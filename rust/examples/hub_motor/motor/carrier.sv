@@ -7,27 +7,27 @@
 // where it passes, so the wires leave the axle into the left-hand bay.
 
 use std (horizontal)
-use motor.dims
-use motor.parts
+use motor.dims (d_core, hub_half, key_t2, key_w, L, Rb, web_half, window_d, window_r)
+use motor.parts (Datums)
 use motor.axle
 
-component Carrier(f: group, dims: group, exit: solid) {
-  hh := dims.hub_half
-  wh := dims.web_half
-  rl := dims.L / 2
-  in f.side {
-    a := motor.parts.At(f.so, dx: -hh, dy: dims.d_core / 2)
-    b := motor.parts.At(f.so, dx: hh, dy: dims.d_core / 2)
-    c := motor.parts.At(f.so, dx: hh, dy: dims.hub_r)
-    d := motor.parts.At(f.so, dx: wh, dy: dims.hub_r)
-    e := motor.parts.At(f.so, dx: wh, dy: dims.rim_r)
-    g := motor.parts.At(f.so, dx: rl, dy: dims.rim_r)
-    h := motor.parts.At(f.so, dx: rl, dy: dims.Rb)
-    k := motor.parts.At(f.so, dx: -rl, dy: dims.Rb)
-    m := motor.parts.At(f.so, dx: -rl, dy: dims.rim_r)
-    n := motor.parts.At(f.so, dx: -wh, dy: dims.rim_r)
-    q := motor.parts.At(f.so, dx: -wh, dy: dims.hub_r)
-    s := motor.parts.At(f.so, dx: -hh, dy: dims.hub_r)
+part Carrier(f: Datums, exit: solid) {
+  hh := hub_half
+  wh := web_half
+  rl := L / 2
+  in f.so.plane {
+    a := motor.parts.At(f.so, dx: -hh, dy: d_core / 2)
+    b := motor.parts.At(f.so, dx: hh, dy: d_core / 2)
+    c := motor.parts.At(f.so, dx: hh, dy: motor.dims.hub_r)
+    d := motor.parts.At(f.so, dx: wh, dy: motor.dims.hub_r)
+    e := motor.parts.At(f.so, dx: wh, dy: motor.dims.rim_r)
+    g := motor.parts.At(f.so, dx: rl, dy: motor.dims.rim_r)
+    h := motor.parts.At(f.so, dx: rl, dy: Rb)
+    k := motor.parts.At(f.so, dx: -rl, dy: Rb)
+    m := motor.parts.At(f.so, dx: -rl, dy: motor.dims.rim_r)
+    n := motor.parts.At(f.so, dx: -wh, dy: motor.dims.rim_r)
+    q := motor.parts.At(f.so, dx: -wh, dy: motor.dims.hub_r)
+    s := motor.parts.At(f.so, dx: -hh, dy: motor.dims.hub_r)
     profile := (bore := line(a.p, b.p)) -> (hub_r := line(b.p, c.p)) ->
                (hub_o := line(c.p, d.p)) -> (web_r := line(d.p, e.p)) ->
                (rim_i := line(e.p, g.p)) -> (rim_r := line(g.p, h.p)) ->
@@ -37,17 +37,17 @@ component Carrier(f: group, dims: group, exit: solid) {
   }
   body := solid(profile, about: f.ax)
 
-  windows := motor.parts.HoleCircle(f, n: dims.windows, r: dims.window_r, d: dims.window_d,
+  windows := motor.parts.HoleCircle(f, n: motor.dims.windows, r: window_r, d: window_d,
                                     phase: 30deg)
-  repeat dims.windows as i {
+  repeat motor.dims.windows as i {
     private window := solid(face(windows.hole[i]), through: body)
     window cut body
   }
 
   // the hub's keyway, `key_t2` above the seat over the hub's length, and the cable port
-  in f.front {
-    slot := motor.parts.Box(f.o, x0: -dims.key_w / 2, y0: -dims.d_core / 2 - dims.key_t2,
-                            x1: dims.key_w / 2, y1: -dims.d_core / 2 + 1mm)
+  in f.o.plane {
+    slot := motor.parts.Box(f.o, x0: -key_w / 2, y0: -d_core / 2 - key_t2,
+                            x1: key_w / 2, y1: -d_core / 2 + 1mm)
   }
   private keyway := solid(slot.profile, through: body)
   keyway cut body
@@ -68,9 +68,8 @@ preview {
     horizontal ax
     length(100mm) ax
   }
-  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
-            so: std.side.origin, ax: ax, to: std.top.origin}
+  frame := {o: std.origin, datum: datum, so: std.side.origin, ax: ax}
 
-  axle := motor.axle.Axle(frame, dims: motor.dims.motor_dims)
-  carrier := Carrier(frame, dims: motor.dims.motor_dims, exit: axle.exit)
+  axle := motor.axle.Axle(frame, std.top.origin)
+  carrier := Carrier(frame, exit: axle.exit)
 }

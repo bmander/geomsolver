@@ -14,32 +14,33 @@
 // disc side (`disc: 1`) is also tapped for the brake disc's six M5 bolts.
 
 use std (horizontal)
-use motor.dims
-use motor.parts
+use motor.dims (brg_in, brg_od, brg_w, clear4, disc_bcd, disc_bolts, disc_depth, flange_r, flange_t,
+                half, lip, lip_r, pocket_in, Ro, Rr, spigot, spigot_r, spoke_d, spoke_r, tap5, web)
+use motor.parts (Datums)
 
-component Cover(f: group, dims: group, screws: group, sg: Scalar, boss_to: Length,
-                boss_r: Length, spoke_phase: Angle, disc: Int) {
-  lip_in := dims.brg_in + dims.brg_w
-  lip_out := lip_in + dims.lip
-  outer := dims.half + dims.web
+part Cover(f: Datums, screws: group, sg: Scalar, boss_to: Length, boss_r: Length,
+           spoke_phase: Angle, disc: Int) {
+  lip_in := brg_in + brg_w
+  lip_out := lip_in + lip
+  outer := half + web
   // each run one number: a station from the mid-plane or a radius from the axle, measured in
-  // the end view from its origin, the other ordinate kept where the run began
-  in f.side {
+  // the section from its origin, the other ordinate kept where the run began
+  in f.so.plane {
     profile := step(u: boss_to) (lip_bore := line) -> step(v: boss_r) (boss_end := line) ->
-               step(u: lip_out) (boss := line) -> step(v: dims.boss_r) (boss_step := line) ->
-               step(u: outer) (housing := line) -> step(v: dims.Ro) (face_o := line) ->
-               step(u: dims.half + dims.flange_t) (flange_step := line) ->
-               step(v: dims.flange_r) (flange_o := line) ->
-               step(u: dims.half) (flange_rim := line) ->
-               step(v: dims.Rr) (flange_i := line) ->
-               step(u: dims.half - dims.spigot) (spigot_o := line) ->
-               step(v: dims.spigot_r) (spigot_end := line) ->
-               step(u: dims.half) (spigot_i := line) ->
-               step(v: dims.boss_r) (face_i := line) ->
-               step(u: dims.pocket_in) (housing_i := line) ->
-               step(v: dims.brg_od / 2) (pocket_end := line) ->
+               step(u: lip_out) (boss := line) -> step(v: motor.dims.boss_r) (boss_step := line) ->
+               step(u: outer) (housing := line) -> step(v: Ro) (face_o := line) ->
+               step(u: half + flange_t) (flange_step := line) ->
+               step(v: flange_r) (flange_o := line) ->
+               step(u: half) (flange_rim := line) ->
+               step(v: Rr) (flange_i := line) ->
+               step(u: half - spigot) (spigot_o := line) ->
+               step(v: spigot_r) (spigot_end := line) ->
+               step(u: half) (spigot_i := line) ->
+               step(v: motor.dims.boss_r) (face_i := line) ->
+               step(u: pocket_in) (housing_i := line) ->
+               step(v: brg_od / 2) (pocket_end := line) ->
                step(u: lip_in) (pocket := line) ->
-               step(v: dims.lip_r) (lip_face := line) -> close
+               step(v: lip_r) (lip_face := line) -> close
   }
   // the left cover's profile is the right's mirrored in the mid-plane, the side view's `v` through
   // its origin: the map taking that line's points to themselves, reversing the turn
@@ -47,45 +48,44 @@ component Cover(f: group, dims: group, screws: group, sg: Scalar, boss_to: Lengt
     body := solid(profile, about: f.ax)
   }
   when sg == -1 {
-    in f.side {
+    in f.so.plane {
       private rim := point
-      rim level(u) f.side
-      rim distance(dims.Ro, along: v) f.side
+      rim level(u) f.so
+      f.so distance(Ro, along: v) rim
     }
-    mirrored := profile mapped(f.so -> f.so, rim -> rim, mirror: true) in f.side
+    mirrored := profile mapped(f.so -> f.so, rim -> rim, mirror: true) in f.so.plane
     body := solid(mirrored, about: f.ax)
   }
 
   // the spoke holes, through the flange
-  spokes := motor.parts.HoleCircle(f, n: dims.spokes, r: dims.spoke_r, d: dims.spoke_d,
+  spokes := motor.parts.HoleCircle(f, n: motor.dims.spokes, r: spoke_r, d: spoke_d,
                                    phase: spoke_phase)
-  repeat dims.spokes as i {
+  repeat motor.dims.spokes as i {
     private spoke := solid(face(spokes.hole[i]), through: body)
     spoke cut body
   }
 
   // the cap screws' clearance holes, each on a tapped hole's centre in the ring
-  in f.front {
-    repeat dims.screws as i {
-      clear := circle(center: screws.c[i]) hint(r: dims.clear4 / 2)
-      radius(dims.clear4 / 2) clear
+  in f.o.plane {
+    repeat motor.dims.screws as i {
+      clear := circle(center: screws.c[i]) hint(r: clear4 / 2)
+      radius(clear4 / 2) clear
     }
   }
-  repeat dims.screws as i {
+  repeat motor.dims.screws as i {
     private screw := solid(face(clear[i]), through: body)
     screw cut body
   }
 
   // the brake disc's six M5 holes, `disc_depth` into the boss's face
   when disc == 1 {
-    disc_holes := motor.parts.HoleCircle(f, n: dims.disc_bolts, r: dims.disc_bcd / 2,
-                                         d: dims.tap5, phase: 0deg)
+    disc_holes := motor.parts.HoleCircle(f, n: disc_bolts, r: disc_bcd / 2, d: tap5, phase: 0deg)
     // the boss's face along the end view's normal (−y), and the holes run inboard from it
     face_h := -sg * boss_to
-    repeat dims.disc_bolts as i {
+    repeat disc_bolts as i {
       private tapped := solid(face(disc_holes.hole[i]),
-                              from: min(face_h, face_h + sg * dims.disc_depth),
-                              to: max(face_h, face_h + sg * dims.disc_depth))
+                              from: min(face_h, face_h + sg * disc_depth),
+                              to: max(face_h, face_h + sg * disc_depth))
       tapped cut body
     }
   }
@@ -106,12 +106,10 @@ preview {
     horizontal ax
     length(100mm) ax
   }
-  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
-            so: std.side.origin, ax: ax, to: std.top.origin}
+  frame := {o: std.origin, datum: datum, so: std.side.origin, ax: ax}
 
   screw := motor.parts.HoleCircle(frame, n: motor.dims.screws, r: motor.dims.screw_r,
                                   d: motor.dims.tap4, phase: 180deg / motor.dims.screws)
-  left := Cover(frame, dims: motor.dims.motor_dims, screws: screw, sg: -1,
-                boss_to: motor.dims.disc_face, boss_r: motor.dims.disc_r, spoke_phase: 0deg,
-                disc: 1)
+  left := Cover(frame, screw, sg: -1, boss_to: motor.dims.disc_face, boss_r: motor.dims.disc_r,
+                spoke_phase: 0deg, disc: 1)
 }
