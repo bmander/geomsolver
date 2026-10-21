@@ -591,6 +591,17 @@ where a rule came from.
     law, `180deg - abs(180deg - t)`, in place of its two constant-rate slides: the pitch curve the
     uniform-rise spiral (1e-9), its halves meeting at the point, the profile's halves parting
     there by the spiral's lean either side (each half reading the corner on its own side), and the
-    osculating radius unchanged.
+    osculating radius unchanged.  `rates/pitch.sv` is cut from the same law, its march unchanged
+    (`tests/drawn_cauchy.rs`).  `tests/cams.rs` (#483) holds the corpus written on it against
+    closed forms: `generation/dwell_cam.sv`, a cycloidal dwell-rise-dwell-return in one law of
+    `min`/`max` and one envelope per piece (1e-9, the pieces meeting); `rocker_cam.sv`, a driven
+    *turn*, the roller on its pivot's arc (1e-9); `flat_cam.sv`, a line as the tool, the cam its
+    support function and its bend `base + s + s''` (1e-9, a held osculating circle 1e-6);
+    `sized_cam.sv`, the base circle an unknown solved through the law so the tightest bend is a
+    stated radius (1e-6); `cam_plate.sv`, a prism's side under the drive holding a point in space,
+    the plate's swept field changing sign there; and `mechanisms/cam_follower.sv`, the roller drawn
+    in the follower (`x in f`) a roller's radius from the profile turned to `t` at every station of
+    the march (and scrubbed in the web suite's `timeline.test.ts`).  A driven sweep is outside the
+    class exported exactly: `cam_plate.sv`'s plate is a field.
   - **Not built**: a point carried under a drive and held by a relation (E080), a relation held to
     an envelope in space generated under one (E061), and a meshing on one.

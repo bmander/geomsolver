@@ -67,11 +67,13 @@ const projects: Example[] = [{
     + 'Edit `depth` or `l`.',
   target: { kind: 'file', path: 'penrose.sv' },
 }, {
-  label: 'Generation by motion · nine examples', key: 'generation',
+  label: 'Generation by motion · fourteen examples', key: 'generation',
   description: 'Curves and solids nobody draws: what a tool leaves behind as it moves, or the path a '
     + 'mechanism traces, each a curve the solve can constrain. A Jansen leg whose toe rod solves to '
     + 'stand on level ground, the same leg bending at a stated radius where it stands '
-    + '(osculating_stride.sv), a dwell linkage fitted by curvature, a heart cam, conjugate cams, '
+    + '(osculating_stride.sv), a dwell linkage fitted by curvature, a heart cam and cams cut from '
+    + 'their followers\' laws (with dwells, a swinging arm, a flat face, a base circle solved '
+    + 'against the cam\'s curvature, a plate as a solid), conjugate cams, '
     + 'clock gearing, a spur mesh cut twice over, a rack-cut spur gear exported exactly, and the '
     + 'same gear whose pressure angle a gauge in space solves (gauged_gear.sv). The README says '
     + 'what each shows.',
@@ -82,8 +84,9 @@ const projects: Example[] = [{
     + '`param t: Angle over (0deg, 360deg)`, every relation held for every value of it, and the '
     + 'drawing followed round by continuation on the assembly mode it is drawn in. A four-bar\'s '
     + 'coupler curve over a whole turn, a slider-crank straight through its dead centres, a triple '
-    + 'rocker stopped where its motion turns back and a four-bar stopped at its change point, '
-    + 'where two branches cross. The README says what each shows.',
+    + 'rocker stopped where its motion turns back, a four-bar stopped at its change point, '
+    + 'where two branches cross, and a cam whose roller rides the profile cut from its law. The '
+    + 'README says what each shows.',
   target: { kind: 'directory', path: 'mechanisms', entry: 'four_bar.sv' },
 }, {
   label: 'Rounds and chamfers · written in Solvent', key: 'rounds',
