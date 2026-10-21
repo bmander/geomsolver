@@ -89,24 +89,25 @@ placement carries inside the blank; CLI test readers zero the offset.
   `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads, but
   every plane's pose rewritten relative to a reference plane (the first face's, found as
   `frame_origin` finds the origin), and that plane's world pose apart.  Two keys of one shape
-  (`same_shape`: every number within `1e-10` of the larger, or of one — not to the bit, since a
-  nested frame's relative pose is worked through the world and a stand settles a part's own
-  numbers to the solve's precision, a direction's row judged in radians) are one solid moved
-  rigidly: `Sketch::evaluated_solid` hands back the
-  same `Shape` (`Rc`'d: boundary, mesh, edges, classifier) under the placement
-  `solid::Rigid::between` the two reference poses makes, never building it again; the same pose
-  within that tolerance is the evaluation itself.  **A solid reading anything in the world
-  itself has its pose in its shape** (`Poses::world`): a region's points, a face family's
-  stations, a body placed or swept under a motion, a revolution about an axis in space or a line
-  in another plane, a face's point in space or another plane, any curve — conservative, so such
-  a solid is reused only where it stands where it stood.  `EvaluatedSolid`'s placement is a
-  rotation and a translation (`to_world = R·p + origin`; `None` for a fresh one, bit for bit
-  what it was): its own outputs (`boundary`, `bounds`, `edges`, `mesh`, `face_edges`,
-  `round_features`) are the shape's; `local_basis` turns a view's plane in, so the renderer and
-  the dimensions need nothing else; the world outputs (`world_*`, `world_bounds` — the turned
-  boundary's own tight box — `stl`, a glTF node through `oriented_mesh`, the ABI's
-  `gcs_solid_mesh`/`gcs_solid_normals`) apply it, and a pick or a scene's edges turn the eye
-  in (`vector_to_local`).  `Sketch::built_solid` is the lookup without the build.
+  (`same_shape`: every number within the solve's step tolerance, `solve::XTOL`, of the larger or
+  of the key's reach — the largest world number a pose in it was worked from — #498: a solve
+  that settles a part it does not move, a drag's polish, leaves it anywhere a step it would not
+  take away, and a nested frame's relative pose is worked through the world; a stand leaves what
+  the parameter does not reach to the bit, `follow::Still`) are one solid moved rigidly:
+  `Sketch::evaluated_solid` hands back the same `Shape` (`Rc`'d: boundary, mesh, edges,
+  classifier) under the placement `solid::Rigid::between` the two reference poses makes, never
+  building it again; the same pose within that tolerance is the evaluation itself.  **A solid
+  reading anything in the world itself has its pose in its shape** (`Poses::world`): a region's
+  points, a face family's stations, a body placed or swept under a motion, a revolution about an
+  axis in space or a line in another plane, a face's point in space or another plane, any curve
+  — conservative, so such a solid is reused only where it stands where it stood.
+  `EvaluatedSolid`'s placement is a rotation and a translation (`to_world = R·p + origin`; `None`
+  for a fresh one, bit for bit what it was): its own outputs (`boundary`, `bounds`, `edges`, `mesh`,
+  `face_edges`, `round_features`) are the shape's; `local_basis` turns a view's plane in, so the
+  renderer and the dimensions need nothing else; the world outputs (`world_*`, `world_bounds` — the
+  turned boundary's own tight box — `stl`, a glTF node through `oriented_mesh`, the ABI's
+  `gcs_solid_mesh`/`gcs_solid_normals`) apply it, and a pick or a scene's edges turn the eye in
+  (`vector_to_local`).  `Sketch::built_solid` is the lookup without the build.
   `tests/rigid_solids.rs` is the gate: the V-twin stood round its crank reuses the disc's,
   cylinders' and pistons' evaluations, each equal to a fresh one where it stands (volume, faces,
   bounds and round features, its boundary on the fresh one's within the two sags), the plate the

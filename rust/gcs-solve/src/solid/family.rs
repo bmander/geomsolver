@@ -402,7 +402,7 @@ impl Reading {
     /// Solve the station at `s`, warm from wherever the part stands: the compiled system, or why
     /// it does not solve.
     fn solve(&self, sk: &mut Sketch, s: f64) -> Result<crate::system::System, String> {
-        crate::follow::settle(sk, self.held, s, &self.outer)
+        crate::follow::settle(sk, self.held, s, &self.outer, &Default::default())
     }
 
     /// Whether the station `sys` solved is regular: of full column rank, no freedom left and no

@@ -197,3 +197,55 @@ fn a_solid_whose_shape_changes_is_built_again() {
     assert!(!now.same_shape(&was), "a larger rim is a new shape");
     assert!(now.volume() > was.volume());
 }
+
+/// **A stand solves only what the parameter reaches** (#498): stood round its crank, the V-twin's
+/// plate and the pistons' own numbers, drawn in their frames, are where they stood at home to the
+/// bit — not settled again to the solve's precision — so the shape keys the gate reads compare
+/// them exactly.
+#[test]
+fn a_stand_leaves_what_the_crank_does_not_reach_to_the_bit() {
+    let (_, home) = vtwin();
+    let still = |i: &usize| {
+        ["plate.", "bankL.pis.", "bankR.pis."].iter().any(|p| home.params[*i].name.starts_with(p))
+    };
+    let held: Vec<usize> = (0..home.params.len()).filter(still).collect();
+    assert!(held.len() > 400, "{}", held.len());
+    let mut sk = home.clone();
+    for t in [40.0, 115.0, 200.0, 290.0] {
+        follow::stand(&mut sk, "t", t).expect("stood");
+        for &i in &held {
+            let (was, now) = (home.params[i].value, sk.params[i].value);
+            let name = &home.params[i].name;
+            assert!(was.to_bits() == now.to_bits(), "`{name}` at {t}: {was} != {now}");
+        }
+        // and what the crank does reach has moved
+        assert!(home.get_x().iter().zip(sk.get_x()).any(|(a, b)| (a - b).abs() > 1.0), "at {t}");
+    }
+}
+
+/// A part with a dimension that reads the parameter is built again where it is stood: the disc
+/// whose radius is `r` is a new shape at each instant, and the peg beside it, which reads nothing
+/// that runs, is the very evaluation it was (#498).
+#[test]
+fn a_solid_whose_dimension_reads_the_parameter_is_built_again_where_stood() {
+    let e = crate::common::read("unit mm\nuse std\nparam r: Length over (10mm, 20mm)\n\
+        in std.front {\n  o := point\n  fix((0, 0)) o\n  \
+        rim := circle(center: o) hint(r: 10)\n  radius(r) rim\n  \
+        p := point\n  fix((40, 0)) p\n  side := circle(center: p) hint(r: 5)\n  \
+        radius(5mm) side\n}\ndisc := solid(face(rim), depth: 5mm)\n\
+        peg := solid(face(side), depth: 5mm)\n");
+    let mut sk = e.sketch.clone();
+    assert!(solve::solve(&mut sk, Default::default()).success);
+    let (disc, peg) = (named(&e, "disc"), named(&e, "peg"));
+    let at = |sk: &Sketch, i: usize| sk.evaluated_solid(i, ApproximationPolicy::Mesh).unwrap();
+    let (mut was, pegged) = (at(&sk, disc), at(&sk, peg));
+    for r in [10.5, 15.0, 20.0] {
+        follow::stand(&mut sk, "r", r).expect("stood");
+        let now = at(&sk, disc);
+        assert!(!now.same_shape(&was), "the disc at {r} is a new shape");
+        let area = std::f64::consts::PI * r * r * 5.0;
+        assert!((now.volume() - area).abs() < 0.02 * area, "{} at {r}", now.volume());
+        assert!(Rc::ptr_eq(&at(&sk, peg), &pegged), "the peg at {r} stands still");
+        was = now;
+    }
+}

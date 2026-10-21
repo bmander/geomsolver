@@ -45,6 +45,11 @@ pub const ORIENTATION_BROKEN: i32 = 7;
 /// a line (`collapsed`): the solve's own relative tolerance, as a bound's.
 const COLLAPSE_TOL: f64 = 1e-6;
 
+/// The step, relative to the size of the unknowns, below which a document's minimisation stops
+/// (`System::tolerances`): two poses nearer than that are one to the solve, which takes no step
+/// between them — what an evaluated solid's shape is compared to (`solid::ShapeKey`, #498).
+pub const XTOL: f64 = 1e-12;
+
 /// How many times larger or smaller than the extent a system was compiled at a failed solve's
 /// pose must be for it to be compiled again at that size (`System::resized`).
 const RESIZE: f64 = 4.0;
@@ -587,10 +592,10 @@ impl System {
 
     /// One minimisation from `z`, updated in place, measured on the hard rows: the result and
     /// the max residual relative to each row's own units, which is what "solved" means.
-    /// Where a document's minimisation stops: `opts.tol` as stated, a step of 1e-12 of `z`, and
+    /// Where a document's minimisation stops: `opts.tol` as stated, a step of `XTOL` of `z`, and
     /// a gradient in 1/length — the same for a solve through boundaries (`through`).
     pub(super) fn tolerances(&self, opts: &SolveOpts) -> newton::Tol {
-        newton::Tol { ftol: opts.tol, xtol: 1e-12, gtol: 1e-16 / self.extent.max(1.0) }
+        newton::Tol { ftol: opts.tol, xtol: XTOL, gtol: 1e-16 / self.extent.max(1.0) }
     }
 
     fn minimise(&mut self, z: &mut [f64], method: Method, opts: &SolveOpts) -> (SolveResult, f64) {
