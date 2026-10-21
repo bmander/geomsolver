@@ -448,13 +448,13 @@ impl<'a> Walk<'a> {
                 // a word of one parameter takes it bare, as a built-in takes its one number
                 // (#463); of more, which is which is said by label
                 OpArg::Dim(text, span) => {
-                    if let ([p], [_]) = (def.params.as_slice(), given.args.as_slice()) {
-                        values.insert(p.text.clone(), (text.clone(), *span));
-                        continue;
-                    }
-                    let (code, m) = match def.params.as_slice() {
-                        [] => (Code::E040, format!("`{word}` has no parameters")),
-                        [p, ..] => (Code::E004, format!(
+                    let (code, m) = match (def.params.as_slice(), given.args.as_slice()) {
+                        ([p], [_]) => {
+                            values.insert(p.text.clone(), (text.clone(), *span));
+                            continue;
+                        }
+                        ([], _) => (Code::E040, format!("`{word}` has no parameters")),
+                        ([p, ..], _) => (Code::E004, format!(
                             "a relation word's parameters are given by label where it has more \
                              than one: `{word}({}: {text}, …)`",
                             p.text

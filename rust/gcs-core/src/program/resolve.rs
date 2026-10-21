@@ -49,10 +49,10 @@ pub(crate) const PLANE: &str = "plane";
 
 /// The plane point `p` is drawn in, or why it has none: a point standing in space, or one not yet
 /// placed — read before the memberships are in, where a declaration names it.
-pub(super) fn drawn_in(sk: &Sketch, p: usize) -> Result<usize, String> {
+fn drawn_in(sk: &Sketch, p: usize) -> Result<usize, String> {
     let pt = &sk.points[p];
-    match (pt.plane, pt.z.is_some() || pt.chart.is_some()) {
-        (Some(f), _) => Ok(f as usize),
+    match (sk.plane_of(p), pt.z.is_some() || pt.chart.is_some()) {
+        (Some(f), _) => Ok(f),
         (None, true) => Err("a point standing in space is drawn in no plane, so it has no \
             `plane`: name the plane itself".to_string()),
         (None, false) => Err("where a point is drawn is known once every `in` is read, after \

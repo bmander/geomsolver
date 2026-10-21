@@ -95,10 +95,6 @@ fn step_dimension(e: &Elaborated, stmt: syntax::StmtId, cid: u32, w: &syntax::Wr
 /// for a word of one parameter) — the text the callout draws, so the text an edit of it writes.
 fn word_dimension(prog: &Program, w: &syntax::Written) -> Option<(Span, String)> {
     let k = prog.resolve_word(&w.word.text, w.fixity, None)?;
-    let only = match prog.words[k].params.as_slice() {
-        [p] => Some(p.text.as_str()),
-        _ => None,
-    };
     let param = prog.words[k].body.iter().find_map(|st| match &st.kind {
         StmtKind::Relation(r) => r.form.written()?.args.iter().find_map(|a| match a {
             syntax::OpArg::Dim(t, _) => Some(t.trim()),
@@ -110,7 +106,12 @@ fn word_dimension(prog: &Program, w: &syntax::Written) -> Option<(Span, String)>
         syntax::OpArg::Named(n, syntax::Arg::Dim { text, span }) if n.text == param => {
             Some((*span, text.clone()))
         }
-        syntax::OpArg::Dim(text, span) if only == Some(param) => Some((*span, text.clone())),
+        // a word of one parameter given it bare
+        syntax::OpArg::Dim(text, span)
+            if matches!(prog.words[k].params.as_slice(), [p] if p.text == param) =>
+        {
+            Some((*span, text.clone()))
+        }
         _ => None,
     })
 }

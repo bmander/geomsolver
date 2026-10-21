@@ -53,9 +53,10 @@ definition's file, a cycle is E003, an unknown word E102 naming the import. **A 
 ([0.152], #463): `o.plane` is the frame a point is drawn in (`program::resolve::follow`, `PLANE`,
 `drawn_in`), so a word about a point in a view reads the view from its operand and stays closed;
 `o.plane.normal` is minted once the memberships are in (`planes::drawn_normals`, over the
-flattener's `normals`). A point standing in space is E040 (`relations::undrawn_plane`) at the
-reference, or at the use where the reference is a word's body's; before the memberships (a
-declaration's child) it is refused as not yet known. `Relation::word` (`Worded`) rides to
+flattener's `normals`). A point standing in space is E040 at the operand, or at the use where the
+operand is a word's body's — a relation that cannot settle says first why an operand whose name is
+found names nothing past it (`relations::constrain`), rather than that it has no kind; before the
+memberships (a declaration's child) it is refused as not yet known. `Relation::word` (`Worded`) rides to
 `Constraint::word` (`WordUse`, entities; `graft` keeps it while its operands survive) and
 `io::describe_with` reads it (`p horizontal q`). `flatten::word_faults` (closure E101, a
 reserved word or a builtin of the fixity E071 — `constraints::builtin_word` — names twice E001)
