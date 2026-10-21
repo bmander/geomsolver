@@ -1870,6 +1870,36 @@ statements.
 | `x cut y` and `y cut x` | E041 at the second — "`x` would be made of itself" |
 | `x coincident y`, two solids | refused: material is added with `union` |
 
+#### Load scenarios
+
+A `scenario` states a load case over the solved drawing: supports, loads and requirements, one
+per line. It stands at the top of the document (or in its `preview`), reads the document's names
+and numbers, and adds no geometry and no row — nothing in it is analysed yet (§9.11).
+
+```
+scenario lift {
+  fixed plate.west                       // a face path; `pinned X` holds without turning
+  load tip (0, -500N, 0)                 // a force, world axes; or `load tip 500N along: down`
+  deflection(tip, along: down) <= 0.5mm  // a bound
+  safety(plate) == 2                     // a driving row: one scenario's may drive
+}
+scenario overload: lift {                // lift's supports and loads, then these
+  pressure plate.near 2MPa
+  claim mode(plate, 1) >= 120Hz          // judged, never solved for
+}
+```
+
+| written | reported |
+|---|---|
+| `patch := point` inside | syntax — a scenario adds no geometry: draw it in the body |
+| `load tip (0, -5N)` | syntax — a load's vector is `(x, y, z)`; in a plane use `along:` |
+| `load tip (0, -5mm, 0)` | E103 — a force is a `Length·Mass·Time^-2` (`N`) |
+| `pressure tip 1MPa` | E040 — a pressure is on a face |
+| `fixed std.front` | E040 — applied to a point, an edge, a face or a solid |
+| `claim deflection(tip) <= u` | E040 — `u` is an unknown; a scenario's numbers are stated |
+| `== v` in two scenarios | E106 — state the second a claim |
+| a scenario in a component | syntax — at the top of a document |
+
 ### 1.15 Frames that move, and generated geometry
 
 **A motion is a frame's joint.** A frame declared bare (`f := frame`, 1.12) is a rigid frame in

@@ -161,6 +161,11 @@ The parser refuses `as` and a trailing joint; the measured-bound sniff skips a s
 opener word starts. `commit_seeds` writes into a root `when`'s body. The hypoid's tip relief is
 one (`hypoid.sv`). `tests/when.rs` is the gate.
 
+**`scenario NAME { … }`, a load case (§9.11 [0.164], #510 P4):** a block like `when` — no prefix,
+the enclosing body's names — at the top of a document alone, whose body is lines (supports, loads,
+requirements) and no statements; it adds nothing to the drawing.  Its rules are
+[analysis.md](analysis.md)'s.
+
 **`when` is the one conditional (0.91, #267).** Two names that are not numbers compare by
 **identity**: `a == b`/`a != b` (`Cond::Cmp` over two `Ast::Var`, a side not in `vals`) holds as
 `Walk::stands_for` resolves them — the absolute name through every alias, so a formal is what

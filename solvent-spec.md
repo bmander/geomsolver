@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.163 — October 2026**
+**Specification, Draft 0.164 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -52,7 +52,7 @@ MUST, MUST NOT, SHOULD, SHOULD NOT, and MAY are used as in RFC 2119. Text marked
 ## 2. Lexical structure
 
 - **Identifiers:** `[A-Za-z_][A-Za-z0-9_]*`. Component names are conventionally capitalized; this is not enforced.
-- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, **[0.72]** `when`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`. **[0.94]** `meshing` is an element keyword (§6.15.4); one shipped example renamed a motion that had been called it.
+- **Keywords:** `component`, `param`, `point`, `circle`, `line`, `frame`, `path`, `repeat`, `cycle`, `ring`, **[0.72]** `when`, `about`, `as`, `next`, `prev`, `hint`, `at`, `fix`, `ccw`, `cw`, `rev`, `true`, `false`, **[0.2]** `curve`, `over`, `spline` (and `ellipse`, until **[0.15]** made the ellipse a library component — `Ellipse` in `std`, a computed point on a datum traced as a curve, whose contacts are the curve's; an implementation keeps the word only to refuse it). **[0.7]** `unit`, `class` and `style` in, `construction` out; every constraint is a prefix or an infix operator (§9.2), so `coincident`, `equal`, `tangent`, `curvature`, `symmetry` and `distance` are the words a statement is written with — it is a class now, and the base sheet is what draws it dashed (§13.2). **[0.4]** In a chain (§6.6) the word `close` is meaningful *contextually*; it is not reserved, and an entity may bear it as a name. **[0.19]** It is read the same way after `->` inside a `face`'s brackets (§6.8), which is the other place the language draws a loop. **[0.8]** `to` is retired: the plain corner is the `->` marker, and threading is stated at the joint rather than inferred from the operands. **[0.5]** A coordinate seed is written `hint at` (§6.4). **[0.7]** Every seed is written in one `hint(…)` clause (§4.3, §6.4); `hint at REF` kept its own form inside a trace block (§6.5.1) until **[0.14]**, when a place became the `at:` and `bearing:` keys of the same clause — `hint(at: REF, bearing: β)` — so `at` after `hint` is refused, and `bearing` is a key and no keyword. **[0.10]** `plane`, `in`, `project` and `fold` in (§6.7); `from` is contextual there as it is in a trace family. **[0.42]** `axis` in; `frame`, `fold`, and `from`, `offset` and `through` as a plane's labels, out — a plane's brackets take `u:` and `v:` and nothing else. **[0.13]** `port` is retired (§7); an implementation keeps the word only to refuse it. **[0.18]** `face` and `solid` are element keywords (§6.8, §6.9) and `view` and `section` open a statement (§6.11); `cut` is the body rule's own word and `on` gains a reading over two solids (§9.2), so both join the operator words a name may not be. **[0.32]** `union` is the body rule's too, and joins them; `on` loses its reading over two solids. **[0.42]** `on` is no constraint word: `coincident` says incidence (§9.2). **[0.20]** `view` and `section` leave model source for the drawing (§6.11). The eight labels a solid's brackets take — `from`, `to`, `depth`, `through`, `along`, `about`, `sweep`, `sense` — are **contextual**: they are read as labels inside the brackets that take them and are reserved nowhere, so a `param` or a point may still bear any of them as a name (`face := -(fw + D / 2)` is idiomatic). A declaration's *name*, however, may not be an element keyword, and three shipped examples renamed a line that had been called `face`. **[0.94]** `meshing` is an element keyword (§6.15.4); one shipped example renamed a motion that had been called it. **[0.164]** `scenario` is a keyword (§9.11); the words of a scenario's lines — `fixed`, `pinned`, `load`, `pressure`, `accelerate` and the outputs — are contextual, read so only there.
 - **Literals:** decimal numbers with optional unit suffix (`10`, `2.5mm`, `30deg`). The constant `tau` (= 2π) and `pi` are predefined.
 - **Comments:** `//` to end of line; `/* ... */` nesting not required.
 - **Operators and punctuation:** `== + - * / ( ) { } [ ] , : . := -> ~ @`
@@ -2674,6 +2674,42 @@ rope minimizes 2 * integral(p.y over p) - integral(p.x over p)
 
 *Open, non-normative:* an integral as a constraint of its own (`integral(…) == A`), an integrand reading other geometry or the curvature (the elastica, #136), a natural end condition (an end free to slide, varied with the curve), and a free curve in space.
 
+### 9.11 Load scenarios **[0.164]**
+
+```
+scenario lift {
+  fixed arm.base
+  load arm.tip (0, -500N, 0)
+  deflection(arm.tip, along: down) <= 0.5mm
+  safety(arm) == 2
+}
+scenario overload: lift {
+  load arm.tip 1kN along: down
+  claim safety(arm) >= 1.25
+}
+scenario free {
+  fixed arm.base
+  claim mode(arm, 1) >= 120Hz
+}
+```
+
+A **scenario** is a load case: the supports a body is held by, the loads it carries, and the **requirements** judged under them — what an analysis of the solved drawing reports, compared with a number. A drawing states as many as it has load cases. A scenario **adds nothing to the drawing**: no entity, no unknown and no row, so the drawing's solve, its DOF ledger (§16.3) and its diagnosis are those of the document with every scenario deleted, and every scenario is read over the one solved drawing.
+
+- **Where it stands.** At the top of a document, or in its `preview` (§14.4); in a component, a block (§12) or an `in` body it is a syntax error, since each copy would be a scenario of its own. Its name is a scenario's, apart from the body's names: two scenarios of one name are **E001**, and a scenario's name collides with no geometry.
+- **Its body is lines, not statements.** Each line is a support, a load or a requirement, and nothing else: a declaration is a syntax error ("a scenario adds no geometry"), and what a load is applied to — a patch, a pad — is drawn in the body and named here. So a scenario is a statement block like `when` (§12.9), reading the enclosing body's names with no prefix of its own, and not a component: it takes no arguments and is never instanced.
+- **Supports.** `fixed X` holds `X` from moving and turning, `pinned X` from moving alone; `along: d` holds only the motion along the direction `d` (a roller is `pinned b along: up`).
+- **Loads.** `load X (fx, fy, fz)` is a force in the world's axes, and `load X f along: d` one of size `f` along `d`; `pressure F p` pushes into the face `F`; `accelerate B (ax, ay, az)` is a body load, the body's density times the acceleration. A force is a `Length·Mass·Time^-2` (`N`, `kN`), a pressure a `Length^-1·Mass·Time^-2` (`Pa` … `GPa`), an acceleration a `Length·Time^-2` (`9.81m / 1s^2`); anything else is **E103** at the number. A vector of two components is a syntax error — in a plane, a load is written along a direction.
+- **What they are applied to** is read by the selectors every operand is (§6.21's faces as sets): a point, an edge (a line, an arc, a circle, a spline, a curve), a face, a solid, or the faces a path past a solid names (`arm.base`, `plate.near`). A plane, an axis or any other datum is **E040**; a pressure on anything but a face **E040**; a name nothing gives **E101**. `along:` names an axis or a line, else **E040**.
+- **Requirements** are written over an **output**: `deflection(X)` (a length; `along: d` reads it along a direction), `safety(B)` (the least factor of safety, a plain number), `mode(B, n)` (the `n`th natural frequency, counted from 1, a `Time^-1`), `buckling(B)` (the factor on the loads at which `B` buckles, a plain number), `compliance(B)` (the work the loads do, an energy) and `mass(B)` (a mass). Each compares with `<=`, `>=` or `==` a number the drawing states — of the output's dimension (**E103**), never reading an unknown of the solve (**E040**) — and is one of three grades, the three a statement already has:
+  - `claim …` is judged after the solve and never solved for (§9.7);
+  - `… == v` is a **driving** row, a square row whose value is the output;
+  - `… <= v` or `… >= v` is a **bound**, kept by an optimiser across scenarios.
+
+  Until every scenario's requirements are kept together, **one scenario's requirements drive dimensions**: a driving row in a second scenario is **E106**, saying to state it a claim.
+- **Extension.** `scenario B: A { … }` begins with `A`'s supports and loads, then its own; its requirements are its own alone, since a requirement is judged under the scenario it is stated in. `A` is written above `B` (**E101** otherwise), so no scenario extends itself. A **load combination** is no construct of its own: it is written out, a scenario whose loads are the factored ones, extending the one its supports are stated in.
+
+This draft states and elaborates scenarios, and solves none: what an output's value is — the analysis it is the result of, its error estimate and the diagnosis of a scenario that leaves a body free — is the subject of a later draft (#510). Presentation of a scenario (a deformed shape, a stress field) belongs in the drawing (`.svd`), never in the model.
+
 ---
 
 ## 10. Paths
@@ -3295,10 +3331,21 @@ Square system, full rank at the hinted seed; one Newton basin per §12.4, lifted
 ## 19. Grammar (EBNF)
 
 ```ebnf
-program        = { use_decl | component | interface | word_def | preview | statement } ;
+program        = { use_decl | component | interface | word_def | preview | scenario
+                 | statement } ;
+scenario       = "scenario" IDENT [ ":" IDENT ] "{" { scenario_line } "}" ;  (* §9.11 [0.164] *)
+scenario_line  = ( "fixed" | "pinned" ) ref [ "along" ":" ref ]
+               | "load" ref ( vector3 | expr "along" ":" ref )
+               | "accelerate" ref vector3
+               | "pressure" ref expr
+               | [ "claim" ] output ( "<=" | ">=" | "==" ) expr ;
+vector3        = "(" expr "," expr "," expr ")" ;
+output         = ( "deflection" "(" ref [ "," "along" ":" ref ] ")"
+                 | "mode" "(" ref "," expr ")"
+                 | ( "safety" | "buckling" | "compliance" | "mass" ) "(" ref ")" ) ;
 interface      = "interface" IDENT "{" [ formal { ( "," | NEWLINE ) formal } ] "}" ;
                                                                     (* §8.1 [0.84] *)
-preview        = "preview" "{" { statement } "}" ;                  (* at most one, §14.4 *)
+preview        = "preview" "{" { statement | scenario } "}" ;       (* at most one, §14.4 *)
 use_decl       = "use" IDENT { "." IDENT }
                  [ "(" IDENT { "," IDENT } ")" ] ;          (* a module, and names read bare, §14.4 *)
 word_def       = ( IDENT IDENT [ "(" IDENT { "," IDENT } ")" ] IDENT  (* infix, §9.9 [0.48] *)
