@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.158] An orientation stated is held.** `ccw(a, b, c)` and `cw(a, b, c)` on the sheet are held
+as a bound is (§9.6): read on the seeds first, a point seeded on the wrong side carried across the
+line of the other two to its mirror; then checked on the solution, a solve ending on the other root
+steered back by reflecting the point and solving again, and failed where no root keeps it (`a bound
+or a stated orientation does not hold`), the diagnosis naming each one broken (`orientation broken:
+ccw(a, b, c)`). What the document states is its own record, apart from the root choices a
+constructive solve writes back, which hold nothing; a plan replays a stated triangle as stated.
+Through 0.157 a stated orientation only recorded a root choice that the plan solver read as a
+merge's chirality, and could overwrite with the seed's, and the document solve never read it: a
+solve landing on the other root was reported solved. No shipped document's solution moved.
+(Issue #157.)
+
 **[0.157] One copy of a pattern, by its index.** An operand the document wrote in a `repeat`'s or
 a `ring`'s body is a step of its body's faces' names with its copy's index, as a reference to the
 copy is written (§6.21): the hole the second drill of `repeat 3 { … drill := solid(face(hole),

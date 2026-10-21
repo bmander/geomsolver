@@ -114,7 +114,11 @@ pub fn to_program(sk: &Sketch) -> Program {
             p.push(StmtKind::Relation(lift_gauge(&name(sk, e), e.kind, point_len(sk, e), &held)));
         }
     }
-    for (key, &v) in &sk.branches {
+    // every root choice is said as the orientation it is — and where the document states one
+    // (#157), as stated, whatever a replay has written into the plan's cache since
+    let mut chosen = sk.branches.clone();
+    chosen.extend(sk.orientations.iter().map(|(k, &v)| (k.clone(), v)));
+    for (key, &v) in &chosen {
         p.push(match decompose::branch_key_points(key) {
             Some(t) => StmtKind::Relation(built(
                 if v >= 0 { CKind::Ccw } else { CKind::Cw },

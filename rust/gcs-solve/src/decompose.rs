@@ -138,6 +138,9 @@ pub struct Plan {
     pub roots: Vec<usize>,
     /// True: replay the recorded chirality even if the sketch moved (Stage 5).
     pub sticky_branches: bool,
+    /// The steps whose chirality the document states (`Sketch::orientations`, #157): replayed as
+    /// stated, sticky or not, since the sketch's own orientation is no choice of the document's.
+    pub held: BTreeSet<usize>,
     /// What each root holds — the rigid bodies a drag moves (`Wave`).
     pub root_els: BTreeMap<usize, Vec<El>>,
     /// Per root, one line of each direction class it carries, by class root.
@@ -172,6 +175,23 @@ impl Plan {
             }
         }
         out
+    }
+
+    /// Install the orientations a document states (#157): each step whose triangle one names
+    /// takes its sign and keeps it whatever the sketch's orientation (`held`).  How many matched.
+    pub fn hold_orientations(&mut self, stated: &BTreeMap<String, i32>) -> usize {
+        self.held.clear();
+        let mut n = 0;
+        for i in 0..self.steps.len() {
+            let Some(t) = self.steps[i].stated(&self.graph) else { continue };
+            let (k, ccw) = branch_record(t, true);
+            if let Some(&v) = stated.get(&k) {
+                self.steps[i].branch = Some(if v == ccw { 1 } else { -1 });
+                self.held.insert(i);
+                n += 1;
+            }
+        }
+        n
     }
 
     /// Install recorded root choices (e.g. from a document); returns how many matched.
@@ -1163,6 +1183,7 @@ pub fn decompose(graph: ConstraintGraph, seed: u32, core_max: usize) -> Plan {
         steps: d.steps,
         roots,
         sticky_branches: false,
+        held: BTreeSet::new(),
         root_els,
         root_dirs,
         roots_of,
@@ -1340,7 +1361,8 @@ pub fn execute(plan: &mut Plan, sk: &mut Sketch, capture: Option<usize>) -> Opti
         }
         let ts: Vec<[f64; 4]>;
         if let Some((x, y, z)) = plan.steps[si].ppp {
-            if plan.steps[si].branch.is_none() || !plan.sticky_branches {
+            let free = plan.steps[si].branch.is_none() || !plan.sticky_branches;
+            if free && !plan.held.contains(&si) {
                 // sketch-guided chirality: the same signed area the drag's order-type guards watch
                 let g = &plan.graph;
                 let (a, b, c) =
@@ -1490,6 +1512,9 @@ impl PlanSolver {
         // replay a stale branch after the user flips one
         let branches = sk.branches.clone();
         self.plan.apply_branches(&branches);
+        // and what the document states is replayed as stated, whatever the pose (#157)
+        let stated = sk.orientations.clone();
+        self.plan.hold_orientations(&stated);
         execute(&mut self.plan, sk, None);
         // dimensions may have been edited since compile
         self.system.refresh_consts(sk);
@@ -1498,9 +1523,10 @@ impl PlanSolver {
         let mut rel = self.system.max_relative_residual(&z);
         let mut numeric = None;
         let mut fell_back = false;
-        // a root the plan chose that breaks a bound is steered by the numeric solve, as any
-        // document solve is (§9.6)
-        let bounded = fallback && sk.constraints.iter().any(|c| c.bound.is_some())
+        // a root the plan chose that breaks a bound or a stated orientation is steered by the
+        // numeric solve, as any document solve is (§9.6, #157)
+        let bounded = fallback
+            && (sk.constraints.iter().any(|c| c.bound.is_some()) || !sk.orientations.is_empty())
             && !crate::solve::bounds_hold(sk);
         // and one where a tangency's line has no length is no solution (#479)
         let collapsed = fallback && !crate::solve::collapsed(sk).is_empty();

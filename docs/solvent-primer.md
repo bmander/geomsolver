@@ -133,7 +133,7 @@ WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint     
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 claim { DECL* CONSTRAINT* }             a claim with witnesses of its own              (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
-ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation       (1.5)
+ccw(a, b, c) | cw(a, b, c)              choose a root, held; adds no equation        (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
 [NAME :=] Component(ARGS) [in REF]      an instance                                  (1.8)
 component NAME(FORMALS) { statement* }  a component definition (not a value)
@@ -248,7 +248,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
-| `ccw(a, b, c)`, `cw(a, b, c)` | call | `c` left (right) of ray `a → b`: a root choice, no equation |
+| `ccw(a, b, c)`, `cw(a, b, c)` | call | `c` left (right) of ray `a → b`: a root choice, no equation — held as a bound is: a seed on the other side is carried across, and a solve ending there steered back or failed |
 
 #### Which way: directions are words
 

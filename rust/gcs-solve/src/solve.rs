@@ -13,7 +13,9 @@ mod through;
 mod turn;
 
 pub use bounds::cross_bounds;
-pub use bounds::{bound_reading, bound_tol, bounds_hold, BoundReading};
+pub use bounds::{
+    bound_reading, bound_tol, bounds_hold, orientation_reading, orientations_broken, BoundReading,
+};
 pub use drag::{Drag, PullPolish, RadiusDrag, Triangle};
 pub use through::{
     solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through, Times,
@@ -25,7 +27,8 @@ use crate::model::Sketch;
 use crate::newton::{self, Info, Method};
 use crate::system::System;
 
-/// A `SolveResult::status` of its own: every row holds, and a bound does not (§9.6).
+/// A `SolveResult::status` of its own: every row holds, and a bound or an orientation the
+/// document states does not (§9.6, #157).
 pub const BOUND_BROKEN: i32 = 5;
 
 /// A `SolveResult::status` of its own: every row holds, and a line a tangency reads only by its
@@ -269,9 +272,10 @@ impl System {
     }
 
     fn solve_steered(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
-        // a document solve over bounds starts where it may be steered back to (§9.6), and one
-        // that fails is tried again from there (`RECOVERIES`)
-        let steers = opts.document() && sk.constraints.iter().any(|c| c.bound.is_some());
+        // a document solve over bounds or stated orientations starts where it may be steered
+        // back to (§9.6, #157), and one that fails is tried again from there (`RECOVERIES`)
+        let steers = opts.document()
+            && (sk.constraints.iter().any(|c| c.bound.is_some()) || !sk.orientations.is_empty());
         let start = if opts.document() { sk.get_x() } else { Vec::new() };
         let mut res = self.solve_unsteered(sk, opts);
         if opts.document() {

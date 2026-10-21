@@ -195,7 +195,7 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   (`retry` off) and a drawing whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
   `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
   A free name in one is E040 (`expr::Fault::ClaimFree`) unless a row of the drawing reads it too:
-  `expr::evaluate` asks the bounds last, binding `Constraint::free` without minting (0.64). `ccw` on the sheet is still unchecked.
+  `expr::evaluate` asks the bounds last, binding `Constraint::free` without minting (0.64).
   `tests/bounds.rs` is the gate.
   **A bound that steers nothing** (#345 S3, [0.115]): `CKind::steers` is `boundable` less
   `RegularWithin`, a flank's least area factor read at a point a search finds — no point of the
@@ -204,6 +204,23 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   that steer; the verdict reads every bound (`bounds_hold`), so one broken is still `BOUND_BROKEN`.
   Steering it would restart every block for nothing (a broken regularity cost the Formate pair two
   minutes a solve).
+  **An orientation stated is held as a bound is** (#157, [0.158]): `ccw(a, b, c)`/`cw` on the
+  sheet is recorded twice by `Gauges::choose_all` — in `Sketch::branches`, the plan's cache, as
+  before, and in **`Sketch::orientations`**, what the document *states* (a `branch(KEY, ±1)`
+  statement is no statement of one).  Only the second is held: a recorded root, which a
+  non-sticky replay writes back from the seed's side, never is, so drawings that state nothing
+  solve as they did.  `solve::orientation_reading` is its verdict (the triangle's least height,
+  signed to the turn stated, `>= -bound_tol`); `orientations_broken`, and `bounds_hold` reads it.
+  The steering is the bound's, over `bounds::Held` (`Bound(ci)` | `Turn(key)`): `cross_bounds`
+  carries a seed (so `program::crossed_seeds` asks it too), `steer` a solution, both by `turned`
+  — the last of the three points the solve moves, carried to its mirror across the line of the
+  other two by `carry`, the Newton walk `across` shares.  The block search (`Search`) reads
+  bounds alone, so an orientation alone broken does not start it.  Broken, the solve is
+  `BOUND_BROKEN`; `Diagnosis::orientations_violated` (keys; report `orientationsViolated`, the
+  CLI's `orientation broken: ccw(a, b, c)`, `report::orientation_text`).  `PlanSolver::solve`
+  replays a stated triangle as stated (`Plan::hold_orientations`, `Plan::held`, sticky or not)
+  and falls back to the numeric solve where one is still broken.  Saved (`"orientations"`, only
+  where one is stated), grafted and lifted with `branches`.  `tests/orientations.rs` is the gate.
 - `same_constraint` is "says exactly the same thing"; `same_relation` is the same *without* the
   numbers.  A repeated *relation* is refused by the app (`edit::applyConstraints`): equations
   without rank.  A **dimension is never deduped by the UI**: redundant or contradictory is the

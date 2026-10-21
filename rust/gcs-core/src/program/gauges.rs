@@ -185,7 +185,7 @@ pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st
             let (key, v) = decompose::branch_record(pts, r.kind == CKind::Ccw);
             map.chosen.push((key.clone(), super::InstPath(st.path.clone())));
             let names: Vec<String> = refs.iter().map(|rf| crate::syntax::ref_text(rf)).collect();
-            gauges.orient(key, v, format!("the triangle `{}`", names.join("`, `")), st);
+            gauges.orient(key, v, format!("the triangle `{}`", names.join("`, `")), st, true);
         }
         _ => unreachable!("{:?} is not a gauge", r.kind),
     }
@@ -218,8 +218,9 @@ pub(super) struct Gauges {
     /// each held parameter: its value, then where, per statement holding it, with the field and
     /// the entity as that statement names them
     holds: BTreeMap<u32, Vec<(f64, Span, StmtId, &'static str, String)>>,
-    /// each canonical triangle's choices (`decompose::branch_record`), and a raw key's
-    branches: BTreeMap<String, Vec<(i32, String, Span, StmtId)>>,
+    /// each canonical triangle's choices (`decompose::branch_record`), and a raw key's, each
+    /// with whether it is an orientation stated (`ccw`, `cw`) rather than a key carried verbatim
+    branches: BTreeMap<String, Vec<(i32, String, Span, StmtId, bool)>>,
 }
 
 impl Gauges {
@@ -227,13 +228,13 @@ impl Gauges {
         self.holds.entry(param).or_default().push((v, st.span, st.id, field, of));
     }
 
-    fn orient(&mut self, key: String, v: i32, what: String, st: &Stmt) {
-        self.branches.entry(key).or_default().push((v, what, st.span, st.id));
+    fn orient(&mut self, key: String, v: i32, what: String, st: &Stmt, stated: bool) {
+        self.branches.entry(key).or_default().push((v, what, st.span, st.id, stated));
     }
 
     /// A `branch(KEY, ±1)` statement: a root choice under a key no triple of points spells.
     pub(super) fn branch(&mut self, b: &crate::syntax::Branch, st: &Stmt) {
-        self.orient(b.key.clone(), b.value, format!("the root choice `{}`", b.key), st);
+        self.orient(b.key.clone(), b.value, format!("the root choice `{}`", b.key), st, false);
     }
 
     /// Hold every number its holds agree on.  Values a rounding apart are one hold — two
@@ -268,15 +269,20 @@ impl Gauges {
         }
     }
 
-    /// Record every root choice its statements agree on.
+    /// Record every root choice its statements agree on — in the plan's cache, which replays it,
+    /// and, where an orientation states it, as the predicate the solve is held to
+    /// (`Sketch::orientations`, #157).
     pub(super) fn choose_all(&mut self, sk: &mut Sketch, diags: &mut Vec<Diag>) {
         for (key, choices) in std::mem::take(&mut self.branches) {
             if choices.iter().all(|c| c.0 == choices[0].0) {
+                if choices.iter().any(|c| c.4) {
+                    sk.orientations.insert(key.clone(), choices[0].0);
+                }
                 sk.branches.insert(key, choices[0].0);
                 continue;
             }
             let at: BTreeMap<(Span, StmtId), String> =
-                choices.into_iter().map(|(_, what, span, id)| ((span, id), what)).collect();
+                choices.into_iter().map(|(_, what, span, id, _)| ((span, id), what)).collect();
             for ((span, id), what) in at {
                 let message = format!(
                     "{what} is oriented both ways: one statement chooses one root, and another \

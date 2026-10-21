@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.157 — October 2026**
+**Specification, Draft 0.158 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2441,6 +2441,8 @@ A selector left unwritten is read off the seed (§9.2): the branch the seeded po
 ### 9.6 Inequalities
 
 Inequalities contribute no equations; they select among the discrete solution components of the equality system. Solvers MUST verify them on candidate solutions and MUST NOT report a solution violating one. There are two kinds: the orientation predicates (`ccw`, `cw`), and bounds.
+
+**An orientation predicate** **[0.158]** `ccw(a, b, c)` (`c` left of the ray `a → b`; `cw` right) is held on the sheet as a bound is: it adds no row, and is read on the seeds first — a point seeded on the wrong side is carried across the line of the other two, to its mirror, as if it had been seeded there — then checked on the solution. A solve ending on the other root is steered back, the point reflected across that line and the drawing solved again, and fails where no root keeps it (`a bound or a stated orientation does not hold`); the diagnosis tells which are broken. A collinear triangle keeps either. What the document states is its own record: a root choice a constructive solver writes back as it goes (§13) is no statement and holds nothing.
 
 **A bound** **[0.60]** is a dimension whose number says how far the measure may go rather than what it is:
 

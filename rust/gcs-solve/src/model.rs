@@ -159,6 +159,12 @@ pub struct Sketch {
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,
+    /// The orientations the document **states** (`ccw(a, b, c)`, `cw`; §9.6, #157), one record
+    /// a triangle as `branches` keys them (`decompose::branch_record`).  `branches` is the plan's
+    /// cache, written back from whatever root a replay took; this is what the document says, a
+    /// predicate like a bound: no row, read on the solution, and a solve landing on the other
+    /// root steered back or failed (`solve::bounds`).  Saved and grafted with `branches`.
+    pub orientations: BTreeMap<String, i32>,
     /// Where a dimension's callout has been dragged to, by constraint id, in the frame that
     /// callout hangs off — see `callout::Frame`.  Document state, like `branches`: an entry
     /// only exists for a dimension somebody has moved, and dropping one puts that callout back

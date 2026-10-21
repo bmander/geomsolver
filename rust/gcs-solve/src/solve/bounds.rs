@@ -1,11 +1,16 @@
 //! **A bound chooses the root** (§9.6): how a bound reads on the drawing, the point it
 //! measures carried across its edge, and a document solve steered to the root where every
-//! bound holds.
+//! bound holds.  **So does an orientation the document states** (`ccw`, `cw`; #157): a predicate
+//! as a bound is, read on the solution as its triangle's signed height, its point carried across
+//! the line of the other two.
 
 use crate::constraints::Constraint;
-use crate::model::{EntRef, Sketch};
+use crate::decompose::branch_key_points;
+use crate::fmath::Det;
+use crate::model::{orientation, EntRef, Sketch};
 use crate::newton;
 use crate::system::System;
+use std::collections::BTreeSet;
 
 use super::{BlockMode, SolveOpts, SolveResult, BOUND_BROKEN};
 
@@ -61,51 +66,105 @@ pub fn bound_tol(sk: &Sketch) -> f64 {
     STEER_TOL * sk.extent()
 }
 
-/// Whether every bound holds on the drawing as it stands (§9.6).
+/// How an orientation the document states reads on the drawing (#157), `key` its triangle's
+/// record (`decompose::branch_record`) and `v` the sign stated: the triangle's least height —
+/// twice its area over its longest side — signed so that it is positive turning the way stated,
+/// and held as a bound `>= 0` is, within `tol`.  Its point is carried to its mirror where it
+/// stands (`turned`), so it has no aims of its own.  `None` for a key that is no triangle.
+pub fn orientation_reading(sk: &Sketch, key: &str, v: i32, tol: f64) -> Option<BoundReading> {
+    let [a, b, c] = triangle(sk, key)?;
+    let side = |i: usize, j: usize| {
+        let ((x0, y0), (x1, y1)) = (sk.point_xy(i), sk.point_xy(j));
+        (x1 - x0).dhypot(y1 - y0)
+    };
+    let longest = side(a, b).max(side(b, c)).max(side(c, a));
+    let turn = v.signum() as f64 * orientation(sk, a, b, c);
+    let m = if longest > 0.0 { turn / longest } else { 0.0 };
+    Some(BoundReading { holds: m >= -tol, edge: m.abs() <= tol, aims: Vec::new() })
+}
+
+/// The three points an orientation's record names, where the sketch has them: a document is
+/// untrusted input, and its record a key like any other.
+fn triangle(sk: &Sketch, key: &str) -> Option<[usize; 3]> {
+    branch_key_points(key).filter(|t| t.iter().all(|&i| i < sk.points.len()))
+}
+
+/// Every orientation the document states that the drawing breaks (#157), by its record's key.
+pub fn orientations_broken(sk: &Sketch) -> Vec<String> {
+    let tol = bound_tol(sk);
+    sk.orientations.iter()
+        .filter(|(k, &v)| orientation_reading(sk, k, v, tol).is_some_and(|r| !r.holds))
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
+/// Whether every bound holds on the drawing as it stands (§9.6), and every orientation the
+/// document states (#157).
 pub fn bounds_hold(sk: &Sketch) -> bool {
     let tol = bound_tol(sk);
     sk.constraints.iter().all(|c| bound_reading(sk, c, tol).is_none_or(|r| r.holds))
+        && orientations_broken(sk).is_empty()
 }
 
-/// Every bound the drawing breaks that a solve can be steered across (`CKind::steers`), by
-/// index, with where its point aims, nearest first.
-fn broken(sk: &Sketch) -> Vec<(usize, Vec<f64>)> {
+/// What a document solve is held to and steered by (§9.6): a bound, by its index among the
+/// constraints, or an orientation the document states, by its record's key (#157).
+#[derive(Clone, Debug, PartialEq)]
+enum Held {
+    Bound(usize),
+    Turn(String),
+}
+
+impl Held {
+    /// How it reads on the drawing.
+    fn reading(&self, sk: &Sketch, tol: f64) -> Option<BoundReading> {
+        match self {
+            Held::Bound(ci) => bound_reading(sk, &sk.constraints[*ci], tol),
+            Held::Turn(k) => orientation_reading(sk, k, *sk.orientations.get(k)?, tol),
+        }
+    }
+
+    /// Its point carried across it: a bound's to `aim`, an orientation's to its mirror.
+    fn carry(&self, sk: &mut Sketch, aim: Option<f64>, free: &BTreeSet<u32>) -> Option<usize> {
+        match self {
+            Held::Bound(ci) => across(sk, *ci, aim?, free),
+            Held::Turn(k) => turned(sk, k, free),
+        }
+    }
+}
+
+/// Every bound the drawing breaks that a solve can be steered across (`CKind::steers`), and
+/// every orientation it states that it breaks, with where its point aims, nearest first — an
+/// orientation's once, to its mirror (`None`).
+fn broken(sk: &Sketch) -> Vec<(Held, Vec<Option<f64>>)> {
     let tol = bound_tol(sk);
-    sk.constraints.iter().enumerate().filter(|(_, c)| c.kind.steers())
-        .filter_map(|(i, c)| bound_reading(sk, c, tol).filter(|r| !r.holds).map(|r| (i, r.aims)))
-        .collect()
+    let bounds = sk.constraints.iter().enumerate().filter(|(_, c)| c.kind.steers())
+        .filter_map(|(i, c)| bound_reading(sk, c, tol).filter(|r| !r.holds)
+            .map(|r| (Held::Bound(i), r.aims.into_iter().map(Some).collect())));
+    let turns = orientations_broken(sk).into_iter().map(|k| (Held::Turn(k), vec![None]));
+    bounds.chain(turns).collect()
 }
 
 /// The parameters a solve moves, the ones `across` may step: asked once a pass, since nothing
 /// carried changes which they are.
-pub(super) fn movable(sk: &Sketch) -> std::collections::BTreeSet<u32> {
+pub(super) fn movable(sk: &Sketch) -> BTreeSet<u32> {
     sk.free_indices().into_iter().map(|i| i as u32).collect()
 }
 
 /// **A bound chooses the seed's side** (§9.6): each bound the pose breaks has the point it
-/// measures carried across its edge (`across`) — what the elaborator asks of the seeds, before
+/// measures carried across its edge (`across`), and each orientation stated its point across
+/// the line of the other two (`turned`, #157) — what the elaborator asks of the seeds, before
 /// what is seeded from them is read.  The points carried.
 pub fn cross_bounds(sk: &mut Sketch) -> Vec<usize> {
     let free = movable(sk);
-    broken(sk).into_iter().filter_map(|(ci, aims)| across(sk, ci, aims[0], &free)).collect()
+    broken(sk).into_iter().filter_map(|(held, aims)| held.carry(sk, aims[0], &free)).collect()
 }
 
 /// Carry the point bound `ci` measures across its edge, to where the bound reads `aim`: the last
-/// of its point operands with a coordinate the solve moves, by Newton steps on the reading alone
-/// over those coordinates (by differences, so a reading through a lift or a squared kernel is
-/// the same question), its twins and their lifts brought to where it stands.  What a seed on the
+/// of its point operands with a coordinate the solve moves (`carry`).  What a seed on the
 /// bound's side would have been.  The point moved, or `None` where none can be, or the reading
 /// will not come round.
-pub(super) fn across(
-    sk: &mut Sketch,
-    ci: usize,
-    aim: f64,
-    free: &std::collections::BTreeSet<u32>,
-) -> Option<usize> {
+pub(super) fn across(sk: &mut Sketch, ci: usize, aim: f64, free: &BTreeSet<u32>) -> Option<usize> {
     let c = sk.constraints[ci].clone();
-    let own = |sk: &Sketch, p: EntRef| -> Vec<usize> {
-        sk.own_params(p).into_iter().filter(|i| free.contains(i)).map(|i| i as usize).collect()
-    };
     // the point operands, last first, then the other operands' points — a cone's angle is
     // between two lines, and the point it measures is the end of the second
     let is_point = |e: &EntRef| e.kind == crate::model::EntKind::Point;
@@ -115,8 +174,50 @@ pub(super) fn across(
     for e in others {
         points.extend(sk.children(e).into_iter().rev().filter(is_point));
     }
-    let q = points.into_iter().find(|&p| !own(sk, p).is_empty())?;
-    let cols = own(sk, q);
+    let q = points.into_iter().find(|&p| !owned(sk, p, free).is_empty())?;
+    carry(sk, q, aim, reads_angle(&c), free, &|sk: &Sketch| c.reading(sk))
+}
+
+/// Carry a point of the triangle an orientation states (#157) across the line of the other
+/// two, to its mirror where it stands: the last of the three with a coordinate the solve moves,
+/// its signed distance from that line read so that the stated turn is positive — the mirror of
+/// a reading on the wrong side, and where it stands on the right one already (from where a solve
+/// began, say), as far from the line again.  One on the line is carried off it by a thousandth
+/// of the drawing.  The point moved, or `None` where none can be or the other two coincide.
+fn turned(sk: &mut Sketch, key: &str, free: &BTreeSet<u32>) -> Option<usize> {
+    let pts = triangle(sk, key)?;
+    let v = sk.orientations.get(key)?.signum() as f64;
+    let at = (0..3).rev().find(|&i| !owned(sk, EntRef::point(pts[i]), free).is_empty())?;
+    // the other two in the order that turns as the record does: a rotation of the triple
+    let (o1, o2, q) = (pts[(at + 1) % 3], pts[(at + 2) % 3], pts[at]);
+    let read = move |sk: &Sketch| {
+        let ((x1, y1), (x2, y2)) = (sk.point_xy(o1), sk.point_xy(o2));
+        let span = (x2 - x1).dhypot(y2 - y1);
+        (span > 0.0).then(|| v * orientation(sk, o1, o2, q) / span)
+    };
+    let aim = read(sk)?.abs().max(1e-3 * sk.extent());
+    carry(sk, EntRef::point(q), aim, false, free, &read)
+}
+
+/// The coordinates of `p` a solve moves, as columns of the parameters.
+fn owned(sk: &Sketch, p: EntRef, free: &BTreeSet<u32>) -> Vec<usize> {
+    sk.own_params(p).into_iter().filter(|i| free.contains(i)).map(|i| i as usize).collect()
+}
+
+/// Carry point `q` to where `read` reads `aim`, by Newton steps on the reading alone over the
+/// coordinates the solve moves (by differences, so a reading through a lift or a squared kernel
+/// is the same question), its twins and their lifts brought to where it stands.  `angle`: the
+/// reading is an angle, held to the tolerance itself.  The point moved, or `None` where the
+/// reading will not come round.
+fn carry(
+    sk: &mut Sketch,
+    q: EntRef,
+    aim: f64,
+    angle: bool,
+    free: &BTreeSet<u32>,
+    read: &dyn Fn(&Sketch) -> Option<f64>,
+) -> Option<usize> {
+    let cols = owned(sk, q, free);
     // the point's twins (§6.7), each seen where it stands in the twin's plane, and every lift
     // among them, found once
     let group: Vec<(usize, Option<usize>)> =
@@ -139,10 +240,10 @@ pub(super) fn across(
     };
     let extent = sk.extent();
     // a length's reading to the drawing's size, an angle's to the tolerance itself
-    let (tol, h) = (STEER_TOL * if reads_angle(&c) { 1.0 } else { extent }, 1e-7 * extent);
+    let (tol, h) = (STEER_TOL * if angle { 1.0 } else { extent }, 1e-7 * extent);
     let mut nudged = false;
     for _ in 0..ACROSS_STEPS {
-        let m = c.reading(sk)?;
+        let m = read(sk)?;
         if (m - aim).abs() <= tol {
             return Some(q.i());
         }
@@ -150,7 +251,7 @@ pub(super) fn across(
         for &i in &cols {
             sk.params[i].value += h;
             place(sk);
-            g.push((c.reading(sk).unwrap_or(m) - m) / h);
+            g.push((read(sk).unwrap_or(m) - m) / h);
             sk.params[i].value -= h;
         }
         let gg: f64 = g.iter().map(|x| x * x).sum();
@@ -173,7 +274,7 @@ pub(super) fn across(
         }
         place(sk);
     }
-    c.reading(sk).filter(|m| (m - aim).abs() <= tol).map(|_| q.i())
+    read(sk).filter(|m| (m - aim).abs() <= tol).map(|_| q.i())
 }
 
 /// How many Newton steps `across` takes the reading: one for an ordinate's, a few for a
@@ -204,26 +305,24 @@ impl System {
         let mut steered = Vec::new();
         let free = movable(sk);
         let origin = start.clone();
-        while let Some((ci, aims)) = broken(sk).into_iter().next() {
-            if steered.contains(&ci) || steered.len() >= STEER_ROUNDS {
+        while let Some((held, aims)) = broken(sk).into_iter().next() {
+            if steered.contains(&held) || steered.len() >= STEER_ROUNDS {
                 break;
             }
-            steered.push(ci);
+            steered.push(held.clone());
             let kept = sk.get_x();
             // each aim, nearest first, from where the solve began and then from the solution
             let attempts = aims.iter().flat_map(|&aim| [(aim, true), (aim, false)]);
             let mut found = None;
             for (aim, from_start) in attempts {
                 sk.set_x(if from_start { &start } else { &kept });
-                if across(sk, ci, aim, &free).is_none() {
+                if held.carry(sk, aim, &free).is_none() {
                     continue;
                 }
                 let crossed = sk.get_x();
                 let again = self.solve_unsteered(sk, opts);
                 let tol = bound_tol(sk);
-                if again.success
-                    && bound_reading(sk, &sk.constraints[ci], tol).is_some_and(|r| r.holds)
-                {
+                if again.success && held.reading(sk, tol).is_some_and(|r| r.holds) {
                     found = Some((again, from_start.then_some(crossed)));
                     break;
                 }
@@ -242,8 +341,9 @@ impl System {
         // what crossing one point at a time cannot reach — a line run the other way round, an
         // offset's other hand, where every point of a block moves together — the block pass finds
         // by searching each block's roots for the one its bounds say (`Search`), from where the
-        // solve began; kept only where it solves and every bound holds
-        if !broken(sk).is_empty()
+        // solve began; kept only where it solves and every bound holds.  The search reads bounds
+        // alone, so an orientation alone broken does not start it
+        if broken(sk).iter().any(|(h, _)| matches!(h, Held::Bound(_)))
             && opts.blocks != BlockMode::Off
             && self.block_order().blocks.len() >= 2
         {
@@ -259,8 +359,8 @@ impl System {
                 self.resync(sk); // back in step with the pose kept
             }
         }
-        // named where it is reported (`Diagnosis::bounds_violated`), not here — every bound, one
-        // that steers nothing included
+        // named where it is reported (`Diagnosis::bounds_violated`, `orientations_violated`), not
+        // here — every bound, one that steers nothing included, and every orientation stated
         if !bounds_hold(sk) {
             res.success = false;
             res.status = BOUND_BROKEN;

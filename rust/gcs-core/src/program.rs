@@ -192,9 +192,10 @@ pub fn elaborate(p: &Program) -> Elaborated {
     // draws, so it is judged after the expansion, and a pass ends at the judgment, before any
     // constraint is stated.  Each pass refuses at least one more set, and a refusal is final
     let mut refused = BTreeSet::new();
-    // **a bound chooses the seed's side** (§9.6): where the seeds break one, the point it
-    // measures is carried across its edge and the document elaborated again from there, its
-    // numbers written over its seed — as if the source had seeded it on the bound's side, so
+    // **a bound chooses the seed's side** (§9.6), and an orientation stated (#157): where the
+    // seeds break one, the point it measures is carried across its edge (an orientation's across
+    // the line of the other two) and the document elaborated again from there, its numbers
+    // written over its seed — as if the source had seeded it on the bound's side, so
     // what is seeded from it, the views folded through it and every seed read through those
     // views stand where they would have.  Once: a seed is where a solve begins, and the solve
     // steers what is left (`System::steer`)
@@ -237,13 +238,15 @@ enum Again {
     Faces(BTreeMap<String, Vec<crate::solid::faces::FacePath>>),
 }
 
-/// The points whose seeds break a bound, carried across (`solve::cross_bounds`): each by the key
-/// it is bound under, with the numbers it now has.
+/// The points whose seeds break a bound or an orientation stated (#157), carried across
+/// (`solve::cross_bounds`): each by the key it is bound under, with the numbers it now has.
 fn crossed_seeds(e: &Elaborated) -> BTreeMap<String, Vec<f64>> {
     // read before anything is copied: most drawings' seeds break none
     let tol = crate::solve::bound_tol(&e.sketch);
     let reads = |c| crate::solve::bound_reading(&e.sketch, c, tol);
-    if !e.sketch.constraints.iter().any(|c| reads(c).is_some_and(|r| !r.holds)) {
+    if !e.sketch.constraints.iter().any(|c| reads(c).is_some_and(|r| !r.holds))
+        && crate::solve::orientations_broken(&e.sketch).is_empty()
+    {
         return BTreeMap::new();
     }
     let mut sk = e.sketch.clone();

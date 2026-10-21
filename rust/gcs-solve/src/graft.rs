@@ -900,25 +900,30 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     }
     // recorded root choices are keyed by sketch point index; grafting renumbers points, so the
     // keys travel with them.  One naming a point that did not come is dropped — replaying it
-    // would apply a chirality to whatever triangle inherited those indices.
-    for (k, &v) in &src.branches {
-        match decompose::branch_key_points(k) {
-            None => {
-                if fresh {
-                    dst.branches.insert(k.clone(), v);   // not a triangle: nothing to renumber
+    // would apply a chirality to whatever triangle inherited those indices.  The orientations
+    // the document states (#157) are keyed alike, and travel alike
+    let carried = |from: &BTreeMap<String, i32>, to: &mut BTreeMap<String, i32>| {
+        for (k, &v) in from {
+            match decompose::branch_key_points(k) {
+                None => {
+                    if fresh {
+                        to.insert(k.clone(), v);   // not a triangle: nothing to renumber
+                    }
                 }
-            }
-            Some(pts) => {
-                let mapped: Option<Vec<usize>> = pts.iter().map(|&p| pt_index(p)).collect();
-                if let Some(m) = mapped {
-                    // renumbering can reorder the three, and the sign is read against the key's
-                    // own order — so it is re-recorded rather than carried across
-                    let (k, v) = decompose::branch_record([m[0], m[1], m[2]], v >= 0);
-                    dst.branches.insert(k, v);
+                Some(pts) => {
+                    let mapped: Option<Vec<usize>> = pts.iter().map(|&p| pt_index(p)).collect();
+                    if let Some(m) = mapped {
+                        // renumbering can reorder the three, and the sign is read against the
+                        // key's own order — so it is re-recorded rather than carried across
+                        let (k, v) = decompose::branch_record([m[0], m[1], m[2]], v >= 0);
+                        to.insert(k, v);
+                    }
                 }
             }
         }
-    }
+    };
+    carried(&src.branches, &mut dst.branches);
+    carried(&src.orientations, &mut dst.orientations);
     // a ring's turns, where every entity of one came along; a copy whose representative or
     // centre did not stands free where it is
     for tn in &src.turns {

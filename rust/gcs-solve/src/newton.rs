@@ -64,7 +64,7 @@ pub fn status_message(status: i32) -> &'static str {
         2 => "gradient below gtol",
         3 => "trust region collapsed / damping exhausted",
         4 => "max iterations reached",
-        5 => "a bound does not hold",
+        5 => "a bound or a stated orientation does not hold",
         6 => "a line a tangency reads by its direction has no length",
         -1 => "failed",
         _ => "unknown",

@@ -150,6 +150,7 @@ mod offset_corners;
 mod offsets;
 mod open_joint;
 mod order;
+mod orientations;
 mod outline;
 mod ordinate;
 mod overview;

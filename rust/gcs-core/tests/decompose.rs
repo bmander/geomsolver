@@ -411,9 +411,12 @@ ccw(a, b, c)
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
     assert_eq!(sk.branches.len(), 1, "the statement recorded no root choice");
-    // seeded *below* the line, against the statement: the recorded root is what decides, and the
-    // solve must bring it round to the side the document names
-    assert!(sk.point_xy(2).1 < 0.0);
+    // seeded *below* the line, against the statement: the elaboration carries a seed across to
+    // the side stated (#157), so it is put back below — the recorded root is what decides, and
+    // the solve must bring it round to the side the document names
+    assert!(sk.point_xy(2).1 > 0.0, "the seed is carried to the side stated");
+    let y = sk.points[2].y as usize;
+    sk.params[y].value = -4.0;
     let mut ps = PlanSolver::new(&sk, true);
     assert_eq!(ps.plan.apply_branches(&sk.branches), 1, "the plan and the document key it apart");
     let r = ps.solve(&mut sk, 1e-9, true, Method::DogLeg);

@@ -171,6 +171,10 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("claimsConsuming", ids(&d.claims_consuming)),
         ("boundsViolated", ids(&d.bounds_violated)),
         ("boundsActive", ids(&d.bounds_active)),
+        (
+            "orientationsViolated",
+            Json::Arr(d.orientations_violated.iter().map(|k| Json::Str(k.clone())).collect()),
+        ),
         ("collapsed", ids(&d.collapsed)),
         // each energy's verdict, by its terms' constraints (#121): `[id, "minimum", asked]`, the
         // last whether it is what the statement asked for — a minimum of a `minimizes`
@@ -1248,6 +1252,18 @@ pub fn meshings_json(sk: &Sketch) -> Json {
         }
     };
     Json::Arr((0..sk.meshings.len()).map(one).collect())
+}
+
+/// An orientation the document states (#157) as it is written: `ccw(a, b, c)` or `cw(a, b, c)`
+/// over its record's points in the record's order (`decompose::branch_record`), each called what
+/// `name` says, or by its index where it says nothing.
+pub fn orientation_text(key: &str, v: i32, name: &dyn Fn(EntRef) -> Option<String>) -> String {
+    let Some(pts) = crate::decompose::branch_key_points(key) else {
+        return format!("branch({key}, {v})");
+    };
+    let named: Vec<String> =
+        pts.iter().map(|&i| name(EntRef::point(i)).unwrap_or_else(|| format!("p{i}"))).collect();
+    format!("{}({})", if v >= 0 { "ccw" } else { "cw" }, named.join(", "))
 }
 
 /// The same immutable claim result supplies terminal and JSON reports.

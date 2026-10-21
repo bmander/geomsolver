@@ -338,6 +338,12 @@ pub fn to_json(sk: &Sketch) -> Json {
             o
         }).collect::<Vec<_>>();
     if !roles.is_empty() { doc.set("roles", Json::Arr(roles)); }
+    // the orientations the document states (#157), only where it states one, so a document
+    // with none dumps exactly as it always has
+    if !sk.orientations.is_empty() {
+        let stated = sk.orientations.iter().map(|(k, &v)| (k.clone(), Json::Int(v as i64)));
+        doc.set("orientations", Json::Obj(stated.collect()));
+    }
     // a ring's turned copies, only when there is one (a curve is no JSON entity, so its turn is
     // not either): which copy is which representative turned how far about what
     let turns: Vec<Json> = sk.turns.iter().filter(|tn| tn.copy.kind != EntKind::Curve)
@@ -684,7 +690,9 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             }
         }
     }
-    if let Some(Json::Obj(kv)) = d.get("branches") {
+    // the orientations the document states (#157) are keyed as its root choices are
+    for (field, to) in [("branches", &mut sk.branches), ("orientations", &mut sk.orientations)] {
+        let Some(Json::Obj(kv)) = d.get(field) else { continue };
         for (k, v) in kv {
             let v = v.as_i64() as i32;
             // a root choice is *one* record of a triangle, in ascending order with the sign read
@@ -695,10 +703,10 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             match decompose::branch_key_points(k) {
                 Some(p) => {
                     let (k, v) = decompose::branch_record(p, v >= 0);
-                    sk.branches.insert(k, v);
+                    to.insert(k, v);
                 }
                 None => {
-                    sk.branches.insert(k.clone(), v);
+                    to.insert(k.clone(), v);
                 }
             }
         }
