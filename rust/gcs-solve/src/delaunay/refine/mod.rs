@@ -156,12 +156,13 @@ pub struct Mesh { pub vertices: Vec<P>,pub triangles: Vec<[u32;3]>,pub report: R
 
 /// A facet waiting to be refined: how bad it was, where it is and what it is made of (to
 /// recognise a stale entry, once its tetrahedron is gone or remade). A `forced` one is refined
-/// whatever its badness: a cell's refinement point fell in its surface ball (`cells`).
+/// whatever its badness, before any other: a cell's refinement point fell in its surface ball
+/// (`cells`).
 #[derive(PartialEq)]
 struct Bad { badness: f64,t: u32,i: usize,key: [u32;3],forced: bool }
 impl Eq for Bad {}
 impl PartialOrd for Bad { fn partial_cmp(&self,o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
-impl Ord for Bad { fn cmp(&self,o: &Self) -> std::cmp::Ordering { self.badness.total_cmp(&o.badness) } }
+impl Ord for Bad { fn cmp(&self,o: &Self) -> std::cmp::Ordering { self.forced.cmp(&o.forced).then(self.badness.total_cmp(&o.badness)) } }
 
 struct Refiner<'a> {
     domain: Box<dyn Domain + 'a>,
@@ -175,6 +176,8 @@ struct Refiner<'a> {
     balls: Vec<(P,f64)>,
     /// The curves each ball stands on.
     owners: Vec<Vec<Place>>,
+    /// Each ball's neighbours along its curves, and the curve's point midway to each.
+    halfway: Vec<Vec<(usize,P)>>,
     /// Every unweighted point inserted (seeds and refinement), to carry into a rebuild.
     kept: Vec<P>,
     // The four maps below are only ever looked up and filled, never iterated, so their order
@@ -196,13 +199,9 @@ struct Refiner<'a> {
     cell: f64,
     queue: BinaryHeap<Bad>,
     report: Report,
-    /// What the cells inside must satisfy, once the surface is done and a volume was asked for
-    /// (`cells`): `None` while the surface is refined, when no cell is judged.
-    cells: Option<Cells>,
-    cell_queue: BinaryHeap<cells::BadCell>,
-    cell_report: CellReport,
-    /// The draws of a sliver's picking region.
-    rng: crate::rng::Rng,
+    /// The cells inside, their criteria and queue, once the surface is done and a volume was
+    /// asked for (`cells`): `None` while the surface is refined, when no cell is judged.
+    filling: Option<cells::Filling>,
 }
 
 impl Refiner<'_> {
@@ -334,8 +333,7 @@ impl Refiner<'_> {
                     if self.sign.len() <= t as usize { self.sign.resize(t as usize+1,0); }
                     self.sign[t as usize] = 0;
                 }
-                if judging { for &t in &created { for i in 0..4 { self.judge(t,i); } } }
-                if judging && self.cells.is_some() { for &t in &created { self.judge_cell(t); } }
+                if judging { for &t in &created { for i in 0..4 { self.judge(t,i); } self.judge_cell(t); } }
                 Ok(true)
             }
         }
@@ -430,8 +428,7 @@ pub fn mesh<'a>(domain: impl Domain + 'a,centre: P,radius: f64,curves: &[Vec<P>]
 /// bounds, its cells held to `cells` (#510 P6): the linear and quadratic tetrahedra.
 pub fn volume<'a>(domain: impl Domain + 'a,centre: P,radius: f64,curves: &[Vec<P>],criteria: &Criteria,cells: &Cells)
     -> Result<Volume,String> {
-    cells.check()?;
-    let mut run = Progressive::new(Box::new(domain),centre,radius,curves.to_vec(),criteria.clone()).with_cells(cells.clone());
+    let mut run = Progressive::new(Box::new(domain),centre,radius,curves.to_vec(),criteria.clone()).with_cells(cells.clone())?;
     while !run.step(usize::MAX)? {}
     run.finished_volume()
 }

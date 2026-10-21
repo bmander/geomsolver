@@ -48,9 +48,9 @@ enum State {
     Refine,
     /// Repair the manifold, check what the balls hold off the surface, and finish or rebuild.
     Repair,
-    /// Refine the cells inside, facets first (a volume's): round `round` of judging every cell,
-    /// begun when `mark` points had been inserted.
-    Fill { round: usize,mark: usize },
+    /// Refine the cells inside, facets first (a volume's): a round of judging every cell
+    /// (`CellReport::rounds`), begun when `mark` points had been inserted.
+    Fill { mark: usize },
     Done(Result<Mesh,String>),
 }
 
@@ -85,7 +85,7 @@ pub struct Progressive<'a> {
     /// What the cells must satisfy, for a refinement that fills a volume (`with_cells`).
     cells: Option<Cells>,
     /// The volume a filling refinement made, once done.
-    volume: Option<Result<Volume,String>>,
+    volume: Option<Volume>,
 }
 
 /// Rounds of judging every cell before a volume is taken as it stands: a round that inserts
@@ -103,8 +103,12 @@ impl<'a> Progressive<'a> {
     /// Fill the volume as well (`refine::volume`): once the surface is done, the cells inside are
     /// refined to `cells` and extracted, linear and quadratic (`finished_volume`). A filling
     /// refinement takes the surface its last build reached, never an earlier one, since the
-    /// cells are that build's.
-    pub fn with_cells(mut self,cells: Cells) -> Self { self.cells = Some(cells); self }
+    /// cells are that build's. Criteria no refinement can meet are refused here, before any work.
+    pub fn with_cells(mut self,cells: Cells) -> Result<Self,String> {
+        cells.check()?;
+        self.cells = Some(cells);
+        Ok(self)
+    }
 
     /// Do at most about `budget` refinements (a build or a repair runs whole): whether the
     /// refinement has finished, well or not — `finished` says which.
@@ -120,26 +124,25 @@ impl<'a> Progressive<'a> {
                 let outcome = self.repair();
                 if let Some(result) = outcome { self.state = State::Done(result); }
             }
-            State::Fill {round,mark} => {
+            State::Fill {mark} => {
                 let r = self.refiner.as_mut().expect("a refiner while filling");
                 if r.fill_some(budget)? {
                     // The surface again: a facet refined for a cell may have opened it.
                     let manifold = repair(r)?;
                     let inserted = r.report.inserted;
-                    if manifold && (inserted == mark || round+1 == FILL_ROUNDS) {
+                    let last = r.filling.as_ref().map_or(0,|f| f.report.rounds) >= FILL_ROUNDS;
+                    if manifold && (inserted == mark || last) {
                         let facets = r.extract();
-                        let (vertices,triangles) = collect(r,&facets);
-                        let volume = extract(r,&self.curves);
-                        let surface = volume.as_ref().map(|_| Mesh {vertices,triangles,report:r.report.clone()}).map_err(Clone::clone);
-                        self.volume = Some(volume);
-                        self.state = State::Done(surface);
-                    } else if round+1 == FILL_ROUNDS {
-                        let e = "the boundary is not a manifold once its cells are refined".to_string();
-                        self.volume = Some(Err(e.clone()));
-                        self.state = State::Done(Err(e));
+                        self.state = State::Done(extract(r,&facets).map(|volume| {
+                            let (vertices,triangles) = collect(r,&facets);
+                            self.volume = Some(volume);
+                            Mesh {vertices,triangles,report:r.report.clone()}
+                        }));
+                    } else if last {
+                        self.state = State::Done(Err("the boundary is not a manifold once its cells are refined".into()));
                     } else {
                         r.judge_cells();
-                        self.state = State::Fill {round:round+1,mark:inserted};
+                        self.state = State::Fill {mark:inserted};
                     }
                 }
             }
@@ -167,8 +170,11 @@ impl<'a> Progressive<'a> {
             State::Done(Err(_)) => Stage::Failed,
         };
         let (queued,worst,report) = match &self.refiner {
-            Some(r) => (r.queue.len()+r.cell_queue.len(),r.queue.peek().map_or(1.,|b| b.badness)
-                .max(r.cell_queue.peek().map_or(1.,|b| b.badness())),r.report.clone()),
+            Some(r) => {
+                let cells = r.filling.as_ref().map(|f| &f.queue);
+                (r.queue.len()+cells.map_or(0,|q| q.len()),r.queue.peek().map_or(1.,|b| b.badness)
+                    .max(cells.and_then(|q| q.peek()).map_or(1.,|b| b.badness)),r.report.clone())
+            }
             None => (0,1.,Report {queries:self.queries,..Report::default()}),
         };
         Progress {stage,rebuild:self.rebuild,queued,worst,inserted:report.inserted,queries:report.queries,
@@ -189,13 +195,10 @@ impl<'a> Progressive<'a> {
     }
 
     /// The volume a filling refinement made (`with_cells`), or why it could not.
-    pub fn finished_volume(self) -> Result<Volume,String> {
-        match (self.volume,self.state) {
-            (Some(volume),_) => volume,
-            (None,State::Done(Err(e))) => Err(e),
-            (None,State::Done(Ok(_))) => Err("the refinement filled no volume".into()),
-            _ => Err("the refinement has not finished".into()),
-        }
+    pub fn finished_volume(mut self) -> Result<Volume,String> {
+        let volume = self.volume.take();
+        self.finished()?;
+        volume.ok_or_else(|| "the refinement filled no volume".into())
     }
 
     /// The restricted facets as they stand, oriented outward; empty before the first build.
@@ -209,7 +212,7 @@ impl<'a> Progressive<'a> {
 
     fn build(&mut self) -> Result<(),String> {
         let criteria = &self.criteria;
-        let (balls,owners) = protect(&self.curves,criteria.edge_size,&mut self.sizing)?;
+        let (balls,owners,halfway) = protect(&self.curves,criteria.edge_size,&mut self.sizing)?;
         let cell = balls.iter().map(|b| b.1).fold(criteria.edge_size,f64::max).max(self.radius*1e-9);
         let domain = match self.refiner.take() {
             Some(old) => {
@@ -219,11 +222,11 @@ impl<'a> Progressive<'a> {
             None => self.domain.take().expect("the domain before the first build"),
         };
         let mut r = Refiner {domain,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
-            tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),
+            tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),halfway:Vec::new(),
             ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),normals:HashMap::new(),
             crossings:std::mem::take(&mut self.crossings),blocking:Vec::new(),
             grid:HashMap::new(),cell,queue:BinaryHeap::new(),report:Report {queries:self.queries,..Report::default()},
-            cells:None,cell_queue:BinaryHeap::new(),cell_report:CellReport::default(),rng:crate::rng::Rng::new(cells::SEED)};
+            filling:None};
         // Protecting balls first, in spatial order.
         let order = crate::delaunay::spatial_order(&balls.iter().map(|b| b.0).collect::<Vec<_>>());
         for &k in &order {
@@ -234,6 +237,10 @@ impl<'a> Progressive<'a> {
             r.balls.push((p,rad));
             r.owners.push(owners[k].clone());
         }
+        // The neighbours renumbered as the balls went in.
+        let mut place = vec![0;order.len()];
+        for (i,&k) in order.iter().enumerate() { place[k] = i; }
+        r.halfway = order.iter().map(|&k| halfway[k].iter().map(|&(c,p)| (place[c],p)).collect()).collect();
         r.report.balls = r.balls.len();
         r.report.rebuilds = self.rebuild;
         if self.rebuild == 0 {
@@ -274,13 +281,9 @@ impl<'a> Progressive<'a> {
             let mesh = Mesh {vertices,triangles,report:r.report.clone()};
             // Shrinking that left no fewer facets standing off than before has not helped, and
             // another round would only pay for the whole surface again: keep the earlier one.
-            if let Some(earlier) = self.manifold.take_if(|m| m.report.coarse <= off.len()) {
-                if self.cells.is_none() { return Some(Ok(earlier)); }
-                return self.fill();
-            }
+            if let Some(earlier) = self.manifold.take_if(|m| m.report.coarse <= off.len()) { return self.settle(earlier); }
             if blocking.is_empty() || rebuild+1 == REBUILDS || !shrink(r,&blocking,&mut self.sizing,self.criteria.edge_size/LEAST) {
-                if self.cells.is_some() { return self.fill(); }
-                return Some(Ok(mesh));
+                return self.settle(mesh);
             }
             self.manifold = Some(mesh);
         } else {
@@ -291,8 +294,7 @@ impl<'a> Progressive<'a> {
             r.trace_faults(rebuild,&blocking);
             // A closed surface reached before is better than this one: the shrinking that followed
             // it was for facets standing off it, and has opened the surface instead.
-            if self.manifold.is_some() && self.cells.is_none() { return Some(Ok(self.manifold.take().unwrap())); }
-            self.manifold = None;
+            if let Some(earlier) = self.manifold.take().filter(|_| self.cells.is_none()) { return Some(Ok(earlier)); }
             if !shrunk {
                 return Some(Err("the boundary is not a manifold, and no ball blocking its repair can shrink".into()));
             }
@@ -305,14 +307,14 @@ impl<'a> Progressive<'a> {
         None
     }
 
-    /// Begin filling the volume on the surface the refiner in hand holds.
-    fn fill(&mut self) -> Option<Result<Mesh,String>> {
-        let cells = self.cells.clone().expect("criteria for the cells");
-        if let Err(e) = cells.check() { return Some(Err(e)); }
+    /// The surface is final: the mesh, or for a volume the start of filling, on the surface the
+    /// refiner in hand holds — never `mesh`, when that is an earlier build's.
+    fn settle(&mut self,mesh: Mesh) -> Option<Result<Mesh,String>> {
+        let Some(cells) = self.cells.clone() else { return Some(Ok(mesh)) };
         let r = self.refiner.as_mut().expect("a refiner to fill");
-        r.cells = Some(cells);
+        r.filling = Some(super::cells::Filling::new(cells));
         r.judge_cells();
-        self.state = State::Fill {round:0,mark:r.report.inserted};
+        self.state = State::Fill {mark:r.report.inserted};
         None
     }
 }

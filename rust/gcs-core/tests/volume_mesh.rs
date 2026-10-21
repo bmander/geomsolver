@@ -3,9 +3,11 @@
 //! angle, and their quadratic elements (TET10), boundary nodes on the exact surface and on the
 //! feature curves, none inverted. On shapes whose answers are closed forms: a sphere, a torus, a
 //! cube whose twelve edges are features and a cylinder whose rims are.
-use gcs_core::delaunay::refine::{volume,Cells,Criteria,Progressive,Readings,Stage,Volume,WithReadings};
+use crate::refine::{circle,closed,cube_edges};
+use gcs_core::delaunay::refine::{volume,Cells,Criteria,Mesh,Progressive,Readings,Stage,Volume,WithReadings};
 use gcs_core::delaunay::tetra::{self,Tet10,EDGES};
-use std::collections::BTreeMap;
+use gcs_core::space::{cross,dot};
+use std::collections::{BTreeMap,BTreeSet};
 
 type P = [f64;3];
 
@@ -16,11 +18,11 @@ fn criteria(size: f64) -> Criteria {
 fn cells(size: f64) -> Cells { Cells {radius_edge:2.,size,dihedral:12.} }
 
 /// The mesh is a conforming complex: every cell positive, every face on one cell or two, the
-/// faces on one exactly the boundary's triangles (facing out), the boundary a closed manifold.
-/// Returns the complex's Euler characteristic V − E + F − T.
+/// faces on one exactly the boundary's triangles (facing out), the boundary a closed manifold
+/// enclosing the cells' volume. Returns the complex's Euler characteristic V − E + F − T.
 fn conforming(v: &Volume) -> i64 {
     let mut faces: BTreeMap<[u32;3],Vec<(usize,[u32;3])>> = BTreeMap::new();
-    let mut edges: BTreeMap<(u32,u32),()> = BTreeMap::new();
+    let mut edges: BTreeSet<(u32,u32)> = BTreeSet::new();
     for (k,q) in v.tets.iter().enumerate() {
         assert!(tetra::volume6(v.tet(k)) > 0.,"cell {k} is not positive");
         for i in 0..4 {
@@ -30,7 +32,7 @@ fn conforming(v: &Volume) -> i64 {
             key.sort_unstable();
             faces.entry(key).or_default().push((k,f));
         }
-        for &(i,j) in &EDGES { edges.insert((q[i].min(q[j]),q[i].max(q[j])),()); }
+        for &(i,j) in &EDGES { edges.insert((q[i].min(q[j]),q[i].max(q[j]))); }
     }
     let mut outer: BTreeMap<[u32;3],[u32;3]> = BTreeMap::new();
     for (key,on) in &faces {
@@ -45,12 +47,8 @@ fn conforming(v: &Volume) -> i64 {
         let mine = outer.get(&key).unwrap_or_else(|| panic!("boundary triangle {f:?} is no cell's face"));
         assert_eq!(rotate(*mine),rotate(*f),"boundary triangle {f:?} faces in");
     }
-    let mut directed: BTreeMap<(u32,u32),usize> = BTreeMap::new();
-    for t in &v.boundary { for j in 0..3 { *directed.entry((t[j],t[(j+1)%3])).or_default() += 1; } }
-    for (&(a,b),&n) in &directed {
-        assert_eq!(n,1,"boundary edge {a}-{b} is walked {n} times one way");
-        assert_eq!(directed.get(&(b,a)),Some(&1),"boundary edge {a}-{b} is not walked back");
-    }
+    let (_,enclosed) = closed(&Mesh {vertices:v.vertices.clone(),triangles:v.boundary.clone(),report:Default::default()});
+    assert!((enclosed-v.linear_volume()).abs() < 1e-12*enclosed.abs().max(1.),"the boundary encloses {enclosed}, the cells {}",v.linear_volume());
     v.vertices.len() as i64-edges.len() as i64+faces.len() as i64-v.tets.len() as i64
 }
 
@@ -128,7 +126,7 @@ fn a_tet10s_jacobian_is_bounded_by_its_bernstein_coefficients() {
         let x = |l: [f64;4]| bent.at(l);
         let col = |k: usize| { let mut a = l; a[k] += d; a[0] -= d; let (p,q) = (x(a),x(l)); [0,1,2].map(|c| (p[c]-q[c])/d) };
         let (u,v,w) = (col(1),col(2),col(3));
-        u[0]*(v[1]*w[2]-v[2]*w[1])-u[1]*(v[0]*w[2]-v[2]*w[0])+u[2]*(v[0]*w[1]-v[1]*w[0])
+        dot(u,cross(v,w))
     };
     let c = bent.jacobian_bernstein();
     for i in 0..4 {
@@ -141,7 +139,7 @@ fn a_tet10s_jacobian_is_bounded_by_its_bernstein_coefficients() {
     let n = 12;
     for a in 0..=n { for b in 0..=n-a { for e in 0..=n-a-b {
         let l = [a,b,e,n-a-b-e].map(|x| x as f64/n as f64);
-        if l.iter().any(|&x| x == 0.) && l.iter().filter(|&&x| x == 0.).count() == 3 { continue; }
+        if l.iter().filter(|&&x| x == 0.).count() == 3 { continue; }
         assert!(jac(l) >= least-1e-5,"{} under the bound {least} at {l:?}",jac(l));
     } } }
     // Pushed far enough inward, the element folds, and the bound says so.
@@ -199,9 +197,7 @@ fn a_torus_is_filled_as_a_solid_torus() {
 fn a_cube_keeps_its_edges_and_is_filled_exactly() {
     let cube = |p: P| p[0].abs().max(p[1].abs()).max(p[2].abs())-0.5;
     let h = 0.5;
-    let corners: Vec<P> = (0..8).map(|k| [if k&1 == 0 { -h } else { h },if k&2 == 0 { -h } else { h },if k&4 == 0 { -h } else { h }]).collect();
-    let mut edges = Vec::new();
-    for a in 0..8 { for b in a+1..8 { if (a^b as usize).count_ones() == 1 { edges.push(vec![corners[a],corners[b]]); } } }
+    let (corners,edges) = cube_edges(h);
     let v = volume(&mut |p| cube(p),[0.;3],1.,&edges,&criteria(0.2),&cells(0.2)).unwrap();
     eprintln!("cube: {} cells, {:?}",v.tets.len(),v.report);
     assert_eq!(conforming(&v),1);
@@ -224,13 +220,7 @@ fn a_cube_keeps_its_edges_and_is_filled_exactly() {
 fn a_cylinders_rim_nodes_are_on_its_rims() {
     let (radius,half) = (0.6,0.5);
     let cylinder = move |p: P| ((p[0]*p[0]+p[1]*p[1]).sqrt()-radius).max(p[2].abs()-half);
-    let circle = |z: f64| {
-        let n = 4096;
-        let mut c: Vec<P> = (0..n).map(|k| { let t = std::f64::consts::TAU*k as f64/n as f64; [radius*t.cos(),radius*t.sin(),z] }).collect();
-        c.push(c[0]);
-        c
-    };
-    let v = volume(&mut |p| cylinder(p),[0.;3],1.2,&[circle(half),circle(-half)],&criteria(0.15),&cells(0.15)).unwrap();
+    let v = volume(&mut |p| cylinder(p),[0.;3],1.2,&[circle([0.,0.,half],radius,4096),circle([0.,0.,-half],radius,4096)],&criteria(0.15),&cells(0.15)).unwrap();
     eprintln!("cylinder: {} cells, {:?}",v.tets.len(),v.report);
     assert_eq!(conforming(&v),1);
     quadratic(&v);
@@ -259,7 +249,6 @@ fn criteria_no_refinement_can_meet_are_refused() {
     assert!(refused(Cells {radius_edge:2.,size:0.3,dihedral:35.}).contains("dihedral"));
 }
 
-
 #[test]
 fn a_filling_refinement_steps_through_its_stages_and_is_deterministic() {
     // A domain with readings: the surface's crossings and the edge nodes' are found by Newton.
@@ -270,7 +259,7 @@ fn a_filling_refinement_steps_through_its_stages_and_is_deterministic() {
     };
     let run = || {
         let domain = WithReadings {value:move |p: P| ellipsoid(p),reading:move |p: P,_| (ellipsoid(p),gradient(p)),readings:Readings::Agreeing};
-        let mut run = Progressive::new(Box::new(domain),[0.;3],1.5,Vec::new(),criteria(0.2)).with_cells(cells(0.2));
+        let mut run = Progressive::new(Box::new(domain),[0.;3],1.5,Vec::new(),criteria(0.2)).with_cells(cells(0.2)).unwrap();
         let mut stages = Vec::new();
         while !run.step(64).unwrap() {
             let stage = run.progress().stage;

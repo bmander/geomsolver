@@ -267,22 +267,25 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
   - **A sliver** (a fair ratio, its least dihedral under `Cells::dihedral`): a point from its
     picking region (Li and Teng). That is `CANDIDATES` seeded draws in `PICK` of its radius about
     the orthocentre, and the best goes in, by the least dihedral angle of the tetrahedra it would
-    make, among the draws the domain holds and that reach no surface ball.
+    make, among the draws that reach no surface ball and that the domain holds. The domain is
+    asked last, once a draw has passed every other test.
   - **Its point in a protecting ball, or a ball under the margin:** the cell is left and
-    counted (`CellReport`). No cell shrinks a ball. Trying the picking region for a centre in a
+    counted (`CellReport`), and never judged again while it stands (`Filling::left`, by its
+    corners). No cell shrinks a ball. Trying the picking region for a centre in a
     ball was measured and refused: the cube's bad cells went from 19 to 3,711.
 
   On a smooth domain every cell meets radius–edge 2 and a 12° dihedral
   (`a_ball_is_filled_with_fair_cells_and_curved_elements_on_its_sphere`, the torus, the
   ellipsoid). With features, every cell left bad has a protecting ball's centre for a corner
-  (`Volume::protected`; the cube, 19 of 2,639 cells, least dihedral 7.8°; the cylinder, 3 of
-  3,631).
+  (`Volume::protected`; the cube, 19 of 2,639 cells, least dihedral 7.8°; the cylinder, 5 of
+  3,624).
 
 - **The quadratic element is TET10, its nodes numbered as CalculiX numbers them**
   (`tetra::Tet10`, `EDGES`). The corners come first, then the edges 0–1, 1–2, 2–0, 0–3, 1–3,
   2–3. An edge node is its edge's middle, except on the boundary (`refine/volume.rs`):
   - **On a feature curve** (two protecting balls next to each other on one curve), the node is
-    at the curve's arc-length middle between them.
+    at the curve's arc-length middle between them. `protect` gives each ball's neighbours and
+    those points (`Protection::halfway`), where the stations are known.
   - **On any other boundary edge,** the node is where the domain's boundary crosses the line
     through the middle along the facets' mean normal, within a quarter of the edge. It is found
     as a surface centre is, by Newton on readings or by bisection, to `Criteria::bisection`. An
@@ -291,7 +294,7 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
   Every node is shared by every element on its edge, so the mesh conforms. On the ball, the
   ellipsoid and the torus, every boundary node is on the surface to 1e-8. The quadratic
   elements hold the volume about 600 to 2,800 times better than the linear cells: the ball 1.6e-2
-  against 2.6e-5, the torus 1.3e-2 against 1.1e-5, the cylinder 5.3e-3 against 1.9e-6. That is
+  against 2.6e-5, the torus 1.3e-2 against 9.5e-6, the cylinder 5.1e-3 against 1.8e-6. That is
   the chord's error against the parabola's.
 
 - **No element is inverted, and the proof is its Bernstein coefficients** (`Tet10::
@@ -310,7 +313,9 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
   closed and manifold, and the Euler characteristic V − E + F − T the solid's: 1 for a ball, 0
   for a solid torus. The cube's linear and quadratic volumes are exactly 1, to 1e-9, with its
   corners as vertices. Filling is deterministic: two runs give the same mesh to the bit, and
-  the slivers' draws come from the seeded `rng::Rng` (`cells::SEED`).
+  the slivers' draws come from the seeded `rng::Rng` (`cells::SEED`). The boundary is the
+  restricted facets `Refiner::extract` gives, renumbered, so the surface mesh and the volume's
+  boundary are one list. `conforming` also holds the volume the boundary encloses to the cells'.
 
 - **What P6 leaves to S3.** No element stiffness reads a `Volume` yet. A protecting ball's
   neighbours keep cells no refinement reaches. Mesh_3 removes those slivers by perturbation and

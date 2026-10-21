@@ -55,16 +55,33 @@ pub struct CellReport {
 }
 
 /// The seed of a sliver's draws: one triangulation, one mesh.
-pub(super) const SEED: u32 = 0x510;
+const SEED: u32 = 0x510;
 /// A sliver's picking region, as a fraction of its circumradius about its orthocentre.
 const PICK: f64 = 0.3;
 /// Draws from a picking region.
 const CANDIDATES: usize = 24;
 
-/// A cell waiting to be refined, as `Bad` is a facet.
+/// A refiner's state while it fills a volume.
+pub(super) struct Filling {
+    pub(super) cells: Cells,
+    pub(super) queue: BinaryHeap<BadCell>,
+    pub(super) report: CellReport,
+    /// The draws of a sliver's picking region.
+    rng: crate::rng::Rng,
+    /// Cells left for a protecting ball or a ball under the margin, by their sorted corners:
+    /// judged alike every round, so never again (a cell remade has other corners).
+    left: std::collections::BTreeSet<[u32;4]>,
+}
+
+impl Filling {
+    pub(super) fn new(cells: Cells) -> Self {
+        Self {cells,queue:BinaryHeap::new(),report:CellReport::default(),rng:crate::rng::Rng::new(SEED),left:Default::default()}
+    }
+}
+
+/// A cell waiting to be refined, as `Bad` is a facet: `sliver` when only its angles are bad.
 #[derive(PartialEq)]
-pub(super) struct BadCell { badness: f64,t: u32,key: [u32;4] }
-impl BadCell { pub(super) fn badness(&self) -> f64 { self.badness } }
+pub(super) struct BadCell { pub(super) badness: f64,t: u32,key: [u32;4],sliver: bool }
 impl Eq for BadCell {}
 impl PartialOrd for BadCell { fn partial_cmp(&self,o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
 impl Ord for BadCell { fn cmp(&self,o: &Self) -> std::cmp::Ordering { self.badness.total_cmp(&o.badness) } }
@@ -82,7 +99,7 @@ impl Cells {
 
     /// How badly the tetrahedron `q` breaks the criteria (above 1 is bad), and whether its shape
     /// and size pass, so that only its angles do not.
-    fn badness(&self,q: [P;4]) -> (f64,bool) {
+    pub(super) fn badness(&self,q: [P;4]) -> (f64,bool) {
         let shape = match tetra::circumsphere(q) {
             Some((_,r)) => (r/tetra::shortest_edge(q)/self.radius_edge).max(r/self.size),
             None => f64::INFINITY,
@@ -96,24 +113,28 @@ impl Cells {
 impl Refiner<'_> {
     fn corners(&self,t: u32) -> [P;4] { self.tri.tet(t).v.map(|v| self.tri.points()[v as usize].p) }
 
+    /// Tetrahedron `t`'s corners, sorted: what it is made of, to recognise it again.
+    fn cell_key(&self,t: u32) -> [u32;4] { let mut key = self.tri.tet(t).v; key.sort_unstable(); key }
+
     /// Whether `t` is a cell of the volume: on no enclosing vertex, its orthocentre inside.
     pub(super) fn inside(&mut self,t: u32) -> bool {
         self.tri.alive(t) && !self.tri.touches_enclosure(t) && self.tet_side(t) < 0
     }
 
-    /// Queue cell `t` if it is inside and breaks the criteria.
+    /// Queue cell `t` if it is inside and breaks the criteria, and was not left before.
     pub(super) fn judge_cell(&mut self,t: u32) {
-        let Some(cells) = self.cells.as_ref() else { return };
-        let (badness,_) = cells.badness(self.corners(t));
-        if badness <= 1. || !self.inside(t) { return; }
-        let mut key = self.tri.tet(t).v;
-        key.sort_unstable();
-        self.cell_queue.push(BadCell {badness,t,key});
+        let Some(filling) = self.filling.as_ref() else { return };
+        if self.tri.touches_enclosure(t) { return; }
+        let (badness,shaped) = filling.cells.badness(self.corners(t));
+        let key = self.cell_key(t);
+        if badness <= 1. || filling.left.contains(&key) || !self.inside(t) { return; }
+        let filling = self.filling.as_mut().expect("filling");
+        filling.queue.push(BadCell {badness,t,key,sliver:shaped});
     }
 
     /// Judge every cell again: a round of filling (`Progressive`).
     pub(super) fn judge_cells(&mut self) {
-        self.cell_report.rounds += 1;
+        if let Some(f) = self.filling.as_mut() { f.report.rounds += 1; }
         let tets: Vec<u32> = self.tri.tets().collect();
         for t in tets { self.judge_cell(t); }
     }
@@ -121,104 +142,114 @@ impl Refiner<'_> {
     /// Refine at most about `budget` points, waiting facets first, then the worst cell: whether
     /// both queues are empty.
     pub(super) fn fill_some(&mut self,budget: usize) -> Result<bool,String> {
-        let mut spent = 0;
-        while spent < budget {
-            spent += 1;
+        for _ in 0..budget {
             if !self.queue.is_empty() { self.refine_some(1)?; continue; }
-            let Some(bad) = self.cell_queue.pop() else { return Ok(true) };
-            if !self.tri.alive(bad.t) { continue; }
-            let mut key = self.tri.tet(bad.t).v;
-            key.sort_unstable();
-            if key != bad.key { continue; }
-            let (badness,sliver) = self.cells.as_ref().expect("criteria while filling").badness(self.corners(bad.t));
-            if badness <= 1. { continue; }
-            self.refine_cell(bad.t,sliver)?;
+            let Some(bad) = self.filling.as_mut().expect("filling").queue.pop() else { return Ok(true) };
+            // A cell with the same corners is the same cell, as bad as when it was judged.
+            if !self.tri.alive(bad.t) || self.cell_key(bad.t) != bad.key { continue; }
+            self.refine_cell(bad.t,bad.key,bad.sliver)?;
         }
-        Ok(self.queue.is_empty() && self.cell_queue.is_empty())
+        Ok(self.queue.is_empty() && self.filling.as_ref().is_none_or(|f| f.queue.is_empty()))
     }
 
-    fn refine_cell(&mut self,t: u32,sliver: bool) -> Result<(),String> {
+    fn refine_cell(&mut self,t: u32,key: [u32;4],sliver: bool) -> Result<(),String> {
         let (o,r2) = self.tri.orthosphere(t);
         let margin = self.margin();
+        let filling = self.filling.as_mut().expect("filling");
         if !o.iter().all(|x| x.is_finite()) || !(r2*(1.-PICK)*(1.-PICK) > margin*margin) {
-            self.cell_report.too_small += 1;
+            filling.report.too_small += 1;
+            filling.left.insert(key);
             return Ok(());
         }
+        // A picked point is clear of every ball and surface ball already.
         let picked = if sliver { self.pick(t,o,r2.sqrt())? } else { None };
-        let p = picked.unwrap_or(o);
-        if self.ball_at(p).is_some() { self.cell_report.in_balls += 1; return Ok(()); }
-        let reached = self.encroached(p,t)?;
-        if !reached.is_empty() {
-            self.cell_report.encroaching += 1;
-            for (u,i,key) in reached { self.queue.push(Bad {badness:f64::INFINITY,t:u,i,key,forced:true}); }
-            return Ok(());
-        }
+        let p = match picked {
+            Some(p) => p,
+            None => {
+                if self.ball_at(o).is_some() {
+                    let filling = self.filling.as_mut().expect("filling");
+                    filling.report.in_balls += 1;
+                    filling.left.insert(key);
+                    return Ok(());
+                }
+                let region = self.tri.conflicts(o,0.,Some(t))?;
+                let reached = self.encroached(o,&region);
+                if !reached.is_empty() {
+                    self.filling.as_mut().expect("filling").report.encroaching += 1;
+                    for (u,i,key,badness) in reached { self.queue.push(Bad {badness,t:u,i,key,forced:true}); }
+                    return Ok(());
+                }
+                o
+            }
+        };
         if self.insert(p)? {
-            self.cell_report.inserted += 1;
-            if picked.is_some() { self.cell_report.slivers += 1; }
+            let report = &mut self.filling.as_mut().expect("filling").report;
+            report.inserted += 1;
+            if picked.is_some() { report.slivers += 1; }
         }
         Ok(())
     }
 
-    /// The restricted facets whose surface ball holds `p`, among those its insertion would remake.
-    fn encroached(&mut self,p: P,hint: u32) -> Result<Vec<(u32,usize,[u32;3])>,String> {
-        let region = self.tri.conflicts(p,0.,Some(hint))?;
-        let mut out: Vec<(u32,usize,[u32;3])> = Vec::new();
-        for &u in &region {
+    /// The restricted facets whose surface ball holds `p`, among those of its conflict region
+    /// `region`, with their shape's badness.
+    fn encroached(&mut self,p: P,region: &[u32]) -> Vec<(u32,usize,[u32;3],f64)> {
+        let mut out: Vec<(u32,usize,[u32;3],f64)> = Vec::new();
+        for &u in region {
             for i in 0..4 {
                 let Some((key,centre)) = self.restricted(u,i) else { continue };
                 if out.iter().any(|f| f.2 == key) { continue; }
                 let a = self.tri.points()[key[0] as usize];
-                if dist2(p,centre) < dist2(centre,a.p)-a.w { out.push((u,i,key)); }
+                if dist2(p,centre) < dist2(centre,a.p)-a.w { out.push((u,i,key,self.shape_badness(key,centre))); }
             }
         }
-        Ok(out)
+        out
     }
 
     /// A sliver's refinement point from its picking region: the orthocentre and `CANDIDATES`
     /// draws in the ball of `PICK × radius` about it, best first by the least dihedral angle of
-    /// the tetrahedra each would make, the first the domain holds and that reaches no surface
-    /// ball and no protecting ball. `None` when no draw qualifies.
+    /// the tetrahedra each would make, the first that reaches no surface ball and that the
+    /// domain holds (asked last, as the costly question). `None` when no draw qualifies.
     fn pick(&mut self,t: u32,o: P,radius: f64) -> Result<Option<P>,String> {
         let mut candidates = vec![o];
+        let rng = &mut self.filling.as_mut().expect("filling").rng;
         while candidates.len() <= CANDIDATES {
-            let d: P = std::array::from_fn(|_| self.rng.uniform(-1.,1.));
+            let d: P = std::array::from_fn(|_| rng.uniform(-1.,1.));
             if dot(d,d) > 1. { continue; }
             candidates.push(std::array::from_fn(|k| o[k]+PICK*radius*d[k]));
         }
         let mut scored = Vec::with_capacity(candidates.len());
-        for (k,&p) in candidates.iter().enumerate() {
+        for p in candidates {
             if self.ball_at(p).is_some() { continue; }
-            scored.push((self.star_quality(p,t)?,k));
+            let region = self.tri.conflicts(p,0.,Some(t))?;
+            scored.push((self.star_quality(p,&region),p,region));
         }
-        // best first, the draw order breaking ties
-        scored.sort_by(|a,b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
-        for (_,k) in scored {
-            let p = candidates[k];
-            if self.side(p) > 0 || !self.encroached(p,t)?.is_empty() { continue; }
-            return Ok(Some(p));
+        // best first, the draw order breaking ties (a stable sort)
+        scored.sort_by(|a,b| b.0.total_cmp(&a.0));
+        for (_,p,region) in scored {
+            if self.encroached(p,&region).is_empty() && self.side(p) < 0 { return Ok(Some(p)); }
         }
         Ok(None)
     }
 
-    /// The least dihedral angle of the tetrahedra `p` would make with its conflict region's
-    /// boundary faces, those on no enclosing vertex; 0 where it is in conflict with nothing.
-    fn star_quality(&mut self,p: P,hint: u32) -> Result<f64,String> {
-        let mut region = self.tri.conflicts(p,0.,Some(hint))?;
-        if region.is_empty() { return Ok(0.); }
-        region.sort_unstable();
+    /// The least dihedral angle of the tetrahedra `p` would make with the boundary faces of its
+    /// conflict region `region`, those on no enclosing vertex; 0 where it is in conflict with
+    /// nothing.
+    fn star_quality(&self,p: P,region: &[u32]) -> f64 {
+        if region.is_empty() { return 0.; }
+        let mut sorted = region.to_vec();
+        sorted.sort_unstable();
         let mut least = 180f64;
-        for &u in &region {
+        for &u in &sorted {
             let tet = self.tri.tet(u);
             for i in 0..4 {
                 let n = tet.n[i];
-                if n != NONE && region.binary_search(&n).is_ok() { continue; }
+                if n != NONE && sorted.binary_search(&n).is_ok() { continue; }
                 if tet.v.iter().enumerate().any(|(j,&v)| j != i && v < ENCLOSING) { continue; }
                 let mut q = self.corners(u);
                 q[i] = p;
                 least = least.min(tetra::least_dihedral(q));
             }
         }
-        Ok(least)
+        least
     }
 }
