@@ -508,11 +508,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             }
         }
     }
-    if let Some(cs) = components.as_ref().filter(|_| !opts.json) {
-        for c in cs {
-            for line in gcs_core::boundary::text(c) {
-                println!("  {line}");
-            }
+    if !opts.json {
+        for line in components.iter().flatten().flat_map(gcs_core::boundary::text) {
+            println!("  {line}");
         }
     }
     let mut code = if r.success || opts.allow_unsolved { 0 } else { 2 };
@@ -668,9 +666,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     (
         code,
         opts.json.then(|| {
-            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, positions.unwrap_or(Json::Null),
-                     components.as_ref().map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json)
-                         .collect())).unwrap_or(Json::Null))
+            let components = components.as_ref()
+                .map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json).collect()));
+            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e,
+                     positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null))
         }),
     )
 }

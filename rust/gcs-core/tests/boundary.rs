@@ -14,14 +14,20 @@ fn named<'a>(cs: &'a [Classified], name: &str) -> &'a Classified {
     cs.iter().find(|c| c.name == name).unwrap_or_else(|| panic!("no component `{name}`"))
 }
 
-const TWO_POINTS: &str = "\
-in std.front {
+/// `components` and `calls` over two points six apart in the front plane, classified.
+fn over_two_points(components: &str, calls: &str) -> Vec<Classified> {
+    classes(&format!("\
+unit mm
+use std (horizontal)
+{components}
+in std.front {{
   a := point
   b := point
   fix((0, 0)) a
   fix((6, 0)) b
+}}
+{calls}"))
 }
-";
 
 /// The review's counterexample (§1): `x distance(5) a`, `x distance(5) b`, six apart.  Full rank
 /// at `(3, 4)` and at `(3, −4)`: locally determined, and the search finds both roots, so which it
@@ -29,27 +35,25 @@ in std.front {
 /// the plane's frame; the same body seeded at `(3, 4)` in the plane does.
 #[test]
 fn the_two_root_point_is_locally_determined_and_its_branch_not_chosen() {
-    let cs = classes(&format!("\
-unit mm
-use std
-component Apex(view: plane, a: point, b: point) {{
-  in view {{
+    let cs = over_two_points("\
+component Apex(view: plane, a: point, b: point) {
+  in view {
     x := point hint(at: a, toward: b, by: 0.8333, turn: 53.13deg)
     x distance(5mm) a
     x distance(5mm) b
-  }}
-}}
-component Paged(view: plane, a: point, b: point) {{
-  in view {{
+  }
+}
+component Paged(view: plane, a: point, b: point) {
+  in view {
     x := point hint((3, 4))
     x distance(5mm) a
     x distance(5mm) b
-  }}
-}}
-{TWO_POINTS}
+  }
+}
+", "\
 one := Apex(std.front, a, b)
 two := Paged(std.front, a, b)
-"));
+");
     let apex = named(&cs, "Apex");
     assert_eq!(apex.class, Class::LocallyDetermined, "{apex:?}");
     let a = apex.analysis.as_ref().unwrap();
@@ -60,7 +64,8 @@ two := Paged(std.front, a, b)
     let paged = named(&cs, "Paged");
     assert_eq!(paged.class, Class::LocallyDetermined);
     let w = &paged.analysis.as_ref().unwrap().world;
-    assert_eq!(w, &[(Reads::Seed, "seeds `x` at coordinates in its plane".to_string())], "{w:?}");
+    let seed = (Reads::Seed, "seeds `x` at coordinates in its plane".to_string());
+    assert_eq!(w, &[seed], "{w:?}");
 }
 
 /// With `ccw(a, b, x)` stated, one of the two roots is refused by the choice the body states: the
@@ -69,25 +74,24 @@ two := Paged(std.front, a, b)
 /// inputs, though 2 at a generic input, where its roots are searched for.
 #[test]
 fn a_stated_orientation_chooses_the_branch_and_a_degenerate_input_is_singular_there() {
-    let cs = classes(&format!("\
-unit mm
-use std
-component Chosen(view: plane, a: point, b: point) {{
-  in view {{
+    let cs = over_two_points("\
+component Chosen(view: plane, a: point, b: point) {
+  in view {
     x := point hint(at: a, toward: b, by: 0.8333, turn: 53.13deg)
     x distance(5mm) a
     x distance(5mm) b
     ccw(a, b, x)
-  }}
-}}
-{TWO_POINTS}
+  }
+}
+", "\
 two := Chosen(std.front, a, b)
-"));
+");
     let c = named(&cs, "Chosen");
     assert_eq!(c.class, Class::BranchChosen, "{c:?}");
     let a = c.analysis.as_ref().unwrap();
     assert_eq!(a.stated, 1);
-    assert_eq!((a.roots.unwrap().admitted, a.roots.unwrap().refused), (1, 1));
+    let roots = a.roots.unwrap();
+    assert_eq!((roots.admitted, roots.refused), (1, 1), "{roots:?}");
 
     let cs = classes("\
 unit mm
@@ -117,25 +121,23 @@ one := Apex(std.front, a, b)
 /// slides round it: it leaves a freedom, named.
 #[test]
 fn a_determined_body_has_its_branch_and_a_sliding_point_is_a_freedom() {
-    let cs = classes(&format!("\
-unit mm
-use std
-component Middle(view: plane, a: point, b: point) {{
-  in view {{
+    let cs = over_two_points("\
+component Middle(view: plane, a: point, b: point) {
+  in view {
     m := point hint(at: a)
     m midpoint line(a, b)
-  }}
-}}
-component Slider(view: plane, a: point, b: point) {{
-  in view {{
+  }
+}
+component Slider(view: plane, a: point, b: point) {
+  in view {
     s := point hint(at: a, toward: b, by: 0.5, turn: 30deg)
     s distance(5mm) a
-  }}
-}}
-{TWO_POINTS}
+  }
+}
+", "\
 mid := Middle(std.front, a, b)
 sl := Slider(std.front, a, b)
-"));
+");
     let m = named(&cs, "Middle");
     assert_eq!(m.class, Class::BranchChosen, "{m:?}");
     assert_eq!(m.analysis.as_ref().unwrap().roots.unwrap().admitted, 1);
@@ -152,21 +154,19 @@ sl := Slider(std.front, a, b)
 /// frame's numbers by a `fix` and places its axis by rows.
 #[test]
 fn a_body_relating_only_its_operands_asserts_only() {
-    let cs = classes(&format!("\
-unit mm
-use std
-component Apart(a: point, b: point) {{
+    let cs = over_two_points("\
+component Apart(a: point, b: point) {
   a distance(6mm) b
-}}
-{TWO_POINTS}
+}
+", "\
 ap := Apart(a, b)
-in std.front {{
+in std.front {
   c := point
   fix((0, 0)) c
-}}
+}
 f := frame
 std.Spin(f, about: c, on: std.front, ratio: 1)
-"));
+");
     let ap = named(&cs, "Apart");
     assert_eq!(ap.class, Class::AssertsOnly, "{ap:?}");
     let a = ap.analysis.as_ref().unwrap();
@@ -178,8 +178,8 @@ std.Spin(f, about: c, on: std.front, ratio: 1)
 }
 
 /// FR2: a crank's angle left unbound is the parent's unknown, read by the body as an input — the
-/// crank is determined against it, and says it exports it.  The same body with the angle its own
-/// unknown (no formal) leaves a freedom it cannot name.
+/// crank is determined against it, and says it exports it.  Without the angle the tip swings
+/// round the pivot: a freedom the body leaves and no formal names.
 #[test]
 fn an_unbound_formal_is_an_exported_input_and_an_unknown_of_its_own_a_freedom() {
     let cs = classes("\
@@ -217,14 +217,13 @@ lo := Loose(std.front, o, ref)
 }
 
 /// Reading the world, beside the class: a row over the plane's own axes, a point held at
-/// coordinates, a coordinate read and a bearing seed are each said, in words.
+/// coordinates, a seed in a plane's frame, one in coordinates and a coordinate read are each
+/// said, in words.
 #[test]
 fn what_a_body_reads_of_the_world_is_said() {
-    let cs = classes(&format!("\
-unit mm
-use std (horizontal)
-component Level(view: plane, a: point) {{
-  in view {{
+    let cs = over_two_points("\
+component Level(view: plane, a: point) {
+  in view {
     y := point hint(at: view, (5, 1))
     y horizontal a
     a distance(5mm) y
@@ -233,11 +232,11 @@ component Level(view: plane, a: point) {{
     z := point hint((a.x + 2mm, a.y + 2mm))
     z distance(2mm) o
     z distance(3mm) y
-  }}
-}}
-{TWO_POINTS}
+  }
+}
+", "\
 lv := Level(std.front, a)
-"));
+");
     let l = named(&cs, "Level");
     let w = &l.analysis.as_ref().unwrap().world;
     for said in ["`lv.y horizontal a` reads its plane's axes", "`fix` holds `lv.o` at coordinates",
@@ -250,17 +249,15 @@ lv := Level(std.front, a)
 /// A component nothing instantiates is listed and not read; a family of sets is a set.
 #[test]
 fn an_unused_component_and_a_set_are_not_read() {
-    let cs = classes(&format!("\
-unit mm
-use std
-component Idle(a: point) {{
+    let cs = over_two_points("\
+component Idle(a: point) {
   b := point
   a distance(1mm) b
-}}
-component Ball(c: point, r: Length) := {{ p | p distance(r) c }}
-{TWO_POINTS}
+}
+component Ball(c: point, r: Length) := { p | p distance(r) c }
+", "\
 ball := Ball(a, r: 3mm)
-"));
+");
     assert_eq!(named(&cs, "Idle").class, Class::Unused);
     assert_eq!(named(&cs, "Ball").class, Class::Set);
     assert!(named(&cs, "Idle").analysis.is_none());
@@ -269,15 +266,13 @@ ball := Ball(a, r: 3mm)
 /// The text `solventc --components` prints is the core's: a line per component, its class first.
 #[test]
 fn the_text_names_the_class_first() {
-    let cs = classes(&format!("\
-unit mm
-use std
-component Apart(a: point, b: point) {{
+    let cs = over_two_points("\
+component Apart(a: point, b: point) {
   a distance(6mm) b
-}}
-{TWO_POINTS}
+}
+", "\
 ap := Apart(a, b)
-"));
+");
     let t = gcs_core::boundary::text(named(&cs, "Apart"));
     assert_eq!(t[0], "component `Apart` (1 instance, `ap` read): asserts only");
     assert!(t.iter().any(|l| l.contains("states 1 fact about its operands")), "{t:?}");
@@ -287,18 +282,16 @@ ap := Apart(a, b)
 /// said, beside the class.
 #[test]
 fn an_unbound_count_is_said_to_be_no_boundary() {
-    let cs = classes(&format!("\
-unit mm
-use std
-component Rung(view: plane, a: point, n: Int) {{
-  in view {{
+    let cs = over_two_points("\
+component Rung(view: plane, a: point, n: Int) {
+  in view {
     b := point hint(at: view, (3, 4))
     a distance(n * 1mm) b
-  }}
-}}
-{TWO_POINTS}
+  }
+}
+", "\
 r := Rung(std.front, a)
-"));
+");
     let a = named(&cs, "Rung").analysis.as_ref().unwrap();
     assert_eq!(a.counts, ["r.n"]);
     assert!(a.exported.is_empty());

@@ -16,7 +16,7 @@
 //!   moved from the instance's by a seeded draw (DT1 fails).  The freedoms are named: a parent
 //!   would have to own them, and cannot name them.
 //! * **Locally determined**: full rank there (DT1), and a second root found from scattered starts
-//!   at the instance's inputs that every root choice it states admits: its branch is the seeds'.
+//!   that every root choice it states admits: which it returns is the seeds' choice.
 //! * **Branch chosen**: locally determined, and no second root the stated choices admit was found.
 //!   A heuristic, and said to be one: a root not found is not shown absent (DT2).
 //! * **Reads the world**, beside any of those: a row that reads its plane's own axes (`horizontal`,
@@ -24,12 +24,16 @@
 //!   a `fix` at coordinates — what fails the spin check of EQ2, found from the text and the rows
 //!   rather than by moving anything.
 //!
+//! What is not read is said so: a family of sets, a component only ever traced in a curve, one
+//! nothing instantiates, and one whose instance owns no unknown and says nothing of its operands.
+//!
 //! The rank is judged as the diagnosis judges it: `System::conditioned` against `RANK_TOL`, at
 //! the document's scale rather than the boundary's own (CL1 asks for the latter; #455 sets it).
 
 use crate::constraints::{CKind, Constraint, OrdinateForm};
 use crate::json::{self, Json};
 use crate::model::{EntKind, EntRef, Sketch};
+use crate::space;
 use crate::program::{Elaborated, Instanced, SourceMap};
 use crate::solve::{solve, BlockMode, SolveOpts};
 use crate::syntax::{Program, Stmt, StmtKind, Ty};
@@ -46,7 +50,7 @@ pub const PROBE_ITERATIONS: i32 = 50;
 pub const SEARCHED: usize = 120;
 
 /// What a component is, by the first of the contract's tests it fails or passes.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Class {
     /// A family of sets (§6.21): an instance is the set, and makes nothing of its own to solve.
     Set,
@@ -65,17 +69,6 @@ pub enum Class {
 }
 
 impl Class {
-    pub const ALL: [Class; 8] = [
-        Class::AssertsOnly,
-        Class::LeavesFreedoms,
-        Class::LocallyDetermined,
-        Class::BranchChosen,
-        Class::NothingToSolve,
-        Class::Set,
-        Class::Traced,
-        Class::Unused,
-    ];
-
     pub fn as_str(self) -> &'static str {
         match self {
             Class::Set => "a set",
@@ -139,9 +132,31 @@ pub struct Analysis {
     pub world: Vec<(Reads, String)>,
 }
 
+impl Analysis {
+    /// The class its findings put it in.
+    pub fn class(&self) -> Class {
+        let asserts = self.facts > 0 || !self.held.is_empty();
+        if self.unknowns == 0 && !asserts {
+            return Class::NothingToSolve;
+        }
+        if !self.public && asserts {
+            return Class::AssertsOnly;
+        }
+        if self.rank < self.unknowns {
+            return Class::LeavesFreedoms;
+        }
+        match self.roots {
+            Some(r) if r.admitted > 1 => Class::LocallyDetermined,
+            // too large to search: what was shown is DT1, and no more
+            None if self.unknowns > SEARCHED => Class::LocallyDetermined,
+            _ => Class::BranchChosen,
+        }
+    }
+}
+
 /// How a body reads the world (EQ2): what fails the check that spins a carrier's frame in its
 /// plane, the operands held.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reads {
     /// A row over its plane's own axes: `horizontal`, `level(up)`, `along: u`.
     Axes,
@@ -195,14 +210,13 @@ pub fn classify(e: &Elaborated, solved: &Sketch) -> Vec<Classified> {
     defs.into_iter().map(|c| {
         let name = prog.component_id(c);
         let instances: Vec<&Instanced> = map.instances.iter().filter(|i| i.comp == c).collect();
-        let drawn: Vec<&Instanced> = instances.iter().copied().filter(|i| i.drawn).collect();
         let mut out = Classified { comp: c, name, instances: instances.len(), class: Class::Unused,
                                    analysis: None };
         if prog.components[c].set.is_some() {
             out.class = Class::Set;
             return out;
         }
-        let Some(first) = drawn.first() else {
+        let Some(first) = instances.iter().find(|i| i.drawn) else {
             if !instances.is_empty() {
                 out.class = Class::Traced;
             }
@@ -215,28 +229,6 @@ pub fn classify(e: &Elaborated, solved: &Sketch) -> Vec<Classified> {
     }).collect()
 }
 
-impl Analysis {
-    /// The class its findings put it in.
-    pub fn class(&self) -> Class {
-        let asserts = self.facts > 0 || !self.held.is_empty();
-        if self.unknowns == 0 && !asserts {
-            return Class::NothingToSolve;
-        }
-        if !self.public && asserts {
-            return Class::AssertsOnly;
-        }
-        if self.rank < self.unknowns {
-            return Class::LeavesFreedoms;
-        }
-        match self.roots {
-            Some(r) if r.admitted > 1 => Class::LocallyDetermined,
-            // too large to search: what was shown is DT1, and no more
-            None if self.unknowns > SEARCHED => Class::LocallyDetermined,
-            _ => Class::BranchChosen,
-        }
-    }
-}
-
 /// What every instance's reading shares: which parameters are whose, which are where a point is.
 struct World {
     /// Each parameter an entity with a site owns, to that entity.
@@ -244,8 +236,8 @@ struct World {
     /// The parameters that are a place or a length: a point's coordinates, a radius, an axis's
     /// origin — moved by a length, where every other number is moved by its own size.
     lengths: BTreeSet<u32>,
-    /// The free variables' parameters, to their names.
-    free: BTreeMap<u32, String>,
+    /// The free variables' parameters.
+    free: BTreeSet<u32>,
 }
 
 impl World {
@@ -265,7 +257,7 @@ impl World {
         for a in &sk.axes {
             lengths.extend(a.a);
         }
-        let free = sk.free_vars.iter().map(|(n, &p)| (p, n.clone())).collect();
+        let free = sk.free_vars.values().copied().collect();
         World { owner, lengths, free }
     }
 }
@@ -279,7 +271,14 @@ fn columns(sk: &Sketch, c: &Constraint) -> Vec<u32> {
 
 /// One instance, read: its rows and unknowns set apart from the document, ranked at its inputs
 /// and at inputs moved from them, its roots searched for, and its text read for the world.
-fn analyse(prog: &Program, map: &SourceMap, sk: &Sketch, world: &World, inst: &Instanced) -> Analysis {
+fn analyse(
+    prog: &Program,
+    map: &SourceMap,
+    sk: &Sketch,
+    world: &World,
+    inst: &Instanced,
+) -> Analysis {
+    let comp = &prog.components[inst.comp];
     let name_of = |e: EntRef| map.name_of(e).cloned();
     let ent_name = |e: EntRef| name_of(e).unwrap_or_else(|| crate::model::entity_name(e));
     let inside = |id: u32| map.site_of_constraint(id).is_some_and(|s| inst.contains(&s.path));
@@ -297,7 +296,7 @@ fn analyse(prog: &Program, map: &SourceMap, sk: &Sketch, world: &World, inst: &I
     // arc's radius, a twin's tie).  A lift of a point drawn in its plane that none of its rows
     // reads is the document's, though its row reads the plane.
     let zero = sk.zero;
-    let nobodys = |p: u32| !world.owner.contains_key(&p) && !world.free.contains_key(&p);
+    let nobodys = |p: u32| !world.owner.contains_key(&p) && !world.free.contains(&p);
     let unowned = |p: u32| nobodys(p) && Some(p) != zero && !sk.params[p as usize].fixed;
     let mut aux: BTreeSet<u32> = BTreeSet::new();
     let mut kept: BTreeSet<u32> = BTreeSet::new();
@@ -333,29 +332,18 @@ fn analyse(prog: &Program, map: &SourceMap, sk: &Sketch, world: &World, inst: &I
     };
     // read off the definition, not the names: an instance under an anonymous key (a face
     // family's station) shows none of its members' names, private or not
-    a.public = !made.is_empty() && declares_public(&prog.components[inst.comp].body);
+    a.public = !made.is_empty() && declares_public(&comp.body);
 
     // its unknowns against its rows, the inputs held; and both free, for what it says of them
-    let mut alone = sk.clone();
-    alone.constraints.retain(|c| kept.contains(&c.id));
-    alone.solid_claims.clear();
-    for (i, p) in alone.params.iter_mut().enumerate() {
-        p.fixed |= !own.contains(&(i as u32));
-    }
-    let mut both = sk.clone();
-    both.constraints.retain(|c| kept.contains(&c.id));
-    both.solid_claims.clear();
+    let mut alone = reduced(sk, &kept, |p, fixed| fixed || !own.contains(&p));
     // an operand the document holds is still one a fact can be about: freed, as every input is
-    for (i, p) in both.params.iter_mut().enumerate() {
-        let i = i as u32;
-        p.fixed = if inputs.contains(&i) { false } else { p.fixed || !own.contains(&i) };
-    }
+    let both = reduced(sk, &kept, |p, fixed| !inputs.contains(&p) && (fixed || !own.contains(&p)));
     let (n, rank_here, null_here) = rank_of(&alone);
     a.unknowns = n;
     a.rank_here = rank_here;
     a.facts = rank_of(&both).1.saturating_sub(rank_here);
     a.fact_rows = rows.iter()
-        .filter(|c| inside(c.id) && c.states_rows() && !c.soft)
+        .filter(|c| inside(c.id) && c.acts())
         .filter(|c| columns(sk, c).iter().all(|p| inputs.contains(p)))
         .map(|c| describe(c)).collect();
 
@@ -369,16 +357,7 @@ fn analyse(prog: &Program, map: &SourceMap, sk: &Sketch, world: &World, inst: &I
     let mut generic = base.clone();
     for _ in 0..PERTURBED {
         alone.set_x(&base);
-        for &p in &inputs {
-            let v = alone.params[p as usize].value;
-            let step = if world.lengths.contains(&p) {
-                rng.normal(0.0, 0.05 * size) / alone.params[p as usize].scale
-            } else {
-                rng.normal(0.0, 0.05) * v.abs().max(1.0)
-            };
-            alone.params[p as usize].value = v + step;
-        }
-        alone.settle_turns();
+        nudge(&mut alone, inputs.iter().copied(), world, &mut rng, 0.05 * size, 0.05);
         solve(&mut alone, probe());
         let (_, r, nl) = rank_of(&alone);
         if r > a.rank {
@@ -393,7 +372,6 @@ fn analyse(prog: &Program, map: &SourceMap, sk: &Sketch, world: &World, inst: &I
     }
 
     // the numbers it left unbound, read as inputs; a count among them is no input at all
-    let comp = &prog.components[inst.comp];
     for f in comp.formals.iter().filter(|f| f.ty.number()) {
         let key = format!("{}{}", inst.prefix, f.name.text);
         let Some(&p) = sk.free_vars.get(&key) else { continue };
@@ -429,7 +407,9 @@ fn analyse(prog: &Program, map: &SourceMap, sk: &Sketch, world: &World, inst: &I
     // the root choices it states, and the roots they admit
     let choices: Vec<(&String, [usize; 3], i32)> = map.chosen.iter()
         .filter(|(_, path)| inst.contains(path))
-        .filter_map(|(k, _)| Some((k, crate::decompose::branch_key_points(k)?, *sk.branches.get(k)?)))
+        .filter_map(|(k, _)| {
+            Some((k, crate::decompose::branch_key_points(k)?, *sk.branches.get(k)?))
+        })
         .collect();
     a.stated = choices.len();
     if a.rank == a.unknowns && a.unknowns > 0 && a.unknowns <= SEARCHED {
@@ -483,7 +463,46 @@ fn analyse(prog: &Program, map: &SourceMap, sk: &Sketch, world: &World, inst: &I
 /// probe is a question, and a start that does not settle soon answers it; the block pass's own
 /// root search would carry a start back to the root it already has.
 fn probe() -> SolveOpts {
-    SolveOpts { max_iter: PROBE_ITERATIONS, retry: false, blocks: BlockMode::Off, ..SolveOpts::default() }
+    SolveOpts {
+        max_iter: PROBE_ITERATIONS,
+        retry: false,
+        blocks: BlockMode::Off,
+        ..SolveOpts::default()
+    }
+}
+
+/// The document with only the rows `kept`, each parameter held as `fixed` says from its index
+/// and whether the document held it.
+fn reduced(sk: &Sketch, kept: &BTreeSet<u32>, fixed: impl Fn(u32, bool) -> bool) -> Sketch {
+    let mut out = sk.clone();
+    out.constraints.retain(|c| kept.contains(&c.id));
+    out.solid_claims.clear();
+    for (i, p) in out.params.iter_mut().enumerate() {
+        p.fixed = fixed(i as u32, p.fixed);
+    }
+    out
+}
+
+/// Move each of `params` by a seeded draw: a place or a length by `length` world units, any other
+/// number by `relative` of its own size (one, where it is smaller).
+fn nudge(
+    sk: &mut Sketch,
+    params: impl Iterator<Item = u32>,
+    world: &World,
+    rng: &mut crate::rng::Rng,
+    length: f64,
+    relative: f64,
+) {
+    for p in params {
+        let q = &mut sk.params[p as usize];
+        let step = if world.lengths.contains(&p) {
+            rng.normal(0.0, length) / q.scale
+        } else {
+            rng.normal(0.0, relative) * q.value.abs().max(1.0)
+        };
+        q.value += step;
+    }
+    sk.settle_turns();
 }
 
 /// The free columns, the rank of the hard rows over them and their null space, at the pose.
@@ -494,19 +513,11 @@ fn rank_of(sk: &Sketch) -> (usize, usize, Option<(Vec<i32>, crate::linalg::Mat)>
         return (0, 0, None);
     }
     if sys.hard_rows().is_empty() {
-        return (n, 0, Some((sys.free.clone(), identity(n))));
+        return (n, 0, Some((sys.free.clone(), crate::linalg::Mat::identity(n))));
     }
     let z = sys.z0(sk);
     let rn = sys.conditioned(&z).rank_and_nullspace(RANK_TOL);
     (n, rn.rank.min(n), Some((sys.free.clone(), rn.null())))
-}
-
-fn identity(n: usize) -> crate::linalg::Mat {
-    let mut m = crate::linalg::Mat::zeros(n, n);
-    for i in 0..n {
-        m.data[i * n + i] = 1.0;
-    }
-    m
 }
 
 /// The entities a null space moves, by their names, most moved first; a number no entity owns by
@@ -544,10 +555,8 @@ fn size_of(sk: &Sketch, own: &BTreeSet<u32>, inputs: &BTreeSet<u32>) -> f64 {
         .map(|i| sk.world_point(i))
         .collect();
     let n = pts.len().max(1) as f64;
-    let mid = pts.iter().fold([0.0; 3], |a, w| [a[0] + w[0] / n, a[1] + w[1] / n, a[2] + w[2] / n]);
-    let size = pts.iter()
-        .map(|w| ((w[0] - mid[0]).powi(2) + (w[1] - mid[1]).powi(2) + (w[2] - mid[2]).powi(2)).sqrt())
-        .fold(0.0, f64::max);
+    let mid = space::scale(pts.iter().fold([0.0; 3], |a, &w| space::add(a, w)), 1.0 / n);
+    let size = pts.iter().map(|&w| space::distance(w, mid)).fold(0.0, f64::max);
     if size > 0.0 { size } else { sk.extent().max(1.0) }
 }
 
@@ -564,8 +573,7 @@ fn figure(sk: &Sketch, made: &BTreeSet<EntRef>) -> Vec<f64> {
             EntKind::Axis => {
                 let r = &sk.axes[e.i()];
                 let d = r.d.map(|p| sk.params[p as usize].value);
-                let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().max(1e-300);
-                out.extend(d.map(|x| x / n));
+                out.extend(space::normalised(d).unwrap_or(d));
                 out.extend(r.a.map(|p| sk.params[p as usize].value));
             }
             _ => {}
@@ -593,16 +601,7 @@ fn search(
     for k in 0..STARTS {
         sk.set_x(&base);
         let mut rng = crate::rng::Rng::new(0x4520_0000 ^ (k as u32).wrapping_mul(2_654_435_761));
-        for &p in &free {
-            let v = sk.params[p as usize].value;
-            let step = if world.lengths.contains(&p) {
-                rng.normal(0.0, 2.0 * size) / sk.params[p as usize].scale
-            } else {
-                rng.normal(0.0, 1.0) * v.abs().max(1.0)
-            };
-            sk.params[p as usize].value = v + step;
-        }
-        sk.settle_turns();
+        nudge(sk, free.iter().copied(), world, &mut rng, 2.0 * size, 1.0);
         let r = solve(sk, probe());
         if !r.settled() {
             continue;
@@ -610,7 +609,8 @@ fn search(
         out.solved += 1;
         let y = figure(sk, made);
         // lengths at the instance's size, a direction's parts as if it were a length
-        let apart = |r: &Vec<f64>| r.iter().zip(&y).any(|(a, b)| (a - b).abs() > 1e-4 * size.max(1.0));
+        let tol = 1e-4 * size.max(1.0);
+        let apart = |r: &Vec<f64>| r.iter().zip(&y).any(|(a, b)| (a - b).abs() > tol);
         if roots.iter().all(|(r, _)| apart(r)) {
             roots.push((y, admits(sk)));
         }
@@ -655,21 +655,23 @@ fn written(prog: &Program, body: &[Stmt], out: &mut Vec<(Reads, String)>) {
         match &st.kind {
             StmtKind::Decl(d) => {
                 let n = &d.name.key().text;
-                let who = if n.starts_with('#') { format!("a {}", d.kind.as_str()) } else { format!("`{n}`") };
+                let who = match n.starts_with('#') {
+                    true => format!("a {}", d.kind.as_str()),
+                    false => format!("`{n}`"),
+                };
                 let hinted = d.hint_span.is_some_and(|s| !s.is_empty());
-                match &d.seed_at {
+                let seed = match &d.seed_at {
                     Some(at) if at.bearing.is_some() => {
-                        out.push((Reads::Seed, format!("seeds {who} by a bearing from its plane's x axis")));
+                        Some("by a bearing from its plane's x axis".to_string())
                     }
-                    Some(at) if at.x.is_some() => {
-                        out.push((Reads::Seed, format!("seeds {who} at coordinates in `{}`'s frame",
-                                                       crate::syntax::ref_text(&at.what))));
-                    }
+                    Some(at) if at.x.is_some() => Some(format!(
+                        "at coordinates in `{}`'s frame", crate::syntax::ref_text(&at.what))),
                     None if hinted && d.seed_spans.iter().any(|s| !s.is_empty()) => {
-                        out.push((Reads::Seed, format!("seeds {who} at coordinates in its plane")));
+                        Some("at coordinates in its plane".to_string())
                     }
-                    _ => {}
-                }
+                    _ => None,
+                };
+                out.extend(seed.map(|how| (Reads::Seed, format!("seeds {who} {how}"))));
             }
             StmtKind::Block(b) => written(prog, &b.body, out),
             _ => {}
@@ -693,10 +695,9 @@ fn coordinate_reads(text: &str) -> Vec<String> {
         let line = line.split("//").next().unwrap_or("");
         let cs: Vec<char> = line.chars().collect();
         for i in 1..cs.len() {
-            if cs[i] != '.' || !ident(cs[i - 1]) || !matches!(cs.get(i + 1), Some('x' | 'y' | 'z')) {
-                continue;
-            }
-            if cs.get(i + 2).is_some_and(|&c| ident(c)) {
+            let field = matches!(cs.get(i + 1), Some('x' | 'y' | 'z'))
+                && !cs.get(i + 2).is_some_and(|&c| ident(c));
+            if cs[i] != '.' || !ident(cs[i - 1]) || !field {
                 continue;
             }
             let mut lo = i;
@@ -717,28 +718,20 @@ fn coordinate_reads(text: &str) -> Vec<String> {
 /// One component as `solventc --components` says it: its class on the first line, and what
 /// was found below it, indented.
 pub fn text(c: &Classified) -> Vec<String> {
-    let count = match c.instances {
-        0 => String::new(),
-        1 => " (1 instance".to_string(),
-        k => format!(" ({k} instances"),
-    };
-    let read = match (&c.analysis, c.instances) {
-        (_, 0) => String::new(),
-        (Some(a), _) => format!(", `{}` read)", a.instance),
-        (None, _) => ")".to_string(),
+    let instances = match (c.instances, &c.analysis) {
+        (0, _) => String::new(),
+        (n, Some(a)) => format!(" ({}, `{}` read)", count(n, "instance"), a.instance),
+        (n, None) => format!(" ({})", count(n, "instance")),
     };
     let class = match c.class {
-        Class::LocallyDetermined => "locally determined, branch not chosen".to_string(),
-        Class::BranchChosen => "locally determined, branch chosen (heuristic)".to_string(),
-        k => k.as_str().to_string(),
+        Class::LocallyDetermined => "locally determined, branch not chosen",
+        Class::BranchChosen => "locally determined, branch chosen (heuristic)",
+        k => k.as_str(),
     };
-    let mut out = vec![format!("component `{}`{count}{read}: {class}", c.name)];
+    let mut out = vec![format!("component `{}`{instances}: {class}", c.name)];
     let Some(a) = &c.analysis else { return out };
-    let unknowns = match a.unknowns {
-        1 => "1 unknown".to_string(),
-        n => format!("{n} unknowns"),
-    };
     if a.unknowns > 0 {
+        let unknowns = count(a.unknowns, "unknown");
         let at = if a.rank == a.rank_here {
             format!("rank {} at its inputs and at {PERTURBED} moved from them", a.rank)
         } else {
@@ -748,15 +741,15 @@ pub fn text(c: &Classified) -> Vec<String> {
     } else {
         out.push("  no unknown of its own".to_string());
     }
+    let quoted = |xs: &[String]| xs.iter().map(|x| format!("`{x}`")).collect::<Vec<_>>();
     if !a.freedoms.is_empty() {
-        let moving: Vec<String> = a.freedoms.iter().map(|f| format!("`{f}`")).collect();
-        out.push(format!("  leaves {} free, moving {}", a.unknowns - a.rank, list(&moving, 6)));
+        out.push(format!("  leaves {} free, moving {}", a.unknowns - a.rank,
+                         list(&quoted(&a.freedoms), 6)));
     }
     if a.facts > 0 || !a.held.is_empty() {
         let mut says = Vec::new();
         if a.facts > 0 {
-            let n = if a.facts == 1 { "1 fact".to_string() } else { format!("{} facts", a.facts) };
-            says.push(format!("states {n} about its operands"));
+            says.push(format!("states {} about its operands", count(a.facts, "fact")));
         }
         if !a.held.is_empty() {
             says.push(format!("holds numbers of {}", a.held.join(", ")));
@@ -771,23 +764,21 @@ pub fn text(c: &Classified) -> Vec<String> {
     }
     if !a.exported.is_empty() {
         out.push(format!("  exports {}: a formal left unbound, the parent's unknown",
-                         list(&a.exported.iter().map(|e| format!("`{e}`")).collect::<Vec<_>>(), 6)));
+                         list(&quoted(&a.exported), 6)));
     }
     if !a.counts.is_empty() {
         out.push(format!("  not a boundary: a count is unbound ({})",
-                         a.counts.iter().map(|e| format!("`{e}`")).collect::<Vec<_>>().join(", ")));
+                         quoted(&a.counts).join(", ")));
     }
     if let Some(r) = a.roots {
-        let roots = |n: usize| if n == 1 { "1 root".to_string() } else { format!("{n} roots") };
         let at = if r.moved { " at inputs moved from its own" } else { "" };
-        let mut line = format!("  {} from {} of {} scattered starts{at}", roots(r.admitted),
-                               r.solved, r.starts);
+        let mut line = format!("  {} from {} of {} scattered starts{at}",
+                               count(r.admitted, "root"), r.solved, r.starts);
         if a.stated > 0 {
-            line += &format!(", by its {} stated root choice{}", a.stated,
-                             if a.stated == 1 { "" } else { "s" });
+            line += &format!(", by its {}", count(a.stated, "stated root choice"));
             if r.refused > 0 {
                 line += &format!(" (which refuse {}; the solve does not enforce them, #157)",
-                                 roots(r.refused));
+                                 count(r.refused, "root"));
             }
         }
         line += match r.admitted {
@@ -806,10 +797,9 @@ pub fn text(c: &Classified) -> Vec<String> {
 
 /// What a body reads of the world, said by kind: how many of each, and the first few.
 fn world_text(world: &[(Reads, String)]) -> String {
-    let of = |k: Reads| world.iter().filter(|w| w.0 == k).map(|w| w.1.clone()).collect::<Vec<_>>();
     let mut said = Vec::new();
     for k in [Reads::Axes, Reads::Held, Reads::Seed, Reads::Coordinate] {
-        let all = of(k);
+        let all: Vec<String> = world.iter().filter(|w| w.0 == k).map(|w| w.1.clone()).collect();
         if all.is_empty() {
             continue;
         }
@@ -826,6 +816,15 @@ fn world_text(world: &[(Reads, String)]) -> String {
     said.join("; ")
 }
 
+/// `1 root`, `2 roots`.
+fn count(n: usize, what: &str) -> String {
+    match n {
+        1 => format!("1 {what}"),
+        _ => format!("{n} {what}s"),
+    }
+}
+
+/// The first `most`, and how many more.
 fn list(xs: &[String], most: usize) -> String {
     let shown = xs.iter().take(most).cloned().collect::<Vec<_>>().join(", ");
     match xs.len().saturating_sub(most) {
