@@ -148,9 +148,10 @@ pub struct Kernel {
     pub n_res: usize,
     pub n_par: usize,
     pub n_const: usize,
-    /// Power of length the residual carries: 1 for the ones written as a signed distance
-    /// (coincident, radius, the distance-to-a-line family), 2 for the ones written squared
-    /// (distance, the dot/cross forms, tangency).  A residual of 1e-6 means something quite
+    /// Power of length the residual carries: 0 for the ones read off unit directions (angles,
+    /// `parallel`, `perpendicular`), 1 for the ones written as a signed distance (coincident,
+    /// radius, the distance-to-a-line family, a tangency at a contact), 2 for the ones written
+    /// squared (distance, the remaining dot/cross forms).  A residual of 1e-6 means something quite
     /// different in the two, so the tolerance a row is judged against is `tol * extent^degree`
     /// rather than one threshold for the whole system.
     pub degree: u32,
@@ -711,57 +712,75 @@ fn dirs(v: &[f64]) -> (f64, f64, f64, f64) {
     (v[2] - v[0], v[3] - v[1], v[6] - v[4], v[7] - v[5])
 }
 
-fn cross_jac(v: &[f64], j: &mut [f64]) {
+/// The two lines' unit directions, `â` and `b̂`, and the floored lengths they were divided by.
+#[inline]
+fn units(v: &[f64]) -> ([f64; 2], [f64; 2], f64, f64) {
     let (d1x, d1y, d2x, d2y) = dirs(v);
-    j[0] = -d2y;
-    j[1] = d2x;
-    j[2] = d2y;
-    j[3] = -d2x;
-    j[4] = d1y;
-    j[5] = -d1x;
-    j[6] = -d1y;
-    j[7] = d1x;
+    let (la, lb) = (line_len(d1x, d1y), line_len(d2x, d2y));
+    ([d1x / la, d1y / la], [d2x / lb, d2y / lb], la, lb)
 }
 
-fn dot_jac(v: &[f64], j: &mut [f64]) {
-    let (d1x, d1y, d2x, d2y) = dirs(v);
-    j[0] = -d2x;
-    j[1] = -d2y;
-    j[2] = d2x;
-    j[3] = d2y;
-    j[4] = -d1x;
-    j[5] = -d1y;
-    j[6] = d1x;
-    j[7] = d1y;
+/// The sine of the angle from the first line's direction to the second's, `â × b̂`, and its
+/// gradient in (a1, b1, a2, b2): `cos3`'s rationale in the sheet.  **Read by direction, never
+/// by length** (#479): the raw `a × b` holds wherever either line has no length, so a side of a
+/// figure shrunk to a point satisfied every `parallel` on it; `â × b̂` is the sine whatever the
+/// lengths, and a shrinking line is no nearer a root.  Degree 0.  Each half of the gradient is
+/// `∂(â × b̂)/∂â` taken across `â` (the unit's derivative is `(I − â âᵀ)/|a|`), so a line's
+/// gradient carries 1/its length and none along itself.
+fn sin2(v: &[f64], j: &mut [f64]) -> f64 {
+    let (ah, bh, la, lb) = units(v);
+    let sn = ah[0] * bh[1] - ah[1] * bh[0];
+    let ga = [(bh[1] - sn * ah[0]) / la, (-bh[0] - sn * ah[1]) / la];
+    let gb = [(-ah[1] - sn * bh[0]) / lb, (ah[0] - sn * bh[1]) / lb];
+    spread(ga, gb, j);
+    sn
 }
 
+/// The cosine of the angle between the two lines' directions, `â · b̂`, and its gradient:
+/// `cos3` in the sheet, and `sin2`'s rationale.  Degree 0.
+fn cos2(v: &[f64], j: &mut [f64]) -> f64 {
+    let (ah, bh, la, lb) = units(v);
+    let cs = ah[0] * bh[0] + ah[1] * bh[1];
+    let ga = [(bh[0] - cs * ah[0]) / la, (bh[1] - cs * ah[1]) / la];
+    let gb = [(ah[0] - cs * bh[0]) / lb, (ah[1] - cs * bh[1]) / lb];
+    spread(ga, gb, j);
+    cs
+}
+
+/// A row's gradient in each line's direction laid over its eight columns: each line's first
+/// end carries the negation of its second.
+#[inline]
+fn spread(ga: [f64; 2], gb: [f64; 2], j: &mut [f64]) {
+    j[..8].copy_from_slice(&[-ga[0], -ga[1], ga[0], ga[1], -gb[0], -gb[1], gb[0], gb[1]]);
+}
+
+/// `â × b̂ = 0` (`sin2`).
 fn parallel_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 8];
     for i in 0..n {
-        let (d1x, d1y, d2x, d2y) = dirs(&v[8 * i..8 * i + 8]);
-        r[i] = d1x * d2y - d1y * d2x;
+        r[i] = sin2(&v[8 * i..], &mut g);
     }
 }
 
 fn parallel_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
-        let mut tmp = [0.0f64; 8];
-        cross_jac(&v[8 * i..8 * i + 8], &mut tmp);
-        j[8 * i..8 * i + 8].copy_from_slice(&tmp);
+        let o = 8 * i;
+        sin2(&v[o..], &mut j[o..o + 8]);
     }
 }
 
+/// `â · b̂ = 0` (`cos2`).
 fn perpendicular_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
+    let mut g = [0.0; 8];
     for i in 0..n {
-        let (d1x, d1y, d2x, d2y) = dirs(&v[8 * i..8 * i + 8]);
-        r[i] = d1x * d2x + d1y * d2y;
+        r[i] = cos2(&v[8 * i..], &mut g);
     }
 }
 
 fn perpendicular_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
     for i in 0..n {
-        let mut tmp = [0.0f64; 8];
-        dot_jac(&v[8 * i..8 * i + 8], &mut tmp);
-        j[8 * i..8 * i + 8].copy_from_slice(&tmp);
+        let o = 8 * i;
+        cos2(&v[o..], &mut j[o..o + 8]);
     }
 }
 
@@ -994,12 +1013,17 @@ fn tangent_circle_circle_jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
-/// (px,py,cx,cy,ax,ay,bx,by): (p-c)·(b-a)
+/// (px,py,cx,cy,ax,ay,bx,by): `(p − c)·(b − a)/|b − a|`, how far the radius to the contact runs
+/// along the line — a signed distance, degree 1.  **Along the line's unit direction** (#479): the
+/// unnormalised `(p − c)·(b − a)` held for every contact once the line's ends met, so a run
+/// tangent at both ends had a root with both at the crossing of its two rounds; divided by the
+/// line's length it is the radius's own component, nil only where the radius is square to the
+/// line.
 fn tangent_arc_line_res(n: usize, v: &[f64], _k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let o = 8 * i;
-        r[i] = (v[o] - v[o + 2]) * (v[o + 6] - v[o + 4])
-            + (v[o + 1] - v[o + 3]) * (v[o + 7] - v[o + 5]);
+        let (dx, dy) = (v[o + 6] - v[o + 4], v[o + 7] - v[o + 5]);
+        r[i] = ((v[o] - v[o + 2]) * dx + (v[o + 1] - v[o + 3]) * dy) / line_len(dx, dy);
     }
 }
 
@@ -1008,14 +1032,10 @@ fn tangent_arc_line_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
         let o = 8 * i;
         let (ux, uy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
         let (dx, dy) = (v[o + 6] - v[o + 4], v[o + 7] - v[o + 5]);
-        j[o] = dx;
-        j[o + 1] = dy;
-        j[o + 2] = -dx;
-        j[o + 3] = -dy;
-        j[o + 4] = -ux;
-        j[o + 5] = -uy;
-        j[o + 6] = ux;
-        j[o + 7] = uy;
+        let l = line_len(dx, dy);
+        let dc = [dx, dy, -dx, -dy, -ux, -uy, ux, uy];
+        let dl = [0.0, 0.0, 0.0, 0.0, -dx / l, -dy / l, dx / l, dy / l];
+        ratio_jac(&dc, &dl, l, ux * dx + uy * dy, &mut j[o..o + 8]);
     }
 }
 
@@ -3603,8 +3623,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "drag", n_res: 2, n_par: 2, degree: 1, n_const: 3, res: drag_res, jac: drag_jac, const_jac: None, form: None },
     Kernel { name: "horizontal", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: horizontal::res, jac: horizontal::jac, const_jac: Some(horizontal::J), form: AFFINE },
     Kernel { name: "vertical", n_res: 1, n_par: 4, degree: 1, n_const: 0, res: vertical::res, jac: vertical::jac, const_jac: Some(vertical::J), form: AFFINE },
-    Kernel { name: "parallel", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: parallel_res, jac: parallel_jac, const_jac: None, form: Some(Form::Jet(taylor::parallel)) },
-    Kernel { name: "perpendicular", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: perpendicular_res, jac: perpendicular_jac, const_jac: None, form: Some(Form::Jet(taylor::perpendicular)) },
+    Kernel { name: "parallel", n_res: 1, n_par: 8, degree: 0, n_const: 0, res: parallel_res, jac: parallel_jac, const_jac: None, form: Some(Form::Jet(taylor::parallel)) },
+    Kernel { name: "perpendicular", n_res: 1, n_par: 8, degree: 0, n_const: 0, res: perpendicular_res, jac: perpendicular_jac, const_jac: None, form: Some(Form::Jet(taylor::perpendicular)) },
     Kernel { name: "angle", n_res: 1, n_par: 8, degree: 0, n_const: 1, res: angle_res, jac: angle_jac, const_jac: None, form: Some(Form::Jet(taylor::angle)) },
     Kernel { name: "equal_length", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: equal_length_res, jac: equal_length_jac, const_jac: None, form: Some(Form::Jet(taylor::equal_length)) },
     Kernel { name: "point_on_line", n_res: 1, n_par: 6, degree: 2, n_const: 0, res: point_on_line_res, jac: point_on_line_jac, const_jac: None, form: Some(Form::Jet(taylor::point_on_line)) },
@@ -3613,7 +3633,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "equal_radius", n_res: 1, n_par: 2, degree: 1, n_const: 0, res: equal_radius::res, jac: equal_radius::jac, const_jac: Some(equal_radius::J), form: AFFINE },
     Kernel { name: "tangent_line_circle", n_res: 1, n_par: 7, degree: 1, n_const: 1, res: tangent_line_circle_res, jac: tangent_line_circle_jac, const_jac: None, form: Some(Form::Jet(taylor::tangent_line_circle)) },
     Kernel { name: "tangent_circle_circle", n_res: 1, n_par: 6, degree: 2, n_const: 1, res: tangent_circle_circle_res, jac: tangent_circle_circle_jac, const_jac: None, form: Some(Form::Jet(taylor::tangent_circle_circle)) },
-    Kernel { name: "tangent_arc_line", n_res: 1, n_par: 8, degree: 2, n_const: 0, res: tangent_arc_line_res, jac: tangent_arc_line_jac, const_jac: None, form: Some(Form::Jet(taylor::tangent_arc_line)) },
+    Kernel { name: "tangent_arc_line", n_res: 1, n_par: 8, degree: 1, n_const: 0, res: tangent_arc_line_res, jac: tangent_arc_line_jac, const_jac: None, form: Some(Form::Jet(taylor::tangent_arc_line)) },
     Kernel { name: "symmetric", n_res: 2, n_par: 8, degree: 2, n_const: 0, res: symmetric_res, jac: symmetric_jac, const_jac: None, form: Some(Form::Jet(taylor::symmetric)) },
     Kernel { name: "parallel_distance", n_res: 1, n_par: 8, degree: 1, n_const: 1, res: parallel_distance_res, jac: parallel_distance_jac, const_jac: None, form: Some(Form::Jet(taylor::parallel_distance)) },
     Kernel { name: "point_line_distance", n_res: 1, n_par: 6, degree: 1, n_const: 1, res: point_line_distance_res, jac: point_line_distance_jac, const_jac: None, form: Some(Form::Jet(taylor::point_line_distance)) },

@@ -554,7 +554,9 @@ and the hub motor's do; `Frame(layout, dims: …)` takes a layout naming the fro
   zero-length line, a `distance` at a stationary point), and minted points may not pile up or seed
   a self-crossing contour (a collapsed side satisfies every direction constraint).  `scatter` walks
   the bearing a fixed irrational step per minted point in creation order (a chain's traversal
-  order: a simple polygon).
+  order: a simple polygon).  A contour scattered at the size of a unit whose stated sides are
+  thirty no longer collapses one on the way: the direction rows read unit directions (#479,
+  [solver.md](solver.md)).
   "No clause" is the empty `hint_span` (a lifted declaration has `None`), and `commit_seeds` writes
   the solved pose in as the clause.  A component's points take the same clause; `gear.sv` /
   `gear_trace.sv` state theirs (else a flank's first step can reach the mirror branch).

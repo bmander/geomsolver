@@ -1504,7 +1504,7 @@ impl PlanSolver {
         // document solve is (§9.6)
         let bounded = fallback && sk.constraints.iter().any(|c| c.bound.is_some())
             && !crate::solve::bounds_hold(sk);
-        // and one where a tangency's line has no length is no solution (#479)
+        // and one where a line a row reads by its direction has no length is no solution (#479)
         let collapsed = fallback && !crate::solve::collapsed(sk).is_empty();
         // and one turned against an orientation the document states, where the plan's seeds
         // chose the other way (#157)

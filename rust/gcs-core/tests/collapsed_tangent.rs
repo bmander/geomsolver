@@ -1,9 +1,12 @@
 //! **A tangency at a contact is no tangency along a line of no length** (#479): `tangent(at:)`
-//! is the `tangent_arc_line` kernel's `(p − c)·(b − a)`, which holds for every contact once the
-//! line's ends meet.  A run tangent at both its ends, from a point on each of two circles that
-//! cross, then has a root with both its ends at the circles' crossing: isolated, of full rank,
-//! residual nil.  A solve ending there fails (`solve::COLLAPSED`), and the diagnosis names the
-//! tangencies (`Diagnosis::collapsed`); where it reaches the tangent, nothing is changed.
+//! was the `tangent_arc_line` kernel's `(p − c)·(b − a)`, which held for every contact once the
+//! line's ends met.  A run tangent at both its ends, from a point on each of two circles that
+//! cross, then had a root with both its ends at the circles' crossing: isolated, of full rank,
+//! residual nil.  Read along the line's unit, `(p − c)·(b − a)/|b − a|`, a shrinking run is no
+//! nearer a root, and a poor start no longer comes there.  Its ends held together the row still
+//! reads nothing (a line of no length has no direction): a solve ending there fails
+//! (`solve::COLLAPSED`), and the diagnosis names the tangencies (`Diagnosis::collapsed`); where it
+//! reaches the tangent, nothing is changed.
 use gcs_core::decompose::PlanSolver;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::newton::Method;
@@ -30,28 +33,40 @@ fn near(p: (f64, f64), q: (f64, f64)) -> bool {
     (p.0 - q.0).abs() < 1e-4 && (p.1 - q.1).abs() < 1e-4
 }
 
-/// From the poor seeds the solve comes to the crossing, `s = e`: not solved, the two tangencies
-/// named, and never reported solved by the plan solver either.
+/// From the poor seeds the solve is never reported solved anywhere but the tangent: once it came
+/// to the crossing, `s = e`, which failed collapsed; read along the line's unit it stops short of
+/// any root.  Nor is it reported solved by the plan solver.
 #[test]
-fn a_run_collapsed_where_its_circles_cross_is_not_solved() {
+fn a_run_from_a_poor_start_is_solved_only_at_the_tangent() {
     let mut e = read(CROSS);
     let r = solve(&mut e.sketch, SolveOpts::default());
     let [s, t] = ends(&e);
-    let crossing = (21.0 / 8.0, (9.0f64 - (21.0f64 / 8.0).powi(2)).sqrt());
-    if near(s, t) {
-        assert!(near(s, crossing), "{s:?}");
-        assert!(!r.success && r.status == COLLAPSED, "{r:?}");
-        let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
-        assert_eq!(d.collapsed.len(), 2, "{d:?}");
-    } else {
-        // or the true tangent, which is as good an answer
-        assert!(r.success && near(s, (0.75, 2.90474)) && near(t, (4.5, 1.93649)), "{s:?} {t:?}");
+    if r.success {
+        assert!(near(s, (0.75, 2.90474)) && near(t, (4.5, 1.93649)), "{s:?} {t:?}");
     }
     let mut e = read(CROSS);
     let mut ps = PlanSolver::new(&e.sketch, false);
     let r = ps.solve(&mut e.sketch, 1e-9, true, Method::DogLeg);
     let [s, t] = ends(&e);
     assert!(!(r.success && near(s, t)), "{r:?}: {s:?} {t:?}");
+}
+
+/// Held where two circles cross (radius 5 about the origin and about `(6, 0)`, crossing at
+/// `(3, 4)`), the run's ends together: every row holds and the tangencies read nothing, so the
+/// solve fails collapsed and the diagnosis names both.
+#[test]
+fn a_run_held_where_its_circles_cross_is_not_solved() {
+    let held = "unit mm\nuse std\nin std.front {\n  a := point\n  b := point\n  \
+                fix((0, 0)) a\n  fix((6, 0)) b\n  ca := circle(center: a)\n  \
+                cb := circle(center: b)\n  radius(5mm) ca\n  radius(5mm) cb\n  \
+                s := point\n  e := point\n  fix((3, 4)) s\n  fix((3, 4)) e\n  \
+                run := line(s, e)\n  s coincident ca\n  e coincident cb\n  \
+                run tangent(at: p1) ca\n  run tangent(at: p2) cb\n}\n";
+    let mut e = read(held);
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(!r.success && r.status == COLLAPSED, "{r:?}");
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!(d.collapsed.len(), 2, "{d:?}");
 }
 
 /// The controls: from good seeds the true external tangent, as before; with the circles clear
