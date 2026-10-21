@@ -281,6 +281,10 @@ pub fn to_json(sk: &Sketch) -> Json {
             if c.claim {
                 o.set("claim", Json::Bool(true));
             }
+            // the claim block it was written in (#460), likewise only when set
+            if let Some(w) = c.witness {
+                o.set("witness", w.into());
+            }
             // a row of the home alone (#339 D3)
             if c.initially {
                 o.set("initially", Json::Bool(true));
@@ -320,11 +324,19 @@ pub fn to_json(sk: &Sketch) -> Json {
         ("unit", sk.units.stated().map(|n| Json::Str(n.to_string())).unwrap_or(Json::Null)),
     ]);
     let roles = sk.roles.iter().filter(|(e, _)| !e.kind.spatial() && e.kind != EntKind::Curve)
-        .map(|(&e, roles)| object([
-            ("entity", ref_json(e)),
-            ("construction", Json::Bool(roles.construction)),
-            ("centerline", Json::Bool(roles.centerline)),
-        ])).collect::<Vec<_>>();
+        .map(|(&e, roles)| {
+            let mut o = object([
+                ("entity", ref_json(e)),
+                ("construction", Json::Bool(roles.construction)),
+                ("centerline", Json::Bool(roles.centerline)),
+            ]);
+            // a claim's witness (#460) only where there is one, so a document with none dumps
+            // exactly as it always has
+            if let Some(w) = roles.witness {
+                o.set("witness", w.into());
+            }
+            o
+        }).collect::<Vec<_>>();
     if !roles.is_empty() { doc.set("roles", Json::Arr(roles)); }
     // a ring's turned copies, only when there is one (a curve is no JSON entity, so its turn is
     // not either): which copy is which representative turned how far about what
@@ -629,6 +641,10 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         if let Some(a) = c.get("along") {
             nc.along = Some(along_from_json(&sk, &nc, a)?);
         }
+        // a witness's row is a claim's, or nothing: on anything else it would name a block
+        // whose rows the drawing solves (#460)
+        nc.witness = c.get("witness").filter(|_| nc.claim)
+            .map(|v| v.as_i64()).and_then(|w| u32::try_from(w).ok());
         nc.initially = c.get("initially").is_some_and(|v| v.as_bool());
         if let Some(cls) = c.get("class") {
             nc.class = crate::style::Classes(
@@ -693,6 +709,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let roles = crate::semantics::GeometryRoles {
             construction: item.get("construction").is_some_and(Json::as_bool),
             centerline: item.get("centerline").is_some_and(Json::as_bool),
+            witness: item.get("witness").and_then(|w| u32::try_from(w.as_i64()).ok()),
         };
         if roles != Default::default() { sk.roles.insert(e, roles); }
     }

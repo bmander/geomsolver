@@ -37,6 +37,7 @@ mod catenary;
 mod chain;
 mod chain_edges;
 mod claim;
+mod claim_witness;
 mod closed_scopes;
 mod components;
 mod composed_rounds;

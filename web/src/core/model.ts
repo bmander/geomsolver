@@ -968,6 +968,8 @@ export interface ConstraintRecord {
   intrinsic: boolean;
   /** a `claim` (Solvent §9.7): expected to add no rank, judged by the diagnosis, never solved */
   claim: boolean;
+  /** the `claim { … }` block it was written in (Solvent §9.7, #460), where it was one */
+  witness?: number;
   /** attribute → the expression text behind it, for a dimension written as one */
   exprs?: Record<string, string>;
   /** its dimension as the statement wrote it, where a `param` was worked out of it (`w`) */

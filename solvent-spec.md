@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.150 — October 2026**
+**Specification, Draft 0.151 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2464,6 +2464,38 @@ appear in no equation. A claim's dimension may be an expression, but MUST NOT bi
 variable, for the same reason.
 
 `claim` qualifies a single longhand relation statement; it does not enter chains (§6.6).
+
+**Witnesses.** **[0.151]**
+
+```
+claim { <declaration | relation | when-block>* }
+```
+
+Some claims cannot be stated without geometry made for them: that the runs of a belt meet on
+the line of centres needs a point on both runs. Declared as ordinary geometry that point is part
+of the drawing, and where it cannot exist — the runs of equal pulleys are parallel — it makes a
+valid document unsolvable: a construction made only to state a theorem restricts the model.
+
+A `claim` block declares such geometry, its **witnesses**, and states relations of them; it is
+one claim, that witnesses satisfying every relation of the block exist. A witness MUST NOT act:
+the drawing holds it while it solves, and the solution set, the degrees of freedom and every
+diagnostic class of the document are exactly what they would be with the block deleted. After
+the solve, the witnesses are solved by the block's relations with the rest of the drawing held
+at its solution, and the block is judged as one claim, every statement of it under the one
+verdict:
+
+* **violated** — no witness satisfies the block at this solution;
+* **theorem** — one does, and the document implies that one exists: every motion its equations
+  allow is matched by a motion of the witnesses, `rank [J 0; G_p G_w] = rank J + rank G_w` for
+  the document's Jacobian `J` and the block's, `G_p` over the document's unknowns and `G_w` over
+  the witnesses' (with no witness, the test above);
+* **consuming** — one does, but only at this pose.
+
+A block holds declarations, relations of what it declares, and `when` blocks of those (§12.9);
+anything else in it is an error. Its relations are claims, under every rule above. A statement
+outside a block, a claim of another block included, MUST NOT name its witness (**E040**). A
+claim that holds only under a condition on the document's numbers is written inside a `when`
+(§12.9): `when rb != ra { claim { … } }` is not made at all where the condition is false.
 
 ### 9.8 Claims about solids **[0.18]**
 

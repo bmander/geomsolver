@@ -131,6 +131,7 @@ REF union REF | REF cut REF | REF common REF  material added to, removed from, s
 NAME := envelope | meshing | surface(...)                                           (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
+claim { DECL* CONSTRAINT* }             a claim with witnesses of its own              (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
 ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation       (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
@@ -1035,6 +1036,33 @@ Use claims for what a figure was drawn to show (the altitudes concur; the traced
 A claim may not own or read an unknown. `claim over rotor_turn in (0deg, 1080deg) { … }` judges at
 sampled poses of a frame's motion, reading solids placed under it, and reports the worst; over an
 unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value.
+
+**A claim with witnesses of its own.** Some claims need geometry to be stated at all: "the two
+runs of a belt meet on the line of centres" needs a point on both runs. Declared as ordinary
+geometry, that point is part of the drawing — and at equal pulleys, where the runs are parallel,
+it cannot exist, so a valid drive no longer solves. Declare it in the claim's block instead:
+
+```sv
+in std.front {
+  claim {
+    x := point
+    x coincident upper.span
+    x coincident lower.span
+    x coincident centres
+  }
+}
+```
+
+What the block declares is a **witness**: the drawing holds it while it solves, so the drawing
+solves, counts and diagnoses exactly as it would with the block deleted. After the solve the
+witness is solved by the block's relations, the drawing held where it landed, and the block is
+judged as one claim — *theorem* where a witness exists and keeps existing as the drawing moves
+(here, at any pair of unequal radii), *refuted* where none exists (equal radii: the drive still
+solves), *independent* where one exists only at this pose. Every statement of the block carries
+the one verdict. A block declares geometry and states relations of it (a `when` inside is fine);
+nothing outside it may name a witness (E040), and its relations are claims, so none may own an
+unknown. A precondition is a `when` over the drawing's numbers, `when rb != ra { claim { … } }`:
+where it is false the claim is not made at all.
 
 Three claim words apply only to solids: `claim bore inside stock`, `claim disc clear(2mm) cyl`,
 `claim head fits(0.15mm) trap`. The report gives the measurement, and one within the faceting of a

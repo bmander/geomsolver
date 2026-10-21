@@ -128,6 +128,8 @@ pub struct Relation {
     pub form: RelationForm,
     pub place: Option<(f64, f64)>,
     pub claim: bool,
+    /// The `claim { … }` block it was written in (#460) — see `syntax::Relation::witness`.
+    pub witness: Option<syntax::StmtId>,
     pub class: Classes,
     /// The defined word the statement was written with (§9.9) — see `syntax::Relation::word`.
     pub word: Option<syntax::Worded>,
@@ -177,8 +179,8 @@ impl Statement {
             S::Chain(c) => Operation::Chain(c),
             S::Decl(d) => Operation::Decl(Box::new(d.into())),
             S::Relation(r) => Operation::Relation(Relation {
-                form: r.form, place: r.place, claim: r.claim, class: r.class, word: r.word,
-                along: r.along, space: r.space, initially: r.initially,
+                form: r.form, place: r.place, claim: r.claim, witness: r.witness, class: r.class,
+                word: r.word, along: r.along, space: r.space, initially: r.initially,
             }),
             S::Branch(b) => Operation::Branch(b),
             S::Style(s) => Operation::Style(s),

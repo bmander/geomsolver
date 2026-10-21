@@ -114,6 +114,25 @@ what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hu
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.
 
+**`claim { … }`, a claim with witnesses of its own (§9.7, [0.151], #460):** hoisted as an `in` body
+is (`parser::statements::witnessed`), the block minting a statement id of its own; `stamp_witness`
+marks each declaration in it (through a `when`) with the block's id as `GeometryRoles::witness` and
+each relation `claim` with it as `Relation::witness`, and refuses anything else (an instance, a set,
+another block: a syntax error).  A defined word applied there stamps what its body makes a witness
+and every row it states the block's — the `coincident` placing a point it declares included
+(`flatten::apply`).  `ir::Relation::witness` reaches `Constraint::witness`, and the role
+`Sketch::roles`, as the block's index per copy (`Elab::witness_block`, keyed by id and path: a
+word's witness past its applications), and `program::witnessed::hold` holds every number a witness
+owns (`fixed`): no row of the drawing reads one, so the drawing's solve, counts and diagnosis are
+those of the document with the block deleted.  A statement outside the block reading a witness — a
+row, a plain claim, another block's relation — is E040 there; an entity's own intrinsic rows are the
+witness's.  The role prints as no modifier (`Annotations::write`) but is a style selector,
+`.witness`; the flag travels through `graft`, JSON (`"witness"` on the role and the row, written
+only when set) and `to_program`, whose printer writes each block back as `claim { … }` after the
+body, grouped by that index (`print::claim_blocks`), and refuses a block's statement printed alone
+(`write_stmt_to`).  What the diagnosis does with one is solver.md's; `tests/claim_witness.rs` is the
+gate.
+
 **`when COND { … }`, a block made or not (§12.9, 0.72, #210):** `BlockKind::When`, the condition
 in `Block::count` (`head` its span). The flattener decides it over the scope's `vals`
 (`flatten::values::condition`: E101 a name nothing gives a number, E040 one that is or reads an

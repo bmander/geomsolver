@@ -23,6 +23,7 @@ mod generated;
 mod rings;
 mod source_map;
 mod variational;
+mod witnessed;
 mod words;
 mod traced;
 

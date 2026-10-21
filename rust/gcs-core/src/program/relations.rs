@@ -286,6 +286,8 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
         return None;
     }
     let initially = r.initially;
+    // the claim block it was written in, one claim per block and copy (#460)
+    let witness = r.witness.map(|k| cx.witness_block(k, &st.path));
     // what the relation is, by what its operands resolve to (`shape`)
     let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
     if face_or_ends(cx, r, st, &shape) {
@@ -420,6 +422,7 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     }
     let mut c = Constraint::new(ckind, args);
     c.claim = r.claim;
+    c.witness = witness;
     c.initially = initially;
     // an interval runs upward from its low end, the number as settled
     if let (Some((b, at)), Some(i)) = (bound, ckind.dimension_slot()) {

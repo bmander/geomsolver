@@ -68,26 +68,31 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     }
     for comp in p.components.iter_mut().filter(|c| c.module.is_none()) {
         let lo = out.len();
+        // a claim's statements are written in its block, after the rest (#460): the body is a
+        // set, so the order printed is the order kept
+        let blocks = claim_blocks(&mut comp.body);
+        let loose = comp.body.len() - blocks.iter().sum::<usize>();
         // Separate declarations from the relations that follow them.
         let mut said_decl = false;
-        for st in &mut comp.body {
+        for st in &mut comp.body[..loose] {
             let is_decl = matches!(st.kind, StmtKind::Decl(_));
             if said_decl && !is_decl {
                 out.push('\n');
             }
             said_decl = is_decl;
-            let start = out.len();
-            // a block's plane is said on each statement it gave one: the flat form has no blocks
-            match &st.kind {
-                StmtKind::Decl(d) if d.membership.plane().is_some() && d.membership.written().is_none() => {
-                    write_decl(&mut out, d);
-                    out.push_str(" in ");
-                    write_ref(&mut out, d.membership.plane().expect("just asked"));
-                }
-                k => write_stmt(&mut out, k),
-            }
-            st.span = Span::new(start, out.len());
+            write_flat(&mut out, st);
             out.push('\n');
+        }
+        let mut at = loose;
+        for n in blocks {
+            out.push_str("claim {\n");
+            for st in &mut comp.body[at..at + n] {
+                out.push_str("  ");
+                write_flat(&mut out, st);
+                out.push('\n');
+            }
+            out.push_str("}\n");
+            at += n;
         }
         comp.span = Span::new(lo, out.len());
     }
@@ -99,9 +104,53 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     Ok(&p.text)
 }
 
+/// One statement of the flat form, its span set to where it was written.
+fn write_flat(out: &mut String, st: &mut super::Stmt) {
+    let start = out.len();
+    // a block's plane is said on each statement it gave one: the flat form has no blocks
+    match &st.kind {
+        StmtKind::Decl(d) if d.membership.plane().is_some() && d.membership.written().is_none() => {
+            write_decl(out, d);
+            out.push_str(" in ");
+            write_ref(out, d.membership.plane().expect("just asked"));
+        }
+        k => write_stmt(out, k),
+    }
+    st.span = Span::new(start, out.len());
+}
+
+/// The `claim { … }` block a statement stands in (#460): a witness by its role, a relation by
+/// its own mark — the same index either way, once the sketch is lifted.
+fn in_claim(k: &StmtKind) -> Option<u32> {
+    match k {
+        StmtKind::Decl(d) => d.annotations.roles.witness,
+        StmtKind::Relation(r) => r.witness.map(|w| w.0),
+        _ => None,
+    }
+}
+
+/// Put a body's `claim { … }` blocks last (#460), each its witnesses then its relations, and
+/// say how many statements each holds.  The sort is stable, so everything else keeps its order.
+fn claim_blocks(body: &mut [super::Stmt]) -> Vec<usize> {
+    body.sort_by_key(|st| in_claim(&st.kind).map(|w| (w, !matches!(st.kind, StmtKind::Decl(_)))));
+    let mut counts: Vec<(u32, usize)> = Vec::new();
+    for w in body.iter().filter_map(|st| in_claim(&st.kind)) {
+        match counts.last_mut() {
+            Some((at, n)) if *at == w => *n += 1,
+            _ => counts.push((w, 1)),
+        }
+    }
+    counts.into_iter().map(|(_, n)| n).collect()
+}
+
 /// Append a supported declaration or statement fragment atomically.
 pub fn write_stmt_to(out: &mut String, k: &StmtKind) -> Result<(), PrintError> {
     printable(k)?;
+    // a claim's witness and what it claims of one stand in the claim's block (#460): printed
+    // alone it would be written loose, where it restricts the drawing
+    if in_claim(k).is_some() {
+        return Err(PrintError { construct: "claim blocks" });
+    }
     write_stmt(out, k);
     Ok(())
 }
@@ -808,7 +857,8 @@ fn write_relation(out: &mut String, r: &Relation) {
         out.push_str(" }");
         return;
     }
-    if r.claim {
+    // in its block (#460) a claim's relation is the block's, and says no `claim` of its own
+    if r.claim && r.witness.is_none() {
         out.push_str("claim ");
     }
     if let Some(n) = &r.name {

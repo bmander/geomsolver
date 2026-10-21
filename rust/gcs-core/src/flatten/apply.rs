@@ -175,6 +175,8 @@ impl<'a> Walk<'a> {
         }).collect();
         let stamp = Worded { ops, ..worded };
         let Application { mut scope, from, set, .. } = app;
+        // what a word's body makes in a claim's block is the claim's witness (#460)
+        scope.stamps.roles.witness = scope.stamps.roles.witness.or(u.rel.witness.map(|w| w.0));
         dims_at(&mut body, dims, u.at);
         let mut path = u.path.to_vec();
         path.push(PathStep::Instance(u.st.id));
@@ -249,7 +251,10 @@ impl<'a> Walk<'a> {
             r.word = Some(Worded { through: through_all(inner), ..stamp.clone() });
             // in space, a set's body (§6.21), which no later stamp undoes
             r.space |= set;
-            r.claim |= u.rel.claim && !places(r);
+            // — but in a claim's block (#460), where what the body makes is a witness and the
+            // `coincident` placing it is the claim's like every other row
+            r.claim |= u.rel.claim && (u.rel.witness.is_some() || !places(r));
+            r.witness = r.witness.or(u.rel.witness);
             r.initially |= u.rel.initially;
             if placed == Some(i) {
                 r.place = u.rel.place;

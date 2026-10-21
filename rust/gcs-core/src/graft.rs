@@ -800,6 +800,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             // `add_quiet`: the walk evaluates once at the end, not once per constraint
             let mut nc = Constraint::new(c.kind, args);
             nc.claim = c.claim;
+            nc.witness = c.witness;
             nc.bound = c.bound;
             nc.initially = c.initially;
             nc.class = c.class.clone();
