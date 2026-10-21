@@ -237,6 +237,10 @@ rules are judged over the compiled structure of those rows (`System::structure`,
 
 Each fault is said once a definition (`said`), against the first instance it is found in.  The
 structure only, so it is deterministic and decided before the solve; nothing changes a row.
+**PT5 is advice** (`parts::roots`, **W207**): `solventc --lint` asks, of the solved sketch, the
+classifier's root search for each part's first instance (`boundary::classify`), and names a part
+classed *locally determined, branch not chosen* — its scattered starts came to another pose its
+stated `ccw`/`cw` admit.  Not in `DRIFT`, which reads text alone; `parts::roots` is its gate's.
 **The diagnosis is read through the parts** (#461 D1–D3, the diagnostic half of #455, from the flat
 solve): `parts::read` takes the solved sketch and its `Diagnosis`, and `solventc` prints
 `parts::text` after the diagnosis's own lines (and `--json` writes `"parts"` where the document

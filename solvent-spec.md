@@ -2320,7 +2320,7 @@ Its **rows** are those its body states, nested instances' included. A claim, a c
 - **Its own rows place what it makes.** A maximum matching of its rows on its own unknowns MUST cover every unknown. One left over is **E108** at the definition, naming what it moves. A parent's statement over a part's outputs is a row of the parent, so it never completes the part from outside. A freedom a part leaves is a formal instead, which the parent binds or leaves unknown.
 - **It states nothing about its operands alone.** A row reading none of its own unknowns, or one past what they take (the matching's over-determined rows), is **E109** at the row. Such a fact belongs where the operands are given, or in a relation word (§9.9).
 
-A root among several is chosen by a stated orientation (§9.6) or a bound, never by a seed alone. Neither rule reads the numbers: a part singular at its inputs is the diagnosis's to report, on the solved pose. Each fault is said once for its definition. *Non-normative:* a part is what a solve through boundaries would treat as a child (`docs/parts-plan.md`); the reference implementation solves it flat.
+A root among several is chosen by a stated orientation (§9.6) or a bound, never by a seed alone; *non-normative:* the reference implementation's lint (**W207**, advice) names a part whose rows it finds another pose for that its stated choices admit. Neither rule reads the numbers: a part singular at its inputs is the diagnosis's to report, on the solved pose. Each fault is said once for its definition. *Non-normative:* a part is what a solve through boundaries would treat as a child (`docs/parts-plan.md`); the reference implementation solves it flat.
 
 ## 9. Constraints
 

@@ -40,7 +40,8 @@ solventc — check a Solvent document
     --no-diagnose       solve only; skip the diagnosis
     --lint              also say where the document's own text drifts from the language's style
                         (W201-W206: a pun, a bare component statement, an asserting component, a
-                        deep path, a presentation flag, a group threaded unread); advisory, so
+                        deep path, a presentation flag, a group threaded unread), and (W207) a
+                        part whose root its seeds choose, read at the solved pose; advisory, so
                         never a failure
     --allow-unsolved    a document that does not solve is not a failure
     --progress          say each stage on stderr as it is done: the solve, each solid built and
@@ -445,6 +446,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     }
     let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
     e.diags.extend(invalid);
+    // a part that leaves its root to its seeds, read at the solved pose (#461 PT5)
+    if opts.lint && !failed {
+        let roots = gcs_core::parts::roots(&e, &sk);
+        if !opts.json {
+            for d in &roots { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
+        }
+        e.diags.extend(roots);
+    }
     if failed {
         return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null, Json::Null)));
     }

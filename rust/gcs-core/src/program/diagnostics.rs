@@ -127,6 +127,10 @@ pub enum Code {
     W205,
     /// a `group` formal handed on whole and never read through
     W206,
+    /// a part whose rows have another pose its stated root choices admit: which it takes is the
+    /// seeds' choice (#461 PT5).  Asked by `solventc --lint` of the solved drawing, never raised
+    /// by elaboration
+    W207,
 }
 
 impl Code {
@@ -176,13 +180,15 @@ impl Code {
             Code::W204 => "W204",
             Code::W205 => "W205",
             Code::W206 => "W206",
+            Code::W207 => "W207",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
             Code::W110 | Code::W112 | Code::W113 | Code::W114 | Code::W115 | Code::W201
-            | Code::W202 | Code::W203 | Code::W204 | Code::W205 | Code::W206 => Severity::Warning,
+            | Code::W202 | Code::W203 | Code::W204 | Code::W205 | Code::W206
+            | Code::W207 => Severity::Warning,
             _ => Severity::Error,
         }
     }

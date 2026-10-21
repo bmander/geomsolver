@@ -28,6 +28,10 @@
 //!   part's rows unmet, the innermost such part is named with its inputs where they stood.
 //! * **D3, a part singular at its inputs.**  Its rows place every unknown it makes structurally
 //!   (PT2), and at the solved pose they may still not: that is said, with the rank.
+//!
+//! **PT5, its root is stated** (`roots`, asked by `solventc --lint`): a part whose rows, from
+//! scattered starts, come to another pose its stated `ccw`/`cw` admit leaves which it takes to
+//! its seeds — **W207**, advisory, since a root not found is not shown absent.
 
 use crate::boundary::{columns, reduced, split, World};
 use crate::constraints::{Constraint, SpecKind};
@@ -344,4 +348,31 @@ pub fn json(r: &Reading) -> Json {
         ("unmet", lines(&r.unmet)),
         ("singular", lines(&r.singular)),
     ])
+}
+
+/// **PT5: which root a part takes is stated** (W207, advisory): each part the document draws,
+/// read through its first instance by the classifier's root search (`boundary::classify`), whose
+/// scattered starts found another pose its stated choices admit.  Read at the solved pose, so
+/// asked of a solved sketch, and only by `--lint`: a search is a heuristic and costs probe solves.
+pub fn roots(e: &Elaborated, solved: &Sketch) -> Vec<Diag> {
+    let prog = &e.program;
+    if !prog.components.iter().any(|c| c.part) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for c in crate::boundary::classify(e, solved) {
+        let comp = &prog.components[c.comp];
+        if !comp.part || c.class != crate::boundary::Class::LocallyDetermined {
+            continue;
+        }
+        let Some(a) = &c.analysis else { continue };
+        let Some(r) = &a.roots else { continue };
+        let at = comp.name.as_ref().map(|n| n.span).unwrap_or(comp.span);
+        out.push(Diag::new(Code::W207, at, None, format!(
+            "part `{}` leaves which root it takes to its seeds: from {} scattered starts its rows \
+             came to {} poses its stated choices admit (in `{}`) — state the one it means, with \
+             `ccw`/`cw` or a bound", c.name, r.starts, r.admitted, a.instance)));
+    }
+    crate::modules::localize(prog, &mut out);
+    out
 }

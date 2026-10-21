@@ -20,7 +20,7 @@ is left to the lint.
 | 0 | #492: in progress separately (the yardstick a far point stretches) | — | — |
 | 1 | `in pin.plane { … }` (PV2) | 0.158 | `tests/relation_words.rs` |
 | 2 | constants of the definition (PC1–PC2) | 0.159 | `tests/closed_scopes.rs`, `tests/modules.rs` |
-| 3 | `part`, E108 and E109 (PT1–PT4) | 0.161 | `tests/parts.rs` |
+| 3 | `part`, E108 and E109 (PT1–PT4); W207 by `--lint` (PT5) | 0.161 | `tests/parts.rs` |
 | 4 | diagnosis through parts (D1–D3), `solventc` and `--json`'s `"parts"` | — | `tests/parts.rs` |
 | 5 | the engine as parts; `style SELECTOR in VIEW` in a drawing | — | `tests/examples_sv.rs`, `tests/drawing.rs` |
 
@@ -45,10 +45,13 @@ What the work found:
 * **Cost.** Checking 225 part instances adds about a quarter to the engine's elaboration, the
   structure compiled once for the document and read per part.
 
-Not done: PT5's lint (a part whose probes find a second root its stated choices admit) is not
-built, and several engine parts still leave their root to their seeds (`ConRod`'s small end above
-or below its pin, for one); a `ccw` would choose it, now that #157 holds one. The V-twin and the
-hub motor still thread their tables.
+PT5's advice is built: `solventc --lint` names a part whose rows, from scattered starts, come to
+another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts draw
+it (`ConRod`'s small end above or below its pin, for one); stating each root is follow-up work,
+now that #157 holds a stated `ccw`. The V-twin and the hub motor still thread their tables, each
+its own issue (§9).
+
+Verified: the workspace suite (core 2,675 passed, 0 failed) and the web suite (318 passed).
 
 ## Summary
 

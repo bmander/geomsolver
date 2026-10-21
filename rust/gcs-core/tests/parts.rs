@@ -341,3 +341,43 @@ x := Apex(o, q)
     assert!(one.singular[0].contains("its rows place 1 of its 2 own unknowns"), "{}", one.singular[0]);
     assert!(reading(&apex("(6, 0)")).singular.is_empty());
 }
+
+/// **PT5, which root a part takes is stated** (W207, by `--lint`): a point 5 from two points 6
+/// apart has two poses; the part that leaves the choice to its seed is named, and the one that
+/// states it with `ccw` is not.
+#[test]
+fn a_part_that_leaves_its_root_to_its_seeds_is_named() {
+    let e = read("\
+unit mm
+use std
+part Apex(a: point, b: point) {
+  in a.plane {
+    m := point hint((3, 4))
+    m distance(5mm) a
+    m distance(5mm) b
+  }
+}
+part Chosen(a: point, b: point) {
+  in a.plane {
+    m := point hint((3, 4))
+    m distance(5mm) a
+    m distance(5mm) b
+    ccw(a, b, m)
+  }
+}
+in std.front {
+  o := point
+  fix((0, 0)) o
+  q := point
+  fix((6, 0)) q
+}
+x := Apex(o, q)
+y := Chosen(o, q)
+");
+    let mut sk = e.sketch.clone();
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let said: Vec<(String, String)> = gcs_core::parts::roots(&e, &sk).iter()
+        .map(|d| (d.code.as_str().to_string(), d.span.slice(e.text()).to_string()))
+        .collect();
+    assert_eq!(said, [("W207".to_string(), "Apex".to_string())]);
+}
