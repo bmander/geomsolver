@@ -2,8 +2,8 @@
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
 `model/scenario.rs`, `syntax/scenario.rs`, `syntax/parser/scenario.rs`, `program/scenarios.rs`, or
-write a `scenario`. The program these rules are built to is issue #510 (P1–P8, S0–S4); a tag (P4,
-S0, …) is its name there. The gate is `rust/gcs-core/tests/scenarios.rs` unless a rule names
+write a `scenario`. The program these rules are built to is issue #510 (P1–P8, S0–S4); a tag
+(P4, S0, …) is its name there. The gate is `rust/gcs-core/tests/scenarios.rs` unless a rule names
 another.
 
 **A scenario, parsed (P4, §9.11 [0.164]).** `scenario NAME [: BASE] { … }` is
@@ -42,6 +42,7 @@ requirement, so a later report says it where it is written and survives `retext`
 the sketch, its JSON and its solve are the document's with every scenario deleted
 (`a_scenario_adds_nothing_to_the_drawing`). A requirement's grade
 (`Requirement::grade` over its `expr::Cmp`: `Claim`, `Driving`, `Bound`) is recorded, not acted
-on, but the rule S1–S3 hold is kept now: one scenario's requirements drive dimensions, a driving row in a second **E106** until S4's optimiser. An edit
+on, but the rule S1–S3 hold is kept now: one scenario's requirements drive dimensions, a driving
+row in a second **E106** until S4's optimiser. An edit
 removing what a scenario names never takes the scenario with it (`edit::remove::mentions`): the
 name left dangling is said (**E101**).
