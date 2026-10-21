@@ -81,7 +81,7 @@ impl Law {
     }
 
     /// Its tape, its numbers and the roll's slot, borrowed: what a profile's encoding carries.
-    pub(crate) fn drive(&self) -> crate::generate::Drive<'_> {
+    pub fn drive(&self) -> crate::generate::Drive<'_> {
         crate::generate::Drive { flat: &self.flat, x: &self.x, at: self.at }
     }
 
