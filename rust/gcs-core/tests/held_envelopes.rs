@@ -497,9 +497,9 @@ fn the_face_mills_lean_solves_from_the_pressure_angle_at_the_mean_point() {
 }
 
 /// What touches an envelope may be written first; a relation at a point no contact holds on it is
-/// refused naming the contact it wants; a set the solve cannot read as a cone or a cylinder is
-/// refused where it is applied, and a contact with an envelope whose motion turns about a point of
-/// a view says why it cannot hold to it.
+/// refused naming the contact it wants, and a set the solve cannot read as a cone or a cylinder
+/// is refused where it is applied; an envelope whose motion turns about a point of a view is held
+/// as under the turn about the line through it square to the view (#398 G).
 #[test]
 fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
     let src = format!("{ANNULUS}r := point hint((0, 35, 0))\nr coincident flank\nalong tangent(at: r) flank\n\
@@ -525,7 +525,11 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
     let planar = ANNULUS.replace("std.Turn(turn, about: ax, ratio: 1)",
         "in std.top {\n  tc := point hint((0, 0))\n}\nfix((0, 0)) tc\n\
          std.Spin(turn, about: tc, on: std.top, ratio: 1)");
-    refused(&planar, "turns about a point of a view");
+    let (lined, viewed) = (elaborated(ANNULUS), elaborated(&planar));
+    for n in ["p", "m", "w", "kc"] {
+        let (a, b) = (crate::common::at(&lined, n), crate::common::at(&viewed, n));
+        assert!(norm(sub(a, b)) < 1e-9, "`{n}` stands at {b:?} under the spin, {a:?} under the turn");
+    }
 }
 
 /// `ANNULUS`'s cylinder with its axis placed by relations alone, each end a point at a stated

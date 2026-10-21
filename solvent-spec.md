@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.157 — October 2026**
+**Specification, Draft 0.158 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1542,9 +1542,11 @@ joint stands at the law's value of `τ`, seen from another frame as any carried 
 of it reads the law's rate: the law is a constant of the relation, read over the numbers it names
 where they are stated, so a law naming a number the drawing does not state (an unknown) is
 **E080**. A roll the relation owns may be left to the solve, which finds the instant a condition
-holds through the law (through 0.155 such a point, and its rate, was **E080**). A relation held to
-an envelope in space generated under a drive is **E061**, and a meshing read on one is refused
-likewise; draw in the frame instead. **[0.155]** A profile in the plane
+holds through the law (through 0.155 such a point, and its rate, was **E080**). **[0.158]** An
+envelope in space generated under a drive (§6.15) is held to as any envelope in space, the joint
+standing at the law's value of the roll where the source touches its envelope; the law reads the
+numbers it names where they are stated, as a carried point's (through 0.157, **E061**). A meshing
+read on a drive is **E061**; draw in the frame instead. **[0.155]** A profile in the plane
 generated under it (§6.15.1) is a curve as any other, its joint standing at the law's value of the
 roll: the law is a constant of the curve, read over the numbers it names where they are stated,
 and a relation holds to the profile as to one cut at a constant rate (through 0.154, **E080**). At
@@ -1727,7 +1729,9 @@ a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated), a
 (`std.Cylinder`) or a plane (`std.HalfSpace`'s face, a distance along a line from a point,
 **[0.104]**), the operand of `envelope` read as what its body states at its point (§6.21) —
 or a **named side of a revolution** turned from a line, an arc or a circle (`surface(rev, e)`),
-under a motion built of turns about lines, screws and slides along lines, seen from any frame. Its
+under a motion built of turns about lines (a turn about a point of a view is the turn about the
+line through it square to the view, **[0.158]**), screws and slides along lines, a joint among them
+driven by a law of the roll or not (§6.14), seen from any frame. Its
 numbers — the source's axis and edge, a cone's half or a cylinder's radius where that is an
 unknown of the drawing (`half: hint(20deg)`), and every axis the motion turns about or slides
 along — are columns of every relation holding something to it, so what makes the source solves

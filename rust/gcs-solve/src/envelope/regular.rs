@@ -142,14 +142,14 @@ impl Term {
 
 /// A problem read back off its constants (the margin, `k[0]`, is the residual's alone).
 #[derive(Clone, Debug)]
-pub struct Problem {
+pub struct Problem<'a> {
     pub roll: [f64; 2],
-    pub layout: Layout,
+    pub layout: Layout<'a>,
     pub terms: Vec<Term>,
 }
 
-impl Problem {
-    pub fn read(k: &[f64]) -> Option<Problem> {
+impl Problem<'_> {
+    pub fn read(k: &[f64]) -> Option<Problem<'_>> {
         let n = *k.get(3)? as usize;
         let layout = Layout::read(k.get(HEADER..HEADER + n)?)?;
         if layout.lead != 0 {
@@ -336,7 +336,7 @@ pub struct Worst {
 
 /// One question: the problem and the columns, a place read over plain numbers.
 struct Ask<'a> {
-    p: &'a Problem,
+    p: &'a Problem<'a>,
     cols: Vec<f64>,
     /// The figure's size: the largest column, or one.
     size: f64,

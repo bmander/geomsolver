@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.158] An envelope in space generated under a drive, held.** A relation holds to an envelope
+in space (§6.15) generated under a driven frame (§6.14, [0.143]) as to one generated at a constant
+rate, the joint standing at the law's value of the roll: with `tube := envelope(skin over t, under:
+follower, seen_from: cam)`, `P coincident tube` holds `P` on the tube the follower's ball sweeps as
+the cam sees it, and the ball's radius solves through it; its normal, a plane or a line touching it
+and its curvature at `P` read the same law. The law is a constant of the relation, read in Taylor
+arithmetic, so the rows and their Jacobian are exact through it. A turn about a point of a view
+(`std.Spin(cam, about: std.origin, on: std.front)`) is read in such a motion as the turn about the
+line through the point square to the view, as a carried point reads it. Through 0.157 such a
+relation was **E061** ("a relation held to what is generated under it reads no drive", and a spin
+in a view "an envelope in space is generated under turns about lines"); a meshing on a drive still
+is. No document changes. (Issue #398 G.)
+
 **[0.157] One copy of a pattern, by its index.** An operand the document wrote in a `repeat`'s or
 a `ring`'s body is a step of its body's faces' names with its copy's index, as a reference to the
 copy is written (§6.21): the hole the second drill of `repeat 3 { … drill := solid(face(hole),
