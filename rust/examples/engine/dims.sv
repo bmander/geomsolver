@@ -1,9 +1,9 @@
-// The engine's dimension table, passed to components as `engine_dims`.
+// The engine's dimension table.
 //
 // An inline four: 80 bore, 90 stroke, 150 rod, cylinders on a 90 pitch, a pent-roof head with two
 // overhead cams driven by a belt at half speed.  Each number is stated here once, with its unit,
-// and `use engine.dims` exports it to root code, which supplies it explicitly to each part
-// and view. Components read the values through their `dims` argument.
+// and is a constant of every definition whose file `use`s it: a part names the ones it reads,
+// `use engine.dims (D, L)`, and reads them bare, with nothing passed at a call.
 
 D := 80mm          // bore
 R := 45mm          // crank throw: the stroke is 2R
@@ -92,19 +92,3 @@ camh := deck + (D / 2 - vs) * tan(va) + (stem + rb) * cos(va) // cam centre abov
 // the timing drive: the cam pulleys are twice the crank's, since a cam turns at half speed
 rcp := 30mm
 rcam := 2 * rcp
-
-// Explicit design inputs shared by the components.
-engine_dims := {
-  D: D, L: L, P: P, R: R, back: back,
-  bulk: bulk, camcap: camcap, camh: camh, camx: camx, capd: capd,
-  ch: ch, cycle: cycle, deck: deck, dev: dev, div: div,
-  dn_e: dn_e, dn_i: dn_i, ecenter: ecenter, edur: edur, evc: evc,
-  evo: evo, front: front, gasket: gasket, head: head, hw: hw,
-  icenter: icenter, idur: idur, ivc: ivc, ivo: ivo, kw: kw,
-  lift_e: lift_e, lift_i: lift_i, ph: ph, pinlen: pinlen, rail: rail,
-  rb: rb, rbig: rbig, rcam: rcam, rcamj: rcamj, rcp: rcp,
-  rflange: rflange, rfw: rfw, rj: rj, rmb: rmb, rn: rn,
-  roof: roof, rp: rp, rpin: rpin, rseal: rseal, rsmall: rsmall,
-  stem: stem, sump: sump, theta: theta, va: va, vs: vs,
-  wall: wall, wcamb: wcamb, wflange: wflange, wfw: wfw, wmb: wmb
-}

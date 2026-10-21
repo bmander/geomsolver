@@ -17,8 +17,8 @@ use gcs_core::solve::{solve, SolveOpts, SolveResult};
 use crate::common::{at, read};
 
 /// The belt: two runs tangent to both circles, `upper` and `lower`, with `rb` the second radius;
-/// `meet` the point stated on both runs and claimed on the line of centres.
-fn belt(rb: f64, meet: bool) -> String {
+/// `meet` the point stated on both runs and claimed on the line of centres, seeded at that `x`.
+pub(crate) fn belt(rb: f64, meet: Option<f64>) -> String {
     let mut src = format!(
         "unit mm\nuse std\n\
          component Run(view: plane, a: circle, b: circle, up: Scalar) {{\n\
@@ -41,15 +41,15 @@ fn belt(rb: f64, meet: bool) -> String {
          upper := Run(std.front, ca, cb, up: 1)\n\
          lower := Run(std.front, ca, cb, up: -1)\n"
     );
-    if meet {
-        src.push_str(
-            "in std.front {\n\
-               x := point hint((-96, 0))\n\
+    if let Some(seed) = meet {
+        src.push_str(&format!(
+            "in std.front {{\n\
+               x := point hint(({seed}, 0))\n\
                x coincident upper.span\n\
                x coincident lower.span\n\
                claim x coincident centres\n\
-             }\n",
-        );
+             }}\n",
+        ));
     }
     src
 }
@@ -66,7 +66,7 @@ fn claimed(e: &Elaborated) -> u32 {
 
 #[test]
 fn parallel_tangents_held_to_meet_do_not_solve_and_judge_no_claim() {
-    let (mut e, r) = solved(&belt(20.0, true));
+    let (mut e, r) = solved(&belt(20.0, Some(-96.0)));
     assert!(!r.settled(), "no point is on two parallel lines: {r:?}");
     assert_ne!(r.outcome(), "solved", "{r:?}");
     let d = diagnose(&mut e.sketch, DiagnoseOptions { settled: r.settled(), ..Default::default() });
@@ -89,7 +89,7 @@ fn parallel_tangents_held_to_meet_do_not_solve_and_judge_no_claim() {
 /// similitude, `−r_a·|ab|/(r_b − r_a)` = −96 from `a`, and the claim is a theorem.
 #[test]
 fn unequal_circles_tangents_meet_where_they_did() {
-    let (mut e, r) = solved(&belt(45.0, true));
+    let (mut e, r) = solved(&belt(45.0, Some(-96.0)));
     assert!(r.settled() && r.outcome() == "solved", "{r:?}");
     let x = at(&e, "x");
     assert!((x[0] + 96.0).abs() < 1e-9 && x[1].abs() < 1e-9 && x[2].abs() < 1e-9, "{x:?}");
@@ -102,7 +102,7 @@ fn unequal_circles_tangents_meet_where_they_did() {
 /// front view's up is the world's z).
 #[test]
 fn equal_circles_belt_alone_solves_where_it_did() {
-    let (e, r) = solved(&belt(20.0, false));
+    let (e, r) = solved(&belt(20.0, None));
     assert!(r.settled(), "{r:?}");
     for (run, up) in [("upper", 1.0), ("lower", -1.0)] {
         let (s, t) = (at(&e, &format!("{run}.s")), at(&e, &format!("{run}.e")));
@@ -116,7 +116,7 @@ fn equal_circles_belt_alone_solves_where_it_did() {
 /// verdict rests on the solve, which the caller holds and the pose does not.
 #[test]
 fn a_pose_no_solve_settled_at_is_judged_for_nothing() {
-    let (mut e, r) = solved(&belt(45.0, true));
+    let (mut e, r) = solved(&belt(45.0, Some(-96.0)));
     assert!(r.settled());
     let d = diagnose(&mut e.sketch, DiagnoseOptions { settled: false, ..Default::default() });
     assert!(d.claims_theorem.is_empty() && d.claims_violated.is_empty());

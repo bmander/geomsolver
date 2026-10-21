@@ -26,7 +26,14 @@ pub fn parse(text: &str) -> Result<Document> {
                 doc.models.push(ModelImport { name, path, at, span });
             }
             "use" => doc.imports.push(p.string()?),
-            "style" => doc.styles.push(p.rule(span)?),
+            "style" => {
+                let rule = p.rule(span)?;
+                if rule.view.is_some() {
+                    return Err(Error { span, message: "a style for one view stands in that \
+                        view's sheet: `sheet NAME { … style SELECTOR in VIEW { … } }`".into() });
+                }
+                doc.styles.push(rule)
+            }
             "sheet" => {
                 let sheet = p.sheet(span)?;
                 if doc.sheets.iter().any(|s| s.name == sheet.name) {
@@ -185,10 +192,19 @@ impl P {
             };
             v.measurements.push(m);
         }
+        // a style for one view names one of this sheet's (#461)
+        for r in &s.styles {
+            if let Some(view) = r.view.as_ref().filter(|w| !s.views.iter().any(|v| &v.name == *w)) {
+                return Err(Error { span: r.span, message: format!("no view named `{view}`") });
+            }
+        }
         Ok(s)
     }
     fn rule(&mut self, span: Span) -> Result<Rule> {
         let selector = self.word()?;
+        // `in VIEW`: the rule styles that view of its sheet alone, as `dimensions in VIEW` asks
+        // for one view's dimensions
+        let view = if self.eat("in") { Some(self.name()?) } else { None };
         self.want("{")?;
         let mut style = Style::default();
         while !self.eat("}") {
@@ -213,7 +229,7 @@ impl P {
             if !style.set(&prop, &vals, &text) { return self.fail(&format!("invalid `{prop}`")) }
             if !self.peek("}") { self.want(";")?; }
         }
-        Ok(Rule { selector, style, span })
+        Ok(Rule { selector, view, style, span })
     }
 }
 

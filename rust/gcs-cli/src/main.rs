@@ -40,7 +40,8 @@ solventc — check a Solvent document
     --no-diagnose       solve only; skip the diagnosis
     --lint              also say where the document's own text drifts from the language's style
                         (W201-W206: a pun, a bare component statement, an asserting component, a
-                        deep path, a presentation flag, a group threaded unread); advisory, so
+                        deep path, a presentation flag, a group threaded unread), and (W207) a
+                        part whose root its seeds choose, read at the solved pose; advisory, so
                         never a failure
     --allow-unsolved    a document that does not solve is not a failure
     --progress          say each stage on stderr as it is done: the solve, each solid built and
@@ -439,11 +440,15 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let r = progress::during(solving, || solve(&mut sk, SolveOpts::default()));
     // a solve that stopped on its iteration limit is no answer, whatever its residual (#449)
     let solved = r.settled();
-    let invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
+    let mut invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
+    let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
+    // a part that leaves its root to its seeds, read at the solved pose (#461 PT5)
+    if opts.lint && !failed {
+        invalid.extend(gcs_core::parts::roots(&e, &sk));
+    }
     if !opts.json {
         for d in &invalid { say(s, d.span.lo, severity(d.severity()), d.code.as_str(), &d.message); }
     }
-    let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
     e.diags.extend(invalid);
     if failed {
         return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null, Json::Null)));
@@ -479,7 +484,18 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             report_set(&sk, &e.map, "claim refuted", &d.claims_violated);
             report_set(&sk, &e.map, "claim independent", &d.claims_consuming);
             report_set(&sk, &e.map, "bound broken", &d.bounds_violated);
+            // each orientation the document states that the solution breaks (#157)
+            for k in &d.orientations_violated {
+                let name = |r| e.map.name_of(r).cloned();
+                if let Some(text) = gcs_core::report::orientation_text(&sk, k, &name) {
+                    println!("  orientation broken: {text}");
+                }
+            }
             report_set(&sk, &e.map, "degenerate", &d.collapsed);
+            // what it says of the document's parts, in their terms (#461 D1–D3)
+            for line in gcs_core::parts::text(&gcs_core::parts::read(&e, &sk, d, solved)) {
+                println!("  {line}");
+            }
             // what each energy came to, in its statement's words (#121)
             for &(id, v) in &d.extrema {
                 if let Some(c) = sk.constraint(id) {
@@ -859,7 +875,7 @@ fn doc_json(
             said(x.span.lo, x.code.as_str(), severity(x.severity()), &x.message)
         }))
         .collect();
-    json::object([
+    let mut doc = json::object([
         ("name", Json::Str(s.name.clone())),
         ("diagnostics", Json::Arr(diags)),
         ("solve", r.map(report::solve_result_json).unwrap_or(Json::Null)),
@@ -867,6 +883,14 @@ fn doc_json(
         ("positions", positions),
         ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
         ("components", components),
-    ])
+    ]);
+    // the document's parts, read through the diagnosis (#461), where it has any
+    if let Some((sk, d)) = d {
+        let parts = gcs_core::parts::read(e, sk, d, r.is_some_and(|r| r.settled()));
+        if parts.instances > 0 {
+            doc.set("parts", gcs_core::parts::json(&parts));
+        }
+    }
+    doc
 }
 

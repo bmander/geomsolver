@@ -170,14 +170,18 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
         sheet.insert("construction".into(), Style { display: Some(Display::None), ..Style::default() });
         sheet.insert("plane".into(), Style { display: Some(Display::None), ..Style::default() });
         sheet.insert("_svd_unselected".into(), Style { display: Some(Display::None), ..Style::default() });
-        for r in &rules {
+        // a rule for one view styles that view alone (#461)
+        let here = |r: &Rule| r.view.as_ref().is_none_or(|w| *w == v.name);
+        for r in rules.iter().filter(|r| here(r)) {
             if let Some(class) = r.selector.strip_prefix('.') {
                 sheet.entry(class.into()).or_default().over(&r.style);
             }
         }
         // the whole sheet before any entity is styled by it; a point never carries `_svd…`
         let mut named = Vec::new();
-        for (i, r) in rules.iter().enumerate().filter(|(_, r)| !r.selector.starts_with('.')) {
+        for (i, r) in rules.iter().enumerate().filter(|(_, r)| !r.selector.starts_with('.'))
+            .filter(|(_, r)| here(r))
+        {
             let (owner, selector, _) = split(&r.selector, models, r.span)?;
             if owner != alias { continue }
             let class = format!("_svd{i}");

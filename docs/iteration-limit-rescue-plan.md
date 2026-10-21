@@ -188,7 +188,146 @@ order).
   same change on the other path and was left out of this one.
 - **Status 1 and 2 above the tolerance.** A step or gradient stop at 1e-9 is a stall as surely as
   a limit stop is, but the corpus's own-seed solves end on status 1 eleven times, so treating it
-  as unsettled needs its own byte gate.
+  as unsettled needs its own byte gate.  (#492 found the far-seeded stops it was suspected of were
+  the extent's measure, below; no corpus status-1/2 success is rejected by the rows' own sizes.)
+
+## #492: a pose already far out, judged at its rows' own sizes
+
+#489 kept a recovery only where it settles, which closed #449 for the path it reported: a
+recompile at a runaway's extent.  The same yardstick stretched wherever the pose was *already*
+far out when the system was compiled.  The solve's acceptance, the diagnosis's violated rows, a
+claim's test and a witness block's all measured each row over `extent^degree`, and one point
+seeded far out makes the extent what it likes.  #449's belt (`unsettled::belt`) with `x` seeded
+far out, `solventc --json` before and after (status/iterations; `x`; the claim's verdict):
+
+| r₂ | seed | before | after |
+|---:|---:|---|---|
+| 20 | −96 | did not solve 4/100 | did not solve 4/100 |
+| 20 | −1e5 | stopped at the limit 4/100 | did not solve 4/100 |
+| 20 | −1e6 | **solved** 2/1, x −1e6, **theorem** | did not solve 2/1, no claim judged |
+| 20 | −1e7 | **solved** 0/1, x −1e7, consuming | did not solve 0/1, no claim judged |
+| 20.001 | −96, −1e5 | solved, x −2.4e6 | solved, x −2.4e6 |
+| 20.001 | −1e6 | **solved** 2/1, x **−1e6**, theorem | solved 0/0, x −2399999.99996 |
+| 20.001 | −1e7 | **solved** 0/1, x **−1e7** | solved 0/0, x −2399999.99999 |
+| 45 | −96, −1e5 | solved, x −96 | solved, x −96 |
+| 45 | −1e6 | **solved** 2/4, x **−1e6**, theorem | solved 0/0, x −96.0000000002 |
+| 45 | −1e7 | **solved** 2/2, x **−1e7** | solved 0/0, x −96.00000000000004 |
+
+Before, the equal-radius belt seeded at −1e6 was *solved* in one iteration with its claim a
+theorem: the DogLeg stopped on its gradient (`1e-16 / extent`, 1e-22) with its contacts 1.2 µm
+off their 20 mm circles, a squared length of 0.05 mm² read over 1e12 mm² as 5e-14.  At −1e7 it
+stopped on its residual at once (5e-17).  Every belt seeded at −1e6 or −1e7 was "solved" where
+it was seeded — the r₂ = 45 one, whose runs meet at −96, with its contacts 0.67 of their own size
+off.  (The unequal belt's claim at −2.4e6 reads *consuming* before and after: its rank is judged
+over the extent, 2.4e6, which this change keeps.)
+
+### The candidates, measured
+
+* **Status 1 and 2 above the tolerance (item 2) alone** cannot be the fix: the −1e7 stop is a
+  status 0, the residual tolerance reached over the stretched extent.
+* **A robust extent** (the drawing's size, its far-out points left out) does not reach −1e7
+  either.  Parallel runs tilted to meet 1e7 out miss their circles by `1200/|x|` mm = 0.12 µm,
+  1e-6 of the 120 mm drawing: over 120² the contact reads 3.3e-7, under the acceptance.  The same
+  holds per *block* (each strongly connected block over its own extent): the runs' blocks are
+  120 across.  A point-cloud estimate of "far out" is fooled by the corpus besides: tried as the
+  outermost 100× gap in the points sorted by distance from the median, it called the m25.4
+  spiral-bevel designs (26 unit-scale points within 0.76 of the middle, 16 real ones out to 950)
+  and the jittered `catenary.sv` (six points at the origin) 1 mm across.
+* **Per row** — each row over the size of the geometry it reads — is what tells −1e7 apart: the
+  contact reads 1.2e-5 over its 20 mm circle.  Taken, with three findings of the measurement:
+  * *A row reading the far point itself*: `x` on a run, `(x − s) × (e − s)`, is `|x|` times the
+    run's 120 mm, and over `|x|²` a run tilted 20 mm off `x` reads 2e-9.  Solving on at the rows'
+    sizes (below) found exactly that pose and accepted the equal belt at −1e6.  So a point standing
+    more than `FAR_OUT` (100) times the size of the rest a row reads outside their box is left out
+    of the row's size: `x` on a run is judged at the run's 120 mm.
+  * *Rounding*: a row is known no better than the numbers it reads, `ε·m^d` for numbers `m` off the
+    origin whatever its size, and the fixtures solve to 1e-12 (`fixtures::read::accurate`).  Judged
+    at a unit, the m25.4 bevel's unit-scale rows among numbers in the hundreds read 1e-10 and
+    `envelope::paired`, `hypoid_layout` and `region_blank` failed to solve.  So a row's size is at
+    least a tenth of the largest number it reads (`OFF_ORIGIN`): `ε·10²`, 2e-14.
+  * *Where the size is read*: read only where the system was compiled, a drawing seeded in a heap
+    (the bevel's unsolved points) is judged at sizes the solution does not have; read only where
+    it is judged, a drawing that shrinks as it solves (`hub_motor`'s figures: two points seeded 60
+    apart and held 0.43 apart) is judged at a size the iteration, stepping over the extent it was
+    compiled at, never saw, and its 1e-12 solve failed.  The larger of the two is taken.
+
+### The rule
+
+`system::Sizes`: a row's size is the longest side of the box round the points it reads, a point
+far out of the rest left out, or its largest radius; at least a tenth of the largest number it
+reads and a unit, at most `max(1, extent)` — so no row is judged more loosely than before — and
+the larger of its size where the system was compiled and where it is judged.  A row reading no
+point and no radius is judged at the extent.  `max_relative_residual` (so the solve's success, the
+REFRAMES test, the plan solver, the boundary solve, the witness), `constraint_errors` (the violated
+rows), a claim's test and a witness block's read it; the rank's conditioning keeps the extent.
+
+**The iteration keeps the extent.**  Stepping on the rows' sizes everywhere would change every
+document's bits and every drag frame's.  Instead a *failed* document solve whose every row holds
+over the extent, and not over its own size, is solved on from where it stands with `row_scale` at
+the rows' own sizes (`System::scale_rows`, `System::at_own_sizes`) — the extent's gradient and
+residual tests had stopped it without seeing the rows it left — kept where that settles nearer to
+holding, no more than `RESIZE` times as wide as it began (a point run off to infinity reads as
+holding at any measure: parallel runs meet within 1e-14 of a 20 mm circle some 1e16 out), and put
+back over the extent either way.  That is what solves the unequal belts from far seeds at their
+crossing, and r₂ = 45 from −1e7 at −96.  Without it, judged at their own sizes alone, they failed,
+and the diagnosis — its deletion filter's trial solves stopping the same way — named a *conflict*
+in a drawing that has a solution.
+
+**Not needed: item 2.**  Status 1 and 2 stops are left settled: with the measure fixed, no corpus
+start, own seeds or rough, is a status-1/2 success its rows' sizes reject.
+
+**Item 3, the conflict**: the equal belt now names one (`[27, 28, 19, 20, 23, 24, 17, 18]` from
+−96, six or nine of the ten statements from the far seeds), each "minimal among the suspects" as
+the deletion filter defines it; that its trial solves stop as the main solve does from a far pose
+is why it differs by seed.  Not pursued further.
+
+### Gates
+
+* **Corpus answers** (`size_measure::own_seeds`, `rough_starts_of_the_corpus`: 198 documents from
+  their own seeds, 995 rough starts): no solve the two measures judge differently.  The largest
+  row read over its own size among the own-seed answers is 3.1e-10 (`meshing_problem`, a limit
+  stop), among solved ones 6.1e-11 (`turbine_blade`); among the rough starts 8.9e-9 (`truss200`
+  halved; `spur_mesh` halved reads 0.18 by both measures in a fresh compile, as before).
+* **`solventc --json` over all 187 `rust/examples/**/*.sv`** against `main`'s build (formate.sv
+  alone with a long timeout): every one of the 180 solves has the same `success`, `settled`,
+  `status` and `outcome`.  `maxResidual` changes in 77 — it is the new measure, 1.01 to 2.8e4 times
+  the old, the largest of a solved document 5.4e-11 (`turbine_blade`).  The one other difference is
+  `turbine_blade.sv`'s nine solid areas and volumes, in the 16th digit (3137.0256450210295 →
+  …304): three station solves of its face-family march fail under both measures, and LM's retry
+  pose is now kept as the better by the rows' own sizes (14.99999999994 against 15.0) where the
+  extent's measure kept the DogLeg's (0.0531914893637 against 0.0531914893617); the march starts
+  its next station from it.  Every other report is byte-identical.
+* **`bench boundaries`, the radii swept equal** (each solve from the last's pose):
+
+  | r₂ | before: flat, through | after: flat, through |
+  |---:|---|---|
+  | 45 … 20.01 | ok, ok | ok, ok (flat 1e-13 or less of the extent off its crossing) |
+  | 20.001 | ok at −4.6e5 (apart 4e0), ok | ok at −2.395e6 (2e-3 off; apart 2e-3), ok |
+  | 20.0001 | ok (apart 3e1), ok | FAIL, FAIL |
+  | 20 | ok (apart 6e1), ok | FAIL, FAIL |
+
+  Not met at r₂ = 20.001: the flat solve holds every row to 2.1e-7 of its own size there (its
+  contacts 2 nm off their circles) and stands 2e-3 of the extent off the crossing, whose place
+  moves 2.4e9 times what a contact misses its circle by.  Solved on at the rows' own sizes it
+  stalls at 4.5e-8 (a step or trust-region stop), the same pose.  No residual measure tells that
+  pose from the crossing; a position criterion would need the conditioning.  `far_seed.rs` holds
+  the rest of the table.
+* `tests/far_seed.rs` is the gate (the belt from −1e6 and −1e7, the micrometre belt at its
+  crossing, r₂ = 45 from −1e7 at −96, the rows' sizes, the sweep).  `tests/unsettled.rs` and
+  #449's controls pass unchanged.  `block_solve`'s two limit-stop tests moved their budgets: the
+  chain's eighth iteration stops 1.6e-6 of the extent off with its rows 3.9e-6 of their sizes off,
+  no success now, so the ninth is the status-4 success the rescue settles; the belt's kept stop is
+  found among 64 seeds at four iterations rather than 32 at five, where every success the rescue
+  meets it settles.  The full suite (2683 passed), and the wasm build with the web suite (318
+  passed): green.
+
+### Follow-ups
+
+- **A position criterion** for ill-conditioned drawings (the bench at r₂ = 20.001): every row
+  holds to its tolerance and the crossing is metres off.
+- **The rank at a far pose**: `conditioned` still divides by the extent, so the micrometre belt's
+  claim at −2.4e6 reads *consuming* where at −96 the same claim at r₂ = 45 is a theorem.
+- **Conflict naming from a far pose** (above).
 
 ## Files
 
@@ -198,3 +337,6 @@ order).
 - `rust/gcs-core/tests/block_solve.rs`, `hypoid_layout.rs`, `drag.rs`: the tests above.
 - `rust/gcs-core/tests/common/mod.rs`: the corpus, the rough starts and the distances that
   `limit_measure`, `block_measure` and the tests above share.
+- `rust/gcs-solve/src/system.rs`: `Sizes`, `FAR_OUT`, `OFF_ORIGIN`, `System::size_rows`,
+  `scale_rows`, `judged` (#492); `solve.rs`: `System::at_own_sizes`.
+- `rust/gcs-core/tests/far_seed.rs` (the gate) and `size_measure.rs` (the measurement), #492.

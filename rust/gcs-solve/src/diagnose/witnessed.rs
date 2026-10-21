@@ -35,10 +35,11 @@ pub(super) fn blocks(sk: &Sketch) -> BTreeMap<u32, Vec<u32>> {
 }
 
 /// Solve block `w`'s witnesses and judge it, writing them back where the block holds.  `tol` is
-/// the diagnosis's residual tolerance, `extent` the drawing's before any
-/// witness moved (so a witness run off to infinity cannot loosen its own test), and `rank` the
-/// drawing's own — `None` where ranks are not read (past the numeric limit a block that holds is
-/// reported a theorem, as a lone claim is).
+/// the diagnosis's residual tolerance, `extent` the drawing's before any witness moved — each row
+/// is judged at its own size (`Sizes`, #492) but never larger than that, so a witness run off to
+/// infinity cannot loosen its own test — and `rank` the drawing's own — `None` where ranks are
+/// not read (past the numeric limit a block that holds is reported a theorem, as a lone claim
+/// is).
 ///
 /// The witness solve is a compile of its own, since the witnesses' unknowns are no column of
 /// `sys`: a copy holding everything else, with only the block's rows.  A compile calls
@@ -64,9 +65,12 @@ pub(super) fn judge(
         .collect();
     unknowns.sort_unstable();
     unknowns.dedup();
+    // what each number is to a size: the scratch copy below has the drawing's own
+    let sizes = Sizes::of(sk);
     if unknowns.is_empty() {
         let mine = sk.constraints.iter().filter(|c| c.witness == Some(w));
-        if !mine.clone().all(|c| claim_holds(sk, c, tol, extent)) {
+        let x = sk.get_x();
+        if !mine.clone().all(|c| claim_holds(sk, &x, c, tol, extent, &sizes)) {
             return Verdict::Violated;
         }
     } else {
@@ -84,7 +88,8 @@ pub(super) fn judge(
             p.fixed = unknowns.binary_search(&(i as u32)).is_err();
         }
         System::new(&scratch).solve(&mut scratch, SolveOpts::default());
-        if !scratch.constraints.iter().all(|c| claim_holds(&scratch, c, tol, extent)) {
+        let x = scratch.get_x();
+        if !scratch.constraints.iter().all(|c| claim_holds(&scratch, &x, c, tol, extent, &sizes)) {
             return Verdict::Violated;
         }
         for &p in &unknowns {

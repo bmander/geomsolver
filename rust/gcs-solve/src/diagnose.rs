@@ -21,7 +21,7 @@ use crate::linalg::{rank_and_nullspace, Mat};
 use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
-use crate::system::System;
+use crate::system::{Sizes, System};
 use crate::system::RANK_TOL;
 use crate::witness::{analyze_with, movable_columns, screen, shaky_warning, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
@@ -127,6 +127,9 @@ pub struct Diagnosis {
     /// with room is in neither.
     pub bounds_violated: Vec<u32>,
     pub bounds_active: Vec<u32>,
+    /// The orientations the document states (`ccw`, `cw`, §9.6, #157) that the solution breaks,
+    /// by their records' keys (`Sketch::orientations`): which a solve reports as a failure.
+    pub orientations_violated: Vec<String>,
     /// The tangencies at a contact whose line has no length (#479, `solve::collapsed`): each holds
     /// whatever its contact, so the figure is degenerate, which a solve reports as a failure.
     pub collapsed: Vec<u32>,
@@ -524,10 +527,14 @@ impl Default for DiagnoseOptions {
 
 /// Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
 /// Whether a claim's row holds (§9.7): the rule `violated_constraints` states against a compiled
-/// system, in the units the row carries — the residual over `extent^degree`, never a NaN.
-fn claim_holds(sk: &Sketch, c: &Constraint, tol: f64, extent: f64) -> bool {
+/// system, in the units the row carries — the residual over its own size to its kernel's power
+/// (`Sizes`, #492), no larger than `extent`, never a NaN.  `x` is the drawing's numbers, read
+/// once by the caller for every claim it asks of.
+fn claim_holds(sk: &Sketch, x: &[f64], c: &Constraint, tol: f64, extent: f64, sizes: &Sizes)
+    -> bool {
     let e = c.error(sk);
-    !e.is_nan() && e <= tol * extent.max(1.0).dpowi(c.kernel_in(sk).degree as i32)
+    let size = sizes.size(x, c.params(sk).into_iter().map(|p| p as usize), extent);
+    !e.is_nan() && e <= tol * size.dpowi(c.kernel_in(sk).degree as i32)
 }
 
 pub fn diagnose(sk: &mut Sketch, opts: DiagnoseOptions) -> Diagnosis {
@@ -769,11 +776,11 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         sk.constraints.iter().filter(|c| c.claim && c.witness.is_none()).collect();
     if !claims.is_empty() && opts.settled {
         // "does it hold?" is the same rule `violated_constraints` states against a compiled
-        // system, in the units the row carries: the residual over `extent^degree`
-        let extent = sk.extent();
+        // system, in the units the row carries: the residual over its own size^degree
+        let (extent, sizes, x) = (sk.extent(), Sizes::of(sk), sk.get_x());
         let held: BTreeSet<u32> = claims
             .iter()
-            .filter(|c| claim_holds(sk, c, opts.tol, extent))
+            .filter(|c| claim_holds(sk, &x, c, opts.tol, extent, &sizes))
             .map(|c| c.id)
             .collect();
         // The rank question is the numeric cross-check's kind of question, and is gated the same
@@ -1004,6 +1011,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         claims_consuming,
         bounds_violated,
         bounds_active,
+        orientations_violated: crate::solve::orientations_broken(sk),
         collapsed: crate::solve::collapsed(sk),
         extrema: crate::variational::extrema(sk),
         // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose

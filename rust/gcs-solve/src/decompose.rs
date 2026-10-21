@@ -1487,15 +1487,17 @@ impl PlanSolver {
 
     pub fn solve(&mut self, sk: &mut Sketch, tol: f64, fallback: bool, method: Method) -> PlanResult {
         // root choices are document state, read every solve — a plan cached per topology must not
-        // replay a stale branch after the user flips one
-        let branches = sk.branches.clone();
+        // replay a stale branch after the user flips one — and a choice the document states is
+        // replayed as stated, whatever the cache came to (#157)
+        let mut branches = sk.branches.clone();
+        branches.extend(sk.orientations.iter().map(|(k, &v)| (k.clone(), v)));
         self.plan.apply_branches(&branches);
         execute(&mut self.plan, sk, None);
         // dimensions may have been edited since compile
         self.system.refresh_consts(sk);
         let z = self.system.z0(sk);
         let mut mx = self.system.max_hard_residual(&z);
-        let mut rel = self.system.max_relative_residual(&z);
+        let mut rel = mx;
         let mut numeric = None;
         let mut fell_back = false;
         // a root the plan chose that breaks a bound is steered by the numeric solve, as any
@@ -1504,7 +1506,10 @@ impl PlanSolver {
             && !crate::solve::bounds_hold(sk);
         // and one where a tangency's line has no length is no solution (#479)
         let collapsed = fallback && !crate::solve::collapsed(sk).is_empty();
-        if (rel > tol || bounded || collapsed) && fallback {
+        // and one turned against an orientation the document states, where the plan's seeds
+        // chose the other way (#157)
+        let oriented = fallback && !crate::solve::orientations_hold(sk);
+        if (rel > tol || bounded || collapsed || oriented) && fallback {
             fell_back = true;
             // `System::solve` re-homes any curve contact and rebuilds itself if one moved to
             // another span, so this system is current whatever the fallback did
@@ -1517,8 +1522,13 @@ impl PlanSolver {
         for (k, v) in self.plan.branches() {
             sk.branches.insert(k, v);
         }
+        // the cache keeps what the document states, not the seeds' turn the replay read
+        for (k, &v) in &sk.orientations {
+            sk.branches.insert(k.clone(), v);
+        }
         let kept = numeric.as_ref().map_or(true, |r: &crate::solve::SolveResult| {
             r.status != crate::solve::BOUND_BROKEN && r.status != crate::solve::COLLAPSED
+                && r.status != crate::solve::ORIENTATION_BROKEN
         });
         PlanResult {
             success: rel <= 1e-6 && kept,

@@ -319,6 +319,10 @@ fn tint_start(
     if w == "component" || w == "interface" {
         return (Some(Tint::Word), Next::Def);
     }
+    // `part Arm(…) {` (#461), and only there: `part` is a name a document may give too
+    if super::words::part_at(toks, i) {
+        return (Some(Tint::Word), Next::Def);
+    }
     if w == "use" {
         return (Some(Tint::Word), Next::Module);
     }

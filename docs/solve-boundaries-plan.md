@@ -63,8 +63,9 @@ can say which parts they keep and which they change.
   it holds only by the pose, and *violated* if it does not hold.
 * **Root choices.** A bound (spec §9.6) chooses the root and is verified: the seed is carried across
   it, `steer` acts, the block pass searches, and a bound still broken ends with `BOUND_BROKEN`. On
-  the sheet, `ccw`/`cw` is only recorded for the constructive plan, and is neither enforced nor
-  checked (#157).
+  the sheet, `ccw`/`cw` stated in the document is held the same way since 0.161 (#157: carried on
+  the seeds, steered, `ORIENTATION_BROKEN`), apart from the choices the constructive plan records,
+  which are not held; the block pass's search reads bounds only.
 * **"Solved"** is `max_relative_residual ≤ 1e-6` (each row over `extent^degree`), and **settled**
   is `success && status != 4`. #449 shows that even settled is not enough: a document can be
   infeasible and still report success at the iteration limit.
@@ -722,7 +723,8 @@ says otherwise.
   against the corpus's well-posed components, not against synthetic cases alone.
 * **Inferred boundaries.** If every rule above can be checked from the elaborated component (CL2,
   FR1, DT1, EQ2 are all mechanical), a parent might treat a qualifying instance as a boundary with
-  no mark in the source. #461 decides that, on the benchmark's evidence.
+  no mark in the source. #461 decides that, on the benchmark's evidence. Proposed for review in
+  [parts-plan.md](parts-plan.md): declared (`part`), checked while elaborating, solved flat.
 * **The locus's own contract.** The locus would meet most of this with a condition estimate (DD2),
   a determinant sign (DD3), no nearby value on failure (FA1), and its module comment corrected to
   march from the anchor. #454's call: the comment is corrected and the square Newton is shared
@@ -748,7 +750,8 @@ instance at the document's solved pose and says which of the tiers it reaches. I
   parent reads and states such facts, or holds an operand's numbers by `fix`, **asserts only**;
 * **DT2** is refuted from `STARTS` starts scattered at twice the instance's size, each a short probe
   solve. Roots are compared by the figure (points in space, radii, axes), and a root the body's own
-  `ccw`/`cw` refuses is counted apart, since the solve does not enforce them (#157);
+  `ccw`/`cw` refuses is counted apart: a probe is steered by none, though a document's solve is
+  held to them (#157);
 * **EQ2** is read from the text and the rows, not by moving anything: a row over a plane's own axes,
   a `fix` at coordinates, a seed in coordinates or by a bearing, and a coordinate read.
 
