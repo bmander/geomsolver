@@ -1013,3 +1013,56 @@ diagnosis) rather than on a cost they no longer carry. (2) The inner solves are 
 of the through solve's time, so #456 (a cache over identical drives answers 9,990 of 10,000) and
 #457 (an edit re-solves 2,000 runs to move one drive) have something to save, and the next slice
 of #459 measures them. (3) and (4) stand.
+
+## 20. Where the time goes (#459, after §19)
+
+**Verdict: a perfect cache of evaluations (#456) would save at most a fifth of a solve through
+boundaries at 1,000 drives, and less after an edit.** With the parent sparse (§19), the time is
+spread across compiling, taking the boundaries out, the parent's step and the inner solves, and the
+inner solves are the smallest of the large ones.
+
+**How it was measured.** `Through::times` times each phase of `solve_through` with
+`clock::Instant`; the phases do not overlap, and `other` is what the whole holds beyond them (the
+DogLeg's own vector work, the flat rows judged at the end, the write back). `bench boundaries`
+prints the medians of at least 5 solves of each document, on the machine and documents of §19,
+release build, load under 3.
+
+| case | N | compile | setup | inner | jacobian | rows | step | rank | other | total | inner % | µs / inner solve |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| identical | 10 | 0.07 | 0.15 | 0.17 | 0.03 | 0.00 | 1.70 | 0.03 | 0.01 | 2.18 | 8% | 1.75 |
+| identical | 100 | 0.55 | 1.27 | 1.35 | 0.11 | 0.03 | 0.63 | 0.22 | 0.12 | 4.29 | 31% | 1.35 |
+| identical | 1,000 | 8.74 | 17.03 | 13.80 | 1.89 | 0.28 | 21.07 | 3.12 | 1.23 | 68.92 | 20% | 1.73 |
+| distinct | 1,000 | 8.75 | 15.82 | 13.88 | 1.77 | 0.28 | 21.98 | 3.00 | 1.17 | 66.78 | 21% | 1.73 |
+| one unknown | 1,000 | 7.95 | 16.79 | 15.99 | 2.18 | 0.35 | 24.66 | 3.95 | 1.49 | 73.02 | 22% | 1.60 |
+| edit to one drive | 100 | 0.53 | 1.35 | 0.75 | 0.09 | 0.02 | 0.62 | 0.22 | 0.11 | 3.74 | 20% | 0.94 |
+| edit to one drive | 1,000 | 8.60 | 17.47 | 7.50 | 1.41 | 0.23 | 20.92 | 2.97 | 1.15 | 62.49 | 12% | 1.25 |
+
+Milliseconds. *Compile* is `System::new`, which a flat solve does first too; *setup* is the rest
+of `Boundaries::new` (each boundary's block, the order they are evaluated in, the parent's rows and
+its Jacobian's structure); *inner* is every evaluation of a boundary: its Newton solve, its
+derivative by the implicit function theorem, and the evaluations answered again.
+
+* **The inner solves are 20% of the time at 1,000 drives and 31% at 100**, about 1.5 µs each (a
+  4 × 4 Newton of two or three iterations and its derivative). A cache that answered every one of
+  them but the first, at no cost of its own, would take 69 ms to about 55 at N = 1,000. A real
+  cache keys each evaluation by its inputs up to a rigid motion (#456) and must look up in well
+  under 1.5 µs to save anything. For parts this cheap the cache is not where the time is, which is
+  §18's third recommendation measured: boundaries pay for an interior that is expensive behind a
+  narrow interface, and a belt run is neither.
+* **The largest phases are boundaries' own machinery, not their evaluation.** Taking the
+  boundaries out costs twice the document's compile (17 ms against 9 at N = 1,000), and the
+  parent's step on its normal equations (21 ms) is as much as the flat solve spends whole beyond
+  its compile. Both are engineering of the kind §19 did, open to the same treatment, and neither
+  is touched by #456 or #457.
+* **Below `DENSE_MAX` the step is the cost.** At ten drives the dense minimum-norm step is 1.7 of
+  2.2 ms; that is the whole of the gap to the flat solve's 0.5 ms (§19).
+* **After an edit the inner share falls to 12%**: only the edited drive's runs move far, and the
+  rest converge in a step. What invalidation (#457) could save is not the inner solves but the
+  untouched drives' share of every phase, including the compile, which needs the parent solved part
+  by part and the document compiled incrementally; the flat solve's block order could be given the
+  same, so #457 does not distinguish boundaries.
+
+**For the next slice.** #456 should not be built for sketch-level parts: its ceiling is a fifth of
+the time here. If boundaries are to pay, they do it where an evaluation is expensive (a trace, an
+envelope, a solid's evaluation, §18's third point), and the next measurement is one of those, not
+more belt drives. On belt drives, the cheaper gains are the setup and the step.

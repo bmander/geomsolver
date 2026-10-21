@@ -15,7 +15,9 @@ mod turn;
 pub use bounds::cross_bounds;
 pub use bounds::{bound_reading, bound_tol, bounds_hold, BoundReading};
 pub use drag::{Drag, PullPolish, RadiusDrag, Triangle};
-pub use through::{solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through};
+pub use through::{
+    solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through, Times,
+};
 pub use turn::{TurnDrag, Turning};
 
 use crate::curve;

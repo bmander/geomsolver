@@ -41,6 +41,7 @@
 //! through it (CM1).
 
 use super::{SolveOpts, SolveResult};
+use crate::clock::Instant;
 use crate::linalg::{absmax, norm, Mat};
 use crate::model::Sketch;
 use crate::newton::{self, Square, SquareTol, SquareWork, TrustRegion};
@@ -192,13 +193,19 @@ pub struct Boundaries {
     reduced: Reduced,
     acc: Vec<f64>,
     work: SquareWork,
+    /// Seconds spent compiling the document (`System::new`), and evaluating the boundaries
+    /// (`evaluate_all`): inner solves, their derivatives, and the evaluations answered again.
+    compile_s: f64,
+    inner_s: f64,
 }
 
 impl Boundaries {
     /// Compile `sk` and take each of `bounds` out of it.  An `Err` says which boundary cannot be
     /// one, and why.
     pub fn new(sk: &Sketch, bounds: &[Boundary]) -> Result<Boundaries, String> {
+        let clock = Instant::now();
         let mut sys = System::new(sk);
+        let compile_s = clock.elapsed().as_secs_f64();
         let z = sys.z0(sk);
         let (adj, row_c) = sys.structure();
         let mut rows_of: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
@@ -363,7 +370,8 @@ impl Boundaries {
         }
         let reduced = Reduced { data: vec![0.0; indices.len()], indptr, indices };
         Ok(Boundaries { sys, z, zcols, inner, inlined, parent, own, reduced,
-                        acc: vec![0.0; nz], work: SquareWork::default() })
+                        acc: vec![0.0; nz], work: SquareWork::default(), compile_s,
+                        inner_s: 0.0 })
     }
 
     /// The boundaries that read each other round a cycle, and so are solved in the parent.
@@ -422,10 +430,13 @@ impl Boundaries {
 
     /// Every boundary at the parent's unknowns `zp`, in order.
     fn evaluate_all(&mut self, zp: &[f64]) -> Result<(), Failure> {
+        let clock = Instant::now();
         for (k, &c) in self.zcols.iter().enumerate() {
             self.z[c] = zp[k];
         }
-        (0..self.inner.len()).try_for_each(|k| self.evaluate_one(k))
+        let done = (0..self.inner.len()).try_for_each(|k| self.evaluate_one(k));
+        self.inner_s += clock.elapsed().as_secs_f64();
+        done
     }
 
     /// Each boundary's `dy/dz` over what it moves with (`Inner::g`), chained through the
@@ -728,6 +739,7 @@ struct Parent<'a> {
     /// The last evaluation that failed, and how many did.
     failure: Option<Failure>,
     failures: usize,
+    times: Times,
 }
 
 impl TrustRegion for Parent<'_> {
@@ -739,7 +751,11 @@ impl TrustRegion for Parent<'_> {
     }
     fn residuals_into(&mut self, zp: &[f64], out: &mut [f64]) {
         match self.b.evaluate_all(zp) {
-            Ok(()) => self.b.sys.subset_residuals(&mut self.b.parent, &self.b.z, out),
+            Ok(()) => {
+                let clock = Instant::now();
+                self.b.sys.subset_residuals(&mut self.b.parent, &self.b.z, out);
+                self.times.rows += clock.elapsed().as_secs_f64();
+            }
             Err(f) => {
                 out.fill(f64::NAN);
                 self.failure = Some(f);
@@ -748,9 +764,11 @@ impl TrustRegion for Parent<'_> {
         }
     }
     fn jacobian_at(&mut self, zp: &[f64]) {
-        match self.b.evaluate_all(zp) {
-            Ok(()) => self.b.reduce(),
-            Err(_) => self.b.reduced.data.fill(f64::NAN),
+        let ok = self.b.evaluate_all(zp).is_ok();
+        let clock = Instant::now();
+        match ok {
+            true => self.b.reduce(),
+            false => self.b.reduced.data.fill(f64::NAN),
         }
         self.finite = self.b.reduced.data.iter().all(|x| x.is_finite());
         if self.dense {
@@ -758,8 +776,10 @@ impl TrustRegion for Parent<'_> {
             let cols: Vec<usize> = (0..self.n()).collect();
             self.j = self.b.reduced_dense(&rows, &cols);
         }
+        self.times.jacobian += clock.elapsed().as_secs_f64();
     }
     fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        let clock = Instant::now();
         let red = &self.b.reduced;
         out.fill(0.0);
         for (r, &vr) in v.iter().enumerate() {
@@ -767,12 +787,26 @@ impl TrustRegion for Parent<'_> {
                 out[red.indices[q] as usize] += red.data[q] * vr;
             }
         }
+        self.times.step += clock.elapsed().as_secs_f64();
     }
     fn j_mul(&mut self, v: &[f64], out: &mut [f64]) {
+        let clock = Instant::now();
         let red = &self.b.reduced;
         csr_mul(&red.indptr, &red.indices, &red.data, v, out);
+        self.times.step += clock.elapsed().as_secs_f64();
     }
     fn gn_step(&mut self, r: &[f64], g: &[f64], p: &mut [f64]) {
+        let clock = Instant::now();
+        self.step(r, g, p);
+        self.times.step += clock.elapsed().as_secs_f64();
+    }
+    fn rank(&self) -> i32 {
+        self.rank
+    }
+}
+
+impl Parent<'_> {
+    fn step(&mut self, r: &[f64], g: &[f64], p: &mut [f64]) {
         if !self.finite {
             p.fill(0.0);
             self.rank = -1;
@@ -791,8 +825,40 @@ impl TrustRegion for Parent<'_> {
             newton::refine(ata, eps, g, p);
         }
     }
-    fn rank(&self) -> i32 {
-        self.rank
+}
+
+/// Where a solve through boundaries spent its time, seconds (zero where the target has no clock,
+/// `clock::Instant`).  The phases do not overlap; what `total` holds beyond them (`other`) is the
+/// DogLeg's own vector work, the flat rows judged at the end and the write back.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Times {
+    /// Compiling the document (`System::new`, as a flat solve does first), and taking the
+    /// boundaries out of it: their blocks, the order they are evaluated in, the parent's rows and
+    /// the structure of its Jacobian (the rest of `Boundaries::new`).
+    pub compile: f64,
+    pub setup: f64,
+    /// Evaluating the boundaries: every inner solve, its derivative by the implicit function
+    /// theorem, and the evaluations answered again at the last inputs.  What a cache of
+    /// evaluations (#456) could save at most.
+    pub inner: f64,
+    /// The parent's rows at each trial pose.
+    pub rows: f64,
+    /// The parent's Jacobian through the boundaries: the chain of `dy/dz`, the parent's own
+    /// entries, and their sum (`Boundaries::reduce`).
+    pub jacobian: f64,
+    /// The step's linear algebra: the Gauss–Newton step (dense or the normal equations) and the
+    /// products the DogLeg asks of the Jacobian.
+    pub step: f64,
+    /// The rank at the pose it ended on (FL3, `Boundaries::reduced_rank`).
+    pub rank: f64,
+    pub total: f64,
+}
+
+impl Times {
+    /// What `total` holds beyond the phases.
+    pub fn other(&self) -> f64 {
+        self.total - self.compile - self.setup - self.inner - self.rows - self.jacobian - self.step
+            - self.rank
     }
 }
 
@@ -833,6 +899,8 @@ pub struct Through {
     /// The rank of the parent's rows over its own unknowns through the boundaries' derivatives,
     /// conditioned as the diagnosis conditions a system, at the pose it ended on (FL3).
     pub reduced_rank: usize,
+    /// Where its time went (#459).
+    pub times: Times,
 }
 
 /// Solve `sk` through `bounds`: the parent's DogLeg over its own unknowns, every boundary solved
@@ -840,7 +908,9 @@ pub struct Through {
 /// cannot be one (`Boundaries::new`).
 pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
     -> Result<Through, String> {
+    let clock = Instant::now();
     let mut b = Boundaries::new(sk, bounds)?;
+    let setup = clock.elapsed().as_secs_f64();
     let mut zp: Vec<f64> = b.zcols.iter().map(|&c| b.z[c]).collect();
     let n = b.zcols.len();
     let mut t = Parent {
@@ -853,6 +923,7 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
         rank: -1,
         failure: None,
         failures: 0,
+        times: Times { setup, ..Times::default() },
     };
     let m = t.m();
     let mut r = vec![0.0; m];
@@ -865,9 +936,10 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
         newton::Info { status: if r.iter().all(|v| v.is_finite()) { 0 } else { -1 }, nfev: 1,
                        ..newton::Info::default() }
     };
-    let (rejected, last) = (t.failures, t.failure.take());
+    let (rejected, last, mut times) = (t.failures, t.failure.take(), t.times);
     // the boundaries at the pose it ended on: a rejected trial last wrote their columns
     let ended = b.evaluate_all(&zp).err();
+    let ranked = Instant::now();
     let reduced_rank = match ended {
         None if n > 0 && m > 0 => {
             b.reduce();
@@ -875,6 +947,7 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
         }
         _ => 0,
     };
+    times.rank = ranked.elapsed().as_secs_f64();
     let z = b.z.clone();
     let max = if ended.is_some() { f64::NAN } else { b.sys.max_relative_residual(&z) };
     let all = b.sys.residuals(&z);
@@ -897,7 +970,7 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
         max_residual: max,
         nfev: info.nfev,
         njev: info.njev,
-        time_s: 0.0,
+        time_s: clock.elapsed().as_secs_f64(),
         method: "dogleg through boundaries".to_string(),
         iterations: info.iterations,
         rank: (info.rank >= 0).then_some(info.rank),
@@ -916,5 +989,7 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
         parent_entries: b.reduced.indices.len(),
         largest_boundary: b.inner.iter().map(|i| i.ycols.len()).max().unwrap_or(0),
         reduced_rank,
+        times: Times { compile: b.compile_s, setup: times.setup - b.compile_s, inner: b.inner_s,
+                       total: clock.elapsed().as_secs_f64(), ..times },
     })
 }

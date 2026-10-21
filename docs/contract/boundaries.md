@@ -100,7 +100,12 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
   they took (`inner_iterations`, each one assembly and LU of an `F_y`), the evaluations answered
   from the last one at the same inputs with no solve (`answered_again`), and the size of what is
   factored: the parent, `parent_rows × parent_unknowns` with `parent_entries` of them read, and
-  the largest boundary (`largest_boundary`). The benchmark's documents and the counts it reads
+  the largest boundary (`largest_boundary`). It also says where its time went
+  (`Through::times`, from `clock::Instant`, so zero in wasm): the compile, taking the boundaries
+  out, every evaluation of a boundary (`inner`, the most a cache of evaluations could save), the
+  parent's rows, its Jacobian, the step's linear algebra and the rank, which do not overlap, and
+  what is left of the whole (`Times::other`, never negative:
+  `a_solve_through_says_where_its_time_went`). The benchmark's documents and the counts it reads
   are `boundary::measure` (with `run_error`, how far a belt document's tangent points stand from
   the closed form), its timings `bench boundaries`, and its results the plan's §18 and §19. The
   gate is `rust/gcs-core/tests/boundary_measure.rs`: N identical drives cost N times one, inner
