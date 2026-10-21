@@ -616,3 +616,10 @@ pub unsafe extern "C" fn gcs_solid_mesh_unit(h: *mut Sketch, idx: i32) -> f64 {
         solid_at(s, idx).map_or(0.0, |i| gcs_core::solid::mesh_unit(s, i))
     })
 }
+
+/// The materials the drawing states, and the solids made of each (`report::materials_json`,
+/// #510 P3).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_materials_json(h: *mut Sketch) -> *mut u8 {
+    json_out(move || report::materials_json(sk(h)))
+}

@@ -117,6 +117,19 @@ fn a_familys_symmetry_is_a_word() {
     assert_ne!(tint_of(called, "symmetric"), Some(Tint::Word));
 }
 
+/// A material (#510 P3): `material(…)` declares one and its properties are labels, and a solid's
+/// `of` is a word of its declaration, the material after it a name.
+#[test]
+fn a_material_and_its_of_are_words() {
+    let src = "steel := material(E: 200GPa, nu: 0.3)
+arm := solid(sec, depth: 4mm) of steel
+";
+    assert_eq!(tint_of(src, "steel :="), Some(Tint::Def));
+    assert_eq!(tint_of(src, "E:"), Some(Tint::Label));
+    assert_eq!(tint_of(src, "of"), Some(Tint::Word));
+    assert_ne!(tint_of(src, "steel\n"), Some(Tint::Class));
+}
+
 /// A computed point is arithmetic the parser never tokenizes — so the numbers in it are still
 /// numbers, and nothing there is mistaken for a word.
 #[test]

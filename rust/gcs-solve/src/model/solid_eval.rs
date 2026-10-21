@@ -41,7 +41,7 @@ impl Sketch {
     /// the whole of what "nothing three-dimensional is ever solved for" comes to in code.
     pub fn solid(&mut self, def: SolidDef, name: &str) -> usize {
         self.solids.push(SolidE {
-            def, name: name.to_string(), class: Classes::default(), copy: None,
+            def, name: name.to_string(), class: Classes::default(), copy: None, material: None,
         });
         self.solids.len() - 1
     }
@@ -55,7 +55,7 @@ impl Sketch {
             return None;
         }
         let stock = self.solids.len();
-        self.solids.push(self.solids[i].clone());
+        self.solids.push(SolidE { material: None, ..self.solids[i].clone() });
         self.solids[i].def =
             SolidDef::Body { stock: stock as u32, on: Vec::new(), through: Vec::new(), bound: Vec::new() };
         Some(stock)

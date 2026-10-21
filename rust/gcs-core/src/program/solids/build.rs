@@ -124,6 +124,9 @@ pub(super) fn build_solid(
     let i = sk.solid(def, &d.name.key().text);
     sk.solids[i].class = d.class.clone();
     sk.solids[i].copy = copy_written(d, st);
+    // what it is made of (#510 P3), where the flattener found it a material it stated
+    sk.solids[i].material = d.material.as_ref().map(crate::syntax::ref_text)
+        .filter(|m| sk.materials.contains_key(m));
     // a sweep rides on its observer (#383): the material a generating cut leaves is the blank's
     if matches!(sweep, Sweep::Swept { .. } | Sweep::Rolled { .. }) {
         if let Some(path) = super::super::generated::observer_path(sk, res, d) {

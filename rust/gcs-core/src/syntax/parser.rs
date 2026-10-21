@@ -6,6 +6,7 @@ mod definitions;
 mod measured;
 mod minimize;
 mod relations;
+mod scenario;
 mod statements;
 
 pub(crate) use declarations::{sweep_of, SweepParts, ROLLED_RETIRED, SWEPT_RETIRED};
@@ -705,6 +706,12 @@ impl<'a> P<'a> {
             _ => false,
         };
         self.raw_until(stop, "expected an expression")
+    }
+
+    /// Whether the statement being read stands at the top of the document, or in its
+    /// `preview`, whose statements are the root's: what a `param` and a `scenario` must.
+    fn at_document_top(&self) -> bool {
+        !self.in_comp && self.in_body <= u32::from(self.in_preview)
     }
 
     fn peek_word(&self, w: &str) -> bool {

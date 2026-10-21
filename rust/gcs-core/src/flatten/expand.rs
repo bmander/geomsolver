@@ -191,6 +191,16 @@ impl<'a> Walk<'a> {
                     }
                     self.emit(StmtKind::Measured(m2), st, scope, path);
                 }
+                // a load case (#510 P4): the scope's numbers written in, what it names resolved
+                // with the references (`rewrite`), and nothing drawn
+                StmtKind::Scenario(sc) => {
+                    let mut sc2 = sc.clone();
+                    for text in sc2.numbers_mut() {
+                        let held = &self.held.names;
+                        *text = super::values::substitute_in(text, vals, self.units, held);
+                    }
+                    self.emit(StmtKind::Scenario(sc2), st, scope, path);
+                }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => self.walk_claim_over(c, st, scope, vals, path, depth),
                 // a gauge or an orientation: kept as written, resolved later

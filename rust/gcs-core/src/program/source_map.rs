@@ -243,6 +243,9 @@ pub struct Elaborated {
     pub sketch: Sketch,
     pub map: SourceMap,
     pub diags: Vec<Diag>,
+    /// The document's load scenarios (#510 P4), in the order written: read over the drawing,
+    /// adding nothing to it.
+    pub scenarios: Vec<super::Stated>,
     /// The program every span in here indexes.  Carried rather than borrowed: a span without the
     /// text it cuts is a pair of numbers about nothing, an edit needs the statements as well as
     /// the characters, and the caller that most needs all of it is across an ABI where a borrow

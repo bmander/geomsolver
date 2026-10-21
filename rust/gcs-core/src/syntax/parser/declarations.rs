@@ -169,6 +169,7 @@ struct Trailers {
     membership: Membership,
     hint_span: Span,
     insert: usize,
+    material: Option<Ref>,
 }
 
 impl<'a> P<'a> {
@@ -246,8 +247,8 @@ impl<'a> P<'a> {
             text: vec![None; scalars.len()],
             spans: vec![Span::default(); scalars.len()],
         };
-        let Trailers { knots, weights, class, class_span, seed_at, membership, hint_span, insert } =
-            self.decl_trailers(kind, &name, &mut seeds)?;
+        let Trailers { knots, weights, class, class_span, seed_at, membership, hint_span, insert,
+                       material } = self.decl_trailers(kind, &name, &mut seeds)?;
         Some(Decl {
             annotations: Default::default(),
             kind,
@@ -276,6 +277,7 @@ impl<'a> P<'a> {
             sense,
             bare: false,
             carried: None,
+            material,
         })
     }
 
@@ -346,6 +348,7 @@ impl<'a> P<'a> {
             sense: None,
             bare: false,
             carried: None,
+            material: None,
         });
     }
 
@@ -554,7 +557,7 @@ impl<'a> P<'a> {
         seeds: &mut Seeds,
     ) -> Option<Trailers> {
         // trailing clauses, in any order: `hint(…)`, `knots [...]`, `weights [...]`, `class …`,
-        // `in PLANE`.
+        // `in PLANE`, and a solid's `of MATERIAL` (#510 P3).
         // Where a clause *would* go if it is not written is the point we are standing on now,
         // before any of them: that is what writeback appends at.
         let mut knots = None;
@@ -563,6 +566,7 @@ impl<'a> P<'a> {
         let mut class_span = Span::default();
         let mut seed_at: Option<AtRef> = None;
         let mut membership = Membership::default();
+        let mut material: Option<Ref> = None;
         let insert = self.prev_hi();
         let mut hint_span = Span::at(insert);
         loop {
@@ -583,6 +587,18 @@ impl<'a> P<'a> {
                 class_span = sp;
             } else if self.peek_word("in") {
                 membership = self.membership_clause(kind, &name, &membership)?;
+            } else if self.peek_word("of") {
+                if kind != EntKind::Solid {
+                    self.fail("`of` says what a solid is made of: `arm := solid(sec, depth: 4mm) \
+                               of steel`");
+                    return None;
+                }
+                if material.is_some() {
+                    self.fail("a solid is made of one material");
+                    return None;
+                }
+                self.i += 1;
+                material = Some(self.refr()?);
             } else if self.peek_word("hint") || self.peek_word("at") {
                 self.retired_seed(kind, &name);
                 return None;
@@ -605,6 +621,7 @@ impl<'a> P<'a> {
             membership,
             hint_span,
             insert,
+            material,
         })
     }
 
@@ -1037,6 +1054,7 @@ impl<'a> P<'a> {
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,over,side,ease:None}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,carried:None,
+            material:None,
         })
     }
 
@@ -1142,6 +1160,7 @@ impl<'a> P<'a> {
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,over,side:None,ease}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,carried:None,
+            material:None,
         })
     }
 
@@ -1201,6 +1220,7 @@ impl<'a> P<'a> {
             sense: None,
             bare: true,
             carried: None,
+            material: None,
         })
     }
 

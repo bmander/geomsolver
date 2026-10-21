@@ -27,6 +27,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.units = src.units;
         dst.presentation = src.presentation.clone();
     }
+    // the materials the solids name (#510 P3), by name: a paste brings those the document lacks
+    for (name, m) in &src.materials {
+        dst.materials.entry(name.clone()).or_insert_with(|| m.clone());
+    }
     let mut made = Vec::new();
     // a face family's running numbers, before any contact pinned to one is added (#243 L1)
     for (name, h) in &src.held {
@@ -598,6 +602,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             name: so.name.clone(),
             class: so.class.clone(),
             copy: so.copy,
+            material: so.material.clone(),
         });
         debug_assert_eq!(solid_map[i], Some(dst.solids.len() - 1));
         made.push(EntRef::solid(dst.solids.len() - 1));

@@ -243,7 +243,13 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         }
         StmtKind::Group(g) => {
             out.push_str(&format!("{} := ", g.name.text));
-            write_members(out, &g.fields);
+            if g.material.is_some() {
+                out.push_str("material(");
+                write_fields(out, &g.fields);
+                out.push(')');
+            } else {
+                write_members(out, &g.fields);
+            }
         }
         StmtKind::Unit(n) => out.push_str(&format!("unit {}", n.text)),
         StmtKind::Style(r) => {
@@ -259,6 +265,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
         StmtKind::Measured(m) => {
             out.push_str(&format!("{} {} {}", m.lhs.text(), m.cmp.text(), m.rhs.text()));
         }
+        StmtKind::Scenario(sc) => sc.write(out),
         StmtKind::Minimize(m) => {
             write_ref(out, &m.curve);
             out.push_str(if m.maximize { " maximizes " } else { " minimizes " });
@@ -304,12 +311,18 @@ fn labels_children(k: EntKind) -> bool {
 /// `{bore: 16mm, cyl: {axis: datum}}` — a group's members, nested groups in their braces.
 fn write_members(out: &mut String, fields: &[InstArg]) {
     out.push('{');
+    write_fields(out, fields);
+    out.push('}');
+}
+
+/// `bore: 16mm, cyl: {axis: datum}` — a group's members, or a material's properties, between
+/// whatever brackets hold them.
+fn write_fields(out: &mut String, fields: &[InstArg]) {
     for (i, f) in fields.iter().enumerate() {
         if i > 0 { out.push_str(", "); }
         if let Some(label) = &f.label { out.push_str(&format!("{}: ", label.text)); }
         write_inst_val(out, &f.value);
     }
-    out.push('}');
 }
 
 fn write_inst_val(out: &mut String, v: &InstVal) {
@@ -429,6 +442,11 @@ fn write_decl(out: &mut String, d: &Decl) {
         out.push_str(" weights [");
         out.push_str(&w.iter().map(|w| w.text.clone().unwrap_or_else(|| num(w.value))).collect::<Vec<_>>().join(", "));
         out.push(']');
+    }
+    // what a solid is made of (#510 P3)
+    if let Some(m) = &d.material {
+        out.push_str(" of ");
+        write_ref(out, m);
     }
     if !d.class.is_empty() {
         out.push_str(" class ");

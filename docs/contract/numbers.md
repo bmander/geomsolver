@@ -34,7 +34,12 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   it carries, and a figure over its unit is the same number in every document.  `Dim::name`
   spells the powers and the SI unit where one is that dimension (`Length^2·Mass·Time^-3 (W)`);
   `Dim::number_text` writes the bases in `kg`, `s` and `A`.  A unit is a suffix only (`V` is a
-  name), and there is no `h` or `min`.  `tests/units.rs`'s design-table section is the gate.  `*` and `/` derive,
+  name), and there is no `h` or `min`.  `tests/units.rs`'s design-table section is the gate.
+  **A material's properties are the one place a pressure and a density are asked for** (#510 P3,
+  [0.165], `Dim::PRESSURE`, `Dim::DENSITY`), and there a bare number is refused rather than
+  read in the document's unit (`model::Property::read`; the rule is
+  [analysis.md](analysis.md)'s).  `Units::to_si` moves a value from the document's units to SI
+  by its powers of length alone.  `*` and `/` derive,
   `+` and `-` demand agreement, `^` takes a whole power on a dimensioned base, and the result is
   checked against its slot (`SpecKind::dim()`).  `Aff` carries the dimension beside the value.
   **The asymmetry between `Dim::fits` and `Dim::agree` is the design.**  A *context* (a slot, a

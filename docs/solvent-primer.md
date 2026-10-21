@@ -1742,6 +1742,32 @@ the set's surface is (`heel := std.Sphere(apex)`, `M distance(w / 2, side: insid
 solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
 `Blank`).
 
+#### Materials
+
+A material is declared once and named by the solids made of it:
+
+```
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+in std.top {
+  rim := radius(20mm) circle(center: std.top.origin)
+  disc := solid(face(rim), depth: 5mm) of steel
+}
+```
+
+- **The properties** are `E` (Young's modulus) and `yield` (yield strength), both pressures
+  (`Pa`, `kPa`, `MPa`, `GPa`); `nu` (Poisson's ratio), a plain number between -1 and 0.5; and
+  `rho` (density), a mass over a volume. Each one is optional. **Write the unit** on each one with
+  a dimension: `E: 200000` is E103, because a bare pressure is in the document's units, which no
+  one means. There is no single-word unit of density, so write `7850kg / 1m^3` or
+  `2.7g / 1cm^3`.
+- **`of`** follows a `solid(…)` declaration, as `in` and `hint` do. It names a material in scope.
+  Naming anything else is E103. A material can be passed to a component as a `group` formal
+  (`component Plate(m: group, …)`, then `of m`).
+- `steel.E` reads as a number with its dimension, the way a group's members do. `steel.E / 1GPa`
+  is 200.
+- Nothing is solved for a material, and nothing reads one yet (#510). `solventc` prints each
+  material and the solids made of it: `material steel: E 200GPa, nu 0.3, …, of disc`.
+
 #### Sketching on a face
 
 A face of a solid names a **set**: the face, bounded by its edges. Its **`.surface`** is the
@@ -1869,6 +1895,36 @@ statements.
 | `solid(sec, depth: 3mm, about: ax)` | E001 — swept along its normal or turned, not both |
 | `x cut y` and `y cut x` | E041 at the second — "`x` would be made of itself" |
 | `x coincident y`, two solids | refused: material is added with `union` |
+
+#### Load scenarios
+
+A `scenario` states a load case over the solved drawing: supports, loads and requirements, one
+per line. It stands at the top of the document (or in its `preview`), reads the document's names
+and numbers, and adds no geometry and no row — nothing in it is analysed yet (§9.11).
+
+```
+scenario lift {
+  fixed plate.west                       // a face path; `pinned X` holds without turning
+  load tip (0, -500N, 0)                 // a force, world axes; or `load tip 500N along: down`
+  deflection(tip, along: down) <= 0.5mm  // a bound
+  safety(plate) == 2                     // a driving row: one scenario's may drive
+}
+scenario overload: lift {                // lift's supports and loads, then these
+  pressure plate.near 2MPa
+  claim mode(plate, 1) >= 120Hz          // judged, never solved for
+}
+```
+
+| written | reported |
+|---|---|
+| `patch := point` inside | syntax — a scenario adds no geometry: draw it in the body |
+| `load tip (0, -5N)` | syntax — a load's vector is `(x, y, z)`; in a plane use `along:` |
+| `load tip (0, -5mm, 0)` | E103 — a force is a `Length·Mass·Time^-2` (`N`) |
+| `pressure tip 1MPa` | E040 — a pressure is on a face |
+| `fixed std.front` | E040 — applied to a point, an edge, a face or a solid |
+| `claim deflection(tip) <= u` | E040 — `u` is an unknown; a scenario's numbers are stated |
+| `== v` in two scenarios | E106 — state the second a claim |
+| a scenario in a component | syntax — at the top of a document |
 
 ### 1.15 Frames that move, and generated geometry
 
