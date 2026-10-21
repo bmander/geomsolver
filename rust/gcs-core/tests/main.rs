@@ -121,6 +121,7 @@ mod hypoid_drive;
 mod hypoid_layout;
 mod hypoid_machine;
 mod interfaces;
+mod interior;
 mod interval;
 mod io;
 mod jacobians;
