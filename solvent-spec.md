@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.155 — October 2026**
+**Specification, Draft 0.156 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1536,10 +1536,15 @@ at(under: f) θ`) or rolled through a body, an envelope in space — reads the r
 parameter (one clock): at the roll `θ` the joint stands at the law's value of `θ`, not at `θ`
 itself, so a value of `t` alone is the frame undriven. A value reads one parameter (**E103**
 naming both otherwise), and a frame driven by a parameter of another type than `Angle` is
-followed but not read over the roll (**E080**). A relation the solve holds reads no drive: a point
-carried by the frame's motion at a roll (`X coincident x at(under: f) τ`), and so a rate of it, is
-**E080**; a relation held to an envelope in space generated under it is **E061**, and a meshing
-read on it is refused likewise; draw in the frame instead. **[0.155]** A profile in the plane
+followed but not read over the roll (**E080**). **[0.156]** A point carried by the frame's motion
+at a roll (`X coincident x at(under: f) τ`, or `X coincident(under: f, t == τ) x`) is held where the
+joint stands at the law's value of `τ`, seen from another frame as any carried point is, and a rate
+of it reads the law's rate: the law is a constant of the relation, read over the numbers it names
+where they are stated, so a law naming a number the drawing does not state (an unknown) is
+**E080**. A roll the relation owns may be left to the solve, which finds the instant a condition
+holds through the law (through 0.155 such a point, and its rate, was **E080**). A relation held to
+an envelope in space generated under a drive is **E061**, and a meshing read on one is refused
+likewise; draw in the frame instead. **[0.155]** A profile in the plane
 generated under it (§6.15.1) is a curve as any other, its joint standing at the law's value of the
 roll: the law is a constant of the curve, read over the numbers it names where they are stated,
 and a relation holds to the profile as to one cut at a constant rate (through 0.154, **E080**). At

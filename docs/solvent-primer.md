@@ -2059,8 +2059,18 @@ roller := r0 in follower                           // where the law puts it at t
 groove := sweep(ball over t, under: follower, seen_from: cam)
 ```
 
-A value reads one parameter. A relation the solve holds — a point carried by a driven frame at a
-roll, a rate of it, a meshing — reads no drive (E080): draw in the frame instead.
+A value reads one parameter. A point carried by a driven frame to a roll is held where the law
+puts the joint at that roll, and its rate reads the law's rate; the law reads stated numbers
+alone (one the solve finds is E080). The roll may be left to the solve, to find an instant:
+
+```sv
+Z := point
+Z coincident(under: follower, seen_from: cam) r0   // the roller as the cam sees it, at a roll
+Z distance(23mm) std.origin                        // found where it has risen 3 mm
+```
+
+A relation held to an envelope in space generated under a drive, and a meshing on one, read no
+drive (E061, E080): draw in the frame instead.
 
 **A frame the drawing moves**: a frame with axes and no joint, placed on geometry that moves as a
 declared parameter runs, is read over that parameter as a motion — where the drawing followed along
