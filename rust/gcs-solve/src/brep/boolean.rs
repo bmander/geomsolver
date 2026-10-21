@@ -6,7 +6,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{around,Uv,V};
-use super::query::{crossings_in,face_box,curve_surface_within,Located,Meets,Place};
+use super::query::{crossings_in,face_box,curve_surface_within,Located,Meets,Outline,Place};
 use super::ssi::{intersect,Ssi};
 use super::topo::{reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::space::{distance,norm};
@@ -368,11 +368,12 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
         // place a point inside the piece against the other solid: the first of its inner
         // points not on the other's boundary (a piece may touch it tangentially), or one on
         // it where the other has a face on this surface
-        let candidates = inside(&piece,f,&out,&pool)?;
-        let (p,place) = candidates.iter().map(|&uv| { let p = f.surface.point(uv); (p,located[1-s].solid_place(p)) })
+        let mut inner = reading::inside(&piece,f,&out,&pool).map(|q| q.point()).peekable();
+        let Some(&first) = inner.peek() else { return Err(format!("a piece of a {} has no inside",f.surface.kind())) };
+        let (p,place) = inner.map(|p| (p,located[1-s].solid_place(p)))
             .find(|&(p,place)| place != Place::On || (0..solids[1-s].faces.len()).any(|g|
                 super::ssi::same(&f.surface,&solids[1-s].faces[g].surface,tol) && located[1-s].face_place(g,p) == Place::In))
-            .unwrap_or_else(|| { let p = f.surface.point(candidates[0]); (p,Place::On) });
+            .unwrap_or((first,Place::On));
         let keep = if place == Place::On {
             // on a face of the other on the same surface: kept once, from A, where the two
             // face the same way and the operation keeps that side
@@ -979,25 +980,36 @@ fn assemble(out: &[WEdge],pool: &Pool,kept: Vec<Face>) -> Brep {
     result
 }
 
-/// The parameters along a half, at `n + 1` points from its start.
-fn samples(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,n: usize) -> Vec<Uv> {
-    (0..=n).map(|j| at(h,f,out,pool,j as f64/n as f64)).collect()
+/// The parameter of a half's edge a fraction `s` of the way along the half.
+fn param(h: &Half,out: &[WEdge],s: f64) -> f64 {
+    let e = &out[h.edge as usize];
+    if h.along { e.t[0]+(e.t[1]-e.t[0])*s } else { e.t[1]-(e.t[1]-e.t[0])*s }
 }
 
 /// The parameters a fraction `s` of the way along a half.
 fn at(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> Uv {
-    let e = &out[h.edge as usize];
-    {
-        let t = if h.along { e.t[0]+(e.t[1]-e.t[0])*s } else { e.t[1]-(e.t[1]-e.t[0])*s };
-        let a = if h.along { h.from } else { h.to };
-        let b = if h.along { h.to } else { h.from };
-        let frac = (t-e.t[0])/(e.t[1]-e.t[0]);
-        let near = [a[0]+frac*(b[0]-a[0]),a[1]+frac*(b[1]-a[1])];
-        match h.pcurve {
-            Pcurve::Line {..} => near,
-            Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
-            Pcurve::Inverse {..} => unwrap(f.surface.inverse_near(e.point(t,pool),near),near,f.surface.periods()),
-        }
+    let (e,t) = (&out[h.edge as usize],param(h,out,s));
+    uv_at(h,f,e,t,|| e.point(t,pool))
+}
+
+/// The parameters a fraction `s` of the way along a half, and its point in space.
+fn at_point(h: &Half,f: &Face,out: &[WEdge],pool: &Pool,s: f64) -> (Uv,V) {
+    let (e,t) = (&out[h.edge as usize],param(h,out,s));
+    let p = e.point(t,pool);
+    (uv_at(h,f,e,t,|| p),p)
+}
+
+/// The parameters of a half at its edge's parameter `t`, whose point in space is `p()` (asked
+/// only where the half's curve in the parameters is the surface's inverse of it).
+fn uv_at(h: &Half,f: &Face,e: &WEdge,t: f64,p: impl FnOnce() -> V) -> Uv {
+    let a = if h.along { h.from } else { h.to };
+    let b = if h.along { h.to } else { h.from };
+    let frac = (t-e.t[0])/(e.t[1]-e.t[0]);
+    let near = [a[0]+frac*(b[0]-a[0]),a[1]+frac*(b[1]-a[1])];
+    match h.pcurve {
+        Pcurve::Line {..} => near,
+        Pcurve::Curve(ref c) => { let p = c.point(t); [p[0],p[1]] }
+        Pcurve::Inverse {..} => unwrap(f.surface.inverse_near(p(),near),near,f.surface.periods()),
     }
 }
 
@@ -1072,81 +1084,130 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
         cycles.push(cycle);
     }
     // outer cycles turn counter-clockwise (the material on their left), holes clockwise
-    let polys: Vec<Vec<Uv>> = cycles.iter().map(|c| c.iter().flat_map(|&h| {
-        let pts = samples(&halves[h],f,out,pool,24);
-        pts[..pts.len()-1].iter().map(|&p| oriented(f,p)).collect::<Vec<_>>()
-    }).collect()).collect();
-    let area = |p: &[Uv]| (0..p.len()).map(|i| { let (a,b) = (p[i],p[(i+1)%p.len()]); a[0]*b[1]-a[1]*b[0] }).sum::<f64>()/2.;
-    let areas: Vec<f64> = polys.iter().map(|p| area(p)).collect();
+    let mut cycles: Vec<Vec<Half>> = cycles.iter().map(|c| c.iter().map(|&h| halves[h].clone()).collect()).collect();
+    let bar = reading::bar(&cycles,out,pool);
+    let drawn: Vec<Outline> = cycles.iter().map(|c| reading::outline(std::slice::from_ref(c),f,out,pool,bar)).collect();
+    let areas: Vec<f64> = drawn.iter().map(|o| if f.reversed { -o.area() } else { o.area() }).collect();
     let mut pieces: Vec<(usize,Vec<usize>)> = (0..cycles.len()).filter(|&i| areas[i] > 0.).map(|i| (i,vec![i])).collect();
     for i in (0..cycles.len()).filter(|&i| areas[i] <= 0.) {
-        // a hole goes in the smallest outer cycle about the ground just to its left, where its
-        // material is (a point on the hole itself may be on its twin, a piece it bounds).  An outer
-        // cycle sharing one of its edges is on that edge's other side, and is never its host: the
-        // probe is a hair off the hole, nearer it than the two walks' samples of one edge agree.
-        let p = &polys[i];
-        let j = (0..p.len()).max_by(|&a,&b| {
-            let l = |k: usize| { let (x,y) = (p[k],p[(k+1)%p.len()]); (y[0]-x[0]).dhypot(y[1]-x[1]) };
-            l(a).total_cmp(&l(b))
-        }).unwrap_or(0);
-        let (p0,p1) = (p[j],p[(j+1)%p.len()]);
-        let d = [p1[0]-p0[0],p1[1]-p0[1]];
-        let len = d[0].dhypot(d[1]).max(1e-300);
-        let eps = 1e-6*len;
-        let probe = [(p0[0]+p1[0])/2.-eps*d[1]/len,(p0[1]+p1[1])/2.+eps*d[0]/len];
-        let edges: Vec<u32> = cycles[i].iter().map(|&h| halves[h].edge).collect();
+        // a hole goes in the smallest outer cycle holding a point of it, read against that cycle
+        // (`reading::holds`). An outer cycle sharing one of its edges is on that edge's other
+        // side, and is never its host.
+        let Some(first) = cycles[i].iter().find(|h| matches!(out[h.edge as usize].curve,EdgeCurve::Curve(_))) else {
+            return Err(format!("a {} has a hole of no curve",f.surface.kind()))
+        };
+        let probe = at_point(first,f,out,pool,0.5);
         let mut host: Option<usize> = None;
         for (k,(o,_)) in pieces.iter().enumerate() {
-            if cycles[*o].iter().any(|&h| edges.contains(&halves[h].edge)) { continue }
-            if winding(&polys[*o],probe) != 0 && host.is_none_or(|h| areas[*o] < areas[pieces[h].0]) { host = Some(k); }
+            if cycles[*o].iter().any(|h| cycles[i].iter().any(|g| g.edge == h.edge)) { continue }
+            let held = reading::holds(std::slice::from_ref(&cycles[*o]),&drawn[*o],bar,f,out,pool,probe);
+            if held == Some(true) && host.is_none_or(|h| areas[*o] < areas[pieces[h].0]) { host = Some(k); }
         }
         match host {
             Some(k) => pieces[k].1.push(i),
             None => return Err(format!("a {} has a hole in no piece",f.surface.kind())),
         }
     }
-    Ok(pieces.into_iter().map(|(_,cs)| cs.iter().map(|&c| cycles[c].iter().map(|&h| halves[h].clone()).collect()).collect()).collect())
+    // each cycle is in one piece
+    Ok(pieces.into_iter().map(|(_,cs)| cs.iter().map(|&c| std::mem::take(&mut cycles[c])).collect()).collect())
 }
 
-fn winding(poly: &[Uv],p: Uv) -> i32 {
-    let mut w = 0;
-    let n = poly.len();
-    for i in 0..n {
-        let (a,b) = (poly[i],poly[(i+1)%n]);
-        let cross = (b[0]-a[0])*(p[1]-a[1])-(p[0]-a[0])*(b[1]-a[1]);
-        if a[1] <= p[1] { if b[1] > p[1] && cross > 0. { w += 1; } }
-        else if b[1] <= p[1] && cross < 0. { w -= 1; }
+/// **Reading a point against cycles of halves**: the one way this module tells inside a face's
+/// pieces from outside them. An outline (`query::Outline`) cuts a curved half's chords short of it
+/// — a full circle in 24 chords by 0.86% of its radius, wider than a narrow strip beside it (a
+/// turned rim chamfered by half a millimetre from 32 out, whose top's strip a middle of the outline
+/// once put in the hole beside it) — so its winding is the cycles' only clear of every half by
+/// twice its sag; nearer, the side of the nearest half's edge says, and nearer a vertex than that
+/// nothing does. `Inner`, a point read inside a piece, is made nowhere else.
+mod reading {
+    use super::{at,at_point,param,Half,Pool,WEdge};
+    use super::super::geom::{hull,Uv,V};
+    use super::super::query::{beside,nearest_on,Outline};
+    use super::super::topo::Face;
+    use crate::space::distance;
+
+    /// How many times an outline is drawn again, each to a quarter of the last bar, while what it
+    /// reads leaves the question open.
+    const FINER: usize = 5;
+
+    /// A point of a piece's face, in space, read inside the piece (`inside`).
+    #[derive(Clone,Copy,Debug)]
+    pub(super) struct Inner(V);
+
+    impl Inner {
+        pub(super) fn point(self) -> V { self.0 }
     }
-    w
-}
 
-/// Points well inside a piece, in its face's parameters, the best first: the middles of the spans
-/// level lines across it have inside it, widest first.
-fn inside(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool) -> Result<Vec<Uv>,String> {
-    let polys: Vec<Vec<Uv>> = piece.iter().map(|cycle| cycle.iter().flat_map(|h| {
-        let pts = samples(h,f,out,pool,24);
-        pts[..pts.len()-1].to_vec()
-    }).collect()).collect();
-    let (mut vlo,mut vhi) = (f64::INFINITY,f64::NEG_INFINITY);
-    for p in polys.iter().flatten() { vlo = vlo.min(p[1]); vhi = vhi.max(p[1]); }
-    let mut found: Vec<(f64,Uv)> = Vec::new();
-    for k in 1..16 {
-        let v = vlo+(vhi-vlo)*(k as f64+0.37)/16.;
-        let mut xs: Vec<f64> = Vec::new();
-        for p in &polys {
-            for i in 0..p.len() {
-                let (a,b) = (p[i],p[(i+1)%p.len()]);
-                if (a[1] <= v) != (b[1] <= v) { xs.push(a[0]+(v-a[1])/(b[1]-a[1])*(b[0]-a[0])); }
+    /// The bar cycles of halves are first drawn to: a hundredth of how far across they stand in
+    /// space, read at their ends and middles (never under the pool's tolerance).
+    pub(super) fn bar(cycles: &[Vec<Half>],out: &[WEdge],pool: &Pool) -> f64 {
+        let (lo,hi) = hull(cycles.iter().flatten().flat_map(|h| [0.,0.5].map(|s| out[h.edge as usize].point(param(h,out,s),pool))));
+        (if lo[0] <= hi[0] { distance(lo,hi)/100. } else { 0. }).max(pool.tol)
+    }
+
+    /// `bar`, then each a quarter of the last, `FINER` times, down to the pool's tolerance.
+    fn finer(bar: f64,tol: f64) -> impl Iterator<Item=f64> {
+        std::iter::successors(Some(bar),move |&b| (b > tol).then(|| (b/4.).max(tol))).take(FINER+1)
+    }
+
+    /// The outline of cycles of halves on `f`, drawn to `bar` (`Outline::of`).
+    pub(super) fn outline(cycles: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool,bar: f64) -> Outline {
+        Outline::of(&f.surface,bar,cycles.iter().map(|c| c.iter().map(|h| move |s: f64| at_point(h,f,out,pool,s))))
+    }
+
+    /// Where `p`, at `uv` on `f`, stands against cycles of halves drawn as `outline`: `Some(true)`
+    /// inside, by the outline's winding where the point is clear of every half by twice its sag,
+    /// else by the side of the nearest half's edge (inside on the material's side of any use of
+    /// it: a seam is used once each side); `None` within the pool's tolerance of a half, or where
+    /// the nearest is a vertex or a pole nearer than that.
+    pub(super) fn judged(cycles: &[Vec<Half>],outline: &Outline,f: &Face,out: &[WEdge],pool: &Pool,uv: Uv,p: V) -> Option<bool> {
+        let mut near: Option<(f64,u32,f64)> = None;
+        for h in cycles.iter().flatten() {
+            let e = &out[h.edge as usize];
+            let (t,d) = nearest_on(&e.curve,e.t,pool.pts[e.v[0] as usize],p);
+            if near.is_none_or(|(best,_,_)| d < best) { near = Some((d,h.edge,t)); }
+        }
+        let (d,edge,t) = near?;
+        if d <= pool.tol { return None }
+        if d > 2.*outline.sag() { return Some(outline.winding(uv) != 0) }
+        let e = &out[edge as usize];
+        if t <= e.t[0] || t >= e.t[1] { return None }
+        Some(cycles.iter().flatten().filter(|u| u.edge == edge).any(|u| {
+            let s = if u.along { (t-e.t[0])/(e.t[1]-e.t[0]) } else { (e.t[1]-t)/(e.t[1]-e.t[0]) };
+            let (a,b) = (at(u,f,out,pool,(s-1e-6).max(0.)),at(u,f,out,pool,(s+1e-6).min(1.)));
+            beside(f,at(u,f,out,pool,s),[b[0]-a[0],b[1]-a[1]],uv)
+        }))
+    }
+
+    /// Whether cycles drawn as `drawn`, to `bar`, hold `(uv, p)` (`judged`), drawn finer while
+    /// they leave it unread; `None` where they still do.
+    pub(super) fn holds(cycles: &[Vec<Half>],drawn: &Outline,bar: f64,f: &Face,out: &[WEdge],pool: &Pool,(uv,p): (Uv,V)) -> Option<bool> {
+        finer(bar,pool.tol).enumerate().find_map(|(k,bar)| match k {
+            0 => judged(cycles,drawn,f,out,pool,uv,p),
+            _ => judged(cycles,&outline(cycles,f,out,pool,bar),f,out,pool,uv,p),
+        })
+    }
+
+    /// Points inside a piece, the best first: the middles of the spans level lines across its
+    /// outline have inside it (`Outline::spans`), widest first, each read against the piece
+    /// (`judged`) and given only where it is inside; drawn finer while none is.
+    pub(super) fn inside<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
+        let mut bars = finer(bar(piece,out,pool),pool.tol);
+        let mut round: Option<(Outline,std::vec::IntoIter<Uv>)> = None;
+        let mut any = false;
+        std::iter::from_fn(move || loop {
+            if let Some((drawn,queue)) = &mut round {
+                for uv in queue.by_ref() {
+                    let p = f.surface.point(uv);
+                    if judged(piece,drawn,f,out,pool,uv,p) == Some(true) { any = true; return Some(Inner(p)) }
+                }
+                if any { return None }
             }
-        }
-        xs.sort_by(|a,b| a.total_cmp(b));
-        for w in xs.chunks(2) {
-            if w.len() == 2 && w[1] > w[0] { found.push((w[1]-w[0],[(w[0]+w[1])/2.,v])); }
-        }
+            let drawn = outline(piece,f,out,pool,bars.next()?);
+            let queue = drawn.spans().into_iter();
+            round = Some((drawn,queue));
+        })
     }
-    if found.is_empty() { return Err(format!("a piece of a {} has no inside",f.surface.kind())) }
-    found.sort_by(|a,b| b.0.total_cmp(&a.0));
-    Ok(found.into_iter().map(|f| f.1).collect())
 }
 
 /// `solid` split by `sheets` (one or more open faces reaching past it on every side) to `tol`: its
@@ -1188,13 +1249,11 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
         let (s,fi,piece) = &pieces[i];
         if *s == 0 { kept.push(i); continue }
         let f = &solids[1].faces[*fi];
-        let candidates = inside(piece,f,&out,&pool)?;
-        let place = candidates.iter().map(|&uv| located[0].solid_place(f.surface.point(uv))).find(|&p| p != Place::On).unwrap_or(Place::On);
+        let mut inner = reading::inside(piece,f,&out,&pool).map(|q| q.point()).peekable();
+        let Some(&first) = inner.peek() else { return Err(format!("a piece of a {} has no inside",f.surface.kind())) };
+        let place = inner.map(|p| located[0].solid_place(p)).find(|&p| p != Place::On).unwrap_or(Place::On);
         if super::debug() {
-            let all: Vec<Place> = candidates.iter().map(|&uv| located[0].solid_place(f.surface.point(uv))).collect();
-            eprintln!("split: a piece of the sheet's {}: {place:?} at {:?} ({} loops); at its {} inner points {} in, {} out, {} on",f.surface.kind(),
-                f.surface.point(candidates[0]),piece.len(),all.len(),all.iter().filter(|&&p| p == Place::In).count(),
-                all.iter().filter(|&&p| p == Place::Out).count(),all.iter().filter(|&&p| p == Place::On).count());
+            eprintln!("split: a piece of the sheet's {}: {place:?}, first read at {first:?} ({} loops)",f.surface.kind(),piece.len());
         }
         if place == Place::In { kept.push(i); }
     }

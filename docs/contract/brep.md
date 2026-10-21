@@ -15,6 +15,16 @@ seam curves), `recipe`. A traced pair is seeded where edges cross faces; between
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
+**A point is read against a face by one drawing of its boundary** (`query::Outline`): each edge
+cut in chords until every chord's middle lies within a bar of the edge in space, carrying its
+`sag`, how far a chord strays at most. Its winding says inside only for a point clear of every
+edge by more than the sag; nearer, the side of the nearest edge says (`Located::face_place`, and
+`boolean`'s `reading`: a piece's inner points, a hole's host). A piece of a Boolean is kept or
+dropped at an `Inner` point (made only by `reading::inside`, so no unread point classifies a
+piece): a middle of a level line's span across the piece's outline read so, the outline drawn
+finer while none is. A fixed polygon of a circle once cut its chords short by more than a
+narrow strip beside it is wide, and read the strip at the hole next to it (a turned rim's chamfer
+from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
@@ -25,8 +35,10 @@ meridian, `section`, the swept cutter and sector, `solid::exact`/`canal`, the na
 (`recipe::Section`, the numbers the native host hands on) until `Profile::of` reads it. A new node
 or field is one arm of `Node::read` and of each match. Every writer writes its points through one
 `recipe::Writer` (millimetres, about the world's origin or `cad::recipe_about`'s). **A kernel error
-has a kind** (`brep::KernelError`, `Kind`): `Brep::check`'s edge not used once each way is
-`NotManifold` (what `boolean::combined` and the body's stratum act on), a recipe of another kind
+has a kind** (`brep::KernelError`, `Kind`): `Brep::check`'s edge used as often each way, more than
+once, is `NotManifold` (material touching along it: what `boolean::combined` and the body's
+stratum act on), one used more often one way or never `Open` (a face missing: the kernel's own failure,
+which the stratum never reads as rounds meeting; `brep::an_edge_used_twice_each_way_touches_and_one_used_once_is_open`), a recipe of another kind
 than a route builds (`Recipe::meridian`, `Sectioned`) is `Refused` (its caller builds it
 another way), an unreadable recipe `Recipe`; its message is all it says, and it becomes a `String`
 where a caller outside `brep` wants one. Never match an error's text.

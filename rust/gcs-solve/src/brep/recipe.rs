@@ -263,11 +263,15 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
                 // terms before them leave it, never off another, so two of separate statements
                 // meeting at a vertex (a fill and a run of other radii) or across a corner a fill
                 // rounds (a rim's run and a ring's stretch) leave material touching itself along a
-                // line, which no manifold boundary holds (#197, #218)
-                if !written && e.kind == Kind::NotManifold {
-                    e.saying(|e| format!("{key}: rounds or chamfers of separate statements meet where the body they each \
-                        read leaves them touching along a line, not built yet (#218): {e}"))
-                } else { e.saying(|e| format!("{key} `{name}`: {e}")) }
+                // line, which no manifold boundary holds (#197, #218). An open boundary is no such
+                // meeting: the kernel lost a face applying the round
+                match (written,e.kind) {
+                    (false,Kind::NotManifold) => e.saying(|e| format!("{key}: rounds or chamfers of separate statements meet where \
+                        the body they each read leaves them touching along a line, not built yet (#218): {e}")),
+                    (false,Kind::Open) => e.saying(|e| format!("{key}: the kernel left the body open applying a round or \
+                        chamfer to it, a failure of its own: {e}")),
+                    _ => e.saying(|e| format!("{key} `{name}`: {e}")),
+                }
             })?;
         }
     }

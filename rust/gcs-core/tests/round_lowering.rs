@@ -598,6 +598,31 @@ fn a_knobs_neck_chamfered_is_a_conic_turned() {
     assert_eq!(kinds(&b).get("cone"), Some(&1), "{:?}", kinds(&b));
 }
 
+/// **A wide rim's narrow strip** (the bored flange): a ring 8 to `R` from its axis and 6 high,
+/// its outer top rim chamfered or rounded by half a millimetre. Cutting the section turned leaves
+/// the top a strip half a millimetre wide `R` round, narrower than a 24-chord polygon of its
+/// circle cuts inside it from `R = 32` on (`boolean::inside`, which once read the strip as the
+/// hole beside it and left an edge used once). Pappus: what each takes is its section turned
+/// about its centroid, `d/3` in from the rim for the flat and `z̄` for the ball's.
+#[test]
+fn a_wide_turned_rim_is_chamfered_and_rounded_exactly() {
+    for big in [32.0, 64.0] {
+        for (word, cut) in [("chamfer(d: 0.5mm)", 2.0 * PI * (big - 0.5 / 3.0) * 0.125),
+                            ("round(r: 0.5mm)", 2.0 * PI * (big - spandrel(0.5).1) * spandrel(0.5).0)] {
+            let e = solved(&format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n\
+                a0 := point\na1 := point\nfix((0, 0)) a0\nfix((0, 20)) a1\nspindle := line(a0, a1)\n\
+                p0 := point\np1 := point\np2 := point\np3 := point\n\
+                fix((8, 0)) p0\nfix(({big}, 0)) p1\nfix(({big}, 6)) p2\nfix((8, 6)) p3\n\
+                (bottom := line(p0, p1)) -> (rim := line(p1, p2)) -> (top := line(p2, p3)) -> \
+                (bore := line(p3, p0)) -> close\n}}\n\
+                washer := solid(face(bottom, rim, top, bore), about: spindle)\n\
+                washer.rim {word} washer.top\n"));
+            let b = exported(&e, "washer");
+            close(props::volume(&b), PI * (big * big - 64.0) * 6.0 - cut);
+        }
+    }
+}
+
 /// A round section's area beside a square corner (`square_run`), and how far its centroid stands
 /// off each face, `r(10 − 3π)/(12 − 3π)`. (Turned about an axis `R` from the corner, Pappus:
 /// `common::rounds::root_ring`.)
