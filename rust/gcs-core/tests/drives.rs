@@ -68,6 +68,13 @@ fn seen(t: f64) -> [f64; 3] {
     [v * s, 0.0, v * c]
 }
 
+/// How fast `seen` runs a radian of the roll at `t` (degrees): a central difference of it.
+fn seen_rate(t: f64) -> [f64; 3] {
+    let h: f64 = 1e-5;
+    let (a, b) = (seen(t + h.to_degrees()), seen(t - h.to_degrees()));
+    std::array::from_fn(|i| (a[i] - b[i]) / (2.0 * h))
+}
+
 fn point(e: &Elaborated, sk: &gcs_core::model::Sketch, n: &str) -> [f64; 3] {
     let p = e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`"));
     assert_eq!(p.kind, EntKind::Point);
@@ -112,9 +119,7 @@ fn a_drive_seen_from_its_cam_is_its_law_turned_back() {
         // the rate is the law's, by the chain rule through its jet, against a difference of the
         // closed form
         let v = m.velocity(r0);
-        let h: f64 = 1e-5;
-        let d: Vec<f64> = (0..3).map(|i| (seen(t + h.to_degrees())[i]
-            - seen(t - h.to_degrees())[i]) / (2.0 * h)).collect();
+        let d = seen_rate(t);
         assert!((0..3).all(|i| (v[i] - d[i]).abs() < 1e-6), "at {t}: {v:?} against {d:?}");
         // the pose alone agrees
         let q = family.pose_at(t.to_radians()).unwrap().point(r0);
@@ -430,11 +435,8 @@ fn the_roll_a_driven_point_is_carried_to_is_solved_through_its_law() {
 /// of the closed form, held along a line through the point.
 #[test]
 fn a_driven_points_rate_is_its_laws() {
-    let t: f64 = 50.0;
-    let h: f64 = 1e-5;
-    let d: Vec<f64> = (0..3).map(|i| (seen(t + h.to_degrees())[i] - seen(t - h.to_degrees())[i])
-        / (2.0 * h)).collect();
-    let s = seen(t);
+    let t = 50.0;
+    let (s, d) = (seen(t), seen_rate(t));
     let e = solved(&cam(&format!("W := point\n\
         W coincident(under: follower, seen_from: cam, t == {t}) r0\n\
         a := point\nfix(({}, {}, {})) a\nb := point hint(({}, {}, {}))\nv := line(a, b)\n\

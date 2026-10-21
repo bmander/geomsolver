@@ -605,10 +605,11 @@ where a rule came from.
     driven joint runs back at the same law.  Read so only by what carries a point
     (`Constraint::motion_parts`, the roll's seed `infer::carried_roll`, `validate`); an envelope's,
     a meshing's and a traced body's motions are read without laws, and refuse a drive as before.
-  - **The constants** (`held::encode_motion`/`read_motion`): `[n, steps…, laws, (step, len, flat…,
-    n_x, x…, at)…]` — the steps as `encode_steps` writes them, then each driven step's law — what
-    `screw::rows` (after a stated roll's `[free, m, c]`), the rate of a carried point
-    (`contact_rate`, `Source::Carried`) and a traced body's carried rows (no laws) read alike.
+  - **The constants** (`held::encode_motion`/`read_motion`, both over the borrowed `held::Driven`,
+    `Moving::drives`): `[n, steps…, laws, (step, len, flat…, n_x, x…, at)…]` — the steps as
+    `encode_steps` writes them, then each driven step's law — what `screw::rows` (after a stated
+    roll's `[free, m, c]`), the rate of a carried point (`contact_rate`, `Source::Carried`) and a
+    traced body's carried rows (no laws) read alike.
   - **Read in Taylor arithmetic** (`held::law_of`): a driven step's roll is the law's series about
     the roll's value (`Drive::series`, degrees), turned to radians and composed with what the roll
     carries besides its value (`H2::chain`) — so an owned roll's column reads the law's rate, the

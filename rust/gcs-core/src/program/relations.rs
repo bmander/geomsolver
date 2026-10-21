@@ -502,13 +502,13 @@ fn carried_motion(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<Option<R
     // (#398 G) where it reads stated numbers alone
     let m = match (drawn_in, super::motions::drive_in(&cx.sk, m)) {
         (Some(_), _) => super::motions::undriven(&cx.sk, m),
-        (None, Some(_)) => match crate::envelope::held::Moving::driven(&cx.sk, m) {
-            Ok(_) => m,
-            Err(message) => {
+        (None, Some(_)) => {
+            if let Err(message) = crate::envelope::held::Moving::driven(&cx.sk, m) {
                 cx.diags.push(Diag::within(Code::E080, under_ref.span, st.id, message));
                 return Some(None);
             }
-        },
+            m
+        }
         (None, None) => m,
     };
     // and a frame the drawing moves is read off its march after the solve (#398 F)

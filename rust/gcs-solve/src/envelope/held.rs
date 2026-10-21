@@ -259,13 +259,12 @@ pub struct Driven<'a> {
 
 /// A motion a relation reads as constants (`Moving::encode`): `[n, steps…, laws, (step, len,
 /// flat…, n_x, x…, at)…]` — the steps as `encode_steps` writes them, then each driven step's law.
-pub fn encode_motion(steps: &[Step], laws: &[(usize, crate::motion::Law)]) -> Vec<f64> {
+pub fn encode_motion(steps: &[Step], laws: &[Driven]) -> Vec<f64> {
     let mut k = vec![steps.len() as f64];
     k.extend(encode_steps(steps));
     k.push(laws.len() as f64);
-    for (step, law) in laws {
-        let d = law.drive();
-        k.extend([*step as f64, d.flat.len() as f64]);
+    for &Driven { step, law: d } in laws {
+        k.extend([step as f64, d.flat.len() as f64]);
         k.extend_from_slice(d.flat);
         k.push(d.x.len() as f64);
         k.extend_from_slice(d.x);
@@ -689,26 +688,16 @@ pub(crate) fn carried<T: Num>(steps: &[Step], laws: &[Driven], m: &[T], t: T, x:
 /// its value, so a column the roll is (an owned roll) reads the law's rate, and its second
 /// order where the place asks for one.
 fn law_of<T: Num>(law: &crate::generate::Drive, t: H2<T>) -> Option<H2<T>> {
-    use crate::taylor::{Jet, ORDER};
+    use crate::taylor::Jet;
     let deg = 180.0 / std::f64::consts::PI;
     let v0 = t.v.val();
     let b = law.series(Jet::var(v0 * deg))?;
-    let a: [f64; ORDER] = std::array::from_fn(|k| b.0[k] * deg.powi(k as i32 - 1));
-    // `L(v)`, `L'(v)` and `L''(v)` at `t`'s value with what it carries besides: a polynomial in
-    // `δ = v − v₀`, which is zero in value
+    let a = Jet(std::array::from_fn(|k| b.0[k] * deg.powi(k as i32 - 1)));
+    // `L(v)`, `L'(v)` and `L''(v)` at `t`'s value with what it carries besides: each series read
+    // by Horner in `δ = v − v₀`, which is zero in value
     let delta = t.v - T::cst(v0);
-    let poly = |c: &dyn Fn(usize) -> f64, from: usize| {
-        let (mut out, mut pow) = (T::cst(0.0), T::cst(1.0));
-        for k in from..ORDER {
-            out = out + pow * T::cst(c(k));
-            pow = pow * delta;
-        }
-        out
-    };
-    let f0 = poly(&|k| a[k], 0);
-    let f1 = poly(&|k| k as f64 * a[k], 1);
-    let f2 = poly(&|k| (k * (k - 1)) as f64 * a[k], 2);
-    Some(t.chain(f0, f1, f2))
+    let at = |c: Jet| c.0.iter().rev().fold(T::cst(0.0), |acc, &c| acc * delta + T::cst(c));
+    Some(t.chain(at(a), at(a.derivative()), at(a.derivative().derivative())))
 }
 
 /// Each step's pose at roll `t`, in order — a driven step's (`laws`) at its law's value of `t`.
@@ -1321,9 +1310,14 @@ impl Moving {
         Ok(Moving { steps, laws, cols })
     }
 
+    /// Its laws as the rows read them, borrowed.
+    pub fn drives(&self) -> Vec<Driven<'_>> {
+        self.laws.iter().map(|(step, law)| Driven { step: *step, law: law.drive() }).collect()
+    }
+
     /// The constants a relation reads the motion by (`encode_motion`).
     pub fn encode(&self) -> Vec<f64> {
-        encode_motion(&self.steps, &self.laws)
+        encode_motion(&self.steps, &self.drives())
     }
 
     pub fn lifted(&self) -> Vec<usize> {
