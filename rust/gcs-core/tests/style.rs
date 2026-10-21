@@ -7,7 +7,7 @@
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::model::{EntKind, EntRef, Sketch};
 use gcs_core::program::elaborate;
-use gcs_core::style::Classes;
+use gcs_core::style::{Classes, Presented};
 use crate::common::parse_legacy as parse;
 
 /// `src` elaborated, drawn in the front plane (`common::front`).

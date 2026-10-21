@@ -1,7 +1,7 @@
 //! **The drift lint** (#462, `program::drift`): six patterns that are drift from Solvent's style
 //! by definition, each a warning of its own code, asked for and never raised by elaboration.  A
 //! document that trips each pattern and one beside it that does not, and the corpus held to a
-//! list of what it already has that can only shrink, as `layering.rs` holds the layering.
+//! list of what it already has that can only shrink.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

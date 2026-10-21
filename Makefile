@@ -18,8 +18,8 @@ comma := ,
 # compiled in with `include_str!`, so a document is source.  Left out of this list, editing one
 # rebuilt nothing — the tests read the file from disk and passed while the browser went on
 # running the case that was compiled in weeks ago.
-RUST_SRC := $(shell find rust/gcs-core/src rust/gcs-ffi/src rust/gcs-cli/src rust/examples rust/lib \
-                        -name '*.rs' -o -name '*.sv')
+RUST_SRC := $(shell find rust/gcs-solve/src rust/gcs-core/src rust/gcs-ffi/src rust/gcs-cli/src \
+                        rust/examples rust/lib -name '*.rs' -o -name '*.sv')
 RUST_CONFIG := rust/Cargo.toml $(wildcard rust/*/Cargo.toml) rust/Cargo.lock rust/rust-toolchain.toml
 WASM_TARGET := wasm32-unknown-unknown
 # The native triple, named so the release artefacts can be asked for together (see `release`)

@@ -2,6 +2,7 @@
 use crate::model::Sketch;
 use crate::plane::Basis;
 use crate::solid::{self, ApproximationPolicy, PageFrame};
+use crate::style::Presented;
 use super::{Renderer, RenderStats, Stroke, View};
 use std::collections::BTreeMap;
 

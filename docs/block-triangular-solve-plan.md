@@ -260,10 +260,10 @@ whole-system solve struggles, which is exactly where `Rescue` already runs it.
 
 ## Files
 
-- `rust/gcs-core/src/system.rs`: subset evaluation, `block_order`.
-- `rust/gcs-core/src/graph.rs`: `blocks` (Tarjan over the matched square part).
-- `rust/gcs-core/src/solve.rs`: the stage in `solve_compiled`; `BlockTr`.
-- `rust/gcs-core/src/newton.rs`: `normal_step` and `min_norm_step`, the Gauss–Newton steps
+- `rust/gcs-solve/src/system.rs`: subset evaluation, `block_order`.
+- `rust/gcs-solve/src/graph.rs`: `blocks` (Tarjan over the matched square part).
+- `rust/gcs-solve/src/solve.rs`: the stage in `solve_compiled`; `BlockTr`.
+- `rust/gcs-solve/src/newton.rs`: `normal_step` and `min_norm_step`, the Gauss–Newton steps
   `BlockTr` shares with the whole system.
 - `rust/gcs-core/tests/`: `block_order.rs` (the order and the seam), `block_solve.rs` (the
   rescue, the polish, a conflict), `hypoid_layout.rs` (the rough-seed gate and the preview
