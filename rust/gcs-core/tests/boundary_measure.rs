@@ -185,3 +185,16 @@ fn a_shared_unknown_is_held_out_of_the_rank_and_the_rank_adds_up() {
     assert!(t.parent_unknowns > DENSE_MAX, "{}", t.parent_unknowns);
     assert_eq!(flat_rank(&got), t.boundary_unknowns + t.reduced_rank);
 }
+
+/// A solve through boundaries says where its time went (`Through::times`), phase by phase: the
+/// phases do not overlap, so they and what is left over add up to the whole, and the inner
+/// solves, the most a cache of evaluations (#456) could save, are one of them.
+#[test]
+fn a_solve_through_says_where_its_time_went() {
+    let (_, t, _) = both(&measure::belts(&[Drive::PAPER; 3], false), 1e-9);
+    let s = t.times;
+    let phases = [s.compile, s.setup, s.inner, s.rows, s.jacobian, s.step, s.rank];
+    assert!(phases.iter().all(|&p| p >= 0.0), "{s:?}");
+    assert!(s.other() >= -1e-9 * s.total, "the phases overlap: {s:?}");
+    assert!(s.compile > 0.0 && s.inner > 0.0 && s.total >= t.result.time_s, "{s:?}");
+}

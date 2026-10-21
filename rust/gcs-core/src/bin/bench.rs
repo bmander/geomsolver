@@ -278,7 +278,7 @@ fn bench_rounded() {
 fn bench_boundaries(most: usize) {
     use gcs_core::boundary::measure::{self, Document, Drive};
     use gcs_core::model::Sketch;
-    use gcs_core::solve::{solve_through, BlockMode, Boundary, SolveOpts, Through};
+    use gcs_core::solve::{solve_through, BlockMode, Boundary, SolveOpts, Through, Times};
     // the worst relative disagreement of two poses
     let apart = |a: &Sketch, b: &Sketch| a.params.iter().zip(&b.params)
         .map(|(p, q)| (p.value - q.value).abs() / (1.0 + q.value.abs())).fold(0.0, f64::max);
@@ -354,6 +354,72 @@ fn bench_boundaries(most: usize) {
                      off.0, off.1,
                      if fb.result.success { "" } else { "; block by block FAILED" });
         }
+    }
+
+    // where a through solve's time goes, phase by phase (`Through::times`), medians of `reps`
+    // solves: `inner` is every evaluation of a boundary, the most a cache of them could save
+    println!("\n== boundaries (#459): where the through solve's time goes, ms (medians) ==");
+    println!("{:<22}{:>6} | {:>7} {:>7} {:>8} {:>7} {:>7} {:>7} {:>7} {:>7} | {:>8} | {:>6} \
+              {:>8} {:>9}",
+             "case", "N", "compile", "setup", "inner", "jacob", "rows", "step", "rank", "other",
+             "total", "inner%", "solves", "µs/solve");
+    let phases = |label: &str, n: usize, ts: &[Times], solves: usize| {
+        let at = |f: fn(&Times) -> f64| median(ts.iter().map(|t| 1e3 * f(t)).collect());
+        let (compile, setup, inner) = (at(|t| t.compile), at(|t| t.setup), at(|t| t.inner));
+        let (jac, rows) = (at(|t| t.jacobian), at(|t| t.rows));
+        let (step, rank, other, total) =
+            (at(|t| t.step), at(|t| t.rank), at(Times::other), at(|t| t.total));
+        println!("{label:<22}{n:>6} | {compile:7.2} {setup:7.2} {inner:8.2} {jac:7.2} {rows:7.2} \
+                  {step:7.2} {rank:7.2} {other:7.2} | {total:8.2} | {:>5.0}% {solves:>8} {:>9.2}",
+                 100.0 * inner / total, 1e3 * inner / solves as f64);
+    };
+    for (label, distinct, shared) in [("identical", false, false), ("distinct", true, false),
+                                      ("distinct, one unknown", true, true)] {
+        for n in [1usize, 10, 100, 1000] {
+            if n > most {
+                continue;
+            }
+            let drives: Vec<Drive> = (0..n).map(|k| {
+                let spread = 40.0 + 10.0 * (k as f64 + 0.5) / n as f64;
+                Drive { r_large: if distinct { spread } else { 45.0 }, ..Drive::PAPER }
+            }).collect();
+            let doc = measure::belts(&drives, shared);
+            let e = measure::read(&doc.src).expect("reads");
+            let bs = measure::bounds(&e, &doc.boundaries).expect("boundaries");
+            let mut last = None;
+            let ts: Vec<Times> = (0..reps(n).max(5)).map(|_| {
+                let t = solve_through(&mut e.sketch.clone(), &bs, SolveOpts::default())
+                    .expect("a boundary");
+                let times = t.times;
+                last = Some(t);
+                times
+            }).collect();
+            phases(label, n, &ts, solves(&last.unwrap()));
+        }
+    }
+    // an edit to one drive of N, solved again from the solved pose
+    for n in [100usize, 1000] {
+        if n > most {
+            continue;
+        }
+        let (_, solved) =
+            measure::solved(&measure::belts(&vec![Drive::PAPER; n], false).src).expect("solves");
+        let mut drives = vec![Drive::PAPER; n];
+        drives[0].centres = 125.0;
+        let doc = measure::belts(&drives, false);
+        let e = measure::read(&doc.src).expect("reads");
+        let bs = measure::bounds(&e, &doc.boundaries).expect("boundaries");
+        let mut start = e.sketch.clone();
+        measure::carry(&solved, &mut start);
+        let mut last = None;
+        let ts: Vec<Times> = (0..reps(n).max(5)).map(|_| {
+            let t = solve_through(&mut start.clone(), &bs, SolveOpts::default())
+                .expect("a boundary");
+            let times = t.times;
+            last = Some(t);
+            times
+        }).collect();
+        phases("an edit to one drive", n, &ts, solves(&last.unwrap()));
     }
 
     println!("\n== boundaries (#459): a closed loop through k two-root points, flat and through \
