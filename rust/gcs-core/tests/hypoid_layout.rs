@@ -751,8 +751,9 @@ fn first_start(scenario: &str, jitters: &[f64], mut attempt: impl FnMut(f64,u32)
 }
 
 /// **A solve that stops on its iteration limit is rescued.** A design solved as solventc solves
-/// it and then jittered by a fifth of its extent is back under the interactive acceptance within
-/// the DogLeg's hundred iterations and not at its solution: without the block rescue
+/// it and then jittered by a fifth of its extent (or a tenth: since a direction's row reads a sine
+/// or a cosine, #479, no fifth of the first 64 stops so) is back under the interactive acceptance
+/// within the DogLeg's hundred iterations and not at its solution: without the block rescue
 /// (`BlockMode::Off`) the solve succeeds on status 4, short of the recorded pair.  By default such
 /// a stop is not *settled* and the rescue runs: what it returns has settled, or is the stop bit for
 /// bit, unless a bound then breaks (status 5) — at every stop met.  And from some, the block pass
@@ -766,13 +767,16 @@ fn a_stop_on_the_iteration_limit_is_rescued() {
     let (_,rows) = recorded();
     let (k,mut e) = solved_design("bevel");
     let reference = e.sketch.clone();
-    first_start("a limit stop the block pass settles",&[0.2],|jitter,seed| {
+    first_start("a limit stop the block pass settles",&[0.2,0.1],|jitter,seed| {
         let start = crate::common::jittered(&reference,jitter,seed);
         e.sketch = start.clone();
         let off = SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()};
         let stop = solve::solve(&mut e.sketch,off);
+        // a start that failed, or settled, is not the scenario, and may stand where the pair's
+        // faces are not to be read
+        if !(stop.success && stop.status == 4) { return None; }
         let (short,_) = off_recorded(&read_pair(&e,rows[0].1[k]),&rows,k);
-        if !(stop.success && stop.status == 4 && short > 1e-9) { return None; }
+        if !(short > 1e-9) { return None; }
         let stopped = crate::common::bits(&e.sketch);
         e.sketch = start;
         let res = solve::solve(&mut e.sketch,SolveOpts::default());

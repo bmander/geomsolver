@@ -494,8 +494,11 @@ fn guards_are_renumbered_into_the_part_or_dropped() {
 /// frame of a `Drag` (the pull and polish alone) on three figures — a rectangle with fillets, a
 /// floating truss and the traced gear — is hashed, pose, status and success together, against
 /// the hash recorded before the rescue existed — re-recorded since when the core's trigonometry
-/// became its own (`fmath`, the same bits native and in wasm), and when the path walked became
-/// `fmath`'s too (`circle_path`: the platform's `sin`/`cos` made the hash glibc's or macOS's).
+/// became its own (`fmath`, the same bits native and in wasm), when the path walked became
+/// `fmath`'s too (`circle_path`: the platform's `sin`/`cos` made the hash glibc's or macOS's), and
+/// when `parallel`, `perpendicular` and a tangency at a contact came to read the lines' unit
+/// directions (#479): the fillet rectangle's frames, every one stopped on its cap before, settle,
+/// the truss's are the bits they were and the gear's within `1e-11`.
 #[test]
 fn pull_polish_frames_are_the_bits_they_were() {
     // FNV-1a over 64-bit words
@@ -528,7 +531,7 @@ fn pull_polish_frames_are_the_bits_they_were() {
     }
     println!("pull/polish hash {h:#018x}");
     // gear_trace's teeth are a ring since #96: one tooth's unknowns, the rest its turns
-    assert_eq!(h, 0x60732b9479880916);
+    assert_eq!(h, 0x4639c4b1c7f756d4);
 }
 
 /// Where the eye at bearing `az` and elevation `el` sees a place in space, and the way it looks.

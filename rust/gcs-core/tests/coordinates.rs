@@ -130,6 +130,10 @@ fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
 const AXES: &str = "unit mm\nuse std\nin std.front {\no := point\nq := point\n\
     fix((10, 20)) o\nfix((14, 23)) q\nf := std.Turned(o, q)\n}\n";
 
+/// The datum then turns from `(4, 3)` to `(0, 5)`, about 53°: `v` follows a quarter turn ahead of
+/// `u`.  Not a whole quarter: `std.Turned`'s `v` is `perpendicular` and `equal` to `u`, whose two
+/// roots lie either side of it, and a quarter turn puts `t` on `v`'s own point — the two lines
+/// one, either root as near as the other, and which the solve takes a rounding's.
 #[test]
 fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
     let mut e = build(&format!("{AXES}in std.front {{\np := point hint((100, -200))\n\
@@ -139,10 +143,11 @@ fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
     close(e.sketch.point_xy(p), (4.8, 18.6));
     let q = e.map.ent_named("q").unwrap().i();
     let [x, y] = e.sketch.point_params(q);
-    e.sketch.params[x as usize].value = 7.0;
-    e.sketch.params[y as usize].value = 24.0;
+    e.sketch.params[x as usize].value = 10.0;
+    e.sketch.params[y as usize].value = 25.0;
     solved(&mut e.sketch);
-    close(e.sketch.point_xy(p), (11.4, 14.8));
+    // u = (0, 1), v = (−1, 0): o − 5u + 2v
+    close(e.sketch.point_xy(p), (8.0, 15.0));
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
     let ordinate = |k: CKind| k == CKind::Ordinate;
     let back = io::loads(&io::dumps(&e.sketch, None)).unwrap();

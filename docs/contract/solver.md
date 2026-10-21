@@ -64,7 +64,7 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   of the plates with the margin free within 2× the fixed plates', at 100 and 200, and no case of
   the library with a dense column.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
-  (`extent^degree`).  Never one absolute threshold — kernels are of degree 1 and 2.  **The
+  (`extent^degree`).  Never one absolute threshold — kernels are of degree 0, 1 and 2.  **The
   iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
   `row_scale`, so the dogleg weighs an `angle` row and a `distance` row alike (issue #43).  A
   test comparing against a kernel multiplies by `row_scale` to get the raw residual.
@@ -121,29 +121,31 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   (`Ty::Path`) is an entity formal judged by kind at elaboration: what the call gave it must be a
   line, arc, circle, spline or curve (`Expansion::paths`, `relations::paths`, E103 at the
   argument). `tests/tangent_at.rs` and `tests/curve_contact.rs` are the gates.
-- **A tangency at a contact is no tangency along a line of no length** (#479), **nor is a
-  `parallel` or a `perpendicular`**.  The `tangent_arc_line` kernel is `(p − c)·(b − a)`, the
-  line's ends' difference unnormalised, so it holds for every contact once the ends meet: a run
-  tangent at both ends (`engine.parts.Span`, the conrod's flanks) has a root with both ends at the
-  crossing of its two rounds, isolated and of full rank, which no rank, diagnosis or witness can
-  tell from the tangent.  `parallel` and `perpendicular` are the cross and the dot of two such
-  differences: a rectangle threaded `perpendicular` has a root with its third side a point and its
-  fourth across the diagonal.  So the lines a row reads only by direction are named
-  (`Constraint::direction_lines`: `TangentArcLine`, `TangentLineCircleAt`, `TangentCircleAt`, both
-  of `Parallel`'s and `Perpendicular`'s), and `solve::collapsed` lists every acting row with one
-  no longer, in space, than `COLLAPSE_TOL` (the solve's own relative tolerance) of the extent.  A
-  document solve ending there is a failed solve (`judged`) and is recovered first by
-  `System::rescaled`: it is solved again from its start with each figure (the points drawn in a
-  plane whose two coordinates are unknowns, grouped by the rows joining their columns) that ended
-  at another size than it started (more than `RESIZE` either way) — a contour of unseeded corners
-  scattered at the size of a unit, its sides thirty — carried about its centroid to the size it
-  ended at, each figure its own factor, and kept only where that ends uncollapsed (a recovery's
-  solve that ends collapsed is never kept).  Otherwise it fails, status `COLLAPSED`,
-  never reported solved; the plan solver falls back to the numeric solve where its root collapses
-  one and keeps no `COLLAPSED` result; `Diagnosis::collapsed` names them (report `collapsed`, the
-  CLI's `degenerate`).  Nothing else searches for the figure from there: the seeds choose it.  A
-  drag (`retry` off) is not judged.  `tests/collapsed_tangent.rs` and `tests/collapsed_side.rs`
-  are the gates.
+- **A row that reads a line by its direction reads its unit direction** (#479): `perpendicular`
+  is the cosine of the angle between the two lines, `â · b̂` (`cos2`), `parallel` the sine,
+  `â × b̂` (`sin2`), both degree 0 as `perpendicular3`'s `cos3` is; the `tangent_arc_line` kernel
+  (`TangentArcLine`, `TangentLineCircleAt`, `TangentCircleAt`) is `(p − c)·(b − a)/|b − a|`, how
+  far the radius to the contact runs along the line, degree 1, its Taylor forms the same.  They
+  were the unnormalised dot and cross of the ends' differences, which hold wherever a line has no
+  length, and a solve found those roots: a rectangle threaded `perpendicular` from scattered
+  corners ended with its third side a point and its fourth across the diagonal, residual nil; a
+  run tangent at both ends (`engine.parts.Span`, the conrod's flanks) with both ends at the
+  crossing of its two rounds — isolated, of full rank, no rank, diagnosis or witness can tell them
+  from the figure.  Read by unit direction, a shrinking line is no nearer a root, and its
+  gradient grows as 1/its length.  The price is the cosine's and sine's own extremes: two lines
+  started square to the answer (`perpendicular` from parallel, `parallel` from square) stand at a
+  stationary point of the row, which the raw form left only by shrinking a line, so which way they
+  turn is the other rows'.  A line of no length still has no direction (its floored unit is nil,
+  so every such row holds there), so the lines a row reads by direction are named
+  (`Constraint::direction_lines`: the three tangencies' line, both of `Parallel`'s and
+  `Perpendicular`'s) and `solve::collapsed` lists every acting row with one no longer, in space,
+  than `COLLAPSE_TOL` (the solve's own relative tolerance) of the extent.  A document solve ending
+  there is a failed solve (`judged`), recovered as any is (`RECOVERIES`; a recovery's solve that
+  ends collapsed is never kept), else fails, status `COLLAPSED`, never reported solved; the plan
+  solver falls back to the numeric solve where its root collapses one and keeps no `COLLAPSED`
+  result; `Diagnosis::collapsed` names them (report `collapsed`, the CLI's `degenerate`).  A drag
+  (`retry` off) is not judged.  `tests/collapsed_side.rs` and `tests/collapsed_tangent.rs` are the
+  gates.
 - `Horizontal`/`Vertical` level a line; a `Level` along a view's own axis levels a *pair of
   points* with the same line kernels, and `cgraph` gives it a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.

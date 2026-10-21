@@ -1,10 +1,11 @@
-//! **A side of no length is no perpendicular side** (#479): `parallel` and `perpendicular` are the
-//! cross and the dot of the two lines' `b − a`, which hold whatever the other line once one has
+//! **A side of no length is no perpendicular side** (#479): `parallel` and `perpendicular` were
+//! the cross and the dot of the two lines' `b − a`, which held whatever the other line once one had
 //! no length.  A rectangle of four lines threaded `perpendicular`, two lengths stated and every
 //! corner unseeded, starts about the origin at the size of a unit and grew its stated sides
 //! first: its third side ended a point and the fourth closed across the diagonal, residual nil,
-//! and that was reported solved.  It is solved again from its start at the size it ended at
-//! (`System::rescaled`), which reaches the rectangle; a collapse no start explains fails
+//! and that was reported solved.  The rows now read the sine and the cosine of the angle between
+//! the lines' unit directions, which a shrinking side comes no nearer, and the rectangle is
+//! reached.  A side held at a point still holds them (its floored unit is nil): that fails
 //! (`solve::COLLAPSED`), the relations named (`Diagnosis::collapsed`).
 use gcs_core::decompose::PlanSolver;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};

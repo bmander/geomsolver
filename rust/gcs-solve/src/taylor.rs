@@ -360,12 +360,12 @@ pub(crate) fn distance_free(v: &[Jet], k: &[f64], r: &mut [Jet]) {
 
 pub(crate) fn parallel(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     let (d1x, d1y, d2x, d2y) = dirs(v);
-    r[0] = d1x * d2y - d1y * d2x;
+    r[0] = (d1x * d2y - d1y * d2x) / (Jet::line_len(d1x, d1y) * Jet::line_len(d2x, d2y));
 }
 
 pub(crate) fn perpendicular(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
     let (d1x, d1y, d2x, d2y) = dirs(v);
-    r[0] = d1x * d2x + d1y * d2y;
+    r[0] = (d1x * d2x + d1y * d2y) / (Jet::line_len(d1x, d1y) * Jet::line_len(d2x, d2y));
 }
 
 pub(crate) fn angle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
@@ -409,7 +409,8 @@ pub(crate) fn tangent_circle_circle(v: &[Jet], k: &[f64], r: &mut [Jet]) {
 }
 
 pub(crate) fn tangent_arc_line(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
-    r[0] = (v[0] - v[2]) * (v[6] - v[4]) + (v[1] - v[3]) * (v[7] - v[5]);
+    let (dx, dy) = (v[6] - v[4], v[7] - v[5]);
+    r[0] = ((v[0] - v[2]) * dx + (v[1] - v[3]) * dy) / Jet::line_len(dx, dy);
 }
 
 pub(crate) fn symmetric(v: &[Jet], _k: &[f64], r: &mut [Jet]) {
