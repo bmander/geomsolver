@@ -229,7 +229,13 @@ pub(super) fn in_space(
         // a point at a fraction of the way along, its place carried over (#248)
         CKind::PointAlongLine => CKind::PointAlongLine3,
         CKind::PointAlongArc => CKind::PointAlongArc3,
-        CKind::Perpendicular => CKind::Perpendicular3,
+        CKind::Perpendicular => {
+            if chosen(2) {
+                return Err((true, "`sense:` is which way a quarter turn goes in a plane, and two \
+                    lines in space turn neither way: square is all they can be".to_string()));
+            }
+            CKind::Perpendicular3
+        }
         CKind::Parallel => CKind::Parallel3,
         CKind::EqualLength => CKind::EqualLength3,
         // the midpoint and the mirror are as well defined in space as in a plane: the mirror

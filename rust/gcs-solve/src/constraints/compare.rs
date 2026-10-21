@@ -49,7 +49,11 @@ fn matches(a: &Constraint, b: &Constraint, want: impl Fn(SpecKind) -> bool + Cop
     if a.kind != b.kind || a.along != b.along || a.bound != b.bound {
         return false;
     }
-    same_args(a, b, false, want) || (a.kind.commutative() && same_args(a, b, true, want))
+    // a perpendicular that says which way is the same statement swapped only with its sense
+    // turned round, which the slots cannot see: it is held to one order (#497)
+    let sided = a.side().is_some() || b.side().is_some();
+    same_args(a, b, false, want)
+        || (a.kind.commutative() && !sided && same_args(a, b, true, want))
 }
 
 /// Whether an entity can fill a spec slot of this kind.

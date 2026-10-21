@@ -109,15 +109,17 @@ component StandardDatums() {
 }
 
 // Axes turned within a plane: the plane through `o` whose u runs toward `t` and whose v is a
-// quarter turn on, in the plane `o` and `t` are drawn in — what a part standing at an angle is
+// quarter turn on, anticlockwise, in the plane `o` and `t` are drawn in — what a part standing at an angle is
 // measured against (`p distance(d, along: u) axes.axes`) and seeded in (`hint(at: axes.axes,
 // x: 3, y: 4)`).  Draw it in that plane: `axes := std.Turned(o, t) in std.front`; `axes.u` is
-// the line from `o` to `t`.  The two lines share `o`, so the plane stands there unsaid.
+// the line from `o` to `t`.  The two lines share `o`, so the plane stands there unsaid.  The
+// turn says its sense: square and equal alone have the mirrored frame as a second root, which a
+// datum turned a quarter or more in one solve can land on (#497).
 component Turned(o: point, t: point) {
   construction u := line(o, t)
   private q := point hint(at: o, toward: t, turn: 90deg)
   private construction v := line(o, q)
-  v perpendicular u
+  u perpendicular(sense: ccw) v
   v equal u
   axes := plane(u: u, v: v)
 }

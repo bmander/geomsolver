@@ -869,9 +869,10 @@ impl CKind {
                 ("along", S::Str),
                 ("form", S::Int),
             ],
-            CKind::Parallel | CKind::Perpendicular | CKind::EqualLength => {
-                &[("l1", S::Line), ("l2", S::Line)]
-            }
+            CKind::Parallel | CKind::EqualLength => &[("l1", S::Line), ("l2", S::Line)],
+            // square either way round, or — with `sense:` — the second a quarter turn from the
+            // first the way it names, as `angle` reads one (#497)
+            CKind::Perpendicular => &[("l1", S::Line), ("l2", S::Line), ("sense", S::Str)],
             // directed as it always was, counter-clockwise positive from `l1`'s direction; the
             // `sense` word is how a drawing says clockwise without writing a minus (§9.4)
             CKind::Angle => {
@@ -1300,6 +1301,7 @@ impl CKind {
             (CKind::Ordinate, 4) | (CKind::Level, 3) => &ALONG_WORDS[..],
             (CKind::Angle, 3) => &["ccw", "cw"][..],
             (CKind::EqualAngle, 4) => &["ccw", "cw"][..],
+            (CKind::Perpendicular, 2) => &["ccw", "cw"][..],
             // a rate held along a line, or square to it; `tangent` the same as `parallel`,
             // written as the tangent at the point (#365)
             (CKind::Rate, 5) => &RATE_WORDS[..],
@@ -1356,6 +1358,8 @@ impl CKind {
             CKind::Angle => (3, &[("ccw", 1.0), ("cw", -1.0)][..]),
             // the second pair turns the way the first does, or — `cw` — the other way round
             CKind::EqualAngle => (4, &[("ccw", 1.0), ("cw", -1.0)][..]),
+            // the quarter turn from the first line to the second, either way (#497)
+            CKind::Perpendicular => (2, &[("ccw", 1.0), ("cw", -1.0)][..]),
             _ => return None,
         })
     }
