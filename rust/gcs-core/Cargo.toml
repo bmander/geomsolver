@@ -40,3 +40,6 @@ path = "tests/main.rs"
 [features]
 # The slow tier: tests of ten seconds or more, run by `make test-slow`.
 slow = []
+# The CalculiX oracle of #510's verification corpus, run by `make test-ccx` with `ccx` and `gmsh`
+# on the path.
+ccx = []
