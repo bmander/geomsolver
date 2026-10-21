@@ -376,6 +376,27 @@ takes a layout naming the front datum, origin and reference axis.
   `tau` reads differently in the two: the **warning**. Asked of the text (every component,
   instantiated or not, and every module body).  `expr::builtin` is the one table; `tests/names.rs`
   is the gate.
+- **The drift lint is asked for, and refuses nothing** (#462; `program::drift`, codes
+  `W201`–`W206`, the `W2xx` block ours as `E1xx` is).  It names six patterns that are drift from
+  the language's style by definition (R10 of [the direction paper](../solvent-direction.md)), not
+  counts of an idiom: **W201** a label given the name it labels in a call (`teeth: teeth` to a
+  component, `d: d` to a word a file defines — a built-in's slot, `plane(u: u, v: v)`, and a seed
+  are no call); **W202** a component call standing as a statement; **W203** a component that makes
+  nothing a parent can read (everything it declares is `private` or a claim's witness) and states
+  relations; **W204** a path reading through an instance into its instance (`pair.gear_cone.ax`,
+  the instances known by their statements; a path through an index or a formal is not followed);
+  **W205** an `Int` formal read only by `when` conditions; **W206** a `group` formal handed on whole
+  and never read through.  Asked of the **document's own text** (its components and root, not a
+  module it reads, which is linted as a document of its own), and never by `elaborate`: only
+  `solventc --lint` adds the warnings, which fail nothing.  `tests/drift.rs` holds each pattern to
+  one document that trips it and one that does not, and holds the corpus (`rust/examples`,
+  `rust/lib`) to `ALLOWED`, a list that only shrinks, for the patterns in `GATED` (W204, W206),
+  each of which the language can say another way today (an instance names what a parent reads of
+  its instance as a group of aliases, `ends := {tip: arm.tip}`).  The rest are said, not held:
+  W201 waits on a word's unlabelled measure (#463), W202 on the motion words (#464), W203 on a
+  word that may leave a number to the solve (`std.Screw`'s pitch, a joint's ratio: a word's
+  parameter left out is E040); W205 is a heuristic, since a flag chooses a model as often as a
+  picture.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,
   `flatten::check_call`).  `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw, o_s: o_s,
   o_t: o_t)`: an argument bound by position must fill an *entity* formal and must stand before every

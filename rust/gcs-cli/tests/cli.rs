@@ -656,3 +656,36 @@ fn a_run_says_its_stages_and_their_times() {
     assert!(!String::from_utf8_lossy(&quiet.stderr).contains("solventc: ["),"unasked, a pipe hears nothing");
     std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
 }
+
+/// `--lint` says the drift lint's warnings in the core's words, and only when asked: advisory, so
+/// a document that solves still exits 0.
+#[test]
+fn the_drift_lint_is_said_when_asked_and_fails_nothing() {
+    let dir = std::env::temp_dir().join(format!("solventc-lint-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("level.sv");
+    std::fs::write(&source,"\
+use std (horizontal)
+component Level(a: point, b: point) {
+  a horizontal b
+}
+in std.front {
+  a := point
+  b := point hint((10, 3))
+  fix((0, 0)) a
+  Level(a, b)
+}
+").unwrap();
+    let path = source.to_str().unwrap();
+    let plain = run(&[path,"--no-diagnose","--allow-unsolved"]);
+    assert_eq!(plain.status.code(),Some(0),"{}",String::from_utf8_lossy(&plain.stderr));
+    assert!(!String::from_utf8_lossy(&plain.stderr).contains("[W2"));
+    let linted = run(&[path,"--no-diagnose","--allow-unsolved","--lint"]);
+    assert_eq!(linted.status.code(),Some(0),"{}",String::from_utf8_lossy(&linted.stderr));
+    let said = String::from_utf8_lossy(&linted.stderr);
+    assert!(said.contains(":2:11: warning[W203]: `Level` declares nothing"),"{said}");
+    assert!(said.contains(":9:3: warning[W202]: `Level(…)` stands as a statement"),"{said}");
+    let json = run(&[path,"--no-diagnose","--allow-unsolved","--lint","--json"]);
+    assert!(String::from_utf8_lossy(&json.stdout).contains("\"code\": \"W202\""));
+    std::fs::remove_dir_all(dir).unwrap();
+}
