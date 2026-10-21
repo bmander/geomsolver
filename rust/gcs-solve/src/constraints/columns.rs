@@ -424,20 +424,19 @@ impl Constraint {
     }
 
     /// The lines this row reads only by their direction (#479): the `tangent_arc_line` kernel's
-    /// `(p − c)·(b − a)` and `parallel`'s cross and `perpendicular`'s dot of the two lines'
-    /// `b − a`, the ends' difference unnormalised, which hold whatever else where a line has no
-    /// length.  A run tangent at both its ends then has a root with its ends together where the
-    /// two rounds cross, and a rectangle of four perpendicular sides one with a side a point and
-    /// the next its diagonal, so only a length tells either from the figure (`solve::collapsed`).
-    pub fn direction_lines(&self) -> Vec<usize> {
-        match self.kind {
-            CKind::TangentArcLine | CKind::TangentCircleAt => vec![self.args[1].ent().i()],
-            CKind::TangentLineCircleAt => vec![self.args[0].ent().i()],
-            CKind::Parallel | CKind::Perpendicular => {
-                vec![self.args[0].ent().i(), self.args[1].ent().i()]
-            }
-            _ => Vec::new(),
-        }
+    /// `(p − c)·(b − a)/|b − a|` and `parallel`'s sine and `perpendicular`'s cosine of the two
+    /// lines' unit directions.  A line of no length has none (its floored unit is nil), so each
+    /// holds there whatever else: a run tangent at both its ends held together where its two
+    /// rounds cross, a rectangle's side pinned to a point — only a length tells either from the
+    /// figure (`solve::collapsed`).
+    pub fn direction_lines(&self) -> impl Iterator<Item = usize> + '_ {
+        let slots = match self.kind {
+            CKind::TangentArcLine | CKind::TangentCircleAt => 1..2,
+            CKind::TangentLineCircleAt => 0..1,
+            CKind::Parallel | CKind::Perpendicular => 0..2,
+            _ => 0..0,
+        };
+        self.args[slots].iter().map(|a| a.ent().i())
     }
 
     /// The spline this constraint touches and the Param holding where on it — `None` for

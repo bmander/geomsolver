@@ -1,6 +1,6 @@
 //! **A side of no length is no perpendicular side** (#479): `parallel` and `perpendicular` were
-//! the cross and the dot of the two lines' `b − a`, which held whatever the other line once one had
-//! no length.  A rectangle of four lines threaded `perpendicular`, two lengths stated and every
+//! the cross and the dot of the two lines' `b − a`, which held whatever the other line once one
+//! had no length.  A rectangle of four lines threaded `perpendicular`, two lengths stated and every
 //! corner unseeded, starts about the origin at the size of a unit and grew its stated sides
 //! first: its third side ended a point and the fourth closed across the diagonal, residual nil,
 //! and that was reported solved.  The rows now read the sine and the cosine of the angle between
@@ -16,7 +16,8 @@ use gcs_core::solve::{solve, SolveOpts, COLLAPSED};
 use crate::common::{ent, read};
 
 /// The document as it was drawn: the four corners unseeded, the circle a bystander.
-const RECT: &str = "use std\n\nc0 := circle(center: std.front.origin) hint(r: 26.8) in std.front\n\n\
+const RECT: &str = "use std\n\n\
+                    c0 := circle(center: std.front.origin) hint(r: 26.8) in std.front\n\n\
                     component Rectangle(w: Length, h: Length) {\n  length(w) (l1 := line) -> \
                     perpendicular length(h) (l2 := line) -> perpendicular (l3 := line) -> \
                     perpendicular (l4 := line) -> close\n}\n\n\
@@ -51,12 +52,8 @@ fn an_unseeded_rectangle_solves_to_a_rectangle() {
 /// never solved, and the two perpendiculars on the third side are named.
 #[test]
 fn a_side_seeded_as_a_point_is_not_solved() {
-    let seeded = RECT.replace(
-        "r0 := Rectangle(w: 30, h: 26.9) in std.front\n",
-        "r0 := Rectangle(w: 30, h: 26.9) in std.front\n\
-         fix((0, 0)) r0.l1.p1\nfix((30, 0)) r0.l2.p1\n\
-         fix((30, 26.9)) r0.l3.p1\nfix((30, 26.9)) r0.l4.p1\n",
-    );
+    let seeded = format!("{RECT}fix((0, 0)) r0.l1.p1\nfix((30, 0)) r0.l2.p1\n\
+                          fix((30, 26.9)) r0.l3.p1\nfix((30, 26.9)) r0.l4.p1\n");
     let mut e = read(&seeded);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(!r.success && r.status == COLLAPSED, "{r:?}: {:?}", sides(&e));

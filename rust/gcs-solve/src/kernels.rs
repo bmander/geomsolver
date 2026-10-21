@@ -148,9 +148,10 @@ pub struct Kernel {
     pub n_res: usize,
     pub n_par: usize,
     pub n_const: usize,
-    /// Power of length the residual carries: 1 for the ones written as a signed distance
-    /// (coincident, radius, the distance-to-a-line family), 2 for the ones written squared
-    /// (distance, the dot/cross forms, tangency).  A residual of 1e-6 means something quite
+    /// Power of length the residual carries: 0 for the ones read off unit directions (angles,
+    /// `parallel`, `perpendicular`), 1 for the ones written as a signed distance (coincident,
+    /// radius, the distance-to-a-line family, a tangency at a contact), 2 for the ones written
+    /// squared (distance, the remaining dot/cross forms).  A residual of 1e-6 means something quite
     /// different in the two, so the tolerance a row is judged against is `tol * extent^degree`
     /// rather than one threshold for the whole system.
     pub degree: u32,
@@ -1032,18 +1033,9 @@ fn tangent_arc_line_jac(n: usize, v: &[f64], _k: &[f64], j: &mut [f64]) {
         let (ux, uy) = (v[o] - v[o + 2], v[o + 1] - v[o + 3]);
         let (dx, dy) = (v[o + 6] - v[o + 4], v[o + 7] - v[o + 5]);
         let l = line_len(dx, dy);
-        let (hx, hy) = (dx / l, dy / l);
-        let s = ux * hx + uy * hy;
-        // along the line the radius's unit, across the line its turn: `(u − s ĥ)/|d|`
-        let (gx, gy) = ((ux - s * hx) / l, (uy - s * hy) / l);
-        j[o] = hx;
-        j[o + 1] = hy;
-        j[o + 2] = -hx;
-        j[o + 3] = -hy;
-        j[o + 4] = -gx;
-        j[o + 5] = -gy;
-        j[o + 6] = gx;
-        j[o + 7] = gy;
+        let dc = [dx, dy, -dx, -dy, -ux, -uy, ux, uy];
+        let dl = [0.0, 0.0, 0.0, 0.0, -dx / l, -dy / l, dx / l, dy / l];
+        ratio_jac(&dc, &dl, l, ux * dx + uy * dy, &mut j[o..o + 8]);
     }
 }
 

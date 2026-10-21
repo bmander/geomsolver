@@ -531,7 +531,7 @@ fn pull_polish_frames_are_the_bits_they_were() {
     }
     println!("pull/polish hash {h:#018x}");
     // gear_trace's teeth are a ring since #96: one tooth's unknowns, the rest its turns
-    assert_eq!(h, 0x4639c4b1c7f756d4);
+    assert_eq!(h, 0xe50bc34a55760d2d);
 }
 
 /// Where the eye at bearing `az` and elevation `el` sees a place in space, and the way it looks.

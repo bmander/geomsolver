@@ -61,11 +61,11 @@ pub fn collapsed(sk: &Sketch) -> Vec<u32> {
     let floor = COLLAPSE_TOL * sk.extent();
     let short = |l: usize| {
         let ln = &sk.lines[l];
-        let (a, b) = (sk.world_point(ln.p1 as usize), sk.world_point(ln.p2 as usize));
-        !(crate::space::norm(crate::space::sub(b, a)) > floor)
+        !(crate::space::distance(sk.world_point(ln.p1 as usize), sk.world_point(ln.p2 as usize))
+            > floor)
     };
     sk.constraints.iter().filter(|c| c.acts())
-        .filter(|c| c.direction_lines().into_iter().any(short))
+        .filter(|c| c.direction_lines().any(short))
         .map(|c| c.id)
         .collect()
 }
@@ -289,12 +289,11 @@ impl System {
                 }
             }
         }
-        if steers && res.success {
-            res = self.steer(sk, opts, start, res);
-        }
+        // what the recoveries leave is judged already; a steer moves it again.  The lines are
         // named where it is reported (`Diagnosis::collapsed`), not here
-        if opts.document() {
-            res = judged(sk, res);
+        if steers && res.success {
+            let steered = self.steer(sk, opts, start, res);
+            res = judged(sk, steered);
         }
         res
     }
@@ -351,7 +350,8 @@ impl System {
             sk.set_x(from);
         }
         let solved = self.solve_unsteered(sk, opts);
-        if solved.success && collapsed(sk).is_empty() {
+        let solved = judged(sk, solved);
+        if solved.success {
             return solved;
         }
         *self = compiled;
