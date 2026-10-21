@@ -58,4 +58,12 @@ part Valve(seat: point, ax: line, lift: Length, head: Length) {
   hc midpoint hd
   hd perpendicular ax
   h1 distance(head) h2
+  // which way each piece stands, the axis running from the seat up to the cam: the face's `f1`
+  // and the head's `h1` on its left, the cam above the face and the bucket and the stem under it
+  ccw(ax.p1, ax.p2, f1)
+  ccw(ax.p1, ax.p2, h1)
+  ccw(f1, f2, ax.p2)
+  cw(f1, f2, b1)
+  cw(f1, f2, b2)
+  cw(f1, f2, hc)
 }
