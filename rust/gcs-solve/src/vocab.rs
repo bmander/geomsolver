@@ -163,6 +163,19 @@ pub fn one_of(words: &[&str]) -> String {
     }
 }
 
+/// `a`, `a and b`, `a, b and c` — every item, as a reader reads a list: `one_of`'s sibling, so
+/// the words that list what holds punctuate it one way.
+pub fn all_of<S: AsRef<str>>(items: &[S]) -> String {
+    match items {
+        [] => "nothing".to_string(),
+        [a] => a.as_ref().to_string(),
+        [rest @ .., last] => {
+            let head: Vec<&str> = rest.iter().map(AsRef::as_ref).collect();
+            format!("{} and {}", head.join(", "), last.as_ref())
+        }
+    }
+}
+
 /// The classes a declaration carries, in the order they were written: `class centerline heavy`.
 ///
 /// Several, because one costs nothing now and forecloses nothing: on a conflicting property the

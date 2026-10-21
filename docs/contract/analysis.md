@@ -260,8 +260,8 @@ another.
   off the supports. Each `Held` support holds its points along one direction or every one, and a
   `fixed` support (`turn`) the body's turn too. The free twists `(v, ω)` are the null space of
   `e·(v + ω×(p − c)) = 0` over every held point and direction, `c` the supports' middle and ω's
-  columns scaled by the supports' size so every column is a velocity (`RIGID`, 1e-9, the rank's
-  cut). The slides are the free twists that do not turn. Each turn is about its axis through the
+  columns scaled by the supports' size so every column is a velocity (`RIGID`, the diagnosis's
+  rank cut `system::RANK_TOL`). The slides are the free twists that do not turn. Each turn is about its axis through the
   point of it nearest `c`, its velocity there along the axis the pitch: zero for a turn, else a
   screw. World axes are preferred where the freedoms hold them (`SNAP`), so a body free about z
   says `turn about z through (0, 0, 0)`. A twist that moves no point of the body (`body`: bars all
@@ -273,7 +273,10 @@ another.
 - **A structure's free motion is named** (`Structure::free`, P5's `Failure::Free` said). The
   rigid motions are the supports': each held degree of freedom holds its node along its axis, and
   the nodes are the body. A mechanism is what is left of the motions no bar stretches (each bar's
-  strain row, `ĝ·(u_b − u_a) = 0`) once the rigid motions' fields are taken out. Its nodes are
+  strain row, `ĝ·(u_b − u_a) = 0`) once the rigid motions' fields are taken out. The rows are the
+  ones `solve` factors, unweighted: one numbering (`Structure::equations`) and one strain-row
+  builder (`Structure::strain`) serve both, so an element that joins the interior joins the
+  mechanism too. Its nodes are
   those it moves. It is looked for by a dense null space up to `diagnose::NUMERIC_MAX` free
   degrees of freedom, and is `None` past it. `Free::text` says both: `free to turn about (-3, 0);
   a mechanism: nodes 1 and 2 move with no bar stretched`
@@ -281,7 +284,10 @@ another.
 
 - **Stress at a sharp re-entrant edge is unbounded, and is said rather than computed**
   (`analysis::reentrant`). A body's edges are read off the boundary the drawing finishes, its
-  rounds made (`BodyFaces::whole`, where `BodyFaces::read` is the stratum a round reads). A
+  rounds made (`BodyFaces::whole`, where `BodyFaces::read` is the stratum a round reads). A body
+  nothing reads the faces of is that stratum, already remembered (`faces::cached`). Any other is
+  remembered in `Caches::whole`, over the drawing's own B-rep (`Sketch::exact_solid`), so every
+  scenario, report and export over one body reads one build. A
   concave corner where the material's angle (`BodyFaces::angle`) passes a half turn (`STRAIGHT`)
   is one, once per pair of faces at its sharpest. Stress grows toward it as `r^(λ−1)`, λ
   Williams' least exponent for a traction-free wedge in its opening mode (`analysis::williams`:
@@ -291,8 +297,8 @@ another.
   (`williams_exponent_is_the_wedges_least_root`).
 
 - **A degenerate modal pair is named, and the ring that makes it one** (`analysis::repeated`,
-  `Repeated::wave`). A run of a solve's ascending values within `eigen::GAP` of each other (the
-  gap Sylvester's count already reads as one value) is repeated. A run at rest (`AT_REST` of the
+  `Repeated::wave`). The eigensolver says which of its values are one (`Pairs::runs`: consecutive
+  values within its `GAP` of the first of each run), and a run of more than one is repeated. A run at rest (`AT_REST` of the
   largest) is a rigid motion's, the supports' word, and is left out. An eigenvalue of two vectors
   has no derivative there (`φᵀ(L' − λR')φ` is no longer one number), so a requirement reads the
   run whole. Given one step of a ring of `order` as a map of the freedoms and the inner product
@@ -302,7 +308,8 @@ another.
   of 120: pairs 1–4 at waves 1–4, the cut tenth value no pair).
 
 - **A requirement out of reach of what drives it** (`analysis::reach`; `Structure::reach` for the
-  interior's row). A row that holds (`SOLVED`, 1e-8 of its size) is `Reached`. One that does not
+  interior's row). A row that holds to what the solver accepts (`SolveOpts::acceptance_tol`, at the
+  size of the larger of its value and what it states) is `Reached`. One that does not
   is `Held` where no column it reads is free. It is `Extreme` where its change over the free
   columns, each moved by its own scale, is below `STATIONARY` (1e-6) of its value. A solve that
   stopped there stopped at the extreme of what the row can be, short of what it states: the least

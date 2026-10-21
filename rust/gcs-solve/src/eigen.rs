@@ -39,6 +39,28 @@ pub struct Pairs {
     pub residuals: Vec<f64>,
 }
 
+impl Pairs {
+    /// **Its runs of one value**: the indices of consecutive values within `GAP` of the first of
+    /// each run (relative to it, or to `BREAKDOWN` of the largest for a run near zero), the gap
+    /// Sylvester's count reads as one value.  A value found once is a run of one.
+    pub fn runs(&self) -> Vec<std::ops::Range<usize>> {
+        let scale = self.values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < self.values.len() {
+            let v = self.values[i];
+            let mut j = i + 1;
+            while j < self.values.len()
+                && self.values[j] - v <= GAP * v.abs().max(BREAKDOWN * scale) {
+                j += 1;
+            }
+            out.push(i..j);
+            i = j;
+        }
+        out
+    }
+}
+
 /// Why a solve has no answer.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Refusal {
@@ -75,9 +97,8 @@ const BREAKDOWN: f64 = 1e-12;
 /// rounding instead of never.
 const FLOOR: f64 = 1e-4;
 /// Sylvester's count is taken this far above the highest value found, relative to its distance
-/// from the shift: values closer than that are one repeated value (`diagnose::analysis::repeated`
-/// reads the same).
-pub(crate) const GAP: f64 = 1e-6;
+/// from the shift: values closer than that are one repeated value.
+const GAP: f64 = 1e-6;
 /// The shift's first distance below zero, relative to the least diagonal ratio `L_ii / R_ii`.
 const SHIFT: f64 = 1e-6;
 

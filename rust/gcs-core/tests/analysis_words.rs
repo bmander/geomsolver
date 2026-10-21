@@ -6,8 +6,9 @@ use gcs_core::diagnose::analysis::{
     self, freedoms, freedoms_text, reach, repeated, williams, Freedom, Held, Reach,
 };
 use gcs_core::eigen::{self, Opts};
+use crate::interior::{braced, two_bar};
+use crate::linalg::spring;
 use gcs_core::interior::{Bar, Failure, Structure};
-use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::rng::Rng;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::sparse::Sym;
@@ -168,7 +169,12 @@ fn a_structure_names_what_leaves_it_free() {
 
     let mut held = two.clone();
     held.fixed = vec![true, true, true, true, false, false];
-    assert!(held.free(&xt).held() && held.free(&xt).text(2).is_none());
+    assert_eq!(held.free(&xt).text(2), None);
+    for dim in [2, 3] {
+        let (s, x) = braced(dim, 9, &mut Rng::new(5));
+        let free = s.free(&x);
+        assert!(free.rigid.is_empty() && free.mechanism == Some(vec![]), "{dim}D: {free:?}");
+    }
 
     let bar = Structure {
         dim: 3,
@@ -247,10 +253,7 @@ scenario loose {{
 
 /// Elaborated and solved, and each scenario's words.
 fn words(src: &str) -> Vec<(String, Vec<String>)> {
-    let (p, errs, linked) = gcs_core::library::parse_linked(src);
-    assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
-    let e: Elaborated = elaborate(&p);
-    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let e = crate::common::read(src);
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).settled());
     e.scenarios.iter()
@@ -293,10 +296,6 @@ fn a_support_on_no_face_is_said() {
     assert!(got[0].1.iter().any(|w| w == said), "{:?}", got[0].1);
 }
 
-fn spring(t: &mut Vec<(usize, usize, f64)>, a: usize, b: usize, k: f64) {
-    t.extend([(a, a, k), (b, b, k), (a, b, -k), (b, a, -k)]);
-}
-
 /// **A degenerate modal pair is named, with its ring**: a free ring of 120 masses has every mode
 /// twice (`4(k/m) sin²(πj/N)`), and one step round the ring turns mode pair j by `2πj/120` — its
 /// wave.  The rigid turn at zero is the supports' word, not a pair, and the tenth value, cut from
@@ -334,20 +333,6 @@ fn a_degenerate_pair_is_named_with_its_ring() {
     assert_eq!(runs.iter().map(|r| (r.first, r.count)).collect::<Vec<_>>(), [(0, 2)]);
     assert_eq!(runs[0].wave(&got, &unit, &|x: &[f64]| x.to_vec(), 4), None);
     assert!(runs[0].text(None).starts_with("modes 1 and 2 are one degenerate pair: "));
-}
-
-/// Two bars from `(∓w, 0)`, held, to an apex at `(0, h)` loaded `(0, −p)`, the output the
-/// apex's rise.
-fn two_bar(w: f64, h: f64, e: f64, a: f64, p: f64) -> (Structure, Vec<f64>) {
-    let s = Structure {
-        dim: 2,
-        nodes: 3,
-        bars: vec![Bar { a: 0, b: 2, e }, Bar { a: 1, b: 2, e }],
-        fixed: vec![true, true, true, true, false, false],
-        load: vec![0.0, 0.0, 0.0, 0.0, 0.0, -p],
-        weight: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-    };
-    (s, vec![-w, 0.0, w, 0.0, 0.0, h, a, a])
 }
 
 /// **A requirement out of reach of what drives it**: the apex of two bars sinks

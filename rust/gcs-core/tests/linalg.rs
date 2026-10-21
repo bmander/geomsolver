@@ -252,7 +252,7 @@ fn dense(a: &Sym) -> DMatrix<f64> {
 }
 
 /// A spring of stiffness `k` between freedoms `a` and `b`, as an assembly adds it: its 2×2 block.
-fn spring(t: &mut Vec<(usize, usize, f64)>, a: usize, b: usize, k: f64) {
+pub(crate) fn spring(t: &mut Vec<(usize, usize, f64)>, a: usize, b: usize, k: f64) {
     t.extend([(a, a, k), (b, b, k), (a, b, -k), (b, a, -k)]);
 }
 

@@ -89,6 +89,9 @@ pub struct Caches {
     /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
     /// `solid::reads`: every round over one body reads the same stratum.
     pub faces: Memo<Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>>,
+    /// Each body's faces as the drawing finishes it, its rounds made (`BodyFaces::whole`, #510
+    /// P7), against `solid::reads`: every scenario and report over one body reads the same build.
+    pub whole: Memo<Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>>,
     /// Each body built exactly that another's field reads by its own boundary
     /// (`solid::field::BuiltField`, #419), against `solid::reads`: none where it is not read so.
     pub(crate) built: Memo<Option<crate::solid::BuiltField>>,
@@ -137,6 +140,7 @@ impl Caches {
         self.canal.clear();
         self.roll.clear();
         self.faces.clear();
+        self.whole.clear();
         self.built.clear();
         self.family.clear();
         self.followed.borrow_mut().clear();

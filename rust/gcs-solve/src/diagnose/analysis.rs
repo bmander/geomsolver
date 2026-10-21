@@ -17,22 +17,23 @@
 //! Each reads geometry or numbers already in hand — supports, a body's boundary, the pairs a
 //! solve returned, a row's value and gradient — and no mesh.
 
-use crate::eigen::{Pairs, GAP};
+use crate::eigen::Pairs;
 use crate::json::fmt_g;
 use crate::linalg::{dot as vdot, min_norm_solve, orthonormalize, rank_and_nullspace, Mat};
 use crate::model::{Applied, EntKind, EntRef, Hold, Output, Scenario, Sketch};
 use crate::solid::faces::BodyFaces;
-use crate::space::{add, cross, dot, norm, scale, sub};
+use crate::space::{add, cross, dot, normalised, norm, scale, sub};
 use crate::sparse::Sym;
-use std::collections::BTreeMap;
+use crate::vocab::all_of;
+use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::PI;
-use std::sync::Arc;
 
 type V = [f64; 3];
 
 /// Below this, relative to the largest singular value of the supports' rows, a twist is left
-/// free.
-const RIGID: f64 = 1e-9;
+/// free: the diagnosis's rank cut (`system::RANK_TOL`), the supports' rows conditioned as the
+/// Jacobian's are, each a unit direction and every column a velocity.
+const RIGID: f64 = crate::system::RANK_TOL;
 /// A unit direction within this of a world axis is named by it, and a basis of freedoms prefers
 /// the axes it holds within this.
 const SNAP: f64 = 1e-9;
@@ -41,14 +42,18 @@ const STRAIGHT: f64 = 1e-6;
 /// Eigenvalues below this fraction of the largest are a rigid-body motion's, which `freedoms`
 /// names: no pair of theirs is said to be degenerate.
 const AT_REST: f64 = 1e-8;
-/// A row is solved within this of what it states, relative to the larger of the two: what
-/// "solved" means for every row (`docs/contract/solver.md`).
-const SOLVED: f64 = 1e-8;
 /// A row's first-order change over the numbers that drive it, each moved by its own scale,
 /// below this fraction of its value: it stands at its extreme.
 const STATIONARY: f64 = 1e-6;
 
 /* -- the motions the supports leave --------------------------------------------------------- */
+
+/// World axis `k`'s unit direction.
+pub fn axis(k: usize) -> V {
+    let mut e = [0.0; 3];
+    e[k] = 1.0;
+    e
+}
 
 /// What one support holds of a body: each point of `at` held along `along` (every direction
 /// where `None`), and with `turn` the body's turn held as well (`fixed`, a clamp; `pinned` holds
@@ -80,8 +85,7 @@ fn figure(v: f64, size: f64) -> String {
 /// A unit direction by its world axis's name where it is one, else by its components.
 fn direction_text(d: V, dim: usize) -> String {
     for (k, name) in ["x", "y", "z"].iter().enumerate() {
-        let mut e = [0.0; 3];
-        e[k] = 1.0;
+        let e = axis(k);
         if norm(sub(d, e)) <= SNAP || norm(add(d, e)) <= SNAP {
             return name.to_string();
         }
@@ -132,12 +136,7 @@ impl Freedom {
 /// `None` where there are none.
 pub fn freedoms_text(fs: &[Freedom], dim: usize) -> Option<String> {
     let each: Vec<String> = fs.iter().map(|f| f.text(dim)).collect();
-    let (last, rest) = each.split_last()?;
-    Some(if rest.is_empty() {
-        format!("free to {last}")
-    } else {
-        format!("free to {} and {last}", rest.join(", "))
-    })
+    (!each.is_empty()).then(|| format!("free to {}", all_of(&each)))
 }
 
 /// A sign that names a direction once: its largest component positive.
@@ -193,35 +192,26 @@ pub fn freedoms(dim: usize, body: &[V], holds: &[Held]) -> Vec<Freedom> {
     let size = points.iter().map(|p| norm(sub(*p, c))).fold(0.0f64, f64::max);
     let size = if size > 0.0 { size } else { 1.0 };
     let (n, at) = if planar { (3, 2) } else { (6, 3) };
+    // point `p` held along unit `e`: e·(v + ω×q) = e·v + ω·(q×e), q = (p − c)/size
+    let twist = |rows: &mut Vec<f64>, p: V, e: V| {
+        let m = cross(scale(sub(p, c), 1.0 / size), e);
+        rows.extend_from_slice(&e[..dim]);
+        rows.extend_from_slice(if planar { &m[2..] } else { &m[..] });
+    };
     let mut rows: Vec<f64> = Vec::new();
-    let mut count = 0;
     for h in holds {
         let dirs: Vec<V> = match h.along {
-            Some(d) => {
-                let d = if planar { [d[0], d[1], 0.0] } else { d };
-                let l = norm(d);
-                if l > 0.0 { vec![scale(d, 1.0 / l)] } else { Vec::new() }
-            }
-            None => (0..dim).map(|k| { let mut e = [0.0; 3]; e[k] = 1.0; e }).collect(),
+            Some(d) => normalised(if planar { [d[0], d[1], 0.0] } else { d }).into_iter().collect(),
+            None => (0..dim).map(axis).collect(),
         };
         for p in &h.at {
-            let q = scale(sub(*p, c), 1.0 / size);
             for e in &dirs {
-                // e·(v + ω×q) = e·v + ω·(q×e)
-                let m = cross(q, *e);
-                let mut r = vec![0.0; n];
-                r[..dim].copy_from_slice(&e[..dim]);
-                if planar { r[2] = m[2] } else { r[3..].copy_from_slice(&m) }
-                rows.extend(r);
-                count += 1;
+                twist(&mut rows, *p, *e);
             }
         }
         if h.turn {
             for j in at..n {
-                let mut r = vec![0.0; n];
-                r[j] = 1.0;
-                rows.extend(r);
-                count += 1;
+                rows.extend((0..n).map(|i| if i == j { 1.0 } else { 0.0 }));
             }
         }
     }
@@ -229,24 +219,16 @@ pub fn freedoms(dim: usize, body: &[V], holds: &[Held]) -> Vec<Freedom> {
     if !body.is_empty() {
         let mut still: Vec<f64> = Vec::new();
         for p in body {
-            let q = scale(sub(*p, c), 1.0 / size);
             for k in 0..dim {
-                let mut e = [0.0; 3];
-                e[k] = 1.0;
-                let m = cross(q, e);
-                let mut r = vec![0.0; n];
-                r[k] = 1.0;
-                if planar { r[2] = m[2] } else { r[3..].copy_from_slice(&m) }
-                still.extend(r);
+                twist(&mut still, *p, axis(k));
             }
         }
         let none = rank_and_nullspace(&Mat::from_vec(still.len() / n, n, still), RIGID).null();
         for j in 0..none.cols {
             rows.extend(none.col(j));
-            count += 1;
         }
     }
-    let null = rank_and_nullspace(&Mat::from_vec(count, n, rows), RIGID).null();
+    let null = rank_and_nullspace(&Mat::from_vec(rows.len() / n, n, rows), RIGID).null();
     let k = null.cols;
     if k == 0 {
         return Vec::new();
@@ -257,7 +239,8 @@ pub fn freedoms(dim: usize, body: &[V], holds: &[Held]) -> Vec<Freedom> {
     let slides: Vec<Vec<f64>> = (0..still.cols)
         .map(|j| null.mul_vec(&still.col(j))[..dim].to_vec())
         .collect();
-    let slides = axes_first(&orthonormalize(&slides, 1e-6), dim);
+    // orthonormal already: heads of orthonormal twists that do not turn
+    let slides = axes_first(&slides, dim);
     let mut out: Vec<Freedom> = slides.iter().map(|s| {
         let mut along = [0.0; 3];
         along[..dim].copy_from_slice(s);
@@ -267,19 +250,13 @@ pub fn freedoms(dim: usize, body: &[V], holds: &[Held]) -> Vec<Freedom> {
     let turns: Vec<Vec<f64>> = (0..k).map(|j| turn.col(j)).collect();
     let turns = axes_first(&orthonormalize(&turns, 1e-6), n - at);
     for w in turns {
-        // the free twist turning at `w`, its velocity cleared of every slide
+        // the free twist turning at `w`, the least-norm one: square to every slide
         let (y, _) = min_norm_solve(&turn, &w, RIGID);
         let t = null.mul_vec(&y);
         let mut v = [0.0; 3];
         v[..dim].copy_from_slice(&t[..dim]);
         // ω' = ω·size is the unit `w`: the twist at unit turn is size times it
-        v = scale(v, size);
-        for s in &slides {
-            let d: f64 = (0..dim).map(|i| v[i] * s[i]).sum();
-            for i in 0..dim {
-                v[i] -= d * s[i];
-            }
-        }
+        let v = scale(v, size);
         let about = if planar { [0.0, 0.0, 1.0] } else { [w[0], w[1], w[2]] };
         let pitch = dot(about, v);
         let pitch = if pitch.abs() <= SNAP * size { 0.0 } else { pitch };
@@ -307,6 +284,8 @@ pub fn williams(alpha: f64) -> f64 {
     for i in 1..=steps {
         let hi = i as f64 / steps as f64;
         if f(hi) <= 0.0 {
+            // bisection, not `roots::bracketed_root`: at a crack the root is this bracket's end,
+            // which regula falsi never moves off, and returns the bracket's middle
             let (mut a, mut b) = (lo, hi);
             for _ in 0..80 {
                 let m = 0.5 * (a + b);
@@ -335,30 +314,28 @@ pub struct Reentrant {
 /// once per pair at its sharpest.  A rounded edge is no corner — its faces meet tangent — and
 /// is not one; a convex edge's stress is bounded.
 pub fn reentrant(body: &BodyFaces) -> Vec<Reentrant> {
-    let mut by_pair: BTreeMap<(usize, usize), Reentrant> = BTreeMap::new();
+    // the sharpest edge of each pair, by its faces, its middle and its angle
+    let mut by_pair: BTreeMap<(usize, usize), (usize, usize, V, f64)> = BTreeMap::new();
     for e in 0..body.brep().0.edges.len() as u32 {
-        if body.convex(e) != Some(false) || body.seam(e) {
+        // a seam is no corner: `convex` is `None` there
+        if body.convex(e) != Some(false) {
             continue;
         }
         let &[fa, fb] = body.faces_of(e) else { continue };
         let at = body.middle(e);
         let Some(angle) = body.angle(&[e], at) else { continue };
-        if angle <= PI + STRAIGHT {
-            continue;
-        }
-        let names = body.paths();
-        let found = Reentrant {
-            faces: [names[fa].text(), names[fb].text()],
-            at,
-            angle,
-            exponent: williams(angle) - 1.0,
-        };
         let key = (fa.min(fb), fa.max(fb));
-        if by_pair.get(&key).is_none_or(|r| angle > r.angle) {
-            by_pair.insert(key, found);
+        if angle > PI + STRAIGHT && by_pair.get(&key).is_none_or(|r| angle > r.3) {
+            by_pair.insert(key, (fa, fb, at, angle));
         }
     }
-    by_pair.into_values().collect()
+    let names = body.paths();
+    by_pair.into_values().map(|(fa, fb, at, angle)| Reentrant {
+        faces: [names[fa].text(), names[fb].text()],
+        at,
+        angle,
+        exponent: williams(angle) - 1.0,
+    }).collect()
 }
 
 impl Reentrant {
@@ -388,27 +365,17 @@ pub struct Repeated {
     pub value: f64,
 }
 
-/// **The repeated eigenvalues of a solve**: runs of its ascending values within `eigen::GAP` of
-/// each other, the gap Sylvester's count already reads as one value.  A run at rest (below
-/// `AT_REST` of the largest) is a rigid-body motion's, which `freedoms` names, and is left out.
-/// An eigenvalue of more than one vector has no derivative there (`φᵀ(L' − λR')φ` is no longer
-/// one number), so a requirement on one of the run reads all of it.
+/// **The repeated eigenvalues of a solve**: its runs of one value (`Pairs::runs`, the eigensolver's
+/// own reading of when values are one) of more than one pair.  A run at rest (below `AT_REST` of
+/// the largest) is a rigid-body motion's, which `freedoms` names, and is left out.  An eigenvalue
+/// of more than one vector has no derivative there (`φᵀ(L' − λR')φ` is no longer one number), so
+/// a requirement on one of the run reads all of it.
 pub fn repeated(p: &Pairs) -> Vec<Repeated> {
     let scale = p.values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < p.values.len() {
-        let v = p.values[i];
-        let mut j = i + 1;
-        while j < p.values.len() && p.values[j] - v <= GAP * v.abs().max(AT_REST * scale) {
-            j += 1;
-        }
-        if j - i > 1 && v.abs() > AT_REST * scale {
-            out.push(Repeated { first: i, count: j - i, value: v });
-        }
-        i = j;
-    }
-    out
+    p.runs().into_iter()
+        .filter(|r| r.len() > 1 && p.values[r.start].abs() > AT_REST * scale)
+        .map(|r| Repeated { first: r.start, count: r.len(), value: p.values[r.start] })
+        .collect()
 }
 
 impl Repeated {
@@ -445,16 +412,15 @@ impl Repeated {
     pub fn text(&self, wave: Option<(usize, usize)>) -> String {
         let modes: Vec<String> =
             (self.first + 1..=self.first + self.count).map(|m| m.to_string()).collect();
-        let (last, rest) = modes.split_last().expect("a run is two or more");
         let what = if self.count == 2 { "one degenerate pair" } else { "one repeated value" };
         let ring = match wave {
             Some((k, order)) => format!(", symmetric under the ring of {order} (wave {k})"),
             None => String::new(),
         };
         format!(
-            "modes {} and {last} are {what}{ring}: no derivative is defined there, so a \
-             requirement reads them together and not either alone",
-            rest.join(", ")
+            "modes {} are {what}{ring}: no derivative is defined there, so a requirement reads \
+             them together and not either alone",
+            all_of(&modes)
         )
     }
 }
@@ -464,7 +430,8 @@ impl Repeated {
 /// What the numbers that drive a row can do for it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Reach {
-    /// It holds: within `SOLVED` of what it states.
+    /// It holds: within what the solver accepts (`SolveOpts::acceptance_tol`) of what it states,
+    /// at the size of the larger.
     Reached,
     /// It does not hold yet, and the numbers that drive it move it: no verdict.
     Moves,
@@ -484,7 +451,7 @@ pub enum Reach {
 /// row states less (a solve shrinking the gap stops at a minimum below it), else a most.
 pub fn reach(value: f64, target: f64, grad: &[f64], scale: &[f64], free: &[bool]) -> Reach {
     let size = value.abs().max(target.abs());
-    if (value - target).abs() <= SOLVED * size {
+    if (value - target).abs() <= crate::solve::SolveOpts::default().acceptance_tol * size {
         return Reach::Reached;
     }
     if !free.iter().any(|f| *f) {
@@ -518,19 +485,6 @@ impl Reach {
 
 /* -- a scenario, read -------------------------------------------------------------------------- */
 
-/// The bodies a scenario reads, built once each: `BodyFaces::whole`, remembered.
-struct Bodies<'a> {
-    sk: &'a Sketch,
-    built: BTreeMap<usize, Result<Arc<BodyFaces>, String>>,
-}
-
-impl Bodies<'_> {
-    fn of(&mut self, solid: usize) -> Result<Arc<BodyFaces>, String> {
-        let sk = self.sk;
-        self.built.entry(solid).or_insert_with(|| BodyFaces::whole(sk, solid).map(Arc::new)).clone()
-    }
-}
-
 /// The unit direction an `along:` names: an axis's, or a line's from its first end.
 fn direction(sk: &Sketch, d: EntRef) -> Result<V, String> {
     let v = match d.kind {
@@ -541,24 +495,19 @@ fn direction(sk: &Sketch, d: EntRef) -> Result<V, String> {
         }
         _ => return Err("`along:` names no direction".to_string()),
     };
-    let l = norm(v);
-    if l > 0.0 {
-        Ok(scale(v, 1.0 / l))
-    } else {
-        Err("`along:` names a direction of no length".into())
-    }
+    normalised(v).ok_or_else(|| "`along:` names a direction of no length".into())
 }
 
 /// The points a support holds: a point, a line's ends, a solid's box (its affine hull is space),
 /// or every face a path names, by its edges' ends and quarters (so a closed edge holds a circle
 /// of points, not one).
-fn points(sk: &Sketch, bodies: &mut Bodies, at: &Applied) -> Result<Vec<V>, String> {
+fn points(sk: &Sketch, at: &Applied) -> Result<Vec<V>, String> {
     match at {
         Applied::Ent(e) => match e.kind {
             EntKind::Point => Ok(vec![sk.world_point(e.i())]),
             EntKind::Line => Ok(sk.line_ends(e.i()).map(|p| sk.world_point(p)).to_vec()),
             EntKind::Solid => {
-                let (lo, hi) = bodies.of(e.i())?.bounds();
+                let (lo, hi) = BodyFaces::whole(sk, e.i())?.bounds();
                 Ok((0..8).map(|k| [0, 1, 2].map(|i| if k >> i & 1 == 0 { lo[i] } else { hi[i] }))
                     .collect())
             }
@@ -568,7 +517,7 @@ fn points(sk: &Sketch, bodies: &mut Bodies, at: &Applied) -> Result<Vec<V>, Stri
             }
         },
         Applied::Face(f) => {
-            let body = bodies.of(f.solid as usize)?;
+            let body = BodyFaces::whole(sk, f.solid as usize)?;
             let faces = body.faces(f);
             let name = &sk.solids[f.solid as usize].name;
             if faces.is_empty() {
@@ -605,14 +554,13 @@ fn named_solids(sc: &Scenario) -> Vec<usize> {
 /// the rigid-body motions its supports leave (`freedoms`, in space, the supports held as one
 /// body), `scenario `lift` leaves `arm` free to turn about z through (0, 0, 0)`; and for every
 /// `safety` requirement, each sharp re-entrant edge of its body, where the stress it asks about
-/// is unbounded.  A support or a body that cannot be read is said too.  Nothing where all is
-/// well.
+/// is unbounded, once per solid.  A support or a body that cannot be read is said too.  Nothing
+/// where all is well.  Each body is the drawing's, built once (`BodyFaces::whole`).
 pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
-    let mut bodies = Bodies { sk, built: BTreeMap::new() };
     let mut out = Vec::new();
     let mut holds = Vec::new();
     for s in &sc.supports {
-        let read = points(sk, &mut bodies, &s.at)
+        let read = points(sk, &s.at)
             .and_then(|at| Ok(Held { at, along: s.along.map(|d| direction(sk, d)).transpose()?,
                                      turn: s.hold == Hold::Fixed }));
         match read {
@@ -626,25 +574,25 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
             let solids = named_solids(sc);
             let names: Vec<String> =
                 solids.iter().map(|&i| format!("`{}`", sk.solids[i].name)).collect();
-            let what = match names.as_slice() {
-                [] => "its structure".to_string(),
-                [one] => one.clone(),
-                [rest @ .., last] => format!("{} and {last}, held as one body,", rest.join(", ")),
+            let what = match names.len() {
+                0 => "its structure".to_string(),
+                1 => names[0].clone(),
+                _ => format!("{}, held as one body,", all_of(&names)),
             };
             out.push(format!("scenario `{}` leaves {what} {free}", sc.name));
         }
     }
-    for r in sc.requirements.iter().filter(|r| r.output == Output::Safety) {
-        let e = r.of.entity();
-        if e.kind != EntKind::Solid {
-            continue;
-        }
-        let name = &sk.solids[e.i()].name;
-        match bodies.of(e.i()) {
+    let asked: BTreeSet<usize> = sc.requirements.iter()
+        .filter(|r| r.output == Output::Safety && r.of.entity().kind == EntKind::Solid)
+        .map(|r| r.of.entity().i())
+        .collect();
+    for solid in asked {
+        let name = &sk.solids[solid].name;
+        match BodyFaces::whole(sk, solid) {
             Ok(body) => {
                 for edge in reentrant(&body) {
-                    out.push(format!("scenario `{}`: `safety({name})` has no answer: {}",
-                                     sc.name, edge.text()));
+                    out.push(format!("scenario `{}`: `{}({name})` has no answer: {}",
+                                     sc.name, Output::Safety.word(), edge.text()));
                 }
             }
             Err(err) => out.push(format!("scenario `{}`: {err}", sc.name)),
