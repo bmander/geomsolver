@@ -143,6 +143,23 @@ part ConRod(pin: CrankPin, bore: line) {
     or0 distance(oil, side: right) cl
     or1 distance(oil, side: right) cl
 
+    // a pocket's outline, each side of the web: a flange's thickness inside the flanks, as far
+    // clear of each eye
+    kq1 := point hint((pin.end.x + 7.3mm, pin.end.y + 33.2mm))
+    kq2 := point hint((sm.x + 4.6mm, sm.y - 19.5mm))
+    kq3 := point hint((sm.x - 4.6mm, sm.y - 19.5mm))
+    kq4 := point hint((pin.end.x - 7.3mm, pin.end.y + 33.2mm))
+    pocket_r := line(kq1, kq2)
+    pocket_l := line(kq3, kq4)
+    kq1 distance(ft, side: left) flank_r
+    kq2 distance(ft, side: left) flank_r
+    kq3 distance(ft, side: right) flank_l
+    kq4 distance(ft, side: right) flank_l
+    pocket_b := arc(center: pin.end, start: kq1, end: kq4) hint(r: eB + ft)
+    pocket_t := arc(center: sm, start: kq3, end: kq2) hint(r: eS + ft)
+    radius(eB + ft) pocket_b
+    radius(eS + ft) pocket_t
+
     // section A-A's plane: square to the rod's axis through the middle of the shank, its `u`
     // along the crank axis
     mid := point hint((pin.end.x, pin.end.y + L / 2))
@@ -197,6 +214,11 @@ part ConRod(pin: CrankPin, bore: line) {
     ka distance(fl) kb
     kc offset(dx: fl / 2, dy: -eS) sm_s
     kd offset(dx: -fl / 2, dy: -eS) sm_s
+    // the web between the pockets, hidden behind the flanges: only its corners are drawn
+    wa := engine.parts.At(pin.side, dx: -wt / 2, dy: 0mm)
+    wb := engine.parts.At(pin.side, dx: wt / 2, dy: 0mm)
+    wc := engine.parts.At(sm_s, dx: wt / 2, dy: 0mm)
+    wd := engine.parts.At(sm_s, dx: -wt / 2, dy: 0mm)
   }
 
   // section A-A: the shank's I-section at mid-length, about the section plane's origin
@@ -228,7 +250,8 @@ part ConRod(pin: CrankPin, bore: line) {
 
   // -- the rod as a solid: what both views agree it is.  The end view's outline, bored at both
   // eyes, runs along the crank axis; the side view's edge-on outline — big end, shank, small end
-  // — runs across the engine either side of the bore axis; the rod is what the two have in common
+  // — runs across the engine either side of the bore axis; the rod is what the two have in common,
+  // less a pocket each side of the web
   body := solid(face(eyeB, fbr, flank_r, fsr, eyeS, fsl, flank_l, fbl, holes: bigbore, smallbore),
                 from: front, to: back)
   edge_on := solid()
@@ -239,6 +262,11 @@ part ConRod(pin: CrankPin, bore: line) {
   shank_s union edge_on
   small_s union edge_on
   edge_on common body
+  // the I: each side of the web, the pocket's outline as deep as the flanges, cut from the rod
+  pockets := solid(face(pocket_r, pocket_t, pocket_l, pocket_b), from: front, to: back)
+  web_s := solid(face(wa.p, wb.p, wc.p, wd.p, -> close), from: -100mm, to: 100mm)
+  web_s cut pockets
+  pockets cut body
 }
 
 // Open this file to preview cylinder 1's rod: on its crank pin where the crankshaft puts it at the

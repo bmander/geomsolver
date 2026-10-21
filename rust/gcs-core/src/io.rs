@@ -393,7 +393,41 @@ pub fn to_json(sk: &Sketch) -> Json {
     if !twins.is_empty() {
         doc.set("twins", Json::Arr(twins));
     }
+    // the materials the document states (#510 P3), only when there is one
+    if !sk.materials.is_empty() {
+        doc.set("materials", Json::Arr(sk.materials.values().map(material_json).collect()));
+    }
     doc
+}
+
+/// **A material as JSON** (#510 P3): its name and each property it states under the property's
+/// own name, in SI — `{"name": "steel", "E": 2e11, "nu": 0.3}` — whatever the document's unit.
+pub fn material_json(m: &crate::model::Material) -> Json {
+    let mut o = object([("name", Json::Str(m.name.clone()))]);
+    for (p, &v) in &m.props {
+        o.set(p.name(), Json::Num(v));
+    }
+    o
+}
+
+/// `material_json`'s reader: every key but `name` a property, each admitted as the language
+/// admits it (`model::Material::new`).
+pub fn material_from_json(j: &Json) -> Result<crate::model::Material, String> {
+    use crate::model::{Material, Property};
+    let Json::Obj(kv) = j else { return Err("a material is an object".into()) };
+    let name = j.get("name").map(Json::as_str).unwrap_or_default();
+    if name.is_empty() {
+        return Err("a material is named".into());
+    }
+    let mut props = std::collections::BTreeMap::new();
+    for (k, v) in kv.iter().filter(|(k, _)| k != "name") {
+        let p = Property::named(k)?;
+        if !matches!(v, Json::Num(_) | Json::Int(_)) {
+            return Err(format!("`{name}`'s `{k}` is a number"));
+        }
+        props.insert(p, v.as_f64());
+    }
+    Material::new(name, props)
 }
 
 fn dual_json(d: &crate::model::Dual) -> Json {
@@ -676,6 +710,10 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.tie_twin(p, t);
     }
     sk.hold_twins();
+    for j in d.get("materials").unwrap_or(&empty).arr() {
+        let m = material_from_json(j)?;
+        sk.materials.insert(m.name.clone(), m);
+    }
     expr::evaluate(&mut sk);   // every expression against the whole document, in order
     // a document written before §13.1: placements in a table of their own, keyed by position in
     // the constraint list.  Read, never written — a document does not have to be re-saved to be

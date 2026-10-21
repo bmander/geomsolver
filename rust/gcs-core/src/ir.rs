@@ -43,6 +43,8 @@ pub enum Operation {
     Minimize(syntax::Minimize),
     /// A bound on measurements (#183 F3), read where a region solid's set is applied.
     Measured(syntax::Measured),
+    /// A load case (#510 P4), its references absolute and its numbers written in.
+    Scenario(syntax::Scenario),
 }
 
 #[derive(Clone, Debug)]
@@ -75,6 +77,8 @@ pub struct Decl {
     pub sense: Option<syntax::Sense>,
     /// A spatial frame declared bare (#383, `syntax::Decl::bare`).
     pub bare: bool,
+    /// What a solid is made of (#510 P3, `syntax::Decl::material`).
+    pub material: Option<syntax::Ref>,
 }
 
 /// The same operands as syntax, with inline faces lowered to declarations of this stage.
@@ -119,6 +123,7 @@ impl From<syntax::Decl> for Decl {
             normal: d.normal,
             sense: d.sense,
             bare: d.bare,
+            material: d.material,
         }
     }
 }
@@ -191,6 +196,7 @@ impl Statement {
             S::Derived(d) => Operation::Derived(d),
             S::Minimize(m) => Operation::Minimize(m),
             S::Measured(m) => Operation::Measured(m),
+            S::Scenario(sc) => Operation::Scenario(sc),
             S::ClaimOver(c) => Operation::ClaimOver(ClaimOver {
                 formal: c.formal, seen_from: c.seen_from, from: c.from, to: c.to, span: c.span,
                 body: c.body.into_iter().map(|s| Self::lower(s, path.clone())).collect::<Result<_, _>>()?,

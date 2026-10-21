@@ -9,7 +9,7 @@
 
 /// Reverse Cuthill–McKee on the pattern of A: short, and the sketch graphs this solver sees
 /// (trusses, chains, rings) are close to banded once relabelled this way.
-fn rcm(n: usize, ap: &[i32], ai: &[i32]) -> (Vec<i32>, Vec<i32>) {
+pub(crate) fn rcm(n: usize, ap: &[i32], ai: &[i32]) -> (Vec<i32>, Vec<i32>) {
     let mut deg = vec![0i32; n];
     let mut seen = vec![false; n];
     let mut queue: Vec<i32> = Vec::with_capacity(n);
@@ -59,11 +59,16 @@ fn rcm(n: usize, ap: &[i32], ai: &[i32]) -> (Vec<i32>, Vec<i32>) {
     (perm, iperm)
 }
 
-/// A column of A is dense when it touches more than `max(16, 10·√n)` others — AMD's rule for
-/// dense rows (Amestoy, Davis & Duff).  One unknown every instance of a component reads (a shared
-/// margin, a pitch) is such a column, and nothing of an ordinary truss, chain or ring is.
+/// A column of n is dense when it touches more than `max(16, 10·√n)` others — AMD's rule for
+/// dense rows (Amestoy, Davis & Duff), and `amd::order`'s.  One unknown every instance of a
+/// component reads (a shared margin, a pitch) is such a column, and nothing of an ordinary truss,
+/// chain or ring is.
+pub(crate) fn dense_limit(n: usize) -> f64 {
+    (10.0 * (n as f64).sqrt()).max(16.0)
+}
+
 fn dense_columns(n: usize, ap: &[i32]) -> Vec<bool> {
-    let limit = (10.0 * (n as f64).sqrt()).max(16.0);
+    let limit = dense_limit(n);
     // A holds its diagonal, which is not a neighbour
     (0..n).map(|i| (ap[i + 1] - ap[i] - 1) as f64 > limit).collect()
 }

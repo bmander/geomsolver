@@ -8,6 +8,7 @@ mod measured;
 mod names;
 mod parser;
 mod print;
+mod scenario;
 mod source;
 mod words;
 mod written;
@@ -21,6 +22,7 @@ pub use parser::{parse, parse_from, parse_legacy, parse_with_limits, ParseLimits
 pub(crate) use parser::{reference_at, sweep_of, SweepParts, ROLLED_RETIRED, SWEPT_RETIRED};
 pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
 pub(crate) use print::{sel_text, written_parts};
+pub use scenario::{Item, ItemKind, LoadText, RequirementText, Scenario};
 pub use source::{line_col, Module, Name, Program, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
 pub use written::{OpArg, RateOf, Written};
@@ -409,6 +411,9 @@ pub enum StmtKind {
     /// `distance(p, f1) + distance(p, f2) <= 10mm` — a bound on an expression of measurements
     /// (§6.21, #183 F3), see `Measured`.
     Measured(Measured),
+    /// `scenario lift { fixed arm.base … }` — a load case (#510 P4), see `Scenario`.  Its name
+    /// is a scenario's, apart from the body's names: it declares nothing the drawing reads.
+    Scenario(Scenario),
 }
 
 impl StmtKind {
@@ -425,7 +430,7 @@ impl StmtKind {
             StmtKind::Derived(d) => Some(d.name.key()),
             StmtKind::Relation(_) | StmtKind::Branch(_) | StmtKind::Block(_) | StmtKind::Style(_)
             | StmtKind::SolidRel(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_)
-            | StmtKind::Minimize(_) | StmtKind::Measured(_) => None,
+            | StmtKind::Minimize(_) | StmtKind::Measured(_) | StmtKind::Scenario(_) => None,
         }
     }
 }
@@ -620,6 +625,10 @@ impl ParamDecl {
 pub struct GroupDecl {
     pub name: Name,
     pub fields: Vec<InstArg>,
+    /// `steel := material(E: 200GPa, nu: 0.3)` (#510 P3): a group whose members are a
+    /// material's properties, checked as such and stated as a model value
+    /// (`Sketch::materials`) — where the word `material` stands.  `None` for a plain group.
+    pub material: Option<Span>,
 }
 
 /// Repetition.  Three constructs and three meanings (spec §12): an open array, a closed one, and
@@ -995,6 +1004,10 @@ pub struct Decl {
     /// person would (`flatten::carried`) once it knows which; the source keeps the one.  `None`
     /// for every other declaration.
     pub carried: Option<CarriedFrame>,
+    /// What a solid is made of, `arm := solid(sec, depth: 4mm) of steel` (#510 P3): a material
+    /// of the scope (`syntax::GroupDecl::material`).  `None` for every other declaration, and for
+    /// a solid that says nothing of it.
+    pub material: Option<Ref>,
 }
 
 /// What a reading at an instant reads and by what (`Decl::carried`, #366, #391 S2): the source,
@@ -1055,6 +1068,7 @@ impl Decl {
             sense: None,
             bare: false,
             carried: None,
+            material: None,
         }
     }
 
@@ -1102,6 +1116,7 @@ impl Decl {
             sense: None,
             bare: false,
             carried: None,
+            material: None,
         }
     }
 }

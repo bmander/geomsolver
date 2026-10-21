@@ -10,9 +10,11 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   Model and constraints
   (`model.rs`, `constraints.rs`), vectorized kernels and the compile-to-plan `System` (`kernels.rs`,
   `system.rs`), our own DogLeg/LM plus dense and sparse linear algebra (`newton.rs`, `linalg.rs`,
-  `sparse.rs`) and a sparse symmetric eigensolver (`eigen.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`), decomposition into solve plans
-  (`cgraph.rs`, `decompose.rs`), witness analysis (`witness.rs`), presentation (`style.rs`),
-  drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts (`callout.rs`), dimension
+  `sparse.rs`, and `cholesky.rs` over `amd.rs` for a mesh's system) and a sparse symmetric
+  eigensolver (`eigen.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`), decomposition into
+  solve plans (`cgraph.rs`, `decompose.rs`), witness analysis (`witness.rs`), presentation
+  (`style.rs`), drag/solution management (`solve.rs`, `homotopy.rs`), dimension callouts
+  (`callout.rs`), dimension
   expressions (`expr.rs`), parametric curves (`curve.rs`), **solids** (`solid.rs`, `csg.rs`,
   `mesh.rs`, `hidden.rs`), the **Solvent** language (`syntax.rs`, `flatten.rs`, `program.rs`,
   `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`), the rebuild walk behind deletion, copy,

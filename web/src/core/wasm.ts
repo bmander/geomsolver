@@ -225,6 +225,7 @@ export interface Abi {
   gcs_solid_glb(h: number, idx: number, unit: number): number;
   gcs_solid_objects_json(h: number): number;
   gcs_solid_unbuilt_json(h: number): number;
+  gcs_materials_json(h: number): number;
   gcs_solid_stl(h: number, idx: number, unit: number): number;
   gcs_solid_stl_preview(h: number, idx: number, unit: number): number;
   gcs_solid_exact(h: number, idx: number, kind: number, tolerance: number): number;

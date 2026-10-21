@@ -141,7 +141,9 @@ fn stack(sk: &mut Sketch, b: usize, of: &BTreeMap<usize, usize>) {
             Some(s) => SolidDef::Body { stock: s, on: pick(&on, false), through: pick(&through, false), bound: Vec::new() },
         };
         let layer = sk.solids.len();
-        sk.solids.push(SolidE { def, name: name.clone(), class: class.clone(), copy });
+        // what it is made of is the top's, the body the document named (#510)
+        sk.solids.push(SolidE { def, name: name.clone(), class: class.clone(), copy,
+                                material: None });
         // the layer's readers read the body it is
         let to = |e: EntRef| Some(if e.kind == EntKind::Solid && e.i() == b { EntRef::solid(layer) } else { e });
         for (&r, _) in of.iter().filter(|(_, &l)| l == k) {

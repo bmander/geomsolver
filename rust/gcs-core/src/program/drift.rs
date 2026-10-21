@@ -207,7 +207,7 @@ fn asserting(c: &Component, out: &mut Vec<Diag>) {
         StmtKind::Relation(_) | StmtKind::Measured(_) | StmtKind::Minimize(_)
         | StmtKind::Branch(_) | StmtKind::SolidRel(_) => states = true,
         StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Group(_) | StmtKind::Style(_)
-        | StmtKind::Unit(_) => {}
+        | StmtKind::Unit(_) | StmtKind::Scenario(_) => {}
     });
     if public || !states {
         return;
@@ -269,6 +269,13 @@ fn deep(p: &Program, c: &Component, read: &[(Vec<(String, Span)>, &Piece)],
 /// drawing (`.svd`).  **W206: a `group` formal handed on whole and never read** through
 /// (`dims`) — configuration threaded through a level that reads none of it (direction N6).
 fn formals(c: &Component, read: &[(Vec<(String, Span)>, &Piece)], out: &mut Vec<Diag>) {
+    // where the body hands something on: an argument of a call it makes.  A group read whole
+    // anywhere else — a solid made of it, `of m` (#510 P3) — is read here.
+    let mut handed = Vec::new();
+    each(&c.body, &mut |st| {
+        handed.extend(calls(st).into_iter().flat_map(|i| i.args.iter().map(|a| a.span)));
+    });
+    let handed_on = |at: Span| handed.iter().any(|a| a.lo <= at.lo && at.hi <= a.hi);
     for f in &c.formals {
         let uses: Vec<_> = read.iter().filter(|(parts, _)| parts[0].0 == f.name.text).collect();
         if uses.is_empty() {
@@ -282,7 +289,8 @@ fn formals(c: &Component, read: &[(Vec<(String, Span)>, &Piece)], out: &mut Vec<
                 f.name.text
             )));
         }
-        if f.ty == Ty::Group && uses.iter().all(|(parts, _)| parts.len() == 1) {
+        let whole = uses.iter().all(|(parts, _)| parts.len() == 1 && handed_on(parts[0].1));
+        if f.ty == Ty::Group && whole {
             out.push(Diag::new(Code::W206, f.name.span, None, format!(
                 "the group `{}` is handed on whole and never read here: configuration threaded \
                  through a level that reads none of it.  Let the component that reads it take it \

@@ -30,6 +30,8 @@ mod duals;
 mod rates;
 mod caches;
 mod running;
+mod material;
+mod scenario;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -51,6 +53,10 @@ pub use duals::{Dual, Move, Moves, Toward};
 pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
 pub use running::Running;
+pub use material::{Material, Property};
+pub use scenario::{
+    Applied, Grade, Hold, Load, LoadKind, LoadValue, Output, Requirement, Scenario, Support,
+};
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub use measure::polyline_distance;
@@ -236,6 +242,11 @@ pub struct Sketch {
     /// for.  Represented once, as every running number is (`Running`); nothing reads one yet.
     /// Set by elaboration and never written to a document, as `declared` is.
     pub parameters: BTreeMap<String, Running>,
+    /// **The materials the document states** (#510 P3), by absolute name: `steel :=
+    /// material(E: 200GPa, …)`, each a model value in SI, which a solid made of one names
+    /// (`SolidE::material`).  Nothing reads one yet.  Document state: grafted with the solids
+    /// and written to JSON.
+    pub materials: BTreeMap<String, Material>,
     /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
     /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
     /// Presentation, as a wobble is: what is drawn moves and the document does not — a march

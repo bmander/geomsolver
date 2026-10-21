@@ -4,6 +4,31 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.165] What a solid is made of.** `steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3,
+yield: 250MPa)` (§6.9) declares a material, a group whose members are the properties of an
+isotropic linear-elastic solid: `E` and `yield` pressures, `nu` a plain number in (−1, 0.5), `rho`
+a density, each optional. `arm := solid(sec, depth: 4mm) of steel` says the solid is made of it.
+A property of the wrong dimension, out of its range, reading an unknown, given twice or not one a
+material has, and a material stating none, are **E103** (twice **E001**) where they are written,
+and a **bare number for a dimensioned property is refused** — the document's unit of pressure is
+nothing anyone writes. An `of` naming something that is no material is **E103**. A material is
+held in SI whatever the document's unit, and its members read as a group's (`steel.E / 1GPa`).
+Nothing reads a material yet: it is the first step of design intent as structural performance.
+`of` becomes a reserved trailer, as `in` is, and `material` a word only as a definition's call; no
+document used either. (Issue #510, P3.)
+
+**[0.164] Load scenarios.** `scenario NAME { … }` (§9.11) states a load case at the top of a
+document or in its `preview`: supports (`fixed X`, `pinned X`, `along: d` for a roller), loads
+(`load X (fx, fy, fz)`, `load X f along: d`, `pressure F p`, `accelerate B (ax, ay, az)`) and
+requirements, an output (`deflection`, `safety`, `mode`, `buckling`, `compliance`, `mass`)
+compared with a number the drawing states — a claim (`claim …`), a driving row (`== v`) or a
+bound (`<=`, `>=`). Targets are read by the selectors every operand is: points, edges, faces,
+solids and face paths (`arm.base`); every number is held to its dimension (**E103**). `scenario B:
+A { … }` begins with `A`'s supports and loads; a load combination is written out. A scenario adds
+no geometry and no row, so the drawing solves as it does without one; one scenario's requirements
+may drive dimensions (**E106** at a second's). Nothing is analysed yet. `scenario` is reserved;
+the line words are contextual. No document changes. (Issue #510, P4.)
+
 **[0.163] A perpendicular that says which way.** `l1 perpendicular(sense: ccw) l2` (§9.3, §9.4)
 states that `l2` is a quarter turn counter-clockwise of `l1`, as `angle` counts, and `sense: cw`
 the other quarter; `perpendicular` with no sense is square either way, as before. It is a

@@ -219,6 +219,7 @@ fn expand(
         .collect();
     cx.sk.declared = std::mem::take(&mut expansion.unknowns);
     cx.sk.parameters = std::mem::take(&mut expansion.parameters);
+    cx.sk.materials = std::mem::take(&mut expansion.materials);
     // each face family's running number, held where its drawn station stands (#243 L1)
     for (name, &(dim, at)) in &expansion.held {
         cx.sk.hold(name, at, dim);
@@ -925,6 +926,10 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     // where the body reads it (#253): the argument is where the fault is
     let quiet = &flat.expansion.quiet;
     cx.diags.retain(|d| !(d.code == Code::E101 && d.stmt.is_some() && quiet.contains(&d.span)));
+    // the load scenarios, read over the drawing once every solid is built (#510 P4)
+    let scenarios = super::scenarios::scenarios(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
     crate::modules::localize(p, &mut cx.diags);
-    Elaborated { sketch: cx.sk, map: cx.map, diags: cx.diags, program: p.clone(), taken: false }
+    Elaborated {
+        sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, program: p.clone(), taken: false,
+    }
 }
