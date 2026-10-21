@@ -8,7 +8,7 @@
 // whole period — the largest rotor that turns in the bore. Its flank is the bore's envelope under
 // the housing's motion, drawn on the page as `flank`. The numbers are in `configuration.sv`.
 unit mm
-use std (horizontal, right_of)
+use std (horizontal, right_of, spins)
 use configuration
 
 R := configuration.generating_radius
@@ -37,8 +37,8 @@ in (spin := frame) {
 // ring gear three times it, turn the rotor two thirds of the way back.
 // The rotor is `spin` seen from the housing, `counter`; the housing is `counter` seen from it.
 counter := frame
-std.Spin(counter, about: centre, on: std.top, ratio: -1)
-std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)
+counter spins(-1) centre
+spin spins(-2 / 3) hub
 
 // -- the curves -------------------------------------------------------------------------------
 // The bore is where an apex goes over three turns of the shaft, one of the rotor; a flank is

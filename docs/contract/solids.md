@@ -412,7 +412,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   off the exact B-rep to 1e-9.
 - **A screw is a motion read at a roll** (§6.9 [0.110], [0.138]; #243 L6, #366). `std.Helix(base,
   pitch:, turns:, s:)` is `base` carried by the screw about its normal through its origin (a frame's
-  `std.Turn` about `base.normal`, `advance: pitch`) to `360deg · turns · s`: `n` the base so
+  `screws(pitch)` about `base.normal`) to `360deg · turns · s`: `n` the base so
   carried (a section in it sweeps a twisted prism), `axial` `n` turned a quarter about its `u` — `u`
   out along `n.u`, `v` up the axis (a thread's).  `std.OnHelix(base, r:, …)`'s `n` stands square to
   the helix of radius `r`, `v` up the axis leaned by the lead angle (a coil's wire): `base` tilted

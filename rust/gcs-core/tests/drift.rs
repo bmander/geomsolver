@@ -247,8 +247,8 @@ fn corpus() -> BTreeMap<String, BTreeMap<&'static str, usize>> {
 /// another way to say it today: what a parent reads of an instance's instance, the first one names
 /// as its own (a group of aliases, `ends := {tip: arm.tip}`, or an interface), and a group nothing
 /// reads is not handed on.  The others are said and not held.  A pun (W201): a defined word's
-/// measure is labelled until #463.  A bare call (W202): the motion components are not words until
-/// #464.  An asserting component (W203): a word's every parameter is given, so a verb that leaves
+/// measure is labelled until #463.  A bare call (W202): the motion components are words since #464,
+/// and `std.Rolls` and `Standoff` are not yet.  An asserting component (W203): a word's every parameter is given, so a verb that leaves
 /// a number to the solve (`std.Screw`'s pitch, a joint's ratio) is a component until one may be
 /// left out.  A flag read by `when` (W205): a model's choice as often as a picture's.
 const GATED: [&str; 2] = ["W204", "W206"];

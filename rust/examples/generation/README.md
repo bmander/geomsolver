@@ -22,9 +22,9 @@ Read them in this order:
 
 What the words are:
 
-- A motion is a frame's joint: `m := frame` declares the frame, `std.Spin(m, about: o, on: v,
-  ratio: r)` turns it about a point `o` drawn in the view `v`, `std.Turn(m, about: ax, ratio: r)`
-  about a line, and `std.Slide(m, along: l, advance: d)` slides it along a line, `d` a turn.
+- A motion is a frame's joint: `m := frame` declares the frame, `m spins(r) o` turns it about a
+  point `o` in the view `o` is drawn in, `m turns(r) ax` about a line, and `m slides(d) l` slides
+  it along a line, `d` a turn (`use std (spins, turns, slides)`).
 - `envelope(tool over t in (a, b), under: m)` is what a point, line, circle, arc, formula curve or
   another envelope cuts. `seen_from: n` reads it as `m` seen from the frame `n`
   (`under: rack, seen_from: blank`). `side: near | far` picks a circle's side.

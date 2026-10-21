@@ -406,10 +406,10 @@ takes a layout naming the front datum, origin and reference axis.
   its instance as a group of aliases (`HypoidPair`'s `gear_member := {ax: gear_cone.ax, …}`,
   `Tooth`'s `left` and `right`), or the parent reads it off a member one level down
   (`inlet.tbore.center`, a set's `flank.apex`).  The list is empty.  The rest are said, not held:
-  W201 waits on a word's unlabelled measure (#463), W202 on the motion words (#464), W203 on a
-  word that may leave a number to the solve (`std.Screw`'s pitch, a joint's ratio: a word's
-  parameter left out is E040); W205 is a heuristic, since a flag chooses a model as often as a
-  picture.
+  W201 waits on a word's unlabelled measure (#463), W202 on `std.Rolls` and `Standoff` (the
+  motion components are words since #464), W203 on a word that may leave a number to the solve
+  (`std.Screw`'s pitch, a joint's ratio: a word's parameter left out is E040); W205 is a
+  heuristic, since a flag chooses a model as often as a picture.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,
   `flatten::check_call`).  `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw, o_s: o_s,
   o_t: o_t)`: an argument bound by position must fill an *entity* formal and must stand before every

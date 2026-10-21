@@ -6,7 +6,7 @@
 // it refining).
 
 unit mm
-use std (coords, on_u)
+use std (coords, on_u, turns)
 wheel_pitch := 16mm
 pinion_pitch := 8mm
 pin_throw := 6mm
@@ -32,11 +32,13 @@ in std.front {
 
 // The wheel turns once per turn of the shared angle; the pinion turns the other way, as fast as
 // the two pitch circles rolling at the pitch point make it — along the page's normal, where the
-// circles touch, the pinion's point there moves with the wheel's.
+// circles touch, the pinion's point there moves with the wheel's.  Its ratio is an unknown the
+// rolling finds.
 wheel_turn := frame
-std.Turn(wheel_turn, about: spindle, ratio: 1)
+wheel_turn turns(1) spindle
+param pinion_ratio: Scalar
 pinion_turn := frame
-std.Turn(pinion_turn, about: pinion_axis)
+pinion_turn turns(pinion_ratio) pinion_axis
 std.Rolls(pitch, pinion_turn, wheel_turn, along: std.front.normal)
 
 // The blank: a disc out to the addendum circle, turned about the spindle.

@@ -3,7 +3,7 @@
 // The part's boundary is the material field's, meshed by Delaunay refinement.
 
 unit mm
-use std (coords, on_u, on_v)
+use std (coords, on_u, on_v, turns)
 in std.front {
   construction centerline spindle := line(std.origin, hint((0, 1)))
   fix((0, 1)) spindle.p2
@@ -24,7 +24,7 @@ in std.front {
   construction centerline cradle := line(hub, hub_up)
 }
 private spin := frame
-std.Turn(spin, about: cradle, ratio: 0.25)
+spin turns(0.25) cradle
 private rise := axis hint(dir: (0, 1, 1))
 fix(dir == (0, sqrt(0.5), sqrt(0.5))) rise
 private flat := plane(u: std.x, v: rise)
@@ -37,7 +37,7 @@ in flat {
   construction centerline kaxis := line(k0, k1)
 }
 private observer := frame
-std.Turn(observer, about: kaxis, ratio: 1)
+observer turns(1) kaxis
 construction removal := sweep(tool over t in (-75deg, 75deg), under: spin, seen_from: observer)
 in std.front {
   private q0 := point

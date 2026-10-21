@@ -153,8 +153,7 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body
             (Some(l), _) => MotionDef::Rotation { axis: l as u32, ratio, advance },
             (None, Some(_)) if advance != 0.0 || held.advance.is_none() => {
                 say(diags, format!("`{name}` turns in a view about a point of it, and a turn in a \
-                    view has no advance: a screw turns about a line, `std.Turn(f, about: l, \
-                    ratio: r, advance: a)`"));
+                    view has no advance: a screw turns about a line, `f screws(a) l`"));
                 continue;
             }
             (None, Some(c)) => MotionDef::Turn { centre: c as u32, ratio },
@@ -259,8 +258,8 @@ pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
         else {
             let name = w.ops.first().map(crate::syntax::ref_text).unwrap_or_default();
             say(diags, Code::E080, format!("a value is a jointed frame's, the instant it stands \
-                at: `{name}` has no joint — `std.Turn(f, about: l, ratio: r)`, `std.Spin`, \
-                `std.Slide`"));
+                at: `{name}` has no joint — `f turns(r) l`, `f spins(r) o`, \
+                `f slides(a) l`"));
             continue;
         };
         let name = name_of(res, f);
@@ -367,7 +366,7 @@ pub(super) fn reading(sk: &mut Sketch, res: &Resolver, under: &Ref, seen_from: O
     let source = frame_motion(sk, res, under, over)?.ok_or_else(|| {
         let name = crate::syntax::ref_text(under);
         format!("`{name}` does not move: a frame's motion is its joint, held by relations — \
-                 `std.Turn({name}, about: l, ratio: r)`, `std.Spin`, `std.Slide` — or the \
+                 `{name} turns(r) l`, `{name} spins(r) o`, `{name} slides(a) l` — or the \
                  drawing moves it as a declared parameter runs, read over it, `over t`")
     })?;
     let Some(g) = seen_from else { return Ok(source) };

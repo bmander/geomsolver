@@ -21,7 +21,7 @@
 // march's tolerance; `past` runs on to 20 and is refused at the waist (u = 90°) short of its
 // radius of curvature, (R − 3e)²/(9e − R) = 15, where `housing.sv`'s `past` is refused.
 unit mm
-use std (right_of)
+use std (right_of, spins)
 
 R := 75mm                 // the generating radius, the rotor's centre to an apex
 e := 15mm                 // the eccentricity, the shaft's crank
@@ -37,9 +37,9 @@ in std.top {
   apex right_of(d: R) hub
 }
 counter := frame
-std.Spin(counter, about: centre, on: std.top, ratio: -1)
+counter spins(-1) centre
 spin := frame
-std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)   // the rotor, seen from the housing
+spin spins(-2 / 3) hub                                   // the rotor, seen from the housing
 
 // the curve the seal's centre runs on: the apex's path over half a turn of the rotor
 trochoid := envelope(apex over t in (0deg, 540deg), under: spin, seen_from: counter)

@@ -59,9 +59,10 @@ the same readings written `under:` (`a_rack_riding_its_frame_cuts_what_the_readi
 `a_tool_riding_its_frame_is_placed_and_swept_as_under_it`) and the refusals
 (`riding_refuses_what_it_cannot_mean`).
 
-**Joints in the solve** (stage 5): a joint's ratio or advance no `fix` states (`std.Turn` given
-no `ratio:`, `program::motions` reading a `Tie` slot or none) stays a free parameter of the
-frame's, seeded where its unknown is, and the motion node carries both as `MotionE::numbers`.
+**Joints in the solve** (stage 5): a joint's ratio or advance no `fix` states (`f turns(k) l`
+over a declared unknown `k`, `program::motions` reading a `Tie` slot or none) stays a free
+parameter of the frame's, seeded where its unknown is, and the motion node carries both as
+`MotionE::numbers`.
 The kind is still read off the holding statements: an axis on a line with its ratio unknown is a
 turn.  `envelope::held::motion` puts the two numbers among the motion's columns past its axis's
 (`held::Free`, encoded in a step's constants as where they start, one past, and whether the step
@@ -104,7 +105,7 @@ on it and each point carried to a stated roll where its motion carries it, round
 planes placed over them (`Sketch::seed_joints`, `Sketch::seed_carried`, `program::place_planes`), so
 a plane drawn over carried points stands along its lines however far round the roll is.
 
-**A joint about a frame's own axis** (#366): `std.Turn(f, about: P.normal)`, or `P.u`, holds
+**A joint about a frame's own axis** (#366): `f turns(r) P.normal`, or `P.u`, holds
 `f.axis` coincident with an axis no drawn line is — `Joint { axis }` — which the held steps read as
 a turn (a slide, its ratio stated 0) about the joint's axis as the solve places it, its point and
 its direction (`held::Step::Rotation { dir: true }`, codes 5 and 6), seeded where the axis it is
@@ -114,7 +115,7 @@ held to stands.  **The station words are frames whose value is written over `s`*
 at `360deg · turns · s`, `n` is `base` drawn in it, and `axial` is `n` drawn in a quarter turn
 about its `u`; `OnHelix` is `base` drawn in a screw about `base.u` standing at the helix's start,
 then in the helix's screw; `Twisted`'s point is `reach` along `n.u` drawn in a turn in `n` about
-its origin standing at `twist · s` (`std.Spin`, `CarriedPointIn`) — no `cos`/`sin` of a running
+its origin standing at `twist · s` (`spins`, `CarriedPointIn`) — no `cos`/`sin` of a running
 number and no geometry drawn to hold an axis.  Each lowers to the reading at an instant it was
 written as through [0.140], row for row.  A family a station so carried sweeps is
 its motion's sweep ([generating.md](generating.md)).  The gates: `tests/carried_frame.rs` (frames,

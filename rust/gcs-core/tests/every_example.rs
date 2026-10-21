@@ -20,7 +20,7 @@ use gcs_core::{library, modules, par, program, syntax};
 const KNOWN: &[(&str, &str)] = &[];
 
 /// Every `.sv` under `dir`, in order.
-fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
+pub(crate) fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
     let mut entries: Vec<PathBuf> =
         std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).collect();
     entries.sort();

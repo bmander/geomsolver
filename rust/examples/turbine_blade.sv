@@ -35,7 +35,7 @@
 // Edit the design table (`hub`, `mean`, `tip`), `span`, `r_hub`, `blades`, the root's numbers
 // or the holes.
 unit mm
-use std (coords, round)
+use std (coords, round, turns)
 
 // ---- the stage ----
 r_hub := 280mm               // the hub's flowpath at the stacking axis, from the engine's axis
@@ -214,7 +214,7 @@ in std.front {
               step(v: -wing_z) (aw_root := line) -> close
 }
 index := frame
-std.Turn(index, about: engine, ratio: 1)
+index turns(1) engine
 // each swept one pitch from the front plane, then turned back half a pitch to stand centred
 platform_sector := solid(plat, about: engine, sweep: pitch_angle)
 wing_f_sector := solid(fwd_wing, about: engine, sweep: pitch_angle)

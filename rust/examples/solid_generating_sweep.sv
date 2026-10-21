@@ -1,7 +1,7 @@
 // Continuous material: a ball swept through a turn about the spindle, everything it passes through
 // — a stretch of a torus with the ball at each end, built exactly.
 unit mm
-use std (on_u)
+use std (on_u, turns)
 
 component GeneratingCut(tool: solid, generating: frame, start: Angle, finish: Angle) {
   body := sweep(tool over t in (start, finish), under: generating)
@@ -23,7 +23,7 @@ in std.front {
 }
 construction tool := solid(face(meridian, diameter), about: diameter)
 generating := frame
-std.Turn(generating, about: spindle, ratio: 1)
+generating turns(1) spindle
 in std.front {
   removal := GeneratingCut(tool, generating, start: -60deg, finish: 60deg)
 }

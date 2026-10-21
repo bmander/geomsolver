@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.154] A frame's joint is said in words.** `std.sv` states a joint as relation words (§6.14),
+the frame the subject and what it moves about or along the object, each of one number given bare
+(§9.9, [0.152]): `f turns(r) l` about a line, `r` radians a radian of the roll; `f screws(a) l` a
+screw about it, a radian a radian, `a` along it a turn; `f spins(r) o` about the point `o`, square
+to the plane it is drawn in (`o.plane`; a point standing in space is **E040**); `f slides(a) l`
+along a line, `a` a turn. Through 0.153 they were components called for their effect,
+`std.Turn(f, about: l, ratio: r, advance: a)`, `std.Spin(f, about: o, on: P, ratio: r)` and
+`std.Slide(f, along: l, advance: a)`, which are kept with the same meaning for one release. A ratio
+the solve finds is given a declared unknown (`param k: Scalar` then `f turns(k) l`), where
+`std.Turn` left it out. The library's 67 calls are rewritten (`counter spins(-1) centre`,
+`rack slides(2 * pi * r1) pitch_line`, `climb screws(pitch) spindle`) and no solved value moved;
+a `fix` a word's body states is held where the word is written, so an edit does not write it again
+at the root. (Issue #464.)
+
 **[0.153] A line square to a plane.** `perpendicular` relates a drawn line and a plane, written
 either way round: `P perpendicular l` turns `P`'s normal along `l` in space, whatever view the line
 is drawn in — two rows across the normal over the line's ends' places, as an axis square to a

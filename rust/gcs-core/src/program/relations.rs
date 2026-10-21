@@ -1751,6 +1751,7 @@ impl Relation {
             claim: self.claim,
             class: &self.class,
             bound: self.form.bound(),
+            worded: self.word.is_some(),
         })
     }
 }

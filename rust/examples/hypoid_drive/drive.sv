@@ -12,7 +12,7 @@
 // the frame's third direction. Every part is placed by the pair's own lines; no point is seeded
 // and no coordinate is written. See README.md.
 unit mm
-use std
+use std (turns)
 use spiral_bevel.hypoid (HypoidPair)
 
 // -- the pair, as `hypoid.sv` states it --------------------------------------------------------
@@ -96,9 +96,9 @@ claim gear_side.shaft clear(1mm) pair.pinion_member.material
 claim pinion_side.shaft clear(1mm) pair.gear_member.material
 claim gear_side.shaft clear(1mm) pinion_side.shaft
 gear_turn := frame
-std.Turn(gear_turn, about: pair.gear_member.ax, ratio: 1)
+gear_turn turns(1) pair.gear_member.ax
 pinion_turn := frame
-std.Turn(pinion_turn, about: pair.pinion_member.ax, ratio: 1)
+pinion_turn turns(1) pair.pinion_member.ax
 construction gear_crank_turned := gear_side.turns.crank at(under: gear_turn) 0deg
 construction pinion_crank_turned := pinion_side.turns.crank at(under: pinion_turn) 0deg
 claim over gear_turn in (0deg, 360deg) {
@@ -183,7 +183,7 @@ component Mount(ax: line, foot: point, inner: point, seat: set, member: solid, t
 component Splined(ax: line, o: point, across: line, lo: Length, hi: Length, root: Length,
     tip: Length, width: Length, keys: Int) {
   turn := frame
-  std.Turn(turn, about: ax, ratio: 1)
+  turn turns(1) ax
   core := { q | q inside std.Cylinder(ax, r: root); o distance(in: (lo, hi), along: ax) q }
   bar := { q | q inside std.Cylinder(ax, r: tip); o distance(in: (lo, hi), along: ax) q
                o distance(in: (-width / 2, width / 2), along: across) q }
@@ -203,7 +203,7 @@ component Splined(ax: line, o: point, across: line, lo: Length, hi: Length, root
 component Spokes(ax: line, o: point, across: line, lo: Length, hi: Length, width: Length,
     reach: Length, bars: Int) {
   turn := frame
-  std.Turn(turn, about: ax, ratio: 1)
+  turn turns(1) ax
   bar := { q | q inside std.Cylinder(ax, r: reach); o distance(in: (lo, hi), along: ax) q
                o distance(in: (-width / 2, width / 2), along: across) q }
   private construction bar_solid := solid(bar)

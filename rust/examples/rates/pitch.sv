@@ -23,7 +23,7 @@
 // (`undercut`), and its march is refused at the hollow, short of 19.2, where a node's area
 // |x_d × x_u| falls to a hundredth of its home's. `solventc` says how far each is marched.
 
-use std (right_of)
+use std (right_of, spins, slides)
 
 base := 25    // the roller centre's nearest approach to the cam's centre
 lift := 15    // how far the follower rises
@@ -40,9 +40,9 @@ in std.front {
 }
 
 cam := frame
-std.Spin(cam, about: o, on: std.front, ratio: 1)
+cam spins(1) o
 out := frame
-std.Slide(out, along: path, advance: 2 * lift)      // the rise: `under: out, seen_from: cam`
+out slides(2 * lift) path                           // the rise: `under: out, seen_from: cam`
 
 in std.front {
   c_rise := point hint((25, 0))

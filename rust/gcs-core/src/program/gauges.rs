@@ -64,8 +64,9 @@ pub(super) fn is_fix(r: &Relation) -> bool {
 /// every gauge is in (`Gauges::hold_all`, `choose_all`).
 pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt) {
     let super::Elab { doc, sk, res, map, gauges, diags, .. } = cx;
-    // a `fix` of the root's own is the one a reconcile reads back; any other is said where it is
-    let within = !st.path.is_empty() || !doc.root().body.iter().any(|s| s.id == st.id);
+    // a `fix` of the root's own is the one a reconcile reads back; any other — a component's, a
+    // word's body (`f turns(2) l`) — is said where it is
+    let within = r.worded || !st.path.is_empty() || !doc.root().body.iter().any(|s| s.id == st.id);
     let refs: Vec<&Ref> = r
         .args
         .iter()

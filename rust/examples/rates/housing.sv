@@ -30,7 +30,7 @@
 // turned clockwise, normalised): a point of the bore stands `s` from the curve the seal's centre
 // runs on, square to it. The fold at the waist, at d = (R − 3e)²/(9e − R) = 15.
 unit mm
-use std (right_of)
+use std (right_of, spins)
 
 R := 75mm                 // the generating radius, the rotor's centre to an apex
 e := 15mm                 // the eccentricity, the shaft's crank
@@ -46,9 +46,9 @@ in std.top {
   apex right_of(d: R) hub
 }
 counter := frame
-std.Spin(counter, about: centre, on: std.top, ratio: -1)
+counter spins(-1) centre
 spin := frame
-std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)   // the rotor, seen from the housing
+spin spins(-2 / 3) hub                                   // the rotor, seen from the housing
 
 // -- the bore -----------------------------------------------------------------------------------
 component Bore(c: point, z1: point, apex: point, m: frame, seen_from: frame, d: Length, u: Angle) {

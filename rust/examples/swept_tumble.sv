@@ -3,7 +3,7 @@
 // between -`roll` and +`roll`. Change a number and apply (⌘↵) to watch it refine again; ⌘B shows
 // it in the glass box. Keep `tube` below `ring`, so the torus has a hole.
 unit mm
-use std (above, coords, on_u, on_v)
+use std (above, coords, on_u, on_v, turns)
 
 ring := 1mm        // the torus's centre circle
 tube := 0.5mm      // the torus's tube
@@ -31,7 +31,7 @@ in std.front {
   construction centerline cradle := line(hub, hub_up)
 }
 private spin := frame
-std.Turn(spin, about: cradle, ratio: 0.25)
+spin turns(0.25) cradle
 private rise := axis hint(dir: (0, 1, 1))
 fix(dir == (0, sqrt(0.5), sqrt(0.5))) rise
 private tilted := plane(u: std.x, v: rise)
@@ -44,5 +44,5 @@ in tilted {
   construction centerline kaxis := line(k0, k1)
 }
 private observer := frame
-std.Turn(observer, about: kaxis, ratio: 1)
+observer turns(1) kaxis
 tumbled := sweep(torus over t in (-roll, roll), under: spin, seen_from: observer)

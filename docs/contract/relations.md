@@ -221,9 +221,9 @@ came from.
   where all are held) and writes it back when the hold goes.  `tests/seeds.rs::a_fix_is_its_own_seed`.
   `edit::reconcile` diffs holds per entity and field (`gauge_key`, `held_refs` over
   `program::holds`) and appends a statement built by `program::lift_gauge` with the numbers.  A
-  number held by a `fix` that is no top-level statement of the root (a component's: `std.Turn`
-  holding the joint of a frame the root declared) is recorded in `SourceMap::held_within` and
-  left out (`holds_except`): it is said where it is, and never written again at the root.  A
+  number held by a `fix` that is no top-level statement of the root (a component's, or a
+  word's body's: `f turns(2) l` holding the joint of a frame the root declared, #464) is
+  recorded in `SourceMap::held_within` and left out (`holds_except`): it is said where it is, and never written again at the root.  A
   frame's holds are named by what it has (`Sketch::frame_members`: a joint alone is `ratio` and
   `advance`).  `tests/gauges.rs::a_hold_a_component_says_is_not_written_again_at_the_root`.  A
   root choice under a key no triple spells stays the

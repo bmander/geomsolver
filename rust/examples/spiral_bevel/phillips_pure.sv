@@ -7,7 +7,7 @@
 // surface traced in space, and it is the member's involute helicoid — the very flank the rack
 // sweeps (`tests/phillips.rs`), with no rack in its definition.
 unit mm
-use std (reciprocal)
+use std (reciprocal, turns)
 
 param pinion_teeth := 24
 param gear_teeth := 48
@@ -32,9 +32,9 @@ fix((0mm, rg + rp, 0mm)) p0
 fix((10mm, rg + rp, 0mm)) p1
 pinion_ax := line(p0, p1)
 gear_turn := frame
-std.Turn(gear_turn, about: gear_ax, ratio: -q)
+gear_turn turns(-q) gear_ax
 pinion_turn := frame
-std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
+pinion_turn turns(1) pinion_ax
 // the mesh is the gear's turn seen from the pinion's: `under: gear_turn, seen_from: pinion_turn`
 
 // -- the line of action, as `phillips.sv` holds it -----------------------------------------------

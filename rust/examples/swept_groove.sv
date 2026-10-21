@@ -5,7 +5,7 @@
 // so the part is built exactly. ⌘B shows it in the glass box. Keep `arc_r + ball_r` inside the
 // block's half width.
 unit mm
-use std (below, right_of)
+use std (below, right_of, turns)
 
 block_w := 40mm      // the block's width and depth
 block_h := 12mm      // its height
@@ -41,7 +41,7 @@ in std.front {
   private ball := Sphere(centre, r: ball_r)
 }
 swing_about := frame
-std.Turn(swing_about, about: spindle, ratio: 1)
+swing_about turns(1) spindle
 construction groove := sweep(ball.body over t in (-swing / 2, swing / 2), under: swing_about)
 
 part := solid(block)

@@ -35,7 +35,7 @@
 // Closed forms: on the sphere x(d, u) = R (sin θ cos u, sin θ sin u, cos θ), θ = θ₀ + d/R; on the
 // cone x(d, u) = ρ (sin α cos u, sin α sin u, cos α), ρ = 30 + d.
 unit mm
-use std
+use std (turns)
 
 R := 30mm
 r1 := 15mm
@@ -85,7 +85,7 @@ top := point hint((0, 0, 10))
 fix((0, 0, 10)) top
 za := line(c, top)
 spin := frame
-std.Turn(spin, about: za, ratio: 1)      // a turn about the axis, a degree a degree
+spin turns(1) za                         // a turn about the axis, a degree a degree
 
 // the starting circle's point: r1 from the axis, on the sphere (and so on the cone)
 s := point hint((15, 0, 26))

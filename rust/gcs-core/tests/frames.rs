@@ -548,8 +548,8 @@ s := std.Screw(isa, spin)
 #[test]
 fn the_motion_spellings_are_refused_with_what_they_became() {
     for (src, says) in [
-        ("o := point\nm := motion(about: o, ratio: 2)\n", "std.Turn"),
-        ("l := line\nm := motion(along: l, advance: 2mm)\n", "std.Slide"),
+        ("o := point\nm := motion(about: o, ratio: 2)\n", "f turns(r) l"),
+        ("l := line\nm := motion(along: l, advance: 2mm)\n", "f slides(a) l"),
         ("m := motion(a, relative_to: b)\n", "seen_from:"),
         ("o := point\nm := motion(about: o, phase: 10deg)\n", "roll"),
         ("component C(m: motion) {\n  p := point\n}\n", "`m: frame`"),

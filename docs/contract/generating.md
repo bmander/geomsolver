@@ -28,7 +28,11 @@ The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `Trimmed
 `axis`, `ratio` and `advance` are minted where a reference names them (`Expansion::joints`, read in
 `program::entities` by `Sketch::mint_joint`: an `AxisE`, its direction seeded along z then by
 `seed_joints` from what holds it, and two parameters, ratio 1 and advance 0) and held by
-ordinary relations; `std.Turn`, `std.Spin` and `std.Slide` are the words that hold them.  Before
+ordinary relations: `std.sv`'s relation words `turns`, `screws`, `spins` (about the axis through
+`o` square to `o.plane`) and `slides` ([0.154], #464).  The components `std.Turn`, `std.Spin` and
+`std.Slide` are kept for one release and no document of the library calls them
+(`tests/joint_words.rs`).  A `fix` in a word's body is held within, as a component's is
+(`ResolvedRelation::worded`), so a reconcile does not write it again at the root.  Before
 the solve `program::motions` reads each joint's kind off its holding statements — `fix`'s
 `ratio`/`advance` slots, `coincident` with a line or point, `parallel` with a view's normal — and
 pushes the `MotionDef` the readers know: a line with a ratio stated 0 `Translation`, a line
@@ -100,7 +104,7 @@ old outputs; renames are atomic per file, not across files. Native-path tests mu
 mesh defects.
 
 **Planar generation (§6.15.1, #61):** `envelope(tool over t in (a, b), under: m, side:)` over a tool
-of the sheet (point/line/circle/arc/formula curve) and a planar motion (`std.Spin`, a turn about a
+of the sheet (point/line/circle/arc/formula curve) and a planar motion (`spins`, a turn about a
 point of a view, is `MotionDef::Turn`, a rotation square to its view in space) is a **curve**
 (`CurveBody::Envelope`, `program/generated.rs`, built with motions after the primitives, before
 constraints): `F = X_s × X_t = 0` in the tool parameter, `C`..`C''` exact by `taylor::Jet`s, `C'''`
@@ -216,7 +220,7 @@ reproduction). `tests/formate.rs` (the cutter and motion, admission);
 `build/exports/formate-{pinion,gear}.stl` and holds the pair to an unvarying clearance and to
 line contact through the mean section.
 
-**Screws, the constant-twist class (#64):** a sweep under a screw (`std.Turn(…, advance:)`) is admitted by
+**Screws, the constant-twist class (#64):** a sweep under a screw (`f screws(a) l`) is admitted by
 rows S1–S4 (`solid::constant_twist`, docs/generating-sweeps.md): the tool's characteristic (each
 ring's `A cos + B sin + C` roots under the screw's twist, fixed on the tool) walked through the blank,
 a coarse pass then `rows` across the reach; S3 is signed. Its sheet is exact, S(s, t) = M(t)·σ(s), rows

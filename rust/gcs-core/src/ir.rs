@@ -150,6 +150,8 @@ pub(crate) struct ResolvedRelation<'a> {
     pub class: &'a Classes,
     /// The bound its number is, where it is one (§9.6): `RelationForm::bound`.
     pub bound: Option<(syntax::Cmp, Option<Arg>)>,
+    /// Stated by a defined word's body (§9.9, `Relation::word`), not where it is written (#464).
+    pub worded: bool,
 }
 
 #[derive(Clone, Debug)]

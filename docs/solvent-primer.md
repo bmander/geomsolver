@@ -1828,32 +1828,38 @@ statements.
 **A motion is a frame's joint.** A frame declared bare (`f := frame`, 1.12) is a rigid frame in
 space; its joint is an axis `f.axis`, a ratio `f.ratio` (radians a radian of the one shared roll)
 and an advance `f.advance` (along the axis a turn of the roll), held by relations like anything
-else. The standard library states them the ways a designer does:
+else. The standard library states them as relation words, the frame the subject and what it
+moves about or along the object (`use std (turns, screws, spins, slides)`):
 
 ```sv
 crown := frame
-std.Turn(crown, about: crown_axis, ratio: 1)             // turns about a line
+crown turns(1) crown_axis            // turns about a line, a radian a radian of the roll
 blank := frame
-std.Turn(blank, about: blank_axis, ratio: 2)             // twice the angle
+blank turns(2) blank_axis            // twice the angle
 tap := frame
-std.Turn(tap, about: hole_axis, ratio: 1, advance: 1.5mm)  // a screw: 1.5 mm per turn
+tap screws(1.5mm) hole_axis          // a screw: a turn a turn, 1.5 mm along it
 plunge := frame
-std.Slide(plunge, along: spindle, advance: 20mm)         // a translation
+plunge slides(20mm) spindle          // a translation, 20 mm a turn
 wheel := frame
-std.Spin(wheel, about: o, on: std.front, ratio: 1)       // about a point of a view, square to it
+wheel spins(1) o                     // about a point, square to the view it is drawn in
 ```
 
+`spins` reads the view from its point (`o.plane`); a point standing in space has none (E040).
+`screws` turns a radian a radian of the roll; a screw at another ratio is its relations written
+out, `l coincident f.axis` and `fix(ratio == r, advance == a) f`. The components `std.Turn`,
+`std.Spin` and `std.Slide` said the same through 0.153 and are kept for one release.
 Roll 0 is as drawn: a member that must stand turned there is drawn turned.
 A motion never moves the sketch, and a frame with no joint stands still: the world. The ratio is
 `Scalar`; a measurement of the drawing there is E107.
 
-**A ratio left out is the solve's**: `std.Turn(pinion, about: shaft)` with no `ratio:`
-leaves it an unknown, which a relation reading the motion holds. `std.Rolls` says the usual one —
+**A ratio may be the solve's**: given a declared unknown, `param k: Scalar` then `pinion
+turns(k) shaft`, it is found by a relation reading the motion. `std.Rolls` says the usual one —
 two pitch circles rolling at their pitch point without slipping along their common tangent:
 
 ```sv
-std.Turn(wheel_turn, about: spindle, ratio: 1)
-std.Turn(pinion_turn, about: pinion_axis)                           // no ratio: found
+wheel_turn turns(1) spindle
+param pinion_ratio: Scalar                                          // not stated: found
+pinion_turn turns(pinion_ratio) pinion_axis
 std.Rolls(pitch, pinion_turn, wheel_turn, along: std.front.normal)  // −R/r, from the radii
 ```
 
@@ -1885,8 +1891,8 @@ in (arm := frame) {
     }
   }
 }
-std.Spin(arm, about: o, on: std.top, ratio: 1)
-std.Spin(planet, about: c, on: std.top, ratio: -3)   // its axis where it is drawn, at rest
+arm spins(1) o
+planet spins(-3) c                                  // its axis where it is drawn, at rest
 X coincident(t == 60deg) x                          // (10, 17.3205): the arm's turn, then the planet's
 ```
 
@@ -1986,7 +1992,7 @@ plane, `X` is held where that plane sees the carried point (two rows). Leave `un
 rides on a frame (`in f { … }`), as for any reading. **A frame carried**: `n := base at τ` —
 `at(under: m)` where `base` rides on nothing — is the plane `base` there, origin, axes and normal;
 every frame that moves is a frame read at a roll. A frame turns about another's axis as about a
-line: `std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)`.
+line: `screw screws(pitch) base.normal`.
 
 **A joint's value**: a jointed frame stands at an instant of the roll,
 `fix(value == τ) f` beside its ratio and advance — its joint turned `ratio · τ` and risen `advance
@@ -1997,7 +2003,7 @@ face family's running number (read again at every station) or name an unknown th
 
 ```sv
 screw := frame
-std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)
+screw screws(pitch) base.normal
 fix(value == 360deg * turns * s) screw
 n := base in screw                       // `std.Helix`'s station: base where the screw stands
 ```
@@ -2015,7 +2021,7 @@ whose station is the drawing itself (`lofts/thread.sv`'s thread):
 ```sv
 param s: Scalar over (0, 1)
 screw := frame
-std.Turn(screw, about: std.top.normal, ratio: 1, advance: pitch)
+screw screws(pitch) std.top.normal
 fix(value == 360deg * turns * s) screw
 in screw {
   in std.front {
@@ -2047,7 +2053,7 @@ stands at the law's value for every `t`. A reading of its motion over the roll r
 ```sv
 param t: Angle over (0deg, 360deg)
 follower := frame
-std.Slide(follower, along: stem, advance: 360mm)   // its value in degrees is its rise in mm
+follower slides(360mm) stem                        // its value in degrees is its rise in mm
 fix(value == 5deg * (1 - cos(t))) follower
 roller := r0 in follower                           // where the law puts it at the held `t`
 groove := sweep(ball over t, under: follower, seen_from: cam)
@@ -2495,7 +2501,7 @@ angle `t` of a declared parameter and traced over it (1.10).
 ### 2.11 A profile generated by a motion: DOF 0, well
 
 ```
-use std
+use std (spins, slides)
 
 in std.front {
   o := point
@@ -2518,8 +2524,8 @@ in (rack := frame) {
   }
 }
 blank := frame
-std.Spin(blank, about: o, on: std.front, ratio: 1)        // the gear blank turns...
-std.Slide(rack, along: slide, advance: 2 * pi * 30)       // ...as the rack rolls on its pitch circle
+blank spins(1) o                                          // the gear blank turns...
+rack slides(2 * pi * 30) slide                            // ...as the rack rolls on its pitch circle
 cut := envelope(flank over t in (-25deg, 25deg), seen_from: blank)   // rides on the blank
 g coincident cut hint(t: 5)                               // the cut must pass through g
 ```

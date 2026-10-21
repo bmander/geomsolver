@@ -7,7 +7,7 @@
 // (§9.6, #217). The face mill's pressure shift and radius are found, not stated: where the pinion
 // and the gear stand equally far from undercut (`Balanced`, #283). See README.md.
 unit mm
-use std (skew)
+use std (skew, turns)
 
 // -- the pair as a designer states it ----------------------------------------------------------
 param pinion_teeth := 24
@@ -74,15 +74,15 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
   // roll seen from the member's. An index frame turns a member a tooth at a time, and the crown's
   // neighbour is the crown read one crown pitch round.
   crown_roll := frame
-  std.Turn(crown_roll, about: gear_cone.crown_ax, ratio: 1)
+  crown_roll turns(1) gear_cone.crown_ax
   pinion_roll := frame
-  std.Turn(pinion_roll, about: pinion_cone.ax, ratio: crown_teeth / pinion_teeth)
+  pinion_roll turns(crown_teeth / pinion_teeth) pinion_cone.ax
   gear_roll := frame
-  std.Turn(gear_roll, about: gear_cone.ax, ratio: -crown_teeth / gear_teeth)
+  gear_roll turns(-crown_teeth / gear_teeth) gear_cone.ax
   pinion_index := frame
-  std.Turn(pinion_index, about: pinion_cone.ax, ratio: 1)
+  pinion_index turns(1) pinion_cone.ax
   gear_index := frame
-  std.Turn(gear_index, about: gear_cone.ax, ratio: 1)
+  gear_index turns(1) gear_cone.ax
   crown_pitch := -360deg / crown_teeth
 
   // The crowns, and the members they generate.

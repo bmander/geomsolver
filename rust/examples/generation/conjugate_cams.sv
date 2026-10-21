@@ -13,7 +13,7 @@
 // Edit the lobe's semi-axes `a` and `b`, or how far its centre `off` sits from the shaft, and
 // the partner is cut again.
 
-use std (right_of)
+use std (right_of, spins)
 
 a := 14
 b := 9
@@ -34,7 +34,7 @@ in std.front {
 
 lobe := trace(Lobe(lc, a: a, b: b).p over u in (0, 360))
 shaft_a := frame
-std.Spin(shaft_a, about: o1, on: std.front, ratio: 1)
+shaft_a spins(1) o1
 shaft_b := frame
-std.Spin(shaft_b, about: o2, on: std.front, ratio: -1)
+shaft_b spins(-1) o2
 partner := envelope(lobe over t in (0deg, 360deg), under: shaft_a, seen_from: shaft_b)

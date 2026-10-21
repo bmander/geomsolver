@@ -112,9 +112,8 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
         }
         MotionDef::Joint { .. } => {
             return Err(format!("`{}`'s joint turns about an axis no centre of a view holds: a tool \
-                                of the sheet is carried by a turn in its view, `std.Spin(f, \
-                                about: o, on: P, ratio: r)`, or a slide along a drawn line, \
-                                `std.Slide`", me.name))
+                                of the sheet is carried by a turn in its view, `f spins(r) \
+                                o`, or a slide along a drawn line, `f slides(a) l`", me.name))
         }
         MotionDef::Rotation { .. } => {
             return Err(format!("`{}` turns about a line in space: a tool of the sheet is carried \

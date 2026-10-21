@@ -1,6 +1,6 @@
 // One source cutter, placed by a frame's turn at each index.
 unit mm
-use std (on_u)
+use std (on_u, turns)
 
 component IndexedCuts(tool: solid, target: solid, indexing: frame, count: Int) {
   repeat count as i {
@@ -14,7 +14,7 @@ in std.front {
   fix((0, 1)) shaft.p2
 }
 turn := frame
-std.Turn(turn, about: shaft, ratio: 1)
+turn turns(1) shaft
 in std.top {
   rim := radius(20mm) circle(center: std.top.origin)
   stock := solid(face(rim), depth: 5mm)
