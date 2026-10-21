@@ -493,6 +493,25 @@ pub fn min_norm_solve(a: &Mat, b: &[f64], rcond: f64) -> (Vec<f64>, usize) {
 /// triangle is read; each sweep zeroes every off-diagonal entry in turn, and the sweeps stop when
 /// what is left off the diagonal is rounding next to what is on it.
 pub fn sym_eigenvalues(a: &Mat) -> Vec<f64> {
+    let mut ev = jacobi(a, None);
+    ev.sort_by(|x, y| x.total_cmp(y));
+    ev
+}
+
+/// The eigenvalues of a symmetric matrix, ascending, and its eigenvectors as the columns of the
+/// second, in the same order (`A V = V Λ`, `VᵀV = I`): `sym_eigenvalues`'s rotations, accumulated.
+/// The projected pencil the eigensolver's Ritz pairs come from (`eigen.rs`).
+pub fn sym_eigen(a: &Mat) -> (Vec<f64>, Mat) {
+    let mut v = Mat::identity(a.rows);
+    let d = jacobi(a, Some(&mut v));
+    let mut idx: Vec<usize> = (0..a.rows).collect();
+    idx.sort_by(|&x, &y| d[x].total_cmp(&d[y]));
+    (idx.iter().map(|&i| d[i]).collect(), v.select_cols(&idx))
+}
+
+/// Cyclic Jacobi on the symmetric matrix `a`'s upper triangle: the diagonal it is rotated to,
+/// the rotations multiplied into `v` when one is given.
+fn jacobi(a: &Mat, mut v: Option<&mut Mat>) -> Vec<f64> {
     let n = a.rows;
     let mut m = a.clone();
     for i in 0..n {
@@ -531,12 +550,17 @@ pub fn sym_eigenvalues(a: &Mat) -> Vec<f64> {
                     m.data[p * n + k] = c * apk - s * aqk;
                     m.data[q * n + k] = s * apk + c * aqk;
                 }
+                if let Some(v) = v.as_deref_mut() {
+                    for k in 0..n {
+                        let (vkp, vkq) = (v.data[k * n + p], v.data[k * n + q]);
+                        v.data[k * n + p] = c * vkp - s * vkq;
+                        v.data[k * n + q] = s * vkp + c * vkq;
+                    }
+                }
             }
         }
     }
-    let mut ev: Vec<f64> = (0..n).map(|i| m.data[i * n + i]).collect();
-    ev.sort_by(|x, y| x.total_cmp(y));
-    ev
+    (0..n).map(|i| m.data[i * n + i]).collect()
 }
 
 /* -- SVD (Golub–Reinsch) ---------------------------------------------------- */

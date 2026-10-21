@@ -2,6 +2,10 @@
 //! of the Jacobian, ordered by reverse Cuthill–McKee with any dense column last, and factored by
 //! an up-looking LDLᵀ (Davis).  Regularizing the diagonal keeps rank-deficient
 //! (under-constrained) systems solvable, which is the normal case while editing.
+//!
+//! The same factor serves a symmetric matrix given by its entries (`Sym`, `Ldl`): a stiffness or
+//! a mass, and a pencil `L − μR` analysed once and factored at each μ the eigensolver asks for
+//! (`Pencil`, `eigen.rs`, #510), whose pivots' signs count the eigenvalues below μ.
 
 /// Reverse Cuthill–McKee on the pattern of A: short, and the sketch graphs this solver sees
 /// (trusses, chains, rings) are close to banded once relabelled this way.
@@ -147,18 +151,13 @@ fn ldl_symbolic(
     (lp, parent, lnz)
 }
 
-pub struct Ata {
-    pub n: usize,
-    pub nnz: usize,
-    /// The columns ordered last as dense (`dense_columns`): none, for an ordinary sketch.
-    pub dense: usize,
-    ap: Vec<i32>,
-    ai: Vec<i32>,
-    ax: Vec<f64>,
-    /// A[ts[t]] += Jdata[ta[t]] * Jdata[tb[t]]
-    ta: Vec<i32>,
-    tb: Vec<i32>,
-    ts: Vec<i32>,
+/// The LDLᵀ of a symmetric pattern: its order, its elimination tree and room for the factor's
+/// numbers, refilled by `numeric` for each new set of values on the same pattern.  `Ata`, `Ldl`
+/// and `Pencil` are its users.
+#[derive(Clone)]
+struct Factor {
+    /// The columns ordered last as dense (`dense_columns`).
+    dense: usize,
     perm: Vec<i32>,
     iperm: Vec<i32>,
     parent: Vec<i32>,
@@ -174,107 +173,40 @@ pub struct Ata {
     least: f64,
 }
 
-impl Ata {
-    pub fn new(n_rows: usize, n_cols: usize, indptr: &[i32], indices: &[i32]) -> Ata {
-        let n = n_cols;
-        let mut tr: Vec<(i32, i32, i32, i32)> = Vec::new();
-        for r in 0..n_rows {
-            let (lo, hi) = (indptr[r] as usize, indptr[r + 1] as usize);
-            for p in lo..hi {
-                for q in lo..hi {
-                    tr.push((indices[p], indices[q], p as i32, q as i32));
-                }
-            }
-        }
-        tr.sort_by_key(|t| (t.0, t.1));
-        let nt = tr.len();
-        let mut ta = vec![0i32; nt];
-        let mut tb = vec![0i32; nt];
-        let mut ts = vec![0i32; nt];
-        let mut ap = vec![0i32; n + 1];
-        let mut ai_tmp: Vec<i32> = Vec::with_capacity(nt);
-        let mut nnz = 0usize;
-        for t in 0..nt {
-            if t == 0 || tr[t].0 != tr[t - 1].0 || tr[t].1 != tr[t - 1].1 {
-                ai_tmp.push(tr[t].1);
-                ap[tr[t].0 as usize + 1] = nnz as i32 + 1;
-                nnz += 1;
-            }
-            ta[t] = tr[t].2;
-            tb[t] = tr[t].3;
-            ts[t] = nnz as i32 - 1;
-        }
-        for i in 1..=n {
-            if ap[i] < ap[i - 1] {
-                ap[i] = ap[i - 1];
-            }
-        }
-        let ai = ai_tmp;
-        let ax = vec![0.0; nnz.max(1)];
-
-        let dense = dense_columns(n, &ap);
-        let (perm, iperm, lp, parent, lnz) = if n > 0 {
-            let (perm, iperm) = order(n, &ap, &ai, &dense);
-            let (lp, parent, lnz) = ldl_symbolic(n, &ap, &ai, &perm, &iperm);
-            (perm, iperm, lp, parent, lnz)
-        } else {
-            (Vec::new(), Vec::new(), vec![0i32], Vec::new(), Vec::new())
-        };
-        let lnz_total = if n > 0 { lp[n] as usize } else { 0 };
-        Ata {
-            n,
-            nnz,
+impl Factor {
+    /// The order and the symbolic factor of `a`'s pattern.
+    fn new(a: &Sym) -> Factor {
+        let n = a.n;
+        let dense = dense_columns(n, &a.ap);
+        let (perm, iperm) = order(n, &a.ap, &a.ai, &dense);
+        let (lp, parent, lnz) = ldl_symbolic(n, &a.ap, &a.ai, &perm, &iperm);
+        let lnz_total = lp[n] as usize;
+        Factor {
             dense: dense.iter().filter(|&&d| d).count(),
-            ap,
-            ai,
-            ax,
-            ta,
-            tb,
-            ts,
             perm,
             iperm,
             parent,
             lnz,
             lp,
-            li: vec![0i32; lnz_total.max(1)],
-            lx: vec![0.0; lnz_total.max(1)],
-            flag: vec![0i32; n.max(1)],
-            pattern: vec![0i32; n.max(1)],
-            d: vec![0.0; n.max(1)],
-            y: vec![0.0; n.max(1)],
+            li: vec![0i32; lnz_total],
+            lx: vec![0.0; lnz_total],
+            flag: vec![0i32; n],
+            pattern: vec![0i32; n],
+            d: vec![0.0; n],
+            y: vec![0.0; n],
             least: 1.0,
         }
     }
 
-    /// The entries of the factor L below its diagonal: the fill of the order chosen.
-    pub fn factor_nnz(&self) -> usize {
-        self.lp.last().map_or(0, |&k| k as usize)
+    fn nnz(&self) -> usize {
+        self.lp[self.perm.len()] as usize
     }
 
-    /// A <- JᵀJ from the Jacobian's CSR values.
-    pub fn fill(&mut self, jdata: &[f64]) {
-        for v in self.ax.iter_mut() {
-            *v = 0.0;
-        }
-        for t in 0..self.ta.len() {
-            self.ax[self.ts[t] as usize] += jdata[self.ta[t] as usize] * jdata[self.tb[t] as usize];
-        }
-    }
-
-    /// The diagonal of A, in original (unpermuted) order.
-    pub fn diag(&self, out: &mut [f64]) {
-        for i in 0..self.n {
-            out[i] = 0.0;
-            for q in self.ap[i]..self.ap[i + 1] {
-                if self.ai[q as usize] == i as i32 {
-                    out[i] = self.ax[q as usize];
-                }
-            }
-        }
-    }
-
-    fn numeric(&mut self, damp: &[f64]) -> bool {
-        let n = self.n;
+    /// Factor `A + diag(damp)`, A's values on the pattern the factor was made for.  `false` on a
+    /// zero pivot.
+    fn numeric(&mut self, a: &Sym, damp: Option<&[f64]>) -> bool {
+        let (ap, ai, ax) = (&a.ap, &a.ai, &a.ax);
+        let n = self.perm.len();
         self.least = 1.0;
         for k in 0..n {
             self.y[k] = 0.0;
@@ -282,12 +214,12 @@ impl Ata {
             self.flag[k] = k as i32;
             self.lnz[k] = 0;
             let kk = self.perm[k] as usize;
-            for p in self.ap[kk]..self.ap[kk + 1] {
-                let mut i = self.iperm[self.ai[p as usize] as usize] as usize;
+            for p in ap[kk]..ap[kk + 1] {
+                let mut i = self.iperm[ai[p as usize] as usize] as usize;
                 if i > k {
                     continue;
                 }
-                self.y[i] += self.ax[p as usize];
+                self.y[i] += ax[p as usize];
                 let mut len = 0usize;
                 while self.flag[i] != k as i32 {
                     self.pattern[len] = i as i32;
@@ -302,7 +234,7 @@ impl Ata {
                 }
             }
             // the diagonal entry of A + diag(damp), what elimination takes the pivot from
-            let diag = self.y[k] + damp[kk];
+            let diag = self.y[k] + damp.map_or(0.0, |d| d[kk]);
             self.d[k] = diag;
             self.y[k] = 0.0;
             while top < n {
@@ -329,31 +261,9 @@ impl Ata {
         true
     }
 
-    /// Solve `(A + diag(damp)) x = b` in place.  `false` on a zero pivot.
-    pub fn solve(&mut self, damp: &[f64], b: &mut [f64]) -> bool {
-        let n = self.n;
-        if n == 0 {
-            return true;
-        }
-        if !self.numeric(damp) {
-            return false;
-        }
-        self.resolve(b);
-        true
-    }
-
-    /// The least pivot of the last factorisation, as a fraction of its column's diagonal in
-    /// `A + diag(damp)`, recorded as it was made: in (0, 1] for a positive definite matrix, at
-    /// rounding's size where it is singular in exact arithmetic but no pivot came out exactly
-    /// zero, and 0 where one did.
-    pub fn least_pivot(&self) -> f64 {
-        self.least
-    }
-
-    /// Solve again, in place, with the factorisation the last `solve` that succeeded left: the
-    /// same `(A + diag(damp))`, another right-hand side.
-    pub fn resolve(&self, b: &mut [f64]) {
-        let n = self.n;
+    /// `b <- (L D Lᵀ)⁻¹ b` with the factor the last `numeric` that succeeded left.
+    fn resolve(&self, b: &mut [f64]) {
+        let n = self.perm.len();
         let mut x = vec![0.0; n];
         for k in 0..n {
             x[k] = b[self.perm[k] as usize];
@@ -378,5 +288,263 @@ impl Ata {
         for k in 0..n {
             b[self.perm[k] as usize] = x[k];
         }
+    }
+}
+
+pub struct Ata {
+    pub n: usize,
+    pub nnz: usize,
+    /// The columns ordered last as dense (`dense_columns`): none, for an ordinary sketch.
+    pub dense: usize,
+    /// JᵀJ, refilled by `fill`.
+    a: Sym,
+    /// A[ts[t]] += Jdata[ta[t]] * Jdata[tb[t]]
+    ta: Vec<i32>,
+    tb: Vec<i32>,
+    ts: Vec<i32>,
+    factor: Factor,
+}
+
+impl Ata {
+    pub fn new(n_rows: usize, n_cols: usize, indptr: &[i32], indices: &[i32]) -> Ata {
+        let n = n_cols;
+        let mut tr: Vec<(i32, i32, i32, i32)> = Vec::new();
+        for r in 0..n_rows {
+            let (lo, hi) = (indptr[r] as usize, indptr[r + 1] as usize);
+            for p in lo..hi {
+                for q in lo..hi {
+                    tr.push((indices[p], indices[q], p as i32, q as i32));
+                }
+            }
+        }
+        tr.sort_by_key(|t| (t.0, t.1));
+        let nt = tr.len();
+        let mut ta = vec![0i32; nt];
+        let mut tb = vec![0i32; nt];
+        let mut ts = vec![0i32; nt];
+        let mut ap = vec![0i32; n + 1];
+        let mut ai: Vec<i32> = Vec::with_capacity(nt);
+        let mut nnz = 0usize;
+        for t in 0..nt {
+            if t == 0 || tr[t].0 != tr[t - 1].0 || tr[t].1 != tr[t - 1].1 {
+                ai.push(tr[t].1);
+                ap[tr[t].0 as usize + 1] = nnz as i32 + 1;
+                nnz += 1;
+            }
+            ta[t] = tr[t].2;
+            tb[t] = tr[t].3;
+            ts[t] = nnz as i32 - 1;
+        }
+        for i in 1..=n {
+            if ap[i] < ap[i - 1] {
+                ap[i] = ap[i - 1];
+            }
+        }
+        let a = Sym { n, ap, ai, ax: vec![0.0; nnz] };
+        let factor = Factor::new(&a);
+        Ata { n, nnz, dense: factor.dense, a, ta, tb, ts, factor }
+    }
+
+    /// The entries of the factor L below its diagonal: the fill of the order chosen.
+    pub fn factor_nnz(&self) -> usize {
+        self.factor.nnz()
+    }
+
+    /// A <- JᵀJ from the Jacobian's CSR values.
+    pub fn fill(&mut self, jdata: &[f64]) {
+        for v in self.a.ax.iter_mut() {
+            *v = 0.0;
+        }
+        for t in 0..self.ta.len() {
+            self.a.ax[self.ts[t] as usize] +=
+                jdata[self.ta[t] as usize] * jdata[self.tb[t] as usize];
+        }
+    }
+
+    /// The diagonal of A, in original (unpermuted) order.
+    pub fn diag(&self, out: &mut [f64]) {
+        self.a.diag_into(out);
+    }
+
+    /// Solve `(A + diag(damp)) x = b` in place.  `false` on a zero pivot.
+    pub fn solve(&mut self, damp: &[f64], b: &mut [f64]) -> bool {
+        if !self.factor.numeric(&self.a, Some(damp)) {
+            return false;
+        }
+        self.resolve(b);
+        true
+    }
+
+    /// The least pivot of the last factorisation, as a fraction of its column's diagonal in
+    /// `A + diag(damp)`, recorded as it was made: in (0, 1] for a positive definite matrix, at
+    /// rounding's size where it is singular in exact arithmetic but no pivot came out exactly
+    /// zero, and 0 where one did.
+    pub fn least_pivot(&self) -> f64 {
+        self.factor.least
+    }
+
+    /// Solve again, in place, with the factorisation the last `solve` that succeeded left: the
+    /// same `(A + diag(damp))`, another right-hand side.
+    pub fn resolve(&self, b: &mut [f64]) {
+        self.factor.resolve(b);
+    }
+}
+
+/// A sparse symmetric matrix, both triangles stored, in compressed columns (each column's rows
+/// ascending).  What an assembly makes: `from_triplets` sums repeated entries, the way element
+/// matrices are added into a global one.
+#[derive(Clone, Debug)]
+pub struct Sym {
+    pub n: usize,
+    ap: Vec<i32>,
+    ai: Vec<i32>,
+    ax: Vec<f64>,
+}
+
+impl Sym {
+    /// The n×n matrix whose `(i, j)` entry is the sum of the triplets naming it.  Every entry
+    /// of the matrix is given, below the diagonal as well as above; one given on a side only
+    /// is not mirrored, and a matrix that is not symmetric is not one this factors.
+    pub fn from_triplets(n: usize, entries: &[(usize, usize, f64)]) -> Sym {
+        let mut t: Vec<(usize, usize, f64)> = entries.to_vec();
+        t.sort_by_key(|e| (e.1, e.0));
+        let mut ap = vec![0i32; n + 1];
+        let mut ai: Vec<i32> = Vec::with_capacity(t.len());
+        let mut ax: Vec<f64> = Vec::with_capacity(t.len());
+        let mut last: Option<(usize, usize)> = None;
+        for &(i, j, v) in &t {
+            assert!(i < n && j < n, "entry ({i}, {j}) outside a {n}×{n} matrix");
+            if last == Some((i, j)) {
+                *ax.last_mut().unwrap() += v;
+                continue;
+            }
+            last = Some((i, j));
+            ai.push(i as i32);
+            ax.push(v);
+            ap[j + 1] += 1;
+        }
+        for j in 0..n {
+            ap[j + 1] += ap[j];
+        }
+        Sym { n, ap, ai, ax }
+    }
+
+    /// The stored entries, `(row, column, value)`, column by column.
+    pub fn entries(&self) -> impl Iterator<Item = (usize, usize, f64)> + '_ {
+        (0..self.n).flat_map(move |j| {
+            (self.ap[j] as usize..self.ap[j + 1] as usize)
+                .map(move |p| (self.ai[p] as usize, j, self.ax[p]))
+        })
+    }
+
+    /// `A x`.  Both triangles are stored, so the columns read as rows.
+    pub fn mul_vec(&self, x: &[f64]) -> Vec<f64> {
+        let mut y = vec![0.0; self.n];
+        crate::system::csr_mul(&self.ap, &self.ai, &self.ax, x, &mut y);
+        y
+    }
+
+    /// The diagonal, zero where nothing is stored.
+    pub fn diag(&self) -> Vec<f64> {
+        let mut d = vec![0.0; self.n];
+        self.diag_into(&mut d);
+        d
+    }
+
+    fn diag_into(&self, out: &mut [f64]) {
+        for j in 0..self.n {
+            let (lo, hi) = (self.ap[j] as usize, self.ap[j + 1] as usize);
+            out[j] = match self.ai[lo..hi].binary_search(&(j as i32)) {
+                Ok(at) => self.ax[lo + at],
+                Err(_) => 0.0,
+            };
+        }
+    }
+
+    /// The largest column sum of |A|: a bound on its 2-norm, the scale a residual is read at.
+    pub fn norm1(&self) -> f64 {
+        let mut sum = vec![0.0; self.n];
+        for (_, j, v) in self.entries() {
+            sum[j] += v.abs();
+        }
+        sum.into_iter().fold(0.0f64, f64::max)
+    }
+
+    /// `c A`.
+    pub fn scaled(&self, c: f64) -> Sym {
+        Sym { ax: self.ax.iter().map(|v| c * v).collect(), ..self.clone() }
+    }
+
+    /// `m`'s values on this matrix's pattern, which holds every entry of `m`'s.
+    fn scatter(&self, m: &Sym) -> Vec<f64> {
+        let mut out = vec![0.0; self.ax.len()];
+        for (i, j, v) in m.entries() {
+            let (lo, hi) = (self.ap[j] as usize, self.ap[j + 1] as usize);
+            let at = self.ai[lo..hi].binary_search(&(i as i32)).expect("an entry of the union");
+            out[lo + at] += v;
+        }
+        out
+    }
+}
+
+/// The LDLᵀ of a `Sym`, without pivoting: the order `Ata`'s is (RCM, dense columns last), the
+/// same up-looking factor.  An SPD matrix factors stably; an indefinite one (a pencil shifted
+/// into its spectrum) factors when no pivot is zero, and its pivots then carry its inertia
+/// (Sylvester): as many negative as the matrix has negative eigenvalues.
+pub struct Ldl {
+    factor: Factor,
+}
+
+impl Ldl {
+    /// The factor of `a`, or `None` on a zero pivot.
+    pub fn new(a: &Sym) -> Option<Ldl> {
+        let mut factor = Factor::new(a);
+        factor.numeric(a, None).then_some(Ldl { factor })
+    }
+
+    /// `b <- A⁻¹ b`.
+    pub fn solve(&self, b: &mut [f64]) {
+        self.factor.resolve(b);
+    }
+
+    /// How many of the pivots are negative: the number of A's eigenvalues below zero, so for
+    /// `A − σB` with B positive definite the number of the pencil's below σ.
+    pub fn negative_pivots(&self) -> usize {
+        self.factor.d.iter().filter(|&&d| d < 0.0).count()
+    }
+}
+
+/// The pencil `L − μR` of two `Sym`s, on the union of their patterns, ordered and analysed
+/// once: a shift, or a count of the eigenvalues below one, is a numeric factor and no more.
+pub struct Pencil {
+    /// L's values on the pattern L ∪ R.
+    l: Sym,
+    /// R's values on the same pattern.
+    r: Vec<f64>,
+    symbolic: Factor,
+}
+
+impl Pencil {
+    pub fn new(l: &Sym, r: &Sym) -> Pencil {
+        assert_eq!(l.n, r.n, "a pencil of matrices of different sizes");
+        let mut t: Vec<(usize, usize, f64)> = l.entries().collect();
+        t.extend(r.entries().map(|(i, j, _)| (i, j, 0.0)));
+        let mut u = Sym::from_triplets(l.n, &t);
+        let r_values = u.scatter(r);
+        u.ax = u.scatter(l);
+        let symbolic = Factor::new(&u);
+        Pencil { l: u, r: r_values, symbolic }
+    }
+
+    /// `L − μR`.
+    pub fn at(&self, mu: f64) -> Sym {
+        let ax = self.l.ax.iter().zip(&self.r).map(|(l, r)| l - mu * r).collect();
+        Sym { ax, ..self.l.clone() }
+    }
+
+    /// The factor of `L − μR`, or `None` on a zero pivot.
+    pub fn factor(&self, mu: f64) -> Option<Ldl> {
+        let mut factor = self.symbolic.clone();
+        factor.numeric(&self.at(mu), None).then_some(Ldl { factor })
     }
 }
