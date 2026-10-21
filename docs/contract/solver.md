@@ -1,8 +1,9 @@
 # The solver
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `kernels.rs`,
-`system.rs`, `solve.rs`, `diagnose*`, `decompose.rs`, `cgraph.rs`. An issue number (#n) or a spec
-version ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule came from.
+`system.rs`, `solve.rs`, `diagnose*`, `decompose.rs`, `cgraph.rs`, `sparse.rs`, `cholesky.rs`,
+`amd.rs`. An issue number (#n) or a spec version ([0.n], see the [language
+changelog](../solvent-changelog.md)) says where a rule came from.
 
 - **A recorded root choice is one record of one triangle** (`decompose::branch_record`).  `ccw(a, b,
   c)` ("c left of a→b") is the same fact as `ccw(a, c, b)` with the sign turned, so a record is
@@ -90,6 +91,26 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   stands, and nothing in the library has one.  `tests/many_instances.rs` is the gate: the factor
   of the plates with the margin free within 2× the fixed plates', at 100 and 200, and no case of
   the library with a dense column.
+- **A mesh's system is factored by supernodal Cholesky** (#510, P1; `cholesky.rs`, `amd.rs`).
+  `Ata`'s band order fills a tetrahedral mesh like `n^{5/3}`; `Cholesky` orders a symmetric
+  positive definite `Symmetric` (its lower triangle by column; an assembly's upper entries are
+  ignored) by approximate minimum degree (Davis's `cs_amd`, a column dense by
+  `sparse::dense_limit`, `Ata`'s rule), postorders the elimination tree (the same fill, the
+  supernodes consecutive) and factors `PAPᵀ = LLᵀ` left-looking, a dense panel per supernode.
+  `analyse` reads the pattern only and `factor` the values, gathered by position into the
+  panels, so a mesh moved within a solve refactors without its
+  analysis.  A pivot within the rounding of its own computation (`r_j·ε·a_jj`, `r_j` row j's
+  count in L: Cholesky's backward error) or not positive is `NotPositive`, naming the column of
+  A.  That is all the factor promises: a free body's rigid-body modes fall under it in AMD's
+  order, but in a band order they can round just above it while a slender supported body's
+  pivots fall to 1e-9 of their diagonal honestly, so no pivot ratio separates the two and naming
+  a freedom is the diagnosis's (#510, P7), from the supports.  The gates are in
+  `tests/linalg.rs`: L entry for entry against `nalgebra`'s dense Cholesky of the same PAPᵀ under
+  every order, with the property `PAPᵀ ≈ LLᵀ`; a stiffness of linear tetrahedra solved against
+  the reference's dense solve, refactored on the same pattern; AMD's fill under half RCM's on a
+  20³ grid, the gap widening with the block, and under 0.85 of it on the 3630-unknown block; a
+  zero and a negative pivot refused, a supported body's pivots all fair; a dense hub ordered
+  last, unfilled.
 - "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units,
   its kernel's power of **its own size** (#492, `system::Sizes`, `System::row_size`): the longest
   side of the box round the points it reads, or its largest radius, at least a tenth of the
