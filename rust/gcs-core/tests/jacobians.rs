@@ -532,7 +532,7 @@ fn a_linear_interior_agrees_with_finite_differences() {
                 let jn = fd_jacobian(res, &v, 1e-6);
                 let mut ja = vec![0.0; 2 * n_par];
                 (kn.jac)(2, &v, &k, &mut ja);
-                let scale = jn.data.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+                let scale = gcs_core::linalg::absmax(&jn.data);
                 for (i, a) in ja.iter().enumerate() {
                     let (row, col) = (i / n_par, i % n_par);
                     let n = jn.data[row * 2 * n_par + row * n_par + col];

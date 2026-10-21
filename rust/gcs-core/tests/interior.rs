@@ -61,7 +61,7 @@ fn two_bar(w: f64, h: f64, e: f64, a: f64, p: f64) -> (Structure, Vec<f64>) {
 fn a_two_bar_truss_sinks_as_its_closed_form() {
     let (w, h, e, a, p) = (300.0, 400.0, 200e3, 50.0, 10e3);
     let (s, x) = two_bar(w, h, e, a, p);
-    let mut st = s.solve(&x).unwrap();
+    let st = s.solve(&x).unwrap();
     let l2: f64 = w * w + h * h;
     let sink = -p * l2.powf(1.5) / (2.0 * e * a * h * h);
     let got = s.output(&st);
@@ -69,7 +69,7 @@ fn a_two_bar_truss_sinks_as_its_closed_form() {
     // the apex moves straight down: the bars are alike
     assert!(st.u[4].abs() <= 1e-12 * sink.abs());
     let mut g = vec![0.0; s.columns()];
-    s.gradient(&mut st, &x, 1.0, &mut g);
+    s.gradient(&st, &x, &mut g);
     let by_h = -p / (2.0 * e * a) * (3.0 * l2.sqrt() / h - 2.0 * l2.powf(1.5) / (h * h * h));
     assert!((g[5] - by_h).abs() <= 1e-10 * by_h.abs(), "{} against {by_h}", g[5]);
     for i in [6, 7] {
@@ -133,18 +133,19 @@ fn a_structure_with_no_displacement_to_give_says_why() {
 }
 
 /// The gradient is one solve on the factor the value was found on, whatever number of columns
-/// the row reads: the adjoint's, where a column at a time would be one each.
+/// the row reads: the adjoint's, where a column at a time would be one each.  `gradient` only
+/// reads the `State` (`Ata::resolve`, no factorisation), so asked twice it answers the same bits.
 #[test]
 fn the_gradient_is_one_more_solve_whatever_the_columns() {
     let mut rng = Rng::new(11);
     for (dim, n) in [(2, 4), (2, 400), (3, 300)] {
         let (s, x) = braced(dim, n, &mut rng);
-        let mut st = s.solve(&x).unwrap();
-        assert_eq!(st.solves, 1);
-        let mut g = vec![0.0; s.columns()];
-        s.gradient(&mut st, &x, 1.0, &mut g);
-        assert_eq!(st.solves, 2, "{dim}D, {n} nodes, {} columns", s.columns());
-        assert!(g.iter().all(|v| v.is_finite()));
+        let st = s.solve(&x).unwrap();
+        let (mut g, mut again) = (vec![0.0; s.columns()], vec![0.0; s.columns()]);
+        s.gradient(&st, &x, &mut g);
+        s.gradient(&st, &x, &mut again);
+        assert!(g.iter().all(|v| v.is_finite()), "{dim}D, {n} nodes, {} columns", s.columns());
+        assert_eq!(g, again);
     }
 }
 
@@ -155,11 +156,11 @@ fn a_structure_is_its_constants() {
     for dim in [2, 3] {
         let (s, _) = braced(dim, 7, &mut rng);
         for stated in [&[1.5][..], &[2.0, -0.25]] {
+            let free = stated.len() == 2;
             let k = s.consts(stated);
-            let (back, free, got) = Structure::read(&k);
+            let (back, got) = Structure::read(&k, free);
             assert_eq!(back, s);
-            assert_eq!(free, stated.len() == 2);
-            assert_eq!(got[..stated.len()], *stated);
+            assert_eq!(got, stated);
             assert_eq!(s.widths(free).1, k.len());
         }
     }

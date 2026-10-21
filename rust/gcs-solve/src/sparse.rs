@@ -165,6 +165,8 @@ pub struct Ata {
     pattern: Vec<i32>,
     d: Vec<f64>,
     y: Vec<f64>,
+    /// The least pivot of the last factorisation as a fraction of its diagonal (`least_pivot`).
+    least: f64,
 }
 
 impl Ata {
@@ -235,6 +237,7 @@ impl Ata {
             pattern: vec![0i32; n.max(1)],
             d: vec![0.0; n.max(1)],
             y: vec![0.0; n.max(1)],
+            least: 1.0,
         }
     }
 
@@ -267,6 +270,7 @@ impl Ata {
 
     fn numeric(&mut self, damp: &[f64]) -> bool {
         let n = self.n;
+        self.least = 1.0;
         for k in 0..n {
             self.y[k] = 0.0;
             let mut top = n;
@@ -292,7 +296,9 @@ impl Ata {
                     self.pattern[top] = self.pattern[len];
                 }
             }
-            self.d[k] = self.y[k] + damp[kk];
+            // the diagonal entry of A + diag(damp), what elimination takes the pivot from
+            let diag = self.y[k] + damp[kk];
+            self.d[k] = diag;
             self.y[k] = 0.0;
             while top < n {
                 let i = self.pattern[top] as usize;
@@ -310,6 +316,7 @@ impl Ata {
                 self.lx[p2] = lki;
                 self.lnz[i] += 1;
             }
+            self.least = self.least.min(if diag > 0.0 { self.d[k].max(0.0) / diag } else { 0.0 });
             if self.d[k] == 0.0 {
                 return false;
             }
@@ -330,18 +337,12 @@ impl Ata {
         true
     }
 
-    /// The least pivot of the last factorisation that succeeded, as a fraction of its column's
-    /// diagonal in A: in (0, 1] for a positive definite A, and at rounding's size where A is
-    /// singular in exact arithmetic but no pivot came out exactly zero.
+    /// The least pivot of the last factorisation, as a fraction of its column's diagonal in
+    /// `A + diag(damp)`, recorded as it was made: in (0, 1] for a positive definite matrix, at
+    /// rounding's size where it is singular in exact arithmetic but no pivot came out exactly
+    /// zero, and 0 where one did.
     pub fn least_pivot(&self) -> f64 {
-        let mut diag = vec![0.0; self.n];
-        self.diag(&mut diag);
-        (0..self.n)
-            .map(|k| {
-                let a = diag[self.perm[k] as usize];
-                if a > 0.0 { self.d[k].max(0.0) / a } else { 0.0 }
-            })
-            .fold(1.0, f64::min)
+        self.least
     }
 
     /// Solve again, in place, with the factorisation the last `solve` that succeeded left: the

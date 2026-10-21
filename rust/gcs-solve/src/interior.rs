@@ -28,6 +28,7 @@
 //! are further elements of the same interior (#510 S0–S3).
 
 use crate::kernels::{curve_widths, Kernel};
+use crate::space::{dot, norm};
 use crate::sparse::Ata;
 
 /// Below this least pivot (`Ata::least_pivot`, a pivot as a fraction of its diagonal) the
@@ -72,16 +73,6 @@ pub enum Failure {
     Unstiff,
 }
 
-/// One bar's geometry at `x`: `Δ = x_b − x_a`, its length, and `E·A`.
-fn bar_at(s: &Structure, b: &Bar, i: usize, x: &[f64]) -> ([f64; 3], f64, f64) {
-    let mut d = [0.0; 3];
-    for k in 0..s.dim {
-        d[k] = x[s.dim * b.b + k] - x[s.dim * b.a + k];
-    }
-    let l = d.iter().map(|c| c * c).sum::<f64>().sqrt();
-    (d, l, b.e * x[s.dim * s.nodes + i])
-}
-
 /// The displacements of a structure at `x`, with the factor they were solved on held for the
 /// adjoint.
 pub struct State {
@@ -90,8 +81,18 @@ pub struct State {
     eq: Vec<Option<usize>>,
     /// Per degree of freedom, zero where held.
     pub u: Vec<f64>,
-    /// The solves made on the factor: the displacements', and one for each gradient.
-    pub solves: usize,
+}
+
+impl State {
+    /// `f`, per degree of freedom, at the equations: the ones no support holds.
+    fn gather(&self, f: &[f64]) -> Vec<f64> {
+        self.eq.iter().zip(f).filter(|(e, _)| e.is_some()).map(|(_, v)| *v).collect()
+    }
+
+    /// A solution over the equations, per degree of freedom: zero where a support holds it.
+    fn scatter(&self, r: &[f64]) -> Vec<f64> {
+        self.eq.iter().map(|e| e.map_or(0.0, |e| r[e])).collect()
+    }
 }
 
 impl Structure {
@@ -100,10 +101,26 @@ impl Structure {
         self.dim * self.nodes + self.bars.len()
     }
 
+    /// `v` at bar `b`'s far end less its near one, per axis: where a bar runs, or how its ends
+    /// move apart.
+    fn ends(&self, b: &Bar, v: &[f64]) -> [f64; 3] {
+        let mut d = [0.0; 3];
+        for k in 0..self.dim {
+            d[k] = v[self.dim * b.b + k] - v[self.dim * b.a + k];
+        }
+        d
+    }
+
+    /// Bar `i`'s geometry at `x`: `Δ = x_b − x_a`, its length, and `E·A`.
+    fn bar_at(&self, i: usize, x: &[f64]) -> ([f64; 3], f64, f64) {
+        let b = &self.bars[i];
+        let d = self.ends(b, x);
+        (d, norm(d), b.e * x[self.dim * self.nodes + i])
+    }
+
     /// Assemble `K(x)` as strain rows, factor it and solve `K u = f`.
     pub fn solve(&self, x: &[f64]) -> Result<State, Failure> {
-        let dofs = self.dim * self.nodes;
-        let mut eq = vec![None; dofs];
+        let mut eq = vec![None; self.fixed.len()];
         let mut n_eq = 0;
         for (i, held) in self.fixed.iter().enumerate() {
             if !held {
@@ -113,7 +130,7 @@ impl Structure {
         }
         let (mut indptr, mut indices, mut data) = (vec![0i32], Vec::new(), Vec::new());
         for (i, b) in self.bars.iter().enumerate() {
-            let (d, l, ea) = bar_at(self, b, i, x);
+            let (d, l, ea) = self.bar_at(i, x);
             if l.is_nan() || l <= 0.0 {
                 return Err(Failure::Collapsed);
             }
@@ -133,13 +150,13 @@ impl Structure {
         }
         let mut ata = Ata::new(self.bars.len(), n_eq, &indptr, &indices);
         ata.fill(&data);
-        let mut rhs: Vec<f64> =
-            (0..dofs).filter(|&i| eq[i].is_some()).map(|i| self.load[i]).collect();
-        if !ata.solve(&vec![0.0; n_eq], &mut rhs) || ata.least_pivot() < SINGULAR {
+        let mut st = State { ata, eq, u: Vec::new() };
+        let mut rhs = st.gather(&self.load);
+        if !st.ata.solve(&vec![0.0; n_eq], &mut rhs) || st.ata.least_pivot() < SINGULAR {
             return Err(Failure::Free);
         }
-        let u = eq.iter().map(|e| e.map_or(0.0, |e| rhs[e])).collect();
-        Ok(State { ata, eq, u, solves: 1 })
+        st.u = st.scatter(&rhs);
+        Ok(st)
     }
 
     /// The output, `Σ weight · u`.
@@ -147,25 +164,23 @@ impl Structure {
         self.weight.iter().zip(&st.u).map(|(w, u)| w * u).sum()
     }
 
-    /// The output's gradient in the columns at `x`, added into `g` scaled by `scale`: one solve
-    /// for `λ` on the factor `st` holds, then each bar's mutual energy differentiated.  The loads
-    /// do not move with `x` and the output reads only `u`, so `∂f/∂x` and `∂J/∂x` are zero and
-    /// what is left is `−λᵀ(∂K/∂x)u`.
-    pub fn gradient(&self, st: &mut State, x: &[f64], scale: f64, g: &mut [f64]) {
-        let dofs = self.dim * self.nodes;
-        let mut rhs: Vec<f64> =
-            (0..dofs).filter(|&i| st.eq[i].is_some()).map(|i| self.weight[i]).collect();
+    /// The output's gradient in the columns at `x`, added into `g`: one solve for `λ` on the
+    /// factor `st` holds — a `State` is only read, so no factorisation is made again — then each
+    /// bar's mutual energy differentiated.  The loads do not move with `x` and the output reads
+    /// only `u`, so `∂f/∂x` and `∂J/∂x` are zero and what is left is `−λᵀ(∂K/∂x)u`.
+    pub fn gradient(&self, st: &State, x: &[f64], g: &mut [f64]) {
+        let mut rhs = st.gather(&self.weight);
         st.ata.resolve(&mut rhs);
-        st.solves += 1;
-        let lam: Vec<f64> = st.eq.iter().map(|e| e.map_or(0.0, |e| rhs[e])).collect();
+        let lam = st.scatter(&rhs);
         for (i, b) in self.bars.iter().enumerate() {
-            let (d, l, ea) = bar_at(self, b, i, x);
-            let (dm, da) = b.mutual(self.dim, d, l, ea, &lam, &st.u);
+            let (d, l, ea) = self.bar_at(i, x);
+            let (al, be) = (self.ends(b, &lam), self.ends(b, &st.u));
+            let (dm, da) = b.mutual(d, l, ea, al, be);
             for k in 0..self.dim {
-                g[self.dim * b.b + k] -= scale * dm[k];
-                g[self.dim * b.a + k] += scale * dm[k];
+                g[self.dim * b.b + k] -= dm[k];
+                g[self.dim * b.a + k] += dm[k];
             }
-            g[dofs + i] -= scale * da;
+            g[self.dim * self.nodes + i] -= da;
         }
     }
 }
@@ -173,76 +188,61 @@ impl Structure {
 impl Bar {
     /// The gradient of the mutual energy `aᵀkₑb = E·A·(Δ·α)(Δ·β)/L³` (with `α`, `β` the ends'
     /// relative displacements under `a` and `b`) in `Δ = x_b − x_a`, and in the area.
-    fn mutual(&self, dim: usize, d: [f64; 3], l: f64, ea: f64, a: &[f64], b: &[f64])
-              -> ([f64; 3], f64) {
-        let (mut al, mut be) = ([0.0; 3], [0.0; 3]);
-        for k in 0..dim {
-            al[k] = a[dim * self.b + k] - a[dim * self.a + k];
-            be[k] = b[dim * self.b + k] - b[dim * self.a + k];
-        }
+    fn mutual(&self, d: [f64; 3], l: f64, ea: f64, al: [f64; 3], be: [f64; 3]) -> ([f64; 3], f64) {
         let (da, db) = (dot(d, al), dot(d, be));
         let l3 = l * l * l;
         let m = ea * da * db / l3;
-        let mut dm = [0.0; 3];
-        for k in 0..dim {
-            dm[k] = ea * (al[k] * db + be[k] * da) / l3 - 3.0 * m * d[k] / (l * l);
-        }
+        let dm = [0, 1, 2].map(|k| ea * (al[k] * db + be[k] * da) / l3 - 3.0 * m * d[k] / (l * l));
         (dm, self.e * da * db / l3)
     }
 }
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
 /* -- the row's constants ------------------------------------------------------------------ */
 
-/// The constants before the structure: `[dim, nodes, bars, free, s₀, s₁]`, with `(s₀, s₁)` the
-/// output stated (`s₁` unread) or, where an unknown sets it, its `(m, c)`.
-pub const HEAD: usize = 6;
+/// The constants before the structure: `[dim, nodes, bars]`, then the output stated, `J₀`, or
+/// where an unknown sets it, its `(m, c)`.
+pub const HEAD: usize = 3;
 
 impl Structure {
     /// A row's constants: the head, every bar's `(a, b, E)`, then every degree of freedom's
-    /// `(held, load, weight)`.  `stated` is `[J]`, or `[m, c]` for an output an unknown sets.
+    /// `(held, load, weight)`.  `stated` is `[J₀]`, or `[m, c]` for an output an unknown sets.
     pub fn consts(&self, stated: &[f64]) -> Vec<f64> {
-        let dofs = self.dim * self.nodes;
-        let mut k = Vec::with_capacity(HEAD + 3 * self.bars.len() + 3 * dofs);
-        let free = stated.len() == 2;
-        k.extend([self.dim as f64, self.nodes as f64, self.bars.len() as f64, free as u8 as f64]);
-        k.extend([stated[0], if free { stated[1] } else { 0.0 }]);
+        let mut k = Vec::with_capacity(self.widths(stated.len() == 2).1);
+        k.extend([self.dim as f64, self.nodes as f64, self.bars.len() as f64]);
+        k.extend(stated);
         for b in &self.bars {
             k.extend([b.a as f64, b.b as f64, b.e]);
         }
-        for i in 0..dofs {
+        for i in 0..self.fixed.len() {
             k.extend([self.fixed[i] as u8 as f64, self.load[i], self.weight[i]]);
         }
         k
     }
 
-    /// What `consts` wrote: the structure, whether an unknown sets the output, and `(s₀, s₁)`.
-    pub fn read(k: &[f64]) -> (Structure, bool, [f64; 2]) {
+    /// What `consts` wrote, `free` where an unknown sets the output (the row has its column, as
+    /// `integral::length_widths` reads a length's): the structure, and what it states.
+    pub fn read(k: &[f64], free: bool) -> (Structure, &[f64]) {
         let (dim, nodes, n_bars) = (k[0] as usize, k[1] as usize, k[2] as usize);
-        let bars = k[HEAD..HEAD + 3 * n_bars]
-            .as_chunks::<3>()
-            .0
-            .iter()
-            .map(|c| Bar { a: c[0] as usize, b: c[1] as usize, e: c[2] })
-            .collect();
-        let per = k[HEAD + 3 * n_bars..HEAD + 3 * n_bars + 3 * dim * nodes].as_chunks::<3>().0;
+        let (stated, rest) = k[HEAD..].split_at(if free { 2 } else { 1 });
+        let (bars, per) = rest.split_at(3 * n_bars);
+        let per = per.as_chunks::<3>().0;
         let s = Structure {
             dim,
             nodes,
-            bars,
+            bars: bars.as_chunks::<3>().0.iter()
+                .map(|c| Bar { a: c[0] as usize, b: c[1] as usize, e: c[2] })
+                .collect(),
             fixed: per.iter().map(|c| c[0] != 0.0).collect(),
             load: per.iter().map(|c| c[1]).collect(),
             weight: per.iter().map(|c| c[2]).collect(),
         };
-        (s, k[3] != 0.0, [k[4], k[5]])
+        (s, stated)
     }
 
     /// A row's widths, `(n_par, n_const)`: its columns, and the unknown's where it has one.
     pub fn widths(&self, free: bool) -> (usize, usize) {
-        (self.columns() + free as usize, HEAD + 3 * self.bars.len() + 3 * self.dim * self.nodes)
+        let stated = if free { 2 } else { 1 };
+        (self.columns() + free as usize, HEAD + stated + 3 * self.bars.len() + 3 * self.fixed.len())
     }
 }
 
@@ -256,11 +256,19 @@ pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
              form: None }
 }
 
+/// Whether a row carries the unknown's column: one more than the columns its head says its
+/// structure reads.
+fn free_at(n_par: usize, k: &[f64]) -> bool {
+    let (dim, nodes, bars) = (k[0] as usize, k[1] as usize, k[2] as usize);
+    n_par > dim * nodes + bars
+}
+
 fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
     for i in 0..n {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
-        let (s, free, stated) = Structure::read(k);
+        let free = free_at(n_par, k);
+        let (s, stated) = Structure::read(k, free);
         let target = if free { stated[0] * v[s.columns()] + stated[1] } else { stated[0] };
         r[i] = match s.solve(v) {
             Ok(st) => s.output(&st) - target,
@@ -275,9 +283,10 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
         let row = &mut j[n_par * i..n_par * (i + 1)];
         row.fill(0.0);
-        let (s, free, stated) = Structure::read(k);
+        let free = free_at(n_par, k);
+        let (s, stated) = Structure::read(k, free);
         match s.solve(v) {
-            Ok(mut st) => s.gradient(&mut st, v, 1.0, row),
+            Ok(st) => s.gradient(&st, v, row),
             Err(_) => row.fill(f64::NAN),
         }
         if free {

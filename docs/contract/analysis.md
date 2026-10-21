@@ -20,9 +20,10 @@ S0–S4) are named there; this file holds the rules landed so far. The gate is
 - **The value is one factorisation; the gradient is the adjoint** (#510 P5). `Structure::solve`
   assembles `K(x)`, factors it once and solves for `u`. `Structure::gradient` solves `Kᵀλ = ∂J/∂u`
   on the factor already in hand and returns `dJ/dx = ∂J/∂x − λᵀ(∂K/∂x·u − ∂f/∂x)`: one more
-  solve, whatever number of columns the row reads (`State::solves`,
-  `the_gradient_is_one_more_solve_whatever_the_columns`, to over 2,000 columns). `∂K/∂x·u` is never
-  formed. Each element differentiates its own mutual energy `λₑᵀkₑ(xₑ)uₑ` in its own columns
+  solve, whatever number of columns the row reads. The gradient only reads the `State`
+  (`Ata::resolve`), so it cannot factor again
+  (`the_gradient_is_one_more_solve_whatever_the_columns`, to over 2,000 columns). `∂K/∂x·u` is
+  never formed. Each element differentiates its own mutual energy `λₑᵀkₑ(xₑ)uₑ` in its own columns
   (`Bar::mutual`).
 
 - **The stiffness is the Gram matrix of strain rows** (#510 P5). An element's stiffness is
@@ -36,15 +37,17 @@ S0–S4) are named there; this file holds the rules landed so far. The gate is
   coordinates (`dim` = 2 or 3 each), then every bar's area (`Structure::columns`), then the
   unknown where one sets the output. A held number is a column the system drops, as for any
   row, so a requirement can drive a node's place or a member's size. The constants are
-  `[dim, nodes, bars, free, s₀, s₁]`, every bar's `(a, b, E)`, then every degree of freedom's
-  `(held, load, weight)`, written and read back exactly (`Structure::consts`, `Structure::read`,
-  `a_structure_is_its_constants`). The output is `J = Σ weight · u`, its weights a direction's
+  `[dim, nodes, bars]`, what the row states (`J₀`, or `(m, c)` with an unknown), every bar's
+  `(a, b, E)`, then every degree of freedom's `(held, load, weight)`, written and read back
+  exactly (`Structure::consts`, `Structure::read`, `a_structure_is_its_constants`). Whether an
+  unknown sets the output is read off the row's width, as a spline length's is. The output is `J = Σ weight · u`, its weights a direction's
   cosines, so it is a displacement and the row is of **degree 1**. The residual is `J − J₀`, or
   `J − (m·a + c)` with an unknown.
 
 - **A structure with no displacement to give is a failure, never a number** (#510 P5).
   `Failure::Free`: the supports leave a motion that costs no energy. The factor has an exactly
-  zero pivot, or its least pivot as a fraction of its diagonal (`Ata::least_pivot`) is below
+  zero pivot, or its least pivot as a fraction of its diagonal (`Ata::least_pivot`, recorded
+  while the factor is made) is below
   `interior::SINGULAR` (1e-12, a few thousand times the precision). A node no bar reaches is
   one, and so is a node held only along a line of bars. `Failure::Collapsed` is a bar of no
   length, and `Failure::Unstiff` is a bar with `E·A ≤ 0`. The kernel reads every failure as NaN,
@@ -63,8 +66,13 @@ S0–S4) are named there; this file holds the rules landed so far. The gate is
 
 - **What P5 leaves to later stages.** No `CKind`, word or statement compiles to the kernel yet.
   Materials, scenarios and the requirement words are P3, P4 and S0, and S0/S1 give the row its
-  constraint type, with its callout or an `undrawn!` entry. The system calls a kernel's residual
-  and Jacobian separately, so a step that asks for both factors `K` twice. Holding the factor
-  between the two calls is to be measured first, as `solve/through.rs` measured its cache.
+  constraint type, with its callout or an `undrawn!` entry. Every call reads the structure from
+  its constants and orders `K`'s pattern again (`Ata::new`'s symbolic analysis), though neither
+  moves with `x`. The system also calls a kernel's residual and Jacobian separately, so a step
+  that asks for both factors `K` twice. Holding the symbolic analysis per row (a hit on every
+  step) and the factor between the two calls (a hit only at one `x`) are two caches, to be
+  measured first and apart, as `solve/through.rs` measured its own. The element interface
+  (strain rows and their derivatives, degrees of freedom apart from coordinates, several section
+  columns) is S0's, shaped against the beam that needs it.
 
 - **Within the solver.** `interior.rs` is in `gcs-solve` and knows no Solvent.
