@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.164] Load scenarios.** `scenario NAME { … }` (§9.11) states a load case at the top of a
+document or in its `preview`: supports (`fixed X`, `pinned X`, `along: d` for a roller), loads
+(`load X (fx, fy, fz)`, `load X f along: d`, `pressure F p`, `accelerate B (ax, ay, az)`) and
+requirements, an output (`deflection`, `safety`, `mode`, `buckling`, `compliance`, `mass`)
+compared with a number the drawing states — a claim (`claim …`), a driving row (`== v`) or a
+bound (`<=`, `>=`). Targets are read by the selectors every operand is: points, edges, faces,
+solids and face paths (`arm.base`); every number is held to its dimension (**E103**). `scenario B:
+A { … }` begins with `A`'s supports and loads; a load combination is written out. A scenario adds
+no geometry and no row, so the drawing solves as it does without one; one scenario's requirements
+may drive dimensions (**E106** at a second's). Nothing is analysed yet. `scenario` is reserved;
+the line words are contextual. No document changes. (Issue #510, P4.)
+
 **[0.163] A perpendicular that says which way.** `l1 perpendicular(sense: ccw) l2` (§9.3, §9.4)
 states that `l2` is a quarter turn counter-clockwise of `l1`, as `angle` counts, and `sense: cw`
 the other quarter; `perpendicular` with no sense is square either way, as before. It is a

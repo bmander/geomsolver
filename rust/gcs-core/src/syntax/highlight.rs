@@ -344,6 +344,16 @@ fn tint_start(
         let over = BLOCKS.contains(&w) && over_chain(toks, i + 1);
         return (Some(Tint::Word), if over { Next::Def } else { Next::Word });
     }
+    // `scenario lift { … }` (#510 P4): the word, then the scenario's name
+    if w == "scenario" && matches!(next, Some(Tok::Ident(_))) {
+        return (Some(Tint::Word), Next::Def);
+    }
+    // a scenario's support or load, `fixed arm.base`, `load tip (0, -5N, 0)`: the word before
+    // what it is applied to
+    let applied = crate::model::Hold::parse(w).is_some() || crate::model::LoadKind::parse(w).is_some();
+    if applied && matches!(next, Some(Tok::Ident(_))) && !known.contains(w) {
+        return (Some(Tint::Word), Next::Word);
+    }
     // a raw branch: a statement the parser knows by name
     if w == "branch" {
         return (Some(Tint::Relation), Next::Word);
@@ -357,6 +367,10 @@ fn tint_start(
     }
     if builtin(w, prev, next, false) {
         return (Some(Tint::Builtin), Next::Word);
+    }
+    // a scenario's requirement, `deflection(arm.tip) <= 0.5mm`: an output read as a relation
+    if next == Some(&Tok::P('(')) && crate::model::Output::parse(w).is_some() {
+        return (Some(Tint::Relation), Next::Word);
     }
     // `step(u: s) (ab := line)`: the core's word before a line (#330), not a component's call
     if next == Some(&Tok::P('(')) && crate::constraints::step_word(w) {

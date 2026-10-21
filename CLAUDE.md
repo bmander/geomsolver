@@ -72,6 +72,7 @@ one), and add a row here only for a new topic. Language changes are also recorde
 | [analytic.md](docs/contract/analytic.md) | surface references, envelopes, interval bounds, shell topology, and the post-solve B-rep as Rust API (patches, seams, corners, edges, face boundaries) | you touch `envelope/`, `patch.rs`, `seam.rs`, `interval.rs`, `topology.rs` |
 | [fields.md](docs/contract/fields.md) | continuous motion solids, field meshing in the page, material fields, an operand built exactly read by its own boundary, removed tracks | you touch `solid/field/`, `delaunay/`, `crease.rs`, or the mesh worker |
 | [brep.md](docs/contract/brep.md) | the clean-room kernel, its phases and rungs, OCCT as oracle | you touch `brep/` |
+| [analysis.md](docs/contract/analysis.md) | load scenarios (#510): `scenario { }` parsed and elaborated into `model::Scenario` — supports, loads, requirements and their grades, targets through the selectors, units, extension and scoping; nothing solved yet | you touch `model/scenario.rs`, `syntax/scenario.rs`, `parser/scenario.rs`, `program/scenarios.rs`, or write a `scenario` |
 | [app.md](docs/contract/app.md) | the document as source, splicing edits, graft, solid gestures, the workspace, the glass box, callouts, the program panel and editor, drags in the page, the timeline | you touch `edit.rs`, `io.rs`, `overview/`, `callout.rs`, or `web/src/app/` |
 
 ## Rules for every change

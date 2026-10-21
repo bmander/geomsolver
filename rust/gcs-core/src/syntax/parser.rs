@@ -6,6 +6,7 @@ mod definitions;
 mod measured;
 mod minimize;
 mod relations;
+mod scenario;
 mod statements;
 
 pub(crate) use declarations::{sweep_of, SweepParts, ROLLED_RETIRED, SWEPT_RETIRED};

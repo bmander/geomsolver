@@ -8,8 +8,9 @@ use crate::model::EntKind;
 // `port` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and each is kept
 // here only so a document written with it is told what to write instead of reading the word as a
 // name; `frame`, retired in 0.42, is an element keyword again (#383)
-pub(super) const OPENERS: [&str; 19] = [
+pub(super) const OPENERS: [&str; 20] = [
     "preview",
+    "scenario",
     "claim",
     "initially",
     "rate",
