@@ -43,6 +43,7 @@ name = "gcs-core"
 version = "0.1.0"
 dependencies = [
  "fixtures",
+ "gcs-solve",
  "nalgebra",
 ]
 
@@ -52,6 +53,10 @@ version = "0.1.0"
 dependencies = [
  "gcs-core",
 ]
+
+[[package]]
+name = "gcs-solve"
+version = "0.1.0"
 
 [[package]]
 name = "glam"

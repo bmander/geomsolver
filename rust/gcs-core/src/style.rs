@@ -240,32 +240,19 @@ pub fn resolve(sheet: &Sheet, classes: &Classes) -> Style {
 
 /// A sketch's sheet, kept on it as its `presentation` (`model::Annex`).  The model carries the
 /// sheet and never reads it; what it is, how it is written and how a class list is resolved
-/// against it are this module's (#409, step 5).
-impl Sketch {
+/// against it are this module's (#409, step 5).  A trait, because the sketch is the solver's
+/// (`gcs-solve`) and the sheet the language's: a crate adds no method to another's type (step 7).
+pub trait Presented {
     /// The document's sheet: what each class looks like.  Empty until elaboration sets one.
-    pub fn sheet(&self) -> &Sheet {
-        static EMPTY: Sheet = Sheet::new();
-        self.presentation.get::<Sheet>().unwrap_or(&EMPTY)
-    }
+    fn sheet(&self) -> &Sheet;
 
     /// The whole sheet, replaced.  Elaboration's write path, and the other half of the epoch.
-    pub fn set_sheet(&mut self, sheet: Sheet) {
-        self.presentation.set(sheet);
-        self.style_epoch = self.style_epoch.wrapping_add(1);
-    }
+    fn set_sheet(&mut self, sheet: Sheet);
 
     /// What an entity is drawn with: the base sheet under the document's, cascaded over its
     /// classes.  **The core resolves; a front end strokes what it is handed** — the same seam
     /// `callout.rs` and `curve::tessellate` sit on, so every front end draws one drawing alike.
-    pub fn style_of(&self, e: EntRef) -> Style {
-        // a kind may carry a class it was never given — a plane's datum glyph is `.plane` —
-        // under whatever the declaration says, so the document's rule still wins
-        let mut classes = self.class_of(e);
-        if let Some(c) = e.kind.implicit_class() {
-            classes.0.insert(0, c.to_string());
-        }
-        resolve(self.sheet(), &classes)
-    }
+    fn style_of(&self, e: EntRef) -> Style;
 
     /// What a *named* class list comes to, spelled as a declaration spells one: `"dimension"`,
     /// or `"dimension reference"`.  The drawing's chrome asks this — a dimension callout is not
@@ -275,7 +262,31 @@ impl Sketch {
     /// A list rather than one name because a claimed dimension *is* a dimension: it takes the
     /// shared rule and then the one that says how it differs, which is how a caller gets a
     /// document's `style .dimension` on a reference dimension too.
-    pub fn style_named(&self, classes: &str) -> Style {
+    fn style_named(&self, classes: &str) -> Style;
+}
+
+impl Presented for Sketch {
+    fn sheet(&self) -> &Sheet {
+        static EMPTY: Sheet = Sheet::new();
+        self.presentation.get::<Sheet>().unwrap_or(&EMPTY)
+    }
+
+    fn set_sheet(&mut self, sheet: Sheet) {
+        self.presentation.set(sheet);
+        self.style_epoch = self.style_epoch.wrapping_add(1);
+    }
+
+    fn style_of(&self, e: EntRef) -> Style {
+        // a kind may carry a class it was never given — a plane's datum glyph is `.plane` —
+        // under whatever the declaration says, so the document's rule still wins
+        let mut classes = self.class_of(e);
+        if let Some(c) = e.kind.implicit_class() {
+            classes.0.insert(0, c.to_string());
+        }
+        resolve(self.sheet(), &classes)
+    }
+
+    fn style_named(&self, classes: &str) -> Style {
         let list = Classes(classes.split_whitespace().map(str::to_string).collect());
         resolve(self.sheet(), &list)
     }

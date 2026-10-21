@@ -19,6 +19,7 @@ use crate::flatten::Expansion;
 use crate::ir::{Operation as StmtKind, Statement};
 use crate::model::{entity_name, EntKind, EntRef, Sketch};
 use crate::solid::faces::FacePath;
+use crate::style::Presented;
 use crate::syntax::{Program, StmtId};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;

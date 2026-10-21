@@ -79,7 +79,7 @@ arithmetic; our own dense linear algebra. And in the CLI: the STEP parser and ve
 
 ## Design
 
-- **Where.** `gcs-core/src/brep/` — the core owns every algorithm, and only the core reaches the
+- **Where.** `gcs-solve/src/brep/` — the core owns every algorithm, and only the core reaches the
   wasm. No dependency is added. The CLI's `cad::native` keeps its `Session` shape, so the export
   code chooses a kernel at one seam (`SOLVENT_KERNEL=occt|rust` while both exist).
 - **The B-rep.** Arenas of vertices, edges, loops, faces, shells, solids with typed indices, never
@@ -662,7 +662,7 @@ splines and lofts; nothing ever handed them to it.
 #### Rung 1 — done (2026-09-30)
 
 Begun ahead of phases 1–5, since its solids need no fitted sheets and every piece it builds is
-one the gear needs too. In `gcs-core/src/brep/`:
+one the gear needs too. In `gcs-solve/src/brep/`:
 
 - **`geom`**: frames and rigid motions; plane, cylinder, cone, sphere and torus parameterised as
   OCCT and STEP do, with closed-form inverses, signed distances and gradients; lines, circles,

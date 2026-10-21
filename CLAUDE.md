@@ -11,10 +11,12 @@ files it lists are the contract, and `gcs-solver-program.md` is the staged progr
 
 ## Layout
 
-* **core** (`rust/gcs-core/`): the whole engine in Rust, no dependencies — model, constraints,
-  kernels, solvers, diagnosis, decomposition, the Solvent language, solids, the B-rep kernel.
-  Within it, the **solver** (model, constraints, kernels, solvers, diagnosis, decomposition, and
-  what they evaluate) neither imports nor reaches the language: `tests/layering.rs` holds it.
+* **core**: the whole engine in Rust, no dependencies, as two crates.
+  * **solver** (`rust/gcs-solve/`): model, constraints, kernels, solvers, diagnosis,
+    decomposition, and what they evaluate: curves, solids, motions, the B-rep kernel.  It knows
+    no Solvent, and the compiler holds it: nothing in it can name the crate built on it.
+  * **language** (`rust/gcs-core/`): the Solvent language and what is built on it, over
+    `gcs-solve`, whose modules it re-exports by name (`gcs_core::model` is `gcs_solve::model`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built as a native `cdylib` and as a
   `wasm32-unknown-unknown` module.
 * **binding** (`web/src/core/`): thin TypeScript proxies over the wasm core. No algorithm.
@@ -63,6 +65,7 @@ one), and add a row here only for a new topic. Language changes are also recorde
 | [curves.md](docs/contract/curves.md) | splines (rational too), control-polygon edits, curve parameters, curves as points of components, loci and traces, variational (free) curves, rates along a running formal, the method of lines, the rate of a contact (one kernel for every `at:` statement), the ellipse | you touch `curve.rs`, `locus.rs`, `tape.rs`, `variational.rs`, `extremal.rs`, `ode.rs`, `rates.rs`, `lines.rs`, `contact_rate.rs` |
 | [frames.md](docs/contract/frames.md) | frames that move: a frame riding on the frames of its blocks, `in` nested in `in`, carriers, readings at a roll that infer their carrier, what a reading makes riding on its observer, a point or a frame read at a roll owned or stated, joints about a frame's axes, the station words | you touch `program/motions.rs`, `program/planes.rs`'s paths, `Sketch::carriers`, a reading's `under:`, `flatten/carried.rs`, `flatten/valued.rs`, `motion/guide.rs` or `envelope/screw.rs` |
 | [parameters.md](docs/contract/parameters.md) | numbers that run (#391): `model::Running`, a declared `param t: Angle over (a, b)`, and the face family's running number, a traced body's formals and the roll's intervals as uses of it; the two readings of what moves, `x at τ` and `over t in (a, b)` (`sweep`, `trace`, an envelope's and a meshing's); a joint's value, `fix(value == τ) f`, and `n := x in f`, drawn where it puts `x`; relations over a parameter, continuation and singular instants, the ledger per parameter, `trace(m over t)`; a joint driven by a law of a parameter (a cam), its jet and its interval bounds; faces swept over a declared parameter, a valued frame's block, frames along a path (#398); a drawing stood at an instant of its march, the timeline's core (#398 L); a frame the drawing moves read as a motion, a trace in space (#398 F) | you touch `model/running.rs`, a `param … over`, `sweep(… over s)`, `flatten/valued.rs`, `motion/guide.rs`, `followed.rs`, a joint's `value`, `x in f`, `SolidDef::Family::over`, `TracedE::over`, `CurveE::over`, a reading's roll interval, `flatten/carried.rs`, `P::instant`, `follow.rs`, `CurveBody::Followed`, `motion/law.rs`, `MotionDef::Driven`, `tape::eval_interval`, `follow::stand`/`Scrub` or `motion/track.rs` |
+| [boundaries.md](docs/contract/boundaries.md) | a parent solved through instances named as boundaries (#454): squareness, one compile, the inner square Newton shared with the locus, the derivative by the implicit function theorem, continued evaluation and failure, the order outputs flow in, agreement with the flat solve | you touch `solve/through.rs`, `boundary::instance` or `newton::square` |
 | [solver.md](docs/contract/solver.md) | constraints owning unknowns, scaling, "solved", rank, tangencies, claims, bounds, diagnosis, decomposition, drags, the block-triangular solve and root search | you touch `kernels.rs`, `system.rs`, `solve.rs`, `diagnose*`, `decompose.rs`, `cgraph.rs` |
 | [solids.md](docs/contract/solids.md) | the body rule, faces and their names, sheets, solid claims, glTF, meshes, the spiral bevel | you touch `solid.rs`, `csg.rs`, `mesh.rs`, `hidden.rs`, `gltf.rs`, or `hypoid.sv` |
 | [generating.md](docs/contract/generating.md) | named motions, planar generation, solid placement, swept solids and their admission, export tolerance, sectors, screws, the Wankel | you touch `motion.rs`, `generate.rs`, `solid/admission.rs`, `brep/sweep`, or the native export |
@@ -78,10 +81,11 @@ one), and add a row here only for a new topic. Language changes are also recorde
   Never write `class`, `style`, `view`, `section`, `dimensions` or callout placements in model
   source (the full rule: [language.md](docs/contract/language.md)).
 - **The core owns every algorithm.**  A change to the model, a constraint type, diagnosis,
-  decomposition or the solvers lands in `rust/gcs-core/` with a Rust test in
-  `rust/gcs-core/tests/` — **a new file there is listed in `tests/main.rs`** (one binary,
-  `autotests = false`; `every_file_is_a_module` fails an unlisted file).  A binding changes only
-  when the *surface* changes.  Geometry or numerics in TypeScript belong in Rust instead.
+  decomposition or the solvers lands in `rust/gcs-solve/` (the language's in `rust/gcs-core/`)
+  with a Rust test in `rust/gcs-core/tests/`, the suite of both crates — **a new file there is
+  listed in `tests/main.rs`** (one binary, `autotests = false`; `every_file_is_a_module` fails
+  an unlisted file).  A binding changes only when the *surface* changes.  Geometry or numerics
+  in TypeScript belong in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
   (`entity_params`, `own_params`, `own_length_params`, `children`, `min_children`, `count`,
   `bounds`, `distance_between`, `point_to_drawn`, `class_of`, `set_class`, `spatial`), `graft`'s

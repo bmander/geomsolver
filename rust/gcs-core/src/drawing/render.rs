@@ -6,7 +6,7 @@ use crate::plane::Basis;
 use crate::program::SourceMap;
 use crate::renderer::Renderer;
 use crate::solid::{ApproximationPolicy, PageFrame};
-use crate::style::{Classes, Display, Style};
+use crate::style::{Classes, Display, Presented, Style};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A solved model and the public names from the same elaboration.

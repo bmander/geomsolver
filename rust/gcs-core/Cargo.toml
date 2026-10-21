@@ -2,17 +2,20 @@
 name = "gcs-core"
 version = "0.1.0"
 edition = "2021"
-description = "Geometric constraint solver: model, numerics, diagnosis, decomposition — the whole engine."
+description = "Geometric constraint solver: the Solvent language and what is built on it, over gcs-solve."
 # The suite is ONE test binary, `tests/main.rs`, with each `tests/*.rs` a module of it: see the
 # note at the top of that file for what fifty binaries cost.
 autotests = false
 
 [dependencies]
+# The solver, which knows no Solvent (#409, step 7).  Its modules are re-exported by name.
+gcs-solve = { path = "../gcs-solve" }
 
-# The library itself has no dependencies.  Its *tests* have one reference implementation:
-# there is no LAPACK/BLAS here — the pivoted QR, the complete orthogonal decomposition, the
-# SVD and the LU are ours — so `tests/linalg.rs` compares them against an independent one.
-# Nothing here links into the cdylib or the wasm; only the test binary.
+# Nor does the engine have any outside the workspace.  Its *tests* have one reference
+# implementation: there is no LAPACK/BLAS here — the pivoted QR, the complete orthogonal
+# decomposition, the SVD and the LU are ours (in `gcs-solve`) — so `tests/linalg.rs` compares
+# them against an independent one.  Nothing here links into the cdylib or the wasm; only the
+# test binary.
 [dev-dependencies]
 nalgebra = { version = "0.35", default-features = false, features = ["std"] }
 # The fixtures the core's and the CLI's suites share (`rust/fixtures`), written once.

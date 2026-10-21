@@ -23,6 +23,7 @@ use crate::constraints::{CKind, Constraint, OrdinateForm};
 use crate::io::dimension_text;
 use crate::model::{angle_between, seg_distance, signed_point_to_line, EntKind, EntRef, Sketch};
 use crate::overview::workspace::{self, apply, Map, Projection, IDENTITY};
+use crate::style::Presented;
 use std::collections::BTreeMap;
 use std::f64::consts::{FRAC_PI_4, PI};
 

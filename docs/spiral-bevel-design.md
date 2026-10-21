@@ -12,7 +12,7 @@ evidence for analytic geometry and verification; it does not establish a finishe
 
 ## Current implementation
 
-`rust/gcs-core/src/envelope.rs` evaluates smooth surface envelopes from surface derivatives
+`rust/gcs-solve/src/envelope.rs` evaluates smooth surface envelopes from surface derivatives
 and composed rigid motions, including the derivatives of moving inverse frames. Its
 intersection solver uses the existing DogLeg implementation, explicit parameter scales,
 physical residual tolerances, finite search bounds, and a final regularity check. Invalid,

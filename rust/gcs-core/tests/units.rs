@@ -12,6 +12,7 @@ use gcs_core::io;
 use gcs_core::model::Sketch;
 use gcs_core::program::elaborate;
 use crate::common::parse_legacy as parse;
+use gcs_core::style::Presented;
 use gcs_core::units::{Dim, Units};
 
 fn read(src: &str) -> Result<Sketch, Vec<String>> {

@@ -269,18 +269,17 @@ fn columns(sk: &Sketch, c: &Constraint) -> Vec<u32> {
     cols
 }
 
-/// One instance, read: its rows and unknowns set apart from the document, ranked at its inputs
-/// and at inputs moved from them, its roots searched for, and its text read for the world.
-fn analyse(
-    prog: &Program,
-    map: &SourceMap,
-    sk: &Sketch,
-    world: &World,
-    inst: &Instanced,
-) -> Analysis {
-    let comp = &prog.components[inst.comp];
-    let name_of = |e: EntRef| map.name_of(e).cloned();
-    let ent_name = |e: EntRef| name_of(e).unwrap_or_else(|| crate::model::entity_name(e));
+/// What an instance made and what it states, set apart from the document: every entity sited
+/// under it (and a twin of one), its own unknowns, and its rows.
+struct Split {
+    made: BTreeSet<EntRef>,
+    /// The numbers of what it made, with the numbers no entity owns that its rows read.
+    own: BTreeSet<u32>,
+    /// Its rows, by constraint id.
+    kept: BTreeSet<u32>,
+}
+
+fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instanced) -> Split {
     let inside = |id: u32| map.site_of_constraint(id).is_some_and(|s| inst.contains(&s.path));
     // what it made: every entity sited under it, and a twin of one
     let mut made: BTreeSet<EntRef> = map.of_entity.iter()
@@ -322,6 +321,35 @@ fn analyse(
         }
     }
     let own: BTreeSet<u32> = mine.union(&aux).copied().collect();
+    Split { made, own, kept }
+}
+
+/// The instance named `name` (as its members' names start: `upper`, `drive.upper`) as a boundary
+/// a parent solves through (#454, `solve::solve_through`): its own unknowns what it made, and its
+/// rows its statements, read as the classifier reads them.  No syntax marks it: the experiment
+/// names it from Rust.  `None` where no instance drawn on the sheet has that name.
+pub fn instance(e: &Elaborated, sk: &Sketch, name: &str) -> Option<crate::solve::Boundary> {
+    let prefix = format!("{name}.");
+    let inst = e.map.instances.iter().find(|i| i.drawn && i.prefix == prefix)?;
+    let Split { own, kept, .. } = split(&e.map, sk, &World::of(sk, &e.map), inst);
+    Some(crate::solve::Boundary { name: name.to_string(), own, rows: kept })
+}
+
+/// One instance, read: its rows and unknowns set apart from the document, ranked at its inputs
+/// and at inputs moved from them, its roots searched for, and its text read for the world.
+fn analyse(
+    prog: &Program,
+    map: &SourceMap,
+    sk: &Sketch,
+    world: &World,
+    inst: &Instanced,
+) -> Analysis {
+    let comp = &prog.components[inst.comp];
+    let name_of = |e: EntRef| map.name_of(e).cloned();
+    let ent_name = |e: EntRef| name_of(e).unwrap_or_else(|| crate::model::entity_name(e));
+    let inside = |id: u32| map.site_of_constraint(id).is_some_and(|s| inst.contains(&s.path));
+    let zero = sk.zero;
+    let Split { made, own, kept } = split(map, sk, world, inst);
     let rows: Vec<&Constraint> = sk.constraints.iter().filter(|c| kept.contains(&c.id)).collect();
     let inputs: BTreeSet<u32> = rows.iter().flat_map(|c| columns(sk, c))
         .filter(|p| !own.contains(p) && Some(*p) != zero).collect();
