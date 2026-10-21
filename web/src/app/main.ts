@@ -594,6 +594,9 @@ window.addEventListener('keydown', (e) => {
   // the curve tools collect as many points as the user wants, and a Boolean as many bodies, so
   // they need a way to say "that is all" — the only tools whose click count is not known
   if (k === 'enter') { e.preventDefault(); view.finishCurve(); return; }
+  // Space lets everything go — the focused constraint too, which `onSelect` drops — and is
+  // taken, so a button with the focus is not pressed by it nor the page scrolled
+  if (k === ' ') { e.preventDefault(); view.selectNone(); return; }
   if (k === 'delete' || k === 'backspace') {
     e.preventDefault();
     deleteSelection();

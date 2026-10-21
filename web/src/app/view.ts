@@ -1610,6 +1610,19 @@ export class SketchView {
     this.draw();
   }
   cancelTool(): void { tools.cancelTool(this); }
+  /** Space: every selection let go — the drawing's, the solids', the picture — the tool still
+   *  down.  An edge tool's number, asked over what it had picked, is put away with them. */
+  selectNone(): void {
+    this.selected = [];
+    this.dropImage();
+    if (this.roundClick) {
+      this.endRound();
+      this.tellRound();
+    }
+    this.onSelect();
+    this.onChanged();
+    this.draw();
+  }
   finishCurve(): void { tools.finishCurve(this); }
   finishSplineFit(): void { tools.finishSplineFit(this); }
 
