@@ -5,7 +5,7 @@
 
 /// Reverse Cuthill–McKee on the pattern of A: short, and the sketch graphs this solver sees
 /// (trusses, chains, rings) are close to banded once relabelled this way.
-fn rcm(n: usize, ap: &[i32], ai: &[i32]) -> (Vec<i32>, Vec<i32>) {
+pub(crate) fn rcm(n: usize, ap: &[i32], ai: &[i32]) -> (Vec<i32>, Vec<i32>) {
     let mut deg = vec![0i32; n];
     let mut seen = vec![false; n];
     let mut queue: Vec<i32> = Vec::with_capacity(n);
