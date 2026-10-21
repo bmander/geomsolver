@@ -402,6 +402,14 @@ fn tint_inner(
     known: &BTreeSet<&str>,
     ring: bool,
 ) -> (Option<Tint>, Next) {
+    // a scenario's claimed requirement, `claim mode(arm, 1) >= 120Hz`: the output a relation,
+    // as `tint_start` reads one standing alone
+    if matches!(prev, Some(Tok::Ident(c)) if c == "claim")
+        && next == Some(&Tok::P('('))
+        && crate::model::Output::parse(w).is_some()
+    {
+        return (Some(Tint::Relation), Next::Word);
+    }
     // `c: circle`, `phase: Angle` — the one place a bare word is a type
     if prev == Some(&Tok::P(':')) && Ty::parse(w).is_some() {
         return (Some(Tint::Type), Next::Word);

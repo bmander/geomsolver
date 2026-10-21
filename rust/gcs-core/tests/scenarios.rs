@@ -240,7 +240,8 @@ fn what_a_scenario_refuses() {
 #[test]
 fn a_scenario_is_tinted_as_it_reads() {
     use gcs_core::syntax::{highlight, Tint};
-    let src = "scenario lift {\n  fixed plate.west\n  claim mode(plate, 1) >= 120Hz\n}\n";
+    let src = "scenario lift {\n  fixed plate.west\n  claim mode(plate, 1) >= 120Hz\n  \
+               safety(plate) == 2\n}\n";
     let tint = |word: &str| {
         let lo = src.find(word).expect("written") as u32;
         highlight(src).into_iter().find(|(_, s)| s.lo == lo).map(|(t, _)| t)
@@ -250,4 +251,5 @@ fn a_scenario_is_tinted_as_it_reads() {
     assert_eq!(tint("fixed"), Some(Tint::Word));
     assert_eq!(tint("claim"), Some(Tint::Word));
     assert_eq!(tint("mode"), Some(Tint::Relation));
+    assert_eq!(tint("safety"), Some(Tint::Relation));
 }
