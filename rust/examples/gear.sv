@@ -57,6 +57,9 @@ component Tooth(base: circle, root: circle, tip: circle,
   l := Flank(base, root, tip, phase: a0 + half, u0: -u0, u1: -u1)
 
   crown := line(r.hi, l.hi)
+  // each flank as a drawing reads it: its curve, and where it stands on the root and the tip
+  right := {e: r.e, lo: r.lo, hi: r.hi}
+  left := {e: l.e, lo: l.lo, hi: l.hi}
 }
 
 component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
@@ -113,7 +116,7 @@ component Gear(N: Int, m: Length, phi: Angle, ded: Scalar) {
   ring N about center {
     t := Tooth(base, root, tip, a0: 0deg, half: half, u0: u0, u1: u1)
     // the gap to the next tooth, drawn across the root circle
-    gap := line(t.l.lo, next.t.r.lo)
+    gap := line(t.left.lo, next.t.right.lo)
   }
 }
 

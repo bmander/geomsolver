@@ -229,8 +229,8 @@ ring 3 about hub {
 ", "E023", "declare it outside", "ring 3 about hub {\n  q := point in std.front\n  p := plane(u: std.x, v: std.z)\n}");
     // the gear's first flank of the second tooth, read from outside the ring
     let src = gcs_core::examples::GEAR.replace(
-        "    gap := line(t.l.lo, next.t.r.lo)\n  }\n",
-        "    gap := line(t.l.lo, next.t.r.lo)\n  }\n  probe := point\n  probe coincident t[1].r.e\n",
+        "    gap := line(t.left.lo, next.t.right.lo)\n  }\n",
+        "    gap := line(t.left.lo, next.t.right.lo)\n  }\n  probe := point\n  probe coincident t[1].r.e\n",
     );
     refused(&src, "E023", "turned copy of a curve", "probe coincident t[1].r.e");
 }

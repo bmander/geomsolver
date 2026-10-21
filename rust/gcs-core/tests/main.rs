@@ -64,6 +64,7 @@ mod diagnose;
 mod draft;
 mod drag;
 mod drawing;
+mod drift;
 mod drives;
 mod ease;
 mod edit;

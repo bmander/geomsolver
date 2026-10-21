@@ -1,9 +1,10 @@
 // A hand-cranked right-angle drive to print and glue together: the hypoid pair of
 // `spiral_bevel/hypoid.sv`, imported whole, each member on a shaft running in a plain sleeve in
 // one frame, and a crank on each shaft. Nothing of the pair is restated: `HypoidPair` lays it out
-// and cuts both members, and everything here stands on what it names — each member's axis and
-// the foot of the mean point M on it (`.ax`, `.foot`), the back cone its blank is bounded by
-// (`.back`), which the member's printed hub fills, and the member itself (`.body`). The frame
+// and cuts both members, and everything here stands on what it names of each member
+// (`pair.gear_member`, `pair.pinion_member`) — its axis and the foot of the mean point M on it
+// (`.ax`, `.foot`), the back cone its blank is bounded by (`.back`), which the member's printed
+// hub fills, the blank (`.material`) and the member itself (`.body`). The frame
 // stands inside the pair, where the shafts cross: a post carrying a sleeve along each shaft into
 // the hollow of its member, on a floor under both. Each shaft goes into its sleeve from the
 // post, its head stopping it there, and its splined end is pressed into its member's hub and
@@ -70,47 +71,43 @@ reach := 1.1 * R + 2 * mean_module
 sizes := {below: reach + 12mm, plate: 8mm, floor_r: 50mm, hub_r: 16mm, rim: 6mm, spokes: 3,
   spoke_w: 8mm}
 
-cross := Crossing(pair.gear_cone.ax, pair.pinion_cone.ax)
-gear_side := Mount(pair.gear_cone.ax, pair.gear_cone.foot, cross.on_a, pair.gear_blank.back,
-  pair.gear.body, cross.span, pair.pinion_cone.ax, mount)
-pinion_side := Mount(pair.pinion_cone.ax, pair.pinion_cone.foot, cross.on_b,
-  pair.pinion_blank.back, pair.pinion.body, cross.span, pair.gear_cone.ax, mount)
-frame := Frame(pair.gear_cone.ax, pair.gear_cone.foot, pair.pinion_cone.ax,
-  pair.pinion_cone.foot, cross, mount, sizes)
+cross := Crossing(pair.gear_member.ax, pair.pinion_member.ax)
+gear_side := Mount(pair.gear_member.ax, pair.gear_member.foot, cross.on_a, pair.gear_member.back,
+  pair.gear_member.body, cross.span, pair.pinion_member.ax, mount)
+pinion_side := Mount(pair.pinion_member.ax, pair.pinion_member.foot, cross.on_b,
+  pair.pinion_member.back, pair.pinion_member.body, cross.span, pair.gear_member.ax, mount)
+frame := Frame(pair.gear_member.ax, pair.gear_member.foot, pair.pinion_member.ax,
+  pair.pinion_member.foot, cross, mount, sizes)
 
 // -- what the drive must be ----------------------------------------------------------------------
 // Each member's blank bounds it (a member is its blank less its cuts), so a part clear of the
 // blank is clear of the member. The frame clears both members, and each shaft and hub runs in
-// it with its clearance and play; each shaft clears the other member and the other shaft; each
-// handle turns loose on its pin, between the crank and the pin's head. Each
-// crank, turned with its shaft through a whole turn, clears the frame and the other member; the
-// two cranks turn in slabs beyond their members, and the slabs are apart.
-claim frame.body clear(2mm) pair.gear_blank.material
-claim frame.body clear(2mm) pair.pinion_blank.material
+// it with its clearance and play; each shaft clears the other member and the other shaft (each
+// handle turning loose on its pin is the crank's own claim, in `Crank`). Each crank, turned with
+// its shaft through a whole turn, clears the frame and the other member; the two cranks turn in
+// slabs beyond their members, and the slabs are apart.
+claim frame.body clear(2mm) pair.gear_member.material
+claim frame.body clear(2mm) pair.pinion_member.material
 claim gear_side.shaft clear(0.1mm) frame.body
 claim pinion_side.shaft clear(0.1mm) frame.body
 claim gear_side.hub clear(0.1mm) frame.body
 claim pinion_side.hub clear(0.1mm) frame.body
-claim gear_side.shaft clear(1mm) pair.pinion_blank.material
-claim pinion_side.shaft clear(1mm) pair.gear_blank.material
+claim gear_side.shaft clear(1mm) pair.pinion_member.material
+claim pinion_side.shaft clear(1mm) pair.gear_member.material
 claim gear_side.shaft clear(1mm) pinion_side.shaft
-claim gear_side.crank.handle clear(0.2mm) gear_side.crank.body
-claim gear_side.crank.handle clear(0.2mm) gear_side.crank.pin
-claim pinion_side.crank.handle clear(0.2mm) pinion_side.crank.body
-claim pinion_side.crank.handle clear(0.2mm) pinion_side.crank.pin
 gear_turn := frame
-std.Turn(gear_turn, about: pair.gear_cone.ax, ratio: 1)
+std.Turn(gear_turn, about: pair.gear_member.ax, ratio: 1)
 pinion_turn := frame
-std.Turn(pinion_turn, about: pair.pinion_cone.ax, ratio: 1)
-construction gear_crank_turned := gear_side.crank.body at(under: gear_turn) 0deg
-construction pinion_crank_turned := pinion_side.crank.body at(under: pinion_turn) 0deg
+std.Turn(pinion_turn, about: pair.pinion_member.ax, ratio: 1)
+construction gear_crank_turned := gear_side.turns.crank at(under: gear_turn) 0deg
+construction pinion_crank_turned := pinion_side.turns.crank at(under: pinion_turn) 0deg
 claim over gear_turn in (0deg, 360deg) {
   gear_crank_turned clear(2mm) frame.body
-  gear_crank_turned clear(2mm) pair.pinion_blank.material
+  gear_crank_turned clear(2mm) pair.pinion_member.material
 }
 claim over pinion_turn in (0deg, 360deg) {
   pinion_crank_turned clear(2mm) frame.body
-  pinion_crank_turned clear(2mm) pair.gear_blank.material
+  pinion_crank_turned clear(2mm) pair.gear_member.material
 }
 
 // -- the parts ---------------------------------------------------------------------------------
@@ -175,6 +172,8 @@ component Mount(ax: line, foot: point, inner: point, seat: set, member: solid, t
   hub_bore.body cut part
 
   crank := Crank(ax, foot, toward, across, m)
+  // what turns with the shaft, for a drawing to turn it
+  turns := {crank: crank.body}
 }
 
 // A splined length of shaft about `ax`, `lo` to `hi` along it from `o` (on the axis): a core of
@@ -357,6 +356,9 @@ component Crank(ax: line, foot: point, toward: line, across: line, m: group) {
   shank_solid union pin
   cap_solid union pin
   handle := solid(sleeve)
+  // the handle turns loose on its pin, between the plate and the pin's head
+  claim handle clear(0.2mm) body
+  claim handle clear(0.2mm) pin
 }
 
 // The frame, inside the pair: a post where the shafts cross, down to a round floor under both,

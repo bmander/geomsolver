@@ -27,5 +27,6 @@ in std.front {
 
   t := gear.Tooth(base, root, tip, a0: 0deg, half: half, u0: u0, u1: u1)
 }
-tooth := solid(face(t.r.e from t.r.lo to t.r.hi, t.crown, t.l.e from t.l.hi to t.l.lo, -> close),
+tooth := solid(face(t.right.e from t.right.lo to t.right.hi, t.crown,
+                 t.left.e from t.left.hi to t.left.lo, -> close),
             depth: 5mm)
