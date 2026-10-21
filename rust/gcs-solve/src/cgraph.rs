@@ -532,7 +532,7 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
                 let (i1, i2) = (c.args[0].ent().i(), c.args[1].ent().i());
                 let target = match c.kind {
                     CKind::Parallel => 0.0,
-                    CKind::Perpendicular => std::f64::consts::FRAC_PI_2,
+                    CKind::Perpendicular => c.sense() * std::f64::consts::FRAC_PI_2,
                     _ => c.args[2].num(),
                 };
                 let a = g.line_el(i1);

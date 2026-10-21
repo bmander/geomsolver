@@ -152,6 +152,10 @@ impl Constraint {
             // an angle is directed, so `sense: cw` turns the number it states rather than the
             // reader having to write the minus (§9.4)
             CKind::Angle => vec![self.sense() * self.args[2].num()],
+            // the quarter turn `angle`'s kernel reads, where a sense says which (#497)
+            CKind::Perpendicular => {
+                self.side().map(|s| vec![s * std::f64::consts::FRAC_PI_2]).unwrap_or_default()
+            }
             // the sign the second pair's angle is read with: `sense: cw` is its mirror image
             CKind::EqualAngle => vec![self.sense()],
             // the turn the similarity keeps, or with `mirror: true` reverses (#357)

@@ -390,3 +390,28 @@ fn vtwin_hardware_changes_update_pockets_bores_and_seal_grooves() {
     near((at("bankL.pis.g1R").0 - at("bankL.pis.g1L").0).hypot(
         at("bankL.pis.g1R").1 - at("bankL.pis.g1L").1), 12.48);
 }
+
+/// `std.Turned`'s `v` is a quarter turn *anticlockwise* of its `u`, whatever the start (#497):
+/// `t` turned a quarter in one solve stands on `v`'s old place, where a perpendicular-and-equal
+/// pair has two roots equally near, and turned past a quarter starts nearer the mirrored one.
+/// The frame comes out right-handed from every one, and states no dimension of its own.
+#[test]
+fn a_turned_frame_keeps_its_handedness_however_far_its_datum_turns() {
+    for deg in [90.0f64, 120.0, 150.0, 180.0, -90.0, -150.0] {
+        let mut e = build(AXES);
+        solved(&mut e.sketch);
+        let (o, q) = (e.map.ent_named("o").unwrap().i(), e.map.ent_named("q").unwrap().i());
+        let [x, y] = e.sketch.point_params(q);
+        let (c, s) = (deg.to_radians().cos(), deg.to_radians().sin());
+        e.sketch.params[x as usize].value = 10.0 + 4.0 * c - 3.0 * s;
+        e.sketch.params[y as usize].value = 20.0 + 4.0 * s + 3.0 * c;
+        solved(&mut e.sketch);
+        let (ox, oy) = e.sketch.point_xy(o);
+        let (tx, ty) = e.sketch.point_xy(q);
+        let (vx, vy) = e.sketch.point_xy(e.map.ent_named("f.q").unwrap().i());
+        let (u, v) = ((tx - ox, ty - oy), (vx - ox, vy - oy));
+        close(v, (-u.1, u.0));
+    }
+    let e = build(AXES);
+    assert!(gcs_core::callout::layout(&e.sketch, 1.0).is_empty(), "a frame states no dimension");
+}

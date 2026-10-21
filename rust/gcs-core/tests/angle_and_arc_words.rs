@@ -239,3 +239,65 @@ fn both_words_print_back_as_written() {
     assert!(reg.get("types").unwrap().arr().iter()
         .any(|t| t.get("name").unwrap().as_str() == "ArcLength"));
 }
+
+/* -- a perpendicular that says which way --------------------------------------------------- */
+
+/// A horizontal line and a second from its start, the second's end seeded `d` (#497).
+fn square(seed: (f64, f64), stated: &str) -> String {
+    format!("use std (horizontal)\nin std.front {{\na := point\nb := point hint((40, 0))\n\
+        d := point hint(({}, {}))\nab := line(a, b)\nad := line(a, d)\nhorizontal ab\n\
+        a distance(40) b\na distance(20) d\nfix((0, 0)) a\n{stated}\n}}\n", seed.0, seed.1)
+}
+
+/// `sense:` says which quarter turn: `ccw` puts the second line anticlockwise of the first, as
+/// `angle` counts, and `cw` the other way — from a seed on the wrong side, and from one along
+/// the first line, where square-either-way has two roots equally near (#497).
+#[test]
+fn a_sided_perpendicular_turns_the_way_it_says_from_any_seed() {
+    for seed in [(25.0, -10.0), (25.0, 10.0), (20.0, 0.0), (-20.0, 0.1)] {
+        let e = solved(&square(seed, "ab perpendicular(sense: ccw) ad"));
+        assert!(near(at(&e, "d"), (0.0, 20.0)), "{seed:?}: {:?}", at(&e, "d"));
+        let e = solved(&square(seed, "ab perpendicular(sense: cw) ad"));
+        assert!(near(at(&e, "d"), (0.0, -20.0)), "{seed:?}: {:?}", at(&e, "d"));
+    }
+    // unsaid, it is square either way, and the seed's side is kept
+    let e = solved(&square((25.0, -10.0), "ab perpendicular ad"));
+    assert!(near(at(&e, "d"), (0.0, -20.0)), "{:?}", at(&e, "d"));
+}
+
+/// A sided perpendicular is still a relation, not a dimension: no number, no callout, one row,
+/// and it prints back as written and reads back from the sketch.
+#[test]
+fn a_sided_perpendicular_is_drawn_as_none_and_prints_as_written() {
+    let src = square((25.0, 10.0), "ab perpendicular(sense: cw) ad");
+    let (mut e, d) = read(&src);
+    assert!(e.ok(), "{d:?}");
+    assert!(gcs_core::callout::layout(&e.sketch, 1.0).iter().all(|k| k.text != "90°"));
+    assert_eq!(gcs_core::diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
+    assert!(said(&e).iter().any(|s| s == "ab perpendicular(sense: cw) ad"), "{:?}", said(&e));
+    let mut lifted = to_program(&e.sketch);
+    let text = gcs_core::syntax::render_flat(&mut lifted).unwrap().to_string();
+    assert!(text.contains("perpendicular(sense: cw)"), "{text}");
+    let (mut again, d) = read(&text);
+    assert!(again.ok(), "{d:?}\n{text}");
+    assert!(solve(&mut again.sketch, SolveOpts::default()).success);
+    // the lifted text names its points by number: `d` is `p2`
+    assert!(near(at(&again, "p2"), (0.0, -20.0)), "{:?}\n{text}", at(&again, "p2"));
+    // the same statement written swapped is not a duplicate of its mirror
+    let (e, d) = read(&square((25.0, 10.0),
+        "ab perpendicular(sense: ccw) ad\nad perpendicular(sense: ccw) ab"));
+    assert!(e.ok(), "{d:?}");
+    let sided = |e: &Elaborated| e.sketch.user_constraints().iter()
+        .filter(|c| c.kind == CKind::Perpendicular).count();
+    assert_eq!(sided(&e), 2);
+}
+
+/// Two lines in space turn neither way, so a sense there is refused at its key.
+#[test]
+fn a_sided_perpendicular_in_space_is_refused() {
+    let (e, d) = read("a := point hint((0, 0, 0))\nb := point hint((1, 0, 0))\n\
+        c := point hint((0, 1, 1))\nab := line(a, b)\nac := line(a, c)\n\
+        ab perpendicular(sense: ccw) ac\n");
+    assert!(!e.ok());
+    assert!(d.iter().any(|x| format!("{x:?}").contains("turn neither way")), "{d:?}");
+}

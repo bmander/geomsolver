@@ -647,6 +647,11 @@ impl Constraint {
                 (_, F::FrameN, true) => K::OrdinateFrameNFree,
             };
         }
+        // a perpendicular that says which way is a directed angle of a quarter turn: one root, and
+        // a gradient where the two lines start as one, which the square's dot has not (#497)
+        if self.kind == CKind::Perpendicular && self.side().is_some() {
+            return K::Angle;
+        }
         // a side left unsaid is the magnitude form: both sides are solutions, and where the solve
         // lands among them is the seed's business (§9.2)
         if self.side().is_none() {

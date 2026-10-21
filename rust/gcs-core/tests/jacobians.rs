@@ -180,6 +180,9 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::one_line(CKind::Vertical, le1),
         Constraint::two_line(CKind::Parallel, le1, le2),
         Constraint::two_line(CKind::Perpendicular, le1, le2),
+        // square the way it says, `angle`'s kernel at a quarter turn either way (#497)
+        Constraint::new(CKind::Perpendicular, vec![e(le1), e(le2), Arg::Str("ccw".into())]),
+        Constraint::new(CKind::Perpendicular, vec![e(le2), e(le1), Arg::Str("cw".into())]),
         Constraint::new(CKind::Angle, vec![e(le1), e(le2), Arg::Num(0.7)]),
         // an angle stated as another, turning the same way and the other (`sense: cw`)
         Constraint::new(CKind::EqualAngle, vec![e(le1), e(le2), e(le2), e(me1)]),
