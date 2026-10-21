@@ -239,7 +239,7 @@ fn symmetric_eigenvalues_agree_with_nalgebra() {
 /* -- the sparse symmetric factor and the eigensolver (#510, P2) ------------------------------- */
 
 use gcs_core::eigen::{self, Opts, Pairs, Refusal};
-use gcs_core::sparse::{Ldl, Sym};
+use gcs_core::sparse::{Ldl, Pencil, Sym};
 
 /// A `Sym` as the reference's dense matrix.
 fn dense(a: &Sym) -> DMatrix<f64> {
@@ -250,16 +250,18 @@ fn dense(a: &Sym) -> DMatrix<f64> {
     d
 }
 
+/// A spring of stiffness `k` between freedoms `a` and `b`, as an assembly adds it: its 2×2 block.
+fn spring(t: &mut Vec<(usize, usize, f64)>, a: usize, b: usize, k: f64) {
+    t.extend([(a, a, k), (b, b, k), (a, b, -k), (b, a, -k)]);
+}
+
 /// The springs of an `nx × ny` grid, random stiffnesses: a membrane's stiffness, as an assembly
-/// adds it (each spring's 2×2 block), with the boundary's nodes held to the ground by a spring
+/// adds it, with the boundary's nodes held to the ground by a spring
 /// of their own when `held`.
 fn grid(seed: u32, nx: usize, ny: usize, held: bool) -> Sym {
     let mut rng = Rng::new(seed);
     let id = |i: usize, j: usize| i * ny + j;
     let mut t: Vec<(usize, usize, f64)> = Vec::new();
-    let spring = |t: &mut Vec<(usize, usize, f64)>, a: usize, b: usize, k: f64| {
-        t.extend([(a, a, k), (b, b, k), (a, b, -k), (b, a, -k)]);
-    };
     for i in 0..nx {
         for j in 0..ny {
             if i + 1 < nx {
@@ -329,7 +331,8 @@ fn assert_pencil_pairs(a: &Sym, b: &Sym, got: &Pairs, what: &str) {
     assert!(got.values.windows(2).all(|w| w[0] <= w[1]), "{what}: values ascending");
     let top = got.values[k - 1];
     let eta = 1e-7 * top.abs().max(1.0);
-    let below = |mu: f64| Ldl::new(&a.combine(1.0, b, -mu)).expect("a factor").negative_pivots();
+    let pencil = Pencil::new(a, b);
+    let below = |mu: f64| pencil.factor(mu).expect("a factor").negative_pivots();
     let under = got.values.iter().filter(|&&v| v < top - eta).count();
     assert_eq!(below(top - eta), under, "{what}: Sylvester's count below {top}");
     assert!(below(top + eta) >= k, "{what}: Sylvester's count above {top}");
@@ -340,7 +343,7 @@ fn assert_pencil_pairs(a: &Sym, b: &Sym, got: &Pairs, what: &str) {
 #[test]
 fn sparse_ldl_solves_and_counts_negative_eigenvalues() {
     for (seed, nx, ny, shift) in [(1u32, 6usize, 5usize, 0.0), (2, 7, 7, 1.3), (3, 4, 9, 3.1)] {
-        let a = grid(seed, nx, ny, true).combine(1.0, &grid_mass(seed + 10, nx, ny), -shift);
+        let a = Pencil::new(&grid(seed, nx, ny, true), &grid_mass(seed + 10, nx, ny)).at(shift);
         let n = a.n;
         let f = Ldl::new(&a).expect("a factor");
         let b = rand_vec(100 + seed, n);
@@ -385,8 +388,7 @@ fn a_free_ring_has_its_rigid_mode_and_every_pair() {
     let (nodes, k, m) = (120usize, 3.0, 2.0);
     let mut t: Vec<(usize, usize, f64)> = Vec::new();
     for a in 0..nodes {
-        let b = (a + 1) % nodes;
-        t.extend([(a, a, k), (b, b, k), (a, b, -k), (b, a, -k)]);
+        spring(&mut t, a, (a + 1) % nodes, k);
     }
     let stiff = Sym::from_triplets(nodes, &t);
     let mass = Sym::from_triplets(nodes, &(0..nodes).map(|i| (i, i, m)).collect::<Vec<_>>());
@@ -494,7 +496,7 @@ fn buckling_finds_eulers_loads() {
         }
         // nothing missed: K + μ K_G has as many negative pivots as loads below μ
         let mu = got.values[2] * (1.0 + 1e-7);
-        assert_eq!(Ldl::new(&k.combine(1.0, &kg, mu)).unwrap().negative_pivots(), 3);
+        assert_eq!(Pencil::new(&k, &kg.scaled(-1.0)).factor(mu).unwrap().negative_pivots(), 3);
     }
 }
 
@@ -503,7 +505,7 @@ fn buckling_finds_eulers_loads() {
 #[test]
 fn buckling_refuses_what_has_no_load() {
     let (k, kg) = column(10, 1.0, 1.0, &[0, 20]);
-    let tension = kg.combine(-1.0, &kg, 0.0);
+    let tension = kg.scaled(-1.0);
     let got = eigen::buckling(&k, &tension, 3, &Opts::default()).expect("a solve");
     assert!(got.values.is_empty(), "a tension's loads: {:?}", got.values);
     let (free, kg) = column(10, 1.0, 1.0, &[]);
