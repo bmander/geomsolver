@@ -70,20 +70,20 @@ impl Sizing {
 
 /// A protecting ball's place: its curve, its arc length along it, and the shorter of its gaps.
 #[derive(Clone,Copy,Debug)]
-pub(super) struct Place { curve: usize,s: f64,gap: f64 }
+pub(super) struct Place { pub(super) curve: usize,pub(super) s: f64,pub(super) gap: f64 }
 
 /// The feature curves as `protect` reads them: each with its length and whether it closes (its
 /// last point its first).
-struct Curves<'c> { curves: &'c [Vec<P>],lengths: Vec<f64>,closed: Vec<bool> }
+pub(super) struct Curves<'c> { curves: &'c [Vec<P>],pub(super) lengths: Vec<f64>,pub(super) closed: Vec<bool> }
 
 impl<'c> Curves<'c> {
-    fn new(curves: &'c [Vec<P>]) -> Self {
+    pub(super) fn new(curves: &'c [Vec<P>]) -> Self {
         Self {curves,lengths:curves.iter().map(|c| polyline_length(c)).collect(),
             closed:curves.iter().map(|c| c.len() >= 2 && dist2(c[0],*c.last().unwrap()) == 0.).collect()}
     }
 
     /// The point at arc length `s` along curve `k`.
-    fn at(&self,k: usize,s: f64) -> P {
+    pub(super) fn at(&self,k: usize,s: f64) -> P {
         let c = &self.curves[k];
         let mut left = s;
         for w in c.windows(2) {
