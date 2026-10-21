@@ -34,76 +34,72 @@ pub(super) fn blocks(sk: &Sketch) -> BTreeMap<u32, Vec<u32>> {
     out
 }
 
-/// Solve one block's witnesses and judge it, writing the witnesses back where the block holds.
-/// `tol` is the diagnosis's residual tolerance, `numeric` whether ranks are read at all (past
-/// the numeric limit a block that holds is reported a theorem, as a lone claim is).
+/// Solve block `w`'s witnesses and judge it, writing them back where the block holds.  `tol` is
+/// the diagnosis's residual tolerance, `extent` the drawing's before any
+/// witness moved (so a witness run off to infinity cannot loosen its own test), and `rank` the
+/// drawing's own — `None` where ranks are not read (past the numeric limit a block that holds is
+/// reported a theorem, as a lone claim is).
 ///
-/// The witness solve is a compile of its own — the witnesses' unknowns are no column of `sys`
-/// — over a copy holding everything else, so it pays `locus::forget` once per block: paid only
-/// by a document that writes a block, and nothing beside it is a contact's march to forget.
+/// The witness solve is a compile of its own, since the witnesses' unknowns are no column of
+/// `sys`: a copy holding everything else, with only the block's rows.  A compile calls
+/// `locus::forget`, so a document that traces as well pays its contacts' marches again once
+/// per block — paid only by a document that writes one.
 pub(super) fn judge(
     sk: &mut Sketch,
     sys: &mut System,
-    rows: &[u32],
+    w: u32,
     tol: f64,
-    numeric: bool,
+    extent: f64,
+    rank: Option<usize>,
 ) -> Verdict {
-    // the witnesses' numbers the block reads: each a number the drawing holds
+    // the block's witnesses' numbers that its rows read: each a number the drawing holds
     let owned: BTreeSet<u32> = sk.roles.iter()
-        .filter(|(_, r)| r.witness)
+        .filter(|(_, r)| r.witness == Some(w))
         .flat_map(|(&e, _)| sk.own_params(e))
         .collect();
-    let block: Vec<&Constraint> = rows.iter().filter_map(|&id| sk.constraint(id)).collect();
-    let mut unknowns: Vec<u32> = block.iter()
+    let mut unknowns: Vec<u32> = sk.constraints.iter()
+        .filter(|c| c.witness == Some(w))
         .flat_map(|c| c.params(sk))
         .filter(|p| owned.contains(p))
         .collect();
     unknowns.sort_unstable();
     unknowns.dedup();
-    // "does it hold?" in the units the drawing measures every row in, the witnesses where they
-    // were before their solve: a witness run off to infinity cannot loosen its own test
-    let extent = sk.extent().max(1.0);
-    let holds = |sk: &Sketch, c: &Constraint| {
-        let e = c.error(sk);
-        !e.is_nan() && e <= tol * extent.dpowi(c.kernel_in(sk).degree as i32)
-    };
-    if !unknowns.is_empty() {
+    if unknowns.is_empty() {
+        let mine = sk.constraints.iter().filter(|c| c.witness == Some(w));
+        if !mine.clone().all(|c| claim_holds(sk, c, tol, extent)) {
+            return Verdict::Violated;
+        }
+    } else {
+        // the copy is made without the drawing's rows, which it would only throw away: the
+        // block's rows stated, and the witnesses' own intrinsic rows with them
+        let all = std::mem::take(&mut sk.constraints);
         let mut scratch = sk.clone();
+        sk.constraints = all;
+        let reads = |c: &Constraint| c.params(sk).iter().any(|p| unknowns.binary_search(p).is_ok());
+        scratch.constraints = sk.constraints.iter()
+            .filter(|c| c.witness == Some(w) || (c.intrinsic && reads(c)))
+            .map(|c| Constraint { claim: false, witness: None, ..c.clone() })
+            .collect();
         for (i, p) in scratch.params.iter_mut().enumerate() {
             p.fixed = unknowns.binary_search(&(i as u32)).is_err();
         }
-        // the block's rows stated, and the witnesses' own intrinsic rows with them; nothing
-        // else reads an unknown, so nothing else is kept
-        scratch.constraints.retain(|c| {
-            rows.contains(&c.id)
-                || (c.intrinsic && c.params(sk).iter().any(|p| unknowns.binary_search(p).is_ok()))
-        });
-        for c in scratch.constraints.iter_mut() {
-            c.claim = false;
-            c.witness = None;
-        }
-        let mut wsys = System::new(&scratch);
-        wsys.solve(&mut scratch, SolveOpts::default());
-        let all_hold = scratch.constraints.iter().all(|c| holds(&scratch, c));
-        if !all_hold {
+        System::new(&scratch).solve(&mut scratch, SolveOpts::default());
+        if !scratch.constraints.iter().all(|c| claim_holds(&scratch, c, tol, extent)) {
             return Verdict::Violated;
         }
         for &p in &unknowns {
             sk.params[p as usize].value = scratch.params[p as usize].value;
         }
-    } else if !block.iter().all(|c| holds(sk, c)) {
-        return Verdict::Violated;
     }
-    if !numeric {
-        return Verdict::Theorem;
-    }
+    let Some(rank_m) = rank else { return Verdict::Theorem };
     let z = sys.z0(sk);
-    let block: Vec<&Constraint> = rows.iter().filter_map(|&id| sk.constraint(id)).collect();
-    let (jc, row_c) = sys.conditioned_over(sk, &z, &block, &unknowns);
-    let base: Vec<usize> = (0..jc.rows()).filter(|&r| !rows.contains(&row_c[r])).collect();
-    let mine: Vec<usize> = (0..jc.rows()).filter(|&r| rows.contains(&row_c[r])).collect();
-    let rank_m = jc.select_rows(&base).rank_rrqr(RANK_TOL);
-    let rank_w = jc.select_tail(&mine, sys.n_free).rank_rrqr(RANK_TOL);
+    let block: Vec<&Constraint> = sk.constraints.iter().filter(|c| c.witness == Some(w)).collect();
+    let (jc, _) = sys.conditioned_over(sk, &z, &block, &unknowns);
+    // the block's rows stand after the drawing's, its witnesses' columns after the free ones
+    let n = jc.rows() - block.iter().map(|c| c.rows_in(sk)).sum::<usize>();
+    let mine: Vec<usize> = (n..jc.rows()).collect();
+    let cols: Vec<usize> = (sys.n_free..jc.cols()).collect();
+    let rank_w = jc.select(&mine, &cols).rank_rrqr(RANK_TOL);
     if jc.rank_rrqr(RANK_TOL) > rank_m + rank_w {
         Verdict::Consuming
     } else {

@@ -563,7 +563,7 @@ pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
     ]);
     // the claim block it was written in (#460), only where there is one
     if let Some(w) = c.witness {
-        v.set("witness", Json::Int(i64::from(w)));
+        v.set("witness", w.into());
     }
     if !exprs.is_empty() {
         v.set("exprs", Json::Obj(exprs));

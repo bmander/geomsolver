@@ -49,7 +49,7 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     }
     for c in p.components.iter().filter(|c| own(c)) {
         for st in &c.body {
-            printable(&st.kind, true)?;
+            printable(&st.kind)?;
             if matches!(st.kind, StmtKind::Instance(_)) {
                 return Err(PrintError { construct: "component instances" });
             }
@@ -114,105 +114,54 @@ fn write_flat(out: &mut String, st: &mut super::Stmt) {
             out.push_str(" in ");
             write_ref(out, d.membership.plane().expect("just asked"));
         }
-        // in its block a claim's relation is the block's, and says no `claim` of its own
-        StmtKind::Relation(r) if r.witness.is_some() => {
-            write_relation(out, &Relation { claim: false, ..r.clone() })
-        }
         k => write_stmt(out, k),
     }
     st.span = Span::new(start, out.len());
 }
 
+/// The `claim { … }` block a statement stands in (#460): a witness by its role, a relation by
+/// its own mark — the same index either way, once the sketch is lifted.
+fn in_claim(k: &StmtKind) -> Option<u32> {
+    match k {
+        StmtKind::Decl(d) => d.annotations.roles.witness,
+        StmtKind::Relation(r) => r.witness.map(|w| w.0),
+        _ => None,
+    }
+}
+
 /// Put a body's `claim { … }` blocks last (#460), each its witnesses then its relations, and
-/// say how many statements each holds.  A witness belongs to the first block whose relations
-/// name it; one no relation names is the first block's.
-fn claim_blocks(body: &mut Vec<super::Stmt>) -> Vec<usize> {
-    let names = |r: &Relation| -> Vec<String> {
-        let refs: Vec<&Ref> = match &r.form {
-            super::RelationForm::Written(w) => w.ops.iter().chain(w.args.iter().filter_map(|a| {
-                match a {
-                    OpArg::Named(_, Arg::Ref(x)) => Some(x),
-                    _ => None,
-                }
-            })).collect(),
-            super::RelationForm::Canonical { args, .. } => args.iter().filter_map(|a| match a {
-                Some(Arg::Ref(x)) => Some(x),
-                _ => None,
-            }).collect(),
-        };
-        refs.into_iter().map(|x| x.root.text.clone()).collect()
-    };
-    let mut ids: Vec<super::StmtId> = Vec::new();
-    for st in body.iter() {
-        if let StmtKind::Relation(Relation { witness: Some(id), .. }) = &st.kind {
-            if !ids.contains(id) {
-                ids.push(*id);
-            }
+/// say how many statements each holds.  The sort is stable, so everything else keeps its order.
+fn claim_blocks(body: &mut [super::Stmt]) -> Vec<usize> {
+    body.sort_by_key(|st| in_claim(&st.kind).map(|w| (w, !matches!(st.kind, StmtKind::Decl(_)))));
+    let mut counts: Vec<(u32, usize)> = Vec::new();
+    for w in body.iter().filter_map(|st| in_claim(&st.kind)) {
+        match counts.last_mut() {
+            Some((at, n)) if *at == w => *n += 1,
+            _ => counts.push((w, 1)),
         }
     }
-    let witness =
-        |st: &super::Stmt| matches!(&st.kind, StmtKind::Decl(d) if d.annotations.roles.witness);
-    if ids.is_empty() && !body.iter().any(witness) {
-        return Vec::new();
-    }
-    let block_of = |st: &super::Stmt, body: &[super::Stmt]| -> Option<usize> {
-        match &st.kind {
-            StmtKind::Relation(Relation { witness: Some(id), .. }) => {
-                ids.iter().position(|k| k == id)
-            }
-            StmtKind::Decl(d) if d.annotations.roles.witness => {
-                let name = &d.name.key().text;
-                Some(body.iter().find_map(|o| match &o.kind {
-                    StmtKind::Relation(r) if r.witness.is_some() && names(r).contains(name) => {
-                        ids.iter().position(|k| Some(k) == r.witness.as_ref())
-                    }
-                    _ => None,
-                }).unwrap_or(0))
-            }
-            _ => None,
-        }
-    };
-    let placed: Vec<Option<usize>> = body.iter().map(|st| block_of(st, body)).collect();
-    let mut groups: Vec<Vec<super::Stmt>> = vec![Vec::new(); ids.len().max(1) + 1];
-    for (st, at) in std::mem::take(body).into_iter().zip(placed) {
-        groups[at.map_or(0, |k| k + 1)].push(st);
-    }
-    let mut counts = Vec::new();
-    for (k, mut g) in groups.into_iter().enumerate() {
-        if k > 0 {
-            // witnesses first, then what is claimed of them
-            g.sort_by_key(|st| !matches!(st.kind, StmtKind::Decl(_)));
-            counts.push(g.len());
-        }
-        body.extend(g);
-    }
-    counts.retain(|&n| n > 0);
-    counts
+    counts.into_iter().map(|(_, n)| n).collect()
 }
 
 /// Append a supported declaration or statement fragment atomically.
 pub fn write_stmt_to(out: &mut String, k: &StmtKind) -> Result<(), PrintError> {
-    printable(k, false)?;
+    printable(k)?;
+    // a claim's witness and what it claims of one stand in the claim's block (#460): printed
+    // alone it would be written loose, where it restricts the drawing
+    if in_claim(k).is_some() {
+        return Err(PrintError { construct: "claim blocks" });
+    }
     write_stmt(out, k);
     Ok(())
 }
 
-/// Whether a statement prints.  A claim's witness and what it claims of one stand in the
-/// claim's block (#460): printed with the rest of the body (`blocks`) the block is written
-/// back around them, and printed alone it would be written loose, restricting the drawing.
-fn printable(k: &StmtKind, blocks: bool) -> Result<(), PrintError> {
+fn printable(k: &StmtKind) -> Result<(), PrintError> {
     match k {
         StmtKind::Chain(_) => Err(PrintError { construct: "named chains" }),
         // a face carried by a map is a definition, written as one (#357)
         StmtKind::Block(b) if b.image.is_some() => Ok(()),
         StmtKind::Block(_) => Err(PrintError { construct: "repeat and cycle blocks" }),
         StmtKind::ClaimOver(_) => Err(PrintError { construct: "claim-over bodies" }),
-        StmtKind::Relation(r) if r.witness.is_some() && !blocks => {
-            Err(PrintError { construct: "claim blocks" })
-        }
-        StmtKind::Decl(d) if d.annotations.roles.witness && !blocks => {
-            Err(PrintError { construct: "claim blocks" })
-        }
         StmtKind::Set(_) => Err(PrintError { construct: "set literals" }),
         _ => Ok(()),
     }
@@ -908,7 +857,8 @@ fn write_relation(out: &mut String, r: &Relation) {
         out.push_str(" }");
         return;
     }
-    if r.claim {
+    // in its block (#460) a claim's relation is the block's, and says no `claim` of its own
+    if r.claim && r.witness.is_none() {
         out.push_str("claim ");
     }
     if let Some(n) = &r.name {

@@ -42,6 +42,29 @@ pub(super) struct Elab<'p> {
     pub(super) witnesses: BTreeMap<(StmtId, Vec<crate::ir::PathStep>), u32>,
 }
 
+impl Elab<'_> {
+    /// The index of the `claim { … }` block `k` written at `path` (#460), minted the first time
+    /// it is asked.  A witness a defined word's body made stands under the use's path as well,
+    /// where the word's relations were stamped as the use's: a block holds no instance, so the
+    /// trailing instances of such a path are applications, and the block is found past them.
+    pub(super) fn witness_block(&mut self, k: StmtId, path: &[crate::ir::PathStep]) -> u32 {
+        let mut at = path.len();
+        while at > 0
+            && !self.witnesses.contains_key(&(k, path[..at].to_vec()))
+            && matches!(path[at - 1], crate::ir::PathStep::Instance(_))
+        {
+            at -= 1;
+        }
+        let key = if self.witnesses.contains_key(&(k, path[..at].to_vec())) {
+            (k, path[..at].to_vec())
+        } else {
+            (k, path.to_vec())
+        };
+        let n = self.witnesses.len() as u32;
+        *self.witnesses.entry(key).or_insert(n)
+    }
+}
+
 /// The flattener's statements, as the phases read them: every one (`body`), those that state
 /// something (`stating`: every statement but a `ring`'s turned copy's, whose relations, holds and
 /// claims are its representative's turned, §12.4 — its declarations are built), and the
@@ -848,10 +871,14 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
         };
         (roles != Default::default()).then_some(((st.id, st.path.clone()), roles))
     }).collect();
-    for (&entity, site) in &cx.map.of_entity {
-        if let Some(&roles) = roles.get(&(site.stmt, site.path.0.clone())) {
-            cx.sk.roles.insert(entity, roles);
-        }
+    let sites: Vec<_> = cx.map.of_entity.iter()
+        .filter_map(|(&e, site)| Some((e, *roles.get(&(site.stmt, site.path.0.clone()))?, site)))
+        .map(|(e, r, site)| (e, r, site.path.0.clone()))
+        .collect();
+    for (entity, mut roles, path) in sites {
+        // a witness's block, from the parser's statement id to its index per copy (#460)
+        roles.witness = roles.witness.map(|k| cx.witness_block(StmtId(k), &path));
+        cx.sk.roles.insert(entity, roles);
     }
     // a claim's witnesses (#460), held while the drawing solves: no row of it reads one
     super::witnessed::hold(&mut cx.sk, &cx.map, &mut cx.diags);

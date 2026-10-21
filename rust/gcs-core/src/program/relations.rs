@@ -287,10 +287,7 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     }
     let initially = r.initially;
     // the claim block it was written in, one claim per block and copy (#460)
-    let witness = r.witness.map(|k| {
-        let n = cx.witnesses.len() as u32;
-        *cx.witnesses.entry((k, st.path.clone())).or_insert(n)
-    });
+    let witness = r.witness.map(|k| cx.witness_block(k, &st.path));
     // what the relation is, by what its operands resolve to (`shape`)
     let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
     if face_or_ends(cx, r, st, &shape) {

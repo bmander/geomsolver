@@ -176,7 +176,7 @@ impl<'a> Walk<'a> {
         let stamp = Worded { ops, ..worded };
         let Application { mut scope, from, set, .. } = app;
         // what a word's body makes in a claim's block is the claim's witness (#460)
-        scope.stamps.roles.witness |= u.rel.witness.is_some();
+        scope.stamps.roles.witness = scope.stamps.roles.witness.or(u.rel.witness.map(|w| w.0));
         dims_at(&mut body, dims, u.at);
         let mut path = u.path.to_vec();
         path.push(PathStep::Instance(u.st.id));

@@ -506,6 +506,13 @@ impl Default for DiagnoseOptions {
 }
 
 /// Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
+/// Whether a claim's row holds (§9.7): the rule `violated_constraints` states against a compiled
+/// system, in the units the row carries — the residual over `extent^degree`, never a NaN.
+fn claim_holds(sk: &Sketch, c: &Constraint, tol: f64, extent: f64) -> bool {
+    let e = c.error(sk);
+    !e.is_nan() && e <= tol * extent.max(1.0).dpowi(c.kernel_in(sk).degree as i32)
+}
+
 pub fn diagnose(sk: &mut Sketch, opts: DiagnoseOptions) -> Diagnosis {
     let mut sys = System::new(sk);
     diagnose_with(sk, &mut sys, opts)
@@ -745,13 +752,10 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     if !claims.is_empty() {
         // "does it hold?" is the same rule `violated_constraints` states against a compiled
         // system, in the units the row carries: the residual over `extent^degree`
+        let extent = sk.extent();
         let held: BTreeSet<u32> = claims
             .iter()
-            .filter(|c| {
-                let e = c.error(sk);
-                let deg = c.kernel_in(sk).degree as i32;
-                !e.is_nan() && e <= opts.tol * sk.extent().max(1.0).dpowi(deg)
-            })
+            .filter(|c| claim_holds(sk, c, opts.tol, extent))
             .map(|c| c.id)
             .collect();
         // The rank question is the numeric cross-check's kind of question, and is gated the same
@@ -800,13 +804,26 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // a `claim { … }` block (#460): its witnesses solved after the drawing, the drawing held,
     // and the block judged as one claim — every statement of it filed under the one verdict
-    for rows in witnessed::blocks(sk).into_values() {
-        let into = match witnessed::judge(sk, sys, &rows, opts.tol, want_numeric) {
-            witnessed::Verdict::Theorem => &mut claims_theorem,
-            witnessed::Verdict::Violated => &mut claims_violated,
-            witnessed::Verdict::Consuming => &mut claims_consuming,
-        };
-        into.extend(rows);
+    let blocks = witnessed::blocks(sk);
+    if !blocks.is_empty() {
+        // read once for every block: the drawing's extent before any witness moves, and its own
+        // rank, which no block's solve changes (a witness is no column of `sys`)
+        let extent = sk.extent();
+        let rank = want_numeric.then(|| match sys.n_free {
+            0 => 0,
+            _ => {
+                let z = sys.z0(sk);
+                sys.conditioned(&z).rank_rrqr(RANK_TOL)
+            }
+        });
+        for (w, rows) in blocks {
+            let into = match witnessed::judge(sk, sys, w, opts.tol, extent, rank) {
+                witnessed::Verdict::Theorem => &mut claims_theorem,
+                witnessed::Verdict::Violated => &mut claims_violated,
+                witnessed::Verdict::Consuming => &mut claims_consuming,
+            };
+            into.extend(rows);
+        }
     }
 
     // -- conflicts --

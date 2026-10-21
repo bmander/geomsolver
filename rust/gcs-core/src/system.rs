@@ -86,15 +86,9 @@ impl Conditioned {
         Conditioned { m: self.m.select_rows(rows) }
     }
 
-    /// The given rows, over the columns from `from` on.
-    pub fn select_tail(&self, rows: &[usize], from: usize) -> Conditioned {
-        let cols = self.m.cols.saturating_sub(from);
-        let mut m = Mat::zeros(rows.len(), cols);
-        for (i, &r) in rows.iter().enumerate() {
-            let row = &self.m.data[r * self.m.cols + from..(r + 1) * self.m.cols];
-            m.data[i * cols..(i + 1) * cols].copy_from_slice(row);
-        }
-        Conditioned { m }
+    /// The given rows, over the given columns, each in the given order.
+    pub fn select(&self, rows: &[usize], cols: &[usize]) -> Conditioned {
+        Conditioned { m: self.m.select_rows(rows).select_cols(cols) }
     }
 
     /// Rank and right null space (the motions) from one SVD.
@@ -1118,7 +1112,8 @@ impl System {
     /// `conditioned_with`, with a column appended for each parameter of `cols` — numbers this
     /// system holds, which `extra` reads as unknowns of its own: a claim's witnesses (#460),
     /// held by the drawing and solved for by the claim's rows alone.  Column `n_free + k` is
-    /// `cols[k]`, in the units a coordinate's column is; this system's rows read none of them.
+    /// `cols[k]` (sorted), in the units a coordinate's column is; this system's rows read none
+    /// of them.
     pub(crate) fn conditioned_over(
         &mut self,
         sk: &Sketch,
@@ -1150,7 +1145,7 @@ impl System {
                 for (k, &p) in ps.iter().enumerate() {
                     cs.clear();
                     fold(&self.col_of, &self.dcols, p as i32, &mut cs);
-                    if let Some(w) = cols.iter().position(|&q| q == p) {
+                    if let Ok(w) = cols.binary_search(&p) {
                         cs.push(((self.n_free + w) as i64, 1.0));
                     }
                     for &(col, w) in &cs {

@@ -57,6 +57,20 @@ in std.front {
 }
 ";
 
+/// The claim, made only where the pulleys differ.
+const CONDITIONAL: &str = "\
+in std.front {
+  when rb != 20mm {
+    claim {
+      x := point
+      x coincident upper.span
+      x coincident lower.span
+      x coincident centres
+    }
+  }
+}
+";
+
 /// The same three relations, stated: the construction the issue warns of.
 const LOOSE: &str = "\
 in std.front {
@@ -67,20 +81,9 @@ in std.front {
 }
 ";
 
-fn elaborated(src: &str) -> Elaborated {
-    let (prog, errs) = crate::common::parse(src);
-    assert!(errs.is_empty(), "does not parse: {errs:?}");
-    gcs_core::program::elaborate(&prog)
-}
-
 /// Elaborated, solved (settled) and diagnosed.
 fn judged(src: &str) -> (Elaborated, Sketch, Diagnosis) {
-    let e = elaborated(src);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}",
-        e.errors().map(|d| (d.code.as_str(), d.message.clone())).collect::<Vec<_>>()
-    );
+    let e = crate::common::read(src);
     let mut sk = e.sketch.clone();
     let r = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
     assert!(r.success && r.settled(), "does not solve: {}", r.message);
@@ -89,8 +92,7 @@ fn judged(src: &str) -> (Elaborated, Sketch, Diagnosis) {
 }
 
 fn xy(e: &Elaborated, sk: &Sketch, name: &str) -> (f64, f64) {
-    let p = e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`"));
-    sk.point_xy(p.i())
+    sk.point_xy(crate::common::ent(e, name).i())
 }
 
 /// The block's statements, by id.
@@ -188,15 +190,9 @@ in std.front {
 #[test]
 fn a_witness_is_its_claims_alone() {
     // a statement outside the block naming the witness would make it part of the drawing again
-    let e = elaborated(&format!(
-        "{}in std.front {{\n  x coincident a\n}}\n",
-        format!("{}{WITNESSED}", belt("45mm"))
-    ));
-    let errs: Vec<(&str, String)> =
-        e.errors().map(|d| (d.code.as_str(), d.message.clone())).collect();
-    assert_eq!(errs.len(), 1, "{errs:?}");
-    assert_eq!(errs[0].0, "E040");
-    assert!(errs[0].1.contains("`x` is a claim's witness"), "{errs:?}");
+    let outside = "in std.front {\n  x coincident a\n}\n";
+    crate::common::refused(&format!("{}{WITNESSED}{outside}", belt("45mm")), "E040",
+                           "`x` is a claim's witness", "x coincident a");
     // and a block holds declarations and relations, nothing that adds to the drawing
     let (_, errs) = crate::common::parse("use std\nclaim {\n  repeat 2 { p := point }\n}\n");
     assert!(errs.iter().any(|e| e.message.contains("declares its witnesses")), "{errs:?}");
@@ -206,11 +202,7 @@ fn a_witness_is_its_claims_alone() {
 fn a_precondition_is_a_when_over_the_numbers() {
     // "unequal radii: the runs meet on the line of centres", read over the drawing's numbers:
     // at equal radii the claim is not made at all
-    let conditional = |rb: &str| {
-        let claim = WITNESSED.replace("  claim {", "  when rb != 20mm {\n  claim {")
-            .replace("\n  }\n}", "\n  }\n  }\n}");
-        format!("{}rb := {rb}\n{claim}", belt("rb"))
-    };
+    let conditional = |rb: &str| format!("{}rb := {rb}\n{CONDITIONAL}", belt("rb"));
     let (_, sk, d) = judged(&conditional("20mm"));
     assert!(block(&sk).is_empty(), "no claim is made");
     assert!(d.claims_theorem.is_empty() && d.claims_violated.is_empty());
@@ -224,9 +216,9 @@ fn a_witness_travels_like_any_flag() {
     let (_, sk, _) = judged(&format!("{}{WITNESSED}", belt("45mm")));
     let back = gcs_core::io::loads(&gcs_core::io::dumps(&sk, None)).unwrap();
     assert_eq!(block(&back), block(&sk), "the rows keep their block");
-    assert_eq!(back.roles.values().filter(|r| r.witness).count(), 1, "the point stays a witness");
-    let kept = gcs_core::graft::without(&sk, &[], &[]);
-    assert_eq!(kept.constraints.iter().filter(|c| c.witness.is_some()).count(), 3);
+    let witnesses = |sk: &Sketch| sk.roles.values().filter_map(|r| r.witness).collect::<Vec<_>>();
+    assert_eq!(witnesses(&back), witnesses(&sk), "the point stays its block's witness");
+    assert_eq!(block(&gcs_core::graft::without(&sk, &[], &[])), block(&sk));
     // and the lifted program writes the block back around its statements, never loose, where
     // they would restrict the drawing: read again, it is the same claim, judged the same
     let text = gcs_core::program::to_program(&sk).text().to_string();
@@ -234,4 +226,42 @@ fn a_witness_travels_like_any_flag() {
     let (_, again, d) = judged(&text);
     assert_eq!(block(&again).len(), 3, "{text}");
     assert_eq!(d.claims_theorem, block(&again), "{text}");
+}
+
+#[test]
+fn each_block_keeps_its_witnesses_through_a_round_trip() {
+    // the second block's points are named only through its line: they are still its own, and
+    // the lifted program writes them back into it, not the first
+    let src = "\
+use std
+in std.front {
+  a := point
+  b := point hint((10, 0))
+  fix((0, 0)) a
+  fix((10, 0)) b
+  rail := line(a, b)
+  claim {
+    w := point hint((3, 1))
+    w coincident rail
+  }
+  claim {
+    p := point hint((2, 1))
+    q := point hint((6, 2))
+    l := line(p, q)
+    a coincident l
+    l parallel rail
+  }
+}
+";
+    let (_, sk, d) = judged(src);
+    assert_eq!(d.claims_theorem, block(&sk));
+    let text = gcs_core::program::to_program(&sk).text().to_string();
+    let (_, again, d) = judged(&text);
+    assert_eq!(d.claims_theorem, block(&again), "{text}");
+    let blocks = |sk: &Sketch| {
+        let mut w: Vec<u32> = sk.roles.values().filter_map(|r| r.witness).collect();
+        w.sort_unstable();
+        w
+    };
+    assert_eq!(blocks(&again), blocks(&sk), "{text}");
 }

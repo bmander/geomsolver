@@ -4,10 +4,12 @@
 pub struct GeometryRoles {
     pub construction: bool,
     pub centerline: bool,
-    /// Declared in a `claim { … }` block (§9.7, #460): geometry made only to state a claim,
-    /// held while the drawing solves and solved after it, for its claim alone.  Stamped by the
-    /// parser, never written as a modifier, so `Annotations::write` leaves it out.
-    pub witness: bool,
+    /// Declared in a `claim { … }` block (§9.7, #460), by the block: geometry made only to state
+    /// a claim, held while the drawing solves and solved after it, for its claim alone.  The
+    /// parser stamps the block's statement id, the elaborator the block's index per copy
+    /// (`Constraint::witness`'s).  Never written as a modifier, so `Annotations::write` leaves
+    /// it out.
+    pub witness: Option<u32>,
 }
 
 impl GeometryRoles {
@@ -15,7 +17,7 @@ impl GeometryRoles {
         Self {
             construction: self.construction || other.construction,
             centerline: self.centerline || other.centerline,
-            witness: self.witness || other.witness,
+            witness: self.witness.or(other.witness),
         }
     }
 
@@ -24,7 +26,7 @@ impl GeometryRoles {
         [
             (self.construction, "construction"),
             (self.centerline, "centerline"),
-            (self.witness, "witness"),
+            (self.witness.is_some(), "witness"),
         ]
         .into_iter()
         .filter_map(|(yes, name)| yes.then_some(name))

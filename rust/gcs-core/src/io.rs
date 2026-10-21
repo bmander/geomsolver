@@ -283,7 +283,7 @@ pub fn to_json(sk: &Sketch) -> Json {
             }
             // the claim block it was written in (#460), likewise only when set
             if let Some(w) = c.witness {
-                o.set("witness", Json::Int(i64::from(w)));
+                o.set("witness", w.into());
             }
             // a row of the home alone (#339 D3)
             if c.initially {
@@ -332,8 +332,8 @@ pub fn to_json(sk: &Sketch) -> Json {
             ]);
             // a claim's witness (#460) only where there is one, so a document with none dumps
             // exactly as it always has
-            if roles.witness {
-                o.set("witness", Json::Bool(true));
+            if let Some(w) = roles.witness {
+                o.set("witness", w.into());
             }
             o
         }).collect::<Vec<_>>();
@@ -709,7 +709,7 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         let roles = crate::semantics::GeometryRoles {
             construction: item.get("construction").is_some_and(Json::as_bool),
             centerline: item.get("centerline").is_some_and(Json::as_bool),
-            witness: item.get("witness").is_some_and(Json::as_bool),
+            witness: item.get("witness").and_then(|w| u32::try_from(w.as_i64()).ok()),
         };
         if roles != Default::default() { sk.roles.insert(e, roles); }
     }

@@ -42,8 +42,8 @@ fn stamp_initially(stmts: &mut [Stmt], errs: &mut Vec<SynErr>) {
 fn stamp_witness(stmts: &mut [Stmt], id: crate::syntax::StmtId, errs: &mut Vec<SynErr>) {
     for st in stmts {
         match &mut st.kind {
-            StmtKind::Decl(d) => d.annotations.roles.witness = true,
-            StmtKind::Chain(c) => c.annotations.roles.witness = true,
+            StmtKind::Decl(d) => d.annotations.roles.witness = Some(id.0),
+            StmtKind::Chain(c) => c.annotations.roles.witness = Some(id.0),
             StmtKind::Relation(r) => {
                 r.claim = true;
                 r.witness = Some(id);
@@ -1105,15 +1105,11 @@ impl<'a> P<'a> {
         }
         // `claim { … }` (§9.7, #460): a claim with witnesses of its own, hoisted as an `in` body
         // is — the witnesses are named beside the block, and held by it
-        if self.peek_word("claim")
-            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('{')))
-        {
+        if self.peek_braced("claim") {
             return self.witnessed(next_id, out);
         }
         // `initially { … }` (#339 D3): rows of a family's home alone, hoisted as an `in` body is
-        if self.peek_word("initially")
-            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('{')))
-        {
+        if self.peek_braced("initially") {
             if !self.take_statement(self.here()) {
                 return None;
             }
@@ -1212,6 +1208,11 @@ impl<'a> P<'a> {
         }
         out.extend(body);
         Some(())
+    }
+
+    /// Whether `word {` stands next: a block hoisted into the body around it.
+    fn peek_braced(&self, word: &str) -> bool {
+        self.peek_word(word) && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('{')))
     }
 
     /// Hoist a `claim { … }` body (§9.7, #460), every statement in it the claim's: its
