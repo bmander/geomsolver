@@ -15,6 +15,11 @@ seam curves), `recipe`. A traced pair is seeded where edges cross faces; between
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
+A piece of a face is kept or dropped by a point inside it (`boolean::inside`): the middle of a
+level line's span across the polygon of its halves' samples, held clear of each chord by twice
+how far the chord strays from its curve and the halves sampled finer until one is, so a narrow
+strip beside a wide circle is never read at the hole beside it (a turned rim's chamfer from 32
+out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's

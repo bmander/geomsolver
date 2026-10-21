@@ -1121,21 +1121,48 @@ fn winding(poly: &[Uv],p: Uv) -> i32 {
 }
 
 /// Points well inside a piece, in its face's parameters, the best first: the middles of the spans
-/// level lines across it have inside it, widest first.
+/// level lines across it have inside it, widest first. The spans are read across the polygon of
+/// samples along its halves, which cuts a curved half's chords short of it (a full circle in 24
+/// chords by 0.86% of its radius, wider than a narrow strip beside it), so a middle counts
+/// as inside only clear of each chord by twice how far the chord strays from its curve, the
+/// halves sampled finer until one is; past that, the middles as they come.
 fn inside(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool) -> Result<Vec<Uv>,String> {
-    let polys: Vec<Vec<Uv>> = piece.iter().map(|cycle| cycle.iter().flat_map(|h| {
-        let pts = samples(h,f,out,pool,24);
-        pts[..pts.len()-1].to_vec()
-    }).collect()).collect();
+    let mut n = 24;
+    loop {
+        // each cycle's samples, each with how far its chord to the next strays from the curve
+        let polys: Vec<Vec<(Uv,f64)>> = piece.iter().map(|cycle| cycle.iter().flat_map(|h| {
+            let pts = samples(h,f,out,pool,n);
+            (0..n).map(|j| {
+                let m = at(h,f,out,pool,(j as f64+0.5)/n as f64);
+                let (a,b) = (pts[j],pts[j+1]);
+                (a,(m[0]-0.5*(a[0]+b[0])).hypot(m[1]-0.5*(a[1]+b[1])))
+            }).collect::<Vec<_>>()
+        }).collect()).collect();
+        let found = spans(&polys);
+        if found.is_empty() { return Err(format!("a piece of a {} has no inside",f.surface.kind())) }
+        let clear = |p: Uv| polys.iter().all(|poly| (0..poly.len()).all(|i| {
+            let ((a,stray),(b,_)) = (poly[i],poly[(i+1)%poly.len()]);
+            let d = [b[0]-a[0],b[1]-a[1]];
+            let t = (((p[0]-a[0])*d[0]+(p[1]-a[1])*d[1])/(d[0]*d[0]+d[1]*d[1]).max(f64::MIN_POSITIVE)).clamp(0.,1.);
+            (p[0]-a[0]-t*d[0]).hypot(p[1]-a[1]-t*d[1]) > 2.*stray
+        }));
+        let (sure,unsure): (Vec<Uv>,Vec<Uv>) = found.into_iter().partition(|&p| clear(p));
+        if !sure.is_empty() || n >= 24 << 5 { return Ok(sure.into_iter().chain(unsure).collect()) }
+        n *= 2;
+    }
+}
+
+/// The middles of the spans level lines across the polygons have inside them, widest first.
+fn spans(polys: &[Vec<(Uv,f64)>]) -> Vec<Uv> {
     let (mut vlo,mut vhi) = (f64::INFINITY,f64::NEG_INFINITY);
-    for p in polys.iter().flatten() { vlo = vlo.min(p[1]); vhi = vhi.max(p[1]); }
+    for (p,_) in polys.iter().flatten() { vlo = vlo.min(p[1]); vhi = vhi.max(p[1]); }
     let mut found: Vec<(f64,Uv)> = Vec::new();
     for k in 1..16 {
         let v = vlo+(vhi-vlo)*(k as f64+0.37)/16.;
         let mut xs: Vec<f64> = Vec::new();
-        for p in &polys {
+        for p in polys {
             for i in 0..p.len() {
-                let (a,b) = (p[i],p[(i+1)%p.len()]);
+                let (a,b) = (p[i].0,p[(i+1)%p.len()].0);
                 if (a[1] <= v) != (b[1] <= v) { xs.push(a[0]+(v-a[1])/(b[1]-a[1])*(b[0]-a[0])); }
             }
         }
@@ -1144,9 +1171,8 @@ fn inside(piece: &[Vec<Half>],f: &Face,out: &[WEdge],pool: &Pool) -> Result<Vec<
             if w.len() == 2 && w[1] > w[0] { found.push((w[1]-w[0],[(w[0]+w[1])/2.,v])); }
         }
     }
-    if found.is_empty() { return Err(format!("a piece of a {} has no inside",f.surface.kind())) }
     found.sort_by(|a,b| b.0.total_cmp(&a.0));
-    Ok(found.into_iter().map(|f| f.1).collect())
+    found.into_iter().map(|f| f.1).collect()
 }
 
 /// `solid` split by `sheets` (one or more open faces reaching past it on every side) to `tol`: its
