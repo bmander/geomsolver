@@ -21,7 +21,7 @@ use crate::linalg::{rank_and_nullspace, Mat};
 use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
-use crate::system::System;
+use crate::system::{Sizes, System};
 use crate::system::RANK_TOL;
 use crate::witness::{analyze_with, movable_columns, screen, shaky_warning, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
@@ -524,10 +524,13 @@ impl Default for DiagnoseOptions {
 
 /// Structural (and optionally numeric) diagnosis of a sketch at its current configuration.
 /// Whether a claim's row holds (§9.7): the rule `violated_constraints` states against a compiled
-/// system, in the units the row carries — the residual over `extent^degree`, never a NaN.
-fn claim_holds(sk: &Sketch, c: &Constraint, tol: f64, extent: f64) -> bool {
+/// system, in the units the row carries — the residual over its own size to its kernel's power
+/// (`Sizes`, #492), no larger than `extent`, never a NaN.
+fn claim_holds(sk: &Sketch, c: &Constraint, tol: f64, extent: f64, sizes: &Sizes) -> bool {
     let e = c.error(sk);
-    !e.is_nan() && e <= tol * extent.max(1.0).dpowi(c.kernel_in(sk).degree as i32)
+    let x: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
+    let size = sizes.size(&x, c.params(sk).into_iter().map(|p| p as usize), extent);
+    !e.is_nan() && e <= tol * size.dpowi(c.kernel_in(sk).degree as i32)
 }
 
 pub fn diagnose(sk: &mut Sketch, opts: DiagnoseOptions) -> Diagnosis {
@@ -769,11 +772,11 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         sk.constraints.iter().filter(|c| c.claim && c.witness.is_none()).collect();
     if !claims.is_empty() && opts.settled {
         // "does it hold?" is the same rule `violated_constraints` states against a compiled
-        // system, in the units the row carries: the residual over `extent^degree`
-        let extent = sk.extent();
+        // system, in the units the row carries: the residual over its own size^degree
+        let (extent, sizes) = (sk.extent(), Sizes::of(sk));
         let held: BTreeSet<u32> = claims
             .iter()
-            .filter(|c| claim_holds(sk, c, opts.tol, extent))
+            .filter(|c| claim_holds(sk, c, opts.tol, extent, &sizes))
             .map(|c| c.id)
             .collect();
         // The rank question is the numeric cross-check's kind of question, and is gated the same

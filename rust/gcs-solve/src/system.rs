@@ -175,7 +175,10 @@ pub struct System {
     /// rows — a four-bar linkage with one angle stated turned its crank about a degree an
     /// iteration and ran out at a hundred, and the same figure at ten times the size did not
     /// move at all (issue #43).  The relative rule "solved" already used for the *test* is
-    /// now the rule the *iteration* sees, which is the only way the two can agree.
+    /// now the rule the *iteration* sees, which is the only way the two can agree.  The test has
+    /// since moved to each row's own size (`row_size`, #492), which no far-out point stretches;
+    /// the iteration keeps the extent, and is moved to the rows' own sizes only where the two
+    /// disagree about a failed solve (`scale_rows`).
     pub row_scale: Vec<f64>,
     /// False when every `row_scale` is 1 — a drawing within a unit of the origin — which then
     /// pays nothing for the division.
@@ -185,6 +188,19 @@ pub struct System {
     /// What `conditioned` divides a *raw* row by; over a row already over `row_scale`, that is
     /// a multiplication by `row_scale / jac_scale`, which is `max(1, extent)` for every row.
     jac_scale: Vec<f64>,
+    /// What each parameter is to the size of the geometry a row reads (`Sizes`, #492).
+    sizes: Sizes,
+    /// Each row's own size where the system was compiled (`take_sizes`).
+    pub(crate) compiled_size: Vec<f64>,
+    /// **Each row's own size** (#492, `Sizes`): the extent of the geometry its constraint reads,
+    /// the larger of where the system was compiled and where it was last judged (`size_rows`),
+    /// between a unit and `max(1, extent)`.  What a row is *judged* at — "solved", the violated
+    /// rows — where `row_scale` is what the iteration steps on.
+    pub row_size: Vec<f64>,
+    /// What a row's residual, over `row_scale`, is multiplied by to be over its own size's
+    /// units: `row_scale / row_size^degree` — `(max(1, extent) / row_size)^degree`, 1 or more,
+    /// where `row_scale` is the extent's.
+    judged: Vec<f64>,
     /// One flag per residual row: rows that must be satisfied.
     pub hard: Vec<bool>,
     pub blocks: Vec<Block>,
@@ -614,6 +630,152 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
     }
 }
 
+/// **A row is judged at its own size** (#492): the size of the geometry each row reads, read off
+/// what each parameter is to it — a coordinate of a point, a radius, or neither.
+///
+/// One extent for every row is stretched by one far-out point: a point seeded a kilometre out
+/// makes the drawing's extent 1e6 mm, and a contact on a 20 mm circle — a squared length,
+/// accepted at `1e-6 · extent²` — then reads as holding a millimetre off it, a belt of two equal
+/// circles held to meet reads as solved, and its claim as a theorem.  So a row is judged over
+/// its own size's units instead: the longest side of the box round the points it reads (the
+/// coordinates of them it reads) or its largest radius, at least a tenth of how far those points
+/// and any other number it reads stand off their origin (`OFF_ORIGIN`: what rounding leaves of a
+/// row is in proportion to that, not to its size) and a unit (the floor `max(1, extent)` has
+/// always had), and at most `max(1, extent)`, so a row is never judged more loosely than the
+/// extent judged it.  A row reading no point and no radius — an axis's, a plane's, an angle's
+/// alone — is judged at the extent as before.  The size is read where the system was compiled
+/// and where the row is judged, and the larger taken (`System::size_rows`).
+///
+/// **A point far out of the rest a row reads is left out of its size** (`FAR_OUT`): `x` on a
+/// run, `(x − s) × (e − s)`, is a kilometre times the run's 120 mm, and over a kilometre squared
+/// a run tilted 20 mm off `x` reads as 2e-9.  Its size is the run's.  A row reading two points
+/// and nothing else (a distance) has no rest to be far out of.
+///
+/// The iteration still steps on `row_scale` (but see `System::scale_rows`): this is the measure
+/// of the answer, not the path to it.  A trace block's inner rows are judged the same way
+/// (`locus::newton`: over the magnitude of what they read).
+pub struct Sizes {
+    /// Per parameter: the point it is a coordinate of and along which axis (`0..3`), `RADIUS`,
+    /// or `NO_SIZE`.
+    part: Vec<(u32, u8)>,
+}
+
+/// `Sizes::part` of a parameter no size is read off.
+const NO_SIZE: u8 = u8::MAX;
+
+/// `Sizes::part` of a radius; 0, 1 and 2 are a point's coordinates.
+const RADIUS: u8 = 3;
+
+/// How many times the size of the rest of what a row reads a point must stand outside it to be
+/// left out of the row's size (`Sizes`).
+pub const FAR_OUT: f64 = 100.0;
+
+/// How many times its size the points a row reads may stand off their frame's origin (`Sizes`):
+/// a number is known to its last bit, so a row of degree `d` over points `m` off the origin
+/// carries `ε·m^d` of rounding whatever its size, and judged at less than `m / OFF_ORIGIN` that
+/// is more than `ε · OFF_ORIGIN^d`, 2e-14 at degree 2 — under the 1e-12 the fixtures are solved
+/// to (`fixtures::read::accurate`), with room.
+pub const OFF_ORIGIN: f64 = 10.0;
+
+impl Sizes {
+    pub fn of(sk: &Sketch) -> Sizes {
+        let mut part = vec![(0, NO_SIZE); sk.params.len()];
+        for (i, p) in sk.points.iter().enumerate() {
+            part[p.x as usize] = (i as u32, 0);
+            part[p.y as usize] = (i as u32, 1);
+            if let Some(z) = p.z {
+                part[z as usize] = (i as u32, 2);
+            }
+        }
+        for r in sk.circles.iter().map(|c| c.radius).chain(sk.arcs.iter().map(|a| a.radius)) {
+            part[r as usize] = (0, RADIUS);
+        }
+        Sizes { part }
+    }
+
+    /// The size of what `params` read where the parameters stand at `x`, between a unit and
+    /// `max(1, extent)`: the longest side of the box round the points they read, a point far out
+    /// of the rest left out, or their largest radius, and a tenth of the largest number they read
+    /// (`OFF_ORIGIN`); `max(1, extent)` where they read no point and no radius.
+    pub fn size(&self, x: &[f64], params: impl Iterator<Item = usize>, extent: f64) -> f64 {
+        let whole = extent.max(1.0);
+        // each point read, by the coordinates of it read (NaN where one is not)
+        let mut points: Vec<(u32, [f64; 3])> = Vec::new();
+        let mut radius = 0.0f64;
+        // the largest number read that is no point's coordinate and no radius: an axis's place,
+        // a plane's, a contact's — rounding is in proportion to it as to a coordinate
+        let mut other = 0.0f64;
+        let mut read = false;
+        for p in params {
+            let (i, k) = self.part.get(p).copied().unwrap_or((0, NO_SIZE));
+            if k == NO_SIZE {
+                other = other.max(x.get(p).map_or(0.0, |v| v.abs()));
+                continue;
+            }
+            read = true;
+            let v = x[p];
+            if k == RADIUS {
+                radius = radius.max(v.abs());
+                continue;
+            }
+            let at = match points.iter().position(|q| q.0 == i) {
+                Some(at) => at,
+                None => {
+                    points.push((i, [f64::NAN; 3]));
+                    points.len() - 1
+                }
+            };
+            points[at].1[k as usize] = v;
+        }
+        if !read {
+            return whole;
+        }
+        // the size of the points read but `skip`, and their box
+        let side = |skip: Option<usize>| {
+            let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+            let mut far = 0.0f64;
+            for (j, (_, c)) in points.iter().enumerate() {
+                if Some(j) == skip {
+                    continue;
+                }
+                for a in 0..3 {
+                    if !c[a].is_nan() {
+                        (lo[a], hi[a]) = (lo[a].min(c[a]), hi[a].max(c[a]));
+                        far = far.max(c[a].abs());
+                    }
+                }
+            }
+            let side =
+                (0..3).filter(|&a| hi[a] >= lo[a]).map(|a| hi[a] - lo[a]).fold(0.0, f64::max);
+            (side.max(radius).max(far / OFF_ORIGIN), lo, hi)
+        };
+        let mut l = side(None).0;
+        // the point standing farthest outside the box of the rest, where the rest has a size
+        if points.len() >= 2 {
+            let outside = |j: usize| {
+                let (rest, lo, hi) = side(Some(j));
+                let c = points[j].1;
+                let out = (0..3).filter(|&a| !c[a].is_nan() && hi[a] >= lo[a])
+                    .map(|a| (lo[a] - c[a]).max(c[a] - hi[a]))
+                    .fold(0.0, f64::max);
+                (out, rest)
+            };
+            let far = (0..points.len()).map(outside)
+                .fold((0.0f64, 0.0f64), |m, o| if o.0 > m.0 { o } else { m });
+            if far.1 > 0.0 && far.0 > FAR_OUT * far.1.max(1.0) {
+                l = far.1;
+            }
+        }
+        let l = l.max(other / OFF_ORIGIN);
+        // NaN fails both comparisons: a size that cannot be read is the whole drawing's
+        if l <= whole {
+            l.max(1.0)
+        } else {
+            whole
+        }
+    }
+}
+
 impl System {
     pub fn new(sk: &Sketch) -> System {
         // A remembered pose is addressed by where its contact's constants live, and this is the
@@ -763,7 +925,7 @@ impl System {
         }
         let row_scaled = row_scale.iter().any(|&s| s != 1.0);
 
-        System {
+        let mut sys = System {
             n_params: n,
             free,
             n_free,
@@ -778,6 +940,10 @@ impl System {
             row_scale,
             row_scaled,
             jac_scale,
+            sizes: Sizes::of(sk),
+            compiled_size: vec![extent.max(1.0); n_res],
+            row_size: vec![extent.max(1.0); n_res],
+            judged: vec![1.0; n_res],
             hard,
             blocks,
             cids,
@@ -798,7 +964,58 @@ impl System {
             order: None,
             tearings: BTreeMap::new(),
             const_slots: None,
+        };
+        sys.take_sizes();
+        sys
+    }
+
+    /// Each row's own size read where the system stands (`x`), kept as where it was compiled
+    /// (`compiled_size`), and judged at (`size_rows`).
+    pub(crate) fn take_sizes(&mut self) {
+        self.compiled_size.fill(0.0);
+        self.size_rows();
+        self.compiled_size.copy_from_slice(&self.row_size);
+    }
+
+    /// Each row's own size read where the system stands (`x`) — or where it was compiled, where
+    /// that is larger — and what its residual is multiplied by to be judged over it (`row_size`,
+    /// `judged`, #492): called wherever a row is judged, after the residuals that put `x` there.
+    /// The larger of the two: a drawing seeded in a heap, or one that shrinks as it solves — two
+    /// points seeded 60 apart and held 0.43 apart — is never judged at a size its iteration,
+    /// stepping over the extent it was compiled at, could not see.
+    pub(crate) fn size_rows(&mut self) {
+        for b in &self.blocks {
+            let kn = self.kernels[b.kid];
+            for i in 0..b.count {
+                let ps = b.gidx[i * kn.n_par..(i + 1) * kn.n_par].iter().map(|&p| p as usize);
+                let r0 = b.row0 + i * kn.n_res;
+                let l = self.sizes.size(&self.x, ps, self.extent).max(self.compiled_size[r0]);
+                let f = self.row_scale[r0] / l.dpowi(kn.degree as i32);
+                for r in r0..r0 + kn.n_res {
+                    self.row_size[r] = l;
+                    self.judged[r] = f;
+                }
+            }
         }
+    }
+
+    /// Every row over its own size's units for the iteration as well (`own`, #492), or over the
+    /// drawing's extent as compiled: what a document solve the extent reads as converged and its
+    /// rows' own sizes do not is solved on in (`solve::System::at_own_sizes`).  A point far out
+    /// stretches the extent, and the trust region then stops on a residual that reads as nothing
+    /// at that size — a gradient of `1e-16 / extent`, a contact on a 20 mm circle a micrometre
+    /// off — without ever having seen the rows it left unsolved.  `jac_scale` is the extent's
+    /// either way, so a rank is judged as at any compile.
+    pub(crate) fn scale_rows(&mut self, own: bool) {
+        let whole = self.extent.max(1.0);
+        for b in &self.blocks {
+            let degree = self.kernels[b.kid].degree as i32;
+            for r in b.row0..b.row0 + b.count * self.kernels[b.kid].n_res {
+                self.row_scale[r] = if own { self.row_size[r] } else { whole }.dpowi(degree);
+                self.judged[r] = self.row_scale[r] / self.row_size[r].dpowi(degree);
+            }
+        }
+        self.row_scaled = self.row_scale.iter().any(|&s| s != 1.0);
     }
 
     /// The span of a spline each curve contact was compiled on — which control points its
@@ -1014,18 +1231,19 @@ impl System {
         m
     }
 
-    /// max |r| over hard rows at z.  A residual is handed out in its row's own units, so this
-    /// is `max_relative_residual` under its older name; both are kept because the ABI
-    /// publishes both.
+    /// max |r| over hard rows at z, each over its own size's units (`row_size`).  This is
+    /// `max_relative_residual` under its older name; both are kept because the ABI publishes
+    /// both.
     pub fn max_hard_residual(&mut self, z: &[f64]) -> f64 {
         let r = self.residuals(z);
+        self.size_rows();
         let mut mx = 0.0f64;
         for i in 0..self.n_res {
             if self.hard[i] {
                 if r[i].is_nan() {
                     return f64::NAN; // NaN is not "no error": it must not read as converged
                 }
-                let a = r[i].abs();
+                let a = self.judged(i, r[i]);
                 if a > mx {
                     mx = a;
                 }
@@ -1074,12 +1292,19 @@ impl System {
     }
 
     /// max |residual| / (that row's units) over the hard rows — dimensionless, so one threshold
-    /// judges every kernel.  This is what "solved" means.  The division happened where the
-    /// residual was produced (`row_scale`), so there is nothing left to do here but the max.
-    /// `locus::assemble` states the same rule in miniature for a trace block's inner rows; an
-    /// edit to what counts toward a row's units has a twin there.
+    /// judges every kernel.  This is what "solved" means.  A row's units are its kernel's power
+    /// of its *own* size (`row_size`, #492), not of the drawing's extent, which one far-out
+    /// point stretches: the residual handed out over `row_scale` is multiplied back by
+    /// `judged`.  `locus::newton` states the same rule in miniature for a trace block's inner
+    /// rows; an edit to what counts toward a row's units has a twin there.
     pub fn max_relative_residual(&mut self, z: &[f64]) -> f64 {
         self.max_hard_residual(z)
+    }
+
+    /// Row `row`'s residual `r`, as this system hands it out (over `row_scale`), over the units
+    /// of the row's own size instead (`row_size`): what "solved" judges.  NaN stays NaN.
+    pub fn judged(&self, row: usize, r: f64) -> f64 {
+        r.abs() * self.judged[row]
     }
 
     /// max |residual| per constraint, in block order (`self.cids`), each in its own units.
@@ -1091,13 +1316,15 @@ impl System {
 
     pub fn constraint_errors(&mut self, z: &[f64]) -> Vec<f64> {
         let r = self.residuals(z);
+        self.size_rows();
         let mut out = Vec::with_capacity(self.cids.len());
         for b in &self.blocks {
             let kn = self.kernels[b.kid];
             for i in 0..b.count {
                 let mut mx = 0.0f64;
                 for t in 0..kn.n_res {
-                    let v = r[b.row0 + i * kn.n_res + t];
+                    let row = b.row0 + i * kn.n_res + t;
+                    let v = self.judged(row, r[row]);
                     if v.is_nan() {
                         mx = f64::NAN;
                         break;

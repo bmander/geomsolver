@@ -284,6 +284,9 @@ impl System {
                 }
             }
         }
+        if opts.document() && !res.success {
+            res = self.at_own_sizes(sk, opts, res);
+        }
         if steers && res.success {
             res = self.steer(sk, opts, start, res);
         }
@@ -364,6 +367,44 @@ impl System {
             Back::Sketch(before) => *sk = *before,
         }
         self.resync(sk);
+        res
+    }
+
+    /// **A drawing is solved at its rows' own sizes** (#492): a failed document solve whose
+    /// every row holds over the drawing's extent, and not over its own size (`System::row_size`),
+    /// stopped where the extent, stretched by a point far out, read the rows it left as solved —
+    /// a DogLeg ending on its gradient after one step, `1e-16 / extent` with the extent at 1e6,
+    /// its contacts on a 20 mm circle a micrometre off, or on its residual at once, `1e-14` of
+    /// a squared extent.  It is solved on from where it stands with every row over its own size
+    /// for the iteration as well (`System::scale_rows`), and kept where that settles nearer to
+    /// holding than it was, no more than `RESIZE` times as wide as it began: a solve that runs a
+    /// point off to infinity reads as holding there at any measure — two parallel tangents meet
+    /// within 1e-14 of a 20 mm circle some 1e16 out.  Its rows are put back over the extent
+    /// either way, which a rank is judged at.  A solve the extent's measure calls failed too,
+    /// and every solve that succeeds, never sees it.
+    fn at_own_sizes(&mut self, sk: &mut Sketch, opts: SolveOpts, res: SolveResult) -> SolveResult {
+        let z = self.z0(sk);
+        let r = self.residuals(&z);
+        let rows = self.hard_rows();
+        if !rows.iter().all(|&i| r[i].abs() < opts.acceptance_tol) {
+            return res;
+        }
+        let (x, wide, compiled) = (sk.get_x(), RESIZE * sk.extent(), self.compiled_size.clone());
+        // its rows' sizes where it stopped, which is where it is solved on from
+        self.take_sizes();
+        let own = rows.iter().map(|&i| self.judged(i, r[i])).fold(0.0, f64::max);
+        self.scale_rows(true);
+        let solved = self.solve_unsteered(sk, opts);
+        if solved.settled() && solved.max_residual < own && sk.extent() <= wide {
+            self.scale_rows(false);
+            self.resync(sk);
+            return solved;
+        }
+        sk.set_x(&x);
+        self.compiled_size = compiled;
+        self.scale_rows(false);
+        self.resync(sk);
+        self.size_rows();
         res
     }
 
@@ -539,6 +580,7 @@ impl System {
             z,
         );
         let r = self.residuals(z);
+        self.size_rows();
         let mut n2 = 0.0;
         let mut rel = 0.0f64;
         // NaN is not "no error", and `f64::max` would drop it: track it and let it win at the end
@@ -546,7 +588,9 @@ impl System {
         for i in 0..r.len() {
             n2 += r[i] * r[i];
             if self.hard[i] {
-                let a = r[i].abs();
+                // over the row's own size (#492): the iteration's `row_scale` is the drawing's
+                // extent, which one far-out point stretches
+                let a = self.judged(i, r[i]);
                 if a.is_nan() {
                     nan = true;
                 } else {

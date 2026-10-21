@@ -136,13 +136,15 @@ p0 distance(10) p1
 }
 
 /// **A solve that stops on its iteration limit is finished where it stopped**
-/// (docs/iteration-limit-rescue-plan.md).  A chain of twelve triangles seeded far off, given eight
-/// DogLeg iterations where it needs ten: the eighth leaves it under the interactive acceptance
+/// (docs/iteration-limit-rescue-plan.md).  A chain of twelve triangles seeded far off, given nine
+/// DogLeg iterations where it needs ten: the ninth leaves it under the interactive acceptance
 /// and short of the solution — a success on status 4, which is all a solve did before the rescue
 /// (`BlockMode::Off`).  By default that stop is not settled, and the block pass *from the stop*
 /// settles it on the solution the whole-system DogLeg was making for: the one it reaches given
 /// its hundred iterations.  The pass from the start — what the rescue after a failure runs — does
-/// not: each triangle solved alone from those seeds finds its other orientation.
+/// not: each triangle solved alone from those seeds finds its other orientation.  (Eight was the
+/// budget until rows were judged at their own sizes, #492: the eighth stops 1.6e-6 of the extent
+/// off, and its rows read 3.9e-6 of their own size, which is no success.)
 #[test]
 fn a_stop_on_the_iteration_limit_is_finished_where_it_stopped() {
     let e = build(&chain(12));
@@ -150,23 +152,30 @@ fn a_stop_on_the_iteration_limit_is_finished_where_it_stopped() {
     start.perturb(6.0, 7);
     let mut full = start.clone();
     assert!(solve(&mut full, SolveOpts::default()).settled());
-    let short = SolveOpts { max_iter: 8, ..SolveOpts::default() };
+    let plain =
+        SolveOpts { max_iter: 8, retry: false, blocks: BlockMode::Off, ..SolveOpts::default() };
+    let eighth = solve(&mut start.clone(), plain);
+    assert!(!eighth.success && eighth.status == 4, "{eighth:?}");
+    let short = SolveOpts { max_iter: 9, ..SolveOpts::default() };
     let mut stop = start.clone();
     let a = solve(&mut stop, SolveOpts { blocks: BlockMode::Off, ..short });
     assert!(a.success && a.status == 4 && a.method == "dogleg", "{a:?}");
-    assert!(apart(&stop, &full) > 1e-7, "{:e} from the full solve", apart(&stop, &full));
     let mut sk = start.clone();
     let b = solve(&mut sk, short);
     assert!(b.settled() && b.method == "blocks", "{b:?}");
     assert!(apart(&sk, &full) < 1e-12, "{:e} from the full solve", apart(&sk, &full));
+    assert!(apart(&sk, &full) < apart(&stop, &full) / 10.0,
+            "{:e} from the full solve, the stop {:e}", apart(&sk, &full), apart(&stop, &full));
     let mut from_start = start.clone();
     solve(&mut from_start, SolveOpts { retry: false, blocks: BlockMode::First, ..short });
     assert!(apart(&from_start, &full) > 0.1, "{:e}", apart(&from_start, &full));
 }
 
 /// **A stop the rescue cannot settle keeps its pose** (docs/iteration-limit-rescue-plan.md): the
-/// belt over its pulleys (`belt_tangency.sv`) seeded off by a unit and given five iterations stops
-/// its DogLeg on that limit under the interactive acceptance, a success.  At every such stop the
+/// belt over its pulleys (`belt_tangency.sv`) seeded off by a unit and given four iterations stops
+/// its DogLeg on that limit under the interactive acceptance, a success.  (Five until rows were
+/// judged at their own sizes, #492: a stop on the fifth is mostly no success now, and every one
+/// among the first 64 seeds the rescue settles; on the fourth one is kept.)  At every such stop the
 /// default solve either settles — by the block pass, or a bound steered after it — or returns the
 /// stop; and at some the block pass under the limit settles it from neither the stop nor the
 /// start, so the default solve returns the stop exactly as a solve without the rescue does — the
@@ -178,8 +187,8 @@ fn a_stop_on_the_iteration_limit_is_finished_where_it_stopped() {
 fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
     let e = build(include_str!("../../examples/belt_tangency.sv"));
     assert!(gcs_core::system::System::new(&e.sketch).block_order().blocks.len() >= 2, "the rescue runs");
-    let limited = SolveOpts { max_iter: 5, ..SolveOpts::default() };
-    let kept = (0..32).find(|&seed| {
+    let limited = SolveOpts { max_iter: 4, ..SolveOpts::default() };
+    let kept = (0..64).find(|&seed| {
         let mut start = e.sketch.clone();
         start.perturb(1.0, seed);
         let (mut off, mut on) = (start.clone(), start);
@@ -191,6 +200,7 @@ fn a_stop_the_rescue_cannot_settle_keeps_its_pose() {
         same && (a.success, a.status, a.max_residual.to_bits(), a.nfev, a.iterations, &a.method)
             == (b.success, b.status, b.max_residual.to_bits(), b.nfev, b.iterations, &b.method)
     });
-    assert!(kept.is_some(), "no stop among the first 32 seeds the rescue keeps: widen the search");
+    assert!(kept.is_some(), "no stop among the first 64 seeds the rescue keeps: widen the search");
 }
+
 
