@@ -21,6 +21,7 @@ pub mod csg;
 pub mod curve;
 pub mod decompose;
 pub mod delaunay;
+pub mod eigen;
 pub mod diagnose;
 pub mod envelope;
 pub mod expr;

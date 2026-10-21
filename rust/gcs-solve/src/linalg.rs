@@ -494,7 +494,31 @@ pub fn min_norm_solve(a: &Mat, b: &[f64], rcond: f64) -> (Vec<f64>, usize) {
 /// what is left off the diagonal is rounding next to what is on it.
 pub fn sym_eigenvalues(a: &Mat) -> Vec<f64> {
     let n = a.rows;
+    let (m, _) = jacobi(a, false);
+    let mut ev: Vec<f64> = (0..n).map(|i| m.data[i * n + i]).collect();
+    ev.sort_by(|x, y| x.total_cmp(y));
+    ev
+}
+
+/// The eigenvalues of a symmetric matrix, ascending, and its eigenvectors as the columns of the
+/// second, in the same order (`A V = V Λ`, `VᵀV = I`): `sym_eigenvalues`'s rotations, accumulated.
+/// The projected pencil the eigensolver's Ritz pairs come from (`eigen.rs`).
+pub fn sym_eigen(a: &Mat) -> (Vec<f64>, Mat) {
+    let n = a.rows;
+    let (m, v) = jacobi(a, true);
+    let v = v.unwrap();
+    let mut idx: Vec<usize> = (0..n).collect();
+    idx.sort_by(|&x, &y| m.data[x * n + x].total_cmp(&m.data[y * n + y]));
+    let ev: Vec<f64> = idx.iter().map(|&i| m.data[i * n + i]).collect();
+    (ev, v.select_cols(&idx))
+}
+
+/// Cyclic Jacobi on the symmetric matrix `a`'s upper triangle: the matrix rotated to diagonal,
+/// and the product of the rotations when `vectors`.
+fn jacobi(a: &Mat, vectors: bool) -> (Mat, Option<Mat>) {
+    let n = a.rows;
     let mut m = a.clone();
+    let mut v = if vectors { Some(Mat::identity(n)) } else { None };
     for i in 0..n {
         for j in 0..i {
             m.data[i * n + j] = m.data[j * n + i];
@@ -531,12 +555,17 @@ pub fn sym_eigenvalues(a: &Mat) -> Vec<f64> {
                     m.data[p * n + k] = c * apk - s * aqk;
                     m.data[q * n + k] = s * apk + c * aqk;
                 }
+                if let Some(v) = v.as_mut() {
+                    for k in 0..n {
+                        let (vkp, vkq) = (v.data[k * n + p], v.data[k * n + q]);
+                        v.data[k * n + p] = c * vkp - s * vkq;
+                        v.data[k * n + q] = s * vkp + c * vkq;
+                    }
+                }
             }
         }
     }
-    let mut ev: Vec<f64> = (0..n).map(|i| m.data[i * n + i]).collect();
-    ev.sort_by(|x, y| x.total_cmp(y));
-    ev
+    (m, v)
 }
 
 /* -- SVD (Golub–Reinsch) ---------------------------------------------------- */
