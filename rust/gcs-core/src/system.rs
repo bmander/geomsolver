@@ -1191,6 +1191,18 @@ impl System {
         self.row_scale[r] / self.jac_scale[r]
     }
 
+    /// A matrix whose row `k` is row `rows[k]` of this system, differentiated against any
+    /// columns in the solver's units (`z`), with the units divided out as `conditioned` divides
+    /// them: what a rank of a parent's rows reduced through its boundaries is asked of
+    /// (`solve::through`).
+    pub(crate) fn conditioned_of(&self, rows: &[usize], mut j: Mat) -> Conditioned {
+        for (k, &r) in rows.iter().enumerate() {
+            let inv = self.conditioning(r);
+            j.data[k * j.cols..(k + 1) * j.cols].iter_mut().for_each(|v| *v *= inv);
+        }
+        Conditioned { m: j }
+    }
+
     fn condition(&mut self, z: &[f64], rows: &[usize]) -> Conditioned {
         Conditioned { m: self.scatter(z, rows, true) }
     }

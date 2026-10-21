@@ -27,9 +27,9 @@
 //! or counter-clockwise, and no regular residual can say which — chirality is discrete.  This
 //! solver's answer to branches everywhere else is a seed and a warm start, and it is the answer
 //! here: the block's `at (…)` seeds are expressions over `(u, θ)`, evaluation starts from them at
-//! the target parameter, and when that solve fails it marches from the low end of the domain,
-//! each step warm-started from the last, so the branch chosen at the start is the branch the
-//! whole curve is on.
+//! the target parameter, and when that solve fails it marches from the anchor (`Anchor::u`), each
+//! step warm-started from the last, so the branch chosen at the anchor is the branch the whole
+//! curve is on.
 //!
 //! **And a branch once carried is kept.**  The outer solver moves `(u, θ)` a little and asks the
 //! same contact again, which is a continuation step like any other — so each contact's pose is
@@ -299,7 +299,8 @@ pub struct Scratch {
     lu: Vec<f64>,
     piv: Vec<usize>,
     rhs: Vec<f64>,
-    q: Vec<f64>,
+    /// What the block's Newton works in (`newton::square`).
+    sq: crate::newton::SquareWork,
     wd: Vec<[f64; tape::MAX_VARS]>,
     v: Vec<f64>,
     jrow: Vec<f64>,
@@ -324,7 +325,7 @@ impl Scratch {
             lu: Vec::new(),
             piv: Vec::new(),
             rhs: Vec::new(),
-            q: Vec::new(),
+            sq: crate::newton::SquareWork::default(),
             wd: Vec::new(),
             v: Vec::new(),
             jrow: Vec::new(),
@@ -510,72 +511,56 @@ const STEP_MIN: f64 = 1e-14;
 const PREDICTED: f64 = 0.5;
 
 /// One Newton solve of the block at the parameter already written into `s.xv[0]`, from the `q`
-/// already in `s.xv`.  Residual rows are judged against their own kernel's power of length over
+/// already in `s.xv`: `newton::square`, the loop a parent's solve through an instance runs too
+/// (`solve/through.rs`).  Residual rows are judged against their own kernel's power of length over
 /// the magnitude of what they read — the same reasoning as `System::max_relative_residual`, in
 /// miniature — so one tolerance serves a block at any size.
-///
-/// Deliberately not `newton::dogleg`: the block is square, so the plain Newton step *is* the
-/// Gauss–Newton step; this runs per residual evaluation inside a kernel, where dogleg's
-/// per-call allocations are the thing the scratch exists to avoid; and the convergence test is
-/// unit-relative where dogleg's is absolute.  A second inner square solve is the point at which
-/// this loop moves to `newton.rs` rather than being copied.
 fn newton(v: &View, s: &mut Scratch) -> bool {
-    let (n_q, q0) = (v.n_q, v.n_outer);
-    let mut last = f64::INFINITY;
-    for _ in 0..NEWTON_MAX {
-        // the one full assembly per iteration; the trial steps below need only residuals
-        let norm = assemble(v, s, Fill::Jac);
-        if !norm.is_finite() {
-            return false;
-        }
-        if norm <= TOL_DONE {
-            return true;
-        }
-        // solve Jq Δ = -r
-        s.lu.clear();
-        s.lu.extend_from_slice(&s.jq);
-        s.rhs.clear();
-        s.rhs.extend(s.r.iter().map(|&x| -x));
-        if !crate::linalg::lu_factor(n_q, &mut s.lu, &mut s.piv) {
-            return false;
-        }
-        crate::linalg::lu_apply(n_q, &s.lu, &s.piv, &mut s.rhs);
-        // backtrack when a full step overshoots — the block is tiny, so a residual evaluation
-        // costs less than a wasted outer iteration
-        s.q.clear();
-        s.q.extend_from_slice(&s.xv[q0..q0 + n_q]);
-        let mut step = 1.0;
-        let mut best = f64::INFINITY;
-        for _ in 0..8 {
-            for i in 0..n_q {
-                s.xv[q0 + i] = s.q[i] + step * s.rhs[i];
-            }
-            let nn = assemble(v, s, Fill::Res);
-            if nn.is_finite() && nn < norm {
-                best = nn;
-                break;
-            }
-            step *= 0.5;
-        }
-        if best.is_infinite() {
-            // no step down from here: converged as far as it goes
-            for i in 0..n_q {
-                s.xv[q0 + i] = s.q[i];
-            }
-            return norm <= TOL_OK;
-        }
-        let dq: f64 = s.rhs.iter().map(|d| d * d * step * step).sum::<f64>().sqrt();
-        let qn: f64 = s.q.iter().map(|x| x * x).sum::<f64>().sqrt();
-        if dq <= STEP_MIN * (1.0 + qn) {
-            return best <= TOL_OK;
-        }
-        if best >= last * 0.999999 && best > TOL_STALL {
-            // stalled without converging
-            return false;
-        }
-        last = best;
+    // taken out while the block borrows the scratch it reads, and put back, so a warm scratch
+    // allocates nothing
+    let mut w = std::mem::take(&mut s.sq);
+    let ok = crate::newton::square(&mut Block { v, s }, &mut w, SQUARE);
+    s.sq = w;
+    ok
+}
+
+/// When the block's Newton stops (`newton::SquareTol`).
+const SQUARE: crate::newton::SquareTol = crate::newton::SquareTol {
+    done: TOL_DONE,
+    ok: TOL_OK,
+    stall: TOL_STALL,
+    step_min: STEP_MIN,
+    max_iter: NEWTON_MAX,
+};
+
+/// The block at one place, as `newton::square` reads it: its unknowns are the `q` of `s.xv`.
+struct Block<'a, 'b> {
+    v: &'a View<'b>,
+    s: &'a mut Scratch,
+}
+
+impl crate::newton::Square for Block<'_, '_> {
+    fn n(&self) -> usize {
+        self.v.n_q
     }
-    last <= TOL_STALL
+    fn get(&self, q: &mut Vec<f64>) {
+        let q0 = self.v.n_outer;
+        q.clear();
+        q.extend_from_slice(&self.s.xv[q0..q0 + self.v.n_q]);
+    }
+    fn put(&mut self, q: &[f64]) {
+        let q0 = self.v.n_outer;
+        self.s.xv[q0..q0 + self.v.n_q].copy_from_slice(q);
+    }
+    fn assemble(&mut self, jac: bool) -> f64 {
+        assemble(self.v, self.s, if jac { Fill::Jac } else { Fill::Res })
+    }
+    fn residual(&self) -> &[f64] {
+        &self.s.r
+    }
+    fn jacobian(&self) -> &[f64] {
+        &self.s.jq
+    }
 }
 
 /// How much of the block `assemble` is asked for: residuals alone (a trial step needs only the

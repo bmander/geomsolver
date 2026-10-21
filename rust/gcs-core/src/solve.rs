@@ -3,16 +3,19 @@
 //! `System::solve` is a document's solve: a minimisation (`System::solve_compiled`, retried by
 //! `RETRIES`), its curve contacts re-homed, its constants read again where it ends, a failure
 //! recovered by `RECOVERIES`, and a bound it breaks steered (`bounds`).  The block-triangular
-//! pass and its root search are `blocks`; the drags `drag`, and a body turned whole `turn`.
+//! pass and its root search are `blocks`; the drags `drag`, and a body turned whole `turn`; a
+//! parent solved through instances it treats as functions of their inputs, `through` (#454).
 
 mod blocks;
 mod bounds;
 mod drag;
+mod through;
 mod turn;
 
 pub(crate) use bounds::cross_bounds;
 pub use bounds::{bound_reading, bound_tol, bounds_hold, BoundReading};
 pub use drag::{Drag, PullPolish, RadiusDrag, Triangle};
+pub use through::{solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through};
 pub use turn::{TurnDrag, Turning};
 
 use crate::curve;
