@@ -13,6 +13,7 @@ mod common;
 
 mod accuracy;
 mod admission;
+mod analysis_words;
 mod angle_and_arc_words;
 mod anonymous;
 mod applied;

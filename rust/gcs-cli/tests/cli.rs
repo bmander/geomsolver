@@ -689,3 +689,52 @@ in std.front {
     assert!(String::from_utf8_lossy(&json.stdout).contains("\"code\": \"W202\""));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// A scenario's diagnosis words (#510 P7) are the core's, said under the document's result: what
+/// its supports leave free, and where a `safety` it states has no answer.  Words, not errors: the
+/// document still exits 0.
+#[test]
+fn a_scenarios_words_are_said() {
+    let dir = std::env::temp_dir().join(format!("solventc-scenario-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("ell.sv");
+    std::fs::write(&source,"\
+unit mm
+use std
+in std.front {
+  b0 := point
+  b1 := point
+  b2 := point
+  b3 := point
+  b4 := point
+  b5 := point
+  fix((0, 0)) b0
+  fix((60, 0)) b1
+  fix((60, 20)) b2
+  fix((20, 20)) b3
+  fix((20, 40)) b4
+  fix((0, 40)) b5
+  (south := line(b0, b1)) -> (east := line(b1, b2)) -> (ledge := line(b2, b3)) -> \
+(riser := line(b3, b4)) -> (top := line(b4, b5)) -> (west := line(b5, b0)) -> close
+  outline := face(south, east, ledge, riser, top, west)
+}
+plate := solid(outline, depth: 4mm)
+scenario lift {
+  pinned b0
+  claim safety(plate) >= 2
+}
+").unwrap();
+    let path = source.to_str().unwrap();
+    let out = run(&[path]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    let free = "  scenario `lift` leaves `plate` free to turn about x through (0, 0, 0), turn \
+about y through (0, 0, 0) and turn about z through (0, 0, 0)\n";
+    assert!(said.contains(free),"{said}");
+    let unbounded = "  scenario `lift`: `safety(plate)` has no answer: stress is unbounded at the \
+edge of `ledge` and `riser`";
+    assert!(said.contains(unbounded),"{said}");
+    let json = String::from_utf8_lossy(&run(&[path,"--json"]).stdout).into_owned();
+    assert!(json.contains("\"scenarios\"") && json.contains("leaves `plate` free"),"{json}");
+    std::fs::remove_dir_all(dir).unwrap();
+}

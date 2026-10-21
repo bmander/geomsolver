@@ -65,6 +65,7 @@ pub struct Component {
     pub dof: i64,
 }
 
+pub mod analysis;
 mod parts;
 mod solid_claims;
 mod witnessed;
