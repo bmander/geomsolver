@@ -391,6 +391,9 @@ pub struct SolidE {
     /// through a body carries the index, `drill[1]` (`step`).  `None` for any other solid, a
     /// word's (a round's `taken`) among them, whose copies' faces are named as one.
     pub copy: Option<u32>,
+    /// What it is made of, `solid(…) of steel` (#510 P3): a key of `Sketch::materials`.  `None`
+    /// for a solid that says nothing of it.
+    pub material: Option<String>,
 }
 
 /// A named implicit envelope, over an interval of the shared roll (a `Running`, #391 S1; its

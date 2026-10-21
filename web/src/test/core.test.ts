@@ -22,7 +22,7 @@ import {
 import { checkSketch } from '../core/fdcheck.js';
 import { enumerateStep } from '../core/homotopy.js';
 import { Axis, Plane, Point, Sketch, Spline } from '../core/model.js';
-import { mesh, objects, preview, stl, glb, unbuilt } from '../core/mesh.js';
+import { materials, mesh, objects, preview, stl, glb, unbuilt } from '../core/mesh.js';
 import { FieldMesher, deferFields, fieldJobs, supplyField, unpaired } from '../core/field.js';
 import { overview } from '../core/overview.js';
 import { Document, fromSketch, highlight } from '../core/program.js';
@@ -1374,6 +1374,23 @@ test('invalid solid exports surface the cores geometry diagnostic', async () => 
     assert.throws(() => glb(doc.sketch, 0), /profile|axis/);
     doc.dispose();
   }
+});
+
+test('a material reaches the binding in SI, with the solids made of it (#510 P3)', () => {
+  const doc = Document.read([
+    'unit in', 'use std',
+    'steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)',
+    'in std.top {', '  rim := radius(1in) circle(center: std.top.origin)',
+    '  disc := solid(face(rim), depth: 0.25in) of steel', '}', ''].join('\n'));
+  assert.ok(doc.ok);
+  const [m] = materials(doc.sketch);
+  assert.equal(m.name, 'steel');
+  assert.ok(Math.abs(m.E! - 200e9) < 1e-3, `${m.E}`);
+  assert.equal(m.nu, 0.3);
+  assert.equal(m.text, 'steel: E 200GPa, nu 0.3, rho 7850kg/m^3, yield 250MPa, of disc');
+  const disc = objects(doc.sketch).find((o) => o.name === 'disc')!;
+  assert.deepEqual(m.solids, [disc.index]);
+  doc.dispose();
 });
 
 test('the drawing exports as SVG, laid out by the core', () => {

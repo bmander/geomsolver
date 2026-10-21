@@ -1742,6 +1742,32 @@ the set's surface is (`heel := std.Sphere(apex)`, `M distance(w / 2, side: insid
 solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
 `Blank`).
 
+#### Materials
+
+A material is declared once and named by the solids made of it:
+
+```
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+in std.top {
+  rim := radius(20mm) circle(center: std.top.origin)
+  disc := solid(face(rim), depth: 5mm) of steel
+}
+```
+
+- **The properties** are `E` (Young's modulus) and `yield` (yield strength), both pressures
+  (`Pa`, `kPa`, `MPa`, `GPa`); `nu` (Poisson's ratio), a plain number between -1 and 0.5; and
+  `rho` (density), a mass over a volume. Each one is optional. **Write the unit** on each one with
+  a dimension: `E: 200000` is E103, because a bare pressure is in the document's units, which no
+  one means. There is no single-word unit of density, so write `7850kg / 1m^3` or
+  `2.7g / 1cm^3`.
+- **`of`** follows a `solid(…)` declaration, as `in` and `hint` do. It names a material in scope.
+  Naming anything else is E103. A material can be passed to a component as a `group` formal
+  (`component Plate(m: group, …)`, then `of m`).
+- `steel.E` reads as a number with its dimension, the way a group's members do. `steel.E / 1GPa`
+  is 200.
+- Nothing is solved for a material, and nothing reads one yet (#510). `solventc` prints each
+  material and the solids made of it: `material steel: E 200GPa, nu 0.3, …, of disc`.
+
 #### Sketching on a face
 
 A face of a solid names a **set**: the face, bounded by its edges. Its **`.surface`** is the

@@ -13,7 +13,7 @@ pub(super) fn chain_face(c: &crate::syntax::NamedChain) -> Decl {
         curve: None, computed: None, class: Classes::default(), seed_at: None,
         seed_names: Vec::new(), sweep: None, seen_from: None, angular_span: None,
         membership: crate::syntax::Membership::default(), normal: None, sense: None,
-        bare: false,
+        bare: false, material: None,
     }
 }
 

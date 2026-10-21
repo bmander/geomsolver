@@ -70,14 +70,14 @@ pub(super) fn joint_word(w: &str) -> bool {
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it
 /// stands.  `as` binds a name after it, which is why `highlight` treats that one specially.
-pub(super) const MODIFIERS: [&str; 11] = [
+pub(super) const MODIFIERS: [&str; 12] = [
     "over", "as", "at", "hint", "class", "from", "in", "private", "construction", "centerline",
-    "param",
+    "param", "of",
 ];
 
 /// The words that may follow a declaration's own, so `class a b` knows where its list ends.
 /// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
-const TRAILERS: [&str; 6] = ["knots", "weights", "hint", "class", "close", "in"];
+const TRAILERS: [&str; 7] = ["knots", "weights", "hint", "class", "close", "in", "of"];
 
 /// Resolve `equal` by operand kinds: line lengths or circle/arc radii.
 pub fn equal_kind(left: EntKind, right: EntKind) -> Option<CKind> {

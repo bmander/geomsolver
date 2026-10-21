@@ -219,6 +219,7 @@ fn expand(
         .collect();
     cx.sk.declared = std::mem::take(&mut expansion.unknowns);
     cx.sk.parameters = std::mem::take(&mut expansion.parameters);
+    cx.sk.materials = std::mem::take(&mut expansion.materials);
     // each face family's running number, held where its drawn station stands (#243 L1)
     for (name, &(dim, at)) in &expansion.held {
         cx.sk.hold(name, at, dim);

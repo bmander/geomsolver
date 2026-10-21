@@ -625,6 +625,10 @@ impl ParamDecl {
 pub struct GroupDecl {
     pub name: Name,
     pub fields: Vec<InstArg>,
+    /// `steel := material(E: 200GPa, nu: 0.3)` (#510 P3): a group whose members are a
+    /// material's properties, checked as such and stated as a model value
+    /// (`Sketch::materials`) — where the word `material` stands.  `None` for a plain group.
+    pub material: Option<Span>,
 }
 
 /// Repetition.  Three constructs and three meanings (spec §12): an open array, a closed one, and
@@ -1000,6 +1004,10 @@ pub struct Decl {
     /// person would (`flatten::carried`) once it knows which; the source keeps the one.  `None`
     /// for every other declaration.
     pub carried: Option<CarriedFrame>,
+    /// What a solid is made of, `arm := solid(sec, depth: 4mm) of steel` (#510 P3): a material
+    /// of the scope (`syntax::GroupDecl::material`).  `None` for every other declaration, and for
+    /// a solid that says nothing of it.
+    pub material: Option<Ref>,
 }
 
 /// What a reading at an instant reads and by what (`Decl::carried`, #366, #391 S2): the source,
@@ -1060,6 +1068,7 @@ impl Decl {
             sense: None,
             bare: false,
             carried: None,
+            material: None,
         }
     }
 
@@ -1107,6 +1116,7 @@ impl Decl {
             sense: None,
             bare: false,
             carried: None,
+            material: None,
         }
     }
 }

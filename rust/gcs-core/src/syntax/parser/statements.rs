@@ -834,7 +834,7 @@ impl<'a> P<'a> {
             None if self.peek() == Some(&Tok::P('{')) => {
                 let fields = self.group_members()?;
                 self.end_of_stmt();
-                StmtKind::Group(crate::syntax::GroupDecl { name, fields })
+                StmtKind::Group(crate::syntax::GroupDecl { name, fields, material: None })
             }
             // `o := (10mm, 20mm)` — a vector, a group of its components: `o.x`, `o.y`
             None if self.tuple_ahead() => {
@@ -848,7 +848,21 @@ impl<'a> P<'a> {
                     })
                     .collect();
                 self.end_of_stmt();
-                StmtKind::Group(crate::syntax::GroupDecl { name, fields })
+                StmtKind::Group(crate::syntax::GroupDecl { name, fields, material: None })
+            }
+            // `steel := material(E: 200GPa, nu: 0.3)` (#510 P3) — a group of a material's
+            // properties, the word read so only as a call: `material` is a name a document may give
+            Some("material") if call => {
+                let at = self.here();
+                self.i += 1;
+                let fields = self.args_between('(', ')')?;
+                if let Some(f) = fields.iter().find(|f| f.label.is_none()) {
+                    self.fail_at(f.span, "a material's properties are named: `material(E: \
+                                          200GPa, nu: 0.3)`");
+                    return None;
+                }
+                self.end_of_stmt();
+                StmtKind::Group(crate::syntax::GroupDecl { name, fields, material: Some(at) })
             }
             // `f := frame` (#383): a frame declared bare — the word read so only as a definition's
             // whole value, since `frame` is a name a document may give
@@ -1427,6 +1441,7 @@ impl<'a> P<'a> {
             sense: None,
             bare: false,
             carried: None,
+            material: None,
         })
     }
 

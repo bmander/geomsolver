@@ -486,6 +486,9 @@ struct Known<'k> {
     joints: &'k std::cell::RefCell<BTreeSet<String>>,
     /// Where a reference read through a name in `failed` — see `Expansion::quiet`.
     quiet: &'k std::cell::RefCell<BTreeSet<Span>>,
+    /// Every material declared, stated or refused, by absolute name: what a solid's `of` may
+    /// name (#510 P3).
+    materials: &'k BTreeSet<String>,
 }
 
 /// Whether `r` reads a name bound to what a call or a use wrote — a formal, a bound variable —
@@ -515,7 +518,7 @@ fn rewrite(
     seen: &std::cell::RefCell<Vec<Seen>>,
 ) {
     let Known { look, sets, solids, failed, arguments, unresolved, normals, charts, joints,
-        quiet } = known;
+        quiet, materials } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.block.ring.as_ref().is_some_and(|r| !r.turned);
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
@@ -594,6 +597,18 @@ fn rewrite(
         }
         StmtKind::Decl(d) => {
             rewrite_decl(d, sc, look, bad, &fix);
+            // what a solid is made of (#510 P3): a name of the scope, and one that resolves
+            // names a material — said here, where whether it resolved is known
+            if let Some(m) = d.material.as_mut() {
+                let (written, said) = (ref_text(m), bad.len());
+                fix(m, bad);
+                let resolved = bad.len() == said && !quiet.borrow().contains(&m.span);
+                if resolved && !materials.contains(&ref_text(m)) {
+                    bad.push((Code::E103, m.span, format!("`{written}` is no material: a solid \
+                        is made of one the document states, `steel := material(E: 200GPa, nu: \
+                        0.3)`")));
+                }
+            }
             // a seed at a place in a frame's coordinates reads its axes (#383)
             if let Some(a) = d.seed_at.as_ref().filter(|a| a.x.is_some() || a.y.is_some() || a.z.is_some()) {
                 charts.borrow_mut().insert(ref_text(&a.what));
@@ -1305,6 +1320,7 @@ impl<'a> Walk<'a> {
         let charts = std::cell::RefCell::new(std::mem::take(&mut self.charts));
         let joints = std::cell::RefCell::new(std::mem::take(&mut self.joints));
         let quiet = std::cell::RefCell::new(std::mem::take(&mut self.quiet));
+        let materials: BTreeSet<String> = self.materials.keys().cloned().collect();
         for (mut st, path, sc) in out {
             // a refused relation is not emitted; a declaration is (a plane whose fold misspells
             // a name), so the error is the one said and not every reference to it after
@@ -1322,7 +1338,7 @@ impl<'a> Walk<'a> {
             let known = Known {
                 look, sets, solids, failed, arguments,
                 unresolved: &unresolved, normals: &normals, charts: &charts, joints: &joints,
-                quiet: &quiet,
+                quiet: &quiet, materials: &materials,
             };
             rewrite(&mut st.kind, &sc, known, &mut bad, &seen);
             if let StmtKind::Decl(d) = &st.kind {

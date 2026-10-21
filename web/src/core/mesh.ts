@@ -124,6 +124,24 @@ export function shownObjects(sk: Sketch): { name: string; index: number }[] {
   return takeJson<{ name: string; index: number }[]>(core().gcs_solid_shown_json(sk.handle));
 }
 
+/** A material the document states (#510 P3), `steel := material(E: 200GPa, …)`: each property
+ *  it states in SI under its own name (pascals, kilograms a cubic metre), the core's words for
+ *  it, and the solids made of it (`solid(…) of steel`). */
+export interface Material {
+  name: string;
+  E?: number;
+  nu?: number;
+  rho?: number;
+  yield?: number;
+  text: string;
+  solids: number[];
+}
+
+/** The materials the document states, and what is made of each. */
+export function materials(sk: Sketch): Material[] {
+  return takeJson<Material[]>(core().gcs_materials_json(sk.handle)) ?? [];
+}
+
 /** The objects that are not drawn, and why: each one that does not evaluate, with the core's
  *  reason (`` `b1`: the revolution axis crosses the profile ``).  A swept object still being
  *  meshed in a worker is not one. */

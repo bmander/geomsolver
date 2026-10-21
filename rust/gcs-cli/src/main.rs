@@ -466,6 +466,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         if !solved {
             println!("  {} (max residual {:.3e})", r.message, r.max_residual);
         }
+        // each material the document states, and what is made of it (#510 P3)
+        for name in sk.materials.keys() {
+            println!("  material {}", gcs_core::report::material_text(&sk, name));
+        }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
             // a plane's freedoms by the ledger's names; a line only where one is left
