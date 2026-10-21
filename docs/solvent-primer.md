@@ -244,7 +244,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
-| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `parallel` two planes |
+| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |

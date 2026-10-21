@@ -383,6 +383,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             (x, y) if axes(x, y) => CKind::Perpendicular3,
             // square to a plane: along its normal
             (Axis, Plane) => CKind::AxisPerpendicularPlane,
+            (Line, Plane) => CKind::LinePerpendicularPlane,
             // along an envelope's normal at a point already on it (#283): the common normal
             (Envelope, Line | Axis) if at_point => CKind::Rate,
             // and a meshing's, the common normal of its two flanks there (#345)
