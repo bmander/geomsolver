@@ -110,3 +110,27 @@ fn the_extrusion_contact_has_its_own_jacobian() {
     assert!(c.is_some(), "`p on flank` is not a point on the extrusion");
     fd_jacobian(&e.sketch, 1e-5);
 }
+
+/// **A side generated under a drive** (#398 G): the rack driven by a law of a declared `t` that is
+/// the roll written another way stands where the undriven rack does, so the point lands where it
+/// did — the law read through the contact's constants — and the contact's Jacobian is still the
+/// system's derivative.
+#[test]
+fn a_side_generated_under_a_drive_reads_its_law() {
+    let undriven = {
+        let mut e = build(&across(3.));
+        assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+        e.sketch.lifted(ent(&e, "p").i())
+    };
+    let src = across(3.).replacen("use std\n", "use std\nparam t: Angle over (-60deg, 60deg)\n", 1)
+        + "fix(value == 2 * (t / 2)) rack\n";
+    let mut e = build(&src);
+    assert!(e.ok(), "{:?}", e.diags);
+    let flank = ent(&e, "flank").i();
+    let def = e.sketch.curves[flank].def as usize;
+    assert!(e.sketch.curve_defs[def].name.contains("D["), "the flank reads no law");
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    let w = e.sketch.lifted(ent(&e, "p").i());
+    assert!((0..3).all(|k| (w[k] - undriven[k]).abs() < 1e-9), "{w:?} against {undriven:?}");
+    fd_jacobian(&e.sketch, 1e-5);
+}

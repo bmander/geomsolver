@@ -37,6 +37,19 @@ pub fn unread_drive(f: &str, over: &str) -> String {
              the roll — a sweep, a placement")
 }
 
+/// `text` compiled over the held numbers `names`, their values where they stand, and the slot of
+/// `over` among them.
+fn compiled(sk: &Sketch, text: &str, over: &str, names: &[String])
+    -> Result<(Vec<f64>, Vec<f64>, usize), String> {
+    let at = names.iter().position(|n| n == over)
+        .ok_or_else(|| format!("`{over}` is not held"))?;
+    let parsed = crate::expr::parse_in(text, sk.units)?;
+    let tape = crate::tape::Tape::compile_wide(&parsed.body, names)
+        .map_err(|m| format!("`{text}`: {m}"))?;
+    let x = names.iter().map(|n| sk.params[sk.held[n].param as usize].value).collect();
+    Ok((tape.flat, x, at))
+}
+
 /// Degrees a radian, enclosed.
 fn degrees() -> Result<I, Error> {
     let d = 180.0 / std::f64::consts::PI;
@@ -55,13 +68,25 @@ impl Law {
                                 angle", p.dim.name()));
         }
         let names: Vec<String> = sk.held.keys().cloned().collect();
-        let at = names.iter().position(|n| n == over)
-            .ok_or_else(|| format!("`{over}` is not held"))?;
-        let parsed = crate::expr::parse_in(text, sk.units)?;
-        let tape = crate::tape::Tape::compile_wide(&parsed.body, &names)
-            .map_err(|m| format!("`{text}`: {m}"))?;
-        let x = names.iter().map(|n| sk.params[sk.held[n].param as usize].value).collect();
-        Ok(Law { text: text.to_string(), over: over.to_string(), flat: tape.flat, x, at })
+        let (flat, x, at) = compiled(sk, text, over, &names)?;
+        Ok(Law { text: text.to_string(), over: over.to_string(), flat, x, at })
+    }
+
+    /// **The law as a profile in the plane carries it** (#398 G): its tape over only the held
+    /// numbers its text reads, where they stand, and the parameter's slot among them — what a
+    /// generated profile's encoding holds (`generate::Drive`).  Refused where the text reads a
+    /// number of the geometry (`HeldNumber::reads`), which the solve moves while a profile's
+    /// constants stand still.
+    pub fn carried(sk: &Sketch, text: &str, over: &str) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
+        Law::read(sk, text, over)?;
+        let deps = crate::expr::parse_in(text, sk.units)?.body.deps();
+        if let Some(d) = deps.iter().find(|d| sk.held.get(*d).is_some_and(|h| h.reads.is_some())) {
+            return Err(format!("`{text}` reads `{d}`, a number of the geometry the solve moves, \
+                                and a profile in the plane is generated over stated numbers"));
+        }
+        let names: Vec<String> = sk.held.keys().filter(|n| *n == over || deps.contains(*n))
+            .cloned().collect();
+        compiled(sk, text, over, &names)
     }
 
     fn at_roll(&self, theta: f64) -> Vec<f64> {

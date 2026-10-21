@@ -5,7 +5,7 @@
 //! a contact names the curve.  An envelope of a spatial operand (a surface) is the spatial one
 //! (§6.15), left to `envelopes` after the solve: the operand's stratum is what tells them apart.
 use super::{resolve::{follow_building, Resolver}, Code, Diag, Made, SourceMap};
-use crate::generate::{Generated, Op, Tool, ToolBody};
+use crate::generate::{Drive, Driven, Generated, Op, Tool, ToolBody};
 use crate::ir::{Decl, Kid, Operation, Statement};
 use crate::model::{CurveBody, CurveDef, CurveE, EntKind, EntRef, Home, MotionDef, Sketch};
 use crate::syntax::StmtId;
@@ -37,29 +37,42 @@ fn tool_of(sk: &Sketch, e: EntRef) -> Result<Tool, String> {
 }
 
 /// A step of the motion program before its columns are placed: which argument or value each
-/// number is read from.
+/// number is read from, and which of the program's laws drives it (#398 G).
 enum Step {
-    Turn { centre: usize, ratio: usize },
-    Slide { line: usize, advance: usize },
+    Turn { centre: usize, ratio: usize, law: Option<usize> },
+    Slide { line: usize, advance: usize, law: Option<usize> },
     Relative,
     /// A frame the drawing moves (#398 F): motion node `motion`, whose table is attached after the
     /// solve, or its inverse where `back`.
     Table { motion: usize, back: bool },
 }
 
-/// The motion as a postfix program, appending the geometry it is written over to `args`, its
-/// numbers to `values`, and its shape (for the definition's key) to `shape`.
-fn program(sk: &Sketch, m: usize, steps: &mut Vec<Step>, args: &mut Vec<EntRef>,
-           values: &mut Vec<f64>, shape: &mut String, depth: usize) -> Result<(), String> {
-    program_signed(sk, m, false, steps, args, values, shape, depth)
+/// A joint's law as the program carries it (`motion::Law::carried`): its tape, the held numbers
+/// it reads where they stand, and the parameter's slot among them.
+type Law = (Vec<f64>, Vec<f64>, usize);
+
+/// What a motion compiles to: its steps, the geometry it is written over (`args`), its numbers
+/// (`values`), the laws its driven steps read, and its shape (for the definition's key).
+#[derive(Default)]
+struct Program {
+    steps: Vec<Step>,
+    args: Vec<EntRef>,
+    values: Vec<f64>,
+    laws: Vec<Law>,
+    shape: String,
+}
+
+/// The motion as a postfix program, appended to `p`.
+fn program(sk: &Sketch, m: usize, p: &mut Program, depth: usize) -> Result<(), String> {
+    program_signed(sk, m, false, p, depth)
 }
 
 /// `program`, or the program of the motion's inverse where `inverse`: a turn and a slide run
 /// back (their numbers negated, so the key's values say it and the shape need not), and a
-/// relative `O⁻¹·S` undone as `S⁻¹·O`, its sides swapped.
-#[allow(clippy::too_many_arguments)]
-fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, args: &mut Vec<EntRef>,
-                  values: &mut Vec<f64>, shape: &mut String, depth: usize) -> Result<(), String> {
+/// relative `O⁻¹·S` undone as `S⁻¹·O`, its sides swapped.  A drive (#398 G) is its joint's step
+/// standing at the law's value of the roll, so a driven joint's inverse runs its law back.
+fn program_signed(sk: &Sketch, m: usize, inverse: bool, p: &mut Program, depth: usize)
+    -> Result<(), String> {
     let sign = if inverse { -1.0 } else { 1.0 };
     if depth > 16 {
         return Err("a planar motion nests too deeply".into());
@@ -72,32 +85,42 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
     }
     match me.def {
         MotionDef::Turn { centre, ratio } => {
-            args.push(EntRef::point(centre as usize));
-            steps.push(Step::Turn { centre: args.len() - 1, ratio: values.len() });
-            values.push(sign * ratio);
-            shape.push('T');
+            p.args.push(EntRef::point(centre as usize));
+            p.steps.push(Step::Turn { centre: p.args.len() - 1, ratio: p.values.len(), law: None });
+            p.values.push(sign * ratio);
+            p.shape.push('T');
         }
         MotionDef::Translation { axis, advance } => {
-            args.push(EntRef::line(axis as usize));
-            steps.push(Step::Slide { line: args.len() - 1, advance: values.len() });
-            values.push(sign * advance);
-            shape.push('S');
+            p.args.push(EntRef::line(axis as usize));
+            p.steps.push(Step::Slide { line: p.args.len() - 1, advance: p.values.len(), law: None });
+            p.values.push(sign * advance);
+            p.shape.push('S');
         }
         MotionDef::Relative { source, observer } => {
             let (first, second) = if inverse { (observer, source) } else { (source, observer) };
-            shape.push('(');
-            program_signed(sk, first as usize, false, steps, args, values, shape, depth + 1)?;
-            program_signed(sk, second as usize, false, steps, args, values, shape, depth + 1)?;
-            steps.push(Step::Relative);
-            shape.push(')');
+            p.shape.push('(');
+            program_signed(sk, first as usize, false, p, depth + 1)?;
+            program_signed(sk, second as usize, false, p, depth + 1)?;
+            p.steps.push(Step::Relative);
+            p.shape.push(')');
         }
         MotionDef::Inverse { of } => {
-            program_signed(sk, of as usize, !inverse, steps, args, values, shape, depth + 1)?;
+            program_signed(sk, of as usize, !inverse, p, depth + 1)?;
         }
-        MotionDef::Driven { ref over, .. } => {
-            return Err(format!("`{}` is driven by `{over}`, and a profile in the sheet is \
-                generated under joints at a constant rate: a drive is read by a sweep or a \
-                placement (#391)", me.name))
+        // a joint driven by its frame's value (#398 G): the joint's own step, standing at the
+        // law's value of the roll, the law carried in the profile's constants
+        MotionDef::Driven { of, ref law, ref over } => {
+            let carried = crate::motion::Law::carried(sk, law, over)
+                .map_err(|m| format!("`{}`: {m}", me.name))?;
+            let n = p.steps.len();
+            program_signed(sk, of as usize, inverse, p, depth + 1)?;
+            let k = p.laws.len();
+            match p.steps.get_mut(n..) {
+                Some([Step::Turn { law, .. } | Step::Slide { law, .. }]) => *law = Some(k),
+                _ => return Err(format!("`{}` drives no turn or slide", me.name)),
+            }
+            p.shape.push_str(&format!("D[{law}@{:?}]", carried.1));
+            p.laws.push(carried);
         }
         MotionDef::Guided { .. } => {
             return Err(format!("`{}` rides along a path, its frame read off the path after the \
@@ -107,8 +130,8 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, steps: &mut Vec<Step>, a
         // a frame the drawing moves, read off the march after the solve (#398 F): run back, its
         // inverse's node
         MotionDef::Followed { .. } => {
-            steps.push(Step::Table { motion: m, back: inverse });
-            shape.push_str(&format!("F{m}{}", if inverse { "⁻" } else { "" }));
+            p.steps.push(Step::Table { motion: m, back: inverse });
+            p.shape.push_str(&format!("F{m}{}", if inverse { "⁻" } else { "" }));
         }
         MotionDef::Joint { .. } => {
             return Err(format!("`{}`'s joint turns about an axis no centre of a view holds: a tool \
@@ -139,9 +162,14 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
         Some("far") => -1.0,
         Some(w) => return Err(format!("`side: {w}` — an envelope's side is `near` or `far` of the instant centre")),
     };
-    let mut named = vec![tool];
-    let (mut steps, mut values, mut shape) = (Vec::new(), Vec::new(), String::new());
-    program(sk, motion, &mut steps, &mut named, &mut values, &mut shape, 0)?;
+    let mut p = Program { args: vec![tool], ..Program::default() };
+    program(sk, motion, &mut p, 0)?;
+    // a driven step reads its law from below at the profile's last roll (`generate::run`)
+    let end = (!p.laws.is_empty()).then(|| {
+        p.values.push(to);
+        p.values.len() - 1
+    });
+    let Program { steps, args: named, values, laws, shape } = p;
     // where each argument's columns start in `[t, θ…, values…]` — a centre the tool is
     // already written over (a generated tool's own pinion) is read where it already is,
     // not given a second column
@@ -167,8 +195,10 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
     }
     let value = |i: usize| 1 + n_theta + i;
     let ops: Vec<Op> = steps.iter().map(|s| match *s {
-        Step::Turn { centre, ratio } => Op::Turn { centre: at[centre], ratio: value(ratio) },
-        Step::Slide { line, advance } => Op::Slide { line: at[line], advance: value(advance) },
+        Step::Turn { centre, ratio, law } => Op::Turn { centre: at[centre], ratio: value(ratio),
+            law: law.zip(end).map(|(law, end)| Driven { law, end: value(end) }) },
+        Step::Slide { line, advance, law } => Op::Slide { line: at[line], advance: value(advance),
+            law: law.zip(end).map(|(law, end)| Driven { law, end: value(end) }) },
         Step::Relative => Op::Relative,
         Step::Table { motion, back } => Op::Table { motion, back },
     }).collect();
@@ -193,7 +223,8 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
         }
         _ => ToolBody::None,
     };
-    let generated = Generated::new(n_theta, kind, side, &ops, tool_body);
+    let drives: Vec<Drive> = laws.iter().map(|(flat, x, at)| Drive { flat, x, at: *at }).collect();
+    let generated = Generated::new(n_theta, kind, side, &ops, &drives, tool_body);
     let key = format!("envelope:{kind:?}:{shape}:{side}");
     let shared = kind.analytic().then(|| sk.curve_defs.iter().position(|x| x.name == key)).flatten();
     let def = match shared {
@@ -361,7 +392,7 @@ pub(super) fn extruded_envelopes(sk: &mut Sketch, res: &mut Resolver, map: &mut 
             .map(|m| EntRef::new(EntKind::Motion, m));
         let Some(motion) = motion else { continue };
         // a turn about a line in space keeps no view: the spatial envelope's, after the solve
-        if program(sk, motion.i(), &mut Vec::new(), &mut Vec::new(), &mut Vec::new(), &mut String::new(), 0).is_err() {
+        if program(sk, motion.i(), &mut Program::default(), 0).is_err() {
             continue;
         }
         made.insert(st.id);

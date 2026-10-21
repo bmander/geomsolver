@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.154 — October 2026**
+**Specification, Draft 0.155 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1538,9 +1538,13 @@ itself, so a value of `t` alone is the frame undriven. A value reads one paramet
 naming both otherwise), and a frame driven by a parameter of another type than `Angle` is
 followed but not read over the roll (**E080**). A relation the solve holds reads no drive: a point
 carried by the frame's motion at a roll (`X coincident x at(under: f) τ`), and so a rate of it, is
-**E080**, as is a profile in the plane generated under it (§6.15); a relation held to an envelope
-generated under it is **E061**, and a meshing read on it is refused likewise; draw in the frame
-instead. A value is a constant twist where it is affine in what it
+**E080**; a relation held to an envelope in space generated under it is **E061**, and a meshing
+read on it is refused likewise; draw in the frame instead. **[0.155]** A profile in the plane
+generated under it (§6.15.1) is a curve as any other, its joint standing at the law's value of the
+roll: the law is a constant of the curve, read over the numbers it names where they are stated,
+and a relation holds to the profile as to one cut at a constant rate (through 0.154, **E080**). At
+a corner of the law (`abs`, `min`, `max`) each profile reads it on the side of the corner its own
+interval runs over, so the two halves of a uniform rise and fall part where the law turns. A value is a constant twist where it is affine in what it
 runs over as it is written — never by how it samples.
 
 ```
@@ -1651,7 +1655,8 @@ tool's normal there passes through the instant centre (the law of gearing). A po
 centres, its slides' lines — are columns of the curve, so a contact on a generated profile moves
 the tool and the motion to suit: a rack's pressure angle chosen so its cut passes a point, a
 cam's roller placed so the profile it cuts bends at a stated radius. The joints' ratios and advances
-are numbers of the curve. A rotation about a line in space, a traced tool, and a generated tool
+are numbers of the curve; **[0.155]** a joint driven by its frame's value (§6.14) stands at the
+law's value of the roll, the law a constant of the curve. A rotation about a line in space, a traced tool, and a generated tool
 whose own tool is not a point, line, circle or arc are errors here (**E080**). A generated tool must be
 declared before the profile it cuts.
 

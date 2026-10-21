@@ -5,7 +5,8 @@
 //! the roll being that parameter (one clock).  The law is differentiated by `taylor::Jet` and
 //! enclosed by interval arithmetic, so `MotionBounds`, the speed bound and with them the roll
 //! search and a swept field stay conservative under it.  The gate: a cam follower's lift against
-//! its law, followed and swept.
+//! its law, followed and swept; and (#398 G) the cam itself, a profile in the plane generated
+//! under the drive, against its closed form, with a circle held osculating it.
 
 use gcs_core::interval::minimum::{Options, Status};
 use gcs_core::interval::Interval as I;
@@ -250,10 +251,6 @@ fn a_drive_refuses_what_it_cannot_mean() {
         p := point hint((3, 0, 21))\np coincident g\n");
     assert!(s.len() == 1 && s[0].starts_with("E061") && s[0].contains("`follower` is driven"),
             "{s:?}");
-    // a profile in the sheet is generated under joints at a constant rate
-    let s = said("in std.front {\n  k := circle(center: r0)\n  radius(2mm) k\n}\n\
-        p := envelope(k over t in (0deg, 90deg), under: follower, seen_from: cam)\n");
-    assert!(s.iter().any(|m| m.contains("driven by `t`")), "{s:?}");
 }
 
 /// **A law three ways** (`motion::Law`): its rate from its Taylor jet against a difference of its
@@ -301,3 +298,79 @@ fn a_laws_jet_and_enclosure_agree_with_its_value() {
     assert!(Law::read(&scalar.sketch, "90deg * s", "s").unwrap_err().contains("an angle"));
 }
 
+
+/// The roller of the planar cam (`profile`): its radius, and its centre where the drive starts.
+const RR: f64 = 4.0;
+
+/// The pitch point at the roll `t` (degrees) in the front view's `(u, v)`, its rate a degree,
+/// and the cam's profile there: `RR` from the pitch point, square to its path, toward the cam's
+/// centre — a radial roller cam's closed form.
+fn pitch(t: f64) -> ([f64; 2], [f64; 2], [f64; 2]) {
+    let (s, c) = t.to_radians().sin_cos();
+    let rho = BASE + lift(t);
+    let drho = RISE * t.to_radians().sin() * std::f64::consts::PI / 180.0;
+    let k = std::f64::consts::PI / 180.0;
+    let p = [rho * s, rho * c];
+    let dp = [drho * s + rho * c * k, drho * c - rho * s * k];
+    let n = dp[0].hypot(dp[1]);
+    // the normal toward the centre
+    let mut w = [dp[1] / n, -dp[0] / n];
+    if w[0] * p[0] + w[1] * p[1] > 0.0 {
+        w = [-w[0], -w[1]];
+    }
+    (p, dp, [p[0] + RR * w[0], p[1] + RR * w[1]])
+}
+
+/// **A profile in the plane generated under a drive** (#398 G): the cam the roller cuts as the
+/// follower rises by its law, seen from the turning cam, against the closed form at every
+/// degree — and its pitch curve, the roller's centre, against its own.
+fn profile() -> Elaborated {
+    solved(&cam(&format!("in std.front {{\n  roller := circle(center: r0)\n  \
+        radius({RR}mm) roller\n}}\n\
+        pitch := envelope(r0 over t, under: follower, seen_from: cam)\n\
+        profile := envelope(roller over t, under: follower, seen_from: cam, side: near)\n")))
+}
+
+#[test]
+fn a_cam_generated_under_a_drive_is_its_closed_form() {
+    let e = profile();
+    assert!(e.ok(), "{:?}", e.diags);
+    let curve = |n: &str| e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`")).i();
+    let (pc, cc) = (curve("pitch"), curve("profile"));
+    let (mut worst_p, mut worst_c) = (0.0_f64, 0.0_f64);
+    for j in 0..=360 {
+        let t = j as f64;
+        let (p, _, c) = pitch(t);
+        let (x, y) = e.sketch.curve_point(pc, t);
+        worst_p = worst_p.max((x - p[0]).hypot(y - p[1]));
+        let (x, y) = e.sketch.curve_point(cc, t);
+        worst_c = worst_c.max((x - c[0]).hypot(y - c[1]));
+    }
+    assert!(worst_p < 1e-9, "the pitch curve is off by {worst_p}");
+    assert!(worst_c < 1e-9, "the profile is off by {worst_c}");
+}
+
+#[test]
+fn a_relation_holds_to_a_profile_generated_under_a_drive() {
+    // a circle osculating the cam at 60° into the turn: its radius is the pitch curve's radius of
+    // curvature less the roller's, the pitch curve the polar curve `ρ = BASE + lift`
+    let e = solved(&cam(&format!("in std.front {{\n  roller := circle(center: r0)\n  \
+        radius({RR}mm) roller\n}}\n\
+        profile := envelope(roller over t, under: follower, seen_from: cam, side: near)\n\
+        in std.front {{\n  k := point hint((0, 0))\n  osc := circle(center: k) hint(r: 20)\n  \
+        profile curvature(t == 60) osc\n}}\n")));
+    assert!(e.ok(), "{:?}", e.diags);
+    let t = 60_f64.to_radians();
+    let (r, dr, ddr) = (BASE + lift(60.0), RISE * t.sin(), RISE * t.cos());
+    let want = (r * r + dr * dr).powf(1.5) / (r * r + 2.0 * dr * dr - r * ddr) - RR;
+    let osc = e.map.ent_named("osc").unwrap().i();
+    let got = e.sketch.params[e.sketch.circles[osc].radius as usize].value;
+    assert!((got - want).abs() < 1e-6, "the cam bends at {got}, the closed form says {want}");
+    // and its centre is the centre of curvature: on the profile's normal there
+    let (_, _, c) = pitch(60.0);
+    let k = e.sketch.point_xy(e.map.ent_named("k").unwrap().i());
+    let d = (k.0 - c[0]).hypot(k.1 - c[1]);
+    assert!((d - want).abs() < 1e-6, "the centre stands {d} from the profile");
+    // the curvature contact's Jacobian, the law read through it, is the system's derivative
+    crate::common::fd_jacobian(&e.sketch, 1e-5);
+}

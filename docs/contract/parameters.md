@@ -6,8 +6,9 @@ interval of the roll a reading states, `follow.rs` (continuation), `trace(m over
 held to it (`followed.rs`), a drive (`motion/law.rs`, `MotionDef::Driven`,
 `tape::eval_interval`), a face swept over a declared parameter or a valued frame's block
 (`flatten/valued.rs`, #398 B), a frame along a path (`motion/guide.rs`, `MotionDef::Guided`,
-#398 C), a drawing stood at an instant of its march (`follow::stand`, `Scrub`, #398 L), or a frame
-the drawing moves read as a motion (`motion/track.rs`, `MotionDef::Followed`, #398 F). The
+#398 C), a drawing stood at an instant of its march (`follow::stand`, `Scrub`, #398 L), a frame
+the drawing moves read as a motion (`motion/track.rs`, `MotionDef::Followed`, #398 F), or a
+profile in the plane generated under a drive (`generate::Drive`, #398 G). The
 direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
 parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
 number (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says
@@ -311,9 +312,10 @@ where a rule came from.
   - **Refused** where a row would read it: `envelope::held::motion` (a carried point at a roll, a
     rate, a meshing; a relation held to an envelope under one, E061 where the solve is told it
     cannot hold to it), said first for a carried point by `relations::carried_motion` (E080,
-    naming `x in f`), both in `motion::unread_drive`'s words; `program::generated::program_signed` (a profile in the plane is
-    generated under joints at a constant rate).  A graft carries a drive with its joint
-    (`graft`), its law reading the parameter by name.
+    naming `x in f`), both in `motion::unread_drive`'s words.  Through [0.154]
+    `program::generated::program_signed` refused a profile in the plane under one too; #398 G
+    (below) generates it.  A graft carries a drive with its joint (`graft`), its law reading the
+    parameter by name.
   - **A constant twist by what is stated** (`expr::Ast::affine_in`): a face family's carried rows
     are its motion's sweep (`solid::family::stated_carry`) only where the roll they state is affine
     in the running number as written; through [0.142] three samples (the ends and the middle)
@@ -337,8 +339,8 @@ where a rule came from.
     off the guide's geometry and its derivatives (and for `On`/`Minimal`, integrated), so it
     needs a motion of its own kind in `Family` (the guide enclosed over a stretch for its bounds)
     and a sweep over a declared parameter that is no angle (`sweep(sec over s)`, left unbuilt by
-    stage 4); a relation the solve holds reading a drive (a law in a kernel's constants); a
-    profile in the plane generated under a drive; a slide's value written as a length (it is an
+    stage 4); a relation the solve holds reading a drive (a law in a kernel's constants), built
+    for a profile in the plane by #398 G (below) and for nothing else; a slide's value written as a length (it is an
     instant of the roll: `advance: 360mm` makes its degrees millimetres); and the app's timeline
     (stage 6, built by #398 L, below).
 - **Faces swept over a declared parameter** (#398 B, [0.145]): one parameter axis for the face
@@ -558,3 +560,36 @@ where a rule came from.
   - **Not built**: a frame the drawing moves read by a relation the solve holds, a roll through a
     body under one (`sweep(tool, through: body)` reads the roll about 0), a frame riding on one, a
     trace in space held to, and a meshing on one.
+- **A profile in the plane generated under a drive** (#398 G, [0.155], `generate::Drive`): a
+  turn or a slide in a planar envelope's motion whose frame's value reads a declared parameter
+  stands at the law's value of the roll, so a cam is cut from its law.
+  - **The program** (`program::generated::program_signed`): `MotionDef::Driven` compiles to its
+    joint's own step (`Step::Turn`/`Step::Slide`, run back where the reading inverts it), marked
+    with the law it reads; the law is `motion::Law::carried`, its tape over only the held numbers
+    its text reads, where they stand when the profile is built, and the parameter's slot.  A law
+    reading a held number of the geometry (`HeldNumber::reads`), which the solve moves while the
+    curve's constants do not, is E080.  The law's text and its numbers join the definition's key,
+    so two profiles share a definition only under the same law.  The profile's last roll is one
+    of its values (`Driven::end`).
+  - **The encoding** (`generate::Generated`): a driven turn `[5, centre, ratio, law, end]`, a
+    driven slide `[6, line, advance, law, end]`, and after the steps the laws, `[n, (len, flat…,
+    n_x, x…, at)…]` — a contact on the profile carries them in its constants, so a relation the
+    solve holds reads the law (`p coincident f`, `f tangent l`, `f curvature k`), and a prism's
+    side under a drive (`extruded_envelopes`) is generated the same way.
+  - **Read in `taylor::Jet`** (`generate::run`): the joint's roll is the law's series, over
+    `tape::eval_num`, about a roll a hair (1e-9 of the roll) from `t` and composed back to `t`,
+    so the profile's orders are as exact as at a constant rate.  **A corner of the law** (`abs`,
+    `min`, `max`: a uniform rise meeting its fall) is read from above, and at the profile's last
+    roll from below, so each piece of a profile reads the law on its own side of the corner,
+    whatever the corner's spelling (the tape's `abs` takes the sign of the constant term, so
+    which side a jet at the corner reads depends on how it is written).
+  - **Gate**: `tests/drives.rs` — a radial cam cut under `5deg * (1 - cos(t))` and its pitch
+    curve against the closed form at every degree (1e-9); a circle held osculating the cam, its
+    radius and centre against the polar curve's radius of curvature less the roller's (1e-6).
+    `tests/generation_examples.rs` — `generation/heart_cam.sv` written over `param t` with one
+    law, `180deg - abs(180deg - t)`, in place of its two constant-rate slides: the pitch curve the
+    uniform-rise spiral (1e-9), its halves meeting at the point, the profile's halves parting
+    there by the spiral's lean either side (each half reading the corner on its own side), and the
+    osculating radius unchanged.
+  - **Not built**: a point carried under a drive and held by a relation (E080), a relation held to
+    an envelope in space generated under one (E061), and a meshing on one.

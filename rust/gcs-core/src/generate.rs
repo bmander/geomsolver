@@ -67,15 +67,42 @@ impl Tool {
 
 /// One step of the motion's postfix program, each number where it stands in the outer vector
 /// `[t, θ…, values…]`: a turn about a centre at a ratio, a slide along a line by an advance
-/// per turn, and the relative of the two before it (the first seen from the second).  A frame
-/// the drawing moves (#398 F) is `Table`, motion node `motion`'s: its numbers are the drawing's
-/// march, which no row reads, attached after the solve (`with_tables`).
+/// per turn, and the relative of the two before it (the first seen from the second).  A turn or
+/// a slide `law`-driven (#398 G) stands at its law's value of the roll rather than at the roll.
+/// A frame the drawing moves (#398 F) is `Table`, motion node `motion`'s: its numbers are the
+/// drawing's march, which no row reads, attached after the solve (`with_tables`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Op {
-    Turn { centre: usize, ratio: usize },
-    Slide { line: usize, advance: usize },
+    Turn { centre: usize, ratio: usize, law: Option<Driven> },
+    Slide { line: usize, advance: usize, law: Option<Driven> },
     Relative,
     Table { motion: usize, back: bool },
+}
+
+/// **A joint driven by a law** (#398 G), as a step reads it: which of the profile's laws
+/// (`Drive`), and where the outer vector holds the profile's last roll — at which the law is read
+/// from below, so a corner of it is read on the side the profile runs over.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Driven {
+    pub law: usize,
+    pub end: usize,
+}
+
+impl Op {
+    fn driven(&self) -> bool {
+        matches!(self, Op::Turn { law: Some(_), .. } | Op::Slide { law: Some(_), .. })
+    }
+}
+
+/// **A joint's law as a profile carries it** (#398 G, `motion::Law::carried`): its tape over the
+/// held numbers it reads, their values where the drawing stood when the profile was built, and
+/// which of them the roll stands for — read in Taylor arithmetic, so the profile's orders are as
+/// exact under a drive as at a constant rate.
+#[derive(Clone, Copy, Debug)]
+pub struct Drive<'a> {
+    pub flat: &'a [f64],
+    pub x: &'a [f64],
+    pub at: usize,
 }
 
 /// What a curve or generated tool carries besides its columns.
@@ -102,7 +129,9 @@ const MARCH: usize = 32;
 /// A compiled generated profile, held as its encoding — what rides in a contact's constants:
 /// `[n_theta, tool, side, n_ops, ops…, tool body…]`, written by `new` and read by `view` and
 /// nowhere else.  A turn is `[1, centre, ratio]`, a slide `[2, line, advance]`, a
-/// relative `[3]`.  A curve tool's body is `[n_theta, lx, ly, x…, y…, n_values, values…, from,
+/// relative `[3]`, a driven turn `[5, centre, ratio, law, end]` and a driven slide `[6, line,
+/// advance, law, end]`; where a step is driven the laws follow the steps, `[n, (len, flat…, n_x,
+/// x…, at)…]`.  A curve tool's body is `[n_theta, lx, ly, x…, y…, n_values, values…, from,
 /// to]`, a generated tool's `[n_theta, n_values, values…, anchor, from, to, len, flat…]`.
 #[derive(Clone, Debug)]
 pub struct Generated {
@@ -122,14 +151,29 @@ impl Generated {
         k
     }
 
-    pub fn new(n_theta: usize, tool: Tool, side: f64, ops: &[Op], body: ToolBody) -> Generated {
+    pub fn new(n_theta: usize, tool: Tool, side: f64, ops: &[Op], laws: &[Drive], body: ToolBody)
+        -> Generated {
         let mut f = vec![n_theta as f64, tool.code(), side, ops.len() as f64];
         for op in ops {
             match *op {
-                Op::Turn { centre, ratio } => f.extend([1.0, centre as f64, ratio as f64]),
-                Op::Slide { line, advance } => f.extend([2.0, line as f64, advance as f64]),
+                Op::Turn { centre, ratio, law: None } => f.extend([1.0, centre as f64, ratio as f64]),
+                Op::Slide { line, advance, law: None } => f.extend([2.0, line as f64, advance as f64]),
+                Op::Turn { centre, ratio, law: Some(d) } =>
+                    f.extend([5.0, centre as f64, ratio as f64, d.law as f64, d.end as f64]),
+                Op::Slide { line, advance, law: Some(d) } =>
+                    f.extend([6.0, line as f64, advance as f64, d.law as f64, d.end as f64]),
                 Op::Relative => f.push(3.0),
                 Op::Table { motion, back } => f.extend([4.0, motion as f64, f64::from(u8::from(back))]),
+            }
+        }
+        if ops.iter().any(Op::driven) {
+            f.push(laws.len() as f64);
+            for d in laws {
+                f.push(d.flat.len() as f64);
+                f.extend_from_slice(d.flat);
+                f.push(d.x.len() as f64);
+                f.extend_from_slice(d.x);
+                f.push(d.at as f64);
             }
         }
         match body {
@@ -168,6 +212,8 @@ struct View<'a> {
     inner: Option<Box<InnerTool<'a>>>,
     /// Each `Table` op's motion node and its table, where they are attached (`with_tables`).
     tables: Vec<(usize, &'a [f64])>,
+    /// The laws the driven steps read.
+    laws: Vec<Drive<'a>>,
 }
 
 struct CurveTool<'a> {
@@ -210,8 +256,12 @@ fn ops(flat: &[f64]) -> Option<(Vec<Op>, usize)> {
     let mut ops = Vec::with_capacity(n_ops);
     for _ in 0..n_ops {
         let (op, len) = match g(at)? {
-            1.0 => (Op::Turn { centre: ix(at + 1)?, ratio: ix(at + 2)? }, 3),
-            2.0 => (Op::Slide { line: ix(at + 1)?, advance: ix(at + 2)? }, 3),
+            1.0 => (Op::Turn { centre: ix(at + 1)?, ratio: ix(at + 2)?, law: None }, 3),
+            2.0 => (Op::Slide { line: ix(at + 1)?, advance: ix(at + 2)?, law: None }, 3),
+            5.0 => (Op::Turn { centre: ix(at + 1)?, ratio: ix(at + 2)?,
+                               law: Some(Driven { law: ix(at + 3)?, end: ix(at + 4)? }) }, 5),
+            6.0 => (Op::Slide { line: ix(at + 1)?, advance: ix(at + 2)?,
+                                law: Some(Driven { law: ix(at + 3)?, end: ix(at + 4)? }) }, 5),
             3.0 => (Op::Relative, 1),
             4.0 => (Op::Table { motion: ix(at + 1)?, back: g(at + 2)? != 0.0 }, 3),
             _ => return None,
@@ -232,6 +282,28 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
         return None;
     }
     let (ops, mut at) = ops(flat)?;
+    let mut laws = Vec::new();
+    if ops.iter().any(Op::driven) {
+        let n = ix(at)?;
+        at += 1;
+        if n > 64 {
+            return None;
+        }
+        for _ in 0..n {
+            let len = ix(at)?;
+            let law = flat.get(at + 1..at + 1 + len)?;
+            at += 1 + len;
+            let nx = ix(at)?;
+            let x = flat.get(at + 1..at + 1 + nx)?;
+            at += 1 + nx;
+            let slot = ix(at)?;
+            if slot >= nx {
+                return None;
+            }
+            at += 1;
+            laws.push(Drive { flat: law, x, at: slot });
+        }
+    }
     let curve = if tool == Tool::Curve {
         let (n_t, lx, ly) = (ix(at)?, ix(at + 1)?, ix(at + 2)?);
         at += 3;
@@ -275,7 +347,7 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
             at += 2 + len;
         }
     }
-    Some(View { n_theta, tool, side, ops, curve, inner, tables })
+    Some(View { n_theta, tool, side, ops, curve, inner, tables, laws })
 }
 
 /// The motion nodes a profile's `Table` ops read (#398 F): what `with_tables` attaches, in order.
@@ -342,6 +414,23 @@ fn table(data: &[f64], t: Jet) -> Option<(Jet, [Jet; 2])> {
     Some((phi, [cx - (cs * ox - sn * oy), cy - (sn * ox + cs * oy)]))
 }
 
+/// **The roll a joint stands at** (degrees, a jet): `t` itself, or where the joint is driven
+/// (#398 G) its law's value of `t` — a series about a roll a hair from `t`, composed back to `t`,
+/// so a law with a corner (`abs`, `min`, `max`: a uniform rise meeting its fall) is read from
+/// above, and at the profile's last roll from below: each piece of a profile reads the law on
+/// its own side of the corner, whatever the corner's spelling.
+fn run(v: &View, outer: &[f64], law: Option<Driven>, t: Jet) -> Option<Jet> {
+    let Some(Driven { law, end }) = law else { return Some(t) };
+    let d = v.laws.get(law)?;
+    let t0 = t.0[0];
+    let side = if t0 >= *outer.get(end)? { -1.0 } else { 1.0 };
+    let base = t0 + side * 1e-9 * (1.0 + t0.abs());
+    let mut x: Vec<Jet> = d.x.iter().map(|&c| Jet::constant(c)).collect();
+    *x.get_mut(d.at)? = Jet::var(base);
+    let r = tape::eval_num::<Jet>(d.flat, &x)?.compose(t.shift(-base));
+    r.0.iter().all(|c| c.is_finite()).then_some(r)
+}
+
 /// The motion at the roll `t` (degrees, a jet), as `(Φ, d)`: `X = R(Φ)·T + d`.
 fn motion(v: &View, outer: &[f64], t: Jet) -> Option<(Jet, [Jet; 2])> {
     let mut stack = [(Jet::default(), [Jet::default(); 2]); STACK];
@@ -349,14 +438,14 @@ fn motion(v: &View, outer: &[f64], t: Jet) -> Option<(Jet, [Jet; 2])> {
     let at = |i: usize| outer.get(i).copied();
     for op in &v.ops {
         let m = match *op {
-            Op::Turn { centre, ratio } => {
+            Op::Turn { centre, ratio, law } => {
                 let (cx, cy) = (at(centre)?, at(centre + 1)?);
-                let phi = t * (at(ratio)? * DEG);
+                let phi = run(v, outer, law, t)? * (at(ratio)? * DEG);
                 let (sn, cs) = phi.sin_cos();
                 // about the centre: R(c' − c) + c, so d = c − R c
                 (phi, [Jet::constant(cx) - (cs * cx - sn * cy), Jet::constant(cy) - (sn * cx + cs * cy)])
             }
-            Op::Slide { line, advance } => {
+            Op::Slide { line, advance, law } => {
                 let (ax, ay, bx, by) = (at(line)?, at(line + 1)?, at(line + 2)?, at(line + 3)?);
                 let len = (bx - ax).dhypot(by - ay);
                 if !(len > 0.0) {
@@ -364,7 +453,8 @@ fn motion(v: &View, outer: &[f64], t: Jet) -> Option<(Jet, [Jet; 2])> {
                 }
                 // `advance` per whole turn of the roll
                 let k = at(advance)? / 360.0 / len;
-                (Jet::constant(0.0), [t * ((bx - ax) * k), t * ((by - ay) * k)])
+                let roll = run(v, outer, law, t)?;
+                (Jet::constant(0.0), [roll * ((bx - ax) * k), roll * ((by - ay) * k)])
             }
             Op::Table { motion, back } => {
                 let data = v.tables.iter().find(|(m, _)| *m == motion)?.1;
@@ -892,14 +982,14 @@ pub fn planar(tool: Tool, columns: &[f64], side: f64, program: &[crate::motion::
         match *step {
             PlanarStep::Turn { centre, ratio } => {
                 outer.extend([centre[0], centre[1], ratio]);
-                ops.push(Op::Turn { centre: at, ratio: at + 2 });
+                ops.push(Op::Turn { centre: at, ratio: at + 2, law: None });
             }
             PlanarStep::Slide { direction, advance } => {
                 outer.extend([0.0, 0.0, direction[0], direction[1], advance]);
-                ops.push(Op::Slide { line: at, advance: at + 4 });
+                ops.push(Op::Slide { line: at, advance: at + 4, law: None });
             }
             PlanarStep::Relative => ops.push(Op::Relative),
         }
     }
-    (Generated::new(columns.len(), tool, side, &ops, ToolBody::None), outer)
+    (Generated::new(columns.len(), tool, side, &ops, &[], ToolBody::None), outer)
 }
