@@ -127,8 +127,9 @@ pub struct Diagnosis {
     /// with room is in neither.
     pub bounds_violated: Vec<u32>,
     pub bounds_active: Vec<u32>,
-    /// The tangencies at a contact whose line has no length (#479, `solve::collapsed`): each holds
-    /// whatever its contact, so the figure is degenerate, which a solve reports as a failure.
+    /// The tangencies at a contact, `parallel`s and `perpendicular`s with a line of no length
+    /// (#479, `solve::collapsed`): each holds whatever that line's direction, so the figure is
+    /// degenerate, which a solve reports as a failure.
     pub collapsed: Vec<u32>,
     /// Each `minimizes`'s and `maximizes`'s verdict (#121), by its terms' constraints: minimum,
     /// maximum, saddle or degenerate, read off the reduced Hessian at the pose diagnosed — told,

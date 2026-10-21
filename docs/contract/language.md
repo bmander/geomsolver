@@ -494,7 +494,9 @@ takes a layout naming the front datum, origin and reference axis.
   zero-length line, a `distance` at a stationary point), and minted points may not pile up or seed
   a self-crossing contour (a collapsed side satisfies every direction constraint).  `scatter` walks
   the bearing a fixed irrational step per minted point in creation order (a chain's traversal
-  order: a simple polygon).
+  order: a simple polygon).  At the size of a unit, though, a contour whose stated sides are
+  thirty can still collapse one on the way, which the solve recovers from (`System::rescaled`,
+  [solver.md](solver.md)).
   "No clause" is the empty `hint_span` (a lifted declaration has `None`), and `commit_seeds` writes
   the solved pose in as the clause.  A component's points take the same clause; `gear.sv` /
   `gear_trace.sv` state theirs (else a flank's first step can reach the mirror branch).

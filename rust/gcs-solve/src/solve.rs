@@ -22,16 +22,17 @@ use crate::curve;
 use crate::model::Sketch;
 use crate::newton::{self, Info, Method};
 use crate::system::System;
+use std::collections::BTreeMap;
 
 /// A `SolveResult::status` of its own: every row holds, and a bound does not (§9.6).
 pub const BOUND_BROKEN: i32 = 5;
 
-/// A `SolveResult::status` of its own: every row holds, and a line a tangency reads only by its
-/// direction has no length (#479, `collapsed`).
+/// A `SolveResult::status` of its own: every row holds, and a line a tangency, `parallel` or
+/// `perpendicular` reads only by its direction has no length (#479, `collapsed`).
 pub const COLLAPSED: i32 = 6;
 
-/// How short, over the drawing's extent, a line a tangency reads by its direction may be and
-/// still be a line (`collapsed`): the solve's own relative tolerance, as a bound's.
+/// How short, over the drawing's extent, a line a row reads by its direction may be and still be
+/// a line (`collapsed`): the solve's own relative tolerance, as a bound's.
 const COLLAPSE_TOL: f64 = 1e-6;
 
 /// How many times larger or smaller than the extent a system was compiled at a failed solve's
@@ -48,18 +49,37 @@ fn reads_pose(sk: &Sketch) -> bool {
     sk.constraints.iter().any(|c| c.kind.reads_pose() && c.states_rows())
 }
 
-/// **A tangency at a contact is no tangency along a line of no length** (#479): every acting
-/// constraint, by id, whose row reads a line only by its direction (`Constraint::direction_line`)
-/// where that line is shorter than `COLLAPSE_TOL` of the extent.  Such a row holds whatever the
-/// contact, so a run tangent at both its ends is satisfied by its ends together where its two
-/// rounds cross: a root of full rank, isolated, that no rank or diagnosis can tell from the
-/// tangent.  A document solve ending there fails (`COLLAPSED`), never reported solved.
+/// **A tangency at a contact is no tangency along a line of no length** (#479), **nor is a
+/// `parallel` or a `perpendicular`**: every acting constraint, by id, whose row reads a line only
+/// by its direction (`Constraint::direction_lines`) where that line is shorter, in space, than
+/// `COLLAPSE_TOL` of the extent.  Such a row holds whatever the line's direction, so a run
+/// tangent at both its ends is satisfied by its ends together where its two rounds cross, and a
+/// rectangle of perpendicular sides by a side drawn as a point and the next across the diagonal:
+/// roots that no rank or diagnosis can tell from the figure.  A document solve ending there is
+/// tried again from its start at the size it ended at (`System::rescaled`), else fails
+/// (`COLLAPSED`), never reported solved.
 pub fn collapsed(sk: &Sketch) -> Vec<u32> {
     let floor = COLLAPSE_TOL * sk.extent();
+    let short = |l: usize| {
+        let ln = &sk.lines[l];
+        let (a, b) = (sk.world_point(ln.p1 as usize), sk.world_point(ln.p2 as usize));
+        !(crate::space::norm(crate::space::sub(b, a)) > floor)
+    };
     sk.constraints.iter().filter(|c| c.acts())
-        .filter(|c| c.direction_line().is_some_and(|l| !(sk.line_length(l) > floor)))
+        .filter(|c| c.direction_lines().into_iter().any(short))
         .map(|c| c.id)
         .collect()
+}
+
+/// `res` judged as a document's answer: one that holds every row with a line a row reads by its
+/// direction of no length is no solution (`collapsed`).
+fn judged(sk: &Sketch, mut res: SolveResult) -> SolveResult {
+    if res.success && !collapsed(sk).is_empty() {
+        res.success = false;
+        res.status = COLLAPSED;
+        res.message = newton::status_message(COLLAPSED).to_string();
+    }
+    res
 }
 
 #[derive(Clone, Debug)]
@@ -167,13 +187,13 @@ impl SolveOpts {
 }
 
 /// What a failed document solve is tried again under, in order, each only while the solve has
-/// not succeeded (`System::solve`): at the drawing's own size, then with its charts gauged where
-/// it ended.  Each says whether it applies, setting up the sketch the system is compiled from
+/// not succeeded (`System::solve`): from a start at the size a collapsed solve ended at, at the
+/// drawing's own size, then with its charts gauged where it ended.  Each says whether it applies, setting up the sketch the system is compiled from
 /// again, and where that solve starts and what is put back where it fails (`Recovery`).  (A
 /// contact on an envelope or a meshing needs none: it is seeded where its block comes up,
 /// `blocks::seed_contacts`.)
-const RECOVERIES: [fn(&System, &mut Sketch, &[f64]) -> Option<Recovery>; 2] =
-    [System::resized, System::recharted];
+const RECOVERIES: [fn(&System, &mut Sketch, &[f64]) -> Option<Recovery>; 3] =
+    [System::rescaled, System::resized, System::recharted];
 
 /// One recovery of a failed document solve (`RECOVERIES`): the system compiled again where the
 /// sketch stands, solved on from `from` (where it stands, when `None`), and kept only where that
@@ -260,6 +280,7 @@ impl System {
         let start = if opts.document() { sk.get_x() } else { Vec::new() };
         let mut res = self.solve_unsteered(sk, opts);
         if opts.document() {
+            res = judged(sk, res);
             for recovery in RECOVERIES {
                 if res.success {
                     break;
@@ -273,12 +294,75 @@ impl System {
             res = self.steer(sk, opts, start, res);
         }
         // named where it is reported (`Diagnosis::collapsed`), not here
-        if opts.document() && res.success && !collapsed(sk).is_empty() {
-            res.success = false;
-            res.status = COLLAPSED;
-            res.message = newton::status_message(COLLAPSED).to_string();
+        if opts.document() {
+            res = judged(sk, res);
         }
         res
+    }
+
+    /// **A collapsed side is a start at the wrong size** (#479): a contour of points the source
+    /// left unseeded starts about the origin at the size of a unit (`program::scatter`), and one
+    /// whose dimensions are thirty times that grows its stated sides first, so a side read only by
+    /// direction — a rectangle's third — can shrink to a point on the way and its neighbour close
+    /// across the diagonal (`collapsed`).  The same contour seeded at its size is the figure.  So
+    /// a document solve that ends collapsed is solved again from where it began with each figure
+    /// — the points drawn in a plane whose two coordinates are unknowns, grouped by the rows that
+    /// join them — that ended at another size, more than `RESIZE` either way, carried about its
+    /// centroid to that size (compiled there, as `resized`): each its own, as two rectangles of
+    /// different sides grow by different factors.  Kept where it succeeds uncollapsed, else the
+    /// first stands.
+    fn rescaled(&self, sk: &mut Sketch, start: &[f64]) -> Option<Recovery> {
+        if collapsed(sk).is_empty() {
+            return None;
+        }
+        // the free columns the rows join, one figure to a root
+        let mut root: Vec<usize> = (0..self.n_free).collect();
+        fn find(root: &mut [usize], mut c: usize) -> usize {
+            while root[c] != c {
+                root[c] = root[root[c]];
+                c = root[c];
+            }
+            c
+        }
+        for cols in self.structure().0 {
+            for w in cols.windows(2) {
+                let (a, b) = (find(&mut root, w[0]), find(&mut root, w[1]));
+                root[a.max(b)] = a.min(b);
+            }
+        }
+        let col = |i: u32| usize::try_from(*self.col_of.get(i as usize)?).ok();
+        let mut figures: BTreeMap<usize, Vec<[usize; 2]>> = BTreeMap::new();
+        for p in sk.points.iter().filter(|p| p.z.is_none()) {
+            if let (Some(cx), Some(_)) = (col(p.x), col(p.y)) {
+                figures.entry(find(&mut root, cx)).or_default()
+                    .push([p.x as usize, p.y as usize]);
+            }
+        }
+        let now = sk.get_x();
+        let size = |x: &[f64], pts: &[[usize; 2]]| {
+            let span = |j: usize| {
+                let v = pts.iter().map(|xy| x[xy[j]]);
+                v.clone().fold(f64::NEG_INFINITY, f64::max) - v.fold(f64::INFINITY, f64::min)
+            };
+            span(0).max(span(1))
+        };
+        let mut from = start.to_vec();
+        let mut any = false;
+        for pts in figures.values() {
+            let k = size(&now, pts) / size(start, pts);
+            if !(k > RESIZE || k * RESIZE < 1.0) || !k.is_finite() {
+                continue;
+            }
+            any = true;
+            let n = pts.len() as f64;
+            let mid = [0, 1].map(|j| pts.iter().map(|xy| start[xy[j]]).sum::<f64>() / n);
+            for xy in pts {
+                for j in 0..2 {
+                    from[xy[j]] = mid[j] + k * (start[xy[j]] - mid[j]);
+                }
+            }
+        }
+        any.then(|| Recovery { from: Some(from), back: Back::Pose(now) })
     }
 
     /// **A drawing is judged at its own size** (#217): a system's rows and columns are scaled by
@@ -333,7 +417,7 @@ impl System {
             sk.set_x(from);
         }
         let solved = self.solve_unsteered(sk, opts);
-        if solved.success {
+        if solved.success && collapsed(sk).is_empty() {
             return solved;
         }
         *self = compiled;

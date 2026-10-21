@@ -42,6 +42,7 @@ mod chain_edges;
 mod claim;
 mod claim_witness;
 mod closed_scopes;
+mod collapsed_side;
 mod collapsed_tangent;
 mod components;
 mod composed_rounds;

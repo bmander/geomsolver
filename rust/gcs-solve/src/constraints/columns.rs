@@ -423,16 +423,20 @@ impl Constraint {
         }
     }
 
-    /// The line a tangency at a contact reads only by its direction (#479): the
-    /// `tangent_arc_line` kernel's `(p − c)·(b − a)`, the ends' difference unnormalised, which
-    /// holds for every contact where the line has no length.  A run tangent at both its ends then
-    /// has a root with its ends together where the two rounds cross, isolated and of full rank, so
-    /// only its length tells it from a tangent (`solve::collapsed`).
-    pub fn direction_line(&self) -> Option<usize> {
+    /// The lines this row reads only by their direction (#479): the `tangent_arc_line` kernel's
+    /// `(p − c)·(b − a)` and `parallel`'s cross and `perpendicular`'s dot of the two lines'
+    /// `b − a`, the ends' difference unnormalised, which hold whatever else where a line has no
+    /// length.  A run tangent at both its ends then has a root with its ends together where the
+    /// two rounds cross, and a rectangle of four perpendicular sides one with a side a point and
+    /// the next its diagonal, so only a length tells either from the figure (`solve::collapsed`).
+    pub fn direction_lines(&self) -> Vec<usize> {
         match self.kind {
-            CKind::TangentArcLine | CKind::TangentCircleAt => Some(self.args[1].ent().i()),
-            CKind::TangentLineCircleAt => Some(self.args[0].ent().i()),
-            _ => None,
+            CKind::TangentArcLine | CKind::TangentCircleAt => vec![self.args[1].ent().i()],
+            CKind::TangentLineCircleAt => vec![self.args[0].ent().i()],
+            CKind::Parallel | CKind::Perpendicular => {
+                vec![self.args[0].ent().i(), self.args[1].ent().i()]
+            }
+            _ => Vec::new(),
         }
     }
 
