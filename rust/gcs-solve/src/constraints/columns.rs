@@ -152,6 +152,10 @@ impl Constraint {
             // an angle is directed, so `sense: cw` turns the number it states rather than the
             // reader having to write the minus (§9.4)
             CKind::Angle => vec![self.sense() * self.args[2].num()],
+            // the quarter turn `angle`'s kernel reads, where a sense says which (#497)
+            CKind::Perpendicular => {
+                self.side().map(|s| vec![s * std::f64::consts::FRAC_PI_2]).unwrap_or_default()
+            }
             // the sign the second pair's angle is read with: `sense: cw` is its mirror image
             CKind::EqualAngle => vec![self.sense()],
             // the turn the similarity keeps, or with `mirror: true` reverses (#357)
@@ -420,17 +424,20 @@ impl Constraint {
         }
     }
 
-    /// The line a tangency at a contact reads only by its direction (#479): the
-    /// `tangent_arc_line` kernel's `(p − c)·(b − a)`, the ends' difference unnormalised, which
-    /// holds for every contact where the line has no length.  A run tangent at both its ends then
-    /// has a root with its ends together where the two rounds cross, isolated and of full rank, so
-    /// only its length tells it from a tangent (`solve::collapsed`).
-    pub fn direction_line(&self) -> Option<usize> {
-        match self.kind {
-            CKind::TangentArcLine | CKind::TangentCircleAt => Some(self.args[1].ent().i()),
-            CKind::TangentLineCircleAt => Some(self.args[0].ent().i()),
-            _ => None,
-        }
+    /// The lines this row reads only by their direction (#479): the `tangent_arc_line` kernel's
+    /// `(p − c)·(b − a)/|b − a|` and `parallel`'s sine and `perpendicular`'s cosine of the two
+    /// lines' unit directions.  A line of no length has none (its floored unit is nil), so each
+    /// holds there whatever else: a run tangent at both its ends held together where its two
+    /// rounds cross, a rectangle's side pinned to a point — only a length tells either from the
+    /// figure (`solve::collapsed`).
+    pub fn direction_lines(&self) -> impl Iterator<Item = usize> + '_ {
+        let slots = match self.kind {
+            CKind::TangentArcLine | CKind::TangentCircleAt => 1..2,
+            CKind::TangentLineCircleAt => 0..1,
+            CKind::Parallel | CKind::Perpendicular => 0..2,
+            _ => 0..0,
+        };
+        self.args[slots].iter().map(|a| a.ent().i())
     }
 
     /// The spline this constraint touches and the Param holding where on it — `None` for

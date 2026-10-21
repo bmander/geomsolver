@@ -46,9 +46,36 @@ What the work found:
   structure compiled once for the document and read per part.
 
 PT5's advice is built: `solventc --lint` names a part whose rows, from scattered starts, come to
-another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts draw
-it (`ConRod`'s small end above or below its pin, for one); stating each root is follow-up work,
-now that #157 holds a stated `ccw`. The hub motor still threads its table, its own issue (§9).
+another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts drew
+it, and each now states its root (#503) with `ccw`/`cw`, so the engine lints clean
+(`tests/parts.rs`):
+* **`Span`**, a belt run or a cam's flank: both circles on the run's far side from the side it
+  is asked for. That refuses the other outer tangent, both crossed ones, and the run of no length
+  where a lobe's overlapping base and nose circles meet. Read on the run itself, which never
+  passes through a centre. `Lobe` and the timing `Drive` drew W207 through their spans alone.
+* **`Throw`**, a crank web: ten points each with two roots. Each is read against points already
+  placed, or against a rim corner whose side of the arm its signed distance fixes. The throw only
+  turns about its axis, so every triangle keeps its area through the turn (302 mm² the least).
+  Its rim corners' seeds stood on the wrong sides of the arm, which the choices read as broken and
+  carried other points across; they now stand where the corners solve.
+* **`Valve`**, the follower, bucket, stem and head: each part's side of the valve axis, or of
+  the follower face. The lift slides the valve along its axis and turns none of them.
+`ConRod` has more unknowns than the search takes (`boundary::SEARCHED`), so it is not asked.
+Every position agrees with the drawing before the change to 7e-13 at 81 cycle angles over the
+whole 720°. Each of those solves, and every stated choice holds at each one.
+
+**The hub motor as parts** (#502): every definition in `hub_motor/motor/` is a `part` reading
+`motor.dims` as constants, and the `motor_dims` group and every `dims:` argument are gone. The
+`frame` group of the world's planes became `motor.parts.Datums`, the points and lines the motor
+is drawn about (the axle's centre and datum in the end view, its mid-plane and centreline in the
+section), and each part draws in the planes they are drawn in; the axle takes the plan's origin
+for its cable port, and the rotor its angle as a formal (PC3). The two W207s, `Rotor` and
+`Stator`, are stated as bounds: each point the walls, shoes, hall sensors and magnets place on a
+circle from an offset line stands ahead of the axle along its centreline (`f.o distance(>= 0,
+along: sc) a`), not at the line's crossing behind it. W207 now reads a part's bounds as root
+choices, as its remedy says (`boundary::analyse`); it read only its orientations. All 6,607
+geometric numbers agree with the old document to 1.4e-14, the solids' volumes exactly, and the
+four sheets render the same coordinates; the advertised shape is unchanged.
 
 **The V-twin as parts** (#501): all 21 definitions in `vtwin/components/` are parts. The
 assembly has 95 instances of 18 of them, and `--lint` says nothing of any file.
@@ -63,23 +90,22 @@ assembly has 95 instances of 18 of them, and `--lint` says nothing of any file.
   (`z: zB`), its cylinder's face wall following.
 * **The throttle.** Its section plane stands at the barrel's centre rather than the frame's
   origin. That is the same plane in space, so the claimed vertical datum tying them is gone.
-* **Making them parts found three faults in the classifier, not the document.**
+* **Making them parts found two faults in the classifier, not the document.**
   * A point's hidden point and a plane's axes were nobody's numbers. A part that read an
     operand in space (the disc's set screw, measured along a frame turned inside the disc's
     frame) took the parent's frame rows as its own, and a part whose point another part's
     frame passed through (the crank pin, under each bank's piston frame) took that frame's.
     Each was E109 over rows it never wrote.
-  * W207's root search held only `ccw`/`cw`, though its message offers a bound.
-  * It counted an axis held along a drawn line as a second root when turned back.
+  * The root search counted an axis held along a drawn line as a second root when turned back.
 
-  Every root is now stated: by `ccw(o, t, q)` in `std.Turned`, and by 22 bounds and three
-  orientations in the parts. 41 other roots are found and refused.
-* **What moved.** Every number the old and new assemblies share agrees within 1e-11 (2,826
-  places, areas and volumes at `t = 0`); the part sheets' previews agree exactly. The throttle's
-  section, its other 23, is the same shape 72 along its plane, about its new origin.
-  The advertised shape loses the datum's point and line (327, 320, 27, 4). The sheets render as
-  before but where coincident hidden edges are split differently (the plate's: 214 pixels of
-  127,438 inked, in dash phase).
+  Every root is now stated, by 22 bounds and three orientations in the parts, beside
+  `std.Turned`'s own turn (#497). 41 other roots are found and refused.
+* **What moved.** Read by the same core, every number the old and new assemblies share agrees
+  within 1e-12 (2,826 places, areas and volumes at `t = 0`), and the part sheets' previews
+  exactly. The throttle's section, its other 23, is the same shape 72 along its plane, about its
+  new origin. The advertised shape loses the datum's point and line (327, 320, 27, 4). Every
+  sheet renders byte for byte as before but the plate's, whose hidden edges are split
+  differently where they coincide (314 pixels of 127,438 inked, in dash phase).
 
 #492 meets its acceptance but for one bench row: at r₂ = 20.001 the flat solve reports "ok" 2e-3
 of the extent off the true crossing, every row holding to 2.1e-7 of its own size while the

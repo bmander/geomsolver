@@ -344,7 +344,7 @@ x := Apex(o, q)
 
 /// **PT5, which root a part takes is stated** (W207, by `--lint`): a point 5 from two points 6
 /// apart has two poses; the part that leaves the choice to its seed is named, and the ones that
-/// state it, with `ccw` or with a bound (#501), are not.
+/// state it, with `ccw` or with a bound (the hub motor's slot corners, ahead of the axle), are not.
 #[test]
 fn a_part_that_leaves_its_root_to_its_seeds_is_named() {
     let e = read("\
@@ -389,6 +389,38 @@ z := Bounded(o, q)
         .map(|d| (d.code.as_str().to_string(), d.span.slice(e.text()).to_string()))
         .collect();
     assert_eq!(said, [("W207".to_string(), "Apex".to_string())]);
+}
+
+/// **The engine states every root its parts take** (#503): `--lint` names none of its parts, and
+/// each choice it states holds through the turn — at the dead centres of both revolutions of the
+/// cycle, where the pins stand in line with the bores, and between them.
+#[test]
+fn the_engine_states_the_root_of_every_part() {
+    let engine = |cycle: &str| {
+        let (mut prog, errs) = gcs_core::syntax::parse(gcs_core::examples::source("engine").unwrap());
+        let linked = gcs_core::modules::link(&mut prog, &mut |name| {
+            let text = gcs_core::library::resolve(name)?;
+            Some(match name {
+                "engine.dims" => text.replace("cycle := 400deg", &format!("cycle := {cycle}")),
+                _ => text,
+            })
+        });
+        assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
+        let e = gcs_core::program::elaborate(&prog);
+        assert!(e.ok(), "{:?}", e.diags);
+        let mut sk = e.sketch.clone();
+        let r = gcs_core::solve::solve(&mut sk, Default::default());
+        assert!(r.success, "at {cycle}: {}", r.message);
+        assert!(gcs_core::solve::orientations_broken(&sk).is_empty(), "at {cycle}");
+        (e, sk)
+    };
+    let (e, sk) = engine("400deg");
+    let said: Vec<String> = gcs_core::parts::roots(&e, &sk).iter().map(|d| d.message.clone())
+        .collect();
+    assert!(said.is_empty(), "{said:#?}");
+    for cycle in ["0deg", "90deg", "180deg", "360deg", "540deg", "630deg"] {
+        engine(cycle);
+    }
 }
 
 /// **What a lift reads is its point's and its plane's** (#501): a point drawn in a plane and read

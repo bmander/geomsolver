@@ -1,8 +1,8 @@
 # A 1 hp e-bike hub motor
 
 A direct-drive, outer-rotor, brushless permanent-magnet hub motor for a 26" rear wheel, rated at
-one mechanical horsepower (746 W) from a 48 V pack. Every part is a Solvent component; the
-assembly solves with no freedom left (`well`, DOF 0) and twelve clearance claims hold on the
+one mechanical horsepower (746 W) from a 48 V pack. Every part is a Solvent `part`, a function of
+what it is drawn about and mated to; the assembly solves with no freedom left (`well`, DOF 0) and twelve clearance claims hold on the
 solids.
 
 `hub_motor.sv` is the assembly, `hub_motor.svd` the drawing (four sheets), `motor/` the parts:
@@ -15,7 +15,7 @@ solids.
 | `motor/stator.sv` | lamination stack, windings, hall sensors | 100 × 0.35 mm M270-35A, bonded; 51 slots |
 | `motor/rotor.sv` | rotor ring, magnets | 1018 tube (back iron and hub shell); 46 N42SH arc magnets |
 | `motor/cover.sv` | side covers | A356-T6 castings, machined; spoke flange, bearing boss |
-| `motor/parts.sv` | bearings, spacers, locknuts; drawing helpers | 6004-2RS; steel tube; M14 × 1.5 flanged nuts |
+| `motor/parts.sv` | bearings, spacers, locknuts; the frame (`Datums`); drawing helpers | 6004-2RS; steel tube; M14 × 1.5 flanged nuts |
 
 Each part file ends with a `preview { … }`: opened on its own, it draws the assembly's frame and
 that part in it (the carrier on its axle, the brake-side cover on the ring's screw circle, and
@@ -75,7 +75,14 @@ half a pitch side to side. That is 2.2 mm clear of the ring for the spoke heads.
 
 ## How it is written
 
-The motor is drawn in two views of one frame (see `motor/parts.sv`):
+The motor is drawn in two views of one frame (see `motor/parts.sv`). Each part is given the frame
+as `Datums`: the axle's centre and a datum line in the end view, and its mid-plane and centreline
+in the section. It draws in the planes those are drawn in (`in f.o.plane`, `in f.so.plane`), so no
+view is passed to it. It reads the numbers it is made to from `motor/dims.sv` as constants of its
+definition, listed in its file's `use motor.dims (…)`, so no table is passed at a call either.
+Where a corner is placed on a circle from an offset line, which has two crossings, a bound says
+it stands ahead of the axle (`f.o distance(>= 0, along: sc) a`). The part's root is stated, not
+left to its seeds, and `solventc --lint` has nothing to say of the assembly.
 
 - **The end view** (`std.front`) is the electromagnetic section. One slot, one magnet and one
   hall sensor are drawn, and a `ring` turns each round: 51, 46 and 3 copies, with only the first

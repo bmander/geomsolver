@@ -33,8 +33,8 @@ part Throw(o: point, ax: line, theta: Angle, shape: group) {
   eye := arc(center: pin, start: er, end: el) hint(r: shape.eye)
   radius(shape.eye) eye
   // the rim: an arc about the axis on the far side from the pin, `shape.half_width` either side of the arm
-  cl := point hint((o.x - shape.rim * sin(theta - asin(shape.half_width / shape.rim)), o.y - shape.rim * cos(theta - asin(shape.half_width / shape.rim))))
-  cr := point hint((o.x - shape.rim * sin(theta + asin(shape.half_width / shape.rim)), o.y - shape.rim * cos(theta + asin(shape.half_width / shape.rim))))
+  cl := point hint((o.x - shape.rim * sin(theta + asin(shape.half_width / shape.rim)), o.y - shape.rim * cos(theta + asin(shape.half_width / shape.rim))))
+  cr := point hint((o.x - shape.rim * sin(theta - asin(shape.half_width / shape.rim)), o.y - shape.rim * cos(theta - asin(shape.half_width / shape.rim))))
   rim := arc(center: o, start: cl, end: cr) hint(r: shape.rim)
   radius(shape.rim) rim
   cl distance(shape.half_width, side: left) arm
@@ -66,6 +66,24 @@ part Throw(o: point, ax: line, theta: Angle, shape: group) {
   od coincident kp
   oa distance(rj) o
   oc distance(rj) o
+  // which root each point takes, the arm running from `o` up to the pin: each read against
+  // points already placed, or against a rim corner, whose side of the arm is stated and whose
+  // height up it turns none of these the other way.  The throw only turns about `o`, so no
+  // triangle here comes near a line.  The passage's journal end on the pin's side of the axis,
+  // its pin end on the axis's side of the pin
+  cw(o, cl, oa)
+  ccw(o, cr, oc)
+  ccw(pin, cl, ob)
+  cw(pin, cr, od)
+  // the heel behind the axis, the crown beyond the pin
+  ccw(o, cl, heel)
+  cw(pin, cl, crown)
+  // the rim's corners behind the passage's journal end, so on the far side of the axis
+  cw(oa, oc, cl)
+  cw(oa, oc, cr)
+  // the eye inside each flank: the tangent from the rim's corner that wraps it
+  ccw(el, cl, pin)
+  cw(er, cr, pin)
 }
 
 // A web seen edge on: a rectangle between `x0` and `x1` along the axis whose top and bottom are

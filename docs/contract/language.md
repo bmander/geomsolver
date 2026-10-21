@@ -247,9 +247,11 @@ structure only, so it is deterministic and decided before the solve; nothing cha
 **PT5 is advice** (`parts::roots`, **W207**): `solventc --lint` asks, of the solved sketch, the
 classifier's root search for each part's first instance (`boundary::classify`), and names a part
 classed *locally determined, branch not chosen* — its scattered starts came to another pose its
-stated `ccw`/`cw` and its bounds (#501) admit.  An axis held along a drawn line is compared with the
-line's sense (`boundary::figure`), which `views::align` gives it and no seed does.  Not in
-`DRIFT`, which reads text alone; `parts::roots` is its gate's.
+stated `ccw`/`cw` and its bounds admit (a bound sited under the instance is among the rows `split`
+keeps, read by `bounds_hold` on each probe's root, as the orientations are by `orientation`).  An
+axis held along a drawn line is compared with the line's sense (`boundary::figure`), which
+`views::align` gives it and no seed does (#501).  Not in `DRIFT`, which reads text alone;
+`parts::roots` is its gate's.
 **The diagnosis is read through the parts** (#461 D1–D3, the diagnostic half of #455, from the flat
 solve): `parts::read` takes the solved sketch and its `Diagnosis`, and `solventc` prints
 `parts::text` after the diagnosis's own lines (and `--json` writes `"parts"` where the document
@@ -353,9 +355,10 @@ body statement is emitted; one over such a solid saying what one over it said jo
 (`Sketch::join_body`: a tool a word already joins to a body is not joined again).
 `tests/symmetric.rs` is the gate, beside the closed forms of
 `tests/round_lowering.rs`.
-Curves need fixed scalar/entity formals. The V-twin's parts, as the inline four's, read
-`components.dims` as constants of their definitions ([0.160], #501), each drawing in the plane its
-operands are drawn in: `Frame(O, ref)`, `Bank(crank.pin, plate.pivots.r, z: components.dims.zB)`.
+Curves need fixed scalar/entity formals. The V-twin's parts, as the inline four's and the hub
+motor's, read `components.dims` as constants of their definitions ([0.160], #501), each drawing
+in the plane its operands are drawn in: `Frame(O, ref)`, `Bank(crank.pin, plate.pivots.r, z:
+components.dims.zB)`.
 
 - **A name is defined one way, `NAME := VALUE`** ([plan](../definitions-plan.md), Solvent §5,
   [0.29]).  `w := 100` is a value (`StmtKind::Param`), `c := circle(…)` a declaration, `t :=
@@ -444,7 +447,9 @@ operands are drawn in: `Frame(O, ref)`, `Bank(crank.pin, plate.pivots.r, z: comp
   one module (`engine/block.sv`, `engine/head.sv`, `engine/crankshaft.sv`, `engine/conrod.sv`,
   every definition of the engine a `part` reading `engine.dims` as constants, #461, and every one
   of the V-twin's, `vtwin/components/`, #501); view modules
-  hold only what the assembly adds.  Instances inside a block copy are indexed like declarations
+  hold only what the assembly adds.  The hub motor's parts (`hub_motor/motor/`, #502) take no
+  plane either: each is given `motor.parts.Datums`, the axle's centre and centreline in its two
+  views, and draws `in f.o.plane` and `in f.so.plane`.  Instances inside a block copy are indexed like declarations
   (`cyl[0].small`, `copy_of`).
 
 - **A name declared over a built-in is said** (Solvent §3.3, §5; `program::shadowing`, W112).
@@ -561,7 +566,9 @@ operands are drawn in: `Frame(O, ref)`, `Bank(crank.pin, plate.pivots.r, z: comp
   zero-length line, a `distance` at a stationary point), and minted points may not pile up or seed
   a self-crossing contour (a collapsed side satisfies every direction constraint).  `scatter` walks
   the bearing a fixed irrational step per minted point in creation order (a chain's traversal
-  order: a simple polygon).
+  order: a simple polygon).  A contour scattered at the size of a unit whose stated sides are
+  thirty no longer collapses one on the way: the direction rows read unit directions (#479,
+  [solver.md](solver.md)).
   "No clause" is the empty `hint_span` (a lifted declaration has `None`), and `commit_seeds` writes
   the solved pose in as the clause.  A component's points take the same clause; `gear.sv` /
   `gear_trace.sv` state theirs (else a flank's first step can reach the mirror branch).

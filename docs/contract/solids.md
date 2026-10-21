@@ -89,9 +89,10 @@ placement carries inside the blank; CLI test readers zero the offset.
   `Caches::solid` keeps each evaluation against a `solid::ShapeKey` — what `reads` reads, but
   every plane's pose rewritten relative to a reference plane (the first face's, found as
   `frame_origin` finds the origin), and that plane's world pose apart.  Two keys of one shape
-  (`same_shape`: every number within `1e-12` of the larger, or of one — not to the bit, since a
+  (`same_shape`: every number within `1e-10` of the larger, or of one — not to the bit, since a
   nested frame's relative pose is worked through the world and a stand settles a part's own
-  numbers by a rounding) are one solid moved rigidly: `Sketch::evaluated_solid` hands back the
+  numbers to the solve's precision, a direction's row judged in radians) are one solid moved
+  rigidly: `Sketch::evaluated_solid` hands back the
   same `Shape` (`Rc`'d: boundary, mesh, edges, classifier) under the placement
   `solid::Rigid::between` the two reference poses makes, never building it again; the same pose
   within that tolerance is the evaluation itself.  **A solid reading anything in the world

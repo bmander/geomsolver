@@ -294,9 +294,11 @@ impl MemoKey {
 /// How near two keys' numbers must be, as a fraction of the larger (or of one, for a number
 /// smaller than one), to be one shape (#412).  Not to the bit: a plane's pose relative to the
 /// reference is worked through the world, and a drawing stood at an instant is settled there
-/// (`follow::stand`), which moves a part's own numbers by a rounding even where nothing of it
-/// moved.
-const NEAR: f64 = 1e-12;
+/// (`follow::stand`), which moves a part's own numbers by what the solve leaves even where nothing
+/// of it moved — and a direction's row is judged in radians (#479), so a residual of a few
+/// `1e-15` at a lever of hundreds leaves `1e-12`, the V-twin's cylinder `5e-12` at 40°.  A
+/// hundred-millionth of a millimetre on a metre is no shape.
+const NEAR: f64 = 1e-10;
 
 /// **What a solid reads, split into its shape and its pose** (#412): everything `reads` reads,
 /// but with every plane's pose rewritten relative to a reference plane (its first face's,
