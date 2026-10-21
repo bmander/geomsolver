@@ -264,6 +264,26 @@ pub struct SquareTol {
     pub max_iter: usize,
 }
 
+impl SquareTol {
+    /// A trace block's and a boundary's: `ok` comfortably inside the outer system's own 1e-6, so
+    /// a contact never reads as satisfied off the back of a sloppy inner solve.
+    pub const BLOCK: SquareTol =
+        SquareTol { done: 1e-12, ok: 1e-8, stall: 1e-10, step_min: 1e-14, max_iter: 30 };
+}
+
+/// A resumed solve's correction against the tangent that predicted it.  Below this fraction of
+/// the predicted move the step is the continuation of the pose it started from; above it, the
+/// step is something else.
+pub const PREDICTED: f64 = 0.5;
+
+/// Whether a resumed solve *continues* the pose it started from, or is a different branch Newton
+/// happened to fall into: the correction it made against the move the tangent predicted (both
+/// lengths), the one absolute term the inner solve's own accuracy at `scale`.  On the same branch
+/// the correction is second order in the step; onto another it is the distance between them.
+pub fn continues(corrected: f64, predicted: f64, scale: f64) -> bool {
+    corrected <= PREDICTED * predicted + SquareTol::BLOCK.ok * scale
+}
+
 /// What `square` works in, held by the caller and reused, so a solve allocates nothing once warm.
 #[derive(Default)]
 pub struct SquareWork {

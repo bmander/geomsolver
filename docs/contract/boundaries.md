@@ -31,9 +31,9 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
 
 - **The inner solve is the locus's** (`newton::square`). One square Newton, backtracked, judged in
   the rows' own units, serves a trace block at one place (`locus::newton`) and a boundary
-  (`solve::through`): the loop the locus said it would move to `newton.rs` at a second user. Its
-  tolerances are the locus's (done 1e-12, accepted 1e-8, stall 1e-10). The locus's numbers are
-  unchanged by the move, to the bit.
+  (`solve::through`): the loop the locus said it would move to `newton.rs` at a second user. Both
+  stop at `SquareTol::BLOCK` (done 1e-12, accepted 1e-8, stall 1e-10) and judge a resumed solve
+  by one `newton::continues`. The locus's numbers are unchanged by the move, to the bit.
 
 - **The derivative is the implicit function theorem on the block's own factorisation** (DD1).
   After the value is accepted, `F_y` is factored once (LU) and `dy/dx = −F_y⁻¹F_x` answered for
@@ -44,8 +44,9 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
 - **An evaluation is a value or a failure, never a nearby value** (FA1, FA2, DT5, DD3). The first
   is *fresh*, from the pose the document gave the boundary; every later one is *continued*: started
   where the last accepted value's tangent predicts and accepted only if Newton's correction is
-  within half the predicted move (the locus's `continues`, plus the inner tolerance) and the sign
-  of `det F_y` (from the LU's pivots and parity) is unchanged. Otherwise it fails — *unsettled*,
+  within half the predicted move (`newton::continues`, plus the inner tolerance) and the sign of
+  `det F_y` (`linalg::lu_det_sign`, the LU's pivots and parity, as `follow` reads it) is
+  unchanged. Otherwise it fails — *unsettled*,
   *singular* (an exactly zero pivot; a condition threshold is DD2's, #455's) or *branch changed*
   — and the parent reads NaN for every one of its rows, which the DogLeg rejects and shrinks its
   trust region for. Asked again at the same inputs it answers from the last value, bit for bit:
@@ -59,8 +60,8 @@ The gate is `rust/gcs-core/tests/boundary_solve.rs` unless a rule names another.
   `a_run_between_nested_pulleys_fails_and_the_parent_says_which`.
 
 - **Outputs flow one way** (IO4). A boundary whose inputs include another's unknowns is evaluated
-  after it, in a deterministic order (Kahn's, by the order the boundaries were given among the
-  ready ones), and the parent's derivative is chained through both
+  after it, in a deterministic order (`graph::tarjan` over what each reads, each after every one it
+  reaches), and the parent's derivative is chained through both
   (`an_apex_over_another_apex_solves_through_both`). Boundaries that read each other round a cycle
   are the parent's coupled system: their rows and unknowns go back to the parent, solved flat, and
   `Through::inlined` names them (`boundaries_that_read_each_other_are_solved_in_the_parent`).

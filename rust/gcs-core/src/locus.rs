@@ -48,6 +48,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::kernels::KERNELS;
+use crate::newton::SquareTol;
 use crate::tape::{self, Tape};
 use crate::taylor::{self, Jet};
 
@@ -62,7 +63,6 @@ pub const MAX_PREDS: usize = 8;
 /// Continuation steps when the answer is carried rather than found in place: the parameter walks
 /// from the home to the target, each step seeded with the last step's answer.
 const MARCH: usize = 32;
-const NEWTON_MAX: usize = 30;
 /// Deterministic retries when the seeds are no use — a block with no seeds starts every point at
 /// the origin, which for a point on a circle is the one singular spot.
 const RESTARTS: usize = 8;
@@ -495,21 +495,6 @@ pub struct Anchor<'a> {
     pub pose: Option<&'a [f64]>,
 }
 
-/// Below this relative residual the block is solved outright.
-const TOL_DONE: f64 = 1e-12;
-/// A solve that ran out of downhill or of step is still *accepted* under this — comfortably
-/// inside the outer system's own 1e-6, so a contact never reads as satisfied off the back of a
-/// sloppy inner solve.
-const TOL_OK: f64 = 1e-8;
-/// A stall above this is a failure; at or below it the point is as solved as it need be.
-const TOL_STALL: f64 = 1e-10;
-/// A step smaller than this fraction of the pose is no step.
-const STEP_MIN: f64 = 1e-14;
-/// A resumed solve's correction against the tangent that predicted it.  Below this fraction of
-/// the predicted move the step is the continuation of the pose it started from; above it, the
-/// step is something else and the answer is thrown away for the march.
-const PREDICTED: f64 = 0.5;
-
 /// One Newton solve of the block at the parameter already written into `s.xv[0]`, from the `q`
 /// already in `s.xv`: `newton::square`, the loop a parent's solve through an instance runs too
 /// (`solve/through.rs`).  Residual rows are judged against their own kernel's power of length over
@@ -519,19 +504,10 @@ fn newton(v: &View, s: &mut Scratch) -> bool {
     // taken out while the block borrows the scratch it reads, and put back, so a warm scratch
     // allocates nothing
     let mut w = std::mem::take(&mut s.sq);
-    let ok = crate::newton::square(&mut Block { v, s }, &mut w, SQUARE);
+    let ok = crate::newton::square(&mut Block { v, s }, &mut w, SquareTol::BLOCK);
     s.sq = w;
     ok
 }
-
-/// When the block's Newton stops (`newton::SquareTol`).
-const SQUARE: crate::newton::SquareTol = crate::newton::SquareTol {
-    done: TOL_DONE,
-    ok: TOL_OK,
-    stall: TOL_STALL,
-    step_min: STEP_MIN,
-    max_iter: NEWTON_MAX,
-};
 
 /// The block at one place, as `newton::square` reads it: its unknowns are the `q` of `s.xv`.
 struct Block<'a, 'b> {
@@ -813,7 +789,7 @@ fn continues(v: &View, s: &Scratch, prev: &Seen) -> bool {
     }
     let corrected = (x - prev.val.x - dx).dhypot(y - prev.val.y - dy);
     let scale = 1.0 + prev.val.x.abs().max(prev.val.y.abs());
-    corrected <= PREDICTED * dx.dhypot(dy) + TOL_OK * scale
+    crate::newton::continues(corrected, dx.dhypot(dy), scale)
 }
 
 /// The solve everything else is carried from: the **pose** a drawn instance stands at when

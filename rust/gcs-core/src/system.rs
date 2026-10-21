@@ -359,6 +359,21 @@ impl Subset {
         csr_mul(&self.indptr, &self.indices, &self.data, v, out);
     }
 
+    /// `out` <- the columns `lo..hi` of the Jacobian `System::subset_csr` last filled, dense and
+    /// row-major (`rows × (hi − lo)`), every other entry zero.
+    pub(crate) fn dense_into(&self, lo: usize, hi: usize, out: &mut [f64]) {
+        let w = hi - lo;
+        out.iter_mut().for_each(|v| *v = 0.0);
+        for r in 0..self.rows.len() {
+            for p in self.indptr[r]..self.indptr[r + 1] {
+                let c = self.indices[p as usize] as usize;
+                if (lo..hi).contains(&c) {
+                    out[r * w + c - lo] = self.data[p as usize];
+                }
+            }
+        }
+    }
+
     /// out (columns) <- Jᵀ v (rows), likewise.
     pub(crate) fn jt_mul(&self, v: &[f64], out: &mut [f64]) {
         out.iter_mut().for_each(|x| *x = 0.0);
@@ -947,22 +962,21 @@ impl System {
     /// a null space is asked of `conditioned`, never of this.
     pub fn jacobian_dense(&mut self, z: &[f64]) -> Mat {
         let rows: Vec<usize> = (0..self.n_res).collect();
-        self.scatter(z, &rows, false)
+        self.scatter(z, &rows)
     }
 
-    /// The chosen rows of the CSR Jacobian, filled into a dense matrix — optionally with each
-    /// row divided by its units (`jac_scale`), which is the whole of what `Conditioned` is.
-    fn scatter(&mut self, z: &[f64], rows: &[usize], condition: bool) -> Mat {
+    /// The chosen rows of the CSR Jacobian, filled into a dense matrix: what `conditioned_of`
+    /// divides each row's units out of, which is the whole of what `Conditioned` is.
+    fn scatter(&mut self, z: &[f64], rows: &[usize]) -> Mat {
         let mut m = Mat::zeros(rows.len(), self.n_free);
         if self.n_free == 0 || rows.is_empty() {
             return m;
         }
         self.compute_csr(z);
         for (i, &r) in rows.iter().enumerate() {
-            let inv = if condition { self.conditioning(r) } else { 1.0 };
             for p in self.csr_indptr[r]..self.csr_indptr[r + 1] {
                 m.data[i * self.n_free + self.csr_indices[p as usize] as usize] =
-                    self.csr_data[p as usize] * inv;
+                    self.csr_data[p as usize];
             }
         }
         m
@@ -1192,8 +1206,8 @@ impl System {
     }
 
     /// A matrix whose row `k` is row `rows[k]` of this system, differentiated against any
-    /// columns in the solver's units (`z`), with the units divided out as `conditioned` divides
-    /// them: what a rank of a parent's rows reduced through its boundaries is asked of
+    /// columns in the solver's units (`z`), with each row's units divided out (`jac_scale`): this
+    /// system's own rows (`condition`), and a parent's rows reduced through its boundaries
     /// (`solve::through`).
     pub(crate) fn conditioned_of(&self, rows: &[usize], mut j: Mat) -> Conditioned {
         for (k, &r) in rows.iter().enumerate() {
@@ -1204,7 +1218,8 @@ impl System {
     }
 
     fn condition(&mut self, z: &[f64], rows: &[usize]) -> Conditioned {
-        Conditioned { m: self.scatter(z, rows, true) }
+        let m = self.scatter(z, rows);
+        self.conditioned_of(rows, m)
     }
 
     /// Structural Jacobian as a bipartite graph: `adj[row]` = sorted free columns with a

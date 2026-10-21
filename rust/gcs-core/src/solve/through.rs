@@ -41,18 +41,12 @@
 //! through it (CM1).
 
 use super::{SolveOpts, SolveResult};
-use crate::linalg::Mat;
+use crate::linalg::{absmax, norm, Mat};
 use crate::model::Sketch;
 use crate::newton::{self, Square, SquareTol, SquareWork, TrustRegion};
 use crate::system::{Subset, System, RANK_TOL};
-use std::collections::{BTreeMap, BTreeSet};
-
-/// When an instance's block is solved: the locus's tolerances, in its rows' own units.
-const SQUARE: SquareTol =
-    SquareTol { done: 1e-12, ok: 1e-8, stall: 1e-10, step_min: 1e-14, max_iter: 30 };
-/// A resumed evaluation's correction against the move its last derivative predicted: below this
-/// fraction it continues the branch it resumed from (the locus's `PREDICTED`).
-const PREDICTED: f64 = 0.5;
+use std::collections::BTreeSet;
+use std::fmt;
 
 /// One instance a parent solves through: what it made and what it states.
 #[derive(Clone, Debug, Default)]
@@ -78,13 +72,13 @@ pub enum Reason {
     BranchChanged,
 }
 
-impl Reason {
-    pub fn as_str(self) -> &'static str {
-        match self {
+impl fmt::Display for Reason {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
             Reason::Unsettled => "unsettled",
             Reason::Singular => "singular",
             Reason::BranchChanged => "branch changed",
-        }
+        })
     }
 }
 
@@ -97,9 +91,9 @@ pub struct Failure {
     pub inputs: Vec<f64>,
 }
 
-impl Failure {
-    pub fn text(&self) -> String {
-        format!("`{}` failed: {}", self.boundary, self.reason.as_str())
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "`{}` failed: {}", self.boundary, self.reason)
     }
 }
 
@@ -110,8 +104,6 @@ pub struct Evaluation {
     pub y: Vec<f64>,
     /// `dy/dx`: a row per unknown, a column per input (`Boundaries::inputs`).
     pub dydx: Mat,
-    /// The sign of `det F_y` (DD3), in the block's compiled order.
-    pub det_sign: i8,
 }
 
 /// The last value an instance accepted, in the solver's units: where the next evaluation
@@ -141,6 +133,14 @@ struct Inner {
     j: Vec<f64>,
 }
 
+/// Where a free column is: the parent's `k`th unknown, or row `k` of the boundaries' unknowns
+/// stacked in the order they are evaluated (`Boundaries::dydz`).
+#[derive(Clone, Copy)]
+enum Place {
+    Parent(usize),
+    Own(usize),
+}
+
 /// The instances a parent is solved through, over the one `System` the document compiles to.
 pub struct Boundaries {
     sys: System,
@@ -154,9 +154,8 @@ pub struct Boundaries {
     inlined: Vec<String>,
     /// The parent's rows, against `zcols` then every instance's `ycols` in order.
     parent: Subset,
-    /// Where each free column is: the parent's `k`th, or an instance's (`inner`, local).
-    zpos: BTreeMap<usize, usize>,
-    ypos: BTreeMap<usize, (usize, usize)>,
+    /// Each free column's place.
+    place: Vec<Place>,
     work: SquareWork,
 }
 
@@ -167,10 +166,9 @@ impl Boundaries {
         let mut sys = System::new(sk);
         let z = sys.z0(sk);
         let (adj, row_c) = sys.structure();
-        // each boundary's rows (kernel instances) and its own columns
         let mut taken_rows: BTreeSet<u32> = BTreeSet::new();
         let mut taken_cols: BTreeSet<usize> = BTreeSet::new();
-        let mut parts: Vec<(String, Vec<(usize, usize)>, Vec<usize>, BTreeSet<usize>)> = Vec::new();
+        let mut all: Vec<(Inner, Vec<(usize, usize)>)> = Vec::new();
         for b in bounds {
             let mut ycols = Vec::new();
             for &p in &b.own {
@@ -183,32 +181,28 @@ impl Boundaries {
                     _ => {}
                 }
             }
-            let mut instances = Vec::new();
-            for &cid in &b.rows {
-                if let Some(&slot) = sys.slot_of.get(&cid) {
-                    instances.push(slot);
-                }
-            }
-            instances.sort_unstable();
-            let n_rows = sys.rows_of(&instances).len();
             if ycols.is_empty() {
                 return Err(format!("`{}` has no unknown of its own to solve", b.name));
             }
+            if ycols.iter().any(|&c| !taken_cols.insert(c)) {
+                return Err(format!("`{}` shares an unknown with another boundary", b.name));
+            }
+            // its rows, as kernel instances
+            let mut instances = Vec::new();
+            for &cid in &b.rows {
+                let Some(&slot) = sys.slot_of.get(&cid) else { continue };
+                if !taken_rows.insert(cid) {
+                    return Err(format!("`{}` shares a statement with another boundary", b.name));
+                }
+                instances.push(slot);
+            }
+            instances.sort_unstable();
+            let n_rows = sys.rows_of(&instances).len();
             if n_rows != ycols.len() {
                 return Err(format!(
                     "`{}` is not square: {} unknowns of its own against {} equations (FR1)",
                     b.name, ycols.len(), n_rows
                 ));
-            }
-            for &cid in &b.rows {
-                if sys.slot_of.contains_key(&cid) && !taken_rows.insert(cid) {
-                    return Err(format!("`{}` shares a statement with another boundary", b.name));
-                }
-            }
-            for &c in &ycols {
-                if !taken_cols.insert(c) {
-                    return Err(format!("`{}` shares an unknown with another boundary", b.name));
-                }
             }
             // its inputs: every other column its rows read
             let mut x: BTreeSet<usize> = BTreeSet::new();
@@ -217,79 +211,62 @@ impl Boundaries {
                     x.extend(cols.iter().copied());
                 }
             }
-            for c in &ycols {
-                x.remove(c);
-            }
-            parts.push((b.name.clone(), instances, ycols, x));
-        }
-        // which reads which: a boundary in a cycle is the parent's (IO4)
-        let n = parts.len();
-        let reads = |j: usize, k: usize| parts[k].2.iter().any(|c| parts[j].3.contains(c));
-        let deps: Vec<Vec<usize>> =
-            (0..n).map(|j| (0..n).filter(|&k| k != j && reads(j, k)).collect()).collect();
-        let cyclic: Vec<bool> = (0..n).map(|j| reaches(&deps, j)).collect();
-        let mut inlined = Vec::new();
-        let mut order = Vec::new();
-        let mut placed = vec![false; n];
-        for j in 0..n {
-            if cyclic[j] {
-                inlined.push(parts[j].0.clone());
-                placed[j] = true;
-            }
-        }
-        // Kahn's order over the rest, by index among the ready ones, so it is deterministic
-        while order.len() + inlined.len() < n {
-            let next = (0..n).find(|&j| !placed[j] && deps[j].iter().all(|&k| placed[k]))
-                .ok_or("the boundaries' order is not a DAG")?;
-            placed[next] = true;
-            order.push(next);
-        }
-        let mut inner = Vec::new();
-        let mut ypos = BTreeMap::new();
-        let mut owned: BTreeSet<usize> = BTreeSet::new();
-        let mut bound_rows: BTreeSet<(usize, usize)> = BTreeSet::new();
-        for &j in &order {
-            let (name, instances, ycols, x) = &parts[j];
-            let xcols: Vec<usize> = x.iter().copied().collect();
+            let xcols: Vec<usize> = x.into_iter().filter(|c| !ycols.contains(c)).collect();
             let cols: Vec<usize> = ycols.iter().chain(&xcols).copied().collect();
-            let sub = sys.subset(instances, &cols);
-            for (t, &c) in ycols.iter().enumerate() {
-                ypos.insert(c, (inner.len(), t));
-                owned.insert(c);
-            }
-            bound_rows.extend(instances.iter().copied());
-            inner.push(Inner {
-                name: name.clone(),
+            let inner = Inner {
+                name: b.name.clone(),
                 start: ycols.iter().map(|&c| z[c]).collect(),
-                ycols: ycols.clone(),
+                sub: sys.subset(&instances, &cols),
+                ycols,
                 xcols,
-                sub,
                 last: None,
                 evaluations: 0,
                 r: Vec::new(),
                 j: Vec::new(),
-            });
+            };
+            all.push((inner, instances));
         }
-        let zcols: Vec<usize> = (0..sys.n_free).filter(|c| !owned.contains(c)).collect();
-        let zpos = zcols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
-        let mut rest: Vec<(usize, usize)> = Vec::new();
-        for (b, blk) in sys.blocks.iter().enumerate() {
-            for i in 0..blk.count {
-                if !bound_rows.contains(&(b, i)) {
-                    rest.push((b, i));
-                }
+        // each after the boundaries it reads; those that read each other round a cycle are the
+        // parent's (IO4), whose rows and unknowns it takes back
+        let reads = |j: usize, k: usize| {
+            j != k && all[k].0.ycols.iter().any(|c| all[j].0.xcols.contains(c))
+        };
+        let deps: Vec<Vec<usize>> =
+            (0..all.len()).map(|j| (0..all.len()).filter(|&k| reads(j, k)).collect()).collect();
+        let mut slots: Vec<Option<(Inner, Vec<(usize, usize)>)>> =
+            all.into_iter().map(Some).collect();
+        let (mut inner, mut inlined) = (Vec::new(), Vec::new());
+        let mut bound_rows: BTreeSet<(usize, usize)> = BTreeSet::new();
+        let mut place: Vec<Option<Place>> = vec![None; sys.n_free];
+        let mut stacked = 0;
+        for comp in crate::graph::tarjan(&deps) {
+            if comp.len() > 1 {
+                let mut names: Vec<usize> = comp;
+                names.sort_unstable();
+                inlined.extend(names.iter().map(|&j| slots[j].as_ref().unwrap().0.name.clone()));
+                continue;
             }
+            let (b, instances) = slots[comp[0]].take().unwrap();
+            for &c in &b.ycols {
+                place[c] = Some(Place::Own(stacked));
+                stacked += 1;
+            }
+            bound_rows.extend(instances);
+            inner.push(b);
         }
+        let zcols: Vec<usize> = (0..sys.n_free).filter(|&c| place[c].is_none()).collect();
+        for (k, &c) in zcols.iter().enumerate() {
+            place[c] = Some(Place::Parent(k));
+        }
+        let rest: Vec<(usize, usize)> = sys.blocks.iter().enumerate()
+            .flat_map(|(b, blk)| (0..blk.count).map(move |i| (b, i)))
+            .filter(|slot| !bound_rows.contains(slot))
+            .collect();
         let cols: Vec<usize> =
-            zcols.iter().copied().chain(inner.iter().flat_map(|b| b.ycols.clone())).collect();
+            zcols.iter().chain(inner.iter().flat_map(|b| &b.ycols)).copied().collect();
         let parent = sys.subset(&rest, &cols);
-        Ok(Boundaries { sys, z, zcols, inner, inlined, parent, zpos, ypos,
-                        work: SquareWork::default() })
-    }
-
-    /// The boundaries solved through, in the order they are evaluated.
-    pub fn names(&self) -> Vec<&str> {
-        self.inner.iter().map(|b| b.name.as_str()).collect()
+        let place = place.into_iter().map(|p| p.expect("every column placed")).collect();
+        Ok(Boundaries { sys, z, zcols, inner, inlined, parent, place, work: SquareWork::default() })
     }
 
     /// The boundaries that read each other round a cycle, and so are solved in the parent.
@@ -314,44 +291,36 @@ impl Boundaries {
         Some(b.xcols.iter().map(|&c| self.sys.free[c] as u32).collect())
     }
 
-    /// How many inner solves a boundary has made.
-    pub fn evaluations(&self, name: &str) -> Option<usize> {
-        Some(self.inner[self.find(name)?].evaluations)
-    }
-
     /// Evaluate one boundary at `x` (parameter units, `inputs` order), resumed from the last value
-    /// it accepted.
+    /// it accepted.  Panics where `name` is no boundary here or `x` is not its inputs' width.
     pub fn evaluate(&mut self, name: &str, x: &[f64]) -> Result<Evaluation, Failure> {
         let k = self.find(name).expect("no such boundary");
-        let cs = self.sys.col_scale.clone();
         let b = &self.inner[k];
         assert_eq!(x.len(), b.xcols.len(), "`{name}` has {} inputs", b.xcols.len());
         for (&c, &v) in b.xcols.iter().zip(x) {
-            self.z[c] = v * cs[c];
+            self.z[c] = v * self.sys.col_scale[c];
         }
         self.evaluate_one(k)?;
-        let b = &self.inner[k];
+        let (b, cs) = (&self.inner[k], &self.sys.col_scale);
         let s = b.last.as_ref().expect("an accepted evaluation is remembered");
-        let mut dydx = s.d.clone();
+        let mut dydx = Mat::zeros(b.ycols.len(), b.xcols.len());
         for (i, &yc) in b.ycols.iter().enumerate() {
             for (j, &xc) in b.xcols.iter().enumerate() {
                 dydx.set(i, j, s.d.at(i, j) * cs[xc] / cs[yc]);
             }
         }
         let y = b.ycols.iter().zip(&s.y).map(|(&c, &v)| v / cs[c]).collect();
-        Ok(Evaluation { y, dydx, det_sign: s.sign })
+        Ok(Evaluation { y, dydx })
     }
 
     /// Evaluate the `k`th boundary at the inputs `z` holds, and leave its value there.
     fn evaluate_one(&mut self, k: usize) -> Result<(), Failure> {
         let b = &mut self.inner[k];
-        let fail = |b: &Inner, z: &[f64], cs: &[f64], reason| Failure {
+        evaluate(&mut self.sys, &mut self.z, b, &mut self.work).map_err(|reason| Failure {
             boundary: b.name.clone(),
             reason,
-            inputs: b.xcols.iter().map(|&c| z[c] / cs[c]).collect(),
-        };
-        evaluate(&mut self.sys, &mut self.z, b, &mut self.work)
-            .map_err(|r| fail(b, &self.z, &self.sys.col_scale, r))
+            inputs: b.xcols.iter().map(|&c| self.z[c] / self.sys.col_scale[c]).collect(),
+        })
     }
 
     /// Every boundary at the parent's unknowns `zp`, in order.
@@ -362,79 +331,60 @@ impl Boundaries {
         (0..self.inner.len()).try_for_each(|k| self.evaluate_one(k))
     }
 
-    /// `dy/dz` for every boundary, chained through the ones it reads: a row per unknown, a column
-    /// per parent unknown.
-    fn derivatives(&self) -> Vec<Mat> {
+    /// `dy/dz`: every boundary's unknowns stacked in the order they are evaluated (`Place::Own`),
+    /// against the parent's unknowns, each boundary's chained through those it reads.
+    fn dydz(&self) -> Mat {
         let nz = self.zcols.len();
-        let mut out: Vec<Mat> = Vec::with_capacity(self.inner.len());
+        let mut g = Mat::zeros(self.inner.iter().map(|b| b.ycols.len()).sum(), nz);
+        let mut at = 0;
         for b in &self.inner {
             let s = b.last.as_ref().expect("evaluated");
-            let mut g = Mat::zeros(b.ycols.len(), nz);
-            for (j, c) in b.xcols.iter().enumerate() {
-                let row: Vec<f64> = match (self.zpos.get(c), self.ypos.get(c)) {
-                    (Some(&zi), _) => (0..nz).map(|t| if t == zi { 1.0 } else { 0.0 }).collect(),
-                    (_, Some(&(m, t))) => (0..nz).map(|u| out[m].at(t, u)).collect(),
-                    _ => continue,
-                };
+            // the rows read are earlier boundaries', all above this one's
+            let (above, here) = g.data.split_at_mut(at * nz);
+            for (j, &c) in b.xcols.iter().enumerate() {
                 for i in 0..b.ycols.len() {
                     let d = s.d.at(i, j);
                     if d == 0.0 {
                         continue;
                     }
-                    for (u, &v) in row.iter().enumerate() {
-                        g.data[i * nz + u] += d * v;
+                    let row = &mut here[i * nz..(i + 1) * nz];
+                    match self.place[c] {
+                        Place::Parent(k) => row[k] += d,
+                        Place::Own(t) => {
+                            let from = &above[t * nz..(t + 1) * nz];
+                            row.iter_mut().zip(from).for_each(|(r, v)| *r += d * v);
+                        }
                     }
                 }
             }
-            out.push(g);
+            at += b.ycols.len();
         }
-        out
+        g
     }
 
     /// The parent's Jacobian against its own unknowns, through the boundaries: `P_z + P_y dy/dz`,
     /// at the pose `z` holds (every boundary evaluated there).
     fn reduced(&mut self) -> Mat {
-        let g = self.derivatives();
+        let g = self.dydz();
         let (m, nz) = (self.parent.rows.len(), self.zcols.len());
         self.sys.subset_csr(&mut self.parent, &self.z);
         let mut j = Mat::zeros(m, nz);
-        let first: Vec<usize> = self.inner.iter().scan(nz, |at, b| {
-            let here = *at;
-            *at += b.ycols.len();
-            Some(here)
-        }).collect();
         for r in 0..m {
+            let row = &mut j.data[r * nz..(r + 1) * nz];
             for p in self.parent.indptr[r]..self.parent.indptr[r + 1] {
                 let p = p as usize;
                 let (c, v) = (self.parent.indices[p] as usize, self.parent.data[p]);
+                // the parent's columns, then the boundaries' unknowns in `g`'s order
                 if c < nz {
-                    j.data[r * nz + c] += v;
-                    continue;
-                }
-                let k = first.partition_point(|&f| f <= c) - 1;
-                let t = c - first[k];
-                for u in 0..nz {
-                    j.data[r * nz + u] += v * g[k].at(t, u);
+                    row[c] += v;
+                } else {
+                    let from = &g.data[(c - nz) * nz..(c - nz + 1) * nz];
+                    row.iter_mut().zip(from).for_each(|(r, u)| *r += v * u);
                 }
             }
         }
         j
     }
-}
-
-/// Whether `j` reaches itself through what it reads.
-fn reaches(deps: &[Vec<usize>], j: usize) -> bool {
-    let mut seen = vec![false; deps.len()];
-    let mut stack: Vec<usize> = deps[j].clone();
-    while let Some(k) = stack.pop() {
-        if k == j {
-            return true;
-        }
-        if !std::mem::replace(&mut seen[k], true) {
-            stack.extend(deps[k].iter().copied());
-        }
-    }
-    false
 }
 
 /// One instance's block over the whole free vector, as `newton::square` reads it: its unknowns
@@ -465,25 +415,12 @@ impl Square for Block<'_> {
         let n = self.cols.len();
         self.r.resize(self.sub.rows.len(), 0.0);
         self.sys.subset_residuals(self.sub, self.z, self.r);
-        let mut worst = 0.0f64;
-        for &v in self.r.iter() {
-            if !v.is_finite() {
-                return f64::NAN;
-            }
-            worst = worst.max(v.abs());
-        }
-        if jac {
+        // `absmax` is NaN where a row is, and a NaN is no convergence
+        let worst = absmax(self.r);
+        if jac && worst.is_finite() {
             self.sys.subset_csr(self.sub, self.z);
-            self.j.clear();
             self.j.resize(n * n, 0.0);
-            for k in 0..n {
-                for p in self.sub.indptr[k]..self.sub.indptr[k + 1] {
-                    let c = self.sub.indices[p as usize] as usize;
-                    if c < n {
-                        self.j[k * n + c] = self.sub.data[p as usize];
-                    }
-                }
-            }
+            self.sub.dense_into(0, n, self.j);
         }
         worst
     }
@@ -500,8 +437,8 @@ impl Square for Block<'_> {
 /// at the value.  On success its value is in `z` and remembered in `b.last`.
 fn evaluate(sys: &mut System, z: &mut [f64], b: &mut Inner, w: &mut SquareWork)
     -> Result<(), Reason> {
-    let x: Vec<f64> = b.xcols.iter().map(|&c| z[c]).collect();
-    if let Some(s) = b.last.as_ref().filter(|s| s.x == x) {
+    let unmoved = |s: &Seen| b.xcols.iter().zip(&s.x).all(|(&c, &v)| z[c] == v);
+    if let Some(s) = b.last.as_ref().filter(|s| unmoved(s)) {
         // asked again where it last was: the Jacobian at the point the residual was just read at
         for (&c, &v) in b.ycols.iter().zip(&s.y) {
             z[c] = v;
@@ -509,29 +446,25 @@ fn evaluate(sys: &mut System, z: &mut [f64], b: &mut Inner, w: &mut SquareWork)
         return Ok(());
     }
     b.evaluations += 1;
+    let x: Vec<f64> = b.xcols.iter().map(|&c| z[c]).collect();
     // where the last value's tangent says the new one is
     let predicted: Option<Vec<f64>> = b.last.as_ref().map(|s| {
-        (0..b.ycols.len()).map(|i| {
-            s.y[i] + (0..x.len()).map(|j| s.d.at(i, j) * (x[j] - s.x[j])).sum::<f64>()
-        }).collect()
+        let dx: Vec<f64> = x.iter().zip(&s.x).map(|(a, c)| a - c).collect();
+        s.y.iter().zip(s.d.mul_vec(&dx)).map(|(y, d)| y + d).collect()
     });
-    let from = predicted.as_ref().unwrap_or(&b.start);
-    for (&c, &v) in b.ycols.iter().zip(from) {
+    for (&c, &v) in b.ycols.iter().zip(predicted.as_ref().unwrap_or(&b.start)) {
         z[c] = v;
     }
     let mut block = Block { sys, sub: &mut b.sub, z, cols: &b.ycols, r: &mut b.r, j: &mut b.j };
-    if !newton::square(&mut block, w, SQUARE) {
+    if !newton::square(&mut block, w, SquareTol::BLOCK) {
         return Err(Reason::Unsettled);
     }
     let y: Vec<f64> = b.ycols.iter().map(|&c| block.z[c]).collect();
-    // continues: the correction Newton made against the move the tangent predicted.  On the
-    // same branch it is second order in the step; onto another it is the distance between them
     if let (Some(s), Some(p)) = (&b.last, &predicted) {
-        let dist = |a: &[f64], c: &[f64]| {
-            a.iter().zip(c).map(|(u, v)| (u - v) * (u - v)).sum::<f64>().sqrt()
+        let apart = |a: &[f64], c: &[f64]| {
+            norm(&a.iter().zip(c).map(|(u, v)| u - v).collect::<Vec<_>>())
         };
-        let scale = 1.0 + s.y.iter().fold(0.0f64, |m, v| m.max(v.abs()));
-        if dist(&y, p) > PREDICTED * dist(p, &s.y) + SQUARE.ok * scale {
+        if !newton::continues(apart(&y, p), apart(p, &s.y), 1.0 + absmax(&s.y)) {
             return Err(Reason::BranchChanged);
         }
     }
@@ -540,23 +473,13 @@ fn evaluate(sys: &mut System, z: &mut [f64], b: &mut Inner, w: &mut SquareWork)
     block.sys.subset_csr(block.sub, block.z);
     let mut fy = vec![0.0; n * n];
     let mut fx = Mat::zeros(n, nx);
-    for k in 0..n {
-        for p in b.sub.indptr[k]..b.sub.indptr[k + 1] {
-            let (c, v) = (b.sub.indices[p as usize] as usize, b.sub.data[p as usize]);
-            if c < n {
-                fy[k * n + c] = v;
-            } else {
-                fx.set(k, c - n, v);
-            }
-        }
-    }
+    b.sub.dense_into(0, n, &mut fy);
+    b.sub.dense_into(n, n + nx, &mut fx.data);
     let mut piv = Vec::with_capacity(n);
     if !crate::linalg::lu_factor(n, &mut fy, &mut piv) {
         return Err(Reason::Singular);
     }
-    let swaps = piv.iter().enumerate().filter(|&(k, &p)| p != k).count();
-    let negative = (0..n).filter(|&k| fy[k * n + k] < 0.0).count();
-    let sign: i8 = if (swaps + negative) % 2 == 0 { 1 } else { -1 };
+    let sign = crate::linalg::lu_det_sign(n, &fy, &piv);
     if b.last.as_ref().is_some_and(|s| s.sign != sign) {
         return Err(Reason::BranchChanged);
     }
@@ -660,13 +583,12 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
     -> Result<Through, String> {
     let mut b = Boundaries::new(sk, bounds)?;
     let mut zp: Vec<f64> = b.zcols.iter().map(|&c| b.z[c]).collect();
-    let extent = b.sys.extent;
     let mut t = Parent { b: &mut b, j: Mat::zeros(0, 0), rank: -1, failure: None, failures: 0 };
     let (m, n) = (t.m(), t.n());
     let mut r = vec![0.0; m];
     t.residuals_into(&zp, &mut r);
     let info = if m > 0 && n > 0 && r.iter().all(|v| v.is_finite()) {
-        let tol = newton::Tol { ftol: opts.tol, xtol: 1e-12, gtol: 1e-16 / extent.max(1.0) };
+        let tol = t.b.sys.tolerances(&opts);
         let max_nfev = if opts.max_nfev <= 0 { 4 * opts.max_iter } else { opts.max_nfev };
         newton::dogleg(&mut t, &mut zp, &mut r, tol, opts.max_iter, max_nfev)
     } else {
@@ -686,7 +608,7 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
     let z = b.z.clone();
     let max = if ended.is_some() { f64::NAN } else { b.sys.max_relative_residual(&z) };
     let all = b.sys.residuals(&z);
-    let norm = all.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let residual_norm = norm(&all);
     if opts.writeback {
         sk.set_x(&b.sys.full_x(&z));
     }
@@ -695,13 +617,13 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
     let failure = ended.or(if success { None } else { last });
     let mut message = newton::status_message(info.status).to_string();
     if let Some(f) = &failure {
-        message = format!("{message}; {}", f.text());
+        message = format!("{message}; {f}");
     }
     let result = SolveResult {
         success,
         status: info.status,
         message,
-        residual_norm: norm,
+        residual_norm,
         max_residual: max,
         nfev: info.nfev,
         njev: info.njev,

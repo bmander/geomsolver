@@ -80,19 +80,20 @@ fn agrees(src: &str, names: &[&str], tol: f64) -> (Elaborated, Through, Sketch) 
 /// DD1: every unknown of the boundary against every input, the derivative of its evaluation
 /// against a central difference of two more, each resumed from the last.  `h` is relative to
 /// each input's size, the tolerance relative to each entry's.
-fn derivatives_hold(sk: &Sketch, b: &Boundary) {
+fn derivatives_hold(e: &Elaborated, sk: &Sketch, name: &str) {
+    let b = &bounds(e, &[name])[0];
     let mut bs = Boundaries::new(sk, std::slice::from_ref(b)).expect("a boundary");
     let inputs = bs.inputs(&b.name).unwrap();
     assert!(!inputs.is_empty(), "`{}` reads no input the solve moves", b.name);
     let x0: Vec<f64> = inputs.iter().map(|&p| sk.params[p as usize].value).collect();
-    let at = bs.evaluate(&b.name, &x0).unwrap_or_else(|f| panic!("{}", f.text()));
+    let at = bs.evaluate(&b.name, &x0).unwrap_or_else(|f| panic!("{f}"));
     for j in 0..x0.len() {
         let h = 1e-6 * x0[j].abs().max(1.0);
         let mut x = x0.clone();
         x[j] = x0[j] + h;
-        let up = bs.evaluate(&b.name, &x).unwrap_or_else(|f| panic!("{}", f.text()));
+        let up = bs.evaluate(&b.name, &x).unwrap_or_else(|f| panic!("{f}"));
         x[j] = x0[j] - h;
-        let down = bs.evaluate(&b.name, &x).unwrap_or_else(|f| panic!("{}", f.text()));
+        let down = bs.evaluate(&b.name, &x).unwrap_or_else(|f| panic!("{f}"));
         for i in 0..at.y.len() {
             let fd = (up.y[i] - down.y[i]) / (2.0 * h);
             let d = at.dydx.at(i, j);
@@ -164,11 +165,10 @@ fn the_apex_derivative_is_its_difference() {
     // nothing held, so every operand's coordinate is an input
     let src = APEX.replace("  fix((0, 0)) a\n", "");
     let (e, sk) = flat(&src.replace("one.x distance(6.5mm) c\n", ""));
-    let b = boundary::instance(&e, &sk, "one").unwrap();
-    let bs = Boundaries::new(&sk, std::slice::from_ref(&b)).unwrap();
+    let bs = Boundaries::new(&sk, &bounds(&e, &["one"])).unwrap();
     assert_eq!(bs.inputs("one").unwrap().len(), 4, "a and b, two coordinates each");
     assert_eq!(bs.unknowns("one").unwrap().len(), 2);
-    derivatives_hold(&sk, &b);
+    derivatives_hold(&e, &sk, "one");
 }
 
 /// The same instance in a document a thousand times larger elsewhere: the parent's extent
@@ -285,7 +285,7 @@ fn a_run_reads_its_two_rims_and_nothing_else() {
 fn a_run_derivative_is_its_difference() {
     let (e, sk) = flat(&belt("120mm"));
     for name in ["upper", "lower"] {
-        derivatives_hold(&sk, &boundary::instance(&e, &sk, name).unwrap());
+        derivatives_hold(&e, &sk, name);
     }
 }
 
@@ -372,7 +372,7 @@ fn the_common_perpendicular_solves_through_to_the_flat_answer() {
 #[test]
 fn the_common_perpendicular_derivative_is_its_difference() {
     let (e, sk) = flat(PERPENDICULAR);
-    derivatives_hold(&sk, &boundary::instance(&e, &sk, "c").unwrap());
+    derivatives_hold(&e, &sk, "c");
 }
 
 /* -- what is not a boundary -------------------------------------------------------------------- */

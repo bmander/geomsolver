@@ -1197,14 +1197,7 @@ impl TrustRegion for BlockTr<'_> {
         self.put(zb);
         self.sys.subset_csr(&mut self.sub, &self.z);
         if let Some(j) = &mut self.dense {
-            let n = j.cols;
-            j.data.iter_mut().for_each(|v| *v = 0.0);
-            for r in 0..j.rows {
-                for p in self.sub.indptr[r]..self.sub.indptr[r + 1] {
-                    let p = p as usize;
-                    j.data[r * n + self.sub.indices[p] as usize] = self.sub.data[p];
-                }
-            }
+            self.sub.dense_into(0, j.cols, &mut j.data);
         }
     }
     fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {

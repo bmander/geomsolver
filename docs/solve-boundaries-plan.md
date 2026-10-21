@@ -763,7 +763,7 @@ The rules it keeps are [`contract/boundaries.md`](contract/boundaries.md); the g
   `System`: no second compile. It is solved by the locus's square Newton, moved to
   `newton::square` and shared with `locus.rs`, and differentiated by the implicit function theorem
   from one LU of `F_y` (DD1). Each evaluation after the first resumes from the last value accepted,
-  started where its tangent predicts, and is checked by the locus's `continues` and by the sign of
+  started where its tangent predicts, and is checked by `newton::continues` and by the sign of
   `det F_y` (DT5, DD3).
 * **The parent** is a `TrustRegion` over its own unknowns, minimised by `newton::dogleg`: its rows
   read at `(z, y(z))`, its Jacobian `P_z + P_y·dy/dz`, chained through boundaries that read one

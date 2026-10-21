@@ -466,17 +466,24 @@ impl System {
 
     /// One minimisation from `z`, updated in place, measured on the hard rows: the result and
     /// the max residual relative to each row's own units, which is what "solved" means.
+    /// Where a document's minimisation stops: `opts.tol` as stated, a step of 1e-12 of `z`, and
+    /// a gradient in 1/length — the same for a solve through boundaries (`through`).
+    pub(super) fn tolerances(&self, opts: &SolveOpts) -> newton::Tol {
+        newton::Tol { ftol: opts.tol, xtol: 1e-12, gtol: 1e-16 / self.extent.max(1.0) }
+    }
+
     fn minimise(&mut self, z: &mut [f64], method: Method, opts: &SolveOpts) -> (SolveResult, f64) {
         // Every residual the system hands out is over its row's own units (`System::row_scale`),
         // so `tol` is the tolerance as stated and the gradient's units are 1/length: a scaled
         // row's derivative with respect to a world-length column is O(1/extent) whatever the
         // row's degree, so stationarity is judged against that.
+        let tol = self.tolerances(opts);
         let info: Info = newton::solve_system(
             self,
             method,
-            opts.tol,
-            1e-12,
-            1e-16 / self.extent.max(1.0),
+            tol.ftol,
+            tol.xtol,
+            tol.gtol,
             opts.max_iter,
             opts.max_nfev,
             opts.dense,
