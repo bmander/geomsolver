@@ -11,6 +11,33 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   `branch_record` — the elaborator, the plan's `branches`/`apply_branches`, `graft`,
   `Part::branches_out` — and `io::from_json` **re-records** what it reads, so older documents
   migrate on load.  `tests/decompose.rs` and `tests/order.rs` are the gates.
+- **A stated root choice is enforced; a recorded one is not** (§9.6, #157, [0.158]).
+  `Sketch::branches` mixes what the document states with what the plan records (a non-sticky
+  replay reads the seeds' turn and writes it back), so the elaborator writes each agreed
+  `ccw`/`cw` twice (`Gauges::choose_all`): into `branches`, which the plan replays, and into
+  **`Sketch::orientations`**, the statements alone, canonical the same way, saved (JSON
+  `"orientations"`, only where there is one) and grafted beside `branches`.  Only `orientations`
+  is enforced, so no drawing whose cache disagrees with its seeds changes.  It is held as a bound
+  is, by the same machinery (`solve/orientations.rs` over `bounds::carry`, the Newton crossing
+  `across` is): `orientation_reading` is the verdict — the triangle's least height (twice its
+  signed area over its longest side), signed by its turn, holds only beyond `bound_tol`, so three
+  points the drawing puts on one line turn neither way and break it; `cross_bounds` carries the
+  point of a broken one on the seeds (the last of the three, in the key's order, with a coordinate
+  the solve moves; its twins and lifts with it) to its mirror in the line through the other two,
+  or half that line's length onto the stated side, and `program::elaborate` elaborates again from
+  there (`crossed_seeds`); `System::steer` steers a broken one after the bounds (a `Choice`, one
+  budget of `STEER_ROUNDS`), from the start and then the solution, kept only where it solves and
+  holds; still broken, `success` false, status **`ORIENTATION_BROKEN`** (7, "a stated orientation
+  does not hold"; a broken bound is said first), `Diagnosis::orientations_violated` (keys; report
+  `orientationsViolated`), the CLI's `orientation broken: ccw(a, b, x)`
+  (`report::orientation_text`).  `PlanSolver::solve` replays a stated choice as stated over its
+  cache, falls back to the numeric solve where its root breaks one, keeps no `ORIENTATION_BROKEN`
+  result, and writes the stated sign back to `branches`.  The block pass's root search
+  (`blocks::Search`) reads bounds only.  A drag (`retry` off), a drawing stating none and one whose
+  seeds keep theirs solve to the same bits; a traced body's are the locus's at its anchor
+  (`locus`), and its drawn instance stands where they hold.  The component classifier still
+  applies them itself to the roots its probes find (`boundary::search`: a probe steers nothing).
+  `tests/orientation.rs` is the gate.
 
 - A constraint may own *unknowns* of its own: a `SpecKind::Param` slot in its `spec`, allocated
   by `Sketch::add` and moved by the solver like any other parameter.  The slot holds a seed
@@ -195,7 +222,8 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   (`retry` off) and a drawing whose seeds keep their bounds solve to the same bits. `Diagnosis::bounds_violated`/`bounds_active`, report `boundsViolated`/
   `boundsActive`; JSON `"bound": {cmp, hi}`; `graft`, `lift`, `describe` (`syntax::bounded`).
   A free name in one is E040 (`expr::Fault::ClaimFree`) unless a row of the drawing reads it too:
-  `expr::evaluate` asks the bounds last, binding `Constraint::free` without minting (0.64). `ccw` on the sheet is still unchecked.
+  `expr::evaluate` asks the bounds last, binding `Constraint::free` without minting (0.64). A
+  `ccw` the document states is steered alike (#157: *a stated root choice is enforced*, above).
   `tests/bounds.rs` is the gate.
   **A bound that steers nothing** (#345 S3, [0.115]): `CKind::steers` is `boundable` less
   `RegularWithin`, a flank's least area factor read at a point a search finds — no point of the

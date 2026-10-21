@@ -159,6 +159,13 @@ pub struct Sketch {
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,
+    /// **The root choices the document states** (§9.6, #157): each `ccw`/`cw`, one record of one
+    /// triangle as `branches` keeps it (`decompose::branch_record`), and kept apart from it —
+    /// `branches` is also the plan's cache, where a replay writes the orientation its seeds had.
+    /// A document solve holds the drawing to these (`solve::orientations_hold`), steering a point
+    /// across the line through the other two where one does not; a recorded choice it never
+    /// reads.  Written by the elaborator; saved and grafted with `branches`.
+    pub orientations: BTreeMap<String, i32>,
     /// Where a dimension's callout has been dragged to, by constraint id, in the frame that
     /// callout hangs off — see `callout::Frame`.  Document state, like `branches`: an entry
     /// only exists for a dimension somebody has moved, and dropping one puts that callout back

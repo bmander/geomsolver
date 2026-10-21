@@ -349,6 +349,12 @@ pub fn to_json(sk: &Sketch) -> Json {
             ("n", Json::Int(tn.n as i64)),
         ])).collect();
     if !turns.is_empty() { doc.set("turns", Json::Arr(turns)); }
+    // the root choices the document states (#157), only when there is one: each also a record of
+    // `branches`, which the plan rewrites; these a solve holds the drawing to
+    if !sk.orientations.is_empty() {
+        let stated = sk.orientations.iter().map(|(k, &v)| (k.clone(), Json::Int(v as i64)));
+        doc.set("orientations", Json::Obj(stated.collect()));
+    }
     // the axes, only when there is one: a direction and its fixed flags, and where it is (read
     // back, since a relation placing it is re-added on load and frees the place again)
     let axes: Vec<Json> = sk
@@ -684,7 +690,9 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             }
         }
     }
-    if let Some(Json::Obj(kv)) = d.get("branches") {
+    for (field, stated) in [("branches", false), ("orientations", true)] {
+        let Some(Json::Obj(kv)) = d.get(field) else { continue };
+        let to = if stated { &mut sk.orientations } else { &mut sk.branches };
         for (k, v) in kv {
             let v = v.as_i64() as i32;
             // a root choice is *one* record of a triangle, in ascending order with the sign read
@@ -695,10 +703,10 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
             match decompose::branch_key_points(k) {
                 Some(p) => {
                     let (k, v) = decompose::branch_record(p, v >= 0);
-                    sk.branches.insert(k, v);
+                    to.insert(k, v);
                 }
                 None => {
-                    sk.branches.insert(k.clone(), v);
+                    to.insert(k.clone(), v);
                 }
             }
         }

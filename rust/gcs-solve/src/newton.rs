@@ -66,6 +66,7 @@ pub fn status_message(status: i32) -> &'static str {
         4 => "max iterations reached",
         5 => "a bound does not hold",
         6 => "a line a tangency reads by its direction has no length",
+        7 => "a stated orientation does not hold",
         -1 => "failed",
         _ => "unknown",
     }

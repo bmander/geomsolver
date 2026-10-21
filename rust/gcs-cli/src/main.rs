@@ -479,6 +479,13 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             report_set(&sk, &e.map, "claim refuted", &d.claims_violated);
             report_set(&sk, &e.map, "claim independent", &d.claims_consuming);
             report_set(&sk, &e.map, "bound broken", &d.bounds_violated);
+            // each orientation the document states that the solution breaks (#157)
+            for k in &d.orientations_violated {
+                let name = |r| e.map.name_of(r).cloned();
+                if let Some(text) = gcs_core::report::orientation_text(&sk, k, &name) {
+                    println!("  orientation broken: {text}");
+                }
+            }
             report_set(&sk, &e.map, "degenerate", &d.collapsed);
             // what each energy came to, in its statement's words (#121)
             for &(id, v) in &d.extrema {
