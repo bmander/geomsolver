@@ -11,6 +11,11 @@ use std
 a := 1000mm
 h := 50mm
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+// the roots, to five figures: (1, 1), (1, 2) and (2, 1), (2, 2), (1, 3) and (3, 1)
+f11 := 237.87Hz
+f12 := 587.22Hz
+f22 := 928.17Hz
+f13 := 1151.1Hz
 
 in std.front {
   b0 := point
@@ -36,17 +41,16 @@ scenario ring {
   pinned plate.south along: std.y
   pinned plate.north along: std.x
   pinned plate.north along: std.y
-  // the roots, to five figures
-  claim mode(plate, 1) >= 0.99 * 237.87Hz
-  claim mode(plate, 1) <= 1.01 * 237.87Hz
-  claim mode(plate, 2) >= 0.99 * 587.22Hz
-  claim mode(plate, 2) <= 1.01 * 587.22Hz
-  claim mode(plate, 3) >= 0.99 * 587.22Hz
-  claim mode(plate, 3) <= 1.01 * 587.22Hz
-  claim mode(plate, 4) >= 0.99 * 928.17Hz
-  claim mode(plate, 4) <= 1.01 * 928.17Hz
-  claim mode(plate, 5) >= 0.99 * 1151.1Hz
-  claim mode(plate, 5) <= 1.01 * 1151.1Hz
-  claim mode(plate, 6) >= 0.99 * 1151.1Hz
-  claim mode(plate, 6) <= 1.01 * 1151.1Hz
+  claim mode(plate, 1) >= 0.99 * f11
+  claim mode(plate, 1) <= 1.01 * f11
+  claim mode(plate, 2) >= 0.99 * f12
+  claim mode(plate, 2) <= 1.01 * f12
+  claim mode(plate, 3) >= 0.99 * f12
+  claim mode(plate, 3) <= 1.01 * f12
+  claim mode(plate, 4) >= 0.99 * f22
+  claim mode(plate, 4) <= 1.01 * f22
+  claim mode(plate, 5) >= 0.99 * f13
+  claim mode(plate, 5) <= 1.01 * f13
+  claim mode(plate, 6) >= 0.99 * f13
+  claim mode(plate, 6) <= 1.01 * f13
 }

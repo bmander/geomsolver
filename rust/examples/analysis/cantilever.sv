@@ -16,6 +16,7 @@ steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
 // the section's second moments: about the breadth (bending under the load) and about the depth
 I := b * h^3 / 12
 I_weak := h * b^3 / 12
+bending := P * L^3 / (3 * steel.E * I)
 first := 1.8751^2 / (2 * pi * L^2) * sqrt(steel.E * I_weak / (steel.rho * b * h))
 
 // the bar's side in the front (x along it, z up), its neutral axis on x, its breadth swept across
@@ -41,8 +42,8 @@ beam := solid(side, from: -b / 2, to: b / 2) of steel
 scenario tip_load {
   fixed beam.root
   load beam.tip P along: down
-  claim deflection(end, along: down) >= 0.99 * P * L^3 / (3 * steel.E * I)
-  claim deflection(end, along: down) <= 1.01 * P * L^3 / (3 * steel.E * I)
+  claim deflection(end, along: down) >= 0.99 * bending
+  claim deflection(end, along: down) <= 1.01 * bending
 }
 
 scenario free {

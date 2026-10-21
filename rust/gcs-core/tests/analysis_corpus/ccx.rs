@@ -10,24 +10,39 @@
 //! Gated on `--features gcs-core/ccx` (`make test-ccx`), with `ccx` and `gmsh` on the path.
 use super::*;
 use gcs_core::brep::geom::V;
-use gcs_core::model::{EntKind, EntRef, Hold, Scenario};
+use gcs_core::model::{EntKind, EntRef, Hold, Scenario, Sketch};
+use gcs_core::space::{cross, distance, dot, lerp, norm, sub, unit};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// How finely each case is meshed: the largest element (millimetres, as the B-rep is) and gmsh's
-/// elements a full turn of a curve.
-fn fineness(name: &str) -> (f64, u32) {
-    match name {
-        "cantilever" => (6.0, 0),
-        "column" => (4.0, 0),
-        "lame" => (3.0, 72),
-        "kirsch" => (8.0, 180),
-        "plate_modes" => (20.0, 0),
-        "nafems_le1" => (40.0, 120),
-        "nafems_fv32" => (150.0, 0),
-        other => panic!("no fineness for `{other}`"),
+/// The tolerance the STEP file is written to, millimetres: how far gmsh's nodes may stand off this
+/// kernel's surfaces.
+const STEP_TOL: f64 = 1e-4;
+
+/// A quadratic element's edges by their corners, in Abaqus's order: a triangle's are the first
+/// three, and the midside node of edge `i` follows the corners, at `corners + i`.
+const EDGES: [(usize, usize); 6] = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)];
+
+/// A quadratic triangle's or tetrahedron's shape functions at barycentric coordinates `l`: each
+/// corner's `l(2l − 1)`, then each edge's `4 lₐ l_b`.
+fn quadratic(l: &[f64]) -> Vec<f64> {
+    let edges = if l.len() == 3 { 3 } else { 6 };
+    let mut n: Vec<f64> = l.iter().map(|&x| x * (2.0 * x - 1.0)).collect();
+    n.extend(EDGES[..edges].iter().map(|&(a, b)| 4.0 * l[a] * l[b]));
+    n
+}
+
+/// The sum of `points` weighted by `w`.
+fn weighted(w: &[f64], points: impl Fn(usize) -> V) -> V {
+    let mut at = [0.0; 3];
+    for (k, &wk) in w.iter().enumerate() {
+        let p = points(k);
+        for c in 0..3 {
+            at[c] += wk * p[c];
+        }
     }
+    at
 }
 
 /// A mesh in the B-rep's frame (millimetres about the solid's origin): its nodes, and its
@@ -47,6 +62,10 @@ struct Facet {
 }
 
 impl Mesh {
+    fn corners(&self) -> usize {
+        if self.plane { 3 } else { 4 }
+    }
+
     /// The boundary: each facet one element has and no other.
     fn boundary(&self) -> Vec<Facet> {
         // a C3D10's faces and a CPS6's edges, each with the corner opposite
@@ -57,21 +76,18 @@ impl Mesh {
             ([2, 3, 0, 9, 7, 6], 1),
         ];
         const TRI: [([usize; 3], usize); 3] = [([0, 1, 3], 2), ([1, 2, 4], 0), ([2, 0, 5], 1)];
-        let mut seen: BTreeMap<Vec<usize>, (usize, Facet)> = BTreeMap::new();
-        let mut add = |nodes: Vec<usize>, inside: usize, corners: usize| {
-            let mut key = nodes[..corners].to_vec();
-            key.sort();
-            seen.entry(key).or_insert((0, Facet { nodes, inside })).0 += 1;
+        let faces: Vec<(&[usize], usize)> = if self.plane {
+            TRI.iter().map(|(f, o)| (&f[..], *o)).collect()
+        } else {
+            TET.iter().map(|(f, o)| (&f[..], *o)).collect()
         };
+        let mut seen: BTreeMap<Vec<usize>, (usize, Facet)> = BTreeMap::new();
         for el in &self.elements {
-            if self.plane {
-                for (f, o) in TRI {
-                    add(f.iter().map(|&k| el[k]).collect(), el[o], 2);
-                }
-            } else {
-                for (f, o) in TET {
-                    add(f.iter().map(|&k| el[k]).collect(), el[o], 3);
-                }
+            for &(f, o) in &faces {
+                let nodes: Vec<usize> = f.iter().map(|&k| el[k]).collect();
+                let mut key = nodes[..self.corners() - 1].to_vec();
+                key.sort();
+                seen.entry(key).or_insert((0, Facet { nodes, inside: el[o] })).0 += 1;
             }
         }
         seen.into_values().filter(|(n, _)| *n == 1).map(|(_, f)| f).collect()
@@ -79,48 +95,21 @@ impl Mesh {
 
     /// Every midside node is near the middle of its edge: the element's order is Abaqus's.
     fn check_order(&self) {
-        let pairs: &[(usize, usize, usize)] = if self.plane {
-            &[(0, 1, 3), (1, 2, 4), (2, 0, 5)]
-        } else {
-            &[(0, 1, 4), (1, 2, 5), (2, 0, 6), (0, 3, 7), (1, 3, 8), (2, 3, 9)]
-        };
+        let edges = if self.plane { 3 } else { 6 };
         for el in &self.elements {
-            for &(a, b, m) in pairs {
-                let (pa, pb, pm) = (self.nodes[el[a]], self.nodes[el[b]], self.nodes[el[m]]);
-                let mid = std::array::from_fn(|k| 0.5 * (pa[k] + pb[k]));
-                assert!(dist(mid, pm) < 0.25 * dist(pa, pb), "a midside node off its edge: {el:?}");
+            for (i, &(a, b)) in EDGES[..edges].iter().enumerate() {
+                let (pa, pb) = (self.nodes[el[a]], self.nodes[el[b]]);
+                let pm = self.nodes[el[self.corners() + i]];
+                assert!(distance(lerp(pa, pb, 0.5), pm) < 0.25 * distance(pa, pb),
+                        "a midside node off its edge: {el:?}");
             }
         }
     }
 }
 
-fn dist(a: V, b: V) -> f64 {
-    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
-}
-
-fn sub(a: V, b: V) -> V {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn cross(a: V, b: V) -> V {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
-fn dot(a: V, b: V) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
 /// A quadratic triangle's shape functions and their derivatives in `(r, s)`, nodes as `Facet`.
-fn tri6(r: f64, s: f64) -> ([f64; 6], [[f64; 2]; 6]) {
+fn tri6(r: f64, s: f64) -> (Vec<f64>, [[f64; 2]; 6]) {
     let (l1, l2, l3) = (1.0 - r - s, r, s);
-    let n = [
-        l1 * (2.0 * l1 - 1.0),
-        l2 * (2.0 * l2 - 1.0),
-        l3 * (2.0 * l3 - 1.0),
-        4.0 * l1 * l2,
-        4.0 * l2 * l3,
-        4.0 * l3 * l1,
-    ];
     let d = [
         [-(4.0 * l1 - 1.0), -(4.0 * l1 - 1.0)],
         [4.0 * l2 - 1.0, 0.0],
@@ -129,22 +118,19 @@ fn tri6(r: f64, s: f64) -> ([f64; 6], [[f64; 2]; 6]) {
         [4.0 * l3, 4.0 * l2],
         [-4.0 * l3, 4.0 * (l1 - l3)],
     ];
-    (n, d)
+    (quadratic(&[l1, l2, l3]), d)
 }
 
-/// Strang and Fix's six points on the reference triangle, exact to degree four, weights summing
-/// to its area.
-fn tri_rule() -> Vec<(f64, f64, f64)> {
-    let a = (0.445948490915965, 0.223381589678011);
-    let b = (0.091576213509771, 0.109951743655322);
-    let mut out = Vec::new();
-    for (x, w) in [a, b] {
-        for (r, s) in [(x, x), (1.0 - 2.0 * x, x), (x, 1.0 - 2.0 * x)] {
-            out.push((r, s, 0.5 * w));
-        }
-    }
-    out
-}
+/// Strang and Fix's six points `(r, s, weight)` on the reference triangle, exact to degree four,
+/// the weights summing to its area.
+const TRI_RULE: [(f64, f64, f64); 6] = {
+    const A: f64 = 0.445948490915965;
+    const WA: f64 = 0.5 * 0.223381589678011;
+    const B: f64 = 0.091576213509771;
+    const WB: f64 = 0.5 * 0.109951743655322;
+    [(A, A, WA), (1.0 - 2.0 * A, A, WA), (A, 1.0 - 2.0 * A, WA),
+     (B, B, WB), (1.0 - 2.0 * B, B, WB), (B, 1.0 - 2.0 * B, WB)]
+};
 
 /// `∫ N_i n dA` over a facet, for each of its nodes: `n` its outward normal (out of the element),
 /// `dA` its area — a plane mesh's edges times the thickness.  A uniform traction `t` lays `t`
@@ -153,50 +139,32 @@ fn integrals(mesh: &Mesh, f: &Facet, thickness: f64) -> Vec<(f64, V)> {
     let x = |k: usize| mesh.nodes[f.nodes[k]];
     let mut out = vec![(0.0, [0.0; 3]); f.nodes.len()];
     let away = |n: V, at: V| if dot(n, sub(at, mesh.nodes[f.inside])) < 0.0 { -1.0 } else { 1.0 };
+    let mut add = |n: &[f64], w: f64, normal: V, area: f64, at: V| {
+        let sign = away(normal, at);
+        for k in 0..n.len() {
+            out[k].0 += w * n[k] * area;
+            for c in 0..3 {
+                out[k].1[c] += w * n[k] * sign * normal[c];
+            }
+        }
+    };
     if mesh.plane {
         let g = (3.0f64 / 5.0).sqrt();
         for (xi, w) in [(-g, 5.0 / 9.0), (0.0, 8.0 / 9.0), (g, 5.0 / 9.0)] {
             let n = [xi * (xi - 1.0) / 2.0, xi * (xi + 1.0) / 2.0, 1.0 - xi * xi];
-            let dn = [xi - 0.5, xi + 0.5, -2.0 * xi];
-            let mut at = [0.0; 3];
-            let mut t = [0.0; 3];
-            for k in 0..3 {
-                for c in 0..3 {
-                    at[c] += n[k] * x(k)[c];
-                    t[c] += dn[k] * x(k)[c];
-                }
-            }
-            // the profile lies in x and z: the edge's normal in it, its length times the depth
-            let normal = [t[2], 0.0, -t[0]];
-            let sign = away(normal, at);
-            let len = (t[0] * t[0] + t[2] * t[2]).sqrt();
-            for k in 0..3 {
-                out[k].0 += w * n[k] * len * thickness;
-                for c in 0..3 {
-                    out[k].1[c] += w * n[k] * sign * normal[c] * thickness;
-                }
-            }
+            let t = weighted(&[xi - 0.5, xi + 0.5, -2.0 * xi], x);
+            // the profile lies in x and z (`swept_across_y`): the edge's normal in it, times the
+            // depth, and its length times the depth
+            let normal = [t[2] * thickness, 0.0, -t[0] * thickness];
+            add(&n, w, normal, norm(normal), weighted(&n, x));
         }
     } else {
-        for (r, s, w) in tri_rule() {
+        for (r, s, w) in TRI_RULE {
             let (n, d) = tri6(r, s);
-            let (mut at, mut xr, mut xs) = ([0.0; 3], [0.0; 3], [0.0; 3]);
-            for k in 0..6 {
-                for c in 0..3 {
-                    at[c] += n[k] * x(k)[c];
-                    xr[c] += d[k][0] * x(k)[c];
-                    xs[c] += d[k][1] * x(k)[c];
-                }
-            }
+            let xr = weighted(&d.map(|dk| dk[0]), x);
+            let xs = weighted(&d.map(|dk| dk[1]), x);
             let normal = cross(xr, xs);
-            let sign = away(normal, at);
-            let area = dot(normal, normal).sqrt();
-            for k in 0..6 {
-                out[k].0 += w * n[k] * area;
-                for c in 0..3 {
-                    out[k].1[c] += w * n[k] * sign * normal[c];
-                }
-            }
+            add(&n, w, normal, norm(normal), weighted(&n, x));
         }
     }
     out
@@ -208,43 +176,51 @@ fn facet_middle(mesh: &Mesh, f: &Facet) -> V {
     if mesh.plane {
         return mesh.nodes[f.nodes[2]];
     }
-    let (n, _) = tri6(1.0 / 3.0, 1.0 / 3.0);
-    let mut at = [0.0; 3];
-    for k in 0..6 {
-        for c in 0..3 {
-            at[c] += n[k] * mesh.nodes[f.nodes[k]][c];
-        }
-    }
-    at
+    weighted(&tri6(1.0 / 3.0, 1.0 / 3.0).0, |k| mesh.nodes[f.nodes[k]])
 }
 
 /// How far `p` is from face `f`'s surface.
 fn off(x: &gcs_core::solid::Exact, f: usize, p: V) -> f64 {
     let s = &x.brep.faces[f].surface;
-    dist(s.point(s.inverse(p)), p)
+    distance(s.point(s.inverse(p)), p)
 }
 
 /// The face of the solid each boundary facet lies on, by its own name (`root` of `beam.root`;
-/// every case is one primitive): the nearest surface to
-/// the facet's middle, every node of it on that surface.  A plane mesh's caps — the faces the
-/// whole profile lies in — are no facet's.
+/// every case is one primitive): the nearest surface to the facet's middle, every node of it on
+/// that surface to the STEP file's tolerance.  A plane mesh's caps — the faces the whole profile
+/// lies in — are no facet's.
 fn classify(x: &gcs_core::solid::Exact, mesh: &Mesh, facets: &[Facet]) -> Vec<String> {
     assert!(x.named.iter().all(|n| n.0 == x.named[0].0), "the oracle reads one primitive's faces");
-    let tol = 1e-5 * x.brep.size();
+    let on = 10.0 * STEP_TOL;
     let probes = [0, mesh.nodes.len() / 2, mesh.nodes.len() - 1];
     let faces: Vec<usize> = (0..x.brep.faces.len())
-        .filter(|&f| !mesh.plane || !probes.iter().all(|&n| off(x, f, mesh.nodes[n]) < tol))
+        .filter(|&f| !mesh.plane || !probes.iter().all(|&n| off(x, f, mesh.nodes[n]) < on))
         .collect();
     facets.iter().map(|fa| {
         let mid = facet_middle(mesh, fa);
-        let &f = faces.iter().min_by(|&&a, &&b| off(x, a, mid).total_cmp(&off(x, b, mid))).unwrap();
+        let (_, f) = faces.iter().map(|&f| (off(x, f, mid), f))
+            .min_by(|a, b| a.0.total_cmp(&b.0)).unwrap();
         for &n in &fa.nodes {
-            // a node on a curved face is placed on it by gmsh, to the STEP's precision
-            assert!(off(x, f, mesh.nodes[n]) < 1e3 * tol, "a facet off `{}`", x.brep.faces[f].name);
+            let d = off(x, f, mesh.nodes[n]);
+            assert!(d < on, "a facet {d} mm off `{}`", x.brep.faces[f].name);
         }
         // the face's own name in the primitive it is a piece of, as a face path names it
         x.named[f].1.clone()
     }).collect()
+}
+
+/// A plane case is drawn in the front and swept across y: its caps (`near`, `far`) are square to
+/// y, so its profile lies in x and z, the axes the plane reading is written in.
+fn swept_across_y(x: &gcs_core::solid::Exact) {
+    let (lo, hi) = x.brep.bounds();
+    let middle = lerp(lo, hi, 0.5);
+    let caps = x.named.iter().enumerate().filter(|(_, n)| n.1 == "near" || n.1 == "far");
+    for (f, (_, name)) in caps {
+        let s = &x.brep.faces[f].surface;
+        let n = s.normal(s.inverse(middle)).expect("a cap's normal");
+        assert!((n[1].abs() - 1.0).abs() < 1e-12, "the oracle reads a plane case swept across y: \
+                                                  `{name}` faces {n:?}");
+    }
 }
 
 /// The B-rep's frame, millimetres about the solid's origin, of a point of the drawing.
@@ -256,25 +232,22 @@ fn framed(e: &Elaborated, x: &gcs_core::solid::Exact, p: EntRef) -> V {
 /// The node nearest a point, in the profile's plane where the mesh is one.
 fn nearest(mesh: &Mesh, p: V) -> usize {
     let flat = |q: V| if mesh.plane { [q[0], 0.0, q[2]] } else { q };
-    (0..mesh.nodes.len()).min_by(|&a, &b| {
-        dist(flat(mesh.nodes[a]), flat(p)).total_cmp(&dist(flat(mesh.nodes[b]), flat(p)))
-    }).unwrap()
-}
-
-/// The world axis an `along:` names: its index, 0 for x.
-fn axis_of(sk: &Sketch, d: EntRef) -> usize {
-    assert_eq!(d.kind, EntKind::Axis, "the oracle reads `along:` an axis");
-    let dir = sk.axes[d.i()].d.map(|p| sk.params[p as usize].value);
-    let k = (0..3).max_by(|&a, &b| dir[a].abs().total_cmp(&dir[b].abs())).unwrap();
-    assert!((dir[k].abs() - 1.0).abs() < 1e-12, "the oracle holds along the world's axes: {dir:?}");
-    k
+    let d = |n: usize| distance(flat(mesh.nodes[n]), flat(p));
+    (0..mesh.nodes.len()).map(|n| (d(n), n)).min_by(|a, b| a.0.total_cmp(&b.0)).unwrap().1
 }
 
 /// The unit direction an `along:` names.
 fn direction(sk: &Sketch, d: EntRef) -> V {
-    let dir = sk.axes[d.i()].d.map(|p| sk.params[p as usize].value);
-    let n = dot(dir, dir).sqrt();
-    dir.map(|c| c / n)
+    assert_eq!(d.kind, EntKind::Axis, "the oracle reads `along:` an axis");
+    unit(sk.axes[d.i()].d.map(|p| sk.params[p as usize].value))
+}
+
+/// The world axis an `along:` names: its index, 0 for x.
+fn axis_of(sk: &Sketch, d: EntRef) -> usize {
+    let dir = direction(sk, d);
+    let k = (0..3).max_by(|&a, &b| dir[a].abs().total_cmp(&dir[b].abs())).unwrap();
+    assert!((dir[k].abs() - 1.0).abs() < 1e-12, "the oracle holds along the world's axes: {dir:?}");
+    k
 }
 
 /// What a deck holds: each node's held directions and its load, newtons.
@@ -288,15 +261,21 @@ fn lay(e: &Elaborated, x: &gcs_core::solid::Exact, s: &Scenario, mesh: &Mesh, fa
        on: &[String], thickness: f64) -> Laid {
     let sk = &e.sketch;
     let si = |v: f64, dim: Dim| sk.units.to_si(v, dim);
+    // the facets on the face a path names
+    let on_face = |f: &gcs_core::model::FaceRef| -> Vec<&Facet> {
+        let name = f.path.last().unwrap();
+        let mine: Vec<&Facet> =
+            facets.iter().zip(on).filter(|(_, n)| *n == name).map(|(fa, _)| fa).collect();
+        assert!(!mine.is_empty(), "no facet on `{name}`");
+        mine
+    };
     let nodes_of = |a: &Applied| -> Vec<usize> {
         match a {
             Applied::Face(f) => {
-                let name = f.path.last().unwrap();
-                let mut ns: Vec<usize> = facets.iter().zip(on).filter(|(_, n)| *n == name)
-                    .flat_map(|(fa, _)| fa.nodes.clone()).collect();
+                let mut ns: Vec<usize> =
+                    on_face(f).iter().flat_map(|fa| fa.nodes.clone()).collect();
                 ns.sort();
                 ns.dedup();
-                assert!(!ns.is_empty(), "no facet on `{name}`");
                 ns
             }
             Applied::Ent(p) if p.kind == EntKind::Point => vec![nearest(mesh, framed(e, x, *p))],
@@ -310,7 +289,13 @@ fn lay(e: &Elaborated, x: &gcs_core::solid::Exact, s: &Scenario, mesh: &Mesh, fa
             Some(d) => vec![axis_of(sk, d)],
             None => vec![0, 1, 2],
         };
-        // in the plane, nothing moves across it: a hold across the thickness is the solid's
+        // in the plane nothing moves across it: a point held across the thickness is the solid
+        // reading's, taking out what the cuts leave free, and nothing else may be held only so
+        if mesh.plane && dofs == [1] {
+            assert!(matches!(sup.at, Applied::Ent(_)),
+                    "a plane reading drops only a point held across the thickness: {sup:?}");
+            continue;
+        }
         let dofs: Vec<usize> = dofs.into_iter().filter(|&k| !mesh.plane || k != 1).collect();
         for n in nodes_of(&sup.at) {
             for &k in &dofs {
@@ -326,51 +311,43 @@ fn lay(e: &Elaborated, x: &gcs_core::solid::Exact, s: &Scenario, mesh: &Mesh, fa
         }
     };
     for l in &s.loads {
-        match l.kind {
-            LoadKind::Force => {
-                let total: V = match &l.value {
+        match (l.kind, &l.at, &l.value) {
+            (LoadKind::Force, at, value) => {
+                let total: V = match value {
                     LoadValue::Vector(v) => v.map(|c| si(c, l.kind.dim())),
                     LoadValue::Along { magnitude, along } => {
                         direction(sk, *along).map(|c| c * si(*magnitude, l.kind.dim()))
                     }
                     LoadValue::Scalar(_) => unreachable!(),
                 };
-                match &l.at {
-                    Applied::Face(f) => {
-                        // a uniform traction: the force over the face's area
-                        let name = f.path.last().unwrap();
-                        let mine: Vec<_> = facets.iter().zip(on).filter(|(_, n)| *n == name)
-                            .map(|(f, _)| f).collect();
-                        let parts: Vec<_> =
-                            mine.iter().map(|f| integrals(mesh, f, thickness)).collect();
-                        let area: f64 = parts.iter().flatten().map(|(a, _)| a).sum();
-                        for (f, part) in mine.iter().zip(&parts) {
-                            for (k, (a, _)) in part.iter().enumerate() {
-                                lay_on(f.nodes[k], total.map(|c| c * a / area));
-                            }
+                if let Applied::Face(f) = at {
+                    // a uniform traction: the force over the face's area
+                    let mine = on_face(f);
+                    let parts: Vec<_> =
+                        mine.iter().map(|f| integrals(mesh, f, thickness)).collect();
+                    let area: f64 = parts.iter().flatten().map(|(a, _)| a).sum();
+                    for (f, part) in mine.iter().zip(&parts) {
+                        for (k, (a, _)) in part.iter().enumerate() {
+                            lay_on(f.nodes[k], total.map(|c| c * a / area));
                         }
                     }
-                    a => {
-                        for n in nodes_of(a) {
-                            lay_on(n, total);
-                        }
+                } else {
+                    for n in nodes_of(at) {
+                        lay_on(n, total);
                     }
                 }
             }
-            LoadKind::Pressure => {
-                let (Applied::Face(f), LoadValue::Scalar(p)) = (&l.at, &l.value) else {
-                    unreachable!()
-                };
+            (LoadKind::Pressure, Applied::Face(f), LoadValue::Scalar(p)) => {
                 let p = si(*p, l.kind.dim());
-                let name = f.path.last().unwrap();
-                for (fa, _) in facets.iter().zip(on).filter(|(_, n)| *n == name) {
+                for fa in on_face(f) {
                     for (k, (_, nv)) in integrals(mesh, fa, thickness).into_iter().enumerate() {
                         // the integrals are in square millimetres
                         lay_on(fa.nodes[k], nv.map(|c| -p * c * 1e-6));
                     }
                 }
             }
-            LoadKind::Acceleration => panic!("the oracle lays no body load yet"),
+            (LoadKind::Acceleration, ..) => panic!("the oracle lays no body load yet"),
+            other => unreachable!("{other:?}"),
         }
     }
     Laid { held, force }
@@ -386,20 +363,20 @@ enum Kind {
 
 fn kind(o: Output) -> Option<Kind> {
     match o {
-        Output::Deflection | Output::Safety | Output::Compliance => Some(Kind::Static),
+        Output::Deflection | Output::Safety => Some(Kind::Static),
         Output::Mode => Some(Kind::Frequency),
         Output::Buckling => Some(Kind::Buckle),
-        Output::Mass => None,
+        Output::Mass | Output::Compliance => None,
     }
 }
 
-/// The deck: the mesh in metres, the material in SI, the section, the supports, and one step.
-fn deck(case: &Case, sk: &Sketch, mesh: &Mesh, laid: &Laid, thickness: f64, k: Kind, modes: u32)
-    -> String {
+/// The mesh in metres, written once and included by each deck: a plane mesh's z is CalculiX's y,
+/// its plane elements lying in x and y.
+fn mesh_deck(mesh: &Mesh) -> String {
     use std::fmt::Write;
-    let mut d = String::from("*HEADING\nSolvent's verification corpus\n*NODE, NSET=NALL\n");
+    let mut d = String::from("*NODE, NSET=NALL\n");
     for (i, p) in mesh.nodes.iter().enumerate() {
-        let [x, y, z] = p.map(|c| c * 1e-3);
+        let [x, y, z] = if mesh.plane { [p[0], p[2], 0.0] } else { *p }.map(|c| c * 1e-3);
         writeln!(d, "{}, {x:.12e}, {y:.12e}, {z:.12e}", i + 1).unwrap();
     }
     let ty = if mesh.plane { "CPS6" } else { "C3D10" };
@@ -408,21 +385,27 @@ fn deck(case: &Case, sk: &Sketch, mesh: &Mesh, laid: &Laid, thickness: f64, k: K
         let ns: Vec<String> = el.iter().map(|n| (n + 1).to_string()).collect();
         writeln!(d, "{}, {}", i + 1, ns.join(", ")).unwrap();
     }
-    let name = sk.solids[solid(sk, case.solid)].material.clone().unwrap();
-    let m = &sk.materials[&name];
+    d
+}
+
+/// A deck: the mesh, the material in SI, the section, the supports, and one step asking for what
+/// the brackets read — the nodes' displacements, their stresses, or `modes` frequencies.
+fn deck(m: &Material, plane: bool, laid: &Laid, thickness: f64, k: Kind, modes: u32,
+        out: &[&str]) -> String {
+    use std::fmt::Write;
+    let mut d = String::from("*HEADING\nSolvent's verification corpus\n*INCLUDE, INPUT=mesh.inp\n");
     let (young, nu) = (m.get(Property::E).unwrap(), m.get(Property::Nu).unwrap());
     writeln!(d, "*MATERIAL, NAME=M\n*ELASTIC\n{young:.12e}, {nu}").unwrap();
     if let Some(rho) = m.get(Property::Rho) {
         writeln!(d, "*DENSITY\n{rho:.12e}").unwrap();
     }
-    if mesh.plane {
-        writeln!(d, "*SOLID SECTION, ELSET=EALL, MATERIAL=M\n{:.12e}", thickness * 1e-3).unwrap();
-    } else {
-        d.push_str("*SOLID SECTION, ELSET=EALL, MATERIAL=M\n");
+    d.push_str("*SOLID SECTION, ELSET=EALL, MATERIAL=M\n");
+    if plane {
+        writeln!(d, "{:.12e}", thickness * 1e-3).unwrap();
     }
     // the deck's own axes: a plane mesh's z is CalculiX's y (its y, across the thickness, is
     // never held or loaded)
-    let dof = |c: usize| if mesh.plane { [1, 0, 2][c] } else { c + 1 };
+    let dof = |c: usize| if plane { [1, 0, 2][c] } else { c + 1 };
     d.push_str("*BOUNDARY\n");
     for (n, h) in &laid.held {
         for c in (0..3).filter(|&c| h[c]) {
@@ -432,30 +415,21 @@ fn deck(case: &Case, sk: &Sketch, mesh: &Mesh, laid: &Laid, thickness: f64, k: K
     match k {
         Kind::Static => d.push_str("*STEP\n*STATIC\n"),
         Kind::Frequency => writeln!(d, "*STEP\n*FREQUENCY, SOLVER=SPOOLES\n{modes}").unwrap(),
-        Kind::Buckle => d.push_str("*STEP\n*BUCKLE, SOLVER=SPOOLES\n4\n"),
+        Kind::Buckle => d.push_str("*STEP\n*BUCKLE, SOLVER=SPOOLES\n2\n"),
     }
     if k != Kind::Frequency {
         d.push_str("*CLOAD\n");
         for (n, f) in &laid.force {
-            for c in (0..3).filter(|&c| f[c] != 0.0 && !(mesh.plane && c == 1)) {
+            for c in (0..3).filter(|&c| f[c] != 0.0 && !(plane && c == 1)) {
                 writeln!(d, "{}, {}, {:.12e}", n + 1, dof(c), f[c]).unwrap();
             }
         }
     }
-    if k == Kind::Static {
-        d.push_str("*NODE FILE\nU\n*EL FILE\nS\n");
+    for o in out {
+        writeln!(d, "{o}").unwrap();
     }
     d.push_str("*END STEP\n");
     d
-}
-
-/// A plane mesh's nodes as CalculiX reads them: z turned into y.
-fn turned(mesh: &Mesh) -> Mesh {
-    Mesh {
-        nodes: mesh.nodes.iter().map(|p| if mesh.plane { [p[0], p[2], 0.0] } else { *p }).collect(),
-        elements: mesh.elements.clone(),
-        plane: mesh.plane,
-    }
 }
 
 /// Runs a program in `dir`, failing the test with its output where it fails.
@@ -469,13 +443,14 @@ fn run(dir: &Path, program: &str, args: &[&str]) {
 
 /// The case's solid meshed by gmsh from its STEP file.
 fn mesh(case: &Case, x: &gcs_core::solid::Exact, dir: &Path) -> Mesh {
-    let step = gcs_core::brep::step::write(&x.brep, case.name, 1e-4).expect("STEP");
+    let step = gcs_core::brep::step::write(&x.brep, case.name, STEP_TOL).expect("STEP");
     std::fs::write(dir.join("solid.step"), step).unwrap();
-    let (size, curvature) = fineness(case.name);
+    let (size, curvature) = case.mesh;
     let plane = case.reading == Reading::Plane;
     let (lo, hi) = x.brep.bounds();
     let e = 1e-3 * x.brep.size();
     let group = if plane {
+        swept_across_y(x);
         // the cap at the least y: the face the solid sweeps
         format!("s() = Surface In BoundingBox{{{}, {}, {}, {}, {}, {}}};\n\
                  Physical Surface(1) = {{s()}};\n",
@@ -488,8 +463,8 @@ fn mesh(case: &Case, x: &gcs_core::solid::Exact, dir: &Path) -> Mesh {
                        Mesh.MeshSizeFromCurvature = {curvature};\nMesh.Optimize = 1;\n");
     std::fs::write(dir.join("mesh.geo"), geo).unwrap();
     let dim = if plane { "-2" } else { "-3" };
-    run(dir, "gmsh", &["mesh.geo", dim, "-format", "inp", "-o", "mesh.inp", "-v", "2"]);
-    read_inp(&std::fs::read_to_string(dir.join("mesh.inp")).unwrap(), plane)
+    run(dir, "gmsh", &["mesh.geo", dim, "-format", "inp", "-o", "gmsh.inp", "-v", "2"]);
+    read_inp(&std::fs::read_to_string(dir.join("gmsh.inp")).unwrap(), plane)
 }
 
 /// gmsh's Abaqus file: its nodes and the elements of the one type wanted, renumbered from zero
@@ -567,49 +542,42 @@ fn table(dat: &str, heading: &str, width: usize) -> Vec<Vec<f64>> {
     out
 }
 
-/// The last block of a result in CalculiX's `.frd` (`DISP`, `STRESS`), node by node.
-fn frd(text: &str, name: &str) -> BTreeMap<usize, Vec<f64>> {
-    let mut out = BTreeMap::new();
-    let mut inside = false;
+/// The last block of each result in CalculiX's `.frd` (`DISP`, `STRESS`), node by node.
+fn frd(text: &str) -> BTreeMap<String, BTreeMap<usize, Vec<f64>>> {
+    let mut out: BTreeMap<String, BTreeMap<usize, Vec<f64>>> = BTreeMap::new();
+    let mut inside: Option<String> = None;
     for l in text.lines() {
         if l.starts_with(" -4") {
-            inside = l[3..].trim_start().starts_with(name);
-            if inside {
-                out.clear();
-            }
-            continue;
-        }
-        if inside && l.starts_with(" -1") {
+            let name = l[3..].split_whitespace().next().unwrap().to_string();
+            out.insert(name.clone(), BTreeMap::new());
+            inside = Some(name);
+        } else if l.starts_with(" -3") {
+            inside = None;
+        } else if let (Some(name), true) = (&inside, l.starts_with(" -1")) {
             let node: usize = l[3..13].trim().parse().unwrap();
             let vals: Vec<f64> = (13..l.len()).step_by(12)
                 .map(|k| l[k..(k + 12).min(l.len())].trim().parse().unwrap())
                 .collect();
-            out.insert(node, vals);
-        }
-        if l.starts_with(" -3") {
-            inside = false;
+            out.get_mut(name).unwrap().insert(node, vals);
         }
     }
-    assert!(!out.is_empty(), "no {name} in the .frd");
     out
 }
 
 /// The displacement at a point, metres: the shape functions of the element that holds it.
 fn displacement(mesh: &Mesh, u: &BTreeMap<usize, Vec<f64>>, p: V) -> V {
-    let corners = if mesh.plane { 3 } else { 4 };
-    // each element's barycentric coordinates of `p` from its corners, and how far outside it is
+    // each element's barycentric coordinates of `p` from its corners
     let bary = |el: &Vec<usize>| -> Vec<f64> {
-        let c: Vec<V> = (0..corners).map(|k| mesh.nodes[el[k]]).collect();
+        let c: Vec<V> = (0..mesh.corners()).map(|k| mesh.nodes[el[k]]).collect();
+        let q = sub(p, c[0]);
         if mesh.plane {
             let (a, b) = (sub(c[1], c[0]), sub(c[2], c[0]));
-            let q = sub(p, c[0]);
             let det = a[0] * b[2] - a[2] * b[0];
             let l2 = (q[0] * b[2] - q[2] * b[0]) / det;
             let l3 = (a[0] * q[2] - a[2] * q[0]) / det;
             vec![1.0 - l2 - l3, l2, l3]
         } else {
             let (a, b, cc) = (sub(c[1], c[0]), sub(c[2], c[0]), sub(c[3], c[0]));
-            let q = sub(p, c[0]);
             let det = dot(a, cross(b, cc));
             let l2 = dot(q, cross(b, cc)) / det;
             let l3 = dot(a, cross(q, cc)) / det;
@@ -617,35 +585,16 @@ fn displacement(mesh: &Mesh, u: &BTreeMap<usize, Vec<f64>>, p: V) -> V {
             vec![1.0 - l2 - l3 - l4, l2, l3, l4]
         }
     };
-    let outside = |l: &Vec<f64>| l.iter().fold(0.0f64, |m, &x| m.max(-x));
-    let el = mesh.elements.iter()
-        .min_by(|a, b| outside(&bary(a)).total_cmp(&outside(&bary(b))))
-        .unwrap();
-    let l = bary(el);
+    // how far outside an element `p` is
+    let outside = |l: &[f64]| l.iter().fold(0.0f64, |m, &x| m.max(-x));
+    let (l, el) = mesh.elements.iter().map(|el| (bary(el), el))
+        .min_by(|a, b| outside(&a.0).total_cmp(&outside(&b.0))).unwrap();
     assert!(outside(&l) < 1e-6, "{p:?} is in no element");
-    let n: Vec<f64> = if mesh.plane {
-        let mut n: Vec<f64> = (0..3).map(|k| l[k] * (2.0 * l[k] - 1.0)).collect();
-        for (a, b) in [(0, 1), (1, 2), (2, 0)] {
-            n.push(4.0 * l[a] * l[b]);
-        }
-        n
-    } else {
-        let mut n: Vec<f64> = (0..4).map(|k| l[k] * (2.0 * l[k] - 1.0)).collect();
-        for (a, b) in [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)] {
-            n.push(4.0 * l[a] * l[b]);
-        }
-        n
-    };
-    let mut out = [0.0; 3];
-    for (k, &node) in el.iter().enumerate() {
-        let v = &u[&(node + 1)];
+    weighted(&quadratic(&l), |k| {
+        let v = &u[&(el[k] + 1)];
         // a plane deck's y is the drawing's z
-        let v: V = if mesh.plane { [v[0], 0.0, v[1]] } else { [v[0], v[1], v[2]] };
-        for c in 0..3 {
-            out[c] += n[k] * v[c];
-        }
-    }
-    out
+        if mesh.plane { [v[0], 0.0, v[1]] } else { [v[0], v[1], v[2]] }
+    })
 }
 
 /// The greatest von Mises stress at a node, pascals.
@@ -665,68 +614,80 @@ fn scratch(case: &Case) -> PathBuf {
     dir
 }
 
+/// What CalculiX answered one scenario: each result of a static step, its frequencies and its
+/// buckling factors.
+#[derive(Default)]
+struct Answered {
+    fields: BTreeMap<String, BTreeMap<usize, Vec<f64>>>,
+    modes: Vec<Vec<f64>>,
+    buckling: Vec<Vec<f64>>,
+}
+
 /// **The oracle's value of every bracket a case claims**, in the document's own units.
-fn judge(case: &Case) -> Vec<(Bracket, f64)> {
-    let e = read(case);
+fn judge(case: &Case, e: &Elaborated) -> Vec<(Bracket, f64)> {
     let sk = &e.sketch;
-    let x = exact(case, sk);
+    let x = exact(case, e);
     let dir = scratch(case);
     let m = mesh(case, &x, &dir);
+    std::fs::write(dir.join("mesh.inp"), mesh_deck(&m)).unwrap();
     let facets = m.boundary();
     let on = classify(&x, &m, &facets);
     let thickness = extent(&x)[1] * x.mm;
+    let material = material(case, e);
     let doc = |v: f64, dim: Dim| v / sk.units.to_si(1.0, dim);
+    let bs = brackets(e);
     let mut out = Vec::new();
-    let bs = brackets(&e);
-    let scenarios: Vec<&Scenario> = e.scenarios.iter().map(|s| &s.scenario).collect();
-    for s in &scenarios {
+    for s in e.scenarios.iter().map(|s| &s.scenario) {
         let mine: Vec<&Bracket> = bs.iter().filter(|b| b.scenario == s.name).collect();
-        let laid = lay(&e, &x, s, &m, &facets, &on, thickness);
-        let mut kinds: Vec<Kind> = mine.iter().filter_map(|b| kind(b.output)).collect();
-        kinds.sort();
-        kinds.dedup();
-        let mut results: BTreeMap<Kind, String> = BTreeMap::new();
-        let deck_mesh = turned(&m);
-        for k in kinds {
-            let modes = mine.iter().filter_map(|b| b.count).max().unwrap_or(1) + 4;
+        let laid = lay(e, &x, s, &m, &facets, &on, thickness);
+        let modes = mine.iter().filter_map(|b| b.count).max().unwrap_or(1) + 4;
+        let mut answered = Answered::default();
+        for k in [Kind::Static, Kind::Frequency, Kind::Buckle] {
+            let wants = |o: Output| mine.iter().any(|b| b.output == o);
+            if !mine.iter().any(|b| kind(b.output) == Some(k)) {
+                continue;
+            }
             let job = format!("{}_{:?}", s.name, k).to_lowercase();
-            let text = deck(case, sk, &deck_mesh, &laid, thickness, k, modes);
+            let mut asked = Vec::new();
+            if wants(Output::Deflection) && k == Kind::Static {
+                asked.push("*NODE FILE\nU");
+            }
+            if wants(Output::Safety) && k == Kind::Static {
+                asked.push("*EL FILE\nS");
+            }
+            let text = deck(material, m.plane, &laid, thickness, k, modes, &asked);
             std::fs::write(dir.join(format!("{job}.inp")), text).unwrap();
             run(&dir, "ccx", &[&job]);
-            results.insert(k, job);
+            let file =
+                |ext: &str| std::fs::read_to_string(dir.join(format!("{job}.{ext}"))).unwrap();
+            match k {
+                Kind::Static => answered.fields = frd(&file("frd")),
+                Kind::Frequency => {
+                    answered.modes = table(&file("dat"), "E I G E N V A L U E   O U T P U T", 5)
+                }
+                Kind::Buckle => {
+                    let heading = "B U C K L I N G   F A C T O R   O U T P U T";
+                    answered.buckling = table(&file("dat"), heading, 2)
+                }
+            }
         }
         for b in mine {
-            let file = |ext: &str, k: Kind| {
-                std::fs::read_to_string(dir.join(format!("{}.{ext}", results[&k]))).unwrap()
-            };
             let v = match b.output {
                 Output::Deflection => {
                     let Applied::Ent(p) = &b.of else { panic!("a deflection at a point") };
-                    let u = frd(&file("frd", Kind::Static), "DISP");
-                    let u = displacement(&m, &u, framed(&e, &x, *p));
+                    let u = displacement(&m, &answered.fields["DISP"], framed(e, &x, *p));
                     let along = b.along.map(|d| direction(sk, d));
-                    doc(along.map_or(dot(u, u).sqrt(), |d| dot(u, d)), Dim::LENGTH)
+                    doc(along.map_or(norm(u), |d| dot(u, d)), Dim::LENGTH)
                 }
                 Output::Safety => {
-                    let name = sk.solids[solid(sk, case.solid)].material.clone().unwrap();
-                    let y = sk.materials[&name].get(Property::Yield).unwrap();
-                    y / mises(&frd(&file("frd", Kind::Static), "STRESS"))
+                    material.get(Property::Yield).unwrap() / mises(&answered.fields["STRESS"])
                 }
-                Output::Mode => {
-                    let heading = "E I G E N V A L U E   O U T P U T";
-                    let rows = table(&file("dat", Kind::Frequency), heading, 5);
-                    rows[b.count.unwrap() as usize - 1][3]
-                }
-                Output::Buckling => {
-                    let heading = "B U C K L I N G   F A C T O R   O U T P U T";
-                    let rows = table(&file("dat", Kind::Buckle), heading, 2);
-                    rows[0][1]
-                }
+                Output::Mode => answered.modes[b.count.unwrap() as usize - 1][3],
+                Output::Buckling => answered.buckling[0][1],
+                // the B-rep's volume, not CalculiX's: the one output with no analysis in it
                 Output::Mass => {
-                    // the B-rep's volume, not CalculiX's: the one output with no analysis in it
-                    let name = sk.solids[solid(sk, case.solid)].material.clone().unwrap();
-                    let rho = sk.materials[&name].get(Property::Rho).unwrap();
-                    rho * gcs_core::brep::props::volume(&x.brep) * 1e-9
+                    // a B-rep is in millimetres, a mass in kilograms in any document
+                    material.get(Property::Rho).unwrap() * volume(&x) * (x.mm * 1e-3).powi(3)
                 }
                 Output::Compliance => panic!("no case claims a compliance yet"),
             };
@@ -737,32 +698,36 @@ fn judge(case: &Case) -> Vec<(Bracket, f64)> {
     out
 }
 
-/// The answer a bracket is about.
-fn bracket_answer<'a>(refs: &'a [Answer], b: &Bracket) -> &'a Answer {
-    let key = (b.scenario.as_str(), b.output, b.count);
-    refs.iter().find(|a| (a.scenario, a.output, a.count) == key).expect("an answer")
-}
-
 /// **CalculiX keeps every claim the corpus states.**  Each case's answer by an independent solver,
 /// on a mesh this kernel's solid gives, inside the bracket the document claims — the evidence
 /// that the documents say what their references say, and what #510's own analysis will be held
-/// to beside them.
+/// to beside them.  The cases are independent and run side by side, each in its own thread and
+/// its own directory.
 #[test]
 #[cfg_attr(not(feature = "ccx"),
            ignore = "the CalculiX oracle: `make test-ccx`, with ccx and gmsh")]
 fn calculix_keeps_every_claim() {
+    let reports: Vec<Vec<(String, bool)>> = std::thread::scope(|scope| {
+        let running: Vec<_> = CASES.iter().map(|case| scope.spawn(move || {
+            let e = read(case);
+            let refs = (case.answers)(case, &e);
+            judge(case, &e).into_iter().map(|(b, v)| {
+                let r = refs.iter().find(|a| a.key() == b.key()).expect("an answer").reference;
+                let n = b.count.map_or(String::new(), |n| format!(" {n}"));
+                let line = format!("{:<12} {:<9} {:?}{n} = {v:.6e} ({:+.3}% of {r:.6e})",
+                                   case.name, b.scenario, b.output, 100.0 * (v / r - 1.0));
+                if b.holds(v) { (line, true) } else {
+                    (format!("{line}: outside [{:?}, {:?}]", b.lo, b.hi), false)
+                }
+            }).collect()
+        })).collect();
+        running.into_iter().map(|t| t.join().unwrap()).collect()
+    });
     let mut broken = Vec::new();
-    for case in &CASES {
-        let refs = answers(case, &read(case));
-        for (b, v) in judge(case) {
-            let r = bracket_answer(&refs, &b).reference;
-            let n = b.count.map_or(String::new(), |n| format!(" {n}"));
-            let line = format!("{:<12} {:<9} {:?}{n} = {v:.6e} ({:+.3}% of {r:.6e})", case.name,
-                               b.scenario, b.output, 100.0 * (v / r - 1.0));
-            eprintln!("{line}");
-            if !b.holds(v) {
-                broken.push(format!("{line}: outside [{:?}, {:?}]", b.lo, b.hi));
-            }
+    for (line, kept) in reports.into_iter().flatten() {
+        eprintln!("{line}");
+        if !kept {
+            broken.push(line);
         }
     }
     assert!(broken.is_empty(), "{}", broken.join("\n"));

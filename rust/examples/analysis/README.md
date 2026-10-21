@@ -40,22 +40,12 @@ What the documents write:
   to itself, so a cut face is a plane of symmetry. One point held along the thickness takes out
   what the cuts leave free.
 - **Every case is drawn in the front** (`std.front`, x along and z up) and swept across y. A case
-  read in the plane is read in the face the solid sweeps, its depth the thickness. A hold across
-  the thickness is the solid reading's alone.
+  read in the plane is read in the face the solid sweeps, its depth the thickness, and the oracle
+  refuses one swept any other way. A point held across the thickness is the solid reading's
+  alone.
 - **A tension is a negative pressure** (`pressure plate.pulled -sigma`), since a pressure pushes
   into the face.
 
-What is not here yet:
-
-- **Frames** (S0): a cantilever, Euler's column and NAFEMS FV2 (the pin-ended double cross) as
-  frames. They wait on how a frame's section is written, which is S0's to decide. The
-  cantilever's and the column's closed forms are already `closed.rs`'s.
-- **How a document asks to be read in the plane** (S2): the corpus's plane cases are thin prisms,
-  and the table above says which. Read as solids, `kirsch.sv` and `nafems_le1.sv` come out near
-  their plane-stress answers, but `nafems_fv32.sv` bends out of its plane far below its in-plane
-  modes.
-- **NAFEMS LE10** (the thick plate under pressure) has a target of σyy at a point. No output word
-  reads a component of stress at a point yet; that is an open decision of the requirement words.
-- **NAFEMS FV52** (the simply supported solid plate). Its supports are published two ways (the
-  lower edges, or the middle plane's), and the corpus waits for the publication in hand.
-  `plate_modes.sv` is the same physics with supports under which the answer is exact.
+What is not here yet, and why (the frame cases, how a document asks to be read in the plane,
+NAFEMS LE10 and FV52), is recorded in the contract: `docs/contract/analysis.md`, "What P8
+leaves".

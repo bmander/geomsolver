@@ -114,18 +114,14 @@ pub fn flexural(k: f64, h: f64, e: f64, nu: f64, rho: f64) -> f64 {
     let f = |w: f64| lamb(w, k, h, e, nu, rho);
     // the first change of sign, then bisection to the last bit
     let n = 2000;
-    let mut a = lo;
+    let (mut a, mut fa) = (lo, f(lo));
     for j in 1..=n {
         let b = lo + (hi - lo) * j as f64 / n as f64;
-        if f(a) * f(b) <= 0.0 {
-            let (mut a, mut b) = (a, b);
-            for _ in 0..200 {
-                let m = 0.5 * (a + b);
-                if f(a) * f(m) <= 0.0 { b = m } else { a = m }
-            }
-            return 0.5 * (a + b);
+        let fb = f(b);
+        if fa * fb <= 0.0 {
+            return bisect(f, a, b);
         }
-        a = b;
+        (a, fa) = (b, fb);
     }
     panic!("no flexural root at k = {k}")
 }
@@ -146,11 +142,17 @@ pub fn plate_modes(side: f64, h: f64, e: f64, nu: f64, rho: f64, count: usize)
     all
 }
 
-/// NAFEMS LE1's target, σyy at D (NAFEMS, *The Standard NAFEMS Benchmarks*, TNSB Rev. 3), in
-/// pascals.
+/// NAFEMS LE1, the elliptic membrane (NAFEMS, *The Standard NAFEMS Benchmarks*, TNSB Rev. 3),
+/// in SI: its inner and outer ellipses' semi-axes along x and y, metres; its thickness; the pull
+/// square to its outer edge, pascals; and its target, σyy at D, pascals.
+pub const LE1_ELLIPSES: [(f64, f64); 2] = [(2.0, 1.0), (3.25, 2.75)];
+pub const LE1_THICKNESS: f64 = 0.1;
+pub const LE1_PULL: f64 = 10e6;
 pub const LE1_SYY_D: f64 = 92.7e6;
 
-/// NAFEMS FV32's six frequencies, hertz (the same publication).
+/// NAFEMS FV32, the cantilevered tapered membrane (the same publication): its length, its root's
+/// and its tip's breadth, metres; and its six frequencies, hertz.
+pub const FV32_TAPER: (f64, f64, f64) = (10.0, 5.0, 1.0);
 pub const FV32: [f64; 6] = [44.623, 130.03, 162.70, 246.05, 379.90, 391.44];
 
 /// The Rayleigh wave's speed over the shear wave's: the root in (0, 1) of
@@ -159,13 +161,22 @@ fn rayleigh(nu: f64) -> f64 {
     let (cl, ct) = speeds(1.0, nu, 1.0);
     let kk = (ct / cl).powi(2);
     let f = |x: f64| (2.0 - x * x).powi(2) - 4.0 * (1.0 - x * x * kk).sqrt() * (1.0 - x * x).sqrt();
-    let (mut a, mut b) = (0.5, 1.0 - 1e-12);
-    assert!(f(a) * f(b) < 0.0);
-    for _ in 0..200 {
+    bisect(f, 0.5, 1.0 - 1e-12)
+}
+
+/// The root of `f` between `a` and `b`, where it changes sign, halved until no double lies
+/// between.  The corpus's own, not the core's root finders: a reference owes nothing to what it
+/// checks.
+fn bisect(f: impl Fn(f64) -> f64, mut a: f64, mut b: f64) -> f64 {
+    let fa = f(a);
+    assert!(fa * f(b) <= 0.0, "no change of sign in [{a}, {b}]");
+    loop {
         let m = 0.5 * (a + b);
-        if f(a) * f(m) <= 0.0 { b = m } else { a = m }
+        if m <= a || m >= b {
+            return m;
+        }
+        if fa * f(m) <= 0.0 { b = m } else { a = m }
     }
-    0.5 * (a + b)
 }
 
 /// A central difference of `f` at `x`.

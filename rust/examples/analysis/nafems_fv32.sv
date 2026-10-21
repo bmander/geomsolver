@@ -9,6 +9,13 @@ use std
 
 thickness := 50mm
 fv32 := material(E: 200GPa, nu: 0.3, rho: 8000kg / 1m^3)
+// the benchmark's frequencies
+f1 := 44.623Hz
+f2 := 130.03Hz
+f3 := 162.70Hz
+f4 := 246.05Hz
+f5 := 379.90Hz
+f6 := 391.44Hz
 
 in std.front {
   p0 := point
@@ -26,16 +33,16 @@ membrane := solid(outline, from: -thickness / 2, to: thickness / 2) of fv32
 
 scenario fv32 {
   fixed membrane.root
-  claim mode(membrane, 1) >= 0.99 * 44.623Hz
-  claim mode(membrane, 1) <= 1.01 * 44.623Hz
-  claim mode(membrane, 2) >= 0.99 * 130.03Hz
-  claim mode(membrane, 2) <= 1.01 * 130.03Hz
-  claim mode(membrane, 3) >= 0.99 * 162.70Hz
-  claim mode(membrane, 3) <= 1.01 * 162.70Hz
-  claim mode(membrane, 4) >= 0.99 * 246.05Hz
-  claim mode(membrane, 4) <= 1.01 * 246.05Hz
-  claim mode(membrane, 5) >= 0.99 * 379.90Hz
-  claim mode(membrane, 5) <= 1.01 * 379.90Hz
-  claim mode(membrane, 6) >= 0.99 * 391.44Hz
-  claim mode(membrane, 6) <= 1.01 * 391.44Hz
+  claim mode(membrane, 1) >= 0.99 * f1
+  claim mode(membrane, 1) <= 1.01 * f1
+  claim mode(membrane, 2) >= 0.99 * f2
+  claim mode(membrane, 2) <= 1.01 * f2
+  claim mode(membrane, 3) >= 0.99 * f3
+  claim mode(membrane, 3) <= 1.01 * f3
+  claim mode(membrane, 4) >= 0.99 * f4
+  claim mode(membrane, 4) <= 1.01 * f4
+  claim mode(membrane, 5) >= 0.99 * f5
+  claim mode(membrane, 5) <= 1.01 * f5
+  claim mode(membrane, 6) >= 0.99 * f6
+  claim mode(membrane, 6) <= 1.01 * f6
 }
