@@ -37,6 +37,9 @@ pub(super) struct Elab<'p> {
     pub(super) duals: BTreeMap<String, usize>,
     pub(super) gauges: Gauges,
     pub(super) probes: Probes,
+    /// Each `claim { … }` block (#460), by its id and the path of the copy it was written in,
+    /// to the index its relations carry (`Constraint::witness`): one claim per block per copy.
+    pub(super) witnesses: BTreeMap<(StmtId, Vec<crate::ir::PathStep>), u32>,
 }
 
 /// The flattener's statements, as the phases read them: every one (`body`), those that state
@@ -70,6 +73,7 @@ pub(super) fn elaborate_in(
         duals: BTreeMap::new(),
         gauges: Gauges::default(),
         probes: Probes::default(),
+        witnesses: BTreeMap::new(),
     };
     unit(&mut cx);
     check_text(&mut cx);
@@ -849,6 +853,8 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
             cx.sk.roles.insert(entity, roles);
         }
     }
+    // a claim's witnesses (#460), held while the drawing solves: no row of it reads one
+    super::witnessed::hold(&mut cx.sk, &cx.map, &mut cx.diags);
     // a dimension a part's own file draws (`Constraint::elsewhere`): its statement, or an
     // instance it is reached through, written in a module with a drawing of its own
     let p = cx.doc;

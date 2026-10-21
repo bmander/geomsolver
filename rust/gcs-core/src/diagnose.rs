@@ -67,6 +67,7 @@ pub struct Component {
 
 mod parts;
 mod solid_claims;
+mod witnessed;
 pub use solid_claims::{
     describe_solid_claim, judge_solids, ClaimJudge, ClaimProgress, SolidOutcome, SolidPose,
     SolidVerdict, SWEEP_STEPS,
@@ -738,7 +739,9 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let mut claims_theorem: Vec<u32> = Vec::new();
     let mut claims_violated: Vec<u32> = Vec::new();
     let mut claims_consuming: Vec<u32> = Vec::new();
-    let claims: Vec<&Constraint> = sk.constraints.iter().filter(|c| c.claim).collect();
+    // a claim with witnesses of its own is judged by its block, below
+    let claims: Vec<&Constraint> =
+        sk.constraints.iter().filter(|c| c.claim && c.witness.is_none()).collect();
     if !claims.is_empty() {
         // "does it hold?" is the same rule `violated_constraints` states against a compiled
         // system, in the units the row carries: the residual over `extent^degree`
@@ -793,6 +796,17 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 claims_theorem.push(c.id);
             }
         }
+    }
+
+    // a `claim { … }` block (#460): its witnesses solved after the drawing, the drawing held,
+    // and the block judged as one claim — every statement of it filed under the one verdict
+    for rows in witnessed::blocks(sk).into_values() {
+        let into = match witnessed::judge(sk, sys, &rows, opts.tol, want_numeric) {
+            witnessed::Verdict::Theorem => &mut claims_theorem,
+            witnessed::Verdict::Violated => &mut claims_violated,
+            witnessed::Verdict::Consuming => &mut claims_consuming,
+        };
+        into.extend(rows);
     }
 
     // -- conflicts --

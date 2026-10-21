@@ -561,6 +561,10 @@ pub fn constraint_json(sk: &Sketch, c: &Constraint) -> Json {
         ("intrinsic", c.intrinsic.into()),
         ("claim", c.claim.into()),
     ]);
+    // the claim block it was written in (#460), only where there is one
+    if let Some(w) = c.witness {
+        v.set("witness", Json::Int(i64::from(w)));
+    }
     if !exprs.is_empty() {
         v.set("exprs", Json::Obj(exprs));
     }
@@ -1048,6 +1052,8 @@ pub fn constraint_from_json(sk: &Sketch, v: &Json) -> Result<Constraint, String>
     c.soft = v.get("soft").map(|x| x.as_bool()).unwrap_or(false) || kind.soft_by_default();
     // as in `io::from_json`: a claim that would own an unknown is not one this kind can carry
     c.claim = v.get("claim").map(|x| x.as_bool()).unwrap_or(false) && kind.claimable();
+    c.witness = v.get("witness").filter(|_| c.claim)
+        .map(|x| x.as_i64()).and_then(|w| u32::try_from(w).ok());
     c.intrinsic = v.get("intrinsic").map(|x| x.as_bool()).unwrap_or(false);
     Ok(c)
 }

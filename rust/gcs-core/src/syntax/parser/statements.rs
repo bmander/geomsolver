@@ -33,6 +33,35 @@ fn stamp_initially(stmts: &mut [Stmt], errs: &mut Vec<SynErr>) {
     }
 }
 
+/// Mark every statement of a `claim { … }` body the claim's (§9.7, #460), through a `when` in
+/// it: a declaration is a witness, made for the claim alone, and a relation is one the claim
+/// makes of its witnesses — claimed, so it compiles no row of the drawing, and tagged with the
+/// block (`id`) so the diagnosis solves the block's witnesses by the block's relations.
+/// Anything that would add to the drawing — an instance, a set, a solid, another block — is
+/// refused: a witness is the block's own, and the block declares and relates, nothing more.
+fn stamp_witness(stmts: &mut [Stmt], id: crate::syntax::StmtId, errs: &mut Vec<SynErr>) {
+    for st in stmts {
+        match &mut st.kind {
+            StmtKind::Decl(d) => d.annotations.roles.witness = true,
+            StmtKind::Chain(c) => c.annotations.roles.witness = true,
+            StmtKind::Relation(r) => {
+                r.claim = true;
+                r.witness = Some(id);
+            }
+            // a number worked out, which adds nothing to solve
+            StmtKind::Param(_) => {}
+            StmtKind::Block(b) if b.kind == BlockKind::When => stamp_witness(&mut b.body, id, errs),
+            _ => errs.push(SynErr {
+                span: st.span,
+                message: "a `claim { … }` block declares its witnesses and states relations of \
+                          them: points, lines and circles made for the claim alone, and what \
+                          the claim says of them"
+                    .into(),
+            }),
+        }
+    }
+}
+
 /// Apply block membership recursively. Faces and solids inherit their geometry's plane;
 /// instances carry membership into expansion.  A statement already in a frame — a block inside
 /// this one, or its own clause — **rides** on this one too (#383): the path is kept, outermost
@@ -1074,6 +1103,13 @@ impl<'a> P<'a> {
             }
             return self.in_block(next_id, out);
         }
+        // `claim { … }` (§9.7, #460): a claim with witnesses of its own, hoisted as an `in` body
+        // is — the witnesses are named beside the block, and held by it
+        if self.peek_word("claim")
+            && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('{')))
+        {
+            return self.witnessed(next_id, out);
+        }
         // `initially { … }` (#339 D3): rows of a family's home alone, hoisted as an `in` body is
         if self.peek_word("initially")
             && matches!(self.t.get(self.i + 1).map(|(t, _)| t), Some(Tok::P('{')))
@@ -1174,6 +1210,23 @@ impl<'a> P<'a> {
         if !nested {
             self.in_blocks.push(InBlock { plane, header, close, declares });
         }
+        out.extend(body);
+        Some(())
+    }
+
+    /// Hoist a `claim { … }` body (§9.7, #460), every statement in it the claim's: its
+    /// declarations witnesses, its relations what it claims of them (`stamp_witness`).  The
+    /// block's own id is what tells one claim's statements from another's.
+    fn witnessed(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
+        let head = self.here();
+        let id = self.mint_stmt(next_id, head)?;
+        self.i += 1; // `claim`
+        let (mut body, joint) = self.braced_body(next_id)?;
+        self.no_open_joint(joint, "a `claim` block");
+        if !body.iter().any(|st| matches!(st.kind, StmtKind::Relation(_) | StmtKind::Block(_))) {
+            self.fail_at(head, "a `claim { … }` block states something of its witnesses");
+        }
+        stamp_witness(&mut body, id, &mut self.errs);
         out.extend(body);
         Some(())
     }

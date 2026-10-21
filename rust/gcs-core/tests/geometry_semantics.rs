@@ -164,7 +164,8 @@ hole := radius(2) circle(center: helper.spoke.p2)
             role(name),
             GeometryRoles {
                 construction: true,
-                centerline: true
+                centerline: true,
+                witness: false
             }
         );
     }

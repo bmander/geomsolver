@@ -118,6 +118,9 @@ export abstract class Constraint {
   intrinsic = false;
   /** a `claim` (Solvent §9.7): expected to add no rank, judged by the diagnosis, never solved */
   claim = false;
+  /** the `claim { … }` block it was written in (Solvent §9.7, #460): a relation of the block's
+   *  witnesses, solved for them after the drawing; null for every other constraint */
+  witness: number | null = null;
   /** Document-stable identity, -1 until a sketch adopts it. */
   id = -1;
   sketch: Sketch | null = null;
@@ -172,12 +175,16 @@ export abstract class Constraint {
     throw new Error(`${this.typeName} references no sketch`);
   }
 
-  toRecord(): { type: string; args: unknown[]; soft: boolean; intrinsic: boolean; claim: boolean } {
+  toRecord(): {
+    type: string; args: unknown[]; soft: boolean; intrinsic: boolean; claim: boolean;
+    witness?: number;
+  } {
     const args = this.spec.map(([, kind], i) => {
       const v = this.args[i];
       return ENTITY_KINDS.has(kind) && v instanceof Entity ? (v as Primitive).ref : v;
     });
-    return { type: this.typeName, args, soft: this.soft, intrinsic: this.intrinsic, claim: this.claim };
+    const rec = { type: this.typeName, args, soft: this.soft, intrinsic: this.intrinsic, claim: this.claim };
+    return this.witness === null ? rec : { ...rec, witness: this.witness };
   }
 
   bind(sk: Sketch): void {
@@ -202,6 +209,7 @@ export abstract class Constraint {
     this.soft = rec.soft;
     this.intrinsic = rec.intrinsic;
     this.claim = rec.claim;
+    this.witness = rec.witness ?? null;
     this.args = this.spec.map(([, kind], i) => fromJson(sk, rec.args[i], kind));
     this.exprs = rec.exprs ?? {};
     this.written = rec.written ?? null;
@@ -304,6 +312,7 @@ export abstract class Constraint {
     temp.soft = this.soft;
     temp.intrinsic = this.intrinsic;
     temp.claim = this.claim;
+    temp.witness = this.witness;
     temp.bind(sk);
     try {
       this.args = temp.args.slice();   // a value the core filled in belongs to the original too

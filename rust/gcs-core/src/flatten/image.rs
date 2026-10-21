@@ -153,6 +153,7 @@ impl Walk<'_> {
             place: None,
             place_span: Span::default(),
             claim: false,
+            witness: None,
             class: Default::default(),
             class_span: Span::default(),
             word: None,

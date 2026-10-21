@@ -4,6 +4,10 @@
 pub struct GeometryRoles {
     pub construction: bool,
     pub centerline: bool,
+    /// Declared in a `claim { … }` block (§9.7, #460): geometry made only to state a claim,
+    /// held while the drawing solves and solved after it, for its claim alone.  Stamped by the
+    /// parser, never written as a modifier, so `Annotations::write` leaves it out.
+    pub witness: bool,
 }
 
 impl GeometryRoles {
@@ -11,6 +15,7 @@ impl GeometryRoles {
         Self {
             construction: self.construction || other.construction,
             centerline: self.centerline || other.centerline,
+            witness: self.witness || other.witness,
         }
     }
 
@@ -19,6 +24,7 @@ impl GeometryRoles {
         [
             (self.construction, "construction"),
             (self.centerline, "centerline"),
+            (self.witness, "witness"),
         ]
         .into_iter()
         .filter_map(|(yes, name)| yes.then_some(name))
@@ -37,7 +43,8 @@ impl Annotations {
         if self.private {
             out.push_str("private ");
         }
-        for role in self.roles.selectors() {
+        // a witness is the block it stands in, not a word before it
+        for role in self.roles.selectors().filter(|&r| r != "witness") {
             out.push_str(role);
             out.push(' ');
         }

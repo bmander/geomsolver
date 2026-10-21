@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.151] A claim with witnesses of its own.** `claim { … }` declares geometry made only to
+state a claim, its **witnesses**, and states relations of them (§9.7): `claim { x := point; x
+coincident upper; x coincident lower; x coincident centres }` claims that the runs of a belt meet
+on the line of centres. The drawing holds every witness while it solves, so the block restricts
+nothing — the document solves, counts and diagnoses as it would without it — and after the solve
+the witnesses are solved by the block's relations, the drawing held, and the block judged as
+one claim: violated where no witness exists (the parallel runs of equal pulleys, where the drive
+still solves), a theorem where one exists for every nearby solution of the drawing, consuming
+where one exists only at this pose. A statement outside the block that names a witness is
+**E040**; a block holds declarations, relations and `when` blocks, and a condition on the
+drawing's numbers is a `when` around it. Through 0.150 the same point was drawing geometry, and
+over-constrained or broke the document. No document changes. (Issue #460.)
+
 **[0.150] A frame the drawing moves.** A frame with axes and no joint, placed by relations on
 geometry the drawing moves as a declared parameter runs — `coupler := std.Turned(b, c) in
 std.front` on a four-bar's coupler — is a motion over that parameter (§6.14): a reading over the

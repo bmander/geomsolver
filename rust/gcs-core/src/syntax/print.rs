@@ -49,7 +49,7 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     }
     for c in p.components.iter().filter(|c| own(c)) {
         for st in &c.body {
-            printable(&st.kind)?;
+            printable(&st.kind, true)?;
             if matches!(st.kind, StmtKind::Instance(_)) {
                 return Err(PrintError { construct: "component instances" });
             }
@@ -68,26 +68,31 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     }
     for comp in p.components.iter_mut().filter(|c| c.module.is_none()) {
         let lo = out.len();
+        // a claim's statements are written in its block, after the rest (#460): the body is a
+        // set, so the order printed is the order kept
+        let blocks = claim_blocks(&mut comp.body);
+        let loose = comp.body.len() - blocks.iter().sum::<usize>();
         // Separate declarations from the relations that follow them.
         let mut said_decl = false;
-        for st in &mut comp.body {
+        for st in &mut comp.body[..loose] {
             let is_decl = matches!(st.kind, StmtKind::Decl(_));
             if said_decl && !is_decl {
                 out.push('\n');
             }
             said_decl = is_decl;
-            let start = out.len();
-            // a block's plane is said on each statement it gave one: the flat form has no blocks
-            match &st.kind {
-                StmtKind::Decl(d) if d.membership.plane().is_some() && d.membership.written().is_none() => {
-                    write_decl(&mut out, d);
-                    out.push_str(" in ");
-                    write_ref(&mut out, d.membership.plane().expect("just asked"));
-                }
-                k => write_stmt(&mut out, k),
-            }
-            st.span = Span::new(start, out.len());
+            write_flat(&mut out, st);
             out.push('\n');
+        }
+        let mut at = loose;
+        for n in blocks {
+            out.push_str("claim {\n");
+            for st in &mut comp.body[at..at + n] {
+                out.push_str("  ");
+                write_flat(&mut out, st);
+                out.push('\n');
+            }
+            out.push_str("}\n");
+            at += n;
         }
         comp.span = Span::new(lo, out.len());
     }
@@ -99,20 +104,115 @@ pub fn render_flat(p: &mut Program) -> Result<&str, PrintError> {
     Ok(&p.text)
 }
 
+/// One statement of the flat form, its span set to where it was written.
+fn write_flat(out: &mut String, st: &mut super::Stmt) {
+    let start = out.len();
+    // a block's plane is said on each statement it gave one: the flat form has no blocks
+    match &st.kind {
+        StmtKind::Decl(d) if d.membership.plane().is_some() && d.membership.written().is_none() => {
+            write_decl(out, d);
+            out.push_str(" in ");
+            write_ref(out, d.membership.plane().expect("just asked"));
+        }
+        // in its block a claim's relation is the block's, and says no `claim` of its own
+        StmtKind::Relation(r) if r.witness.is_some() => {
+            write_relation(out, &Relation { claim: false, ..r.clone() })
+        }
+        k => write_stmt(out, k),
+    }
+    st.span = Span::new(start, out.len());
+}
+
+/// Put a body's `claim { … }` blocks last (#460), each its witnesses then its relations, and
+/// say how many statements each holds.  A witness belongs to the first block whose relations
+/// name it; one no relation names is the first block's.
+fn claim_blocks(body: &mut Vec<super::Stmt>) -> Vec<usize> {
+    let names = |r: &Relation| -> Vec<String> {
+        let refs: Vec<&Ref> = match &r.form {
+            super::RelationForm::Written(w) => w.ops.iter().chain(w.args.iter().filter_map(|a| {
+                match a {
+                    OpArg::Named(_, Arg::Ref(x)) => Some(x),
+                    _ => None,
+                }
+            })).collect(),
+            super::RelationForm::Canonical { args, .. } => args.iter().filter_map(|a| match a {
+                Some(Arg::Ref(x)) => Some(x),
+                _ => None,
+            }).collect(),
+        };
+        refs.into_iter().map(|x| x.root.text.clone()).collect()
+    };
+    let mut ids: Vec<super::StmtId> = Vec::new();
+    for st in body.iter() {
+        if let StmtKind::Relation(Relation { witness: Some(id), .. }) = &st.kind {
+            if !ids.contains(id) {
+                ids.push(*id);
+            }
+        }
+    }
+    let witness =
+        |st: &super::Stmt| matches!(&st.kind, StmtKind::Decl(d) if d.annotations.roles.witness);
+    if ids.is_empty() && !body.iter().any(witness) {
+        return Vec::new();
+    }
+    let block_of = |st: &super::Stmt, body: &[super::Stmt]| -> Option<usize> {
+        match &st.kind {
+            StmtKind::Relation(Relation { witness: Some(id), .. }) => {
+                ids.iter().position(|k| k == id)
+            }
+            StmtKind::Decl(d) if d.annotations.roles.witness => {
+                let name = &d.name.key().text;
+                Some(body.iter().find_map(|o| match &o.kind {
+                    StmtKind::Relation(r) if r.witness.is_some() && names(r).contains(name) => {
+                        ids.iter().position(|k| Some(k) == r.witness.as_ref())
+                    }
+                    _ => None,
+                }).unwrap_or(0))
+            }
+            _ => None,
+        }
+    };
+    let placed: Vec<Option<usize>> = body.iter().map(|st| block_of(st, body)).collect();
+    let mut groups: Vec<Vec<super::Stmt>> = vec![Vec::new(); ids.len().max(1) + 1];
+    for (st, at) in std::mem::take(body).into_iter().zip(placed) {
+        groups[at.map_or(0, |k| k + 1)].push(st);
+    }
+    let mut counts = Vec::new();
+    for (k, mut g) in groups.into_iter().enumerate() {
+        if k > 0 {
+            // witnesses first, then what is claimed of them
+            g.sort_by_key(|st| !matches!(st.kind, StmtKind::Decl(_)));
+            counts.push(g.len());
+        }
+        body.extend(g);
+    }
+    counts.retain(|&n| n > 0);
+    counts
+}
+
 /// Append a supported declaration or statement fragment atomically.
 pub fn write_stmt_to(out: &mut String, k: &StmtKind) -> Result<(), PrintError> {
-    printable(k)?;
+    printable(k, false)?;
     write_stmt(out, k);
     Ok(())
 }
 
-fn printable(k: &StmtKind) -> Result<(), PrintError> {
+/// Whether a statement prints.  A claim's witness and what it claims of one stand in the
+/// claim's block (#460): printed with the rest of the body (`blocks`) the block is written
+/// back around them, and printed alone it would be written loose, restricting the drawing.
+fn printable(k: &StmtKind, blocks: bool) -> Result<(), PrintError> {
     match k {
         StmtKind::Chain(_) => Err(PrintError { construct: "named chains" }),
         // a face carried by a map is a definition, written as one (#357)
         StmtKind::Block(b) if b.image.is_some() => Ok(()),
         StmtKind::Block(_) => Err(PrintError { construct: "repeat and cycle blocks" }),
         StmtKind::ClaimOver(_) => Err(PrintError { construct: "claim-over bodies" }),
+        StmtKind::Relation(r) if r.witness.is_some() && !blocks => {
+            Err(PrintError { construct: "claim blocks" })
+        }
+        StmtKind::Decl(d) if d.annotations.roles.witness && !blocks => {
+            Err(PrintError { construct: "claim blocks" })
+        }
         StmtKind::Set(_) => Err(PrintError { construct: "set literals" }),
         _ => Ok(()),
     }
