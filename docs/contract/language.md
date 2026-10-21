@@ -38,7 +38,10 @@ numbers (`module_params` keeps the module's own); groups register under their pa
 b := b distance(d, along: up) a` at a file's top level (`syntax::WordDef`, `Program::words`,
 parsed by `parser/definitions.rs`: `word_definition_ahead`, `defined_prefix_ahead` before a call,
 `word_args` keeping labelled texts). The flattener applies a use (`flatten/words.rs`,
-`Walk::apply_word`, over `flatten/apply.rs`, #103): params by label (E004/E040), a number
+`Walk::apply_word`, over `flatten/apply.rs`, #103): params by label (E004/E040) — but a word of
+one parameter takes it bare too (`Walk::word_args`, [0.152], #463: `r above(7) q`; bare to a word
+of two or more E004, to one of none E040; a bare argument inside a body passed on to a defined word
+as a labelled one is, `pass_on`, and `word_dimension` edits it), a number
 parameter bound in the body's scope, a word parameter where a word stands, an **entity parameter**
 (`Param::Entity`, read where an entity stands: `n square(up: std.z) g`, #250) aliased as an operand
 is — its text read as a reference at the use (`syntax::reference_at`), a direction word put in
@@ -46,7 +49,14 @@ place unless a name there is spelt so (`names_here`: a formal `up` given on) —
 whole to another word (`Param::Passed`) decided by what it is given, operands aliased,
 every relation's span moved to the use's word (a parameter's dimension to its argument, so
 `written` and `edit::set_dimension`'s `word_dimension` read it); nested words resolve from the
-definition's file, a cycle is E003, an unknown word E102 naming the import. `Relation::word` (`Worded`) rides to
+definition's file, a cycle is E003, an unknown word E102 naming the import. **A point's plane**
+([0.152], #463): `o.plane` is the frame a point is drawn in (`program::resolve::follow`, `PLANE`,
+`drawn_in`), so a word about a point in a view reads the view from its operand and stays closed;
+`o.plane.normal` is minted once the memberships are in (`planes::drawn_normals`, over the
+flattener's `normals`). A point standing in space is E040 at the operand, or at the use where the
+operand is a word's body's — a relation that cannot settle says first why an operand whose name is
+found names nothing past it (`relations::constrain`), rather than that it has no kind; before the
+memberships (a declaration's child) it is refused as not yet known. `Relation::word` (`Worded`) rides to
 `Constraint::word` (`WordUse`, entities; `graft` keeps it while its operands survive) and
 `io::describe_with` reads it (`p horizontal q`). `flatten::word_faults` (closure E101, a
 reserved word or a builtin of the fixity E071 — `constraints::builtin_word` — names twice E001)

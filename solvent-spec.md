@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.151 — October 2026**
+**Specification, Draft 0.152 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -733,8 +733,11 @@ same direction.
 
 **A point drawn in a plane has the plane's own two coordinates.** The point `(a, b)` drawn in `P`
 stands at `o_P + a·û_P + b·v̂_P` in space, its *lift*, which is what a relation in space reads
-(§9.2). A plane whose axes' directions and place are all held is **constant**: its basis is
-settled at elaboration and a lift over it reads it as constants. Any other plane is solved with
+(§9.2). **[0.152]** The plane it is drawn in is its member `p.plane`, read wherever a plane is
+(`t perpendicular p.plane`, `l parallel p.plane.normal`): so what is handed a point drawn in a view
+is handed the view (§9.9). A point standing in space is drawn in no plane, and its `plane` is
+**E040** where a relation reads it. A plane whose axes' directions and place are all held is
+**constant**: its basis is settled at elaboration and a lift over it reads it as constants. Any other plane is solved with
 the sketch. *Non-normative:* an implementation places the planes and axes first, solving the
 statements about them alone (and about points of planes already placed) round by round, so the
 main solve starts where the planes stand rather than where their seeds put them; the geometry
@@ -2544,8 +2547,8 @@ a above(d) b := b distance(d, along: up) a
 
 A **relation word** is defined at the top level of a file — never inside a body — as a component is: the word between its two operand names (infix) or before its one (prefix), its parameters in parentheses after it, `:=`, and the **one** relation it stands for. A statement writing the word, `p horizontal q`, `r above(d: 7mm) q`, is that relation with the operands and the parameters put in, expanded where the statement stands (§14.1) as a component's body is.
 
-- **Operands are entities**, aliased as a component's entity formals are (P1); their kinds are checked by the relation they reach, where the word is expanded (`p above(d: 1) l` of a line is **E040**, as `l distance(…, along: up) p` would be). A body may read an operand's members (`a.p1`).
-- **Parameters are numbers, selector words or entities** **[0.83]**, given **by label** where the word is written, as a call's numbers are (§4.1): a value given by position is **E004**, a label the word has not is **E040**, and a parameter left out is **E040**. Which a parameter is is how its body reads it: a name read in a dimension, a pin or a seed is a number (written in as the text it was given, read where the word is written); one standing where a selector's word does (`side: s`) is a word; and one standing where an entity does — an operand (`P.v parallel up`), an entity or a direction in a relation's parentheses (`level(s)`, `along: s`), a declaration's child — is an entity, given a reference read where the word is written and aliased in the body as an operand is (`up: std.z`; one that names nothing is **E101** at the argument, and one that is no name **E040**), or a direction word put where it stands (`s: up`) where no name there is spelt so. A name read as a number and as either of the others is **E040**. A parameter only passed whole to another word (`a level_with(e) b := a both(along: e) b`) is what that word reads it as.
+- **Operands are entities**, aliased as a component's entity formals are (P1); their kinds are checked by the relation they reach, where the word is expanded (`p above(d: 1) l` of a line is **E040**, as `l distance(…, along: up) p` would be). A body may read an operand's members (`a.p1`), **[0.152]** and of a point drawn in a plane the plane it is drawn in (`o.plane`, §6.7): a word about a point in a view reads the view from what it is given, so the body stays closed (`f spins(ratio) o := { o coincident f.axis; f.axis parallel o.plane.normal; fix(ratio == ratio, advance == 0mm) f }`). Given a point standing in space, that is **E040** where the word is written.
+- **Parameters are numbers, selector words or entities** **[0.83]**, given **by label** where the word is written, as a call's numbers are (§4.1) — but **[0.152]** a word of **one** parameter may be given it bare, as a constraint word of the language takes its one number (`r above(7mm) q`, as `distance(80)`): a value given by position to a word of two or more is **E004** (`b offset(dx: 30, dy: 12) a` stays labelled, so nothing in order is ambiguous), one given a word of none, a label the word has not and a parameter left out are **E040**. Which a parameter is is how its body reads it: a name read in a dimension, a pin or a seed is a number (written in as the text it was given, read where the word is written); one standing where a selector's word does (`side: s`) is a word; and one standing where an entity does — an operand (`P.v parallel up`), an entity or a direction in a relation's parentheses (`level(s)`, `along: s`), a declaration's child — is an entity, given a reference read where the word is written and aliased in the body as an operand is (`up: std.z`; one that names nothing is **E101** at the argument, and one that is no name **E040**), or a direction word put where it stands (`s: up`) where no name there is spelt so. A name read as a number and as either of the others is **E040**. A parameter only passed whole to another word (`a level_with(e) b := a both(along: e) b`) is what that word reads it as.
 - **The body is closed** over its operands and parameters (§5): a reference or a name it reads that is neither — another entity, a value of the file, a datum — is **E101** at the definition. A word whose body states another defined word is that word's expansion in turn, resolved from the file the body is written in; a word reached again while it is being expanded is **E003**.
 - **An error inside the expansion is reported where the word is written**: every place in the body is the word's own place in the statement that writes it, and a dimension that is one of the word's parameters is the argument the statement gave it — so its callout shows that argument, and editing the callout edits it.
 - A word that is a word of the language's own — an element keyword, a trailing clause, a modifier, a body word, a word opening a statement — or a constraint word of the language **of the same fixity** is **E071**; so is a word defined twice in one file with one fixity. An infix word and a prefix word of one spelling are two words: `std`'s `a horizontal b` stands beside the language's `horizontal l` of a line.
@@ -3037,7 +3040,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E001 | redeclaration within a body |
 | E002 | a block's index or edge binder over a name already in scope |
 | E003 | a component instantiation nothing ends: reached again while it is being expanded, given the numbers it was given there, or nested past the implementation's depth (§8) **[0.75]**; an interface holding itself through its members (§8.1) **[0.84]** |
-| E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]** |
+| E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]**; **[0.152]** a value given by position to a relation word of two or more parameters (§9.9) |
 | E010 | withdrawn: an undecorated `tangent` between circles reads its branch off the seed (§9.5) |
 | E011 | closed path winding contradicts declared orientation |
 | E012 | ambiguous or conflicting path-fragment composition |
