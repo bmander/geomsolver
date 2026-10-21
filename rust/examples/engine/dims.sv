@@ -53,6 +53,7 @@ bulk := 14mm       // a crankcase bulkhead's thickness, at each main bearing
 rmb := rj + 2mm    // the main bearing shell, outside: the bore in the bulkhead
 wmb := 22mm        // a main bearing's length along the axis
 capd := 14mm       // the bearing cap's depth below the shell
+rbay := 84mm       // a crankcase bay's half-width: the throws sweep 77 round the axis
 
 // the head: a separate casting, standing on its gasket
 gasket := 2mm      // the head gasket: the head's face stands this far off the deck

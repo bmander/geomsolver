@@ -15,7 +15,7 @@
 // Looking across (the side view) it is seen edge on — the big end, the shank's flanges and the
 // small end each a width along the crankshaft.  Section A-A is the shank's I-section.
 
-use engine.dims (L, pinlen, rp, rpin)
+use engine.dims (L, back, front, pinlen, rp, rpin)
 use engine.parts
 use std (offset, vertical)
 
@@ -225,4 +225,37 @@ part ConRod(pin: CrankPin, bore: line) {
     cut.origin distance(-fl / 2, along: u) q7
     q0.p distance(2 * hM, along: v) q7
   }
+
+  // -- the rod as a solid: what both views agree it is.  The end view's outline, bored at both
+  // eyes, runs along the crank axis; the side view's edge-on outline — big end, shank, small end
+  // — runs across the engine either side of the bore axis; the rod is what the two have in common
+  body := solid(face(eyeB, fbr, flank_r, fsr, eyeS, fsl, flank_l, fbl, holes: bigbore, smallbore),
+                from: front, to: back)
+  edge_on := solid()
+  big_s := solid(face(b1, b2, b3, b4), from: -100mm, to: 100mm)
+  shank_s := solid(face(ka, kb, kc, kd, -> close), from: -100mm, to: 100mm)
+  small_s := solid(face(s1, s2, s3, s4), from: -100mm, to: 100mm)
+  big_s union edge_on
+  shank_s union edge_on
+  small_s union edge_on
+  edge_on common body
+}
+
+// Open this file to preview cylinder 1's rod: on its crank pin where the crankshaft puts it at the
+// table's crank angle, its small end on the bore axis, in both sections and section A-A, and as a
+// solid.
+preview {
+  unit mm
+  in std.side {
+    top := engine.parts.At(std.side.origin, dx: 0mm, dy: 300mm)
+    bore := line(std.side.origin, top.p)
+    pe := engine.parts.At(std.side.origin, dx: engine.dims.R * sin(engine.dims.theta),
+                          dy: engine.dims.R * cos(engine.dims.theta))
+  }
+  in std.front {
+    ps := engine.parts.At(std.origin, dx: front + 25mm + engine.dims.P / 2,
+                          dy: engine.dims.R * cos(engine.dims.theta))
+  }
+  pin := {end: pe.p, side: ps.p}
+  rod := ConRod(pin, bore)
 }

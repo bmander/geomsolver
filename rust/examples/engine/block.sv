@@ -9,7 +9,7 @@
 // every width in the plan is the end view's, by projection, inside the part; every length is the
 // side view's.
 
-use engine.dims (D, P, back, bulk, capd, deck, front, hw, kw, rail, rj, rmb, sump, wall, wmb)
+use engine.dims (D, P, back, bulk, capd, deck, front, hw, kw, rail, rbay, rj, rmb, sump, wall, wmb)
 use engine.parts
 use std (horizontal, offset)
 
@@ -165,4 +165,46 @@ part EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point, o_t:
   ax[1].p project c[1]
   ax[2].p project c[2]
   ax[3].p project c[3]
+
+  // -- the casting as a solid -------------------------------------------------------------
+  // The end section's outline run along the crank axis (the end view's normal) from the front
+  // face to the rear, less the four bores drilled down from the deck as the plan draws them, and
+  // less a bay for the crank between each pair of bulkheads, open below the rail to the sump;
+  // the bulkheads are what is left, bored for the main bearings.  The sump is hung under the
+  // rail: the end view's pan run along the axis, as deep as the side view's floor at each station.
+  in end {
+    // a bay's section: `rbay` either side of the bore axis, from below the rail up to where the
+    // bores end, so the crank and the rods' big ends swing clear inside it
+    construction bay0 := point hint((o.x - rbay, o.y + rail - 1mm))
+    construction bay1 := point hint((o.x + rbay, o.y + rail - 1mm))
+    construction bay2 := point hint((o.x + rbay, o.y + deck - wall))
+    construction bay3 := point hint((o.x - rbay, o.y + deck - wall))
+    bay0 offset(dx: -rbay, dy: rail - 1mm) o
+    bay1 offset(dx: rbay, dy: rail - 1mm) o
+    bay2 offset(dx: rbay, dy: deck - wall) o
+    bay3 offset(dx: -rbay, dy: deck - wall) o
+  }
+  casting := solid(face(deckline, b_r, sk_r, kr, railline, kl, sk_l, b_l), from: front, to: back)
+  repeat 4 as i {
+    private cylinder := solid(face(bore[i]), from: deck - wall - 1mm, to: deck + 1mm)
+    cylinder cut casting
+  }
+  repeat 4 as i {
+    private crankcase := solid(face(bay0, bay1, bay2, bay3, -> close),
+                               from: front + 25mm + bulk / 2 + i * P,
+                               to: front + 25mm - bulk / 2 + (i + 1) * P)
+    crankcase cut casting
+  }
+  mains := solid(face(shell), from: front - 1mm, to: back + 1mm)
+  mains cut casting
+  pan := solid(face(su_r, ss_r, sb, ss_l, su_l, -> close), from: front, to: back)
+  floor := solid(face(s1, s2, s3, s4, -> close), from: -kw - 1mm, to: kw + 1mm)
+  floor common pan
+}
+
+// Open this file to preview the block alone: the casting in the three views the assembly draws
+// it in, about the world's origin, and the casting and its sump as solids.
+preview {
+  unit mm
+  block := EngineBlock(std.side, std.front, std.top, std.side.origin, std.origin, std.top.origin)
 }
