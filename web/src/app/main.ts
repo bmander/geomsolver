@@ -154,8 +154,8 @@ toolTopic('Solids', SOLID_TOOLS, [
     title: 'Draw on the selected face of a solid: the plane lying there, or a plane written onto '
          + 'it that follows the solid (double-click a face does the same)' },
 ]);
-/* The workspace's own buttons, in its corner: orbit mode, where one finger turns the view, and
- * delete, which a phone has no key for. */
+/* The workspace's own button, in its corner: orbit mode, where one finger turns the view — shown
+ * only to a finger (`app.css`), since a mouse orbits with its right button; `o` works anywhere. */
 const VIEW_BUTTONS: ToolbarButton[] = [
   { label: 'Orbit', key: 'o', toggle: true,
     title: 'Orbit mode: a drag turns the workspace about, rather than drawing or selecting — one '
@@ -164,8 +164,6 @@ const VIEW_BUTTONS: ToolbarButton[] = [
       view.setOrbitMode(!view.orbitMode);
       toast(view.orbitMode ? 'orbit: drag to turn the view' : 'orbit off');
     } },
-  { label: 'Delete', onClick: () => deleteSelection(),
-    title: 'Delete what is selected (Delete)' },
 ];
 const [orbitButton] = VIEW_BUTTONS.map((b) => addButton(
   document.getElementById('view-buttons') as HTMLElement, b));
@@ -488,6 +486,9 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       title: 'The selection, the points that define it, and every constraint that stays inside' },
     { label: 'Paste', key: '⌘v', onClick: () => report(view.pasteClipboard(), 'pasted'),
       title: 'A copy of the clipboard, nudged clear and selected, joined to nothing' },
+    { label: 'Delete', key: 'del', onClick: () => deleteSelection(),
+      title: 'Take away what is selected — the focused constraint, else the drawing\u2019s '
+           + 'selection, the solids or the picture' },
     null,
     { label: 'Fit to screen', onClick: () => view.fit() },
     { label: 'Isolate', onClick: () => view.isolate(),
@@ -547,9 +548,9 @@ aboutBadge.addEventListener('click', () => void about());
 
 /* -- keyboard ------------------------------------------------------------------- */
 
-/** What the Delete key and the workspace's Delete button both do: take away whatever is selected
- *  — the constraint with the focus, else the drawing's selection, the solids or the picture.  One
- *  function, so a phone's button and a keyboard's key cannot come to delete different things. */
+/** What the Delete key and Edit ▸ Delete both do: take away whatever is selected — the constraint
+ *  with the focus, else the drawing's selection, the solids or the picture.  One function, so a
+ *  phone's menu item and a keyboard's key cannot come to delete different things. */
 function deleteSelection(): void {
   if (currentConstraint) {
     const c = currentConstraint;

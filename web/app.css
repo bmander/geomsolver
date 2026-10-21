@@ -182,9 +182,10 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
   border: 1px solid var(--line); border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 #plane-pick select { font: inherit; color: var(--text); }
-/* the workspace's own buttons — orbit, delete — in its lower right corner, under a thumb */
+/* the workspace's own buttons — orbit — in its lower right corner, under a thumb: a finger's
+   only (below), since a mouse orbits with its right button */
 #view-buttons { position: absolute; right: 12px; bottom: 12px; z-index: 3;
-  display: flex; gap: 6px; }
+  display: none; gap: 6px; }
 #view-buttons button { box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 #view-buttons button:not([aria-pressed="true"]) { background: var(--bg); }
 .drawing-active :is(#plane-pick, #view-buttons) { visibility: hidden; }
@@ -623,6 +624,7 @@ dialog input[type=search] {
    keyboard chips go, since a touch screen has no keys to name.  The sizes stay constant: a bar
    short of room folds its topics (`ui::fitBar`) rather than shrink them. */
 @media (pointer: coarse) {
+  #view-buttons { display: flex; }
   button, select { min-height: 36px; padding: 6px 12px; }
   .bar { gap: 6px; }
   .menu > button { padding: 6px 12px; }
