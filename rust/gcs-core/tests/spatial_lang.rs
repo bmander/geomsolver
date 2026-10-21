@@ -211,6 +211,35 @@ top coincident m
     }
 }
 
+/// `P perpendicular l` of a line drawn in a view turns the plane square to the line in space,
+/// whichever way round it is written; through the line's end, the plane is the section there.
+#[test]
+fn a_plane_square_to_a_drawn_line_turns_with_it() {
+    let doc = |held: &str, plane_first: bool| format!("\
+use std
+p0 := point hint((42.55, -0.36)) in std.front
+c0 := circle(center: p0) hint(r: 17.3) in std.front
+p1 := point hint((42.55, 16.95)) in std.front
+p1 coincident c0
+{held}
+v0 := plane(u: hint(dir: (1, -0.1, -0.1)), v: hint(dir: (-0.1, -1, -0.1))) hint(origin: (5, -5, 21))
+l1 := line(p0, p1) in std.front
+p1 coincident v0
+{}
+", if plane_first { "v0 perpendicular l1" } else { "l1 perpendicular v0" });
+    for (held, plane_first) in [("p1 level(right) p0", true), ("fix((48, 15)) p1", false)] {
+        let e = read(&doc(held, plane_first));
+        let mut sk = e.sketch.clone();
+        assert!(solve(&mut sk, SolveOpts::default()).success, "{held}");
+        let b = sk.basis(ent(&e, "v0").i());
+        let (p0, p1) = ends(&sk, ent(&e, "l1"));
+        let dir = sub(p1, p0);
+        // the plane's normal along the line, and its end on the plane
+        assert!(norm(cross(b.normal(), dir)) < 1e-9 * norm(dir), "{b:?} against {dir:?}");
+        assert!(dot(b.normal(), sub(p1, b.o)).abs() < 1e-9);
+    }
+}
+
 /// A plane over free axes starts where their seeds say, and stands where its own seed says.
 #[test]
 fn a_free_plane_starts_at_its_seeds() {
@@ -491,6 +520,9 @@ fn each_word_across_planes_is_the_relation_in_space() {
         ("r coincident q", CKind::AxisOnPlane),
         ("r parallel q", CKind::AxisParallelPlane),
         ("r perpendicular q", CKind::AxisPerpendicularPlane),
+        // a drawn line square to a plane, written either way round
+        ("la perpendicular q", CKind::LinePerpendicularPlane),
+        ("q perpendicular la", CKind::LinePerpendicularPlane),
         ("r perpendicular std.z", CKind::Perpendicular3),
         ("la parallel r", CKind::Parallel3),
         ("q distance(5) std.top", CKind::PlaneDistance),

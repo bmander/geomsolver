@@ -894,7 +894,7 @@ f slides(advance) l := {
   fix(ratio == 0, advance == advance) f
 }
 
-// The joints as components, kept for one release (0.153) beside the words above, which say each
+// The joints as components, kept for one release (0.154) beside the words above, which say each
 // as a relation: `std.Turn(f, about: l, ratio: r)` is `f turns(r) l`, with `advance: a` (at ratio
 // 1) `f screws(a) l`; `std.Spin(f, about: o, on: P, ratio: r)` is `f spins(r) o`, `o` drawn in
 // `P`; `std.Slide(f, along: l, advance: a)` is `f slides(a) l`.

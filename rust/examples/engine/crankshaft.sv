@@ -109,6 +109,9 @@ component Crankshaft(end: plane, side: plane, o: point, ax: line, o_s: point,
       t1 := Throw(o, ax, theta: dims.theta, dims: dims, shape: throw_dims)
       t2 := Throw(o, ax, theta: dims.theta + 180deg, dims: dims, shape: throw_dims)
     }
+    // each throw's pin in the section, for what rides on it: cylinders 1 and 4 on `t1`'s, 2 and 3
+    // on `t2`'s
+    pins := {t1: t1.pin, t2: t2.pin}
   }
 
   // -- across the axis: the whole shaft edge on ------------------------------------------

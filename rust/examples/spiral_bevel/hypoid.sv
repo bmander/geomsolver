@@ -94,6 +94,12 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
     n: pinion_teeth)
   gear := Member(gear_blank.material, gear_space.body, crown_roll, gear_roll, gear_index,
     n: gear_teeth)
+  // What a drawing that stands on the pair reads of each member: its axis and the foot of M on it,
+  // its blank's back cone and the blank itself, and the member.
+  gear_member := {ax: gear_cone.ax, foot: gear_cone.foot, back: gear_blank.back,
+    material: gear_blank.material, body: gear.body}
+  pinion_member := {ax: pinion_cone.ax, foot: pinion_cone.foot, back: pinion_blank.back,
+    material: pinion_blank.material, body: pinion.body}
 
   // The face mill's two settings, found.
   balance := Balanced(P, gear_cone, trace, mill.ax, mill.inner_flank, mill.outer_flank,

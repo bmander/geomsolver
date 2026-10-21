@@ -91,8 +91,8 @@ component MeshingPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
 
   // The mean contact T: on the face mill's inner cone in the normal section through M, where the
   // cone's normal is a line of action of the mesh.
-  mean := MeanContact(gear_cone, trace.heading, mill.ax, mill.inner_flank, mill.inner_flank.apex,
-    gear_turn, pinion_turn)
+  mean := MeanContact(gear_cone, trace.heading, mill.ax, mill.inner_flank, gear_turn,
+    pinion_turn)
 
   // -- the contact as the designer states it ----------------------------------------------------
   // The pinion's convex flank, the envelope of the face mill's inner cone under the mesh, and its
@@ -142,15 +142,15 @@ interface Contact { T: point, normal: line, generator: line }
 // along it does no work on the members' relative motion, so two flanks touching there with that
 // normal touch as they turn. The mesh is `mesh` seen from `seen_from`.
 // `normal` runs from T to the mill's axis; `generator`, the cone's line from its apex through T.
-component MeanContact(gear: Gear, heading: line, ax: line, flank: set, apex: point,
-    mesh: frame, seen_from: frame) {
+component MeanContact(gear: Gear, heading: line, ax: line, flank: set, mesh: frame,
+    seen_from: frame) {
   T := point hint((53.2, 1, 0.6))
   gear.M level(heading) T
   T coincident flank
   to_axis := point hint((35.5, 38.9, 24.8))
   to_axis coincident ax
   normal := line(T, to_axis)
-  generator := line(apex, T)
+  generator := line(flank.apex, T)
   normal perpendicular generator
   normal reciprocal(seen_from: seen_from) mesh
 }

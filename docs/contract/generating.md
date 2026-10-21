@@ -29,7 +29,7 @@ The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `Trimmed
 `program::entities` by `Sketch::mint_joint`: an `AxisE`, its direction seeded along z then by
 `seed_joints` from what holds it, and two parameters, ratio 1 and advance 0) and held by
 ordinary relations: `std.sv`'s relation words `turns`, `screws`, `spins` (about the axis through
-`o` square to `o.plane`) and `slides` ([0.153], #464).  The components `std.Turn`, `std.Spin` and
+`o` square to `o.plane`) and `slides` ([0.154], #464).  The components `std.Turn`, `std.Spin` and
 `std.Slide` are kept for one release and no document of the library calls them
 (`tests/joint_words.rs`).  A `fix` in a word's body is held within, as a component's is
 (`ResolvedRelation::worded`), so a reconcile does not write it again at the root.  Before

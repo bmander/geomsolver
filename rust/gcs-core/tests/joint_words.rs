@@ -1,4 +1,4 @@
-//! **A frame's joint as relation words** (Solvent §6.14 [0.153]; issue #464): `std.sv` states a
+//! **A frame's joint as relation words** (Solvent §6.14 [0.154]; issue #464): `std.sv` states a
 //! joint as a word with the frame the subject and what it moves about or along the object —
 //! `f turns(r) l`, `f screws(a) l`, `f spins(r) o`, `f slides(a) l` — each its one number bare.
 //! Each moves the frame as the component it replaces did (`std.Turn`, `std.Spin`, `std.Slide`,

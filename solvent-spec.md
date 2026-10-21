@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.153 — October 2026**
+**Specification, Draft 0.154 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -724,7 +724,8 @@ held where its held axes are not, are **E067**.
 
 Every plane has three members. `P.u` and `P.v` are its axes, axes through its origin. `P.origin`
 is a point drawn in `P` and held at its `(0, 0)`, which a component may be handed and a relation
-may place. An axis square to `P` is `t perpendicular P`. **[0.89]** A fourth, `P.normal`, is the
+may place. An axis square to `P` is `t perpendicular P`, and **[0.153]** a line drawn in any view
+square to it `l perpendicular P`. **[0.89]** A fourth, `P.normal`, is the
 axis along `u × v` through its origin: square to both axes, on the side `u × v` is, standing where
 the plane stands, and read wherever an axis is (`l parallel P.normal`, `plane(u: P.normal, …)`,
 `hint(dir: P.normal)`). It is the plane's, never a freedom of its own, and is not declared: a
@@ -1327,7 +1328,7 @@ turned `ratio·t` right handed about its axis and moved `advance·t/2π` along i
 0 is a slide. Roll 0 is as drawn: a member that must stand turned there is drawn turned. A frame
 with no joint stands still: it is the world. A joint does not move the sketch.
 
-**[0.153]** The standard library (§8) states the joint as relation words (§9.9), the frame the
+**[0.154]** The standard library (§8) states the joint as relation words (§9.9), the frame the
 subject and what it moves about or along the object, each of one number given bare (`use std
 (turns, screws, spins, slides)`):
 
@@ -1342,7 +1343,7 @@ subject and what it moves about or along the object, each of one number given ba
 * **`f slides(a) l`** — along the directed line `l` by `a` a full turn of the roll, turning not at
   all.
 
-Through 0.152 they were components called for their effect, `std.Turn(f, about: l, ratio: r,
+Through 0.153 they were components called for their effect, `std.Turn(f, about: l, ratio: r,
 advance: a)`, `std.Spin(f, about: o, on: P, ratio: r)` and `std.Slide(f, along: l, advance: a)`;
 those are kept, with the same meaning, for one release.
 
@@ -1353,7 +1354,7 @@ takes. A measurement of the drawing as its ratio or advance is **E107**. Axis ge
 current solved model, read where it stands in space.
 
 **Joints in the solve [0.137].** A ratio or an advance no `fix` states — a number pinned to an
-unknown, `param k: Scalar` then `f turns(k) l` **[0.153]** — is an **unknown** of the solve, as
+unknown, `param k: Scalar` then `f turns(k) l` **[0.154]** — is an **unknown** of the solve, as
 the axis is: every relation that reads the motion during the solve (a point it carries and its
 rate, a point on an envelope in space or on a meshing) reads it as a column, and what is built after the solve reads
 it where the solve left it. A profile generated in the plane (§6.15.1) is generated over stated
@@ -1404,7 +1405,7 @@ arbitrary motion laws or an assembly-joint solver.
 ratio: r, phase: φ, advance: a)`, `motion(along: l, advance: a)`, `motion(source, relative_to:
 observer)`, with `m: motion` formals and its numbers allowed to measure the solved drawing
 **[0.27]**. Each is refused naming what it became: `motion(…)` the frame and `turns`, `spins` or
-`slides` **[0.153]**; `relative_to:` the reading's `seen_from:`; `phase:` a roll offset (a turn with
+`slides` **[0.154]**; `relative_to:` the reading's `seen_from:`; `phase:` a roll offset (a turn with
 phase φ and ratio r read at roll τ is the same turn read at τ + φ/r).
 
 **[0.138] A frame that moves is a frame read at a roll.** `X coincident x at τ` is the point
@@ -2322,7 +2323,7 @@ What goes in the parentheses is a short list:
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc |
 | `length` | prefix | **[0.90]** a line: the distance between its own ends; **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length; a free curve: its own. **[0.90]** `distance` relates two things and `length` measures one: so a word over `g: path` states `g`'s length whatever `g` is given, and `distance(d) l` on a line, the spelling through 0.89, is **E040** naming `length(d) l` |
-| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
+| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.153]** `perpendicular` takes (line, plane), either way round: the line, drawn in any view, along the plane's normal in space; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
 | `regular` | infix | **[0.115]** (envelope in space, solid) +`by:` a solid, written `flank regular(…, by: tool) within blank`: the flank's least area factor where the tool cuts it in the blank, a bound or an equation (§6.15.3) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `mapped` | infix | **[0.117]** (point, point), its **pairs** in the parentheses, each a point of the source, `->`, and where it goes: `q mapped(from -> a, to -> b, third -> c) p` holds `q` where the affine map taking `from`, `to` and `third` to `a`, `b` and `c` carries `p`, `q = a + i·(b − a) + j·(c − a)` with `p = from + i·(to − from) + j·(third − from)`. Two pairs are the similarity keeping the turn (`to` turned a quarter about `from` goes to `b` turned a quarter about `a`), `mirror: true` the one reversing it; three pairs say their turn by where their targets stand. Each side is read in its own plane — `q` and the targets in one, `p` and the sources in one, which may be another (**E062** where either is not) — so a point drawn in one view is carried into another. Three sources standing in a line, or two that are one, are **E061** naming them, where they are held; other than two or three pairs, and `mirror:` with three, are **E040**. **[0.118]** (circle, circle) under two pairs: the circle about the image of the other's centre, its radius scaled by `|b − a| / |to − from|`; under three pairs **E040** (an ellipse). A face carried whole is §6.8. No number: not a dimension |
@@ -2379,6 +2380,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `coincident(l: Line, t: Axis)` **[0.44]** | two components of (X − A) × d̂ across the axis, for X each of the line's ends | 4 | A the axis's place, d̂ its direction; a line of no length is still on it |
 | `coincident(t: Axis, P: Plane)` **[0.42]** | n̂_P·(A − o_P), n̂_P·(A + L·d̂ − o_P) | 2 | the axis lies in `P`: two of its points, L the drawing's extent apart |
 | `parallel(t: Axis, P: Plane)`, `perpendicular(t, P)` **[0.42]** | n̂_P·d̂; (n̂_P × d̂) across n̂_P | 1; 2 | along `P`, and square to it |
+| `perpendicular(l: Line, P: Plane)` **[0.153]** | ((B − A)^ × n̂_P) across n̂_P | 2 | A, B the line's ends in space, drawn in any view |
 | `coincident(t: Axis, s: Axis)` **[0.43]** | two components of (d̂_s × d̂_t) across `t`, scaled by L; two components of (A_s − A_t) × d̂_t across `t` | 4 | one line, either sense; L the drawing's extent |
 | `parallel(P: Plane, Q: Plane)` **[0.43]** | two components of n̂_Q × n̂_P across n̂_P | 2 | either way round; neither plane's place nor its turn within itself |
 | `coincident(L, P: Plane)` **[0.24]** | n̂_P·(A − o_P), n̂_P·(B − o_P) | 2 | A, B the line's two ends, lifted |
@@ -2573,7 +2575,7 @@ A **relation word** is defined at the top level of a file — never inside a bod
 
 **A body may be several statements** **[0.50]**: `l1 flush(d) l2 := { l1 parallel l2; l2.p1 distance(d) l1 }`, in braces, one per line, for one fact about the operands that takes several rows. It may declare the geometry its relations need (`private ab := line(a, b)`), which each use makes anew, under a name of the use's own, and read only what it declares besides its operands and parameters. Every relation a use makes is the statement's: deleted with it, described as it, a placement on it going to the one relation when it makes one. A body may write other words and use sets (§6.21), a set written in place included (`a orbits(r) o := a coincident std.Sphere(o, r: r)`). An infix word is a relation **between** its operands — distance, symmetry, flushness; that each stands on a third thing is said of each (`a coincident P`), not made a word.
 
-**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). **[0.153]** A frame's joint is said so too, the frame the subject: `f turns(r) l`, `f screws(a) l`, `f spins(r) o` and `f slides(a) l` (§6.14). **[0.83]** `P square(up: d) l` stands plane `P` square to a line or an axis `l`, its `v` along `d` and its `u` square to `d` and to `l` — three statements, since a plane's axes are not held square (§6.7); with `d` square to `l` its normal runs along `l`, and where `d` is not that is no conflict: the normal is `l`'s part square to `d`. Each is two dimensions or a dimension and a level, said as the one fact they are. **[0.53]** A body may state an energy over an operand (§9.10): `std.hangs(L: 150mm) rope` is a curve that long, hanging.
+**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). **[0.154]** A frame's joint is said so too, the frame the subject: `f turns(r) l`, `f screws(a) l`, `f spins(r) o` and `f slides(a) l` (§6.14). **[0.83]** `P square(up: d) l` stands plane `P` square to a line or an axis `l`, its `v` along `d` and its `u` square to `d` and to `l` — three statements, since a plane's axes are not held square (§6.7); with `d` square to `l` its normal runs along `l`, and where `d` is not that is no conflict: the normal is `l`'s part square to `d`. Each is two dimensions or a dimension and a level, said as the one fact they are. **[0.53]** A body may state an energy over an operand (§9.10): `std.hangs(L: 150mm) rope` is a curve that long, hanging.
 
 **A word may make solids** **[0.69]**. A body in braces may hold, beside its relations and their
 declarations, blocks (`repeat a in A { … }`, §12.8), instances, sets and body statements, so a word

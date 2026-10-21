@@ -331,6 +331,9 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::AxisParallelPlane, vec![e(axis_b), e(pce)]),
         Constraint::new(CKind::AxisPerpendicularPlane, vec![e(axis_b), e(pbe)]),
         Constraint::new(CKind::AxisPerpendicularPlane, vec![e(axis_a), e(pae)]),
+        // a drawn line square to a plane, over a free plane and a held one
+        Constraint::new(CKind::LinePerpendicularPlane, vec![e(me1), e(pce)]),
+        Constraint::new(CKind::LinePerpendicularPlane, vec![e(me2), e(pae)]),
         Constraint::new(CKind::PlaneDistance, vec![e(pbe), e(pce), Arg::Num(2.0)]),
         // two planes facing alike, over free planes and a held one
         Constraint::new(CKind::PlaneParallel, vec![e(pbe), e(pce)]),
