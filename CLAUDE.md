@@ -11,10 +11,12 @@ files it lists are the contract, and `gcs-solver-program.md` is the staged progr
 
 ## Layout
 
-* **core** (`rust/gcs-core/`): the whole engine in Rust, no dependencies — model, constraints,
-  kernels, solvers, diagnosis, decomposition, the Solvent language, solids, the B-rep kernel.
-  Within it, the **solver** (model, constraints, kernels, solvers, diagnosis, decomposition, and
-  what they evaluate) neither imports nor reaches the language: `tests/layering.rs` holds it.
+* **core**: the whole engine in Rust, no dependencies, as two crates.
+  * **solver** (`rust/gcs-solve/`): model, constraints, kernels, solvers, diagnosis,
+    decomposition, and what they evaluate: curves, solids, motions, the B-rep kernel.  It knows
+    no Solvent, and the compiler holds it: nothing in it can name the crate built on it.
+  * **language** (`rust/gcs-core/`): the Solvent language and what is built on it, over
+    `gcs-solve`, whose modules it re-exports by name (`gcs_core::model` is `gcs_solve::model`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built as a native `cdylib` and as a
   `wasm32-unknown-unknown` module.
 * **binding** (`web/src/core/`): thin TypeScript proxies over the wasm core. No algorithm.
@@ -78,10 +80,11 @@ one), and add a row here only for a new topic. Language changes are also recorde
   Never write `class`, `style`, `view`, `section`, `dimensions` or callout placements in model
   source (the full rule: [language.md](docs/contract/language.md)).
 - **The core owns every algorithm.**  A change to the model, a constraint type, diagnosis,
-  decomposition or the solvers lands in `rust/gcs-core/` with a Rust test in
-  `rust/gcs-core/tests/` — **a new file there is listed in `tests/main.rs`** (one binary,
-  `autotests = false`; `every_file_is_a_module` fails an unlisted file).  A binding changes only
-  when the *surface* changes.  Geometry or numerics in TypeScript belong in Rust instead.
+  decomposition or the solvers lands in `rust/gcs-solve/` (the language's in `rust/gcs-core/`)
+  with a Rust test in `rust/gcs-core/tests/`, the suite of both crates — **a new file there is
+  listed in `tests/main.rs`** (one binary, `autotests = false`; `every_file_is_a_module` fails
+  an unlisted file).  A binding changes only when the *surface* changes.  Geometry or numerics
+  in TypeScript belong in Rust instead.
 - A new *entity* kind stops the build in the exhaustive `match e.kind` arms — `model.rs`
   (`entity_params`, `own_params`, `own_length_params`, `children`, `min_children`, `count`,
   `bounds`, `distance_between`, `point_to_drawn`, `class_of`, `set_class`, `spatial`), `graft`'s

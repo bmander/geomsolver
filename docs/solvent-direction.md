@@ -137,7 +137,7 @@ plan per topology (`docs/implementation-status.md`). That is fast at the sizes t
 part in the solve, identical instances are solved separately, and decomposability is something
 discovered in the graph rather than declared in the source.
 
-There is one exception, and it matters for §5. A **locus** (`rust/gcs-core/src/locus.rs`) is a
+There is one exception, and it matters for §5. A **locus** (`rust/gcs-solve/src/locus.rs`) is a
 curve defined by the constraints that force it: `Unwind(…).p over u` in `gear_trace.sv`. Each
 evaluation is a small Newton solve of the component's block against its inputs, and its
 derivatives with respect to those inputs come from one factorisation of that block, by the
@@ -390,7 +390,8 @@ puns in a call; a bare component statement; a component that declares nothing an
 formals; a path reaching more than one level into another instance; an `Int` formal used only to
 choose what is drawn; a `group` handed on whole by a component that reads none of it. Whether CI
 fails on *new* occurrences is decided per pattern, against an allowed list that can only shrink,
-as `tests/layering.rs` holds the layering. Readability rules (R1, R2) stay guidance.
+as the layering gate held the solver's imports until the crate split (#409). Readability rules
+(R1, R2) stay guidance.
 
 ---
 

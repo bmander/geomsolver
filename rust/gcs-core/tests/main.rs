@@ -122,7 +122,6 @@ mod joint_words;
 mod json_escapes;
 mod language_pipeline;
 mod laws;
-mod layering;
 mod limit_measure;
 mod linalg;
 mod lines;

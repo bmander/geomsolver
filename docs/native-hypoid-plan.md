@@ -791,7 +791,7 @@ tool nor the model says how. The flank ends down the tooth depth are not relieve
 
 ## Files
 
-- The meter: `rust/gcs-core/src/solid/accuracy.rs`; its samples and `--measure`,
+- The meter: `rust/gcs-solve/src/solid/accuracy.rs`; its samples and `--measure`,
   `rust/gcs-cli/src/cad/measure.rs`.
 - The tolerance: `solid::export::Tolerance`; `solid/contact_trace.rs` (`charted`, `Rows`, `Layout`,
   `Grid`, `marked`); `solid/contracts.rs` (`TinyTriangles::clustered`, cells per sweep);

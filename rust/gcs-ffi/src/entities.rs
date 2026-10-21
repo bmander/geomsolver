@@ -1,6 +1,7 @@
 //! Parameters and entities: their numbers, their styles, and the spatial ones sampled.
 
 use super::*;
+use gcs_core::style::Presented;
 
 /* -- params ---------------------------------------------------------------- */
 

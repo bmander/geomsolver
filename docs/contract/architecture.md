@@ -6,7 +6,8 @@ changelog](../solvent-changelog.md)) says where a rule came from.
 
 Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementation —
 
-* **core** (`rust/gcs-core/`): the whole engine in Rust, no dependencies.  Model and constraints
+* **core** (`rust/gcs-solve/`, `rust/gcs-core/`): the whole engine in Rust, no dependencies.
+  Model and constraints
   (`model.rs`, `constraints.rs`), vectorized kernels and the compile-to-plan `System` (`kernels.rs`,
   `system.rs`), our own DogLeg/LM plus dense and sparse linear algebra (`newton.rs`, `linalg.rs`,
   `sparse.rs`), structural diagnosis (`graph.rs`, `diagnose.rs`), decomposition into solve plans
@@ -16,35 +17,34 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `mesh.rs`, `hidden.rs`), the **Solvent** language (`syntax.rs`, `flatten.rs`, `program.rs`,
   `edit.rs`, `tape.rs`), JSON export (`io.rs`, `json.rs`), the rebuild walk behind deletion, copy,
   paste and a drag's part (`graft.rs`) and the reference sketches (`examples.rs`, over
-  `rust/examples/`).  **The solver is usable without the language** (#409): a sketch is built
-  from entities and constraint records, solved and diagnosed through the ABI with no document
-  (`gcs-ffi/tests/without_a_document.rs`), and the solver's modules import neither the parser nor
-  `io`: the words and types the model shares with the language (`Cmp`, `BodyWord`, `Span`,
-  `num`, `snake`, `one_of`, `public_path`) are defined below both in `vocab.rs`, which depends on
-  nothing, and `syntax` (or `program`, for `public_path`) re-exports them.  **The solver does
-  not import the language**, and a gate holds the build to it (`tests/layering.rs`): no
-  `crate::` path in a *solver* module (`model`,
-  `constraints`, `kernels`, `system`, `newton`, `linalg`, `sparse`, `graph`, `cgraph`,
-  `diagnose`, `decompose`, `witness`, `solve`, `homotopy`, `rng`, `fmath`, `graft`, `vocab`)
-  names a *language* module (`syntax`, `flatten`, `program`, `modules`, `edit`, `style`,
-  `library`, `examples`, `overview`, `callout`, `svg`, `drawing`, `report`, `io`).  Its list of
-  edges still standing is empty (step 6) and stays a ratchet: a new edge fails the gate.  **Nor
-  does the solver reach the language**, through any module in between: the gate follows every
-  route from the solver set, through the curves, the solids, the motions and the B-rep that the
-  model evaluates, and fails with the route, a `file:line` a hop, if one arrives at a language
-  module.  So what the language and the solids share is defined below both: which solids are
-  *objects* is the model's (`model::objects`, re-exported by `overview`), and an instance's
-  public name the vocabulary's (`vocab::public_path`, re-exported by `program`).  The solver
-  still reaches the solids, and **the solids are the solver's** (#409, step 6, decided): solid
-  evaluation, motions and the B-rep are what the model evaluates, so they sit on the solver's
-  side of the line, and the language above it.  The crate split (step 7) cuts there: the solver
-  set and everything it reaches below, the language and what is built on it above.
+  `rust/examples/`).  **The solver is a crate of its own, and knows no Solvent** (#409, step
+  7): `gcs-solve` (`rust/gcs-solve/`) is the model, its constraints and kernels, the solvers,
+  diagnosis and decomposition, and everything they reach — the curves, the solids, the motions
+  and the B-rep that the model evaluates, for **the solids are the solver's** (step 6, decided).
+  `gcs-core` is the language and what is built on it: the parser, elaboration, modules,
+  presentation, the case library, the reports and `io`, the callouts, the renderer, SVG and
+  glTF.  It depends on `gcs-solve` and re-exports each of its modules under its own name, so
+  `crate::model` in the core and `gcs_core::model` outside it name what they always did, and
+  the ABI, the CLI and the suite (`gcs-core/tests`, which tests both) are unchanged.  **The
+  compiler holds the line**: nothing in `gcs-solve` can name the crate built on it, so no route
+  from the solver arrives at the language.  The source-scanning gate that held it inside one
+  crate (`tests/layering.rs`, steps 0–6) is gone with the reason for it.  The solver is usable
+  without the language at run time as well: a sketch is built from entities and constraint
+  records, solved and diagnosed through the ABI with no document
+  (`gcs-ffi/tests/without_a_document.rs`).  What the two share is defined below both: the words
+  and types the model shares with the language (`Cmp`, `BodyWord`, `Span`, `num`, `snake`,
+  `one_of`, `public_path`) in `vocab.rs`, which depends on nothing (`syntax`, or `program` for
+  `public_path`, re-exports them), and which solids are *objects* in the model
+  (`model::objects`, re-exported by `overview`).  What elaboration hands the solver checked is
+  made by a constructor (`model::SolidClaim::new`, `model::Sweep::new`), never a literal: the
+  fields stay the solver's, so nothing past elaboration rewrites one.
   **Presentation rides on the model as tags and an annex** (#409, step 5): an entity and a
   constraint carry their classes as names (`vocab::Classes`, re-exported by `style`), which
   nothing that solves reads; the document's sheet is on the sketch as `Sketch::presentation`, a
   `model::Annex` the model clones and grafts and never reads, and `style` alone puts it there and
-  resolves it (`Sketch::sheet`, `set_sheet`, `style_of`, `style_named` are an `impl Sketch` in
-  `style.rs`).  The sketch stays the one document a handle names, so the ABI is unchanged.
+  resolves it.  `sheet`, `set_sheet`, `style_of` and `style_named` are the trait
+  `style::Presented`, implemented for `Sketch` in `style.rs`: a crate adds no method to
+  another's type, so a caller imports the trait.  The sketch stays the one document a handle names, so the ABI is unchanged.
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built twice — a self-contained
   `wasm32-unknown-unknown` module and a native `cdylib`, where the *panic boundary* is checked
   (`gcs-ffi/tests/panic_boundary.rs`): `guard`'s `catch_unwind` only catches on native (wasm

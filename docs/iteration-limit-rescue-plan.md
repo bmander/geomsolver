@@ -192,7 +192,7 @@ order).
 
 ## Files
 
-- `rust/gcs-core/src/solve.rs`: `SolveResult::settled`, the trigger in `solve_compiled` and the
+- `rust/gcs-solve/src/solve.rs`: `SolveResult::settled`, the trigger in `solve_compiled` and the
   rule in `System::block_rescue`.
 - `rust/gcs-core/tests/limit_measure.rs`: the measurement (phase 1 and the `default` column).
 - `rust/gcs-core/tests/block_solve.rs`, `hypoid_layout.rs`, `drag.rs`: the tests above.

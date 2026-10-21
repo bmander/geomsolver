@@ -1,5 +1,6 @@
 use gcs_core::{
-    drawing, graft, io, model::EntRef, program, semantics::GeometryRoles, solve, syntax,
+    drawing, graft, io, model::EntRef, program, semantics::GeometryRoles, solve, style::Presented,
+    syntax,
 };
 use std::collections::BTreeMap;
 use crate::common::linked::build;
