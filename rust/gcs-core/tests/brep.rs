@@ -1447,3 +1447,26 @@ fn a_strip_across_a_tangent_seam_unions_into_its_body() {
     let want = volume(&plate)+volume(&strip);
     assert!((volume(&union)-want).abs() <= 1e-9*want,"{} against {want}",volume(&union));
 }
+
+/// **Touching is not open** (`Brep::check`): two blocks meeting along one edge leave it used twice
+/// each way, material touching itself along a line (`Kind::NotManifold`, what the body's stratum
+/// reads as rounds of separate statements meeting); a block missing a face leaves its edges used
+/// once one way only, a boundary the kernel left open (`Kind::Open`), never a meeting.
+#[test]
+fn an_edge_used_twice_each_way_touches_and_one_used_once_is_open() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    use gcs_core::brep::Kind;
+    let block = |x: f64,y: f64| {
+        let p = Profile {names:vec![],origin:[0.;3],normal:XY,
+            loops:vec![poly(&[[x,y,0.],[x+1.,y,0.],[x+1.,y+1.,0.],[x,y+1.,0.]])]};
+        prism(&p,0.,1.).unwrap()
+    };
+    let touching = boolean(&block(0.,0.),&block(1.,1.),Op::Union,1e-9).unwrap();
+    let e = touching.check(1e-9).unwrap_err();
+    assert_eq!(e.kind,Kind::NotManifold,"{e}");
+    let mut open = block(0.,0.);
+    open.faces.pop();
+    let e = open.check(1e-9).unwrap_err();
+    assert_eq!(e.kind,Kind::Open,"{e}");
+    assert!(e.msg.starts_with("not closed: "),"{e}");
+}
