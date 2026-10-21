@@ -46,9 +46,24 @@ What the work found:
   structure compiled once for the document and read per part.
 
 PT5's advice is built: `solventc --lint` names a part whose rows, from scattered starts, come to
-another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts draw
-it (`ConRod`'s small end above or below its pin, for one); stating each root is follow-up work,
-now that #157 holds a stated `ccw`. The V-twin still threads its table, its own issue (§9).
+another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts drew
+it, and each now states its root (#503) with `ccw`/`cw`, so the engine lints clean
+(`tests/parts.rs`):
+* **`Span`**, a belt run or a cam's flank: both circles on the run's far side from the side it
+  is asked for. That refuses the other outer tangent, both crossed ones, and the run of no length
+  where a lobe's overlapping base and nose circles meet. Read on the run itself, which never
+  passes through a centre. `Lobe` and the timing `Drive` drew W207 through their spans alone.
+* **`Throw`**, a crank web: ten points each with two roots. Each is read against points already
+  placed, or against a rim corner whose side of the arm its signed distance fixes. The throw only
+  turns about its axis, so every triangle keeps its area through the turn (302 mm² the least).
+  Its rim corners' seeds stood on the wrong sides of the arm, which the choices read as broken and
+  carried other points across; they now stand where the corners solve.
+* **`Valve`**, the follower, bucket, stem and head: each part's side of the valve axis, or of
+  the follower face. The lift slides the valve along its axis and turns none of them.
+`ConRod` has more unknowns than the search takes (`boundary::SEARCHED`), so it is not asked.
+Every position agrees with the drawing before the change to 7e-13 at 81 cycle angles over the
+whole 720°. Each of those solves, and every stated choice holds at each one. The V-twin still
+threads its table, its own issue (§9).
 
 **The hub motor as parts** (#502): every definition in `hub_motor/motor/` is a `part` reading
 `motor.dims` as constants, and the `motor_dims` group and every `dims:` argument are gone. The
