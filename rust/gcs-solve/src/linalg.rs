@@ -944,6 +944,14 @@ pub fn lu_factor(n: usize, a: &mut [f64], piv: &mut Vec<usize>) -> bool {
     true
 }
 
+/// The sign of the determinant of a matrix `lu_factor` has factored: the parity of its row swaps
+/// and of the negative pivots on `U`'s diagonal.
+pub fn lu_det_sign(n: usize, a: &[f64], piv: &[usize]) -> i8 {
+    let swaps = piv.iter().enumerate().filter(|&(k, &p)| p != k).count();
+    let negative = (0..n).filter(|&k| a[k * n + k] < 0.0).count();
+    if (swaps + negative) % 2 == 0 { 1 } else { -1 }
+}
+
 /// Solve one right-hand side with a factorisation from `lu_factor`.
 ///
 /// The row swaps are applied *before* the elimination, all of them: during factorisation a

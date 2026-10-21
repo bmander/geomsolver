@@ -364,8 +364,9 @@ pub fn widest_block(adj: &[Vec<usize>], mate_col: &[i32]) -> usize {
 }
 
 /// Strongly connected components of `succ` (Tarjan), iteratively, since a layout's chains are
-/// long enough to matter to a recursive walk's stack.
-fn tarjan(succ: &[Vec<usize>]) -> Vec<Vec<usize>> {
+/// long enough to matter to a recursive walk's stack.  A component comes out after every one it
+/// reaches: read `succ` as what each depends on, and that is an order to solve them in.
+pub(crate) fn tarjan(succ: &[Vec<usize>]) -> Vec<Vec<usize>> {
     let n = succ.len();
     let (mut index, mut low, mut on) = (vec![usize::MAX; n], vec![0; n], vec![false; n]);
     let (mut stack, mut out, mut next) = (Vec::new(), Vec::new(), 0);

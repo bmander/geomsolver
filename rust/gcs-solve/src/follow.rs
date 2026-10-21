@@ -666,7 +666,5 @@ fn det_sign(n: usize, mut a: Vec<f64>) -> i8 {
     if !crate::linalg::lu_factor(n, &mut a, &mut piv) {
         return 0;
     }
-    let swaps = piv.iter().enumerate().filter(|&(k, &p)| p != k).count();
-    let negative = (0..n).filter(|&k| a[k * n + k] < 0.0).count();
-    if (swaps + negative) % 2 == 0 { 1 } else { -1 }
+    crate::linalg::lu_det_sign(n, &a, &piv)
 }

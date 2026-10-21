@@ -1,6 +1,7 @@
 # A reusable solve boundary: the contract
 
-**Status (2026-10-21): a design for review (#451); the advisory classifier (#452) built, §16.** It states what a component
+**Status (2026-10-21): a design for review (#451); the advisory classifier (#452) built, §16; the
+prototype (#454) built, §17, its rules kept in [`contract/boundaries.md`](contract/boundaries.md).** It states what a component
 must satisfy for a parent to treat it as a **reusable solve boundary**: a function of its inputs,
 solved once per distinct input and consumed through its interface. It is the first step of track A
 of epic #465, written before the classifier (#452), the uniqueness spike (#453) and the prototype
@@ -649,8 +650,8 @@ says otherwise.
 
 | rule | held by | built in |
 |---|---|---|
-| CL1 | one instance in two documents (one 1000× larger) agrees; evaluation after unrelated history is bit-identical | #454 |
-| CL2 | listed inputs equal the lowered rows' columns; no column outside `x ∪ y` | #452, #454 |
+| CL1 | one instance in two documents (one 1000× larger) agrees (held, to the inner tolerance); evaluation after unrelated history is bit-identical | #454; the history half #456 |
+| CL2 | listed inputs equal the lowered rows' columns; no column outside `x ∪ y` (held) | #452, #454 |
 | CL3 | an unbound `Int` formal is "not a boundary" | #452 |
 | DT1 | the two-root point is DT1; with `b` on `a` it is not | #452 |
 | DT2 | the two-root point is refuted without `ccw`, unrefuted with it (after #157) | #452, #157 |
@@ -660,26 +661,26 @@ says otherwise.
 | DT6 | a walk from one basin to the other reports the mismatch | #455 |
 | FR1 | a body with a row over its operands alone is "not a boundary", naming it | #452 |
 | FR2 | `Crank(o, theta: hint(…))` is DT1; with the angle the body's own unknown it is not | #452 |
-| FR3 | no boundary's derivative is minimum-norm: `F_y` square in every DT1 test | #454 |
+| FR3 | no boundary's derivative is minimum-norm: `F_y` square in every DT1 test (held: a boundary not square is refused) | #454 |
 | EQ1, EQ2 | `Apex` with a page seed fails the motion and spin checks; with a relative seed it passes | #452, #456 |
 | EQ3, EQ4 | key equality under random proper motions of the operands; no rounding in keys | #456 |
 | EQ5 | `Pulley(centre)` invariant under the free rotation; a keyway there fails DT1 | #456 |
 | EQ6 | N instances' `upper.run.p1` each match the flat solve | #456 |
 | IO1 | a `private` member read from outside is E101 | #454 |
-| IO2 | one over-constraint, flat and through a boundary, named at the parent | #454 |
-| IO3 | a parent's opposite `ccw` over `one.x` is reported broken; a `Side` input chooses | #454 |
-| IO4 | two children reading each other's outputs are one parent system | #454 |
-| DD1 | finite-difference check of every output against every input | #454 |
+| IO2 | one over-constraint, flat and through a boundary, named at the parent | #455 (the prototype runs no diagnosis) |
+| IO3 | a parent's opposite `ccw` over `one.x` is reported broken; a `Side` input chooses | after #157 |
+| IO4 | two children reading each other's outputs are one parent system (held) | #454 |
+| DD1 | finite-difference check of every output against every input (held, outputs the boundary's own coordinates) | #454 |
 | DD2 | `x² = u` fails *singular* above 0 and the parent stops short | #455 |
 | DD3 | a fold crossed by the inputs fails *branch changed* | #455 |
 | DD4 | nested circles fail *outside* without a Newton step | #455 |
 | DD5 | the belt loop near `c = r₁ + r₂` converges with no evaluation outside `Ω` | #455, #458 |
 | FA1–FA4 | one boundary per reason; the parent's residual is not finite; the report names the instance and the parent's rows | #455 |
-| FL1–FL3 | flat and boundary agree; flat from the boundary pose does not move; the rank identity | #454 |
+| FL1–FL3 | flat and boundary agree; flat from the boundary pose does not move; the rank identity (held) | #454 |
 | DP1 | the derivative is exactly zero outside `D(o)` | #457 |
 | DP2 | moving a drive's shafts together re-solves nothing; `belt_length` bit-identical | #457 |
 | DP3, DP4 | the belt's counted evaluations; perturb-and-restore is bit-identical | #457 |
-| CM1 | the tangents' claim is a theorem of the drive; a pose claim is consuming | #454 |
+| CM1 | the tangents' claim is a theorem of the drive; a pose claim is consuming | #455 (not built by #454) |
 | CM2 | N instances of one key, one judgement | #456 |
 | CM3 | the drive at equal radii evaluates and its claim is not applicable | #460 |
 
@@ -722,8 +723,11 @@ says otherwise.
   no mark in the source. #461 decides that, on the benchmark's evidence.
 * **The locus's own contract.** The locus would meet most of this with a condition estimate (DD2),
   a determinant sign (DD3), no nearby value on failure (FA1), and its module comment corrected to
-  march from the anchor. Whether those changes land in `locus.rs` for traces, or only in the
-  boundary built on it, is #454's call.
+  march from the anchor. #454's call: the comment is corrected and the square Newton is shared
+  (`newton::square`), but the determinant sign and the refusal of a nearby value land only in the
+  boundary built on it (§17). A trace keeps its march and its fallback; changing what a contact
+  reads on a failed solve is a change to every traced document, and is left to be decided
+  against them.
 
 ## 16. The classifier (#452)
 
@@ -748,3 +752,30 @@ instance at the document's solved pose and says which of the tiers it reaches. I
 
 `tests/boundary.rs` holds one component of each class, the two-root point among them.
 
+## 17. The prototype (#454)
+
+`solve::solve_through` solves a document through instances named from Rust (`solve::Boundary`,
+built by `boundary::instance` from the classifier's own reading of an instance), with no syntax.
+The rules it keeps are [`contract/boundaries.md`](contract/boundaries.md); the gate is
+`tests/boundary_solve.rs`. In short:
+
+* **On the locus's machinery.** Each boundary's block is a `Subset` of the flat document's one
+  `System`: no second compile. It is solved by the locus's square Newton, moved to
+  `newton::square` and shared with `locus.rs`, and differentiated by the implicit function theorem
+  from one LU of `F_y` (DD1). Each evaluation after the first resumes from the last value accepted,
+  started where its tangent predicts, and is checked by `newton::continues` and by the sign of
+  `det F_y` (DT5, DD3).
+* **The parent** is a `TrustRegion` over its own unknowns, minimised by `newton::dogleg`: its rows
+  read at `(z, y(z))`, its Jacobian `P_z + P_y·dy/dz`, chained through boundaries that read one
+  another in order (IO4). A failed evaluation is NaN rows, which the DogLeg rejects (FA1, FA2).
+* **What it shows.** The direction paper's belt drive (§6.1, turning frames left out) with both runs
+  as boundaries, the two-root apex placed through its output, two apexes chained, and the common
+  perpendicular of two skew lines in space each solve to the flat answer to 1e-9 (1e-8 in space),
+  with the rank identity of FL3; each boundary's derivative passes a central difference. Asked to
+  nest the pulleys, the parent stops at the edge of the runs' domain and names the run that held
+  it.
+* **What it does not do.** Judge at the boundary's own scale (CL1: the document's, until #455);
+  estimate a condition or refuse below `τ` (DD2), state a domain (DD4, DD5) or check path
+  independence (DT6), all #455's; start a fresh evaluation from seeds stated relative to its
+  inputs or share a value between instances (DT4, #456); run the diagnosis through boundaries
+  (IO2, CM1); enforce a root choice (#157). It is a solve, not yet a benchmark: #459 measures it.
