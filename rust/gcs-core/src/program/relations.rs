@@ -354,8 +354,6 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     } else {
         super::reading::Reader::Drawn
     };
-    // a word's body states what it holds where the word is used (#464), as a component's does
-    let worded = r.word.is_some();
     let r = match r
         .resolve(&|r| cx.res.entity(&cx.sk, r).map(|e| e.kind))
     {
@@ -380,7 +378,7 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     // is no constraint for the map to know it by.  A claim on one is refused below the way any
     // unclaimable kind is, so it is checked first.
     if ckind.gauge() {
-        gauge(cx, &r, st, worded);
+        gauge(cx, &r, st);
         return None;
     }
     let spec = ckind.spec();
@@ -799,7 +797,7 @@ fn set_words(
 }
 
 /// A gauge applied (`apply_gauge`) — but a claim on one refused, as any unclaimable kind is.
-fn gauge(cx: &mut Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt, worded: bool) {
+fn gauge(cx: &mut Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt) {
     if r.claim {
         cx.diags.push(Diag::on(
             Code::E040,
@@ -812,7 +810,7 @@ fn gauge(cx: &mut Elab<'_>, r: &ResolvedRelation<'_>, st: &Stmt, worded: bool) {
         ));
         return;
     }
-    apply_gauge(cx, r, st, worded);
+    apply_gauge(cx, r, st);
 }
 
 /// Every slot of the kind's spec converted (`to_arg`), with which the source left out — or the
@@ -1753,6 +1751,7 @@ impl Relation {
             claim: self.claim,
             class: &self.class,
             bound: self.form.bound(),
+            worded: self.word.is_some(),
         })
     }
 }

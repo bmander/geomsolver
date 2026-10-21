@@ -3,12 +3,13 @@
 //! `f turns(r) l`, `f screws(a) l`, `f spins(r) o`, `f slides(a) l` — each its one number bare.
 //! Each moves the frame as the component it replaces did (`std.Turn`, `std.Spin`, `std.Slide`,
 //! kept for one release), and no document of the library calls those components any more.
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use gcs_core::motion::Family;
 use gcs_core::solve::{solve, SolveOpts};
 
 use crate::common::{ent, read, refused};
+use crate::every_example::sources;
 
 /// A point `o`, a line `l` up and to the right, and a point `x` off both, held in the front; `m`
 /// a frame whose joint `joint` states.
@@ -73,14 +74,13 @@ fn each_joint_word_moves_the_frame_as_its_component_did() {
 /// about `o`, square to the front, twice the roll.
 #[test]
 fn each_joint_word_says_what_it_moves() {
-    let x = carried("m slides(6mm) l", &[0.0])[0];
+    let [x, turn, back] = carried("m slides(6mm) l", &[0.0, 360.0, -60.0])[..] else { panic!() };
     let (len, dir) = (500f64.sqrt(), [10.0, 0.0, 20.0]);
-    let along = |k: f64, p: [f64; 3]| [p[0] + k * dir[0] / len, p[1], p[2] + k * dir[2] / len];
-    assert!(near(carried("m slides(6mm) l", &[360.0])[0], along(6.0, x)));
-    assert!(near(carried("m slides(6mm) l", &[-60.0])[0], along(-1.0, x)));
-    assert!(near(carried("m screws(4mm) l", &[360.0])[0], along(4.0, x)));
+    let along = |k: f64| [x[0] + k * dir[0] / len, x[1], x[2] + k * dir[2] / len];
+    assert!(near(turn, along(6.0)) && near(back, along(-1.0)), "{turn:?} {back:?}");
+    assert!(near(carried("m screws(4mm) l", &[360.0])[0], along(4.0)));
     // about `o` = (5, 0, 2) square to the front, counter-clockwise as the front is drawn
-    let [at] = carried("m spins(2) o", &[45.0])[..] else { unreachable!() };
+    let at = carried("m spins(2) o", &[45.0])[0];
     let (s, c) = 90f64.to_radians().sin_cos();
     let (dx, dz) = (40.0 - 5.0, 10.0 - 2.0);
     let want = [5.0 + c * dx - s * dz, x[1], 2.0 + s * dx + c * dz];
@@ -117,20 +117,6 @@ fn a_hold_a_word_says_is_not_written_again_at_the_root() {
     }
 }
 
-/// Every `.sv` under `dir`, in order.
-fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
-    let mut entries: Vec<PathBuf> =
-        std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).collect();
-    entries.sort();
-    for p in entries {
-        if p.is_dir() {
-            sources(&p, out);
-        } else if p.extension().is_some_and(|e| e == "sv") {
-            out.push(p);
-        }
-    }
-}
-
 /// **The library says a joint in words**: no document under `rust/examples/` and no module of
 /// `rust/lib/` calls `std.Turn`, `std.Spin` or `std.Slide` (#464's 67 calls, migrated).
 #[test]
@@ -145,13 +131,14 @@ fn no_document_calls_a_joint_component() {
             let text = std::fs::read_to_string(p).unwrap();
             text.lines().enumerate()
                 .filter(|(_, l)| {
+                    // `std.Turn(` in a document, `Turn(` bare in `std.sv`, and not `Turned(`
                     let code = l.split("//").next().unwrap_or("");
-                    ["Turn(", "Spin(", "Slide("].iter().any(|c| {
-                        code.match_indices(c).any(|(i, _)| {
-                            !code[..i].ends_with(|ch: char| ch.is_alphanumeric() || ch == '_')
-                                && !code[..i].trim_end().ends_with("component")
+                    !code.trim_start().starts_with("component ")
+                        && ["Turn(", "Spin(", "Slide("].iter().any(|c| {
+                            code.match_indices(c).any(|(i, _)| {
+                                !code[..i].ends_with(|ch: char| ch.is_alphanumeric() || ch == '_')
+                            })
                         })
-                    })
                 })
                 .map(|(n, l)| format!("{}:{}: {}", p.display(), n + 1, l.trim()))
                 .collect::<Vec<_>>()

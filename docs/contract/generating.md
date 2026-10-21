@@ -28,11 +28,11 @@ The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `Trimmed
 `axis`, `ratio` and `advance` are minted where a reference names them (`Expansion::joints`, read in
 `program::entities` by `Sketch::mint_joint`: an `AxisE`, its direction seeded along z then by
 `seed_joints` from what holds it, and two parameters, ratio 1 and advance 0) and held by
-ordinary relations; `std.sv`'s relation words `turns`, `screws`, `spins` and `slides` hold them
-([0.153], #464: `f spins(r) o` the axis through `o` square to `o.plane`; the components
-`std.Turn`, `std.Spin` and `std.Slide` kept for one release, and no document of the library calls
-them, `tests/joint_words.rs`), and a `fix` in a word's body is held within, as a component's is
-(`apply_gauge`'s `worded`, `a_hold_a_word_says_is_not_written_again_at_the_root`).  Before
+ordinary relations: `std.sv`'s relation words `turns`, `screws`, `spins` (about the axis through
+`o` square to `o.plane`) and `slides` ([0.153], #464).  The components `std.Turn`, `std.Spin` and
+`std.Slide` are kept for one release and no document of the library calls them
+(`tests/joint_words.rs`).  A `fix` in a word's body is held within, as a component's is
+(`ResolvedRelation::worded`), so a reconcile does not write it again at the root.  Before
 the solve `program::motions` reads each joint's kind off its holding statements — `fix`'s
 `ratio`/`advance` slots, `coincident` with a line or point, `parallel` with a view's normal — and
 pushes the `MotionDef` the readers know: a line with a ratio stated 0 `Translation`, a line
