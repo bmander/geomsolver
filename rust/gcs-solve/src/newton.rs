@@ -169,7 +169,7 @@ pub(crate) fn normal_step(ata: &mut Ata, values: &[f64], g: &[f64], p: &mut [f64
 /// `REFINE_TOL` of `‖g‖`, at most `REFINE_MAX` rounds.  A step `ε` barely holds back is left as
 /// it was, to the bit; and as `g` has nothing along JᵀJ's null space, neither has a correction,
 /// so the step stays the least change that `normal_step` makes it.
-fn refine(ata: &Ata, eps: f64, g: &[f64], p: &mut [f64]) {
+pub(crate) fn refine(ata: &Ata, eps: f64, g: &[f64], p: &mut [f64]) {
     if !eps.is_finite() {
         return;
     }

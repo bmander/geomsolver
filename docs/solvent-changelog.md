@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.156] A point carried under a drive, held.** A point carried to a roll by a driven frame
+(§6.14, [0.143]) is held where the joint stands at the law's value of the roll: `X coincident r0
+at(under: follower, seen_from: cam) 30deg` is the follower's roller seen from the cam at 30° into
+the turn, and `Z coincident(under: follower, seen_from: cam) r0` with `Z distance(23mm)
+std.origin` solves for the instant the follower has risen 3 mm. The law is a constant of the
+relation, compiled over the numbers it names as they are stated and read in Taylor arithmetic, so
+the rows, their Jacobian and `rate(X over t)` are exact through it; a law naming a number the
+drawing does not state is **E080**, now saying so. Through 0.155 the point and its rate were
+**E080** ("a relation the solve holds reads no drive"). No document changes. (Issue #398 G.)
+
 **[0.155] A profile in the plane generated under a drive.** A joint driven by its frame's value
 (§6.14, [0.143]) carries a tool of the sheet into a planar envelope (§6.15.1) as a constant-rate
 joint does, standing at the law's value of the roll: `fix(value == 180deg - abs(180deg - t))

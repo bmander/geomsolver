@@ -349,21 +349,24 @@ fn source_frame(h: &Header, cols: &[f64], grad: bool) -> Option<Read> {
         Source::Traced => crate::traced::frame(cols, h.own, h.slot, second, grad),
         Source::Meshing => crate::envelope::meshing::frame(cols, h.own, grad),
         Source::Carried => {
-            let steps = held::read_steps(h.own)?;
+            let (steps, laws) = held::read_motion(h.own)?;
             if cols.len() != 4 + held::steps_width(&steps) {
                 return None;
             }
-            fn carried<T: Num>(steps: &[held::Step], cols: &[T]) -> Option<Frame<T>> {
+            // under a drive, the law's rate by the chain rule through its jet (#398 G)
+            fn carried<T: Num>(steps: &[held::Step], laws: &[held::Driven], cols: &[T])
+                               -> Option<Frame<T>> {
                 let deg = T::cst(std::f64::consts::PI / 180.0);
-                let (x, rate) = held::carried(steps, &cols[4..], cols[3] * deg, col3(cols, 0))?;
+                let (x, rate) = held::carried(steps, laws, &cols[4..], cols[3] * deg,
+                                              col3(cols, 0))?;
                 let mut f = Frame::zero();
                 f.x = x;
                 f.rate = rate;
                 Some(f)
             }
             match grad {
-                true => Read::by_passes(cols, |c, _| carried(&steps, c)),
-                false => carried(&steps, cols).map(Read::value),
+                true => Read::by_passes(cols, |c, _| carried(&steps, &laws, c)),
+                false => carried(&steps, &laws, cols).map(Read::value),
             }
         }
         Source::Envelope => {

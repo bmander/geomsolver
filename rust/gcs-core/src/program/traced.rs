@@ -1125,7 +1125,7 @@ impl<'v> Lowering<'v> {
         let cols: Vec<u32> = x.into_iter().chain(at).chain([t as u32])
             .chain(from.iter().map(|&c| c as u32)).collect();
         self.push(crate::traced::Row { kind: crate::traced::RowKind::Carried, cols,
-            consts: crate::envelope::held::encode_steps(&steps) }, st.span);
+            consts: crate::envelope::held::encode_motion(&steps, &[]) }, st.span);
         Ok(())
     }
 }

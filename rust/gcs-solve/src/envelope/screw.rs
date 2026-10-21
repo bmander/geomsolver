@@ -20,13 +20,20 @@
 //! screw`, #391 S3).  Drawn in a plane, `X` is held where the plane
 //! sees the carried point: the two rows along the plane's axes.
 //!
+//! **Under a drive** (#398 G), `X coincident x at(under: f) τ`, `f`'s value written over the
+//! declared parameter the roll stands for (`fix(value == 5deg * (1 - cos(t))) f`): the driven
+//! joint stands at its law's value of `τ`, the law's tape carried in the constants as a profile in
+//! the plane carries one (`generate::Drive`) and read in Taylor arithmetic (`held::carried`), so
+//! the rows, their Jacobian and the rate are exact through the law — an owned roll's column
+//! reads the law's rate.  A law reads stated numbers alone (`motion::Law::held`).
+//!
 //! **Layout.** Columns `[X's lift, x's lift, τ, motion…]`, then two lifted ends per axis the motion
-//! turns about or slides along (`held::Moving`).  Constants: the motion's steps
-//! (`held::encode_steps`).  At a stated roll, no `τ` column: `[X's lift, x's lift, (X's plane's û,
-//! v̂), motion…, (a)]`, constants `[free, m, c, steps…]`, the roll `m·a + c` radians where a free
-//! variable `a` is the last column and `c` alone otherwise.  The rows are written once over
+//! turns about or slides along (`held::Moving`).  Constants: the motion's steps and its laws
+//! (`held::encode_motion`).  At a stated roll, no `τ` column: `[X's lift, x's lift, (X's plane's
+//! û, v̂), motion…, (a)]`, constants `[free, m, c, motion…]`, the roll `m·a + c` radians where a
+//! free variable `a` is the last column and `c` alone otherwise.  The rows are written once over
 //! `kernels::Num`, so the Jacobian is exact by forward differentiation.
-use super::held::{self, cross, vscale as scale, vsub, Step, STEP};
+use super::held::{self, cross, vscale as scale, vsub};
 use crate::kernels::{Kernel, KernelFn, Num};
 
 /// Which statement a motion is read for: a point it carries.
@@ -81,7 +88,7 @@ pub(crate) fn square_to<T: Num>(d: [T; 3]) -> ([T; 3], [T; 3]) {
 /// the constants are no motion's steps over this many columns.
 pub(crate) fn rows<T: Num>(r: Reading, cols: &[T], k: &[f64], out: &mut [T]) -> Option<()> {
     let lead = r.lead_consts();
-    let steps = held::read_steps(k.get(lead..)?)?;
+    let (steps, laws) = held::read_motion(k.get(lead..)?)?;
     let width = held::steps_width(&steps);
     // a stated roll's free variable is the last column
     let free = lead > 0 && k[0] != 0.0;
@@ -95,7 +102,7 @@ pub(crate) fn rows<T: Num>(r: Reading, cols: &[T], k: &[f64], out: &mut [T]) -> 
         Reading::At | Reading::AtIn if free => cols[r.lead() + width] * T::cst(k[1]) + T::cst(k[2]),
         Reading::At | Reading::AtIn => T::cst(k[2]),
     };
-    let (moved, _) = held::carried(&steps, &cols[r.lead()..r.lead() + width], t, at)?;
+    let (moved, _) = held::carried(&steps, &laws, &cols[r.lead()..r.lead() + width], t, at)?;
     // `X − Pose(τ)·x`, whole in space or along the axes of the plane `X` is drawn in
     let d: [T; 3] = std::array::from_fn(|i| x[i] - moved[i]);
     match r {
@@ -135,15 +142,9 @@ pub fn kernel(r: Reading, n_par: usize, n_const: usize) -> Kernel {
              form: None }
 }
 
-/// The constants a reading of a motion with these steps takes: a stated roll's `[free, m, c]`
-/// (`free` 0 or 1, the roll `m·a + c` radians over a free variable `a`, `c` where there is none),
-/// then the steps.
-pub fn consts(r: Reading, roll: [f64; 3], steps: &[Step]) -> Vec<f64> {
-    let lead = &roll[..r.lead_consts()];
-    [lead, &held::encode_steps(steps)[..]].concat()
-}
-
-/// How many constants a reading of `steps` takes.
-pub fn n_const(r: Reading, steps: &[Step]) -> usize {
-    r.lead_consts() + STEP * steps.len()
+/// The constants a reading of a motion takes: a stated roll's `[free, m, c]` (`free` 0 or 1, the
+/// roll `m·a + c` radians over a free variable `a`, `c` where there is none), then the motion as
+/// `held::encode_motion` writes it.
+pub fn consts(r: Reading, roll: [f64; 3], motion: &[f64]) -> Vec<f64> {
+    [&roll[..r.lead_consts()], motion].concat()
 }

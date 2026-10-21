@@ -943,3 +943,73 @@ against the parent's 2.8 s.
    solve does not. It can be had from the flat solve, by reading a failing block's rows back to
    the instance that states them (the classifier's `split`), with no boundary solve. #449 stands
    on its own: both solves report an infeasible document solved.
+
+## 19. The sparse parent (#459, after §18)
+
+**Verdict: §18's cost was the prototype's engineering, not the architecture.** With the parent's
+Jacobian kept sparse and stepped as the flat solve steps, solving through boundaries takes about
+what the flat solve takes on every belt document, linear in N, and less at the largest sizes. What
+§18 recommended as the next experiment is done, and it changes §18's recommendations 1 and 2.
+
+**What changed** (`solve/through.rs`, `System::subset`, `boundary::instances`; the contract's rules
+in `docs/contract/boundaries.md`):
+
+1. **A sparse parent.** Each boundary's `dy/dz` is held over the parent unknowns it moves with
+   (those it reads, and those of each boundary it reads), not over all of them, and the parent's
+   Jacobian `P_z + P_y·dy/dz` is compressed rows with a structure fixed when the boundaries are
+   taken out. To `DENSE_MAX` unknowns its step is the dense minimum-norm step as before, and above
+   it the normal equations of its entries (`sparse::Ata`, refined), as a flat system's is. N drives
+   are `20N` entries.
+2. **The rank, part by part.** FL3's rank was one dense pivoted QR of the whole parent, which at
+   300 drives with a shared unknown cost 37 s alone. Parts that share no column are ranked apart and
+   summed. A column every part reads (the shared centre distance) is held out, and the rank of what
+   no part spans is added by a block QR.
+3. **A block's evaluation writes only what it reads.** Each inner Newton iteration copied the
+   whole document's unknowns into the system before evaluating its four rows (`apply_z`), which is
+   quadratic in N over a step. `System::subset` now writes only its rows' columns, to the same
+   bits. The flat block pass shares it.
+4. **Construction and naming are linear.** `Boundaries::new` found each boundary's inputs and its
+   read order by scanning every row and every other boundary per boundary. `boundary::instance`
+   read the whole source map per instance, which took 21 s to name 2,000 runs. Both now index once.
+   Naming takes 34 ms.
+
+**Measured** as §18, release build, one 4-core 2.1 GHz Xeon container, after the test suite (load
+falling from 5 to 2 over the run), medians of 7 runs (3 at N ≥ 300). *Entries*: the parent's
+Jacobian's. *Off*: how far the runs' tangent points stand from the closed form of an outer tangent
+(`measure::run_error`), mm, flat / through.
+
+| case | N | flat ms | through ms (§18) | through ms | parent | entries | off: flat / through |
+|---|---:|---:|---:|---:|---|---:|---|
+| identical | 10 | 0.5 | 4.3 | 2.4 | 104 × 80 | 200 | 1e-11 / 3e-14 |
+| identical | 30 | 1.2 | 82.7 | 1.6 | 264 × 240 | 600 | 1e-11 / 4e-7 |
+| identical | 100 | 6.1 | 3,675 | 8.4 | 824 × 800 | 2,000 | 4e-11 / 4e-7 |
+| identical | 300 | 23.0 | 647,157 | 20.3 | 2,424 × 2,400 | 6,000 | 1e-11 / 4e-7 |
+| identical | 1,000 | 90.7 | not run | 77.9 | 8,024 × 8,000 | 20,000 | 3e-5 / 3e-6 |
+| distinct | 100 | 4.0 | 3,678 | 4.9 | 824 × 800 | 2,000 | 7e-11 / 6e-7 |
+| distinct | 1,000 | 84.0 | not run | 87.2 | 8,024 × 8,000 | 20,000 | 8e-5 / 4e-6 |
+| one unknown | 100 | 4.4 | 2,494 | 5.4 | 826 × 802 | 2,106 | 1e-6 / 8e-9 |
+| one unknown | 300 | 16.6 | not run | 18.1 | 2,426 × 2,402 | 6,306 | 3e-5 / 5e-9 |
+| one unknown | 1,000 | 184 | not run | 90.1 | 8,026 × 8,002 | 21,006 | 3e-1 / 9e-5 |
+
+An edit to one drive of N, solved again from the solved pose: 4.2 ms through against 3.7 flat at
+N = 100 (2,847 in §18), and 86 against 105 at N = 1,000. The loop and the sweeps are §18's, to
+the iteration: the change is in the parent's linear algebra, not its steps.
+
+* **Through is within a small factor of flat everywhere, and linear.** Below `DENSE_MAX` parent
+  unknowns (ten drives) it still takes the dense step and is slower (2.4 ms against 0.5), as a
+  flat system under `DENSE_MAX` is slower than a larger sparse one (§18). The inner solves are now
+  a real share of the time: at N = 1,000, 10,000 of them in 78 ms.
+* **"Apart" is not "off".** §18 read the two solves' disagreement as the through solve's error.
+  Against the closed form, both solves hold every row to about 1e-12, and a tangency holds its
+  point only to the square root of its residual, which here is judged at the document's scale (400 m
+  wide at N = 1,000). Through is off by about 5e-7 mm from N = 30, the floor of its inner tolerance
+  (`SquareTol::BLOCK`, unchanged). Flat is off by 1e-11 to 1e-9 to N = 300, and by more after.
+  At N = 1,000 with the shared unknown, flat stops with every tangent point 0.27 mm out, where
+  through is within 1e-4.
+
+**What this changes in §18's recommendations.** (1) The case against #461 was the parent's cost,
+and that is gone; #461 is open again, to be decided on what boundaries give (reuse, invalidation,
+diagnosis) rather than on a cost they no longer carry. (2) The inner solves are now a large share
+of the through solve's time, so #456 (a cache over identical drives answers 9,990 of 10,000) and
+#457 (an edit re-solves 2,000 runs to move one drive) have something to save, and the next slice
+of #459 measures them. (3) and (4) stand.
