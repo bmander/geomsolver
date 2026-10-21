@@ -1554,6 +1554,30 @@ test('Delete takes the picture when the picture is what is selected, and only th
   assert.equal(view.source, source, 'removing the picture spliced the document');
 });
 
+test('Space selects nothing: the drawing\'s selection, the picture and the solids let go', () => {
+  const view = traced();
+  let told = 0;
+  view.onSelect = () => { told++; };
+  view.selected = [view.sketch.points[0], view.sketch.points[1]];
+  const source = view.source;
+  view.selectNone();
+  assert.deepEqual(view.selected, []);
+  assert.equal(told, 1, 'the shell was not told, so a focused constraint would stay focused');
+  view.pickImage();
+  view.selectNone();
+  assert.ok(view.underlay && !view.underlay.picked, 'the picture stayed selected');
+  assert.ok(view.underlay, 'letting the picture go took it away');
+  assert.equal(view.source, source, 'selecting nothing edited the document');
+
+  const solid = extruding('block := solid(face(ab, bc, cd, da), depth: 5)\n');
+  solid.pickSolid({
+    name: 'block', index: solid.doc.solids().find((s) => s.name === 'block')!.index, face: '',
+  });
+  solid.selectNone();
+  assert.equal(solid.selectedSolids.length, 0);
+  assert.equal(solid.tool, 'extrude', 'selecting nothing put the tool down');
+});
+
 test('the picture is not in the document: nothing it does is written, saved or undone', () => {
   const view = traced();
   const u = view.underlay!;

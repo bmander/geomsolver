@@ -40,6 +40,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   Delete button are one function (`main.ts`'s `deleteSelection`): the focused constraint, else the
   drawing's selection, the solids or the picture.  Gate:
   `deleting_beside_what_a_component_made_takes_the_rest`, and the app test beside it.
+- **Space selects nothing** (`SketchView.selectNone`): the drawing's selection, the solids and the
+  picture let go, and with them the focused constraint (`onSelect` drops it); the tool stays down,
+  an edge tool's number put away.  Gate: `app.test.ts`'s Space test.
 - **Make component** (`edit::make_component`; FFI `gcs_elab_make_component`,
   `Document.makeComponent`; the Component button `⇧G`, and Insert ▸ Component… to name it) is
   the selection's statements moved, **as written**, into `component Part(…) { … }` and one
