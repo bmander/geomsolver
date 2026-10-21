@@ -35,10 +35,6 @@ fn a_path_names_a_face_from_its_route() {
         assert!(!drill.matches(no), "{no:?}");
     }
 }
-    for no in [&["drill", "hole[2]"][..], &["drill", "hole[]"], &["drill", "hol"], &["drill[1]"]] {
-        assert!(!hole.matches(no), "{no:?}");
-    }
-}
 
 /// A plate 60 × 20 × 10 with three holes cut through it by a `repeat`, each drill a copy.
 const DRILLED: &str = "unit mm\nuse std (chamfer)\nin std.front {\n\
