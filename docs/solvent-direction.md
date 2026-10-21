@@ -969,7 +969,8 @@ Experiment first, syntax last. Epic #465 tracks both tracks.
 **Track A — reusable solve boundaries**, in order:
 
 1. **The contract (#451).** C3, N2's tiers, N3's equivariance, N8's numerical contract and N9's
-   per-output dependencies, written as rules a test can hold.
+   per-output dependencies, written as rules a test can hold:
+   [solve-boundaries-plan.md](solve-boundaries-plan.md).
 2. **An advisory classifier (#452)** in `solventc`, reporting each component's tier and what it
    leaves undeclared, with a corpus report; refuses nothing. In parallel, **a spike on tier 3
    (#453)**: verifying a component unique over an input domain.

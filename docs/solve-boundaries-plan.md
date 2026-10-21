@@ -1,0 +1,710 @@
+# A reusable solve boundary: the contract
+
+**Status (2026-10-21): a design for review (#451); nothing built.** It states what a component
+must satisfy for a parent to treat it as a **reusable solve boundary**: a function of its inputs,
+solved once per distinct input and consumed through its interface. It is the first step of track A
+of epic #465, written before the classifier (#452), the uniqueness spike (#453) and the prototype
+(#454), each of which builds against it. Each rule is stated so that a test can hold it, and §12
+lists those tests and the issue that writes each one. Once the prototype lands, the rules it keeps
+become a contract topic file, `docs/contract/boundaries.md`, with a row in `CLAUDE.md`.
+
+Background: [the direction paper](solvent-direction.md) §3.2 (C3, C4) and §5 (N2, N3, N8, N9), and
+[the review](https://github.com/bmander/geomsolver/issues/448#issuecomment-6303715169) of its
+first version. The paper proposed boundaries, and the review found that its guarantees outran its
+machinery. This document answers by saying exactly what is promised and what is not. No syntax is
+proposed here. Where a rule needs something the language cannot say yet (a domain, a context
+value), the prototype supplies it from Rust, and #461 decides on #459's evidence whether it
+becomes syntax.
+
+Everything shown as current behaviour was run through `solventc` or read in the code at `c6f4ca7`.
+
+---
+
+## 1. What exists today
+
+The contract is built from parts the core already has. They are listed here so that the rules below
+can say which parts they keep and which they change.
+
+* **Closed component scope** (spec §5). A body reads its formals and its own declarations, and
+  calls definitions and built-ins. Reading the root's geometry, a value of the file, an enclosing
+  component's names or `std.front` is refused: E101 for an entity, E103 for a number
+  (`flatten/resolve.rs`, `flatten/values.rs`; `tests/closed_scopes.rs`). So closure *by name*
+  already holds. §3 lists the channels it does not cover.
+* **Unbound numeric formals are the instance's unknowns.** A number the call leaves out is
+  `inst.formal`, solved with the drawing and seeded by `f: hint(v)` (`flatten/bindings.rs`). This is
+  the mechanism §5 uses for exported freedoms.
+* **Interfaces type formals** (spec §8.1, 0.84; `flatten/interfaces.rs`). A formal typed by an
+  interface sees only the members the interface declares. In the spec's words, "an interface names
+  no solve boundary and makes nothing". Interfaces constrain what a body *reads*, never what a
+  parent reads of an instance.
+* **A parent reads, and relates, anything not `private`.** `inst.p` and `inst.sub.p` are paths, and
+  a parent may state relations on them (`rates/geodesic.sv` places `g.p` and squares `g.tl` to
+  `g.ax` from outside). Today that silently merges blocks of the solve.
+* **The locus is a boundary in miniature** (`locus.rs`; `docs/contract/curves.md`). A traced
+  component is lowered once into rows over `[u, θ, values, q, w]`. The block must be square ("a
+  trace block must determine its points"). Each evaluation is a Newton solve with LU. The derivative
+  with respect to `(u, θ)` is `Jq·S = −B`, one factorisation for every right-hand side: the implicit
+  function theorem. Evaluation resumes from the pose this contact last accepted, checked by
+  `continues` against the tangent's prediction. If that fails, it cold-starts at the anchor and
+  marches. `ccw` predicates are enforced at the anchor by reflecting and solving again. Restarts
+  draw from a fixed-seed `Rng`, so "the answer cannot depend on history"
+  (`trace.rs::an_evaluation_does_not_depend_on_what_was_evaluated_before`). Four things it lacks
+  matter below:
+  - it has no condition estimate: `lu_factor` fails only on an exactly zero pivot;
+  - a failed solve returns its best point with `ok: false`, and `point_on_body_res` writes
+    `p − C(u)` without reading `ok`, so a nearby value can reach the parent;
+  - its memo is keyed by the address of the contact's constants;
+  - its module comment says the fallback marches "from the low end of the domain", while the code
+    marches from the anchor.
+* **Claims are judged and never solved for** (spec §9.7; `diagnose.rs`). A claim's rows are stacked
+  onto the conditioned system at the solution. It is a *theorem* if they add no rank, *consuming* if
+  it holds only by the pose, and *violated* if it does not hold.
+* **Root choices.** A bound (spec §9.6) chooses the root and is verified: the seed is carried across
+  it, `steer` acts, the block pass searches, and a bound still broken ends with `BOUND_BROKEN`. On
+  the sheet, `ccw`/`cw` is only recorded for the constructive plan, and is neither enforced nor
+  checked (#157).
+* **"Solved"** is `max_relative_residual ≤ 1e-6` (each row over `extent^degree`), and **settled**
+  is `success && status != 4`. #449 shows that even settled is not enough: a document can be
+  infeasible and still report success at the iteration limit.
+* **Block order.** `System::block_order` gives the Dulmage–Mendelsohn square part as strongly
+  connected blocks, in solve order. `BlockTr` solves one block with every other column held.
+* **Rank.** Rank and null space are judged on `System::conditioned` against the absolute
+  `RANK_TOL = 1e-9`. The ledger `Driven` reads the rank a set of rows adds to the rest.
+
+## 2. Terms
+
+A **boundary** is a component definition, together with the structural numbers its call decides
+(§3, CL3), that a parent treats as one function. An **instance** is one call of it.
+
+The instance's **inputs** `x` are:
+
+* its **operands**: the entities its formals alias (points, lines, circles, planes, axes, frames,
+  paths, sets) and their coordinates;
+* its **carriers**: the planes its entities are drawn in. A carrier is an operand whether a formal
+  names it (`in view`) or the instance took it from where it was written (`in std.front { t :=
+  Rung(a) }`);
+* its **numbers**: the numeric formals. Each is *bound* (a value, substituted at elaboration) or
+  *unbound* (an unknown of the parent, §5);
+* its **context**: values fixed at elaboration that the boundary reads without a formal. Closed
+  scope admits none today. §3 keeps a place for them (N7 of the paper) without proposing syntax.
+
+Its **own unknowns** `y` are the coordinates of everything its body declares. Its **rows**
+`F(y, x) = 0` are the body's acting statements: claims and bounds compile no row, as today. Its
+**root choices** `R(y, x)` are its bounds and orientations: sign conditions, not rows. Its
+**outputs** `o = g(y, x)` are what a parent may read (§7).
+
+Its **shape** `s(x)` is the part of its inputs invariant under proper rigid motion: radii, distances
+between operands, angles between them, and the numbers. Its **pose** `P(x)` is the motion that
+takes a canonical placement of that shape to where the operands stand (§6).
+
+An **evaluation** is one solve of `F(·, x) = 0` subject to `R`:
+
+* A **fresh** evaluation starts from the body's seeds at `x`.
+* A **continued** evaluation starts from the last value this instance accepted, as the locus's
+  resume does.
+
+Its **domain** `Ω` is the set of inputs at which the boundary promises a value (§8).
+
+---
+
+## 3. Closure
+
+**CL1 — A value depends on the definition, the inputs and the context, and on nothing else.** A
+fresh evaluation is a function of `(definition, x, κ)`. It does not depend on:
+
+* the rest of the document: other instances, the root's geometry, the document's extent;
+* the order in which instances are evaluated;
+* what the solver evaluated before.
+
+*Held by:* evaluate one instance inside two documents that differ only elsewhere: another instance
+added, or geometry far from it that makes the document's extent 1000× larger. The values agree to
+the inner solve's tolerance. Evaluating a key after an unrelated history gives the same bits (the
+locus's history test, generalised).
+
+Closed scope gives the name half of CL1. It leaves four channels open, and the contract closes each:
+
+* **The carrier taken from where the instance is written.** Take `component Rung(a: point, w:
+  Length)`, whose body declares `b` and states `a distance(w) b` and `a horizontal b`, with no plane
+  formal. Written once in `in std.front` and once in `in std.top`, it gives one figure in plane
+  coordinates and two in space. Run: `b` lands at `(30, 0)` in each plane, and `horizontal` read
+  each plane's `up`. That is correct,
+  and it means the carrier is an *input*: it is part of `x`, its key and its dependencies, though no
+  formal names it.
+* **The document's scale.** Today a block solve keeps the whole system's `row_scale` on purpose ("a
+  block is never compiled as a sub-sketch, whose different extent would scale it differently"). A
+  boundary needs the opposite. Its acceptance, its rank and its conditioning (§8) are judged at its
+  **own** scale, read off its inputs' shape. Otherwise one instance could be accepted in a small
+  document and refused in a large one.
+* **Solver history.** The locus's memo is keyed by an address and its resume by the last pose. Both
+  are allowed only as the *continued* evaluation of DT5. A fresh value never reads them.
+* **Seeds.** Seeds are inert for the solution set (P3), but they choose which root a tier-1
+  boundary returns. CL1 therefore holds of the value only if every seed is a function of the inputs.
+  A seed in a carrier's coordinates is one, because the carrier is an input. Whether it survives a
+  motion is EQ's question (§6), not closure's.
+
+**CL2 — The inputs are known before anything is solved.** For each instance, elaboration lists its
+operands, carriers, numbers (each bound or unbound) and context reads, and nothing outside the
+list is read during an evaluation. *Held by:* the listed inputs equal those found by walking the
+lowered rows' columns, and no column of the lowered rows lies outside `x ∪ y`. This is the locus's
+range check (`view` returns `None` for a column past the table), applied to a component.
+
+**CL3 — A structural number is part of the definition, never an input.** An `Int` formal, a `when`
+condition, `repeat N` or `ring N` decides *what the boundary is*. Two calls that differ in one are
+two definitions, keyed separately and never interpolated. An `Int` formal left unbound is therefore
+not a freedom. Today it is one: `Rung(a)` with an unbound `n: Int` elaborates with `r.n` as a free
+unknown, although the spec calls a count "never an unknown" (`flatten/bindings.rs` skips only
+non-numbers, and `Ty::number` includes `Int`). A boundary refuses it. *Held by:* an instance leaving
+an `Int` formal unbound is classified "not a boundary: a count is unbound".
+
+---
+
+## 4. Determination
+
+**DT1 — Locally determined.** At input `x`, with value `y*`, the boundary's Jacobian in its own
+unknowns, `F_y(y*, x)`, is square and nonsingular. It is judged on the conditioned matrix, at the
+boundary's own scale (CL1), against `RANK_TOL`. That is all full rank shows: `y*` is isolated, and
+by the implicit function theorem a smooth branch `y(x)` passes through it. It says nothing about:
+
+* other roots at the same `x`;
+* whether a root exists at other inputs;
+* which root a seed reaches.
+
+A boundary is **generically locally determined** when DT1 holds at the instance's inputs and at `K`
+inputs perturbed from them along random shape directions (seeded `rng::Rng`; `K` is the
+classifier's to choose).
+
+Run: `x distance(5) a`, `x distance(5) b` with `a`, `b` six apart is DT1 at both `(3, 4)` and
+`(3, −4)`, numeric rank 2, DOF 0. *Held by:* that case is DT1; the same body with `b` coincident
+with `a` is not.
+
+**DT2 — Branch explicitly chosen.** DT1 holds, and every discrete choice the boundary makes is made
+by a stated root choice: a bound, or `ccw`/`cw`. The solver verifies the choice on the value and
+fails the evaluation where none holds (§9). This tier is not available for orientations until #157:
+today `ccw(a, b, x)` added to the example above still returns `(3, −4)` from a seed below the line.
+
+That the stated choices resolve *every* ambiguity cannot be shown at one input. So DT2 is
+**claimed by the author and tested by refutation**. From `S` scattered starts at the same `x` (the
+block pass's restart scheme: points scattered about the operands at their size, a fixed stream
+per start), every start that converges and satisfies `R` must reach the same `y*` to tolerance. Two
+distinct roots that satisfy `R` refute DT2 at that `x`. The classifier labels the result a
+heuristic: it finds no second root, and proves none absent. *Held by:* the two-root point without
+`ccw` is refuted (two roots found); with `ccw`, once #157 lands, it is not.
+
+**DT3 — Verified unique over a stated domain.** A domain `Ω` is declared (§8, DD4). For every
+`x ∈ Ω`, exactly one `y` satisfies `F = 0` and `R`, and DT1 holds there. The verification is
+either an argument recorded beside the definition's test (the common tangent's, §13) or a
+computation (#453: interval Newton or Krawczyk over a box of `Ω`, the root choices cutting the
+box). "Not verified" is an honest answer, and the boundary falls back to DT2 or DT1. *Held by:* the
+spike's cases, and for each boundary that claims DT3, a test that samples `Ω` (seeded) and finds DT2
+unrefuted at every sample. The sampling only checks the argument; it does not replace it.
+
+**DT4 — Deterministic.** A fresh evaluation is a function of the key (§6, EQ4): the definition, the
+shape, the context and the carriers' parts that the boundary reads. It is computed in the canonical
+placement from seeds stated relative to the operands, then posed. Two instances with one key get one
+value, moved by their poses. This is what a cache needs, and it holds at every tier, because it is a
+property of the procedure, not of the equations. *Held by:* N instances of one key evaluated in
+shuffled orders give bit-identical canonical values.
+
+**DT5 — Continuous along a parent's path, and checked there.** Within a parent's iteration, an
+instance is evaluated by **continuation**: warm-started from the value it last accepted. The new
+value is accepted only if:
+
+* the Newton correction stays within a fixed fraction of the move the derivative predicted (the
+  locus's `continues`, `PREDICTED = 0.5`);
+* the sign of `det F_y` is unchanged (DD3).
+
+Otherwise the evaluation fails with *branch changed* (§9). This is what a parent's Newton needs, and
+determinism does not give it. A fresh evaluation at nearby inputs may land on another root
+wherever the basins of the seeds' starts cross. *Held by:* a two-root boundary driven by a parent
+along a path that crosses the seeds' basin boundary keeps its branch under continuation and fails
+when the path reaches the fold (#455's test).
+
+**DT6 — Path independence is checked at the end.** At a parent's accepted solution, each instance's
+continued value must equal its fresh value at the final inputs, to tolerance. A mismatch means the
+document's answer depends on the path its solve took. It is reported, naming the instance and both
+values, and the solve is not *settled*. At DT3 inside `Ω` a mismatch cannot occur, so the check
+costs one fresh evaluation per distinct key and finds only bugs. At DT1 and DT2 it is the only
+thing that does. *Held by:* a document whose solve walks a DT1 boundary from one basin into the
+other reports the mismatch.
+
+What each tier permits:
+
+| tier | the parent may | what it relies on |
+|---|---|---|
+| not DT1 | nothing: the component is inlined, as today | — |
+| DT1 | solve through it (DD1), checked (DT5, DT6); share one value per key (DT4) | seeds pick the root |
+| DT2 | the same, and its value is the author's stated choice | refutation, not proof |
+| DT3 | the same, and DT6 cannot fail inside `Ω` | an argument or a verified box |
+
+---
+
+## 5. Exported freedoms
+
+**FR1 — A boundary is square in its own unknowns.** It states exactly as many independent rows as
+it has own unknowns: `dim F = dim y`, the locus's squareness rule applied to a component.
+
+A body that states a fact about its inputs alone is a *verb* fused to a noun, and is not a
+boundary. Such a fact is a row whose columns are all inputs, or a row beyond what its own unknowns
+absorb, such as `a distance(10) b` over two operands. The fix is to split it: the noun builds, and
+the parent states the fact (paper R3). *Held by:* a component with one such row is classified "not
+a boundary: states a fact about its operands", naming the row.
+
+**FR2 — A freedom is exported only as an unbound numeric formal.** A crank's angle is a formal
+`theta: Angle` the call leaves unbound. Inside the boundary it is an input like any number. In the
+parent it is an unknown, `crank.theta`, seeded by `theta: hint(30deg)` and placed by the parent's
+own statements (a coupler's length). That is exactly what an unbound formal is today, so no new
+mechanism is needed. A freedom the body leaves that is not such a formal (a point free to slide)
+fails DT1. The classifier lists it as a freedom the parent would have to own and cannot name.
+*Held by:* `Crank(o, theta: hint(30deg))` is DT1 with `theta` an input. The same body with the
+angle an unknown of its own (no formal) is not DT1, and the classifier names that unknown.
+
+**FR3 — A boundary has no gauge.** FR1 and FR2 make `F_y` square, so the derivative of §8 is
+always `−F_y⁻¹F_x` and never a minimum-norm choice. #455 asks how a boundary with exported freedoms
+is differentiated, "minimum-norm, or the freedom held as an input". The contract answers: **held
+as an input**. A minimum-norm derivative would make the value depend on how the freedom is
+parametrised and on the previous pose, which breaks DT4.
+
+---
+
+## 6. Rigid-motion equivariance
+
+**EQ1 — The group.** Equivariance is with respect to **proper** rigid motions `g` of space acting
+on every input:
+
+* operands are moved;
+* carriers are moved as *oriented* planes, normal included;
+* numbers are left alone.
+
+A boundary is **equivariant** when `B(g·x) = g·B(x)`, entity by entity, for every `g`. Reflections
+are excluded: `ccw`, `turn:` and a bearing's sense are read about a carrier's normal, and a
+reflection reverses them. A mirrored instance is another key, or a declared mirror of one (§15).
+
+**EQ2 — A carrier is read as a plane, not as a frame.** A carrier has an origin and in-plane axes
+`u`, `v`. A boundary may read its normal and its place, but not those axes or that origin. If it
+read them, two instances drawn in `std.front` at different places in it would be related by a
+motion that moves their operands and leaves the carrier where it is, and EQ1 would not apply to
+them. So equivariance is checked twice:
+
+* move everything by `g`;
+* and, separately, **spin and slide each carrier's frame within its plane**, with the operands held
+  where they stand in space (so their plane coordinates change). The value in space must not change.
+
+The body reads a carrier's axes, and fails the second check, through:
+
+* `horizontal`, `vertical`, `level(up | right | u | v)`;
+* `along: u`;
+* a seed in plane coordinates, `hint((3, 4))` or `hint(at: P, (3, 4))`;
+* a bearing seed, `hint(at: k, bearing: β)`, measured "from the x axis of the plane";
+* `fix((x, y))`;
+* any read of a coordinate, `p.x`.
+
+These are the classifier's "reads the world" (#452). Closed scope cannot catch them, because the
+carrier is legitimately an input.
+
+Run, with a seed in plane coordinates:
+
+```solvent
+unit mm
+use std
+component Apex(view: plane, a: point, b: point) {
+  in view {
+    x := point hint((3, 4))
+    x distance(5mm) a
+    x distance(5mm) b
+  }
+}
+in std.front {
+  a := point
+  b := point
+  fix((0, 0)) a
+  fix((6, 0)) b
+  c := point
+  d := point
+  fix((100, 0)) c
+  fix((94, 0)) d
+}
+one := Apex(std.front, a, b)
+two := Apex(std.front, c, d)
+```
+
+`two`'s operands are `one`'s turned 180° about `(50, 0)`, so equivariance asks for `two.x =
+(97, −4)`. It solves to `(97, 4)`, with numeric rank 4 and DOF 0. The body is closed, DT1, and still
+not equivariant. Write the seed from the operands instead, `hint(at: a, toward: b, by: 0.8333, turn:
+53.13deg)`, and `two.x` is `(97, −4)`. *Held by:* exactly this pair: the first refuted by the
+spin check and the motion check, the second passing both.
+
+**EQ3 — The canonical frame is built from the operands, in their declared order.**
+
+* **The origin** is the first operand's anchor: a point itself, a circle's or an arc's centre, a
+  line's `p1`, a plane's or a frame's origin.
+* **The first axis** points from that origin to the next operand's anchor that is distinct from it.
+  If there is none, it is the first line's or axis's direction.
+* **The second axis** is, for a boundary drawn in a carrier, `n × u` with `n` the carrier's normal,
+  which also fixes the handedness. In space, it comes from the next anchor or direction independent
+  of the first.
+
+Where the operands fix no axis, the canonical frame takes one by a fixed rule (the carrier's `u`).
+Examples: a lone circle; two concentric circles; a lone point with a carrier.
+
+**EQ4 — The key is the shape in that frame.** The key is the definition, the operands' coordinates
+in the canonical frame (which are their invariants), the numbers, and the context. The pose is the
+canonical frame itself. Ordered containers only, and a stable encoding of floats. Inputs equal to
+within tolerance but not in bits are *not* the same key: a key never rounds, so a hit can never
+return a value its own inputs would not.
+
+**EQ5 — Where the operands leave the frame undefined.** Let `G_x` be the proper motions that fix
+every input. Two cases:
+
+* **`G_x` connected** (rotations about a lone circle's centre, about a line in space). Then **an
+  equivariant DT1 boundary is invariant under it automatically.** For `g ∈ G_x`, `g·y*` solves the
+  same equations at the same inputs. The orbit `G_x·y*` is connected and contains `y*`, which is
+  isolated, so the orbit is `{y*}`. A body whose result would turn with the free rotation (a keyway
+  on a pulley given only a centre) is not DT1: the rotation is a free direction of `F_y`. It fails
+  DT1, not EQ, and the classifier names the freedom. The fix is a datum operand that fixes the
+  frame, or an exported angle (FR2).
+* **`G_x` finite and non-trivial**: a symmetry that fixes every operand but maps one isolated root
+  to another. Every operand Solvent has carries an orientation: a line runs `p1 → p2`, an axis has
+  its `d`, a circle is drawn in a carrier with a normal, and a plane is read with its normal. A
+  motion fixing points and oriented directions is a rotation about a point, a rotation about a line,
+  a translation within a plane, a combination of these, or the identity, and all of them are
+  connected. So we know of no operand pattern in the language with a finite `G_x`. The two-root
+  point's roots are related by the half-turn about `ab`, and that turns the carrier over, so it is
+  not in `G_x`. If one arises (an unoriented set operand, say), the root choice must be stated
+  (DT2), or a datum given, or those inputs left out of `Ω`.
+
+*Held by:* `Pulley(centre)` (a rim and a bore) evaluated at a centre and at that centre with the
+canonical axis rotated gives one value. A keyway at a bare centre fails DT1, naming the rotation.
+
+**EQ6 — Identity survives the pose.** Every entity of an instance is the corresponding entity of
+the canonical value, moved by the instance's pose, and keeps its own name and key (`flatten::keys`).
+A value is shared as numbers, never by reference. The document's writeback, its diagnosis and its
+callouts see per-instance entities, exactly as now. *Held by:* N instances of one key, each with
+its own `upper.run.p1` read by the parent, each matching the flat solve's.
+
+---
+
+## 7. Interface and outputs
+
+**IO1 — What a parent may read.** A boundary's **outputs** are its non-`private` named members and
+their own fields, with nothing anonymous and no rows among them:
+
+* the entities its body names (`upper.run`, `upper.run.p1`, `small.rim.r`);
+* its numeric formals (`crank.theta`);
+* the members of a named nested instance, read through that instance's name (`drive.upper.run`).
+  Each step of such a path reads an output of the step before it.
+
+Interfaces are unchanged. They type a formal, and say what a body reads of its operands. *Held by:*
+a parent reading a `private` member of a boundary is refused (E101, as today). An anonymous child
+has no path to read it by.
+
+**IO2 — A boundary never yields.** A parent's statement over an output is a row over the
+**parent's** unknowns. It reaches them only through `o(x)` and its derivative, and never moves the
+output off `B(x)`. Two consequences:
+
+* A statement such as `fix(r == 20mm) small.rim` is legitimate exactly when the radius is an
+  exported freedom (an unbound `r` of `Pulley`). The row is then the parent's equation for
+  `small.r`.
+* A statement over outputs that reaches no parent unknown is an over-constraint of the **parent**,
+  diagnosed there, naming the output and the instance. It is never absorbed by the boundary's
+  interior, because that interior has no freedom to give (FR1, FR2).
+
+Flat and boundary solves agree on this whenever the boundary is DT1 (§10). *Held by:* the same
+over-constraint in both forms, and the boundary form's diagnosis names the instance.
+
+**IO3 — A parent cannot choose a boundary's root.** A bound or an orientation stated by the parent
+over a boundary's outputs constrains the parent's unknowns. It does not choose the boundary's
+branch. In the flat solve it would: a parent's `ccw(a, b, one.x)` picks `one.x`'s root. Through a
+boundary the root is the boundary's own (DT2), and if the parent's choice is broken, the parent's
+solve fails with that choice named. A choice the parent wants to make is an *input*: a `Side`
+formal, decided at elaboration (CL3), that the body's own root choice reads. *Held by:* the
+two-root point as a boundary with its `ccw` inside, and a parent stating the opposite `ccw` over
+`one.x`, reports the parent's choice broken. With a `Side` input, the parent gets the root it asked
+for.
+
+**IO4 — Outputs carry identities, and values flow one way.** An output of one boundary may be an
+operand of another (`CommonTangent(small.rim, large.rim)`). The second boundary's inputs are then
+the first's outputs, and the instances form a DAG within the parent. A cycle among a parent's
+children through outputs and inputs is a coupled system of the parent's, solved at the parent
+(paper C5: "closed explicitly at the level that owns it"), never by iterating the children against
+each other. *Held by:* two boundaries each reading the other's output are solved as one parent
+system, and the instance graph reports the cycle.
+
+---
+
+## 8. Derivatives and domains
+
+**DD1 — Derivatives come from the boundary's own factorisation.** At an accepted value,
+
+```
+dy/dx = −F_y⁻¹ F_x,      do/dx = g_y · dy/dx + g_x,
+```
+
+from the one factorisation of `F_y` the evaluation finished with: the locus's `finish`, `Jq·S =
+−B`, for every input column at once. Outputs measured from the sketch (a length, an angle, an arc's
+length) are differentiated exactly. Finite differences are not used for them. *Held by:* a
+finite-difference check of every output against every input, at the scale and tolerance
+`tests/jacobians.rs` uses for kernels (#454).
+
+**DD2 — Conditioning is reported, and a near-singular value is a failure.** Each evaluation reports
+an estimate of the smallest singular value of the conditioned `F_y` at its own scale, from the
+factorisation already computed (a condition estimate on the LU, or the QR's `R`). Below a threshold
+`τ` the evaluation **fails** with *singular* (§9). It does not return a value with a huge
+derivative. `τ` is #455's to choose, and it sits above `RANK_TOL`. The positive root of `x² = u`
+shows why it cannot be left to the parent: `dx/du = 1/(2x)` is finite at every `u > 0`, and a
+parent's Newton walking `u` down meets ever larger steps until it lands at or past zero. With `τ`,
+the boundary refuses before that, and the parent's trust region shrinks (DD5). *Held by:* that
+boundary, approached from `u > 0`, fails *singular* at a `u` above 0, and the parent stops short and
+reports (#455's test).
+
+**DD3 — A branch change is detected, not inferred.** Each accepted evaluation records the sign of
+`det F_y`, from the LU's pivots and its permutation's parity (rows and columns in the instance's
+compiled order, so successive signs compare). Along a parent's path, a change of sign between two
+accepted evaluations means the path crossed a fold or a bifurcation. That evaluation fails with
+*branch changed*, even where its correction passed `continues`. *Held by:* a two-root boundary
+whose inputs are driven toward the fold where its roots meet, by steps that land a warm start on
+the other root, fails there and does not return that root.
+
+**DD4 — A domain is a set of conditions on the inputs alone.** `Ω` is declared as conditions over
+measurements of the inputs, such as `distance(a.center, b.center) > |a.r − b.r|`. They are judged
+before the inner solve: outside `Ω` the evaluation fails with *outside*, naming the condition,
+and nothing is solved. Because they read only inputs, they are bounds over the parent's unknowns,
+and the parent can steer by them as it steers by bounds today. Until #461 decides on syntax, the
+prototype states a boundary's `Ω` in Rust. A boundary with no stated `Ω` has `Ω` = everywhere DT1
+and DD2 hold, and fails where they do not. *Held by:* the common tangent called with one circle
+inside the other fails *outside*, naming the condition, and never runs Newton.
+
+**DD5 — The parent stays inside.** A parent's step that would take any instance's inputs out of its
+`Ω` is shortened to the condition's edge, as a step is carried across a bound. A failed evaluation
+(§9) rejects the step and shrinks the trust region, as a NaN residual does today. So a parent near
+a domain's edge slows and stops short. It never accepts a value from outside. *Held by:* the
+belt-length loop of the paper's §6.4, started near `c = r₁ + r₂`, converges without an evaluation
+outside `Ω`. The evaluations made are counted, and each is checked.
+
+**DD6 — Sketch outputs only.** This contract covers outputs measured from the solved sketch. An
+output through an evaluated solid (a volume, a mass) needs an accuracy contract for its finite
+differences and detection of a change of topology within a perturbation. It is #458's phase 2, and
+stays outside this contract until then. Spec §1.2's "no edge back" holds within a boundary.
+
+---
+
+## 9. Failure
+
+**FA1 — An evaluation returns a value or a failure, never a nearby value.** A **value** carries:
+
+* the pose and the canonical figure;
+* the derivative (DD1), the condition estimate (DD2) and the sign of `det F_y` (DD3);
+* the claims' verdicts (§11).
+
+A **failure** carries a reason and the inputs at which it happened:
+
+| reason | when |
+|---|---|
+| *outside* | a condition of `Ω` is false (DD4); nothing was solved |
+| *unsettled* | the inner solve did not reach `max_relative_residual ≤ 1e-6` at the boundary's own scale, judged on the residual itself, not on a status (#449) |
+| *singular* | the condition estimate fell below `τ` (DD2) |
+| *branch changed* | a continued evaluation failed `continues`, or `det F_y` changed sign (DT5, DD3) |
+| *root choice broken* | a stated bound or orientation does not hold at the value (DT2) |
+
+The locus does not meet FA1 today: a failed solve keeps its best point with `ok: false`, and
+`point_on_body_res` writes the residual from it. A boundary's failure reaches the parent as NaN
+rows (which `System` already reads as "not converged") or as a typed result, never as coordinates.
+*Held by:* each reason produced by a small boundary built to produce it, and in each case the
+parent's residual is not finite.
+
+**FA2 — In a parent's iteration a failure rejects the step.** The trust region shrinks and the step
+is tried again. A failure is never accepted, cached as a value, or replaced by the last good value.
+
+**FA3 — A failure the parent ends on is the parent's failure.** If the parent's solve ends on a
+failed evaluation, it reports `success: false`, and its status names the instance, the reason and
+the input values. The diagnosis attributes the failure to the **parent**: it names the parent's
+rows that hold the instance's inputs where the failure is, as a broken bound is reported today. It
+never lists the boundary's interior as conflicting. The boundary's own diagnosis at those inputs is
+available beside it, for example "*outside*: one circle holds the other: centres 10 apart, radii 20
+and 45". *Held by:* the belt drive with its centres fixed closer than the radii's difference:
+`success` false, the drive's tangent named, the parent's `distance` named as what holds it there.
+
+**FA4 — Failures are values of the key too.** A fresh evaluation that fails, fails for every
+instance with that key (DT4). It may be cached as a failure, and is re-reported for each instance
+by name.
+
+---
+
+## 10. Agreement with the flat solve
+
+**FL1 — Soundness.** The pose a document solves to through boundaries (the parent's unknowns, each
+instance's inputs, outputs and interior) satisfies every row of the same document's flat
+elaboration, to the flat solve's tolerance. *Held by:* #454's acceptance test, for every boundary
+document in the test set.
+
+**FL2 — A fixed point of the flat solve.** The flat solve started from that pose stays there.
+*Held by:* the same documents; zero iterations, or a residual already under tolerance.
+
+**FL3 — The rank adds up.** Where every instance is DT1 at the solution, the flat document's
+numeric rank is the sum of the instances' own unknowns and the rank of the parent's reduced system
+(its rows over its unknowns, through the instances' derivatives). So the DOF agrees, and so does
+every over-constraint the parent reports. *Held by:* the rank identity checked on each boundary
+document, and on the belt drive with one of its rows duplicated at the parent.
+
+**FL4 — Not promised: the same root.** Below DT3, the flat solve from the document's seeds may reach
+a root the boundaries do not, and the boundaries may reach one the flat solve does not. Both are
+solutions (FL1). The benchmark counts such disagreements and reports them (#459). They are not
+failures of the contract.
+
+---
+
+## 11. Dependencies, invalidation and claims
+
+### Dependencies
+
+**DP1 — Each output has a dependency set.** `D(o)` is the set of inputs and context values that
+output `o` reads. It is computed structurally from the boundary's lowered rows, in their block
+order (`graph::blocks` over `F`'s incidence):
+
+* the inputs read by the rows of every block upstream of the block that places `o`;
+* the inputs `g` reads directly;
+* for a nested instance, its own `D` of each output it consumes, transitively.
+
+A structural set over-approximates: an input may be in `D(o)` and still have no numerical effect.
+That is sound, and costs only a needless re-evaluation. *Held by:* for each output and each input
+outside `D(o)`, the derivative of DD1 is exactly zero. The sets are exposed for diagnosis
+("`belt_length` depends on `r_small`, `ratio`, the shafts' distance").
+
+**DP2 — Shape and pose are separate dependencies.** For each output, `D(o)` splits into what it
+reads of the shape and whether it reads the pose:
+
+* an **invariant** output (a length, an angle, a radius, any number measured from the figure) reads
+  the shape only;
+* an entity output reads both.
+
+A change that moves every input of an instance by one rigid motion changes its pose only. Nothing
+is solved again: entity outputs are re-posed, and invariant outputs are unchanged. *Held by:* moving
+a drive's two shafts together re-solves nothing (evaluations counted), and its `belt_length` is
+bit-identical.
+
+**DP3 — Invalidation follows `D`, and cutoff is exact.** After a change `δ` to inputs or context,
+an output is re-evaluated only if `δ` meets `D(o)`, or if `δ` moves its pose and it reads the pose.
+An instance is re-solved only if an output some consumer reads is invalid. A re-evaluated output
+**bit-identical** to its previous value invalidates nothing downstream: early cutoff, as in
+incremental build systems. Cutoff is exact, never within a tolerance. A tolerance would make what a
+document solves to depend on what was cached before. *Held by:* the paper's §6.4 cases on a
+two-level document shaped like the belt drive, with evaluations counted, not timed (#457):
+
+* a value read only by a bore re-evaluates the pulleys and not the parent's loop;
+* a new ratio re-evaluates what reads it and nothing else.
+
+**DP4 — Reuse is indistinguishable from re-evaluation.** A fresh output is computed from the blocks
+upstream of it only, each from seeds stated relative to its inputs. So its value is a function of
+`D(o)`'s values alone, and a reused output is bit-identical to one evaluated again. A continued
+evaluation (DT5) depends on its path and is never reused across a change. It is checked against a
+fresh one instead (DT6). *Held by:* for each output, perturbing then restoring an input outside
+`D(o)` and evaluating fresh gives the same bits as not perturbing it.
+
+### Claims
+
+**CM1 — A claim in a boundary is judged over the boundary's family, not at its inputs.** The claim's
+rows are stacked on `F` over the columns of **both** `y` and `x` (the inputs free, as the parent's
+unknowns are in the flat diagnosis), at the boundary's value, and judged as `diagnose_with` judges
+today: *theorem*, *consuming* or *violated*. With the inputs held fixed instead, the judgement would
+be empty. `F_y` is square and nonsingular (FR1, DT1), so every row over `y` is in its span, and
+every claim that holds would be a "theorem". Judged over `(y, x)`, a theorem means what it should:
+the body implies the claim at every input near this one, whatever the parent does. *Held by:* at
+unequal radii, the belt drive's tangents meeting on the line of centres is a theorem of the drive. A
+claim true only at the instance's inputs (that the centres are 120 apart) is *consuming*. With the
+inputs held, both would read *theorem*.
+
+**CM2 — One verdict per distinct solve.** A claim's verdict is a property of the fresh value of a
+key. It is judged once per key, invariant under the pose for an equivariant claim, and reported
+under every instance's name. *Held by:* N instances of one key give N reports of one judgement,
+and the judgement runs once.
+
+**CM3 — A claim never restricts a boundary's domain.** `Ω` and every failure of §9 are decided by
+the acting rows and root choices alone. Witness geometry built only for a claim is solved after the
+boundary, against its value held, and only for the claim (#460's `claim { … }`). A witness that
+cannot be built fails the claim, which is reported as not applicable, never as the boundary. Until
+#460 lands, geometry written outside a claim is acting geometry, and restricts `Ω` as any row does.
+That is #460's case: the belt at equal radii, whose witness `x` has nowhere to stand. *Held by:*
+after #460, the drive at equal radii evaluates, and its claim is reported not applicable.
+
+---
+
+## 12. The rules and the tests that hold them
+
+Every test is a Rust test in `rust/gcs-core/tests/`, in a file listed in `tests/main.rs`, unless it
+says otherwise.
+
+| rule | held by | built in |
+|---|---|---|
+| CL1 | one instance in two documents (one 1000× larger) agrees; evaluation after unrelated history is bit-identical | #454 |
+| CL2 | listed inputs equal the lowered rows' columns; no column outside `x ∪ y` | #452, #454 |
+| CL3 | an unbound `Int` formal is "not a boundary" | #452 |
+| DT1 | the two-root point is DT1; with `b` on `a` it is not | #452 |
+| DT2 | the two-root point is refuted without `ccw`, unrefuted with it (after #157) | #452, #157 |
+| DT3 | the spike's verified boxes; sampled `Ω` for each DT3 boundary | #453 |
+| DT4 | N instances of one key in shuffled orders give bit-identical canonical values | #456 |
+| DT5 | continuation keeps a branch across a basin boundary and fails at the fold | #455 |
+| DT6 | a walk from one basin to the other reports the mismatch | #455 |
+| FR1 | a body with a row over its operands alone is "not a boundary", naming it | #452 |
+| FR2 | `Crank(o, theta: hint(…))` is DT1; with the angle the body's own unknown it is not | #452 |
+| FR3 | no boundary's derivative is minimum-norm: `F_y` square in every DT1 test | #454 |
+| EQ1, EQ2 | `Apex` with a page seed fails the motion and spin checks; with a relative seed it passes | #452, #456 |
+| EQ3, EQ4 | key equality under random proper motions of the operands; no rounding in keys | #456 |
+| EQ5 | `Pulley(centre)` invariant under the free rotation; a keyway there fails DT1 | #456 |
+| EQ6 | N instances' `upper.run.p1` each match the flat solve | #456 |
+| IO1 | a `private` member read from outside is E101 | #454 |
+| IO2 | one over-constraint, flat and through a boundary, named at the parent | #454 |
+| IO3 | a parent's opposite `ccw` over `one.x` is reported broken; a `Side` input chooses | #454 |
+| IO4 | two children reading each other's outputs are one parent system | #454 |
+| DD1 | finite-difference check of every output against every input | #454 |
+| DD2 | `x² = u` fails *singular* above 0 and the parent stops short | #455 |
+| DD3 | a fold crossed by the inputs fails *branch changed* | #455 |
+| DD4 | nested circles fail *outside* without a Newton step | #455 |
+| DD5 | the belt loop near `c = r₁ + r₂` converges with no evaluation outside `Ω` | #455, #458 |
+| FA1–FA4 | one boundary per reason; the parent's residual is not finite; the report names the instance and the parent's rows | #455 |
+| FL1–FL3 | flat and boundary agree; flat from the boundary pose does not move; the rank identity | #454 |
+| DP1 | the derivative is exactly zero outside `D(o)` | #457 |
+| DP2 | moving a drive's shafts together re-solves nothing; `belt_length` bit-identical | #457 |
+| DP3, DP4 | the belt's counted evaluations; perturb-and-restore is bit-identical | #457 |
+| CM1 | the tangents' claim is a theorem of the drive; a pose claim is consuming | #454 |
+| CM2 | N instances of one key, one judgement | #456 |
+| CM3 | the drive at equal radii evaluates and its claim is not applicable | #460 |
+
+## 13. Worked cases
+
+| case | inputs | tier | EQ | notes |
+|---|---|---|---|---|
+| a point 5 from `a` and `b` | `a`, `b`, carrier | DT1; DT2 with `ccw` after #157 | with a relative seed | two roots, related by the half-turn that turns the carrier over (EQ5) |
+| `CommonTangent(a, b)`: the left external tangent | two circles, carrier | DT3 on `Ω`: the centres farther apart than the radii differ; by hand (paper §6.3), once its `ccw` is checked (#157) | yes | at `Ω`'s edge the outer tangents merge and the tangent points' derivatives grow without bound (DD2) |
+| `Pulley(centre)`: rim and bore | a point, carrier; `r`, `bore` | DT3 trivially (linear) | yes, invariant about the centre | key `(r, bore)`; the canonical axis is the carrier's `u` (EQ3) |
+| `Crank(o, theta)` | a point, carrier; `theta` unbound | DT1 with `theta` an input | yes | `theta` is the parent's unknown (FR2) |
+| `x² = u`, `x ≥ 0` | `u` | DT3 on `u > 0` | n/a | singular at the edge (DD2) |
+| `Apex` with `hint((3, 4))` | `a`, `b`, carrier | DT1 | **no**: reads the carrier's frame | §6's run |
+
+## 14. What the contract does not promise
+
+* **Total work.** A parent summing 1,000 distinct children's outputs makes 1,000 evaluations per
+  iteration (the review's §3). The contract bounds what one parent step factorises, through
+  squareness and the derivative of DD1, and lets reuse follow dependencies (DP3). #459 measures the
+  rest.
+* **Uniqueness below DT3.** DT1 is isolation. DT2 is the author's claim, refuted where it can be.
+* **That a boundary beats the flat solve.** The flat solve already decomposes the graph it is given
+  (`decompose`, `block_order`). Whether boundaries pay, and where, is #459's question.
+* **Solids.** DD6.
+* **Anything about syntax.** `given`, `context`, binding by value and a domain clause are #461's,
+  after #459.
+
+## 15. Open questions
+
+* **Mirrors.** A declared mirror would share one key between an instance and its reflection,
+  reading every orientation reversed. Is it worth a rule, or is a mirrored part simply another key?
+* **Context, today.** Closed scope admits no context, so every value a boundary reads is a formal
+  bound by value, and the key holds it. Whether N7's `context` is needed at all depends on how much
+  of the corpus threads a standard (#452's corpus report, the paper's §2.3).
+* **`τ` and own scale.** DD2's threshold and CL1's own scale need numbers. #455 should choose them
+  against the corpus's well-posed components, not against synthetic cases alone.
+* **Inferred boundaries.** If every rule above can be checked from the elaborated component (CL2,
+  FR1, DT1, EQ2 are all mechanical), a parent might treat a qualifying instance as a boundary with
+  no mark in the source. #461 decides that, on the benchmark's evidence.
+* **The locus's own contract.** The locus would meet most of this with a condition estimate (DD2),
+  a determinant sign (DD3), no nearby value on failure (FA1), and its module comment corrected to
+  march from the anchor. Whether those changes land in `locus.rs` for traces, or only in the
+  boundary built on it, is #454's call.
