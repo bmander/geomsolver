@@ -10,6 +10,7 @@
 //! binding over the flat C ABI in `gcs-ffi`; there is no second copy of any algorithm.
 pub mod callout;
 pub mod brep;
+pub mod boundary;
 pub mod cgraph;
 pub mod clear;
 pub mod complex;

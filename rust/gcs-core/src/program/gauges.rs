@@ -159,6 +159,7 @@ pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st
                     sk.place_axis(e.i());
                 }
                 gauges.hold(own[at], v, field, crate::syntax::ref_text(rf), st);
+                map.holds.push((own[at], super::InstPath(st.path.clone())));
                 if within {
                     map.held_within.insert(own[at]);
                 }
@@ -182,6 +183,7 @@ pub(super) fn apply_gauge(cx: &mut super::Elab<'_>, r: &ResolvedRelation<'_>, st
             // canonical, so the choice the document states and the one the plan replays are one
             // record and not two that never meet (issue #48, item 4)
             let (key, v) = decompose::branch_record(pts, r.kind == CKind::Ccw);
+            map.chosen.push((key.clone(), super::InstPath(st.path.clone())));
             let names: Vec<String> = refs.iter().map(|rf| crate::syntax::ref_text(rf)).collect();
             gauges.orient(key, v, format!("the triangle `{}`", names.join("`, `")), st);
         }

@@ -21,7 +21,7 @@ const SOLVER: &[&str] = &[
 /// case library and the reports.
 const LANGUAGE: &[&str] = &[
     "syntax", "flatten", "program", "modules", "edit", "style", "library", "examples",
-    "overview", "callout", "svg", "drawing", "report", "io",
+    "overview", "callout", "svg", "drawing", "report", "io", "boundary",
 ];
 
 /// The edges still standing, as (file under `src/`, language module, how many paths name it).

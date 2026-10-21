@@ -1,6 +1,6 @@
 # A reusable solve boundary: the contract
 
-**Status (2026-10-21): a design for review (#451); nothing built.** It states what a component
+**Status (2026-10-21): a design for review (#451); the advisory classifier (#452) built, §16.** It states what a component
 must satisfy for a parent to treat it as a **reusable solve boundary**: a function of its inputs,
 solved once per distinct input and consumed through its interface. It is the first step of track A
 of epic #465, written before the classifier (#452), the uniqueness spike (#453) and the prototype
@@ -724,3 +724,27 @@ says otherwise.
   a determinant sign (DD3), no nearby value on failure (FA1), and its module comment corrected to
   march from the anchor. Whether those changes land in `locus.rs` for traces, or only in the
   boundary built on it, is #454's call.
+
+## 16. The classifier (#452)
+
+`boundary::classify`, printed by `solventc --components`, reads each component through its first
+instance at the document's solved pose and says which of the tiers it reaches. It is advisory, as
+#452 asks, and checks what it can without the prototype:
+
+* **its own unknowns** are the numbers of what the instance made (every entity sited under its
+  path, `SourceMap::instances`), with the numbers no entity owns that its rows read (a contact's
+  place, a lift). Its **inputs** are every other column its rows read. An unbound numeric formal
+  is an input, reported as exported (FR2), and an unbound `Int` formal as "not a boundary" (CL3);
+* **DT1** is the rank of its rows over its own unknowns, the inputs held, at the instance's inputs
+  and at `PERTURBED` inputs moved from them by a seeded draw. The rank at the document's scale, not
+  the boundary's own, until #455 sets one (CL1);
+* **FR1** is the rank its rows add with the inputs freed as well. A body that declares nothing a
+  parent reads and states such facts, or holds an operand's numbers by `fix`, **asserts only**;
+* **DT2** is refuted from `STARTS` starts scattered at twice the instance's size, each a short probe
+  solve. Roots are compared by the figure (points in space, radii, axes), and a root the body's own
+  `ccw`/`cw` refuses is counted apart, since the solve does not enforce them (#157);
+* **EQ2** is read from the text and the rows, not by moving anything: a row over a plane's own axes,
+  a `fix` at coordinates, a seed in coordinates or by a bearing, and a coordinate read.
+
+`tests/boundary.rs` holds one component of each class, the two-root point among them.
+

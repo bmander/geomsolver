@@ -907,6 +907,10 @@ impl<'a> Walk<'a> {
         }
         let mut instance_path = path.to_vec();
         instance_path.push(PathStep::Instance(st.id));
+        // the last bound is this one: nothing since `bind_instance` pushed another
+        if let Some(info) = self.instances.last_mut().filter(|i| i.prefix == sc.owner) {
+            info.path = instance_path.clone();
+        }
         // an instance of a family of sets is the set, its formals bound (§6.21) —
         // and what its body makes without reading its point is the instance's,
         // made once here (F3)
