@@ -184,6 +184,11 @@ fn expand(
 ) -> Expansion {
     let mut expansion = crate::flatten::expand_faces(cx.doc, cx.sk.units, refused, faces);
     cx.map.private_names = expansion.private_names.clone();
+    // an instance drawn has its path; one cut short (a recursion refused) has none and is not one
+    cx.map.instances = expansion.instances.iter().filter(|i| !i.drawn || !i.path.is_empty())
+        .map(|i| super::Instanced { path: super::InstPath(i.path.clone()), prefix: i.prefix.clone(),
+                                    comp: i.comp, drawn: i.drawn })
+        .collect();
     cx.sk.declared = std::mem::take(&mut expansion.unknowns);
     cx.sk.parameters = std::mem::take(&mut expansion.parameters);
     // each face family's running number, held where its drawn station stands (#243 L1)

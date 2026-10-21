@@ -382,6 +382,9 @@ pub struct InstanceInfo {
     /// Whether its body was expanded onto the sheet.  An instance written in place inside a
     /// curve is bound and never drawn: the curve is the only thing made of it.
     pub drawn: bool,
+    /// The instances and blocks enclosing its body's statements, this one last — the path every
+    /// site of what it made starts with (`program::InstPath`).  Empty for one never expanded.
+    pub path: Vec<PathStep>,
 }
 
 /// A block over a chain's edges, set aside by the walk until the chain it names can be found:

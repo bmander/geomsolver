@@ -44,6 +44,10 @@ solventc — check a Solvent document
                         5 s.  On a terminal, unasked, the stages of a second or more are said
     --no-progress       say nothing on stderr as the run goes, even on a terminal
     --timings           at the end, the slowest solids and claims, each with its statement
+    --components        what each component is against the contract for a reusable solve
+                        boundary (#452), read through its first instance: asserts only, leaves
+                        freedoms, locally determined, branch chosen, and whether it reads the
+                        world.  Advisory: nothing is refused on its word
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (by the kernel --kernel names)
@@ -116,6 +120,8 @@ struct Opts {
     say: watch::Say,
     /// `--timings`: the slowest solids and claims, said at the end.
     timings: bool,
+    /// `--components`: each component classified against the boundary contract (#452).
+    components: bool,
 }
 
 impl Default for Opts {
@@ -139,6 +145,7 @@ impl Default for Opts {
             sheet: None,
             say: watch::Say::Nothing,
             timings: false,
+            components: false,
         }
     }
 }
@@ -235,6 +242,7 @@ fn main() -> ExitCode {
             "--progress" => said = Some(watch::Say::Everything),
             "--no-progress" => said = Some(watch::Say::Nothing),
             "--timings" => opts.timings = true,
+            "--components" => opts.components = true,
             "--allow-unsolved" => opts.allow_unsolved = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
@@ -411,7 +419,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         if !opts.json {
             println!("{}: did not elaborate", s.name);
         }
-        return (1, opts.json.then(|| doc_json(s, &errs, None, None, &e, Json::Null)));
+        return (1, opts.json.then(|| doc_json(s, &errs, None, None, &e, Json::Null, Json::Null)));
     }
 
     let mut sk = e.sketch.clone();
@@ -425,11 +433,13 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
     e.diags.extend(invalid);
     if failed {
-        return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null)));
+        return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null, Json::Null)));
     }
     let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
         .then(|| progress::during(diagnosing, || diagnose(&mut sk, DiagnoseOptions::default())));
+    // read at the solved pose, before anything below builds or exports
+    let components = opts.components.then(|| gcs_core::boundary::classify(&e, &sk));
 
     if !opts.json {
         println!("{}: {}", s.name, if r.success { "solved" } else { "did not solve" });
@@ -495,6 +505,13 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 // exactly — so it is read to `READING_SIG` like every other number a person is
                 // shown, and converted by nothing: it is already in the units of the drawing
                 println!("  {n} = {}", expr::reading(SpecKind::Scalar, v));
+            }
+        }
+    }
+    if let Some(cs) = components.as_ref().filter(|_| !opts.json) {
+        for c in cs {
+            for line in gcs_core::boundary::text(c) {
+                println!("  {line}");
             }
         }
     }
@@ -651,7 +668,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     (
         code,
         opts.json.then(|| {
-            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, positions.unwrap_or(Json::Null))
+            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, positions.unwrap_or(Json::Null),
+                     components.as_ref().map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json)
+                         .collect())).unwrap_or(Json::Null))
         }),
     )
 }
@@ -807,6 +826,7 @@ fn doc_json(
     d: Option<(&Sketch, &gcs_core::diagnose::Diagnosis)>,
     e: &Elaborated,
     positions: Json,
+    components: Json,
 ) -> Json {
     let said = |lo: u32, code: &str, sev: &str, message: &str| {
         let (line, col) = line_col(&s.text, lo);
@@ -831,6 +851,7 @@ fn doc_json(
         ("diagnosis", d.map(|(sk, d)| report::diagnosis_json(sk, d)).unwrap_or(Json::Null)),
         ("positions", positions),
         ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
+        ("components", components),
     ])
 }
 

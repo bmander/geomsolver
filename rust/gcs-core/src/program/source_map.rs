@@ -43,6 +43,36 @@ pub struct SourceMap {
     /// `std.Turn` holding the joint of a frame the root declared: said where they are, so a
     /// reconcile never writes them again at the root (`edit::reconcile`'s gauges).
     pub(crate) held_within: BTreeSet<u32>,
+    /// Every component instance bound (#452): the path its body's sites start with, the prefix
+    /// its names do and which of the program's components it is — what a reader asking what one
+    /// instance made, and of which definition, reads (`boundary`).
+    pub instances: Vec<Instanced>,
+    /// Each number a `fix` held, with the path of the statement holding it: whose `fix` it was.
+    /// A gauge makes no constraint, so no `of_constraint` site says so.
+    pub holds: Vec<(u32, InstPath)>,
+    /// Each root choice an orientation recorded (`Sketch::branches`' key), with the path of the
+    /// statement choosing it.
+    pub chosen: Vec<(String, InstPath)>,
+}
+
+/// One component instance as expanded — see `SourceMap::instances`.
+#[derive(Clone, Debug)]
+pub struct Instanced {
+    pub path: InstPath,
+    /// `leg.`, `g.t.r.`: what every name it made starts with.
+    pub prefix: String,
+    /// Which of the program's components (`Program::components`).
+    pub comp: usize,
+    /// Whether its body was expanded onto the sheet.  One written in place inside a curve is
+    /// bound and never drawn (`flatten::InstanceInfo::drawn`), and its path is empty.
+    pub drawn: bool,
+}
+
+impl Instanced {
+    /// Whether a site with this path stands inside the instance, however deep.
+    pub fn contains(&self, path: &InstPath) -> bool {
+        path.0.starts_with(&self.path.0)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

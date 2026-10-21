@@ -24,6 +24,7 @@ mod block_solve;
 mod block_structure;
 mod booleans;
 mod bore;
+mod boundary;
 mod bounds;
 mod brep;
 mod brep_census;

@@ -81,6 +81,12 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   unasked, the stages of a second or more are said (`--no-progress` silences it).  `--timings`
   lists the solids and claims by their own time after the report, each at its statement — a
   module's solid at the document's instance of it (`Program::document_stmt`).
+  **`--components` classifies each component against the boundary contract** (#452,
+  `boundary::classify`, worded by `boundary::text`/`json`): read through its first instance at the
+  solved pose (`SourceMap::instances`, each with its path and definition; `holds`/`chosen`, whose
+  `fix` and whose `ccw`), its own unknowns ranked with its inputs held and at inputs moved from
+  them, its roots searched from scattered starts, and what it reads of the world said.  Advisory:
+  nothing is refused on its word, and the search is labelled the heuristic it is.
 * **app** (`web/src/app/`): a 3D-workspace sketcher (see **The workspace** in [app.md](app.md)), the only front
   end.  The *view* is the canvas:
   `view.ts` holds the state and modules take that view as first argument (`paint`, `gesture`,
