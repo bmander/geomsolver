@@ -254,7 +254,13 @@ pub fn summary(d: &Diagnosis) -> String {
             d.implied.len()
         ));
     }
-    if d.status == State::Unsolved {
+    if d.status == State::Unsolved && d.violated.is_empty() {
+        parts.push(
+            "UNSOLVED — the solve stopped short of a solution, though every constraint reads \
+             as holding where it stopped; no verdict on it"
+                .to_string(),
+        );
+    } else if d.status == State::Unsolved {
         parts.push(format!(
             "UNSOLVED — {} constraint(s) unsatisfied where the solve stopped short of a \
              stationary point; no verdict on them",
@@ -494,6 +500,13 @@ pub struct DiagnoseOptions {
     /// (`ClaimJudge`): they read the solved pose and enter nothing else the diagnosis says, and
     /// judging one is seconds of solids evaluated.  Not judged, `solid_claims` is empty.
     pub solid_claims: bool,
+    /// Whether the pose diagnosed is a solve's answer (`SolveResult::settled`), as the caller
+    /// that solved it knows (#449).  Where it is not — the solve failed, or stopped on its
+    /// iteration limit under the acceptance — nothing is judged *on* it: no claim lands in any
+    /// of the three lists, and a drawing whose rows all read as holding there is `Unsolved`, not
+    /// well.  The rows can read as holding where they do not: a point run off to infinity widens
+    /// the extent every row is measured against.  True where the caller does not say.
+    pub settled: bool,
 }
 
 impl Default for DiagnoseOptions {
@@ -505,6 +518,7 @@ impl Default for DiagnoseOptions {
             tol: 1e-6,
             numeric_max: NUMERIC_MAX,
             solid_claims: true,
+            settled: true,
         }
     }
 }
@@ -712,7 +726,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         if !sys.stationary(&z) {
             let mut scratch = sk.clone();
             let mut ssys = System::new(&scratch);
-            if ssys.solve(&mut scratch, SolveOpts::default()).success {
+            if ssys.solve(&mut scratch, SolveOpts::default()).settled() {
                 stalled = true;
             } else {
                 unsettled = true;
@@ -750,10 +764,11 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let mut claims_theorem: Vec<u32> = Vec::new();
     let mut claims_violated: Vec<u32> = Vec::new();
     let mut claims_consuming: Vec<u32> = Vec::new();
-    // a claim with witnesses of its own is judged by its block, below
+    // a claim with witnesses of its own is judged by its block, below; and none is judged on a
+    // pose no solve settled at, which may not even satisfy the claim's premises (#449)
     let claims: Vec<&Constraint> =
         sk.constraints.iter().filter(|c| c.claim && c.witness.is_none()).collect();
-    if !claims.is_empty() {
+    if !claims.is_empty() && opts.settled {
         // "does it hold?" is the same rule `violated_constraints` states against a compiled
         // system, in the units the row carries: the residual over `extent^degree`
         let extent = sk.extent();
@@ -809,7 +824,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // a `claim { … }` block (#460): its witnesses solved after the drawing, the drawing held,
     // and the block judged as one claim — every statement of it filed under the one verdict
     let blocks = witnessed::blocks(sk);
-    if !blocks.is_empty() {
+    if !blocks.is_empty() && opts.settled {
         // read once for every block: the drawing's extent before any witness moves, and its own
         // rank, which no block's solve changes (a witness is no column of `sys`)
         let extent = sk.extent();
@@ -832,7 +847,10 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // -- conflicts --
     let mut conflict_set: Option<Vec<u32>> = None;
-    if !stalled && opts.conflicts.unwrap_or(!violated.is_empty()) {
+    // a pose no solve settled at is searched too where every row reads as holding there: what
+    // reads as holding at that pose's extent may not hold at the drawing's (#449)
+    let search = !violated.is_empty() || !opts.settled;
+    if !stalled && opts.conflicts.unwrap_or(search) {
         // Candidates = the structurally over-determined block (where a redundancy must live)
         // *together with* whatever is actually violated.  Not just the over-block: a consistent
         // duplicate (two Horizontals on one line) makes an over-block with nothing to do with an
@@ -950,7 +968,12 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // enough, since a dependency can be shared between a user constraint that is still doing work
     // and a primitive's own definition, leaving nothing to delete — and a relation-only theorem
     // leaves `implied` constraints that *could* go but need not, which is not "over" either
-    let status = if stalled {
+    // a pose no solve settled at, every row reading as holding and no conflict found: unsolved,
+    // and no more is known (#449)
+    let unsolved = !opts.settled
+        && violated.is_empty()
+        && conflict_set.as_ref().map(|c| c.is_empty()).unwrap_or(true);
+    let status = if stalled || unsolved {
         State::Unsolved
     } else if conflict_set.as_ref().map(|c| !c.is_empty()).unwrap_or(false)
         || !violated.is_empty()

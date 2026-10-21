@@ -15,7 +15,9 @@ mod turn;
 pub use bounds::cross_bounds;
 pub use bounds::{bound_reading, bound_tol, bounds_hold, BoundReading};
 pub use drag::{Drag, PullPolish, RadiusDrag, Triangle};
-pub use through::{solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through};
+pub use through::{
+    solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through, Times,
+};
 pub use turn::{TurnDrag, Turning};
 
 use crate::curve;
@@ -109,6 +111,19 @@ impl SolveResult {
     /// solution; it is a success, and not settled (docs/iteration-limit-rescue-plan.md).
     pub fn settled(&self) -> bool {
         self.success && self.status != 4
+    }
+
+    /// What the solve came to, in the words every surface reports it in (#449): *solved* only
+    /// where it settled, since a stop on the iteration limit is no answer however small its
+    /// residual reads.
+    pub fn outcome(&self) -> &'static str {
+        if self.settled() {
+            "solved"
+        } else if self.success {
+            "stopped at the iteration limit"
+        } else {
+            "did not solve"
+        }
     }
 
     pub fn plain(method: &str, success: bool, max_residual: f64, nfev: i32) -> SolveResult {
@@ -336,8 +351,13 @@ impl System {
     }
 
     /// A system compiled where `sk` stands — as the recovery left it — then solved on from the
-    /// recovery's start: kept where that succeeds, else the system that was is put back, the
-    /// sketch it stood on with it, and `res` stands.
+    /// recovery's start: kept where that settles (`SolveResult::settled`) uncollapsed (`judged`),
+    /// else the system that was is put back, the sketch it stood on with it, and `res` stands.  A stop on the iteration
+    /// limit is not kept even under the acceptance (#449): a recompile changes the yardstick, and
+    /// a solve that ran a point off to infinity is compiled at the extent the runaway left —
+    /// two equal circles' external tangents held to meet, every row then over a drawing ten
+    /// kilometres across, read a contact 0.13 mm off its 20 mm circle as 3e-8 and the drawing as
+    /// solved.  Compiled at its own size from an unseeded start, a drawing converges there.
     fn recompiled(
         &mut self,
         sk: &mut Sketch,
@@ -351,7 +371,7 @@ impl System {
         }
         let solved = self.solve_unsteered(sk, opts);
         let solved = judged(sk, solved);
-        if solved.success {
+        if solved.settled() {
             return solved;
         }
         *self = compiled;

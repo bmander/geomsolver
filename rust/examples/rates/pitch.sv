@@ -2,10 +2,12 @@
 // roller's centre takes is the profile's parallel curve, a front moving away from the cam at unit
 // speed, square to itself, its Cauchy data the profile the drawing has.
 //
-// The cam is `generation/heart_cam.sv`'s rising half: a follower sliding out `lift` along its line
-// over half a turn, seen from the turning cam. The profile `cam_rise` is the envelope of the
-// roller under that motion (`side: near`, the side facing the cam's centre), and the pitch curve
-// `pitch_rise` the envelope of the roller's centre. `Pitch` marches the first into the second:
+// The cam is `generation/heart_cam.sv`'s rising half: the follower driven by the heart cam's own
+// law of the cam's turn `t`, `180deg - abs(180deg - t)`, which slides it out `lift` along its line
+// over the first half turn, seen from the turning cam. The profile `cam_rise` is the envelope of
+// the roller under that motion (`side: near`, the side facing the cam's centre), and the pitch
+// curve `pitch_rise` the envelope of the roller's centre. `Pitch` marches the first into the
+// second:
 //
 //   initially { p coincident(t == u) k }
 //
@@ -29,6 +31,8 @@ base := 25    // the roller centre's nearest approach to the cam's centre
 lift := 15    // how far the follower rises
 rr := 6       // the roller
 
+param t: Angle over (0deg, 360deg)          // the cam's turn
+
 in std.front {
   o := point
   fix((0, 0)) o
@@ -41,8 +45,9 @@ in std.front {
 
 cam := frame
 cam spins(1) o
-out := frame
-out slides(2 * lift) path                           // the rise: `under: out, seen_from: cam`
+follower := frame
+follower slides(2 * lift) path                      // out `lift` in half a turn of its value...
+fix(value == 180deg - abs(180deg - t)) follower     // ...which rises and falls uniformly
 
 in std.front {
   c_rise := point hint((25, 0))
@@ -51,8 +56,8 @@ in std.front {
   radius(rr) roller
 }
 
-pitch_rise := envelope(c_rise over t in (0deg, 180deg), under: out, seen_from: cam)
-cam_rise := envelope(roller over t in (0deg, 180deg), under: out, seen_from: cam, side: near)
+pitch_rise := envelope(c_rise over t in (0deg, 180deg), under: follower, seen_from: cam)
+cam_rise := envelope(roller over t in (0deg, 180deg), under: follower, seen_from: cam, side: near)
 
 // a profile drawn by its formula, three lobes and three hollows
 component Lobed(c: point, u: Angle) {

@@ -135,6 +135,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
         let mut node = walk.node(i,&dependencies,&w)?;
         node.set("id",i.into());
         node.set("name",sk.solids[i].name.clone().into());
+        if sk.solids[i].copy.is_some() { node.set("step",sk.solids[i].step().into()); }
         nodes.push(node);
         seen.insert(i);
     }

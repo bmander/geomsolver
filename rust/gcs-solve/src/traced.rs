@@ -599,7 +599,7 @@ fn view(flat: &[f64]) -> Option<View<'_>> {
                 }
             }
             RowKind::Carried => {
-                let steps = held::read_steps(consts)?;
+                let (steps, _) = held::read_motion(consts)?;
                 if n_cols != 7 + held::steps_width(&steps) {
                     return None;
                 }

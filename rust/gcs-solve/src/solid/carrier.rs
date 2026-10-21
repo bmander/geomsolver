@@ -37,7 +37,7 @@ pub fn carrier(sk: &Sketch, solid: usize, path: &str) -> Result<Carrier, String>
             return Err(format!("`{path}` names no face: `{}` is a body", s.name));
         };
         let (o, rest) = s.operands().into_iter().find_map(|o| {
-            crate::solid::past_step(&sk.solids[o as usize].name, steps).map(|r| (o, r))
+            crate::solid::past_step(&sk.solids[o as usize], steps).map(|r| (o, r))
         }).ok_or_else(|| format!("`{path}` names no face: no `{seg}` in `{}`", s.name))?;
         at = o as usize;
         steps = rest;

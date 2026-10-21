@@ -246,7 +246,8 @@ pub unsafe extern "C" fn gcs_system_free_indices(s: *mut System, out: *mut i32) 
 
 /* -- solving --------------------------------------------------------------- */
 
-/// `[success, status, residualNorm, maxResidual, nfev, njev, iterations, rank]` (rank -1 = none).
+/// `[success, status, residualNorm, maxResidual, nfev, njev, iterations, rank, settled]` (rank
+/// -1 = none): nine numbers, `SolveResult::settled` last (#449).
 pub(crate) fn write_result(r: &SolveResult, out: *mut f64) {
     let v = [
         r.success as i32 as f64,
@@ -257,6 +258,7 @@ pub(crate) fn write_result(r: &SolveResult, out: *mut f64) {
         r.njev as f64,
         r.iterations as f64,
         r.rank.map(|x| x as f64).unwrap_or(-1.0),
+        r.settled() as i32 as f64,
     ];
     unsafe {
         for (i, x) in v.iter().enumerate() {

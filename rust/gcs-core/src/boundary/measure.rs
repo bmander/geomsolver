@@ -123,6 +123,31 @@ meet_{k} := Crossing(std.front, upper_{k}.span, lower_{k}.span, centres_{k})
     Document { src, boundaries }
 }
 
+/// How far the ends of `drives`' runs in `sk` (a pose of `belts(drives, _)`) stand from where
+/// they are, mm: the closed form of an outer tangent, each end its rim's centre plus its radius
+/// along `n = ((r₁ − r₂)/c, ±√(1 − ((r₁ − r₂)/c)²))`, the worst coordinate.  What a solve's
+/// pose is off by, which two solves' disagreement does not say: a tangency holds its point to
+/// the square root of its residual, so two poses that both hold every row to 1e-12 can stand a
+/// tenth of a millimetre apart where the document is 400 m across.  Each drive at its own
+/// `centres`: in a document whose centres are one unknown, the first drive's settles every one.
+pub fn run_error(sk: &Sketch, drives: &[Drive]) -> f64 {
+    let at: std::collections::BTreeMap<&str, f64> =
+        sk.params.iter().map(|p| (p.name.as_str(), p.value)).collect();
+    let mut worst: f64 = 0.0;
+    for (k, d) in drives.iter().enumerate() {
+        let nx = (d.r_small - d.r_large) / d.centres;
+        let x0 = PITCH * k as f64;
+        for (run, side) in [("upper", 1.0), ("lower", -1.0)] {
+            let ny = side * (1.0 - nx * nx).sqrt();
+            for (end, x, r) in [("s", x0, d.r_small), ("e", x0 + d.centres, d.r_large)] {
+                let read = |c: &str| at[format!("{run}_{k}.{end}.{c}").as_str()];
+                worst = worst.max((read("x") - (x + r * nx)).abs()).max((read("y") - r * ny).abs());
+            }
+        }
+    }
+    worst
+}
+
 /// The links' length, mm, of `dyads`: the crank's and each two-root point's to the joint before
 /// it and to its pivot.
 const LINK: f64 = 5.0;
@@ -271,8 +296,9 @@ pub fn read(src: &str) -> Result<Elaborated, String> {
 
 /// The instances named, as boundaries of `e`'s drawing.
 pub fn bounds(e: &Elaborated, names: &[String]) -> Result<Vec<Boundary>, String> {
-    names.iter().map(|n| super::instance(e, &e.sketch, n).ok_or(format!("no instance `{n}`")))
-        .collect()
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    super::instances(e, &e.sketch, &names).into_iter().zip(&names)
+        .map(|(b, n)| b.ok_or(format!("no instance `{n}`"))).collect()
 }
 
 /// A flat solve and the size of what it factors.

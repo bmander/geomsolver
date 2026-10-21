@@ -1657,7 +1657,8 @@ bore cut body
   ```
 
   `peg[i] cut plate` in the same `repeat` cuts each from a body instead. `solid()` with nothing in
-  `union` with it is E080. Faces are reached through the copies, `pegs.peg.near`.
+  `union` with it is E080. Faces are reached through the copies, `pegs.peg[3].near` one copy's and
+  `pegs.peg.near` every copy's.
 - **Name intermediates the sets cannot express.** A boss standing in a pocket's floor is not
   `pocket cut body` + `boss union body` — that is stock ∪ boss − pocket, and the pocket eats the
   boss. Name the pocketed shell, then add the boss to it:
@@ -1737,6 +1738,10 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - `A` and `B` are **face paths**: `block` (every face), `block.near` (one), `pad.boss` (every face
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
+- **One copy of a pattern** (0.157): an operand written in a `repeat` or a `ring` is named with
+  its copy's index, as `--where` reports it — the hole the second drill cut is
+  `flange.drill[1].hole`. `flange.cd chamfer(d: 1mm) flange.drill[1]` chamfers that one hole
+  (`drill[i]` in a `repeat`); `flange.drill` is every copy's.
 - Each acts on the body after its other terms: a round reads the faces the cuts and unions left,
   and not another round's — unless it names that round (below).
 - Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a
@@ -1962,7 +1967,9 @@ prism's face `in` a view and name the edge in it.
 **An envelope in space is held to by the solve** where its source is a cone, a cylinder or a
 plane set (`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`, `std.HalfSpace`) or
 a revolution's side turned
-from a line, an arc or a circle, under turns about lines, screws and slides, seen from the world or another frame
+from a line, an arc or a circle, under turns about lines (or about a point of a view, the line
+through it square to the view), screws and slides — driven by a law or not — seen from the world
+or another frame
 (`spiral_bevel/mean_point.sv`):
 
 ```
@@ -2059,8 +2066,25 @@ roller := r0 in follower                           // where the law puts it at t
 groove := sweep(ball over t, under: follower, seen_from: cam)
 ```
 
-A value reads one parameter. A relation the solve holds — a point carried by a driven frame at a
-roll, a rate of it, a meshing — reads no drive (E080): draw in the frame instead.
+A value reads one parameter. A point carried by a driven frame to a roll is held where the law
+puts the joint at that roll, and its rate reads the law's rate; the law reads stated numbers
+alone (one the solve finds is E080). The roll may be left to the solve, to find an instant:
+
+```sv
+Z := point
+Z coincident(under: follower, seen_from: cam) r0   // the roller as the cam sees it, at a roll
+Z distance(23mm) std.origin                        // found where it has risen 3 mm
+```
+
+An envelope in space generated under a drive is held to as any envelope in space is, the joint
+standing at the law's value of the roll where the source touches it:
+
+```sv
+tube := envelope(skin over t, under: follower, seen_from: cam)
+P coincident tube                                  // the ball's radius solves through P
+```
+
+A meshing on a drive reads no drive (E061): draw in the frame instead.
 
 **A frame the drawing moves**: a frame with axes and no joint, placed on geometry that moves as a
 declared parameter runs, is read over that parameter as a motion — where the drawing followed along

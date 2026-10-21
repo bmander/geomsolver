@@ -3,13 +3,15 @@
  * `.svd` states); an edit made at home and the drawing stood back after it; the crank's pin
  * dragged along its march; and a march that stops at a singular instant stopping the timeline
  * there.  Nothing shown at an instant is written back.  An edit takes no march before it returns,
- * and a scrub of the V-twin moves its parts in the 3D box rather than cutting them again (#412). */
+ * and a scrub of the V-twin moves its parts in the 3D box rather than cutting them again (#412).
+ * `mechanisms/cam_follower.sv` scrubbed: the roller drawn in its follower rides on the profile cut
+ * from the follower's law (#483). */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import * as drawings from '../core/drawing.js';
-import { Point } from '../core/model.js';
+import { Curve, Point } from '../core/model.js';
 import { Scrub } from '../core/parameters.js';
 import { PlanDrag } from '../core/decompose.js';
 import { Document } from '../core/program.js';
@@ -26,6 +28,7 @@ const files: Record<string, string> =
   JSON.parse(await readFile(new URL('../examples/sources.json', import.meta.url), 'utf8'));
 const FOUR_BAR = files['mechanisms/four_bar.sv'];
 const TRIPLE_ROCKER = files['mechanisms/triple_rocker.sv'];
+const CAM = files['mechanisms/cam_follower.sv'];
 const VTWIN = files['vtwin/assembly.sv'];
 
 /** The rocker pin of a four-bar (ground `g`, crank `r`, coupler `l`, rocker `k`) at crank angle
@@ -189,4 +192,39 @@ test('a scrub of the V-twin moves its parts in the box and cuts none of them aga
   assert.equal(box.stats.cut, cut, 'nothing cut again along the scrub');
   assert.ok(box.stats.moved - moved >= 3 * cut,
             `every object placed at every step: ${box.stats.moved}`);
+});
+
+test('a cam is scrubbed with its roller riding on the profile cut for it', (t) => {
+  assert.ok(CAM, 'mechanisms/cam_follower.sv is packed');
+  const view = opened(CAM);
+  t.after(() => view.doc.dispose());
+  const m = view.marchOf('t');
+  assert.ok(m?.followed);
+  assert.equal(m.reached, 360);
+  assert.equal(m.singular, null);
+  const before = view.source;
+  const profile = view.doc.entity('profile');
+  assert.ok(profile instanceof Curve, 'no profile');
+  const outline = profile.polyline();
+  assert.ok(outline.length > 100, `${outline.length} points`);
+  // the roller's centre drawn in the follower, a point in the front view (the world's x and z)
+  const riding = (): [number, number] => {
+    const p = view.doc.entity('riding');
+    assert.ok(p instanceof Point, 'no riding');
+    return [p.params[0].value, p.params[2].value];
+  };
+  for (const deg of [0, 45, 90, 180, 270, 330]) {
+    assert.ok(view.showInstant('t', deg));
+    const lift = 5 * (1 - Math.cos((deg * Math.PI) / 180));
+    near(riding(), [25 + lift, 0], 1e-8, `the roller at ${deg}`);
+    // turned back by the cam, the roller's centre is a roller's radius from the cam: the nearest
+    // of the profile's polyline, to the polyline's resolution
+    const [s, c] = [Math.sin((deg * Math.PI) / 180), Math.cos((deg * Math.PI) / 180)];
+    const [x, y] = riding();
+    const seen: [number, number] = [c * x + s * y, -s * x + c * y];
+    const nearest = Math.min(...outline.map(([u, v]) => Math.hypot(u - seen[0], v - seen[1])));
+    assert.ok(Math.abs(nearest - 5) < 2e-2, `at ${deg} the roller stands ${nearest} from the cam`);
+  }
+  view.syncSeeds();
+  assert.equal(view.source, before, 'a scrub writes nothing back');
 });

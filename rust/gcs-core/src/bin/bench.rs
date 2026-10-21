@@ -273,16 +273,16 @@ fn bench_rounded() {
 /// **Boundaries against the flat solve** (#459): each document of `boundary::measure` solved flat
 /// (compile and solve, as a document is) and through its instances (`solve_through`, #454's
 /// prototype), timed, with the counts that do not depend on the machine beside each.  `bench
-/// boundaries [most]`: drives past `most` (100 by default) are solved flat only, and edits to
+/// boundaries [most]`: drives past `most` (1000 by default) are solved flat only, and edits to
 /// more than it not at all.
 fn bench_boundaries(most: usize) {
     use gcs_core::boundary::measure::{self, Document, Drive};
     use gcs_core::model::Sketch;
-    use gcs_core::solve::{solve_through, BlockMode, Boundary, SolveOpts, Through};
+    use gcs_core::solve::{solve_through, BlockMode, Boundary, SolveOpts, Through, Times};
     // the worst relative disagreement of two poses
     let apart = |a: &Sketch, b: &Sketch| a.params.iter().zip(&b.params)
         .map(|(p, q)| (p.value - q.value).abs() / (1.0 + q.value.abs())).fold(0.0, f64::max);
-    let reps = |n: usize| if n >= 100 { 1 } else if n >= 30 { 3 } else { 7 };
+    let reps = |n: usize| if n >= 300 { 3 } else { 7 };
     // (flat, flat block by block, through) medians in ms, and the last of each
     let run = |doc: &Document, n: usize| {
         let e = measure::read(&doc.src).expect("reads");
@@ -310,16 +310,17 @@ fn bench_boundaries(most: usize) {
             st = sk;
         }
         let gap = apart(&st, &sf);
-        (median(tf), median(tb), median(tt), f.unwrap(), fb.unwrap(), t.unwrap(), gap, named)
+        (median(tf), median(tb), median(tt), f.unwrap(), fb.unwrap(), t.unwrap(), gap, named,
+         (sf, st))
     };
     let solves = |t: &Through| t.evaluations.iter().map(|e| e.1).sum::<usize>();
     let ok = |b: bool| if b { "ok" } else { "FAIL" };
 
     println!("\n== boundaries (#459): repeated and distinct belt drives, flat and through their \
               runs ==");
-    println!("{:<22}{:>6}{:>6} | {:^30} | {:^9} | {:^62} | apart", "case", "N", "free",
-             "flat: ms / it / largest block", "blocks ms",
-             "through: ms / it / inner solves / inner it / again / parent");
+    println!("{:<22}{:>6}{:>6} | {:^30} | {:^9} | {:^74} | apart | off: flat / through mm",
+             "case", "N", "free", "flat: ms / it / largest block", "blocks ms",
+             "through: ms / it / inner solves / inner it / again / parent (entries)");
     for (label, distinct, shared) in [("identical", false, false), ("distinct", true, false),
                                       ("distinct, one unknown", true, true)] {
         for n in [1usize, 3, 10, 30, 100, 300, 1000] {
@@ -329,29 +330,96 @@ fn bench_boundaries(most: usize) {
                 Drive { r_large, ..Drive::PAPER }
             }).collect();
             let doc = measure::belts(&drives, shared);
-            // the dense parent is `parent_rows × parent_unknowns`, factored every step: past
-            // `most` drives only the flat solve runs (a hundred is seconds, three hundred minutes)
+            // past `most` drives only the flat solve runs
             if n > most {
                 let e = measure::read(&doc.src).expect("reads");
                 let mut sk = e.sketch.clone();
                 let t0 = Instant::now();
                 let f = measure::flat(&mut sk, SolveOpts::default());
                 let tf = ms(t0);
-                println!("{label:<22}{n:>6}{:>6} | {tf:9.1} {:>4} {:>4} {:>8} | {:^9} | {:^62} |",
+                println!("{label:<22}{n:>6}{:>6} | {tf:9.1} {:>4} {:>4} {:>8} | {:^9} | {:^74} |",
                          f.unknowns, f.result.iterations, f.largest_block, ok(f.result.success),
-                         "-", format!("not run: the parent is {0}x{0}, dense", 8 * n));
+                         "-", "not run");
                 continue;
             }
-            let (tf, tb, tt, f, fb, t, gap, named) = run(&doc, n);
+            let (tf, tb, tt, f, fb, t, gap, named, (sf, st)) = run(&doc, n);
+            let off = (measure::run_error(&sf, &drives), measure::run_error(&st, &drives));
             println!("{label:<22}{n:>6}{:>6} | {tf:9.1} {:>4} {:>4} {:>8} | {tb:9.1} | {tt:9.1} \
-                      {:>4} {:>6} {:>7} {:>6} {:>5}x{:<5} {:>4} | {gap:.0e}  \
-                      (named {named:.0} ms{})",
+                      {:>4} {:>6} {:>7} {:>6} {:>5}x{:<5} ({:>6}) {:>4} | {gap:.0e} | \
+                      {:.0e} / {:.0e}  (named {named:.0} ms{})",
                      f.unknowns, f.result.iterations, f.largest_block,
                      ok(f.result.success && fb.result.success),
                      t.result.iterations, solves(&t), t.inner_iterations, t.answered_again,
-                     t.parent_rows, t.parent_unknowns, ok(t.result.success),
+                     t.parent_rows, t.parent_unknowns, t.parent_entries, ok(t.result.success),
+                     off.0, off.1,
                      if fb.result.success { "" } else { "; block by block FAILED" });
         }
+    }
+
+    // where a through solve's time goes, phase by phase (`Through::times`), medians of `reps`
+    // solves: `inner` is every evaluation of a boundary, the most a cache of them could save
+    println!("\n== boundaries (#459): where the through solve's time goes, ms (medians) ==");
+    println!("{:<22}{:>6} | {:>7} {:>7} {:>8} {:>7} {:>7} {:>7} {:>7} {:>7} | {:>8} | {:>6} \
+              {:>8} {:>9}",
+             "case", "N", "compile", "setup", "inner", "jacob", "rows", "step", "rank", "other",
+             "total", "inner%", "solves", "µs/solve");
+    let phases = |label: &str, n: usize, ts: &[Times], solves: usize| {
+        let at = |f: fn(&Times) -> f64| median(ts.iter().map(|t| 1e3 * f(t)).collect());
+        let (compile, setup, inner) = (at(|t| t.compile), at(|t| t.setup), at(|t| t.inner));
+        let (jac, rows) = (at(|t| t.jacobian), at(|t| t.rows));
+        let (step, rank, other, total) =
+            (at(|t| t.step), at(|t| t.rank), at(Times::other), at(|t| t.total));
+        println!("{label:<22}{n:>6} | {compile:7.2} {setup:7.2} {inner:8.2} {jac:7.2} {rows:7.2} \
+                  {step:7.2} {rank:7.2} {other:7.2} | {total:8.2} | {:>5.0}% {solves:>8} {:>9.2}",
+                 100.0 * inner / total, 1e3 * inner / solves as f64);
+    };
+    for (label, distinct, shared) in [("identical", false, false), ("distinct", true, false),
+                                      ("distinct, one unknown", true, true)] {
+        for n in [1usize, 10, 100, 1000] {
+            if n > most {
+                continue;
+            }
+            let drives: Vec<Drive> = (0..n).map(|k| {
+                let spread = 40.0 + 10.0 * (k as f64 + 0.5) / n as f64;
+                Drive { r_large: if distinct { spread } else { 45.0 }, ..Drive::PAPER }
+            }).collect();
+            let doc = measure::belts(&drives, shared);
+            let e = measure::read(&doc.src).expect("reads");
+            let bs = measure::bounds(&e, &doc.boundaries).expect("boundaries");
+            let mut last = None;
+            let ts: Vec<Times> = (0..reps(n).max(5)).map(|_| {
+                let t = solve_through(&mut e.sketch.clone(), &bs, SolveOpts::default())
+                    .expect("a boundary");
+                let times = t.times;
+                last = Some(t);
+                times
+            }).collect();
+            phases(label, n, &ts, solves(&last.unwrap()));
+        }
+    }
+    // an edit to one drive of N, solved again from the solved pose
+    for n in [100usize, 1000] {
+        if n > most {
+            continue;
+        }
+        let (_, solved) =
+            measure::solved(&measure::belts(&vec![Drive::PAPER; n], false).src).expect("solves");
+        let mut drives = vec![Drive::PAPER; n];
+        drives[0].centres = 125.0;
+        let doc = measure::belts(&drives, false);
+        let e = measure::read(&doc.src).expect("reads");
+        let bs = measure::bounds(&e, &doc.boundaries).expect("boundaries");
+        let mut start = e.sketch.clone();
+        measure::carry(&solved, &mut start);
+        let mut last = None;
+        let ts: Vec<Times> = (0..reps(n).max(5)).map(|_| {
+            let t = solve_through(&mut start.clone(), &bs, SolveOpts::default())
+                .expect("a boundary");
+            let times = t.times;
+            last = Some(t);
+            times
+        }).collect();
+        phases("an edit to one drive", n, &ts, solves(&last.unwrap()));
     }
 
     println!("\n== boundaries (#459): a closed loop through k two-root points, flat and through \
@@ -361,7 +429,7 @@ fn bench_boundaries(most: usize) {
              "through: ms / it / inner solves / inner it / parent");
     for k in [2usize, 4, 8, 16, 32, 64, 128, 256] {
         let doc = measure::dyads(k);
-        let (tf, tb, tt, f, fb, t, gap, _) = run(&doc, k);
+        let (tf, tb, tt, f, fb, t, gap, _, _) = run(&doc, k);
         println!("{k:>5}{:>6} | {tf:9.1} {:>4} {:>4} {:>8} | {tb:9.1} | {tt:9.1} {:>4} {:>6} {:>7} \
                   {:>5}x{:<5} {:>4} | {gap:.0e}",
                  f.unknowns, f.result.iterations, f.largest_block,
@@ -425,7 +493,7 @@ fn bench_boundaries(most: usize) {
     println!("{:>6} | {:^22} | {:^74}", "N", "flat: ms / it",
              "through: ms / it / inner solves / inner it / boundaries whose inputs moved / \
               drives moved");
-    for n in [1usize, 10, 100] {
+    for n in [1usize, 10, 100, 1000] {
         if n > most {
             continue;
         }
@@ -476,7 +544,7 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("scrub") { bench_scrub(); return; }
     if std::env::args().nth(1).as_deref() == Some("rounded") { bench_rounded(); return; }
     if std::env::args().nth(1).as_deref() == Some("boundaries") {
-        bench_boundaries(std::env::args().nth(2).and_then(|n| n.parse().ok()).unwrap_or(100));
+        bench_boundaries(std::env::args().nth(2).and_then(|n| n.parse().ok()).unwrap_or(1000));
         return;
     }
     if std::env::args().nth(1).as_deref() == Some("delaunay") { bench_delaunay(std::env::args().nth(2).as_deref()); return; }

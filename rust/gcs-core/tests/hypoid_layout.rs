@@ -751,26 +751,29 @@ fn first_start(scenario: &str, jitters: &[f64], mut attempt: impl FnMut(f64,u32)
 }
 
 /// **A solve that stops on its iteration limit is rescued.** A design solved as solventc solves
-/// it and then jittered by a fifth of its extent (or a tenth: since a direction's row reads a sine
-/// or a cosine, #479, no fifth of the first 64 stops so) is back under the interactive acceptance
-/// within the DogLeg's hundred iterations and not at its solution: without the block rescue
-/// (`BlockMode::Off`) the solve succeeds on status 4, short of the recorded pair.  By default such
-/// a stop is not *settled* and the rescue runs: what it returns has settled, or is the stop bit for
-/// bit, unless a bound then breaks (status 5) — at every stop met.  And from some, the block pass
-/// settles it.  Which root it settles on is the layout's; the rough starts' gates hold that.  The
-/// bevel pair: since the heading's square from O is said as parallel to MC (#217) the configured
-/// hypoid converges inside the limit from every jitter of a fifth tried, and so does every design
-/// at a few hundredths.
+/// it and then jittered by a fifth of its extent is back under the interactive acceptance within
+/// `LIMIT` iterations and not at its solution: without the block rescue (`BlockMode::Off`) the
+/// solve succeeds on status 4, short of the recorded pair.  `LIMIT` is half the default: since a
+/// direction's row reads a sine or a cosine (#479) and a recovery is kept only where it settles
+/// (#449), no jitter of the first 64 at a fifth, a tenth or five others stops so within a
+/// hundred.  By default such a stop is not *settled* and the rescue runs: what it returns has
+/// settled, or is the stop bit for bit, unless a bound then breaks (status 5) — at every stop
+/// met.  And from some, the block pass settles it.  Which root it settles on is the layout's; the
+/// rough starts' gates hold that.  The bevel pair: since the heading's square from O is said as
+/// parallel to MC (#217) the configured hypoid converges inside the limit from every jitter of a
+/// fifth tried, and so does every design at a few hundredths.
 #[test]
 fn a_stop_on_the_iteration_limit_is_rescued() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
+    // half the default hundred, both solves alike: the block pass works to the same limit
+    const LIMIT: i32 = 50;
     let (_,rows) = recorded();
     let (k,mut e) = solved_design("bevel");
     let reference = e.sketch.clone();
-    first_start("a limit stop the block pass settles",&[0.2,0.1],|jitter,seed| {
+    first_start("a limit stop the block pass settles",&[0.2],|jitter,seed| {
         let start = crate::common::jittered(&reference,jitter,seed);
         e.sketch = start.clone();
-        let off = SolveOpts {blocks:BlockMode::Off,..SolveOpts::default()};
+        let off = SolveOpts {blocks:BlockMode::Off,max_iter:LIMIT,..SolveOpts::default()};
         let stop = solve::solve(&mut e.sketch,off);
         // a start that failed, or settled, is not the scenario, and may stand where the pair's
         // faces are not to be read
@@ -779,7 +782,7 @@ fn a_stop_on_the_iteration_limit_is_rescued() {
         if !(short > 1e-9) { return None; }
         let stopped = crate::common::bits(&e.sketch);
         e.sketch = start;
-        let res = solve::solve(&mut e.sketch,SolveOpts::default());
+        let res = solve::solve(&mut e.sketch,SolveOpts {max_iter:LIMIT,..SolveOpts::default()});
         let kept = crate::common::bits(&e.sketch) == stopped && res.status == stop.status;
         let broken = res.status == solve::BOUND_BROKEN;
         assert!(res.settled() || kept || broken,"seed {seed}: {res:?}");

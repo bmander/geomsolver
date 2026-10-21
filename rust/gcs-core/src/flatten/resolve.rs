@@ -82,6 +82,14 @@ fn resolve_dotted(segs: &[&str], span: Span, sc: &Scope, look: Lookup)
     look.find(&r, sc).ok_or_else(|| look.missing(&r, sc))
 }
 
+/// Which copy an index written `text` picks: a whole number, read in the scope.
+fn index(text: &str, sc: &Scope, units: Units) -> Option<usize> {
+    match value_of(text, &*sc.vals, units) {
+        Ok(v) if v.is_finite() && v >= 0.0 && v.round() == v => Some(v as usize),
+        _ => None,
+    }
+}
+
 /// The absolute name `name` has inside copy `k` of whichever block declares it, under
 /// `container` — the dotted path written before the indexed name (`l.` for `l.p[1]`, nothing
 /// for `p[1]`), which is an instance the block was walked inside.
@@ -129,12 +137,13 @@ fn under_member(target: &str, member: &str) -> bool {
     target == member || target.strip_prefix(member).is_some_and(|s| s.starts_with('.'))
 }
 
-/// What a reference is resolved against: the names declared so far, the aliases resolved
-/// (`Walk::alias_table`, or `Lazy`) and the units an index is read in — the one context every
-/// reference's lookup reads (`Walk::look`).
+/// What a reference is resolved against: the names declared so far (and which of them are
+/// solids'), the aliases resolved (`Walk::alias_table`, or `Lazy`) and the units an index is
+/// read in — the one context every reference's lookup reads (`Walk::look`).
 #[derive(Clone, Copy)]
 pub(super) struct Lookup<'l> {
     pub names: &'l BTreeSet<String>,
+    pub solids: &'l BTreeSet<String>,
     pub alias: &'l dyn Aliases,
     pub units: Units,
 }
@@ -262,7 +271,7 @@ impl Lookup<'_> {
     /// `c0.center` is the entity `c0` and its field `center`.  Which it is cannot be told from
     /// the spelling, only from what exists — so the longest match that names something wins.
     pub(super) fn raw(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
-        let Lookup { names, alias, units } = *self;
+        let Lookup { names, alias, .. } = *self;
         // `p[k]` names *which copy* of a repeated statement, so it is resolved before anything
         // else and the rest of the path is read against the copy it picks.  The index may stand
         // on the root or on a dotted name — `l.p[1]` is copy 1 of the `p` a block inside the
@@ -272,54 +281,7 @@ impl Lookup<'_> {
         // field of a copy is still a field, so it comes after.  Only once — a copy of a copy is
         // a thing no statement makes.
         if let Some(at) = r.path.iter().position(|s| matches!(s, Seg::Index(_))) {
-            let Seg::Index(text) = &r.path[at] else { unreachable!() };
-            if r.path[at + 1..].iter().any(|s| matches!(s, Seg::Index(_))) {
-                return None;
-            }
-            let k = match value_of(text, &*sc.vals, units) {
-                Ok(v) if v.is_finite() && v >= 0.0 && v.round() == v => v as usize,
-                _ => return None,
-            };
-            let mut segs: Vec<&str> = vec![r.root.text.as_str()];
-            for s in &r.path[..at] {
-                if let Seg::Field(f) = s {
-                    segs.push(f.text.as_str());
-                }
-            }
-            let leaf = segs.pop()?;
-            let abs = if segs.is_empty() {
-                copy_of("", leaf, k, sc, names)?
-            } else {
-                // A layout argument may alias an instance whose body contains the repetition.
-                // Resolve that container in the caller's scope before selecting its copy.
-                let path = r.path[..at - 1].to_vec();
-                let container = Ref { root: r.root.clone(), path, span: r.span };
-                let (root, rest) = self.raw(&container, sc)?;
-                let prefix = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
-                let scope = Scope { prefixes: vec![format!("{prefix}.")], ..sc.clone() };
-                copy_of("", leaf, k, &scope, names)?
-            };
-            // a member is no name (#188): the caller keeps it
-            let rest: Vec<String> = r.path[at + 1..]
-                .iter()
-                .filter_map(|s| match s {
-                    Seg::Field(f) => Some(f.text.clone()),
-                    Seg::Index(t) => Some(t.clone()),
-                    Seg::Member(_) => None,
-                })
-                .collect();
-            // greedy under the copy, as below: `cyl[0].small` is the entity `…cyl.small` and no
-            // field, where `p[1].x` is the entity `…p` and its field
-            for take in (1..=rest.len()).rev() {
-                let cand = format!("{abs}.{}", rest[..take].join("."));
-                if names.contains(&cand) {
-                    return Some((cand, rest[take..].to_vec()));
-                }
-                if let Some(t) = alias.alias(&cand) {
-                    return self.alias_target(&t, &rest[take..]);
-                }
-            }
-            return Some((abs, rest));
+            return self.copy(r, sc, at).or_else(|| self.face_of_copy(r, sc));
         }
 
         let mut segs: Vec<String> = vec![r.root.text.clone()];
@@ -359,6 +321,79 @@ impl Lookup<'_> {
             }
         }
         None
+    }
+
+    /// `raw` for a reference whose segment `at` is the first index: the copy it picks of the
+    /// block a name was declared in, and the rest of the path read against that copy.
+    fn copy(&self, r: &Ref, sc: &Scope, at: usize) -> Option<(String, Vec<String>)> {
+        let Lookup { names, alias, units, .. } = *self;
+        let Seg::Index(text) = &r.path[at] else { unreachable!() };
+        if r.path[at + 1..].iter().any(|s| matches!(s, Seg::Index(_))) {
+            return None;
+        }
+        let k = index(text, sc, units)?;
+        let mut segs: Vec<&str> = vec![r.root.text.as_str()];
+        for s in &r.path[..at] {
+            if let Seg::Field(f) = s {
+                segs.push(f.text.as_str());
+            }
+        }
+        let leaf = segs.pop()?;
+        let abs = if segs.is_empty() {
+            copy_of("", leaf, k, sc, names)?
+        } else {
+            // A layout argument may alias an instance whose body contains the repetition.
+            // Resolve that container in the caller's scope before selecting its copy.
+            let path = r.path[..at - 1].to_vec();
+            let container = Ref { root: r.root.clone(), path, span: r.span };
+            let (root, rest) = self.raw(&container, sc)?;
+            let prefix = std::iter::once(root).chain(rest).collect::<Vec<_>>().join(".");
+            let scope = Scope { prefixes: vec![format!("{prefix}.")], ..sc.clone() };
+            copy_of("", leaf, k, &scope, names)?
+        };
+        // a member is no name (#188): the caller keeps it
+        let rest: Vec<String> = r.path[at + 1..]
+            .iter()
+            .filter_map(|s| match s {
+                Seg::Field(f) => Some(f.text.clone()),
+                Seg::Index(t) => Some(t.clone()),
+                Seg::Member(_) => None,
+            })
+            .collect();
+        // greedy under the copy, as below: `cyl[0].small` is the entity `…cyl.small` and no
+        // field, where `p[1].x` is the entity `…p` and its field
+        for take in (1..=rest.len()).rev() {
+            let cand = format!("{abs}.{}", rest[..take].join("."));
+            if names.contains(&cand) {
+                return Some((cand, rest[take..].to_vec()));
+            }
+            if let Some(t) = alias.alias(&cand) {
+                return self.alias_target(&t, &rest[take..]);
+            }
+        }
+        Some((abs, rest))
+    }
+
+    /// **One copy's faces, past a solid** (`flange.drill[1]`, [0.157]): where an index picks no
+    /// copy of a declaration, it is read as part of the segment it stands on, as the faces are
+    /// named (`SolidE::step`, `solid::faces::FacePath`) — a reference that, so read, reaches no
+    /// solid is none.
+    fn face_of_copy(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
+        if self.solids.is_empty() {
+            return None;
+        }
+        let mut path: Vec<Seg> = Vec::with_capacity(r.path.len());
+        for s in &r.path {
+            let Seg::Index(text) = s else {
+                path.push(s.clone());
+                continue;
+            };
+            let k = index(text, sc, self.units)?;
+            let Some(Seg::Field(f)) = path.last_mut() else { return None };
+            f.text = format!("{}[{k}]", f.text);
+        }
+        let named = Ref { root: r.root.clone(), path, span: r.span };
+        self.raw(&named, sc).filter(|(abs, rest)| !rest.is_empty() && self.solids.contains(abs))
     }
 
     /// Explicit entity arguments grant access to that entity. Passing a layout grants its
@@ -806,7 +841,7 @@ impl<'a> Walk<'a> {
     /// A reference resolved against the names declared so far and `alias`, the walk's aliases
     /// as `alias_table` resolved them.
     pub(super) fn look<'l>(&'l self, alias: &'l dyn Aliases) -> Lookup<'l> {
-        Lookup { names: &self.names, alias, units: self.units }
+        Lookup { names: &self.names, solids: &self.solid_names, alias, units: self.units }
     }
 
     /// `alias_keys` brought up to the aliases made so far (`Lazy`): they are only ever added to.

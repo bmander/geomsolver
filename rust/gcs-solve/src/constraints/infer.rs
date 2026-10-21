@@ -131,11 +131,11 @@ fn carried_roll(sk: &Sketch, args: &[Arg]) -> Option<f64> {
     use crate::envelope::held::{carried, Moving};
     let (Some(Arg::Ent(p)), Some(Arg::Ent(q)), Some(Arg::Ent(m))) =
         (args.first(), args.get(1), args.get(2)) else { return None };
-    let moving = Moving::of_any(sk, m.i()).ok()?;
-    let values = moving.values(sk);
+    let moving = Moving::driven(sk, m.i()).ok()?;
+    let (values, laws) = (moving.values(sk), moving.drives());
     let (at, x) = (sk.lifted(p.i()), sk.lifted(q.i()));
     let gap = |deg: f64| {
-        carried(&moving.steps, &values, deg.to_radians(), x)
+        carried(&moving.steps, &laws, &values, deg.to_radians(), x)
             .map_or(f64::INFINITY, |(w, _)| crate::space::norm(crate::space::sub(w, at)))
     };
     let step = 360.0 / ROLL_SAMPLES as f64;
@@ -517,7 +517,7 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
                 .map_err(|why| format!("the solve cannot read {}: {why}", name(on)))?;
         }
         RateSource::Carried => {
-            crate::envelope::held::Moving::of_any(sk, on.i())
+            crate::envelope::held::Moving::driven(sk, on.i())
                 .map_err(|why| format!("the solve cannot read {}: {why}", name(on)))?;
         }
         RateSource::Envelope => {
@@ -594,7 +594,7 @@ pub fn validate(
     if kind.reads_motion() {
         let c = Constraint::new(kind, args.to_vec());
         let m = c.motion_of().ok_or("a point is carried by a motion")?;
-        crate::envelope::held::Moving::of_any(sk, m.i())
+        crate::envelope::held::Moving::driven(sk, m.i())
             .map_err(|why| format!("the solve cannot read {}: {why}", name(m)))?;
     }
     if matches!(kind, CKind::Rate | CKind::RateDistance) {

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.155 — October 2026**
+**Specification, Draft 0.158 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1536,10 +1536,17 @@ at(under: f) θ`) or rolled through a body, an envelope in space — reads the r
 parameter (one clock): at the roll `θ` the joint stands at the law's value of `θ`, not at `θ`
 itself, so a value of `t` alone is the frame undriven. A value reads one parameter (**E103**
 naming both otherwise), and a frame driven by a parameter of another type than `Angle` is
-followed but not read over the roll (**E080**). A relation the solve holds reads no drive: a point
-carried by the frame's motion at a roll (`X coincident x at(under: f) τ`), and so a rate of it, is
-**E080**; a relation held to an envelope in space generated under it is **E061**, and a meshing
-read on it is refused likewise; draw in the frame instead. **[0.155]** A profile in the plane
+followed but not read over the roll (**E080**). **[0.156]** A point carried by the frame's motion
+at a roll (`X coincident x at(under: f) τ`, or `X coincident(under: f, t == τ) x`) is held where the
+joint stands at the law's value of `τ`, seen from another frame as any carried point is, and a rate
+of it reads the law's rate: the law is a constant of the relation, read over the numbers it names
+where they are stated, so a law naming a number the drawing does not state (an unknown) is
+**E080**. A roll the relation owns may be left to the solve, which finds the instant a condition
+holds through the law (through 0.155 such a point, and its rate, was **E080**). **[0.158]** An
+envelope in space generated under a drive (§6.15) is held to as any envelope in space, the joint
+standing at the law's value of the roll where the source touches its envelope; the law reads the
+numbers it names where they are stated, as a carried point's (through 0.157, **E061**). A meshing
+read on a drive is **E061**; draw in the frame instead. **[0.155]** A profile in the plane
 generated under it (§6.15.1) is a curve as any other, its joint standing at the law's value of the
 roll: the law is a constant of the curve, read over the numbers it names where they are stated,
 and a relation holds to the profile as to one cut at a constant rate (through 0.154, **E080**). At
@@ -1722,7 +1729,9 @@ a **set** — a cone (`std.Cone`, and `std.ConeThrough` with its lean stated), a
 (`std.Cylinder`) or a plane (`std.HalfSpace`'s face, a distance along a line from a point,
 **[0.104]**), the operand of `envelope` read as what its body states at its point (§6.21) —
 or a **named side of a revolution** turned from a line, an arc or a circle (`surface(rev, e)`),
-under a motion built of turns about lines, screws and slides along lines, seen from any frame. Its
+under a motion built of turns about lines (a turn about a point of a view is the turn about the
+line through it square to the view, **[0.158]**), screws and slides along lines, a joint among them
+driven by a law of the roll or not (§6.14), seen from any frame. Its
 numbers — the source's axis and edge, a cone's half or a cylinder's radius where that is an
 unknown of the drawing (`half: hint(20deg)`), and every axis the motion turns about or slides
 along — are columns of every relation holding something to it, so what makes the source solves
@@ -2086,7 +2095,12 @@ the solid names every face whose name it begins: `pad` every face, `pad.plate` e
 gave it, `pad.plate.near` one. It is read from the solid, so an operand an instance made is
 reached from the instance's solid by its route (`part.pad.plate.near`), and never by a suffix:
 `pad.near` names a cap of `pad`'s own sweep and nothing of its operands'. `repeat a in X` (§12.8)
-runs over the same names.
+runs over the same names. **[0.157]** An operand the document wrote in a `repeat`'s or a `ring`'s
+body (§12.1) is a step with its copy's index, as a reference to the copy is written: the hole the
+second drill of `repeat 3 { … drill := solid(face(hole), through: plate) … }` cuts is
+`plate.drill[1].hole` (an edge drawn in the copy is named as the copy names it, `hole`), so
+`plate.drill[1]` names that drill's faces and `plate.drill` every copy's. A word's solids (a
+round's, §9.9) are no copies a document wrote, and are named as before.
 
 **Members** **[0.70]**. `S.ends` (where the edge a set is ends, below), `F.surface` (a face's or a
 set's whole surface), **[0.149]** `F.smooth` (a face's surface carried on across every seam where a

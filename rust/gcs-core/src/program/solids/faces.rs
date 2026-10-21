@@ -58,12 +58,14 @@ pub(super) fn validate_chain(
 
 /// Expanded references keep the source's last field as the boundary's public name — a block's
 /// copy spelled as the source would reach it, `side[2]` (#243 L8), so the copies of one edge
-/// stay apart.
-fn boundary_name(r: &crate::syntax::Ref) -> String {
+/// stay apart — read from `scope`, where the face is declared: an edge of the copy the face is
+/// drawn in is its own name there (`hole`), as a hole's is, its copy being the solid's
+/// (`drill[1].hole`, `SolidE::copy`).
+fn boundary_name(r: &crate::syntax::Ref, scope: Option<&str>) -> String {
     match r.path.last() {
         Some(crate::syntax::Seg::Field(n)) => n.text.clone(),
         _ => {
-            let public = super::super::public_path(&r.root.text);
+            let public = boundary_path(&r.root.text, scope);
             public.rsplit('.').next().unwrap_or(&public).to_string()
         }
     }
@@ -95,6 +97,7 @@ fn build_loop(
     sk: &mut Sketch,
     res: &Resolver,
     kids: &[Kid],
+    scope: Option<&str>,
     closed: bool,
     stmt: StmtId,
     span: Span,
@@ -104,7 +107,7 @@ fn build_loop(
         diags.push(Diag::within(code, span, stmt, m));
     };
     let refs = loop_refs(res, kids, span, &mut report)?;
-    let items = loop_items(sk, res, &refs, closed, &mut report)?;
+    let items = loop_items(sk, res, &refs, scope, closed, &mut report)?;
     // **a circle is a loop by itself, and may not stand in one** — and so is a closed curve
     let lone_circle = items.len() == 1 && (items[0].entity.kind == EntKind::Circle
         || (items[0].entity.kind == EntKind::Curve
@@ -189,10 +192,11 @@ fn loop_items(
     sk: &mut Sketch,
     res: &Resolver,
     refs: &[(&crate::syntax::Ref, Option<[&crate::syntax::Ref; 2]>)],
+    scope: Option<&str>,
     closed: bool,
     report: &mut impl FnMut(Code, Span, String),
 ) -> Option<Vec<Item>> {
-    let leaves: Vec<String> = refs.iter().map(|(r, _)| boundary_name(r)).collect();
+    let leaves: Vec<String> = refs.iter().map(|(r, _)| boundary_name(r, scope)).collect();
     let reserved: BTreeSet<&str> = leaves.iter().map(String::as_str).collect();
     let mut anonymous = 0;
     let mut items: Vec<Item> = Vec::with_capacity(refs.len());
@@ -259,7 +263,7 @@ fn loop_items(
         // rewritten `lid` into `cyl.lid`, and a face path is already prefixed by the solid it
         // belongs to — so keeping the whole thing spells `cyl.body.block.cyl.lid`, saying
         // "cylinder" twice about one face.  The leaf is what the source wrote.
-        let leaf = boundary_name(r);
+        let leaf = boundary_name(r, scope);
         let name = if leaf.starts_with('#') {
             fresh_boundary_name("edge", &mut anonymous, &reserved)
         } else {
@@ -577,9 +581,10 @@ fn build_face_whole(
     span: Span,
     diags: &mut Vec<Diag>,
 ) -> Option<usize> {
-    let (outer, plane) = build_loop(sk, res,
-        d.children.first().map(Vec::as_slice).unwrap_or_default(), d.closed, stmt, span, diags)?;
     let scope = owner.rsplit_once('.').map(|(p, _)| format!("{p}."));
+    let (outer, plane) = build_loop(sk, res,
+        d.children.first().map(Vec::as_slice).unwrap_or_default(), scope.as_deref(), d.closed,
+        stmt, span, diags)?;
     let mut holes = Vec::new();
     let mut used: BTreeSet<String> = outer.edge_names.iter().cloned().collect();
     for kid in d.children.get(1).into_iter().flatten() {
@@ -610,7 +615,7 @@ fn build_face_whole(
             // a face is a loop, so it is a hole as it stands: its outer loop, on its plane
             Hole::Face(f) => hole_of_face(sk, f, r, stmt, diags)?,
             Hole::Circle | Hole::Chain => {
-                build_loop(sk, res, std::slice::from_ref(kid), false, stmt, span, diags)?
+                build_loop(sk, res, std::slice::from_ref(kid), None, false, stmt, span, diags)?
             }
         };
         let prefix = boundary_path(&r.root.text, scope.as_deref());

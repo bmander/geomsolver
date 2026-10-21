@@ -20,6 +20,9 @@ export type Triangle = [Point, Point, Point];
 
 export interface SolveResult {
   success: boolean;
+  /** Accepted *and* stopped for a reason other than the iteration limit: the core's
+   *  `SolveResult::settled`, what "solved" means (#449). */
+  settled: boolean;
   status: number;
   message: string;
   residualNorm: number;   /* over all residuals, soft ones included */
@@ -36,9 +39,13 @@ export interface SolveResult {
 export const now = (): number =>
   (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 
-function readResult(out: Float64Array, message: string, method: string, t0: number): SolveResult {
+/** How many numbers the core writes for a solve's result (`write_result`): settled last. */
+export const RESULT_LEN = 9;
+
+export function readResult(out: Float64Array, message: string, method: string, t0: number): SolveResult {
   return {
     success: out[0] !== 0,
+    settled: out[8] !== 0,
     status: out[1],
     message,
     residualNorm: out[2],
@@ -234,7 +241,7 @@ export class System {
   } = {}): SolveResult {
     const method = opts.method ?? 'dogleg';
     const t0 = now();
-    return withBuf(8, 8, (b) => {
+    return withBuf(RESULT_LEN, 8, (b) => {
       const msg = takeStr(core().gcs_system_solve(
         this.handle, this.sketch.handle, METHOD_ID[method], opts.tol ?? 1e-14,
         opts.maxIter ?? 100, opts.maxNfev ?? 0,
@@ -254,7 +261,7 @@ export function rankTol(): number {
 export function solve(sketch: Sketch, opts: Parameters<System['solve']>[0] = {}): SolveResult {
   const method = opts.method ?? 'dogleg';
   const t0 = now();
-  return withBuf(8, 8, (b) => {
+  return withBuf(RESULT_LEN, 8, (b) => {
     const msg = takeStr(core().gcs_solve(
       sketch.handle, METHOD_ID[method], opts.tol ?? 1e-14, opts.maxIter ?? 100,
       opts.maxNfev ?? 0,
@@ -323,7 +330,7 @@ export class Drag {
 
   move(x: number, y: number): SolveResult {
     const t0 = now();
-    return withBuf(8, 8, (b) => {
+    return withBuf(RESULT_LEN, 8, (b) => {
       const msg = takeStr(core().gcs_drag_move(this.handle, this.sketch.handle, x, y, b.ptr));
       return readResult(b.f64, msg, this.method, t0);
     });
@@ -357,7 +364,7 @@ export class RadiusDrag {
 
   move(r: number): SolveResult {
     const t0 = now();
-    return withBuf(8, 8, (b) => {
+    return withBuf(RESULT_LEN, 8, (b) => {
       const msg = takeStr(core().gcs_radius_drag_move(this.handle, this.sketch.handle, r, b.ptr));
       return readResult(b.f64, msg, this.method, t0);
     });
@@ -399,7 +406,7 @@ export class TurnDrag {
    *  the plane's page. */
   sweep(from: [number, number], to: [number, number]): SolveResult {
     const t0 = now();
-    return withBuf(8, 8, (b) => {
+    return withBuf(RESULT_LEN, 8, (b) => {
       const msg = takeStr(core().gcs_turn_drag_sweep(this.handle, this.sketch.handle,
                                                      ...from, ...to, b.ptr));
       return readResult(b.f64, msg, 'dogleg', t0);
@@ -410,7 +417,7 @@ export class TurnDrag {
    *  side swung right), `down` about its right (the near side swung down). */
   turnSeen(eye: { az: number; el: number }, across: number, down: number): SolveResult {
     const t0 = now();
-    return withBuf(8, 8, (b) => {
+    return withBuf(RESULT_LEN, 8, (b) => {
       const msg = takeStr(core().gcs_turn_drag_seen(this.handle, this.sketch.handle, eye.az,
                                                     eye.el, across, down, b.ptr));
       return readResult(b.f64, msg, 'dogleg', t0);

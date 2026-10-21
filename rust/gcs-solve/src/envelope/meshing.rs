@@ -112,13 +112,13 @@ impl Contact {
 /// A flank as a meshing's constants say it: an envelope or a source standing still (`held`), or
 /// a surface traced in space as its member sees it (#326, `traced`: its domain and constants).
 #[derive(Clone, Debug)]
-enum Side {
-    Held(Layout),
+enum Side<'a> {
+    Held(Layout<'a>),
     Traced { domain: [[f64; 2]; 2], k: Vec<f64>, width: usize },
 }
 
-impl Side {
-    fn read(k: &[f64]) -> Option<Side> {
+impl Side<'_> {
+    fn read(k: &[f64]) -> Option<Side<'_>> {
         if let Some((domain, c)) = crate::traced::flank_parts(k) {
             return Some(Side::Traced { domain, k: c.to_vec(), width: crate::traced::flank_width(k) });
         }
@@ -134,11 +134,11 @@ impl Side {
 
 /// A meshing's constants read back.
 #[derive(Clone, Debug)]
-struct Mesh {
+struct Mesh<'a> {
     lead: usize,
     /// The pinion's flank (the observer's) and the gear's (the source's), and where each one's
     /// constants are.
-    flanks: [Side; 2],
+    flanks: [Side<'a>; 2],
     consts: [Range<usize>; 2],
     steps: Vec<Step>,
     /// The steps the gear's and the pinion's turns are.
@@ -148,8 +148,8 @@ struct Mesh {
     ease: Option<Ease>,
 }
 
-impl Mesh {
-    fn read(k: &[f64]) -> Option<Mesh> {
+impl Mesh<'_> {
+    fn read(k: &[f64]) -> Option<Mesh<'_>> {
         if k.len() < HEADER {
             return None;
         }
@@ -997,7 +997,7 @@ impl Meshing {
         Ok(m)
     }
 
-    fn mesh(&self) -> Mesh {
+    fn mesh(&self) -> Mesh<'_> {
         Mesh::read(&self.k).expect("a meshing's constants were read at its making")
     }
 
@@ -1275,7 +1275,7 @@ fn still_seed(l: &Layout, parts: &[f64], q: [f64; 3]) -> Option<[f64; 3]> {
 
 /// A formed flank's point at `[u, v]` against `q`.
 struct Nearest<'a> {
-    l: &'a Layout,
+    l: &'a Layout<'a>,
     parts: &'a [f64],
     q: [f64; 3],
     j: Mat,

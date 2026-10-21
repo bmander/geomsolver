@@ -6,7 +6,9 @@
 //! enclosed by interval arithmetic, so `MotionBounds`, the speed bound and with them the roll
 //! search and a swept field stay conservative under it.  The gate: a cam follower's lift against
 //! its law, followed and swept; and (#398 G) the cam itself, a profile in the plane generated
-//! under the drive, against its closed form, with a circle held osculating it.
+//! under the drive, against its closed form, with a circle held osculating it; a point carried
+//! under the drive held by a relation, at a stated roll, at one the solve finds, and its rate; and
+//! an envelope in space generated under the drive held to, a ball's radius solving through it.
 
 use gcs_core::interval::minimum::{Options, Status};
 use gcs_core::interval::Interval as I;
@@ -67,6 +69,13 @@ fn seen(t: f64) -> [f64; 3] {
     [v * s, 0.0, v * c]
 }
 
+/// How fast `seen` runs a radian of the roll at `t` (degrees): a central difference of it.
+fn seen_rate(t: f64) -> [f64; 3] {
+    let h: f64 = 1e-5;
+    let (a, b) = (seen(t + h.to_degrees()), seen(t - h.to_degrees()));
+    std::array::from_fn(|i| (a[i] - b[i]) / (2.0 * h))
+}
+
 fn point(e: &Elaborated, sk: &gcs_core::model::Sketch, n: &str) -> [f64; 3] {
     let p = e.map.ent_named(n).unwrap_or_else(|| panic!("no `{n}`"));
     assert_eq!(p.kind, EntKind::Point);
@@ -111,9 +120,7 @@ fn a_drive_seen_from_its_cam_is_its_law_turned_back() {
         // the rate is the law's, by the chain rule through its jet, against a difference of the
         // closed form
         let v = m.velocity(r0);
-        let h: f64 = 1e-5;
-        let d: Vec<f64> = (0..3).map(|i| (seen(t + h.to_degrees())[i]
-            - seen(t - h.to_degrees())[i]) / (2.0 * h)).collect();
+        let d = seen_rate(t);
         assert!((0..3).all(|i| (v[i] - d[i]).abs() < 1e-6), "at {t}: {v:?} against {d:?}");
         // the pose alone agrees
         let q = family.pose_at(t.to_radians()).unwrap().point(r0);
@@ -233,9 +240,12 @@ fn a_roll_through_a_body_under_a_drive_is_conservative() {
 #[test]
 fn a_drive_refuses_what_it_cannot_mean() {
     let said = |extra: &str| crate::common::lenient::read(&cam(extra)).1;
-    // a relation the solve holds reads no law
-    let s = said("X := point\nX coincident r0 at(under: follower) 30deg\n");
-    assert!(s.len() == 1 && s[0].starts_with("E080") && s[0].contains("driven by `t`"), "{s:?}");
+    // a law is read over stated numbers, not an unknown the solve finds (#398 G)
+    let s = said("param k: Scalar\nlift := frame\n\
+        std.Slide(lift, along: stem, advance: 360mm)\nfix(value == 5deg * k * (1 - cos(t))) lift\n\
+        X := point\nfix((0, 0, 22)) X\nX coincident r0 at(under: lift) 30deg\n");
+    assert!(s.len() == 1 && s[0].starts_with("E080")
+            && s[0].contains("reads `k`, which the drawing does not state"), "{s:?}");
     // one parameter drives a joint
     let s = said("param u: Angle over (0deg, 90deg)\nlift := frame\n\
         std.Slide(lift, along: stem, advance: 360mm)\nfix(value == t + u) lift\n");
@@ -245,10 +255,11 @@ fn a_drive_refuses_what_it_cannot_mean() {
         std.Slide(lift, along: stem, advance: 360mm)\nfix(value == 90deg * s) lift\n\
         q := sweep(ball over t, under: lift)\n");
     assert!(s.len() == 1 && s[0].starts_with("E080") && s[0].contains("a Scalar"), "{s:?}");
-    // nor does a relation held to an envelope the drive generates
+    // nor does a relation held to a meshing under the drive, which reads its mesh's turns at a
+    // constant ratio (an envelope in space generated under one is held, #398 G)
     let s = said("wall := surface(ball, meridian)\n\
-        g := envelope(wall over t in (0deg, 30deg), under: follower, seen_from: cam)\n\
-        p := point hint((3, 0, 21))\np coincident g\n");
+        contact := meshing(wall, wall over t in (0deg, 30deg), under: follower, seen_from: cam)\n\
+        p := point hint((3, 0, 21))\np coincident contact\n");
     assert!(s.len() == 1 && s[0].starts_with("E061") && s[0].contains("`follower` is driven"),
             "{s:?}");
 }
@@ -372,5 +383,134 @@ fn a_relation_holds_to_a_profile_generated_under_a_drive() {
     let d = (k.0 - c[0]).hypot(k.1 - c[1]);
     assert!((d - want).abs() < 1e-6, "the centre stands {d} from the profile");
     // the curvature contact's Jacobian, the law read through it, is the system's derivative
+    crate::common::fd_jacobian(&e.sketch, 1e-5);
+}
+
+/// **A point carried under a drive, held by a relation** (#398 G): `X coincident r0 at(under:
+/// follower) τ` holds `X` where the follower stands at its law's value of `τ`, the law carried in
+/// the row's constants — against the closed form under the follower alone and seen from the cam,
+/// at a roll stated and at one the solve finds.
+#[test]
+fn a_point_carried_under_a_drive_is_its_law() {
+    let rolls = [0.0, 30.0, 90.0, 135.0, 200.0, 315.0];
+    let mut extra = String::new();
+    for (k, t) in rolls.iter().enumerate() {
+        extra += &format!("X{k} := point\nX{k} coincident r0 at(under: follower) {t}deg\n\
+            Y{k} := point\nY{k} coincident r0 at(under: follower, seen_from: cam) {t}deg\n");
+    }
+    let e = solved(&cam(&extra));
+    assert!(e.ok(), "{:?}", e.diags);
+    for (k, &t) in rolls.iter().enumerate() {
+        let x = point(&e, &e.sketch, &format!("X{k}"));
+        let want = [0.0, 0.0, BASE + lift(t)];
+        assert!((0..3).all(|i| (x[i] - want[i]).abs() < 1e-9), "at {t}: {x:?} against {want:?}");
+        let y = point(&e, &e.sketch, &format!("Y{k}"));
+        let want = seen(t);
+        assert!((0..3).all(|i| (y[i] - want[i]).abs() < 1e-9), "at {t}: {y:?} against {want:?}");
+    }
+    crate::common::fd_jacobian(&e.sketch, 1e-5);
+}
+
+/// **The instant a driven follower has risen 3 mm** (#398 G): the roll a relation owns, left to
+/// the solve, reads the law's rate through its column — the roller's centre seen from the cam held
+/// `BASE + 3` from the cam's centre is where `5 (1 − cos t) = 3`, `t = acos(0.4)`.
+#[test]
+fn the_roll_a_driven_point_is_carried_to_is_solved_through_its_law() {
+    let want = (0.4_f64).acos().to_degrees();
+    let s = seen(want);
+    let e = solved(&cam(&format!("Z := point hint(({}, {}, {}))\n\
+        Z coincident(under: follower, seen_from: cam) r0\n\
+        Z distance({}mm) std.origin\n", s[0] + 0.5, s[1], s[2] - 0.5, BASE + 3.0)));
+    assert!(e.ok(), "{:?}", e.diags);
+    let c = e.sketch.constraints.iter()
+        .find(|c| c.kind == gcs_core::constraints::CKind::CarriedPoint && !c.stated_roll())
+        .expect("held");
+    let got = e.sketch.params[c.args[3].param() as usize].value;
+    assert!((got - want).abs() < 1e-8, "the roll is {got}°, the closed form says {want}°");
+    let z = point(&e, &e.sketch, "Z");
+    assert!((0..3).all(|i| (z[i] - s[i]).abs() < 1e-8), "{z:?} against {s:?}");
+    crate::common::fd_jacobian(&e.sketch, 1e-5);
+}
+
+/// **A driven point's rate** (#398 G): `rate(X over t)` of a point carried under a drive is the
+/// roller's velocity as the cam sees it, the law's rate by the chain rule — against a difference
+/// of the closed form, held along a line through the point.
+#[test]
+fn a_driven_points_rate_is_its_laws() {
+    let t = 50.0;
+    let (s, d) = (seen(t), seen_rate(t));
+    let e = solved(&cam(&format!("W := point\n\
+        W coincident(under: follower, seen_from: cam, t == {t}) r0\n\
+        a := point\nfix(({}, {}, {})) a\nb := point hint(({}, {}, {}))\nv := line(a, b)\n\
+        rate(W over t) parallel v\nlength(10mm) v\n\
+        b level(std.y) a\n",
+        s[0], s[1], s[2], s[0] + d[0], s[1] + d[1], s[2] + d[2])));
+    assert!(e.ok(), "{:?}", e.diags);
+    let [a, b] = ["a", "b"].map(|n| point(&e, &e.sketch, n));
+    let n = d.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let got: Vec<f64> = (0..3).map(|i| (b[i] - a[i]) / 10.0).collect();
+    assert!((0..3).all(|i| (got[i] - d[i] / n).abs() < 1e-7), "{got:?} against {d:?}");
+}
+
+/// A ball whose radius the solve finds — its meridian `sleeve` about `r0`, its ends on the stem —
+/// and `tube`, the envelope in space of its side swept under the follower as the cam sees it: the
+/// canal surface about the path `seen`, at the ball's radius — held through `P`, stated at
+/// `off_the_path`.  `extra` adds statements.
+fn bulb(extra: &str) -> String {
+    let p = off_the_path();
+    cam(&format!("in std.front {{\n  lo := point hint((0, 17))\n  hi := point hint((0, 23))\n  \
+        lo coincident stem\n  hi coincident stem\n  \
+        sleeve := arc(center: r0, start: lo, end: hi)\n  axle := line(lo, hi)\n}}\n\
+        bulb := solid(face(sleeve, axle), about: axle)\n\
+        skin := surface(bulb, sleeve)\n\
+        tube := envelope(skin over t, under: follower, seen_from: cam)\n\
+        P := point\nfix(({}, {}, {})) P\nP coincident tube\n{extra}", p[0], p[1], p[2]))
+}
+
+/// Where `bulb`'s tests stand their point: off the path at 60° by 2 mm outward in the cam's plane
+/// and 2 mm square to it, so the path's nearest point is `seen(60)`, `2√2` away.
+fn off_the_path() -> [f64; 3] {
+    let (s, d) = (seen(60.0), seen_rate(60.0));
+    let n = d[0].hypot(d[2]);
+    let out = [-d[2] / n, 0.0, d[0] / n];
+    let out = if out[0] * s[0] + out[2] * s[2] > 0.0 { out } else { out.map(|x| -x) };
+    [s[0] + 2.0 * out[0], 2.0, s[2] + 2.0 * out[2]]
+}
+
+/// **A relation held to an envelope in space generated under a drive** (#398 G): the ball's
+/// radius solves so the tube its side sweeps under the follower, as the cam sees it, passes
+/// through a point stated off the path — the law carried in the contact's constants and read in
+/// Taylor arithmetic, so the rows and their Jacobian are exact through it.  The closed form: the
+/// radius is the point's distance from the path `seen`, met at the roll whose point is nearest.
+#[test]
+fn a_relation_holds_to_an_envelope_generated_under_a_drive() {
+    let e = solved(&bulb(""));
+    assert!(e.ok(), "{:?}", e.diags);
+    let [r0, lo] = ["r0", "lo"].map(|n| point(&e, &e.sketch, n));
+    let got = (0..3).map(|i| (lo[i] - r0[i]).powi(2)).sum::<f64>().sqrt();
+    let want = 8_f64.sqrt();
+    assert!((got - want).abs() < 1e-9, "the ball's radius is {got}, the closed form says {want}");
+    let c = e.sketch.constraints.iter()
+        .find(|c| c.kind == gcs_core::constraints::CKind::PointOnEnvelope).expect("held");
+    // the place's roll, in radians: where the path's point is nearest
+    let roll = e.sketch.params[c.args[4].param() as usize].value.to_degrees();
+    assert!((roll - 60.0).abs() < 1e-7, "met at {roll}°, the closed form says 60°");
+    crate::common::fd_jacobian(&e.sketch, 1e-5);
+}
+
+/// **The normal of an envelope generated under a drive** (#398 G): a line held along the tube's
+/// normal where a point is held to it runs from the path's nearest point through the point.
+#[test]
+fn an_envelopes_normal_under_a_drive_is_its_closed_forms() {
+    let p = off_the_path();
+    let s = seen(60.0);
+    let e = solved(&bulb(&format!("Q := point hint(({}, {}, {}))\nnl := line(P, Q)\n\
+        length(5mm) nl\ntube perpendicular(at: P) nl\n",
+        p[0] + (p[0] - s[0]) * 1.5, p[1] + (p[1] - s[1]) * 1.5, p[2] + (p[2] - s[2]) * 1.5)));
+    assert!(e.ok(), "{:?}", e.diags);
+    let q = point(&e, &e.sketch, "Q");
+    let r = 8_f64.sqrt();
+    let want: Vec<f64> = (0..3).map(|i| p[i] + (p[i] - s[i]) * 5.0 / r).collect();
+    assert!((0..3).all(|i| (q[i] - want[i]).abs() < 1e-8), "{q:?} against {want:?}");
     crate::common::fd_jacobian(&e.sketch, 1e-5);
 }

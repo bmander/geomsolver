@@ -36,9 +36,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 - **Delete takes everything selected** that has a statement of its own (`edit::remove`): what a
   component or a block made stays, counted in `Edit::kept`, and the rest goes — so a band swept
   over the drawing that also caught `std`'s datums deletes the drawing, and the status line says
-  what stayed.  Refused, saying why, only when nothing would go.  The key and the workspace's
-  Delete button are one function (`main.ts`'s `deleteSelection`): the focused constraint, else the
-  drawing's selection, the solids or the picture.  Gate:
+  what stayed.  Refused, saying why, only when nothing would go.  The key and Edit ▸ Delete are
+  one function (`main.ts`'s `deleteSelection`): the focused constraint, else the drawing's
+  selection, the solids or the picture.  Gate:
   `deleting_beside_what_a_component_made_takes_the_rest`, and the app test beside it.
 - **Space selects nothing** (`SketchView.selectNone`): the drawing's selection, the solids and the
   picture let go, and with them the focused constraint (`onSelect` drops it); the tool stays down,
@@ -259,8 +259,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   orbits, middle or ⇧right-drag pans, the wheel zooms; a trackpad's pinch (ctrl-wheel, Safari's
   `gesturechange`) zooms and its scroll pans (`gesture::scrolled`), and two touch fingers pinch
   and pan (`touchNavigation`: a lone finger's press waits `TOUCH_HOLD_MS` or `TOUCH_SLOP_PX`, so
-  a pinch neither clicks a tool nor drags).  **Orbit mode** (`SketchView.orbitMode`, the Orbit
-  button `o` in the workspace's lower-right corner, beside Delete) makes a primary-button press —
+  a pinch neither clicks a tool nor drags).  **Orbit mode** (`SketchView.orbitMode`, key `o`, and
+  the Orbit button in the workspace's lower-right corner, shown only under `pointer: coarse` — a
+  mouse orbits with its right button; Delete is Edit ▸ Delete) makes a primary-button press —
   one finger on a phone — an orbit, whatever tool is down; a pinch still zooms and pans.  A flat
   document opens square on to the front, one with a solid or off-front geometry from three
   quarters (`homeOrbit`);
