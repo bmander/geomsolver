@@ -130,6 +130,10 @@ fn unnamed_component_calls_keep_their_instances_distinct_and_source_intact() {
 const AXES: &str = "unit mm\nuse std\nin std.front {\no := point\nq := point\n\
     fix((10, 20)) o\nfix((14, 23)) q\nf := std.Turned(o, q)\n}\n";
 
+/// The datum then turns from `(4, 3)` to `(0, 5)`, about 53°: `v` follows a quarter turn ahead of
+/// `u`.  Not a whole quarter: `std.Turned`'s `v` is `perpendicular` and `equal` to `u`, whose two
+/// roots lie either side of it, and a quarter turn puts `t` on `v`'s own point — the two lines
+/// one, either root as near as the other, and which the solve takes a rounding's.
 #[test]
 fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
     let mut e = build(&format!("{AXES}in std.front {{\np := point hint((100, -200))\n\
@@ -139,10 +143,11 @@ fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
     close(e.sketch.point_xy(p), (4.8, 18.6));
     let q = e.map.ent_named("q").unwrap().i();
     let [x, y] = e.sketch.point_params(q);
-    e.sketch.params[x as usize].value = 7.0;
-    e.sketch.params[y as usize].value = 24.0;
+    e.sketch.params[x as usize].value = 10.0;
+    e.sketch.params[y as usize].value = 25.0;
     solved(&mut e.sketch);
-    close(e.sketch.point_xy(p), (11.4, 14.8));
+    // u = (0, 1), v = (−1, 0): o − 5u + 2v
+    close(e.sketch.point_xy(p), (8.0, 15.0));
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
     let ordinate = |k: CKind| k == CKind::Ordinate;
     let back = io::loads(&io::dumps(&e.sketch, None)).unwrap();
@@ -389,4 +394,29 @@ fn vtwin_hardware_changes_update_pockets_bores_and_seal_grooves() {
     near((at("plate.thr.seal1.p").1 - at("plate.thr.seal2.p").1).abs(), 2.7);
     near((at("bankL.pis.g1R").0 - at("bankL.pis.g1L").0).hypot(
         at("bankL.pis.g1R").1 - at("bankL.pis.g1L").1), 12.48);
+}
+
+/// `std.Turned`'s `v` is a quarter turn *anticlockwise* of its `u`, whatever the start (#497):
+/// `t` turned a quarter in one solve stands on `v`'s old place, where a perpendicular-and-equal
+/// pair has two roots equally near, and turned past a quarter starts nearer the mirrored one.
+/// The frame comes out right-handed from every one, and states no dimension of its own.
+#[test]
+fn a_turned_frame_keeps_its_handedness_however_far_its_datum_turns() {
+    for deg in [90.0f64, 120.0, 150.0, 180.0, -90.0, -150.0] {
+        let mut e = build(AXES);
+        solved(&mut e.sketch);
+        let (o, q) = (e.map.ent_named("o").unwrap().i(), e.map.ent_named("q").unwrap().i());
+        let [x, y] = e.sketch.point_params(q);
+        let (c, s) = (deg.to_radians().cos(), deg.to_radians().sin());
+        e.sketch.params[x as usize].value = 10.0 + 4.0 * c - 3.0 * s;
+        e.sketch.params[y as usize].value = 20.0 + 4.0 * s + 3.0 * c;
+        solved(&mut e.sketch);
+        let (ox, oy) = e.sketch.point_xy(o);
+        let (tx, ty) = e.sketch.point_xy(q);
+        let (vx, vy) = e.sketch.point_xy(e.map.ent_named("f.q").unwrap().i());
+        let (u, v) = ((tx - ox, ty - oy), (vx - ox, vy - oy));
+        close(v, (-u.1, u.0));
+    }
+    let e = build(AXES);
+    assert!(gcs_core::callout::layout(&e.sketch, 1.0).is_empty(), "a frame states no dimension");
 }

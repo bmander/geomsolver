@@ -480,18 +480,20 @@ fn analyse(
     a.held = held;
 
     // the root choices it states, and the roots they admit: read here of each root a probe finds,
-    // since a probe is no document solve and is steered by none of them (`solve::steer`, #157)
+    // since a probe is no document solve and is steered by none of them (`solve::steer`, #157).
+    // Its orientations, and its bounds (§9.6), which `alone` keeps among its rows
     let choices: Vec<(&String, [usize; 3], i32)> = map.chosen.iter()
         .filter(|(_, path)| inst.contains(path))
         .filter_map(|(k, _)| {
             Some((k, crate::decompose::branch_key_points(k)?, *sk.orientations.get(k)?))
         })
         .collect();
-    a.stated = choices.len();
+    a.stated = choices.len() + rows.iter().filter(|c| c.bound.is_some()).count();
     if a.rank == a.unknowns && a.unknowns > 0 && a.unknowns <= SEARCHED {
-        let admits = |s: &Sketch| choices.iter().all(|&(_, [p, q, r], v)| {
-            crate::model::orientation(s, p, q, r) * v as f64 > 0.0
-        });
+        let admits = |s: &Sketch| crate::solve::bounds_hold(s)
+            && choices.iter().all(|&(_, [p, q, r], v)| {
+                crate::model::orientation(s, p, q, r) * v as f64 > 0.0
+            });
         let mut roots = search(&mut alone, &own, &made, world, size, &admits);
         roots.moved = generic != base;
         a.roots = Some(roots);

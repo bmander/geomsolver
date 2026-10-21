@@ -7,8 +7,10 @@ use engine.dims (D, ch, ph, rpin)
 use std (offset)
 
 // A line tangent to two circles at both ends — a belt run, a crank web's flank, a cam's flank.
-// `side` says which side of the centre line: the seeds are the two contact points at the bearing
-// square to the line of centres, so the solve starts on the branch that was asked for.
+// `side` says which side of the centre line: 1 the left of `k1` to `k2`, -1 the right.  That is
+// stated as both circles on the run's other side, which is the outer tangent there — neither a
+// crossed one nor the run of no length where overlapping circles meet; the seeds are the two
+// contact points at the bearing square to the line of centres.
 part Span(k1: circle, k2: circle, side: Scalar) {
   a := point hint(at: k1, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
   b := point hint(at: k2, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
@@ -17,6 +19,14 @@ part Span(k1: circle, k2: circle, side: Scalar) {
   b coincident k2
   s tangent(at: p1) k1
   s tangent(at: p2) k2
+  when side > 0 {
+    cw(a, b, k1.center)
+    cw(a, b, k2.center)
+  }
+  when side < 0 {
+    ccw(a, b, k1.center)
+    ccw(a, b, k2.center)
+  }
 }
 
 // A piston: a rectangle about its small end, the crown `ch` above the pin, two rings under the
@@ -47,6 +57,16 @@ part Piston(small: point, pin: Int) {
   cl distance(6, along: down) r1.p2
   cl distance(12, along: down) r2.p1
   cl distance(12, along: down) r2.p2
+  // seen edge on, the piston stands at its own station along the crank axis, so that picture is
+  // the one turned into a solid: the half right of the bore axis, turned about it
+  when pin == 0 {
+    construction ct := point hint((small.x, small.y + ch))
+    construction sk := point hint((small.x, small.y + ch - ph))
+    ct midpoint crown
+    sk midpoint skirt
+    construction centre := line(sk, ct)
+    body := solid(face(ct, cr, sr, sk, -> close), about: centre)
+  }
 }
 
 // A point placed from `o` by two ordinates — the corner of an outline, a centre on a pitch.
@@ -67,4 +87,19 @@ part Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   b offset(dx: x1, dy: y0) o
   c offset(dx: x1, dy: y1) o
   d offset(dx: x0, dy: y1) o
+}
+
+// Open this file to preview cylinder 1's piston at top dead centre: on its small end in the end
+// section, its pin seen end on, and edge on in the side section, where it is turned into a solid.
+preview {
+  unit mm
+  in std.side {
+    small := At(std.side.origin, dx: 0mm, dy: engine.dims.R + engine.dims.L)
+    piston := Piston(small.p, pin: 1)
+  }
+  in std.front {
+    small_s := At(std.origin, dx: engine.dims.front + 25mm + engine.dims.P / 2,
+                  dy: engine.dims.R + engine.dims.L)
+    piston_s := Piston(small_s.p, pin: 0)
+  }
 }

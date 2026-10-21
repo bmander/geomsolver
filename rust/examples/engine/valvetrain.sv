@@ -5,6 +5,7 @@
 
 use engine.dims (rb, rn, stem)
 use engine.parts
+use std
 
 // A tangent cam about `c`, its nose `dn` out at `phi` from the line `ref`, measured
 // counter-clockwise: the base circle, the nose circle and the two flanks tangent to both.
@@ -58,4 +59,27 @@ part Valve(seat: point, ax: line, lift: Length, head: Length) {
   hc midpoint hd
   hd perpendicular ax
   h1 distance(head) h2
+  // which way each piece stands, the axis running from the seat up to the cam: the face's `f1`
+  // and the head's `h1` on its left, the cam above the face and the bucket and the stem under it
+  ccw(ax.p1, ax.p2, f1)
+  ccw(ax.p1, ax.p2, h1)
+  ccw(f1, f2, ax.p2)
+  cw(f1, f2, b1)
+  cw(f1, f2, b2)
+  cw(f1, f2, hc)
+}
+
+// Open this file to preview cylinder 1's intake valve and its lobe where the table's cycle puts
+// them, stood upright: the valve's seat at the origin of the end view, the cam's centre `stem +
+// rb` above it.
+preview {
+  unit mm
+  in std.side {
+    cam := engine.parts.At(std.side.origin, dx: 0mm, dy: stem + rb)
+    vaxis := line(std.side.origin, cam.p)
+    ai := (engine.dims.cycle - engine.dims.icenter) / 2
+    lobe := Lobe(cam.p, vaxis, phi: 180deg + ai, dn: engine.dims.dn_i)
+    valve := Valve(std.side.origin, vaxis, lift: max(rb, engine.dims.dn_i * cos(ai) + rn) - rb,
+                   head: engine.dims.div)
+  }
 }

@@ -8,14 +8,15 @@
 // and the electromagnetic sizing that meets it, is `motor.dims`: 746 W and 27.9 N·m at 255
 // rpm, 32 km/h on a 26" wheel, from a 48 V pack at 18 A.
 //
-// **Two views of one frame** (`motor.parts`).  The end view, `std.front`, is the
+// **Two views of one frame** (`motor.parts.Datums`).  The end view, `std.front`, is the
 // electromagnetic section: the slots, the magnets, the ring, the spoke and screw circles, the
 // carrier's windows, the key.  The half-section along the axle, `std.side`, is every turned
 // profile — axle, carrier, covers, bearings, spacers, locknuts, end turns — each a stepped
 // outline turned about the axle's centreline.  Every solid is a sweep of a face drawn in one of
 // them; a hole is a face drawn where it is seen round, swept through the part it bores.
 //
-// **The parts** (each its own module, each a component handed the frame and the table):
+// **The parts** (each its own module, each a `part`: a function of the frame it is drawn about and
+// what it is mated to, reading the table, `motor.dims`, as constants of its own definition):
 //
 //   motor.axle      Axle      4140, Ø24 / Ø20 / M14 × 1.5 with 10 mm flats; the key; the cable port
 //   motor.carrier   Carrier   6061-T6 spider: hub, web with six windows, rim under the stack
@@ -29,13 +30,14 @@
 // 6885 A 8 × 7 × 32 key; two M14 × 1.5 axle nuts and a torque arm; three SS41 hall sensors
 // (drawn, in the stator); a 3 × 2.5 mm² + 5 × 0.3 mm² cable.
 //
-// The drawing has no freedom: the rotor's angle is the table's `theta`, a north pole on the
-// datum.  The claims at the end are the fits the assembly depends on — the gap, the copper
-// clear of the covers, the stator clear of everything that turns — judged on the solids.
+// The drawing has no freedom: the rotor's angle is its formal, given the table's `theta`, a north
+// pole on the datum.  The claims at the end are the fits the assembly depends on — the gap, the
+// copper clear of the covers, the stator clear of everything that turns — judged on the solids.
 
 unit mm
 use std (horizontal)
-use motor.dims
+use motor.dims (brg_id, brg_in, brg_od, brg_w, d_end, d_seat, disc_face, disc_r, fw_r, fw_to, old,
+                spokes, step_end)
 use motor.parts
 use motor.axle
 use motor.carrier
@@ -54,41 +56,37 @@ in std.side {
   horizontal ax
   length(100mm) ax
 }
-frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
-          so: std.side.origin, ax: ax, to: std.top.origin}
+// what every part is drawn about: each draws in the planes these are drawn in
+frame := {o: std.origin, datum: datum, so: std.side.origin, ax: ax}
 
 // -- what stands still: the axle, the carrier keyed to it, the stator pressed on the carrier ---
-axle := motor.axle.Axle(frame, dims: motor.dims.motor_dims)
-carrier := motor.carrier.Carrier(frame, dims: motor.dims.motor_dims, exit: axle.exit)
-stator := motor.stator.Stator(frame, dims: motor.dims.motor_dims)
+// (the axle's cable port is drawn in the plan, about its origin)
+axle := motor.axle.Axle(frame, std.top.origin)
+carrier := motor.carrier.Carrier(frame, exit: axle.exit)
+stator := motor.stator.Stator(frame)
 
 // -- what turns: the ring and its magnets, and the covers screwed to its ends -------------------
-rotor := motor.rotor.Rotor(frame, dims: motor.dims.motor_dims)
-left := motor.cover.Cover(frame, dims: motor.dims.motor_dims, screws: rotor.screw, sg: -1,
-                          boss_to: motor.dims.disc_face, boss_r: motor.dims.disc_r,
+rotor := motor.rotor.Rotor(frame, theta: motor.dims.theta)
+left := motor.cover.Cover(frame, rotor.screw, sg: -1, boss_to: disc_face, boss_r: disc_r,
                           spoke_phase: 0deg, disc: 1)
-right := motor.cover.Cover(frame, dims: motor.dims.motor_dims, screws: rotor.screw, sg: 1,
-                           boss_to: motor.dims.fw_to, boss_r: motor.dims.fw_r,
-                           spoke_phase: 180deg / motor.dims.spokes, disc: 0)
+right := motor.cover.Cover(frame, rotor.screw, sg: 1, boss_to: fw_to, boss_r: fw_r,
+                           spoke_phase: 180deg / spokes, disc: 0)
 
 // -- between them: the bearings on the axle's shoulders, and what clamps their inner races -----
 // Each bearing stands on a shoulder of the carrier's seat; a spacer tube runs from its inner
 // race to the step down to the thread, and the flanged locknut on the thread clamps the two
 // against the shoulder, its face where the dropout's is, 67.5 from the mid-plane.
-brg_in := motor.dims.brg_in
-brg_out := motor.dims.brg_in + motor.dims.brg_w
-bearing_l := motor.parts.Revolved(frame, s0: -brg_out, s1: -brg_in, r0: motor.dims.brg_id / 2,
-                                  r1: motor.dims.brg_od / 2)
-bearing_r := motor.parts.Revolved(frame, s0: brg_in, s1: brg_out, r0: motor.dims.brg_id / 2,
-                                  r1: motor.dims.brg_od / 2)
-spacer_l := motor.parts.Revolved(frame, s0: -motor.dims.step_end, s1: -brg_out,
-                                 r0: motor.dims.d_seat / 2, r1: motor.dims.spacer_r)
-spacer_r := motor.parts.Revolved(frame, s0: brg_out, s1: motor.dims.step_end,
-                                 r0: motor.dims.d_seat / 2, r1: motor.dims.spacer_r)
-nut_l := motor.parts.Revolved(frame, s0: -motor.dims.old / 2, s1: -motor.dims.step_end,
-                              r0: motor.dims.d_end / 2, r1: motor.dims.nut_r)
-nut_r := motor.parts.Revolved(frame, s0: motor.dims.step_end, s1: motor.dims.old / 2,
-                              r0: motor.dims.d_end / 2, r1: motor.dims.nut_r)
+brg_out := brg_in + brg_w
+bearing_l := motor.parts.Revolved(frame, s0: -brg_out, s1: -brg_in, r0: brg_id / 2, r1: brg_od / 2)
+bearing_r := motor.parts.Revolved(frame, s0: brg_in, s1: brg_out, r0: brg_id / 2, r1: brg_od / 2)
+spacer_l := motor.parts.Revolved(frame, s0: -step_end, s1: -brg_out, r0: d_seat / 2,
+                                 r1: motor.dims.spacer_r)
+spacer_r := motor.parts.Revolved(frame, s0: brg_out, s1: step_end, r0: d_seat / 2,
+                                 r1: motor.dims.spacer_r)
+nut_l := motor.parts.Revolved(frame, s0: -old / 2, s1: -step_end, r0: d_end / 2,
+                              r1: motor.dims.nut_r)
+nut_r := motor.parts.Revolved(frame, s0: step_end, s1: old / 2, r0: d_end / 2,
+                              r1: motor.dims.nut_r)
 
 // -- the fits -------------------------------------------------------------------------------
 claim stator.lamination clear(0.5mm) rotor.magnets      // the air gap, 0.6 drawn

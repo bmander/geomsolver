@@ -16,39 +16,45 @@
 // hall sensors stand in three slots' mouths.
 
 use std (horizontal)
-use motor.dims
-use motor.parts
+use motor.dims (bo, end_turn_in, hall_l, hall_r0, hall_r1, hall_w, hs, L, overhang, Rb, Rc, Rs, Ry,
+                slot_pitch, slots, wt)
+use motor.parts (Datums)
 
-component Stator(f: group, dims: group) {
-  in f.front {
-    ring dims.slots about f.o {
+part Stator(f: Datums) {
+  in f.o.plane {
+    ring slots about f.o {
       // the slot's centreline, and the centrelines of the teeth either side of it
-      construction sc := line(f.o, hint((dims.Rs + 3mm, 0mm)))
-      length(dims.Rs + 3mm) sc
-      construction t1 := line(f.o, hint((dims.Rs, -1mm)))
-      construction t2 := line(f.o, hint((dims.Rs, 1mm)))
-      length(dims.Rs) t1
-      length(dims.Rs) t2
-      t1 angle(dims.slot_pitch / 2) sc
-      sc angle(dims.slot_pitch / 2) t2
+      construction sc := line(f.o, hint((Rs + 3mm, 0mm)))
+      length(Rs + 3mm) sc
+      construction t1 := line(f.o, hint((Rs, -1mm)))
+      construction t2 := line(f.o, hint((Rs, 1mm)))
+      length(Rs) t1
+      length(Rs) t2
+      t1 angle(slot_pitch / 2) sc
+      sc angle(slot_pitch / 2) t2
       // the slot's near side (the clockwise one), from its bottom out past the tips
-      a := point hint((dims.Ry, -2mm))
-      h := point hint((dims.Rc, -3mm))
-      g := point hint((dims.Rs - dims.hs, -dims.bo / 2))
-      k := point hint((dims.Rs + 2mm, -dims.bo / 2))
-      a distance(dims.wt / 2, side: left) t1
-      h distance(dims.wt / 2, side: left) t1
-      f.o distance(dims.Ry) a
-      f.o distance(dims.Rc) h
-      g distance(dims.bo / 2, side: right) sc
-      k distance(dims.bo / 2, side: right) sc
-      f.o distance(dims.Rs - dims.hs) g
-      f.o distance(dims.Rs + 2mm) k
+      a := point hint((Ry, -2mm))
+      h := point hint((Rc, -3mm))
+      g := point hint((Rs - hs, -bo / 2))
+      k := point hint((Rs + 2mm, -bo / 2))
+      a distance(wt / 2, side: left) t1
+      h distance(wt / 2, side: left) t1
+      f.o distance(Ry) a
+      f.o distance(Rc) h
+      g distance(bo / 2, side: right) sc
+      k distance(bo / 2, side: right) sc
+      f.o distance(Rs - hs) g
+      f.o distance(Rs + 2mm) k
+      // each on its circle ahead of the axle, not on the circle's far side behind it
+      f.o distance(>= 0, along: sc) a
+      f.o distance(>= 0, along: sc) h
+      f.o distance(>= 0, along: sc) g
+      f.o distance(>= 0, along: sc) k
       // and its far side, the mirror
-      b := point hint((dims.Ry, 2mm))
-      c := point hint((dims.Rc, 3mm))
-      d := point hint((dims.Rs - dims.hs, dims.bo / 2))
-      e := point hint((dims.Rs + 2mm, dims.bo / 2))
+      b := point hint((Ry, 2mm))
+      c := point hint((Rc, 3mm))
+      d := point hint((Rs - hs, bo / 2))
+      e := point hint((Rs + 2mm, bo / 2))
       a symmetry(sc) b
       h symmetry(sc) c
       g symmetry(sc) d
@@ -65,16 +71,16 @@ component Stator(f: group, dims: group) {
     }
     // the first slot stands on the datum
     f.datum angle(0deg) sc[0]
-    tips := circle(center: f.o) hint(r: dims.Rs)
-    radius(dims.Rs) tips
-    bore := circle(center: f.o) hint(r: dims.Rb)
-    radius(dims.Rb) bore
-    stack := solid(face(tips, holes: bore), from: -dims.L / 2, to: dims.L / 2)
+    tips := circle(center: f.o) hint(r: Rs)
+    radius(Rs) tips
+    bore := circle(center: f.o) hint(r: Rb)
+    radius(Rb) bore
+    stack := solid(face(tips, holes: bore), from: -L / 2, to: L / 2)
   }
   lamination := solid(stack)
-  repeat dims.slots as i {
+  repeat slots as i {
     private slot := solid(face(bottom[i], wall_r[i], shoe_r[i], lip_r[i], mouth[i], lip_l[i],
-                               shoe_l[i], wall_l[i]), from: -dims.L / 2 - 1mm, to: dims.L / 2 + 1mm)
+                               shoe_l[i], wall_l[i]), from: -L / 2 - 1mm, to: L / 2 + 1mm)
     slot cut lamination
   }
 
@@ -82,13 +88,12 @@ component Stator(f: group, dims: group) {
   // The coils fill the band between the slots' bottom and the wedges, the stack's length and the
   // end turns' either side of it, wherever the iron is not: the band less the lamination is a
   // coil side in every slot, and the end turns either side.
-  in f.front {
-    band_o := circle(center: f.o) hint(r: dims.Rc)
-    radius(dims.Rc) band_o
-    band_i := circle(center: f.o) hint(r: dims.end_turn_in)
-    radius(dims.end_turn_in) band_i
-    windings := solid(face(band_o, holes: band_i), from: -dims.L / 2 - dims.overhang,
-                      to: dims.L / 2 + dims.overhang)
+  in f.o.plane {
+    band_o := circle(center: f.o) hint(r: Rc)
+    radius(Rc) band_o
+    band_i := circle(center: f.o) hint(r: end_turn_in)
+    radius(end_turn_in) band_i
+    windings := solid(face(band_o, holes: band_i), from: -L / 2 - overhang, to: L / 2 + overhang)
   }
   lamination cut windings
 
@@ -97,42 +102,43 @@ component Stator(f: group, dims: group) {
   // third of a turn, and 17 slot pitches of 23 × 7.06° electrical are 240° — so the three read
   // the three phases exactly 120° electrical apart, and are themselves a ring of three.  Each is
   // set into the stack's left end, its leads out over the end turns toward the cable.
-  in f.front {
+  in f.o.plane {
     ring 3 about f.o {
-      construction hc := line(f.o, hint((dims.Rs, 0mm)))
-      length(dims.Rs) hc
-      q1 := point hint((dims.Rc, -1mm))
-      q2 := point hint((dims.Rc, 1mm))
-      q3 := point hint((dims.Rs, 1mm))
-      q4 := point hint((dims.Rs, -1mm))
-      q1 distance(dims.hall_w / 2, side: right) hc
-      q4 distance(dims.hall_w / 2, side: right) hc
-      q2 distance(dims.hall_w / 2, side: left) hc
-      q3 distance(dims.hall_w / 2, side: left) hc
-      f.o distance(dims.hall_r0) q1
-      f.o distance(dims.hall_r0) q2
-      f.o distance(dims.hall_r1) q3
-      f.o distance(dims.hall_r1) q4
+      construction hc := line(f.o, hint((Rs, 0mm)))
+      length(Rs) hc
+      q1 := point hint((Rc, -1mm))
+      q2 := point hint((Rc, 1mm))
+      q3 := point hint((Rs, 1mm))
+      q4 := point hint((Rs, -1mm))
+      q1 distance(hall_w / 2, side: right) hc
+      q4 distance(hall_w / 2, side: right) hc
+      q2 distance(hall_w / 2, side: left) hc
+      q3 distance(hall_w / 2, side: left) hc
+      f.o distance(hall_r0) q1
+      f.o distance(hall_r0) q2
+      f.o distance(hall_r1) q3
+      f.o distance(hall_r1) q4
+      f.o distance(>= 0, along: hc) q1
+      f.o distance(>= 0, along: hc) q2
+      f.o distance(>= 0, along: hc) q3
+      f.o distance(>= 0, along: hc) q4
       hall_s := (h1 := line(q1, q2)) -> (h2 := line(q2, q3)) -> (h3 := line(q3, q4)) ->
                 (h4 := line(q4, q1)) -> close
     }
     f.datum angle(0deg) hc[0]
-    halls := solid(face(h1[0], h2[0], h3[0], h4[0]), from: dims.L / 2 - dims.hall_l,
-                   to: dims.L / 2)
+    halls := solid(face(h1[0], h2[0], h3[0], h4[0]), from: L / 2 - hall_l, to: L / 2)
   }
   repeat 2 as i {
     private hall := solid(face(h1[i + 1], h2[i + 1], h3[i + 1], h4[i + 1]),
-                          from: dims.L / 2 - dims.hall_l, to: dims.L / 2)
+                          from: L / 2 - hall_l, to: L / 2)
     hall union halls
   }
 
   // the stack and the end turns as the half-section along the axle cuts them
-  in f.side {
-    stack_s := motor.parts.Box(f.so, x0: -dims.L / 2, y0: dims.Rb, x1: dims.L / 2, y1: dims.Rs)
-    end_l := motor.parts.Box(f.so, x0: -dims.L / 2 - dims.overhang, y0: dims.end_turn_in,
-                             x1: -dims.L / 2, y1: dims.Rc)
-    end_r := motor.parts.Box(f.so, x0: dims.L / 2, y0: dims.end_turn_in,
-                             x1: dims.L / 2 + dims.overhang, y1: dims.Rc)
+  in f.so.plane {
+    stack_s := motor.parts.Box(f.so, x0: -L / 2, y0: Rb, x1: L / 2, y1: Rs)
+    end_l := motor.parts.Box(f.so, x0: -L / 2 - overhang, y0: end_turn_in, x1: -L / 2, y1: Rc)
+    end_r := motor.parts.Box(f.so, x0: L / 2, y0: end_turn_in, x1: L / 2 + overhang, y1: Rc)
   }
 }
 
@@ -151,8 +157,7 @@ preview {
     horizontal ax
     length(100mm) ax
   }
-  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
-            so: std.side.origin, ax: ax, to: std.top.origin}
+  frame := {o: std.origin, datum: datum, so: std.side.origin, ax: ax}
 
-  stator := Stator(frame, dims: motor.dims.motor_dims)
+  stator := Stator(frame)
 }

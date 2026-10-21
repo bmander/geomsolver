@@ -44,12 +44,48 @@ What the work found:
   still DOF 0, well constrained.
 * **Cost.** Checking 225 part instances adds about a quarter to the engine's elaboration, the
   structure compiled once for the document and read per part.
+* **The engine as solids.** Each part makes its own solid from the views it draws, so the
+  assembly shows a solid engine with nothing added at the root: the block and head are their end
+  sections run along the crank axis (the block less its bores, the crankcase bays between its
+  bulkheads and the main-bearing bore, the head less its camshaft tunnels), the sump the end
+  view's pan `common` with the side view's floor, the crankshaft a union of the end section's
+  journal, pins, webs and turned ends over the stretches the side view gives them, each rod its
+  end outline `common` with its edge-on outline, and each piston its side view's half turned
+  about the bore axis. Each part's file opens alone from a `preview` placing it as `engine.sv`
+  does; `tests/engine.rs` holds the solids to the table and each preview to the assembly's.
 
 PT5's advice is built: `solventc --lint` names a part whose rows, from scattered starts, come to
-another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts draw
-it (`ConRod`'s small end above or below its pin, for one); stating each root is follow-up work,
-now that #157 holds a stated `ccw`. The V-twin and the hub motor still thread their tables, each
-its own issue (§9).
+another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts drew
+it, and each now states its root (#503) with `ccw`/`cw`, so the engine lints clean
+(`tests/parts.rs`):
+* **`Span`**, a belt run or a cam's flank: both circles on the run's far side from the side it
+  is asked for. That refuses the other outer tangent, both crossed ones, and the run of no length
+  where a lobe's overlapping base and nose circles meet. Read on the run itself, which never
+  passes through a centre. `Lobe` and the timing `Drive` drew W207 through their spans alone.
+* **`Throw`**, a crank web: ten points each with two roots. Each is read against points already
+  placed, or against a rim corner whose side of the arm its signed distance fixes. The throw only
+  turns about its axis, so every triangle keeps its area through the turn (302 mm² the least).
+  Its rim corners' seeds stood on the wrong sides of the arm, which the choices read as broken and
+  carried other points across; they now stand where the corners solve.
+* **`Valve`**, the follower, bucket, stem and head: each part's side of the valve axis, or of
+  the follower face. The lift slides the valve along its axis and turns none of them.
+`ConRod` has more unknowns than the search takes (`boundary::SEARCHED`), so it is not asked.
+Every position agrees with the drawing before the change to 7e-13 at 81 cycle angles over the
+whole 720°. Each of those solves, and every stated choice holds at each one. The V-twin still
+threads its table, its own issue (§9).
+
+**The hub motor as parts** (#502): every definition in `hub_motor/motor/` is a `part` reading
+`motor.dims` as constants, and the `motor_dims` group and every `dims:` argument are gone. The
+`frame` group of the world's planes became `motor.parts.Datums`, the points and lines the motor
+is drawn about (the axle's centre and datum in the end view, its mid-plane and centreline in the
+section), and each part draws in the planes they are drawn in; the axle takes the plan's origin
+for its cable port, and the rotor its angle as a formal (PC3). The two W207s, `Rotor` and
+`Stator`, are stated as bounds: each point the walls, shoes, hall sensors and magnets place on a
+circle from an offset line stands ahead of the axle along its centreline (`f.o distance(>= 0,
+along: sc) a`), not at the line's crossing behind it. W207 now reads a part's bounds as root
+choices, as its remedy says (`boundary::analyse`); it read only its orientations. All 6,607
+geometric numbers agree with the old document to 1.4e-14, the solids' volumes exactly, and the
+four sheets render the same coordinates; the advertised shape is unchanged.
 
 #492 meets its acceptance but for one bench row: at r₂ = 20.001 the flat solve reports "ok" 2e-3
 of the extent off the true crossing, every row holding to 2.1e-7 of its own size while the

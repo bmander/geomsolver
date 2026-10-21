@@ -187,7 +187,12 @@ fn the_tip_relief_turns_each_crown_flank_at_its_kink() {
             worst = worst.max(value(&crown,p).abs()).max((value(&relief,p)-s*turn.sin()).abs());
         }
     }
-    assert!(worst < 1e-9,"the relief leaves its stated chamfer by {worst}");
+    // within 1e-8: the fixture is solved to its acceptance, not to the bit.  Since the direction
+    // rows read unit directions (#479) the whole-system DogLeg settles the pair itself, stepping
+    // on the drawing's extent with each row judged at its own size (#492), and leaves the kinks'
+    // squared-distance rows on the flank at 5.7e-13 of theirs: the kinks a few 1e-9 mm from where
+    // the block pass put them.  A squared row at the 1e-12 acceptance allows far more.
+    assert!(worst < 1e-8,"the relief leaves its stated chamfer by {worst}");
 }
 
 /// A tip relief of zero is no relief: the pair then has no topping and no relief cut at all, and

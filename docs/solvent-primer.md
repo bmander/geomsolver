@@ -245,7 +245,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
-| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes |
+| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), two lines in a plane only |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
@@ -781,9 +781,9 @@ instance:
 
 A freedom it leaves is a formal the call leaves unbound (`Crank(o, d, theta: hint(30deg))`), which
 the parent places. A parent may relate a part's outputs (`r distance(10mm) a.tip`), but such a
-statement is the parent's and never completes the part. Choose a root with `ccw`/`cw` (held by the
-solve), not with a seed: `solventc --lint` names a part whose rows have another pose its stated
-choices admit (W207, advice). A part is solved like any component. Use one for anything a parent should
+statement is the parent's and never completes the part. Choose a root with `ccw`/`cw` or a bound
+(each held by the solve), not with a seed: `solventc --lint` names a part whose rows have another
+pose its stated choices admit (W207, advice). A part is solved like any component. Use one for anything a parent should
 be able to trust as a unit: a pulley, a rod on its pin, a belt run.
 
 ```

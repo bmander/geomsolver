@@ -8,33 +8,34 @@
 // beside the carrier's web, a hole drawn in the plan and swept straight up.
 
 use std (below, horizontal)
-use motor.dims
-use motor.parts
+use motor.dims (axle_half, cable_d, cable_to, d_core, d_end, d_seat, exit_at, exit_d, flats,
+                flats_from, hub_r, key_h, key_l, key_t1, key_w, step_end, step_seat)
+use motor.parts (Datums)
 
-component Axle(f: group, dims: group) {
-  ah := dims.axle_half
-  rc := dims.d_core / 2
-  rs := dims.d_seat / 2
-  re := dims.d_end / 2
-  in f.side {
-    a := motor.parts.At(f.so, dx: -ah, dy: dims.cable_d / 2)
-    b := motor.parts.At(f.so, dx: -dims.cable_to, dy: dims.cable_d / 2)
+part Axle(f: Datums, to: point) {
+  ah := axle_half
+  rc := d_core / 2
+  rs := d_seat / 2
+  re := d_end / 2
+  in f.so.plane {
+    a := motor.parts.At(f.so, dx: -ah, dy: cable_d / 2)
+    b := motor.parts.At(f.so, dx: -cable_to, dy: cable_d / 2)
     // the bore's end and the right end's centre, on the centreline
     c := point
     d := point
     c coincident f.ax
     d coincident f.ax
-    f.so distance(-dims.cable_to, along: u) c
+    f.so distance(-cable_to, along: u) c
     f.so distance(ah, along: u) d
     e := motor.parts.At(f.so, dx: ah, dy: re)
-    g := motor.parts.At(f.so, dx: dims.step_end, dy: re)
-    h := motor.parts.At(f.so, dx: dims.step_end, dy: rs)
-    k := motor.parts.At(f.so, dx: dims.step_seat, dy: rs)
-    m := motor.parts.At(f.so, dx: dims.step_seat, dy: rc)
-    n := motor.parts.At(f.so, dx: -dims.step_seat, dy: rc)
-    q := motor.parts.At(f.so, dx: -dims.step_seat, dy: rs)
-    s := motor.parts.At(f.so, dx: -dims.step_end, dy: rs)
-    t := motor.parts.At(f.so, dx: -dims.step_end, dy: re)
+    g := motor.parts.At(f.so, dx: step_end, dy: re)
+    h := motor.parts.At(f.so, dx: step_end, dy: rs)
+    k := motor.parts.At(f.so, dx: step_seat, dy: rs)
+    m := motor.parts.At(f.so, dx: step_seat, dy: rc)
+    n := motor.parts.At(f.so, dx: -step_seat, dy: rc)
+    q := motor.parts.At(f.so, dx: -step_seat, dy: rs)
+    s := motor.parts.At(f.so, dx: -step_end, dy: rs)
+    t := motor.parts.At(f.so, dx: -step_end, dy: re)
     w := motor.parts.At(f.so, dx: -ah, dy: re)
     profile := (cable := line(a.p, b.p)) -> (cable_end := line(b.p, c)) ->
                (centre := line(c, d)) -> (end_r := line(d, e.p)) ->
@@ -45,14 +46,10 @@ component Axle(f: group, dims: group) {
                (thread_l := line(t.p, w.p)) -> (end_l := line(w.p, a.p)) -> close
 
     // the flats, each a slab beyond `flats / 2` from the centreline, cut sideways through
-    fr_up := motor.parts.Box(f.so, x0: dims.flats_from, y0: dims.flats / 2, x1: ah + 1mm,
-                             y1: re + 1mm)
-    fr_dn := motor.parts.Box(f.so, x0: dims.flats_from, y0: -re - 1mm, x1: ah + 1mm,
-                             y1: -dims.flats / 2)
-    fl_up := motor.parts.Box(f.so, x0: -ah - 1mm, y0: dims.flats / 2, x1: -dims.flats_from,
-                             y1: re + 1mm)
-    fl_dn := motor.parts.Box(f.so, x0: -ah - 1mm, y0: -re - 1mm, x1: -dims.flats_from,
-                             y1: -dims.flats / 2)
+    fr_up := motor.parts.Box(f.so, x0: flats_from, y0: flats / 2, x1: ah + 1mm, y1: re + 1mm)
+    fr_dn := motor.parts.Box(f.so, x0: flats_from, y0: -re - 1mm, x1: ah + 1mm, y1: -flats / 2)
+    fl_up := motor.parts.Box(f.so, x0: -ah - 1mm, y0: flats / 2, x1: -flats_from, y1: re + 1mm)
+    fl_dn := motor.parts.Box(f.so, x0: -ah - 1mm, y0: -re - 1mm, x1: -flats_from, y1: -flats / 2)
   }
   body := solid(profile, about: f.ax)
   private flat_ru := solid(fr_up.profile, through: body)
@@ -65,23 +62,22 @@ component Axle(f: group, dims: group) {
   flat_ld cut body
 
   // the keyway, under the carrier's seat, and the key in it: in the end view, straight down
-  in f.front {
-    seat := motor.parts.Box(f.o, x0: -dims.key_w / 2, y0: -rc - 1mm, x1: dims.key_w / 2,
-                            y1: -rc + dims.key_t1)
-    k_sec := motor.parts.Box(f.o, x0: -dims.key_w / 2, y0: -rc + dims.key_t1 - dims.key_h,
-                             x1: dims.key_w / 2, y1: -rc + dims.key_t1)
-    private keyway := solid(seat.profile, from: -dims.key_l / 2, to: dims.key_l / 2)
-    key := solid(k_sec.profile, from: -dims.key_l / 2, to: dims.key_l / 2)
+  in f.o.plane {
+    seat := motor.parts.Box(f.o, x0: -key_w / 2, y0: -rc - 1mm, x1: key_w / 2, y1: -rc + key_t1)
+    k_sec := motor.parts.Box(f.o, x0: -key_w / 2, y0: -rc + key_t1 - key_h,
+                             x1: key_w / 2, y1: -rc + key_t1)
+    private keyway := solid(seat.profile, from: -key_l / 2, to: key_l / 2)
+    key := solid(k_sec.profile, from: -key_l / 2, to: key_l / 2)
   }
   keyway cut body
 
   // the cable's way out: up the bore from the left end, out through the top beside the web
-  in f.top {
+  in to.plane {
     outlet := point
-    outlet below(d: dims.exit_at) f.to
-    exit_c := circle(center: outlet) hint(r: dims.exit_d / 2)
-    radius(dims.exit_d / 2) exit_c
-    exit := solid(face(exit_c), from: 0mm, to: dims.hub_r + 1mm)
+    outlet below(d: exit_at) to
+    exit_c := circle(center: outlet) hint(r: exit_d / 2)
+    radius(exit_d / 2) exit_c
+    exit := solid(face(exit_c), from: 0mm, to: hub_r + 1mm)
   }
   exit cut body
 }
@@ -100,8 +96,7 @@ preview {
     horizontal ax
     length(100mm) ax
   }
-  frame := {front: std.front, side: std.side, top: std.top, o: std.origin, datum: datum,
-            so: std.side.origin, ax: ax, to: std.top.origin}
+  frame := {o: std.origin, datum: datum, so: std.side.origin, ax: ax}
 
-  axle := Axle(frame, dims: motor.dims.motor_dims)
+  axle := Axle(frame, std.top.origin)
 }

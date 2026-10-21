@@ -21,9 +21,10 @@
 // and the teeth's or the ring's flux density follows.  No figure reaches a constraint; the
 // comments say what each comes to.
 //
-// A component receives this table as `dims`: `motor_dims` at the bottom is the group of what the
-// parts read.  What only the assembly reads (the bearings' bore, the covers' bosses, the spacers
-// and locknuts) it reads here by name, `motor.dims.old`.
+// Every number here is a constant of each definition whose file `use`s it: a part names the ones
+// it reads, `use motor.dims (Rs, L)`, and reads them bare, with nothing passed at a call.  What
+// only the assembly reads (the bearings' bore, the covers' bosses, the spacers and locknuts) it
+// reads the same way.
 
 // -- the duty -------------------------------------------------------------------------------
 power := 745.7W         // shaft output: one mechanical horsepower
@@ -64,6 +65,7 @@ Rr := Rm + hm           // the rotor ring's bore, where the magnets are bonded: 
 alpha := 0.80           // pole arc over pole pitch, for a near-sinusoidal gap field
 magnet_arc := alpha * pole_pitch    // 6.26°
 L := 35mm               // the stack: 100 sheets of 0.35 mm M270-35A, bonded
+theta := 0deg           // the rotor's angle in the drawing: a north pole's centre on the datum
 
 // -- the stator lamination --------------------------------------------------------------------
 // One slot is drawn: a tooth either side of it, parallel-sided, and shoes closing it to a slot
@@ -194,22 +196,3 @@ hall_w := 1.5mm         // across the slot
 hall_r0 := Rc + 0.2mm   // radially, over the coils' wedge line
 hall_r1 := Rs - 0.3mm   // and under the tips, 0.9 from the magnets
 hall_l := 4mm           // along the axle, set into the stack's left end
-
-motor_dims := {
-  Rs: Rs, Rm: Rm, Rr: Rr, Ro: Ro, L: L, half: half, theta: 0deg,
-  poles: poles, slots: slots, slot_pitch: slot_pitch, magnet_arc: magnet_arc,
-  wt: wt, bo: bo, hs: hs, Ry: Ry, Rb: Rb, Rc: Rc, overhang: overhang,
-  end_turn_in: end_turn_in, hall_w: hall_w, hall_r0: hall_r0, hall_r1: hall_r1, hall_l: hall_l,
-  screw_r: screw_r, screws: screws, tap4: tap4, tap_depth: tap_depth, clear4: clear4,
-  hub_r: hub_r, hub_half: hub_half, web_half: web_half, rim_r: rim_r, windows: windows,
-  window_d: window_d, window_r: window_r,
-  axle_half: axle_half, d_core: d_core, d_seat: d_seat, d_end: d_end, flats: flats,
-  flats_from: flats_from, step_seat: step_seat, step_end: step_end, cable_d: cable_d,
-  cable_to: cable_to, exit_at: exit_at, exit_d: exit_d,
-  key_w: key_w, key_h: key_h, key_l: key_l, key_t1: key_t1, key_t2: key_t2,
-  brg_od: brg_od, brg_w: brg_w, brg_in: brg_in,
-  web: web, spigot: spigot, spigot_r: spigot_r, boss_r: boss_r, lip: lip, lip_r: lip_r,
-  pocket_in: pocket_in, flange_r: flange_r, flange_t: flange_t, spokes: spokes,
-  spoke_r: spoke_r, spoke_d: spoke_d,
-  disc_bolts: disc_bolts, disc_bcd: disc_bcd, tap5: tap5, disc_depth: disc_depth
-}

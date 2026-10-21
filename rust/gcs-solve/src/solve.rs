@@ -33,16 +33,16 @@ use crate::system::System;
 /// A `SolveResult::status` of its own: every row holds, and a bound does not (§9.6).
 pub const BOUND_BROKEN: i32 = 5;
 
-/// A `SolveResult::status` of its own: every row holds, and a line a tangency reads only by its
-/// direction has no length (#479, `collapsed`).
+/// A `SolveResult::status` of its own: every row holds, and a line a tangency, `parallel` or
+/// `perpendicular` reads only by its direction has no length (#479, `collapsed`).
 pub const COLLAPSED: i32 = 6;
 
 /// A `SolveResult::status` of its own: every row holds, and an orientation the document states
 /// does not (§9.6, #157).
 pub const ORIENTATION_BROKEN: i32 = 7;
 
-/// How short, over the drawing's extent, a line a tangency reads by its direction may be and
-/// still be a line (`collapsed`): the solve's own relative tolerance, as a bound's.
+/// How short, over the drawing's extent, a line a row reads by its direction may be and still be
+/// a line (`collapsed`): the solve's own relative tolerance, as a bound's.
 const COLLAPSE_TOL: f64 = 1e-6;
 
 /// The step, relative to the size of the unknowns, below which a document's minimisation stops
@@ -64,18 +64,37 @@ fn reads_pose(sk: &Sketch) -> bool {
     sk.constraints.iter().any(|c| c.kind.reads_pose() && c.states_rows())
 }
 
-/// **A tangency at a contact is no tangency along a line of no length** (#479): every acting
-/// constraint, by id, whose row reads a line only by its direction (`Constraint::direction_line`)
-/// where that line is shorter than `COLLAPSE_TOL` of the extent.  Such a row holds whatever the
-/// contact, so a run tangent at both its ends is satisfied by its ends together where its two
-/// rounds cross: a root of full rank, isolated, that no rank or diagnosis can tell from the
-/// tangent.  A document solve ending there fails (`COLLAPSED`), never reported solved.
+/// **A tangency at a contact is no tangency along a line of no length** (#479), **nor is a
+/// `parallel` or a `perpendicular`**: every acting constraint, by id, whose row reads a line only
+/// by its direction (`Constraint::direction_lines`) where that line is shorter, in space, than
+/// `COLLAPSE_TOL` of the extent.  The rows read the line's unit direction, so a shrinking line is
+/// no nearer their root; but a line of no length has no direction, and its floored unit is nil,
+/// so each still holds there whatever else: a run tangent at both its ends held together where
+/// its two rounds cross, a rectangle's side pinned to a point.  A document solve ending there is a
+/// failed solve, recovered as any is (`RECOVERIES`, whose solve is never kept collapsed), else
+/// fails (`COLLAPSED`), never reported solved.
 pub fn collapsed(sk: &Sketch) -> Vec<u32> {
     let floor = COLLAPSE_TOL * sk.extent();
+    let short = |l: usize| {
+        let ln = &sk.lines[l];
+        !(crate::space::distance(sk.world_point(ln.p1 as usize), sk.world_point(ln.p2 as usize))
+            > floor)
+    };
     sk.constraints.iter().filter(|c| c.acts())
-        .filter(|c| c.direction_line().is_some_and(|l| !(sk.line_length(l) > floor)))
+        .filter(|c| c.direction_lines().any(short))
         .map(|c| c.id)
         .collect()
+}
+
+/// `res` judged as a document's answer: one that holds every row with a line a row reads by its
+/// direction of no length is no solution (`collapsed`).
+fn unless_collapsed(sk: &Sketch, mut res: SolveResult) -> SolveResult {
+    if res.success && !collapsed(sk).is_empty() {
+        res.success = false;
+        res.status = COLLAPSED;
+        res.message = newton::status_message(COLLAPSED).to_string();
+    }
+    res
 }
 
 #[derive(Clone, Debug)]
@@ -290,6 +309,7 @@ impl System {
         let start = if opts.document() { sk.get_x() } else { Vec::new() };
         let mut res = self.solve_unsteered(sk, opts);
         if opts.document() {
+            res = unless_collapsed(sk, res);
             for recovery in RECOVERIES {
                 if res.success {
                     break;
@@ -302,14 +322,11 @@ impl System {
         if opts.document() && !res.success {
             res = self.at_own_sizes(sk, opts, res);
         }
-        if steers && res.success {
-            res = self.steer(sk, opts, start, res);
-        }
+        // what the recoveries leave is judged already; a steer moves it again.  The lines are
         // named where it is reported (`Diagnosis::collapsed`), not here
-        if opts.document() && res.success && !collapsed(sk).is_empty() {
-            res.success = false;
-            res.status = COLLAPSED;
-            res.message = newton::status_message(COLLAPSED).to_string();
+        if steers && res.success {
+            let steered = self.steer(sk, opts, start, res);
+            res = unless_collapsed(sk, steered);
         }
         res
     }
@@ -352,13 +369,14 @@ impl System {
     }
 
     /// A system compiled where `sk` stands — as the recovery left it — then solved on from the
-    /// recovery's start: kept where that settles (`SolveResult::settled`), else the system that
-    /// was is put back, the sketch it stood on with it, and `res` stands.  A stop on the iteration
-    /// limit is not kept even under the acceptance (#449): a recompile changes the yardstick, and
-    /// a solve that ran a point off to infinity is compiled at the extent the runaway left —
-    /// two equal circles' external tangents held to meet, every row then over a drawing ten
-    /// kilometres across, read a contact 0.13 mm off its 20 mm circle as 3e-8 and the drawing as
-    /// solved.  Compiled at its own size from an unseeded start, a drawing converges there.
+    /// recovery's start: kept where that settles (`SolveResult::settled`) uncollapsed
+    /// (`unless_collapsed`), else the system that was is put back, the sketch it stood on with
+    /// it, and `res` stands.  A stop on the iteration limit is not kept even under the acceptance
+    /// (#449): a recompile changes the yardstick, and a solve that ran a point off to infinity is
+    /// compiled at the extent the runaway left — two equal circles' external tangents held to
+    /// meet, every row then over a drawing ten kilometres across, read a contact 0.13 mm off its
+    /// 20 mm circle as 3e-8 and the drawing as solved.  Compiled at its own size from an unseeded
+    /// start, a drawing converges there.
     fn recompiled(
         &mut self,
         sk: &mut Sketch,
@@ -371,6 +389,7 @@ impl System {
             sk.set_x(from);
         }
         let solved = self.solve_unsteered(sk, opts);
+        let solved = unless_collapsed(sk, solved);
         if solved.settled() {
             return solved;
         }
@@ -396,7 +415,8 @@ impl System {
     /// point off to infinity reads as holding there at any measure — two parallel tangents meet
     /// within 1e-14 of a 20 mm circle some 1e16 out.  Its rows are put back over the extent
     /// either way, which a rank is judged at.  A solve the extent's measure calls failed too,
-    /// and every solve that succeeds, never sees it.
+    /// and every solve that succeeds, never sees it; one that ends collapsed is not kept
+    /// (`unless_collapsed`).
     fn at_own_sizes(&mut self, sk: &mut Sketch, opts: SolveOpts, res: SolveResult) -> SolveResult {
         let z = self.z0(sk);
         let r = self.residuals(&z);
@@ -410,6 +430,8 @@ impl System {
         let own = rows.iter().map(|&i| self.judged(i, r[i])).fold(0.0, f64::max);
         self.scale_rows(true);
         let solved = self.solve_unsteered(sk, opts);
+        // every row holding where a line it reads by direction has none is still no answer
+        let solved = unless_collapsed(sk, solved);
         if solved.settled() && solved.max_residual < own && sk.extent() <= wide {
             self.scale_rows(false);
             self.resync(sk);
