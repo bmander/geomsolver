@@ -25,7 +25,8 @@
 //! ends) or a point and a direction (1, an axis's), its number `c + m·x` (a cone's half angle, a
 //! cylinder's radius; `x` its last column where `free`), a direction its axis does not run along
 //! (`ref`, which fixes where a set's `v` starts), and the motion as the steps `motion::Family`
-//! reads.
+//! reads — past them, where a joint is driven, each driven step's law (`encode_laws`, #398 G), so
+//! the step stands at the law's value of the roll and every row reads the law exactly.
 //!
 //! What this certifies is local: a root of the rows is a regular point of the envelope near the
 //! place it was seeded at — not which branch, not that the roll is within `from:`/`to:`, and not
@@ -141,14 +142,18 @@ pub enum Step {
     Relative { source: usize, observer: usize },
 }
 
-/// The constants of one contact, built from its parts (the inverse of `Layout::read`).
+/// The constants of one contact, built from its parts (the inverse of `Layout::read`): a
+/// driven step's law past the steps (`encode_laws`), where the motion has one (#398 G).
 #[allow(clippy::too_many_arguments)]
 pub fn consts(lead: usize, source: Source, axis: u8, number: (f64, f64, bool), reference: [f64; 3],
-              steps: &[Step]) -> Vec<f64> {
+              steps: &[Step], laws: &[Driven]) -> Vec<f64> {
     let mut k = vec![lead as f64, source as i64 as f64, axis as f64,
                      number.0, number.1, if number.2 { 1.0 } else { 0.0 },
                      reference[0], reference[1], reference[2], steps.len() as f64];
     k.extend(encode_steps(steps));
+    if !laws.is_empty() {
+        k.extend(encode_laws(laws));
+    }
     k
 }
 
@@ -257,12 +262,9 @@ pub struct Driven<'a> {
     pub law: crate::generate::Drive<'a>,
 }
 
-/// A motion a relation reads as constants (`Moving::encode`): `[n, steps…, laws, (step, len,
-/// flat…, n_x, x…, at)…]` — the steps as `encode_steps` writes them, then each driven step's law.
-pub fn encode_motion(steps: &[Step], laws: &[Driven]) -> Vec<f64> {
-    let mut k = vec![steps.len() as f64];
-    k.extend(encode_steps(steps));
-    k.push(laws.len() as f64);
+/// Each driven step's law as constants: `[laws, (step, len, flat…, n_x, x…, at)…]`.
+pub fn encode_laws(laws: &[Driven]) -> Vec<f64> {
+    let mut k = vec![laws.len() as f64];
     for &Driven { step, law: d } in laws {
         k.extend([step as f64, d.flat.len() as f64]);
         k.extend_from_slice(d.flat);
@@ -273,19 +275,17 @@ pub fn encode_motion(steps: &[Step], laws: &[Driven]) -> Vec<f64> {
     k
 }
 
-/// A motion read back off `encode_motion`'s constants: `None` where they are no motion's, or a
-/// law drives a step there is none of, or a relative.
-pub fn read_motion(k: &[f64]) -> Option<(Vec<Step>, Vec<Driven<'_>>)> {
+/// The laws `encode_laws` wrote, read back off `k` from `at` over `steps`, and where they end:
+/// `None` where they are no laws', or a law drives a step there is none of, or a relative.
+fn read_laws<'a>(k: &'a [f64], mut at: usize, steps: &[Step]) -> Option<(Vec<Driven<'a>>, usize)> {
     let ix = |i: usize| k.get(i).copied().filter(|v| *v >= 0.0 && v.fract() == 0.0)
         .map(|v| v as usize);
-    let n = ix(0).filter(|&n| n <= 64)?;
-    let steps = read_steps(k.get(1..1 + STEP * n)?)?;
-    let mut at = 1 + STEP * n;
-    let n_laws = ix(at).filter(|&l| l <= n)?;
+    let n_laws = ix(at).filter(|&l| l <= steps.len())?;
     at += 1;
     let mut laws = Vec::with_capacity(n_laws);
     for _ in 0..n_laws {
-        let step = ix(at).filter(|&s| s < n && !matches!(steps[s], Step::Relative { .. }))?;
+        let step = ix(at)
+            .filter(|&s| s < steps.len() && !matches!(steps[s], Step::Relative { .. }))?;
         let len = ix(at + 1)?;
         let flat = k.get(at + 2..at + 2 + len)?;
         at += 2 + len;
@@ -296,12 +296,30 @@ pub fn read_motion(k: &[f64]) -> Option<(Vec<Step>, Vec<Driven<'_>>)> {
         at += 1;
         laws.push(Driven { step, law: crate::generate::Drive { flat, x, at: slot } });
     }
+    Some((laws, at))
+}
+
+/// A motion a relation reads as constants (`Moving::encode`): `[n, steps…, laws…]` — the steps as
+/// `encode_steps` writes them, then each driven step's law (`encode_laws`).
+pub fn encode_motion(steps: &[Step], laws: &[Driven]) -> Vec<f64> {
+    let mut k = vec![steps.len() as f64];
+    k.extend(encode_steps(steps));
+    k.extend(encode_laws(laws));
+    k
+}
+
+/// A motion read back off `encode_motion`'s constants: `None` where they are no motion's, or a
+/// law drives a step there is none of, or a relative.
+pub fn read_motion(k: &[f64]) -> Option<(Vec<Step>, Vec<Driven<'_>>)> {
+    let n = k.first().copied().filter(|v| (0.0..=64.0).contains(v) && v.fract() == 0.0)? as usize;
+    let steps = read_steps(k.get(1..1 + STEP * n)?)?;
+    let (laws, at) = read_laws(k, 1 + STEP * n, &steps)?;
     (at == k.len()).then_some((steps, laws))
 }
 
-/// A contact's constants read back.
+/// A contact's constants read back, a driven step's law borrowed from them.
 #[derive(Clone, Debug)]
-pub struct Layout {
+pub struct Layout<'a> {
     pub lead: usize,
     pub source: Source,
     /// The source's axis as two points (0) or a point and a direction (1).
@@ -309,26 +327,40 @@ pub struct Layout {
     pub number: (f64, f64, bool),
     pub reference: [f64; 3],
     pub steps: Vec<Step>,
+    /// Each driven step's law (#398 G): the envelope generated under a drive.
+    pub laws: Vec<Driven<'a>>,
 }
 
-impl Layout {
+impl Layout<'_> {
     /// A contact's constants read back: an envelope's, so its motion has a step.
-    pub fn read(k: &[f64]) -> Option<Layout> {
+    pub fn read(k: &[f64]) -> Option<Layout<'_>> {
         Self::read_any(k).filter(|l| !l.steps.is_empty())
     }
 
     /// A flank's constants read back (#283, `envelope::meshing`): an envelope's, or a formed
-    /// flank's — the source itself, standing still, with no step.
-    pub fn read_any(k: &[f64]) -> Option<Layout> {
+    /// flank's — the source itself, standing still, with no step.  Past the steps, the laws of
+    /// the steps a drive drives, where there are any (`consts`).
+    pub fn read_any(k: &[f64]) -> Option<Layout<'_>> {
         if k.len() < HEADER {
             return None;
         }
         let source = Source::of(k[1])?;
         let n = k[9];
-        if !(n >= 0.0 && n <= 64.0) || k.len() != HEADER + STEP * n as usize {
+        if !(n >= 0.0 && n <= 64.0) || k.len() < HEADER + STEP * n as usize {
             return None;
         }
-        let steps = read_steps(&k[HEADER..])?;
+        let end = HEADER + STEP * n as usize;
+        let steps = read_steps(&k[HEADER..end])?;
+        let laws = match k.len() == end {
+            true => Vec::new(),
+            false => {
+                let (laws, at) = read_laws(k, end, &steps)?;
+                if at != k.len() {
+                    return None;
+                }
+                laws
+            }
+        };
         Some(Layout {
             lead: k[0] as usize,
             source,
@@ -336,6 +368,7 @@ impl Layout {
             number: (k[3], k[4], k[5] != 0.0),
             reference: [k[6], k[7], k[8]],
             steps,
+            laws,
         })
     }
 
@@ -651,12 +684,17 @@ impl<T: Num> Pose<T> {
     }
 }
 
-/// The motion's pose at roll `t` (the place's third), as `motion::Family::at` reads it; where it
-/// has no step (a formed flank, #283), the source standing still.
+/// The motion's pose at roll `t` (the place's third), as `motion::Family::at` reads it — a driven
+/// step at its law's value of `t` (#398 G); where it has no step (a formed flank, #283), the
+/// source standing still, and where a law has no value at `t`, no pose (NaN).
 fn pose<T: Num>(l: &Layout, m: &[T], t: H2<T>) -> Pose<T> {
-    poses(&l.steps, &[], m, t).and_then(|mut p| p.pop()).unwrap_or_else(|| {
-        let (one, o) = (H2::cst(T::cst(1.0)), H2::cst(zero()));
-        Pose { r: [[one, o, o], [o, one, o], [o, o, one]], p: [o; 3] }
+    let (one, o) = (H2::cst(T::cst(1.0)), H2::cst(zero()));
+    if l.steps.is_empty() {
+        return Pose { r: [[one, o, o], [o, one, o], [o, o, one]], p: [o; 3] };
+    }
+    poses(&l.steps, &l.laws, m, t).and_then(|mut p| p.pop()).unwrap_or_else(|| {
+        let nan = H2::cst(T::cst(f64::NAN));
+        Pose { r: [[nan; 3]; 3], p: [nan; 3] }
     })
 }
 
@@ -1140,6 +1178,8 @@ pub struct Parts {
     pub number: (f64, f64, bool),
     pub reference: [f64; 3],
     pub steps: Vec<Step>,
+    /// Each driven step and its law (#398 G): the envelope generated under a drive.
+    pub laws: Vec<(usize, crate::motion::Law)>,
     cols: Vec<Col>,
 }
 
@@ -1155,13 +1195,15 @@ pub(crate) enum Col {
 }
 
 impl Parts {
-    /// Envelope `index`'s parts, or why a contact cannot read it.
+    /// Envelope `index`'s parts, or why a contact cannot read it: its motion read as a carried
+    /// point's is (#398 G), a turn about a point of a view as the turn about the line square to
+    /// the view and a driven joint at its law.
     pub fn of(sk: &Sketch, index: usize) -> Result<Parts, String> {
         let e = sk.envelopes.get(index).ok_or("no such envelope")?;
         let mut parts = Parts::still(sk, &e.held, &e.name)?;
         let mut done = std::collections::BTreeMap::new();
-        motion(sk, e.motion as usize, &mut parts.steps, &mut parts.cols, &mut done, 0, false,
-               None)?;
+        motion(sk, e.motion as usize, &mut parts.steps, &mut parts.cols, &mut done, 0, true,
+               Some(&mut parts.laws))?;
         Ok(parts)
     }
 
@@ -1227,7 +1269,7 @@ impl Parts {
                 (source, 0, n, shape.reference)
             }
         };
-        Ok(Parts { source, axis, number, reference, steps: Vec::new(), cols })
+        Ok(Parts { source, axis, number, reference, steps: Vec::new(), laws: Vec::new(), cols })
     }
 
     /// The points whose lifts the columns read: what `Sketch::add` lifts.
@@ -1252,12 +1294,16 @@ impl Parts {
 
     /// The constants over these parts with a lead of `lead` columns: a flank's are `0`.
     pub fn consts_at(&self, lead: usize) -> Vec<f64> {
-        consts(lead, self.source, self.axis, self.number, self.reference, &self.steps)
+        consts(lead, self.source, self.axis, self.number, self.reference, &self.steps,
+               &drives(&self.laws))
     }
 
     /// How many constants a contact reads (`consts`).
     pub fn n_const(&self) -> usize {
-        HEADER + STEP * self.steps.len()
+        match self.laws.is_empty() {
+            true => HEADER + STEP * self.steps.len(),
+            false => self.consts_at(0).len(),
+        }
     }
 
     /// How many columns a contact of kind `c` reads.
@@ -1289,8 +1335,8 @@ impl Moving {
     }
 
     /// The same, a turn about a point of a view read as the turn about the line through it square
-    /// to the view (`Step::Turn`): what a relation reading the motion itself takes (#326), where
-    /// an envelope in space is still generated under turns about lines.
+    /// to the view (`Step::Turn`): what a relation reading the motion itself takes (#326), and an
+    /// envelope in space (#398 G), where a meshing still turns its flanks about lines.
     pub fn of_any(sk: &Sketch, m: usize) -> Result<Moving, String> {
         Self::read(sk, m, true, false)
     }
@@ -1312,7 +1358,7 @@ impl Moving {
 
     /// Its laws as the rows read them, borrowed.
     pub fn drives(&self) -> Vec<Driven<'_>> {
-        self.laws.iter().map(|(step, law)| Driven { step: *step, law: law.drive() }).collect()
+        drives(&self.laws)
     }
 
     /// The constants a relation reads the motion by (`encode_motion`).
@@ -1335,6 +1381,11 @@ impl Moving {
     pub fn width(&self) -> usize {
         width(&self.cols)
     }
+}
+
+/// Each driven step's law as the rows read it, borrowed.
+fn drives(laws: &[(usize, crate::motion::Law)]) -> Vec<Driven<'_>> {
+    laws.iter().map(|(step, law)| Driven { step: *step, law: law.drive() }).collect()
 }
 
 /// A number as `c + m·x` and whether `x` is a column — the unknown it reads, where it reads one.
@@ -1435,8 +1486,8 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             Step::Turn { at, ratio, free: free(cols, 9) }
         }
         MotionDef::Turn { .. } => {
-            return Err(format!("`{}` turns about a point of a view: an envelope in space is \
-                                generated under turns about lines", me.name))
+            return Err(format!("`{}` turns about a point of a view: a meshing turns its flanks \
+                                about lines", me.name))
         }
         MotionDef::Relative { source, observer } => {
             let source = motion(sk, source as usize, steps, cols, done, depth + 1, turns,
@@ -1467,10 +1518,10 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
                 solve: a relation the solve holds reads no frame along a path — sweep what rides \
                 on it as the parameter runs, `sweep(sec over s)`", me.name))
         }
-        // a driven frame (#391 S5): where a point carried to a roll reads it (#398 G), the
-        // joint's own step again over the same axis columns, standing at the law's value of the
-        // roll, the law carried in the constants; read by nothing else, an envelope's or a
-        // meshing's rows, which read no law
+        // a driven frame (#391 S5): where a point carried to a roll or an envelope in space reads
+        // it (#398 G), the joint's own step again over the same axis columns, standing at the
+        // law's value of the roll, the law carried in the constants; a meshing's own motion
+        // reads no law
         MotionDef::Driven { of, ref law, ref over } => {
             let f = sk.motions.get(of as usize).map_or(me.name.as_str(), |j| j.name.as_str());
             let Some(laws) = laws.as_deref_mut() else {

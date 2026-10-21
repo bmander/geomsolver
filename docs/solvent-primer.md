@@ -1967,7 +1967,9 @@ prism's face `in` a view and name the edge in it.
 **An envelope in space is held to by the solve** where its source is a cone, a cylinder or a
 plane set (`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`, `std.HalfSpace`) or
 a revolution's side turned
-from a line, an arc or a circle, under turns about lines, screws and slides, seen from the world or another frame
+from a line, an arc or a circle, under turns about lines (or about a point of a view, the line
+through it square to the view), screws and slides — driven by a law or not — seen from the world
+or another frame
 (`spiral_bevel/mean_point.sv`):
 
 ```
@@ -2074,8 +2076,15 @@ Z coincident(under: follower, seen_from: cam) r0   // the roller as the cam sees
 Z distance(23mm) std.origin                        // found where it has risen 3 mm
 ```
 
-A relation held to an envelope in space generated under a drive, and a meshing on one, read no
-drive (E061, E080): draw in the frame instead.
+An envelope in space generated under a drive is held to as any envelope in space is, the joint
+standing at the law's value of the roll where the source touches it:
+
+```sv
+tube := envelope(skin over t, under: follower, seen_from: cam)
+P coincident tube                                  // the ball's radius solves through P
+```
+
+A meshing on a drive reads no drive (E061): draw in the frame instead.
 
 **A frame the drawing moves**: a frame with axes and no joint, placed on geometry that moves as a
 declared parameter runs, is read over that parameter as a motion — where the drawing followed along

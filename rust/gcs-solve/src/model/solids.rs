@@ -594,9 +594,10 @@ pub enum MotionDef {
     /// the value's text written over the declared parameter `over`, at every roll — the roll is
     /// that parameter while a reading runs over it.  Minted beside the joint's own node, which
     /// `x in f` reads at the value worked out; every other reading of the frame's motion reads
-    /// this one (`motion::Law`).  A row the solve holds reads its law only as a point carried to a
-    /// roll and its rate (#398 G, `envelope::held::Moving::driven`); an envelope's or a meshing's
-    /// relation reading it is refused (`envelope::held`).
+    /// this one (`motion::Law`).  A row the solve holds reads its law as a point carried to a roll
+    /// and its rate (#398 G, `envelope::held::Moving::driven`) and as an envelope in space
+    /// generated under it (`envelope::held::Parts::of`); a meshing's relation reading it is
+    /// refused (`envelope::held`).
     Driven { of: u32, law: String, over: String },
     /// **A frame along a path** (#398 C): the jointed frame `frame` whose joint is held along the
     /// path `guide` (`g coincident f.axis`, `std.Along`), standing where the path's parameter puts
