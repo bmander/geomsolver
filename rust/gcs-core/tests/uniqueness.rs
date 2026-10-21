@@ -167,6 +167,43 @@ fn pt(x: f64) -> I {
 fn around(x: f64, r: f64) -> I {
     iv(x - r, x + r)
 }
+/// Inputs known exactly, as intervals.
+fn exact(x: &[f64]) -> Vec<I> {
+    x.iter().map(|&v| pt(v)).collect()
+}
+fn points<const N: usize>(y: &[f64; N]) -> [I; N] {
+    from_fn(|i| pt(y[i]))
+}
+fn hull(xs: &[I]) -> I {
+    iv(xs.iter().map(|&x| lo(x)).fold(f64::INFINITY, f64::min),
+        xs.iter().map(|&x| hi(x)).fold(f64::NEG_INFINITY, f64::max))
+}
+/// The widest side of a box.
+fn extent(b: &[I]) -> f64 {
+    b.iter().fold(0f64, |m, &v| m.max(width(v)))
+}
+/// `1 + max |yᵢ|`: what a tolerance on `y` is relative to.
+fn size(y: &[f64]) -> f64 {
+    1. + y.iter().fold(0f64, |m, v| m.max(v.abs()))
+}
+fn widest(b: &[I]) -> usize {
+    (0..b.len()).max_by(|&i, &k| width(b[i]).total_cmp(&width(b[k]))).unwrap()
+}
+/// `b` cut across side `i` at `at`.
+fn halves<B: Clone + AsMut<[I]> + AsRef<[I]>>(b: &B, i: usize, at: f64) -> [B; 2] {
+    let s = b.as_ref()[i];
+    let (mut p, mut q) = (b.clone(), b.clone());
+    p.as_mut()[i] = iv(lo(s), at);
+    q.as_mut()[i] = iv(at, hi(s));
+    [p, q]
+}
+/// `k` strictly inside `y`: Krawczyk's test.
+fn interior(k: &[I], y: &[I]) -> bool {
+    k.iter().zip(y).all(|(&k, &y)| lo(y) < lo(k) && hi(k) < hi(y))
+}
+fn apart(a: &[I], b: &[I]) -> bool {
+    a.iter().zip(b).any(|(&a, &b)| hi(a) < lo(b) || hi(b) < lo(a))
+}
 
 /// `(b − a) × (p − a)`: positive when `p` is left of `a → b` (`ccw(a, b, p)`).
 fn ccw<const N: usize>(a: [D<N>; 2], b: [D<N>; 2], p: [D<N>; 2]) -> D<N> {
@@ -206,9 +243,10 @@ struct Cost {
     input_boxes: usize,
     /// Boxes of unknowns examined by the exclusion.
     unknown_boxes: usize,
-    /// Input boxes split because no tube contracted over them, or because a box of unknowns
-    /// would not go and was no second root.
+    /// Input boxes split because no tube contracted over them, or one did but its root choices
+    /// were not decided over the whole of it.
     no_tube: usize,
+    /// Input boxes split because a box of unknowns would not go and was no second root.
     undecided: usize,
 }
 
@@ -277,13 +315,9 @@ fn inverse<const N: usize>(mut a: [[f64; N]; N]) -> Option<[[f64; N]; N]> {
     inv.iter().flatten().all(|v| v.is_finite()).then_some(inv)
 }
 
-fn points<const N: usize>(y: &[f64; N]) -> [I; N] {
-    from_fn(|i| pt(y[i]))
-}
-
 fn newton<const N: usize>(c: &Component<N>, x: &[f64], seed: [f64; N], cost: &mut Cost)
     -> Option<[f64; N]> {
-    let xi: Vec<I> = x.iter().map(|&v| pt(v)).collect();
+    let xi = exact(x);
     // Only an approximation is wanted: the tube is what proves anything.
     let mut y = seed;
     let mut last = f64::INFINITY;
@@ -295,8 +329,7 @@ fn newton<const N: usize>(c: &Component<N>, x: &[f64], seed: [f64; N], cost: &mu
         for i in 0..N {
             y[i] -= step[i];
         }
-        let size = 1. + y.iter().fold(0f64, |m, v| m.max(v.abs()));
-        last = step.iter().fold(0f64, |m, s| m.max(s.abs())) / size;
+        last = step.iter().fold(0f64, |m, s| m.max(s.abs())) / size(&y);
         if last <= 1e-14 {
             break;
         }
@@ -304,16 +337,22 @@ fn newton<const N: usize>(c: &Component<N>, x: &[f64], seed: [f64; N], cost: &mu
     (last <= 1e-10).then_some(y)
 }
 
+/// `F(ỹ, X)`: the one evaluation of the Krawczyk operator that does not depend on `Y`.
+fn at_centre<const N: usize>(c: &Component<N>, yt: &[f64; N], x: &[I], cost: &mut Cost)
+    -> [E; N] {
+    eval(c, &points(yt), x, cost).map(|r| r.v)
+}
+
 fn krawczyk<const N: usize>(
-    c: &Component<N>, y: &[I; N], yt: &[f64; N], cm: &[[f64; N]; N], x: &[I], cost: &mut Cost,
+    c: &Component<N>, y: &[I; N], yt: &[f64; N], f0: &[E; N], cm: &[[f64; N]; N], x: &[I],
+    cost: &mut Cost,
 ) -> Option<[I; N]> {
-    let f0 = eval(c, &points(yt), x, cost);
     let r = eval(c, y, x, cost);
     let mut k = [I::ZERO; N];
     for i in 0..N {
         let mut s = E::c(yt[i]);
         for l in 0..N {
-            s = s - E::c(cm[i][l]) * f0[l].v;
+            s = s - E::c(cm[i][l]) * f0[l];
         }
         for m in 0..N {
             let mut a = E::c(if i == m { 1. } else { 0. });
@@ -327,63 +366,63 @@ fn krawczyk<const N: usize>(
     Some(k)
 }
 
-/// A box `Y` about `ỹ` with `K(Y, X) ⊂ int Y`, by ε-inflation, and the preconditioner that
-/// proved it; `None` if none is found.
+/// A box `Y` about `ỹ` with `K(Y, X) ⊂ int Y`, and what proved it.
+struct Tube<const N: usize> {
+    y: [I; N],
+    yt: [f64; N],
+    f0: [E; N],
+    cm: [[f64; N]; N],
+}
+
+/// A tube about `ỹ` by ε-inflation; `None` if none is found.
 fn tube<const N: usize>(c: &Component<N>, x: &[I], yt: [f64; N], cost: &mut Cost)
-    -> Option<([I; N], [[f64; N]; N])> {
+    -> Option<Tube<N>> {
     let xm: Vec<I> = x.iter().map(|v| pt(v.mid())).collect();
     let cm = inverse(mid_matrix(&eval(c, &points(&yt), &xm, cost))?)?;
-    let f0 = eval(c, &points(&yt), x, cost);
-    let size = 1. + yt.iter().fold(0f64, |m, v| m.max(v.abs()));
+    let f0 = at_centre(c, &yt, x, cost);
+    let pad = 1e-12 * size(&yt);
     let mut y = [I::ZERO; N];
     for i in 0..N {
         let mut z = E::c(0.);
         for l in 0..N {
-            z = z + E::c(cm[i][l]) * f0[l].v;
+            z = z + E::c(cm[i][l]) * f0[l];
         }
         let r = z.0.map(|z| lo(z).abs().max(hi(z).abs()))?;
-        y[i] = I::new(yt[i] - 2. * r - 1e-12 * size, yt[i] + 2. * r + 1e-12 * size).ok()?;
+        y[i] = I::new(yt[i] - 2. * r - pad, yt[i] + 2. * r + pad).ok()?;
     }
     for _ in 0..16 {
-        let k = krawczyk(c, &y, &yt, &cm, x, cost)?;
-        if (0..N).all(|i| lo(y[i]) < lo(k[i]) && hi(k[i]) < hi(y[i])) {
-            return Some((y, cm));
+        let k = krawczyk(c, &y, &yt, &f0, &cm, x, cost)?;
+        if interior(&k, &y) {
+            return Some(Tube { y, yt, f0, cm });
         }
         for i in 0..N {
             let (a, b) = (lo(k[i]).min(lo(y[i])), hi(k[i]).max(hi(y[i])));
-            let pad = 0.5 * (b - a) + 1e-12 * size;
-            y[i] = I::new(a - pad, b + pad).ok()?;
+            let r = 0.5 * (b - a) + pad;
+            y[i] = I::new(a - r, b + r).ok()?;
         }
     }
     None
 }
 
-/// The largest box `ỹ + 2ᵏ(Y − ỹ)` that still contracts: the root is unique in all of it, so
-/// the exclusion starts where the rows are bounded away from zero, not at the tube's face,
-/// where an input box's width keeps every row's enclosure about zero.
-fn grow<const N: usize>(
-    c: &Component<N>, x: &[I], yt: [f64; N], cm: &[[f64; N]; N], y: [I; N], region: &[I; N],
-    cost: &mut Cost,
-) -> [I; N] {
-    let mut best = y;
-    for _ in 0..30 {
-        let Some(next) = (0..N)
-            .map(|i| {
-                let r = 2. * (hi(best[i]) - yt[i]).max(yt[i] - lo(best[i]));
-                I::new((yt[i] - r).max(lo(region[i])), (yt[i] + r).min(hi(region[i]))).ok()
-            })
-            .collect::<Option<Vec<I>>>()
-        else {
-            break;
-        };
-        let next: [I; N] = from_fn(|i| next[i]);
+/// The largest box `ỹ + 2ᵏ(Y − ỹ)` within the region that still contracts: the root is unique
+/// in all of it, so the exclusion starts where the rows are bounded away from zero, not at the
+/// tube's face, where an input box's width keeps every row's enclosure about zero.
+fn grow<const N: usize>(c: &Component<N>, x: &[I], t: &Tube<N>, region: &[I; N], cost: &mut Cost)
+    -> [I; N] {
+    let mut best = t.y;
+    'doubling: for _ in 0..30 {
+        let mut next = best;
+        for i in 0..N {
+            let r = 2. * (hi(best[i]) - t.yt[i]).max(t.yt[i] - lo(best[i]));
+            let (a, b) = ((t.yt[i] - r).max(lo(region[i])), (t.yt[i] + r).min(hi(region[i])));
+            let Ok(side) = I::new(a, b) else { break 'doubling };
+            next[i] = side;
+        }
         if next == best {
             break;
         }
-        match krawczyk(c, &next, &yt, cm, x, cost) {
-            Some(k) if (0..N).all(|i| lo(next[i]) < lo(k[i]) && hi(k[i]) < hi(next[i])) => {
-                best = next
-            }
+        match krawczyk(c, &next, &t.yt, &t.f0, &t.cm, x, cost) {
+            Some(k) if interior(&k, &next) => best = next,
             _ => break,
         }
     }
@@ -399,7 +438,7 @@ enum Exclusion<const N: usize> {
 fn exclude<const N: usize>(
     c: &Component<N>, x: &[I], y: &[I; N], region: [I; N], cost: &mut Cost, budget: usize,
 ) -> Exclusion<N> {
-    let scale = region.iter().fold(0f64, |m, v| m.max(width(*v)));
+    let scale = extent(&region);
     let mut stack = vec![region];
     'boxes: while let Some(b) = stack.pop() {
         cost.unknown_boxes += 1;
@@ -413,10 +452,7 @@ fn exclude<const N: usize>(
         for i in 0..N {
             for face in [lo(y[i]), hi(y[i])] {
                 if lo(b[i]) < face && face < hi(b[i]) {
-                    let (mut p, mut q) = (b, b);
-                    p[i] = iv(lo(b[i]), face);
-                    q[i] = iv(face, hi(b[i]));
-                    stack.extend([p, q]);
+                    stack.extend(halves(&b, i, face));
                     continue 'boxes;
                 }
             }
@@ -428,23 +464,18 @@ fn exclude<const N: usize>(
         if signs(c, &b, x).iter().any(|s| s.0.is_some_and(|s| hi(s) <= 0.)) {
             continue;
         }
-        let ym: [f64; N] = from_fn(|i| b[i].mid());
         if let Some(cm) = mid_matrix(&r).and_then(inverse) {
-            if let Some(k) = krawczyk(c, &b, &ym, &cm, x, cost) {
-                if (0..N).any(|i| hi(k[i]) < lo(b[i]) || hi(b[i]) < lo(k[i])) {
-                    continue;
-                }
+            let ym: [f64; N] = from_fn(|i| b[i].mid());
+            let f0 = at_centre(c, &ym, x, cost);
+            if krawczyk(c, &b, &ym, &f0, &cm, x, cost).is_some_and(|k| apart(&k, &b)) {
+                continue;
             }
         }
-        let i = (0..N).max_by(|&i, &k| width(b[i]).total_cmp(&width(b[k]))).unwrap();
+        let i = widest(&b);
         if width(b[i]) < 1e-7 * scale {
             return Exclusion::Undecided(b);
         }
-        let m = b[i].mid();
-        let (mut p, mut q) = (b, b);
-        p[i] = iv(lo(b[i]), m);
-        q[i] = iv(m, hi(b[i]));
-        stack.extend([p, q]);
+        stack.extend(halves(&b, i, b[i].mid()));
     }
     Exclusion::Clear
 }
@@ -454,11 +485,10 @@ fn exclude<const N: usize>(
 fn second_root<const N: usize>(
     c: &Component<N>, x: &[f64], b: &[I; N], y: &[I; N], cost: &mut Cost,
 ) -> Option<[f64; N]> {
-    let xi: Vec<I> = x.iter().map(|&v| pt(v)).collect();
+    let xi = exact(x);
     let root = newton(c, x, from_fn(|i| b[i].mid()), cost)?;
-    let (t, _) = tube(c, &xi, root, cost)?;
-    let apart = (0..N).any(|i| hi(t[i]) < lo(y[i]) || hi(y[i]) < lo(t[i]));
-    (apart && admitted(c, &t, &xi)).then_some(root)
+    let t = tube(c, &xi, root, cost)?;
+    (apart(&t.y, y) && admitted(c, &t.y, &xi)).then_some(root)
 }
 
 struct Report<const N: usize> {
@@ -488,23 +518,19 @@ fn run<const N: usize>(c: &Component<N>, x: Vec<I>, budget: usize, cost: &mut Co
             if depth == DEPTH {
                 return Err(format!("{why} at {xm:?}, the input box split {DEPTH} times"));
             }
-            let i = (0..xb.len()).max_by(|&i, &k| width(xb[i]).total_cmp(&width(xb[k]))).unwrap();
-            let m = xb[i].mid();
-            let (mut p, mut q) = (xb.clone(), xb.clone());
-            p[i] = iv(lo(xb[i]), m);
-            q[i] = iv(m, hi(xb[i]));
-            stack.extend([(p, depth + 1), (q, depth + 1)]);
+            let i = widest(&xb);
+            stack.extend(halves(&xb, i, xb[i].mid()).map(|h| (h, depth + 1)));
             Ok(())
         };
         let Some(yt) = newton(c, &xm, (c.seed)(&xm), cost) else {
             return Outcome::NotVerified(format!("no root from the seed at {xm:?}"));
         };
-        if !admitted(c, &points(&yt), &xm.iter().map(|&v| pt(v)).collect::<Vec<_>>()) {
+        if !admitted(c, &points(&yt), &exact(&xm)) {
             return Outcome::NotVerified(format!("the seed's root breaks a root choice at {xm:?}"));
         }
         let region = (c.region)(&xb);
         let y = match tube(c, &xb, yt, cost) {
-            Some((y, cm)) if admitted(c, &y, &xb) => grow(c, &xb, yt, &cm, y, &region, cost),
+            Some(t) if admitted(c, &t.y, &xb) => grow(c, &xb, &t, &region, cost),
             _ => {
                 cost.no_tube += 1;
                 match split(&mut stack, "no tube") {
@@ -529,16 +555,9 @@ fn run<const N: usize>(c: &Component<N>, x: Vec<I>, budget: usize, cost: &mut Co
     Outcome::Verified
 }
 
-fn hull_of(es: &[E]) -> I {
-    let bs: Vec<I> = es.iter().map(|e| e.0.unwrap()).collect();
-    iv(bs.iter().map(|&b| lo(b)).fold(f64::INFINITY, f64::min),
-        bs.iter().map(|&b| hi(b)).fold(f64::NEG_INFINITY, f64::max))
-}
-
 /// `c ± r` over the input box: where a point on that circle can stand.
 fn disc(c: I, r: I) -> I {
-    let reach = E::of(r) * E::of(iv(-1., 1.));
-    hull_of(&[E::of(c) + reach])
+    (E::of(c) + E::of(r) * E::of(iv(-1., 1.))).0.unwrap()
 }
 
 // -- the components ---------------------------------------------------------------------------
@@ -594,13 +613,10 @@ fn circumcircle(bounded: bool) -> Component<3> {
             [cx, cy, (x[0] - cx).hypot(x[1] - cy)]
         },
         region: |x| {
-            let span = |k: usize| {
-                let h = hull_of(&[E::of(x[k]), E::of(x[k + 2]), E::of(x[k + 4])]);
-                (lo(h), hi(h))
-            };
-            let ((x0, x1), (y0, y1)) = (span(0), span(1));
-            let l = (x1 - x0).max(y1 - y0);
-            [iv(x0 - 10. * l, x1 + 10. * l), iv(y0 - 10. * l, y1 + 10. * l), iv(-20. * l, 20. * l)]
+            let (hx, hy) = (hull(&[x[0], x[2], x[4]]), hull(&[x[1], x[3], x[5]]));
+            let l = width(hx).max(width(hy));
+            let wide = |h: I| iv(lo(h) - 10. * l, hi(h) + 10. * l);
+            [wide(hx), wide(hy), iv(-20. * l, 20. * l)]
         },
     }
 }
@@ -689,19 +705,15 @@ fn common_tangent(touch: Touch) -> Component<4> {
 /// are affine in the unknowns, so the tube's test is a test of the interval Gram matrix alone,
 /// and holds for a tube of any size.  Ω: the lines not parallel.
 fn common_perpendicular() -> Component<2> {
-    fn feet(y: &[D<2>; 2], x: &[D<2>]) -> ([D<2>; 3], [D<2>; 3], [D<2>; 3]) {
-        let u1: [D<2>; 3] = from_fn(|i| x[3 + i] - x[i]);
-        let u2: [D<2>; 3] = from_fn(|i| x[9 + i] - x[6 + i]);
-        let gap = from_fn(|i| x[6 + i] + y[1] * u2[i] - x[i] - y[0] * u1[i]);
-        (gap, u1, u2)
-    }
     fn dot(a: [D<2>; 3], b: [D<2>; 3]) -> D<2> {
         a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
     }
     Component {
         rows: |y, x| {
-            let (g, u1, u2) = feet(y, x);
-            [dot(g, u1), dot(g, u2)]
+            let u1: [D<2>; 3] = from_fn(|i| x[3 + i] - x[i]);
+            let u2: [D<2>; 3] = from_fn(|i| x[9 + i] - x[6 + i]);
+            let gap = from_fn(|i| x[6 + i] + y[1] * u2[i] - x[i] - y[0] * u1[i]);
+            [dot(gap, u1), dot(gap, u2)]
         },
         signs: |_, _| vec![],
         seed: |_| [0.5, 0.5],
@@ -807,7 +819,7 @@ fn the_cost_grows_toward_the_fold() {
 fn the_placement_is_what_costs() {
     // The same ±w in the shape's three numbers, and in all six inputs: the same shapes, placed
     // every way.  Covering a box by boxes small enough for the tube costs a power of its
-    // dimension, so the three placement coordinates multiply the work a hundredfold.
+    // dimension, so the three placement coordinates multiply the work many times over.
     let x = [0., 0., 6., 0., 5., 5.];
     for w in [0.2, 0.3] {
         let r = verify(&apex(true), shape(&x, w, &APEX), BUDGET);
@@ -837,8 +849,7 @@ fn the_circle_through_nearly_collinear_points_is_not_verified_within_a_budget() 
     // the third point `h` off the line of the other two, each of the shape's numbers free by
     // ±0.05: as `h` falls, `F_y` loses conditioning, the tube needs ever smaller input boxes
     // and the exclusion ever smaller boxes along the valleys where two rows vanish.  At h = 3
-    // one box does; at h = 2 it takes 63 (260k evaluations, measured); at 0.5 the verifier
-    // gives up, as it should, rather than guess.
+    // one box does; at 0.5 the verifier gives up, as it should, rather than guess.
     let x = [0., 0., 10., 0., 5., 3.];
     let r = verify(&circumcircle(true), shape(&x, 0.05, &TRIANGLE), BUDGET);
     report("circumcircle, r > 0, h = 3, ±0.05", &r);
@@ -906,9 +917,9 @@ fn the_common_perpendicular_is_verified_by_its_gram_matrix() {
 /// DT2 refutation of the contract, which finds a second root or finds none, and proves nothing.
 fn scattered<const N: usize>(c: &Component<N>, x: &[f64], starts: usize, rng: &mut Rng)
     -> Vec<[f64; N]> {
-    let xi: Vec<I> = x.iter().map(|&v| pt(v)).collect();
+    let xi = exact(x);
     let region = (c.region)(&xi);
-    let scale = region.iter().fold(0f64, |m, v| m.max(width(*v)));
+    let scale = extent(&region);
     let mut cost = Cost::default();
     let mut found: Vec<[f64; N]> = vec![];
     for _ in 0..starts {
