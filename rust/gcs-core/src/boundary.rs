@@ -473,11 +473,12 @@ fn analyse(
     }
     a.held = held;
 
-    // the root choices it states, and the roots they admit
+    // the root choices it states, and the roots they admit: read here of each root a probe finds,
+    // since a probe is no document solve and is steered by none of them (`solve::steer`, #157)
     let choices: Vec<(&String, [usize; 3], i32)> = map.chosen.iter()
         .filter(|(_, path)| inst.contains(path))
         .filter_map(|(k, _)| {
-            Some((k, crate::decompose::branch_key_points(k)?, *sk.branches.get(k)?))
+            Some((k, crate::decompose::branch_key_points(k)?, *sk.orientations.get(k)?))
         })
         .collect();
     a.stated = choices.len();
@@ -847,7 +848,7 @@ pub fn text(c: &Classified) -> Vec<String> {
         if a.stated > 0 {
             line += &format!(", by its {}", count(a.stated, "stated root choice"));
             if r.refused > 0 {
-                line += &format!(" (which refuse {}; the solve does not enforce them, #157)",
+                line += &format!(" (which refuse {}; the solve holds the drawing to them)",
                                  count(r.refused, "root"));
             }
         }

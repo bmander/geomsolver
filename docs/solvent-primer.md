@@ -133,7 +133,7 @@ WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint     
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 claim { DECL* CONSTRAINT* }             a claim with witnesses of its own              (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
-ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation       (1.5)
+ccw(a, b, c) | cw(a, b, c)              choose a root; adds no equation              (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
 [NAME :=] Component(ARGS) [in REF]      an instance                                  (1.8)
 component NAME(FORMALS) { statement* }  a component definition (not a value)
@@ -248,7 +248,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
-| `ccw(a, b, c)`, `cw(a, b, c)` | call | `c` left (right) of ray `a → b`: a root choice, no equation |
+| `ccw(a, b, c)`, `cw(a, b, c)` | call | `c` left (right) of ray `a → b`: a root choice, no equation, held as a bound is (1.11) |
 
 #### Which way: directions are words
 
@@ -1098,6 +1098,15 @@ It takes an ordinate, a point–point distance or a distance from a line (else E
 from it following; off the solution the solve looks for a root where it holds, else fails with `a
 bound does not hold`. The diagnosis lists violated and *active* bounds. Not on a `claim`, and not
 the only reader of an unknown. Inside a set's body a bound makes a region (1.13).
+
+**An orientation is held the same way.** `ccw(a, b, x)` adds no row and chooses the root with `x`
+left of `a → b` (`cw`, right): a point of the triangle seeded on the other side is carried across
+the line through the other two before the solve, a solution on the other side is steered to the
+root that turns the stated way, and where none is found the solve fails with `a stated orientation
+does not hold` (`orientation broken: ccw(a, b, x)`). Three points the drawing puts on one line
+turn neither way, so they break it. A point 5 from `a` at `(0, 0)` and from `b` at `(6, 0)` comes
+to `(3, 4)` under `ccw(a, b, x)` whatever its seed. Inside a traced body it is read at the anchor
+instead, and continuity carries it (1.10).
 
 **Words, not seeds.** A bound chooses the root of each block of the solve's block-triangular order
 it decides, so a drawing whose bounds, senses and signed ordinates say every root needs no seed at
@@ -2221,7 +2230,7 @@ mean the model is fully constrained: read the diagnosis — parameter and equati
 | `under` | DOF > 0 | add a constraint or a gauge, or leave a mechanism's freedom on purpose |
 | `over` | a dimension takes part in a consistent redundancy | remove one `over:` line; editing it would be the next conflict |
 | `conflict` | statements that cannot all hold | the `conflict:` lines are the *minimal* disagreeing set |
-| `unsolved` | the solver stopped short | check the model, then reseed nearer the intended branch |
+| `unsolved` | the solver stopped short, or no root keeps a bound or a `ccw` | check the model and the `bound broken:`/`orientation broken:` lines, then reseed nearer the intended branch |
 
 A redundancy among pure relations (a fourth `perpendicular` round a rectangle) is a theorem, listed
 `implied:`, never an error.
@@ -2232,8 +2241,9 @@ number (`--where body.volume`). Under `--json` they are a `positions` table. It 
 `claim` for testing a position.
 
 Two habits: **fix something** (a figure nothing holds is under by three however determined its
-shape), and **seed for the branch** (the solver finds the solution nearest its start, so an arc
-seeded on the wrong side comes out mirrored).
+shape), and **say the branch** — with a bound or a `ccw` where a side matters, since the solver
+otherwise finds the solution nearest its start, so an arc seeded on the wrong side comes out
+mirrored.
 
 ---
 

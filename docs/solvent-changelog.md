@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.160] A stated orientation is held.** `ccw(a, b, c)` and `cw(a, b, c)` written in a
+document (§9.6) are checked on the solution and the solve is steered to them, as a bound is
+([0.60]): a triangle whose seeds turn the other way has a point carried across the line through
+the other two before the solve, everything seeded from it following; a solution that turns the
+other way is steered to the root that turns the stated way; and where none is found the solve
+fails (`a stated orientation does not hold`) and the diagnosis names the statement. Three points
+the drawing puts on one line turn neither way and break it. A point 5 from each of `(0, 0)` and
+`(6, 0)` under `ccw(a, b, x)` is `(3, 4)` from any seed; through 0.159 a seed below the line gave
+`(3, −4)`, reported solved, and the statement was read only by a plan replaying its closed-form
+construction. What the document states is kept apart from the root choices a plan records of its
+seeds, and only it is held. Inside a traced body an orientation is read at the anchor, as before
+(§6.5.1). A drawing whose solution kept its orientations is unchanged. (Issue #157.)
+
 **[0.159] A definition reads the constants of its file.** A component's or a relation word's
 body (§8) reads the numbers its file states at the top and those of the modules the file `use`s,
 by the names the file reads them by (`engine.dims.L`, `L` under `use engine.dims (L)`), where it was

@@ -2,19 +2,25 @@
 //!
 //! `System::solve` is a document's solve: a minimisation (`System::solve_compiled`, retried by
 //! `RETRIES`), its curve contacts re-homed, its constants read again where it ends, a failure
-//! recovered by `RECOVERIES`, and a bound it breaks steered (`bounds`).  The block-triangular
+//! recovered by `RECOVERIES`, and a bound it breaks steered (`bounds`), as is an orientation the
+//! document states (`orientations`, #157).  The block-triangular
 //! pass and its root search are `blocks`; the drags `drag`, and a body turned whole `turn`; a
 //! parent solved through instances it treats as functions of their inputs, `through` (#454).
 
 mod blocks;
 mod bounds;
 mod drag;
+mod orientations;
 mod through;
 mod turn;
 
 pub use bounds::cross_bounds;
 pub use bounds::{bound_reading, bound_tol, bounds_hold, BoundReading};
 pub use drag::{Drag, PullPolish, RadiusDrag, Triangle};
+pub use orientations::{
+    broken as orientations_broken, orientation_reading, orientations_hold,
+    triangle as orientation_triangle, OrientationReading,
+};
 pub use through::{
     solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through, Times,
 };
@@ -31,6 +37,10 @@ pub const BOUND_BROKEN: i32 = 5;
 /// A `SolveResult::status` of its own: every row holds, and a line a tangency reads only by its
 /// direction has no length (#479, `collapsed`).
 pub const COLLAPSED: i32 = 6;
+
+/// A `SolveResult::status` of its own: every row holds, and an orientation the document states
+/// does not (§9.6, #157).
+pub const ORIENTATION_BROKEN: i32 = 7;
 
 /// How short, over the drawing's extent, a line a tangency reads by its direction may be and
 /// still be a line (`collapsed`): the solve's own relative tolerance, as a bound's.
@@ -271,7 +281,8 @@ impl System {
     fn solve_steered(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         // a document solve over bounds starts where it may be steered back to (§9.6), and one
         // that fails is tried again from there (`RECOVERIES`)
-        let steers = opts.document() && sk.constraints.iter().any(|c| c.bound.is_some());
+        let steers = opts.document()
+            && (sk.constraints.iter().any(|c| c.bound.is_some()) || !sk.orientations.is_empty());
         let start = if opts.document() { sk.get_x() } else { Vec::new() };
         let mut res = self.solve_unsteered(sk, opts);
         if opts.document() {

@@ -52,7 +52,8 @@ revision. What it changed:
   single-valued function: a point 5 from each of `(0, 0)` and `(6, 0)` solves to `(3, 4)` or
   `(3, −4)` by its seed, both with numeric rank 2 and DOF 0. N2 now has three tiers, and the
   checker is advisory. Checking the second tier for this revision found that `ccw` on the sheet,
-  which §6.3 relied on to choose a root, is today neither enforced nor checked (#157).
+  which §6.3 relied on to choose a root, was then neither enforced nor checked (#157; it is
+  both since [0.160]).
 * **Equivariance and invalidation (N3, N9).** Caching up to placement needs rigid-motion
   equivariance, not only closure, and invalidation must be tracked per output: §6.4's claim that
   a new fit class leaves the solve for `c` a hit contradicted `BeltDrive`'s own cache key.
@@ -440,7 +441,9 @@ own. What a checker can establish is one of three things:
    On the sheet, `ccw` records a root choice for the constructive plan and is neither enforced nor
    checked (#157): adding `ccw(a, b, x)` above still returns `(3, −4)` from the seed `(3, −4)`, or
    from `(1, −1)`, with the solve reporting success. Tier 2 needs #157 first. Even then, that the
-   stated choices resolve *every* ambiguity is not established by checking one input.
+   stated choices resolve *every* ambiguity is not established by checking one input. (*Since
+   0.160 a stated `ccw` on the sheet is held as a bound is, #157: the example returns `(3, 4)`
+   from either seed, and a solve no root of which keeps it fails.*)
 3. **Verified unique over a stated domain.** For every input in a declared domain there is exactly
    one solution meeting the root choices. How far this can be checked, by intervals or by
    argument, is #453's spike; for small nouns (a common tangent) it can be argued by hand.
@@ -854,12 +857,11 @@ What changed from §6.2:
 * **The branch is chosen, not suggested** (N2, tier 2). Two circles clear of each other have four
   common tangents. On an inner one the tangent points fall on opposite sides of the line of
   centres; on the two outer ones on the same side, and the two `ccw` predicates admit only the
-  left one — once a predicate on the sheet is enforced and checked, which today it is not
-  (#157). That this holds over the whole domain is a short argument — the radii to the tangent
-  points are parallel and on one side — which is tier 3 for this noun, made by hand. It fails at
-  the domain's edge: as the centres close to the difference of the radii, the outer tangents
-  merge and the tangent points' derivatives with respect to the centre distance grow without
-  bound (N8).
+  left one — a predicate on the sheet being enforced and checked since 0.160 (#157). That this
+  holds over the whole domain is a short argument — the radii to the tangent points are parallel
+  and on one side — which is tier 3 for this noun, made by hand. It fails at the domain's edge: as
+  the centres close to the difference of the radii, the outer tangents merge and the tangent
+  points' derivatives with respect to the centre distance grow without bound (N8).
 * **No number is threaded.** There are no puns. The shaft's diameter travels with the shaft (N6);
   the fit class is context (N7), and `BeltDrive` never mentions it although both pulleys inside it
   read it.
@@ -986,7 +988,7 @@ Experiment first, syntax last. Epic #465 tracks both tracks.
    #459's evidence.
 
 Track A also leans on one existing gap: **`ccw` on the sheet enforced and checked (#157)**, without
-which no drawn component reaches N2's second tier.
+which no drawn component reaches N2's second tier. (*Closed in 0.160.*)
 
 **Track B — statements and words**, independent of Track A and judged on readability:
 

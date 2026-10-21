@@ -171,6 +171,11 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("claimsConsuming", ids(&d.claims_consuming)),
         ("boundsViolated", ids(&d.bounds_violated)),
         ("boundsActive", ids(&d.bounds_active)),
+        // the orientations the document states that the solution breaks, by record key (#157)
+        (
+            "orientationsViolated",
+            Json::Arr(d.orientations_violated.iter().map(|k| Json::Str(k.clone())).collect()),
+        ),
         ("collapsed", ids(&d.collapsed)),
         // each energy's verdict, by its terms' constraints (#121): `[id, "minimum", asked]`, the
         // last whether it is what the statement asked for — a minimum of a `minimizes`
@@ -225,6 +230,22 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
             ("dof", p.dof.map(|n| n as i64).into()),
         ])).collect())),
     ])
+}
+
+/// **An orientation the document states, as a statement** (§9.6, #157): the record `key` of
+/// `Sketch::orientations` written back as the call it is, `ccw(a, b, c)` or `cw(a, b, c)`, its
+/// points in the record's order and named by `name` where it names them.  `None` for a key that
+/// is no stated orientation of three points.
+pub fn orientation_text(
+    sk: &Sketch,
+    key: &str,
+    name: &dyn Fn(EntRef) -> Option<String>,
+) -> Option<String> {
+    let t = crate::solve::orientation_triangle(sk, key)?;
+    let word = if *sk.orientations.get(key)? >= 0 { "ccw" } else { "cw" };
+    let names: Vec<String> =
+        t.iter().map(|&p| name(EntRef::point(p)).unwrap_or_else(|| format!("point {p}"))).collect();
+    Some(format!("{word}({})", names.join(", ")))
 }
 
 /// **How a drawing runs over its declared parameter `name`** (#391 S4), in a reader's words: how

@@ -127,6 +127,9 @@ pub struct Diagnosis {
     /// with room is in neither.
     pub bounds_violated: Vec<u32>,
     pub bounds_active: Vec<u32>,
+    /// The orientations the document states (`ccw`, `cw`, §9.6, #157) that the solution breaks,
+    /// by their records' keys (`Sketch::orientations`): which a solve reports as a failure.
+    pub orientations_violated: Vec<String>,
     /// The tangencies at a contact whose line has no length (#479, `solve::collapsed`): each holds
     /// whatever its contact, so the figure is degenerate, which a solve reports as a failure.
     pub collapsed: Vec<u32>,
@@ -1004,6 +1007,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         claims_consuming,
         bounds_violated,
         bounds_active,
+        orientations_violated: crate::solve::orientations_broken(sk),
         collapsed: crate::solve::collapsed(sk),
         extrema: crate::variational::extrema(sk),
         // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose

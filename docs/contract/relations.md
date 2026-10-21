@@ -217,6 +217,9 @@ came from.
   repeats a `fix`.  Holds and root choices are gathered (`gauges::Gauges`) and applied once
   all are in (`hold_all` after the fix pass, `choose_all` after phase 5's `branch`es): alike, one
   gauge; differing, E031 at each statement and nothing applied, so no order decides (#113).
+  A root choice agreed is written to `Sketch::branches` (the plan's) **and**
+  `Sketch::orientations` (the document's), the one a document solve holds the drawing to
+  ([solver.md](solver.md): *a stated root choice is enforced*, #157).
   `commit_seeds` takes a held number out of a written clause (the whole clause
   where all are held) and writes it back when the hold goes.  `tests/seeds.rs::a_fix_is_its_own_seed`.
   `edit::reconcile` diffs holds per entity and field (`gauge_key`, `held_refs` over
