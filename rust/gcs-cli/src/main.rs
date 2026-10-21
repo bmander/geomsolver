@@ -38,6 +38,10 @@ solventc — check a Solvent document
     --where NAME        where a name landed: its own numbers and everything under it
                         (repeatable; the whole table in --json when none is given)
     --no-diagnose       solve only; skip the diagnosis
+    --lint              also say where the document's own text drifts from the language's style
+                        (W201-W206: a pun, a bare component statement, an asserting component, a
+                        deep path, a presentation flag, a group threaded unread); advisory, so
+                        never a failure
     --allow-unsolved    a document that does not solve is not a failure
     --progress          say each stage on stderr as it is done: the solve, each solid built and
                         each claim judged, with its time; work still going is said again past
@@ -94,6 +98,8 @@ struct Opts {
     /// a file something else reads.
     wanted: Vec<String>,
     no_diagnose: bool,
+    /// `--lint`: the drift lint's warnings (`program::drift`) beside elaboration's.
+    lint: bool,
     allow_unsolved: bool,
     output: Option<String>,
     /// `--stl PATH` — the one output of a drawing that is not a picture, and the reason a
@@ -130,6 +136,7 @@ impl Default for Opts {
             json: false,
             wanted: Vec::new(),
             no_diagnose: false,
+            lint: false,
             allow_unsolved: false,
             output: None,
             stl: None,
@@ -239,6 +246,7 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
+            "--lint" => opts.lint = true,
             "--progress" => said = Some(watch::Say::Everything),
             "--no-progress" => said = Some(watch::Say::Nothing),
             "--timings" => opts.timings = true,
@@ -393,6 +401,9 @@ fn read_model(s: &Source) -> (Program, Vec<SynErr>, Elaborated) {
 fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json>) {
     let elaborating = || progress::Work::elaborate(&s.name);
     let (prog, errs, mut e) = progress::during(elaborating, || read_model(s));
+    if opts.lint {
+        e.diags.extend(gcs_core::program::drift(&prog));
+    }
     if opts.timings {
         *places = where_written(&prog, &e);
     }

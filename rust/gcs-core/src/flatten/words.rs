@@ -124,7 +124,7 @@ fn param_kinds(def: &WordDef) -> Result<BTreeMap<String, Param>, (Span, String)>
         // a defined word's argument that is only a parameter's name is passed on to it
         let defined = !builtin_word(&w.word.text, w.fixity);
         for a in &w.args {
-            if let OpArg::Named(_, Arg::Dim { text, span }) = a {
+            if let OpArg::Named(_, Arg::Dim { text, span }) | OpArg::Dim(text, span) = a {
                 if defined && crate::syntax::is_name(text.trim()) {
                     said(text.trim(), Param::Passed, *span)?
                 }
@@ -272,6 +272,16 @@ pub(crate) fn faults(def: &WordDef) -> Vec<(Code, Span, String)> {
     out
 }
 
+/// A defined word's argument in a body, as the use puts it in: a word or a direction word
+/// given for a parameter it names whole, or a number not affine where it is read, written in.
+fn pass_on(text: &mut String, words: &BTreeMap<&str, &str>, texts: &BTreeMap<&str, String>) {
+    if let Some(given) = words.get(text.trim()) {
+        *text = given.to_string();
+    } else if !texts.is_empty() {
+        *text = substitute_with(text, |w| texts.get(w).cloned());
+    }
+}
+
 impl<'a> Walk<'a> {
     /// **A statement written with a word a file defines, applied** — `true` where the statement
     /// is such a use, whatever became of it; `false` for a relation in the language's own words.
@@ -361,6 +371,7 @@ impl<'a> Walk<'a> {
         for st in body.iter_mut() {
             let StmtKind::Relation(r) = &mut st.kind else { continue };
             let Some(w) = r.form.written_mut() else { continue };
+            let defined = !builtin_word(&w.word.text, w.fixity);
             for a in w.args.iter_mut() {
                 match a {
                     OpArg::Named(_, Arg::Word(v)) => {
@@ -368,14 +379,9 @@ impl<'a> Walk<'a> {
                             *v = given.to_string();
                         }
                     }
-                    // passed on to another word as it stands
-                    OpArg::Named(_, Arg::Dim { text, .. }) => {
-                        if let Some(given) = words.get(text.trim()) {
-                            *text = given.to_string();
-                        } else if !texts.is_empty() {
-                            *text = substitute_with(text, |w| texts.get(w).cloned());
-                        }
-                    }
+                    // passed on to another word as it stands, by label or bare
+                    OpArg::Named(_, Arg::Dim { text, .. }) => pass_on(text, &words, &texts),
+                    OpArg::Dim(text, _) if defined => pass_on(text, &words, &texts),
                     OpArg::Dim(text, _) | OpArg::Slot { arg: Arg::Dim { text, .. }, .. }
                         if !texts.is_empty() =>
                     {
@@ -416,8 +422,8 @@ impl<'a> Walk<'a> {
         true
     }
 
-    /// The parameters a use gives, by label (§4.1) — each name to the text it was given and
-    /// where — or `None`, said at the use, where they are not the word's.
+    /// The parameters a use gives, by label (§4.1) or, to a word of one, bare — each name to the
+    /// text it was given and where — or `None`, said at the use, where they are not the word's.
     fn word_args(
         &mut self,
         def: &WordDef,
@@ -439,12 +445,22 @@ impl<'a> Walk<'a> {
                         return None;
                     }
                 }
+                // a word of one parameter takes it bare, as a built-in takes its one number
+                // (#463); of more, which is which is said by label
                 OpArg::Dim(text, span) => {
-                    let p = def.params.first().map_or("p", |p| p.text.as_str());
-                    let m = format!(
-                        "a relation word's parameters are given by label: `{word}({p}: {text})`"
-                    );
-                    self.once(Code::E004, *span, m);
+                    let (code, m) = match (def.params.as_slice(), given.args.as_slice()) {
+                        ([p], [_]) => {
+                            values.insert(p.text.clone(), (text.clone(), *span));
+                            continue;
+                        }
+                        ([], _) => (Code::E040, format!("`{word}` has no parameters")),
+                        ([p, ..], _) => (Code::E004, format!(
+                            "a relation word's parameters are given by label where it has more \
+                             than one: `{word}({}: {text}, …)`",
+                            p.text
+                        )),
+                    };
+                    self.once(code, *span, m);
                     return None;
                 }
                 _ => {

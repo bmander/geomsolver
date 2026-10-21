@@ -2021,6 +2021,7 @@ test('the constraint bar relates points, lines, axes and planes by what is selec
   assert.equal(said('parallel', 't', 'w'), 'AxisParallelPlane');
   assert.equal(said('parallel', 'w', 'std.top'), 'PlaneParallel');
   assert.equal(said('perpendicular', 't', 'w'), 'AxisPerpendicularPlane');
+  assert.equal(said('perpendicular', 'ab', 'w'), 'LinePerpendicularPlane');
   assert.equal(said('perpendicular', 't', 'std.x'), 'Perpendicular3');
   assert.equal(said('parallel', 'c', 'w'), undefined, 'a point is parallel to nothing');
   assert.equal(said('coincident', 'a', 'b', 'c'), undefined, 'a pair, not three');

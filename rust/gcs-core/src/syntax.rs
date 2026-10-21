@@ -1587,6 +1587,11 @@ pub struct Relation {
     /// Written `claim …` (§9.7): stated as expected to add no rank, judged by the diagnosis and
     /// never solved for.
     pub claim: bool,
+    /// Written in a `claim { … }` block (§9.7, #460), by the block's id: one of the statements
+    /// the claim makes of its witnesses, solved for them after the drawing and judged with the
+    /// rest of the block.  Stamped by the parser, which hoists the block's statements and sets
+    /// `claim` on each, so nothing that solves the drawing sees it.
+    pub witness: Option<StmtId>,
     /// The classes the statement carries (`a distance(80) b class ref`), which is how a
     /// dimension's callout is given a look of its own — or none, under `display: none` — the
     /// way a declaration's is (§13.2).  A relation that states no dimension draws nothing, and a
@@ -1632,6 +1637,7 @@ impl Relation {
             place: None,
             place_span: Span::default(),
             claim: false,
+            witness: None,
             class: Classes::default(),
             class_span: Span::default(),
             word: None,

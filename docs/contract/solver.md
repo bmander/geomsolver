@@ -137,7 +137,17 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   a free variable (`CKind::claimable`; E040 at elaboration; document readers drop the flag;
   `expr::evaluate` refuses the binding).  The flag travels through `graft`, JSON (`"claim"`,
   written only when set) and both bindings.  `peaucellier.sv` is the case, `tests/claim.rs` the
-  gate.  `io::describe` prefixes `claim `; `callout.rs` draws a claimed dimension
+  gate.  **A `claim { … }` block** (#460, [0.151]) is one claim over witnesses of its own, the
+  drawing having held them (language.md): after the plain claims, `diagnose::witnessed` solves
+  each block's witnesses by its rows (and the witnesses' intrinsic rows) on a copy holding every
+  other number — a compile of its own, the one `locus::forget` a block costs — and tests each row
+  against the drawing's extent from *before* that solve, so a witness run off to infinity cannot
+  loosen its own test.  None holds: *violated*, the witnesses left as they were.  Else they are
+  written back and the block is a *theorem* iff `rank [J_m 0; G_p G_w] = rank J_m + rank G_w`
+  (`System::conditioned_over`, a column per witness unknown after the free ones) — every motion
+  the drawing allows is followed by one of the witnesses; with no witness it is the lone claim's
+  test — and *consuming* otherwise.  Every row of the block is filed under the one verdict.
+  `io::describe` prefixes `claim `; `callout.rs` draws a claimed dimension
   **parenthesised** — the whole label (`(R50)`, never `R(50)`), wrapped *before* measuring.
   **A verdict is shown where the claim is written, quietly**: a wash behind the statement
   (`app/program.ts::marks`, `.claim-proved` / `.claim-refuted` / `.claim-independent`), no banner.

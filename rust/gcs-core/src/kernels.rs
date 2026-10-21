@@ -136,9 +136,11 @@ pub enum K {
     // a hidden point held at the lift of a point drawn in a spatial frame's three coordinates
     // (#383)
     ChartLift,
+    // a line along a plane's normal, its ends drawn anywhere
+    LinePerpendicularPlane,
 }
 
-pub const N_KERNELS: usize = 93;
+pub const N_KERNELS: usize = 94;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3226,6 +3228,16 @@ fn axis_perpendicular_plane_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
     [vdot(x, e(0)), vdot(x, e(1))]
 }
 
+/// Columns of `line_perpendicular_plane`: (A, B, du, dv), K = (e₁, e₂) — the line's ends' hidden
+/// points, the plane's axes, and `axis_perpendicular_plane`'s two directions across its normal.
+/// `((B − A)^ × n̂)·e_k`: the line along the normal, either way.  Degree 0.
+fn line_perpendicular_plane_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    let (_, _, n) = frame(vec3(v, 6), vec3(v, 9));
+    let x = vcross(vunit(vsub(vec3(v, 3), vec3(v, 0))), n);
+    let e = |t: usize| cst3(k, 3 * t);
+    [vdot(x, e(0)), vdot(x, e(1))]
+}
+
 /// Columns of `plane_parallel`: (du_P, dv_P, du_Q, dv_Q), K = (e₁, e₂), two directions across
 /// `P`'s normal as it stood when compiled or refreshed.  `(n̂_Q × n̂_P)·e_k`: the normals alike,
 /// either way.  Degree 0.
@@ -3678,6 +3690,7 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("mapped_circle", mapped_circle_rows, n_res: 3, n_par: 14, degree: 1, n_const: 1),
     num_kernel!("tangent_circle_at3", tangent_circle_at3_rows, n_res: 2, n_par: 18, degree: 1, n_const: 0),
     num_kernel!("chart_lift", chart_lift_rows, n_res: 3, n_par: 15, degree: 1, n_const: 0),
+    num_kernel!("line_perpendicular_plane", line_perpendicular_plane_rows, n_res: 2, n_par: 12, degree: 0, n_const: 6),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

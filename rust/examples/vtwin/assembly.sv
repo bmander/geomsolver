@@ -55,8 +55,8 @@ in std.front {
 layout := {front: std.front, origin: O, ax: ref}
 plate := components.frame.Frame(layout, dims: components.dims.vtwin_dims)
 crank := components.crank.Crank(layout, dims: components.dims.vtwin_dims, theta: t)
-bankR := components.bank.Bank(layout, crank.pin, plate.r.piv, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims)
-bankL := components.bank.Bank(layout, crank.pin, plate.l.piv, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)
+bankR := components.bank.Bank(layout, crank.pin, plate.pivots.r, fw: components.dims.fwB, dim: 1, dims: components.dims.vtwin_dims)
+bankL := components.bank.Bank(layout, crank.pin, plate.pivots.l, fw: components.dims.fwA, dim: 0, dims: components.dims.vtwin_dims)
 // **the plate's side view is asked for, not drawn** (§6.11) — the part is a solid, so the
 // assembly's side view of it is a reading of that solid and cannot disagree with the front view
 // about how thick the plate is or how far the bearing boss stands off it
@@ -71,15 +71,15 @@ so left_of(d: components.dims.tp / 2) std.side.origin  // the same height: the c
 side := components.side_view.SideView(so, dims: components.dims.vtwin_dims) in std.side
 
 // the two views agree: every height the side view shows is the front view's
-crank.pin project side.pin_s             // the pin
-plate.r.piv project side.pv              // a pivot
-bankR.cyl.k_tl project side.cyB_top    // bank R (bank B, the thicker) is nearest in the side view
-bankR.cyl.k_br project side.cyB_bot
-bankL.cyl.k_tr project side.cyA_top
-bankL.cyl.k_bl project side.cyA_bot
-bankR.cyl.b_tl project side.boB_top    // and each bore's, which is a rod further from the plate on B
-bankR.cyl.b_br project side.boB_bot
-bankL.cyl.b_tr project side.boA_top
-bankL.cyl.b_bl project side.boA_bot
+crank.pin project side.pin_s               // the pin
+plate.pivots.r project side.pv             // a pivot
+bankR.corners.k_tl project side.cyB_top    // bank R (bank B, the thicker) is nearest in the side view
+bankR.corners.k_br project side.cyB_bot
+bankL.corners.k_tr project side.cyA_top
+bankL.corners.k_bl project side.cyA_bot
+bankR.corners.b_tl project side.boB_top    // and each bore's, which is a rod further from the plate on B
+bankR.corners.b_br project side.boB_bot
+bankL.corners.b_tr project side.boA_top
+bankL.corners.b_bl project side.boA_bot
 
 // how it looks

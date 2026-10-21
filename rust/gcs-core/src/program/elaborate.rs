@@ -37,6 +37,32 @@ pub(super) struct Elab<'p> {
     pub(super) duals: BTreeMap<String, usize>,
     pub(super) gauges: Gauges,
     pub(super) probes: Probes,
+    /// Each `claim { … }` block (#460), by its id and the path of the copy it was written in,
+    /// to the index its relations carry (`Constraint::witness`): one claim per block per copy.
+    pub(super) witnesses: BTreeMap<(StmtId, Vec<crate::ir::PathStep>), u32>,
+}
+
+impl Elab<'_> {
+    /// The index of the `claim { … }` block `k` written at `path` (#460), minted the first time
+    /// it is asked.  A witness a defined word's body made stands under the use's path as well,
+    /// where the word's relations were stamped as the use's: a block holds no instance, so the
+    /// trailing instances of such a path are applications, and the block is found past them.
+    pub(super) fn witness_block(&mut self, k: StmtId, path: &[crate::ir::PathStep]) -> u32 {
+        let mut at = path.len();
+        while at > 0
+            && !self.witnesses.contains_key(&(k, path[..at].to_vec()))
+            && matches!(path[at - 1], crate::ir::PathStep::Instance(_))
+        {
+            at -= 1;
+        }
+        let key = if self.witnesses.contains_key(&(k, path[..at].to_vec())) {
+            (k, path[..at].to_vec())
+        } else {
+            (k, path.to_vec())
+        };
+        let n = self.witnesses.len() as u32;
+        *self.witnesses.entry(key).or_insert(n)
+    }
 }
 
 /// The flattener's statements, as the phases read them: every one (`body`), those that state
@@ -70,6 +96,7 @@ pub(super) fn elaborate_in(
         duals: BTreeMap::new(),
         gauges: Gauges::default(),
         probes: Probes::default(),
+        witnesses: BTreeMap::new(),
     };
     unit(&mut cx);
     check_text(&mut cx);
@@ -426,6 +453,8 @@ fn memberships(
     let (drawn, kept_off) = planes::incidences(
         &mut cx.sk, &cx.res, &mut cx.map, &flat.stating, deferred, &expansion.rings, &mut cx.diags,
     );
+    // and the normal of the plane a point is drawn in, where `o.plane.normal` reads it
+    planes::drawn_normals(&mut cx.sk, &cx.res);
     // and a set drawn as an element is one only where what it reads says so (`lowering`)
     let (sk, res) = (&cx.sk, &cx.res);
     let ent = |r: &crate::syntax::Ref| {
@@ -849,11 +878,17 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
         };
         (roles != Default::default()).then_some(((st.id, st.path.clone()), roles))
     }).collect();
-    for (&entity, site) in &cx.map.of_entity {
-        if let Some(&roles) = roles.get(&(site.stmt, site.path.0.clone())) {
-            cx.sk.roles.insert(entity, roles);
-        }
+    let sites: Vec<_> = cx.map.of_entity.iter()
+        .filter_map(|(&e, site)| Some((e, *roles.get(&(site.stmt, site.path.0.clone()))?, site)))
+        .map(|(e, r, site)| (e, r, site.path.0.clone()))
+        .collect();
+    for (entity, mut roles, path) in sites {
+        // a witness's block, from the parser's statement id to its index per copy (#460)
+        roles.witness = roles.witness.map(|k| cx.witness_block(StmtId(k), &path));
+        cx.sk.roles.insert(entity, roles);
     }
+    // a claim's witnesses (#460), held while the drawing solves: no row of it reads one
+    super::witnessed::hold(&mut cx.sk, &cx.map, &mut cx.diags);
     // a dimension a part's own file draws (`Constraint::elsewhere`): its statement, or an
     // instance it is reached through, written in a module with a drawing of its own
     let p = cx.doc;

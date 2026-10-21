@@ -138,6 +138,7 @@ fn written(word: &str, fixity: crate::constraints::Fixity, ops: Vec<Ref>, args: 
         place: None,
         place_span: Span::default(),
         claim: false,
+        witness: None,
         class: Default::default(),
         class_span: Span::default(),
         word: None,
@@ -186,7 +187,7 @@ fn frame(st: &Stmt, d: &Decl) -> Vec<Stmt> {
     // the lines from the carried origin, and the plane over them by the name written
     for (k, to) in [("lu", "u"), ("lv", "v")] {
         let mut l = Decl::line(key(k), local("o"), local(to), Default::default());
-        let roles = GeometryRoles { construction: true, centerline: false };
+        let roles = GeometryRoles { construction: true, ..GeometryRoles::default() };
         l.annotations = Annotations { private: true, roles };
         out.push(stmt(StmtKind::Decl(l)));
     }

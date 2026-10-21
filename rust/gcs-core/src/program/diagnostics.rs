@@ -106,6 +106,21 @@ pub enum Code {
     /// a declaration in two frames with axes at once, nested `in` blocks (#383): the inner one
     /// draws it, and the outer is only ridden on
     W115,
+    /// The drift lint (#462, `program::drift`): advisory, asked for and never raised by
+    /// elaboration.  The `W2xx` block is ours, as the `E1xx` one is.
+    ///
+    /// a label given the name it labels, `teeth: teeth`: a value handed on under its own name
+    W201,
+    /// a component call standing as a statement, called for what it states
+    W202,
+    /// a component that makes nothing a parent can read and only states relations
+    W203,
+    /// a path reading through one instance into another's inside, `pair.gear_cone.ax`
+    W204,
+    /// an `Int` formal read only by `when` conditions: what is made, chosen by a flag
+    W205,
+    /// a `group` formal handed on whole and never read through
+    W206,
 }
 
 impl Code {
@@ -147,12 +162,19 @@ impl Code {
             Code::W113 => "W113",
             Code::W114 => "W114",
             Code::W115 => "W115",
+            Code::W201 => "W201",
+            Code::W202 => "W202",
+            Code::W203 => "W203",
+            Code::W204 => "W204",
+            Code::W205 => "W205",
+            Code::W206 => "W206",
         }
     }
 
     pub fn severity(self) -> Severity {
         match self {
-            Code::W110 | Code::W112 | Code::W113 | Code::W114 | Code::W115 => Severity::Warning,
+            Code::W110 | Code::W112 | Code::W113 | Code::W114 | Code::W115 | Code::W201
+            | Code::W202 | Code::W203 | Code::W204 | Code::W205 | Code::W206 => Severity::Warning,
             _ => Severity::Error,
         }
     }

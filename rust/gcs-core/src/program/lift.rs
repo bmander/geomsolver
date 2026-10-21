@@ -468,7 +468,10 @@ pub(crate) fn lift_relation(sk: &Sketch, c: &Constraint) -> Relation {
     for (i, (_, kind)) in spec.iter().enumerate() {
         args.push(lift_arg(sk, *kind, &c.args[i]));
     }
-    let mut rel = Relation { claim: c.claim, ..built(c.kind, args) };
+    // a claim's block is kept by its index (#460), which the printer refuses rather than write
+    // the block's statements loose, where they would restrict the drawing
+    let witness = c.witness.map(crate::syntax::StmtId);
+    let mut rel = Relation { claim: c.claim, witness, ..built(c.kind, args) };
     // a bound is said as one (§9.6), its interval's high end in the document's units
     let form = &mut rel.form;
     if let (Some(b), crate::syntax::RelationForm::Canonical { bound, .. }) = (c.bound, form) {

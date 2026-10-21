@@ -9,15 +9,17 @@ parts go together with glued press-fit splines.
 The point is reuse: **`drive.sv` imports the pair and restates none of it.** One line,
 `use spiral_bevel.hypoid (HypoidPair)`, and one call lay out the pitch cones, find the face mill
 and cut both members. `hypoid.sv` and its tests stay the pair's single source. Every part here is
-placed by lines and sets the pair already names:
+placed by lines and sets the pair already names, each member's in a group of its own
+(`gear_member`, `pinion_member`, aliases of the pair's own geometry), so the drive reads what the
+pair offers and never reaches into the cones and blanks it is built of:
 
 | the pair names | the drive reads it as |
 |---|---|
-| `pair.gear_cone.ax`, `pair.pinion_cone.ax` | each shaft's axis: shaft, sleeve, hub, spline and crank all turn about it |
-| `pair.gear_cone.foot`, `pair.pinion_cone.foot` | the foot of the mean point M on each axis, where every ordinate along a shaft is measured from |
-| `pair.gear_blank.back`, `pair.pinion_blank.back` | the set bounding each blank's back: each hub lies within the points deeper than it (`q outside seat`), and its rim is those within 2.5 mm of it (`q distance(<= m.rim, side: outside) seat`), so the member sits on its hub exactly |
-| `pair.gear.body`, `pair.pinion.body` | the toothed members, each made a printed part with its hub (`gear_side.part`, `pinion_side.part`) |
-| `pair.gear_blank.material`, `pair.pinion_blank.material` | each member's blank, which bounds the member: what the clearance claims are judged against |
+| `pair.gear_member.ax`, `pair.pinion_member.ax` | each shaft's axis: shaft, sleeve, hub, spline and crank all turn about it |
+| `pair.gear_member.foot`, `pair.pinion_member.foot` | the foot of the mean point M on each axis, where every ordinate along a shaft is measured from |
+| `pair.gear_member.back`, `pair.pinion_member.back` | the set bounding each blank's back: each hub lies within the points deeper than it (`q outside seat`), and its rim is those within 2.5 mm of it (`q distance(<= m.rim, side: outside) seat`), so the member sits on its hub exactly |
+| `pair.gear_member.body`, `pair.pinion_member.body` | the toothed members, each made a printed part with its hub (`gear_side.part`, `pinion_side.part`) |
+| `pair.gear_member.material`, `pair.pinion_member.material` | each member's blank, which bounds the member: what the clearance claims are judged against |
 
 The only number taken from the pair's design rather than its geometry is the depth of the frame's
 floor, `reach`. It is read from the stated tooth counts and module, because a value may not read
@@ -111,7 +113,7 @@ The cranks turn in slabs beyond their members, and the slabs are apart. Each cra
 42 mm, is less than its shaft's height over the floor's underside (75 mm for the gear's), so it
 turns clear of the table.
 
-The swept claims read solids of instances, `frame.body` and `pair.pinion_blank.material`, and
+The swept claims read solids of instances, `frame.body` and `pair.pinion_member.material`, and
 this design is what made them possible. Until it, a name inside `claim over … { … }` was not
 resolved the way the same claim outside the block is (`flatten/resolve.rs`). The gate is
 `gcs-core/tests/solid_claim.rs`'s `a_claim_over_a_motion_reads_the_solids_of_instances`.

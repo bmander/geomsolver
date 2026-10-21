@@ -198,6 +198,21 @@ box). "Not verified" is an honest answer, and the boundary falls back to DT2 or 
 spike's cases, and for each boundary that claims DT3, a test that samples `Ω` (seeded) and finds DT2
 unrefuted at every sample. The sampling only checks the argument; it does not replace it.
 
+The spike (#453, `tests/uniqueness.rs`) built the computation and found what it needs and costs:
+
+* **Uniqueness is relative to a region `S` every admissible root lies in.** A row such as `s on a`
+  gives `S` for free; a circle through three points does not, and its `S` has to be stated. The
+  verdict is "exactly one root in `S`", never more.
+* **The verification is over the shape, not the placement** (§6): the first operand at the origin,
+  the second on an axis. Its cost grows as a power of the input dimension, and the three
+  placement coordinates multiply it by one to two orders of magnitude.
+* **It judges the rows as compiled, not the figure.** `CommonTangent` stated with the regular
+  tangency at each end (`run tangent(at: s) a`, the `tangent_arc_line` kernel) has a second
+  admissible root wherever the circles cross: `s = e` at the crossing, a zero-length run. The
+  verifier proves it a root (a refutation) and the solver reports it solved, DOF 0. Stated with the
+  radii to `s` and `e` parallel instead, the same tangent verifies on every box tried, from
+  circles well clear to circles nearly nested.
+
 **DT4 — Deterministic.** A fresh evaluation is a function of the key (§6, EQ4): the definition, the
 shape, the context and the carriers' parts that the boundary reads. It is computed in the canonical
 placement from seeds stated relative to the operands, then posed. Two instances with one key get one
@@ -673,10 +688,11 @@ says otherwise.
 | case | inputs | tier | EQ | notes |
 |---|---|---|---|---|
 | a point 5 from `a` and `b` | `a`, `b`, carrier | DT1; DT2 with `ccw` after #157 | with a relative seed | two roots, related by the half-turn that turns the carrier over (EQ5) |
-| `CommonTangent(a, b)`: the left external tangent | two circles, carrier | DT3 on `Ω`: the centres farther apart than the radii differ; by hand (paper §6.3), once its `ccw` is checked (#157) | yes | at `Ω`'s edge the outer tangents merge and the tangent points' derivatives grow without bound (DD2) |
+| `CommonTangent(a, b)`: the left external tangent | two circles, carrier | stated by `tangent(at:)` at both ends: DT3 only where the circles clear each other; where they cross, `s = e` at the crossing is a second root (#453). Stated with the radii parallel: DT3 by computation on the boxes #453 tried, across `Ω`; both once its `ccw` is checked (#157) | yes | at `Ω`'s edge the outer tangents merge and the tangent points' derivatives grow without bound (DD2) |
 | `Pulley(centre)`: rim and bore | a point, carrier; `r`, `bore` | DT3 trivially (linear) | yes, invariant about the centre | key `(r, bore)`; the canonical axis is the carrier's `u` (EQ3) |
 | `Crank(o, theta)` | a point, carrier; `theta` unbound | DT1 with `theta` an input | yes | `theta` is the parent's unknown (FR2) |
 | `x² = u`, `x ≥ 0` | `u` | DT3 on `u > 0` | n/a | singular at the edge (DD2) |
+| `CircleThrough(p1, p2, p3)`, `r > 0` | three points, carrier | DT3 by computation within a stated `S` (#453); without the bound, two roots `±r` | yes | the cost grows steeply as the points near a line, and the verifier gives up there |
 | `Apex` with `hint((3, 4))` | `a`, `b`, carrier | DT1 | **no**: reads the carrier's frame | §6's run |
 
 ## 14. What the contract does not promise

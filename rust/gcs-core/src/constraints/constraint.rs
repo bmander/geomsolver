@@ -78,6 +78,12 @@ pub struct Constraint {
     /// the drawing, whose solve could not hold that station's frame, but one of the leg's part
     /// once its family frees it.
     pub carried: bool,
+    /// The `claim { … }` block it was written in (§9.7, #460), by the block's index among the
+    /// document's: a relation the claim makes of its **witnesses**, the geometry the block
+    /// declares.  Always a claim as well, so it compiles no row of the drawing; the diagnosis
+    /// solves the block's witnesses by the block's rows, the drawing held, and judges the block
+    /// as one claim (`diagnose::witnessed`).  Travels like `claim`.
+    pub witness: Option<u32>,
 }
 
 /// A defined relation word as a statement wrote it — see `Constraint::word`.
@@ -208,6 +214,7 @@ impl Constraint {
             bound: None,
             initially: false,
             carried: false,
+            witness: None,
         }
     }
 

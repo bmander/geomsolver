@@ -131,6 +131,7 @@ REF union REF | REF cut REF | REF common REF  material added to, removed from, s
 NAME := envelope | meshing | surface(...)                                           (1.15)
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
+claim { DECL* CONSTRAINT* }             a claim with witnesses of its own              (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
 ccw(a, b, c) | cw(a, b, c)              record a root choice; adds no equation       (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
@@ -243,7 +244,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
-| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `parallel` two planes |
+| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
@@ -791,7 +792,7 @@ worked case: a dimension module, a parts module and one module per part.
 
 ```
 a horizontal b := a level(up) b                  // std.sv
-a above(d) b := b distance(d, along: up) a       // r above(d: 7) q: r stands 7 above q
+a above(d) b := b distance(d, along: up) a       // r above(7) q: r stands 7 above q
 l1 flush(d) l2 := {                              // parallel, and d apart
   l1 parallel l2
   l2.p1 distance(d) l1
@@ -802,11 +803,15 @@ a apart(d) b := {                                // what the body declares, each
 }
 ```
 
-Parameters are given by label (`above(d: 7)`; positional is E004, a missing or unknown label E040);
+A word of one parameter takes it bare or labelled (`above(7)`, `above(d: 7)`); one of two or more
+takes them by label (`offset(dx: 30, dy: 12)`; positional is E004, a missing or unknown label
+E040, anything given a word of none E040);
 a word parameter stands where a selector or direction would (`side: s`, `level(s)`), and one read
 where an entity stands is given a reference (`n square(up: std.z) g`), an alias in the body as an
 operand is (E101 at the argument where it names nothing). The body reads
-only its operands, their members and the parameters (E101 otherwise); it may write other words and
+only its operands, their members and the parameters (E101 otherwise) — among a point's members the
+plane it is drawn in, `o.plane`, so a word about a point in a view needs no plane given (`f.axis
+parallel o.plane.normal`; a point in space has none, E040 at the use); it may write other words and
 use sets. An unknown word is E102; culprits and errors read as the word (`p horizontal q`), and a
 dimension passed as a parameter draws and edits at the argument. An infix word relates its operands
 to each other; that both stand on a third thing is said of each (`a coincident P`).
@@ -1036,6 +1041,33 @@ A claim may not own or read an unknown. `claim over rotor_turn in (0deg, 1080deg
 sampled poses of a frame's motion, reading solids placed under it, and reports the worst; over an
 unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value.
 
+**A claim with witnesses of its own.** Some claims need geometry to be stated at all: "the two
+runs of a belt meet on the line of centres" needs a point on both runs. Declared as ordinary
+geometry, that point is part of the drawing — and at equal pulleys, where the runs are parallel,
+it cannot exist, so a valid drive no longer solves. Declare it in the claim's block instead:
+
+```sv
+in std.front {
+  claim {
+    x := point
+    x coincident upper.span
+    x coincident lower.span
+    x coincident centres
+  }
+}
+```
+
+What the block declares is a **witness**: the drawing holds it while it solves, so the drawing
+solves, counts and diagnoses exactly as it would with the block deleted. After the solve the
+witness is solved by the block's relations, the drawing held where it landed, and the block is
+judged as one claim — *theorem* where a witness exists and keeps existing as the drawing moves
+(here, at any pair of unequal radii), *refuted* where none exists (equal radii: the drive still
+solves), *independent* where one exists only at this pose. Every statement of the block carries
+the one verdict. A block declares geometry and states relations of it (a `when` inside is fine);
+nothing outside it may name a witness (E040), and its relations are claims, so none may own an
+unknown. A precondition is a `when` over the drawing's numbers, `when rb != ra { claim { … } }`:
+where it is false the claim is not made at all.
+
 Three claim words apply only to solids: `claim bore inside stock`, `claim disc clear(2mm) cyl`,
 `claim head fits(0.15mm) trap`. The report gives the measurement, and one within the faceting of a
 round face is **undecided**:
@@ -1135,9 +1167,10 @@ plane `u × v`, up out × u, so `v` need not be square to `u`: it picks the plan
 up. `P.origin` (drawn in `P`, held at `(0, 0)`) lies on both axes, so where the axes stand the plane
 stands; `P.normal` is the axis along `u × v` through `P.origin`, read wherever an axis is (`l
 parallel P.normal`, `plane(u: P.normal, v: P.u)`) and adding no freedom — declare `P` before
-anything naming it; two held axes that do not meet are E067. A plane over a line stands on it, and over two
-lines sharing an end, at that end. **A slot left out mints a free axis**: `P := plane` is seven
-freedoms, `plane(u: std.x)` mints only `P.v`. A minted axis starts as the front's unless seeded,
+anything naming it; two held axes that do not meet are E067. A point drawn in a plane names it as
+`p.plane` (`t perpendicular p.plane`); one standing in space has none (E040). A plane over a
+line stands on it, and over two lines sharing an end, at that end. **A slot left out mints a free
+axis**: `P := plane` is seven freedoms, `plane(u: std.x)` mints only `P.v`. A minted axis starts as the front's unless seeded,
 `plane(v: hint(dir: (0, -1, 0)))` — seed one a relation will turn far. A seed may read the
 direction off geometry: an axis (`hint(dir: up)`), a line from its `p1` to its `p2` in space
 (`hint(dir: g)`), a plane's normal (`hint(dir: P.normal)`, or `P.n`), turned about another (`hint(dir: up, turn:

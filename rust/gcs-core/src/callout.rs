@@ -127,6 +127,7 @@ macro_rules! undrawn {
             | CKind::AxisCoincident
             | CKind::AxisParallelPlane
             | CKind::AxisPerpendicularPlane
+            | CKind::LinePerpendicularPlane
             | CKind::PlaneParallel
             | CKind::PlaneDistance
             // a contact with an envelope in space states no number (#283)

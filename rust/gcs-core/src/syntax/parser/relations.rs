@@ -178,6 +178,7 @@ impl<'a> P<'a> {
                 rates: Vec::new(),
             }),
             claim: false,
+            witness: None,
             class,
             class_span,
             word: None,

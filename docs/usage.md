@@ -24,6 +24,7 @@ build/solventc rust/examples/*.sv            # parse, elaborate, solve, diagnose
 build/solventc --json rust/examples/gear.sv  # the same numbers, structured
 build/solventc drawing.sv --where hinge      # the numbers under one name
 build/solventc --components drawing.sv       # each component against the boundary contract
+build/solventc --lint drawing.sv             # also where its text drifts from the style (advisory)
 build/solventc --help                        # every option
 ```
 
@@ -31,6 +32,11 @@ The exit codes are `0` (elaborated and solved), `1` (did not parse or elaborate)
 solve, unless `--allow-unsolved`), so you can check a document in CI. A diagnostic carries its
 span, for example `gear.sv:31:14: error[E040]: …`. The wording of the report is the core's, so the
 CLI and the app describe a drawing the same way.
+
+`--lint` adds the drift lint's warnings, `W201`–`W206`: a pun (`teeth: teeth`) in a call, a
+component call standing as a statement, a component that only states relations, a path reaching
+through one instance into another, an `Int` read only by `when`, and a `group` handed on unread
+([the contract](contract/language.md)). They are advisory and never change the exit code.
 
 ### Models and drawings
 

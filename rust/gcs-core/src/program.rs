@@ -5,6 +5,7 @@
 
 mod curves;
 mod diagnostics;
+mod drift;
 mod elaborate;
 mod entities;
 mod gauges;
@@ -23,10 +24,12 @@ mod generated;
 mod rings;
 mod source_map;
 mod variational;
+mod witnessed;
 mod words;
 mod traced;
 
 pub use diagnostics::{Code, Diag, Severity};
+pub use drift::{drift, DRIFT};
 
 /// Geometry diagnostics belong after solving: a poor hint is not an invalid final profile.
 pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag> {

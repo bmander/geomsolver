@@ -4,6 +4,37 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.153] A line square to a plane.** `perpendicular` relates a drawn line and a plane, written
+either way round: `P perpendicular l` turns `P`'s normal along `l` in space, whatever view the line
+is drawn in — two rows across the normal over the line's ends' places, as an axis square to a
+plane is (`LinePerpendicularPlane`). Through 0.152 only an axis was (`t perpendicular P`), and a
+line was **E040** ("`perpendicular` does not relate a plane to a line"). No document changes.
+
+**[0.152] A word's one number bare, and the plane its operand is drawn in.** A relation word of
+one parameter may be given it unlabelled, as a constraint word of the language takes its one
+number (§9.9): `r above(7mm) q` is `r above(d: 7mm) q`, and passed on bare inside a body (`a
+twice(d) b := a above(d * 2) b`) it is the inner word's one parameter; through 0.151 it was
+**E004**. A word of two or more keeps its labels (`b offset(dx: 30, dy: 12) a`; given in order,
+**E004**), and a bare value given a word of none is **E040**. A point drawn in a plane has that
+plane as its member `p.plane` (§6.7), read wherever a plane is, its `normal` included — so a word
+about a point drawn in a view reads the view from its operand and stays closed over what it is
+given: `f spins(ratio) o := { o coincident f.axis; f.axis parallel o.plane.normal; fix(ratio ==
+ratio, advance == 0mm) f }` is `std.Spin` with no `on:`. A point standing in space is drawn in no
+plane: its `plane` is **E040**, where the word is written. No document changes. (Issue #463.)
+
+**[0.151] A claim with witnesses of its own.** `claim { … }` declares geometry made only to
+state a claim, its **witnesses**, and states relations of them (§9.7): `claim { x := point; x
+coincident upper; x coincident lower; x coincident centres }` claims that the runs of a belt meet
+on the line of centres. The drawing holds every witness while it solves, so the block restricts
+nothing — the document solves, counts and diagnoses as it would without it — and after the solve
+the witnesses are solved by the block's relations, the drawing held, and the block judged as
+one claim: violated where no witness exists (the parallel runs of equal pulleys, where the drive
+still solves), a theorem where one exists for every nearby solution of the drawing, consuming
+where one exists only at this pose. A statement outside the block that names a witness is
+**E040**; a block holds declarations, relations and `when` blocks, and a condition on the
+drawing's numbers is a `when` around it. Through 0.150 the same point was drawing geometry, and
+over-constrained or broke the document. No document changes. (Issue #460.)
+
 **[0.150] A frame the drawing moves.** A frame with axes and no joint, placed by relations on
 geometry the drawing moves as a declared parameter runs — `coupler := std.Turned(b, c) in
 std.front` on a four-bar's coupler — is a motion over that parameter (§6.14): a reading over the

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.150 — October 2026**
+**Specification, Draft 0.153 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -724,7 +724,8 @@ held where its held axes are not, are **E067**.
 
 Every plane has three members. `P.u` and `P.v` are its axes, axes through its origin. `P.origin`
 is a point drawn in `P` and held at its `(0, 0)`, which a component may be handed and a relation
-may place. An axis square to `P` is `t perpendicular P`. **[0.89]** A fourth, `P.normal`, is the
+may place. An axis square to `P` is `t perpendicular P`, and **[0.153]** a line drawn in any view
+square to it `l perpendicular P`. **[0.89]** A fourth, `P.normal`, is the
 axis along `u × v` through its origin: square to both axes, on the side `u × v` is, standing where
 the plane stands, and read wherever an axis is (`l parallel P.normal`, `plane(u: P.normal, …)`,
 `hint(dir: P.normal)`). It is the plane's, never a freedom of its own, and is not declared: a
@@ -733,8 +734,11 @@ same direction.
 
 **A point drawn in a plane has the plane's own two coordinates.** The point `(a, b)` drawn in `P`
 stands at `o_P + a·û_P + b·v̂_P` in space, its *lift*, which is what a relation in space reads
-(§9.2). A plane whose axes' directions and place are all held is **constant**: its basis is
-settled at elaboration and a lift over it reads it as constants. Any other plane is solved with
+(§9.2). **[0.152]** The plane it is drawn in is its member `p.plane`, read wherever a plane is
+(`t perpendicular p.plane`, `l parallel p.plane.normal`): so what is handed a point drawn in a view
+is handed the view (§9.9). A point standing in space is drawn in no plane, and its `plane` is
+**E040** where a relation reads it. A plane whose axes' directions and place are all held is
+**constant**: its basis is settled at elaboration and a lift over it reads it as constants. Any other plane is solved with
 the sketch. *Non-normative:* an implementation places the planes and axes first, solving the
 statements about them alone (and about points of planes already placed) round by round, so the
 main solve starts where the planes stand rather than where their seeds put them; the geometry
@@ -2311,7 +2315,7 @@ What goes in the parentheses is a short list:
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc |
 | `length` | prefix | **[0.90]** a line: the distance between its own ends; **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length; a free curve: its own. **[0.90]** `distance` relates two things and `length` measures one: so a word over `g: path` states `g`'s length whatever `g` is given, and `distance(d) l` on a line, the spelling through 0.89, is **E040** naming `length(d) l` |
-| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
+| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.153]** `perpendicular` takes (line, plane), either way round: the line, drawn in any view, along the plane's normal in space; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
 | `regular` | infix | **[0.115]** (envelope in space, solid) +`by:` a solid, written `flank regular(…, by: tool) within blank`: the flank's least area factor where the tool cuts it in the blank, a bound or an equation (§6.15.3) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `mapped` | infix | **[0.117]** (point, point), its **pairs** in the parentheses, each a point of the source, `->`, and where it goes: `q mapped(from -> a, to -> b, third -> c) p` holds `q` where the affine map taking `from`, `to` and `third` to `a`, `b` and `c` carries `p`, `q = a + i·(b − a) + j·(c − a)` with `p = from + i·(to − from) + j·(third − from)`. Two pairs are the similarity keeping the turn (`to` turned a quarter about `from` goes to `b` turned a quarter about `a`), `mirror: true` the one reversing it; three pairs say their turn by where their targets stand. Each side is read in its own plane — `q` and the targets in one, `p` and the sources in one, which may be another (**E062** where either is not) — so a point drawn in one view is carried into another. Three sources standing in a line, or two that are one, are **E061** naming them, where they are held; other than two or three pairs, and `mirror:` with three, are **E040**. **[0.118]** (circle, circle) under two pairs: the circle about the image of the other's centre, its radius scaled by `|b − a| / |to − from|`; under three pairs **E040** (an ellipse). A face carried whole is §6.8. No number: not a dimension |
@@ -2368,6 +2372,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `coincident(l: Line, t: Axis)` **[0.44]** | two components of (X − A) × d̂ across the axis, for X each of the line's ends | 4 | A the axis's place, d̂ its direction; a line of no length is still on it |
 | `coincident(t: Axis, P: Plane)` **[0.42]** | n̂_P·(A − o_P), n̂_P·(A + L·d̂ − o_P) | 2 | the axis lies in `P`: two of its points, L the drawing's extent apart |
 | `parallel(t: Axis, P: Plane)`, `perpendicular(t, P)` **[0.42]** | n̂_P·d̂; (n̂_P × d̂) across n̂_P | 1; 2 | along `P`, and square to it |
+| `perpendicular(l: Line, P: Plane)` **[0.153]** | ((B − A)^ × n̂_P) across n̂_P | 2 | A, B the line's ends in space, drawn in any view |
 | `coincident(t: Axis, s: Axis)` **[0.43]** | two components of (d̂_s × d̂_t) across `t`, scaled by L; two components of (A_s − A_t) × d̂_t across `t` | 4 | one line, either sense; L the drawing's extent |
 | `parallel(P: Plane, Q: Plane)` **[0.43]** | two components of n̂_Q × n̂_P across n̂_P | 2 | either way round; neither plane's place nor its turn within itself |
 | `coincident(L, P: Plane)` **[0.24]** | n̂_P·(A − o_P), n̂_P·(B − o_P) | 2 | A, B the line's two ends, lifted |
@@ -2465,6 +2470,38 @@ variable, for the same reason.
 
 `claim` qualifies a single longhand relation statement; it does not enter chains (§6.6).
 
+**Witnesses.** **[0.151]**
+
+```
+claim { <declaration | relation | when-block>* }
+```
+
+Some claims cannot be stated without geometry made for them: that the runs of a belt meet on
+the line of centres needs a point on both runs. Declared as ordinary geometry that point is part
+of the drawing, and where it cannot exist — the runs of equal pulleys are parallel — it makes a
+valid document unsolvable: a construction made only to state a theorem restricts the model.
+
+A `claim` block declares such geometry, its **witnesses**, and states relations of them; it is
+one claim, that witnesses satisfying every relation of the block exist. A witness MUST NOT act:
+the drawing holds it while it solves, and the solution set, the degrees of freedom and every
+diagnostic class of the document are exactly what they would be with the block deleted. After
+the solve, the witnesses are solved by the block's relations with the rest of the drawing held
+at its solution, and the block is judged as one claim, every statement of it under the one
+verdict:
+
+* **violated** — no witness satisfies the block at this solution;
+* **theorem** — one does, and the document implies that one exists: every motion its equations
+  allow is matched by a motion of the witnesses, `rank [J 0; G_p G_w] = rank J + rank G_w` for
+  the document's Jacobian `J` and the block's, `G_p` over the document's unknowns and `G_w` over
+  the witnesses' (with no witness, the test above);
+* **consuming** — one does, but only at this pose.
+
+A block holds declarations, relations of what it declares, and `when` blocks of those (§12.9);
+anything else in it is an error. Its relations are claims, under every rule above. A statement
+outside a block, a claim of another block included, MUST NOT name its witness (**E040**). A
+claim that holds only under a condition on the document's numbers is written inside a `when`
+(§12.9): `when rb != ra { claim { … } }` is not made at all where the condition is false.
+
 ### 9.8 Claims about solids **[0.18]**
 
 A claim is a statement judged and never solved (§9.7).  Everything §9.7 says of a claim about the drawing holds of a claim about the **object**, and the reason is one stratum out rather than new: a solid is evaluated after the drawing is solved, so a statement about one compiles no row and can no more act than a `claim a project b` can.
@@ -2512,8 +2549,8 @@ a above(d) b := b distance(d, along: up) a
 
 A **relation word** is defined at the top level of a file — never inside a body — as a component is: the word between its two operand names (infix) or before its one (prefix), its parameters in parentheses after it, `:=`, and the **one** relation it stands for. A statement writing the word, `p horizontal q`, `r above(d: 7mm) q`, is that relation with the operands and the parameters put in, expanded where the statement stands (§14.1) as a component's body is.
 
-- **Operands are entities**, aliased as a component's entity formals are (P1); their kinds are checked by the relation they reach, where the word is expanded (`p above(d: 1) l` of a line is **E040**, as `l distance(…, along: up) p` would be). A body may read an operand's members (`a.p1`).
-- **Parameters are numbers, selector words or entities** **[0.83]**, given **by label** where the word is written, as a call's numbers are (§4.1): a value given by position is **E004**, a label the word has not is **E040**, and a parameter left out is **E040**. Which a parameter is is how its body reads it: a name read in a dimension, a pin or a seed is a number (written in as the text it was given, read where the word is written); one standing where a selector's word does (`side: s`) is a word; and one standing where an entity does — an operand (`P.v parallel up`), an entity or a direction in a relation's parentheses (`level(s)`, `along: s`), a declaration's child — is an entity, given a reference read where the word is written and aliased in the body as an operand is (`up: std.z`; one that names nothing is **E101** at the argument, and one that is no name **E040**), or a direction word put where it stands (`s: up`) where no name there is spelt so. A name read as a number and as either of the others is **E040**. A parameter only passed whole to another word (`a level_with(e) b := a both(along: e) b`) is what that word reads it as.
+- **Operands are entities**, aliased as a component's entity formals are (P1); their kinds are checked by the relation they reach, where the word is expanded (`p above(d: 1) l` of a line is **E040**, as `l distance(…, along: up) p` would be). A body may read an operand's members (`a.p1`), **[0.152]** and of a point drawn in a plane the plane it is drawn in (`o.plane`, §6.7): a word about a point in a view reads the view from what it is given, so the body stays closed (`f spins(ratio) o := { o coincident f.axis; f.axis parallel o.plane.normal; fix(ratio == ratio, advance == 0mm) f }`). Given a point standing in space, that is **E040** where the word is written.
+- **Parameters are numbers, selector words or entities** **[0.83]**, given **by label** where the word is written, as a call's numbers are (§4.1) — but **[0.152]** a word of **one** parameter may be given it bare, as a constraint word of the language takes its one number (`r above(7mm) q`, as `distance(80)`): a value given by position to a word of two or more is **E004** (`b offset(dx: 30, dy: 12) a` stays labelled, so nothing in order is ambiguous), one given a word of none, a label the word has not and a parameter left out are **E040**. Which a parameter is is how its body reads it: a name read in a dimension, a pin or a seed is a number (written in as the text it was given, read where the word is written); one standing where a selector's word does (`side: s`) is a word; and one standing where an entity does — an operand (`P.v parallel up`), an entity or a direction in a relation's parentheses (`level(s)`, `along: s`), a declaration's child — is an entity, given a reference read where the word is written and aliased in the body as an operand is (`up: std.z`; one that names nothing is **E101** at the argument, and one that is no name **E040**), or a direction word put where it stands (`s: up`) where no name there is spelt so. A name read as a number and as either of the others is **E040**. A parameter only passed whole to another word (`a level_with(e) b := a both(along: e) b`) is what that word reads it as.
 - **The body is closed** over its operands and parameters (§5): a reference or a name it reads that is neither — another entity, a value of the file, a datum — is **E101** at the definition. A word whose body states another defined word is that word's expansion in turn, resolved from the file the body is written in; a word reached again while it is being expanded is **E003**.
 - **An error inside the expansion is reported where the word is written**: every place in the body is the word's own place in the statement that writes it, and a dimension that is one of the word's parameters is the argument the statement gave it — so its callout shows that argument, and editing the callout edits it.
 - A word that is a word of the language's own — an element keyword, a trailing clause, a modifier, a body word, a word opening a statement — or a constraint word of the language **of the same fixity** is **E071**; so is a word defined twice in one file with one fixity. An infix word and a prefix word of one spelling are two words: `std`'s `a horizontal b` stands beside the language's `horizontal l` of a line.
@@ -3005,7 +3042,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E001 | redeclaration within a body |
 | E002 | a block's index or edge binder over a name already in scope |
 | E003 | a component instantiation nothing ends: reached again while it is being expanded, given the numbers it was given there, or nested past the implementation's depth (§8) **[0.75]**; an interface holding itself through its members (§8.1) **[0.84]** |
-| E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]** |
+| E004 | a positional argument that binds a value parameter, or that follows a labelled one (§4.1) **[0.17]**; **[0.152]** a value given by position to a relation word of two or more parameters (§9.9) |
 | E010 | withdrawn: an undecorated `tangent` between circles reads its branch off the seed (§9.5) |
 | E011 | closed path winding contradicts declared orientation |
 | E012 | ambiguous or conflicting path-fragment composition |

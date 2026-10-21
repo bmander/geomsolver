@@ -86,6 +86,11 @@ impl Conditioned {
         Conditioned { m: self.m.select_rows(rows) }
     }
 
+    /// The given rows, over the given columns, each in the given order.
+    pub fn select(&self, rows: &[usize], cols: &[usize]) -> Conditioned {
+        Conditioned { m: self.m.select_rows(rows).select_cols(cols) }
+    }
+
     /// Rank and right null space (the motions) from one SVD.
     pub fn rank_and_nullspace(&self, tol: f64) -> RankNull {
         rank_and_nullspace_with(&self.m, Tol::Abs(tol))
@@ -1101,14 +1106,33 @@ impl System {
         z: &[f64],
         extra: &[&Constraint],
     ) -> (Conditioned, Vec<u32>) {
+        self.conditioned_over(sk, z, extra, &[])
+    }
+
+    /// `conditioned_with`, with a column appended for each parameter of `cols` — numbers this
+    /// system holds, which `extra` reads as unknowns of its own: a claim's witnesses (#460),
+    /// held by the drawing and solved for by the claim's rows alone.  Column `n_free + k` is
+    /// `cols[k]` (sorted), in the units a coordinate's column is; this system's rows read none
+    /// of them.
+    pub(crate) fn conditioned_over(
+        &mut self,
+        sk: &Sketch,
+        z: &[f64],
+        extra: &[&Constraint],
+        cols: &[u32],
+    ) -> (Conditioned, Vec<u32>) {
         let base = self.conditioned(z);
         let (_, mut row_c) = self.structure();
-        if extra.is_empty() || self.n_free == 0 {
+        if extra.is_empty() || self.n_free + cols.len() == 0 {
             return (base, row_c);
         }
+        let n_cols = self.n_free + cols.len();
         let n_extra: usize = extra.iter().map(|c| c.rows_in(sk)).sum();
-        let mut m = Mat::zeros(base.rows() + n_extra, self.n_free);
-        m.data[..base.as_mat().data.len()].copy_from_slice(&base.as_mat().data);
+        let mut m = Mat::zeros(base.rows() + n_extra, n_cols);
+        for r in 0..base.rows() {
+            m.data[r * n_cols..r * n_cols + self.n_free]
+                .copy_from_slice(&base.as_mat().data[r * self.n_free..(r + 1) * self.n_free]);
+        }
         let mut r = base.rows();
         for c in extra {
             let ps = c.params(sk);
@@ -1121,8 +1145,11 @@ impl System {
                 for (k, &p) in ps.iter().enumerate() {
                     cs.clear();
                     fold(&self.col_of, &self.dcols, p as i32, &mut cs);
+                    if let Ok(w) = cols.binary_search(&p) {
+                        cs.push(((self.n_free + w) as i64, 1.0));
+                    }
                     for &(col, w) in &cs {
-                        m.data[r * self.n_free + col as usize] += w * j[t * kn.n_par + k] * inv;
+                        m.data[r * n_cols + col as usize] += w * j[t * kn.n_par + k] * inv;
                     }
                 }
                 row_c.push(c.id);
