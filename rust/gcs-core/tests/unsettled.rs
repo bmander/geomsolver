@@ -92,21 +92,22 @@ fn unequal_circles_tangents_meet_where_they_did() {
     let (mut e, r) = solved(&belt(45.0, true));
     assert!(r.settled() && r.outcome() == "solved", "{r:?}");
     let x = at(&e, "x");
-    assert!((x[0] + 96.0).abs() < 1e-9 && x[1].abs() < 1e-9, "{x:?}");
+    assert!((x[0] + 96.0).abs() < 1e-9 && x[1].abs() < 1e-9 && x[2].abs() < 1e-9, "{x:?}");
     let d = diagnose(&mut e.sketch, DiagnoseOptions { settled: r.settled(), ..Default::default() });
     assert_eq!(d.claims_theorem, vec![claimed(&e)]);
     assert_eq!(d.status, State::Well);
 }
 
-/// Equal radii without the point: the runs lie along the circles' common tangents at ±20.
+/// Equal radii without the point: the runs lie along the circles' common tangents at ±20 (the
+/// front view's up is the world's z).
 #[test]
 fn equal_circles_belt_alone_solves_where_it_did() {
     let (e, r) = solved(&belt(20.0, false));
     assert!(r.settled(), "{r:?}");
     for (run, up) in [("upper", 1.0), ("lower", -1.0)] {
         let (s, t) = (at(&e, &format!("{run}.s")), at(&e, &format!("{run}.e")));
-        assert!(s[0].abs() < 1e-9 && (s[1] - 20.0 * up).abs() < 1e-9, "{run}.s {s:?}");
-        assert!((t[0] - 120.0).abs() < 1e-9 && (t[1] - 20.0 * up).abs() < 1e-9, "{run}.e {t:?}");
+        assert!(s[0].abs() < 1e-9 && (s[2] - 20.0 * up).abs() < 1e-9, "{run}.s {s:?}");
+        assert!((t[0] - 120.0).abs() < 1e-9 && (t[2] - 20.0 * up).abs() < 1e-9, "{run}.e {t:?}");
     }
 }
 
