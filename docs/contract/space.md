@@ -198,7 +198,7 @@ are `Parallel3`/`Perpendicular3`/`Angle3` (slots `SpecKind::Direction`, a line o
 axis is handed to the line kernels as the segment
 `(0, d)` from `Sketch::origin_param`, a fixed 0 (`Constraint::axis_columns`). An unsigned angle
 of 0°/180° is E040 by value (`program/relations.rs`). `tests/axis.rs` is the gate.
-`l perpendicular P` of a drawn line and a plane ([0.152]) is `LinePerpendicularPlane`, either way
+`l perpendicular P` of a drawn line and a plane ([0.153]) is `LinePerpendicularPlane`, either way
 round: the line's ends' hidden points, two rows across `P`'s normal as `AxisPerpendicularPlane`'s
 (`kernels::line_perpendicular_plane_rows`, its directions read off the pose, `reads_pose`).
 `spatial_lang::a_plane_square_to_a_drawn_line_turns_with_it` is the gate.

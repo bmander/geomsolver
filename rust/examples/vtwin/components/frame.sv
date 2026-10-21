@@ -7,7 +7,7 @@ use components.parts
 use components.throttle
 
 // Both banks use the same port timing, rotated: intake counter-clockwise of the bank,
-// exhaust clockwise, for a clockwise crank. The pivot remains available as r.piv or l.piv.
+// exhaust clockwise, for a clockwise crank. The frame names both pivots, `pivots.r` and `pivots.l`.
 component FrameBank(o: point, ref: line, alpha: Angle, dim: Int, dims: group) {
   port_bearing := atan2(dims.a * sin(dims.beta), dims.H + dims.a * cos(dims.beta))
   piv := point hint((o.x + dims.H * sin(alpha), o.y + dims.H * cos(alpha)))
@@ -125,6 +125,8 @@ component IntakeManifold(o: point, right: line, left: line, dims: group) {
   co1 coincident right
   claim radius(dims.rman + dims.wch / 2) ch_out
   plenum := solid(face(ch_in, co1, ch_out, ci0), from: -dims.wch / 2, to: dims.wch / 2)
+  // what the frame cuts besides the plenum: each bank's feed
+  feeds := {r: feedR.body, l: feedL.body}
 }
 
 // A square exhaust passage from a port to its nearest plate edge.
@@ -187,11 +189,13 @@ component Frame(layout: group, dims: group) {
     l := FrameBank(layout.origin, layout.ax, alpha: dims.alphaL, dim: 1, dims: dims)
     claim r.ax angle(dims.V) l.ax
     air := IntakeManifold(layout.origin, r.rad_i, l.rad_i, dims: dims)
-    ventR := ExhaustPassage(r.ep.p, blank.edge_r, dims: dims)
-    ventL := ExhaustPassage(l.ep.p, blank.cham_l, dims: dims)
+    ventR := ExhaustPassage(r.exhaust.center, blank.edge_r, dims: dims)
+    ventL := ExhaustPassage(l.exhaust.center, blank.cham_l, dims: dims)
     inlet := FrameInlet(layout.origin, dims: dims)
   }
-  thr := components.throttle.Throttle(layout.front, inlet.tb.p, layout.ax, phi: dims.throttle, dims: dims)
+  // each bank's pivot, for what swings on it
+  pivots := {r: r.piv, l: l.piv}
+  thr := components.throttle.Throttle(layout.front, inlet.tbore.center, layout.ax, phi: dims.throttle, dims: dims)
 
   boltR := solid(face(r.bolt), from: zb, to: zf)
   boltL := solid(face(l.bolt), from: zb, to: zf)
@@ -214,8 +218,8 @@ component Frame(layout: group, dims: group) {
   portRe cut body
   portLe cut body
   air.plenum cut body
-  air.feedR.body cut body
-  air.feedL.body cut body
+  air.feeds.r cut body
+  air.feeds.l cut body
   inlet.passage_s cut body
   ventR.body cut body
   ventL.body cut body

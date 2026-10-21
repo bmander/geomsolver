@@ -38,7 +38,10 @@ numbers (`module_params` keeps the module's own); groups register under their pa
 b := b distance(d, along: up) a` at a file's top level (`syntax::WordDef`, `Program::words`,
 parsed by `parser/definitions.rs`: `word_definition_ahead`, `defined_prefix_ahead` before a call,
 `word_args` keeping labelled texts). The flattener applies a use (`flatten/words.rs`,
-`Walk::apply_word`, over `flatten/apply.rs`, #103): params by label (E004/E040), a number
+`Walk::apply_word`, over `flatten/apply.rs`, #103): params by label (E004/E040) — but a word of
+one parameter takes it bare too (`Walk::word_args`, [0.152], #463: `r above(7) q`; bare to a word
+of two or more E004, to one of none E040; a bare argument inside a body passed on to a defined word
+as a labelled one is, `pass_on`, and `word_dimension` edits it), a number
 parameter bound in the body's scope, a word parameter where a word stands, an **entity parameter**
 (`Param::Entity`, read where an entity stands: `n square(up: std.z) g`, #250) aliased as an operand
 is — its text read as a reference at the use (`syntax::reference_at`), a direction word put in
@@ -46,7 +49,14 @@ place unless a name there is spelt so (`names_here`: a formal `up` given on) —
 whole to another word (`Param::Passed`) decided by what it is given, operands aliased,
 every relation's span moved to the use's word (a parameter's dimension to its argument, so
 `written` and `edit::set_dimension`'s `word_dimension` read it); nested words resolve from the
-definition's file, a cycle is E003, an unknown word E102 naming the import. `Relation::word` (`Worded`) rides to
+definition's file, a cycle is E003, an unknown word E102 naming the import. **A point's plane**
+([0.152], #463): `o.plane` is the frame a point is drawn in (`program::resolve::follow`, `PLANE`,
+`drawn_in`), so a word about a point in a view reads the view from its operand and stays closed;
+`o.plane.normal` is minted once the memberships are in (`planes::drawn_normals`, over the
+flattener's `normals`). A point standing in space is E040 at the operand, or at the use where the
+operand is a word's body's — a relation that cannot settle says first why an operand whose name is
+found names nothing past it (`relations::constrain`), rather than that it has no kind; before the
+memberships (a declaration's child) it is refused as not yet known. `Relation::word` (`Worded`) rides to
 `Constraint::word` (`WordUse`, entities; `graft` keeps it while its operands survive) and
 `io::describe_with` reads it (`p horizontal q`). `flatten::word_faults` (closure E101, a
 reserved word or a builtin of the fixity E071 — `constraints::builtin_word` — names twice E001)
@@ -376,6 +386,30 @@ takes a layout naming the front datum, origin and reference axis.
   `tau` reads differently in the two: the **warning**. Asked of the text (every component,
   instantiated or not, and every module body).  `expr::builtin` is the one table; `tests/names.rs`
   is the gate.
+- **The drift lint is asked for, and refuses nothing** (#462; `program::drift`, codes
+  `W201`–`W206`, the `W2xx` block ours as `E1xx` is).  It names six patterns that are drift from
+  the language's style by definition (R10 of [the direction paper](../solvent-direction.md)), not
+  counts of an idiom: **W201** a label given the name it labels in a call (`teeth: teeth` to a
+  component, `d: d` to a word a file defines — a built-in's slot, `plane(u: u, v: v)`, and a seed
+  are no call); **W202** a component call standing as a statement; **W203** a component that makes
+  nothing a parent can read (everything it declares is `private` or a claim's witness) and states
+  relations; **W204** a path reading through an instance into its instance (`pair.gear_cone.ax`,
+  the instances known by their statements, a block's next copy's too, `next.t.r.lo`; a path
+  through an index or a formal is not followed);
+  **W205** an `Int` formal read only by `when` conditions; **W206** a `group` formal handed on whole
+  and never read through.  Asked of the **document's own text** (its components and root, not a
+  module it reads, which is linted as a document of its own), and never by `elaborate`: only
+  `solventc --lint` adds the warnings, which fail nothing.  `tests/drift.rs` holds each pattern to
+  one document that trips it and one that does not, and holds the corpus (`rust/examples`,
+  `rust/lib`) to `ALLOWED`, a list that only shrinks, for the patterns in `GATED` (W204, W206),
+  each of which the language can say another way today: an instance names what a parent reads of
+  its instance as a group of aliases (`HypoidPair`'s `gear_member := {ax: gear_cone.ax, …}`,
+  `Tooth`'s `left` and `right`), or the parent reads it off a member one level down
+  (`inlet.tbore.center`, a set's `flank.apex`).  The list is empty.  The rest are said, not held:
+  W201 waits on a word's unlabelled measure (#463), W202 on the motion words (#464), W203 on a
+  word that may leave a number to the solve (`std.Screw`'s pitch, a joint's ratio: a word's
+  parameter left out is E040); W205 is a heuristic, since a flag chooses a model as often as a
+  picture.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,
   `flatten::check_call`).  `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw, o_s: o_s,
   o_t: o_t)`: an argument bound by position must fill an *entity* formal and must stand before every

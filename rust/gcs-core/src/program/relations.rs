@@ -358,7 +358,17 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
         .resolve(&|r| cx.res.entity(&cx.sk, r).map(|e| e.kind))
     {
         Ok(r) => r,
-        Err((span, message)) => {
+        Err(why) => {
+            // an operand whose name is found but whose path past it names nothing (`o.plane` of
+            // a point in space, #463) says why in its own words, at the operand — or, in a
+            // word's body, where the word is used — rather than as an operand of no kind
+            let past = r.form.written().and_then(|w| w.ops.iter().find_map(|o| {
+                cx.res.lookup(o)?;
+                let m = cx.res.operand(&cx.sk, o).err()?;
+                let here = st.span.lo <= o.span.lo && o.span.hi <= st.span.hi;
+                Some((if here { o.span } else { st.span }, m))
+            }));
+            let (span, message) = past.unwrap_or(why);
             cx.diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
         }

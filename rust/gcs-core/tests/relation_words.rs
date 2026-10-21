@@ -137,9 +137,131 @@ fn a_claim_keeps_its_word() {
 #[test]
 fn the_arguments_are_given_by_label() {
     let src = |stmt: &str| format!("use std\na above(d) b := b distance(d, along: up) a\n{POINTS}  {stmt}\n}}\n");
-    refused(&src("r above(5) q"), "E004", "by label: `above(d: 5)`", "5");
     refused(&src("r above(e: 5) q"), "E040", "has no parameter `e`", "e");
     refused(&src("r above q"), "E040", "needs `d`", "above");
+    refused(&src("r above(5, d: 5) q"), "E004", "by label where it has more than one", "5");
+    // a word of two keeps them labelled, so nothing given in order is ambiguous
+    let two = "use std\na offset(dx, dy) b := {\n  b distance(dx, along: right) a\n  b distance(dy, along: up) a\n}\n";
+    refused(&format!("{two}{POINTS}  r offset(3, 4) q\n}}\n"), "E004", "`offset(dx: 3, …)`", "3");
+    refused(&format!("{two}{POINTS}  r offset(3) q\n}}\n"), "E004", "by label", "3");
+    // and a word of none takes nothing
+    let none = "use std\na same b := a coincident b\n";
+    refused(&format!("{none}{POINTS}  r same(3) q\n}}\n"), "E040", "`same` has no parameters", "3");
+}
+
+/// **A word of one parameter takes it bare** (#463), as a built-in takes its one number
+/// (`distance(80)`): the same statement as the labelled one, described and edited as written —
+/// and passed on bare to another word, a number or an entity.
+#[test]
+fn a_word_of_one_parameter_takes_it_bare() {
+    let src = |stmt: &str| format!("\
+use std (horizontal)
+a above(d) b := b distance(d, along: up) a
+a twice(d) b := a above(d * 2) b
+{POINTS}  p horizontal q
+  {stmt}
+  r level(right) q
+}}
+");
+    for stmt in ["r above(7) q", "r above(d: 7) q", "r twice(3.5) q"] {
+        let e = read(&src(stmt));
+        let at = solved_at(&e, &["r"]);
+        assert!(near(at[0], [10.0, 0.0, 7.0]), "{stmt}: {at:?}");
+        assert!(said(&e).contains(&stmt.to_string()), "{stmt}: {:?}", said(&e));
+    }
+    // the dimension is the bare argument: an edit of it writes there
+    let e = read(&src("r above(7) q"));
+    let c = e.sketch.user_constraints().into_iter().find(|c| c.kind == CKind::Ordinate).unwrap();
+    let edit = gcs_core::edit::set_dimension(&e, &e.program, c.id, "d", "9");
+    assert!(edit.refused.is_none(), "{:?}", edit.refused);
+    assert!(edit.text.contains("r above(9) q"), "{}", edit.text);
+    // an entity, given bare and passed on bare
+    let e = read(&format!("\
+use std
+a both(along) b := {{
+  a parallel along
+  b parallel along
+}}
+a level_with(e) b := a both(e) b
+{LINES}  l1 both(h) l2
+  l2 level_with(std.x) l2
+}}
+"));
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    assert!(rise(&sk, &e, "l1").abs() < 1e-9 && rise(&sk, &e, "l2").abs() < 1e-9, "{:?}", said(&e));
+}
+
+/* -- the plane an operand is drawn in (#463) ---------------------------------------------- */
+
+/// `std.Spin` as a word: the axis through `o` square to the view `o` is drawn in, which the word
+/// reads from its operand, `o.plane` — written with the plane's normal, or square to the plane.
+fn spins(square: &str) -> String {
+    format!("\
+unit mm
+use std
+f spins(ratio) o := {{
+  o coincident f.axis
+  {square}
+  fix(ratio == ratio, advance == 0mm) f
+}}
+in std.top {{
+  o := point
+  fix((0, 0)) o
+  c := point
+  fix((30, 0)) c
+  x := point
+  fix((40, 0)) x
+}}
+arm := frame
+arm spins(1) o
+planet := frame
+planet spins(-3) c
+")
+}
+
+/// **A word reads the plane its operand is drawn in** (#463): `o.plane` is the view a point is
+/// drawn in, so a word about it needs no plane given — and is still closed over what it is
+/// given.  The planet is turned about `c` square to the top, three times a radian the other way.
+#[test]
+fn a_word_reads_the_plane_its_operand_is_drawn_in() {
+    use gcs_core::motion::Family;
+    for square in ["f.axis parallel o.plane.normal", "f.axis perpendicular o.plane"] {
+        let e = read(&spins(square));
+        let mut sk = e.sketch.clone();
+        assert!(solve(&mut sk, SolveOpts::default()).success, "{square}");
+        let planet = sk.motions.iter().position(|m| m.name == "planet").expect("a motion `planet`");
+        let family = Family::read(&sk, planet).unwrap();
+        let x = sk.world_point(ent(&e, "x").i());
+        for deg in [-60.0, 25.0, 90.0] {
+            let tau = f64::to_radians(deg);
+            let (s, k) = (-3.0 * tau).sin_cos();
+            let want = [30.0 + 10.0 * k, 10.0 * s, 0.0];
+            let got = family.at(tau).unwrap().point(x);
+            assert!(near(got, want), "{square}, τ = {deg}: {got:?} against {want:?}");
+        }
+    }
+}
+
+/// A point standing in space is drawn in no plane: its `plane` is refused where the word is used,
+/// and where a relation reads it directly, at the reference.
+#[test]
+fn a_point_in_space_has_no_plane() {
+    let src = format!("{}a := point hint((1, 2, 7))\nbad := frame\nbad spins(2) a\n",
+        spins("f.axis parallel o.plane.normal"));
+    let (prog, _, _) = gcs_core::library::parse_linked(&src);
+    let e = elaborate(&prog);
+    let at: Vec<(&str, &str)> = e.errors()
+        .map(|d| (d.code.as_str(), d.span.slice(prog.text())))
+        .collect();
+    assert_eq!(at, [("E040", "bad spins(2) a")], "{:?}", e.diags);
+    assert!(e.errors().all(|d| d.message.contains("standing in space is drawn in no plane")));
+    refused(
+        "unit mm\nuse std\na := point hint((1, 2, 7))\nl := axis hint(dir: (0, 0, 1))\nl perpendicular a.plane\n",
+        "E040",
+        "drawn in no plane",
+        "a.plane",
+    );
 }
 
 #[test]
