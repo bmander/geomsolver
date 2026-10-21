@@ -206,6 +206,9 @@ pub enum KernelKey {
     /// A rate of a contact (#365), whatever its source: one kernel at its word's rows, the form
     /// its source holds a rate to a line in, and its block's widths (`contact_rate::kernel`).
     Rate { word: u8, form: u8, n_par: usize, n_const: usize },
+    /// An output of a linear solve, its gradient the adjoint (#510 P5), at its block's widths
+    /// (`interior::kernel`).
+    Interior { n_par: usize, n_const: usize },
 }
 
 pub fn kernel(id: K) -> &'static Kernel {

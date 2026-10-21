@@ -330,6 +330,20 @@ impl Ata {
         true
     }
 
+    /// The least pivot of the last factorisation that succeeded, as a fraction of its column's
+    /// diagonal in A: in (0, 1] for a positive definite A, and at rounding's size where A is
+    /// singular in exact arithmetic but no pivot came out exactly zero.
+    pub fn least_pivot(&self) -> f64 {
+        let mut diag = vec![0.0; self.n];
+        self.diag(&mut diag);
+        (0..self.n)
+            .map(|k| {
+                let a = diag[self.perm[k] as usize];
+                if a > 0.0 { self.d[k].max(0.0) / a } else { 0.0 }
+            })
+            .fold(1.0, f64::min)
+    }
+
     /// Solve again, in place, with the factorisation the last `solve` that succeeded left: the
     /// same `(A + diag(damp))`, another right-hand side.
     pub fn resolve(&self, b: &mut [f64]) {

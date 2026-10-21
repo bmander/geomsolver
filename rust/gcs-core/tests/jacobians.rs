@@ -499,6 +499,52 @@ fn every_dimension_can_be_written_free() {
     }
 }
 
+/// A row whose value is the output of a linear solve (#510 P5): the adjoint gradient of a braced
+/// structure's output, in every node's coordinates and every bar's area, against central
+/// differences of the value — in the plane and in space, stated and with its number an unknown,
+/// and two instances in one block, as `System` evaluates a block of rows built at one width.
+#[test]
+fn a_linear_interior_agrees_with_finite_differences() {
+    use gcs_core::fdcheck::fd_jacobian;
+    use gcs_core::kernels::KernelKey;
+    for seed in 0..5u32 {
+        let mut rng = Rng::new(seed + 40);
+        for dim in [2, 3] {
+            let (s, x) = crate::interior::braced(dim, 6 + seed as usize, &mut rng);
+            for stated in [&[0.3][..], &[1.7, -0.2]] {
+                let free = stated.len() == 2;
+                let (n_par, n_const) = s.widths(free);
+                let kn = gcs_core::system::build_kernel(
+                    &Sketch::new(), KernelKey::Interior { n_par, n_const });
+                let mut one = x.clone();
+                if free {
+                    one.push(rng.uniform(-1.0, 1.0));
+                }
+                // a second instance, its nodes moved and its areas grown
+                let two: Vec<f64> = one.iter().map(|v| v * 1.1 + 0.05).collect();
+                let v = [one, two].concat();
+                let k = [s.consts(stated), s.consts(stated)].concat();
+                let res = |w: &[f64]| {
+                    let mut r = vec![0.0; 2];
+                    (kn.res)(2, w, &k, &mut r);
+                    r
+                };
+                let jn = fd_jacobian(res, &v, 1e-6);
+                let mut ja = vec![0.0; 2 * n_par];
+                (kn.jac)(2, &v, &k, &mut ja);
+                let scale = jn.data.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+                for (i, a) in ja.iter().enumerate() {
+                    let (row, col) = (i / n_par, i % n_par);
+                    let n = jn.data[row * 2 * n_par + row * n_par + col];
+                    assert!((a - n).abs() <= 1e-7 + 1e-6 * scale,
+                            "seed {seed}, {dim}D, free {free}: row {row} column {col}: {a} \
+                             against {n}");
+                }
+            }
+        }
+    }
+}
+
 /// Every contact with an envelope in space (#283) — a point on it, a line in its tangent plane, a
 /// line and an axis along its normal, a plane touching it, a circle osculating its section — over
 /// each source the solve reads: a cone and a cylinder set, each with its number an unknown, and a
