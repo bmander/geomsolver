@@ -32,9 +32,14 @@
 //! - *Held*: the drawing must be held where it starts — of full column rank there.  A freedom
 //!   left at an instant is a free *function* of the parameter, and nothing says how it moves as
 //!   the parameter runs, so it is refused naming the count (`not_held`).
+//! - *Still* (#498): what the parameter does not reach — the blocks of the drawing's order no
+//!   reader's row is in or reads through — is set aside at every station and keeps its numbers to
+//!   the bit (`Still`): only what moves is solved.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
+use crate::constraints::Constraint;
 use crate::model::{Running, Sketch};
 use crate::units::Units;
 use crate::vocab::num;
@@ -68,6 +73,11 @@ const GROW: f64 = 1.5;
 /// How far past two branches meeting a drawing is looked for, as a fraction of the interval, to
 /// tell a crossing from a turn.
 const PROBE: f64 = 1e-4;
+
+/// Where in its interval a row is asked whether it reads the parameter (`Still::of`), as a
+/// fraction of it: the golden section, irrational, so no law periodic in the interval reads there
+/// what it reads at its start.
+const ELSEWHERE: f64 = 0.618_033_988_749_894_8;
 
 /// The most stations a march keeps before it is refused: a step kept only at the finest, all the
 /// way, would be ten million.
@@ -121,6 +131,8 @@ pub struct Followed {
     pub singular: Option<Singular>,
     /// The parameter the running number is held in.
     held: u32,
+    /// What the parameter does not reach, left where it stands at every instant.
+    still: Still,
 }
 
 impl Followed {
@@ -146,7 +158,7 @@ impl Followed {
         let w = (t - a.at) / (b.at - a.at);
         let x: Vec<f64> = a.x.iter().zip(&b.x).map(|(p, q)| p + w * (q - p)).collect();
         sk.set_x(&x);
-        settle(sk, self.held, t, &[]).map(|_| ())
+        settle(sk, self.held, t, &[], &self.still).map(|_| ())
     }
 }
 
@@ -445,18 +457,36 @@ pub(crate) fn march_key(sk: &Sketch, name: &str) -> Vec<f64> {
 pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
     let over = sk.parameters.get(name)
         .ok_or_else(|| format!("`{name}` is no parameter the drawing declares"))?.clone();
+    let reading = readers(sk, name);
     let held = sk.held.get(name).map(|h| h.param)
-        .filter(|_| !readers(sk, name).is_empty())
+        .filter(|_| !reading.is_empty())
         .ok_or_else(|| format!("nothing the drawing states reads `{name}`"))?;
     let mut sk = sk.clone();
     home(&mut sk);
+    let elsewhere = over.from + (over.to - over.from) * ELSEWHERE;
+    let mut reading = reading;
+    loop {
+        let still = Still::of(&sk, held, &reading, elsewhere);
+        let followed = march(sk.clone(), &over, held, &still);
+        // a row set aside that read otherwise at a station reads the parameter: marched again
+        // with it solved, so every orientation is read over the one system
+        let missed = still.missed.take();
+        if missed.is_empty() {
+            return followed;
+        }
+        reading.extend(missed);
+    }
+}
+
+/// The march of `follow`, from the drawing `sk` at home, with what `still` sets aside.
+fn march(mut sk: Sketch, over: &Running, held: u32, still: &Still) -> Result<Followed, String> {
     let span = over.to - over.from;
     let (coarsest, finest) = (span * COARSEST, span * FINEST);
-    let mut sys = settle(&mut sk, held, over.from, &[])
-        .map_err(|e| format!("the drawing at {}: {e}", at_text(&over, over.from, sk.units)))?;
+    let mut sys = settle(&mut sk, held, over.from, &[], still)
+        .map_err(|e| format!("the drawing at {}: {e}", at_text(over, over.from, sk.units)))?;
     let jac = Jacobian::read(&mut sys, &sk);
     if let Some(n) = jac.short(&mut sys, &sk) {
-        return Err(not_held(&over, n, sk.units));
+        return Err(not_held(over, n, sk.units));
     }
     // a motion too small to judge a turn by: the solve's own reach, in world length
     let floor = 1e-9 * (1.0 + sys.extent);
@@ -472,7 +502,7 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
     let stop = |trail: Vec<Station>, kind: Kind| {
         let at = trail.last().map_or(over.from, |s| s.at);
         Ok(Followed { over: over.clone(), stations: trail, singular: Some(Singular { at, kind }),
-                      held })
+                      held, still: still.clone() })
     };
     loop {
         let prev = trail.last().expect("a march starts somewhere").clone();
@@ -494,7 +524,10 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
             _ => prev.x.clone(),
         };
         sk.set_x(&predicted);
-        let solved = settle(&mut sk, held, t, &[]);
+        let solved = settle(&mut sk, held, t, &[], still);
+        if !still.missed.borrow().is_empty() {
+            return Err("a row set aside reads the parameter".into());
+        }
         let finest_step = step <= finest;
         let Ok(mut sys) = solved else {
             if finest_step {
@@ -510,7 +543,8 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
         let o = jac.sign;
         if sign != 0 && o != sign {
             if finest_step {
-                let kind = beyond(&mut sk, held, &prev, (prev.at + span * PROBE).min(over.to));
+                let kind = beyond(&mut sk, held, still, &prev,
+                                  (prev.at + span * PROBE).min(over.to));
                 return stop(trail, kind);
             }
             h = step / 2.0;
@@ -521,7 +555,7 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
             continue;
         }
         if jac.short(&mut sys, &sk).is_some() {
-            let kind = beyond(&mut sk, held, &prev, (t + span * PROBE).min(over.to));
+            let kind = beyond(&mut sk, held, still, &prev, (t + span * PROBE).min(over.to));
             trail.push(Station { at: t, x });
             return stop(trail, kind);
         }
@@ -531,7 +565,7 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
         }
         trail.push(Station { at: t, x });
     }
-    Ok(Followed { over, stations: trail, singular: None, held })
+    Ok(Followed { over: over.clone(), stations: trail, singular: None, held, still: still.clone() })
 }
 
 /// The ids of the constraints whose numbers read the declared parameter `name` (#391 S4): the
@@ -565,9 +599,9 @@ pub fn reading(over: &Running, v: f64, units: Units) -> String {
 
 /// What two branches meeting just past station `prev` are, by whether a drawing stands at `probe`
 /// past them: where one goes on they cross, and where none does the motion turns back.
-fn beyond(sk: &mut Sketch, held: u32, prev: &Station, probe: f64) -> Kind {
+fn beyond(sk: &mut Sketch, held: u32, still: &Still, prev: &Station, probe: f64) -> Kind {
     sk.set_x(&prev.x);
-    if settle(sk, held, probe, &[]).is_ok() { Kind::Branch } else { Kind::Limit }
+    if settle(sk, held, probe, &[], still).is_ok() { Kind::Branch } else { Kind::Limit }
 }
 
 /// Why a drawing short of rank where it starts is not followed.
@@ -579,10 +613,11 @@ pub fn not_held(over: &Running, n: usize, units: Units) -> String {
 }
 
 /// Solve the drawing with its running number held at `t`, warm from where it stands, the
-/// unknowns named `outer` held as they stand: the compiled system, or why it does not solve.  The
-/// one station solve of a march along a number, a declared parameter's here and a face family's
-/// (`solid::family`), whose station holds the drawing's unknowns it was handed.
-pub(crate) fn settle(sk: &mut Sketch, held: u32, t: f64, outer: &[String])
+/// unknowns named `outer` held as they stand and what `still` sets aside left where it stands:
+/// the compiled system, or why it does not solve.  The one station solve of a march along a
+/// number, a declared parameter's here and a face family's (`solid::family`), whose station holds
+/// the drawing's unknowns it was handed.
+pub(crate) fn settle(sk: &mut Sketch, held: u32, t: f64, outer: &[String], still: &Still)
     -> Result<System, String> {
     sk.params[held as usize].value = t;
     for item in crate::expr::evaluate(sk) {
@@ -596,11 +631,170 @@ pub(crate) fn settle(sk: &mut Sketch, held: u32, t: f64, outer: &[String])
             sk.params[p as usize].fixed = true;
         }
     }
+    let aside = still.aside(sk);
     let mut sys = System::new(sk);
-    if !sys.solve(sk, crate::solve::SolveOpts::default()).success {
+    let solved = sys.solve(sk, crate::solve::SolveOpts::default()).success;
+    aside.give_back(sk);
+    if !solved {
         return Err("does not solve".into());
     }
     Ok(sys)
+}
+
+/// **What a march leaves where it stands** (#498): the statements and unknowns of the blocks of
+/// the drawing's block-triangular order (`System::block_order`) the parameter does not reach —
+/// no row of one reads it, nor an unknown of a block that does, and each holds where the drawing
+/// stands at home and is of full rank there.  Nothing such a block reads moves as the parameter
+/// runs, so its unknowns are where they stand at every instant: each station solves the rest
+/// with them set aside (`aside`) and they keep their numbers to the bit.  Solved with the rest,
+/// a part that does not move moved by the solve's rounding, and a solid that only moved read as
+/// another shape (`solid::ShapeKey`).  A row reads the parameter where its text does, where it
+/// reads a held number (worked out where the drawing is settled), and where what it reads — its
+/// unknowns' numbers and the constants it compiles to — is otherwise with the parameter held
+/// elsewhere (`ELSEWHERE`).  One that still reads otherwise at a station than at home, a constant
+/// read off where what moves stands, is not set aside there (`missed`), and the march is made
+/// again with it among the readers (`follow`).  Nothing is set aside of a drawing whose order is
+/// not square, whose rank is read whole.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Still {
+    /// The statements set aside, by id, ascending.
+    rows: Vec<u32>,
+    /// The unknowns their blocks are matched to, ascending.
+    params: Vec<u32>,
+    /// What each statement reads at home (`read`), by id.
+    reads: BTreeMap<u32, Vec<f64>>,
+    /// The statements a station found reading otherwise (`aside`): rows reading the parameter.
+    missed: std::cell::RefCell<BTreeSet<u32>>,
+}
+
+impl Still {
+    /// What the parameter held in `held` and read by the statements `reading` does not reach in
+    /// `sk`, at home — nor where it is held at `elsewhere`, where a row reading it some way no
+    /// text says reads otherwise.
+    fn of(sk: &Sketch, held: u32, reading: &[u32], elsewhere: f64) -> Still {
+        let mut sys = System::new(sk);
+        let order = sys.block_order();
+        let square = order.over_rows.is_empty() && order.over_cols.is_empty()
+            && order.under_rows.is_empty() && order.under_cols.is_empty();
+        if !square || order.blocks.len() < 2 {
+            return Still::default();
+        }
+        let z = sys.z0(sk);
+        let r = sys.residuals(&z);
+        sys.size_rows();
+        let j = sys.conditioned_sparse(&z);
+        let acceptance = crate::solve::SolveOpts::default().acceptance_tol;
+        let cid = |&(b, i): &(usize, usize)| sys.blocks[b].cids[i];
+        let mut there = sk.clone();
+        there.params[held as usize].value = elsewhere;
+        let _ = crate::expr::evaluate(&mut there);
+        let spans = (crate::curve::contact_spans(sk), crate::curve::contact_spans(&there));
+        // a held number is written where the drawing is settled, read off where it stands
+        let numbers: BTreeSet<u32> = sk.held.values().map(|h| h.param).chain([held]).collect();
+        let reads_t: BTreeSet<u32> = sk.constraints.iter().zip(&there.constraints)
+            .filter(|(c, d)| reading.contains(&c.id)
+                || c.params(sk).iter().any(|p| numbers.contains(p))
+                || read(sk, c, &spans.0) != read(&there, d, &spans.1))
+            .map(|(c, _)| c.id)
+            .collect();
+        let mut block = vec![usize::MAX; sys.n_free];
+        for (k, b) in order.blocks.iter().enumerate() {
+            for &c in &b.cols {
+                block[c] = k;
+            }
+        }
+        let mut reached: Vec<bool> = order.blocks.iter().map(|b| {
+            let tol = crate::linalg::Tol::Abs(crate::system::RANK_TOL);
+            b.instances.iter().any(|i| reads_t.contains(&cid(i)))
+                || b.rows.iter().any(|&row| !(sys.judged(row, r[row]) < acceptance))
+                || crate::linalg::rrqr_with(&j.dense(&b.rows, &b.cols), tol).0 < b.cols.len()
+        }).collect();
+        // and every block reading an unknown of one reached, until there is none
+        let mut more = true;
+        while more {
+            more = false;
+            for (k, b) in order.blocks.iter().enumerate() {
+                if !reached[k] && b.rows.iter()
+                    .any(|&row| j.row(row).any(|(c, _)| block[c] != k && reached[block[c]])) {
+                    (reached[k], more) = (true, true);
+                }
+            }
+        }
+        let still = order.blocks.iter().zip(&reached).filter(|(_, &r)| !r).map(|(b, _)| b);
+        let (mut rows, mut params) = (Vec::new(), Vec::new());
+        for b in still {
+            rows.extend(b.instances.iter().map(cid));
+            params.extend(b.cols.iter().map(|&c| sys.free[c] as u32));
+        }
+        rows.sort_unstable();
+        rows.dedup();
+        params.sort_unstable();
+        let reads = sk.constraints.iter().filter(|c| rows.binary_search(&c.id).is_ok())
+            .map(|c| (c.id, read(sk, c, &spans.0)))
+            .collect();
+        Still { rows, params, reads, ..Still::default() }
+    }
+
+    /// Set it aside in `sk`, where what it reads is what it read at home: its statements carried
+    /// (`Constraint::carried`, which compiles no row) and its unknowns held — what was changed,
+    /// for `Aside::give_back`.
+    fn aside(&self, sk: &mut Sketch) -> Aside {
+        if self.rows.is_empty() {
+            return Aside::default();
+        }
+        let spans = crate::curve::contact_spans(sk);
+        let missed: Vec<u32> = sk.constraints.iter()
+            .filter(|c| self.reads.get(&c.id).is_some_and(|was| *was != read(sk, c, &spans)))
+            .map(|c| c.id)
+            .collect();
+        if !missed.is_empty() {
+            self.missed.borrow_mut().extend(missed);
+            return Aside::default();
+        }
+        let rows: Vec<usize> = sk.constraints.iter().enumerate()
+            .filter(|(_, c)| !c.carried && self.rows.binary_search(&c.id).is_ok())
+            .map(|(i, _)| i)
+            .collect();
+        let params: Vec<usize> = self.params.iter().map(|&p| p as usize)
+            .filter(|&p| sk.params.get(p).is_some_and(|q| !q.fixed))
+            .collect();
+        for &i in &rows {
+            sk.constraints[i].carried = true;
+        }
+        for &p in &params {
+            sk.params[p].fixed = true;
+        }
+        Aside { rows, params }
+    }
+}
+
+/// What constraint `c` of `sk` reads: its unknowns' numbers and the constants it compiles to
+/// (`System::new`'s, on the span `spans` says).
+fn read(sk: &Sketch, c: &Constraint, spans: &BTreeMap<u32, usize>) -> Vec<f64> {
+    let span = spans.get(&c.id).copied();
+    let mut v: Vec<f64> = c.params_on(sk, span).iter().map(|&p| sk.params[p as usize].value)
+        .collect();
+    v.extend(c.consts_on(sk, span));
+    v
+}
+
+/// What `Still::aside` changed: the statements it carried and the unknowns it held, by index.
+#[derive(Default)]
+struct Aside {
+    rows: Vec<usize>,
+    params: Vec<usize>,
+}
+
+impl Aside {
+    /// Give `sk` back what was set aside: its statements' rows and its unknowns' freedom.
+    fn give_back(self, sk: &mut Sketch) {
+        for i in self.rows {
+            sk.constraints[i].carried = false;
+        }
+        for p in self.params {
+            sk.params[p].fixed = false;
+        }
+    }
 }
 
 /// How many degrees of freedom the solved system `sys` leaves, where it leaves any: a station

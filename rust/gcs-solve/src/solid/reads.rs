@@ -37,8 +37,8 @@ enum Poses {
     /// In the world, with every other number: `reads`, the key every other cache keeps.
     World,
     /// Relative to the plane `to`, with `rigid` false once anything read stands in the world
-    /// itself: a `ShapeKey`'s.
-    Relative { to: Basis, rigid: bool },
+    /// itself, and `reach` the largest number a pose was worked from: a `ShapeKey`'s.
+    Relative { to: Basis, rigid: bool, reach: f64 },
 }
 
 impl Poses {
@@ -59,7 +59,8 @@ impl Poses {
                 v.extend(b.v);
                 v.extend(b.o);
             }
-            Poses::Relative { to, .. } => {
+            Poses::Relative { to, reach, .. } => {
+                *reach = b.o.iter().fold(*reach, |m, x| m.max(x.abs()));
                 let axes = [to.u, to.v, to.normal()];
                 let local = |x: [f64; 3]| axes.map(|a| crate::plane::dot(a, x));
                 v.extend(local(b.u));
@@ -291,12 +292,18 @@ impl MemoKey {
     }
 }
 
-/// How near two keys' numbers must be, as a fraction of the larger (or of one, for a number
-/// smaller than one), to be one shape (#412).  Not to the bit: a plane's pose relative to the
-/// reference is worked through the world, and a drawing stood at an instant is settled there
-/// (`follow::stand`), which moves a part's own numbers by a rounding even where nothing of it
-/// moved.
-const NEAR: f64 = 1e-12;
+/// How near two keys' numbers must be to be one shape (#412, #498): the solve's own step
+/// tolerance (`solve::XTOL`), of the larger number or of the key's reach where that is larger —
+/// the largest number in the world a pose in it was worked from (`ShapeKey::reach`).  A document
+/// solve takes no step shorter than `XTOL` of the size of its unknowns, of which the reach is
+/// one, so where it settles a part it does not move (a drag's polish solves the whole drawing)
+/// it may leave its numbers anywhere that near, and no nearer is a pose it can tell apart: within
+/// it the shape is the one solved, and outside it something changed.  So the bound is the
+/// solve's and the drawing's, not a number fitted to a case: a change to row scaling or to a
+/// kernel's degree moves where a solve settles, not how far a step it does not take is.  The
+/// rounding of a pose worked through the world is far inside it, and a drawing stood at an
+/// instant leaves what the parameter does not reach to the bit (`follow::Still`).
+const NEAR: f64 = crate::solve::XTOL;
 
 /// **What a solid reads, split into its shape and its pose** (#412): everything `reads` reads,
 /// but with every plane's pose rewritten relative to a reference plane (its first face's,
@@ -310,18 +317,23 @@ const NEAR: f64 = 1e-12;
 pub struct ShapeKey {
     shape: Vec<f64>,
     pose: Basis,
+    /// The largest number, in the world, a pose the shape reads was worked from: the reference's
+    /// origin and each plane's, and one.
+    reach: f64,
 }
 
 impl ShapeKey {
     /// Solid `si`'s key, as the drawing stands.
     pub fn of(sk: &Sketch, si: usize) -> ShapeKey {
         let pose = reference(sk, si);
-        let mut poses = Poses::Relative { to: pose, rigid: true };
+        let reach = pose.o.iter().fold(1.0, |m: f64, x| m.max(x.abs()));
+        let mut poses = Poses::Relative { to: pose, rigid: true, reach };
         let mut shape = reads_with(sk, si, 0.0, &|_| false, &mut poses);
-        if let Poses::Relative { rigid: false, .. } = poses {
+        let Poses::Relative { rigid, reach, .. } = poses else { unreachable!() };
+        if !rigid {
             shape.extend(pose.u.iter().chain(&pose.v).chain(&pose.o));
         }
-        ShapeKey { shape, pose }
+        ShapeKey { shape, pose, reach }
     }
 
     /// Where its reference plane stands in the world.
@@ -333,20 +345,22 @@ impl ShapeKey {
     /// from this pose to the other's, is what the other would build — every number the same
     /// within `NEAR`.
     pub fn same_shape(&self, other: &ShapeKey) -> bool {
-        self.shape.len() == other.shape.len() && near(&self.shape, &other.shape)
+        self.shape.len() == other.shape.len()
+            && near(&self.shape, &other.shape, self.reach.max(other.reach))
     }
 
     /// Whether `other` stands where this does, within `NEAR`: the same shape there is the same
     /// solid, unmoved.
     pub fn same_pose(&self, other: &ShapeKey) -> bool {
         let numbers = |b: &Basis| [b.u, b.v, b.o].concat();
-        near(&numbers(&self.pose), &numbers(&other.pose))
+        near(&numbers(&self.pose), &numbers(&other.pose), self.reach.max(other.reach))
     }
 }
 
-/// Whether two lists of numbers are one within `NEAR`.
-fn near(a: &[f64], b: &[f64]) -> bool {
-    a.iter().zip(b).all(|(&a, &b)| a == b || (a - b).abs() <= NEAR * a.abs().max(b.abs()).max(1.0))
+/// Whether two lists of numbers are one within `NEAR` of the larger of each pair, or of `reach`.
+fn near(a: &[f64], b: &[f64], reach: f64) -> bool {
+    a.iter().zip(b)
+        .all(|(&a, &b)| a == b || (a - b).abs() <= NEAR * a.abs().max(b.abs()).max(reach))
 }
 
 /// **A result per solid, remembered against what it was built from** (`MemoKey`):

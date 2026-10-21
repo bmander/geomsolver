@@ -187,6 +187,23 @@ where a rule came from.
     is refused too. `Followed::put` stands a drawing at any instant reached, solved from the
     stations either side, on the branch carried. `follow::followed` remembers a march on the sketch
     (`Caches::followed`) against every parameter, every constraint's numbers and the interval.
+    **A station solves only what the parameter reaches** (`follow::Still`, #498): the blocks of
+    the drawing's block-triangular order at home that no reader's row is in, that read no unknown
+    of a block that is, and that hold there and are of full rank, are set aside for every station
+    solve — their statements carried (`Constraint::carried`, no row), their unknowns held, both
+    given back after — so what the parameter does not move keeps its numbers to the bit at every
+    station and every instant stood, rather than being settled again to the solve's precision
+    (the V-twin's plate and its pistons' own numbers: `rigid_solids.rs`,
+    `a_stand_leaves_what_the_crank_does_not_reach_to_the_bit`).  A reader is a row whose text
+    reads the parameter, that reads a held number, or whose unknowns' numbers and compiled
+    constants differ with the parameter held at the golden section of its interval (`ELSEWHERE`:
+    the stride's tangencies to the path its toe traces); a station that finds a set-aside row
+    reading otherwise than at home (a constant read off where a moving part stands, as a valued
+    frame's block's) solves the whole drawing, and the march is made again with that row a
+    reader, so every orientation is read over one system.  Nothing is set aside of a drawing whose order is not square.  The start's
+    rank and every orientation are read over what is solved, the rest's blocks of full rank and
+    the same at every instant.  Smaller, each station is cheaper: the V-twin's march and a stand
+    take half what they did.
   - **The ledger per parameter** (`Diagnosis::parameters`, `diagnose::Driven`): each declared
     parameter's readers and the freedom they drive — the rank their rows add to the rest's, on the
     conditioned Jacobian, `None` past the dense limit.  `summary` says `1 DOF over t` and, where
