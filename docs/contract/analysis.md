@@ -28,9 +28,9 @@ is `rust/gcs-core/tests/linalg.rs` unless a rule names another.
   Ritz vectors kept), one factor for the whole solve. The tolerances are named once (`BREAKDOWN`,
   `FLOOR`, `GAP`, `SHIFT`), never written at a use.
 - **The lowest pairs of `A x = λ B x`** (`eigen::lowest`; A symmetric, B positive definite, else
-  `Refusal::NotDefinite`): `L = A`, `R = B`, the inner product R's. **The shift is found, not given**: `SHIFT` of the
-  least diagonal ratio `A_ii/B_ii` below zero (a Rayleigh quotient, so no eigenvalue is above
-  it), moved down until `A − σB` factors with no negative pivot, so nothing is below it and the
+  `Refusal::NotDefinite`): `L = A`, `R = B`, the inner product R's. **The shift is found, not
+  given**: `SHIFT` of the least diagonal ratio `A_ii/B_ii` below zero (a Rayleigh quotient, so no
+  eigenvalue is above it), moved down until `A − σB` factors with no negative pivot, so nothing is below it and the
   nearest are the lowest; a stiffness free in a rigid-body motion has its mode at zero, found like
   any other. `lowest_modes_agree_with_the_dense_reference`,
   `lowest_modes_of_a_large_membrane_hold_their_properties`.
