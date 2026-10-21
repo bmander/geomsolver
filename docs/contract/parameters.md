@@ -565,19 +565,20 @@ where a rule came from.
   stands at the law's value of the roll, so a cam is cut from its law.
   - **The program** (`program::generated::program_signed`): `MotionDef::Driven` compiles to its
     joint's own step (`Step::Turn`/`Step::Slide`, run back where the reading inverts it), marked
-    with the law it reads; the law is `motion::Law::carried`, its tape over only the held numbers
-    its text reads, where they stand when the profile is built, and the parameter's slot.  A law
-    reading a held number of the geometry (`HeldNumber::reads`), which the solve moves while the
-    curve's constants do not, is E080.  The law's text and its numbers join the definition's key,
-    so two profiles share a definition only under the same law.  The profile's last roll is one
-    of its values (`Driven::end`).
-  - **The encoding** (`generate::Generated`): a driven turn `[5, centre, ratio, law, end]`, a
-    driven slide `[6, line, advance, law, end]`, and after the steps the laws, `[n, (len, flat…,
-    n_x, x…, at)…]` — a contact on the profile carries them in its constants, so a relation the
+    with the law it reads, a `motion::Law` (`Law::carried`: its tape over the held numbers its text
+    reads, as every law is compiled, where they stand when the profile is built).  A law reading a
+    held number of the geometry (`HeldNumber::reads`), which the solve moves while the curve's
+    constants do not, is E080.  The law's text and its numbers join the definition's key, so two
+    profiles share a definition only under the same law.  The profile's last roll is one of its
+    values.
+  - **The encoding** (`generate::Generated`): a driven turn `[5, centre, ratio, law]`, a driven
+    slide `[6, line, advance, law]`, and after the steps the laws, `[n, end, (len, flat…, n_x, x…,
+    at)…]` (`[0]` for none; `end` where the outer vector holds the last roll), each read as a
+    borrowed `generate::Drive` (`Law::drive`, whose `series` `Law::jet` reads too) — a contact on the profile carries them in its constants, so a relation the
     solve holds reads the law (`p coincident f`, `f tangent l`, `f curvature k`), and a prism's
     side under a drive (`extruded_envelopes`) is generated the same way.
-  - **Read in `taylor::Jet`** (`generate::run`): the joint's roll is the law's series, over
-    `tape::eval_num`, about a roll a hair (1e-9 of the roll) from `t` and composed back to `t`,
+  - **Read in `taylor::Jet`** (`generate::run`): the joint's roll is the law's series
+    (`Drive::series`, over `tape::eval_num`) about a roll a hair (1e-9 of the roll) from `t` and composed back to `t`,
     so the profile's orders are as exact as at a constant rate.  **A corner of the law** (`abs`,
     `min`, `max`: a uniform rise meeting its fall) is read from above, and at the profile's last
     roll from below, so each piece of a profile reads the law on its own side of the corner,

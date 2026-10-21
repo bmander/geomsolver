@@ -5,7 +5,7 @@
 //! a contact names the curve.  An envelope of a spatial operand (a surface) is the spatial one
 //! (§6.15), left to `envelopes` after the solve: the operand's stratum is what tells them apart.
 use super::{resolve::{follow_building, Resolver}, Code, Diag, Made, SourceMap};
-use crate::generate::{Drive, Driven, Generated, Op, Tool, ToolBody};
+use crate::generate::{Generated, Op, Tool, ToolBody};
 use crate::ir::{Decl, Kid, Operation, Statement};
 use crate::model::{CurveBody, CurveDef, CurveE, EntKind, EntRef, Home, MotionDef, Sketch};
 use crate::syntax::StmtId;
@@ -47,10 +47,6 @@ enum Step {
     Table { motion: usize, back: bool },
 }
 
-/// A joint's law as the program carries it (`motion::Law::carried`): its tape, the held numbers
-/// it reads where they stand, and the parameter's slot among them.
-type Law = (Vec<f64>, Vec<f64>, usize);
-
 /// What a motion compiles to: its steps, the geometry it is written over (`args`), its numbers
 /// (`values`), the laws its driven steps read, and its shape (for the definition's key).
 #[derive(Default)]
@@ -58,7 +54,7 @@ struct Program {
     steps: Vec<Step>,
     args: Vec<EntRef>,
     values: Vec<f64>,
-    laws: Vec<Law>,
+    laws: Vec<crate::motion::Law>,
     shape: String,
 }
 
@@ -119,7 +115,7 @@ fn program_signed(sk: &Sketch, m: usize, inverse: bool, p: &mut Program, depth: 
                 Some([Step::Turn { law, .. } | Step::Slide { law, .. }]) => *law = Some(k),
                 _ => return Err(format!("`{}` drives no turn or slide", me.name)),
             }
-            p.shape.push_str(&format!("D[{law}@{:?}]", carried.1));
+            p.shape.push_str(&format!("D[{law}@{:?}]", carried.drive().x));
             p.laws.push(carried);
         }
         MotionDef::Guided { .. } => {
@@ -165,10 +161,10 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
     let mut p = Program { args: vec![tool], ..Program::default() };
     program(sk, motion, &mut p, 0)?;
     // a driven step reads its law from below at the profile's last roll (`generate::run`)
-    let end = (!p.laws.is_empty()).then(|| {
+    if !p.laws.is_empty() {
         p.values.push(to);
-        p.values.len() - 1
-    });
+    }
+    let end = p.values.len().saturating_sub(1);
     let Program { steps, args: named, values, laws, shape } = p;
     // where each argument's columns start in `[t, θ…, values…]` — a centre the tool is
     // already written over (a generated tool's own pinion) is read where it already is,
@@ -195,10 +191,8 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
     }
     let value = |i: usize| 1 + n_theta + i;
     let ops: Vec<Op> = steps.iter().map(|s| match *s {
-        Step::Turn { centre, ratio, law } => Op::Turn { centre: at[centre], ratio: value(ratio),
-            law: law.zip(end).map(|(law, end)| Driven { law, end: value(end) }) },
-        Step::Slide { line, advance, law } => Op::Slide { line: at[line], advance: value(advance),
-            law: law.zip(end).map(|(law, end)| Driven { law, end: value(end) }) },
+        Step::Turn { centre, ratio, law } => Op::Turn { centre: at[centre], ratio: value(ratio), law },
+        Step::Slide { line, advance, law } => Op::Slide { line: at[line], advance: value(advance), law },
         Step::Relative => Op::Relative,
         Step::Table { motion, back } => Op::Table { motion, back },
     }).collect();
@@ -223,8 +217,8 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
         }
         _ => ToolBody::None,
     };
-    let drives: Vec<Drive> = laws.iter().map(|(flat, x, at)| Drive { flat, x, at: *at }).collect();
-    let generated = Generated::new(n_theta, kind, side, &ops, &drives, tool_body);
+    let drives: Vec<_> = laws.iter().map(crate::motion::Law::drive).collect();
+    let generated = Generated::new(n_theta, kind, side, &ops, &drives, value(end), tool_body);
     let key = format!("envelope:{kind:?}:{shape}:{side}");
     let shared = kind.analytic().then(|| sk.curve_defs.iter().position(|x| x.name == key)).flatten();
     let def = match shared {

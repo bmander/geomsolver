@@ -23,7 +23,8 @@ pub struct Law {
     /// The declared parameter it runs over, which the roll stands for.
     over: String,
     flat: Vec<f64>,
-    /// Every held number where it stands, in the tape's order; the parameter's slot is the roll's.
+    /// The held numbers the text reads where they stand, in the tape's order; the parameter's slot
+    /// is the roll's.
     x: Vec<f64>,
     at: usize,
 }
@@ -35,19 +36,6 @@ pub fn unread_drive(f: &str, over: &str) -> String {
     format!("`{f}` is driven by `{over}`, and a relation the solve holds reads no drive (#391): \
              draw in it, `n := x in {f}`, which stands where its value puts it, or read it over \
              the roll — a sweep, a placement")
-}
-
-/// `text` compiled over the held numbers `names`, their values where they stand, and the slot of
-/// `over` among them.
-fn compiled(sk: &Sketch, text: &str, over: &str, names: &[String])
-    -> Result<(Vec<f64>, Vec<f64>, usize), String> {
-    let at = names.iter().position(|n| n == over)
-        .ok_or_else(|| format!("`{over}` is not held"))?;
-    let parsed = crate::expr::parse_in(text, sk.units)?;
-    let tape = crate::tape::Tape::compile_wide(&parsed.body, names)
-        .map_err(|m| format!("`{text}`: {m}"))?;
-    let x = names.iter().map(|n| sk.params[sk.held[n].param as usize].value).collect();
-    Ok((tape.flat, x, at))
 }
 
 /// Degrees a radian, enclosed.
@@ -67,26 +55,34 @@ impl Law {
             return Err(format!("`{over}` is a {}, and a drive read over the roll runs over an \
                                 angle", p.dim.name()));
         }
-        let names: Vec<String> = sk.held.keys().cloned().collect();
-        let (flat, x, at) = compiled(sk, text, over, &names)?;
-        Ok(Law { text: text.to_string(), over: over.to_string(), flat, x, at })
+        let parsed = crate::expr::parse_in(text, sk.units)?;
+        let deps = parsed.body.deps();
+        let names: Vec<String> = sk.held.keys().filter(|n| *n == over || deps.contains(*n))
+            .cloned().collect();
+        let at = names.iter().position(|n| n == over)
+            .ok_or_else(|| format!("`{over}` is not held"))?;
+        let tape = crate::tape::Tape::compile_wide(&parsed.body, &names)
+            .map_err(|m| format!("`{text}`: {m}"))?;
+        let x = names.iter().map(|n| sk.params[sk.held[n].param as usize].value).collect();
+        Ok(Law { text: text.to_string(), over: over.to_string(), flat: tape.flat, x, at })
     }
 
-    /// **The law as a profile in the plane carries it** (#398 G): its tape over only the held
-    /// numbers its text reads, where they stand, and the parameter's slot among them — what a
-    /// generated profile's encoding holds (`generate::Drive`).  Refused where the text reads a
-    /// number of the geometry (`HeldNumber::reads`), which the solve moves while a profile's
-    /// constants stand still.
-    pub fn carried(sk: &Sketch, text: &str, over: &str) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
-        Law::read(sk, text, over)?;
+    /// **The law as a profile in the plane carries it** (#398 G, `generate::Drive`): refused
+    /// where the text reads a number of the geometry (`HeldNumber::reads`), which the solve moves
+    /// while a profile's constants stand still.
+    pub fn carried(sk: &Sketch, text: &str, over: &str) -> Result<Law, String> {
+        let law = Law::read(sk, text, over)?;
         let deps = crate::expr::parse_in(text, sk.units)?.body.deps();
         if let Some(d) = deps.iter().find(|d| sk.held.get(*d).is_some_and(|h| h.reads.is_some())) {
             return Err(format!("`{text}` reads `{d}`, a number of the geometry the solve moves, \
                                 and a profile in the plane is generated over stated numbers"));
         }
-        let names: Vec<String> = sk.held.keys().filter(|n| *n == over || deps.contains(*n))
-            .cloned().collect();
-        compiled(sk, text, over, &names)
+        Ok(law)
+    }
+
+    /// Its tape, its numbers and the roll's slot, borrowed: what a profile's encoding carries.
+    pub(crate) fn drive(&self) -> crate::generate::Drive<'_> {
+        crate::generate::Drive { flat: &self.flat, x: &self.x, at: self.at }
     }
 
     fn at_roll(&self, theta: f64) -> Vec<f64> {
@@ -105,11 +101,7 @@ impl Law {
 
     /// The value at `theta` and its rate a radian of the roll, read off a Taylor jet.
     pub fn jet(&self, theta: f64) -> Result<[f64; 2], String> {
-        use crate::taylor::Jet;
-        let mut x: Vec<Jet> = self.x.iter().map(|&v| Jet::constant(v)).collect();
-        x[self.at] = Jet::from(&[theta.to_degrees(), 1.0]);
-        let j = crate::tape::eval_num::<Jet>(&self.flat, &x)
-            .filter(|j| j.nth(0).is_finite() && j.nth(1).is_finite())
+        let j = self.drive().series(crate::taylor::Jet::var(theta.to_degrees()))
             .ok_or_else(|| format!("`{}` has no rate at {} = {}°", self.text, self.over,
                                    theta.to_degrees()))?;
         // degrees a degree is radians a radian
