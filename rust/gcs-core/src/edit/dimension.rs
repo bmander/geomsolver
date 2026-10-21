@@ -91,10 +91,14 @@ fn step_dimension(e: &Elaborated, stmt: syntax::StmtId, cid: u32, w: &syntax::Wr
 
 /// **A defined word's number, where the statement wrote it** (§9.9): where the word's body
 /// states its dimension as one of its parameters (`a above(d) b := b distance(d, along: up) a`),
-/// the argument the statement gave that parameter (`r above(d: 7) q`'s `7`) — the text the
-/// callout draws, so the text an edit of it writes.
+/// the argument the statement gave that parameter (`r above(d: 7) q`'s `7`, or `r above(7) q`'s
+/// for a word of one parameter) — the text the callout draws, so the text an edit of it writes.
 fn word_dimension(prog: &Program, w: &syntax::Written) -> Option<(Span, String)> {
     let k = prog.resolve_word(&w.word.text, w.fixity, None)?;
+    let only = match prog.words[k].params.as_slice() {
+        [p] => Some(p.text.as_str()),
+        _ => None,
+    };
     let param = prog.words[k].body.iter().find_map(|st| match &st.kind {
         StmtKind::Relation(r) => r.form.written()?.args.iter().find_map(|a| match a {
             syntax::OpArg::Dim(t, _) => Some(t.trim()),
@@ -106,6 +110,7 @@ fn word_dimension(prog: &Program, w: &syntax::Written) -> Option<(Span, String)>
         syntax::OpArg::Named(n, syntax::Arg::Dim { text, span }) if n.text == param => {
             Some((*span, text.clone()))
         }
+        syntax::OpArg::Dim(text, span) if only == Some(param) => Some((*span, text.clone())),
         _ => None,
     })
 }

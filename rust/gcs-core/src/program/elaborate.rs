@@ -448,6 +448,8 @@ fn memberships(
     let (drawn, kept_off) = planes::incidences(
         &mut cx.sk, &cx.res, &mut cx.map, &flat.stating, deferred, &expansion.rings, &mut cx.diags,
     );
+    // and the normal of the plane a point is drawn in, where `o.plane.normal` reads it
+    planes::drawn_normals(&mut cx.sk, &cx.res);
     // and a set drawn as an element is one only where what it reads says so (`lowering`)
     let (sk, res) = (&cx.sk, &cx.res);
     let ent = |r: &crate::syntax::Ref| {

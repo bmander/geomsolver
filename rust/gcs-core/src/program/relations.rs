@@ -1,7 +1,7 @@
 //! Settle relations into constraints and resolve their arguments.  Gauges are applied in
 //! `gauges`, and region terms built in `regions`.
 
-use super::resolve::{follow, Operand, Resolver};
+use super::resolve::{drawn_in, follow, Operand, Resolver, PLANE};
 use super::gauges::{apply_gauge, fix_spelling};
 use super::regions::{
     ends_term, face_term, probe_of, region_term, settled_number, term_name, term_number,
@@ -11,7 +11,7 @@ use super::{Code, Diag, Elab, SourceMap};
 use crate::constraints::{seed_omitted_named, Arg as CArg, CKind, Constraint, SpecKind};
 use crate::ir::{PathStep, Relation, ResolvedRelation, Statement as Stmt};
 use crate::model::{entity_name, EntKind, EntRef, Sketch, Toward};
-use crate::syntax::{Arg, Ref, RelationForm, Span, StmtId};
+use crate::syntax::{Arg, Ref, RelationForm, Seg, Span, StmtId};
 use std::collections::BTreeSet;
 use crate::fmath::Det;
 use crate::{expr, io};
@@ -269,6 +269,24 @@ fn say_once(diags: &mut Vec<Diag>, span: Span, stmt: StmtId, message: String) {
     }
 }
 
+/// The first reference in `w` reading `o.plane` of a point `o` drawn in no plane, and why
+/// (`resolve::drawn_in`).
+fn undrawn_plane(sk: &Sketch, res: &Resolver, w: &crate::syntax::Written)
+    -> Option<(Span, String)> {
+    let args = w.args.iter().filter_map(|a| match a {
+        crate::syntax::OpArg::Ent(r) | crate::syntax::OpArg::Named(_, Arg::Ref(r)) => Some(r),
+        _ => None,
+    });
+    w.ops.iter().chain(args).find_map(|x| {
+        let k = x.path.iter().position(|s| matches!(s, Seg::Field(f) if f.text == PLANE))?;
+        let p = follow(sk, res.lookup(x)?, &x.path[..k]).ok()?;
+        if p.kind != EntKind::Point {
+            return None;
+        }
+        drawn_in(sk, p.i()).err().map(|m| (x.span, m))
+    })
+}
+
 /// A relation stated: settled into a constraint and added to the sketch, its id returned — or
 /// applied as a gauge, taken as a region's term, or refused, and no id. The steps below, in the
 /// order each may end it.
@@ -288,6 +306,13 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     let initially = r.initially;
     // the claim block it was written in, one claim per block and copy (#460)
     let witness = r.witness.map(|k| cx.witness_block(k, &st.path));
+    // a point's plane read where the point is drawn in none (#463): said at the reference, and
+    // not as an operand of no kind — or, in a word's body, where the word is used
+    if let Some((span, m)) = r.form.written().and_then(|w| undrawn_plane(&cx.sk, &cx.res, w)) {
+        let here = st.span.lo <= span.lo && span.hi <= st.span.hi;
+        cx.diags.push(Diag::within(Code::E040, if here { span } else { st.span }, st.id, m));
+        return None;
+    }
     // what the relation is, by what its operands resolve to (`shape`)
     let shape = r.form.written().map_or(Shape::Other, |w| shape(&cx.sk, &cx.res, w));
     if face_or_ends(cx, r, st, &shape) {

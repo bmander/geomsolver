@@ -393,6 +393,25 @@ pub(crate) fn plane_of_entity_by(
     kids.iter().all(|k| at(k.i()) == Some(first)).then_some(first)
 }
 
+/// **The normal of the plane a point is drawn in, where the document reads it** (#463):
+/// `o.plane.normal` is minted as `P.normal` is (`Sketch::plane_normal`), once the memberships say
+/// which plane `o` is in.  A point drawn in none is said where the reference is read.
+pub(super) fn drawn_normals(sk: &mut Sketch, res: &Resolver) {
+    let tail = format!(".{}", super::resolve::PLANE);
+    for key in &res.normals {
+        let Some(point) = key.strip_suffix(&tail) else { continue };
+        let segs: Vec<&str> = point.split('.').collect();
+        let found =
+            res.dotted(&segs).and_then(|(e, path)| super::resolve::follow(sk, e, &path).ok());
+        let Some(p) = found.filter(|p| p.kind == EntKind::Point) else { continue };
+        if let Ok(f) = super::resolve::drawn_in(sk, p.i()) {
+            let name = sk.plane_names.get(&(f as u32)).cloned()
+                .unwrap_or_else(|| entity_name(EntRef::frame(f)));
+            sk.plane_normal(f, &format!("{name}.{}", crate::program::NORMAL));
+        }
+    }
+}
+
 /// **The plane each face used as a set is drawn in** (`flatten::faces`, #162 F5): bound under the
 /// hidden name its carrier reads (`{face}#plane`), once memberships are in and before any
 /// relation reads it — the plane every item of the face agrees about, the rule a face is built

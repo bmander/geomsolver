@@ -792,7 +792,7 @@ worked case: a dimension module, a parts module and one module per part.
 
 ```
 a horizontal b := a level(up) b                  // std.sv
-a above(d) b := b distance(d, along: up) a       // r above(d: 7) q: r stands 7 above q
+a above(d) b := b distance(d, along: up) a       // r above(7) q: r stands 7 above q
 l1 flush(d) l2 := {                              // parallel, and d apart
   l1 parallel l2
   l2.p1 distance(d) l1
@@ -803,11 +803,15 @@ a apart(d) b := {                                // what the body declares, each
 }
 ```
 
-Parameters are given by label (`above(d: 7)`; positional is E004, a missing or unknown label E040);
+A word of one parameter takes it bare or labelled (`above(7)`, `above(d: 7)`); one of two or more
+takes them by label (`offset(dx: 30, dy: 12)`; positional is E004, a missing or unknown label
+E040, anything given a word of none E040);
 a word parameter stands where a selector or direction would (`side: s`, `level(s)`), and one read
 where an entity stands is given a reference (`n square(up: std.z) g`), an alias in the body as an
 operand is (E101 at the argument where it names nothing). The body reads
-only its operands, their members and the parameters (E101 otherwise); it may write other words and
+only its operands, their members and the parameters (E101 otherwise) — among a point's members the
+plane it is drawn in, `o.plane`, so a word about a point in a view needs no plane given (`f.axis
+parallel o.plane.normal`; a point in space has none, E040 at the use); it may write other words and
 use sets. An unknown word is E102; culprits and errors read as the word (`p horizontal q`), and a
 dimension passed as a parameter draws and edits at the argument. An infix word relates its operands
 to each other; that both stand on a third thing is said of each (`a coincident P`).
@@ -1163,9 +1167,10 @@ plane `u × v`, up out × u, so `v` need not be square to `u`: it picks the plan
 up. `P.origin` (drawn in `P`, held at `(0, 0)`) lies on both axes, so where the axes stand the plane
 stands; `P.normal` is the axis along `u × v` through `P.origin`, read wherever an axis is (`l
 parallel P.normal`, `plane(u: P.normal, v: P.u)`) and adding no freedom — declare `P` before
-anything naming it; two held axes that do not meet are E067. A plane over a line stands on it, and over two
-lines sharing an end, at that end. **A slot left out mints a free axis**: `P := plane` is seven
-freedoms, `plane(u: std.x)` mints only `P.v`. A minted axis starts as the front's unless seeded,
+anything naming it; two held axes that do not meet are E067. A point drawn in a plane names it as
+`p.plane` (`t perpendicular p.plane`); one standing in space has none (E040). A plane over a
+line stands on it, and over two lines sharing an end, at that end. **A slot left out mints a free
+axis**: `P := plane` is seven freedoms, `plane(u: std.x)` mints only `P.v`. A minted axis starts as the front's unless seeded,
 `plane(v: hint(dir: (0, -1, 0)))` — seed one a relation will turn far. A seed may read the
 direction off geometry: an axis (`hint(dir: up)`), a line from its `p1` to its `p2` in space
 (`hint(dir: g)`), a plane's normal (`hint(dir: P.normal)`, or `P.n`), turned about another (`hint(dir: up, turn:

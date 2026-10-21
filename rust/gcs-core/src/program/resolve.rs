@@ -42,6 +42,24 @@ pub(super) struct Resolver {
 /// A plane's member naming its normal, `P.normal`: `u × v`, an axis (`Sketch::plane_normal`).
 pub(crate) const NORMAL: &str = "normal";
 
+/// A point's member naming the plane it is drawn in, `o.plane` (#463): so a relation word about a
+/// point drawn in a view reads that view from its operand, and is still closed over what it is
+/// given.
+pub(crate) const PLANE: &str = "plane";
+
+/// The plane point `p` is drawn in, or why it has none: a point standing in space, or one not yet
+/// placed — read before the memberships are in, where a declaration names it.
+pub(super) fn drawn_in(sk: &Sketch, p: usize) -> Result<usize, String> {
+    let pt = &sk.points[p];
+    match (pt.plane, pt.z.is_some() || pt.chart.is_some()) {
+        (Some(f), _) => Ok(f as usize),
+        (None, true) => Err("a point standing in space is drawn in no plane, so it has no \
+            `plane`: name the plane itself".to_string()),
+        (None, false) => Err("where a point is drawn is known once every `in` is read, after \
+            the declarations: name the plane itself".to_string()),
+    }
+}
+
 /// **What an operand names, resolved once** (#188): an entity, its fields followed; the faces of
 /// a solid a path past it names (`pad.plate.near`, `F.surface`); where the edge a set is ends
 /// (`S.ends`, the set's own point, `flatten::sets::measured_sets`); or the solid a face path is
@@ -164,6 +182,12 @@ pub(super) fn follow_building(
                 return follow(sk, EntRef::point(o), &path[1..]);
             }
         }
+        if e.kind == EntKind::Point && f.text == PLANE {
+            return Err(format!(
+                "`{name}` is declared after this, and the plane it is drawn in is known once it \
+                 is: declare `{name}` first, or name the plane itself"
+            ));
+        }
         if e.kind == EntKind::Frame && (f.text == NORMAL || f.text == "axis") {
             return Err(format!(
                 "`{name}` is declared after this, and its {} is minted with it: declare \
@@ -237,6 +261,11 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
                 }
                 None => return Err("a plane's normal is not built yet".to_string()),
             }
+        }
+        // the plane a point is drawn in (#463)
+        if e.kind == EntKind::Point && f.text == PLANE {
+            e = EntRef::frame(drawn_in(sk, e.i())?);
+            continue;
         }
         // and a frame's joint axis, minted where its joint is read (#383)
         if e.kind == EntKind::Frame && f.text == "axis" {

@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.152] A word's one number bare, and the plane its operand is drawn in.** A relation word of
+one parameter may be given it unlabelled, as a constraint word of the language takes its one
+number (§9.9): `r above(7mm) q` is `r above(d: 7mm) q`, and passed on bare inside a body (`a
+twice(d) b := a above(d * 2) b`) it is the inner word's one parameter; through 0.151 it was
+**E004**. A word of two or more keeps its labels (`b offset(dx: 30, dy: 12) a`; given in order,
+**E004**), and a bare value given a word of none is **E040**. A point drawn in a plane has that
+plane as its member `p.plane` (§6.7), read wherever a plane is, its `normal` included — so a word
+about a point drawn in a view reads the view from its operand and stays closed over what it is
+given: `f spins(ratio) o := { o coincident f.axis; f.axis parallel o.plane.normal; fix(ratio ==
+ratio, advance == 0mm) f }` is `std.Spin` with no `on:`. A point standing in space is drawn in no
+plane: its `plane` is **E040**, where the word is written. No document changes. (Issue #463.)
+
 **[0.151] A claim with witnesses of its own.** `claim { … }` declares geometry made only to
 state a claim, its **witnesses**, and states relations of them (§9.7): `claim { x := point; x
 coincident upper; x coincident lower; x coincident centres }` claims that the runs of a belt meet
