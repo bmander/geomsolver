@@ -34,7 +34,7 @@ use crate::constraints::{CKind, Constraint, OrdinateForm};
 use crate::json::{self, Json};
 use crate::model::{EntKind, EntRef, Sketch};
 use crate::space;
-use crate::program::{Elaborated, Instanced, SourceMap};
+use crate::program::{Elaborated, InstPath, Instanced, SourceMap};
 use crate::solve::{solve, BlockMode, SolveOpts};
 use crate::syntax::{Program, Stmt, StmtKind, Ty};
 use crate::system::{System, RANK_TOL};
@@ -240,6 +240,20 @@ struct World {
     lengths: BTreeSet<u32>,
     /// The free variables' parameters.
     free: BTreeSet<u32>,
+    /// Every entity and every statement (by its index among the sketch's) by the instance path
+    /// it is sited under, ascending, and the statements sited nowhere: what an instance made and
+    /// states are a range of each (`under`), not a reading of the whole document per instance.
+    ents: Vec<(InstPath, EntRef)>,
+    cons: Vec<(InstPath, usize)>,
+    unsited: Vec<usize>,
+}
+
+/// The entries of `list` (ascending by path) sited at `at` or under it: one range, since every
+/// path that starts with `at` sorts after it and before any that does not.
+fn under<'a, T: Copy>(list: &'a [(InstPath, T)], at: &'a InstPath)
+    -> impl Iterator<Item = T> + 'a {
+    let lo = list.partition_point(|(p, _)| p < at);
+    list[lo..].iter().take_while(move |(p, _)| p.0.starts_with(&at.0)).map(|&(_, t)| t)
 }
 
 impl World {
@@ -260,7 +274,18 @@ impl World {
             lengths.extend(a.a);
         }
         let free = sk.free_vars.values().copied().collect();
-        World { owner, lengths, free }
+        let mut ents: Vec<(InstPath, EntRef)> =
+            map.of_entity.iter().map(|(&e, s)| (s.path.clone(), e)).collect();
+        ents.sort();
+        let (mut cons, mut unsited) = (Vec::new(), Vec::new());
+        for (k, c) in sk.constraints.iter().enumerate() {
+            match map.site_of_constraint(c.id) {
+                Some(s) => cons.push((s.path.clone(), k)),
+                None => unsited.push(k),
+            }
+        }
+        cons.sort();
+        World { owner, lengths, free, ents, cons, unsited }
     }
 }
 
@@ -284,8 +309,7 @@ struct Split {
 fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instanced) -> Split {
     let inside = |id: u32| map.site_of_constraint(id).is_some_and(|s| inst.contains(&s.path));
     // what it made: every entity sited under it, and a twin of one
-    let mut made: BTreeSet<EntRef> = map.of_entity.iter()
-        .filter(|(_, s)| inst.contains(&s.path)).map(|(&e, _)| e).collect();
+    let mut made: BTreeSet<EntRef> = under(&world.ents, &inst.path).collect();
     for (&twin, &of) in &map.twin_of {
         if made.contains(&of) {
             made.insert(twin);
@@ -301,9 +325,14 @@ fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instanced) -> Split
     let unowned = |p: u32| nobodys(p) && Some(p) != zero && !sk.params[p as usize].fixed;
     let mut aux: BTreeSet<u32> = BTreeSet::new();
     let mut kept: BTreeSet<u32> = BTreeSet::new();
+    // a statement sited elsewhere is never its own: the rest are those sited under it and those
+    // sited nowhere, in the sketch's order (the rows kept grow to one fixed point in any order)
+    let mut candidates: Vec<usize> =
+        under(&world.cons, &inst.path).chain(world.unsited.iter().copied()).collect();
+    candidates.sort_unstable();
     loop {
         let before = (kept.len(), aux.len());
-        for c in &sk.constraints {
+        for c in candidates.iter().map(|&k| &sk.constraints[k]) {
             if kept.contains(&c.id) {
                 continue;
             }
@@ -331,10 +360,20 @@ fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instanced) -> Split
 /// rows its statements, read as the classifier reads them.  No syntax marks it: the experiment
 /// names it from Rust.  `None` where no instance drawn on the sheet has that name.
 pub fn instance(e: &Elaborated, sk: &Sketch, name: &str) -> Option<crate::solve::Boundary> {
-    let prefix = format!("{name}.");
-    let inst = e.map.instances.iter().find(|i| i.drawn && i.prefix == prefix)?;
-    let Split { own, kept, .. } = split(&e.map, sk, &World::of(sk, &e.map), inst);
-    Some(crate::solve::Boundary { name: name.to_string(), own, rows: kept })
+    instances(e, sk, &[name]).pop().flatten()
+}
+
+/// `instance` for each of `names`, in order, the document read once for all of them.
+pub fn instances(e: &Elaborated, sk: &Sketch, names: &[&str])
+    -> Vec<Option<crate::solve::Boundary>> {
+    let world = World::of(sk, &e.map);
+    let drawn: BTreeMap<&str, &Instanced> =
+        e.map.instances.iter().rev().filter(|i| i.drawn).map(|i| (i.prefix.as_str(), i)).collect();
+    names.iter().map(|&name| {
+        let inst = drawn.get(format!("{name}.").as_str())?;
+        let Split { own, kept, .. } = split(&e.map, sk, &world, inst);
+        Some(crate::solve::Boundary { name: name.to_string(), own, rows: kept })
+    }).collect()
 }
 
 /// One instance, read: its rows and unknowns set apart from the document, ranked at its inputs

@@ -44,8 +44,9 @@ use super::{SolveOpts, SolveResult};
 use crate::linalg::{absmax, norm, Mat};
 use crate::model::Sketch;
 use crate::newton::{self, Square, SquareTol, SquareWork, TrustRegion};
-use crate::system::{Subset, System, RANK_TOL};
-use std::collections::BTreeSet;
+use crate::sparse::Ata;
+use crate::system::{csr_mul, Conditioned, Subset, System, DENSE_MAX, RANK_TOL};
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 /// One instance a parent solves through: what it made and what it states.
@@ -117,12 +118,30 @@ struct Seen {
     sign: i8,
 }
 
+/// Where one of an instance's inputs comes from, for its derivative against the parent's
+/// unknowns (`Boundaries::chain`).
+enum Input {
+    /// A parent unknown, at this place of the instance's `dep`.
+    Parent(usize),
+    /// Row `row` of the earlier instance `from` (in evaluation order), whose `dep` sits at `at`
+    /// of this one's.
+    Own { from: usize, row: usize, at: Vec<usize> },
+}
+
 /// One instance, compiled: its columns, its block, and where it last got to.
 struct Inner {
     name: String,
     /// Its own unknowns and its inputs, as free columns.
     ycols: Vec<usize>,
     xcols: Vec<usize>,
+    /// The parent unknowns its value moves with, ascending: those it reads, and those every
+    /// instance it reads moves with.  Its `dy/dz` is over these alone, so a parent of a thousand
+    /// parts holds a thousand small derivatives, not one dense one (#459).
+    dep: Vec<usize>,
+    /// Each input's source, in `xcols` order.
+    inputs: Vec<Input>,
+    /// `dy/dz` over `dep`, `ycols × dep`, as `chain` last made it.
+    g: Mat,
     /// Its rows, differentiated against `ycols` then `xcols`.
     sub: Subset,
     /// The unknowns the document started them at: a fresh evaluation's start.
@@ -138,11 +157,20 @@ struct Inner {
 }
 
 /// Where a free column is: the parent's `k`th unknown, or row `k` of the boundaries' unknowns
-/// stacked in the order they are evaluated (`Boundaries::dydz`).
+/// stacked in the order they are evaluated.
 #[derive(Clone, Copy)]
 enum Place {
     Parent(usize),
     Own(usize),
+}
+
+/// The parent's Jacobian through the boundaries, `P_z + P_y·dy/dz`, as compressed rows over the
+/// parent's unknowns.  Its structure is fixed when the boundaries are taken out: a parent row
+/// reads the parent unknowns it reads itself and every one the boundaries it reads move with.
+struct Reduced {
+    indptr: Vec<i32>,
+    indices: Vec<i32>,
+    data: Vec<f64>,
 }
 
 /// The instances a parent is solved through, over the one `System` the document compiles to.
@@ -158,8 +186,11 @@ pub struct Boundaries {
     inlined: Vec<String>,
     /// The parent's rows, against `zcols` then every instance's `ycols` in order.
     parent: Subset,
-    /// Each free column's place.
-    place: Vec<Place>,
+    /// Each stacked unknown of the boundaries (`Place::Own`): its instance and its row there.
+    own: Vec<(usize, usize)>,
+    /// The parent's Jacobian through the boundaries, and a row of it as it is summed.
+    reduced: Reduced,
+    acc: Vec<f64>,
     work: SquareWork,
 }
 
@@ -170,6 +201,10 @@ impl Boundaries {
         let mut sys = System::new(sk);
         let z = sys.z0(sk);
         let (adj, row_c) = sys.structure();
+        let mut rows_of: BTreeMap<u32, Vec<usize>> = BTreeMap::new();
+        for (row, &cid) in row_c.iter().enumerate() {
+            rows_of.entry(cid).or_default().push(row);
+        }
         let mut taken_rows: BTreeSet<u32> = BTreeSet::new();
         let mut taken_cols: BTreeSet<usize> = BTreeSet::new();
         let mut all: Vec<(Inner, Vec<(usize, usize)>)> = Vec::new();
@@ -210,10 +245,8 @@ impl Boundaries {
             }
             // its inputs: every other column its rows read
             let mut x: BTreeSet<usize> = BTreeSet::new();
-            for (row, cols) in adj.iter().enumerate() {
-                if b.rows.contains(&row_c[row]) {
-                    x.extend(cols.iter().copied());
-                }
+            for row in b.rows.iter().filter_map(|cid| rows_of.get(cid)).flatten() {
+                x.extend(adj[*row].iter().copied());
             }
             let xcols: Vec<usize> = x.into_iter().filter(|c| !ycols.contains(c)).collect();
             let cols: Vec<usize> = ycols.iter().chain(&xcols).copied().collect();
@@ -223,6 +256,9 @@ impl Boundaries {
                 sub: sys.subset(&instances, &cols),
                 ycols,
                 xcols,
+                dep: Vec::new(),
+                inputs: Vec::new(),
+                g: Mat::zeros(0, 0),
                 last: None,
                 evaluations: 0,
                 iterations: 0,
@@ -234,11 +270,17 @@ impl Boundaries {
         }
         // each after the boundaries it reads; those that read each other round a cycle are the
         // parent's (IO4), whose rows and unknowns it takes back
-        let reads = |j: usize, k: usize| {
-            j != k && all[k].0.ycols.iter().any(|c| all[j].0.xcols.contains(c))
-        };
-        let deps: Vec<Vec<usize>> =
-            (0..all.len()).map(|j| (0..all.len()).filter(|&k| reads(j, k)).collect()).collect();
+        let mut owner = vec![usize::MAX; sys.n_free];
+        for (k, (b, _)) in all.iter().enumerate() {
+            b.ycols.iter().for_each(|&c| owner[c] = k);
+        }
+        let deps: Vec<Vec<usize>> = all.iter().enumerate().map(|(j, (b, _))| {
+            let mut d: Vec<usize> = b.xcols.iter().map(|&c| owner[c])
+                .filter(|&k| k != usize::MAX && k != j).collect();
+            d.sort_unstable();
+            d.dedup();
+            d
+        }).collect();
         let mut slots: Vec<Option<(Inner, Vec<(usize, usize)>)>> =
             all.into_iter().map(Some).collect();
         let (mut inner, mut inlined) = (Vec::new(), Vec::new());
@@ -271,8 +313,57 @@ impl Boundaries {
         let cols: Vec<usize> =
             zcols.iter().chain(inner.iter().flat_map(|b| &b.ycols)).copied().collect();
         let parent = sys.subset(&rest, &cols);
-        let place = place.into_iter().map(|p| p.expect("every column placed")).collect();
-        Ok(Boundaries { sys, z, zcols, inner, inlined, parent, place, work: SquareWork::default() })
+        let place: Vec<Place> =
+            place.into_iter().map(|p| p.expect("every column placed")).collect();
+        // what each instance's value moves with, each after those it reads
+        let mut own: Vec<(usize, usize)> = Vec::new();
+        for k in 0..inner.len() {
+            let (done, rest) = inner.split_at_mut(k);
+            let b = &mut rest[0];
+            // an input another boundary makes is one of the unknowns stacked before this one's
+            let from_of = |t: usize| own[t];
+            let mut dep: BTreeSet<usize> = BTreeSet::new();
+            for &c in &b.xcols {
+                match place[c] {
+                    Place::Parent(p) => {
+                        dep.insert(p);
+                    }
+                    Place::Own(t) => dep.extend(&done[from_of(t).0].dep),
+                }
+            }
+            b.dep = dep.into_iter().collect();
+            let at = |p: usize| b.dep.binary_search(&p).expect("in what it moves with");
+            b.inputs = b.xcols.iter().map(|&c| match place[c] {
+                Place::Parent(p) => Input::Parent(at(p)),
+                Place::Own(t) => {
+                    let (from, row) = from_of(t);
+                    Input::Own { from, row, at: done[from].dep.iter().map(|&p| at(p)).collect() }
+                }
+            }).collect();
+            b.g = Mat::zeros(b.ycols.len(), b.dep.len());
+            own.extend((0..b.ycols.len()).map(|i| (k, i)));
+        }
+        // the reduced Jacobian's structure: each parent row's own parent unknowns, and what
+        // every boundary unknown it reads moves with
+        let nz = zcols.len();
+        let (mut indptr, mut indices) = (vec![0i32], Vec::new());
+        let mut row: BTreeSet<usize> = BTreeSet::new();
+        for r in 0..parent.rows.len() {
+            row.clear();
+            for p in parent.indptr[r]..parent.indptr[r + 1] {
+                match parent.indices[p as usize] as usize {
+                    c if c < nz => {
+                        row.insert(c);
+                    }
+                    c => row.extend(&inner[own[c - nz].0].dep),
+                }
+            }
+            indices.extend(row.iter().map(|&c| c as i32));
+            indptr.push(indices.len() as i32);
+        }
+        let reduced = Reduced { data: vec![0.0; indices.len()], indptr, indices };
+        Ok(Boundaries { sys, z, zcols, inner, inlined, parent, own, reduced,
+                        acc: vec![0.0; nz], work: SquareWork::default() })
     }
 
     /// The boundaries that read each other round a cycle, and so are solved in the parent.
@@ -337,59 +428,164 @@ impl Boundaries {
         (0..self.inner.len()).try_for_each(|k| self.evaluate_one(k))
     }
 
-    /// `dy/dz`: every boundary's unknowns stacked in the order they are evaluated (`Place::Own`),
-    /// against the parent's unknowns, each boundary's chained through those it reads.
-    fn dydz(&self) -> Mat {
-        let nz = self.zcols.len();
-        let mut g = Mat::zeros(self.inner.iter().map(|b| b.ycols.len()).sum(), nz);
-        let mut at = 0;
-        for b in &self.inner {
+    /// Each boundary's `dy/dz` over what it moves with (`Inner::g`), chained through the
+    /// boundaries it reads, in the order they are evaluated.
+    fn chain(&mut self) {
+        for k in 0..self.inner.len() {
+            let (done, rest) = self.inner.split_at_mut(k);
+            let b = &mut rest[0];
             let s = b.last.as_ref().expect("evaluated");
-            // the rows read are earlier boundaries', all above this one's
-            let (above, here) = g.data.split_at_mut(at * nz);
-            for (j, &c) in b.xcols.iter().enumerate() {
+            let w = b.dep.len();
+            b.g.data.fill(0.0);
+            for (j, input) in b.inputs.iter().enumerate() {
                 for i in 0..b.ycols.len() {
                     let d = s.d.at(i, j);
                     if d == 0.0 {
                         continue;
                     }
-                    let row = &mut here[i * nz..(i + 1) * nz];
-                    match self.place[c] {
-                        Place::Parent(k) => row[k] += d,
-                        Place::Own(t) => {
-                            let from = &above[t * nz..(t + 1) * nz];
-                            row.iter_mut().zip(from).for_each(|(r, v)| *r += d * v);
+                    let row = &mut b.g.data[i * w..(i + 1) * w];
+                    match input {
+                        Input::Parent(at) => row[*at] += d,
+                        Input::Own { from, row: t, at } => {
+                            let f = &done[*from];
+                            let from = &f.g.data[t * f.dep.len()..(t + 1) * f.dep.len()];
+                            at.iter().zip(from).for_each(|(&a, v)| row[a] += d * v);
                         }
                     }
                 }
             }
-            at += b.ycols.len();
         }
-        g
     }
 
     /// The parent's Jacobian against its own unknowns, through the boundaries: `P_z + P_y dy/dz`,
-    /// at the pose `z` holds (every boundary evaluated there).
-    fn reduced(&mut self) -> Mat {
-        let g = self.dydz();
-        let (m, nz) = (self.parent.rows.len(), self.zcols.len());
+    /// at the pose `z` holds (every boundary evaluated there), into `self.reduced`.
+    fn reduce(&mut self) {
+        self.chain();
+        let nz = self.zcols.len();
         self.sys.subset_csr(&mut self.parent, &self.z);
-        let mut j = Mat::zeros(m, nz);
-        for r in 0..m {
-            let row = &mut j.data[r * nz..(r + 1) * nz];
-            for p in self.parent.indptr[r]..self.parent.indptr[r + 1] {
-                let p = p as usize;
-                let (c, v) = (self.parent.indices[p] as usize, self.parent.data[p]);
-                // the parent's columns, then the boundaries' unknowns in `g`'s order
+        let (p, red, acc) = (&self.parent, &mut self.reduced, &mut self.acc);
+        for r in 0..p.rows.len() {
+            for q in p.indptr[r]..p.indptr[r + 1] {
+                let (c, v) = (p.indices[q as usize] as usize, p.data[q as usize]);
+                // the parent's columns, then the boundaries' unknowns in the order evaluated
                 if c < nz {
-                    row[c] += v;
+                    acc[c] += v;
                 } else {
-                    let from = &g.data[(c - nz) * nz..(c - nz + 1) * nz];
-                    row.iter_mut().zip(from).for_each(|(r, u)| *r += v * u);
+                    let (k, i) = self.own[c - nz];
+                    let b = &self.inner[k];
+                    let g = &b.g.data[i * b.dep.len()..(i + 1) * b.dep.len()];
+                    b.dep.iter().zip(g).for_each(|(&a, u)| acc[a] += v * u);
+                }
+            }
+            for q in red.indptr[r] as usize..red.indptr[r + 1] as usize {
+                let a = red.indices[q] as usize;
+                red.data[q] = acc[a];
+                acc[a] = 0.0;
+            }
+        }
+    }
+
+    /// The rows `rows` of the reduced Jacobian over the columns `cols` (ascending), dense.
+    fn reduced_dense(&self, rows: &[usize], cols: &[usize]) -> Mat {
+        let red = &self.reduced;
+        let mut j = Mat::zeros(rows.len(), cols.len());
+        for (k, &r) in rows.iter().enumerate() {
+            for q in red.indptr[r] as usize..red.indptr[r + 1] as usize {
+                if let Ok(c) = cols.binary_search(&(red.indices[q] as usize)) {
+                    j.set(k, c, red.data[q]);
                 }
             }
         }
         j
+    }
+
+    /// The reduced Jacobian's parts over its unknowns but the `held` ones: `(rows, columns)`
+    /// that share no column, ascending.  A row that reads only held columns is a part with no
+    /// column of its own; one that reads none is in no part.
+    fn parts(&self, held: &[bool]) -> Vec<(Vec<usize>, Vec<usize>)> {
+        let (m, nz) = (self.parent.rows.len(), self.zcols.len());
+        let red = &self.reduced;
+        let row = |r: usize| {
+            red.indices[red.indptr[r] as usize..red.indptr[r + 1] as usize].iter()
+                .map(|&c| c as usize).filter(|&c| !held[c])
+        };
+        let mut up: Vec<usize> = (0..nz).collect();
+        fn root(up: &mut [usize], mut a: usize) -> usize {
+            while up[a] != a {
+                up[a] = up[up[a]];
+                a = up[a];
+            }
+            a
+        }
+        for r in 0..m {
+            let mut cs = row(r);
+            if let Some(first) = cs.next() {
+                for c in cs {
+                    let (a, b) = (root(&mut up, first), root(&mut up, c));
+                    up[a.max(b)] = a.min(b);
+                }
+            }
+        }
+        let mut parts: BTreeMap<usize, (Vec<usize>, Vec<usize>)> = BTreeMap::new();
+        for c in (0..nz).filter(|&c| !held[c]) {
+            parts.entry(root(&mut up, c)).or_default().1.push(c);
+        }
+        for r in 0..m {
+            match row(r).next() {
+                Some(c) => parts.entry(root(&mut up, c)).or_default().0.push(r),
+                None if red.indptr[r] < red.indptr[r + 1] => {
+                    parts.entry(usize::MAX).or_default().0.push(r)
+                }
+                None => {}
+            }
+        }
+        parts.into_values().filter(|(rows, _)| !rows.is_empty()).collect()
+    }
+
+    /// The rank of the reduced Jacobian, conditioned as the diagnosis conditions a system,
+    /// without factoring it whole.  Parts that share no column are blocks of a block-diagonal
+    /// matrix, whose rank is theirs summed, so N drives that stand apart are N small
+    /// factorisations, not one of `8N` columns.  An unknown every part reads (a shared centre
+    /// distance) joins them all into one, so the columns read by the most rows are held out,
+    /// one at a time, until no part is over `DENSE_MAX` columns (or `COUPLED` are held): the rank
+    /// is each part's, plus the rank of what of the held columns no part's columns span (a
+    /// block QR: `Conditioned::rank_and_rest`).
+    fn reduced_rank(&self) -> usize {
+        const COUPLED: usize = 32;
+        let nz = self.zcols.len();
+        let red = &self.reduced;
+        let mut reads = vec![0usize; nz];
+        red.indices.iter().for_each(|&c| reads[c as usize] += 1);
+        let mut held = vec![false; nz];
+        let mut n_held = 0;
+        let parts = loop {
+            let parts = self.parts(&held);
+            match parts.iter().map(|p| &p.1).max_by_key(|cols| cols.len()) {
+                Some(cols) if cols.len() > DENSE_MAX && n_held < COUPLED => {
+                    let c = *cols.iter().max_by_key(|&&c| (reads[c], std::cmp::Reverse(c)))
+                        .expect("a part over DENSE_MAX columns has one");
+                    held[c] = true;
+                    n_held += 1;
+                }
+                _ => break parts,
+            }
+        };
+        let held: Vec<usize> = (0..nz).filter(|&c| held[c]).collect();
+        let mut rank = 0;
+        let mut rest = Vec::new();
+        for (rows, cols) in &parts {
+            let full: Vec<usize> = rows.iter().map(|&r| self.parent.rows[r]).collect();
+            let own = self.sys.conditioned_of(&full, self.reduced_dense(rows, cols));
+            if held.is_empty() {
+                rank += own.rank_rrqr(RANK_TOL);
+                continue;
+            }
+            let with = self.sys.conditioned_of(&full, self.reduced_dense(rows, &held));
+            let (r, left) = own.rank_and_rest(&with, RANK_TOL);
+            rank += r;
+            rest.push(left);
+        }
+        rank + Conditioned::stack(&rest, held.len()).rank_rrqr(RANK_TOL)
     }
 }
 
@@ -516,10 +712,18 @@ fn evaluate(sys: &mut System, z: &mut [f64], b: &mut Inner, w: &mut SquareWork)
 }
 
 /// The parent as a `TrustRegion`: its rows over its own unknowns, every boundary evaluated at
-/// them.  A failed evaluation is NaN rows, which the DogLeg rejects and shrinks for.
+/// them.  A failed evaluation is NaN rows, which the DogLeg rejects and shrinks for.  Its step
+/// is the flat solve's (`newton::JacCtx`): the minimum-norm step of the dense Jacobian to
+/// `DENSE_MAX` unknowns, the normal equations of the sparse one above, refined for a document.
 struct Parent<'a> {
     b: &'a mut Boundaries,
+    dense: bool,
+    refine: bool,
+    /// The reduced Jacobian dense, where the step is.
     j: Mat,
+    /// Its normal equations, factored over the reduced structure, made at the first sparse step.
+    ata: Option<Ata>,
+    finite: bool,
     rank: i32,
     /// The last evaluation that failed, and how many did.
     failure: Option<Failure>,
@@ -544,24 +748,48 @@ impl TrustRegion for Parent<'_> {
         }
     }
     fn jacobian_at(&mut self, zp: &[f64]) {
-        self.j = match self.b.evaluate_all(zp) {
-            Ok(()) => self.b.reduced(),
-            Err(_) => Mat::from_vec(self.m(), self.n(), vec![f64::NAN; self.m() * self.n()]),
-        };
+        match self.b.evaluate_all(zp) {
+            Ok(()) => self.b.reduce(),
+            Err(_) => self.b.reduced.data.fill(f64::NAN),
+        }
+        self.finite = self.b.reduced.data.iter().all(|x| x.is_finite());
+        if self.dense {
+            let rows: Vec<usize> = (0..self.m()).collect();
+            let cols: Vec<usize> = (0..self.n()).collect();
+            self.j = self.b.reduced_dense(&rows, &cols);
+        }
     }
     fn jt_mul(&mut self, v: &[f64], out: &mut [f64]) {
-        out.copy_from_slice(&self.j.mul_t_vec(v));
+        let red = &self.b.reduced;
+        out.fill(0.0);
+        for (r, &vr) in v.iter().enumerate() {
+            for q in red.indptr[r] as usize..red.indptr[r + 1] as usize {
+                out[red.indices[q] as usize] += red.data[q] * vr;
+            }
+        }
     }
     fn j_mul(&mut self, v: &[f64], out: &mut [f64]) {
-        out.copy_from_slice(&self.j.mul_vec(v));
+        let red = &self.b.reduced;
+        csr_mul(&red.indptr, &red.indices, &red.data, v, out);
     }
-    fn gn_step(&mut self, r: &[f64], _g: &[f64], p: &mut [f64]) {
-        if !self.j.data.iter().all(|x| x.is_finite()) {
+    fn gn_step(&mut self, r: &[f64], g: &[f64], p: &mut [f64]) {
+        if !self.finite {
             p.fill(0.0);
             self.rank = -1;
             return;
         }
-        self.rank = newton::min_norm_step(&self.j, r, p);
+        if self.dense {
+            self.rank = newton::min_norm_step(&self.j, r, p);
+            return;
+        }
+        let red = &self.b.reduced;
+        let (m, n) = (r.len(), p.len());
+        let ata = self.ata.get_or_insert_with(|| Ata::new(m, n, &red.indptr, &red.indices));
+        self.rank = -1;
+        let eps = newton::normal_step(ata, &red.data, g, p);
+        if self.refine {
+            newton::refine(ata, eps, g, p);
+        }
     }
     fn rank(&self) -> i32 {
         self.rank
@@ -595,9 +823,11 @@ pub struct Through {
     /// The parent's own unknowns, and every boundary's.
     pub parent_unknowns: usize,
     pub boundary_unknowns: usize,
-    /// The parent's rows: its Jacobian through the boundaries is a dense `parent_rows ×
-    /// parent_unknowns`, factored at every step (`Boundaries::reduced`).
+    /// The parent's rows, and the entries of its Jacobian through the boundaries, `parent_rows ×
+    /// parent_unknowns` (`Boundaries::reduce`): dense to `DENSE_MAX` unknowns, as the flat
+    /// solve's is, and the normal equations of these entries above.
     pub parent_rows: usize,
+    pub parent_entries: usize,
     /// The most unknowns one boundary has: the largest `F_y` an inner solve factors.
     pub largest_boundary: usize,
     /// The rank of the parent's rows over its own unknowns through the boundaries' derivatives,
@@ -612,8 +842,19 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
     -> Result<Through, String> {
     let mut b = Boundaries::new(sk, bounds)?;
     let mut zp: Vec<f64> = b.zcols.iter().map(|&c| b.z[c]).collect();
-    let mut t = Parent { b: &mut b, j: Mat::zeros(0, 0), rank: -1, failure: None, failures: 0 };
-    let (m, n) = (t.m(), t.n());
+    let n = b.zcols.len();
+    let mut t = Parent {
+        b: &mut b,
+        dense: opts.dense.unwrap_or(n <= DENSE_MAX),
+        refine: opts.document(),
+        j: Mat::zeros(0, 0),
+        ata: None,
+        finite: false,
+        rank: -1,
+        failure: None,
+        failures: 0,
+    };
+    let m = t.m();
     let mut r = vec![0.0; m];
     t.residuals_into(&zp, &mut r);
     let info = if m > 0 && n > 0 && r.iter().all(|v| v.is_finite()) {
@@ -629,8 +870,8 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
     let ended = b.evaluate_all(&zp).err();
     let reduced_rank = match ended {
         None if n > 0 && m > 0 => {
-            let j = b.reduced();
-            b.sys.conditioned_of(&b.parent.rows, j).rank_rrqr(RANK_TOL)
+            b.reduce();
+            b.reduced_rank()
         }
         _ => 0,
     };
@@ -672,6 +913,7 @@ pub fn solve_through(sk: &mut Sketch, bounds: &[Boundary], opts: SolveOpts)
         parent_unknowns: b.zcols.len(),
         boundary_unknowns: b.inner.iter().map(|i| i.ycols.len()).sum(),
         parent_rows: b.parent.rows.len(),
+        parent_entries: b.reduced.indices.len(),
         largest_boundary: b.inner.iter().map(|i| i.ycols.len()).max().unwrap_or(0),
         reduced_rank,
     })

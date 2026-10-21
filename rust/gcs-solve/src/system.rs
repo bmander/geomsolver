@@ -111,6 +111,22 @@ impl Conditioned {
         rrqr_with(&self.m, Tol::Abs(tol)).0
     }
 
+    /// Rank by pivoted QR, and what of `with`'s columns (the same rows, conditioned alike) lies
+    /// outside the span of these: `with` turned by the factorisation's `Qᵀ`, the rows past the
+    /// rank, which an orthogonal turn leaves conditioned as they were.  The rank of `[self |
+    /// with]` is the first plus the rank of the second.
+    pub(crate) fn rank_and_rest(&self, with: &Conditioned, tol: f64) -> (usize, Conditioned) {
+        let (rank, rest) = crate::linalg::rrqr_rest(&self.m, &with.m, Tol::Abs(tol));
+        (rank, Conditioned { m: rest })
+    }
+
+    /// The rows of each of `parts`, one under another, over `cols` columns.
+    pub(crate) fn stack(parts: &[Conditioned], cols: usize) -> Conditioned {
+        let rows = parts.iter().map(|p| p.m.rows).sum();
+        Conditioned { m: Mat::from_vec(rows, cols, parts.iter().flat_map(|p| p.m.data.iter())
+            .copied().collect()) }
+    }
+
     /// The numbers, for handing across the ABI and for the witness's dependency coefficients.
     /// Not for a rank: that is the methods above, with the tolerance they insist on.
     #[doc(hidden)]
@@ -342,6 +358,9 @@ pub struct Subset {
     pub rows: Vec<usize>,
     /// The free columns differentiated against, in local order.
     pub cols: Vec<usize>,
+    /// Every free column its rows read, ascending: all of the whole free vector it is evaluated
+    /// at that it needs written (`System::apply_cols`).
+    reads: Vec<usize>,
     pub indptr: Vec<i32>,
     pub indices: Vec<i32>,
     /// The Jacobian's values over `indptr`/`indices`, as `System::subset_csr` last filled them.
@@ -419,7 +438,7 @@ fn jac_entries(
     row0: usize,
     src0: usize,
     ncols: i64,
-    col: impl Fn(i32, &mut Vec<(i64, f64)>),
+    mut col: impl FnMut(i32, &mut Vec<(i64, f64)>),
 ) {
     let mut cs = Vec::new();
     for i in 0..count {
@@ -907,6 +926,19 @@ impl System {
         settle(&mut self.x, &self.derived);
     }
 
+    /// `apply_z` for the columns `cols` alone: what a subset reads, written as the whole vector
+    /// would write it.  Every parameter its rows read is held, free in `cols`, or derived from
+    /// bases in `cols` (`fold`), so it reads what it would after `apply_z`, to the bit; the
+    /// rest of `x` is left as it was, and nothing but a subset's own evaluation reads it before
+    /// the next `apply_z` (#459: a boundary's 4 rows no longer write a document's every column).
+    fn apply_cols(&mut self, z: &[f64], cols: &[usize]) {
+        for &i in cols {
+            let p = self.free[i] as usize;
+            self.x[p] = if self.scaled { z[i] / self.col_scale[i] } else { z[i] };
+        }
+        settle(&mut self.x, &self.derived);
+    }
+
     pub fn residuals_into(&mut self, z: &[f64], r: &mut [f64]) {
         self.apply_z(z);
         let mut v: Vec<f64> = Vec::new();
@@ -1315,10 +1347,14 @@ impl System {
         let mut inst = instances.to_vec();
         inst.sort_unstable();
         inst.dedup();
-        let mut local = vec![-1i32; self.n_free];
-        for (k, &c) in cols.iter().enumerate() {
-            local[c] = k as i32;
-        }
+        // each column's place in `cols`, by search: a vector over every free column, made for
+        // each of a document's thousands of boundaries, is quadratic in the document
+        let mut local: Vec<(usize, i32)> =
+            cols.iter().enumerate().map(|(k, &c)| (c, k as i32)).collect();
+        local.sort_unstable();
+        let local_of =
+            |c: usize| local.binary_search_by_key(&c, |e| e.0).map_or(-1, |k| local[k].1);
+        let mut reads: Vec<usize> = Vec::new();
         // contiguous instances of one kernel block are one call, as the whole system's are
         let mut runs: Vec<(usize, usize, usize, usize, usize)> = Vec::new();
         let (mut out, mut joff) = (0usize, 0usize);
@@ -1343,24 +1379,28 @@ impl System {
             let gidx = &blk.gidx[i0 * kn.n_par..(i0 + count) * kn.n_par];
             let col = |p: i32, cs: &mut Vec<(i64, f64)>| {
                 fold(&self.col_of, &self.dcols, p, cs);
+                reads.extend(cs.iter().map(|&(c, _)| c as usize));
                 cs.retain_mut(|(c, _)| {
-                    *c = local[*c as usize] as i64;
+                    *c = local_of(*c as usize) as i64;
                     *c >= 0
                 });
             };
             jac_entries(&mut es, kn, gidx, count, out0, joff0, ncols, col);
             fill_const_jac(kn, count, &mut jdata[joff0..]);
         }
+        reads.sort_unstable();
+        reads.dedup();
         let Csr { indptr, indices, ent_src, ent_slot, ent_w } = csr_structure(es, rows.len(), ncols);
         let data = vec![0.0; indices.len()];
-        Subset { runs, rows, cols: cols.to_vec(), indptr, indices, data, ent_src, ent_slot, ent_w,
+        Subset { runs, rows, cols: cols.to_vec(), reads, indptr, indices, data, ent_src, ent_slot,
+            ent_w,
             jdata, v: Vec::new() }
     }
 
     /// The subset's residuals at `z` (the whole free vector), one per `s.rows`, each over its
     /// row's units exactly as `residuals_into` hands it out.
     pub fn subset_residuals(&mut self, s: &mut Subset, z: &[f64], out: &mut [f64]) {
-        self.apply_z(z);
+        self.apply_cols(z, &s.reads);
         for &(b, i0, count, out0, _) in &s.runs {
             let blk = &self.blocks[b];
             let kn = self.kernels[blk.kid];
@@ -1378,7 +1418,7 @@ impl System {
     /// Fill `s.data`: the subset's Jacobian at `z` against its columns, each value the whole
     /// system's `compute_csr` makes for that row and column.
     pub fn subset_csr(&mut self, s: &mut Subset, z: &[f64]) {
-        self.apply_z(z);
+        self.apply_cols(z, &s.reads);
         for &(b, i0, count, _, joff0) in &s.runs {
             let blk = &self.blocks[b];
             let kn = self.kernels[blk.kid];

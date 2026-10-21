@@ -283,7 +283,10 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
 - **Block-triangular solve** ([docs/block-triangular-solve-plan.md](../block-triangular-solve-plan.md)):
   `System::block_order` (memoised per compile) is the DM-matched square part in strongly
   connected blocks (`graph::blocks`: Tarjan, lowest row first), over/under parts beside it.
-  `System::subset` evaluates through the whole system's helpers, so its numbers match to the bit;
+  `System::subset` evaluates through the whole system's helpers, so its numbers match to the bit,
+  and writes only the free columns its rows read (`Subset::reads`, `System::apply_cols`): every
+  parameter it reads is held, free among them or derived from bases among them, so the bits are
+  `apply_z`'s, and a block of four rows costs four columns, not a document's every one (#459);
   `BlockTr` minimises one block with `newton::dogleg`, compiling no `System`.
   `SolveOpts::blocks`: `Rescue` (default) runs the pass and a whole-system DogLeg polish after a
   failed DogLeg, before LM, only with `retry` and ≥2 blocks, kept only if it solves; `First` is
