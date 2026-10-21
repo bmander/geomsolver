@@ -475,6 +475,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             report_set(&sk, &e.map, "claim refuted", &d.claims_violated);
             report_set(&sk, &e.map, "claim independent", &d.claims_consuming);
             report_set(&sk, &e.map, "bound broken", &d.bounds_violated);
+            report_set(&sk, &e.map, "degenerate", &d.collapsed);
             // what each energy came to, in its statement's words (#121)
             for &(id, v) in &d.extrema {
                 if let Some(c) = sk.constraint(id) {

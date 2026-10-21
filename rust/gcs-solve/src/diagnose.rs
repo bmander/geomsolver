@@ -127,6 +127,9 @@ pub struct Diagnosis {
     /// with room is in neither.
     pub bounds_violated: Vec<u32>,
     pub bounds_active: Vec<u32>,
+    /// The tangencies at a contact whose line has no length (#479, `solve::collapsed`): each holds
+    /// whatever its contact, so the figure is degenerate, which a solve reports as a failure.
+    pub collapsed: Vec<u32>,
     /// Each `minimizes`'s and `maximizes`'s verdict (#121), by its terms' constraints: minimum,
     /// maximum, saddle or degenerate, read off the reduced Hessian at the pose diagnosed — told,
     /// never enforced: a stationary point the solve reached is the drawing's, and the verdict says
@@ -978,6 +981,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         claims_consuming,
         bounds_violated,
         bounds_active,
+        collapsed: crate::solve::collapsed(sk),
         extrema: crate::variational::extrema(sk),
         // **judged, at the very end, and never compiled.**  A solid claim reads the solved pose
         // and the terms over it; it enters no system, so nothing above this line can see it and

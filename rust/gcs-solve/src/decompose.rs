@@ -1502,7 +1502,9 @@ impl PlanSolver {
         // document solve is (§9.6)
         let bounded = fallback && sk.constraints.iter().any(|c| c.bound.is_some())
             && !crate::solve::bounds_hold(sk);
-        if (rel > tol || bounded) && fallback {
+        // and one where a tangency's line has no length is no solution (#479)
+        let collapsed = fallback && !crate::solve::collapsed(sk).is_empty();
+        if (rel > tol || bounded || collapsed) && fallback {
             fell_back = true;
             // `System::solve` re-homes any curve contact and rebuilds itself if one moved to
             // another span, so this system is current whatever the fallback did
@@ -1516,7 +1518,7 @@ impl PlanSolver {
             sk.branches.insert(k, v);
         }
         let kept = numeric.as_ref().map_or(true, |r: &crate::solve::SolveResult| {
-            r.status != crate::solve::BOUND_BROKEN
+            r.status != crate::solve::BOUND_BROKEN && r.status != crate::solve::COLLAPSED
         });
         PlanResult {
             success: rel <= 1e-6 && kept,
