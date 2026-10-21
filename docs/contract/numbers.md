@@ -36,7 +36,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `Dim::number_text` writes the bases in `kg`, `s` and `A`.  A unit is a suffix only (`V` is a
   name), and there is no `h` or `min`.  `tests/units.rs`'s design-table section is the gate.
   **A material's properties are the one place a pressure and a density are asked for** (#510 P3,
-  [0.164], `Dim::PRESSURE`, `Dim::DENSITY`), and there a bare number is refused rather than
+  [0.165], `Dim::PRESSURE`, `Dim::DENSITY`), and there a bare number is refused rather than
   read in the document's unit (`model::Property::read`; the rule is
   [analysis.md](analysis.md)'s).  `Units::to_si` moves a value from the document's units to SI
   by its powers of length alone.  `*` and `/` derive,

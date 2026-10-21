@@ -43,6 +43,8 @@ pub enum Operation {
     Minimize(syntax::Minimize),
     /// A bound on measurements (#183 F3), read where a region solid's set is applied.
     Measured(syntax::Measured),
+    /// A load case (#510 P4), its references absolute and its numbers written in.
+    Scenario(syntax::Scenario),
 }
 
 #[derive(Clone, Debug)]
@@ -194,6 +196,7 @@ impl Statement {
             S::Derived(d) => Operation::Derived(d),
             S::Minimize(m) => Operation::Minimize(m),
             S::Measured(m) => Operation::Measured(m),
+            S::Scenario(sc) => Operation::Scenario(sc),
             S::ClaimOver(c) => Operation::ClaimOver(ClaimOver {
                 formal: c.formal, seen_from: c.seen_from, from: c.from, to: c.to, span: c.span,
                 body: c.body.into_iter().map(|s| Self::lower(s, path.clone())).collect::<Result<_, _>>()?,

@@ -627,6 +627,7 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
         KernelKey::Motion { reading, n_par, n_const } => {
             crate::envelope::screw::kernel(crate::envelope::screw::Reading::ALL[reading as usize], n_par, n_const)
         }
+        KernelKey::Interior { n_par, n_const } => crate::interior::kernel(n_par, n_const),
     }
 }
 

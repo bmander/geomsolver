@@ -622,6 +622,8 @@ fn rewrite(
                 x.refs_mut().for_each(|r| fix(r, bad));
             }
         }
+        // a load case names what it holds, loads and requires of (#510 P4)
+        StmtKind::Scenario(sc) => sc.refs_mut().into_iter().for_each(|r| fix(r, bad)),
         // `bore cut body` names two solids, and inside a component both wear the prefix
         StmtKind::SolidRel(r) => {
             fix(&mut r.what, bad);

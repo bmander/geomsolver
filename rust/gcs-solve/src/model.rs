@@ -31,6 +31,7 @@ mod rates;
 mod caches;
 mod running;
 mod material;
+mod scenario;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -53,6 +54,9 @@ pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
 pub use running::Running;
 pub use material::{Material, Property};
+pub use scenario::{
+    Applied, Grade, Hold, Load, LoadKind, LoadValue, Output, Requirement, Scenario, Support,
+};
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub use measure::polyline_distance;
