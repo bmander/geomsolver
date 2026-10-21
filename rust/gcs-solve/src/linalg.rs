@@ -399,6 +399,21 @@ pub(crate) fn rrqr_with(a: &Mat, tol: Tol) -> (usize, Vec<i32>) {
     (rank, piv)
 }
 
+/// `a`'s rank by `qrp`, and what of `b`'s columns (rows as `a`'s) lies outside the span of `a`'s:
+/// `Qᵀ b` past the rank's rows.  The rank of `[a | b]` is the first, plus the rank of the second
+/// (a block QR, `a`'s columns pivoted first).
+pub(crate) fn rrqr_rest(a: &Mat, b: &Mat, tol: Tol) -> (usize, Mat) {
+    let (m, n, nb) = (a.rows, a.cols, b.cols);
+    if m == 0 || n == 0 {
+        return (0, b.clone());
+    }
+    let mut w = a.data.clone();
+    let mut bw = b.data.clone();
+    let (tau, _, rank) = qrp(m, n, &mut w, tol);
+    apply_qt(m, n, m.min(n), &w, &tau, &mut bw, nb);
+    (rank, Mat::from_vec(m - rank, nb, bw[rank * nb..].to_vec()))
+}
+
 /// The null space of a matrix of full row rank, from a pivoted QR of its transpose: `Aᵀ = Q R`,
 /// and `Q`'s columns past the rank span what `A` sends to zero — one per column, `n − m` of them.
 /// `None` where `A` is short of full row rank by `tol`, for an SVD to read instead.  Several times

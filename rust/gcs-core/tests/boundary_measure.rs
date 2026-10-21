@@ -5,6 +5,7 @@
 use gcs_core::boundary::measure::{self, Document, Drive};
 use gcs_core::model::Sketch;
 use gcs_core::solve::{solve_through, Boundaries, SolveOpts, Through};
+use gcs_core::system::{System, DENSE_MAX, RANK_TOL};
 
 /// `doc` solved flat and through its boundaries from the same start, the two poses held to agree
 /// to `tol`: both solved, and each solve's answer.
@@ -31,10 +32,9 @@ fn solves(t: &Through) -> usize {
 /// N identical drives cost N times one drive, inner solve for inner solve: nothing is shared
 /// between instances, though every copy is asked the same question at every step (an exact
 /// placement-independent cache would answer all but one, #456).  The flat solve's largest block
-/// stays a run's four unknowns, while the parent through the runs is one dense matrix that grows
-/// with N: eight unknowns a drive.
+/// stays a run's four unknowns, and the parent through the runs has eight unknowns a drive.
 #[test]
-fn identical_drives_cost_n_times_one_and_the_parent_is_dense() {
+fn identical_drives_cost_n_times_one() {
     let (f1, one, _) = both(&measure::belts(&[Drive::PAPER], false), 1e-9);
     let (f3, three, _) = both(&measure::belts(&[Drive::PAPER; 3], false), 1e-9);
     assert_eq!(three.result.iterations, one.result.iterations);
@@ -135,4 +135,53 @@ fn the_derivative_grows_towards_a_fold_and_past_it_the_boundary_is_named() {
     let (past, _, _) = at(40.1, Some(&nearer));
     assert!(!past.result.success);
     assert_eq!(past.failure.as_ref().map(|f| f.boundary.as_str()), Some("one"));
+}
+
+/// The flat document's rank at `sk`'s pose, as the diagnosis reads it.
+fn flat_rank(sk: &Sketch) -> usize {
+    let mut sys = System::new(sk);
+    let z = sys.z0(sk);
+    sys.rank(&z, RANK_TOL, true)
+}
+
+/// The parent's Jacobian through the boundaries is sparse: a drive's rows read only its own
+/// drive's unknowns, so its entries grow as N, not N², and past `DENSE_MAX` unknowns the parent
+/// steps on its normal equations, as the flat solve does (the dense parent was #459's cost).
+/// Stepped either way it comes to one pose, and its rank, found part by part, is what is left of
+/// the flat rank when the boundaries' own unknowns are taken out (FL3).
+#[test]
+fn the_parent_is_sparse_and_steps_as_the_dense_one_does() {
+    let (_, one, _) = both(&measure::belts(&[Drive::PAPER], false), 1e-9);
+    let n = 20;
+    let doc = measure::belts(&vec![Drive::PAPER; n], false);
+    let (_, t, sparse) = both(&doc, 1e-7);
+    assert!(t.parent_unknowns > DENSE_MAX, "{}", t.parent_unknowns);
+    assert_eq!(t.parent_entries, n * one.parent_entries);
+    assert_eq!(flat_rank(&sparse), t.boundary_unknowns + t.reduced_rank);
+    let e = measure::read(&doc.src).unwrap();
+    let bs = measure::bounds(&e, &doc.boundaries).unwrap();
+    let mut dense = e.sketch.clone();
+    let d = solve_through(&mut dense, &bs, SolveOpts { dense: Some(true), ..SolveOpts::default() })
+        .unwrap();
+    assert!(d.result.success, "{}", d.result.message);
+    assert_eq!((d.result.iterations, d.reduced_rank), (t.result.iterations, t.reduced_rank));
+    for (a, b) in sparse.params.iter().zip(&dense.params) {
+        assert!((a.value - b.value).abs() <= 1e-9 * (1.0 + b.value.abs()),
+                "`{}`: {} sparse, {} dense", b.name, a.value, b.value);
+    }
+}
+
+/// An unknown every drive reads joins the whole parent into one part, over `DENSE_MAX` columns:
+/// its rank is found with that column held out, each drive's part factored on its own and the
+/// held column's rank added for what no part spans, and it is still the flat rank less the
+/// boundaries' own unknowns (FL3).
+#[test]
+fn a_shared_unknown_is_held_out_of_the_rank_and_the_rank_adds_up() {
+    let n = 20;
+    let drives: Vec<Drive> =
+        (0..n).map(|k| Drive { r_large: 40.0 + 10.0 * (k as f64 + 0.5) / n as f64, ..Drive::PAPER })
+            .collect();
+    let (_, t, got) = both(&measure::belts(&drives, true), 1e-7);
+    assert!(t.parent_unknowns > DENSE_MAX, "{}", t.parent_unknowns);
+    assert_eq!(flat_rank(&got), t.boundary_unknowns + t.reduced_rank);
 }
