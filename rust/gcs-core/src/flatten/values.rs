@@ -36,6 +36,12 @@ fn out_of_reach(name: &str, vals: &Vals, scope: &Scope) -> Option<(Code, String)
         return None;
     }
     if scope.forbidden.contains(name) {
+        // a constant of the file is read (#461 PC1): what is out of reach is an unknown, or a
+        // number of the caller's alone
+        if scope.forbidden.unknown(name) {
+            return Some((Code::E103, format!("`{name}` is an unknown of the drawing, and a \
+                definition reads only constants: pass it as an argument")));
+        }
         return Some((Code::E103, format!("`{name}` is outside this component; pass it as an argument")));
     }
     if name.split_once('.').is_some_and(|(head, _)| scope.groups.contains(head)) {

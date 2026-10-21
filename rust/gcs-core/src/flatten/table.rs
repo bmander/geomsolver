@@ -123,6 +123,17 @@ impl Vals {
         self.own
     }
 
+    /// Every name in force and the value it has here, an inner frame's hiding an outer one's.
+    pub(crate) fn flat(&self) -> BTreeMap<String, Aff> {
+        let mut out: BTreeMap<String, Aff> = BTreeMap::new();
+        for t in self.frames() {
+            for (k, v) in &t.own {
+                out.entry(k.clone()).or_insert_with(|| v.clone());
+            }
+        }
+        out
+    }
+
     /// Whether any value in force is affine in an unknown of the drawing: a name some frame
     /// indexed as one, whose value here — a frame inside may hide it — still is.
     pub(crate) fn any_unknown(&self) -> bool {

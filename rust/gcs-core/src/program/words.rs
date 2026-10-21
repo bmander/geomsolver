@@ -54,7 +54,8 @@ pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
             continue;
         }
         first.insert(key, d.word.span);
-        for (code, span, message) in crate::flatten::word_faults(d) {
+        let numbers = crate::flatten::file_numbers(p, d.module);
+        for (code, span, message) in crate::flatten::word_faults(d, &numbers) {
             say(code, span, message);
         }
     }

@@ -4,6 +4,24 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.159] A definition reads the constants of its file.** A component's or a relation word's
+body (§8) reads the numbers its file states at the top and those of the modules the file `use`s,
+by the names the file reads them by (`engine.dims.L`, `L` under `use engine.dims (L)`), where it was
+**E103** ("outside this component; pass it as an argument"). Only constants: a value that is or
+reads an unknown (`param c: Length`) stays out of reach, **E103** saying so; so do a document's
+`preview` values and its root instances' numbers, and every number of a file that uses the module.
+A formal, or a number of the body, by the same name hides the constant. So a dimension table is
+read where it is needed rather than threaded through every call as a `group`. No document changes.
+(Issue #461.)
+
+**[0.158] A body drawn in the plane its operand is drawn in.** `in pin.plane { … }` (§6.7) reads
+the plane a point is drawn in (`o.plane`, [0.152]) as the frame of an `in` block, through any path
+that reaches a point (`in pin.end.plane`, `in l.p1.plane`): a component draws where what it is
+handed is drawn, with no plane formal, and the plane is read once that point is drawn, wherever
+either is declared. A point standing in space is drawn in no plane, **E040** at the reference.
+Through 0.157 any path in an `in` was **E040** ("`o` is a point, and `in` names a plane"). No
+document changes. (Issue #461.)
+
 **[0.157] One copy of a pattern, by its index.** An operand the document wrote in a `repeat`'s or
 a `ring`'s body is a step of its body's faces' names with its copy's index, as a reference to the
 copy is written (§6.21): the hole the second drill of `repeat 3 { … drill := solid(face(hole),

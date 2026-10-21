@@ -79,14 +79,134 @@ layout := Layout()
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
 }
 #[test]
-fn components_cannot_capture_global_values_geometry_or_standard_datums() {
+fn components_cannot_capture_global_unknowns_geometry_or_standard_datums() {
     for src in [
-        "use std\nlength := 20\ncomponent Bad() { a := point\nb := point\na distance(length) b }\nin std.front {\nb := Bad()\n}\n",
+        "use std\nparam length: Scalar hint(20)\ncomponent Bad() { a := point\nb := point\na distance(length) b }\nin std.front {\nb := Bad()\n}\n",
         "use std\nin std.front {\na := point\n}\ncomponent Bad() { fix((0, 0)) a }\nin std.front {\nb := Bad()\n}\n",
         "use std\ncomponent Bad() { ax := line(std.origin, hint((0, 1))) }\nin std.front {\nb := Bad()\n}\n",
         "use std\ncomponent Inner() { fix((0, 0)) a }\ncomponent Outer() { a := point\ni := Inner() }\nin std.front {\no := Outer()\n}\n",
-        "use std\nlength := 20\ncomponent Bad() { width := length / 2\na := point }\nin std.front {\nb := Bad()\n}\n",
+        "use std\nparam length: Scalar hint(20)\ncomponent Bad() { width := length / 2\na := point }\nin std.front {\nb := Bad()\n}\n",
     ] { assert!(!build(src).ok(), "captured ambient value: {src}"); }
+}
+
+/// **A definition reads the constants of its file** (#461 PC1): the document's own values and
+/// groups' numbers, worked out while elaborating, are part of what a component or a word is, as
+/// a number written in its body is — read with no argument to hand them in.
+#[test]
+fn a_definition_reads_the_constants_of_its_file() {
+    let e = solved("\
+unit mm
+use std (horizontal)
+w := 7mm
+half := w / 2
+dims := {r: 3mm}
+a apart b := a distance(half) b
+component Arm(o: point) {
+  tip := point hint((5, 0))
+  o distance(w + dims.r) tip
+  o horizontal tip
+  mid := point hint((2, 0))
+  o apart mid
+  o horizontal mid
+}
+in std.front {
+  o := point
+  fix((0, 0)) o
+}
+arm := Arm(o) in std.front
+");
+    let x = |n: &str| e.sketch.point_xy(e.map.ent_named(n).unwrap().i()).0.abs();
+    assert!((x("arm.tip") - 10.0).abs() < 1e-9, "{}", x("arm.tip"));
+    assert!((x("arm.mid") - 3.5).abs() < 1e-9, "{}", x("arm.mid"));
+}
+
+/// A formal or a number of the body by the name of a constant hides it: what the call hands in,
+/// and what the body says, is what it reads.
+#[test]
+fn a_formal_hides_a_constant() {
+    let e = solved("\
+unit mm
+use std (horizontal)
+w := 7mm
+component Arm(o: point, w: Length) {
+  tip := point hint((5, 0))
+  o distance(w) tip
+  o horizontal tip
+}
+component Own(o: point) {
+  w := 2mm
+  tip := point hint((5, 0))
+  o distance(w) tip
+  o horizontal tip
+}
+in std.front {
+  o := point
+  fix((0, 0)) o
+}
+arm := Arm(o, w: 4mm) in std.front
+own := Own(o) in std.front
+");
+    let x = |n: &str| e.sketch.point_xy(e.map.ent_named(n).unwrap().i()).0.abs();
+    assert!((x("arm.tip") - 4.0).abs() < 1e-9 && (x("own.tip") - 2.0).abs() < 1e-9);
+}
+
+/// **Only constants** (#461 PC2): a number that is or reads an unknown of the drawing is no
+/// constant, and a definition reading one is told so (E103); nor are the numbers of the root's
+/// instances (`ball.r`), nor what the file's `preview` states, which a document using the file
+/// would not have.
+#[test]
+fn a_definition_reads_no_unknown_no_instance_number_and_no_preview_value() {
+    let refused = |src: &str, needle: &str| {
+        let e = build(src);
+        assert!(e.errors().any(|d| d.code.as_str() == "E103" && d.message.contains(needle)),
+            "{src}\n{:?}", e.diags);
+    };
+    refused("\
+unit mm
+use std
+param k: Length hint(3mm)
+twice := 2 * k
+component C(o: point) {
+  p := point
+  o distance(twice) p
+}
+in std.front {
+  o := point
+}
+c := C(o) in std.front
+", "`twice` is an unknown of the drawing, and a definition reads only constants");
+    refused("\
+unit mm
+use std
+component Ball(c: point, r: Length) {
+  k := circle(center: c)
+  radius(r) k
+}
+component C(o: point) {
+  p := point
+  o distance(ball.r) p
+}
+in std.front {
+  o := point
+}
+ball := Ball(o, r: 5mm) in std.front
+c := C(o) in std.front
+", "outside this component");
+    refused("\
+unit mm
+use std
+component C(o: point) {
+  p := point
+  o distance(shown) p
+}
+preview {
+  shown := 4mm
+  in std.front {
+    o := point
+  }
+  c := C(o) in std.front
+}
+", "outside this component");
 }
 #[test]
 fn groups_reject_missing_duplicate_and_wrong_kind_members() {

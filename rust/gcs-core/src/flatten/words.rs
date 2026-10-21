@@ -157,12 +157,45 @@ fn param_kinds(def: &WordDef) -> Result<BTreeMap<String, Param>, (Span, String)>
     Ok(out)
 }
 
+/// **The numbers a file states or imports, by the names it reads them by** (#461 PC1): its own
+/// top-level values and groups (the document's outside its `preview`), each `use`d module's under
+/// the module's path (`lib.table.L`), and those a `use` lists bare.  Read off the text, so a
+/// word's definition is judged as written (`faults`): whether each is a constant, reading no
+/// unknown, is the application's to find (`Walk::file_numbers`).
+pub(crate) fn file_numbers(p: &crate::syntax::Program, file: Option<usize>) -> BTreeSet<String> {
+    let numbers = |body: &[crate::syntax::Stmt], preview: Option<Span>| -> Vec<String> {
+        body.iter().filter(|st| !preview.is_some_and(|v| v.lo <= st.span.lo && st.span.hi <= v.hi))
+            .filter_map(|st| match &st.kind {
+                StmtKind::Param(n) => Some(n.name.text.clone()),
+                StmtKind::Group(g) => Some(g.name.text.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let mut out: BTreeSet<String> = match file {
+        None => numbers(&p.root().body, p.preview).into_iter().collect(),
+        Some(k) => numbers(&p.modules[k].root.body, None).into_iter().collect(),
+    };
+    for u in p.use_stmts(file) {
+        let Some(k) = p.module_named(&u.name) else { continue };
+        out.extend(numbers(&p.modules[k].root.body, None).into_iter().map(|n| format!("{}.{n}", u.name)));
+        out.extend(u.names.iter().map(|n| n.text.clone()));
+    }
+    out
+}
+
+/// Whether `name` is one of `numbers` or a member of one, a group (`dims.L` of `dims`).
+fn among(numbers: &BTreeSet<String>, name: &str) -> bool {
+    numbers.contains(name)
+        || name.match_indices('.').any(|(at, _)| numbers.contains(&name[..at]))
+}
+
 /// **What is wrong with a word's definition, as written** (§9.9): a word the language keeps for
 /// itself, an operand or a parameter named twice, and a body reading anything it was neither
-/// given nor declared itself.  Asked of every definition by `program::words`, used or not; the
-/// application asks it too, and applies no definition it faults, so a fault is said once, at the
-/// definition.
-pub(crate) fn faults(def: &WordDef) -> Vec<(Code, Span, String)> {
+/// given nor declared itself, nor a number of its file (`file_numbers`, #461).  Asked of every
+/// definition by `program::words`, used or not; the application asks it too, and applies no
+/// definition it faults, so a fault is said once, at the definition.
+pub(crate) fn faults(def: &WordDef, numbers: &BTreeSet<String>) -> Vec<(Code, Span, String)> {
     let mut out = Vec::new();
     let word = &def.word.text;
     let place = match def.fixity {
@@ -235,7 +268,7 @@ pub(crate) fn faults(def: &WordDef) -> Vec<(Code, Span, String)> {
                         continue;
                     }
                     for name in reads(text) {
-                        if !def.params.iter().any(|p| p.text == name) {
+                        if !def.params.iter().any(|p| p.text == name) && !among(numbers, &name) {
                             out.push((Code::E101, *span, reach(&name)));
                         }
                     }
@@ -397,8 +430,15 @@ impl<'a> Walk<'a> {
             }
         }
         let at = used.word.span;
-        let closure =
-            Scope { closed: true, module: def.module, vals: Rc::new(Vals::of(vals)), ..Scope::default() };
+        // its parameters over the constants of the file it is written in (#461)
+        let (constants, unknowns) = self.file_numbers(def.module);
+        let mut given = Vals::over(constants);
+        for (k, v) in vals {
+            given.insert(k, v);
+        }
+        let forbidden = super::Outside { unknowns, ..Default::default() };
+        let closure = Scope { closed: true, module: def.module, vals: Rc::new(given), forbidden,
+                              ..Scope::default() };
         let u = Use { st, rel, path, scope, at };
         let app = self.begin(&u, &closure);
         for (operand, given) in def.operands.iter().zip(&used.ops) {
@@ -500,10 +540,11 @@ impl<'a> Walk<'a> {
     /// definition `faults` refuses — said where it is written (`program::words`), not again at
     /// every statement that writes it.
     fn word_kinds(&mut self, k: usize) -> Option<Rc<BTreeMap<String, Param>>> {
-        let def = &self.prog.words[k];
+        let prog = self.prog;
+        let def = &prog.words[k];
         self.words.kinds
             .entry(k)
-            .or_insert_with(|| match faults(def).is_empty() {
+            .or_insert_with(|| match faults(def, &file_numbers(prog, def.module)).is_empty() {
                 true => param_kinds(def).ok().map(Rc::new),
                 false => None,
             })

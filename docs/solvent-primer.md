@@ -661,9 +661,14 @@ t0 := Rung(l0, r0, len: 50)
 - **An instance's numbers are read by its name**: every numeric formal, bound or not, is
   `inst.formal` — `p distance(ball.r) ball.center` — and travels with an instance passed as a
   `group`. Values a body declares are not read this way.
-- **Scope is closed.** A body sees only its formals and its own declarations: root values,
-  geometry and standard datums must be passed in. Component definitions and built-in functions
-  remain callable. Repetition blocks share the enclosing scope.
+- **Scope is closed.** A body sees only its formals and its own declarations: geometry, standard
+  datums and the document's unknowns must be passed in. Component definitions and built-in
+  functions remain callable. Repetition blocks share the enclosing scope.
+- **A body reads its file's constants**: the values its file states at the top and those of the
+  modules the file `use`s (`engine.dims.L`, or `L` with `use engine.dims (L)`), with nothing passed
+  at the call. A number a parent should be able to vary or solve for — a crank's angle, a ratio — is
+  a formal; a number the part's design fixes is a constant. A `param` with no value is an unknown,
+  never a constant (E103 in a body). The same holds in a relation word's body.
 - **Everything an instance makes is public by dotted name** (`t0.e`, `five.s[0].p1`) unless
   declared `private`. `construction` marks purpose, independently: shown in the editor, hidden on
   sheets unless styled. A private entity may still be passed explicitly to another component.
@@ -1231,7 +1236,10 @@ Views carry no place on paper: the `.svd` places each.
 - **`in top { … }`** writes membership once for every declaration inside. An instance joins a view
   whole: `t := Tooth(…) in top`. Inside a component, `in view { … }` over plane formals lets a part
   carry its own views (`engine/conrod.sv`), and `when flag == 1 { … }` over a 0/1 `Int` formal
-  omits a view an instance does not show in.
+  omits a view an instance does not show in. A body may instead draw in the plane an operand is
+  drawn in, `in pin.plane { … }` (or `in pin.end.plane`, through a member): no view is handed to
+  it, and it is drawn wherever what it is mated to is. A point standing in space has no plane
+  (E040 at the reference).
 - A view's attitude may be an unknown: build it on axes the solve turns (2.13, 2.14). Planes and
   axes are settled before the main solve and still move with it.
 
