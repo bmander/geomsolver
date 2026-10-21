@@ -17,7 +17,7 @@ is left to the lint.
 | step | what landed | spec | gate |
 |---|---|---|---|
 | 0 | #157: a stated `ccw`/`cw` is checked and steered by the default solve | 0.160 | `tests/orientation.rs` |
-| 0 | #492: in progress separately (the yardstick a far point stretches) | — | — |
+| 0 | #492: each row judged at its own size, so a far point no longer loosens every row and "solved" means solved | — | `tests/far_seed.rs` |
 | 1 | `in pin.plane { … }` (PV2) | 0.158 | `tests/relation_words.rs` |
 | 2 | constants of the definition (PC1–PC2) | 0.159 | `tests/closed_scopes.rs`, `tests/modules.rs` |
 | 3 | `part`, E108 and E109 (PT1–PT4); W207 by `--lint` (PT5) | 0.161 | `tests/parts.rs` |
@@ -51,7 +51,14 @@ it (`ConRod`'s small end above or below its pin, for one); stating each root is 
 now that #157 holds a stated `ccw`. The V-twin and the hub motor still thread their tables, each
 its own issue (§9).
 
-Verified: the workspace suite (core 2,675 passed, 0 failed) and the web suite (318 passed).
+#492 meets its acceptance but for one bench row: at r₂ = 20.001 the flat solve reports "ok" 2e-3
+of the extent off the true crossing, every row holding to 2.1e-7 of its own size while the
+crossing moves 2.4e9 times a contact's miss — no residual measure can tell that pose from the
+crossing (`docs/iteration-limit-rescue-plan.md` records it, and the rank, which keeps the global
+extent).
+
+Verified on the merged branch: the workspace suite (core 2,681 passed, 0 failed) and the web suite
+(318 passed).
 
 ## Summary
 

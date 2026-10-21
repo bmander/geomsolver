@@ -90,11 +90,30 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   stands, and nothing in the library has one.  `tests/many_instances.rs` is the gate: the factor
   of the plates with the margin free within 2× the fixed plates', at 100 and 200, and no case of
   the library with a dense column.
-- "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units
-  (`extent^degree`).  Never one absolute threshold — kernels are of degree 1 and 2.  **The
-  iteration sees the same vector**: `residuals_into` and `compute_csr` divide every row by
-  `row_scale`, so the dogleg weighs an `angle` row and a `distance` row alike (issue #43).  A
-  test comparing against a kernel multiplies by `row_scale` to get the raw residual.
+- "Solved" is `System::max_relative_residual <= 1e-6`: each row's residual over its own units,
+  its kernel's power of **its own size** (#492, `system::Sizes`, `System::row_size`): the longest
+  side of the box round the points it reads, or its largest radius, at least a tenth of the
+  largest number it reads (`system::OFF_ORIGIN`: rounding is in proportion to that, and the
+  fixtures solve to 1e-12) and a unit, at most `max(1, extent)`, and the larger of its size where
+  the system was compiled and where it is judged.  A point standing more than `system::FAR_OUT`
+  (100) times the size of the rest a row reads outside their box is left out of the row's size
+  (`x` far out on a run, `(x − s) × (e − s)`, is judged at the run's size); a row reading no
+  point and no radius is judged at the extent.  Never one absolute threshold — kernels are of
+  degree 1 and 2 — and **never the drawing's extent alone**, which one far-out point stretches:
+  seeded 1e6 mm out, a contact a micrometre off its 20 mm circle read as 5e-14, and a belt of
+  equal circles held to meet, which has no solution, as solved with its claim a theorem.  **The
+  iteration steps on the extent**: `residuals_into` and `compute_csr` divide every row by
+  `row_scale` (`max(1, extent)^degree`), so the dogleg weighs an `angle` row and a `distance` row
+  alike (issue #43), and `System::judged` multiplies a row back to its own size.  A test comparing
+  against a kernel multiplies by `row_scale` to get the raw residual.  A failed document solve
+  whose every row holds over the extent and not over its own size stopped where the extent read
+  what it left as solved (a gradient of `1e-16 / extent` after one step); it is solved on with
+  `row_scale` at the rows' own sizes (`System::scale_rows`, `System::at_own_sizes`), kept where
+  that settles nearer to holding, no more than `RESIZE` times as wide (a point run off to
+  infinity reads as holding at any measure), and put back over the extent either way.  The
+  violated rows (`constraint_errors`), a claim's test and a witness block's read the same sizes;
+  the rank keeps the extent (below).  Corpus: no solve's outcome moves (`turbine_blade`'s areas,
+  in the 16th digit: a failed station's retry kept by the new measure); `maxResidual` is it.  `tests/far_seed.rs` is the gate, `tests/size_measure.rs` the measurement.
   **A rate's rows carry the degree of what they compare** (#365, `contact_rate::Word::degree`, by
   the source's `Form`): a carried point's rate across or along a line a velocity, degree 1, a
   length a radian of the roll, so the rows stay regular where the point stands still (on the axis
@@ -181,9 +200,10 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   drawing having held them (language.md): after the plain claims, `diagnose::witnessed` solves
   each block's witnesses by its rows (and the witnesses' intrinsic rows) on a copy holding every
   other number — a compile of its own, the one `locus::forget` a block costs — and tests each row
-  against the drawing's extent from *before* that solve, so a witness run off to infinity cannot
-  loosen its own test.  None holds: *violated*, the witnesses left as they were.  Else they are
-  written back and the block is a *theorem* iff `rank [J_m 0; G_p G_w] = rank J_m + rank G_w`
+  at its own size no larger than the drawing's extent from *before* that solve (#492), so a
+  witness run off to infinity cannot loosen its own test.  None holds: *violated*, the
+  witnesses left as they were.  Else they are written back and the block is a *theorem* iff
+  `rank [J_m 0; G_p G_w] = rank J_m + rank G_w`
   (`System::conditioned_over`, a column per witness unknown after the free ones) — every motion
   the drawing allows is followed by one of the witnesses; with no witness it is the lone claim's
   test — and *consuming* otherwise.  Every row of the block is filed under the one verdict.
@@ -418,7 +438,10 @@ version ([0.n], see the [language changelog](../solvent-changelog.md)) says wher
   the solve's): where not, no claim is judged on the pose (no list holds it), the conflict
   search runs even where every row reads as holding, and a drawing it finds no conflict in is
   `Unsolved`.  The diagnosis's own scratch solve (`stationary` above) counts only where it
-  settles.  `tests/unsettled.rs` is the gate.
+  settles.  `tests/unsettled.rs` is the gate.  A pose *already* far out when the system is
+  compiled settled under the old yardstick — every row over an extent that point stretched —
+  and so passed every guard here; rows are now judged at their own sizes ("Solved" above,
+  #492).
 - **A drawing over a declared parameter is followed, not solved once** (#391 S4): continuation
   (`follow.rs`) marches the drawing's own solve along the parameter from its interval's start, one
   branch carried by the Jacobian's orientation and a bounded corrector step, and stops at a
