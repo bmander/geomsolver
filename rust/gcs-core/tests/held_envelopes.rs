@@ -527,8 +527,7 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
          std.Spin(turn, about: tc, on: std.top, ratio: 1)");
     let (lined, viewed) = (elaborated(ANNULUS), elaborated(&planar));
     for n in ["p", "m", "w", "kc"] {
-        let at = |e: &gcs_core::program::Elaborated| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
-        let (a, b) = (at(&lined), at(&viewed));
+        let (a, b) = (crate::common::at(&lined, n), crate::common::at(&viewed, n));
         assert!(norm(sub(a, b)) < 1e-9, "`{n}` stands at {b:?} under the spin, {a:?} under the turn");
     }
 }

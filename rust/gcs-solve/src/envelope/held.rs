@@ -21,12 +21,13 @@
 //! states about (a point's lift, a line's ends, a plane's axes, a circle), the place, the source
 //! (`Source`), and two lifted ends per axis the motion turns about or slides along.  Its constants
 //! are `[lead, source, axis, c, m, free, ref×3, steps, (code, at, source | free, observer | back,
-//! ratio, advance)×steps]` (`HEADER`, `STEP`): the source's axis as two points (`axis` 0, a line's
+//! ratio, advance)×steps, laws…]` (`HEADER`, `STEP`, from `steps` on `encode_motion`'s): the
+//! source's axis as two points (`axis` 0, a line's
 //! ends) or a point and a direction (1, an axis's), its number `c + m·x` (a cone's half angle, a
 //! cylinder's radius; `x` its last column where `free`), a direction its axis does not run along
 //! (`ref`, which fixes where a set's `v` starts), and the motion as the steps `motion::Family`
-//! reads — past them, where a joint is driven, each driven step's law (`encode_laws`, #398 G), so
-//! the step stands at the law's value of the roll and every row reads the law exactly.
+//! reads — past them each driven step's law (#398 G), so the step stands at the law's value of
+//! the roll and every row reads the law exactly.
 //!
 //! What this certifies is local: a root of the rows is a regular point of the envelope near the
 //! place it was seeded at — not which branch, not that the roll is within `from:`/`to:`, and not
@@ -142,18 +143,16 @@ pub enum Step {
     Relative { source: usize, observer: usize },
 }
 
-/// The constants of one contact, built from its parts (the inverse of `Layout::read`): a
-/// driven step's law past the steps (`encode_laws`), where the motion has one (#398 G).
+/// The constants of one contact, built from its parts (the inverse of `Layout::read`): the motion
+/// as `encode_motion` writes it, its step count the header's last, each driven step's law past
+/// the steps (#398 G).
 #[allow(clippy::too_many_arguments)]
 pub fn consts(lead: usize, source: Source, axis: u8, number: (f64, f64, bool), reference: [f64; 3],
               steps: &[Step], laws: &[Driven]) -> Vec<f64> {
     let mut k = vec![lead as f64, source as i64 as f64, axis as f64,
                      number.0, number.1, if number.2 { 1.0 } else { 0.0 },
-                     reference[0], reference[1], reference[2], steps.len() as f64];
-    k.extend(encode_steps(steps));
-    if !laws.is_empty() {
-        k.extend(encode_laws(laws));
-    }
+                     reference[0], reference[1], reference[2]];
+    k.extend(encode_motion(steps, laws));
     k
 }
 
@@ -262,9 +261,13 @@ pub struct Driven<'a> {
     pub law: crate::generate::Drive<'a>,
 }
 
-/// Each driven step's law as constants: `[laws, (step, len, flat…, n_x, x…, at)…]`.
-pub fn encode_laws(laws: &[Driven]) -> Vec<f64> {
-    let mut k = vec![laws.len() as f64];
+/// A motion a relation reads as constants (`Moving::encode`, and past an envelope's header,
+/// `consts`): `[n, steps…, laws, (step, len, flat…, n_x, x…, at)…]` — the steps as
+/// `encode_steps` writes them, then each driven step's law.
+pub fn encode_motion(steps: &[Step], laws: &[Driven]) -> Vec<f64> {
+    let mut k = vec![steps.len() as f64];
+    k.extend(encode_steps(steps));
+    k.push(laws.len() as f64);
     for &Driven { step, law: d } in laws {
         k.extend([step as f64, d.flat.len() as f64]);
         k.extend_from_slice(d.flat);
@@ -275,17 +278,19 @@ pub fn encode_laws(laws: &[Driven]) -> Vec<f64> {
     k
 }
 
-/// The laws `encode_laws` wrote, read back off `k` from `at` over `steps`, and where they end:
-/// `None` where they are no laws', or a law drives a step there is none of, or a relative.
-fn read_laws<'a>(k: &'a [f64], mut at: usize, steps: &[Step]) -> Option<(Vec<Driven<'a>>, usize)> {
+/// A motion read back off `encode_motion`'s constants: `None` where they are no motion's, or a
+/// law drives a step there is none of, or a relative.
+pub fn read_motion(k: &[f64]) -> Option<(Vec<Step>, Vec<Driven<'_>>)> {
     let ix = |i: usize| k.get(i).copied().filter(|v| *v >= 0.0 && v.fract() == 0.0)
         .map(|v| v as usize);
-    let n_laws = ix(at).filter(|&l| l <= steps.len())?;
+    let n = ix(0).filter(|&n| n <= 64)?;
+    let steps = read_steps(k.get(1..1 + STEP * n)?)?;
+    let mut at = 1 + STEP * n;
+    let n_laws = ix(at).filter(|&l| l <= n)?;
     at += 1;
     let mut laws = Vec::with_capacity(n_laws);
     for _ in 0..n_laws {
-        let step = ix(at)
-            .filter(|&s| s < steps.len() && !matches!(steps[s], Step::Relative { .. }))?;
+        let step = ix(at).filter(|&s| s < n && !matches!(steps[s], Step::Relative { .. }))?;
         let len = ix(at + 1)?;
         let flat = k.get(at + 2..at + 2 + len)?;
         at += 2 + len;
@@ -296,24 +301,6 @@ fn read_laws<'a>(k: &'a [f64], mut at: usize, steps: &[Step]) -> Option<(Vec<Dri
         at += 1;
         laws.push(Driven { step, law: crate::generate::Drive { flat, x, at: slot } });
     }
-    Some((laws, at))
-}
-
-/// A motion a relation reads as constants (`Moving::encode`): `[n, steps…, laws…]` — the steps as
-/// `encode_steps` writes them, then each driven step's law (`encode_laws`).
-pub fn encode_motion(steps: &[Step], laws: &[Driven]) -> Vec<f64> {
-    let mut k = vec![steps.len() as f64];
-    k.extend(encode_steps(steps));
-    k.extend(encode_laws(laws));
-    k
-}
-
-/// A motion read back off `encode_motion`'s constants: `None` where they are no motion's, or a
-/// law drives a step there is none of, or a relative.
-pub fn read_motion(k: &[f64]) -> Option<(Vec<Step>, Vec<Driven<'_>>)> {
-    let n = k.first().copied().filter(|v| (0.0..=64.0).contains(v) && v.fract() == 0.0)? as usize;
-    let steps = read_steps(k.get(1..1 + STEP * n)?)?;
-    let (laws, at) = read_laws(k, 1 + STEP * n, &steps)?;
     (at == k.len()).then_some((steps, laws))
 }
 
@@ -338,29 +325,13 @@ impl Layout<'_> {
     }
 
     /// A flank's constants read back (#283, `envelope::meshing`): an envelope's, or a formed
-    /// flank's — the source itself, standing still, with no step.  Past the steps, the laws of
-    /// the steps a drive drives, where there are any (`consts`).
+    /// flank's — the source itself, standing still, with no step.
     pub fn read_any(k: &[f64]) -> Option<Layout<'_>> {
         if k.len() < HEADER {
             return None;
         }
         let source = Source::of(k[1])?;
-        let n = k[9];
-        if !(n >= 0.0 && n <= 64.0) || k.len() < HEADER + STEP * n as usize {
-            return None;
-        }
-        let end = HEADER + STEP * n as usize;
-        let steps = read_steps(&k[HEADER..end])?;
-        let laws = match k.len() == end {
-            true => Vec::new(),
-            false => {
-                let (laws, at) = read_laws(k, end, &steps)?;
-                if at != k.len() {
-                    return None;
-                }
-                laws
-            }
-        };
+        let (steps, laws) = read_motion(&k[HEADER - 1..])?;
         Some(Layout {
             lead: k[0] as usize,
             source,
@@ -1200,11 +1171,9 @@ impl Parts {
     /// the view and a driven joint at its law.
     pub fn of(sk: &Sketch, index: usize) -> Result<Parts, String> {
         let e = sk.envelopes.get(index).ok_or("no such envelope")?;
-        let mut parts = Parts::still(sk, &e.held, &e.name)?;
-        let mut done = std::collections::BTreeMap::new();
-        motion(sk, e.motion as usize, &mut parts.steps, &mut parts.cols, &mut done, 0, true,
-               Some(&mut parts.laws))?;
-        Ok(parts)
+        let parts = Parts::still(sk, &e.held, &e.name)?;
+        let Moving { steps, laws, cols } = Moving::driven(sk, e.motion as usize)?;
+        Ok(Parts { steps, laws, cols: [parts.cols, cols].concat(), ..parts })
     }
 
     /// The parts of a source the solve reads standing still — a formed flank (#283,
@@ -1300,10 +1269,7 @@ impl Parts {
 
     /// How many constants a contact reads (`consts`).
     pub fn n_const(&self) -> usize {
-        match self.laws.is_empty() {
-            true => HEADER + STEP * self.steps.len(),
-            false => self.consts_at(0).len(),
-        }
+        self.consts_at(0).len()
     }
 
     /// How many columns a contact of kind `c` reads.

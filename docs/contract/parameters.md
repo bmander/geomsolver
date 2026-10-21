@@ -642,12 +642,12 @@ where a rule came from.
   driven, holds `p` where the moving source touches its envelope, the driven joint standing at its
   law's value of the place's roll — and so every relation at a point held there (its normal, a
   line or a plane touching it, its curvature) and a flank's regularity within a blank.
-  - **The motion**: `Parts::of` reads the envelope's motion as a carried point's is (`held::motion`
-    with laws to collect, and turns about a point of a view as `Step::Turn`, the turn about the line
-    through it square to the view): a cam spinning in a view seen as a turn in space.
-  - **The constants** (`held::consts`, `Layout::read_any`): the laws past the steps,
-    `encode_laws`' `[laws, (step, len, flat…, n_x, x…, at)…]`, only where the motion has one, so
-    every encoding without a drive reads as before.  `Layout` borrows them (`Layout<'a>`, its
+  - **The motion**: `Parts::of` reads the envelope's motion as a carried point's is
+    (`Moving::driven`: laws collected, and a turn about a point of a view as `Step::Turn`, the turn
+    about the line through it square to the view): a cam spinning in a view seen as a turn in space.
+  - **The constants** (`held::consts`, `Layout::read_any`): past the source's header, the motion
+    as a carried point's is written (`encode_motion`/`read_motion`, from the step count on), so the
+    laws follow the steps — a count of none where there is no drive.  `Layout` borrows them (`Layout<'a>`, its
     `laws` the `held::Driven` of `encode_motion`), and `held::pose` stands each driven step at its
     law's value of the roll through `held::poses` — the contact's rows, its seed (`held::seed`), the
     envelope's frame (`contact_rate`, `Source::Envelope`), a meshing's generated flank and a
