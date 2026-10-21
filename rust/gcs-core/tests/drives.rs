@@ -6,7 +6,8 @@
 //! enclosed by interval arithmetic, so `MotionBounds`, the speed bound and with them the roll
 //! search and a swept field stay conservative under it.  The gate: a cam follower's lift against
 //! its law, followed and swept; and (#398 G) the cam itself, a profile in the plane generated
-//! under the drive, against its closed form, with a circle held osculating it.
+//! under the drive, against its closed form, with a circle held osculating it; and a point carried
+//! under the drive held by a relation, at a stated roll, at one the solve finds, and its rate.
 
 use gcs_core::interval::minimum::{Options, Status};
 use gcs_core::interval::Interval as I;
@@ -233,9 +234,12 @@ fn a_roll_through_a_body_under_a_drive_is_conservative() {
 #[test]
 fn a_drive_refuses_what_it_cannot_mean() {
     let said = |extra: &str| crate::common::lenient::read(&cam(extra)).1;
-    // a relation the solve holds reads no law
-    let s = said("X := point\nX coincident r0 at(under: follower) 30deg\n");
-    assert!(s.len() == 1 && s[0].starts_with("E080") && s[0].contains("driven by `t`"), "{s:?}");
+    // a law is read over stated numbers, not an unknown the solve finds (#398 G)
+    let s = said("param k: Scalar\nlift := frame\n\
+        std.Slide(lift, along: stem, advance: 360mm)\nfix(value == 5deg * k * (1 - cos(t))) lift\n\
+        X := point\nfix((0, 0, 22)) X\nX coincident r0 at(under: lift) 30deg\n");
+    assert!(s.len() == 1 && s[0].starts_with("E080")
+            && s[0].contains("reads `k`, which the drawing does not state"), "{s:?}");
     // one parameter drives a joint
     let s = said("param u: Angle over (0deg, 90deg)\nlift := frame\n\
         std.Slide(lift, along: stem, advance: 360mm)\nfix(value == t + u) lift\n");
@@ -373,4 +377,73 @@ fn a_relation_holds_to_a_profile_generated_under_a_drive() {
     assert!((d - want).abs() < 1e-6, "the centre stands {d} from the profile");
     // the curvature contact's Jacobian, the law read through it, is the system's derivative
     crate::common::fd_jacobian(&e.sketch, 1e-5);
+}
+
+/// **A point carried under a drive, held by a relation** (#398 G): `X coincident r0 at(under:
+/// follower) τ` holds `X` where the follower stands at its law's value of `τ`, the law carried in
+/// the row's constants — against the closed form under the follower alone and seen from the cam,
+/// at a roll stated and at one the solve finds.
+#[test]
+fn a_point_carried_under_a_drive_is_its_law() {
+    let rolls = [0.0, 30.0, 90.0, 135.0, 200.0, 315.0];
+    let mut extra = String::new();
+    for (k, t) in rolls.iter().enumerate() {
+        extra += &format!("X{k} := point\nX{k} coincident r0 at(under: follower) {t}deg\n\
+            Y{k} := point\nY{k} coincident r0 at(under: follower, seen_from: cam) {t}deg\n");
+    }
+    let e = solved(&cam(&extra));
+    assert!(e.ok(), "{:?}", e.diags);
+    for (k, &t) in rolls.iter().enumerate() {
+        let x = point(&e, &e.sketch, &format!("X{k}"));
+        let want = [0.0, 0.0, BASE + lift(t)];
+        assert!((0..3).all(|i| (x[i] - want[i]).abs() < 1e-9), "at {t}: {x:?} against {want:?}");
+        let y = point(&e, &e.sketch, &format!("Y{k}"));
+        let want = seen(t);
+        assert!((0..3).all(|i| (y[i] - want[i]).abs() < 1e-9), "at {t}: {y:?} against {want:?}");
+    }
+    crate::common::fd_jacobian(&e.sketch, 1e-5);
+}
+
+/// **The instant a driven follower has risen 3 mm** (#398 G): the roll a relation owns, left to
+/// the solve, reads the law's rate through its column — the roller's centre seen from the cam held
+/// `BASE + 3` from the cam's centre is where `5 (1 − cos t) = 3`, `t = acos(0.4)`.
+#[test]
+fn the_roll_a_driven_point_is_carried_to_is_solved_through_its_law() {
+    let want = (0.4_f64).acos().to_degrees();
+    let s = seen(want);
+    let e = solved(&cam(&format!("Z := point hint(({}, {}, {}))\n\
+        Z coincident(under: follower, seen_from: cam) r0\n\
+        Z distance({}mm) std.origin\n", s[0] + 0.5, s[1], s[2] - 0.5, BASE + 3.0)));
+    assert!(e.ok(), "{:?}", e.diags);
+    let c = e.sketch.constraints.iter()
+        .find(|c| c.kind == gcs_core::constraints::CKind::CarriedPoint && !c.stated_roll())
+        .expect("held");
+    let got = e.sketch.params[c.args[3].param() as usize].value;
+    assert!((got - want).abs() < 1e-8, "the roll is {got}°, the closed form says {want}°");
+    let z = point(&e, &e.sketch, "Z");
+    assert!((0..3).all(|i| (z[i] - s[i]).abs() < 1e-8), "{z:?} against {s:?}");
+    crate::common::fd_jacobian(&e.sketch, 1e-5);
+}
+
+/// **A driven point's rate** (#398 G): `rate(X over t)` of a point carried under a drive is the
+/// roller's velocity as the cam sees it, the law's rate by the chain rule — against a difference
+/// of the closed form, held along a line through the point.
+#[test]
+fn a_driven_points_rate_is_its_laws() {
+    let t: f64 = 50.0;
+    let h: f64 = 1e-5;
+    let d: Vec<f64> = (0..3).map(|i| (seen(t + h.to_degrees())[i] - seen(t - h.to_degrees())[i])
+        / (2.0 * h)).collect();
+    let s = seen(t);
+    let e = solved(&cam(&format!("W := point\n\
+        W coincident(under: follower, seen_from: cam, t == {t}) r0\n\
+        a := point\nfix(({}, {}, {})) a\nb := point hint(({}, {}, {}))\nv := line(a, b)\n\
+        rate(W over t) parallel v\nlength(10mm) v\n\
+        b level(std.y) a\n",
+        s[0], s[1], s[2], s[0] + d[0], s[1] + d[1], s[2] + d[2])));
+    assert!(e.ok(), "{:?}", e.diags);
+    let [a, b] = ["a", "b"].map(|n| point(&e, &e.sketch, n));
+    let n = d.iter().map(|x| x * x).sum::<f64>().sqrt();
+    let got: Vec<f64> = (0..3).map(|i| (b[i] - a[i]) / 10.0).collect();
+    assert!((0..3).all(|i| (got[i] - d[i] / n).abs() < 1e-7), "{got:?} against {d:?}");
 }

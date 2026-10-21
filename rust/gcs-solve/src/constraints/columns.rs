@@ -90,8 +90,8 @@ impl Constraint {
                 (None, Some(i)) => [0.0, 0.0, self.args[i].num()],
                 (None, None) => [0.0; 3],
             };
-            return self.motion_parts(sk).map(|p| crate::envelope::screw::consts(r, roll, &p.steps))
-                .unwrap_or_default();
+            return self.motion_parts(sk)
+                .map(|p| crate::envelope::screw::consts(r, roll, &p.encode())).unwrap_or_default();
         }
         if self.kind == CKind::Stationary {
             return crate::variational::pack(sk, self.id);
@@ -316,10 +316,7 @@ impl Constraint {
             RateSource::Traced => self.traced_of().and_then(|e| sk.traced.get(e.i()))
                 .map(crate::traced::consts_of),
             RateSource::Meshing => self.meshing_parts(sk).map(|p| p.consts(sk, 0)),
-            RateSource::Carried => self.motion_parts(sk).map(|p| {
-                crate::envelope::screw::consts(crate::envelope::screw::Reading::Carried, [0.0; 3],
-                                               &p.steps)
-            }),
+            RateSource::Carried => self.motion_parts(sk).map(|p| p.encode()),
             RateSource::Envelope => self.envelope_parts(sk).map(|p| p.consts_at(0)),
         };
         let source = match src {

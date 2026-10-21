@@ -8,7 +8,8 @@ held to it (`followed.rs`), a drive (`motion/law.rs`, `MotionDef::Driven`,
 (`flatten/valued.rs`, #398 B), a frame along a path (`motion/guide.rs`, `MotionDef::Guided`,
 #398 C), a drawing stood at an instant of its march (`follow::stand`, `Scrub`, #398 L), a frame
 the drawing moves read as a motion (`motion/track.rs`, `MotionDef::Followed`, #398 F), or a
-profile in the plane generated under a drive (`generate::Drive`, #398 G). The
+profile in the plane generated under a drive (`generate::Drive`, #398 G) or a point carried
+under one (`envelope::held::Moving::driven`). The
 direction is [#391](https://github.com/bmander/geomsolver/issues/391): geometry over a
 parameter, trajectories rather than snapshots; this file holds what is built of it. An issue
 number (#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says
@@ -309,12 +310,12 @@ where a rule came from.
     constant twist: `screw`, `turning`, `sliding`, `in_plane`, `in_frame` and `instantaneous`
     refuse one, as does `NormalVelocity` (`motion::contact`) — what is built of a driven sweep is
     the field's.  `solid::reads` keys a drive by its text and every held number.
-  - **Refused** where a row would read it: `envelope::held::motion` (a carried point at a roll, a
-    rate, a meshing; a relation held to an envelope under one, E061 where the solve is told it
-    cannot hold to it), said first for a carried point by `relations::carried_motion` (E080,
-    naming `x in f`), both in `motion::unread_drive`'s words.  Through [0.154]
-    `program::generated::program_signed` refused a profile in the plane under one too; #398 G
-    (below) generates it.  A graft carries a drive with its joint (`graft`), its law reading the
+  - **Refused** where a row would read it: `envelope::held::motion` read without laws (a
+    meshing; a relation held to an envelope under one, E061 where the solve is told it cannot hold
+    to it), in `motion::unread_drive`'s words.  Through [0.155] a carried point at a roll and its
+    rate were refused too (`relations::carried_motion`, E080), and through [0.154]
+    `program::generated::program_signed` refused a profile in the plane under one; #398 G (below)
+    holds the one and generates the other.  A graft carries a drive with its joint (`graft`), its law reading the
     parameter by name.
   - **A constant twist by what is stated** (`expr::Ast::affine_in`): a face family's carried rows
     are its motion's sweep (`solid::family::stated_carry`) only where the roll they state is affine
@@ -592,5 +593,32 @@ where a rule came from.
     uniform-rise spiral (1e-9), its halves meeting at the point, the profile's halves parting
     there by the spiral's lean either side (each half reading the corner on its own side), and the
     osculating radius unchanged.
-  - **Not built**: a point carried under a drive and held by a relation (E080), a relation held to
-    an envelope in space generated under one (E061), and a meshing on one.
+  - **Not built**: a relation held to an envelope in space generated under one (E061), and a
+    meshing on one.
+- **A point carried under a drive, held** (#398 G, [0.156], `envelope::held::Moving::driven`):
+  `X coincident x at(under: f) τ` and `X coincident(under: f, t == τ) x`, `f` driven (or seen from
+  another frame, `seen_from:`), hold `X` where the joint stands at its law's value of `τ` — the
+  one clock, as every reading over the roll.
+  - **The motion** (`held::motion` with laws to collect): `MotionDef::Driven` is its joint's own
+    step again, over the same axis columns, and the law (`motion::Law::held`: its tape over the
+    held numbers its text reads, as they stand) is recorded against that step; an inverse of a
+    driven joint runs back at the same law.  Read so only by what carries a point
+    (`Constraint::motion_parts`, the roll's seed `infer::carried_roll`, `validate`); an envelope's,
+    a meshing's and a traced body's motions are read without laws, and refuse a drive as before.
+  - **The constants** (`held::encode_motion`/`read_motion`): `[n, steps…, laws, (step, len, flat…,
+    n_x, x…, at)…]` — the steps as `encode_steps` writes them, then each driven step's law — what
+    `screw::rows` (after a stated roll's `[free, m, c]`), the rate of a carried point
+    (`contact_rate`, `Source::Carried`) and a traced body's carried rows (no laws) read alike.
+  - **Read in Taylor arithmetic** (`held::law_of`): a driven step's roll is the law's series about
+    the roll's value (`Drive::series`, degrees), turned to radians and composed with what the roll
+    carries besides its value (`H2::chain`) — so an owned roll's column reads the law's rate, the
+    Jacobian is exact by forward differentiation, and `rate(X over t)` reads the law's rate by the
+    chain rule.  Nothing is differenced.
+  - **Refused** (E080, `relations::carried_motion` in `Moving::driven`'s words): a law naming a
+    number the drawing does not state, an unknown the solve finds (`Law::read`, which says so
+    rather than the tape's wording), or a number of the geometry (`Law::held`).
+  - **Gate**: `tests/drives.rs` — the follower's roller carried to six stated rolls under the
+    follower and seen from the cam against the closed form (1e-9), the system's Jacobian against
+    differences; the instant the follower has risen 3 mm, the roll left to the solve and held
+    `BASE + 3` from the cam's centre, against `acos(0.4)` (1e-8); the roller's rate seen from the
+    cam against a difference of the closed form (1e-7); the refusal.

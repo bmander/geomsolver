@@ -441,7 +441,7 @@ impl Constraint {
             let parts = self.motion_parts(sk);
             let free = usize::from(self.free.is_some());
             let (n_par, n_const) = parts.map_or((0, 0), |p| {
-                (r.lead() + p.width() + free, crate::envelope::screw::n_const(r, &p.steps))
+                (r.lead() + p.width() + free, r.lead_consts() + p.encode().len())
             });
             return Key::Motion { reading: r as u8, n_par, n_const };
         }
@@ -580,9 +580,9 @@ impl Constraint {
     }
 
     /// What a relation reading a motion reads of it (`envelope::held::Moving`), where the solve can
-    /// read it (#326).
+    /// read it (#326) — a driven joint's law with it (#398 G).
     pub fn motion_parts(&self, sk: &Sketch) -> Option<crate::envelope::held::Moving> {
-        crate::envelope::held::Moving::of_any(sk, self.motion_of()?.i()).ok()
+        crate::envelope::held::Moving::driven(sk, self.motion_of()?.i()).ok()
     }
 
     /// What a flank's regularity within a blank reads (#345, `envelope::regular::Parts`): the

@@ -97,7 +97,7 @@ impl Row<'_> {
                 }
             }
             RowKind::Carried => {
-                let steps = held::read_steps(self.consts).ok_or("rate row shape mismatch")?;
+                let (steps, _) = held::read_motion(self.consts).ok_or("rate row shape mismatch")?;
                 if steps.is_empty() || self.cols.len() != 7 + held::steps_width(&steps) {
                     return Err("rate row shape mismatch".into());
                 }
