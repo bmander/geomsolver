@@ -722,7 +722,8 @@ says otherwise.
   against the corpus's well-posed components, not against synthetic cases alone.
 * **Inferred boundaries.** If every rule above can be checked from the elaborated component (CL2,
   FR1, DT1, EQ2 are all mechanical), a parent might treat a qualifying instance as a boundary with
-  no mark in the source. #461 decides that, on the benchmark's evidence.
+  no mark in the source. #461 decides that, on the benchmark's evidence. Proposed for review in
+  [parts-plan.md](parts-plan.md): declared (`part`), checked while elaborating, solved flat.
 * **The locus's own contract.** The locus would meet most of this with a condition estimate (DD2),
   a determinant sign (DD3), no nearby value on failure (FA1), and its module comment corrected to
   march from the anchor. #454's call: the comment is corrected and the square Newton is shared
