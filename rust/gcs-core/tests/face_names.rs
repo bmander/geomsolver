@@ -26,6 +26,74 @@ fn a_path_names_a_face_from_its_route() {
     }
     // the body's own sweep has no route: its cap is named alone
     assert!(FacePath::new("", "near").matches(&["near"]));
+    // a copy the document wrote steps with its index: named by it, or without it as every copy
+    let drill = FacePath::new("drill[1]", "hole");
+    for yes in [&["drill[1]", "hole"][..], &["drill", "hole"], &["drill"], &["drill[1]"]] {
+        assert!(drill.matches(yes), "{yes:?}");
+    }
+    for no in [&["drill[2]"][..], &["drill[]"], &["dril"], &["drill[1]", "hole[1]"]] {
+        assert!(!drill.matches(no), "{no:?}");
+    }
+}
+
+/// A plate 60 × 20 × 10 with three holes cut through it by a `repeat`, each drill a copy.
+const DRILLED: &str = "unit mm\nuse std (chamfer)\nin std.front {\n\
+    b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
+    fix((0, 0)) b0\nfix((60, 0)) b1\nfix((60, 20)) b2\nfix((0, 20)) b3\n\
+    (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
+    (west := line(b3, b0)) -> close\n\
+    outline := face(south, east, north, west)\n}\n\
+    plate := solid(outline, depth: 10mm)\n\
+    repeat 3 as i {\n\
+      c := point in std.front\n\
+      fix((15 + 15 * i, 10)) c\n\
+      hole := radius(3mm) circle(center: c) in std.front\n\
+      drill := solid(face(hole), through: plate)\n\
+      drill cut plate\n\
+    }\n";
+
+type Areas = std::collections::BTreeMap<String, f64>;
+
+/// **One copy of a pattern** ([0.157]): a solid the document writes in a `repeat`'s body is a
+/// step of its own in a body's faces' names, with its index (`plate.drill[1].hole`, the hole the
+/// second drill cut), so a face path names one copy's faces — `plate.drill[1]`, as a reference
+/// to the copy is written — where `plate.drill` names them all.  A word's solids are not: the
+/// chamfer's faces are `taken.flat` however many it makes.
+#[test]
+fn a_copy_written_in_a_block_is_named_by_its_index() {
+    let read = |chamfered: &str| {
+        let e = solved(&format!("{DRILLED}{chamfered}"));
+        gcs_core::report::positions(&e.sketch, &e.map).into_iter()
+            .filter(|(k, _)| k.starts_with("plate.drill") || k.starts_with("plate.taken")
+                || k == "plate.volume")
+            .collect::<Areas>()
+    };
+    let plain = read("");
+    let hole = |k: usize| format!("plate.drill[{k}].hole.area");
+    for k in 0..3 {
+        assert!(plain.contains_key(&hole(k)), "{plain:?}");
+    }
+    let one = read("plate.near chamfer(d: 1mm) plate.drill[1]\n");
+    assert!(one.contains_key("plate.taken.flat.area"), "{one:?}");
+    // its face by name, and the copy as a block's binder reads it
+    let face = read("plate.near chamfer(d: 1mm) plate.drill[1].hole\n");
+    let bound = read("repeat 1 as i {\nplate.near chamfer(d: 1mm) plate.drill[i + 1]\n}\n");
+    let all = read("plate.near chamfer(d: 1mm) plate.drill.hole\n");
+    let shorter = |m: &Areas, k: usize| m[&hole(k)] < plain[&hole(k)] - 1.0;
+    for k in 0..3 {
+        for (m, what) in [(&one, "one"), (&face, "face"), (&bound, "bound")] {
+            assert_eq!(shorter(m, k), k == 1, "{what}, hole {k}: {m:?}");
+        }
+        assert!(shorter(&all, k), "hole {k}: {all:?}");
+        assert!((one[&hole(k)] - plain[&hole(k)]).abs() < 1e-9 || k == 1);
+    }
+    // each hole's chamfer takes as much as another's
+    let taken = |m: &Areas| plain["plate.volume"] - m["plate.volume"];
+    assert!(taken(&one) > 0.0);
+    let (a, b) = (taken(&all), taken(&one));
+    assert!((a - 3.0 * b).abs() < 1e-6 * a, "{a} against three of {b}");
+    // a copy there is not names nothing, as any face path that names nothing
+    assert!(taken(&read("plate.near chamfer(d: 1mm) plate.drill[7]\n")).abs() < 1e-9);
 }
 
 /// A block 40 × 24 × 12 on the front plane, its near face at y = 0, a copy of it turned a half

@@ -62,9 +62,9 @@ its own faces).
 
 A built member's faces are named, as any body's are: its blank's by the sets its region's body
 uses (`pair.pinion.body`'s `material.tip`, `material.heel`, `material.toe`, `material.back`), and
-each face a tooth space leaves by the crown face that made it (`indexed.outer`,
-`indexed.outer_round`, `indexed.tip`; the gear's by its space cutter's, `indexed.outer_crown.inner`
-and `indexed.neighbor.outer`). The generating-system checks (`gcs-core/tests/envelope/paired.rs`)
+each face a tooth space leaves by the copy that cut it and the crown face that made it
+(`indexed[0].outer`, `indexed[0].outer_round`, `indexed[0].tip`; the gear's by its space cutter's,
+`indexed[0].outer_crown.inner` and `indexed[0].neighbor.outer`). The generating-system checks (`gcs-core/tests/envelope/paired.rs`)
 read those faces off the members built at one tooth space each, and hold each flank to the
 analytic envelope of the crown face its name says — with the seams, corners and edges of its face
 loop solved on the analytic faces where the built member says they meet, never on the kernel's

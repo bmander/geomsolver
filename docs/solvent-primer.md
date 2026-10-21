@@ -1657,7 +1657,8 @@ bore cut body
   ```
 
   `peg[i] cut plate` in the same `repeat` cuts each from a body instead. `solid()` with nothing in
-  `union` with it is E080. Faces are reached through the copies, `pegs.peg.near`.
+  `union` with it is E080. Faces are reached through the copies, `pegs.peg[3].near` one copy's and
+  `pegs.peg.near` every copy's.
 - **Name intermediates the sets cannot express.** A boss standing in a pocket's floor is not
   `pocket cut body` + `boss union body` — that is stock ∪ boss − pocket, and the pocket eats the
   boss. Name the pocketed shell, then add the boss to it:
@@ -1737,6 +1738,10 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
 - `A` and `B` are **face paths**: `block` (every face), `block.near` (one), `pad.boss` (every face
   the boss gave), `pad.plate.near`, read from the solid through its operands' names, never by
   suffix. Faces that do not meet make nothing; a face a Boolean ate names nothing.
+- **One copy of a pattern** (0.157): an operand written in a `repeat` or a `ring` is named with
+  its copy's index, as `--where` reports it — the hole the second drill cut is
+  `flange.drill[1].hole`. `flange.cd chamfer(d: 1mm) flange.drill[1]` chamfers that one hole
+  (`drill[i]` in a `repeat`); `flange.drill` is every copy's.
 - Each acts on the body after its other terms: a round reads the faces the cuts and unions left,
   and not another round's — unless it names that round (below).
 - Where two faces meet tangent there is no edge: a chain of tangent edges (an obround's foot, a

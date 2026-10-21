@@ -289,23 +289,22 @@ impl Recipe {
     pub fn build(&self) -> Built {
         let mut built = BTreeMap::new();
         // each node's primitives, keyed as its faces are named, and their routes from it
-        let mut routes: BTreeMap<i64,(String,BTreeMap<String,String>)> = BTreeMap::new();
-        for Named {id,name,node} in &self.nodes {
+        let mut routes: BTreeMap<i64,(&str,&str,BTreeMap<String,String>)> = BTreeMap::new();
+        for Named {id,name,step,node} in &self.nodes {
             let mut b = node.built(&built,&BTreeMap::new(),0.).map_err(|e| e.saying(|e| format!("`{name}`: {e}")))?;
             let mut own = BTreeMap::new();
             match node {
                 Node::Lowered(_) => {}
                 Node::Body(body) => for id in std::iter::once(&body.stock).chain(body.sets().into_iter().flat_map(|(_,l)| l)) {
-                    let Some((operand,paths)) = routes.get(id) else { continue };
-                    let short = crate::solid::route_step(operand);
+                    let Some((operand,short,paths)) = routes.get(id) else { continue };
                     for (primitive,path) in paths {
                         // a swept solid's own sweep, split off as its stock, adds no step
-                        let route = if operand == name { path.clone() } else { placed_name(&short,path) };
+                        let route = if operand == name { path.clone() } else { placed_name(short,path) };
                         own.entry(primitive.clone()).or_insert(route);
                     }
                 },
                 Node::Placed {source,..} => {
-                    let source = routes.get(source).map(|(_,p)| p);
+                    let source = routes.get(source).map(|(_,_,p)| p);
                     for f in &mut b.faces {
                         let (of,face) = named_parts(&f.name);
                         let path = source.and_then(|p| p.get(of)).map_or(of,String::as_str);
@@ -320,7 +319,7 @@ impl Recipe {
                     own.insert(name.to_string(),String::new());
                 }
             }
-            routes.insert(*id,(name.to_string(),own));
+            routes.insert(*id,(name,step,own));
             built.insert(*id,b);
         }
         built.remove(&self.root).ok_or("recipe: no root".into())
@@ -480,7 +479,7 @@ fn meridian_region(recipe: &Recipe,seam: V) -> Result<(Profile,V,V),KernelError>
     // each step tagged by its face's name (`NAMED`), one past its place here: the Booleans keep a
     // step's tag
     let mut names: Vec<String> = Vec::new();
-    for Named {id,name,node} in nodes {
+    for Named {id,name,node,..} in nodes {
         let region = match node {
             Node::Revolve {profile,origin: o,axis: a,angle} => {
                 whole_turn(*angle,name)?;

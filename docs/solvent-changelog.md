@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.157] One copy of a pattern, by its index.** An operand the document wrote in a `repeat`'s or
+a `ring`'s body is a step of its body's faces' names with its copy's index, as a reference to the
+copy is written (§6.21): the hole the second drill of `repeat 3 { … drill := solid(face(hole),
+through: plate) … }` cuts is `plate.drill[1].hole`, so `plate.near chamfer(d: 1mm) plate.drill[1]`
+chamfers that hole alone (`drill[i + 1]`, any whole number the scope reads), and `plate.drill`
+names every copy's faces, as it did. An edge drawn in the copy is named as the copy names it:
+the hole's side is `hole`, not `hole[1]`. A ring's copies' caps, one name through 0.156
+(`pegs.peg.near`), are each the copy's (`pegs.peg[3].near`). Through 0.156 every copy's faces had
+one step (`plate.drill.hole[1]`) and an index on it was **E101** ("no such entity"). A word's
+solids are no copies a document wrote and keep their names (`plate.taken.flat`). Reported face
+names of copies change; no document's text does.
+
 **[0.156] A point carried under a drive, held.** A point carried to a roll by a driven frame
 (§6.14, [0.143]) is held where the joint stands at the law's value of the roll: `X coincident r0
 at(under: follower, seen_from: cam) 30deg` is the follower's roller seen from the cam at 30° into

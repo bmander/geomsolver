@@ -40,7 +40,9 @@ impl Sketch {
     /// A solid: a face swept, or a term over other solids.  It allocates no parameter, which is
     /// the whole of what "nothing three-dimensional is ever solved for" comes to in code.
     pub fn solid(&mut self, def: SolidDef, name: &str) -> usize {
-        self.solids.push(SolidE { def, name: name.to_string(), class: Classes::default() });
+        self.solids.push(SolidE {
+            def, name: name.to_string(), class: Classes::default(), copy: None,
+        });
         self.solids.len() - 1
     }
 

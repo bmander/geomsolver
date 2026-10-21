@@ -597,6 +597,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             def,
             name: so.name.clone(),
             class: so.class.clone(),
+            copy: so.copy,
         });
         debug_assert_eq!(solid_map[i], Some(dst.solids.len() - 1));
         made.push(EntRef::solid(dst.solids.len() - 1));
