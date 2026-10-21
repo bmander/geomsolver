@@ -48,8 +48,20 @@ What the work found:
 PT5's advice is built: `solventc --lint` names a part whose rows, from scattered starts, come to
 another pose its stated choices admit (**W207**, `parts::roots`). Five of the engine's parts draw
 it (`ConRod`'s small end above or below its pin, for one); stating each root is follow-up work,
-now that #157 holds a stated `ccw`. The V-twin and the hub motor still thread their tables, each
-its own issue (§9).
+now that #157 holds a stated `ccw`. The V-twin still threads its table, its own issue (§9).
+
+**The hub motor as parts** (#502): every definition in `hub_motor/motor/` is a `part` reading
+`motor.dims` as constants, and the `motor_dims` group and every `dims:` argument are gone. The
+`frame` group of the world's planes became `motor.parts.Datums`, the points and lines the motor
+is drawn about (the axle's centre and datum in the end view, its mid-plane and centreline in the
+section), and each part draws in the planes they are drawn in; the axle takes the plan's origin
+for its cable port, and the rotor its angle as a formal (PC3). The two W207s, `Rotor` and
+`Stator`, are stated as bounds: each point the walls, shoes, hall sensors and magnets place on a
+circle from an offset line stands ahead of the axle along its centreline (`f.o distance(>= 0,
+along: sc) a`), not at the line's crossing behind it. W207 now reads a part's bounds as root
+choices, as its remedy says (`boundary::analyse`); it read only its orientations. All 6,607
+geometric numbers agree with the old document to 1.4e-14, the solids' volumes exactly, and the
+four sheets render the same coordinates; the advertised shape is unchanged.
 
 #492 meets its acceptance but for one bench row: at r₂ = 20.001 the flat solve reports "ok" 2e-3
 of the extent off the true crossing, every row holding to 2.1e-7 of its own size while the

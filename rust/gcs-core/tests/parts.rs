@@ -343,8 +343,8 @@ x := Apex(o, q)
 }
 
 /// **PT5, which root a part takes is stated** (W207, by `--lint`): a point 5 from two points 6
-/// apart has two poses; the part that leaves the choice to its seed is named, and the one that
-/// states it with `ccw` is not.
+/// apart has two poses; the part that leaves the choice to its seed is named, and the ones that
+/// state it, with `ccw` or with a bound (the hub motor's slot corners, ahead of the axle), are not.
 #[test]
 fn a_part_that_leaves_its_root_to_its_seeds_is_named() {
     let e = read("\
@@ -365,6 +365,14 @@ part Chosen(a: point, b: point) {
     ccw(a, b, m)
   }
 }
+part Bounded(a: point, b: point) {
+  in a.plane {
+    m := point hint((3, 4))
+    m distance(5mm) a
+    m distance(5mm) b
+    a distance(>= 0, along: v) m
+  }
+}
 in std.front {
   o := point
   fix((0, 0)) o
@@ -373,6 +381,7 @@ in std.front {
 }
 x := Apex(o, q)
 y := Chosen(o, q)
+z := Bounded(o, q)
 ");
     let mut sk = e.sketch.clone();
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
