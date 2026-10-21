@@ -13,7 +13,7 @@
 // flank's profile at M is the circle osculating its section by the normal plane through `across`:
 // the curvature an envelope's contact reads off its source and the mesh, with no second solve.
 unit mm
-use std
+use std (turns)
 
 param pinion_teeth := 24
 param gear_teeth := 48
@@ -39,9 +39,9 @@ fix((0mm, rg + rp, 0mm)) p0
 fix((10mm, rg + rp, 0mm)) p1
 pinion_ax := line(p0, p1)
 gear_turn := frame
-std.Turn(gear_turn, about: gear_ax, ratio: -pinion_teeth / gear_teeth)
+gear_turn turns(-pinion_teeth / gear_teeth) gear_ax
 pinion_turn := frame
-std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
+pinion_turn turns(1) pinion_ax
 
 // -- the mean point ------------------------------------------------------------------------------
 // M, where the pitch cylinders touch; the pitch plane is square to the y axis there. The gear's

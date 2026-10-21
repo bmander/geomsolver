@@ -680,11 +680,11 @@ impl<'a> P<'a> {
              member drawn turned"
         } else if has("along") {
             "`motion(along: l, advance: a)` is retired (#383): declare a frame and slide it, \
-             `f := frame` then `std.Slide(f, along: l, advance: a)`"
+             `f := frame` then `f slides(a) l`"
         } else {
             "`motion(about: …)` is retired (#383): declare a frame and turn it, `f := frame` then \
-             `std.Turn(f, about: l, ratio: r)` (a screw: `advance: a`), or about a point of a view \
-             `std.Spin(f, about: o, on: P, ratio: r)`"
+             `f turns(r) l` (a screw: `f screws(a) l`), or about a point of a view \
+             `f spins(r) o`"
         };
         self.fail_at(at, message);
         self.i = j.min(self.t.len());

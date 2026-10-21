@@ -7,7 +7,7 @@
 // at any offset, and nothing but the two members and their shafts enters it. The layout, the
 // blanks and the face mill are `hypoid.sv`'s own steps, imported. Step 1 of #283; see README.md.
 unit mm
-use std
+use std (turns)
 use hypoid (GearCone, ToothTrace, PinionCone, Blank, FaceMill, Tooth, Topping, Member, Generated)
 
 // -- the pair as a designer states it ----------------------------------------------------------
@@ -68,11 +68,11 @@ component FormatePair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
   // over its own, seen from the pinion's turn (`under: gear_turn, seen_from: pinion_turn`).
   // Nothing reads a cone distance: the ratio is the teeth.
   gear_index := frame
-  std.Turn(gear_index, about: gear_cone.ax, ratio: 1)
+  gear_index turns(1) gear_cone.ax
   pinion_turn := frame
-  std.Turn(pinion_turn, about: pinion_cone.ax, ratio: 1)
+  pinion_turn turns(1) pinion_cone.ax
   gear_turn := frame
-  std.Turn(gear_turn, about: gear_cone.ax, ratio: -pinion_teeth / gear_teeth)
+  gear_turn turns(-pinion_teeth / gear_teeth) gear_cone.ax
 
   // The gear's tooth, as the face mill forms it: the ring about the cutter's axis between the
   // inner and outer flank cones, up to the root clearance past the gear's tip and down past its

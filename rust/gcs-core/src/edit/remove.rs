@@ -316,7 +316,7 @@ pub(super) fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) ->
         }
         StmtKind::Relation(rel) => relation_refs(rel, &mut look),
         // a call with no name makes nothing another statement can name, only what it states of
-        // its arguments — `std.Turn(f, about: ax, ratio: 2)` (#383) — so it goes with any of them
+        // its arguments — `std.Rolls(at, a, b, along: up)` (#383) — so it goes with any of them
         StmtKind::Instance(i) if i.name.text.starts_with('#') => {
             let mut args: Vec<&syntax::InstArg> = i.args.iter().collect();
             while let Some(a) = args.pop() {

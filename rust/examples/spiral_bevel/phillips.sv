@@ -14,7 +14,7 @@
 // turn — it moves along L as the member does — which the claims check (`tests/phillips.rs` reads
 // the pair against the closed form).
 unit mm
-use std (reciprocal)
+use std (reciprocal, turns, slides)
 
 param pinion_teeth := 24
 param gear_teeth := 48
@@ -40,9 +40,9 @@ fix((0mm, rg + rp, 0mm)) p0
 fix((10mm, rg + rp, 0mm)) p1
 pinion_ax := line(p0, p1)
 gear_turn := frame
-std.Turn(gear_turn, about: gear_ax, ratio: -q)
+gear_turn turns(-q) gear_ax
 pinion_turn := frame
-std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
+pinion_turn turns(1) pinion_ax
 // the mesh is the gear's turn seen from the pinion's: `under: gear_turn, seen_from: pinion_turn`
 
 // -- the line of action --------------------------------------------------------------------------
@@ -63,7 +63,7 @@ screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)
 // member's flank is what it sweeps, seen from that member.
 rack := std.HalfSpace(P, L, d: 0mm)
 slide := frame
-std.Slide(slide, along: L, advance: 2 * pi * sigma)
+slide slides(2 * pi * sigma) L
 pinion_flank := envelope(rack over t in (-40deg, 40deg), under: slide, seen_from: pinion_turn)
 gear_flank := envelope(rack over t in (-40deg, 40deg), under: slide, seen_from: gear_turn)
 claim L reciprocal(seen_from: pinion_turn) slide

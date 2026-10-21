@@ -312,7 +312,7 @@ fn a_measurement_in_a_joint_is_refused_by_its_stratum_and_its_arguments_are_name
 }
 
 /// **The retired motion is refused naming what replaced it**, as the document is read:
-/// `motion(about: …)` names `std.Turn` and `std.Spin`, `motion(along: …)` `std.Slide`, `phase:`
+/// `motion(about: …)` names `turns` and `spins`, `motion(along: …)` `slides`, `phase:`
 /// the roll it shifts, and a motion relative to another the reading's `seen_from:`.
 #[test]
 fn the_retired_motion_is_refused_naming_its_replacement() {
@@ -322,10 +322,10 @@ fn the_retired_motion_is_refused_naming_its_replacement() {
         assert!(errors.iter().any(|e| e.message.contains(words)),"{words}: {errors:?}");
     };
     refused(&format!("{DRAWING}turn := motion(about: ax, ratio: length(big) / length(small))\n"),
-        "std.Turn(f, about: l, ratio: r)");
-    refused(&format!("{DRAWING}turn := motion(about: o, ratio: 1)\n"),"std.Spin(f, about: o");
+        "f turns(r) l");
+    refused(&format!("{DRAWING}turn := motion(about: o, ratio: 1)\n"),"f spins(r) o");
     refused(&format!("{DRAWING}slide := motion(along: ax, advance: 3mm)\n"),
-        "std.Slide(f, along: l, advance: a)");
+        "f slides(a) l");
     refused(&format!("{DRAWING}turn := motion(about: ax, ratio: 3, phase: angle(big, slope))\n"),
         "roll 0 is as drawn");
     refused(&format!("{DRAWING}a1 := frame\nstd.Turn(a1, about: ax, ratio: 1)\n\

@@ -188,9 +188,9 @@ fn motions_reject_wrong_units_missing_references_and_retired_spellings() {
     for (args,want) in [
         ("about: ax,ratio: 2,phase: 30deg","roll 0 is as drawn"),
         ("turn,relative_to: observer","seen_from: b"),
-        ("along: other,advance: 2mm","std.Slide(f, along: l, advance: a)"),
-        ("about: ax,ratio: 2","std.Turn(f, about: l, ratio: r)"),
-        ("about: o,ratio: 2","std.Spin(f, about: o, on: P, ratio: r)"),
+        ("along: other,advance: 2mm","f slides(a) l"),
+        ("about: ax,ratio: 2","f turns(r) l"),
+        ("about: o,ratio: 2","f spins(r) o"),
     ] {
         let (_,errors) = crate::common::parse(&format!("{AXES}bad := motion({args})\n"));
         assert!(errors.iter()

@@ -14,7 +14,7 @@
 //     the axis under a screw sweeps its area times the rise (Cavalieri): 8 · 30 = 240 mm³.
 // Edit `r`, `size`, `pitch` or `turns` (a negative pitch for a left-hand thread).
 unit mm
-use std (coords, on_u)
+use std (coords, on_u, screws)
 
 r := 10mm
 size := 2mm
@@ -41,7 +41,7 @@ param s: Scalar over (0, 1)
 
 // the screw, at its value over `s`, and the square drawn in its block on the axial plane
 screw := frame
-std.Turn(screw, about: std.top.normal, ratio: 1, advance: pitch)
+screw screws(pitch) std.top.normal
 fix(value == 360deg * turns * s) screw
 in screw {
   in std.front {

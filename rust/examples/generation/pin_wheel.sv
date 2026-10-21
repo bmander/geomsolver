@@ -10,7 +10,7 @@
 // radius `rp` or the pitch radii and they are generated again: the 3D counterpart, which cuts
 // the tooth space out of a solid wheel, is `../lantern_generation.sv`.
 
-use std (horizontal, right_of)
+use std (horizontal, right_of, spins)
 
 r1 := 10      // the pinion's pitch radius, where its pins stand
 r2 := 30      // the wheel's
@@ -35,8 +35,8 @@ in std.front {
 }
 
 pinion := frame
-std.Spin(pinion, about: o1, on: std.front, ratio: -r2 / r1)
+pinion spins(-r2 / r1) o1
 wheel := frame
-std.Spin(wheel, about: o2, on: std.front, ratio: 1)
+wheel spins(1) o2
 epicycloid := envelope(pc over t in (-20deg, 20deg), under: pinion, seen_from: wheel)
 flank := envelope(pin over t in (-20deg, 20deg), under: pinion, seen_from: wheel, side: far)

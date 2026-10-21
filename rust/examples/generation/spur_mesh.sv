@@ -11,7 +11,7 @@
 // involute, and Euler–Savary's centre of curvature on the common normal.  The diagnosis judges
 // it a theorem: true at every pose the freedom reaches, and implied rather than stated.
 
-use std (right_of)
+use std (right_of, spins, slides)
 
 r1 := 20                    // the pinion's pitch radius
 r2 := 30                    // the gear's
@@ -44,11 +44,11 @@ in std.front {
 // the pinion and the gear turn together at the ratio of their pitch radii; the rack rolls on
 // the pinion's pitch circle
 pinion := frame
-std.Spin(pinion, about: o1, on: std.front, ratio: 1)
+pinion spins(1) o1
 gear := frame
-std.Spin(gear, about: o2, on: std.front, ratio: -r1 / r2)
+gear spins(-r1 / r2) o2
 rack := frame
-std.Slide(rack, along: pitch_line, advance: 2 * pi * r1)
+rack slides(2 * pi * r1) pitch_line
 
 // the rack seen from the pinion cuts the tooth; the pinion seen from the gear cuts the mate
 tooth := envelope(flank over t in (-40deg, 40deg), under: rack, seen_from: pinion)

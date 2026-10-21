@@ -75,9 +75,9 @@ fn continuous_sweep_source_has_the_full_interval_and_endpoint_caps() {
 /// turn), so its surface is the field's.
 fn slid() -> String {
     let source = include_str!("../../examples/solid_generating_sweep.sv");
-    assert!(source.contains("std.Turn(generating, about: spindle, ratio: 1)"),"the turn moved");
-    source.replace("std.Turn(generating, about: spindle, ratio: 1)",
-                 "std.Slide(generating, along: spindle, advance: 6mm)")
+    assert!(source.contains("generating turns(1) spindle"),"the turn moved");
+    source.replace("use std (on_u, turns)","use std (on_u, slides)")
+        .replace("generating turns(1) spindle","generating slides(6mm) spindle")
 }
 const CAPSULE: f64 = 10.*std::f64::consts::PI/3.;
 

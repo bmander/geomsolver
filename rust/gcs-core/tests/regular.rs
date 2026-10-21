@@ -27,7 +27,7 @@ pub(crate) fn regular(margin: &str) -> String {
 /// and `stmt` stated of it — the shift left to the solve, seeded at 10°, where `unknown`.
 pub(crate) fn pair(shift: f64, stmt: &str, unknown: bool) -> String {
     let text = fixtures::gear::design(&fixtures::gear::formate_source(), 25.0, shift, 25.0);
-    let anchor = "  std.Turn(gear_turn, about: gear_cone.ax, ratio: -pinion_teeth / gear_teeth)\n";
+    let anchor = "  gear_turn turns(-pinion_teeth / gear_teeth) gear_cone.ax\n";
     assert!(text.contains(anchor), "the pair's gear turn is where it was");
     let text = text.replace(anchor, &format!("{anchor}  {FLANK}\n  {stmt}\n"));
     if !unknown {

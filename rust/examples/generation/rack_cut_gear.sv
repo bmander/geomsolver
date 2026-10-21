@@ -17,7 +17,7 @@
 // line, would generate the involute's folded branch, which the class refuses.
 
 unit mm
-use std (right_of)
+use std (right_of, spins, slides)
 
 N := 20                     // teeth
 m := 2mm                    // module
@@ -70,8 +70,8 @@ construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 // a pitch circle's turn a turn: the rack rolls on the pitch circle.  What it cuts is the tooth,
 // riding the rack, seen from the blank.
 turn := frame
-std.Spin(turn, about: o, on: std.front, ratio: 1)
-std.Slide(rack, along: slide, advance: 2 * pi * rp)
+turn spins(1) o
+rack slides(2 * pi * rp) slide
 construction space := sweep(rack_tooth, through: gear, seen_from: turn)
 
 // The same motion draws on the sketch what it cuts in the solid: the envelope of the rack's flank

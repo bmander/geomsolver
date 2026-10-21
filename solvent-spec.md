@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.152 — October 2026**
+**Specification, Draft 0.153 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1072,7 +1072,7 @@ block := solid(face(mouth, side_r, lid, side_l), from: face, to: back)
   radius `r` that screw draws, its `u` out from the axis and its `v` up the axis leaned by the
   helix's lead angle, so a section drawn in it sweeps a coil. Neither is held by a seed, and a
   negative pitch winds left-handed. **[0.138]** Both are frames read at a roll (§6.14): `n` is
-  `base` carried by a frame's screw (`std.Turn` about `base.normal`, `advance: pitch`) to `360deg
+  `base` carried by a frame's screw (`screw screws(pitch) base.normal`, §6.14) to `360deg
   · turns · s`, `axial` that frame turned a quarter about its `u`, and `OnHelix`'s `n` the frame
   square to the helix where it starts — `base` turned about `base.u` and slid out `r` — carried by
   the same screw; through 0.137 each was points placed by `cos` and `sin` ordinates in
@@ -1309,9 +1309,9 @@ specified below; solids assembled from surface boundaries remain under developme
 
 ```
 crown := frame
-std.Turn(crown, about: crown_axis, ratio: 1)
+crown turns(1) crown_axis
 blank := frame
-std.Turn(blank, about: blank_axis, ratio: 2)
+blank turns(2) blank_axis
 flank := envelope(crown_flank over t in (-35deg, 35deg), under: crown, seen_from: blank)
 ```
 
@@ -1327,16 +1327,24 @@ turned `ratio·t` right handed about its axis and moved `advance·t/2π` along i
 0 is a slide. Roll 0 is as drawn: a member that must stand turned there is drawn turned. A frame
 with no joint stands still: it is the world. A joint does not move the sketch.
 
-The standard library (§8) states the joint the ways a designer does:
+**[0.153]** The standard library (§8) states the joint as relation words (§9.9), the frame the
+subject and what it moves about or along the object, each of one number given bare (`use std
+(turns, screws, spins, slides)`):
 
-* **`std.Turn(f, about: l, ratio: r, advance: a)`** — about the line `l`; `advance` defaults to
-  `0mm` (a turn), and given, the joint is a screw.
-* **`std.Spin(f, about: o, on: P, ratio: r)`** — about the point `o` of the view `P`, the axis
-  through `o` square to `P`, counter-clockwise as `P` is drawn. A turn in a view is how a planar
-  motion is written: what it generates in its view is a curve of the drawing (§6.15.1), with `o`'s
-  coordinates among that curve's columns.
-* **`std.Slide(f, along: l, advance: a)`** — along the directed line `l` by `a` a full turn of the
-  roll, turning not at all.
+* **`f turns(r) l`** — about the line `l`, `r` radians a radian of the roll, advancing `0mm`.
+* **`f screws(a) l`** — a screw about the line `l`, a radian a radian of the roll, advancing `a`
+  along it a full turn; a screw at another ratio states its relations (`l coincident f.axis`,
+  `fix(ratio == r, advance == a) f`).
+* **`f spins(r) o`** — about the point `o`, the axis through `o` square to the plane `o` is drawn
+  in (`o.plane`, §6.7), counter-clockwise as that plane is drawn; given a point standing in space,
+  **E040**. A turn in a view is how a planar motion is written: what it generates in its view is
+  a curve of the drawing (§6.15.1), with `o`'s coordinates among that curve's columns.
+* **`f slides(a) l`** — along the directed line `l` by `a` a full turn of the roll, turning not at
+  all.
+
+Through 0.152 they were components called for their effect, `std.Turn(f, about: l, ratio: r,
+advance: a)`, `std.Spin(f, about: o, on: P, ratio: r)` and `std.Slide(f, along: l, advance: a)`;
+those are kept, with the same meaning, for one release.
 
 **How it is read.** Before the solve the joint's kind is read off what holds it — an axis on a
 line with a ratio stated 0 is a slide, on a line a turn or a screw, through a point of a view and
@@ -1344,10 +1352,10 @@ square to it a turn in that view — and is otherwise a general joint, which onl
 takes. A measurement of the drawing as its ratio or advance is **E107**. Axis geometry follows the
 current solved model, read where it stands in space.
 
-**Joints in the solve [0.137].** A ratio or an advance no `fix` states — a `std.Turn` given no
-`ratio:`, a number pinned to an unknown — is an **unknown** of the solve, as the axis is: every
-relation that reads the motion during the solve (a point it carries and its rate, a point on an
-envelope in space or on a meshing) reads it as a column, and what is built after the solve reads
+**Joints in the solve [0.137].** A ratio or an advance no `fix` states — a number pinned to an
+unknown, `param k: Scalar` then `f turns(k) l` **[0.153]** — is an **unknown** of the solve, as
+the axis is: every relation that reads the motion during the solve (a point it carries and its
+rate, a point on an envelope in space or on a meshing) reads it as a column, and what is built after the solve reads
 it where the solve left it. A profile generated in the plane (§6.15.1) is generated over stated
 numbers: one found by the solve is an error there. A joint whose numbers nothing holds is freedom,
 reported by the diagnosis like any other. **`std.Rolls(at, a, b, along: d)`** states that `a` and
@@ -1395,8 +1403,8 @@ arbitrary motion laws or an assembly-joint solver.
 **Retired spellings.** Through 0.134 a motion was a declaration of its own, `m := motion(about: l,
 ratio: r, phase: φ, advance: a)`, `motion(along: l, advance: a)`, `motion(source, relative_to:
 observer)`, with `m: motion` formals and its numbers allowed to measure the solved drawing
-**[0.27]**. Each is refused naming what it became: `motion(…)` the frame and `std.Turn`, `std.Spin`
-or `std.Slide`; `relative_to:` the reading's `seen_from:`; `phase:` a roll offset (a turn with
+**[0.27]**. Each is refused naming what it became: `motion(…)` the frame and `turns`, `spins` or
+`slides` **[0.153]**; `relative_to:` the reading's `seen_from:`; `phase:` a roll offset (a turn with
 phase φ and ratio r read at roll τ is the same turn read at τ + φ/r).
 
 **[0.138] A frame that moves is a frame read at a roll.** `X coincident x at τ` is the point
@@ -1411,11 +1419,11 @@ two, where that plane sees the carried point. A roll read where nothing rides an
 is an error. A plane is carried whole: `n := base at τ` (with `under: m` and `seen_from:
 g` as on a point) is the plane `base` where the pose carries it — its origin, its `u` and `v` and
 its normal the pose's images of `base`'s — and anything drawn in `n` is drawn in the carried frame.
-A frame may turn about another frame's axis, `std.Turn(f, about: P.normal)` or `P.u`, as about a
+A frame may turn about another frame's axis, `f turns(r) P.normal` or `P.u`, as about a
 line. The standard library's station words are frames read so: `std.Helix` is `base` carried by a
-screw about `base.normal` (`advance: pitch`) to `360deg · turns · s`, `std.OnHelix` the frame
+screw about `base.normal` (`screws(pitch)`) to `360deg · turns · s`, `std.OnHelix` the frame
 square to the helix where it starts carried by the same screw, `std.Twisted`'s point turned in its
-plane about its origin (`std.Spin`, §6.9) — **[0.141]** each drawn in a frame whose value is that
+plane about its origin (`spins`, §6.9) — **[0.141]** each drawn in a frame whose value is that
 roll (`n := base in screw`, below). Every frame that moves as a number runs is said this
 way: no frame of the language is written as `cos` and `sin` ordinates of the number it moves
 by.
@@ -1462,7 +1470,7 @@ is drawn nowhere.
 
 ```
 screw := frame
-std.Turn(screw, about: base.normal, ratio: 1, advance: pitch)
+screw screws(pitch) base.normal
 fix(value == 360deg * turns * s) screw
 n := base in screw                      // `base` where the screw's value puts it
 ```
@@ -1487,7 +1495,7 @@ of issue #391 is written as it is drawn:
 ```
 param s: Scalar over (0, 1)
 screw := frame
-std.Turn(screw, about: std.top.normal, ratio: 1, advance: pitch)
+screw screws(pitch) std.top.normal
 fix(value == 360deg * turns * s) screw
 in screw {
   in std.front {                        // the front plane as the screw carries it
@@ -1537,9 +1545,9 @@ runs over as it is written — never by how it samples.
 ```
 param t: Angle over (0deg, 360deg)
 cam := frame
-std.Spin(cam, about: o, on: std.front, ratio: 1)
+cam spins(1) o
 follower := frame
-std.Slide(follower, along: stem, advance: 360mm)        // its value in degrees is its rise in mm
+follower slides(360mm) stem                             // its value in degrees is its rise in mm
 fix(value == 5deg * (1 - cos(t))) follower              // the cam's law
 roller := r0 in follower                                // at its rise where t is held
 groove := sweep(ball over t, under: follower, seen_from: cam)   // what the cam must not hold
@@ -1620,9 +1628,9 @@ patches, seams, corners, edges and face boundaries that check one are Rust API (
 
 ```
 blank := frame
-std.Spin(blank, about: o, on: std.front, ratio: 1)
+blank spins(1) o
 rack := frame
-std.Slide(rack, along: slide, advance: 2 * pi * 30)
+rack slides(2 * pi * 30) slide
 flank := envelope(rack_flank over t in (-25deg, 25deg), under: rack, seen_from: blank)
 profile := envelope(roller over t in (0deg, 360deg), under: follower_on_cam, side: near)
 ```
@@ -2565,7 +2573,7 @@ A **relation word** is defined at the top level of a file — never inside a bod
 
 **A body may be several statements** **[0.50]**: `l1 flush(d) l2 := { l1 parallel l2; l2.p1 distance(d) l1 }`, in braces, one per line, for one fact about the operands that takes several rows. It may declare the geometry its relations need (`private ab := line(a, b)`), which each use makes anew, under a name of the use's own, and read only what it declares besides its operands and parameters. Every relation a use makes is the statement's: deleted with it, described as it, a placement on it going to the one relation when it makes one. A body may write other words and use sets (§6.21), a set written in place included (`a orbits(r) o := a coincident std.Sphere(o, r: r)`). An infix word is a relation **between** its operands — distance, symmetry, flushness; that each stands on a third thing is said of each (`a coincident P`), not made a word.
 
-**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). **[0.83]** `P square(up: d) l` stands plane `P` square to a line or an axis `l`, its `v` along `d` and its `u` square to `d` and to `l` — three statements, since a plane's axes are not held square (§6.7); with `d` square to `l` its normal runs along `l`, and where `d` is not that is no conflict: the normal is `l`'s part square to `d`. Each is two dimensions or a dimension and a level, said as the one fact they are. **[0.53]** A body may state an energy over an operand (§9.10): `std.hangs(L: 150mm) rope` is a curve that long, hanging.
+**A word and a set are one predicate** **[0.50]**: a body over parameters (in parentheses, given at the call) and bound variables (a word's operands, a set's point, written where the definition shows them and filled at the use), applied by one rule — under a name of the use's own, each bound variable the operand the use wrote, the body closed over what it was given. A component instance is the case with no bound variable, stated where it is written. An operand that names nothing is **E101** once, where it is written, and not again at each place in the body that reads it. *Open, non-normative:* a word as a value (#80). The standard library defines `horizontal` and `vertical` between two points as words (§14.4), and where one point stands from another (`b offset(dx: 30, dy: 12) a`, `b right_of(d: 30) a`, `left_of`, `above`, `below`), where a point stands in a plane's frame (`p coords(du: 20, dv: 5) P`, `p on_u(d: 20) P`, `p on_v(d: 5) P`), two lines crossed (`a skew(theta: 90deg, e: 20mm) b`) and one line turned from another (`a turned(theta: 180deg) b`). **[0.153]** A frame's joint is said so too, the frame the subject: `f turns(r) l`, `f screws(a) l`, `f spins(r) o` and `f slides(a) l` (§6.14). **[0.83]** `P square(up: d) l` stands plane `P` square to a line or an axis `l`, its `v` along `d` and its `u` square to `d` and to `l` — three statements, since a plane's axes are not held square (§6.7); with `d` square to `l` its normal runs along `l`, and where `d` is not that is no conflict: the normal is `l`'s part square to `d`. Each is two dimensions or a dimension and a level, said as the one fact they are. **[0.53]** A body may state an energy over an operand (§9.10): `std.hangs(L: 150mm) rope` is a curve that long, hanging.
 
 **A word may make solids** **[0.69]**. A body in braces may hold, beside its relations and their
 declarations, blocks (`repeat a in A { … }`, §12.8), instances, sets and body statements, so a word

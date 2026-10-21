@@ -10,7 +10,7 @@
 // stock); the shank is added after, square to the axis. A real flute runs out into the shank
 // as the wheel lifts away, which is no rigid motion.
 unit mm
-use std
+use std (screws, turns)
 use configuration
 use wheel
 use point
@@ -54,9 +54,9 @@ in std.front {
 
 // the screw a wheel rides along, one lead a turn, and the turn from one flute to the next
 grind := frame
-std.Turn(grind, about: ax, ratio: 1, advance: configuration.lead)
+grind screws(configuration.lead) ax
 index := frame
-std.Turn(index, about: ax, ratio: 1)
+index turns(1) ax
 // the roll each wheel runs over, from its rim below the stock to past its top (#398)
 start := -360deg * configuration.flute_wheel.rim / configuration.lead
 finish := 360deg * (configuration.fluted_length + configuration.flute_wheel.rim) / configuration.lead

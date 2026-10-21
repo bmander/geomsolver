@@ -1343,9 +1343,9 @@ fn motion(sk: &Sketch, m: usize, steps: &mut Vec<Step>, cols: &mut Vec<Col>,
             let observer = motion(sk, observer as usize, steps, cols, done, depth + 1, turns)?;
             Step::Relative { source, observer }
         }
-        // a joint about an axis no drawn line holds — a frame's own, `std.Turn(f, about:
-        // P.normal)` — turns about that axis as the solve places it: its point and its direction
-        // (#366); a ratio stated 0 slides along it
+        // a joint about an axis no drawn line holds — a frame's own, `f turns(r) P.normal` —
+        // turns about that axis as the solve places it: its point and its direction (#366); a
+        // ratio stated 0 slides along it
         MotionDef::Joint { axis: x, ratio, advance } => {
             let ax = sk.axes.get(x as usize).ok_or("no such motion axis")?;
             cols.extend([Col::Three(ax.a), Col::Three(ax.d)]);

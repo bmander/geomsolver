@@ -17,7 +17,7 @@
 // is how tightly the profile bends there (it must stay larger than a grinding wheel's).  Edit
 // `lift`, `base` or the roller's radius and the cam is cut again.
 
-use std (right_of)
+use std (right_of, spins, slides)
 
 base := 25    // the roller centre's nearest approach to the cam's centre
 lift := 15    // how far the follower rises
@@ -34,11 +34,11 @@ in std.front {
 }
 
 cam := frame
-std.Spin(cam, about: o, on: std.front, ratio: 1)
+cam spins(1) o
 rise := frame
-std.Slide(rise, along: path, advance: 2 * lift)     // out `lift` in half a turn...
+rise slides(2 * lift) path                          // out `lift` in half a turn...
 fall := frame
-std.Slide(fall, along: path, advance: -2 * lift)    // ...and back in at the same rate
+fall slides(-2 * lift) path                         // ...and back in at the same rate
 
 // the roller where the rise starts, and where the fall would start if it began at no roll
 in std.front {

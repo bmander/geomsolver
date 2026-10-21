@@ -34,10 +34,10 @@ fn a_continuous_boundary_exports_through_the_field_mesh() {
     // exactly (#238, `solid::canal`), and a slid one is still the field's
     let source = dir.join("slid.sv");
     let turned = include_str!("../../examples/solid_generating_sweep.sv");
-    let (turn,slide) = ("std.Turn(generating, about: spindle, ratio: 1)",
-                        "std.Slide(generating, along: spindle, advance: 6mm)");
+    let (turn,slide) = ("generating turns(1) spindle","generating slides(6mm) spindle");
     assert!(turned.contains(turn),"the sweep's turn moved");
-    std::fs::write(&source,turned.replace(turn,slide)).unwrap();
+    let slid = turned.replace("use std (on_u, turns)","use std (on_u, slides)").replace(turn,slide);
+    std::fs::write(&source,slid).unwrap();
     let result = run(&[source.to_str().unwrap(),"--stl",output.to_str().unwrap(),
         "--solid","removal.body","--stl-backend","mesh","--no-diagnose"]);
     assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));

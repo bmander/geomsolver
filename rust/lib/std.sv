@@ -589,12 +589,12 @@ component On(g: path, up: axis, s: Scalar) {
 component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
   // the screw: a frame turning about `base`'s normal, rising `pitch` a turn, at its value
   private screw := frame
-  Turn(screw, about: base.normal, ratio: 1, advance: pitch)
+  screw screws(pitch) base.normal
   fix(value == 360deg * turns * s) screw
   n := base in screw
   // and `n` turned a quarter about its `u`
   private stand := frame
-  Turn(stand, about: n.u, ratio: 1)
+  stand turns(1) n.u
   fix(value == 90deg) stand
   axial := n in stand
 }
@@ -610,11 +610,11 @@ component Helix(base: plane, pitch: Length, turns: Scalar, s: Scalar) {
 component OnHelix(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
   // the helix's screw, as `Helix`'s
   private screw := frame
-  Turn(screw, about: base.normal, ratio: 1, advance: pitch)
+  screw screws(pitch) base.normal
   fix(value == 360deg * turns * s) screw
   // where the helix starts: `base` turned about its `u` axis and slid `r` out along it
   private tilt := frame
-  Turn(tilt, about: base.u, ratio: 1, advance: r * 360deg / (90deg + atan2(pitch, 2 * pi * r)))
+  tilt screws(r * 360deg / (90deg + atan2(pitch, 2 * pi * r))) base.u
   fix(value == 90deg + atan2(pitch, 2 * pi * r)) tilt
   private start := base in tilt
   n := start in screw
@@ -837,7 +837,7 @@ component Similar(prof: face, from: point, to: point, n: plane, a: point, b: poi
 // so a twist past a half turn is a twist past a half turn.
 component Twisted(n: plane, twist: Angle, reach: Length, s: Scalar) {
   private turn := frame
-  Spin(turn, about: n.origin, on: n, ratio: 1)
+  turn spins(1) n.origin
   fix(value == twist * s) turn
   in n {
     private x := point
@@ -857,28 +857,58 @@ p scaled(du, dv, scale, s) P := {
 // A round's radius scaled as `scaled` scales a point: `r` at `s = 0`, `scale` times it at `s = 1`.
 scaled_radius(r, scale, s) k := radius(r * (1 + (scale - 1) * s)) k
 
-// -- a frame's joint: turns, screws and slides (#383) --------------------------------------------
+// -- a frame's joint: turns, screws and slides (#383, #464) --------------------------------------
 //
 // A frame's motion is its joint: an axis `f.axis`, a ratio `f.ratio` (radians a radian of the
 // shared roll) and an advance `f.advance` (along the axis a turn of the roll), held by relations
-// like anything else.  These are the shapes a designer states them in.  Roll 0 is as drawn: a
+// like anything else.  These are the words a designer states them in, the frame the subject and
+// what it moves about or along the object: `counter spins(-1) centre`.  Roll 0 is as drawn: a
 // member that must stand turned there is drawn turned.
 
-// `f` turns about the line `about`, `ratio` radians a radian of the roll, and screws `advance`
-// along it a turn: a turn where the advance is left out, a screw where it is given.
+// `f turns(ratio) l`: `f` turns about the line `l`, `ratio` radians a radian of the roll, and
+// moves not at all along it.
+f turns(ratio) l := {
+  l coincident f.axis
+  fix(ratio == ratio, advance == 0mm) f
+}
+
+// `f screws(advance) l`: `f` screws about the line `l`, a radian a radian of the roll, and
+// `advance` along it a turn — right-handed for a positive advance, left for a negative.
+f screws(advance) l := {
+  l coincident f.axis
+  fix(ratio == 1, advance == advance) f
+}
+
+// `f spins(ratio) o`: `f` turns about the point `o` in the view it is drawn in, `ratio` radians a
+// radian of the roll — about the axis through `o` square to that view.
+f spins(ratio) o := {
+  o coincident f.axis
+  f.axis parallel o.plane.normal
+  fix(ratio == ratio, advance == 0mm) f
+}
+
+// `f slides(advance) l`: `f` slides along the line `l`, `advance` a turn of the roll, turning not
+// at all.
+f slides(advance) l := {
+  l coincident f.axis
+  fix(ratio == 0, advance == advance) f
+}
+
+// The joints as components, kept for one release (0.153) beside the words above, which say each
+// as a relation: `std.Turn(f, about: l, ratio: r)` is `f turns(r) l`, with `advance: a` (at ratio
+// 1) `f screws(a) l`; `std.Spin(f, about: o, on: P, ratio: r)` is `f spins(r) o`, `o` drawn in
+// `P`; `std.Slide(f, along: l, advance: a)` is `f slides(a) l`.
 component Turn(f: frame, about: line, ratio: Scalar, advance: Length = 0mm) {
   about coincident f.axis
   fix(ratio == ratio, advance == advance) f
 }
 
-// `f` turns in the view `on` about its point `about`: the axis through it square to the view.
 component Spin(f: frame, about: point, on: plane, ratio: Scalar) {
   about coincident f.axis
   f.axis parallel on.normal
   fix(ratio == ratio, advance == 0mm) f
 }
 
-// `f` slides along the line `along`, `advance` a turn of the roll, turning not at all.
 component Slide(f: frame, along: line, advance: Length) {
   along coincident f.axis
   fix(ratio == 0, advance == advance) f

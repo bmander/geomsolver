@@ -22,7 +22,7 @@
 // envelope extruded (`brep::sweep::extruded`), not a traced sheet.
 
 unit mm
-use std (coords, offset, right_of)
+use std (coords, offset, right_of, spins, slides)
 
 N := 20                     // teeth
 m := 2mm                    // module
@@ -69,9 +69,9 @@ tooth := face(t0, t1, rack_flank, t3, -> close)
 construction rack_tooth := solid(tooth, from: -width - 2mm, to: 2mm)
 
 turn := frame
-std.Spin(turn, about: o, on: std.front, ratio: 1)
+turn spins(1) o
 rack := frame
-std.Slide(rack, along: slide, advance: 2 * pi * rp)
+rack slides(2 * pi * rp) slide
 construction space := sweep(rack_tooth, through: gear, under: rack, seen_from: turn)
 
 // the flank in space: the prism's side, and what it generates
