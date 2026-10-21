@@ -423,6 +423,19 @@ impl Constraint {
         }
     }
 
+    /// The line a tangency at a contact reads only by its direction (#479): the
+    /// `tangent_arc_line` kernel's `(p − c)·(b − a)`, the ends' difference unnormalised, which
+    /// holds for every contact where the line has no length.  A run tangent at both its ends then
+    /// has a root with its ends together where the two rounds cross, isolated and of full rank, so
+    /// only its length tells it from a tangent (`solve::collapsed`).
+    pub fn direction_line(&self) -> Option<usize> {
+        match self.kind {
+            CKind::TangentArcLine | CKind::TangentCircleAt => Some(self.args[1].ent().i()),
+            CKind::TangentLineCircleAt => Some(self.args[0].ent().i()),
+            _ => None,
+        }
+    }
+
     /// The spline this constraint touches and the Param holding where on it — `None` for
     /// anything that is not a curve contact, and for one that has not been added yet (its
     /// parameter is still the seed number, not a Param).

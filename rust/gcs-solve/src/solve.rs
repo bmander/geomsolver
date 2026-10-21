@@ -26,6 +26,14 @@ use crate::system::System;
 /// A `SolveResult::status` of its own: every row holds, and a bound does not (§9.6).
 pub const BOUND_BROKEN: i32 = 5;
 
+/// A `SolveResult::status` of its own: every row holds, and a line a tangency reads only by its
+/// direction has no length (#479, `collapsed`).
+pub const COLLAPSED: i32 = 6;
+
+/// How short, over the drawing's extent, a line a tangency reads by its direction may be and
+/// still be a line (`collapsed`): the solve's own relative tolerance, as a bound's.
+const COLLAPSE_TOL: f64 = 1e-6;
+
 /// How many times larger or smaller than the extent a system was compiled at a failed solve's
 /// pose must be for it to be compiled again at that size (`System::resized`).
 const RESIZE: f64 = 4.0;
@@ -38,6 +46,20 @@ pub(super) const REFRAMES: usize = 3;
 /// are they read again as a solve goes (`REFRAMES`, the block pass).
 fn reads_pose(sk: &Sketch) -> bool {
     sk.constraints.iter().any(|c| c.kind.reads_pose() && c.states_rows())
+}
+
+/// **A tangency at a contact is no tangency along a line of no length** (#479): every acting
+/// constraint, by id, whose row reads a line only by its direction (`Constraint::direction_line`)
+/// where that line is shorter than `COLLAPSE_TOL` of the extent.  Such a row holds whatever the
+/// contact, so a run tangent at both its ends is satisfied by its ends together where its two
+/// rounds cross: a root of full rank, isolated, that no rank or diagnosis can tell from the
+/// tangent.  A document solve ending there fails (`COLLAPSED`), never reported solved.
+pub fn collapsed(sk: &Sketch) -> Vec<u32> {
+    let floor = COLLAPSE_TOL * sk.extent();
+    sk.constraints.iter().filter(|c| c.acts())
+        .filter(|c| c.direction_line().is_some_and(|l| !(sk.line_length(l) > floor)))
+        .map(|c| c.id)
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -247,10 +269,16 @@ impl System {
                 }
             }
         }
-        if !steers || !res.success {
-            return res;
+        if steers && res.success {
+            res = self.steer(sk, opts, start, res);
         }
-        self.steer(sk, opts, start, res)
+        // named where it is reported (`Diagnosis::collapsed`), not here
+        if opts.document() && res.success && !collapsed(sk).is_empty() {
+            res.success = false;
+            res.status = COLLAPSED;
+            res.message = newton::status_message(COLLAPSED).to_string();
+        }
+        res
     }
 
     /// **A drawing is judged at its own size** (#217): a system's rows and columns are scaled by
