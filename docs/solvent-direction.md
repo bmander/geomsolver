@@ -630,7 +630,7 @@ claim (#460).
 Every line but four parses today; the four marked `[new]` are the refusals of §2.6. With those
 four written in today's syntax (`Pulley(o1, width: 10mm)`, `turns(ratio: 1)`) the document solves
 to the same drawing, and the claim is again judged a theorem — at these radii. Its witness is
-unconditional as §6.1's is, and fails the same way at equal radii.
+unconditional as §6.1's is, so at equal radii it has nowhere to stand.
 
 ```solvent
 // An open belt drive.
