@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.161] Parts.** `part Name(…) { … }` (§8.2) is a component declared a function of what it is
+given. It is held to two rules, judged on each instance's rows with its inputs held:
+- its rows place everything it makes, or **E108** at the definition names what they leave free;
+- no row is about its operands alone, or **E109** at the row.
+
+A freedom a part leaves is a formal the call leaves unbound, an unknown of the parent. A parent's
+statement over a part's outputs is the parent's row and never completes it. A part is solved flat
+as a component is. `part` is a word only before a definition's shape, `part Name(…) {`, so the
+documents that name a thing `part` are unchanged. No document changes. (Issue #461.)
+
 **[0.160] A stated orientation is held.** `ccw(a, b, c)` and `cw(a, b, c)` written in a
 document (§9.6) are checked on the solution and the solve is steered to them, as a bound is
 ([0.60]): a triangle whose seeds turn the other way has a point carried across the line through

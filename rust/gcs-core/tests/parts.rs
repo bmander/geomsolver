@@ -236,3 +236,108 @@ in std.front {
     let parts: Vec<bool> = parsed.components.iter().filter(|c| c.name.is_some()).map(|c| c.part).collect();
     assert_eq!(parts, [false, true]);
 }
+
+/// The diagnosis of `src` once solved, read through its parts (#461 D1–D3).
+fn reading(src: &str) -> gcs_core::parts::Reading {
+    let e = read(src);
+    let mut sk = e.sketch.clone();
+    let r = gcs_core::solve::solve(&mut sk, Default::default());
+    let settled = r.settled();
+    let d = gcs_core::diagnose::diagnose(&mut sk,
+        gcs_core::diagnose::DiagnoseOptions { settled, ..Default::default() });
+    gcs_core::parts::read(&e, &sk, &d, settled)
+}
+
+/// An arm whose tip a parent holds 10 from a point 45 out: the arm places its tip 30 along from
+/// its pin, so the parent's statement is the one that cannot hold.
+const HELD_FROM_OUTSIDE: &str = "\
+unit mm
+use std (horizontal)
+part Arm(o: point) {
+  in o.plane {
+    tip := point hint((30, 0))
+    o distance(30mm) tip
+    o horizontal tip
+  }
+}
+in std.front {
+  o := point
+  fix((0, 0)) o
+  r := point hint((40, 0))
+  fix((45, 0)) r
+}
+a := Arm(o)
+in std.front {
+  r distance(10mm) a.tip
+}
+";
+
+/// **D1: an over-constraint through a part's outputs is the parent's.**  The conflict holds the
+/// arm's row and the parent's; the reading names the parent's as the one to remove, the part's as
+/// the reason, and what the part is given — and does not say the part failed as well.
+#[test]
+fn an_over_constraint_through_a_part_is_said_as_the_parents() {
+    let r = reading(HELD_FROM_OUTSIDE);
+    assert_eq!((r.instances, r.definitions), (1, 1));
+    assert_eq!(r.over, ["`r distance(10mm) a.tip` over-constrains part `a` (`Arm`): what it makes \
+        is placed by what it is given (`o`), so remove this, not `o distance(30mm) a.tip`"]);
+    assert!(r.unmet.is_empty(), "{:?}", r.unmet);
+}
+
+/// **D2: a part that does not hold is named, with what it is given.**  A point 5 from two points
+/// 12 apart has no pose: the solve stops with the part's rows unmet, and the reading names the
+/// part, its rows and where its operands stood.
+#[test]
+fn a_part_that_does_not_hold_is_named_with_its_inputs() {
+    let r = reading("\
+unit mm
+use std
+part Apex(a: point, b: point) {
+  in a.plane {
+    m := point hint((5, 0.5))
+    m distance(5mm) a
+    m distance(5mm) b
+  }
+}
+in std.front {
+  o := point
+  fix((0, 0)) o
+  q := point
+  fix((12, 0)) q
+}
+x := Apex(o, q)
+");
+    assert!(r.over.is_empty(), "{:?}", r.over);
+    assert_eq!(r.unmet.len(), 1, "{:?}", r.unmet);
+    assert!(r.unmet[0].starts_with("part `x` (`Apex`) does not hold where the solve stopped") &&
+        r.unmet[0].contains("`o` at (0, 0, 0), `q` at (12, 0, 0)"), "{}", r.unmet[0]);
+}
+
+/// **D3: a part singular at what it is given.**  Its rows reach both numbers of its point, so it
+/// is a part; but with its two operands one point its two rows are one, and at the solved pose
+/// they place one number of two — said, with the rank.  Apart, it is not.
+#[test]
+fn a_part_singular_at_its_inputs_is_said_with_its_rank() {
+    let apex = |q: &str| format!("\
+unit mm
+use std
+part Apex(a: point, b: point) {{
+  in a.plane {{
+    m := point hint((3, 4))
+    m distance(5mm) a
+    m distance(5mm) b
+  }}
+}}
+in std.front {{
+  o := point
+  fix((0, 0)) o
+  q := point
+  fix({q}) q
+}}
+x := Apex(o, q)
+");
+    let one = reading(&apex("(0, 0)"));
+    assert_eq!(one.singular.len(), 1, "{one:?}");
+    assert!(one.singular[0].contains("its rows place 1 of its 2 own unknowns"), "{}", one.singular[0]);
+    assert!(reading(&apex("(6, 0)")).singular.is_empty());
+}

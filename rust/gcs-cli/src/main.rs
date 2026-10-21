@@ -487,6 +487,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 }
             }
             report_set(&sk, &e.map, "degenerate", &d.collapsed);
+            // what it says of the document's parts, in their terms (#461 D1–D3)
+            for line in gcs_core::parts::text(&gcs_core::parts::read(&e, &sk, d, solved)) {
+                println!("  {line}");
+            }
             // what each energy came to, in its statement's words (#121)
             for &(id, v) in &d.extrema {
                 if let Some(c) = sk.constraint(id) {
@@ -866,7 +870,7 @@ fn doc_json(
             said(x.span.lo, x.code.as_str(), severity(x.severity()), &x.message)
         }))
         .collect();
-    json::object([
+    let mut doc = json::object([
         ("name", Json::Str(s.name.clone())),
         ("diagnostics", Json::Arr(diags)),
         ("solve", r.map(report::solve_result_json).unwrap_or(Json::Null)),
@@ -874,6 +878,14 @@ fn doc_json(
         ("positions", positions),
         ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
         ("components", components),
-    ])
+    ]);
+    // the document's parts, read through the diagnosis (#461), where it has any
+    if let Some((sk, d)) = d {
+        let parts = gcs_core::parts::read(e, sk, d, r.is_some_and(|r| r.settled()));
+        if parts.instances > 0 {
+            doc.set("parts", gcs_core::parts::json(&parts));
+        }
+    }
+    doc
 }
 

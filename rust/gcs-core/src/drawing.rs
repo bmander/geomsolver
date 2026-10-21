@@ -98,6 +98,8 @@ pub struct Measurement {
 pub struct Rule {
     /// An implicit class (`.hidden`), or a model entity/component path.
     pub selector: String,
+    /// The one view of its sheet it styles (`style m.rod2 in end { … }`, #461), or every view.
+    pub view: Option<String>,
     pub style: Style,
     pub span: Span,
 }

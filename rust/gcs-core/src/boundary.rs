@@ -337,8 +337,14 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
                 continue;
             }
             let cols = columns(sk, c);
+            // an arc's, an axis's or a plane's own rows (its ends at its radius, a unit
+            // direction, a plane through its axes) are what it made, whatever else they read: an
+            // arc about an operand's centre places its ends from it (#461)
+            let own_row = c.intrinsic && c.entities().iter()
+                .any(|e| e.kind != EntKind::Point && made.contains(e));
             let ours = inside(c.id) || map.site_of_constraint(c.id).is_none() && (
-                cols.iter().any(|p| aux.contains(p))
+                own_row
+                || cols.iter().any(|p| aux.contains(p))
                 || cols.iter().any(|p| mine.contains(p))
                     && cols.iter().all(|&p| mine.contains(&p) || nobodys(p)));
             if !ours {

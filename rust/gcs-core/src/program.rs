@@ -219,7 +219,8 @@ pub fn elaborate(p: &Program) -> Elaborated {
                 // a part is held to being a function of what it is given (#461), judged on a
                 // document that elaborated: over one that did not, its rows are not all there
                 if e.ok() {
-                    let faults = crate::parts::check(&e);
+                    let mut faults = crate::parts::check(&e);
+                    crate::modules::localize(p, &mut faults);
                     e.diags.extend(faults);
                 }
                 return e;

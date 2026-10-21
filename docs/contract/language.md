@@ -219,6 +219,38 @@ the dimension (`program::traced::Lowering::dimension`); curves.md's "A number th
 says what it becomes.  A trace in a plane compiles its dimensions over the formals and the geometry
 alone, so there the name is still E103 ("not something this curve can read").
 
+**A part is a component held to being a function of what it is given** (§8.2, [0.161], #461,
+[plan](../parts-plan.md)).  `part Name(…) {` parses as `component` does with `Component::part`
+set; the parser reads the word so only where a definition's shape follows it (`part_ahead`: a
+name, a bracketed list, then `{`), so `part := solid(…)` and `part above(7) q` stay statements, and
+`highlight` tints it only there.  `parts::check` runs once `program::elaborate` has a document
+that elaborated with no error.  It reads each drawn instance of a part as the classifier reads one
+(`boundary::split`).  Its own unknowns are what it made, the numbers no entity owns that its rows
+read, and the free variables under its prefix that are no formal of its own.  Its rows are the
+acting ones among those kept.  Its inputs, held, are every other column (`boundary::reduced`).  Two
+rules are judged over the compiled structure of those rows (`System::structure`,
+`graph::dulmage_mendelsohn`):
+- **E108** at the definition's name: an own column the matching leaves unmatched, named by its
+  entity or its free variable;
+- **E109** at the row's site: a row of no own column, or one of the over-determined block, worded
+  by whether it reads an own unknown at all.
+
+Each fault is said once a definition (`said`), against the first instance it is found in.  The
+structure only, so it is deterministic and decided before the solve; nothing changes a row.
+**The diagnosis is read through the parts** (#461 D1–D3, the diagnostic half of #455, from the flat
+solve): `parts::read` takes the solved sketch and its `Diagnosis`, and `solventc` prints
+`parts::text` after the diagnosis's own lines (and `--json` writes `"parts"` where the document
+has any).
+- **D1:** a conflict (`Diagnosis::conflicts`, else `over`) holding a part's rows and a row outside
+  it over the part's own unknowns names that row as the one to remove, the part's rows and its
+  inputs as why.
+- **D2:** a part whose rows `violated` holds is named with its rows and its inputs' places, the
+  innermost only, and not where D1 already said why.
+- **D3:** a settled solve's part whose rows, alone with its inputs held, have numeric rank
+  (`System::conditioned`, `RANK_TOL`) short of its own unknowns is said singular with the rank.
+
+`tests/parts.rs` is the gate.
+
 **A component may instantiate itself** (§8, 0.75): a call back into one still being expanded
 is walked like any other (`Walk::instantiating` keeps each with the numbers it was given), each
 level an instance under the last (`d.s.s.m`), ended by a `when` over its numbers. E003 at the

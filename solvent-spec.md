@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.160 — October 2026**
+**Specification, Draft 0.161 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2290,6 +2290,38 @@ fixed coordinate layout, so its needed members must be passed individually to a 
 
 ---
 
+### 8.2 Parts **[0.161]**
+
+```solvent
+part CommonTangent(a: circle, b: circle) {
+  in a.center.plane {
+    s := point hint(at: a.center, toward: b.center, by: 0.1, turn: 90deg)
+    e := point hint(at: b.center, toward: a.center, by: 0.1, turn: -90deg)
+    run := line(s, e)
+    s coincident a
+    e coincident b
+    run tangent(at: p1) a
+    run tangent(at: p2) b
+    ccw(a.center, b.center, s)
+    ccw(a.center, b.center, e)
+  }
+}
+```
+
+A **part** is a component declared a function of what it is given. It is written `part Name(…) { … }` where `component` would stand, and it may hold whatever a component's body may. It is instantiated, flattened and solved exactly as a component is, so declaring one changes no number. `part` is a word only where a definition's shape follows it, `part Name(…) {`; elsewhere it is a name like any other. A set family (§6.21) is a predicate and is never a part.
+
+An instance of a part has **its own unknowns** and **inputs**:
+
+- Its own unknowns are the numbers of what it makes, the numbers no entity owns that its rows read (a contact's place), and the numbers its body leaves unknown (a formal of an instance inside it left unbound).
+- Its inputs are every other column its rows read, including a formal of its own that the call leaves unbound. That formal is the part's **exported freedom**, an unknown of the parent (a crank's angle).
+
+Its **rows** are those its body states, nested instances' included. A claim, a claim block's witness and a bound state no row. Two rules are held over the structure of those rows, the inputs held, in every drawn instance:
+
+- **Its own rows place what it makes.** A maximum matching of its rows on its own unknowns MUST cover every unknown. One left over is **E108** at the definition, naming what it moves. A parent's statement over a part's outputs is a row of the parent, so it never completes the part from outside. A freedom a part leaves is a formal instead, which the parent binds or leaves unknown.
+- **It states nothing about its operands alone.** A row reading none of its own unknowns, or one past what they take (the matching's over-determined rows), is **E109** at the row. Such a fact belongs where the operands are given, or in a relation word (§9.9).
+
+A root among several is chosen by a stated orientation (§9.6) or a bound, never by a seed alone. Neither rule reads the numbers: a part singular at its inputs is the diagnosis's to report, on the solved pose. Each fault is said once for its definition. *Non-normative:* a part is what a solve through boundaries would treat as a child (`docs/parts-plan.md`); the reference implementation solves it flat.
+
 ## 9. Constraints
 
 ### 9.1 Equational form
@@ -3101,6 +3133,8 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E103 | a shape or a number the model cannot build: more children than the kind has slots (§6.1), an input whose value is not its type (§6.3), a seed reading a scalar that is not there (§6.4), a curve the model cannot trace (§6.5), an extent of the wrong dimension (§6.9), iteration over what is not a named chain (§12.8), **[0.84]** a group or an instance given where an interface asks for a member it lacks or holds of another type, and an interface's `Side` member (§8.1) |
 | E105 | a `fix` of a number the entity does not have (§13) **[0.34]** |
 | E107 | a measurement of the solved drawing where a number is needed before the solve (§6.14) **[0.27]** |
+| E108 | a part whose rows leave one of its own unknowns free, so that a parent would have to place it from outside (§8.2) **[0.161]** |
+| E109 | a part stating a fact about what it is given rather than about what it makes: a row of none of its own unknowns, or past what they take (§8.2) **[0.161]** |
 
 **[0.18]** The reference implementation raises all four (**[0.42]** E083 is gone, with `against`). A negative sweep and a picture asked of the wrong kind are **E040** by the rules those codes already state (a magnitude written with a sign, §9.2 **[0.17]**; a kind mismatch, §14.1), and an unresolved name in any of these statements is **E101**, so no new code is spent on either.
 

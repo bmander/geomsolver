@@ -137,6 +137,7 @@ ccw(a, b, c) | cw(a, b, c)              choose a root; adds no equation         
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
 [NAME :=] Component(ARGS) [in REF]      an instance                                  (1.8)
 component NAME(FORMALS) { statement* }  a component definition (not a value)
+part NAME(FORMALS) { statement* }       a component that is a function of its inputs  (1.8)
 a WORD(PARAMS) b := RELATION | { ... }  a relation word                              (1.9)
 repeat N [as i] { ... }                 N unrelated copies                           (1.7)
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
@@ -771,6 +772,29 @@ steps read one another so (`gear: Gear, trace: Trace` in `spiral_bevel/hypoid.sv
 
 **Derive, don't restate**: keep a few design inputs and derive the rest, so changing one carries
 its dependents (the V-twin derives its cylinder, pockets and grooves from bore, throw and wall).
+
+**A part is a component that promises to be a function of what it is given**: `part Name(…) {
+… }`, written where `component` would be. The elaborator holds it to two rules, over each
+instance:
+- its own rows place everything it makes, or **E108** names what they leave free;
+- it states nothing about its operands alone, or **E109** names the row.
+
+A freedom it leaves is a formal the call leaves unbound (`Crank(o, d, theta: hint(30deg))`), which
+the parent places. A parent may relate a part's outputs (`r distance(10mm) a.tip`), but such a
+statement is the parent's and never completes the part. Choose a root with `ccw`/`cw` (held by the
+solve), not with a seed. A part is solved like any component. Use one for anything a parent should
+be able to trust as a unit: a pulley, a rod on its pin, a belt run.
+
+```
+part Crank(o: point, datum: line, theta: Angle) {
+  in o.plane {
+    tip := point hint((20, 20))
+    arm := line(o, tip)
+    o distance(30mm) tip
+    datum angle(theta) arm
+  }
+}
+```
 
 ### 1.9 Modules, relation words and previews
 
