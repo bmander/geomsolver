@@ -76,6 +76,7 @@ mod edit;
 mod edit_datums;
 mod edit_rounds;
 mod edit_solids;
+mod engine;
 mod ellipse;
 mod envelope;
 mod evaluated_solid;

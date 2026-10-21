@@ -216,4 +216,25 @@ part CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point, o_t
   cam_e project ce
   t_l project hbl_t            // the head's width, from its top corner
   tr.p project hfl_t
+
+  // -- the casting as a solid -------------------------------------------------------------
+  // The end section's outline run along the crank axis from the front face to the rear, bored
+  // for the two camshafts; each shaft runs in its tunnel from its pulley, forward of the block,
+  // to its last bearing.
+  casting := solid(face(gasket, side_r, topline, side_l), from: front, to: back)
+  tunnel_i := solid(face(j_i), from: front - 1mm, to: back + 1mm)
+  tunnel_e := solid(face(j_e), from: front - 1mm, to: back + 1mm)
+  tunnel_i cut casting
+  tunnel_e cut casting
+  camshaft_i := solid(face(j_i), from: front - 55mm, to: back - 10mm)
+  camshaft_e := solid(face(j_e), from: front - 55mm, to: back - 10mm)
+}
+
+// Open this file to preview the head alone: the casting in the three views the assembly draws it
+// in, about the world's origin, with its valves and lobes where the table's cycle puts them, and
+// the casting and the two camshafts as solids.
+preview {
+  unit mm
+  cylinder_head := CylinderHead(std.side, std.front, std.top, std.side.origin, std.origin,
+                               std.top.origin)
 }

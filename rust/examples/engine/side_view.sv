@@ -20,3 +20,14 @@ part SideSection(o: point) {
   a1 := engine.parts.At(o, dx: back + 60mm, dy: 0mm)
   axisline := line(a0.p, a1.p)
 }
+
+// Open this file to preview what the side view adds: the crank axis, and the timing drive edge on
+// from the crank to the camshafts where the head carries them.
+preview {
+  unit mm
+  in std.front {
+    side := SideSection(std.origin)
+    cam := engine.parts.At(std.origin, dx: front, dy: engine.dims.camh + engine.dims.gasket)
+    drive := DriveSide(std.origin, cam.p)
+  }
+}
