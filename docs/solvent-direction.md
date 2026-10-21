@@ -1,12 +1,38 @@
 # Solvent's direction: statements, nouns and verbs
 
-**Status (2026-10-20, revised): a discussion paper, nothing adopted.** It sets out where the
-language stands, what has gone wrong with it, and two independent proposals: a style for
-statements, judged on readability, and reusable solve boundaries, to be established by
-experiment before any grammar is built around them. One example is carried through every stage.
-The syntax in §5 and §6.3 is proposed and does not parse; everything shown as current was run
-through `solventc`. This revision answers an adversarial review of the first version (see *What
-changed after review*, below); the plan it leads to is epic #465.
+**Status (2026-10-21): concluded; kept as the record of the argument.** Both of its proposals
+were decided on evidence, under epic #465, and what was adopted is in the specification, not
+here. The syntax in §5 and §6.3 was never built and does not parse; read it as the proposal it
+was. Everything shown as current was run through `solventc` when the paper was written (2026-10-20,
+revised for an adversarial review: see *What changed after review*, below).
+
+## Outcome
+
+* **Reusable solve boundaries (§5): the premise did not hold, the aim did.** The benchmark
+  (#459; [solve-boundaries-plan.md](solve-boundaries-plan.md) §18–§20) found that the flat
+  solve already decomposes what it is given. Once the parent's Jacobian was kept sparse (#488),
+  solving through boundaries was linear in the number of parts but no faster than flat, and a
+  perfect cache of evaluations would save at most a fifth of a solve (#493). **Performance is not
+  why a large assembly needs boundaries.** What it needs is that it can be read and trusted a part
+  at a time.
+* **So the boundary is declared, checked and solved flat** (#461, decided in
+  [parts-plan.md](parts-plan.md), spec 0.159–0.162). `part Name(…) { … }` is a component
+  declared to be a function of what it is given. It is checked while elaborating against the
+  document's one compiled structure (E108, E109), and diagnosis reads a solve in terms of parts
+  (D1–D3). A definition reads its file's constants (N7's tables, without `context`), and a part
+  draws in its operands' planes (`in pin.plane`), so the threaded tables and world planes of §2.3
+  go. The engine's 18 definitions are parts. Of §6.5's list, `given`, binding by value and the
+  shared namespace were declined; `context` and "a noun that is one thing" deferred
+  ([parts-plan.md](parts-plan.md) §7). Caching (N3, #456) and invalidation (N9, #457) are parked;
+  `solve::through` stays a Rust API for an interior whose evaluation is expensive, measured first.
+* **The statement style (§4) landed as small changes**, each judged on readability: claim
+  witnesses scoped to the claim (#460, spec 0.151), the drift lint (#462, `solventc --lint`),
+  unlabelled measures and `o.plane` for words (#463, 0.152), and `turns`, `spins`, `slides` as
+  relation words (#464, 0.154).
+* **The bugs the review found are fixed:** the false "solved" (#449, #489; #492 judges each row
+  at its own size) and an unenforced `ccw` (#157, 0.161).
+
+What is still open is tracked on #465, not here.
 
 ## Summary
 
@@ -941,7 +967,8 @@ component of its file (E071), which is why the component here is `Rod`.
 
 * **Inferred or declared.** If boundaries pay (#459), a parent might find them from the closed
   component scope alone, with no new syntax; `given` and `context` would then be for readers. #461
-  decides on the benchmark's evidence.
+  decides on the benchmark's evidence. (*Decided: declared, as `part`, and solved flat; see*
+  Outcome.)
 * **Inputs as statements or in brackets.** `small.r := r_small` on its own line is the proof's
   idiom, but four inputs cost four lines. A `where` clause — `Pulley(a) where r := r_small` — is
   the compromise, and risks drifting back to an argument list.
@@ -985,7 +1012,7 @@ Experiment first, syntax last. Epic #465 tracks both tracks.
    boundaries and singular inputs, measuring solve work, cache reuse, derivative accuracy and
    invalidation.
 5. **Only then syntax (#461)**: `given`, binding by value, `context`, built, narrowed or dropped on
-   #459's evidence.
+   #459's evidence. (*Narrowed to `part`; see* Outcome.)
 
 Track A also leans on one existing gap: **`ccw` on the sheet enforced and checked (#157)**, without
 which no drawn component reaches N2's second tier. (*Closed in 0.161.*)
