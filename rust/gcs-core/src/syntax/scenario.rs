@@ -3,8 +3,10 @@
 //! `model::Scenario`; nothing in it is solved.
 
 use super::names::write_ref;
+use super::print::vector_text;
 use super::{Name, Ref, Span};
-use crate::model::{Compare, Hold, LoadKind, Output};
+use crate::expr::Cmp;
+use crate::model::{Hold, LoadKind, Output};
 
 /// `scenario lift { … }`, or `scenario overload: lift { … }` extending another.
 #[derive(Clone, Debug)]
@@ -58,7 +60,7 @@ pub struct RequirementText {
     pub along: Option<Ref>,
     /// `mode(b, n)`'s `n`.
     pub count: Option<Number>,
-    pub compare: Compare,
+    pub compare: Cmp,
     pub value: Number,
 }
 
@@ -125,23 +127,23 @@ impl Scenario {
     }
 }
 
+/// `{sep}along: d`, where a direction is written.
+fn write_along(out: &mut String, sep: &str, along: Option<&Ref>) {
+    if let Some(d) = along {
+        out.push_str(sep);
+        out.push_str("along: ");
+        write_ref(out, d);
+    }
+}
+
 impl Item {
     pub fn write(&self, out: &mut String) {
-        let along = |out: &mut String, along: &Option<Ref>| {
-            if let Some(d) = along {
-                out.push_str(", along: ");
-                write_ref(out, d);
-            }
-        };
         match &self.kind {
-            ItemKind::Support { hold, at, along: dir } => {
+            ItemKind::Support { hold, at, along } => {
                 out.push_str(hold.word());
                 out.push(' ');
                 write_ref(out, at);
-                if let Some(d) = dir {
-                    out.push_str(" along: ");
-                    write_ref(out, d);
-                }
+                write_along(out, " ", along.as_ref());
             }
             ItemKind::Load { kind, at, value } => {
                 out.push_str(kind.word());
@@ -150,13 +152,11 @@ impl Item {
                 out.push(' ');
                 match value {
                     LoadText::Vector(parts) => {
-                        let parts: Vec<&str> = parts.iter().map(|(t, _)| t.as_str()).collect();
-                        out.push_str(&format!("({})", parts.join(", ")));
+                        out.push_str(&vector_text(parts.iter().map(|(t, _)| t.clone())))
                     }
                     LoadText::Along { magnitude, along } => {
                         out.push_str(&magnitude.0);
-                        out.push_str(" along: ");
-                        write_ref(out, along);
+                        write_along(out, " ", Some(along));
                     }
                     LoadText::Scalar(n) => out.push_str(&n.0),
                 }
@@ -172,7 +172,7 @@ impl Item {
                     out.push_str(", ");
                     out.push_str(n);
                 }
-                along(out, &r.along);
+                write_along(out, ", ", r.along.as_ref());
                 out.push_str(&format!(") {} {}", r.compare.text(), r.value.0));
             }
         }

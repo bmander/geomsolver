@@ -113,6 +113,8 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
     // inside a block's bracketed binders, `cycle (ea, eb) in (a, b)`: each name is one the block
     // declares, as the one in `repeat e in` is
     let mut walks = false;
+    // inside a `scenario NAME { … }` (#510 P4), whose body is lines of its own words
+    let mut scenario = false;
     for (i, (t, span)) in toks.iter().enumerate() {
         let prev = i.checked_sub(1).map(|j| &toks[j].0);
         // a unit written against its number is one literal to the parser (`20mm`, `90deg`, `1'
@@ -160,6 +162,12 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         } else if matches!(t, Tok::P('}')) && style > 0 {
             style = 0;
         }
+        // a scenario's body holds no braces of its own, so its `}` is the one that ends it
+        if matches!(t, Tok::Ident(w) if w == "scenario") && at == Next::Start {
+            scenario = true;
+        } else if matches!(t, Tok::P('}')) {
+            scenario = false;
+        }
         if at == Next::Start && head.is_none() {
             head = defined_word(toks, i);
         }
@@ -201,10 +209,19 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
             }
             Tok::P(_) => None,
             Tok::Ident(w) => {
-                let (tint, then) = tint_word(w, prev, toks, i, at, &known, ring);
-                ring |= at == Next::Start && w == "ring";
-                at = then;
-                tint
+                let next = toks.get(i + 1).map(|(t, _)| t);
+                match scenario.then(|| scenario_word(w, prev, next)).flatten() {
+                    Some(tint) => {
+                        at = Next::Word;
+                        Some(tint)
+                    }
+                    None => {
+                        let (tint, then) = tint_word(w, prev, toks, i, at, &known, ring);
+                        ring |= at == Next::Start && w == "ring";
+                        at = then;
+                        tint
+                    }
+                }
             }
         };
         // anything at all leaves the opening word behind; a name the statement is still owed
@@ -290,6 +307,21 @@ fn tint_word(
     }
 }
 
+/// A word of a scenario's line (#510 P4), read as the parser reads one (`parser/scenario.rs`):
+/// a support's, a load's or `claim` at the line's head, and an output before its `(` there or
+/// after `claim` — `None` for anything else, tinted as it would be in any statement.
+fn scenario_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>) -> Option<Tint> {
+    let head = matches!(prev, Some(Tok::Nl | Tok::P('{')));
+    let claimed = matches!(prev, Some(Tok::Ident(c)) if c == "claim");
+    let applied =
+        crate::model::Hold::parse(w).is_some() || crate::model::LoadKind::parse(w).is_some();
+    if head && (applied || w == "claim") {
+        return Some(Tint::Word);
+    }
+    let output = next == Some(&Tok::P('(')) && crate::model::Output::parse(w).is_some();
+    ((head || claimed) && output).then_some(Tint::Relation)
+}
+
 /// What a word is where a statement starts (`tint_word`): a modifier, a definition's name, a
 /// keyword opening a declaration, block or clause, a word the file defines, a call, or an
 /// operator.
@@ -348,12 +380,6 @@ fn tint_start(
     if w == "scenario" && matches!(next, Some(Tok::Ident(_))) {
         return (Some(Tint::Word), Next::Def);
     }
-    // a scenario's support or load, `fixed arm.base`, `load tip (0, -5N, 0)`: the word before
-    // what it is applied to
-    let applied = crate::model::Hold::parse(w).is_some() || crate::model::LoadKind::parse(w).is_some();
-    if applied && matches!(next, Some(Tok::Ident(_))) && !known.contains(w) {
-        return (Some(Tint::Word), Next::Word);
-    }
     // a raw branch: a statement the parser knows by name
     if w == "branch" {
         return (Some(Tint::Relation), Next::Word);
@@ -367,10 +393,6 @@ fn tint_start(
     }
     if builtin(w, prev, next, false) {
         return (Some(Tint::Builtin), Next::Word);
-    }
-    // a scenario's requirement, `deflection(arm.tip) <= 0.5mm`: an output read as a relation
-    if next == Some(&Tok::P('(')) && crate::model::Output::parse(w).is_some() {
-        return (Some(Tint::Relation), Next::Word);
     }
     // `step(u: s) (ab := line)`: the core's word before a line (#330), not a component's call
     if next == Some(&Tok::P('(')) && crate::constraints::step_word(w) {
@@ -402,14 +424,6 @@ fn tint_inner(
     known: &BTreeSet<&str>,
     ring: bool,
 ) -> (Option<Tint>, Next) {
-    // a scenario's claimed requirement, `claim mode(arm, 1) >= 120Hz`: the output a relation,
-    // as `tint_start` reads one standing alone
-    if matches!(prev, Some(Tok::Ident(c)) if c == "claim")
-        && next == Some(&Tok::P('('))
-        && crate::model::Output::parse(w).is_some()
-    {
-        return (Some(Tint::Relation), Next::Word);
-    }
     // `c: circle`, `phase: Angle` — the one place a bare word is a type
     if prev == Some(&Tok::P(':')) && Ty::parse(w).is_some() {
         return (Some(Tint::Type), Next::Word);

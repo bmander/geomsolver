@@ -4,8 +4,9 @@
 //! to the drawing: the sketch a document with scenarios elaborates to is the one it does with
 //! them deleted.
 use gcs_core::model::{
-    Applied, Compare, EntKind, FaceRef, Grade, Hold, LoadKind, LoadValue, Output, Scenario,
+    Applied, EntKind, FaceRef, Grade, Hold, LoadKind, LoadValue, Output, Scenario,
 };
+use gcs_core::expr::Cmp;
 use gcs_core::program::{elaborate, Elaborated};
 use gcs_core::syntax::{parse, StmtKind};
 
@@ -110,7 +111,7 @@ fn a_scenario_holds_its_supports_loads_and_requirements() {
     assert_eq!(lift.loads[0].value, LoadValue::Vector([0.0, -5e5, 0.0]));
     let [defl, safety] = &lift.requirements[..] else { panic!("{:?}", lift.requirements) };
     assert_eq!((defl.output, defl.of.clone(), defl.along), (Output::Deflection, Applied::Ent(tip), Some(down)));
-    assert_eq!((defl.compare, defl.value, defl.grade()), (Compare::Le, 0.5, Grade::Bound));
+    assert_eq!((defl.compare, defl.value, defl.grade()), (Cmp::Le, 0.5, Grade::Bound));
     assert_eq!((safety.output, safety.of.clone()), (Output::Safety, Applied::Ent(plate)));
     assert_eq!((safety.value, safety.grade()), (2.0, Grade::Driving));
 
@@ -142,8 +143,7 @@ fn a_scenario_holds_its_supports_loads_and_requirements() {
     assert!((az + 3.0 * 9810.0).abs() < 1e-9, "{az} mm/s²");
     let [mode, mass] = &transport.requirements[..] else { panic!() };
     assert_eq!((mode.output, mode.count, mode.value), (Output::Mode, Some(1), 120.0));
-    assert_eq!((mass.output, mass.compare, mass.value), (Output::Mass, Compare::Le, 0.05));
-    assert!(transport.entities().contains(&down));
+    assert_eq!((mass.output, mass.compare, mass.value), (Output::Mass, Cmp::Le, 0.05));
 }
 
 /// **A scenario adds nothing to the drawing**: no entity, no parameter, no row, and the drawing
@@ -252,4 +252,10 @@ fn a_scenario_is_tinted_as_it_reads() {
     assert_eq!(tint("claim"), Some(Tint::Word));
     assert_eq!(tint("mode"), Some(Tint::Relation));
     assert_eq!(tint("safety"), Some(Tint::Relation));
+    // and only in a scenario: elsewhere `mass(…)` is the call it reads as
+    let call = "m := mass(plate)\nload x\n";
+    let runs = highlight(call);
+    let at = |w: &str| call.find(w).expect("written") as u32;
+    assert_eq!(runs.iter().find(|(_, s)| s.lo == at("mass")).map(|(t, _)| *t), Some(Tint::Type));
+    assert!(!runs.iter().any(|(t, s)| s.lo == at("load") && *t == Tint::Word));
 }

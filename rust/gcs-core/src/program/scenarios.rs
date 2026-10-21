@@ -45,8 +45,9 @@ pub(super) fn scenarios(
 ) -> Vec<Stated> {
     let mut out: Vec<Stated> = Vec::new();
     let mut by_name: BTreeMap<String, usize> = BTreeMap::new();
-    // the scenario whose requirements drive dimensions, and where the first was written
-    let mut driving: Option<(String, Span)> = None;
+    // the scenario whose requirements drive dimensions
+    let mut driving: Option<String> = None;
+    let read = Reading { sk, res };
     for st in body {
         let Operation::Scenario(sc) = &st.kind else { continue };
         if by_name.contains_key(&sc.name.text) {
@@ -95,7 +96,6 @@ pub(super) fn scenarios(
         }
         for (k, it) in sc.items.iter().enumerate() {
             let line = Line { stmt: st.id, item: k };
-            let read = Reading { sk, res };
             let got = match &it.kind {
                 ItemKind::Support { hold, at, along } => read.support(*hold, at, along.as_ref())
                     .map(|s| {
@@ -121,8 +121,8 @@ pub(super) fn scenarios(
         if let Some(k) = first {
             let span = sc.items[made.requirements[k].item].span;
             match &driving {
-                None => driving = Some((sc.name.text.clone(), span)),
-                Some((other, _)) => diags.push(Diag::within(
+                None => driving = Some(sc.name.text.clone()),
+                Some(other) => diags.push(Diag::within(
                     Code::E106,
                     span,
                     st.id,
@@ -163,8 +163,8 @@ impl Reading<'_> {
 
     fn load(&self, kind: LoadKind, at: &Ref, value: &LoadText) -> Result<Load, Fault> {
         let applied = self.applied(at, kind.word())?;
-        if kind == LoadKind::Pressure && !matches!(applied, Applied::Face(_))
-            && applied.entity().kind != EntKind::Face
+        if kind == LoadKind::Pressure
+            && matches!(applied, Applied::Ent(e) if e.kind != EntKind::Face)
         {
             return Err((Code::E040, Some(at.span), format!(
                 "a pressure is on a face: `{}` is {}",
@@ -220,7 +220,7 @@ impl Reading<'_> {
         match self.res.operand(self.sk, r).map_err(|m| (Code::E101, at, m))? {
             Operand::Face(f) => Ok(Applied::Face(f)),
             Operand::Body(e) => Ok(Applied::Ent(e)),
-            Operand::Ent(e) if MATERIAL.contains(&e.kind) => Ok(Applied::Ent(e)),
+            Operand::Ent(e) if material(e.kind) => Ok(Applied::Ent(e)),
             Operand::Ent(e) => Err((Code::E040, at, format!(
                 "`{what}` is applied to what a body is made of or stands on — a point, an \
                  edge, a face or a solid — and `{named}` is {}",
@@ -263,15 +263,9 @@ impl Reading<'_> {
     }
 }
 
-/// The kinds a support, a load or an output may be applied to: what a body is made of — its
-/// points, its edges and members, its faces and its solids.
-const MATERIAL: [EntKind; 8] = [
-    EntKind::Point,
-    EntKind::Line,
-    EntKind::Circle,
-    EntKind::Arc,
-    EntKind::Spline,
-    EntKind::Curve,
-    EntKind::Face,
-    EntKind::Solid,
-];
+/// Whether a support, a load or an output may be applied to an entity of this kind: what a body
+/// is made of — its points, its edges and members (whatever a point runs along), its faces and
+/// its solids.
+fn material(kind: EntKind) -> bool {
+    kind.runs_along() || matches!(kind, EntKind::Point | EntKind::Face | EntKind::Solid)
+}

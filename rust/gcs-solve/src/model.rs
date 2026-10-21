@@ -53,7 +53,7 @@ pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
 pub use running::Running;
 pub use scenario::{
-    Applied, Compare, Grade, Hold, Load, LoadKind, LoadValue, Output, Requirement, Scenario, Support,
+    Applied, Grade, Hold, Load, LoadKind, LoadValue, Output, Requirement, Scenario, Support,
 };
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};

@@ -3,7 +3,8 @@
 //! so its lines are read here, by their first word, and nowhere else.
 
 use super::P;
-use crate::model::{Compare, Hold, LoadKind, Output};
+use crate::expr::Cmp;
+use crate::model::{Hold, LoadKind, Output};
 use crate::syntax::lexer::Tok;
 use crate::syntax::{Item, ItemKind, LoadText, RequirementText, Scenario, Span};
 
@@ -160,8 +161,8 @@ impl P<'_> {
     /// `deflection(X) <= 0.5mm`, the output's word next (`claim` read already where it is one).
     fn requirement(&mut self, claim: bool) -> Option<RequirementText> {
         let Some(output) = self.word_at(self.i).and_then(Output::parse) else {
-            let words: Vec<_> = Output::ALL.iter().map(|o| format!("`{}`", o.word())).collect();
-            self.fail(&format!("a requirement is written over an output: {}", words.join(", ")));
+            let words = crate::syntax::one_of(&Output::ALL.map(Output::word));
+            self.fail(&format!("a requirement is written over an output: {words}"));
             return None;
         };
         self.i += 1;
@@ -195,11 +196,11 @@ impl P<'_> {
         let compare = match self.peek() {
             Some(Tok::EqEq) => {
                 self.i += 1;
-                Compare::Eq
+                Cmp::Eq
             }
             Some(Tok::P('<' | '>')) => match self.closed_cmp()? {
-                crate::syntax::Cmp::Le => Compare::Le,
-                _ => Compare::Ge,
+                crate::syntax::Cmp::Le => Cmp::Le,
+                _ => Cmp::Ge,
             },
             _ => {
                 self.fail("a requirement compares its output with a number: `<=`, `>=` or `==`");

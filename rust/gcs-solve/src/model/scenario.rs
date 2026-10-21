@@ -9,6 +9,7 @@
 //! document's unit, a force in kg·(document length)/s², a pressure in kg/((document length)·s²).
 
 use super::*;
+use crate::expr::Cmp;
 use crate::units::Dim;
 
 /// What a support or a load is applied to, as the existing selectors name it: an entity (a point,
@@ -41,7 +42,7 @@ pub enum Hold {
 }
 
 impl Hold {
-    pub const ALL: [Hold; 2] = [Hold::Fixed, Hold::Pinned];
+    const ALL: [Hold; 2] = [Hold::Fixed, Hold::Pinned];
 
     /// The word a scenario writes it with.
     pub fn word(self) -> &'static str {
@@ -77,7 +78,7 @@ pub enum LoadKind {
 }
 
 impl LoadKind {
-    pub const ALL: [LoadKind; 3] = [LoadKind::Force, LoadKind::Pressure, LoadKind::Acceleration];
+    const ALL: [LoadKind; 3] = [LoadKind::Force, LoadKind::Pressure, LoadKind::Acceleration];
 
     /// The word a scenario writes it with.
     pub fn word(self) -> &'static str {
@@ -193,24 +194,6 @@ impl Output {
     }
 }
 
-/// How a requirement compares its output with its number.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Compare {
-    Le,
-    Ge,
-    Eq,
-}
-
-impl Compare {
-    pub fn text(self) -> &'static str {
-        match self {
-            Compare::Le => "<=",
-            Compare::Ge => ">=",
-            Compare::Eq => "==",
-        }
-    }
-}
-
 /// **Which of the three statements a requirement is** (#510): what the solve does with it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Grade {
@@ -232,7 +215,8 @@ pub struct Requirement {
     pub along: Option<EntRef>,
     /// `mode(b, n)`'s `n`, counted from 1.
     pub count: Option<u32>,
-    pub compare: Compare,
+    /// `<=`, `>=` or `==`, the three a requirement is written with.
+    pub compare: Cmp,
     pub value: f64,
     pub claim: bool,
 }
@@ -241,7 +225,7 @@ impl Requirement {
     pub fn grade(&self) -> Grade {
         match (self.claim, self.compare) {
             (true, _) => Grade::Claim,
-            (false, Compare::Eq) => Grade::Driving,
+            (false, Cmp::Eq) => Grade::Driving,
             (false, _) => Grade::Bound,
         }
     }
@@ -257,26 +241,4 @@ pub struct Scenario {
     pub supports: Vec<Support>,
     pub loads: Vec<Load>,
     pub requirements: Vec<Requirement>,
-}
-
-impl Scenario {
-    /// Every entity it reads, in the order it states them.
-    pub fn entities(&self) -> Vec<EntRef> {
-        let mut out = Vec::new();
-        for s in &self.supports {
-            out.push(s.at.entity());
-            out.extend(s.along);
-        }
-        for l in &self.loads {
-            out.push(l.at.entity());
-            if let LoadValue::Along { along, .. } = l.value {
-                out.push(along);
-            }
-        }
-        for r in &self.requirements {
-            out.push(r.of.entity());
-            out.extend(r.along);
-        }
-        out
-    }
 }

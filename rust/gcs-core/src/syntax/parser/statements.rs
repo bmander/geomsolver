@@ -582,7 +582,7 @@ impl<'a> P<'a> {
     fn input(&mut self) -> Option<StmtKind> {
         let word = self.here();
         self.i += 1; // `param`
-        if self.in_body > u32::from(self.in_preview) {
+        if !self.at_document_top() {
             self.errs.push(SynErr {
                 span: word,
                 message: if self.in_comp {
@@ -1095,7 +1095,7 @@ impl<'a> P<'a> {
         // targets are the drawing's, and a component's copies would each be a scenario of its own
         if self.scenario_ahead() {
             let head = self.here();
-            if self.in_comp || self.in_body > u32::from(self.in_preview) {
+            if !self.at_document_top() {
                 self.fail("a scenario stands at the top of a document (or in its `preview`), \
                            not inside a component or a block");
                 self.skip_block();
