@@ -16,7 +16,8 @@ ph := 62mm         // piston height, crown to skirt
 // Cylinder 1's angle in its 720° cycle: 0 is top dead centre firing, so 0–180 is the power
 // stroke, 180–360 exhaust, 360–540 intake, 540–720 compression.  The crank's *turn* — all the
 // geometry sees — is the cycle angle modulo one revolution.  400 is forty degrees into the
-// intake stroke: the intake valve opening on its lobe, the exhaust just shut.
+// intake stroke: the intake valve opening on its lobe, the exhaust just shut.  The assembly runs
+// over a whole cycle from here (`engine.sv`'s `t`), and each part's file previews it here.
 cycle := 400deg
 theta := cycle - 360deg * floor(cycle / 360deg)
 
