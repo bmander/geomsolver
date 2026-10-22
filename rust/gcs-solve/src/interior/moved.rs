@@ -15,6 +15,11 @@
 //! boundary is held, so it factors (`cholesky::Cholesky` under minimum degree, as the structure
 //! over the same mesh does) and its rate is one more solve on that factor:
 //! a gradient in the inner nodes reaches the boundary as `−L_IBᵀ L_II⁻¹ g_I`.
+//!
+//! A solid read in three dimensions over a prism (#510 S3) is its face's mesh stacked through its
+//! depth (`Stack`): each node of the solid is a node of the plane at an ordinate along the
+//! plane's normal, so it moves as that node does, lifted into space, and its rate reaches the
+//! plane node along the plane's two axes.
 
 use crate::kernels::{Dual, Num};
 use crate::cholesky::{Cholesky, Ordering, Symmetric};
@@ -39,7 +44,8 @@ pub enum Node {
 
 /// **The nodes as functions of the drawing's columns**: how many columns, the sides, each node's
 /// standing, every node's place at the compile (`x0`, two each), and the cotangent Laplacian's
-/// weights over the compile's mesh, each pair of nodes once.
+/// weights over the compile's mesh, each pair of nodes once — and where a solid is stacked over
+/// the plane's nodes (#510 S3), how.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Moved {
     pub columns: usize,
@@ -47,10 +53,77 @@ pub struct Moved {
     pub nodes: Vec<Node>,
     pub x0: Vec<f64>,
     pub laplace: Vec<(usize, usize, f64)>,
+    pub stack: Option<Stack>,
 }
 
-/// The places worked out at some columns: every node's, and the factor of the inner nodes'
-/// Laplacian, for the rate.
+/// **A solid's nodes stacked over a plane's** (#510 S3): the plane as its origin, its two axes
+/// and its normal, and per node of the solid the plane's node it stands over and its ordinate
+/// along the normal — so it stands at `o + p₀u + p₁v + h n`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Stack {
+    pub basis: [[f64; 3]; 4],
+    pub of: Vec<(usize, f64)>,
+}
+
+impl Stack {
+    /// Every node's place in space, the plane's nodes at `x` (two each).
+    fn lift(&self, x: &[f64]) -> Vec<f64> {
+        let [o, u, v, n] = self.basis;
+        self.of.iter().flat_map(|&(p, h)| {
+            let (a, b) = (x[2 * p], x[2 * p + 1]);
+            [0, 1, 2].map(|c| o[c] + a * u[c] + b * v[c] + h * n[c])
+        }).collect()
+    }
+
+    /// A gradient in the solid's places, folded onto the plane's `plane` nodes along its two
+    /// axes.
+    fn fold(&self, g: &[f64], plane: usize) -> Vec<f64> {
+        let [_, u, v, _] = self.basis;
+        let mut out = vec![0.0; 2 * plane];
+        for (i, &(p, _)) in self.of.iter().enumerate() {
+            let gi = &g[3 * i..3 * i + 3];
+            out[2 * p] += (0..3).map(|c| gi[c] * u[c]).sum::<f64>();
+            out[2 * p + 1] += (0..3).map(|c| gi[c] * v[c]).sum::<f64>();
+        }
+        out
+    }
+
+    /// Its constants: how many nodes, the basis's twelve numbers, then each node's two.
+    fn consts(&self) -> Vec<f64> {
+        let mut k = vec![self.of.len() as f64];
+        k.extend(self.basis.iter().flatten());
+        for &(p, h) in &self.of {
+            k.extend([p as f64, h]);
+        }
+        k
+    }
+
+    fn width(&self) -> usize {
+        13 + 2 * self.of.len()
+    }
+
+    /// What `consts` wrote over a plane of `plane` nodes, and how many it read.
+    fn read(k: &[f64], plane: usize) -> Option<(Stack, usize)> {
+        let count = |v: f64| (v >= 0.0 && v.fract() == 0.0 && v < 1e9).then_some(v as usize);
+        let n = count(*k.first()?)?;
+        let b = k.get(1..13)?;
+        let basis = std::array::from_fn(|r| [b[3 * r], b[3 * r + 1], b[3 * r + 2]]);
+        let of = k.get(13..13 + 2 * n)?.as_chunks::<2>().0.iter()
+            .map(|c| Some((count(c[0]).filter(|&p| p < plane)?, c[1]))).collect::<Option<_>>()?;
+        Some((Stack { basis, of }, 13 + 2 * n))
+    }
+
+    /// The places `x` of the plane's nodes, lifted where there is a stack.
+    fn over(stack: &Option<Stack>, x: Vec<f64>) -> Vec<f64> {
+        match stack {
+            Some(st) => st.lift(&x),
+            None => x,
+        }
+    }
+}
+
+/// The places worked out at some columns: every node's (in space where the nodes are stacked), and
+/// the factor of the inner nodes' Laplacian, for the rate.
 pub struct Placed {
     pub x: Vec<f64>,
     inner: Vec<Option<usize>>,
@@ -121,7 +194,7 @@ impl Moved {
         }
         let (inner, m) = self.inner();
         if m == 0 {
-            return Some(Placed { x, inner, factor: None });
+            return Some(Placed { x: Stack::over(&self.stack, x), inner, factor: None });
         }
         let mut t: Vec<(usize, usize, f64)> = Vec::new();
         // the boundary's move, into each inner node's right-hand side: −L_IB δ_B = Σ w δ_B
@@ -151,14 +224,17 @@ impl Moved {
                 }
             }
         }
-        Some(Placed { x, inner, factor: Some(factor) })
+        Some(Placed { x: Stack::over(&self.stack, x), inner, factor: Some(factor) })
     }
 
     /// **A gradient in the nodes' places carried to the columns**, added into `row`: the inner
     /// nodes' through the harmonic map onto the boundary's (`−L_IBᵀ L_II⁻¹ g_I`, one solve per
     /// axis on the factor in hand), then each boundary node's onto the columns its place reads.
     pub fn chain(&self, v: &[f64], placed: &Placed, g: &[f64], row: &mut [f64]) {
-        let mut g = g[..2 * self.nodes.len()].to_vec();
+        let mut g = match &self.stack {
+            Some(st) => st.fold(&g[..3 * st.of.len()], self.nodes.len()),
+            None => g[..2 * self.nodes.len()].to_vec(),
+        };
         if let Some(f) = &placed.factor {
             let m = placed.inner.iter().flatten().count();
             for c in 0..2 {
@@ -244,17 +320,21 @@ impl Moved {
         for &(i, j, w) in &self.laplace {
             k.extend([i as f64, j as f64, w]);
         }
+        if let Some(st) = &self.stack {
+            k.extend(st.consts());
+        }
         k
     }
 
     /// How many constants it is.
     pub fn width(&self) -> usize {
         4 + 6 * self.edges.len() + 5 * self.nodes.len() + 3 * self.laplace.len()
+            + self.stack.as_ref().map_or(0, Stack::width)
     }
 
     /// What `consts` wrote, from `k`, and how many it read — `None` for constants that are not
-    /// whole, or a column or a node out of range.
-    pub fn read(k: &[f64]) -> Option<(Moved, usize)> {
+    /// whole, or a column or a node out of range.  `stacked` where a solid is stacked over it.
+    pub fn read(k: &[f64], stacked: bool) -> Option<(Moved, usize)> {
         let count = |v: f64| (v >= 0.0 && v.fract() == 0.0 && v < 1e9).then_some(v as usize);
         let head = k.get(..4)?;
         let (columns, n_edges, n_nodes, n_lap) =
@@ -289,7 +369,15 @@ impl Moved {
             Some((count(w[0]).filter(|&i| i < n_nodes)?, count(w[1]).filter(|&j| j < n_nodes)?,
                   w[2]))
         }).collect::<Option<_>>()?;
-        Some((Moved { columns, edges, nodes, x0, laplace }, at))
+        let stack = match stacked {
+            false => None,
+            true => {
+                let (st, used) = Stack::read(k.get(at..)?, n_nodes)?;
+                at += used;
+                Some(st)
+            }
+        };
+        Some((Moved { columns, edges, nodes, x0, laplace, stack }, at))
     }
 }
 

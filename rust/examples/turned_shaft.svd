@@ -1,0 +1,10 @@
+// Presentation of turned_shaft.sv. Model geometry is independent of this drawing.
+model m from "turned_shaft.sv"
+
+sheet drawing {
+  size A4
+  label "A TURNED SHAFT" at (14mm, 18mm)
+  label "Its shoulder's round gives its factor of safety an answer" at (14mm, 28mm)
+  sketch front(m) at (90mm, 230mm)
+  dimensions in front
+}

@@ -1,0 +1,10 @@
+// Presentation of flat_bar_strut.sv. Model geometry is independent of this drawing.
+model m from "flat_bar_strut.sv"
+
+sheet drawing {
+  size A4
+  label "A FLAT BAR'S BUCKLING" at (14mm, 18mm)
+  label "It buckles across its thickness, out of the plane it is drawn in" at (14mm, 28mm)
+  sketch front(m) at (100mm, 250mm) scale 0.3
+  dimensions in front
+}

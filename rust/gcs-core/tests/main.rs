@@ -21,6 +21,7 @@ mod applied;
 mod axis;
 mod bare_plane;
 mod beams;
+mod bodies;
 mod block_measure;
 mod block_order;
 mod block_solve;

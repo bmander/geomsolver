@@ -1,0 +1,10 @@
+// Presentation of pin_lug.sv. Model geometry is independent of this drawing.
+model m from "pin_lug.sv"
+
+sheet drawing {
+  size A4
+  label "A PIN LUG" at (14mm, 18mm)
+  label "Its hole is the cutter's face, named from the body it cuts" at (14mm, 28mm)
+  sketch front(m) at (40mm, 130mm) scale 1.5
+  dimensions in front
+}

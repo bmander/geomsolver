@@ -1328,3 +1328,81 @@ scenario s {
     }
 }
 
+
+/// **A solid's deflection, as the drawing states it** (#510 S3, `CKind::Deflection` over a solid
+/// read in three dimensions): the row over its face's points' numbers and its radii, its face's
+/// nodes moved with them and its own stacked over them — the library's plank (lines, a load
+/// across its plane), and a plate with a round corner and a hole (an arc, a circle) under a
+/// pressure on the arc, a force across it on a side and its weight — against finite
+/// differences, the plank at the solution and both knocked off it.
+#[test]
+fn a_solids_deflection_agrees_with_finite_differences() {
+    let holed = "\
+unit mm
+use std (horizontal, vertical)
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
+param r: Length hint(9mm)
+in std.front {
+  a := point
+  b := point hint((120, 0))
+  c := point hint((120, 30))
+  k := point hint((100, 30))
+  d := point hint((100, 50))
+  e := point
+  o := point
+  fix((0mm, 0mm)) a
+  fix((0mm, 50mm)) e
+  fix((40mm, 25mm)) o
+  fix((120mm, 0mm)) b
+  b vertical c
+  b distance(30mm) c
+  c horizontal k
+  k vertical d
+  low := line(a, b)
+  end := line(b, c)
+  round := radius(20mm) arc(center: k, start: c, end: d)
+  top := line(d, e)
+  back := line(e, a)
+  hole := radius(r) circle(center: o) hint(r: 9)
+  region := face(low, end, round, top, back, holes: hole)
+}
+down := axis
+fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
+plate := solid(region, from: -4mm, to: 4mm) of steel
+scenario s {
+  fixed plate.back
+  pressure plate.round 30MPa
+  load plate.low 3kN along: std.y
+  accelerate plate (0, 0, -9.81 * 1m / 1s^2)
+  deflection(b, along: down) == 0.14mm
+  claim deflection(c, along: down) >= 0mm
+}
+";
+    let mut rng = Rng::new(513);
+    // the holed plate's mesh is the larger, and is read once, knocked off its solution: its
+    // nodes moved off where they were meshed and its row off what it states
+    let plank = gcs_core::examples::source("sized_plank").unwrap();
+    for (src, rounds) in [(plank, 0..2), (holed, 1..2)] {
+        let mut sk = crate::common::solved(&crate::common::read(src));
+        for round in rounds {
+            if round > 0 {
+                for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                    p.value += rng.uniform(-0.01, 0.01) * (1.0 + p.value.abs().min(10.0));
+                }
+            }
+            // a solid's stiffness is good to fewer figures than a region's, its rounding in a
+            // difference over 1e-4 of a millimetre a thousandth of the rate: the difference is
+            // taken over 1e-2, where its truncation is under 1e-6 of it
+            let c = sk.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap();
+            let v = c.local_values(&sk);
+            let ja = c.jacobian(&sk, &v);
+            let jn = gcs_core::fdcheck::fd_jacobian(|w| c.residual(&sk, w), &v, 1e-2);
+            let scale = gcs_core::linalg::absmax(&jn.data);
+            assert!(scale.is_finite() && scale > 0.0, "round {round}");
+            for (col, (a, n)) in ja.iter().zip(&jn.data).enumerate() {
+                assert!((a - n).abs() <= 1e-5 * scale,
+                        "round {round}: column {col}: {a} against {n}");
+            }
+        }
+    }
+}

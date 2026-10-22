@@ -260,8 +260,9 @@ pub struct Sketch {
     /// Only a scenario that drives is here: one of claims adds nothing to the drawing.  Set by
     /// elaboration and carried by the Solvent source alone, as a beam is: never written to JSON.
     pub scenarios: Vec<Scenario>,
-    /// **The regions a driving row over a plane reads** (#510 S2): each meshed once, where the
-    /// drawing stood when its row was compiled (`prisms::Row`), by what the row names — the
+    /// **The regions a driving row over a plane reads** (#510 S2), and the prisms one over a solid
+    /// reads (#510 S3, its face's mesh stacked): each meshed once, where the drawing stood when its
+    /// row was compiled (`prisms::Row`), by what the row names — the
     /// scenario's index here, the point and the direction — so every compile of the row through
     /// a solve reads one topology, its nodes moving with the drawing, and shares it rather than
     /// copying it.  Set by elaboration with the row, carried by the Solvent source alone.

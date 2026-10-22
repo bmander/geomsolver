@@ -45,7 +45,7 @@ pub mod conditions;
 pub mod carrier;
 pub(crate) mod profile;
 mod primitive;
-mod document;
+pub(crate) mod document;
 mod reads;
 pub use profile::{FacePoly,face_poly};
 pub use profile::{ring_area, ring_centroid};

@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.172] Solids read in three dimensions; every output's error.** A solid a requirement names,
+made of a material and read in no plane (§9.11), is read as the solid it is, in quadratic
+tetrahedra: a prism as its face's mesh stacked through its depth, any other solid by refining its
+exact boundary. Its supports hold along the world's axes, its loads fall on the faces, points and
+volume they name, and it answers all six outputs — `buckling` among them, the least factor on the
+loads, and `safety` from von Mises at the nodes — each judged as a frame's is; a load that presses
+nothing buckles nothing, a sharp re-entrant edge leaves `safety` unanswered, a support along a
+direction off the world's axes and a line naming a part of a body (not the body) have no answer
+yet, and each says why. A driving deflection of a point of a prism read so is a row of the drawing,
+its face's nodes moved with the drawing and its own stacked over them, refused where a region's
+is (**E040**). Every output of a frame, a region or a solid now has its error estimated beside it,
+the change from the same reading twice as coarse, said beside the value (`± 0.026mm`). Before,
+a requirement on a solid read in no plane had no answer and said nothing; a document that wrote
+one now has it answered. No syntax is added. (Issue #510, S3.)
+
 **[0.171] An instance is a frame.** From outside, an instance's datums are `b.std.x`, `b.std.y`,
 `b.std.z`, `b.std.front`, …, `b.std.origin` (§5, §8), the spellings its body reads them by, where
 0.170 refused the path (no such member). Once the body declaring the instance, or one around it,

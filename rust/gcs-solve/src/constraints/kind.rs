@@ -177,14 +177,15 @@ pub enum CKind {
     /// as written, an equation where the number is stated outright.  The envelope's columns and
     /// every point, axis and unknown of the two regions' terms are columns.
     RegularWithin,
-    /// **A deflection, driven** (#510 S1, `beams::Row`; S2, `prisms::Row`): `deflection(tip,
-    /// along: down) == 2mm` in a `scenario`, the move of the point `at` along a direction, under
-    /// the supports and the loads of the scenario `Sketch::scenarios[scenario]` holds.  One row,
-    /// the interior's (`interior::kernel`): `d·u − d₀`, its gradient the adjoint — over a frame
-    /// whose joint `at` is, its columns the lifts of the frame's joints and the unknowns its
-    /// sections are read over; or over a region the scenario reads in its plane, its columns the
-    /// region's points' numbers and its radii, its mesh the compile's moved with them
-    /// (`interior::Moved`, `Sketch::meshed`).  A displacement, degree 1.  Made by the elaborator
+    /// **A deflection, driven** (#510 S1, `beams::Row`; S2, `prisms::Row`; S3, `bodies::row`):
+    /// `deflection(tip, along: down) == 2mm` in a `scenario`, the move of the point `at` along a
+    /// direction, under the supports and the loads of the scenario `Sketch::scenarios[scenario]`
+    /// holds.  One row, the interior's (`interior::kernel`): `d·u − d₀`, its gradient the adjoint —
+    /// over a frame whose joint `at` is, its columns the lifts of the frame's joints and the
+    /// unknowns its sections are read over; or over a region the scenario reads in its plane, or a
+    /// prism it reads in three dimensions, its columns the face's points' numbers and its radii,
+    /// its mesh the compile's moved with them (`interior::Moved`, a solid's stacked over its
+    /// face's, `interior::Stack`; `Sketch::meshed`).  A displacement, degree 1.  Made by the elaborator
     /// from a driving requirement, never written as a statement, and carried by the Solvent source
     /// alone, as a beam is.
     Deflection,

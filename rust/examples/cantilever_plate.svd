@@ -1,0 +1,10 @@
+// Presentation of cantilever_plate.sv. Model geometry is independent of this drawing.
+model m from "cantilever_plate.sv"
+
+sheet drawing {
+  size A4
+  label "A CANTILEVERED PLATE'S MODES" at (14mm, 18mm)
+  label "It bends, twists, then bends again, out of its plane" at (14mm, 28mm)
+  sketch top(m) from m.std.top at (30mm, 140mm) scale 0.5
+  dimensions in top
+}
