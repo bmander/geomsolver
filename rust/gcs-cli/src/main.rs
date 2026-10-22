@@ -18,6 +18,8 @@
 
 use std::process::ExitCode;
 mod cad;
+mod picture;
+mod png;
 mod watch;
 
 use gcs_core::constraints::SpecKind;
@@ -67,6 +69,14 @@ solventc — check a Solvent document
                         the faceted kernel; refine meshes the material field by the core's Delaunay
                         refinement, checked by the field-agreement probe)
     --gltf PATH         write a solid as binary glTF: every face a named node
+    --png PATH          draw what the workspace shows as a PNG (a part file: its preview), each
+                        object shaded in its instance's colour, depth-buffered, with its creases
+                        and silhouettes; --solid draws one solid or one instance's objects
+    --view VIEW         the eye --png draws from: home (default, as the workspace opens), iso,
+                        front, side, top, or az,el in degrees
+    --size PX           the PNG's longer side in pixels (default 1200)
+    --hide NAMES        objects --png leaves out, each a name and everything under it, comma
+                        separated (repeatable): a cutaway
     --solid NAME        which solid to export; defaults to the only Boolean root
     --tolerance [LENGTH] export for fabrication: the native STEP/STL within LENGTH of the exact
                         surface (default 0.01mm; a bare number is in the document's unit, and
@@ -112,6 +122,12 @@ struct Opts {
     refine: bool,
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
     gltf: Option<String>,
+    /// `--png PATH` — the objects as the workspace shows them, drawn without a page (#541), from
+    /// `--view`'s eye at `--size`, less `--hide`'s.
+    png: Option<String>,
+    view: picture::Eye,
+    size: usize,
+    hide: Vec<String>,
     solid: Option<String>,
     /// `--measure PATH` — exported files to measure against the solid's exact surface.
     measure: Vec<String>,
@@ -145,6 +161,10 @@ impl Default for Opts {
             native_stl: true,
             refine: false,
             gltf: None,
+            png: None,
+            view: picture::HOME,
+            size: 1200,
+            hide: Vec::new(),
             solid: None,
             measure: Vec::new(),
             measure_samples: 20000,
@@ -209,6 +229,23 @@ fn main() -> ExitCode {
                     eprintln!("solventc: --gltf needs a path");
                     return ExitCode::from(2);
                 }
+            },
+            "--png" => match args.next() {
+                Some(p) => opts.png = Some(p),
+                None => { eprintln!("solventc: --png needs a path"); return ExitCode::from(2); }
+            },
+            "--view" => match args.next().as_deref().map(picture::eye) {
+                Some(Ok(eye)) => opts.view = eye,
+                Some(Err(m)) => { eprintln!("solventc: {m}"); return ExitCode::from(2); }
+                None => { eprintln!("solventc: --view needs a view"); return ExitCode::from(2); }
+            },
+            "--size" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|n| (16..=8192).contains(n)) {
+                Some(n) => opts.size = n,
+                None => { eprintln!("solventc: --size needs a side in pixels, 16 to 8192"); return ExitCode::from(2); }
+            },
+            "--hide" => match args.next() {
+                Some(n) => opts.hide.extend(n.split(',').map(str::trim).filter(|n| !n.is_empty()).map(String::from)),
+                None => { eprintln!("solventc: --hide needs a name"); return ExitCode::from(2); }
             },
             "--stl" => match args.next() {
                 Some(p) => opts.stl = Some(p),
@@ -275,6 +312,10 @@ fn main() -> ExitCode {
     if opts.tolerance.is_some() && opts.measure.is_empty() && opts.step.is_none() && (opts.stl.is_none() || opts.refine || !opts.native_stl) {
         eprintln!("solventc: --tolerance holds a native export (or a measurement) to it; give --step, --stl by the kernel's \
             export, or --measure");
+        return ExitCode::from(2);
+    }
+    if opts.png.is_some() && paths.len() != 1 {
+        eprintln!("solventc: --png writes one file, so it takes one document");
         return ExitCode::from(2);
     }
     if opts.output.is_some() && paths.len() != 1 {
@@ -693,6 +734,22 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             }
         }
     }
+    if let Some(path) = &opts.png {
+        // what the workspace shows, at the pose the run reached: a drawing that did not solve is
+        // still looked at, as its SVG is still written
+        let ask = picture::Ask { eye: opts.view, size: opts.size, solid: opts.solid.as_deref(), hide: &opts.hide };
+        match picture::chosen(&sk, &ask).and_then(|which| picture::render(&sk, &which, &ask)) {
+            Ok((bytes, unbuilt)) => {
+                // an object that does not evaluate is left out, as the box leaves it, and said
+                for why in unbuilt { eprintln!("solventc: {why}"); }
+                if let Err(err) = cad::output::write(path, &bytes) {
+                    eprintln!("solventc: {err}");
+                    code = 1;
+                }
+            }
+            Err(m) => { eprintln!("solventc: {m}"); code = 1; }
+        }
+    }
     // measured after anything written, so one run may export a file and measure it
     for path in &opts.measure {
         let lines = if solved { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| {
@@ -725,9 +782,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
 }
 
 fn check_drawing(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
-    let result = if opts.stl.is_some() || opts.step.is_some() || opts.gltf.is_some() || opts.solid.is_some() {
+    let result = if opts.stl.is_some() || opts.step.is_some() || opts.gltf.is_some() || opts.png.is_some()
+        || opts.solid.is_some() {
         Err(gcs_core::drawing::Error { span: Default::default(),
-            message: "STL/STEP/glTF export selects geometry from a .sv model, not a .svd drawing".into() })
+            message: "STL/STEP/glTF/PNG export selects geometry from a .sv model, not a .svd drawing".into() })
     } else {
         gcs_core::drawing::compile(&s.text, &s.name, opts.sheet.as_deref(), &mut |path, from| {
             let base = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new("."));
