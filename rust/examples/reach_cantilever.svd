@@ -1,0 +1,10 @@
+// Presentation of reach_cantilever.sv. Model geometry is independent of this drawing.
+model m from "reach_cantilever.sv"
+
+sheet drawing {
+  size A4
+  label "HOW FAR A CANTILEVER MAY REACH" at (14mm, 18mm)
+  label "Its length is the one at which the tip sinks 4mm under 1kN" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

@@ -29,7 +29,7 @@ block's frame the same way.  An instance's frame reaches its body's declarations
 draws a point in the **innermost frame of its path with axes** (a plane, or a spatial frame with
 a chart), and the path itself is what it rides on; a frame with axes further out says nothing of
 where, which is W115 — but for a plane standing at the outer frame's own place, one of its
-standard datums (#542, [0.168], `Sketch::plane_at`), which is where in it a definition standing
+standard datums (#542, [0.169], `Sketch::plane_at`), which is where in it a definition standing
 in the frame draws.  So a body standing in `f` that draws `in std.front { … }` is drawn in `f`'s front and
 rides `f` (and whatever `f` rides) by this rule alone: the datums stand at the frame's rest pose,
 built over its chart and riding nothing themselves, and an instance in a frame with a joint is

@@ -262,7 +262,9 @@ pub fn to_json(sk: &Sketch) -> Json {
             o
         })
         .collect();
-    let user = sk.user_constraints();
+    // a row the source alone carries (#510 S1) is not the document's to write
+    let user: Vec<&Constraint> =
+        sk.user_constraints().into_iter().filter(|c| !c.kind.of_source()).collect();
     let constraints: Vec<Json> = user
         .iter()
         .map(|c| {

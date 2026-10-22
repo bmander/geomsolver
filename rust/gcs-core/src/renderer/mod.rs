@@ -15,7 +15,7 @@ pub use dimensions::{generated, Dim};
 pub use document::{detail_free, inputs, layout, layout_with_stats, section, view, Drawn};
 use std::cell::{Cell, OnceCell};
 use crate::bvh::Bvh;
-use crate::{csg::Edge, plane::Basis, solid::{EvaluatedSolid, LocalPoint, PageFrame}};
+use crate::{plane::Basis, solid::{EvaluatedSolid, LocalPoint, PageFrame}};
 
 /// One projection and its placement on the page. `section` is a world-space cutting plane;
 /// the section retains material behind its origin along the view normal.
@@ -66,13 +66,12 @@ pub struct RenderStats {
 /// All view-dependent work lives here, and no editor or document is needed to project it.
 pub struct Renderer<'a> {
     solid: &'a EvaluatedSolid,
-    edges: &'a [Edge],
     visibility: OnceCell<Bvh<3>>,
     stats: Cell<RenderStats>,
 }
 impl<'a> Renderer<'a> {
     pub fn prepare(solid: &'a EvaluatedSolid) -> Self {
-        Self { solid, edges: solid.edges(), visibility: OnceCell::new(), stats: Cell::default() }
+        Self { solid, visibility: OnceCell::new(), stats: Cell::default() }
     }
 
     pub fn stats(&self) -> RenderStats { self.stats.get() }

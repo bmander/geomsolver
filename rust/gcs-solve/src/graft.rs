@@ -780,7 +780,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
     }
     let mut expr = false;
     for c in src.user_constraints() {
-        if drop_c.contains(&c.id) {
+        // a row the source alone carries reads what the walk does not copy (#510 S1)
+        if drop_c.contains(&c.id) || c.kind.of_source() {
             continue;
         }
         let mut args = Vec::with_capacity(c.args.len());

@@ -496,3 +496,23 @@ fn a_joints_value_may_run_over_a_declared_parameter() {
         near(point(&sk, "X"), screw.at(s.at.to_radians()).unwrap().point(x), "followed");
     }
 }
+
+/// **A value is no hold a gesture's reconcile can lose** (#391 S3): the sketch holds no number
+/// for it, so a reconcile after a solve — what the page does after every edit — reads
+/// `fix(value == τ) f` as no gauge and writes nothing, the value alone or beside the joint's
+/// numbers.  It once took the statement out, and the cam on the timeline stopped turning.
+#[test]
+fn a_joints_value_survives_a_reconcile() {
+    let flat = SCREW.replace("std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)",
+        "ax coincident screw.axis\nfix(ratio == 1.5, advance == 7mm, value == t) screw");
+    for src in [format!("{SCREW}param t: Angle over (-30deg, 400deg)\nfix(value == t) screw\n\
+                         X := x in screw\n"),
+                format!("param t: Angle over (-30deg, 400deg)\n{flat}X := x in screw\n")] {
+        let mut e = solved(&src);
+        let sk = e.sketch.clone();
+        let out = gcs_core::edit::reconcile(&mut e, &sk);
+        assert!(out.refused.is_none(), "{:?}", out.refused);
+        assert!(out.text.contains("value == t) screw"), "reconcile wrote {}", out.text);
+        assert_ne!(out.kind, gcs_core::edit::Kind::Structural, "reconcile wrote {}", out.text);
+    }
+}

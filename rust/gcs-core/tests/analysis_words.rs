@@ -139,6 +139,7 @@ fn a_structure_names_what_leaves_it_free() {
         fixed: vec![true, true, false, false, true, true],
         load: vec![0.0, 0.0, 0.0, -1.0, 0.0, 0.0],
         weight: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        spread: Vec::new(),
     };
     let x = vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0];
     assert_eq!(line.solve(&x).err(), Some(Failure::Free));
@@ -161,6 +162,7 @@ fn a_structure_names_what_leaves_it_free() {
         fixed: vec![true, true, false, false, false, false],
         load: vec![0.0; 6],
         weight: vec![0.0; 6],
+        spread: Vec::new(),
     };
     let xt = vec![-3.0, 0.0, 3.0, 0.0, 0.0, 4.0, 1.0, 1.0];
     let free = two.free(&xt);
@@ -186,6 +188,7 @@ fn a_structure_names_what_leaves_it_free() {
         fixed: vec![false, false, false, false, true, true],
         load: vec![0.0; 6],
         weight: vec![0.0; 6],
+        spread: Vec::new(),
     };
     let xb = vec![0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 1.0];
     let free = bar.free(&xb);

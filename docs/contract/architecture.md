@@ -72,6 +72,16 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `--stl` writes binary STL through `gcs_core::mesh` (`--solid` says which).  `--output` writes SVG
   through `gcs_core::svg`, as `File ▸ Export SVG` does; it **chooses a `unit`** from the page width
   (`--width`) and every constant size follows.  The *camera* is never consulted.
+  **`--png` draws what the workspace shows, headless** (#541, `gcs-cli/src/picture.rs`): the
+  objects of `overview::shown_objects`, each the mesh the box cuts it to
+  (`ApproximationPolicy::Mesh`) where its placement stands it, and the edges a drawing's view of
+  it draws (`EvaluatedSolid::drawn_edges`, the one rule both use: every corner, and its
+  silhouettes), from the box's eye (`eye_frame`; `home` is `view.ts`'s three-quarter view, and a
+  named view is a sheet's, `drawing::named_view`).  A part file is its `preview`, so it draws that.  A
+  **depth buffer** at two samples a pixel, never a painter's sort, each instance one colour by
+  the order the document's objects come in (so a cutaway keeps it); an object that does not
+  evaluate is left out and its reason said.  The PNG writer is the CLI's (`png.rs`, fixed-code
+  deflate); it computes no geometry, and `tests/cli.rs` reads its pictures back.
   **A long run says what it is doing** (#320): the core tells whoever listens on its thread
   (`progress::listen`) when work begins and ends — the elaboration, the solve and the diagnosis,
   which the CLI wraps in `progress::during`, and inside them each solid built

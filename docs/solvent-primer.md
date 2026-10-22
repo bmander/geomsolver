@@ -1996,8 +1996,16 @@ scenario tip_load {
 - **What is answered**: `deflection(p[, along: d])`, `mass(arm)`, `mode(arm, n)`, `buckling(arm)`,
   `compliance(arm)`, `safety(arm)` (yield over `|N|/A + |My|/Sy + |Mz|/Sz`). `load arm 2kN along:
   down` spreads a force along the beam; `accelerate arm (0m / 1s^2, 0m / 1s^2, -9.81m / 1s^2)` is
-  its weight. Every requirement is judged, never solved for: `solventc` prints its value and
-  `kept` or `refuted`.
+  its weight. A claim is judged, never solved for: `solventc` prints its value and `kept` or
+  `refuted`.
+- **A driving deflection sizes the frame**: `deflection(end, along: down) == 4mm` at a joint is a
+  row of the drawing. Declare what it sizes, `param h: Length hint(40mm)`, and read the section
+  over it (`Iz: b * h^3 / 12`, any formula); or let it place a joint (`foot distance(len) end`,
+  `len` an unknown). `solventc` prints `driven == 4mm, held` and the unknown's value. `along:` is
+  an axis or a line the drawing holds. Any other driving requirement (`mode(arm, 1) == 30Hz`) is
+  only judged yet. The library shows each: `sized_cantilever.sv` (a depth),
+  `reach_cantilever.sv` (a length), `shelf_bracket.sv` (two members, a load spread along the arm)
+  and `portal_frame.sv` (a tube's diameter, a point on a member, the frame's weight).
 - `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
   twist about its own line — and `solventc` says so (`leaves `arm` free to turn about x …`).
 
@@ -2009,6 +2017,8 @@ scenario tip_load {
 | `A: 50mm` | E103 — `A` is Length^2 |
 | `fixed arm` | E040 — hold its ends |
 | `safety(arm)` with no `Sz` | no answer — reads `Sy` and `Sz` |
+| `Iz: b * h^3 / 12`, `h` an unknown nothing drives | E040 — nothing determines it |
+| `deflection(end, along: d) == 4mm` on a frame left free | E040 — the frame is free to turn |
 
 ### 1.15 Frames that move, and generated geometry
 
@@ -2391,7 +2401,17 @@ make solventc                                         # once
 build/solventc drawing.sv                             # parse, elaborate, solve, diagnose; --json
 build/solventc drawing.sv --where hinge               # where a name landed
 build/solventc drawing.sv --stl part.stl --solid body # a solid, for a printer
+build/solventc part.sv --png part.png                 # look at it: the workspace's objects
 ```
+
+**Look at a solid before you trust it.**  `--png PATH` draws what the workspace shows, with no
+browser or GPU: each object shaded in its instance's colour, depth-buffered, its creases and
+silhouettes inked.  A part file draws its `preview`, about the world's origin.  `--view` is `home`
+(the workspace's opening view), a view a sheet names (`front`, `back`, `right`, `left`, `top`,
+`bottom`, `isometric`) or `az,el` in degrees; `--size` the longer side in pixels (1200); `--solid NAME` one solid, or every object of one instance; `--hide
+a,b` leaves those out, each a name and everything under it, for a cutaway
+(`--hide block.casting,head`).  An open box, a belt off its pulleys, a piston not at its stroke —
+a picture shows what no number in the report does.
 
 Exit codes: 0 solved, 1 did not parse or elaborate, 2 did not solve. A successful solve does not
 mean the model is fully constrained: read the diagnosis — parameter and equation counts, the

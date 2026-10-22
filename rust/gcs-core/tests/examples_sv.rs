@@ -58,6 +58,10 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("vtwin_disc", (22, 18, 4, 0), 0, State::Well),
     ("vtwin_flywheel", (21, 17, 2, 0), 0, State::Well),
     ("vtwin_throttle", (44, 40, 3, 0), 0, State::Well),
+    ("sized_cantilever", (7, 1, 0, 0), 0, State::Well),
+    ("reach_cantilever", (7, 1, 0, 0), 0, State::Well),
+    ("shelf_bracket", (8, 2, 0, 0), 0, State::Well),
+    ("portal_frame", (10, 3, 0, 0), 0, State::Well),
 ];
 
 #[test]

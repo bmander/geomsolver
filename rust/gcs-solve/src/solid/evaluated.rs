@@ -683,6 +683,24 @@ impl EvaluatedSolid {
     pub fn area(&self) -> f64 {
         mesh::area(self.boundary())
     }
+    /// **The edges a view draws, looking along `-eye`** (the solid's own coordinates): every
+    /// corner, and a smooth seam only where the surface turns away from the eye across it — or,
+    /// on an exact solid, the silhouettes traced on its surfaces in place of its mesh's seams.
+    /// `more` (a section's edges) is judged by the same rule.  The one rule a drawing's views and
+    /// `solventc --png` both draw by.
+    pub fn drawn_edges(&self, eye: [f64; 3], more: &[Edge]) -> Vec<Edge> {
+        let traced = self.silhouettes(eye);
+        let seen = |e: &&Edge| {
+            if !e.smooth { return true; }
+            let (a, b) = (plane::dot(e.na, eye), plane::dot(e.nb, eye));
+            // a silhouette is where the sign changes; a seam whose two facets both face the eye
+            // (or both face away) is the tessellation and is not drawn
+            traced.is_none() && a * b <= 0.0 && (a.abs() >= 1e-12 || b.abs() >= 1e-12)
+        };
+        let mut drawn: Vec<Edge> = self.edges().iter().chain(more).filter(seen).cloned().collect();
+        drawn.extend(traced.into_iter().flatten());
+        drawn
+    }
     /// A view's silhouettes on an exact solid's curved faces, looking along `-eye` (`None` for any
     /// other solid, whose smooth seams are its silhouettes): where the surface's own outward normal
     /// turns from facing the eye to facing away, interpolated across each facet from the exact

@@ -23,8 +23,13 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `reconcile` and `retext` **apply themselves to the `Elaborated` and do not rebuild the
   drawing** (that would invalidate a half-finished tool's proxies).  `retext` re-parses (same
   ids); `adopt` extends the map onto new statements.  `reconcile` reads only the *append* (past
-  the map's high-water mark); it cannot follow a **renumbering**, so deletion is `edit::remove`
-  and not `graft::without`.
+  the map's high-water mark), but for what a plane owns and no gesture draws: its origin, and
+  its normal, which `o.plane.normal` mints after every axis a statement made
+  (`a_normal_read_writes_nothing_back`).  So a reconcile after a plain solve writes seeds and
+  nothing structural, and the text it leaves elaborates to the parameters the drawing holds —
+  which the page's workers rely on, reading that text and writing the page's values over it
+  (`set_x` refuses a vector of another length).  It cannot follow a **renumbering**, so
+  deletion is `edit::remove` and not `graft::without`.
 - Deletion, copy and paste are one rebuild walk (`graft`): every surviving entity is
   renumbered into the destination and every reference follows, and a constraint comes along
   exactly when all its entities did.  `without` keeps what is not deleted, `copy` keeps the

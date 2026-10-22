@@ -120,6 +120,11 @@ fn every_constraint_type_is_printable() {
             // document; `tests/carried.rs` and `tests/rate_of_contact.rs` print them from one
             continue;
         }
+        if kind.of_source() {
+            // a frame's deflection is the source's alone (#510 S1), never lifted to a statement:
+            // `tests/driven.rs` elaborates it from a scenario's driving requirement
+            continue;
+        }
         if kind == CKind::RegularWithin {
             // a flank's regularity reads an envelope and two region solids, declared in a
             // document; `tests/regular.rs` prints it from the Formate pair

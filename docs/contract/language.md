@@ -313,7 +313,7 @@ says `use std` (`Walk::new`, over `Program::uses_of`), while `std.front` read by
 is a datum only to a file that says it (`Lookup::unread`). Where a place it stands resolves, read
 where it was written (`Scope::written_at`), to a frame (`Datums::frames`: a declaration written
 `frame`, or a reading at an instant whose source is one, `walk_reading_at`, `Lookup::frame`), the
-innermost such names **the frame's own datums** ([0.168], #542; through 0.167 E101): `std.x`,
+innermost such names **the frame's own datums** ([0.169], #542; through 0.167 E101): `std.x`,
 `std.y`, `std.z` read as its `u`, `v`, `normal` (minting its chart as `f.u` does), and the rest as
 `std`'s `FrameDatums` over it under `keys::frame_datums` (`{frame}#std.`, keys a source cannot
 write, walked `Stamps::anonymous` so no reader is shown them),
