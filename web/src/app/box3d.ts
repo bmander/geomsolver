@@ -25,6 +25,7 @@ import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
 import { COL, chromeOf, inkOf } from './paint.js';
+import { ScenarioScene } from './scenario-box.js';
 import { partOf, samePick } from './view.js';
 import type { Combining, SketchView } from './view.js';
 
@@ -141,10 +142,12 @@ export class Box3D {
   private litKey: string | null = null;
   /** Each object's edges, as the core gave them, kept until the objects are re-cut. */
   private readonly edgesOf = new Map<number, SolidEdge[]>();
+  /** **The load scenario drawn** (#510): its marks and the drawing deformed under it. */
+  readonly scenario = new ScenarioScene();
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
-    this.scene.add(this.datums, this.objects, this.previewed, this.litEdges);
+    this.scene.add(this.datums, this.objects, this.previewed, this.litEdges, this.scenario.group);
     // a headlight and a soft fill: the object is read for its shape, so the light follows the
     // eye rather than standing somewhere in the world and leaving half of it dark
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -167,6 +170,7 @@ export class Box3D {
     const h = v.hovered?.kind === 'solid' && v.hovered.pick.edge ? v.hovered.pick : null;
     const lit = picked.length || h ? JSON.stringify([picked, h && [h.index, h.edge]]) : null;
     if (lit !== this.litKey) this.buildLit(v, lit);
+    this.scenario.paint(v);
     this.aim(v);
     this.chrome(v, c);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -219,6 +223,7 @@ export class Box3D {
   /** Let the box go — the canvas keeps its context otherwise, and a browser only allows so many. */
   clear(): void {
     this.dispose();
+    this.scenario.clear();
     this.built = null;
     this.renderer?.clear();
   }
@@ -500,11 +505,13 @@ export class Box3D {
       picked.set(s.index, o);
     }
     const h = v.hovered?.kind === 'solid' ? v.hovered.pick : null;
+    // a solid the scenario drawn deforms shows through its deformation, at rest
+    const deformed = this.scenario.ghosted(v);
     for (const { solid, path, mesh: face } of this.faces) {
       const m = face.material as THREE.MeshStandardMaterial;
       const tool = c?.tools.some((t) => t.index === solid);
       face.visible = !(c && this.preview.shown && c.target.index === solid);
-      ghost(m, !!tool);
+      ghost(m, !!tool || deformed.has(solid));
       m.color.set(tool ? INK[c!.word] : INK.solid);
       const mine = picked.get(solid);
       const [ink, glow]: [string | number, number] = tool ? [INK[c!.word], 0.35]

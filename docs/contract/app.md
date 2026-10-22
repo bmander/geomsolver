@@ -446,6 +446,32 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   The source catches up at exactly two seams and **never per frame**: `syncSeeds` at the end of a
   drag (`gesture::endGesture`, guaranteed numeric) and `syncSource` at the end of `afterEdit`.
   The panel is wired to `onProgram`, never to `onDragFrame`.
+- **The scenario chooser** (#510; `app/scenario-card.ts`, `app/scenario-box.ts`,
+  `SketchView.scenario`, `chooseScenario`).  Beside **Sketch on**, in the viewport's upper right
+  (`#view-picks`), `#scenario-pick` lists the document's load scenarios by name (*None*, then each
+  in the order written, an extended one `heavy : shelf`; `Document.scenarioNames`), hidden for a
+  document with none and inked as failing while one of them fails.  **Choosing is view state**,
+  as the plane chosen is: it writes nothing and solves nothing, is kept across an edit — the
+  program panel's too — by its name, let go where the name is gone, and by a load.  Chosen, its
+  **card** unfolds beneath the chooser: in its head the **exaggeration** the picture is drawn at
+  (`#scenario-scale`, by equal ratios from true scale at its left to ten times the picture's own
+  factor at its right, opening at the picture's own — `SketchView.scenarioScale`, null for it),
+  *Animate* (the picture swings from rest to its factor and back) and *Mesh* (the edges of the
+  mesh that was solved); the colour ramp the moves are read by, 0 to the largest in the core's
+  words; what the reading says (still reading, why a body is not drawn, the scenario's words);
+  and a row per line of the scenario — the line as written, by its span, a load's value, a
+  requirement's sentence in the verdict's ink — which puts the editor's caret on its line
+  (`goToSource`).  **In the box** (`ScenarioScene`) every coordinate is the core's (the marks,
+  the picture: analysis.md, "A scenario drawn"); a glyph is chrome made in pixels about its
+  anchor and scaled by `unit` every frame, so it keeps its size as the eye zooms — a plate for
+  `fixed` on a face (a block at a point or along a line), a cone for `pinned` pointing at its
+  place (on a roller where it holds one direction), an arrow ending at its place for a load and
+  for a pressure, faces tinted, a probe at a deflection's point inked by its verdict, the words
+  as sprites beside their place.  The deformed bodies are **morph targets**: three.js draws
+  `rest + s·moved`, the factor written per frame, so the slider needs no round trip to the core
+  and no coordinate is worked out in the page; each vertex coloured on the ramp by its move as a
+  fraction of the largest.  A solid the picture deforms is ghosted beneath it.  A gesture moving
+  the drawing hides the scenario until the edit settles and the worker reads it again.
 - **The timeline** (#398 L, [0.146]; `app/timeline.ts`, `SketchView.instant`, `showInstant`):
   a row per declared parameter in the viewport's lower left, its interval a slider whose solid
   part is what the march reached, hatched past it, the singular instant marked with the core's

@@ -14,9 +14,9 @@
 //! here under their own names, so `crate::model` and `gcs_core::model` name what they always did.
 pub use gcs_solve::{
     amd, beams, bodies, brep, cgraph, cholesky, clear, clock, complex, constraints, contact_rate,
-    csg, curve, decompose, delaunay, diagnose, eigen, envelope, expr, extremal, fmath, follow,
-    generate, graft, graph, homotopy, integral, interior, interval, json, kernels, linalg, lines,
-    locus, mesh, model, motion, newton, ode, par, plane, prisms, progress, rates, rng, roots,
+    csg, curve, decompose, deformed, delaunay, diagnose, eigen, envelope, expr, extremal, fmath,
+    follow, generate, graft, graph, homotopy, integral, interior, interval, json, kernels, linalg,
+    lines, locus, mesh, model, motion, newton, ode, par, plane, prisms, progress, rates, rng, roots,
     semantics, solid, solve, space, sparse, system, tape, taylor, topology, traced, units,
     variational, vocab, witness,
 };

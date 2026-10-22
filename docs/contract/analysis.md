@@ -16,7 +16,8 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 `delaunay/plane.rs`, `prisms.rs`, a scenario's `plane stress`/`plane strain` line
 (`model::PlaneReading`), `Sketch::meshed` or `DeflectionRow`; or `interior::Tet10`,
 `interior::Borne`, `interior::Stack` (`interior/solid.rs`), `bodies.rs`, `beams::Read::errors`,
-`cholesky::Cholesky::factor_ldl` or `eigen::UNBUCKLED`.
+`cholesky::Cholesky::factor_ldl` or `eigen::UNBUCKLED`; or `deformed.rs`, `overview/scenario.rs`,
+a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn).
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
@@ -29,7 +30,8 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
 frame's driving row (S1), `rust/gcs-core/tests/prisms.rs` for solids read in their plane and
 a region's driving row (S2, its mesher `rust/gcs-core/tests/plane_mesh.rs`), and
 `rust/gcs-core/tests/bodies.rs` for solids read in three dimensions, a solid's driving row and the
-errors estimated beside every answer (S3), unless a rule names another.
+errors estimated beside every answer (S3), and `rust/gcs-core/tests/scenario_view.rs` for a
+scenario drawn, unless a rule names another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -235,11 +237,12 @@ errors estimated beside every answer (S3), unless a rule names another.
   (`scenario_words`) leave out the supports that hold a frame, and a scenario of frames alone
   holds no body of its own (`diagnose::analysis::scenario_read`).
   **The page says them too**, from the same JSON (FFI `gcs_elab_scenarios_json`,
-  `Document.scenarios`): read again after every solve (`SketchView.afterEdit`, `view.scenarios`),
-  counted in the footer's `#scenarios` line — what holds, what fails, what has no answer, each
-  word — with every sentence as its tooltip, red and standing while one fails, and listed in the
-  Diagnosis report.  A document whose requirements fail never looks solved and silent
-  (`core.test.ts`, `a document says what its load scenarios answer`).
+  `Document.scenarios`; in the page `gcs_elab_scenarios_pictured_json`, read in a worker — "A
+  scenario drawn", below): read again after every solve (`SketchView.afterEdit`,
+  `view.scenarios`), counted in the footer's `#scenarios` line — what holds, what fails, what has
+  no answer, each word — with every sentence as its tooltip, red and standing while one fails,
+  and listed in the Diagnosis report.  A document whose requirements fail never looks solved and
+  silent (`core.test.ts`, `a document says what its load scenarios answer`).
 
 - **What S0 leaves.**
   - ~~**No row.**~~ S1 compiles a driving deflection to the beam's row (below).
@@ -710,9 +713,8 @@ errors estimated beside every answer (S3), unless a rule names another.
   bar's factor are held to their closed forms within 1%.
 
 - **What S3 leaves.**
-  - **Not in the page.** No surface carries a scenario's answers over the ABI (`report::
-    scenarios_json` reaches `solventc` alone), so nothing runs an analysis in the page's mesh
-    worker yet; a solid's reading there would be the worker's, as a field's surface is.
+  - ~~**Not in the page.**~~ The page reads every scenario in the mesh worker, and draws the one
+    chosen (below, "A scenario drawn").
   - **No Hadamard derivative, and a filled body is not driven.** A prism's nodes are functions of
     the drawing; a filled body's are the refinement's, so its driving deflection compiles nothing.
     The boundary form `∫_Γ (V·n) w dΓ` over the faces' velocities is what would drive one.
@@ -728,6 +730,68 @@ errors estimated beside every answer (S3), unless a rule names another.
     (its buckling), the cantilever in 1.2 s, each read once at its own size. The
     Cholesky's update is formed four columns at a time (`cholesky::BLOCK`) and its dense panels a
     column at a time, and each read meshes afresh, twice (P5's two caches are still not kept).
+
+- **A scenario drawn: where its lines fall** (#510; `overview::scenario::marks`,
+  `report::scenario_marks_json`, FFI `gcs_elab_scenario_marks_json`, `Document.scenarioMarks`).
+  Every line of a scenario — support, load, requirement, reading in the plane — is a **mark**, in
+  the order written, read off the solved drawing with no analysis made: its anchors; at each the
+  direction it acts along (a force's; a pressure's into its face, against the face's outward
+  normal; the one direction a support holds where it says `along:`), and on a face that normal;
+  the faces it tints, as triangles; its size among the scenario's loads of its kind; its words in
+  the core's (`600N along down` is said `600N`, a pressure `100kPa`, `pinned along z`:
+  `scenario::quantity`, SI with a prefix); where its words go; whether it is a requirement read at
+  a place (`probe`, a deflection — one of a whole body has no place); and the span of the line it
+  is written on. A point is drawn at itself, a line, an edge or a beam's lines at `ALONG` places
+  evenly along them, a solid at its middle, faces a path names at up to `OVER` places spread over
+  them (farthest-point, over each triangle cut finer than a sixth of the faces' reach). **A face
+  is read off the mesh the workspace already draws** (`EvaluatedSolid::mesh` at the object's own
+  scale, its groups named `lug.root`, `pin.bore`: `names_group` takes the path with or without the
+  solid's own name first), so a mark on a face builds no exact boundary on the page's thread.
+  **A mark adds nothing to the drawing** (`a_mark_adds_nothing_to_the_drawing`); every line of
+  every scenario of the library is one, its span the line it is written on
+  (`every_line_of_a_scenario_is_a_mark`), and a pressure points into its face
+  (`a_pressure_points_into_its_face`). Gate: `tests/scenario_view.rs`.
+
+- **A scenario drawn: how the drawing moves under it** (#510; `deformed::Picture`,
+  `diagnose::analysis::scenario_pictured`, each reader's `read_pictured`). **Every body any line
+  of the scenario falls on is read**, a requirement's or not — a frame a support or a load names a
+  joint or a member of (`beams::read_pictured`), each region it reads in its plane
+  (`prisms::read_pictured`), each solid read in three dimensions a line falls on
+  (`bodies::read_pictured`, `solid_of`) — so a scenario of supports and loads alone is drawn.
+  **What is drawn deformed is the mesh that was solved**, never the display's: a frame a tube of
+  `SIDES` about each element at `PIECES`, sampled at `SAMPLES` places on the cubic it bends as (its
+  ends' moves in a line along it; across it, in each plane, Hermite's cubic in its ends' moves
+  and turns — a turn about e3 the slope along e2, about e2 the slope along e3's negative), every
+  vertex of a ring moving as its centre; a region its quadratic triangles cut in four on both caps
+  at its middle ± half its depth, walls along its sides, the in-plane move the same at each level;
+  a solid its tetrahedra's boundary facets cut in four. Each body is its vertices at rest and
+  their moves, triangles and the mesh's edges. **It is the answers' reading**: each body is
+  analysed once for its answers and its picture (`read_pictured` shares the readers' `Analysed`),
+  at the readers' own size, so a deflection of a point is the move of the vertices drawn nearest
+  it, to rounding (`the_picture_moves_each_point_by_its_answer`, over the library); the coarser
+  reading the error is estimated against draws nothing. A cantilever's picture is its cubic,
+  inside its elements as at its nodes (`a_cantilevers_picture_is_its_cubic`). A body that cannot be
+  read is not drawn, and why is said in the core's words (`Picture::words`,
+  `a_frame_left_free_draws_no_deflection_and_says_why`); a scenario that loads nothing moves
+  nothing. **The factor it is drawn at** (`deformed::factor`): the largest move as `SHOWN` (a
+  tenth) of the bodies' extent, rounded down to 1, 2 or 5 of a decade, never below true scale;
+  a host draws `rest + s·moved` for any `s`.
+
+- **A scenario drawn: over the ABI and in the page** (#510; `report::scenarios_pictured_json`,
+  FFI `gcs_elab_scenarios_pictured_json`, `Document.scenariosPictured`, `app/scenario-view.ts`).
+  `{ "scenarios", "picture" }`: `scenarios_json`'s answers word for word
+  (`the_answers_beside_a_picture_are_the_answers`), each answer now with its requirement's
+  `index`, and the picture of the scenario asked for — flat arrays, places and moves to seven
+  figures — or `null`. **The page reads it in the mesh worker** (a `scenario` job, its own
+  instance), never on its own thread: a solid read in three dimensions is seconds. The job is
+  keyed by the text, the pose and the scenario drawn, as the claims' is; the answers already said
+  stand until the new ones come, and the picture goes at once (it is of a pose the edit may have
+  left). With no worker (node) the reading is made at once, so the tests see what the page would
+  (`app.test.ts`, `choosing a scenario writes nothing, and draws its marks and how the drawing
+  moves`). The marks are read on the page with every edit (`gcs_elab_scenario_marks_json`), the
+  names with no analysis (`gcs_elab_scenario_names_json`); `core.test.ts`, `a document says where
+  its scenarios fall and how the drawing moves under one`. The page's chooser and card are
+  [app.md](app.md)'s.
 
 - **A scenario, parsed** (#510 P4, §9.11 [0.164]). `scenario NAME [: BASE] { … }` is
   `syntax::StmtKind::Scenario` (`syntax::Scenario`, its lines `Item`/`ItemKind`: a support, a load

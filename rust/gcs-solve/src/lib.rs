@@ -24,6 +24,7 @@ pub mod contact_rate;
 pub mod csg;
 pub mod curve;
 pub mod decompose;
+pub mod deformed;
 pub mod delaunay;
 pub mod eigen;
 pub mod diagnose;

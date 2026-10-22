@@ -22,6 +22,7 @@
 //! loads that press nothing.
 
 use crate::beams::Read;
+use crate::deformed::Body;
 use crate::delaunay::plane::Mesh as Plane;
 use crate::delaunay::tetra::{self, EDGES};
 use crate::diagnose::analysis::{self, direction, Held};
@@ -537,6 +538,29 @@ impl Analysed {
         }).as_ref().map_err(Clone::clone)
     }
 
+    /// **The solid drawn** (`deformed::Body`): its boundary's facets, each six-node triangle cut
+    /// in four, over the nodes they use, each moving as the solve moves it — or why it does not
+    /// move (its structure gave no displacement).
+    fn body(&self, name: &str) -> Result<Body, String> {
+        let u = &self.state()?.u;
+        let mesh = &self.f.mesh;
+        let mut body = Body { kind: "solid", name: name.to_string(), solid: Some(self.f.solid),
+                              ..Body::default() };
+        let mut at: BTreeMap<usize, u32> = BTreeMap::new();
+        let mut facets = Vec::new();
+        for (n, _) in &mesh.facets {
+            let n = n.map(|i| *at.entry(i).or_insert_with(|| {
+                body.vertex(mesh.nodes[i], [u[3 * i], u[3 * i + 1], u[3 * i + 2]])
+            }));
+            body.quadratic(n);
+            facets.push(n);
+        }
+        body.side_edges(facets.iter().flat_map(|&[a, b, c, ab, bc, ca]| {
+            [[a, ab, b], [b, bc, c], [c, ca, a]]
+        }));
+        Ok(body)
+    }
+
     /// Node `i`'s move.
     fn moved(&self, i: usize) -> Result<V, String> {
         let u = &self.state()?.u;
@@ -688,6 +712,16 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
 
 /// `read`, every mesh `coarser` times the reading's size.
 pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
+    read_pictured(sk, sc, coarser, false).0
+}
+
+/// **`read_at`, and where `pictured`, the picture of every solid read in three dimensions that a
+/// line of the scenario falls on** (`deformed::Body`: its tetrahedra's boundary), or why one is
+/// not drawn: each solid meshed and solved once for both.
+pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
+    -> (Read, Vec<Result<Body, String>>)
+{
+    let mut drawn = Vec::new();
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
@@ -698,8 +732,16 @@ pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
     let mut solids: Vec<usize> = of.iter().flatten().copied().collect();
     solids.sort();
     solids.dedup();
-    if solids.is_empty() {
-        return out;
+    // what is drawn: every solid a line falls on, a requirement's or not
+    let mut touched: Vec<usize> = if pictured {
+        sc.applied().filter_map(|a| solid_of(sk, sc, a)).collect()
+    } else {
+        Vec::new()
+    };
+    touched.sort();
+    touched.dedup();
+    if solids.is_empty() && touched.is_empty() {
+        return (out, drawn);
     }
     for (k, s) in sc.supports.iter().enumerate() {
         out.holds[k] = solid_of(sk, sc, &s.at).is_some_and(|i| solids.contains(&i));
@@ -730,8 +772,19 @@ pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
                                    sk.solids[*s].name));
         }
     }
+    for s in touched {
+        let a = read.entry(s).or_insert_with(|| {
+            let mesh = mesh(sk, s, &named, coarser)?;
+            Analysed::new(sk, sc, s, mesh, 0)
+        });
+        let name = &sk.solids[s].name;
+        drawn.push(match a {
+            Ok(a) => a.body(name).map_err(|m| format!("scenario `{}`: {m}", sc.name)),
+            Err(m) => Err(format!("scenario `{}`: {}", sc.name, m.text(name))),
+        });
+    }
     out.bodies = solids;
-    out
+    (out, drawn)
 }
 
 /// A requirement's value over its solid `a`, or why it has none.
