@@ -12,6 +12,7 @@
 //! cannot name a module of the one that depends on it.
 pub mod amd;
 pub mod beams;
+pub mod bodies;
 pub mod brep;
 pub mod cgraph;
 pub mod cholesky;

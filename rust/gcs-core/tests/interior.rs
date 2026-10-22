@@ -40,6 +40,8 @@ pub(crate) fn braced(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
         spread: Vec::new(),
         tris: Vec::new(),
         laid: Vec::new(),
+        tets: Vec::new(),
+        borne: Vec::new(),
     };
     (s, x)
 }
@@ -58,6 +60,8 @@ pub(crate) fn two_bar(w: f64, h: f64, e: f64, a: f64, p: f64) -> (Structure, Vec
         spread: Vec::new(),
         tris: Vec::new(),
         laid: Vec::new(),
+        tets: Vec::new(),
+        borne: Vec::new(),
     };
     (s, vec![-w, 0.0, w, 0.0, 0.0, h, a, a])
 }
@@ -102,6 +106,8 @@ fn a_bar_in_space_stretches_by_pl_over_ea() {
         spread: Vec::new(),
         tris: Vec::new(),
         laid: Vec::new(),
+        tets: Vec::new(),
+        borne: Vec::new(),
     };
     let x = vec![5.0, -2.0, 1.0, 5.0 + l, -2.0, 1.0, a];
     let st = s.solve(&x).unwrap();
@@ -125,6 +131,8 @@ fn a_structure_with_no_displacement_to_give_says_why() {
         spread: Vec::new(),
         tris: Vec::new(),
         laid: Vec::new(),
+        tets: Vec::new(),
+        borne: Vec::new(),
     };
     let x = vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0];
     assert_eq!(line.solve(&x).err(), Some(Failure::Free));
@@ -243,7 +251,8 @@ pub(crate) fn framed(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
     }
     let mut s = Structure { dim, nodes: n, bars: Vec::new(), beams, fixed: Vec::new(),
                             load: Vec::new(), weight: Vec::new(), spread: Vec::new(),
-                            tris: Vec::new(), laid: Vec::new() };
+                            tris: Vec::new(), laid: Vec::new(),
+                            tets: Vec::new(), borne: Vec::new() };
     let dofs = s.per() * n;
     s.fixed = (0..dofs).map(|i| i < s.per()).collect();
     s.load = (0..dofs).map(|_| rng.uniform(-10.0, 10.0)).collect();
@@ -277,7 +286,8 @@ fn cantilever(dim: usize, pieces: usize, l: f64, e: f64, g: f64, rho: f64, secti
     }
     let mut s = Structure { dim, nodes: pieces + 1, bars: Vec::new(), beams, fixed: Vec::new(),
                             load: Vec::new(), weight: Vec::new(), spread: Vec::new(),
-                            tris: Vec::new(), laid: Vec::new() };
+                            tris: Vec::new(), laid: Vec::new(),
+                            tets: Vec::new(), borne: Vec::new() };
     let dofs = s.per() * s.nodes;
     s.fixed = (0..dofs).map(|i| i < s.per()).collect();
     s.load = vec![0.0; dofs];
@@ -511,7 +521,8 @@ pub(crate) fn sheet(nx: usize, ny: usize, w: f64, h: f64, jitter: f64, strain: b
     let dofs = 2 * cols * rows;
     let s = Structure { dim: 2, nodes: cols * rows, bars: Vec::new(), beams: Vec::new(),
                         fixed: vec![false; dofs], load: vec![0.0; dofs], weight: vec![0.0; dofs],
-                        spread: Vec::new(), tris, laid: Vec::new() };
+                        spread: Vec::new(), tris, laid: Vec::new(), tets: Vec::new(),
+                        borne: Vec::new() };
     (s, x)
 }
 
@@ -678,6 +689,332 @@ fn a_plane_interior_agrees_with_finite_differences() {
         let last = s.nodes - 1;
         let d = s.dof(last, 1).unwrap();
         s.load[d] = -500.0;
+        for w in s.weight.iter_mut() {
+            *w = rng.uniform(-1.0, 1.0);
+        }
+        for stated in [&[0.01][..], &[1.7, -0.2]] {
+            let free = stated.len() == 2;
+            let (n_par, n_const) = s.widths(free);
+            let k = s.consts(stated);
+            assert_eq!(k.len(), n_const);
+            assert_eq!(Structure::read(&k, free).0, s);
+            let kn = build_kernel(&Sketch::new(), KernelKey::Interior { n_par, n_const });
+            let mut v = x.clone();
+            if free {
+                v.push(0.4);
+            }
+            let res = |w: &[f64]| {
+                let mut r = vec![0.0; 1];
+                (kn.res)(1, w, &k, &mut r);
+                r
+            };
+            let jn = fd_jacobian(res, &v, 1e-5);
+            let mut ja = vec![0.0; n_par];
+            (kn.jac)(1, &v, &k, &mut ja);
+            let scale = gcs_core::linalg::absmax(&jn.data);
+            for (col, a) in ja.iter().enumerate() {
+                let n = jn.data[col];
+                assert!((a - n).abs() <= 1e-6 * scale, "seed {seed}, free {free}: column {col}: \
+                                                         {a} against {n}");
+            }
+        }
+    }
+}
+
+/* -- the solid element (#510 S3) ------------------------------------------------------------- */
+
+/// A block of quadratic tetrahedra over `[0, w] × [0, h] × [0, d]`, `nx` by `ny` by `nz` cells
+/// each cut into Kuhn's six (the paths from its low corner to its high one, so neighbours share
+/// their faces' diagonals), its inner corners knocked about by `jitter` of a cell and every
+/// middle node at the middle of its edge (so the elements are straight): the nodes on a grid of
+/// `(2nx + 1)(2ny + 1)(2nz + 1)`, node `(a, b, c)` at `(c (2ny + 1) + b)(2nx + 1) + a`.  Nothing
+/// held or loaded.
+pub(crate) fn block(n: [usize; 3], size: [f64; 3], jitter: f64, rng: &mut Rng)
+    -> (Structure, Vec<f64>)
+{
+    let g = n.map(|k| 2 * k + 1);
+    let id = |p: [usize; 3]| (p[2] * g[1] + p[1]) * g[0] + p[0];
+    let count = g[0] * g[1] * g[2];
+    let mut x = vec![0.0; 3 * count];
+    for c in (0..g[2]).step_by(2) {
+        for b in (0..g[1]).step_by(2) {
+            for a in (0..g[0]).step_by(2) {
+                let p = [a, b, c];
+                let inner = (0..3).all(|k| p[k] > 0 && p[k] + 1 < g[k]);
+                for k in 0..3 {
+                    let cell = size[k] / n[k] as f64;
+                    let dx = if inner { rng.uniform(-jitter, jitter) * cell } else { 0.0 };
+                    x[3 * id(p) + k] = p[k] as f64 * cell / 2.0 + dx;
+                }
+            }
+        }
+    }
+    let place = |x: &[f64], i: usize| [x[3 * i], x[3 * i + 1], x[3 * i + 2]];
+    let mut tets = Vec::new();
+    for k in 0..n[2] {
+        for j in 0..n[1] {
+            for i in 0..n[0] {
+                let low = [2 * i, 2 * j, 2 * k];
+                for perm in [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]] {
+                    let mut corners = [low; 4];
+                    for s in 0..3 {
+                        corners[s + 1] = corners[s];
+                        corners[s + 1][perm[s]] += 2;
+                    }
+                    let vol = |c: &[[usize; 3]; 4]| {
+                        let p = c.map(|q| place(&x, id(q)));
+                        let (u, v, w) = (sub(p[1], p[0]), sub(p[2], p[0]), sub(p[3], p[0]));
+                        dot(u, cross(v, w))
+                    };
+                    if vol(&corners) < 0.0 {
+                        corners.swap(1, 2);
+                    }
+                    let mut nn = [0usize; 10];
+                    for m in 0..4 {
+                        nn[m] = id(corners[m]);
+                    }
+                    for (m, (p, q)) in TET_EDGES.iter().enumerate() {
+                        let mid: [usize; 3] =
+                            std::array::from_fn(|c| (corners[*p][c] + corners[*q][c]) / 2);
+                        nn[4 + m] = id(mid);
+                    }
+                    tets.push(interior::Tet10 { n: nn, e: 2e5, nu: 0.3, rho: 7.8e-9 });
+                }
+            }
+        }
+    }
+    for t in &tets {
+        for (m, (p, q)) in TET_EDGES.iter().enumerate() {
+            for c in 0..3 {
+                x[3 * t.n[4 + m] + c] = 0.5 * (x[3 * t.n[*p] + c] + x[3 * t.n[*q] + c]);
+            }
+        }
+    }
+    let dofs = 3 * count;
+    let s = Structure { dim: 3, nodes: count, fixed: vec![false; dofs], load: vec![0.0; dofs],
+                        weight: vec![0.0; dofs], tets, ..Structure::default() };
+    (s, x)
+}
+
+/// A TET10's edges, as its middle nodes stand on them.
+const TET_EDGES: [(usize, usize); 6] = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)];
+
+fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+
+/// The block's boundary facets whose corners all pass `on`, each `[a, b, c, ab, bc, ca]` turned
+/// out of the material.
+fn facets_where(s: &Structure, x: &[f64], on: impl Fn([f64; 3]) -> bool) -> Vec<[usize; 6]> {
+    let place = |i: usize| [x[3 * i], x[3 * i + 1], x[3 * i + 2]];
+    let mid = |t: &interior::Tet10, p: usize, q: usize| {
+        let m = TET_EDGES.iter().position(|&e| e == (p, q) || e == (q, p)).unwrap();
+        t.n[4 + m]
+    };
+    let mut out = Vec::new();
+    for t in &s.tets {
+        for far in 0..4 {
+            let mut f: Vec<usize> = (0..4).filter(|&k| k != far).collect();
+            if !f.iter().all(|&k| on(place(t.n[k]))) {
+                continue;
+            }
+            let p = f.iter().map(|&k| place(t.n[k])).collect::<Vec<_>>();
+            if dot(cross(sub(p[1], p[0]), sub(p[2], p[0])), sub(place(t.n[far]), p[0])) > 0.0 {
+                f.swap(1, 2);
+            }
+            out.push([t.n[f[0]], t.n[f[1]], t.n[f[2]], mid(t, f[0], f[1]), mid(t, f[1], f[2]),
+                      mid(t, f[2], f[0])]);
+        }
+    }
+    out
+}
+
+/// **The patch test in space** (#510 S3): a block of knocked-about quadratic tetrahedra, its
+/// near face held along x and three of its corners held just enough to take out the rest of the
+/// rigid motions, pulled by a pressure of `−σ` on its far face, stresses uniformly — `σx = σ`
+/// and every other component nothing at every node of every element — and stretches as the
+/// closed form: `σ w / E` along it, `−ν σ h / E` and `−ν σ d / E` across.
+#[test]
+fn a_block_pulled_stresses_uniformly_as_the_patch_test_asks() {
+    let (n, size, sigma) = ([3, 2, 2], [30.0, 20.0, 10.0], 50.0);
+    let mut rng = Rng::new(11);
+    let (mut s, x) = block(n, size, 0.2, &mut rng);
+    let place = |i: usize| [x[3 * i], x[3 * i + 1], x[3 * i + 2]];
+    let at = |p: [f64; 3]| (0..s.nodes).find(|&i| sub(place(i), p).iter().all(|v| v.abs() < 1e-9))
+        .unwrap();
+    for i in 0..s.nodes {
+        if place(i)[0].abs() < 1e-9 {
+            s.fixed[3 * i] = true;
+        }
+    }
+    let (o, top, deep) = (at([0.0; 3]), at([0.0, size[1], 0.0]), at([0.0, 0.0, size[2]]));
+    for (node, c) in [(o, 1), (o, 2), (top, 2), (deep, 1)] {
+        s.fixed[3 * node + c] = true;
+    }
+    s.borne = vec![interior::Borne::Pressure {
+        facets: facets_where(&s, &x, |p| (p[0] - size[0]).abs() < 1e-9), p: -sigma }];
+    let st = s.solve(&x).unwrap();
+    let e = 2e5;
+    let corner = at(size);
+    let u: [f64; 3] = std::array::from_fn(|c| st.u[3 * corner + c]);
+    let want = [sigma * size[0] / e, -0.3 * sigma * size[1] / e, -0.3 * sigma * size[2] / e];
+    for c in 0..3 {
+        assert!((u[c] - want[c]).abs() <= 1e-10 * want[0], "{u:?} against {want:?}");
+    }
+    for (i, t) in s.tets.iter().enumerate() {
+        let ue: [f64; 30] = std::array::from_fn(|k| st.u[3 * t.n[k / 3] + k % 3]);
+        for sn in t.stresses(&s.tet_places(i, &x), &ue).unwrap() {
+            assert!((sn[0] - sigma).abs() <= 1e-9 * sigma, "{sn:?}");
+            assert!(sn[1..].iter().all(|v| v.abs() <= 1e-9 * sigma), "{sn:?}");
+            assert!((interior::Tet10::von_mises(sn) - sigma).abs() <= 1e-9 * sigma);
+        }
+    }
+}
+
+/// **What a solid element is** (#510 S3): its stiffness has exactly six motions that cost
+/// nothing, the rigid ones — three slides and three turns; its mass weighs `ρ V` along each
+/// axis; its volume is `∫ det J`, exact for a curved edge; and a load borne by it lays its
+/// whole: a body load `b V`, a force spread through it or over a facet `F`, a pressure `p` times
+/// the facet's area along its inward normal.  Turned over, it is `Collapsed`; and a stress makes
+/// a geometric stiffness that stiffens under a pull along it.
+#[test]
+fn a_solid_element_is_rigid_in_six_motions_and_weighs_its_volume() {
+    let mut rng = Rng::new(5);
+    let (mut s, x) = block([1, 1, 1], [3.0, 2.0, 1.0], 0.0, &mut rng);
+    s.tets.truncate(1);
+    let t = s.tets[0];
+    let p = s.tet_places(0, &x);
+    let k = t.stiffness(&p).unwrap();
+    let mut m = gcs_core::linalg::Mat::zeros(30, 30);
+    for a in 0..30 {
+        for b in 0..30 {
+            m.set(a, b, k[a][b]);
+        }
+    }
+    let values = gcs_core::linalg::sym_eigenvalues(&m);
+    let top = values.iter().fold(0.0f64, |a, v| a.max(v.abs()));
+    let zero = values.iter().filter(|v| v.abs() <= 1e-10 * top).count();
+    assert_eq!(zero, 6, "{values:?}");
+    for c in 0..6 {
+        let r: [f64; 30] = std::array::from_fn(|i| {
+            let (n, axis) = (i / 3, i % 3);
+            let q = p[n];
+            match c {
+                0..3 => (axis == c) as u8 as f64,
+                _ => cross([(c == 3) as u8 as f64, (c == 4) as u8 as f64, (c == 5) as u8 as f64],
+                           q)[axis],
+            }
+        });
+        for row in &k {
+            let f: f64 = (0..30).map(|i| row[i] * r[i]).sum();
+            assert!(f.abs() <= 1e-10 * top * 3.0, "motion {c}: {f}");
+        }
+    }
+    let vol = dot(sub(p[1], p[0]), cross(sub(p[2], p[0]), sub(p[3], p[0]))) / 6.0;
+    assert!(vol > 0.0);
+    let mass = t.mass(&p).unwrap();
+    for axis in 0..3 {
+        let sum: f64 = (0..10).flat_map(|a| (0..10).map(move |b| (a, b)))
+            .map(|(a, b)| mass[3 * a + axis][3 * b + axis]).sum();
+        assert!((sum - t.rho * vol).abs() <= 1e-12 * sum, "{sum} against {}", t.rho * vol);
+    }
+    assert!((t.volume(&p) - vol).abs() <= 1e-12 * vol);
+    // with its middle nodes knocked about, its volume is the Bernstein coefficients' mean of the
+    // volume mesh's own element (#510 P6), an independent reading of the same cubic
+    let mut bowed = p;
+    for q in bowed.iter_mut().skip(4) {
+        for c in 0..3 {
+            q[c] += rng.uniform(-0.1, 0.1);
+        }
+    }
+    let exact = gcs_core::delaunay::tetra::Tet10 { nodes: bowed }.volume();
+    assert!((t.volume(&bowed) - exact).abs() <= 1e-12 * vol, "{} against {exact}",
+            t.volume(&bowed));
+    // what a load lays, in whole
+    let lays = |l: interior::Borne| -> [f64; 3] {
+        let mut s1 = s.clone();
+        s1.borne = vec![l];
+        let f = s1.forces(&x);
+        [0, 1, 2].map(|c| (0..s1.nodes).map(|n| f[3 * n + c]).sum())
+    };
+    let near = |a: [f64; 3], b: [f64; 3]| {
+        let d = sub(a, b);
+        dot(d, d).sqrt() <= 1e-12 * dot(b, b).sqrt()
+    };
+    let force = [3.0, -5.0, 2.0];
+    let body = lays(interior::Borne::Body { elements: vec![0], force });
+    assert!(near(body, force.map(|f| f * vol)), "{body:?}");
+    assert!(near(lays(interior::Borne::Through { elements: vec![0], force }), force));
+    let facet = facets_where(&s, &x, |q| q[2].abs() < 1e-9)[0];
+    assert!(near(lays(interior::Borne::Across { facets: vec![facet], force }), force));
+    let corners = [facet[0], facet[1], facet[2]].map(|i| [x[3 * i], x[3 * i + 1], x[3 * i + 2]]);
+    let nda = cross(sub(corners[1], corners[0]), sub(corners[2], corners[0])).map(|v| v / 2.0);
+    let pressed = lays(interior::Borne::Pressure { facets: vec![facet], p: 4.0 });
+    assert!(near(pressed, nda.map(|v| -4.0 * v)), "{pressed:?} against {nda:?}");
+    // a pull along x stiffens a move across it
+    let u: [f64; 30] = std::array::from_fn(|i| if i % 3 == 0 { 1e-3 * p[i / 3][0] } else { 0.0 });
+    let kg = t.geometric(&p, &u).unwrap();
+    let across: [f64; 30] = std::array::from_fn(|i| if i % 3 == 1 { p[i / 3][0] } else { 0.0 });
+    let energy: f64 = (0..30).map(|a| (0..30).map(|b| across[a] * kg[a][b] * across[b]).sum::<f64>())
+        .sum();
+    // σx = (λ + 2μ) ε along x, and the move across it is a unit slope: σx V
+    let (l, mu) = t.lame();
+    let want = (l + 2.0 * mu) * 1e-3 * vol;
+    assert!((energy - want).abs() <= 1e-10 * want, "{energy} against {want}");
+    // mirrored, it is turned over everywhere
+    let over = p.map(|q| [-q[0], q[1], q[2]]);
+    assert_eq!(t.stiffness(&over).err(), Some(Failure::Collapsed));
+}
+
+/// **A solid structure's adjoint gradient agrees with its differences** (#510 S3): blocks of
+/// knocked-about elements with their middle nodes moved off their edges (curved), held at their
+/// near faces, under every load a solid bears at once — a pressure on the far face, a force
+/// spread over the top, a force through half the elements and a body load through the rest —
+/// and a load at a node, the output a random weighing of the moves.  Through the kernel, so its
+/// constants are read back too; stated and with an unknown setting the output.
+#[test]
+fn a_solid_interior_agrees_with_finite_differences() {
+    use gcs_core::fdcheck::fd_jacobian;
+    for seed in 0..2u32 {
+        let mut rng = Rng::new(seed + 140);
+        let size = [30.0, 12.0, 10.0];
+        let (mut s, mut x) = block([2 + seed as usize, 1, 1], size, 0.15, &mut rng);
+        for t in &s.tets {
+            for m in 4..10 {
+                for c in 0..3 {
+                    x[3 * t.n[m] + c] += rng.uniform(-0.2, 0.2);
+                }
+            }
+        }
+        let place = |x: &[f64], i: usize| [x[3 * i], x[3 * i + 1], x[3 * i + 2]];
+        for i in 0..s.nodes {
+            if place(&x, i)[0].abs() < 1e-9 {
+                for c in 0..3 {
+                    s.fixed[3 * i + c] = true;
+                }
+            }
+        }
+        let n_el = s.tets.len();
+        let far = facets_where(&s, &x, |p| (p[0] - size[0]).abs() < 1e-9);
+        let top = facets_where(&s, &x, |p| (p[1] - size[1]).abs() < 1e-9);
+        s.borne = vec![
+            interior::Borne::Pressure { facets: far, p: 30.0 },
+            interior::Borne::Across { facets: top, force: [-40.0, 700.0, 20.0] },
+            interior::Borne::Through { elements: (0..n_el).step_by(2).collect(),
+                                       force: [90.0, 20.0, -10.0] },
+            interior::Borne::Body { elements: (1..n_el).step_by(2).collect(),
+                                    force: [0.5, -3.0, 1.0] },
+        ];
+        let last = s.nodes - 1;
+        s.load[3 * last + 1] = -500.0;
         for w in s.weight.iter_mut() {
             *w = rng.uniform(-1.0, 1.0);
         }

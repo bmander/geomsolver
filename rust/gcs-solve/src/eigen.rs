@@ -101,6 +101,9 @@ const FLOOR: f64 = 1e-4;
 const GAP: f64 = 1e-6;
 /// The shift's first distance below zero, relative to the least diagonal ratio `L_ii / R_ii`.
 const SHIFT: f64 = 1e-6;
+/// A load factor past this buckles nothing a load is read for: where the iteration converges on
+/// none, a count of none below it is none at all (`buckling`).
+pub const UNBUCKLED: f64 = 1e6;
 
 /// A vector and B times it: every vector of the iteration is carried with its product, so an
 /// inner product is one dot and a combination of vectors needs no further product.
@@ -367,6 +370,21 @@ pub fn lowest(a: &Sym, b: &Sym, count: usize, opts: &Opts) -> Result<Pairs, Refu
 /// load), `K_G` the geometric stiffness of the reference load, and λ the multiple of that load
 /// the structure buckles at.  A load that buckles nothing (all tension) has none, and fewer than
 /// `count` are returned when the load reaches fewer.  The pencil is `K φ = λ (−K_G) φ`.
+///
+/// A solid in tension (#510 S3) has a geometric stiffness with a null space of thousands, every
+/// θ of the iteration about zero, where it converges on nothing: there Sylvester's count answers
+/// instead.  No negative pivot of `K + μ K_G` at `μ = UNBUCKLED` is no factor below it, so none
+/// is returned; any is the iteration's failure, refused.
 pub fn buckling(k: &Sym, kg: &Sym, count: usize, opts: &Opts) -> Result<Pairs, Refusal> {
-    solve(k, &kg.scaled(-1.0), true, count, opts)
+    let r = kg.scaled(-1.0);
+    match solve(k, &r, true, count, opts) {
+        Err(Refusal::NoConvergence { converged: 0 }) => {
+            let below = Pencil::new(k, &r).factor(UNBUCKLED).map(|f| f.negative_pivots());
+            match below {
+                Some(0) => Ok(Pairs::default()),
+                _ => Err(Refusal::NoConvergence { converged: 0 }),
+            }
+        }
+        other => other,
+    }
 }

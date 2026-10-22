@@ -3,9 +3,10 @@
 //! an up-looking LDLᵀ (Davis).  Regularizing the diagonal keeps rank-deficient
 //! (under-constrained) systems solvable, which is the normal case while editing.
 //!
-//! The same factor serves a symmetric matrix given by its entries (`Sym`, `Ldl`): a stiffness or
-//! a mass, and a pencil `L − μR` analysed once and factored at each μ the eigensolver asks for
-//! (`Pencil`, `eigen.rs`, #510), whose pivots' signs count the eigenvalues below μ.
+//! A symmetric matrix given by its entries (`Sym`) — a stiffness, a mass — is factored by P1's
+//! supernodal LDLᵀ under minimum degree (`Ldl`, #510 S3), and so is a pencil `L − μR` analysed
+//! once and factored at each μ the eigensolver asks for (`Pencil`, `eigen.rs`, #510 P2), whose
+//! pivots' signs count the eigenvalues below μ.
 
 /// Reverse Cuthill–McKee on the pattern of A: short, and the sketch graphs this solver sees
 /// (trusses, chains, rings) are close to banded once relabelled this way.
@@ -152,8 +153,8 @@ fn ldl_symbolic(
 }
 
 /// The LDLᵀ of a symmetric pattern: its order, its elimination tree and room for the factor's
-/// numbers, refilled by `numeric` for each new set of values on the same pattern.  `Ata`, `Ldl`
-/// and `Pencil` are its users.
+/// numbers, refilled by `numeric` for each new set of values on the same pattern.  `Ata` is its
+/// user.
 #[derive(Clone)]
 struct Factor {
     /// The columns ordered last as dense (`dense_columns`).
@@ -407,7 +408,7 @@ impl Sym {
     /// is not mirrored, and a matrix that is not symmetric is not one this factors.
     pub fn from_triplets(n: usize, entries: &[(usize, usize, f64)]) -> Sym {
         let mut t: Vec<(usize, usize, f64)> = entries.to_vec();
-        t.sort_by_key(|e| (e.1, e.0));
+        t.sort_unstable_by_key(|e| (e.1, e.0));
         let mut ap = vec![0i32; n + 1];
         let mut ai: Vec<i32> = Vec::with_capacity(t.len());
         let mut ax: Vec<f64> = Vec::with_capacity(t.len());
@@ -427,6 +428,23 @@ impl Sym {
             ap[j + 1] += ap[j];
         }
         Sym { n, ap, ai, ax }
+    }
+
+    /// Its lower triangle by column, what `cholesky` factors: the entries `(i, j)` with `i ≥ j`,
+    /// in the order they are stored.
+    fn lower(&self) -> crate::cholesky::Symmetric {
+        let mut colptr = vec![0usize; self.n + 1];
+        let (mut rowind, mut values) = (Vec::new(), Vec::new());
+        for j in 0..self.n {
+            for p in self.ap[j] as usize..self.ap[j + 1] as usize {
+                if self.ai[p] as usize >= j {
+                    rowind.push(self.ai[p] as usize);
+                    values.push(self.ax[p]);
+                }
+            }
+            colptr[j + 1] = rowind.len();
+        }
+        crate::cholesky::Symmetric { n: self.n, colptr, rowind, values }
     }
 
     /// The stored entries, `(row, column, value)`, column by column.
@@ -487,41 +505,53 @@ impl Sym {
     }
 }
 
-/// The LDLᵀ of a `Sym`, without pivoting: the order `Ata`'s is (RCM, dense columns last), the
-/// same up-looking factor.  An SPD matrix factors stably; an indefinite one (a pencil shifted
-/// into its spectrum) factors when no pivot is zero, and its pivots then carry its inertia
-/// (Sylvester): as many negative as the matrix has negative eigenvalues.
+/// The LDLᵀ of a `Sym`, without pivoting: P1's supernodal factor under approximate minimum
+/// degree (`cholesky::Cholesky::factor_ldl`, #510 S3), where a mesh's pencils are factored.  An
+/// SPD matrix factors stably; an indefinite one (a pencil shifted into its spectrum) factors when
+/// no pivot is zero, and its pivots then carry its inertia (Sylvester): as many negative as the
+/// matrix has negative eigenvalues.
 pub struct Ldl {
-    factor: Factor,
+    factor: crate::cholesky::Cholesky,
+    negative: usize,
 }
 
 impl Ldl {
     /// The factor of `a`, or `None` on a zero pivot.
     pub fn new(a: &Sym) -> Option<Ldl> {
-        let mut factor = Factor::new(a);
-        factor.numeric(a, None).then_some(Ldl { factor })
+        let low = a.lower();
+        let factor = crate::cholesky::Cholesky::analyse(&low, crate::cholesky::Ordering::Amd);
+        Ldl::of(factor, &low)
+    }
+
+    /// `factor`'s analysis given `a`'s values, or `None` on a zero pivot.
+    fn of(mut factor: crate::cholesky::Cholesky, a: &crate::cholesky::Symmetric) -> Option<Ldl> {
+        let negative = factor.factor_ldl(a).ok()?;
+        Some(Ldl { factor, negative })
     }
 
     /// `b <- A⁻¹ b`.
     pub fn solve(&self, b: &mut [f64]) {
-        self.factor.resolve(b);
+        self.factor.solve(b);
     }
 
     /// How many of the pivots are negative: the number of A's eigenvalues below zero, so for
     /// `A − σB` with B positive definite the number of the pencil's below σ.
     pub fn negative_pivots(&self) -> usize {
-        self.factor.d.iter().filter(|&&d| d < 0.0).count()
+        self.negative
     }
 }
 
 /// The pencil `L − μR` of two `Sym`s, on the union of their patterns, ordered and analysed
-/// once: a shift, or a count of the eigenvalues below one, is a numeric factor and no more.
+/// once (under minimum degree, #510 S3): a shift, or a count of the eigenvalues below one, is a
+/// numeric factor and no more.
 pub struct Pencil {
     /// L's values on the pattern L ∪ R.
     l: Sym,
     /// R's values on the same pattern.
     r: Vec<f64>,
-    symbolic: Factor,
+    /// The lower triangles of L and of R on the pattern, and its analysis.
+    lower: (crate::cholesky::Symmetric, Vec<f64>),
+    symbolic: crate::cholesky::Cholesky,
 }
 
 impl Pencil {
@@ -532,8 +562,11 @@ impl Pencil {
         let mut u = Sym::from_triplets(l.n, &t);
         let r_values = u.scatter(r);
         u.ax = u.scatter(l);
-        let symbolic = Factor::new(&u);
-        Pencil { l: u, r: r_values, symbolic }
+        let low = u.lower();
+        let low_r = Sym { ax: r_values.clone(), ..u.clone() }.lower().values;
+        let symbolic =
+            crate::cholesky::Cholesky::analyse(&low, crate::cholesky::Ordering::Amd);
+        Pencil { l: u, r: r_values, lower: (low, low_r), symbolic }
     }
 
     /// `L − μR`.
@@ -544,7 +577,9 @@ impl Pencil {
 
     /// The factor of `L − μR`, or `None` on a zero pivot.
     pub fn factor(&self, mu: f64) -> Option<Ldl> {
-        let mut factor = self.symbolic.clone();
-        factor.numeric(&self.at(mu), None).then_some(Ldl { factor })
+        let (l, r) = &self.lower;
+        let values = l.values.iter().zip(r).map(|(l, r)| l - mu * r).collect();
+        let at = crate::cholesky::Symmetric { values, ..l.clone() };
+        Ldl::of(self.symbolic.clone(), &at)
     }
 }

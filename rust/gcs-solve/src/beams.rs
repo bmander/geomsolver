@@ -43,6 +43,8 @@ type V = [f64; 3];
 
 /// How many cubic elements a member is cut into between two joints.
 pub const PIECES: usize = 8;
+/// Two readings within this of their value differ by rounding alone (`Read::estimated`).
+pub const ROUNDING: f64 = 1e-12;
 /// Two places within this of the frame's extent are one joint; a point within it of a member's
 /// line, between its ends, lies on the member.  Far below any member's length, far above what
 /// "solved" leaves between two points held coincident.
@@ -52,12 +54,22 @@ pub const JOINED: f64 = 1e-6;
 /// and per requirement its value, or why it has none; `None` for one about no frame (a solid's,
 /// which nothing analyses yet).  Per support, whether it holds a frame (names a joint of one), so
 /// the body a solid's supports hold is not read with it.  A scenario's regions read in their
-/// plane say the same (#510 S2, `prisms::read`), and the two are merged (`merge`).
+/// plane say the same (#510 S2, `prisms::read`), and so do the solids it reads in three
+/// dimensions (#510 S3, `bodies::read`), which it names in `bodies`; each is merged (`merge`).
+///
+/// **Beside each value, the error estimated in it** (#510 S3, `errors`): the change from the
+/// same reading twice as coarse (`estimated`) — a frame at half its pieces, a region or a solid
+/// meshed at twice its elements' size.  Where the coarser reading's error is at least twice the
+/// finer's, as it is wherever a discretisation converges at all, that change bounds the finer's
+/// error; it is no bound on what the element leaves out (a beam's shear, a stress at a point a
+/// load is laid on).  `None` where the coarser reading has no value.
 #[derive(Clone, Debug, Default)]
 pub struct Read {
     pub words: Vec<String>,
     pub answers: Vec<Option<Result<f64, String>>>,
+    pub errors: Vec<Option<f64>>,
     pub holds: Vec<bool>,
+    pub bodies: Vec<usize>,
 }
 
 impl Read {
@@ -70,14 +82,31 @@ impl Read {
     /// this has none, a support held by either.
     pub fn merge(&mut self, other: Read) {
         self.words.extend(other.words);
-        for (a, b) in self.answers.iter_mut().zip(other.answers) {
-            if a.is_none() {
-                *a = b;
+        self.errors.resize(self.answers.len(), None);
+        for (k, b) in other.answers.into_iter().enumerate() {
+            if self.answers[k].is_none() && b.is_some() {
+                self.answers[k] = b;
+                self.errors[k] = other.errors.get(k).copied().flatten();
             }
         }
         for (a, b) in self.holds.iter_mut().zip(other.holds) {
             *a |= b;
         }
+        self.bodies.extend(other.bodies);
+    }
+
+    /// **This reading with the error estimated beside each value**: the change from `coarser`,
+    /// the same reading twice as coarse — nothing where it is rounding's (`ROUNDING` of the
+    /// value: a straight solid's mass, a frame's joint under loads the cubic is exact for).
+    pub fn estimated(mut self, coarser: &Read) -> Read {
+        self.errors = self.answers.iter().zip(&coarser.answers).map(|(a, b)| match (a, b) {
+            (Some(Ok(a)), Some(Ok(b))) => {
+                let e = (a - b).abs();
+                Some(if e <= ROUNDING * a.abs().max(b.abs()) { 0.0 } else { e })
+            }
+            _ => None,
+        }).collect();
+        self
     }
 }
 
@@ -371,7 +400,8 @@ impl Framed {
         }
         let mut s = Structure { dim: 3, nodes: n, bars: Vec::new(), beams: elements,
                                 fixed: Vec::new(), load: Vec::new(), weight: Vec::new(),
-                                spread: Vec::new(), tris: Vec::new(), laid: Vec::new() };
+                                spread: Vec::new(), tris: Vec::new(), laid: Vec::new(),
+                                tets: Vec::new(), borne: Vec::new() };
         let dofs = s.per() * n;
         (s.fixed, s.load, s.weight) = (vec![false; dofs], vec![0.0; dofs], vec![0.0; dofs]);
         let on = |a: &Applied| -> Vec<usize> {
@@ -708,15 +738,22 @@ fn frame_of(sk: &Sketch, mesh: &Mesh, of: &Applied) -> Option<Result<usize, Stri
 /// value or why none, the words its frames say, and which supports hold a frame.  Each frame is
 /// analysed once, and its modes solved once for the most any requirement asks for.
 pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
+    let coarser = read_pieces(sk, sc, PIECES / 2);
+    read_pieces(sk, sc, PIECES).estimated(&coarser)
+}
+
+/// `read`, each member cut into `pieces` elements between its joints.
+fn read_pieces(sk: &Sketch, sc: &Scenario, pieces: usize) -> Read {
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
         holds: vec![false; sc.supports.len()],
+        ..Read::default()
     };
     if sk.beams.is_empty() {
         return out;
     }
-    let mesh = match Mesh::new(sk, &named_points(sc, None), PIECES) {
+    let mesh = match Mesh::new(sk, &named_points(sc, None), pieces) {
         Ok(m) => m,
         Err(m) => {
             out.words.push(format!("scenario `{}`: {m}", sc.name));
@@ -864,7 +901,18 @@ fn stress(r: &[f64; 12], q: V, h: f64, a: f64, sy: f64, sz: f64) -> f64 {
 /// length (`1.6mm`), a frequency in hertz, a mass in kilograms, a compliance in joules, a factor
 /// as a plain number — six figures.
 pub fn value_text(sk: &Sketch, output: Output, v: f64) -> String {
-    let fig = |v: f64| crate::json::fmt_g(v, 6);
+    figures_text(sk, output, v, 6)
+}
+
+/// **The error estimated beside a value** (#510 S3, `Read::errors`), as its value is said but
+/// to two figures: `± 0.0021mm`.
+pub fn error_text(sk: &Sketch, output: Output, e: f64) -> String {
+    format!("± {}", figures_text(sk, output, e, 2))
+}
+
+/// A value of `output` to `figures` figures, in its unit.
+fn figures_text(sk: &Sketch, output: Output, v: f64, figures: usize) -> String {
+    let fig = |v: f64| crate::json::fmt_g(v, figures);
     match output {
         Output::Deflection => format!("{}{}", fig(v), sk.units.name()),
         Output::Mode => format!("{}Hz", fig(v)),

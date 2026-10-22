@@ -310,6 +310,7 @@ pub fn scenarios_json(sk: &Sketch, scenarios: &[crate::program::Stated]) -> Json
             ("requirement", a.head.as_str().into()),
             ("grade", a.grade.into()),
             ("value", a.value.map_or(Json::Null, Json::from)),
+            ("error", a.error.map_or(Json::Null, Json::from)),
             ("holds", a.holds.map_or(Json::Null, Json::from)),
             ("text", a.text.as_str().into()),
         ]));
@@ -322,14 +323,16 @@ pub fn scenarios_json(sk: &Sketch, scenarios: &[crate::program::Stated]) -> Json
 }
 
 /// **A requirement a frame answers** (#510 S0): what it is of as written, its grade, its value
-/// in the document's units (`None` where there is none), whether it keeps what it states, and
-/// the sentence a report says — `` scenario `lift`: deflection(tip, along: down) is 0.4mm:
-/// claimed <= 0.5mm, kept ``.
+/// in the document's units (`None` where there is none), the error estimated beside it (#510
+/// S3, `beams::Read::errors`), whether it keeps what it states, and the sentence a report says
+/// — `` scenario `lift`: deflection(tip, along: down) is 0.4mm ± 0.0012mm: claimed <= 0.5mm,
+/// kept ``.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScenarioAnswer {
     pub head: String,
     pub grade: &'static str,
     pub value: Option<f64>,
+    pub error: Option<f64>,
     pub holds: Option<bool>,
     pub text: String,
 }
@@ -360,6 +363,7 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
             (Ok(_), Some(v)) if v.is_finite() => &Ok(v),
             _ => got,
         };
+        let error = read.errors.get(k).copied().flatten();
         let (value, holds, said) = match got {
             Ok(v) => {
                 let keeps = crate::beams::keeps(r, *v);
@@ -373,13 +377,17 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
                     (_, false) => format!("stated {stated}, which does not hold; nothing drives \
                                            it yet"),
                 };
-                let v_text = crate::beams::value_text(sk, r.output, *v);
+                let mut v_text = crate::beams::value_text(sk, r.output, *v);
+                if let Some(e) = error {
+                    v_text = format!("{v_text} {}", crate::beams::error_text(sk, r.output, e));
+                }
                 (Some(*v), Some(keeps), format!("{head} is {v_text}: {verdict}"))
             }
             Err(why) => (None, None, format!("{head} has no answer: {why}")),
         };
         let text = format!("scenario `{}`: {said}", s.scenario.name);
-        out.push(ScenarioAnswer { head, grade, value, holds, text });
+        let error = value.and(error);
+        out.push(ScenarioAnswer { head, grade, value, error, holds, text });
     }
     out
 }

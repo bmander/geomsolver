@@ -28,8 +28,9 @@
 //! stretch, its twist, and two for each plane it bends in, a Cholesky factor of `[4 2; 2 4]`
 //! times its ends' turns against its chord — so it joins the solve, the gradient and the
 //! mechanism as the bar does.  The quadratic triangle (#510 S2, `plane::Tri6`), in plane stress
-//! or plane strain, is the third: nine strain rows over its six nodes' moves.  Solids are a
-//! further element of the same interior (#510 S3).
+//! or plane strain, is the third: nine strain rows over its six nodes' moves.  The quadratic
+//! tetrahedron (#510 S3, `solid::Tet10`) is the fourth: twenty-four strain rows over its ten
+//! nodes' moves in space.
 
 use crate::diagnose::analysis::{self, Freedom, Held, Reach};
 use crate::kernels::{curve_widths, Dual, Kernel, Num};
@@ -40,8 +41,10 @@ use crate::sparse::{Ata, Sym};
 
 mod moved;
 mod plane;
-pub use moved::{Edge, Moved, Node};
+mod solid;
+pub use moved::{Edge, Moved, Node, Stack};
 pub use plane::{Laid, Tri6};
+pub use solid::{Borne, Tet10};
 
 /// Below this least pivot (`Ata::least_pivot`, a pivot as a fraction of its diagonal) the
 /// stiffness is singular: a motion the supports leave free costs only rounding's worth of
@@ -76,7 +79,8 @@ pub struct Beam {
 /// (`model::SectionProp::STIFFNESS`).
 pub const SECTION: usize = 4;
 
-/// A structure of bars and beams, or of plane elements (#510 S2): `nodes` points of `dim` (2 or
+/// A structure of bars and beams, of plane elements (#510 S2), or of solid elements (#510 S3):
+/// `nodes` points of `dim` (2 or
 /// 3) coordinates each, and per degree of freedom (`per · node + k`, `Structure::per`) whether a
 /// support holds it, the load on it, and its weight in the output `J = Σ weight · u`.  A node's
 /// degrees of freedom are its moves along the axes, then where there is a beam its turns: about z
@@ -87,8 +91,8 @@ pub const SECTION: usize = 4;
 /// (`Structure::columns`); the moduli, the densities, the supports, the loads and the weights are
 /// constants.  A load spread along beams (`spread`, #510 S1) is a force of their geometry and
 /// their sections, so it moves with the columns: `f(x)`.  So does a load laid on plane elements
-/// (`laid`, #510 S2), of their places.
-#[derive(Clone, Debug, PartialEq)]
+/// (`laid`, #510 S2), of their places, and a load borne by solid elements (`borne`, #510 S3).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Structure {
     pub dim: usize,
     pub nodes: usize,
@@ -101,6 +105,9 @@ pub struct Structure {
     /// The plane elements (#510 S2), in a structure of `dim` 2.
     pub tris: Vec<Tri6>,
     pub laid: Vec<Laid>,
+    /// The solid elements (#510 S3), in a structure of `dim` 3.
+    pub tets: Vec<Tet10>,
+    pub borne: Vec<Borne>,
 }
 
 /// **A load spread along beams** (#510 S1), each carrying it as a force a length, `q`, in the
@@ -129,9 +136,10 @@ pub enum Failure {
 }
 
 /// The factor a structure's displacements were solved on: the normal equations of its strain
-/// rows (`sparse::Ata`, reverse Cuthill–McKee) for bars and beams, or a plane structure's
-/// stiffness assembled and factored by supernodal Cholesky under minimum degree
-/// (`cholesky::Cholesky`, #510 S2) — a mesh's thousands of unknowns, which a band order fills.
+/// rows (`sparse::Ata`, reverse Cuthill–McKee) for bars and beams, or a plane or a solid
+/// structure's stiffness assembled and factored by supernodal Cholesky under minimum degree
+/// (`cholesky::Cholesky`, #510 S2, S3) — a mesh's thousands of unknowns, which a band order
+/// fills.
 enum Factor {
     Ata(Ata),
     Cholesky(crate::cholesky::Cholesky),
@@ -236,16 +244,17 @@ impl Structure {
         d
     }
 
-    /// Assemble `K(x)` as strain rows, factor it and solve `K u = f`.  A plane structure's
-    /// stiffness is assembled whole and factored under minimum degree (#510 S2): a pivot lost to
-    /// rounding is a motion the supports leave free.
+    /// Assemble `K(x)` as strain rows, factor it and solve `K u = f`.  A plane or a solid
+    /// structure's stiffness is assembled whole and factored under minimum degree (#510 S2, S3):
+    /// a pivot lost to rounding is a motion the supports leave free.
     pub fn solve(&self, x: &[f64]) -> Result<State, Failure> {
         let (eq, n_eq) = self.equations();
         let mut rhs: Vec<f64> = eq.iter().zip(self.forces(x)).filter(|(e, _)| e.is_some())
             .map(|(_, v)| v).collect();
-        let factor = if !self.tris.is_empty() {
+        let factor = if self.meshed() {
             let mut t = Vec::new();
             self.tris_into(&eq, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
+            self.tets_into(&eq, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
             let k = crate::cholesky::Symmetric::from_triplets(n_eq, &t);
             let mut c = crate::cholesky::Cholesky::analyse(&k, crate::cholesky::Ordering::Amd);
             c.factor(&k).map_err(|_| Failure::Free)?;
@@ -336,7 +345,14 @@ impl Structure {
             Ok(m)
         })?;
         self.tris_into(&eq, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
+        self.tets_into(&eq, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
         Ok(Sym::from_triplets(n_eq, &t))
+    }
+
+    /// Whether it is a mesh of plane or solid elements, assembled whole and factored under
+    /// minimum degree.
+    fn meshed(&self) -> bool {
+        !self.tris.is_empty() || !self.tets.is_empty()
     }
 
     /// Per degree of freedom its equation, `None` where a support holds it, and how many there
@@ -375,6 +391,27 @@ impl Structure {
         let lam = st.scatter(&rhs);
         self.spread_into(&lam, x, g);
         self.laid_into(&lam, x, g);
+        self.borne_into(&lam, x, g);
+        for i in 0..self.tets.len() {
+            // the element's mutual energy over its thirty coordinates
+            let Ok(rows) = self.tets[i].rows(&self.tet_places_d::<30>(i, x)) else { continue };
+            let dofs = self.tet_dofs(i);
+            let (l, u): (Vec<f64>, Vec<f64>) = dofs.iter().map(|&d| (lam[d], st.u[d])).unzip();
+            let mut m = Dual::<30>::cst(0.0);
+            for r in &rows {
+                let (mut rl, mut ru) = (Dual::cst(0.0), Dual::cst(0.0));
+                for k in 0..30 {
+                    rl = rl + r[k] * Dual::cst(l[k]);
+                    ru = ru + r[k] * Dual::cst(u[k]);
+                }
+                m = m + rl * ru;
+            }
+            for (k, &n) in self.tets[i].n.iter().enumerate() {
+                for c in 0..3 {
+                    g[3 * n + c] -= m.g[3 * k + c];
+                }
+            }
+        }
         for i in 0..self.tris.len() {
             // the element's mutual energy over its twelve coordinates
             let Ok(rows) = self.tris[i].rows(&self.tri_places_d::<12>(i, x)) else { continue };
@@ -672,6 +709,7 @@ impl Structure {
     pub fn forces(&self, x: &[f64]) -> Vec<f64> {
         let mut f = self.load.clone();
         self.laid_forces(x, &mut f);
+        self.borne_forces(x, &mut f);
         if self.spread.is_empty() {
             return f;
         }
@@ -796,6 +834,7 @@ impl Structure {
             Ok(m)
         })?;
         self.tris_into(&eq, &mut t, |i| self.tris[i].mass(&self.tri_places(i, x)))?;
+        self.tets_into(&eq, &mut t, |i| self.tets[i].mass(&self.tet_places(i, x)))?;
         Ok(Sym::from_triplets(n_eq, &t))
     }
 
@@ -966,6 +1005,139 @@ impl Structure {
     }
 }
 
+/* -- the solid element (#510 S3) ------------------------------------------------------------- */
+
+impl Structure {
+    /// Solid element `i`'s thirty degrees of freedom: each node's move along x, y, then z.
+    fn tet_dofs(&self, i: usize) -> [usize; 30] {
+        let n = self.tets[i].n;
+        std::array::from_fn(|k| 3 * n[k / 3] + k % 3)
+    }
+
+    /// Solid element `i`'s nodes' places at `x`.
+    pub fn tet_places(&self, i: usize, x: &[f64]) -> [[f64; 3]; 10] {
+        self.tets[i].n.map(|n| [x[3 * n], x[3 * n + 1], x[3 * n + 2]])
+    }
+
+    /// `tet_places`, each coordinate carrying its rate among the element's thirty (`N` = 30), or
+    /// none (`N` = 0).
+    fn tet_places_d<const N: usize>(&self, i: usize, x: &[f64]) -> [solid::P<Dual<N>>; 10] {
+        let p = self.tet_places(i, x);
+        std::array::from_fn(|k| if N == 0 {
+            p[k].map(Dual::cst)
+        } else {
+            solid::var(p[k], 3 * k)
+        })
+    }
+
+    /// Every solid element's thirty-by-thirty matrix, `local(i)`, added at the equations `eq`
+    /// numbers, as triplets.
+    fn tets_into(&self, eq: &[Option<usize>], t: &mut Vec<(usize, usize, f64)>,
+                 local: impl Fn(usize) -> Result<[[f64; 30]; 30], Failure>) -> Result<(), Failure>
+    {
+        for i in 0..self.tets.len() {
+            let m = local(i)?;
+            let dofs = self.tet_dofs(i);
+            for a in 0..30 {
+                let Some(ea) = eq[dofs[a]] else { continue };
+                for b in 0..30 {
+                    if let (Some(eb), true) = (eq[dofs[b]], m[a][b] != 0.0) {
+                        t.push((ea, eb, m[a][b]));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// **The geometric stiffness of the solid elements** (#510 S3) under the stress the moves `u`
+    /// (per degree of freedom) make, over the equations no support holds: each element's `∫ ∇Nᵀ
+    /// σ ∇N dV` — what `eigen::buckling` reads beside `stiffness`.
+    pub fn stressed(&self, x: &[f64], u: &[f64]) -> Result<Sym, Failure> {
+        let (eq, n_eq) = self.equations();
+        let mut t = Vec::new();
+        self.tets_into(&eq, &mut t, |i| {
+            let ue: [f64; 30] = self.tet_dofs(i).map(|d| u[d]);
+            self.tets[i].geometric(&self.tet_places(i, x), &ue).ok_or(Failure::Collapsed)
+        })?;
+        Ok(Sym::from_triplets(n_eq, &t))
+    }
+
+    /// The solid elements' volume at `x`.
+    pub fn volume(&self, x: &[f64]) -> f64 {
+        (0..self.tets.len()).map(|i| self.tets[i].volume(&self.tet_places(i, x))).sum()
+    }
+
+    /// **Each facet's and element's share of a load borne by the solid** (#510 S3), at `x`, over
+    /// a number that may carry rates (`N` = 30 its nodes' coordinates, a facet's six the first
+    /// eighteen; 0 none): its nodes, their forces, and the measure an even load is spread by.
+    fn borne_shares<const N: usize>(&self, l: &Borne, x: &[f64])
+        -> Vec<(Vec<usize>, Vec<[Dual<N>; 3]>, Dual<N>)>
+    {
+        let place = |n: usize, k: usize| -> solid::P<Dual<N>> {
+            let p = [x[3 * n], x[3 * n + 1], x[3 * n + 2]];
+            if N == 0 { p.map(Dual::cst) } else { solid::var(p, 3 * k) }
+        };
+        let mut out = Vec::new();
+        for facet in l.facets() {
+            let (f, m) = solid::facet_load(l, &std::array::from_fn(|k| place(facet[k], k)));
+            out.push((facet.to_vec(), f.to_vec(), m));
+        }
+        for &e in l.elements() {
+            let t = &self.tets[e];
+            let (f, m) = solid::element_load(l, &std::array::from_fn(|k| place(t.n[k], k)));
+            out.push((t.n.to_vec(), f.to_vec(), m));
+        }
+        out
+    }
+
+    /// The loads borne by the solid at `x`, added into `f` per degree of freedom: each facet's or
+    /// element's consistent load at its nodes, an even load's over the measure it is spread by.
+    fn borne_forces(&self, x: &[f64], f: &mut [f64]) {
+        for l in &self.borne {
+            let shares = self.borne_shares::<0>(l, x);
+            let by = if l.even() { shares.iter().map(|s| s.2.v).sum() } else { 1.0 };
+            for (nodes, at, _) in shares {
+                for (n, v) in nodes.into_iter().zip(at) {
+                    for c in 0..3 {
+                        f[3 * n + c] += v[c].v / by;
+                    }
+                }
+            }
+        }
+    }
+
+    /// **`λᵀ ∂f/∂x` of the loads borne by the solid, added into `g`** (#510 S3), as the plane's
+    /// are (`laid_into`): each share's `λᵀfₑ` in `Dual` over its nodes' places, an even load's
+    /// whole over its measure `S` also reading `−(Σ λᵀfₑ)/S² · ∂S`.
+    fn borne_into(&self, lam: &[f64], x: &[f64], g: &mut [f64]) {
+        for l in &self.borne {
+            let mut parts: Vec<(Vec<usize>, [f64; 30], [f64; 30])> = Vec::new();
+            let (mut whole, mut measure) = (0.0, 0.0);
+            for (nodes, f, m) in self.borne_shares::<30>(l, x) {
+                let mut w = Dual::<30>::cst(0.0);
+                for (&n, fk) in nodes.iter().zip(&f) {
+                    for c in 0..3 {
+                        w = w + fk[c] * Dual::cst(lam[3 * n + c]);
+                    }
+                }
+                whole += w.v;
+                measure += m.v;
+                parts.push((nodes, w.g, m.g));
+            }
+            let (by, less) =
+                if l.even() { (measure, whole / (measure * measure)) } else { (1.0, 0.0) };
+            for (nodes, dw, dm) in parts {
+                for (k, &n) in nodes.iter().enumerate() {
+                    for c in 0..3 {
+                        g[3 * n + c] += dw[3 * k + c] / by - less * dm[3 * k + c];
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Past this many degrees of freedom no dense null space is taken to find a mechanism: the
 /// diagnosis's own limit (`diagnose::NUMERIC_MAX`).
 const MECHANISM_MAX: usize = crate::diagnose::NUMERIC_MAX;
@@ -1067,6 +1239,21 @@ impl Structure {
                 }
             }
         }
+        for i in 0..self.tets.len() {
+            let t = &self.tets[i];
+            let Ok(groups) = t.rows(&self.tet_places_d::<0>(i, x)) else { continue };
+            let dofs = self.tet_dofs(i);
+            let unit = t.e.sqrt();
+            for r in &groups {
+                let at = rows.len();
+                rows.resize(at + n, 0.0);
+                for k in 0..30 {
+                    if let Some(e) = eq[dofs[k]] {
+                        rows[at + e] += r[k].v / unit;
+                    }
+                }
+            }
+        }
         // each rigid motion's field, so what is left is orthogonal to it: its nodes' moves and,
         // where they turn, their turns
         for f in &rigid {
@@ -1140,12 +1327,14 @@ impl Bar {
 /* -- the row's constants ------------------------------------------------------------------ */
 
 /// The constants before the structure: `[dim, nodes, bars, beams, spreads, sized, tris, laid,
-/// moved]` — `sized` how many unknowns the beams' sections are read over (`Sizing`), or −1 where
-/// each section's numbers are columns of their own; `tris` and `laid` the plane elements and the
-/// loads laid on them (#510 S2); `moved` how many columns of the drawing the nodes are read over
-/// (`Moved`), or −1 where their coordinates are the columns — then the output stated, `J₀`, or
-/// where an unknown sets it, its `(m, c)`.
-pub const HEAD: usize = 9;
+/// moved, tets, borne, stacked]` — `sized` how many unknowns the beams' sections are read over
+/// (`Sizing`), or −1 where each section's numbers are columns of their own; `tris` and `laid` the
+/// plane elements and the loads laid on them (#510 S2); `moved` how many columns of the drawing
+/// the nodes are read over (`Moved`), or −1 where their coordinates are the columns; `tets` and
+/// `borne` the solid elements and the loads they bear (#510 S3); `stacked` how many nodes of the
+/// plane a solid's nodes are stacked over (`Stack`), or −1 where the nodes are the plane's own —
+/// then the output stated, `J₀`, or where an unknown sets it, its `(m, c)`.
+pub const HEAD: usize = 12;
 
 /// A beam's constants: its ends, its moduli, its density and its section's z.
 const BEAM: usize = 8;
@@ -1157,6 +1346,36 @@ const TRI: usize = 11;
 /// A laid load's constants before what it lies on: its kind, how many sides or elements, and
 /// two numbers (a pressure and its depth, or a force).
 const LAID: usize = 4;
+
+/// A solid element's constants: its ten nodes, its modulus, ratio and density.
+const TET: usize = 13;
+
+/// A borne load's constants before what it lies on: its kind, how many facets or elements, and
+/// three numbers (a pressure and two zeros, or a force).
+const BORNE: usize = 5;
+
+impl Borne {
+    /// Its constants: `[kind, count, a, b, c]`, then each facet's six nodes or each element.
+    fn consts(&self) -> Vec<f64> {
+        let (kind, head) = match self {
+            Borne::Pressure { p, .. } => (0.0, [*p, 0.0, 0.0]),
+            Borne::Across { force, .. } => (1.0, *force),
+            Borne::Through { force, .. } => (2.0, *force),
+            Borne::Body { force, .. } => (3.0, *force),
+        };
+        let count = self.facets().len() + self.elements().len();
+        let mut k = vec![kind, count as f64];
+        k.extend(head);
+        k.extend(self.facets().iter().flatten().map(|&n| n as f64));
+        k.extend(self.elements().iter().map(|&e| e as f64));
+        k
+    }
+
+    /// How many constants it is.
+    fn width(&self) -> usize {
+        BORNE + 6 * self.facets().len() + self.elements().len()
+    }
+}
 
 impl Laid {
     /// Its constants: `[kind, count, a, b]`, then each side's three nodes or each element.
@@ -1228,6 +1447,8 @@ impl Structure {
         k.push(sized);
         k.extend([self.tris.len() as f64, self.laid.len() as f64]);
         k.push(moved.map_or(-1.0, |m| m.columns as f64));
+        k.extend([self.tets.len() as f64, self.borne.len() as f64]);
+        k.push(moved.and_then(|m| m.stack.as_ref()).map_or(-1.0, |st| st.plane as f64));
         k.extend(stated);
         for b in &self.bars {
             k.extend([b.a as f64, b.b as f64, b.e]);
@@ -1246,6 +1467,13 @@ impl Structure {
             k.extend([t.e, t.nu, t.rho, t.depth, t.strain as u8 as f64]);
         }
         for l in &self.laid {
+            k.extend(l.consts());
+        }
+        for t in &self.tets {
+            k.extend(t.n.map(|n| n as f64));
+            k.extend([t.e, t.nu, t.rho]);
+        }
+        for l in &self.borne {
             k.extend(l.consts());
         }
         for i in 0..self.fixed.len() {
@@ -1288,6 +1516,7 @@ impl Structure {
         let (dim, nodes) = (count(head[0])?, count(head[1])?);
         let (n_bars, n_beams, n_spread) = (count(head[2])?, count(head[3])?, count(head[4])?);
         let (n_tris, n_laid) = (count(head[6])?, count(head[7])?);
+        let (n_tets, n_borne) = (count(head[9])?, count(head[10])?);
         let mut at = HEAD;
         let mut take = |n: usize| -> Option<&[f64]> {
             let out = k.get(at..at.checked_add(n)?)?;
@@ -1334,6 +1563,35 @@ impl Structure {
             };
             laid.push(l);
         }
+        let tets: Vec<Tet10> = take(TET * n_tets)?.as_chunks::<TET>().0.iter().map(|c| {
+            let n: Option<Vec<usize>> = c[..10].iter().map(|&v| node(v)).collect();
+            Some(Tet10 { n: n?.try_into().ok()?, e: c[10], nu: c[11], rho: c[12] })
+        }).collect::<Option<_>>()?;
+        let mut borne = Vec::with_capacity(n_borne);
+        for _ in 0..n_borne {
+            let c = take(BORNE)?;
+            let n = count(c[1])?;
+            let (kind, f) = (count(c[0])?, [c[2], c[3], c[4]]);
+            let l = if kind < 2 {
+                let facets: Vec<[usize; 6]> = take(6 * n)?.as_chunks::<6>().0.iter()
+                    .map(|s| Some(s.map(node))).map(|s| s.and_then(|s| {
+                        Some([s[0]?, s[1]?, s[2]?, s[3]?, s[4]?, s[5]?])
+                    })).collect::<Option<_>>()?;
+                match kind {
+                    0 => Borne::Pressure { facets, p: f[0] },
+                    _ => Borne::Across { facets, force: f },
+                }
+            } else {
+                let elements: Vec<usize> = take(n)?.iter()
+                    .map(|&v| count(v).filter(|&i| i < n_tets)).collect::<Option<_>>()?;
+                match kind {
+                    2 => Borne::Through { elements, force: f },
+                    3 => Borne::Body { elements, force: f },
+                    _ => return None,
+                }
+            };
+            borne.push(l);
+        }
         let s = Structure {
             dim,
             nodes,
@@ -1350,10 +1608,15 @@ impl Structure {
             spread,
             tris,
             laid,
+            tets,
+            borne,
         };
-        // a plane element is of the plane, moves without turning, and is no member's
+        // a plane element is of the plane, a solid one of space, each moves without turning, and
+        // neither is a member's nor the other's
         let mixed = !s.beams.is_empty() || !s.bars.is_empty();
-        if !(dim == 2 || dim == 3) || (!s.tris.is_empty() && (dim != 2 || mixed)) {
+        if !(dim == 2 || dim == 3) || (!s.tris.is_empty() && (dim != 2 || mixed))
+            || (!s.tets.is_empty() && (dim != 3 || mixed || !s.tris.is_empty()))
+        {
             return None;
         }
         let per = take(3 * s.per() * nodes)?.as_chunks::<3>().0;
@@ -1384,10 +1647,15 @@ impl Structure {
         let moved = match head[8] {
             v if v < 0.0 => None,
             _ => {
-                let (m, used) = Moved::read(k.get(at..)?)?;
+                let (m, used) = Moved::read(k.get(at..)?, head[11] >= 0.0)?;
                 at += used;
-                let fits = m.nodes.len() == s.nodes && m.x0.len() == 2 * s.nodes && s.dim == 2
-                    && head[8] == m.columns as f64;
+                let plane = m.nodes.len();
+                let fits = m.x0.len() == 2 * plane && head[8] == m.columns as f64
+                    && match &m.stack {
+                        None => plane == s.nodes && s.dim == 2,
+                        Some(st) => st.of.len() == s.nodes && s.dim == 3
+                            && head[11] == plane as f64,
+                    };
                 Some(fits.then_some(m)?)
             }
         };
@@ -1413,11 +1681,12 @@ impl Structure {
         let tapes: usize =
             sizing.iter().flat_map(|z| z.sections.iter().flatten()).map(|t| 1 + t.len()).sum();
         let laid: usize = self.laid.iter().map(Laid::width).sum();
+        let borne: usize = self.borne.iter().map(Borne::width).sum();
         let nodes = moved.map_or(self.dim * self.nodes, |m| m.columns);
         (self.row_columns(sizing) - self.dim * self.nodes + nodes + free as usize,
          HEAD + stated + 3 * self.bars.len() + BEAM * self.beams.len() + spread
-             + TRI * self.tris.len() + laid + 3 * self.fixed.len() + tapes
-             + moved.map_or(0, Moved::width))
+             + TRI * self.tris.len() + laid + TET * self.tets.len() + borne
+             + 3 * self.fixed.len() + tapes + moved.map_or(0, Moved::width))
     }
 
     /// How many columns a row over the structure reads before the unknown that may set its

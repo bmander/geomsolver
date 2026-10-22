@@ -17,6 +17,12 @@
 //! values, so a mesh moved with the parameters (its topology fixed within one solve) pays the
 //! analysis once.  A pivot that is not positive to working precision ([`NotPositive`]) is an
 //! error naming its column.
+//!
+//! The same analysis factors `PAPᵀ = LDLᵀ` without pivoting ([`Cholesky::factor_ldl`], #510 S3):
+//! a pencil `K − μM` shifted into its spectrum is indefinite, and its pivots' signs are its
+//! inertia (Sylvester), what an eigensolver counts its pairs by (`sparse::Pencil`).  Each
+//! descendant's update is formed four columns at a time, each of its columns read once for the
+//! four.
 
 use crate::amd;
 
@@ -40,7 +46,7 @@ impl Symmetric {
         for &(i, _, _) in &low {
             assert!(i < n, "Symmetric::from_triplets: row {i} of {n}");
         }
-        low.sort_by_key(|&(i, j, _)| (j, i));
+        low.sort_unstable_by_key(|&(i, j, _)| (j, i));
         let mut colptr = vec![0usize; n + 1];
         let mut rowind = Vec::with_capacity(low.len());
         let mut values: Vec<f64> = Vec::with_capacity(low.len());
@@ -112,6 +118,10 @@ pub struct NotPositive {
 
 const NONE: usize = usize::MAX;
 
+/// How many columns of a descendant's update are formed together, each of its columns read once
+/// for them all.
+const BLOCK: usize = 4;
+
 /// The analysis of one pattern and the factor of the last values given it.
 #[derive(Clone, Debug)]
 pub struct Cholesky {
@@ -137,6 +147,15 @@ pub struct Cholesky {
     /// Entries of L, its diagonal counted.
     nnz_l: usize,
     factored: bool,
+    /// Whether the last factor is `LDLᵀ`: each panel's diagonal D's, below it L's, its own
+    /// diagonal a unit not stored.
+    ldl: bool,
+}
+
+/// A pivot of `LDLᵀ` that is zero, or not a number: the factor stopped at `column` (of A).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ZeroPivot {
+    pub column: usize,
 }
 
 impl Cholesky {
@@ -253,6 +272,7 @@ impl Cholesky {
             rcount,
             nnz_l: count.iter().sum(),
             factored: false,
+            ldl: false,
         }
     }
 
@@ -282,11 +302,25 @@ impl Cholesky {
     /// gathered by position).  On a pivot not positive the factor is left unusable and the
     /// column named.
     pub fn factor(&mut self, a: &Symmetric) -> Result<(), NotPositive> {
+        self.numeric(a, false).map(|_| ()).map_err(|(column, pivot)| NotPositive { column, pivot })
+    }
+
+    /// **Factor `a` as `LDLᵀ`, without pivoting** (#510 S3): `a` symmetric, positive definite or
+    /// not, on the pattern analysed.  Its count of negative pivots — the number of `a`'s
+    /// eigenvalues below zero, Sylvester's inertia — or the column whose pivot is zero.
+    pub fn factor_ldl(&mut self, a: &Symmetric) -> Result<usize, ZeroPivot> {
+        self.numeric(a, true).map_err(|(column, _)| ZeroPivot { column })
+    }
+
+    /// The numeric factor, `LLᵀ` or, where `ldl`, `LDLᵀ`: the count of negative pivots, or the
+    /// column (of A) and pivot it stopped at.
+    fn numeric(&mut self, a: &Symmetric, ldl: bool) -> Result<usize, (usize, f64)> {
         assert!(
             a.n == self.n && a.values.len() == self.gather.len(),
             "Cholesky::factor: not the pattern analysed"
         );
         self.factored = false;
+        self.ldl = ldl;
         let ns = self.supernodes();
         let shape = Shape { first: &self.first, rp: &self.rp, rows: &self.rows, xp: &self.xp };
         let lx = &mut self.lx;
@@ -296,8 +330,9 @@ impl Cholesky {
         let mut next = vec![NONE; ns];
         // the position in each supernode's rows of the first not yet applied to an ancestor
         let mut ptr = vec![0usize; ns];
-        let mut acc: Vec<f64> = Vec::new();
+        let mut acc: Vec<[f64; BLOCK]> = Vec::new();
         let mut diag: Vec<f64> = Vec::new();
+        let mut negative = 0;
         for s in 0..ns {
             let (f, ncol, rows, base) = shape.panel(s);
             let (l, nrow) = (f + ncol, rows.len());
@@ -311,8 +346,8 @@ impl Cholesky {
             }
             diag.clear();
             diag.extend((0..ncol).map(|c| lx[base + c * nrow + c]));
-            // the descendants whose rows reach s, each `L_d[p0.., :] · L_d[p0..p0 + m1, :]ᵀ`,
-            // a column of the update at a time
+            // the descendants whose rows reach s, each `L_d[p0.., :] D_d L_d[p0..p0 + m1, :]ᵀ`
+            // (D a unit in `LLᵀ`), `BLOCK` columns of the update at a time
             let mut d = head[s];
             head[s] = NONE;
             while d != NONE {
@@ -324,22 +359,34 @@ impl Cholesky {
                 let m1 = drows[p0..].iter().take_while(|&&r| r < l).count();
                 rel.clear();
                 rel.extend(drows[p0..].iter().map(|&r| map[r]));
-                for j in 0..m1 {
+                let mut j = 0;
+                while j < m1 {
+                    let w = (m1 - j).min(BLOCK);
                     acc.clear();
-                    acc.resize(m2 - j, 0.0);
+                    acc.resize(m2 - j, [0.0; BLOCK]);
                     for k in 0..dncol {
                         let colk = &lx[dbase + k * dnrow + p0 + j..dbase + (k + 1) * dnrow];
-                        let ljk = colk[0];
-                        if ljk != 0.0 {
-                            for (t, &v) in acc.iter_mut().zip(colk) {
-                                *t += v * ljk;
+                        let dk = if ldl { lx[dbase + k * dnrow + k] } else { 1.0 };
+                        let mut lk = [0.0; BLOCK];
+                        for t in 0..w {
+                            lk[t] = colk[t] * dk;
+                        }
+                        if lk.iter().all(|&v| v == 0.0) {
+                            continue;
+                        }
+                        for (a, &v) in acc.iter_mut().zip(colk) {
+                            for t in 0..BLOCK {
+                                a[t] += v * lk[t];
                             }
                         }
                     }
-                    let col = base + (drows[p0 + j] - f) * nrow;
-                    for (&t, &r) in acc.iter().zip(&rel[j..]) {
-                        lx[col + r] -= t;
+                    for t in 0..w {
+                        let col = base + (drows[p0 + j + t] - f) * nrow;
+                        for (a, &r) in acc[t..].iter().zip(&rel[j + t..]) {
+                            lx[col + r] -= a[t];
+                        }
                     }
+                    j += w;
                 }
                 ptr[d] = p0 + m1;
                 if ptr[d] < dnrow {
@@ -356,7 +403,7 @@ impl Cholesky {
                 let colc = &mut rest[c..nrow];
                 for k in 0..c {
                     let colk = &done[k * nrow + c..(k + 1) * nrow];
-                    let lck = colk[0];
+                    let lck = if ldl { colk[0] * done[k * nrow + k] } else { colk[0] };
                     if lck != 0.0 {
                         for (x, &v) in colc.iter_mut().zip(colk) {
                             *x -= v * lck;
@@ -364,9 +411,19 @@ impl Cholesky {
                     }
                 }
                 let pivot = colc[0];
+                if ldl {
+                    if pivot == 0.0 || !pivot.is_finite() {
+                        return Err((self.perm[f + c], pivot));
+                    }
+                    negative += (pivot < 0.0) as usize;
+                    for x in &mut colc[1..] {
+                        *x /= pivot;
+                    }
+                    continue;
+                }
                 let rounding = self.rcount[f + c] as f64 * f64::EPSILON * diag[c];
                 if !(diag[c] > 0.0 && pivot > rounding) || !pivot.is_finite() {
-                    return Err(NotPositive { column: self.perm[f + c], pivot });
+                    return Err((self.perm[f + c], pivot));
                 }
                 let root = pivot.sqrt();
                 colc[0] = root;
@@ -382,22 +439,32 @@ impl Cholesky {
             }
         }
         self.factored = true;
-        Ok(())
+        Ok(negative)
     }
 
-    /// Solve `A x = b` in place with the last factor.
+    /// Solve `A x = b` in place with the last factor, `LLᵀ` or `LDLᵀ`.
     pub fn solve(&self, b: &mut [f64]) {
         assert!(self.factored, "Cholesky::solve: no factor");
         let mut y: Vec<f64> = self.perm.iter().map(|&i| b[i]).collect();
+        // L's diagonal: its own in LLᵀ, a unit in LDLᵀ (where the panel's diagonal holds D)
+        let unit = |d: f64| if self.ldl { 1.0 } else { d };
         for s in 0..self.supernodes() {
             let (f, ncol, rows, base) = self.panel(s);
             let nrow = rows.len();
             for c in 0..ncol {
                 let col = &self.lx[base + c * nrow..base + (c + 1) * nrow];
-                y[f + c] /= col[c];
+                y[f + c] /= unit(col[c]);
                 let yj = y[f + c];
                 for r in c + 1..nrow {
                     y[rows[r]] -= col[r] * yj;
+                }
+            }
+        }
+        if self.ldl {
+            for s in 0..self.supernodes() {
+                let (f, ncol, rows, base) = self.panel(s);
+                for c in 0..ncol {
+                    y[f + c] /= self.lx[base + c * rows.len() + c];
                 }
             }
         }
@@ -410,7 +477,7 @@ impl Cholesky {
                 for r in c + 1..nrow {
                     sum -= col[r] * y[rows[r]];
                 }
-                y[f + c] = sum / col[c];
+                y[f + c] = sum / unit(col[c]);
             }
         }
         for (k, &i) in self.perm.iter().enumerate() {

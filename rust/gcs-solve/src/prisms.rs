@@ -172,6 +172,26 @@ impl Region {
         Ok(region)
     }
 
+    /// **Its breadth**, `2A / P`: twice its area over its perimeter, each read off its sides at
+    /// sixty-four places a side — a strip's width, a disc's radius.
+    pub fn breadth(&self, sk: &Sketch) -> f64 {
+        let (mut area, mut perimeter, mut g) = (0.0, 0.0, 0);
+        for (k, &n) in self.loops.iter().enumerate() {
+            let mut twice = 0.0;
+            for side in &self.sides[g..g + n] {
+                let p: Vec<P> = (0..=64).map(|i| side.at(sk, i as f64 / 64.0)).collect();
+                for w in p.windows(2) {
+                    twice += w[0][0] * w[1][1] - w[1][0] * w[0][1];
+                    perimeter += (w[1][0] - w[0][0]).hypot(w[1][1] - w[0][1]);
+                }
+            }
+            // the outer loop's area, less its holes'
+            area += if k == 0 { 0.5 * twice.abs() } else { -0.5 * twice.abs() };
+            g += n;
+        }
+        2.0 * area / perimeter
+    }
+
     /// Where a place in space is in the plane, and how far off it along its normal.
     pub fn local(&self, p: V) -> (P, f64) {
         let (a, b) = self.basis.view_coords(p);
@@ -191,12 +211,12 @@ impl Region {
     }
 
     /// Whether face `i` of the drawing is the one the prism is swept from.
-    fn is_face(&self, sk: &Sketch, i: usize) -> bool {
+    pub(crate) fn is_face(&self, sk: &Sketch, i: usize) -> bool {
         matches!(sk.solids[self.solid].def, SolidDef::Prism { face, .. } if face as usize == i)
     }
 
     /// Its sides whose three quarter points all pass `test`.
-    fn sides_where(&self, sk: &Sketch, test: impl Fn(P) -> bool) -> Vec<usize> {
+    pub(crate) fn sides_where(&self, sk: &Sketch, test: impl Fn(P) -> bool) -> Vec<usize> {
         (0..self.sides.len()).filter(|&g| {
             [0.25, 0.5, 0.75].iter().all(|&s| test(self.sides[g].at(sk, s)))
         }).collect()
@@ -245,6 +265,20 @@ impl Region {
     /// **The region meshed**, cut at the places `named` (each on a side, or inside), to the
     /// reading's criteria.
     pub fn mesh(&self, sk: &Sketch, named: &[P]) -> Result<Mesh, String> {
+        self.mesh_coarser(sk, named, 1.0)
+    }
+
+    /// `mesh`, its elements and its curved sides' pieces `coarser` times the reading's (#510 S3:
+    /// a reading's error is estimated against one twice as coarse).
+    pub fn mesh_coarser(&self, sk: &Sketch, named: &[P], coarser: f64) -> Result<Mesh, String> {
+        self.mesh_sized(sk, named, coarser * SIZE * self.extent, coarser * TURN)
+    }
+
+    /// `mesh`, its elements' circumradii at most `size` and its curved sides' pieces turning at
+    /// most `turn`.
+    pub fn mesh_sized(&self, sk: &Sketch, named: &[P], size: f64, turn: f64)
+        -> Result<Mesh, String>
+    {
         let mut cuts: Vec<Vec<f64>> = vec![Vec::new(); self.sides.len()];
         let mut inside: Vec<P> = Vec::new();
         for &p in named {
@@ -267,8 +301,7 @@ impl Region {
             }
             loops.push(lp);
         }
-        let criteria = Criteria { ratio: 2f64.sqrt(), size: SIZE * self.extent, turn: TURN,
-                                  most: MOST };
+        let criteria = Criteria { ratio: 2f64.sqrt(), size, turn, most: MOST };
         mesher::mesh(&mesher::Region { loops, points: inside }, &criteria)
     }
 }
@@ -298,9 +331,9 @@ pub struct Plated {
     name: String,
 }
 
-/// Why a region cannot be read: the supports leave it free (in the solver's words), or anything
-/// else, said.
-enum Unread {
+/// Why a region or a solid cannot be read: the supports leave it free (in the solver's words), or
+/// anything else, said.
+pub(crate) enum Unread {
     Free(String),
     Why(String),
 }
@@ -312,7 +345,7 @@ impl From<String> for Unread {
 }
 
 impl Unread {
-    fn text(&self, name: &str) -> String {
+    pub(crate) fn text(&self, name: &str) -> String {
         match self {
             Unread::Free(free) => format!("`{name}` is {free}"),
             Unread::Why(m) => m.clone(),
@@ -321,8 +354,11 @@ impl Unread {
 }
 
 impl Plated {
-    /// `region` read in `plane` under scenario `sc`, meshed and loaded, or why it cannot be.
-    fn new(sk: &Sketch, sc: &Scenario, region: Region, plane: InPlane) -> Result<Plated, Unread> {
+    /// `region` read in `plane` under scenario `sc`, meshed (`coarser` times the reading's size)
+    /// and loaded, or why it cannot be.
+    fn new(sk: &Sketch, sc: &Scenario, region: Region, plane: InPlane, coarser: f64)
+        -> Result<Plated, Unread>
+    {
         let solid = region.solid;
         let name = sk.solids[solid].name.clone();
         let young = property(sk, solid, Property::E)?;
@@ -332,7 +368,7 @@ impl Plated {
         let rho = property(sk, solid, Property::Rho);
         // the points the scenario names in the region are nodes
         let named: Vec<P> = sc.applied().filter_map(|a| point_of(sk, &region, a)).collect();
-        let mesh = region.mesh(sk, &named)?;
+        let mesh = region.mesh_coarser(sk, &named, coarser)?;
         let strain = plane == InPlane::Strain;
         let tris: Vec<Tri6> = mesh.tris.iter()
             .map(|&n| Tri6 { n, e: young, nu, rho: *rho.as_ref().unwrap_or(&f64::NAN),
@@ -342,7 +378,8 @@ impl Plated {
         let elements: Vec<usize> = (0..tris.len()).collect();
         let s = Structure { dim: 2, nodes: n, bars: Vec::new(), beams: Vec::new(),
                             fixed: vec![false; 2 * n], load: vec![0.0; 2 * n],
-                            weight: vec![0.0; 2 * n], spread: Vec::new(), tris, laid: Vec::new() };
+                            weight: vec![0.0; 2 * n], spread: Vec::new(), tris, laid: Vec::new(),
+                            ..Structure::default() };
         let mut p = Plated { region, mesh, s, x, name };
         // a support holds its nodes' moves along the plane's axes: a plane element's node has
         // no turn, so `fixed` holds what `pinned` does
@@ -498,7 +535,7 @@ impl Plated {
 }
 
 /// The node of `mesh` nearest `p`, within `tol`.
-fn node_at(mesh: &Mesh, p: P, tol: f64) -> Option<usize> {
+pub(crate) fn node_at(mesh: &Mesh, p: P, tol: f64) -> Option<usize> {
     (0..mesh.points.len()).map(|i| {
         let q = mesh.points[i];
         ((q[0] - p[0]).hypot(q[1] - p[1]), i)
@@ -507,7 +544,7 @@ fn node_at(mesh: &Mesh, p: P, tol: f64) -> Option<usize> {
 
 /// Where a point a line names is in the region's plane, if it is a point standing in it (within
 /// the prism's depth of its middle).
-fn point_of(sk: &Sketch, region: &Region, a: &Applied) -> Option<P> {
+pub(crate) fn point_of(sk: &Sketch, region: &Region, a: &Applied) -> Option<P> {
     let Applied::Ent(e) = a else { return None };
     if e.kind != EntKind::Point {
         return None;
@@ -520,7 +557,7 @@ fn point_of(sk: &Sketch, region: &Region, a: &Applied) -> Option<P> {
 
 /// Whether what a line names, not a solid's, falls on `region`: a point in it, its face, or an
 /// edge of the drawing that one of its sides runs along — what `Plated::on` reads on it.
-fn falls_on(sk: &Sketch, region: &Region, a: &Applied) -> bool {
+pub(crate) fn falls_on(sk: &Sketch, region: &Region, a: &Applied) -> bool {
     match a {
         Applied::Ent(e) if e.kind == EntKind::Point => point_of(sk, region, a).is_some(),
         Applied::Ent(e) if e.kind == EntKind::Face => region.is_face(sk, e.i()),
@@ -547,7 +584,7 @@ fn inside(sk: &Sketch, region: &Region, p: P) -> bool {
 }
 
 /// Whether the drawing's edge `e` passes through `q` (in the region's plane), within `tol`.
-fn edge_holds(sk: &Sketch, e: EntRef, region: &Region, q: P, tol: f64) -> bool {
+pub(crate) fn edge_holds(sk: &Sketch, e: EntRef, region: &Region, q: P, tol: f64) -> bool {
     match e.kind {
         EntKind::Line => {
             let [a, b] = sk.line_ends(e.i()).map(|i| region.local(sk.world_point(i)).0);
@@ -582,10 +619,10 @@ struct Analysed {
 }
 
 impl Analysed {
-    fn new(sk: &Sketch, sc: &Scenario, region: Region, plane: InPlane, modes: usize)
-        -> Result<Analysed, Unread>
+    fn new(sk: &Sketch, sc: &Scenario, region: Region, plane: InPlane, modes: usize,
+           coarser: f64) -> Result<Analysed, Unread>
     {
-        let p = Plated::new(sk, sc, region, plane)?;
+        let p = Plated::new(sk, sc, region, plane, coarser)?;
         let st = p.s.solve(&p.x).map_err(|why| unsolved(&p, why))?;
         Ok(Analysed { p, st, modes, pairs: OnceCell::new(), stresses: OnceCell::new() })
     }
@@ -658,10 +695,17 @@ fn unsolved(p: &Plated, why: Failure) -> Unread {
 /// requirement its value or why none (`None` for one about no region read so), the words its
 /// regions say (one the supports leave free, once), and which supports hold a region.
 pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
+    let coarser = read_coarser(sk, sc, 2.0);
+    read_coarser(sk, sc, 1.0).estimated(&coarser)
+}
+
+/// `read`, each region meshed `coarser` times the reading's size.
+fn read_coarser(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
         holds: vec![false; sc.supports.len()],
+        ..Read::default()
     };
     if sc.readings.is_empty() {
         return out;
@@ -695,7 +739,7 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
         let (solid, plane, region) = &regions[i];
         let a = read[i].get_or_insert_with(|| {
             let region = region.clone()?;
-            Analysed::new(sk, sc, region, *plane, modes[i])
+            Analysed::new(sk, sc, region, *plane, modes[i], coarser)
         });
         out.answers[k] = Some(match a {
             Ok(a) => answer(sk, a, r),
@@ -823,7 +867,8 @@ impl Row {
             return Err("the plane its region is drawn in moves in the solve, and a driving row \
                         reads its axes as they stand".to_string());
         }
-        let p = Plated::new(sk, sc, region, plane).map_err(|u| u.text(&sk.solids[solid].name))?;
+        let p = Plated::new(sk, sc, region, plane, 1.0)
+            .map_err(|u| u.text(&sk.solids[solid].name))?;
         let Plated { region, mesh, mut s, x, .. } = p;
         let tol = ON * region.extent;
         let node_at = |q: P| node_at(&mesh, q, tol);
@@ -899,7 +944,7 @@ impl Row {
         }).collect();
         let laplace = crate::interior::Moved::laplacian(&mesh.tris, &x);
         let moved = crate::interior::Moved { columns: columns.len(), edges, nodes, x0: x.clone(),
-                                             laplace };
+                                             laplace, stack: None };
         Ok(Row { structure: s, moved, columns, x })
     }
 

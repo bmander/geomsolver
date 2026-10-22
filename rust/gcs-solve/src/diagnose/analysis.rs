@@ -567,6 +567,7 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
 pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::Read) {
     let mut frames = crate::beams::read(sk, sc);
     frames.merge(crate::prisms::read(sk, sc));
+    frames.merge(crate::bodies::read(sk, sc));
     let mut out = Vec::new();
     let mut holds = Vec::new();
     for (k, s) in sc.supports.iter().enumerate() {
@@ -581,8 +582,8 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
             Err(e) => out.push(format!("scenario `{}`: {e}", sc.name)),
         }
     }
-    let solids: Vec<usize> =
-        named_solids(sc).into_iter().filter(|&s| sc.plane_of(s).is_none()).collect();
+    let read = |s: usize| sc.plane_of(s).is_some() || frames.bodies.contains(&s);
+    let solids: Vec<usize> = named_solids(sc).into_iter().filter(|&s| !read(s)).collect();
     // a scenario of frames and regions alone holds no body of its own
     let of_frames = frames.reads_any() && solids.is_empty() && holds.is_empty();
     if out.is_empty() && !of_frames {
@@ -601,7 +602,7 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
     let asked: BTreeSet<usize> = sc.requirements.iter()
         .filter(|r| r.output == Output::Safety)
         .filter_map(|r| r.of.solid())
-        .filter(|&s| sc.plane_of(s).is_none())
+        .filter(|&s| !read(s))
         .collect();
     for solid in asked {
         let name = &sk.solids[solid].name;

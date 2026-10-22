@@ -67,7 +67,7 @@ pub fn shape(xi: f64, eta: f64) -> [f64; 6] {
 }
 
 /// Their derivatives in `ξ` and in `η` at `(ξ, η)`.
-fn shape_d(xi: f64, eta: f64) -> [[f64; 6]; 2] {
+pub(crate) fn shape_d(xi: f64, eta: f64) -> [[f64; 6]; 2] {
     let (l1, l2, l3) = (1.0 - xi - eta, xi, eta);
     [
         [1.0 - 4.0 * l1, 4.0 * l2 - 1.0, 0.0, 4.0 * (l1 - l2), 4.0 * l3, -4.0 * l3],
