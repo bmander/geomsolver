@@ -24,24 +24,10 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
     let eye = basis.normal();
     let eps = solid.epsilon();
 
-    // **which edges this view draws at all**: every corner, and a smooth seam only where the
-    // surface turns away from the eye across it — or, on an exact solid, the silhouettes traced on
-    // its surfaces in place of its mesh's seams
-    let traced = solid.silhouettes(eye);
+    // **which edges this view draws at all**: the solid's rule (`EvaluatedSolid::drawn_edges`)
     let mut drawn: Vec<(([f64; 3], [f64; 3]), bool, String)> = Vec::new();
-    let seams = renderer.edges.iter().chain(section_edges)
-        .filter(|e| !(e.smooth && traced.is_some()))
-        .map(|e| (e, false));
-    for (e, silhouette) in seams.chain(traced.iter().flatten().map(|e| (e, true))) {
+    for e in solid.drawn_edges(eye, section_edges) {
         let sil = e.smooth;
-        if sil && !silhouette {
-            let (a, b) = (plane::dot(e.na, eye), plane::dot(e.nb, eye));
-            // a silhouette is where the sign changes; a seam whose two facets both face the eye
-            // (or both face away) is the tessellation and is not drawn
-            if a * b > 0.0 || (a.abs() < 1e-12 && b.abs() < 1e-12) {
-                continue;
-            }
-        }
         let (mut a, mut b) = (e.a, e.b);
         if let Some(cut) = cut {
             let height = |p: [f64; 3]| plane::dot(eye, std::array::from_fn(|k| p[k] - cut.o[k]));
@@ -59,7 +45,7 @@ fn view_clipped(renderer: &Renderer<'_>, page: PageFrame, cut: Option<Basis>, se
                 }
             }
         }
-        drawn.push(((a, b), sil, e.path.clone()));
+        drawn.push(((a, b), sil, e.path));
     }
 
     // **split where one edge crosses another in the picture** (Appel): visibility can only

@@ -2374,7 +2374,17 @@ make solventc                                         # once
 build/solventc drawing.sv                             # parse, elaborate, solve, diagnose; --json
 build/solventc drawing.sv --where hinge               # where a name landed
 build/solventc drawing.sv --stl part.stl --solid body # a solid, for a printer
+build/solventc part.sv --png part.png                 # look at it: the workspace's objects
 ```
+
+**Look at a solid before you trust it.**  `--png PATH` draws what the workspace shows, with no
+browser or GPU: each object shaded in its instance's colour, depth-buffered, its creases and
+silhouettes inked.  A part file draws its `preview`, about the world's origin.  `--view` is `home`
+(the workspace's opening view), a view a sheet names (`front`, `back`, `right`, `left`, `top`,
+`bottom`, `isometric`) or `az,el` in degrees; `--size` the longer side in pixels (1200); `--solid NAME` one solid, or every object of one instance; `--hide
+a,b` leaves those out, each a name and everything under it, for a cutaway
+(`--hide block.casting,head`).  An open box, a belt off its pulleys, a piston not at its stroke —
+a picture shows what no number in the report does.
 
 Exit codes: 0 solved, 1 did not parse or elaborate, 2 did not solve. A successful solve does not
 mean the model is fully constrained: read the diagnosis — parameter and equation counts, the

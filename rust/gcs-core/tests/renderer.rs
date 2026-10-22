@@ -166,3 +166,33 @@ fn spatial_queries_skip_most_unrelated_geometry_in_the_throttle() {
     assert!(stats.boundary_candidates < stats.boundary_exhaustive / 2, "{stats:?}");
     assert!(stats.crossing_candidates < stats.crossing_exhaustive / 2, "{stats:?}");
 }
+
+/// **The edges a view draws** (`EvaluatedSolid::drawn_edges`, the one rule a drawing's views and
+/// `solventc --png` both draw by): a can seen side on keeps every corner — its two rims — and of
+/// its round side only the two silhouettes, traced where the surface turns from the eye; none of
+/// the mesh's seams.
+#[test]
+fn a_view_draws_every_corner_and_only_the_silhouettes_of_a_round_face() {
+    let e = crate::common::linked::solved("\
+unit mm
+use std
+in std.top {
+  hub := point
+  fix((0mm, 0mm)) hub
+  rim := radius(8mm) circle(center: hub)
+  can := solid(face(rim), from: 0mm, to: 20mm)
+}
+");
+    let i = e.map.ent_named("can").unwrap().i();
+    let solid = e.sketch.evaluated_solid(i, ApproximationPolicy::Mesh).unwrap();
+    // looking along +y, from the front
+    let drawn = solid.drawn_edges(solid.vector_to_local([0.0, -1.0, 0.0]), &[]);
+    let corners = solid.edges().iter().filter(|e| !e.smooth).count();
+    assert!(corners > 0);
+    assert_eq!(drawn.iter().filter(|e| !e.smooth).count(), corners, "every corner is drawn");
+    let x = |p: [f64; 3]| solid.to_world(gcs_core::solid::LocalPoint(p)).0[0];
+    let sides: Vec<f64> = drawn.iter().filter(|e| e.smooth).flat_map(|e| [x(e.a), x(e.b)]).collect();
+    assert!(!sides.is_empty() && sides.iter().all(|x| (x.abs() - 8.0).abs() < 1e-6),
+            "only the silhouettes at x = ±8: {sides:?}");
+    assert!(sides.iter().any(|&x| x > 0.0) && sides.iter().any(|&x| x < 0.0), "one on each side");
+}

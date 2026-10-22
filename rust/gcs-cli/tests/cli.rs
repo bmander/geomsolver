@@ -790,3 +790,194 @@ not hold; nothing drives it yet\n",
             && json.contains("\"holds\": false"),"{json}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// A PNG `solventc --png` wrote, read back: its width, its height and its pixels, three bytes
+/// each.  Only what the writer makes is read (8-bit truecolour, filter 0, fixed-code deflate
+/// blocks), and the stream's own check is held to.
+fn read_png(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
+    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n", "a PNG's signature");
+    let (mut at, mut size, mut idat) = (8, (0, 0), Vec::new());
+    while at < bytes.len() {
+        let n = u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+        let (kind, data) = (&bytes[at + 4..at + 8], &bytes[at + 8..at + 8 + n]);
+        match kind {
+            b"IHDR" => {
+                let word = |k: usize| u32::from_be_bytes(data[k..k + 4].try_into().unwrap()) as usize;
+                size = (word(0), word(4));
+                assert_eq!(&data[8..], &[8, 2, 0, 0, 0], "8-bit truecolour, not interlaced");
+            }
+            b"IDAT" => idat.extend_from_slice(data),
+            _ => {}
+        }
+        at += 12 + n;
+    }
+    let raw = inflate(&idat[2..idat.len() - 4]);
+    let (mut a, mut b) = (1u32, 0u32);
+    for &x in &raw {
+        a = (a + x as u32) % 65521;
+        b = (b + a) % 65521;
+    }
+    assert_eq!(((b << 16) | a).to_be_bytes(), idat[idat.len() - 4..], "the zlib stream's Adler-32");
+    let (w, h) = size;
+    assert_eq!(raw.len(), h * (3 * w + 1), "a scanline a row, each led by its filter");
+    let mut rgb = Vec::with_capacity(3 * w * h);
+    for row in raw.chunks_exact(3 * w + 1) {
+        assert_eq!(row[0], 0, "filter 0");
+        rgb.extend_from_slice(&row[1..]);
+    }
+    (w, h, rgb)
+}
+
+/// Deflate's fixed-code blocks (RFC 1951), which are all `--png` writes.
+fn inflate(data: &[u8]) -> Vec<u8> {
+    let mut bit = 0usize;
+    let mut take = |n: usize| -> usize {
+        let mut v = 0;
+        for k in 0..n {
+            v |= ((data[bit / 8] >> (bit % 8)) as usize & 1) << k;
+            bit += 1;
+        }
+        v
+    };
+    const LENGTH: [(usize, usize); 29] = [(3, 0), (4, 0), (5, 0), (6, 0), (7, 0), (8, 0), (9, 0),
+        (10, 0), (11, 1), (13, 1), (15, 1), (17, 1), (19, 2), (23, 2), (27, 2), (31, 2), (35, 3),
+        (43, 3), (51, 3), (59, 3), (67, 4), (83, 4), (99, 4), (115, 4), (131, 5), (163, 5),
+        (195, 5), (227, 5), (258, 0)];
+    let mut out = Vec::new();
+    loop {
+        let last = take(1) == 1;
+        match take(2) {
+            1 => loop {
+                // a code is read its most significant bit first
+                let mut code = 0;
+                let mut symbol = None;
+                for len in 1..=9 {
+                    code = code << 1 | take(1);
+                    symbol = match (len, code) {
+                        (7, 0..=23) => Some(256 + code),
+                        (8, 0x30..=0xbf) => Some(code - 0x30),
+                        (8, 0xc0..=0xc7) => Some(280 + code - 0xc0),
+                        (9, 0x190..=0x1ff) => Some(144 + code - 0x190),
+                        _ => None,
+                    };
+                    if symbol.is_some() { break; }
+                }
+                match symbol.expect("a fixed code") {
+                    s @ 0..=255 => out.push(s as u8),
+                    256 => break,
+                    s => {
+                        let (base, extra) = LENGTH[s - 257];
+                        let len = base + take(extra);
+                        let k = (0..5).fold(0, |c, _| c << 1 | take(1));
+                        let (base, extra) = if k < 4 { (k + 1, 0) } else {
+                            let extra = k / 2 - 1;
+                            ((2 + (k & 1)) << extra | 1, extra)
+                        };
+                        let d = base + take(extra);
+                        for _ in 0..len {
+                            out.push(out[out.len() - d]);
+                        }
+                    }
+                }
+            },
+            t => panic!("--png writes no deflate block of type {t}"),
+        }
+        if last { return out; }
+    }
+}
+
+/// The colour at the middle of a picture.
+fn middle((w, h, rgb): &(usize, usize, Vec<u8>)) -> [u8; 3] {
+    let k = 3 * (h / 2 * w + w / 2);
+    [rgb[k], rgb[k + 1], rgb[k + 2]]
+}
+
+/// Two prisms on one axis, the narrow one standing out of the wide one's top.
+const NESTED: &str = "\
+unit mm
+use std
+in std.top {
+  hub := point
+  fix((0mm, 0mm)) hub
+  wide_rim := radius(30mm) circle(center: hub)
+  narrow_rim := radius(8mm) circle(center: hub)
+  wide := solid(face(wide_rim), from: -5mm, to: 5mm)
+  narrow := solid(face(narrow_rim), from: 0mm, to: 20mm)
+}
+";
+
+/// `--png` keeps, at each pixel, what is nearest the eye (#541): from above, the narrow prism at
+/// the middle, drawn as it is drawn alone; from below, the wide one.  Which is drawn first does
+/// not decide it, so a painter's order cannot pass both.  A part keeps its instance's colour in
+/// a cutaway, and the picture is fitted to what it draws, its longer side `--size`.
+#[test]
+fn a_png_keeps_what_is_nearest_the_eye() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("nested.sv");
+    std::fs::write(&source, NESTED).unwrap();
+    let draw = |name: &str, extra: &[&str]| {
+        let png = dir.join(format!("{name}.png"));
+        let mut args = vec![source.to_str().unwrap(), "--no-diagnose", "--size", "300", "--png",
+                            png.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        let out = run(&args);
+        assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+        read_png(&std::fs::read(png).unwrap())
+    };
+    let above = draw("above", &["--view", "top"]);
+    assert_eq!((above.0, above.1), (300, 300), "a round part seen square on is a square picture");
+    let below = draw("below", &["--view", "-90,-90"]);
+    let narrow = middle(&draw("narrow", &["--view", "top", "--solid", "narrow"]));
+    let wide_below = middle(&draw("wide_below", &["--view", "-90,-90", "--solid", "wide"]));
+    let wide_above = middle(&draw("wide_above", &["--view", "top", "--solid", "wide"]));
+    let paper = [250, 250, 250];
+    assert!(narrow != paper && wide_below != paper && narrow != wide_below);
+    assert_eq!(middle(&above), narrow, "from above, the narrow prism is nearest");
+    assert_eq!(middle(&below), wide_below, "from below, the wide prism is nearest");
+    assert_eq!(middle(&draw("cutaway", &["--view", "top", "--hide", "narrow"])), wide_above,
+               "hidden, the narrow prism lets the wide one through, its colour its own");
+    // an edge is drawn round the wide prism's rim: dark ink across a row through the middle
+    let (w, h, rgb) = &above;
+    let row = &rgb[3 * w * (h / 2)..3 * w * (h / 2 + 1)];
+    assert!(row.as_chunks::<3>().0.iter().any(|p| p.iter().all(|&c| c < 120)), "an edge at the rim");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// A part file draws its `preview` (#541): the engine's head opened alone, about the world's
+/// origin, as the workspace opens it.
+#[test]
+fn a_part_file_draws_its_preview() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-part-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = dir.join("head.png");
+    let out = run(&[&doc("engine/head.sv"), "--no-diagnose", "--size", "240", "--png",
+                    png.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    let (w, h, rgb) = read_png(&std::fs::read(&png).unwrap());
+    assert_eq!(w.max(h), 240);
+    let inked = rgb.as_chunks::<3>().0.iter().filter(|p| **p != [250, 250, 250]).count();
+    assert!(inked > w * h / 4, "the head fills its picture: {inked} of {} pixels", w * h);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// What `--png` refuses: an eye it cannot read, a name to hide that names nothing, and a drawing
+/// rather than a model.
+#[test]
+fn a_png_is_refused_what_it_cannot_draw() {
+    let out = run(&[&doc("solid_pulley.sv"), "--png", "x.png", "--view", "askew"]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--view needs front, back, right, left, top, bottom, isometric"));
+    let dir = std::env::temp_dir().join(format!("solventc-png-refused-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let png = dir.join("p.png");
+    let out = run(&[&doc("solid_pulley.sv"), "--no-diagnose", "--png", png.to_str().unwrap(),
+                    "--hide", "nothing_here"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no solid called `nothing_here` to hide"));
+    assert!(!png.exists(), "nothing is written");
+    let out = run(&[&doc("solid_pulley.svd"), "--png", png.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("PNG export selects geometry from a .sv model"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
