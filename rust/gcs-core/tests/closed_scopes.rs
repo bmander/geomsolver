@@ -83,9 +83,6 @@ fn components_cannot_capture_global_unknowns_or_geometry() {
     for src in [
         "use std\nparam length: Scalar hint(20)\ncomponent Bad() { a := point\nb := point\na distance(length) b }\nin std.front {\nb := Bad()\n}\n",
         "use std\nin std.front {\na := point\n}\ncomponent Bad() { fix((0, 0)) a }\nin std.front {\nb := Bad()\n}\n",
-        // a standard datum is the frame's the instance stands in, and a frame's are not drawn
-        // yet (#524): `frame_datums.rs`
-        "use std\ncomponent Bad() { ax := line(std.origin, hint((0, 1))) }\nin (f := frame) {\nb := Bad()\n}\n",
         "use std\ncomponent Inner() { fix((0, 0)) a }\ncomponent Outer() { a := point\ni := Inner() }\nin std.front {\no := Outer()\n}\n",
         "use std\nparam length: Scalar hint(20)\ncomponent Bad() { width := length / 2\na := point }\nin std.front {\nb := Bad()\n}\n",
     ] { assert!(!build(src).ok(), "captured ambient value: {src}"); }
@@ -513,9 +510,6 @@ o := Outer()
     // a name that is nowhere is said at the argument too, and a body reading its formal in a
     // declaration is not told again
     for (src, arg) in [
-        ("unit mm\nuse std\ncomponent Inner(q: point) {\n  m := point\n  l := line(q, m)\n}\n\
-          component Outer() {\n  i := Inner(std.origin)\n}\nin (f := frame) {\no := Outer()\n}\n",
-         "std.origin"),
         ("unit mm\nuse std\ncomponent Inner(q: point) {\n  m := point\n  l := line(q, m)\n}\n\
           in std.front {\no := Inner(zork)\n}\n", "zork"),
         ("unit mm\nuse std\ncomponent Inner(view: plane) {\n  in view {\n    m := point\n  }\n}\n\

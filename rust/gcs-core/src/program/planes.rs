@@ -135,12 +135,17 @@ fn member(
     let charted = |sk: &Sketch, f: usize| sk.frames[f].planar() || sk.frames[f].chart.is_some();
     let charts: Vec<(usize, Span)> =
         path.iter().copied().filter(|&(f, _)| charted(sk, f)).collect();
+    // — but for one standing where the outer one does, its own datum (#542), which is where in
+    // it a body standing in it draws
     if let [.., (outer, at), (inner, _)] = charts[..] {
-        let who = |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| entity_name(e));
-        fail(Code::W115, at, format!(
-            "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
-             inside another draws what is in it, and the outer one is ridden on",
-            who(EntRef::frame(inner)), who(EntRef::frame(outer))));
+        if sk.frames[inner].o != sk.frames[outer].o {
+            let who = |f: usize| map.name_of(EntRef::frame(f)).cloned()
+                .unwrap_or_else(|| entity_name(EntRef::frame(f)));
+            fail(Code::W115, at, format!(
+                "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
+                 inside another draws what is in it, and the outer one is ridden on",
+                who(inner), who(outer)));
+        }
     }
     let (plane, r_span) = charts.last().copied()
         .or_else(|| path.last().copied()).expect("a membership names a frame");

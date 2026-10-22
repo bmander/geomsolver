@@ -349,11 +349,9 @@ sheet drawing {
   style m.plate.air.feedL.da { display: none }
   style m.plate.thr.lever_axes { display: none }
   style m.plate.thr.hole_axes { display: none }
-  style m.bankR.cylinder_axes { display: none }
   style m.bankR.piston_axes { display: none }
   style m.bankR.cyl.ax { display: none }
   style m.bankR.pis.rod { display: none }
-  style m.bankL.cylinder_axes { display: none }
   style m.bankL.piston_axes { display: none }
   style m.bankL.cyl.ax { display: none }
   style m.bankL.pis.rod { display: none }

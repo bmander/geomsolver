@@ -312,13 +312,34 @@ document's `None` or a module's index), and the drawing has them — made whenev
 says `use std` (`Walk::new`, over `Program::uses_of`), while `std.front` read by its own spelling
 is a datum only to a file that says it (`Lookup::unread`). Where a place it stands resolves, read
 where it was written (`Scope::written_at`), to a frame (`Datums::frames`: a declaration written
-`frame`, or a reading at an instant whose source is one, `walk_reading_at`, `Lookup::frame`), it
-is refused rather than given the world's: `Lookup::missing` says E101, naming the frame, since a
-frame's own datums are not drawn yet. A plane is no frame, so `Tooth(…) in top` reads the world's.
-`tests/frame_datums.rs` is the gate (`a_body_reading_its_datums_at_the_root_stands_where_one_handed_them_does`,
-`nested_instances_read_the_same_datums`,
+`frame`, or a reading at an instant whose source is one, `walk_reading_at`, `Lookup::frame`), the
+innermost such names **the frame's own datums** ([0.169], #542; through 0.167 E101): `std.x`,
+`std.y`, `std.z` read as its `u`, `v`, `normal` (minting its chart as `f.u` does), and the rest as
+`std`'s `FrameDatums` over it under `keys::frame_datums` (`{frame}#std.`, keys a source cannot
+write, walked `Stamps::anonymous` so no reader is shown them),
+`std.back` as `behind.normal`, `f.u` reversed. Their names are made with the frame
+(`Walk::declare_frame`), so an alias of one resolves as any name does (a call or a word handed
+`std.front`), and the frame is kept in `Datums::read`; `Walk::finish` walks `FrameDatums` once for
+each frame read, after the world's, its formal an alias of the frame and sited where the frame was
+declared (`Frame::path`), so a part that declares the frame makes them (`boundary::split`). Each plane
+stands at the frame's own place (`Sketch::plane_at`, chosen in `entities::build_plane` by
+`flatten::frame_datum`): no unknown and no row for an axis already through it, so a frame's datums
+add no freedom and no dependency, and `diagnose::view_freedoms` says a chart sharing an earlier
+one's place no more. Drawn in a plane standing where the frame around it does is no W115 (`planes::member`), and
+`drawn_incidences` twins a point onto one as onto the world's. A plane is no frame, so `Tooth(…)
+in top` reads the world's. `tests/frame_datums.rs` is the gate
+(`a_body_reading_its_datums_at_the_root_stands_where_one_handed_them_does`,
+`a_frame_at_the_worlds_pose_gives_the_roots_solve`,
+`a_frame_turned_and_moved_moves_the_body_with_it`,
+`two_instances_of_one_definition_stand_in_two_frames`,
+`a_bare_frame_placed_by_relations_on_its_datums_is_fully_held`,
+`a_frame_left_unplaced_reports_its_freedoms`,
+`a_definition_in_a_frame_with_a_joint_rides_it_at_a_roll`,
+`an_instance_stands_in_the_innermost_frame_which_rides_those_outside_it`,
+`a_frames_datum_is_handed_on_as_any_name_is`, `nested_instances_read_the_same_datums`,
 `a_modules_definition_reads_its_datums_by_the_modules_own_use`,
-`a_body_standing_in_a_frame_is_refused_its_datums`, `a_plane_is_no_frame`,
+`a_body_reads_the_datums_of_the_frame_around_its_call_wherever_that_is_written`,
+`a_frames_own_datums_are_read_by_no_name_outside_a_body`, `a_plane_is_no_frame`,
 `a_relation_word_still_reads_only_its_operands`). **A definition reads the constants of its file**
 ([0.160], #461 PC1, PC2): `Walk::file_numbers` works out, once a file, the numbers the file reads at
 its top — a module's own and its `use`s' (`used_params`, `imported_params`, `module_params`), the
@@ -525,7 +546,7 @@ components.dims.zB)`.
   drawn.  **The core has no filesystem**: the resolver is the host's — `solventc` reads
   `engine/parts.sv` beside the document, then `library::resolve`; the FFI and `examples::document`
   use `library::parse_linked`, over `library::MODULES`.  **`rust/lib/` is the standard library**
-  (`std`: `std.StandardDatums`, `std.Turned`), in the Makefile's `RUST_SRC`.  `program::reparse` relinks from the
+  (`std`: `std.StandardDatums`, `std.FrameDatums`, `std.Turned`), in the Makefile's `RUST_SRC`.  `program::reparse` relinks from the
   texts in hand (`modules::relink`), so an edit never asks the host.  E070 no module, E071 defined
   twice in one file.  `tests/modules.rs` is the gate.
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted

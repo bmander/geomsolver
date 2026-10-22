@@ -8,10 +8,14 @@
 // passes through the pivot — that is what an oscillating cylinder *is*: the rod cannot swing
 // relative to the cylinder, so the cylinder swings instead.  The cylinder's frame stands at the
 // pivot along the rod and the piston's at the crown down it, so the two statements place both
-// parts, and the whole bank turns with the crank.  Nothing here reads the crank angle: the pin
-// is wherever the assembly's `t` puts it, and the drawing is followed along `t` from where it
-// starts.  The crown's seed is where the closed form puts it, which is what keeps the solve on
-// the branch with the cylinder over the pin rather than folded back through the pivot.
+// parts, and the whole bank turns with the crank.  The cylinder stands in a frame of its own
+// (#542), mated as a part is: its origin on the pivot, its axes square, its v square to the plane
+// of swing and its u to the rod, so its z runs up the rod.  Each axis starts as the world's, the
+// nearer of its two ways round on either bank, so no seed says which.  Nothing here reads the
+// crank angle: the pin is wherever the assembly's `t` puts it, and the drawing is followed along
+// `t` from where it starts.  The crown's seed is where the closed form puts it, which is what
+// keeps the solve on the branch with the cylinder over the pin rather than folded back through
+// the pivot.
 
 use std
 use components.dims (D, L, rt)
@@ -31,12 +35,16 @@ part Bank(pin: point, piv: point, z: Length) {
     piv coincident rod
     pin distance(L) crown
 
-    // The parts' frames: the cylinder's points up from its pivot, the piston's down from its
-    // crown to the pin.
-    cylinder_axes := std.Turned(piv, crown)
+    // The piston's frame, pointing down from its crown to the pin.
     piston_axes := std.Turned(crown, pin)
   }
-  cyl := components.cylinder.Cylinder(cylinder_axes, fw: z - D / 2)
+  in (cylinder_frame := frame) {
+    cyl := components.cylinder.Cylinder(fw: z - D / 2)
+  }
+  cylinder_frame.origin coincident piv
+  cylinder_frame.u perpendicular cylinder_frame.v
+  cylinder_frame.v parallel pin.plane.normal
+  cylinder_frame.u perpendicular rod
   pis := components.piston.Piston(piston_axes)
   // what a view across the crank axis shows of the cylinder: the corners of its outline and of
   // its bore that stand highest and lowest, which are the left-hand top and right-hand bottom

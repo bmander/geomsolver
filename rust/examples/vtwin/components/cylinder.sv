@@ -4,10 +4,10 @@
 use std (on_u)
 use components.dims (D, H, L, R, a, boltac, boltaf, dport, head, ph, trapfit, traph, trapz, wall)
 
-// f is the cylinder's own frame: origin at the pivot, u toward the head, v to the left.  The part
-// is drawn in it, so every number below is the part's own and the frame is all that moves; fw is
-// the plate-side wall thickness.
-part Cylinder(f: group, fw: Length) {
+// The cylinder stands in its own frame (#542): origin at the pivot, z toward the head.  The part is
+// drawn in the frame's `std.up`, z to the right and x to the left, so every number below is the
+// part's own and the frame is all that moves; fw is the plate-side wall thickness.
+part Cylinder(fw: Length) {
   // The skirt reaches the bore mouth at bottom dead centre.
   mouth_u := L - R - ph - H
   hw := D / 2 + wall
@@ -21,11 +21,11 @@ part Cylinder(f: group, fw: Length) {
   face := -(fw + D / 2)
   back := D / 2 + wall
 
-  in f.axes {
+  in std.up {
     // The bore's axis, through the pivot and the air port `a` along it.
     pt := point hint((a, 0mm))
-    pt on_u(d: a) f.axes
-    ax := line(f.axes.origin, pt)
+    pt on_u(d: a) std.up
+    ax := line(std.up.origin, pt)
 
     // Body outline, from the open mouth to the head.
     k_bl := point hint((mouth_u, hw))
@@ -49,11 +49,11 @@ part Cylinder(f: group, fw: Length) {
     // The air port and pivot shank enter through the plate-side face.
     port := circle(center: pt) hint(r: dport / 2)
     radius(dport / 2) port
-    shank := circle(center: f.axes.origin) hint(r: trapfit / 2)
+    shank := circle(center: std.up.origin) hint(r: trapfit / 2)
     radius(trapfit / 2) shank
 
     // The bolt head slides in from the left; the slot holds it against the face wall.
-    pkt := std.Hex(f.axes.origin, ax, af: boltaf, phase: 90deg)
+    pkt := std.Hex(std.up.origin, ax, af: boltaf, phase: 90deg)
     t0 := point hint((trapw / 2, hw))
     t1 := point hint((trapw / 2, -trapd))
     t2 := point hint((-trapw / 2, -trapd))
@@ -74,7 +74,7 @@ part Cylinder(f: group, fw: Length) {
     length(top_u - mouth_u) side_l
     m0 midpoint mouth
     m0 coincident ax
-    m0 distance(mouth_u, along: u) f.axes
+    m0 distance(mouth_u, along: u) std.up
     // The bore opens at that mouth and leaves the specified side and head walls.
     b_bl coincident mouth
     b_br coincident mouth
@@ -93,7 +93,7 @@ part Cylinder(f: group, fw: Length) {
     t3 coincident side_l
     length(trapw) trap1
     t1 distance(trapd, side: right) ax
-    t0 distance(trapw / 2, along: u) f.axes
+    t0 distance(trapw / 2, along: u) std.up
     h0 coincident lid
     h0 coincident bore_l
     // which way round each of those is: the left wall on the left, the head beyond the mouth, the
@@ -109,8 +109,8 @@ part Cylinder(f: group, fw: Length) {
     claim b_br distance(head_u - mouth_u) b_tr
     claim b_tl distance(D) b_tr
     claim k_tl distance(2 * hw) k_tr
-    claim f.axes.origin distance(a) pt
-    claim m0 distance(-mouth_u) f.axes.origin
+    claim std.up.origin distance(a) pt
+    claim m0 distance(-mouth_u) std.up.origin
     claim b_tl distance(wall) h0
     claim k_tl distance(hw - D / 2) h0
     claim radius(dport / 2) port
@@ -136,10 +136,12 @@ part Cylinder(f: group, fw: Length) {
 // ../cylinder.svd arranges the three projections of this same preview.
 preview {
   unit mm
-  in std.front {
-    up := point
-    fix((0, 40)) up
-    axes := std.Turned(std.origin, up)
+  // upright: its frame the world's, so the cylinder's z is the world's and its section the
+  // world's up plane
+  in (f := frame) {
+    cyl := Cylinder(fw: components.dims.fwA)
   }
-  cyl := Cylinder(axes, fw: components.dims.fwA)
+  fix(dir == (1, 0, 0)) f.u
+  fix(dir == (0, 1, 0)) f.v
+  fix(origin == (0, 0, 0)) f
 }

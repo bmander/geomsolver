@@ -535,7 +535,14 @@ fn build_plane(
     let o = [0, 1, 2].map(|i| if wrote(i) { d.seed.get(i).copied().unwrap_or(0.0) } else { 0.0 });
     // the origin was minted with the points (`Resolver::origins`)
     let Some(&origin) = res.origins.get(&d.name.key().text) else { return None };
-    let pi = sk.plane_over(axes[0], axes[1], o, origin, &show);
+    // a frame's own datum (#542) stands where the frame does, adding nothing
+    let frame = crate::flatten::frame_datum(&d.name.key().text)
+        .and_then(|(f, _)| res.of.get(f))
+        .filter(|f| f.kind == EntKind::Frame && sk.frames[f.i()].chart.is_some());
+    let pi = match frame {
+        Some(f) => sk.plane_at(axes[0], axes[1], f.i(), origin),
+        None => sk.plane_over(axes[0], axes[1], o, origin, &show),
+    };
     // a frame declared bare whose axes are read: spatial, its origin at (0, 0, 0) along them
     if d.bare {
         sk.spatial_chart(pi);

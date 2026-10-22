@@ -1,6 +1,9 @@
-//! A definition's standard datums are those of the frame it stands in (#524): `std.front` in a
-//! body names the datum of the frame its instance stands in, the world's at the root, and a body
-//! standing in a frame other than the world is refused rather than given the world's.
+//! A definition's standard datums are those of the frame it stands in (#524, #542): `std.front`
+//! in a body names the datum of the frame its instance stands in — the world's at the root, and
+//! the frame's own under a frame: its axes, the planes over them, and its origin, standing where
+//! the frame does.  A body is then drawn once and placed by its frame: what it makes in a frame
+//! moved by a rigid motion is what it makes at the root, moved by that motion.
+use gcs_core::diagnose::{diagnose, view_freedoms, DiagnoseOptions};
 use gcs_core::program::{elaborate, Code, Elaborated};
 use gcs_core::syntax::parse;
 use gcs_core::modules::link;
@@ -36,16 +39,88 @@ component Post(view: plane, o: point, len: Length) {
 }
 ";
 
+/// A body reading every standard datum: a point in each plane, placed by ordinates in it, and
+/// one beside each along an axis.  The points, by name.
+const PROBE: &str = "\
+unit mm
+use std
+component Probe(len: Length) {
+  in std.front {
+    a := point
+    a coincident std.origin
+    b := point hint((3, len))
+    b distance(3mm, along: u) std.front
+    a distance(len) b
+  }
+  in std.top {
+    c := point hint((5, 7))
+    c distance(5mm, along: u) std.top
+    c distance(7mm, along: v) std.top
+    j := point hint((5, 20))
+    line(c, j) parallel std.y
+    c distance(13mm) j
+    g := point hint((-6, 7))
+    line(c, g) parallel std.back
+    c distance(11mm) g
+  }
+  in std.side {
+    d := point hint((2, 9))
+    d distance(2mm, along: u) std.side
+    d distance(9mm, along: v) std.side
+    h := point hint((2, 20))
+    line(d, h) parallel std.z
+    d distance(11mm) h
+  }
+  in std.up {
+    e := point hint((4, 6))
+    e distance(4mm, along: u) std.up
+    e distance(6mm, along: v) std.up
+    m := point hint((4, -5))
+    line(e, m) parallel std.x
+    e distance(11mm) m
+  }
+}
+";
+const POINTS: [&str; 9] = ["a", "b", "c", "j", "g", "d", "h", "e", "m"];
+
+/// A frame's pose, by its axes and origin: `fix` statements placing `f` there.
+struct Pose {
+    u: [f64; 3],
+    v: [f64; 3],
+    o: [f64; 3],
+}
+
+impl Pose {
+    const WORLD: Pose = Pose { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0, 0.0, 0.0] };
+    /// Turned off every axis and moved.
+    const MOVED: Pose = Pose { u: [0.6, 0.8, 0.0], v: [-0.48, 0.36, 0.8], o: [10.0, -20.0, 5.0] };
+
+    fn place(&self, f: &str) -> String {
+        let t = |x: [f64; 3]| format!("({}, {}, {})", x[0], x[1], x[2]);
+        format!("fix(dir == {}) {f}.u\nfix(dir == {}) {f}.v\nfix(origin == {}) {f}\n",
+                t(self.u), t(self.v), t(self.o))
+    }
+
+    /// `p` at the root, where this pose takes it: `o + x·u + y·v + z·(u × v)`.
+    fn image(&self, p: [f64; 3]) -> [f64; 3] {
+        let (u, v) = (self.u, self.v);
+        let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+        [0, 1, 2].map(|k| self.o[k] + p[0] * u[k] + p[1] * v[k] + p[2] * n[k])
+    }
+}
+
 /// Two places alike to 1e-8.
 fn near(a: [f64; 3], b: [f64; 3]) -> bool {
     (0..3).all(|k| crate::common::near(a[k], b[k]))
 }
 
-/// The E101 said at the first place `what` is written.
-fn refused<'a>(e: &'a Elaborated, src: &str, what: &str) -> &'a gcs_core::program::Diag {
-    let at = src.find(what).unwrap_or_else(|| panic!("`{what}` is not in the text"));
-    e.diags.iter().find(|d| d.code == Code::E101 && d.span.lo as usize == at)
-        .unwrap_or_else(|| panic!("`{what}` is not refused: {:?}", e.diags))
+/// Every probe point of `framed`'s instance `inst` where `pose` takes the root's `p`.
+fn moved(root: &Elaborated, framed: &Elaborated, inst: &str, pose: &Pose) {
+    for name in POINTS {
+        let (want, got) = (pose.image(at(root, &format!("p.{name}"))),
+                           at(framed, &format!("{inst}.{name}")));
+        assert!(near(got, want), "{inst}.{name}: {got:?} against {want:?}");
+    }
 }
 
 #[test]
@@ -58,6 +133,145 @@ fn a_body_reading_its_datums_at_the_root_stands_where_one_handed_them_does() {
     }
     // the same entities, and nothing of the world made twice
     assert_eq!(read.sketch.points.len(), handed.sketch.points.len());
+}
+
+#[test]
+fn a_frame_at_the_worlds_pose_gives_the_roots_solve() {
+    let root = solved(&format!("{PROBE}p := Probe(len: 40mm)\n"));
+    let framed = solved(&format!("{PROBE}in (f := frame) {{\n  p := Probe(len: 40mm)\n}}\n{}",
+                                 Pose::WORLD.place("f")));
+    for name in POINTS {
+        let name = format!("p.{name}");
+        assert!(near(at(&framed, &name), at(&root, &name)), "{name}: {:?} against {:?}",
+                at(&framed, &name), at(&root, &name));
+    }
+    // the frame's datums are the world's
+    for (datum, world) in [("front", "std.front"), ("top", "std.top"), ("side", "std.side"),
+                           ("up", "std.up")] {
+        let (f, w) = (crate::common::ent(&framed, &format!("f#std.{datum}")),
+                      crate::common::ent(&framed, world));
+        let (bf, bw) = (framed.sketch.basis(f.i()), framed.sketch.basis(w.i()));
+        assert!(near(bf.u, bw.u) && near(bf.v, bw.v) && near(bf.o, bw.o), "{datum}");
+    }
+}
+
+#[test]
+fn a_frame_turned_and_moved_moves_the_body_with_it() {
+    let root = solved(&format!("{PROBE}p := Probe(len: 40mm)\n"));
+    let framed = solved(&format!("{PROBE}in (f := frame) {{\n  p := Probe(len: 40mm)\n}}\n{}",
+                                 Pose::MOVED.place("f")));
+    moved(&root, &framed, "p", &Pose::MOVED);
+    // the frame's own datums, made once, and drawn in without a word (W115 says nothing)
+    assert!(framed.diags.iter().all(|d| d.code != Code::W115), "{:?}", framed.diags);
+    // and the same instance placed by a trailer, `in f`, rather than a block
+    let trailer = solved(&format!("{PROBE}f := frame\np := Probe(len: 40mm) in f\n{}",
+                                  Pose::MOVED.place("f")));
+    moved(&root, &trailer, "p", &Pose::MOVED);
+}
+
+#[test]
+fn two_instances_of_one_definition_stand_in_two_frames() {
+    let other = Pose { u: [0.0, 0.0, 1.0], v: [1.0, 0.0, 0.0], o: [-3.0, 4.0, 12.0] };
+    let root = solved(&format!("{PROBE}p := Probe(len: 40mm)\n"));
+    let src = format!("{PROBE}in (f := frame) {{\n  p := Probe(len: 40mm)\n}}\n\
+                       in (g := frame) {{\n  q := Probe(len: 40mm)\n  r := Probe(len: 40mm)\n}}\n\
+                       {}{}", Pose::MOVED.place("f"), other.place("g"));
+    let e = solved(&src);
+    moved(&root, &e, "p", &Pose::MOVED);
+    moved(&root, &e, "q", &other);
+    moved(&root, &e, "r", &other);
+    // each frame's datums are made once, however many instances read them: the frames of the
+    // root's, and of each frame its own and its five planes
+    let frames = |e: &Elaborated| e.sketch.frames.len();
+    assert_eq!(frames(&e), frames(&root) + 2 * 6);
+}
+
+#[test]
+fn a_bare_frame_placed_by_relations_on_its_datums_is_fully_held() {
+    // a seat in space, a bore's axis through it, and a datum across: the frame stands at the
+    // seat, its u along the bore and its v up, and nothing is free
+    let src = format!("{READS}\
+seat := point
+fix((10, 20, 30)) seat
+bore := axis
+fix(dir == (0, 1, 0), origin == (10, 0, 30)) bore
+in (f := frame) {{
+  p := Post(len: 40mm)
+}}
+f.origin coincident seat
+f.u parallel bore
+f.v parallel std.z
+");
+    let mut e = solved(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    let pose = Pose { u: [0.0, 1.0, 0.0], v: [0.0, 0.0, 1.0], o: [10.0, 20.0, 30.0] };
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    for name in ["p.a", "p.b"] {
+        let (want, got) = (pose.image(at(&root, name)), at(&e, name));
+        assert!(near(got, want), "{name}: {got:?} against {want:?}");
+    }
+}
+
+#[test]
+fn a_frame_left_unplaced_reports_its_freedoms() {
+    let mut e = build(&format!("{READS}in (f := frame) {{\n  p := Post(len: 40mm)\n}}\n"));
+    assert!(e.ok(), "{:?}", e.diags);
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    // the frame's own seven numbers — two axes' turns and where it stands — and nothing of its
+    // datums', which stand where it does
+    assert_eq!(d.dof, 7);
+    assert_eq!(view_freedoms(&e.sketch, &d), vec!["f.attitude", "f.origin"]);
+}
+
+#[test]
+fn a_definition_in_a_frame_with_a_joint_rides_it_at_a_roll() {
+    // the arm turns about z, and the post drawn in it is carried at a roll with no `under:`
+    let src = format!("{READS}\
+in std.top {{
+  o := point
+  fix((0, 0)) o
+}}
+in (arm := frame) {{
+  p := Post(len: 40mm)
+}}
+{}arm spins(1) o
+X := point hint((0, 3, 40))
+X coincident(t == 90deg) p.b
+", Pose::WORLD.place("arm")).replace("use std\n", "use std (spins)\n");
+    let e = solved(&src);
+    // at rest the post stands as drawn, and at a quarter turn it has turned about z
+    let b = at(&e, "p.b");
+    assert!(near(at(&e, "X"), [-b[1], b[0], b[2]]), "{:?} against {b:?}", at(&e, "X"));
+    let arm = crate::common::ent(&e, "arm").i() as u32;
+    assert_eq!(e.sketch.carriers(crate::common::ent(&e, "p.b")).unwrap(), vec![arm]);
+}
+
+#[test]
+fn an_instance_stands_in_the_innermost_frame_which_rides_those_outside_it() {
+    // the inner frame is turned and moved in the world at rest; the outer one turns about z
+    let inner = Pose { u: [0.0, 1.0, 0.0], v: [-1.0, 0.0, 0.0], o: [20.0, 0.0, 0.0] };
+    let src = format!("{READS}\
+in std.top {{
+  o := point
+  fix((0, 0)) o
+}}
+in (g := frame) {{
+  in (h := frame) {{
+    p := Post(len: 40mm)
+  }}
+}}
+{}{}g spins(1) o
+X := point hint((0, 20, 40))
+X coincident(t == 90deg) p.b
+", Pose::WORLD.place("g"), inner.place("h")).replace("use std\n", "use std (spins)\n");
+    let e = solved(&src);
+    assert!(e.diags.iter().all(|d| d.code != Code::W115), "{:?}", e.diags);
+    // the post reads the inner frame's datums
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    let b = inner.image(at(&root, "p.b"));
+    assert!(near(at(&e, "p.b"), b), "{:?} against {b:?}", at(&e, "p.b"));
+    // and rides the inner frame on the outer: a quarter turn of the outer carries it
+    assert!(near(at(&e, "X"), [-b[1], b[0], b[2]]), "{:?} against {b:?}", at(&e, "X"));
 }
 
 #[test]
@@ -95,6 +309,13 @@ fn read_with_module(src: &str) -> Elaborated {
     elaborate(&prog)
 }
 
+/// The E101 said at the first place `what` is written.
+fn refused<'a>(e: &'a Elaborated, src: &str, what: &str) -> &'a gcs_core::program::Diag {
+    let at = src.find(what).unwrap_or_else(|| panic!("`{what}` is not in the text"));
+    e.diags.iter().find(|d| d.code == Code::E101 && d.span.lo as usize == at)
+        .unwrap_or_else(|| panic!("`{what}` is not refused: {:?}", e.diags))
+}
+
 #[test]
 fn a_modules_definition_reads_its_datums_by_the_modules_own_use() {
     // the document says no `use std`: the module does, and that is what its body reads by
@@ -104,6 +325,16 @@ fn a_modules_definition_reads_its_datums_by_the_modules_own_use() {
     let handed = solved(&format!("{HANDED}p := Post(std.front, std.origin, len: 40mm)\n"));
     for name in ["p.a", "p.b"] {
         assert!(near(at(&e, name), at(&handed, name)), "{name}");
+    }
+    // and in a frame, the frame's own, by the module's `use` still
+    let src = format!("unit mm\nuse lib.posts\nin (f := frame) {{\n  p := lib.posts.Post(len: \
+                       40mm)\n}}\n{}", Pose::MOVED.place("f"));
+    let mut e = read_with_module(&src);
+    assert!(e.ok(), "{:?}", e.diags);
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    for name in ["p.a", "p.b"] {
+        let want = Pose::MOVED.image(at(&handed, name));
+        assert!(near(at(&e, name), want), "{name}: {:?} against {want:?}", at(&e, name));
     }
     // and the document reads none by it: `std` is a name of the files that say `use std`
     let src = "unit mm\nuse lib.posts\nq := point in std.front\n";
@@ -117,27 +348,61 @@ fn a_modules_definition_reads_its_datums_by_the_modules_own_use() {
 }
 
 #[test]
-fn a_body_standing_in_a_frame_is_refused_its_datums() {
-    // a frame around the call, as a block or as the call's own `in`, and around a call further out
-    for (src, frame) in [
-        (format!("{READS}in (f := frame) {{\n  p := Post(len: 40mm)\n}}\n"), "`f`"),
-        (format!("{READS}f := frame\np := Post(len: 40mm) in f\n"), "`f`"),
+fn a_body_reads_the_datums_of_the_frame_around_its_call_wherever_that_is_written() {
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    let want = |name: &str| Pose::MOVED.image(at(&root, &format!("p.{name}")));
+    // a frame around a call further out, and a frame declared in a body around its call
+    for (src, post) in [
         (format!("{READS}component Arm() {{\n  p := Post(len: 40mm)\n}}\n\
-                  in (arm := frame) {{\n  a := Arm()\n}}\n"), "`arm`"),
-        (format!("{READS}component Arm() {{\n  in (g := frame) {{\n    p := Post(len: 40mm)\n  }}\n}}\n\
-                  a := Arm()\n"), "`g`"),
-        // a frame read at an instant is a frame
-        (format!("{READS}f := frame\nf turns(1) std.z\nn := f at 30deg\n\
-                  p := Post(len: 40mm) in n\n"), "`n`"),
+                  in (arm := frame) {{\n  a := Arm()\n}}\n{}", Pose::MOVED.place("arm")), "a.p"),
+        (format!("{READS}component Arm() {{\n  in (g := frame) {{\n    p := Post(len: 40mm)\n  \
+                  }}\n  {}}}\na := Arm()\n", Pose::MOVED.place("g").replace('\n', "\n  ")),
+         "a.p"),
     ] {
-        let e = build(&src);
-        let d = refused(&e, &src, "std.front");
-        for word in ["`std.front`", frame, "frame its instance stands in", "not drawn yet"] {
-            assert!(d.message.contains(word), "{word}: {}", d.message);
+        let e = solved(&src);
+        for name in ["a", "b"] {
+            let got = at(&e, &format!("{post}.{name}"));
+            assert!(near(got, want(name)), "{post}.{name}: {got:?} against {:?}", want(name));
         }
-        // every standard datum it reads, and nothing given the world's in its place
-        refused(&e, &src, "std.origin");
     }
+}
+
+#[test]
+fn a_frames_datum_is_handed_on_as_any_name_is() {
+    // handed to a call as its view and origin, and to a relation word as its operand: what the
+    // frame's own are, made once a body reads one, is read through the alias as any name is
+    let src = format!("{}\
+component Outer() {{
+  p := Post(std.front, std.origin, len: 40mm)
+  in std.front {{
+    c := point hint((5, 0))
+    c on_u(d: 5mm) std.front
+  }}
+}}
+in (f := frame) {{
+  o := Outer()
+}}
+{}", HANDED.replace("use std\n", "use std (on_u)\n"), Pose::MOVED.place("f"));
+    let e = solved(&src);
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    for name in ["a", "b"] {
+        let want = Pose::MOVED.image(at(&root, &format!("p.{name}")));
+        let got = at(&e, &format!("o.p.{name}"));
+        assert!(near(got, want), "o.p.{name}: {got:?} against {want:?}");
+    }
+    assert!(near(at(&e, "o.c"), Pose::MOVED.image([5.0, 0.0, 0.0])), "{:?}", at(&e, "o.c"));
+}
+
+#[test]
+fn a_frames_own_datums_are_read_by_no_name_outside_a_body() {
+    // made under a key no source can spell: outside a body standing in the frame, `std` is the
+    // world's, and the frame's are no name at all
+    let src = format!("{READS}in (f := frame) {{\n  p := Post(len: 40mm)\n}}\n\
+                       q := point in std.front\n");
+    let e = build(&src);
+    assert!(e.ok(), "{:?}", e.diags);
+    let q = crate::common::ent(&e, "q");
+    assert_eq!(e.sketch.points[q.i()].plane, Some(crate::common::ent(&e, "std.front").idx));
 }
 
 #[test]
