@@ -2,7 +2,9 @@
 //! in a body names the datum of the frame its instance stands in — the world's at the root, and
 //! the frame's own under a frame: its axes, the planes over them, and its origin, standing where
 //! the frame does.  A body is then drawn once and placed by its frame: what it makes in a frame
-//! moved by a rigid motion is what it makes at the root, moved by that motion.
+//! moved by a rigid motion is what it makes at the root, moved by that motion.  And from outside
+//! (#548), `b.std.D` names the same datums of instance `b`, which then stands in a square frame of
+//! its own that relations on them place.
 use gcs_core::diagnose::{diagnose, view_freedoms, DiagnoseOptions};
 use gcs_core::program::{elaborate, Code, Elaborated};
 use gcs_core::syntax::parse;
@@ -440,4 +442,176 @@ in std.front {
     let e = build(src);
     assert!(e.diags.iter().any(|d| d.code == Code::E101 && d.message.contains("std.front")),
             "{:?}", e.diags);
+}
+
+// ---- an instance is a frame (#548): its datums read from outside, `b.std.z` ----
+
+/// A seat in space, a bore's axis through it, and a datum across: what `READS`'s post is mated
+/// to, its x along the bore and its y up, by relations on `{who}`'s datums written `{x}`, `{y}`
+/// and `{o}`.
+fn mated(x: &str, y: &str, o: &str) -> String {
+    format!("\
+seat := point
+fix((10, 20, 30)) seat
+bore := axis
+fix(dir == (0, 1, 0), origin == (10, 0, 30)) bore
+{o} coincident seat
+{x} parallel bore
+{y} parallel std.z
+")
+}
+
+/// Where `mated` puts the post.
+const SEATED: Pose = Pose { u: [0.0, 1.0, 0.0], v: [0.0, 0.0, 1.0], o: [10.0, 20.0, 30.0] };
+
+#[test]
+fn an_instance_whose_std_nothing_outside_reads_stands_as_before() {
+    // no frame of its own: the same entities as before, at the root and in a frame
+    for src in [format!("{READS}p := Post(len: 40mm)\n"),
+                format!("{READS}in (f := frame) {{\n  p := Post(len: 40mm)\n}}\n{}",
+                        Pose::MOVED.place("f"))] {
+        let e = solved(&src);
+        assert!(e.map.ent_named("p#frame").is_none());
+        assert!(e.sketch.plane_names.values().all(|n| n != "p"), "{:?}", e.sketch.plane_names);
+    }
+    // and a body's own `std` read inside it is no read from outside
+    let e = solved(&format!("{READS}component Pair() {{\n  one := Post(len: 40mm)\n  \
+                             q := point in std.front\n}}\npair := Pair()\n"));
+    assert!(e.map.ent_named("pair.one#frame").is_none() && e.map.ent_named("pair#frame").is_none());
+}
+
+#[test]
+fn an_instances_datums_place_it_as_a_frame_written_around_it_does() {
+    let by_hand = solved(&format!("{READS}in (f := frame) {{\n  p := Post(len: 40mm)\n}}\n\
+                                   f.u perpendicular f.v\n{}", mated("f.u", "f.v", "f.origin")));
+    let read = solved(&format!("{READS}p := Post(len: 40mm)\n{}",
+                               mated("p.std.x", "p.std.y", "p.std.origin")));
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    for name in ["p.a", "p.b"] {
+        let (h, r) = (at(&by_hand, name), at(&read, name));
+        assert!(near(h, r), "{name}: {r:?} against {h:?}");
+        assert!(near(r, SEATED.image(at(&root, name))), "{name}: {r:?}");
+    }
+    // the same unknowns, and one row fewer: the instance owns its squareness
+    let unknowns = |e: &Elaborated| e.sketch.params.iter().filter(|p| !p.fixed).count();
+    assert_eq!(unknowns(&read), unknowns(&by_hand));
+    assert_eq!(read.sketch.user_constraints().len() + 1, by_hand.sketch.user_constraints().len());
+    // and its datums are the frame's own, read by the body as its `std`
+    let p = crate::common::ent(&read, "p.a");
+    let front = crate::common::ent(&read, "p#frame#std.front");
+    assert_eq!(read.sketch.points[p.i()].plane, Some(front.idx));
+}
+
+#[test]
+fn a_mate_on_an_instances_datums_holds_it_wholly() {
+    let mut e = solved(&format!("{READS}p := Post(len: 40mm)\n{}",
+                                mated("p.std.x", "p.std.y", "p.std.origin")));
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    // the other datums agree: `std.z` is the post's x × y, its front the plane over x and z
+    let mut e = solved(&format!("{READS}p := Post(len: 40mm)\n{}\
+                                 n := axis\nfix(dir == (1, 0, 0), origin == (0, 0, 0)) n\n\
+                                 claim p.std.z parallel n\nclaim p.std.back parallel bore\n",
+                                mated("p.std.x", "p.std.y", "p.std.origin")));
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    let front = e.sketch.basis(crate::common::ent(&e, "p#frame#std.front").i());
+    assert!(near(front.u, [0.0, 1.0, 0.0]) && near(front.v, [1.0, 0.0, 0.0]), "{front:?}");
+}
+
+#[test]
+fn an_unplaced_instance_reports_six_freedoms_under_its_own_name() {
+    // its origin read by a seed alone, which places nothing
+    let mut e = build(&format!("{READS}p := Post(len: 40mm)\nq := point hint(at: p.std.origin)\n\
+                                fix((1, 2, 3)) q\n"));
+    assert!(e.ok(), "{:?}", e.diags);
+    let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
+    assert_eq!(d.dof, 6);
+    assert_eq!(view_freedoms(&e.sketch, &d), vec!["p.attitude", "p.origin"]);
+}
+
+#[test]
+fn two_instances_of_one_definition_are_placed_by_two_mates() {
+    let src = format!("{READS}p := Post(len: 40mm)\nq := Post(len: 25mm)\n{}\
+                       other := point\nfix((10, -20, 5)) other\n\
+                       d1 := axis\nfix(dir == (0.6, 0.8, 0), origin == (0, 0, 0)) d1\n\
+                       d2 := axis\nfix(dir == (-0.48, 0.36, 0.8), origin == (0, 0, 0)) d2\n\
+                       q.std.origin coincident other\nq.std.x parallel d1\nq.std.y parallel d2\n",
+                      mated("p.std.x", "p.std.y", "p.std.origin"));
+    let mut e = solved(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    let (r40, r25) = (solved(&format!("{READS}p := Post(len: 40mm)\n")),
+                      solved(&format!("{READS}p := Post(len: 25mm)\n")));
+    for (inst, root, pose) in [("p", &r40, &SEATED), ("q", &r25, &Pose::MOVED)] {
+        for name in ["a", "b"] {
+            let (got, want) = (at(&e, &format!("{inst}.{name}")),
+                               pose.image(at(root, &format!("p.{name}"))));
+            assert!(near(got, want), "{inst}.{name}: {got:?} against {want:?}");
+        }
+    }
+}
+
+#[test]
+fn an_instance_in_a_frame_with_a_joint_rides_it() {
+    // the post's own frame is mated at rest, and rides the arm around its call, which turns
+    // about z: a quarter turn carries the post whole
+    let src = format!("{READS}\
+in std.top {{
+  o := point
+  fix((0, 0)) o
+}}
+in (arm := frame) {{
+  p := Post(len: 40mm)
+}}
+{}arm spins(1) o
+{}X := point hint((-20, 10, 70))
+X coincident(t == 90deg) p.b
+", Pose::WORLD.place("arm"), mated("p.std.x", "p.std.y", "p.std.origin"))
+        .replace("use std\n", "use std (spins)\n");
+    let e = solved(&src);
+    let b = at(&e, "p.b");
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    assert!(near(b, SEATED.image(at(&root, "p.b"))), "{b:?}");
+    assert!(near(at(&e, "X"), [-b[1], b[0], b[2]]), "{:?} against {b:?}", at(&e, "X"));
+    let arm = crate::common::ent(&e, "arm").i() as u32;
+    assert_eq!(e.sketch.carriers(crate::common::ent(&e, "p.b")).unwrap(), vec![arm]);
+}
+
+#[test]
+fn an_instances_frame_starts_where_the_frame_around_its_call_stands() {
+    // read by a seed alone, so where it starts is where it stands
+    let src = format!("{READS}in (g := frame) {{\n  p := Post(len: 40mm)\n}}\n{}\
+                       q := point hint(at: p.std.origin)\n", Pose::MOVED.place("g"));
+    let e = build(&src);
+    assert!(e.ok(), "{:?}", e.diags);
+    let f = e.sketch.basis(crate::common::ent(&e, "p#frame").i());
+    assert!(near(f.u, Pose::MOVED.u) && near(f.v, Pose::MOVED.v) && near(f.o, Pose::MOVED.o),
+            "{f:?}");
+    assert!(near(at(&e, "q"), Pose::MOVED.o), "{:?}", at(&e, "q"));
+}
+
+#[test]
+fn an_instance_nested_in_a_body_is_read_as_a_frame_by_its_path() {
+    // the root reads a datum of an instance inside another, by the path through it
+    let src = format!("{READS}component Pair() {{\n  one := Post(len: 40mm)\n}}\n\
+                       pair := Pair()\n{}",
+                      mated("pair.one.std.x", "pair.one.std.y", "pair.one.std.origin"));
+    let mut e = solved(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    let want = SEATED.image(at(&root, "p.b"));
+    assert!(near(at(&e, "pair.one.b"), want), "{:?} against {want:?}", at(&e, "pair.one.b"));
+}
+
+#[test]
+fn an_instance_whose_body_reads_no_datum_is_refused_its_frame() {
+    // placed by what it is given: a mate on its frame would place nothing
+    let src = format!("{HANDED}p := Post(std.front, std.origin, len: 40mm)\nq := point\n\
+                       p.std.origin coincident q\n");
+    let e = build(&src);
+    let at = src.find("p.std.origin coincident").unwrap();
+    let d = e.diags.iter().find(|d| d.code == Code::E111 && d.span.lo as usize == at)
+        .unwrap_or_else(|| panic!("not refused: {:?}", e.diags));
+    assert!(d.message.contains("`Post`'s body reads no standard datum"), "{}", d.message);
+    // and a member that is no datum is no frame's, refused as it was
+    let e = build(&format!("{READS}p := Post(len: 40mm)\nq := point\np.std.zork coincident q\n"));
+    assert!(!e.ok() && e.diags.iter().all(|d| d.code != Code::E111), "{:?}", e.diags);
 }

@@ -78,6 +78,8 @@ impl<'a> Walk<'a> {
                 self.err(Code::E001, label.span, format!("`{name}` is declared twice"));
             }
         }
+        // the instances whose datums it reads from outside (#548), before any is walked
+        self.read_outside(body, scope);
         for st in body {
             if let StmtKind::Instance(inst) = &st.kind {
                 let name = format!("{prefix}{}", inst.name.text);
@@ -861,6 +863,16 @@ impl<'a> Walk<'a> {
                 Some(here(p))
             }
             (None, q) => q.clone(),
+        };
+        // read from outside as a frame (#548), it stands in its own, which rides the one around
+        // its call
+        let own = self.own_frame(comp, inst, st, scope, path, key.trim_end_matches('.'));
+        let in_plane = match own {
+            Some(own) => {
+                rides.extend(in_plane);
+                Some(own)
+            }
+            None => in_plane,
         };
         // a symmetric family's instance given what one before it was given, in another order it
         // allows, is that one (#415): a name for it, and nothing made again

@@ -340,7 +340,38 @@ in top` reads the world's. `tests/frame_datums.rs` is the gate
 `a_modules_definition_reads_its_datums_by_the_modules_own_use`,
 `a_body_reads_the_datums_of_the_frame_around_its_call_wherever_that_is_written`,
 `a_frames_own_datums_are_read_by_no_name_outside_a_body`, `a_plane_is_no_frame`,
-`a_relation_word_still_reads_only_its_operands`). **A definition reads the constants of its file**
+`a_relation_word_still_reads_only_its_operands`). **An instance is a frame** ([0.170], #548): read
+from outside, `b.std.D` names the datum `D` of a frame of the instance's own, `keys::instance_frame`
+(`{b}#frame`). What decides it is lazy and syntactic: each time a body is walked, before its
+instances, `Walk::read_outside` (`flatten/framed.rs`) reads its statements — their text by
+`syntax::name_uses`, and the frames they are drawn in, which a hoisted `in` header is no part of —
+for a path `X.std.D`, `X` not empty and `D` a datum's name, and keeps `{prefix}X` in
+`Datums::outside`, so a later statement or an enclosing body reads it as well as the one declaring
+the instance. `Walk::own_frame`, at the call, declares that frame bare as `in (f := frame) { b := …
+}` would — in the `in`s around the call, `Stamps::plane` stamping the parent's, so it rides the
+frame its call stands in — put in `Expansion::charts` so it has axes, and stamps it as the body's
+innermost `Stamps::plane`, the call's own `in` ridden, so `Scope::stands` ends in it and the body's
+`std` are its datums (#542 as above). `Lookup::raw` reads the path through `Lookup::instance_datum`,
+one rule with the body's (`Lookup::frame_datum`). The frame is **square**: `entities::build_plane`
+gives an instance's own frame `Sketch::square_chart`, an intrinsic `Perpendicular3` of its `u` and
+`v`, so it has six freedoms, and names it after the instance (`Sketch::plane_names`), so
+`diagnose::view_freedoms` says `cyl.attitude` and `cyl.origin`. It **starts where the frame around
+its call stands**: `views::instance_frames`, after the holds, seeds each from the innermost frame
+with axes it rides (`Sketch::seed_at_frame`), a held number left as held. An instance whose `std`
+nothing outside reads makes no frame and stands as before. One whose body reads no datum, nor any
+body it calls (`Walk::reads_datums`), is kept in `Datums::refused`: its `b.std.D` names nothing and
+`Lookup::missing` says **E111**, since it is placed by its arguments. A path past `std` naming no
+datum is left as written. `tests/frame_datums.rs` is the gate
+(`an_instance_whose_std_nothing_outside_reads_stands_as_before`,
+`an_instances_datums_place_it_as_a_frame_written_around_it_does`,
+`a_mate_on_an_instances_datums_holds_it_wholly`,
+`an_unplaced_instance_reports_six_freedoms_under_its_own_name`,
+`two_instances_of_one_definition_are_placed_by_two_mates`,
+`an_instance_in_a_frame_with_a_joint_rides_it`,
+`an_instances_frame_starts_where_the_frame_around_its_call_stands`,
+`an_instance_nested_in_a_body_is_read_as_a_frame_by_its_path`,
+`an_instance_whose_body_reads_no_datum_is_refused_its_frame`); the V-twin's bank mates its cylinder
+so. **A definition reads the constants of its file**
 ([0.160], #461 PC1, PC2): `Walk::file_numbers` works out, once a file, the numbers the file reads at
 its top — a module's own and its `use`s' (`used_params`, `imported_params`, `module_params`), the
 document's from its root table less its root instances' numbers and its `preview`'s — and splits

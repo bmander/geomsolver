@@ -135,6 +135,26 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
     out
 }
 
+/// **An instance's own frame starts where the frame around its call stands** (#548): each
+/// instance read as a frame (`flatten::frame_instance`), in build order so one nested in another
+/// reads it seeded, along the innermost frame with axes that it rides — a mate outside then
+/// starts from the pose its call puts it in, and a frame no `in` encloses starts as the world.
+pub(crate) fn instance_frames(sk: &mut Sketch, res: &super::resolve::Resolver) {
+    let own = |key: &str, e: &EntRef| {
+        e.kind == EntKind::Frame && crate::flatten::frame_instance(key).is_some()
+    };
+    let mut own: Vec<usize> =
+        res.of.iter().filter(|(key, e)| own(key, e)).map(|(_, e)| e.i()).collect();
+    own.sort_unstable();
+    for f in own {
+        let around = sk.frames[f].rides.iter().rev().map(|&g| g as usize)
+            .find(|&g| sk.frames[g].chart.is_some());
+        if let Some(g) = around {
+            sk.seed_at_frame(f, g);
+        }
+    }
+}
+
 /// Each plane's axes stood through its origin again, the first plane over an axis taking it, as
 /// the plane's build stood them (`Sketch::push_plane`) — once `fix` has said where the planes
 /// stand and which way their axes run, so a plane held off the world origin carries its axes

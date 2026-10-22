@@ -1260,7 +1260,7 @@ n coincident a.origin
 n coincident b.origin                // DOF 0
 ```
 
-Stacked parts are drawn so; there is no mate word. Two planes lying on one another are warned
+Stacked parts are drawn so. Two planes lying on one another are warned
 (W113). `solventc --where P` lists `P.x`, `P.y`, `P.z` (where it stands) and `P.u`, `P.v`, `P.n`
 (and `P.normal`, where the document reads it).
 
@@ -1318,11 +1318,24 @@ in f {
 }
 ```
 
-**A definition stands in a frame.** An instance stands in the frame its call stands in — the
-innermost frame of the `in` blocks around the call or of an `in f` trailer on it, else its parent
-instance's, so at the root the world — and its body's `std.*` name that frame's datums: the
-world's, at the root, as the document's own do. A plane is no frame: `t := Tooth(…) in top` puts
-the instance on `top` and changes nothing `std` names inside it. In a frame `f`:
+**An instance is a frame.** An instance stands in a frame, and its body's `std.*` name that
+frame's datums. From outside they are `b.std.x`, `b.std.y`, `b.std.z`, `b.std.front`, …,
+`b.std.origin`, the body's spellings, and once anything outside reads one the instance stands in a
+frame of its own: square (six freedoms, not a bare frame's seven), starting where the frame around
+its call stands and riding it, placed by relations on those datums — a mate:
+
+```sv
+cyl := components.cylinder.Cylinder(fw: z - D / 2)
+cyl.std.origin coincident piv
+cyl.std.y parallel pin.plane.normal
+cyl.std.x perpendicular rod          // its z runs up the rod: DOF 0
+```
+
+Left unplaced, the diagnosis names `cyl.attitude` and `cyl.origin`. An instance whose datums
+nothing outside reads stands in the frame its call stands in: the innermost frame of the `in`
+blocks around the call or of an `in f` trailer on it, else its parent instance's, so at the root
+the world. A plane is no frame: `t := Tooth(…) in top` changes nothing `std` names inside it. In a
+frame `f`:
 
 | datum | in frame `f` | the world's |
 |---|---|---|
@@ -1332,17 +1345,13 @@ the instance on `top` and changes nothing `std` names inside it. In a frame `f`:
 | `std.up` | `plane(u: f.normal, v: back)` | (z, −x) |
 | `std.origin` | a point in that front at `(0, 0)`, which is `f.origin` | |
 
-They agree with its coordinates — a point `in f` at `(x, y, z)` stands at `std.origin + x·std.x +
-y·std.y + z·std.z` — so a frame at the world's pose has the world's, and a body drawn in a frame
-moved by a rigid motion is the root's drawing moved by it. They are made once a frame, when a body
-standing in it first reads one, and stand where it does, adding no freedom: reading them names
-`f`'s axes as `f.u` does, so a bare frame's place is the solve's, held by relations on `f.u`,
-`f.v` and `f.origin` (a mate: `f.origin coincident seat`, …) or reported free. What the body
-declares rides `f` as anything declared in `in f { … }` does, so in a frame with a joint it moves
-whole, and among nested frames it stands in the innermost. A frame's axes start as the world's,
-and a relation leaving one either way round takes the nearer: place it so
-(`vtwin/components/bank.sv`). The body's file says `use std`, a module's by its own; a relation
-word reads only its operands, `std` included (E101).
+A point `in f` at `(x, y, z)` stands at `std.origin + x·std.x + y·std.y + z·std.z`, so a body in a
+frame moved by a rigid motion is the root's drawing moved by it; the datums add no freedom, and
+what the body declares rides `f` (a joint carries it whole). A body that reads no datum is placed
+by what it is given (`ConRod(crank.pin1, end.bore)`): reading its `b.std` is E111. An axis starts
+as the frame's around it, and a relation leaving it either way round takes the nearer: write the
+mate so. The body's file says `use std`, a module's by its own; a relation word reads only its
+operands, `std` included (E101).
 
 **Model relationships, not coordinate tables**: a rectangle is perpendicular
 sides, a width, a height and a position against a datum, not an ordinate for every corner; the

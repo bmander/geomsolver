@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.170] An instance is a frame.** From outside, an instance's datums are `b.std.x`, `b.std.y`,
+`b.std.z`, `b.std.front`, …, `b.std.origin` (§5, §8), the spellings its body reads them by, where
+0.169 refused the path (no such member). Once the body declaring the instance, or one around it,
+writes such a path, the instance stands in a frame of its own: declared beside the call in the
+`in`s around it, so it starts where the frame around the call stands and rides it; square, so it
+has six freedoms and its body cannot be sheared; and placed by relations on those datums, a mate,
+or reported free under the instance's name (`cyl.attitude`, `cyl.origin`). An instance whose `std`
+nothing outside reads stands as before, so nothing that elaborated changes. Reading the datums of an
+instance whose body reads none is **E111**: it is placed by its arguments. No syntax is added. The
+V-twin's bank mates its cylinder by `cyl.std.origin`, `cyl.std.y` and `cyl.std.x`, the frame it
+named and its `perpendicular` row gone, its positions unchanged. (Issue #548, from #523.)
+
 **[0.169] A frame has the standard datums.** Inside a definition's body whose instance stands in
 a frame `f`, `std.*` names `f`'s own datums (§5, §8, §14.4) where 0.167 refused them (**E101**):
 `std.x`, `std.y` and `std.z` are `f.u`, `f.v` and `f.normal`, `std.back` is `f.u` reversed,
