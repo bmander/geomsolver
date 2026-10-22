@@ -334,8 +334,9 @@ function cameraPress(v: SketchView, e: PointerEvent, sp: [number, number]): void
     v.gesture = panGesture(v, sp);
     return;
   }
+  // and let go where it was pressed, the right button asks what can be done with what is there
   if (e.button === 2) {
-    v.gesture = orbitGesture(v, sp);
+    v.gesture = orbitGesture(v, sp, () => v.onContextMenu(v.contextAt(...sp), sp));
   }
 }
 
@@ -591,14 +592,24 @@ export function abandonGesture(v: SketchView): void {
 const ORBIT_PER_PX = 0.008;
 const EL_MAX = Math.PI / 2 - 1e-3;
 
+/** How far the right button may wander and still be a click, which opens the context menu,
+ *  rather than a turn. */
+const MENU_SLOP_PX = 4;
+
 /** Turn the workspace about: a horizontal drag swings the eye round it, a vertical one lowers
  *  it — the pointer pushes the scene about as if it were held.  Camera-only — the two angles
- *  are view state and nothing in the document moves — so it is `transient` exactly as a pan is. */
-export function orbitGesture(v: SketchView, from: [number, number]): Gesture {
+ *  are view state and nothing in the document moves — so it is `transient` exactly as a pan is.
+ *  Let go without having gone `MENU_SLOP_PX`, it was a `click`, where one is given. */
+export function orbitGesture(v: SketchView, from: [number, number], click?: () => void): Gesture {
   let last = from;
+  let turned = false;
   return {
     transient: true,
+    end: () => {
+      if (!turned) click?.();
+    },
     move: (sp) => {
+      turned ||= Math.hypot(sp[0] - from[0], sp[1] - from[1]) >= MENU_SLOP_PX;
       const o = v.orbit;
       v.orbit = {
         az: o.az + (sp[0] - last[0]) * ORBIT_PER_PX,
