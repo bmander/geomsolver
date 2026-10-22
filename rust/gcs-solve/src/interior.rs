@@ -252,9 +252,10 @@ impl Structure {
         let mut rhs: Vec<f64> = eq.iter().zip(self.forces(x)).filter(|(e, _)| e.is_some())
             .map(|(_, v)| v).collect();
         let factor = if self.meshed() {
+            // the factor reads the lower triangle alone
             let mut t = Vec::new();
-            self.tris_into(&eq, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
-            self.tets_into(&eq, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
+            self.tris_into(&eq, true, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
+            self.tets_into(&eq, true, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
             let k = crate::cholesky::Symmetric::from_triplets(n_eq, &t);
             let mut c = crate::cholesky::Cholesky::analyse(&k, crate::cholesky::Ordering::Amd);
             c.factor(&k).map_err(|_| Failure::Free)?;
@@ -344,8 +345,8 @@ impl Structure {
             }
             Ok(m)
         })?;
-        self.tris_into(&eq, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
-        self.tets_into(&eq, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
+        self.tris_into(&eq, false, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
+        self.tets_into(&eq, false, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
         Ok(Sym::from_triplets(n_eq, &t))
     }
 
@@ -392,43 +393,14 @@ impl Structure {
         self.spread_into(&lam, x, g);
         self.laid_into(&lam, x, g);
         self.borne_into(&lam, x, g);
+        // each element's mutual energy over its coordinates, its nodes' places
         for i in 0..self.tets.len() {
-            // the element's mutual energy over its thirty coordinates
             let Ok(rows) = self.tets[i].rows(&self.tet_places_d::<30>(i, x)) else { continue };
-            let dofs = self.tet_dofs(i);
-            let (l, u): (Vec<f64>, Vec<f64>) = dofs.iter().map(|&d| (lam[d], st.u[d])).unzip();
-            let mut m = Dual::<30>::cst(0.0);
-            for r in &rows {
-                let (mut rl, mut ru) = (Dual::cst(0.0), Dual::cst(0.0));
-                for k in 0..30 {
-                    rl = rl + r[k] * Dual::cst(l[k]);
-                    ru = ru + r[k] * Dual::cst(u[k]);
-                }
-                m = m + rl * ru;
-            }
-            for (k, &n) in self.tets[i].n.iter().enumerate() {
-                for c in 0..3 {
-                    g[3 * n + c] -= m.g[3 * k + c];
-                }
-            }
+            self.mutual_into(&rows, &self.tet_dofs(i), &self.tets[i].n, &lam, &st.u, g);
         }
         for i in 0..self.tris.len() {
-            // the element's mutual energy over its twelve coordinates
             let Ok(rows) = self.tris[i].rows(&self.tri_places_d::<12>(i, x)) else { continue };
-            let dofs = self.tri_dofs(i);
-            let mut m = Dual::<12>::cst(0.0);
-            for r in &rows {
-                let (mut rl, mut ru) = (Dual::cst(0.0), Dual::cst(0.0));
-                for k in 0..12 {
-                    rl = rl + r[k] * Dual::cst(lam[dofs[k]]);
-                    ru = ru + r[k] * Dual::cst(st.u[dofs[k]]);
-                }
-                m = m + rl * ru;
-            }
-            for (k, &n) in self.tris[i].n.iter().enumerate() {
-                g[2 * n] -= m.g[2 * k];
-                g[2 * n + 1] -= m.g[2 * k + 1];
-            }
+            self.mutual_into(&rows, &self.tri_dofs(i), &self.tris[i].n, &lam, &st.u, g);
         }
         for (i, b) in self.bars.iter().enumerate() {
             let (d, l, ea) = self.bar_at(i, x);
@@ -833,8 +805,8 @@ impl Structure {
             bending(&mut m, &cubic, rho * a * l / 420.0);
             Ok(m)
         })?;
-        self.tris_into(&eq, &mut t, |i| self.tris[i].mass(&self.tri_places(i, x)))?;
-        self.tets_into(&eq, &mut t, |i| self.tets[i].mass(&self.tet_places(i, x)))?;
+        self.tris_into(&eq, false, &mut t, |i| self.tris[i].mass(&self.tri_places(i, x)))?;
+        self.tets_into(&eq, false, &mut t, |i| self.tets[i].mass(&self.tet_places(i, x)))?;
         Ok(Sym::from_triplets(n_eq, &t))
     }
 
@@ -908,21 +880,12 @@ impl Structure {
     }
 
     /// Every plane element's twelve-by-twelve matrix, `local(i)`, added at the equations `eq`
-    /// numbers, as triplets.
-    fn tris_into(&self, eq: &[Option<usize>], t: &mut Vec<(usize, usize, f64)>,
+    /// numbers, as triplets (`local_into`).
+    fn tris_into(&self, eq: &[Option<usize>], lower: bool, t: &mut Vec<(usize, usize, f64)>,
                  local: impl Fn(usize) -> Result<[[f64; 12]; 12], Failure>) -> Result<(), Failure>
     {
         for i in 0..self.tris.len() {
-            let m = local(i)?;
-            let dofs = self.tri_dofs(i);
-            for a in 0..12 {
-                let Some(ea) = eq[dofs[a]] else { continue };
-                for b in 0..12 {
-                    if let (Some(eb), true) = (eq[dofs[b]], m[a][b] != 0.0) {
-                        t.push((ea, eb, m[a][b]));
-                    }
-                }
-            }
+            local_into(&local(i)?, &self.tri_dofs(i), eq, lower, t);
         }
         Ok(())
     }
@@ -936,7 +899,7 @@ impl Structure {
     /// number that may carry rates (`N` = 12 its nodes' coordinates, a side's three the first six;
     /// 0 none): its nodes, their forces, and the measure an even load is spread by.
     fn laid_shares<const N: usize>(&self, l: &Laid, x: &[f64])
-        -> Vec<(Vec<usize>, Vec<[Dual<N>; 2]>, Dual<N>)>
+        -> Vec<Share<N, 2>>
     {
         let place = |n: usize, k: usize| -> plane::P<Dual<N>> {
             let p = self.place2(n, x);
@@ -960,15 +923,7 @@ impl Structure {
     /// element's consistent load at its nodes, an even load's over the measure it is spread by.
     fn laid_forces(&self, x: &[f64], f: &mut [f64]) {
         for l in &self.laid {
-            let shares = self.laid_shares::<0>(l, x);
-            let by = if l.even() { shares.iter().map(|s| s.2.v).sum() } else { 1.0 };
-            for (nodes, at, _) in shares {
-                for (n, v) in nodes.into_iter().zip(at) {
-                    for c in 0..2 {
-                        f[self.dof(n, c).unwrap()] += v[c].v / by;
-                    }
-                }
-            }
+            self.shares_forces(self.laid_shares::<0>(l, x), l.even(), f);
         }
     }
 
@@ -978,28 +933,74 @@ impl Structure {
     /// ∂S`.
     fn laid_into(&self, lam: &[f64], x: &[f64], g: &mut [f64]) {
         for l in &self.laid {
-            let mut parts: Vec<(Vec<usize>, [f64; 12], [f64; 12])> = Vec::new();
-            let (mut whole, mut measure) = (0.0, 0.0);
-            for (nodes, f, m) in self.laid_shares::<12>(l, x) {
-                // λᵀfₑ, its rates in the element's coordinates
-                let mut w = Dual::<12>::cst(0.0);
-                for (&n, fk) in nodes.iter().zip(&f) {
-                    for c in 0..2 {
-                        w = w + fk[c] * Dual::cst(lam[self.dof(n, c).unwrap()]);
-                    }
+            self.shares_into(self.laid_shares::<12>(l, x), l.even(), lam, g);
+        }
+    }
+
+    /// One load's `shares` (each its nodes, their forces of `C` components and its measure),
+    /// added into `f` per degree of freedom — over the whole measure where it is `even`: a load
+    /// laid on the plane's, or borne by a solid's.
+    fn shares_forces<const C: usize>(&self, shares: Vec<Share<0, C>>, even: bool, f: &mut [f64]) {
+        let by = if even { shares.iter().map(|s| s.2.v).sum() } else { 1.0 };
+        for (nodes, at, _) in shares {
+            for (n, v) in nodes.into_iter().zip(at) {
+                for c in 0..C {
+                    f[self.dof(n, c).unwrap()] += v[c].v / by;
                 }
-                whole += w.v;
-                measure += m.v;
-                parts.push((nodes, w.g, m.g));
             }
-            let (by, less) =
-                if l.even() { (measure, whole / (measure * measure)) } else { (1.0, 0.0) };
-            for (nodes, dw, dm) in parts {
-                for (k, &n) in nodes.iter().enumerate() {
-                    for c in 0..2 {
-                        g[2 * n + c] += dw[2 * k + c] / by - less * dm[2 * k + c];
-                    }
+        }
+    }
+
+    /// **`λᵀ ∂f/∂x` of one load's `shares`, added into `g`**: each share's `λᵀfₑ` formed in `Dual`
+    /// over its nodes' places; an even load's whole is `Σ λᵀfₑ / S`, `S` the measure it is spread
+    /// over, so each place also reads `−(Σ λᵀfₑ)/S² · ∂S`.
+    fn shares_into<const N: usize, const C: usize>(&self, shares: Vec<Share<N, C>>, even: bool,
+                                                    lam: &[f64], g: &mut [f64])
+    {
+        let mut parts: Vec<(Vec<usize>, [f64; N], [f64; N])> = Vec::new();
+        let (mut whole, mut measure) = (0.0, 0.0);
+        for (nodes, f, m) in shares {
+            // λᵀfₑ, its rates in the element's coordinates
+            let mut w = Dual::<N>::cst(0.0);
+            for (&n, fk) in nodes.iter().zip(&f) {
+                for c in 0..C {
+                    w = w + fk[c] * Dual::cst(lam[self.dof(n, c).unwrap()]);
                 }
+            }
+            whole += w.v;
+            measure += m.v;
+            parts.push((nodes, w.g, m.g));
+        }
+        let (by, less) = if even { (measure, whole / (measure * measure)) } else { (1.0, 0.0) };
+        for (nodes, dw, dm) in parts {
+            for (k, &n) in nodes.iter().enumerate() {
+                for c in 0..C {
+                    g[C * n + c] += dw[C * k + c] / by - less * dm[C * k + c];
+                }
+            }
+        }
+    }
+
+    /// An element's mutual energy `Σ (r·λ)(r·u)` over its strain rows `rows` of its degrees of
+    /// freedom `dofs`, formed over its nodes' places (`N` its coordinates, `N / K` each of its
+    /// `K` nodes'), and taken from `g` at its nodes `nodes`.
+    fn mutual_into<const N: usize, const K: usize>(&self, rows: &[[Dual<N>; N]],
+                                                    dofs: &[usize; N], nodes: &[usize; K],
+                                                    lam: &[f64], u: &[f64], g: &mut [f64])
+    {
+        let d = N / K;
+        let mut m = Dual::<N>::cst(0.0);
+        for r in rows {
+            let (mut rl, mut ru) = (Dual::cst(0.0), Dual::cst(0.0));
+            for k in 0..N {
+                rl = rl + r[k] * Dual::cst(lam[dofs[k]]);
+                ru = ru + r[k] * Dual::cst(u[dofs[k]]);
+            }
+            m = m + rl * ru;
+        }
+        for (k, &n) in nodes.iter().enumerate() {
+            for c in 0..d {
+                g[d * n + c] -= m.g[d * k + c];
             }
         }
     }
@@ -1031,21 +1032,12 @@ impl Structure {
     }
 
     /// Every solid element's thirty-by-thirty matrix, `local(i)`, added at the equations `eq`
-    /// numbers, as triplets.
-    fn tets_into(&self, eq: &[Option<usize>], t: &mut Vec<(usize, usize, f64)>,
+    /// numbers, as triplets (`local_into`).
+    fn tets_into(&self, eq: &[Option<usize>], lower: bool, t: &mut Vec<(usize, usize, f64)>,
                  local: impl Fn(usize) -> Result<[[f64; 30]; 30], Failure>) -> Result<(), Failure>
     {
         for i in 0..self.tets.len() {
-            let m = local(i)?;
-            let dofs = self.tet_dofs(i);
-            for a in 0..30 {
-                let Some(ea) = eq[dofs[a]] else { continue };
-                for b in 0..30 {
-                    if let (Some(eb), true) = (eq[dofs[b]], m[a][b] != 0.0) {
-                        t.push((ea, eb, m[a][b]));
-                    }
-                }
-            }
+            local_into(&local(i)?, &self.tet_dofs(i), eq, lower, t);
         }
         Ok(())
     }
@@ -1056,7 +1048,7 @@ impl Structure {
     pub fn stressed(&self, x: &[f64], u: &[f64]) -> Result<Sym, Failure> {
         let (eq, n_eq) = self.equations();
         let mut t = Vec::new();
-        self.tets_into(&eq, &mut t, |i| {
+        self.tets_into(&eq, false, &mut t, |i| {
             let ue: [f64; 30] = self.tet_dofs(i).map(|d| u[d]);
             self.tets[i].geometric(&self.tet_places(i, x), &ue).ok_or(Failure::Collapsed)
         })?;
@@ -1072,7 +1064,7 @@ impl Structure {
     /// a number that may carry rates (`N` = 30 its nodes' coordinates, a facet's six the first
     /// eighteen; 0 none): its nodes, their forces, and the measure an even load is spread by.
     fn borne_shares<const N: usize>(&self, l: &Borne, x: &[f64])
-        -> Vec<(Vec<usize>, Vec<[Dual<N>; 3]>, Dual<N>)>
+        -> Vec<Share<N, 3>>
     {
         let place = |n: usize, k: usize| -> solid::P<Dual<N>> {
             let p = [x[3 * n], x[3 * n + 1], x[3 * n + 2]];
@@ -1095,15 +1087,7 @@ impl Structure {
     /// element's consistent load at its nodes, an even load's over the measure it is spread by.
     fn borne_forces(&self, x: &[f64], f: &mut [f64]) {
         for l in &self.borne {
-            let shares = self.borne_shares::<0>(l, x);
-            let by = if l.even() { shares.iter().map(|s| s.2.v).sum() } else { 1.0 };
-            for (nodes, at, _) in shares {
-                for (n, v) in nodes.into_iter().zip(at) {
-                    for c in 0..3 {
-                        f[3 * n + c] += v[c].v / by;
-                    }
-                }
-            }
+            self.shares_forces(self.borne_shares::<0>(l, x), l.even(), f);
         }
     }
 
@@ -1112,27 +1096,44 @@ impl Structure {
     /// whole over its measure `S` also reading `−(Σ λᵀfₑ)/S² · ∂S`.
     fn borne_into(&self, lam: &[f64], x: &[f64], g: &mut [f64]) {
         for l in &self.borne {
-            let mut parts: Vec<(Vec<usize>, [f64; 30], [f64; 30])> = Vec::new();
-            let (mut whole, mut measure) = (0.0, 0.0);
-            for (nodes, f, m) in self.borne_shares::<30>(l, x) {
-                let mut w = Dual::<30>::cst(0.0);
-                for (&n, fk) in nodes.iter().zip(&f) {
-                    for c in 0..3 {
-                        w = w + fk[c] * Dual::cst(lam[3 * n + c]);
-                    }
+            self.shares_into(self.borne_shares::<30>(l, x), l.even(), lam, g);
+        }
+    }
+}
+
+/// One share of a load laid on the plane or borne by a solid: its nodes, each node's force of `C`
+/// components, and the measure it lies over, over a number carrying `N` rates.
+type Share<const N: usize, const C: usize> = (Vec<usize>, Vec<[Dual<N>; C]>, Dual<N>);
+
+/// An element's `M`-by-`M` matrix `m` over its degrees of freedom `dofs`, added at the equations
+/// `eq` numbers as triplets — its lower triangle alone where `lower`, which is all a Cholesky
+/// reads.
+fn local_into<const M: usize>(m: &[[f64; M]; M], dofs: &[usize; M], eq: &[Option<usize>],
+                              lower: bool, t: &mut Vec<(usize, usize, f64)>)
+{
+    for a in 0..M {
+        let Some(ea) = eq[dofs[a]] else { continue };
+        for b in 0..M {
+            if let (Some(eb), true) = (eq[dofs[b]], m[a][b] != 0.0) {
+                if !lower || ea >= eb {
+                    t.push((ea, eb, m[a][b]));
                 }
-                whole += w.v;
-                measure += m.v;
-                parts.push((nodes, w.g, m.g));
             }
-            let (by, less) =
-                if l.even() { (measure, whole / (measure * measure)) } else { (1.0, 0.0) };
-            for (nodes, dw, dm) in parts {
-                for (k, &n) in nodes.iter().enumerate() {
-                    for c in 0..3 {
-                        g[3 * n + c] += dw[3 * k + c] / by - less * dm[3 * k + c];
-                    }
-                }
+        }
+    }
+}
+
+/// An element's strain rows `rows` over its degrees of freedom `dofs`, each over `unit` and laid
+/// out over the `n` equations `eq` numbers, appended to `out`: the mechanism's rows (`free`).
+fn unit_rows<const N: usize>(rows: &[[Dual<0>; N]], dofs: &[usize; N], unit: f64,
+                             eq: &[Option<usize>], n: usize, out: &mut Vec<f64>)
+{
+    for r in rows {
+        let at = out.len();
+        out.resize(at + n, 0.0);
+        for k in 0..N {
+            if let Some(e) = eq[dofs[k]] {
+                out[at + e] += r[k].v / unit;
             }
         }
     }
@@ -1227,32 +1228,12 @@ impl Structure {
         for i in 0..self.tris.len() {
             let t = &self.tris[i];
             let Ok(groups) = t.rows(&self.tri_places_d::<0>(i, x)) else { continue };
-            let dofs = self.tri_dofs(i);
-            let unit = (t.e * t.depth).sqrt();
-            for r in &groups {
-                let at = rows.len();
-                rows.resize(at + n, 0.0);
-                for k in 0..12 {
-                    if let Some(e) = eq[dofs[k]] {
-                        rows[at + e] += r[k].v / unit;
-                    }
-                }
-            }
+            unit_rows(&groups, &self.tri_dofs(i), (t.e * t.depth).sqrt(), &eq, n, &mut rows);
         }
         for i in 0..self.tets.len() {
             let t = &self.tets[i];
             let Ok(groups) = t.rows(&self.tet_places_d::<0>(i, x)) else { continue };
-            let dofs = self.tet_dofs(i);
-            let unit = t.e.sqrt();
-            for r in &groups {
-                let at = rows.len();
-                rows.resize(at + n, 0.0);
-                for k in 0..30 {
-                    if let Some(e) = eq[dofs[k]] {
-                        rows[at + e] += r[k].v / unit;
-                    }
-                }
-            }
+            unit_rows(&groups, &self.tet_dofs(i), t.e.sqrt(), &eq, n, &mut rows);
         }
         // each rigid motion's field, so what is left is orthogonal to it: its nodes' moves and,
         // where they turn, their turns
@@ -1448,7 +1429,7 @@ impl Structure {
         k.extend([self.tris.len() as f64, self.laid.len() as f64]);
         k.push(moved.map_or(-1.0, |m| m.columns as f64));
         k.extend([self.tets.len() as f64, self.borne.len() as f64]);
-        k.push(moved.and_then(|m| m.stack.as_ref()).map_or(-1.0, |st| st.plane as f64));
+        k.push(moved.filter(|m| m.stack.is_some()).map_or(-1.0, |m| m.nodes.len() as f64));
         k.extend(stated);
         for b in &self.bars {
             k.extend([b.a as f64, b.b as f64, b.e]);
@@ -1573,10 +1554,10 @@ impl Structure {
             let n = count(c[1])?;
             let (kind, f) = (count(c[0])?, [c[2], c[3], c[4]]);
             let l = if kind < 2 {
-                let facets: Vec<[usize; 6]> = take(6 * n)?.as_chunks::<6>().0.iter()
-                    .map(|s| Some(s.map(node))).map(|s| s.and_then(|s| {
-                        Some([s[0]?, s[1]?, s[2]?, s[3]?, s[4]?, s[5]?])
-                    })).collect::<Option<_>>()?;
+                let facets: Vec<[usize; 6]> = take(6 * n)?.as_chunks::<6>().0.iter().map(|s| {
+                    let s = s.map(node);
+                    Some([s[0]?, s[1]?, s[2]?, s[3]?, s[4]?, s[5]?])
+                }).collect::<Option<_>>()?;
                 match kind {
                     0 => Borne::Pressure { facets, p: f[0] },
                     _ => Borne::Across { facets, force: f },

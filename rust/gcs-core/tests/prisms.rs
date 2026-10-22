@@ -14,7 +14,7 @@ use crate::analysis_corpus::{read as read_case, Reading, CASES};
 /// Each requirement's answer under each scenario of `e`, as the report reads it (frames and
 /// regions merged), with the scenario's words: `(scenario, output, count, answer)`.
 #[allow(clippy::type_complexity)]
-fn answers(e: &Elaborated)
+pub(crate) fn answers(e: &Elaborated)
     -> (Vec<(String, Output, Option<u32>, Result<f64, String>)>, Vec<String>)
 {
     let (mut out, mut words) = (Vec::new(), Vec::new());
@@ -30,7 +30,7 @@ fn answers(e: &Elaborated)
 }
 
 /// The one value `e` answers of `output`.
-fn value(e: &Elaborated, output: Output) -> f64 {
+pub(crate) fn value(e: &Elaborated, output: Output) -> f64 {
     let (got, words) = answers(e);
     let found: Vec<f64> = got.iter().filter(|g| g.1 == output).map(|g| {
         g.3.clone().unwrap_or_else(|m| panic!("{output:?} has no answer: {m}; {words:?}"))

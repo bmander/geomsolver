@@ -56,12 +56,11 @@ pub struct Moved {
     pub stack: Option<Stack>,
 }
 
-/// **A solid's nodes stacked over a plane's** (#510 S3): how many nodes the plane has, the plane
-/// as its origin, its two axes and its normal, and per node of the solid the plane's node it
-/// stands over and its ordinate along the normal — so it stands at `o + p₀u + p₁v + h n`.
+/// **A solid's nodes stacked over a plane's** (#510 S3): the plane as its origin, its two axes
+/// and its normal, and per node of the solid the plane's node it stands over and its ordinate
+/// along the normal — so it stands at `o + p₀u + p₁v + h n`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stack {
-    pub plane: usize,
     pub basis: [[f64; 3]; 4],
     pub of: Vec<(usize, f64)>,
 }
@@ -76,10 +75,11 @@ impl Stack {
         }).collect()
     }
 
-    /// A gradient in the solid's places, folded onto the plane's nodes along its two axes.
-    fn fold(&self, g: &[f64]) -> Vec<f64> {
+    /// A gradient in the solid's places, folded onto the plane's `plane` nodes along its two
+    /// axes.
+    fn fold(&self, g: &[f64], plane: usize) -> Vec<f64> {
         let [_, u, v, _] = self.basis;
-        let mut out = vec![0.0; 2 * self.plane];
+        let mut out = vec![0.0; 2 * plane];
         for (i, &(p, _)) in self.of.iter().enumerate() {
             let gi = &g[3 * i..3 * i + 3];
             out[2 * p] += (0..3).map(|c| gi[c] * u[c]).sum::<f64>();
@@ -88,9 +88,9 @@ impl Stack {
         out
     }
 
-    /// Its constants: `[plane, nodes]`, the basis's twelve numbers, then each node's two.
+    /// Its constants: how many nodes, the basis's twelve numbers, then each node's two.
     fn consts(&self) -> Vec<f64> {
-        let mut k = vec![self.plane as f64, self.of.len() as f64];
+        let mut k = vec![self.of.len() as f64];
         k.extend(self.basis.iter().flatten());
         for &(p, h) in &self.of {
             k.extend([p as f64, h]);
@@ -99,18 +99,26 @@ impl Stack {
     }
 
     fn width(&self) -> usize {
-        14 + 2 * self.of.len()
+        13 + 2 * self.of.len()
     }
 
-    /// What `consts` wrote, and how many it read.
-    fn read(k: &[f64]) -> Option<(Stack, usize)> {
+    /// What `consts` wrote over a plane of `plane` nodes, and how many it read.
+    fn read(k: &[f64], plane: usize) -> Option<(Stack, usize)> {
         let count = |v: f64| (v >= 0.0 && v.fract() == 0.0 && v < 1e9).then_some(v as usize);
-        let (plane, n) = (count(*k.first()?)?, count(*k.get(1)?)?);
-        let b = k.get(2..14)?;
+        let n = count(*k.first()?)?;
+        let b = k.get(1..13)?;
         let basis = std::array::from_fn(|r| [b[3 * r], b[3 * r + 1], b[3 * r + 2]]);
-        let of = k.get(14..14 + 2 * n)?.as_chunks::<2>().0.iter()
+        let of = k.get(13..13 + 2 * n)?.as_chunks::<2>().0.iter()
             .map(|c| Some((count(c[0]).filter(|&p| p < plane)?, c[1]))).collect::<Option<_>>()?;
-        Some((Stack { plane, basis, of }, 14 + 2 * n))
+        Some((Stack { basis, of }, 13 + 2 * n))
+    }
+
+    /// The places `x` of the plane's nodes, lifted where there is a stack.
+    fn over(stack: &Option<Stack>, x: Vec<f64>) -> Vec<f64> {
+        match stack {
+            Some(st) => st.lift(&x),
+            None => x,
+        }
     }
 }
 
@@ -186,8 +194,7 @@ impl Moved {
         }
         let (inner, m) = self.inner();
         if m == 0 {
-            let x = self.stack.as_ref().map_or(x.clone(), |st| st.lift(&x));
-            return Some(Placed { x, inner, factor: None });
+            return Some(Placed { x: Stack::over(&self.stack, x), inner, factor: None });
         }
         let mut t: Vec<(usize, usize, f64)> = Vec::new();
         // the boundary's move, into each inner node's right-hand side: −L_IB δ_B = Σ w δ_B
@@ -217,8 +224,7 @@ impl Moved {
                 }
             }
         }
-        let x = self.stack.as_ref().map_or(x.clone(), |st| st.lift(&x));
-        Some(Placed { x, inner, factor: Some(factor) })
+        Some(Placed { x: Stack::over(&self.stack, x), inner, factor: Some(factor) })
     }
 
     /// **A gradient in the nodes' places carried to the columns**, added into `row`: the inner
@@ -226,7 +232,7 @@ impl Moved {
     /// axis on the factor in hand), then each boundary node's onto the columns its place reads.
     pub fn chain(&self, v: &[f64], placed: &Placed, g: &[f64], row: &mut [f64]) {
         let mut g = match &self.stack {
-            Some(st) => st.fold(&g[..3 * st.of.len()]),
+            Some(st) => st.fold(&g[..3 * st.of.len()], self.nodes.len()),
             None => g[..2 * self.nodes.len()].to_vec(),
         };
         if let Some(f) = &placed.factor {
@@ -366,9 +372,9 @@ impl Moved {
         let stack = match stacked {
             false => None,
             true => {
-                let (st, used) = Stack::read(k.get(at..)?)?;
+                let (st, used) = Stack::read(k.get(at..)?, n_nodes)?;
                 at += used;
-                Some((st.plane == n_nodes).then_some(st)?)
+                Some(st)
             }
         };
         Some((Moved { columns, edges, nodes, x0, laplace, stack }, at))

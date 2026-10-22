@@ -155,7 +155,6 @@ fn ldl_symbolic(
 /// The LDLᵀ of a symmetric pattern: its order, its elimination tree and room for the factor's
 /// numbers, refilled by `numeric` for each new set of values on the same pattern.  `Ata` is its
 /// user.
-#[derive(Clone)]
 struct Factor {
     /// The columns ordered last as dense (`dense_columns`).
     dense: usize,
@@ -205,7 +204,7 @@ impl Factor {
 
     /// Factor `A + diag(damp)`, A's values on the pattern the factor was made for.  `false` on a
     /// zero pivot.
-    fn numeric(&mut self, a: &Sym, damp: Option<&[f64]>) -> bool {
+    fn numeric(&mut self, a: &Sym, damp: &[f64]) -> bool {
         let (ap, ai, ax) = (&a.ap, &a.ai, &a.ax);
         let n = self.perm.len();
         self.least = 1.0;
@@ -235,7 +234,7 @@ impl Factor {
                 }
             }
             // the diagonal entry of A + diag(damp), what elimination takes the pivot from
-            let diag = self.y[k] + damp.map_or(0.0, |d| d[kk]);
+            let diag = self.y[k] + damp[kk];
             self.d[k] = diag;
             self.y[k] = 0.0;
             while top < n {
@@ -369,7 +368,7 @@ impl Ata {
 
     /// Solve `(A + diag(damp)) x = b` in place.  `false` on a zero pivot.
     pub fn solve(&mut self, damp: &[f64], b: &mut [f64]) -> bool {
-        if !self.factor.numeric(&self.a, Some(damp)) {
+        if !self.factor.numeric(&self.a, damp) {
             return false;
         }
         self.resolve(b);
@@ -545,12 +544,9 @@ impl Ldl {
 /// once (under minimum degree, #510 S3): a shift, or a count of the eigenvalues below one, is a
 /// numeric factor and no more.
 pub struct Pencil {
-    /// L's values on the pattern L ∪ R.
-    l: Sym,
-    /// R's values on the same pattern.
-    r: Vec<f64>,
-    /// The lower triangles of L and of R on the pattern, and its analysis.
+    /// L's lower triangle on the pattern L ∪ R, and R's values on it.
     lower: (crate::cholesky::Symmetric, Vec<f64>),
+    /// The pattern's analysis.
     symbolic: crate::cholesky::Cholesky,
 }
 
@@ -560,19 +556,13 @@ impl Pencil {
         let mut t: Vec<(usize, usize, f64)> = l.entries().collect();
         t.extend(r.entries().map(|(i, j, _)| (i, j, 0.0)));
         let mut u = Sym::from_triplets(l.n, &t);
-        let r_values = u.scatter(r);
+        u.ax = u.scatter(r);
+        let low_r = u.lower().values;
         u.ax = u.scatter(l);
         let low = u.lower();
-        let low_r = Sym { ax: r_values.clone(), ..u.clone() }.lower().values;
         let symbolic =
             crate::cholesky::Cholesky::analyse(&low, crate::cholesky::Ordering::Amd);
-        Pencil { l: u, r: r_values, lower: (low, low_r), symbolic }
-    }
-
-    /// `L − μR`.
-    pub fn at(&self, mu: f64) -> Sym {
-        let ax = self.l.ax.iter().zip(&self.r).map(|(l, r)| l - mu * r).collect();
-        Sym { ax, ..self.l.clone() }
+        Pencil { lower: (low, low_r), symbolic }
     }
 
     /// The factor of `L − μR`, or `None` on a zero pivot.

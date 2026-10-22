@@ -561,13 +561,24 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
 }
 
 /// **A scenario, read** (#510 S0): its words (`scenario_words`'s, then its frames' and its
-/// regions'), and what its frames (`beams::read`) and the solids it reads in their plane (#510 S2,
-/// `prisms::read`) answer of each requirement.  A solid read in its plane is held, and says
-/// where its stress is unbounded, in its own answers, never as a body of the scenario's.
+/// regions'), and what its frames (`beams::read`), the solids it reads in their plane (#510 S2,
+/// `prisms::read`) and those it reads in three dimensions (#510 S3, `bodies::read`) answer of
+/// each requirement, each with its error estimated beside it (`Read::estimated`, against the
+/// same readings twice as coarse).  A solid read so is held, and says where its stress is
+/// unbounded, in its own answers, never as a body of the scenario's.
 pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::Read) {
-    let mut frames = crate::beams::read(sk, sc);
-    frames.merge(crate::prisms::read(sk, sc));
-    frames.merge(crate::bodies::read(sk, sc));
+    // every reader at its own size, then, where anything is answered, twice as coarse: the
+    // change is the error estimated beside each value (#510 S3)
+    let read = |coarser: f64| {
+        let mut r = crate::beams::read_at(sk, sc, coarser);
+        r.merge(crate::prisms::read_at(sk, sc, coarser));
+        r.merge(crate::bodies::read_at(sk, sc, coarser));
+        r
+    };
+    let mut frames = read(1.0);
+    if frames.answers.iter().any(|a| matches!(a, Some(Ok(_)))) {
+        frames = frames.estimated(&read(2.0));
+    }
     let mut out = Vec::new();
     let mut holds = Vec::new();
     for (k, s) in sc.supports.iter().enumerate() {

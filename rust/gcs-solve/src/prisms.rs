@@ -263,19 +263,14 @@ impl Region {
     }
 
     /// **The region meshed**, cut at the places `named` (each on a side, or inside), to the
-    /// reading's criteria.
-    pub fn mesh(&self, sk: &Sketch, named: &[P]) -> Result<Mesh, String> {
-        self.mesh_coarser(sk, named, 1.0)
-    }
-
-    /// `mesh`, its elements and its curved sides' pieces `coarser` times the reading's (#510 S3:
-    /// a reading's error is estimated against one twice as coarse).
+    /// reading's criteria, its elements and its curved sides' pieces `coarser` times the
+    /// reading's (#510 S3: a reading's error is estimated against one twice as coarse).
     pub fn mesh_coarser(&self, sk: &Sketch, named: &[P], coarser: f64) -> Result<Mesh, String> {
         self.mesh_sized(sk, named, coarser * SIZE * self.extent, coarser * TURN)
     }
 
-    /// `mesh`, its elements' circumradii at most `size` and its curved sides' pieces turning at
-    /// most `turn`.
+    /// The region meshed, its elements' circumradii at most `size` and its curved sides' pieces
+    /// turning at most `turn`.
     pub fn mesh_sized(&self, sk: &Sketch, named: &[P], size: f64, turn: f64)
         -> Result<Mesh, String>
     {
@@ -308,7 +303,7 @@ impl Region {
 
 /// A material's property for solid `solid`, read back into the document's units, or why there
 /// is none.
-fn property(sk: &Sketch, solid: usize, p: Property) -> Result<f64, String> {
+pub(crate) fn property(sk: &Sketch, solid: usize, p: Property) -> Result<f64, String> {
     let s = &sk.solids[solid];
     crate::beams::made_of(sk, &s.name, s.material.as_deref(), "solid", p)
 }
@@ -345,6 +340,18 @@ impl From<String> for Unread {
 }
 
 impl Unread {
+    /// Why a mesh's structure gave no displacement: what its supports leave it free to do, by
+    /// `free`, or an element turned over, or a material that is none.
+    pub(crate) fn of(why: Failure, free: impl FnOnce() -> String) -> Unread {
+        match why {
+            Failure::Free => Unread::Free(free()),
+            Failure::Collapsed => Unread::Why("an element of its mesh is turned over".to_string()),
+            Failure::Unstiff => {
+                Unread::Why("its material is no material: E > 0 and -1 < nu < 0.5".to_string())
+            }
+        }
+    }
+
     pub(crate) fn text(&self, name: &str) -> String {
         match self {
             Unread::Free(free) => format!("`{name}` is {free}"),
@@ -637,9 +644,7 @@ impl Analysed {
         self.pairs.get_or_init(|| {
             property(sk, self.p.region.solid, Property::Rho)?;
             let k = self.p.s.stiffness(&self.p.x).map_err(|_| "no stiffness".to_string())?;
-            let m = self.p.s.mass(&self.p.x).map_err(|_| "no mass".to_string())?;
-            eigen::lowest(&k, &m, self.modes, &eigen::Opts::default())
-                .map_err(|why| format!("its modes are not found: {why:?}"))
+            modes(&self.p.s, &self.p.x, &k, self.modes)
         }).as_ref().map_err(Clone::clone)
     }
 
@@ -672,35 +677,38 @@ impl Analysed {
 /// Why a region's structure gave no displacement, in the solver's words: the rigid motions its
 /// supports leave, read in space with every node held across the plane.
 fn unsolved(p: &Plated, why: Failure) -> Unread {
-    match why {
-        Failure::Free => {
-            let r = &p.region;
-            let nodes: Vec<V> = p.mesh.points.iter().map(|&q| r.lift(q)).collect();
-            let axes = [r.basis.u, r.basis.v];
-            let mut holds: Vec<Held> = (0..p.s.fixed.len()).filter(|&i| p.s.fixed[i])
-                .map(|i| Held { at: vec![nodes[i / 2]], along: Some(axes[i % 2]), turn: false })
-                .collect();
-            holds.push(Held { at: nodes.clone(), along: Some(r.basis.normal()), turn: false });
-            let fs = analysis::freedoms(3, &nodes, &holds);
-            Unread::Free(analysis::freedoms_text(&fs, 3).unwrap_or_else(|| "free".to_string()))
-        }
-        Failure::Collapsed => Unread::Why("an element of its mesh is turned over".to_string()),
-        Failure::Unstiff => {
-            Unread::Why("its material is no material: E > 0 and -1 < nu < 0.5".to_string())
-        }
-    }
+    Unread::of(why, || {
+        let r = &p.region;
+        let nodes: Vec<V> = p.mesh.points.iter().map(|&q| r.lift(q)).collect();
+        let axes = [r.basis.u, r.basis.v];
+        let mut holds: Vec<Held> = (0..p.s.fixed.len()).filter(|&i| p.s.fixed[i])
+            .map(|i| Held { at: vec![nodes[i / 2]], along: Some(axes[i % 2]), turn: false })
+            .collect();
+        holds.push(Held { at: nodes.clone(), along: Some(r.basis.normal()), turn: false });
+        let fs = analysis::freedoms(3, &nodes, &holds);
+        analysis::freedoms_text(&fs, 3).unwrap_or_else(|| "free".to_string())
+    })
+}
+
+/// **The lowest `count` modes of a mesh's structure** `s` standing at `x`, its stiffness `k` in
+/// hand: its mass's pencil with it (`eigen::lowest`), or why they are not found.
+pub(crate) fn modes(s: &Structure, x: &[f64], k: &crate::sparse::Sym, count: usize)
+    -> Result<Pairs, String>
+{
+    let m = s.mass(x).map_err(|_| "no mass".to_string())?;
+    eigen::lowest(k, &m, count, &eigen::Opts::default())
+        .map_err(|why| format!("its modes are not found: {why:?}"))
 }
 
 /// **A scenario read over the prisms it reads in their plane**, at the solved drawing: per
 /// requirement its value or why none (`None` for one about no region read so), the words its
 /// regions say (one the supports leave free, once), and which supports hold a region.
 pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
-    let coarser = read_coarser(sk, sc, 2.0);
-    read_coarser(sk, sc, 1.0).estimated(&coarser)
+    read_at(sk, sc, 1.0)
 }
 
 /// `read`, each region meshed `coarser` times the reading's size.
-fn read_coarser(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
+pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
@@ -974,7 +982,7 @@ impl Row {
     /// the row is refused for where it is stated (a region the supports leave free).
     pub fn check(&self) -> Result<(), String> {
         // a solid's row is stacked over its face's mesh (#510 S3)
-        let what = if self.structure.dim == 3 { "solid" } else { "region" };
+        let what = if self.moved.stack.is_some() { "solid" } else { "region" };
         self.structure.solve(&self.x).map(|_| ()).map_err(|why| match why {
             Failure::Free => format!("its {what} is free: its supports leave it a motion"),
             _ => format!("its {what} gives no displacement"),

@@ -16,7 +16,9 @@
 //! its `∂f/∂x` in the gradient.  Its geometric stiffness under a stress (`Tet10::geometric`) is
 //! what a linear buckling reads.
 
+use super::plane::lift;
 use super::Failure;
+use crate::delaunay::tetra::EDGES;
 use crate::kernels::{Dual, Num};
 
 /// A quadratic tetrahedron (#510 S3): its ten nodes — the corners, then the middles of the edges
@@ -57,9 +59,6 @@ fn rule5() -> Vec<([f64; 3], f64)> {
                 ([c, d, d], w)]);
     out
 }
-
-/// The edges a middle node stands on, in its order: `delaunay::tetra::EDGES`.
-const EDGES: [(usize, usize); 6] = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)];
 
 /// Where each node stands in the element's own coordinates `(ξ, η, ζ)`.
 fn nodes() -> [[f64; 3]; 10] {
@@ -276,15 +275,20 @@ impl Tet10 {
         rule5().iter().map(|&(p, w)| w * jacobian(&lift(x), &shape_d(p)).1.v).sum()
     }
 
-    /// The strain at `(ξ, η, ζ)` under its moves `u`, or `None` where it is turned over there.
-    fn strain_at(&self, x: &[P<f64>; 10], u: &[f64; 30], p: [f64; 3]) -> Option<[f64; 6]> {
+    /// The derivatives of the shape functions in x, y and z at `(ξ, η, ζ)`, and `det J` there —
+    /// or `None` where it is turned over.
+    fn gradients(x: &[P<f64>; 10], p: [f64; 3]) -> Option<([[f64; 10]; 3], f64)> {
         let d = shape_d(p);
         let (j, det) = jacobian(&lift(x), &d);
-        if !(det.v > 0.0) {
-            return None;
-        }
-        let bm = strain_rows(&in_space(&j, det, &d));
-        Some(bm.map(|r| (0..30).map(|i| r[i].v * u[i]).sum::<f64>()))
+        (det.v > 0.0).then(|| (in_space(&j, det, &d).map(|r| r.map(|v| v.v)), det.v))
+    }
+
+    /// The strain `(εx, εy, εz, γyz, γxz, γxy)` of its moves `u` where the shape functions'
+    /// derivatives are `g`.
+    fn strain(g: &[[f64; 10]; 3], u: &[f64; 30]) -> [f64; 6] {
+        let du = |a: usize, c: usize| (0..10).map(|k| g[c][k] * u[3 * k + a]).sum::<f64>();
+        [du(0, 0), du(1, 1), du(2, 2), du(1, 2) + du(2, 1), du(0, 2) + du(2, 0),
+         du(0, 1) + du(1, 0)]
     }
 
     /// **The stresses at its nodes** under its moves `u` (each node's x, y, z): `(σx, σy, σz,
@@ -294,7 +298,8 @@ impl Tet10 {
         let at = nodes();
         let mut out = [[0.0; 6]; 10];
         for k in 0..10 {
-            out[k] = self.stress_of(self.strain_at(x, u, at[k])?);
+            let (g, _) = Tet10::gradients(x, at[k])?;
+            out[k] = self.stress_of(Tet10::strain(&g, u));
         }
         Some(out)
     }
@@ -312,19 +317,14 @@ impl Tet10 {
     pub fn geometric(&self, x: &[P<f64>; 10], u: &[f64; 30]) -> Option<[[f64; 30]; 30]> {
         let mut m = [[0.0; 30]; 30];
         for (p, w) in rule5() {
-            let d = shape_d(p);
-            let (j, det) = jacobian(&lift(x), &d);
-            if !(det.v > 0.0) {
-                return None;
-            }
-            let g = in_space(&j, det, &d).map(|r| r.map(|v| v.v));
-            let s = self.stress_of(self.strain_at(x, u, p)?);
+            let (g, det) = Tet10::gradients(x, p)?;
+            let s = self.stress_of(Tet10::strain(&g, u));
             let t = [[s[0], s[5], s[4]], [s[5], s[1], s[3]], [s[4], s[3], s[2]]];
             for a in 0..10 {
                 let ta: [f64; 3] =
                     std::array::from_fn(|r| (0..3).map(|c| t[r][c] * g[c][a]).sum());
                 for b in 0..10 {
-                    let v = w * det.v * (0..3).map(|r| g[r][b] * ta[r]).sum::<f64>();
+                    let v = w * det * (0..3).map(|r| g[r][b] * ta[r]).sum::<f64>();
                     for c in 0..3 {
                         m[3 * a + c][3 * b + c] += v;
                     }
@@ -333,11 +333,6 @@ impl Tet10 {
         }
         Some(m)
     }
-}
-
-/// Places as numbers with no rates.
-fn lift<const K: usize>(x: &[P<f64>; K]) -> [P<Dual<0>>; K] {
-    x.map(|p| p.map(<Dual<0> as Num>::cst))
 }
 
 /* -- loads borne by a solid ------------------------------------------------------------------- */
@@ -359,21 +354,13 @@ pub enum Borne {
     Body { elements: Vec<usize>, force: [f64; 3] },
 }
 
-/// The plane's degree-four rule on a facet `(0,0), (1,0), (0,1)`: its points and weights.
-fn facet_rule() -> [(f64, f64, f64); 6] {
-    let (a, wa) = (0.445_948_490_915_965, 0.223_381_589_678_011 / 2.0);
-    let (b, wb) = (0.091_576_213_509_771, 0.109_951_743_655_322 / 2.0);
-    [(a, a, wa), (1.0 - 2.0 * a, a, wa), (a, 1.0 - 2.0 * a, wa),
-     (b, b, wb), (1.0 - 2.0 * b, b, wb), (b, 1.0 - 2.0 * b, wb)]
-}
-
 /// **What a load lays at each node of a facet** at its places `x`, a number that may carry
 /// rates: each of its six nodes' force, and its area — so `λᵀfₑ = Σ λ_k · f_k`, and an even
 /// load's whole is `Σ fₑ / Σ area`.
 pub(crate) fn facet_load<T: Num>(borne: &Borne, x: &[P<T>; 6]) -> ([[T; 3]; 6], T) {
     let zero = T::cst(0.0);
     let (mut f, mut area) = ([[zero; 3]; 6], zero);
-    for (s, t, w) in facet_rule() {
+    for (s, t, w) in super::plane::rule4() {
         let n = super::plane::shape(s, t);
         let d = super::plane::shape_d(s, t);
         let mut ts = [[zero; 3]; 2];

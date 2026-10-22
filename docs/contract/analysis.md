@@ -641,10 +641,11 @@ errors estimated beside every answer (S3), unless a rule names another.
   (`gcs-cli/tests/cli.rs`, `a_solid_reading_is_said`).
 
 - **Every output has its error estimated beside it** (#510 S3; `beams::Read::errors`,
-  `Read::estimated`). Each reading — a frame's (`beams::read`), a region's (`prisms::read`), a
-  solid's (`bodies::read`) — is made again twice as coarse (a frame at half its `PIECES`, a region
-  or a solid meshed at twice its elements' size and its curves' pieces' turn), and beside each value
-  is the change from that reading: nothing where the two agree to rounding (`ROUNDING`, 1e-12 of the
+  `Read::estimated`). A scenario's readings — a frame's (`beams::read_at`), a region's
+  (`prisms::read_at`), a solid's (`bodies::read_at`) — are made again twice as coarse, once and
+  only where something is answered (`diagnose::analysis::scenario_read`: a frame at half its
+  `PIECES`, a region or a solid meshed at twice its elements' size and its curves' pieces' turn),
+  and beside each value is the change from that reading: nothing where the two agree to rounding (`ROUNDING`, 1e-12 of the
   value: a straight solid's mass, a frame's joint under loads the cubic is exact for), none where
   the coarser has no value. Wherever the discretisation converges the coarser reading is at least
   twice as wrong, and the change bounds the error of the reading it is beside — where the reference
@@ -864,11 +865,10 @@ errors estimated beside every answer (S3), unless a rule names another.
   `buckling_finds_eulers_loads` holds a pinned and a cantilevered column to Euler's loads and to
   the reference; `buckling_refuses_what_has_no_load`. **A tension buckles nothing, counted** (#510
   S3): a solid pulled has a geometric stiffness whose null space is thousands wide, every θ of the
-  iteration about zero, and the iteration converges on none (`NoConvergence { converged: 0 }`);
-  there Sylvester's count answers instead — no negative pivot of `K + μK_G` at `μ = UNBUCKLED`
-  (10⁶, a factor past any load a scenario reads) is no factor below it, and none is returned; any
-  is the iteration's failure, refused as it was (`what_has_no_answer_in_three_dimensions_says_why`,
-  a bar pulled).
+  iteration about zero, where it would converge on none; so Sylvester's count is asked before it
+  iterates — no negative pivot of `K + μK_G` at `μ = UNBUCKLED` (10⁶, a factor past any load a
+  scenario reads) is no factor below it, and none is returned, one factor more for every buckling
+  (`what_has_no_answer_in_three_dimensions_says_why`, a bar pulled).
 
 - **No pair is missed** (#510 P2; rings and patterns give repeated pairs). A Krylov space holds
   one direction of each eigenspace, so after the iteration converges Sylvester's count is taken

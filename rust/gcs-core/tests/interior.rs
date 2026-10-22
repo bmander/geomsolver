@@ -2,10 +2,12 @@
 //! displacements `K(x)u = f`, and the adjoint gradient of an output of them.  The rules are
 //! `docs/contract/analysis.md`'s; the kernel's finite-difference check is `jacobians.rs`'s
 //! (`a_linear_interior_agrees_with_finite_differences`).
+use gcs_core::delaunay::tetra::{self, EDGES};
 use gcs_core::interior::{self, Bar, Beam, Failure, Spread, Structure};
 use gcs_core::kernels::KernelKey;
 use gcs_core::model::Sketch;
 use gcs_core::rng::Rng;
+use gcs_core::space::{cross, dot, sub};
 use gcs_core::system::build_kernel;
 
 /// A braced structure of `n` nodes in `dim` dimensions and the columns it stands at: each node
@@ -40,8 +42,7 @@ pub(crate) fn braced(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
         spread: Vec::new(),
         tris: Vec::new(),
         laid: Vec::new(),
-        tets: Vec::new(),
-        borne: Vec::new(),
+        ..Structure::default()
     };
     (s, x)
 }
@@ -60,8 +61,7 @@ pub(crate) fn two_bar(w: f64, h: f64, e: f64, a: f64, p: f64) -> (Structure, Vec
         spread: Vec::new(),
         tris: Vec::new(),
         laid: Vec::new(),
-        tets: Vec::new(),
-        borne: Vec::new(),
+        ..Structure::default()
     };
     (s, vec![-w, 0.0, w, 0.0, 0.0, h, a, a])
 }
@@ -106,8 +106,7 @@ fn a_bar_in_space_stretches_by_pl_over_ea() {
         spread: Vec::new(),
         tris: Vec::new(),
         laid: Vec::new(),
-        tets: Vec::new(),
-        borne: Vec::new(),
+        ..Structure::default()
     };
     let x = vec![5.0, -2.0, 1.0, 5.0 + l, -2.0, 1.0, a];
     let st = s.solve(&x).unwrap();
@@ -131,8 +130,7 @@ fn a_structure_with_no_displacement_to_give_says_why() {
         spread: Vec::new(),
         tris: Vec::new(),
         laid: Vec::new(),
-        tets: Vec::new(),
-        borne: Vec::new(),
+        ..Structure::default()
     };
     let x = vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0];
     assert_eq!(line.solve(&x).err(), Some(Failure::Free));
@@ -252,7 +250,7 @@ pub(crate) fn framed(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
     let mut s = Structure { dim, nodes: n, bars: Vec::new(), beams, fixed: Vec::new(),
                             load: Vec::new(), weight: Vec::new(), spread: Vec::new(),
                             tris: Vec::new(), laid: Vec::new(),
-                            tets: Vec::new(), borne: Vec::new() };
+                            ..Structure::default() };
     let dofs = s.per() * n;
     s.fixed = (0..dofs).map(|i| i < s.per()).collect();
     s.load = (0..dofs).map(|_| rng.uniform(-10.0, 10.0)).collect();
@@ -287,7 +285,7 @@ fn cantilever(dim: usize, pieces: usize, l: f64, e: f64, g: f64, rho: f64, secti
     let mut s = Structure { dim, nodes: pieces + 1, bars: Vec::new(), beams, fixed: Vec::new(),
                             load: Vec::new(), weight: Vec::new(), spread: Vec::new(),
                             tris: Vec::new(), laid: Vec::new(),
-                            tets: Vec::new(), borne: Vec::new() };
+                            ..Structure::default() };
     let dofs = s.per() * s.nodes;
     s.fixed = (0..dofs).map(|i| i < s.per()).collect();
     s.load = vec![0.0; dofs];
@@ -521,8 +519,8 @@ pub(crate) fn sheet(nx: usize, ny: usize, w: f64, h: f64, jitter: f64, strain: b
     let dofs = 2 * cols * rows;
     let s = Structure { dim: 2, nodes: cols * rows, bars: Vec::new(), beams: Vec::new(),
                         fixed: vec![false; dofs], load: vec![0.0; dofs], weight: vec![0.0; dofs],
-                        spread: Vec::new(), tris, laid: Vec::new(), tets: Vec::new(),
-                        borne: Vec::new() };
+                        spread: Vec::new(), tris, laid: Vec::new(),
+                        ..Structure::default() };
     (s, x)
 }
 
@@ -761,19 +759,14 @@ pub(crate) fn block(n: [usize; 3], size: [f64; 3], jitter: f64, rng: &mut Rng)
                         corners[s + 1] = corners[s];
                         corners[s + 1][perm[s]] += 2;
                     }
-                    let vol = |c: &[[usize; 3]; 4]| {
-                        let p = c.map(|q| place(&x, id(q)));
-                        let (u, v, w) = (sub(p[1], p[0]), sub(p[2], p[0]), sub(p[3], p[0]));
-                        dot(u, cross(v, w))
-                    };
-                    if vol(&corners) < 0.0 {
+                    if tetra::volume6(corners.map(|q| place(&x, id(q)))) < 0.0 {
                         corners.swap(1, 2);
                     }
                     let mut nn = [0usize; 10];
                     for m in 0..4 {
                         nn[m] = id(corners[m]);
                     }
-                    for (m, (p, q)) in TET_EDGES.iter().enumerate() {
+                    for (m, (p, q)) in EDGES.iter().enumerate() {
                         let mid: [usize; 3] =
                             std::array::from_fn(|c| (corners[*p][c] + corners[*q][c]) / 2);
                         nn[4 + m] = id(mid);
@@ -784,7 +777,7 @@ pub(crate) fn block(n: [usize; 3], size: [f64; 3], jitter: f64, rng: &mut Rng)
         }
     }
     for t in &tets {
-        for (m, (p, q)) in TET_EDGES.iter().enumerate() {
+        for (m, (p, q)) in EDGES.iter().enumerate() {
             for c in 0..3 {
                 x[3 * t.n[4 + m] + c] = 0.5 * (x[3 * t.n[*p] + c] + x[3 * t.n[*q] + c]);
             }
@@ -796,45 +789,13 @@ pub(crate) fn block(n: [usize; 3], size: [f64; 3], jitter: f64, rng: &mut Rng)
     (s, x)
 }
 
-/// A TET10's edges, as its middle nodes stand on them.
-const TET_EDGES: [(usize, usize); 6] = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)];
-
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
 /// The block's boundary facets whose corners all pass `on`, each `[a, b, c, ab, bc, ca]` turned
-/// out of the material.
+/// out of the material (`bodies::boundary`).
 fn facets_where(s: &Structure, x: &[f64], on: impl Fn([f64; 3]) -> bool) -> Vec<[usize; 6]> {
-    let place = |i: usize| [x[3 * i], x[3 * i + 1], x[3 * i + 2]];
-    let mid = |t: &interior::Tet10, p: usize, q: usize| {
-        let m = TET_EDGES.iter().position(|&e| e == (p, q) || e == (q, p)).unwrap();
-        t.n[4 + m]
-    };
-    let mut out = Vec::new();
-    for t in &s.tets {
-        for far in 0..4 {
-            let mut f: Vec<usize> = (0..4).filter(|&k| k != far).collect();
-            if !f.iter().all(|&k| on(place(t.n[k]))) {
-                continue;
-            }
-            let p = f.iter().map(|&k| place(t.n[k])).collect::<Vec<_>>();
-            if dot(cross(sub(p[1], p[0]), sub(p[2], p[0])), sub(place(t.n[far]), p[0])) > 0.0 {
-                f.swap(1, 2);
-            }
-            out.push([t.n[f[0]], t.n[f[1]], t.n[f[2]], mid(t, f[0], f[1]), mid(t, f[1], f[2]),
-                      mid(t, f[2], f[0])]);
-        }
-    }
-    out
+    let nodes: Vec<[f64; 3]> = x.as_chunks::<3>().0.to_vec();
+    let tets: Vec<[usize; 10]> = s.tets.iter().map(|t| t.n).collect();
+    gcs_core::bodies::boundary(&tets, &nodes).into_iter()
+        .filter(|f| f[..3].iter().all(|&k| on(nodes[k]))).collect()
 }
 
 /// **The patch test in space** (#510 S3): a block of knocked-about quadratic tetrahedra, its
@@ -918,7 +879,7 @@ fn a_solid_element_is_rigid_in_six_motions_and_weighs_its_volume() {
             assert!(f.abs() <= 1e-10 * top * 3.0, "motion {c}: {f}");
         }
     }
-    let vol = dot(sub(p[1], p[0]), cross(sub(p[2], p[0]), sub(p[3], p[0]))) / 6.0;
+    let vol = tetra::volume6([p[0], p[1], p[2], p[3]]) / 6.0;
     assert!(vol > 0.0);
     let mass = t.mass(&p).unwrap();
     for axis in 0..3 {

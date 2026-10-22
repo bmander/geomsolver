@@ -30,9 +30,10 @@ use crate::interior::{Borne, Failure, State, Structure, Tet10};
 use crate::model::{
     Applied, EntKind, LoadKind, LoadValue, Output, Property, Requirement, Scenario, Sketch,
 };
-use crate::prisms::{self, Region, Unread, ON};
+use crate::prisms::{self, property, Region, Unread, ON};
 use crate::solid::faces::BodyFaces;
-use crate::space::{cross, dot, norm, scale, sub};
+use crate::space::{dot, norm, scale, sub};
+use crate::sparse::Sym;
 use std::cell::OnceCell;
 use std::collections::BTreeMap;
 
@@ -286,20 +287,12 @@ pub fn boundary(tets: &[[usize; 10]], nodes: &[V]) -> Vec<[usize; 6]> {
     faces.into_values().filter(|f| f.2 == 1).map(|(t, far, _)| {
         let e = &tets[t];
         let mut c: Vec<usize> = (0..4).filter(|&k| k != far).collect();
-        let p = c.iter().map(|&k| nodes[e[k]]).collect::<Vec<_>>();
-        if dot(cross(sub(p[1], p[0]), sub(p[2], p[0])), sub(nodes[e[far]], p[0])) > 0.0 {
+        if tetra::volume6([c[0], c[1], c[2], far].map(|k| nodes[e[k]])) > 0.0 {
             c.swap(1, 2);
         }
         [e[c[0]], e[c[1]], e[c[2]], middle(e, c[0], c[1]), middle(e, c[1], c[2]),
          middle(e, c[2], c[0])]
     }).collect()
-}
-
-/// A material's property for solid `solid`, read back into the document's units, or why there
-/// is none.
-fn property(sk: &Sketch, solid: usize, p: Property) -> Result<f64, String> {
-    let s = &sk.solids[solid];
-    crate::beams::made_of(sk, &s.name, s.material.as_deref(), "solid", p)
 }
 
 /// What a line of the scenario names on the solid: nodes, facets of its boundary (by index), or
@@ -319,7 +312,6 @@ pub struct Filled {
     pub s: Structure,
     pub x: Vec<f64>,
     name: String,
-    tol: f64,
 }
 
 impl Filled {
@@ -339,7 +331,6 @@ impl Filled {
         let elements: Vec<usize> = (0..tets.len()).collect();
         let s = Structure { dim: 3, nodes: n, fixed: vec![false; 3 * n], load: vec![0.0; 3 * n],
                             weight: vec![0.0; 3 * n], tets, ..Structure::default() };
-        let tol = mesh.near;
         // a line naming a part of the body (a solid united into it, a cutter) is about the body,
         // and a part's faces are named from it
         let parts = crate::solid::document::operand_paths(sk, solid);
@@ -352,7 +343,7 @@ impl Filled {
                      `{name}.{route}…`", part = sk.solids[part].name)));
             }
         }
-        let mut f = Filled { solid, mesh, s, x, name, tol };
+        let mut f = Filled { solid, mesh, s, x, name };
         // a support holds its nodes' moves along the world's axes: a solid element's node has no
         // turn, so `fixed` holds what `pinned` does
         for sup in &sc.supports {
@@ -436,7 +427,7 @@ impl Filled {
         };
         Ok(match a {
             Applied::Ent(e) if e.kind == EntKind::Point => {
-                match self.mesh.node_at(sk.world_point(e.i()), self.tol) {
+                match self.mesh.node_at(sk.world_point(e.i()), self.mesh.near) {
                     Some(n) => On::Nodes(vec![n]),
                     None => On::Nothing,
                 }
@@ -519,6 +510,7 @@ impl Filled {
 struct Analysed {
     f: Filled,
     st: OnceCell<Result<State, String>>,
+    k: OnceCell<Result<Sym, String>>,
     modes: usize,
     pairs: OnceCell<Result<Pairs, String>>,
     buckled: OnceCell<Result<f64, String>>,
@@ -534,8 +526,8 @@ impl Analysed {
         if let Some(free) = f.free() {
             return Err(Unread::Free(free));
         }
-        Ok(Analysed { f, st: OnceCell::new(), modes, pairs: OnceCell::new(),
-                      buckled: OnceCell::new(), stresses: OnceCell::new() })
+        Ok(Analysed { f, st: OnceCell::new(), k: OnceCell::new(), modes,
+                      pairs: OnceCell::new(), buckled: OnceCell::new(), stresses: OnceCell::new() })
     }
 
     /// The displacements under the scenario's loads, solved once.
@@ -551,14 +543,17 @@ impl Analysed {
         Ok([u[3 * i], u[3 * i + 1], u[3 * i + 2]])
     }
 
+    /// Its stiffness, assembled once for its modes and its buckling.
+    fn stiffness(&self) -> Result<&Sym, String> {
+        let k = || self.f.s.stiffness(&self.f.x).map_err(|_| "no stiffness".to_string());
+        self.k.get_or_init(k).as_ref().map_err(Clone::clone)
+    }
+
     /// The modes the requirements ask for, solved once for the most of them.
     fn pairs(&self, sk: &Sketch) -> Result<&Pairs, String> {
         self.pairs.get_or_init(|| {
             property(sk, self.f.solid, Property::Rho)?;
-            let k = self.f.s.stiffness(&self.f.x).map_err(|_| "no stiffness".to_string())?;
-            let m = self.f.s.mass(&self.f.x).map_err(|_| "no mass".to_string())?;
-            eigen::lowest(&k, &m, self.modes, &eigen::Opts::default())
-                .map_err(|why| format!("its modes are not found: {why:?}"))
+            prisms::modes(&self.f.s, &self.f.x, self.stiffness()?, self.modes)
         }).as_ref().map_err(Clone::clone)
     }
 
@@ -566,10 +561,9 @@ impl Analysed {
     /// geometric stiffness of the stress the loads make.
     fn buckled(&self) -> Result<f64, String> {
         self.buckled.get_or_init(|| {
-            let k = self.f.s.stiffness(&self.f.x).map_err(|_| "no stiffness".to_string())?;
             let kg = self.f.s.stressed(&self.f.x, &self.state()?.u)
                 .map_err(|_| "an element of its mesh is turned over".to_string())?;
-            let pairs = eigen::buckling(&k, &kg, 1, &eigen::Opts::default())
+            let pairs = eigen::buckling(self.stiffness()?, &kg, 1, &eigen::Opts::default())
                 .map_err(|why| format!("its buckling is not found: {why:?}"))?;
             pairs.values.first().copied()
                 .ok_or_else(|| "the loads press nothing, so nothing buckles".to_string())
@@ -620,13 +614,7 @@ impl Filled {
 /// Why a solid's structure gave no displacement, in the solver's words: the rigid motions its
 /// supports leave.
 fn unsolved(f: &Filled, why: Failure) -> Unread {
-    match why {
-        Failure::Free => Unread::Free(f.free().unwrap_or_else(|| "free".to_string())),
-        Failure::Collapsed => Unread::Why("an element of its mesh is turned over".to_string()),
-        Failure::Unstiff => {
-            Unread::Why("its material is no material: E > 0 and -1 < nu < 0.5".to_string())
-        }
-    }
+    Unread::of(why, || f.free().unwrap_or_else(|| "free".to_string()))
 }
 
 /// **How solid `solid` is meshed in three dimensions**, the points `named` its nodes, `coarser`
@@ -695,16 +683,11 @@ fn solid_of(sk: &Sketch, sc: &Scenario, a: &Applied) -> Option<usize> {
 /// solids say (one the supports leave free, once), which supports hold such a solid, and which
 /// solids are read.
 pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
-    let fine = read_coarser(sk, sc, 1.0);
-    if fine.bodies.is_empty() {
-        return fine;
-    }
-    let coarser = read_coarser(sk, sc, 2.0);
-    fine.estimated(&coarser)
+    read_at(sk, sc, 1.0)
 }
 
 /// `read`, every mesh `coarser` times the reading's size.
-pub fn read_coarser(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
+pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
@@ -826,7 +809,7 @@ pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef)
     named.push(at);
     let f = Filled::new(sk, sc, solid, mesh(sk, solid, &named, 1.0)?)
         .map_err(|u| u.text(&sk.solids[solid].name))?;
-    let node = f.mesh.node_at(sk.world_point(at), f.tol)
+    let node = f.mesh.node_at(sk.world_point(at), f.mesh.near)
         .ok_or("its point is no node of its solid's mesh")?;
     let Filled { mesh, mut s, x, .. } = f;
     let d = direction(sk, along)?;
@@ -838,7 +821,6 @@ pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef)
     let (mut moved, columns) =
         prisms::moved_with(sk, sc, &st.region, &st.plane, &plane_x, at, face_plane)?;
     let b = &st.region.basis;
-    moved.stack = Some(crate::interior::Stack { plane: st.plane.points.len(),
-                                                basis: [b.o, b.u, b.v, b.normal()], of: st.of });
+    moved.stack = Some(crate::interior::Stack { basis: [b.o, b.u, b.v, b.normal()], of: st.of });
     Ok(prisms::Row { structure: s, moved, columns, x })
 }

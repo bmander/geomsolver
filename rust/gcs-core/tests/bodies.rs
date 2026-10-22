@@ -5,27 +5,9 @@
 //! says why.  The rules are `docs/contract/analysis.md`'s.
 use gcs_core::diagnose::analysis::scenario_read;
 use gcs_core::model::Output;
-use gcs_core::program::Elaborated;
 
 use crate::analysis_corpus::{read as read_case, Reading, CASES};
-
-/// Each requirement's answer under each scenario of `e`, as the report reads it, with the
-/// scenario's words: `(scenario, output, count, answer)`.
-#[allow(clippy::type_complexity)]
-fn answers(e: &Elaborated)
-    -> (Vec<(String, Output, Option<u32>, Result<f64, String>)>, Vec<String>)
-{
-    let (mut out, mut words) = (Vec::new(), Vec::new());
-    for s in &e.scenarios {
-        let (said, read) = scenario_read(&e.sketch, &s.scenario);
-        words.extend(said);
-        for (r, a) in s.scenario.requirements.iter().zip(read.answers) {
-            let a = a.unwrap_or_else(|| Err("about nothing read".to_string()));
-            out.push((s.scenario.name.clone(), r.output, r.count, a));
-        }
-    }
-    (out, words)
-}
+use crate::prisms::{answers, value};
 
 /// **Every solid case of the corpus answers its reference** (#510 S3), read in three
 /// dimensions: the cantilever's tip sag and first mode, Euler's column's buckling factor, Lamé's
@@ -410,10 +392,8 @@ fn every_solid_case_of_the_library_says_what_it_claims() {
             }
         }
     }
-    let value = |key: &str, output: Output| -> f64 {
-        let e = crate::common::text::solved(gcs_core::examples::source(key).unwrap());
-        let (got, _) = answers(&e);
-        got.into_iter().find(|g| g.1 == output).unwrap().3.unwrap()
+    let value = |key: &str, output: Output| {
+        value(&crate::common::text::solved(gcs_core::examples::source(key).unwrap()), output)
     };
     let d = 200e6 * 1000.0 / (12.0 * (1.0 - 0.09));
     let sag = 0.00126 * 0.1e3 * 400f64.powi(4) / d;

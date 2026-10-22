@@ -58,11 +58,12 @@ pub const JOINED: f64 = 1e-6;
 /// dimensions (#510 S3, `bodies::read`), which it names in `bodies`; each is merged (`merge`).
 ///
 /// **Beside each value, the error estimated in it** (#510 S3, `errors`): the change from the
-/// same reading twice as coarse (`estimated`) — a frame at half its pieces, a region or a solid
-/// meshed at twice its elements' size.  Where the coarser reading's error is at least twice the
-/// finer's, as it is wherever a discretisation converges at all, that change bounds the finer's
-/// error; it is no bound on what the element leaves out (a beam's shear, a stress at a point a
-/// load is laid on).  `None` where the coarser reading has no value.
+/// same reading twice as coarse (`estimated`, `diagnose::analysis::scenario_read`) — a frame at
+/// half its pieces, a region or a solid meshed at twice its elements' size.  Where the coarser
+/// reading's error is at least twice the finer's, as it is wherever a discretisation converges at
+/// all, that change bounds the finer's error; it is no bound on what the element leaves out (a
+/// beam's shear, a stress at a point a load is laid on).  `None` where the coarser reading has no
+/// value.
 #[derive(Clone, Debug, Default)]
 pub struct Read {
     pub words: Vec<String>,
@@ -82,11 +83,9 @@ impl Read {
     /// this has none, a support held by either.
     pub fn merge(&mut self, other: Read) {
         self.words.extend(other.words);
-        self.errors.resize(self.answers.len(), None);
-        for (k, b) in other.answers.into_iter().enumerate() {
-            if self.answers[k].is_none() && b.is_some() {
-                self.answers[k] = b;
-                self.errors[k] = other.errors.get(k).copied().flatten();
+        for (a, b) in self.answers.iter_mut().zip(other.answers) {
+            if a.is_none() {
+                *a = b;
             }
         }
         for (a, b) in self.holds.iter_mut().zip(other.holds) {
@@ -400,8 +399,7 @@ impl Framed {
         }
         let mut s = Structure { dim: 3, nodes: n, bars: Vec::new(), beams: elements,
                                 fixed: Vec::new(), load: Vec::new(), weight: Vec::new(),
-                                spread: Vec::new(), tris: Vec::new(), laid: Vec::new(),
-                                tets: Vec::new(), borne: Vec::new() };
+                                ..Structure::default() };
         let dofs = s.per() * n;
         (s.fixed, s.load, s.weight) = (vec![false; dofs], vec![0.0; dofs], vec![0.0; dofs]);
         let on = |a: &Applied| -> Vec<usize> {
@@ -738,12 +736,13 @@ fn frame_of(sk: &Sketch, mesh: &Mesh, of: &Applied) -> Option<Result<usize, Stri
 /// value or why none, the words its frames say, and which supports hold a frame.  Each frame is
 /// analysed once, and its modes solved once for the most any requirement asks for.
 pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
-    let coarser = read_pieces(sk, sc, PIECES / 2);
-    read_pieces(sk, sc, PIECES).estimated(&coarser)
+    read_at(sk, sc, 1.0)
 }
 
-/// `read`, each member cut into `pieces` elements between its joints.
-fn read_pieces(sk: &Sketch, sc: &Scenario, pieces: usize) -> Read {
+/// `read`, each member cut into `coarser` times fewer pieces between its joints (#510 S3: the
+/// reading an error is estimated against, `diagnose::analysis::scenario_read`).
+pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
+    let pieces = ((PIECES as f64 / coarser).round() as usize).max(1);
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
