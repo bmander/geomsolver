@@ -99,6 +99,10 @@ pub enum Code {
     /// a part stating a fact about what it is given rather than about what it makes: a row of
     /// none of its own unknowns, or past what they take (#461 PT3)
     E109,
+    /// an instance's frame read from outside, `b.std.z`, where its definition's body reads no
+    /// standard datum: it is placed by its arguments, so a relation on its frame places nothing
+    /// (#548)
+    E111,
     /// an expression that would not compute — the last number stands
     W110,
     /// a declaration over a built-in name (§3.3, §5): the built-in is what an expression reads
@@ -169,6 +173,7 @@ impl Code {
             Code::E107 => "E107",
             Code::E108 => "E108",
             Code::E109 => "E109",
+            Code::E111 => "E111",
             Code::W110 => "W110",
             Code::W112 => "W112",
             Code::W113 => "W113",

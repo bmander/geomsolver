@@ -135,7 +135,7 @@ fn copy_of(
 
 /// A reference's dotted segments, its indices kept and a member left out (#188): what
 /// `Lookup::raw` reads (`valued::segments` stops at the first that is no field).
-fn read_segments(r: &Ref) -> Vec<String> {
+pub(super) fn read_segments(r: &Ref) -> Vec<String> {
     let mut segs: Vec<String> = vec![r.root.text.clone()];
     for s in &r.path {
         match s {
@@ -285,7 +285,34 @@ impl Lookup<'_> {
     /// Greedy on the dotted name: `t.lead` is one name if something declared it, and
     /// `c0.center` is the entity `c0` and its field `center`.  Which it is cannot be told from
     /// the spelling, only from what exists — so the longest match that names something wins.
+    /// An instance's datums read from outside are its own frame's (`instance_datum`).
     pub(super) fn raw(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
+        let (abs, rest) = self.named(r, sc)?;
+        match rest.first().map(String::as_str) {
+            Some("std") => self.instance_datum(abs, rest),
+            _ => Some((abs, rest)),
+        }
+    }
+
+    /// **An instance's datum read from outside** (#548): `b.std.D` past instance `b` names the
+    /// datum `D` of the frame it stands in, `keys::instance_frame`, as its body reads it — `None`
+    /// where it was refused one, its body reading no datum (`Lookup::missing` says so).  Anything
+    /// else past `b` is left as it was.
+    fn instance_datum(&self, abs: String, rest: Vec<String>) -> Option<(String, Vec<String>)> {
+        let frame = super::keys::instance_frame(&abs);
+        let datum = rest.get(1).filter(|d| self.names.contains(&format!("std.{d}")));
+        match datum {
+            Some(d) if self.standard.frames.contains_key(&frame) => {
+                Some(self.frame_datum(frame, d, rest[2..].to_vec()))
+            }
+            Some(_) if self.standard.refused.contains_key(&abs) => None,
+            _ => Some((abs, rest)),
+        }
+    }
+
+    /// `raw`'s reading of the name as written, before an instance's datums are read as its
+    /// frame's.
+    fn named(&self, r: &Ref, sc: &Scope) -> Option<(String, Vec<String>)> {
         let Lookup { names, alias, .. } = *self;
         // `p[k]` names *which copy* of a repeated statement, so it is resolved before anything
         // else and the rest of the path is read against the copy it picks.  The index may stand
@@ -366,6 +393,12 @@ impl Lookup<'_> {
             });
         let Some(frame) = frame else { return Some((world, rest)) };
         let datum = world.strip_prefix("std.").unwrap_or(&world);
+        Some(self.frame_datum(frame, datum, rest))
+    }
+
+    /// Frame `frame`'s own datum `datum` and the fields past it (#542): `x`, `y` and `z` its
+    /// `u`, `v` and `normal`, and the rest its `FrameDatums`, made once read (`Datums::read`).
+    fn frame_datum(&self, frame: String, datum: &str, rest: Vec<String>) -> (String, Vec<String>) {
         let (of, member) = match datum {
             "x" => (frame, Some("u")),
             "y" => (frame, Some("v")),
@@ -379,7 +412,7 @@ impl Lookup<'_> {
                 }
             }
         };
-        Some((of, member.map(str::to_string).into_iter().chain(rest).collect()))
+        (of, member.map(str::to_string).into_iter().chain(rest).collect())
     }
 
     /// Whether `abs` names a frame (`Datums::frames`): declared bare, or a reading of one.
@@ -507,6 +540,17 @@ impl Lookup<'_> {
 
     /// Why `find` found nothing for `r`: the code and the words.
     pub(super) fn missing(&self, r: &Ref, sc: &Scope) -> (Code, String) {
+        // an instance's datums read where its body reads none (#548)
+        if let Some((target, rest)) = self.named(r, sc) {
+            if let Some(def) = self.standard.refused.get(&target)
+                .filter(|_| rest.first().map(String::as_str) == Some("std")) {
+                return (Code::E111, format!(
+                    "`{}` reads the frame of `{}`, and `{def}`'s body reads no standard datum: it \
+                     is placed by what it is given, so a relation on its frame would place \
+                     nothing — relate what it is given instead", ref_text(r),
+                    ref_text(r).split(".std.").next().unwrap_or_default()));
+            }
+        }
         if let Some((target, rest)) = self.raw(r, sc) {
             if let (Some(shape), Some(member)) = (sc.typed.get(&target), rest.first()) {
                 return (Code::E101, format!(

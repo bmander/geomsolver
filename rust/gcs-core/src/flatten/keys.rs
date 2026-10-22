@@ -136,6 +136,17 @@ pub(crate) fn frame_datum(key: &str) -> Option<(&str, &str)> {
     key.rsplit_once("#std.")
 }
 
+/// The frame an instance read as one stands in (#548), `{instance}#frame`: what its `b.std.D`
+/// names the datums of, declared beside the call.
+pub(super) fn instance_frame(instance: &str) -> String {
+    format!("{instance}#frame")
+}
+
+/// Where `key` is an instance's own frame (`instance_frame`): the instance.
+pub(crate) fn frame_instance(key: &str) -> Option<&str> {
+    key.strip_suffix("#frame")
+}
+
 /// What an interface-typed formal was given, whole (§8.1 [0.84]): `{formal}#given`, judged once
 /// every name is known.
 pub(super) const GIVEN: &str = "#given";

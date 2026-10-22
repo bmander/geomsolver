@@ -503,6 +503,9 @@ fn holds(
         }
     }
     cx.gauges.hold_all(&mut cx.sk, &mut cx.diags);
+    // an instance's own frame starts where the frame around its call stands (#548), once that
+    // one's holds are in
+    views::instance_frames(&mut cx.sk, &cx.res);
     // a plane whose axes are held stands where they meet (#84), and one held elsewhere takes
     // its free axes with it
     cx.diags.extend(views::origins_on_axes(&mut cx.sk, &cx.map));

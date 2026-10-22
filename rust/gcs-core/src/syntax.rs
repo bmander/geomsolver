@@ -1091,6 +1091,19 @@ impl Decl {
         }
     }
 
+    /// A frame declared bare, built rather than parsed (`f := frame`, §6.7): no axes until they
+    /// are named, and no seed.
+    pub fn frame(name: DeclName) -> Decl {
+        Decl {
+            kind: EntKind::Frame,
+            children: vec![Vec::new(); 3],
+            seed: vec![0.0; 3],
+            seed_text: vec![None; 3],
+            bare: true,
+            ..Decl::point(name, [0.0; 2], None)
+        }
+    }
+
     /// `k := trace(leg.toe over theta in (0, 360))` — the declaration a curve definition makes.
     pub fn curve(name: DeclName, curve: CurveSpec, class: Classes, class_span: Span) -> Decl {
         Decl {

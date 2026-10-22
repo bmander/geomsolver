@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.171] An instance is a frame.** From outside, an instance's datums are `b.std.x`, `b.std.y`,
+`b.std.z`, `b.std.front`, …, `b.std.origin` (§5, §8), the spellings its body reads them by, where
+0.170 refused the path (no such member). Once the body declaring the instance, or one around it,
+writes such a path, the instance stands in a frame of its own: declared beside the call in the
+`in`s around it, so it starts where the frame around the call stands and rides it; square, so it
+has six freedoms and its body cannot be sheared; and placed by relations on those datums, a mate,
+or reported free under the instance's name (`cyl.attitude`, `cyl.origin`). An instance whose `std`
+nothing outside reads stands as before, so nothing that elaborated changes. Reading the datums of an
+instance whose body reads none is **E111**: it is placed by its arguments. No syntax is added. The
+V-twin's bank mates its cylinder by `cyl.std.origin`, `cyl.std.y` and `cyl.std.x`, the frame it
+named and its `perpendicular` row gone, its positions unchanged. (Issue #548, from #523.)
+
 **[0.170] Solids read in their plane.** A scenario's line `plane stress B` or `plane strain B`
 (§9.11) reads the solid `B` — a prism, its face swept square to its plane with no draft — over
 that face, its depth the thickness: plane stress for a thin plate, plane strain for a long prism.
