@@ -201,3 +201,178 @@ scenario hang {
     assert!(got[1].3.as_ref().is_ok_and(|&v| v > 0.0), "{got:?}");
     assert!(words.is_empty(), "the answer says it, not a word: {words:?}");
 }
+
+/// **A requirement sizes a plank** (#510 S3): the library's plank (`sized_plank.sv`), drawn in
+/// plan, built in at its root and loaded at its end across its plane, its width `w` an unknown,
+/// driven so the end's corner sinks 0.9mm — a solid's driving row, its face's mesh moved with
+/// the drawing and stacked through its thickness.  It solves to no freedom, its row holds what
+/// it states, and the width found lies between Euler–Bernoulli's `4 P L³ / (E t³ sag)` (30mm, a
+/// beam free to curl across its width) and a plate's, `(1 − ν²)` of it (27.3mm, held from
+/// curling): three times as wide as it is thick, and held at its root, the plank is a little
+/// stiffer than the beam.  Read afresh at the solved drawing, the claims' reading agrees with
+/// the row to its discretisation, within its error estimated.
+#[test]
+fn a_requirement_sizes_a_plank() {
+    let src = gcs_core::examples::source("sized_plank").unwrap();
+    let mut e = crate::common::text::solved(src);
+    assert_eq!(crate::common::dof(&mut e.sketch), 0);
+    let w = e.sketch.params[*e.sketch.free_vars.get("w").expect("w") as usize].value;
+    let beam = 4.0 * 50e3 * 300f64.powi(3) / (200e6 * 1000.0 * 0.9);
+    let plate = (1.0 - 0.3 * 0.3) * beam;
+    assert!(w > plate && w < beam, "{w} between {plate} and {beam}");
+    let s = &e.scenarios[0];
+    let (words, read) = scenario_read(&e.sketch, &s.scenario);
+    assert!(words.is_empty(), "{words:?}");
+    let said = gcs_core::report::scenario_answers(&e.sketch, s, &read);
+    assert!(said[0].text.contains("driven == 0.9mm, held"), "{}", said[0].text);
+    assert!(said[1].text.ends_with("kept"), "{}", said[1].text);
+    let fresh = read.answers[0].clone().unwrap().unwrap();
+    let error = read.errors[0].expect("an estimate");
+    assert!((fresh - 0.9).abs() <= error.max(1e-4), "{fresh} ± {error} against 0.9mm");
+    eprintln!("w = {w}; afresh {fresh} ± {error}");
+}
+
+
+/// A bar `w` by `h` by `t` drawn in the front and swept from it, made of two blocks united — so
+/// no prism, and filled by refining its exact boundary — held and pulled as `bar`'s is, its
+/// far block's face named from the body (`bar.tail.right`).
+const UNITED: &str = "unit mm
+use std
+w := 80mm
+h := 30mm
+t := 10mm
+sigma := 40MPa
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+in std.front {
+  o := point
+  m := point
+  b := point
+  k := point
+  n := point
+  d := point
+  fix((0mm, 0mm)) o
+  fix((40mm, 0mm)) m
+  fix((w, 0mm)) b
+  fix((w, h)) k
+  fix((40mm, h)) n
+  fix((0mm, h)) d
+  near := (low := line(o, m)) -> (seam := line(m, n)) -> (top := line(n, d)) ->
+          (left := line(d, o)) -> close
+  far := (low2 := line(m, b)) -> (right := line(b, k)) -> (top2 := line(k, n)) ->
+         (seam2 := line(n, m)) -> close
+}
+bar := solid(near, from: 0mm, to: t) of steel
+tail := solid(far, from: 0mm, to: t)
+tail union bar
+scenario pull {
+  pinned bar.left along: std.x
+  pinned o along: std.z
+  pinned o along: std.y
+  pinned d along: std.y
+  pressure bar.tail.right -sigma
+  claim deflection(k, along: std.x) >= 0mm
+  claim deflection(k, along: std.z) <= 0mm
+  claim compliance(bar) >= 0J
+  claim safety(bar) >= 1
+  claim mass(bar) >= 1g
+}
+";
+
+/// **A body that is no prism is filled and answers** (#510 S3, `bodies::Mesh::filled`): the bar
+/// of two blocks united is meshed by refining its exact boundary (P6), its corners vertices of
+/// the refinement, so the points held at them are nodes and its uniform stress is held exactly:
+/// its far corner moves `σ w / E` along it and `−ν σ h / E` across, the pull does `σ² w h t /
+/// E`, its factor of safety is the yield over `σ` and its mass `ρ w h t` — to 1e-6, the nodes'
+/// places on its flat faces read to the refinement's bisection — and the reading twice as
+/// coarse says the same.  A line naming the block united into it rather than the body is told
+/// to name it from the body.
+#[test]
+fn a_body_of_two_blocks_answers_to_rounding() {
+    let (w, h, t, s, young, nu, rho, yields) =
+        (80.0, 30.0, 10.0, 40e3, 200e6, 0.3, 7850.0 * 1e-9, 250e3);
+    let e = crate::common::text::solved(UNITED);
+    let (words, read) = scenario_read(&e.sketch, &e.scenarios[0].scenario);
+    assert!(words.is_empty(), "{words:?}");
+    let v: Vec<f64> = read.answers.iter().map(|a| a.clone().unwrap().unwrap()).collect();
+    let want = [s * w / young, -nu * s * h / young, s * s * w * h * t / young, yields / s,
+                rho * w * h * t];
+    for (k, (&got, want)) in v.iter().zip(want).enumerate() {
+        assert!((got - want).abs() <= 1e-6 * want.abs(), "answer {k} is {got}, not {want}");
+        let error = read.errors[k].expect("an estimate");
+        assert!(error <= 1e-6 * want.abs(), "answer {k}'s estimate is {error}");
+    }
+    let e = crate::common::text::solved(&UNITED.replace("bar.tail.right", "tail.right"));
+    let (_, read) = scenario_read(&e.sketch, &e.scenarios[0].scenario);
+    let said = read.answers[0].clone().unwrap().unwrap_err();
+    assert!(said.contains("`tail` is a part of `bar`: a line about it names it from the body, \
+                           `bar.tail.…`"), "{said}");
+}
+
+/// A rod of radius `r` and length `L`, turned about z from its half section in the front, its
+/// base held along z and its centre's nearest node across, pulled by `−σ` on its head.
+const ROD: &str = "unit mm
+use std
+r := 10mm
+L := 100mm
+sigma := 40MPa
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+in std.front {
+  o := point
+  a := point
+  b := point
+  c := point
+  fix((0mm, 0mm)) o
+  fix((r, 0mm)) a
+  fix((r, L)) b
+  fix((0mm, L)) c
+  profile := (base := line(o, a)) -> (side := line(a, b)) -> (head := line(b, c)) ->
+             (spine := line(c, o)) -> close
+}
+rod := solid(profile, about: std.z) of steel
+scenario pull {
+  pinned rod.base along: std.z
+  pinned o along: std.x
+  pinned o along: std.y
+  pinned a along: std.y
+  pressure rod.head -sigma
+  claim deflection(c, along: std.z) >= 0mm
+  claim mass(rod) >= 0kg
+  claim safety(rod) >= 1
+}
+";
+
+/// **A turned rod answers its closed forms** (#510 S3): a solid of revolution is no prism, so
+/// its exact boundary is refined and filled, its cylinder's nodes on it.  Pulled along its axis,
+/// its head moves `σ L / E` within 1e-3 — a point names the node nearest it, and the points
+/// holding its base across are near the axis, not on it — and its mass is `ρ π r² L` within the
+/// error estimated beside it.
+#[test]
+fn a_turned_rod_answers_its_closed_forms() {
+    let (r, l, s, young, rho) = (10.0f64, 100.0, 40e3, 200e6, 7850.0 * 1e-9);
+    let e = crate::common::text::solved(ROD);
+    let (words, read) = scenario_read(&e.sketch, &e.scenarios[0].scenario);
+    assert!(words.is_empty(), "{words:?}");
+    let moved = read.answers[0].clone().unwrap().unwrap();
+    assert!((moved - s * l / young).abs() <= 2e-3 * s * l / young, "{moved}");
+    let mass = read.answers[1].clone().unwrap().unwrap();
+    let want = rho * std::f64::consts::PI * r * r * l;
+    let error = read.errors[1].expect("an estimate");
+    assert!((mass - want).abs() <= error && error <= 1e-2 * want, "{mass} ± {error}: {want}");
+}
+
+/// **A turned solid's deflection drives nothing yet** (#510 S3): its mesh is its boundary's
+/// refinement, whose nodes are no functions of the drawing, so a driving deflection of a point of
+/// it compiles no row — the drawing solves as it would without it — and the report says it holds
+/// or not, and that nothing drives it.
+#[test]
+fn a_filled_bodys_deflection_drives_nothing() {
+    let src = ROD.replace("  claim deflection(c, along: std.z) >= 0mm\n",
+                          "  deflection(c, along: std.z) == 0.02mm\n");
+    let e = crate::common::text::solved(&src);
+    use gcs_core::constraints::CKind;
+    assert!(e.sketch.constraints.iter().all(|c| c.kind != CKind::Deflection));
+    let s = &e.scenarios[0];
+    let (_, read) = scenario_read(&e.sketch, &s.scenario);
+    let said = gcs_core::report::scenario_answers(&e.sketch, s, &read);
+    assert!(said[0].text.contains("nothing drives it yet"), "{}", said[0].text);
+}

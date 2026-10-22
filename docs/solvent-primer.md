@@ -2070,6 +2070,49 @@ scenario pull {
 | `claim buckling(plate) >= 1` | no answer — a plate buckles out of its plane |
 | `deflection(p, along: d) == v` over a spline's region | E040 — a spline or a curve is not moved yet |
 
+#### Solids read as solids
+
+A solid made of a material that a requirement names, and no `plane …` line reads, is read in
+three dimensions: nothing more is written.  A prism is meshed as its face's mesh stacked through
+its depth; any other solid (turned, united, cut) by refining its exact boundary.
+
+```
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+in std.front {
+  …
+  side := (foot := line(a, c)) -> (right := line(c, d)) -> (head := line(d, e)) ->
+          (left := line(e, a)) -> close
+}
+strut := solid(side, from: -10mm, to: 10mm) of steel
+scenario press {
+  fixed strut.foot
+  pressure strut.head 10MPa
+  claim buckling(strut) >= 2.5                 // the least factor on the loads
+}
+```
+
+- **Where a line falls**: a face path is its faces (a wall, a cap, a turned face); a body names
+  its parts' faces from itself, `bar.tail.right`, not `tail.right`; a point in a prism is a node,
+  in any other solid the node nearest it.  A support holds along the world's axes, and `fixed`
+  holds what `pinned` does.
+- **What is answered**: all six — `deflection`, `compliance`, `mass`, `mode`, `buckling` and
+  `safety` (von Mises at the nodes); the material states `E` and `nu`.  A load that presses
+  nothing buckles nothing, and a sharp inside edge leaves `safety` unanswered: round it.
+- **Every answer has its error beside it**, a frame's and a region's too: the change from the
+  same reading twice as coarse, `is 6.39152mm ± 0.026mm`.  Where the two agree to rounding it is
+  `± 0mm` (a frame's joint under loads a cubic is exact for).
+- **A driving deflection sizes a prism**: `deflection(end_low, along: down) == 0.9mm` at a point of
+  a prism read so is a row, as a region's is, its face's nodes moved with the drawing and the
+  solid's stacked over them.  The library's `sized_plank.sv` finds a plank's width so, bent across
+  its own plane, which no reading in that plane can.
+
+| written | reported |
+|---|---|
+| `pinned plate.left along: tilted`, off the world's axes | no answer — not read under yet |
+| `pressure tail.right p`, `tail` united into `bar` | no answer — name it from the body, `bar.tail.…` |
+| `claim buckling(plate) >= 1` under a pull | no answer — the loads press nothing |
+| `deflection(p, along: d) == v` in a turned solid | judged, not driven — a prism's row alone |
+
 ### 1.15 Frames that move, and generated geometry
 
 **A motion is a frame's joint.** A frame declared bare (`f := frame`, 1.12) is a rigid frame in

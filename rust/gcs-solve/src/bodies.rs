@@ -50,6 +50,13 @@ pub const BREADTH: f64 = 1.0 / 3.0;
 /// tube's length), and a layer twice as deep as its elements are wide keeps them fair.
 pub const LAYER: f64 = 2.0;
 
+/// The most an element of a solid that is no prism may be (`Mesh::filled`), as a fraction of
+/// its extent.
+pub const FILLED: f64 = 1.0 / 16.0;
+
+/// How many pieces a feature curve of a body's boundary is read in, for its protection.
+const CURVE: usize = 64;
+
 /// The fewest layers a prism's depth is cut into: one prism of tetrahedra through a plate reads
 /// its bending stiff (the corpus's plate, its sixth mode 1.05% high in one layer, 0.28% in two).
 pub const LAYERS: usize = 2;
@@ -74,6 +81,10 @@ pub struct Mesh {
     pub tets: Vec<[usize; 10]>,
     pub facets: Vec<([usize; 6], Wall)>,
     pub stack: Option<Stacked>,
+    /// How near a point a node must be to be the point's: a stack's named points are its nodes,
+    /// to `prisms::ON` of its extent; a filled body's point names the node nearest it, within an
+    /// element's size.
+    pub near: f64,
 }
 
 /// **A prism's mesh, its face's stacked**: the region, the face's mesh, and per node its node of
@@ -190,7 +201,52 @@ impl Mesh {
             };
             Some((f, wall))
         }).collect();
-        Ok(Mesh { nodes, tets, facets, stack: Some(Stacked { region, plane, of }) })
+        Ok(Mesh { nodes, tets, facets, stack: Some(Stacked { region, plane, of }), near: tol })
+    }
+
+    /// **A solid that is no prism, meshed by refining its exact boundary** (#510 S3, P6's
+    /// `delaunay::refine::volume`): the domain the boundary's signed distance
+    /// (`BodyFaces::signed_distance`), the boundary's sharp edges — each where two faces meet at
+    /// a corner — protected as feature curves, the cells held to a radius–edge ratio of 2, a
+    /// least dihedral angle of 12° and a size of `FILLED` of the body's extent or `BREADTH` of
+    /// its breadth (three times its volume over its area), whichever is less, `coarser` times
+    /// it; each cell a TET10 whose boundary nodes lie on the surface and the curves.  Each facet
+    /// of its boundary lies on the face its middle is nearest.
+    pub fn filled(sk: &Sketch, solid: usize, coarser: f64) -> Result<Mesh, String> {
+        use crate::delaunay::refine::{volume, Cells, Criteria};
+        let body = BodyFaces::whole(sk, solid)?;
+        let (lo, hi) = body.reach();
+        let extent = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
+        if !(extent > 0.0) {
+            return Err(format!("`{}` has no extent", sk.solids[solid].name));
+        }
+        let centre: V = std::array::from_fn(|k| 0.5 * (lo[k] + hi[k]));
+        let radius = 0.6 * norm(sub(hi, lo));
+        // its breadth, three times its volume over its area: a slab's thickness and a half, a
+        // rod's radius and a half
+        let (b, mm, _) = body.brep();
+        let area: f64 = b.faces.iter().map(|f| crate::brep::props::area(b, f)).sum();
+        let breadth = 3.0 * crate::brep::props::volume(b) / area / mm;
+        let size = coarser * (FILLED * extent).min(BREADTH * breadth);
+        let edges = body.brep().0.edges.len() as u32;
+        let curves: Vec<Vec<V>> = (0..edges).filter(|&e| body.convex(e).is_some()).map(|e| {
+            (0..=CURVE).map(|k| body.along(e, k as f64 / CURVE as f64)).collect()
+        }).collect();
+        let criteria = Criteria { facet_size: size, facet_distance: size / 20.0, facet_angle: 25.0,
+                                  edge_size: size, bisection: 1e-9 * extent,
+                                  max_points: 200_000, normal_angle: 0.0 };
+        let cells = Cells { radius_edge: 2.0, size, dihedral: 12.0 };
+        let domain = |p: V| body.signed_distance(p).0;
+        let v = volume(domain, centre, radius, &curves, &criteria, &cells)
+            .map_err(|m| format!("`{}` is not meshed: {m}", sk.solids[solid].name))?;
+        let tets: Vec<[usize; 10]> = v.elements.iter().map(|e| e.map(|n| n as usize)).collect();
+        let facets = boundary(&tets, &v.nodes).into_iter().map(|f| {
+            let middle: V = std::array::from_fn(|c| {
+                f[..3].iter().map(|&n| v.nodes[n][c]).sum::<f64>() / 3.0
+            });
+            (f, Wall::Face(body.signed_distance(middle).1))
+        }).collect();
+        Ok(Mesh { nodes: v.nodes, tets, facets, stack: None, near: size })
     }
 
     /// The node nearest `p`, within `tol`.
@@ -283,7 +339,19 @@ impl Filled {
         let elements: Vec<usize> = (0..tets.len()).collect();
         let s = Structure { dim: 3, nodes: n, fixed: vec![false; 3 * n], load: vec![0.0; 3 * n],
                             weight: vec![0.0; 3 * n], tets, ..Structure::default() };
-        let tol = ON * mesh.extent();
+        let tol = mesh.near;
+        // a line naming a part of the body (a solid united into it, a cutter) is about the body,
+        // and a part's faces are named from it
+        let parts = crate::solid::document::operand_paths(sk, solid);
+        for a in sc.supports.iter().map(|s| &s.at).chain(sc.loads.iter().map(|l| &l.at)) {
+            let Some(part) = a.solid().filter(|&p| p != solid) else { continue };
+            if let Some(route) = parts.get(&sk.solids[part].name) {
+                let route = if route.is_empty() { String::new() } else { format!("{route}.") };
+                return Err(Unread::Why(format!(
+                    "`{part}` is a part of `{name}`: a line about it names it from the body, \
+                     `{name}.{route}…`", part = sk.solids[part].name)));
+            }
+        }
         let mut f = Filled { solid, mesh, s, x, name, tol };
         // a support holds its nodes' moves along the world's axes: a solid element's node has no
         // turn, so `fixed` holds what `pinned` does
@@ -562,12 +630,13 @@ fn unsolved(f: &Filled, why: Failure) -> Unread {
 }
 
 /// **How solid `solid` is meshed in three dimensions**, the points `named` its nodes, `coarser`
-/// times the reading's size — or why it cannot be: a prism is its face's mesh stacked; any other
-/// solid is not read in three dimensions yet.
+/// times the reading's size — or why it cannot be: a prism is its face's mesh stacked, the
+/// points it holds nodes; any other solid its exact boundary refined and filled
+/// (`Mesh::filled`), a point naming the node nearest it.
 pub fn mesh(sk: &Sketch, solid: usize, named: &[usize], coarser: f64) -> Result<Mesh, String> {
-    let region = Region::of(sk, solid).map_err(|m| {
-        format!("{m}, which a reading in three dimensions does not read yet")
-    })?;
+    let Ok(region) = Region::of(sk, solid) else {
+        return Mesh::filled(sk, solid, coarser);
+    };
     let points: Vec<(P, f64)> = named.iter().filter_map(|&i| {
         let a = Applied::Ent(crate::model::EntRef::point(i));
         let p = prisms::point_of(sk, &region, &a)?;
@@ -598,8 +667,9 @@ fn named_points(sc: &Scenario) -> Vec<usize> {
 }
 
 /// The solid among the drawing's that what a line names falls on, not a solid's own (a point in
-/// it, its face, an edge one of its sides runs along) — a prism made of a material, read in no
-/// plane; `None` where there is none, or where it is a joint of a frame.
+/// it, its face, an edge one of its sides runs along) — made of a material, read in no plane; a
+/// prism by its region, any other by its exact boundary (a point within it); `None` where there
+/// is none, or where it is a joint of a frame.
 fn solid_of(sk: &Sketch, sc: &Scenario, a: &Applied) -> Option<usize> {
     let reads = |s: usize| sk.solids[s].material.is_some() && sc.plane_of(s).is_none();
     if let Some(s) = a.solid() {
@@ -609,7 +679,14 @@ fn solid_of(sk: &Sketch, sc: &Scenario, a: &Applied) -> Option<usize> {
         return None;
     }
     (0..sk.solids.len()).find(|&s| {
-        reads(s) && Region::of(sk, s).is_ok_and(|r| prisms::falls_on(sk, &r, a))
+        reads(s) && match Region::of(sk, s) {
+            Ok(r) => prisms::falls_on(sk, &r, a),
+            Err(_) => match a {
+                Applied::Ent(e) if e.kind == EntKind::Point => BodyFaces::whole(sk, s)
+                    .is_ok_and(|b| b.signed_distance(sk.world_point(e.i())).0 <= b.tolerance()),
+                _ => false,
+            },
+        }
     })
 }
 
@@ -642,8 +719,7 @@ pub fn read_coarser(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
         return out;
     }
     for (k, s) in sc.supports.iter().enumerate() {
-        out.holds[k] = s.at.solid().is_some_and(|i| solids.contains(&i))
-            || solid_of(sk, sc, &s.at).is_some_and(|i| solids.contains(&i));
+        out.holds[k] = solid_of(sk, sc, &s.at).is_some_and(|i| solids.contains(&i));
     }
     let mut modes: BTreeMap<usize, usize> = BTreeMap::new();
     for (r, s) in sc.requirements.iter().zip(&of) {
@@ -720,4 +796,49 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
             Ok(yields / worst)
         }
     }
+}
+
+/* -- a driving row (#510 S3) ------------------------------------------------------------------ */
+
+/// **Whether what a requirement names is a point of a solid read in three dimensions** (#510
+/// S3), a prism: what a driving row over a solid may be compiled at.
+pub fn of_body(sk: &Sketch, sc: &Scenario, of: &Applied) -> bool {
+    matches!(of, Applied::Ent(e) if e.kind == EntKind::Point)
+        && solid_of(sk, sc, of).is_some_and(|s| Region::of(sk, s).is_ok())
+}
+
+/// **The row of `deflection(at, along: along)` under scenario `sc`** over the solid whose point
+/// `at` is (#510 S3), or why the solve cannot read it: the row a region's is (`prisms::Row`) —
+/// the solid meshed once, where the drawing stands, its structure under the scenario with the
+/// deflection's weights on its point's node — its nodes the face's moved with the drawing
+/// (`prisms::moved_with`) and stacked through the depth (`interior::Stack`), so each node of the
+/// solid moves as the face's node it stands over does.  Refused as a region's is: a direction
+/// the solve moves (its own, a load's), a plane it turns, a side it does not move (a spline's,
+/// a curve's).
+pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef)
+    -> Result<prisms::Row, String>
+{
+    crate::beams::directions_held(sk, sc, along)?;
+    let of = Applied::Ent(crate::model::EntRef::point(at));
+    let solid = solid_of(sk, sc, &of).ok_or("it is of a point of no solid the scenario reads")?;
+    let face_plane = prisms::held_plane(sk, solid)?;
+    let mut named = named_points(sc);
+    named.push(at);
+    let f = Filled::new(sk, sc, solid, mesh(sk, solid, &named, 1.0)?)
+        .map_err(|u| u.text(&sk.solids[solid].name))?;
+    let node = f.mesh.node_at(sk.world_point(at), f.tol)
+        .ok_or("its point is no node of its solid's mesh")?;
+    let Filled { mesh, mut s, x, .. } = f;
+    let d = direction(sk, along)?;
+    for c in 0..3 {
+        s.weight[3 * node + c] = d[c];
+    }
+    let st = mesh.stack.ok_or("it is read over no prism")?;
+    let plane_x: Vec<f64> = st.plane.points.iter().flatten().copied().collect();
+    let (mut moved, columns) =
+        prisms::moved_with(sk, sc, &st.region, &st.plane, &plane_x, at, face_plane)?;
+    let b = &st.region.basis;
+    moved.stack = Some(crate::interior::Stack { plane: st.plane.points.len(),
+                                                basis: [b.o, b.u, b.v, b.normal()], of: st.of });
+    Ok(prisms::Row { structure: s, moved, columns, x })
 }

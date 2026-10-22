@@ -825,7 +825,8 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
 /// deflection's weights on its point's node, and how its nodes move with the drawing (`Moved`):
 /// each node at a point of the drawing that point, each node along a side the side's point at
 /// its parameter, the nodes inside a harmonic map of the boundary.  Its columns are each point's
-/// two numbers in the plane, then each arc's or circle's radius.
+/// two numbers in the plane, then each arc's or circle's radius.  A solid's row is one too (#510
+/// S3, `bodies::row`): its face's mesh moved so, and its own nodes stacked over it (`Stack`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     pub structure: Structure,
@@ -833,6 +834,102 @@ pub struct Row {
     pub columns: Vec<u32>,
     /// Where the structure stands: its nodes' places at the drawing.
     pub x: Vec<f64>,
+}
+
+/// The plane prism `solid`'s face is drawn in (`None` the page), or why a driving row cannot
+/// read it: no prism, or a plane the solve turns.
+pub(crate) fn held_plane(sk: &Sketch, solid: usize) -> Result<Option<u32>, String> {
+    let SolidDef::Prism { face, .. } = sk.solids[solid].def else {
+        return Err("it is read over no prism".to_string());
+    };
+    let face_plane = sk.faces[face as usize].plane;
+    if face_plane.is_some_and(|p| !sk.plane_fixed(p as usize)) {
+        return Err("the plane its region is drawn in moves in the solve, and a driving row reads \
+                    its axes as they stand".to_string());
+    }
+    Ok(face_plane)
+}
+
+/// **How a region's mesh moves with the drawing** (#510 S2; a solid's face's too, #510 S3): its
+/// nodes as functions of the drawing's columns — each node at a point of the drawing that point
+/// (a side's start, a point the scenario names, `at`), each node along a side the side's point at
+/// its parameter, the nodes inside a harmonic map of the boundary over `mesh` standing at `x` —
+/// and the columns, each point's two numbers in the plane, then each arc's or circle's radius.
+/// A side the row does not move (a spline's, a curve's) is refused.
+pub(crate) fn moved_with(sk: &Sketch, sc: &Scenario, region: &Region, mesh: &Mesh, x: &[f64],
+                         at: usize, face_plane: Option<u32>)
+    -> Result<(crate::interior::Moved, Vec<u32>), String>
+{
+    let tol = ON * region.extent;
+    let node_at = |q: P| node_at(mesh, q, tol);
+    let mut columns: Vec<u32> = Vec::new();
+    let mut point_col: std::collections::BTreeMap<usize, usize> = Default::default();
+    let mut col_of = |q: usize, columns: &mut Vec<u32>| -> usize {
+        *point_col.entry(q).or_insert_with(|| {
+            let pt = &sk.points[q];
+            columns.extend([pt.x, pt.y]);
+            columns.len() - 2
+        })
+    };
+    let mut edges = Vec::new();
+    for b in &region.sides {
+        edges.push(match *b {
+            Bound::Line { a, b } => {
+                let (a, b) = (col_of(a, &mut columns), col_of(b, &mut columns));
+                Edge::Line { a, b }
+            }
+            Bound::Arc { c, r, from, to, ccw } => {
+                let c = col_of(c, &mut columns);
+                let (from, to) = (col_of(from, &mut columns), col_of(to, &mut columns));
+                columns.push(r as u32);
+                Edge::Arc { c, from, to, r: columns.len() - 1, ccw }
+            }
+            Bound::Circle { c, r } => {
+                let c = col_of(c, &mut columns);
+                columns.push(r as u32);
+                Edge::Circle { c, r: columns.len() - 1 }
+            }
+            Bound::Curved { .. } => return Err("its region is bounded by a spline or a curve, \
+                                                which a driving row does not move yet"
+                .to_string()),
+        });
+    }
+    // the points standing at nodes: each side's start, and every point the scenario names
+    // drawn in the region's plane
+    let mut at_point: Vec<Option<usize>> = vec![None; mesh.points.len()];
+    let stands = |q: usize, at_point: &mut Vec<Option<usize>>| {
+        if sk.plane_of(q).map(|p| p as u32) != face_plane {
+            return;
+        }
+        if let Some(i) = node_at(region.local(sk.world_point(q)).0) {
+            at_point[i].get_or_insert(q);
+        }
+    };
+    for b in &region.sides {
+        match *b {
+            Bound::Line { a, .. } => stands(a, &mut at_point),
+            Bound::Arc { from, .. } => stands(from, &mut at_point),
+            _ => {}
+        }
+    }
+    for a in sc.applied().chain([&Applied::Ent(EntRef::point(at))]) {
+        if let Applied::Ent(e) = a {
+            if e.kind == EntKind::Point && point_of(sk, region, a).is_some() {
+                stands(e.i(), &mut at_point);
+            }
+        }
+    }
+    let nodes: Vec<Node> = (0..mesh.points.len()).map(|i| {
+        match (at_point[i], mesh.on[i]) {
+            (Some(q), _) => Node::At(col_of(q, &mut columns)),
+            (None, Some((g, t))) => Node::On(g, t),
+            (None, None) => Node::Inner,
+        }
+    }).collect();
+    let laplace = crate::interior::Moved::laplacian(&mesh.tris, x);
+    let moved = crate::interior::Moved { columns: columns.len(), edges, nodes, x0: x.to_vec(),
+                                         laplace, stack: None };
+    Ok((moved, columns))
 }
 
 /// The reading among `sc`'s whose region holds the drawing's point `at`, and the region.
@@ -859,101 +956,28 @@ impl Row {
         crate::beams::directions_held(sk, sc, along)?;
         let (solid, plane, region) = region_of(sk, sc, at)
             .ok_or("it is of a point of no region the scenario reads in its plane")?;
-        let SolidDef::Prism { face, .. } = sk.solids[solid].def else {
-            return Err("it is read over no prism".to_string());
-        };
-        let face_plane = sk.faces[face as usize].plane;
-        if face_plane.is_some_and(|p| !sk.plane_fixed(p as usize)) {
-            return Err("the plane its region is drawn in moves in the solve, and a driving row \
-                        reads its axes as they stand".to_string());
-        }
+        let face_plane = held_plane(sk, solid)?;
         let p = Plated::new(sk, sc, region, plane, 1.0)
             .map_err(|u| u.text(&sk.solids[solid].name))?;
         let Plated { region, mesh, mut s, x, .. } = p;
-        let tol = ON * region.extent;
-        let node_at = |q: P| node_at(&mesh, q, tol);
         let (here, _) = region.local(sk.world_point(at));
-        let node = node_at(here).ok_or("its point is no node of its region's mesh")?;
+        let node = node_at(&mesh, here, ON * region.extent)
+            .ok_or("its point is no node of its region's mesh")?;
         let (d, _) = region.along(direction(sk, along)?);
         s.weight[2 * node] = d[0];
         s.weight[2 * node + 1] = d[1];
-        // the columns: each point drawn in the region's plane, its two numbers, then each radius
-        let mut columns: Vec<u32> = Vec::new();
-        let mut point_col: std::collections::BTreeMap<usize, usize> = Default::default();
-        let mut col_of = |q: usize, columns: &mut Vec<u32>| -> usize {
-            *point_col.entry(q).or_insert_with(|| {
-                let pt = &sk.points[q];
-                columns.extend([pt.x, pt.y]);
-                columns.len() - 2
-            })
-        };
-        let mut edges = Vec::new();
-        for b in &region.sides {
-            edges.push(match *b {
-                Bound::Line { a, b } => {
-                    let (a, b) = (col_of(a, &mut columns), col_of(b, &mut columns));
-                    Edge::Line { a, b }
-                }
-                Bound::Arc { c, r, from, to, ccw } => {
-                    let c = col_of(c, &mut columns);
-                    let (from, to) = (col_of(from, &mut columns), col_of(to, &mut columns));
-                    columns.push(r as u32);
-                    Edge::Arc { c, from, to, r: columns.len() - 1, ccw }
-                }
-                Bound::Circle { c, r } => {
-                    let c = col_of(c, &mut columns);
-                    columns.push(r as u32);
-                    Edge::Circle { c, r: columns.len() - 1 }
-                }
-                Bound::Curved { .. } => return Err("its region is bounded by a spline or a curve, \
-                                                    which a driving row does not move yet"
-                    .to_string()),
-            });
-        }
-        // the points standing at nodes: each side's start, and every point the scenario names
-        // drawn in the region's plane
-        let mut at_point: Vec<Option<usize>> = vec![None; mesh.points.len()];
-        let stands = |q: usize, at_point: &mut Vec<Option<usize>>| {
-            if sk.plane_of(q).map(|p| p as u32) != face_plane {
-                return;
-            }
-            if let Some(i) = node_at(region.local(sk.world_point(q)).0) {
-                at_point[i].get_or_insert(q);
-            }
-        };
-        for b in &region.sides {
-            match *b {
-                Bound::Line { a, .. } => stands(a, &mut at_point),
-                Bound::Arc { from, .. } => stands(from, &mut at_point),
-                _ => {}
-            }
-        }
-        for a in sc.applied().chain([&Applied::Ent(EntRef::point(at))]) {
-            if let Applied::Ent(e) = a {
-                if e.kind == EntKind::Point && point_of(sk, &region, a).is_some() {
-                    stands(e.i(), &mut at_point);
-                }
-            }
-        }
-        let nodes: Vec<Node> = (0..mesh.points.len()).map(|i| {
-            match (at_point[i], mesh.on[i]) {
-                (Some(q), _) => Node::At(col_of(q, &mut columns)),
-                (None, Some((g, t))) => Node::On(g, t),
-                (None, None) => Node::Inner,
-            }
-        }).collect();
-        let laplace = crate::interior::Moved::laplacian(&mesh.tris, &x);
-        let moved = crate::interior::Moved { columns: columns.len(), edges, nodes, x0: x.clone(),
-                                             laplace, stack: None };
+        let (moved, columns) = moved_with(sk, sc, &region, &mesh, &x, at, face_plane)?;
         Ok(Row { structure: s, moved, columns, x })
     }
 
     /// Whether the structure gives a displacement where the drawing stands, or why not — what
     /// the row is refused for where it is stated (a region the supports leave free).
     pub fn check(&self) -> Result<(), String> {
+        // a solid's row is stacked over its face's mesh (#510 S3)
+        let what = if self.structure.dim == 3 { "solid" } else { "region" };
         self.structure.solve(&self.x).map(|_| ()).map_err(|why| match why {
-            Failure::Free => "its region is free: its supports leave it a motion".to_string(),
-            _ => "its region gives no displacement".to_string(),
+            Failure::Free => format!("its {what} is free: its supports leave it a motion"),
+            _ => format!("its {what} gives no displacement"),
         })
     }
 

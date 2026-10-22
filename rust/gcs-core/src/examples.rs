@@ -176,7 +176,7 @@ pub fn example(name: &str) -> Option<Sketch> {
         | "catenary" | "dido" | "sag" | "ring" | "fisheye" | "projectile" | "hyperbolic"
         | "sized_cantilever" | "reach_cantilever" | "shelf_bracket" | "portal_frame"
         | "sized_plate" | "tuning_fork" | "rounded_bracket" | "pressure_pipe" | "gravity_wall"
-        | "drilled_plate" => {
+        | "drilled_plate" | "sized_plank" => {
             document(source(name)?, name)
         }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -268,7 +268,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 61] = [
+pub const CASES: [(&str, &str, &str); 62] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "One hollow square section carried round a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -311,6 +311,7 @@ pub const CASES: [(&str, &str, &str); 61] = [
     ("A long pipe under pressure · plane strain", "pressure_pipe", "a quarter of a cast iron pipe's section read in plane strain (`plane strain pipe`), its length held so its axial stress is 2νA: Lamé's solution is exact there, and the pipe claims its bore's move (1 + ν) A a / E ((1 − 2ν) + c²/a²) within 1% and its von Mises stress at the bore within 3%, both kept"),
     ("A gravity wall · plane strain, its weight and its water", "gravity_wall", "a metre of a concrete wall read in plane strain under its own weight (`accelerate`, its density times gravity) and the water's mean pressure on its back face: its mass is exactly the trapezoid's, its crest leans downstream 0.037mm, and its first mode in its plane is 64Hz"),
     ("How large a lightening hole may be · a requirement drives a radius", "drilled_plate", "an aluminium web built in at its root, loaded along its end and by its weight, read in plane stress, with a round hole whose radius is an unknown: `deflection(end_low, along: down) == sag` drives it, the hole's nodes moving with its radius and the nodes inside following the boundary, and the solve finds the radius at which the corner sinks 0.6mm — 19.23mm"),
+    ("A plank sized by its sag · a requirement drives a solid", "sized_plank", "a steel plank drawn in plan, built in at its root and loaded at its end across its own plane, so it bends out of the face it is swept from and is read as the solid it is: its width `w` an unknown its sides' dimensions read, and `deflection(end_low, along: down) == sag` driving it — the plank meshed once in quadratic tetrahedra, its face's mesh stacked through its thickness, its nodes moving with its sides — and the solve finds the width at which the corner sinks 0.9mm under 50N — 29.71mm, between a beam's 30mm and a plate's 27.3mm, the plank three times as wide as it is thick and held at its root"),
     ("Hyperbolic plane · the shortest path", "hyperbolic", "Poincaré's half-plane, where length is `ds / y`: the curve from `a` to `b` that makes it least is an arc of a circle centred on the line `y = 0` — the hyperbolic plane's straight line, found from the principle alone.  Drag `b` and the arc swings round, meeting the line square on"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Belt wrap · arc length", "belt_wrap", "an open belt over two pulleys, closed as one tangent chain, with nothing saying how far apart the pulleys are: `length(wrap) big` states the belt in contact with the big pulley — its radius times its sweep — and the centre distance follows.  Edit `wrap` and the second pulley moves"),
@@ -441,6 +442,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "pressure_pipe" => Some(include_str!("../../examples/pressure_pipe.sv")),
         "gravity_wall" => Some(include_str!("../../examples/gravity_wall.sv")),
         "drilled_plate" => Some(include_str!("../../examples/drilled_plate.sv")),
+        "sized_plank" => Some(include_str!("../../examples/sized_plank.sv")),
         "sag" => Some(include_str!("../../examples/sag.sv")),
         "ring" => Some(include_str!("../../examples/ring.sv")),
         "fisheye" => Some(include_str!("../../examples/fisheye.sv")),

@@ -779,10 +779,12 @@ scenario tip_load {
     let said = String::from_utf8_lossy(&out.stdout);
     for line in [
         "  material steel: E 200GPa, nu 0.3, rho 7850kg/m^3, yield 250MPa, of arm\n",
-        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: claimed <= 7mm, kept\n",
-        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: claimed <= 6mm, refuted\n",
-        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: stated <= 5mm, which does \
-not hold; nothing drives it yet\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: claimed <= 7mm, \
+kept\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: claimed <= 6mm, \
+refuted\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: stated <= 5mm, which \
+does not hold; nothing drives it yet\n",
     ] {
         assert!(said.contains(line),"{line}\n{said}");
     }

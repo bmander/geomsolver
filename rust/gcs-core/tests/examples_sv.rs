@@ -68,6 +68,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("pressure_pipe", (10, 2, 0, 2), 0, State::Well),
     ("gravity_wall", (9, 4, 0, 0), 0, State::Well),
     ("drilled_plate", (10, 4, 1, 0), 0, State::Well),
+    ("sized_plank", (9, 4, 0, 0), 0, State::Well),
 ];
 
 #[test]

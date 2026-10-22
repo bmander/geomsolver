@@ -1,0 +1,10 @@
+// Presentation of sized_plank.sv. Model geometry is independent of this drawing.
+model m from "sized_plank.sv"
+
+sheet drawing {
+  size A4
+  label "A PLANK SIZED BY ITS SAG" at (14mm, 18mm)
+  label "Its width is the one at which the end sinks 0.9mm under 50N across its plane" at (14mm, 28mm)
+  sketch top(m) from m.std.top at (40mm, 110mm)
+  dimensions in top
+}

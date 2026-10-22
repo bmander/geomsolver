@@ -607,24 +607,32 @@ impl Constraint {
         crate::envelope::regular::Parts::of(sk, flank, tool, blank)
     }
 
-    /// **What a deflection driven reads** (#510 S1, S2): the frame its point is a joint of
-    /// (`beams::Row`), or else the region read in its plane its point is in (`prisms::Row`),
-    /// under its scenario — or why the solve cannot read it.
-    /// A region's row is the one meshed when it was compiled (`Sketch::meshed`), where there is
-    /// one, so every compile through a solve reads one topology.
+    /// **What a deflection driven reads** (#510 S1, S2, S3): the frame its point is a joint of
+    /// (`beams::Row`), or else the region read in its plane its point is in (`prisms::Row`), or
+    /// else the solid read in three dimensions it is a point of (`bodies::row`, a `prisms::Row`
+    /// over the face's mesh stacked), under its scenario — or why the solve cannot read it.  A
+    /// region's or a solid's row is the one meshed when it was compiled (`Sketch::meshed`),
+    /// where there is one, so every compile through a solve reads one topology.
     pub fn deflection_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
         let (sc, at, along) = self.frame_read(sk)?;
         if let Some(Arg::Int(k)) = self.args.get(2) {
             let key = usize::try_from(*k).ok().map(|k| (k, at, along));
             if let Some(r) = key.and_then(|key| sk.meshed.get(&key)) {
-                return Ok(DeflectionRow::Plane(r.clone()));
+                return Ok(DeflectionRow::Meshed(r.clone()));
             }
         }
         let of = crate::model::Applied::Ent(EntRef::point(at));
-        if crate::beams::of_frame(sk, sc, &of) || !crate::prisms::of_region(sk, sc, &of) {
+        if crate::beams::of_frame(sk, sc, &of) {
             return crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame);
         }
-        crate::prisms::Row::of(sk, sc, at, along).map(|r| DeflectionRow::Plane(r.into()))
+        if crate::prisms::of_region(sk, sc, &of) {
+            return crate::prisms::Row::of(sk, sc, at, along)
+                .map(|r| DeflectionRow::Meshed(r.into()));
+        }
+        if crate::bodies::of_body(sk, sc, &of) {
+            return crate::bodies::row(sk, sc, at, along).map(|r| DeflectionRow::Meshed(r.into()));
+        }
+        crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame)
     }
 
     /// The unknowns a frame's sections are read over, without its structure (#510 S1); a region's
@@ -656,9 +664,9 @@ impl Constraint {
     /// the unknowns bound); a region's points' numbers and radii.
     pub fn deflection_parts(&self, sk: &Sketch) -> Option<(DeflectionRow, Vec<u32>)> {
         let row = match self.deflection_row(sk).ok()? {
-            DeflectionRow::Plane(r) => {
+            DeflectionRow::Meshed(r) => {
                 let cols = r.columns.clone();
-                return Some((DeflectionRow::Plane(r), cols));
+                return Some((DeflectionRow::Meshed(r), cols));
             }
             DeflectionRow::Frame(r) => r,
         };
@@ -1060,12 +1068,12 @@ impl Constraint {
     }
 }
 
-/// **What a deflection driven reads** (#510 S1, S2): a frame's row or a region's, each the
-/// interior's kernel at its own widths.
+/// **What a deflection driven reads** (#510 S1, S2, S3): a frame's row, or a mesh's — a
+/// region's, or a solid's stacked over its face's — each the interior's kernel at its own widths.
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeflectionRow {
     Frame(crate::beams::Row),
-    Plane(std::sync::Arc<crate::prisms::Row>),
+    Meshed(std::sync::Arc<crate::prisms::Row>),
 }
 
 impl DeflectionRow {
@@ -1073,7 +1081,7 @@ impl DeflectionRow {
     pub fn consts(&self, d: f64) -> Vec<f64> {
         match self {
             DeflectionRow::Frame(r) => r.consts(d),
-            DeflectionRow::Plane(r) => r.consts(d),
+            DeflectionRow::Meshed(r) => r.consts(d),
         }
     }
 
@@ -1081,7 +1089,7 @@ impl DeflectionRow {
     pub fn widths(&self) -> (usize, usize) {
         match self {
             DeflectionRow::Frame(r) => r.widths(),
-            DeflectionRow::Plane(r) => r.widths(),
+            DeflectionRow::Meshed(r) => r.widths(),
         }
     }
 
@@ -1089,16 +1097,16 @@ impl DeflectionRow {
     pub fn check(&self) -> Result<(), String> {
         match self {
             DeflectionRow::Frame(r) => r.check(),
-            DeflectionRow::Plane(r) => r.check(),
+            DeflectionRow::Meshed(r) => r.check(),
         }
     }
 
-    /// The points whose lifts it reads: a frame's joints; none of a region's, whose points are
-    /// read in their plane.
+    /// The points whose lifts it reads: a frame's joints; none of a region's or a solid's, whose
+    /// points are read in their face's plane.
     pub fn lifted(&self) -> Vec<usize> {
         match self {
             DeflectionRow::Frame(r) => r.points.clone(),
-            DeflectionRow::Plane(_) => Vec::new(),
+            DeflectionRow::Meshed(_) => Vec::new(),
         }
     }
 }

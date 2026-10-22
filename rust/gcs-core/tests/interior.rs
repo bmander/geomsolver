@@ -963,8 +963,8 @@ fn a_solid_element_is_rigid_in_six_motions_and_weighs_its_volume() {
     let u: [f64; 30] = std::array::from_fn(|i| if i % 3 == 0 { 1e-3 * p[i / 3][0] } else { 0.0 });
     let kg = t.geometric(&p, &u).unwrap();
     let across: [f64; 30] = std::array::from_fn(|i| if i % 3 == 1 { p[i / 3][0] } else { 0.0 });
-    let energy: f64 = (0..30).map(|a| (0..30).map(|b| across[a] * kg[a][b] * across[b]).sum::<f64>())
-        .sum();
+    let energy: f64 =
+        (0..30).map(|a| (0..30).map(|b| across[a] * kg[a][b] * across[b]).sum::<f64>()).sum();
     // σx = (λ + 2μ) ε along x, and the move across it is a unit slope: σx V
     let (l, mu) = t.lame();
     let want = (l + 2.0 * mu) * 1e-3 * vol;
