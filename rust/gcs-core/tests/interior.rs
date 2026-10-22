@@ -42,7 +42,7 @@ pub(crate) fn braced(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
 
 /// Two bars from `(∓w, 0)`, held, to an apex at `(0, h)` loaded `(0, −p)`, each of modulus `e`
 /// and area `a`, its output the apex's rise.
-fn two_bar(w: f64, h: f64, e: f64, a: f64, p: f64) -> (Structure, Vec<f64>) {
+pub(crate) fn two_bar(w: f64, h: f64, e: f64, a: f64, p: f64) -> (Structure, Vec<f64>) {
     let s = Structure {
         dim: 2,
         nodes: 3,

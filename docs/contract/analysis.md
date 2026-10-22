@@ -5,13 +5,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 `syntax/scenario.rs`, `syntax/parser/scenario.rs`, `program/scenarios.rs`, or write a `scenario`;
 or `model/material.rs`, a `material(…)` group (`flatten::values::material`), a solid's `of`, or a
 material's JSON (`io::material_json`) or report (`report::materials_json`); or `eigen.rs`,
-`sparse::Sym`, `sparse::Ldl` or `sparse::Pencil`; or `delaunay/refine/cells.rs`,
-`delaunay/refine/volume.rs` or `delaunay/tetra.rs`.
+`sparse::Sym`, `sparse::Ldl` or `sparse::Pencil`; or `diagnose/analysis.rs`, `Structure::free`,
+`Structure::reach`, `BodyFaces::whole` or a scenario's report (`report::scenarios_json`); or
+`delaunay/refine/cells.rs`, `delaunay/refine/volume.rs` or `delaunay/tetra.rs`.
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
 `rust/gcs-core/tests/scenarios.rs` for scenarios (P4), `rust/gcs-core/tests/materials.rs` for
 materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
+`rust/gcs-core/tests/analysis_words.rs` for the diagnosis words (P7) and
 `rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6), unless a rule names another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
@@ -60,8 +62,8 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
   one, and so is a node held only along a line of bars. `Failure::Collapsed` is a bar of no
   length, and `Failure::Unstiff` is a bar with `E·A ≤ 0`. The kernel reads every failure as NaN,
   in the residual and the Jacobian, which the step rejects and shrinks its trust region for
-  (`a_structure_with_no_displacement_to_give_says_why`). Naming the free motion in the solver's
-  words is P7's.
+  (`a_structure_with_no_displacement_to_give_says_why`). `Structure::free` names the free motion
+  (P7, below).
 
 - **Held to closed forms and to its differences** (#510 P5). The apex of two bars sinks
   `P L³ / (2 E A h²)` to 1e-12, and its rates in the rise and in each area are the closed form's
@@ -245,6 +247,97 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
   are made from.
 
 - **Within the solver.** `interior.rs` and `eigen.rs` are in `gcs-solve` and know no Solvent.
+
+- **What an analysis cannot answer is said in the solver's words** (#510 P7;
+  `diagnose/analysis.rs`, in `gcs-solve`, knowing no Solvent). Four words, each read off what is
+  already in hand — supports, a body's boundary, the pairs a solve returned, a row's value and
+  gradient — and none off a mesh: the motions supports leave free, unbounded stress at an edge, a
+  degenerate modal pair, and a requirement out of reach. A word is a report, never a row: it
+  changes no solve and no count.
+
+- **A rigid-body motion is named from the supports, never from a factor** (`analysis::freedoms`).
+  P1's Cholesky refuses only a pivot lost to rounding and P5's interior a least pivot under
+  `SINGULAR`, and no pivot ratio tells a free body from a slender held one, so the motion is read
+  off the supports. Each `Held` support holds its points along one direction or every one, and a
+  `fixed` support (`turn`) the body's turn too. The free twists `(v, ω)` are the null space of
+  `e·(v + ω×(p − c)) = 0` over every held point and direction, `c` the supports' middle and ω's
+  columns scaled by the supports' size so every column is a velocity (`RIGID`, the diagnosis's
+  rank cut `system::RANK_TOL`). The slides are the free twists that do not turn. Each turn is about its axis through the
+  point of it nearest `c`, its velocity there along the axis the pitch: zero for a turn, else a
+  screw. World axes are preferred where the freedoms hold them (`SNAP`), so a body free about z
+  says `turn about z through (0, 0, 0)`. A twist that moves no point of the body (`body`: bars all
+  on one line, turning about it) moves nothing and is no freedom. Every freedom moves no held point
+  along a held direction, and `6 − rank` remain under generic holds, screws among them
+  (`the_freedoms_are_what_the_supports_leave`,
+  `a_rigid_body_motion_is_named_from_the_supports`).
+
+- **A structure's free motion is named** (`Structure::free`, P5's `Failure::Free` said). The
+  rigid motions are the supports': each held degree of freedom holds its node along its axis, and
+  the nodes are the body. A mechanism is what is left of the motions no bar stretches (each bar's
+  strain row, `ĝ·(u_b − u_a) = 0`) once the rigid motions' fields are taken out. The rows are the
+  ones `solve` factors, unweighted: one numbering (`Structure::equations`) and one strain-row
+  builder (`Structure::strain`) serve both, so an element that joins the interior joins the
+  mechanism too. Its nodes are
+  those it moves. It is looked for by a dense null space up to `diagnose::NUMERIC_MAX` free
+  degrees of freedom, and is `None` past it. `Free::text` says both: `free to turn about (-3, 0);
+  a mechanism: nodes 1 and 2 move with no bar stretched`
+  (`a_structure_names_what_leaves_it_free`).
+
+- **Stress at a sharp re-entrant edge is unbounded, and is said rather than computed**
+  (`analysis::reentrant`). A body's edges are read off the boundary the drawing finishes, its
+  rounds made (`BodyFaces::whole`, where `BodyFaces::read` is the stratum a round reads). A body
+  nothing reads the faces of is that stratum, already remembered (`faces::cached`). Any other is
+  remembered in `Caches::whole`, over the drawing's own B-rep (`Sketch::exact_solid`), so every
+  scenario, report and export over one body reads one build. A
+  concave corner where the material's angle (`BodyFaces::angle`) passes a half turn (`STRAIGHT`)
+  is one, once per pair of faces at its sharpest. Stress grows toward it as `r^(λ−1)`, λ
+  Williams' least exponent for a traction-free wedge in its opening mode (`analysis::williams`:
+  the least positive root of `sin(λα) + λ sin α = 0`; ½ at a crack, 0.5445 at three quarters of
+  a turn, 1 at a half turn or less). So a stress requirement there has no answer a finer mesh
+  converges to. A rounded edge's faces meet tangent, and it is no corner
+  (`williams_exponent_is_the_wedges_least_root`).
+
+- **A degenerate modal pair is named, and the ring that makes it one** (`analysis::repeated`,
+  `Repeated::wave`). The eigensolver says which of its values are one (`Pairs::runs`: consecutive
+  values within its `GAP` of the first of each run), and a run of more than one is repeated. A run at rest (`AT_REST` of the
+  largest) is a rigid motion's, the supports' word, and is left out. An eigenvalue of two vectors
+  has no derivative there (`φᵀ(L' − λR')φ` is no longer one number), so a requirement reads the
+  run whole. Given one step of a ring of `order` as a map of the freedoms and the inner product
+  the pair is orthonormal in, the step acts on the pair as `A = ΦᵀBTΦ`. A ring's pair turns by
+  `2πk/order` under it, and `k` is its wave. A step that keeps each mode (or a reflection) gives
+  none: degenerate, but not the ring's (`a_degenerate_pair_is_named_with_its_ring`, the free ring
+  of 120: pairs 1–4 at waves 1–4, the cut tenth value no pair).
+
+- **A requirement out of reach of what drives it** (`analysis::reach`; `Structure::reach` for the
+  interior's row). A row that holds to what the solver accepts (`SolveOpts::acceptance_tol`, at the
+  size of the larger of its value and what it states) is `Reached`. One that does not
+  is `Held` where no column it reads is free. It is `Extreme` where its change over the free
+  columns, each moved by its own scale, is below `STATIONARY` (1e-6) of its value. A solve that
+  stopped there stopped at the extreme of what the row can be, short of what it states: the least
+  it reaches where it states less, else the most. Otherwise it `Moves`, and there is no verdict.
+  The interior moves a coordinate by the structure's extent and an area by itself. Driving two
+  bars' rise to half their least sink, a damped Newton stops at `h = √2 w`, and the verdict is
+  the closed form's `3√3 P w / (4EA)` (`a_requirement_out_of_reach_says_so`).
+
+- **A scenario's words, at the solved drawing** (`analysis::scenario_words`). Its supports'
+  points come from what each names: a point; a line's ends; a solid's box (a solid spans space);
+  or every face a path names, by its edges' ends and quarters. They are held as one body until
+  an analysis joins bodies of its own (S0), and named by the solids the scenario names:
+  `scenario `lift` leaves `plate` free to turn about x through (0, 0, 0), …`. Every `safety`
+  requirement on a solid with a re-entrant edge is said to have no answer. A support that cannot
+  be read is said (`` `plate.nowhere` names no face of `plate` ``), never taken as holding
+  nothing (`a_scenario_says_what_leaves_it_free_and_where_stress_is_unbounded`,
+  `a_support_on_no_face_is_said`). `solventc` prints each word under the document's result once
+  it is solved, and `--json` gives them as `scenarios` (`report::scenarios_json`,
+  `gcs-cli/tests/cli.rs`'s `a_scenarios_words_are_said`). They are words, not errors: the
+  document still exits 0.
+
+- **What P7 leaves to later stages.** No word yet reads an analysis's own results: the degenerate
+  pair and the out-of-reach verdict are said of pairs and rows a caller hands them, and no
+  scenario computes modes or compiles a driving row until S0–S3. The ring a pair is the ring's is
+  given as a map of the freedoms; reading it off a drawing's `ring` is the modal stage's. The
+  free motion of a scenario holds its supports as one body: which bodies a load path joins is
+  S0's. A pinned face is read as its points held, which holds a turn as a clamp does.
 
 - **A volume is the surface's refinement carried inside** (#510 P6; `delaunay::refine::volume`,
   `Progressive::with_cells`, `refine/cells.rs`). Once the surface is done, as

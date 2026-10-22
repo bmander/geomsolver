@@ -27,8 +27,10 @@
 //! structure, enough to hold the mechanism to its contract.  Frames, plane elements and solids
 //! are further elements of the same interior (#510 S0–S3).
 
+use crate::diagnose::analysis::{self, Freedom, Held, Reach};
 use crate::kernels::{curve_widths, Kernel};
-use crate::space::{dot, norm};
+use crate::linalg::{rank_and_nullspace, Mat};
+use crate::space::{dot, norm, scale};
 use crate::sparse::Ata;
 
 /// Below this least pivot (`Ata::least_pivot`, a pivot as a fraction of its diagonal) the
@@ -120,14 +122,7 @@ impl Structure {
 
     /// Assemble `K(x)` as strain rows, factor it and solve `K u = f`.
     pub fn solve(&self, x: &[f64]) -> Result<State, Failure> {
-        let mut eq = vec![None; self.fixed.len()];
-        let mut n_eq = 0;
-        for (i, held) in self.fixed.iter().enumerate() {
-            if !held {
-                eq[i] = Some(n_eq);
-                n_eq += 1;
-            }
-        }
+        let (eq, n_eq) = self.equations();
         let (mut indptr, mut indices, mut data) = (vec![0i32], Vec::new(), Vec::new());
         for (i, b) in self.bars.iter().enumerate() {
             let (d, l, ea) = self.bar_at(i, x);
@@ -137,15 +132,10 @@ impl Structure {
             if ea.is_nan() || ea <= 0.0 {
                 return Err(Failure::Unstiff);
             }
-            let s = (ea / l).sqrt() / l;
-            for (node, sign) in [(b.a, -1.0), (b.b, 1.0)] {
-                for k in 0..self.dim {
-                    if let Some(e) = eq[self.dim * node + k] {
-                        indices.push(e as i32);
-                        data.push(sign * s * d[k]);
-                    }
-                }
-            }
+            self.strain(b, scale(d, (ea / l).sqrt() / l), &eq, |e, v| {
+                indices.push(e as i32);
+                data.push(v);
+            });
             indptr.push(indices.len() as i32);
         }
         let mut ata = Ata::new(self.bars.len(), n_eq, &indptr, &indices);
@@ -157,6 +147,26 @@ impl Structure {
         }
         st.u = st.scatter(&rhs);
         Ok(st)
+    }
+
+    /// Per degree of freedom its equation, `None` where a support holds it, and how many there
+    /// are: the numbering `solve` factors and `free` reads.
+    fn equations(&self) -> (Vec<Option<usize>>, usize) {
+        let mut n = 0;
+        let eq = self.fixed.iter().map(|held| (!held).then(|| { n += 1; n - 1 })).collect();
+        (eq, n)
+    }
+
+    /// Bar `b`'s strain row `g·(u_b − u_a)`, `g` its direction scaled as the caller weighs it, at
+    /// the equations `eq` numbers: each `(equation, entry)` given to `put`.
+    fn strain(&self, b: &Bar, g: [f64; 3], eq: &[Option<usize>], mut put: impl FnMut(usize, f64)) {
+        for (node, sign) in [(b.a, -1.0), (b.b, 1.0)] {
+            for k in 0..self.dim {
+                if let Some(e) = eq[self.dim * node + k] {
+                    put(e, sign * g[k]);
+                }
+            }
+        }
     }
 
     /// The output, `Σ weight · u`.
@@ -182,6 +192,125 @@ impl Structure {
             }
             g[self.dim * self.nodes + i] -= da;
         }
+    }
+}
+
+/// Past this many degrees of freedom no dense null space is taken to find a mechanism: the
+/// diagnosis's own limit (`diagnose::NUMERIC_MAX`).
+const MECHANISM_MAX: usize = crate::diagnose::NUMERIC_MAX;
+
+/// **What leaves a structure free** (#510 P7), its `Failure::Free` named: the rigid-body motions
+/// its supports leave (`analysis::freedoms`, from the held degrees of freedom alone), and the
+/// nodes a mechanism moves — a motion of the nodes no bar resists and no rigid motion makes.
+/// `mechanism` is `None` past `MECHANISM_MAX` free degrees of freedom, where it is not looked for.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Free {
+    pub rigid: Vec<Freedom>,
+    pub mechanism: Option<Vec<usize>>,
+}
+
+impl Free {
+    /// `free to turn about (0, 0)`, `a mechanism: nodes 2 and 3 move with no bar stretched` — or
+    /// `None` where it is held.
+    pub fn text(&self, dim: usize) -> Option<String> {
+        let mut parts: Vec<String> =
+            analysis::freedoms_text(&self.rigid, dim).into_iter().collect();
+        if let Some(nodes) = self.mechanism.as_ref().filter(|m| !m.is_empty()) {
+            let names: Vec<String> = nodes.iter().map(|n| n.to_string()).collect();
+            let one = names.len() == 1;
+            let (what, moves) = if one { ("node", "moves") } else { ("nodes", "move") };
+            parts.push(format!("a mechanism: {what} {} {moves} with no bar stretched",
+                               crate::vocab::all_of(&names)));
+        }
+        (!parts.is_empty()).then(|| parts.join("; "))
+    }
+}
+
+impl Structure {
+    /// Node `i`'s place at `x`, in space.
+    fn node(&self, i: usize, x: &[f64]) -> [f64; 3] {
+        let mut p = [0.0; 3];
+        p[..self.dim].copy_from_slice(&x[self.dim * i..self.dim * (i + 1)]);
+        p
+    }
+
+    /// **What the supports and the bars leave free at `x`** (#510 P7): `Failure::Free`, named.  The
+    /// rigid motions are the supports': every held degree of freedom holds its node along its
+    /// axis.  A mechanism is what is left of the motions no bar stretches (each bar's strain row,
+    /// `ĝ·(u_b − u_a) = 0`) once the rigid ones are taken out: its nodes are those it moves.  A
+    /// bar of no length stretches along no direction and is left out.
+    pub fn free(&self, x: &[f64]) -> Free {
+        let nodes: Vec<[f64; 3]> = (0..self.nodes).map(|i| self.node(i, x)).collect();
+        let holds: Vec<Held> = (0..self.fixed.len()).filter(|&i| self.fixed[i]).map(|i| {
+            Held { at: vec![nodes[i / self.dim]], along: Some(analysis::axis(i % self.dim)),
+                   turn: false }
+        }).collect();
+        let rigid = analysis::freedoms(self.dim, &nodes, &holds);
+        let (eq, n) = self.equations();
+        if n > MECHANISM_MAX {
+            return Free { rigid, mechanism: None };
+        }
+        // the rows `solve` factors, unweighted, one after another
+        let mut rows: Vec<f64> = Vec::new();
+        for b in &self.bars {
+            let d = self.ends(b, x);
+            let l = norm(d);
+            if !(l > 0.0) {
+                continue;
+            }
+            let at = rows.len();
+            rows.resize(at + n, 0.0);
+            self.strain(b, scale(d, 1.0 / l), &eq, |e, v| rows[at + e] += v);
+        }
+        // each rigid motion's field, so what is left is orthogonal to it
+        for f in &rigid {
+            let at = rows.len();
+            rows.resize(at + n, 0.0);
+            for (node, p) in nodes.iter().enumerate() {
+                let v = f.velocity(*p);
+                for k in 0..self.dim {
+                    if let Some(e) = eq[self.dim * node + k] {
+                        rows[at + e] = v[k];
+                    }
+                }
+            }
+        }
+        let null = rank_and_nullspace(&Mat::from_vec(rows.len() / n.max(1), n, rows),
+                                      crate::system::RANK_TOL).null();
+        let mut moved = vec![0.0f64; self.nodes];
+        for c in 0..null.cols {
+            for (i, e) in eq.iter().enumerate() {
+                if let Some(e) = e {
+                    moved[i / self.dim] = moved[i / self.dim].max(null.at(*e, c).abs());
+                }
+            }
+        }
+        let top = moved.iter().copied().fold(0.0, f64::max);
+        let mechanism = (0..self.nodes).filter(|&i| top > 0.0 && moved[i] > 1e-6 * top).collect();
+        Free { rigid, mechanism: Some(mechanism) }
+    }
+
+    /// **Whether a requirement on the output is out of reach** (#510 P7) at `x`, stating `target`,
+    /// of the columns `free` says drive it (`analysis::reach`).  A node's coordinate is moved by
+    /// the structure's extent, an area by itself.
+    pub fn reach(&self, x: &[f64], target: f64, free: &[bool]) -> Result<Reach, Failure> {
+        let st = self.solve(x)?;
+        let mut g = vec![0.0; self.columns()];
+        self.gradient(&st, x, &mut g);
+        let at = self.dim * self.nodes;
+        let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+        for i in 0..self.nodes {
+            let p = self.node(i, x);
+            for k in 0..self.dim {
+                lo[k] = lo[k].min(p[k]);
+                hi[k] = hi[k].max(p[k]);
+            }
+        }
+        let extent =
+            (0..self.dim).map(|k| hi[k] - lo[k]).fold(0.0, f64::max).max(f64::MIN_POSITIVE);
+        let scale: Vec<f64> = (0..self.columns()).map(|i| if i < at { extent } else { x[i].abs() })
+            .collect();
+        Ok(analysis::reach(self.output(&st), target, &g, &scale, free))
     }
 }
 
