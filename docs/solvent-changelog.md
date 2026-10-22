@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.168] A frame has the standard datums.** Inside a definition's body whose instance stands in
+a frame `f`, `std.*` names `f`'s own datums (§5, §8, §14.4) where 0.167 refused them (**E101**):
+`std.x`, `std.y` and `std.z` are `f.u`, `f.v` and `f.normal`, `std.back` is `f.u` reversed,
+`std.top`, `std.front`, `std.side` and `std.up` are `plane(u: f.u, v: f.v)`, `(f.u, f.normal)`,
+`(f.v, f.normal)` and `(f.normal, back)`, and `std.origin` is a point in that front at its `(0, 0)`,
+at `f.origin`. They agree with the frame's coordinates — a point `in f` at `(x, y, z)` stands at
+`std.origin + x·std.x + y·std.y + z·std.z` — so a frame at the world's pose has the world's
+datums, and a body in a frame moved by a rigid motion is the root's moved by it. They are made once
+a frame, when a body standing in it first reads one, stand where the frame does and add no freedom;
+reading one names the frame's axes, so a bare frame is placed by relations on `f.u`, `f.v` and
+`f.origin` (a mate) or reported free. What the body declares rides the frame as anything under
+`in f` does. No syntax is added, and nothing that elaborated changes. The V-twin's cylinder stands
+in a frame its bank mates to the rod, reading its own `std.up`, its positions unchanged.
+(Issue #542, from #523.)
+
 **[0.167] A definition's standard datums are those of the frame it stands in.** Inside a
 definition's body (`component` or `part`), `std.front`, `std.top`, `std.side`, `std.up`, `std.x`,
 `std.y`, `std.z`, `std.back` and `std.origin` name the datums of the frame the instance stands in

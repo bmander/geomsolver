@@ -264,7 +264,7 @@ impl Lookup<'_> {
             let mut replaced = false;
             for take in (1..=segs.len()).rev() {
                 let key = segs[..take].join(".");
-                if names.contains(&key) {
+                if names.contains(&key) || self.standard.made(&key) {
                     return Some((key, segs[take..].to_vec()));
                 }
                 if let Some(next) = alias.alias(&key) {
@@ -329,7 +329,7 @@ impl Lookup<'_> {
             }
         }
         // a definition's body reads the standard datums of the frame it stands in (#524)
-        self.datum(&segs, sc)?.ok()
+        self.datum(&segs, sc)
     }
 
     /// Whether `name`, read by name from `sc`, is a standard datum its file does not read: a
@@ -339,31 +339,47 @@ impl Lookup<'_> {
             && !self.standard.files.contains(&sc.module)
     }
 
-    /// **A standard datum read in a definition's body** (#524): `std.front` there names the
-    /// datum of the frame its instance stands in (`Scope::stands`), where the body's file says
-    /// `use std` — the root's, the world's, where the instance stands in no frame.  `Err` with
-    /// the frame it stands in where that is a frame other than the world: a frame's own datums
-    /// are not drawn yet, so the reference is refused rather than given the world's.  `None` for
-    /// anything else, and outside a definition's body — a relation word reads only its operands.
-    fn datum(&self, segs: &[String], sc: &Scope) -> Option<Result<(String, Vec<String>), Ref>> {
+    /// **A standard datum read in a definition's body** (#524, #542): `std.front` there names
+    /// the datum of the frame its instance stands in (`Scope::stands`), where the body's file
+    /// says `use std` — the root's, the world's, where the instance stands in no frame, and the
+    /// frame's own where it does: `std.x`, `std.y` and `std.z` are its `u`, `v` and `normal`,
+    /// and the rest its `FrameDatums`, made under `keys::frame_datums` once a body reads one
+    /// (`Datums::read`).  `None` for anything else, and outside a definition's body — a relation
+    /// word reads only its operands.
+    fn datum(&self, segs: &[String], sc: &Scope) -> Option<(String, Vec<String>)> {
         let stands = sc.stands.as_ref().filter(|_| sc.closed)?;
         if segs.first().map(String::as_str) != Some("std")
             || !self.standard.files.contains(&sc.module) {
             return None;
         }
-        let found = (2..=segs.len()).rev().find_map(|take| {
+        let (world, rest) = (2..=segs.len()).rev().find_map(|take| {
             let cand = segs[..take].join(".");
             self.names.contains(&cand).then(|| (cand, segs[take..].to_vec()))
         })?;
         // the innermost frame among the places it stands, each read where it was written
-        let frame = stands.iter().rev().filter(|_| !self.standard.frames.is_empty()).find(|ip| {
-            let at = Scope { stands: None, ..Scope::written_at(ip, sc) };
-            self.raw(&ip.plane, &at).is_some_and(|(abs, rest)| rest.is_empty() && self.frame(&abs))
-        });
-        Some(match frame {
-            Some(ip) => Err(ip.plane.clone()),
-            None => Ok(found),
-        })
+        let frame = stands.iter().rev().filter(|_| !self.standard.frames.is_empty())
+            .find_map(|ip| {
+                let at = Scope { stands: None, ..Scope::written_at(ip, sc) };
+                self.raw(&ip.plane, &at)
+                    .filter(|(abs, rest)| rest.is_empty() && self.frame(abs))
+                    .map(|(abs, _)| abs)
+            });
+        let Some(frame) = frame else { return Some((world, rest)) };
+        let datum = world.strip_prefix("std.").unwrap_or(&world);
+        let (of, member) = match datum {
+            "x" => (frame, Some("u")),
+            "y" => (frame, Some("v")),
+            "z" => (frame, Some(NORMAL)),
+            _ => {
+                self.standard.read.borrow_mut().insert(frame.clone());
+                let made = super::keys::frame_datums(&frame);
+                match datum {
+                    "back" => (format!("{made}behind"), Some(NORMAL)),
+                    _ => (format!("{made}{datum}"), None),
+                }
+            }
+        };
+        Some((of, member.map(str::to_string).into_iter().chain(rest).collect()))
     }
 
     /// Whether `abs` names a frame (`Datums::frames`): declared bare, or a reading of one.
@@ -508,13 +524,6 @@ impl Lookup<'_> {
             return (Code::E020, format!(
                 "`{word}` names the {} copy round a `cycle`, and no `cycle` closes the copies here",
                 if word == "next" { "next" } else { "previous" }
-            ));
-        }
-        if let Some(Err(frame)) = self.datum(&read_segments(r), sc) {
-            return (Code::E101, format!(
-                "`{}` names a datum of the frame its instance stands in, `{}`, and a frame's own \
-                 datums are not drawn yet: pass the datum in, or draw the instance in no frame",
-                ref_text(r), ref_text(&frame)
             ));
         }
         (Code::E101, format!("no such entity: `{}`", ref_text(r)))

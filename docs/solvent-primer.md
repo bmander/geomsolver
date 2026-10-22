@@ -1322,10 +1322,27 @@ in f {
 innermost frame of the `in` blocks around the call or of an `in f` trailer on it, else its parent
 instance's, so at the root the world — and its body's `std.*` name that frame's datums: the
 world's, at the root, as the document's own do. A plane is no frame: `t := Tooth(…) in top` puts
-the instance on `top` and changes nothing `std` names inside it. A frame's own datums are not
-drawn yet, so a body reading `std` while its instance stands in a frame (`in (f := frame) { p :=
-Post() }`) is E101, saying so: hand that body its view instead. The body's file says `use std`, a
-module's by its own; a relation word reads only its operands, `std` included (E101).
+the instance on `top` and changes nothing `std` names inside it. In a frame `f`:
+
+| datum | in frame `f` | the world's |
+|---|---|---|
+| `std.x`, `std.y`, `std.z` | `f.u`, `f.v`, `f.normal` (`f.u × f.v`) | x, y, z |
+| `std.back` | `f.u` reversed | −x |
+| `std.top`, `std.front`, `std.side` | `plane(u: f.u, v: f.v)`, `(f.u, f.normal)`, `(f.v, f.normal)` | (x, y), (x, z), (y, z) |
+| `std.up` | `plane(u: f.normal, v: back)` | (z, −x) |
+| `std.origin` | a point in that front at `(0, 0)`, which is `f.origin` | |
+
+They agree with its coordinates — a point `in f` at `(x, y, z)` stands at `std.origin + x·std.x +
+y·std.y + z·std.z` — so a frame at the world's pose has the world's, and a body drawn in a frame
+moved by a rigid motion is the root's drawing moved by it. They are made once a frame, when a body
+standing in it first reads one, and stand where it does, adding no freedom: reading them names
+`f`'s axes as `f.u` does, so a bare frame's place is the solve's, held by relations on `f.u`,
+`f.v` and `f.origin` (a mate: `f.origin coincident seat`, …) or reported free. What the body
+declares rides `f` as anything declared in `in f { … }` does, so in a frame with a joint it moves
+whole, and among nested frames it stands in the innermost. A frame's axes start as the world's,
+and a relation leaving one either way round takes the nearer: place it so
+(`vtwin/components/bank.sv`). The body's file says `use std`, a module's by its own; a relation
+word reads only its operands, `std` included (E101).
 
 **Model relationships, not coordinate tables**: a rectangle is perpendicular
 sides, a width, a height and a position against a datum, not an ordinate for every corner; the

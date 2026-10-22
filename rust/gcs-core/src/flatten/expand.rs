@@ -242,7 +242,8 @@ impl<'a> Walk<'a> {
         self.readings.push((c.source.clone(), scope.clone()));
         // a frame where what it reads is one (#524)
         let abs = format!("{prefix}{}", d.name.key().text);
-        self.standard.frames.insert(abs, Some(self.readings[k].clone()));
+        self.standard.frames.insert(abs.clone(), Some(self.readings[k].clone()));
+        self.standard.sited.insert(abs, path.to_vec());
         for (s, read) in super::carried::ways(st, d) {
             let sc = Scope { reading: Some((k, read)), ..scope.clone() };
             match &s.kind {
@@ -359,9 +360,10 @@ impl<'a> Walk<'a> {
     ) {
         let abs = format!("{prefix}{}", d.name.key().text);
         self.names.insert(abs.clone());
-        // a frame, which an instance standing in reads no standard datum of (#524)
+        // a frame, whose own standard datums an instance standing in it reads (#542)
         if d.bare {
             self.standard.frames.insert(abs.clone(), None);
+            self.standard.sited.insert(abs.clone(), path.to_vec());
         }
         if d.kind == crate::model::EntKind::Solid {
             self.solid_names.insert(abs.clone());
@@ -1617,6 +1619,16 @@ impl Walk<'_> {
             .filter(|(_, d, _)| d.kind == EntKind::Frame)
             .map(|(key, ..)| key.clone())
             .collect();
+        // and a frame's own (#542), made after the document under the frame's name, once a body
+        // standing in it reads one — which may be here
+        let frame_planes: BTreeSet<&str> = self.frame_datums_component().into_iter()
+            .flat_map(|comp| comp.body.iter().filter_map(|st| match &st.kind {
+                StmtKind::Decl(d) if d.kind == EntKind::Frame => Some(d.name.key().text.as_str()),
+                _ => None,
+            }))
+            .collect();
+        let is_plane = |key: &str| planes.contains(key)
+            || super::frame_datum(key).is_some_and(|(_, d)| frame_planes.contains(d));
         // each point its declaration draws in a plane, with every plane it is drawn in, first
         // first.  One its instance's `in` puts in a view stands in space to the component that
         // declares it, which says where it stands whatever view the instance is put in: its
@@ -1652,7 +1664,7 @@ impl Walk<'_> {
             };
             let (rp, rq) = (rp.clone(), rq.clone());
             let Some(images) = drawn.get_mut(&point) else { continue };
-            if !planes.contains(&plane) || images.contains(&plane) {
+            if !is_plane(&plane) || images.contains(&plane) {
                 continue;
             }
             // past the twins `in` made, and any a name already holds

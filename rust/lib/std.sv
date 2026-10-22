@@ -108,6 +108,24 @@ component StandardDatums() {
   fix((0, 0)) origin
 }
 
+// The standard datums of the frame `f` (#542): what `std` names in a definition's body whose
+// instance stands in `f`, made once a frame when such a body first reads one.  They are the
+// world's read along the frame's own axes: x is `f.u`, y `f.v` and z `f.normal`, which a body
+// reads as those, and each plane is two of them, as the world's are, standing where the frame
+// does — its place is the frame's, so it adds nothing.  `back`, the frame's x reversed, is the
+// normal of `behind`, square to the front's normal and z.  A point in `f` at `(x, y, z)` stands at
+// `origin + x·u + y·v + z·normal`, and a frame at the world's attitude and origin has the world's
+// datums.
+component FrameDatums(f: frame) {
+  top := plane(u: f.u, v: f.v)
+  front := plane(u: f.u, v: f.normal)
+  side := plane(u: f.v, v: f.normal)
+  behind := plane(u: front.normal, v: f.normal)
+  up := plane(u: f.normal, v: behind.normal)
+  origin := point in front
+  fix((0, 0)) origin
+}
+
 // Axes turned within a plane: the plane through `o` whose u runs toward `t` and whose v is a
 // quarter turn on, anticlockwise, in the plane `o` and `t` are drawn in — what a part standing at an angle is
 // measured against (`p distance(d, along: u) axes.axes`) and seeded in (`hint(at: axes.axes,

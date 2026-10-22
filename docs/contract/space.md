@@ -20,8 +20,12 @@ A **plane** is `P := plane(u: r1, v: r2)` (`PlaneE { u, v, o, origin }`): right 
 out × u; it owns `o` (three unknowns); members `P.u`, `P.v`, `P.origin` (a point drawn in P held at
 (0, 0)), and `P.normal` (below). **Its axes pass through its origin** (0.43, #84): `push_plane` mints two intrinsic
 `PlaneAxis` rows (`point_on_axis` over `o`), placing both axes, standing one it is first to place
-through `o`. A slot left out mints a free axis (`P.u`/`P.v`, `build_plane`): `p := plane` is 7
-DOF. `views::origins_on_axes` (right after the `fix` pass) holds `o` where two wholly held axes
+through `o`. A frame's own standard datum (#542, [language.md](language.md)) is the one plane
+that owns no `o`: `Sketch::plane_at` stands it at its frame's place, and an axis already through
+that place (the frame's `u`, `v`, normal, or a normal of a plane standing there) takes no
+`PlaneAxis` row, so the datums add no unknown and no row that carries no information. A slot left
+out mints a free axis (`P.u`/`P.v`, `build_plane`): `p := plane` is 7 DOF.
+`views::origins_on_axes` (right after the `fix` pass) holds `o` where two wholly held axes
 meet, so std's planes add no row; held axes that miss or run alike, or a plane held off its held
 axes, are E067. A plane standing off another takes its own axes (held, or `parallel`): with
 shared axes it would sit on them. `P.origin coincident p`, `P coincident p`, `P distance(d) Q`

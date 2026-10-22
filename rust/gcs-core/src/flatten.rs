@@ -47,7 +47,7 @@ pub use faces::{FaceAxis, FacePlane};
 
 pub(crate) use words::{faults as word_faults, file_number_names};
 pub(crate) use interfaces::check as interface_faults;
-pub(crate) use keys::is_probe;
+pub(crate) use keys::{frame_datum, is_probe};
 use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};
@@ -294,15 +294,30 @@ impl InPlane {
     }
 }
 
-/// **The standard datums** (#524), as a definition's body reads them: the files that say `use
-/// std` — the document (`None`) or a module — empty where the drawing has none, and every frame
-/// declared, by absolute name, which an instance standing in refuses them.  A frame declared bare
-/// is one (`None`); a reading at an instant (`Walk::walk_reading_at`) is one where its source,
-/// read where it was written, is.
+/// **The standard datums** (#524, #542), as a definition's body reads them: the files that say
+/// `use std` — the document (`None`) or a module — empty where the drawing has none, and every
+/// frame declared, by absolute name, whose own datums an instance standing in it reads.  A frame
+/// declared bare is one (`None`); a reading at an instant (`Walk::walk_reading_at`) is one where
+/// its source, read where it was written, is.  `read` is every frame a body has read a datum of
+/// that is made (`std.front`, not `std.x`, which is the frame's `u`): its `FrameDatums`, walked
+/// once each after the document (`Walk::finish`), under `keys::frame_datums`, whose names `own`
+/// are, and sited where the frame is (`sited`): what a part declares the frame in makes them.
 #[derive(Clone, Default)]
 struct Datums {
     files: BTreeSet<Option<usize>>,
     frames: BTreeMap<String, Option<(Ref, Scope)>>,
+    sited: BTreeMap<String, Vec<PathStep>>,
+    read: std::rc::Rc<std::cell::RefCell<BTreeSet<String>>>,
+    own: BTreeSet<String>,
+}
+
+impl Datums {
+    /// Whether `key` is a frame's own datum a body has read: a name from then on, whatever reads
+    /// it — an alias a call made of it too — though made only after the document (`read`).
+    fn made(&self, key: &str) -> bool {
+        keys::frame_datum(key)
+            .is_some_and(|(f, d)| self.own.contains(d) && self.read.borrow().contains(f))
+    }
 }
 
 pub struct Expansion {
@@ -728,6 +743,10 @@ impl<'a> Walk<'a> {
     fn new(prog: &'a Program, units: Units, sym: Option<Sym>) -> Walk<'a> {
         let std_module = prog.modules.iter().position(|m| m.name == "std");
         let standard = std_module.and_then(|k| prog.component_in(Some(k), "StandardDatums"));
+        let declared = |c: &'a Component| c.body.iter().filter_map(|st| match &st.kind {
+            StmtKind::Decl(d) => Some(d.name.key().text.clone()),
+            _ => None,
+        });
         let shadowed = prog.root().body.iter().any(|st| match &st.kind {
             StmtKind::Instance(i) => i.name.text == "std",
             StmtKind::Decl(d) => d.name.key().text == "std",
@@ -748,10 +767,7 @@ impl<'a> Walk<'a> {
             units,
             out: Vec::new(),
             names: if !files.is_empty() {
-                standard.unwrap().body.iter().filter_map(|st| match &st.kind {
-                    StmtKind::Decl(d) => Some(format!("std.{}", d.name.key().text)),
-                    _ => None,
-                }).collect()
+                declared(standard.unwrap()).map(|n| format!("std.{n}")).collect()
             } else { BTreeSet::new() },
             solid_names: BTreeSet::new(),
             aliases: Vec::new(),
@@ -763,7 +779,12 @@ impl<'a> Walk<'a> {
             constants: BTreeMap::new(),
             diagnostics: Vec::new(),
             called: BTreeSet::new(),
-            standard: Datums { files, frames: BTreeMap::new() },
+            standard: Datums {
+                files,
+                own: std_module.and_then(|k| prog.component_in(Some(k), "FrameDatums"))
+                    .into_iter().flat_map(declared).collect(),
+                ..Datums::default()
+            },
             group_names: BTreeSet::new(),
             shapes: interfaces::shapes(prog),
             typed: BTreeMap::new(),
@@ -823,6 +844,32 @@ impl<'a> Walk<'a> {
         Some((self.prog.component_in(k, "StandardDatums")?, scope))
     }
 
+    /// `std`'s `FrameDatums`, what a frame's own standard datums are (#542).
+    fn frame_datums_component(&self) -> Option<&'a Component> {
+        let k = self.prog.modules.iter().position(|m| m.name == "std");
+        self.prog.component_in(k, "FrameDatums")
+    }
+
+    /// **A frame's own standard datums** (#542), for every frame a body standing in it read one
+    /// of (`Datums::read`): `std`'s `FrameDatums` walked under `keys::frame_datums`, its formal
+    /// the frame, once a frame and where the frame is declared — after the document's own and the
+    /// world's, which resolution by name lets every body read whatever order they are made in.
+    fn frame_datums(&mut self) {
+        let Some(comp) = self.frame_datums_component() else { return };
+        let [formal] = &comp.formals[..] else { return };
+        let frames = self.standard.read.borrow().clone();
+        for frame in frames {
+            let prefix = keys::frame_datums(&frame);
+            let root = Scope::absolute(Default::default());
+            let given = Ref::dotted(&frame, formal.name.span);
+            self.aliases.push((format!("{prefix}{}", formal.name.text), given, root));
+            let scope = Scope { prefixes: vec![prefix], module: comp.module, ..Scope::default() };
+            let mut vals = Vals::of(self.module_params(comp.module.unwrap()));
+            let path = self.standard.sited.get(&frame).cloned().unwrap_or_default();
+            self.body(&comp.body, &scope, &mut vals, &path, 1);
+        }
+    }
+
     fn finish(mut self) -> Expansion {
         self.expand_pending();
         self.expand_fits();
@@ -845,6 +892,7 @@ impl<'a> Walk<'a> {
             // without them; resolution is by name, so nothing reads them the worse for it.
             let mut vals = Vals::of(self.module_params(comp.module.unwrap()));
             self.body(&comp.body, &scope, &mut vals, &[], 1);
+            self.frame_datums();
             self.expand_pending();
             let (mut datums, resolved) = self.resolve();
             flat.append(&mut datums);

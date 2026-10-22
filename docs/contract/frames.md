@@ -28,9 +28,16 @@ block's frame the same way.  An instance's frame reaches its body's declarations
 `Stamps::{plane, rides}`, each resolved where it was written (`rewrite_decl`).  The elaborator
 draws a point in the **innermost frame of its path with axes** (a plane, or a spatial frame with
 a chart), and the path itself is what it rides on; a frame with axes further out says nothing of
-where, which is W115.  At rest a riding point is drawn where it stands: `Sketch::world_point`
-reads no joint, so no relation naming no roll sees riding at all.  A point already riding keeps
-its path: drawn again on another is E060.
+where, which is W115 — but for a plane that is one of the outer frame's own standard datums
+(#542, [0.168], `flatten::frame_datum`), which is where in it a definition standing in the frame
+draws.  So a body standing in `f` that draws `in std.front { … }` is drawn in `f`'s front and
+rides `f` (and whatever `f` rides) by this rule alone: the datums stand at the frame's rest pose,
+built over its chart and riding nothing themselves, and an instance in a frame with a joint is
+carried whole at a roll with no `under:` (`tests/frame_datums.rs`,
+`a_definition_in_a_frame_with_a_joint_rides_it_at_a_roll`,
+`an_instance_stands_in_the_innermost_frame_which_rides_those_outside_it`).  At rest a riding point
+is drawn where it stands: `Sketch::world_point` reads no joint, so no relation naming no roll sees
+riding at all.  A point already riding keeps its path: drawn again on another is E060.
 
 **A reading at a roll infers its carrier** (stage 4): where a reading leaves `under:` out, the
 motion is what its tool rides on, seen from the frame `seen_from:` names (`motions::riding`,
