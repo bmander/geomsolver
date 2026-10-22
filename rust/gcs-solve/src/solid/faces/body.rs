@@ -42,19 +42,39 @@ impl BodyFaces {
     /// Solid `body`'s faces, as made by the terms that do not read them.
     pub fn read(sk: &Sketch, body: usize) -> Result<BodyFaces, String> {
         let readers = readers_of(sk, body);
-        let name = sk.solids.get(body).ok_or("no such solid")?.name.clone();
-        let stratum;
-        let from = if readers.is_empty() {
-            sk
-        } else {
-            stratum = without(sk, &readers)?;
-            &stratum
-        };
+        if readers.is_empty() {
+            return BodyFaces::built(sk, body, false);
+        }
+        BodyFaces::built(&without(sk, &readers)?, body, false)
+    }
+
+    /// Solid `body`'s faces as the drawing finishes it, the terms that read them made too (its
+    /// rounds): what an analysis reads (#510 P7), where `read` is what those terms read.  A body
+    /// nothing reads the faces of is the stratum `cached` already holds; any other is remembered
+    /// in `Caches::whole`, its B-rep the drawing's own (`Sketch::exact_solid`).
+    pub fn whole(sk: &Sketch, body: usize) -> Result<std::sync::Arc<BodyFaces>, String> {
+        if readers_of(sk, body).is_empty() {
+            return cached(sk, body);
+        }
+        let key = crate::solid::MemoKey::of(sk, body);
+        let build = || BodyFaces::built(sk, body, true).map(std::sync::Arc::new);
+        sk.caches.whole.get_or(body, key, build)
+    }
+
+    /// Solid `body`'s faces in `from`, every term of it made: its B-rep `from`'s remembered one
+    /// where `remembered`, else built for this reading alone (a stratum's).
+    fn built(from: &Sketch, body: usize, remembered: bool) -> Result<BodyFaces, String> {
+        let name = from.solids.get(body).ok_or("no such solid")?.name.clone();
         // each face named by its document path (`pocket.near`), as `solid::exact` names them —
         // a swept body's by its blank's primitives and the cutter's faces its cuts left (#212)
         let swept = crate::solid::cad::contains_sweep(from, body);
-        let ex = if swept { crate::solid::exact::swept(from, body) } else { crate::solid::exact::build(from, body) }
-            .map_err(|e| format!("`{name}`'s faces: {e}"))?;
+        let ex = if swept {
+            crate::solid::exact::swept(from, body)
+        } else if remembered {
+            from.exact_solid(body).map(|e| (*e).clone())
+        } else {
+            crate::solid::exact::build(from, body)
+        }.map_err(|e| format!("`{name}`'s faces: {e}"))?;
         let routes = crate::solid::document::operand_paths(from, body);
         let paths = ex.named.iter().map(|(of, face)| {
             FacePath::new(routes.get(of).map_or(of.as_str(), String::as_str), face)
@@ -256,6 +276,9 @@ impl BodyFaces {
             (e, at, d / self.mm)
         }).min_by(|a, b| a.2.total_cmp(&b.2))
     }
+
+    /// Face `fi`'s edges, once each.
+    pub fn face_edges(&self, fi: usize) -> &[u32] { &self.edges[fi] }
 
     /// The faces edge `e` bounds.
     pub fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }

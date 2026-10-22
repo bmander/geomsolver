@@ -23,7 +23,11 @@
 //!    vertex whose triangles form more than one fan, the largest facet there is refined, until
 //!    none remain.
 //!
-//! `Progressive` runs the five a step at a time (`progressive`). Outside the bounding sphere is
+//! 6. **Cells** (`cells`, asked by `Progressive::with_cells` or `volume`). The tetrahedra inside
+//!    are refined to a radius–edge ratio, a size and a least dihedral angle, facets first; the
+//!    volume is extracted as linear and quadratic tetrahedra (`volume`, #510 P6).
+//!
+//! `Progressive` runs them a step at a time (`progressive`). Outside the bounding sphere is
 //! outside the domain, as in Mesh_3.
 #[allow(unused_imports)]
 use crate::fmath::Det;
@@ -32,14 +36,18 @@ use super::regular::{Regular,Inserted,NONE,ENCLOSING};
 use crate::space::{sub,dot,distance_squared as dist2,circumcentre};
 use std::collections::{BinaryHeap,HashMap};
 
+mod cells;
 mod crossing;
 mod manifold;
 mod progressive;
 mod protect;
 mod seed;
 mod trace;
+mod volume;
 
+pub use cells::{Cells,CellReport};
 pub use progressive::{Progress,Progressive,Stage};
+pub use volume::{Volume,VolumeReport};
 use protect::Place;
 
 type P = [f64;3];
@@ -147,12 +155,14 @@ pub struct Report {
 pub struct Mesh { pub vertices: Vec<P>,pub triangles: Vec<[u32;3]>,pub report: Report }
 
 /// A facet waiting to be refined: how bad it was, where it is and what it is made of (to
-/// recognise a stale entry, once its tetrahedron is gone or remade).
+/// recognise a stale entry, once its tetrahedron is gone or remade). A `forced` one is refined
+/// whatever its badness, before any other: a cell's refinement point fell in its surface ball
+/// (`cells`).
 #[derive(PartialEq)]
-struct Bad { badness: f64,t: u32,i: usize,key: [u32;3] }
+struct Bad { badness: f64,t: u32,i: usize,key: [u32;3],forced: bool }
 impl Eq for Bad {}
 impl PartialOrd for Bad { fn partial_cmp(&self,o: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(o)) } }
-impl Ord for Bad { fn cmp(&self,o: &Self) -> std::cmp::Ordering { self.badness.total_cmp(&o.badness) } }
+impl Ord for Bad { fn cmp(&self,o: &Self) -> std::cmp::Ordering { self.forced.cmp(&o.forced).then(self.badness.total_cmp(&o.badness)) } }
 
 struct Refiner<'a> {
     domain: Box<dyn Domain + 'a>,
@@ -166,6 +176,8 @@ struct Refiner<'a> {
     balls: Vec<(P,f64)>,
     /// The curves each ball stands on.
     owners: Vec<Vec<Place>>,
+    /// Each ball's neighbours along its curves, and the curve's point midway to each.
+    halfway: Vec<Vec<(usize,P)>>,
     /// Every unweighted point inserted (seeds and refinement), to carry into a rebuild.
     kept: Vec<P>,
     // The four maps below are only ever looked up and filled, never iterated, so their order
@@ -187,6 +199,9 @@ struct Refiner<'a> {
     cell: f64,
     queue: BinaryHeap<Bad>,
     report: Report,
+    /// The cells inside, their criteria and queue, once the surface is done and a volume was
+    /// asked for (`cells`): `None` while the surface is refined, when no cell is judged.
+    filling: Option<cells::Filling>,
 }
 
 impl Refiner<'_> {
@@ -292,7 +307,7 @@ impl Refiner<'_> {
             if badness <= 1. { return; }
             let a = self.tri.points()[key[0] as usize];
             if dist2(centre,a.p)-a.w < self.margin()*self.margin() { self.report.too_small += 1; return; }
-            self.queue.push(Bad {badness,t,i,key});
+            self.queue.push(Bad {badness,t,i,key,forced:false});
         }
     }
 
@@ -318,7 +333,7 @@ impl Refiner<'_> {
                     if self.sign.len() <= t as usize { self.sign.resize(t as usize+1,0); }
                     self.sign[t as usize] = 0;
                 }
-                if judging { for &t in &created { for i in 0..4 { self.judge(t,i); } } }
+                if judging { for &t in &created { for i in 0..4 { self.judge(t,i); } self.judge_cell(t); } }
                 Ok(true)
             }
         }
@@ -342,7 +357,7 @@ impl Refiner<'_> {
             if face != bad.key { continue; }
             let Some((key,centre)) = self.restricted(bad.t,bad.i) else { continue };
             let badness = self.badness(key,centre);
-            if badness <= 1. { continue; }
+            if badness <= 1. && !bad.forced { continue; }
             let a = self.tri.points()[key[0] as usize];
             if dist2(centre,a.p)-a.w < self.margin()*self.margin() { self.report.too_small += 1; continue; }
             self.trace_refining(key,badness,centre);
@@ -407,4 +422,13 @@ pub fn mesh<'a>(domain: impl Domain + 'a,centre: P,radius: f64,curves: &[Vec<P>]
     let mut run = Progressive::new(Box::new(domain),centre,radius,curves.to_vec(),criteria.clone());
     while !run.step(usize::MAX)? {}
     run.finished()
+}
+
+/// Mesh the boundary of `{p : value(p) < 0}` within `radius` of `centre` and fill the volume it
+/// bounds, its cells held to `cells` (#510 P6): the linear and quadratic tetrahedra.
+pub fn volume<'a>(domain: impl Domain + 'a,centre: P,radius: f64,curves: &[Vec<P>],criteria: &Criteria,cells: &Cells)
+    -> Result<Volume,String> {
+    let mut run = Progressive::new(Box::new(domain),centre,radius,curves.to_vec(),criteria.clone()).with_cells(cells.clone())?;
+    while !run.step(usize::MAX)? {}
+    run.finished_volume()
 }

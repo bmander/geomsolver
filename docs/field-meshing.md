@@ -561,3 +561,24 @@ turned about the gear's axis, so a query needs only the cuts nearest it in angle
 indexed union in its fundamental sector would take the cost per query from the tooth count to a
 constant.
 
+## A volume for analysis (2026-10-21, #510 P6)
+
+The surface's refinement goes on inside it: `refine::volume` (or `Progressive::with_cells`)
+refines the cells whose orthocentre the domain holds, then extracts linear and quadratic (TET10)
+tetrahedra. The rules are in [contract/analysis.md](contract/analysis.md). The gate is
+`rust/gcs-core/tests/volume_mesh.rs`, with radius–edge 2, a 12° dihedral, and cell size equal to
+facet size:
+
+| Case | Cells | Cell points (slivers) | Worst ρ | Least dihedral | Bad cells | Volume error, linear / TET10 |
+|---|---|---|---|---|---|---|
+| Ball, facet 0.25 | 2,508 | 204 (66) | 2.00 | 12.1° | 0 | 1.6e-2 / 2.6e-5 |
+| Torus 1 × 0.4, facet 0.15 | 6,998 | 544 (193) | 1.95 | 12.0° | 0 | 1.3e-2 / 9.5e-6 |
+| Ellipsoid, Newton readings, facet 0.2 | 2,805 | 219 (81) | 1.92 | 12.3° | 0 | — |
+| Cube, 12 feature edges, facet 0.2 | 2,639 | 235 (82) | 4.72 | 7.8° | 19, all at balls | exact / exact |
+| Cylinder, 2 rims, facet 0.15 | 3,624 | 298 (82) | 2.32 | 12.1° | 5, all at balls | 5.1e-3 / 1.8e-6 |
+
+Cell points are roughly a third of every point inserted. What is left bad is beside a
+protecting ball, where no cell point may go. A cell whose orthocentre falls in a ball was also
+tried by its picking region. On the cube that took the bad cells from 19 to 3,711, a runaway of
+points crowding the ball's edge, so it was dropped.
+

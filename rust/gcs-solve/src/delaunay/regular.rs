@@ -328,15 +328,7 @@ impl Regular {
         let mut corners = self.corners(t);
         corners.sort_unstable_by(|p,q| p.p[0].total_cmp(&q.p[0]).then(p.p[1].total_cmp(&q.p[1]))
             .then(p.p[2].total_cmp(&q.p[2])).then(p.w.total_cmp(&q.w)));
-        let [a,b,c,d] = corners;
-        let from_a = |q: Weighted| [0,1,2].map(|k| q.p[k]-a.p[k]);
-        let (u,v,x) = (from_a(b),from_a(c),from_a(d));
-        use crate::space::{dot,cross};
-        let (ru,rv,rx) = (dot(u,u)-(b.w-a.w),dot(v,v)-(c.w-a.w),dot(x,x)-(d.w-a.w));
-        let (vx,xu,uv) = (cross(v,x),cross(x,u),cross(u,v));
-        let det = 2.*dot(u,vx);
-        let o: [f64;3] = std::array::from_fn(|k| (ru*vx[k]+rv*xu[k]+rx*uv[k])/det);
-        ([a.p[0]+o[0],a.p[1]+o[1],a.p[2]+o[2]],dot(o,o)-a.w)
+        super::tetra::orthosphere(corners)
     }
 
     /// The tetrahedra a point would take if inserted (its conflict region), leaving the

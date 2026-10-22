@@ -1,9 +1,11 @@
 //! The refinement a step at a time (`Progressive`): build, refine, repair, and rebuild with
-//! shrunk balls where they blocked a repair or held a facet off the surface.
+//! shrunk balls where they blocked a repair or held a facet off the surface; then, for a volume,
+//! fill: refine the cells inside, and extract them.
 use super::*;
 use super::manifold::{repair,standing_off};
 use super::protect::{protect,shrink,Sizing,LEAST,REBUILDS};
 use super::seed::{lattice,seed};
+use super::volume::{extract,Volume};
 use crate::space::polyline_length;
 
 /// A refinement's state for a host to show (`Progressive::progress`). `worst` is the badness of
@@ -22,15 +24,16 @@ pub struct Progress {
 
 /// Which stage a refinement is at (`Progress::stage`), and the word a host shows for it.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Stage { Building, Refining, Repairing, Done, Failed }
+pub enum Stage { Building, Refining, Repairing, Filling, Done, Failed }
 
 impl Stage {
-    /// The word for the stage: `building`, `refining`, `repairing`, `done` or `failed`.
+    /// The word for the stage: `building`, `refining`, `repairing`, `filling`, `done` or `failed`.
     pub fn word(self) -> &'static str {
         match self {
             Stage::Building => "building",
             Stage::Refining => "refining",
             Stage::Repairing => "repairing",
+            Stage::Filling => "filling",
             Stage::Done => "done",
             Stage::Failed => "failed",
         }
@@ -45,6 +48,9 @@ enum State {
     Refine,
     /// Repair the manifold, check what the balls hold off the surface, and finish or rebuild.
     Repair,
+    /// Refine the cells inside, facets first (a volume's): a round of judging every cell
+    /// (`CellReport::rounds`), begun when `mark` points had been inserted.
+    Fill { mark: usize },
     Done(Result<Mesh,String>),
 }
 
@@ -76,13 +82,32 @@ pub struct Progressive<'a> {
     /// The last closed, manifold surface a build reached, kept while balls are shrunk for facets
     /// that stood off it: shrinking is an improvement, and one that fails leaves this standing.
     manifold: Option<Mesh>,
+    /// What the cells must satisfy, for a refinement that fills a volume (`with_cells`).
+    cells: Option<Cells>,
+    /// The volume a filling refinement made, once done.
+    volume: Option<Volume>,
 }
+
+/// Rounds of judging every cell before a volume is taken as it stands: a round that inserts
+/// nothing ends filling sooner.
+const FILL_ROUNDS: usize = 8;
 
 impl<'a> Progressive<'a> {
     pub fn new(domain: Box<dyn Domain + 'a>,centre: P,radius: f64,curves: Vec<Vec<P>>,criteria: Criteria) -> Self {
         let sizing = curves.iter().map(|c| Sizing {base:polyline_length(c).min(criteria.edge_size).max(criteria.edge_size*1e-3),local:Vec::new()}).collect();
         Self {domain:Some(domain),refiner:None,centre,radius,curves,criteria,sizing,kept:Vec::new(),
-            memo:HashMap::new(),crossings:HashMap::new(),queries:0,rebuild:0,state:State::Build,manifold:None}
+            memo:HashMap::new(),crossings:HashMap::new(),queries:0,rebuild:0,state:State::Build,manifold:None,
+            cells:None,volume:None}
+    }
+
+    /// Fill the volume as well (`refine::volume`): once the surface is done, the cells inside are
+    /// refined to `cells` and extracted, linear and quadratic (`finished_volume`). A filling
+    /// refinement takes the surface its last build reached, never an earlier one, since the
+    /// cells are that build's. Criteria no refinement can meet are refused here, before any work.
+    pub fn with_cells(mut self,cells: Cells) -> Result<Self,String> {
+        cells.check()?;
+        self.cells = Some(cells);
+        Ok(self)
     }
 
     /// Do at most about `budget` refinements (a build or a repair runs whole): whether the
@@ -98,6 +123,28 @@ impl<'a> Progressive<'a> {
             State::Repair => {
                 let outcome = self.repair();
                 if let Some(result) = outcome { self.state = State::Done(result); }
+            }
+            State::Fill {mark} => {
+                let r = self.refiner.as_mut().expect("a refiner while filling");
+                if r.fill_some(budget)? {
+                    // The surface again: a facet refined for a cell may have opened it.
+                    let manifold = repair(r)?;
+                    let inserted = r.report.inserted;
+                    let last = r.filling.as_ref().map_or(0,|f| f.report.rounds) >= FILL_ROUNDS;
+                    if manifold && (inserted == mark || last) {
+                        let facets = r.extract();
+                        self.state = State::Done(extract(r,&facets).map(|volume| {
+                            let (vertices,triangles) = collect(r,&facets);
+                            self.volume = Some(volume);
+                            Mesh {vertices,triangles,report:r.report.clone()}
+                        }));
+                    } else if last {
+                        self.state = State::Done(Err("the boundary is not a manifold once its cells are refined".into()));
+                    } else {
+                        r.judge_cells();
+                        self.state = State::Fill {mark:inserted};
+                    }
+                }
             }
         }
         Ok(matches!(self.state,State::Done(_)))
@@ -118,11 +165,16 @@ impl<'a> Progressive<'a> {
             State::Build => Stage::Building,
             State::Refine => Stage::Refining,
             State::Repair => Stage::Repairing,
+            State::Fill {..} => Stage::Filling,
             State::Done(Ok(_)) => Stage::Done,
             State::Done(Err(_)) => Stage::Failed,
         };
         let (queued,worst,report) = match &self.refiner {
-            Some(r) => (r.queue.len(),r.queue.peek().map_or(1.,|b| b.badness),r.report.clone()),
+            Some(r) => {
+                let cells = r.filling.as_ref().map(|f| &f.queue);
+                (r.queue.len()+cells.map_or(0,|q| q.len()),r.queue.peek().map_or(1.,|b| b.badness)
+                    .max(cells.and_then(|q| q.peek()).map_or(1.,|b| b.badness)),r.report.clone())
+            }
             None => (0,1.,Report {queries:self.queries,..Report::default()}),
         };
         Progress {stage,rebuild:self.rebuild,queued,worst,inserted:report.inserted,queries:report.queries,
@@ -142,6 +194,13 @@ impl<'a> Progressive<'a> {
         }
     }
 
+    /// The volume a filling refinement made (`with_cells`), or why it could not.
+    pub fn finished_volume(mut self) -> Result<Volume,String> {
+        let volume = self.volume.take();
+        self.finished()?;
+        volume.ok_or_else(|| "the refinement filled no volume".into())
+    }
+
     /// The restricted facets as they stand, oriented outward; empty before the first build.
     pub fn snapshot(&mut self) -> Mesh {
         if let State::Done(Ok(m)) = &self.state { return m.clone(); }
@@ -153,7 +212,7 @@ impl<'a> Progressive<'a> {
 
     fn build(&mut self) -> Result<(),String> {
         let criteria = &self.criteria;
-        let (balls,owners) = protect(&self.curves,criteria.edge_size,&mut self.sizing)?;
+        let (balls,owners,halfway) = protect(&self.curves,criteria.edge_size,&mut self.sizing)?;
         let cell = balls.iter().map(|b| b.1).fold(criteria.edge_size,f64::max).max(self.radius*1e-9);
         let domain = match self.refiner.take() {
             Some(old) => {
@@ -163,10 +222,11 @@ impl<'a> Progressive<'a> {
             None => self.domain.take().expect("the domain before the first build"),
         };
         let mut r = Refiner {domain,centre:self.centre,radius:self.radius,criteria:criteria.clone(),
-            tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),
+            tri:Regular::new(self.centre,self.radius),sign:Vec::new(),balls:Vec::new(),owners:Vec::new(),halfway:Vec::new(),
             ball_of:HashMap::new(),kept:Vec::new(),memo:std::mem::take(&mut self.memo),normals:HashMap::new(),
             crossings:std::mem::take(&mut self.crossings),blocking:Vec::new(),
-            grid:HashMap::new(),cell,queue:BinaryHeap::new(),report:Report {queries:self.queries,..Report::default()}};
+            grid:HashMap::new(),cell,queue:BinaryHeap::new(),report:Report {queries:self.queries,..Report::default()},
+            filling:None};
         // Protecting balls first, in spatial order.
         let order = crate::delaunay::spatial_order(&balls.iter().map(|b| b.0).collect::<Vec<_>>());
         for &k in &order {
@@ -177,6 +237,10 @@ impl<'a> Progressive<'a> {
             r.balls.push((p,rad));
             r.owners.push(owners[k].clone());
         }
+        // The neighbours renumbered as the balls went in.
+        let mut place = vec![0;order.len()];
+        for (i,&k) in order.iter().enumerate() { place[k] = i; }
+        r.halfway = order.iter().map(|&k| halfway[k].iter().map(|&(c,p)| (place[c],p)).collect()).collect();
         r.report.balls = r.balls.len();
         r.report.rebuilds = self.rebuild;
         if self.rebuild == 0 {
@@ -217,9 +281,9 @@ impl<'a> Progressive<'a> {
             let mesh = Mesh {vertices,triangles,report:r.report.clone()};
             // Shrinking that left no fewer facets standing off than before has not helped, and
             // another round would only pay for the whole surface again: keep the earlier one.
-            if let Some(earlier) = self.manifold.take_if(|m| m.report.coarse <= off.len()) { return Some(Ok(earlier)); }
+            if let Some(earlier) = self.manifold.take_if(|m| m.report.coarse <= off.len()) { return self.settle(earlier); }
             if blocking.is_empty() || rebuild+1 == REBUILDS || !shrink(r,&blocking,&mut self.sizing,self.criteria.edge_size/LEAST) {
-                return Some(Ok(mesh));
+                return self.settle(mesh);
             }
             self.manifold = Some(mesh);
         } else {
@@ -230,7 +294,7 @@ impl<'a> Progressive<'a> {
             r.trace_faults(rebuild,&blocking);
             // A closed surface reached before is better than this one: the shrinking that followed
             // it was for facets standing off it, and has opened the surface instead.
-            if self.manifold.is_some() { return Some(Ok(self.manifold.take().unwrap())); }
+            if let Some(earlier) = self.manifold.take().filter(|_| self.cells.is_none()) { return Some(Ok(earlier)); }
             if !shrunk {
                 return Some(Err("the boundary is not a manifold, and no ball blocking its repair can shrink".into()));
             }
@@ -240,6 +304,17 @@ impl<'a> Progressive<'a> {
         }
         self.rebuild += 1;
         self.state = State::Build;
+        None
+    }
+
+    /// The surface is final: the mesh, or for a volume the start of filling, on the surface the
+    /// refiner in hand holds — never `mesh`, when that is an earlier build's.
+    fn settle(&mut self,mesh: Mesh) -> Option<Result<Mesh,String>> {
+        let Some(cells) = self.cells.clone() else { return Some(Ok(mesh)) };
+        let r = self.refiner.as_mut().expect("a refiner to fill");
+        r.filling = Some(super::cells::Filling::new(cells));
+        r.judge_cells();
+        self.state = State::Fill {mark:r.report.inserted};
         None
     }
 }

@@ -39,6 +39,28 @@ pub struct Pairs {
     pub residuals: Vec<f64>,
 }
 
+impl Pairs {
+    /// **Its runs of one value**: the indices of consecutive values within `GAP` of the first of
+    /// each run (relative to it, or to `BREAKDOWN` of the largest for a run near zero), the gap
+    /// Sylvester's count reads as one value.  A value found once is a run of one.
+    pub fn runs(&self) -> Vec<std::ops::Range<usize>> {
+        let scale = self.values.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < self.values.len() {
+            let v = self.values[i];
+            let mut j = i + 1;
+            while j < self.values.len()
+                && self.values[j] - v <= GAP * v.abs().max(BREAKDOWN * scale) {
+                j += 1;
+            }
+            out.push(i..j);
+            i = j;
+        }
+        out
+    }
+}
+
 /// Why a solve has no answer.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Refusal {

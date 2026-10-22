@@ -470,6 +470,15 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         for name in sk.materials.keys() {
             println!("  material {}", gcs_core::report::material_text(&sk, name));
         }
+        // what each scenario's supports leave free, and where a stress it asks for is
+        // unbounded (#510 P7): read at the solved pose, a line only where there is something
+        if solved {
+            for st in &e.scenarios {
+                for w in gcs_core::diagnose::analysis::scenario_words(&sk, &st.scenario) {
+                    println!("  {w}");
+                }
+            }
+        }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
             // a plane's freedoms by the ledger's names; a line only where one is left
@@ -888,9 +897,14 @@ fn doc_json(
         ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
         ("components", components),
     ]);
+    // each scenario's words (#510 P7) at the solved pose, where the document states any
+    let settled = r.is_some_and(|r| r.settled());
+    if let Some((sk, _)) = d.filter(|_| settled && !e.scenarios.is_empty()) {
+        doc.set("scenarios", report::scenarios_json(sk, &e.scenarios));
+    }
     // the document's parts, read through the diagnosis (#461), where it has any
     if let Some((sk, d)) = d {
-        let parts = gcs_core::parts::read(e, sk, d, r.is_some_and(|r| r.settled()));
+        let parts = gcs_core::parts::read(e, sk, d, settled);
         if parts.instances > 0 {
             doc.set("parts", gcs_core::parts::json(&parts));
         }

@@ -242,6 +242,25 @@ impl<'c> Protection<'c> {
         self.places.iter().map(|p| p.iter().map(|&(k,j)| Place {curve:k,s:self.stations[k][j],gap:self.gap(k,j)}).collect()).collect()
     }
 
+    /// Each ball's neighbours along its curves, with the point of the curve midway between them
+    /// by arc length: where a quadratic element puts the node of the edge joining the two
+    /// (`volume`).
+    fn halfway(&self) -> Vec<Vec<(usize,P)>> {
+        (0..self.balls.len()).map(|b| {
+            let mut out = Vec::new();
+            for &(k,j) in &self.places[b] {
+                let (st,n,length) = (&self.stations[k],self.stations[k].len(),self.curves.lengths[k]);
+                let mut near = Vec::new();
+                if j+1 < n { near.push((j+1,0.5*(st[j]+st[j+1]))); } else if self.curves.closed[k] { near.push((0,0.5*(st[j]+length))); }
+                if j > 0 { near.push((j-1,0.5*(st[j-1]+st[j]))); } else if self.curves.closed[k] { near.push((n-1,0.5*(st[n-1]+length))); }
+                for (m,s) in near {
+                    if let Some(&c) = self.at_place.get(&(k,m)) { if c != b { out.push((c,self.curves.at(k,s))); } }
+                }
+            }
+            out
+        }).collect()
+    }
+
     /// Why balls `x` and `y` could not be kept apart.
     fn refusal(&self,x: usize,y: usize,finest: f64,round: usize) -> String {
         let gaps = |b: usize| self.places[b].iter().map(|&(k,j)| self.gap(k,j)).collect::<Vec<_>>();
@@ -251,22 +270,26 @@ impl<'c> Protection<'c> {
     }
 }
 
-/// Protecting balls along the curves: `(centre, radius)` and where each stands, with corners
+/// Protecting balls along the curves: `(centre, radius)`, where each stands, and its neighbours
+/// along its curves with the curve's point midway to each (`Protection::halfway`), with corners
 /// (curve ends, and ends shared by curves) once each. A closed curve repeats its first point at
 /// its end. Where balls neither consecutive on one curve nor sharing a corner meet, the curves
 /// are refined there (`Protection::meeting`), a round at a time.
-pub(super) fn protect(curves: &[Vec<P>],edge_size: f64,sizing: &mut [Sizing]) -> Result<(Vec<(P,f64)>,Vec<Vec<Place>>),String> {
+pub(super) fn protect(curves: &[Vec<P>],edge_size: f64,sizing: &mut [Sizing]) -> Result<Protected,String> {
     let curves = Curves::new(curves);
     let (finest,least) = (edge_size/8.,edge_size/LEAST);
     for round in 0..16 {
         let p = Protection::new(&curves,sizing,edge_size);
         let (tight,example) = p.meeting(finest,least);
-        let Some((x,y)) = example else { return Ok((p.balls.clone(),p.owners())); };
+        let Some((x,y)) = example else { return Ok((p.balls.clone(),p.owners(),p.halfway())); };
         if tight.is_empty() || round == 15 { return Err(p.refusal(x,y,finest,round)); }
         for (k,s,h) in tight { sizing[k].local.push((s,h)); }
     }
     unreachable!()
 }
+
+/// The balls, their places and their neighbours halfway (`protect`).
+pub(super) type Protected = (Vec<(P,f64)>,Vec<Vec<Place>>,Vec<Vec<(usize,P)>>);
 
 /// Halve the feature spacing at the places of balls `blocking`, down to `least`: whether any
 /// could shrink.
