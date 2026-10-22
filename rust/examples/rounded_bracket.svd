@@ -1,0 +1,10 @@
+// Presentation of rounded_bracket.sv. Model geometry is independent of this drawing.
+model m from "rounded_bracket.sv"
+
+sheet drawing {
+  size A4
+  label "A ROUNDED SHELF BRACKET" at (14mm, 18mm)
+  label "Its inside corner rounded, so its stress has an answer; drawn sharp it says round it" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

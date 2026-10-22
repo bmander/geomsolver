@@ -480,6 +480,16 @@ another.
   discretisation, not to rounding: the library's plate reads its sag so to 1e-3. A frame's row
   and its reading agree to rounding either way.
 
+- **The library's region cases** each show a capability, and each solves to no freedom, answers
+  every requirement, keeps its claims and holds what it drives, with nothing said against it
+  (`tests/prisms.rs`, `every_region_case_of_the_library_says_what_it_claims`):
+  `tuning_fork.sv` (modes in the plane: the fork rocking on its stem, its tines ringing a little
+  below a built-in tine's), `rounded_bracket.sv` (a round making a factor of safety answerable;
+  drawn sharp, it has none and says to round it), `pressure_pipe.sv` (plane strain, to Lamé's
+  closed form), `gravity_wall.sv` (plane strain under its weight and a pressure, its mass the
+  trapezoid's), and the driving `sized_plate.sv` (below) and `drilled_plate.sv` (a hole's radius
+  driven, its circle's nodes moving with it: 19.23mm).
+
 - **The library's driving region** is `sized_plate.sv`: a steel plate built in along its root,
   loaded along its end, its depth an unknown its sides' dimensions read, driven so its end's lower
   corner sinks 0.5mm — 76.75mm, within 0.5% of Timoshenko's beam with its shear counted for each

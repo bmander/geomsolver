@@ -2039,7 +2039,10 @@ scenario pull {
   point of the region is a row. Its mesh is made once, where the drawing stands when it is
   elaborated, and its nodes move with the drawing — so seed the region near where it will be
   solved (a circle's `hint(r: …)` too). Its sides are lines, arcs and circles. The library's
-  `sized_plate.sv` finds a plate's depth so.
+  `sized_plate.sv` finds a plate's depth so, and `drilled_plate.sv` a hole's radius.
+- **The library shows the rest**: `tuning_fork.sv` (modes in the plane), `rounded_bracket.sv` (a
+  round that gives a corner's stress an answer), `pressure_pipe.sv` (plane strain, Lamé's closed
+  form) and `gravity_wall.sv` (plane strain under its own weight).
 
 | written | reported |
 |---|---|

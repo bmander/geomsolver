@@ -350,3 +350,42 @@ fn a_regions_driving_row_is_refused_where_it_cannot_be_read() {
     use gcs_core::constraints::CKind;
     assert!(e.sketch.constraints.iter().all(|c| c.kind != CKind::Deflection));
 }
+
+/// The library's cases read in the plane (#510 S2), each a capability: modes in the plane, a
+/// round making a stress answerable, plane strain to a closed form, a body load, and driving rows
+/// over a region's lines and a circle's radius.
+const LIBRARY: [&str; 6] =
+    ["sized_plate", "tuning_fork", "rounded_bracket", "pressure_pipe", "gravity_wall",
+     "drilled_plate"];
+
+/// **Every region case of the library says what it claims** (#510 S2): solved, it leaves no
+/// freedom; every requirement has an answer and keeps what it states, a driven one held by its
+/// row (the report's value its row's); nothing is said against it.  The rounded bracket drawn
+/// sharp instead says its stress is unbounded at the corner, and still answers its deflection.
+#[test]
+fn every_region_case_of_the_library_says_what_it_claims() {
+    for key in LIBRARY {
+        let src = gcs_core::examples::source(key).unwrap();
+        let e = crate::common::read(src);
+        let mut sk = crate::common::solved(&e);
+        assert_eq!(crate::common::dof(&mut sk), 0, "{key}");
+        for s in &e.scenarios {
+            let (words, read) = scenario_read(&sk, &s.scenario);
+            assert!(words.is_empty(), "{key}: {words:?}");
+            let said = gcs_core::report::scenario_answers(&sk, s, &read);
+            assert_eq!(said.len(), s.scenario.requirements.len(), "{key}: {said:?}");
+            for (k, a) in said.iter().enumerate() {
+                let end = if s.driven[k].is_some() { "held" } else { "kept" };
+                assert!(a.text.ends_with(end), "{key}: {}", a.text);
+            }
+        }
+    }
+    let sharp = gcs_core::examples::source("rounded_bracket").unwrap()
+        .replace("  round := arc(center: o, start: d, end: c) hint(r: r)\n",
+                 "  round := line(c, d)\n");
+    let e = crate::common::text::solved(&sharp);
+    let (got, _) = answers(&e);
+    let safety = got.iter().find(|g| g.1 == Output::Safety).unwrap();
+    assert!(safety.3.as_ref().unwrap_err().contains("round it"), "{safety:?}");
+    assert!(got.iter().any(|g| g.1 == Output::Deflection && g.3.is_ok()));
+}
