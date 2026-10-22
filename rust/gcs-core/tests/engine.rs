@@ -349,3 +349,57 @@ fn each_part_previews_as_the_assembly_builds_it() {
         for (mine,theirs) in solids { close(mine,built(&e,mine).0,built(&whole,theirs).0); }
     }
 }
+
+/// **The crank turns the engine** (#398 L): `t`, the assembly's one parameter, is cylinder 1's
+/// angle in its four-stroke cycle, and the drawing is followed over the whole of it.  Stood at
+/// every eighth of a turn, each crank pin is where the throw puts it, each piston's small end
+/// where the slider-crank's closed form puts it, and each valve as far off its seat as its lobe
+/// reaches: the tangent cam's support along the valve's axis, `max(rb, dn cos φ + rn)`, the
+/// camshaft turning at half the crank's speed and each cylinder a quarter of the cycle behind the
+/// one before it in the firing order 1-3-4-2.  It is drawn at the table's 400°, and runs from
+/// there round to it again.
+#[test]
+fn the_engine_turns_through_its_cycle() {
+    let e = open("engine.sv");
+    let march = gcs_core::follow::followed(&e.sketch,"t");
+    let f = march.as_ref().as_ref().expect("followed");
+    assert_eq!((f.over.from,f.reached(),f.singular),(400.,1120.,None));
+    let mut sk = e.sketch.clone();
+    let at = |sk: &gcs_core::model::Sketch,name: &str| {
+        sk.world_point(e.map.ent_named(name).unwrap_or_else(|| panic!("{name}")).i())
+    };
+    let near = |what: &str,got: f64,want: f64| {
+        assert!((got-want).abs() < 1e-6,"{what}: {got} against {want}");
+    };
+    let apart = |a: [f64;3],b: [f64;3]| ((a[0]-b[0]).powi(2)+(a[1]-b[1]).powi(2)+(a[2]-b[2]).powi(2)).sqrt();
+    let dn = |dur: f64| (RB-RN)/(dur/4.).to_radians().cos();
+    let lift = |dur: f64,phi: f64| (dn(dur)*phi.to_radians().cos()+RN).max(RB)-RB;
+    // where in its cycle each cylinder is when cylinder 1 is at 0: the firing order 1-3-4-2
+    let behind = [0.,540.,180.,360.];
+    let (icenter,ecenter) = (450.+(48.-12.)/2.,270.+(12.-48.)/2.);
+    for step in 0..=16 {
+        let t = 400.+step as f64*45.;
+        gcs_core::follow::stand(&mut sk,"t",t).expect("reached");
+        // cylinder 1's throw in the end section, `t` clockwise from top dead centre
+        let pin = at(&sk,"crank.t1.pin");
+        let side = sk.basis(e.map.ent_named("std.side").unwrap().i());
+        let (x,y) = side.view_coords(pin);
+        near("pin across",x,R*t.to_radians().sin());
+        near("pin up",y,R*t.to_radians().cos());
+        for k in 1..=4 {
+            // 1 and 4 are up together, 2 and 3 a half turn on; the small end rides the bore axis
+            let ph = (t+if k == 2 || k == 3 { 180. } else { 0. }).to_radians();
+            let small = R*ph.cos()+(L*L-R*R*ph.sin().powi(2)).sqrt();
+            near(&format!("rod {k}'s small end at {t}"),at(&sk,&format!("rod{k}.sm_s"))[2],small);
+            let c = (t-behind[k-1]).rem_euclid(720.);
+            for (aft,(intake,dur,center)) in ["f","r"].iter()
+                .flat_map(|a| [(a,("i",IDUR,icenter)),(a,("e",EDUR,ecenter))]) {
+                let v = format!("valves{k}{aft}");
+                let reach = apart(at(&sk,&format!("{v}.drawn_{intake}.fc")),
+                                  at(&sk,&format!("{v}.cam_{intake}")));
+                near(&format!("{v} {intake} at {t}"),reach,RB+lift(dur,(c-center)/2.));
+            }
+        }
+    }
+}
+
