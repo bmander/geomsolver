@@ -221,16 +221,19 @@ pub(super) fn drive(
             let args = vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)];
             let name =
                 |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
-            if let Err(m) = crate::constraints::validate(sk, CKind::Deflection, &args, &name) {
-                diags.push(Diag::within(Code::E040, span, line.stmt, format!(
-                    "`{}` cannot drive the drawing: {m}", s.heads[k])));
-                continue;
-            }
-            // a region's row is meshed once, here, and read so through every solve (#510 S2)
+            // a region's row is meshed once, here, and read so through every solve (#510 S2):
+            // held before it is validated, so the validation reads that mesh
+            let key = (at as usize, p.i(), along);
             if let Ok(crate::constraints::DeflectionRow::Plane(row)) =
                 Constraint::new(CKind::Deflection, args.clone()).deflection_row(sk)
             {
-                sk.meshed.insert((at as usize, p.i()), row);
+                sk.meshed.insert(key, row);
+            }
+            if let Err(m) = crate::constraints::validate(sk, CKind::Deflection, &args, &name) {
+                sk.meshed.remove(&key);
+                diags.push(Diag::within(Code::E040, span, line.stmt, format!(
+                    "`{}` cannot drive the drawing: {m}", s.heads[k])));
+                continue;
             }
             let id = sk.add_quiet(Constraint::new(CKind::Deflection, args));
             // made by the scenario's statement, and stood where its requirement is written

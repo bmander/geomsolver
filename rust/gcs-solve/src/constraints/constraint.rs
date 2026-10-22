@@ -615,25 +615,22 @@ impl Constraint {
     pub fn deflection_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
         let (sc, at, along) = self.frame_read(sk)?;
         if let Some(Arg::Int(k)) = self.args.get(2) {
-            if let Some(r) = usize::try_from(*k).ok().and_then(|k| sk.meshed.get(&(k, at))) {
+            let key = usize::try_from(*k).ok().map(|k| (k, at, along));
+            if let Some(r) = key.and_then(|key| sk.meshed.get(&key)) {
                 return Ok(DeflectionRow::Plane(r.clone()));
             }
         }
         let of = crate::model::Applied::Ent(EntRef::point(at));
-        if !crate::beams::of_frame(sk, sc, &of) && crate::prisms::of_region(sk, sc, &of) {
-            return crate::prisms::Row::of(sk, sc, at, along).map(DeflectionRow::Plane);
+        if crate::beams::of_frame(sk, sc, &of) || !crate::prisms::of_region(sk, sc, &of) {
+            return crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame);
         }
-        crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame)
+        crate::prisms::Row::of(sk, sc, at, along).map(|r| DeflectionRow::Plane(r.into()))
     }
 
-    /// The unknowns a frame's sections are read over, without its structure (#510 S1); none of a
-    /// region's.
+    /// The unknowns a frame's sections are read over, without its structure (#510 S1); a region's
+    /// point is no joint, so it reads none.
     pub fn frame_unknowns(&self, sk: &Sketch) -> Result<Vec<String>, String> {
         let (sc, at, _) = self.frame_read(sk)?;
-        let of = crate::model::Applied::Ent(EntRef::point(at));
-        if !crate::beams::of_frame(sk, sc, &of) && crate::prisms::of_region(sk, sc, &of) {
-            return Ok(Vec::new());
-        }
         crate::beams::row_unknowns(sk, sc, at)
     }
 
@@ -1068,7 +1065,7 @@ impl Constraint {
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeflectionRow {
     Frame(crate::beams::Row),
-    Plane(crate::prisms::Row),
+    Plane(std::sync::Arc<crate::prisms::Row>),
 }
 
 impl DeflectionRow {

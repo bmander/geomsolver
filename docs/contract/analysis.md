@@ -385,8 +385,8 @@ another.
   left, the outward normal times `ds` the tangent turned clockwise: linear in the places); a force
   spread evenly along sides (`F ∫ N ds / Σ L`) or over elements (`F ∫ N dA / Σ A`), the same force
   however the region grows; a body load `b t ∫ N dA`. Each node's share is laid by
-  `side_forces`/`element_forces`, and `λᵀ∂f/∂x` is each side's or element's `λᵀfₑ` in `Dual`
-  (`side_work`, `element_work`), an even load's whole also reading `−(Σ λᵀfₑ)/S² ∂S`. The patch
+  one function per kind of share (`side_load`, `element_load`), over a plain number for the loads
+  and over `Dual` for `λᵀ∂f/∂x`, an even load's whole also reading `−(Σ λᵀfₑ)/S² ∂S`. The patch
   test holds to 1e-9 (a sheet of knocked-about elements pulled: `σx = σ` at every node of every
   element, its stretch `σ w/E'` and narrowing `−ν'σh/E'` in either reading,
   `a_sheet_pulled_stresses_uniformly_as_the_patch_test_asks`); the element is rigid in three
@@ -440,7 +440,7 @@ another.
   solid read in its plane is no body of the scenario's own: its supports are the region's
   (`Read::holds`, merged with a frame's by `Read::merge` in `scenario_read`). **Held to**
   (`tests/prisms.rs`): every plane case of the corpus answers its reference — Kirsch's Kt and
-  LE1's stress at D within 1% (0.33% and 0.13%), FV32's six frequencies within 0.1% (0.03%) — and
+  LE1's stress at D within 1% (0.62% and 0.13%), FV32's six frequencies within 0.1% (0.03%) — and
   keeps its claims; Lamé's cylinder, exact in plane stress with its ends open, answers its bore's
   move within 1e-4 and its von Mises within 0.5% in plane stress, and plane strain's closed forms
   in plane strain; a pulled sheet answers its move, its work, its factor of safety, its mass and
@@ -453,7 +453,8 @@ another.
   joint), compiles to `CKind::Deflection` as a frame's does, the interior's kernel at the region's
   widths. The epic's first difficulty, remeshing, met by keeping the topology: the region is
   meshed **once**, where the drawing stands when the row is compiled, and held on the sketch
-  (`Sketch::meshed`, by the scenario's index and the point) so that every compile of the row
+  (`Sketch::meshed`, by the scenario's index, the point and the direction, shared by `Arc`; made
+  before the row is validated, so the validation reads it) so that every compile of the row
   through a solve — and every residual after it — reads one mesh. Within it the nodes are
   functions of the row's columns, each region point's two numbers in the plane and each arc's or
   circle's radius (`Moved`, its constants after the structure's, `HEAD`'s `moved`): a node at a

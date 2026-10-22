@@ -266,12 +266,13 @@ pub enum Laid {
     Body { elements: Vec<usize>, force: [f64; 2] },
 }
 
-/// **What a load lays on one side or element**, `λᵀfₑ` for multipliers `lam` at its nodes (x then
-/// y each), as a number over its places `x` — and, for a load spread evenly, the measure it is
-/// spread by (its length or its area), so the whole is `Σ λᵀfₑ / Σ measure`.
-pub(crate) fn side_work<T: Num>(laid: &Laid, x: &[P<T>; 3], lam: &[[f64; 2]; 3]) -> (T, T) {
+/// **What a load lays at each node of a side** at its places `x`, a number that may carry rates:
+/// each of its three nodes' force (x, y), and its length — so `λᵀfₑ = Σ λ_k · f_k`, and an even
+/// load's whole is `Σ fₑ / Σ length`.  The pressure's outward normal times `ds` is the tangent
+/// turned a quarter clockwise, `(t_y, −t_x)`.
+pub(crate) fn side_load<T: Num>(laid: &Laid, x: &[P<T>; 3]) -> ([[T; 2]; 3], T) {
     let zero = T::cst(0.0);
-    let (mut work, mut length) = (zero, zero);
+    let (mut f, mut length) = ([[zero; 2]; 3], zero);
     for (s, w) in rule_side() {
         let (n, d) = (side_shape(s), side_shape_d(s));
         let mut t = [zero; 2];
@@ -280,85 +281,42 @@ pub(crate) fn side_work<T: Num>(laid: &Laid, x: &[P<T>; 3], lam: &[[f64; 2]; 3])
                 t[c] = t[c] + T::cst(d[k]) * x[k][c];
             }
         }
-        let l: [f64; 2] = [0, 1].map(|c| (0..3).map(|k| n[k] * lam[k][c]).sum());
-        match laid {
-            // the outward normal times ds is the tangent turned a quarter clockwise, (t_y, −t_x)
-            Laid::Pressure { p, depth, .. } => {
-                let f = T::cst(-p * depth * w);
-                work = work + f * (t[1] * T::cst(l[0]) - t[0] * T::cst(l[1]));
-            }
-            Laid::Along { force, .. } => {
-                let ds = (t[0] * t[0] + t[1] * t[1]).sqrt() * T::cst(w);
-                work = work + ds * T::cst(force[0] * l[0] + force[1] * l[1]);
-                length = length + ds;
-            }
-            _ => {}
-        }
-    }
-    (work, length)
-}
-
-/// `side_work`'s over an element: `λᵀfₑ` and its area, for a load over elements, the element's
-/// depth `depth` read by a body load.
-pub(crate) fn element_work<T: Num>(laid: &Laid, x: &[P<T>; 6], lam: &[[f64; 2]; 6], depth: f64)
-    -> (T, T)
-{
-    let zero = T::cst(0.0);
-    let (mut work, mut area) = (zero, zero);
-    let force = match laid {
-        Laid::Over { force, .. } => *force,
-        Laid::Body { force, .. } => force.map(|f| f * depth),
-        _ => return (zero, zero),
-    };
-    for (xi, eta, w) in rule4() {
-        let (_, det) = jacobian(x, &shape_d(xi, eta));
-        let n = shape(xi, eta);
-        let l: [f64; 2] = [0, 1].map(|c| (0..6).map(|k| n[k] * lam[k][c]).sum());
-        let da = det * T::cst(w);
-        work = work + da * T::cst(force[0] * l[0] + force[1] * l[1]);
-        area = area + da;
-    }
-    (work, area)
-}
-
-/// **What a load lays at each node of a side** at its places `x`: `f_k` for each of its three
-/// nodes, and its length — `λᵀfₑ = Σ λ_k · f_k`, `side_work` read off for a plain number at once.
-pub(crate) fn side_forces(laid: &Laid, x: &[P<f64>; 3]) -> ([[f64; 2]; 3], f64) {
-    let (mut f, mut length) = ([[0.0; 2]; 3], 0.0);
-    for (s, w) in rule_side() {
-        let (n, d) = (side_shape(s), side_shape_d(s));
-        let t: [f64; 2] = [0, 1].map(|c| (0..3).map(|k| d[k] * x[k][c]).sum());
-        let ds = t[0].hypot(t[1]) * w;
-        length += ds;
+        let ds = (t[0] * t[0] + t[1] * t[1]).sqrt() * T::cst(w);
+        length = length + ds;
         let at = match laid {
-            Laid::Pressure { p, depth, .. } => [-p * depth * w * t[1], p * depth * w * t[0]],
-            Laid::Along { force, .. } => [force[0] * ds, force[1] * ds],
-            _ => [0.0; 2],
+            Laid::Pressure { p, depth, .. } => {
+                let q = T::cst(-p * depth * w);
+                [q * t[1], zero - q * t[0]]
+            }
+            Laid::Along { force, .. } => [ds * T::cst(force[0]), ds * T::cst(force[1])],
+            _ => [zero; 2],
         };
         for k in 0..3 {
             for c in 0..2 {
-                f[k][c] += n[k] * at[c];
+                f[k][c] = f[k][c] + T::cst(n[k]) * at[c];
             }
         }
     }
     (f, length)
 }
 
-/// `side_forces`'s over an element: each of its six nodes' force, and its area.
-pub(crate) fn element_forces(laid: &Laid, x: &[P<f64>; 6], depth: f64) -> ([[f64; 2]; 6], f64) {
+/// `side_load`'s over an element: each of its six nodes' force, and its area, the element's depth
+/// `depth` read by a body load.
+pub(crate) fn element_load<T: Num>(laid: &Laid, x: &[P<T>; 6], depth: f64) -> ([[T; 2]; 6], T) {
+    let zero = T::cst(0.0);
+    let (mut f, mut area) = ([[zero; 2]; 6], zero);
     let force = match laid {
         Laid::Over { force, .. } => *force,
         Laid::Body { force, .. } => force.map(|f| f * depth),
-        _ => return ([[0.0; 2]; 6], 0.0),
+        _ => return (f, area),
     };
-    let (mut f, mut area) = ([[0.0; 2]; 6], 0.0);
     for (xi, eta, w) in rule4() {
-        let (_, det) = jacobian(&lift(x), &shape_d(xi, eta));
-        let (n, da) = (shape(xi, eta), det.v * w);
-        area += da;
+        let (_, det) = jacobian(x, &shape_d(xi, eta));
+        let (n, da) = (shape(xi, eta), det * T::cst(w));
+        area = area + da;
         for k in 0..6 {
             for c in 0..2 {
-                f[k][c] += n[k] * da * force[c];
+                f[k][c] = f[k][c] + da * T::cst(n[k] * force[c]);
             }
         }
     }

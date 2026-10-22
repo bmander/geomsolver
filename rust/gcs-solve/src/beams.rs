@@ -295,15 +295,37 @@ impl Unread {
 /// A material's property, read back into the document's units, or why there is none.
 fn property(sk: &Sketch, beam: usize, p: Property) -> Result<f64, String> {
     let b = &sk.beams[beam];
-    let name = b.material.as_ref().ok_or_else(|| {
-        format!("`{}` is made of no material it can be read by: say what, `beam(…) of steel`",
-                b.name)
+    made_of(sk, &b.name, b.material.as_deref(), "beam", p)
+}
+
+/// **A property of what `name` is made of** (`material`, written `KIND(…) of steel`), read back
+/// into the document's units, or why there is none: a frame's beam's (#510 S0), or a solid's read
+/// in its plane (S2, `prisms.rs`).
+pub(crate) fn made_of(sk: &Sketch, name: &str, material: Option<&str>, kind: &str, p: Property)
+    -> Result<f64, String>
+{
+    let m = material.ok_or_else(|| {
+        format!("`{name}` is made of no material it can be read by: say what, `{kind}(…) of steel`")
     })?;
-    let m = &sk.materials[name];
-    let si = m.get(p).ok_or_else(|| {
-        format!("`{}` is made of `{name}`, which states no `{}`", b.name, p.name())
+    let si = sk.materials[m].get(p).ok_or_else(|| {
+        format!("`{name}` is made of `{m}`, which states no `{}`", p.name())
     })?;
     Ok(sk.units.from_si(si, p.dim()))
+}
+
+/// **Whether every direction a driving row reads is held** (#510 S1, S2): its own `along`, and
+/// each load's of scenario `sc` — the row reads them as constants, so one the solve moves is
+/// refused.
+pub(crate) fn directions_held(sk: &Sketch, sc: &Scenario, along: EntRef) -> Result<(), String> {
+    let loads = sc.loads.iter().filter_map(|l| match l.value {
+        LoadValue::Along { along, .. } => Some(along),
+        _ => None,
+    });
+    if std::iter::once(along).chain(loads).all(|d| sk.direction_held(d)) {
+        return Ok(());
+    }
+    Err("its direction moves in the solve, and a driving row reads every direction as it stands: \
+         name an axis the drawing holds, or a line whose ends it holds".to_string())
 }
 
 impl Framed {
@@ -537,16 +559,7 @@ impl Row {
     /// and the loads are read as constants of the row), more unknowns than a tape reads, or a
     /// frame that cannot be read at all.
     pub fn of(sk: &Sketch, sc: &Scenario, at: usize, along: EntRef) -> Result<Row, String> {
-        for d in [Some(along)].into_iter().chain(sc.loads.iter().map(|l| match l.value {
-            LoadValue::Along { along, .. } => Some(along),
-            _ => None,
-        })).flatten() {
-            if !sk.direction_held(d) {
-                return Err("its direction moves in the solve, and a driving row reads every \
-                            direction as it stands: name an axis the drawing holds, or a line \
-                            whose ends it holds".to_string());
-            }
-        }
+        directions_held(sk, sc, along)?;
         let (mesh, joint) = row_mesh(sk, sc, at)?;
         let unknowns = frame_unknowns(sk, &mesh, mesh.frame[joint])?;
         let framed = Framed::new(sk, sc, &mesh, mesh.frame[joint]).map_err(|u| u.text())?;

@@ -23,7 +23,8 @@ use crate::beams::Read;
 use crate::delaunay::plane::{self as mesher, Criteria, Mesh, Side};
 use crate::diagnose::analysis::{self, direction, Held};
 use crate::eigen::{self, Pairs};
-use crate::interior::{Failure, Laid, State, Structure, Tri6};
+use crate::interior::{Edge, Failure, Laid, Node, State, Structure, Tri6};
+use crate::kernels::{Dual, Num};
 use crate::model::{
     Applied, EntKind, EntRef, InPlane, LoadKind, LoadValue, Output, Property, Requirement,
     Scenario, Sketch, SolidDef,
@@ -60,41 +61,31 @@ pub enum Bound {
 }
 
 impl Bound {
-    /// Where it is at `s` on `[0, 1]`, in the plane.
+    /// Where it is at `s` on `[0, 1]`, in the plane: a line, an arc or a circle read as the
+    /// driving row moves it (`interior::Edge::at`, over its own numbers), so a node meshed here
+    /// stands where the row first places it.
     pub fn at(&self, sk: &Sketch, s: f64) -> P {
-        let xy = |i: usize| -> P {
+        let xy = |i: usize| {
             let (x, y) = sk.point_xy(i);
             [x, y]
         };
-        match *self {
-            Bound::Line { a, b } => {
-                let (p, q) = (xy(a), xy(b));
-                [p[0] + s * (q[0] - p[0]), p[1] + s * (q[1] - p[1])]
-            }
+        let radius = |r: usize| [sk.params[r].value];
+        let (edge, q): (Edge, Vec<f64>) = match *self {
+            Bound::Line { a, b } => (Edge::Line { a: 0, b: 2 }, [xy(a), xy(b)].concat()),
             Bound::Arc { c, r, from, to, ccw } => {
-                let (o, rad) = (xy(c), sk.params[r].value.abs());
-                let bearing = |i: usize| {
-                    let p = xy(i);
-                    (p[1] - o[1]).atan2(p[0] - o[0])
-                };
-                let (a0, a1) = (bearing(from), bearing(to));
-                let mut sweep = if ccw { a1 - a0 } else { a0 - a1 };
-                while sweep <= 0.0 {
-                    sweep += std::f64::consts::TAU;
-                }
-                let a = if ccw { a0 + s * sweep } else { a0 - s * sweep };
-                [o[0] + rad * a.cos(), o[1] + rad * a.sin()]
+                (Edge::Arc { c: 0, from: 2, to: 4, r: 6, ccw },
+                 [&xy(c)[..], &xy(from), &xy(to), &radius(r)].concat())
             }
             Bound::Circle { c, r } => {
-                let (o, rad) = (xy(c), sk.params[r].value.abs());
-                let a = std::f64::consts::TAU * s;
-                [o[0] + rad * a.cos(), o[1] + rad * a.sin()]
+                (Edge::Circle { c: 0, r: 2 }, [&xy(c)[..], &radius(r)].concat())
             }
             Bound::Curved { e, t } => {
                 let (x, y) = crate::solid::profile::curved_point(sk, e, t[0] + s * (t[1] - t[0]));
-                [x, y]
+                return [x, y];
             }
-        }
+        };
+        let q: Vec<Dual<0>> = q.into_iter().map(Dual::cst).collect();
+        edge.at(&q, s).map(|v| v.v)
     }
 
     /// Whether it is straight.
@@ -183,8 +174,8 @@ impl Region {
 
     /// Where a place in space is in the plane, and how far off it along its normal.
     pub fn local(&self, p: V) -> (P, f64) {
-        let d = sub(p, self.basis.o);
-        ([dot(d, self.basis.u), dot(d, self.basis.v)], dot(d, self.basis.normal()))
+        let (a, b) = self.basis.view_coords(p);
+        ([a, b], dot(sub(p, self.basis.o), self.basis.normal()))
     }
 
     /// Where a point of the plane stands in space at the prism's middle.
@@ -199,6 +190,18 @@ impl Region {
         ([dot(d, self.basis.u), dot(d, self.basis.v)], dot(d, self.basis.normal()))
     }
 
+    /// Whether face `i` of the drawing is the one the prism is swept from.
+    fn is_face(&self, sk: &Sketch, i: usize) -> bool {
+        matches!(sk.solids[self.solid].def, SolidDef::Prism { face, .. } if face as usize == i)
+    }
+
+    /// Its sides whose three quarter points all pass `test`.
+    fn sides_where(&self, sk: &Sketch, test: impl Fn(P) -> bool) -> Vec<usize> {
+        (0..self.sides.len()).filter(|&g| {
+            [0.25, 0.5, 0.75].iter().all(|&s| test(self.sides[g].at(sk, s)))
+        }).collect()
+    }
+
     /// The side `p` lies on and its parameter there, if it lies on one: the nearest of 64 samples
     /// along each side, then a golden section about it.
     pub fn on_side(&self, sk: &Sketch, p: P) -> Option<(usize, f64)> {
@@ -208,17 +211,27 @@ impl Region {
             (q[0] - p[0]).hypot(q[1] - p[1])
         };
         let mut best: Option<(f64, usize, f64)> = None;
+        let n: usize = 64;
+        let r = (5f64.sqrt() - 1.0) / 2.0;
         for g in 0..self.sides.len() {
-            let n: usize = 64;
-            let k = (0..=n).min_by(|&a, &b| {
-                dist(g, a as f64 / n as f64).total_cmp(&dist(g, b as f64 / n as f64))
-            }).unwrap();
+            let samples: Vec<f64> = (0..=n).map(|k| dist(g, k as f64 / n as f64)).collect();
+            let k = (0..=n).min_by(|&a, &b| samples[a].total_cmp(&samples[b])).unwrap();
             let (mut a, mut b) = (k.saturating_sub(1) as f64 / n as f64,
                                   (k + 1).min(n) as f64 / n as f64);
-            let r = (5f64.sqrt() - 1.0) / 2.0;
-            for _ in 0..80 {
-                let (c, d) = (b - r * (b - a), a + r * (b - a));
-                if dist(g, c) < dist(g, d) { b = d } else { a = c }
+            // golden section, each step one new distance: 0.618⁶⁰ of a sample's span is past
+            // what a double resolves
+            let (mut c, mut d) = (b - r * (b - a), a + r * (b - a));
+            let (mut fc, mut fd) = (dist(g, c), dist(g, d));
+            for _ in 0..60 {
+                if fc < fd {
+                    (b, d, fd) = (d, c, fc);
+                    c = b - r * (b - a);
+                    fc = dist(g, c);
+                } else {
+                    (a, c, fc) = (c, d, fd);
+                    d = a + r * (b - a);
+                    fd = dist(g, d);
+                }
             }
             let s = 0.5 * (a + b);
             let d = dist(g, s);
@@ -264,14 +277,7 @@ impl Region {
 /// is none.
 fn property(sk: &Sketch, solid: usize, p: Property) -> Result<f64, String> {
     let s = &sk.solids[solid];
-    let name = s.material.as_ref().ok_or_else(|| {
-        format!("`{}` is made of no material it can be read by: say what, `solid(…) of steel`",
-                s.name)
-    })?;
-    let si = sk.materials[name].get(p).ok_or_else(|| {
-        format!("`{}` is made of `{name}`, which states no `{}`", s.name, p.name())
-    })?;
-    Ok(sk.units.from_si(si, p.dim()))
+    crate::beams::made_of(sk, &s.name, s.material.as_deref(), "solid", p)
 }
 
 /// What a line of the scenario names on the region: nodes, the sides they are on, or the whole.
@@ -315,22 +321,22 @@ impl Unread {
 }
 
 impl Plated {
-    /// Solid `solid`'s region read in `plane` under scenario `sc`, meshed and loaded, or why it
-    /// cannot be.
-    fn new(sk: &Sketch, sc: &Scenario, solid: usize, plane: InPlane) -> Result<Plated, Unread> {
-        let region = Region::of(sk, solid)?;
+    /// `region` read in `plane` under scenario `sc`, meshed and loaded, or why it cannot be.
+    fn new(sk: &Sketch, sc: &Scenario, region: Region, plane: InPlane) -> Result<Plated, Unread> {
+        let solid = region.solid;
         let name = sk.solids[solid].name.clone();
         let young = property(sk, solid, Property::E)?;
         let nu = property(sk, solid, Property::Nu).map_err(|m| {
             format!("{m}: a reading in the plane reads Poisson's ratio")
         })?;
-        let rho = property(sk, solid, Property::Rho).unwrap_or(f64::NAN);
+        let rho = property(sk, solid, Property::Rho);
         // the points the scenario names in the region are nodes
         let named: Vec<P> = sc.applied().filter_map(|a| point_of(sk, &region, a)).collect();
         let mesh = region.mesh(sk, &named)?;
         let strain = plane == InPlane::Strain;
         let tris: Vec<Tri6> = mesh.tris.iter()
-            .map(|&n| Tri6 { n, e: young, nu, rho, depth: region.depth, strain }).collect();
+            .map(|&n| Tri6 { n, e: young, nu, rho: *rho.as_ref().unwrap_or(&f64::NAN),
+                             depth: region.depth, strain }).collect();
         let n = mesh.points.len();
         let x: Vec<f64> = mesh.points.iter().flatten().copied().collect();
         let elements: Vec<usize> = (0..tris.len()).collect();
@@ -408,7 +414,7 @@ impl Plated {
                          its plane has no move for", p.name)));
                 }
                 (LoadKind::Acceleration, _) => {
-                    let rho = property(sk, solid, Property::Rho)?;
+                    let rho = rho.clone()?;
                     p.s.laid.push(Laid::Body { elements: elements.clone(),
                                                force: [rho * f[0], rho * f[1]] });
                 }
@@ -433,15 +439,12 @@ impl Plated {
                 if e.i() == self.region.solid { On::Whole } else { On::Nothing }
             }
             Applied::Ent(e) if e.kind == EntKind::Face => {
-                match &sk.solids[self.region.solid].def {
-                    SolidDef::Prism { face, .. } if *face as usize == e.i() => On::Whole,
-                    _ => On::Nothing,
-                }
+                if self.region.is_face(sk, e.i()) { On::Whole } else { On::Nothing }
             }
             Applied::Ent(e) => {
                 // an edge of the drawing: the sides it is, by the places along it
-                let sides = self.sides_where(sk, |q| self.region.on_side(sk, q).is_some()
-                    && edge_holds(sk, *e, &self.region, q, tol));
+                let sides =
+                    self.region.sides_where(sk, |q| edge_holds(sk, *e, &self.region, q, tol));
                 if sides.is_empty() { On::Nothing } else { On::Sides(sides) }
             }
             Applied::Face(f) if f.solid as usize == self.region.solid => {
@@ -460,7 +463,7 @@ impl Plated {
                     On::Whole
                 } else {
                     let near = 1e-6 * self.region.extent + body.tolerance();
-                    On::Sides(self.sides_where(sk, |q| {
+                    On::Sides(self.region.sides_where(sk, |q| {
                         let p = self.region.lift(q);
                         faces.iter().any(|&fi| body.patch_distance(fi, p) <= near)
                     }))
@@ -470,19 +473,9 @@ impl Plated {
         })
     }
 
-    /// The region's sides whose three quarter points all pass `test`.
-    fn sides_where(&self, sk: &Sketch, test: impl Fn(P) -> bool) -> Vec<usize> {
-        (0..self.region.sides.len()).filter(|&g| {
-            [0.25, 0.5, 0.75].iter().all(|&s| test(self.region.sides[g].at(sk, s)))
-        }).collect()
-    }
-
     /// The node at `p`, within `tol`.
     fn node_at(&self, p: P, tol: f64) -> Option<usize> {
-        (0..self.mesh.points.len()).map(|i| {
-            let q = self.mesh.points[i];
-            ((q[0] - p[0]).hypot(q[1] - p[1]), i)
-        }).filter(|&(d, _)| d <= tol).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, i)| i)
+        node_at(&self.mesh, p, tol)
     }
 
     /// The segments of sides `g`, each `[first, middle, last]` with the material on its left.
@@ -504,6 +497,14 @@ impl Plated {
     }
 }
 
+/// The node of `mesh` nearest `p`, within `tol`.
+fn node_at(mesh: &Mesh, p: P, tol: f64) -> Option<usize> {
+    (0..mesh.points.len()).map(|i| {
+        let q = mesh.points[i];
+        ((q[0] - p[0]).hypot(q[1] - p[1]), i)
+    }).filter(|&(d, _)| d <= tol).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, i)| i)
+}
+
 /// Where a point a line names is in the region's plane, if it is a point standing in it (within
 /// the prism's depth of its middle).
 fn point_of(sk: &Sketch, region: &Region, a: &Applied) -> Option<P> {
@@ -517,15 +518,15 @@ fn point_of(sk: &Sketch, region: &Region, a: &Applied) -> Option<P> {
     (within && (region.on_side(sk, p).is_some() || inside(sk, region, p))).then_some(p)
 }
 
-/// Whether what a line names, not a solid's, falls on `region`: a point in it, or an edge of the
-/// drawing that one of its sides runs along.
+/// Whether what a line names, not a solid's, falls on `region`: a point in it, its face, or an
+/// edge of the drawing that one of its sides runs along — what `Plated::on` reads on it.
 fn falls_on(sk: &Sketch, region: &Region, a: &Applied) -> bool {
     match a {
         Applied::Ent(e) if e.kind == EntKind::Point => point_of(sk, region, a).is_some(),
-        Applied::Ent(e) if e.kind.runs_along() => region.sides.iter().any(|b| {
-            [0.25, 0.5, 0.75].iter().all(|&s| edge_holds(sk, *e, region, b.at(sk, s),
-                                                          ON * region.extent))
-        }),
+        Applied::Ent(e) if e.kind == EntKind::Face => region.is_face(sk, e.i()),
+        Applied::Ent(e) if e.kind.runs_along() => !region.sides_where(sk, |q| {
+            edge_holds(sk, *e, region, q, ON * region.extent)
+        }).is_empty(),
         _ => false,
     }
 }
@@ -581,10 +582,10 @@ struct Analysed {
 }
 
 impl Analysed {
-    fn new(sk: &Sketch, sc: &Scenario, solid: usize, plane: InPlane, modes: usize)
+    fn new(sk: &Sketch, sc: &Scenario, region: Region, plane: InPlane, modes: usize)
         -> Result<Analysed, Unread>
     {
-        let p = Plated::new(sk, sc, solid, plane)?;
+        let p = Plated::new(sk, sc, region, plane)?;
         let st = p.s.solve(&p.x).map_err(|why| unsolved(&p, why))?;
         Ok(Analysed { p, st, modes, pairs: OnceCell::new(), stresses: OnceCell::new() })
     }
@@ -666,15 +667,16 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
         return out;
     }
     // each reading's region, for which lines fall on it
-    let regions: Vec<(usize, InPlane, Option<Region>)> = sc.readings.iter().filter_map(|r| {
-        let solid = r.of.solid()?;
-        Some((solid, r.plane, Region::of(sk, solid).ok()))
-    }).collect();
+    let regions: Vec<(usize, InPlane, Result<Region, String>)> =
+        sc.readings.iter().filter_map(|r| {
+            let solid = r.of.solid()?;
+            Some((solid, r.plane, Region::of(sk, solid)))
+        }).collect();
     let of = |a: &Applied| -> Option<usize> {
         match a.solid() {
             Some(s) => regions.iter().position(|(solid, _, _)| *solid == s),
             None => regions.iter()
-                .position(|(_, _, r)| r.as_ref().is_some_and(|r| falls_on(sk, r, a))),
+                .position(|(_, _, r)| r.as_ref().is_ok_and(|r| falls_on(sk, r, a))),
         }
     };
     for (k, s) in sc.supports.iter().enumerate() {
@@ -690,11 +692,14 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
         (0..regions.len()).map(|_| None).collect();
     for (k, r) in sc.requirements.iter().enumerate() {
         let Some(i) = of(&r.of) else { continue };
-        let (solid, plane, _) = regions[i];
-        let a = read[i].get_or_insert_with(|| Analysed::new(sk, sc, solid, plane, modes[i]));
+        let (solid, plane, region) = &regions[i];
+        let a = read[i].get_or_insert_with(|| {
+            let region = region.clone()?;
+            Analysed::new(sk, sc, region, *plane, modes[i])
+        });
         out.answers[k] = Some(match a {
             Ok(a) => answer(sk, a, r),
-            Err(m) => Err(m.text(&sk.solids[solid].name)),
+            Err(m) => Err(m.text(&sk.solids[*solid].name)),
         });
     }
     for (i, a) in read.iter().enumerate() {
@@ -798,10 +803,7 @@ fn region_of(sk: &Sketch, sc: &Scenario, at: usize) -> Option<(usize, InPlane, R
 /// **Whether what a requirement names is a point of a region the scenario reads in its plane**
 /// (#510 S2): what a driving row over a region may be compiled at.
 pub fn of_region(sk: &Sketch, sc: &Scenario, of: &Applied) -> bool {
-    matches!(of, Applied::Ent(e) if e.kind == EntKind::Point) && match of {
-        Applied::Ent(e) => region_of(sk, sc, e.i()).is_some(),
-        _ => false,
-    }
+    matches!(of, Applied::Ent(e) if e.kind == EntKind::Point && region_of(sk, sc, e.i()).is_some())
 }
 
 impl Row {
@@ -810,17 +812,8 @@ impl Row {
     /// load's) or a plane it turns, a side the row does not move (a spline's, a curve's), or a
     /// region that cannot be read at all.
     pub fn of(sk: &Sketch, sc: &Scenario, at: usize, along: EntRef) -> Result<Row, String> {
-        for d in [Some(along)].into_iter().chain(sc.loads.iter().map(|l| match l.value {
-            LoadValue::Along { along, .. } => Some(along),
-            _ => None,
-        })).flatten() {
-            if !sk.direction_held(d) {
-                return Err("its direction moves in the solve, and a driving row reads every \
-                            direction as it stands: name an axis the drawing holds, or a line \
-                            whose ends it holds".to_string());
-            }
-        }
-        let (solid, plane, _) = region_of(sk, sc, at)
+        crate::beams::directions_held(sk, sc, along)?;
+        let (solid, plane, region) = region_of(sk, sc, at)
             .ok_or("it is of a point of no region the scenario reads in its plane")?;
         let SolidDef::Prism { face, .. } = sk.solids[solid].def else {
             return Err("it is read over no prism".to_string());
@@ -830,15 +823,10 @@ impl Row {
             return Err("the plane its region is drawn in moves in the solve, and a driving row \
                         reads its axes as they stand".to_string());
         }
-        let p = Plated::new(sk, sc, solid, plane).map_err(|u| u.text(&sk.solids[solid].name))?;
+        let p = Plated::new(sk, sc, region, plane).map_err(|u| u.text(&sk.solids[solid].name))?;
         let Plated { region, mesh, mut s, x, .. } = p;
         let tol = ON * region.extent;
-        let node_at = |q: P| -> Option<usize> {
-            (0..mesh.points.len()).map(|i| {
-                let m = mesh.points[i];
-                ((m[0] - q[0]).hypot(m[1] - q[1]), i)
-            }).filter(|&(d, _)| d <= tol).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, i)| i)
-        };
+        let node_at = |q: P| node_at(&mesh, q, tol);
         let (here, _) = region.local(sk.world_point(at));
         let node = node_at(here).ok_or("its point is no node of its region's mesh")?;
         let (d, _) = region.along(direction(sk, along)?);
@@ -859,18 +847,18 @@ impl Row {
             edges.push(match *b {
                 Bound::Line { a, b } => {
                     let (a, b) = (col_of(a, &mut columns), col_of(b, &mut columns));
-                    crate::interior::Edge::Line { a, b }
+                    Edge::Line { a, b }
                 }
                 Bound::Arc { c, r, from, to, ccw } => {
                     let c = col_of(c, &mut columns);
                     let (from, to) = (col_of(from, &mut columns), col_of(to, &mut columns));
                     columns.push(r as u32);
-                    crate::interior::Edge::Arc { c, from, to, r: columns.len() - 1, ccw }
+                    Edge::Arc { c, from, to, r: columns.len() - 1, ccw }
                 }
                 Bound::Circle { c, r } => {
                     let c = col_of(c, &mut columns);
                     columns.push(r as u32);
-                    crate::interior::Edge::Circle { c, r: columns.len() - 1 }
+                    Edge::Circle { c, r: columns.len() - 1 }
                 }
                 Bound::Curved { .. } => return Err("its region is bounded by a spline or a curve, \
                                                     which a driving row does not move yet"
@@ -902,11 +890,11 @@ impl Row {
                 }
             }
         }
-        let nodes: Vec<crate::interior::Node> = (0..mesh.points.len()).map(|i| {
+        let nodes: Vec<Node> = (0..mesh.points.len()).map(|i| {
             match (at_point[i], mesh.on[i]) {
-                (Some(q), _) => crate::interior::Node::At(col_of(q, &mut columns)),
-                (None, Some((g, t))) => crate::interior::Node::On(g, t),
-                (None, None) => crate::interior::Node::Inner,
+                (Some(q), _) => Node::At(col_of(q, &mut columns)),
+                (None, Some((g, t))) => Node::On(g, t),
+                (None, None) => Node::Inner,
             }
         }).collect();
         let laplace = crate::interior::Moved::laplacian(&mesh.tris, &x);

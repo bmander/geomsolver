@@ -241,37 +241,36 @@ impl Structure {
     /// rounding is a motion the supports leave free.
     pub fn solve(&self, x: &[f64]) -> Result<State, Failure> {
         let (eq, n_eq) = self.equations();
-        if !self.tris.is_empty() {
+        let mut rhs: Vec<f64> = eq.iter().zip(self.forces(x)).filter(|(e, _)| e.is_some())
+            .map(|(_, v)| v).collect();
+        let factor = if !self.tris.is_empty() {
             let mut t = Vec::new();
             self.tris_into(&eq, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
             let k = crate::cholesky::Symmetric::from_triplets(n_eq, &t);
             let mut c = crate::cholesky::Cholesky::analyse(&k, crate::cholesky::Ordering::Amd);
             c.factor(&k).map_err(|_| Failure::Free)?;
-            let mut st = State { ata: Factor::Cholesky(c), eq, u: Vec::new() };
-            let mut rhs = st.gather(&self.forces(x));
-            st.ata.resolve(&mut rhs);
+            c.solve(&mut rhs);
             if rhs.iter().any(|v| !v.is_finite()) {
                 return Err(Failure::Free);
             }
-            st.u = st.scatter(&rhs);
-            return Ok(st);
-        }
-        let (mut indptr, mut indices, mut data) = (vec![0i32], Vec::new(), Vec::new());
-        self.rows(x, &eq, |row| {
-            for &(e, v) in row {
-                indices.push(e as i32);
-                data.push(v);
+            Factor::Cholesky(c)
+        } else {
+            let (mut indptr, mut indices, mut data) = (vec![0i32], Vec::new(), Vec::new());
+            self.rows(x, &eq, |row| {
+                for &(e, v) in row {
+                    indices.push(e as i32);
+                    data.push(v);
+                }
+                indptr.push(indices.len() as i32);
+            })?;
+            let mut ata = Ata::new(indptr.len() - 1, n_eq, &indptr, &indices);
+            ata.fill(&data);
+            if !ata.solve(&vec![0.0; n_eq], &mut rhs) || ata.least_pivot() < SINGULAR {
+                return Err(Failure::Free);
             }
-            indptr.push(indices.len() as i32);
-        })?;
-        let mut ata = Ata::new(indptr.len() - 1, n_eq, &indptr, &indices);
-        ata.fill(&data);
-        let mut rhs: Vec<f64> = eq.iter().zip(self.forces(x)).filter(|(e, _)| e.is_some())
-            .map(|(_, v)| v).collect();
-        if !ata.solve(&vec![0.0; n_eq], &mut rhs) || ata.least_pivot() < SINGULAR {
-            return Err(Failure::Free);
-        }
-        let mut st = State { ata: Factor::Ata(ata), eq, u: Vec::new() };
+            Factor::Ata(ata)
+        };
+        let mut st = State { ata: factor, eq, u: Vec::new() };
         st.u = st.scatter(&rhs);
         Ok(st)
     }
@@ -894,48 +893,41 @@ impl Structure {
         [x[2 * n], x[2 * n + 1]]
     }
 
-    /// **A load laid on the plane, as `λᵀf` over the places** (#510 S2): each side's or element's
-    /// share, its value and its rates over its own nodes' coordinates (a side's three nodes the
-    /// first six of the twelve), handed to `each` with its nodes and the measure an even load is
-    /// spread by, its length or its area.  `lam` gives each node's multipliers.
-    fn laid_work<const N: usize>(&self, l: &Laid, x: &[f64], lam: &dyn Fn(usize) -> [f64; 2],
-                                 mut each: impl FnMut(&[usize], Dual<N>, Dual<N>)) {
+    /// **Each side's and element's share of a load laid on the plane** (#510 S2), at `x`, over a
+    /// number that may carry rates (`N` = 12 its nodes' coordinates, a side's three the first six;
+    /// 0 none): its nodes, their forces, and the measure an even load is spread by.
+    fn laid_shares<const N: usize>(&self, l: &Laid, x: &[f64])
+        -> Vec<(Vec<usize>, Vec<[Dual<N>; 2]>, Dual<N>)>
+    {
+        let place = |n: usize, k: usize| -> plane::P<Dual<N>> {
+            let p = self.place2(n, x);
+            if N == 0 { p.map(Dual::cst) } else { plane::var(p, 2 * k) }
+        };
+        let mut out = Vec::new();
         for side in l.sides() {
-            let p: [plane::P<Dual<N>>; 3] =
-                std::array::from_fn(|k| plane::var(self.place2(side[k], x), 2 * k));
-            let (w, m) = plane::side_work(l, &p, &side.map(lam));
-            each(side, w, m);
+            let (f, m) = plane::side_load(l, &std::array::from_fn(|k| place(side[k], k)));
+            out.push((side.to_vec(), f.to_vec(), m));
         }
         for &e in l.elements() {
-            let n = self.tris[e].n;
-            let p: [plane::P<Dual<N>>; 6] =
-                std::array::from_fn(|k| plane::var(self.place2(n[k], x), 2 * k));
-            let (w, m) = plane::element_work(l, &p, &n.map(lam), self.tris[e].depth);
-            each(&n, w, m);
+            let t = &self.tris[e];
+            let (f, m) =
+                plane::element_load(l, &std::array::from_fn(|k| place(t.n[k], k)), t.depth);
+            out.push((t.n.to_vec(), f.to_vec(), m));
         }
+        out
     }
 
     /// The loads laid on the plane at `x`, added into `f` per degree of freedom: each side's or
     /// element's consistent load at its nodes, an even load's over the measure it is spread by.
     fn laid_forces(&self, x: &[f64], f: &mut [f64]) {
         for l in &self.laid {
-            let mut shares: Vec<(usize, [f64; 2])> = Vec::new();
-            let mut measure = 0.0;
-            for side in l.sides() {
-                let (at, m) = plane::side_forces(l, &side.map(|n| self.place2(n, x)));
-                shares.extend(side.iter().copied().zip(at));
-                measure += m;
-            }
-            for &e in l.elements() {
-                let t = &self.tris[e];
-                let (at, m) = plane::element_forces(l, &t.n.map(|n| self.place2(n, x)), t.depth);
-                shares.extend(t.n.iter().copied().zip(at));
-                measure += m;
-            }
-            let by = if l.even() { measure } else { 1.0 };
-            for (n, v) in shares {
-                for c in 0..2 {
-                    f[self.dof(n, c).unwrap()] += v[c] / by;
+            let shares = self.laid_shares::<0>(l, x);
+            let by = if l.even() { shares.iter().map(|s| s.2.v).sum() } else { 1.0 };
+            for (nodes, at, _) in shares {
+                for (n, v) in nodes.into_iter().zip(at) {
+                    for c in 0..2 {
+                        f[self.dof(n, c).unwrap()] += v[c].v / by;
+                    }
                 }
             }
         }
@@ -946,15 +938,21 @@ impl Structure {
     /// S`, `S` the length or the area it is spread over, so each place also reads `−(Σ λᵀfₑ)/S² ·
     /// ∂S`.
     fn laid_into(&self, lam: &[f64], x: &[f64], g: &mut [f64]) {
-        let at = |n: usize| [lam[self.dof(n, 0).unwrap()], lam[self.dof(n, 1).unwrap()]];
         for l in &self.laid {
             let mut parts: Vec<(Vec<usize>, [f64; 12], [f64; 12])> = Vec::new();
             let (mut whole, mut measure) = (0.0, 0.0);
-            self.laid_work::<12>(l, x, &at, |nodes, w, m| {
+            for (nodes, f, m) in self.laid_shares::<12>(l, x) {
+                // λᵀfₑ, its rates in the element's coordinates
+                let mut w = Dual::<12>::cst(0.0);
+                for (&n, fk) in nodes.iter().zip(&f) {
+                    for c in 0..2 {
+                        w = w + fk[c] * Dual::cst(lam[self.dof(n, c).unwrap()]);
+                    }
+                }
                 whole += w.v;
                 measure += m.v;
-                parts.push((nodes.to_vec(), w.g, m.g));
-            });
+                parts.push((nodes, w.g, m.g));
+            }
             let (by, less) =
                 if l.even() { (measure, whole / (measure * measure)) } else { (1.0, 0.0) };
             for (nodes, dw, dm) in parts {
@@ -1157,17 +1155,17 @@ const BEAM: usize = 8;
 const TRI: usize = 11;
 
 /// A laid load's constants before what it lies on: its kind, how many sides or elements, and
-/// three numbers (a pressure and its depth, or a force).
-const LAID: usize = 5;
+/// two numbers (a pressure and its depth, or a force).
+const LAID: usize = 4;
 
 impl Laid {
-    /// Its constants: `[kind, count, a, b, c]`, then each side's three nodes or each element.
+    /// Its constants: `[kind, count, a, b]`, then each side's three nodes or each element.
     fn consts(&self) -> Vec<f64> {
         let (kind, head) = match self {
-            Laid::Pressure { p, depth, .. } => (0.0, [*p, *depth, 0.0]),
-            Laid::Along { force, .. } => (1.0, [force[0], force[1], 0.0]),
-            Laid::Over { force, .. } => (2.0, [force[0], force[1], 0.0]),
-            Laid::Body { force, .. } => (3.0, [force[0], force[1], 0.0]),
+            Laid::Pressure { p, depth, .. } => (0.0, [*p, *depth]),
+            Laid::Along { force, .. } => (1.0, *force),
+            Laid::Over { force, .. } => (2.0, *force),
+            Laid::Body { force, .. } => (3.0, *force),
         };
         let count = self.sides().len() + self.elements().len();
         let mut k = vec![kind, count as f64];
@@ -1317,24 +1315,22 @@ impl Structure {
         for _ in 0..n_laid {
             let c = take(LAID)?;
             let n = count(c[1])?;
-            let l = match c[0] {
-                k if k == 0.0 || k == 1.0 => {
-                    let sides: Option<Vec<[usize; 3]>> = take(3 * n)?.as_chunks::<3>().0.iter()
-                        .map(|s| Some([node(s[0])?, node(s[1])?, node(s[2])?])).collect();
-                    match k == 0.0 {
-                        true => Laid::Pressure { sides: sides?, p: c[2], depth: c[3] },
-                        false => Laid::Along { sides: sides?, force: [c[2], c[3]] },
-                    }
+            let (kind, a, b) = (count(c[0])?, c[2], c[3]);
+            let l = if kind < 2 {
+                let sides: Vec<[usize; 3]> = take(3 * n)?.as_chunks::<3>().0.iter()
+                    .map(|s| Some([node(s[0])?, node(s[1])?, node(s[2])?])).collect::<Option<_>>()?;
+                match kind {
+                    0 => Laid::Pressure { sides, p: a, depth: b },
+                    _ => Laid::Along { sides, force: [a, b] },
                 }
-                k if k == 2.0 || k == 3.0 => {
-                    let elements: Option<Vec<usize>> =
-                        take(n)?.iter().map(|&v| count(v).filter(|&i| i < n_tris)).collect();
-                    match k == 2.0 {
-                        true => Laid::Over { elements: elements?, force: [c[2], c[3]] },
-                        false => Laid::Body { elements: elements?, force: [c[2], c[3]] },
-                    }
+            } else {
+                let elements: Vec<usize> = take(n)?.iter()
+                    .map(|&v| count(v).filter(|&i| i < n_tris)).collect::<Option<_>>()?;
+                match kind {
+                    2 => Laid::Over { elements, force: [a, b] },
+                    3 => Laid::Body { elements, force: [a, b] },
+                    _ => return None,
                 }
-                _ => return None,
             };
             laid.push(l);
         }
@@ -1355,8 +1351,9 @@ impl Structure {
             tris,
             laid,
         };
-        // a plane element is of the plane, and moves without turning
-        if !(dim == 2 || dim == 3) || (!s.tris.is_empty() && (dim != 2 || !s.beams.is_empty())) {
+        // a plane element is of the plane, moves without turning, and is no member's
+        let mixed = !s.beams.is_empty() || !s.bars.is_empty();
+        if !(dim == 2 || dim == 3) || (!s.tris.is_empty() && (dim != 2 || mixed)) {
             return None;
         }
         let per = take(3 * s.per() * nodes)?.as_chunks::<3>().0;

@@ -261,11 +261,11 @@ pub struct Sketch {
     /// elaboration and carried by the Solvent source alone, as a beam is: never written to JSON.
     pub scenarios: Vec<Scenario>,
     /// **The regions a driving row over a plane reads** (#510 S2): each meshed once, where the
-    /// drawing stood when its row was compiled (`prisms::Row`), by the scenario's index here and
-    /// the point the deflection is of — so every compile of the row through a solve reads one
-    /// topology, its nodes moving with the drawing.  Set by elaboration with the row, carried by
-    /// the Solvent source alone.
-    pub meshed: BTreeMap<(usize, usize), crate::prisms::Row>,
+    /// drawing stood when its row was compiled (`prisms::Row`), by what the row names — the
+    /// scenario's index here, the point and the direction — so every compile of the row through
+    /// a solve reads one topology, its nodes moving with the drawing, and shares it rather than
+    /// copying it.  Set by elaboration with the row, carried by the Solvent source alone.
+    pub meshed: BTreeMap<(usize, usize, EntRef), std::sync::Arc<crate::prisms::Row>>,
     /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
     /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
     /// Presentation, as a wobble is: what is drawn moves and the document does not — a march

@@ -70,15 +70,13 @@ pub struct Mesh {
     pub sides: Vec<Vec<[usize; 3]>>,
 }
 
-/// A segment of the boundary: its ends (vertices), its side, their parameters along it, and
-/// whether a split has replaced it.
+/// A segment of the boundary: its ends (vertices), its side, and their parameters along it.
 #[derive(Clone, Copy, Debug)]
 struct Seg {
     a: u32,
     b: u32,
     side: usize,
     s: [f64; 2],
-    alive: bool,
 }
 
 /// The triangulation being refined: points, triangles counter-clockwise with their neighbours
@@ -89,7 +87,6 @@ struct Tri {
     on: Vec<Option<(usize, f64)>>,
     tris: Vec<[u32; 3]>,
     nbr: Vec<[u32; 3]>,
-    alive: Vec<bool>,
     about: Vec<u32>,
     inside: Vec<bool>,
     last: usize,
@@ -107,12 +104,10 @@ impl Tri {
         if t == self.tris.len() {
             self.tris.push(tri);
             self.nbr.push(nbr);
-            self.alive.push(true);
             self.inside.push(false);
         } else {
             self.tris[t] = tri;
             self.nbr[t] = nbr;
-            self.alive[t] = true;
         }
         for v in tri {
             self.about[v as usize] = t as u32;
@@ -122,8 +117,8 @@ impl Tri {
     /// The triangle holding `p`, on its sides included, walked to from the last one reached.
     fn locate(&mut self, p: P) -> Option<usize> {
         let mut t = self.last;
-        if !self.alive.get(t).copied().unwrap_or(false) {
-            t = self.alive.iter().position(|&a| a)?;
+        if t >= self.tris.len() {
+            t = 0;
         }
         for step in 0..=self.tris.len() {
             let mut next = None;
@@ -145,7 +140,7 @@ impl Tri {
             }
         }
         (0..self.tris.len()).find(|&t| {
-            self.alive[t] && (0..3).all(|k| {
+            (0..3).all(|k| {
                 orient2(self.p(self.tris[t][k]), self.p(self.tris[t][(k + 1) % 3]), p) >= 0
             })
         })
@@ -153,9 +148,9 @@ impl Tri {
 
     /// Point `p` into the triangulation (Bowyer–Watson): every triangle whose circle holds it, a
     /// connected cavity about the one it lies in, replaced by the fan from it to the cavity's
-    /// rim.  The new triangles, and whether the cavity was all of the region; `None` where `p`
-    /// lies outside or on a point already there.
-    fn insert(&mut self, p: P, on: Option<(usize, f64)>) -> Option<(u32, Vec<usize>, bool)> {
+    /// rim.  The new point, and whether the cavity was all of the region; `None` where `p` lies
+    /// outside or on a point already there.
+    fn insert(&mut self, p: P, on: Option<(usize, f64)>) -> Option<(u32, bool)> {
         let t0 = self.locate(p)?;
         if self.tris[t0].iter().any(|&v| self.p(v) == p) {
             return None;
@@ -222,7 +217,7 @@ impl Tri {
             self.inside[t] = inside;
         }
         self.last = made[0];
-        Some((v, made, inside))
+        Some((v, inside))
     }
 
     /// The triangle with the side from `a` to `b` counter-clockwise (so on that side's left), and
@@ -310,7 +305,7 @@ pub fn mesh(region: &Region, criteria: &Criteria) -> Result<Mesh, String> {
             let g = first + k;
             let side = &lp[k];
             let end = (side.at)(1.0);
-            let next = (region.loops[li][(k + 1) % lp.len()].at)(0.0);
+            let next = (lp[(k + 1) % lp.len()].at)(0.0);
             let gap = (end[0] - next[0]).hypot(end[1] - next[1]);
             let across = {
                 let (a, b) = ((side.at)(0.0), end);
@@ -333,11 +328,8 @@ pub fn mesh(region: &Region, criteria: &Criteria) -> Result<Mesh, String> {
             return Err("a loop of the region bounds nothing".to_string());
         }
         // the outer loop counter-clockwise, a hole clockwise
-        let area: f64 = (0..pts.len()).map(|i| {
-            let (p, q) = (pts[i].0, pts[(i + 1) % pts.len()].0);
-            p[0] * q[1] - q[0] * p[1]
-        }).sum();
-        backward.push((area > 0.0) != (li == 0));
+        let ring: Vec<(f64, f64)> = pts.iter().map(|&(p, _, _)| (p[0], p[1])).collect();
+        backward.push((crate::solid::ring_area(&ring) > 0.0) != (li == 0));
         loops.push(pts);
         first += lp.len();
     }
@@ -353,7 +345,6 @@ pub fn mesh(region: &Region, criteria: &Criteria) -> Result<Mesh, String> {
         on: vec![None; 3],
         tris: vec![[0, 1, 2]],
         nbr: vec![[NONE; 3]],
-        alive: vec![true],
         about: vec![0, 0, 0],
         inside: vec![false],
         last: 0,
@@ -366,7 +357,7 @@ pub fn mesh(region: &Region, criteria: &Criteria) -> Result<Mesh, String> {
     let mut segs: Vec<Seg> = Vec::new();
     for (lp, &back) in loops.iter().zip(&backward) {
         let ids: Vec<u32> = lp.iter().map(|&(p, g, s)| {
-            tri.insert(p, Some((g, s))).map(|(v, _, _)| v)
+            tri.insert(p, Some((g, s))).map(|(v, _)| v)
                 .ok_or_else(|| "two points of the region's boundary are one".to_string())
         }).collect::<Result<_, _>>()?;
         for i in 0..lp.len() {
@@ -374,8 +365,8 @@ pub fn mesh(region: &Region, criteria: &Criteria) -> Result<Mesh, String> {
             let (side, s0) = (lp[i].1, lp[i].2);
             let s1 = if lp[j].1 == side && lp[j].2 > s0 { lp[j].2 } else { 1.0 };
             segs.push(match back {
-                false => Seg { a: ids[i], b: ids[j], side, s: [s0, s1], alive: true },
-                true => Seg { a: ids[j], b: ids[i], side, s: [s1, s0], alive: true },
+                false => Seg { a: ids[i], b: ids[j], side, s: [s0, s1] },
+                true => Seg { a: ids[j], b: ids[i], side, s: [s1, s0] },
             });
         }
     }
@@ -437,18 +428,10 @@ fn refine(tri: &mut Tri, segs: &mut Vec<Seg>, sides: &[&Side], criteria: &Criter
 {
     let mut stuck: BTreeSet<[u32; 3]> = BTreeSet::new();
     loop {
-        // conform: no segment encroached
-        let mut queue: Vec<usize> = (0..segs.len()).filter(|&i| segs[i].alive).collect();
-        while let Some(i) = queue.pop() {
-            if !segs[i].alive || !tri.encroached(&segs[i]) {
-                continue;
-            }
-            let made = split(tri, segs, sides, i)?;
-            queue.extend(made);
-            // a split may encroach the segments about it
-            queue.extend((0..segs.len()).filter(|&j| segs[j].alive));
-            queue.sort_unstable();
-            queue.dedup();
+        // conform: no segment encroached, each split looked at again with every other, as a
+        // split may encroach the segments about it
+        while let Some(i) = (0..segs.len()).rev().find(|&i| tri.encroached(&segs[i])) {
+            split(tri, segs, sides, i)?;
             if tri.pts.len() > criteria.most {
                 return Err(too_many(criteria));
             }
@@ -456,23 +439,20 @@ fn refine(tri: &mut Tri, segs: &mut Vec<Seg>, sides: &[&Side], criteria: &Criter
         classify(tri, segs);
         // the bad triangles of the region, by index
         let worse: Vec<usize> = (0..tri.tris.len()).filter(|&t| {
-            tri.alive[t] && tri.inside[t] && bad(tri, t, criteria)
+            tri.inside[t] && bad(tri, t, criteria)
                 && !stuck.contains(&tri.tris[t])
         }).collect();
         if worse.is_empty() {
             return Ok(());
         }
         for t in worse {
-            if !tri.alive[t] || !tri.inside[t] || !bad(tri, t, criteria) {
+            if !tri.inside[t] || !bad(tri, t, criteria) {
                 continue;
             }
             let (c, _, _) = tri.circle(t);
             let near: Vec<usize> = (0..segs.len()).filter(|&i| {
-                let s = &segs[i];
-                s.alive && {
-                    let (a, b) = (tri.p(s.a), tri.p(s.b));
-                    (c[0] - a[0]) * (c[0] - b[0]) + (c[1] - a[1]) * (c[1] - b[1]) < 0.0
-                }
+                let (a, b) = (tri.p(segs[i].a), tri.p(segs[i].b));
+                (c[0] - a[0]) * (c[0] - b[0]) + (c[1] - a[1]) * (c[1] - b[1]) < 0.0
             }).collect();
             if !near.is_empty() {
                 for i in near {
@@ -482,7 +462,7 @@ fn refine(tri: &mut Tri, segs: &mut Vec<Seg>, sides: &[&Side], criteria: &Criter
                 break;
             }
             match tri.insert(c, None) {
-                Some((_, _, true)) => {}
+                Some((_, true)) => {}
                 // a centre on a point, or one the region does not hold: left, never tried again
                 _ => {
                     stuck.insert(tri.tris[t]);
@@ -506,30 +486,28 @@ fn bad(tri: &Tri, t: usize, criteria: &Criteria) -> bool {
     r > criteria.ratio * least || r > criteria.size
 }
 
-/// Segment `i` split at its parameter's middle, on its curve: the two halves' indices.
-fn split(tri: &mut Tri, segs: &mut Vec<Seg>, sides: &[&Side], i: usize)
-    -> Result<Vec<usize>, String>
-{
+/// Segment `i` split at its parameter's middle, on its curve: its first half in its place, its
+/// second after the last.
+fn split(tri: &mut Tri, segs: &mut Vec<Seg>, sides: &[&Side], i: usize) -> Result<(), String> {
     let s = segs[i];
     let m = 0.5 * (s.s[0] + s.s[1]);
     let p = (sides[s.side].at)(m);
-    let (v, _, _) = tri.insert(p, Some((s.side, m))).ok_or_else(|| {
+    let (v, _) = tri.insert(p, Some((s.side, m))).ok_or_else(|| {
         "a segment of the region's boundary could not be split: its middle is a point already, or \
          lies outside the triangulation".to_string()
     })?;
-    segs[i].alive = false;
-    segs.push(Seg { a: s.a, b: v, side: s.side, s: [s.s[0], m], alive: true });
-    segs.push(Seg { a: v, b: s.b, side: s.side, s: [m, s.s[1]], alive: true });
-    Ok(vec![segs.len() - 2, segs.len() - 1])
+    segs[i] = Seg { a: s.a, b: v, side: s.side, s: [s.s[0], m] };
+    segs.push(Seg { a: v, b: s.b, side: s.side, s: [m, s.s[1]] });
+    Ok(())
 }
 
 /// Which triangles are of the region: those on each segment's left, and every one reached from
 /// them without crossing a segment.
 fn classify(tri: &mut Tri, segs: &[Seg]) {
     let held: BTreeSet<(u32, u32)> =
-        segs.iter().filter(|s| s.alive).map(|s| (s.a.min(s.b), s.a.max(s.b))).collect();
+        segs.iter().map(|s| (s.a.min(s.b), s.a.max(s.b))).collect();
     tri.inside.iter_mut().for_each(|v| *v = false);
-    let mut stack: Vec<usize> = segs.iter().filter(|s| s.alive)
+    let mut stack: Vec<usize> = segs.iter()
         .filter_map(|s| tri.edge(s.a, s.b).map(|(t, _)| t)).collect();
     for &t in &stack {
         tri.inside[t] = true;
@@ -553,7 +531,7 @@ fn extract(tri: &Tri, segs: &[Seg], sides: &[&Side]) -> Mesh {
     let mut index: Vec<Option<usize>> = vec![None; tri.pts.len()];
     let mut out = Mesh { points: Vec::new(), on: Vec::new(), tris: Vec::new(),
                          sides: vec![Vec::new(); sides.len()] };
-    let kept: Vec<usize> = (0..tri.tris.len()).filter(|&t| tri.alive[t] && tri.inside[t]).collect();
+    let kept: Vec<usize> = (0..tri.tris.len()).filter(|&t| tri.inside[t]).collect();
     for &t in &kept {
         for v in tri.tris[t] {
             if index[v as usize].is_none() {
@@ -564,7 +542,7 @@ fn extract(tri: &Tri, segs: &[Seg], sides: &[&Side]) -> Mesh {
         }
     }
     let by_edge: BTreeMap<(u32, u32), &Seg> =
-        segs.iter().filter(|s| s.alive).map(|s| ((s.a.min(s.b), s.a.max(s.b)), s)).collect();
+        segs.iter().map(|s| ((s.a.min(s.b), s.a.max(s.b)), s)).collect();
     let mut middles: BTreeMap<(u32, u32), usize> = BTreeMap::new();
     for &t in &kept {
         let c = tri.tris[t];
@@ -593,7 +571,7 @@ fn extract(tri: &Tri, segs: &[Seg], sides: &[&Side]) -> Mesh {
     }
     // each side's segments, along its loop: chained from end to end
     let mut along: Vec<Vec<&Seg>> = vec![Vec::new(); sides.len()];
-    for s in segs.iter().filter(|s| s.alive) {
+    for s in segs.iter() {
         along[s.side].push(s);
     }
     for (g, list) in along.iter().enumerate() {

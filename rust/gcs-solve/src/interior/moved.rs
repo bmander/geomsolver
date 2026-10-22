@@ -12,11 +12,12 @@
 //! (its elements each cut into their four straight triangles).  A cotangent Laplacian of a plane
 //! mesh leaves a linear function harmonic, so with no move the nodes stand where they were meshed,
 //! to rounding; and it is the stiffness of the linear Poisson element, positive definite once the
-//! boundary is held, so it factors (`sparse::Ldl`) and its rate is one more solve on that factor:
+//! boundary is held, so it factors (`cholesky::Cholesky` under minimum degree, as the structure
+//! over the same mesh does) and its rate is one more solve on that factor:
 //! a gradient in the inner nodes reaches the boundary as `−L_IBᵀ L_II⁻¹ g_I`.
 
 use crate::kernels::{Dual, Num};
-use crate::sparse::{Ldl, Sym};
+use crate::cholesky::{Cholesky, Ordering, Symmetric};
 
 /// A side of the region, as the row's columns read it: each point by the column of its x (its y
 /// the next), a radius by its column.
@@ -53,7 +54,7 @@ pub struct Moved {
 pub struct Placed {
     pub x: Vec<f64>,
     inner: Vec<Option<usize>>,
-    factor: Option<Ldl>,
+    factor: Option<Cholesky>,
 }
 
 impl Edge {
@@ -66,8 +67,9 @@ impl Edge {
         }
     }
 
-    /// Its point at `s`, over its columns' numbers `q` (in `columns`'s order).
-    fn at<T: Num>(&self, q: &[T], s: f64) -> [T; 2] {
+    /// Its point at `s`, over its columns' numbers `q` (in `columns`'s order): the one reading of a
+    /// side, whose meshing (`prisms::Bound::at`) and moving read alike.
+    pub(crate) fn at<T: Num>(&self, q: &[T], s: f64) -> [T; 2] {
         let k = T::cst;
         match *self {
             Edge::Line { .. } => [q[0] + k(s) * (q[2] - q[0]), q[1] + k(s) * (q[3] - q[1])],
@@ -138,7 +140,9 @@ impl Moved {
                 }
             }
         }
-        let factor = Ldl::new(&Sym::from_triplets(m, &t))?;
+        let l = Symmetric::from_triplets(m, &t);
+        let mut factor = Cholesky::analyse(&l, Ordering::Amd);
+        factor.factor(&l).ok()?;
         for (c, r) in rhs.iter_mut().enumerate() {
             factor.solve(r);
             for i in 0..n {
