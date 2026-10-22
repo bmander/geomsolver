@@ -1765,8 +1765,9 @@ in std.top {
   (`component Plate(m: group, …)`, then `of m`).
 - `steel.E` reads as a number with its dimension, the way a group's members do. `steel.E / 1GPa`
   is 200.
-- Nothing is solved for a material, and nothing reads one yet (#510). `solventc` prints each
-  material and the solids made of it: `material steel: E 200GPa, nu 0.3, …, of disc`.
+- Nothing is solved for a material. A frame's analysis reads one (below); nothing reads a solid's
+  yet (#510). `solventc` prints each material and what is made of it: `material steel: E 200GPa,
+  nu 0.3, …, of disc`.
 
 #### Sketching on a face
 
@@ -1900,7 +1901,8 @@ statements.
 
 A `scenario` states a load case over the solved drawing: supports, loads and requirements, one
 per line. It stands at the top of the document (or in its `preview`), reads the document's names
-and numbers, and adds no geometry and no row — nothing in it is analysed yet (§9.11).
+and numbers, and adds no geometry and no row. A frame's requirements are answered and judged
+(below); a solid's are not analysed yet (§9.11).
 
 ```
 scenario lift {
@@ -1925,6 +1927,58 @@ scenario overload: lift {                // lift's supports and loads, then thes
 | `claim deflection(tip) <= u` | E040 — `u` is an unknown; a scenario's numbers are stated |
 | `== v` in two scenarios | E106 — state the second a claim |
 | a scenario in a component | syntax — at the top of a document |
+
+#### Frames
+
+A frame is drawn on the lines its members run along, and analysed under a scenario (§9.11):
+
+```
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+b := 25mm
+h := 50mm
+in std.front {
+  foot := point
+  end := point
+  fix((0mm, 0mm)) foot
+  fix((1000mm, 0mm)) end
+  span := line(foot, end)
+}
+down := axis
+fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
+arm := beam(span, A: b * h, Iy: h * b^3 / 12, Iz: b * h^3 / 12, J: 0.229 * h * b^3,
+            Sy: h * b^2 / 6, Sz: b * h^2 / 6) of steel
+scenario tip_load {
+  fixed foot
+  load end 1kN along: down
+  claim deflection(end, along: down) <= 7mm   // solventc: … is 6.4mm: claimed <= 7mm, kept
+  claim safety(arm) >= 2
+}
+```
+
+- **The section** is stated in each member's own axes: x along it, z the normal of the plane its
+  line is drawn in. `Iz` is its second moment bending in that plane, `Iy` across it, `A` its area
+  and `J` its torsion constant — all four required; `Sy` and `Sz` (section moduli) only where a
+  `safety` is asked. Write each from the section's sizes, or as a number of its unit: a unit is
+  a suffix, so `65104mm^4` is (65104 mm)⁴, and a figure is `65104 * 1mm^4`. A beam may name
+  several lines: `beam(left, top, right, …)`.
+- **Joints** are where members' ends meet, or an end lies on another member; a point the scenario
+  names on a member (a load's) cuts it there. Every joint is rigid.
+- **What is answered**: `deflection(p[, along: d])`, `mass(arm)`, `mode(arm, n)`, `buckling(arm)`,
+  `compliance(arm)`, `safety(arm)` (yield over `|N|/A + |My|/Sy + |Mz|/Sz`). `load arm 2kN along:
+  down` spreads a force along the beam; `accelerate arm (0m / 1s^2, 0m / 1s^2, -9.81m / 1s^2)` is
+  its weight. Every requirement is judged, never solved for: `solventc` prints its value and
+  `kept` or `refuted`.
+- `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
+  twist about its own line — and `solventc` says so (`leaves `arm` free to turn about x …`).
+
+| written | reported |
+|---|---|
+| `beam(p, A: …)`, `p` a point | E040 — drawn on lines |
+| a line standing in space | E040 — a beam is drawn in a plane |
+| no `J` | E103 — states `A`, `Iy`, `Iz` and `J` |
+| `A: 50mm` | E103 — `A` is Length^2 |
+| `fixed arm` | E040 — hold its ends |
+| `safety(arm)` with no `Sz` | no answer — reads `Sy` and `Sz` |
 
 ### 1.15 Frames that move, and generated geometry
 

@@ -708,7 +708,9 @@ fn judge(case: &Case, e: &Elaborated) -> Vec<(Bracket, f64)> {
            ignore = "the CalculiX oracle: `make test-ccx`, with ccx and gmsh")]
 fn calculix_keeps_every_claim() {
     let reports: Vec<Vec<(String, bool)>> = std::thread::scope(|scope| {
-        let running: Vec<_> = CASES.iter().map(|case| scope.spawn(move || {
+        // a frame is no oracle's: its answers are the core's own, exact (`tests/beams.rs`)
+        let solids = CASES.iter().filter(|c| c.reading != Reading::Frame);
+        let running: Vec<_> = solids.map(|case| scope.spawn(move || {
             let e = read(case);
             let refs = (case.answers)(case, &e);
             judge(case, &e).into_iter().map(|(b, v)| {

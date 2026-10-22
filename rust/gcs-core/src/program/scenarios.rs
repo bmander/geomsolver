@@ -26,6 +26,9 @@ pub struct Stated {
     pub supports: Vec<Line>,
     pub loads: Vec<Line>,
     pub requirements: Vec<Line>,
+    /// Each requirement's output as written, `deflection(tip, along: down)`: what a report says
+    /// it of (#510 S0).
+    pub heads: Vec<String>,
 }
 
 /// One line of a scenario's body: the scenario statement, and the line's index in it.
@@ -71,6 +74,7 @@ pub(super) fn scenarios(
             supports: Vec::new(),
             loads: Vec::new(),
             requirements: Vec::new(),
+            heads: Vec::new(),
         };
         if let Some(base) = &sc.extends {
             match by_name.get(&base.text) {
@@ -106,9 +110,12 @@ pub(super) fn scenarios(
                     made.scenario.loads.push(l);
                     made.loads.push(line);
                 }),
-                ItemKind::Requirement(r) => read.requirement(r).map(|r| {
+                ItemKind::Requirement(t) => read.requirement(t).map(|r| {
                     made.scenario.requirements.push(r);
                     made.requirements.push(line);
+                    let mut head = String::new();
+                    t.write_head(&mut head);
+                    made.heads.push(head);
                 }),
             };
             if let Err((code, span, message)) = got {
@@ -157,19 +164,28 @@ impl Reading<'_> {
         along: Option<&Ref>,
     ) -> Result<Support, Fault> {
         let at = self.applied(at, hold.word())?;
+        if let Applied::Beam(b) = at {
+            return Err((Code::E040, None, format!(
+                "a support holds what a frame stands on — a point, a line — and `{}` is a beam: \
+                 hold its ends",
+                self.sk.beams[b].name
+            )));
+        }
         let along = along.map(|d| self.direction(d)).transpose()?;
         Ok(Support { hold, at, along })
     }
 
     fn load(&self, kind: LoadKind, at: &Ref, value: &LoadText) -> Result<Load, Fault> {
         let applied = self.applied(at, kind.word())?;
-        if kind == LoadKind::Pressure
-            && matches!(applied, Applied::Ent(e) if e.kind != EntKind::Face)
-        {
+        let what = match &applied {
+            Applied::Ent(e) if e.kind != EntKind::Face => Some(e.kind.a().to_string()),
+            Applied::Beam(_) => Some("a beam".to_string()),
+            _ => None,
+        };
+        if let (LoadKind::Pressure, Some(what)) = (kind, what) {
             return Err((Code::E040, Some(at.span), format!(
-                "a pressure is on a face: `{}` is {}",
-                crate::syntax::ref_text(at),
-                applied.entity().kind.a()
+                "a pressure is on a face: `{}` is {what}",
+                crate::syntax::ref_text(at)
             )));
         }
         let what = kind.word();
@@ -218,6 +234,7 @@ impl Reading<'_> {
         let at = Some(r.span);
         let named = crate::syntax::ref_text(r);
         match self.res.operand(self.sk, r).map_err(|m| (Code::E101, at, m))? {
+            Operand::Beam(b) => Ok(Applied::Beam(b)),
             Operand::Face(f) => Ok(Applied::Face(f)),
             Operand::Body(e) => Ok(Applied::Ent(e)),
             Operand::Ent(e) if material(e.kind) => Ok(Applied::Ent(e)),
@@ -248,18 +265,24 @@ impl Reading<'_> {
     /// A number the drawing states, of the dimension `want`: never an unknown of the solve,
     /// since a requirement compares with it and a load is what the solve is read under.
     fn number(&self, text: &str, span: Span, want: Dim, what: &str) -> Result<f64, Fault> {
-        let at = Some(span);
-        // an unknown the document declared is read as one, to be refused as one
-        let v = crate::flatten::value_read(text, &BTreeMap::new(), &self.sk.declared, self.sk.units)
-            .map_err(|m| (Code::E103, at, format!("`{text}`: {m}")))?;
-        v.dim.require(want, what).map_err(|m| (Code::E103, at, format!("`{text}`: {m}")))?;
-        match v.number() {
-            Some(x) if x.is_finite() => Ok(x),
-            _ => Err((Code::E040, at, format!(
-                "`{text}` reads an unknown of the drawing, and a scenario's numbers are ones it \
-                 states"
-            ))),
-        }
+        stated(self.sk, text, want, what, "a scenario's numbers are ones it states")
+            .map_err(|(code, m)| (code, Some(span), m))
+    }
+}
+
+/// **A number the drawing states**, `text` worked out of the dimension `want` (said of as
+/// `what`): never an unknown of the solve (**E040**, `why` saying what the number is for), the
+/// wrong dimension **E103**.  A scenario's numbers (#510 P4) and a beam's section (#510 S0).
+pub(super) fn stated(sk: &Sketch, text: &str, want: Dim, what: &str, why: &str)
+    -> Result<f64, (Code, String)>
+{
+    // an unknown the document declared is read as one, to be refused as one
+    let v = crate::flatten::value_read(text, &BTreeMap::new(), &sk.declared, sk.units)
+        .map_err(|m| (Code::E103, format!("`{text}`: {m}")))?;
+    v.dim.require(want, what).map_err(|m| (Code::E103, format!("`{text}`: {m}")))?;
+    match v.number() {
+        Some(x) if x.is_finite() => Ok(x),
+        _ => Err((Code::E040, format!("`{text}` reads an unknown of the drawing, and {why}"))),
     }
 }
 

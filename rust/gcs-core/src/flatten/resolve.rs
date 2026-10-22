@@ -589,6 +589,17 @@ fn rewrite(
             bad.push((code, r.span, why))
         }
     };
+    // what a solid or a beam is made of (#510 P3, S0): a name of the scope, and one that
+    // resolves names a material — said here, where whether it resolved is known
+    let made_of = |m: &mut Ref, what: &str, bad: &mut Vec<(Code, Span, String)>| {
+        let (written, said) = (ref_text(m), bad.len());
+        fix(m, bad);
+        let resolved = bad.len() == said && !quiet.borrow().contains(&m.span);
+        if resolved && !materials.contains(&ref_text(m)) {
+            bad.push((Code::E103, m.span, format!("`{written}` is no material: {what} is made \
+                of one the document states, `steel := material(E: 200GPa, nu: 0.3)`")));
+        }
+    };
     match k {
         StmtKind::Chain(chain) => {
             for r in &mut chain.links {
@@ -597,17 +608,8 @@ fn rewrite(
         }
         StmtKind::Decl(d) => {
             rewrite_decl(d, sc, look, bad, &fix);
-            // what a solid is made of (#510 P3): a name of the scope, and one that resolves
-            // names a material — said here, where whether it resolved is known
             if let Some(m) = d.material.as_mut() {
-                let (written, said) = (ref_text(m), bad.len());
-                fix(m, bad);
-                let resolved = bad.len() == said && !quiet.borrow().contains(&m.span);
-                if resolved && !materials.contains(&ref_text(m)) {
-                    bad.push((Code::E103, m.span, format!("`{written}` is no material: a solid \
-                        is made of one the document states, `steel := material(E: 200GPa, nu: \
-                        0.3)`")));
-                }
+                made_of(m, "a solid", bad);
             }
             // a seed at a place in a frame's coordinates reads its axes (#383)
             if let Some(a) = d.seed_at.as_ref().filter(|a| a.x.is_some() || a.y.is_some() || a.z.is_some()) {
@@ -624,6 +626,15 @@ fn rewrite(
         }
         // a load case names what it holds, loads and requires of (#510 P4)
         StmtKind::Scenario(sc) => sc.refs_mut().into_iter().for_each(|r| fix(r, bad)),
+        // a frame's members name their lines, and the material they are made of (#510 S0)
+        StmtKind::Beam(b) => {
+            for r in &mut b.lines {
+                fix(r, bad);
+            }
+            if let Some(m) = b.material.as_mut() {
+                made_of(m, "a beam", bad);
+            }
+        }
         // `bore cut body` names two solids, and inside a component both wear the prefix
         StmtKind::SolidRel(r) => {
             fix(&mut r.what, bad);

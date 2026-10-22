@@ -16,18 +16,23 @@ use crate::units::Dim;
 /// a line, a solid's whole body), or the faces a path past a solid names (`arm.base`, sets.md's
 /// faces as sets).  Whether a face path names faces is the analysis's to judge, where it reads the
 /// solid's boundary after the solve, as a region reading a face does.
+///
+/// Or a beam (#510 S0), by its index in `Sketch::beams`: what its members are, for a body load
+/// or an output of the frame they are part of.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Applied {
     Ent(EntRef),
     Face(FaceRef),
+    Beam(usize),
 }
 
 impl Applied {
-    /// The entity it is of: itself, or the solid a face is a face of.
-    pub fn entity(&self) -> EntRef {
+    /// The solid it is of, where it is of one: itself, or the solid a face is a face of.
+    pub fn solid(&self) -> Option<usize> {
         match self {
-            Applied::Ent(e) => *e,
-            Applied::Face(f) => EntRef::solid(f.solid as usize),
+            Applied::Ent(e) if e.kind == EntKind::Solid => Some(e.i()),
+            Applied::Face(f) => Some(f.solid as usize),
+            _ => None,
         }
     }
 }
@@ -221,6 +226,17 @@ pub struct Requirement {
     pub claim: bool,
 }
 
+impl Grade {
+    /// What a report calls it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Grade::Claim => "claim",
+            Grade::Driving => "driving",
+            Grade::Bound => "bound",
+        }
+    }
+}
+
 impl Requirement {
     pub fn grade(&self) -> Grade {
         match (self.claim, self.compare) {
@@ -241,4 +257,14 @@ pub struct Scenario {
     pub supports: Vec<Support>,
     pub loads: Vec<Load>,
     pub requirements: Vec<Requirement>,
+}
+
+impl Scenario {
+    /// What each of its lines is applied to, in the order written: its supports', its loads',
+    /// then what its requirements are of.
+    pub fn applied(&self) -> impl Iterator<Item = &Applied> {
+        self.supports.iter().map(|s| &s.at)
+            .chain(self.loads.iter().map(|l| &l.at))
+            .chain(self.requirements.iter().map(|r| &r.of))
+    }
 }

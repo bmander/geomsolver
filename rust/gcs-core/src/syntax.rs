@@ -2,6 +2,7 @@
 //!
 //! Only values inside `hint(…)` clauses are seeds a solve may write back.
 
+mod beam;
 mod highlight;
 mod lexer;
 mod measured;
@@ -13,6 +14,7 @@ mod source;
 mod words;
 mod written;
 
+pub use beam::BeamDecl;
 pub use highlight::{highlight, Tint};
 pub use measured::{Measured, Measurement, Measuring};
 pub(crate) use highlight::with_comments;
@@ -414,6 +416,9 @@ pub enum StmtKind {
     /// `scenario lift { fixed arm.base … }` — a load case (#510 P4), see `Scenario`.  Its name
     /// is a scenario's, apart from the body's names: it declares nothing the drawing reads.
     Scenario(Scenario),
+    /// `arm := beam(span, A: …) of steel` — a frame's members (#510 S0), see `BeamDecl`.  Its
+    /// name is the drawing's, read by a scenario; it adds nothing the solve reads.
+    Beam(BeamDecl),
 }
 
 impl StmtKind {
@@ -428,6 +433,7 @@ impl StmtKind {
             StmtKind::Group(g) => Some(&g.name),
             StmtKind::Set(d) => Some(&d.name),
             StmtKind::Derived(d) => Some(d.name.key()),
+            StmtKind::Beam(b) => Some(&b.name),
             StmtKind::Relation(_) | StmtKind::Branch(_) | StmtKind::Block(_) | StmtKind::Style(_)
             | StmtKind::SolidRel(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_)
             | StmtKind::Minimize(_) | StmtKind::Measured(_) | StmtKind::Scenario(_) => None,

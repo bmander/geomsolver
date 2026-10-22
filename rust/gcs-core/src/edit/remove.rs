@@ -335,11 +335,11 @@ pub(super) fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) ->
                 look(at);
             }
         }
-        // a load case is never taken with one thing it names: the rest of it is the document's
-        // to keep, and what it names gone is said there (E101)
+        // a load case, or a frame's members, is never taken with one thing it names: the rest of
+        // it is the document's to keep, and what it names gone is said there (E101)
         StmtKind::Branch(_) | StmtKind::Instance(_) | StmtKind::Param(_) | StmtKind::Block(_)
         | StmtKind::Style(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_)
-        | StmtKind::Scenario(_) => {}
+        | StmtKind::Scenario(_) | StmtKind::Beam(_) => {}
     }
     hit
 }

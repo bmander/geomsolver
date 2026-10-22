@@ -201,6 +201,20 @@ impl<'a> Walk<'a> {
                     }
                     self.emit(StmtKind::Scenario(sc2), st, scope, path);
                 }
+                // a frame's members (#510 S0): named as a declaration is, the scope's numbers
+                // written into its section, what it names resolved with the references
+                // (`rewrite`), and nothing drawn
+                StmtKind::Beam(b) => {
+                    let mut b2 = b.clone();
+                    for text in b2.numbers_mut() {
+                        let held = &self.held.names;
+                        *text = super::values::substitute_in(text, vals, self.units, held);
+                    }
+                    let abs = format!("{prefix}{}", b.name.text);
+                    self.names.insert(abs.clone());
+                    b2.name.text = abs;
+                    self.emit(StmtKind::Beam(b2), st, scope, path);
+                }
                 // a claim over an interval: its numbers and its relations' worked out as above
                 StmtKind::ClaimOver(c) => self.walk_claim_over(c, st, scope, vals, path, depth),
                 // a gauge or an orientation: kept as written, resolved later

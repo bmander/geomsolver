@@ -165,16 +165,25 @@ impl Item {
                 if r.claim {
                     out.push_str("claim ");
                 }
-                out.push_str(r.output.word());
-                out.push('(');
-                write_ref(out, &r.of);
-                if let Some((n, _)) = &r.count {
-                    out.push_str(", ");
-                    out.push_str(n);
-                }
-                write_along(out, ", ", r.along.as_ref());
-                out.push_str(&format!(") {} {}", r.compare.text(), r.value.0));
+                r.write_head(out);
+                out.push_str(&format!(" {} {}", r.compare.text(), r.value.0));
             }
         }
+    }
+}
+
+impl RequirementText {
+    /// Its output as written, `deflection(tip, along: down)`, `mode(arm, 2)`: what it is, and what
+    /// a report says it of.
+    pub fn write_head(&self, out: &mut String) {
+        out.push_str(self.output.word());
+        out.push('(');
+        write_ref(out, &self.of);
+        if let Some((n, _)) = &self.count {
+            out.push_str(", ");
+            out.push_str(n.trim());
+        }
+        write_along(out, ", ", self.along.as_ref());
+        out.push(')');
     }
 }

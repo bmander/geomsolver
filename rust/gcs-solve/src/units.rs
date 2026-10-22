@@ -439,6 +439,12 @@ impl Units {
     pub fn to_si(&self, v: f64, dim: Dim) -> f64 {
         v * (self.length.1 / M).powf(dim.len.value())
     }
+
+    /// `to_si`'s inverse: an SI value of dimension `dim` in the document's own units — what an
+    /// analysis reads a material in (#510 S0), its arithmetic done in the drawing's lengths.
+    pub fn from_si(&self, v: f64, dim: Dim) -> f64 {
+        v / (self.length.1 / M).powf(dim.len.value())
+    }
 }
 
 fn length_names() -> String {

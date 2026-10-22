@@ -505,12 +505,30 @@ fn every_dimension_can_be_written_free() {
 /// and two instances in one block, as `System` evaluates a block of rows built at one width.
 #[test]
 fn a_linear_interior_agrees_with_finite_differences() {
+    interior_agrees(crate::interior::braced, 40, 1e-6);
+}
+
+/// The same of a frame (#510 S0): beams rigid at their ends, whose rows read their ends' turns
+/// and their section's four numbers — the adjoint gradient in every node's coordinates and every
+/// section's area, second moments and torsion constant, its rates in the beam's axes carried.
+/// A frame's normal equations square a stiffer conditioning than a truss's, so its value is
+/// good to fewer figures and the difference is taken over a longer step.
+#[test]
+fn a_frames_interior_agrees_with_finite_differences() {
+    interior_agrees(crate::interior::framed, 60, 1e-4);
+}
+
+fn interior_agrees(
+    make: fn(usize, usize, &mut Rng) -> (gcs_core::interior::Structure, Vec<f64>),
+    first: u32,
+    step: f64,
+) {
     use gcs_core::fdcheck::fd_jacobian;
     use gcs_core::kernels::KernelKey;
     for seed in 0..5u32 {
-        let mut rng = Rng::new(seed + 40);
+        let mut rng = Rng::new(seed + first);
         for dim in [2, 3] {
-            let (s, x) = crate::interior::braced(dim, 6 + seed as usize, &mut rng);
+            let (s, x) = make(dim, 6 + seed as usize, &mut rng);
             for stated in [&[0.3][..], &[1.7, -0.2]] {
                 let free = stated.len() == 2;
                 let (n_par, n_const) = s.widths(free);
@@ -529,7 +547,7 @@ fn a_linear_interior_agrees_with_finite_differences() {
                     (kn.res)(2, w, &k, &mut r);
                     r
                 };
-                let jn = fd_jacobian(res, &v, 1e-6);
+                let jn = fd_jacobian(res, &v, step);
                 let mut ja = vec![0.0; 2 * n_par];
                 (kn.jac)(2, &v, &k, &mut ja);
                 let scale = gcs_core::linalg::absmax(&jn.data);

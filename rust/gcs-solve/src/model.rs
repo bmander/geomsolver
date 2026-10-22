@@ -32,6 +32,7 @@ mod caches;
 mod running;
 mod material;
 mod scenario;
+mod beam;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -54,6 +55,7 @@ pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
 pub use running::Running;
 pub use material::{Material, Property};
+pub use beam::{Beam, Section, SectionProp};
 pub use scenario::{
     Applied, Grade, Hold, Load, LoadKind, LoadValue, Output, Requirement, Scenario, Support,
 };
@@ -247,6 +249,11 @@ pub struct Sketch {
     /// (`SolidE::material`).  Nothing reads one yet.  Document state: grafted with the solids
     /// and written to JSON.
     pub materials: BTreeMap<String, Material>,
+    /// **The beams the document states** (#510 S0), in the order written: `arm := beam(span, A:
+    /// …) of steel`, each the lines it makes members of a frame, by a section and a material.
+    /// Read by an analysis of a scenario (`frame.rs`), never by the solve.  Set by elaboration
+    /// and carried by the Solvent source alone, as a solid's `of` is: never written to JSON.
+    pub beams: Vec<Beam>,
     /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
     /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
     /// Presentation, as a wobble is: what is drawn moves and the document does not — a march

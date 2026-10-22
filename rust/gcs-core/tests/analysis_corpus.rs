@@ -1,14 +1,16 @@
 //! **The verification corpus** (#510 P8): the analytic cases every analysis of #510 is held to,
 //! each a Solvent document in `rust/examples/analysis/` — a cantilever, Euler's column, Lamé's
-//! thick cylinder, Kirsch's plate with a hole, a simply supported plate's modes, and NAFEMS LE1
-//! and FV32.  Each states its answer as the claims of a scenario, a bracket about the reference.
-//! The gate here holds each document to what it says it is: it solves to no freedom, its body is
+//! thick cylinder, Kirsch's plate with a hole, a simply supported plate's modes, NAFEMS LE1 and
+//! FV32, and as frames (#510 S0) the cantilever, the column and a beam built in at both ends.
+//! Each states its answer as the claims of a scenario, a bracket about the reference.  The gate here holds each document to what it says it is: it solves to no freedom, its body is
 //! the size its numbers say, and every bracket it claims is the closed form of its own drawing —
 //! read off the solved solid, its material and its scenario, not off its text — at the tolerance
 //! the case gives.  The closed forms are in turn held to their equations (`closed`), and an
 //! external solver judges every claim (`ccx`, CalculiX, the oracle `make test-ccx` runs).
 use gcs_core::expr::Cmp;
-use gcs_core::model::{Applied, LoadKind, LoadValue, Material, Output, Property, Requirement};
+use gcs_core::model::{
+    Applied, LoadKind, LoadValue, Material, Output, Property, Requirement, SectionProp,
+};
 use gcs_core::program::Elaborated;
 use gcs_core::units::Dim;
 use std::f64::consts::PI;
@@ -18,12 +20,13 @@ use crate::common::{at, ent};
 mod ccx;
 mod closed;
 
-/// How a case is read: as the solid it draws, or in the plane of the face it sweeps, in plane
-/// stress, its depth the thickness.
+/// How a case is read: as the solid it draws, in the plane of the face it sweeps, in plane
+/// stress, its depth the thickness, or as a frame of the beams it draws (#510 S0).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Reading {
     Solid,
     Plane,
+    Frame,
 }
 
 impl Reading {
@@ -32,13 +35,14 @@ impl Reading {
         match self {
             Reading::Solid => "solid",
             Reading::Plane => "plane stress",
+            Reading::Frame => "frame",
         }
     }
 }
 
-/// A case: its document, the solid it is about and how that is read, the answers its claims
-/// are held to, and how finely the oracle meshes it — the largest element in millimetres, and
-/// gmsh's elements a full turn of a curve.
+/// A case: its document, the solid (or for a frame, the beam) it is about and how that is read,
+/// the answers its claims are held to, and how finely the oracle meshes it — the largest element
+/// in millimetres, and gmsh's elements a full turn of a curve.
 pub struct Case {
     pub name: &'static str,
     pub src: &'static str,
@@ -61,7 +65,7 @@ macro_rules! case {
     };
 }
 
-pub const CASES: [Case; 7] = [
+pub const CASES: [Case; 10] = [
     case!(cantilever, "beam", Solid, (6.0, 0)),
     case!(column, "strut", Solid, (4.0, 0)),
     case!(lame, "tube", Solid, (3.0, 72)),
@@ -69,6 +73,9 @@ pub const CASES: [Case; 7] = [
     case!(plate_modes, "plate", Solid, (20.0, 0)),
     case!(nafems_le1, "membrane", Plane, (40.0, 120)),
     case!(nafems_fv32, "membrane", Plane, (150.0, 0)),
+    case!(cantilever_frame, "arm", Frame, (0.0, 0)),
+    case!(column_frame, "strut", Frame, (0.0, 0)),
+    case!(clamped_frame, "girder", Frame, (0.0, 0)),
 ];
 
 /// The case named `name`.
@@ -98,10 +105,30 @@ fn extent(x: &gcs_core::solid::Exact) -> [f64; 3] {
     std::array::from_fn(|k| (hi[k] - lo[k]) / x.mm)
 }
 
-/// The material the case's solid is made of.
+/// The material the case's solid, or its beam, is made of.
 pub fn material<'a>(case: &Case, e: &'a Elaborated) -> &'a Material {
-    let name = e.sketch.solids[ent(e, case.solid).i()].material.as_ref().expect("made of one");
-    &e.sketch.materials[name]
+    let name = match case.reading {
+        Reading::Frame => beam(case, e).material.as_ref(),
+        _ => e.sketch.solids[ent(e, case.solid).i()].material.as_ref(),
+    };
+    &e.sketch.materials[name.expect("made of one")]
+}
+
+/// The frame case's beam.
+pub fn beam<'a>(case: &Case, e: &'a Elaborated) -> &'a gcs_core::model::Beam {
+    e.sketch.beams.iter().find(|b| b.name == case.solid).expect("a beam")
+}
+
+/// A number of the frame case's beam's section.
+fn section(case: &Case, e: &Elaborated, p: SectionProp) -> f64 {
+    beam(case, e).section.get(p).unwrap_or_else(|| panic!("{}: no {p:?}", case.name))
+}
+
+/// The length of the frame case's one member, off the solved drawing.
+fn span(case: &Case, e: &Elaborated) -> f64 {
+    let [l] = beam(case, e).lines[..] else { panic!("{}: one member", case.name) };
+    let [a, b] = e.sketch.line_ends(l).map(|p| e.sketch.world_point(p));
+    gcs_core::space::norm(gcs_core::space::sub(b, a))
 }
 
 /// A property of the case's material, in the document's own units.
@@ -309,6 +336,51 @@ fn nafems_fv32(case: &Case, e: &Elaborated) -> Vec<Answer> {
     let mode = |i: usize| answer("fv32", Output::Mode, Some(i as u32 + 1), closed::FV32[i],
                                  about(0.01), EXACT);
     (0..closed::FV32.len()).map(mode).collect()
+}
+
+/// **The frame cases' answers** (#510 S0), from the solved drawing: the span off its line, the
+/// section off its beam, the material off its `of`, the loads off the scenario.
+fn cantilever_frame(case: &Case, e: &Elaborated) -> Vec<Answer> {
+    let l = span(case, e);
+    let (young, rho) = (property(case, e, Property::E), property(case, e, Property::Rho));
+    let p = load(e, "tip_load", LoadKind::Force);
+    let [a, iy, iz] =
+        [SectionProp::A, SectionProp::Iy, SectionProp::Iz].map(|p| section(case, e, p));
+    let tip = closed::cantilever_tip(p, l, young, iz);
+    let safety = property(case, e, Property::Yield) / (p * l / section(case, e, SectionProp::Sz));
+    vec![
+        answer("tip_load", Output::Deflection, None, tip, about(0.01), EXACT),
+        answer("tip_load", Output::Safety, None, safety, about(0.03), EXACT),
+        answer("free", Output::Mode, Some(1), closed::cantilever_mode(young, iy, rho, a, l),
+               about(0.01), 1e-5),
+        answer("free", Output::Mass, None, rho * a * l, [1.0, 1.0], 1e-9),
+    ]
+}
+
+fn column_frame(case: &Case, e: &Elaborated) -> Vec<Answer> {
+    let (iy, iz) = (section(case, e, SectionProp::Iy), section(case, e, SectionProp::Iz));
+    assert_eq!(iy, iz, "a square strut");
+    let p = load(e, "press", LoadKind::Force);
+    let euler = closed::euler_cantilever(property(case, e, Property::E), iy, span(case, e));
+    vec![answer("press", Output::Buckling, None, euler / p, about(0.01), EXACT)]
+}
+
+fn clamped_frame(case: &Case, e: &Elaborated) -> Vec<Answer> {
+    let l = span(case, e);
+    let young = property(case, e, Property::E);
+    let [a, iz, sz] =
+        [SectionProp::A, SectionProp::Iz, SectionProp::Sz].map(|p| section(case, e, p));
+    let yields = property(case, e, Property::Yield);
+    let p = load(e, "midspan", LoadKind::Force);
+    let q = property(case, e, Property::Rho) * a * load(e, "weight", LoadKind::Acceleration);
+    let (sinks, sags) = closed::clamped(p, q, l, young, iz);
+    vec![
+        answer("midspan", Output::Deflection, None, sinks, about(0.01), EXACT),
+        answer("midspan", Output::Safety, None, yields * sz * 8.0 / (p * l), about(0.03), EXACT),
+        answer("weight", Output::Deflection, None, sags, about(0.01), EXACT),
+        answer("weight", Output::Safety, None, yields * sz * 12.0 / (q * l * l), about(0.03),
+               EXACT),
+    ]
 }
 
 /// The solid's volume, in the document's lengths.

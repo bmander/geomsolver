@@ -23,6 +23,7 @@ mod envelopes;
 mod generated;
 mod rings;
 mod scenarios;
+mod beams;
 mod source_map;
 mod variational;
 mod witnessed;
