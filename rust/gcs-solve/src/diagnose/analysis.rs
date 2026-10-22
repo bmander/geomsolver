@@ -83,7 +83,7 @@ fn figure(v: f64, size: f64) -> String {
 }
 
 /// A unit direction by its world axis's name where it is one, else by its components.
-fn direction_text(d: V, dim: usize) -> String {
+pub fn direction_text(d: V, dim: usize) -> String {
     for (k, name) in ["x", "y", "z"].iter().enumerate() {
         let e = axis(k);
         if norm(sub(d, e)) <= SNAP || norm(add(d, e)) <= SNAP {

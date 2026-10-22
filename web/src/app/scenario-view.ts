@@ -15,6 +15,7 @@
  * Nothing here is geometry: the picture's arrays are the core's, handed to the box as they came,
  * typed so the worker can transfer them rather than copy. */
 import { related } from '../core/modules.js';
+import { samePose } from './claim-judging.js';
 import type { Document, Scenario } from '../core/program.js';
 import type { PictureBody, ScenarioPicture } from '../core/scenario.js';
 
@@ -109,11 +110,6 @@ const spawnWorker = (): ReadWorker =>
   new Worker(new URL('./mesh-worker.bundle.js', import.meta.url),
     { type: 'module' }) as unknown as ReadWorker;
 
-/** Whether two parameter vectors are the same pose, bit for bit. */
-function samePose(a: Float64Array, b: Float64Array): boolean {
-  return a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
-}
-
 export class ScenarioReading {
   private worker: ReadWorker | null = null;
   private job = 0;
@@ -172,11 +168,6 @@ export class ScenarioReading {
       .map((f): [string, string] => [f.name, f.text]);
     this.worker.postMessage({ kind: 'scenario', id: this.job, text: doc.text, modules, x, drawn });
     this.told(this.state);
-  }
-
-  /** Forget the drawing the reading is of, so the next `start` asks again whatever it is. */
-  forget(): void {
-    this.of = null;
   }
 
   /** End the job in hand: the worker drops it before it starts. */

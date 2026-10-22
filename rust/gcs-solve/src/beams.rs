@@ -505,8 +505,7 @@ impl Analysed {
             let place = |k: usize| -> V { [0, 1, 2].map(|c| self.f.x[3 * k + c]) };
             let (pa, pb) = (place(beam.a), place(beam.b));
             let ((ua, ta), (ub, tb)) = (end(beam.a), end(beam.b));
-            let (ua, ta) = (interior::into_axes(&axes, ua), interior::into_axes(&axes, ta));
-            let (ub, tb) = (interior::into_axes(&axes, ub), interior::into_axes(&axes, tb));
+            let [ua, ta, ub, tb] = [ua, ta, ub, tb].map(|v| interior::into_axes(&axes, v));
             let centre: Vec<(V, V)> = (0..SAMPLES).map(|k| {
                 let t = k as f64 / (SAMPLES - 1) as f64;
                 let w = deformed::hermite(t);

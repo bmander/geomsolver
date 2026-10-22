@@ -73,7 +73,7 @@ const spawnWorker = (): JudgeWorker =>
     { type: 'module' }) as unknown as JudgeWorker;
 
 /** Whether two parameter vectors are the same pose, bit for bit. */
-function samePose(a: Float64Array, b: Float64Array): boolean {
+export function samePose(a: Float64Array, b: Float64Array): boolean {
   return a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
 }
 

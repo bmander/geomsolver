@@ -310,8 +310,8 @@ pub fn scenarios_json(sk: &Sketch, scenarios: &[crate::program::Stated]) -> Json
     }).collect())
 }
 
-/// One scenario's record in `scenarios_json`: its name, the scenario it extends, its words and
-/// its answers, each with `index`, the requirement's place among the scenario's.
+/// One scenario's record in `scenarios_json`: its name, its words and its answers, each with
+/// `index`, the requirement's place among the scenario's.
 fn scenario_json(sk: &Sketch, s: &crate::program::Stated, words: Vec<String>,
                  read: &crate::beams::Read) -> Json {
     let answers = scenario_answers(sk, s, read).into_iter().map(|a| object([
@@ -338,14 +338,14 @@ pub fn scenarios_pictured_json(sk: &Sketch, scenarios: &[crate::program::Stated]
                                drawn: Option<usize>) -> Json {
     let mut picture = Json::Null;
     let all = scenarios.iter().enumerate().map(|(k, s)| {
-        if Some(k) == drawn {
+        let (words, read) = if Some(k) == drawn {
             let (words, read, p) = crate::diagnose::analysis::scenario_pictured(sk, &s.scenario);
             picture = picture_json(sk, &p);
-            scenario_json(sk, s, words, &read)
+            (words, read)
         } else {
-            let (words, read) = crate::diagnose::analysis::scenario_read(sk, &s.scenario);
-            scenario_json(sk, s, words, &read)
-        }
+            crate::diagnose::analysis::scenario_read(sk, &s.scenario)
+        };
+        scenario_json(sk, s, words, &read)
     }).collect();
     object([("scenarios", Json::Arr(all)), ("picture", picture)])
 }
@@ -356,9 +356,7 @@ pub fn scenarios_pictured_json(sk: &Sketch, scenarios: &[crate::program::Stated]
 /// (vertex indices); then why any body it falls on is not drawn, the largest move and where it
 /// stands, as a reader reads it, the extent drawn, and the factor to draw at (`×200`).
 pub fn picture_json(sk: &Sketch, p: &crate::deformed::Picture) -> Json {
-    let fig = |v: f64| -> Json {
-        Json::Num(format!("{v:.6e}").parse().unwrap_or(v))
-    };
+    let fig = |v: f64| Json::Num(format!("{v:.6e}").parse().unwrap_or(v));
     let flat = |vs: &[[f64; 3]]| Json::Arr(vs.iter().flatten().map(|&v| fig(v)).collect());
     let ints = |vs: Vec<u32>| Json::Arr(vs.into_iter().map(|v| Json::Int(v as i64)).collect());
     let bodies = p.bodies.iter().enumerate().map(|(k, b)| object([
@@ -376,7 +374,7 @@ pub fn picture_json(sk: &Sketch, p: &crate::deformed::Picture) -> Json {
         ("words", Json::Arr(p.words.iter().map(|w| Json::Str(w.clone())).collect())),
         ("largest", p.largest.into()),
         ("largestText", p.largest_text(sk).into()),
-        ("largestAt", Json::Arr(p.largest_at.iter().map(|&v| Json::from(v)).collect())),
+        ("largestAt", Json::Arr(p.largest_at.map(Json::from).to_vec())),
         ("extent", p.extent.into()),
         ("scale", p.scale.into()),
     ])
@@ -395,10 +393,11 @@ pub fn scenario_names_json(scenarios: &[crate::program::Stated]) -> Json {
 /// **Where scenario `k` of the document falls on the drawing** (`overview::scenario::marks`):
 /// each mark's kind and index, its anchors, its directions and normals there, the triangles it
 /// tints (nine numbers each), its size among its kind, its words and where they are drawn,
-/// whether it is a requirement read at a place (`probe`), and
-/// `span`, the bytes of the line it is written on in the document (an extended scenario's base's
-/// lines where its base wrote them) — `null` for a line a module wrote.
+/// whether it is a requirement read at a place (`probe`), and `span`, the bytes of the line it
+/// is written on in the document (an extended scenario's base's lines where its base wrote them)
+/// — `null` for a line a module wrote.
 pub fn scenario_marks_json(e: &crate::program::Elaborated, sk: &Sketch, k: usize) -> Json {
+    use crate::overview::scenario::Kind;
     let Some(s) = e.scenarios.get(k) else { return Json::Arr(Vec::new()) };
     let span = |line: Option<&crate::program::Line>| -> Json {
         let at = line.and_then(|l| {
@@ -409,9 +408,8 @@ pub fn scenario_marks_json(e: &crate::program::Elaborated, sk: &Sketch, k: usize
         at.map_or(Json::Null, |sp| Json::Arr(vec![Json::Int(sp.lo as i64),
                                                   Json::Int(sp.hi as i64)]))
     };
-    let v3 = |v: &[f64; 3]| Json::Arr(v.iter().map(|&x| Json::from(x)).collect());
+    let v3 = |v: &[f64; 3]| Json::Arr(v.map(Json::from).to_vec());
     let vs = |vs: &[[f64; 3]]| Json::Arr(vs.iter().map(v3).collect());
-    use crate::overview::scenario::Kind;
     Json::Arr(crate::overview::scenario::marks(sk, s).into_iter().map(|m| {
         let line = match m.kind {
             Kind::Fixed | Kind::Pinned => s.supports.get(m.index),

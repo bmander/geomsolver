@@ -8,7 +8,7 @@
  * document's (the line's own text, by its span), and choosing writes nothing. */
 import type { ScenarioMark } from '../core/scenario.js';
 import { goToSource } from './program.js';
-import { RAMP } from './scenario-box.js';
+import { RAMP, bare } from './scenario-box.js';
 import type { SketchView } from './view.js';
 
 const pick = document.getElementById('scenario-pick') as HTMLLabelElement;
@@ -94,12 +94,13 @@ export function refreshScenarioCard(view: SketchView): void {
   if (!view.scenario) return;
   // the head: the exaggeration, at the card's factor or the picture's own
   const p = view.picture;
-  slider.disabled = !p || !(p.largest > 0);
+  const moves = !!p && p.largest > 0;
+  slider.disabled = !moves;
   slider.value = String(stepOf(view, view.scenarioFactor));
-  scaleText.value = p && p.largest > 0 ? factorText(view.scenarioFactor) : '';
+  scaleText.value = moves ? factorText(view.scenarioFactor) : '';
   animate.checked = view.scenarioAnimate;
   meshed.checked = view.scenarioMesh;
-  legend.hidden = !p || !(p.largest > 0);
+  legend.hidden = !moves;
   legendHi.textContent = p ? p.largestText : '';
   legend.title =
     p ? `the largest move, ${p.largestText}, drawn ${factorText(view.scenarioFactor)}` : '';
@@ -110,12 +111,10 @@ export function refreshScenarioCard(view: SketchView): void {
   if (r?.error) said.push(r.error);
   else if (r?.reading) said.push('reading the scenario…');
   else if (p && !p.bodies.length && !p.words.length) said.push('nothing is read under it');
-  else if (p && !(p.largest > 0)) said.push('nothing is loaded, so nothing moves');
-  const words = [...(p?.words ?? []), ...(sc?.words ?? [])]
-    .map((w) => w.replace(/^scenario `[^`]*`:? /, ''));
+  else if (p && !moves) said.push('nothing is loaded, so nothing moves');
+  const words = [...(p?.words ?? []), ...(sc?.words ?? [])].map(bare);
   status.textContent = [...said, ...new Set(words)].join('\n');
   status.className = r?.error || words.length ? 'failed' : '';
-  status.style.whiteSpace = 'pre-line';
   // a row for each line, in the order written
   const text = view.doc.text;
   lines.replaceChildren(...view.scenarioMarks.map((m) => {
@@ -131,7 +130,7 @@ export function refreshScenarioCard(view: SketchView): void {
     if (m.kind === 'requirement') {
       const a = sc?.answers.find((x) => x.index === m.index);
       if (a) {
-        note = a.text.replace(/^scenario `[^`]*`: /, '');
+        note = bare(a.text);
         li.classList.add(a.holds === true ? 'kept' : 'refuted');
       } else if (r?.reading) {
         note = 'reading…';

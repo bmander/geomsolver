@@ -18,8 +18,8 @@ const LIBRARY: [&str; 16] = [
 
 /// A steel cantilever `L` long along x on the front, built in at `root`, and `P` at its tip along
 /// `down`: its section bends in the front about the front's normal, so its tip sinks
-/// `P L³ / 3 E Iz`.  `hold` is how its root is held; `extra` more lines of the scenario.
-fn cantilever(hold: &str, extra: &str) -> String {
+/// `P L³ / 3 E Iz`.  `hold` is how its root is held.
+fn cantilever(hold: &str) -> String {
     format!("\
 unit mm
 use std
@@ -39,7 +39,7 @@ bar := beam(arm, A: 100 * 1mm^2, Iy: 1000 * 1mm^4, Iz: 2000 * 1mm^4, J: 500 * 1m
 scenario tip_load {{
   {hold} root
   load tip P along: down
-{extra}}}
+}}
 ")
 }
 
@@ -59,7 +59,7 @@ fn nearest(p: &Picture, at: [f64; 3]) -> Vec<([f64; 3], [f64; 3])> {
 /// 1e-9 of the tip's move.  The beam is cut into `PIECES` elements, each a tube of `SIDES`.
 #[test]
 fn a_cantilevers_picture_is_its_cubic() {
-    let e = crate::common::text::solved(&cantilever("fixed", ""));
+    let e = crate::common::text::solved(&cantilever("fixed"));
     let (words, _, p) = scenario_pictured(&e.sketch, &e.scenarios[0].scenario);
     assert!(words.is_empty() && p.words.is_empty(), "{words:?} {:?}", p.words);
     assert_eq!(p.bodies.len(), 1);
@@ -101,7 +101,7 @@ fn the_default_factor_is_a_tenth_of_the_extent_rounded_down() {
 /// cantilever turns there freely — no displacement to give, so no body, and the solver's words.
 #[test]
 fn a_frame_left_free_draws_no_deflection_and_says_why() {
-    let e = crate::common::text::solved(&cantilever("pinned", ""));
+    let e = crate::common::text::solved(&cantilever("pinned"));
     let (_, _, p) = scenario_pictured(&e.sketch, &e.scenarios[0].scenario);
     assert!(p.bodies.is_empty(), "{:?}", p.bodies.len());
     assert!(p.words.iter().any(|w| w.contains("free")), "{:?}", p.words);

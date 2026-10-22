@@ -205,7 +205,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
   font-family: var(--mono); color: var(--muted); }
 #scenario-legend[hidden] { display: none; }
 #scenario-ramp { flex: 1; height: 9px; border-radius: 3px; }
-#scenario-status { margin: 0; padding: 4px 9px; color: var(--muted); }
+#scenario-status { margin: 0; padding: 4px 9px; color: var(--muted); white-space: pre-line; }
 #scenario-status:empty { display: none; }
 #scenario-status.failed { color: var(--danger); }
 #scenario-lines { list-style: none; margin: 0; padding: 4px 0 6px; overflow: auto; }

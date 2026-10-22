@@ -17,8 +17,10 @@
 use crate::model::{
     Applied, EntKind, EntRef, FaceRef, Hold, LoadKind, LoadValue, Output, Sketch,
 };
+use crate::diagnose::analysis::direction_text;
 use crate::program::Stated;
-use crate::solid::{ApproximationPolicy, LocalPoint};
+use crate::solid::faces::same_step;
+use crate::solid::{ApproximationPolicy, Box3, LocalPoint};
 use crate::space::{add, cross, distance, lerp, norm, normalised, scale, sub};
 use crate::units::Dim;
 
@@ -86,70 +88,65 @@ pub fn marks(sk: &Sketch, s: &Stated) -> Vec<Mark> {
     let mut out = Vec::new();
     for (k, sup) in sc.supports.iter().enumerate() {
         let Some(on) = reach.anchors(sk, &sup.at) else { continue };
-        let held = sup.along.and_then(|d| crate::diagnose::analysis::direction(sk, d).ok())
-            .and_then(normalised);
+        let held = sup.along.and_then(|d| unit(sk, d));
         let kind = if sup.hold == Hold::Fixed { Kind::Fixed } else { Kind::Pinned };
-        let text = match (sup.along, held) {
-            (Some(_), Some(d)) => format!("{} along {}", sup.hold.word(), direction_text(d)),
-            _ => sup.hold.word().to_string(),
+        let text = match held {
+            Some(d) => format!("{} along {}", sup.hold.word(), direction_text(d, 3)),
+            None => sup.hold.word().to_string(),
         };
         let dir = held.map_or(Vec::new(), |d| vec![d; on.at.len()]);
         out.push(on.mark(kind, k, dir, text));
     }
     for (k, load) in sc.loads.iter().enumerate() {
         let Some(on) = reach.anchors(sk, &load.at) else { continue };
-        let (kind, dir, magnitude) = match (load.kind, &load.value) {
-            (LoadKind::Pressure, LoadValue::Scalar(p)) => {
-                // a pressure pushes into the material: against the face's outward normal
-                let sign = if *p < 0.0 { 1.0 } else { -1.0 };
-                (Kind::Pressure, on.normal.iter().map(|n| scale(*n, sign)).collect(), p.abs())
+        let (kind, dir, magnitude) = match load.value {
+            // a pressure pushes into the material: against the face's outward normal
+            LoadValue::Scalar(p) => {
+                let sign = if p < 0.0 { 1.0 } else { -1.0 };
+                (Kind::Pressure, on.normal.iter().map(|n| Some(scale(*n, sign))).collect(), p.abs())
             }
-            (kind, value) => {
-                let v = match value {
-                    LoadValue::Vector(v) => *v,
-                    LoadValue::Along { magnitude, along } => {
-                        match crate::diagnose::analysis::direction(sk, *along) {
-                            Ok(d) => scale(normalised(d).unwrap_or([0.0; 3]), *magnitude),
-                            Err(_) => [0.0; 3],
-                        }
-                    }
-                    LoadValue::Scalar(v) => [0.0, 0.0, *v],
-                };
-                let kind =
-                    if kind == LoadKind::Acceleration { Kind::Accelerate } else { Kind::Load };
-                let d = normalised(v).unwrap_or([0.0; 3]);
-                (kind, vec![d; on.at.len()], norm(v))
+            LoadValue::Vector(v) => (vector(load.kind), vec![normalised(v); on.at.len()], norm(v)),
+            LoadValue::Along { magnitude, along } => {
+                let d = unit(sk, along).map(|d| scale(d, magnitude.signum()));
+                (vector(load.kind), vec![d; on.at.len()], magnitude.abs())
             }
         };
+        // a load of no size, or along no direction, points nowhere
+        let dir = dir.into_iter().map(|d| d.unwrap_or([0.0; 3])).collect();
         let text = quantity(sk, load.kind.dim(), magnitude);
         let mut m = on.mark(kind, k, dir, text);
         m.size = magnitude;
         out.push(m);
     }
     for (k, r) in sc.requirements.iter().enumerate() {
-        let Some(on) = reach.anchors(sk, &r.of) else { continue };
         // a requirement is drawn once, where its words are
-        let at = on.label;
+        let Some(on) = reach.anchors(sk, &r.of).map(|on| Anchors::at(on.label)) else { continue };
         let text = s.heads.get(k).cloned().unwrap_or_else(|| r.output.word().to_string());
-        let mut m = Anchors { at: vec![at], normal: Vec::new(), tint: Vec::new(), label: at }
-            .mark(Kind::Requirement, k, Vec::new(), text);
+        let mut m = on.mark(Kind::Requirement, k, Vec::new(), text);
         if r.output == Output::Deflection {
             m.probe = true;
-            m.dir = r.along.and_then(|d| crate::diagnose::analysis::direction(sk, d).ok())
-                .and_then(normalised).map_or(Vec::new(), |d| vec![d]);
+            m.dir = r.along.and_then(|d| unit(sk, d)).into_iter().collect();
         }
         out.push(m);
     }
     for (k, r) in sc.readings.iter().enumerate() {
-        let Some(on) = reach.anchors(sk, &r.of) else { continue };
-        let at = on.label;
-        out.push(Anchors { at: vec![at], normal: Vec::new(), tint: Vec::new(), label: at }
-            .mark(Kind::Plane, k, Vec::new(), format!("plane {}", r.plane.word())));
+        let Some(on) = reach.anchors(sk, &r.of).map(|on| Anchors::at(on.label)) else { continue };
+        out.push(on.mark(Kind::Plane, k, Vec::new(), format!("plane {}", r.plane.word())));
     }
     sized(&mut out, Kind::Load);
     sized(&mut out, Kind::Pressure);
     sized(&mut out, Kind::Accelerate);
     out
+}
+
+/// The mark a load of `kind` other than a pressure is: a body load, or a force.
+fn vector(kind: LoadKind) -> Kind {
+    if kind == LoadKind::Acceleration { Kind::Accelerate } else { Kind::Load }
+}
+
+/// The unit direction an `along:` names, where it names one.
+fn unit(sk: &Sketch, d: EntRef) -> Option<V> {
+    crate::diagnose::analysis::direction(sk, d).ok().and_then(normalised)
 }
 
 /// Each mark of `kind`'s size as a fraction of the largest of them.
@@ -170,6 +167,16 @@ struct Anchors {
 }
 
 impl Anchors {
+    /// One place, where the words go too.
+    fn at(p: V) -> Anchors {
+        Anchors { at: vec![p], normal: Vec::new(), tint: Vec::new(), label: p }
+    }
+
+    /// Places along a line, or about a solid: none on a face.
+    fn along(at: Vec<V>) -> Option<Anchors> {
+        Anchors::of(at, Vec::new(), Vec::new())
+    }
+
     fn of(at: Vec<V>, normal: Vec<V>, tint: Vec<[V; 3]>) -> Option<Anchors> {
         if at.is_empty() {
             return None;
@@ -192,17 +199,8 @@ struct Reach {
 
 impl Reach {
     fn of(sk: &Sketch) -> Reach {
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        for i in 0..sk.points.len() {
-            let p = sk.world_point(i);
-            for k in 0..3 {
-                lo[k] = lo[k].min(p[k]);
-                hi[k] = hi[k].max(p[k]);
-            }
-        }
-        let extent = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
-        Reach { unit: 1e-3 * if extent.is_finite() && extent > 0.0 { extent } else { 1.0 } }
+        let extent = Box3::of((0..sk.points.len()).map(|i| sk.world_point(i))).side();
+        Reach { unit: 1e-3 * if extent > 0.0 { extent } else { 1.0 } }
     }
 
     /// Where `a` is drawn: a point; `ALONG` places along a line, an edge or each line of a beam;
@@ -211,19 +209,16 @@ impl Reach {
     fn anchors(&self, sk: &Sketch, a: &Applied) -> Option<Anchors> {
         match a {
             Applied::Ent(e) => match e.kind {
-                EntKind::Point => Anchors::of(vec![sk.world_point(e.i())], Vec::new(), Vec::new()),
+                EntKind::Point => Some(Anchors::at(sk.world_point(e.i()))),
                 EntKind::Solid => {
-                    let tris = triangles(sk, e.i(), |_| true);
-                    Anchors::of(vec![middle(&tris)?], Vec::new(), Vec::new())
+                    let b = Box3::of(triangles(sk, e.i(), |_| true).into_iter().flatten());
+                    (!b.is_empty()).then(|| Anchors::at(lerp(b.lo, b.hi, 0.5)))
                 }
-                _ => Anchors::of(self.along(sk, *e), Vec::new(), Vec::new()),
+                _ => Anchors::along(self.along(sk, *e)),
             },
-            Applied::Beam(b) => {
-                let at = sk.beams.get(*b)?.lines.iter()
-                    .flat_map(|&l| self.along(sk, EntRef { kind: EntKind::Line, idx: l as u32 }))
-                    .collect();
-                Anchors::of(at, Vec::new(), Vec::new())
-            }
+            Applied::Beam(b) => Anchors::along(sk.beams.get(*b)?.lines.iter()
+                .flat_map(|&l| self.along(sk, EntRef { kind: EntKind::Line, idx: l as u32 }))
+                .collect()),
             Applied::Face(f) => {
                 let name = sk.solids.get(f.solid as usize)?.name.clone();
                 let tris = triangles(sk, f.solid as usize, |path| names_group(&name, f, path));
@@ -314,27 +309,6 @@ fn names_group(solid: &str, f: &FaceRef, group: &str) -> bool {
     starts(&segs) || (segs.starts_with(&own) && starts(&segs[own.len()..]))
 }
 
-/// Whether segment `written` names segment `mine`: the same, or a copy of it (`drill` names
-/// `drill[1]`).
-fn same_step(written: &str, mine: &str) -> bool {
-    written == mine || mine.strip_prefix(written).and_then(|r| r.strip_prefix('['))
-        .and_then(|r| r.strip_suffix(']'))
-        .is_some_and(|k| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit()))
-}
-
-/// The middle of triangles' corners' box.
-fn middle(tris: &[[V; 3]]) -> Option<V> {
-    let mut lo = [f64::INFINITY; 3];
-    let mut hi = [f64::NEG_INFINITY; 3];
-    for p in tris.iter().flatten() {
-        for k in 0..3 {
-            lo[k] = lo[k].min(p[k]);
-            hi[k] = hi[k].max(p[k]);
-        }
-    }
-    (!tris.is_empty()).then(|| lerp(lo, hi, 0.5))
-}
-
 /// **Up to `OVER` places spread over triangles**, and each one's outward normal: their
 /// centroids, the first the one nearest their middle weighted by area, each next the farthest
 /// from those taken.
@@ -343,17 +317,8 @@ fn spread(tris: &[[V; 3]]) -> (Vec<V>, Vec<V>) {
     let mut n = Vec::new();
     let mut mid = [0.0; 3];
     let mut area = 0.0;
-    let reach = middle(tris).map_or(0.0, |_| {
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        for p in tris.iter().flatten() {
-            for k in 0..3 {
-                lo[k] = lo[k].min(p[k]);
-                hi[k] = hi[k].max(p[k]);
-            }
-        }
-        distance(lo, hi)
-    });
+    let b = Box3::of(tris.iter().flatten().copied());
+    let reach = if b.is_empty() { 0.0 } else { distance(b.lo, b.hi) };
     for t in tris {
         let (ab, ac) = (sub(t[1], t[0]), sub(t[2], t[0]));
         let x = cross(ab, ac);
@@ -399,20 +364,9 @@ fn spread(tris: &[[V; 3]]) -> (Vec<V>, Vec<V>) {
     (taken.iter().map(|&i| c[i]).collect(), taken.iter().map(|&i| n[i]).collect())
 }
 
-/// A direction as a reader reads it: `x`, `-z`, else its components to three figures.
-fn direction_text(d: V) -> String {
-    for (k, name) in ["x", "y", "z"].iter().enumerate() {
-        if (d[k].abs() - 1.0).abs() <= 1e-9 {
-            return if d[k] > 0.0 { name.to_string() } else { format!("-{name}") };
-        }
-    }
-    let parts: Vec<String> = d.iter().map(|v| crate::json::fmt_g(*v, 3)).collect();
-    format!("({})", parts.join(", "))
-}
-
 /// **A load's size as a reader reads it**, in SI with a prefix that keeps it between 1 and 1000:
 /// `600N`, `2.5kN`, `100kPa`, `9.81m/s²`.
-pub fn quantity(sk: &Sketch, dim: Dim, v: f64) -> String {
+fn quantity(sk: &Sketch, dim: Dim, v: f64) -> String {
     let si = sk.units.to_si(v, dim);
     let unit = if dim == LoadKind::Force.dim() {
         "N"

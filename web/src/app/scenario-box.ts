@@ -11,6 +11,7 @@
  * and no coordinate is worked out on this side. */
 import * as THREE from 'three';
 
+import type { ScenarioAnswer } from '../core/program.js';
 import type { ScenarioMark, Vec3 } from '../core/scenario.js';
 import type { Drawn } from './scenario-view.js';
 import type { SketchView } from './view.js';
@@ -60,18 +61,22 @@ export function ramp(t: number, out = new THREE.Color()): THREE.Color {
   return out.set(RAMP[0][1]);
 }
 
-/** What a requirement's answer says of it, for its probe's ink: held, failed, or nothing yet. */
-function verdict(v: SketchView, index: number): boolean | null {
-  const s = v.scenarios.find((x) => x.name === v.scenario);
-  return s?.answers.find((a) => a.index === index)?.holds ?? null;
+/** What the scenario drawn answered of its requirement `index`, once it is read. */
+function answerOf(v: SketchView, index: number): ScenarioAnswer | undefined {
+  return v.scenarios.find((s) => s.name === v.scenario)?.answers.find((a) => a.index === index);
+}
+
+/** A sentence the core said of a scenario, without the scenario's name at its head — what the
+ *  card and a label say, the scenario being the one chosen. */
+export function bare(text: string): string {
+  return text.replace(/^scenario `[^`]*`:? /, '');
 }
 
 /** A requirement's label: its sentence without the scenario's name, to its value. */
 function said(v: SketchView, m: ScenarioMark): string {
-  const s = v.scenarios.find((x) => x.name === v.scenario);
-  const a = s?.answers.find((x) => x.index === m.index);
+  const a = answerOf(v, m.index);
   if (!a) return m.text;
-  const text = a.text.replace(/^scenario `[^`]*`: /, '');
+  const text = bare(a.text);
   const cut = text.indexOf(': ', text.indexOf(' is '));
   return cut > 0 ? text.slice(0, cut) : text;
 }
@@ -126,7 +131,7 @@ export class ScenarioScene {
     for (const g of this.glyphs) g.scale.setScalar(unit);
     for (const { sprite, w, h } of this.labels) sprite.scale.set(w * unit, h * unit, 1);
     for (const p of this.probes) {
-      const held = verdict(v, p.index);
+      const held = answerOf(v, p.index)?.holds ?? null;
       p.mat.color.set(held === true ? INK.kept : held === false ? INK.refuted : INK.requirement);
     }
     let s = v.scenarioFactor;

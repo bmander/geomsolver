@@ -15,7 +15,8 @@
 //! A host draws `rest + s·moved` for any `s` it likes; nothing here depends on it.
 
 use crate::model::{Output, Sketch};
-use crate::space::{distance, norm};
+use crate::solid::Box3;
+use crate::space::norm;
 
 type V = [f64; 3];
 
@@ -87,18 +88,12 @@ pub struct Picture {
 impl Picture {
     /// The picture of these bodies, each drawn or why not.
     pub fn of(read: Vec<Result<Body, String>>) -> Picture {
-        let mut p = Picture { scale: 1.0, ..Picture::default() };
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
+        let mut p = Picture::default();
+        let mut bounds = Box3::empty();
         for b in read {
             match b {
                 Ok(b) => {
-                    for q in &b.rest {
-                        for k in 0..3 {
-                            lo[k] = lo[k].min(q[k]);
-                            hi[k] = hi[k].max(q[k]);
-                        }
-                    }
+                    b.rest.iter().for_each(|&q| bounds.add(q));
                     let (m, at) = b.largest();
                     if m > p.largest {
                         (p.largest, p.largest_at) = (m, at);
@@ -112,9 +107,7 @@ impl Picture {
                 }
             }
         }
-        if !p.bodies.is_empty() {
-            p.extent = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
-        }
+        p.extent = bounds.side();
         p.scale = factor(p.extent, p.largest);
         p
     }
@@ -180,8 +173,7 @@ pub(crate) fn tube(body: &mut Body, centre: &[(V, V)], e2: V, e3: V, radius: f64
         }
     }
     // the element's chord, ring to ring through one side: where its nodes are
-    if centre.len() >= 2 && distance(centre[0].0, centre[centre.len() - 1].0) > 0.0 {
-        let last = centre.len() - 1;
+    if let Some(last) = centre.len().checked_sub(1).filter(|&l| l > 0) {
         body.edges.push([at(0, 0), at(last, 0)]);
     }
 }
