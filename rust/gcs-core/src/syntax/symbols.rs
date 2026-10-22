@@ -31,11 +31,10 @@
 
 use std::collections::BTreeMap;
 
-use super::highlight::{highlight, Tint};
-use super::lexer::{lex, Tok};
-use super::words::{is_name, part_at, past_args, set_at, word_definition_at, BLOCKS};
+use super::highlight::{defined_word, tints, Tint};
+use super::lexer::{group_ahead, lex, Tok};
+use super::words::{is_name, part_at, set_at, BLOCKS, QUALIFIERS};
 use super::{Span, MAX_TEXT};
-use crate::constraints::Fixity;
 use crate::model::EntKind;
 
 /// What gave a symbol its name.
@@ -134,17 +133,9 @@ pub fn symbols(src: &str) -> Symbols {
         return Symbols::default();
     }
     let toks = lex(src).0.toks;
-    let runs = highlight(src);
-    let tints: Vec<Option<Tint>> = toks
-        .iter()
-        .map(|(_, s)| {
-            let k = runs.partition_point(|r| r.1.hi <= s.lo);
-            runs.get(k).filter(|r| r.1.lo <= s.lo).map(|r| r.0)
-        })
-        .collect();
     let mut b = Build::default();
-    b.scopes.push(Scope::new(None, Close::Never, true, true));
-    b.walk(&toks, &tints);
+    b.scopes.push(Scope::new(0, Close::Never, true, true, false));
+    b.walk(src, &toks, &tints(&toks));
     b.finish()
 }
 
@@ -162,8 +153,9 @@ enum Close {
     Paren(i32),
 }
 
-struct Scope {
-    parent: Option<usize>,
+struct Scope<'a> {
+    /// The scope around it; the document's is its own.
+    parent: usize,
     close: Close,
     /// The declarations made in it are its own; otherwise they belong to the scope around it,
     /// as a repetition's do.
@@ -179,17 +171,17 @@ struct Scope {
     /// Where a component's formals are, while they are being read: the depth of parentheses
     /// inside its list.
     formals: Option<i32>,
-    names: BTreeMap<String, usize>,
+    names: BTreeMap<&'a str, usize>,
 }
 
-impl Scope {
-    fn new(parent: Option<usize>, close: Close, owner: bool, unit: bool) -> Scope {
+impl Scope<'_> {
+    fn new(parent: usize, close: Close, owner: bool, unit: bool, binds: bool) -> Self {
         Scope {
             parent,
             close,
             owner,
             unit,
-            binds: false,
+            binds,
             interface: false,
             formals: None,
             names: BTreeMap::new(),
@@ -200,7 +192,7 @@ impl Scope {
 /// How a word is resolved, once every declaration is known.
 #[derive(Clone, Copy)]
 enum Base {
-    /// already: a declaration
+    /// already: a declaration, and so where its name is given
     Given(usize),
     /// by name from this scope outwards, an unknown where nothing gives it
     Read(usize),
@@ -211,48 +203,41 @@ enum Base {
     Field(usize),
     /// the formal of what the call at this node is, nothing where it has none
     Label(usize),
-    /// `next` or `prev`: no name of its own, its field read in this scope
+    /// `next` or `prev`: no name of its own (it names nothing), its field read in this scope
     Copy(usize),
 }
 
-struct Node {
-    name: String,
+struct Node<'a> {
+    name: &'a str,
     span: Span,
     base: Base,
-    def: bool,
-    /// shown as an occurrence: everything but `next`/`prev`
-    shown: bool,
 }
 
-/// What a name declared just now is still waiting for, to know what its members are.
+/// What a name declared just now is waiting for, to know what its members are.
 #[derive(Clone, Copy, PartialEq)]
 enum Typing {
-    /// `t0` of `t0 := Rung(…)`, before the `:=`
-    Define,
-    /// past the `:=`: the call's name
+    /// `t0` of `t0 := Rung(…)`: the name before the call's `(`
     Call,
-    /// `layout` of `layout: Layout`, before the `:`
-    Colon,
-    /// past the `:`: the interface's name
+    /// `layout` of `layout: Layout`: the interface's name
     Formal,
 }
 
 #[derive(Default)]
-struct Build {
-    scopes: Vec<Scope>,
+struct Build<'a> {
+    scopes: Vec<Scope<'a>>,
     symbols: Vec<Symbol>,
     /// the scope a component or a word opens, by symbol
     opens: BTreeMap<usize, usize>,
     /// the node naming what a symbol is an instance of, or the interface it is typed by
     types: BTreeMap<usize, usize>,
-    nodes: Vec<Node>,
-    members: BTreeMap<(usize, String), usize>,
-    unknowns: BTreeMap<(usize, String), usize>,
+    nodes: Vec<Node<'a>>,
+    members: BTreeMap<(usize, &'a str), usize>,
+    unknowns: BTreeMap<(usize, &'a str), usize>,
     resolved: Vec<Option<Option<usize>>>,
 }
 
-impl Build {
-    fn walk(&mut self, toks: &[(Tok, Span)], tints: &[Option<Tint>]) {
+impl<'a> Build<'a> {
+    fn walk(&mut self, src: &str, toks: &'a [(Tok, Span)], tints: &[Option<Tint>]) {
         let tok = |k: usize| toks.get(k).map(|(t, _)| t);
         let mut cur = 0usize;
         let mut braces = 0i32;
@@ -264,8 +249,9 @@ impl Build {
         let mut squares: Vec<Option<usize>> = Vec::new();
         // per open parenthesis: the node it calls, and whether it is `fix`'s
         let mut calls: Vec<(Option<usize>, bool)> = Vec::new();
-        // per open brace: the symbol a group's labels are members of
-        let mut groups: Vec<Option<(usize, i32)>> = Vec::new();
+        // per open brace that opens a group's members: the symbol they are members of, and the
+        // depth of parentheses its labels stand at
+        let mut groups: Vec<Option<(Option<usize>, i32)>> = Vec::new();
         let mut typing: Option<(usize, Typing)> = None;
         // the last label a group gave, which a group written in place under it is the members of
         let mut member: Option<usize> = None;
@@ -279,28 +265,19 @@ impl Build {
             let (t, span) = (&toks[i].0, toks[i].1);
             let prev = i.checked_sub(1).and_then(|j| tok(j));
             let after_dot = field.take();
-            let typed = typing;
-            if let Some((_, end)) = head {
-                if i > end {
-                    head = None;
-                }
-            }
-            if !matches!(t, Tok::Ident(_) | Tok::P('.') | Tok::P('(') | Tok::P(':') | Tok::Define) {
+            if !matches!(t, Tok::Ident(_) | Tok::P('.' | '(' | ':' | '{') | Tok::Define) {
                 typing = None;
             }
             match t {
                 Tok::Nl => {
-                    while self.ends(cur, |c| match c {
+                    cur = self.close_while(cur, |c| match c {
                         Close::Statement(d) => d >= braces,
                         Close::Paren(_) => true,
                         _ => false,
-                    }) {
-                        cur = self.scopes[cur].parent.unwrap_or(0);
-                    }
+                    });
                     start = true;
                     path = None;
                     using = 0;
-                    head = None;
                     unit = None;
                     calls.clear();
                     squares.clear();
@@ -308,18 +285,22 @@ impl Build {
                     continue;
                 }
                 Tok::P('{') => {
-                    let group = matches!(prev, Some(Tok::Define) | Some(Tok::P(':')))
-                        && set_at(toks, i).is_none()
-                        && group_after(toks, i);
-                    let owner = match prev {
-                        Some(Tok::Define) if group => typed.map(|(s, _)| s),
-                        Some(Tok::P(':')) if group => member,
-                        _ => None,
+                    let set = set_at(toks, i).is_some();
+                    // the lexer's rule: after `:=` a list of members, and after a member's `:`
+                    // where the brace around it is one
+                    let group = match prev {
+                        Some(Tok::Define) => !set && group_ahead(&src[span.hi as usize..]),
+                        Some(Tok::P(':')) => groups.last().is_some_and(|g| g.is_some()),
+                        _ => false,
                     };
-                    groups.push(owner.map(|s| (s, parens)));
-                    if set_at(toks, i).is_some() {
-                        cur = self.push(cur, Close::Brace(braces), true, false);
-                        self.scopes[cur].binds = true;
+                    let owner = match prev {
+                        Some(Tok::Define) => typing.map(|(s, _)| s),
+                        _ => member,
+                    };
+                    groups.push(group.then_some((owner, parens)));
+                    typing = None;
+                    if set {
+                        cur = self.push(cur, Close::Brace(braces), true, false, true);
                     } else if !group {
                         let s = &mut self.scopes[cur];
                         s.binds &= !matches!(s.close, Close::Statement(_));
@@ -334,14 +315,12 @@ impl Build {
                 Tok::P('}') => {
                     braces = (braces - 1).max(0);
                     groups.pop();
-                    while self.ends(cur, |c| match c {
+                    cur = self.close_while(cur, |c| match c {
                         Close::Brace(d) => d >= braces,
                         Close::Statement(d) => d > braces,
                         Close::Paren(_) => true,
                         Close::Never => false,
-                    }) {
-                        cur = self.scopes[cur].parent.unwrap_or(0);
-                    }
+                    });
                     start = true;
                     path = None;
                     continue;
@@ -365,8 +344,7 @@ impl Build {
                     let fix = matches!(prev, Some(Tok::Ident(w)) if w == "fix");
                     calls.push((path, fix));
                     if matches!(prev, Some(Tok::Ident(w)) if w == "integral") {
-                        cur = self.push(cur, Close::Paren(parens), false, false);
-                        self.scopes[cur].binds = true;
+                        cur = self.push(cur, Close::Paren(parens), false, false, true);
                     }
                     parens += 1;
                     path = None;
@@ -375,9 +353,7 @@ impl Build {
                 Tok::P(')') => {
                     parens = (parens - 1).max(0);
                     let (callee, _) = calls.pop().unwrap_or((None, false));
-                    while self.ends(cur, |c| matches!(c, Close::Paren(d) if d >= parens)) {
-                        cur = self.scopes[cur].parent.unwrap_or(0);
-                    }
+                    cur = self.close_while(cur, |c| matches!(c, Close::Paren(d) if d >= parens));
                     if self.scopes[cur].formals.is_some_and(|d| d > parens) {
                         self.scopes[cur].formals = None;
                     }
@@ -401,17 +377,11 @@ impl Build {
                     continue;
                 }
                 Tok::P(':') => {
-                    if let Some((s, Typing::Colon)) = typing {
-                        typing = Some((s, Typing::Formal));
-                    }
                     path = None;
                     continue;
                 }
                 Tok::Define => {
-                    typing = match typing {
-                        Some((s, Typing::Define)) => Some((s, Typing::Call)),
-                        _ => None,
-                    };
+                    typing = typing.filter(|&(_, k)| k == Typing::Call);
                     start = false;
                     path = None;
                     continue;
@@ -424,60 +394,56 @@ impl Build {
                 }
             }
             let Tok::Ident(w) = t else { unreachable!("every other token continued above") };
+            let w = w.as_str();
             let next = tok(i + 1);
             let at_start = std::mem::replace(&mut start, false);
             path = None;
 
             // what a statement opens, read at its first word
             if at_start {
-                if let Some(fixity) = word_definition_at(toks, i) {
-                    let word = if fixity == Fixity::Infix { i + 1 } else { i };
-                    head = Some((word, past_args(toks, word) + 1));
-                    cur = self.push(cur, Close::Statement(braces), true, true);
+                if let Some(h) = defined_word(toks, i) {
+                    head = Some(h);
+                    cur = self.push(cur, Close::Statement(braces), true, true, false);
                 } else if w == "component" || w == "interface" || part_at(toks, i) {
                     unit = Some(w == "interface");
                 } else if w == "use" {
                     using = 1;
                     continue;
-                } else if BLOCKS.contains(&w.as_str()) {
-                    cur = self.push(cur, Close::Statement(braces), false, false);
-                    self.scopes[cur].binds = w != "when";
+                } else if BLOCKS.contains(&w) {
+                    cur = self.push(cur, Close::Statement(braces), false, false, w != "when");
                 } else if w == "in" {
-                    cur = self.push(cur, Close::Statement(braces), false, false);
+                    cur = self.push(cur, Close::Statement(braces), false, false, false);
                 } else if (w == "claim" || w == "preview") && next == Some(&Tok::P('{')) {
-                    cur = self.push(cur, Close::Statement(braces), true, false);
-                } else if ["private", "construction", "centerline"].contains(&w.as_str()) {
+                    cur = self.push(cur, Close::Statement(braces), true, false, false);
+                } else if QUALIFIERS.contains(&w) {
                     start = true;
                 }
             }
 
             // a relation word's head: the word is the document's, its operands and parameters
             // the body's
-            if let Some((word, end)) = head {
-                if i < end {
-                    let outer = self.scopes[cur].parent.unwrap_or(0);
-                    if i == word {
-                        let owner = self.owner(outer);
-                        let s = self.define(owner, w, SymbolKind::Word);
-                        self.opens.insert(s, cur);
-                        self.given(s, w, span);
-                    } else if prev != Some(&Tok::P(':')) && is_name(w) {
-                        let s = self.define(cur, w, SymbolKind::Formal);
-                        self.given(s, w, span);
-                    }
-                    continue;
+            if let Some((word, _)) = head.filter(|&(_, end)| i < end) {
+                if i == word {
+                    let owner = self.up(self.scopes[cur].parent, |s| s.owner);
+                    let s = self.define(owner, w, SymbolKind::Word);
+                    self.opens.insert(s, cur);
+                    self.given(s, w, span);
+                } else if prev != Some(&Tok::P(':')) && is_name(w) {
+                    let s = self.define(cur, w, SymbolKind::Formal);
+                    self.given(s, w, span);
                 }
+                continue;
             }
 
             if using > 0 {
                 if let Some(of) = after_dot {
-                    path = Some(self.node(w, span, Base::Field(of), false));
+                    path = Some(self.node(w, span, Base::Field(of)));
                 } else if using == 1 {
-                    let owner = self.owner(cur);
+                    let owner = self.up(cur, |s| s.owner);
                     let s = self.define(owner, w, SymbolKind::Module);
                     path = Some(self.given(s, w, span));
                 } else if is_name(w) {
-                    let owner = self.owner(cur);
+                    let owner = self.up(cur, |s| s.owner);
                     let s = self.define(owner, w, SymbolKind::Import);
                     self.given(s, w, span);
                 }
@@ -490,7 +456,7 @@ impl Build {
                     Base::Copy(sc) => Base::Read(sc),
                     _ => Base::Field(of),
                 };
-                let n = self.node(w, span, base, false);
+                let n = self.node(w, span, base);
                 path = Some(n);
                 if let Some((s, Typing::Formal)) = typing {
                     self.types.insert(s, n);
@@ -502,7 +468,7 @@ impl Build {
             if at_start && self.scopes[cur].interface && next == Some(&Tok::P(':')) {
                 let s = self.define(cur, w, SymbolKind::Formal);
                 self.given(s, w, span);
-                typing = Some((s, Typing::Colon));
+                typing = Some((s, Typing::Formal));
                 continue;
             }
 
@@ -517,50 +483,49 @@ impl Build {
                         }
                         None => SymbolKind::Name,
                     };
-                    let into = if binds { cur } else { self.owner(cur) };
+                    let into = if binds { cur } else { self.up(cur, |s| s.owner) };
                     let s = self.define(into, w, kind);
                     self.given(s, w, span);
                     if let Some(interface) = unit.take() {
-                        cur = self.push(cur, Close::Statement(braces), true, true);
+                        cur = self.push(cur, Close::Statement(braces), true, true, false);
                         self.opens.insert(s, cur);
                         self.scopes[cur].interface = interface;
                         self.scopes[cur].formals = (!interface).then_some(parens + 1);
                     }
-                    typing = (next == Some(&Tok::Define)).then_some((s, Typing::Define));
+                    typing = (next == Some(&Tok::Define)).then_some((s, Typing::Call));
+                    continue;
                 }
                 Some(Tint::Label) => {
+                    let group = groups.last().copied().flatten().filter(|&(_, d)| d == parens);
                     if self.scopes[cur].formals == Some(parens) {
                         let s = self.define(cur, w, SymbolKind::Formal);
                         self.given(s, w, span);
-                        typing = Some((s, Typing::Colon));
-                    } else if let Some(Some((owner, _))) =
-                        groups.last().copied().filter(|g| g.is_some_and(|(_, d)| d == parens))
-                    {
+                        typing = Some((s, Typing::Formal));
+                        continue;
+                    } else if let Some((Some(owner), _)) = group {
                         let s = self.member(owner, w);
                         self.given(s, w, span);
                         member = Some(s);
                     } else if let Some(&(Some(callee), _)) = calls.last() {
-                        self.node(w, span, Base::Label(callee), false);
+                        self.node(w, span, Base::Label(callee));
                     }
                 }
                 // a call of a component, or of what the core makes (`trace(…)`), which no
                 // declaration gives and so names nothing
                 Some(Tint::Type) if next == Some(&Tok::P('(')) && EntKind::parse(w).is_none() => {
-                    path = Some(self.node(w, span, Base::Word(cur), false));
+                    path = Some(self.node(w, span, Base::Word(cur)));
                 }
                 Some(Tint::Relation) => {
-                    path = Some(self.node(w, span, Base::Word(cur), false));
+                    path = Some(self.node(w, span, Base::Word(cur)));
                 }
                 Some(Tint::Word) if (w == "next" || w == "prev") && next == Some(&Tok::P('.')) => {
-                    let n = self.node(w, span, Base::Copy(cur), false);
-                    self.nodes[n].shown = false;
-                    path = Some(n);
+                    path = Some(self.node(w, span, Base::Copy(cur)));
                 }
                 None if is_name(w) => {
                     // `fix(x == 0, y == 0) p` — a member the word holds, of the operand after it
                     let held = next == Some(&Tok::EqEq) && calls.last().is_some_and(|c| c.1);
                     if !held {
-                        let n = self.node(w, span, Base::Read(cur), false);
+                        let n = self.node(w, span, Base::Read(cur));
                         path = Some(n);
                         if let Some((s, Typing::Formal)) = typing {
                             self.types.insert(s, n);
@@ -569,70 +534,52 @@ impl Build {
                 }
                 _ => {}
             }
-            if !matches!(typing, Some((_, Typing::Define | Typing::Colon))) && path.is_none() {
+            if path.is_none() {
                 typing = None;
             }
         }
     }
 
-    /// Whether the innermost scope (never the document's) ends at what `ends` says.
-    fn ends(&self, cur: usize, ends: impl Fn(Close) -> bool) -> bool {
-        cur != 0 && ends(self.scopes[cur].close)
+    /// The scope around `cur` past every innermost one that ends at what `ends` says.
+    fn close_while(&self, mut cur: usize, ends: impl Fn(Close) -> bool) -> usize {
+        while ends(self.scopes[cur].close) {
+            cur = self.scopes[cur].parent;
+        }
+        cur
     }
 
-    fn push(&mut self, cur: usize, close: Close, owner: bool, unit: bool) -> usize {
-        self.scopes.push(Scope::new(Some(cur), close, owner, unit));
+    fn push(&mut self, cur: usize, close: Close, owner: bool, unit: bool, binds: bool) -> usize {
+        self.scopes.push(Scope::new(cur, close, owner, unit, binds));
         self.scopes.len() - 1
     }
 
-    /// The scope a declaration made in `s` belongs to.
-    fn owner(&self, mut s: usize) -> usize {
-        while !self.scopes[s].owner {
-            s = self.scopes[s].parent.unwrap_or(0);
+    /// The innermost scope from `s` outwards that `is` says, the document's at the last — which
+    /// is every kind there is.
+    fn up(&self, mut s: usize, is: impl Fn(&Scope) -> bool) -> usize {
+        while !is(&self.scopes[s]) {
+            s = self.scopes[s].parent;
         }
         s
-    }
-
-    fn unit_of(&self, mut s: usize) -> usize {
-        while !self.scopes[s].unit {
-            s = self.scopes[s].parent.unwrap_or(0);
-        }
-        s
-    }
-
-    fn symbol(&mut self, name: &str, kind: SymbolKind, parent: Option<usize>) -> usize {
-        self.symbols.push(Symbol { name: name.to_string(), kind, parent });
-        self.symbols.len() - 1
     }
 
     /// The symbol `name` is in scope `s`, made now if this is its first declaration there.  A
     /// name declared twice in one scope is one symbol, the copies of a block's statement or a
     /// mistake, and the elaborator says which.
-    fn define(&mut self, s: usize, name: &str, kind: SymbolKind) -> usize {
-        if let Some(&k) = self.scopes[s].names.get(name) {
-            return k;
-        }
-        let k = self.symbol(name, kind, None);
-        self.scopes[s].names.insert(name.to_string(), k);
-        k
+    fn define(&mut self, s: usize, name: &'a str, kind: SymbolKind) -> usize {
+        intern(&mut self.symbols, &mut self.scopes[s].names, name, name, kind, None)
     }
 
-    fn member(&mut self, of: usize, name: &str) -> usize {
-        if let Some(&k) = self.members.get(&(of, name.to_string())) {
-            return k;
-        }
-        let k = self.symbol(name, SymbolKind::Member, Some(of));
-        self.members.insert((of, name.to_string()), k);
-        k
+    fn member(&mut self, of: usize, name: &'a str) -> usize {
+        intern(&mut self.symbols, &mut self.members, (of, name), name, SymbolKind::Member, Some(of))
     }
 
-    fn node(&mut self, name: &str, span: Span, base: Base, def: bool) -> usize {
-        self.nodes.push(Node { name: name.to_string(), span, base, def, shown: true });
+    fn node(&mut self, name: &'a str, span: Span, base: Base) -> usize {
+        self.nodes.push(Node { name, span, base });
         self.nodes.len() - 1
     }
 
-    fn given(&mut self, s: usize, name: &str, span: Span) -> usize {
-        self.node(name, span, Base::Given(s), true)
+    fn given(&mut self, s: usize, name: &'a str, span: Span) -> usize {
+        self.node(name, span, Base::Given(s))
     }
 
     fn lookup(&self, mut s: usize, name: &str) -> Option<usize> {
@@ -640,7 +587,10 @@ impl Build {
             if let Some(&k) = self.scopes[s].names.get(name) {
                 return Some(k);
             }
-            s = self.scopes[s].parent?;
+            if s == 0 {
+                return None;
+            }
+            s = self.scopes[s].parent;
         }
     }
 
@@ -648,12 +598,9 @@ impl Build {
     /// instance of or typed by.
     fn declared_in(&mut self, s: usize, name: &str) -> Option<usize> {
         let holder = match self.symbols[s].kind {
-            SymbolKind::Component | SymbolKind::Word => Some(s),
-            _ => match self.types.get(&s).copied() {
-                Some(n) => self.resolve(n),
-                None => None,
-            },
-        }?;
+            SymbolKind::Component | SymbolKind::Word => s,
+            _ => self.resolve(*self.types.get(&s)?)?,
+        };
         let scope = *self.opens.get(&holder)?;
         self.scopes[scope].names.get(name).copied()
     }
@@ -664,36 +611,30 @@ impl Build {
         }
         // a cycle of types (`a := a.b(…)`) resolves to nothing rather than forever
         self.resolved[n] = Some(None);
-        let name = self.nodes[n].name.clone();
+        let name = self.nodes[n].name;
         let r = match self.nodes[n].base {
             Base::Given(s) => Some(s),
-            Base::Read(sc) => Some(match self.lookup(sc, &name) {
+            Base::Read(sc) => Some(match self.lookup(sc, name) {
                 Some(s) => s,
                 None => {
-                    let key = (self.unit_of(sc), name.clone());
-                    match self.unknowns.get(&key) {
-                        Some(&s) => s,
-                        None => {
-                            let s = self.symbol(&name, SymbolKind::Unknown, None);
-                            self.unknowns.insert(key, s);
-                            s
-                        }
-                    }
+                    let key = (self.up(sc, |s| s.unit), name);
+                    let kind = SymbolKind::Unknown;
+                    intern(&mut self.symbols, &mut self.unknowns, key, name, kind, None)
                 }
             }),
-            Base::Word(sc) => self.lookup(sc, &name),
+            Base::Word(sc) => self.lookup(sc, name),
             Base::Copy(_) => None,
-            Base::Field(of) => match self.resolve(of) {
-                Some(p) => Some(match self.declared_in(p, &name) {
+            Base::Field(of) => {
+                let p = self.resolve(of)?;
+                Some(match self.declared_in(p, name) {
                     Some(s) => s,
-                    None => self.member(p, &name),
-                }),
-                None => None,
-            },
-            Base::Label(call) => match self.resolve(call) {
-                Some(c) => self.declared_in(c, &name),
-                None => None,
-            },
+                    None => self.member(p, name),
+                })
+            }
+            Base::Label(call) => {
+                let c = self.resolve(call)?;
+                self.declared_in(c, name)
+            }
         };
         self.resolved[n] = Some(r);
         r
@@ -703,25 +644,27 @@ impl Build {
         self.resolved = vec![None; self.nodes.len()];
         let mut occurrences = Vec::with_capacity(self.nodes.len());
         for n in 0..self.nodes.len() {
-            if !self.nodes[n].shown {
-                continue;
-            }
             if let Some(symbol) = self.resolve(n) {
                 let node = &self.nodes[n];
-                occurrences.push(Occurrence { span: node.span, symbol, def: node.def });
+                let def = matches!(node.base, Base::Given(_));
+                occurrences.push(Occurrence { span: node.span, symbol, def });
             }
         }
         Symbols { symbols: self.symbols, occurrences }
     }
 }
 
-/// Whether the `{` at `i`, after a `:=` or a member's `:`, opens a group's members: empty, or a
-/// name and then `:` — the lexer's own rule (`group_ahead`), read off its tokens.
-fn group_after(toks: &[(Tok, Span)], i: usize) -> bool {
-    let mut rest = toks[i + 1..].iter().map(|(t, _)| t).filter(|t| **t != Tok::Nl);
-    match rest.next() {
-        Some(Tok::P('}')) => true,
-        Some(Tok::Ident(_)) => rest.next() == Some(&Tok::P(':')),
-        _ => false,
-    }
+/// The symbol `key` is in `map`, made now — named `name`, of `kind` — if it is not there yet.
+fn intern<K: Ord>(
+    symbols: &mut Vec<Symbol>,
+    map: &mut BTreeMap<K, usize>,
+    key: K,
+    name: &str,
+    kind: SymbolKind,
+    parent: Option<usize>,
+) -> usize {
+    *map.entry(key).or_insert_with(|| {
+        symbols.push(Symbol { name: name.to_string(), kind, parent });
+        symbols.len() - 1
+    })
 }

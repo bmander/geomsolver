@@ -75,6 +75,10 @@ pub(super) const MODIFIERS: [&str; 12] = [
     "param", "of",
 ];
 
+/// The modifiers a statement may open with and still be at its start — the word after them is
+/// the one that says what the statement is.
+pub(super) const QUALIFIERS: [&str; 3] = ["private", "construction", "centerline"];
+
 /// The words that may follow a declaration's own, so `class a b` knows where its list ends.
 /// A chain's joints are here too: `arc a(center: c) class construction tangent …` is one link.
 const TRAILERS: [&str; 7] = ["knots", "weights", "hint", "class", "close", "in", "of"];

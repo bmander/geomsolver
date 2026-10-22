@@ -509,7 +509,7 @@ export function showStatementFor(): void {
   if (!where || ppanel.hidden || typed || view.gesture) return;
   if (!project && activeFile) selectFile('');
   markStatement();
-  if (document.activeElement !== ptext) ped.scrollToLine(lineAt(where.lo));
+  if (document.activeElement !== ptext) ped.scrollToLine(ped.lineOf(where.lo));
 }
 
 /** **Go to source** (#435): the program editor's caret on a span of the document — an outline
@@ -522,15 +522,7 @@ export function goToSource(span: SourceSpan): void {
   if (!project && activeFile) selectFile('');
   ptext.focus();
   ptext.setSelectionRange(span.lo, span.hi);
-  ped.scrollToLine(lineAt(span.lo));
-}
-
-/** Which line an offset falls on.  Counted rather than sliced: `slice(0, off).split` builds the
- *  whole prefix and an array of every line in it, on every pick. */
-function lineAt(off: number): number {
-  let line = 0;
-  for (let i = 0; i < off && i < shown.length; i += 1) if (shown[i] === '\n') line += 1;
-  return line;
+  ped.scrollToLine(ped.lineOf(span.lo));
 }
 
 /** Be told each time the panel turns to a pane — the outline reads its tree only while shown. */

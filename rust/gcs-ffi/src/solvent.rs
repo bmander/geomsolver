@@ -117,24 +117,17 @@ pub unsafe extern "C" fn gcs_program_highlight(ptr: *const u8, len: usize) -> *m
 pub unsafe extern "C" fn gcs_program_symbols(ptr: *const u8, len: usize) -> *mut u8 {
     json_out(move || {
         let index = syntax::symbols(as_str(ptr, len));
-        let symbols = index.symbols.iter().map(|s| {
-            Json::Arr(vec![
-                Json::Str(s.name.clone()),
-                Json::Str(s.kind.as_str().to_string()),
-                Json::Int(s.parent.map_or(-1, |p| p as i64)),
-            ])
+        let symbols = index.symbols.into_iter().map(|s| {
+            let parent = s.parent.map_or(-1, |p| p as i64);
+            Json::Arr(vec![s.name.into(), s.kind.as_str().into(), parent.into()])
         });
         let occurrences = index.occurrences.iter().map(|o| {
-            Json::Arr(vec![
-                Json::Int(o.span.lo as i64),
-                Json::Int(o.span.hi as i64),
-                Json::Int(o.symbol as i64),
-                Json::Int(o.def as i64),
-            ])
+            let def = o.def as i64;
+            Json::Arr(vec![o.span.lo.into(), o.span.hi.into(), o.symbol.into(), def.into()])
         });
-        Json::Obj(vec![
-            ("symbols".to_string(), Json::Arr(symbols.collect())),
-            ("occurrences".to_string(), Json::Arr(occurrences.collect())),
+        json::object([
+            ("symbols", Json::Arr(symbols.collect())),
+            ("occurrences", Json::Arr(occurrences.collect())),
         ])
     })
 }

@@ -171,7 +171,7 @@ pub(super) fn lex(src: &str) -> (Lexed, Vec<SynErr>) {
 /// Whether the text after a `{` opens a list of members: empty, or a name and then `:` (not
 /// `:=`), whatever space, line breaks or comments stand between.  Anything else — a set's `{ p |
 /// … }`, a word's statements — is a body.
-fn group_ahead(rest: &str) -> bool {
+pub(super) fn group_ahead(rest: &str) -> bool {
     fn skip(mut s: &str) -> &str {
         loop {
             s = s.trim_start();

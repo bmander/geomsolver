@@ -23,6 +23,8 @@ const LAYER = 'occurrences';
 /** How long the caret rests before the names are lit: long enough that arrowing through a line
  *  repaints nothing, short enough that a click reads as answered. */
 const PAUSE = 120;
+/** A character a name may hold — the lexer's `ident_char`. */
+const WORD = /[\p{L}\p{N}_]/u;
 
 /** The occurrence a caret or selection means (module header): the one it is in or stands just
  *  past, or the one it selects exactly. */
@@ -49,7 +51,7 @@ export function stepTo(index: Symbols, lo: number, hi: number, step: 1 | -1): Oc
   const o = meant(index, lo, hi);
   if (!o) return null;
   const all = index.of(o.symbol);
-  const k = all.findIndex((x) => x.lo === o.lo);
+  const k = all.indexOf(o);
   return all[(k + step + all.length) % all.length];
 }
 
@@ -60,12 +62,9 @@ export class Occurrences {
   private timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly ed: CodeEditor) {
-    ed.onCaret((edited) => {
-      // an edit moves every offset after it: what was lit is let go at once, quietly, since the
-      // edit is about to repaint the copy anyway, and asked again once the typing rests
-      if (edited) ed.setMarks([], LAYER, false);
-      this.later();
-    });
+    // an edit has already let go of what was lit (the editor drops a layer the text moved
+    // under); either way the name is asked again once the caret rests
+    ed.onCaret(() => this.later());
     ed.box.addEventListener('keydown', (e) => {
       if (e.key !== 'F7' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (this.step(e.shiftKey ? -1 : 1)) e.preventDefault();
@@ -85,8 +84,11 @@ export class Occurrences {
   update(): void {
     clearTimeout(this.timer);
     this.timer = undefined;
-    const index = this.symbols();
     const { lo, hi } = this.ed.caret;
+    // no word against the caret, no name: the text is not indexed for it, which is most of the
+    // pauses in typing — after a space, a bracket, a line's end
+    const text = this.ed.text;
+    const index = (WORD.test(text[lo - 1] ?? '') || WORD.test(text[lo] ?? '')) && this.symbols();
     this.ed.setMarks(index ? occurrenceMarks(index, lo, hi) : [], LAYER);
   }
 
@@ -113,10 +115,7 @@ export class Occurrences {
     const text = this.ed.text;
     if (this.index?.text !== text) {
       // a core that cannot read the text lights nothing; it is no reason to stop typing
-      let symbols: Symbols | null = null;
-      try { symbols = this.indexer(text); } catch { /* nothing lit */ }
-      if (!symbols) return null;
-      this.index = { text, symbols };
+      try { this.index = { text, symbols: this.indexer(text) }; } catch { return null; }
     }
     return this.index.symbols;
   }

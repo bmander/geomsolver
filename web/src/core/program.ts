@@ -542,16 +542,10 @@ export class Symbols {
   constructor(readonly symbols: Symbol[], readonly occurrences: Occurrence[]) {}
 
   /** The occurrence a caret at string index `at` is in, or stands just past — `rim|` means `rim`,
-   *  as in every editor; the core's `Symbols::at`. */
+   *  as in every editor (the rule `Symbols::at` states in the core). */
   at(at: number): Occurrence | null {
     const os = this.occurrences;
-    let lo = 0, hi = os.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (os[mid].hi < at) lo = mid + 1;
-      else hi = mid;
-    }
-    const o = os[lo];
+    const o = os[partition(os.length, (k) => os[k].hi < at)];
     return o && o.lo <= at ? o : null;
   }
 
@@ -563,26 +557,41 @@ export class Symbols {
 
 /** Index a program's names.  An empty index where the text is past what the core reads. */
 export function symbols(text: string): Symbols {
-  const h = withStr(text, (p, n) => core().gcs_program_symbols(p, n));
-  if (!h) throw new Error(lastError() || 'the text could not be indexed');
-  const wire = takeJson<{ symbols: [string, SymbolKind, number][];
-    occurrences: [number, number, number, number][] }>(h);
-  const at = new Offsets(text);
-  return new Symbols(
-    wire.symbols.map(([name, kind, parent]) => ({ name, kind, parent })),
-    wire.occurrences.map(([lo, hi, symbol, def]) =>
-      ({ lo: at.at(lo), hi: at.at(hi), symbol, def: def !== 0 })),
-  );
+  type Wire = { symbols: [string, SymbolKind, number][];
+    occurrences: [number, number, number, number][] };
+  return crossed<Wire, Symbols>(text, (p, n) => core().gcs_program_symbols(p, n), (wire, at) =>
+    new Symbols(
+      wire.symbols.map(([name, kind, parent]) => ({ name, kind, parent })),
+      wire.occurrences.map(([lo, hi, symbol, def]) =>
+        ({ lo: at.at(lo), hi: at.at(hi), symbol, def: def !== 0 })),
+    ));
 }
 
 /** A colouring entry's runs, crossed onto the string the browser holds — the program's here, and
  *  a drawing's (`drawing.highlight`) through the same seam. */
 export function coloured(text: string, entry: (p: number, n: number) => number): Run[] {
-  const runs = withStr(text, entry);
-  if (!runs) throw new Error(lastError() || 'the text could not be coloured');
-  const at = new Offsets(text);
-  return takeJson<[string, number, number][]>(runs)
-    .map(([cls, lo, hi]) => ({ cls, lo: at.at(lo), hi: at.at(hi) }));
+  return crossed<[string, number, number][], Run[]>(text, entry, (runs, at) =>
+    runs.map(([cls, lo, hi]) => ({ cls, lo: at.at(lo), hi: at.at(hi) })));
+}
+
+/** What an entry reading a text answers, its offsets crossed onto the string by `cross`. */
+function crossed<W, R>(text: string, entry: (p: number, n: number) => number,
+  cross: (wire: W, at: Offsets) => R): R {
+  const h = withStr(text, entry);
+  if (!h) throw new Error(lastError() || 'the text could not be read');
+  return cross(takeJson<W>(h), new Offsets(text));
+}
+
+/** The first of `0..n` for which `before` is false, `before` holding of a prefix — where a sorted
+ *  array is cut. */
+function partition(n: number, before: (k: number) => boolean): number {
+  let lo = 0, hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (before(mid)) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 /** Byte offsets, as the core counts them, onto the string the browser holds.
@@ -631,12 +640,7 @@ class Offsets {
   at(off: number): number {
     if (this.plain) return off;
     // the last wide character that ends at or before `off`; everything after it is one-to-one
-    let lo = 0, hi = this.ends.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (this.ends[mid] <= off) lo = mid + 1;
-      else hi = mid;
-    }
+    const lo = partition(this.ends.length, (k) => this.ends[k] <= off);
     return lo === 0 ? off : this.units[lo - 1] + (off - this.ends[lo - 1]);
   }
 }

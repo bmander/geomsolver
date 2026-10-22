@@ -67,7 +67,9 @@ export class CodeEditor {
   private readonly copy: HTMLPreElement;
   private colour: (text: string) => Run[];
   /** The ranges callers have asked to be marked, by layer — each in no particular order, and
-   *  possibly overlapping one another and the other layers' (`setMarks`).
+   *  possibly overlapping one another and the other layers' (`setMarks`).  An edit lets go of
+   *  every layer but the default one, whose marks come with the text (`setText`): whatever the
+   *  others said was said of offsets the edit has moved.
    *
    *  Marked with a class and **never with a weight**.  The box in front of this copy is one
    *  face throughout; a bold here would advance its glyphs differently from the box's, and
@@ -79,8 +81,9 @@ export class CodeEditor {
   /** Who is told the caret moved or the text changed (`onCaret`), and where it last was, so a
    *  move to where it already stood tells nobody. */
   private watchers: ((edited: boolean) => void)[] = [];
-  private lastCaret = { lo: -1, hi: -1, edits: -1 };
-  private edits = 0;
+  private lastCaret = { lo: -1, hi: -1 };
+  /** The text changed since the watchers were last told. */
+  private dirty = false;
   /** The last colouring, against the text it was made from.  Colouring crosses the ABI and
    *  re-lexes the document, and a repaint that only moved the *mark* has the same text and so
    *  the same runs — which used to be paid for again anyway. */
@@ -120,7 +123,7 @@ export class CodeEditor {
     // the general answer, where the browser sends it for a textarea's own selection, and the
     // rest cover one that does not — a key, a press, a word double-clicked.  `caretMoved`
     // tells each move once however many of them report it.
-    this.box.addEventListener('input', () => { this.edits += 1; this.caretMoved(); });
+    this.box.addEventListener('input', () => { this.edited(); this.caretMoved(); });
     for (const e of ['keyup', 'pointerup', 'select', 'focus']) {
       this.box.addEventListener(e, () => this.caretMoved());
     }
@@ -145,22 +148,36 @@ export class CodeEditor {
    *  nothing else. */
   select(lo: number, hi = lo): void {
     this.box.setSelectionRange(lo, hi);
-    const text = this.text;
-    let line = 0;
-    for (let i = 0; i < lo && i < text.length; i += 1) if (text[i] === '\n') line += 1;
+    const line = this.lineOf(lo);
     const each = this.lineHeight || 1;
     const top = this.box.scrollTop / each, rows = this.box.clientHeight / each;
     if (line < top || line >= top + rows - 1) this.scrollToLine(line, Math.floor(rows / 2));
     this.caretMoved();
   }
 
+  /** Which line (from 0) a string index falls on.  Counted rather than sliced: `slice(0, off)
+   *  .split` builds the whole prefix and an array of every line in it. */
+  lineOf(off: number): number {
+    const text = this.text;
+    let line = 0;
+    for (let i = 0; i < off && i < text.length; i += 1) if (text[i] === '\n') line += 1;
+    return line;
+  }
+
   private caretMoved(): void {
     const { selectionStart: lo, selectionEnd: hi } = this.box;
-    const last = this.lastCaret;
-    if (last.lo === lo && last.hi === hi && last.edits === this.edits) return;
-    const edited = last.edits !== this.edits;
-    this.lastCaret = { lo, hi, edits: this.edits };
+    const edited = this.dirty;
+    if (!edited && this.lastCaret.lo === lo && this.lastCaret.hi === hi) return;
+    this.lastCaret = { lo, hi };
+    this.dirty = false;
     for (const w of this.watchers) w(edited);
+  }
+
+  /** The text changed: the layers but the default are let go (`layers`), unpainted — the change
+   *  is painted by whoever made it, `setText` or the typing's own repaint. */
+  private edited(): void {
+    this.dirty = true;
+    for (const layer of [...this.layers.keys()]) if (layer !== '') this.layers.delete(layer);
   }
 
   get text(): string {
@@ -181,22 +198,15 @@ export class CodeEditor {
     this.box.setSelectionRange(selectionStart, selectionEnd);
     this.box.scrollTop = scrollTop;
     this.box.scrollLeft = scrollLeft;
-    // told before the paint, so a layer let go as stale is not painted once more first
-    if (changed) {
-      this.edits += 1;
-      this.caretMoved();
-    }
+    if (changed) this.edited();
     this.repaint();
+    if (changed) this.caretMoved();
   }
 
   /** Mark these ranges in `layer` — the default one is the caller's who set the text — and no
    *  others there; every other layer's stay.  Repaints only when the layer actually changed, so a
-   *  gesture that keeps landing on the same statement costs one paint and not sixty.
-   *
-   *  `paint: false` leaves the copy as it is until whatever repaints next: what a caller wants
-   *  that has learnt its marks are stale (the text changed under them) from the same event that
-   *  is about to repaint anyway. */
-  setMarks(marks: Mark[], layer = '', paint = true): void {
+   *  gesture that keeps landing on the same statement costs one paint and not sixty. */
+  setMarks(marks: Mark[], layer = ''): void {
     const a = this.layers.get(layer) ?? [];
     if (a.length === marks.length
         && a.every((m, i) => m.lo === marks[i].lo && m.hi === marks[i].hi
@@ -204,7 +214,7 @@ export class CodeEditor {
       return;
     }
     this.layers.set(layer, marks);
-    if (paint) this.repaint();
+    this.repaint();
   }
 
   /** Colour what is in the box now — after typing, or after the rules changed. */
@@ -241,7 +251,7 @@ export class CodeEditor {
       // one bug this whole class is built to avoid.
       if (to <= from) return;
       while (taken < marks.length && marks[taken].lo < to) open.push(marks[taken++]);
-      open = open.filter((m) => m.hi > from);
+      if (open.length) open = open.filter((m) => m.hi > from);
       const cut = (i: number): number => Math.min(Math.max(i, from), to);
       const edges = [from, to];
       for (const m of open) edges.push(cut(m.lo), cut(m.hi));
