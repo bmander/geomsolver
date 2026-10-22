@@ -212,6 +212,7 @@ mod round_lowering;
 mod rounds;
 mod rounds_examples;
 mod row_scale;
+mod scenario_view;
 mod scenarios;
 mod seams;
 mod sections;

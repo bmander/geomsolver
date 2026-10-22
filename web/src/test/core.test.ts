@@ -1353,6 +1353,41 @@ test('a document says what its load scenarios answer, a claim refuted as well as
   plain.dispose();
 });
 
+test('a document says where its scenarios fall and how the drawing moves under one', () => {
+  // the shelf bracket's one scenario (#510): a mark for each of its four lines, every place the
+  // core's and each mark's span the line as written; its answers read with its picture are the
+  // answers read alone, and its frame is drawn — the tip moving the 1.5mm the row drives
+  const src = examples.source('shelf_bracket');
+  const doc = Document.read(src);
+  assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+  assert.ok(solve(doc.sketch).success);
+  assert.deepEqual(doc.scenarioNames(), [{ name: 'shelf', extends: null }]);
+  const marks = doc.scenarioMarks(0);
+  assert.deepEqual(marks.map((m) => m.kind), ['fixed', 'load', 'requirement', 'requirement']);
+  assert.deepEqual(marks.map((m) => src.slice(...m.span!).trim()),
+    ['fixed foot', 'load arm w along: down', 'deflection(tip, along: down) == sag',
+     'claim safety(bracket) >= 2']);
+  const load = marks[1];
+  assert.equal(load.at.length, load.dir.length);
+  assert.ok(load.dir.every((d) => d[0] === 0 && d[1] === 0 && d[2] === -1), JSON.stringify(load));
+  assert.equal(load.text, '600N');
+  assert.deepEqual(doc.scenarioMarks(7), []);
+  const alone = doc.scenarios();
+  const read = doc.scenariosPictured(0);
+  assert.deepEqual(read.scenarios, alone);
+  const p = read.picture!;
+  assert.equal(p.bodies.length, 1);
+  assert.equal(p.bodies[0].kind, 'frame');
+  assert.equal(p.bodies[0].rest.length, p.bodies[0].moved.length);
+  assert.equal(p.bodies[0].size.length * 3, p.bodies[0].rest.length);
+  assert.ok(p.largest >= 1.5 && p.scale >= 1, JSON.stringify({ ...p, bodies: [] }));
+  assert.equal(doc.scenariosPictured(-1).picture, null);
+  doc.dispose();
+  const plain = Document.read('a := point hint((0, 0))\n');
+  assert.deepEqual(plain.scenarioNames(), []);
+  plain.dispose();
+});
+
 test('a solid that does not evaluate is refused with the core\'s reason, its neighbours meshed, and listed as not drawn', () => {
   // the triangle turned about `std.x`, which crosses it: the box once threw on the null face
   // table on every paint, and the page stopped drawing

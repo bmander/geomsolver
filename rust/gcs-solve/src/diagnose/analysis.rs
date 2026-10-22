@@ -486,7 +486,7 @@ impl Reach {
 /* -- a scenario, read -------------------------------------------------------------------------- */
 
 /// The unit direction an `along:` names: an axis's, or a line's from its first end.
-pub(crate) fn direction(sk: &Sketch, d: EntRef) -> Result<V, String> {
+pub fn direction(sk: &Sketch, d: EntRef) -> Result<V, String> {
     let v = match d.kind {
         EntKind::Axis => sk.axes[d.i()].d.map(|p| sk.params[p as usize].value),
         EntKind::Line => {
@@ -567,18 +567,39 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
 /// same readings twice as coarse).  A solid read so is held, and says where its stress is
 /// unbounded, in its own answers, never as a body of the scenario's.
 pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::Read) {
+    let (words, read, _) = scenario_read_with(sk, sc, false);
+    (words, read)
+}
+
+/// **A scenario read, and drawn** (`deformed::Picture`): `scenario_read`'s words and answers,
+/// and the picture of every body a line of it falls on, each body analysed once for both — its
+/// answers and its picture the same reading, at the readers' own size.
+pub fn scenario_pictured(sk: &Sketch, sc: &Scenario)
+    -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
+{
+    scenario_read_with(sk, sc, true)
+}
+
+fn scenario_read_with(sk: &Sketch, sc: &Scenario, pictured: bool)
+    -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
+{
     // every reader at its own size, then, where anything is answered, twice as coarse: the
     // change is the error estimated beside each value (#510 S3)
-    let read = |coarser: f64| {
-        let mut r = crate::beams::read_at(sk, sc, coarser);
-        r.merge(crate::prisms::read_at(sk, sc, coarser));
-        r.merge(crate::bodies::read_at(sk, sc, coarser));
-        r
+    let read = |coarser: f64, pictured: bool| {
+        let (mut r, mut drawn) = crate::beams::read_pictured(sk, sc, coarser, pictured);
+        let (p, d) = crate::prisms::read_pictured(sk, sc, coarser, pictured);
+        r.merge(p);
+        drawn.extend(d);
+        let (b, d) = crate::bodies::read_pictured(sk, sc, coarser, pictured);
+        r.merge(b);
+        drawn.extend(d);
+        (r, drawn)
     };
-    let mut frames = read(1.0);
+    let (mut frames, drawn) = read(1.0, pictured);
     if frames.answers.iter().any(|a| matches!(a, Some(Ok(_)))) {
-        frames = frames.estimated(&read(2.0));
+        frames = frames.estimated(&read(2.0, false).0);
     }
+    let picture = crate::deformed::Picture::of(drawn);
     let mut out = Vec::new();
     let mut holds = Vec::new();
     for (k, s) in sc.supports.iter().enumerate() {
@@ -628,5 +649,5 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
         }
     }
     out.extend(frames.words.iter().cloned());
-    (out, frames)
+    (out, frames, picture)
 }

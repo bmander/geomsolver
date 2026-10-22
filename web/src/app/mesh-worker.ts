@@ -11,13 +11,18 @@
  *
  * A third instance judges the drawing's claims about solids (a `claims` job, `claim-judging.ts`):
  * a pose at a time (`ClaimJudge`), saying which claim of how many and which pose, and posting the
- * verdicts once every claim is judged. */
+ * verdicts once every claim is judged.
+ *
+ * A fourth reads the load scenarios (a `scenario` job, `scenario-view.ts`): every scenario's
+ * answers and the picture of the one chosen, one reading, posted once read — its arrays'
+ * buffers handed over rather than copied. */
 import { ClaimJudge, solidClaims } from '../core/claims.js';
 import { ExactBuilder, FieldMesher, fieldJobs, unpaired, type MeshProgress } from '../core/field.js';
 import { install } from '../core/modules.js';
 import { Document } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
 import { unpairedClaims, type ClaimFrame, type ClaimJob } from './claim-judging.js';
+import { buffers, readScenarios, type ScenarioFrame, type ScenarioJob } from './scenario-view.js';
 import type { ExactJob, Frame, Job, MeshJob } from './field-preview.js';
 
 /** Facets refined between looks at the message queue. */
@@ -26,8 +31,8 @@ const BUDGET = 40;
 const FRAME_MS = 120;
 
 const scope = globalThis as unknown as {
-  onmessage: ((ev: MessageEvent<Job | ClaimJob>) => void) | null;
-  postMessage(message: Frame | ClaimFrame, transfer?: Transferable[]): void;
+  onmessage: ((ev: MessageEvent<Job | ClaimJob | ScenarioJob>) => void) | null;
+  postMessage(message: Frame | ClaimFrame | ScenarioFrame, transfer?: Transferable[]): void;
 };
 const ready = initCore();
 let latest = 0;
@@ -40,6 +45,11 @@ scope.onmessage = (ev) => {
     ready.then(() => judge(job)).catch((e) => scope.postMessage({ id: job.id, error: String(e) }));
     return;
   }
+  if (job.kind === 'scenario') {
+    ready.then(() => scenarios(job))
+      .catch((e) => scope.postMessage({ id: job.id, error: String(e) }));
+    return;
+  }
   // a core that will not start, or a job that throws past its own handling, fails every solid
   // of it aloud rather than leaving the page waiting
   const fail = (e: unknown): void => {
@@ -49,6 +59,28 @@ scope.onmessage = (ev) => {
   };
   ready.then(() => (job.kind === 'exact' ? exact(job) : run(job))).catch(fail);
 };
+
+/** **Read the scenarios of the page's drawing, and draw the one chosen**: one reading, posted
+ *  once read.  A burst of edits starts only the last job, and the worker's drawing must name the
+ *  scenario chosen as the page's does. */
+async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promise<void> {
+  await pause();
+  if (job.id !== latest) return;
+  install(job.modules);
+  const doc = Document.read(job.text);
+  try {
+    doc.sketch.setX(job.x);
+    if (job.drawn && !doc.scenarioNames().some((s) => s.name === job.drawn)) {
+      throw new Error(`the worker's drawing states no scenario \`${job.drawn}\``);
+    }
+    const got = readScenarios(doc, job.drawn);
+    if (job.id !== latest) return;
+    scope.postMessage({ id: job.id, scenarios: got.scenarios, picture: got.picture },
+                      buffers(got.picture));
+  } finally {
+    doc.dispose();
+  }
+}
 
 /** Let messages in — a newer job, a cancel — before the next step. By a message to itself and not a
  *  timer: a page out of sight has its timers throttled to one a second or slower, and meshing

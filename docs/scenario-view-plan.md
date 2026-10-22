@@ -1,9 +1,12 @@
 # Seeing a load scenario in the workspace: plan
 
-**Status (2026-10-22): proposed.** It belongs to #510 (design intent as structural performance) and
-covers what [analysis.md](contract/analysis.md) leaves as "the drawing's to say": "a requirement's
-figure is the deformed frame". Nothing here is built yet. The [open questions](#open-questions) are
-the decisions this plan needs from a person before the first stage starts.
+**Status (2026-10-22): implemented**, V0–V3 in one change, for #510. The open questions were
+settled in conversation: supports are what "constraints" means, glyphs keep their size on screen,
+the answers moved into the worker with the picture, the default factor is a tenth of the extent
+rounded to 1–2–5, and the choice is view state only. The exaggeration is a slider in the head of
+the scenario's card. Where the build departed from this plan is [As built](#as-built) at the end;
+the rules are [analysis.md](contract/analysis.md)'s "A scenario drawn" and
+[app.md](contract/app.md)'s "The scenario chooser".
 
 A document with a `scenario` gets a second chooser beside **Sketch on**, in the viewport's upper
 right. Choosing a scenario draws it over the workspace:
@@ -263,3 +266,32 @@ Hovering a mark or a row lights the source line in the editor.
    convention. A true-scale default would be more honest and usually invisible.
 5. **Remembering the choice.** View state only, as proposed, or kept per document in the page's
    local storage so a reload comes back to the scenario being looked at.
+
+## As built
+
+* **The marks are `gcs-core`'s** (`overview/scenario.rs`), not `gcs-solve`'s: an edge is drawn
+  where the workspace draws it (`overview::drawable`), which the language crate holds. A face's
+  marks read the mesh the box already evaluated (`EvaluatedSolid::mesh` at the object's own
+  scale), its groups matched by name (`lug.root`, `pin.bore`), so no exact boundary is built on
+  the page's thread. A flat face is a few large triangles, so each is cut finer than a sixth of
+  the faces' reach before the anchors are spread over it.
+* **The picture crosses as JSON, not buffers**, as a Boolean's preview does: one call answers
+  every scenario and draws one (`gcs_elab_scenarios_pictured_json`), its places and moves to seven
+  figures. The worker types the arrays and transfers their buffers to the page. A third call,
+  `gcs_elab_scenario_names_json`, lists the scenarios with no analysis, so the chooser fills at
+  once.
+* **The readers share their analysis** through `read_pictured(sk, sc, coarser, pictured)`, which
+  `read_at` calls with `false`: a body read for a requirement is drawn from the same `Analysed`,
+  and one no requirement names is analysed then. The coarser reading for the error draws nothing.
+* **A requirement of a whole body has no place in the box** (its mass, its safety, a mode): only
+  a deflection is a probe (`Mark::probe`), inked by its verdict and labelled to its value. The rest,
+  and the reading in the plane, are the card's rows.
+* **Labels are sprites in the box**, not words on the 2D canvas: three.js places them as it places
+  everything else, so nothing in `app/` projects a point either way.
+* **The exaggeration slider** runs by equal ratios from true scale to ten times the picture's own
+  factor (and at least ×10), opening at the picture's own, in the head of the card that unfolds
+  under the chooser.
+* **A gesture hides the whole scenario**, marks too, until the edit settles: marks on faces cannot
+  follow a drag cheaply, and half a scenario following the pointer read worse than none.
+* **Not built**: hovering a row lighting its mark in the box, and picking a mark in the workspace
+  (still "later").

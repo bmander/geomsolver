@@ -14,6 +14,7 @@
  * names anything is `structural`, because the name may be an unknown, and an unknown is a
  * column.
  */
+import type { Pictured, ScenarioMark } from './scenario.js';
 import { Constraint } from './constraints.js';
 import { Kind, KINDS, Plane, Primitive, Sketch, fromWire } from './model.js';
 import type { Way } from './model.js';
@@ -90,6 +91,8 @@ export interface Region {
  *  written, its grade (`claim`, `driving`, …), its value in the document's units and whether it
  *  holds — both null where it has no answer — and the core's sentence for it. */
 export interface ScenarioAnswer {
+  /** Its requirement's place among the scenario's, as `ScenarioMark.index` counts them. */
+  index: number;
   requirement: string;
   grade: string;
   value: number | null;
@@ -231,6 +234,34 @@ export class Document {
    *  again after each solve; empty for a document with no scenario. */
   scenarios(): Scenario[] {
     return takeJson<Scenario[]>(core().gcs_elab_scenarios_json(this.h, this.sketch.handle)) ?? [];
+  }
+
+  /** **What every load scenario says, and how the drawing moves under scenario `drawn`** — its
+   *  index among `scenarios()`, or −1 for none: the answers `scenarios()` gives, and the picture
+   *  read with them, each body analysed once for both.  Seconds for a solid read in three
+   *  dimensions: what the mesh worker asks (`scenario-view.ts`), never the page's own thread. */
+  scenariosPictured(drawn: number): Pictured {
+    return takeJson<Pictured>(
+      core().gcs_elab_scenarios_pictured_json(this.h, this.sketch.handle, drawn))
+      ?? { scenarios: [], picture: null };
+  }
+
+  /** **The load scenarios the document states**, by name in the order written, and the one each
+   *  extends: what a chooser lists, with no analysis. */
+  scenarioNames(): { name: string; extends: string | null }[] {
+    return takeJson<{ name: string; extends: string | null }[]>(
+      core().gcs_elab_scenario_names_json(this.h)) ?? [];
+  }
+
+  /** **Where scenario `k` falls on the drawing** as it stands: a mark for each of its lines, in
+   *  the order written, every place and direction the core's.  No analysis: read on every edit. */
+  scenarioMarks(k: number): ScenarioMark[] {
+    const marks = takeJson<ScenarioMark[]>(
+      core().gcs_elab_scenario_marks_json(this.h, this.sketch.handle, k)) ?? [];
+    // the core's spans are bytes of the text, brought onto the string
+    const at = new Offsets(this.text);
+    for (const m of marks) if (m.span) m.span = [at.at(m.span[0]), at.at(m.span[1])];
+    return marks;
   }
 
   /** **The solids this document names**, in the order it names them.

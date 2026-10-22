@@ -210,6 +210,41 @@ pub unsafe extern "C" fn gcs_elab_scenarios_json(h: *mut Elaborated, s: *mut Ske
     json_out(move || gcs_core::report::scenarios_json(sk(s), &(*h).scenarios))
 }
 
+/// **What every load scenario says, and one's picture** (`report::scenarios_pictured_json`):
+/// `{ "scenarios", "picture" }`, the first `gcs_elab_scenarios_json`'s and the second how the
+/// drawing moves under scenario `drawn` (its bodies' places at rest, their moves, triangles and
+/// edges as flat arrays, the largest move and the factor to draw it at) — or `null` for a
+/// `drawn` that is no scenario's index (−1 for none).  Its answers and its picture are one
+/// reading.  What a worker asks, since a solid read in three dimensions takes seconds.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_scenarios_pictured_json(h: *mut Elaborated, s: *mut Sketch,
+                                                          drawn: i32) -> *mut u8 {
+    json_out(move || {
+        let drawn = usize::try_from(drawn).ok();
+        gcs_core::report::scenarios_pictured_json(sk(s), &(*h).scenarios, drawn)
+    })
+}
+
+/// **The document's load scenarios by name** (`report::scenario_names_json`): `[{ "name",
+/// "extends" }]` in the order written.  No analysis.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_scenario_names_json(h: *mut Elaborated) -> *mut u8 {
+    json_out(move || gcs_core::report::scenario_names_json(&(*h).scenarios))
+}
+
+/// **Where scenario `k` falls on the drawing** (`report::scenario_marks_json`): a mark per line —
+/// supports, loads, requirements, readings — its anchors, directions, normals, tinted triangles,
+/// size and words, and the span of the line it is written on.  No analysis: cheap enough for
+/// every edit.  `[]` for a `k` that is no scenario's.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_scenario_marks_json(h: *mut Elaborated, s: *mut Sketch,
+                                                      k: i32) -> *mut u8 {
+    json_out(move || match usize::try_from(k) {
+        Ok(k) => gcs_core::report::scenario_marks_json(&*h, sk(s), k),
+        Err(_) => Json::Arr(Vec::new()),
+    })
+}
+
 /* -- pure graph algorithms -------------------------------------------------- */
 
 fn adj_from(v: &Json) -> Vec<Vec<usize>> {

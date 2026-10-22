@@ -20,6 +20,7 @@
 //! load (a plate buckles out of its plane, which it has no move for).
 
 use crate::beams::Read;
+use crate::deformed::Body;
 use crate::delaunay::plane::{self as mesher, Criteria, Mesh, Side};
 use crate::diagnose::analysis::{self, direction, Held};
 use crate::eigen::{self, Pairs};
@@ -634,6 +635,49 @@ impl Analysed {
         Ok(Analysed { p, st, modes, pairs: OnceCell::new(), stresses: OnceCell::new() })
     }
 
+    /// **The region drawn** (`deformed::Body`): each quadratic triangle cut in four on both caps
+    /// — the near one at the middle less half the depth, turned to face away — and each piece of
+    /// its sides a wall between them, every node moving in the plane as the reading moves it.
+    fn body(&self, name: &str) -> Body {
+        let r = &self.p.region;
+        let n = r.basis.normal();
+        let mut body = Body { kind: "region", name: name.to_string(), solid: Some(r.solid),
+                              ..Body::default() };
+        let count = self.p.mesh.points.len() as u32;
+        for level in [-0.5, 0.5] {
+            for (i, &q) in self.p.mesh.points.iter().enumerate() {
+                let at = r.lift(q);
+                let [a, b] = self.moved(i);
+                let u = [0, 1, 2].map(|k| a * r.basis.u[k] + b * r.basis.v[k]);
+                body.vertex([0, 1, 2].map(|k| at[k] + level * r.depth * n[k]), u);
+            }
+        }
+        for t in &self.p.mesh.tris {
+            let near = t.map(|i| i as u32);
+            let far = near.map(|i| i + count);
+            body.quadratic(far);
+            // the near cap faces the other way: its corners and its middles each run backwards
+            let [a, b, c, ab, bc, ca] = near;
+            body.quadratic([a, c, b, ca, bc, ab]);
+        }
+        for side in &self.p.mesh.sides {
+            for &[a, m, b] in side {
+                for [p, q] in [[a, m], [m, b]] {
+                    let (p, q) = (p as u32, q as u32);
+                    // the material on the piece's left: its outward normal is the run turned
+                    // clockwise, the run crossed with the plane's normal
+                    body.triangles.extend([[p, q, q + count], [p, q + count, p + count]]);
+                }
+            }
+        }
+        let tops: Vec<[u32; 3]> = self.p.mesh.tris.iter().flat_map(|t| {
+            let t = t.map(|i| i as u32 + count);
+            [[t[0], t[3], t[1]], [t[1], t[4], t[2]], [t[2], t[5], t[0]]]
+        }).collect();
+        body.side_edges(tops);
+        body
+    }
+
     /// Node `i`'s move in the plane.
     fn moved(&self, i: usize) -> P {
         [self.st.u[2 * i], self.st.u[2 * i + 1]]
@@ -709,6 +753,16 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
 
 /// `read`, each region meshed `coarser` times the reading's size.
 pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
+    read_pictured(sk, sc, coarser, false).0
+}
+
+/// **`read_at`, and where `pictured`, the picture of every region the scenario reads in its
+/// plane** (`deformed::Body`: its triangles stood through its depth), or why one is not drawn:
+/// each region analysed once for both.
+pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
+    -> (Read, Vec<Result<Body, String>>)
+{
+    let mut drawn = Vec::new();
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
@@ -716,7 +770,7 @@ pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
         ..Read::default()
     };
     if sc.readings.is_empty() {
-        return out;
+        return (out, drawn);
     }
     // each reading's region, for which lines fall on it
     let regions: Vec<(usize, InPlane, Result<Region, String>)> =
@@ -760,7 +814,20 @@ pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
                                    sk.solids[regions[i].0].name));
         }
     }
-    out
+    if pictured {
+        for (i, (solid, plane, region)) in regions.iter().enumerate() {
+            let a = read[i].get_or_insert_with(|| {
+                let region = region.clone()?;
+                Analysed::new(sk, sc, region, *plane, 0, coarser)
+            });
+            let name = &sk.solids[*solid].name;
+            drawn.push(match a {
+                Ok(a) => Ok(a.body(name)),
+                Err(m) => Err(format!("scenario `{}`: {}", sc.name, m.text(name))),
+            });
+        }
+    }
+    (out, drawn)
 }
 
 /// A requirement's value over its region `a`, or why it has none.

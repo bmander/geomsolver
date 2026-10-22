@@ -176,19 +176,54 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 #canvas { position: relative; z-index: 1; }
 /* the plane being drawn on, in the viewport's upper right as a CAD tool keeps it: over the
    canvases, under the windows that float over the drawing */
-#plane-pick { position: absolute; top: 10px; right: 12px; z-index: 3;
+#view-picks { position: absolute; top: 10px; right: 12px; z-index: 3;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  max-width: calc(100% - 24px); pointer-events: none; }
+#view-picks > * { pointer-events: auto; }
+#view-picks .picks { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+#plane-pick, #scenario-pick {
   display: flex; align-items: center; gap: 6px; padding: 3px 6px;
   font-size: 12px; color: var(--muted); background: var(--bg);
   border: 1px solid var(--line); border-radius: 6px;
   box-shadow: 0 1px 4px rgba(0,0,0,.08); }
-#plane-pick select { font: inherit; color: var(--text); }
+#scenario-pick[hidden] { display: none; }
+#plane-pick select, #scenario-pick select { font: inherit; color: var(--text); }
+#scenario-pick.failed select { color: var(--danger); }
+/* the scenario drawn: its card, the exaggeration in its head, the legend, its lines */
+#scenario-card { width: 320px; max-width: 100%; max-height: 55vh; display: flex;
+  flex-direction: column; font-size: 12px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+#scenario-card[hidden] { display: none; }
+#scenario-card header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  padding: 6px 9px; border-bottom: 1px solid var(--line); color: var(--muted); }
+#scenario-card header label { display: flex; align-items: center; gap: 4px; }
+#scenario-exaggerate { flex: 1 1 100%; }
+#scenario-exaggerate input { flex: 1; min-width: 80px; }
+#scenario-scale-text { font-family: var(--mono); color: var(--text); min-width: 4.5em;
+  text-align: right; }
+#scenario-legend { display: flex; align-items: center; gap: 6px; padding: 6px 9px 0;
+  font-family: var(--mono); color: var(--muted); }
+#scenario-legend[hidden] { display: none; }
+#scenario-ramp { flex: 1; height: 9px; border-radius: 3px; }
+#scenario-status { margin: 0; padding: 4px 9px; color: var(--muted); }
+#scenario-status:empty { display: none; }
+#scenario-status.failed { color: var(--danger); }
+#scenario-lines { list-style: none; margin: 0; padding: 4px 0 6px; overflow: auto; }
+#scenario-lines li { display: flex; gap: 6px; align-items: baseline; padding: 2px 9px;
+  cursor: pointer; }
+#scenario-lines li:hover, #scenario-lines li.lit { background: var(--accent-soft); }
+#scenario-lines .glyph { flex: none; width: 1.2em; text-align: center; }
+#scenario-lines code { font-family: var(--mono); white-space: pre-wrap; word-break: break-word; }
+#scenario-lines .said { display: block; color: var(--muted); }
+#scenario-lines li.kept .said { color: var(--ok); }
+#scenario-lines li.refuted .said { color: var(--danger); }
 /* the workspace's own buttons — orbit — in its lower right corner, under a thumb: a finger's
    only (below), since a mouse orbits with its right button */
 #view-buttons { position: absolute; right: 12px; bottom: 12px; z-index: 3;
   display: none; gap: 6px; }
 #view-buttons button { box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 #view-buttons button:not([aria-pressed="true"]) { background: var(--bg); }
-.drawing-active :is(#plane-pick, #view-buttons) { visibility: hidden; }
+.drawing-active :is(#view-picks, #view-buttons) { visibility: hidden; }
 canvas.select { cursor: default; }
 
 #drawing-view { position: absolute; inset: 0; z-index: 2; display: flex;
@@ -630,7 +665,7 @@ dialog input[type=search] {
   #ppanel.folded { height: auto; }
   #ppanel.folded > :not(#ppanel-head) { display: none; }
   #ppanel.folded #ppanel-head { border-bottom: 0; }
-  #plane-pick > span { display: none; }
+  #plane-pick > span, #scenario-pick > span { display: none; }
 }
 
 /* -- a finger -------------------------------------------------------------------------------

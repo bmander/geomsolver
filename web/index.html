@@ -25,10 +25,39 @@
            sketch on its own plane over it. -->
       <canvas id="box"></canvas>
       <canvas id="canvas"></canvas>
-      <label id="plane-pick" title="The plane the next thing is drawn on — choosing one also turns the view square on to it; None draws points and lines in space">
-        <span>Sketch on</span>
-        <select id="plane-select" aria-label="Sketch plane"></select>
-      </label>
+      <!-- the viewport's choosers, in its upper right: the plane drawn on, and — where the
+           document states one — the load scenario drawn over the workspace, its card unfolding
+           beneath it once one is chosen.  Filled by `main` and `scenario-card` -->
+      <div id="view-picks">
+        <div class="picks">
+          <label id="scenario-pick" hidden title="A load scenario the document states — choosing one draws its supports and loads, and how the drawing moves under it; None draws none">
+            <span>Scenario</span>
+            <select id="scenario-select" aria-label="Load scenario"></select>
+          </label>
+          <label id="plane-pick" title="The plane the next thing is drawn on — choosing one also turns the view square on to it; None draws points and lines in space">
+            <span>Sketch on</span>
+            <select id="plane-select" aria-label="Sketch plane"></select>
+          </label>
+        </div>
+        <section id="scenario-card" hidden aria-label="Load scenario">
+          <header>
+            <label id="scenario-exaggerate" title="How many times the moves are drawn larger than they are: at the left, as they are">
+              <span>Exaggerate</span>
+              <input id="scenario-scale" type="range" min="0" max="1000" step="1" aria-label="Exaggeration">
+              <output id="scenario-scale-text" for="scenario-scale"></output>
+            </label>
+            <label title="Swing the drawing from rest to its exaggerated shape and back"><input id="scenario-animate" type="checkbox"> Animate</label>
+            <label title="Draw the edges of the mesh that was solved"><input id="scenario-mesh" type="checkbox"> Mesh</label>
+          </header>
+          <div id="scenario-legend" aria-label="Moves">
+            <span id="scenario-legend-lo">0</span>
+            <span id="scenario-ramp"></span>
+            <span id="scenario-legend-hi"></span>
+          </div>
+          <p id="scenario-status" role="status"></p>
+          <ul id="scenario-lines"></ul>
+        </section>
+      </div>
       <!-- the workspace's own buttons, in its corner where a thumb finds them: filled by `main` -->
       <div id="view-buttons" aria-label="Workspace"></div>
       <section id="drawing-view" aria-label="Drawing view" hidden>
