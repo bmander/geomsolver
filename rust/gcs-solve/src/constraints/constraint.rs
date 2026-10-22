@@ -610,6 +610,20 @@ impl Constraint {
     /// **What a frame's deflection reads** (#510 S1, `beams::Row`): its frame under its
     /// scenario, or why the solve cannot read it.
     pub fn frame_row(&self, sk: &Sketch) -> Result<crate::beams::Row, String> {
+        let (sc, at, along) = self.frame_read(sk)?;
+        crate::beams::Row::of(sk, sc, at, along)
+    }
+
+    /// The unknowns `frame_row`'s sections are read over, without its structure (#510 S1).
+    pub fn frame_unknowns(&self, sk: &Sketch) -> Result<Vec<String>, String> {
+        let (sc, at, _) = self.frame_read(sk)?;
+        crate::beams::row_unknowns(sk, sc, at)
+    }
+
+    /// What a frame's deflection names: its scenario, its point and its direction.
+    fn frame_read<'s>(&self, sk: &'s Sketch)
+        -> Result<(&'s crate::model::Scenario, usize, EntRef), String>
+    {
         let (Some(Arg::Ent(at)), Some(Arg::Ent(along)), Some(Arg::Int(k))) =
             (self.args.first(), self.args.get(1), self.args.get(2))
         else {
@@ -620,7 +634,7 @@ impl Constraint {
         if at.kind != EntKind::Point || at.i() >= sk.points.len() {
             return Err("a frame's deflection is of a point".into());
         }
-        crate::beams::Row::of(sk, sc, at.i(), *along)
+        Ok((sc, at.i(), *along))
     }
 
     /// `frame_row` and the columns it reads — every joint's lift, then every unknown its
@@ -630,7 +644,7 @@ impl Constraint {
         let row = self.frame_row(sk).ok()?;
         let mut cols = Vec::with_capacity(3 * row.points.len() + row.unknowns.len());
         for &p in &row.points {
-            cols.extend(sk.lifts.get(sk.lift_of(p)?)?.x);
+            cols.extend(sk.lifted_cols(p)?);
         }
         for n in &row.unknowns {
             let q = *sk.free_vars.get(n)?;

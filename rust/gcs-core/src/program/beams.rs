@@ -101,7 +101,8 @@ fn number(sk: &Sketch, text: &str, p: SectionProp) -> Result<(f64, Option<Over>)
         let x = super::scenarios::stated(sk, text, p.dim(), p.name(), why)?;
         return positive(text, p, x).map(|x| (x, None));
     }
-    let mut env = BTreeMap::new();
+    // the dimension is the arithmetic's, worked out at the seeds; the value is the tape's
+    let (mut env, mut seeds) = (BTreeMap::new(), Vec::new());
     for name in reads.keys() {
         let decl = &sk.declared[name];
         if decl.dim != Dim::LENGTH && decl.dim != Dim::SCALAR {
@@ -112,14 +113,17 @@ fn number(sk: &Sketch, text: &str, p: SectionProp) -> Result<(f64, Option<Over>)
         let seed = decl.seed.ok_or_else(|| (Code::E040, format!(
             "`{name}` has no seed, and a section read over it starts there: `hint(…)` it")))?;
         env.insert(name.clone(), crate::expr::Aff::of_dim(seed, decl.dim));
+        seeds.push(seed);
     }
     let v = crate::expr::eval(&parsed.body, &env)
         .map_err(|e| (Code::E103, format!("`{text}`: {e}")))?;
     v.dim.require(p.dim(), p.name()).map_err(|m| (Code::E103, format!("`{text}`: {m}")))?;
-    let over = Over { text: text.to_string(), unknowns: reads.into_keys().collect() };
-    over.tape(&over.unknowns, sk.units).map_err(|m| (Code::E103, format!("`{text}`: {m}")))?;
-    let x = v.number().filter(|x| x.is_finite())
-        .ok_or_else(|| (Code::E103, format!("`{text}` comes to no number")))?;
+    let over = Over::new(text, reads.into_keys().collect(), sk.units)
+        .map_err(|m| (Code::E103, format!("`{text}`: {m}")))?;
+    let x = over.at(&seeds);
+    if !x.is_finite() {
+        return Err((Code::E103, format!("`{text}` comes to no number")));
+    }
     positive(text, p, x).map(|x| (x, Some(over)))
 }
 

@@ -189,7 +189,7 @@ frame's driving row (S1), unless a rule names another.
   answer yet), and where it is `fixed` its turns. A force at a point is a load at its joint; a
   force on a beam or a member's line is spread evenly along its members, and `accelerate` is
   `ρ A a` a length along them; each spread load is its consistent load at the elements' ends
-  (`fixed_end`), exact for the cubic. The material is read back into the document's units
+  (`interior::fixed_end`), exact for the cubic. The material is read back into the document's units
   (`Units::from_si`): `E`, `G = E / 2(1 + nu)` (a frame twists, so `nu` is needed), `rho` where
   a mass is read, `yield` for a safety. A material that does not state what is read of it, a
   beam made of none, a frame the supports leave free (`Structure::free`, named in the solver's
@@ -262,38 +262,40 @@ frame's driving row (S1), unless a rule names another.
 
 - **The row's frame is meshed at one element between joints** (`Mesh::new(…, 1)`): every node is a
   joint, so every node is a point of the drawing — a member's end, or a point the scenario names
-  lying on one — and its three columns are that point's lift (`Constraint::lifted_points`, minted
-  at the add). A joint is a point by identity first, then by place (`Mesh::joint`, `at_point`), so
+  lying on one — and its three columns are that point's lift (`Constraint::lifted_points`, minted at
+  the add). A joint is a point by identity first, then by place (`Mesh::joint`, `at_point`), so
   members sharing a point join wherever a step puts it. One element is exact here: under loads at
-  the joints and loads spread evenly, the cubic's nodal moves are the beam's, which is all a
-  static deflection reads, and the claims' reading at `PIECES` agrees to rounding. The topology is
-  read where the drawing stands when the row is compiled and kept through that solve: within it
-  the nodes move, and the members never change. The weights, and a load's `along:`, are read as
-  constants of the row, so a direction the solve moves (an axis whose direction is not held, a line
-  whose ends or plane are not) is refused (**E040**, `held_direction`), as is a frame the supports
-  leave free (`Row::check` in `validate`, the solver's words).
+  the joints and loads spread evenly, the cubic's nodal moves are the beam's, which is all a static
+  deflection reads, and the claims' reading at `PIECES` agrees to rounding. The topology is read
+  where the drawing stands when the row is compiled and kept through that solve: within it the nodes
+  move, and the members never change. The weights, and a load's `along:`, are read as constants of
+  the row, so a direction the solve moves (an axis whose direction is not held, a line whose ends or
+  plane are not) is refused (**E040**, `Sketch::direction_held`), as is a frame the supports leave
+  free (`Row::check` in `validate`, the solver's words).
 
 - **A section read over unknowns** (#510 S1; `model::Over`, `interior::Sizing`). A section's number
-  may read the drawing's declared unknowns (`param h: Length hint(40mm)`, `Iz: b * h^3 / 12`): it
-  is worked out at their seeds and checked for its dimension and sign (`program::beams::number`),
-  and kept as its text and the unknowns it reads. Any function of them, not only one affine in
-  one: each is a tape (`tape.rs`) over the row's unknowns, a stated number a constant tape
-  (`Tape::constant`). The row's columns are the joints' lifts, then those unknowns (at most
+  may read the drawing's declared unknowns (`param h: Length hint(40mm)`, `Iz: b * h^3 / 12`): it is
+  worked out at their seeds and checked for its dimension and sign (`program::beams::number`), and
+  kept as its text, the unknowns it reads and its tape over them. Any function of them, not only one affine in one: each
+  is a tape (`tape.rs`) over the row's unknowns, a stated number a constant tape (`Tape::compile` of
+  the number). The row's columns are the joints' lifts, then those unknowns (at most
   `tape::MAX_VARS`), bound by the expression pass when a row reads them (`expr::evaluate`, from
   their seeds, as an envelope's set's are). `Section::read` reads a number at the drawing — a bound
   unknown's value, else its seed — and the claims' analysis reads the section so too. An unknown
-  that is an angle (a tape reads no angle as the drawing holds one) or has no seed is **E040**
-  where the section reads it, and one no row binds — no driving row on its frame and no dimension
-  — is **E040** too (`program::beams::sized`): nothing determines it. The kernel solves the
-  structure at the sections the tapes give, and carries each section's rate to the unknowns by the
-  tape's gradient (`interior::jac`); the constants carry the tapes after the structure (`HEAD`'s
-  `sized`, −1 where the sections are columns of their own, so P5's and S0's rows are unchanged).
+  that is an angle (a tape reads no angle as the drawing holds one) or has no seed is **E040** where
+  the section reads it, and one no row binds — no driving row on its frame and no dimension — is
+  **E040** too (`program::beams::sized`): nothing determines it. The kernel solves the structure at
+  the sections the tapes give, and carries each section's rate to the unknowns by the tape's
+  gradient (`interior::jac`); the constants carry the tapes after the structure (`HEAD`'s `sized`,
+  −1 where the sections are columns of their own, so P5's and S0's rows are unchanged).
   `Structure::read_sized` refuses constants that are not whole, which the kernel reads as NaN.
 
 - **A spread load moves with its members** (#510 S1; `interior::Spread`, `Structure::forces`). A
   force spread evenly along beams is its whole over their length, `q = F / Σ L`, the same force
   however long they grow; a body load is `q = ρ a A`, growing with the area. Each beam's share is
-  its consistent load, `q L/2` at each end and `± L/12 (Δ × q)` its end moments, exact for the
+  its consistent load (`interior::fixed_end`, one formula for what `Structure::forces` lays at its
+  ends and what a reading of its end actions takes out), `q L/2` at each end and `± L/12 (Δ × q)`
+  its end moments in the world's axes, exact for the
   cubic (`a_spread_load_is_its_consistent_load`: `q L⁴/8EI` and `q L³/6EI` in one beam or
   several). So `f` is `f(x)` and the gradient is `λᵀ(∂f/∂x − ∂K/∂x u)`: `λᵀfₑ = q · wₑ`, `wₑ`
   formed in `Dual<3>` over the beam's run (`spread_into`). The frames' analysis states its loads

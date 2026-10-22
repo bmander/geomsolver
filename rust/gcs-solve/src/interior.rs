@@ -36,7 +36,7 @@ use crate::diagnose::analysis::{self, Freedom, Held, Reach};
 use crate::kernels::{curve_widths, Dual, Kernel, Num};
 use crate::linalg::{rank_and_nullspace, Mat};
 use crate::envelope::held;
-use crate::space::{dot, norm, scale, sub};
+use crate::space::{add, dot, norm, scale, sub};
 use crate::sparse::{Ata, Sym};
 
 /// Below this least pivot (`Ata::least_pivot`, a pivot as a fraction of its diagonal) the
@@ -388,6 +388,18 @@ type Local = [D; 12];
 /// bending about z, in `SECTION`'s order.  Across the plane and its twist move nothing there.
 const IN_PLANE: [bool; SECTION] = [true, false, true, false];
 
+/// **The consistent load of `q`** (a force a length, in a beam's axes) along a beam of length
+/// `h`, in its axes: half at each end, and the cubic's end moments `q h²/12` in each plane it
+/// bends in — what `Structure::forces` lays at its ends, and what a reading of its end actions
+/// takes out (`beams.rs`).
+pub fn fixed_end(q: [f64; 3], h: f64) -> [f64; 12] {
+    let (m2, m3) = (q[2] * h * h / 12.0, q[1] * h * h / 12.0);
+    [
+        q[0] * h / 2.0, q[1] * h / 2.0, q[2] * h / 2.0, 0.0, -m2, m3,
+        q[0] * h / 2.0, q[1] * h / 2.0, q[2] * h / 2.0, 0.0, m2, -m3,
+    ]
+}
+
 /// A beam's axes: e1, e2, e3, its rows.
 pub type Axes = [[f64; 3]; 3];
 
@@ -570,44 +582,40 @@ impl Structure {
     pub fn spread_at(&self, x: &[f64]) -> Vec<[f64; 3]> {
         let mut q = vec![[0.0; 3]; self.beams.len()];
         for s in &self.spread {
-            let total: f64 = if s.per_area {
-                1.0
-            } else {
-                s.beams.iter().map(|&i| norm(self.place(self.beams[i].a, self.beams[i].b, x)))
-                    .sum()
-            };
+            let total = if s.per_area { 1.0 } else { self.spread_length(s, x) };
             for &i in &s.beams {
                 let w = if s.per_area { self.section(i, x)[0] } else { 1.0 / total };
-                q[i] = [0, 1, 2].map(|k| q[i][k] + w * s.force[k]);
+                q[i] = add(q[i], scale(s.force, w));
             }
         }
         q
     }
 
+    /// Beam `i`'s run at `x`, `x_b − x_a`.
+    fn beam_run(&self, i: usize, x: &[f64]) -> [f64; 3] {
+        self.place(self.beams[i].a, self.beams[i].b, x)
+    }
+
+    /// The length of every beam spread load `s` lies along, at `x`.
+    fn spread_length(&self, s: &Spread, x: &[f64]) -> f64 {
+        s.beams.iter().map(|&i| norm(self.beam_run(i, x))).sum()
+    }
+
     /// **The loads at `x`**, per degree of freedom: the loads at the nodes, and each beam's
-    /// spread load as its consistent load at its ends — `q L / 2` at each, and the cubic's end
-    /// moments `± L/12 · (Δ × q)` (`L²/12` of `q` square to it, in each plane it bends in),
-    /// exact for the cubic.  A component the structure lacks (in the plane, a turn about x or y)
-    /// is dropped.
+    /// spread load as its consistent load at its ends (`fixed_end`, in its axes, turned into the
+    /// world's), exact for the cubic.  A component the structure lacks (in the plane, a turn about
+    /// x or y) is dropped.
     pub fn forces(&self, x: &[f64]) -> Vec<f64> {
         let mut f = self.load.clone();
         if self.spread.is_empty() {
             return f;
         }
         for (i, q) in self.spread_at(x).into_iter().enumerate() {
-            let b = &self.beams[i];
-            let d = self.place(b.a, b.b, x);
-            let h = norm(d);
-            let m = scale(crate::space::cross(d, q), h / 12.0);
-            for (node, sign) in [(b.a, 1.0), (b.b, -1.0)] {
-                for c in 0..3 {
-                    if let Some(dof) = self.dof(node, c) {
-                        f[dof] += q[c] * h / 2.0;
-                    }
-                    if let Some(dof) = self.dof(node, 3 + c) {
-                        f[dof] += sign * m[c];
-                    }
-                }
+            let Some((h, axes)) = self.beam_axes(i, x) else { continue };
+            let local = fixed_end(into_axes(&axes, q), h);
+            for (k, dof) in self.beam_dofs(i) {
+                let block = k / 3 * 3;
+                f[dof] += out_of_axes(&axes, [0, 1, 2].map(|j| local[block + j]))[k % 3];
             }
         }
         f
@@ -621,22 +629,24 @@ impl Structure {
     /// `−(Σ force · w)/S² · Δ/L` besides its own `force · ∂w/S`.
     fn spread_into(&self, lam: &[f64], x: &[f64], g: &mut [f64]) {
         let w = |i: usize| -> [D; 3] {
-            let b = &self.beams[i];
-            let d = self.place(b.a, b.b, x);
-            let d = [0, 1, 2].map(|k| D::var(d[k], k));
+            let r = self.beam_run(i, x);
+            let d = [0, 1, 2].map(|k| D::var(r[k], k));
             let h = held::dot(d, d).sqrt();
-            let read = |node: usize, c: usize| D::cst(self.dof(node, c).map_or(0.0, |k| lam[k]));
-            let turn = [0, 1, 2].map(|c| read(b.a, 3 + c) - read(b.b, 3 + c));
+            // its ends' λ, each end's moves then turns, as `beam_dofs` lays them out
+            let mut l = [0.0; 12];
+            for (k, dof) in self.beam_dofs(i) {
+                l[k] = lam[dof];
+            }
+            let turn = [0, 1, 2].map(|c| D::cst(l[3 + c] - l[9 + c]));
             let m = held::cross(turn, d);
-            [0, 1, 2].map(|c| {
-                h * D::cst(0.5) * (read(b.a, c) + read(b.b, c)) + h * D::cst(1.0 / 12.0) * m[c]
-            })
+            [0, 1, 2].map(|c| h * D::cst(0.5 * (l[c] + l[6 + c])) + h * D::cst(1.0 / 12.0) * m[c])
         };
+        // a rate in a beam's run: its far end's coordinates gain it, its near end's lose it
         let run = |i: usize, by: [f64; 3], g: &mut [f64]| {
-            let ends = self.beam_ends(i);
+            let [a, b] = self.beam_ends(i);
             for k in 0..self.dim {
-                g[self.dim * ends[1] + k] += by[k];
-                g[self.dim * ends[0] + k] -= by[k];
+                g[self.dim * b + k] += by[k];
+                g[self.dim * a + k] -= by[k];
             }
         };
         for s in &self.spread {
@@ -651,14 +661,11 @@ impl Structure {
                 continue;
             }
             let fws: Vec<D> = s.beams.iter().map(|&i| held::dot(f, w(i))).collect();
-            let runs: Vec<[f64; 3]> = s.beams.iter().map(|&i| {
-                let b = &self.beams[i];
-                self.place(b.a, b.b, x)
-            }).collect();
-            let total: f64 = runs.iter().map(|&d| norm(d)).sum();
+            let total = self.spread_length(s, x);
             let whole: f64 = fws.iter().map(|v| v.v).sum::<f64>() / total;
-            for ((&i, fw), d) in s.beams.iter().zip(&fws).zip(&runs) {
-                let l = norm(*d);
+            for (&i, fw) in s.beams.iter().zip(&fws) {
+                let d = self.beam_run(i, x);
+                let l = norm(d);
                 let by = [0, 1, 2].map(|k| fw.g[k] / total - whole / total * d[k] / l);
                 run(i, by, g);
             }
@@ -1113,45 +1120,58 @@ pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
              form: None }
 }
 
+/// Whether a row carries the unknown's column: one more than the columns its head says its
+/// structure reads — the nodes' coordinates, the bars' areas, then the sections or the unknowns
+/// they are read over.  `None` where there is no head.
+fn free_at(n_par: usize, k: &[f64]) -> Option<bool> {
+    let h = k.get(..HEAD)?;
+    let sections = if h[5] < 0.0 { SECTION as f64 * h[3] } else { h[5] };
+    Some(n_par as f64 > h[0] * h[1] + h[2] + sections)
+}
+
 /// One row read off its columns `v` and constants `k`: the structure, the columns it is solved
-/// at, what it states, its sizing, and whether an unknown sets its output — a row carries the
-/// unknown's column where it has one more than its structure reads.
+/// at, what it states, whether an unknown sets its output, and where its sections are read over
+/// unknowns each one's value and rate in them.
 struct Row<'a> {
     s: Structure,
     x: Vec<f64>,
     stated: &'a [f64],
-    sizing: Option<Sizing>,
     free: bool,
+    sized: Option<(usize, Vec<[crate::tape::Value; SECTION]>)>,
 }
 
 impl<'a> Row<'a> {
-    fn read(v: &[f64], k: &'a [f64], sc: &mut crate::tape::Scratch) -> Option<Row<'a>> {
-        let base = |free: bool| Structure::read_sized(k, free);
-        // the head says how many columns the structure reads; one more is the unknown's
-        let (s, _, sizing) = base(false).or_else(|| base(true))?;
-        let free = v.len() > s.row_columns(sizing.as_ref());
-        let (s, stated, sizing) = base(free)?;
+    fn read(v: &[f64], k: &'a [f64]) -> Option<Row<'a>> {
+        let free = free_at(v.len(), k)?;
+        let (s, stated, sizing) = Structure::read_sized(k, free)?;
         let cols = s.row_columns(sizing.as_ref());
         if v.len() != cols + free as usize {
             return None;
         }
-        let direct = s.dim * s.nodes + s.bars.len();
+        let direct = s.section_at(0);
         let mut x = v[..direct].to_vec();
-        match &sizing {
-            None => x.extend(&v[direct..cols]),
-            Some(z) => {
-                for i in 0..s.beams.len() {
-                    x.extend(z.section(i, &v[direct..cols], sc).map(|t| t.v));
-                }
-            }
+        let sized = sizing.map(|z| {
+            let mut sc = crate::tape::Scratch::new();
+            let sections: Vec<_> =
+                (0..s.beams.len()).map(|i| z.section(i, &v[direct..cols], &mut sc)).collect();
+            x.extend(sections.iter().flatten().map(|t| t.v));
+            (z.unknowns, sections)
+        });
+        if sized.is_none() {
+            x.extend(&v[direct..cols]);
         }
-        Some(Row { s, x, stated, sizing, free })
+        Some(Row { s, x, stated, free, sized })
+    }
+
+    /// The columns the structure is read over, before the unknown that may set its output.
+    fn columns(&self) -> usize {
+        self.s.section_at(0) + self.sized.as_ref().map_or(SECTION * self.s.beams.len(), |z| z.0)
     }
 
     /// What the row states the output is, at the unknown's column `v` reads.
     fn target(&self, v: &[f64]) -> f64 {
         match self.free {
-            true => self.stated[0] * v[self.s.row_columns(self.sizing.as_ref())] + self.stated[1],
+            true => self.stated[0] * v[self.columns()] + self.stated[1],
             false => self.stated[0],
         }
     }
@@ -1159,10 +1179,9 @@ impl<'a> Row<'a> {
 
 fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let mut sc = crate::tape::Scratch::new();
     for i in 0..n {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
-        r[i] = Row::read(v, k, &mut sc).and_then(|row| {
+        r[i] = Row::read(v, k).and_then(|row| {
             let st = row.s.solve(&row.x).ok()?;
             Some(row.s.output(&st) - row.target(v))
         }).unwrap_or(f64::NAN);
@@ -1171,12 +1190,11 @@ fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
 
 fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
-    let mut sc = crate::tape::Scratch::new();
     for i in 0..n {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
         let row = &mut j[n_par * i..n_par * (i + 1)];
         row.fill(0.0);
-        let Some(read) = Row::read(v, k, &mut sc) else {
+        let Some(read) = Row::read(v, k) else {
             row.fill(f64::NAN);
             continue;
         };
@@ -1185,20 +1203,19 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
             row.fill(f64::NAN);
             continue;
         };
-        let mut g = vec![0.0; s.columns()];
-        s.gradient(&st, &read.x, &mut g);
-        let direct = s.dim * s.nodes + s.bars.len();
-        let cols = s.row_columns(read.sizing.as_ref());
-        row[..direct].copy_from_slice(&g[..direct]);
-        match &read.sizing {
-            None => row[direct..cols].copy_from_slice(&g[direct..]),
+        let cols = read.columns();
+        match &read.sized {
+            None => s.gradient(&st, &read.x, &mut row[..cols]),
             // a section's rate carried to the unknowns it is read over
-            Some(z) => {
-                for b in 0..s.beams.len() {
-                    let at = s.section_at(b);
-                    for (c, t) in z.section(b, &v[direct..cols], &mut sc).iter().enumerate() {
-                        for u in 0..z.unknowns {
-                            row[direct + u] += g[at + c] * t.d[u];
+            Some((unknowns, sections)) => {
+                let mut g = vec![0.0; s.columns()];
+                s.gradient(&st, &read.x, &mut g);
+                let direct = s.section_at(0);
+                row[..direct].copy_from_slice(&g[..direct]);
+                for (b, four) in sections.iter().enumerate() {
+                    for (c, t) in four.iter().enumerate() {
+                        for u in 0..*unknowns {
+                            row[direct + u] += g[s.section_at(b) + c] * t.d[u];
                         }
                     }
                 }

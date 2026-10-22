@@ -48,6 +48,22 @@ impl Sketch {
         x.strip_suffix(".x").unwrap_or(x)
     }
 
+    /// Whether direction `e` is held: an axis's outright, a line's by its ends, each held where
+    /// it is drawn, in a plane held where it stands.  Anything else is no direction.
+    pub fn direction_held(&self, e: EntRef) -> bool {
+        match e.kind {
+            EntKind::Axis => self.axes[e.i()].d.iter().all(|&p| self.params[p as usize].fixed),
+            EntKind::Line => {
+                let l = &self.lines[e.i()];
+                [l.p1, l.p2].iter().all(|&p| {
+                    self.point_held(p as usize)
+                        && self.plane_of(p as usize).is_none_or(|v| self.plane_fixed(v))
+                })
+            }
+            _ => false,
+        }
+    }
+
     /// Whether every number of point `p` is held: two in its plane, three in space.
     pub fn point_held(&self, p: usize) -> bool {
         let pt = &self.points[p];

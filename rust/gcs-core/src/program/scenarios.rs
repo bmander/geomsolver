@@ -180,25 +180,29 @@ pub(super) fn drive(
                 continue;
             }
             let line = s.requirements[k];
-            let span = body.iter().find(|st| st.id == line.stmt).and_then(|st| match &st.kind {
-                Operation::Scenario(sc) => sc.items.get(line.item).map(|it| it.span),
-                _ => None,
-            }).unwrap_or_default();
+            let Some(st) = body.iter().find(|st| st.id == line.stmt) else { continue };
+            let span = match &st.kind {
+                Operation::Scenario(sc) => sc.items.get(line.item).map_or(st.span, |it| it.span),
+                _ => st.span,
+            };
             let at = *index.get_or_insert_with(|| {
                 sk.scenarios.push(s.scenario.clone());
                 sk.scenarios.len() as i64 - 1
             });
             let args = vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)];
-            let name = |e: EntRef| format!("{} {}", e.kind.a(), e.i());
+            let name =
+                |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
             if let Err(m) = crate::constraints::validate(sk, CKind::Deflection, &args, &name) {
                 diags.push(Diag::within(Code::E040, span, line.stmt, format!(
                     "`{}` cannot drive the drawing: {m}", s.heads[k])));
                 continue;
             }
             let id = sk.add_quiet(Constraint::new(CKind::Deflection, args));
-            map.of_constraint.insert(id, super::source_map::Site {
-                stmt: line.stmt, span, path: Default::default(),
-            });
+            // made by the scenario's statement, and stood where its requirement is written
+            map.record(st, super::source_map::Made::Con(id));
+            if let Some(site) = map.of_constraint.get_mut(&id) {
+                site.span = span;
+            }
             s.driven[k] = Some(id);
             added = true;
         }

@@ -89,16 +89,26 @@ pub struct Section {
 }
 
 /// **A section's number read over unknowns** (#510 S1): its text as the flattener wrote it, every
-/// number of its scope written in, and the declared unknowns it reads, by absolute name.  A
-/// requirement driving the frame finds them; the text is read as a tape over them (`tape.rs`), so
-/// it may be any function of them (`b * h^3 / 12`), not only one affine in one.
+/// number of its scope written in, the declared unknowns it reads, by absolute name, and its
+/// tape over them (`tape.rs`), compiled once — so it may be any function of them (`b * h^3 /
+/// 12`), not only one affine in one.  A requirement driving the frame finds them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Over {
     pub text: String,
     pub unknowns: Vec<String>,
+    pub own: crate::tape::Tape,
 }
 
 impl Over {
+    /// `text` read over `unknowns`, in the document's units, or why it cannot be.
+    pub fn new(text: &str, unknowns: Vec<String>, units: crate::units::Units)
+        -> Result<Over, String>
+    {
+        let mut over = Over { text: text.to_string(), unknowns, own: Default::default() };
+        over.own = over.tape(&over.unknowns, units)?;
+        Ok(over)
+    }
+
     /// Its tape over `vars` (which hold every unknown it reads), in the document's units.
     pub fn tape(&self, vars: &[String], units: crate::units::Units)
         -> Result<crate::tape::Tape, String>
@@ -106,14 +116,14 @@ impl Over {
         let p = crate::expr::parse_in(&self.text, units)?;
         crate::tape::Tape::compile(&p.body, vars)
     }
+
+    /// What it comes to at its unknowns' values `x`, in its own order.
+    pub fn at(&self, x: &[f64]) -> f64 {
+        self.own.eval(x, &mut crate::tape::Scratch::new()).v
+    }
 }
 
 impl Section {
-    /// A section of numbers it states, none read over an unknown.
-    pub fn stated(props: BTreeMap<SectionProp, f64>) -> Section {
-        Section { props, over: BTreeMap::new() }
-    }
-
     /// A number stated of it, as it came to at elaboration (at the unknowns' seeds).
     pub fn get(&self, p: SectionProp) -> Option<f64> {
         self.props.get(&p).copied()
@@ -134,8 +144,7 @@ impl Section {
                     format!("`{name}` is an unknown with no seed: `hint(…)` it")
                 })?);
             }
-            let tape = over.tape(&over.unknowns, sk.units)?;
-            let v = tape.eval(&x, &mut crate::tape::Scratch::new()).v;
+            let v = over.at(&x);
             match v > 0.0 && v.is_finite() {
                 true => Ok(v),
                 false => Err(format!("`{}` is {v} where the drawing stands, and a section's \

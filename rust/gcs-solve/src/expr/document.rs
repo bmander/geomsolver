@@ -260,8 +260,8 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // (#510 S1), from its seed
     let sized: Vec<(String, f64)> = sk.constraints.iter()
         .filter(|c| c.kind == crate::constraints::CKind::Deflection && c.states_rows())
-        .filter_map(|c| c.frame_row(sk).ok())
-        .flat_map(|r| r.unknowns)
+        .filter_map(|c| c.frame_unknowns(sk).ok())
+        .flatten()
         .filter_map(|n| sk.declared.get(&n).and_then(|d| d.seed).map(|s| (n, s)))
         .collect();
     let held: Vec<(String, f64)> = envelopes.chain(flanks).chain(eased).chain(sized).collect();

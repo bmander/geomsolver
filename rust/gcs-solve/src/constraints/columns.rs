@@ -1175,18 +1175,7 @@ impl Constraint {
     /// Whether operand `i`'s direction is held: an axis's outright, a line's by its ends, each
     /// held where it is drawn, in a plane held where it stands.
     fn direction_held(&self, sk: &Sketch, i: usize) -> bool {
-        let e = self.args[i].ent();
-        match e.kind {
-            EntKind::Axis => sk.axes[e.i()].d.iter().all(|&p| sk.params[p as usize].fixed),
-            EntKind::Line => {
-                let l = &sk.lines[e.i()];
-                [l.p1, l.p2].iter().all(|&p| {
-                    sk.point_held(p as usize)
-                        && sk.plane_of(p as usize).is_none_or(|v| sk.plane_fixed(v))
-                })
-            }
-            _ => false,
-        }
+        sk.direction_held(self.args[i].ent())
     }
 
     /// Operand `i`'s direction as it stands now, as a direction relation reads it.
