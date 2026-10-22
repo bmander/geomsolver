@@ -245,6 +245,7 @@ mod sundial;
 mod surfaces;
 mod swept_faces;
 mod swept_over_parameters;
+mod symbols;
 mod symmetric;
 mod tangent_at;
 mod tape;

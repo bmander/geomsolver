@@ -575,6 +575,12 @@ dialog input[type=search] {
   background: var(--accent-soft);
   -webkit-text-stroke: 0.4px currentColor;
 }
+/* The name under the caret, and every other place the text names it (`app/occurrences.ts`):
+   faint where it is read, stronger where it is given — the two inks every editor uses for reads
+   and writes.  Background only, as every mark here (`app/editor.ts`), and after `.lit` so a name
+   inside the picked statement still reads as one. */
+.code-copy .occurrence { background: rgba(87, 87, 87, 0.16); }
+.code-copy .occurrence-def { background: rgba(14, 99, 156, 0.22); }
 .code-copy .word { color: var(--syn-word); }
 .code-copy .type { color: var(--syn-type); }
 .code-copy .relation { color: var(--syn-relation); }

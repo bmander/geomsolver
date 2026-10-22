@@ -384,11 +384,38 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `core/drawing.ts`); the panel picks one by the file shown (`CodeEditor.colouring`).  Relation
   words are known by the text: those it defines or names in a `use (…)` (`relation_words`); units
   join their number's run; `expr`'s functions, constants and measures are `builtin`.
+- **The names a text gives and reads are the core's** (`syntax::symbols`, FFI
+  `gcs_program_symbols`, `core/program.ts::symbols` → `Symbols`): every name, the declaration it
+  names, and each place it is named, given (`def`) or read — the index an editor feature stands
+  on, the occurrences under the caret now and going to a definition or renaming next.  A function
+  of the *text*, as the colouring is, and **standing on the colouring's own scan**: a word tinted
+  `Def` gives a name, a plain word reads one, a `Type` before its `(` calls a component, a
+  `Relation` the file defines or imports reads that word, a `Label` in a component's or a word's
+  call names the formal it fills; so a colour and the index cannot disagree about a word.  On that
+  the language's scopes: a component's, part's, interface's or relation word's body holds its
+  formals and declarations, a set's, a `claim { … }`'s and a `preview`'s keep theirs, a repetition
+  or an `in` block shares the scope around it but for its header's binders (as `integral(… over p)`
+  keeps its own), and a name is the innermost declaration of it read outwards.  **A member is
+  reached through what it is read of**: through an instance (`t0.mid`, `Rung(…).mid`) or a formal
+  typed by an interface it is the declaration in that body; where the text declares none (`l.p1`,
+  `std.front`) it is one symbol per name per thing read of; a group's label is its member;
+  `next.v` is `v`.  A name nothing gives is one `unknown` symbol per name per body, so a half-typed
+  name lights its other spellings.  `tests/symbols.rs` (the corpus indexed end to end, each
+  occurrence its symbol's word) and `web/src/test/occurrences.test.ts` are the gates.
+- **The name under the caret is lit wherever else it is named** (`app/occurrences.ts`), as every
+  editor does: the caret in a name or just past it (`rim|`), or a selection of exactly the name;
+  given in a stronger ink (`.occurrence-def`) than read (`.occurrence`); after a short pause
+  (`PAUSE`), let go at once on an edit; F7 and ⇧F7 step to the next and the previous place, round
+  the ends.  On a program only — a drawing or a text file lights nothing (`Occurrences.names`).
+  `CodeEditor` stays ignorant of all of it: it keeps **marks in layers** (`setMarks(marks,
+  layer)`; the default layer is the panel's picked statement and verdicts, `occurrences` this) and
+  tells **the caret** (`onCaret(edited)`, once per move or edit however many events report it),
+  which is all a feature reading the word under the caret needs.
 - Offsets cross the ABI in **UTF-8 bytes** and index a **UTF-16 string** on the other side
   (`gear.sv` has an em dash).  `core/program.ts::Offsets` is the conversion and `Document.adopt`
-  is the **one seam** every report crosses: diagnostics, source map and coloured runs are string
-  indices by the time anyone sees them.  A wholly-ASCII program builds nothing; otherwise it is a
-  binary search, since offsets do not arrive in order.  Nothing sends an offset back.
+  is the **one seam** every report crosses: diagnostics, source map, coloured runs and names are
+  string indices by the time anyone sees them.  A wholly-ASCII program builds nothing; otherwise
+  it is a binary search, since offsets do not arrive in order.  Nothing sends an offset back.
 - The box it is typed in is `app/editor.ts` — a `CodeEditor`, which knows nothing of Solvent and is
   handed the text and a function saying which runs are what: a `<textarea>` over a `<pre>` of the
   same text.  **The two layers must put every character in the same place**; shared CSS is not

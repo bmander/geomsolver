@@ -109,6 +109,36 @@ pub unsafe extern "C" fn gcs_program_highlight(ptr: *const u8, len: usize) -> *m
     json_out(move || runs_json(syntax::highlight(as_str(ptr, len))))
 }
 
+/// The names a program gives and reads (`syntax::symbols`): `{"symbols": [[name, kind,
+/// parent], …], "occurrences": [[lo, hi, symbol, def], …]}`, the occurrences in order, `parent`
+/// the symbol a member is read of or -1, `def` 1 where the name is given.  A function of the text,
+/// as the colouring is, so a panel asks it of what somebody is halfway through typing.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_program_symbols(ptr: *const u8, len: usize) -> *mut u8 {
+    json_out(move || {
+        let index = syntax::symbols(as_str(ptr, len));
+        let symbols = index.symbols.iter().map(|s| {
+            Json::Arr(vec![
+                Json::Str(s.name.clone()),
+                Json::Str(s.kind.as_str().to_string()),
+                Json::Int(s.parent.map_or(-1, |p| p as i64)),
+            ])
+        });
+        let occurrences = index.occurrences.iter().map(|o| {
+            Json::Arr(vec![
+                Json::Int(o.span.lo as i64),
+                Json::Int(o.span.hi as i64),
+                Json::Int(o.symbol as i64),
+                Json::Int(o.def as i64),
+            ])
+        });
+        Json::Obj(vec![
+            ("symbols".to_string(), Json::Arr(symbols.collect())),
+            ("occurrences".to_string(), Json::Arr(occurrences.collect())),
+        ])
+    })
+}
+
 /// Colour a drawing (`.svd`), as `gcs_program_highlight` colours a program: the drawing lexer's
 /// own scan, in the same `[[class, lo, hi], …]`.
 #[no_mangle]

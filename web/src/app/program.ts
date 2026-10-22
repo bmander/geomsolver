@@ -14,7 +14,9 @@
  * made elsewhere; `dimbox.ts` will not overwrite a box somebody is in.  A panel that reprinted on
  * every solve would take the line out from under the cursor. */
 import type { Mark } from './editor.js';
-import { highlight, type Diagnostic, type SourceMap, type SourceSpan } from '../core/program.js';
+import { Occurrences } from './occurrences.js';
+import { highlight, symbols, type Diagnostic, type SourceMap, type SourceSpan }
+  from '../core/program.js';
 import type { ClaimVerdict } from '../core/claims.js';
 import * as modules from '../core/modules.js';
 import { highlight as drawingHighlight, type DrawingBundle } from '../core/drawing.js';
@@ -27,6 +29,9 @@ import { ProjectExplorer, projectFile, sourceFile } from './project-explorer.js'
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
  *  owns what the text *means* — which document it came from and what applying it does. */
 const ptext = ped.box;
+/** The name under the caret, lit wherever else the text names it — a program's names, read by
+ *  the core; nothing in a drawing or a text file. */
+const occurrences = new Occurrences(ped);
 
 /** The text the panel last put there.  An identical reprint is one string compare and no write,
  *  which is what makes refreshing on every change affordable. */
@@ -329,6 +334,7 @@ export function refreshProgram(): void {
   const quiet = imported || drawingActive() || showingText();
   ped.plain = showingText();
   ped.colouring = activeFile.endsWith('.svd') ? drawingHighlight : highlight;
+  occurrences.names = activeFile.endsWith('.svd') || showingText() ? null : symbols;
   ped.setText(text, quiet ? [] : marks());
   ppanel.classList.remove('dirty');
   ppanelState.textContent = imported ? ' — imported file, read only' : '';

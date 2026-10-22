@@ -33,7 +33,13 @@
  *
  * This module knows nothing about Solvent, the sketch, or the shell: it is handed the text and a
  * function that says which runs of it are what.  That is what lets the harness build the very same
- * control the app builds, rather than a second one that might not have the bug. */
+ * control the app builds, rather than a second one that might not have the bug.
+ *
+ * What an editor's features need of it is two things, and both are said here without saying what
+ * any feature is: **marks in layers** (`setMarks(marks, layer)`), so the statement picked on the
+ * drawing, the names under the caret and whatever comes next each keep their own and none has to
+ * recompose the others'; and **the caret** (`onCaret`), told whenever it moves or the text under
+ * it changes, so a feature that reads the word there is asked again exactly then. */
 
 /** A run of the text and what it is.  `cls` becomes the element's class and the stylesheet says
  *  what it looks like — see the face rule above. */
@@ -60,7 +66,8 @@ export class CodeEditor {
   readonly box: HTMLTextAreaElement;
   private readonly copy: HTMLPreElement;
   private colour: (text: string) => Run[];
-  /** The ranges a caller has asked to be marked, in no particular order and possibly overlapping.
+  /** The ranges callers have asked to be marked, by layer — each in no particular order, and
+   *  possibly overlapping one another and the other layers' (`setMarks`).
    *
    *  Marked with a class and **never with a weight**.  The box in front of this copy is one
    *  face throughout; a bold here would advance its glyphs differently from the box's, and
@@ -68,7 +75,12 @@ export class CodeEditor {
    *  four rules in this file's header — this is the third of them.  A background, a box-shadow
    *  or an outline is safe, since none of the three takes any room; a border or a padding is
    *  the same mistake as a bold. */
-  private marks: Mark[] = [];
+  private layers = new Map<string, Mark[]>();
+  /** Who is told the caret moved or the text changed (`onCaret`), and where it last was, so a
+   *  move to where it already stood tells nobody. */
+  private watchers: ((edited: boolean) => void)[] = [];
+  private lastCaret = { lo: -1, hi: -1, edits: -1 };
+  private edits = 0;
   /** The last colouring, against the text it was made from.  Colouring crosses the ABI and
    *  re-lexes the document, and a repaint that only moved the *mark* has the same text and so
    *  the same runs — which used to be paid for again anyway. */
@@ -104,6 +116,51 @@ export class CodeEditor {
     // the copy has no scrollbars of its own — it is moved by the box, which is the only one that
     // knows where the text has got to
     this.box.addEventListener('scroll', () => this.follow());
+    // The caret.  A textarea says it moved in no one event: `selectionchange` on the document is
+    // the general answer, where the browser sends it for a textarea's own selection, and the
+    // rest cover one that does not — a key, a press, a word double-clicked.  `caretMoved`
+    // tells each move once however many of them report it.
+    this.box.addEventListener('input', () => { this.edits += 1; this.caretMoved(); });
+    for (const e of ['keyup', 'pointerup', 'select', 'focus']) {
+      this.box.addEventListener(e, () => this.caretMoved());
+    }
+    document.addEventListener('selectionchange', () => {
+      if (document.activeElement === this.box) this.caretMoved();
+    });
+  }
+
+  /** Be told whenever the caret moves, or the text it is in changes — `edited` then, since every
+   *  offset a caller holds into the old text is stale.  Typing reports both, once. */
+  onCaret(watcher: (edited: boolean) => void): void {
+    this.watchers.push(watcher);
+  }
+
+  /** The selection, as string indices: `lo === hi` is a caret with nothing selected. */
+  get caret(): Extent {
+    return { lo: this.box.selectionStart, hi: this.box.selectionEnd };
+  }
+
+  /** Put the caret (or a selection) here, as a click there would, and bring its line on screen
+   *  — scrolled to the middle only where it was off it, so a step to a line in view moves
+   *  nothing else. */
+  select(lo: number, hi = lo): void {
+    this.box.setSelectionRange(lo, hi);
+    const text = this.text;
+    let line = 0;
+    for (let i = 0; i < lo && i < text.length; i += 1) if (text[i] === '\n') line += 1;
+    const each = this.lineHeight || 1;
+    const top = this.box.scrollTop / each, rows = this.box.clientHeight / each;
+    if (line < top || line >= top + rows - 1) this.scrollToLine(line, Math.floor(rows / 2));
+    this.caretMoved();
+  }
+
+  private caretMoved(): void {
+    const { selectionStart: lo, selectionEnd: hi } = this.box;
+    const last = this.lastCaret;
+    if (last.lo === lo && last.hi === hi && last.edits === this.edits) return;
+    const edited = last.edits !== this.edits;
+    this.lastCaret = { lo, hi, edits: this.edits };
+    for (const w of this.watchers) w(edited);
   }
 
   get text(): string {
@@ -117,34 +174,49 @@ export class CodeEditor {
    *  after it, so setting the two apart would repaint once against the old marks and again
    *  against the new ones. */
   setText(text: string, marks?: Mark[]): void {
-    if (marks !== undefined) this.marks = marks;
+    if (marks !== undefined) this.layers.set('', marks);
     const { selectionStart, selectionEnd, scrollTop, scrollLeft } = this.box;
+    const changed = text !== this.box.value;
     this.box.value = text;
-    this.repaint();
     this.box.setSelectionRange(selectionStart, selectionEnd);
     this.box.scrollTop = scrollTop;
     this.box.scrollLeft = scrollLeft;
-    this.follow();
+    // told before the paint, so a layer let go as stale is not painted once more first
+    if (changed) {
+      this.edits += 1;
+      this.caretMoved();
+    }
+    this.repaint();
   }
 
-  /** Mark these ranges and no others.  Repaints only when the set actually changed, so a gesture
-   *  that keeps landing on the same statement costs one paint and not sixty. */
-  setMarks(marks: Mark[]): void {
-    const a = this.marks;
+  /** Mark these ranges in `layer` — the default one is the caller's who set the text — and no
+   *  others there; every other layer's stay.  Repaints only when the layer actually changed, so a
+   *  gesture that keeps landing on the same statement costs one paint and not sixty.
+   *
+   *  `paint: false` leaves the copy as it is until whatever repaints next: what a caller wants
+   *  that has learnt its marks are stale (the text changed under them) from the same event that
+   *  is about to repaint anyway. */
+  setMarks(marks: Mark[], layer = '', paint = true): void {
+    const a = this.layers.get(layer) ?? [];
     if (a.length === marks.length
         && a.every((m, i) => m.lo === marks[i].lo && m.hi === marks[i].hi
                           && m.cls === marks[i].cls)) {
       return;
     }
-    this.marks = marks;
-    this.repaint();
+    this.layers.set(layer, marks);
+    if (paint) this.repaint();
   }
 
   /** Colour what is in the box now — after typing, or after the rules changed. */
   repaint(): void {
     const text = this.text;
     const out = document.createDocumentFragment();
-    const marks = this.marks;
+    // every layer's marks at once, by where they start: the stretches below are written in order,
+    // so a mark is taken up when the text reaches it and let go once it is past — a repaint walks
+    // the marks once, not once per coloured run
+    const marks = [...this.layers.values()].flat().sort((a, b) => a.lo - b.lo);
+    let taken = 0;
+    let open: Mark[] = [];
     /** One piece of one colour: a bare string where it has nothing to say, a span where it has. */
     const piece = (a: number, b: number, cls: string): void => {
       if (b <= a) return;
@@ -168,14 +240,16 @@ export class CodeEditor {
       // between them — characters appearing in the copy that the box does not have, which is the
       // one bug this whole class is built to avoid.
       if (to <= from) return;
+      while (taken < marks.length && marks[taken].lo < to) open.push(marks[taken++]);
+      open = open.filter((m) => m.hi > from);
       const cut = (i: number): number => Math.min(Math.max(i, from), to);
       const edges = [from, to];
-      for (const m of marks) edges.push(cut(m.lo), cut(m.hi));
+      for (const m of open) edges.push(cut(m.lo), cut(m.hi));
       edges.sort((a, b) => a - b);
       for (let i = 0; i + 1 < edges.length; i += 1) {
         const [a, b] = [edges[i], edges[i + 1]];
         if (b <= a) continue;
-        const over = marks.filter((m) => m.lo <= a && m.hi >= b).map((m) => m.cls);
+        const over = open.filter((m) => m.lo <= a && m.hi >= b).map((m) => m.cls);
         piece(a, b, [cls, ...over].filter(Boolean).join(' '));
       }
     };
