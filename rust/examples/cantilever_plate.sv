@@ -7,7 +7,7 @@
 // A strip's twist, Saint-Venant's (1 / 4L) √(G J / (ρ Ip)) with J = b t³ / 3 and Ip = b³ t / 12,
 // is less than the plate's, whose root holds its section from warping.
 unit mm
-use std
+use std (horizontal, vertical)
 
 L := 300mm
 b := 150mm
@@ -19,13 +19,16 @@ twist := 1 / (4 * L) * 2 * t / b * sqrt(steel.E / (2 * (1 + steel.nu)) / steel.r
 
 in std.top {
   root_low := point
-  end_low := point
-  end_high := point
-  root_high := point
+  end_low := point hint((300, 0))
+  end_high := point hint((300, 150))
+  root_high := point hint((0, 150))
   fix((0mm, 0mm)) root_low
-  fix((L, 0mm)) end_low
-  fix((L, b)) end_high
-  fix((0mm, b)) root_high
+  root_low horizontal end_low
+  root_low distance(L) end_low
+  end_low vertical end_high
+  end_low distance(b) end_high
+  end_high horizontal root_high
+  root_high vertical root_low
   outline := (low := line(root_low, end_low)) -> (end := line(end_low, end_high)) ->
              (high := line(end_high, root_high)) -> (root := line(root_high, root_low)) -> close
 }

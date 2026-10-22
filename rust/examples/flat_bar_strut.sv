@@ -6,7 +6,7 @@
 // second moment, and the factor on the pressure at which it buckles is that over the load the
 // pressure lays on its head.
 unit mm
-use std
+use std (horizontal, vertical)
 
 L := 600mm
 b := 40mm
@@ -17,15 +17,18 @@ euler := pi^2 * steel.E * b * t^3 / 12 / (4 * L^2)
 
 in std.front {
   a := point
-  c := point
-  d := point
-  e := point
+  c := point hint((20, 0))
+  d := point hint((20, 600))
+  e := point hint((-20, 600))
   fix((-b / 2, 0mm)) a
-  fix((b / 2, 0mm)) c
-  fix((b / 2, L)) d
-  fix((-b / 2, L)) e
-  side := (foot := line(a, c)) -> (right := line(c, d)) -> (head := line(d, e)) ->
-          (left := line(e, a)) -> close
+  a horizontal c
+  a distance(b) c
+  c vertical d
+  c distance(L) d
+  d horizontal e
+  e vertical a
+  side := (foot := line(a, c)) -> (flank := line(c, d)) -> (head := line(d, e)) ->
+          (back := line(e, a)) -> close
 }
 bar := solid(side, from: -t / 2, to: t / 2) of steel
 

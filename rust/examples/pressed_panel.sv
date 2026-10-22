@@ -4,7 +4,7 @@
 // clamped square plate does, 0.00126 q a⁴ / D with D = E t³ / (12 (1 − ν²)); at forty times
 // thinner than it is wide its shear adds a little to that, and the panel claims its sag within 3%.
 unit mm
-use std
+use std (horizontal, vertical)
 
 a := 400mm
 t := 10mm
@@ -16,15 +16,20 @@ sag := 0.00126 * q * a^4 / D
 // drawn in plan and swept up its thickness: its `near` cap the top, pressed down
 in std.top {
   sw := point
-  se := point
-  ne := point
-  nw := point
-  middle := point
+  se := point hint((400, 0))
+  ne := point hint((400, 400))
+  nw := point hint((0, 400))
+  middle := point hint((200, 200))
   fix((0mm, 0mm)) sw
-  fix((a, 0mm)) se
-  fix((a, a)) ne
-  fix((0mm, a)) nw
-  fix((a / 2, a / 2)) middle
+  sw horizontal se
+  sw distance(a) se
+  se vertical ne
+  se distance(a) ne
+  ne horizontal nw
+  nw vertical sw
+  // the middle, where the sag is read, half way along each side
+  sw distance(a / 2, along: u) middle
+  sw distance(a / 2, along: v) middle
   square := (south := line(sw, se)) -> (east := line(se, ne)) -> (north := line(ne, nw)) ->
             (west := line(nw, sw)) -> close
 }
