@@ -1915,7 +1915,8 @@ statements.
 A `scenario` states a load case over the solved drawing: supports, loads and requirements, one
 per line. It stands at the top of the document (or in its `preview`), reads the document's names
 and numbers, and adds no geometry and no row. A frame's requirements are answered and judged
-(below); a solid's are not analysed yet (§9.11).
+(below), and so are a solid's read in its plane; a solid read in three dimensions is not analysed
+yet (§9.11).
 
 ```
 scenario lift {
@@ -2002,6 +2003,52 @@ scenario tip_load {
 | `safety(arm)` with no `Sz` | no answer — reads `Sy` and `Sz` |
 | `Iz: b * h^3 / 12`, `h` an unknown nothing drives | E040 — nothing determines it |
 | `deflection(end, along: d) == 4mm` on a frame left free | E040 — the frame is free to turn |
+
+#### Solids read in their plane
+
+A prism — a face swept square to its plane, `solid(F, from: a, to: b)` — is read over its face
+when a scenario says so: `plane stress plate` for a thin plate (free across its thickness),
+`plane strain dam` for a long one (held along its length). Its depth is the thickness.
+
+```
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+in std.front {
+  …
+  hole := arc(center: o, start: m, end: s) hint(r: 10mm)
+  quarter := face(cut_x, pulled, side, cut_y, hole)
+}
+plate := solid(quarter, from: -1mm, to: 1mm) of steel
+scenario pull {
+  plane stress plate
+  pinned plate.cut_x along: std.z            // a wall of the prism is a side of the face
+  pinned plate.cut_y along: std.x
+  pressure plate.pulled -50MPa               // a tension: a pressure pushes in
+  claim safety(plate) >= 1.6                 // yield over the greatest von Mises stress
+}
+```
+
+- **Where a line falls**: a face path naming a wall of the prism (`plate.cut_x`), or the line it
+  was swept from, is that side of the face; the solid, its face or a cap is all of it; a point in
+  it is a node of the mesh. A hold across the thickness (`pinned m along: std.y` in the front)
+  holds nothing the plane moves, and `fixed` holds what `pinned` does.
+- **What is answered**: `deflection(p[, along: d])` (or a side's, the solid's worst),
+  `compliance`, `mass`, `mode(plate, n)` and `safety(plate)`; the material states `E` and `nu`.
+  `buckling` has no answer (a plate buckles out of its plane), nor does a load across the plane,
+  nor a `safety` where a sharp inside corner leaves the stress unbounded: round it.
+- **A driving deflection sizes the region**: `deflection(corner, along: down) == 0.5mm` at a
+  point of the region is a row. Its mesh is made once, where the drawing stands when it is
+  elaborated, and its nodes move with the drawing — so seed the region near where it will be
+  solved (a circle's `hint(r: …)` too). Its sides are lines, arcs and circles. The library's
+  `sized_plate.sv` finds a plate's depth so.
+
+| written | reported |
+|---|---|
+| `plane stress p`, `p` a point | E040 — a solid is read in its plane |
+| `plane stress body`, `body` turned or cut | E040 — a prism, its face swept square to its plane |
+| `plane stress plate` twice in a scenario | E001 — read in the plane already |
+| `plane stretch plate` | syntax — `plane stress` or `plane strain` |
+| `claim buckling(plate) >= 1` | no answer — a plate buckles out of its plane |
+| `deflection(p, along: d) == v` over a spline's region | E040 — a spline or a curve is not moved yet |
 
 ### 1.15 Frames that move, and generated geometry
 

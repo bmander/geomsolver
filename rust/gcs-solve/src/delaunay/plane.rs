@@ -507,7 +507,9 @@ fn bad(tri: &Tri, t: usize, criteria: &Criteria) -> bool {
 }
 
 /// Segment `i` split at its parameter's middle, on its curve: the two halves' indices.
-fn split(tri: &mut Tri, segs: &mut Vec<Seg>, sides: &[&Side], i: usize) -> Result<Vec<usize>, String> {
+fn split(tri: &mut Tri, segs: &mut Vec<Seg>, sides: &[&Side], i: usize)
+    -> Result<Vec<usize>, String>
+{
     let s = segs[i];
     let m = 0.5 * (s.s[0] + s.s[1]);
     let p = (sides[s.side].at)(m);
@@ -596,7 +598,8 @@ fn extract(tri: &Tri, segs: &[Seg], sides: &[&Side]) -> Mesh {
     }
     for (g, list) in along.iter().enumerate() {
         let mut ordered: Vec<&Seg> = Vec::with_capacity(list.len());
-        if let Some(start) = list.iter().find(|s| !list.iter().any(|o| o.b == s.a)).or(list.first()) {
+        let start = list.iter().find(|s| !list.iter().any(|o| o.b == s.a)).or(list.first());
+        if let Some(start) = start {
             ordered.push(start);
             while ordered.len() < list.len() {
                 let end = ordered.last().unwrap().b;

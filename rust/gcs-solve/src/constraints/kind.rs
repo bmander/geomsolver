@@ -177,13 +177,16 @@ pub enum CKind {
     /// as written, an equation where the number is stated outright.  The envelope's columns and
     /// every point, axis and unknown of the two regions' terms are columns.
     RegularWithin,
-    /// **A frame's deflection, driven** (#510 S1, `beams::Row`): `deflection(tip, along: down) ==
-    /// 2mm` in a `scenario`, the move of the joint `at` along a direction, under the supports and
-    /// the loads of the scenario `Sketch::scenarios[scenario]` holds.  One row, the interior's
-    /// (`interior::kernel`): the frame's structure solved, `d·u − d₀`, its columns the lifts of the
-    /// frame's joints and the unknowns its sections are read over, its gradient the adjoint.  A
-    /// displacement, degree 1.  Made by the elaborator from a driving requirement, never written
-    /// as a statement, and carried by the Solvent source alone, as a beam is.
+    /// **A deflection, driven** (#510 S1, `beams::Row`; S2, `prisms::Row`): `deflection(tip,
+    /// along: down) == 2mm` in a `scenario`, the move of the point `at` along a direction, under
+    /// the supports and the loads of the scenario `Sketch::scenarios[scenario]` holds.  One row,
+    /// the interior's (`interior::kernel`): `d·u − d₀`, its gradient the adjoint — over a frame
+    /// whose joint `at` is, its columns the lifts of the frame's joints and the unknowns its
+    /// sections are read over; or over a region the scenario reads in its plane, its columns the
+    /// region's points' numbers and its radii, its mesh the compile's moved with them
+    /// (`interior::Moved`, `Sketch::meshed`).  A displacement, degree 1.  Made by the elaborator
+    /// from a driving requirement, never written as a statement, and carried by the Solvent source
+    /// alone, as a beam is.
     Deflection,
     /// **A point on a body traced in space** (#326, `traced`): `p coincident k`, three rows `p −
     /// X(u, s)` against the place `[u, s]` it owns (a curve's `s` held at none), so a point on a
@@ -1794,7 +1797,7 @@ impl CKind {
                 panic!("a flank's regularity is read by a kernel built at its operands' widths")
             }
             CKind::Deflection => {
-                panic!("a frame's deflection is read by a kernel built at its frame's widths")
+                panic!("a deflection is read by a kernel built at its structure's widths")
             }
             CKind::CarriedPoint | CKind::CarriedPointIn => {
                 panic!("a point a motion carries is read by a kernel built at its operands' widths")

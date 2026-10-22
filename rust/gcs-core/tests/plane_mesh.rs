@@ -64,7 +64,8 @@ fn holds(m: &Mesh, area: f64, corner: f64) {
     for (t, n) in m.tris.iter().enumerate() {
         let p = n.map(|i| m.points[i]);
         let corners = [p[0], p[1], p[2]];
-        let o = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
+        let o = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1])
+            - (p[1][1] - p[0][1]) * (p[2][0] - p[0][0]);
         assert!(o > 0.0, "element {t} is turned over");
         let least = least_angle(corners);
         assert!(least >= 20.7 || least >= corner - 1e-9, "element {t}: least angle {least}°");

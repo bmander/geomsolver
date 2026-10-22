@@ -1,6 +1,6 @@
 //! **`scenario NAME { … }`, a load case** (#510 P4): the supports, the loads and the requirements
-//! judged under them, and how a solid is read in its plane (#510 S2), as written.  `program::scenarios` elaborates one into a
-//! `model::Scenario`; nothing in it is solved.
+//! judged under them, and how a solid is read in its plane (#510 S2), as written.
+//! `program::scenarios` elaborates one into a `model::Scenario`; nothing in it is solved.
 
 use super::names::write_ref;
 use super::print::vector_text;

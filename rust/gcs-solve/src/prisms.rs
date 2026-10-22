@@ -247,7 +247,8 @@ impl Region {
             let mut lp = Vec::new();
             for _ in 0..n {
                 let b = self.sides[g].clone();
-                lp.push(Side { at: Box::new(move |s| b.at(sk, s)), straight: self.sides[g].straight(),
+                let straight = b.straight();
+                lp.push(Side { at: Box::new(move |s| b.at(sk, s)), straight,
                                cuts: std::mem::take(&mut cuts[g]) });
                 g += 1;
             }
@@ -332,12 +333,11 @@ impl Plated {
             .map(|&n| Tri6 { n, e: young, nu, rho, depth: region.depth, strain }).collect();
         let n = mesh.points.len();
         let x: Vec<f64> = mesh.points.iter().flatten().copied().collect();
-        let mut s = Structure { dim: 2, nodes: n, bars: Vec::new(), beams: Vec::new(),
-                                fixed: vec![false; 2 * n], load: vec![0.0; 2 * n],
-                                weight: vec![0.0; 2 * n], spread: Vec::new(), tris,
-                                laid: Vec::new() };
-        let elements: Vec<usize> = (0..s.tris.len()).collect();
-        let mut p = Plated { region, mesh, s: Structure { tris: Vec::new(), ..s.clone() }, x, name };
+        let elements: Vec<usize> = (0..tris.len()).collect();
+        let s = Structure { dim: 2, nodes: n, bars: Vec::new(), beams: Vec::new(),
+                            fixed: vec![false; 2 * n], load: vec![0.0; 2 * n],
+                            weight: vec![0.0; 2 * n], spread: Vec::new(), tris, laid: Vec::new() };
+        let mut p = Plated { region, mesh, s, x, name };
         // a support holds its nodes' moves along the plane's axes: a plane element's node has
         // no turn, so `fixed` holds what `pinned` does
         for sup in &sc.supports {
@@ -363,7 +363,7 @@ impl Plated {
             };
             for node in nodes {
                 for &k in &axes {
-                    s.fixed[2 * node + k] = true;
+                    p.s.fixed[2 * node + k] = true;
                 }
             }
         }
@@ -386,19 +386,21 @@ impl Plated {
             match (load.kind, &on) {
                 (LoadKind::Force, On::Nodes(nodes)) => {
                     for &node in nodes {
-                        s.load[2 * node] += f[0];
-                        s.load[2 * node + 1] += f[1];
+                        p.s.load[2 * node] += f[0];
+                        p.s.load[2 * node + 1] += f[1];
                     }
                 }
                 (LoadKind::Force, On::Sides(g)) => {
-                    s.laid.push(Laid::Along { sides: p.sides(g), force: f });
+                    let sides = p.sides(g);
+                    p.s.laid.push(Laid::Along { sides, force: f });
                 }
                 (LoadKind::Force, On::Whole) => {
-                    s.laid.push(Laid::Over { elements: elements.clone(), force: f });
+                    p.s.laid.push(Laid::Over { elements: elements.clone(), force: f });
                 }
                 (LoadKind::Pressure, On::Sides(g)) => {
                     let LoadValue::Scalar(pr) = load.value else { continue };
-                    s.laid.push(Laid::Pressure { sides: p.sides(g), p: pr, depth: p.region.depth });
+                    let (sides, depth) = (p.sides(g), p.region.depth);
+                    p.s.laid.push(Laid::Pressure { sides, p: pr, depth });
                 }
                 (LoadKind::Pressure, _) => {
                     return Err(Unread::Why(format!(
@@ -407,13 +409,12 @@ impl Plated {
                 }
                 (LoadKind::Acceleration, _) => {
                     let rho = property(sk, solid, Property::Rho)?;
-                    s.laid.push(Laid::Body { elements: elements.clone(),
-                                             force: [rho * f[0], rho * f[1]] });
+                    p.s.laid.push(Laid::Body { elements: elements.clone(),
+                                               force: [rho * f[0], rho * f[1]] });
                 }
                 (LoadKind::Force, On::Nothing) => {}
             }
         }
-        p.s = s;
         Ok(p)
     }
 
@@ -514,6 +515,19 @@ fn point_of(sk: &Sketch, region: &Region, a: &Applied) -> Option<P> {
     let within = (off - region.mid).abs() <= 0.5 * region.depth + ON * region.extent;
     // a named point is a node only where it is in the region: on a side, or inside
     (within && (region.on_side(sk, p).is_some() || inside(sk, region, p))).then_some(p)
+}
+
+/// Whether what a line names, not a solid's, falls on `region`: a point in it, or an edge of the
+/// drawing that one of its sides runs along.
+fn falls_on(sk: &Sketch, region: &Region, a: &Applied) -> bool {
+    match a {
+        Applied::Ent(e) if e.kind == EntKind::Point => point_of(sk, region, a).is_some(),
+        Applied::Ent(e) if e.kind.runs_along() => region.sides.iter().any(|b| {
+            [0.25, 0.5, 0.75].iter().all(|&s| edge_holds(sk, *e, region, b.at(sk, s),
+                                                          ON * region.extent))
+        }),
+        _ => false,
+    }
 }
 
 /// Whether `p` is inside the region: the winding of its sides about it, sampled.
@@ -657,13 +671,11 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
         Some((solid, r.plane, Region::of(sk, solid).ok()))
     }).collect();
     let of = |a: &Applied| -> Option<usize> {
-        if let Some(s) = a.solid() {
-            return regions.iter().position(|(solid, _, _)| *solid == s);
+        match a.solid() {
+            Some(s) => regions.iter().position(|(solid, _, _)| *solid == s),
+            None => regions.iter()
+                .position(|(_, _, r)| r.as_ref().is_some_and(|r| falls_on(sk, r, a))),
         }
-        regions.iter().position(|(_, _, r)| r.as_ref().is_some_and(|r| point_of(sk, r, a).is_some()
-            || matches!(a, Applied::Ent(e) if e.kind.runs_along() && r.sides.iter().any(|b|
-                [0.25, 0.5, 0.75].iter().all(|&s| edge_holds(sk, *e, r, b.at(sk, s),
-                                                              ON * r.extent))))))
     };
     for (k, s) in sc.supports.iter().enumerate() {
         out.holds[k] = of(&s.at).is_some();
@@ -674,7 +686,8 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
             modes[i] = modes[i].max(r.count.unwrap_or(1) as usize);
         }
     }
-    let mut read: Vec<Option<Result<Analysed, Unread>>> = (0..regions.len()).map(|_| None).collect();
+    let mut read: Vec<Option<Result<Analysed, Unread>>> =
+        (0..regions.len()).map(|_| None).collect();
     for (k, r) in sc.requirements.iter().enumerate() {
         let Some(i) = of(&r.of) else { continue };
         let (solid, plane, _) = regions[i];
@@ -845,11 +858,12 @@ impl Row {
         for b in &region.sides {
             edges.push(match *b {
                 Bound::Line { a, b } => {
-                    crate::interior::Edge::Line { a: col_of(a, &mut columns), b: col_of(b, &mut columns) }
+                    let (a, b) = (col_of(a, &mut columns), col_of(b, &mut columns));
+                    crate::interior::Edge::Line { a, b }
                 }
                 Bound::Arc { c, r, from, to, ccw } => {
-                    let (c, from, to) =
-                        (col_of(c, &mut columns), col_of(from, &mut columns), col_of(to, &mut columns));
+                    let c = col_of(c, &mut columns);
+                    let (from, to) = (col_of(from, &mut columns), col_of(to, &mut columns));
                     columns.push(r as u32);
                     crate::interior::Edge::Arc { c, from, to, r: columns.len() - 1, ccw }
                 }

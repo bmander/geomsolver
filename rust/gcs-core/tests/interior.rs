@@ -609,8 +609,8 @@ fn a_plane_element_is_rigid_in_three_motions_and_weighs_its_area() {
     // its mass and its area, straight, then with a side bowed out
     let m = t.mass(&p).unwrap();
     let area = 0.5 * 30.0 * 10.0;
-    let along_x: f64 = (0..6).flat_map(|a| (0..6).map(move |b| (a, b))).map(|(a, b)| m[2 * a][2 * b])
-        .sum();
+    let along_x: f64 =
+        (0..6).flat_map(|a| (0..6).map(move |b| (a, b))).map(|(a, b)| m[2 * a][2 * b]).sum();
     assert!((along_x - t.rho * t.depth * area).abs() <= 1e-12 * along_x);
     assert!((t.area(&p) - area).abs() <= 1e-12 * area);
     let mut bowed = p;
@@ -623,7 +623,8 @@ fn a_plane_element_is_rigid_in_three_motions_and_weighs_its_area() {
         let f = s1.forces(&x);
         [0, 1].map(|c| (0..s1.nodes).map(|n| f[s1.dof(n, c).unwrap()]).sum())
     };
-    let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) <= 1e-12 * b[0].hypot(b[1]);
+    let near =
+        |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) <= 1e-12 * b[0].hypot(b[1]);
     let body = lays(interior::Laid::Body { elements: vec![0], force: [3.0, -5.0] });
     assert!(near(body, [3.0 * t.depth * area, -5.0 * t.depth * area]), "{body:?}");
     let over = lays(interior::Laid::Over { elements: vec![0], force: [3.0, -5.0] });

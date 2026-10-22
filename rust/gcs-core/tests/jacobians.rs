@@ -1321,7 +1321,8 @@ scenario s {
             let scale = gcs_core::linalg::absmax(&jn.data);
             assert!(scale.is_finite() && scale > 0.0, "round {round}");
             for (col, (a, n)) in ja.iter().zip(&jn.data).enumerate() {
-                assert!((a - n).abs() <= 1e-5 * scale, "round {round}: column {col}: {a} against {n}");
+                assert!((a - n).abs() <= 1e-5 * scale,
+                        "round {round}: column {col}: {a} against {n}");
             }
         }
     }

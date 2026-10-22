@@ -13,7 +13,10 @@ use crate::analysis_corpus::{read as read_case, Reading, CASES};
 
 /// Each requirement's answer under each scenario of `e`, as the report reads it (frames and
 /// regions merged), with the scenario's words: `(scenario, output, count, answer)`.
-fn answers(e: &Elaborated) -> (Vec<(String, Output, Option<u32>, Result<f64, String>)>, Vec<String>) {
+#[allow(clippy::type_complexity)]
+fn answers(e: &Elaborated)
+    -> (Vec<(String, Output, Option<u32>, Result<f64, String>)>, Vec<String>)
+{
     let (mut out, mut words) = (Vec::new(), Vec::new());
     for s in &e.scenarios {
         let (said, read) = scenario_read(&e.sketch, &s.scenario);
@@ -344,5 +347,6 @@ fn a_regions_driving_row_is_refused_where_it_cannot_be_read() {
     // read as a solid, the plate's deflection drives nothing
     let solid = plate.replace("  plane stress plate\n", "");
     let e = crate::common::text::solved(&solid.replace("param h: Length hint(78mm)", "h := 78mm"));
-    assert!(e.sketch.constraints.iter().all(|c| c.kind != gcs_core::constraints::CKind::Deflection));
+    use gcs_core::constraints::CKind;
+    assert!(e.sketch.constraints.iter().all(|c| c.kind != CKind::Deflection));
 }

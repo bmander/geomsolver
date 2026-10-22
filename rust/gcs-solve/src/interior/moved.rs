@@ -6,8 +6,8 @@
 //! topology and moving the places.  A node at a point of the drawing (a side's end, a point the
 //! scenario names) is that point (`Node::At`, its two columns); a node along a side is the side's
 //! own point at the parameter it was meshed at (`Node::On`: a line's `a + s (b − a)`, an arc's
-//! point at the fraction `s` of its turn, a circle's at the bearing `2π s`), so a side that grows or
-//! bends carries its nodes with it.  The nodes inside follow the boundary as a harmonic map:
+//! point at the fraction `s` of its turn, a circle's at the bearing `2π s`), so a side that grows
+//! or bends carries its nodes with it.  The nodes inside follow the boundary as a harmonic map:
 //! their moves solve `L_II δ_I = −L_IB δ_B`, `L` the cotangent Laplacian of the compile's mesh
 //! (its elements each cut into their four straight triangles).  A cotangent Laplacian of a plane
 //! mesh leaves a linear function harmonic, so with no move the nodes stand where they were meshed,

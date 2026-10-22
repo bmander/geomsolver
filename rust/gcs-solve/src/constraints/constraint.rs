@@ -429,7 +429,7 @@ impl Constraint {
             });
             return Key::Traced { contact: c as u8, n_par, n_const };
         }
-        // a frame's deflection, at its frame's widths (#510 S1)
+        // a deflection driven, at its frame's or its region's widths (#510 S1, S2)
         if self.kind == CKind::Deflection {
             let (n_par, n_const) = self.deflection_parts(sk).map_or((0, 0), |(r, _)| r.widths());
             return Key::Interior { n_par, n_const };
@@ -637,19 +637,19 @@ impl Constraint {
         crate::beams::row_unknowns(sk, sc, at)
     }
 
-    /// What a frame's deflection names: its scenario, its point and its direction.
+    /// What a deflection driven names: its scenario, its point and its direction.
     fn frame_read<'s>(&self, sk: &'s Sketch)
         -> Result<(&'s crate::model::Scenario, usize, EntRef), String>
     {
         let (Some(Arg::Ent(at)), Some(Arg::Ent(along)), Some(Arg::Int(k))) =
             (self.args.first(), self.args.get(1), self.args.get(2))
         else {
-            return Err("a frame's deflection names a point, a direction and a scenario".into());
+            return Err("a deflection driven names a point, a direction and a scenario".into());
         };
         let sc = usize::try_from(*k).ok().and_then(|k| sk.scenarios.get(k))
             .ok_or("it is read under no scenario the drawing holds")?;
         if at.kind != EntKind::Point || at.i() >= sk.points.len() {
-            return Err("a frame's deflection is of a point".into());
+            return Err("a deflection driven is of a point".into());
         }
         Ok((sc, at.i(), *along))
     }

@@ -137,7 +137,8 @@ pub fn in_circle(a: Q,b: Q,c: Q,d: Q) -> i8 {
     let (ax,ay,bx,by,cx,cy) = (e(a[0],d[0]),e(a[1],d[1]),e(b[0],d[0]),e(b[1],d[1]),e(c[0],d[0]),
                                e(c[1],d[1]));
     let sq = |x: &Expansion,y: &Expansion| x.mul(x).add(&y.mul(y));
-    let cr = |x1: &Expansion,y1: &Expansion,x2: &Expansion,y2: &Expansion| x1.mul(y2).sub(&x2.mul(y1));
+    let cr = |x1: &Expansion,y1: &Expansion,x2: &Expansion,y2: &Expansion|
+        x1.mul(y2).sub(&x2.mul(y1));
     sq(&ax,&ay).mul(&cr(&bx,&by,&cx,&cy)).add(&sq(&bx,&by).mul(&cr(&cx,&cy,&ax,&ay)))
         .add(&sq(&cx,&cy).mul(&cr(&ax,&ay,&bx,&by))).sign()
 }

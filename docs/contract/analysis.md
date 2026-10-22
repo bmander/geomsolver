@@ -11,7 +11,10 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 `rust/examples/analysis/` or `tests/analysis_corpus*`; or `interior::Beam`, `model/beam.rs`,
 `syntax/beam.rs`, `program/beams.rs`, `beams.rs` or a scenario's answers
 (`report::scenario_answers`); or `CKind::Deflection`, `beams::Row`, `interior::Spread`,
-`interior::Sizing`, `model::Over`, `Sketch::scenarios` or `program::scenarios::drive`.
+`interior::Sizing`, `model::Over`, `Sketch::scenarios` or `program::scenarios::drive`; or
+`interior::Tri6`, `interior::Laid`, `interior::Moved` (`interior/plane.rs`, `interior/moved.rs`),
+`delaunay/plane.rs`, `prisms.rs`, a scenario's `plane stress`/`plane strain` line
+(`model::PlaneReading`), `Sketch::meshed` or `DeflectionRow`.
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
@@ -20,8 +23,10 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
 `rust/gcs-core/tests/analysis_words.rs` for the diagnosis words (P7),
 `rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6),
 `rust/gcs-core/tests/analysis_corpus.rs` for the verification corpus (P8) and
-`rust/gcs-core/tests/beams.rs` for frames (S0) and `rust/gcs-core/tests/driven.rs` for a
-frame's driving row (S1), unless a rule names another.
+`rust/gcs-core/tests/beams.rs` for frames (S0), `rust/gcs-core/tests/driven.rs` for a
+frame's driving row (S1), and `rust/gcs-core/tests/prisms.rs` for solids read in their plane and
+a region's driving row (S2, its mesher `rust/gcs-core/tests/plane_mesh.rs`), unless a rule names
+another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -44,8 +49,9 @@ frame's driving row (S1), unless a rule names another.
 - **The stiffness is the Gram matrix of strain rows** (#510 P5). An element's stiffness is
   `Σ sᵣsᵣᵀ` over rows of its own degrees of freedom. A pin-jointed bar has one,
   `√(EA/L)·(−ĝ, ĝ)`. So `K = SᵀS`, ordered and factored by the normal equations the solver
-  already has (`sparse::Ata`). A support holds a degree of freedom at zero by leaving its column
-  out of `S`. A frame's or a continuum's element joins as more rows (a Cholesky factor of its
+  already has (`sparse::Ata`); a plane structure's `K` is the same rows summed into each element's
+  matrix and factored by P1's supernodal Cholesky under minimum degree (S2, below). A support
+  holds a degree of freedom at zero by leaving its column out of `S`. A frame's or a continuum's element joins as more rows (a Cholesky factor of its
   constitutive matrix times its strain operator). A factorisation fit for 3D meshes is P1's.
 
 - **A structure is its columns and its constants** (#510 P5). The columns are every node's
@@ -336,6 +342,164 @@ frame's driving row (S1), unless a rule names another.
     difficulty) is not needed while the joints are points.
   - **The two caches P5 named** are still not kept: each call reads the frame from the sketch
     once per compile and factors `K` once for the residual and again for the Jacobian.
+
+- **A solid is read in its plane where a scenario says so** (#510 S2; `plane stress B`, `plane
+  strain B`, §9.11 [0.169]; `syntax::ItemKind::Reading`, `model::PlaneReading`, `InPlane`). The
+  open decision of how a document asks to be read in the plane, decided: a line of the scenario,
+  since how a body is read is the analysis's, beside its supports and loads, and the corpus's own
+  oracle reads one document either way. `plane` at a line's head (the parser's `scenario_item`),
+  `stress` or `strain` after it, and a target, contextual words tinted as the parser reads them
+  (`highlight::scenario_word`) and printed back as written. Elaborated (`program::scenarios`,
+  `Reading::reading`): the target is a solid (**E040** otherwise) whose definition is a prism of a
+  face swept square to its plane with no draft (`SolidDef::Prism { draft: None }`, **E040**
+  otherwise — a turned, cut or drafted body has no one face it is read over); a solid read twice
+  in one scenario is **E001**; an extended scenario begins with its base's readings, and its own
+  replaces its base's for a solid (`the_reading_is_a_line_of_the_scenario`). A reading adds
+  nothing to the drawing. `Scenario::plane_of` says how a solid is read.
+
+- **The plane element is the interior's third** (#510 S2; `interior::Tri6`, `interior/plane.rs`).
+  A quadratic triangle, its nodes numbered as CalculiX numbers a CPS6 (corners counter-clockwise,
+  then the middles of the sides 0–1, 1–2, 2–0), isoparametric: a side whose middle node is off its
+  chord is curved. Its stiffness is the Gram matrix of strain rows as every element's is: at each
+  of the degree-two rule's three points, `√(w·det J·t)·Cᵀ B`, `C` the Cholesky factor of `D` —
+  plane stress `E/(1 − ν²)·[1, ν, (1 − ν)/2]`, plane strain `E/((1 + ν)(1 − 2ν))·[1 − ν, ν, (1 −
+  2ν)/2]` — nine rows, its rank exactly, so no spurious motion. `det J ≤ 0` anywhere is
+  `Failure::Collapsed`, `E ≤ 0` or `ν` outside (−1, ½) `Unstiff`. Its consistent mass `ρ t ∫ NᵀN`
+  and area `∫ det J` take Dunavant's degree-four rule (exact for a curved element's area). Its
+  stresses at its nodes are `D` times the strain read there (`Tri6::stresses`), and its von Mises
+  stress reads `σz = 0` in plane stress and `ν(σx + σy)` in plane strain (`Tri6::von_mises`). Its
+  gradient is its mutual energy's in `Dual<12>` over its twelve coordinates
+  (`Structure::gradient`), as the beam's is over its run. A node of a plane structure moves along
+  x and y and turns not at all (`Structure::components`); bars, beams and plane elements are not
+  mixed (the constants are refused).
+
+- **A plane structure is factored under minimum degree** (#510 S2; `interior::Factor`). A mesh's
+  thousands of unknowns, which a band order fills as `n^{3/2}`: its `K` is assembled from each
+  element's twelve-by-twelve `Σ rrᵀ` and factored by `cholesky::Cholesky` under AMD; a pivot lost
+  to rounding (`NotPositive`) is `Failure::Free`, which the supports name (below), never the
+  factor. The adjoint reads the same factor (`Factor::resolve`). On a region of 6,000 unknowns the
+  factor took the residual from 219 ms to 31 ms.
+
+- **A load laid on the plane moves with it** (#510 S2; `interior::Laid`). A pressure `p` on sides
+  of depth `t`, `−p t ∫ N n ds` (each side `[first, middle, last]` run with the material on its
+  left, the outward normal times `ds` the tangent turned clockwise: linear in the places); a force
+  spread evenly along sides (`F ∫ N ds / Σ L`) or over elements (`F ∫ N dA / Σ A`), the same force
+  however the region grows; a body load `b t ∫ N dA`. Each node's share is laid by
+  `side_forces`/`element_forces`, and `λᵀ∂f/∂x` is each side's or element's `λᵀfₑ` in `Dual`
+  (`side_work`, `element_work`), an even load's whole also reading `−(Σ λᵀfₑ)/S² ∂S`. The patch
+  test holds to 1e-9 (a sheet of knocked-about elements pulled: `σx = σ` at every node of every
+  element, its stretch `σ w/E'` and narrowing `−ν'σh/E'` in either reading,
+  `a_sheet_pulled_stresses_uniformly_as_the_patch_test_asks`); the element is rigid in three
+  motions and only them, weighs `ρ t A`, and each load lays its whole
+  (`a_plane_element_is_rigid_in_three_motions_and_weighs_its_area`); the gradient agrees with
+  central differences over sheets with curved elements under every load at once, through the
+  kernel so the constants read back (`a_plane_interior_agrees_with_finite_differences`, all in
+  `tests/interior.rs`).
+
+- **A region is meshed by Delaunay refinement** (#510 S2; `delaunay::plane::mesh`). Its loops of
+  sides (each a curve on `[0, 1]`), the outer turned counter-clockwise and the holes clockwise so
+  the material is on every segment's left. A curved side is first cut where a piece would turn
+  more than `Criteria::turn`, and every boundary point lies on its curve. The triangulation
+  (Bowyer–Watson on the exact `orient2` and `in_circle`, `delaunay::predicates`) conforms: a
+  segment a vertex encroaches (inside its diametral circle) is split at its parameter's middle, on
+  the curve. Then Ruppert: a triangle of the region whose circumradius passes `Criteria::ratio` of
+  its shortest side (√2: every angle over 20.7°) or `Criteria::size` gets its circumcentre, unless
+  that encroaches a segment, which is split instead; a small feature grades its neighbours to its
+  size. Past `Criteria::most` points it is refused (a corner too sharp for refinement to end), and
+  so is a loop that does not close. Each element's middle nodes are a segment's curve point at its
+  parameters' middle, else the chord's middle; every boundary node knows its side and parameter
+  (`Mesh::on`), each side its segments in order (`Mesh::sides`). Parameters a side must be cut at,
+  and points inside, are nodes (`Side::cuts`, `Region::points`). Held to (`tests/plane_mesh.rs`):
+  every angle over 20.7°, conforming (every inner side on two elements, the boundary exactly the
+  segments, each with an element on its left), every element valid, the areas the region's to
+  1e-7 (a parabola through three points 1.4° apart on a circle), the hole's nodes on it, graded
+  ten to one, the same run to run, named points nodes.
+
+- **A region read in its plane** (#510 S2; `prisms::read`, `Region`, `Plated`). The face's loops
+  walked into sides (`Bound`: a line, an arc, a circle, a spline's or a curve's span), meshed at
+  `TURN` (π/72) and `SIZE` (1/24 of the region's extent); the points the scenario names in the
+  region are nodes. What a line names falls on the region: a face path's faces (`BodyFaces::whole`)
+  whose patch holds a side's quarter points at the prism's middle are those sides, and a cap (a
+  plane square to the face's normal) the whole; the line a side was swept from, that side; the
+  solid or its face, the whole; a point within the region, its node. A support holds its nodes
+  along the plane's axes — `along:` one of them, off them no answer yet, across the thickness
+  nothing; a force at a point is a nodal load, on sides `Laid::Along`, on the whole `Laid::Over`;
+  a pressure on sides `Laid::Pressure` at the prism's depth; `accelerate` `Laid::Body` of the
+  material's `rho`. The material is read back into the document's units: `E`, `nu` (said where
+  missing: a reading in the plane reads Poisson's ratio), `rho`, `yield`.
+
+- **What a region answers** (#510 S2; `prisms::answer`): `deflection` a node's move in the plane
+  along `d` (or its length), a side's or the solid's worst; `compliance` `fᵀu`; `mass` `ρ t Σ A`;
+  `mode` `eigen::lowest(K, M)`; `safety` the yield over the greatest von Mises stress at the nodes
+  `B` names, each node's stress the average of its elements' there. **No answer, and why**: a
+  region its supports leave free, named in the solver's words with every node held across the
+  plane (`analysis::freedoms` in space: `` scenario `pull` leaves `plate` free to slide along z
+  ``, said once as the scenario's word); `buckling` (a plate buckles out of its plane, which it
+  has no move for); a load or a pressure across the plane; a `safety` where the solid has a sharp
+  re-entrant edge (`analysis::reentrant`'s text in the answer itself, not as a word as well). A
+  solid read in its plane is no body of the scenario's own: its supports are the region's
+  (`Read::holds`, merged with a frame's by `Read::merge` in `scenario_read`). **Held to**
+  (`tests/prisms.rs`): every plane case of the corpus answers its reference — Kirsch's Kt and
+  LE1's stress at D within 1% (0.33% and 0.13%), FV32's six frequencies within 0.1% (0.03%) — and
+  keeps its claims; Lamé's cylinder, exact in plane stress with its ends open, answers its bore's
+  move within 1e-4 and its von Mises within 0.5% in plane stress, and plane strain's closed forms
+  in plane strain; a pulled sheet answers its move, its work, its factor of safety, its mass and
+  an inner point's move to 1e-9; every no-answer says why. `solventc` says them as a frame's
+  (`gcs-cli/tests/cli.rs`, `a_plane_reading_is_said`).
+
+- **A region's deflection, driven, is a row whose mesh moves with the drawing** (#510 S2;
+  `prisms::Row`, `interior::Moved`, `DeflectionRow::Plane`). `deflection(p, along: d) == v`, `p` a
+  point of a region the scenario reads in its plane (`prisms::of_region`, tried after a frame's
+  joint), compiles to `CKind::Deflection` as a frame's does, the interior's kernel at the region's
+  widths. The epic's first difficulty, remeshing, met by keeping the topology: the region is
+  meshed **once**, where the drawing stands when the row is compiled, and held on the sketch
+  (`Sketch::meshed`, by the scenario's index and the point) so that every compile of the row
+  through a solve — and every residual after it — reads one mesh. Within it the nodes are
+  functions of the row's columns, each region point's two numbers in the plane and each arc's or
+  circle's radius (`Moved`, its constants after the structure's, `HEAD`'s `moved`): a node at a
+  point of the drawing (a side's start, a point the scenario names) is that point; a node along a
+  side is the side's point at the parameter it was meshed at (a line's `a + s(b − a)`, an arc's at
+  the fraction `s` of its turn, a circle's at `2πs`); the nodes inside follow the boundary
+  harmonically, `L_II δ_I = −L_IB δ_B` over the cotangent Laplacian of the compile's mesh (each
+  element cut into its four straight triangles), which leaves a plane mesh where it was to rounding
+  and is positive definite with the boundary held. The gradient is the structure's adjoint carried
+  through: the inner nodes' onto the boundary's, `−L_IBᵀ L_II⁻¹ g_I` (one solve per axis on the
+  Laplacian's factor), then each boundary node's onto its columns (`Dual<7>` over an arc's). It
+  agrees with central differences on the library's plate and on a plate in plane strain with a
+  round corner and a circular hole under a pressure on the arc, a force along a side and its
+  weight, at the solution and knocked off it, to 1e-5 of the row's largest rate
+  (`tests/jacobians.rs`, `a_regions_deflection_agrees_with_finite_differences`). Refused where
+  written (**E040**): a region bounded by a spline or a curve (not moved yet), drawn in a plane the
+  solve turns, under a direction the solve moves, or left free (`Row::check`).
+
+- **What the report says of a driven requirement is its row's** (#510 S2;
+  `report::scenario_answers`). The row's value at the solved drawing (its residual plus what it
+  states) is the requirement's value, so `driven == 0.5mm, held` judges what the solve held. A
+  claim of the same output reads the solved drawing meshed afresh, which agrees to the mesh's
+  discretisation, not to rounding: the library's plate reads its sag so to 1e-3. A frame's row
+  and its reading agree to rounding either way.
+
+- **The library's driving region** is `sized_plate.sv`: a steel plate built in along its root,
+  loaded along its end, its depth an unknown its sides' dimensions read, driven so its end's lower
+  corner sinks 0.5mm — 76.75mm, within 0.5% of Timoshenko's beam with its shear counted for each
+  of three sags, leaving no freedom (`tests/prisms.rs`, `a_requirement_sizes_a_plate`).
+
+- **What S2 leaves.**
+  - **Stress drives nothing yet.** A factor of safety is read at the nodes, a maximum: driving it
+    needs its aggregation (a KS function or a p-norm, with its error reported) and its gradient,
+    and the edge diagnosis already says where it has no answer. Mass, compliance and modes are
+    claims too.
+  - **The mesh is the compile's**, made where the drawing stands when it is elaborated: a region
+    whose seeds are far from its solution (a circle seeded at radius 1 that the solve grows ninefold)
+    inverts elements as its nodes follow, and the row reads NaN. No remeshing when the motion
+    distorts the elements, and no error estimate beside an output (S3's).
+  - **One prism, one face**: a body cut or united, or drafted, is not read in its plane; nor is a
+    region bounded by a spline or a curve driven (its nodes would read the spline's basis). A
+    support along a direction off the plane's axes has no answer.
+  - **Nothing cached between reads**: each read meshes afresh, and each call of the row reads its
+    constants, factors its Laplacian and orders `K` again (P5's two caches); the AMD analysis is
+    redone per call though the pattern is the compile's.
+  - **A frame and a region are not read together** in one structure.
 
 - **A scenario, parsed** (#510 P4, §9.11 [0.164]). `scenario NAME [: BASE] { … }` is
   `syntax::StmtKind::Scenario` (`syntax::Scenario`, its lines `Item`/`ItemKind`: a support, a load
@@ -744,12 +908,14 @@ frame's driving row (S1), unless a rule names another.
   units, the load's sign, and the axes, the front being x and z. It is also what S0–S3's own
   answers will be put beside.
 
-- **How a case is read is the corpus's, not yet the language's** (#510 P8). `Reading::Plane`
-  reads a case in plane stress over the face its solid sweeps, its depth the thickness; the
-  oracle reads it so only for a solid swept across y. A hold across the thickness (`pinned m along:
-  std.y`) is the solid reading's, taking out what the symmetry cuts leave free. How a document
-  asks to be read in the plane is S2's to decide. Until it does, FV32 read as a solid bends out
-  of its plane far below the in-plane modes it claims.
+- **How a case is read is its document's** (#510 P8, decided in S2). `Reading::Plane` reads a
+  case in plane stress over the face its solid sweeps, its depth the thickness; the oracle reads
+  it so only for a solid swept across y. A hold across the thickness (`pinned m along: std.y`) is
+  the solid reading's, taking out what the symmetry cuts leave free, and holds nothing in the
+  plane. Since S2 a document says how it is read (`plane stress plate`, above), and every case
+  the table reads in the plane states it in each scenario, no other case stating it
+  (`a_plane_case_states_its_reading`). Read as a solid, FV32 bends out of its plane far below the
+  in-plane modes it claims.
 
 - **What P8 leaves.**
   - **The frame cases** are S0's (above): the cantilever, Euler's column and a beam built in at

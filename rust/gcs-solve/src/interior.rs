@@ -41,7 +41,7 @@ use crate::sparse::{Ata, Sym};
 mod moved;
 mod plane;
 pub use moved::{Edge, Moved, Node};
-pub use plane::{shape, side_shape, Laid, Tri6};
+pub use plane::{Laid, Tri6};
 
 /// Below this least pivot (`Ata::least_pivot`, a pivot as a fraction of its diagonal) the
 /// stiffness is singular: a motion the supports leave free costs only rounding's worth of
@@ -76,11 +76,11 @@ pub struct Beam {
 /// (`model::SectionProp::STIFFNESS`).
 pub const SECTION: usize = 4;
 
-/// A structure of bars and beams, or of plane elements (#510 S2): `nodes` points of `dim` (2 or 3) coordinates each, and per
-/// degree of freedom (`per · node + k`, `Structure::per`) whether a support holds it, the load on
-/// it, and its weight in the output `J = Σ weight · u`.  A node's degrees of freedom are its
-/// moves along the axes, then where there is a beam its turns: about z in the plane, about x, y
-/// and z in space.  The weights are numbers, a direction's cosines, so the output is a
+/// A structure of bars and beams, or of plane elements (#510 S2): `nodes` points of `dim` (2 or
+/// 3) coordinates each, and per degree of freedom (`per · node + k`, `Structure::per`) whether a
+/// support holds it, the load on it, and its weight in the output `J = Σ weight · u`.  A node's
+/// degrees of freedom are its moves along the axes, then where there is a beam its turns: about z
+/// in the plane, about x, y and z in space.  The weights are numbers, a direction's cosines, so the output is a
 /// displacement: a length.
 ///
 /// Its columns are every node's coordinates, then every bar's area, then every beam's section
@@ -844,7 +844,7 @@ fn bending(m: &mut [[f64; 12]; 12], c: &[[f64; 4]; 4], w: f64) {
     }
 }
 
-/* -- the plane element (#510 S2) ---------------------------------------------------------------- */
+/* -- the plane element (#510 S2) ------------------------------------------------------------- */
 
 impl Structure {
     /// Plane element `i`'s twelve degrees of freedom: each node's move along x, then along y.

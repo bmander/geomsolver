@@ -1,6 +1,7 @@
 //! `scenario lift { … }` — a load case (#510 P4): its supports, loads and requirements, and how
-//! it reads a solid in its plane (#510 S2), each a line of its own.  The body is no body of statements: it declares nothing and relates nothing,
-//! so its lines are read here, by their first word, and nowhere else.
+//! it reads a solid in its plane (#510 S2), each a line of its own.  The body is no body of
+//! statements: it declares nothing and relates nothing, so its lines are read here, by their first
+//! word, and nowhere else.
 
 use super::P;
 use crate::expr::Cmp;
