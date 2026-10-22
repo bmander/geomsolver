@@ -8,7 +8,6 @@
 //! over its own size (`system::Sizes`, `System::row_size`), and a failed solve whose rows hold
 //! only by the extent is solved on at its rows' own sizes (`System::at_own_sizes`).  The gate
 //! for "solved" in `docs/contract/solver.md`.
-use gcs_core::boundary::measure::{self, Drive};
 use gcs_core::constraints::CKind;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::model::Sketch;
@@ -111,29 +110,33 @@ fn a_row_is_judged_at_the_size_of_what_it_reads() {
     assert_eq!((contacts, on_runs), (4, 2));
 }
 
-/// `bench boundaries`' sweep of the radii to equal (#459), each solve started where the last
-/// ended: the flat solve is solved nowhere the runs do not cross, and where it is solved, at
-/// the crossing.  At r₂ = 20.001 (a crossing 2.4 km out) it holds every row to 2e-7 of its own
-/// size and stands 2e-3 of the extent off the crossing, whose place moves 2.4e9 times what a
-/// contact is off its circle: no residual measure tells that pose from the crossing, so it is
-/// not held to it here (docs/iteration-limit-rescue-plan.md, #492).
+/// The radii swept to equal, each solve started where the last ended: the belt is solved nowhere
+/// the runs do not cross, and where it is solved, at the crossing.  At r₂ = 20.001 (a crossing
+/// 2.4 km out) it holds every row to 2e-7 of its own size and stands 2e-3 of the extent off the
+/// crossing, whose place moves 2.4e9 times what a contact is off its circle: no residual measure
+/// tells that pose from the crossing, so it is not held to it here
+/// (docs/iteration-limit-rescue-plan.md, #492).
 #[test]
 fn radii_swept_equal_solve_only_where_the_runs_cross() {
     let mut last: Option<Sketch> = None;
     for rb in [45.0, 30.0, 25.0, 22.0, 21.0, 20.5, 20.1, 20.01, 20.001, 20.0001, 20.0] {
-        let doc = measure::belts(&[Drive { r_large: rb, ..Drive::PAPER }], false);
-        let e = measure::read(&doc.src).expect("reads");
+        let e = read(&belt(rb, Some(-60.0)));
         let mut sk = e.sketch.clone();
-        if let Some(s) = &last {
-            measure::carry(s, &mut sk);
+        // one text differing only in a number: its parameters line up by index
+        if let Some(from) = &last {
+            for (t, f) in sk.params.iter_mut().zip(&from.params) {
+                if !t.fixed && !f.fixed {
+                    t.value = f.value;
+                }
+            }
         }
-        let f = measure::flat(&mut sk, SolveOpts::default());
-        let x = sk.world_point(ent(&e, "meet_0.x").i());
+        let r = solve(&mut sk, SolveOpts::default());
+        let x = sk.world_point(ent(&e, "x").i());
         if rb <= 20.0001 {
-            assert!(!f.result.success, "r₂ = {rb}: {:?} at {x:?}", f.result);
+            assert!(!r.success, "r₂ = {rb}: {r:?} at {x:?}");
         } else if rb != 20.001 {
             let crossing = -20.0 * 120.0 / (rb - 20.0);
-            assert!(f.result.settled(), "r₂ = {rb}: {:?}", f.result);
+            assert!(r.settled(), "r₂ = {rb}: {r:?}");
             assert!((x[0] - crossing).abs() < 1e-6 * sk.extent(), "r₂ = {rb}: {x:?}");
         }
         last = Some(sk);

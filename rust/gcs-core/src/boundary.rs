@@ -1,34 +1,34 @@
-//! **What each component is, against the contract for a reusable solve boundary** (#452,
-//! `docs/solve-boundaries-plan.md`).  Advisory only: it proves nothing about caching, and nothing
-//! is refused on its word.  `solventc --components` prints it.
+//! **What each component is: a function of what it is given, or not** (#452).  Advisory only:
+//! nothing is refused on its word.  `solventc --components` prints it, and `parts` reads a
+//! declared part through its `split` and its root search.
 //!
 //! A component is read through one instance of it in a solved document: what that instance made
 //! (every entity and row whose site lies under its path) against what it was given (every other
 //! column its rows read).  The instance's own unknowns are `y`, its inputs `x`, and its rows the
 //! acting statements of its body, a nested instance's included.  Everything else in the document
-//! is set aside: the parent's statements over the instance's outputs are the parent's (IO2), and
-//! the inputs are held where they stand.
+//! is set aside: the parent's statements over the instance's outputs are the parent's, and the
+//! inputs are held where they stand.
 //!
 //! * **Asserts only**: it declares nothing a parent reads (none, or only `private` geometry), and
 //!   its rows, or its `fix`es, say something of its operands (`std.Spin`, `std.Turn`).  A candidate
 //!   verb.
 //! * **Leaves freedoms**: rank-deficient against its own unknowns at a generic input, the inputs
-//!   moved from the instance's by a seeded draw (DT1 fails).  The freedoms are named: a parent
-//!   would have to own them, and cannot name them.
-//! * **Locally determined**: full rank there (DT1), and a second root found from scattered starts
-//!   that every root choice it states admits: which it returns is the seeds' choice.
+//!   moved from the instance's by a seeded draw.  The freedoms are named: a parent would have to
+//!   own them, and cannot name them.
+//! * **Locally determined**: full rank there, and a second root found from scattered starts that
+//!   every root choice it states admits: which it returns is the seeds' choice.
 //! * **Branch chosen**: locally determined, and no second root the stated choices admit was found.
-//!   A heuristic, and said to be one: a root not found is not shown absent (DT2).
+//!   A heuristic, and said to be one: a root not found is not shown absent.
 //! * **Reads the world**, beside any of those: a row that reads its plane's own axes (`horizontal`,
 //!   `level(up)`, `along: u`), a seed in coordinates or by a bearing, a coordinate read (`p.x`) or
-//!   a `fix` at coordinates — what fails the spin check of EQ2, found from the text and the rows
-//!   rather than by moving anything.
+//!   a `fix` at coordinates — what would answer differently were its operands turned, found from
+//!   the text and the rows rather than by moving anything.
 //!
 //! What is not read is said so: a family of sets, a component only ever traced in a curve, one
 //! nothing instantiates, and one whose instance owns no unknown and says nothing of its operands.
 //!
 //! The rank is judged as the diagnosis judges it: `System::conditioned` against `RANK_TOL`, at
-//! the document's scale rather than the boundary's own (CL1 asks for the latter; #455 sets it).
+//! the document's scale rather than the instance's own.
 
 use crate::constraints::{CKind, Constraint, OrdinateForm};
 use crate::json::{self, Json};
@@ -39,8 +39,6 @@ use crate::solve::{solve, BlockMode, SolveOpts};
 use crate::syntax::{Program, Stmt, StmtKind, Ty};
 use crate::system::{System, RANK_TOL};
 use std::collections::{BTreeMap, BTreeSet};
-
-pub mod measure;
 
 /// How many inputs moved from the instance's the rank is read at, beside the instance's own.
 pub const PERTURBED: usize = 3;
@@ -396,27 +394,6 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
     }
     let own: BTreeSet<u32> = mine.union(&aux).copied().collect();
     Split { made, own, kept }
-}
-
-/// The instance named `name` (as its members' names start: `upper`, `drive.upper`) as a boundary
-/// a parent solves through (#454, `solve::solve_through`): its own unknowns what it made, and its
-/// rows its statements, read as the classifier reads them.  No syntax marks it: the experiment
-/// names it from Rust.  `None` where no instance drawn on the sheet has that name.
-pub fn instance(e: &Elaborated, sk: &Sketch, name: &str) -> Option<crate::solve::Boundary> {
-    instances(e, sk, &[name]).pop().flatten()
-}
-
-/// `instance` for each of `names`, in order, the document read once for all of them.
-pub fn instances(e: &Elaborated, sk: &Sketch, names: &[&str])
-    -> Vec<Option<crate::solve::Boundary>> {
-    let world = World::of(sk, &e.map);
-    let drawn: BTreeMap<&str, &Instanced> =
-        e.map.instances.iter().rev().filter(|i| i.drawn).map(|i| (i.prefix.as_str(), i)).collect();
-    names.iter().map(|&name| {
-        let inst = drawn.get(format!("{name}.").as_str())?;
-        let Split { own, kept, .. } = split(&e.map, sk, &world, inst);
-        Some(crate::solve::Boundary { name: name.to_string(), own, rows: kept })
-    }).collect()
 }
 
 /// One instance, read: its rows and unknowns set apart from the document, ranked at its inputs

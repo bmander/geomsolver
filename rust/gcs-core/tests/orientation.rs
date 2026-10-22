@@ -12,9 +12,9 @@ use gcs_core::solve::{solve, SolveOpts, ORIENTATION_BROKEN};
 
 use crate::common::{ent, read};
 
-/// The review's two-root point (docs/solvent-direction.md, N2): `x` five from `a` and from `b`,
-/// six apart, a root above the line through them and one below, seeded at `seed`, the orientation
-/// `turn` stated of it (or none).
+/// The two-root point of #448's review: `x` five from `a` and from `b`, six apart, a root above
+/// the line through them and one below, seeded at `seed`, the orientation `turn` stated of it
+/// (or none).
 fn apex(seed: (f64, f64), turn: &str) -> String {
     format!("\
 unit mm

@@ -1,7 +1,7 @@
 //! **The drift lint** (#462): six patterns that are drift from Solvent's style by definition.
 //! They are not counts of an idiom, which a legitimate new example raises and a reshuffle onto
 //! separate lines lowers, but places where a statement says something the language has a better
-//! way to say (R10 of `docs/solvent-direction.md`).
+//! way to say (R10 of #448).
 //!
 //! Advisory: each pattern is a warning of its own code, asked for (`solventc --lint`) and never
 //! raised by elaboration, so nothing is refused on its word.  Asked of the document's own text —

@@ -467,7 +467,7 @@ components.dims.zB)`.
   is the gate.
 - **The drift lint is asked for, and refuses nothing** (#462; `program::drift`, codes
   `W201`–`W206`, the `W2xx` block ours as `E1xx` is).  It names six patterns that are drift from
-  the language's style by definition (R10 of [the direction paper](../solvent-direction.md)), not
+  the language's style by definition (R10 of #448), not
   counts of an idiom: **W201** a label given the name it labels in a call (`teeth: teeth` to a
   component, `d: d` to a word a file defines — a built-in's slot, `plane(u: u, v: v)`, and a seed
   are no call); **W202** a component call standing as a statement; **W203** a component that makes
