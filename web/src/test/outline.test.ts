@@ -9,12 +9,13 @@ import type { Row } from '../core/outline.js';
 import { Point, fromWire } from '../core/model.js';
 import type { Primitive } from '../core/model.js';
 import {
-  frameRow, isHidden, rowKey, selectRow, selectionRow, setRowHidden, walk,
+  frameRow, hide, isHidden, rowKey, rowOf, selectRow, selectionRow, setRowHidden, walk,
 } from '../app/hidden.js';
 import { iconOf } from '../app/outline.js';
-import type { SketchView } from '../app/view.js';
+import type { Hit, SketchView } from '../app/view.js';
 import { initCore } from '../core/wasm.js';
-import { docView } from './views.js';
+import { canvasOf, pointer } from './canvas.js';
+import { docView, seenAt } from './views.js';
 
 (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame ??=
   (fn: FrameRequestCallback) => { fn(0); return 0; };
@@ -137,6 +138,77 @@ test('Isolate hides all but the selection and what made it; Show all shows it ag
   assert.equal(v.hiddenRows.size, 0);
   assert.equal(v.hiddenEnts.size, 0);
   assert.equal(v.hiddenSolids.size, 0);
+});
+
+test('a right-click asks what to do with what it is on, and Hide hides the row that made it',
+     (t) => {
+  const v = docView(DOC);
+  t.after(() => v.doc.dispose());
+  v.fit();
+  const menus: [Hit | null, [number, number]][] = [];
+  v.onContextMenu = (hit, at) => menus.push([hit, at]);
+  let said = '';
+  v.onStatus = (m) => { said = m; };
+  const cv = canvasOf(v);
+  const right = (from: [number, number], to = from) => {
+    cv.fire('pointerdown', pointer(...from, { button: 2, buttons: 2 }));
+    cv.fire('pointermove', pointer(...to, { button: 2, buttons: 2 }));
+    cv.fire('pointerup', pointer(...to, { button: 2, buttons: 0 }));
+  };
+  // a drag of the right button turns the workspace, and asks nothing
+  const orbit = { ...v.orbit };
+  right([400, 300], [460, 280]);
+  assert.equal(menus.length, 0);
+  assert.notDeepEqual(v.orbit, orbit, 'the eye turned');
+  v.orbit = orbit;
+
+  // let go where it was pressed, on a member of an instance: the menu on that point
+  const q = ent(v, 'pin.q') as Point;
+  right(v.seen(q));
+  assert.equal(menus.length, 1);
+  assert.deepEqual(menus[0], [{ kind: 'entity', ent: q }, v.seen(q)]);
+  const hid = hide(v, q);
+  assert.equal(hid, row(v, 'pin.q'));
+  assert.match(said, /hid q/);
+  assert.ok(v.hiddenEnts.has(q));
+  assert.ok(!v.hiddenEnts.has(ent(v, 'pin.arm')), 'its sibling is not what made it');
+  assert.ok(!isHidden(v, row(v, 'pin')));
+  assert.notEqual(v.pick(...v.seen(q)), q, 'hidden is not picked');
+
+  // on an object's face, the object is hidden whole
+  right(seenAt(v, [40, 0, 12]));
+  const [onFace] = menus.at(-1)!;
+  assert.ok(onFace?.kind === 'solid', JSON.stringify(onFace));
+  const stock = row(v, 'stock');
+  assert.equal(onFace.pick.index, stock.solid);
+  assert.equal(hide(v, onFace.pick.index), stock);
+  assert.ok(v.hiddenSolids.has(stock.solid!));
+
+  // on nothing, the menu is still asked for: Show all is on it while anything is hidden
+  right([5, 5]);
+  assert.deepEqual(menus.at(-1)![0], null);
+});
+
+test('a right-click\'s Show definition and Show in model viewer go to the row that made it',
+     (t) => {
+  const v = docView(DOC);
+  t.after(() => v.doc.dispose());
+  const text = (r: Row | null) => r?.span && v.doc.text.slice(r.span.lo, r.span.hi);
+  // a member of an instance: its row under the instance, its statement in the definition
+  const q = rowOf(v, ent(v, 'pin.q'));
+  assert.equal(q, row(v, 'pin.q'));
+  assert.equal(text(q), 'q := point hint((3, 0))');
+  // a copy of a ring's: the copy's row, written once in the ring
+  assert.equal(rowOf(v, ent(v, 'tip[1]')), row(v, 'tip[1]'));
+  assert.match(text(row(v, 'tip[1]'))!, /^tip := point/);
+  // an object's face stands for the object: its row and its statement
+  const stock = row(v, 'stock');
+  assert.equal(rowOf(v, stock.solid!), stock);
+  assert.match(text(stock)!, /^stock := solid/);
+  // a module's datum has a row and no statement in the document: no definition to show
+  const front = rowOf(v, ent(v, 'std.front'));
+  assert.equal(front, row(v, 'std.front'));
+  assert.equal(front.span, undefined);
 });
 
 test('a hidden object leaves the box, and comes back', (t) => {

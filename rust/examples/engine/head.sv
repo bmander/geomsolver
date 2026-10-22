@@ -4,13 +4,14 @@
 //
 // One component, three views (§6.7).  Along the axis it is the section through cylinder 1: the
 // head's outline from the gasket face up, the roof over the bore, the plug, the two valves and the
-// journals the camshafts ride in — how far each valve is lifted is the cycle's, worked out from
-// the timing in `dims.sv`.  Across the axis it is the head edge on: the casting and the camshaft
-// (the two shafts one behind the other) in its five bearings.  From above it is the two shafts
-// with their bearing caps, and the valves and plug of each cylinder.  Heights in the side view and
-// widths in the plan are the end view's by projection, inside the part.  As a solid it is the
-// casting: open above the camshafts' split line, pocketed for the lobes, a pent-roof chamber under
-// each bore with the plug's well over it, and the head bolts' holes.
+// journals the camshafts ride in — how far each valve is lifted is the cycle's, worked out at
+// `cycle`, cylinder 1's angle in it, from the timing in `dims.sv`.  Across the axis it is the head
+// edge on: the casting and the camshaft (the two shafts one behind the other) in its five
+// bearings.  From above it is the two shafts with their bearing caps, and the valves and plug of
+// each cylinder.  Heights in the side view and widths in the plan are the end view's by
+// projection, inside the part.  As a solid it is the casting: open above the camshafts' split
+// line, pocketed for the lobes, a pent-roof chamber under each bore with the plug's well over it,
+// and the head bolts' holes.
 //
 // What rides in it is a part of its own, mated to what the head gives it: each camshaft
 // (`Camshaft`) in its journal, with a lobe over every valve pointed where that cylinder's angle in
@@ -45,7 +46,7 @@ part CamBearing(c: point) {
   cap := engine.parts.Box(c, x0: -wcamb / 2, y0: -(rcamj + camcap), x1: wcamb / 2, y1: rcamj + camcap)
 }
 
-part CylinderHead() {
+part CylinderHead(cycle: Angle) {
   // -- along the axis: the section through cylinder 1 -------------------------------------
   in std.side {
     // the casting: its face on the gasket, its sides, its top
@@ -105,8 +106,8 @@ part CylinderHead() {
                                          dy: deck + gasket - 3mm)
     // where cylinder 1 is in its cycle says how far each valve is off its seat: the reach of
     // its lobe (the camshaft's) along the axis, less the base circle (see `dims.sv`)
-    ai := (engine.dims.cycle - icenter) / 2
-    ae := (engine.dims.cycle - ecenter) / 2
+    ai := (cycle - icenter) / 2
+    ae := (cycle - ecenter) / 2
     lift_now_i := max(rb, dn_i * cos(ai) + rn) - rb
     lift_now_e := max(rb, dn_e * cos(ae) + rn) - rb
     v_i := engine.valvetrain.Valve(seat_i, vaxis_i, lift: lift_now_i, head: div)
@@ -298,9 +299,10 @@ part CylinderHead() {
 // taller, the intake axis leaning out one way and the exhaust the other.  As solids it is the
 // shaft — the journal from the pulley's stub through the first bearing, a journal in each other
 // bearing, the shaft between them and every lobe at its station — and its five bearing caps, the
-// end section's cap over the journal from the split line up, bored for the journal.  So the cycle
-// turns every lobe of both views and the solid alike.
-part Camshaft(journal: circle, ref: line, c_s: point, intake: Int) {
+// end section's cap over the journal from the split line up, bored for the journal.  So `cycle`,
+// cylinder 1's angle in it — the assembly's running `t` — turns every lobe of both views and the
+// solid alike, at half its speed.
+part Camshaft(journal: circle, ref: line, c_s: point, intake: Int, cycle: Angle) {
   center := intake * icenter + (1 - intake) * ecenter
   nose := intake * dn_i + (1 - intake) * dn_e    // how far its nose stands out
   lean := (1 - 2 * intake) * va      // the valve axis's lean off the bore's, counter-clockwise
@@ -308,10 +310,10 @@ part Camshaft(journal: circle, ref: line, c_s: point, intake: Int) {
   // -- along the axis --------------------------------------------------------------------
   in journal.center.plane {
     lobe := engine.valvetrain.Lobe(journal.center, ref,
-                                   phi: 180deg + (engine.dims.cycle - center) / 2, dn: nose)
+                                   phi: 180deg + (cycle - center) / 2, dn: nose)
     repeat 3 as j {
       off := 180deg * ((j + 1) * (2 - j) / 2) + 360deg * (j + 1 - 2 * floor((j + 1) / 2))
-      cj := engine.dims.cycle - off - 720deg * floor((engine.dims.cycle - off) / 720deg)
+      cj := cycle - off - 720deg * floor((cycle - off) / 720deg)
       construction ghost := engine.valvetrain.Lobe(journal.center, ref,
                                                    phi: 180deg + (cj - center) / 2, dn: nose)
     }
@@ -325,7 +327,7 @@ part Camshaft(journal: circle, ref: line, c_s: point, intake: Int) {
   in c_s.plane {
     repeat 4 as i {
       off := 180deg * (i * (3 - i) / 2) + 360deg * (i - 2 * floor(i / 2))
-      ci := engine.dims.cycle - off - 720deg * floor((engine.dims.cycle - off) / 720deg)
+      ci := cycle - off - 720deg * floor((cycle - off) / 720deg)
       ny := nose * sin(90deg + lean + 180deg + (ci - center) / 2)
       top := max(rb, ny + rn)
       bot := max(rb, rn - ny)
@@ -372,16 +374,17 @@ part Camshaft(journal: circle, ref: line, c_s: point, intake: Int) {
 // Two of cylinder `cylinder`'s valves (1 to 4, front to back) in the head `h` (a `CylinderHead`),
 // as solids, each with its bucket: the intake valve and the exhaust valve at one station along the
 // crank axis, `vx` before the bore's axis (`aft` 0) or behind it (`aft` 1), each as far off its
-// seat as the cycle puts that cylinder's lobe, and each boring its bucket, guide and throat in the
-// head's casting.  The station is a plane parallel to the end section, made of a line across the
-// engine in the head's plan and one up it in its side section from where the station crosses the
-// crank axis: so it is the end section carried along the axis, its coordinates the end section's
-// own, and the valves stand in it as the end section draws cylinder 1's, by the same numbers.
-part Valves(h: group, cylinder: Int, aft: Int) {
+// seat as `cycle` (cylinder 1's angle in it) puts that cylinder's lobe, and each boring its
+// bucket, guide and throat in the head's casting.  The station is a plane parallel to the end
+// section, made of a line across the engine in the head's plan and one up it in its side section
+// from where the station crosses the crank axis: so it is the end section carried along the axis,
+// its coordinates the end section's own, and the valves stand in it as the end section draws
+// cylinder 1's, by the same numbers.
+part Valves(h: group, cylinder: Int, aft: Int, cycle: Angle) {
   i := cylinder - 1
   x := front + 25mm + P / 2 + i * P + (2 * aft - 1) * vx
   off := 180deg * (i * (3 - i) / 2) + 360deg * (i - 2 * floor(i / 2))
-  ci := engine.dims.cycle - off - 720deg * floor((engine.dims.cycle - off) / 720deg)
+  ci := cycle - off - 720deg * floor((cycle - off) / 720deg)
   lift_i := max(rb, dn_i * cos((ci - icenter) / 2) + rn) - rb
   lift_e := max(rb, dn_e * cos((ci - ecenter) / 2) + rn) - rb
   construction sa := point in std.front hint((std.origin.x + x, std.origin.y))
@@ -423,15 +426,17 @@ part Valves(h: group, cylinder: Int, aft: Int) {
 // valves at their stations — the casting, the camshafts, their caps and the valves as solids.
 preview {
   unit mm
-  cylinder_head := CylinderHead()
-  camshaft_i := Camshaft(cylinder_head.j_i, cylinder_head.vaxis_i, cylinder_head.cam, intake: 1)
-  camshaft_e := Camshaft(cylinder_head.j_e, cylinder_head.vaxis_e, cylinder_head.cam, intake: 0)
-  valves1f := Valves(cylinder_head, cylinder: 1, aft: 0)
-  valves1r := Valves(cylinder_head, cylinder: 1, aft: 1)
-  valves2f := Valves(cylinder_head, cylinder: 2, aft: 0)
-  valves2r := Valves(cylinder_head, cylinder: 2, aft: 1)
-  valves3f := Valves(cylinder_head, cylinder: 3, aft: 0)
-  valves3r := Valves(cylinder_head, cylinder: 3, aft: 1)
-  valves4f := Valves(cylinder_head, cylinder: 4, aft: 0)
-  valves4r := Valves(cylinder_head, cylinder: 4, aft: 1)
+  cylinder_head := CylinderHead(cycle: engine.dims.cycle)
+  camshaft_i := Camshaft(cylinder_head.j_i, cylinder_head.vaxis_i, cylinder_head.cam, intake: 1,
+                         cycle: engine.dims.cycle)
+  camshaft_e := Camshaft(cylinder_head.j_e, cylinder_head.vaxis_e, cylinder_head.cam, intake: 0,
+                         cycle: engine.dims.cycle)
+  valves1f := Valves(cylinder_head, cylinder: 1, aft: 0, cycle: engine.dims.cycle)
+  valves1r := Valves(cylinder_head, cylinder: 1, aft: 1, cycle: engine.dims.cycle)
+  valves2f := Valves(cylinder_head, cylinder: 2, aft: 0, cycle: engine.dims.cycle)
+  valves2r := Valves(cylinder_head, cylinder: 2, aft: 1, cycle: engine.dims.cycle)
+  valves3f := Valves(cylinder_head, cylinder: 3, aft: 0, cycle: engine.dims.cycle)
+  valves3r := Valves(cylinder_head, cylinder: 3, aft: 1, cycle: engine.dims.cycle)
+  valves4f := Valves(cylinder_head, cylinder: 4, aft: 0, cycle: engine.dims.cycle)
+  valves4r := Valves(cylinder_head, cylinder: 4, aft: 1, cycle: engine.dims.cycle)
 }

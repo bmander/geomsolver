@@ -3,51 +3,125 @@
  * too, said so — then the objects whole, as the core ordered them (`workspace::under`).  The
  * row the pointer or the keyboard is on is lit where it is drawn, as the pointer lights what it
  * is over on the canvas, and the one chosen is taken as a click on it would be.  The view says
- * what is there (`SketchView.onChoose`); this is only the list. */
+ * what is there (`SketchView.onChoose`); this is only the list.  A right-click's menu is such a
+ * list too (`onContextMenu`), of what can be done with the one thing it was on. */
+import type { SourceSpan } from '../core/program.js';
+import type { Row } from '../core/outline.js';
 import { view } from './shell.js';
-import { hitName } from './view.js';
+import { hide, hideableRow, rowOf } from './hidden.js';
+import { bodyOf, hitName } from './view.js';
 import type { Hit } from './view.js';
 
 /** The list open, if one is, and what closes it. */
 let open: { el: HTMLElement; away: (e: Event) => void } | null = null;
 
+/** Where a right-click's ways to what it was on lead, as the page wires them (`onWays`): its
+ *  statement in the program editor, and its row in the model outline. */
+let toSource: (span: SourceSpan) => void = () => {};
+let toRow: (row: Row) => void = () => {};
+
+/** Be told how to go to a statement and to an outline row — the panel's, which this list does
+ *  not hold. */
+export function onWays(source: (span: SourceSpan) => void, row: (row: Row) => void): void {
+  toSource = source;
+  toRow = row;
+}
+
 /** List `hits` at a canvas point.  `add` is the ⌘-click's shift: the one chosen joins the
  *  selection rather than replacing it, as a shift-click's does — and so does one chosen with
  *  shift held. */
 export function onChoose(hits: Hit[], at: [number, number], add: boolean): void {
+  openList(`${hits.length} under the pointer`, hits.map((hit) => {
+    const { kind, name, hidden } = hitName(view.doc, hit);
+    return {
+      cells: [['kind', kind], ['name', name], ...(hidden ? [['note', 'hidden'] as Cell] : [])],
+      hit,
+      take: (e: MouseEvent) => view.takeHit(hit, add || e.shiftKey),
+    };
+  }), at);
+}
+
+/** **A right-click's menu** on what it was on, `hit` (an object's face or edge standing for the
+ *  object): Show definition, the program editor's caret on the statement that made it; Show in
+ *  model viewer, the outline opened to its row; Hide, that row hidden; and Show all while
+ *  anything is hidden.  With none to offer nothing opens; on something that cannot be hidden, it
+ *  says so. */
+export function onContextMenu(hit: Hit | null, at: [number, number]): void {
+  closeChooser();
+  const items: Item[] = [];
+  const whole: Hit | null = hit?.kind === 'solid' ? { kind: 'solid', pick: bodyOf(hit.pick) } : hit;
+  const target = !whole ? null : whole.kind === 'entity' ? whole.ent : whole.pick.index;
+  const made = target === null ? null : rowOf(view, target);
+  const span = made?.span;
+  if (span) {
+    items.push({ cells: [['verb', 'Show definition']], hit: whole, take: () => toSource(span) });
+  }
+  if (made) {
+    items.push({ cells: [['verb', 'Show in model viewer']], hit: whole,
+                 take: () => toRow(made) });
+  }
+  const row = target === null ? null : hideableRow(view, target);
+  if (row && target !== null) {
+    items.push({ cells: [['verb', 'Hide'], ['name', row.label]], hit: whole,
+                 take: () => { hide(view, target); } });
+  }
+  if (view.hiddenRows.size) {
+    items.push({ cells: [['verb', 'Show all'], ['note', '⇧I']], hit: null,
+                 take: () => view.showAll() });
+  }
+  if (whole && !row) view.onStatus(`${hitName(view.doc, whole).name} cannot be hidden`);
+  if (!items.length) return;
+  const named = whole && hitName(view.doc, whole);
+  openList(named ? `${named.kind} ${named.name}` : null, items, at);
+}
+
+/** A row's text, by the class each span is drawn in. */
+type Cell = [string, string];
+
+/** One row of a list: its text, what it lights while it is pointed at, and what choosing it does. */
+interface Item {
+  cells: Cell[];
+  hit: Hit | null;
+  take: (e: MouseEvent) => void;
+}
+
+/** Open a list of `items` under a `head` at a canvas point, kept inside the viewport: the row
+ *  pointed at or reached by the arrows lit where it is drawn, a press anywhere else or the wheel
+ *  done with it. */
+function openList(head: string | null, items: Item[], at: [number, number]): void {
   closeChooser();
   const wrap = document.getElementById('canvas-wrap') as HTMLElement;
   const el = document.createElement('div');
   el.className = 'chooser';
   el.setAttribute('role', 'menu');
-  const head = document.createElement('div');
-  head.className = 'chooser-head';
-  head.textContent = `${hits.length} under the pointer`;
-  el.append(head);
-  const rows = hits.map((hit) => {
-    const { kind, name, hidden } = hitName(view.doc, hit);
+  if (head !== null) {
+    const top = document.createElement('div');
+    top.className = 'chooser-head';
+    top.textContent = head;
+    el.append(top);
+  }
+  const rows = items.map(({ cells, hit, take }) => {
     const row = document.createElement('button');
     row.type = 'button';
     row.setAttribute('role', 'menuitem');
-    const cell = (cls: string, text: string) => {
+    for (const [cls, text] of cells) {
       const span = document.createElement('span');
       span.className = cls;
       span.textContent = text;
       row.append(span);
-    };
-    cell('kind', kind);
-    cell('name', name);
-    if (hidden) cell('note', 'hidden');
+    }
     row.addEventListener('pointerenter', () => row.focus());
     row.addEventListener('focus', () => view.hoverHit(hit));
     row.addEventListener('click', (e) => {
       closeChooser();
-      view.takeHit(hit, add || e.shiftKey);
+      take(e);
     });
     el.append(row);
     return row;
   });
   el.addEventListener('pointerleave', () => view.hoverHit(null));
+  // a right-click on the list is the list's, not the browser's menu over it
+  el.addEventListener('contextmenu', (e) => e.preventDefault());
   el.addEventListener('keydown', (e) => {
     // the list's own keys: the page's (Escape backing out of a tool, a tool's letter) wait
     e.stopPropagation();

@@ -42,12 +42,13 @@ mod carried;
 mod valued;
 mod same;
 mod table;
+mod framed;
 
 pub use faces::{FaceAxis, FacePlane};
 
 pub(crate) use words::{faults as word_faults, file_number_names};
 pub(crate) use interfaces::check as interface_faults;
-pub(crate) use keys::{frame_datum, is_probe};
+pub(crate) use keys::{frame_datum, frame_instance, is_probe};
 use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};
@@ -307,6 +308,12 @@ struct Datums {
     /// Shared by every clone (`drawn_incidences` resolves through one), so no read is lost.
     read: std::rc::Rc<std::cell::RefCell<BTreeSet<String>>>,
     own: BTreeMap<String, crate::model::EntKind>,
+    /// **An instance read as a frame** (#548): every instance, by absolute name, whose `b.std.D`
+    /// the scope declaring it or one around it writes (`framed::read_outside`) — each standing in
+    /// a frame of its own, `keys::instance_frame` — and of those, the ones refused it because
+    /// their body reads no datum, to the name of their definition.
+    outside: BTreeSet<String>,
+    refused: BTreeMap<String, String>,
 }
 
 /// A frame declared (#524, #542): a reading at an instant (`Walk::walk_reading_at`) is one where

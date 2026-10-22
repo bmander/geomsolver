@@ -109,6 +109,29 @@ pub unsafe extern "C" fn gcs_program_highlight(ptr: *const u8, len: usize) -> *m
     json_out(move || runs_json(syntax::highlight(as_str(ptr, len))))
 }
 
+/// The names a program gives and reads (`syntax::symbols`): `{"symbols": [[name, kind,
+/// parent], …], "occurrences": [[lo, hi, symbol, def], …]}`, the occurrences in order, `parent`
+/// the symbol a member is read of or -1, `def` 1 where the name is given.  A function of the text,
+/// as the colouring is, so a panel asks it of what somebody is halfway through typing.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_program_symbols(ptr: *const u8, len: usize) -> *mut u8 {
+    json_out(move || {
+        let index = syntax::symbols(as_str(ptr, len));
+        let symbols = index.symbols.into_iter().map(|s| {
+            let parent = s.parent.map_or(-1, |p| p as i64);
+            Json::Arr(vec![s.name.into(), s.kind.as_str().into(), parent.into()])
+        });
+        let occurrences = index.occurrences.iter().map(|o| {
+            let def = o.def as i64;
+            Json::Arr(vec![o.span.lo.into(), o.span.hi.into(), o.symbol.into(), def.into()])
+        });
+        json::object([
+            ("symbols", Json::Arr(symbols.collect())),
+            ("occurrences", Json::Arr(occurrences.collect())),
+        ])
+    })
+}
+
 /// Colour a drawing (`.svd`), as `gcs_program_highlight` colours a program: the drawing lexer's
 /// own scan, in the same `[[class, lo, hi], …]`.
 #[no_mangle]

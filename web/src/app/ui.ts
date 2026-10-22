@@ -38,6 +38,16 @@ export function judgingLine(msg: string, state: 'going' | 'failed' | 'finished' 
   claimsEl.className = state === 'going' ? '' : state;
 }
 
+const scenariosEl = document.getElementById('scenarios') as HTMLElement;
+
+/** The load scenarios' line in the footer: failed (a requirement that does not hold, or has no
+ *  answer) or finished, with every sentence the core said of them as its tooltip; empty, none. */
+export function scenarioLine(msg: string, state: '' | 'failed' | 'finished' = '', said = ''): void {
+  scenariosEl.textContent = msg;
+  scenariosEl.className = state;
+  scenariosEl.title = said;
+}
+
 function open<T>(title: string, build: (resolve: (v: T) => void) => void): Promise<T> {
   modalTitle.textContent = title;
   modalBody.replaceChildren();

@@ -317,6 +317,8 @@ export async function showDiagnosis(): Promise<void> {
     }
     lines.push('');
   }
+  // each load scenario's words and its requirements' answers, as `solventc` says them
+  for (const s of view.scenarios) lines.push(...s.words, ...s.answers.map((a) => a.text), '');
   lines.push(...d.warnings);
   if (view.lastPlan) {
     lines.push('', `Decomposition: ${view.lastPlan.plan.summary}`

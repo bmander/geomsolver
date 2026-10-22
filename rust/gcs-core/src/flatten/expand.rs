@@ -78,6 +78,8 @@ impl<'a> Walk<'a> {
                 self.err(Code::E001, label.span, format!("`{name}` is declared twice"));
             }
         }
+        // the instances whose datums it reads from outside (#548), before any is walked
+        self.read_outside(body, scope);
         for st in body {
             if let StmtKind::Instance(inst) = &st.kind {
                 let name = format!("{prefix}{}", inst.name.text);
@@ -862,6 +864,15 @@ impl<'a> Walk<'a> {
             }
             (None, q) => q.clone(),
         };
+        // read from outside as a frame (#548), it stands in its own, which rides the one around
+        // its call
+        let in_plane = match self.own_frame(comp, inst, st, scope, path) {
+            Some(own) => {
+                rides.extend(in_plane);
+                Some(own)
+            }
+            None => in_plane,
+        };
         // a symmetric family's instance given what one before it was given, in another order it
         // allows, is that one (#415): a name for it, and nothing made again
         let stamps = Stamps {
@@ -1282,10 +1293,18 @@ impl<'a> Walk<'a> {
         // starting value. Read it only in hints — where the unknown's own seed says it starts
         // (`lean: hint(20deg)`), else at zero; constraints keep the symbolic value. Traced
         // components retain their parameterized seeds.
-        let seeded;
+        let (seeded, home);
         let vals: &dyn Table = if self.sym.is_none() && vals.any_unknown() {
             seeded = Seeded { vals, unknowns: &self.unknowns, held: &self.held.names };
             &seeded
+        } else {
+            vals
+        };
+        // a declared parameter a part's body never names, brought in by a formal's text
+        // (`lift: max(rb, dn * cos(t / 2) + rn)`), is read where the drawing stands
+        let vals: &dyn Table = if self.sym.is_none() && !self.parameters.is_empty() {
+            home = Home { vals, held: &self.held.names, parameters: &self.parameters };
+            &home
         } else {
             vals
         };
@@ -1829,6 +1848,42 @@ fn applied(probe: &str, set: Ref, word: &str, at: Span) -> crate::syntax::Relati
         rates: Vec::new(),
     };
     crate::syntax::Relation::of(crate::syntax::RelationForm::Written(written))
+}
+
+/// The numbers in force, and each declared parameter they do not give where the drawing stands,
+/// its interval's start (#391 S4): what a seed reads of a parameter a formal's text brought into
+/// a body that never names it.
+struct Home<'v> {
+    vals: &'v dyn Table,
+    held: &'v BTreeMap<String, (crate::units::Dim, f64)>,
+    parameters: &'v BTreeMap<String, crate::model::Running>,
+}
+
+impl Home<'_> {
+    fn home(&self, name: &str) -> Option<Aff> {
+        let held = self.held.get(name).filter(|_| self.parameters.contains_key(name));
+        held.filter(|_| !self.vals.has(name)).map(|&(dim, v)| Aff::of_dim(v, dim))
+    }
+}
+
+impl expr::Env for Home<'_> {
+    fn value(&self, name: &str) -> Option<Aff> {
+        self.vals.value(name).or_else(|| self.home(name))
+    }
+}
+
+impl Table for Home<'_> {
+    fn has(&self, name: &str) -> bool {
+        self.vals.has(name) || self.home(name).is_some()
+    }
+
+    fn binds(&self, unknown: &str) -> bool {
+        self.vals.binds(unknown)
+    }
+
+    fn under(&self, prefix: &str) -> BTreeMap<String, Aff> {
+        self.vals.under(prefix)
+    }
 }
 
 /// The numbers in force as a seed reads them (`settle_seeds`): a value affine in an unknown of

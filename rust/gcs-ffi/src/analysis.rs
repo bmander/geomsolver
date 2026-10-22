@@ -199,6 +199,17 @@ pub unsafe extern "C" fn gcs_distance_rigidity_json(h: *mut Sketch) -> *mut u8 {
     })
 }
 
+/* -- load scenarios --------------------------------------------------------- */
+
+/// What each load scenario of the document says of the drawing as it stands
+/// (`report::scenarios_json`): its name, its words, and each requirement's answer — its value,
+/// whether it holds, and the sentence `solventc` prints (`` scenario `shelf`: safety(bracket) is
+/// 1.22695: claimed >= 1, kept ``).  `[]` for a document with none.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_scenarios_json(h: *mut Elaborated, s: *mut Sketch) -> *mut u8 {
+    json_out(move || gcs_core::report::scenarios_json(sk(s), &(*h).scenarios))
+}
+
 /* -- pure graph algorithms -------------------------------------------------- */
 
 fn adj_from(v: &Json) -> Vec<Vec<usize>> {

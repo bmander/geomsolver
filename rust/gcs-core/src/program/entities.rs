@@ -547,6 +547,14 @@ fn build_plane(
     if d.bare {
         sk.spatial_chart(pi);
     }
+    // an instance's own frame (#548) is square, its six freedoms said under the instance's name
+    let instance = crate::flatten::frame_instance(&d.name.key().text).filter(|_| d.bare);
+    if let Some(inst) = instance {
+        sk.square_chart(pi);
+        if !crate::syntax::hidden(inst) {
+            sk.plane_names.insert(pi as u32, inst.to_string());
+        }
+    }
     if let Some(n) = d.name.shown() {
         sk.plane_names.insert(pi as u32, n.text.clone());
     }

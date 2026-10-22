@@ -155,6 +155,21 @@ where a rule came from.
     joint's value may read one (`motions::values` reads `Sketch::held`), so what is drawn in the
     frame is a trajectory (`tests/parameters.rs`,
     `a_joints_value_may_run_over_a_declared_parameter`, against the motion's closed form).
+  - **Carried down through parts** (the engine's cams): a part's formal bound to a text over a
+    declared parameter (`Camshaft(…, cycle: t)`) carries it into the body, and a value of the body
+    not affine in it (`lift := max(rb, dn * cos(cycle / 2) + rn) - rb`) is kept as text over it, as
+    one over a face family's running number is (`held_text`) — the body never names the parameter
+    itself, so this is no value reading one.  Given on as another part's or a relation word's
+    argument, the text is read there by the parameter's name: a word's body reads a parameter its
+    argument texts carry in as the use's statement would (`apply_word` gives the application's
+    scope its free value, so `b offset(dx: 5mm, dy: lift) o` is a reader); and a hint over it,
+    a seed, is read where the drawing stands (`seed_texts` reads a hint through `Home`, which
+    gives a declared parameter the scope has no value for at its start, so `hint((o.x, o.y +
+    lift))` is no free name at build; a scope that has one, the root's or a station's, reads it as
+    before).
+    Gate: `tests/continuation.rs`
+    (`a_parameter_passed_down_through_parts_drives_what_they_draw`), a cam's reach through two
+    parts into `offset` and a hint, followed over 720° and stood at its closed form (1e-9).
   - **The default quantifier** (the epic's question 3, decided): no word.  Every relation of the
     drawing holds at every value of every parameter, the ones reading none included — a relation
     between geometry that does not move is the same row at every instant, and one between a moving
@@ -519,6 +534,25 @@ where a rule came from.
     bodies are evaluated where they stand, so a scrub re-evaluates every moving part's (about a
     second an instant natively); and the march is taken again after every edit (1.3 s in the page
     for the V-twin).
+- **The four-cylinder engine over its cycle** (`engine.sv`): `param t: Angle over
+  (engine.dims.cycle, engine.dims.cycle + 720deg)`, cylinder 1's angle in its four-stroke cycle
+  from the table's 400° round to it again, is bound to the crankshaft (`theta: t`, both throws and
+  every pin's height in the side section) and to the cylinder head, both camshafts and every pair
+  of valves (`cycle: t`), which work out each cylinder's angle in its cycle and each lobe's reach
+  from it.  The drawing is held, drawn at the table's angle (so the sheet and each part's preview
+  are as they were) and followed over the whole cycle, two turns of the crank (about 6 s
+  natively).  Neither end of the interval is a dead centre: at one exactly (`t` a multiple of
+  180°) every rod stands square to the world's axes and the kernel refuses its body and its cap (a
+  bolt's hole touching a face of the edge-on outline), which a stand there shows as such.
+  - **Gate**: `tests/engine.rs` (`the_engine_turns_through_its_cycle`): stood at every eighth of a
+    turn over the cycle, cylinder 1's pin at `(R sin t, R cos t)` in the end section, each rod's
+    small end at the slider-crank's height, and each of the sixteen valves `max(rb, dn cos φ + rn)`
+    from its cam's centre, `φ` half its cylinder's angle from its lobe's centre in the firing
+    order 1-3-4-2 (1e-6).
+  - **Not built**: a rod's solid at a dead centre (above); the timing pulleys and the belt do not
+    turn (a toothed pulley is generated, and turning one is a placement of its solid, not a
+    relation); the bodies are evaluated where they stand, so a scrub re-evaluates every moving
+    part's.
 - **A frame the drawing moves** (#398 F, [0.150], `motion/track.rs`): a frame with axes and no
   joint, riding on none, placed by relations on geometry the drawing moves as a declared parameter
   runs (`coupler := std.Turned(b, c) in std.front`), is a motion over it — so a sweep, an envelope

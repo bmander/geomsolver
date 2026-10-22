@@ -405,6 +405,15 @@ impl<'a> Walk<'a> {
                 },
             }
         }
+        // a declared parameter a text written in reads (`b offset(dx: 2mm, dy: lift) a`, `lift`
+        // a part's formal over `t`) is the document's, carried in by the use: the body reads it
+        // by name as the use's statement would (#391 S4)
+        for n in texts.values().flat_map(|t| reads(t)) {
+            if let Some(p) = self.parameters.get(&n) {
+                let a = Aff::free(n.clone(), p.dim);
+                vals.entry(n).or_insert(a);
+            }
+        }
         let mut body = def.body.clone();
         for st in body.iter_mut() {
             let StmtKind::Relation(r) = &mut st.kind else { continue };

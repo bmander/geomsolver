@@ -92,6 +92,40 @@ impl Sketch {
         self.params[z].fixed = true;
     }
 
+    /// **Frame `f` square by construction** (#548): an intrinsic row holding its `u` square to
+    /// its `v`, so it has the six freedoms of a rigid placement and not a bare frame's seven —
+    /// what an instance read as a frame owns, so a datum along `v` cannot shear the body.
+    pub fn square_chart(&mut self, f: usize) {
+        let (u, v) = (self.frames[f].u as usize, self.frames[f].v as usize);
+        let mut c = Constraint::two_line(crate::constraints::CKind::Perpendicular3,
+            EntRef::new(EntKind::Axis, u), EntRef::new(EntKind::Axis, v));
+        c.intrinsic = true;
+        self.add_quiet(c);
+    }
+
+    /// **Frame `f` seeded where frame `g` stands** (#548): its axes along `g`'s and its place
+    /// `g`'s, a number a hold has written left as it is — the start of a frame that rides `g`.
+    pub fn seed_at_frame(&mut self, f: usize, g: usize) {
+        let (Some(cf), Some(cg)) = (self.frames[f].chart.clone(), self.frames[g].chart.clone())
+        else {
+            return;
+        };
+        let dir = |sk: &Sketch, ax: u32| sk.axes[ax as usize].d;
+        let pairs = [(dir(self, cf.u), dir(self, cg.u)), (dir(self, cf.v), dir(self, cg.v)),
+                     (cf.o, cg.o)];
+        for (to, from) in pairs.into_iter().flat_map(|(to, from)| to.into_iter().zip(from)) {
+            if !self.params[to as usize].fixed {
+                self.params[to as usize].value = self.params[from as usize].value;
+            }
+        }
+        let o = cf.o.map(|q| self.params[q as usize].value);
+        for ax in [cf.u, cf.v] {
+            if !self.axes[ax as usize].a.iter().any(|&q| self.params[q as usize].fixed) {
+                self.stand_axis_through(ax as usize, o);
+            }
+        }
+    }
+
     /// Draw point `p` in spatial frame `f`'s chart (#383): its three numbers, `x` along `f.u`, `y`
     /// up and `z` out, the third given with every point in space's (`give_place`).  A membership
     /// and not a constraint: nothing moves, and its lift reads the chart (`lift_point`).

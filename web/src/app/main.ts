@@ -61,10 +61,11 @@ import {
   about, alternatives, doOpen, flipBranch, insertComponent, insertPlane, leaveExample, openCase,
   openExample, options, report, reportSolve, showDiagnosis,
 } from './dialogs.js';
-import { closeChooser, onChoose } from './choose.js';
+import { closeChooser, onChoose, onContextMenu, onWays } from './choose.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
-import { bindProgramPanel, goToSource, onSide, openDrawing, refreshProgram, resetProgramFiles,
-  saveProjectFile, showClaims, showStatementFor, toggleProgramPanel } from './program.js';
+import { bindProgramPanel, goToSource, onSide, openDrawing, openSide, refreshProgram,
+  resetProgramFiles, saveProjectFile, showClaims, showStatementFor, toggleProgramPanel }
+  from './program.js';
 import { OutlinePane } from './outline.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
@@ -73,10 +74,11 @@ import {
 } from './shell.js';
 import {
   MenuItem, ToolbarButton, addButton, addMenu, addTopic, askChoice, closeMenus, download, fitBars,
-  judgingLine, openImage, refining, toast,
+  judgingLine, openImage, refining, scenarioLine, toast,
 } from './ui.js';
 import { objectName, type Refining } from './field-preview.js';
 import type { Judging } from './claim-judging.js';
+import type { Scenario } from '../core/program.js';
 import { Tool } from './view.js';
 import { meshing } from './loading.js';
 import { Timeline } from './timeline.js';
@@ -332,6 +334,32 @@ function sayJudging(j: Judging | null): void {
     ?? `reading the drawing to judge ${j.claims.length} claim${j.claims.length === 1 ? '' : 's'}`;
   judgingLine(`${spin} ${doing} ${'▰'.repeat(n)}${'▱'.repeat(8 - n)} ${clock}`);
   judgingTick = window.setInterval(() => sayJudging(view.claims.judging), 250);
+}
+
+/** **The load scenarios, said in the footer** after each solve: how many requirements hold and
+ *  how many do not — a claim refuted, a driving row not reached, one with no answer — with each
+ *  sentence the core said of them (`` scenario `shelf`: safety(bracket) is 1.22695e-05: claimed
+ *  >= 1, refuted ``) as the line's tooltip.  All holding, the line stays a few seconds; one
+ *  failing, or a word of the scenario's (a structure left free, a stress unbounded), it stays,
+ *  and in red. */
+let scenarioTimer = 0;
+function showScenarios(ss: Scenario[]): void {
+  clearTimeout(scenarioTimer);
+  const answers = ss.flatMap((s) => s.answers);
+  const words = ss.flatMap((s) => s.words);
+  if (!answers.length && !words.length) { scenarioLine(''); return; }
+  const held = answers.filter((a) => a.holds === true).length;
+  const failed = answers.filter((a) => a.holds === false).length;
+  const unanswered = answers.filter((a) => a.holds === null).length;
+  const said = [failed && `${failed} fail${failed === 1 ? 's' : ''}`,
+    unanswered && `${unanswered} without an answer`,
+    words.length && `${words.length} warning${words.length === 1 ? '' : 's'}`,
+    held && `${held} hold${held === 1 ? 's' : ''}`].filter(Boolean).join(', ');
+  const all = [...words, ...answers.map((a) => a.text)].join('\n');
+  const label = ss.length === 1 ? `scenario ${ss[0].name}` : 'scenarios';
+  const fails = failed + unanswered + words.length > 0;
+  scenarioLine(`${label}: ${said}`, fails ? 'failed' : 'finished', all);
+  if (!fails) scenarioTimer = window.setTimeout(() => scenarioLine(''), 5000);
 }
 
 /** **The background refinement, said in the footer** — one entry an object, while any is going:
@@ -623,6 +651,11 @@ const outline = new OutlinePane(document.getElementById('outline-tree')!, view,
   (row) => { if (row.span) goToSource(row.span); },
   document.getElementById('outline-isolate')!, document.getElementById('outline-show-all')!);
 onSide((side) => outline.show(side === 'outline'));
+// a right-click's ways to what it was on: its statement, and its row in the outline
+onWays(goToSource, (row) => {
+  openSide('outline');
+  outline.showRow(row);
+});
 view.onHidden = () => outline.paint();
 view.onSelect = () => {
   if (currentConstraint) focusConstraint(null);
@@ -665,6 +698,7 @@ view.onDimension = onDimension;
 view.onExtent = onExtent;
 view.onRound = onRound;
 view.onChoose = onChoose;
+view.onContextMenu = onContextMenu;
 view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); outline.refresh(); };
 view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
@@ -679,6 +713,7 @@ timeline.refresh();
 view.onStatus = toast;
 view.onRefine = (list) => { showRefining(list); meshing(list); };
 view.onClaims = showJudging;
+view.onScenarios = showScenarios;
 hooks.focusChanged = showStatementFor;
 bindProgramPanel();
 new ResizeObserver(() => view.resize()).observe(canvas);
