@@ -471,11 +471,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             println!("  material {}", gcs_core::report::material_text(&sk, name));
         }
         // what each scenario's supports leave free, and where a stress it asks for is
-        // unbounded (#510 P7): read at the solved pose, a line only where there is something
+        // unbounded (#510 P7), then what its frames answer of each requirement (#510 S0): read
+        // at the solved pose, a line only where there is something
         if solved {
             for st in &e.scenarios {
-                for w in gcs_core::diagnose::analysis::scenario_words(&sk, &st.scenario) {
+                let (words, read) = gcs_core::diagnose::analysis::scenario_read(&sk, &st.scenario);
+                for w in words {
                     println!("  {w}");
+                }
+                for a in gcs_core::report::scenario_answers(&sk, st, &read) {
+                    println!("  {}", a.text);
                 }
             }
         }

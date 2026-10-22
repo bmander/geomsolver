@@ -926,7 +926,9 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     // where the body reads it (#253): the argument is where the fault is
     let quiet = &flat.expansion.quiet;
     cx.diags.retain(|d| !(d.code == Code::E101 && d.stmt.is_some() && quiet.contains(&d.span)));
-    // the load scenarios, read over the drawing once every solid is built (#510 P4)
+    // a frame's members (#510 S0), then the load scenarios, read over the drawing once every
+    // solid is built (#510 P4)
+    cx.sk.beams = super::beams::beams(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
     let scenarios = super::scenarios::scenarios(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
     crate::modules::localize(p, &mut cx.diags);
     Elaborated {

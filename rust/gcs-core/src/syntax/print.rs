@@ -266,6 +266,7 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             out.push_str(&format!("{} {} {}", m.lhs.text(), m.cmp.text(), m.rhs.text()));
         }
         StmtKind::Scenario(sc) => sc.write(out),
+        StmtKind::Beam(b) => b.write(out),
         StmtKind::Minimize(m) => {
             write_ref(out, &m.curve);
             out.push_str(if m.maximize { " maximizes " } else { " minimizes " });

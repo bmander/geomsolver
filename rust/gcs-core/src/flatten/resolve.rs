@@ -624,6 +624,23 @@ fn rewrite(
         }
         // a load case names what it holds, loads and requires of (#510 P4)
         StmtKind::Scenario(sc) => sc.refs_mut().into_iter().for_each(|r| fix(r, bad)),
+        // a frame's members name their lines, and the material they are made of (#510 S0),
+        // judged as a solid's is
+        StmtKind::Beam(b) => {
+            for r in &mut b.lines {
+                fix(r, bad);
+            }
+            if let Some(m) = b.material.as_mut() {
+                let (written, said) = (ref_text(m), bad.len());
+                fix(m, bad);
+                let resolved = bad.len() == said && !quiet.borrow().contains(&m.span);
+                if resolved && !materials.contains(&ref_text(m)) {
+                    bad.push((Code::E103, m.span, format!("`{written}` is no material: a beam \
+                        is made of one the document states, `steel := material(E: 200GPa, nu: \
+                        0.3)`")));
+                }
+            }
+        }
         // `bore cut body` names two solids, and inside a component both wear the prefix
         StmtKind::SolidRel(r) => {
             fix(&mut r.what, bad);

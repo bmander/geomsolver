@@ -37,6 +37,12 @@ pub fn euler_cantilever(e: f64, i: f64, l: f64) -> f64 {
     PI * PI * e * i / (4.0 * l * l)
 }
 
+/// A beam built in at both ends: how far its middle sinks under a load `p` there, `P L³ / (192 E
+/// I)`, and under a load `q` a length along it, `q L⁴ / (384 E I)`.
+pub fn clamped(p: f64, q: f64, l: f64, e: f64, i: f64) -> (f64, f64) {
+    (p * l.powi(3) / (192.0 * e * i), q * l.powi(4) / (384.0 * e * i))
+}
+
 /// **Lamé's thick cylinder**, bore `a`, outside `c`, internal pressure `p`, ends open.
 pub struct Lame {
     pub a: f64,
@@ -203,6 +209,22 @@ fn a_cantilevers_answers_are_its_beams() {
     // free head only where cos kL = 0: kL = π/2
     let pe = euler_cantilever(e, i, l);
     assert!(((pe / (e * i)).sqrt() * l - PI / 2.0).abs() < 1e-14);
+    // built in at both ends, EI w'''' = q: w = q x² (L − x)² / (24EI) has no slope or sink at
+    // either end and sinks the closed form at the middle, its moment q L²/12 at the ends; under
+    // a load at the middle the half is w = P x² (3L − 4x) / (48EI), flat at the middle too
+    let q = 3.0;
+    let w = |x: f64| q * x * x * (l - x).powi(2) / (24.0 * e * i);
+    let (sinks, sags) = clamped(p, q, l, e, i);
+    assert!(w(l) == 0.0 && d(w, 0.0, 1e-6).abs() < 1e-12 && d(w, l, 1e-6).abs() < 1e-12);
+    assert!((w(l / 2.0) - sags).abs() < 1e-15 * sags.max(1.0));
+    let four = |x: f64| d(|y| d(|z| d(|v| d(w, v, 1e-2), z, 1e-2), y, 1e-2), x, 1e-2);
+    assert!((e * i * four(0.4 * l) - q).abs() < 1e-6 * q);
+    let curve = |x: f64| d(|y| d(w, y, 1e-4), x, 1e-4);
+    assert!((e * i * curve(0.0).abs() - q * l * l / 12.0).abs() < 1e-6 * q);
+    let half = |x: f64| p * x * x * (3.0 * l - 4.0 * x) / (48.0 * e * i);
+    assert!(d(half, l / 2.0, 1e-6).abs() < 1e-12 && (half(l / 2.0) - sinks).abs() < 1e-15);
+    let curve = |x: f64| d(|y| d(half, y, 1e-4), x, 1e-4);
+    assert!((e * i * curve(0.0).abs() - p * l / 8.0).abs() < 1e-6 * p);
 }
 
 #[test]

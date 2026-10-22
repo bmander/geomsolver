@@ -285,10 +285,13 @@ fn made_of<'a>(sk: &'a Sketch, name: &'a str) -> impl Iterator<Item = usize> + '
     (0..sk.solids.len()).filter(move |&i| sk.solids[i].material.as_deref() == Some(name))
 }
 
-/// A material as a reader reads it, and what is made of it: `steel: E 200GPa, nu 0.3, of arm`.
+/// A material as a reader reads it, and what is made of it — its solids, then its beams (#510
+/// S0): `steel: E 200GPa, nu 0.3, of arm`.
 pub fn material_text(sk: &Sketch, name: &str) -> String {
     let Some(m) = sk.materials.get(name) else { return format!("{name}: no material") };
-    let of: Vec<&str> = made_of(sk, name).map(|i| sk.solids[i].name.as_str()).collect();
+    let beams = sk.beams.iter().filter(|b| b.material.as_deref() == Some(name));
+    let of: Vec<&str> = made_of(sk, name).map(|i| sk.solids[i].name.as_str())
+        .chain(beams.map(|b| b.name.as_str())).collect();
     if of.is_empty() {
         format!("{}, of no solid", m.text())
     } else {
@@ -296,18 +299,78 @@ pub fn material_text(sk: &Sketch, name: &str) -> String {
     }
 }
 
-/// **What each load scenario's diagnosis says** (#510 P7) at the solved drawing `sk`: per
-/// scenario, its name and its words (`diagnose::analysis::scenario_words`) — the motions its
-/// supports leave free, and each re-entrant edge where a `safety` it states is unbounded; none
-/// where all is well.
+/// **What each load scenario says** (#510 P7, S0) at the solved drawing `sk`: per scenario, its
+/// name, its words (`diagnose::analysis::scenario_read`) — the motions its supports leave free,
+/// each re-entrant edge where a `safety` it states is unbounded, what its frames cannot be read
+/// under — and each requirement a frame answers (`scenario_answers`); none where all is well.
 pub fn scenarios_json(sk: &Sketch, scenarios: &[crate::program::Stated]) -> Json {
     Json::Arr(scenarios.iter().map(|s| {
-        let words = crate::diagnose::analysis::scenario_words(sk, &s.scenario);
+        let (words, read) = crate::diagnose::analysis::scenario_read(sk, &s.scenario);
+        let answers = scenario_answers(sk, s, &read).into_iter().map(|a| object([
+            ("requirement", a.head.as_str().into()),
+            ("grade", a.grade.into()),
+            ("value", a.value.map_or(Json::Null, Json::from)),
+            ("holds", a.holds.map_or(Json::Null, Json::from)),
+            ("text", a.text.as_str().into()),
+        ]));
         object([
             ("name", s.scenario.name.as_str().into()),
             ("words", Json::Arr(words.into_iter().map(Json::Str).collect())),
+            ("answers", Json::Arr(answers.collect())),
         ])
     }).collect())
+}
+
+/// **A requirement a frame answers** (#510 S0): what it is of as written, its grade, its value
+/// in the document's units (`None` where there is none), whether it keeps what it states, and
+/// the sentence a report says — `` scenario `lift`: deflection(tip, along: down) is 0.4mm:
+/// claimed <= 0.5mm, kept ``.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ScenarioAnswer {
+    pub head: String,
+    pub grade: &'static str,
+    pub value: Option<f64>,
+    pub holds: Option<bool>,
+    pub text: String,
+}
+
+/// Every requirement of scenario `s` its frames answer (`beams::read`, in `read`), in the order
+/// written.  A claim is kept or refuted; a driving row or a bound is said to hold or not, and that
+/// nothing drives it yet (#510 S1, S4).
+pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::beams::Read)
+    -> Vec<ScenarioAnswer>
+{
+    use crate::model::Grade;
+    let mut out = Vec::new();
+    for (k, r) in s.scenario.requirements.iter().enumerate() {
+        let Some(got) = &read.answers[k] else { continue };
+        let head = s.heads[k].clone();
+        let grade = match r.grade() {
+            Grade::Claim => "claim",
+            Grade::Driving => "driving",
+            Grade::Bound => "bound",
+        };
+        let stated = format!("{} {}", r.compare.text(),
+                             crate::beams::value_text(sk, r.output, r.value));
+        let (value, holds, said) = match got {
+            Ok(v) => {
+                let keeps = crate::beams::keeps(r, *v);
+                let verdict = match (r.grade(), keeps) {
+                    (Grade::Claim, true) => format!("claimed {stated}, kept"),
+                    (Grade::Claim, false) => format!("claimed {stated}, refuted"),
+                    (_, true) => format!("stated {stated}, which holds; nothing drives it yet"),
+                    (_, false) => format!("stated {stated}, which does not hold; nothing drives \
+                                           it yet"),
+                };
+                let v_text = crate::beams::value_text(sk, r.output, *v);
+                (Some(*v), Some(keeps), format!("{head} is {v_text}: {verdict}"))
+            }
+            Err(why) => (None, None, format!("{head} has no answer: {why}")),
+        };
+        let text = format!("scenario `{}`: {said}", s.scenario.name);
+        out.push(ScenarioAnswer { head, grade, value, holds, text });
+    }
+    out
 }
 
 /// **The parameters a drawing declares** (#398 L), for a timeline: each by name, what it is and

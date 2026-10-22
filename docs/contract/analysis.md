@@ -8,16 +8,18 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 `sparse::Sym`, `sparse::Ldl` or `sparse::Pencil`; or `diagnose/analysis.rs`, `Structure::free`,
 `Structure::reach`, `BodyFaces::whole` or a scenario's report (`report::scenarios_json`); or
 `delaunay/refine/cells.rs`, `delaunay/refine/volume.rs` or `delaunay/tetra.rs`; or a case of
-`rust/examples/analysis/` or `tests/analysis_corpus*`.
+`rust/examples/analysis/` or `tests/analysis_corpus*`; or `interior::Beam`, `model/beam.rs`,
+`syntax/beam.rs`, `program/beams.rs`, `beams.rs` or a scenario's answers
+(`report::scenario_answers`).
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
 `rust/gcs-core/tests/scenarios.rs` for scenarios (P4), `rust/gcs-core/tests/materials.rs` for
 materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
 `rust/gcs-core/tests/analysis_words.rs` for the diagnosis words (P7),
-`rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6) and
-`rust/gcs-core/tests/analysis_corpus.rs` for the verification corpus (P8), unless a rule names
-another.
+`rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6),
+`rust/gcs-core/tests/analysis_corpus.rs` for the verification corpus (P8) and
+`rust/gcs-core/tests/beams.rs` for frames (S0), unless a rule names another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -77,17 +79,165 @@ another.
   redundant structures in the plane and in space, stated and free, and for two instances in one
   block (`tests/jacobians.rs`, `a_linear_interior_agrees_with_finite_differences`).
 
-- **What P5 leaves to later stages.** No `CKind`, word or statement compiles to the kernel yet.
-  Materials are P3 (below), and nothing reads one yet; scenarios and their requirement words are parsed and elaborated (P4,
-  below) but compile no row; S0/S1 give the row its constraint type, with its callout or an
-  `undrawn!` entry. Every call reads the structure from
+- **What P5 leaves to later stages.** No `CKind`, word or statement compiles to the kernel yet:
+  S1 gives the row its constraint type, with its callout or an `undrawn!` entry.  S0 reads the
+  structure directly, for claims (below). Every call reads the structure from
   its constants and orders `K`'s pattern again (`Ata::new`'s symbolic analysis), though neither
   moves with `x`. The system also calls a kernel's residual and Jacobian separately, so a step
   that asks for both factors `K` twice. Holding the symbolic analysis per row (a hit on every
   step) and the factor between the two calls (a hit only at one `x`) are two caches, to be
-  measured first and apart, as `solve/through.rs` measured its own. The element interface
-  (strain rows and their derivatives, degrees of freedom apart from coordinates, several section
-  columns) is S0's, shaped against the beam that needs it.
+  measured first and apart, as `solve/through.rs` measured its own. The element interface is
+  S0's (below).
+
+- **The beam is the interior's second element** (#510 S0; `interior::Beam`). An Euler–Bernoulli
+  beam rigid at both ends, of modulus `e`, shear modulus `g` and density `rho`, its section's z
+  a constant direction (the normal of the plane it is drawn in). Its local axes come from its
+  run `Δ` and z: e1 along it, e2 = z × e1, e3 = e1 × e2 (`Beam::axes`); z along it is
+  `Failure::Collapsed`. **Degrees of freedom are numbered apart from coordinates**: a node has
+  `dim` coordinates (columns) and, once there is a beam, `Structure::per` degrees of freedom —
+  its moves, then its turns (one about z in the plane, three in space); `Structure::dof` maps a
+  node's component in space to its degree of freedom, `None` where the plane has none. **A
+  section is four columns** after the bars' areas, in `SECTION`'s order: `A`, `Iy`, `Iz`, `J`.
+  `fixed`, `load` and `weight` are per degree of freedom, as for bars.
+
+- **A beam's stiffness is six strain rows** (#510 S0; `Beam::local`), each over its twelve
+  degrees of freedom in its own axes at a unit section, then turned into the world's
+  (`beam_rows`): the stretch `√(E/L)(u_b − u_a)·e1`; in each plane it bends, two rows
+  `√(E/L)(2φ_a + φ_b)` and `√(3E/L)φ_b`, `φ` an end's turn against the chord — a Cholesky factor
+  of `E I/L·[4 2; 2 4]`; and the twist `√(G/L)(θ_b − θ_a)·e1`. Each group scales by the root of
+  its column, so the element's stiffness is linear in its section. In the plane only the stretch
+  and the bending about z are rows. So the beam joins `solve`, `stiffness` (the rows' outer
+  products as a `Sym`, for a pencil) and `free`'s mechanism by the one row builder (`rows`), as
+  P7 asked. `free` holds a held turn as the body's turn, and where there are beams the body is
+  no longer the nodes' places alone: a twist about a line of nodes turns them.
+
+- **A beam's gradient is its mutual energy's, carried in its axes** (#510 S0;
+  `Structure::gradient`). Each group's mutual energy at a unit section, `Σ (r·λ)(r·u)`, is
+  formed in `kernels::Dual<3>` over `Δ` (the axes and the length carry their rates), so the
+  gradient in the nodes' coordinates is exact and the section's column reads the group's energy
+  itself. It agrees with central differences of the value over random braced frames in the plane
+  and in space, stated and free (`jacobians.rs`, `a_frames_interior_agrees_with_finite_differences`;
+  a frame's normal equations square a stiffer conditioning than a truss's, so its difference is
+  taken over 1e-4). The constants carry beams (`HEAD` is `[dim, nodes, bars, beams]`, each beam
+  `(a, b, E, G, ρ, z)`), written and read back exactly (`a_frame_is_its_constants`). No word
+  compiles to the row yet: that is S1's.
+
+- **A cubic is the beam's exact deflection under end loads** (#510 S0). A cantilever's tip
+  sinks `P L³/3EIz` and turns `P L²/2EIz` in its plane, moves `P L³/3EIy` across it, twists `T
+  L/GJ` and stretches `P L/EA`, in one element or several, in the plane and in space, to 1e-10
+  (`a_cantilever_bends_twists_and_stretches_as_its_closed_forms`). **Its modes and its buckling
+  are the cubic's to approximate**: the consistent mass (`Structure::mass`: `ρAL/6·[2 1; 1 2]`
+  along it, `ρ(Iy + Iz)L/6·[2 1; 1 2]` in its twist, `ρAL/420·[156 22L 54 −13L; …]` in each
+  bending plane, no rotary inertia, a bar none) and the geometric stiffness
+  (`Structure::geometric`, each beam's pull `N`: `N/30L·[36 3L −36 3L; …]` in each bending
+  plane, `N(Iy + Iz)/(AL)` in its twist), read by `eigen::lowest` and `eigen::buckling`. Cut into
+  sixteen, a cantilever's first two frequencies are within 1e-6 and its third 1e-5 of `βᵢ²/(2πL²)
+  √(EI/ρA)`, and its first load factor within 1e-6 of Euler's
+  (`a_cantilevers_modes_and_buckling_are_its_closed_forms`). `Structure::end_actions` gives each
+  beam's `k_e u_e` in its own axes, the far end's pull at `[6]`; a load spread along it is the
+  caller's to take out.
+
+- **A beam is a statement of the language** (#510 S0; `arm := beam(span, post, A: …, Iy: …, Iz:
+  …, J: …[, Sy: …, Sz: …]) of steel`, `syntax::BeamDecl`, `StmtKind::Beam`). `beam` is a word
+  only as a definition's call, as `material` is, and `of` the trailer a solid's is. The lines
+  come first, unlabelled; then the section's numbers, each labelled (syntax errors otherwise, and
+  for a beam on no line). It flows as a scenario does: the flattener names it under its scope's
+  prefix, writes the scope's numbers into its section (`numbers_mut`) and rescopes its lines and
+  material (`refs_mut`); `program::beams` reads each, once the geometry is built, into a
+  `model::Beam` on `Sketch::beams` (gcs-solve, pure data): its lines by index, its `Section` in
+  the **document's units** (as every length is; the material stays in SI), its material by name.
+  Refused, each where it is written: a target that is no line (**E040**) or a line standing in
+  space (**E040**: its section's z is the plane's normal); a name of nothing (**E101**); a label
+  no section has (**E103**), twice (**E001**); a number of the wrong power of length, at zero or
+  less (**E103**), or reading an unknown of the drawing (**E040**, until S1 drives one); a
+  section leaving out any of `A`, `Iy`, `Iz`, `J` (**E103**); `of` naming no material
+  (**E103**, judged in `flatten::resolve::rewrite` as a solid's is). A beam that fails any check
+  is left out whole: a frame missing a member is another frame. `Sy` and `Sz`, the elastic
+  section moduli, are optional: only a factor of safety reads them. **A beam adds nothing to the
+  drawing** (`a_beam_is_its_lines_section_and_material`): no entity, unknown or row, and the
+  sketch's JSON is the document's without it, so it is carried by the Solvent source alone, as
+  a solid's `of` is. The printer writes it back as written; an edit removing a line it names
+  never takes the beam with it (E101 is said).
+
+- **A scenario names a beam as the beam it is** (#510 S0; `Applied::Beam`, its index on
+  `Sketch::beams`). `Applied::entity` is `None` for one, and `Applied::solid` names a solid's.
+  A beam is what a body load (`accelerate arm …`), a force spread along it (`load arm f along:
+  d`) and an output (`mass(arm)`, `mode(arm, 1)`) are of; a support on one is **E040** ("hold its
+  ends"), and so is a pressure. `Stated::heads` keeps each requirement's output as written,
+  `deflection(tip, along: down)`, for the report.
+
+- **The drawing is the mesh** (#510 S0; `beams.rs`, `Mesh`). Every line a beam names is a
+  member. Members join where their ends meet, or where an end lies on another member, by place
+  (`JOINED`, 1e-6 of the frame's extent): a **joint**. A point the scenario names (a support, a
+  load, an output's) lying on a member between its ends cuts it there into a joint of its own
+  (`a_point_on_a_member_cuts_it`). Between joints a member is cut into `PIECES` (8) cubic
+  elements, its section's z the normal of the plane its line is drawn in. A **frame** is the
+  members joined to one another (`a_frame_joins_where_its_members_meet`: an L, rigid at its
+  corner, and a tee); a requirement reads the frame of what it names — a beam, a member's line, a
+  point at a joint — and one naming two frames has no answer. Nothing else is meshed, and the
+  frame stands where the solved drawing puts it.
+
+- **A frame is read under the scenario where it falls on it** (#510 S0; `Analysed::new`). A
+  support holds every joint it names a point of (a point; a line's every node): its moves, or
+  along `along:` its move along that one world axis (a direction off the world's axes is no
+  answer yet), and where it is `fixed` its turns. A force at a point is a load at its joint; a
+  force on a beam or a member's line is spread evenly along its members, and `accelerate` is
+  `ρ A a` a length along them; each spread load is its consistent load at the elements' ends
+  (`fixed_end`), exact for the cubic. The material is read back into the document's units
+  (`Units::from_si`): `E`, `G = E / 2(1 + nu)` (a frame twists, so `nu` is needed), `rho` where
+  a mass is read, `yield` for a safety. A material that does not state what is read of it, a
+  beam made of none, a frame the supports leave free (`Structure::free`, named in the solver's
+  words and said once as the scenario's word: `` scenario `loose` leaves `arm` free to turn about
+  x through (0, 0, 0), … ``) are reasons, never numbers (`what_has_no_answer_says_why`).
+
+- **What a frame answers** (#510 S0; `beams::read`, `answer`), in the document's units:
+  - `deflection(X[, along: d])`: a joint's move along `d` (signed), or its length; of a beam or
+    a line, the worst over its nodes;
+  - `compliance(B)`: `fᵀu`, the work the scenario's loads do on the frame;
+  - `mass(B)`: `ρ A L` over the members `B` names;
+  - `mode(B, n)`: the frame's `n`th frequency, `√λₙ / 2π` of `eigen::lowest(K, M)`;
+  - `buckling(B)`: the least factor on the loads, `eigen::buckling(K, K_G)`, `K_G` from each
+    element's pull at its middle; none where nothing is pressed;
+  - `safety(B)`: the least yield over the greatest normal stress along the members `B` names,
+    `|N|/A + |My|/Sy + |Mz|/Sz` at the section's farthest fibres. Each is a quadratic along an
+    element (its near end's actions less the spread load's, and the spread load), so the
+    greatest of their sizes is the greatest of the eight signed sums, each at an end or its
+    vertex (`stress`): exact. Euler–Bernoulli's: no shear, and the twist's is not read.
+
+  A requirement about no frame (a solid's) has no answer of this kind (`None`). **Every frame
+  case of the corpus answers its reference** (`every_frame_case_answers_its_reference`): to 1e-9
+  where the cubic is exact — a load at a joint or spread evenly, the stress they give, a mass —
+  and to 1e-5 for a mode or a buckling load; and keeps every claim it states.
+
+- **A claim is judged; nothing is solved for** (#510 S0; `beams::keeps`,
+  `report::scenario_answers`). A value keeps a requirement on its side of `<=`/`>=`, or within
+  1e-9 of what it states for `==`. A claim is said `kept` or `refuted`; a driving row or a bound
+  is said to hold or not, and that nothing drives it yet (S1, S4). `solventc` prints each under
+  the scenario's words, `` scenario `tip_load`: deflection(end, along: down) is 6.4mm: claimed
+  >= 6.336mm, kept `` (a frequency in hertz, a mass in kilograms, a compliance in joules, a
+  factor plain, six figures: `beams::value_text`), and `--json` gives them as each scenario's
+  `answers` (`report::scenarios_json`: the requirement, its grade, its value, whether it holds,
+  the sentence). A refuted claim is a report, not an error: the document still exits 0
+  (`gcs-cli/tests/cli.rs`, `a_frames_answers_are_said`). The words of a scenario's solids
+  (`scenario_words`) leave out the supports that hold a frame, and a scenario of frames alone
+  holds no body of its own (`diagnose::analysis::scenario_read`).
+
+- **What S0 leaves.**
+  - **No row.** The beam's row and its gradient are in hand, but no `CKind` or word compiles a
+    requirement to it, and a section reading an unknown is refused: S1's.
+  - **A beam's line is drawn in a plane**, whose normal is its section's z; a line in space,
+    and a section turned about its member (an `up:`), are not read yet.
+  - **A support holds along the world's axes**, and `fixed` holds every turn: a support holding
+    one turn and not another (a simply supported beam's ends in space, free to bend and held
+    from twisting) has no spelling, so such a beam is free to twist about its own line, and said
+    so.
+  - **A factor of safety leaves out the twist's shear**, and stress is read on Euler–Bernoulli's
+    terms (no shear stress). The failure criterion is still the open decision's.
+  - **NAFEMS FV2** (the pin-ended double cross) waits on its published values in hand, and on a
+    pin: every joint is rigid.
+  - **No load at a moment**: a scenario's load is a force.
+  - **Two caches** are still unmeasured: each read meshes, assembles and factors its frame again,
+    once per frame, and a mode or a buckling load assembles `K` once more for its pencil.
 
 - **A scenario, parsed** (#510 P4, §9.11 [0.164]). `scenario NAME [: BASE] { … }` is
   `syntax::StmtKind::Scenario` (`syntax::Scenario`, its lines `Item`/`ItemKind`: a support, a load
@@ -134,8 +284,9 @@ another.
 - **A material is a model value** (#510 P3, §6.9 [0.165]): `model::Material`, a name and the
   properties stated of it (`model::Property`: `E`, `nu`, `rho`, `yield`).  `Sketch::materials`
   holds the document's materials by absolute name (`steel`, `p.al` inside an instance), and
-  `SolidE::material` names the one a solid is made of.  Nothing reads either yet.  The solve,
-  the diagnosis and every evaluated solid are unchanged by a material.  `tests/materials.rs` is
+  `SolidE::material` names the one a solid is made of, `model::Beam::material` a beam's (S0).
+  A frame's analysis reads a beam's (S0, below); nothing reads a solid's yet.  The solve, the
+  diagnosis and every evaluated solid are unchanged by a material.  `tests/materials.rs` is
   the gate.
 - **A material is held in SI** (`Units::to_si`): pascals, and kilograms per cubic metre.  The
   same text states the same material in any document unit, inch or millimetre
@@ -324,8 +475,9 @@ another.
 
 - **A scenario's words, at the solved drawing** (`analysis::scenario_words`). Its supports'
   points come from what each names: a point; a line's ends; a solid's box (a solid spans space);
-  or every face a path names, by its edges' ends and quarters. They are held as one body until
-  an analysis joins bodies of its own (S0), and named by the solids the scenario names:
+  or every face a path names, by its edges' ends and quarters. A support that holds a frame of
+  beams is the frame's (S0, below); the rest are held as one body, named by the solids the
+  scenario names:
   `scenario `lift` leaves `plate` free to turn about x through (0, 0, 0), …`. Every `safety`
   requirement on a solid with a re-entrant edge is said to have no answer. A support that cannot
   be read is said (`` `plate.nowhere` names no face of `plate` ``), never taken as holding
@@ -336,11 +488,12 @@ another.
   document still exits 0.
 
 - **What P7 leaves to later stages.** No word yet reads an analysis's own results: the degenerate
-  pair and the out-of-reach verdict are said of pairs and rows a caller hands them, and no
-  scenario computes modes or compiles a driving row until S0–S3. The ring a pair is the ring's is
+  pair and the out-of-reach verdict are said of pairs and rows a caller hands them, and a frame's
+  modes are S0's, but no repeated pair of theirs is named yet, and no scenario compiles a
+  driving row until S1. The ring a pair is the ring's is
   given as a map of the freedoms; reading it off a drawing's `ring` is the modal stage's. The
-  free motion of a scenario holds its supports as one body: which bodies a load path joins is
-  S0's. A pinned face is read as its points held, which holds a turn as a clamp does.
+  free motion of a scenario's solids holds their supports as one body; a frame's is its own
+  (S0). A pinned face is read as its points held, which holds a turn as a clamp does.
 
 - **A volume is the surface's refinement carried inside** (#510 P6; `delaunay::refine::volume`,
   `Progressive::with_cells`, `refine/cells.rs`). Once the surface is done, as
@@ -500,8 +653,11 @@ another.
   of its plane far below the in-plane modes it claims.
 
 - **What P8 leaves.**
-  - **The frame cases** (a cantilever, Euler's column, NAFEMS FV2) wait on how S0 writes a
-    section. The beam's closed forms are already `closed.rs`'s.
+  - **The frame cases** are S0's (above): the cantilever, Euler's column and a beam built in at
+    both ends, as frames (`cantilever_frame.sv`, `column_frame.sv`, `clamped_frame.sv`), read
+    `Reading::Frame` off the beam's line, section and material. CalculiX reads no frame: a
+    frame's answers are the core's own, held to the closed forms (`tests/beams.rs`). NAFEMS FV2
+    waits.
   - **NAFEMS LE10's target** is a component of stress at a point, which no output word reads
     (an open decision of the requirement words).
   - **NAFEMS FV52's supports** are published two ways, the lower edges or the middle plane's.

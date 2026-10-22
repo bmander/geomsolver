@@ -531,35 +531,48 @@ fn points(sk: &Sketch, at: &Applied) -> Result<Vec<V>, String> {
             }
             Ok(out)
         }
+        Applied::Beam(b) => Err(format!("a support holds points, and `{}` is a beam",
+                                        sk.beams[*b].name)),
     }
 }
 
-/// The solids a scenario names, in the order first named: what its supports hold as one body
-/// until an analysis joins bodies of its own (S0).
+/// The solids a scenario names, in the order first named: what its supports hold as one body,
+/// where a frame's are read with the frame (`beams::read`).
 fn named_solids(sc: &Scenario) -> Vec<usize> {
     let mut out: Vec<usize> = Vec::new();
     let named = sc.supports.iter().map(|s| &s.at)
         .chain(sc.loads.iter().map(|l| &l.at))
         .chain(sc.requirements.iter().map(|r| &r.of));
-    for a in named {
-        let e = a.entity();
-        if e.kind == EntKind::Solid && !out.contains(&e.i()) {
-            out.push(e.i());
+    for i in named.filter_map(|a| a.solid()) {
+        if !out.contains(&i) {
+            out.push(i);
         }
     }
     out
 }
 
-/// **What can be said of a scenario before it is analysed** (#510 P7), at the solved drawing:
-/// the rigid-body motions its supports leave (`freedoms`, in space, the supports held as one
-/// body), `scenario `lift` leaves `arm` free to turn about z through (0, 0, 0)`; and for every
-/// `safety` requirement, each sharp re-entrant edge of its body, where the stress it asks about
-/// is unbounded, once per solid.  A support or a body that cannot be read is said too.  Nothing
-/// where all is well.  Each body is the drawing's, built once (`BodyFaces::whole`).
+/// **What can be said of a scenario** (#510 P7), at the solved drawing: the rigid-body motions
+/// its supports leave (`freedoms`, in space, the supports held as one body), `scenario `lift`
+/// leaves `arm` free to turn about z through (0, 0, 0)`; and for every `safety` requirement,
+/// each sharp re-entrant edge of its body, where the stress it asks about is unbounded, once per
+/// solid.  A support or a body that cannot be read is said too.  Nothing where all is well.  Each
+/// body is the drawing's, built once (`BodyFaces::whole`).  A support that holds a frame of
+/// beams is the frame's, and what a frame leaves free is said with its answers (#510 S0,
+/// `scenario_read`).
 pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
+    scenario_read(sk, sc).0
+}
+
+/// **A scenario, read** (#510 S0): its words (`scenario_words`'s, then its frames'), and what
+/// its frames answer of each requirement (`beams::read`).
+pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::Read) {
+    let frames = crate::beams::read(sk, sc);
     let mut out = Vec::new();
     let mut holds = Vec::new();
-    for s in &sc.supports {
+    for (k, s) in sc.supports.iter().enumerate() {
+        if frames.holds_frame[k] {
+            continue;
+        }
         let read = points(sk, &s.at)
             .and_then(|at| Ok(Held { at, along: s.along.map(|d| direction(sk, d)).transpose()?,
                                      turn: s.hold == Hold::Fixed }));
@@ -568,10 +581,12 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
             Err(e) => out.push(format!("scenario `{}`: {e}", sc.name)),
         }
     }
-    if out.is_empty() {
+    let solids = named_solids(sc);
+    // a scenario of frames alone holds no body of its own
+    let of_frames = !sk.beams.is_empty() && solids.is_empty() && holds.is_empty();
+    if out.is_empty() && !of_frames {
         let fs = freedoms(3, &[], &holds);
         if let Some(free) = freedoms_text(&fs, 3) {
-            let solids = named_solids(sc);
             let names: Vec<String> =
                 solids.iter().map(|&i| format!("`{}`", sk.solids[i].name)).collect();
             let what = match names.len() {
@@ -583,8 +598,8 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
         }
     }
     let asked: BTreeSet<usize> = sc.requirements.iter()
-        .filter(|r| r.output == Output::Safety && r.of.entity().kind == EntKind::Solid)
-        .map(|r| r.of.entity().i())
+        .filter(|r| r.output == Output::Safety)
+        .filter_map(|r| r.of.solid())
         .collect();
     for solid in asked {
         let name = &sk.solids[solid].name;
@@ -598,5 +613,6 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
             Err(err) => out.push(format!("scenario `{}`: {err}", sc.name)),
         }
     }
-    out
+    out.extend(frames.words.iter().cloned());
+    (out, frames)
 }

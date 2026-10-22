@@ -208,6 +208,7 @@ fn asserting(c: &Component, out: &mut Vec<Diag>) {
         | StmtKind::Branch(_) | StmtKind::SolidRel(_) => states = true,
         StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Group(_) | StmtKind::Style(_)
         | StmtKind::Unit(_) | StmtKind::Scenario(_) => {}
+        StmtKind::Beam(_) => public = true,
     });
     if public || !states {
         return;

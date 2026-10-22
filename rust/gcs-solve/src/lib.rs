@@ -11,6 +11,7 @@
 //! the language is `gcs-core`, built on this crate, and the compiler holds the line — this crate
 //! cannot name a module of the one that depends on it.
 pub mod amd;
+pub mod beams;
 pub mod brep;
 pub mod cgraph;
 pub mod cholesky;

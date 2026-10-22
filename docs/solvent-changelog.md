@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.166] Frames.** `arm := beam(span, post, A: b * h, Iy: …, Iz: …, J: …) of steel`
+(§9.11) makes lines of the drawing members of a frame: Euler–Bernoulli beams rigid at their ends,
+of the section stated in each member's own axes (z the normal of the plane its line is drawn in,
+so `Iz` bends it in that plane) and the material `of` names. `A`, `Iy`, `Iz` and `J` are
+required, `Sy` and `Sz` optional (a factor of safety reads them); each a positive power of
+length the drawing states (**E103**, **E040** reading an unknown, **E001** twice). A target that
+is no line, or a line standing in space, is **E040**. A beam adds nothing to the drawing, and a
+scenario names it as a beam (a support or a pressure on one is **E040**). The drawing is the
+mesh: members join where their ends meet or an end lies on another, and a point the scenario
+names cuts a member there. **A scenario's requirements on a frame are answered and judged**,
+never solved for — each output's value in the document's units, a claim kept or refuted — and
+where there is none it says why: the supports leave the frame free, or its material states too
+little. `beam` is a word only as a definition's call; no document used it as one. (Issue #510,
+S0.)
+
 **[0.165] What a solid is made of.** `steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3,
 yield: 250MPa)` (§6.9) declares a material, a group whose members are the properties of an
 isotropic linear-elastic solid: `E` and `yield` pressures, `nu` a plain number in (−1, 0.5), `rho`

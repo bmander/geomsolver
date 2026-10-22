@@ -864,6 +864,9 @@ impl<'a> P<'a> {
                 self.end_of_stmt();
                 StmtKind::Group(crate::syntax::GroupDecl { name, fields, material: Some(at) })
             }
+            // `arm := beam(span, A: b * h, …) of steel` (#510 S0) — a frame's members, the
+            // word read so only as a call: `beam` is a name a document may give
+            Some("beam") if call => StmtKind::Beam(self.beam(name)?),
             // `f := frame` (#383): a frame declared bare — the word read so only as a definition's
             // whole value, since `frame` is a name a document may give
             Some("frame") if words::bare_frame_at(&self.t, self.i) || call => {
@@ -1552,6 +1555,45 @@ impl<'a> P<'a> {
             return None;
         }
         Some(fields)
+    }
+
+    /// `beam(span, post, A: b * h, Iy: …, Iz: …, J: …) of steel` past `name :=`: the lines
+    /// first, unlabelled, then the section's numbers, each labelled, then its material.
+    fn beam(&mut self, name: Name) -> Option<crate::syntax::BeamDecl> {
+        let at = self.here();
+        self.i += 1;
+        let args = self.args_between('(', ')')?;
+        let (mut lines, mut section) = (Vec::new(), Vec::new());
+        for a in args {
+            match (a.label, a.value) {
+                (None, InstVal::Ref(r)) if section.is_empty() => lines.push(r),
+                (None, _) => {
+                    self.fail_at(a.span, "a beam is drawn on lines, then states its section: \
+                                          `beam(span, A: b * h, Iy: …, Iz: …, J: …)`");
+                    return None;
+                }
+                (Some(label), InstVal::Expr(text)) => section.push((label, (text, a.span))),
+                (Some(label), InstVal::Ref(r)) => {
+                    section.push((label, (crate::syntax::ref_text(&r), a.span)))
+                }
+                (Some(label), _) => {
+                    self.fail_at(a.span, &format!("`{}` is a number of the section", label.text));
+                    return None;
+                }
+            }
+        }
+        if lines.is_empty() {
+            self.fail_at(at, "a beam is drawn on lines: `beam(span, A: b * h, …)`");
+            return None;
+        }
+        let material = if self.word_at(self.i) == Some("of") {
+            self.i += 1;
+            Some(self.refr()?)
+        } else {
+            None
+        };
+        self.end_of_stmt();
+        Some(crate::syntax::BeamDecl { name, at, lines, section, material })
     }
 
     /// A call's arguments in `( … )`, or a group's members in `{ … }`.

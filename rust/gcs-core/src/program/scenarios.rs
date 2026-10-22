@@ -26,6 +26,9 @@ pub struct Stated {
     pub supports: Vec<Line>,
     pub loads: Vec<Line>,
     pub requirements: Vec<Line>,
+    /// Each requirement's output as written, `deflection(tip, along: down)`: what a report says
+    /// it of (#510 S0).
+    pub heads: Vec<String>,
 }
 
 /// One line of a scenario's body: the scenario statement, and the line's index in it.
@@ -71,6 +74,7 @@ pub(super) fn scenarios(
             supports: Vec::new(),
             loads: Vec::new(),
             requirements: Vec::new(),
+            heads: Vec::new(),
         };
         if let Some(base) = &sc.extends {
             match by_name.get(&base.text) {
@@ -106,9 +110,10 @@ pub(super) fn scenarios(
                     made.scenario.loads.push(l);
                     made.loads.push(line);
                 }),
-                ItemKind::Requirement(r) => read.requirement(r).map(|r| {
+                ItemKind::Requirement(t) => read.requirement(t).map(|r| {
                     made.scenario.requirements.push(r);
                     made.requirements.push(line);
+                    made.heads.push(head(t));
                 }),
             };
             if let Err((code, span, message)) = got {
@@ -140,6 +145,14 @@ pub(super) fn scenarios(
     out
 }
 
+/// A requirement's output as written: `deflection(tip, along: down)`, `mode(arm, 2)`.
+fn head(r: &crate::syntax::RequirementText) -> String {
+    let mut args = vec![crate::syntax::ref_text(&r.of)];
+    args.extend(r.count.as_ref().map(|(t, _)| t.trim().to_string()));
+    args.extend(r.along.as_ref().map(|d| format!("along: {}", crate::syntax::ref_text(d))));
+    format!("{}({})", r.output.word(), args.join(", "))
+}
+
 /// A line's fault: its code, where (the line's own span where `None`) and what.
 type Fault = (Code, Option<Span>, String);
 
@@ -157,19 +170,28 @@ impl Reading<'_> {
         along: Option<&Ref>,
     ) -> Result<Support, Fault> {
         let at = self.applied(at, hold.word())?;
+        if let Applied::Beam(b) = at {
+            return Err((Code::E040, None, format!(
+                "a support holds what a frame stands on — a point, a line — and `{}` is a beam: \
+                 hold its ends",
+                self.sk.beams[b].name
+            )));
+        }
         let along = along.map(|d| self.direction(d)).transpose()?;
         Ok(Support { hold, at, along })
     }
 
     fn load(&self, kind: LoadKind, at: &Ref, value: &LoadText) -> Result<Load, Fault> {
         let applied = self.applied(at, kind.word())?;
-        if kind == LoadKind::Pressure
-            && matches!(applied, Applied::Ent(e) if e.kind != EntKind::Face)
-        {
+        let what = match &applied {
+            Applied::Ent(e) if e.kind != EntKind::Face => Some(e.kind.a().to_string()),
+            Applied::Beam(_) => Some("a beam".to_string()),
+            _ => None,
+        };
+        if let (LoadKind::Pressure, Some(what)) = (kind, what) {
             return Err((Code::E040, Some(at.span), format!(
-                "a pressure is on a face: `{}` is {}",
-                crate::syntax::ref_text(at),
-                applied.entity().kind.a()
+                "a pressure is on a face: `{}` is {what}",
+                crate::syntax::ref_text(at)
             )));
         }
         let what = kind.word();
@@ -217,6 +239,10 @@ impl Reading<'_> {
     fn applied(&self, r: &Ref, what: &str) -> Result<Applied, Fault> {
         let at = Some(r.span);
         let named = crate::syntax::ref_text(r);
+        // a beam is the drawing's name for its members (#510 S0), and no entity
+        if let Some(b) = self.sk.beams.iter().position(|b| b.name == named) {
+            return Ok(Applied::Beam(b));
+        }
         match self.res.operand(self.sk, r).map_err(|m| (Code::E101, at, m))? {
             Operand::Face(f) => Ok(Applied::Face(f)),
             Operand::Body(e) => Ok(Applied::Ent(e)),

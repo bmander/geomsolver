@@ -20,6 +20,7 @@ mod anonymous;
 mod applied;
 mod axis;
 mod bare_plane;
+mod beams;
 mod block_measure;
 mod block_order;
 mod block_solve;

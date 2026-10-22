@@ -16,19 +16,30 @@ use crate::units::Dim;
 /// a line, a solid's whole body), or the faces a path past a solid names (`arm.base`, sets.md's
 /// faces as sets).  Whether a face path names faces is the analysis's to judge, where it reads the
 /// solid's boundary after the solve, as a region reading a face does.
+///
+/// Or a beam (#510 S0), by its index in `Sketch::beams`: what its members are, for a body load
+/// or an output of the frame they are part of.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Applied {
     Ent(EntRef),
     Face(FaceRef),
+    Beam(usize),
 }
 
 impl Applied {
-    /// The entity it is of: itself, or the solid a face is a face of.
-    pub fn entity(&self) -> EntRef {
+    /// The entity it is of: itself, or the solid a face is a face of — `None` for a beam, which
+    /// is no entity.
+    pub fn entity(&self) -> Option<EntRef> {
         match self {
-            Applied::Ent(e) => *e,
-            Applied::Face(f) => EntRef::solid(f.solid as usize),
+            Applied::Ent(e) => Some(*e),
+            Applied::Face(f) => Some(EntRef::solid(f.solid as usize)),
+            Applied::Beam(_) => None,
         }
+    }
+
+    /// The solid it is of, where it is of one.
+    pub fn solid(&self) -> Option<usize> {
+        self.entity().filter(|e| e.kind == EntKind::Solid).map(|e| e.i())
     }
 }
 

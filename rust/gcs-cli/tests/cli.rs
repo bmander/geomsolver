@@ -738,3 +738,55 @@ edge of `ledge` and `riser`";
     assert!(json.contains("\"scenarios\"") && json.contains("leaves `plate` free"),"{json}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// **A frame's answers are said** (#510 S0): under each scenario, every requirement on a frame
+/// with its value in the document's units and whether it keeps what it states — a refuted claim
+/// is a report, so the document still exits 0 — and `--json` gives them as the scenario's
+/// `answers`.
+#[test]
+fn a_frames_answers_are_said() {
+    let dir = std::env::temp_dir().join(format!("solventc-frame-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("arm.sv");
+    std::fs::write(&source,"\
+unit mm
+use std
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+b := 25mm
+h := 50mm
+in std.front {
+  foot := point
+  end := point
+  fix((0mm, 0mm)) foot
+  fix((1000mm, 0mm)) end
+  span := line(foot, end)
+}
+down := axis
+fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
+arm := beam(span, A: b * h, Iy: h * b^3 / 12, Iz: b * h^3 / 12, J: 0.229 * h * b^3) of steel
+scenario tip_load {
+  fixed foot
+  load end 1kN along: down
+  claim deflection(end, along: down) <= 7mm
+  claim deflection(end, along: down) <= 6mm
+  deflection(end, along: down) <= 5mm
+}
+").unwrap();
+    let path = source.to_str().unwrap();
+    let out = run(&[path]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    for line in [
+        "  material steel: E 200GPa, nu 0.3, rho 7850kg/m^3, yield 250MPa, of arm\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm: claimed <= 7mm, kept\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm: claimed <= 6mm, refuted\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm: stated <= 5mm, which does \
+not hold; nothing drives it yet\n",
+    ] {
+        assert!(said.contains(line),"{line}\n{said}");
+    }
+    let json = String::from_utf8_lossy(&run(&[path,"--json"]).stdout).into_owned();
+    assert!(json.contains("\"answers\"") && json.contains("\"grade\": \"claim\"")
+            && json.contains("\"holds\": false"),"{json}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
