@@ -133,8 +133,9 @@ fn copy_of(
     found
 }
 
-/// A reference's dotted segments, a member left out (#188): what `Lookup::raw` reads.
-fn segments(r: &Ref) -> Vec<String> {
+/// A reference's dotted segments, its indices kept and a member left out (#188): what
+/// `Lookup::raw` reads (`valued::segments` stops at the first that is no field).
+fn read_segments(r: &Ref) -> Vec<String> {
     let mut segs: Vec<String> = vec![r.root.text.clone()];
     for s in &r.path {
         match s {
@@ -298,7 +299,7 @@ impl Lookup<'_> {
             return self.copy(r, sc, at).or_else(|| self.face_of_copy(r, sc));
         }
 
-        let mut segs = segments(r);
+        let mut segs = read_segments(r);
         // `next` and `prev` name the sibling copy, so the rest of the path is read in *its* scope
         let mut prefixes = sc.prefixes.clone();
         if (segs[0] == "next" || segs[0] == "prev") && segs.len() > 1 {
@@ -315,7 +316,7 @@ impl Lookup<'_> {
             let rest: Vec<String> = segs[take..].to_vec();
             for p in &prefixes {
                 let abs = format!("{p}{cand}");
-                if names.contains(&abs) && !(p.is_empty() && self.unread(&abs)) {
+                if names.contains(&abs) && !(p.is_empty() && self.unread(&abs, sc)) {
                     return Some((abs, rest));
                 }
                 if let Some(t) = alias.alias(&abs) {
@@ -323,7 +324,7 @@ impl Lookup<'_> {
                 }
             }
             if !sc.closed {
-                if names.contains(&cand) && !self.unread(&cand) { return Some((cand, rest)); }
+                if names.contains(&cand) && !self.unread(&cand, sc) { return Some((cand, rest)); }
                 if let Some(t) = alias.alias(&cand) { return self.alias_target(&t, &rest); }
             }
         }
@@ -331,15 +332,11 @@ impl Lookup<'_> {
         self.datum(&segs, sc)?.ok()
     }
 
-    /// Whether `name` is a standard datum's (`std.front`), where the drawing has them.
-    fn is_datum(&self, name: &str) -> bool {
+    /// Whether `name`, read by name from `sc`, is a standard datum its file does not read: a
+    /// module's `use std` makes them, and a file reads them by a `use std` of its own.
+    fn unread(&self, name: &str, sc: &Scope) -> bool {
         name.starts_with("std.") && !self.standard.files.is_empty()
-    }
-
-    /// Whether `name`, read by the document's own scope, is a standard datum it does not read:
-    /// a module's `use std` makes them, and the document reads them by a `use std` of its own.
-    fn unread(&self, name: &str) -> bool {
-        self.is_datum(name) && !self.standard.files.contains(&None)
+            && !self.standard.files.contains(&sc.module)
     }
 
     /// **A standard datum read in a definition's body** (#524): `std.front` there names the
@@ -356,13 +353,11 @@ impl Lookup<'_> {
         }
         let found = (2..=segs.len()).rev().find_map(|take| {
             let cand = segs[..take].join(".");
-            (self.is_datum(&cand) && self.names.contains(&cand))
-                .then(|| (cand, segs[take..].to_vec()))
+            self.names.contains(&cand).then(|| (cand, segs[take..].to_vec()))
         })?;
         // the innermost frame among the places it stands, each read where it was written
-        let frame = stands.iter().rev().find(|ip| {
-            let at = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(),
-                closed: ip.closed, module: ip.module, stands: None, ..sc.clone() };
+        let frame = stands.iter().rev().filter(|_| !self.standard.frames.is_empty()).find(|ip| {
+            let at = Scope { stands: None, ..Scope::written_at(ip, sc) };
             self.raw(&ip.plane, &at).is_some_and(|(abs, rest)| rest.is_empty() && self.frame(&abs))
         });
         Some(match frame {
@@ -515,7 +510,7 @@ impl Lookup<'_> {
                 if word == "next" { "next" } else { "previous" }
             ));
         }
-        if let Some(Err(frame)) = self.datum(&segments(r), sc) {
+        if let Some(Err(frame)) = self.datum(&read_segments(r), sc) {
             return (Code::E101, format!(
                 "`{}` names a datum of the frame its instance stands in, `{}`, and a frame's own \
                  datums are not drawn yet: pass the datum in, or draw the instance in no frame",
@@ -794,8 +789,7 @@ fn rewrite_decl(
     if let Some(r) = d.membership.plane_mut() {
         match (&sc.stamps.plane, from_instance) {
             (Some(ip), true) => {
-                let outer = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(),
-                    closed: ip.closed, module: ip.module, stands: ip.stands.clone(), ..sc.clone() };
+                let outer = Scope::written_at(ip, sc);
                 match look.find(r, &outer) {
                     Some((abs, rest)) => {
                         r.root = Name { text: abs, span: r.root.span };
@@ -824,8 +818,7 @@ fn rewrite_decl(
         let around = sc.stamps.rides.iter().chain(sc.stamps.plane.iter().filter(|_| own));
         let mut outer = Vec::new();
         for ip in around {
-            let at = Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(),
-                closed: ip.closed, module: ip.module, stands: ip.stands.clone(), ..sc.clone() };
+            let at = Scope::written_at(ip, sc);
             let mut r = ip.plane.clone();
             match look.find(&r, &at) {
                 Some((abs, rest)) => {

@@ -309,9 +309,10 @@ root; a relation word's closure, a traced body and the document's own scope have
 nothing else names it, `Lookup::raw` reads `std.front` in such a body through `Lookup::datum`: a
 standard datum's name (`Datums`), where the body's file says `use std` (`Datums::files`, the
 document's `None` or a module's index), and the drawing has them — made whenever any file read
-says `use std` (`Walk::new`), while the document's own scope reads them only by its own
-(`Lookup::unread`). Where a place it stands resolves, as written, to a frame (`Datums::frames`: a
-declaration written `frame`, or a reading at an instant whose source is one, `Lookup::frame`), it
+says `use std` (`Walk::new`, over `Program::uses_of`), while `std.front` read by its own spelling
+is a datum only to a file that says it (`Lookup::unread`). Where a place it stands resolves, read
+where it was written (`Scope::written_at`), to a frame (`Datums::frames`: a declaration written
+`frame`, or a reading at an instant whose source is one, `walk_reading_at`, `Lookup::frame`), it
 is refused rather than given the world's: `Lookup::missing` says E101, naming the frame, since a
 frame's own datums are not drawn yet. A plane is no frame, so `Tooth(…) in top` reads the world's.
 `tests/frame_datums.rs` is the gate (`a_body_reading_its_datums_at_the_root_stands_where_one_handed_them_does`,

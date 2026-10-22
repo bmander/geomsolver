@@ -4,6 +4,7 @@
 use gcs_core::program::{elaborate, Code, Elaborated};
 use gcs_core::syntax::parse;
 use gcs_core::modules::link;
+use crate::common::at;
 use crate::common::linked::{build, solved};
 
 /// A post standing on the front's origin, `len` up and 3 out: drawn in its view by its own
@@ -35,17 +36,12 @@ component Post(view: plane, o: point, len: Length) {
 }
 ";
 
-/// Where the named point stands in space.
-fn at(e: &Elaborated, name: &str) -> [f64; 3] {
-    let p = e.map.ent_named(name).unwrap_or_else(|| panic!("no `{name}`"));
-    e.sketch.world_point(p.i())
-}
-
+/// Two places alike to 1e-8.
 fn near(a: [f64; 3], b: [f64; 3]) -> bool {
-    (0..3).all(|k| (a[k] - b[k]).abs() < 1e-8)
+    (0..3).all(|k| crate::common::near(a[k], b[k]))
 }
 
-/// The diagnostics' codes and where each is, against the text.
+/// The E101 said at the first place `what` is written.
 fn refused<'a>(e: &'a Elaborated, src: &str, what: &str) -> &'a gcs_core::program::Diag {
     let at = src.find(what).unwrap_or_else(|| panic!("`{what}` is not in the text"));
     e.diags.iter().find(|d| d.code == Code::E101 && d.span.lo as usize == at)
@@ -130,6 +126,9 @@ fn a_body_standing_in_a_frame_is_refused_its_datums() {
                   in (arm := frame) {{\n  a := Arm()\n}}\n"), "`arm`"),
         (format!("{READS}component Arm() {{\n  in (g := frame) {{\n    p := Post(len: 40mm)\n  }}\n}}\n\
                   a := Arm()\n"), "`g`"),
+        // a frame read at an instant is a frame
+        (format!("{READS}f := frame\nf turns(1) std.z\nn := f at 30deg\n\
+                  p := Post(len: 40mm) in n\n"), "`n`"),
     ] {
         let e = build(&src);
         let d = refused(&e, &src, "std.front");

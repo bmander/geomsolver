@@ -240,6 +240,9 @@ impl<'a> Walk<'a> {
         let c = d.carried.as_ref().expect("a reading at an instant");
         let k = self.readings.len();
         self.readings.push((c.source.clone(), scope.clone()));
+        // a frame where what it reads is one (#524)
+        let abs = format!("{prefix}{}", d.name.key().text);
+        self.standard.frames.insert(abs, Some(self.readings[k].clone()));
         for (s, read) in super::carried::ways(st, d) {
             let sc = Scope { reading: Some((k, read)), ..scope.clone() };
             match &s.kind {
@@ -359,8 +362,6 @@ impl<'a> Walk<'a> {
         // a frame, which an instance standing in reads no standard datum of (#524)
         if d.bare {
             self.standard.frames.insert(abs.clone(), None);
-        } else if let Some(c) = &d.carried {
-            self.standard.frames.insert(abs.clone(), Some((c.source.clone(), scope.clone())));
         }
         if d.kind == crate::model::EntKind::Solid {
             self.solid_names.insert(abs.clone());
@@ -851,9 +852,7 @@ impl<'a> Walk<'a> {
         // the instance's own `in`, or the one already in force around it — both at once
         // nest (#383): the one around it is ridden on, as are the instance's further blocks
         let mut rides = scope.stamps.rides.clone();
-        let here = |plane: &Ref| InPlane { owner: scope.owner.clone(), plane: plane.clone(),
-                                           prefixes: scope.prefixes.clone(), closed: scope.closed,
-                                           module: scope.module, stands: scope.stands.clone() };
+        let here = |plane: &Ref| InPlane::at(plane, scope);
         let in_plane = match (inst.membership.plane(), &scope.stamps.plane) {
             // written here, in this scope: it resolves against these prefixes
             (Some(p), outer) => {
