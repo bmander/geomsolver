@@ -7,14 +7,17 @@ or `model/material.rs`, a `material(…)` group (`flatten::values::material`), a
 material's JSON (`io::material_json`) or report (`report::materials_json`); or `eigen.rs`,
 `sparse::Sym`, `sparse::Ldl` or `sparse::Pencil`; or `diagnose/analysis.rs`, `Structure::free`,
 `Structure::reach`, `BodyFaces::whole` or a scenario's report (`report::scenarios_json`); or
-`delaunay/refine/cells.rs`, `delaunay/refine/volume.rs` or `delaunay/tetra.rs`.
+`delaunay/refine/cells.rs`, `delaunay/refine/volume.rs` or `delaunay/tetra.rs`; or a case of
+`rust/examples/analysis/` or `tests/analysis_corpus*`.
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
 `rust/gcs-core/tests/scenarios.rs` for scenarios (P4), `rust/gcs-core/tests/materials.rs` for
-materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
-`rust/gcs-core/tests/analysis_words.rs` for the diagnosis words (P7) and
-`rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6), unless a rule names another.
+materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
+`rust/gcs-core/tests/analysis_words.rs` for the diagnosis words (P7),
+`rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6) and
+`rust/gcs-core/tests/analysis_corpus.rs` for the verification corpus (P8), unless a rule names
+another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -416,3 +419,93 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
   cells have one size, with no grading toward a feature or a load. The volume is built in the
   terminal and the tests only, not in the page's mesh worker. A `MaterialField` is a `Domain`
   like any other, but no gate fills one yet.
+
+- **The verification corpus is documents** (#510 P8). Each analytic case every analysis is held
+  to is a Solvent document in `rust/examples/analysis/`: a solid made of a material, and a
+  `scenario` whose claims bracket the case's answer. The README's table is the list of cases,
+  their references and the stage that first answers each. The corpus claims its answers and
+  never drives by them: a driving row or a bound in a case fails the gate. Each document states
+  its own tolerance in its claims. `Case` (the test's table) holds, for each, the solid it is
+  about, how it is read, the function that works out its answers (`Case::answers`) and how finely
+  the oracle meshes it. Every file in the directory is a case, and the README's table reads each
+  as `Case` does (`the_corpus_is_its_files`). The documents join the library's own suites
+  through `fixtures::examples`.
+
+- **A claim is its own drawing's answer** (#510 P8; `each_case_claims_its_own_answer`). The
+  reference is worked out from the solved drawing, not from the document's text: its size from
+  the exact solid's extent and its points, its material from the solid's `of` (SI, read back
+  into the document's units), and its loads from the scenario. Each bracket the document claims
+  must then be the case's factors on that reference. That is to the last bit for a bracket
+  written as an expression (`0.99 * bending`, `bending := P * L^3 / (3 * steel.E * I)`), and to
+  the written figures for one written as a number (a Rayleigh–Lamb root, a NAFEMS value). A
+  benchmark's dimensions are SI constants beside its reference (`closed::LE1_ELLIPSES`), compared
+  through the document's units. No claim may be left over.
+  So a document whose geometry, material or load drifts from what its claims assume fails here,
+  before any analysis reads it. The cantilever's bracket holds Euler–Bernoulli's tip deflection
+  (a frame's answer) and Timoshenko's (a solid's, 0.2% more) both
+  (`the_cantilevers_bracket_holds_both_beams`).
+
+- **The closed forms are held to their equations** (#510 P8; `analysis_corpus/closed.rs`), so a
+  wrong reference cannot pass a right analysis:
+  - the cantilever's deflection solves the beam equation with its moment `P (L − x)`, and its
+    root `β₁L` solves `1 + cos x cosh x = 0`;
+  - Euler's load closes the buckled column at its free head (`kL = π/2`);
+  - Lamé's stresses are in equilibrium, carry the pressure at the bore and nothing outside, and
+    are compatible with one displacement, whose von Mises stress is greatest at the bore;
+  - Kirsch's field is in equilibrium, free at the hole, the pull far off, and three times it at
+    the hole's edge square to the pull; Heywood's finite width tends to it;
+  - the plate's frequency is a root of the flexural Rayleigh–Lamb equation. It falls short of
+    Kirchhoff's by the square of the thinness and becomes a Rayleigh wave when thick. A double
+    cancels the equation's two terms to `(kh)⁵`, so it is checked no thinner than `h/a = 0.01`.
+    Its first six modes come as (1, 1), a pair, (2, 2) and a pair.
+
+  The plate's supports are diaphragms: each edge face is held along the edge and across the
+  plate, and free square to it. Under them the modes are exact in three dimensions at any
+  thickness. A NAFEMS reference is the publication's number, with its source named. The closed
+  forms' root finding is their own bisection, not the core's: a reference owes nothing to what
+  it checks.
+
+- **CalculiX is the oracle** (#510 P8; `analysis_corpus/ccx.rs`, `make test-ccx`, the feature
+  `gcs-core/ccx`, with `ccx` and `gmsh` on the path). It is in the tests alone, as OCCT is for
+  `brep/`. Each case's solid is built by this kernel and written as STEP (`brep::step::write`).
+  gmsh meshes it in C3D10, or meshes the face it sweeps in CPS6 for a case read in the plane.
+  Every midside node is checked to sit on its edge, so the element order is Abaqus's. A boundary
+  facet belongs to the face of the solid whose surface is nearest its middle, and every node of
+  the facet must lie on that surface to ten times the STEP file's tolerance (1 µm), read by this
+  kernel's own `Surface::inverse`. A face path (`beam.root`) names the facets by the face's own
+  name (`Exact::named`).
+  - Supports hold every node of a face, or the node nearest a point, along the world axis
+    `along:` names.
+  - A force on a face is a uniform traction. A pressure is integrated over each quadratic facet
+    and pushes into the material.
+  - The deck is in SI, its mesh written once and included by each step's deck, each asking
+    only for the results its brackets read. A plane deck turns the drawing's z into CalculiX's y.
+    It drops a point held across the thickness (the solid reading's), refuses any other hold
+    across it, and refuses a solid whose caps are not square to y (`swept_across_y`).
+  - A deflection at a point is interpolated by the shape functions of the element that holds
+    it. A factor of safety is the yield over the greatest nodal von Mises stress. A mode and a
+    buckling factor are read from the `.dat`. A mass is the B-rep's volume times the density.
+
+  The cases are independent and run side by side, one thread and one directory each. Every
+  claim the corpus states is kept; the test prints each answer beside its reference. That
+  agreement is the evidence that each document says what its reference says: the supports, the
+  units, the load's sign, and the axes, the front being x and z. It is also what S0–S3's own
+  answers will be put beside.
+
+- **How a case is read is the corpus's, not yet the language's** (#510 P8). `Reading::Plane`
+  reads a case in plane stress over the face its solid sweeps, its depth the thickness; the
+  oracle reads it so only for a solid swept across y. A hold across the thickness (`pinned m along:
+  std.y`) is the solid reading's, taking out what the symmetry cuts leave free. How a document
+  asks to be read in the plane is S2's to decide. Until it does, FV32 read as a solid bends out
+  of its plane far below the in-plane modes it claims.
+
+- **What P8 leaves.**
+  - **The frame cases** (a cantilever, Euler's column, NAFEMS FV2) wait on how S0 writes a
+    section. The beam's closed forms are already `closed.rs`'s.
+  - **NAFEMS LE10's target** is a component of stress at a point, which no output word reads
+    (an open decision of the requirement words).
+  - **NAFEMS FV52's supports** are published two ways, the lower edges or the middle plane's.
+    The case waits for the publication in hand, and `plate_modes.sv` is the same physics with
+    supports under which the answer is exact.
+  - **The oracle lays no body load**, holds only along the world's axes, reads no compliance and
+    meshes one primitive's faces by name. Each is refused by name, where a later case needs it.

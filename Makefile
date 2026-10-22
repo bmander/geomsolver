@@ -27,7 +27,7 @@ WASM_TARGET := wasm32-unknown-unknown
 HOST := $(shell rustc -vV | sed -n 's/^host: //p')
 RELEASE := $(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-ffi
 
-.PHONY: all wasm solventc release test test-rust test-web test-slow bench fmt clippy clean
+.PHONY: all wasm solventc release test test-rust test-web test-slow test-ccx bench fmt clippy clean
 
 all: build/libgcs$(EXT)
 
@@ -86,6 +86,12 @@ test-web: wasm
 # change to the gear example or the native export lands, not on every edit.
 test-slow: all
 	$(CARGO) test --manifest-path rust/Cargo.toml --features gcs-core/slow,gcs-cli/slow$(if $(filter 1,$(OCCT)),$(comma)gcs-cli/occt,)
+
+# #510's verification corpus judged by CalculiX (`feature = "ccx"`): each case of
+# rust/examples/analysis meshed by gmsh and solved by ccx, both on the path, against the claims its
+# document states.
+test-ccx:
+	$(CARGO) test --manifest-path rust/Cargo.toml -p gcs-core --features gcs-core/ccx analysis_corpus::
 
 bench: wasm
 	$(CARGO) run --manifest-path rust/Cargo.toml --release -p gcs-core --bin bench
