@@ -27,21 +27,21 @@ param tip_relief := 0.2mm
 param end_relief := 0.2mm
 // The members are `pair.pinion.body` and `pair.gear.body`. The face mill's settings are only
 // seeded (`hint`): the seed says where the search begins, never where it ends.
-pair := HypoidPair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
+pair := HypoidPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   spiral_angle: spiral_angle, backlash: backlash, tip_relief: tip_relief, end_relief: end_relief,
   pressure_shift: hint(10deg), cutter_radius: hint(80mm))
 
 // -- the pair ----------------------------------------------------------------------------------
-// The steps a designer takes, each a component below, on the pitch plane P with `across` (the
-// gear's axis stands square to it) and `up`. The formals the call leaves out are unknowns: the
-// normal module `mn`, which the trace sets; the pinion's pitch radius at M, `rp`, and the bevel
-// pinion's pitch angle, `pa`, which the pinion's cone sets. The face mill's `pressure_shift` and
-// `cutter_radius` are found by the balance.
-component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_teeth: Int,
-    mean_module: Length, shaft_angle: Angle, offset: Length, spiral_angle: Angle,
-    backlash: Length, tip_relief: Length, end_relief: Length, mn: Length, rp: Length, pa: Angle,
-    pressure_shift: Angle, cutter_radius: Length) {
+// The steps a designer takes, each a component below, on the pitch plane P — the `std.top` of the
+// frame the pair stands in — with `across`, its `std.y` (the gear's axis stands square to it), and
+// `up`, its `std.z`. The formals the call leaves out are unknowns: the normal module `mn`, which
+// the trace sets; the pinion's pitch radius at M, `rp`, and the bevel pinion's pitch angle, `pa`,
+// which the pinion's cone sets. The face mill's `pressure_shift` and `cutter_radius` are found by
+// the balance.
+component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, shaft_angle: Angle,
+    offset: Length, spiral_angle: Angle, backlash: Length, tip_relief: Length, end_relief: Length,
+    mn: Length, rp: Length, pa: Angle, pressure_shift: Angle, cutter_radius: Length) {
   // The proportions: the crown's tooth count (the hypotenuse of the gear's triangle, in teeth),
   // the mean cone distance R, and the depths in normal modules.
   crown_teeth := sqrt(pinion_teeth^2 + gear_teeth^2)
@@ -53,12 +53,12 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
   rounding := 0.3 * mn
 
   // The pitch cones and the tooth trace.
-  gear_cone := GearCone(P, across, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
+  gear_cone := GearCone(std.top, std.y, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
     mean_module: mean_module)
-  trace := ToothTrace(P, gear_cone, R: R, spiral_angle: spiral_angle, mean_module: mean_module,
-    mn: mn, cutter_radius: cutter_radius)
-  pinion_cone := PinionCone(P, up, gear_cone, trace, shaft_angle: shaft_angle, offset: offset,
-    rp: rp, pa: pa)
+  trace := ToothTrace(std.top, gear_cone, R: R, spiral_angle: spiral_angle,
+    mean_module: mean_module, mn: mn, cutter_radius: cutter_radius)
+  pinion_cone := PinionCone(std.top, std.z, gear_cone, trace, shaft_angle: shaft_angle,
+    offset: offset, rp: rp, pa: pa)
 
   // The blanks.
   blank_design := {width: 0.2 * R, addendum: addendum, back: 4 * mn, relief: end_relief}
@@ -66,7 +66,7 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
   pinion_blank := Blank(pinion_cone.pitch_line, pinion_cone.ax, blank_design)
 
   // The face mill.
-  mill := FaceMill(P, gear_cone, trace, R: R, mean_module: mean_module, pressure: pressure,
+  mill := FaceMill(std.top, gear_cone, trace, R: R, mean_module: mean_module, pressure: pressure,
     pressure_shift: pressure_shift, cutter_radius: cutter_radius, dedendum: dedendum, base: base)
 
   // The rolls. The crown turns about its axis at O and meshes with each member tooth for tooth,
@@ -102,7 +102,7 @@ component HypoidPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_t
     material: pinion_blank.material, body: pinion.body}
 
   // The face mill's two settings, found.
-  balance := Balanced(P, gear_cone, trace, mill.ax, mill.inner_flank, mill.outer_flank,
+  balance := Balanced(std.top, gear_cone, trace, mill.ax, mill.inner_flank, mill.outer_flank,
     crown_roll, pinion_roll, gear_roll, R: R, face: blank_design.width, depth: addendum,
     cutter_radius: cutter_radius)
 

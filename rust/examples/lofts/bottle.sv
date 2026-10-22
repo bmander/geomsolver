@@ -22,9 +22,9 @@ rise := 60mm
 height := 90mm
 apart := 80mm
 
-component Ring(g: path, up: axis, front: plane, rail: path, s: Scalar) {
-  st := std.On(g, up: up, s: s)
-  rim := point in st.n, front
+component Ring(g: path, rail: path, s: Scalar) {
+  st := std.On(g, up: std.y, s: s)
+  rim := point in st.n, std.front
   rim coincident rail
   in st.n {
     k := circle(center: st.n.origin)
@@ -66,6 +66,6 @@ in std.front {
   rail := spline(through: rims2, start: whole, end: whole)
 }
 param s: Scalar over (0, 2)
-ruled := sweep(Ring(axis, std.y, std.front, rims).f over s)
+ruled := sweep(Ring(axis, rims).f over s)
 param s2: Scalar over (0, 1)
-smooth := sweep(Ring(whole, std.y, std.front, rail, s: s2).f over s2)
+smooth := sweep(Ring(whole, rail, s: s2).f over s2)

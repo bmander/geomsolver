@@ -70,7 +70,7 @@ reserved word or a builtin of the fixity E071 — `constraints::builtin_word` �
 is asked of every definition (`program/words.rs`) and blocks its expansion. A body is one relation
 or several with their declarations (#103); none is defined in a body. `horizontal`/`vertical` between points live in `rust/lib/std.sv`; the printer
 writes `level(up)` (`print::ordinate_text`). `tests/relation_words.rs` is the gate. E071 is a
-component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std`. A drawn callout drops a
+component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std` — a definition's body, its file's ([0.167]). A drawn callout drops a
 module path (`relations::unqualified`), and a module with a `preview` draws its own dimensions
 there and not in a document using it (`Constraint::elsewhere`, [app.md](app.md)).
 
@@ -300,8 +300,25 @@ reads silenced (`read_through`); a relation reading one is not stated. Text faul
 `interfaces::check` (E071/E001/E101/E003). `hypoid.sv`'s `Gear`, `Trace`, `BlankDesign`;
 `tests/interfaces.rs` is the gate.
 
-**Closed components:** model dependencies enter through arguments, standard datums included.
-Definitions and built-ins stay callable. **A definition reads the constants of its file**
+**Closed components:** model dependencies enter through arguments. Definitions and built-ins stay
+callable. **A definition's standard datums are those of the frame it stands in** ([0.167], #524):
+the one name a body reads unhanded. `walk_instance` gives the body's scope `Scope::stands`, every
+`in` around the call and around each call enclosing it (`Stamps::{rides, plane}`, each an
+`InPlane` carrying the file and the place it was written in), outermost first and empty at the
+root; a relation word's closure, a traced body and the document's own scope have none. Where
+nothing else names it, `Lookup::raw` reads `std.front` in such a body through `Lookup::datum`: a
+standard datum's name (`Datums`), where the body's file says `use std` (`Datums::files`, the
+document's `None` or a module's index), and the drawing has them — made whenever any file read
+says `use std` (`Walk::new`), while the document's own scope reads them only by its own
+(`Lookup::unread`). Where a place it stands resolves, as written, to a frame (`Datums::frames`: a
+declaration written `frame`, or a reading at an instant whose source is one, `Lookup::frame`), it
+is refused rather than given the world's: `Lookup::missing` says E101, naming the frame, since a
+frame's own datums are not drawn yet. A plane is no frame, so `Tooth(…) in top` reads the world's.
+`tests/frame_datums.rs` is the gate (`a_body_reading_its_datums_at_the_root_stands_where_one_handed_them_does`,
+`nested_instances_read_the_same_datums`,
+`a_modules_definition_reads_its_datums_by_the_modules_own_use`,
+`a_body_standing_in_a_frame_is_refused_its_datums`, `a_plane_is_no_frame`,
+`a_relation_word_still_reads_only_its_operands`). **A definition reads the constants of its file**
 ([0.160], #461 PC1, PC2): `Walk::file_numbers` works out, once a file, the numbers the file reads at
 its top — a module's own and its `use`s' (`used_params`, `imported_params`, `module_params`), the
 document's from its root table less its root instances' numbers and its `preview`'s — and splits

@@ -7,7 +7,8 @@ follows from lines, angles, incidence and the stated numbers; no constraint, and
 feeds one, computes a point with `sin` and `cos`.
 
 **One file, `hypoid.sv`.** Its head is the pair as a designer states it — the `param`s — and
-one call, `pair := HypoidPair(std.top, std.y, std.z, …)`, passing them on by name. The component
+one call, `pair := HypoidPair(pinion_teeth: pinion_teeth, …)`, passing them on by name; the pair
+stands on its frame's `std.top`, which it reads itself (#524). The component
 `HypoidPair` reads as the steps a designer takes, each a component of its own below it, so every
 name the pair makes is under `pair` (`pair.pinion.body`, `pair.gear_cone.M`, `pair.mill.ax`).
 **No point is seeded** but each blade's apex and foot, started on the side its cone opens to as

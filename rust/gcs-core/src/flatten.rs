@@ -136,6 +136,11 @@ struct Scope {
     /// way: the index into `Walk::readings` and what its source must be for this to be the one
     /// kept (`carried`, `Walk::settle_readings`).
     reading: Option<(usize, carried::Read)>,
+    /// **Where a definition's body stands** (#524): the `in`s around its instance's call and
+    /// around every call enclosing it, outermost first — what `std.front` in the body names the
+    /// datums of (`Lookup::datum`).  Empty at the root, the world.  `None` outside a definition's
+    /// body: the document's own scope, a relation word's, a traced body's.
+    stands: Option<std::rc::Rc<Vec<InPlane>>>,
 }
 
 /// The numbers in force outside a closed component's body (`Scope::forbidden`): the scope the
@@ -269,6 +274,20 @@ struct InPlane {
     plane: Ref,
     prefixes: Vec<String>,
     closed: bool,
+    /// The file and the place it was written in (`Scope::{module, stands}`): what a standard
+    /// datum it names is read by (#524).
+    module: Option<usize>,
+    stands: Option<std::rc::Rc<Vec<InPlane>>>,
+}
+
+/// **The standard datums** (#524), as a definition's body reads them: the files that say `use
+/// std` — the document (`None`) or a module — and every frame declared, by absolute name, which
+/// an instance standing in refuses them.  A frame declared bare is one (`None`); a reading at an
+/// instant (`Decl::carried`) is one where its source, read where it was written, is.
+#[derive(Clone, Default)]
+struct Datums {
+    files: BTreeSet<Option<usize>>,
+    frames: BTreeMap<String, Option<(Ref, Scope)>>,
 }
 
 pub struct Expansion {
@@ -474,8 +493,10 @@ struct Walk<'a> {
     /// arguments) carries no span and so is read at most once, which costs nothing: it labels
     /// every number by construction.
     called: BTreeSet<Span>,
-    /// The document says `use std`, so it has the standard datums (`StandardDatums`).
+    /// A file read says `use std`, so the drawing has the standard datums (`StandardDatums`).
     standard_datums: bool,
+    /// Who reads them, and the frames that refuse them — see `Datums`.
+    standard: Datums,
     group_names: BTreeSet<String>,
     /// Every interface of the program, resolved once (`interfaces::shapes`).
     shapes: Vec<std::rc::Rc<interfaces::Shape>>,
@@ -699,10 +720,16 @@ impl<'a> Walk<'a> {
             StmtKind::Group(g) => g.name.text == "std",
             _ => false,
         });
-        // the datums are the standard library's names like any other (§14.4): the document
-        // reaches `std.front` through a `use std` of its own
-        let used = prog.uses.iter().any(|u| u.name == "std");
-        let standard_datums = sym.is_none() && standard.is_some() && used && !shadowed;
+        // the datums are the standard library's names like any other (§14.4): a file reaches
+        // `std.front` through a `use std` of its own — the document at its root and in its
+        // definitions, a module in its definitions (#524) — and they are made where any does
+        let says = |uses: &[crate::syntax::Use]| uses.iter().any(|u| u.name == "std");
+        let modules = prog.modules.iter().enumerate().filter(|(_, m)| says(&m.uses));
+        let files: BTreeSet<Option<usize>> = says(&prog.uses).then_some(None).into_iter()
+            .chain(modules.map(|(k, _)| Some(k)))
+            .collect();
+        let standard_datums =
+            sym.is_none() && standard.is_some() && !files.is_empty() && !shadowed;
         Walk {
             private_names: BTreeMap::new(),
             prog,
@@ -725,6 +752,10 @@ impl<'a> Walk<'a> {
             diagnostics: Vec::new(),
             called: BTreeSet::new(),
             standard_datums,
+            standard: Datums {
+                files: if standard_datums { files } else { BTreeSet::new() },
+                frames: BTreeMap::new(),
+            },
             group_names: BTreeSet::new(),
             shapes: interfaces::shapes(prog),
             typed: BTreeMap::new(),
@@ -774,7 +805,7 @@ impl<'a> Walk<'a> {
     }
 
     /// The standard datums' component and the scope its statements are walked in, where the
-    /// document has them (`use std`).
+    /// drawing has them (a `use std` in any file read).
     fn datums(&self) -> Option<(&'a Component, Scope)> {
         if !self.standard_datums {
             return None;

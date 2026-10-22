@@ -21,9 +21,8 @@ size := 2mm
 pitch := 4mm
 turns := 3
 
-component Flight(base: plane, off: Length, w: Length, h: Length, pitch: Length, turns: Scalar,
-                 s: Scalar) {
-  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
+component Flight(off: Length, w: Length, h: Length, pitch: Length, turns: Scalar, s: Scalar) {
+  st := std.Helix(std.top, pitch: pitch, turns: turns, s: s)
   in st.n {
     a := point
     b := point
@@ -52,5 +51,4 @@ in screw {
   sec := face(sq.loop)
 }
 thread := sweep(sec over s)
-flight := sweep(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f
-                over s)
+flight := sweep(Flight(off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f over s)

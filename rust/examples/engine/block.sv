@@ -22,95 +22,95 @@ part MainBearingSide(jc: point) {
   cap := engine.parts.Box(jc, x0: -wmb / 2, y0: -(rmb + capd), x1: wmb / 2, y1: -rmb)
 }
 
-part EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point, o_t: point) {
+part EngineBlock() {
   // -- along the axis: the section through cylinder 1 -------------------------------------
-  in end {
+  in std.side {
     // the bore's walls, `wall` deep below the deck
-    bl0 := point hint((o.x - D / 2, o.y + deck))
-    br0 := point hint((o.x + D / 2, o.y + deck))
-    bl1 := engine.parts.At(o, dx: -D / 2, dy: deck - wall)
-    br1 := engine.parts.At(o, dx: D / 2, dy: deck - wall)
+    bl0 := point hint((std.side.origin.x - D / 2, std.side.origin.y + deck))
+    br0 := point hint((std.side.origin.x + D / 2, std.side.origin.y + deck))
+    bl1 := engine.parts.At(std.side.origin, dx: -D / 2, dy: deck - wall)
+    br1 := engine.parts.At(std.side.origin, dx: D / 2, dy: deck - wall)
     wall_l := line(bl0, bl1.p)
     wall_r := line(br0, br1.p)
-    bl0 offset(dx: -D / 2, dy: deck) o
-    o distance(deck, along: v) br0
+    bl0 offset(dx: -D / 2, dy: deck) std.side.origin
+    std.side.origin distance(deck, along: v) br0
     bl0 distance(D) br0
     // the outline: deck, walls, skirt, pan rail
-    d_l := point hint((o.x - hw, o.y + deck))
-    d_r := point hint((o.x + hw, o.y + deck))
-    s_l := engine.parts.At(o, dx: -hw, dy: 110mm)
-    s_r := engine.parts.At(o, dx: hw, dy: 110mm)
-    k_l := engine.parts.At(o, dx: -kw, dy: 30mm)
-    k_r := engine.parts.At(o, dx: kw, dy: 30mm)
-    pr_l := point hint((o.x - kw, o.y + rail))
-    pr_r := point hint((o.x + kw, o.y + rail))
+    d_l := point hint((std.side.origin.x - hw, std.side.origin.y + deck))
+    d_r := point hint((std.side.origin.x + hw, std.side.origin.y + deck))
+    s_l := engine.parts.At(std.side.origin, dx: -hw, dy: 110mm)
+    s_r := engine.parts.At(std.side.origin, dx: hw, dy: 110mm)
+    k_l := engine.parts.At(std.side.origin, dx: -kw, dy: 30mm)
+    k_r := engine.parts.At(std.side.origin, dx: kw, dy: 30mm)
+    pr_l := point hint((std.side.origin.x - kw, std.side.origin.y + rail))
+    pr_r := point hint((std.side.origin.x + kw, std.side.origin.y + rail))
     (deckline := line(d_l, d_r)) -> (b_r := line(d_r, s_r.p)) -> (sk_r := line(s_r.p, k_r.p)) ->
       (kr := line(k_r.p, pr_r)) -> (railline := line(pr_r, pr_l)) -> (kl := line(pr_l, k_l.p)) ->
       (sk_l := line(k_l.p, s_l.p)) -> (b_l := line(s_l.p, d_l)) -> close
-    d_l offset(dx: -hw, dy: deck) o
-    o distance(deck, along: v) d_r
+    d_l offset(dx: -hw, dy: deck) std.side.origin
+    std.side.origin distance(deck, along: v) d_r
     d_l distance(2 * hw) d_r
-    pr_l offset(dx: -kw, dy: rail) o
-    o distance(rail, along: v) pr_r
+    pr_l offset(dx: -kw, dy: rail) std.side.origin
+    std.side.origin distance(rail, along: v) pr_r
     pr_l distance(2 * kw) pr_r
     // the main bearing behind the section: the shell round the journal, hidden, and the cap
     // below the parting line at the crank's axis
-    shell := circle(center: o) hint(r: rmb)
+    shell := circle(center: std.side.origin) hint(r: rmb)
     radius(rmb) shell
-    c_l := point hint((o.x - (rmb + capd), o.y))
-    c_r := point hint((o.x + (rmb + capd), o.y))
-    cap := arc(center: o, start: c_l, end: c_r) hint(r: rmb + capd)
+    c_l := point hint((std.side.origin.x - (rmb + capd), std.side.origin.y))
+    c_r := point hint((std.side.origin.x + (rmb + capd), std.side.origin.y))
+    cap := arc(center: std.side.origin, start: c_l, end: c_r) hint(r: rmb + capd)
     radius(rmb + capd) cap
     parting := line(c_l, c_r)
-    o horizontal c_l
-    o horizontal c_r
+    std.side.origin horizontal c_l
+    std.side.origin horizontal c_r
     // the sump
-    sh_l := engine.parts.At(o, dx: -kw, dy: rail - 30mm)
-    sh_r := engine.parts.At(o, dx: kw, dy: rail - 30mm)
-    sp_l := point hint((o.x - 60mm, o.y + sump))
-    sp_r := point hint((o.x + 60mm, o.y + sump))
+    sh_l := engine.parts.At(std.side.origin, dx: -kw, dy: rail - 30mm)
+    sh_r := engine.parts.At(std.side.origin, dx: kw, dy: rail - 30mm)
+    sp_l := point hint((std.side.origin.x - 60mm, std.side.origin.y + sump))
+    sp_r := point hint((std.side.origin.x + 60mm, std.side.origin.y + sump))
     (su_r := line(pr_r, sh_r.p)) -> (ss_r := line(sh_r.p, sp_r)) -> (sb := line(sp_r, sp_l)) ->
       (ss_l := line(sp_l, sh_l.p)) -> (su_l := line(sh_l.p, pr_l))
-    sp_l offset(dx: -60, dy: sump) o
-    o distance(60, along: u) sp_r
-    sp_r distance(-sump, along: v) o
+    sp_l offset(dx: -60, dy: sump) std.side.origin
+    std.side.origin distance(60, along: u) sp_r
+    sp_r distance(-sump, along: v) std.side.origin
   }
 
   // -- across the axis: the casting edge on -----------------------------------------------
-  in side {
-    bfl := point hint((o_s.x + front, o_s.y + deck))
-    bfr := point hint((o_s.x + back, o_s.y + deck))
-    rfl := point hint((o_s.x + front, o_s.y + rail))
-    rfr := point hint((o_s.x + back, o_s.y + rail))
+  in std.front {
+    bfl := point hint((std.origin.x + front, std.origin.y + deck))
+    bfr := point hint((std.origin.x + back, std.origin.y + deck))
+    rfl := point hint((std.origin.x + front, std.origin.y + rail))
+    rfr := point hint((std.origin.x + back, std.origin.y + rail))
     dl := line(bfl, bfr)
     blockfront := line(bfl, rfl)
     blockback := line(bfr, rfr)
     rl := line(rfl, rfr)
-    o_s distance(front, along: u) bfl
-    o_s distance(front, along: u) rfl
-    o_s distance(back, along: u) rfr
+    std.origin distance(front, along: u) bfl
+    std.origin distance(front, along: u) rfl
+    std.origin distance(back, along: u) rfr
     horizontal dl
     horizontal rl
     bfl distance(back - front) bfr
     // the sump: shallow at the front, deep at the back
-    q_a := point hint((o_s.x + front + 15mm, o_s.y + rail))
-    q_b := point hint((o_s.x + front + 45mm, o_s.y + sump + 45mm))
-    q_c := point hint((o_s.x + front + 150mm, o_s.y + sump))
-    q_d := point hint((o_s.x + back - 40mm, o_s.y + sump))
-    q_e := point hint((o_s.x + back - 10mm, o_s.y + rail))
+    q_a := point hint((std.origin.x + front + 15mm, std.origin.y + rail))
+    q_b := point hint((std.origin.x + front + 45mm, std.origin.y + sump + 45mm))
+    q_c := point hint((std.origin.x + front + 150mm, std.origin.y + sump))
+    q_d := point hint((std.origin.x + back - 40mm, std.origin.y + sump))
+    q_e := point hint((std.origin.x + back - 10mm, std.origin.y + rail))
     (s1 := line(q_a, q_b)) -> (s2 := line(q_b, q_c)) -> (s3 := line(q_c, q_d)) -> (s4 := line(q_d, q_e))
     q_a coincident rl
     q_e coincident rl
-    o_s distance(front + 15mm, along: u) q_a
-    o_s distance(back - 10mm, along: u) q_e
-    o_s distance(front + 45mm, along: u) q_b
+    std.origin distance(front + 15mm, along: u) q_a
+    std.origin distance(back - 10mm, along: u) q_e
+    std.origin distance(front + 45mm, along: u) q_b
     q_d distance(45, along: v) q_b
-    o_s distance(front + 150mm, along: u) q_c
-    o_s distance(back - 40mm, along: u) q_d
+    std.origin distance(front + 150mm, along: u) q_c
+    std.origin distance(back - 40mm, along: u) q_d
     horizontal s3
     // the four bores, their walls down from the deck
     repeat 4 as i {
-      ax := engine.parts.At(o_s, dx: front + 25mm + P / 2 + i * P, dy: 0mm)
+      ax := engine.parts.At(std.origin, dx: front + 25mm + P / 2 + i * P, dy: 0mm)
       wl0 := point hint((ax.p.x - D / 2, ax.p.y + deck))
       wr0 := point hint((ax.p.x + D / 2, ax.p.y + deck))
       wl1 := point hint((ax.p.x - D / 2, ax.p.y + deck - wall))
@@ -128,26 +128,26 @@ part EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point, o_t:
     }
     // the five bulkheads and their main bearings
     repeat 5 as j {
-      jc := engine.parts.At(o_s, dx: front + 25mm + j * P, dy: 0mm)
+      jc := engine.parts.At(std.origin, dx: front + 25mm + j * P, dy: 0mm)
       bearing := MainBearingSide(jc.p)
     }
     claim ax[0].p distance(P) ax[1].p
   }
 
   // -- from above: the deck and the bores -----------------------------------------------
-  in top {
-    fl := point hint((o_t.x + front, o_t.y - hw))
-    fr := point hint((o_t.x + back, o_t.y - hw))
-    br := point hint((o_t.x + back, o_t.y + hw))
-    bl := point hint((o_t.x + front, o_t.y + hw))
+  in std.top {
+    fl := point hint((std.top.origin.x + front, std.top.origin.y - hw))
+    fr := point hint((std.top.origin.x + back, std.top.origin.y - hw))
+    br := point hint((std.top.origin.x + back, std.top.origin.y + hw))
+    bl := point hint((std.top.origin.x + front, std.top.origin.y + hw))
     (e1 := line(fl, fr)) -> (e2 := line(fr, br)) -> (e3 := line(br, bl)) -> (e4 := line(bl, fl)) -> close
     horizontal e1
     vertical e2
     horizontal e3
     vertical e4
     repeat 4 as i {
-      c := point hint((o_t.x + front + 25mm + P / 2 + i * P, o_t.y))
-      o_t horizontal c
+      c := point hint((std.top.origin.x + front + 25mm + P / 2 + i * P, std.top.origin.y))
+      std.top.origin horizontal c
       bore := circle(center: c) hint(r: D / 2)
       radius(D / 2) bore
     }
@@ -172,17 +172,17 @@ part EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point, o_t:
   // less a bay for the crank between each pair of bulkheads, open below the rail to the sump;
   // the bulkheads are what is left, bored for the main bearings.  The sump is hung under the
   // rail: the end view's pan run along the axis, as deep as the side view's floor at each station.
-  in end {
+  in std.side {
     // a bay's section: `rbay` either side of the bore axis, from below the rail up to where the
     // bores end, so the crank and the rods' big ends swing clear inside it
-    construction bay0 := point hint((o.x - rbay, o.y + rail - 1mm))
-    construction bay1 := point hint((o.x + rbay, o.y + rail - 1mm))
-    construction bay2 := point hint((o.x + rbay, o.y + deck - wall))
-    construction bay3 := point hint((o.x - rbay, o.y + deck - wall))
-    bay0 offset(dx: -rbay, dy: rail - 1mm) o
-    bay1 offset(dx: rbay, dy: rail - 1mm) o
-    bay2 offset(dx: rbay, dy: deck - wall) o
-    bay3 offset(dx: -rbay, dy: deck - wall) o
+    construction bay0 := point hint((std.side.origin.x - rbay, std.side.origin.y + rail - 1mm))
+    construction bay1 := point hint((std.side.origin.x + rbay, std.side.origin.y + rail - 1mm))
+    construction bay2 := point hint((std.side.origin.x + rbay, std.side.origin.y + deck - wall))
+    construction bay3 := point hint((std.side.origin.x - rbay, std.side.origin.y + deck - wall))
+    bay0 offset(dx: -rbay, dy: rail - 1mm) std.side.origin
+    bay1 offset(dx: rbay, dy: rail - 1mm) std.side.origin
+    bay2 offset(dx: rbay, dy: deck - wall) std.side.origin
+    bay3 offset(dx: -rbay, dy: deck - wall) std.side.origin
   }
   casting := solid(face(deckline, b_r, sk_r, kr, railline, kl, sk_l, b_l), from: front, to: back)
   repeat 4 as i {
@@ -206,5 +206,5 @@ part EngineBlock(end: plane, side: plane, top: plane, o: point, o_s: point, o_t:
 // it in, about the world's origin, and the casting and its sump as solids.
 preview {
   unit mm
-  block := EngineBlock(std.side, std.front, std.top, std.side.origin, std.origin, std.top.origin)
+  block := EngineBlock()
 }

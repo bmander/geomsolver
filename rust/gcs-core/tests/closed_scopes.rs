@@ -79,11 +79,13 @@ layout := Layout()
     assert_eq!(diagnose::diagnose(&mut e.sketch, Default::default()).dof, 0);
 }
 #[test]
-fn components_cannot_capture_global_unknowns_geometry_or_standard_datums() {
+fn components_cannot_capture_global_unknowns_or_geometry() {
     for src in [
         "use std\nparam length: Scalar hint(20)\ncomponent Bad() { a := point\nb := point\na distance(length) b }\nin std.front {\nb := Bad()\n}\n",
         "use std\nin std.front {\na := point\n}\ncomponent Bad() { fix((0, 0)) a }\nin std.front {\nb := Bad()\n}\n",
-        "use std\ncomponent Bad() { ax := line(std.origin, hint((0, 1))) }\nin std.front {\nb := Bad()\n}\n",
+        // a standard datum is the frame's the instance stands in, and a frame's are not drawn
+        // yet (#524): `frame_datums.rs`
+        "use std\ncomponent Bad() { ax := line(std.origin, hint((0, 1))) }\nin (f := frame) {\nb := Bad()\n}\n",
         "use std\ncomponent Inner() { fix((0, 0)) a }\ncomponent Outer() { a := point\ni := Inner() }\nin std.front {\no := Outer()\n}\n",
         "use std\nparam length: Scalar hint(20)\ncomponent Bad() { width := length / 2\na := point }\nin std.front {\nb := Bad()\n}\n",
     ] { assert!(!build(src).ok(), "captured ambient value: {src}"); }
@@ -494,24 +496,25 @@ component Inner(view: plane) {
   }
 }
 component Outer() {
-  i := Inner(std.top)
+  i := Inner(top)
 }
+top := plane(u: std.x, v: std.y)
 o := Outer()
 ";
     let e = build(src);
-    let at = src.find("std.top").unwrap();
+    let at = src.find("(top)").unwrap() + 1;
     assert_eq!(e.diags.len(), 1, "{:?}", e.diags);
     let d = &e.diags[0];
     let (lo, hi) = (d.span.lo as usize, d.span.hi as usize);
-    assert_eq!((d.code, lo, hi), (program::Code::E101, at, at + "std.top".len()), "{d:?}");
-    for word in ["`Outer`", "`std.top`", "`Inner`", "`view`", "closed"] {
+    assert_eq!((d.code, lo, hi), (program::Code::E101, at, at + "top".len()), "{d:?}");
+    for word in ["`Outer`", "`top`", "`Inner`", "`view`", "closed"] {
         assert!(d.message.contains(word), "{word}: {}", d.message);
     }
     // a name that is nowhere is said at the argument too, and a body reading its formal in a
     // declaration is not told again
     for (src, arg) in [
         ("unit mm\nuse std\ncomponent Inner(q: point) {\n  m := point\n  l := line(q, m)\n}\n\
-          component Outer() {\n  i := Inner(std.origin)\n}\nin std.front {\no := Outer()\n}\n",
+          component Outer() {\n  i := Inner(std.origin)\n}\nin (f := frame) {\no := Outer()\n}\n",
          "std.origin"),
         ("unit mm\nuse std\ncomponent Inner(q: point) {\n  m := point\n  l := line(q, m)\n}\n\
           in std.front {\no := Inner(zork)\n}\n", "zork"),
