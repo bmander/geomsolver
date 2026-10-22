@@ -153,4 +153,10 @@ sheet drawing {
   style m.drive.pcrank { color: #2a7ab0; width: 1.2 }
   style m.drive.pcam_i { color: #2a7ab0; width: 1.2 }
   style m.drive.pcam_e { color: #2a7ab0; width: 1.2 }
+  // the crankshaft and the rods (`engine/crankshaft.sv`, `engine/conrod.sv`): the starter ring
+  // gear drawn as a gear is, its pitch circle chain-dotted and its root circle and lines thin
+  style m.crank.ring.pitch { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.crank.ring.root { width: 0.6 }
+  style m.crank.ring.root_t { width: 0.6 }
+  style m.crank.ring.root_b { width: 0.6 }
 }
