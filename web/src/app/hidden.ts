@@ -149,6 +149,23 @@ export function toggleRow(v: SketchView, row: Row): void {
   setRowHidden(v, row, !isHidden(v, row));
 }
 
+/** **Hide what a right-click is on** (`p`, an entity, or object `solid`): the row that made it,
+ *  and so all that row made.  The row hidden, or null where none can be — nothing made it that the
+ *  tree lists with an eye. */
+export function hide(v: SketchView, p: Primitive | number): Row | null {
+  const at = hideableRow(v, p);
+  if (!at) return null;
+  setRowHidden(v, at, true);
+  v.onStatus(`hid ${at.label} — ⇧I shows everything`);
+  return at;
+}
+
+/** The row `hide` would hide, or null. */
+export function hideableRow(v: SketchView, p: Primitive | number): Row | null {
+  const at = found(v, p);
+  return at && hasEye(at.row, at.above) ? at.row : null;
+}
+
 /** Show every row that made `p`: what choosing a hidden plane, or drawing on one, does. */
 export function reveal(v: SketchView, p: Primitive): void {
   if (!v.hiddenEnts.has(p)) return;

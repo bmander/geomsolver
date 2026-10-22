@@ -412,6 +412,10 @@ export class SketchView {
    *  choose among, each row lit as it is pointed at (`hoverHit`), the one chosen taken as a click
    *  on it would be (`takeHit`, with `add` the click's shift). */
   onChoose: (hits: Hit[], at: [number, number], add: boolean) => void = () => {};
+  /** **A right-click that did not turn the workspace**: the shell opens a menu at `at` (canvas
+   *  coordinates) on what it was on (`contextAt`), or on nothing — Hide, and Show all while
+   *  anything is hidden. */
+  onContextMenu: (hit: Hit | null, at: [number, number]) => void = () => {};
   /** The size last written by the Fillet or Chamfer tool, or typed and left, by its word: where
    *  the next starts.  View state, never saved. */
   roundSize: Record<EdgeWord, string> = { round: '', chamfer: '' };
@@ -1453,6 +1457,16 @@ export class SketchView {
         : u.kind === 'face' ? { face: u.face, at: u.at } : { face: '' });
       return pick ? [{ kind: 'solid', pick, hidden: u.kind === 'edge' && !u.seen }] : [];
     });
+  }
+
+  /** **What a right-click is on**, as a press finds it (`gesture::whatIsAt`): what is drawn there,
+   *  else the edge or face of an object the eye sees, else a pane's plane — or nothing. */
+  contextAt(sx: number, sy: number): Hit | null {
+    const ent = this.pick(sx, sy);
+    if (ent && !(ent instanceof Plane)) return { kind: 'entity', ent };
+    const pick = this.edgeAt(sx, sy) ?? this.solidAt(sx, sy);
+    if (pick) return { kind: 'solid', pick };
+    return ent ? { kind: 'entity', ent } : null;
   }
 
   /** Light a hit as the pointer is on it — a row of the ⌘-click's list — or nothing. */

@@ -61,7 +61,7 @@ import {
   about, alternatives, doOpen, flipBranch, insertComponent, insertPlane, leaveExample, openCase,
   openExample, options, report, reportSolve, showDiagnosis,
 } from './dialogs.js';
-import { closeChooser, onChoose } from './choose.js';
+import { closeChooser, onChoose, onContextMenu } from './choose.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
 import { bindProgramPanel, goToSource, onSide, openDrawing, refreshProgram, resetProgramFiles,
   saveProjectFile, showClaims, showStatementFor, toggleProgramPanel } from './program.js';
@@ -665,6 +665,7 @@ view.onDimension = onDimension;
 view.onExtent = onExtent;
 view.onRound = onRound;
 view.onChoose = onChoose;
+view.onContextMenu = onContextMenu;
 view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); outline.refresh(); };
 view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a

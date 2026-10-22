@@ -640,7 +640,7 @@ dialog input[type=search] {
 }
 
 /* What a ⌘-click had under it, to choose among (`choose.ts`): a row each, the one the pointer or
-   the keyboard is on lit where it is drawn */
+   the keyboard is on lit where it is drawn — and a right-click's menu, drawn the same */
 #canvas-wrap .chooser {
   position: absolute; z-index: 7; display: flex; flex-direction: column;
   min-width: 200px; max-width: min(420px, calc(100% - 8px)); max-height: 50vh; overflow-y: auto;
@@ -657,6 +657,7 @@ dialog input[type=search] {
   background: var(--accent-soft); color: var(--accent); outline: none;
 }
 .chooser .kind { color: var(--muted); min-width: 4.5em; }
+.chooser .verb { min-width: 4.5em; }
 .chooser button:focus .kind { color: inherit; }
 .chooser .name { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; }
 .chooser .note { margin-left: auto; color: var(--muted); font-style: italic; }
