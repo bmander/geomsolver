@@ -9,8 +9,6 @@ use super::{Name, Ref, Span};
 #[derive(Clone, Debug)]
 pub struct BeamDecl {
     pub name: Name,
-    /// Where the word `beam` stands.
-    pub at: Span,
     pub lines: Vec<Ref>,
     /// Each number of its section: its label, and its text and where it is written — the
     /// flattener writes the scope's numbers into the text, and the elaborator works it out.
@@ -19,12 +17,6 @@ pub struct BeamDecl {
 }
 
 impl BeamDecl {
-    /// Every reference it makes, in the order written: what the flattener rescopes — its lines,
-    /// then its material.
-    pub fn refs_mut(&mut self) -> Vec<&mut Ref> {
-        self.lines.iter_mut().chain(self.material.as_mut()).collect()
-    }
-
     /// Every number's text, mutably.
     pub fn numbers_mut(&mut self) -> Vec<&mut String> {
         self.section.iter_mut().map(|(_, (t, _))| t).collect()

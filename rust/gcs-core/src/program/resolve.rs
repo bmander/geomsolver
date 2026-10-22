@@ -37,6 +37,9 @@ pub(super) struct Resolver {
     /// The statements holding a joint along a path (#398 C), `g coincident f.axis`: read as the
     /// frame's motion (`motions::motions`, `MotionDef::Guided`) and stating no row.
     pub(super) guides: std::collections::BTreeSet<crate::syntax::StmtId>,
+    /// The beams (#510 S0) by absolute name, each its index on `Sketch::beams`: a name a scenario
+    /// reads, and no entity.  Known once `program::beams` has read them.
+    pub(super) beams: BTreeMap<String, usize>,
 }
 
 /// A plane's member naming its normal, `P.normal`: `u × v`, an axis (`Sketch::plane_normal`).
@@ -81,6 +84,8 @@ pub(super) enum Operand {
     Face(FaceRef),
     Ends(EntRef),
     Body(EntRef),
+    /// A beam (#510 S0), by its index on `Sketch::beams`.
+    Beam(usize),
 }
 
 impl Operand {
@@ -111,6 +116,12 @@ impl Resolver {
 
     /// What `r` names (`Operand`), or why nothing.
     pub(super) fn operand(&self, sk: &Sketch, r: &Ref) -> Result<Operand, String> {
+        if let Some(&b) = self.beams.get(&r.root.text) {
+            return match r.path.is_empty() {
+                true => Ok(Operand::Beam(b)),
+                false => Err(format!("`{}` is a beam, which has no parts", r.root.text)),
+            };
+        }
         let e = self.lookup(r).ok_or_else(|| format!("no such entity: `{}`", r.root.text))?;
         operand_at(sk, e, &r.path)
     }

@@ -486,7 +486,7 @@ impl Reach {
 /* -- a scenario, read -------------------------------------------------------------------------- */
 
 /// The unit direction an `along:` names: an axis's, or a line's from its first end.
-fn direction(sk: &Sketch, d: EntRef) -> Result<V, String> {
+pub(crate) fn direction(sk: &Sketch, d: EntRef) -> Result<V, String> {
     let v = match d.kind {
         EntKind::Axis => sk.axes[d.i()].d.map(|p| sk.params[p as usize].value),
         EntKind::Line => {
@@ -540,10 +540,7 @@ fn points(sk: &Sketch, at: &Applied) -> Result<Vec<V>, String> {
 /// where a frame's are read with the frame (`beams::read`).
 fn named_solids(sc: &Scenario) -> Vec<usize> {
     let mut out: Vec<usize> = Vec::new();
-    let named = sc.supports.iter().map(|s| &s.at)
-        .chain(sc.loads.iter().map(|l| &l.at))
-        .chain(sc.requirements.iter().map(|r| &r.of));
-    for i in named.filter_map(|a| a.solid()) {
+    for i in sc.applied().filter_map(|a| a.solid()) {
         if !out.contains(&i) {
             out.push(i);
         }
@@ -583,7 +580,7 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
     }
     let solids = named_solids(sc);
     // a scenario of frames alone holds no body of its own
-    let of_frames = !sk.beams.is_empty() && solids.is_empty() && holds.is_empty();
+    let of_frames = frames.reads_a_frame() && solids.is_empty() && holds.is_empty();
     if out.is_empty() && !of_frames {
         let fs = freedoms(3, &[], &holds);
         if let Some(free) = freedoms_text(&fs, 3) {

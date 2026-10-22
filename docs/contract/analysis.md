@@ -106,9 +106,12 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
   `√(E/L)(2φ_a + φ_b)` and `√(3E/L)φ_b`, `φ` an end's turn against the chord — a Cholesky factor
   of `E I/L·[4 2; 2 4]`; and the twist `√(G/L)(θ_b − θ_a)·e1`. Each group scales by the root of
   its column, so the element's stiffness is linear in its section. In the plane only the stretch
-  and the bending about z are rows. So the beam joins `solve`, `stiffness` (the rows' outer
-  products as a `Sym`, for a pencil) and `free`'s mechanism by the one row builder (`rows`), as
-  P7 asked. `free` holds a held turn as the body's turn, and where there are beams the body is
+  and the bending about z are rows (`IN_PLANE`, read once in `beam_local`). So the beam joins
+  `solve` and `free`'s mechanism by the one row builder (`rows`), as P7 asked; `stiffness` (a
+  `Sym`, for a pencil) sums the same rows into each beam's twelve-by-twelve matrix in its axes,
+  turned as the mass and the geometric stiffness are (`beams_into`). A node's components are one
+  table (`components`: which of the six in space the structure has), so `per`, `dof` and its
+  inverse read it alone. `free` holds a held turn as the body's turn, and where there are beams the body is
   no longer the nodes' places alone: a twist about a line of nodes turns them.
 
 - **A beam's gradient is its mutual energy's, carried in its axes** (#510 S0;
@@ -236,8 +239,10 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
   - **NAFEMS FV2** (the pin-ended double cross) waits on its published values in hand, and on a
     pin: every joint is rigid.
   - **No load at a moment**: a scenario's load is a force.
-  - **Two caches** are still unmeasured: each read meshes, assembles and factors its frame again,
-    once per frame, and a mode or a buckling load assembles `K` once more for its pencil.
+  - **What is worked out once is per read**: a frame is analysed once per scenario, its `K`
+    assembled once, its modes solved once for the most any requirement asks, its buckling and
+    its end actions once (`Analysed`'s cells); but nothing is kept between reads, and a pencil
+    factors `K` again beside the static solve's normal equations.
 
 - **A scenario, parsed** (#510 P4, §9.11 [0.164]). `scenario NAME [: BASE] { … }` is
   `syntax::StmtKind::Scenario` (`syntax::Scenario`, its lines `Item`/`ItemKind`: a support, a load

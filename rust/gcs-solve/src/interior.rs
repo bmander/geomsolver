@@ -35,7 +35,8 @@
 use crate::diagnose::analysis::{self, Freedom, Held, Reach};
 use crate::kernels::{curve_widths, Dual, Kernel, Num};
 use crate::linalg::{rank_and_nullspace, Mat};
-use crate::space::{dot, norm, scale};
+use crate::envelope::held;
+use crate::space::{dot, norm, scale, sub};
 use crate::sparse::{Ata, Sym};
 
 /// Below this least pivot (`Ata::least_pivot`, a pivot as a fraction of its diagonal) the
@@ -66,9 +67,10 @@ pub struct Beam {
     pub z: [f64; 3],
 }
 
-/// A beam's section, as its columns run: its area, its second moments about its y and its z
-/// (bending across its plane and in it), and its torsion constant.
-pub const SECTION: [&str; 4] = ["A", "Iy", "Iz", "J"];
+/// How many columns a beam's section is, as they run: its area, its second moments about its y
+/// and its z (bending across its plane and in it), and its torsion constant
+/// (`model::SectionProp::STIFFNESS`).
+pub const SECTION: usize = 4;
 
 /// A structure of bars and beams: `nodes` points of `dim` (2 or 3) coordinates each, and per
 /// degree of freedom (`per · node + k`, `Structure::per`) whether a support holds it, the load on
@@ -130,34 +132,45 @@ impl Structure {
     /// How many columns the structure reads: the nodes' coordinates, the bars' areas, then the
     /// beams' sections.
     pub fn columns(&self) -> usize {
-        self.dim * self.nodes + self.bars.len() + SECTION.len() * self.beams.len()
+        self.dim * self.nodes + self.bars.len() + SECTION * self.beams.len()
     }
 
     /// Where beam `i`'s section starts among the columns.
     fn section_at(&self, i: usize) -> usize {
-        self.dim * self.nodes + self.bars.len() + SECTION.len() * i
+        self.dim * self.nodes + self.bars.len() + SECTION * i
     }
 
-    /// How many degrees of freedom a node has: its moves, and where there is a beam its turns —
-    /// one in the plane, three in space.
-    pub fn per(&self) -> usize {
+    /// Beam `i`'s section at `x`, in `SECTION`'s order.
+    pub fn section<'a>(&self, i: usize, x: &'a [f64]) -> &'a [f64] {
+        &x[self.section_at(i)..self.section_at(i) + SECTION]
+    }
+
+    /// **A node's components in space**, the ones the structure has, in the order its degrees of
+    /// freedom run: 0–2 a move along x, y, z, 3–5 a turn about them.  Its moves, and where there
+    /// is a beam its turns — one about z in the plane, three in space.
+    fn components(&self) -> &'static [usize] {
         match (self.beams.is_empty(), self.dim) {
-            (true, d) => d,
-            (false, 2) => 3,
-            (false, d) => 2 * d,
+            (true, 2) => &[0, 1],
+            (true, _) => &[0, 1, 2],
+            (false, 2) => &[0, 1, 5],
+            (false, _) => &[0, 1, 2, 3, 4, 5],
         }
     }
 
-    /// The degree of freedom of node `n`'s component `c` in space — 0–2 a move along x, y, z,
-    /// 3–5 a turn about them — or `None` where the structure has none: in the plane, a move
-    /// along z or a turn about x or y.
+    /// How many degrees of freedom a node has.
+    pub fn per(&self) -> usize {
+        self.components().len()
+    }
+
+    /// The degree of freedom of node `n`'s component `c` in space, or `None` where the structure
+    /// has none: in the plane, a move along z or a turn about x or y.
     pub fn dof(&self, n: usize, c: usize) -> Option<usize> {
-        let at = self.per() * n;
-        match (c < 3, self.dim) {
-            (true, d) => (c < d).then_some(at + c),
-            (false, 2) => (c == 5 && self.per() == 3).then_some(at + 2),
-            (false, _) => (self.per() == 6).then_some(at + c),
-        }
+        self.components().iter().position(|&k| k == c).map(|k| self.per() * n + k)
+    }
+
+    /// Degree of freedom `i` as its node and its component in space: `dof`'s inverse.
+    fn component(&self, i: usize) -> (usize, usize) {
+        (i / self.per(), self.components()[i % self.per()])
     }
 
     /// Bar `i`'s geometry at `x`: `Δ = x_b − x_a`, its length, and `E·A`.
@@ -169,11 +182,7 @@ impl Structure {
 
     /// Node `b`'s place less node `a`'s, at `x`.
     fn place(&self, a: usize, b: usize, x: &[f64]) -> [f64; 3] {
-        let mut d = [0.0; 3];
-        for k in 0..self.dim {
-            d[k] = x[self.dim * b + k] - x[self.dim * a + k];
-        }
-        d
+        sub(self.node(b, x), self.node(a, x))
     }
 
     /// Bar `b`'s move at its far end less its near one, under `u` per degree of freedom.
@@ -209,35 +218,23 @@ impl Structure {
     }
 
     /// Every element's strain rows at `x`, each handed to `row` as its `(equation, entry)`s at the
-    /// equations `eq` numbers: what `solve` factors and `stiffness` sums.  A row every degree of
-    /// freedom of which is held is handed on empty.
+    /// equations `eq` numbers: what `solve` factors.  A row every degree of freedom of which is
+    /// held is handed on empty.
     fn rows(&self, x: &[f64], eq: &[Option<usize>], mut row: impl FnMut(&[(usize, f64)]))
         -> Result<(), Failure>
     {
         let mut at: Vec<(usize, f64)> = Vec::new();
         for (i, b) in self.bars.iter().enumerate() {
             let (d, l, ea) = self.bar_at(i, x);
-            if l.is_nan() || l <= 0.0 {
-                return Err(Failure::Collapsed);
-            }
-            if ea.is_nan() || ea <= 0.0 {
-                return Err(Failure::Unstiff);
-            }
+            check_bar(l, ea)?;
             at.clear();
             self.strain(b, scale(d, (ea / l).sqrt() / l), eq, |e, v| at.push((e, v)));
             row(&at);
         }
         for i in 0..self.beams.len() {
-            let section = &x[self.section_at(i)..self.section_at(i) + SECTION.len()];
+            let section = self.section(i, x);
             let rows = self.beam_rows(i, x)?;
-            for (group, rs) in rows.iter().enumerate() {
-                if rs.is_empty() {
-                    continue;
-                }
-                let p = section[group];
-                if p.is_nan() || p <= 0.0 {
-                    return Err(Failure::Unstiff);
-                }
+            for (rs, &p) in rows.iter().zip(section) {
                 for r in rs {
                     at.clear();
                     self.beam_put(i, r, |dof, v| {
@@ -252,22 +249,40 @@ impl Structure {
         Ok(())
     }
 
-    /// **`K(x)`, assembled**: the sum of every strain row's outer product, over the equations no
-    /// support holds — the matrix `solve` factors, for a pencil (`eigen.rs`) to read.
+    /// **`K(x)`, assembled** over the equations no support holds — the matrix `solve` factors,
+    /// for a pencil (`eigen.rs`) to read: each bar's strain row's outer product, each beam's
+    /// twelve-by-twelve stiffness `Σ p rrᵀ` in its own axes, turned.
     pub fn stiffness(&self, x: &[f64]) -> Result<Sym, Failure> {
         let (eq, n_eq) = self.equations();
         let mut t = Vec::new();
-        self.rows(x, &eq, |row| {
-            for &(i, a) in row {
+        for (i, b) in self.bars.iter().enumerate() {
+            let (d, l, ea) = self.bar_at(i, x);
+            check_bar(l, ea)?;
+            let mut row = Vec::new();
+            self.strain(b, scale(d, (ea / l).sqrt() / l), &eq, |e, v| row.push((e, v)));
+            for &(i, a) in &row {
                 t.extend(row.iter().map(|&(j, b)| (i, j, a * b)));
             }
+        }
+        self.beams_into(x, &eq, &mut t, |i, l, _| {
+            let mut m = [[0.0; 12]; 12];
+            for (rs, &p) in self.beam_local(i, l, x)?.iter().zip(self.section(i, x)) {
+                for r in rs {
+                    for a in 0..12 {
+                        for b in 0..12 {
+                            m[a][b] += p * r[a].v * r[b].v;
+                        }
+                    }
+                }
+            }
+            Ok(m)
         })?;
         Ok(Sym::from_triplets(n_eq, &t))
     }
 
     /// Per degree of freedom its equation, `None` where a support holds it, and how many there
     /// are: the numbering `solve` factors and `free` reads.
-    pub fn equations(&self) -> (Vec<Option<usize>>, usize) {
+    fn equations(&self) -> (Vec<Option<usize>>, usize) {
         let mut n = 0;
         let eq = self.fixed.iter().map(|held| (!held).then(|| { n += 1; n - 1 })).collect();
         (eq, n)
@@ -333,6 +348,17 @@ impl Structure {
     }
 }
 
+/// A bar of length `l` and stiffness `ea` that is one, or why it is none.
+fn check_bar(l: f64, ea: f64) -> Result<(), Failure> {
+    if l.is_nan() || l <= 0.0 {
+        return Err(Failure::Collapsed);
+    }
+    if ea.is_nan() || ea <= 0.0 {
+        return Err(Failure::Unstiff);
+    }
+    Ok(())
+}
+
 /* -- the beam --------------------------------------------------------------------------------- */
 
 /// A number and its rates in a beam's run `Δ = x_b − x_a`.
@@ -342,12 +368,21 @@ type D = Dual<3>;
 /// along e1, e2, e3 and turns about them, then its far end's.
 type Local = [D; 12];
 
-fn cross_d(a: [D; 3], b: [D; 3]) -> [D; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+/// Which of a beam's section's columns a structure in the plane bends with: its stretch and its
+/// bending about z, in `SECTION`'s order.  Across the plane and its twist move nothing there.
+const IN_PLANE: [bool; SECTION] = [true, false, true, false];
+
+/// A beam's axes: e1, e2, e3, its rows.
+pub type Axes = [[f64; 3]; 3];
+
+/// A world vector read along a beam's axes.
+pub fn into_axes(axes: &Axes, v: [f64; 3]) -> [f64; 3] {
+    axes.map(|e| dot(e, v))
 }
 
-fn length_d(a: [D; 3]) -> D {
-    (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt()
+/// A vector along a beam's axes, in the world's: `into_axes`'s inverse.
+pub fn out_of_axes(axes: &Axes, v: [f64; 3]) -> [f64; 3] {
+    [0, 1, 2].map(|k| (0..3).map(|j| axes[j][k] * v[j]).sum())
 }
 
 impl Beam {
@@ -356,18 +391,18 @@ impl Beam {
     /// length, or z runs along it.
     pub(crate) fn axes(&self, d: [f64; 3]) -> Option<(D, [[D; 3]; 3])> {
         let d = [0, 1, 2].map(|k| D::var(d[k], k));
-        let l = length_d(d);
+        let l = held::dot(d, d).sqrt();
         if !(l.v > 0.0) {
             return None;
         }
         let e1 = d.map(|c| c / l);
-        let c = cross_d(self.z.map(D::cst), e1);
-        let n = length_d(c);
+        let c = held::cross(self.z.map(D::cst), e1);
+        let n = held::dot(c, c).sqrt();
         if !(n.v > 1e-9) {
             return None;
         }
         let e2 = c.map(|v| v / n);
-        Some((l, [e1, e2, cross_d(e1, e2)]))
+        Some((l, [e1, e2, held::cross(e1, e2)]))
     }
 
     /// **Its strain rows in its own axes, at a unit section**, per column of the section: the
@@ -375,7 +410,7 @@ impl Beam {
     /// φ_b)` and `√(3E/L)·φ_b`, the ends' turns `φ` against the chord, a Cholesky factor of the
     /// bending stiffness `E·I/L·[4 2; 2 4]`; and the twist `√(G/L)·(θ_b − θ_a)·e1`.  Each scales by
     /// the root of its column, so the element's stiffness is linear in its section.
-    fn local(&self, l: D) -> [Vec<Local>; 4] {
+    fn local(&self, l: D) -> [Vec<Local>; SECTION] {
         let zero = D::cst(0.0);
         let (c, t) = ((D::cst(self.e) / l).sqrt(), (D::cst(self.g) / l).sqrt());
         let s3 = D::cst(3f64.sqrt());
@@ -404,18 +439,6 @@ impl Beam {
             vec![row(&[(3, neg * t), (9, t)])],
         ]
     }
-
-    /// The rotation into its own axes of its twelve degrees of freedom: each end's moves and
-    /// turns read along e1, e2, e3.
-    fn to_local(axes: &[[f64; 3]; 3], g: &[f64; 12]) -> [f64; 12] {
-        let mut out = [0.0; 12];
-        for block in 0..4 {
-            for j in 0..3 {
-                out[3 * block + j] = (0..3).map(|k| axes[j][k] * g[3 * block + k]).sum();
-            }
-        }
-        out
-    }
 }
 
 impl Structure {
@@ -424,70 +447,74 @@ impl Structure {
         [self.beams[i].a, self.beams[i].b]
     }
 
-    /// Beam `i`'s rows at `x`, per column of its section, each over its twelve degrees of
-    /// freedom in space — the world's moves and turns at each end — at a unit section.  The rows
-    /// in the plane are those that move it in its plane: its stretch and its bending about z.
-    fn beam_rows(&self, i: usize, x: &[f64]) -> Result<[Vec<Local>; 4], Failure> {
+    /// Beam `i`'s axes at `x`, their rates in its run carried, and its length.
+    fn beam_axes_d(&self, i: usize, x: &[f64]) -> Option<(D, [[D; 3]; 3])> {
         let b = &self.beams[i];
-        let (l, axes) = b.axes(self.place(b.a, b.b, x)).ok_or(Failure::Collapsed)?;
-        if !(b.e > 0.0) || !(self.dim == 2 || b.g > 0.0) {
-            return Err(Failure::Unstiff);
-        }
+        b.axes(self.place(b.a, b.b, x))
+    }
+
+    /// Beam `i`'s axes at `x` as plain numbers, and its length.
+    pub fn beam_axes(&self, i: usize, x: &[f64]) -> Option<(f64, Axes)> {
+        let (l, axes) = self.beam_axes_d(i, x)?;
+        Some((l.v, axes.map(|e| e.map(|c| c.v))))
+    }
+
+    /// Beam `i`'s rows in its own axes at a unit section, of length `l`, per column of its
+    /// section, those the structure bends with (`IN_PLANE` in the plane) — or why it is no
+    /// member: a modulus or a column it reads at zero or less.
+    fn beam_local(&self, i: usize, l: D, x: &[f64]) -> Result<[Vec<Local>; SECTION], Failure> {
+        let b = &self.beams[i];
         let mut out = b.local(l);
         for (group, rows) in out.iter_mut().enumerate() {
-            if self.dim == 2 && group != 0 && group != 2 {
+            if self.dim == 2 && !IN_PLANE[group] {
                 rows.clear();
-                continue;
             }
-            for r in rows.iter_mut() {
-                let mut g = [D::cst(0.0); 12];
-                for block in 0..4 {
-                    for k in 0..3 {
-                        let mut s = D::cst(0.0);
-                        for j in 0..3 {
-                            s = s + r[3 * block + j] * axes[j][k];
-                        }
-                        g[3 * block + k] = s;
-                    }
-                }
-                *r = g;
+        }
+        let moduli = [b.e, b.e, b.e, b.g];
+        for ((rows, &p), m) in out.iter().zip(self.section(i, x)).zip(moduli) {
+            if !rows.is_empty() && !(p > 0.0 && m > 0.0) {
+                return Err(Failure::Unstiff);
             }
         }
         Ok(out)
+    }
+
+    /// Beam `i`'s rows at `x`, per column of its section, each over its twelve degrees of
+    /// freedom in space — the world's moves and turns at each end — at a unit section.
+    fn beam_rows(&self, i: usize, x: &[f64]) -> Result<[Vec<Local>; SECTION], Failure> {
+        let (l, axes) = self.beam_axes_d(i, x).ok_or(Failure::Collapsed)?;
+        let mut out = self.beam_local(i, l, x)?;
+        for r in out.iter_mut().flatten() {
+            let mut g = [D::cst(0.0); 12];
+            for block in 0..4 {
+                for k in 0..3 {
+                    let mut s = D::cst(0.0);
+                    for j in 0..3 {
+                        s = s + r[3 * block + j] * axes[j][k];
+                    }
+                    g[3 * block + k] = s;
+                }
+            }
+            *r = g;
+        }
+        Ok(out)
+    }
+
+    /// Beam `i`'s twelve components in space (each end's moves and turns) that the structure
+    /// has, each with its degree of freedom.
+    fn beam_dofs(&self, i: usize) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.beam_ends(i).into_iter().enumerate().flat_map(move |(end, node)| {
+            (0..6).filter_map(move |c| self.dof(node, c).map(|d| (6 * end + c, d)))
+        })
     }
 
     /// Each entry of beam `i`'s row `r` (over its twelve degrees of freedom in space) at the
     /// structure's degree of freedom it falls on, given to `put`; one the structure lacks (in the
     /// plane, a move along z or a turn about x or y) is dropped.
     fn beam_put(&self, i: usize, r: &Local, mut put: impl FnMut(usize, D)) {
-        for (end, node) in self.beam_ends(i).into_iter().enumerate() {
-            for c in 0..6 {
-                if let Some(dof) = self.dof(node, c) {
-                    put(dof, r[6 * end + c]);
-                }
-            }
+        for (k, dof) in self.beam_dofs(i) {
+            put(dof, r[k]);
         }
-    }
-
-    /// Beam `i`'s twelve degrees of freedom in space under `u` (per degree of freedom), zero
-    /// where the structure has none.
-    fn beam_gather(&self, i: usize, u: &[f64]) -> [f64; 12] {
-        let mut out = [0.0; 12];
-        for (end, node) in self.beam_ends(i).into_iter().enumerate() {
-            for c in 0..6 {
-                if let Some(dof) = self.dof(node, c) {
-                    out[6 * end + c] = u[dof];
-                }
-            }
-        }
-        out
-    }
-
-    /// Beam `i`'s axes at `x` as plain numbers, and its length.
-    pub fn beam_axes(&self, i: usize, x: &[f64]) -> Option<(f64, [[f64; 3]; 3])> {
-        let b = &self.beams[i];
-        let (l, axes) = b.axes(self.place(b.a, b.b, x))?;
-        Some((l.v, axes.map(|e| e.map(|c| c.v))))
     }
 
     /// **Each beam's end actions under `u`** (#510 S0), in its own axes: `k_e u_e`, the forces
@@ -497,18 +524,21 @@ impl Structure {
     /// stretch is `[6]`, the far end's pull; `None` for a beam with no axes.
     pub fn end_actions(&self, u: &[f64], x: &[f64]) -> Vec<Option<[f64; 12]>> {
         (0..self.beams.len()).map(|i| {
-            let b = &self.beams[i];
-            let (l, axes) = b.axes(self.place(b.a, b.b, x))?;
+            let (l, axes) = self.beam_axes_d(i, x)?;
             let axes = axes.map(|e| e.map(|c| c.v));
-            let ul = Beam::to_local(&axes, &self.beam_gather(i, u));
-            let section = &x[self.section_at(i)..self.section_at(i) + SECTION.len()];
+            let mut ue = [0.0; 12];
+            for (k, dof) in self.beam_dofs(i) {
+                ue[k] = u[dof];
+            }
+            let mut ul = [0.0; 12];
+            for block in 0..4 {
+                let v = into_axes(&axes, [0, 1, 2].map(|k| ue[3 * block + k]));
+                ul[3 * block..3 * block + 3].copy_from_slice(&v);
+            }
             let mut f = [0.0; 12];
-            for (group, rows) in b.local(l).iter().enumerate() {
-                if self.dim == 2 && group != 0 && group != 2 {
-                    continue;
-                }
+            for (rows, &p) in self.beam_local(i, l, x).ok()?.iter().zip(self.section(i, x)) {
                 for r in rows {
-                    let s: f64 = (0..12).map(|k| r[k].v * ul[k]).sum::<f64>() * section[group];
+                    let s: f64 = (0..12).map(|k| r[k].v * ul[k]).sum::<f64>() * p;
                     for k in 0..12 {
                         f[k] += r[k].v * s;
                     }
@@ -518,39 +548,56 @@ impl Structure {
         }).collect()
     }
 
-    /// Beam `i`'s twelve-by-twelve matrix `m` in its own axes, turned into the world's and added
-    /// at the equations `eq` numbers, as triplets.
-    fn beam_scatter(&self, i: usize, axes: &[[f64; 3]; 3], m: &[[f64; 12]; 12],
-                    eq: &[Option<usize>], t: &mut Vec<(usize, usize, f64)>) {
-        // the world's column k of each end's moves and turns is Σ_j axes[j][k]·(local j)
-        let mut at: Vec<(usize, [f64; 12])> = Vec::new();
-        for (end, node) in self.beam_ends(i).into_iter().enumerate() {
-            for c in 0..6 {
-                let Some(e) = self.dof(node, c).and_then(|d| eq[d]) else { continue };
-                let (block, k) = (2 * end + c / 3, c % 3);
+    /// Beam `i`'s twelve actions in its own axes, `local`, turned into the world's and added into
+    /// `f` per degree of freedom: a load spread along it, given at its ends.
+    pub fn beam_load(&self, i: usize, axes: &Axes, local: &[f64; 12], f: &mut [f64]) {
+        let mut world = [0.0; 12];
+        for block in 0..4 {
+            let v = out_of_axes(axes, [0, 1, 2].map(|j| local[3 * block + j]));
+            world[3 * block..3 * block + 3].copy_from_slice(&v);
+        }
+        for (k, dof) in self.beam_dofs(i) {
+            f[dof] += world[k];
+        }
+    }
+
+    /// Every beam's twelve-by-twelve matrix in its own axes, `local(i, length, axes)`, turned
+    /// into the world's and added at the equations `eq` numbers, as triplets.
+    fn beams_into(&self, x: &[f64], eq: &[Option<usize>], t: &mut Vec<(usize, usize, f64)>,
+                  local: impl Fn(usize, D, &Axes) -> Result<[[f64; 12]; 12], Failure>)
+        -> Result<(), Failure>
+    {
+        for i in 0..self.beams.len() {
+            let (l, axes_d) = self.beam_axes_d(i, x).ok_or(Failure::Collapsed)?;
+            let axes = axes_d.map(|e| e.map(|c| c.v));
+            let m = local(i, l, &axes)?;
+            // the world's component k of each end's moves and turns is Σ_j axes[j][k]·(local j)
+            let at: Vec<(usize, [f64; 12])> = self.beam_dofs(i).filter_map(|(k, dof)| {
+                let e = eq[dof]?;
                 let mut col = [0.0; 12];
                 for j in 0..3 {
-                    col[3 * block + j] = axes[j][k];
+                    col[k / 3 * 3 + j] = axes[j][k % 3];
                 }
-                at.push((e, col));
+                Some((e, col))
+            }).collect();
+            for (ei, ci) in &at {
+                for (ej, cj) in &at {
+                    let mut s = 0.0;
+                    for p in 0..12 {
+                        if ci[p] == 0.0 {
+                            continue;
+                        }
+                        for q in 0..12 {
+                            s += ci[p] * m[p][q] * cj[q];
+                        }
+                    }
+                    if s != 0.0 {
+                        t.push((*ei, *ej, s));
+                    }
+                }
             }
         }
-        for (ei, ci) in &at {
-            for (ej, cj) in &at {
-                let mut s = 0.0;
-                for p in 0..12 {
-                    if ci[p] == 0.0 {
-                        continue;
-                    }
-                    for q in 0..12 {
-                        s += ci[p] * m[p][q] * cj[q];
-                    }
-                }
-                if s != 0.0 {
-                    t.push((*ei, *ej, s));
-                }
-            }
-        }
+        Ok(())
     }
 
     /// **The consistent mass** (#510 S0), over the equations no support holds: each beam's
@@ -560,25 +607,18 @@ impl Structure {
     pub fn mass(&self, x: &[f64]) -> Result<Sym, Failure> {
         let (eq, n_eq) = self.equations();
         let mut t = Vec::new();
-        for i in 0..self.beams.len() {
-            let (l, axes) = self.beam_axes(i, x).ok_or(Failure::Collapsed)?;
-            let s = &x[self.section_at(i)..self.section_at(i) + SECTION.len()];
+        self.beams_into(x, &eq, &mut t, |i, l, _| {
+            let (l, s) = (l.v, self.section(i, x));
             let (rho, a, ip) = (self.beams[i].rho, s[0], s[1] + s[2]);
             let mut m = [[0.0; 12]; 12];
-            let pair = |m: &mut [[f64; 12]; 12], p: usize, q: usize, w: f64| {
-                m[p][p] += 2.0 * w;
-                m[q][q] += 2.0 * w;
-                m[p][q] += w;
-                m[q][p] += w;
-            };
-            pair(&mut m, 0, 6, rho * a * l / 6.0);
-            pair(&mut m, 3, 9, rho * ip * l / 6.0);
+            pair(&mut m, 0, 6, rho * a * l / 3.0, rho * a * l / 6.0);
+            pair(&mut m, 3, 9, rho * ip * l / 3.0, rho * ip * l / 6.0);
             let cubic = [[156.0, 22.0 * l, 54.0, -13.0 * l], [22.0 * l, 4.0 * l * l, 13.0 * l,
                          -3.0 * l * l], [54.0, 13.0 * l, 156.0, -22.0 * l],
                          [-13.0 * l, -3.0 * l * l, -22.0 * l, 4.0 * l * l]];
             bending(&mut m, &cubic, rho * a * l / 420.0);
-            self.beam_scatter(i, &axes, &m, &eq, &mut t);
-        }
+            Ok(m)
+        })?;
         Ok(Sym::from_triplets(n_eq, &t))
     }
 
@@ -589,24 +629,27 @@ impl Structure {
     pub fn geometric(&self, x: &[f64], axial: &[f64]) -> Result<Sym, Failure> {
         let (eq, n_eq) = self.equations();
         let mut t = Vec::new();
-        for i in 0..self.beams.len() {
-            let (l, axes) = self.beam_axes(i, x).ok_or(Failure::Collapsed)?;
-            let s = &x[self.section_at(i)..self.section_at(i) + SECTION.len()];
-            let n = axial[i];
+        self.beams_into(x, &eq, &mut t, |i, l, _| {
+            let (l, s, n) = (l.v, self.section(i, x), axial[i]);
             let mut m = [[0.0; 12]; 12];
             let w = n * (s[1] + s[2]) / (s[0] * l);
-            m[3][3] += w;
-            m[9][9] += w;
-            m[3][9] -= w;
-            m[9][3] -= w;
+            pair(&mut m, 3, 9, w, -w);
             let cubic = [[36.0, 3.0 * l, -36.0, 3.0 * l], [3.0 * l, 4.0 * l * l, -3.0 * l, -l * l],
                          [-36.0, -3.0 * l, 36.0, -3.0 * l], [3.0 * l, -l * l, -3.0 * l,
                          4.0 * l * l]];
             bending(&mut m, &cubic, n / (30.0 * l));
-            self.beam_scatter(i, &axes, &m, &eq, &mut t);
-        }
+            Ok(m)
+        })?;
         Ok(Sym::from_triplets(n_eq, &t))
     }
+}
+
+/// `[diag off; off diag]` added over degrees of freedom `p` and `q` of a beam's twelve.
+fn pair(m: &mut [[f64; 12]; 12], p: usize, q: usize, diag: f64, off: f64) {
+    m[p][p] += diag;
+    m[q][q] += diag;
+    m[p][q] += off;
+    m[q][p] += off;
 }
 
 /// A cubic's four-by-four matrix `c`, times `w`, added in both planes a beam bends in: over its
@@ -673,9 +716,9 @@ impl Structure {
         let (per, dim) = (self.per(), self.dim);
         let nodes: Vec<[f64; 3]> = (0..self.nodes).map(|i| self.node(i, x)).collect();
         let holds: Vec<Held> = (0..self.fixed.len()).filter(|&i| self.fixed[i]).map(|i| {
-            match i % per {
-                k if k < dim => Held { at: vec![nodes[i / per]], along: Some(analysis::axis(k)),
-                                       turn: false },
+            match self.component(i) {
+                (node, c) if c < 3 => Held { at: vec![nodes[node]], along: Some(analysis::axis(c)),
+                                             turn: false },
                 _ => Held { at: Vec::new(), along: None, turn: true },
             }
         }).collect();
@@ -857,7 +900,7 @@ pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
 /// structure reads.
 fn free_at(n_par: usize, k: &[f64]) -> bool {
     let (dim, nodes, bars, beams) = (k[0] as usize, k[1] as usize, k[2] as usize, k[3] as usize);
-    n_par > dim * nodes + bars + SECTION.len() * beams
+    n_par > dim * nodes + bars + SECTION * beams
 }
 
 fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {

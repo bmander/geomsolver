@@ -27,19 +27,13 @@ pub enum Applied {
 }
 
 impl Applied {
-    /// The entity it is of: itself, or the solid a face is a face of — `None` for a beam, which
-    /// is no entity.
-    pub fn entity(&self) -> Option<EntRef> {
-        match self {
-            Applied::Ent(e) => Some(*e),
-            Applied::Face(f) => Some(EntRef::solid(f.solid as usize)),
-            Applied::Beam(_) => None,
-        }
-    }
-
-    /// The solid it is of, where it is of one.
+    /// The solid it is of, where it is of one: itself, or the solid a face is a face of.
     pub fn solid(&self) -> Option<usize> {
-        self.entity().filter(|e| e.kind == EntKind::Solid).map(|e| e.i())
+        match self {
+            Applied::Ent(e) if e.kind == EntKind::Solid => Some(e.i()),
+            Applied::Face(f) => Some(f.solid as usize),
+            _ => None,
+        }
     }
 }
 
@@ -232,6 +226,17 @@ pub struct Requirement {
     pub claim: bool,
 }
 
+impl Grade {
+    /// What a report calls it.
+    pub fn word(self) -> &'static str {
+        match self {
+            Grade::Claim => "claim",
+            Grade::Driving => "driving",
+            Grade::Bound => "bound",
+        }
+    }
+}
+
 impl Requirement {
     pub fn grade(&self) -> Grade {
         match (self.claim, self.compare) {
@@ -252,4 +257,14 @@ pub struct Scenario {
     pub supports: Vec<Support>,
     pub loads: Vec<Load>,
     pub requirements: Vec<Requirement>,
+}
+
+impl Scenario {
+    /// What each of its lines is applied to, in the order written: its supports', its loads',
+    /// then what its requirements are of.
+    pub fn applied(&self) -> impl Iterator<Item = &Applied> {
+        self.supports.iter().map(|s| &s.at)
+            .chain(self.loads.iter().map(|l| &l.at))
+            .chain(self.requirements.iter().map(|r| &r.of))
+    }
 }

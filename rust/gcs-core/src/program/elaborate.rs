@@ -929,6 +929,7 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     // a frame's members (#510 S0), then the load scenarios, read over the drawing once every
     // solid is built (#510 P4)
     cx.sk.beams = super::beams::beams(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
+    cx.res.beams = cx.sk.beams.iter().enumerate().map(|(i, b)| (b.name.clone(), i)).collect();
     let scenarios = super::scenarios::scenarios(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
     crate::modules::localize(p, &mut cx.diags);
     Elaborated {

@@ -345,11 +345,7 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
     for (k, r) in s.scenario.requirements.iter().enumerate() {
         let Some(got) = &read.answers[k] else { continue };
         let head = s.heads[k].clone();
-        let grade = match r.grade() {
-            Grade::Claim => "claim",
-            Grade::Driving => "driving",
-            Grade::Bound => "bound",
-        };
+        let grade = r.grade().word();
         let stated = format!("{} {}", r.compare.text(),
                              crate::beams::value_text(sk, r.output, r.value));
         let (value, holds, said) = match got {

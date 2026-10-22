@@ -65,9 +65,8 @@ pub(super) fn beams(
                 Err((code, m)) => say(code, *span, m),
             }
         }
-        let written = |p: &SectionProp| b.section.iter().any(|(l, _)| l.text == p.name());
         let missing: Vec<String> = SectionProp::STIFFNESS.iter()
-            .filter(|p| !props.contains_key(p) && !written(p))
+            .filter(|p| !b.section.iter().any(|(l, _)| l.text == p.name()))
             .map(|p| format!("`{}`", p.name()))
             .collect();
         if !missing.is_empty() {
@@ -87,14 +86,11 @@ pub(super) fn beams(
 /// A section's number as written, worked out: of its dimension, positive, and never an unknown
 /// of the solve, since nothing drives a section until a requirement does (#510 S1).
 fn number(sk: &Sketch, text: &str, p: SectionProp) -> Result<f64, (Code, String)> {
-    let v = crate::flatten::value_read(text, &BTreeMap::new(), &sk.declared, sk.units)
-        .map_err(|m| (Code::E103, format!("`{text}`: {m}")))?;
-    v.dim.require(p.dim(), p.name()).map_err(|m| (Code::E103, format!("`{text}`: {m}")))?;
-    match v.number() {
-        Some(x) if x.is_finite() && x > 0.0 => Ok(x),
-        Some(x) => Err((Code::E103, format!("`{}` is positive, and `{text}` is {x}", p.name()))),
-        None => Err((Code::E040, format!(
-            "`{text}` reads an unknown of the drawing, and a beam's section is a number it states \
-             until a requirement drives one"))),
+    let why = "a beam's section is a number it states until a requirement drives one";
+    let x = super::scenarios::stated(sk, text, p.dim(), p.name(), why)?;
+    if x > 0.0 {
+        Ok(x)
+    } else {
+        Err((Code::E103, format!("`{}` is positive, and `{text}` is {x}", p.name())))
     }
 }

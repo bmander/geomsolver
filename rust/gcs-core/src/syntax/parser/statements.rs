@@ -1593,7 +1593,7 @@ impl<'a> P<'a> {
             None
         };
         self.end_of_stmt();
-        Some(crate::syntax::BeamDecl { name, at, lines, section, material })
+        Some(crate::syntax::BeamDecl { name, lines, section, material })
     }
 
     /// A call's arguments in `( … )`, or a group's members in `{ … }`.
