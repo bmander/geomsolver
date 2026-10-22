@@ -176,7 +176,8 @@ pub fn example(name: &str) -> Option<Sketch> {
         | "catenary" | "dido" | "sag" | "ring" | "fisheye" | "projectile" | "hyperbolic"
         | "sized_cantilever" | "reach_cantilever" | "shelf_bracket" | "portal_frame"
         | "sized_plate" | "tuning_fork" | "rounded_bracket" | "pressure_pipe" | "gravity_wall"
-        | "drilled_plate" | "sized_plank" => {
+        | "drilled_plate" | "sized_plank" | "pressed_panel" | "flat_bar_strut"
+        | "cantilever_plate" | "turned_shaft" | "pin_lug" => {
             document(source(name)?, name)
         }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -268,7 +269,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 62] = [
+pub const CASES: [(&str, &str, &str); 67] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "One hollow square section carried round a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -312,6 +313,11 @@ pub const CASES: [(&str, &str, &str); 62] = [
     ("A gravity wall · plane strain, its weight and its water", "gravity_wall", "a metre of a concrete wall read in plane strain under its own weight (`accelerate`, its density times gravity) and the water's mean pressure on its back face: its mass is exactly the trapezoid's, its crest leans downstream 0.037mm, and its first mode in its plane is 64Hz"),
     ("How large a lightening hole may be · a requirement drives a radius", "drilled_plate", "an aluminium web built in at its root, loaded along its end and by its weight, read in plane stress, with a round hole whose radius is an unknown: `deflection(end_low, along: down) == sag` drives it, the hole's nodes moving with its radius and the nodes inside following the boundary, and the solve finds the radius at which the corner sinks 0.6mm — 19.23mm"),
     ("A plank sized by its sag · a requirement drives a solid", "sized_plank", "a steel plank drawn in plan, built in at its root and loaded at its end across its own plane, so it bends out of the face it is swept from and is read as the solid it is: its width `w` an unknown its sides' dimensions read, and `deflection(end_low, along: down) == sag` driving it — the plank meshed once in quadratic tetrahedra, its face's mesh stacked through its thickness, its nodes moving with its sides — and the solve finds the width at which the corner sinks 0.9mm under 50N — 29.71mm, between a beam's 30mm and a plate's 27.3mm, the plank three times as wide as it is thick and held at its root"),
+    ("A panel under pressure · a load across its plane", "pressed_panel", "a square steel panel clamped along its four edges and pressed on its face, `pressure panel.near q` — a load across the plane it is drawn in, so it is read as the solid it is, its face's mesh stacked through its thickness: its middle sinks 0.1757mm, within 0.3% of Timoshenko's clamped plate, 0.00126 q a⁴ / D, and its mass is exactly the slab's"),
+    ("A flat bar's buckling · a solid buckles", "flat_bar_strut", "a steel flat bar on its edge, built in at its foot and pressed on its head: it buckles across its thickness, out of the plane it is drawn in, so `buckling(bar)` reads the solid — its stiffness against the geometric stiffness of the stress the pressure makes — and the factor on the pressure is 2.070, within 0.7% of Euler's π² E I / (4 L²)"),
+    ("A cantilevered plate's modes · bending and twisting", "cantilever_plate", "a steel plate built in along its root and free elsewhere, its modes out of its plane: it bends at 46.6Hz, a little stiffer than a beam (held from curling across its width), twists at 199Hz, above Saint-Venant's (its root holds its section from warping), and bends again at 290.6Hz"),
+    ("A turned shaft · a solid of revolution, its stress answered", "turned_shaft", "a stepped steel shaft, its shoulder rounded, pulled along its axis: no prism, so it is read by refining its exact boundary and filling it in quadratic tetrahedra; the round gives its factor of safety an answer, 2.62 — a Kt of 1.59 in the neck, Peterson's — where a sharp or a chamfered shoulder says its stress is unbounded and to round it, and each answer's error is said beside it"),
+    ("A pin lug · a body cut, a face named from it", "pin_lug", "a steel lug built in at its root, a pin hole cut through its end by another solid, and a 20kN pull spread over the hole's wall, named from the body it cuts (`lug.pin.bore`): a cut body is filled from its exact boundary, and its factor of safety, 1.86, puts the greatest stress at 1.6 times the net section's average"),
     ("Hyperbolic plane · the shortest path", "hyperbolic", "Poincaré's half-plane, where length is `ds / y`: the curve from `a` to `b` that makes it least is an arc of a circle centred on the line `y = 0` — the hyperbolic plane's straight line, found from the principle alone.  Drag `b` and the arc swings round, meeting the line square on"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Belt wrap · arc length", "belt_wrap", "an open belt over two pulleys, closed as one tangent chain, with nothing saying how far apart the pulleys are: `length(wrap) big` states the belt in contact with the big pulley — its radius times its sweep — and the centre distance follows.  Edit `wrap` and the second pulley moves"),
@@ -443,6 +449,11 @@ pub fn source(key: &str) -> Option<&'static str> {
         "gravity_wall" => Some(include_str!("../../examples/gravity_wall.sv")),
         "drilled_plate" => Some(include_str!("../../examples/drilled_plate.sv")),
         "sized_plank" => Some(include_str!("../../examples/sized_plank.sv")),
+        "pressed_panel" => Some(include_str!("../../examples/pressed_panel.sv")),
+        "flat_bar_strut" => Some(include_str!("../../examples/flat_bar_strut.sv")),
+        "cantilever_plate" => Some(include_str!("../../examples/cantilever_plate.sv")),
+        "turned_shaft" => Some(include_str!("../../examples/turned_shaft.sv")),
+        "pin_lug" => Some(include_str!("../../examples/pin_lug.sv")),
         "sag" => Some(include_str!("../../examples/sag.sv")),
         "ring" => Some(include_str!("../../examples/ring.sv")),
         "fisheye" => Some(include_str!("../../examples/fisheye.sv")),

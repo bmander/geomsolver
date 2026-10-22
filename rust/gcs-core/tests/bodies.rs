@@ -376,3 +376,59 @@ fn a_filled_bodys_deflection_drives_nothing() {
     let said = gcs_core::report::scenario_answers(&e.sketch, s, &read);
     assert!(said[0].text.contains("nothing drives it yet"), "{}", said[0].text);
 }
+
+/// The library's solids read in three dimensions (#510 S3), each a capability: a driving row
+/// stacked through a plank, a load across a panel's plane, a solid's buckling, a plate's modes out
+/// of its plane, a solid of revolution filled from its boundary with a round making its stress
+/// answerable, and a body cut by another solid, its load named on the cutter's face from it.
+const LIBRARY: [&str; 6] =
+    ["sized_plank", "pressed_panel", "flat_bar_strut", "cantilever_plate", "turned_shaft",
+     "pin_lug"];
+
+/// **Every solid case of the library says what it claims** (#510 S3): solved, it leaves no
+/// freedom; every requirement has an answer with its error estimated beside it, and keeps what it
+/// states, a driven one held by its row; nothing is said against it.  The panel's sag and the bar's
+/// buckling factor are their closed forms within 1% (Timoshenko's clamped plate, Euler's strut),
+/// and the shaft's shoulder chamfered instead of rounded says its stress is unbounded and to round
+/// it, while its mass still answers.
+#[test]
+fn every_solid_case_of_the_library_says_what_it_claims() {
+    for key in LIBRARY {
+        let src = gcs_core::examples::source(key).unwrap();
+        let e = crate::common::read(src);
+        let mut sk = crate::common::solved(&e);
+        assert_eq!(crate::common::dof(&mut sk), 0, "{key}");
+        for s in &e.scenarios {
+            let (words, read) = scenario_read(&sk, &s.scenario);
+            assert!(words.is_empty(), "{key}: {words:?}");
+            let said = gcs_core::report::scenario_answers(&sk, s, &read);
+            assert_eq!(said.len(), s.scenario.requirements.len(), "{key}: {said:?}");
+            for (k, a) in said.iter().enumerate() {
+                let end = if s.driven[k].is_some() { "held" } else { "kept" };
+                assert!(a.text.ends_with(end), "{key}: {}", a.text);
+                assert!(a.error.is_some(), "{key}: {}", a.text);
+            }
+        }
+    }
+    let value = |key: &str, output: Output| -> f64 {
+        let e = crate::common::text::solved(gcs_core::examples::source(key).unwrap());
+        let (got, _) = answers(&e);
+        got.into_iter().find(|g| g.1 == output).unwrap().3.unwrap()
+    };
+    let d = 200e6 * 1000.0 / (12.0 * (1.0 - 0.09));
+    let sag = 0.00126 * 0.1e3 * 400f64.powi(4) / d;
+    let got = value("pressed_panel", Output::Deflection);
+    assert!((got - sag).abs() <= 1e-2 * sag, "the panel sinks {got}, Timoshenko's {sag}");
+    let euler = std::f64::consts::PI.powi(2) * 200e6 * 40.0 * 216.0 / 12.0 / (4.0 * 360000.0);
+    let factor = euler / (2e3 * 40.0 * 6.0);
+    let got = value("flat_bar_strut", Output::Buckling);
+    assert!((got - factor).abs() <= 1e-2 * factor, "the bar buckles at {got}, Euler's {factor}");
+    let chamfered = gcs_core::examples::source("turned_shaft").unwrap()
+        .replace("  round := arc(center: c, start: g, end: f) hint(r: rho)\n",
+                 "  round := line(f, g)\n");
+    let e = crate::common::text::solved(&chamfered);
+    let (got, _) = answers(&e);
+    let safety = got.iter().find(|g| g.1 == Output::Safety).unwrap();
+    assert!(safety.3.as_ref().unwrap_err().contains("round it"), "{safety:?}");
+    assert!(got.iter().any(|g| g.1 == Output::Mass && g.3.is_ok()));
+}

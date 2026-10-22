@@ -2105,6 +2105,10 @@ scenario press {
   a prism read so is a row, as a region's is, its face's nodes moved with the drawing and the
   solid's stacked over them.  The library's `sized_plank.sv` finds a plank's width so, bent across
   its own plane, which no reading in that plane can.
+- **The library shows the rest**: `pressed_panel.sv` (a pressure on a cap, across the plane),
+  `flat_bar_strut.sv` (buckling across the thickness), `cantilever_plate.sv` (modes out of the
+  plane: bending, twisting), `turned_shaft.sv` (a turned solid, a round making its stress
+  answerable) and `pin_lug.sv` (a cut body, a load on the cutter's face named from the body).
 
 | written | reported |
 |---|---|

@@ -1,0 +1,10 @@
+// Presentation of pressed_panel.sv. Model geometry is independent of this drawing.
+model m from "pressed_panel.sv"
+
+sheet drawing {
+  size A4
+  label "A PANEL UNDER PRESSURE" at (14mm, 18mm)
+  label "Its middle sinks as a clamped plate's under 0.1MPa on its face" at (14mm, 28mm)
+  sketch top(m) from m.std.top at (25mm, 220mm) scale 0.4
+  dimensions in top
+}

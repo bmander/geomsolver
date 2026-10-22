@@ -689,6 +689,19 @@ errors estimated beside every answer (S3), unless a rule names another.
   states, and the claims' reading of the solved drawing agrees with the row within its error
   (`a_requirement_sizes_a_plank`).
 
+- **The library's solid cases** each show a capability of the reading in three dimensions, and
+  each solves to no freedom, answers every requirement with its error beside it, keeps its claims
+  and holds what it drives, with nothing said against it (`tests/bodies.rs`,
+  `every_solid_case_of_the_library_says_what_it_claims`): the driving `sized_plank.sv` (above);
+  `pressed_panel.sv` (a pressure on a cap, across the plane: a clamped square panel's middle sinks
+  within 0.3% of Timoshenko's `0.00126 q a⁴ / D`); `flat_bar_strut.sv` (a solid's buckling, across
+  its thickness: 2.070, within 0.7% of Euler's); `cantilever_plate.sv` (modes out of the plane: it
+  bends at 46.6Hz, twists at 199Hz above Saint-Venant's, bends again at 290.6Hz); `turned_shaft.sv`
+  (a solid of revolution, filled: its shoulder's round gives its factor of safety an answer, a Kt
+  of 1.59, where a chamfer says to round it); and `pin_lug.sv` (a body cut by another solid, its
+  pull spread over the cutter's face named from the body, `lug.pin.bore`). The panel's sag and the
+  bar's factor are held to their closed forms within 1%.
+
 - **What S3 leaves.**
   - **Not in the page.** No surface carries a scenario's answers over the ABI (`report::
     scenarios_json` reaches `solventc` alone), so nothing runs an analysis in the page's mesh
