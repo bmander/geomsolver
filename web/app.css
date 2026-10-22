@@ -257,6 +257,10 @@ footer #refine.finished { color: var(--muted); }
 footer #claims { float: right; margin-left: 16px; color: var(--text); }
 footer #claims.failed { color: #a03b46; }
 footer #claims.finished { color: var(--muted); }
+/* the load scenarios' requirements, answered after each solve: one that fails stays red */
+footer #scenarios { float: right; margin-left: 16px; color: var(--text); }
+footer #scenarios.failed { color: #a03b46; }
+footer #scenarios.finished { color: var(--muted); }
 
 dialog {
   border: 1px solid var(--line); border-radius: 9px; padding: 0;

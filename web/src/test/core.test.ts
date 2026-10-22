@@ -1325,6 +1325,34 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
   }
 });
 
+test('a document says what its load scenarios answer, a claim refuted as well as kept', () => {
+  // the rounded bracket under its own load keeps all four claims; under a hundred thousand times
+  // that, the deflection and the factor of safety are refuted and the mass still kept — said in
+  // the core's words, the page's footer and its diagnosis reading these (#510)
+  const read = (load: string) => {
+    const src = examples.source('rounded_bracket').replace(/^P := 1kN$/m, `P := ${load}`);
+    const doc = Document.read(src);
+    assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+    assert.ok(solve(doc.sketch).success);
+    const ss = doc.scenarios();
+    doc.dispose();
+    return ss;
+  };
+  const kept = read('1kN');
+  assert.deepEqual(kept.map((s) => s.name), ['shelf']);
+  assert.equal(kept[0].answers.length, 4);
+  assert.ok(kept[0].answers.every((a) => a.holds === true && a.grade === 'claim'),
+    JSON.stringify(kept));
+  const heavy = read('100000kN')[0].answers;
+  assert.deepEqual(heavy.map((a) => a.holds), [false, false, true, true]);
+  assert.match(heavy[1].text, /^scenario `shelf`: safety\(bracket\) is .*: claimed >= 1, refuted$/);
+  assert.ok(heavy[0].value! > 1e4, `the tip moves ${heavy[0].value}mm`);
+  // a document with no scenario says none
+  const plain = Document.read('a := point hint((0, 0))\n');
+  assert.deepEqual(plain.scenarios(), []);
+  plain.dispose();
+});
+
 test('a solid that does not evaluate is refused with the core\'s reason, its neighbours meshed, and listed as not drawn', () => {
   // the triangle turned about `std.x`, which crosses it: the box once threw on the null face
   // table on every paint, and the page stopped drawing

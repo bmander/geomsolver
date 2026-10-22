@@ -86,6 +86,25 @@ export interface Region {
   rings: [number, number][][];
 }
 
+/** A requirement of a load scenario, answered at the drawing as it stands (#510): what it is of as
+ *  written, its grade (`claim`, `driving`, …), its value in the document's units and whether it
+ *  holds — both null where it has no answer — and the core's sentence for it. */
+export interface ScenarioAnswer {
+  requirement: string;
+  grade: string;
+  value: number | null;
+  holds: boolean | null;
+  text: string;
+}
+
+/** What a load scenario says (`report::scenarios_json`): its words — a motion its supports leave
+ *  free, an edge where a `safety` it states is unbounded — and each requirement's answer. */
+export interface Scenario {
+  name: string;
+  words: string[];
+  answers: ScenarioAnswer[];
+}
+
 /** A proposed new source.  Nothing has happened yet: `text` is what the document would say. */
 export interface Edit {
   text: string;
@@ -205,6 +224,13 @@ export class Document {
    *  from one document to the next: a proxy dies with its sketch, a name does not. */
   entity(name: string): Primitive | undefined {
     return this.byName.get(name);
+  }
+
+  /** **What each load scenario says** of the drawing as it stands, in the core's words: every
+   *  requirement judged — a claim kept or refuted — over a mesh of the solved drawing.  Read
+   *  again after each solve; empty for a document with no scenario. */
+  scenarios(): Scenario[] {
+    return takeJson<Scenario[]>(core().gcs_elab_scenarios_json(this.h, this.sketch.handle)) ?? [];
   }
 
   /** **The solids this document names**, in the order it names them.
