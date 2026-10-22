@@ -240,6 +240,9 @@ impl<'a> Walk<'a> {
         let c = d.carried.as_ref().expect("a reading at an instant");
         let k = self.readings.len();
         self.readings.push((c.source.clone(), scope.clone()));
+        // a frame where what it reads is one (#524)
+        let abs = format!("{prefix}{}", d.name.key().text);
+        self.standard.frames.insert(abs, Some(self.readings[k].clone()));
         for (s, read) in super::carried::ways(st, d) {
             let sc = Scope { reading: Some((k, read)), ..scope.clone() };
             match &s.kind {
@@ -356,6 +359,10 @@ impl<'a> Walk<'a> {
     ) {
         let abs = format!("{prefix}{}", d.name.key().text);
         self.names.insert(abs.clone());
+        // a frame, which an instance standing in reads no standard datum of (#524)
+        if d.bare {
+            self.standard.frames.insert(abs.clone(), None);
+        }
         if d.kind == crate::model::EntKind::Solid {
             self.solid_names.insert(abs.clone());
         }
@@ -845,8 +852,7 @@ impl<'a> Walk<'a> {
         // the instance's own `in`, or the one already in force around it — both at once
         // nest (#383): the one around it is ridden on, as are the instance's further blocks
         let mut rides = scope.stamps.rides.clone();
-        let here = |plane: &Ref| InPlane { owner: scope.owner.clone(), plane: plane.clone(),
-                                           prefixes: scope.prefixes.clone(), closed: scope.closed };
+        let here = |plane: &Ref| InPlane::at(plane, scope);
         let in_plane = match (inst.membership.plane(), &scope.stamps.plane) {
             // written here, in this scope: it resolves against these prefixes
             (Some(p), outer) => {
@@ -872,6 +878,9 @@ impl<'a> Walk<'a> {
         if self.same_instance(comp, &key, scope, &sub_vals, &sides, &stamps) {
             return ControlFlow::Continue(());
         }
+        // it stands in the frame its call stands in (#524): every `in` around the call, and
+        // where there is none its parent's — the world, at the root
+        let stands = stamps.rides.iter().chain(&stamps.plane).cloned().collect();
         // the call's numbers over the constants of the file the component is written in (#461),
         // its other numbers out of reach as the caller's are
         let (constants, unknowns) = self.file_numbers(comp.module);
@@ -901,6 +910,7 @@ impl<'a> Walk<'a> {
             stamps,
             pred: PredWalk { pass: Pass::Itself, written: None, held: false },
             reading: None,
+            stands: Some(std::rc::Rc::new(stands)),
         };
         // a component reached again while it is still being expanded recurses
         // (§8), ended by a `when` over its numbers: given the numbers it was given
@@ -1486,6 +1496,7 @@ impl<'a> Walk<'a> {
                     held: scope.pred.held,
                 },
                 reading: None,
+                stands: scope.stands.clone(),
             };
             let mut p2 = path.to_vec();
             p2.push(PathStep::Copy { block: st.id, index: k as u32 });
@@ -1584,8 +1595,9 @@ impl Walk<'_> {
         let units = self.units;
         // a plane or a point is never a face's name past a solid
         let solids = BTreeSet::new();
+        let standard = self.standard.clone();
         let at = |r: &Ref, sc: &Scope, names: &BTreeSet<String>| {
-            Lookup { names, solids: &solids, alias, units }.find(r, sc)
+            Lookup { names, solids: &solids, alias, units, standard: &standard }.find(r, sc)
                 .and_then(|(abs, rest)| rest.is_empty().then_some(abs))
         };
         // every declaration walked, by its absolute name, and the standard datums, walked after

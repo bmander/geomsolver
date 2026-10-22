@@ -31,21 +31,17 @@ component Flat(n: plane, w: Length, h: Length) {
   f := face(a, b, c, d, -> close)
 }
 
-component Frenet(base: plane, r: Length, pitch: Length, turns: Scalar, w: Length, h: Length,
-                 s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+component Frenet(r: Length, pitch: Length, turns: Scalar, w: Length, h: Length, s: Scalar) {
+  st := std.OnHelix(std.top, r: r, pitch: pitch, turns: turns, s: s)
   sec := Flat(st.n, w: w, h: h)
 }
 
-component Unturned(base: plane, r: Length, pitch: Length, turns: Scalar, w: Length, h: Length,
-                   s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
-  rm := std.Minimal(st.n, up: base.normal, s: s)
+component Unturned(r: Length, pitch: Length, turns: Scalar, w: Length, h: Length, s: Scalar) {
+  st := std.OnHelix(std.top, r: r, pitch: pitch, turns: turns, s: s)
+  rm := std.Minimal(st.n, up: std.top.normal, s: s)
   sec := Flat(rm.f, w: w, h: h)
 }
 
 param s: Scalar over (0, 1)
-facing := sweep(Frenet(std.top, r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f
-                over s)
-twisting := sweep(Unturned(std.top, r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f
-                  over s)
+facing := sweep(Frenet(r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f over s)
+twisting := sweep(Unturned(r: r, pitch: pitch, turns: turns, w: w, h: h).sec.f over s)

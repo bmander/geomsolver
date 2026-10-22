@@ -3,18 +3,16 @@
 //! A requirement on a structure — a tip moves no more than half a millimetre — is a row whose
 //! residual is an output `J(u)` of the displacements `u` that solve `K(x)u = f`, where the
 //! stiffness `K` is assembled from the drawing's own numbers `x` (where the nodes stand, how
-//! big each member is).  The row is a **kernel**, not a boundary of `solve/through.rs`: `u` is no
-//! unknown of the drawing — a boundary's inner unknowns are parameters of the one `System` and
-//! its inner solve is the square Newton of `newton::square` on a dense LU, where an analysis has
-//! thousands of displacements, a solve that is linear, and nothing to show of them in the
+//! big each member is).  The row is a **kernel**: `u` is no unknown of the drawing — an analysis
+//! has thousands of displacements, a solve that is linear, and nothing to show of them in the
 //! drawing — and a kernel is a row like every other: the flat solve, the decomposition, the
 //! diagnosis, a claim and a free twin take it as they take a spline's length (`integral.rs`),
 //! which reads every control point of its spline as this reads every node and member.
 //!
 //! The value is one factorisation of `K` and one solve; the gradient is **the adjoint**, one more
 //! solve on the factor already in hand, `Kᵀλ = ∂J/∂u`, then `dJ/dx = ∂J/∂x − λᵀ(∂K/∂x·u − ∂f/∂x)`
-//! — whatever number of columns the row reads, where the implicit function theorem of a
-//! boundary answers one column at a time.  `∂K/∂x·u` is never formed: `λᵀK(x)u` is a sum of
+//! — whatever number of columns the row reads, where the implicit function theorem through a
+//! square Newton (`newton::square`, a locus's) answers one column at a time.  `∂K/∂x·u` is never formed: `λᵀK(x)u` is a sum of
 //! each element's mutual energy `λₑᵀkₑ(xₑ)uₑ`, and only its gradient in the element's own
 //! columns is taken (`Bar::mutual`).
 //!

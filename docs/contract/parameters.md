@@ -107,9 +107,11 @@ where a rule came from.
   (`motions::value_of`).  The value is no number of the frame's and states no row:
   `program::motions::values` reads it off the statement into `Resolver::values`, after the
   memberships and before any reading is built, and `motions::holding` hands the `fix` the rest of
-  its slots.  An Angle, checked there once (E103, as is a declared parameter read in it);
-  refused: a value of anything but a jointed frame (E080), one given twice (E040), a frame with a
-  value riding on another, and one a frame rides on (E080, naming `n := base in f`).  What its
+  its slots; a reconcile reads it as no gauge, so a gesture never takes the statement out
+  (`a_joints_value_survives_a_reconcile`).  An Angle, checked there once (E103, as is a declared
+  parameter read in it); refused: a value of anything but a jointed frame (E080), one given twice
+  (E040), a frame with a value riding on another, and one a frame rides on (E080, naming
+  `n := base in f`).  What its
   `in` block draws stands where the value puts it (#398 B, below); through [0.144] anything drawn
   there was refused.
   - **`n := x in f`, drawn in a jointed frame** (`P::drawn_in`, a `Decl::carried` whose args are

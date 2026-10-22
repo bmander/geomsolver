@@ -13,8 +13,8 @@ wire := 1.5mm
 pitch := 5mm
 turns := 4
 
-component Coil(base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+component Coil(r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
+  st := std.OnHelix(std.top, r: r, pitch: pitch, turns: turns, s: s)
   in st.n {
     w := circle(center: st.n.origin)
     radius(wire) w
@@ -23,4 +23,4 @@ component Coil(base: plane, r: Length, wire: Length, pitch: Length, turns: Scala
 }
 
 param s: Scalar over (0, 1)
-spring := sweep(Coil(std.top, r: r, wire: wire, pitch: pitch, turns: turns).f over s)
+spring := sweep(Coil(r: r, wire: wire, pitch: pitch, turns: turns).f over s)

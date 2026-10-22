@@ -662,9 +662,12 @@ t0 := Rung(l0, r0, len: 50)
 - **An instance's numbers are read by its name**: every numeric formal, bound or not, is
   `inst.formal` — `p distance(ball.r) ball.center` — and travels with an instance passed as a
   `group`. Values a body declares are not read this way.
-- **Scope is closed.** A body sees only its formals and its own declarations: geometry, standard
-  datums and the document's unknowns must be passed in. Component definitions and built-in
-  functions remain callable. Repetition blocks share the enclosing scope.
+- **Scope is closed.** A body sees only its formals and its own declarations: geometry and the
+  document's unknowns must be passed in. Component definitions and built-in functions remain
+  callable. Repetition blocks share the enclosing scope.
+- **A body's standard datums are its frame's**: `std.front`, `std.top`, `std.side`, `std.up`,
+  `std.x`, `std.y`, `std.z`, `std.back` and `std.origin` in a body name the datums of the frame the
+  instance stands in — so a body says `in std.side { … }` itself and is handed no view (1.12).
 - **A body reads its file's constants**: the values its file states at the top and those of the
   modules the file `use`s (`engine.dims.L`, or `L` with `use engine.dims (L)`), with nothing passed
   at the call. A number a parent should be able to vary or solve for — a crank's angle, a ratio — is
@@ -1268,9 +1271,10 @@ agree; E061 for points in one plane or parallel planes, E065 if the planes come 
 Views carry no place on paper: the `.svd` places each.
 
 - **`in top { … }`** writes membership once for every declaration inside. An instance joins a view
-  whole: `t := Tooth(…) in top`. Inside a component, `in view { … }` over plane formals lets a part
-  carry its own views (`engine/conrod.sv`), and `when flag == 1 { … }` over a 0/1 `Int` formal
-  omits a view an instance does not show in. A body may instead draw in the plane an operand is
+  whole: `t := Tooth(…) in top`. Inside a component, `in std.side { … }` draws in its frame's
+  own datums (`engine/block.sv`); `in view { … }` over plane formals lets a part carry views it is
+  handed (`engine/conrod.sv`), and `when flag == 1 { … }` over a 0/1 `Int` formal omits a view an
+  instance does not show in. A body may instead draw in the plane an operand is
   drawn in, `in pin.plane { … }` (or `in pin.end.plane`, through a member): no view is handed to
   it, and it is drawn wherever what it is mated to is. A point standing in space has no plane
   (E040 at the reference).
@@ -1314,7 +1318,16 @@ in f {
 }
 ```
 
-No component has an implicit frame. **Model relationships, not coordinate tables**: a rectangle is perpendicular
+**A definition stands in a frame.** An instance stands in the frame its call stands in — the
+innermost frame of the `in` blocks around the call or of an `in f` trailer on it, else its parent
+instance's, so at the root the world — and its body's `std.*` name that frame's datums: the
+world's, at the root, as the document's own do. A plane is no frame: `t := Tooth(…) in top` puts
+the instance on `top` and changes nothing `std` names inside it. A frame's own datums are not
+drawn yet, so a body reading `std` while its instance stands in a frame (`in (f := frame) { p :=
+Post() }`) is E101, saying so: hand that body its view instead. The body's file says `use std`, a
+module's by its own; a relation word reads only its operands, `std` included (E101).
+
+**Model relationships, not coordinate tables**: a rectangle is perpendicular
 sides, a width, a height and a position against a datum, not an ordinate for every corner; the
 library deliberately has no coordinate-placement helper. A stepped outline is a chain of runs
 (1.7), one number each, and not a table of corners.
@@ -1575,8 +1588,8 @@ of the geometry it was given (`rim.r`).
   (`body.sec.ab`).
 - **Seed the section where it belongs at the middle of the interval**: the branch the drawn station
   takes is the one every station keeps (`docs/lofts/l0/`).
-- A component is closed over its arguments, so the station's `up` (`std.z`) is passed in as an
-  `axis` formal.
+- A body reads its frame's `std.z` itself (1.12), so a station whose `up` is always the world's
+  needs no formal for it; an `axis` formal is for an `up` the call chooses.
 
 **Where the section stands, and what it is**, are constraints in the component: a station word of
 `std` for the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line,
@@ -2371,7 +2384,17 @@ make solventc                                         # once
 build/solventc drawing.sv                             # parse, elaborate, solve, diagnose; --json
 build/solventc drawing.sv --where hinge               # where a name landed
 build/solventc drawing.sv --stl part.stl --solid body # a solid, for a printer
+build/solventc part.sv --png part.png                 # look at it: the workspace's objects
 ```
+
+**Look at a solid before you trust it.**  `--png PATH` draws what the workspace shows, with no
+browser or GPU: each object shaded in its instance's colour, depth-buffered, its creases and
+silhouettes inked.  A part file draws its `preview`, about the world's origin.  `--view` is `home`
+(the workspace's opening view), a view a sheet names (`front`, `back`, `right`, `left`, `top`,
+`bottom`, `isometric`) or `az,el` in degrees; `--size` the longer side in pixels (1200); `--solid NAME` one solid, or every object of one instance; `--hide
+a,b` leaves those out, each a name and everything under it, for a cutaway
+(`--hide block.casting,head`).  An open box, a belt off its pulleys, a piston not at its stroke —
+a picture shows what no number in the report does.
 
 Exit codes: 0 solved, 1 did not parse or elaborate, 2 did not solve. A successful solve does not
 mean the model is fully constrained: read the diagnosis — parameter and equation counts, the

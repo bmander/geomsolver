@@ -582,9 +582,8 @@ curve has its Jacobian in the profile's columns against central differences; and
   sketch and `Constraint::params_on` — never a second column mapping — into static-kernel rows
   over `[u, θ, values, q, w]`: `q` the body's coordinates, `w` a dimension over `u` computed by a
   tape and read by its **free twin** kernel (`(m, c)` the unit conversion), so no new derivative
-  code exists.  `C(u)` is a small damped Newton solve (`newton::square`, shared with a parent's
-  solve through a boundary, `boundaries.md`), its derivatives the implicit function theorem from
-  one factorisation.  The body encodes to flat `f64` in the contact's consts
+  code exists.  `C(u)` is a small damped Newton solve (`newton::square`), its derivatives the
+  implicit function theorem from one factorisation.  The body encodes to flat `f64` in the contact's consts
   (`locus::eval_at` the one evaluator, `eval_flat` its cold entry); `System` picks
   `point_on_body_kernel` over `curve_kernel` per definition, bindings untouched.  A trace contact's
   constants are `[anchor, n_values, values…, has_pose, flat…, pose…]` (`kernel_eval` reads,

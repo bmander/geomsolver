@@ -496,8 +496,7 @@ pub struct Anchor<'a> {
 }
 
 /// One Newton solve of the block at the parameter already written into `s.xv[0]`, from the `q`
-/// already in `s.xv`: `newton::square`, the loop a parent's solve through an instance runs too
-/// (`solve/through.rs`).  Residual rows are judged against their own kernel's power of length over
+/// already in `s.xv`: `newton::square`.  Residual rows are judged against their own kernel's power of length over
 /// the magnitude of what they read — the same reasoning as `System::max_relative_residual`, in
 /// miniature — so one tolerance serves a block at any size.
 fn newton(v: &View, s: &mut Scratch) -> bool {

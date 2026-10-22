@@ -136,6 +136,11 @@ struct Scope {
     /// way: the index into `Walk::readings` and what its source must be for this to be the one
     /// kept (`carried`, `Walk::settle_readings`).
     reading: Option<(usize, carried::Read)>,
+    /// **Where a definition's body stands** (#524): the `in`s around its instance's call and
+    /// around every call enclosing it, outermost first — what `std.front` in the body names the
+    /// datums of (`Lookup::datum`).  Empty at the root, the world.  `None` outside a definition's
+    /// body: the document's own scope, a relation word's, a traced body's.
+    stands: Option<std::rc::Rc<Vec<InPlane>>>,
 }
 
 /// The numbers in force outside a closed component's body (`Scope::forbidden`): the scope the
@@ -229,6 +234,12 @@ impl Scope {
         Scope { prefixes: vec![String::new()], access, ..Scope::default() }
     }
 
+    /// `inner` read where `ip` was written: its owner, prefixes, file and place (#45.4, #524).
+    fn written_at(ip: &InPlane, inner: &Scope) -> Scope {
+        Scope { owner: ip.owner.clone(), prefixes: ip.prefixes.clone(), closed: ip.closed,
+                module: ip.module, stands: ip.stands.clone(), ..inner.clone() }
+    }
+
     /// The innermost prefix — what a name declared here is put under.
     fn prefix(&self) -> &str {
         self.prefixes.first().map(String::as_str).unwrap_or("")
@@ -269,6 +280,29 @@ struct InPlane {
     plane: Ref,
     prefixes: Vec<String>,
     closed: bool,
+    /// The file and the place it was written in (`Scope::{module, stands}`): what a standard
+    /// datum it names is read by (#524).
+    module: Option<usize>,
+    stands: Option<std::rc::Rc<Vec<InPlane>>>,
+}
+
+impl InPlane {
+    /// `plane`, written in `sc`.
+    fn at(plane: &Ref, sc: &Scope) -> InPlane {
+        InPlane { owner: sc.owner.clone(), plane: plane.clone(), prefixes: sc.prefixes.clone(),
+                  closed: sc.closed, module: sc.module, stands: sc.stands.clone() }
+    }
+}
+
+/// **The standard datums** (#524), as a definition's body reads them: the files that say `use
+/// std` — the document (`None`) or a module — empty where the drawing has none, and every frame
+/// declared, by absolute name, which an instance standing in refuses them.  A frame declared bare
+/// is one (`None`); a reading at an instant (`Walk::walk_reading_at`) is one where its source,
+/// read where it was written, is.
+#[derive(Clone, Default)]
+struct Datums {
+    files: BTreeSet<Option<usize>>,
+    frames: BTreeMap<String, Option<(Ref, Scope)>>,
 }
 
 pub struct Expansion {
@@ -474,8 +508,9 @@ struct Walk<'a> {
     /// arguments) carries no span and so is read at most once, which costs nothing: it labels
     /// every number by construction.
     called: BTreeSet<Span>,
-    /// The document says `use std`, so it has the standard datums (`StandardDatums`).
-    standard_datums: bool,
+    /// The standard datums (`StandardDatums`): who reads them, where a file read says `use std`,
+    /// and the frames that refuse them — see `Datums`.
+    standard: Datums,
     group_names: BTreeSet<String>,
     /// Every interface of the program, resolved once (`interfaces::shapes`).
     shapes: Vec<std::rc::Rc<interfaces::Shape>>,
@@ -699,16 +734,20 @@ impl<'a> Walk<'a> {
             StmtKind::Group(g) => g.name.text == "std",
             _ => false,
         });
-        // the datums are the standard library's names like any other (§14.4): the document
-        // reaches `std.front` through a `use std` of its own
-        let used = prog.uses.iter().any(|u| u.name == "std");
-        let standard_datums = sym.is_none() && standard.is_some() && used && !shadowed;
+        // the datums are the standard library's names like any other (§14.4): a file reaches
+        // `std.front` through a `use std` of its own — the document at its root and in its
+        // definitions, a module in its definitions (#524) — and they are made where any does
+        let made = sym.is_none() && standard.is_some() && !shadowed;
+        let files: BTreeSet<Option<usize>> = std::iter::once(None)
+            .chain((0..prog.modules.len()).map(Some))
+            .filter(|&f| made && prog.uses_of(f).contains(&"std"))
+            .collect();
         Walk {
             private_names: BTreeMap::new(),
             prog,
             units,
             out: Vec::new(),
-            names: if standard_datums {
+            names: if !files.is_empty() {
                 standard.unwrap().body.iter().filter_map(|st| match &st.kind {
                     StmtKind::Decl(d) => Some(format!("std.{}", d.name.key().text)),
                     _ => None,
@@ -724,7 +763,7 @@ impl<'a> Walk<'a> {
             constants: BTreeMap::new(),
             diagnostics: Vec::new(),
             called: BTreeSet::new(),
-            standard_datums,
+            standard: Datums { files, frames: BTreeMap::new() },
             group_names: BTreeSet::new(),
             shapes: interfaces::shapes(prog),
             typed: BTreeMap::new(),
@@ -774,9 +813,9 @@ impl<'a> Walk<'a> {
     }
 
     /// The standard datums' component and the scope its statements are walked in, where the
-    /// document has them (`use std`).
+    /// drawing has them (a `use std` in any file read).
     fn datums(&self) -> Option<(&'a Component, Scope)> {
-        if !self.standard_datums {
+        if self.standard.files.is_empty() {
             return None;
         }
         let k = self.prog.modules.iter().position(|m| m.name == "std");

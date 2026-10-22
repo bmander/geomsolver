@@ -201,3 +201,23 @@ fn the_normal_is_not_drawn() {
     let axes = e.sketch.drawn().iter().filter(|r| r.kind == EntKind::Axis).count();
     assert_eq!(axes, e.sketch.axes.len() - 1);
 }
+
+/// **A normal is the plane's, and no axis a gesture drew** (#463): `o.plane.normal` is minted
+/// after every axis the elaboration made and is no statement's, so a reconcile after a solve —
+/// what the page does after every edit — writes nothing for it.  It once appended an
+/// `x0 := axis`, and the text then elaborated to six more parameters than the drawing held,
+/// which every worker given the page's values refused (the engine's timing drive).
+#[test]
+fn a_normal_read_writes_nothing_back() {
+    for reading in ["a.plane.normal", "std.top.normal"] {
+        let src = format!("use std\na := point in std.top\nb := point hint((1, 2, 3))\n\
+            l := line(a, b)\nl parallel {reading}\n");
+        let mut e = read(&src);
+        let sk = solved(&e.sketch);
+        let out = gcs_core::edit::reconcile(&mut e, &sk);
+        assert!(out.refused.is_none(), "{reading}: {:?}", out.refused);
+        assert!(!out.text.contains(":= axis"), "{reading}: reconcile wrote {}", out.text);
+        let again = read(&out.text);
+        assert_eq!(again.sketch.params.len(), sk.params.len(), "{reading}: {}", out.text);
+    }
+}

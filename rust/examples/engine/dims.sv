@@ -90,6 +90,8 @@ roof := deck + (D / 2) * tan(va)                             // the ridge of the
 camx := vs + (stem + rb) * sin(va)                            // cam centre off the bore axis
 camh := deck + (D / 2 - vs) * tan(va) + (stem + rb) * cos(va) // cam centre above the crank
 
-// the timing drive: the cam pulleys are twice the crank's, since a cam turns at half speed
-rcp := 30mm
+// the timing drive: the cam pulleys are twice the crank's, since a cam turns at half speed.  The
+// two cam centres stand `2 camx` (118) apart, so a cam pulley's pitch radius must be well under
+// 59 for the pair to clear each other: 26 at the crank leaves 14 between their pitch circles
+rcp := 26mm
 rcam := 2 * rcp

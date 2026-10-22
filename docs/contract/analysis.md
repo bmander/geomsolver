@@ -26,13 +26,11 @@ frame's driving row (S1), unless a rule names another.
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
   built at its block's widths (`KernelKey::Interior { n_par, n_const }`, `interior::kernel`) as a
-  spline's length is (`integral.rs`): one row reading every number the structure is made of. It
-  is not a boundary of `solve/through.rs`. A boundary's inner unknowns are parameters of the one
-  `System`, and its inner solve is `newton::square` on a dense LU, its derivative a column at a
-  time. A structure's displacements are thousands of numbers the drawing does not hold, its
-  solve is linear, and it needs one derivative for many columns. As a row it is taken as every
-  other row is, by the flat solve, the decomposition, the diagnosis, a claim and a free twin,
-  and no boundary has to be named from Rust.
+  spline's length is (`integral.rs`): one row reading every number the structure is made of. A
+  structure's displacements are thousands of numbers the drawing does not hold, its solve is
+  linear, and it needs one derivative for many columns, which the adjoint gives. As a row it is
+  taken as every other row is, by the flat solve, the decomposition, the diagnosis, a claim and
+  a free twin.
 
 - **The value is one factorisation; the gradient is the adjoint** (#510 P5). `Structure::solve`
   assembles `K(x)`, factors it once and solves for `u`. `Structure::gradient` solves `Kᵀλ = ∂J/∂u`
@@ -247,7 +245,7 @@ frame's driving row (S1), unless a rule names another.
     factors `K` again beside the static solve's normal equations.
 
 - **A frame's deflection, driven, is a row** (#510 S1; `CKind::Deflection`, `beams::Row`,
-  `program::scenarios::drive`, §9.11 [0.167]). `deflection(p, along: d) == v` in a scenario, `p` a
+  `program::scenarios::drive`, §9.11 [0.168]). `deflection(p, along: d) == v` in a scenario, `p` a
   joint of a frame (`beams::of_frame`), is compiled by the elaborator, once every scenario is read,
   into a constraint of the drawing: `[at: Point, along: Direction, scenario: Int, d: Length]`, the
   scenario's supports and loads held for it on `Sketch::scenarios` (only a scenario that drives is
