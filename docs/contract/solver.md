@@ -204,16 +204,22 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   stationary point of the row, which the raw form left only by shrinking a line, so which way they
   turn is the other rows'.  A line of no length still has no direction (its floored unit is nil,
   so every such row holds there), so the lines a row reads by direction are named
-  (`Constraint::direction_lines`: the three tangencies' line, both of `Parallel`'s and
-  `Perpendicular`'s) and `solve::collapsed` lists every acting row with one no longer, in space,
-  than `COLLAPSE_TOL` (the solve's own relative tolerance) of the extent.  A document solve ending
+  (`Constraint::direction_lines`, #496: the three tangencies' line, both of `Parallel`'s and an
+  unsensed `Perpendicular`'s, a spline's or a curve's tangent line, a rate's line, a `Level`'s
+  along a line, and in space both of `Perpendicular3`'s and `Parallel3`'s, `PointOnLine3`'s and
+  `LinePerpendicularPlane`'s — an exhaustive match over `CKind`, so a new kind says, and
+  `every_row_read_by_direction_is_declared` holds it to the kernels: every line slot of every row
+  of the Jacobian corpus is declared exactly when shrinking that line toward either end leaves the
+  residual where it was and its collapse puts it at nil whatever else) and `solve::collapsed`
+  lists every acting row with one no longer, in space, than `COLLAPSE_TOL` (the solve's own
+  relative tolerance) of the extent.  A document solve ending
   there is a failed solve (`solve::unless_collapsed`), recovered as any is (`RECOVERIES` and
   `System::at_own_sizes`; a recovery's solve that ends collapsed is never kept), else fails, status
   `COLLAPSED`, never reported solved; the plan
   solver falls back to the numeric solve where its root collapses one and keeps no `COLLAPSED`
   result; `Diagnosis::collapsed` names them (report `collapsed`, the CLI's `degenerate`).  A drag
-  (`retry` off) is not judged.  `tests/collapsed_side.rs` and `tests/collapsed_tangent.rs` are the
-  gates.
+  (`retry` off) is not judged.  `tests/collapsed_side.rs`, `tests/collapsed_tangent.rs` and
+  `tests/collapsed_space.rs` are the gates.
 - `Horizontal`/`Vertical` level a line; a `Level` along a view's own axis levels a *pair of
   points* with the same line kernels, and `cgraph` gives it a `virtual_line` in the ground
   x-axis's direction class, so a levelled pair decomposes rather than falling to the residue.

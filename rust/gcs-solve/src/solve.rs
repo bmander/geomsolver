@@ -65,12 +65,13 @@ fn reads_pose(sk: &Sketch) -> bool {
 }
 
 /// **A tangency at a contact is no tangency along a line of no length** (#479), **nor is a
-/// `parallel` or a `perpendicular`**: every acting constraint, by id, whose row reads a line only
-/// by its direction (`Constraint::direction_lines`) where that line is shorter, in space, than
-/// `COLLAPSE_TOL` of the extent.  The rows read the line's unit direction, so a shrinking line is
-/// no nearer their root; but a line of no length has no direction, and its floored unit is nil,
-/// so each still holds there whatever else: a run tangent at both its ends held together where
-/// its two rounds cross, a rectangle's side pinned to a point.  A document solve ending there is a
+/// `parallel` or a `perpendicular`**, in a view or in space (#496): every acting constraint, by
+/// id, whose row reads a line only by its direction (`Constraint::direction_lines`) where that
+/// line is shorter, in space, than `COLLAPSE_TOL` of the extent.  The rows read the line's unit
+/// direction, so a shrinking line is no nearer their root; but a line of no length has no
+/// direction, and its floored unit is nil, so each still holds there whatever else: a run tangent
+/// at both its ends held together where its two rounds cross, a rectangle's side pinned to a
+/// point.  A document solve ending there is a
 /// failed solve, recovered as any is (`RECOVERIES`, whose solve is never kept collapsed), else
 /// fails (`COLLAPSED`), never reported solved.
 pub fn collapsed(sk: &Sketch) -> Vec<u32> {

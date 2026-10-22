@@ -1057,3 +1057,75 @@ rate(X over t) perpendicular nl
         }
     }
 }
+
+/// **Which lines a row reads by direction is the kernel's** (#496): `Constraint::direction_lines`
+/// names them for `solve::collapsed`, and the table is held to the kernels here.  For every line
+/// slot of every row of the corpus, the line is shrunk toward each of its ends, in its view and
+/// in space (its ends' hidden points, where the row reads those).  The row reads it only by
+/// direction when a millionth of the line leaves the residual where it was, and the line's
+/// collapse puts it at nil whatever else — at the pose and with every other column moved: no
+/// nearer its root as it shrinks, and on it at a line of no length.  That is a slot
+/// `direction_lines` must name, and a slot it names must be one; a row that comes to its root
+/// continuously (`b − a` unnormalised), or holds at a nil line only by the sign of a zero (an
+/// angle's `atan2`), is not.
+#[test]
+fn every_row_read_by_direction_is_declared() {
+    use gcs_core::model::EntKind;
+    let norm = |r: &[f64]| r.iter().map(|x| x * x).sum::<f64>().sqrt();
+    for seed in 0..3u32 {
+        let sk = all_constraints(seed);
+        let mut rng = Rng::new(seed + 70);
+        for c in &sk.constraints {
+            let declared: Vec<usize> = c.direction_lines().collect();
+            for a in &c.args {
+                let Arg::Ent(e) = a else { continue };
+                if e.kind != EntKind::Line {
+                    continue;
+                }
+                let l = &sk.lines[e.i()];
+                // the sketch with the line `s` of its length, its end `to` held, and the
+                // Params of its two ends
+                let shrunk = |to: u32, from: u32, s: f64| {
+                    let (to, from) = (to as usize, from as usize);
+                    let mut pairs: Vec<(u32, u32)> =
+                        sk.point_params(to).into_iter().zip(sk.point_params(from)).collect();
+                    if let (Some(a), Some(b)) = (sk.lift_of(to), sk.lift_of(from)) {
+                        pairs.extend(sk.lifts[a].x.into_iter().zip(sk.lifts[b].x));
+                    }
+                    let mut k = sk.clone();
+                    for &(t, f) in &pairs {
+                        let (vt, vf) = (sk.params[t as usize].value, sk.params[f as usize].value);
+                        k.params[f as usize].value = vt + s * (vf - vt);
+                    }
+                    let ends: Vec<u32> = pairs.iter().flat_map(|&(t, f)| [t, f]).collect();
+                    (k, ends)
+                };
+                let at = |to: u32, from: u32, s: f64| {
+                    let (k, _) = shrunk(to, from, s);
+                    norm(&c.residual(&k, &c.local_values(&k)))
+                };
+                let mut by_direction = |to: u32, from: u32| {
+                    let r = at(to, from, 1.0);
+                    if !(r > 1e-6 && (at(to, from, 1e-6) - r).abs() < 1e-6 * r) {
+                        return false;
+                    }
+                    let (k, ends) = shrunk(to, from, 0.0);
+                    let cols = c.params(&k);
+                    (0..16).all(|n| {
+                        let mut v = c.local_values(&k);
+                        for (x, p) in v.iter_mut().zip(&cols) {
+                            if n > 0 && !ends.contains(p) {
+                                *x += rng.uniform(-20.0, 20.0);
+                            }
+                        }
+                        norm(&c.residual(&k, &v)) < 1e-12
+                    })
+                };
+                let found = by_direction(l.p1, l.p2) || by_direction(l.p2, l.p1);
+                assert_eq!(found, declared.contains(&e.i()),
+                           "seed {seed}: {:?} {:?} reads line {} by direction: {found}",
+                           c.kind, c.args, e.i());
+            }
+        }
+    }
+}
