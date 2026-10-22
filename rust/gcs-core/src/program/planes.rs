@@ -140,7 +140,10 @@ fn member(
     if let [.., (outer, at), (inner, _)] = charts[..] {
         let who = |f: usize| map.name_of(EntRef::frame(f)).cloned()
             .unwrap_or_else(|| entity_name(EntRef::frame(f)));
-        if crate::flatten::frame_datum(&who(inner)).map(|(f, _)| f) != Some(who(outer).as_str()) {
+        // a datum is no name a reader sees, so it is known by the key it resolves by
+        let key = |f: usize| map.keys().find(|&(_, e)| e == EntRef::frame(f)).map(|(k, _)| k);
+        let datum = key(inner).and_then(|k| crate::flatten::frame_datum(k)).map(|(f, _)| f);
+        if datum.is_none() || datum != key(outer).map(String::as_str) {
             fail(Code::W115, at, format!(
                 "drawn in `{}`, so the `{}` around it says nothing of where: a frame with axes \
                  inside another draws what is in it, and the outer one is ridden on",

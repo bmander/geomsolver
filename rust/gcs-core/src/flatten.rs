@@ -863,7 +863,9 @@ impl<'a> Walk<'a> {
             let root = Scope::absolute(Default::default());
             let given = Ref::dotted(&frame, formal.name.span);
             self.aliases.push((format!("{prefix}{}", formal.name.text), given, root));
-            let scope = Scope { prefixes: vec![prefix], module: comp.module, ..Scope::default() };
+            // named by no name a reader sees: they are read only as a body's `std`
+            let mut scope = Scope { prefixes: vec![prefix], module: comp.module, ..Scope::default() };
+            scope.stamps.anonymous = true;
             let mut vals = Vals::of(self.module_params(comp.module.unwrap()));
             let path = self.standard.sited.get(&frame).cloned().unwrap_or_default();
             self.body(&comp.body, &scope, &mut vals, &path, 1);

@@ -315,7 +315,8 @@ where it was written (`Scope::written_at`), to a frame (`Datums::frames`: a decl
 `frame`, or a reading at an instant whose source is one, `walk_reading_at`, `Lookup::frame`), the
 innermost such names **the frame's own datums** ([0.168], #542; through 0.167 E101): `std.x`,
 `std.y`, `std.z` read as its `u`, `v`, `normal` (minting its chart as `f.u` does), and the rest as
-`std`'s `FrameDatums` over it under `keys::frame_datums` (`{frame}#std.`, no name a source writes),
+`std`'s `FrameDatums` over it under `keys::frame_datums` (`{frame}#std.`, keys a source cannot
+write, walked `Stamps::anonymous` so no reader is shown them),
 `std.back` as `behind.normal`, `f.u` reversed. The frame is kept in `Datums::read`, and from then
 its datums are names to an alias reading one (`Datums::made`, `Lookup::alias_target`: a call or a
 word handed `std.front`); `Walk::finish` walks `FrameDatums` once for each frame read, after the
@@ -324,7 +325,7 @@ world's, its formal an alias of the frame and sited where the frame was declared
 stands at the frame's own place (`Sketch::plane_at`, chosen in `entities::build_plane` by
 `flatten::frame_datum`): no unknown and no row for an axis already through it, so a frame's datums
 add no freedom and no dependency, and `diagnose::view_freedoms` says a chart sharing an earlier
-one's place no more. Drawn in one inside the frame is no W115 (`planes::member`), and
+one's place no more. Drawn in one inside the frame is no W115 (`planes::member`, by the keys), and
 `drawn_incidences` twins a point onto one as onto the world's. A plane is no frame, so `Tooth(…)
 in top` reads the world's. `tests/frame_datums.rs` is the gate
 (`a_body_reading_its_datums_at_the_root_stands_where_one_handed_them_does`,
