@@ -3178,11 +3178,14 @@ fn line_on_axis_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
  * the turned-round pose is never a root.  Near the root it is `â × b̂` to second order, the rows
  * the unsensed kernels state.  The constant `s` (±1) turns the second round: `sense: opposite`. */
 
-/// The turn carrying the unit `a` onto the unit `b`: `atan2(|a × b|, a·b)·(a × b)/|a × b|`.
-/// Near `b = a` it is read by its series, `(a × b)·g(t)/(a·b)` with `t = |a × b|²/(a·b)²` and
-/// `g(t) = atan(√t)/√t`, so no root is taken where its gradient is wanted and a jet takes none at
-/// zero.  At `b = −a` exactly no axis is defined, and it is π along `e₁`: a residual, never a root.
-fn turn_onto<T: Num>(a: V3<T>, b: V3<T>, e1: V3<T>) -> V3<T> {
+/// The turn carrying `a` onto `s·b` (`s` ±1): `atan2(|a × b|, a·b)·(a × b)/|a × b|`, which reads
+/// only their directions, so neither need be a unit.  Near the root it is read by its series,
+/// `(a × b)·g(t)/(a·b)` with `t = |a × b|²/(a·b)²` and `g(t) = atan(√t)/√t`, so no root is taken
+/// where its gradient is wanted and a jet takes none at zero.  Exactly the other way round no axis
+/// is defined: there it is π along `e₁` less `(a × b)/(|a||b|)`, the residual and a gradient a
+/// step leaves that pose by — never a root.
+fn turn_onto<T: Num>(a: V3<T>, b: V3<T>, s: f64, e1: V3<T>) -> V3<T> {
+    let b = b.map(|x| x * T::cst(s));
     let x = vcross(a, b);
     let c = vdot(a, b);
     let s2 = vdot(x, x);
@@ -3191,50 +3194,48 @@ fn turn_onto<T: Num>(a: V3<T>, b: V3<T>, e1: V3<T>) -> V3<T> {
         let g = T::cst(1.0)
             - t * (T::cst(1.0 / 3.0) - t * (T::cst(1.0 / 5.0) - t * T::cst(1.0 / 7.0)));
         g / c
-    } else if s2.val() > 1e-24 {
-        let s = s2.sqrt();
-        T::atan2(s, c) / s
+    } else if s2.val() > 1e-24 * c.val() * c.val() {
+        let r = s2.sqrt();
+        T::atan2(r, c) / r
     } else {
-        return e1.map(|x| x * T::cst(std::f64::consts::PI));
+        let p = vlen(a, MIN_LINE_LEN) * vlen(b, MIN_LINE_LEN);
+        return std::array::from_fn(|i| e1[i] * T::cst(std::f64::consts::PI) - x[i] / p);
     };
     x.map(|xi| xi * f)
 }
 
 /// Columns of `parallel3_sensed`: (A, B, C, D), K = (e₁, e₂, s) — `parallel3`'s, and the sense.
-/// `turn(â, s·b̂)·e_k`: the angle from the first direction to the second, run the way `s` says,
+/// `turn(a, s·b)·e_k`: the angle from the first direction to the second, run the way `s` says,
 /// across the first.  Degree 0.
 fn parallel3_sensed_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
     let (a, b) = two_dirs(v);
-    let s = T::cst(k[6]);
-    let w = turn_onto(vunit(a), vunit(b).map(|x| x * s), cst3(k, 0));
+    let w = turn_onto(a, b, k[6], cst3(k, 0));
     [vdot(w, cst3(k, 0)), vdot(w, cst3(k, 3))]
 }
 
 /// Columns of `axis_coincident_sensed`: (a₁, d₁, a₂, d₂), K = (e₁, e₂, L, s) —
-/// `axis_coincident`'s, and the sense.  Its turn rows are `L·turn(d̂₁, s·d̂₂)·e_k`, its offset
+/// `axis_coincident`'s, and the sense.  Its turn rows are `L·turn(d₁, s·d₂)·e_k`, its offset
 /// rows `axis_coincident`'s.  All four lengths.  Degree 1.
 fn axis_coincident_sensed_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
-    let (a1, d1, a2, d2) = (vec3(v, 0), vunit(vec3(v, 3)), vec3(v, 6), vunit(vec3(v, 9)));
+    let (a1, d1, a2, d2) = (vec3(v, 0), vunit(vec3(v, 3)), vec3(v, 6), vec3(v, 9));
     let e = |t: usize| cst3(k, 3 * t);
-    let (l, s) = (T::cst(k[6]), T::cst(k[7]));
-    let turn = turn_onto(d1, d2.map(|x| x * s), e(0));
+    let l = T::cst(k[6]);
+    let turn = turn_onto(d1, d2, k[7], e(0));
     let off = vcross(vsub(a2, a1), d1);
     [vdot(turn, e(0)) * l, vdot(turn, e(1)) * l, vdot(off, e(0)), vdot(off, e(1))]
 }
 
 /// Columns of `line_on_axis_sensed`: (A, B, a, d), K = (e₁, e₂, s) — `line_on_axis`'s, and the
 /// sense.  `A` on the axis, `point_on_axis`'s two rows, and the line running along it the way `s`
-/// says, `|B − A|·turn(d̂, s·(B − A)^)·e_k`: where `B` is on the axis that is `B`'s two rows to
+/// says, `|B − A|·turn(d, s·(B − A))·e_k`: where `B` is on the axis that is `B`'s two rows to
 /// first order, and a line of no length is still on it.  Degree 1.
 fn line_on_axis_sensed_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
-    let (p, q, a, d) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vunit(vec3(v, 9)));
-    let e = |t: usize| cst3(k, 3 * t);
-    let s = T::cst(k[6]);
-    let wp = vcross(vsub(p, a), d);
+    let (p, q, a, d) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9));
+    let [r0, r1] = across(vsub(p, a), d, k);
     let run = vsub(q, p);
-    let turn = turn_onto(d, vunit(run).map(|x| x * s), e(0));
+    let turn = turn_onto(d, run, k[6], cst3(k, 0));
     let l = vlen(run, 0.0);
-    [vdot(wp, e(0)), vdot(wp, e(1)), vdot(turn, e(0)) * l, vdot(turn, e(1)) * l]
+    [r0, r1, vdot(turn, cst3(k, 0)) * l, vdot(turn, cst3(k, 3)) * l]
 }
 
 /* -- a point at a fraction of a line's run and of an arc's turn (#248) ------------------------

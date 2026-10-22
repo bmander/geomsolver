@@ -192,9 +192,9 @@ impl<'a> Body<'a> {
             .ok_or("a marched surface traces a point its rates move")?;
         let pick = |ks: &[usize]| ks.iter().map(|&k| self.alg[k].clone()).collect();
         // a `parallel` is read across the line that is no rate along the marched formal
+        use crate::kernels::K;
+        let parallel = [K::Parallel3, K::Parallel3Sensed].map(|k| RowKind::Kernel(k as usize));
         let across = self.rate.iter().map(|r| {
-            use crate::kernels::K;
-            let parallel = [K::Parallel3, K::Parallel3Sensed].map(|k| RowKind::Kernel(k as usize));
             parallel.contains(&r.kind).then(|| {
                 let marched =
                     |at: usize| r.cols[at..at + 6].iter().any(|&c| (rd..rd + n).contains(&c));

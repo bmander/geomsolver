@@ -33,11 +33,11 @@ came from.
   the turn carrying the first direction onto the second, axis times angle, across the first —
   of size π where the two run the other way, so that pose is no root (a smooth two-row residual
   over the sphere has an even number of roots; this one has a seam there instead) — its sign the
-  last constant (`Constraint::sensed`).  Alike or apart is the same statement swapped, so
+  last constant (`Constraint::consts_on`).  Alike or apart is the same statement swapped, so
   `compare::matches` swaps them (only a sided `perpendicular` is held to one order); the word
-  carries into space (`reading::in_space`) and through a copy (`graft`).  From exactly the other
-  way the turn has no gradient, so `views::align` turns a free axis of its own (no plane's `u`,
-  `v` or normal) round where its seed stands against its sensed row.  **The rule:** an axis the
+  carries into space (`reading::in_space`) and through a copy (`graft`).  Exactly the other way
+  round no turn's axis is defined, and the row reads π along `e₁` less the cross product over the
+  lengths: a residual with a gradient a step leaves that pose by.  **The rule:** an axis the
   language holds to a direction unasked runs its way — `axes_along`'s intrinsic row and `std`'s
   joint words are sensed `same`.  No number, so no dimension and no callout.
   `tests/axis_sense.rs` is the gate, the kernels' rows in `jacobians.rs`.

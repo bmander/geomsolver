@@ -208,11 +208,12 @@ impl Constraint {
                 let across_held = self.direction_held(sk, 1) && !self.direction_held(sk, 0);
                 let at = if across_held { 1 } else { 0 };
                 let (e1, e2) = across(self.axis_dir(sk, at));
-                [&e1[..], &e2[..], &self.sensed()[..]].concat()
+                // and the sign of a sense said, last (#535)
+                [e1, e2].concat().into_iter().chain(self.side()).collect()
             }
             CKind::PointOnLine3 | CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => {
                 let (e1, e2) = across(self.axis_dir(sk, 1));
-                [&e1[..], &e2[..], &self.sensed()[..]].concat()
+                [e1, e2].concat().into_iter().chain(self.side()).collect()
             }
             CKind::PlaneDistance => vec![self.args[2].num()],
             // two points on the axis a drawing's extent apart, so its two rows weigh alike
@@ -221,7 +222,8 @@ impl Constraint {
             // its turn and its offset weigh alike
             CKind::AxisCoincident => {
                 let (e1, e2) = across(self.axis_dir(sk, 0));
-                [e1.to_vec(), e2.to_vec(), vec![sk.extent().max(1.0)], self.sensed()].concat()
+                [e1, e2].concat().into_iter().chain([sk.extent().max(1.0)]).chain(self.side())
+                    .collect()
             }
             // two directions across the plane's normal as it stands now
             CKind::AxisPerpendicularPlane | CKind::LinePerpendicularPlane => {
@@ -459,8 +461,9 @@ impl Constraint {
             CKind::Perpendicular | CKind::Parallel | CKind::Parallel3 if self.side().is_some() => {
                 &[]
             }
-            CKind::Perpendicular3 | CKind::Parallel3 => &[0, 1],
-            CKind::Perpendicular | CKind::Parallel => &[0, 1],
+            CKind::Perpendicular | CKind::Parallel | CKind::Perpendicular3 | CKind::Parallel3 => {
+                &[0, 1]
+            }
             CKind::TangentArcLine | CKind::TangentCircleAt => &[1],
             CKind::TangentLineCircleAt | CKind::LinePerpendicularPlane => &[0],
             CKind::SplineTangentLine | CKind::CurveTangentLine | CKind::PointOnLine3 => &[1],
@@ -1196,12 +1199,6 @@ impl Constraint {
         }
         let l = &sk.lines[e.i()];
         crate::space::sub(sk.lifted(l.p2 as usize), sk.lifted(l.p1 as usize))
-    }
-
-    /// The sign a direction relation that says which way the second runs reads last among its
-    /// constants (#535): `same` +1, `opposite` −1; nothing where it says neither.
-    fn sensed(&self) -> Vec<f64> {
-        self.side().map(|s| vec![s]).unwrap_or_default()
     }
 
     /// Those hidden points' Params, three a point.
