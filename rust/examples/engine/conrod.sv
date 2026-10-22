@@ -14,6 +14,12 @@
 // big end to small end and filleted into both eyes; and the drilled oil passage up the middle.
 // Looking across (the side view) it is seen edge on — the big end, the shank's flanges and the
 // small end each a width along the crankshaft.  Section A-A is the shank's I-section.
+//
+// As solids it is what both views agree it is: the rod, and its cap split off at the parting
+// line, each pierced by the two cap bolts, whose heads stand on seats spot-faced in the cap; the
+// bush pressed into the small end; and the oil passage drilled up the web.  The bolts and the
+// passage are turned about their axes, in the plane the rod swings in where it stands along the
+// crank axis — the end view's, carried to the side view's pin.
 
 use engine.dims (L, back, front, pinlen, rp, rpin)
 use engine.parts
@@ -22,20 +28,50 @@ use std (offset, vertical)
 // What a rod needs of the pin it rides: the pin in the end view, and in the side view.
 interface CrankPin { end: point, side: point }
 
+// A cap bolt, turned about its axis from `a`, its head's underside, to `b`, its tip: the shank
+// `r` round, the head `rh` round and `h` deep.  Half its section is drawn beside the axis, in the
+// plane the two points are drawn in; `hole` is the shank's own turn, which the rod is bored by.
+part CapBolt(a: point, b: point, r: Length, rh: Length, h: Length) {
+  in a.plane {
+    construction stem := line(a, b)
+    construction tip := point hint(at: b, toward: a, by: 0.1, turn: 90deg)
+    construction foot := point hint(at: a, toward: b, by: 0.1, turn: -90deg)
+    construction seat := point hint(at: a, toward: b, by: 0.2, turn: -30deg)
+    construction crown := point hint(at: a, toward: b, by: 0.2, turn: -60deg)
+    construction edge := point hint(at: a, toward: b, by: 0.15, turn: -90deg)
+    tip distance(r, side: right) stem
+    foot distance(r, side: right) stem
+    seat distance(r, side: right) stem
+    crown distance(rh, side: right) stem
+    edge distance(rh, side: right) stem
+    b level(stem) tip
+    a level(stem) foot
+    a distance(h, along: stem) seat
+    a distance(h, along: stem) crown
+    a level(stem) edge
+  }
+  bolt := solid(face(a, b, tip, seat, crown, edge, -> close), about: stem)
+  construction hole := solid(face(a, b, tip, foot, -> close), about: stem)
+}
+
 part ConRod(pin: CrankPin, bore: line) {
   // the rod's own dimensions
   wB := pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
   wS := 22mm             // small end, along the crank axis
   rB := rp + 1.5mm       // big-end bore: the crank pin and a bearing shell
   rS := rpin + 1mm       // small-end bore: the piston pin and a bush
-  eB := 30mm             // big-end eye, outside
+  eB := 34mm             // big-end eye, outside: room for the cap bolts beside the bore
   eS := 16mm             // small-end eye, outside
   hB := 12mm             // shank half-width where it leaves the big end…
   hS := 9mm              // …and where it meets the small end
   rf := 6mm              // fillet between shank and eye
-  bolt := 22mm           // cap bolt centres, off the rod's axis
-  capd := 26mm           // the bolt reaches this far into the cap…
-  rodd := 20mm           // …and this far into the rod
+  bolt := 27mm           // cap bolt centres, off the rod's axis: an M8 with a wall each side
+  rbolt := 4mm
+  spot := 16mm           // the bolt heads' seats, spot-faced this far below the parting line
+  rhead := 6.5mm         // a bolt's head…
+  head := 6mm            // …and its height
+  capd := spot + head    // the bolt reaches this far into the cap, its head's underside…
+  rodd := 12mm           // …and this far into the rod, where it is screwed
   fl := 18mm             // I-section: flange width, the shank's thickness across the engine
   ft := 4mm              // flange thickness
   wt := 5mm              // web thickness
@@ -59,8 +95,8 @@ part ConRod(pin: CrankPin, bore: line) {
     // bare circle–circle tangency has) and the flank square to it, the tangency stated at
     // that point (§1.5).  The eyes themselves are drawn as the arcs left between the
     // fillets, the long way round.
-    cbl := point hint((pin.end.x - (hB + rf), pin.end.y + 31.2mm))
-    cbr := point hint((pin.end.x + (hB + rf), pin.end.y + 31.2mm))
+    cbl := point hint((pin.end.x - (hB + rf), pin.end.y + sqrt((eB + rf)^2 - (hB + rf)^2)))
+    cbr := point hint((pin.end.x + (hB + rf), pin.end.y + sqrt((eB + rf)^2 - (hB + rf)^2)))
     csl := point hint((sm.x - (hS + rf), sm.y - 16.1mm))
     csr := point hint((sm.x + (hS + rf), sm.y - 16.1mm))
     // (that the centre is `eB + rf` from the pin follows: the contact is on the axis, on the
@@ -73,16 +109,16 @@ part ConRod(pin: CrankPin, bore: line) {
     rayBR := line(pin.end, cbr)
     raySL := line(sm, csl)
     raySR := line(sm, csr)
-    sbl := point hint((pin.end.x - 15mm, pin.end.y + 26mm))
-    sbr := point hint((pin.end.x + 15mm, pin.end.y + 26mm))
+    sbl := point hint(at: pin.end, toward: cbl, by: eB / (eB + rf))
+    sbr := point hint(at: pin.end, toward: cbr, by: eB / (eB + rf))
     ssl := point hint((sm.x - 10.9mm, sm.y - 11.7mm))
     ssr := point hint((sm.x + 10.9mm, sm.y - 11.7mm))
     sbl coincident rayBL
     sbr coincident rayBR
     ssl coincident raySL
     ssr coincident raySR
-    ebl := point hint((pin.end.x - hB, pin.end.y + 31mm))
-    ebr := point hint((pin.end.x + hB, pin.end.y + 31mm))
+    ebl := point hint((pin.end.x - hB, cbl.y))
+    ebr := point hint((pin.end.x + hB, cbr.y))
     esl := point hint((sm.x - hS, sm.y - 16mm))
     esr := point hint((sm.x + hS, sm.y - 16mm))
     flank_l := line(ebl, esl)
@@ -126,6 +162,42 @@ part ConRod(pin: CrankPin, bore: line) {
     br0 distance(capd, side: right) parting
     br1 distance(rodd, side: left) parting
     claim bl0 distance(2 * bolt) br0
+    // the cap is what lies beyond the parting line: a block past the eye on every side of it
+    construction cap0 := point hint((pin.end.x - eB - 6mm, pin.end.y))
+    construction cap1 := point hint((pin.end.x + eB + 6mm, pin.end.y))
+    construction cap2 := point hint((pin.end.x + eB + 6mm, pin.end.y - eB - 12mm))
+    construction cap3 := point hint((pin.end.x - eB - 6mm, pin.end.y - eB - 12mm))
+    cap0 coincident(t == -6mm / (2 * eB)) parting
+    cap1 coincident(t == 1 + 6mm / (2 * eB)) parting
+    cap2 distance(eB + 12mm, side: right) parting
+    cap3 distance(eB + 12mm, side: right) parting
+    cap1 level(parting) cap2
+    cap0 level(parting) cap3
+    // each bolt head's seat, spot-faced flat across the cap's shoulder outside the bore
+    construction sl0 := point hint((pin.end.x - bolt + rhead + 1mm, pin.end.y - spot))
+    construction sl1 := point hint((pin.end.x - eB - 6mm, pin.end.y - spot))
+    construction sl2 := point hint((pin.end.x - eB - 6mm, pin.end.y - eB - 12mm))
+    construction sl3 := point hint((pin.end.x - bolt + rhead + 1mm, pin.end.y - eB - 12mm))
+    construction sr0 := point hint((pin.end.x + bolt - rhead - 1mm, pin.end.y - spot))
+    construction sr1 := point hint((pin.end.x + eB + 6mm, pin.end.y - spot))
+    construction sr2 := point hint((pin.end.x + eB + 6mm, pin.end.y - eB - 12mm))
+    construction sr3 := point hint((pin.end.x + bolt - rhead - 1mm, pin.end.y - eB - 12mm))
+    sl0 distance(bolt - rhead - 1mm, side: left) cl
+    sl1 distance(eB + 6mm, side: left) cl
+    sl2 distance(eB + 6mm, side: left) cl
+    sl3 distance(bolt - rhead - 1mm, side: left) cl
+    sr0 distance(bolt - rhead - 1mm, side: right) cl
+    sr1 distance(eB + 6mm, side: right) cl
+    sr2 distance(eB + 6mm, side: right) cl
+    sr3 distance(bolt - rhead - 1mm, side: right) cl
+    sl0 distance(spot, side: right) parting
+    sl1 distance(spot, side: right) parting
+    sl2 distance(eB + 12mm, side: right) parting
+    sl3 distance(eB + 12mm, side: right) parting
+    sr0 distance(spot, side: right) parting
+    sr1 distance(spot, side: right) parting
+    sr2 distance(eB + 12mm, side: right) parting
+    sr3 distance(eB + 12mm, side: right) parting
 
     // the oil passage, drilled from the big-end bore to the small-end bore
     ol0 := point hint((pin.end.x - oil, pin.end.y + rB))
@@ -142,13 +214,29 @@ part ConRod(pin: CrankPin, bore: line) {
     ol1 distance(oil, side: left) cl
     or0 distance(oil, side: right) cl
     or1 distance(oil, side: right) cl
+    // half the passage's section, a millimetre into each bore, turned about the rod's axis
+    construction oc0 := point hint((pin.end.x, pin.end.y + rB - 1mm))
+    construction oc1 := point hint((sm.x, sm.y - rS + 1mm))
+    construction oe0 := point hint((pin.end.x - oil, pin.end.y + rB - 1mm))
+    construction oe1 := point hint((sm.x - oil, sm.y - rS + 1mm))
+    pin.end distance(rB - 1mm, along: cl) oc0
+    sm distance(1mm - rS, along: cl) oc1
+    oc0 coincident cl
+    oc1 coincident cl
+    oc0 level(cl) oe0
+    oc1 level(cl) oe1
+    oe0 distance(oil, side: left) cl
+    oe1 distance(oil, side: left) cl
+    // the bush pressed into the small end, the piston pin's bore through it
+    construction pin_bore := circle(center: sm) hint(r: rpin)
+    radius(rpin) pin_bore
 
     // a pocket's outline, each side of the web: a flange's thickness inside the flanks, as far
     // clear of each eye
-    kq1 := point hint((pin.end.x + 7.3mm, pin.end.y + 33.2mm))
+    kq1 := point hint((pin.end.x + hB - ft, pin.end.y + sqrt((eB + ft)^2 - (hB - ft)^2)))
     kq2 := point hint((sm.x + 4.6mm, sm.y - 19.5mm))
     kq3 := point hint((sm.x - 4.6mm, sm.y - 19.5mm))
-    kq4 := point hint((pin.end.x - 7.3mm, pin.end.y + 33.2mm))
+    kq4 := point hint((pin.end.x - hB + ft, pin.end.y + sqrt((eB + ft)^2 - (hB - ft)^2)))
     pocket_r := line(kq1, kq2)
     pocket_l := line(kq3, kq4)
     kq1 distance(ft, side: left) flank_r
@@ -171,6 +259,43 @@ part ConRod(pin: CrankPin, bore: line) {
   cut.u parallel pin.end.plane.normal
   cut.v perpendicular cl
   cut.v perpendicular cut.u
+
+  // the plane the rod swings in, where it stands along the crank axis: the end view's, through
+  // the pin as the side view puts it; the passage's section carried into it square across
+  swing := plane(u: hint(dir: pin.end.plane.u), v: hint(dir: pin.end.plane.v))
+  swing.origin coincident pin.side
+  swing.u parallel pin.end.plane.u
+  swing.v parallel pin.end.plane.v
+  in swing {
+    construction sc0 := point hint((oc0.x, oc0.y - pin.end.y))
+    construction sc1 := point hint((oc1.x, oc1.y - pin.end.y))
+    construction se0 := point hint((oe0.x, oe0.y - pin.end.y))
+    construction se1 := point hint((oe1.x, oe1.y - pin.end.y))
+    sc0 level(pin.end.plane.u) oc0
+    sc0 level(pin.end.plane.v) oc0
+    sc1 level(pin.end.plane.u) oc1
+    sc1 level(pin.end.plane.v) oc1
+    se0 level(pin.end.plane.u) oe0
+    se0 level(pin.end.plane.v) oe0
+    se1 level(pin.end.plane.u) oe1
+    se1 level(pin.end.plane.v) oe1
+    construction oil_axis := line(sc0, sc1)
+    // each cap bolt's axis, from its head's underside to its tip
+    construction ql0 := point hint((bl0.x, bl0.y - pin.end.y))
+    construction ql1 := point hint((bl1.x, bl1.y - pin.end.y))
+    construction qr0 := point hint((br0.x, br0.y - pin.end.y))
+    construction qr1 := point hint((br1.x, br1.y - pin.end.y))
+    ql0 level(pin.end.plane.u) bl0
+    ql0 level(pin.end.plane.v) bl0
+    ql1 level(pin.end.plane.u) bl1
+    ql1 level(pin.end.plane.v) bl1
+    qr0 level(pin.end.plane.u) br0
+    qr0 level(pin.end.plane.v) br0
+    qr1 level(pin.end.plane.u) br1
+    qr1 level(pin.end.plane.v) br1
+  }
+  bolt_left := CapBolt(ql0, ql1, r: rbolt, rh: rhead, h: head)
+  bolt_right := CapBolt(qr0, qr1, r: rbolt, rh: rhead, h: head)
 
   in pin.side.plane {
     // the small end, edge on: square above the pin on the bore's line, as high as the end view
@@ -252,8 +377,8 @@ part ConRod(pin: CrankPin, bore: line) {
   // eyes, runs along the crank axis; the side view's edge-on outline — big end, shank, small end
   // — runs across the engine either side of the bore axis; the rod is what the two have in common,
   // less a pocket each side of the web
-  body := solid(face(eyeB, fbr, flank_r, fsr, eyeS, fsl, flank_l, fbl, holes: bigbore, smallbore),
-                from: front, to: back)
+  whole := solid(face(eyeB, fbr, flank_r, fsr, eyeS, fsl, flank_l, fbl, holes: bigbore, smallbore),
+                 from: front, to: back)
   edge_on := solid()
   big_s := solid(face(b1, b2, b3, b4), from: -100mm, to: 100mm)
   shank_s := solid(face(ka, kb, kc, kd, -> close), from: -100mm, to: 100mm)
@@ -261,12 +386,31 @@ part ConRod(pin: CrankPin, bore: line) {
   big_s union edge_on
   shank_s union edge_on
   small_s union edge_on
-  edge_on common body
+  edge_on common whole
   // the I: each side of the web, the pocket's outline as deep as the flanges, cut from the rod
   pockets := solid(face(pocket_r, pocket_t, pocket_l, pocket_b), from: front, to: back)
   web_s := solid(face(wa.p, wb.p, wc.p, wd.p, -> close), from: -100mm, to: 100mm)
   web_s cut pockets
-  pockets cut body
+  pockets cut whole
+  // the oil passage drilled up the web from the big end's bore to the small end's
+  oilway := solid(face(sc0, sc1, se1, se0, -> close), about: oil_axis)
+  oilway cut whole
+  // the bolts' holes, and their heads' seats
+  bolt_left.hole cut whole
+  bolt_right.hole cut whole
+  seat_l := solid(face(sl0, sl1, sl2, sl3, -> close), from: front, to: back)
+  seat_r := solid(face(sr0, sr1, sr2, sr3, -> close), from: front, to: back)
+  seat_l cut whole
+  seat_r cut whole
+  // split at the parting line: the rod, and its cap
+  split := solid(face(cap0, cap1, cap2, cap3, -> close), from: front, to: back)
+  body := solid(whole)
+  split cut body
+  cap := solid(whole)
+  split common cap
+  // the small end's bush: the ring between its bore and the pin's, as wide as the small end
+  bush := solid(face(smallbore, holes: pin_bore), from: front, to: back)
+  small_s common bush
 }
 
 // Open this file to preview cylinder 1's rod: on its crank pin where the crankshaft puts it at the
