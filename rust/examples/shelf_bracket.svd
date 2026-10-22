@@ -1,0 +1,10 @@
+// Presentation of shelf_bracket.sv. Model geometry is independent of this drawing.
+model m from "shelf_bracket.sv"
+
+sheet drawing {
+  size A4
+  label "A SHELF BRACKET SIZED BY ITS SAG" at (14mm, 18mm)
+  label "One section for post and arm, deep enough that the tip sinks 1.5mm" at (14mm, 28mm)
+  sketch front(m) at (60mm, 150mm)
+  dimensions in front
+}

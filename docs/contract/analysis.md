@@ -312,6 +312,13 @@ frame's driving row (S1), unless a rule names another.
   under its own weight, `√(1.5 ρ g L⁴ / (E δ))`, and under a force spread evenly, `(1.5 P L³ / (E
   b δ))^(1/3)`, and a length so, `(8 E I δ / P)^(1/3)`; an L of two members sized by its arm's end,
   the root of one cubic — each to 1e-9. The report says `driven == 4mm, held`, or `not reached`.
+  **The library's driving cases** are `sized_cantilever.sv` (a depth), `reach_cantilever.sv` (a
+  length), `shelf_bracket.sv` (an L under a load spread along its arm) and `portal_frame.sv` (a
+  tube's diameter, non-affine, under a load at a point cutting a member and the frame's weight):
+  each leaves no freedom, its deflection read at `PIECES` is what its row states, and its claims
+  are kept (`every_driving_case_holds_what_it_drives`); the reach and the bracket are their
+  closed forms (`the_librarys_reach_and_bracket_are_their_closed_forms`), and each row agrees
+  with its differences (`a_frames_deflection_agrees_with_finite_differences`).
 
 - **The row is the source's alone** (`CKind::of_source`): it reads beams and a scenario, which no
   document JSON, rebuild walk (`graft`) or flat program (`to_program`) holds, so none of them

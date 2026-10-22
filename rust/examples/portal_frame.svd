@@ -1,0 +1,10 @@
+// Presentation of portal_frame.sv. Model geometry is independent of this drawing.
+model m from "portal_frame.sv"
+
+sheet drawing {
+  size A3
+  label "A PORTAL FRAME SIZED BY ITS SAG" at (14mm, 18mm)
+  label "The tube's diameter at which the beam's middle sinks 2mm under 20kN and its own weight" at (14mm, 28mm)
+  sketch front(m) at (60mm, 230mm)
+  dimensions in front
+}

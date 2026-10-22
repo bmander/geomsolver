@@ -569,9 +569,11 @@ fn a_sized_frames_interior_agrees_with_finite_differences() {
 }
 
 /// **A frame's deflection, as the drawing states it** (#510 S1, `CKind::Deflection`): the row
-/// over the joints' lifts and the unknowns the sections read — the library's sized cantilever,
-/// and an L frame placed by an unknown and sized by another under a force spread along it and
-/// its weight — against finite differences, at the solution and knocked off it.
+/// over the joints' lifts and the unknowns the sections read — the library's four driving cases
+/// (a section sized, a node placed, a bracket under a spread load, a tube's diameter under a
+/// point and its weight), and an L frame placed by an unknown and sized by another under a force
+/// spread along it and its weight — against finite differences, at the solution and knocked off
+/// it.
 #[test]
 fn a_frames_deflection_agrees_with_finite_differences() {
     let l_frame = "\
@@ -602,9 +604,10 @@ scenario s {
   deflection(end, along: down) == 3mm
 }
 ";
-    let cantilever = gcs_core::examples::source("sized_cantilever").unwrap();
+    let library = ["sized_cantilever", "reach_cantilever", "shelf_bracket", "portal_frame"]
+        .map(|k| gcs_core::examples::source(k).unwrap());
     let mut rng = Rng::new(510);
-    for src in [cantilever, l_frame] {
+    for src in library.into_iter().chain([l_frame]) {
         let e = crate::common::read(src);
         let mut sk = crate::common::solved(&e);
         for round in 0..3 {

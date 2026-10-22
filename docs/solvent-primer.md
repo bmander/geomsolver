@@ -1973,7 +1973,9 @@ scenario tip_load {
   over it (`Iz: b * h^3 / 12`, any formula); or let it place a joint (`foot distance(len) end`,
   `len` an unknown). `solventc` prints `driven == 4mm, held` and the unknown's value. `along:` is
   an axis or a line the drawing holds. Any other driving requirement (`mode(arm, 1) == 30Hz`) is
-  only judged yet.
+  only judged yet. The library shows each: `sized_cantilever.sv` (a depth),
+  `reach_cantilever.sv` (a length), `shelf_bracket.sv` (two members, a load spread along the arm)
+  and `portal_frame.sv` (a tube's diameter, a point on a member, the frame's weight).
 - `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
   twist about its own line — and `solventc` says so (`leaves `arm` free to turn about x …`).
 

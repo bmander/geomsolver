@@ -174,7 +174,7 @@ pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
         "solid_flange" | "solid_pulley" | "solid_elbow" | "solid_tray" | "solid_loft" | "nurbs"
         | "catenary" | "dido" | "sag" | "ring" | "fisheye" | "projectile" | "hyperbolic"
-        | "sized_cantilever" => {
+        | "sized_cantilever" | "reach_cantilever" | "shelf_bracket" | "portal_frame" => {
             document(source(name)?, name)
         }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -266,7 +266,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 52] = [
+pub const CASES: [(&str, &str, &str); 55] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "One hollow square section carried round a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -300,6 +300,9 @@ pub const CASES: [(&str, &str, &str); 52] = [
     ("Maxwell's fish-eye · light in a lens", "fisheye", "a lens whose refractive index falls off from its centre as 2 / (1 + r² / R²), and a ray `minimizes` the index integrated along it — Fermat's principle, its length free: every ray is an arc of a circle, though nothing says so, and every ray from a point meets again opposite it.  Drag `b` and the ray bends to it"),
     ("A throw · least action, not a parabola", "projectile", "a ball thrown from `a` lands at `b`, its path the curve that makes its speed, `sqrt(h - p.y)`, integrated along it stationary — Jacobi's form of least action: a parabola, though nothing says so, the low line drive a minimum.  The high lob through the same points is a saddle"),
     ("A cantilever sized by its sag · a requirement drives", "sized_cantilever", "a beam of the drawing built in at one end and loaded at the other, its depth `h` an unknown, and `deflection(end, along: down) == sag` in its scenario: the frame's deflection is a row, solved by the interior's solve and differentiated by its adjoint, so the solve finds the depth at which the tip sinks 4mm — Euler–Bernoulli's (4 P L³ / (E b sag))^(1/3), 58.48mm.  Edit the load, the length or the sag and the depth follows"),
+    ("How far a cantilever may reach · a requirement places a node", "reach_cantilever", "the sized cantilever turned round: its section stated, its length an unknown its line's dimension reads, and `deflection(tip, along: down) == sag` driving it — the row reads the tip's place as a column, so the solve moves the tip out until it sinks 4mm under 1kN: (3 E I sag / P)^(1/3), 855.0mm"),
+    ("A shelf bracket sized by its sag · two members, a spread load", "shelf_bracket", "a post built in at its foot and an arm off its head, rigid at the corner, one section for both, the shelf's 600N spread evenly along the arm: the depth found so the tip sinks 1.5mm is the root of the arm's bending, the post's turn under the arm's moment and its shortening — 29.50mm"),
+    ("A portal frame sized by its sag · a tube, its weight", "portal_frame", "two posts and a beam of one round tube, its diameter the unknown: a 20kN load hung from the beam's middle (a point on the member, which cuts it) and the frame's own weight, which grows with the tube, sink the middle 2mm at a diameter of 221.8mm — the tube's area and second moments no affine function of the diameter, each read as a formula over it"),
     ("Hyperbolic plane · the shortest path", "hyperbolic", "Poincaré's half-plane, where length is `ds / y`: the curve from `a` to `b` that makes it least is an arc of a circle centred on the line `y = 0` — the hyperbolic plane's straight line, found from the principle alone.  Drag `b` and the arc swings round, meeting the line square on"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Belt wrap · arc length", "belt_wrap", "an open belt over two pulleys, closed as one tangent chain, with nothing saying how far apart the pulleys are: `length(wrap) big` states the belt in contact with the big pulley — its radius times its sweep — and the centre distance follows.  Edit `wrap` and the second pulley moves"),
@@ -421,6 +424,9 @@ pub fn source(key: &str) -> Option<&'static str> {
         "catenary" => Some(include_str!("../../examples/catenary.sv")),
         "dido" => Some(include_str!("../../examples/dido.sv")),
         "sized_cantilever" => Some(include_str!("../../examples/sized_cantilever.sv")),
+        "reach_cantilever" => Some(include_str!("../../examples/reach_cantilever.sv")),
+        "shelf_bracket" => Some(include_str!("../../examples/shelf_bracket.sv")),
+        "portal_frame" => Some(include_str!("../../examples/portal_frame.sv")),
         "sag" => Some(include_str!("../../examples/sag.sv")),
         "ring" => Some(include_str!("../../examples/ring.sv")),
         "fisheye" => Some(include_str!("../../examples/fisheye.sv")),

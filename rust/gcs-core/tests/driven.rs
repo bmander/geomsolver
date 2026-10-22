@@ -241,3 +241,61 @@ fn what_cannot_drive_says_why() {
     let said = gcs_core::report::scenario_answers(&e.sketch, &e.scenarios[0], &read);
     assert!(said[0].text.contains("nothing drives it yet"), "{}", said[0].text);
 }
+
+/// The library's driving cases, each a frame and a scenario driving one of its deflections.
+const LIBRARY: [&str; 4] = ["sized_cantilever", "reach_cantilever", "shelf_bracket", "portal_frame"];
+
+/// **Every driving case of the library holds what it drives**: solved, it leaves no freedom, its
+/// one row is driven and held, and the deflection the claims' analysis reads of the solved
+/// drawing — the frame cut into `beams::PIECES` between its joints, where the row reads it at
+/// one — is what the row states, to rounding; and every claim beside it is kept.
+#[test]
+fn every_driving_case_holds_what_it_drives() {
+    for key in LIBRARY {
+        let (e, mut sk) = sized(gcs_core::examples::source(key).unwrap());
+        assert_eq!(crate::common::dof(&mut sk), 0, "{key}");
+        let s = &e.scenarios[0];
+        let read = beams::read(&sk, &s.scenario);
+        let said = gcs_core::report::scenario_answers(&sk, s, &read);
+        for (k, r) in s.scenario.requirements.iter().enumerate() {
+            let got = *read.answers[k].as_ref().unwrap().as_ref().unwrap();
+            assert!(beams::keeps(r, got), "{key}: {}", said[k].text);
+            if s.driven[k].is_some() {
+                assert!((got - r.value).abs() <= 1e-9 * r.value, "{key}: {got}");
+                assert!(said[k].text.ends_with("held"), "{key}: {}", said[k].text);
+            } else {
+                assert!(said[k].text.ends_with("kept"), "{key}: {}", said[k].text);
+            }
+        }
+        assert_eq!(s.driven.iter().flatten().count(), 1, "{key}");
+    }
+}
+
+/// **The library's reach and bracket are their closed forms**: the cantilever's reach `(3 E I
+/// sag / P)^(1/3)`; the bracket's depth the root of `w L³ / 8EI + w L² H / 2EI + w H / EA = sag`
+/// — the arm off the corner, the post's turn under the arm's moment, the post's shortening —
+/// found here by bisection, to 1e-9.
+#[test]
+fn the_librarys_reach_and_bracket_are_their_closed_forms() {
+    let (_, sk) = sized(gcs_core::examples::source("reach_cantilever").unwrap());
+    let i = 0.025 * 0.05f64.powi(3) / 12.0;
+    let want = (3.0 * E * i * 4e-3 / 1e3).cbrt() * 1e3;
+    let reach = unknown(&sk, "reach");
+    assert!((reach - want).abs() <= 1e-9 * want, "reach: {reach} against {want}");
+
+    let (_, sk) = sized(gcs_core::examples::source("shelf_bracket").unwrap());
+    let (b, w, l, post, sag) = (0.02f64, 600.0, 0.3f64, 0.4, 1.5e-3);
+    let sink = |h: f64| {
+        let i = b * h.powi(3) / 12.0;
+        w * l.powi(3) / (8.0 * E * i) + w * l * l * post / (2.0 * E * i) + w * post / (E * b * h)
+            - sag
+    };
+    let (mut lo, mut hi) = (0.01, 0.1);
+    for _ in 0..200 {
+        let m = 0.5 * (lo + hi);
+        if sink(m) > 0.0 { lo = m } else { hi = m }
+    }
+    let want = 0.5 * (lo + hi) * 1e3;
+    let h = unknown(&sk, "h");
+    assert!((h - want).abs() <= 1e-9 * want, "bracket: {h} against {want}");
+}
