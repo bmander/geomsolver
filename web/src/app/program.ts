@@ -516,13 +516,19 @@ export function showStatementFor(): void {
  *  row's statement — the panel opened and the line brought on screen. */
 export function goToSource(span: SourceSpan): void {
   if (switching || drawingActive() || showingText()) return;
-  if (ppanel.hidden) toggleProgramPanel();
-  showSide('program');
-  if (narrow.matches) fold(false);
+  openSide('program');
   if (!project && activeFile) selectFile('');
   ptext.focus();
   ptext.setSelectionRange(span.lo, span.hi);
   ped.scrollToLine(ped.lineOf(span.lo));
+}
+
+/** Open the panel on a pane — the drawer unfolded, on a narrow screen — as a way to something
+ *  in it does: `goToSource`, and a right-click's Show in model viewer. */
+export function openSide(next: Side): void {
+  if (ppanel.hidden) toggleProgramPanel();
+  showSide(next);
+  if (narrow.matches) fold(false);
 }
 
 /** Be told each time the panel turns to a pane — the outline reads its tree only while shown. */

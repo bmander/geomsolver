@@ -61,10 +61,11 @@ import {
   about, alternatives, doOpen, flipBranch, insertComponent, insertPlane, leaveExample, openCase,
   openExample, options, report, reportSolve, showDiagnosis,
 } from './dialogs.js';
-import { closeChooser, onChoose, onContextMenu } from './choose.js';
+import { closeChooser, onChoose, onContextMenu, onWays } from './choose.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
-import { bindProgramPanel, goToSource, onSide, openDrawing, refreshProgram, resetProgramFiles,
-  saveProjectFile, showClaims, showStatementFor, toggleProgramPanel } from './program.js';
+import { bindProgramPanel, goToSource, onSide, openDrawing, openSide, refreshProgram,
+  resetProgramFiles, saveProjectFile, showClaims, showStatementFor, toggleProgramPanel }
+  from './program.js';
 import { OutlinePane } from './outline.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
@@ -650,6 +651,11 @@ const outline = new OutlinePane(document.getElementById('outline-tree')!, view,
   (row) => { if (row.span) goToSource(row.span); },
   document.getElementById('outline-isolate')!, document.getElementById('outline-show-all')!);
 onSide((side) => outline.show(side === 'outline'));
+// a right-click's ways to what it was on: its statement, and its row in the outline
+onWays(goToSource, (row) => {
+  openSide('outline');
+  outline.showRow(row);
+});
 view.onHidden = () => outline.paint();
 view.onSelect = () => {
   if (currentConstraint) focusConstraint(null);

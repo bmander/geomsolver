@@ -478,6 +478,11 @@ dialog input[type=search] {
 .outline-row:hover .outline-source, .outline-source:focus-visible { visibility: visible; }
 .outline-row:hover { background: var(--accent-soft); }
 .outline-row[aria-current] { background: var(--accent-soft); color: var(--accent); }
+/* the row a right-click's Show in model viewer went to, lit a moment so the eye finds it */
+.outline-row.found { animation: outline-found 1.6s ease-out; }
+@keyframes outline-found {
+  from { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+}
 .outline-row.operand .outline-label { font-style: italic; color: var(--muted); }
 /* hidden, and under a hidden row: the name stays, faded, so it can be found and shown again */
 .outline-row.hidden .outline-label, .outline-row.dimmed .outline-label { opacity: .45; }

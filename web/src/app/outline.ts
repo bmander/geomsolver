@@ -9,7 +9,7 @@
  * when a row is first opened, so a ring of many copies, or the V-twin, stays cheap. */
 import type { Row } from '../core/outline.js';
 import {
-  frameRow, hasEye, hoverRow, isHidden, partlyHidden, rowKey, rowSelected, selectRow,
+  ancestors, frameRow, hasEye, hoverRow, isHidden, partlyHidden, rowKey, rowSelected, selectRow,
   selectedKeys, selectionRow, toggleRow, walk,
 } from './hidden.js';
 import { disclosure } from './project-explorer.js';
@@ -213,10 +213,30 @@ export class OutlinePane {
     const at = selectionRow(this.view);
     if (at?.row === this.revealed) return;
     this.revealed = at?.row ?? null;
-    if (!at) return;
-    for (const r of at.above) this.expand(this.indexOf(r), false);
+    if (at) this.bring(at.row, at.above);
+  }
+
+  /** **Show in model viewer**: open the tree to `row`, bring it on screen and mark it found —
+   *  what a right-click on the thing it made asks, the selection left as it is.  The keys are the
+   *  tree's after, as a click in it would leave them. */
+  showRow(row: Row): void {
+    if (this.tree.hidden) return;
+    this.refresh();
+    const line = this.bring(row, ancestors(this.view, row));
+    if (!line) return;
+    line.querySelector<HTMLElement>('.outline-label')?.focus({ preventScroll: true });
+    line.classList.remove('found');
+    void line.offsetWidth;           // so marking it again starts the flash again
+    line.classList.add('found');
+  }
+
+  /** Open the rows `above` and bring `row` on screen: its line, or none where it is not drawn. */
+  private bring(row: Row, above: readonly Row[]): HTMLElement | undefined {
+    for (const r of above) this.expand(this.indexOf(r), false);
     this.paint();
-    this.drawn.get(this.indexOf(at.row))?.row.scrollIntoView({ block: 'nearest' });
+    const line = this.drawn.get(this.indexOf(row))?.row;
+    line?.scrollIntoView({ block: 'nearest' });
+    return line;
   }
 
   private indexOf(row: Row): number {
@@ -245,6 +265,7 @@ export class OutlinePane {
     const line = document.createElement('div');
     line.className = `outline-row${row.operand ? ' operand' : ''}`;
     line.dataset.i = String(i);
+    line.addEventListener('animationend', () => line.classList.remove('found'));
     line.style.setProperty('--depth', String(above.length));
     const kids = row.children.length > 0;
     const twist = document.createElement('button');

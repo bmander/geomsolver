@@ -504,9 +504,14 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   their other children hidden in their stead); choosing a hidden plane, or drawing on it, shows
   it.  **A right-click** that does not turn the workspace (let go within `MENU_SLOP_PX` of its
   press, `gesture::orbitGesture`) opens a menu on what it is on (`SketchView.contextAt`, as a
-  press finds it; `choose.ts::onContextMenu`): **Hide**, which hides the row that made it
-  (`hidden.hide` — an object's face or edge hides the object, and something no row with an eye
-  made is said so), and **Show all** while anything is hidden.  The pane: an eye per row (dimmed under a hidden row, half where some row under it is
+  press finds it; `choose.ts::onContextMenu`; an object's face or edge stands for the object):
+  **Show definition**, the editor's caret on the span of the row that made it
+  (`hidden.rowOf`, `program.ts::goToSource` — a member's statement in its definition, offered
+  only where the row has a span); **Show in model viewer**, the panel turned to the outline
+  (`program.ts::openSide`) and the tree opened to that row, brought on screen, focused and lit a
+  moment (`OutlinePane.showRow`), the selection left as it is; **Hide**, which hides that row
+  (`hidden.hide` — something no row with an eye made is said so); and **Show all** while anything
+  is hidden.  The pane: an eye per row (dimmed under a hidden row, half where some row under it is
   hidden); an icon of what the row is (`outline.iconOf`: its row kind, or for an entity the
   core's kind word for what it stands for — a point, a line, a plane, a face); a click selects (⇧ toggles), a hover lights as the ⌘-click list's rows do, a
   double-click frames the row's subtree (`workspace::bounds_of`, hidden or not, FFI

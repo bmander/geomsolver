@@ -9,7 +9,7 @@ import type { Row } from '../core/outline.js';
 import { Point, fromWire } from '../core/model.js';
 import type { Primitive } from '../core/model.js';
 import {
-  frameRow, hide, isHidden, rowKey, selectRow, selectionRow, setRowHidden, walk,
+  frameRow, hide, isHidden, rowKey, rowOf, selectRow, selectionRow, setRowHidden, walk,
 } from '../app/hidden.js';
 import { iconOf } from '../app/outline.js';
 import type { Hit, SketchView } from '../app/view.js';
@@ -187,6 +187,28 @@ test('a right-click asks what to do with what it is on, and Hide hides the row t
   // on nothing, the menu is still asked for: Show all is on it while anything is hidden
   right([5, 5]);
   assert.deepEqual(menus.at(-1)![0], null);
+});
+
+test('a right-click\'s Show definition and Show in model viewer go to the row that made it',
+     (t) => {
+  const v = docView(DOC);
+  t.after(() => v.doc.dispose());
+  const text = (r: Row | null) => r?.span && v.doc.text.slice(r.span.lo, r.span.hi);
+  // a member of an instance: its row under the instance, its statement in the definition
+  const q = rowOf(v, ent(v, 'pin.q'));
+  assert.equal(q, row(v, 'pin.q'));
+  assert.equal(text(q), 'q := point hint((3, 0))');
+  // a copy of a ring's: the copy's row, written once in the ring
+  assert.equal(rowOf(v, ent(v, 'tip[1]')), row(v, 'tip[1]'));
+  assert.match(text(row(v, 'tip[1]'))!, /^tip := point/);
+  // an object's face stands for the object: its row and its statement
+  const stock = row(v, 'stock');
+  assert.equal(rowOf(v, stock.solid!), stock);
+  assert.match(text(stock)!, /^stock := solid/);
+  // a module's datum has a row and no statement in the document: no definition to show
+  const front = rowOf(v, ent(v, 'std.front'));
+  assert.equal(front, row(v, 'std.front'));
+  assert.equal(front.span, undefined);
 });
 
 test('a hidden object leaves the box, and comes back', (t) => {
