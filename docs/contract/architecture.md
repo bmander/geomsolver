@@ -74,10 +74,10 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   (`--width`) and every constant size follows.  The *camera* is never consulted.
   **`--png` draws what the workspace shows, headless** (#541, `gcs-cli/src/picture.rs`): the
   objects of `overview::shown_objects`, each the mesh the box cuts it to
-  (`ApproximationPolicy::Mesh`) where its placement stands it, its creases and its silhouettes
-  as the core's renderer finds them (`EvaluatedSolid::silhouettes` on an exact solid, else a
-  round face's seams where its facets turn from the eye), from the box's eye (`eye_frame`; `home`
-  is `view.ts`'s three-quarter view).  A part file is its `preview`, so it draws that.  A
+  (`ApproximationPolicy::Mesh`) where its placement stands it, and the edges a drawing's view of
+  it draws (`EvaluatedSolid::drawn_edges`, the one rule both use: every corner, and its
+  silhouettes), from the box's eye (`eye_frame`; `home` is `view.ts`'s three-quarter view, and a
+  named view is a sheet's, `drawing::named_view`).  A part file is its `preview`, so it draws that.  A
   **depth buffer** at two samples a pixel, never a painter's sort, each instance one colour by
   the order the document's objects come in (so a cutaway keeps it); an object that does not
   evaluate is left out and its reason said.  The PNG writer is the CLI's (`png.rs`, fixed-code

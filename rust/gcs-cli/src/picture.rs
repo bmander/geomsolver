@@ -14,12 +14,15 @@
 //! draws a small face behind a big one through it; this cannot.
 //!
 //! **Nothing here is geometry the core has not already given.**  The eye is the core's
-//! (`workspace::eye_frame`, the box's camera), the triangles, normals and edges are the evaluated
-//! solid's, and what is left — projecting, filling, shading and an encoder — is a renderer's.
+//! (`workspace::eye_frame`, the box's camera; a named view is a sheet's, `drawing::named_view`),
+//! the triangles and normals are the evaluated solid's, the edges are the ones its views draw
+//! (`EvaluatedSolid::drawn_edges`), and what is left — projecting, filling, shading and an
+//! encoder — is a renderer's.
 
 use gcs_core::model::Sketch;
-use gcs_core::overview::workspace::eye_frame;
-use gcs_core::solid::{ApproximationPolicy, LocalPoint};
+use gcs_core::overview::workspace::{eye_frame, look_at};
+use gcs_core::solid::ApproximationPolicy;
+use gcs_core::space::{dot, normalised};
 
 /// The eye a picture is taken from, as the box's orbit holds it: a bearing and an elevation.
 #[derive(Clone, Copy, Debug)]
@@ -32,26 +35,20 @@ pub struct Eye {
 /// unless told otherwise.
 pub const HOME: Eye = Eye { az: -std::f64::consts::PI / 3.0, el: std::f64::consts::PI / 6.0 };
 
-/// The eye `--view` names: one of the standard planes' squarely (front from −y, side from +x,
-/// top from +z, as `std.sv` stands them), `iso` the isometric from the front's right, `home` the
-/// workspace's opening view, or a bearing and an elevation in degrees, `az,el`.
+/// The eye `--view` names: a view a sheet names (`front`, `back`, `right`, `left`, `top`,
+/// `bottom`, `isometric`) square on, `home` the workspace's opening view, or a bearing and an
+/// elevation in degrees, `az,el`.
 pub fn eye(name: &str) -> Result<Eye, String> {
-    use std::f64::consts::{FRAC_PI_2, FRAC_PI_4};
-    Ok(match name {
-        "home" => HOME,
-        "front" => Eye { az: -FRAC_PI_2, el: 0.0 },
-        "side" => Eye { az: 0.0, el: 0.0 },
-        "top" => Eye { az: -FRAC_PI_2, el: FRAC_PI_2 },
-        "iso" => Eye { az: -FRAC_PI_4, el: (1.0 / 3f64.sqrt()).asin() },
-        _ => {
-            let angles: Vec<f64> = name.split(',').filter_map(|v| v.trim().parse().ok()).collect();
-            match angles[..] {
-                [az, el] if name.split(',').count() == 2 && az.is_finite() && el.is_finite() =>
-                    Eye { az: az.to_radians(), el: el.clamp(-90.0, 90.0).to_radians() },
-                _ => return Err(format!("--view needs iso, front, side, top, home or az,el in degrees, not `{name}`")),
-            }
-        }
-    })
+    if name == "home" { return Ok(HOME); }
+    if let Some(b) = gcs_core::drawing::named_view(name) {
+        let (az, el) = look_at(&b);
+        return Ok(Eye { az, el });
+    }
+    let degrees = |v: &str| v.trim().parse::<f64>().ok().filter(|x| x.is_finite());
+    name.split_once(',').and_then(|(az, el)| Some((degrees(az)?, degrees(el)?)))
+        .map(|(az, el)| Eye { az: az.to_radians(), el: el.clamp(-90.0, 90.0).to_radians() })
+        .ok_or_else(|| format!("--view needs front, back, right, left, top, bottom, isometric, home \
+            or az,el in degrees, not `{name}`"))
 }
 
 /// What `--png` was asked for.
@@ -65,41 +62,36 @@ pub struct Ask<'a> {
     pub hide: &'a [String],
 }
 
-/// Whether `name` is `asked` or something under it: `head` reaches `head.casting`.
-fn under(name: &str, asked: &str) -> bool {
-    name == asked || name.strip_prefix(asked).is_some_and(|r| r.starts_with('.'))
-}
-
 /// The solids a picture draws: the one `--solid` names (else the objects under that name), or
 /// every object the workspace shows; less those `--hide` names.
-pub fn chosen(sk: &Sketch, ask: &Ask) -> Result<Vec<usize>, String> {
+fn chosen(sk: &Sketch, ask: &Ask) -> Result<Vec<usize>, String> {
     let named = |i: usize| sk.solids[i].name.as_str();
     let mut v = match ask.solid {
-        Some(n) => match sk.solids.iter().position(|s| s.name == n) {
-            Some(i) => vec![i],
-            None => {
+        Some(n) => match crate::pick_solid(sk, Some(n)) {
+            Ok(i) => vec![i],
+            Err(m) => {
                 let v: Vec<usize> = gcs_core::overview::objects(sk).into_iter()
-                    .filter(|&i| under(named(i), n)).collect();
-                if v.is_empty() { return Err(format!("no solid called `{n}`")); }
+                    .filter(|&i| crate::under(named(i), n)).collect();
+                if v.is_empty() { return Err(m); }
                 v
             }
         },
         None => gcs_core::overview::shown_objects(sk),
     };
     for h in ask.hide {
-        if !sk.solids.iter().any(|s| under(&s.name, h)) {
+        if !sk.solids.iter().any(|s| crate::under(&s.name, h)) {
             return Err(format!("no solid called `{h}` to hide"));
         }
     }
-    v.retain(|&i| !ask.hide.iter().any(|h| under(named(i), h)));
+    v.retain(|&i| !ask.hide.iter().any(|h| crate::under(named(i), h)));
     if v.is_empty() { return Err("this document has no solid to draw".into()); }
     Ok(v)
 }
 
 /// The paper behind, the ink of an edge, and the colours an instance is drawn in: the box's
 /// background and edge (`box3d.ts`'s `INK`), and pigments light enough to shade.
-const PAPER: [f64; 3] = [250.0, 250.0, 250.0];
-const EDGE: [f64; 3] = [58.0, 63.0, 69.0];
+const PAPER: [u8; 3] = [250, 250, 250];
+const EDGE: [u8; 3] = [58, 63, 69];
 const PIGMENTS: [[f64; 3]; 10] = [
     [143.0, 179.0, 217.0], [224.0, 163.0, 112.0], [146.0, 196.0, 143.0], [217.0, 140.0, 140.0],
     [181.0, 159.0, 214.0], [196.0, 164.0, 132.0], [227.0, 166.0, 207.0], [176.0, 179.0, 184.0],
@@ -141,70 +133,50 @@ const MARGIN: f64 = 0.04;
 const AMBIENT: f64 = 0.38;
 const LIGHT: [f64; 3] = [-0.35, 0.55, 0.76];
 
-/// One solid seen: its triangles and normals in the world, and the edges to draw.
-struct Seen {
-    pigment: [f64; 3],
-    positions: Vec<[f64; 3]>,
-    normals: Vec<[f64; 3]>,
-    edges: Vec<[[f64; 3]; 2]>,
+/// The eye's coordinates — across, up, toward the viewer — of a solid's own: each a row of the
+/// placement's rotation seen by the eye, and where its origin stands along it.
+type Frame = [([f64; 3], f64); 3];
+
+fn seen(f: &Frame, p: [f64; 3]) -> [f64; 3] {
+    f.map(|(row, at)| dot(row, p) + at)
 }
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-/// The PNG of `which` seen from `ask.eye`, and each solid that did not evaluate with the core's
-/// reason (left out of the picture, as the box leaves it out).
-pub fn render(sk: &Sketch, which: &[usize], ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> {
-    let [right, up, toward] = eye_frame(ask.eye.az, ask.eye.el);
-    // the eye's coordinates of a world point: across, up, and toward the viewer
-    let see = |p: [f64; 3]| [dot(right, p), dot(up, p), dot(toward, p)];
+/// The PNG of what `ask` names, seen from `ask.eye`, and each solid that did not evaluate with
+/// the core's reason (left out of the picture, as the box leaves it out).
+pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> {
+    let axes = eye_frame(ask.eye.az, ask.eye.el);
     let instances = instances(sk);
-    let mut seen = Vec::new();
-    let mut unbuilt = Vec::new();
-    for &i in which {
+    // each solid evaluated once, its frame, its colour and its edges in the eye's coordinates;
+    // its triangles are read from its own mesh when they are filled, not copied out
+    let (mut solids, mut unbuilt) = (Vec::new(), Vec::new());
+    let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    for i in chosen(sk, ask)? {
         let solid = match sk.evaluated_solid(i, ApproximationPolicy::Mesh) {
             Ok(s) => s,
             Err(why) => { unbuilt.push(why); continue; }
         };
-        let m = solid.mesh();
-        let world = |p: &[f64; 3]| solid.to_world(LocalPoint(*p)).0;
-        let normal = |n: &[f64; 3]| solid.vector_to_world(*n);
-        // the creases the box strokes, and the silhouettes as the core's renderer draws them
-        // (`renderer::projection`): on an exact solid traced on its surfaces, else each seam of
-        // a round face where its facets turn from facing the eye to facing away
-        let traced = solid.silhouettes(solid.vector_to_local(toward));
-        let seam = |e: &gcs_core::csg::Edge| {
-            let (a, b) = (dot(normal(&e.na), toward), dot(normal(&e.nb), toward));
-            traced.is_none() && a * b <= 0.0 && (a.abs() >= 1e-12 || b.abs() >= 1e-12)
-        };
-        let edges = solid.edges().iter().filter(|e| !e.smooth || seam(e))
-            .chain(traced.iter().flatten())
-            .map(|e| [see(world(&e.a)), see(world(&e.b))])
-            .collect();
-        seen.push(Seen {
-            pigment: pigment(&instances, &sk.solids[i].name),
-            positions: m.positions.as_chunks::<3>().0.iter().map(|p| see(world(p))).collect(),
-            normals: m.normals.as_chunks::<3>().0.iter().map(|n| see(normal(n))).collect(),
-            edges,
-        });
+        let o = solid.origin().0;
+        let frame: Frame = axes.map(|e| (solid.vector_to_local(e), dot(e, o)));
+        for p in solid.mesh().positions.as_chunks::<3>().0 {
+            let q = seen(&frame, *p);
+            for k in 0..3 {
+                lo[k] = lo[k].min(q[k]);
+                hi[k] = hi[k].max(q[k]);
+            }
+        }
+        let edges: Vec<[[f64; 3]; 2]> = solid.drawn_edges(frame[2].0, &[]).iter()
+            .map(|e| [seen(&frame, e.a), seen(&frame, e.b)]).collect();
+        solids.push((solid, frame, pigment(&instances, &sk.solids[i].name), edges));
     }
-    if seen.iter().all(|s| s.positions.is_empty()) {
+    if !lo[0].is_finite() {
         return Err(unbuilt.first().cloned().unwrap_or_else(|| "this document has no solid to draw".into()));
     }
     // the picture fitted to what it draws, its longer side `size` and its shorter at least half
-    let (mut lo, mut hi) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
-    for p in seen.iter().flat_map(|s| &s.positions) {
-        for k in 0..2 {
-            lo[k] = lo[k].min(p[k]);
-            hi[k] = hi[k].max(p[k]);
-        }
-    }
     let span = [(hi[0] - lo[0]).max(1e-12), (hi[1] - lo[1]).max(1e-12)];
     let size = ask.size as f64;
     let aspect = (span[1] / span[0]).clamp(0.5, 2.0);
     let (w, h) = if aspect <= 1.0 { (size, (size * aspect).round()) } else { ((size / aspect).round(), size) };
-    let (w, h) = (w.max(1.0) as usize, h.max(1.0) as usize);
+    let (w, h) = (w as usize, h as usize);
     let margin = 2.0 * MARGIN * size;
     let scale = ((w as f64 - margin) / span[0]).min((h as f64 - margin) / span[1]) * SAMPLES as f64;
     let (cx, cy) = ((lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0);
@@ -212,41 +184,39 @@ pub fn render(sk: &Sketch, which: &[usize], ask: &Ask) -> Result<(Vec<u8>, Vec<S
     // a point in the eye's coordinates on the canvas, its depth kept
     let (half_w, half_h) = (canvas.w as f64 / 2.0, canvas.h as f64 / 2.0);
     let place = |p: [f64; 3]| [(p[0] - cx) * scale + half_w, half_h - (p[1] - cy) * scale, p[2]];
-    let light = {
-        let l = LIGHT;
-        let n = dot(l, l).sqrt();
-        l.map(|x| x / n)
-    };
-    for s in &seen {
-        for (t, n) in s.positions.as_chunks::<3>().0.iter().zip(s.normals.as_chunks::<3>().0) {
-            canvas.triangle(t.map(place), *n, s.pigment, light);
+    let light = normalised(LIGHT).expect("the light has a direction");
+    for (solid, frame, pigment, _) in &solids {
+        let m = solid.mesh();
+        let normal = |n: [f64; 3]| frame.map(|(row, _)| dot(row, n));
+        for (t, n) in m.positions.as_chunks::<9>().0.iter().zip(m.normals.as_chunks::<9>().0) {
+            let corner = |k: usize| [t[3 * k], t[3 * k + 1], t[3 * k + 2]];
+            let normal_at = |k: usize| normal([n[3 * k], n[3 * k + 1], n[3 * k + 2]]);
+            canvas.triangle([0, 1, 2].map(|k| place(seen(frame, corner(k)))),
+                            [0, 1, 2].map(normal_at), *pigment, light);
         }
     }
     // an edge is drawn where it is no farther than the surface it bounds, give or take what a
     // sample's width of a steep face spans in depth
-    let depth = seen.iter().flat_map(|s| &s.positions).fold((f64::INFINITY, f64::NEG_INFINITY),
-        |(a, b), p| (a.min(p[2]), b.max(p[2])));
-    let slack = (depth.1 - depth.0) * 2e-3 + 2.5 / scale;
-    for s in &seen {
-        for e in &s.edges {
+    let slack = (hi[2] - lo[2]) * 2e-3 + 2.5 / scale;
+    for (_, _, _, edges) in &solids {
+        for e in edges {
             canvas.line(place(e[0]), place(e[1]), slack);
         }
     }
-    let rgb = canvas.down(SAMPLES);
-    Ok((crate::png::encode(w, h, &rgb), unbuilt))
+    Ok((crate::png::encode(w, h, &canvas.down()), unbuilt))
 }
 
 /// The samples being drawn: a colour and a depth each, the depth `-∞` where nothing is.
 struct Canvas {
     w: usize,
     h: usize,
-    colour: Vec<[f64; 3]>,
-    depth: Vec<f64>,
+    colour: Vec<[u8; 3]>,
+    depth: Vec<f32>,
 }
 
 impl Canvas {
     fn new(w: usize, h: usize) -> Canvas {
-        Canvas { w, h, colour: vec![PAPER; w * h], depth: vec![f64::NEG_INFINITY; w * h] }
+        Canvas { w, h, colour: vec![PAPER; w * h], depth: vec![f32::NEG_INFINITY; w * h] }
     }
 
     /// One triangle, its corners on the canvas with their depths and its normals the eye's, each
@@ -256,35 +226,35 @@ impl Canvas {
     fn triangle(&mut self, p: [[f64; 3]; 3], n: [[f64; 3]; 3], pigment: [f64; 3], light: [f64; 3]) {
         let area = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1]);
         if !area.is_finite() || area.abs() < 1e-12 { return; }
-        let x0 = p.iter().map(|q| q[0]).fold(f64::INFINITY, f64::min).floor().max(0.0) as usize;
-        let x1 = (p.iter().map(|q| q[0]).fold(f64::NEG_INFINITY, f64::max).ceil() as isize).min(self.w as isize - 1);
-        let y0 = p.iter().map(|q| q[1]).fold(f64::INFINITY, f64::min).floor().max(0.0) as usize;
-        let y1 = (p.iter().map(|q| q[1]).fold(f64::NEG_INFINITY, f64::max).ceil() as isize).min(self.h as isize - 1);
-        if x1 < 0 || y1 < 0 { return; }
+        let per = 1.0 / area;
+        // the samples whose centres the triangle's box reaches, on the canvas
+        let reach = |k: usize, limit: usize| {
+            let (a, b) = p.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), q| (a.min(q[k]), b.max(q[k])));
+            (a.floor().max(0.0) as usize)..(b.ceil().max(0.0) as usize + 1).min(limit)
+        };
+        let (xs, ys) = (reach(0, self.w), reach(1, self.h));
         // a sample is covered when it is on the inside of all three edges; one exactly on an edge
         // is the triangle's whose side the area's sign puts it, so neighbours leave no crack
         let edge = |a: [f64; 3], b: [f64; 3], x: f64, y: f64| (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]);
-        for y in y0..=y1 as usize {
+        for y in ys {
             let sy = y as f64 + 0.5;
-            for x in x0..=x1 as usize {
+            for x in xs.clone() {
                 let sx = x as f64 + 0.5;
-                let w0 = edge(p[1], p[2], sx, sy) / area;
-                let w1 = edge(p[2], p[0], sx, sy) / area;
+                let w0 = edge(p[1], p[2], sx, sy) * per;
+                let w1 = edge(p[2], p[0], sx, sy) * per;
                 let w2 = 1.0 - w0 - w1;
                 if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 { continue; }
-                let z = w0 * p[0][2] + w1 * p[1][2] + w2 * p[2][2];
+                let z = (w0 * p[0][2] + w1 * p[1][2] + w2 * p[2][2]) as f32;
                 let k = y * self.w + x;
                 if z <= self.depth[k] { continue; }
                 self.depth[k] = z;
                 let m: [f64; 3] = std::array::from_fn(|c| w0 * n[0][c] + w1 * n[1][c] + w2 * n[2][c]);
-                let len = dot(m, m).sqrt();
-                let lit = if len > 0.0 { (dot(m, light) / len).abs() } else { 1.0 };
+                let lit = normalised(m).map_or(1.0, |m| dot(m, light).abs());
                 let shade = AMBIENT + (1.0 - AMBIENT) * lit;
-                self.colour[k] = pigment.map(|c| c * shade);
+                self.colour[k] = pigment.map(|c| (c * shade).round().clamp(0.0, 255.0) as u8);
             }
         }
     }
-
     /// An edge, three samples wide, inked wherever nothing stands nearer than it by more than
     /// `slack`.  At a silhouette only the outer side survives the test, the surface turning
     /// toward the eye just inside it, so a stroke any thinner would be half a pixel there.
@@ -299,15 +269,17 @@ impl Canvas {
                 let (x, y) = (cx + dx, cy + dy);
                 if x < 0 || y < 0 || x >= self.w as isize || y >= self.h as isize { continue; }
                 let k = y as usize * self.w + x as usize;
-                if q[2] + slack >= self.depth[k] {
+                if (q[2] + slack) as f32 >= self.depth[k] {
                     self.colour[k] = EDGE;
                 }
             }
         }
     }
 
-    /// The picture: each `n`-by-`n` block of samples averaged into a pixel, three bytes each.
-    fn down(&self, n: usize) -> Vec<u8> {
+    /// The picture: each `SAMPLES`-square block of samples averaged into a pixel, three bytes
+    /// each.
+    fn down(&self) -> Vec<u8> {
+        let n = SAMPLES;
         let (w, h) = (self.w / n, self.h / n);
         let mut out = Vec::with_capacity(w * h * 3);
         for y in 0..h {
@@ -316,7 +288,7 @@ impl Canvas {
                 for j in 0..n {
                     for i in 0..n {
                         let c = self.colour[(y * n + j) * self.w + x * n + i];
-                        for k in 0..3 { sum[k] += c[k]; }
+                        for k in 0..3 { sum[k] += c[k] as f64; }
                     }
                 }
                 out.extend(sum.map(|v| (v / (n * n) as f64).round().clamp(0.0, 255.0) as u8));

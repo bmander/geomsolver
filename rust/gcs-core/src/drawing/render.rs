@@ -53,7 +53,10 @@ fn entities(model: Model<'_>, path: &str) -> Vec<EntRef> {
     model.names.names.iter().filter(|(_, names)| path.is_empty() || names.iter().any(|n| under(&crate::program::public_path(n), path)))
         .map(|(&e, _)| e).collect()
 }
-fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result<Basis, Error> {
+/// **A view named by a word**, through the world origin: `front`, `back`, `right`, `left`,
+/// `top`, `bottom` and `isometric`, as a sheet's `view` names them and `solventc --view` does;
+/// `None` for any other name.
+pub fn named_view(name: &str) -> Option<Basis> {
     let (u, v) = match name {
         "front" => ([1., 0., 0.], [0., 0., 1.]),
         "back" => ([-1., 0., 0.], [0., 0., 1.]),
@@ -61,16 +64,18 @@ fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result
         "left" => ([0., -1., 0.], [0., 0., 1.]),
         "top" => ([1., 0., 0.], [0., 1., 0.]),
         "bottom" => ([1., 0., 0.], [0., -1., 0.]),
-        "isometric" => return Ok(Basis::explicit([1., -1., 0.], [1., 1., 2.])
+        "isometric" => return Some(Basis::explicit([1., -1., 0.], [1., 1., 2.])
             .expect("the built-in isometric axes span a plane")),
-        _ => {
-            let (_, path, model) = split(name, models, span)?;
-            let e = model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Frame)
-                .ok_or_else(|| error(span, format!("`{name}` is not a model plane")))?;
-            return Ok(model.sketch.basis(e.i()));
-        }
+        _ => return None,
     };
-    Ok(Basis { u, v, o: [0.; 3] })
+    Some(Basis { u, v, o: [0.; 3] })
+}
+fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result<Basis, Error> {
+    if let Some(b) = named_view(name) { return Ok(b); }
+    let (_, path, model) = split(name, models, span)?;
+    let e = model.names.entity_path(model.sketch, path).filter(|e| e.kind == EntKind::Frame)
+        .ok_or_else(|| error(span, format!("`{name}` is not a model plane")))?;
+    Ok(model.sketch.basis(e.i()))
 }
 
 /// The planes other than `p` lying in it and facing the same way, each with its map into `p`:

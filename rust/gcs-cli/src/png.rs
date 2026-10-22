@@ -35,12 +35,25 @@ fn chunk(out: &mut Vec<u8>, kind: &[u8; 4], data: &[u8]) {
     out.extend_from_slice(&crc.to_be_bytes());
 }
 
-/// The CRC-32 PNG checks each chunk by (ISO 3309, the reflected 0xEDB88320).
+/// The CRC-32 PNG checks each chunk by (ISO 3309, the reflected 0xEDB88320), a byte at a time.
+const CRC: [u32; 256] = {
+    let mut table = [0; 256];
+    let mut n = 0;
+    while n < 256 {
+        let mut c = n as u32;
+        let mut k = 0;
+        while k < 8 {
+            c = if c & 1 == 1 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 };
+            k += 1;
+        }
+        table[n] = c;
+        n += 1;
+    }
+    table
+};
+
 fn crc32(bytes: &[u8]) -> u32 {
-    let table: Vec<u32> = (0..256u32).map(|n| {
-        (0..8).fold(n, |c, _| if c & 1 == 1 { 0xedb8_8320 ^ (c >> 1) } else { c >> 1 })
-    }).collect();
-    !bytes.iter().fold(!0u32, |c, &b| table[((c ^ b as u32) & 0xff) as usize] ^ (c >> 8))
+    !bytes.iter().fold(!0u32, |c, &b| CRC[((c ^ b as u32) & 0xff) as usize] ^ (c >> 8))
 }
 
 /// `bytes` as a zlib stream: a header, the deflate block, and the Adler-32 of what it holds.
@@ -50,13 +63,9 @@ fn zlib(bytes: &[u8]) -> Vec<u8> {
     deflate(&mut w, bytes);
     let mut out = w.finish();
     let (mut a, mut b) = (1u32, 0u32);
-    for chunk in bytes.chunks(5552) {
-        for &x in chunk {
-            a += x as u32;
-            b += a;
-        }
-        a %= 65521;
-        b %= 65521;
+    for &x in bytes {
+        a = (a + x as u32) % 65521;
+        b = (b + a) % 65521;
     }
     out.extend_from_slice(&((b << 16) | a).to_be_bytes());
     out

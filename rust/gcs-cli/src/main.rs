@@ -72,8 +72,9 @@ solventc — check a Solvent document
     --png PATH          draw what the workspace shows as a PNG (a part file: its preview), each
                         object shaded in its instance's colour, depth-buffered, with its creases
                         and silhouettes; --solid draws one solid or one instance's objects
-    --view VIEW         the eye --png draws from: home (default, as the workspace opens), iso,
-                        front, side, top, or az,el in degrees
+    --view VIEW         the eye --png draws from: home (default, as the workspace opens), a view
+                        a sheet names (front, back, right, left, top, bottom, isometric), or
+                        az,el in degrees
     --size PX           the PNG's longer side in pixels (default 1200)
     --hide NAMES        objects --png leaves out, each a name and everything under it, comma
                         separated (repeatable): a cutaway
@@ -239,9 +240,9 @@ fn main() -> ExitCode {
                 Some(Err(m)) => { eprintln!("solventc: {m}"); return ExitCode::from(2); }
                 None => { eprintln!("solventc: --view needs a view"); return ExitCode::from(2); }
             },
-            "--size" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|n| (16..=8192).contains(n)) {
+            "--size" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|n| (16..=4096).contains(n)) {
                 Some(n) => opts.size = n,
-                None => { eprintln!("solventc: --size needs a side in pixels, 16 to 8192"); return ExitCode::from(2); }
+                None => { eprintln!("solventc: --size needs a side in pixels, 16 to 4096"); return ExitCode::from(2); }
             },
             "--hide" => match args.next() {
                 Some(n) => opts.hide.extend(n.split(',').map(str::trim).filter(|n| !n.is_empty()).map(String::from)),
@@ -738,7 +739,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         // what the workspace shows, at the pose the run reached: a drawing that did not solve is
         // still looked at, as its SVG is still written
         let ask = picture::Ask { eye: opts.view, size: opts.size, solid: opts.solid.as_deref(), hide: &opts.hide };
-        match picture::chosen(&sk, &ask).and_then(|which| picture::render(&sk, &which, &ask)) {
+        match picture::render(&sk, &ask) {
             Ok((bytes, unbuilt)) => {
                 // an object that does not evaluate is left out, as the box leaves it, and said
                 for why in unbuilt { eprintln!("solventc: {why}"); }
@@ -842,14 +843,19 @@ fn wanted(
 ) -> Vec<(String, f64)> {
     // a solid is read only where a name asked reaches it, or it reaches a name asked — a swept
     // one from its exact surface where one builds, as a drawing reads it
-    let reaches = |a: &str, b: &str| a == b || a.strip_prefix(b).is_some_and(|r| r.starts_with('.'));
-    let asked = |n: &str| names.is_empty() || names.iter().any(|q| reaches(n, q) || reaches(q, n));
+    let asked = |n: &str| names.is_empty() || names.iter().any(|q| under(n, q) || under(q, n));
     gcs_core::brep::export::supply_exact_where(sk, &|i| asked(&sk.solids[i].name));
     let all = report::positions_where(sk, map, &asked);
     if names.is_empty() {
         return all;
     }
-    all.into_iter().filter(|(n, _)| names.iter().any(|q| reaches(n, q))).collect()
+    all.into_iter().filter(|(n, _)| names.iter().any(|q| under(n, q))).collect()
+}
+
+/// Whether `name` is `asked` or something under it: `cyl` reaches `cyl.pivot.x`, and `head`
+/// reaches `head.casting`.
+fn under(name: &str, asked: &str) -> bool {
+    name == asked || name.strip_prefix(asked).is_some_and(|r| r.starts_with('.'))
 }
 
 /// `file:line:col: error[Exxx]: message`.

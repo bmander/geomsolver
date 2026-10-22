@@ -2367,8 +2367,8 @@ build/solventc part.sv --png part.png                 # look at it: the workspac
 **Look at a solid before you trust it.**  `--png PATH` draws what the workspace shows, with no
 browser or GPU: each object shaded in its instance's colour, depth-buffered, its creases and
 silhouettes inked.  A part file draws its `preview`, about the world's origin.  `--view` is `home`
-(the workspace's opening view), `iso`, `front`, `side`, `top` or `az,el` in degrees; `--size` the
-longer side in pixels (1200); `--solid NAME` one solid, or every object of one instance; `--hide
+(the workspace's opening view), a view a sheet names (`front`, `back`, `right`, `left`, `top`,
+`bottom`, `isometric`) or `az,el` in degrees; `--size` the longer side in pixels (1200); `--solid NAME` one solid, or every object of one instance; `--hide
 a,b` leaves those out, each a name and everything under it, for a cutaway
 (`--hide block.casting,head`).  An open box, a belt off its pulleys, a piston not at its stroke —
 a picture shows what no number in the report does.

@@ -351,3 +351,18 @@ fn a_parts_extent_is_read_off_its_round_outline() {
     assert_eq!(svg.matches(">36</text>").count(), 3, "{svg}");
     assert!(!svg.contains(">35.9999</text>"), "{svg}");
 }
+
+/// The views a sheet names by a word (`drawing::named_view`), which `solventc --view` names too:
+/// each stands square on where the standard planes do, the isometric from the front's left.
+#[test]
+fn a_view_named_by_a_word_is_the_eye_square_on_to_it() {
+    use gcs_core::overview::workspace::look_at;
+    let deg = |(az, el): (f64, f64)| (az.to_degrees().round(), el.to_degrees().round());
+    for (name, eye) in [("front", (-90.0, 0.0)), ("back", (90.0, 0.0)), ("right", (0.0, 0.0)),
+                        ("left", (180.0, 0.0)), ("top", (-90.0, 90.0)), ("bottom", (-90.0, -90.0)),
+                        ("isometric", (-135.0, 35.0))] {
+        let b = drawing::named_view(name).unwrap();
+        assert_eq!(deg(look_at(&b)), eye, "{name}");
+    }
+    assert!(drawing::named_view("std.front").is_none(), "a model's plane is the model's to say");
+}

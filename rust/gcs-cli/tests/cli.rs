@@ -967,7 +967,7 @@ fn a_part_file_draws_its_preview() {
 fn a_png_is_refused_what_it_cannot_draw() {
     let out = run(&[&doc("solid_pulley.sv"), "--png", "x.png", "--view", "askew"]);
     assert_eq!(out.status.code(), Some(2));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--view needs iso, front, side, top"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--view needs front, back, right, left, top, bottom, isometric"));
     let dir = std::env::temp_dir().join(format!("solventc-png-refused-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let png = dir.join("p.png");
