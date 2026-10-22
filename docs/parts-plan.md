@@ -1,10 +1,28 @@
 # Parts: a component held to being a function of what it is given (#461)
 
 A design for review on #461. It decides the issue's candidates on what a boundary means for the
-language rather than on what it costs the solver. The rules a boundary must keep come from
-[solve-boundaries-plan.md](solve-boundaries-plan.md), and a rule's tag there (FR1, DT2, IO2, …) is
-used here by name. The style goals come from [the direction paper](solvent-direction.md). Nothing
-here is built yet: a line marked `[new]` does not parse today.
+language rather than on what it costs the solver. The rules a boundary must keep came from the
+solve-boundaries plan, and the style goals from the direction paper (#448). Both are retired, and
+are in the history at
+[`8d0a2d4`](https://github.com/bmander/geomsolver/tree/8d0a2d4/docs): `solve-boundaries-plan.md`
+and `solvent-direction.md`. The tags this document still uses are these:
+
+| tag | the rule |
+|---|---|
+| CL1 | A value depends on the definition, its inputs and its context, and on nothing else. |
+| CL3 | A structural number (an `Int` formal, a `when` condition, `ring N`) is part of the definition, never an input. |
+| DT1 | Locally determined: at its inputs, the Jacobian in its own unknowns is square and nonsingular. |
+| DT2 | Branch chosen: DT1, and every discrete choice is made by a stated `ccw`/`cw` or a bound. |
+| EQ1 | Equivariance is with respect to proper rigid motions acting on every input. |
+| EQ2 | A carrier is read as a plane: its normal and place, never its in-plane axes or origin. |
+| EQ6 | Every entity of an instance keeps its own name and identity under the pose. |
+| FR1 | A boundary is square in its own unknowns. A fact about its inputs alone is a verb fused to a noun. |
+| FR2 | A freedom is exported only as an unbound numeric formal, which the parent binds or leaves unknown. |
+| IO2 | A boundary never yields: a parent's statement over an output is a row over the parent's unknowns. |
+| IO3 | A parent cannot choose a boundary's root. |
+| IO4 | Outputs carry identities, and values flow one way: the instances form a DAG within the parent. |
+
+The rest of this paragraph was written before the work: a line marked `[new]` did not parse then.
 
 ## Status
 

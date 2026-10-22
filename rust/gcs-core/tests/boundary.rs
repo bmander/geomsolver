@@ -1,4 +1,4 @@
-//! The advisory component classifier (#452, `docs/solve-boundaries-plan.md`): one component of
+//! The advisory component classifier (#452, `boundary.rs`): one component of
 //! each class, read through an instance in a solved document — the review's two-root point
 //! among them, locally determined with its branch left to the seeds.
 use crate::common::linked::solved;

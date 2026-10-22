@@ -24,13 +24,11 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
   built at its block's widths (`KernelKey::Interior { n_par, n_const }`, `interior::kernel`) as a
-  spline's length is (`integral.rs`): one row reading every number the structure is made of. It
-  is not a boundary of `solve/through.rs`. A boundary's inner unknowns are parameters of the one
-  `System`, and its inner solve is `newton::square` on a dense LU, its derivative a column at a
-  time. A structure's displacements are thousands of numbers the drawing does not hold, its
-  solve is linear, and it needs one derivative for many columns. As a row it is taken as every
-  other row is, by the flat solve, the decomposition, the diagnosis, a claim and a free twin,
-  and no boundary has to be named from Rust.
+  spline's length is (`integral.rs`): one row reading every number the structure is made of. A
+  structure's displacements are thousands of numbers the drawing does not hold, its solve is
+  linear, and it needs one derivative for many columns, which the adjoint gives. As a row it is
+  taken as every other row is, by the flat solve, the decomposition, the diagnosis, a claim and
+  a free twin.
 
 - **The value is one factorisation; the gradient is the adjoint** (#510 P5). `Structure::solve`
   assembles `K(x)`, factors it once and solves for `u`. `Structure::gradient` solves `Kᵀλ = ∂J/∂u`

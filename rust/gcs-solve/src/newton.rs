@@ -235,8 +235,8 @@ pub(crate) fn dense_gn_step(j: &crate::linalg::Mat, r: &[f64], p: &mut [f64], rc
 /* -- a square block, by plain Newton ----------------------------------------------------------- */
 
 /// A block with as many rows as unknowns, solved by `square` — a trace block at one place along
-/// its curve (`locus.rs`) and an instance a parent solves through (`solve/through.rs`).  Its rows
-/// are judged in their own units, so one tolerance serves a block at any size.
+/// its curve (`locus.rs`).  Its rows are judged in their own units, so one tolerance serves a
+/// block at any size.
 pub trait Square {
     /// Unknowns, and rows.
     fn n(&self) -> usize;

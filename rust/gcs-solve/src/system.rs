@@ -111,22 +111,6 @@ impl Conditioned {
         rrqr_with(&self.m, Tol::Abs(tol)).0
     }
 
-    /// Rank by pivoted QR, and what of `with`'s columns (the same rows, conditioned alike) lies
-    /// outside the span of these: `with` turned by the factorisation's `Qᵀ`, the rows past the
-    /// rank, which an orthogonal turn leaves conditioned as they were.  The rank of `[self |
-    /// with]` is the first plus the rank of the second.
-    pub(crate) fn rank_and_rest(&self, with: &Conditioned, tol: f64) -> (usize, Conditioned) {
-        let (rank, rest) = crate::linalg::rrqr_rest(&self.m, &with.m, Tol::Abs(tol));
-        (rank, Conditioned { m: rest })
-    }
-
-    /// The rows of each of `parts`, one under another, over `cols` columns.
-    pub(crate) fn stack(parts: &[Conditioned], cols: usize) -> Conditioned {
-        let rows = parts.iter().map(|p| p.m.rows).sum();
-        Conditioned { m: Mat::from_vec(rows, cols, parts.iter().flat_map(|p| p.m.data.iter())
-            .copied().collect()) }
-    }
-
     /// The numbers, for handing across the ABI and for the witness's dependency coefficients.
     /// Not for a rank: that is the methods above, with the tolerance they insist on.
     #[doc(hidden)]
@@ -1467,8 +1451,7 @@ impl System {
 
     /// A matrix whose row `k` is row `rows[k]` of this system, differentiated against any
     /// columns in the solver's units (`z`), with each row's units divided out (`jac_scale`): this
-    /// system's own rows (`condition`), and a parent's rows reduced through its boundaries
-    /// (`solve::through`).
+    /// system's own rows (`condition`).
     pub(crate) fn conditioned_of(&self, rows: &[usize], mut j: Mat) -> Conditioned {
         for (k, &r) in rows.iter().enumerate() {
             let inv = self.conditioning(r);

@@ -4,14 +4,12 @@
 //! `RETRIES`), its curve contacts re-homed, its constants read again where it ends, a failure
 //! recovered by `RECOVERIES`, and a bound it breaks steered (`bounds`), as is an orientation the
 //! document states (`orientations`, #157).  The block-triangular
-//! pass and its root search are `blocks`; the drags `drag`, and a body turned whole `turn`; a
-//! parent solved through instances it treats as functions of their inputs, `through` (#454).
+//! pass and its root search are `blocks`; the drags `drag`, and a body turned whole `turn`.
 
 mod blocks;
 mod bounds;
 mod drag;
 mod orientations;
-mod through;
 mod turn;
 
 pub use bounds::cross_bounds;
@@ -19,9 +17,6 @@ pub use bounds::{bound_reading, bound_tol, bounds_hold, BoundReading};
 pub use drag::{Drag, PullPolish, RadiusDrag, Triangle};
 pub use orientations::{
     broken as orientations_broken, orientations_hold, triangle as orientation_triangle,
-};
-pub use through::{
-    solve_through, Boundaries, Boundary, Evaluation, Failure, Reason, Through, Times,
 };
 pub use turn::{TurnDrag, Turning};
 
@@ -594,7 +589,7 @@ impl System {
     /// One minimisation from `z`, updated in place, measured on the hard rows: the result and
     /// the max residual relative to each row's own units, which is what "solved" means.
     /// Where a document's minimisation stops: `opts.tol` as stated, a step of `XTOL` of `z`, and
-    /// a gradient in 1/length — the same for a solve through boundaries (`through`).
+    /// a gradient in 1/length.
     pub(super) fn tolerances(&self, opts: &SolveOpts) -> newton::Tol {
         newton::Tol { ftol: opts.tol, xtol: XTOL, gtol: 1e-16 / self.extent.max(1.0) }
     }
