@@ -1,0 +1,10 @@
+// Presentation of pressure_pipe.sv. Model geometry is independent of this drawing.
+model m from "pressure_pipe.sv"
+
+sheet drawing {
+  size A4
+  label "A LONG PIPE UNDER PRESSURE" at (14mm, 18mm)
+  label "A quarter of its section read in plane strain: Lame's solution, exact there" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

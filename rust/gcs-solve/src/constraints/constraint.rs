@@ -429,9 +429,9 @@ impl Constraint {
             });
             return Key::Traced { contact: c as u8, n_par, n_const };
         }
-        // a frame's deflection, at its frame's widths (#510 S1)
+        // a deflection driven, at its frame's or its region's widths (#510 S1, S2)
         if self.kind == CKind::Deflection {
-            let (n_par, n_const) = self.frame_parts(sk).map_or((0, 0), |(r, _)| r.widths());
+            let (n_par, n_const) = self.deflection_parts(sk).map_or((0, 0), |(r, _)| r.widths());
             return Key::Interior { n_par, n_const };
         }
         // a flank's regularity within a blank, at its block's widths (#345)
@@ -607,41 +607,61 @@ impl Constraint {
         crate::envelope::regular::Parts::of(sk, flank, tool, blank)
     }
 
-    /// **What a frame's deflection reads** (#510 S1, `beams::Row`): its frame under its
-    /// scenario, or why the solve cannot read it.
-    pub fn frame_row(&self, sk: &Sketch) -> Result<crate::beams::Row, String> {
+    /// **What a deflection driven reads** (#510 S1, S2): the frame its point is a joint of
+    /// (`beams::Row`), or else the region read in its plane its point is in (`prisms::Row`),
+    /// under its scenario — or why the solve cannot read it.
+    /// A region's row is the one meshed when it was compiled (`Sketch::meshed`), where there is
+    /// one, so every compile through a solve reads one topology.
+    pub fn deflection_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
         let (sc, at, along) = self.frame_read(sk)?;
-        crate::beams::Row::of(sk, sc, at, along)
+        if let Some(Arg::Int(k)) = self.args.get(2) {
+            let key = usize::try_from(*k).ok().map(|k| (k, at, along));
+            if let Some(r) = key.and_then(|key| sk.meshed.get(&key)) {
+                return Ok(DeflectionRow::Plane(r.clone()));
+            }
+        }
+        let of = crate::model::Applied::Ent(EntRef::point(at));
+        if crate::beams::of_frame(sk, sc, &of) || !crate::prisms::of_region(sk, sc, &of) {
+            return crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame);
+        }
+        crate::prisms::Row::of(sk, sc, at, along).map(|r| DeflectionRow::Plane(r.into()))
     }
 
-    /// The unknowns `frame_row`'s sections are read over, without its structure (#510 S1).
+    /// The unknowns a frame's sections are read over, without its structure (#510 S1); a region's
+    /// point is no joint, so it reads none.
     pub fn frame_unknowns(&self, sk: &Sketch) -> Result<Vec<String>, String> {
         let (sc, at, _) = self.frame_read(sk)?;
         crate::beams::row_unknowns(sk, sc, at)
     }
 
-    /// What a frame's deflection names: its scenario, its point and its direction.
+    /// What a deflection driven names: its scenario, its point and its direction.
     fn frame_read<'s>(&self, sk: &'s Sketch)
         -> Result<(&'s crate::model::Scenario, usize, EntRef), String>
     {
         let (Some(Arg::Ent(at)), Some(Arg::Ent(along)), Some(Arg::Int(k))) =
             (self.args.first(), self.args.get(1), self.args.get(2))
         else {
-            return Err("a frame's deflection names a point, a direction and a scenario".into());
+            return Err("a deflection driven names a point, a direction and a scenario".into());
         };
         let sc = usize::try_from(*k).ok().and_then(|k| sk.scenarios.get(k))
             .ok_or("it is read under no scenario the drawing holds")?;
         if at.kind != EntKind::Point || at.i() >= sk.points.len() {
-            return Err("a frame's deflection is of a point".into());
+            return Err("a deflection driven is of a point".into());
         }
         Ok((sc, at.i(), *along))
     }
 
-    /// `frame_row` and the columns it reads — every joint's lift, then every unknown its
-    /// sections are read over — where the solve can read them all: the lifts minted and the
-    /// unknowns bound.
-    pub fn frame_parts(&self, sk: &Sketch) -> Option<(crate::beams::Row, Vec<u32>)> {
-        let row = self.frame_row(sk).ok()?;
+    /// `deflection_row` and the columns it reads — a frame's every joint's lift, then every
+    /// unknown its sections are read over, where the solve can read them all (the lifts minted and
+    /// the unknowns bound); a region's points' numbers and radii.
+    pub fn deflection_parts(&self, sk: &Sketch) -> Option<(DeflectionRow, Vec<u32>)> {
+        let row = match self.deflection_row(sk).ok()? {
+            DeflectionRow::Plane(r) => {
+                let cols = r.columns.clone();
+                return Some((DeflectionRow::Plane(r), cols));
+            }
+            DeflectionRow::Frame(r) => r,
+        };
         let mut cols = Vec::with_capacity(3 * row.points.len() + row.unknowns.len());
         for &p in &row.points {
             cols.extend(sk.lifted_cols(p)?);
@@ -653,7 +673,7 @@ impl Constraint {
             }
             cols.push(q);
         }
-        Some((row, cols))
+        Some((DeflectionRow::Frame(row), cols))
     }
 
     /// What a contact reads of its envelope (`envelope::held::Parts`), where the solve can read it.
@@ -1037,5 +1057,48 @@ impl Constraint {
     /// derivative's (§6.21).
     fn eval(&self, sk: &Sketch, v: &[f64]) -> (Vec<f64>, Vec<f64>) {
         kernels::eval_with(&self.kernel_in(sk), v, &self.consts(sk))
+    }
+}
+
+/// **What a deflection driven reads** (#510 S1, S2): a frame's row or a region's, each the
+/// interior's kernel at its own widths.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DeflectionRow {
+    Frame(crate::beams::Row),
+    Plane(std::sync::Arc<crate::prisms::Row>),
+}
+
+impl DeflectionRow {
+    /// Its constants, stating the deflection `d`.
+    pub fn consts(&self, d: f64) -> Vec<f64> {
+        match self {
+            DeflectionRow::Frame(r) => r.consts(d),
+            DeflectionRow::Plane(r) => r.consts(d),
+        }
+    }
+
+    /// Its widths, `(n_par, n_const)`.
+    pub fn widths(&self) -> (usize, usize) {
+        match self {
+            DeflectionRow::Frame(r) => r.widths(),
+            DeflectionRow::Plane(r) => r.widths(),
+        }
+    }
+
+    /// Whether its structure gives a displacement where the drawing stands, or why not.
+    pub fn check(&self) -> Result<(), String> {
+        match self {
+            DeflectionRow::Frame(r) => r.check(),
+            DeflectionRow::Plane(r) => r.check(),
+        }
+    }
+
+    /// The points whose lifts it reads: a frame's joints; none of a region's, whose points are
+    /// read in their plane.
+    pub fn lifted(&self) -> Vec<usize> {
+        match self {
+            DeflectionRow::Frame(r) => r.points.clone(),
+            DeflectionRow::Plane(_) => Vec::new(),
+        }
     }
 }

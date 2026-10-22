@@ -51,18 +51,33 @@ pub const JOINED: f64 = 1e-6;
 /// **What a scenario's frames say**: words, each a sentence — a frame the supports leave free —
 /// and per requirement its value, or why it has none; `None` for one about no frame (a solid's,
 /// which nothing analyses yet).  Per support, whether it holds a frame (names a joint of one), so
-/// the body a solid's supports hold is not read with it.
+/// the body a solid's supports hold is not read with it.  A scenario's regions read in their
+/// plane say the same (#510 S2, `prisms::read`), and the two are merged (`merge`).
 #[derive(Clone, Debug, Default)]
 pub struct Read {
     pub words: Vec<String>,
     pub answers: Vec<Option<Result<f64, String>>>,
-    pub holds_frame: Vec<bool>,
+    pub holds: Vec<bool>,
 }
 
 impl Read {
-    /// Whether it read a frame at all: a support holding one, or a requirement about one.
-    pub fn reads_a_frame(&self) -> bool {
-        self.holds_frame.iter().any(|&h| h) || self.answers.iter().any(Option::is_some)
+    /// Whether it read anything at all: a support holding a frame, or a requirement about one.
+    pub fn reads_any(&self) -> bool {
+        self.holds.iter().any(|&h| h) || self.answers.iter().any(Option::is_some)
+    }
+
+    /// Another reading of the same scenario merged in: its words after these, an answer where
+    /// this has none, a support held by either.
+    pub fn merge(&mut self, other: Read) {
+        self.words.extend(other.words);
+        for (a, b) in self.answers.iter_mut().zip(other.answers) {
+            if a.is_none() {
+                *a = b;
+            }
+        }
+        for (a, b) in self.holds.iter_mut().zip(other.holds) {
+            *a |= b;
+        }
     }
 }
 
@@ -280,15 +295,37 @@ impl Unread {
 /// A material's property, read back into the document's units, or why there is none.
 fn property(sk: &Sketch, beam: usize, p: Property) -> Result<f64, String> {
     let b = &sk.beams[beam];
-    let name = b.material.as_ref().ok_or_else(|| {
-        format!("`{}` is made of no material it can be read by: say what, `beam(…) of steel`",
-                b.name)
+    made_of(sk, &b.name, b.material.as_deref(), "beam", p)
+}
+
+/// **A property of what `name` is made of** (`material`, written `KIND(…) of steel`), read back
+/// into the document's units, or why there is none: a frame's beam's (#510 S0), or a solid's read
+/// in its plane (S2, `prisms.rs`).
+pub(crate) fn made_of(sk: &Sketch, name: &str, material: Option<&str>, kind: &str, p: Property)
+    -> Result<f64, String>
+{
+    let m = material.ok_or_else(|| {
+        format!("`{name}` is made of no material it can be read by: say what, `{kind}(…) of steel`")
     })?;
-    let m = &sk.materials[name];
-    let si = m.get(p).ok_or_else(|| {
-        format!("`{}` is made of `{name}`, which states no `{}`", b.name, p.name())
+    let si = sk.materials[m].get(p).ok_or_else(|| {
+        format!("`{name}` is made of `{m}`, which states no `{}`", p.name())
     })?;
     Ok(sk.units.from_si(si, p.dim()))
+}
+
+/// **Whether every direction a driving row reads is held** (#510 S1, S2): its own `along`, and
+/// each load's of scenario `sc` — the row reads them as constants, so one the solve moves is
+/// refused.
+pub(crate) fn directions_held(sk: &Sketch, sc: &Scenario, along: EntRef) -> Result<(), String> {
+    let loads = sc.loads.iter().filter_map(|l| match l.value {
+        LoadValue::Along { along, .. } => Some(along),
+        _ => None,
+    });
+    if std::iter::once(along).chain(loads).all(|d| sk.direction_held(d)) {
+        return Ok(());
+    }
+    Err("its direction moves in the solve, and a driving row reads every direction as it stands: \
+         name an axis the drawing holds, or a line whose ends it holds".to_string())
 }
 
 impl Framed {
@@ -334,7 +371,7 @@ impl Framed {
         }
         let mut s = Structure { dim: 3, nodes: n, bars: Vec::new(), beams: elements,
                                 fixed: Vec::new(), load: Vec::new(), weight: Vec::new(),
-                                spread: Vec::new() };
+                                spread: Vec::new(), tris: Vec::new(), laid: Vec::new() };
         let dofs = s.per() * n;
         (s.fixed, s.load, s.weight) = (vec![false; dofs], vec![0.0; dofs], vec![0.0; dofs]);
         let on = |a: &Applied| -> Vec<usize> {
@@ -522,16 +559,7 @@ impl Row {
     /// and the loads are read as constants of the row), more unknowns than a tape reads, or a
     /// frame that cannot be read at all.
     pub fn of(sk: &Sketch, sc: &Scenario, at: usize, along: EntRef) -> Result<Row, String> {
-        for d in [Some(along)].into_iter().chain(sc.loads.iter().map(|l| match l.value {
-            LoadValue::Along { along, .. } => Some(along),
-            _ => None,
-        })).flatten() {
-            if !sk.direction_held(d) {
-                return Err("its direction moves in the solve, and a driving row reads every \
-                            direction as it stands: name an axis the drawing holds, or a line \
-                            whose ends it holds".to_string());
-            }
-        }
+        directions_held(sk, sc, along)?;
         let (mesh, joint) = row_mesh(sk, sc, at)?;
         let unknowns = frame_unknowns(sk, &mesh, mesh.frame[joint])?;
         let framed = Framed::new(sk, sc, &mesh, mesh.frame[joint]).map_err(|u| u.text())?;
@@ -683,7 +711,7 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
-        holds_frame: vec![false; sc.supports.len()],
+        holds: vec![false; sc.supports.len()],
     };
     if sk.beams.is_empty() {
         return out;
@@ -696,7 +724,7 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
         }
     };
     for (k, s) in sc.supports.iter().enumerate() {
-        out.holds_frame[k] = !mesh.nodes_of(sk, &s.at).is_empty();
+        out.holds[k] = !mesh.nodes_of(sk, &s.at).is_empty();
     }
     let of: Vec<_> = sc.requirements.iter().map(|r| frame_of(sk, &mesh, &r.of)).collect();
     let mut modes: BTreeMap<usize, usize> = BTreeMap::new();

@@ -32,6 +32,7 @@ in std.front {
 membrane := solid(outline, from: -thickness / 2, to: thickness / 2) of fv32
 
 scenario fv32 {
+  plane stress membrane
   fixed membrane.root
   claim mode(membrane, 1) >= 0.99 * f1
   claim mode(membrane, 1) <= 1.01 * f1

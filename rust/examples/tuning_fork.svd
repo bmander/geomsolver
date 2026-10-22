@@ -1,0 +1,10 @@
+// Presentation of tuning_fork.sv. Model geometry is independent of this drawing.
+model m from "tuning_fork.sv"
+
+sheet drawing {
+  size A4
+  label "A TUNING FORK'S MODES IN ITS PLANE" at (14mm, 18mm)
+  label "Read in plane stress: the fork rocks on its stem, then its tines ring near 764Hz" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

@@ -1253,3 +1253,78 @@ fn every_row_read_by_direction_is_declared() {
         }
     }
 }
+
+/// **A region's deflection, as the drawing states it** (#510 S2, `CKind::Deflection` over a
+/// region read in its plane): the row over the region's points' numbers and its radii, its nodes
+/// moved with them — the library's sized plate (lines), and a plate in plane strain with a round
+/// corner and a hole (an arc, a circle) under a pressure on the arc, a force along a side and its
+/// weight — against finite differences, at the solution and knocked off it.
+#[test]
+fn a_regions_deflection_agrees_with_finite_differences() {
+    let holed = "\
+unit mm
+use std (horizontal, vertical)
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
+param r: Length hint(9mm)
+in std.front {
+  a := point
+  b := point hint((120, 0))
+  c := point hint((120, 30))
+  k := point hint((100, 30))
+  d := point hint((100, 50))
+  e := point
+  o := point
+  fix((0mm, 0mm)) a
+  fix((0mm, 50mm)) e
+  fix((40mm, 25mm)) o
+  fix((120mm, 0mm)) b
+  b vertical c
+  b distance(30mm) c
+  c horizontal k
+  k vertical d
+  low := line(a, b)
+  end := line(b, c)
+  round := radius(20mm) arc(center: k, start: c, end: d)
+  top := line(d, e)
+  back := line(e, a)
+  hole := radius(r) circle(center: o) hint(r: 9)
+  region := face(low, end, round, top, back, holes: hole)
+}
+down := axis
+fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
+plate := solid(region, from: -2mm, to: 2mm) of steel
+scenario s {
+  plane strain plate
+  fixed plate.back
+  pressure plate.round 30MPa
+  load plate.low 3kN along: down
+  accelerate plate (0, 0, -9.81 * 1m / 1s^2)
+  deflection(b, along: down) == 0.23mm
+  claim deflection(c, along: down) >= 0mm
+}
+";
+    let mut rng = Rng::new(511);
+    for src in [gcs_core::examples::source("sized_plate").unwrap(), holed] {
+        let mut sk = crate::common::solved(&crate::common::read(src));
+        for round in 0..3 {
+            if round > 0 {
+                for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                    p.value += rng.uniform(-0.01, 0.01) * (1.0 + p.value.abs().min(10.0));
+                }
+            }
+            // a region's normal equations are good to fewer figures than a frame's, so the
+            // difference is taken over a longer step, and good to its truncation, 1e-5
+            let c = sk.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap();
+            let v = c.local_values(&sk);
+            let ja = c.jacobian(&sk, &v);
+            let jn = gcs_core::fdcheck::fd_jacobian(|w| c.residual(&sk, w), &v, 1e-4);
+            let scale = gcs_core::linalg::absmax(&jn.data);
+            assert!(scale.is_finite() && scale > 0.0, "round {round}");
+            for (col, (a, n)) in ja.iter().zip(&jn.data).enumerate() {
+                assert!((a - n).abs() <= 1e-5 * scale,
+                        "round {round}: column {col}: {a} against {n}");
+            }
+        }
+    }
+}
+

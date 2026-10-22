@@ -247,8 +247,43 @@ impl Requirement {
     }
 }
 
+/// **How a prism is read in its plane** (#510 S2): over the face it is swept from, its depth
+/// the thickness.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InPlane {
+    /// `plane stress B`: a thin plate, free across its thickness (`σz = 0`).
+    Stress,
+    /// `plane strain B`: a long prism, held along its length (`εz = 0`).
+    Strain,
+}
+
+impl InPlane {
+    const ALL: [InPlane; 2] = [InPlane::Stress, InPlane::Strain];
+
+    /// The word after `plane` a scenario writes it with.
+    pub fn word(self) -> &'static str {
+        match self {
+            InPlane::Stress => "stress",
+            InPlane::Strain => "strain",
+        }
+    }
+
+    pub fn parse(w: &str) -> Option<InPlane> {
+        InPlane::ALL.into_iter().find(|p| p.word() == w)
+    }
+}
+
+/// `plane stress plate` — a solid read in its plane under the scenario (#510 S2): `of` the
+/// solid, a prism of a face swept square to its plane.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlaneReading {
+    pub plane: InPlane,
+    pub of: Applied,
+}
+
 /// **A scenario** — its supports and loads (an extended scenario's first, then its own) and the
-/// requirements it states, which are its own alone.
+/// requirements it states, which are its own alone; and how it reads its solids (#510 S2,
+/// extended as its supports are).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scenario {
     pub name: String,
@@ -257,14 +292,21 @@ pub struct Scenario {
     pub supports: Vec<Support>,
     pub loads: Vec<Load>,
     pub requirements: Vec<Requirement>,
+    pub readings: Vec<PlaneReading>,
 }
 
 impl Scenario {
     /// What each of its lines is applied to, in the order written: its supports', its loads',
-    /// then what its requirements are of.
+    /// what its requirements are of, then the solids it reads in the plane.
     pub fn applied(&self) -> impl Iterator<Item = &Applied> {
         self.supports.iter().map(|s| &s.at)
             .chain(self.loads.iter().map(|l| &l.at))
             .chain(self.requirements.iter().map(|r| &r.of))
+            .chain(self.readings.iter().map(|r| &r.of))
+    }
+
+    /// How it reads solid `solid` in the plane, where it does.
+    pub fn plane_of(&self, solid: usize) -> Option<InPlane> {
+        self.readings.iter().find(|r| r.of.solid() == Some(solid)).map(|r| r.plane)
     }
 }
