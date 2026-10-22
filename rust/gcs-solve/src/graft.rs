@@ -873,7 +873,15 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     }
                 }
             }
-            let mut nc = Constraint::new(c.kind, ents.into_iter().map(Arg::Ent).collect());
+            // the rest of its slots as it states them: which way an axis runs along its line (#535)
+            let mut ents = ents.into_iter();
+            let args = c.args.iter()
+                .map(|a| match a {
+                    Arg::Ent(_) => Arg::Ent(ents.next().expect("an entity a slot")),
+                    a => a.clone(),
+                })
+                .collect();
+            let mut nc = Constraint::new(c.kind, args);
             nc.intrinsic = true;
             dst.add_quiet(nc);
         }

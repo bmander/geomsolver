@@ -882,7 +882,10 @@ impl CKind {
                 ("along", S::Str),
                 ("form", S::Int),
             ],
-            CKind::Parallel | CKind::EqualLength => &[("l1", S::Line), ("l2", S::Line)],
+            CKind::EqualLength => &[("l1", S::Line), ("l2", S::Line)],
+            // alike either way round, or — with `sense:` — the second running the way the first
+            // does, or the other way (#535)
+            CKind::Parallel => &[("l1", S::Line), ("l2", S::Line), ("sense", S::Str)],
             // square either way round, or — with `sense:` — the second a quarter turn from the
             // first the way it names, as `angle` reads one (#497)
             CKind::Perpendicular => &[("l1", S::Line), ("l2", S::Line), ("sense", S::Str)],
@@ -1023,7 +1026,8 @@ impl CKind {
                 &[("l1", S::Line), ("l2", S::Line), ("d", S::Length), ("sign", S::Int)]
             }
             CKind::Angle3 => &[("l1", S::Direction), ("l2", S::Direction), ("theta", S::Angle)],
-            CKind::Perpendicular3 | CKind::Parallel3 => &[("l1", S::Direction), ("l2", S::Direction)],
+            CKind::Perpendicular3 => &[("l1", S::Direction), ("l2", S::Direction)],
+            CKind::Parallel3 => &[("l1", S::Direction), ("l2", S::Direction), ("sense", S::Str)],
             CKind::PointOnPlane => {
                 &[("p", S::Point), ("plane", S::Plane)]
             }
@@ -1045,11 +1049,11 @@ impl CKind {
             CKind::AxisUnit | CKind::AxisFoot => &[("axis", S::Axis)],
             CKind::PlaneAxis => &[("plane", S::Plane), ("axis", S::Axis)],
             CKind::PointOnAxis => &[("p", S::Point), ("axis", S::Axis)],
-            CKind::LineOnAxis => &[("line", S::Line), ("axis", S::Axis)],
+            CKind::LineOnAxis => &[("line", S::Line), ("axis", S::Axis), ("sense", S::Str)],
             CKind::AxisOnPlane | CKind::AxisParallelPlane | CKind::AxisPerpendicularPlane => {
                 &[("axis", S::Axis), ("plane", S::Plane)]
             }
-            CKind::AxisCoincident => &[("a", S::Axis), ("b", S::Axis)],
+            CKind::AxisCoincident => &[("a", S::Axis), ("b", S::Axis), ("sense", S::Str)],
             // the point carried and the point it is carried from, then each pair, source and
             // target, in the order the pairs are written (#357)
             CKind::Mapped => &[
@@ -1322,6 +1326,10 @@ impl CKind {
             (CKind::Angle, 3) => &["ccw", "cw"][..],
             (CKind::EqualAngle, 4) => &["ccw", "cw"][..],
             (CKind::Perpendicular, 2) => &["ccw", "cw"][..],
+            // which way the second direction runs along the first (#535)
+            (CKind::Parallel | CKind::Parallel3 | CKind::LineOnAxis | CKind::AxisCoincident, 2) => {
+                &["same", "opposite"][..]
+            }
             // a rate held along a line, or square to it; `tangent` the same as `parallel`,
             // written as the tangent at the point (#365)
             (CKind::Rate, 5) => &RATE_WORDS[..],
@@ -1380,6 +1388,10 @@ impl CKind {
             CKind::EqualAngle => (4, &[("ccw", 1.0), ("cw", -1.0)][..]),
             // the quarter turn from the first line to the second, either way (#497)
             CKind::Perpendicular => (2, &[("ccw", 1.0), ("cw", -1.0)][..]),
+            // the second direction run along the first, or turned round (#535)
+            CKind::Parallel | CKind::Parallel3 | CKind::LineOnAxis | CKind::AxisCoincident => {
+                (2, &[("same", 1.0), ("opposite", -1.0)][..])
+            }
             _ => return None,
         })
     }

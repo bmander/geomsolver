@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.171 — October 2026**
+**Specification, Draft 0.172 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -700,7 +700,7 @@ side.origin coincident std.front          // on std.y already: at the world orig
 p := plane                                // [0.43] its axes p.u and p.v minted, free
 ```
 
-`plane(u: r1, v: r2)` takes two axes or drawn lines and nothing else; a plane's 0.10–0.41 labels
+`plane(u: r1, v: r2)` takes two axes or drawn lines and nothing else (**[0.172]** an axis taken from a drawn line runs along it from its `p1` toward its `p2`, which its row states — §9.4 — so a solve from any start keeps the plane facing the way its lines say); a plane's 0.10–0.41 labels
 — `origin:`, `toward:`, `from:`, `fold:`, `offset:`, `through:`, `attitude:`, and a basis written
 as triples of numbers — are refused where written. Its **basis** is read off the axes'
 directions: `û = u/‖u‖`; the normal `n̂` is `u × v` normalised, out of the plane toward its
@@ -1333,6 +1333,8 @@ with no joint stands still: it is the world. A joint does not move the sketch.
 **[0.154]** The standard library (§8) states the joint as relation words (§9.9), the frame the
 subject and what it moves about or along the object, each of one number given bare (`use std
 (turns, screws, spins, slides)`):
+
+**[0.172]** Each holds the joint's axis the way what it is held to runs (`l coincident(sense: same) f.axis`, §9.4): a line from its `p1` toward its `p2`, an axis its own way, and under `spins` the view's normal, out of it. So a positive ratio turns right handed about the line as it is drawn, and a slide runs the way its line does, from any start; through 0.171 the solve kept whichever sense its seed had.
 
 * **`f turns(r) l`** — about the line `l`, `r` radians a radian of the roll, advancing `0mm`.
 * **`f screws(a) l`** — a screw about the line `l`, a radian a radian of the roll, advancing `a`
@@ -2394,7 +2396,7 @@ What goes in the parentheses is a short list:
 | `angle` | infix | (line, line); **[0.27]** (line, line) with a second pair in the parentheses, `l1 angle(l3, l4) l2` (§9.4); **[0.42]** (axis, axis \| line), (line, axis), the unsigned angle in space |
 | `radius` | prefix | a circle or an arc |
 | `length` | prefix | **[0.90]** a line: the distance between its own ends; **[0.27]** an arc: its length along itself; **[0.53]** a spline: its whole length; a free curve: its own. **[0.90]** `distance` relates two things and `length` measures one: so a word over `g: path` states `g`'s length whatever `g` is given, and `distance(d) l` on a line, the spelling through 0.89, is **E040** naming `length(d) l` |
-| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.153]** `perpendicular` takes (line, plane), either way round: the line, drawn in any view, along the plane's normal in space; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3) |
+| `midpoint`, `parallel`, `perpendicular`, `symmetry` | infix | one each; **[0.42]** `parallel` and `perpendicular` also take an axis beside an axis or a line, in space, and (axis, plane) — along the plane, and square to it — either way round; **[0.153]** `perpendicular` takes (line, plane), either way round: the line, drawn in any view, along the plane's normal in space; **[0.43]** `parallel` takes (plane, plane): the two face alike, either way (two rows over their normals; neither's place nor its turn within itself); **[0.90]** `perpendicular` takes (envelope in space, line or axis) +`at: m`, the line along its normal at a point held on it (§6.15.3); **[0.172]** `parallel`, and `coincident` between a line and an axis or two axes, take `sense: same|opposite`, which way the second direction runs (§9.4) |
 | `regular` | infix | **[0.115]** (envelope in space, solid) +`by:` a solid, written `flank regular(…, by: tool) within blank`: the flank's least area factor where the tool cuts it in the blank, a bound or an equation (§6.15.3) |
 | `project` | infix | (point, point), each `in` a plane — the two planes are read off the memberships and never written (§6.7) **[0.10]** |
 | `mapped` | infix | **[0.117]** (point, point), its **pairs** in the parentheses, each a point of the source, `->`, and where it goes: `q mapped(from -> a, to -> b, third -> c) p` holds `q` where the affine map taking `from`, `to` and `third` to `a`, `b` and `c` carries `p`, `q = a + i·(b − a) + j·(c − a)` with `p = from + i·(to − from) + j·(third − from)`. Two pairs are the similarity keeping the turn (`to` turned a quarter about `from` goes to `b` turned a quarter about `a`), `mirror: true` the one reversing it; three pairs say their turn by where their targets stand. Each side is read in its own plane — `q` and the targets in one, `p` and the sources in one, which may be another (**E062** where either is not) — so a point drawn in one view is carried into another. Three sources standing in a line, or two that are one, are **E061** naming them, where they are held; other than two or three pairs, and `mirror:` with three, are **E040**. **[0.118]** (circle, circle) under two pairs: the circle about the image of the other's centre, its radius scaled by `|b − a| / |to − from|`; under three pairs **E040** (an ellipse). A face carried whole is §6.8. No number: not a dimension |
@@ -2434,6 +2436,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `angle(L1, L2) == angle(L3, L4)` **[0.27]** | wrap(∠(dir(L1), dir(L2)) − s·∠(dir(L3), dir(L4))) | 1 | written `l1 angle(l3, l4) l2`; s = −1 under `sense: cw`; §9.4 |
 | `length(A: Arc) == e` **[0.27]** | A.r·θ − e | 1 | θ the sweep counter-clockwise from `start` to `end`, in (0, 2π]; a magnitude |
 | `parallel(L1, L2)` | sin(L1.dir − L2.dir) | 1 | |
+| `parallel(L1, L2, sense: s)` **[0.172]** | wrap(∠(dir(L1), dir(L2)) − θ), θ = 0 under `same` and π under `opposite`; in space two components across â of the turn carrying â onto ±b̂, φ·(â × b̂)/‖â × b̂‖ | 1; 2 in space | written `l1 parallel(sense: same) l2`; the turn's size is the angle between, π where the two run the other way, so that pose is no root; no number, no callout; §9.4 |
 | `perpendicular(L1, L2, sense: s)` **[0.163]** | wrap(∠(dir(L1), dir(L2)) − s·π/2) | 1 | written `l1 perpendicular(sense: ccw) l2`; s = −1 under `cw`; no number, no callout; in a plane only (**E040**); §9.4 |
 | `perpendicular(L1, L2)` | cos(L1.dir − L2.dir) | 1 | |
 | `tangent(C1, C2)` | ‖c1−c2‖ − (r1 + r2) *or* ‖c1−c2‖ − \|r1 − r2\| | 1 | branch by decoration, §9.5 |
@@ -2449,11 +2452,11 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `level(p, q, t)` **[0.46]** | (q − p)·t̂ | 1 | the ordinate's zero, written `p level(t) q`; `p horizontal q` is `p level(up) q` |
 | `distance(P, Q) == e` **[0.42]** | (o_Q − o_P)·n̂_P − e | 1 | signed; parallel only where their axes make them so (§6.10) |
 | `coincident(t: Axis, p)` **[0.42]** | two components of (X − A) × d̂ across the axis | 2 | A the axis's place, d̂ its direction |
-| `coincident(l: Line, t: Axis)` **[0.44]** | two components of (X − A) × d̂ across the axis, for X each of the line's ends | 4 | A the axis's place, d̂ its direction; a line of no length is still on it |
+| `coincident(l: Line, t: Axis)` **[0.44]** | two components of (X − A) × d̂ across the axis, for X each of the line's ends | 4 | A the axis's place, d̂ its direction; a line of no length is still on it; **[0.172]** with `sense:`, the second end's two rows are ‖B − A‖ times `parallel`'s turn from d̂ onto ±(B − A)^ |
 | `coincident(t: Axis, P: Plane)` **[0.42]** | n̂_P·(A − o_P), n̂_P·(A + L·d̂ − o_P) | 2 | the axis lies in `P`: two of its points, L the drawing's extent apart |
 | `parallel(t: Axis, P: Plane)`, `perpendicular(t, P)` **[0.42]** | n̂_P·d̂; (n̂_P × d̂) across n̂_P | 1; 2 | along `P`, and square to it |
 | `perpendicular(l: Line, P: Plane)` **[0.153]** | ((B − A)^ × n̂_P) across n̂_P | 2 | A, B the line's ends in space, drawn in any view |
-| `coincident(t: Axis, s: Axis)` **[0.43]** | two components of (d̂_s × d̂_t) across `t`, scaled by L; two components of (A_s − A_t) × d̂_t across `t` | 4 | one line, either sense; L the drawing's extent |
+| `coincident(t: Axis, s: Axis)` **[0.43]** | two components of (d̂_s × d̂_t) across `t`, scaled by L; two components of (A_s − A_t) × d̂_t across `t` | 4 | one line, either sense; L the drawing's extent; **[0.172]** with `sense:` the first two are L times `parallel`'s turn from d̂_t onto ±d̂_s |
 | `parallel(P: Plane, Q: Plane)` **[0.43]** | two components of n̂_Q × n̂_P across n̂_P | 2 | either way round; neither plane's place nor its turn within itself |
 | `coincident(L, P: Plane)` **[0.24]** | n̂_P·(A − o_P), n̂_P·(B − o_P) | 2 | A, B the line's two ends, lifted |
 | `coincident(q, S)` **[0.49]** | the rows F of S's body, with q for its point | as many as the body states | §6.21; the geometry the body declares is made once per use |
@@ -2485,6 +2488,8 @@ Implementations MAY extend this library. Extensions MUST document residuals and 
 **[0.27]** The number may be another such angle: `l1 angle(l3, l4) l2` states `∠(L1, L2) = ∠(L3, L4)`, both directed, compared mod 2π, and `sense: cw` equates the first with the second's negative — its mirror image. A statement holds at most one number, so two unlabelled items in `angle`'s parentheses are the second pair or an error. It relates turns in a plane and has no reading across views (**E062**).
 
 **[0.163]** `perpendicular` says which way the same way: `l1 perpendicular(sense: ccw) l2` states that `L2`'s direction is a quarter turn counter-clockwise of `L1`'s, the directed angle of a quarter turn (`cw` the other quarter), where `perpendicular` alone is square either way and has both. It states no number, so it is no dimension and is drawn as `perpendicular` is. Two lines in space turn neither way, so a sense there is **E040** at the key. A frame built as a line and a second square to it and as long (`std.Turned`) states its handedness this way: square and equal alone have its mirror image as a second root, as near as the first wherever the two lines start as one.
+
+**[0.172]** `parallel` says which way the second runs: `l1 parallel(sense: same) l2` states that the two directions run alike, `sense: opposite` that they run apart, where `parallel` alone holds either way and leaves which to the seed. Between two lines in a plane it is the directed angle at no turn or a half. Between directions in space — two axes, or an axis and a line — it is the turn carrying the first onto the second, whose size is the angle between them, so the other way round is no root at all; its two rows agree with the unsided ones to first order where the two run as said. `coincident` between a line and an axis, or two axes, takes the same `sense:`: the line or the second axis lies on the first and runs as it says. Each states no number, so none is a dimension, and the statement swapped is the same statement. What the sense is of is a direction: a line's runs from `p1` toward `p2`, an axis's is its own, a plane's normal runs out of it toward its viewer (§6.7). A sense on a relation with no direction to sense (a point on an axis), or a word other than `same` or `opposite`, is **E040** at the key. **The rule:** where the language holds an axis to a line or to another direction without a statement saying so, it holds it the way that direction runs — a plane built on a drawn line (§6.7) and a frame's joint held to a line, an axis or a view's normal (§6.14) — so which way they run is the drawing's, never a seed's.
 
 ### 9.5 Branch decorations are constraints
 

@@ -233,14 +233,12 @@ part StarterRing(o: point, arm: line, o_s: point, at: Length) {
   construction zone := solid(face(z0, z1, z2, z3, -> close), from: at, to: at + wring)
 
   // The ring turns about the axis and the rack slides along its pitch line a pitch circle's turn
-  // a turn: the rack rolls on the pitch circle.  Which way each joint's axis runs is a bound — the
-  // turn's along the shaft as the band runs, out of the end view; the slide's the way its pitch
-  // line runs — so the roll is the one the rack cuts by, whatever a start was.
+  // a turn: the rack rolls on the pitch circle.  Each joint's axis runs the way what it is held
+  // to does — the turn's out of the end view, along the shaft as the band runs; the slide's the
+  // way its pitch line runs — so the roll is the one the rack cuts by, whatever a start was.
   turn := frame
   turn spins(1) o
   rack slides(2 * pi * rring) slide
-  band.a distance(>= 1mm, along: turn.axis) band.b
-  s0 distance(>= 1mm, along: rack.axis) s1
   construction space := sweep(rack_tooth, through: zone, seen_from: turn)
   repeat zr as i {
     construction indexed := space at(under: turn) i * 360deg / zr

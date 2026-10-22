@@ -162,6 +162,11 @@ impl Constraint {
             CKind::Perpendicular => {
                 self.side().map(|s| vec![s * std::f64::consts::FRAC_PI_2]).unwrap_or_default()
             }
+            // the turn `angle`'s kernel reads, where a sense says which way the second runs: none,
+            // or a half (#535)
+            CKind::Parallel => self.side()
+                .map(|s| vec![if s < 0.0 { std::f64::consts::PI } else { 0.0 }])
+                .unwrap_or_default(),
             // the sign the second pair's angle is read with: `sense: cw` is its mirror image
             CKind::EqualAngle => vec![self.sense()],
             // the turn the similarity keeps, or with `mirror: true` reverses (#357)
@@ -203,11 +208,11 @@ impl Constraint {
                 let across_held = self.direction_held(sk, 1) && !self.direction_held(sk, 0);
                 let at = if across_held { 1 } else { 0 };
                 let (e1, e2) = across(self.axis_dir(sk, at));
-                [e1, e2].concat()
+                [&e1[..], &e2[..], &self.sensed()[..]].concat()
             }
             CKind::PointOnLine3 | CKind::PointOnAxis | CKind::LineOnAxis | CKind::PlaneAxis => {
                 let (e1, e2) = across(self.axis_dir(sk, 1));
-                [e1, e2].concat()
+                [&e1[..], &e2[..], &self.sensed()[..]].concat()
             }
             CKind::PlaneDistance => vec![self.args[2].num()],
             // two points on the axis a drawing's extent apart, so its two rows weigh alike
@@ -216,7 +221,7 @@ impl Constraint {
             // its turn and its offset weigh alike
             CKind::AxisCoincident => {
                 let (e1, e2) = across(self.axis_dir(sk, 0));
-                [e1.to_vec(), e2.to_vec(), vec![sk.extent().max(1.0)]].concat()
+                [e1.to_vec(), e2.to_vec(), vec![sk.extent().max(1.0)], self.sensed()].concat()
             }
             // two directions across the plane's normal as it stands now
             CKind::AxisPerpendicularPlane | CKind::LinePerpendicularPlane => {
@@ -448,11 +453,14 @@ impl Constraint {
     /// and a line of no length is one of its roots, not a hole in it.
     pub fn direction_lines(&self) -> impl Iterator<Item = usize> + '_ {
         let slots: &[usize] = match self.kind {
-            CKind::Parallel | CKind::Perpendicular3 | CKind::Parallel3 => &[0, 1],
             // a perpendicular that says which way is the directed angle (#497), which reads a
-            // nil line as at no angle and so does not hold there
-            CKind::Perpendicular if self.side().is_some() => &[],
-            CKind::Perpendicular => &[0, 1],
+            // nil line as at no angle and so does not hold there; so is a parallel that says
+            // which way the second runs (#535), and in space its turn, π where it reads none
+            CKind::Perpendicular | CKind::Parallel | CKind::Parallel3 if self.side().is_some() => {
+                &[]
+            }
+            CKind::Perpendicular3 | CKind::Parallel3 => &[0, 1],
+            CKind::Perpendicular | CKind::Parallel => &[0, 1],
             CKind::TangentArcLine | CKind::TangentCircleAt => &[1],
             CKind::TangentLineCircleAt | CKind::LinePerpendicularPlane => &[0],
             CKind::SplineTangentLine | CKind::CurveTangentLine | CKind::PointOnLine3 => &[1],
@@ -1188,6 +1196,12 @@ impl Constraint {
         }
         let l = &sk.lines[e.i()];
         crate::space::sub(sk.lifted(l.p2 as usize), sk.lifted(l.p1 as usize))
+    }
+
+    /// The sign a direction relation that says which way the second runs reads last among its
+    /// constants (#535): `same` +1, `opposite` −1; nothing where it says neither.
+    fn sensed(&self) -> Vec<f64> {
+        self.side().map(|s| vec![s]).unwrap_or_default()
     }
 
     /// Those hidden points' Params, three a point.

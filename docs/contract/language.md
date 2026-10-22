@@ -255,9 +255,9 @@ structure only, so it is deterministic and decided before the solve; nothing cha
 classifier's root search for each part's first instance (`boundary::classify`), and names a part
 classed *locally determined, branch not chosen* — its scattered starts came to another pose its
 stated `ccw`/`cw` and its bounds admit (a bound sited under the instance is among the rows `split`
-keeps, read by `bounds_hold` on each probe's root, as the orientations are by `orientation`).  An
-axis held along a drawn line is compared with the line's sense (`boundary::figure`), which
-`views::align` gives it and no seed does (#501).  Not in `DRIFT`, which reads text alone;
+keeps, read by `bounds_hold` on each probe's root, as the orientations are by `orientation`).  A
+`sense:` needs no reading: its row's only root is the one it states (#535), so a probe turned the
+other way finds none, and an axis a plane holds along a drawn line is sensed so by its row.  Not in `DRIFT`, which reads text alone;
 `parts::roots` is its gate's.
 **The diagnosis is read through the parts** (#461 D1–D3, the diagnostic half of #455, from the flat
 solve): `parts::read` takes the solved sketch and its `Diagnosis`, and `solventc` prints

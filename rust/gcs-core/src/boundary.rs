@@ -655,8 +655,10 @@ fn size_of(sk: &Sketch, own: &BTreeSet<u32>, inputs: &BTreeSet<u32>) -> f64 {
 
 /// The figure an instance made, as numbers two roots are compared by: each point where it stands
 /// in space, each radius's size and each axis's direction and place.  Not its parameters: an
-/// angle a turn on, or a frame's attitude written the other way, is the same figure.
-fn figure(sk: &Sketch, made: &BTreeSet<EntRef>, along: &BTreeMap<usize, usize>) -> Vec<f64> {
+/// angle a turn on, or a frame's attitude written the other way, is the same figure.  An axis
+/// held along a drawn line runs the line's way by its row (#535), so a probe that turns it round
+/// finds no root to count.
+fn figure(sk: &Sketch, made: &BTreeSet<EntRef>) -> Vec<f64> {
     let mut out = Vec::new();
     for e in made {
         match e.kind {
@@ -666,35 +668,13 @@ fn figure(sk: &Sketch, made: &BTreeSet<EntRef>, along: &BTreeMap<usize, usize>) 
             EntKind::Axis => {
                 let r = &sk.axes[e.i()];
                 let d = r.d.map(|p| sk.params[p as usize].value);
-                let mut d = space::normalised(d).unwrap_or(d);
-                // held along a drawn line, an axis runs the line's way (`views::align`), so a
-                // probe that turns it back has found no other root
-                if let Some(&l) = along.get(&e.i()) {
-                    let ln = &sk.lines[l];
-                    let w = space::sub(sk.world_point(ln.p2 as usize),
-                        sk.world_point(ln.p1 as usize));
-                    if space::dot(d, w) < 0.0 {
-                        d = d.map(|x| -x);
-                    }
-                }
-                out.extend(d);
+                out.extend(space::normalised(d).unwrap_or(d));
                 out.extend(r.a.map(|p| sk.params[p as usize].value));
             }
             _ => {}
         }
     }
     out
-}
-
-/// The axes held along drawn lines, each to its line (`views::along`).
-fn held_along(sk: &Sketch) -> BTreeMap<usize, usize> {
-    sk.constraints.iter()
-        .filter(|c| c.intrinsic && c.along.is_none() && c.kind == CKind::Parallel3)
-        .filter_map(|c| match (c.args[0].ent(), c.args[1].ent()) {
-            (r, l) if r.kind == EntKind::Axis && l.kind == EntKind::Line => Some((r.i(), l.i())),
-            _ => None,
-        })
-        .collect()
 }
 
 /// DT2 by refutation: `STARTS` starts scattered about the instance's solution at twice its size,
@@ -711,8 +691,7 @@ fn search(
     let base = sk.get_x();
     let free: Vec<u32> = sk.free_indices().into_iter().map(|p| p as u32)
         .filter(|p| own.contains(p)).collect();
-    let along = held_along(sk);
-    let mut roots: Vec<(Vec<f64>, bool)> = vec![(figure(sk, made, &along), admits(sk))];
+    let mut roots: Vec<(Vec<f64>, bool)> = vec![(figure(sk, made), admits(sk))];
     let mut out = Roots { starts: STARTS, ..Roots::default() };
     for k in 0..STARTS {
         sk.set_x(&base);
@@ -723,7 +702,7 @@ fn search(
             continue;
         }
         out.solved += 1;
-        let y = figure(sk, made, &along);
+        let y = figure(sk, made);
         // lengths at the instance's size, a direction's parts as if it were a length
         let tol = 1e-4 * size.max(1.0);
         let apart = |r: &Vec<f64>| r.iter().zip(&y).any(|(a, b)| (a - b).abs() > tol);

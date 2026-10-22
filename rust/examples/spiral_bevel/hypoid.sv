@@ -108,9 +108,10 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
 
   // The tip relief: a topping beside each crown flank, kinked in the normal section N (square to
   // P on the trace normal, through the cutter's axis) `tip_relief` short of the addendum, and cut
-  // by its own sweep.
+  // by its own sweep.  N's u runs along the trace normal away from M (`to_inner`), up the cutter's
+  // axis its v: the way the toppings were cut in it.
   when tip_relief > 0mm {
-    N := plane(u: trace.normal, v: mill.ax)
+    N := plane(u: mill.to_inner, v: mill.ax)
     depth := addendum - tip_relief
     inner_half := pressure + pressure_shift + 30deg
     outer_half := pressure - pressure_shift + 30deg

@@ -50,8 +50,9 @@ fn matches(a: &Constraint, b: &Constraint, want: impl Fn(SpecKind) -> bool + Cop
         return false;
     }
     // a perpendicular that says which way is the same statement swapped only with its sense
-    // turned round, which the slots cannot see: it is held to one order (#497)
-    let sided = a.side().is_some() || b.side().is_some();
+    // turned round, which the slots cannot see: it is held to one order (#497).  Two directions
+    // run alike or apart whichever is read first (#535), so a parallel's sense swaps with it
+    let sided = a.kind == CKind::Perpendicular && (a.side().is_some() || b.side().is_some());
     same_args(a, b, false, want)
         || (a.kind.commutative() && !sided && same_args(a, b, true, want))
 }

@@ -273,11 +273,17 @@ pub(super) fn in_space(
     // and the place a contact owns, where one is written: pinned, shared or seeded
     let place = kind.spec().iter().position(|(_, s)| s.is_param()).map(|i| args[i].clone())
         .filter(|a| matches!(a, Arg::Seed { .. } | Arg::Shared { .. }));
+    // and which way a direction runs, the same word in a plane and in space (#535)
+    let sense = kind.spec().iter().position(|(n, _)| *n == "sense").filter(|&i| chosen(i))
+        .map(|i| args[i].clone());
     let mut out = Vec::new();
     let mut left_out = Vec::new();
     let mut ents = ents.into_iter();
-    for (i, (_, s)) in k3.spec().iter().enumerate() {
-        if s.is_entity() {
+    for (i, (name, s)) in k3.spec().iter().enumerate() {
+        if let Some(a) = sense.as_ref().filter(|_| *name == "sense") {
+            out.push(a.clone());
+            left_out.push(false);
+        } else if s.is_entity() {
             out.push(ents.next().expect("the two kinds name the same operands"));
             left_out.push(false);
         } else if s.is_dimension() {

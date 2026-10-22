@@ -89,9 +89,8 @@ part Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
 
   // The blank turns about its spindle, the line out of the view through its centre, and the belt
   // runs along the pitch line a pitch circle a turn, the way the pitch point turns.  Each axis
-  // runs the way it is drawn: the spindle out along the view's normal, the belt from `s0` to
-  // `s1`, and `radial`'s u and v out to the pitch point and along the pitch line (bounds, so
-  // which root is meant is stated, not left to the seeds).
+  // runs the way its line is drawn: the spindle out along the view's normal, the belt from `s0`
+  // to `s1`, and `radial`'s u and v out to the pitch point and along the pitch line.
   out := point hint((10mm, o.x, o.y))
   construction spindle := line(o, out)
   out distance(10mm, along: n) o.plane
@@ -99,10 +98,6 @@ part Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
   turn := frame
   turn turns(1) spindle
   belt slides(2 * pi * rp) line_of_pitch
-  o distance(>= 1mm, along: turn.axis) out
-  s0 distance(>= 1mm, along: belt.axis) s1
-  o distance(>= 1mm, along: radial.axes.u) s0
-  s0 distance(>= 1mm, along: radial.axes.v) s1
   construction space := sweep(belt_tooth, through: pulley, seen_from: turn)
 
   construction blank := solid(face(tip), from: xp0 + flanged * wf, to: xp1 - flanged * wf)

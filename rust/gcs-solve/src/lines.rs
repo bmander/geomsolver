@@ -193,7 +193,9 @@ impl<'a> Body<'a> {
         let pick = |ks: &[usize]| ks.iter().map(|&k| self.alg[k].clone()).collect();
         // a `parallel` is read across the line that is no rate along the marched formal
         let across = self.rate.iter().map(|r| {
-            (r.kind == RowKind::Kernel(crate::kernels::K::Parallel3 as usize)).then(|| {
+            use crate::kernels::K;
+            let parallel = [K::Parallel3, K::Parallel3Sensed].map(|k| RowKind::Kernel(k as usize));
+            parallel.contains(&r.kind).then(|| {
                 let marched =
                     |at: usize| r.cols[at..at + 6].iter().any(|&c| (rd..rd + n).contains(&c));
                 if marched(0) { 6 } else { 0 }
@@ -567,7 +569,8 @@ impl<'a> Body<'a> {
             Some(at) => {
                 let p = |k: usize| -> [f64; 3] { std::array::from_fn(|c| z[r.cols[at + k + c]]) };
                 let (e1, e2) = crate::space::across(crate::space::sub(p(3), p(0)));
-                [e1, e2].concat()
+                // and a sensed one's sign after them, as it was stated (#535)
+                [&e1[..], &e2[..], &r.consts[6..]].concat()
             }
             None => r.consts.to_vec(),
         }).collect()

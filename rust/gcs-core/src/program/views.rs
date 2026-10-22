@@ -486,13 +486,44 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
 }
 
 /// Every axis a plane holds along a drawn line (`program::entities::axes_along`) turned to the
-/// line as it now stands, its sense included — `parallel` is satisfied both ways, so an axis
-/// seeded before its line's points were placed may stand against it, and a plane over it turn
-/// its back.
+/// line as it now stands — seeded before its line's points were placed, it may stand far from
+/// it.  And every other axis of its own a statement says runs the way another direction does
+/// (#535) turned round where its seed stands against it: the stated root is the only one, but
+/// from exactly the other way the turn onto it has no gradient to follow.  A plane's axes and
+/// normal are the plane's, turned with it or not at all.
 fn align(sk: &mut Sketch) {
     for (r, l) in along(sk) {
         if !sk.axes[r].d.iter().any(|&q| sk.params[q as usize].fixed) {
             sk.turn_axis_along(r, l);
+        }
+    }
+    let planes: BTreeSet<usize> = (0..sk.frames.len())
+        .filter_map(|p| sk.frames[p].chart.as_ref())
+        .flat_map(|c| [Some(c.u), Some(c.v), c.normal].into_iter().flatten().map(|a| a as usize))
+        .collect();
+    let sensed: Vec<(EntRef, EntRef, f64)> = sk.constraints.iter()
+        .filter(|c| matches!(c.kind, CKind::Parallel3 | CKind::LineOnAxis | CKind::AxisCoincident))
+        .filter_map(|c| Some((c.args[0].ent(), c.args[1].ent(), c.side()?)))
+        .collect();
+    let dir = |sk: &Sketch, e: EntRef| match e.kind {
+        EntKind::Axis => Some(sk.axes[e.i()].d.map(|q| sk.params[q as usize].value)),
+        EntKind::Line => {
+            let l = &sk.lines[e.i()];
+            Some(crate::space::sub(sk.world_point(l.p2 as usize), sk.world_point(l.p1 as usize)))
+        }
+        _ => None,
+    };
+    for (a, b, s) in sensed {
+        let (Some(da), Some(db)) = (dir(sk, a), dir(sk, b)) else { continue };
+        if s * crate::space::dot(da, db) >= 0.0 {
+            continue;
+        }
+        let own = |e: &EntRef| e.kind == EntKind::Axis && !planes.contains(&e.i())
+            && !sk.axes[e.i()].d.iter().any(|&q| sk.params[q as usize].fixed);
+        if let Some(r) = [b, a].into_iter().find(own) {
+            for q in sk.axes[r.i()].d {
+                sk.params[q as usize].value = -sk.params[q as usize].value;
+            }
         }
     }
 }

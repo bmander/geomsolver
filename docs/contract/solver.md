@@ -206,7 +206,8 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   so every such row holds there), so the lines a row reads by direction are named
   (`Constraint::direction_lines`, #496: the three tangencies' line, both of `Parallel`'s and an
   unsensed `Perpendicular`'s, a spline's or a curve's tangent line, a rate's line, a `Level`'s
-  along a line, and in space both of `Perpendicular3`'s and `Parallel3`'s, `PointOnLine3`'s and
+  along a line, and in space both of `Perpendicular3`'s and an unsensed `Parallel3`'s (a sensed
+  one reads a nil line at a half turn, #535), `PointOnLine3`'s and
   `LinePerpendicularPlane`'s — an exhaustive match over `CKind`, so a new kind says, and
   `every_row_read_by_direction_is_declared` holds it to the kernels: every line slot of every row
   of the Jacobian corpus is declared exactly when shrinking that line toward either end leaves the

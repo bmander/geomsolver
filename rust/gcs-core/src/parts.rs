@@ -372,7 +372,7 @@ pub fn roots(e: &Elaborated, solved: &Sketch) -> Vec<Diag> {
         out.push(Diag::new(Code::W207, at, None, format!(
             "part `{}` leaves which root it takes to its seeds: from {} scattered starts its rows \
              came to {} poses its stated choices admit (in `{}`) — state the one it means, with \
-             `ccw`/`cw` or a bound", c.name, r.starts, r.admitted, a.instance)));
+             `ccw`/`cw`, a `sense:` or a bound", c.name, r.starts, r.admitted, a.instance)));
     }
     crate::modules::localize(prog, &mut out);
     out

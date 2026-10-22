@@ -726,6 +726,17 @@ impl Constraint {
         if self.kind == CKind::Perpendicular && self.side().is_some() {
             return K::Angle;
         }
+        // a direction that says which way it runs along another (#535): in a plane `angle`'s
+        // kernel at no turn or a half; in space the turn onto it, whose only root is the one said
+        if self.side().is_some() {
+            match self.kind {
+                CKind::Parallel => return K::Angle,
+                CKind::Parallel3 => return K::Parallel3Sensed,
+                CKind::AxisCoincident => return K::AxisCoincidentSensed,
+                CKind::LineOnAxis => return K::LineOnAxisSensed,
+                _ => {}
+            }
+        }
         // a side left unsaid is the magnitude form: both sides are solutions, and where the solve
         // lands among them is the seed's business (§9.2)
         if self.side().is_none() {
@@ -753,7 +764,10 @@ impl Constraint {
         if self.kind == CKind::Ordinate {
             return self.side().unwrap_or(1.0) * d;
         }
-        let Some(_) = self.kind.side_slot() else { return d };
+        // a side with no number to sign — which way a direction runs (#535) — signs nothing
+        let Some(_) = self.kind.side_slot().filter(|_| !self.dimensions().is_empty()) else {
+            return d;
+        };
         if let Some(s) = self.side() {
             return s * d;
         }

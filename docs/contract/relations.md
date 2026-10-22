@@ -25,6 +25,22 @@ came from.
   its mirror), so `compare::matches` swaps only unsided ones; in space it is E040 at the key
   (`reading::in_space`).  `std.Turned` states its turn so.  `tests/angle_and_arc_words.rs` and
   `coordinates::a_turned_frame_keeps_its_handedness_however_far_its_datum_turns` are the gates.
+- **A direction says which way it runs** ([0.172], #535).  `parallel` (`Parallel`, `Parallel3`)
+  and `coincident` between a line and an axis or two axes (`LineOnAxis`, `AxisCoincident`) take
+  `sense: same|opposite` as their third slot, in `side_words`; unsaid each holds either way.  In
+  a plane a sensed `parallel` is `angle`'s kernel at 0 or π; in space each is its own kernel
+  (`K::Parallel3Sensed`, `K::AxisCoincidentSensed`, `K::LineOnAxisSensed`, `kernels::turn_onto`):
+  the turn carrying the first direction onto the second, axis times angle, across the first —
+  of size π where the two run the other way, so that pose is no root (a smooth two-row residual
+  over the sphere has an even number of roots; this one has a seam there instead) — its sign the
+  last constant (`Constraint::sensed`).  Alike or apart is the same statement swapped, so
+  `compare::matches` swaps them (only a sided `perpendicular` is held to one order); the word
+  carries into space (`reading::in_space`) and through a copy (`graft`).  From exactly the other
+  way the turn has no gradient, so `views::align` turns a free axis of its own (no plane's `u`,
+  `v` or normal) round where its seed stands against its sensed row.  **The rule:** an axis the
+  language holds to a direction unasked runs its way — `axes_along`'s intrinsic row and `std`'s
+  joint words are sensed `same`.  No number, so no dimension and no callout.
+  `tests/axis_sense.rs` is the gate, the kernels' rows in `jacobians.rs`.
 - **A selector says what it means, or it is refused** (Solvent §9.2). `CKind::words(slot)` is the
   vocabulary a `Str` slot takes (`at: start|end`, `at: p1|p2`) and `constraints::ALONG` the one
   table `along:` is read by (choice and message).  A key naming no slot, a word outside a slot's
