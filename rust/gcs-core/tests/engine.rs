@@ -31,7 +31,7 @@ const HEAD: f64 = 190.;
 const RCAMJ: f64 = 13.;
 const WCAMB: f64 = 16.;
 const CAMCAP: f64 = 4.;
-const RCP: f64 = 30.;
+const RCP: f64 = 26.;
 const VS: f64 = 19.;
 const RFW: f64 = 140.;
 const RPIN: f64 = 11.;
@@ -131,8 +131,9 @@ fn the_engine_shows_a_solid_of_every_part() {
     let mut want: Vec<String> = ["block.casting","block.main_caps","block.plugs","block.pan",
         "head.casting","camshaft_i.shaft","camshaft_i.caps","camshaft_e.shaft","camshaft_e.caps",
         "crank.shaft","crank.ring.gear","pistons1.body","pistons2.body","pistons3.body",
-        "pistons4.body","pistons1.gudgeon","pistons2.gudgeon","pistons3.gudgeon","pistons4.gudgeon","drive.crank.pulley","drive.crank.flanges",
-        "drive.intake.pulley","drive.exhaust.pulley","drive.belt","drive.tensioner"]
+        "pistons4.body","pistons1.gudgeon","pistons2.gudgeon","pistons3.gudgeon","pistons4.gudgeon",
+        "drive.crank.pulley","drive.crank.flanges","drive.intake.pulley","drive.exhaust.pulley",
+        "drive.belt","drive.tensioner"]
         .iter().map(|s| s.to_string()).collect();
     // every cylinder's four valves, a pair at each station, each with its bucket
     for c in 1..=4 {
