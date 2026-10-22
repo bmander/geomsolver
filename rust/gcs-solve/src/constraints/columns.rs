@@ -424,20 +424,121 @@ impl Constraint {
         }
     }
 
-    /// The lines this row reads only by their direction (#479): the `tangent_arc_line` kernel's
-    /// `(p − c)·(b − a)/|b − a|` and `parallel`'s sine and `perpendicular`'s cosine of the two
-    /// lines' unit directions.  A line of no length has none (its floored unit is nil), so each
-    /// holds there whatever else: a run tangent at both its ends held together where its two
-    /// rounds cross, a rectangle's side pinned to a point — only a length tells either from the
-    /// figure (`solve::collapsed`).
+    /// The lines this row reads only by their direction (#479, #496): the `tangent_arc_line`
+    /// kernel's `(p − c)·(b − a)/|b − a|`, `parallel`'s sine and `perpendicular`'s cosine of the
+    /// two lines' unit directions, a tangent line's rows over its length, a level's height along
+    /// a line's unit, and the same words in space — `perpendicular3`'s cosine, `parallel3`'s
+    /// `(â × b̂)·e_k`, a point on a line or a line along a normal across the line's unit.  A line
+    /// of no length has no direction (its floored unit is nil), so each holds there whatever
+    /// else, while a shrinking line comes no nearer its root: a run tangent at both its ends held
+    /// together where its two rounds cross, a rectangle's side pinned to a point — only a length
+    /// tells either from the figure (`solve::collapsed`).
+    ///
+    /// The match is exhaustive on purpose: a new kind says which of its slots it reads so, and
+    /// `every_row_read_by_direction_is_declared` holds the table to the kernels.  A slot is
+    /// counted only where it holds a line (a direction slot may hold an axis, held to the unit
+    /// sphere, and a level's or a rate's target a plane or a circle).  A row that reads a line's
+    /// `b − a` unnormalised is not here: it comes to its root continuously as the line shrinks,
+    /// and a line of no length is one of its roots, not a hole in it.
     pub fn direction_lines(&self) -> impl Iterator<Item = usize> + '_ {
-        let slots = match self.kind {
-            CKind::TangentArcLine | CKind::TangentCircleAt => 1..2,
-            CKind::TangentLineCircleAt => 0..1,
-            CKind::Parallel | CKind::Perpendicular => 0..2,
-            _ => 0..0,
+        let slots: &[usize] = match self.kind {
+            CKind::Parallel | CKind::Perpendicular3 | CKind::Parallel3 => &[0, 1],
+            // a perpendicular that says which way is the directed angle (#497), which reads a
+            // nil line as at no angle and so does not hold there
+            CKind::Perpendicular if self.side().is_some() => &[],
+            CKind::Perpendicular => &[0, 1],
+            CKind::TangentArcLine | CKind::TangentCircleAt => &[1],
+            CKind::TangentLineCircleAt | CKind::LinePerpendicularPlane => &[0],
+            CKind::SplineTangentLine | CKind::CurveTangentLine | CKind::PointOnLine3 => &[1],
+            // a rate held along, across or square to a line (#365), over the line's unit
+            CKind::Rate => &[1],
+            // two points level along a line: `(q − p)·t̂`
+            CKind::Level => &[2],
+            CKind::Coincident
+            | CKind::Distance
+            | CKind::Midpoint
+            | CKind::DragTarget
+            | CKind::DragSeen
+            // `b − a` itself, held level: a line of no length is on its root, not off it
+            | CKind::Horizontal
+            | CKind::Vertical
+            // an angle reads a nil line by the sign of a zero, as at none or at half a turn
+            | CKind::Angle
+            | CKind::EqualAngle
+            | CKind::ArcLength
+            | CKind::SplineLength
+            | CKind::CurveLength
+            | CKind::Stationary
+            | CKind::CurveTouchesLine
+            // a distance from a line is nil from one of no length, so the row is its number
+            | CKind::ParallelDistance
+            | CKind::EqualLength
+            | CKind::PointOnLine
+            | CKind::PointLineDistance
+            | CKind::PointOnCircle
+            | CKind::Radius
+            | CKind::EqualRadius
+            | CKind::AnnularDistance
+            | CKind::TangentLineCircle
+            | CKind::TangentCircleCircle
+            | CKind::Symmetric
+            | CKind::PointOnSpline
+            | CKind::SplineCurvature
+            | CKind::PointAlongLine
+            | CKind::PointAlongArc
+            // an ordinate along a line of no length is its number: it holds only where that is
+            // none, which is a level
+            | CKind::Ordinate
+            | CKind::PointOnCurve
+            | CKind::PointOnExtrusion
+            | CKind::CurveCurvature
+            | CKind::PointOnEnvelope
+            | CKind::PointOnMeshing
+            | CKind::RateDistance
+            | CKind::CarriedPoint
+            | CKind::CarriedPointIn
+            | CKind::RegularWithin
+            | CKind::PointOnTraced
+            | CKind::Project
+            | CKind::Lift
+            | CKind::ChartLift
+            | CKind::Coincident3
+            | CKind::Distance3
+            | CKind::PointLine3
+            | CKind::LineLine3
+            | CKind::Angle3
+            | CKind::PointOnPlane
+            | CKind::PointOnCircle3
+            | CKind::EqualLength3
+            | CKind::PointAlongLine3
+            | CKind::PointAlongArc3
+            | CKind::TangentCircleAt3
+            | CKind::LineOnPlane
+            | CKind::Midpoint3
+            | CKind::Symmetric3
+            | CKind::ProjectSolved
+            | CKind::AxisOnPlane
+            | CKind::AxisCoincident
+            | CKind::AxisParallelPlane
+            | CKind::AxisPerpendicularPlane
+            | CKind::PlaneParallel
+            | CKind::PlaneDistance
+            | CKind::AxisUnit
+            | CKind::AxisFoot
+            | CKind::PlaneAxis
+            | CKind::PointOnAxis
+            | CKind::LineOnAxis
+            | CKind::Mapped
+            | CKind::MappedSimilar
+            | CKind::MappedCircle
+            | CKind::Fix
+            | CKind::Ccw
+            | CKind::Cw => &[],
         };
-        self.args[slots].iter().map(|a| a.ent().i())
+        slots.iter().filter_map(|&i| match self.args.get(i) {
+            Some(Arg::Ent(e)) if e.kind == EntKind::Line => Some(e.i()),
+            _ => None,
+        })
     }
 
     /// The spline this constraint touches and the Param holding where on it — `None` for
