@@ -3,8 +3,10 @@
 The analytic cases every structural analysis of #510 (design intent as structural performance)
 is held to, item P8. Each is a Solvent document: a solid, or a frame of beams, made of a
 material, and a `scenario` whose claims bracket the case's answer. The frames are analysed by the
-core since S0, which judges their claims (`rust/gcs-core/tests/beams.rs`); the solids' claims
-are judged by the gate and by an external solver until S2–S3 analyse them.
+core since S0, which judges their claims (`rust/gcs-core/tests/beams.rs`), and the cases read in
+the plane since S2, each scenario saying so (`plane stress plate`; `rust/gcs-core/tests/prisms.rs`);
+the solids read in three dimensions are judged by the gate and by an external solver until S3
+analyses them.
 
 - **The gate** (`rust/gcs-core/tests/analysis_corpus.rs`, every `make test`) holds each document
   to what it says it is. It solves to no freedom, its solid is the size its numbers say, and every
@@ -16,6 +18,9 @@ are judged by the gate and by an external solver until S2–S3 analyse them.
   own: each frame case's answers are its references, exact where a cubic is exact (a load at a
   joint or spread evenly along a member) and within 1e-5 where it approximates (a mode, a
   buckling load), and every claim is kept.
+- **The plane cases' analysis** (`rust/gcs-core/tests/prisms.rs`, every `make test`) is the
+  core's own too: each answers its reference — Kirsch's and LE1's stress within 1%, FV32's
+  frequencies within 0.1% — over its face meshed in quadratic triangles, and keeps every claim.
 - **The oracle** (`analysis_corpus/ccx.rs`, `make test-ccx`, with `ccx` and `gmsh` on the path)
   is CalculiX, kept in the tests alone as OCCT is for the B-rep kernel. It reads the solids; a
   frame is no oracle's. Each solid is built by this kernel and written as STEP. gmsh meshes it
@@ -47,9 +52,9 @@ What the documents write:
   to itself, so a cut face is a plane of symmetry. One point held along the thickness takes out
   what the cuts leave free.
 - **Every case is drawn in the front** (`std.front`, x along and z up) and swept across y. A case
-  read in the plane is read in the face the solid sweeps, its depth the thickness, and the oracle
-  refuses one swept any other way. A point held across the thickness is the solid reading's
-  alone.
+  read in the plane says so in its scenario (`plane stress plate`) and is read in the face the
+  solid sweeps, its depth the thickness; the oracle refuses one swept any other way. A point held
+  across the thickness is the solid reading's alone, and holds nothing in the plane.
 - **A tension is a negative pressure** (`pressure plate.pulled -sigma`), since a pressure pushes
   into the face.
 
@@ -57,6 +62,5 @@ What the documents write:
   z the front's normal, so `Iz` bends it in the front and `Iy` across it.  A point drawn on a
   member where a load stands cuts it there.
 
-What is not here yet, and why (NAFEMS FV2's frame, how a document asks to be read in the plane,
-NAFEMS LE10 and FV52), is recorded in the contract: `docs/contract/analysis.md`, "What P8
-leaves".
+What is not here yet, and why (NAFEMS FV2's frame, NAFEMS LE10 and FV52), is recorded in the
+contract: `docs/contract/analysis.md`, "What P8 leaves".

@@ -1,0 +1,10 @@
+// Presentation of gravity_wall.sv. Model geometry is independent of this drawing.
+model m from "gravity_wall.sv"
+
+sheet drawing {
+  size A4
+  label "A GRAVITY WALL" at (14mm, 18mm)
+  label "Read in plane strain under its own weight and the water's mean pressure" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

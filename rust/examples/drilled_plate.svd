@@ -1,0 +1,10 @@
+// Presentation of drilled_plate.sv. Model geometry is independent of this drawing.
+model m from "drilled_plate.sv"
+
+sheet drawing {
+  size A4
+  label "HOW LARGE A LIGHTENING HOLE MAY BE" at (14mm, 18mm)
+  label "Its radius is the one at which the end sinks 0.6mm, the mesh moving with the hole" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

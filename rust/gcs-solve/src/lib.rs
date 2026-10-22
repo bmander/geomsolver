@@ -50,6 +50,7 @@ pub mod newton;
 pub mod ode;
 pub mod par;
 pub mod plane;
+pub mod prisms;
 pub mod progress;
 pub mod rates;
 pub mod rng;

@@ -334,10 +334,13 @@ pub struct ScenarioAnswer {
     pub text: String,
 }
 
-/// Every requirement of scenario `s` its frames answer (`beams::read`, in `read`), in the order
-/// written.  A claim is kept or refuted; a driving deflection the drawing is solved for (#510
-/// S1, `Stated::driven`) is said to be held or not reached; any other driving row or bound is
-/// said to hold or not, and that nothing drives it yet (S2–S4).
+/// Every requirement of scenario `s` its frames or its regions answer (`beams::read`,
+/// `prisms::read`, in `read`), in the order written.  A claim is kept or refuted; a driving
+/// deflection the drawing is solved for (#510 S1, `Stated::driven`) is said to be held or not
+/// reached, its value its own row's — a region's on the mesh the row was compiled on and moved
+/// with the drawing (#510 S2), which a fresh mesh of the solved drawing reads to its
+/// discretisation, not to rounding; any other driving row or bound is said to hold or not, and
+/// that nothing drives it yet (S3–S4).
 pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::beams::Read)
     -> Vec<ScenarioAnswer>
 {
@@ -349,6 +352,14 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
         let grade = r.grade().word();
         let stated = format!("{} {}", r.compare.text(),
                              crate::beams::value_text(sk, r.output, r.value));
+        // a driven requirement's value is its row's at the solved drawing
+        let row = s.driven.get(k).copied().flatten().and_then(|id| sk.constraint(id)).map(|c| {
+            c.residual(sk, &c.local_values(sk))[0] + r.value
+        });
+        let got = match (got, row) {
+            (Ok(_), Some(v)) if v.is_finite() => &Ok(v),
+            _ => got,
+        };
         let (value, holds, said) = match got {
             Ok(v) => {
                 let keeps = crate::beams::keeps(r, *v);

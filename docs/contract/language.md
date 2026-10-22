@@ -340,7 +340,7 @@ in top` reads the world's. `tests/frame_datums.rs` is the gate
 `a_modules_definition_reads_its_datums_by_the_modules_own_use`,
 `a_body_reads_the_datums_of_the_frame_around_its_call_wherever_that_is_written`,
 `a_frames_own_datums_are_read_by_no_name_outside_a_body`, `a_plane_is_no_frame`,
-`a_relation_word_still_reads_only_its_operands`). **An instance is a frame** ([0.170], #548): read
+`a_relation_word_still_reads_only_its_operands`). **An instance is a frame** ([0.171], #548): read
 from outside, `b.std.D` names the datum `D` of a frame of the instance's own, `keys::instance_frame`
 (`{b}#frame`). What decides it is lazy and syntactic: each time a body is walked, before its
 instances, `Walk::read_outside` (`flatten/framed.rs`) reads its statements — their text by

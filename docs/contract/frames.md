@@ -36,7 +36,7 @@ built over its chart and riding nothing themselves, and an instance in a frame w
 carried whole at a roll with no `under:` (`tests/frame_datums.rs`,
 `a_definition_in_a_frame_with_a_joint_rides_it_at_a_roll`,
 `an_instance_stands_in_the_innermost_frame_which_rides_those_outside_it`).  An instance read as a
-frame from outside (#548, [0.170], [language.md](language.md)) stands in a frame of its own declared
+frame from outside (#548, [0.171], [language.md](language.md)) stands in a frame of its own declared
 in the `in`s around its call, so it rides that frame by this same rule and is carried whole by a
 joint outside (`an_instance_in_a_frame_with_a_joint_rides_it`); it starts at that frame's pose
 (`views::instance_frames`).  At rest a riding point

@@ -27,8 +27,9 @@
 //! (`Structure::per`), and a section of four columns (`SECTION`).  Its stiffness is six rows — its
 //! stretch, its twist, and two for each plane it bends in, a Cholesky factor of `[4 2; 2 4]`
 //! times its ends' turns against its chord — so it joins the solve, the gradient and the
-//! mechanism as the bar does.  Plane elements and solids are further elements of the same
-//! interior (#510 S2–S3).
+//! mechanism as the bar does.  The quadratic triangle (#510 S2, `plane::Tri6`), in plane stress
+//! or plane strain, is the third: nine strain rows over its six nodes' moves.  Solids are a
+//! further element of the same interior (#510 S3).
 
 use crate::diagnose::analysis::{self, Freedom, Held, Reach};
 use crate::kernels::{curve_widths, Dual, Kernel, Num};
@@ -36,6 +37,11 @@ use crate::linalg::{rank_and_nullspace, Mat};
 use crate::envelope::held;
 use crate::space::{add, dot, norm, scale, sub};
 use crate::sparse::{Ata, Sym};
+
+mod moved;
+mod plane;
+pub use moved::{Edge, Moved, Node};
+pub use plane::{Laid, Tri6};
 
 /// Below this least pivot (`Ata::least_pivot`, a pivot as a fraction of its diagonal) the
 /// stiffness is singular: a motion the supports leave free costs only rounding's worth of
@@ -70,17 +76,18 @@ pub struct Beam {
 /// (`model::SectionProp::STIFFNESS`).
 pub const SECTION: usize = 4;
 
-/// A structure of bars and beams: `nodes` points of `dim` (2 or 3) coordinates each, and per
-/// degree of freedom (`per · node + k`, `Structure::per`) whether a support holds it, the load on
-/// it, and its weight in the output `J = Σ weight · u`.  A node's degrees of freedom are its
-/// moves along the axes, then where there is a beam its turns: about z in the plane, about x, y
-/// and z in space.  The weights are numbers, a direction's cosines, so the output is a
+/// A structure of bars and beams, or of plane elements (#510 S2): `nodes` points of `dim` (2 or
+/// 3) coordinates each, and per degree of freedom (`per · node + k`, `Structure::per`) whether a
+/// support holds it, the load on it, and its weight in the output `J = Σ weight · u`.  A node's
+/// degrees of freedom are its moves along the axes, then where there is a beam its turns: about z
+/// in the plane, about x, y and z in space.  The weights are numbers, a direction's cosines, so the output is a
 /// displacement: a length.
 ///
 /// Its columns are every node's coordinates, then every bar's area, then every beam's section
 /// (`Structure::columns`); the moduli, the densities, the supports, the loads and the weights are
 /// constants.  A load spread along beams (`spread`, #510 S1) is a force of their geometry and
-/// their sections, so it moves with the columns: `f(x)`.
+/// their sections, so it moves with the columns: `f(x)`.  So does a load laid on plane elements
+/// (`laid`, #510 S2), of their places.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Structure {
     pub dim: usize,
@@ -91,6 +98,9 @@ pub struct Structure {
     pub load: Vec<f64>,
     pub weight: Vec<f64>,
     pub spread: Vec<Spread>,
+    /// The plane elements (#510 S2), in a structure of `dim` 2.
+    pub tris: Vec<Tri6>,
+    pub laid: Vec<Laid>,
 }
 
 /// **A load spread along beams** (#510 S1), each carrying it as a force a length, `q`, in the
@@ -118,10 +128,29 @@ pub enum Failure {
     Unstiff,
 }
 
+/// The factor a structure's displacements were solved on: the normal equations of its strain
+/// rows (`sparse::Ata`, reverse Cuthill–McKee) for bars and beams, or a plane structure's
+/// stiffness assembled and factored by supernodal Cholesky under minimum degree
+/// (`cholesky::Cholesky`, #510 S2) — a mesh's thousands of unknowns, which a band order fills.
+enum Factor {
+    Ata(Ata),
+    Cholesky(crate::cholesky::Cholesky),
+}
+
+impl Factor {
+    /// `b` overwritten by `K⁻¹ b` on the factor in hand.
+    fn resolve(&self, b: &mut [f64]) {
+        match self {
+            Factor::Ata(a) => a.resolve(b),
+            Factor::Cholesky(c) => c.solve(b),
+        }
+    }
+}
+
 /// The displacements of a structure at `x`, with the factor they were solved on held for the
 /// adjoint.
 pub struct State {
-    ata: Ata,
+    ata: Factor,
     /// Per degree of freedom, its equation, or `None` where a support holds it.
     eq: Vec<Option<usize>>,
     /// Per degree of freedom, zero where held.
@@ -207,24 +236,41 @@ impl Structure {
         d
     }
 
-    /// Assemble `K(x)` as strain rows, factor it and solve `K u = f`.
+    /// Assemble `K(x)` as strain rows, factor it and solve `K u = f`.  A plane structure's
+    /// stiffness is assembled whole and factored under minimum degree (#510 S2): a pivot lost to
+    /// rounding is a motion the supports leave free.
     pub fn solve(&self, x: &[f64]) -> Result<State, Failure> {
         let (eq, n_eq) = self.equations();
-        let (mut indptr, mut indices, mut data) = (vec![0i32], Vec::new(), Vec::new());
-        self.rows(x, &eq, |row| {
-            for &(e, v) in row {
-                indices.push(e as i32);
-                data.push(v);
+        let mut rhs: Vec<f64> = eq.iter().zip(self.forces(x)).filter(|(e, _)| e.is_some())
+            .map(|(_, v)| v).collect();
+        let factor = if !self.tris.is_empty() {
+            let mut t = Vec::new();
+            self.tris_into(&eq, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
+            let k = crate::cholesky::Symmetric::from_triplets(n_eq, &t);
+            let mut c = crate::cholesky::Cholesky::analyse(&k, crate::cholesky::Ordering::Amd);
+            c.factor(&k).map_err(|_| Failure::Free)?;
+            c.solve(&mut rhs);
+            if rhs.iter().any(|v| !v.is_finite()) {
+                return Err(Failure::Free);
             }
-            indptr.push(indices.len() as i32);
-        })?;
-        let mut ata = Ata::new(indptr.len() - 1, n_eq, &indptr, &indices);
-        ata.fill(&data);
-        let mut st = State { ata, eq, u: Vec::new() };
-        let mut rhs = st.gather(&self.forces(x));
-        if !st.ata.solve(&vec![0.0; n_eq], &mut rhs) || st.ata.least_pivot() < SINGULAR {
-            return Err(Failure::Free);
-        }
+            Factor::Cholesky(c)
+        } else {
+            let (mut indptr, mut indices, mut data) = (vec![0i32], Vec::new(), Vec::new());
+            self.rows(x, &eq, |row| {
+                for &(e, v) in row {
+                    indices.push(e as i32);
+                    data.push(v);
+                }
+                indptr.push(indices.len() as i32);
+            })?;
+            let mut ata = Ata::new(indptr.len() - 1, n_eq, &indptr, &indices);
+            ata.fill(&data);
+            if !ata.solve(&vec![0.0; n_eq], &mut rhs) || ata.least_pivot() < SINGULAR {
+                return Err(Failure::Free);
+            }
+            Factor::Ata(ata)
+        };
+        let mut st = State { ata: factor, eq, u: Vec::new() };
         st.u = st.scatter(&rhs);
         Ok(st)
     }
@@ -289,6 +335,7 @@ impl Structure {
             }
             Ok(m)
         })?;
+        self.tris_into(&eq, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
         Ok(Sym::from_triplets(n_eq, &t))
     }
 
@@ -327,6 +374,25 @@ impl Structure {
         st.ata.resolve(&mut rhs);
         let lam = st.scatter(&rhs);
         self.spread_into(&lam, x, g);
+        self.laid_into(&lam, x, g);
+        for i in 0..self.tris.len() {
+            // the element's mutual energy over its twelve coordinates
+            let Ok(rows) = self.tris[i].rows(&self.tri_places_d::<12>(i, x)) else { continue };
+            let dofs = self.tri_dofs(i);
+            let mut m = Dual::<12>::cst(0.0);
+            for r in &rows {
+                let (mut rl, mut ru) = (Dual::cst(0.0), Dual::cst(0.0));
+                for k in 0..12 {
+                    rl = rl + r[k] * Dual::cst(lam[dofs[k]]);
+                    ru = ru + r[k] * Dual::cst(st.u[dofs[k]]);
+                }
+                m = m + rl * ru;
+            }
+            for (k, &n) in self.tris[i].n.iter().enumerate() {
+                g[2 * n] -= m.g[2 * k];
+                g[2 * n + 1] -= m.g[2 * k + 1];
+            }
+        }
         for (i, b) in self.bars.iter().enumerate() {
             let (d, l, ea) = self.bar_at(i, x);
             let (al, be) = (self.stretch(b, &lam), self.stretch(b, &st.u));
@@ -605,6 +671,7 @@ impl Structure {
     /// x or y) is dropped.
     pub fn forces(&self, x: &[f64]) -> Vec<f64> {
         let mut f = self.load.clone();
+        self.laid_forces(x, &mut f);
         if self.spread.is_empty() {
             return f;
         }
@@ -728,6 +795,7 @@ impl Structure {
             bending(&mut m, &cubic, rho * a * l / 420.0);
             Ok(m)
         })?;
+        self.tris_into(&eq, &mut t, |i| self.tris[i].mass(&self.tri_places(i, x)))?;
         Ok(Sym::from_triplets(n_eq, &t))
     }
 
@@ -770,6 +838,129 @@ fn bending(m: &mut [[f64; 12]; 12], c: &[[f64; 4]; 4], w: f64) {
         for p in 0..4 {
             for q in 0..4 {
                 m[dofs[p]][dofs[q]] += w * signs[p] * signs[q] * c[p][q];
+            }
+        }
+    }
+}
+
+/* -- the plane element (#510 S2) ------------------------------------------------------------- */
+
+impl Structure {
+    /// Plane element `i`'s twelve degrees of freedom: each node's move along x, then along y.
+    fn tri_dofs(&self, i: usize) -> [usize; 12] {
+        let n = self.tris[i].n;
+        std::array::from_fn(|k| self.dof(n[k / 2], k % 2).unwrap())
+    }
+
+    /// Plane element `i`'s nodes' places at `x`.
+    pub fn tri_places(&self, i: usize, x: &[f64]) -> [[f64; 2]; 6] {
+        self.tris[i].n.map(|n| [x[2 * n], x[2 * n + 1]])
+    }
+
+    /// `tri_places`, each coordinate carrying its rate among the element's twelve (`N` = 12), or
+    /// none (`N` = 0).
+    fn tri_places_d<const N: usize>(&self, i: usize, x: &[f64]) -> [plane::P<Dual<N>>; 6] {
+        let p = self.tri_places(i, x);
+        std::array::from_fn(|k| if N == 0 {
+            p[k].map(Dual::cst)
+        } else {
+            plane::var(p[k], 2 * k)
+        })
+    }
+
+    /// Every plane element's twelve-by-twelve matrix, `local(i)`, added at the equations `eq`
+    /// numbers, as triplets.
+    fn tris_into(&self, eq: &[Option<usize>], t: &mut Vec<(usize, usize, f64)>,
+                 local: impl Fn(usize) -> Result<[[f64; 12]; 12], Failure>) -> Result<(), Failure>
+    {
+        for i in 0..self.tris.len() {
+            let m = local(i)?;
+            let dofs = self.tri_dofs(i);
+            for a in 0..12 {
+                let Some(ea) = eq[dofs[a]] else { continue };
+                for b in 0..12 {
+                    if let (Some(eb), true) = (eq[dofs[b]], m[a][b] != 0.0) {
+                        t.push((ea, eb, m[a][b]));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Node `n`'s place in the plane at `x`.
+    fn place2(&self, n: usize, x: &[f64]) -> [f64; 2] {
+        [x[2 * n], x[2 * n + 1]]
+    }
+
+    /// **Each side's and element's share of a load laid on the plane** (#510 S2), at `x`, over a
+    /// number that may carry rates (`N` = 12 its nodes' coordinates, a side's three the first six;
+    /// 0 none): its nodes, their forces, and the measure an even load is spread by.
+    fn laid_shares<const N: usize>(&self, l: &Laid, x: &[f64])
+        -> Vec<(Vec<usize>, Vec<[Dual<N>; 2]>, Dual<N>)>
+    {
+        let place = |n: usize, k: usize| -> plane::P<Dual<N>> {
+            let p = self.place2(n, x);
+            if N == 0 { p.map(Dual::cst) } else { plane::var(p, 2 * k) }
+        };
+        let mut out = Vec::new();
+        for side in l.sides() {
+            let (f, m) = plane::side_load(l, &std::array::from_fn(|k| place(side[k], k)));
+            out.push((side.to_vec(), f.to_vec(), m));
+        }
+        for &e in l.elements() {
+            let t = &self.tris[e];
+            let (f, m) =
+                plane::element_load(l, &std::array::from_fn(|k| place(t.n[k], k)), t.depth);
+            out.push((t.n.to_vec(), f.to_vec(), m));
+        }
+        out
+    }
+
+    /// The loads laid on the plane at `x`, added into `f` per degree of freedom: each side's or
+    /// element's consistent load at its nodes, an even load's over the measure it is spread by.
+    fn laid_forces(&self, x: &[f64], f: &mut [f64]) {
+        for l in &self.laid {
+            let shares = self.laid_shares::<0>(l, x);
+            let by = if l.even() { shares.iter().map(|s| s.2.v).sum() } else { 1.0 };
+            for (nodes, at, _) in shares {
+                for (n, v) in nodes.into_iter().zip(at) {
+                    for c in 0..2 {
+                        f[self.dof(n, c).unwrap()] += v[c].v / by;
+                    }
+                }
+            }
+        }
+    }
+
+    /// **`λᵀ ∂f/∂x` of the loads laid on the plane, added into `g`** (#510 S2): each side's or
+    /// element's `λᵀfₑ` formed in `Dual` over its nodes' places; an even load's whole is `Σ λᵀfₑ /
+    /// S`, `S` the length or the area it is spread over, so each place also reads `−(Σ λᵀfₑ)/S² ·
+    /// ∂S`.
+    fn laid_into(&self, lam: &[f64], x: &[f64], g: &mut [f64]) {
+        for l in &self.laid {
+            let mut parts: Vec<(Vec<usize>, [f64; 12], [f64; 12])> = Vec::new();
+            let (mut whole, mut measure) = (0.0, 0.0);
+            for (nodes, f, m) in self.laid_shares::<12>(l, x) {
+                // λᵀfₑ, its rates in the element's coordinates
+                let mut w = Dual::<12>::cst(0.0);
+                for (&n, fk) in nodes.iter().zip(&f) {
+                    for c in 0..2 {
+                        w = w + fk[c] * Dual::cst(lam[self.dof(n, c).unwrap()]);
+                    }
+                }
+                whole += w.v;
+                measure += m.v;
+                parts.push((nodes, w.g, m.g));
+            }
+            let (by, less) =
+                if l.even() { (measure, whole / (measure * measure)) } else { (1.0, 0.0) };
+            for (nodes, dw, dm) in parts {
+                for (k, &n) in nodes.iter().enumerate() {
+                    for c in 0..2 {
+                        g[2 * n + c] += dw[2 * k + c] / by - less * dm[2 * k + c];
+                    }
+                }
             }
         }
     }
@@ -861,6 +1052,21 @@ impl Structure {
                 });
             }
         }
+        for i in 0..self.tris.len() {
+            let t = &self.tris[i];
+            let Ok(groups) = t.rows(&self.tri_places_d::<0>(i, x)) else { continue };
+            let dofs = self.tri_dofs(i);
+            let unit = (t.e * t.depth).sqrt();
+            for r in &groups {
+                let at = rows.len();
+                rows.resize(at + n, 0.0);
+                for k in 0..12 {
+                    if let Some(e) = eq[dofs[k]] {
+                        rows[at + e] += r[k].v / unit;
+                    }
+                }
+            }
+        }
         // each rigid motion's field, so what is left is orthogonal to it: its nodes' moves and,
         // where they turn, their turns
         for f in &rigid {
@@ -933,14 +1139,47 @@ impl Bar {
 
 /* -- the row's constants ------------------------------------------------------------------ */
 
-/// The constants before the structure: `[dim, nodes, bars, beams, spreads, sized]` — `sized` how
-/// many unknowns the beams' sections are read over (`Sizing`), or −1 where each section's numbers
-/// are columns of their own — then the output stated, `J₀`, or where an unknown sets it, its
-/// `(m, c)`.
-pub const HEAD: usize = 6;
+/// The constants before the structure: `[dim, nodes, bars, beams, spreads, sized, tris, laid,
+/// moved]` — `sized` how many unknowns the beams' sections are read over (`Sizing`), or −1 where
+/// each section's numbers are columns of their own; `tris` and `laid` the plane elements and the
+/// loads laid on them (#510 S2); `moved` how many columns of the drawing the nodes are read over
+/// (`Moved`), or −1 where their coordinates are the columns — then the output stated, `J₀`, or
+/// where an unknown sets it, its `(m, c)`.
+pub const HEAD: usize = 9;
 
 /// A beam's constants: its ends, its moduli, its density and its section's z.
 const BEAM: usize = 8;
+
+/// A plane element's constants: its six nodes, its modulus, ratio, density and depth, and
+/// whether it is read in plane strain.
+const TRI: usize = 11;
+
+/// A laid load's constants before what it lies on: its kind, how many sides or elements, and
+/// two numbers (a pressure and its depth, or a force).
+const LAID: usize = 4;
+
+impl Laid {
+    /// Its constants: `[kind, count, a, b]`, then each side's three nodes or each element.
+    fn consts(&self) -> Vec<f64> {
+        let (kind, head) = match self {
+            Laid::Pressure { p, depth, .. } => (0.0, [*p, *depth]),
+            Laid::Along { force, .. } => (1.0, *force),
+            Laid::Over { force, .. } => (2.0, *force),
+            Laid::Body { force, .. } => (3.0, *force),
+        };
+        let count = self.sides().len() + self.elements().len();
+        let mut k = vec![kind, count as f64];
+        k.extend(head);
+        k.extend(self.sides().iter().flatten().map(|&n| n as f64));
+        k.extend(self.elements().iter().map(|&e| e as f64));
+        k
+    }
+
+    /// How many constants it is.
+    fn width(&self) -> usize {
+        LAID + 3 * self.sides().len() + self.elements().len()
+    }
+}
 
 /// **A row's sections read over its unknowns** (#510 S1): a beam sized by a requirement states
 /// its section over unknowns of the drawing (`Iz: b * h^3 / 12`, `h` declared), so the row's
@@ -974,11 +1213,21 @@ impl Structure {
     /// `consts`, and after them, where the sections are read over unknowns, every beam's four
     /// tapes, each `(length, flat…)`.
     pub fn consts_sized(&self, stated: &[f64], sizing: Option<&Sizing>) -> Vec<f64> {
+        self.consts_with(stated, sizing, None)
+    }
+
+    /// `consts_sized`, and after them, where the nodes are read over the drawing's columns
+    /// (#510 S2), how (`Moved::consts`).
+    pub fn consts_with(&self, stated: &[f64], sizing: Option<&Sizing>, moved: Option<&Moved>)
+        -> Vec<f64>
+    {
         let sized = sizing.map_or(-1.0, |z| z.unknowns as f64);
-        let mut k = Vec::with_capacity(self.widths_sized(stated.len() == 2, sizing).1);
+        let mut k = Vec::with_capacity(self.widths_with(stated.len() == 2, sizing, moved).1);
         k.extend([self.dim, self.nodes, self.bars.len(), self.beams.len(), self.spread.len()]
             .map(|n| n as f64));
         k.push(sized);
+        k.extend([self.tris.len() as f64, self.laid.len() as f64]);
+        k.push(moved.map_or(-1.0, |m| m.columns as f64));
         k.extend(stated);
         for b in &self.bars {
             k.extend([b.a as f64, b.b as f64, b.e]);
@@ -992,6 +1241,13 @@ impl Structure {
             k.extend(s.force);
             k.extend(s.beams.iter().map(|&i| i as f64));
         }
+        for t in &self.tris {
+            k.extend(t.n.map(|n| n as f64));
+            k.extend([t.e, t.nu, t.rho, t.depth, t.strain as u8 as f64]);
+        }
+        for l in &self.laid {
+            k.extend(l.consts());
+        }
         for i in 0..self.fixed.len() {
             k.extend([self.fixed[i] as u8 as f64, self.load[i], self.weight[i]]);
         }
@@ -1000,6 +1256,9 @@ impl Structure {
                 k.push(t.len() as f64);
                 k.extend(t);
             }
+        }
+        if let Some(m) = moved {
+            k.extend(m.consts());
         }
         k
     }
@@ -1014,10 +1273,21 @@ impl Structure {
     /// What `consts_sized` wrote: the structure, what it states and its sizing — `None` for
     /// constants that are not whole (a document is untrusted input).
     pub fn read_sized(k: &[f64], free: bool) -> Option<(Structure, &[f64], Option<Sizing>)> {
+        let (s, stated, sizing, moved) = Structure::read_with(k, free)?;
+        moved.is_none().then_some((s, stated, sizing))
+    }
+
+    /// What `consts_with` wrote: `read_sized`'s, and how the nodes are read over the drawing's
+    /// columns where they are (#510 S2) — every node held by it, in the plane.
+    #[allow(clippy::type_complexity)]
+    pub fn read_with(k: &[f64], free: bool)
+        -> Option<(Structure, &[f64], Option<Sizing>, Option<Moved>)>
+    {
         let count = |v: f64| (v >= 0.0 && v.fract() == 0.0 && v < 1e9).then_some(v as usize);
         let head = k.get(..HEAD)?;
         let (dim, nodes) = (count(head[0])?, count(head[1])?);
         let (n_bars, n_beams, n_spread) = (count(head[2])?, count(head[3])?, count(head[4])?);
+        let (n_tris, n_laid) = (count(head[6])?, count(head[7])?);
         let mut at = HEAD;
         let mut take = |n: usize| -> Option<&[f64]> {
             let out = k.get(at..at.checked_add(n)?)?;
@@ -1036,6 +1306,34 @@ impl Structure {
             spread.push(Spread { beams: along?, force: [c[2], c[3], c[4]], per_area: c[1] != 0.0 });
         }
         let node = |v: f64| count(v).filter(|&i| i < nodes);
+        let tris: Vec<Tri6> = take(TRI * n_tris)?.as_chunks::<TRI>().0.iter().map(|c| {
+            let n: Option<Vec<usize>> = c[..6].iter().map(|&v| node(v)).collect();
+            Some(Tri6 { n: n?.try_into().ok()?, e: c[6], nu: c[7], rho: c[8], depth: c[9],
+                        strain: c[10] != 0.0 })
+        }).collect::<Option<_>>()?;
+        let mut laid = Vec::with_capacity(n_laid);
+        for _ in 0..n_laid {
+            let c = take(LAID)?;
+            let n = count(c[1])?;
+            let (kind, a, b) = (count(c[0])?, c[2], c[3]);
+            let l = if kind < 2 {
+                let sides: Vec<[usize; 3]> = take(3 * n)?.as_chunks::<3>().0.iter()
+                    .map(|s| Some([node(s[0])?, node(s[1])?, node(s[2])?])).collect::<Option<_>>()?;
+                match kind {
+                    0 => Laid::Pressure { sides, p: a, depth: b },
+                    _ => Laid::Along { sides, force: [a, b] },
+                }
+            } else {
+                let elements: Vec<usize> = take(n)?.iter()
+                    .map(|&v| count(v).filter(|&i| i < n_tris)).collect::<Option<_>>()?;
+                match kind {
+                    2 => Laid::Over { elements, force: [a, b] },
+                    3 => Laid::Body { elements, force: [a, b] },
+                    _ => return None,
+                }
+            };
+            laid.push(l);
+        }
         let s = Structure {
             dim,
             nodes,
@@ -1050,8 +1348,12 @@ impl Structure {
             load: Vec::new(),
             weight: Vec::new(),
             spread,
+            tris,
+            laid,
         };
-        if !(dim == 2 || dim == 3) {
+        // a plane element is of the plane, moves without turning, and is no member's
+        let mixed = !s.beams.is_empty() || !s.bars.is_empty();
+        if !(dim == 2 || dim == 3) || (!s.tris.is_empty() && (dim != 2 || mixed)) {
             return None;
         }
         let per = take(3 * s.per() * nodes)?.as_chunks::<3>().0;
@@ -1079,7 +1381,17 @@ impl Structure {
                 Some(Sizing { unknowns, sections })
             }
         };
-        (at == k.len()).then_some((s, stated, sizing))
+        let moved = match head[8] {
+            v if v < 0.0 => None,
+            _ => {
+                let (m, used) = Moved::read(k.get(at..)?)?;
+                at += used;
+                let fits = m.nodes.len() == s.nodes && m.x0.len() == 2 * s.nodes && s.dim == 2
+                    && head[8] == m.columns as f64;
+                Some(fits.then_some(m)?)
+            }
+        };
+        (at == k.len()).then_some((s, stated, sizing, moved))
     }
 
     /// A row's widths, `(n_par, n_const)`: its columns, and the unknown's where it has one.
@@ -1089,13 +1401,23 @@ impl Structure {
 
     /// `widths`, its sections read over `sizing`'s unknowns where there is one.
     pub fn widths_sized(&self, free: bool, sizing: Option<&Sizing>) -> (usize, usize) {
+        self.widths_with(free, sizing, None)
+    }
+
+    /// `widths_sized`, its nodes read over the drawing's columns where `moved` is.
+    pub fn widths_with(&self, free: bool, sizing: Option<&Sizing>, moved: Option<&Moved>)
+        -> (usize, usize)
+    {
         let stated = if free { 2 } else { 1 };
         let spread: usize = self.spread.iter().map(|s| 5 + s.beams.len()).sum();
         let tapes: usize =
             sizing.iter().flat_map(|z| z.sections.iter().flatten()).map(|t| 1 + t.len()).sum();
-        (self.row_columns(sizing) + free as usize,
+        let laid: usize = self.laid.iter().map(Laid::width).sum();
+        let nodes = moved.map_or(self.dim * self.nodes, |m| m.columns);
+        (self.row_columns(sizing) - self.dim * self.nodes + nodes + free as usize,
          HEAD + stated + 3 * self.bars.len() + BEAM * self.beams.len() + spread
-             + 3 * self.fixed.len() + tapes)
+             + TRI * self.tris.len() + laid + 3 * self.fixed.len() + tapes
+             + moved.map_or(0, Moved::width))
     }
 
     /// How many columns a row over the structure reads before the unknown that may set its
@@ -1124,7 +1446,8 @@ pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
 fn free_at(n_par: usize, k: &[f64]) -> Option<bool> {
     let h = k.get(..HEAD)?;
     let sections = if h[5] < 0.0 { SECTION as f64 * h[3] } else { h[5] };
-    Some(n_par as f64 > h[0] * h[1] + h[2] + sections)
+    let nodes = if h[8] < 0.0 { h[0] * h[1] } else { h[8] };
+    Some(n_par as f64 > nodes + h[2] + sections)
 }
 
 /// One row read off its columns `v` and constants `k`: the structure, the columns it is solved
@@ -1136,12 +1459,23 @@ struct Row<'a> {
     stated: &'a [f64],
     free: bool,
     sized: Option<(usize, Vec<[crate::tape::Value; SECTION]>)>,
+    /// Where the nodes are read over the drawing's columns (#510 S2): how, and where they stand.
+    moved: Option<(Moved, moved::Placed)>,
 }
 
 impl<'a> Row<'a> {
     fn read(v: &[f64], k: &'a [f64]) -> Option<Row<'a>> {
         let free = free_at(v.len(), k)?;
-        let (s, stated, sizing) = Structure::read_sized(k, free)?;
+        let (s, stated, sizing, moved) = Structure::read_with(k, free)?;
+        if let Some(m) = moved {
+            // a plane structure's nodes, read over the drawing: no areas and no sections
+            if v.len() != m.columns + free as usize || !s.bars.is_empty() || !s.beams.is_empty() {
+                return None;
+            }
+            let placed = m.places(&v[..m.columns])?;
+            let x = placed.x.clone();
+            return Some(Row { s, x, stated, free, sized: None, moved: Some((m, placed)) });
+        }
         let cols = s.row_columns(sizing.as_ref());
         if v.len() != cols + free as usize {
             return None;
@@ -1158,11 +1492,14 @@ impl<'a> Row<'a> {
         if sized.is_none() {
             x.extend(&v[direct..cols]);
         }
-        Some(Row { s, x, stated, free, sized })
+        Some(Row { s, x, stated, free, sized, moved: None })
     }
 
     /// The columns the structure is read over, before the unknown that may set its output.
     fn columns(&self) -> usize {
+        if let Some((m, _)) = &self.moved {
+            return m.columns;
+        }
         self.s.section_at(0) + self.sized.as_ref().map_or(SECTION * self.s.beams.len(), |z| z.0)
     }
 
@@ -1202,10 +1539,16 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
             continue;
         };
         let cols = read.columns();
-        match &read.sized {
-            None => s.gradient(&st, &read.x, &mut row[..cols]),
+        match (&read.sized, &read.moved) {
+            // the nodes' rates carried through how they move with the drawing (#510 S2)
+            (_, Some((m, placed))) => {
+                let mut g = vec![0.0; s.columns()];
+                s.gradient(&st, &read.x, &mut g);
+                m.chain(&v[..cols], placed, &g, &mut row[..cols]);
+            }
+            (None, None) => s.gradient(&st, &read.x, &mut row[..cols]),
             // a section's rate carried to the unknowns it is read over
-            Some((unknowns, sections)) => {
+            (Some((unknowns, sections)), None) => {
                 let mut g = vec![0.0; s.columns()];
                 s.gradient(&st, &read.x, &mut g);
                 let direct = s.section_at(0);

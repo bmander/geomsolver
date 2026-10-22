@@ -4,9 +4,9 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.170] An instance is a frame.** From outside, an instance's datums are `b.std.x`, `b.std.y`,
+**[0.171] An instance is a frame.** From outside, an instance's datums are `b.std.x`, `b.std.y`,
 `b.std.z`, `b.std.front`, …, `b.std.origin` (§5, §8), the spellings its body reads them by, where
-0.169 refused the path (no such member). Once the body declaring the instance, or one around it,
+0.170 refused the path (no such member). Once the body declaring the instance, or one around it,
 writes such a path, the instance stands in a frame of its own: declared beside the call in the
 `in`s around it, so it starts where the frame around the call stands and rides it; square, so it
 has six freedoms and its body cannot be sheared; and placed by relations on those datums, a mate,
@@ -15,6 +15,20 @@ nothing outside reads stands as before, so nothing that elaborated changes. Read
 instance whose body reads none is **E111**: it is placed by its arguments. No syntax is added. The
 V-twin's bank mates its cylinder by `cyl.std.origin`, `cyl.std.y` and `cyl.std.x`, the frame it
 named and its `perpendicular` row gone, its positions unchanged. (Issue #548, from #523.)
+
+**[0.170] Solids read in their plane.** A scenario's line `plane stress B` or `plane strain B`
+(§9.11) reads the solid `B` — a prism, its face swept square to its plane with no draft — over
+that face, its depth the thickness: plane stress for a thin plate, plane strain for a long prism.
+Its supports, loads and requirements fall on the region where they name it (a wall of the prism
+is a side of the face, the solid or a cap the whole), and it answers `deflection`, `compliance`,
+`mass`, `mode` and `safety` (von Mises at the nodes), each judged as a frame's is; `buckling`, a
+load across the plane and a `safety` at a sharp re-entrant edge have no answer and say why. A
+driving deflection of a point of such a region is a row of the drawing, its mesh made once where
+the drawing stands and moved with it, the region's points and radii its columns. Refused: a target
+that is no solid or no such prism (**E040**), a solid read twice in one scenario (**E001**), a
+driving row over a region bounded by a spline or a curve, in a plane the solve turns, or left free
+(**E040**). `plane` stood at a scenario line's head as a syntax error before; the corpus's
+Kirsch, LE1 and FV32 now state the reading they were read in. (Issue #510, S2.)
 
 **[0.169] A frame has the standard datums.** Inside a definition's body whose instance stands in
 a frame `f`, `std.*` names `f`'s own datums (§5, §8, §14.4) where 0.167 refused them (**E101**):
