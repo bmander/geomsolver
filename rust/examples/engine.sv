@@ -58,7 +58,7 @@ pistons3 := engine.parts.Piston(rod3.sm_s, pin: 0) in std.front
 pistons4 := engine.parts.Piston(rod4.sm_s, pin: 0) in std.front
 
 // the timing drive, on the front of the engine in the end section and edge on in the side
-drive := engine.end_view.Drive(std.side.origin, head.cam_i, head.cam_e) in std.side
+drive := engine.end_view.Drive(std.side.origin, head.cam_i, head.cam_e)
 drive_s := engine.side_view.DriveSide(O, head.cam) in std.front
 
 // how it looks: the dimensions the sheet shows, and nothing else

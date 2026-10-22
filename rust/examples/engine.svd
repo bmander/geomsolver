@@ -108,20 +108,6 @@ sheet drawing {
   style m.piston1.cr { display: none }
   style m.piston1.sl { display: none }
   style m.piston1.sr { display: none }
-  style m.drive.b1.a { display: none }
-  style m.drive.b1.b { display: none }
-  style m.drive.b2.a { display: none }
-  style m.drive.b2.b { display: none }
-  style m.drive.b3.a { display: none }
-  style m.drive.b3.b { display: none }
-  style m.drive_s.crankpulley.a { display: none }
-  style m.drive_s.crankpulley.b { display: none }
-  style m.drive_s.crankpulley.c { display: none }
-  style m.drive_s.crankpulley.d { display: none }
-  style m.drive_s.campulley.a { display: none }
-  style m.drive_s.campulley.b { display: none }
-  style m.drive_s.campulley.c { display: none }
-  style m.drive_s.campulley.d { display: none }
   style m.piston1.r1.p1 { display: none }
   style m.piston1.r1.p2 { display: none }
   style m.piston1.r2.p1 { display: none }
@@ -137,11 +123,6 @@ sheet drawing {
   style m.head.cl_e { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.piston1.r1 { width: 0.6 }
   style m.piston1.r2 { width: 0.6 }
-  style m.drive.b1.s { color: #2a7ab0; width: 1.2 }
-  style m.drive.b2.s { color: #2a7ab0; width: 1.2 }
-  style m.drive.b3.s { color: #2a7ab0; width: 1.2 }
-  style m.drive_s.beltf { color: #2a7ab0; width: 1.2 }
-  style m.drive_s.beltb { color: #2a7ab0; width: 1.2 }
   style m.block.shell { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.head.j_i { color: #7a7a7a; width: 0.6; dash: 4 3 }
   style m.head.j_e { color: #7a7a7a; width: 0.6; dash: 4 3 }
@@ -150,7 +131,99 @@ sheet drawing {
   style m.rod2 in end { color: #888888; width: 0.6; dash: 6 3 }
   style m.rod3 in end { display: none }
   style m.rod4 in end { display: none }
-  style m.drive.pcrank { color: #2a7ab0; width: 1.2 }
-  style m.drive.pcam_i { color: #2a7ab0; width: 1.2 }
-  style m.drive.pcam_e { color: #2a7ab0; width: 1.2 }
+  // the timing drive (`engine.end_view`'s Drive and Pulley, `engine.side_view`'s DriveSide): each
+  // pulley's pitch circle a centre line and its tooth roots dashed, as gear teeth are drawn; the
+  // belt's inside and back in the belt's colour; the helper points hidden
+  style m.drive.crank.pitch { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.drive.crank.root { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive.crank.s0 { display: none }
+  style m.drive.crank.s1 { display: none }
+  style m.drive.crank.out { display: none }
+  style m.drive.intake.pitch { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.drive.intake.root { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive.intake.s0 { display: none }
+  style m.drive.intake.s1 { display: none }
+  style m.drive.intake.out { display: none }
+  style m.drive.exhaust.pitch { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.drive.exhaust.root { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive.exhaust.s0 { display: none }
+  style m.drive.exhaust.s1 { display: none }
+  style m.drive.exhaust.out { display: none }
+  style m.drive.si { color: #2a7ab0; width: 1.2 }
+  style m.drive.wi { color: #2a7ab0; width: 1.2 }
+  style m.drive.sk { color: #2a7ab0; width: 1.2 }
+  style m.drive.wk { color: #2a7ab0; width: 1.2 }
+  style m.drive.st { color: #2a7ab0; width: 1.2 }
+  style m.drive.we { color: #2a7ab0; width: 1.2 }
+  style m.drive.se { color: #2a7ab0; width: 1.2 }
+  style m.drive.wc { color: #2a7ab0; width: 1.2 }
+  style m.drive.bi { color: #2a7ab0; width: 1.2 }
+  style m.drive.vi { color: #2a7ab0; width: 1.2 }
+  style m.drive.bk { color: #2a7ab0; width: 1.2 }
+  style m.drive.vk { color: #2a7ab0; width: 1.2 }
+  style m.drive.bm { color: #2a7ab0; width: 1.2 }
+  style m.drive.ve { color: #2a7ab0; width: 1.2 }
+  style m.drive.be { color: #2a7ab0; width: 1.2 }
+  style m.drive.vc { color: #2a7ab0; width: 1.2 }
+  style m.drive.idl.p { display: none }
+  style m.drive.ia { display: none }
+  style m.drive.ib { display: none }
+  style m.drive.ba { display: none }
+  style m.drive.bb { display: none }
+  style m.drive.sk.p2 { display: none }
+  style m.drive.st.p1 { display: none }
+  style m.drive.st.p2 { display: none }
+  style m.drive.se.p1 { display: none }
+  style m.drive.se.p2 { display: none }
+  style m.drive.si.p1 { display: none }
+  style m.drive.bk.p2 { display: none }
+  style m.drive.bm.p1 { display: none }
+  style m.drive.bm.p2 { display: none }
+  style m.drive.be.p1 { display: none }
+  style m.drive.be.p2 { display: none }
+  style m.drive.bi.p1 { display: none }
+  style m.drive_s.under { color: #2a7ab0; width: 1.2 }
+  style m.drive_s.beltb { color: #2a7ab0; width: 1.2 }
+  style m.drive_s.over { color: #2a7ab0; width: 1.2 }
+  style m.drive_s.beltf { color: #2a7ab0; width: 1.2 }
+  style m.drive_s.crank_roots.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive_s.crank_roots.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive_s.crank_roots.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive_s.crank_roots.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive_s.cam_roots.ab { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive_s.cam_roots.bc { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive_s.cam_roots.cd { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive_s.cam_roots.da { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.drive_s.crank_near.a { display: none }
+  style m.drive_s.crank_near.b { display: none }
+  style m.drive_s.crank_near.c { display: none }
+  style m.drive_s.crank_near.d { display: none }
+  style m.drive_s.crank_teeth.a { display: none }
+  style m.drive_s.crank_teeth.b { display: none }
+  style m.drive_s.crank_teeth.c { display: none }
+  style m.drive_s.crank_teeth.d { display: none }
+  style m.drive_s.crank_far.a { display: none }
+  style m.drive_s.crank_far.b { display: none }
+  style m.drive_s.crank_far.c { display: none }
+  style m.drive_s.crank_far.d { display: none }
+  style m.drive_s.crank_roots.a { display: none }
+  style m.drive_s.crank_roots.b { display: none }
+  style m.drive_s.crank_roots.c { display: none }
+  style m.drive_s.crank_roots.d { display: none }
+  style m.drive_s.cam_teeth.a { display: none }
+  style m.drive_s.cam_teeth.b { display: none }
+  style m.drive_s.cam_teeth.c { display: none }
+  style m.drive_s.cam_teeth.d { display: none }
+  style m.drive_s.cam_roots.a { display: none }
+  style m.drive_s.cam_roots.b { display: none }
+  style m.drive_s.cam_roots.c { display: none }
+  style m.drive_s.cam_roots.d { display: none }
+  style m.drive_s.roller.a { display: none }
+  style m.drive_s.roller.b { display: none }
+  style m.drive_s.roller.c { display: none }
+  style m.drive_s.roller.d { display: none }
+  style m.drive_s.b0.p { display: none }
+  style m.drive_s.b1.p { display: none }
+  style m.drive_s.b2.p { display: none }
+  style m.drive_s.b3.p { display: none }
 }
