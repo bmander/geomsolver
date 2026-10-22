@@ -497,8 +497,10 @@ part Crankshaft(o: point, ax: line, o_s: point, theta: Angle) {
                             about: drilling[i])
     oilway cut shaft
   }
-  // the pilot bearing's bore in the flange, and the nose's keyway and tapped bore
-  pilot := solid(face(pilot_c), from: xfw - dpilot, to: xfw + 1mm)
+  // the pilot bearing's bore in the flange, run out through the flywheel's bore as the gearbox
+  // shaft enters it (a cutter stopping a millimetre into that bore's air left the mesh sagging
+  // past the export's tolerance), and the nose's keyway and tapped bore
+  pilot := solid(face(pilot_c), from: xfw - dpilot, to: xfw + wfw + 1mm)
   keyway := solid(face(k0, k1, k2, k3, -> close), from: front - 72mm, to: front - 28mm)
   tapped := solid(face(tap_c), from: front - 72mm, to: front - 70mm + dtap)
   pilot cut shaft
