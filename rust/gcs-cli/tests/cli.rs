@@ -790,3 +790,21 @@ not hold; nothing drives it yet\n",
             && json.contains("\"holds\": false"),"{json}");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// **A driving deflection is said driven** (#510 S1): the library's sized cantilever solves to
+/// the depth its tip sinks 4mm at, and `solventc` says the requirement is driven and held, and
+/// the unknown it sized.
+#[test]
+fn a_driven_deflection_is_said() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sized_cantilever.sv");
+    let out = run(&[path, "--where", "h"]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    for line in [
+        "  scenario `tip_load`: deflection(end, along: down) is 4mm: driven == 4mm, held\n",
+        "DOF 0\n",
+        "  h = 58.4804\n",
+    ] {
+        assert!(said.contains(line),"{line}\n{said}");
+    }
+}

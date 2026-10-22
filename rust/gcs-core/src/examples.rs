@@ -173,7 +173,8 @@ pub fn jansen() -> Sketch {
 pub fn example(name: &str) -> Option<Sketch> {
     Some(match name {
         "solid_flange" | "solid_pulley" | "solid_elbow" | "solid_tray" | "solid_loft" | "nurbs"
-        | "catenary" | "dido" | "sag" | "ring" | "fisheye" | "projectile" | "hyperbolic" => {
+        | "catenary" | "dido" | "sag" | "ring" | "fisheye" | "projectile" | "hyperbolic"
+        | "sized_cantilever" => {
             document(source(name)?, name)
         }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -265,7 +266,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 51] = [
+pub const CASES: [(&str, &str, &str); 52] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "One hollow square section carried round a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -298,6 +299,7 @@ pub const CASES: [(&str, &str, &str); 51] = [
     ("A ring on a rod · a corner where the rope chooses", "ring", "a rope 160 long threaded through a ring that slides on a sloping rod below it: `rope touches rod` holds the rope to the rod somewhere, with nothing along the rod holding it, so the rope bends there in a corner, two catenaries, and the ring slides to where the rope's pull along the rod balances — the rope leaving the rod at the angle it met it.  Drag `b` or either end of the rod and the ring slides"),
     ("Maxwell's fish-eye · light in a lens", "fisheye", "a lens whose refractive index falls off from its centre as 2 / (1 + r² / R²), and a ray `minimizes` the index integrated along it — Fermat's principle, its length free: every ray is an arc of a circle, though nothing says so, and every ray from a point meets again opposite it.  Drag `b` and the ray bends to it"),
     ("A throw · least action, not a parabola", "projectile", "a ball thrown from `a` lands at `b`, its path the curve that makes its speed, `sqrt(h - p.y)`, integrated along it stationary — Jacobi's form of least action: a parabola, though nothing says so, the low line drive a minimum.  The high lob through the same points is a saddle"),
+    ("A cantilever sized by its sag · a requirement drives", "sized_cantilever", "a beam of the drawing built in at one end and loaded at the other, its depth `h` an unknown, and `deflection(end, along: down) == sag` in its scenario: the frame's deflection is a row, solved by the interior's solve and differentiated by its adjoint, so the solve finds the depth at which the tip sinks 4mm — Euler–Bernoulli's (4 P L³ / (E b sag))^(1/3), 58.48mm.  Edit the load, the length or the sag and the depth follows"),
     ("Hyperbolic plane · the shortest path", "hyperbolic", "Poincaré's half-plane, where length is `ds / y`: the curve from `a` to `b` that makes it least is an arc of a circle centred on the line `y = 0` — the hyperbolic plane's straight line, found from the principle alone.  Drag `b` and the arc swings round, meeting the line square on"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Belt wrap · arc length", "belt_wrap", "an open belt over two pulleys, closed as one tangent chain, with nothing saying how far apart the pulleys are: `length(wrap) big` states the belt in contact with the big pulley — its radius times its sweep — and the centre distance follows.  Edit `wrap` and the second pulley moves"),
@@ -418,6 +420,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "nurbs" => Some(include_str!("../../examples/nurbs.sv")),
         "catenary" => Some(include_str!("../../examples/catenary.sv")),
         "dido" => Some(include_str!("../../examples/dido.sv")),
+        "sized_cantilever" => Some(include_str!("../../examples/sized_cantilever.sv")),
         "sag" => Some(include_str!("../../examples/sag.sv")),
         "ring" => Some(include_str!("../../examples/ring.sv")),
         "fisheye" => Some(include_str!("../../examples/fisheye.sv")),

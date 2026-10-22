@@ -1966,8 +1966,14 @@ scenario tip_load {
 - **What is answered**: `deflection(p[, along: d])`, `mass(arm)`, `mode(arm, n)`, `buckling(arm)`,
   `compliance(arm)`, `safety(arm)` (yield over `|N|/A + |My|/Sy + |Mz|/Sz`). `load arm 2kN along:
   down` spreads a force along the beam; `accelerate arm (0m / 1s^2, 0m / 1s^2, -9.81m / 1s^2)` is
-  its weight. Every requirement is judged, never solved for: `solventc` prints its value and
-  `kept` or `refuted`.
+  its weight. A claim is judged, never solved for: `solventc` prints its value and `kept` or
+  `refuted`.
+- **A driving deflection sizes the frame**: `deflection(end, along: down) == 4mm` at a joint is a
+  row of the drawing. Declare what it sizes, `param h: Length hint(40mm)`, and read the section
+  over it (`Iz: b * h^3 / 12`, any formula); or let it place a joint (`foot distance(len) end`,
+  `len` an unknown). `solventc` prints `driven == 4mm, held` and the unknown's value. `along:` is
+  an axis or a line the drawing holds. Any other driving requirement (`mode(arm, 1) == 30Hz`) is
+  only judged yet.
 - `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
   twist about its own line — and `solventc` says so (`leaves `arm` free to turn about x …`).
 
@@ -1979,6 +1985,8 @@ scenario tip_load {
 | `A: 50mm` | E103 — `A` is Length^2 |
 | `fixed arm` | E040 — hold its ends |
 | `safety(arm)` with no `Sz` | no answer — reads `Sy` and `Sz` |
+| `Iz: b * h^3 / 12`, `h` an unknown nothing drives | E040 — nothing determines it |
+| `deflection(end, along: d) == 4mm` on a frame left free | E040 — the frame is free to turn |
 
 ### 1.15 Frames that move, and generated geometry
 

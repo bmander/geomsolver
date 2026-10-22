@@ -2,7 +2,7 @@
 //! displacements `K(x)u = f`, and the adjoint gradient of an output of them.  The rules are
 //! `docs/contract/analysis.md`'s; the kernel's finite-difference check is `jacobians.rs`'s
 //! (`a_linear_interior_agrees_with_finite_differences`).
-use gcs_core::interior::{self, Bar, Beam, Failure, Structure};
+use gcs_core::interior::{self, Bar, Beam, Failure, Spread, Structure};
 use gcs_core::kernels::KernelKey;
 use gcs_core::model::Sketch;
 use gcs_core::rng::Rng;
@@ -37,6 +37,7 @@ pub(crate) fn braced(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
         fixed: (0..dofs).map(|i| i < dim * dim).collect(),
         load: (0..dofs).map(|_| rng.uniform(-10.0, 10.0)).collect(),
         weight: (0..dofs).map(|_| rng.uniform(-1.0, 1.0)).collect(),
+        spread: Vec::new(),
     };
     (s, x)
 }
@@ -52,6 +53,7 @@ pub(crate) fn two_bar(w: f64, h: f64, e: f64, a: f64, p: f64) -> (Structure, Vec
         fixed: vec![true, true, true, true, false, false],
         load: vec![0.0, 0.0, 0.0, 0.0, 0.0, -p],
         weight: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        spread: Vec::new(),
     };
     (s, vec![-w, 0.0, w, 0.0, 0.0, h, a, a])
 }
@@ -93,6 +95,7 @@ fn a_bar_in_space_stretches_by_pl_over_ea() {
         fixed: vec![true, true, true, false, true, true],
         load: vec![0.0, 0.0, 0.0, p, 0.0, 0.0],
         weight: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        spread: Vec::new(),
     };
     let x = vec![5.0, -2.0, 1.0, 5.0 + l, -2.0, 1.0, a];
     let st = s.solve(&x).unwrap();
@@ -113,6 +116,7 @@ fn a_structure_with_no_displacement_to_give_says_why() {
         fixed: vec![true, true, false, false, true, true],
         load: vec![0.0, 0.0, 0.0, -1.0, 0.0, 0.0],
         weight: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        spread: Vec::new(),
     };
     let x = vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0];
     assert_eq!(line.solve(&x).err(), Some(Failure::Free));
@@ -203,7 +207,8 @@ fn a_requirement_drives_the_area() {
 /// A braced frame of `n` nodes in `dim` dimensions and the columns it stands at, as `braced`'s
 /// bars but of beams, rigid at their ends: each node joined to the one before it and the one
 /// before that, the first held whole, every degree of freedom loaded and weighed at random, each
-/// beam's section's z a random direction (in the plane, z).
+/// beam's section's z a random direction (in the plane, z); a force spread along its first three
+/// beams and a body load along every other one.
 pub(crate) fn framed(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64>) {
     let mut x = Vec::new();
     for i in 0..n {
@@ -229,11 +234,18 @@ pub(crate) fn framed(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
                   rng.uniform(1.0, 5.0)]);
     }
     let mut s = Structure { dim, nodes: n, bars: Vec::new(), beams, fixed: Vec::new(),
-                            load: Vec::new(), weight: Vec::new() };
+                            load: Vec::new(), weight: Vec::new(), spread: Vec::new() };
     let dofs = s.per() * n;
     s.fixed = (0..dofs).map(|i| i < s.per()).collect();
     s.load = (0..dofs).map(|_| rng.uniform(-10.0, 10.0)).collect();
     s.weight = (0..dofs).map(|_| rng.uniform(-1.0, 1.0)).collect();
+    // a force spread evenly along the first beams, and a body load on every other one (#510 S1)
+    let m = s.beams.len();
+    let mut force = || [0, 1, 2].map(|k| if k < dim { rng.uniform(-10.0, 10.0) } else { 0.0 });
+    s.spread = vec![
+        Spread { beams: (0..m.min(3)).collect(), force: force(), per_area: false },
+        Spread { beams: (0..m).step_by(2).collect(), force: force(), per_area: true },
+    ];
     (s, x)
 }
 
@@ -255,7 +267,7 @@ fn cantilever(dim: usize, pieces: usize, l: f64, e: f64, g: f64, rho: f64, secti
         x.extend(section);
     }
     let mut s = Structure { dim, nodes: pieces + 1, bars: Vec::new(), beams, fixed: Vec::new(),
-                            load: Vec::new(), weight: Vec::new() };
+                            load: Vec::new(), weight: Vec::new(), spread: Vec::new() };
     let dofs = s.per() * s.nodes;
     s.fixed = (0..dofs).map(|i| i < s.per()).collect();
     s.load = vec![0.0; dofs];
@@ -370,3 +382,74 @@ fn a_frame_is_its_constants() {
     }
 }
 
+
+/// **A load spread along a cantilever is its consistent load** (#510 S1, `Spread`): spread
+/// evenly, its whole `F` over the length, the tip sinks `q L⁴ / 8EIz` and turns `q L³ / 6EIz`
+/// with `q = F / L`, and as a body load `q = ρ a A` the same — in one beam or several, in the
+/// plane and in space, to rounding, the cubic's nodal values being exact under it.  One beam
+/// alone carries the end moments `± q L² / 12` uncancelled, so a wrong one shows here.
+#[test]
+fn a_spread_load_is_its_consistent_load() {
+    let (l, e, g) = (1000.0, 2e8, 7.7e7);
+    let (a, iy, iz, j) = (1250.0, 65104.0, 260417.0, 178000.0);
+    for dim in [2, 3] {
+        for pieces in [1, 4] {
+            let up = if dim == 2 { 1 } else { 2 };
+            for per_area in [false, true] {
+                let (mut s, x) = cantilever(dim, pieces, l, e, g, 1.0, [a, iy, iz, j]);
+                let mut force = [0.0; 3];
+                force[up] = if per_area { -0.8 } else { -1e5 };
+                s.spread = vec![Spread { beams: (0..pieces).collect(), force, per_area }];
+                let q = if per_area { 0.8 * a } else { 1e5 / l };
+                let per = s.per();
+                let tip = per * pieces + up;
+                s.weight[tip] = 1.0;
+                let st = s.solve(&x).unwrap();
+                let want = -q * l.powi(4) / (8.0 * e * iz);
+                let got = s.output(&st);
+                assert!((got - want).abs() <= 1e-10 * want.abs(),
+                        "{dim}D, {pieces} pieces, per area {per_area}: {got} against {want}");
+                let turn = if dim == 2 { st.u[per * pieces + 2] } else { st.u[per * pieces + 4] };
+                let want = q * l.powi(3) / (6.0 * e * iz);
+                assert!((turn.abs() - want).abs() <= 1e-10 * want, "{turn} against {want}");
+            }
+        }
+    }
+}
+
+/// **A row's sections read over unknowns** (#510 S1, `Sizing`): the cantilever's depth `h` an
+/// unknown, its section `b h`, `h b³/12`, `b h³/12`, a constant, each a tape over it — the row's
+/// columns its nodes' then `h`'s, and its value the tip's sink at the sections the tapes give.
+/// Newton on the row finds the depth at which the tip sinks `δ`, `(4 P L³ / (E b δ))^(1/3)`.
+#[test]
+fn a_rows_sections_are_read_over_its_unknowns() {
+    use gcs_core::interior::Sizing;
+    let (l, e, g, b, p, sink) = (1000.0, 2e5, 7.7e4, 25.0, 1e3, 4.0);
+    let (mut s, x) = cantilever(2, 1, l, e, g, 1.0, [1.0; 4]);
+    let tip = s.per() + 1;
+    s.load[tip] = -p;
+    s.weight[tip] = 1.0;
+    let vars = ["h".to_string()];
+    let tape = |text: &str| {
+        let ast = gcs_core::expr::parse_in(text, gcs_core::units::Units::default()).unwrap();
+        gcs_core::tape::Tape::compile(&ast.body, &vars).unwrap().flat
+    };
+    let sizing = Sizing { unknowns: 1, sections: vec![[tape("25 * h"), tape("h * 25^3 / 12"),
+                                                        tape("25 * h^3 / 12"), tape("1000")]] };
+    let k = s.consts_sized(&[-sink], Some(&sizing));
+    let (n_par, n_const) = s.widths_sized(false, Some(&sizing));
+    assert_eq!((n_par, n_const), (2 * 2 + 1, k.len()));
+    let kn = interior::kernel(n_par, n_const);
+    let mut v = [&x[..4], &[40.0]].concat();
+    for _ in 0..30 {
+        let (mut r, mut jac) = ([0.0], vec![0.0; n_par]);
+        (kn.res)(1, &v, &k, &mut r);
+        if r[0].abs() <= 1e-13 * sink {
+            break;
+        }
+        (kn.jac)(1, &v, &k, &mut jac);
+        v[4] -= r[0] / jac[4];
+    }
+    let want = (4.0 * p * l.powi(3) / (e * b * sink)).cbrt();
+    assert!((v[4] - want).abs() <= 1e-9 * want, "{} against {want}", v[4]);
+}

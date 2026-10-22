@@ -193,6 +193,14 @@ impl Tape {
         Ok(t)
     }
 
+    /// A tape of one number, reading no variable: a stated number where a row's numbers are
+    /// tapes (a beam's section, #510 S1).
+    pub fn constant(v: f64) -> Tape {
+        let mut t = Tape { ops: vec![Op::Const(v)], flat: Vec::new(), n_vars: 0 };
+        t.flat = t.encode();
+        t
+    }
+
     /// The instructions as plain numbers.
     fn encode(&self) -> Vec<f64> {
         let mut f = Vec::with_capacity(self.ops.len() * WORD);

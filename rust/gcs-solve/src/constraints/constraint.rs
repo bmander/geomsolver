@@ -429,6 +429,11 @@ impl Constraint {
             });
             return Key::Traced { contact: c as u8, n_par, n_const };
         }
+        // a frame's deflection, at its frame's widths (#510 S1)
+        if self.kind == CKind::Deflection {
+            let (n_par, n_const) = self.frame_parts(sk).map_or((0, 0), |(r, _)| r.widths());
+            return Key::Interior { n_par, n_const };
+        }
         // a flank's regularity within a blank, at its block's widths (#345)
         if self.kind == CKind::RegularWithin {
             let parts = self.regular_parts(sk);
@@ -600,6 +605,41 @@ impl Constraint {
         let flank = ent(0, EntKind::Envelope)?;
         let (blank, tool) = (ent(1, EntKind::Solid)?, ent(2, EntKind::Solid)?);
         crate::envelope::regular::Parts::of(sk, flank, tool, blank)
+    }
+
+    /// **What a frame's deflection reads** (#510 S1, `beams::Row`): its frame under its
+    /// scenario, or why the solve cannot read it.
+    pub fn frame_row(&self, sk: &Sketch) -> Result<crate::beams::Row, String> {
+        let (Some(Arg::Ent(at)), Some(Arg::Ent(along)), Some(Arg::Int(k))) =
+            (self.args.first(), self.args.get(1), self.args.get(2))
+        else {
+            return Err("a frame's deflection names a point, a direction and a scenario".into());
+        };
+        let sc = usize::try_from(*k).ok().and_then(|k| sk.scenarios.get(k))
+            .ok_or("it is read under no scenario the drawing holds")?;
+        if at.kind != EntKind::Point || at.i() >= sk.points.len() {
+            return Err("a frame's deflection is of a point".into());
+        }
+        crate::beams::Row::of(sk, sc, at.i(), *along)
+    }
+
+    /// `frame_row` and the columns it reads — every joint's lift, then every unknown its
+    /// sections are read over — where the solve can read them all: the lifts minted and the
+    /// unknowns bound.
+    pub fn frame_parts(&self, sk: &Sketch) -> Option<(crate::beams::Row, Vec<u32>)> {
+        let row = self.frame_row(sk).ok()?;
+        let mut cols = Vec::with_capacity(3 * row.points.len() + row.unknowns.len());
+        for &p in &row.points {
+            cols.extend(sk.lifts.get(sk.lift_of(p)?)?.x);
+        }
+        for n in &row.unknowns {
+            let q = *sk.free_vars.get(n)?;
+            if sk.params[q as usize].fixed {
+                return None;
+            }
+            cols.push(q);
+        }
+        Some((row, cols))
     }
 
     /// What a contact reads of its envelope (`envelope::held::Parts`), where the solve can read it.
@@ -784,6 +824,8 @@ impl Constraint {
                 }
                 // a flank's least area factor (#345)
                 None if self.kind == CKind::RegularWithin => 1,
+                // a frame's deflection (#510 S1)
+                None if self.kind == CKind::Deflection => 1,
                 None => kernels::kernel(self.kernel()).n_res,
             },
         }

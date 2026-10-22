@@ -78,6 +78,11 @@ impl Constraint {
         }
         // a flank's regularity within a blank: the envelope's, the roll's, the regions' terms' and
         // the number (#345)
+        // a frame's deflection: its structure, its sections read over its unknowns (#510 S1)
+        if self.kind == CKind::Deflection {
+            let d = self.args.get(3).map_or(0.0, Arg::num);
+            return self.frame_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
+        }
         if self.kind == CKind::RegularWithin {
             let margin = self.kind.dimension_slot().map_or(0.0, |i| self.args[i].num());
             return self.regular_parts(sk).map(|p| p.consts(margin)).unwrap_or_default();
@@ -498,6 +503,7 @@ impl Constraint {
             | CKind::CarriedPoint
             | CKind::CarriedPointIn
             | CKind::RegularWithin
+            | CKind::Deflection
             | CKind::PointOnTraced
             | CKind::Project
             | CKind::Lift
@@ -898,6 +904,8 @@ impl Constraint {
             CKind::RegularWithin => {
                 self.regular_parts(sk).map(|p| p.columns(sk)).unwrap_or_default()
             }
+            // a frame's deflection: every joint's lift, then its sections' unknowns (#510 S1)
+            CKind::Deflection => self.frame_parts(sk).map(|(_, c)| c).unwrap_or_default(),
             // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
             // the plane the first is drawn in where it is read there, then the motion's axes
             CKind::CarriedPoint | CKind::CarriedPointIn if self.stated_roll() => {
@@ -1114,6 +1122,8 @@ impl Constraint {
             }
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
+            // every joint of the frame (#510 S1)
+            CKind::Deflection => self.frame_row(sk).map(|r| r.points).unwrap_or_default(),
             // both points, then every point the motion's axes read (#326, #366)
             CKind::CarriedPoint | CKind::CarriedPointIn => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();

@@ -335,8 +335,9 @@ pub struct ScenarioAnswer {
 }
 
 /// Every requirement of scenario `s` its frames answer (`beams::read`, in `read`), in the order
-/// written.  A claim is kept or refuted; a driving row or a bound is said to hold or not, and that
-/// nothing drives it yet (#510 S1, S4).
+/// written.  A claim is kept or refuted; a driving deflection the drawing is solved for (#510
+/// S1, `Stated::driven`) is said to be held or not reached; any other driving row or bound is
+/// said to hold or not, and that nothing drives it yet (S2–S4).
 pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::beams::Read)
     -> Vec<ScenarioAnswer>
 {
@@ -351,9 +352,12 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
         let (value, holds, said) = match got {
             Ok(v) => {
                 let keeps = crate::beams::keeps(r, *v);
+                let driven = s.driven.get(k).is_some_and(Option::is_some);
                 let verdict = match (r.grade(), keeps) {
                     (Grade::Claim, true) => format!("claimed {stated}, kept"),
                     (Grade::Claim, false) => format!("claimed {stated}, refuted"),
+                    (Grade::Driving, true) if driven => format!("driven {stated}, held"),
+                    (Grade::Driving, false) if driven => format!("driven {stated}, not reached"),
                     (_, true) => format!("stated {stated}, which holds; nothing drives it yet"),
                     (_, false) => format!("stated {stated}, which does not hold; nothing drives \
                                            it yet"),

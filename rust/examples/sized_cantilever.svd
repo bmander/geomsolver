@@ -1,0 +1,10 @@
+// Presentation of sized_cantilever.sv. Model geometry is independent of this drawing.
+model m from "sized_cantilever.sv"
+
+sheet drawing {
+  size A4
+  label "A CANTILEVER SIZED BY ITS SAG" at (14mm, 18mm)
+  label "Its depth is the one at which the tip sinks 4mm under 1kN" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

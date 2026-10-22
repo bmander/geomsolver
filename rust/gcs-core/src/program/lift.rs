@@ -105,7 +105,8 @@ pub fn to_program(sk: &Sketch) -> Program {
     });
     // a set's derivative row (§6.21) is one no flat statement spells: a flat program keeps the
     // contact and the set's rows at it, and says nothing of the tangency
-    let stated = sk.user_constraints().into_iter().filter(|c| c.along.is_none());
+    let stated = sk.user_constraints().into_iter()
+        .filter(|c| c.along.is_none() && !c.kind.of_source());
     for c in stated.chain(along) {
         p.push(StmtKind::Relation(renamed(lift_relation(sk, c), &names)));
     }

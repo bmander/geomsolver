@@ -15,19 +15,25 @@
 //! value, or why there is none: an analysis cannot be read where the supports leave the frame
 //! free (`Structure::free`, said in the solver's words), where a material does not state what is
 //! read of it, or where an output is asked of what it is not read of yet.  The value is in the
-//! document's units, the material read back into them (`Units::from_si`).  Nothing here is a row:
-//! a requirement is judged after the solve, never solved for (S1 drives).
+//! document's units, the material read back into them (`Units::from_si`).
+//!
+//! **A driving deflection is a row** (#510 S1, `Row`): `deflection(tip, along: down) == 2mm`
+//! compiles to the interior's kernel (`interior::kernel`) over the frame its point is a joint of,
+//! meshed with one element between joints (exact for the joints' moves under loads at joints
+//! and spread evenly, which is all a static deflection reads), its nodes' columns the lifts of
+//! the drawing's points there and its sections read over the unknowns they state (`Sizing`).
+//! Every other requirement is judged after the solve, never solved for.
 
 use crate::diagnose::analysis::direction;
 use crate::eigen::{self, Pairs};
 use crate::graph::UnionFind;
-use crate::interior::{self, Beam as Element, Failure, State, Structure};
+use crate::interior::{self, Beam as Element, Failure, Sizing, Spread, State, Structure};
 use crate::model::{
-    Applied, EntKind, Hold, LoadKind, LoadValue, Output, Property, Requirement, Scenario,
+    Applied, EntKind, EntRef, Hold, LoadKind, LoadValue, Output, Property, Requirement, Scenario,
     SectionProp, Sketch,
 };
 use crate::solid::Box3;
-use crate::space::{add, distance, dot, lerp, norm, normalised, scale, sub};
+use crate::space::{distance, dot, lerp, norm, normalised, scale, sub};
 use crate::sparse::Sym;
 use crate::vocab::all_of;
 use std::cell::OnceCell;
@@ -75,6 +81,8 @@ struct Member {
 struct Mesh {
     nodes: Vec<V>,
     joints: usize,
+    /// Each joint's point of the drawing: the first member's end or named point found there.
+    points: Vec<usize>,
     /// Each element: its member, and its ends (nodes).  A member's elements are consecutive.
     elements: Vec<(usize, [usize; 2])>,
     members: Vec<Member>,
@@ -83,25 +91,30 @@ struct Mesh {
 }
 
 impl Mesh {
-    fn new(sk: &Sketch, named: &[V]) -> Result<Mesh, String> {
+    /// The drawing's beams meshed, cut at the `named` points that lie on a member and into
+    /// `pieces` elements between joints.
+    fn new(sk: &Sketch, named: &[usize], pieces: usize) -> Result<Mesh, String> {
         let mut members = Vec::new();
         let mut bounds = Box3::empty();
+        let mut ends: Vec<(V, usize)> = Vec::new();
         for (b, beam) in sk.beams.iter().enumerate() {
             for &l in &beam.lines {
-                let ends = sk.line_ends(l).map(|p| sk.world_point(p));
-                ends.iter().for_each(|&p| bounds.add(p));
-                members.push(Member { beam: b, line: l, ends, z: plane_normal(sk, l) });
+                let at = sk.line_ends(l);
+                let places = at.map(|p| sk.world_point(p));
+                places.iter().for_each(|&p| bounds.add(p));
+                ends.extend([(places[0], at[0]), (places[1], at[1])]);
+                members.push(Member { beam: b, line: l, ends: places, z: plane_normal(sk, l) });
             }
         }
         let extent = (0..3).map(|k| bounds.hi[k] - bounds.lo[k]).fold(0.0, f64::max);
         let tol = JOINED * extent.max(f64::MIN_POSITIVE);
-        let mut mesh = Mesh { nodes: Vec::new(), joints: 0, elements: Vec::new(), members,
-                              frame: Vec::new(), tol };
+        let mut mesh = Mesh { nodes: Vec::new(), joints: 0, points: Vec::new(),
+                              elements: Vec::new(), members, frame: Vec::new(), tol };
         // the joints: every member's ends, then every place an end or a named point cuts one
-        let ends: Vec<V> = mesh.members.iter().flat_map(|m| m.ends).collect();
-        for &p in &ends {
-            mesh.joint(p);
+        for &(p, point) in &ends {
+            mesh.joint(p, point);
         }
+        let named: Vec<(V, usize)> = named.iter().map(|&i| (sk.world_point(i), i)).collect();
         let mut cuts: Vec<Vec<(f64, usize)>> = Vec::new();
         for m in 0..mesh.members.len() {
             let [p, q] = mesh.members[m].ends;
@@ -111,11 +124,12 @@ impl Mesh {
                 let b = &sk.beams[mesh.members[m].beam];
                 return Err(format!("a line of `{}` has no length, so it is no member", b.name));
             }
-            let mut at: Vec<(f64, usize)> = vec![(0.0, mesh.joint(p)), (1.0, mesh.joint(q))];
-            for &c in ends.iter().chain(named) {
+            let [pa, pb] = sk.line_ends(mesh.members[m].line);
+            let mut at: Vec<(f64, usize)> = vec![(0.0, mesh.joint(p, pa)), (1.0, mesh.joint(q, pb))];
+            for &(c, point) in ends.iter().chain(&named) {
                 let t = dot(sub(c, p), d) / (l * l);
                 if t * l > tol && (1.0 - t) * l > tol && distance(c, lerp(p, q, t)) <= tol {
-                    at.push((t, mesh.joint(c)));
+                    at.push((t, mesh.joint(c, point)));
                 }
             }
             at.sort_by(|a, b| a.0.total_cmp(&b.0));
@@ -127,11 +141,11 @@ impl Mesh {
             for w in at.windows(2) {
                 let ((t0, a), (t1, b)) = (w[0], w[1]);
                 let mut prev = a;
-                for k in 1..=PIECES {
-                    let next = if k == PIECES {
+                for k in 1..=pieces {
+                    let next = if k == pieces {
                         b
                     } else {
-                        mesh.nodes.push(lerp(p, q, t0 + (t1 - t0) * k as f64 / PIECES as f64));
+                        mesh.nodes.push(lerp(p, q, t0 + (t1 - t0) * k as f64 / pieces as f64));
                         mesh.nodes.len() - 1
                     };
                     mesh.elements.push((m, [prev, next]));
@@ -148,10 +162,15 @@ impl Mesh {
         Ok(mesh)
     }
 
-    /// The joint at `p`, made where there is none.
-    fn joint(&mut self, p: V) -> usize {
+    /// The joint of the drawing's point `point`, at `p`: the one it already is, else the one
+    /// at its place, made where there is none.
+    fn joint(&mut self, p: V, point: usize) -> usize {
+        if let Some(j) = self.points.iter().position(|&q| q == point) {
+            return j;
+        }
         self.at(p).unwrap_or_else(|| {
             self.nodes.push(p);
+            self.points.push(point);
             self.joints += 1;
             self.joints - 1
         })
@@ -160,6 +179,11 @@ impl Mesh {
     /// The joint at `p`, if there is one.
     fn at(&self, p: V) -> Option<usize> {
         (0..self.joints).find(|&i| distance(self.nodes[i], p) <= self.tol)
+    }
+
+    /// The joint the drawing's point `i` is: the one it was made at, else the one at its place.
+    fn at_point(&self, sk: &Sketch, i: usize) -> Option<usize> {
+        self.points.iter().position(|&q| q == i).or_else(|| self.at(sk.world_point(i)))
     }
 
     /// The members `a` names: a beam's every line's, or a line's.
@@ -177,7 +201,7 @@ impl Mesh {
     fn nodes_of(&self, sk: &Sketch, a: &Applied) -> Vec<usize> {
         if let Applied::Ent(e) = a {
             if e.kind == EntKind::Point {
-                return self.at(sk.world_point(e.i())).into_iter().collect();
+                return self.at_point(sk, e.i()).into_iter().collect();
             }
         }
         let ms = self.members_of(a);
@@ -203,17 +227,28 @@ fn elements_of(member: &[usize], ms: &[usize]) -> Vec<usize> {
     (0..member.len()).filter(|&e| ms.contains(&member[e])).collect()
 }
 
-/// One frame of the scenario, analysed: its structure and columns (its loads the consistent
-/// loads of what is spread along it), the solved displacements, per element the load spread
-/// along it (in the world's axes, a force a length) and the element's member, and what the
-/// requirements read of it, worked out once.
+/// One frame of the mesh under a scenario, as a structure: its columns (its sections the
+/// drawing's), its elements' members, where each node of the mesh is in it, and the beams it is
+/// made of, named.  Its loads are the scenario's at its joints, and spread along its members
+/// (`interior::Spread`).
+struct Framed {
+    s: Structure,
+    x: Vec<f64>,
+    member: Vec<usize>,
+    /// Each node of the mesh, its own number in the frame, where it is in it.
+    local: Vec<Option<usize>>,
+    names: String,
+}
+
+/// One frame of the scenario, analysed: the frame, its loads spread along each element (in the
+/// world's axes, a force a length), the solved displacements, and what the requirements read of
+/// it, worked out once.
 struct Analysed {
     s: Structure,
     x: Vec<f64>,
     st: State,
     spread: Vec<V>,
     member: Vec<usize>,
-    /// Each node of the mesh, its own number in the frame, where it is in it.
     local: Vec<Option<usize>>,
     /// How many modes the requirements on the frame ask for, at most.
     modes: usize,
@@ -259,12 +294,9 @@ fn property(sk: &Sketch, beam: usize, p: Property) -> Result<f64, String> {
     Ok(sk.units.from_si(si, p.dim()))
 }
 
-impl Analysed {
-    /// The frame `frame` of `mesh` under scenario `sc`, solved, or why it cannot be; `modes` the
-    /// most modes a requirement asks of it.
-    fn new(sk: &Sketch, sc: &Scenario, mesh: &Mesh, frame: usize, modes: usize)
-        -> Result<Analysed, Unread>
-    {
+impl Framed {
+    /// The frame `frame` of `mesh` under scenario `sc`, or why it cannot be read.
+    fn new(sk: &Sketch, sc: &Scenario, mesh: &Mesh, frame: usize) -> Result<Framed, Unread> {
         let mut local = vec![None; mesh.nodes.len()];
         let mut n = 0;
         for i in (0..mesh.nodes.len()).filter(|&i| mesh.frame[i] == frame) {
@@ -274,8 +306,8 @@ impl Analysed {
         let els: Vec<usize> =
             (0..mesh.elements.len()).filter(|&e| local[mesh.elements[e].1[0]].is_some()).collect();
         let names = frame_names(sk, mesh, &els);
-        // every beam's moduli, read once
-        let mut moduli: BTreeMap<usize, (f64, f64, f64)> = BTreeMap::new();
+        // every beam's moduli and section, read once
+        let mut moduli: BTreeMap<usize, (f64, f64, f64, [f64; 4])> = BTreeMap::new();
         for &e in &els {
             let beam = mesh.members[mesh.elements[e].0].beam;
             if let std::collections::btree_map::Entry::Vacant(v) = moduli.entry(beam) {
@@ -284,7 +316,8 @@ impl Analysed {
                     format!("{m}: a frame twists, and its shear modulus is E / 2(1 + nu)")
                 })?;
                 let rho = property(sk, beam, Property::Rho).unwrap_or(f64::NAN);
-                v.insert((young, young / (2.0 * (1.0 + nu)), rho));
+                let section = sk.beams[beam].section.stiffness(sk)?;
+                v.insert((young, young / (2.0 * (1.0 + nu)), rho, section));
             }
         }
         let mut x = vec![0.0; 3 * n];
@@ -296,15 +329,15 @@ impl Analysed {
         let (mut elements, mut member) = (Vec::new(), Vec::new());
         for &e in &els {
             let (m, [a, b]) = mesh.elements[e];
-            let beam = mesh.members[m].beam;
-            let (young, g, rho) = moduli[&beam];
+            let (young, g, rho, section) = moduli[&mesh.members[m].beam];
             let (a, b) = (local[a].unwrap(), local[b].unwrap());
             elements.push(Element { a, b, e: young, g, rho, z: mesh.members[m].z });
             member.push(m);
-            x.extend(sk.beams[beam].section.stiffness());
+            x.extend(section);
         }
         let mut s = Structure { dim: 3, nodes: n, bars: Vec::new(), beams: elements,
-                                fixed: Vec::new(), load: Vec::new(), weight: Vec::new() };
+                                fixed: Vec::new(), load: Vec::new(), weight: Vec::new(),
+                                spread: Vec::new() };
         let dofs = s.per() * n;
         (s.fixed, s.load, s.weight) = (vec![false; dofs], vec![0.0; dofs], vec![0.0; dofs]);
         let on = |a: &Applied| -> Vec<usize> {
@@ -337,7 +370,6 @@ impl Analysed {
             }
         }
         // the loads: a force at a joint, or spread along what it names
-        let mut spread = vec![[0.0; 3]; s.beams.len()];
         for load in &sc.loads {
             let v = match &load.value {
                 LoadValue::Vector(v) => *v,
@@ -353,38 +385,42 @@ impl Analysed {
                         s.load[dof] += v[c];
                     }
                 }
-                LoadKind::Force | LoadKind::Acceleration => {
+                LoadKind::Force => {
                     let along = elements_of(&member, &mesh.members_of(&load.at));
-                    let length: f64 =
-                        along.iter().map(|&e| s.beam_axes(e, &x).map_or(0.0, |a| a.0)).sum();
+                    if !along.is_empty() {
+                        s.spread.push(Spread { beams: along, force: v, per_area: false });
+                    }
+                }
+                // a body load: the density times the acceleration, a force a volume, spread
+                // along each beam named by its own density
+                LoadKind::Acceleration => {
+                    let along = elements_of(&member, &mesh.members_of(&load.at));
+                    let mut by_beam: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
                     for e in along {
-                        let q = if load.kind == LoadKind::Force {
-                            scale(v, 1.0 / length)
-                        } else {
-                            let beam = mesh.members[member[e]].beam;
-                            scale(v, property(sk, beam, Property::Rho)? * s.section(e, &x)[0])
-                        };
-                        spread[e] = add(spread[e], q);
+                        by_beam.entry(mesh.members[member[e]].beam).or_default().push(e);
+                    }
+                    for (beam, along) in by_beam {
+                        let rho = property(sk, beam, Property::Rho)?;
+                        s.spread.push(Spread { beams: along, force: scale(v, rho),
+                                               per_area: true });
                     }
                 }
                 LoadKind::Pressure => {}
             }
         }
-        // a load spread along an element is its consistent load at its ends
-        let mut load = std::mem::take(&mut s.load);
-        for e in (0..s.beams.len()).filter(|&e| spread[e] != [0.0; 3]) {
-            let (h, axes) = s.beam_axes(e, &x).ok_or("a member of no length".to_string())?;
-            s.beam_load(e, &axes, &fixed_end(interior::into_axes(&axes, spread[e]), h), &mut load);
-        }
-        s.load = load;
-        let st = s.solve(&x).map_err(|why| match why {
-            Failure::Free => {
-                let free = s.free(&x).text(3).unwrap_or_else(|| "free".to_string());
-                Unread::Free { names: names.clone(), free }
-            }
-            Failure::Collapsed => Unread::Why(format!("a member of {names} has no length")),
-            Failure::Unstiff => Unread::Why(format!("a member of {names} has no stiffness")),
-        })?;
+        Ok(Framed { s, x, member, local, names })
+    }
+}
+
+impl Analysed {
+    /// The frame `frame` of `mesh` under scenario `sc`, solved, or why it cannot be; `modes` the
+    /// most modes a requirement asks of it.
+    fn new(sk: &Sketch, sc: &Scenario, mesh: &Mesh, frame: usize, modes: usize)
+        -> Result<Analysed, Unread>
+    {
+        let Framed { s, x, member, local, names } = Framed::new(sk, sc, mesh, frame)?;
+        let st = s.solve(&x).map_err(|why| unsolved(&s, &x, &names, why))?;
+        let spread = s.spread_at(&x);
         Ok(Analysed { s, x, st, spread, member, local, modes, stiffness: OnceCell::new(),
                       pairs: OnceCell::new(), buckled: OnceCell::new(), actions: OnceCell::new() })
     }
@@ -453,6 +489,147 @@ impl Analysed {
     }
 }
 
+/// Why a frame's structure gave no displacement, in the solver's words.
+fn unsolved(s: &Structure, x: &[f64], names: &str, why: Failure) -> Unread {
+    match why {
+        Failure::Free => {
+            let free = s.free(x).text(3).unwrap_or_else(|| "free".to_string());
+            Unread::Free { names: names.to_string(), free }
+        }
+        Failure::Collapsed => Unread::Why(format!("a member of {names} has no length")),
+        Failure::Unstiff => Unread::Why(format!("a member of {names} has no stiffness")),
+    }
+}
+
+/* -- a driving row (#510 S1) ------------------------------------------------------------------ */
+
+/// **What a driving deflection's row reads** (#510 S1): the frame its point is a joint of under
+/// the scenario, one element between joints — so every node is a joint, and each is a point of
+/// the drawing whose lift is its three columns (`points`, a node each) — with the deflection's
+/// weights on the point's moves along its direction, and its sections read over the unknowns
+/// they state (`unknowns`, by name, the row's columns after the nodes').
+#[derive(Clone, Debug, PartialEq)]
+pub struct Row {
+    pub structure: Structure,
+    pub sizing: Sizing,
+    pub points: Vec<usize>,
+    pub unknowns: Vec<String>,
+    /// Where the structure stands: the nodes' places and the sections, at the drawing.
+    pub x: Vec<f64>,
+}
+
+impl Row {
+    /// **The row of `deflection(at, along: along)` under scenario `sc`**, or why the solve
+    /// cannot read it: `at` names no joint of a frame, a direction the solve moves (the weights
+    /// and the loads are read as constants of the row), more unknowns than a tape reads, or a
+    /// frame that cannot be read at all.
+    pub fn of(sk: &Sketch, sc: &Scenario, at: usize, along: EntRef) -> Result<Row, String> {
+        for d in [Some(along)].into_iter().chain(sc.loads.iter().map(|l| match l.value {
+            LoadValue::Along { along, .. } => Some(along),
+            _ => None,
+        })).flatten() {
+            if !held_direction(sk, d) {
+                return Err("its direction moves in the solve, and a driving row reads every \
+                            direction as it stands: name an axis the drawing holds, or a line \
+                            whose ends it holds".to_string());
+            }
+        }
+        let mut named: Vec<usize> = sc.applied().filter_map(|a| match a {
+            Applied::Ent(e) if e.kind == EntKind::Point => Some(e.i()),
+            _ => None,
+        }).collect();
+        named.push(at);
+        let mesh = Mesh::new(sk, &named, 1)?;
+        let joint = mesh.at_point(sk, at).ok_or_else(|| {
+            "it is of a point that is no joint of a frame: a driving deflection is read at a \
+             member's end, or a point on one".to_string()
+        })?;
+        let framed = Framed::new(sk, sc, &mesh, mesh.frame[joint]).map_err(|u| u.text())?;
+        let Framed { mut s, x, member, local, .. } = framed;
+        let d = direction(sk, along)?;
+        let node = local[joint].unwrap();
+        for c in 0..3 {
+            let dof = s.dof(node, c).unwrap();
+            s.weight[dof] = d[c];
+        }
+        let mut points = vec![0; s.nodes];
+        for (i, k) in local.iter().enumerate() {
+            if let Some(k) = *k {
+                points[k] = mesh.points[i];
+            }
+        }
+        // the unknowns every beam of the frame reads, each once
+        let mut unknowns: Vec<String> = Vec::new();
+        for &m in &member {
+            for n in sk.beams[mesh.members[m].beam].section.unknowns() {
+                if !unknowns.contains(&n) {
+                    unknowns.push(n);
+                }
+            }
+        }
+        if unknowns.len() > crate::tape::MAX_VARS {
+            return Err(format!("its frame's sections read {} unknowns, and a row reads at most \
+                                {}", unknowns.len(), crate::tape::MAX_VARS));
+        }
+        let mut sections = Vec::with_capacity(member.len());
+        for (e, &m) in member.iter().enumerate() {
+            let section = &sk.beams[mesh.members[m].beam].section;
+            let mut four: [Vec<f64>; interior::SECTION] = Default::default();
+            for ((t, p), v) in four.iter_mut().zip(SectionProp::STIFFNESS).zip(s.section(e, &x)) {
+                *t = match section.over.get(&p) {
+                    Some(over) => over.tape(&unknowns, sk.units)?.flat,
+                    None => crate::tape::Tape::constant(*v).flat,
+                };
+            }
+            sections.push(four);
+        }
+        let sizing = Sizing { unknowns: unknowns.len(), sections };
+        Ok(Row { structure: s, sizing, points, unknowns, x })
+    }
+
+    /// Whether the structure gives a displacement where the drawing stands, or why not — what
+    /// the row is refused for where it is stated (a frame the supports leave free).
+    pub fn check(&self) -> Result<(), String> {
+        self.structure.solve(&self.x).map(|_| ())
+            .map_err(|why| unsolved(&self.structure, &self.x, "the frame", why).text())
+    }
+
+    /// Its constants, stating the deflection `d`.
+    pub fn consts(&self, d: f64) -> Vec<f64> {
+        self.structure.consts_sized(&[d], Some(&self.sizing))
+    }
+
+    /// Its widths, `(n_par, n_const)`.
+    pub fn widths(&self) -> (usize, usize) {
+        self.structure.widths_sized(false, Some(&self.sizing))
+    }
+}
+
+/// **Whether what a requirement names is of a frame** (#510 S1): a joint of one, or a beam or
+/// a member's line — what a driving row may be compiled over, where the drawing stands.
+pub fn of_frame(sk: &Sketch, sc: &Scenario, of: &Applied) -> bool {
+    let named: Vec<usize> = sc.applied().chain([of]).filter_map(|a| match a {
+        Applied::Ent(e) if e.kind == EntKind::Point => Some(e.i()),
+        _ => None,
+    }).collect();
+    !sk.beams.is_empty()
+        && Mesh::new(sk, &named, 1).is_ok_and(|mesh| !mesh.nodes_of(sk, of).is_empty())
+}
+
+/// Whether direction `d` is one the solve cannot move: an axis whose direction is held, or a line
+/// whose ends are held in a plane that is.
+fn held_direction(sk: &Sketch, d: EntRef) -> bool {
+    let held = |ps: &[u32]| ps.iter().all(|&p| sk.params[p as usize].fixed);
+    match d.kind {
+        EntKind::Axis => held(&sk.axes[d.i()].d),
+        EntKind::Line => {
+            let [a, _] = sk.line_ends(d.i());
+            held(&sk.line_params(d.i())) && sk.plane_of(a).is_none_or(|v| sk.plane_fixed(v))
+        }
+        _ => false,
+    }
+}
+
 /// The consistent load of `q` (a force a length, in the element's axes) along an element of
 /// length `h`: half at each end, and the cubic's end moments `q h²/12` in each plane it bends in.
 fn fixed_end(q: V, h: f64) -> [f64; 12] {
@@ -501,11 +678,11 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
     if sk.beams.is_empty() {
         return out;
     }
-    let named: Vec<V> = sc.applied().filter_map(|a| match a {
-        Applied::Ent(e) if e.kind == EntKind::Point => Some(sk.world_point(e.i())),
+    let named: Vec<usize> = sc.applied().filter_map(|a| match a {
+        Applied::Ent(e) if e.kind == EntKind::Point => Some(e.i()),
         _ => None,
     }).collect();
-    let mesh = match Mesh::new(sk, &named) {
+    let mesh = match Mesh::new(sk, &named, PIECES) {
         Ok(m) => m,
         Err(m) => {
             out.words.push(format!("scenario `{}`: {m}", sc.name));
@@ -564,7 +741,7 @@ fn answer(sk: &Sketch, mesh: &Mesh, a: &Analysed, r: &Requirement) -> Result<f64
             }
             worst.ok_or_else(|| "it names no node of a frame".to_string())
         }
-        Output::Compliance => Ok(dot_all(&a.s.load, &a.st.u)),
+        Output::Compliance => Ok(dot_all(&a.s.forces(&a.x), &a.st.u)),
         Output::Mass => {
             let ms = mesh.members_of(&r.of);
             if ms.is_empty() {
@@ -593,7 +770,8 @@ fn answer(sk: &Sketch, mesh: &Mesh, a: &Analysed, r: &Requirement) -> Result<f64
             for e in elements_of(&a.member, &ms) {
                 let beam = mesh.members[a.member[e]].beam;
                 let b = &sk.beams[beam];
-                let (sy, sz) = (b.section.get(SectionProp::Sy), b.section.get(SectionProp::Sz));
+                let (sy, sz) = (b.section.read(SectionProp::Sy, sk).transpose()?,
+                                b.section.read(SectionProp::Sz, sk).transpose()?);
                 let (Some(sy), Some(sz)) = (sy, sz) else {
                     let states = if sy.is_some() || sz.is_some() { "one" } else { "neither" };
                     return Err(format!("a factor of safety reads `{}`'s section moduli, `Sy` \

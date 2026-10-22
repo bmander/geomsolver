@@ -140,6 +140,9 @@ macro_rules! undrawn {
             // nor a flank's regularity within a blank (#345): a ratio, read at a point a search
             // finds
             | CKind::RegularWithin
+            // nor a frame's deflection (#510 S1): a scenario's requirement, whose figure is the
+            // deformed frame, which is presentation the drawing's `.svd` is to say
+            | CKind::Deflection
             // nor a point carried by a motion, at a roll it owns or one stated: a turn about
             // whatever the motion turns about, which no view of the drawing shows (#366)
             | CKind::CarriedPoint

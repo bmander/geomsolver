@@ -55,7 +55,7 @@ pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
 pub use running::Running;
 pub use material::{Material, Property};
-pub use beam::{Beam, Section, SectionProp};
+pub use beam::{Beam, Over, Section, SectionProp};
 pub use scenario::{
     Applied, Grade, Hold, Load, LoadKind, LoadValue, Output, Requirement, Scenario, Support,
 };
@@ -254,6 +254,11 @@ pub struct Sketch {
     /// Read by an analysis of a scenario (`frame.rs`), never by the solve.  Set by elaboration
     /// and carried by the Solvent source alone, as a solid's `of` is: never written to JSON.
     pub beams: Vec<Beam>,
+    /// **The load scenarios a driving row reads** (#510 S1): a scenario's supports and loads,
+    /// which a frame's deflection driven under it (`CKind::Deflection`) is solved under, by index.
+    /// Only a scenario that drives is here: one of claims adds nothing to the drawing.  Set by
+    /// elaboration and carried by the Solvent source alone, as a beam is: never written to JSON.
+    pub scenarios: Vec<Scenario>,
     /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
     /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
     /// Presentation, as a wobble is: what is drawn moves and the document does not — a march

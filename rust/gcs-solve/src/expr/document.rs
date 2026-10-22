@@ -256,7 +256,15 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     let eased = sk.meshings.iter().enumerate().filter(|(i, _)| {
         sk.constraints.iter().any(|c| c.meshing_of().is_some_and(|m| m.i() == *i))
     }).flat_map(|(_, m)| m.ease.iter().flat_map(|e| e.unknowns(&sk.declared)));
-    let held: Vec<(String, f64)> = envelopes.chain(flanks).chain(eased).collect();
+    // and every unknown the sections of a frame a deflection is driven over are read over
+    // (#510 S1), from its seed
+    let sized: Vec<(String, f64)> = sk.constraints.iter()
+        .filter(|c| c.kind == crate::constraints::CKind::Deflection && c.states_rows())
+        .filter_map(|c| c.frame_row(sk).ok())
+        .flat_map(|r| r.unknowns)
+        .filter_map(|n| sk.declared.get(&n).and_then(|d| d.seed).map(|s| (n, s)))
+        .collect();
+    let held: Vec<(String, f64)> = envelopes.chain(flanks).chain(eased).chain(sized).collect();
     for (name, seed) in held {
         if !bound.contains_key(&name) {
             free_param(sk, &name, seed);

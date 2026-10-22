@@ -327,8 +327,10 @@ up := line(a, far)
         "`A` is Length^2");
     has("x := beam(span, A: -1mm^2, Iy: 1mm^4, Iz: 1mm^4, J: 1mm^4) of steel".into(), "E103",
         "positive");
+    // a section read over an unknown is one a driving requirement sizes (#510 S1): with none,
+    // nothing determines it
     has("x := beam(span, A: u * 1mm, Iy: 1mm^4, Iz: 1mm^4, J: 1mm^4) of steel".into(), "E040",
-        "reads an unknown");
+        "nothing determines");
     has(format!("x := beam(span, {ok}) of span"), "E103", "`span` is no material");
     has(format!("x := beam({ok}) of steel"), "syntax", "drawn on lines");
     has(format!("x := beam(span, {ok}, b) of steel"), "syntax", "drawn on lines, then");
