@@ -32,8 +32,8 @@ side := engine.side_view.SideSection(O) in std.front
 // the castings, each one part in its three views (`engine.block`, `engine.head`): the block
 // from the pan rail to the deck with its bores and main bearings, and the head standing on its
 // gasket with the valves and the camshafts in their bearings
-block := engine.block.EngineBlock(std.side, std.front, std.top, std.side.origin, O, std.top.origin)
-head := engine.head.CylinderHead(std.side, std.front, std.top, std.side.origin, O, std.top.origin)
+block := engine.block.EngineBlock()
+head := engine.head.CylinderHead()
 
 // the camshafts, each a part riding in its journal in the head (`engine.head`), every lobe timed
 // to its cylinder's valves by the cycle; and the valves, a pair at each station along the axis,

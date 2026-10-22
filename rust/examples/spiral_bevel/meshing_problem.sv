@@ -35,7 +35,7 @@ param lag := -0.03
 param backlash := 0.05mm
 // The pair on the pitch plane P, `std.top`: `pair.pinion.body` and `pair.gear.body` are the
 // members. The ease's two curvatures are left to the solve, which starts them at the seeds.
-pair := MeshingPair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
+pair := MeshingPair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   spiral_angle: spiral_angle, pressure: pressure, path_angle: path_angle, lag: lag,
   backlash: backlash, profile_ease: hint(-0.01), lengthwise_ease: hint(-0.001))
@@ -45,22 +45,22 @@ pair := MeshingPair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teet
 // holds are its three formals (`mn`, `rp`, `pa`) and the ease's two curvatures, per millimetre:
 // `profile_ease` across the tooth trace and `lengthwise_ease` along it (seeded: the search
 // starts there).
-component MeshingPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_teeth: Int,
-    mean_module: Length, shaft_angle: Angle, offset: Length, spiral_angle: Angle,
-    pressure: Angle, path_angle: Angle, lag: Scalar, backlash: Length, mn: Length, rp: Length,
-    pa: Angle, profile_ease: Scalar, lengthwise_ease: Scalar) {
+component MeshingPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, shaft_angle: Angle,
+    offset: Length, spiral_angle: Angle, pressure: Angle, path_angle: Angle, lag: Scalar,
+    backlash: Length, mn: Length, rp: Length, pa: Angle, profile_ease: Scalar,
+    lengthwise_ease: Scalar) {
   R := mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2
   dedendum := 1.25 * mn
   base := 2 * mn
   rounding := 0.3 * mn
 
   // The pitch cones, the tooth trace and the blanks, as `formate.sv` lays them out.
-  gear_cone := GearCone(P, across, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
+  gear_cone := GearCone(std.top, std.y, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
     mean_module: mean_module)
-  trace := ToothTrace(P, gear_cone, R: R, spiral_angle: spiral_angle, mean_module: mean_module,
-    mn: mn, cutter_radius: 0.8 * R)
-  pinion_cone := PinionCone(P, up, gear_cone, trace, shaft_angle: shaft_angle, offset: offset,
-    rp: rp, pa: pa)
+  trace := ToothTrace(std.top, gear_cone, R: R, spiral_angle: spiral_angle,
+    mean_module: mean_module, mn: mn, cutter_radius: 0.8 * R)
+  pinion_cone := PinionCone(std.top, std.z, gear_cone, trace, shaft_angle: shaft_angle,
+    offset: offset, rp: rp, pa: pa)
   blank_design := {width: 0.2 * R, addendum: mn, back: 4 * mn, relief: 0mm}
   gear_blank := Blank(gear_cone.generator, gear_cone.ax, blank_design)
   pinion_blank := Blank(pinion_cone.pitch_line, pinion_cone.ax, blank_design)
@@ -68,7 +68,7 @@ component MeshingPair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
   // The face mill. Its inner blades lean the stated pressure angle: a cone's normal leans from
   // the plane square to its axis by the cone's half angle, so the pressure shift is the stated
   // angle less the face mill's 20°.
-  mill := FaceMill(P, gear_cone, trace, R: R, mean_module: mean_module, pressure: 20deg,
+  mill := FaceMill(std.top, gear_cone, trace, R: R, mean_module: mean_module, pressure: 20deg,
     pressure_shift: pressure - 20deg, cutter_radius: 0.8 * R, dedendum: dedendum, base: base)
 
   // The motions, as `formate.sv`'s: the mesh is the gear's turn seen from the pinion's

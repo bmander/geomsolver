@@ -45,35 +45,37 @@ part CamBearing(c: point) {
   cap := engine.parts.Box(c, x0: -wcamb / 2, y0: -(rcamj + camcap), x1: wcamb / 2, y1: rcamj + camcap)
 }
 
-part CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point, o_t: point) {
+part CylinderHead() {
   // -- along the axis: the section through cylinder 1 -------------------------------------
-  in end {
+  in std.side {
     // the casting: its face on the gasket, its sides, its top
-    f_l := point hint((o.x - hw, o.y + deck + gasket))
-    f_r := point hint((o.x + hw, o.y + deck + gasket))
-    t_l := point hint((o.x - 110mm, o.y + deck + head))
-    tr := engine.parts.At(o, dx: 110mm, dy: deck + head)
+    f_l := point hint((std.side.origin.x - hw, std.side.origin.y + deck + gasket))
+    f_r := point hint((std.side.origin.x + hw, std.side.origin.y + deck + gasket))
+    t_l := point hint((std.side.origin.x - 110mm, std.side.origin.y + deck + head))
+    tr := engine.parts.At(std.side.origin, dx: 110mm, dy: deck + head)
     (gasket := line(f_l, f_r)) -> (side_r := line(f_r, tr.p)) -> (topline := line(tr.p, t_l)) -> (side_l := line(t_l, f_l)) -> close
-    f_l offset(dx: -hw, dy: deck + gasket) o
-    o distance(deck + gasket, along: v) f_r
+    f_l offset(dx: -hw, dy: deck + gasket) std.side.origin
+    std.side.origin distance(deck + gasket, along: v) f_r
     f_l distance(2 * hw) f_r
-    t_l offset(dx: -110, dy: deck + head) o
+    t_l offset(dx: -110, dy: deck + head) std.side.origin
     // the pent roof over the bore, from the face at the bore's edges up to the ridge
-    r_l := engine.parts.At(o, dx: -D / 2, dy: deck + gasket)
-    r_r := engine.parts.At(o, dx: D / 2, dy: deck + gasket)
-    ridge := engine.parts.At(o, dx: 0mm, dy: roof + gasket)
+    r_l := engine.parts.At(std.side.origin, dx: -D / 2, dy: deck + gasket)
+    r_r := engine.parts.At(std.side.origin, dx: D / 2, dy: deck + gasket)
+    ridge := engine.parts.At(std.side.origin, dx: 0mm, dy: roof + gasket)
     roof_l := line(r_l.p, ridge.p)
     roof_r := line(r_r.p, ridge.p)
     plug := engine.parts.Box(ridge.p, x0: -7mm, y0: 0mm, x1: 7mm, y1: 40mm)
     // the valve axes: through the seat centres, square to the roof, up to the cam centres
-    seat_i := point hint((o.x + vs, o.y + deck + gasket + (D / 2 - vs) * tan(va)))
-    seat_e := point hint((o.x - vs, o.y + deck + gasket + (D / 2 - vs) * tan(va)))
+    seat_i := point hint((std.side.origin.x + vs,
+                          std.side.origin.y + deck + gasket + (D / 2 - vs) * tan(va)))
+    seat_e := point hint((std.side.origin.x - vs,
+                          std.side.origin.y + deck + gasket + (D / 2 - vs) * tan(va)))
     seat_i coincident roof_r
     seat_e coincident roof_l
-    o distance(vs, along: u) seat_i
-    o distance(-vs, along: u) seat_e
-    cam_i := point hint((o.x + camx, o.y + camh + gasket))
-    cam_e := point hint((o.x - camx, o.y + camh + gasket))
+    std.side.origin distance(vs, along: u) seat_i
+    std.side.origin distance(-vs, along: u) seat_e
+    cam_i := point hint((std.side.origin.x + camx, std.side.origin.y + camh + gasket))
+    cam_e := point hint((std.side.origin.x - camx, std.side.origin.y + camh + gasket))
     vaxis_i := line(seat_i, cam_i)
     vaxis_e := line(seat_e, cam_e)
     vaxis_i perpendicular roof_r
@@ -89,14 +91,18 @@ part CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point, o_t
     // across both shafts, the pocket each shaft's lobes and buckets turn in below it, and the
     // chamber's section — the roof run on down past the gasket face, so the chamber cuts the face
     // cleanly rather than lying in it
-    construction well := engine.parts.Box(o, x0: -(camx + wbox), y0: camh + gasket,
+    construction well := engine.parts.Box(std.side.origin, x0: -(camx + wbox), y0: camh + gasket,
                                           x1: camx + wbox, y1: deck + head + 2mm)
-    construction pocket_i := engine.parts.Box(o, x0: camx - dpocket, y0: camh + gasket - dpocket,
+    construction pocket_i := engine.parts.Box(std.side.origin, x0: camx - dpocket,
+                                              y0: camh + gasket - dpocket,
                                               x1: camx + wbox, y1: camh + gasket)
-    construction pocket_e := engine.parts.Box(o, x0: -(camx + wbox), y0: camh + gasket - dpocket,
+    construction pocket_e := engine.parts.Box(std.side.origin, x0: -(camx + wbox),
+                                              y0: camh + gasket - dpocket,
                                               x1: -(camx - dpocket), y1: camh + gasket)
-    construction ch_l := engine.parts.At(o, dx: -(D / 2 + 3mm / tan(va)), dy: deck + gasket - 3mm)
-    construction ch_r := engine.parts.At(o, dx: D / 2 + 3mm / tan(va), dy: deck + gasket - 3mm)
+    construction ch_l := engine.parts.At(std.side.origin, dx: -(D / 2 + 3mm / tan(va)),
+                                         dy: deck + gasket - 3mm)
+    construction ch_r := engine.parts.At(std.side.origin, dx: D / 2 + 3mm / tan(va),
+                                         dy: deck + gasket - 3mm)
     // where cylinder 1 is in its cycle says how far each valve is off its seat: the reach of
     // its lobe (the camshaft's) along the axis, less the base circle (see `dims.sv`)
     ai := (engine.dims.cycle - icenter) / 2
@@ -108,43 +114,43 @@ part CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point, o_t
   }
 
   // -- across the axis: the head edge on ----------------------------------------------
-  in side {
-    hfl := point hint((o_s.x + front, o_s.y + deck + gasket))
-    hfr := point hint((o_s.x + back, o_s.y + deck + gasket))
-    htl := point hint((o_s.x + front, o_s.y + deck + head))
-    htr := point hint((o_s.x + back, o_s.y + deck + head))
+  in std.front {
+    hfl := point hint((std.origin.x + front, std.origin.y + deck + gasket))
+    hfr := point hint((std.origin.x + back, std.origin.y + deck + gasket))
+    htl := point hint((std.origin.x + front, std.origin.y + deck + head))
+    htr := point hint((std.origin.x + back, std.origin.y + deck + head))
     (hface := line(hfl, hfr)) -> (hback := line(hfr, htr)) -> (htop := line(htr, htl)) -> (hfront := line(htl, hfl)) -> close
-    o_s distance(front, along: u) hfl
-    o_s distance(front, along: u) htl
-    o_s distance(back, along: u) hfr
-    o_s distance(back, along: u) htr
+    std.origin distance(front, along: u) hfl
+    std.origin distance(front, along: u) htl
+    std.origin distance(back, along: u) hfr
+    std.origin distance(back, along: u) htr
     horizontal hface
     horizontal htop
     // the camshaft: the two shafts lie one behind the other here, one journal's outline
-    cam := point hint((o_s.x + front, o_s.y + camh + gasket))
-    camb := point hint((o_s.x + back, o_s.y + camh + gasket))
+    cam := point hint((std.origin.x + front, std.origin.y + camh + gasket))
+    camb := point hint((std.origin.x + back, std.origin.y + camh + gasket))
     camline := line(cam, camb)
-    o_s distance(front, along: u) cam
-    o_s distance(back, along: u) camb
+    std.origin distance(front, along: u) cam
+    std.origin distance(back, along: u) camb
     horizontal camline
-    ju0 := point hint((o_s.x + front + 10mm, o_s.y + camh + gasket + rcamj))
-    ju1 := point hint((o_s.x + back - 10mm, o_s.y + camh + gasket + rcamj))
-    jd0 := point hint((o_s.x + front + 10mm, o_s.y + camh + gasket - rcamj))
-    jd1 := point hint((o_s.x + back - 10mm, o_s.y + camh + gasket - rcamj))
+    ju0 := point hint((std.origin.x + front + 10mm, std.origin.y + camh + gasket + rcamj))
+    ju1 := point hint((std.origin.x + back - 10mm, std.origin.y + camh + gasket + rcamj))
+    jd0 := point hint((std.origin.x + front + 10mm, std.origin.y + camh + gasket - rcamj))
+    jd1 := point hint((std.origin.x + back - 10mm, std.origin.y + camh + gasket - rcamj))
     shaft_u := line(ju0, ju1)
     shaft_d := line(jd0, jd1)
-    o_s distance(front + 10mm, along: u) ju0
-    o_s distance(back - 10mm, along: u) ju1
-    o_s distance(front + 10mm, along: u) jd0
-    o_s distance(back - 10mm, along: u) jd1
+    std.origin distance(front + 10mm, along: u) ju0
+    std.origin distance(back - 10mm, along: u) ju1
+    std.origin distance(front + 10mm, along: u) jd0
+    std.origin distance(back - 10mm, along: u) jd1
     cam distance(rcamj, along: v) ju0
     cam distance(rcamj, along: v) ju1
     cam distance(-rcamj, along: v) jd0
     cam distance(-rcamj, along: v) jd1
     // five bearings, between and beyond the cylinders
     repeat 5 as j {
-      bc := point hint((o_s.x + front + 25mm + j * P, o_s.y + camh + gasket))
-      o_s distance(front + 25mm + j * P, along: u) bc
+      bc := point hint((std.origin.x + front + 25mm + j * P, std.origin.y + camh + gasket))
+      std.origin distance(front + 25mm + j * P, along: u) bc
       cam horizontal bc
       bearing := CamBearing(bc)
     }
@@ -152,63 +158,65 @@ part CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point, o_t
 
   // -- from above: the head's outline, the two shafts in their bearings, and each cylinder's
   // valves and plug -----------------------------------------------------------------------
-  in top {
-    hfl_t := point hint((o_t.x + front, o_t.y - 110mm))
-    hfr_t := point hint((o_t.x + back, o_t.y - 110mm))
-    hbr_t := point hint((o_t.x + back, o_t.y + 110mm))
-    hbl_t := point hint((o_t.x + front, o_t.y + 110mm))
+  in std.top {
+    hfl_t := point hint((std.top.origin.x + front, std.top.origin.y - 110mm))
+    hfr_t := point hint((std.top.origin.x + back, std.top.origin.y - 110mm))
+    hbr_t := point hint((std.top.origin.x + back, std.top.origin.y + 110mm))
+    hbl_t := point hint((std.top.origin.x + front, std.top.origin.y + 110mm))
     (h1 := line(hfl_t, hfr_t)) -> (h2 := line(hfr_t, hbr_t)) -> (h3 := line(hbr_t, hbl_t)) -> (h4 := line(hbl_t, hfl_t)) -> close
     horizontal h1
     vertical h2
     horizontal h3
     vertical h4
-    o_t distance(front, along: u) hfl_t
-    o_t distance(back, along: u) hbr_t
-    ci := point hint((o_t.x + front + 10mm, o_t.y + camx))
-    ce := point hint((o_t.x + front + 10mm, o_t.y - camx))
-    ci1 := point hint((o_t.x + back - 10mm, o_t.y + camx))
-    ce1 := point hint((o_t.x + back - 10mm, o_t.y - camx))
+    std.top.origin distance(front, along: u) hfl_t
+    std.top.origin distance(back, along: u) hbr_t
+    ci := point hint((std.top.origin.x + front + 10mm, std.top.origin.y + camx))
+    ce := point hint((std.top.origin.x + front + 10mm, std.top.origin.y - camx))
+    ci1 := point hint((std.top.origin.x + back - 10mm, std.top.origin.y + camx))
+    ce1 := point hint((std.top.origin.x + back - 10mm, std.top.origin.y - camx))
     cl_i := line(ci, ci1)
     cl_e := line(ce, ce1)
-    o_t distance(front + 10mm, along: u) ci
-    o_t distance(back - 10mm, along: u) ci1
-    o_t distance(front + 10mm, along: u) ce
-    o_t distance(back - 10mm, along: u) ce1
+    std.top.origin distance(front + 10mm, along: u) ci
+    std.top.origin distance(back - 10mm, along: u) ci1
+    std.top.origin distance(front + 10mm, along: u) ce
+    std.top.origin distance(back - 10mm, along: u) ce1
     horizontal cl_i
     horizontal cl_e
     // the shafts' outlines, `rcamj` either side of each centreline
     repeat 2 as s {
       sgn := 1 - 2 * s
-      a0 := point hint((o_t.x + front + 10mm, o_t.y + sgn * (camx + rcamj)))
-      a1 := point hint((o_t.x + back - 10mm, o_t.y + sgn * (camx + rcamj)))
-      b0 := point hint((o_t.x + front + 10mm, o_t.y + sgn * (camx - rcamj)))
-      b1 := point hint((o_t.x + back - 10mm, o_t.y + sgn * (camx - rcamj)))
+      a0 := point hint((std.top.origin.x + front + 10mm, std.top.origin.y + sgn * (camx + rcamj)))
+      a1 := point hint((std.top.origin.x + back - 10mm, std.top.origin.y + sgn * (camx + rcamj)))
+      b0 := point hint((std.top.origin.x + front + 10mm, std.top.origin.y + sgn * (camx - rcamj)))
+      b1 := point hint((std.top.origin.x + back - 10mm, std.top.origin.y + sgn * (camx - rcamj)))
       outer := line(a0, a1)
       inner := line(b0, b1)
-      o_t distance(front + 10mm, along: u) a0
-      o_t distance(back - 10mm, along: u) a1
-      o_t distance(front + 10mm, along: u) b0
-      o_t distance(back - 10mm, along: u) b1
+      std.top.origin distance(front + 10mm, along: u) a0
+      std.top.origin distance(back - 10mm, along: u) a1
+      std.top.origin distance(front + 10mm, along: u) b0
+      std.top.origin distance(back - 10mm, along: u) b1
       ci distance(sgn * (camx + rcamj) - camx, along: v) a0
       ci distance(sgn * (camx + rcamj) - camx, along: v) a1
       ci distance(sgn * (camx - rcamj) - camx, along: v) b0
       ci distance(sgn * (camx - rcamj) - camx, along: v) b1
     }
     repeat 5 as j {
-      bi := point hint((o_t.x + front + 25mm + j * P, o_t.y + camx))
-      be := point hint((o_t.x + front + 25mm + j * P, o_t.y - camx))
-      o_t distance(front + 25mm + j * P, along: u) bi
-      o_t distance(front + 25mm + j * P, along: u) be
+      bi := point hint((std.top.origin.x + front + 25mm + j * P, std.top.origin.y + camx))
+      be := point hint((std.top.origin.x + front + 25mm + j * P, std.top.origin.y - camx))
+      std.top.origin distance(front + 25mm + j * P, along: u) bi
+      std.top.origin distance(front + 25mm + j * P, along: u) be
       ci horizontal bi
       ce horizontal be
       cap_i := CamBearing(bi)
       cap_e := CamBearing(be)
       // the head bolts either side at each bulkhead, where the block's holes are: each bored up
       // from the gasket face into the bearing's saddle, short of the camshaft's tunnel
-      construction bolt_ip := point hint((o_t.x + front + 25mm + j * P, o_t.y + ybolt))
-      construction bolt_ep := point hint((o_t.x + front + 25mm + j * P, o_t.y - ybolt))
-      bolt_ip offset(dx: front + 25mm + j * P, dy: ybolt) o_t
-      bolt_ep offset(dx: front + 25mm + j * P, dy: -ybolt) o_t
+      construction bolt_ip := point hint((std.top.origin.x + front + 25mm + j * P,
+                                          std.top.origin.y + ybolt))
+      construction bolt_ep := point hint((std.top.origin.x + front + 25mm + j * P,
+                                          std.top.origin.y - ybolt))
+      bolt_ip offset(dx: front + 25mm + j * P, dy: ybolt) std.top.origin
+      bolt_ep offset(dx: front + 25mm + j * P, dy: -ybolt) std.top.origin
       construction bolt_i := circle(center: bolt_ip) hint(r: rbolt)
       construction bolt_e := circle(center: bolt_ep) hint(r: rbolt)
       radius(rbolt) bolt_i
@@ -219,8 +227,8 @@ part CylinderHead(end: plane, side: plane, top: plane, o: point, o_s: point, o_t
       bolt_eb cut casting
     }
     repeat 4 as i {
-      pc := point hint((o_t.x + front + 25mm + P / 2 + i * P, o_t.y))
-      pc right_of(d: front + 25mm + P / 2 + i * P) o_t
+      pc := point hint((std.top.origin.x + front + 25mm + P / 2 + i * P, std.top.origin.y))
+      pc right_of(d: front + 25mm + P / 2 + i * P) std.top.origin
       plug := circle(center: pc) hint(r: 7mm)
       radius(7) plug
       construction barrel := circle(center: pc) hint(r: D / 2)
@@ -376,12 +384,12 @@ part Valves(h: group, cylinder: Int, aft: Int) {
   ci := engine.dims.cycle - off - 720deg * floor((engine.dims.cycle - off) / 720deg)
   lift_i := max(rb, dn_i * cos((ci - icenter) / 2) + rn) - rb
   lift_e := max(rb, dn_e * cos((ci - ecenter) / 2) + rn) - rb
-  construction sa := point in h.side hint((h.o_s.x + x, h.o_s.y))
-  construction sb := point in h.top hint((h.o_t.x + x, h.o_t.y + 10mm))
-  construction sc := point in h.side hint((h.o_s.x + x, h.o_s.y + 10mm))
-  sa right_of(d: x) h.o_s
-  sb offset(dx: x, dy: 10mm) h.o_t
-  sc offset(dx: x, dy: 10mm) h.o_s
+  construction sa := point in std.front hint((std.origin.x + x, std.origin.y))
+  construction sb := point in std.top hint((std.top.origin.x + x, std.top.origin.y + 10mm))
+  construction sc := point in std.front hint((std.origin.x + x, std.origin.y + 10mm))
+  sa right_of(d: x) std.origin
+  sb offset(dx: x, dy: 10mm) std.top.origin
+  sc offset(dx: x, dy: 10mm) std.origin
   construction across := line(sa, sb)
   construction up := line(sa, sc)
   station := plane(u: across, v: up)
@@ -415,8 +423,7 @@ part Valves(h: group, cylinder: Int, aft: Int) {
 // valves at their stations — the casting, the camshafts, their caps and the valves as solids.
 preview {
   unit mm
-  cylinder_head := CylinderHead(std.side, std.front, std.top, std.side.origin, std.origin,
-                               std.top.origin)
+  cylinder_head := CylinderHead()
   camshaft_i := Camshaft(cylinder_head.j_i, cylinder_head.vaxis_i, cylinder_head.cam, intake: 1)
   camshaft_e := Camshaft(cylinder_head.j_e, cylinder_head.vaxis_e, cylinder_head.cam, intake: 0)
   valves1f := Valves(cylinder_head, cylinder: 1, aft: 0)

@@ -27,7 +27,7 @@ param tip_relief := 0.2mm
 param end_relief := 0.2mm
 // The pair on the pitch plane P, `std.top`: `pair.pinion.body` and `pair.gear.body` are the
 // members.
-pair := FormatePair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
+pair := FormatePair(pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
   mean_module: mean_module, shaft_angle: shaft_angle, offset: offset,
   pressure_shift: pressure_shift, spiral_angle: spiral_angle, backlash: backlash,
   tip_relief: tip_relief, end_relief: end_relief)
@@ -35,10 +35,9 @@ pair := FormatePair(std.top, std.y, std.z, pinion_teeth: pinion_teeth, gear_teet
 // -- the pair ----------------------------------------------------------------------------------
 // The layout, the blanks and the face mill are `HypoidPair`'s, step for step; what differs is how
 // each member is cut. The unknowns no point holds are the same three formals: `mn`, `rp` and `pa`.
-component FormatePair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_teeth: Int,
-    mean_module: Length, shaft_angle: Angle, offset: Length, pressure_shift: Angle,
-    spiral_angle: Angle, backlash: Length, tip_relief: Length, end_relief: Length, mn: Length,
-    rp: Length, pa: Angle) {
+component FormatePair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, shaft_angle: Angle,
+    offset: Length, pressure_shift: Angle, spiral_angle: Angle, backlash: Length,
+    tip_relief: Length, end_relief: Length, mn: Length, rp: Length, pa: Angle) {
   R := mean_module * sqrt(pinion_teeth^2 + gear_teeth^2) / 2
   pressure := 20deg
   addendum := mn
@@ -47,12 +46,12 @@ component FormatePair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
   rounding := 0.3 * mn
 
   // The pitch cones and the tooth trace.
-  gear_cone := GearCone(P, across, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
+  gear_cone := GearCone(std.top, std.y, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
     mean_module: mean_module)
-  trace := ToothTrace(P, gear_cone, R: R, spiral_angle: spiral_angle, mean_module: mean_module,
-    mn: mn, cutter_radius: 0.8 * R)
-  pinion_cone := PinionCone(P, up, gear_cone, trace, shaft_angle: shaft_angle, offset: offset,
-    rp: rp, pa: pa)
+  trace := ToothTrace(std.top, gear_cone, R: R, spiral_angle: spiral_angle,
+    mean_module: mean_module, mn: mn, cutter_radius: 0.8 * R)
+  pinion_cone := PinionCone(std.top, std.z, gear_cone, trace, shaft_angle: shaft_angle,
+    offset: offset, rp: rp, pa: pa)
 
   // The blanks.
   blank_design := {width: 0.2 * R, addendum: addendum, back: 4 * mn, relief: end_relief}
@@ -60,7 +59,7 @@ component FormatePair(P: plane, across: axis, up: axis, pinion_teeth: Int, gear_
   pinion_blank := Blank(pinion_cone.pitch_line, pinion_cone.ax, blank_design)
 
   // The face mill: its axis through C and its two flank cones through the pitch points.
-  mill := FaceMill(P, gear_cone, trace, R: R, mean_module: mean_module, pressure: pressure,
+  mill := FaceMill(std.top, gear_cone, trace, R: R, mean_module: mean_module, pressure: pressure,
     pressure_shift: pressure_shift, cutter_radius: 0.8 * R, dedendum: dedendum, base: base)
 
   // The motions: each member's turn about its shaft, which also indexes it, the gear's next tooth

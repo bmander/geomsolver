@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.167] A definition's standard datums are those of the frame it stands in.** Inside a
+definition's body (`component` or `part`), `std.front`, `std.top`, `std.side`, `std.up`, `std.x`,
+`std.y`, `std.z`, `std.back` and `std.origin` name the datums of the frame the instance stands in
+(§5, §8): the innermost frame of the `in` blocks around its call or of an `in f` trailer on it,
+else its parent instance's — at the root, the world. A plane is no frame (`Tooth(…) in top`
+changes nothing about what `std` names inside it). The datums of a frame other than the world are
+not drawn yet, so a body reading one while its instance stands in such a frame is **E101**, saying
+so. The body's file must say `use std`, a module's by its own, and the datums are made whenever
+any file read says it. A relation word still reads only its operands. Through 0.166 a body could
+not read `std` at all (**E101**, `no such entity: std.front`), so nothing that elaborated changes;
+the corpus drops the views it handed its definitions where every call handed the world's — the
+engine's block and head lose all six of theirs. (Issue #524, from #523.)
+
 **[0.166] Frames.** `arm := beam(span, post, A: b * h, Iy: …, Iz: …, J: …) of steel`
 (§9.11) makes lines of the drawing members of a frame: Euler–Bernoulli beams rigid at their ends,
 of the section stated in each member's own axes (z the normal of the plane its line is drawn in,
