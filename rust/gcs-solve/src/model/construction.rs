@@ -300,11 +300,16 @@ impl Sketch {
     /// `(0, 0)`.
     pub fn plane_over(&mut self, u: usize, v: usize, o: [f64; 3], origin: usize, name: &str) -> usize {
         let op = self.plane_place(o, name);
+        self.hold_origin(origin);
+        self.push_plane(u, v, op, origin)
+    }
+
+    /// A plane's origin point held at `(0, 0)` of the plane it is about to be drawn in.
+    fn hold_origin(&mut self, origin: usize) {
         for p in self.point_params(origin) {
             self.params[p as usize].value = 0.0;
             self.params[p as usize].fixed = true;
         }
-        self.push_plane(u, v, op, origin)
     }
 
     /// An axis as a document or another sketch carries it: its direction and which of the three
@@ -346,6 +351,26 @@ impl Sketch {
         }
     }
 
+    /// **A plane standing where frame `f` does** (#542), over axes `u`, `v`: its place is `f`'s
+    /// own three Params, so it adds no unknown, and its origin, a point already made, is put in
+    /// it and held at `(0, 0)`.  An axis already through that place — `f`'s `u`, `v` or normal,
+    /// or one of a plane standing there — is placed by no row of its own; any other is held
+    /// through it as `push_plane` holds a plane's axes.  What a frame's standard datums are.
+    pub fn plane_at(&mut self, u: usize, v: usize, f: usize, origin: usize) -> usize {
+        let op = self.frames[f].o;
+        let through: Vec<u32> = self.frames.iter().filter_map(|g| g.chart.as_ref())
+            .filter(|c| c.o == op)
+            .flat_map(|c| [Some(c.u), Some(c.v), c.normal])
+            .flatten()
+            .collect();
+        self.hold_origin(origin);
+        let pi = self.chart_plane(u, v, op, origin);
+        for ax in [u, v].into_iter().filter(|&ax| !through.contains(&(ax as u32))) {
+            self.hold_through(pi, ax);
+        }
+        pi
+    }
+
     /// A plane as a document or another sketch carries it: over axes `u`, `v`, standing at `o`
     /// with which of its three numbers are held, its origin a point already made.
     pub fn plane_restored(&mut self, u: usize, v: usize, o: [f64; 3], held: [bool; 3], origin: usize,
@@ -368,22 +393,33 @@ impl Sketch {
     /// Its axes pass through its origin: the intrinsic `PlaneAxis` rows, which read (and so place)
     /// both axes.
     fn push_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
+        let pi = self.chart_plane(u, v, op, origin);
+        for ax in [u, v] {
+            self.hold_through(pi, ax);
+        }
+        pi
+    }
+
+    /// The plane over axes `u`, `v` standing at `op`, its origin drawn in it, and no row.
+    fn chart_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
         let pi = self.frames.len();
         self.points[origin].plane = Some(pi as u32);
         self.frames.push(FrameE::charted(Chart { u: u as u32, v: v as u32, o: op, origin: origin as u32,
                                                  normal: None, planar: true }));
-        let o = op.map(|q| self.params[q as usize].value);
-        for ax in [u, v] {
-            // an axis this plane is the first to place starts through where the plane does
-            if !self.axes[ax].placed {
-                self.stand_axis_through(ax, o);
-            }
-            let mut c = Constraint::new(crate::constraints::CKind::PlaneAxis,
-                vec![Arg::Ent(EntRef::frame(pi)), Arg::Ent(EntRef::new(EntKind::Axis, ax))]);
-            c.intrinsic = true;
-            self.add_quiet(c);
-        }
         pi
+    }
+
+    /// Axis `ax` held through plane `pi`'s origin, the intrinsic `PlaneAxis` rows — and stood
+    /// there first, where `pi` is the first to place it.
+    fn hold_through(&mut self, pi: usize, ax: usize) {
+        if !self.axes[ax].placed {
+            let o = self.frames[pi].o.map(|q| self.params[q as usize].value);
+            self.stand_axis_through(ax, o);
+        }
+        let mut c = Constraint::new(crate::constraints::CKind::PlaneAxis,
+            vec![Arg::Ent(EntRef::frame(pi)), Arg::Ent(EntRef::new(EntKind::Axis, ax))]);
+        c.intrinsic = true;
+        self.add_quiet(c);
     }
 
     /// **Plane `pi`'s normal, `P.normal`**: an axis along `u × v` through its origin, minted the

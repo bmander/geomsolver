@@ -344,7 +344,7 @@ another.
     once per compile and factors `K` once for the residual and again for the Jacobian.
 
 - **A solid is read in its plane where a scenario says so** (#510 S2; `plane stress B`, `plane
-  strain B`, §9.11 [0.169]; `syntax::ItemKind::Reading`, `model::PlaneReading`, `InPlane`). The
+  strain B`, §9.11 [0.170]; `syntax::ItemKind::Reading`, `model::PlaneReading`, `InPlane`). The
   open decision of how a document asks to be read in the plane, decided: a line of the scenario,
   since how a body is read is the analysis's, beside its supports and loads, and the corpus's own
   oracle reads one document either way. `plane` at a line's head (the parser's `scenario_item`),

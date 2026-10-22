@@ -124,6 +124,18 @@ pub(super) fn side_axis(face: &str, edge: &str) -> String {
     format!("{face}#{edge}#m")
 }
 
+/// The prefix a frame's own standard datums are made under (#542), `{frame}#std.`: what `std.front`
+/// names in a body standing in the frame, and no name the source can read the frame's by.
+pub(super) fn frame_datums(frame: &str) -> String {
+    format!("{frame}#std.")
+}
+
+/// Where `key` is one of a frame's own standard datums (`frame_datums`): the frame, and the
+/// datum's name in `std`'s `FrameDatums`.
+pub(crate) fn frame_datum(key: &str) -> Option<(&str, &str)> {
+    key.rsplit_once("#std.")
+}
+
 /// What an interface-typed formal was given, whole (§8.1 [0.84]): `{formal}#given`, judged once
 /// every name is known.
 pub(super) const GIVEN: &str = "#given";

@@ -16,10 +16,10 @@ const staticFetch = async (path: string | URL | Request) =>
   new Response(String(path) === 'dist/examples/sources.json' ? packed : '',
     { status: String(path) === 'dist/examples/sources.json' ? 200 : 404 });
 
-test('a bare cylinder preview stands on a frame turned in the front', () => {
+test('a bare cylinder preview stands in a frame turned in the front', () => {
   const text = 'unit mm\nuse std\nuse components.dims\nuse components.cylinder\n'
-    + 'preview {\nin std.front {\nup := point\nfix((0, 40)) up\naxes := std.Turned(std.origin, up)\n'
-    + 'components.cylinder.Cylinder(axes, fw: 12mm)\n}\n}\n';
+    + 'preview {\nin (f := frame) {\ncomponents.cylinder.Cylinder(fw: 12mm)\n}\n'
+    + 'fix(dir == (0, 0, 1)) f.u\nfix(dir == (0, 1, 0)) f.v\nfix(origin == (0, 0, 0)) f\n}\n';
   const doc = Document.read(text);
   try {
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
