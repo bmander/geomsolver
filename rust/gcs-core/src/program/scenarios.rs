@@ -1,9 +1,9 @@
 //! **Load scenarios, elaborated** (#510 P4): each `scenario NAME { … }` into a
 //! `model::Scenario` — its targets resolved by the selectors every operand is resolved by
 //! (`Resolver::operand`), its numbers worked out and held to what they are — read once the
-//! drawing's geometry and solids are built.  Nothing is solved and no row is stated: a scenario
-//! adds nothing to the drawing, so the solve, its counts and its diagnosis are the drawing's
-//! with every scenario deleted.
+//! drawing's geometry and solids are built.  A scenario of claims adds nothing to the drawing,
+//! so the solve, its counts and its diagnosis are the drawing's with it deleted; a driving
+//! deflection of a frame's joint is compiled into a row of the drawing (#510 S1, `drive`).
 
 use super::resolve::{Operand, Resolver};
 use super::{Code, Diag};
@@ -29,6 +29,8 @@ pub struct Stated {
     /// Each requirement's output as written, `deflection(tip, along: down)`: what a report says
     /// it of (#510 S0).
     pub heads: Vec<String>,
+    /// Each requirement's row, by its constraint's id, where it drives one (#510 S1, `drive`).
+    pub driven: Vec<Option<u32>>,
 }
 
 /// One line of a scenario's body: the scenario statement, and the line's index in it.
@@ -75,6 +77,7 @@ pub(super) fn scenarios(
             loads: Vec::new(),
             requirements: Vec::new(),
             heads: Vec::new(),
+            driven: Vec::new(),
         };
         if let Some(base) = &sc.extends {
             match by_name.get(&base.text) {
@@ -116,6 +119,7 @@ pub(super) fn scenarios(
                     let mut head = String::new();
                     t.write_head(&mut head);
                     made.heads.push(head);
+                    made.driven.push(None);
                 }),
             };
             if let Err((code, span, message)) = got {
@@ -145,6 +149,68 @@ pub(super) fn scenarios(
         out.push(made);
     }
     out
+}
+
+/// **Driving requirements compiled into rows** (#510 S1): every `deflection(p, along: d) == v` of
+/// a frame's joint `p` (`beams::of_frame`) becomes a `CKind::Deflection` of the drawing, solved
+/// under its scenario's supports and loads, which the sketch holds for it (`Sketch::scenarios`);
+/// the row stands where the requirement is written.  One the solve cannot read — a frame the
+/// supports leave free, a direction the solve moves — is **E040** there.  Any other driving
+/// requirement (a solid's; a frame's mode, mass or safety) compiles nothing yet and is judged
+/// after the solve, as a claim is.
+pub(super) fn drive(
+    sk: &mut Sketch,
+    map: &mut super::source_map::SourceMap,
+    body: &[&Statement],
+    scenarios: &mut [Stated],
+    diags: &mut Vec<Diag>,
+) {
+    use crate::constraints::{Arg, CKind, Constraint};
+    let mut added = false;
+    for s in scenarios.iter_mut() {
+        let mut index: Option<i64> = None;
+        for k in 0..s.scenario.requirements.len() {
+            let r = &s.scenario.requirements[k];
+            let (Grade::Driving, crate::model::Output::Deflection, Applied::Ent(p), Some(along)) =
+                (r.grade(), r.output, &r.of, r.along)
+            else {
+                continue;
+            };
+            if p.kind != EntKind::Point || !crate::beams::of_frame(sk, &s.scenario, &r.of) {
+                continue;
+            }
+            let line = s.requirements[k];
+            let Some(st) = body.iter().find(|st| st.id == line.stmt) else { continue };
+            let span = match &st.kind {
+                Operation::Scenario(sc) => sc.items.get(line.item).map_or(st.span, |it| it.span),
+                _ => st.span,
+            };
+            let at = *index.get_or_insert_with(|| {
+                sk.scenarios.push(s.scenario.clone());
+                sk.scenarios.len() as i64 - 1
+            });
+            let args = vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)];
+            let name =
+                |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
+            if let Err(m) = crate::constraints::validate(sk, CKind::Deflection, &args, &name) {
+                diags.push(Diag::within(Code::E040, span, line.stmt, format!(
+                    "`{}` cannot drive the drawing: {m}", s.heads[k])));
+                continue;
+            }
+            let id = sk.add_quiet(Constraint::new(CKind::Deflection, args));
+            // made by the scenario's statement, and stood where its requirement is written
+            map.record(st, super::source_map::Made::Con(id));
+            if let Some(site) = map.of_constraint.get_mut(&id) {
+                site.span = span;
+            }
+            s.driven[k] = Some(id);
+            added = true;
+        }
+    }
+    // the unknowns the frames' sections are read over are bound once the rows read them
+    if added {
+        crate::expr::evaluate(sk);
+    }
 }
 
 /// A line's fault: its code, where (the line's own span where `None`) and what.

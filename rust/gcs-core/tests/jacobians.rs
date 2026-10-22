@@ -518,6 +518,112 @@ fn a_frames_interior_agrees_with_finite_differences() {
     interior_agrees(crate::interior::framed, 60, 1e-4);
 }
 
+/// The same of a frame whose sections are read over two unknowns (#510 S1, `Sizing`): each
+/// beam's area, second moments and torsion constant a function of them — products, powers, a
+/// constant — and its loads spread along it, its body load growing with the area the unknowns
+/// size.  The adjoint gradient carried through each tape to the unknowns, against central
+/// differences, in the plane and in space.
+#[test]
+fn a_sized_frames_interior_agrees_with_finite_differences() {
+    use gcs_core::fdcheck::fd_jacobian;
+    use gcs_core::interior::Sizing;
+    let vars = ["u".to_string(), "w".to_string()];
+    let tape = |text: &str| {
+        let ast = gcs_core::expr::parse_in(text, gcs_core::units::Units::default()).unwrap();
+        gcs_core::tape::Tape::compile(&ast.body, &vars).unwrap().flat
+    };
+    for seed in 0..4u32 {
+        let mut rng = Rng::new(seed + 80);
+        for dim in [2, 3] {
+            let (s, x) = crate::interior::framed(dim, 5 + seed as usize, &mut rng);
+            let sections = (0..s.beams.len()).map(|i| {
+                let k = 1.0 + 0.1 * i as f64;
+                [tape(&format!("{k} * u * w + 1")), tape(&format!("u^2 / {k} + 0.5")),
+                 tape("w^3 / 4 + u"), tape(&format!("{k} + 0 * u"))]
+            }).collect();
+            let sizing = Sizing { unknowns: 2, sections };
+            let (n_par, n_const) = s.widths_sized(false, Some(&sizing));
+            let k = s.consts_sized(&[0.3], Some(&sizing));
+            assert_eq!(n_const, k.len());
+            let kn = gcs_core::system::build_kernel(
+                &Sketch::new(), gcs_core::kernels::KernelKey::Interior { n_par, n_const });
+            let direct = dim * s.nodes;
+            let v = [&x[..direct], &[rng.uniform(1.0, 2.0), rng.uniform(1.0, 2.0)]].concat();
+            assert_eq!(v.len(), n_par);
+            let res = |w: &[f64]| {
+                let mut r = vec![0.0; 1];
+                (kn.res)(1, w, &k, &mut r);
+                r
+            };
+            let jn = fd_jacobian(res, &v, 1e-4);
+            let mut ja = vec![0.0; n_par];
+            (kn.jac)(1, &v, &k, &mut ja);
+            let scale = gcs_core::linalg::absmax(&jn.data);
+            for (col, a) in ja.iter().enumerate() {
+                let n = jn.data[col];
+                assert!((a - n).abs() <= 1e-7 + 1e-6 * scale,
+                        "seed {seed}, {dim}D: column {col}: {a} against {n}");
+            }
+        }
+    }
+}
+
+/// **A frame's deflection, as the drawing states it** (#510 S1, `CKind::Deflection`): the row
+/// over the joints' lifts and the unknowns the sections read — the library's four driving cases
+/// (a section sized, a node placed, a bracket under a spread load, a tube's diameter under a
+/// point and its weight), and an L frame placed by an unknown and sized by another under a force
+/// spread along it and its weight — against finite differences, at the solution and knocked off
+/// it.
+#[test]
+fn a_frames_deflection_agrees_with_finite_differences() {
+    let l_frame = "\
+unit mm
+use std (horizontal)
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
+param h: Length hint(30mm)
+param reach: Length hint(400mm)
+in std.front {
+  foot := point
+  corner := point
+  end := point hint((400, 600))
+  fix((0mm, 0mm)) foot
+  fix((0mm, 600mm)) corner
+  corner horizontal end
+  corner distance(reach) end
+  post := line(foot, corner)
+  arm := line(corner, end)
+}
+down := axis
+fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
+frame := beam(post, arm, A: 20mm * h, Iy: h * (20mm)^3 / 12, Iz: 20mm * h^3 / 12,
+              J: 0.2 * h * (20mm)^3) of steel
+scenario s {
+  fixed foot
+  load arm 2kN along: down
+  accelerate frame (0, 0, -9.81 * 1m / 1s^2)
+  deflection(end, along: down) == 3mm
+}
+";
+    let library = ["sized_cantilever", "reach_cantilever", "shelf_bracket", "portal_frame"]
+        .map(|k| gcs_core::examples::source(k).unwrap());
+    let mut rng = Rng::new(510);
+    for src in library.into_iter().chain([l_frame]) {
+        let e = crate::common::read(src);
+        let mut sk = crate::common::solved(&e);
+        for round in 0..3 {
+            if round > 0 {
+                for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                    p.value += rng.uniform(-0.02, 0.02) * (1.0 + p.value.abs().min(10.0));
+                }
+            }
+            let c = sk.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap();
+            let err = check_constraint(&sk, c, 1e-5, 1e-6)
+                .unwrap_or_else(|e| panic!("round {round}: {e}"));
+            assert!(err.is_finite());
+        }
+    }
+}
+
 fn interior_agrees(
     make: fn(usize, usize, &mut Rng) -> (gcs_core::interior::Structure, Vec<f64>),
     first: u32,

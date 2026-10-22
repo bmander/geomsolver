@@ -34,7 +34,7 @@ use crate::diagnose::analysis::{self, Freedom, Held, Reach};
 use crate::kernels::{curve_widths, Dual, Kernel, Num};
 use crate::linalg::{rank_and_nullspace, Mat};
 use crate::envelope::held;
-use crate::space::{dot, norm, scale, sub};
+use crate::space::{add, dot, norm, scale, sub};
 use crate::sparse::{Ata, Sym};
 
 /// Below this least pivot (`Ata::least_pivot`, a pivot as a fraction of its diagonal) the
@@ -79,7 +79,8 @@ pub const SECTION: usize = 4;
 ///
 /// Its columns are every node's coordinates, then every bar's area, then every beam's section
 /// (`Structure::columns`); the moduli, the densities, the supports, the loads and the weights are
-/// constants.
+/// constants.  A load spread along beams (`spread`, #510 S1) is a force of their geometry and
+/// their sections, so it moves with the columns: `f(x)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Structure {
     pub dim: usize,
@@ -89,6 +90,19 @@ pub struct Structure {
     pub fixed: Vec<bool>,
     pub load: Vec<f64>,
     pub weight: Vec<f64>,
+    pub spread: Vec<Spread>,
+}
+
+/// **A load spread along beams** (#510 S1), each carrying it as a force a length, `q`, in the
+/// world's axes: a force spread evenly along them, `q = force / Σ L` (`per_area` false: `force`
+/// the whole of it, so it is the same force however long they grow), or a body load, `q = force
+/// · A` (`per_area`: `force` a density times an acceleration, so it grows with the section).  Each
+/// beam's share is its consistent load at its ends (`Structure::forces`), exact for the cubic.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spread {
+    pub beams: Vec<usize>,
+    pub force: [f64; 3],
+    pub per_area: bool,
 }
 
 /// Why a structure has no displacement to give.
@@ -207,7 +221,7 @@ impl Structure {
         let mut ata = Ata::new(indptr.len() - 1, n_eq, &indptr, &indices);
         ata.fill(&data);
         let mut st = State { ata, eq, u: Vec::new() };
-        let mut rhs = st.gather(&self.load);
+        let mut rhs = st.gather(&self.forces(x));
         if !st.ata.solve(&vec![0.0; n_eq], &mut rhs) || st.ata.least_pivot() < SINGULAR {
             return Err(Failure::Free);
         }
@@ -305,12 +319,14 @@ impl Structure {
 
     /// The output's gradient in the columns at `x`, added into `g`: one solve for `λ` on the
     /// factor `st` holds — a `State` is only read, so no factorisation is made again — then each
-    /// element's mutual energy differentiated.  The loads do not move with `x` and the output
-    /// reads only `u`, so `∂f/∂x` and `∂J/∂x` are zero and what is left is `−λᵀ(∂K/∂x)u`.
+    /// element's mutual energy differentiated, and the loads spread along beams.  The output
+    /// reads only `u`, so `∂J/∂x` is zero and what is left is `λᵀ(∂f/∂x − (∂K/∂x)u)`: a load at a
+    /// node does not move with `x`, and one spread along a beam does (`Structure::spread_into`).
     pub fn gradient(&self, st: &State, x: &[f64], g: &mut [f64]) {
         let mut rhs = st.gather(&self.weight);
         st.ata.resolve(&mut rhs);
         let lam = st.scatter(&rhs);
+        self.spread_into(&lam, x, g);
         for (i, b) in self.bars.iter().enumerate() {
             let (d, l, ea) = self.bar_at(i, x);
             let (al, be) = (self.stretch(b, &lam), self.stretch(b, &st.u));
@@ -369,6 +385,18 @@ type Local = [D; 12];
 /// Which of a beam's section's columns a structure in the plane bends with: its stretch and its
 /// bending about z, in `SECTION`'s order.  Across the plane and its twist move nothing there.
 const IN_PLANE: [bool; SECTION] = [true, false, true, false];
+
+/// **The consistent load of `q`** (a force a length, in a beam's axes) along a beam of length
+/// `h`, in its axes: half at each end, and the cubic's end moments `q h²/12` in each plane it
+/// bends in — what `Structure::forces` lays at its ends, and what a reading of its end actions
+/// takes out (`beams.rs`).
+pub fn fixed_end(q: [f64; 3], h: f64) -> [f64; 12] {
+    let (m2, m3) = (q[2] * h * h / 12.0, q[1] * h * h / 12.0);
+    [
+        q[0] * h / 2.0, q[1] * h / 2.0, q[2] * h / 2.0, 0.0, -m2, m3,
+        q[0] * h / 2.0, q[1] * h / 2.0, q[2] * h / 2.0, 0.0, m2, -m3,
+    ]
+}
 
 /// A beam's axes: e1, e2, e3, its rows.
 pub type Axes = [[f64; 3]; 3];
@@ -517,8 +545,8 @@ impl Structure {
 
     /// **Each beam's end actions under `u`** (#510 S0), in its own axes: `k_e u_e`, the forces
     /// and moments its ends' nodes hold it by — the near end's force along e1, e2, e3 and moment
-    /// about them, then the far end's.  A load spread along the beam is the caller's to take
-    /// out (its fixed-end actions), since the structure carries only its nodes' loads.  The
+    /// about them, then the far end's.  A load spread along the beam (`spread`) is the caller's
+    /// to take out (its fixed-end actions): these are the element's own stiffness alone.  The
     /// stretch is `[6]`, the far end's pull; `None` for a beam with no axes.
     pub fn end_actions(&self, u: &[f64], x: &[f64]) -> Vec<Option<[f64; 12]>> {
         (0..self.beams.len()).map(|i| {
@@ -546,16 +574,99 @@ impl Structure {
         }).collect()
     }
 
-    /// Beam `i`'s twelve actions in its own axes, `local`, turned into the world's and added into
-    /// `f` per degree of freedom: a load spread along it, given at its ends.
-    pub fn beam_load(&self, i: usize, axes: &Axes, local: &[f64; 12], f: &mut [f64]) {
-        let mut world = [0.0; 12];
-        for block in 0..4 {
-            let v = out_of_axes(axes, [0, 1, 2].map(|j| local[3 * block + j]));
-            world[3 * block..3 * block + 3].copy_from_slice(&v);
+    /// **Each beam's load spread along it** at `x` (#510 S1), a force a length in the world's
+    /// axes: the sum of every `Spread` it carries, an even one's force over the length of all the
+    /// beams it lies along, a body load's times the beam's area.
+    pub fn spread_at(&self, x: &[f64]) -> Vec<[f64; 3]> {
+        let mut q = vec![[0.0; 3]; self.beams.len()];
+        for s in &self.spread {
+            let total = if s.per_area { 1.0 } else { self.spread_length(s, x) };
+            for &i in &s.beams {
+                let w = if s.per_area { self.section(i, x)[0] } else { 1.0 / total };
+                q[i] = add(q[i], scale(s.force, w));
+            }
         }
-        for (k, dof) in self.beam_dofs(i) {
-            f[dof] += world[k];
+        q
+    }
+
+    /// Beam `i`'s run at `x`, `x_b − x_a`.
+    fn beam_run(&self, i: usize, x: &[f64]) -> [f64; 3] {
+        self.place(self.beams[i].a, self.beams[i].b, x)
+    }
+
+    /// The length of every beam spread load `s` lies along, at `x`.
+    fn spread_length(&self, s: &Spread, x: &[f64]) -> f64 {
+        s.beams.iter().map(|&i| norm(self.beam_run(i, x))).sum()
+    }
+
+    /// **The loads at `x`**, per degree of freedom: the loads at the nodes, and each beam's
+    /// spread load as its consistent load at its ends (`fixed_end`, in its axes, turned into the
+    /// world's), exact for the cubic.  A component the structure lacks (in the plane, a turn about
+    /// x or y) is dropped.
+    pub fn forces(&self, x: &[f64]) -> Vec<f64> {
+        let mut f = self.load.clone();
+        if self.spread.is_empty() {
+            return f;
+        }
+        for (i, q) in self.spread_at(x).into_iter().enumerate() {
+            let Some((h, axes)) = self.beam_axes(i, x) else { continue };
+            let local = fixed_end(into_axes(&axes, q), h);
+            for (k, dof) in self.beam_dofs(i) {
+                let block = k / 3 * 3;
+                f[dof] += out_of_axes(&axes, [0, 1, 2].map(|j| local[block + j]))[k % 3];
+            }
+        }
+        f
+    }
+
+    /// **`λᵀ ∂f/∂x`, added into `g`** (#510 S1): each beam's share of a spread load is linear in
+    /// its `q`, `λₑᵀfₑ = q · wₑ` with `wₑ = L/2 (λ_a + λ_b) + L/12 (θ_a − θ_b) × Δ` (`λ` its
+    /// ends' moves, `θ` their turns), and `wₑ` is formed in `Dual<3>` over `Δ`.  A body load's
+    /// `q` is its area's times the force, so its column reads `force · wₑ`; an even one's is
+    /// the force over the length `S` of every beam it lies along, so each of their runs reads
+    /// `−(Σ force · w)/S² · Δ/L` besides its own `force · ∂w/S`.
+    fn spread_into(&self, lam: &[f64], x: &[f64], g: &mut [f64]) {
+        let w = |i: usize| -> [D; 3] {
+            let r = self.beam_run(i, x);
+            let d = [0, 1, 2].map(|k| D::var(r[k], k));
+            let h = held::dot(d, d).sqrt();
+            // its ends' λ, each end's moves then turns, as `beam_dofs` lays them out
+            let mut l = [0.0; 12];
+            for (k, dof) in self.beam_dofs(i) {
+                l[k] = lam[dof];
+            }
+            let turn = [0, 1, 2].map(|c| D::cst(l[3 + c] - l[9 + c]));
+            let m = held::cross(turn, d);
+            [0, 1, 2].map(|c| h * D::cst(0.5 * (l[c] + l[6 + c])) + h * D::cst(1.0 / 12.0) * m[c])
+        };
+        // a rate in a beam's run: its far end's coordinates gain it, its near end's lose it
+        let run = |i: usize, by: [f64; 3], g: &mut [f64]| {
+            let [a, b] = self.beam_ends(i);
+            for k in 0..self.dim {
+                g[self.dim * b + k] += by[k];
+                g[self.dim * a + k] -= by[k];
+            }
+        };
+        for s in &self.spread {
+            let f = s.force.map(D::cst);
+            if s.per_area {
+                for &i in &s.beams {
+                    let fw = held::dot(f, w(i));
+                    let a = self.section(i, x)[0];
+                    run(i, fw.g.map(|v| a * v), g);
+                    g[self.section_at(i)] += fw.v;
+                }
+                continue;
+            }
+            let fws: Vec<D> = s.beams.iter().map(|&i| held::dot(f, w(i))).collect();
+            let total = self.spread_length(s, x);
+            let whole: f64 = fws.iter().map(|v| v.v).sum::<f64>() / total;
+            for (&i, fw) in s.beams.iter().zip(&fws) {
+                let d = self.beam_run(i, x);
+                let l = norm(d);
+                let by = [0, 1, 2].map(|k| fw.g[k] / total - whole / total * d[k] / l);
+                run(i, by, g);
+            }
         }
     }
 
@@ -822,20 +933,52 @@ impl Bar {
 
 /* -- the row's constants ------------------------------------------------------------------ */
 
-/// The constants before the structure: `[dim, nodes, bars, beams]`, then the output stated,
-/// `J₀`, or where an unknown sets it, its `(m, c)`.
-pub const HEAD: usize = 4;
+/// The constants before the structure: `[dim, nodes, bars, beams, spreads, sized]` — `sized` how
+/// many unknowns the beams' sections are read over (`Sizing`), or −1 where each section's numbers
+/// are columns of their own — then the output stated, `J₀`, or where an unknown sets it, its
+/// `(m, c)`.
+pub const HEAD: usize = 6;
 
 /// A beam's constants: its ends, its moduli, its density and its section's z.
 const BEAM: usize = 8;
 
+/// **A row's sections read over its unknowns** (#510 S1): a beam sized by a requirement states
+/// its section over unknowns of the drawing (`Iz: b * h^3 / 12`, `h` declared), so the row's
+/// columns after the bars' areas are those `unknowns`, and each section's number is a function
+/// of them — a flat tape (`tape::Tape::flat`), per beam in `SECTION`'s order, a stated number a
+/// tape of one constant.  The structure is solved at the sections the tapes give, and its
+/// gradient in a section's number is carried to the unknowns by the tape's own.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Sizing {
+    pub unknowns: usize,
+    pub sections: Vec<[Vec<f64>; SECTION]>,
+}
+
+impl Sizing {
+    /// Beam `i`'s section at the unknowns `u`, each number with its gradient in them.
+    fn section(&self, i: usize, u: &[f64], sc: &mut crate::tape::Scratch)
+        -> [crate::tape::Value; SECTION]
+    {
+        self.sections[i].each_ref().map(|t| crate::tape::eval_flat(t, self.unknowns, u, sc))
+    }
+}
+
 impl Structure {
     /// A row's constants: the head, every bar's `(a, b, E)`, every beam's `(a, b, E, G, ρ, z)`,
-    /// then every degree of freedom's `(held, load, weight)`.  `stated` is `[J₀]`, or `[m, c]`
-    /// for an output an unknown sets.
+    /// every spread load's `(count, per_area, force, beams…)`, then every degree of freedom's
+    /// `(held, load, weight)`.  `stated` is `[J₀]`, or `[m, c]` for an output an unknown sets.
     pub fn consts(&self, stated: &[f64]) -> Vec<f64> {
-        let mut k = Vec::with_capacity(self.widths(stated.len() == 2).1);
-        k.extend([self.dim, self.nodes, self.bars.len(), self.beams.len()].map(|n| n as f64));
+        self.consts_sized(stated, None)
+    }
+
+    /// `consts`, and after them, where the sections are read over unknowns, every beam's four
+    /// tapes, each `(length, flat…)`.
+    pub fn consts_sized(&self, stated: &[f64], sizing: Option<&Sizing>) -> Vec<f64> {
+        let sized = sizing.map_or(-1.0, |z| z.unknowns as f64);
+        let mut k = Vec::with_capacity(self.widths_sized(stated.len() == 2, sizing).1);
+        k.extend([self.dim, self.nodes, self.bars.len(), self.beams.len(), self.spread.len()]
+            .map(|n| n as f64));
+        k.push(sized);
         k.extend(stated);
         for b in &self.bars {
             k.extend([b.a as f64, b.b as f64, b.e]);
@@ -844,8 +987,19 @@ impl Structure {
             k.extend([b.a as f64, b.b as f64, b.e, b.g, b.rho]);
             k.extend(b.z);
         }
+        for s in &self.spread {
+            k.extend([s.beams.len() as f64, s.per_area as u8 as f64]);
+            k.extend(s.force);
+            k.extend(s.beams.iter().map(|&i| i as f64));
+        }
         for i in 0..self.fixed.len() {
             k.extend([self.fixed[i] as u8 as f64, self.load[i], self.weight[i]]);
+        }
+        for tapes in sizing.iter().flat_map(|z| &z.sections) {
+            for t in tapes {
+                k.push(t.len() as f64);
+                k.extend(t);
+            }
         }
         k
     }
@@ -853,34 +1007,103 @@ impl Structure {
     /// What `consts` wrote, `free` where an unknown sets the output (the row has its column, as
     /// `integral::length_widths` reads a length's): the structure, and what it states.
     pub fn read(k: &[f64], free: bool) -> (Structure, &[f64]) {
-        let (dim, nodes) = (k[0] as usize, k[1] as usize);
-        let (n_bars, n_beams) = (k[2] as usize, k[3] as usize);
-        let (stated, rest) = k[HEAD..].split_at(if free { 2 } else { 1 });
-        let (bars, rest) = rest.split_at(3 * n_bars);
-        let (beams, per) = rest.split_at(BEAM * n_beams);
-        let per = per.as_chunks::<3>().0;
+        let (s, stated, _) = Structure::read_sized(k, free).expect("a structure's constants");
+        (s, stated)
+    }
+
+    /// What `consts_sized` wrote: the structure, what it states and its sizing — `None` for
+    /// constants that are not whole (a document is untrusted input).
+    pub fn read_sized(k: &[f64], free: bool) -> Option<(Structure, &[f64], Option<Sizing>)> {
+        let count = |v: f64| (v >= 0.0 && v.fract() == 0.0 && v < 1e9).then_some(v as usize);
+        let head = k.get(..HEAD)?;
+        let (dim, nodes) = (count(head[0])?, count(head[1])?);
+        let (n_bars, n_beams, n_spread) = (count(head[2])?, count(head[3])?, count(head[4])?);
+        let mut at = HEAD;
+        let mut take = |n: usize| -> Option<&[f64]> {
+            let out = k.get(at..at.checked_add(n)?)?;
+            at += n;
+            Some(out)
+        };
+        let stated = take(if free { 2 } else { 1 })?;
+        let bars = take(3 * n_bars)?;
+        let beams = take(BEAM * n_beams)?;
+        let mut spread = Vec::with_capacity(n_spread);
+        for _ in 0..n_spread {
+            let c = take(5)?;
+            let along = take(count(c[0])?)?;
+            let along: Option<Vec<usize>> =
+                along.iter().map(|&v| count(v).filter(|&i| i < n_beams)).collect();
+            spread.push(Spread { beams: along?, force: [c[2], c[3], c[4]], per_area: c[1] != 0.0 });
+        }
+        let node = |v: f64| count(v).filter(|&i| i < nodes);
         let s = Structure {
             dim,
             nodes,
             bars: bars.as_chunks::<3>().0.iter()
-                .map(|c| Bar { a: c[0] as usize, b: c[1] as usize, e: c[2] })
-                .collect(),
+                .map(|c| Some(Bar { a: node(c[0])?, b: node(c[1])?, e: c[2] }))
+                .collect::<Option<_>>()?,
             beams: beams.as_chunks::<BEAM>().0.iter()
-                .map(|c| Beam { a: c[0] as usize, b: c[1] as usize, e: c[2], g: c[3], rho: c[4],
-                                z: [c[5], c[6], c[7]] })
-                .collect(),
-            fixed: per.iter().map(|c| c[0] != 0.0).collect(),
-            load: per.iter().map(|c| c[1]).collect(),
-            weight: per.iter().map(|c| c[2]).collect(),
+                .map(|c| Some(Beam { a: node(c[0])?, b: node(c[1])?, e: c[2], g: c[3], rho: c[4],
+                                     z: [c[5], c[6], c[7]] }))
+                .collect::<Option<_>>()?,
+            fixed: Vec::new(),
+            load: Vec::new(),
+            weight: Vec::new(),
+            spread,
         };
-        (s, stated)
+        if !(dim == 2 || dim == 3) {
+            return None;
+        }
+        let per = take(3 * s.per() * nodes)?.as_chunks::<3>().0;
+        let mut s = s;
+        s.fixed = per.iter().map(|c| c[0] != 0.0).collect();
+        s.load = per.iter().map(|c| c[1]).collect();
+        s.weight = per.iter().map(|c| c[2]).collect();
+        let sizing = match head[5] {
+            v if v < 0.0 => None,
+            v => {
+                let unknowns = count(v).filter(|&n| n <= crate::tape::MAX_VARS)?;
+                let mut sections = Vec::with_capacity(n_beams);
+                for _ in 0..n_beams {
+                    let mut four: [Vec<f64>; SECTION] = Default::default();
+                    for t in &mut four {
+                        let n = count(*take(1)?.first()?)?;
+                        let flat = take(n)?;
+                        if !crate::tape::reads_within(flat, unknowns) {
+                            return None;
+                        }
+                        *t = flat.to_vec();
+                    }
+                    sections.push(four);
+                }
+                Some(Sizing { unknowns, sections })
+            }
+        };
+        (at == k.len()).then_some((s, stated, sizing))
     }
 
     /// A row's widths, `(n_par, n_const)`: its columns, and the unknown's where it has one.
     pub fn widths(&self, free: bool) -> (usize, usize) {
+        self.widths_sized(free, None)
+    }
+
+    /// `widths`, its sections read over `sizing`'s unknowns where there is one.
+    pub fn widths_sized(&self, free: bool, sizing: Option<&Sizing>) -> (usize, usize) {
         let stated = if free { 2 } else { 1 };
-        (self.columns() + free as usize,
-         HEAD + stated + 3 * self.bars.len() + BEAM * self.beams.len() + 3 * self.fixed.len())
+        let spread: usize = self.spread.iter().map(|s| 5 + s.beams.len()).sum();
+        let tapes: usize =
+            sizing.iter().flat_map(|z| z.sections.iter().flatten()).map(|t| 1 + t.len()).sum();
+        (self.row_columns(sizing) + free as usize,
+         HEAD + stated + 3 * self.bars.len() + BEAM * self.beams.len() + spread
+             + 3 * self.fixed.len() + tapes)
+    }
+
+    /// How many columns a row over the structure reads before the unknown that may set its
+    /// output: the nodes' coordinates, the bars' areas, then the beams' sections or the unknowns
+    /// they are read over.
+    pub fn row_columns(&self, sizing: Option<&Sizing>) -> usize {
+        self.dim * self.nodes + self.bars.len()
+            + sizing.map_or(SECTION * self.beams.len(), |z| z.unknowns)
     }
 }
 
@@ -888,30 +1111,78 @@ impl Structure {
 
 /// The kernel at a block's widths (`system::build_kernel`, `KernelKey::Interior`): one row, the
 /// output less what it states, `J(x) − J₀` or `J(x) − (m·a + c)`.  A displacement, so degree 1.
-/// A structure with no displacement to give (`Failure`) reads NaN, which the step rejects.
+/// A structure with no displacement to give (`Failure`), and constants that are no structure,
+/// read NaN, which the step rejects.
 pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
     Kernel { name: "interior", n_res: 1, n_par, n_const, degree: 1, res, jac, const_jac: None,
              form: None }
 }
 
 /// Whether a row carries the unknown's column: one more than the columns its head says its
-/// structure reads.
-fn free_at(n_par: usize, k: &[f64]) -> bool {
-    let (dim, nodes, bars, beams) = (k[0] as usize, k[1] as usize, k[2] as usize, k[3] as usize);
-    n_par > dim * nodes + bars + SECTION * beams
+/// structure reads — the nodes' coordinates, the bars' areas, then the sections or the unknowns
+/// they are read over.  `None` where there is no head.
+fn free_at(n_par: usize, k: &[f64]) -> Option<bool> {
+    let h = k.get(..HEAD)?;
+    let sections = if h[5] < 0.0 { SECTION as f64 * h[3] } else { h[5] };
+    Some(n_par as f64 > h[0] * h[1] + h[2] + sections)
+}
+
+/// One row read off its columns `v` and constants `k`: the structure, the columns it is solved
+/// at, what it states, whether an unknown sets its output, and where its sections are read over
+/// unknowns each one's value and rate in them.
+struct Row<'a> {
+    s: Structure,
+    x: Vec<f64>,
+    stated: &'a [f64],
+    free: bool,
+    sized: Option<(usize, Vec<[crate::tape::Value; SECTION]>)>,
+}
+
+impl<'a> Row<'a> {
+    fn read(v: &[f64], k: &'a [f64]) -> Option<Row<'a>> {
+        let free = free_at(v.len(), k)?;
+        let (s, stated, sizing) = Structure::read_sized(k, free)?;
+        let cols = s.row_columns(sizing.as_ref());
+        if v.len() != cols + free as usize {
+            return None;
+        }
+        let direct = s.section_at(0);
+        let mut x = v[..direct].to_vec();
+        let sized = sizing.map(|z| {
+            let mut sc = crate::tape::Scratch::new();
+            let sections: Vec<_> =
+                (0..s.beams.len()).map(|i| z.section(i, &v[direct..cols], &mut sc)).collect();
+            x.extend(sections.iter().flatten().map(|t| t.v));
+            (z.unknowns, sections)
+        });
+        if sized.is_none() {
+            x.extend(&v[direct..cols]);
+        }
+        Some(Row { s, x, stated, free, sized })
+    }
+
+    /// The columns the structure is read over, before the unknown that may set its output.
+    fn columns(&self) -> usize {
+        self.s.section_at(0) + self.sized.as_ref().map_or(SECTION * self.s.beams.len(), |z| z.0)
+    }
+
+    /// What the row states the output is, at the unknown's column `v` reads.
+    fn target(&self, v: &[f64]) -> f64 {
+        match self.free {
+            true => self.stated[0] * v[self.columns()] + self.stated[1],
+            false => self.stated[0],
+        }
+    }
 }
 
 fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
     for i in 0..n {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
-        let free = free_at(n_par, k);
-        let (s, stated) = Structure::read(k, free);
-        let target = if free { stated[0] * v[s.columns()] + stated[1] } else { stated[0] };
-        r[i] = match s.solve(v) {
-            Ok(st) => s.output(&st) - target,
-            Err(_) => f64::NAN,
-        };
+        r[i] = Row::read(v, k).and_then(|row| {
+            let st = row.s.solve(&row.x).ok()?;
+            Some(row.s.output(&st) - row.target(v))
+        }).unwrap_or(f64::NAN);
     }
 }
 
@@ -921,14 +1192,35 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
         let row = &mut j[n_par * i..n_par * (i + 1)];
         row.fill(0.0);
-        let free = free_at(n_par, k);
-        let (s, stated) = Structure::read(k, free);
-        match s.solve(v) {
-            Ok(st) => s.gradient(&st, v, row),
-            Err(_) => row.fill(f64::NAN),
+        let Some(read) = Row::read(v, k) else {
+            row.fill(f64::NAN);
+            continue;
+        };
+        let s = &read.s;
+        let Ok(st) = s.solve(&read.x) else {
+            row.fill(f64::NAN);
+            continue;
+        };
+        let cols = read.columns();
+        match &read.sized {
+            None => s.gradient(&st, &read.x, &mut row[..cols]),
+            // a section's rate carried to the unknowns it is read over
+            Some((unknowns, sections)) => {
+                let mut g = vec![0.0; s.columns()];
+                s.gradient(&st, &read.x, &mut g);
+                let direct = s.section_at(0);
+                row[..direct].copy_from_slice(&g[..direct]);
+                for (b, four) in sections.iter().enumerate() {
+                    for (c, t) in four.iter().enumerate() {
+                        for u in 0..*unknowns {
+                            row[direct + u] += g[s.section_at(b) + c] * t.d[u];
+                        }
+                    }
+                }
+            }
         }
-        if free {
-            row[s.columns()] = -stated[0];
+        if read.free {
+            row[cols] = -read.stated[0];
         }
     }
 }

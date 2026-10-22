@@ -79,21 +79,99 @@ impl SectionProp {
 }
 
 /// **A beam's section**: the numbers stated of it, in the document's units, each positive.  The
-/// four of `SectionProp::STIFFNESS` are always stated.
+/// four of `SectionProp::STIFFNESS` are always stated.  A number read over unknowns of the drawing
+/// (#510 S1: `Iz: b * h^3 / 12`, `h` declared) is in `over` as well, and `props` holds what it
+/// came to at the unknowns' seeds; what it is is read at the drawing (`Section::read`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Section {
     pub props: BTreeMap<SectionProp, f64>,
+    pub over: BTreeMap<SectionProp, Over>,
+}
+
+/// **A section's number read over unknowns** (#510 S1): its text as the flattener wrote it, every
+/// number of its scope written in, the declared unknowns it reads, by absolute name, and its
+/// tape over them (`tape.rs`), compiled once — so it may be any function of them (`b * h^3 /
+/// 12`), not only one affine in one.  A requirement driving the frame finds them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Over {
+    pub text: String,
+    pub unknowns: Vec<String>,
+    pub own: crate::tape::Tape,
+}
+
+impl Over {
+    /// `text` read over `unknowns`, in the document's units, or why it cannot be.
+    pub fn new(text: &str, unknowns: Vec<String>, units: crate::units::Units)
+        -> Result<Over, String>
+    {
+        let mut over = Over { text: text.to_string(), unknowns, own: Default::default() };
+        over.own = over.tape(&over.unknowns, units)?;
+        Ok(over)
+    }
+
+    /// Its tape over `vars` (which hold every unknown it reads), in the document's units.
+    pub fn tape(&self, vars: &[String], units: crate::units::Units)
+        -> Result<crate::tape::Tape, String>
+    {
+        let p = crate::expr::parse_in(&self.text, units)?;
+        crate::tape::Tape::compile(&p.body, vars)
+    }
+
+    /// What it comes to at its unknowns' values `x`, in its own order.
+    pub fn at(&self, x: &[f64]) -> f64 {
+        self.own.eval(x, &mut crate::tape::Scratch::new()).v
+    }
 }
 
 impl Section {
-    /// A number stated of it.
+    /// A number stated of it, as it came to at elaboration (at the unknowns' seeds).
     pub fn get(&self, p: SectionProp) -> Option<f64> {
         self.props.get(&p).copied()
     }
 
-    /// Its stiffness's four numbers, in `interior::SECTION`'s order: `[A, Iy, Iz, J]`.
-    pub fn stiffness(&self) -> [f64; 4] {
-        SectionProp::STIFFNESS.map(|p| self.get(p).unwrap_or(f64::NAN))
+    /// **A number of it at the drawing**: as stated, or worked out at the values the unknowns it
+    /// reads stand at — one no row binds yet at its seed (a driving row's frame is read before
+    /// the expression pass binds what it reads), `Err` where it has none.
+    pub fn read(&self, p: SectionProp, sk: &super::Sketch) -> Option<Result<f64, String>> {
+        let Some(over) = self.over.get(&p) else { return self.get(p).map(Ok) };
+        Some((|| {
+            let mut x = Vec::with_capacity(over.unknowns.len());
+            for name in &over.unknowns {
+                let bound = sk.free_vars.get(name).map(|&q| &sk.params[q as usize])
+                    .filter(|q| !q.fixed).map(|q| q.value);
+                let seed = sk.declared.get(name).and_then(|d| d.seed);
+                x.push(bound.or(seed).ok_or_else(|| {
+                    format!("`{name}` is an unknown with no seed: `hint(…)` it")
+                })?);
+            }
+            let v = over.at(&x);
+            match v > 0.0 && v.is_finite() {
+                true => Ok(v),
+                false => Err(format!("`{}` is {v} where the drawing stands, and a section's \
+                                      numbers are positive", p.name())),
+            }
+        })())
+    }
+
+    /// Its stiffness's four numbers at the drawing, in `interior::SECTION`'s order: `[A, Iy, Iz,
+    /// J]`, or why one cannot be read.
+    pub fn stiffness(&self, sk: &super::Sketch) -> Result<[f64; 4], String> {
+        let mut out = [0.0; 4];
+        for (o, p) in out.iter_mut().zip(SectionProp::STIFFNESS) {
+            *o = self.read(p, sk).unwrap_or(Ok(f64::NAN))?;
+        }
+        Ok(out)
+    }
+
+    /// Every unknown it reads, each once, in the order first read.
+    pub fn unknowns(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for n in self.over.values().flat_map(|o| &o.unknowns) {
+            if !out.contains(n) {
+                out.push(n.clone());
+            }
+        }
+        out
     }
 }
 

@@ -10,7 +10,8 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 `delaunay/refine/cells.rs`, `delaunay/refine/volume.rs` or `delaunay/tetra.rs`; or a case of
 `rust/examples/analysis/` or `tests/analysis_corpus*`; or `interior::Beam`, `model/beam.rs`,
 `syntax/beam.rs`, `program/beams.rs`, `beams.rs` or a scenario's answers
-(`report::scenario_answers`).
+(`report::scenario_answers`); or `CKind::Deflection`, `beams::Row`, `interior::Spread`,
+`interior::Sizing`, `model::Over`, `Sketch::scenarios` or `program::scenarios::drive`.
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
@@ -19,7 +20,8 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
 `rust/gcs-core/tests/analysis_words.rs` for the diagnosis words (P7),
 `rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6),
 `rust/gcs-core/tests/analysis_corpus.rs` for the verification corpus (P8) and
-`rust/gcs-core/tests/beams.rs` for frames (S0), unless a rule names another.
+`rust/gcs-core/tests/beams.rs` for frames (S0) and `rust/gcs-core/tests/driven.rs` for a
+frame's driving row (S1), unless a rule names another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -77,9 +79,9 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
   redundant structures in the plane and in space, stated and free, and for two instances in one
   block (`tests/jacobians.rs`, `a_linear_interior_agrees_with_finite_differences`).
 
-- **What P5 leaves to later stages.** No `CKind`, word or statement compiles to the kernel yet:
-  S1 gives the row its constraint type, with its callout or an `undrawn!` entry.  S0 reads the
-  structure directly, for claims (below). Every call reads the structure from
+- **What P5 leaves to later stages.** ~~No `CKind` compiles to the kernel~~: S1's
+  `CKind::Deflection` does (below), in `undrawn!`.  S0 reads the structure directly, for claims
+  (below). Every call reads the structure from
   its constants and orders `K`'s pattern again (`Ata::new`'s symbolic analysis), though neither
   moves with `x`. The system also calls a kernel's residual and Jacobian separately, so a step
   that asks for both factors `K` twice. Holding the symbolic analysis per row (a hit on every
@@ -150,7 +152,8 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
   Refused, each where it is written: a target that is no line (**E040**) or a line standing in
   space (**E040**: its section's z is the plane's normal); a name of nothing (**E101**); a label
   no section has (**E103**), twice (**E001**); a number of the wrong power of length, at zero or
-  less (**E103**), or reading an unknown of the drawing (**E040**, until S1 drives one); a
+  less (**E103**), or reading an unknown of the drawing that is no seeded length or plain number
+  (**E040**; S1 reads a section over the drawing's unknowns, below); a
   section leaving out any of `A`, `Iy`, `Iz`, `J` (**E103**); `of` naming no material
   (**E103**, judged in `flatten::resolve::rewrite` as a solid's is). A beam that fails any check
   is left out whole: a frame missing a member is another frame. `Sy` and `Sz`, the elastic
@@ -184,7 +187,7 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
   answer yet), and where it is `fixed` its turns. A force at a point is a load at its joint; a
   force on a beam or a member's line is spread evenly along its members, and `accelerate` is
   `ρ A a` a length along them; each spread load is its consistent load at the elements' ends
-  (`fixed_end`), exact for the cubic. The material is read back into the document's units
+  (`interior::fixed_end`), exact for the cubic. The material is read back into the document's units
   (`Units::from_si`): `E`, `G = E / 2(1 + nu)` (a frame twists, so `nu` is needed), `rho` where
   a mass is read, `yield` for a safety. A material that does not state what is read of it, a
   beam made of none, a frame the supports leave free (`Structure::free`, named in the solver's
@@ -224,8 +227,7 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
   holds no body of its own (`diagnose::analysis::scenario_read`).
 
 - **What S0 leaves.**
-  - **No row.** The beam's row and its gradient are in hand, but no `CKind` or word compiles a
-    requirement to it, and a section reading an unknown is refused: S1's.
+  - ~~**No row.**~~ S1 compiles a driving deflection to the beam's row (below).
   - **A beam's line is drawn in a plane**, whose normal is its section's z; a line in space,
     and a section turned about its member (an `up:`), are not read yet.
   - **A support holds along the world's axes**, and `fixed` holds every turn: a support holding
@@ -241,6 +243,99 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
     assembled once, its modes solved once for the most any requirement asks, its buckling and
     its end actions once (`Analysed`'s cells); but nothing is kept between reads, and a pencil
     factors `K` again beside the static solve's normal equations.
+
+- **A frame's deflection, driven, is a row** (#510 S1; `CKind::Deflection`, `beams::Row`,
+  `program::scenarios::drive`, §9.11 [0.168]). `deflection(p, along: d) == v` in a scenario, `p` a
+  joint of a frame (`beams::of_frame`), is compiled by the elaborator, once every scenario is read,
+  into a constraint of the drawing: `[at: Point, along: Direction, scenario: Int, d: Length]`, the
+  scenario's supports and loads held for it on `Sketch::scenarios` (only a scenario that drives is
+  there), its site the requirement's line, and `Stated::driven` its id. It is the interior's
+  kernel (`KernelKey::Interior`, built at its frame's widths; one row, degree 1, `d·u − v`), so
+  the flat solve, the decomposition and the diagnosis take it as any row: the sized cantilever
+  leaves no freedom (`a_requirement_sizes_a_section`). Any other driving requirement — a solid's,
+  or a frame's mode, mass, buckling, compliance or safety, or a deflection with no `along:` —
+  compiles nothing, and the report says nothing drives it yet. The kind has no free twin (a
+  scenario's number reads no unknown) and is in `undrawn!`: a requirement's figure is the deformed
+  frame, the drawing's to say.
+
+- **The row's frame is meshed at one element between joints** (`Mesh::new(…, 1)`): every node is a
+  joint, so every node is a point of the drawing — a member's end, or a point the scenario names
+  lying on one — and its three columns are that point's lift (`Constraint::lifted_points`, minted at
+  the add). A joint is a point by identity first, then by place (`Mesh::joint`, `at_point`), so
+  members sharing a point join wherever a step puts it. One element is exact here: under loads at
+  the joints and loads spread evenly, the cubic's nodal moves are the beam's, which is all a static
+  deflection reads, and the claims' reading at `PIECES` agrees to rounding. The topology is read
+  where the drawing stands when the row is compiled and kept through that solve: within it the nodes
+  move, and the members never change. The weights, and a load's `along:`, are read as constants of
+  the row, so a direction the solve moves (an axis whose direction is not held, a line whose ends or
+  plane are not) is refused (**E040**, `Sketch::direction_held`), as is a frame the supports leave
+  free (`Row::check` in `validate`, the solver's words).
+
+- **A section read over unknowns** (#510 S1; `model::Over`, `interior::Sizing`). A section's number
+  may read the drawing's declared unknowns (`param h: Length hint(40mm)`, `Iz: b * h^3 / 12`): it is
+  worked out at their seeds and checked for its dimension and sign (`program::beams::number`), and
+  kept as its text, the unknowns it reads and its tape over them. Any function of them, not only one affine in one: each
+  is a tape (`tape.rs`) over the row's unknowns, a stated number a constant tape (`Tape::compile` of
+  the number). The row's columns are the joints' lifts, then those unknowns (at most
+  `tape::MAX_VARS`), bound by the expression pass when a row reads them (`expr::evaluate`, from
+  their seeds, as an envelope's set's are). `Section::read` reads a number at the drawing — a bound
+  unknown's value, else its seed — and the claims' analysis reads the section so too. An unknown
+  that is an angle (a tape reads no angle as the drawing holds one) or has no seed is **E040** where
+  the section reads it, and one no row binds — no driving row on its frame and no dimension — is
+  **E040** too (`program::beams::sized`): nothing determines it. The kernel solves the structure at
+  the sections the tapes give, and carries each section's rate to the unknowns by the tape's
+  gradient (`interior::jac`); the constants carry the tapes after the structure (`HEAD`'s `sized`,
+  −1 where the sections are columns of their own, so P5's and S0's rows are unchanged).
+  `Structure::read_sized` refuses constants that are not whole, which the kernel reads as NaN.
+
+- **A spread load moves with its members** (#510 S1; `interior::Spread`, `Structure::forces`). A
+  force spread evenly along beams is its whole over their length, `q = F / Σ L`, the same force
+  however long they grow; a body load is `q = ρ a A`, growing with the area. Each beam's share is
+  its consistent load (`interior::fixed_end`, one formula for what `Structure::forces` lays at its
+  ends and what a reading of its end actions takes out), `q L/2` at each end and `± L/12 (Δ × q)`
+  its end moments in the world's axes, exact for the
+  cubic (`a_spread_load_is_its_consistent_load`: `q L⁴/8EI` and `q L³/6EI` in one beam or
+  several). So `f` is `f(x)` and the gradient is `λᵀ(∂f/∂x − ∂K/∂x u)`: `λᵀfₑ = q · wₑ`, `wₑ`
+  formed in `Dual<3>` over the beam's run (`spread_into`). The frames' analysis states its loads
+  so (`Framed::new`), and reads the compliance as `fᵀu` of them. The adjoint gradient agrees with
+  central differences over random braced frames with both kinds spread, and over frames whose
+  sections are read over two unknowns (`jacobians.rs`,
+  `a_frames_interior_agrees_with_finite_differences`,
+  `a_sized_frames_interior_agrees_with_finite_differences`); the constraint agrees as the drawing
+  states it, sized, placed, loaded by its weight and spread, at the solution and knocked off it
+  (`a_frames_deflection_agrees_with_finite_differences`).
+
+- **Held to closed forms** (`tests/driven.rs`): a depth sized so the tip sinks `δ`,
+  `(4 P L³ / (E b δ))^(1/3)`, for three sags; a length placed, `(3 E I δ / P)^(1/3)`; a depth
+  under its own weight, `√(1.5 ρ g L⁴ / (E δ))`, and under a force spread evenly, `(1.5 P L³ / (E
+  b δ))^(1/3)`, and a length so, `(8 E I δ / P)^(1/3)`; an L of two members sized by its arm's end,
+  the root of one cubic — each to 1e-9. The report says `driven == 4mm, held`, or `not reached`.
+  **The library's driving cases** are `sized_cantilever.sv` (a depth), `reach_cantilever.sv` (a
+  length), `shelf_bracket.sv` (an L under a load spread along its arm) and `portal_frame.sv` (a
+  tube's diameter, non-affine, under a load at a point cutting a member and the frame's weight):
+  each leaves no freedom, its deflection read at `PIECES` is what its row states, and its claims
+  are kept (`every_driving_case_holds_what_it_drives`); the reach and the bracket are their
+  closed forms (`the_librarys_reach_and_bracket_are_their_closed_forms`), and each row agrees
+  with its differences (`a_frames_deflection_agrees_with_finite_differences`).
+
+- **The row is the source's alone** (`CKind::of_source`): it reads beams and a scenario, which no
+  document JSON, rebuild walk (`graft`) or flat program (`to_program`) holds, so none of them
+  writes the row; the source states it again when it is elaborated (`the_row_is_the_sources_alone`).
+
+- **What S1 leaves.**
+  - **One output drives**: a deflection of a joint along a direction. A deflection with no
+    `along:` (a length, not linear in `u`), a beam's worst (a maximum), a compliance (`f(x)ᵀu`,
+    its own `∂J/∂x`), a mass, a mode (`φᵀ(K' − λM')φ`, P2's open derivative) and a safety (a
+    maximum: S2's aggregation) are claims yet.
+  - **A drag and a rebuild drop the row**: `graft` copies neither beams nor scenarios, so a part a
+    gesture moves, a copy and a paste carry no frame row. Carrying them means remapping a beam's
+    lines and a scenario's targets as every entity reference is remapped.
+  - **The topology is the compile's**: a point the scenario names cut into a member by place, at
+    the drawing the row is compiled at; a point held on a member that a step moves off it bends
+    the member at it rather than leaving it. Remeshing as the drawing moves (the epic's first
+    difficulty) is not needed while the joints are points.
+  - **The two caches P5 named** are still not kept: each call reads the frame from the sketch
+    once per compile and factors `K` once for the residual and again for the Jacobian.
 
 - **A scenario, parsed** (#510 P4, §9.11 [0.164]). `scenario NAME [: BASE] { … }` is
   `syntax::StmtKind::Scenario` (`syntax::Scenario`, its lines `Item`/`ItemKind`: a support, a load
@@ -279,7 +374,8 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
 - **A scenario solves nothing** (#510 P4). It states no row and makes no entity, parameter or
   unknown: the sketch, its JSON and its solve are the document's with every scenario deleted
   (`a_scenario_adds_nothing_to_the_drawing`). A requirement's grade (`Requirement::grade` over
-  its `expr::Cmp`: `Claim`, `Driving`, `Bound`) is recorded, not acted on, but the rule S1–S3
+  its `expr::Cmp`: `Claim`, `Driving`, `Bound`) is recorded — and, since S1, a frame's driving
+  deflection compiled into a row (above), the one exception to adding nothing — but the rule S1–S3
   hold is kept now: one scenario's requirements drive dimensions, a driving row in a second
   **E106** until S4's optimiser. An edit removing what a scenario names never takes the scenario
   with it (`edit::remove::mentions`): the name left dangling is said (**E101**).

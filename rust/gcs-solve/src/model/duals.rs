@@ -111,7 +111,7 @@ impl Sketch {
     }
 
     /// The three columns point `p` stands at in space, once its lift is minted.
-    fn lifted_cols(&self, p: usize) -> Option<[u32; 3]> {
+    pub(crate) fn lifted_cols(&self, p: usize) -> Option<[u32; 3]> {
         self.lift_of(p).map(|k| self.lifts[k].x)
     }
 

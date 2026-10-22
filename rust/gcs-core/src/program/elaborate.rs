@@ -930,7 +930,11 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     // solid is built (#510 P4)
     cx.sk.beams = super::beams::beams(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
     cx.res.beams = cx.sk.beams.iter().enumerate().map(|(i, b)| (b.name.clone(), i)).collect();
-    let scenarios = super::scenarios::scenarios(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
+    let mut scenarios = super::scenarios::scenarios(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
+    // a driving deflection of a frame is a row (#510 S1), and the unknowns its sections read
+    // are then bound: one a section reads that nothing binds is said
+    super::scenarios::drive(&mut cx.sk, &mut cx.map, &flat.body, &mut scenarios, &mut cx.diags);
+    super::beams::sized(&cx.sk, &flat.body, &mut cx.diags);
     crate::modules::localize(p, &mut cx.diags);
     Elaborated {
         sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, program: p.clone(), taken: false,

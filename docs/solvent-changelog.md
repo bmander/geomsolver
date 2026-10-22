@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.168] A frame's deflection drives.** `deflection(p, along: d) == v` in a scenario (§9.11),
+`p` a joint of a frame, is a row of the drawing, solved for: the frame's deflection under the
+scenario's supports and loads, its rate the adjoint's. A beam's section may now be read over the
+drawing's declared unknowns (`param h: Length hint(40mm)`, `Iz: b * h^3 / 12`, any function of
+them), which the row sizes; or it places a joint, a length an unknown. An unknown a section reads
+is a seeded length or plain number (**E040**), and one no row binds is **E040**; a driving
+deflection its frame cannot be read under (left free) or along a direction the solve moves is
+**E040** where it is written. Other driving requirements compile nothing yet. Before this, a
+section reading an unknown was **E040**; no document wrote one. (Issue #510, S1.)
+
 **[0.167] A definition's standard datums are those of the frame it stands in.** Inside a
 definition's body (`component` or `part`), `std.front`, `std.top`, `std.side`, `std.up`, `std.x`,
 `std.y`, `std.z`, `std.back` and `std.origin` name the datums of the frame the instance stands in
