@@ -447,8 +447,7 @@ in std.front {
 // ---- an instance is a frame (#548): its datums read from outside, `b.std.z` ----
 
 /// A seat in space, a bore's axis through it, and a datum across: what `READS`'s post is mated
-/// to, its x along the bore and its y up, by relations on `{who}`'s datums written `{x}`, `{y}`
-/// and `{o}`.
+/// to, its x along the bore and its y up, by relations on the datums written `x`, `y` and `o`.
 fn mated(x: &str, y: &str, o: &str) -> String {
     format!("\
 seat := point

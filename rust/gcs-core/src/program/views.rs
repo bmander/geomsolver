@@ -140,11 +140,11 @@ pub(crate) fn origins_on_axes(sk: &mut Sketch, map: &SourceMap) -> Vec<Diag> {
 /// reads it seeded, along the innermost frame with axes that it rides — a mate outside then
 /// starts from the pose its call puts it in, and a frame no `in` encloses starts as the world.
 pub(crate) fn instance_frames(sk: &mut Sketch, res: &super::resolve::Resolver) {
-    let own = |key: &str, e: &EntRef| {
+    let owned = |key: &str, e: &EntRef| {
         e.kind == EntKind::Frame && crate::flatten::frame_instance(key).is_some()
     };
     let mut own: Vec<usize> =
-        res.of.iter().filter(|(key, e)| own(key, e)).map(|(_, e)| e.i()).collect();
+        res.of.iter().filter(|(key, e)| owned(key, e)).map(|(_, e)| e.i()).collect();
     own.sort_unstable();
     for f in own {
         let around = sk.frames[f].rides.iter().rev().map(|&g| g as usize)

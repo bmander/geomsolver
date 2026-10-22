@@ -604,12 +604,7 @@ impl Walk<'_> {
             if f.frame && arg_of(comp, inst, f).is_none() {
                 let at = Span::at(st.span.lo as usize);
                 let name = Name { text: f.name.text.clone(), span: at };
-                let mut d = Decl::point(DeclName::Written(name), [0.0; 2], None);
-                d.kind = crate::model::EntKind::Frame;
-                d.bare = true;
-                d.seed = vec![0.0; 3];
-                d.seed_text = vec![None; 3];
-                d.children = vec![Vec::new(); 3];
+                let d = Decl::frame(DeclName::Written(name));
                 out.push(Stmt { id: st.id, kind: StmtKind::Decl(d), span: st.span,
                     chained: Chained::No });
                 continue;

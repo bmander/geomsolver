@@ -866,8 +866,7 @@ impl<'a> Walk<'a> {
         };
         // read from outside as a frame (#548), it stands in its own, which rides the one around
         // its call
-        let own = self.own_frame(comp, inst, st, scope, path, key.trim_end_matches('.'));
-        let in_plane = match own {
+        let in_plane = match self.own_frame(comp, inst, st, scope, path) {
             Some(own) => {
                 rides.extend(in_plane);
                 Some(own)
