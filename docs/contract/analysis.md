@@ -6,14 +6,15 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 or `model/material.rs`, a `material(…)` group (`flatten::values::material`), a solid's `of`, or a
 material's JSON (`io::material_json`) or report (`report::materials_json`); or `eigen.rs`,
 `sparse::Sym`, `sparse::Ldl` or `sparse::Pencil`; or `diagnose/analysis.rs`, `Structure::free`,
-`Structure::reach`, `BodyFaces::whole` or a scenario's report (`report::scenarios_json`).
+`Structure::reach`, `BodyFaces::whole` or a scenario's report (`report::scenarios_json`); or
+`delaunay/refine/cells.rs`, `delaunay/refine/volume.rs` or `delaunay/tetra.rs`.
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
 `rust/gcs-core/tests/scenarios.rs` for scenarios (P4), `rust/gcs-core/tests/materials.rs` for
 materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2) and
-`rust/gcs-core/tests/analysis_words.rs` for the diagnosis words (P7), unless a rule names
-another.
+`rust/gcs-core/tests/analysis_words.rs` for the diagnosis words (P7) and
+`rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6), unless a rule names another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -337,3 +338,81 @@ another.
   given as a map of the freedoms; reading it off a drawing's `ring` is the modal stage's. The
   free motion of a scenario holds its supports as one body: which bodies a load path joins is
   S0's. A pinned face is read as its points held, which holds a turn as a clamp does.
+
+- **A volume is the surface's refinement carried inside** (#510 P6; `delaunay::refine::volume`,
+  `Progressive::with_cells`, `refine/cells.rs`). Once the surface is done, as
+  [fields.md](fields.md) has it, the cells are refined on the same regular triangulation. A cell
+  is a tetrahedron whose orthocentre the domain holds, so the volume's boundary is the restricted
+  facets, to the vertex. That stage is `Stage::Filling`, stepped as the others are. Facets are
+  refined first throughout, so the surface's criteria hold to the end. A filling refinement
+  takes its last build's surface, never an earlier one, since the cells are that build's.
+  Rounds of judging every cell (`FILL_ROUNDS`) end at the first round that inserts nothing. A
+  surface left not manifold is a refusal, never a volume. `Cells::check` refuses criteria no
+  refinement meets: a radius–edge bound under 1, no size, a dihedral bound of 30° or more.
+
+- **A cell is judged by its radius–edge ratio, its size and its least dihedral angle**
+  (`Cells`; `tetra::radius_edge`, `circumsphere`, `least_dihedral`). Each kind of bad cell is
+  refined in its own way:
+  - **Too long for its shortest edge, or too big:** the cell's orthocentre goes in. It is at
+    least its ball's radius from every vertex, so refinement ends.
+  - **Its point in a restricted facet's surface ball:** the facet is refined instead
+    (`Bad::forced`, Mesh_3's rule), and the cell is judged again.
+  - **A sliver** (a fair ratio, its least dihedral under `Cells::dihedral`): a point from its
+    picking region (Li and Teng). That is `CANDIDATES` seeded draws in `PICK` of its radius about
+    the orthocentre, and the best goes in, by the least dihedral angle of the tetrahedra it would
+    make, among the draws that reach no surface ball and that the domain holds. The domain is
+    asked last, once a draw has passed every other test.
+  - **Its point in a protecting ball, or a ball under the margin:** the cell is left and
+    counted (`CellReport`), and never judged again while it stands (`Filling::left`, by its
+    corners). No cell shrinks a ball. Trying the picking region for a centre in a
+    ball was measured and refused: the cube's bad cells went from 19 to 3,711.
+
+  On a smooth domain every cell meets radius–edge 2 and a 12° dihedral
+  (`a_ball_is_filled_with_fair_cells_and_curved_elements_on_its_sphere`, the torus, the
+  ellipsoid). With features, every cell left bad has a protecting ball's centre for a corner
+  (`Volume::protected`; the cube, 19 of 2,639 cells, least dihedral 7.8°; the cylinder, 5 of
+  3,624).
+
+- **The quadratic element is TET10, its nodes numbered as CalculiX numbers them**
+  (`tetra::Tet10`, `EDGES`). The corners come first, then the edges 0–1, 1–2, 2–0, 0–3, 1–3,
+  2–3. An edge node is its edge's middle, except on the boundary (`refine/volume.rs`):
+  - **On a feature curve** (two protecting balls next to each other on one curve), the node is
+    at the curve's arc-length middle between them. `protect` gives each ball's neighbours and
+    those points (`Protection::halfway`), where the stations are known.
+  - **On any other boundary edge,** the node is where the domain's boundary crosses the line
+    through the middle along the facets' mean normal, within a quarter of the edge. It is found
+    as a surface centre is, by Newton on readings or by bisection, to `Criteria::bisection`. An
+    edge whose line meets no boundary stays straight, and is counted.
+
+  Every node is shared by every element on its edge, so the mesh conforms. On the ball, the
+  ellipsoid and the torus, every boundary node is on the surface to 1e-8. The quadratic
+  elements hold the volume about 600 to 2,800 times better than the linear cells: the ball 1.6e-2
+  against 2.6e-5, the torus 1.3e-2 against 9.5e-6, the cylinder 5.1e-3 against 1.8e-6. That is
+  the chord's error against the parabola's.
+
+- **No element is inverted, and the proof is its Bernstein coefficients** (`Tet10::
+  jacobian_bernstein`, Johnen, Remacle and Geuzaine). A TET10's Jacobian determinant is a cubic
+  in the barycentric coordinates. Its twenty cubic Bernstein coefficients bound it below
+  everywhere in the element, and the four at the corners are its values there. They are formed
+  exactly from the columns' corner values, and their mean over 120 is the element's volume
+  (`Tet10::volume`). An element whose least coefficient is under `LEAST_JACOBIAN` (0.2) of its
+  straight element's `6V` (`jacobian_ratio`) has its curved edges put back straight, and its
+  neighbours are judged again, until none fails. A straight element is its positive linear cell.
+  `a_tet10s_jacobian_is_bounded_by_its_bernstein_coefficients` holds the corners, the bound on a
+  lattice, the volume's closed form and a folded element.
+
+- **A volume is held to what a complex is** (`conforming`): every cell positive, every face on
+  one cell or two, the faces on one exactly the boundary's outward triangles, the boundary
+  closed and manifold, and the Euler characteristic V − E + F − T the solid's: 1 for a ball, 0
+  for a solid torus. The cube's linear and quadratic volumes are exactly 1, to 1e-9, with its
+  corners as vertices. Filling is deterministic: two runs give the same mesh to the bit, and
+  the slivers' draws come from the seeded `rng::Rng` (`cells::SEED`). The boundary is the
+  restricted facets `Refiner::extract` gives, renumbered, so the surface mesh and the volume's
+  boundary are one list. `conforming` also holds the volume the boundary encloses to the cells'.
+
+- **What P6 leaves to S3.** No element stiffness reads a `Volume` yet. A protecting ball's
+  neighbours keep cells no refinement reaches. Mesh_3 removes those slivers by perturbation and
+  exudation, which need a vertex moved or reweighted, and this triangulation removes none. The
+  cells have one size, with no grading toward a feature or a load. The volume is built in the
+  terminal and the tests only, not in the page's mesh worker. A `MaterialField` is a `Domain`
+  like any other, but no gate fills one yet.

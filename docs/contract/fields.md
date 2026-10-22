@@ -53,6 +53,11 @@ of its terms as before. Remembered in `Caches::built` against `solid::reads`. Co
 operand reads a sheet of nothing where the round's cut lies on the face it rounds, which a spilled
 chamfer's flat crosses, ending one feature curve on another (`tests/composed_rounds.rs`).
 
+**A volume, for analysis** (#510 P6): `refine::volume` and `Progressive::with_cells` fill the
+surface's inside after it is done (`Stage::Filling`); the rules are
+[analysis.md](analysis.md)'s. The surface stage is unchanged by them, except that a filling
+refinement takes its last build's surface, never an earlier one.
+
 **Meshing speed (2026-09-25):** sweeps read from adaptive distance fields (`solid/field/adf.rs`,
 `SweptField::cached`, `Source::Cached`): an octree per sweep and `Resolution`, exact corners,
 trilinear between, split while wider than a facet or its centre reads off by over a tenth of the

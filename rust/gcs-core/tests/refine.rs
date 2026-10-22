@@ -12,7 +12,7 @@ fn criteria(size: f64) -> Criteria {
 
 /// The mesh is a closed oriented 2-manifold: every directed edge used once and its reverse once,
 /// and each vertex's triangles one fan. Returns the Euler characteristic and the volume.
-fn closed(m: &Mesh) -> (i64,f64) {
+pub(crate) fn closed(m: &Mesh) -> (i64,f64) {
     let mut directed: BTreeMap<(u32,u32),usize> = BTreeMap::new();
     for t in &m.triangles {
         for j in 0..3 { *directed.entry((t[j],t[(j+1)%3])).or_default() += 1; }
@@ -62,7 +62,7 @@ fn a_torus_has_genus_one_and_two_spheres_are_both_found() {
     assert_eq!(chi,4,"two spheres");
 }
 
-fn circle(c: P,r: f64,n: usize) -> Vec<P> {
+pub(crate) fn circle(c: P,r: f64,n: usize) -> Vec<P> {
     let mut v: Vec<P> = (0..n).map(|k| { let t = std::f64::consts::TAU*k as f64/n as f64; [c[0]+r*t.cos(),c[1]+r*t.sin(),c[2]] }).collect();
     v.push(v[0]);
     v
@@ -97,15 +97,20 @@ fn a_cylinder_keeps_its_rims() {
         "the top rim is not along mesh edges");
 }
 
-#[test]
-fn a_cube_keeps_its_edges_and_corners() {
-    let cube = |p: P| p[0].abs().max(p[1].abs()).max(p[2].abs())-0.5;
-    let h = 0.5;
-    let mut edges = Vec::new();
+/// The corners of the cube of half-side `h` about the origin, and its twelve edges as curves.
+pub(crate) fn cube_edges(h: f64) -> (Vec<P>,Vec<Vec<P>>) {
     let corners: Vec<P> = (0..8).map(|k| [if k&1 == 0 { -h } else { h },if k&2 == 0 { -h } else { h },if k&4 == 0 { -h } else { h }]).collect();
+    let mut edges = Vec::new();
     for a in 0..8 { for b in a+1..8 {
         if (a^b as usize).count_ones() == 1 { edges.push(vec![corners[a],corners[b]]); }
     } }
+    (corners,edges)
+}
+
+#[test]
+fn a_cube_keeps_its_edges_and_corners() {
+    let cube = |p: P| p[0].abs().max(p[1].abs()).max(p[2].abs())-0.5;
+    let (corners,edges) = cube_edges(0.5);
     let m = mesh(&mut |p| cube(p),[0.;3],1.,&edges,&criteria(0.15)).unwrap();
     let (chi,volume) = closed(&m);
     eprintln!("cube: {} triangles, {:?}",m.triangles.len(),m.report);
