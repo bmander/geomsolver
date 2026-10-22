@@ -108,7 +108,7 @@ pub fn face_paths(sk: &Sketch, i: usize) -> Vec<FacePath> {
 
 /// Whether segment `written` of a face path names segment `mine` of a face's name: the same, or
 /// `mine` a copy of it (`drill` names `drill[1]`; `drill[1]` names only itself).
-pub(crate) fn same_step(written: &str, mine: &str) -> bool {
+pub fn same_step(written: &str, mine: &str) -> bool {
     let copy = |k: &str| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit());
     written == mine || mine.strip_prefix(written).and_then(|r| r.strip_prefix('['))
         .and_then(|r| r.strip_suffix(']')).is_some_and(copy)

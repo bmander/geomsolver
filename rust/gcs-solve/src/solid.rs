@@ -45,7 +45,7 @@ pub mod conditions;
 pub mod carrier;
 pub(crate) mod profile;
 mod primitive;
-mod document;
+pub(crate) mod document;
 mod reads;
 pub use profile::{FacePoly,face_poly};
 pub use profile::{ring_area, ring_centroid};
@@ -213,6 +213,17 @@ pub struct Box3 {
 impl Box3 {
     pub fn empty() -> Box3 {
         Box3 { lo: [f64::INFINITY; 3], hi: [f64::NEG_INFINITY; 3] }
+    }
+    /// The box about `points`: empty where there are none.
+    pub fn of(points: impl IntoIterator<Item = [f64; 3]>) -> Box3 {
+        let mut b = Box3::empty();
+        points.into_iter().for_each(|p| b.add(p));
+        b
+    }
+    /// Its largest side; 0 for an empty box.
+    pub fn side(&self) -> f64 {
+        if self.is_empty() { return 0.0 }
+        (0..3).map(|k| self.hi[k] - self.lo[k]).fold(0.0, f64::max)
     }
     pub fn add(&mut self, p: [f64; 3]) {
         for i in 0..3 {

@@ -22,6 +22,8 @@ import { mesh, objects } from '../core/mesh.js';
 import { fieldJobs } from '../core/field.js';
 import { FieldPreview, type Refining } from './field-preview.js';
 import { ClaimJudging, type Judging } from './claim-judging.js';
+import { ScenarioReading, type Drawn, type Reading } from './scenario-view.js';
+import type { ScenarioMark } from '../core/scenario.js';
 import * as dim from '../core/callout.js';
 import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
@@ -324,8 +326,30 @@ export class SketchView {
   pendingFit: Place[] = [];
   diagnosis: Diagnosis | null = null;
   /** What each load scenario says of the drawing as it stands, read again after every solve: a
-   *  requirement refuted is a word of the footer's, as a claim about solids is. */
+   *  requirement refuted is a word of the footer's, as a claim about solids is.  Read in a
+   *  worker with the picture (`scenarioRead`), so it lags the solve by the reading. */
   scenarios: Scenario[] = [];
+  /** **The scenario drawn over the workspace** (#510), by name — '' for none: its supports and
+   *  loads (`scenarioMarks`, read at once on every edit) and how the drawing moves under it
+   *  (`picture`, read in a worker).  View state, as the plane chosen is: it writes nothing,
+   *  solves nothing, is kept across an edit by its name and let go by a load. */
+  scenario = '';
+  /** Where the scenario drawn falls on the drawing: a mark for each of its lines. */
+  scenarioMarks: ScenarioMark[] = [];
+  /** How the drawing moves under the scenario drawn, once the worker has read it; null before,
+   *  for none, and for a drawing that has moved since. */
+  picture: Drawn | null = null;
+  /** The reading as it stands: whether one is out, and why it failed. */
+  scenarioReading: Reading | null = null;
+  /** The factor the picture is drawn at, as the card's slider sets it; null for the picture's
+   *  own (`Drawn.scale`). */
+  scenarioScale: number | null = null;
+  /** Whether the picture swings from rest to its factor and back, and whether the mesh that was
+   *  solved is drawn over it. */
+  scenarioAnimate = false;
+  scenarioMesh = false;
+  /** Bumped whenever the marks or the picture change, so the box rebuilds them only then. */
+  scenarioEpoch = 0;
   /** The constraint the shell has the focus on, so its callout can say so. */
   litConstraint: Constraint | null = null;
   lastResult: SolveResult | null = null;
@@ -373,6 +397,8 @@ export class SketchView {
   onClaims: (judging: Judging | null) => void = () => {};
   /** The load scenarios were read again, after a solve (`scenarios`). */
   onScenarios: (scenarios: Scenario[]) => void = () => {};
+  /** The scenario drawn, its marks or its picture changed: the chooser and its card follow. */
+  onScenarioView: () => void = () => {};
   /** A dimension callout was clicked: the shell puts the focus on that constraint. */
   onPickConstraint: (c: Constraint) => void = () => {};
   /** What is held changed, and nothing else did — the line that names it is the whole of the
@@ -488,6 +514,10 @@ export class SketchView {
   private readonly fields = new FieldPreview((error) => this.fieldArrived(error), (r) => this.onRefine(r));
   /** The claims about solids, judged in a worker: the diagnosis here leaves them out. */
   readonly claims = new ClaimJudging((j) => this.onClaims(j));
+  /** The load scenarios' answers and the picture of the one drawn, read in a worker. */
+  readonly scenarioRead = new ScenarioReading((r) => this.scenarioArrived(r));
+  /** The animation frame the picture's swing is running on, while it is. */
+  private swinging = 0;
   /** A source sync is running: `swap` re-enters `afterEdit`, and the second pass has nothing
    *  left to write.  One flag rather than a subtle argument about termination. */
   private syncing = false;
@@ -784,7 +814,12 @@ export class SketchView {
 
   /** Project navigation starts a separate edit history; undo must never cross file boundaries. */
   openProjectFile(text: string): boolean {
-    if (!this.another(() => this.reread(text, true, false))) return false;
+    const chosen = this.scenario;
+    this.scenario = '';
+    if (!this.another(() => this.reread(text, true, false))) {
+      this.scenario = chosen;
+      return false;
+    }
     this.undoStack = [];
     return true;
   }
@@ -802,7 +837,11 @@ export class SketchView {
    *  its own way and is not this. */
   load(text: string, fit = true): boolean {
     this.pushUndo();
+    // another document states its own scenarios: none is drawn until one is chosen
+    const chosen = this.scenario;
+    this.scenario = '';
     if (!this.another(() => this.reread(text, fit, false))) {
+      this.scenario = chosen;
       this.dropUndo();
       return false;
     }
@@ -1155,8 +1194,7 @@ export class SketchView {
     this.syncSource();        // the drawing changed, so the document has to say what it now says
     this.fields.start(this.doc);
     this.claims.start(this.doc);
-    this.scenarios = this.doc.scenarios();
-    this.onScenarios(this.scenarios);
+    this.readScenarios();
     this.followLater();
     if (!this.holding) this.onChanged();
     this.draw();
@@ -1517,6 +1555,73 @@ export class SketchView {
       if (name && offered.includes(name)) return name;
     }
     return null;
+  }
+
+  // -- a load scenario, drawn (#510) -----------------------------------------
+
+  /** The document's load scenarios, by name, in the order written. */
+  scenarioNames(): { name: string; extends: string | null }[] {
+    return this.doc.scenarioNames();
+  }
+
+  /** **Draw scenario `name` over the workspace** ('' for none): its marks at once, and its
+   *  picture once the worker has read it.  Writes nothing and solves nothing. */
+  chooseScenario(name: string): void {
+    if (name === this.scenario) return;
+    this.scenario = name;
+    this.scenarioScale = null;
+    this.readScenarios();
+    this.draw();
+  }
+
+  /** The factor the picture is drawn at: the card's, else the picture's own. */
+  get scenarioFactor(): number {
+    return this.scenarioScale ?? this.picture?.scale ?? 1;
+  }
+
+  /** Swing the picture from rest to its factor and back, or stop. */
+  setScenarioAnimate(on: boolean): void {
+    this.scenarioAnimate = on;
+    cancelAnimationFrame(this.swinging);
+    this.swinging = 0;
+    const tick = (): void => {
+      if (!this.scenarioAnimate || !this.picture) { this.swinging = 0; return; }
+      this.draw();
+      this.swinging = requestAnimationFrame(tick);
+    };
+    if (on) this.swinging = requestAnimationFrame(tick);
+    this.draw();
+  }
+
+  /** Read the scenario drawn again: its marks here, at once, and every scenario's answers with
+   *  its picture in the worker.  A name the document no longer states is let go. */
+  private readScenarios(): void {
+    const names = this.doc.scenarioNames();
+    if (this.scenario && !names.some((n) => n.name === this.scenario)) this.scenario = '';
+    const k = names.findIndex((n) => n.name === this.scenario);
+    this.scenarioMarks = k >= 0 ? this.doc.scenarioMarks(k) : [];
+    this.scenarioEpoch += 1;
+    // a job of another drawing or choice tells at once that its picture is gone (a pose this
+    // edit may have left) until the worker says again; the same one leaves the picture standing
+    this.scenarioRead.start(this.doc, this.scenario);
+    this.onScenarioView();
+  }
+
+  /** The worker's reading arrived, or moved: the answers to the footer, the picture to the box. */
+  private scenarioArrived(r: Reading | null): void {
+    this.scenarioReading = r;
+    const picture = r && r.drawn === this.scenario ? r.picture : null;
+    if (picture !== this.picture) {
+      this.picture = picture;
+      this.scenarioEpoch += 1;
+    }
+    if (!r || r.scenarios) {
+      this.scenarios = r?.scenarios ?? [];
+      this.onScenarios(this.scenarios);
+    }
+    if (this.scenarioAnimate && this.picture && !this.swinging) this.setScenarioAnimate(true);
+    this.onScenarioView();
+    this.draw();
   }
 
   // -- painting ------------------------------------------------------------

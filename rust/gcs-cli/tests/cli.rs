@@ -740,8 +740,9 @@ edge of `ledge` and `riser`";
 }
 
 /// **A frame's answers are said** (#510 S0): under each scenario, every requirement on a frame
-/// with its value in the document's units and whether it keeps what it states — a refuted claim
-/// is a report, so the document still exits 0 — and `--json` gives them as the scenario's
+/// with its value in the document's units, the error estimated beside it (#510 S3: nothing, at a
+/// joint a cubic is exact for) and whether it keeps what it states — a refuted claim is a
+/// report, so the document still exits 0 — and `--json` gives them as the scenario's
 /// `answers`.
 #[test]
 fn a_frames_answers_are_said() {
@@ -778,10 +779,12 @@ scenario tip_load {
     let said = String::from_utf8_lossy(&out.stdout);
     for line in [
         "  material steel: E 200GPa, nu 0.3, rho 7850kg/m^3, yield 250MPa, of arm\n",
-        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm: claimed <= 7mm, kept\n",
-        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm: claimed <= 6mm, refuted\n",
-        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm: stated <= 5mm, which does \
-not hold; nothing drives it yet\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: claimed <= 7mm, \
+kept\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: claimed <= 6mm, \
+refuted\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 6.4mm ± 0mm: stated <= 5mm, which \
+does not hold; nothing drives it yet\n",
     ] {
         assert!(said.contains(line),"{line}\n{said}");
     }
@@ -801,7 +804,7 @@ fn a_driven_deflection_is_said() {
     assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
     let said = String::from_utf8_lossy(&out.stdout);
     for line in [
-        "  scenario `tip_load`: deflection(end, along: down) is 4mm: driven == 4mm, held\n",
+        "  scenario `tip_load`: deflection(end, along: down) is 4mm ± 0mm: driven == 4mm, held\n",
         "DOF 0\n",
         "  h = 58.4804\n",
     ] {
@@ -1022,4 +1025,21 @@ fn a_plane_reading_is_said() {
     assert!(said.contains("  scenario `pull`: buckling(plate) has no answer: `plate` is read in \
 its plane, and a plate buckles out of its plane, which it has no move for\n"),"{said}");
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// **A solid read in three dimensions is said** (#510 S3): Euler's column of the corpus, its
+/// buckling factor with the error estimated beside it, each claim kept; `--json` gives each
+/// answer's `error`.
+#[test]
+fn a_solid_reading_is_said() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/analysis/column.sv");
+    let out = run(&[path]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> =
+        said.lines().filter(|l| l.starts_with("  scenario `press`: buckling(strut) is ")).collect();
+    assert_eq!(lines.len(), 2, "{said}");
+    assert!(lines.iter().all(|l| l.contains(" ± ") && l.ends_with(", kept")), "{said}");
+    let json = String::from_utf8_lossy(&run(&[path,"--json"]).stdout).into_owned();
+    assert!(json.contains("\"error\": ") && !json.contains("\"error\": null"),"{json}");
 }

@@ -70,11 +70,11 @@ the same readings written `under:` (`a_rack_riding_its_frame_cuts_what_the_readi
 `a_tool_riding_its_frame_is_placed_and_swept_as_under_it`) and the refusals
 (`riding_refuses_what_it_cannot_mean`).
 
-**A joint's axis runs the way it is held** ([0.172], #535): `std`'s `turns`, `screws` and
+**A joint's axis runs the way it is held** ([0.173], #535): `std`'s `turns`, `screws` and
 `slides` write `l coincident(sense: same) f.axis` and `spins` `f.axis parallel(sense: same)
 o.plane.normal`, so the joint's axis runs along its line from `p1` toward `p2`, along an axis its
 own way, or out of the view — rows with that root alone (`K::LineOnAxisSensed`,
-`K::AxisCoincidentSensed`, `K::Parallel3Sensed`), where through 0.171 the solve kept whatever sense
+`K::AxisCoincidentSensed`, `K::Parallel3Sensed`), where through 0.172 the solve kept whatever sense
 `Sketch::seed_joints` gave it.  `program::motions` reads a holding statement with a `sense:` as one
 without.  `axis_sense::a_joints_axis_runs_the_way_its_line_does_whatever_its_start` is the gate.
 

@@ -5,13 +5,27 @@
  * is over on the canvas, and the one chosen is taken as a click on it would be.  The view says
  * what is there (`SketchView.onChoose`); this is only the list.  A right-click's menu is such a
  * list too (`onContextMenu`), of what can be done with the one thing it was on. */
+import type { SourceSpan } from '../core/program.js';
+import type { Row } from '../core/outline.js';
 import { view } from './shell.js';
-import { hide, hideableRow } from './hidden.js';
+import { hide, hideableRow, rowOf } from './hidden.js';
 import { bodyOf, hitName } from './view.js';
 import type { Hit } from './view.js';
 
 /** The list open, if one is, and what closes it. */
 let open: { el: HTMLElement; away: (e: Event) => void } | null = null;
+
+/** Where a right-click's ways to what it was on lead, as the page wires them (`onWays`): its
+ *  statement in the program editor, and its row in the model outline. */
+let toSource: (span: SourceSpan) => void = () => {};
+let toRow: (row: Row) => void = () => {};
+
+/** Be told how to go to a statement and to an outline row — the panel's, which this list does
+ *  not hold. */
+export function onWays(source: (span: SourceSpan) => void, row: (row: Row) => void): void {
+  toSource = source;
+  toRow = row;
+}
 
 /** List `hits` at a canvas point.  `add` is the ⌘-click's shift: the one chosen joins the
  *  selection rather than replacing it, as a shift-click's does — and so does one chosen with
@@ -27,14 +41,25 @@ export function onChoose(hits: Hit[], at: [number, number], add: boolean): void 
   }), at);
 }
 
-/** **A right-click's menu** on what it was on, `hit`: Hide, the row that made it (an object's
- *  face or edge hides the object), and Show all while anything is hidden.  With neither to offer
- *  nothing opens; on something that cannot be hidden, it says so. */
+/** **A right-click's menu** on what it was on, `hit` (an object's face or edge standing for the
+ *  object): Show definition, the program editor's caret on the statement that made it; Show in
+ *  model viewer, the outline opened to its row; Hide, that row hidden; and Show all while
+ *  anything is hidden.  With none to offer nothing opens; on something that cannot be hidden, it
+ *  says so. */
 export function onContextMenu(hit: Hit | null, at: [number, number]): void {
   closeChooser();
   const items: Item[] = [];
   const whole: Hit | null = hit?.kind === 'solid' ? { kind: 'solid', pick: bodyOf(hit.pick) } : hit;
   const target = !whole ? null : whole.kind === 'entity' ? whole.ent : whole.pick.index;
+  const made = target === null ? null : rowOf(view, target);
+  const span = made?.span;
+  if (span) {
+    items.push({ cells: [['verb', 'Show definition']], hit: whole, take: () => toSource(span) });
+  }
+  if (made) {
+    items.push({ cells: [['verb', 'Show in model viewer']], hit: whole,
+                 take: () => toRow(made) });
+  }
   const row = target === null ? null : hideableRow(view, target);
   if (row && target !== null) {
     items.push({ cells: [['verb', 'Hide'], ['name', row.label]], hit: whole,

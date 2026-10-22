@@ -11,6 +11,7 @@ mod parser;
 mod print;
 mod scenario;
 mod source;
+mod symbols;
 mod words;
 mod written;
 
@@ -25,6 +26,7 @@ pub(crate) use parser::{reference_at, sweep_of, SweepParts, ROLLED_RETIRED, SWEP
 pub use print::{bounded, operator_text, render_flat, write_stmt_to, PrintError};
 pub(crate) use print::{sel_text, written_parts};
 pub use scenario::{Item, ItemKind, LoadText, RequirementText, Scenario};
+pub use symbols::{symbols, Occurrence, Symbol, SymbolKind, Symbols};
 pub use source::{line_col, Module, Name, Program, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
 pub use written::{OpArg, RateOf, Written};

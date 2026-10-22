@@ -344,7 +344,10 @@ fn assert_pencil_pairs(a: &Sym, b: &Sym, got: &Pairs, what: &str) {
 #[test]
 fn sparse_ldl_solves_and_counts_negative_eigenvalues() {
     for (seed, nx, ny, shift) in [(1u32, 6usize, 5usize, 0.0), (2, 7, 7, 1.3), (3, 4, 9, 3.1)] {
-        let a = Pencil::new(&grid(seed, nx, ny, true), &grid_mass(seed + 10, nx, ny)).at(shift);
+        let (l, r) = (grid(seed, nx, ny, true), grid_mass(seed + 10, nx, ny));
+        let mut t: Vec<(usize, usize, f64)> = l.entries().collect();
+        t.extend(r.entries().map(|(i, j, v)| (i, j, -shift * v)));
+        let a = Sym::from_triplets(l.n, &t);
         let n = a.n;
         let f = Ldl::new(&a).expect("a factor");
         let b = rand_vec(100 + seed, n);

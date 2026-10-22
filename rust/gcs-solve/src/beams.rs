@@ -27,6 +27,7 @@
 use crate::diagnose::analysis::direction;
 use crate::eigen::{self, Pairs};
 use crate::graph::UnionFind;
+use crate::deformed::{self, Body, SAMPLES};
 use crate::interior::{self, Beam as Element, Failure, Sizing, Spread, State, Structure};
 use crate::model::{
     Applied, EntKind, EntRef, Hold, LoadKind, LoadValue, Output, Property, Requirement, Scenario,
@@ -43,6 +44,8 @@ type V = [f64; 3];
 
 /// How many cubic elements a member is cut into between two joints.
 pub const PIECES: usize = 8;
+/// Two readings within this of their value differ by rounding alone (`Read::estimated`).
+pub const ROUNDING: f64 = 1e-12;
 /// Two places within this of the frame's extent are one joint; a point within it of a member's
 /// line, between its ends, lies on the member.  Far below any member's length, far above what
 /// "solved" leaves between two points held coincident.
@@ -52,12 +55,23 @@ pub const JOINED: f64 = 1e-6;
 /// and per requirement its value, or why it has none; `None` for one about no frame (a solid's,
 /// which nothing analyses yet).  Per support, whether it holds a frame (names a joint of one), so
 /// the body a solid's supports hold is not read with it.  A scenario's regions read in their
-/// plane say the same (#510 S2, `prisms::read`), and the two are merged (`merge`).
+/// plane say the same (#510 S2, `prisms::read`), and so do the solids it reads in three
+/// dimensions (#510 S3, `bodies::read`), which it names in `bodies`; each is merged (`merge`).
+///
+/// **Beside each value, the error estimated in it** (#510 S3, `errors`): the change from the
+/// same reading twice as coarse (`estimated`, `diagnose::analysis::scenario_read`) — a frame at
+/// half its pieces, a region or a solid meshed at twice its elements' size.  Where the coarser
+/// reading's error is at least twice the finer's, as it is wherever a discretisation converges at
+/// all, that change bounds the finer's error; it is no bound on what the element leaves out (a
+/// beam's shear, a stress at a point a load is laid on).  `None` where the coarser reading has no
+/// value.
 #[derive(Clone, Debug, Default)]
 pub struct Read {
     pub words: Vec<String>,
     pub answers: Vec<Option<Result<f64, String>>>,
+    pub errors: Vec<Option<f64>>,
     pub holds: Vec<bool>,
+    pub bodies: Vec<usize>,
 }
 
 impl Read {
@@ -78,6 +92,21 @@ impl Read {
         for (a, b) in self.holds.iter_mut().zip(other.holds) {
             *a |= b;
         }
+        self.bodies.extend(other.bodies);
+    }
+
+    /// **This reading with the error estimated beside each value**: the change from `coarser`,
+    /// the same reading twice as coarse — nothing where it is rounding's (`ROUNDING` of the
+    /// value: a straight solid's mass, a frame's joint under loads the cubic is exact for).
+    pub fn estimated(mut self, coarser: &Read) -> Read {
+        self.errors = self.answers.iter().zip(&coarser.answers).map(|(a, b)| match (a, b) {
+            (Some(Ok(a)), Some(Ok(b))) => {
+                let e = (a - b).abs();
+                Some(if e <= ROUNDING * a.abs().max(b.abs()) { 0.0 } else { e })
+            }
+            _ => None,
+        }).collect();
+        self
     }
 }
 
@@ -371,7 +400,7 @@ impl Framed {
         }
         let mut s = Structure { dim: 3, nodes: n, bars: Vec::new(), beams: elements,
                                 fixed: Vec::new(), load: Vec::new(), weight: Vec::new(),
-                                spread: Vec::new(), tris: Vec::new(), laid: Vec::new() };
+                                ..Structure::default() };
         let dofs = s.per() * n;
         (s.fixed, s.load, s.weight) = (vec![false; dofs], vec![0.0; dofs], vec![0.0; dofs]);
         let on = |a: &Applied| -> Vec<usize> {
@@ -457,6 +486,39 @@ impl Analysed {
         let spread = f.s.spread_at(&f.x);
         Ok(Analysed { f, st, spread, modes, stiffness: OnceCell::new(), pairs: OnceCell::new(),
                       buckled: OnceCell::new(), actions: OnceCell::new() })
+    }
+
+    /// **The frame drawn** (`deformed::Body`): a tube along each element, sampled at `SAMPLES`
+    /// places on the cubic it bends as — along it, its ends' moves in a line; across it, in each
+    /// plane it bends in, Hermite's cubic in its ends' moves and turns (a turn about e3 the slope
+    /// along e2, one about e2 the slope along e3's negative).
+    fn body(&self, mesh: &Mesh) -> Body {
+        let s = &self.f.s;
+        let extent = mesh.tol / JOINED;
+        let mut body = Body { kind: "frame", name: self.f.names.clone(), ..Body::default() };
+        let end = |k: usize| -> (V, V) {
+            let at = |c: usize| self.st.u[s.dof(k, c).unwrap()];
+            ([at(0), at(1), at(2)], [at(3), at(4), at(5)])
+        };
+        for (e, beam) in s.beams.iter().enumerate() {
+            let Some((h, axes)) = s.beam_axes(e, &self.f.x) else { continue };
+            let place = |k: usize| -> V { [0, 1, 2].map(|c| self.f.x[3 * k + c]) };
+            let (pa, pb) = (place(beam.a), place(beam.b));
+            let ((ua, ta), (ub, tb)) = (end(beam.a), end(beam.b));
+            let [ua, ta, ub, tb] = [ua, ta, ub, tb].map(|v| interior::into_axes(&axes, v));
+            let centre: Vec<(V, V)> = (0..SAMPLES).map(|k| {
+                let t = k as f64 / (SAMPLES - 1) as f64;
+                let w = deformed::hermite(t);
+                let local = [
+                    (1.0 - t) * ua[0] + t * ub[0],
+                    w[0] * ua[1] + w[1] * h * ta[2] + w[2] * ub[1] + w[3] * h * tb[2],
+                    w[0] * ua[2] - w[1] * h * ta[1] + w[2] * ub[2] - w[3] * h * tb[1],
+                ];
+                (lerp(pa, pb, t), interior::out_of_axes(&axes, local))
+            }).collect();
+            deformed::tube(&mut body, &centre, axes[1], axes[2], deformed::TUBE * extent);
+        }
+        body
     }
 
     /// The displacement of node `i` (the mesh's numbering).
@@ -708,19 +770,37 @@ fn frame_of(sk: &Sketch, mesh: &Mesh, of: &Applied) -> Option<Result<usize, Stri
 /// value or why none, the words its frames say, and which supports hold a frame.  Each frame is
 /// analysed once, and its modes solved once for the most any requirement asks for.
 pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
+    read_at(sk, sc, 1.0)
+}
+
+/// `read`, each member cut into `coarser` times fewer pieces between its joints (#510 S3: the
+/// reading an error is estimated against, `diagnose::analysis::scenario_read`).
+pub fn read_at(sk: &Sketch, sc: &Scenario, coarser: f64) -> Read {
+    read_pictured(sk, sc, coarser, false).0
+}
+
+/// **`read_at`, and where `pictured`, the picture of every frame any line of the scenario falls
+/// on** (`deformed::Body`, a tube along each element sampled on its cubic), or why one is not
+/// drawn: each frame analysed once for both.
+pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
+    -> (Read, Vec<Result<Body, String>>)
+{
+    let pieces = ((PIECES as f64 / coarser).round() as usize).max(1);
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
         holds: vec![false; sc.supports.len()],
+        ..Read::default()
     };
+    let mut drawn = Vec::new();
     if sk.beams.is_empty() {
-        return out;
+        return (out, drawn);
     }
-    let mesh = match Mesh::new(sk, &named_points(sc, None), PIECES) {
+    let mesh = match Mesh::new(sk, &named_points(sc, None), pieces) {
         Ok(m) => m,
         Err(m) => {
             out.words.push(format!("scenario `{}`: {m}", sc.name));
-            return out;
+            return (out, drawn);
         }
     };
     for (k, s) in sc.supports.iter().enumerate() {
@@ -748,13 +828,28 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
             }
         };
     }
-    // a frame the supports leave free is said once, in the solver's words
+    // a frame the supports leave free is said once, in the solver's words — those a requirement
+    // reads, before any analysed only to be drawn, which is the reading the report has always had
     for a in frames.values() {
         if let Err(Unread::Free { names, free }) = a {
             out.words.push(format!("scenario `{}` leaves {names} {free}", sc.name));
         }
     }
-    out
+    if pictured {
+        // every frame a line of the scenario falls on, a requirement's or not
+        let mut touched: Vec<usize> = sc.applied()
+            .flat_map(|a| mesh.nodes_of(sk, a)).map(|i| mesh.frame[i]).collect();
+        touched.sort();
+        touched.dedup();
+        for f in touched {
+            let a = frames.entry(f).or_insert_with(|| Analysed::new(sk, sc, &mesh, f, 0));
+            drawn.push(match a {
+                Ok(a) => Ok(a.body(&mesh)),
+                Err(m) => Err(format!("scenario `{}`: {}", sc.name, m.text())),
+            });
+        }
+    }
+    (out, drawn)
 }
 
 /// A requirement's value over its frame `a`, or why it has none.
@@ -864,7 +959,18 @@ fn stress(r: &[f64; 12], q: V, h: f64, a: f64, sy: f64, sz: f64) -> f64 {
 /// length (`1.6mm`), a frequency in hertz, a mass in kilograms, a compliance in joules, a factor
 /// as a plain number — six figures.
 pub fn value_text(sk: &Sketch, output: Output, v: f64) -> String {
-    let fig = |v: f64| crate::json::fmt_g(v, 6);
+    figures_text(sk, output, v, 6)
+}
+
+/// **The error estimated beside a value** (#510 S3, `Read::errors`), as its value is said but
+/// to two figures: `± 0.0021mm`.
+pub fn error_text(sk: &Sketch, output: Output, e: f64) -> String {
+    format!("± {}", figures_text(sk, output, e, 2))
+}
+
+/// A value of `output` to `figures` figures, in its unit.
+fn figures_text(sk: &Sketch, output: Output, v: f64, figures: usize) -> String {
+    let fig = |v: f64| crate::json::fmt_g(v, figures);
     match output {
         Output::Deflection => format!("{}{}", fig(v), sk.units.name()),
         Output::Mode => format!("{}Hz", fig(v)),

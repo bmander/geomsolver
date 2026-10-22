@@ -14,6 +14,7 @@
  * names anything is `structural`, because the name may be an unknown, and an unknown is a
  * column.
  */
+import type { Pictured, ScenarioMark } from './scenario.js';
 import { Constraint } from './constraints.js';
 import { Kind, KINDS, Plane, Primitive, Sketch, fromWire } from './model.js';
 import type { Way } from './model.js';
@@ -90,6 +91,8 @@ export interface Region {
  *  written, its grade (`claim`, `driving`, …), its value in the document's units and whether it
  *  holds — both null where it has no answer — and the core's sentence for it. */
 export interface ScenarioAnswer {
+  /** Its requirement's place among the scenario's, as `ScenarioMark.index` counts them. */
+  index: number;
   requirement: string;
   grade: string;
   value: number | null;
@@ -231,6 +234,34 @@ export class Document {
    *  again after each solve; empty for a document with no scenario. */
   scenarios(): Scenario[] {
     return takeJson<Scenario[]>(core().gcs_elab_scenarios_json(this.h, this.sketch.handle)) ?? [];
+  }
+
+  /** **What every load scenario says, and how the drawing moves under scenario `drawn`** — its
+   *  index among `scenarios()`, or −1 for none: the answers `scenarios()` gives, and the picture
+   *  read with them, each body analysed once for both.  Seconds for a solid read in three
+   *  dimensions: what the mesh worker asks (`scenario-view.ts`), never the page's own thread. */
+  scenariosPictured(drawn: number): Pictured {
+    return takeJson<Pictured>(
+      core().gcs_elab_scenarios_pictured_json(this.h, this.sketch.handle, drawn))
+      ?? { scenarios: [], picture: null };
+  }
+
+  /** **The load scenarios the document states**, by name in the order written, and the one each
+   *  extends: what a chooser lists, with no analysis. */
+  scenarioNames(): { name: string; extends: string | null }[] {
+    return takeJson<{ name: string; extends: string | null }[]>(
+      core().gcs_elab_scenario_names_json(this.h)) ?? [];
+  }
+
+  /** **Where scenario `k` falls on the drawing** as it stands: a mark for each of its lines, in
+   *  the order written, every place and direction the core's.  No analysis: read on every edit. */
+  scenarioMarks(k: number): ScenarioMark[] {
+    const marks = takeJson<ScenarioMark[]>(
+      core().gcs_elab_scenario_marks_json(this.h, this.sketch.handle, k)) ?? [];
+    // the core's spans are bytes of the text, brought onto the string
+    const at = new Offsets(this.text);
+    for (const m of marks) if (m.span) m.span = [at.at(m.span[0]), at.at(m.span[1])];
+    return marks;
   }
 
   /** **The solids this document names**, in the order it names them.
@@ -547,14 +578,77 @@ export function highlight(text: string): Run[] {
   return coloured(text, (p, n) => core().gcs_program_highlight(p, n));
 }
 
+/** What gave a symbol its name — the core's `syntax::SymbolKind`, by its word. */
+export type SymbolKind = 'name' | 'param' | 'formal' | 'binder' | 'component' | 'word' | 'module'
+  | 'import' | 'member' | 'unknown';
+
+/** One thing a text names.  `parent` is what a member is read of (`l` for `l.p1`), else -1. */
+export interface Symbol { name: string; kind: SymbolKind; parent: number }
+
+/** One place the text names a symbol: `lo`/`hi` index the **string**, as a `Run`'s do; `def` where
+ *  the name is given (declared, bound, a formal) rather than read. */
+export interface Occurrence { lo: number; hi: number; symbol: number; def: boolean }
+
+/** **The names a text gives and reads** (`syntax::symbols`) — what an editor's features stand on:
+ *  the word under the caret, the declaration it names, and every other place it is named.  The
+ *  core resolves every name; this only holds the answer, crossed onto the string, and looks it up.
+ *
+ *  A function of the *text*, as the colouring is: the program being looked at is usually the one
+ *  half-typed, and its names are still worth lighting. */
+export class Symbols {
+  constructor(readonly symbols: Symbol[], readonly occurrences: Occurrence[]) {}
+
+  /** The occurrence a caret at string index `at` is in, or stands just past — `rim|` means `rim`,
+   *  as in every editor (the rule `Symbols::at` states in the core). */
+  at(at: number): Occurrence | null {
+    const os = this.occurrences;
+    const o = os[partition(os.length, (k) => os[k].hi < at)];
+    return o && o.lo <= at ? o : null;
+  }
+
+  /** Every place `symbol` is named, in text order. */
+  of(symbol: number): Occurrence[] {
+    return this.occurrences.filter((o) => o.symbol === symbol);
+  }
+}
+
+/** Index a program's names.  An empty index where the text is past what the core reads. */
+export function symbols(text: string): Symbols {
+  type Wire = { symbols: [string, SymbolKind, number][];
+    occurrences: [number, number, number, number][] };
+  return crossed<Wire, Symbols>(text, (p, n) => core().gcs_program_symbols(p, n), (wire, at) =>
+    new Symbols(
+      wire.symbols.map(([name, kind, parent]) => ({ name, kind, parent })),
+      wire.occurrences.map(([lo, hi, symbol, def]) =>
+        ({ lo: at.at(lo), hi: at.at(hi), symbol, def: def !== 0 })),
+    ));
+}
+
 /** A colouring entry's runs, crossed onto the string the browser holds — the program's here, and
  *  a drawing's (`drawing.highlight`) through the same seam. */
 export function coloured(text: string, entry: (p: number, n: number) => number): Run[] {
-  const runs = withStr(text, entry);
-  if (!runs) throw new Error(lastError() || 'the text could not be coloured');
-  const at = new Offsets(text);
-  return takeJson<[string, number, number][]>(runs)
-    .map(([cls, lo, hi]) => ({ cls, lo: at.at(lo), hi: at.at(hi) }));
+  return crossed<[string, number, number][], Run[]>(text, entry, (runs, at) =>
+    runs.map(([cls, lo, hi]) => ({ cls, lo: at.at(lo), hi: at.at(hi) })));
+}
+
+/** What an entry reading a text answers, its offsets crossed onto the string by `cross`. */
+function crossed<W, R>(text: string, entry: (p: number, n: number) => number,
+  cross: (wire: W, at: Offsets) => R): R {
+  const h = withStr(text, entry);
+  if (!h) throw new Error(lastError() || 'the text could not be read');
+  return cross(takeJson<W>(h), new Offsets(text));
+}
+
+/** The first of `0..n` for which `before` is false, `before` holding of a prefix — where a sorted
+ *  array is cut. */
+function partition(n: number, before: (k: number) => boolean): number {
+  let lo = 0, hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (before(mid)) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
 }
 
 /** Byte offsets, as the core counts them, onto the string the browser holds.
@@ -567,8 +661,8 @@ export function coloured(text: string, entry: (p: number, n: number) => number):
  *  part of the drawing.
  *
  *  **This is the one seam.**  Every offset the core reports crosses it — the highlighting, the
- *  diagnostics and the source map alike — so no consumer has to know the difference, and no two of
- *  them can disagree about which unit they hold.
+ *  names, the diagnostics and the source map alike — so no consumer has to know the difference, and
+ *  no two of them can disagree about which unit they hold.
  *
  *  A program that is all ASCII builds nothing and answers in one comparison, which is the usual
  *  case.  Otherwise one walk records where each wider-than-one-byte character ends, and a lookup
@@ -603,12 +697,7 @@ class Offsets {
   at(off: number): number {
     if (this.plain) return off;
     // the last wide character that ends at or before `off`; everything after it is one-to-one
-    let lo = 0, hi = this.ends.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (this.ends[mid] <= off) lo = mid + 1;
-      else hi = mid;
-    }
+    const lo = partition(this.ends.length, (k) => this.ends[k] <= off);
     return lo === 0 ? off : this.units[lo - 1] + (off - this.ends[lo - 1]);
   }
 }

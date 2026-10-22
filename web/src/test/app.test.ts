@@ -2933,3 +2933,49 @@ test('an opening held builds its objects one at a time, saying which, and tells 
   await view.buildObjects(() => {}, async () => {});
   assert.equal(changed, 2);
 });
+
+test('choosing a scenario writes nothing, and draws its marks and how the drawing moves', () => {
+  // the rounded bracket's shelf (#510): read on this thread with no worker, as the page reads it
+  // in one — its answers to the footer, its marks at once, its picture with them
+  const src = examples.source('rounded_bracket');
+  const view = new SketchView(fakeCanvas(), Document.read(src));
+  assert.ok(view.load(src));
+  const text = view.source;
+  assert.deepEqual(view.scenarioNames().map((n) => n.name), ['shelf']);
+  assert.equal(view.scenario, '');
+  assert.equal(view.picture, null);
+  assert.ok(view.scenarios.length === 1 && view.scenarios[0].answers.length === 4);
+  view.chooseScenario('shelf');
+  assert.equal(view.source, text, 'choosing a scenario wrote to the document');
+  assert.ok(view.scenarioMarks.length >= 4, JSON.stringify(view.scenarioMarks.map((m) => m.kind)));
+  const p = view.picture!;
+  assert.ok(p && p.bodies.length === 1 && p.bodies[0].kind === 'region', JSON.stringify(p?.words));
+  assert.ok(p.bodies[0].rest instanceof Float32Array && p.largest > 0);
+  assert.equal(view.scenarioFactor, p.scale);
+  // the box ghosts the solid deformed, scales every glyph to the pixel, morphs by the factor
+  const scene = view.box3d.scenario;
+  scene.paint(view);
+  assert.ok(scene.group.visible);
+  assert.deepEqual([...scene.ghosted(view)], [p.bodies[0].solid]);
+  view.scenarioScale = 3;
+  scene.paint(view);
+  const morphs: number[] = [];
+  scene.group.traverse((o) => {
+    const m = o as { morphTargetInfluences?: number[] };
+    if (m.morphTargetInfluences) morphs.push(m.morphTargetInfluences[0]);
+  });
+  assert.ok(morphs.length >= 1 && morphs.every((s) => s === 3), JSON.stringify(morphs));
+  // an edit keeps the scenario by its name; another document lets it go
+  view.setProgram(view.source + '\n');
+  assert.equal(view.scenario, 'shelf');
+  assert.ok(view.picture);
+  view.chooseScenario('');
+  assert.equal(view.picture, null);
+  assert.deepEqual(view.scenarioMarks, []);
+  scene.paint(view);
+  assert.ok(!scene.group.visible);
+  view.chooseScenario('shelf');
+  assert.ok(view.load('use std\n'));
+  assert.equal(view.scenario, '');
+  assert.deepEqual(view.scenarioNames(), []);
+});

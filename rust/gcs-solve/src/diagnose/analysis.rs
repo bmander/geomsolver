@@ -83,7 +83,7 @@ fn figure(v: f64, size: f64) -> String {
 }
 
 /// A unit direction by its world axis's name where it is one, else by its components.
-fn direction_text(d: V, dim: usize) -> String {
+pub fn direction_text(d: V, dim: usize) -> String {
     for (k, name) in ["x", "y", "z"].iter().enumerate() {
         let e = axis(k);
         if norm(sub(d, e)) <= SNAP || norm(add(d, e)) <= SNAP {
@@ -486,7 +486,7 @@ impl Reach {
 /* -- a scenario, read -------------------------------------------------------------------------- */
 
 /// The unit direction an `along:` names: an axis's, or a line's from its first end.
-pub(crate) fn direction(sk: &Sketch, d: EntRef) -> Result<V, String> {
+pub fn direction(sk: &Sketch, d: EntRef) -> Result<V, String> {
     let v = match d.kind {
         EntKind::Axis => sk.axes[d.i()].d.map(|p| sk.params[p as usize].value),
         EntKind::Line => {
@@ -561,12 +561,45 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
 }
 
 /// **A scenario, read** (#510 S0): its words (`scenario_words`'s, then its frames' and its
-/// regions'), and what its frames (`beams::read`) and the solids it reads in their plane (#510 S2,
-/// `prisms::read`) answer of each requirement.  A solid read in its plane is held, and says
-/// where its stress is unbounded, in its own answers, never as a body of the scenario's.
+/// regions'), and what its frames (`beams::read`), the solids it reads in their plane (#510 S2,
+/// `prisms::read`) and those it reads in three dimensions (#510 S3, `bodies::read`) answer of
+/// each requirement, each with its error estimated beside it (`Read::estimated`, against the
+/// same readings twice as coarse).  A solid read so is held, and says where its stress is
+/// unbounded, in its own answers, never as a body of the scenario's.
 pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::Read) {
-    let mut frames = crate::beams::read(sk, sc);
-    frames.merge(crate::prisms::read(sk, sc));
+    let (words, read, _) = scenario_read_with(sk, sc, false);
+    (words, read)
+}
+
+/// **A scenario read, and drawn** (`deformed::Picture`): `scenario_read`'s words and answers,
+/// and the picture of every body a line of it falls on, each body analysed once for both — its
+/// answers and its picture the same reading, at the readers' own size.
+pub fn scenario_pictured(sk: &Sketch, sc: &Scenario)
+    -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
+{
+    scenario_read_with(sk, sc, true)
+}
+
+fn scenario_read_with(sk: &Sketch, sc: &Scenario, pictured: bool)
+    -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
+{
+    // every reader at its own size, then, where anything is answered, twice as coarse: the
+    // change is the error estimated beside each value (#510 S3)
+    let read = |coarser: f64, pictured: bool| {
+        let (mut r, mut drawn) = crate::beams::read_pictured(sk, sc, coarser, pictured);
+        let (p, d) = crate::prisms::read_pictured(sk, sc, coarser, pictured);
+        r.merge(p);
+        drawn.extend(d);
+        let (b, d) = crate::bodies::read_pictured(sk, sc, coarser, pictured);
+        r.merge(b);
+        drawn.extend(d);
+        (r, drawn)
+    };
+    let (mut frames, drawn) = read(1.0, pictured);
+    if frames.answers.iter().any(|a| matches!(a, Some(Ok(_)))) {
+        frames = frames.estimated(&read(2.0, false).0);
+    }
+    let picture = crate::deformed::Picture::of(drawn);
     let mut out = Vec::new();
     let mut holds = Vec::new();
     for (k, s) in sc.supports.iter().enumerate() {
@@ -581,8 +614,8 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
             Err(e) => out.push(format!("scenario `{}`: {e}", sc.name)),
         }
     }
-    let solids: Vec<usize> =
-        named_solids(sc).into_iter().filter(|&s| sc.plane_of(s).is_none()).collect();
+    let read = |s: usize| sc.plane_of(s).is_some() || frames.bodies.contains(&s);
+    let solids: Vec<usize> = named_solids(sc).into_iter().filter(|&s| !read(s)).collect();
     // a scenario of frames and regions alone holds no body of its own
     let of_frames = frames.reads_any() && solids.is_empty() && holds.is_empty();
     if out.is_empty() && !of_frames {
@@ -601,7 +634,7 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
     let asked: BTreeSet<usize> = sc.requirements.iter()
         .filter(|r| r.output == Output::Safety)
         .filter_map(|r| r.of.solid())
-        .filter(|&s| sc.plane_of(s).is_none())
+        .filter(|&s| !read(s))
         .collect();
     for solid in asked {
         let name = &sk.solids[solid].name;
@@ -616,5 +649,5 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
         }
     }
     out.extend(frames.words.iter().cloned());
-    (out, frames)
+    (out, frames, picture)
 }

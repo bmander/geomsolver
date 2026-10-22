@@ -18,7 +18,7 @@ pub(crate) use body::along_run;
 pub use body::{reading, BodyFaces, Read, Reading};
 pub use layers::layer;
 pub use path::{face_paths, face_source, FacePath, FaceSource};
-pub(crate) use path::same_step;
+pub use path::same_step;
 
 /// The region solids whose terms read the faces of `body`.
 pub fn readers_of(sk: &Sketch, body: usize) -> BTreeSet<usize> {

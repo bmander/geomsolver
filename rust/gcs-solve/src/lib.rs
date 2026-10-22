@@ -12,6 +12,7 @@
 //! cannot name a module of the one that depends on it.
 pub mod amd;
 pub mod beams;
+pub mod bodies;
 pub mod brep;
 pub mod cgraph;
 pub mod cholesky;
@@ -23,6 +24,7 @@ pub mod contact_rate;
 pub mod csg;
 pub mod curve;
 pub mod decompose;
+pub mod deformed;
 pub mod delaunay;
 pub mod eigen;
 pub mod diagnose;

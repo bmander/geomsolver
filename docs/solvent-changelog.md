@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.172] Which way an axis runs.** `parallel` takes `sense: same|opposite` (§9.4): the second
+**[0.173] Which way an axis runs.** `parallel` takes `sense: same|opposite` (§9.4): the second
 direction runs the way the first does, or the other way, where `parallel` alone holds either way
 and leaves which to the seed. Between two lines in a plane it is the directed angle at no turn or a
 half; between directions in space, the turn carrying the first onto the second, whose size is the
@@ -13,18 +13,33 @@ two axes, takes the same word. None states a number or draws a callout. And **th
 language holds an axis to a direction without a statement saying so, it runs the way that
 direction does — a plane built on a drawn line (`plane(u: across, v: up)`) from the line's `p1`
 toward its `p2` (§6.7), and a frame's joint (`turns`, `screws`, `slides`, `spins`, §6.14) along
-the line, the axis or the view's normal it is held to. Through 0.171 the seeds put them so and the
+the line, the axis or the view's normal it is held to. Through 0.172 the seeds put them so and the
 solve kept whatever sense a start had, so a drawing that solved from its seeds is unchanged; one
 whose plane or joint the solve had turned round now comes back. `--lint`'s W207 reads a sense as a
 stated root. The engine's detailing drops the eight bounds that pinned those senses by ordinates
 with nothing to do with the design (`Valves`, `Pulley`, `StarterRing`), and the V-twin's bank mates
 its cylinder's z along the rod the way the rod runs (`cyl.std.z parallel(sense: same) rod`) and its
-x in the plane of swing, where 0.171 left which way the z ran to the seed. Which way round its y
+x in the plane of swing, where 0.172 left which way the z ran to the seed. Which way round its y
 stands is still its seed's, one of the two: a sense on a single turn needs a directed angle about
 an axis, which space does not have yet. The hypoid layout's rolls, indexes and normal sections had
 been solved running against their lines; every point stands where it did, coordinates drawn in
 those sections change sign, and the tip relief's section `N` is now built on `to_inner`, the trace
 normal run away from `M`, the way its toppings were cut in it. (Issue #535, from #523.)
+
+**[0.172] Solids read in three dimensions; every output's error.** A solid a requirement names,
+made of a material and read in no plane (§9.11), is read as the solid it is, in quadratic
+tetrahedra: a prism as its face's mesh stacked through its depth, any other solid by refining its
+exact boundary. Its supports hold along the world's axes, its loads fall on the faces, points and
+volume they name, and it answers all six outputs — `buckling` among them, the least factor on the
+loads, and `safety` from von Mises at the nodes — each judged as a frame's is; a load that presses
+nothing buckles nothing, a sharp re-entrant edge leaves `safety` unanswered, a support along a
+direction off the world's axes and a line naming a part of a body (not the body) have no answer
+yet, and each says why. A driving deflection of a point of a prism read so is a row of the drawing,
+its face's nodes moved with the drawing and its own stacked over them, refused where a region's
+is (**E040**). Every output of a frame, a region or a solid now has its error estimated beside it,
+the change from the same reading twice as coarse, said beside the value (`± 0.026mm`). Before,
+a requirement on a solid read in no plane had no answer and said nothing; a document that wrote
+one now has it answered. No syntax is added. (Issue #510, S3.)
 
 **[0.171] An instance is a frame.** From outside, an instance's datums are `b.std.x`, `b.std.y`,
 `b.std.z`, `b.std.front`, …, `b.std.origin` (§5, §8), the spellings its body reads them by, where

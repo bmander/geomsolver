@@ -7,8 +7,15 @@
 // a function of what it is given, so the assembly places each by what it is mated to, and nothing
 // here reaches inside one.  The views are tied by projection, the draughtsman's way (§6.7): the
 // end view owns every height and width, the side view every length along the crank axis, and the
-// plan is placed almost wholly by the other two.  One crank angle turns every piston in every
-// view.
+// plan is placed almost wholly by the other two.
+//
+// **The crank turns it** (§6.5): `t` is cylinder 1's angle in its four-stroke cycle (0 at top
+// dead centre firing, `engine.dims`), a parameter the drawing runs over for a whole cycle, two
+// turns of the crank, from the table's angle round to it again.  The crankshaft stands at `t`, so
+// every pin, rod and piston in every view moves with it; each camshaft turns at half the speed,
+// so every lobe and every valve opens and shuts as the cycle puts its cylinder.  Every other
+// relation holds for every `t`: the drawing is drawn at the table's angle, where the sheet and
+// each part's file show it, and followed round the cycle, and in the app a timeline scrubs it.
 
 unit mm
 use engine.parts
@@ -21,6 +28,8 @@ use engine.conrod
 use engine.end_view
 use engine.side_view
 
+param t: Angle over (engine.dims.cycle, engine.dims.cycle + 720deg)   // cylinder 1's, in its cycle
+
 // the three views are the standard planes: the side view is the front plane, the end view
 // the side plane, and the plan the top plane; where each is drawn on the sheet is `engine.svd`'s
 O := point in std.front
@@ -31,28 +40,29 @@ side := engine.side_view.SideSection(O) in std.front
 
 // the castings, each one part in its three views (`engine.block`, `engine.head`): the block
 // from the pan rail to the deck with its bores and main bearings, and the head standing on its
-// gasket with the valves and the camshafts in their bearings
+// gasket with the valves and the camshafts in their bearings, cylinder 1's valves lifted as `t`
+// puts them
 block := engine.block.EngineBlock()
-head := engine.head.CylinderHead()
+head := engine.head.CylinderHead(cycle: t)
 
 // the camshafts, each a part riding in its journal in the head (`engine.head`), every lobe timed
-// to its cylinder's valves by the cycle; and the valves, a pair at each station along the axis,
-// before and behind each bore's, as far off their seats as the cycle puts them
-camshaft_i := engine.head.Camshaft(head.j_i, head.vaxis_i, head.cam, intake: 1)
-camshaft_e := engine.head.Camshaft(head.j_e, head.vaxis_e, head.cam, intake: 0)
-valves1f := engine.head.Valves(head, cylinder: 1, aft: 0)
-valves1r := engine.head.Valves(head, cylinder: 1, aft: 1)
-valves2f := engine.head.Valves(head, cylinder: 2, aft: 0)
-valves2r := engine.head.Valves(head, cylinder: 2, aft: 1)
-valves3f := engine.head.Valves(head, cylinder: 3, aft: 0)
-valves3r := engine.head.Valves(head, cylinder: 3, aft: 1)
-valves4f := engine.head.Valves(head, cylinder: 4, aft: 0)
-valves4r := engine.head.Valves(head, cylinder: 4, aft: 1)
+// to its cylinder's valves by the cycle and turned to `t`; and the valves, a pair at each station
+// along the axis, before and behind each bore's, as far off their seats as `t` puts them
+camshaft_i := engine.head.Camshaft(head.j_i, head.vaxis_i, head.cam, intake: 1, cycle: t)
+camshaft_e := engine.head.Camshaft(head.j_e, head.vaxis_e, head.cam, intake: 0, cycle: t)
+valves1f := engine.head.Valves(head, cylinder: 1, aft: 0, cycle: t)
+valves1r := engine.head.Valves(head, cylinder: 1, aft: 1, cycle: t)
+valves2f := engine.head.Valves(head, cylinder: 2, aft: 0, cycle: t)
+valves2r := engine.head.Valves(head, cylinder: 2, aft: 1, cycle: t)
+valves3f := engine.head.Valves(head, cylinder: 3, aft: 0, cycle: t)
+valves3r := engine.head.Valves(head, cylinder: 3, aft: 1, cycle: t)
+valves4f := engine.head.Valves(head, cylinder: 4, aft: 0, cycle: t)
+valves4r := engine.head.Valves(head, cylinder: 4, aft: 1, cycle: t)
 
 // the crankshaft, a part in both sections (`engine.crankshaft`): the throw of cylinder 1 and a
 // ghost of 2 and 3's in the end section, the whole shaft in the side section, every pin's height
-// carried across inside the part, at the table's crank angle
-crank := engine.crankshaft.Crankshaft(std.side.origin, end.bore, O, theta: engine.dims.theta)
+// carried across inside the part, turned to `t`
+crank := engine.crankshaft.Crankshaft(std.side.origin, end.bore, O, theta: t)
 
 // the connecting rods, each a part on its pin and in its bore (`engine.conrod`): it draws itself
 // in every view its pin is drawn in, and makes the plane its shank's section A-A is cut in.  Which

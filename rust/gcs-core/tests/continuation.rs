@@ -343,3 +343,32 @@ fn the_ledger_counts_the_freedom_each_parameter_drives() {
     assert_eq!(d.parameters[0].readers, Vec::<u32>::new());
     assert!(!gcs_core::diagnose::summary(&d).contains(" over t"));
 }
+
+/// **A parameter passed down through parts** (the engine's cams, `engine/head.sv`): a part's
+/// formal bound to `t`, a value of the part over it that is not affine in it (a cam's reach,
+/// `max(…)` of a cosine), and that value given on to another part whose hint and whose relation
+/// word (`std.offset`) read it.  The hint is a seed, read where the drawing stands (the
+/// interval's start), and the word's body reads `t` as the use's statement would: so the drawing
+/// is driven by `t`, followed over the whole of it, and the follower stands at the reach's closed
+/// form at every instant.
+#[test]
+fn a_parameter_passed_down_through_parts_drives_what_they_draw() {
+    let src = "unit mm\nuse std (offset)\n\
+        part Follower(o: point, lift: Length) {\n  f := point hint((o.x + 5mm, o.y + lift))\n  \
+        f offset(dx: 5mm, dy: lift) o\n}\n\
+        part Cam(o: point, phase: Angle) {\n  reach := max(17mm, 20mm * cos(phase / 2) + 7mm)\n  \
+        follower := Follower(o, lift: reach)\n}\n\
+        param t: Angle over (0deg, 720deg)\n\
+        in std.front {\n  o := point\n  fix((0, 0)) o\n  cam := Cam(o, phase: t)\n}\n";
+    let e = solved(src);
+    let f = follow(&e.sketch, "t").expect("followed");
+    assert_eq!((f.reached(), f.singular.is_none()), (720.0, true));
+    let mut sk = e.sketch.clone();
+    for step in 0..=16 {
+        let t = step as f64 * 45.0;
+        gcs_core::follow::stand(&mut sk, "t", t).expect("reached");
+        let reach = (20.0 * (t / 2.0).to_radians().cos() + 7.0).max(17.0);
+        let (x, y) = at(&sk, &e, "cam.follower.f");
+        assert!((x - 5.0).abs() < 1e-9 && (y - reach).abs() < 1e-9, "at {t}: ({x}, {y}) against {reach}");
+    }
+}

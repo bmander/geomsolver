@@ -14,7 +14,7 @@ use crate::analysis_corpus::{read as read_case, Reading, CASES};
 /// Each requirement's answer under each scenario of `e`, as the report reads it (frames and
 /// regions merged), with the scenario's words: `(scenario, output, count, answer)`.
 #[allow(clippy::type_complexity)]
-fn answers(e: &Elaborated)
+pub(crate) fn answers(e: &Elaborated)
     -> (Vec<(String, Output, Option<u32>, Result<f64, String>)>, Vec<String>)
 {
     let (mut out, mut words) = (Vec::new(), Vec::new());
@@ -30,7 +30,7 @@ fn answers(e: &Elaborated)
 }
 
 /// The one value `e` answers of `output`.
-fn value(e: &Elaborated, output: Output) -> f64 {
+pub(crate) fn value(e: &Elaborated, output: Output) -> f64 {
     let (got, words) = answers(e);
     let found: Vec<f64> = got.iter().filter(|g| g.1 == output).map(|g| {
         g.3.clone().unwrap_or_else(|m| panic!("{output:?} has no answer: {m}; {words:?}"))
@@ -324,8 +324,8 @@ fn a_requirement_sizes_a_plate() {
 
 /// **A deflection over a region that cannot drive is refused where it is written** (#510 S2,
 /// **E040**): a region its supports leave free, and one bounded by a spline, which the row does not
-/// move yet.  A deflection driven of a point of no region read in the plane compiles nothing,
-/// and the report says nothing drives it.
+/// move yet.  Read in no plane, the plate's deflection drives it as a solid (#510 S3): its row is
+/// stacked through the depth, a structure in space.
 #[test]
 fn a_regions_driving_row_is_refused_where_it_cannot_be_read() {
     let errors = |src: &str| {
@@ -344,11 +344,14 @@ fn a_regions_driving_row_is_refused_where_it_cannot_be_read() {
     let driven = case.src.replace("  claim safety(membrane) >= 0.97 * le1.yield / target\n",
                                   "  deflection(a, along: std.z) == 0.1mm\n");
     has(&errors(&driven), "spline or a curve");
-    // read as a solid, the plate's deflection drives nothing
+    // read as a solid, the plate's deflection drives it in space (#510 S3)
     let solid = plate.replace("  plane stress plate\n", "");
-    let e = crate::common::text::solved(&solid.replace("param h: Length hint(78mm)", "h := 78mm"));
-    use gcs_core::constraints::CKind;
-    assert!(e.sketch.constraints.iter().all(|c| c.kind != CKind::Deflection));
+    let e = crate::common::read(&solid);
+    use gcs_core::constraints::{CKind, DeflectionRow};
+    let row = e.sketch.constraints.iter().find(|c| c.kind == CKind::Deflection)
+        .map(|c| c.deflection_row(&e.sketch).expect("a row"));
+    let Some(DeflectionRow::Meshed(row)) = row else { panic!("a meshed row: {row:?}") };
+    assert_eq!(row.structure.dim, 3);
 }
 
 /// The library's cases read in the plane (#510 S2), each a capability: modes in the plane, a

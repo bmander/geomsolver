@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use super::lexer::{lex, Tok};
 use super::words::{
     joint_word, link_word, opens_link, over_chain, over_walks, past_args, set_at, trails_decl, word_at,
-    word_definition_at, BLOCKS, MODIFIERS,
+    word_definition_at, BLOCKS, MODIFIERS, QUALIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
 use crate::constraints::{is_operator, Fixity};
@@ -90,9 +90,25 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         return Vec::new();
     }
     let (lexed, _) = lex(src);
-    let toks = &lexed.toks;
+    let mut out: Vec<(Tint, Span)> = Vec::with_capacity(lexed.toks.len());
+    for ((t, span), tint) in lexed.toks.iter().zip(tints(&lexed.toks)) {
+        match (tint, out.last_mut()) {
+            (None, _) => {}
+            // a unit is one run with its number (`tints`): the number's is widened over it
+            (Some(Tint::Num), Some(last)) if !matches!(t, Tok::Num(_)) => last.1.hi = span.hi,
+            (Some(tint), _) => out.push((tint, *span)),
+        }
+    }
+    with_comments(out, lexed.comments)
+}
+
+/// **What each token is**, one entry per token of `toks` and `None` for one that is ordinary
+/// text — the whole of the colouring but for the comments and the merging of a unit into its
+/// number's run, so a reader that walks the tokens itself (`symbols`) asks the very rule the
+/// colours are painted by.  A unit standing against its number is `Num`, its number's.
+pub(super) fn tints(toks: &[(Tok, Span)]) -> Vec<Option<Tint>> {
     let known = relation_words(toks);
-    let mut out: Vec<(Tint, Span)> = Vec::with_capacity(toks.len());
+    let mut out: Vec<Option<Tint>> = vec![None; toks.len()];
     let mut at = Next::Start;
     // how deep inside a `hint(…)` clause we are, and 0 outside one.  A number inside one is a
     // seed and every other number is not — the whole of §4.3's lexical rule, and the reason the
@@ -118,15 +134,15 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
     for (i, (t, span)) in toks.iter().enumerate() {
         let prev = i.checked_sub(1).map(|j| &toks[j].0);
         // a unit written against its number is one literal to the parser (`20mm`, `90deg`, `1'
-        // 6"`), so it is coloured as the number it belongs to: the run is widened over it
-        if let (Some(Tok::Num(_)), Some(last)) = (prev, out.last_mut()) {
+        // 6"`), so it is coloured as the number it belongs to
+        if let Some(Tok::Num(_)) = prev {
             let unit = match t {
                 Tok::Ident(w) => crate::units::unit(w).is_some(),
                 Tok::P('\'') | Tok::P('"') => true,
                 _ => false,
             };
-            if unit && last.1.hi == span.lo && toks[i - 1].1.hi == span.lo {
-                last.1.hi = span.hi;
+            if unit && toks[i - 1].1.hi == span.lo {
+                out[i] = Some(Tint::Num);
                 continue;
             }
         }
@@ -174,7 +190,7 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         if let Some((word, end)) = head {
             if i < end {
                 if i == word {
-                    out.push((Tint::Def, *span));
+                    out[i] = Some(Tint::Def);
                 }
                 at = Next::Word;
                 continue;
@@ -226,7 +242,7 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         };
         // anything at all leaves the opening word behind; a name the statement is still owed
         // (`Def`, `Inst`) survives the punctuation in between, which is why only `Start` lapses
-        let modifier = matches!(t, Tok::Ident(w) if ["private", "construction", "centerline"].contains(&w.as_str()));
+        let modifier = matches!(t, Tok::Ident(w) if QUALIFIERS.contains(&w.as_str()));
         if at == Next::Start && !matches!(t, Tok::P('{') | Tok::P('}')) && !modifier {
             at = Next::Word;
         }
@@ -240,11 +256,9 @@ pub fn highlight(src: &str) -> Vec<(Tint, Span)> {
         if matches!(t, Tok::P('{')) && matches!(prev, Some(Tok::Define) | Some(Tok::P(':'))) {
             at = Next::Word;
         }
-        if let Some(tint) = tint {
-            out.push((tint, *span));
-        }
+        out[i] = tint;
     }
-    with_comments(out, lexed.comments)
+    out
 }
 
 /// The comments were never tokens; put them back where they were written.  Both runs are already
@@ -338,7 +352,7 @@ fn tint_start(
     i: usize,
     known: &BTreeSet<&str>,
 ) -> (Option<Tint>, Next) {
-    if ["private", "construction", "centerline"].contains(&w) {
+    if QUALIFIERS.contains(&w) {
         return (Some(Tint::Word), Next::Start);
     }
     // `param bore: Length := 50mm` — the word, then the name it declares
@@ -546,7 +560,7 @@ fn builtin(w: &str, prev: Option<&Tok>, next: Option<&Tok>, measures: bool) -> b
 
 /// `a word(params) b :=` or `word(params) l :=` at `i`: where the word being defined is, and
 /// where its head ends (the `:=`).  The parser's own lookahead, `word_definition_at`.
-fn defined_word(toks: &[(Tok, Span)], i: usize) -> Option<(usize, usize)> {
+pub(super) fn defined_word(toks: &[(Tok, Span)], i: usize) -> Option<(usize, usize)> {
     let word = match word_definition_at(toks, i)? {
         Fixity::Infix => i + 1,
         _ => i,

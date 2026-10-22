@@ -42,7 +42,7 @@ const RULE2: [(f64, f64, f64); 3] =
      (1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0)];
 
 /// Dunavant's degree-four rule of six points, for the consistent mass (`NᵀN`, of degree four).
-fn rule4() -> [(f64, f64, f64); 6] {
+pub(crate) fn rule4() -> [(f64, f64, f64); 6] {
     let (a, wa) = (0.445_948_490_915_965, 0.223_381_589_678_011 / 2.0);
     let (b, wb) = (0.091_576_213_509_771, 0.109_951_743_655_322 / 2.0);
     [(a, a, wa), (1.0 - 2.0 * a, a, wa), (a, 1.0 - 2.0 * a, wa),
@@ -67,7 +67,7 @@ pub fn shape(xi: f64, eta: f64) -> [f64; 6] {
 }
 
 /// Their derivatives in `ξ` and in `η` at `(ξ, η)`.
-fn shape_d(xi: f64, eta: f64) -> [[f64; 6]; 2] {
+pub(crate) fn shape_d(xi: f64, eta: f64) -> [[f64; 6]; 2] {
     let (l1, l2, l3) = (1.0 - xi - eta, xi, eta);
     [
         [1.0 - 4.0 * l1, 4.0 * l2 - 1.0, 0.0, 4.0 * (l1 - l2), 4.0 * l3, -4.0 * l3],
@@ -240,8 +240,8 @@ impl Tri6 {
     }
 }
 
-/// Places as numbers with no rates.
-fn lift(x: &[P<f64>; 6]) -> [P<Dual<0>>; 6] {
+/// Places as numbers with no rates, `D` coordinates each: the plane's and the solid's.
+pub(crate) fn lift<const K: usize, const D: usize>(x: &[[f64; D]; K]) -> [[Dual<0>; D]; K] {
     x.map(|p| p.map(<Dual<0> as Num>::cst))
 }
 

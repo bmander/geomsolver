@@ -179,11 +179,12 @@ pub(super) fn scenarios(
 
 /// **Driving requirements compiled into rows** (#510 S1): every `deflection(p, along: d) == v` of
 /// a frame's joint `p` (`beams::of_frame`), or (#510 S2) of a point of a region the scenario
-/// reads in its plane (`prisms::of_region`), becomes a `CKind::Deflection` of the drawing, solved
+/// reads in its plane (`prisms::of_region`), or (#510 S3) of a point of a solid it reads in three
+/// dimensions (`bodies::of_body`), becomes a `CKind::Deflection` of the drawing, solved
 /// under its scenario's supports and loads, which the sketch holds for it (`Sketch::scenarios`);
 /// the row stands where the requirement is written.  One the solve cannot read — a frame or a
 /// region the supports leave free, a direction the solve moves — is **E040** there.  Any other
-/// driving requirement (a solid's not read in its plane; a mode, a mass or a safety) compiles
+/// driving requirement (a solid's that is no prism; a mode, a mass or a safety) compiles
 /// nothing yet and is judged after the solve, as a claim is.
 pub(super) fn drive(
     sk: &mut Sketch,
@@ -204,7 +205,8 @@ pub(super) fn drive(
                 continue;
             };
             if p.kind != EntKind::Point || !(crate::beams::of_frame(sk, &s.scenario, &r.of)
-                || crate::prisms::of_region(sk, &s.scenario, &r.of))
+                || crate::prisms::of_region(sk, &s.scenario, &r.of)
+                || crate::bodies::of_body(sk, &s.scenario, &r.of))
             {
                 continue;
             }
@@ -221,10 +223,10 @@ pub(super) fn drive(
             let args = vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)];
             let name =
                 |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
-            // a region's row is meshed once, here, and read so through every solve (#510 S2):
-            // held before it is validated, so the validation reads that mesh
+            // a region's or a solid's row is meshed once, here, and read so through every solve
+            // (#510 S2, S3): held before it is validated, so the validation reads that mesh
             let key = (at as usize, p.i(), along);
-            if let Ok(crate::constraints::DeflectionRow::Plane(row)) =
+            if let Ok(crate::constraints::DeflectionRow::Meshed(row)) =
                 Constraint::new(CKind::Deflection, args.clone()).deflection_row(sk)
             {
                 sk.meshed.insert(key, row);

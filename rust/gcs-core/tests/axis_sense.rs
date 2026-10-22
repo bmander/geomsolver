@@ -1,4 +1,4 @@
-//! **Which way an axis runs** (#535, Solvent 0.172): `parallel`, and `coincident` between two
+//! **Which way an axis runs** (#535, Solvent 0.173): `parallel`, and `coincident` between two
 //! directions, take `sense: same|opposite`, whose row has the stated root as its only one; an
 //! axis a plane is built on along a drawn line runs from the line's start toward its end; and a
 //! joint's axis runs the way the line or axis it is held to does.  Held here from seeds turned
@@ -103,7 +103,7 @@ fn an_axis_coincident_a_line_or_an_axis_runs_the_way_it_says() {
 
 /// **A plane built on drawn lines runs along them** (the rule): its `u` and `v` from each line's
 /// start toward its end, which the rows say, so a solve that starts from the axes turned round
-/// comes back to the lines — where through 0.171 only the seed said it, and the plane stayed
+/// comes back to the lines — where through 0.172 only the seed said it, and the plane stayed
 /// turned round.
 #[test]
 fn a_plane_on_two_lines_runs_along_them_whatever_its_start() {

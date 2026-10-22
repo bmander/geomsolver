@@ -14,7 +14,10 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 `interior::Sizing`, `model::Over`, `Sketch::scenarios` or `program::scenarios::drive`; or
 `interior::Tri6`, `interior::Laid`, `interior::Moved` (`interior/plane.rs`, `interior/moved.rs`),
 `delaunay/plane.rs`, `prisms.rs`, a scenario's `plane stress`/`plane strain` line
-(`model::PlaneReading`), `Sketch::meshed` or `DeflectionRow`.
+(`model::PlaneReading`), `Sketch::meshed` or `DeflectionRow`; or `interior::Tet10`,
+`interior::Borne`, `interior::Stack` (`interior/solid.rs`), `bodies.rs`, `beams::Read::errors`,
+`cholesky::Cholesky::factor_ldl` or `eigen::UNBUCKLED`; or `deformed.rs`, `overview/scenario.rs`,
+a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn).
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
@@ -24,9 +27,11 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
 `rust/gcs-core/tests/volume_mesh.rs` for the volume mesh (P6),
 `rust/gcs-core/tests/analysis_corpus.rs` for the verification corpus (P8) and
 `rust/gcs-core/tests/beams.rs` for frames (S0), `rust/gcs-core/tests/driven.rs` for a
-frame's driving row (S1), and `rust/gcs-core/tests/prisms.rs` for solids read in their plane and
-a region's driving row (S2, its mesher `rust/gcs-core/tests/plane_mesh.rs`), unless a rule names
-another.
+frame's driving row (S1), `rust/gcs-core/tests/prisms.rs` for solids read in their plane and
+a region's driving row (S2, its mesher `rust/gcs-core/tests/plane_mesh.rs`), and
+`rust/gcs-core/tests/bodies.rs` for solids read in three dimensions, a solid's driving row and the
+errors estimated beside every answer (S3), and `rust/gcs-core/tests/scenario_view.rs` for a
+scenario drawn, unless a rule names another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -232,11 +237,12 @@ another.
   (`scenario_words`) leave out the supports that hold a frame, and a scenario of frames alone
   holds no body of its own (`diagnose::analysis::scenario_read`).
   **The page says them too**, from the same JSON (FFI `gcs_elab_scenarios_json`,
-  `Document.scenarios`): read again after every solve (`SketchView.afterEdit`, `view.scenarios`),
-  counted in the footer's `#scenarios` line — what holds, what fails, what has no answer, each
-  word — with every sentence as its tooltip, red and standing while one fails, and listed in the
-  Diagnosis report.  A document whose requirements fail never looks solved and silent
-  (`core.test.ts`, `a document says what its load scenarios answer`).
+  `Document.scenarios`; in the page `gcs_elab_scenarios_pictured_json`, read in a worker — "A
+  scenario drawn", below): read again after every solve (`SketchView.afterEdit`,
+  `view.scenarios`), counted in the footer's `#scenarios` line — what holds, what fails, what has
+  no answer, each word — with every sentence as its tooltip, red and standing while one fails,
+  and listed in the Diagnosis report.  A document whose requirements fail never looks solved and
+  silent (`core.test.ts`, `a document says what its load scenarios answer`).
 
 - **What S0 leaves.**
   - ~~**No row.**~~ S1 compiles a driving deflection to the beam's row (below).
@@ -509,7 +515,8 @@ another.
   - **The mesh is the compile's**, made where the drawing stands when it is elaborated: a region
     whose seeds are far from its solution (a circle seeded at radius 1 that the solve grows ninefold)
     inverts elements as its nodes follow, and the row reads NaN. No remeshing when the motion
-    distorts the elements, and no error estimate beside an output (S3's).
+    distorts the elements. ~~No error estimate beside an output~~: S3 estimates one beside every
+    output (below).
   - **One prism, one face**: a body cut or united, or drafted, is not read in its plane; nor is a
     region bounded by a spline or a curve driven (its nodes would read the spline's basis). A
     support along a direction off the plane's axes has no answer.
@@ -517,6 +524,274 @@ another.
     constants, factors its Laplacian and orders `K` again (P5's two caches); the AMD analysis is
     redone per call though the pattern is the compile's.
   - **A frame and a region are not read together** in one structure.
+
+- **The solid element is the interior's fourth** (#510 S3; `interior::Tet10`,
+  `interior/solid.rs`). A quadratic tetrahedron, its nodes numbered as CalculiX numbers a C3D10
+  and the volume mesh a TET10 (`delaunay::tetra::EDGES`: the corners, then the middles of the edges
+  0–1, 1–2, 2–0, 0–3, 1–3, 2–3), isoparametric: an edge whose middle node is off its chord is
+  curved. Its stiffness is the Gram matrix of strain rows as every element's is: at each of the
+  degree-two rule's four points, `√(w·det J)·Lᵀ B`, `L` the Cholesky factor of the isotropic `D`
+  (Lamé's `λ + 2μ` on the stretches' diagonal, `λ` off it, `μ` on the engineering shears') —
+  twenty-four rows, its rank exactly (thirty moves less six rigid ones), so no spurious motion.
+  `det J ≤ 0` at a point is `Failure::Collapsed`, `E ≤ 0` or `ν` outside (−1, ½) `Unstiff`. Its
+  consistent mass `ρ ∫ NᵀN` and volume `∫ det J` take Walkington's fourteen-point degree-five rule,
+  every weight positive (exact for a curved element's volume, whose `det J` is a cubic). Its
+  stresses at its nodes are `D` times the strain read there (`Tet10::stresses`), its von Mises
+  stress the six components' (`Tet10::von_mises`), and its geometric stiffness under the stress
+  its moves make is `∫ ∇Nₐᵀ σ ∇N_b dV` along each axis alike (`Tet10::geometric`, the same rule),
+  what a linear buckling reads (`Structure::stressed`). Its gradient is its mutual energy's in
+  `Dual<30>` over its thirty coordinates, as the plane element's is over its twelve. A node of a
+  solid structure moves along x, y and z and turns not at all (`Structure::components`); solid
+  elements are mixed with no bar, beam or plane element (the constants are refused), and a solid
+  structure is assembled whole and factored under minimum degree as a plane one is
+  (`interior::Factor::Cholesky`). **Held to** (`tests/interior.rs`): the patch test in space to
+  1e-9 — a block of knocked-about elements pulled, `σx = σ` at every node of every element and
+  every other component nothing, its stretch `σw/E` and narrowings `−νσh/E`, `−νσd/E`
+  (`a_block_pulled_stresses_uniformly_as_the_patch_test_asks`); exactly six motions costing
+  nothing, the rigid ones; a mass of `ρV` along each axis; the volume of an element with its
+  middle nodes knocked about the volume mesh's own Bernstein reading of it (P6, an independent
+  formula for the same cubic); each load laying its whole; a pull stiffening a move across it by
+  `σx V`; mirrored, `Collapsed` (`a_solid_element_is_rigid_in_six_motions_and_weighs_its_volume`);
+  and the gradient against central differences over curved elements under every load at once,
+  through the kernel so the constants read back (`a_solid_interior_agrees_with_finite_differences`).
+
+- **A load borne by a solid moves with it** (#510 S3; `interior::Borne`): a pressure `p` on
+  facets, `−p ∫ N n dA` (each facet a quadratic triangle `[a, b, c, ab, bc, ca]` turned so `(b − a) ×
+  (c − a)` points out of the material; `n dA` the cross of the facet's two tangents, of degree two,
+  so the degree-four rule is exact); a force spread evenly over facets (`F ∫ N dA / Σ A`) or through
+  elements (`F ∫ N dV / Σ V`), the same force however the solid grows; a body load `b ∫ N dV`. One
+  function per kind of share (`facet_load`, `element_load`) lays the load and, over `Dual`, its
+  `λᵀ∂f/∂x`, an even load's whole also reading `−(Σ λᵀfₑ)/S² ∂S`, as the plane's do. The row's
+  constants carry them after the plane loads (`HEAD` is twelve: `tets`, `borne`, and `stacked`
+  below), each `[kind, count, a, b, c]` then its facets or elements; a solid element's are its ten
+  nodes, its modulus, ratio and density.
+
+- **A solid is read in three dimensions where a requirement names it and nothing else reads it**
+  (#510 S3; `bodies::read`, `scenario_read`). A solid made of a material, named by a requirement —
+  itself, a face path past it, a point in it, a line its wall was swept from — and read in no plane,
+  is read as the solid it is, after frames and regions (`Read::merge`: a requirement a frame or a
+  region answers is theirs). A solid of no material is no structure, and is read by nothing: the
+  scenario's words hold it as a body of its own, as P7 does. A solid read so is no body of the
+  scenario's own: its supports are its own (`Read::holds`), and its stress unbounded at an edge is
+  said in its `safety`'s answer, not as a word as well (`Read::bodies` names it to
+  `scenario_read`).
+
+- **A prism is its face's mesh stacked** (#510 S3; `bodies::Mesh::stacked`). Its face is meshed in
+  quadratic triangles (`prisms::Region::mesh_sized`, its boundary nodes on the drawing's curves)
+  no larger than S2's `SIZE` of its extent nor `BREADTH` (⅓) of its breadth (`Region::breadth`,
+  `2A/P`: a strip's width, a disc's radius), so a slender face has elements enough across it to
+  bend — the corpus's cantilever, 50mm deep and a metre long, read its tip's sag 1.1% stiff at the
+  extent's size alone and reads it 0.13% stiff at this. Its depth is cut at the ordinates of the
+  points the scenario names in it, then into layers no deeper than `LAYER` (2) of the face's size,
+  and `LAYERS` (2) at least: one prism of tetrahedra through a plate reads its bending stiff (the
+  corpus's plate, its sixth mode 1.05% high in one layer, 0.28% in two). Each triangle of a layer is
+  a prism of three tetrahedra, cut by the order of its corners' nodes, so two prisms sharing a
+  wall cut it on one diagonal and the mesh conforms; every middle node is a node of the face — a
+  corner at a middle level, or a side's middle at its corners' level or between — so a side
+  curved in the face is curved through the depth, and a point the scenario names is a node (its
+  place in the face a node of the face's mesh, its ordinate a level). Each boundary facet is on a
+  cap (near or far, by its level) or a side (by the face's boundary segment its corners are on).
+
+- **Any other solid is its exact boundary refined and filled** (#510 S3; `bodies::Mesh::filled`,
+  P6's `delaunay::refine::volume`). A solid that is no prism — turned, united, cut — is meshed over
+  its domain the body's signed distance (`BodyFaces::signed_distance`, of the drawing's own B-rep
+  with its rounds made), each sharp edge of its boundary (where two faces meet at a corner,
+  `BodyFaces::convex`) protected as a feature curve read in `CURVE` (64) pieces, its cells held
+  to a radius–edge ratio of 2, a least dihedral of 12° and a size of `FILLED` (1/16) of its
+  extent or `BREADTH` of its breadth (`3V/A`, from the B-rep's exact properties), whichever is less:
+  at the extent's size alone a bar 10mm thick and its reading twice as coarse, cells of 10mm, lost
+  its corners' cells and read its volume 1.2e-4 short. Each element is a TET10 whose boundary nodes
+  lie on the surface and the curves (P6); each facet of its boundary is on the face its middle is
+  nearest. Its corners are protecting balls' centres, so vertices: a point at a corner is a node.
+  A point anywhere else names the node nearest it, within an element's size (`Mesh::near`).
+
+- **What a line names on a solid** (#510 S3; `Filled::on`): a point its node; the solid, or the face
+  a prism is swept from, the whole; a line its prism's wall was swept from, that wall's facets; a
+  face path the facets on the faces it names — on a prism a cap (a plane square to the face's
+  normal, out of the near side or the far) or the sides whose quarter points lie on the face's patch
+  at the prism's middle, on a filled body the faces themselves. **A body names its parts' faces from
+  itself**: `bar.tail.right` is the face `right` of the block `tail` united into `bar`, as a face
+  path names any operand's (`FacePath::matches`), and a support or a load written on a part itself
+  (`tail.right`) is about the body, so it is said, never read as nothing: `` `tail` is a part of
+  `bar`: a line about it names it from the body, `bar.tail.…` ``. A support holds its nodes along
+  the world's axes (`along:` one of them; along any other direction no answer yet), `fixed` holding
+  what `pinned` does, a solid element's node having no turn; a force at a point is a load at its
+  node, on facets `Borne::Across`, on the whole `Borne::Through`; a pressure on facets
+  `Borne::Pressure`, on anything else no answer; `accelerate` `Borne::Body` of the material's
+  `rho`. The material is read back into the document's units: `E`, `nu` (said where missing: a
+  reading in three dimensions reads Poisson's ratio), `rho`, `yield`.
+
+- **What a solid answers** (#510 S3; `bodies::answer`): `deflection` a node's move along `d` (or its
+  length), a face's or the solid's worst; `compliance` `fᵀu`; `mass` `ρ ΣV`; `mode`
+  `eigen::lowest(K, M)`; `buckling` the least factor `eigen::buckling(K, K_G)` reads, `K_G` of the
+  stress the scenario's loads make; `safety` the yield over the greatest von Mises stress at the
+  nodes it names, each node's the average of its elements'. Each is worked out once and only where
+  asked: a motion the supports leave free is named from them before anything is factored
+  (`Filled::free`, `analysis::freedoms` over every held degree of freedom — a mesh of solid
+  elements is one body, so a motion no element strains is rigid), and the static solve is made
+  only where an output reads it, so a modal scenario factors no stiffness it does not read.
+  **No answer, and why**: a solid its supports leave free (said once as the scenario's word, ``
+  scenario `pull` leaves `plate` free to slide along z ``); a material missing what is read; a
+  support off the world's axes; a pressure on no face; a line naming a part of a body; a buckling
+  under loads that press nothing; a `safety` where the solid has a sharp re-entrant edge
+  (`analysis::reentrant`'s text in the answer). **Held to** (`tests/bodies.rs`): every solid case
+  of the corpus answers its reference within 1% and keeps every claim, with nothing said against
+  it (`every_solid_case_answers_its_reference`): the cantilever's sag −0.13% and its first mode
+  +0.27%, Euler's column +0.11%, Lamé's bore +0.003% and its stress −0.10%, the plate's six modes
+  +0.06% to +0.28%; a bar pulled answers its move, its narrowing, its work, its factor of safety,
+  its mass and an inner point's move to 1e-9, its errors nothing (`a_bar_pulled_answers_to_rounding`);
+  the same bar made of two blocks united, filled, to 1e-6 (its nodes on its flat faces read to the
+  refinement's bisection), and a part named for the body said
+  (`a_body_of_two_blocks_answers_to_rounding`); a turned rod pulled moves `σL/E` within 2e-3 — the
+  nodes nearest the points holding its base across are near its axis, not on it, and hold a little
+  of its narrowing (0.14%) — and weighs `ρπr²L` within the error beside it
+  (`a_turned_rod_answers_its_closed_forms`); every no-answer says why
+  (`what_has_no_answer_in_three_dimensions_says_why`). `solventc` says them as a frame's
+  (`gcs-cli/tests/cli.rs`, `a_solid_reading_is_said`).
+
+- **Every output has its error estimated beside it** (#510 S3; `beams::Read::errors`,
+  `Read::estimated`). A scenario's readings — a frame's (`beams::read_at`), a region's
+  (`prisms::read_at`), a solid's (`bodies::read_at`) — are made again twice as coarse, once and
+  only where something is answered (`diagnose::analysis::scenario_read`: a frame at half its
+  `PIECES`, a region or a solid meshed at twice its elements' size and its curves' pieces' turn),
+  and beside each value is the change from that reading: nothing where the two agree to rounding (`ROUNDING`, 1e-12 of the
+  value: a straight solid's mass, a frame's joint under loads the cubic is exact for), none where
+  the coarser has no value. Wherever the discretisation converges the coarser reading is at least
+  twice as wrong, and the change bounds the error of the reading it is beside — where the reference
+  is exact in three dimensions the corpus holds it to that (Lamé's, the plate's Rayleigh–Lamb
+  roots), or both within 1e-4 of the value (Lamé's bore, within 3e-5, where the arcs' pieces need
+  not converge monotonically); on the plate it is six to nine times the error. It is no bound on
+  what the element leaves out (a beam's shear, a stress at a point a load is laid on), and no
+  goal-oriented estimate: a second reading, at about a quarter of the first's cost. A report says
+  it beside the value, to two figures (`beams::error_text`: `` deflection(end, along: down) is
+  6.39152mm ± 0.026mm: claimed >= 6.336mm, kept ``), and `--json` gives each answer's `error`
+  (`report::ScenarioAnswer::error`). A driven requirement's value is its row's, its error the two
+  readings' change.
+
+- **A solid's deflection, driven, is a row stacked over its face's** (#510 S3; `bodies::row`,
+  `bodies::of_body`, `interior::Stack`, `DeflectionRow::Meshed`). `deflection(p, along: d) == v`,
+  `p` a point of a prism read in three dimensions (tried after a frame's joint and a region's
+  point), compiles to `CKind::Deflection` as a region's does, and its row is a region's
+  (`prisms::Row`): the solid meshed once where the drawing stands when the row is compiled, held on
+  `Sketch::meshed` with the regions', its structure under the scenario with the deflection's
+  weights (the direction's world components) on its point's node. Its face's nodes move with the
+  drawing as a region's do (`prisms::moved_with`, the one reading of how), and every node of the
+  solid stands over its face's node at its ordinate along the plane's normal (`Stack`: `o + p₀u +
+  p₁v + h n`), so it moves as that node does; a gradient in the solid's places is folded onto the
+  face's along its two axes (`Stack::fold`) and then carried as a region's is. The constants carry
+  the stack after the face's moves (`HEAD`'s `stacked`: how many nodes the face has). Refused where
+  a region's is (**E040**): a direction the solve moves, a plane it turns, a side it does not move,
+  a solid left free. A driving deflection of a solid that is no prism compiles nothing yet: its
+  nodes are no functions of the drawing, and the report says nothing drives it. **Held to**: its
+  gradient against central differences on the library's plank, at the solution and knocked off
+  it, and on a plate with a round corner and a hole under a pressure on the arc, a force across it
+  and its weight, knocked off it, to 1e-5 of the row's largest rate (`tests/jacobians.rs`,
+  `a_solids_deflection_agrees_with_finite_differences`) — taken over 1e-2, since a solid's
+  stiffness is good to fewer figures than a region's: over 1e-4 its rounding is a thousandth of
+  the rate, over 1e-2 its truncation under a millionth.
+
+- **The library's driving solid** is `sized_plank.sv`: a steel plank drawn in plan, built in at its
+  root and loaded at its end across its own plane — so it bends out of the face it is swept from,
+  which no reading in that plane has a move for — its width an unknown its sides' dimensions read,
+  driven so its end's corner sinks 0.9mm under 50N: 29.71mm, between a beam's `4PL³/(Et³δ)`
+  (30mm, free to curl across its width) and a plate's `(1 − ν²)` of it (27.3mm), the plank three
+  times as wide as it is thick and held at its root. It solves to no freedom, its row holds what it
+  states, and the claims' reading of the solved drawing agrees with the row within its error
+  (`a_requirement_sizes_a_plank`).
+
+- **The library's solid cases** each show a capability of the reading in three dimensions, and
+  each solves to no freedom, answers every requirement with its error beside it, keeps its claims
+  and holds what it drives, with nothing said against it (`tests/bodies.rs`,
+  `every_solid_case_of_the_library_says_what_it_claims`): the driving `sized_plank.sv` (above);
+  `pressed_panel.sv` (a pressure on a cap, across the plane: a clamped square panel's middle sinks
+  within 0.3% of Timoshenko's `0.00126 q a⁴ / D`); `flat_bar_strut.sv` (a solid's buckling, across
+  its thickness: 2.070, within 0.7% of Euler's); `cantilever_plate.sv` (modes out of the plane: it
+  bends at 46.6Hz, twists at 199Hz above Saint-Venant's, bends again at 290.6Hz); `turned_shaft.sv`
+  (a solid of revolution, filled: its shoulder's round gives its factor of safety an answer, a Kt
+  of 1.59, where a chamfer says to round it); and `pin_lug.sv` (a body cut by another solid, its
+  pull spread over the cutter's face named from the body, `lug.pin.bore`). The panel's sag and the
+  bar's factor are held to their closed forms within 1%.
+
+- **What S3 leaves.**
+  - ~~**Not in the page.**~~ The page reads every scenario in the mesh worker, and draws the one
+    chosen (below, "A scenario drawn").
+  - **No Hadamard derivative, and a filled body is not driven.** A prism's nodes are functions of
+    the drawing; a filled body's are the refinement's, so its driving deflection compiles nothing.
+    The boundary form `∫_Γ (V·n) w dΓ` over the faces' velocities is what would drive one.
+  - **The error is a second reading's**, not the goal-oriented (dual-weighted residual) estimate
+    the adjoint would give with the derivative: it costs a coarser mesh, and promises a bound only
+    where the reading converges monotonically.
+  - **Stress, modes, buckling, compliance and mass drive nothing yet**, as S2 left them.
+  - **A filled body's point is the node nearest it**, so a support at a point off a vertex holds a
+    little of what it should not (the rod's 0.14%). A degenerate pair of a solid's modes (the
+    plate's two) is found and not yet named with its ring (P7's word).
+  - **Speed.** In layers as deep as its elements are wide Lamé's tube is 53,754 unknowns, factored
+    in 9.4 s; at `LAYER` 2 it is read in 3.3 s, the plate in 5.1 s (its modes), the column in 2.2 s
+    (its buckling), the cantilever in 1.2 s, each read once at its own size. The
+    Cholesky's update is formed four columns at a time (`cholesky::BLOCK`) and its dense panels a
+    column at a time, and each read meshes afresh, twice (P5's two caches are still not kept).
+
+- **A scenario drawn: where its lines fall** (#510; `overview::scenario::marks`,
+  `report::scenario_marks_json`, FFI `gcs_elab_scenario_marks_json`, `Document.scenarioMarks`).
+  Every line of a scenario — support, load, requirement, reading in the plane — is a **mark**, in
+  the order written, read off the solved drawing with no analysis made: its anchors; at each the
+  direction it acts along (a force's; a pressure's into its face, against the face's outward
+  normal; the one direction a support holds where it says `along:`), and on a face that normal;
+  the faces it tints, as triangles; its size among the scenario's loads of its kind; its words in
+  the core's (`600N along down` is said `600N`, a pressure `100kPa`, `pinned along z`:
+  `scenario::quantity`, SI with a prefix); where its words go; whether it is a requirement read at
+  a place (`probe`, a deflection — one of a whole body has no place); and the span of the line it
+  is written on. A point is drawn at itself, a line, an edge or a beam's lines at `ALONG` places
+  evenly along them, a solid at its middle, faces a path names at up to `OVER` places spread over
+  them (farthest-point, over each triangle cut finer than a sixth of the faces' reach). **A face
+  is read off the mesh the workspace already draws** (`EvaluatedSolid::mesh` at the object's own
+  scale, its groups named `lug.root`, `pin.bore`: `names_group` takes the path with or without the
+  solid's own name first), so a mark on a face builds no exact boundary on the page's thread.
+  **A mark adds nothing to the drawing** (`a_mark_adds_nothing_to_the_drawing`); every line of
+  every scenario of the library is one, its span the line it is written on
+  (`every_line_of_a_scenario_is_a_mark`), and a pressure points into its face
+  (`a_pressure_points_into_its_face`). Gate: `tests/scenario_view.rs`.
+
+- **A scenario drawn: how the drawing moves under it** (#510; `deformed::Picture`,
+  `diagnose::analysis::scenario_pictured`, each reader's `read_pictured`). **Every body any line
+  of the scenario falls on is read**, a requirement's or not — a frame a support or a load names a
+  joint or a member of (`beams::read_pictured`), each region it reads in its plane
+  (`prisms::read_pictured`), each solid read in three dimensions a line falls on
+  (`bodies::read_pictured`, `solid_of`) — so a scenario of supports and loads alone is drawn.
+  **What is drawn deformed is the mesh that was solved**, never the display's: a frame a tube of
+  `SIDES` about each element at `PIECES`, sampled at `SAMPLES` places on the cubic it bends as (its
+  ends' moves in a line along it; across it, in each plane, Hermite's cubic in its ends' moves
+  and turns — a turn about e3 the slope along e2, about e2 the slope along e3's negative), every
+  vertex of a ring moving as its centre; a region its quadratic triangles cut in four on both caps
+  at its middle ± half its depth, walls along its sides, the in-plane move the same at each level;
+  a solid its tetrahedra's boundary facets cut in four. Each body is its vertices at rest and
+  their moves, triangles and the mesh's edges. **It is the answers' reading**: each body is
+  analysed once for its answers and its picture (`read_pictured` shares the readers' `Analysed`),
+  at the readers' own size, so a deflection of a point is the move of the vertices drawn nearest
+  it, to rounding (`the_picture_moves_each_point_by_its_answer`, over the library); the coarser
+  reading the error is estimated against draws nothing. A cantilever's picture is its cubic,
+  inside its elements as at its nodes (`a_cantilevers_picture_is_its_cubic`). A body that cannot be
+  read is not drawn, and why is said in the core's words (`Picture::words`,
+  `a_frame_left_free_draws_no_deflection_and_says_why`); a scenario that loads nothing moves
+  nothing. **The factor it is drawn at** (`deformed::factor`): the largest move as `SHOWN` (a
+  tenth) of the bodies' extent, rounded down to 1, 2 or 5 of a decade, never below true scale;
+  a host draws `rest + s·moved` for any `s`.
+
+- **A scenario drawn: over the ABI and in the page** (#510; `report::scenarios_pictured_json`,
+  FFI `gcs_elab_scenarios_pictured_json`, `Document.scenariosPictured`, `app/scenario-view.ts`).
+  `{ "scenarios", "picture" }`: `scenarios_json`'s answers word for word
+  (`the_answers_beside_a_picture_are_the_answers`), each answer now with its requirement's
+  `index`, and the picture of the scenario asked for — flat arrays, places and moves to seven
+  figures — or `null`. **The page reads it in the mesh worker** (a `scenario` job, its own
+  instance), never on its own thread: a solid read in three dimensions is seconds. The job is
+  keyed by the text, the pose and the scenario drawn, as the claims' is; the answers already said
+  stand until the new ones come, and the picture goes at once (it is of a pose the edit may have
+  left). With no worker (node) the reading is made at once, so the tests see what the page would
+  (`app.test.ts`, `choosing a scenario writes nothing, and draws its marks and how the drawing
+  moves`). The marks are read on the page with every edit (`gcs_elab_scenario_marks_json`), the
+  names with no analysis (`gcs_elab_scenario_names_json`); `core.test.ts`, `a document says where
+  its scenarios fall and how the drawing moves under one`. The page's chooser and card are
+  [app.md](app.md)'s.
 
 - **A scenario, parsed** (#510 P4, §9.11 [0.164]). `scenario NAME [: BASE] { … }` is
   `syntax::StmtKind::Scenario` (`syntax::Scenario`, its lines `Item`/`ItemKind`: a support, a load
@@ -623,21 +898,25 @@ another.
   element matrices into a global one; nothing is mirrored, so an entry given on one side only is
   not symmetric and is not a matrix the factor answers for.
 
-- **One sparse factor** (#510 P2; `sparse::Ldl`). The up-looking LDLᵀ the normal equations use
-  (`sparse::Ata`, its order RCM with any dense column last) is one `Factor` over a `Sym`, JᵀJ
-  among them; nothing has a copy of it. Without pivoting: an SPD matrix factors stably, an
-  indefinite one when no pivot is zero (`None` when one is), and **its negative pivots are its
-  negative eigenvalues** (Sylvester), so `A − μB`'s count the pencil's eigenvalues below μ when B
-  is positive definite. **A pencil is analysed once** (`sparse::Pencil`): `L − μR` on the union of
-  the two patterns, ordered and its elimination tree built at construction, so each shift and each
-  count is a numeric factor and no more. `sparse_ldl_solves_and_counts_negative_eigenvalues` holds
-  the solve and the count against the reference on membranes shifted into their spectrum.
+- **One sparse factor for a symmetric matrix given by its entries** (#510 P2, S3; `sparse::Ldl`).
+  Since S3 it is P1's supernodal factor as `LDLᵀ` (`cholesky::Cholesky::factor_ldl`) under
+  approximate minimum degree, the analysis `factor` reads, so a mesh's pencils fill as its
+  stiffness does; the up-looking LDLᵀ under RCM (`sparse::Factor`) is the normal equations' alone
+  (`sparse::Ata`). Without pivoting: an SPD matrix factors stably, an indefinite one when no pivot
+  is zero (`None` when one is), and **its negative pivots are its negative eigenvalues**
+  (Sylvester), so `A − μB`'s count the pencil's eigenvalues below μ when B is positive definite.
+  **A pencil is analysed once** (`sparse::Pencil`): `L − μR` on the union of the two patterns, its
+  lower triangles and its analysis made at construction, so each shift and each count is a numeric
+  factor and no more. `sparse_ldl_solves_and_counts_negative_eigenvalues` holds the solve and the
+  count against the reference on membranes shifted into their spectrum. On the corpus's plate (24,840
+  unknowns) a factor of its pencil went from 2.27 s to 0.98 s, and on Lamé's tube (53,754) from
+  22.5 s to 9.5 s, the Cholesky's own time.
 
 - **One iteration for every pencil `L x = λ R x`** (#510 P2; `eigen.rs`'s `solve`): shift-invert
   Lanczos on `T = (L − σR)⁻¹R`, self-adjoint in `xᵀBy` with B the side that is positive definite,
   its largest θ = 1/(λ − σ) the λ just above σ. Full reorthogonalization, thick restart (the
   wanted Ritz vectors kept), one factor for the whole solve. The tolerances are named once
-  (`BREAKDOWN`, `FLOOR`, `GAP`, `SHIFT`), never written at a use.
+  (`BREAKDOWN`, `FLOOR`, `GAP`, `SHIFT`, and S3's `UNBUCKLED`), never written at a use.
 
 - **The lowest pairs of `A x = λ B x`** (#510 P2; `eigen::lowest`; A symmetric, B positive
   definite, else `Refusal::NotDefinite`): `L = A`, `R = B`, the inner product R's. **The shift is
@@ -654,7 +933,12 @@ another.
   are the lowest positive load factors, and a load that buckles nothing (a tension) has none. `L −
   μR = K + μK_G`'s negative pivots count the positive factors below μ.
   `buckling_finds_eulers_loads` holds a pinned and a cantilevered column to Euler's loads and to
-  the reference; `buckling_refuses_what_has_no_load`.
+  the reference; `buckling_refuses_what_has_no_load`. **A tension buckles nothing, counted** (#510
+  S3): a solid pulled has a geometric stiffness whose null space is thousands wide, every θ of the
+  iteration about zero, where it would converge on none; so Sylvester's count is asked before it
+  iterates — no negative pivot of `K + μK_G` at `μ = UNBUCKLED` (10⁶, a factor past any load a
+  scenario reads) is no factor below it, and none is returned, one factor more for every buckling
+  (`what_has_no_answer_in_three_dimensions_says_why`, a bar pulled).
 
 - **No pair is missed** (#510 P2; rings and patterns give repeated pairs). A Krylov space holds
   one direction of each eigenspace, so after the iteration converges Sylvester's count is taken
@@ -846,7 +1130,8 @@ another.
   restricted facets `Refiner::extract` gives, renumbered, so the surface mesh and the volume's
   boundary are one list. `conforming` also holds the volume the boundary encloses to the cells'.
 
-- **What P6 leaves to S3.** No element stiffness reads a `Volume` yet. A protecting ball's
+- **What P6 leaves to S3.** ~~No element stiffness reads a `Volume` yet~~: S3's solid that is no
+  prism is filled so and read (`bodies::Mesh::filled`, below). A protecting ball's
   neighbours keep cells no refinement reaches. Mesh_3 removes those slivers by perturbation and
   exudation, which need a vertex moved or reweighted, and this triangulation removes none. The
   cells have one size, with no grading toward a feature or a load. The volume is built in the

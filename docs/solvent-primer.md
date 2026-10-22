@@ -1215,7 +1215,7 @@ line stands on it, and over two lines sharing an end, at that end. **A slot left
 axis**: `P := plane` is seven freedoms, `plane(u: std.x)` mints only `P.v`. A minted axis starts as the front's unless seeded,
 `plane(v: hint(dir: (0, -1, 0)))` — seed one a relation will turn far. An axis taken from a drawn line
 runs along it from its `p1` toward its `p2`: the row says so, not the seed, so `plane(u: across,
-v: up)` faces the way its lines say from any start and needs no bound to keep it there (0.172). A seed may read the
+v: up)` faces the way its lines say from any start and needs no bound to keep it there (0.173). A seed may read the
 direction off geometry: an axis (`hint(dir: up)`), a line from its `p1` to its `p2` in space
 (`hint(dir: g)`), a plane's normal (`hint(dir: P.normal)`, or `P.n`), turned about another (`hint(dir: up, turn:
 -90deg, about: g)`), so a word standing a plane square to a line it is handed seeds it from that
@@ -2081,6 +2081,53 @@ scenario pull {
 | `claim buckling(plate) >= 1` | no answer — a plate buckles out of its plane |
 | `deflection(p, along: d) == v` over a spline's region | E040 — a spline or a curve is not moved yet |
 
+#### Solids read as solids
+
+A solid made of a material that a requirement names, and no `plane …` line reads, is read in
+three dimensions: nothing more is written.  A prism is meshed as its face's mesh stacked through
+its depth; any other solid (turned, united, cut) by refining its exact boundary.
+
+```
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+in std.front {
+  …
+  side := (foot := line(a, c)) -> (right := line(c, d)) -> (head := line(d, e)) ->
+          (left := line(e, a)) -> close
+}
+strut := solid(side, from: -10mm, to: 10mm) of steel
+scenario press {
+  fixed strut.foot
+  pressure strut.head 10MPa
+  claim buckling(strut) >= 2.5                 // the least factor on the loads
+}
+```
+
+- **Where a line falls**: a face path is its faces (a wall, a cap, a turned face); a body names
+  its parts' faces from itself, `bar.tail.right`, not `tail.right`; a point in a prism is a node,
+  in any other solid the node nearest it.  A support holds along the world's axes, and `fixed`
+  holds what `pinned` does.
+- **What is answered**: all six — `deflection`, `compliance`, `mass`, `mode`, `buckling` and
+  `safety` (von Mises at the nodes); the material states `E` and `nu`.  A load that presses
+  nothing buckles nothing, and a sharp inside edge leaves `safety` unanswered: round it.
+- **Every answer has its error beside it**, a frame's and a region's too: the change from the
+  same reading twice as coarse, `is 6.39152mm ± 0.026mm`.  Where the two agree to rounding it is
+  `± 0mm` (a frame's joint under loads a cubic is exact for).
+- **A driving deflection sizes a prism**: `deflection(end_low, along: down) == 0.9mm` at a point of
+  a prism read so is a row, as a region's is, its face's nodes moved with the drawing and the
+  solid's stacked over them.  The library's `sized_plank.sv` finds a plank's width so, bent across
+  its own plane, which no reading in that plane can.
+- **The library shows the rest**: `pressed_panel.sv` (a pressure on a cap, across the plane),
+  `flat_bar_strut.sv` (buckling across the thickness), `cantilever_plate.sv` (modes out of the
+  plane: bending, twisting), `turned_shaft.sv` (a turned solid, a round making its stress
+  answerable) and `pin_lug.sv` (a cut body, a load on the cutter's face named from the body).
+
+| written | reported |
+|---|---|
+| `pinned plate.left along: tilted`, off the world's axes | no answer — not read under yet |
+| `pressure tail.right p`, `tail` united into `bar` | no answer — name it from the body, `bar.tail.…` |
+| `claim buckling(plate) >= 1` under a pull | no answer — the loads press nothing |
+| `deflection(p, along: d) == v` in a turned solid | judged, not driven — a prism's row alone |
+
 ### 1.15 Frames that move, and generated geometry
 
 **A motion is a frame's joint.** A frame declared bare (`f := frame`, 1.12) is a rigid frame in
@@ -2102,7 +2149,7 @@ wheel := frame
 wheel spins(1) o                     // about a point, square to the view it is drawn in
 ```
 
-Each holds the joint's axis the way what it is held to runs (0.172): a line from `p1` toward `p2`,
+Each holds the joint's axis the way what it is held to runs (0.173): a line from `p1` toward `p2`,
 an axis its own way, and under `spins` the view's normal, out of it — so `turns(1)` turns right
 handed about the line as drawn, and which way a joint goes is never left to a seed.
 `spins` reads the view from its point (`o.plane`); a point standing in space has none (E040).

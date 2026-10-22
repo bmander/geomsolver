@@ -384,11 +384,38 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `core/drawing.ts`); the panel picks one by the file shown (`CodeEditor.colouring`).  Relation
   words are known by the text: those it defines or names in a `use (…)` (`relation_words`); units
   join their number's run; `expr`'s functions, constants and measures are `builtin`.
+- **The names a text gives and reads are the core's** (`syntax::symbols`, FFI
+  `gcs_program_symbols`, `core/program.ts::symbols` → `Symbols`): every name, the declaration it
+  names, and each place it is named, given (`def`) or read — the index an editor feature stands
+  on, the occurrences under the caret now and going to a definition or renaming next.  A function
+  of the *text*, as the colouring is, and **standing on the colouring's own scan**: a word tinted
+  `Def` gives a name, a plain word reads one, a `Type` before its `(` calls a component, a
+  `Relation` the file defines or imports reads that word, a `Label` in a component's or a word's
+  call names the formal it fills; so a colour and the index cannot disagree about a word.  On that
+  the language's scopes: a component's, part's, interface's or relation word's body holds its
+  formals and declarations, a set's, a `claim { … }`'s and a `preview`'s keep theirs, a repetition
+  or an `in` block shares the scope around it but for its header's binders (as `integral(… over p)`
+  keeps its own), and a name is the innermost declaration of it read outwards.  **A member is
+  reached through what it is read of**: through an instance (`t0.mid`, `Rung(…).mid`) or a formal
+  typed by an interface it is the declaration in that body; where the text declares none (`l.p1`,
+  `std.front`) it is one symbol per name per thing read of; a group's label is its member;
+  `next.v` is `v`.  A name nothing gives is one `unknown` symbol per name per body, so a half-typed
+  name lights its other spellings.  `tests/symbols.rs` (the corpus indexed end to end, each
+  occurrence its symbol's word) and `web/src/test/occurrences.test.ts` are the gates.
+- **The name under the caret is lit wherever else it is named** (`app/occurrences.ts`), as every
+  editor does: the caret in a name or just past it (`rim|`), or a selection of exactly the name;
+  given in a stronger ink (`.occurrence-def`) than read (`.occurrence`); after a short pause
+  (`PAUSE`), let go at once on an edit; F7 and ⇧F7 step to the next and the previous place, round
+  the ends.  On a program only — a drawing or a text file lights nothing (`Occurrences.names`).
+  `CodeEditor` stays ignorant of all of it: it keeps **marks in layers** (`setMarks(marks,
+  layer)`; the default layer is the panel's picked statement and verdicts, `occurrences` this) and
+  tells **the caret** (`onCaret(edited)`, once per move or edit however many events report it),
+  which is all a feature reading the word under the caret needs.
 - Offsets cross the ABI in **UTF-8 bytes** and index a **UTF-16 string** on the other side
   (`gear.sv` has an em dash).  `core/program.ts::Offsets` is the conversion and `Document.adopt`
-  is the **one seam** every report crosses: diagnostics, source map and coloured runs are string
-  indices by the time anyone sees them.  A wholly-ASCII program builds nothing; otherwise it is a
-  binary search, since offsets do not arrive in order.  Nothing sends an offset back.
+  is the **one seam** every report crosses: diagnostics, source map, coloured runs and names are
+  string indices by the time anyone sees them.  A wholly-ASCII program builds nothing; otherwise
+  it is a binary search, since offsets do not arrive in order.  Nothing sends an offset back.
 - The box it is typed in is `app/editor.ts` — a `CodeEditor`, which knows nothing of Solvent and is
   handed the text and a function saying which runs are what: a `<textarea>` over a `<pre>` of the
   same text.  **The two layers must put every character in the same place**; shared CSS is not
@@ -419,6 +446,32 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   The source catches up at exactly two seams and **never per frame**: `syncSeeds` at the end of a
   drag (`gesture::endGesture`, guaranteed numeric) and `syncSource` at the end of `afterEdit`.
   The panel is wired to `onProgram`, never to `onDragFrame`.
+- **The scenario chooser** (#510; `app/scenario-card.ts`, `app/scenario-box.ts`,
+  `SketchView.scenario`, `chooseScenario`).  Beside **Sketch on**, in the viewport's upper right
+  (`#view-picks`), `#scenario-pick` lists the document's load scenarios by name (*None*, then each
+  in the order written, an extended one `heavy : shelf`; `Document.scenarioNames`), hidden for a
+  document with none and inked as failing while one of them fails.  **Choosing is view state**,
+  as the plane chosen is: it writes nothing and solves nothing, is kept across an edit — the
+  program panel's too — by its name, let go where the name is gone, and by a load.  Chosen, its
+  **card** unfolds beneath the chooser: in its head the **exaggeration** the picture is drawn at
+  (`#scenario-scale`, by equal ratios from true scale at its left to ten times the picture's own
+  factor at its right, opening at the picture's own — `SketchView.scenarioScale`, null for it),
+  *Animate* (the picture swings from rest to its factor and back) and *Mesh* (the edges of the
+  mesh that was solved); the colour ramp the moves are read by, 0 to the largest in the core's
+  words; what the reading says (still reading, why a body is not drawn, the scenario's words);
+  and a row per line of the scenario — the line as written, by its span, a load's value, a
+  requirement's sentence in the verdict's ink — which puts the editor's caret on its line
+  (`goToSource`).  **In the box** (`ScenarioScene`) every coordinate is the core's (the marks,
+  the picture: analysis.md, "A scenario drawn"); a glyph is chrome made in pixels about its
+  anchor and scaled by `unit` every frame, so it keeps its size as the eye zooms — a plate for
+  `fixed` on a face (a block at a point or along a line), a cone for `pinned` pointing at its
+  place (on a roller where it holds one direction), an arrow ending at its place for a load and
+  for a pressure, faces tinted, a probe at a deflection's point inked by its verdict, the words
+  as sprites beside their place.  The deformed bodies are **morph targets**: three.js draws
+  `rest + s·moved`, the factor written per frame, so the slider needs no round trip to the core
+  and no coordinate is worked out in the page; each vertex coloured on the ramp by its move as a
+  fraction of the largest.  A solid the picture deforms is ghosted beneath it.  A gesture moving
+  the drawing hides the scenario until the edit settles and the worker reads it again.
 - **The timeline** (#398 L, [0.146]; `app/timeline.ts`, `SketchView.instant`, `showInstant`):
   a row per declared parameter in the viewport's lower left, its interval a slider whose solid
   part is what the march reached, hatched past it, the singular instant marked with the core's
@@ -477,9 +530,14 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   their other children hidden in their stead); choosing a hidden plane, or drawing on it, shows
   it.  **A right-click** that does not turn the workspace (let go within `MENU_SLOP_PX` of its
   press, `gesture::orbitGesture`) opens a menu on what it is on (`SketchView.contextAt`, as a
-  press finds it; `choose.ts::onContextMenu`): **Hide**, which hides the row that made it
-  (`hidden.hide` — an object's face or edge hides the object, and something no row with an eye
-  made is said so), and **Show all** while anything is hidden.  The pane: an eye per row (dimmed under a hidden row, half where some row under it is
+  press finds it; `choose.ts::onContextMenu`; an object's face or edge stands for the object):
+  **Show definition**, the editor's caret on the span of the row that made it
+  (`hidden.rowOf`, `program.ts::goToSource` — a member's statement in its definition, offered
+  only where the row has a span); **Show in model viewer**, the panel turned to the outline
+  (`program.ts::openSide`) and the tree opened to that row, brought on screen, focused and lit a
+  moment (`OutlinePane.showRow`), the selection left as it is; **Hide**, which hides that row
+  (`hidden.hide` — something no row with an eye made is said so); and **Show all** while anything
+  is hidden.  The pane: an eye per row (dimmed under a hidden row, half where some row under it is
   hidden); an icon of what the row is (`outline.iconOf`: its row kind, or for an entity the
   core's kind word for what it stands for — a point, a line, a plane, a face); a click selects (⇧ toggles), a hover lights as the ⌘-click list's rows do, a
   double-click frames the row's subtree (`workspace::bounds_of`, hidden or not, FFI

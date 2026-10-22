@@ -25,7 +25,7 @@ came from.
   its mirror), so `compare::matches` swaps only unsided ones; in space it is E040 at the key
   (`reading::in_space`).  `std.Turned` states its turn so.  `tests/angle_and_arc_words.rs` and
   `coordinates::a_turned_frame_keeps_its_handedness_however_far_its_datum_turns` are the gates.
-- **A direction says which way it runs** ([0.172], #535).  `parallel` (`Parallel`, `Parallel3`)
+- **A direction says which way it runs** ([0.173], #535).  `parallel` (`Parallel`, `Parallel3`)
   and `coincident` between a line and an axis or two axes (`LineOnAxis`, `AxisCoincident`) take
   `sense: same|opposite` as their third slot, in `side_words`; unsaid each holds either way.  In
   a plane a sensed `parallel` is `angle`'s kernel at 0 or π; in space each is its own kernel

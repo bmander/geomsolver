@@ -31,6 +31,7 @@ use std::collections::BTreeMap;
 
 pub mod outline;
 pub mod region;
+pub mod scenario;
 pub mod workspace;
 
 /// The rank tolerance a corner is placed at, relative to the largest singular value of its four
