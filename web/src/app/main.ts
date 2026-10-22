@@ -339,7 +339,8 @@ function sayJudging(j: Judging | null): void {
  *  how many do not — a claim refuted, a driving row not reached, one with no answer — with each
  *  sentence the core said of them (`` scenario `shelf`: safety(bracket) is 1.22695e-05: claimed
  *  >= 1, refuted ``) as the line's tooltip.  All holding, the line stays a few seconds; one
- *  failing, or a word of what leaves a structure free, it stays, and in red. */
+ *  failing, or a word of the scenario's (a structure left free, a stress unbounded), it stays,
+ *  and in red. */
 let scenarioTimer = 0;
 function showScenarios(ss: Scenario[]): void {
   clearTimeout(scenarioTimer);
@@ -355,12 +356,9 @@ function showScenarios(ss: Scenario[]): void {
     held && `${held} hold${held === 1 ? 's' : ''}`].filter(Boolean).join(', ');
   const all = [...words, ...answers.map((a) => a.text)].join('\n');
   const label = ss.length === 1 ? `scenario ${ss[0].name}` : 'scenarios';
-  if (failed || unanswered || words.length) {
-    scenarioLine(`${label}: ${said}`, 'failed', all);
-    return;
-  }
-  scenarioLine(`${label}: ${said}`, 'finished', all);
-  scenarioTimer = window.setTimeout(() => scenarioLine(''), 5000);
+  const fails = failed + unanswered + words.length > 0;
+  scenarioLine(`${label}: ${said}`, fails ? 'failed' : 'finished', all);
+  if (!fails) scenarioTimer = window.setTimeout(() => scenarioLine(''), 5000);
 }
 
 /** **The background refinement, said in the footer** — one entry an object, while any is going:
