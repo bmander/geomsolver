@@ -57,7 +57,8 @@ pub use running::Running;
 pub use material::{Material, Property};
 pub use beam::{Beam, Over, Section, SectionProp};
 pub use scenario::{
-    Applied, Grade, Hold, Load, LoadKind, LoadValue, Output, Requirement, Scenario, Support,
+    Applied, Grade, Hold, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading, Requirement,
+    Scenario, Support,
 };
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
@@ -259,6 +260,12 @@ pub struct Sketch {
     /// Only a scenario that drives is here: one of claims adds nothing to the drawing.  Set by
     /// elaboration and carried by the Solvent source alone, as a beam is: never written to JSON.
     pub scenarios: Vec<Scenario>,
+    /// **The regions a driving row over a plane reads** (#510 S2): each meshed once, where the
+    /// drawing stood when its row was compiled (`prisms::Row`), by the scenario's index here and
+    /// the point the deflection is of — so every compile of the row through a solve reads one
+    /// topology, its nodes moving with the drawing.  Set by elaboration with the row, carried by
+    /// the Solvent source alone.
+    pub meshed: BTreeMap<(usize, usize), crate::prisms::Row>,
     /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
     /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
     /// Presentation, as a wobble is: what is drawn moves and the document does not — a march

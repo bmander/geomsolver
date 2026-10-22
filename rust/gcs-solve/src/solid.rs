@@ -43,7 +43,7 @@ pub mod lowering;
 pub mod faces;
 pub mod conditions;
 pub mod carrier;
-mod profile;
+pub(crate) mod profile;
 mod primitive;
 mod document;
 mod reads;

@@ -1,12 +1,12 @@
 //! **`scenario NAME { … }`, a load case** (#510 P4): the supports, the loads and the requirements
-//! judged under them, as written.  `program::scenarios` elaborates one into a
+//! judged under them, and how a solid is read in its plane (#510 S2), as written.  `program::scenarios` elaborates one into a
 //! `model::Scenario`; nothing in it is solved.
 
 use super::names::write_ref;
 use super::print::vector_text;
 use super::{Name, Ref, Span};
 use crate::expr::Cmp;
-use crate::model::{Hold, LoadKind, Output};
+use crate::model::{Hold, LoadKind, Output, InPlane};
 
 /// `scenario lift { … }`, or `scenario overload: lift { … }` extending another.
 #[derive(Clone, Debug)]
@@ -38,6 +38,8 @@ pub enum ItemKind {
     Load { kind: LoadKind, at: Ref, value: LoadText },
     /// `claim mode(arm, 1) >= 120Hz`, `deflection(arm.tip) <= 0.5mm`, `safety(arm) == 2`.
     Requirement(RequirementText),
+    /// `plane stress plate`, `plane strain dam` (#510 S2): a solid read in its plane.
+    Reading { plane: InPlane, of: Ref },
 }
 
 /// A load's number as written.
@@ -84,6 +86,7 @@ impl Scenario {
                     out.push(&mut r.of);
                     out.extend(r.along.as_mut());
                 }
+                ItemKind::Reading { of, .. } => out.push(of),
             }
         }
         out
@@ -94,7 +97,7 @@ impl Scenario {
         let mut out = Vec::new();
         for it in &mut self.items {
             match &mut it.kind {
-                ItemKind::Support { .. } => {}
+                ItemKind::Support { .. } | ItemKind::Reading { .. } => {}
                 ItemKind::Load { value, .. } => match value {
                     LoadText::Vector(parts) => out.extend(parts.iter_mut().map(|(t, _)| t)),
                     LoadText::Along { magnitude, .. } => out.push(&mut magnitude.0),
@@ -167,6 +170,12 @@ impl Item {
                 }
                 r.write_head(out);
                 out.push_str(&format!(" {} {}", r.compare.text(), r.value.0));
+            }
+            ItemKind::Reading { plane, of } => {
+                out.push_str("plane ");
+                out.push_str(plane.word());
+                out.push(' ');
+                write_ref(out, of);
             }
         }
     }

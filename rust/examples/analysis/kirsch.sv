@@ -41,6 +41,7 @@ in std.front {
 plate := solid(quarter, from: -t / 2, to: t / 2) of steel
 
 scenario pull {
+  plane stress plate
   pinned plate.cut_x along: std.z
   pinned plate.cut_y along: std.x
   pinned m along: std.y

@@ -38,6 +38,8 @@ pub(crate) fn braced(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
         load: (0..dofs).map(|_| rng.uniform(-10.0, 10.0)).collect(),
         weight: (0..dofs).map(|_| rng.uniform(-1.0, 1.0)).collect(),
         spread: Vec::new(),
+        tris: Vec::new(),
+        laid: Vec::new(),
     };
     (s, x)
 }
@@ -54,6 +56,8 @@ pub(crate) fn two_bar(w: f64, h: f64, e: f64, a: f64, p: f64) -> (Structure, Vec
         load: vec![0.0, 0.0, 0.0, 0.0, 0.0, -p],
         weight: vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0],
         spread: Vec::new(),
+        tris: Vec::new(),
+        laid: Vec::new(),
     };
     (s, vec![-w, 0.0, w, 0.0, 0.0, h, a, a])
 }
@@ -96,6 +100,8 @@ fn a_bar_in_space_stretches_by_pl_over_ea() {
         load: vec![0.0, 0.0, 0.0, p, 0.0, 0.0],
         weight: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
         spread: Vec::new(),
+        tris: Vec::new(),
+        laid: Vec::new(),
     };
     let x = vec![5.0, -2.0, 1.0, 5.0 + l, -2.0, 1.0, a];
     let st = s.solve(&x).unwrap();
@@ -117,6 +123,8 @@ fn a_structure_with_no_displacement_to_give_says_why() {
         load: vec![0.0, 0.0, 0.0, -1.0, 0.0, 0.0],
         weight: vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
         spread: Vec::new(),
+        tris: Vec::new(),
+        laid: Vec::new(),
     };
     let x = vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 1.0, 1.0];
     assert_eq!(line.solve(&x).err(), Some(Failure::Free));
@@ -234,7 +242,8 @@ pub(crate) fn framed(dim: usize, n: usize, rng: &mut Rng) -> (Structure, Vec<f64
                   rng.uniform(1.0, 5.0)]);
     }
     let mut s = Structure { dim, nodes: n, bars: Vec::new(), beams, fixed: Vec::new(),
-                            load: Vec::new(), weight: Vec::new(), spread: Vec::new() };
+                            load: Vec::new(), weight: Vec::new(), spread: Vec::new(),
+                            tris: Vec::new(), laid: Vec::new() };
     let dofs = s.per() * n;
     s.fixed = (0..dofs).map(|i| i < s.per()).collect();
     s.load = (0..dofs).map(|_| rng.uniform(-10.0, 10.0)).collect();
@@ -267,7 +276,8 @@ fn cantilever(dim: usize, pieces: usize, l: f64, e: f64, g: f64, rho: f64, secti
         x.extend(section);
     }
     let mut s = Structure { dim, nodes: pieces + 1, bars: Vec::new(), beams, fixed: Vec::new(),
-                            load: Vec::new(), weight: Vec::new(), spread: Vec::new() };
+                            load: Vec::new(), weight: Vec::new(), spread: Vec::new(),
+                            tris: Vec::new(), laid: Vec::new() };
     let dofs = s.per() * s.nodes;
     s.fixed = (0..dofs).map(|i| i < s.per()).collect();
     s.load = vec![0.0; dofs];
@@ -452,4 +462,249 @@ fn a_rows_sections_are_read_over_its_unknowns() {
     }
     let want = (4.0 * p * l.powi(3) / (e * b * sink)).cbrt();
     assert!((v[4] - want).abs() <= 1e-9 * want, "{} against {want}", v[4]);
+}
+
+/* -- the plane element (#510 S2) ------------------------------------------------------------- */
+
+/// A sheet of quadratic triangles over `[0, w] × [0, h]`, `nx` by `ny` cells each cut on its
+/// diagonal, its inner corners knocked about by `jitter` of a cell and every middle node at the
+/// middle of its side (so the elements are straight): the nodes on a grid of `(2nx + 1)(2ny + 1)`,
+/// node `(a, b)` at `b (2nx + 1) + a`.  Nothing held or loaded.
+pub(crate) fn sheet(nx: usize, ny: usize, w: f64, h: f64, jitter: f64, strain: bool,
+                    rng: &mut Rng) -> (Structure, Vec<f64>) {
+    let (cols, rows) = (2 * nx + 1, 2 * ny + 1);
+    let id = |a: usize, b: usize| b * cols + a;
+    let mut x = vec![0.0; 2 * cols * rows];
+    for b in (0..rows).step_by(2) {
+        for a in (0..cols).step_by(2) {
+            let inner = a > 0 && b > 0 && a + 1 < cols && b + 1 < rows;
+            let (dx, dy) = if inner {
+                (rng.uniform(-jitter, jitter) * w / nx as f64,
+                 rng.uniform(-jitter, jitter) * h / ny as f64)
+            } else {
+                (0.0, 0.0)
+            };
+            x[2 * id(a, b)] = a as f64 * w / (2 * nx) as f64 + dx;
+            x[2 * id(a, b) + 1] = b as f64 * h / (2 * ny) as f64 + dy;
+        }
+    }
+    let mut tris = Vec::new();
+    let t = |n: [(usize, usize); 6]| interior::Tri6 { n: n.map(|(a, b)| id(a, b)), e: 2e5,
+                                                       nu: 0.3, rho: 7.8e-9, depth: 2.0, strain };
+    for j in 0..ny {
+        for i in 0..nx {
+            let (a, b) = (2 * i, 2 * j);
+            tris.push(t([(a, b), (a + 2, b), (a + 2, b + 2), (a + 1, b), (a + 2, b + 1),
+                         (a + 1, b + 1)]));
+            tris.push(t([(a, b), (a + 2, b + 2), (a, b + 2), (a + 1, b + 1), (a + 1, b + 2),
+                         (a, b + 1)]));
+        }
+    }
+    // every middle node at the middle of the side it is on
+    for tri in &tris {
+        for (m, (p, q)) in [(3, (0, 1)), (4, (1, 2)), (5, (2, 0))] {
+            for c in 0..2 {
+                x[2 * tri.n[m] + c] = 0.5 * (x[2 * tri.n[p] + c] + x[2 * tri.n[q] + c]);
+            }
+        }
+    }
+    let dofs = 2 * cols * rows;
+    let s = Structure { dim: 2, nodes: cols * rows, bars: Vec::new(), beams: Vec::new(),
+                        fixed: vec![false; dofs], load: vec![0.0; dofs], weight: vec![0.0; dofs],
+                        spread: Vec::new(), tris, laid: Vec::new() };
+    (s, x)
+}
+
+/// The sheet's sides along its right edge, run upward with the material on their left.
+fn right_sides(nx: usize, ny: usize) -> Vec<[usize; 3]> {
+    let cols = 2 * nx + 1;
+    (0..ny).map(|j| [2 * j, 2 * j + 1, 2 * j + 2].map(|b| b * cols + 2 * nx)).collect()
+}
+
+/// **The patch test** (#510 S2): a sheet of knocked-about quadratic triangles, its left edge held
+/// along x and one corner across, pulled by a pressure of `−σ` on its right edge, stresses
+/// uniformly — `σx = σ`, `σy = τ = 0` at every node of every element — and stretches as the
+/// closed form: `σ w / E'` along it and `−ν' σ h / E'` across, `E' = E`, `ν' = ν` in plane stress
+/// and `E/(1 − ν²)`, `ν/(1 − ν)` in plane strain.
+#[test]
+fn a_sheet_pulled_stresses_uniformly_as_the_patch_test_asks() {
+    let (nx, ny, w, h, sigma) = (4, 2, 40.0, 20.0, 50.0);
+    for strain in [false, true] {
+        let mut rng = Rng::new(7);
+        let (mut s, x) = sheet(nx, ny, w, h, 0.2, strain, &mut rng);
+        let cols = 2 * nx + 1;
+        for b in 0..2 * ny + 1 {
+            let d = s.dof(b * cols, 0).unwrap();
+            s.fixed[d] = true;
+        }
+        let d = s.dof(0, 1).unwrap();
+        s.fixed[d] = true;
+        s.laid = vec![interior::Laid::Pressure { sides: right_sides(nx, ny), p: -sigma,
+                                                 depth: 2.0 }];
+        let corner = (2 * ny) * cols + 2 * nx;
+        let st = s.solve(&x).unwrap();
+        let (e, nu) = (2e5, 0.3);
+        let (e1, nu1) = if strain { (e / (1.0 - nu * nu), nu / (1.0 - nu)) } else { (e, nu) };
+        let (ux, uy) = (st.u[s.dof(corner, 0).unwrap()], st.u[s.dof(corner, 1).unwrap()]);
+        assert!((ux - sigma * w / e1).abs() <= 1e-10 * ux.abs(), "{ux}");
+        assert!((uy + nu1 * sigma * h / e1).abs() <= 1e-10 * ux.abs(), "{uy}");
+        for (i, t) in s.tris.iter().enumerate() {
+            let u: [f64; 12] = std::array::from_fn(|k| st.u[s.dof(t.n[k / 2], k % 2).unwrap()]);
+            for sn in t.stresses(&s.tri_places(i, &x), &u).unwrap() {
+                assert!((sn[0] - sigma).abs() <= 1e-9 * sigma, "{sn:?}");
+                assert!(sn[1].abs() <= 1e-9 * sigma && sn[2].abs() <= 1e-9 * sigma, "{sn:?}");
+            }
+        }
+    }
+}
+
+/// **What a plane element is** (#510 S2): its stiffness moves nothing in the three rigid
+/// motions, and only them — held at three moves it gives a displacement, at two it is free; its
+/// mass weighs `ρ t A` along each axis; its area is `∫ det J`, exact for a curved side; and a
+/// load laid on the plane lays its whole: a body load `b t A`, a force spread over the area or
+/// along sides `F`, a pressure `p t` times the side's chord turned.  Turned over, it is
+/// `Collapsed`.
+#[test]
+fn a_plane_element_is_rigid_in_three_motions_and_weighs_its_area() {
+    let mut rng = Rng::new(3);
+    let (mut s, x) = sheet(1, 1, 30.0, 10.0, 0.0, false, &mut rng);
+    s.tris.truncate(1);
+    let t = s.tris[0];
+    let p = s.tri_places(0, &x);
+    let k = t.stiffness(&p).unwrap();
+    let rigid = |c: usize| -> [f64; 12] {
+        std::array::from_fn(|i| {
+            let (n, axis) = (i / 2, i % 2);
+            match c {
+                0 | 1 => if axis == c { 1.0 } else { 0.0 },
+                _ => if axis == 0 { -p[n][1] } else { p[n][0] },
+            }
+        })
+    };
+    let top = k.iter().flatten().fold(0.0f64, |m, v| m.max(v.abs()));
+    for c in 0..3 {
+        let r = rigid(c);
+        for row in &k {
+            let f: f64 = (0..12).map(|i| row[i] * r[i]).sum();
+            assert!(f.abs() <= 1e-10 * top * 30.0, "motion {c}: {f}");
+        }
+    }
+    // held at three moves of its corners it has a displacement; at two it turns (the sheet's
+    // nodes no element reaches are held)
+    let mut held = s.clone();
+    for n in (0..held.nodes).filter(|n| !t.n.contains(n)) {
+        held.fixed[2 * n] = true;
+        held.fixed[2 * n + 1] = true;
+    }
+    for (n, c) in [(t.n[0], 0), (t.n[0], 1), (t.n[1], 1)] {
+        let d = held.dof(n, c).unwrap();
+        held.fixed[d] = true;
+    }
+    let d = held.dof(t.n[2], 0).unwrap();
+    held.load[d] = 1.0;
+    assert!(held.solve(&x).is_ok());
+    let d = held.dof(t.n[1], 1).unwrap();
+    held.fixed[d] = false;
+    assert_eq!(held.solve(&x).err(), Some(Failure::Free));
+    // its mass and its area, straight, then with a side bowed out
+    let m = t.mass(&p).unwrap();
+    let area = 0.5 * 30.0 * 10.0;
+    let along_x: f64 = (0..6).flat_map(|a| (0..6).map(move |b| (a, b))).map(|(a, b)| m[2 * a][2 * b])
+        .sum();
+    assert!((along_x - t.rho * t.depth * area).abs() <= 1e-12 * along_x);
+    assert!((t.area(&p) - area).abs() <= 1e-12 * area);
+    let mut bowed = p;
+    bowed[3][1] -= 2.0; // the side 0–1's middle pushed out by 2: a parabola's 2/3 of its chord's 2
+    assert!((t.area(&bowed) - (area + 2.0 / 3.0 * 30.0 * 2.0)).abs() <= 1e-12 * area);
+    // what a load lays, in whole
+    let lays = |l: interior::Laid| -> [f64; 2] {
+        let mut s1 = s.clone();
+        s1.laid = vec![l];
+        let f = s1.forces(&x);
+        [0, 1].map(|c| (0..s1.nodes).map(|n| f[s1.dof(n, c).unwrap()]).sum())
+    };
+    let near = |a: [f64; 2], b: [f64; 2]| (a[0] - b[0]).hypot(a[1] - b[1]) <= 1e-12 * b[0].hypot(b[1]);
+    let body = lays(interior::Laid::Body { elements: vec![0], force: [3.0, -5.0] });
+    assert!(near(body, [3.0 * t.depth * area, -5.0 * t.depth * area]), "{body:?}");
+    let over = lays(interior::Laid::Over { elements: vec![0], force: [3.0, -5.0] });
+    assert!(near(over, [3.0, -5.0]), "{over:?}");
+    let side = [t.n[0], t.n[3], t.n[1]];
+    let along = lays(interior::Laid::Along { sides: vec![side], force: [3.0, -5.0] });
+    assert!(near(along, [3.0, -5.0]), "{along:?}");
+    // the side runs along x with the material above it, so its outward normal is −y
+    let pressed = lays(interior::Laid::Pressure { sides: vec![side], p: 4.0, depth: t.depth });
+    assert!(near(pressed, [0.0, 4.0 * t.depth * 30.0]), "{pressed:?}");
+    // turned over
+    let mut over_p = p;
+    over_p.swap(1, 2);
+    assert_eq!(t.stiffness(&over_p).err(), Some(Failure::Collapsed));
+}
+
+/// **A plane structure's adjoint gradient agrees with its differences** (#510 S2): sheets of
+/// knocked-about elements with their middle nodes moved off their sides (curved), in plane stress
+/// and strain, held at their left edges, under every load laid on the plane at once — a pressure
+/// and a force along the right edge, a force over the area and a body load — and a load at a
+/// node, the output a random weighing of the moves.  Through the kernel, so its constants are
+/// read back too; stated and with an unknown setting the output.
+#[test]
+fn a_plane_interior_agrees_with_finite_differences() {
+    use gcs_core::fdcheck::fd_jacobian;
+    for seed in 0..4u32 {
+        let mut rng = Rng::new(seed + 120);
+        let (nx, ny) = (2 + seed as usize % 2, 2);
+        let (mut s, mut x) = sheet(nx, ny, 30.0, 20.0, 0.15, seed % 2 == 1, &mut rng);
+        for t in &s.tris {
+            for m in 3..6 {
+                for c in 0..2 {
+                    x[2 * t.n[m] + c] += rng.uniform(-0.3, 0.3);
+                }
+            }
+        }
+        let cols = 2 * nx + 1;
+        for b in 0..2 * ny + 1 {
+            for c in 0..2 {
+                let d = s.dof(b * cols, c).unwrap();
+                s.fixed[d] = true;
+            }
+        }
+        let n_el = s.tris.len();
+        s.laid = vec![
+            interior::Laid::Pressure { sides: right_sides(nx, ny), p: 30.0, depth: 2.0 },
+            interior::Laid::Along { sides: right_sides(nx, ny), force: [-40.0, 700.0] },
+            interior::Laid::Over { elements: (0..n_el).step_by(2).collect(), force: [90.0, 20.0] },
+            interior::Laid::Body { elements: (1..n_el).step_by(2).collect(), force: [0.5, -3.0] },
+        ];
+        let last = s.nodes - 1;
+        let d = s.dof(last, 1).unwrap();
+        s.load[d] = -500.0;
+        for w in s.weight.iter_mut() {
+            *w = rng.uniform(-1.0, 1.0);
+        }
+        for stated in [&[0.01][..], &[1.7, -0.2]] {
+            let free = stated.len() == 2;
+            let (n_par, n_const) = s.widths(free);
+            let k = s.consts(stated);
+            assert_eq!(k.len(), n_const);
+            assert_eq!(Structure::read(&k, free).0, s);
+            let kn = build_kernel(&Sketch::new(), KernelKey::Interior { n_par, n_const });
+            let mut v = x.clone();
+            if free {
+                v.push(0.4);
+            }
+            let res = |w: &[f64]| {
+                let mut r = vec![0.0; 1];
+                (kn.res)(1, w, &k, &mut r);
+                r
+            };
+            let jn = fd_jacobian(res, &v, 1e-5);
+            let mut ja = vec![0.0; n_par];
+            (kn.jac)(1, &v, &k, &mut ja);
+            let scale = gcs_core::linalg::absmax(&jn.data);
+            for (col, a) in ja.iter().enumerate() {
+                let n = jn.data[col];
+                assert!((a - n).abs() <= 1e-6 * scale, "seed {seed}, free {free}: column {col}: \
+                                                         {a} against {n}");
+            }
+        }
+    }
 }

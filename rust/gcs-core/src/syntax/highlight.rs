@@ -308,14 +308,19 @@ fn tint_word(
 }
 
 /// A word of a scenario's line (#510 P4), read as the parser reads one (`parser/scenario.rs`):
-/// a support's, a load's or `claim` at the line's head, and an output before its `(` there or
-/// after `claim` — `None` for anything else, tinted as it would be in any statement.
+/// a support's, a load's, `claim` or `plane` at the line's head, `stress` or `strain` after
+/// `plane` (#510 S2), and an output before its `(` there or after `claim` — `None` for anything
+/// else, tinted as it would be in any statement.
 fn scenario_word(w: &str, prev: Option<&Tok>, next: Option<&Tok>) -> Option<Tint> {
     let head = matches!(prev, Some(Tok::Nl | Tok::P('{')));
     let claimed = matches!(prev, Some(Tok::Ident(c)) if c == "claim");
     let applied =
         crate::model::Hold::parse(w).is_some() || crate::model::LoadKind::parse(w).is_some();
-    if head && (applied || w == "claim") {
+    if head && (applied || w == "claim" || w == "plane") {
+        return Some(Tint::Word);
+    }
+    let read = matches!(prev, Some(Tok::Ident(p)) if p == "plane");
+    if read && crate::model::InPlane::parse(w).is_some() {
         return Some(Tint::Word);
     }
     let output = next == Some(&Tok::P('(')) && crate::model::Output::parse(w).is_some();

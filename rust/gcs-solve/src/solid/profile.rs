@@ -152,7 +152,7 @@ pub(super) fn loop_poly(sk: &Sketch, edges: &[EntRef], edge_names: &[String], pl
 /// A loop's edges in traversal order, each with the end it is entered by and the end it leaves
 /// by, each starting where the last one ended — the first entered by whichever end the *last*
 /// edge shares.  `None` where the edges do not run end to end.
-pub(super) fn walk_loop(sk: &Sketch, edges: &[EntRef]) -> Option<Vec<(EntRef, u32, u32)>> {
+pub(crate) fn walk_loop(sk: &Sketch, edges: &[EntRef]) -> Option<Vec<(EntRef, u32, u32)>> {
     let mut at: Option<u32> = None;
     let mut out = Vec::with_capacity(edges.len());
     for &e in edges {
@@ -174,7 +174,7 @@ pub(super) fn walk_loop(sk: &Sketch, edges: &[EntRef]) -> Option<Vec<(EntRef, u3
 }
 
 /// A spline's or a curve's parameter where a walk entering it at `from` enters and leaves it.
-pub(super) fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, [f64; 2])> {
+pub(crate) fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, [f64; 2])> {
     let (a, b) = match e.kind {
         EntKind::Spline => (crate::curve::domain(sk, e.i()), sk.splines[e.i()].ctrl[0] == from),
         EntKind::Curve => (sk.curve_domain(e.i()), sk.curve_ends(e.i())?.0 == from),
@@ -185,7 +185,7 @@ pub(super) fn curved_span(sk: &Sketch, e: EntRef, from: u32) -> Option<(EntRef, 
 }
 
 /// Where a spline or a curve is at its parameter `t`, on the page.
-pub(super) fn curved_point(sk: &Sketch, e: EntRef, t: f64) -> (f64, f64) {
+pub(crate) fn curved_point(sk: &Sketch, e: EntRef, t: f64) -> (f64, f64) {
     match e.kind {
         EntKind::Spline => crate::curve::point_at(sk, e.i(), t),
         _ => sk.curve_point(e.i(), t),

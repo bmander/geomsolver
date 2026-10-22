@@ -455,3 +455,25 @@ fn the_corpus_is_its_files() {
         assert!(row.contains(&format!("| {} |", case.reading.word())), "{row}");
     }
 }
+
+/// **A case read in the plane says so** (#510 S2): every scenario of a case the table reads in
+/// plane stress reads its solid so (`plane stress plate`), and no other case reads anything in
+/// the plane — the document says how it is read, and the table agrees with it.
+#[test]
+fn a_plane_case_states_its_reading() {
+    use gcs_core::model::{Applied, InPlane};
+    for case in &CASES {
+        let e = read(case);
+        for s in &e.scenarios {
+            let read: Vec<_> =
+                s.scenario.readings.iter().map(|r| (r.plane, r.of.clone())).collect();
+            match case.reading {
+                Reading::Plane => {
+                    assert_eq!(read, [(InPlane::Stress, Applied::Ent(ent(&e, case.solid)))],
+                               "{}", case.name)
+                }
+                _ => assert!(read.is_empty(), "{}: {read:?}", case.name),
+            }
+        }
+    }
+}

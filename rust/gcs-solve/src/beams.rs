@@ -51,18 +51,33 @@ pub const JOINED: f64 = 1e-6;
 /// **What a scenario's frames say**: words, each a sentence — a frame the supports leave free —
 /// and per requirement its value, or why it has none; `None` for one about no frame (a solid's,
 /// which nothing analyses yet).  Per support, whether it holds a frame (names a joint of one), so
-/// the body a solid's supports hold is not read with it.
+/// the body a solid's supports hold is not read with it.  A scenario's regions read in their
+/// plane say the same (#510 S2, `prisms::read`), and the two are merged (`merge`).
 #[derive(Clone, Debug, Default)]
 pub struct Read {
     pub words: Vec<String>,
     pub answers: Vec<Option<Result<f64, String>>>,
-    pub holds_frame: Vec<bool>,
+    pub holds: Vec<bool>,
 }
 
 impl Read {
-    /// Whether it read a frame at all: a support holding one, or a requirement about one.
-    pub fn reads_a_frame(&self) -> bool {
-        self.holds_frame.iter().any(|&h| h) || self.answers.iter().any(Option::is_some)
+    /// Whether it read anything at all: a support holding a frame, or a requirement about one.
+    pub fn reads_any(&self) -> bool {
+        self.holds.iter().any(|&h| h) || self.answers.iter().any(Option::is_some)
+    }
+
+    /// Another reading of the same scenario merged in: its words after these, an answer where
+    /// this has none, a support held by either.
+    pub fn merge(&mut self, other: Read) {
+        self.words.extend(other.words);
+        for (a, b) in self.answers.iter_mut().zip(other.answers) {
+            if a.is_none() {
+                *a = b;
+            }
+        }
+        for (a, b) in self.holds.iter_mut().zip(other.holds) {
+            *a |= b;
+        }
     }
 }
 
@@ -334,7 +349,7 @@ impl Framed {
         }
         let mut s = Structure { dim: 3, nodes: n, bars: Vec::new(), beams: elements,
                                 fixed: Vec::new(), load: Vec::new(), weight: Vec::new(),
-                                spread: Vec::new() };
+                                spread: Vec::new(), tris: Vec::new(), laid: Vec::new() };
         let dofs = s.per() * n;
         (s.fixed, s.load, s.weight) = (vec![false; dofs], vec![0.0; dofs], vec![0.0; dofs]);
         let on = |a: &Applied| -> Vec<usize> {
@@ -683,7 +698,7 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
     let mut out = Read {
         words: Vec::new(),
         answers: vec![None; sc.requirements.len()],
-        holds_frame: vec![false; sc.supports.len()],
+        holds: vec![false; sc.supports.len()],
     };
     if sk.beams.is_empty() {
         return out;
@@ -696,7 +711,7 @@ pub fn read(sk: &Sketch, sc: &Scenario) -> Read {
         }
     };
     for (k, s) in sc.supports.iter().enumerate() {
-        out.holds_frame[k] = !mesh.nodes_of(sk, &s.at).is_empty();
+        out.holds[k] = !mesh.nodes_of(sk, &s.at).is_empty();
     }
     let of: Vec<_> = sc.requirements.iter().map(|r| frame_of(sk, &mesh, &r.of)).collect();
     let mut modes: BTreeMap<usize, usize> = BTreeMap::new();

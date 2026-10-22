@@ -103,3 +103,41 @@ pub fn power_exact(a: Weighted,b: Weighted,c: Weighted,d: Weighted,e: Weighted) 
     }
     -det.sign()
 }
+
+/* -- in the plane (#510 S2) -------------------------------------------------------------------- */
+
+type Q = [f64;2];
+
+const ORIENT2_BOUND: f64 = (3.+16.*EPS)*EPS;
+const IN_CIRCLE_BOUND: f64 = (10.+96.*EPS)*EPS;
+
+/// The sign of `(b − a) × (c − a)`: positive when `a`, `b`, `c` turn counter-clockwise.
+pub fn orient2(a: Q,b: Q,c: Q) -> i8 {
+    let (l,r) = ((b[0]-a[0])*(c[1]-a[1]),(b[1]-a[1])*(c[0]-a[0]));
+    let det = l-r;
+    let bound = ORIENT2_BOUND*(l.abs()+r.abs());
+    if det > bound || -det > bound { return sign(det); }
+    count_exact();
+    Expansion::diff(b[0],a[0]).mul(&Expansion::diff(c[1],a[1]))
+        .sub(&Expansion::diff(b[1],a[1]).mul(&Expansion::diff(c[0],a[0]))).sign()
+}
+
+/// Positive when `d` is strictly inside the circle through the counter-clockwise `a`, `b`, `c`,
+/// zero on it, negative outside: Shewchuk's incircle, filtered.
+pub fn in_circle(a: Q,b: Q,c: Q,d: Q) -> i8 {
+    let (ax,ay,bx,by,cx,cy) = (a[0]-d[0],a[1]-d[1],b[0]-d[0],b[1]-d[1],c[0]-d[0],c[1]-d[1]);
+    let (la,lb,lc) = (ax*ax+ay*ay,bx*bx+by*by,cx*cx+cy*cy);
+    let det = la*(bx*cy-cx*by)+lb*(cx*ay-ax*cy)+lc*(ax*by-bx*ay);
+    let permanent = la*((bx*cy).abs()+(cx*by).abs())+lb*((cx*ay).abs()+(ax*cy).abs())
+        +lc*((ax*by).abs()+(bx*ay).abs());
+    let bound = IN_CIRCLE_BOUND*permanent;
+    if det > bound || -det > bound { return sign(det); }
+    count_exact();
+    let e = |x: f64,y: f64| Expansion::diff(x,y);
+    let (ax,ay,bx,by,cx,cy) = (e(a[0],d[0]),e(a[1],d[1]),e(b[0],d[0]),e(b[1],d[1]),e(c[0],d[0]),
+                               e(c[1],d[1]));
+    let sq = |x: &Expansion,y: &Expansion| x.mul(x).add(&y.mul(y));
+    let cr = |x1: &Expansion,y1: &Expansion,x2: &Expansion,y2: &Expansion| x1.mul(y2).sub(&x2.mul(y1));
+    sq(&ax,&ay).mul(&cr(&bx,&by,&cx,&cy)).add(&sq(&bx,&by).mul(&cr(&cx,&cy,&ax,&ay)))
+        .add(&sq(&cx,&cy).mul(&cr(&ax,&ay,&bx,&by))).sign()
+}

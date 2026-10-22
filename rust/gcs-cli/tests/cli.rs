@@ -999,3 +999,27 @@ fn a_png_is_refused_what_it_cannot_draw() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("PNG export selects geometry from a .sv model"));
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// **A solid read in its plane is said** (#510 S2): the corpus's Kirsch plate, `plane stress
+/// plate` in its scenario, has its factor of safety said under the scenario — kept — and a
+/// buckling asked of it says why it has none; the document still exits 0.
+#[test]
+fn a_plane_reading_is_said() {
+    let dir = std::env::temp_dir().join(format!("solventc-plane-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("kirsch.sv");
+    let kirsch = include_str!("../../examples/analysis/kirsch.sv")
+        .replace("  claim safety(plate) <= 1.03 * steel.yield / (kt * sigma)\n",
+                 "  claim safety(plate) <= 1.03 * steel.yield / (kt * sigma)\n  \
+                  claim buckling(plate) >= 1\n");
+    std::fs::write(&source,kirsch).unwrap();
+    let path = source.to_str().unwrap();
+    let out = run(&[path]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("  scenario `pull`: safety(plate) is 1.66") && said.contains(", kept\n"),
+            "{said}");
+    assert!(said.contains("  scenario `pull`: buckling(plate) has no answer: `plate` is read in \
+its plane, and a plate buckles out of its plane, which it has no move for\n"),"{said}");
+    std::fs::remove_dir_all(dir).unwrap();
+}

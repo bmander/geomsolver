@@ -1,0 +1,10 @@
+// Presentation of sized_plate.sv. Model geometry is independent of this drawing.
+model m from "sized_plate.sv"
+
+sheet drawing {
+  size A4
+  label "A PLATE SIZED BY ITS SAG" at (14mm, 18mm)
+  label "Its depth is the one at which the end sinks 0.5mm under 4kN, read in plane stress" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

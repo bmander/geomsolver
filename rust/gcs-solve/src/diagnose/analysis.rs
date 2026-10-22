@@ -560,14 +560,17 @@ pub fn scenario_words(sk: &Sketch, sc: &Scenario) -> Vec<String> {
     scenario_read(sk, sc).0
 }
 
-/// **A scenario, read** (#510 S0): its words (`scenario_words`'s, then its frames'), and what
-/// its frames answer of each requirement (`beams::read`).
+/// **A scenario, read** (#510 S0): its words (`scenario_words`'s, then its frames' and its
+/// regions'), and what its frames (`beams::read`) and the solids it reads in their plane (#510 S2,
+/// `prisms::read`) answer of each requirement.  A solid read in its plane is held, and says
+/// where its stress is unbounded, in its own answers, never as a body of the scenario's.
 pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::Read) {
-    let frames = crate::beams::read(sk, sc);
+    let mut frames = crate::beams::read(sk, sc);
+    frames.merge(crate::prisms::read(sk, sc));
     let mut out = Vec::new();
     let mut holds = Vec::new();
     for (k, s) in sc.supports.iter().enumerate() {
-        if frames.holds_frame[k] {
+        if frames.holds[k] {
             continue;
         }
         let read = points(sk, &s.at)
@@ -578,9 +581,10 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
             Err(e) => out.push(format!("scenario `{}`: {e}", sc.name)),
         }
     }
-    let solids = named_solids(sc);
-    // a scenario of frames alone holds no body of its own
-    let of_frames = frames.reads_a_frame() && solids.is_empty() && holds.is_empty();
+    let solids: Vec<usize> =
+        named_solids(sc).into_iter().filter(|&s| sc.plane_of(s).is_none()).collect();
+    // a scenario of frames and regions alone holds no body of its own
+    let of_frames = frames.reads_any() && solids.is_empty() && holds.is_empty();
     if out.is_empty() && !of_frames {
         let fs = freedoms(3, &[], &holds);
         if let Some(free) = freedoms_text(&fs, 3) {
@@ -597,6 +601,7 @@ pub fn scenario_read(sk: &Sketch, sc: &Scenario) -> (Vec<String>, crate::beams::
     let asked: BTreeSet<usize> = sc.requirements.iter()
         .filter(|r| r.output == Output::Safety)
         .filter_map(|r| r.of.solid())
+        .filter(|&s| sc.plane_of(s).is_none())
         .collect();
     for solid in asked {
         let name = &sk.solids[solid].name;

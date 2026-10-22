@@ -9,8 +9,8 @@ use super::resolve::{Operand, Resolver};
 use super::{Code, Diag};
 use crate::ir::{Operation, Statement};
 use crate::model::{
-    Applied, EntKind, EntRef, Grade, Load, LoadKind, LoadValue, Requirement, Scenario, Sketch,
-    Support,
+    Applied, EntKind, EntRef, Grade, InPlane, Load, LoadKind, LoadValue, PlaneReading, Requirement,
+    Scenario, Sketch, Support,
 };
 use crate::syntax::{ItemKind, LoadText, Ref, Span, StmtId};
 use crate::units::Dim;
@@ -31,6 +31,9 @@ pub struct Stated {
     pub heads: Vec<String>,
     /// Each requirement's row, by its constraint's id, where it drives one (#510 S1, `drive`).
     pub driven: Vec<Option<u32>>,
+    /// Where each reading in the plane was written (#510 S2): an extended scenario's are its
+    /// base's.
+    pub readings: Vec<Line>,
 }
 
 /// One line of a scenario's body: the scenario statement, and the line's index in it.
@@ -71,6 +74,7 @@ pub(super) fn scenarios(
                 supports: Vec::new(),
                 loads: Vec::new(),
                 requirements: Vec::new(),
+                readings: Vec::new(),
             },
             stmt: st.id,
             supports: Vec::new(),
@@ -78,6 +82,7 @@ pub(super) fn scenarios(
             requirements: Vec::new(),
             heads: Vec::new(),
             driven: Vec::new(),
+            readings: Vec::new(),
         };
         if let Some(base) = &sc.extends {
             match by_name.get(&base.text) {
@@ -88,6 +93,8 @@ pub(super) fn scenarios(
                     made.scenario.loads = b.scenario.loads.clone();
                     made.supports = b.supports.clone();
                     made.loads = b.loads.clone();
+                    made.scenario.readings = b.scenario.readings.clone();
+                    made.readings = b.readings.clone();
                 }
                 None => diags.push(Diag::within(
                     Code::E101,
@@ -121,6 +128,25 @@ pub(super) fn scenarios(
                     made.heads.push(head);
                     made.driven.push(None);
                 }),
+                ItemKind::Reading { plane, of } => read.reading(*plane, of).and_then(|r| {
+                    let solid = r.of.solid();
+                    match made.scenario.readings.iter().position(|o| o.of.solid() == solid) {
+                        // a reading of its own replaces its base's
+                        Some(k) if made.readings[k].stmt != st.id => {
+                            made.scenario.readings[k] = r;
+                            made.readings[k] = line;
+                            Ok(())
+                        }
+                        Some(_) => Err((Code::E001, Some(of.span), format!(
+                            "`{}` is read in the plane already in this scenario",
+                            crate::syntax::ref_text(of)))),
+                        None => {
+                            made.scenario.readings.push(r);
+                            made.readings.push(line);
+                            Ok(())
+                        }
+                    }
+                }),
             };
             if let Err((code, span, message)) = got {
                 diags.push(Diag::within(code, span.unwrap_or(it.span), st.id, message));
@@ -152,12 +178,13 @@ pub(super) fn scenarios(
 }
 
 /// **Driving requirements compiled into rows** (#510 S1): every `deflection(p, along: d) == v` of
-/// a frame's joint `p` (`beams::of_frame`) becomes a `CKind::Deflection` of the drawing, solved
+/// a frame's joint `p` (`beams::of_frame`), or (#510 S2) of a point of a region the scenario
+/// reads in its plane (`prisms::of_region`), becomes a `CKind::Deflection` of the drawing, solved
 /// under its scenario's supports and loads, which the sketch holds for it (`Sketch::scenarios`);
-/// the row stands where the requirement is written.  One the solve cannot read — a frame the
-/// supports leave free, a direction the solve moves — is **E040** there.  Any other driving
-/// requirement (a solid's; a frame's mode, mass or safety) compiles nothing yet and is judged
-/// after the solve, as a claim is.
+/// the row stands where the requirement is written.  One the solve cannot read — a frame or a
+/// region the supports leave free, a direction the solve moves — is **E040** there.  Any other
+/// driving requirement (a solid's not read in its plane; a mode, a mass or a safety) compiles
+/// nothing yet and is judged after the solve, as a claim is.
 pub(super) fn drive(
     sk: &mut Sketch,
     map: &mut super::source_map::SourceMap,
@@ -176,7 +203,9 @@ pub(super) fn drive(
             else {
                 continue;
             };
-            if p.kind != EntKind::Point || !crate::beams::of_frame(sk, &s.scenario, &r.of) {
+            if p.kind != EntKind::Point || !(crate::beams::of_frame(sk, &s.scenario, &r.of)
+                || crate::prisms::of_region(sk, &s.scenario, &r.of))
+            {
                 continue;
             }
             let line = s.requirements[k];
@@ -196,6 +225,12 @@ pub(super) fn drive(
                 diags.push(Diag::within(Code::E040, span, line.stmt, format!(
                     "`{}` cannot drive the drawing: {m}", s.heads[k])));
                 continue;
+            }
+            // a region's row is meshed once, here, and read so through every solve (#510 S2)
+            if let Ok(crate::constraints::DeflectionRow::Plane(row)) =
+                Constraint::new(CKind::Deflection, args.clone()).deflection_row(sk)
+            {
+                sk.meshed.insert((at as usize, p.i()), row);
             }
             let id = sk.add_quiet(Constraint::new(CKind::Deflection, args));
             // made by the scenario's statement, and stood where its requirement is written
@@ -293,6 +328,26 @@ impl Reading<'_> {
         let (text, span) = &r.value;
         let value = self.number(text, *span, r.output.dim(), word)?;
         Ok(Requirement { output: r.output, of, along, count, compare: r.compare, value, claim: r.claim })
+    }
+
+    /// **`plane stress B`, `plane strain B`** (#510 S2): `B` a solid that is a prism, its face
+    /// swept square to its plane with no draft — what a reading in the plane reads over that face,
+    /// its depth the thickness — else **E040**.
+    fn reading(&self, plane: InPlane, of: &Ref) -> Result<PlaneReading, Fault> {
+        let at = Some(of.span);
+        let named = crate::syntax::ref_text(of);
+        let solid = match self.applied(of, "plane")? {
+            Applied::Ent(e) if e.kind == EntKind::Solid => e.i(),
+            _ => return Err((Code::E040, at, format!(
+                "a solid is read in its plane, and `{named}` is no solid"))),
+        };
+        match &self.sk.solids[solid].def {
+            crate::model::SolidDef::Prism { draft: None, .. } => {}
+            _ => return Err((Code::E040, at, format!(
+                "a solid read in its plane is a prism, its face swept square to its plane \
+                 (`solid(F, from: …, to: …)`), and `{named}` is not"))),
+        }
+        Ok(PlaneReading { plane, of: Applied::Ent(EntRef::solid(solid)) })
     }
 
     /// What a support, a load or an output is of: geometry a body is made of or stands on.

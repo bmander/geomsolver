@@ -1,17 +1,18 @@
-//! `scenario lift { … }` — a load case (#510 P4): its supports, loads and requirements, each a
-//! line of its own.  The body is no body of statements: it declares nothing and relates nothing,
+//! `scenario lift { … }` — a load case (#510 P4): its supports, loads and requirements, and how
+//! it reads a solid in its plane (#510 S2), each a line of its own.  The body is no body of statements: it declares nothing and relates nothing,
 //! so its lines are read here, by their first word, and nowhere else.
 
 use super::P;
 use crate::expr::Cmp;
-use crate::model::{Hold, LoadKind, Output};
+use crate::model::{Hold, LoadKind, Output, InPlane};
 use crate::syntax::lexer::Tok;
 use crate::syntax::{Item, ItemKind, LoadText, RequirementText, Scenario, Span};
 
 /// What a scenario's body holds, said where a line is none of it.
 const HOLDS: &str = "a scenario holds supports (`fixed X`, `pinned X`), loads (`load X (fx, fy, \
-                     fz)`, `load X f along: d`, `pressure F p`, `accelerate B (ax, ay, az)`) and \
-                     requirements (`deflection(X) <= 0.5mm`, `claim mode(B, 1) >= 120Hz`)";
+                     fz)`, `load X f along: d`, `pressure F p`, `accelerate B (ax, ay, az)`), \
+                     requirements (`deflection(X) <= 0.5mm`, `claim mode(B, 1) >= 120Hz`) and \
+                     readings (`plane stress B`, `plane strain B`)";
 
 impl P<'_> {
     /// Whether `scenario NAME` stands here.
@@ -99,6 +100,18 @@ impl P<'_> {
         }
         if call && Output::parse(&w).is_some() {
             return self.requirement(false).map(ItemKind::Requirement);
+        }
+        // `plane stress B`, `plane strain B` (#510 S2)
+        if w == "plane" {
+            self.i += 1;
+            let Some(plane) = self.word_at(self.i).and_then(InPlane::parse) else {
+                self.fail("a solid is read in its plane in `plane stress` or `plane strain`: \
+                           `plane stress B`");
+                return None;
+            };
+            self.i += 1;
+            let of = self.refr()?;
+            return Some(ItemKind::Reading { plane, of });
         }
         self.fail(HOLDS);
         None

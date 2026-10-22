@@ -43,6 +43,7 @@ in std.front {
 membrane := solid(quarter, from: -thickness / 2, to: thickness / 2) of le1
 
 scenario le1 {
+  plane stress membrane
   pinned membrane.dc along: std.z
   pinned membrane.ab along: std.x
   pinned d along: std.y
