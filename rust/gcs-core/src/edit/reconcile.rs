@@ -104,7 +104,9 @@ fn origin_of(sk: &Sketch, r: EntRef) -> Option<usize> {
 }
 
 /// A fresh name for each entity the sketch has past what the elaboration made — the high-water
-/// mark, per kind: past it is new — but a plane's origin.
+/// mark, per kind: past it is new — but a plane's origin, and a plane's normal: minted where the
+/// document reads it, and `o.plane.normal` after every axis a statement made (#463), so past the
+/// mark and still nothing a gesture drew.
 fn new_entities(
     e: &Elaborated,
     sk: &Sketch,
@@ -117,7 +119,9 @@ fn new_entities(
     }
     let mut minted = Names::new();
     for r in sk.primitives() {
-        if r.i() < high.get(&r.kind).copied().unwrap_or(0) || origin_of(sk, r).is_some() {
+        if r.i() < high.get(&r.kind).copied().unwrap_or(0) || origin_of(sk, r).is_some()
+            || (r.kind == EntKind::Axis && sk.normal_of(r.i()).is_some())
+        {
             continue;
         }
         minted.insert(r, next_name(taken, r.kind));
@@ -575,7 +579,14 @@ fn gauge_key(r: &syntax::Relation) -> Option<GaugeKey> {
             if crate::constraints::gauge_op(&w.word.text)? != CKind::Fix {
                 return None;
             }
-            let fields: Vec<syntax::Name> = w.slots().map(|(key, _)| key).collect();
+            // a joint's value is read off the statement and holds no number
+            // (`program::motions::holding`): no gauge says it, and a `fix` of only one is none
+            let value = |key: &syntax::Name| key.text == crate::constraints::JOINT_VALUE;
+            let keys: Vec<syntax::Name> = w.slots().map(|(key, _)| key).collect();
+            if keys.iter().any(value) && keys.iter().all(value) {
+                return None;
+            }
+            let fields: Vec<syntax::Name> = keys.into_iter().filter(|k| !value(k)).collect();
             Some(gauge_key_of(syntax::ref_text(w.ops.first()?), fields.iter().map(|k| k.text.as_str())))
         }
         syntax::RelationForm::Canonical { kind: CKind::Fix, args, .. } => {
