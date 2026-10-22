@@ -264,7 +264,7 @@ impl Lookup<'_> {
             let mut replaced = false;
             for take in (1..=segs.len()).rev() {
                 let key = segs[..take].join(".");
-                if names.contains(&key) || self.standard.made(&key) {
+                if names.contains(&key) {
                     return Some((key, segs[take..].to_vec()));
                 }
                 if let Some(next) = alias.alias(&key) {
@@ -386,7 +386,7 @@ impl Lookup<'_> {
     fn frame(&self, abs: &str) -> bool {
         let mut at = abs.to_string();
         for _ in 0..MAX_DEPTH {
-            match self.standard.frames.get(&at) {
+            match self.standard.frames.get(&at).map(|f| &f.reads) {
                 None => return false,
                 Some(None) => return true,
                 Some(Some((source, sc))) => match self.raw(source, sc) {

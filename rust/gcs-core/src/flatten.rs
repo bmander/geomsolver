@@ -296,28 +296,26 @@ impl InPlane {
 
 /// **The standard datums** (#524, #542), as a definition's body reads them: the files that say
 /// `use std` — the document (`None`) or a module — empty where the drawing has none, and every
-/// frame declared, by absolute name, whose own datums an instance standing in it reads.  A frame
-/// declared bare is one (`None`); a reading at an instant (`Walk::walk_reading_at`) is one where
-/// its source, read where it was written, is.  `read` is every frame a body has read a datum of
-/// that is made (`std.front`, not `std.x`, which is the frame's `u`): its `FrameDatums`, walked
-/// once each after the document (`Walk::finish`), under `keys::frame_datums`, whose names `own`
-/// are, and sited where the frame is (`sited`): what a part declares the frame in makes them.
+/// frame declared, by absolute name, whose own datums an instance standing in it reads.  `read`
+/// is every frame a body has read a datum of that is made (`std.front`, not `std.x`, which is the
+/// frame's `u`): its `FrameDatums`, whose declarations `own` are, walked once each after the
+/// document (`Walk::finish`) under `keys::frame_datums`.
 #[derive(Clone, Default)]
 struct Datums {
     files: BTreeSet<Option<usize>>,
-    frames: BTreeMap<String, Option<(Ref, Scope)>>,
-    sited: BTreeMap<String, Vec<PathStep>>,
+    frames: BTreeMap<String, Frame>,
+    /// Shared by every clone (`drawn_incidences` resolves through one), so no read is lost.
     read: std::rc::Rc<std::cell::RefCell<BTreeSet<String>>>,
-    own: BTreeSet<String>,
+    own: BTreeMap<String, crate::model::EntKind>,
 }
 
-impl Datums {
-    /// Whether `key` is a frame's own datum a body has read: a name from then on, whatever reads
-    /// it — an alias a call made of it too — though made only after the document (`read`).
-    fn made(&self, key: &str) -> bool {
-        keys::frame_datum(key)
-            .is_some_and(|(f, d)| self.own.contains(d) && self.read.borrow().contains(f))
-    }
+/// A frame declared (#524, #542): a reading at an instant (`Walk::walk_reading_at`) is one where
+/// its source, read where it was written, is — `None` for one declared bare — and its datums are
+/// walked where it was, so what a part declares it in makes them.
+#[derive(Clone)]
+struct Frame {
+    reads: Option<(Ref, Scope)>,
+    path: Vec<PathStep>,
 }
 
 pub struct Expansion {
@@ -744,7 +742,7 @@ impl<'a> Walk<'a> {
         let std_module = prog.modules.iter().position(|m| m.name == "std");
         let standard = std_module.and_then(|k| prog.component_in(Some(k), "StandardDatums"));
         let declared = |c: &'a Component| c.body.iter().filter_map(|st| match &st.kind {
-            StmtKind::Decl(d) => Some(d.name.key().text.clone()),
+            StmtKind::Decl(d) => Some((d.name.key().text.clone(), d.kind)),
             _ => None,
         });
         let shadowed = prog.root().body.iter().any(|st| match &st.kind {
@@ -767,7 +765,7 @@ impl<'a> Walk<'a> {
             units,
             out: Vec::new(),
             names: if !files.is_empty() {
-                declared(standard.unwrap()).map(|n| format!("std.{n}")).collect()
+                declared(standard.unwrap()).map(|(n, _)| format!("std.{n}")).collect()
             } else { BTreeSet::new() },
             solid_names: BTreeSet::new(),
             aliases: Vec::new(),
@@ -839,15 +837,21 @@ impl<'a> Walk<'a> {
         if self.standard.files.is_empty() {
             return None;
         }
-        let k = self.prog.modules.iter().position(|m| m.name == "std");
-        let scope = Scope { prefixes: vec!["std.".into()], module: k, ..Scope::default() };
-        Some((self.prog.component_in(k, "StandardDatums")?, scope))
+        let comp = self.std_component("StandardDatums")?;
+        Some((comp, Scope { prefixes: vec!["std.".into()], module: comp.module, ..Scope::default() }))
     }
 
-    /// `std`'s `FrameDatums`, what a frame's own standard datums are (#542).
-    fn frame_datums_component(&self) -> Option<&'a Component> {
-        let k = self.prog.modules.iter().position(|m| m.name == "std");
-        self.prog.component_in(k, "FrameDatums")
+    /// `std`'s component `name`.
+    fn std_component(&self, name: &str) -> Option<&'a Component> {
+        self.prog.component_in(self.prog.modules.iter().position(|m| m.name == "std"), name)
+    }
+
+    /// Frame `abs`, declared at `path` (`Datums::frames`): its own datums' names made with it, a
+    /// key no source can spell, so a name only to a body reading them as `std` (#542).
+    fn declare_frame(&mut self, abs: String, reads: Option<(Ref, Scope)>, path: &[PathStep]) {
+        let made = keys::frame_datums(&abs);
+        self.names.extend(self.standard.own.keys().map(|d| format!("{made}{d}")));
+        self.standard.frames.insert(abs, Frame { reads, path: path.to_vec() });
     }
 
     /// **A frame's own standard datums** (#542), for every frame a body standing in it read one
@@ -855,7 +859,7 @@ impl<'a> Walk<'a> {
     /// the frame, once a frame and where the frame is declared — after the document's own and the
     /// world's, which resolution by name lets every body read whatever order they are made in.
     fn frame_datums(&mut self) {
-        let Some(comp) = self.frame_datums_component() else { return };
+        let Some(comp) = self.std_component("FrameDatums") else { return };
         let [formal] = &comp.formals[..] else { return };
         let frames = self.standard.read.borrow().clone();
         for frame in frames {
@@ -867,7 +871,7 @@ impl<'a> Walk<'a> {
             let mut scope = Scope { prefixes: vec![prefix], module: comp.module, ..Scope::default() };
             scope.stamps.anonymous = true;
             let mut vals = Vals::of(self.module_params(comp.module.unwrap()));
-            let path = self.standard.sited.get(&frame).cloned().unwrap_or_default();
+            let path = self.standard.frames.get(&frame).map(|f| f.path.clone()).unwrap_or_default();
             self.body(&comp.body, &scope, &mut vals, &path, 1);
         }
     }

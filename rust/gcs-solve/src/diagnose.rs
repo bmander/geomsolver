@@ -193,11 +193,11 @@ pub struct Driven {
 pub fn view_freedoms(sk: &Sketch, d: &Diagnosis) -> Vec<String> {
     let under: BTreeSet<u32> = d.under_params.iter().copied().collect();
     let mut out = Vec::new();
-    let charts = || sk.frames.iter().enumerate().filter_map(|(i, f)| Some((i, f.chart.as_ref()?)));
-    for (i, p) in charts() {
+    let mut places = BTreeSet::new();
+    for (i, p) in sk.frames.iter().enumerate().filter_map(|(i, f)| Some((i, f.chart.as_ref()?))) {
         // one standing where an earlier one does is that frame read another way (a frame's own
         // datums, `Sketch::plane_at`): its freedoms are the earlier one's, said there
-        if charts().take_while(|&(j, _)| j < i).any(|(_, q)| q.o == p.o) {
+        if !places.insert(p.o) {
             continue;
         }
         let axes = [p.u, p.v].map(|r| sk.axes[r as usize].d);
