@@ -31,7 +31,7 @@ import { Param, Plane, Point, Primitive, Sketch, toWire } from '../core/model.js
 import * as params from '../core/parameters.js';
 import type { March, Parameter } from '../core/parameters.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
-import type { BodyWord, Region } from '../core/program.js';
+import type { BodyWord, Region, Scenario } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import type { Item } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
@@ -323,6 +323,9 @@ export class SketchView {
    *  came from a Point becomes a constraint once there is a curve to name. */
   pendingFit: Place[] = [];
   diagnosis: Diagnosis | null = null;
+  /** What each load scenario says of the drawing as it stands, read again after every solve: a
+   *  requirement refuted is a word of the footer's, as a claim about solids is. */
+  scenarios: Scenario[] = [];
   /** The constraint the shell has the focus on, so its callout can say so. */
   litConstraint: Constraint | null = null;
   lastResult: SolveResult | null = null;
@@ -368,6 +371,8 @@ export class SketchView {
   /** The claims about solids being judged in the background, as the judging moves; null once the
    *  drawing has none. */
   onClaims: (judging: Judging | null) => void = () => {};
+  /** The load scenarios were read again, after a solve (`scenarios`). */
+  onScenarios: (scenarios: Scenario[]) => void = () => {};
   /** A dimension callout was clicked: the shell puts the focus on that constraint. */
   onPickConstraint: (c: Constraint) => void = () => {};
   /** What is held changed, and nothing else did — the line that names it is the whole of the
@@ -1146,6 +1151,8 @@ export class SketchView {
     this.syncSource();        // the drawing changed, so the document has to say what it now says
     this.fields.start(this.doc);
     this.claims.start(this.doc);
+    this.scenarios = this.doc.scenarios();
+    this.onScenarios(this.scenarios);
     this.followLater();
     if (!this.holding) this.onChanged();
     this.draw();

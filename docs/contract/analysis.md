@@ -231,6 +231,12 @@ another.
   (`gcs-cli/tests/cli.rs`, `a_frames_answers_are_said`). The words of a scenario's solids
   (`scenario_words`) leave out the supports that hold a frame, and a scenario of frames alone
   holds no body of its own (`diagnose::analysis::scenario_read`).
+  **The page says them too**, from the same JSON (FFI `gcs_elab_scenarios_json`,
+  `Document.scenarios`): read again after every solve (`SketchView.afterEdit`, `view.scenarios`),
+  counted in the footer's `#scenarios` line — what holds, what fails, what has no answer, each
+  word — with every sentence as its tooltip, red and standing while one fails, and listed in the
+  Diagnosis report.  A document whose requirements fail never looks solved and silent
+  (`core.test.ts`, `a document says what its load scenarios answer`).
 
 - **What S0 leaves.**
   - ~~**No row.**~~ S1 compiles a driving deflection to the beam's row (below).

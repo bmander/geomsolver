@@ -73,10 +73,11 @@ import {
 } from './shell.js';
 import {
   MenuItem, ToolbarButton, addButton, addMenu, addTopic, askChoice, closeMenus, download, fitBars,
-  judgingLine, openImage, refining, toast,
+  judgingLine, openImage, refining, scenarioLine, toast,
 } from './ui.js';
 import { objectName, type Refining } from './field-preview.js';
 import type { Judging } from './claim-judging.js';
+import type { Scenario } from '../core/program.js';
 import { Tool } from './view.js';
 import { meshing } from './loading.js';
 import { Timeline } from './timeline.js';
@@ -332,6 +333,34 @@ function sayJudging(j: Judging | null): void {
     ?? `reading the drawing to judge ${j.claims.length} claim${j.claims.length === 1 ? '' : 's'}`;
   judgingLine(`${spin} ${doing} ${'▰'.repeat(n)}${'▱'.repeat(8 - n)} ${clock}`);
   judgingTick = window.setInterval(() => sayJudging(view.claims.judging), 250);
+}
+
+/** **The load scenarios, said in the footer** after each solve: how many requirements hold and
+ *  how many do not — a claim refuted, a driving row not reached, one with no answer — with each
+ *  sentence the core said of them (`` scenario `shelf`: safety(bracket) is 1.22695e-05: claimed
+ *  >= 1, refuted ``) as the line's tooltip.  All holding, the line stays a few seconds; one
+ *  failing, or a word of what leaves a structure free, it stays, and in red. */
+let scenarioTimer = 0;
+function showScenarios(ss: Scenario[]): void {
+  clearTimeout(scenarioTimer);
+  const answers = ss.flatMap((s) => s.answers);
+  const words = ss.flatMap((s) => s.words);
+  if (!answers.length && !words.length) { scenarioLine(''); return; }
+  const held = answers.filter((a) => a.holds === true).length;
+  const failed = answers.filter((a) => a.holds === false).length;
+  const unanswered = answers.filter((a) => a.holds === null).length;
+  const said = [failed && `${failed} fail${failed === 1 ? 's' : ''}`,
+    unanswered && `${unanswered} without an answer`,
+    words.length && `${words.length} warning${words.length === 1 ? '' : 's'}`,
+    held && `${held} hold${held === 1 ? 's' : ''}`].filter(Boolean).join(', ');
+  const all = [...words, ...answers.map((a) => a.text)].join('\n');
+  const label = ss.length === 1 ? `scenario ${ss[0].name}` : 'scenarios';
+  if (failed || unanswered || words.length) {
+    scenarioLine(`${label}: ${said}`, 'failed', all);
+    return;
+  }
+  scenarioLine(`${label}: ${said}`, 'finished', all);
+  scenarioTimer = window.setTimeout(() => scenarioLine(''), 5000);
 }
 
 /** **The background refinement, said in the footer** — one entry an object, while any is going:
@@ -679,6 +708,7 @@ timeline.refresh();
 view.onStatus = toast;
 view.onRefine = (list) => { showRefining(list); meshing(list); };
 view.onClaims = showJudging;
+view.onScenarios = showScenarios;
 hooks.focusChanged = showStatementFor;
 bindProgramPanel();
 new ResizeObserver(() => view.resize()).observe(canvas);
