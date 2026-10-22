@@ -1,8 +1,8 @@
 //! The four-cylinder engine (`rust/examples/engine.sv`, its parts in `engine/`) as solids: the
-//! assembly shows one of every part it places — block and sump, head and camshafts, crankshaft,
-//! rods, pistons, pulleys — each built exactly, the turned and swept ones the closed form of the
-//! table's numbers; and each part's file opens alone from its `preview`, solving with nothing left
-//! free and building the solid the assembly does.
+//! assembly shows one of every part it places — block, bearing caps, core plugs and oil pan, head
+//! and camshafts, crankshaft, rods, pistons, pulleys — each built exactly, the turned and swept
+//! ones the closed form of the table's numbers; and each part's file opens alone from its
+//! `preview`, solving with nothing left free and building the solid the assembly does.
 use gcs_core::brep::props;
 use gcs_core::diagnose::{self,State};
 use gcs_core::program::Elaborated;
@@ -21,6 +21,10 @@ const BACK: f64 = 4.*P+25.;
 const RAIL: f64 = -40.;
 const SUMP: f64 = -130.;
 const KW: f64 = 105.;
+const RJ: f64 = 25.;
+const CAPD: f64 = 14.;
+const WMB: f64 = 22.;
+const HW: f64 = 75.;
 const GASKET: f64 = 2.;
 const HEAD: f64 = 190.;
 const RCAMJ: f64 = 13.;
@@ -59,20 +63,28 @@ fn the_engine_shows_a_solid_of_every_part() {
     let mut shown: Vec<String> = gcs_core::overview::shown_objects(&e.sketch).into_iter()
         .map(|i| e.sketch.solid_name(i)).collect();
     shown.sort();
-    let mut want = vec!["block.casting","block.pan","head.casting","head.camshaft_i",
+    let mut want = vec!["block.casting","block.main_caps","block.plugs","block.pan",
+        "head.casting","head.camshaft_i",
         "head.camshaft_e","crank.shaft","rod1.body","rod2.body","rod3.body","rod4.body",
         "pistons1.body","pistons2.body","pistons3.body","pistons4.body","drive.crank_pulley",
         "drive.cam_pulley_i","drive.cam_pulley_e"];
     want.sort();
     assert_eq!(shown,want);
 
-    // the castings run the block's length, the block from its rail to its deck and the sump from
-    // the rail to its floor; the head stands on its gasket
+    // the castings run the block's length, the block from its rail to its deck and the pan, its
+    // flange the block's outline under the rail, from the rail to its floor; the head stands on
+    // its gasket
     let (_,b) = built(&e,"block.casting");
     for (got,want) in b.iter().zip([FRONT,BACK,-KW,KW,RAIL,DECK]) { close("block",*got,want); }
     let (_,b) = built(&e,"block.pan");
-    close("pan floor",b[4],SUMP);
-    close("pan top",b[5],RAIL);
+    for (got,want) in b.iter().zip([FRONT,BACK,-KW,KW,SUMP-8.,RAIL]) { close("pan",*got,want); }
+    // the five bearing caps are half rings round the shells, `wmb` long; the eight core plugs
+    // discs 16 in radius and 4 thick, a millimetre inside the block's sides
+    let rmb = RJ+2.;
+    close("bearing caps",built(&e,"block.main_caps").0,5.*WMB*PI/2.*((rmb+CAPD).powi(2)-rmb*rmb));
+    let (v,b) = built(&e,"block.plugs");
+    close("core plugs",v,8.*PI*16.*16.*4.);
+    close("plugs out",b[3],HW-1.);
     let (_,b) = built(&e,"head.casting");
     close("head face",b[4],DECK+GASKET);
     close("head top",b[5],DECK+HEAD);
@@ -106,7 +118,8 @@ fn the_engine_shows_a_solid_of_every_part() {
 fn each_part_previews_as_the_assembly_builds_it() {
     let whole = open("engine.sv");
     let parts: [(&str,&[(&str,&str)]);8] = [
-        ("block",&[("block.casting","block.casting"),("block.pan","block.pan")]),
+        ("block",&[("block.casting","block.casting"),("block.pan","block.pan"),
+                   ("block.main_caps","block.main_caps"),("block.plugs","block.plugs")]),
         ("head",&[("cylinder_head.casting","head.casting"),
                   ("cylinder_head.camshaft_i","head.camshaft_i")]),
         ("crankshaft",&[("crank.shaft","crank.shaft")]),

@@ -153,4 +153,53 @@ sheet drawing {
   style m.drive.pcrank { color: #2a7ab0; width: 1.2 }
   style m.drive.pcam_i { color: #2a7ab0; width: 1.2 }
   style m.drive.pcam_e { color: #2a7ab0; width: 1.2 }
+  // the block and its oil pan (`engine/block.sv`): the points of the pan's wall, flange and
+  // bolts, its drain, and the water jacket, hidden; the drain plug's hole drawn hidden
+  style m.block.jl0.p { display: none }
+  style m.block.jl1.p { display: none }
+  style m.block.jl2.p { display: none }
+  style m.block.jl3.p { display: none }
+  style m.block.jr0.p { display: none }
+  style m.block.jr1.p { display: none }
+  style m.block.jr2.p { display: none }
+  style m.block.jr3.p { display: none }
+  style m.block.lo_l.p { display: none }
+  style m.block.lo_r.p { display: none }
+  style m.block.li_l.p { display: none }
+  style m.block.li_r.p { display: none }
+  style m.block.it_l { display: none }
+  style m.block.it_r { display: none }
+  style m.block.ih_l { display: none }
+  style m.block.ih_r { display: none }
+  style m.block.ip_l { display: none }
+  style m.block.ip_r { display: none }
+  style m.block.bolt_l.a { display: none }
+  style m.block.bolt_l.b { display: none }
+  style m.block.bolt_l.c { display: none }
+  style m.block.bolt_l.d { display: none }
+  style m.block.bolt_r.a { display: none }
+  style m.block.bolt_r.b { display: none }
+  style m.block.bolt_r.c { display: none }
+  style m.block.bolt_r.d { display: none }
+  style m.block.pf_f.p { display: none }
+  style m.block.pf_b.p { display: none }
+  style m.block.it_a { display: none }
+  style m.block.j_b { display: none }
+  style m.block.j_c { display: none }
+  style m.block.j_d { display: none }
+  style m.block.it_e { display: none }
+  style m.block.db0.p { display: none }
+  style m.block.db1.p { display: none }
+  style m.block.db2.p { display: none }
+  style m.block.db3.p { display: none }
+  style m.block.dh0.p { display: none }
+  style m.block.dh1.p { display: none }
+  style m.block.dh2.p { display: none }
+  style m.block.dh3.p { display: none }
+  style m.block.jk0.p { display: none }
+  style m.block.jk1.p { display: none }
+  style m.block.jk2.p { display: none }
+  style m.block.jk3.p { display: none }
+  style m.block.drain_f { color: #7a7a7a; width: 0.6; dash: 4 3 }
+  style m.block.drain_b { color: #7a7a7a; width: 0.6; dash: 4 3 }
 }
