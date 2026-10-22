@@ -60,16 +60,16 @@ sheet drawing {
   style m.head.seat_e { display: none }
   style m.head.cam_i { display: none }
   style m.head.cam_e { display: none }
-  style m.head.lobe_i.n { display: none }
-  style m.head.lobe_i.fl.a { display: none }
-  style m.head.lobe_i.fl.b { display: none }
-  style m.head.lobe_i.fr.a { display: none }
-  style m.head.lobe_i.fr.b { display: none }
-  style m.head.lobe_e.n { display: none }
-  style m.head.lobe_e.fl.a { display: none }
-  style m.head.lobe_e.fl.b { display: none }
-  style m.head.lobe_e.fr.a { display: none }
-  style m.head.lobe_e.fr.b { display: none }
+  style m.camshaft_i.lobe.n { display: none }
+  style m.camshaft_i.lobe.br { display: none }
+  style m.camshaft_i.lobe.bl { display: none }
+  style m.camshaft_i.lobe.nr { display: none }
+  style m.camshaft_i.lobe.nl { display: none }
+  style m.camshaft_e.lobe.n { display: none }
+  style m.camshaft_e.lobe.br { display: none }
+  style m.camshaft_e.lobe.bl { display: none }
+  style m.camshaft_e.lobe.nr { display: none }
+  style m.camshaft_e.lobe.nl { display: none }
   style m.head.v_i.fc { display: none }
   style m.head.v_i.f1 { display: none }
   style m.head.v_i.f2 { display: none }
@@ -122,8 +122,8 @@ sheet drawing {
   style m.side.axisline { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.head.vaxis_i { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.head.vaxis_e { color: #888888; width: 0.5; dash: 14 3 2 3 }
-  style m.head.lobe_i.spine { color: #888888; width: 0.5; dash: 14 3 2 3 }
-  style m.head.lobe_e.spine { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.camshaft_i.lobe.spine { color: #888888; width: 0.5; dash: 14 3 2 3 }
+  style m.camshaft_e.lobe.spine { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.head.camline { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.head.cl_i { color: #888888; width: 0.5; dash: 14 3 2 3 }
   style m.head.cl_e { color: #888888; width: 0.5; dash: 14 3 2 3 }
