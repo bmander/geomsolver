@@ -2545,7 +2545,7 @@ a,b` leaves those out, each a name and everything under it, for a cutaway
 (`--hide block.casting,head`).  An open box, a belt off its pulleys, a piston not at its stroke —
 a picture shows what no number in the report does.
 
-Exit codes: 0 solved, 1 did not parse or elaborate, 2 did not solve. A successful solve does not
+Exit codes: 0 solved, 1 did not parse or elaborate, 2 did not solve, 64 a wrong command line. A successful solve does not
 mean the model is fully constrained: read the diagnosis — parameter and equation counts, the
 **DOF**, and culprit lines (`over:`, `conflict:`, `implied:`). The status (`diagnosis.status` under
 `--json`):

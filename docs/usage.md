@@ -48,8 +48,11 @@ build/solventc --lint drawing.sv             # also where its text drifts from t
 build/solventc --help                        # every option
 ```
 
-The exit codes are `0` (elaborated and solved), `1` (did not parse or elaborate) and `2` (did not
-solve, unless `--allow-unsolved`), so you can check a document in CI. A diagnostic carries its
+The exit codes are `0` (elaborated and solved), `1` (did not parse or elaborate), `2` (did not
+solve, unless `--allow-unsolved`) and `64` (the command line was wrong: an unknown option, an option
+missing its value, no document), so you can check a document in CI.  A wrong command line says what
+was wrong and the synopsis, and points at `--help`; `--help` has every option, examples and where
+the primer is. A diagnostic carries its
 span, for example `gear.sv:31:14: error[E040]: …`. The wording of the report is the core's, so the
 CLI and the app describe a drawing the same way.
 

@@ -25,10 +25,48 @@ fn version_is_said_and_succeeds() {
     assert!(String::from_utf8_lossy(&output.stdout).starts_with("solventc "));
 }
 
+/// A command line that cannot be read says what is wrong first, then the synopsis and where the
+/// options are — not every option, which would push the one line that matters off the screen —
+/// and exits 64, apart from what a document is.
+#[test]
+fn a_wrong_command_line_says_why_and_points_at_help() {
+    for (args,why) in [(&[][..],"no document given"),(&["--bogus","x.sv"][..],"unknown option `--bogus`"),
+        (&["--glb","x.glb","x.sv"][..],"unknown option `--glb`"),(&["x.sv","--where"][..],"--where needs a name")] {
+        let output = run(args);
+        assert_eq!(output.status.code(),Some(64),"{args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.starts_with(&format!("solventc: {why}\n")),"{args:?}: {stderr}");
+        assert!(stderr.contains("usage: solventc [OPTIONS] FILE...") && stderr.contains("solventc --help"),"{stderr}");
+        assert!(!stderr.contains("--measure-samples"),"the whole of the help is not repeated: {stderr}");
+        assert!(output.stdout.is_empty());
+    }
+}
+
+/// `--help` is the whole of it: every option the parser reads, examples, the exit codes and where
+/// the language is written down.
+#[test]
+fn help_lists_every_option_examples_and_the_primer() {
+    let output = run(&["--help"]);
+    assert_eq!(output.status.code(),Some(0));
+    let help = String::from_utf8_lossy(&output.stdout);
+    let source = include_str!("../src/main.rs");
+    let parser = &source[source.find("fn main()").unwrap()..];
+    let mut read = 0;
+    for option in parser.split('"').skip(1).step_by(2)
+        .filter(|s| s.starts_with('-') && s.len() > 1 && !s.contains(char::is_whitespace)) {
+        assert!(help.contains(&format!(" {option} ")) || help.contains(&format!(" {option},")),
+            "{option} is read but not in --help");
+        read += 1;
+    }
+    assert!(read > 20,"the parser's options were found ({read})");
+    assert!(help.contains("Examples:") && help.contains("solvent-primer.md") && help.contains("64 the command line"));
+    assert!(help.lines().all(|l| l.chars().count() <= 100),"--help fits 100 columns");
+}
+
 #[test]
 fn unknown_stl_backend_is_refused() {
     let output = run(&["--stl-backend","unknown"]);
-    assert_eq!(output.status.code(),Some(2));
+    assert_eq!(output.status.code(),Some(64));
     assert!(String::from_utf8_lossy(&output.stderr).contains("occt, mesh or refine"));
 }
 
@@ -231,14 +269,14 @@ fn the_rounds_export_and_measure_within_their_tolerance() {
 #[test]
 fn a_tolerance_is_a_positive_length_for_a_native_export() {
     let output = run(&[&doc("swept_torus.sv"),"--tolerance","3furlongs","--step","x.step"]);
-    assert_eq!(output.status.code(),Some(2));
+    assert_eq!(output.status.code(),Some(64));
     assert!(String::from_utf8_lossy(&output.stderr).contains("`furlongs` is not a length unit"));
     let output = run(&[&doc("swept_torus.sv"),"--tolerance","0mm","--step","x.step"]);
-    assert_eq!(output.status.code(),Some(2));
+    assert_eq!(output.status.code(),Some(64));
     assert!(String::from_utf8_lossy(&output.stderr).contains("a tolerance is a positive length"));
     // It holds an export or a measurement to it, and means nothing to a document only checked.
     let output = run(&[&doc("swept_torus.sv"),"--tolerance","--no-diagnose"]);
-    assert_eq!(output.status.code(),Some(2));
+    assert_eq!(output.status.code(),Some(64));
     assert!(String::from_utf8_lossy(&output.stderr).contains("--tolerance holds a native export"));
 }
 
@@ -516,7 +554,7 @@ fn output_writes_an_svg() {
 
     // one file, so one document
     let two = run(&["--output", &out.to_string_lossy(), &doc("rect_fillets.sv"), &doc("truss.sv")]);
-    assert_eq!(two.status.code(), Some(2));
+    assert_eq!(two.status.code(), Some(64));
 }
 
 #[test]
@@ -1020,7 +1058,7 @@ fn a_part_file_draws_its_preview() {
 #[test]
 fn a_png_is_refused_what_it_cannot_draw() {
     let out = run(&[&doc("solid_pulley.sv"), "--png", "x.png", "--view", "askew"]);
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(64));
     assert!(String::from_utf8_lossy(&out.stderr).contains("--view needs front, back, right, left, top, bottom, isometric"));
     let dir = std::env::temp_dir().join(format!("solventc-png-refused-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
