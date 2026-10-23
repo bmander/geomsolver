@@ -46,14 +46,16 @@ pub use measures::MeasureStated;
 /// document's statement that used it.
 pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program) -> Vec<Diag> {
     let place = refused::Placing::new(p);
-    let mut diags = refused::solids(sk, map, p, &place);
-    let at = |e: EntRef| place.site(map.site_of(e));
+    let mut diags = refused::solids(sk, map, &place);
+    let refuse = |e: EntRef, message: String| {
+        let (span, stmt) = place.site(map.site_of(e));
+        Diag::new(Code::E080, span, stmt, message)
+    };
     // a prism's side is read in the drawing, where its envelope stands for it (`extruded_envelopes`)
     let prism = |i: usize| matches!(sk.solids[sk.surfaces[i].solid as usize].def, crate::model::SolidDef::Prism { .. });
     for i in (0..sk.surfaces.len()).filter(|&i| !prism(i)) {
         if let Err(message) = crate::solid::RevolvedSurface::named(sk,i) {
-            let (span, stmt) = at(crate::model::EntRef::new(crate::model::EntKind::Surface,i));
-            diags.push(Diag::new(Code::E080, span, stmt, message));
+            diags.push(refuse(EntRef::new(crate::model::EntKind::Surface, i), message));
         }
     }
     for i in 0..sk.motions.len() {
@@ -70,8 +72,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
             _ => crate::motion::evaluate(sk,i,0.).map(|_| ()),
         };
         if let Err(message) = read {
-            let (span, stmt) = at(crate::model::EntRef::new(crate::model::EntKind::Motion,i));
-            diags.push(Diag::new(Code::E080, span, stmt, message));
+            diags.push(refuse(EntRef::new(crate::model::EntKind::Motion, i), message));
         }
     }
     // a profile cut under a frame the drawing moves, read in its plane (#398 F)
@@ -79,8 +80,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
         let crate::model::CurveBody::Envelope(g) = &sk.curve_defs[sk.curves[i].def as usize].body
         else { continue };
         if let Err(message) = sk.generated_flat(i,&g.flat) {
-            let (span, stmt) = at(crate::model::EntRef::new(crate::model::EntKind::Curve,i));
-            diags.push(Diag::new(Code::E080, span, stmt, message));
+            diags.push(refuse(EntRef::new(crate::model::EntKind::Curve, i), message));
         }
     }
     diags.extend(views::degenerate(sk, map));
@@ -89,8 +89,7 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
         // a set's envelope has no side to read after the solve: its contacts are its rows (#283)
         if sk.envelopes[i].surface.is_none() { continue; }
         if let Err(message) = crate::envelope::GeneratedEnvelope::named(sk,i) {
-            let (span, stmt) = at(crate::model::EntRef::new(crate::model::EntKind::Envelope,i));
-            diags.push(Diag::new(Code::E080, span, stmt, message));
+            diags.push(refuse(EntRef::new(crate::model::EntKind::Envelope, i), message));
         }
     }
     // a module's own place, where no statement of the document made it

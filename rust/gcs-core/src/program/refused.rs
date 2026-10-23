@@ -38,7 +38,7 @@ impl<'a> Placing<'a> {
         if self.in_document(site.span) {
             return (site.span, Some(site.stmt));
         }
-        // the statement ids of every statement, gathered only once a site is in a module
+        // where every statement is, gathered only once a site is in a module
         let spans = self.spans.get_or_init(|| self.p.stmts().map(|st| (st.id, st.span)).collect());
         site.path.0.iter().rev()
             .filter_map(|step| match step {
@@ -50,16 +50,9 @@ impl<'a> Placing<'a> {
     }
 }
 
-/// The refused solids, by index, in their own words: every solid but a body, validated.
-fn refused(sk: &Sketch) -> BTreeMap<usize, String> {
-    sk.solids.iter().enumerate()
-        .filter(|(_, s)| !matches!(s.def, SolidDef::Body { .. }))
-        .filter_map(|(i, _)| Some((i, crate::solid::validate(sk, i).err()?)))
-        .collect()
-}
-
-/// What each solid is built on, which of them are refused, and which of those are roots.
-pub(super) struct Causes<'a> {
+/// What each solid is built on, which of them are refused (in their own words), and which of
+/// those are roots.
+struct Causes<'a> {
     sk: &'a Sketch,
     refused: BTreeMap<usize, String>,
     on: Vec<Vec<usize>>,
@@ -68,9 +61,14 @@ pub(super) struct Causes<'a> {
 }
 
 impl<'a> Causes<'a> {
-    pub(super) fn new(sk: &'a Sketch) -> Causes<'a> {
+    fn new(sk: &'a Sketch) -> Causes<'a> {
+        // every solid but a body, validated: a body's refusal is its operands'
+        let refused = sk.solids.iter().enumerate()
+            .filter(|(_, s)| !matches!(s.def, SolidDef::Body { .. }))
+            .filter_map(|(i, _)| Some((i, crate::solid::validate(sk, i).err()?)))
+            .collect();
         let on = (0..sk.solids.len()).map(|i| crate::solid::built_on(sk, i)).collect();
-        let mut causes = Causes { sk, refused: refused(sk), on, root: BTreeSet::new() };
+        let mut causes = Causes { sk, refused, on, root: BTreeSet::new() };
         causes.root = causes.refused.keys().copied()
             .filter(|&i| causes.below(&causes.on[i]).iter().all(|&j| j == i))
             .collect();
@@ -116,75 +114,73 @@ impl<'a> Causes<'a> {
         }
         out
     }
-
-    /// What solid `i` is built on.
-    fn on(&self, i: usize) -> &[usize] {
-        &self.on[i]
-    }
 }
 
-/// The notes that each statement whose solids follow from a refused one is not built (N080),
-/// and every other diagnostic `solid_diagnostics` says of the solids, in the order: the refused
-/// roots, each statement's note, then the faces a body bears on that it does not have.
-pub(super) fn solids(sk: &Sketch, map: &SourceMap, p: &Program, place: &Placing) -> Vec<Diag> {
+/// A statement that is not built: what it follows from, and the solids named between.
+#[derive(Default)]
+struct Unbuilt {
+    stmt: Option<StmtId>,
+    roots: BTreeSet<usize>,
+    via: BTreeSet<String>,
+}
+
+/// The refused roots in their own words, then the note that each statement whose solids follow
+/// from one is not built (N080), then the faces a body bears on that it does not have.
+pub(super) fn solids(sk: &Sketch, map: &SourceMap, place: &Placing) -> Vec<Diag> {
     let causes = Causes::new(sk);
     let mut roots: BTreeMap<usize, Diag> = BTreeMap::new();
-    // each statement that is not built, by where it is said: its statement, its roots and the
-    // solids named between
-    let mut notes: BTreeMap<Span, (Option<StmtId>, BTreeSet<usize>, BTreeSet<String>)> =
-        BTreeMap::new();
-    let mut note = |at: (Span, Option<StmtId>), from: &[usize], under: Vec<usize>| {
-        let via = causes.via(from, &under);
-        let entry = notes.entry(at.0).or_insert_with(|| (at.1, BTreeSet::new(), BTreeSet::new()));
-        entry.1.extend(under);
-        entry.2.extend(via);
+    // each statement not built, by where it is said
+    let mut unbuilt: BTreeMap<Span, Unbuilt> = BTreeMap::new();
+    let mut note = |(span, stmt): (Span, Option<StmtId>), from: &[usize], under: Vec<usize>| {
+        let u = unbuilt.entry(span).or_insert_with(|| Unbuilt { stmt, ..Unbuilt::default() });
+        u.via.extend(causes.via(from, &under));
+        u.roots.extend(under);
     };
     for (&i, message) in &causes.refused {
         let at = place.site(map.site_of(EntRef::solid(i)));
-        let under: Vec<usize> =
-            causes.roots(causes.on(i)).into_iter().filter(|&r| r != i).collect();
+        let under = if causes.root.contains(&i) { Vec::new() } else { causes.roots(&causes.on[i]) };
+        // a solid with no root below it (refused solids built on one another all round) is said
+        // in its own words as well
         if under.is_empty() {
             roots.insert(i, Diag::new(Code::E080, at.0, at.1, message.clone()));
         } else {
-            note(at, causes.on(i), under);
+            note(at, &causes.on[i], under);
         }
     }
     let mut bearing = Vec::new();
     for (b, message) in crate::solid::bearing_errors(sk) {
-        let solid = b.solid as usize;
         // the body borne on, refused itself or built on what is
+        let solid = b.solid as usize;
         let under = causes.roots(&[solid]);
-        let at = (b.span, Some(StmtId(b.stmt)));
         if under.is_empty() {
-            bearing.push(Diag::new(Code::E082, at.0, at.1, message));
+            bearing.push(Diag::new(Code::E082, b.span, Some(StmtId(b.stmt)), message));
         } else {
-            note(at, &[solid], under);
+            note((b.span, Some(StmtId(b.stmt))), &[solid], under);
         }
     }
     // a root is said as the document shows it before a note points at it
-    let mut out: Vec<Diag> = roots.values().cloned().collect();
-    crate::modules::localize(p, &mut out);
-    let said: BTreeMap<usize, Span> =
-        roots.keys().copied().zip(out.iter().map(|d| d.span)).collect();
-    for (span, (stmt, under, via)) in notes {
-        let named: Vec<String> = under.iter().map(|&r| {
-            let (line, col) = crate::syntax::line_col(p.text(), said[&r].lo);
-            format!("`{}` ({line}:{col})", sk.solids[r].name)
+    let (ids, mut out): (Vec<usize>, Vec<Diag>) = roots.into_iter().unzip();
+    crate::modules::localize(place.p, &mut out);
+    let said: BTreeMap<usize, Span> = ids.into_iter().zip(out.iter().map(|d| d.span)).collect();
+    for (span, u) in unbuilt {
+        let named: Vec<String> = u.roots.iter().map(|r| {
+            let (line, col) = crate::syntax::line_col(place.p.text(), said[r].lo);
+            format!("`{}` ({line}:{col})", sk.solids[*r].name)
         }).collect();
         let named = match named.split_last() {
             Some((last, [])) => last.clone(),
             Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
             None => continue,
         };
-        let via: Vec<String> = via.iter().map(|v| format!("`{v}`")).collect();
-        let message = if via.is_empty() {
+        let message = if u.via.is_empty() {
             format!("not built: it is built on {named}, which could not be built")
         } else {
+            let via: Vec<String> = u.via.iter().map(|v| format!("`{v}`")).collect();
             format!("not built: it is built on {}, made of {named}, which could not be built",
                 via.join(", "))
         };
-        let mut d = Diag::new(Code::N080, span, stmt, message);
-        d.cause = under.first().map(|r| said[r]);
+        let mut d = Diag::new(Code::N080, span, u.stmt, message);
+        d.cause = u.roots.first().map(|r| said[r]);
         out.push(d);
     }
     out.extend(bearing);
