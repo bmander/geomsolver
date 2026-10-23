@@ -98,6 +98,32 @@ pub struct Stacked {
     pub of: Vec<(usize, f64)>,
 }
 
+/// **A body's boundary as a refinement reads it**: its signed distance, and as readings the
+/// distance and its gradient, so a crossing is placed by Newton in a few readings where
+/// bisection takes twenty signs — and where the distance is the distance itself (within
+/// `slack`, `BodyFaces::distance_slack`), each reading clears the crossing's bracket by as much.
+struct Boundary<'a> {
+    body: &'a BodyFaces,
+    slack: Option<Vec<(u32, f64)>>,
+}
+
+impl crate::delaunay::refine::Domain for Boundary<'_> {
+    fn value(&mut self, p: V) -> f64 {
+        self.body.signed_distance(p).0
+    }
+    fn readings(&self) -> crate::delaunay::refine::Readings {
+        use crate::delaunay::refine::Readings;
+        if self.slack.is_some() { Readings::Distance } else { Readings::Agreeing }
+    }
+    fn reading(&mut self, p: V, _: bool) -> (f64, V) {
+        let (v, _, g) = self.body.reading(p);
+        (v, g)
+    }
+    fn slack(&self, p: V, v: f64) -> f64 {
+        self.slack.as_ref().map_or(0.0, |s| self.body.slack_at(s, p, v))
+    }
+}
+
 /// The key of a pair of nodes, either way round.
 fn key(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
@@ -238,7 +264,7 @@ impl Mesh {
                                   edge_size: size, bisection: 1e-9 * extent,
                                   max_points: 200_000, normal_angle: 0.0 };
         let cells = Cells { radius_edge: 2.0, size, dihedral: 12.0 };
-        let domain = |p: V| body.signed_distance(p).0;
+        let domain = Boundary { body: &body, slack: body.distance_slack() };
         let v = volume(domain, centre, radius, &curves, &criteria, &cells)
             .map_err(|m| format!("`{}` is not meshed: {m}", sk.solids[solid].name))?;
         let tets: Vec<[usize; 10]> = v.elements.iter().map(|e| e.map(|n| n as usize)).collect();

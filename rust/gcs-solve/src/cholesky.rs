@@ -41,26 +41,40 @@ impl Symmetric {
     /// read: an entry above the diagonal is ignored, so an assembly of whole element matrices
     /// may be passed as it stands.
     pub fn from_triplets(n: usize, t: &[(usize, usize, f64)]) -> Symmetric {
-        let mut low: Vec<(usize, usize, f64)> =
-            t.iter().copied().filter(|&(i, j, _)| i >= j).collect();
-        for &(i, _, _) in &low {
-            assert!(i < n, "Symmetric::from_triplets: row {i} of {n}");
-        }
-        low.sort_unstable_by_key(|&(i, j, _)| (j, i));
-        let mut colptr = vec![0usize; n + 1];
-        let mut rowind = Vec::with_capacity(low.len());
-        let mut values: Vec<f64> = Vec::with_capacity(low.len());
-        for (q, &(i, j, v)) in low.iter().enumerate() {
-            if q > 0 && low[q - 1].0 == i && low[q - 1].1 == j {
-                *values.last_mut().unwrap() += v;
-            } else {
-                rowind.push(i);
-                values.push(v);
-                colptr[j + 1] += 1;
+        // counted into their columns, then each column sorted by row: duplicates adjacent
+        let mut start = vec![0usize; n + 1];
+        for &(i, j, _) in t {
+            if i >= j {
+                assert!(i < n, "Symmetric::from_triplets: row {i} of {n}");
+                start[j + 1] += 1;
             }
         }
         for j in 0..n {
-            colptr[j + 1] += colptr[j];
+            start[j + 1] += start[j];
+        }
+        let mut at = start.clone();
+        let mut low = vec![(0usize, 0.0f64); start[n]];
+        for &(i, j, v) in t {
+            if i >= j {
+                low[at[j]] = (i, v);
+                at[j] += 1;
+            }
+        }
+        let mut colptr = vec![0usize; n + 1];
+        let mut rowind = Vec::with_capacity(low.len());
+        let mut values: Vec<f64> = Vec::with_capacity(low.len());
+        for j in 0..n {
+            let col = &mut low[start[j]..start[j + 1]];
+            col.sort_by_key(|&(i, _)| i);
+            for (q, &(i, v)) in col.iter().enumerate() {
+                if q > 0 && col[q - 1].0 == i {
+                    *values.last_mut().unwrap() += v;
+                } else {
+                    rowind.push(i);
+                    values.push(v);
+                }
+            }
+            colptr[j + 1] = rowind.len();
         }
         Symmetric { n, colptr, rowind, values }
     }

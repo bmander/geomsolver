@@ -17,7 +17,8 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 (`model::PlaneReading`), `Sketch::meshed` or `DeflectionRow`; or `interior::Tet10`,
 `interior::Borne`, `interior::Stack` (`interior/solid.rs`), `bodies.rs`, `beams::Read::errors`,
 `cholesky::Cholesky::factor_ldl` or `eigen::UNBUCKLED`; or `deformed.rs`, `overview/scenario.rs`,
-a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn).
+a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn); or `pcg.rs`,
+`Structure::solve_by` or `BodyFaces::reading`/`distance_slack` (a solid read faster).
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
@@ -604,6 +605,21 @@ scenario drawn, unless a rule names another.
   lie on the surface and the curves (P6); each facet of its boundary is on the face its middle is
   nearest. Its corners are protecting balls' centres, so vertices: a point at a corner is a node.
   A point anywhere else names the node nearest it, within an element's size (`Mesh::near`).
+  **The refinement reads the boundary by its distance** (`bodies::Boundary`): its value the
+  signed distance, its readings the distance and its gradient (`BodyFaces::reading`, the unit
+  vector from the nearest point toward the point, the way the distance grows), so each crossing
+  is placed by Newton; and where every face is a plane, a cylinder, a sphere or a torus and every
+  edge a line, a circle or a traced intersection, the value is the distance itself
+  (`BodyFaces::distance_slack`: a traced edge's nearest point found to within twice its chords'
+  sag, a slack paid only by a reading whose box reaches that edge), and each reading clears the
+  crossing's bracket by as much (`Readings::Distance`, [fields.md](fields.md)). A query reads only
+  the faces and edges whose boxes come within the distance first reached (`nearest_point`), and a
+  face's foot is placed on it or off it by its outline's winding alone where every edge's box is
+  farther than its near-edge reading reaches (`Located::face_place`, the outline's chords banded
+  by `v`): what reading every face would choose, so the same mesh. The engine's connecting rod
+  (77,654 TET10, 385,368 unknowns) meshes in 13 s where it took 73 s, its reading twice as coarse in
+  7 s where it took 35 s (`a_bodys_reading_is_its_distance_and_its_gradient`,
+  `a_distances_readings_clear_a_crossings_bracket`).
 
 - **What a line names on a solid** (#510 S3; `Filled::on`): a point its node; the solid, or the face
   a prism is swept from, the whole; a line its prism's wall was swept from, that wall's facets; a
@@ -668,6 +684,31 @@ scenario drawn, unless a rule names another.
   (`report::ScenarioAnswer::error`). A driven requirement's value is its row's, its error the two
   readings' change.
 
+- **A solid too large to factor is solved by CG over its corners** (#510; `pcg::Pcg`,
+  `interior::ITERATIVE`, `Structure::solve_by`). In three dimensions a factor fills as `n^{4/3}`:
+  the conrod's 385,368 unknowns fill L to 183 million entries (1.5 GB) and 2.8e11 multiply–adds,
+  58 s. A solid of `ITERATIVE` (50,000) equations or more is solved instead by conjugate gradients
+  preconditioned by one two-level cycle — a Gauss–Seidel sweep forward from zero, the corners'
+  correction, a sweep backward — whose coarse space is the mesh's own corners: a TET10's field
+  restricted to its corners is the linear element's, and read at a side's middle node it is the
+  mean of the side's ends, in the element's coordinates, so the space nests exactly, a side
+  curved onto the boundary too. The corners' matrix is Galerkin's, `PᵀKP`, assembled element by
+  element (`P_eᵀ K_e P_e`, a side's ends its own element's corners) and factored under minimum
+  degree — a twentieth of the unknowns (57,603 on the conrod; 9 million entries of L, under a
+  second). The cycle is symmetric, so it preconditions CG, which stops at a residual of
+  `pcg::TOLERANCE` (1e-11) of the load's; the moves are then good to about twenty times that.
+  Every pass reads the stiffness's lower triangle by column, its only copy. A structure the
+  supports leave free fails the corners' factor (its rigid motions are the corners' too), and
+  one CG does not settle in `pcg::MOST` (300) iterations — a mesh holding an element nearly
+  flat, where a small residual need not mean good moves — is factored after all, so the factor
+  still says which is free. A plane structure, whose factor fills as `n log n`, is always
+  factored, as are the eigensolver's pencils (`eigen`). The adjoint of a row solved by CG is CG's
+  again, on the same preconditioner. **Held to**: on each library solid (the lug, the shaft, the
+  panel, the plank), CG's moves are the factor's to 1e-8 of the largest
+  (`cg_over_the_corners_agrees_with_the_factor`). The conrod takes 56 iterations, 12 s, its
+  coarser reading 36; read whole — meshed, solved, read again twice as coarse for the error — it
+  answers in 41 s where it took 187 s, the same answer to every figure said.
+
 - **A solid's deflection, driven, is a row stacked over its face's** (#510 S3; `bodies::row`,
   `bodies::of_body`, `interior::Stack`, `DeflectionRow::Meshed`). `deflection(p, along: d) == v`,
   `p` a point of a prism read in three dimensions (tried after a frame's joint and a region's
@@ -725,7 +766,8 @@ scenario drawn, unless a rule names another.
   - **A filled body's point is the node nearest it**, so a support at a point off a vertex holds a
     little of what it should not (the rod's 0.14%). A degenerate pair of a solid's modes (the
     plate's two) is found and not yet named with its ring (P7's word).
-  - **Speed.** In layers as deep as its elements are wide Lamé's tube is 53,754 unknowns, factored
+  - **Speed.** ~~Every solid factored~~: one of `ITERATIVE` equations or more is solved by CG over
+    its corners (above). In layers as deep as its elements are wide Lamé's tube is 53,754 unknowns, factored
     in 9.4 s; at `LAYER` 2 it is read in 3.3 s, the plate in 5.1 s (its modes), the column in 2.2 s
     (its buckling), the cantilever in 1.2 s, each read once at its own size. The
     Cholesky's update is formed four columns at a time (`cholesky::BLOCK`) and its dense panels a

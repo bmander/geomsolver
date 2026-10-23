@@ -128,6 +128,7 @@ mod hypoid_layout;
 mod hypoid_machine;
 mod interfaces;
 mod interior;
+mod iterative;
 mod interval;
 mod io;
 mod jacobians;
