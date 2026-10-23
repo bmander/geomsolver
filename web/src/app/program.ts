@@ -35,16 +35,19 @@ const ptext = ped.box;
 const occurrences = new Occurrences(ped);
 /** The editor's layer what is selected in the workspace is named in. */
 const SELECTED = 'selected';
-/** The text the drawing came from, joined to the outline of what it made (`names.ts`) — once per
- *  text and outline, and only while the box holds that text: a draft's offsets are its own. */
+/** The text the drawing came from, joined to the outline of what it made (`names.ts`) — the
+ *  names the caret's lighting already read, once per text and outline, and only while the box
+ *  holds that text: a draft's offsets are its own. */
 let joined: Names | null = null;
 function names(): Names | null {
   const doc = view.doc;
   if (!doc.live || ped.text !== doc.text || typed || showingText() || drawingActive()
     || (!project && activeFile)) return null;
+  const index = occurrences.symbols();
+  if (!index) return null;
   const outline = view.outline();
-  if (joined?.text !== doc.text || joined.outline !== outline) {
-    try { joined = new Names(doc.text, symbols(doc.text), outline); } catch { return null; }
+  if (joined?.index !== index || joined.outline !== outline) {
+    joined = new Names(doc.text, index, outline);
   }
   return joined;
 }

@@ -31,7 +31,7 @@ export function rowKey(row: Row): string {
 const refKey = (r: Ref): string => r.join(':');
 
 /** The proxy an entity a row names stands for, in this elaboration. */
-const entOf = (v: SketchView, [kind, index]: Ref): Primitive | undefined =>
+export const entOf = (v: SketchView, [kind, index]: Ref): Primitive | undefined =>
   v.doc.entityOf({ kind: fromWire(kind), index });
 
 /** Whether a key is an anonymous row's, which no edit carries. */

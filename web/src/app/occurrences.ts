@@ -38,14 +38,19 @@ export function meant(index: Symbols, lo: number, hi: number): Occurrence | null
   return lo === hi || (o.lo === lo && o.hi === hi) ? o : null;
 }
 
+/** How a place a name is named is marked: more strongly where it is given than where it is
+ *  read.  One rule for the name under the caret and the names of what is selected (`names.ts`). */
+export function markOf(o: Occurrence): Mark {
+  return { lo: o.lo, hi: o.hi, cls: o.def ? 'occurrence-def' : 'occurrence' };
+}
+
 /** What to mark for a caret or selection at `lo`..`hi`: every place the name it means is named,
  *  `occurrence-def` where it is given and `occurrence` where it is read — none where it means no
  *  name. */
 export function occurrenceMarks(index: Symbols, lo: number, hi: number): Mark[] {
   const o = meant(index, lo, hi);
   if (!o) return [];
-  return index.of(o.symbol)
-    .map((x) => ({ lo: x.lo, hi: x.hi, cls: x.def ? 'occurrence-def' : 'occurrence' }));
+  return index.of(o.symbol).map(markOf);
 }
 
 /** Where `F7` (`step` 1) or `⇧F7` (-1) puts the caret from `lo`..`hi`: the start of the next or
@@ -66,8 +71,8 @@ export class Occurrences {
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** The caret was put where it rests, not carried there by typing: what `onName` is told of. */
   private put = false;
-  /** Told of the name the caret was put on, once it rests there, with the index it is read in. */
-  onName: ((o: Occurrence, index: Symbols) => void) | null = null;
+  /** Told of the name the caret was put on, once it rests there. */
+  onName: ((o: Occurrence) => void) | null = null;
 
   constructor(private readonly ed: CodeEditor) {
     // an edit has already let go of what was lit (the editor drops a layer the text moved
@@ -101,7 +106,7 @@ export class Occurrences {
     this.ed.setMarks(index ? occurrenceMarks(index, lo, hi) : [], LAYER);
     const o = index && this.put && meant(index, lo, hi);
     this.put = false;
-    if (o && index) this.onName?.(o, index);
+    if (o) this.onName?.(o);
   }
 
   /** Put the caret on the next (`1`) or previous (`-1`) place the name under it is named; whether
@@ -112,7 +117,6 @@ export class Occurrences {
     const to = index && stepTo(index, lo, hi, step);
     if (!to) return false;
     this.ed.select(to.lo);
-    this.put = true;
     this.update();
     return true;
   }
@@ -122,8 +126,9 @@ export class Occurrences {
     this.timer = setTimeout(() => this.update(), PAUSE);
   }
 
-  /** The index of the text shown, asked of the core once per text. */
-  private symbols(): Symbols | null {
+  /** The index of the text shown, asked of the core once per text — null where nothing reads its
+   *  names (`names`). */
+  symbols(): Symbols | null {
     if (!this.indexer) return null;
     const text = this.ed.text;
     if (this.index?.text !== text) {
