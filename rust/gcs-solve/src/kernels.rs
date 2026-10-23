@@ -3215,22 +3215,24 @@ fn turn_onto<T: Num>(a: V3<T>, b: V3<T>, s: f64, e1: V3<T>) -> V3<T> {
  * dot — and only the shadows are read, so neither direction need be square to the axis. */
 
 /// `wrap(atan2(â·(d₁ × d₂), d₁ₚ·d₂ₚ) − θ)` over (A, B, C, D, E, F): the two directions and the
-/// axis, each a segment.  One root on the full turn, its cut at θ + π, the pose farthest from it,
-/// as in the plane.  A direction along the axis casts no shadow: each shadow's `|dₚ|²` is
-/// floored at `MIN_LINE_LEN` squared, as `angle_gap_jac` floors `|d|²`, and under it the row
-/// reads the half turn — a residual, never a NaN.
+/// axis, each a segment.  The shadows are never built: `d₁ₚ·d₂ₚ = d₁·d₂ − (â·d₁)(â·d₂)`.  One
+/// root on the full turn, its cut at θ + π, the pose farthest from it, as in the plane.  A
+/// direction along the axis casts no shadow: each shadow's `|dₚ|² = |d|² − (â·d)²` is floored at
+/// `MIN_LINE_LEN` squared, as `angle_gap_jac` floors `|d|²`, and under it the row reads the half
+/// turn — a residual, never a NaN.
 fn angle_about_gap<T: Num>(v: &[T], theta: T) -> T {
-    const TURN: f64 = 2.0 * std::f64::consts::PI;
     let (d1, d2) = two_dirs(v);
     let a = vunit(vsub(vec3(v, 15), vec3(v, 12)));
-    let shadow = |d: V3<T>| vsub(d, a.map(|x| x * vdot(d, a)));
-    let (p1, p2) = (shadow(d1), shadow(d2));
+    let (h1, h2) = (vdot(d1, a), vdot(d2, a));
+    let shadow = |d: V3<T>, h: T| {
+        d.iter().map(|x| x.val() * x.val()).sum::<f64>() - h.val() * h.val()
+    };
     let floor = MIN_LINE_LEN * MIN_LINE_LEN;
-    if vdot(p1, p1).val() < floor || vdot(p2, p2).val() < floor {
+    if shadow(d1, h1) < floor || shadow(d2, h2) < floor {
         return T::cst(std::f64::consts::PI);
     }
-    let g = T::atan2(vdot(a, vcross(d1, d2)), vdot(p1, p2)) - theta;
-    g - T::cst(TURN * (g.val() / TURN).round())
+    let g = T::atan2(vdot(a, vcross(d1, d2)), vdot(d1, d2) - h1 * h2) - theta;
+    g - T::cst(g.val() - wrap_turn(g.val()))
 }
 
 /// Columns of `angle_about`: (A, B, C, D, E, F), K = (θ) — the turn, its sense applied

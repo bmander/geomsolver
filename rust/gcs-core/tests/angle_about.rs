@@ -3,24 +3,18 @@
 //! the plane square to `a` to the second's; `perpendicular(sense: ccw|cw, about: a)` is that turn
 //! at a quarter.  One row, one root: where the unsigned `angle` and the bare `perpendicular` in
 //! space hold either way round, these say which.  In a plane the axis is its normal, unsaid.
-use gcs_core::constraints::CKind;
+use gcs_core::constraints::{CKind, Constraint};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::model::Sketch;
+use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::space::{cross, dot, norm, sub};
+use gcs_core::space::{dot, norm, sub};
 
-use crate::common::{dof, ent, kinds, read, refused, solved, unit};
+use crate::common::{dir, dof, ent, kinds, read, refused, set_dir as seed, solved, unit};
 
-/// An axis's direction as it stands.
-fn dir(sk: &Sketch, axis: usize) -> [f64; 3] {
-    sk.axes[axis].d.map(|p| sk.params[p as usize].value)
-}
-
-/// The axis seeded along `d`.
-fn seed(sk: &mut Sketch, axis: usize, d: [f64; 3]) {
-    for (k, q) in sk.axes[axis].d.into_iter().enumerate() {
-        sk.params[q as usize].value = d[k];
-    }
+/// The sketch's one row of kind `k`.
+fn row(sk: &Sketch, k: CKind) -> Constraint {
+    sk.user_constraints().into_iter().find(|c| c.kind == k).cloned().expect("the row")
 }
 
 /// Two axes held through the origin, `z` along (0, 0, 1) and `n` along (0, 1, 0), and a free
@@ -53,9 +47,8 @@ fn in_a_plane_about_its_normal_is_the_planes_angle() {
     ] {
         let (p, q) = (read(&doc(plain)), read(&doc(about)));
         assert_eq!(kinds(&p), kinds(&q), "{about}");
-        let (p, q) = (solved(&p), solved(&q));
-        let d = |sk: &Sketch, e| sk.world_point(ent(e, "d").i());
-        let (p0, q0) = (d(&p, &read(&doc(plain))), d(&q, &read(&doc(about))));
+        let d = |e: &Elaborated| solved(e).world_point(ent(e, "d").i());
+        let (p0, q0) = (d(&p), d(&q));
         assert!(norm(sub(p0, q0)) < 1e-9, "{about}: {q0:?} against {p0:?}");
     }
 }
@@ -88,7 +81,7 @@ fn a_turn_about_an_axis_has_one_root() {
     let x = ent(&e, "x").i();
     let other = 60f64.to_radians();
     seed(&mut sk, x, [other.cos(), other.sin(), 0.0]);
-    let c = sk.user_constraints().iter().find(|c| c.kind == CKind::AngleAbout).cloned().unwrap();
+    let c = row(&sk, CKind::AngleAbout);
     let r = c.residual(&sk, &c.local_values(&sk))[0];
     assert!((r.abs() - 60f64.to_radians()).abs() < 1e-9, "{r}");
 }
@@ -118,15 +111,14 @@ fn a_frame_mated_about_its_z_is_held_wholly() {
                fix(dir == (1, 0, 0), origin == (0, 0, 0)) wall\n\
                p.std.origin coincident seat\np.std.z parallel(sense: same) rod\n\
                p.std.x perpendicular(sense: ccw, about: p.std.z) wall\n";
+    let e = read(src);
+    let u = e.sketch.frames[ent(&e, "p#frame").i()].u as usize;
     for x0 in [[0.0, 0.0, 1.0], [0.0, 0.0, -1.0], [1.0, 0.1, 0.2]] {
-        let e = read(src);
         let mut sk = e.sketch.clone();
-        let px = ent(&e, "p#frame").i();
-        let u = sk.frames[px].u as usize;
         seed(&mut sk, u, x0);
         assert!(solve(&mut sk, SolveOpts::default()).success, "from {x0:?}");
         // z along the rod, and the wall a quarter turn about it from x: x = wall × z
-        let want = cross([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        let want = [0.0, 0.0, 1.0];
         let got = unit(dir(&sk, u));
         assert!(dot(got, want) > 1.0 - 1e-9, "from {x0:?}: x {got:?}");
         let d = diagnose(&mut sk, DiagnoseOptions::default());
@@ -143,8 +135,7 @@ fn a_direction_along_the_axis_reads_no_nan() {
     let mut sk = e.sketch.clone();
     let x = ent(&e, "x").i();
     seed(&mut sk, x, [0.0, 0.0, 1.0]);
-    let c = sk.user_constraints().iter().find(|c| c.kind == CKind::PerpendicularAbout)
-        .cloned().unwrap();
+    let c = row(&sk, CKind::PerpendicularAbout);
     let v = c.local_values(&sk);
     let r = c.residual(&sk, &v);
     assert!(r.iter().all(|x| x.is_finite()) && r[0].abs() > 1.0, "{r:?}");
@@ -175,14 +166,13 @@ fn a_turn_about_an_axis_prints_back_as_written() {
     use gcs_core::program::to_program;
     let src = held("n angle(30deg, sense: cw, about: z) x");
     let e = read(&src);
-    let sk = solved(&e);
+    let mut sk = solved(&e);
     let mut lifted = to_program(&e.sketch);
     let text = gcs_core::syntax::render_flat(&mut lifted).unwrap().to_string();
     assert!(text.contains("angle(30deg, sense: cw, about: "), "{text}");
     let back = solved(&read(&text));
     let x = |sk: &Sketch| unit(dir(sk, ent(&e, "x").i()));
     assert!(norm(sub(x(&sk), x(&back))) < 1e-9, "{text}");
-    let mut sk = sk;
     assert_eq!(dof(&mut sk), 0);
 }
 
@@ -193,12 +183,11 @@ fn a_copy_keeps_the_axis_a_turn_is_read_about() {
     use gcs_core::{graft, io};
     let e = read(&held("n perpendicular(sense: cw, about: z) x"));
     let sk = solved(&e);
-    let row = |sk: &Sketch| sk.user_constraints().iter()
-        .find(|c| c.kind == CKind::PerpendicularAbout).map(|c| c.args.clone()).expect("the row");
+    let x = ent(&e, "x").i();
     for mut back in [io::from_json(&io::to_json(&sk)).expect("reads back"),
                      graft::copy(&sk, &sk.primitives())] {
-        assert_eq!(row(&back), row(&sk));
-        let x = ent(&e, "x").i();
+        let args = |sk: &Sketch| row(sk, CKind::PerpendicularAbout).args;
+        assert_eq!(args(&back), args(&sk));
         seed(&mut back, x, [0.0, 1.0, 0.0]);
         assert!(solve(&mut back, SolveOpts::default()).success);
         assert!(norm(sub(unit(dir(&back, x)), unit(dir(&sk, x)))) < 1e-9);

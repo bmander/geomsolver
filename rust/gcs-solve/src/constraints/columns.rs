@@ -1154,14 +1154,14 @@ impl Constraint {
                 [vec![e(0).i(), e(1).i()], parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
-            // a direction's operands: a line's ends are lifted, and an axis is in space already
-            CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => (0..2)
-                .filter(|&i| e(i).kind == EntKind::Line)
-                .flat_map(ends)
-                .collect(),
-            // and the axis a turn is read about, where it is a line (#558)
-            CKind::AngleAbout | CKind::PerpendicularAbout => (0..3)
-                .filter(|&i| e(i).kind == EntKind::Line)
+            // a direction's operands, and the axis a turn is read about (#558): a line's ends are
+            // lifted, and an axis is in space already
+            CKind::Angle3
+            | CKind::Perpendicular3
+            | CKind::Parallel3
+            | CKind::AngleAbout
+            | CKind::PerpendicularAbout => (0..self.args.len())
+                .filter(|&i| matches!(&self.args[i], Arg::Ent(x) if x.kind == EntKind::Line))
                 .flat_map(ends)
                 .collect(),
             _ => [ends(0), ends(1)].concat(),
