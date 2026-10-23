@@ -80,26 +80,23 @@ pub fn fd_jacobian(sk: &Sketch, tol: f64) {
 
 /// `src` parsed and elaborated with no error, or the test fails with every diagnostic.
 pub fn read(src: &str) -> Elaborated {
-    let (prog, errs, linked) = gcs_core::library::parse_linked(src);
-    assert!(errs.is_empty() && linked.is_empty(), "does not parse: {errs:?} {linked:?}\n{src}");
-    let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}\n{src}",
-        e.errors().map(|d| format!("{} {}", d.code.as_str(), d.message)).collect::<Vec<_>>()
-    );
-    e
+    read_but(src, |_| false)
 }
 
 /// `read`, past the promise every definition is held to (`promise`): for a test of another rule
 /// whose bodies only relate what they are given, or leave a point free, on purpose.
 pub fn read_past_promise(src: &str) -> Elaborated {
+    read_but(src, promise)
+}
+
+/// `src` parsed and elaborated with no error but those `pass` lets through.
+fn read_but(src: &str, pass: fn(&gcs_core::program::Diag) -> bool) -> Elaborated {
     let (prog, errs, linked) = gcs_core::library::parse_linked(src);
     assert!(errs.is_empty() && linked.is_empty(), "does not parse: {errs:?} {linked:?}\n{src}");
     let e = elaborate(&prog);
-    let other: Vec<String> =
-        other_errors(&e).iter().map(|d| format!("{} {}", d.code.as_str(), d.message)).collect();
-    assert!(other.is_empty(), "does not elaborate: {other:?}\n{src}");
+    let said: Vec<String> = e.errors().filter(|d| !pass(d))
+        .map(|d| format!("{} {}", d.code.as_str(), d.message)).collect();
+    assert!(said.is_empty(), "does not elaborate: {said:?}\n{src}");
     e
 }
 

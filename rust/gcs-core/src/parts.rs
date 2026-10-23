@@ -66,16 +66,15 @@ struct Read<'e> {
 }
 
 /// Every drawn instance of a braced definition in `sk`, read, with the reading of the document they
-/// share — or `None` where the program defines none.
+/// share — or `None` where the document draws none.
 fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Option<(World, Vec<Read<'e>>)> {
     let prog = &e.program;
-    if !prog.components.iter().any(|c| c.braced()) {
-        return None;
-    }
+    let mut drawn =
+        e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].braced()).peekable();
+    drawn.peek()?;
     let world = World::of(sk, &e.map);
     let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
     let zero = sk.zero;
-    let drawn = e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].braced());
     let read = drawn.map(|inst| {
         let comp = &prog.components[inst.comp];
         let s = split(&e.map, sk, &world, inst);
@@ -142,35 +141,41 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
         let word = prog.component_id(inst.comp);
         let at = comp.name.as_ref().map(|n| n.span).unwrap_or(comp.span);
         let instance = inst.prefix.trim_end_matches('.');
-        // its rows over the columns `of` alone, numbered afresh
-        let structure = |of: &BTreeSet<u32>| {
-            let cols: Vec<usize> = of.iter()
-                .filter_map(|&p| usize::try_from(sys.col_of[p as usize]).ok())
-                .collect::<BTreeSet<usize>>().into_iter().collect();
-            let local: BTreeMap<usize, usize> =
-                cols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
-            let mut adj: Vec<Vec<usize>> = Vec::new();
-            let mut row_c: Vec<u32> = Vec::new();
-            for &id in &r.rows {
-                for &k in rows_of.get(&id).map(Vec::as_slice).unwrap_or(&[]) {
-                    adj.push(all[k].iter().filter_map(|c| local.get(c).copied()).collect());
-                    row_c.push(id);
-                }
-            }
-            (cols, adj, row_c)
+        // its rows over its own columns, numbered first, and the formals the call left unbound
+        let col_set = |of: &BTreeSet<u32>| -> BTreeSet<usize> {
+            of.iter().filter_map(|&p| usize::try_from(sys.col_of[p as usize]).ok()).collect()
         };
-        // PT2 is judged over its own unknowns, and PT3 over those and the formals the call left
-        // unbound, which its rows may determine or leave to the parent
-        let (cols, adj, _) = structure(&r.own);
-        let dm = dulmage_mendelsohn(&adj, cols.len());
-        let (wide, adj, row_c) = structure(&r.own.union(&r.unbound).copied().collect());
-        let over: BTreeSet<usize> =
-            dulmage_mendelsohn(&adj, wide.len()).over_rows.into_iter().collect();
+        let own_cols = col_set(&r.own);
+        let mut cols: Vec<usize> = own_cols.iter().copied().collect();
+        let n_own = cols.len();
+        cols.extend(col_set(&r.unbound).difference(&own_cols));
+        let local: BTreeMap<usize, usize> = cols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
+        let mut adj: Vec<Vec<usize>> = Vec::new();
+        let mut row_c: Vec<u32> = Vec::new();
+        for &id in &r.rows {
+            for &k in rows_of.get(&id).map(Vec::as_slice).unwrap_or(&[]) {
+                adj.push(all[k].iter().filter_map(|c| local.get(c).copied()).collect());
+                row_c.push(id);
+            }
+        }
+        // PT3 is judged over its own unknowns and the formals the call left unbound, which its
+        // rows may determine or leave to the parent, and PT2 over its own alone: the same matching
+        // where the call left none
+        let wide = dulmage_mendelsohn(&adj, cols.len());
+        let unmatched: Vec<usize> = if n_own == cols.len() {
+            (0..n_own).filter(|&c| wide.mate_col[c] < 0).collect()
+        } else {
+            let narrow: Vec<Vec<usize>> =
+                adj.iter().map(|a| a.iter().copied().filter(|&c| c < n_own).collect()).collect();
+            let dm = dulmage_mendelsohn(&narrow, n_own);
+            (0..n_own).filter(|&c| dm.mate_col[c] < 0).collect()
+        };
+        let over: BTreeSet<usize> = wide.over_rows.into_iter().collect();
 
         // PT2: an own unknown no row reaches, the matching's unmatched columns
         let mut free: Vec<String> = Vec::new();
         let mut left = 0usize;
-        for col in (0..cols.len()).filter(|&c| dm.mate_col[c] < 0) {
+        for col in unmatched {
             left += 1;
             let what = owner_name(e, sk, &world, sys.free[cols[col]] as u32)
                 .map_or("a number its rows read".to_string(), |n| format!("`{n}`"));

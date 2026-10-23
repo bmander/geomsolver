@@ -32,7 +32,7 @@
 
 use crate::constraints::{CKind, Constraint, OrdinateForm};
 use crate::json::{self, Json};
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{Chart, EntKind, EntRef, Sketch};
 use crate::space;
 use crate::program::{Elaborated, InstPath, Instanced, SourceMap};
 use crate::solve::{solve, BlockMode, SolveOpts};
@@ -247,6 +247,11 @@ pub(crate) struct World {
     ents: Vec<(InstPath, EntRef)>,
     cons: Vec<(InstPath, usize)>,
     unsited: Vec<usize>,
+    /// Every row's columns (`columns`), by its index among the sketch's: read by every instance
+    /// over and again, worked out once.
+    cols: Vec<Vec<u32>>,
+    /// Each entity's twins, the inverse of `SourceMap::twin_of`.
+    twins: BTreeMap<EntRef, Vec<EntRef>>,
 }
 
 /// The entries of `list` (ascending by path) sited at `at` or under it: one range, since every
@@ -271,9 +276,7 @@ impl World {
         let mut with: BTreeMap<EntRef, Vec<u32>> = BTreeMap::new();
         for &e in map.of_entity.keys().filter(|e| e.kind == EntKind::Frame) {
             let f = &sk.frames[e.i()];
-            let axes = f.chart.iter().flat_map(|c| [Some(c.u), Some(c.v), c.normal])
-                .chain([f.joint.as_ref().map(|j| j.axis)])
-                .flatten();
+            let axes = f.chart.iter().flat_map(chart_axes).chain(f.joint.as_ref().map(|j| j.axis));
             for a in axes {
                 let axis = EntRef::new(EntKind::Axis, a as usize);
                 with.entry(e).or_default().extend(sk.own_params(axis));
@@ -282,34 +285,36 @@ impl World {
         // and a curve's points no name reaches (an arc's centre and ends, minted with it) are
         // the curve's, with their hidden points: a row over them is about what made the curve
         let unsited = |r: &EntRef| r.kind == EntKind::Point && !map.of_entity.contains_key(r);
-        let lift_of: BTreeMap<u32, [u32; 3]> = sk.lifts.iter().map(|l| (l.point, l.x)).collect();
         let mut curve_of: BTreeMap<EntRef, EntRef> = BTreeMap::new();
         let curve = |e: &&EntRef| {
             matches!(e.kind, EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline)
         };
         for &e in map.of_entity.keys().filter(curve) {
             for k in sk.children(e).into_iter().filter(unsited) {
-                let ps = with.entry(e).or_default();
-                ps.extend(sk.own_params(k));
-                ps.extend(lift_of.get(&k.idx).into_iter().flatten());
+                with.entry(e).or_default().extend(sk.own_params(k));
                 curve_of.entry(k).or_insert(e);
             }
         }
         // and so is the plane an arc in space is drawn in, standing at its centre (`arcs_in_space`)
         for (i, f) in sk.frames.iter().enumerate() {
             let Some(c) = &f.chart else { continue };
-            let Some(&e) = curve_of.get(&EntRef::point(c.origin as usize))
-                .filter(|_| !map.of_entity.contains_key(&EntRef::frame(i))) else { continue };
+            let Some(&e) = curve_of.get(&EntRef::point(c.origin as usize)) else { continue };
+            if map.of_entity.contains_key(&EntRef::frame(i)) {
+                continue;
+            }
             let ps = with.entry(e).or_default();
             ps.extend(sk.own_params(EntRef::frame(i)));
-            for a in [Some(c.u), Some(c.v), c.normal].into_iter().flatten() {
+            for a in chart_axes(c) {
                 ps.extend(sk.own_params(EntRef::new(EntKind::Axis, a as usize)));
             }
         }
+        // a point's hidden point is the point's, or the curve's that made it
         for l in &sk.lifts {
             let pt = EntRef::point(l.point as usize);
-            if map.of_entity.contains_key(&pt) {
-                with.entry(pt).or_default().extend(l.x);
+            let named = map.of_entity.contains_key(&pt);
+            let at = if named { Some(pt) } else { curve_of.get(&pt).copied() };
+            if let Some(e) = at {
+                with.entry(e).or_default().extend(l.x);
             }
         }
         for (&e, ps) in &with {
@@ -338,8 +343,18 @@ impl World {
             }
         }
         cons.sort();
-        World { owner, lengths, free, with, ents, cons, unsited }
+        let cols = sk.constraints.iter().map(|c| columns(sk, c)).collect();
+        let mut twins: BTreeMap<EntRef, Vec<EntRef>> = BTreeMap::new();
+        for (&twin, &of) in &map.twin_of {
+            twins.entry(of).or_default().push(twin);
+        }
+        World { owner, lengths, free, with, ents, cons, unsited, cols, twins }
     }
+}
+
+/// A chart's axes: its `u`, its `v` and, in space, its normal.
+fn chart_axes(c: &Chart) -> impl Iterator<Item = u32> {
+    [Some(c.u), Some(c.v), c.normal].into_iter().flatten()
 }
 
 /// Every column a row reads: its kernel's, and the free variable its number is written in.
@@ -363,11 +378,9 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
     let inside = |id: u32| map.site_of_constraint(id).is_some_and(|s| inst.contains(&s.path));
     // what it made: every entity sited under it, and a twin of one
     let mut made: BTreeSet<EntRef> = under(&world.ents, &inst.path).collect();
-    for (&twin, &of) in &map.twin_of {
-        if made.contains(&of) {
-            made.insert(twin);
-        }
-    }
+    let twins: Vec<EntRef> =
+        made.iter().flat_map(|e| world.twins.get(e).into_iter().flatten().copied()).collect();
+    made.extend(twins);
     // the point a plane it made stands at is made with it: the row holding it there is the plane's
     let origins: BTreeSet<EntRef> = made.iter().filter(|e| e.kind == EntKind::Frame)
         .filter_map(|e| sk.frames[e.i()].chart.as_ref().map(|c| EntRef::point(c.origin as usize)))
@@ -389,38 +402,37 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
     let mut candidates: Vec<usize> =
         under(&world.cons, &inst.path).chain(world.unsited.iter().copied()).collect();
     candidates.sort_unstable();
+    let placed = |e: &EntRef| made.contains(e) || origins.contains(e);
     loop {
         let before = (kept.len(), aux.len());
-        for c in candidates.iter().map(|&k| &sk.constraints[k]) {
+        for &k in &candidates {
+            let (c, cols) = (&sk.constraints[k], &world.cols[k]);
             if kept.contains(&c.id) {
                 continue;
             }
-            let cols = columns(sk, c);
-            // a row placing one thing is the instance's when that thing is — what it made, or the
-            // point a plane it made stands at — whatever else it reads: a point's lift reads the
-            // plane it is drawn in, a twin's tie the plane it is held on, a plane's axis the line
-            // it is built along.  So the rows that tie what it made to the frame it stands in are its
-            // own, that frame's placement an input, and the lift of a point another draws in a
-            // plane it made, or a plane another stands at its origin, are not
-            let placed = |e: &EntRef| made.contains(e) || origins.contains(e);
-            // an arc's, an axis's or a plane's own rows (its ends at its radius, a unit
-            // direction, a plane through its axes) are what it made, whatever else they read: an
-            // arc about an operand's centre places its ends from it (#461)
-            let own_row = c.intrinsic && match subject(c) {
-                Some(e) => placed(&e),
-                None => c.entities().iter().any(|e| e.kind != EntKind::Point && placed(e)),
-            };
-            let theirs = c.intrinsic && subject(c).is_some_and(|e| !placed(&e));
-            let ours = inside(c.id) || map.site_of_constraint(c.id).is_none() && !theirs && (
-                own_row
-                || cols.iter().any(|p| aux.contains(p))
-                || cols.iter().any(|p| mine.contains(p))
-                    && cols.iter().all(|&p| mine.contains(&p) || nobodys(p)));
+            // a row placing one thing is the instance's exactly when that thing is — what it made,
+            // or the point a plane it made stands at — whatever else it reads: a point's lift
+            // reads the plane it is drawn in, a twin's tie the plane it is held on, a plane's axis
+            // the line it is built along.  So the rows that tie what it made to the frame it
+            // stands in are its own, that frame's placement an input, and the lift of a point
+            // another draws in a plane it made, or a plane another stands at its origin, are not.
+            // An arc's, an axis's or a plane's own rows (its ends at its radius, a unit direction,
+            // a plane through its axes) are what it made, whatever else they read: an arc about
+            // an operand's centre places its ends from it (#461)
+            let ours = inside(c.id) || map.site_of_constraint(c.id).is_none()
+                && match c.intrinsic.then(|| subject(c)).flatten() {
+                    Some(e) => placed(&e),
+                    None => c.intrinsic
+                        && c.entities().iter().any(|e| e.kind != EntKind::Point && placed(e))
+                        || cols.iter().any(|p| aux.contains(p))
+                        || cols.iter().any(|p| mine.contains(p))
+                            && cols.iter().all(|&p| mine.contains(&p) || nobodys(p)),
+                };
             if !ours {
                 continue;
             }
             kept.insert(c.id);
-            aux.extend(cols.into_iter().filter(|&p| unowned(p)));
+            aux.extend(cols.iter().copied().filter(|&p| unowned(p)));
         }
         if (kept.len(), aux.len()) == before {
             break;
@@ -437,9 +449,10 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
 fn subject(c: &Constraint) -> Option<EntRef> {
     match c.kind {
         CKind::Lift | CKind::ChartLift | CKind::Coincident3 | CKind::Parallel3
-        | CKind::PointOnPlane | CKind::ProjectSolved => Some(c.args[0].ent()),
-        // a twin's fold, `project(point, twin)` (`Sketch::tie_twin`), places the twin
-        CKind::PointOnAxis | CKind::Project => Some(c.args[1].ent()),
+        | CKind::PointOnPlane => Some(c.args[0].ent()),
+        // a twin's fold, `project(point, twin)` (`Sketch::tie_twin`; `ProjectSolved` once its
+        // planes move), places the twin
+        CKind::PointOnAxis | CKind::Project | CKind::ProjectSolved => Some(c.args[1].ent()),
         _ => None,
     }
 }

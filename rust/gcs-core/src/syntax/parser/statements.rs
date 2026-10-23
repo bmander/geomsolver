@@ -5,17 +5,17 @@ use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::{self, over_chain, over_walks, set_at, Brackets, BLOCKS, ENERGY_WORDS};
-
-/// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part`
-/// promised.
-const PART_RETIRED: &str = "`part` is retired (#562): every definition is held to being a \
-    function of what it is given, so write `component Name(…) { … }`";
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
     Input, Name, OpArg, OpenJoint, ParamDecl, Ref, SetLit, SolidRel, Source, Span, Stmt, StmtKind,
     SynErr, Ty, Use,
 };
+
+/// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part`
+/// promised.
+const PART_RETIRED: &str = "`part` is retired (#562): every definition is held to being a \
+    function of what it is given, so write `component Name(…) { … }`";
 
 /// What a `when` is, said where one is written otherwise (#210).
 const WHEN: &str = "a `when` is decided by comparing numbers, or names: `when d > 0mm { … }`, \

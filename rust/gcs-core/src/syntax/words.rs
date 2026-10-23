@@ -203,7 +203,8 @@ pub(super) fn past_bracket(toks: &[(Tok, Span)], open: usize, brackets: Brackets
 
 /// **`part Name(…) {` at `i`**: the definition `part` once declared (#461), retired now that
 /// every braced definition is held to what it promised (#562) — read only so the parser can say
-/// what to write instead.  `part` is a name a document may give (`part := solid(…)`, `part above(7) q`).
+/// what to write instead.  `part` is a name a document may give (`part := solid(…)`,
+/// `part above(7) q`).
 pub(super) fn part_at(toks: &[(Tok, Span)], i: usize) -> bool {
     let at = |k: usize| toks.get(k).map(|(t, _)| t);
     matches!(at(i), Some(Tok::Ident(w)) if w == "part")

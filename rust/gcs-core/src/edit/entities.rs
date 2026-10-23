@@ -11,11 +11,11 @@ use super::*;
 /// function of what it is given (#562): the corner is the instance's one freedom, a point of the
 /// drawing's own, and `names` is the instance's then the corner's, for the tool to seed at the
 /// gesture.
-pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edit {
+pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: &str) -> Edit {
     // its first side is level, which a figure standing in space has no meaning for
-    let Some(plane) = plane.filter(|p| !p.is_empty()) else {
+    if plane.is_empty() {
         return Edit::none(prog, Some("a rectangle is drawn in a plane: choose one first".into()));
-    };
+    }
     let (at, lead) = append_at(prog);
     let mut with = lead;
     let mut edits = Vec::new();
@@ -33,15 +33,17 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
             with.push_str(definition);
         }
     }
-    // a fresh instance name, past every name the document already binds
-    let taken: std::collections::BTreeSet<&str> = prog
-        .stmts()
-        .filter_map(|s| s.kind.bound_name().map(|n| n.text.as_str()))
-        .collect();
-    let name =
-        (0..).map(|i| format!("r{i}")).find(|n| !taken.contains(n.as_str())).unwrap_or_default();
-    let corner = mint(prog, EntKind::Point);
-    with.push_str(&format!("{corner} := point in {plane}\n"));
+    // a fresh instance name and corner, past every name the document already binds
+    let mut taken = taken_names(prog);
+    let name = (0..).map(|i| format!("r{i}")).find(|n| !taken.contains(n)).unwrap_or_default();
+    taken.insert(name.clone());
+    let corner = next_name(&mut taken, EntKind::Point);
+    // the corner the tool seeds, so written with no `hint(…)` (the empty clause), in the view
+    // the instance joins
+    let written = syntax::DeclName::Written(syntax::Name::new(&corner));
+    let mut point = Decl::point(written, [0.0; 2], None);
+    point.hint_span = Some(Span::default());
+    point.membership = syntax::Membership::lifted(syntax::Ref::new(plane));
     let arg = |label: Option<&str>, value: syntax::InstVal| syntax::InstArg {
         label: label.map(syntax::Name::new),
         value,
@@ -63,8 +65,13 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
         class: Default::default(),
     };
     let mut line = String::new();
-    if let Err(e) = syntax::write_stmt_to(&mut line, &StmtKind::Instance(inst)) {
-        return Edit::none(prog, Some(e.to_string()));
+    for (k, st) in [StmtKind::Decl(point), StmtKind::Instance(inst)].iter().enumerate() {
+        if k > 0 {
+            line.push('\n');
+        }
+        if let Err(e) = syntax::write_stmt_to(&mut line, st) {
+            return Edit::none(prog, Some(e.to_string()));
+        }
     }
     with.push_str(&line);
     edits.push(Splice { at, with });

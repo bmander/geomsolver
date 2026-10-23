@@ -180,7 +180,7 @@ fn drawing_into_a_preview_keeps_new_geometry_inside_it() {
         assert!(p.preview.unwrap().contains(added.span.lo), "{}", e.text);
         assert!(elaborate(&p).ok());
         assert!(e.text.ends_with("tail := 1\n"));
-        let rect = edit::add_rectangle(&p, 30.0, 20.0, Some("std.front"));
+        let rect = edit::add_rectangle(&p, 30.0, 20.0, "std.front");
         let p = prog_of(&rect.text);
         let back = elaborate(&p);
         assert!(back.ok(), "{:?}\n{}", back.errors().map(|d| &d.message).collect::<Vec<_>>(),
@@ -216,7 +216,7 @@ fn preview_gestures_keep_source_mappings_with_statements_after_the_block() {
 #[test]
 fn a_rectangle_is_a_component_instance() {
     let prog = prog_of("use std\nin std.front {\np9 := point hint((5, 5))\n}\n");
-    let e = edit::add_rectangle(&prog, 120.0, 60.0, Some("std.front"));
+    let e = edit::add_rectangle(&prog, 120.0, 60.0, "std.front");
     assert_eq!(e.kind, Kind::Structural);
     assert_eq!(e.names, vec!["r0", "p0"]);
     assert!(e.text.contains("component Rectangle(corner: point, w: Length, h: Length)"), "{}",
@@ -229,7 +229,7 @@ fn a_rectangle_is_a_component_instance() {
     assert_eq!((back.sketch.points.len(), back.sketch.lines.len()), (5 + STD_POINTS, 4));
 
     // the second rectangle reuses the definition: one component, two instances
-    let e = edit::add_rectangle(&prog, 40.0, 40.0, Some("std.front"));
+    let e = edit::add_rectangle(&prog, 40.0, 40.0, "std.front");
     assert_eq!(e.names, vec!["r1", "p1"]);
     assert_eq!(e.text.matches("component Rectangle").count(), 1, "{}", e.text);
     let back = elaborate(&prog_of(&e.text));
