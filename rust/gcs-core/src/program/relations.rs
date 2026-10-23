@@ -948,11 +948,13 @@ fn across_views(
     match super::reading::in_space(&cx.sk, ckind, &args, reader) {
         Ok(None) => Some((ckind, spec, args, left_out)),
         Ok(Some((k, a, l))) => Some((k, k.spec(), a, l)),
-        Err((selector, message)) => {
-            let key = ["side", "sense"].into_iter().find_map(|k| r.written.and_then(|w| w.key_span(k)));
+        Err((key, message)) => {
+            // a selector that says nothing there is said at its key, a word with no meaning there
+            // at the statement
+            let at = key.and_then(|k| r.written.and_then(|w| w.key_span(k)));
             cx.diags.push(Diag::within(
-                if selector { Code::E040 } else { Code::E062 },
-                if selector { key.unwrap_or(st.span) } else { st.span },
+                if key.is_some() { Code::E040 } else { Code::E062 },
+                at.unwrap_or(st.span),
                 st.id,
                 message,
             ));

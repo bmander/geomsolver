@@ -242,6 +242,10 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
     let at_point = sel("at").is_some_and(|w| w.is_empty());
+    // a turn read about an axis named (#558): two directions, drawn or in space
+    let about = |a: EntKind, b: EntKind| {
+        sel("about").is_some() && (matches!((a, b), (Line, Line)) || axes(a, b))
+    };
     Some(match word {
         // incidence, and two points being one: what it means is the kinds of its operands
         "coincident" => match (a, b) {
@@ -358,6 +362,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             _ => return None,
         },
         "angle" => match (a, b) {
+            (x, y) if about(x, y) => CKind::AngleAbout,
             (Line, Line) => CKind::Angle,
             (x, y) if axes(x, y) => CKind::Angle3,
             _ => return None,
@@ -379,6 +384,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             _ => return None,
         },
         "perpendicular" => match (a, b) {
+            (x, y) if about(x, y) => CKind::PerpendicularAbout,
             (Line, Line) => CKind::Perpendicular,
             (x, y) if axes(x, y) => CKind::Perpendicular3,
             // square to a plane: along its normal

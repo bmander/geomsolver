@@ -23,7 +23,8 @@ came from.
   (`Constraint::kernel`, `own_consts_on`), one root and a gradient where the lines start as one.
   No number, so no dimension and no callout.  A sided pair is not `commutative` (swapped, it is
   its mirror), so `compare::matches` swaps only unsided ones; in space it is E040 at the key
-  (`reading::in_space`).  `std.Turned` states its turn so.  `tests/angle_and_arc_words.rs` and
+  (`reading::in_space`, `Written::assemble` between axes), its message naming `about:` (below).
+  `std.Turned` states its turn so.  `tests/angle_and_arc_words.rs` and
   `coordinates::a_turned_frame_keeps_its_handedness_however_far_its_datum_turns` are the gates.
 - **A direction says which way it runs** ([0.173], #535).  `parallel` (`Parallel`, `Parallel3`)
   and `coincident` between a line and an axis or two axes (`LineOnAxis`, `AxisCoincident`) take
@@ -41,6 +42,22 @@ came from.
   language holds to a direction unasked runs its way — `axes_along`'s intrinsic row and `std`'s
   joint words are sensed `same`.  No number, so no dimension and no callout.
   `tests/axis_sense.rs` is the gate, the kernels' rows in `jacobians.rs`.
+- **A turn is read about an axis named** ([0.174], #558).  `angle(θ, about: a)` is
+  `CKind::AngleAbout` (`l1, l2, about, theta, sense`) and `perpendicular(sense:, about: a)`
+  `CKind::PerpendicularAbout` (`l1, l2, about, sense`), settled by `infix_op` where `about:` is
+  written over two directions; the parser reads the key's value as a reference.  One kernel,
+  `kernels::angle_about` (degree 0, its free twin `angle_about_free`): `wrap(atan2(â·(d₁ × d₂),
+  d₁ₚ·d₂ₚ) − θ)` over the shadows square to `â`, the plane's `angle_gap` about any axis, one root,
+  its cut at θ + π; the perpendicular's θ is `±π/2` (`own_consts_on`), no number, so no dimension
+  and no callout, and the angle is drawn by no view (`undrawn!`).  A shadow under `MIN_LINE_LEN`
+  reads the half turn, never a NaN, so neither kind reads a line by direction (`direction_lines`).
+  Columns are the two directions and the axis, a line's ends lifted.  In a plane
+  (`reading::about_axis`) two lines drawn there turn about its normal: `about: P.normal` is the
+  plane's own `Angle` or sided `Perpendicular`, and any other axis E040 at the key, as are a
+  perpendicular about an axis with no `sense:`; `about:` on another word is `assemble`'s "takes no
+  `about`".  Neither kind is `commutative` (swapped, each is its mirror); `graft` and the file
+  carry the axis as any entity slot, and `print` writes `about:` last.  `tests/angle_about.rs` is
+  the gate, the kernels' rows in `jacobians.rs`.
 - **A selector says what it means, or it is refused** (Solvent §9.2). `CKind::words(slot)` is the
   vocabulary a `Str` slot takes (`at: start|end`, `at: p1|p2`) and `constraints::ALONG` the one
   table `along:` is read by (choice and message).  A key naming no slot, a word outside a slot's

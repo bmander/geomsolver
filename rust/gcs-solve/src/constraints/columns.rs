@@ -198,6 +198,10 @@ impl Constraint {
                 vec![s * self.args[2].num(), pinned]
             }
             CKind::Angle3 => vec![self.args[2].num()],
+            // the turn about the axis, `sense: cw` turning it as in the plane, and the sided
+            // perpendicular's a quarter (#558)
+            CKind::AngleAbout => vec![self.sense() * self.args[3].num()],
+            CKind::PerpendicularAbout => vec![self.sense() * std::f64::consts::FRAC_PI_2],
             // two directions across a line as its hidden points stand now — the first line of a
             // parallel, the line a point is on — refreshed with every `refresh_consts`, so they
             // follow the line between solves
@@ -461,6 +465,9 @@ impl Constraint {
             CKind::Perpendicular | CKind::Parallel | CKind::Parallel3 if self.side().is_some() => {
                 &[]
             }
+            // the turn about an axis (#558) reads a direction with no shadow as the half turn,
+            // and an axis of no length as none, so neither holds there
+            CKind::AngleAbout | CKind::PerpendicularAbout => &[],
             CKind::Perpendicular | CKind::Parallel | CKind::Perpendicular3 | CKind::Parallel3 => {
                 &[0, 1]
             }
@@ -1032,6 +1039,10 @@ impl Constraint {
             | CKind::Midpoint3
             | CKind::Symmetric3 => self.lifted_columns(sk),
             CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => self.axis_columns(sk),
+            // and the axis the turn is read about after them (#558)
+            CKind::AngleAbout | CKind::PerpendicularAbout => {
+                [self.axis_columns(sk), self.direction_columns(sk, 2)].concat()
+            }
             // and the plane's origin and axes after them
             CKind::PointOnPlane | CKind::LineOnPlane => {
                 [self.lifted_columns(sk), plane_columns(sk, e(1).i())].concat()
@@ -1143,9 +1154,14 @@ impl Constraint {
                 [vec![e(0).i(), e(1).i()], parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
-            // a direction's operands: a line's ends are lifted, and an axis is in space already
-            CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => (0..2)
-                .filter(|&i| e(i).kind == EntKind::Line)
+            // a direction's operands, and the axis a turn is read about (#558): a line's ends are
+            // lifted, and an axis is in space already
+            CKind::Angle3
+            | CKind::Perpendicular3
+            | CKind::Parallel3
+            | CKind::AngleAbout
+            | CKind::PerpendicularAbout => (0..self.args.len())
+                .filter(|&i| matches!(&self.args[i], Arg::Ent(x) if x.kind == EntKind::Line))
                 .flat_map(ends)
                 .collect(),
             _ => [ends(0), ends(1)].concat(),

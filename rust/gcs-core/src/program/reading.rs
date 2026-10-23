@@ -109,7 +109,7 @@ fn view_points(sk: &Sketch, kind: CKind, args: &[Arg]) -> Option<Vec<usize>> {
 /// the point it is carried from and the source frame in one, which may be another — so a profile
 /// drawn in a view is carried into a station's plane.  Either side not drawn in one plane is
 /// refused, naming the side: a map between points in space is not said yet.
-fn mapped_planes(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), (bool, String)> {
+fn mapped_planes(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), Refusal> {
     let sides = kind.map_sides().expect("a map has sides");
     let side = |of: &[usize]| -> Option<usize> {
         // a point where it is drawn, a circle where its centre is
@@ -121,7 +121,7 @@ fn mapped_planes(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), (bool, St
         let v = planes.next()??;
         planes.all(|w| w == Some(v)).then_some(v)
     };
-    let say = |what: &str| Err((false, format!(
+    let say = |what: &str| Err((None, format!(
         "`mapped` reads {what} in one plane, and these are not drawn in one: draw them in one \
          view (`in P {{ … }}`), as a station's corners are drawn in its plane"
     )));
@@ -133,6 +133,10 @@ fn mapped_planes(sk: &Sketch, kind: CKind, args: &[Arg]) -> Result<(), (bool, St
     }
     Ok(())
 }
+
+/// Why a relation has no reading: the key of a selector that says nothing there (E040 at it), or
+/// `None` for a word with no meaning in space (E062), and the message.
+pub(super) type Refusal = (Option<&'static str>, String);
 
 /// What a relation is read as, written or a set's (§6.21).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -150,14 +154,15 @@ pub(super) enum Reader {
 /// the plane's kind says beyond the one in space is: `Ok(None)` is the kind as written, in one
 /// plane; `Ok(Some((k, args, left_out)))` the relation in space it is otherwise,
 /// its arguments in `k`'s spec order with the inferred slots left for
-/// `constraints::seed_omitted`; `Err` a word that has no meaning in space, or a selector that says
-/// nothing there, as (E040 or E062, the message).
+/// `constraints::seed_omitted` — or, a turn about a plane's normal, the plane's own kind
+/// (`about_axis`); `Err` a word that has no meaning in space (E062), or a selector that says
+/// nothing there (E040, at the key named), with the message.
 pub(super) fn in_space(
     sk: &Sketch,
     kind: CKind,
     args: &[Arg],
     reader: Reader,
-) -> Result<Option<(CKind, Vec<Arg>, Vec<bool>)>, (bool, String)> {
+) -> Result<Option<(CKind, Vec<Arg>, Vec<bool>)>, Refusal> {
     // an ordinate is one statement in a view and in space — its form says which kernel reads it
     // (`constraints::OrdinateForm`) — but a direction said as a view's own word is an axis of
     // the view both points are drawn in, and across views there is none.  `u` and `v` are the
@@ -168,7 +173,7 @@ pub(super) fn in_space(
         if in_view && !crate::constraints::against_plane(sk, word, args[0].ent(), &args[2]) {
             let (p, q) = (args[0].ent().i(), args[1].ent().i());
             if crate::constraints::shared_view(sk, p, q).is_none() {
-                return Err((false, format!(
+                return Err((None, format!(
                     "a view's own direction (`{word}`) has no meaning in space, and these points \
                      are not drawn in one view: name the direction, an axis such as `std.z` or a \
                      line"
@@ -188,6 +193,9 @@ pub(super) fn in_space(
         return Ok((stated && drawn)
             .then(|| (CKind::CarriedPointIn, args.to_vec(), vec![false; args.len()])));
     }
+    if matches!(kind, CKind::AngleAbout | CKind::PerpendicularAbout) {
+        return about_axis(sk, kind, args, reader);
+    }
     let Some(pts) = view_points(sk, kind, args) else { return Ok(None) };
     // where each point is read: its plane, or `None` for a point in space (a document gives
     // every point one or the other before a relation is read: `entities::places`)
@@ -195,7 +203,7 @@ pub(super) fn in_space(
     // one plane, the 2D relation
     let one_plane =
         views.first().is_some_and(|v| v.is_some()) && views.iter().all(|v| *v == views[0]);
-    let chosen = |i: usize| matches!(args.get(i), Some(Arg::Str(w)) if !w.is_empty());
+    let chosen = |i: usize| chosen(args, i);
     // the plane's kind says which way where it is an angle or names a side or a sense
     // (`CKind::side_slot`), which a set's body, in space, does not
     let says_which_way = kind == CKind::Angle || kind.side_slot().is_some_and(chosen);
@@ -213,7 +221,7 @@ pub(super) fn in_space(
     // point is the arc's end or the line's, named
     if matches!(kind, CKind::TangentCircleAt | CKind::TangentArcLine | CKind::TangentLineCircleAt) {
         let c = crate::constraints::Constraint::new(kind, args.to_vec());
-        let at = c.contact_point(sk).ok_or((false, "a tangency at a point names one".to_string()))?;
+        let at = c.contact_point(sk).ok_or((None, "a tangency at a point names one".to_string()))?;
         let (round, line) = match kind {
             CKind::TangentLineCircleAt => (args[1].clone(), args[0].clone()),
             _ => (args[0].clone(), args[1].clone()),
@@ -231,8 +239,10 @@ pub(super) fn in_space(
         CKind::PointAlongArc => CKind::PointAlongArc3,
         CKind::Perpendicular => {
             if chosen(2) {
-                return Err((true, "`sense:` is which way a quarter turn goes in a plane, and two \
-                    lines in space turn neither way: square is all they can be".to_string()));
+                return Err((Some("sense"), "`sense:` is which way a quarter turn goes in a plane, \
+                    and two lines in space turn neither way: square is all they can be, unless \
+                    the turn is read about an axis, `perpendicular(sense: ccw, about: a)`"
+                    .to_string()));
             }
             CKind::Perpendicular3
         }
@@ -244,15 +254,16 @@ pub(super) fn in_space(
         CKind::Symmetric => CKind::Symmetric3,
         CKind::PointLineDistance | CKind::ParallelDistance => {
             if chosen(3) {
-                return Err((true, "`side:` names a side of a line in its plane, and in space a \
-                    line has no sides: the distance is a magnitude".to_string()));
+                return Err((Some("side"), "`side:` names a side of a line in its plane, and in \
+                    space a line has no sides: the distance is a magnitude".to_string()));
             }
             if kind == CKind::PointLineDistance { CKind::PointLine3 } else { CKind::LineLine3 }
         }
         CKind::Angle => {
             if chosen(3) {
-                return Err((true, "`sense:` is which way an angle turns in a plane, and two lines \
-                    in space turn neither way: the angle is unsigned".to_string()));
+                return Err((Some("sense"), "`sense:` is which way an angle turns in a plane, and \
+                    two lines in space turn neither way: the angle is unsigned, unless it is read \
+                    about an axis, `angle(θ, about: a)`".to_string()));
             }
             CKind::Angle3
         }
@@ -260,7 +271,7 @@ pub(super) fn in_space(
         // to refuse (`Constraint::differentiable`)
         _ if one_plane => return Ok(None),
         _ => {
-            return Err((false, format!(
+            return Err((None, format!(
                 "`{word}` relates its operands in one plane, and these are not drawn in one: it \
                  has no meaning in space"
             )))
@@ -297,4 +308,55 @@ pub(super) fn in_space(
         }
     }
     Ok(Some((k3, out, left_out)))
+}
+
+/// Whether slot `i` holds a word the statement said: a side, a sense.
+fn chosen(args: &[Arg], i: usize) -> bool {
+    matches!(args.get(i), Some(Arg::Str(w)) if !w.is_empty())
+}
+
+/// **A turn read about an axis** (#558): `angle(θ, about: a)` and `perpendicular(sense:, about:
+/// a)`, the turn about `a` from the first direction's shadow square to it to the second's.  In
+/// space it is the kind as written.  Two lines drawn in one plane turn about its normal, so there
+/// `about:` names that normal or is refused, and names it to no effect: the plane's own `angle`
+/// or sided `perpendicular`, which a plane reads the same way round.  A perpendicular says which
+/// way, or there is no turn to read about anything.
+fn about_axis(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    reader: Reader,
+) -> Result<Option<(CKind, Vec<Arg>, Vec<bool>)>, Refusal> {
+    if kind == CKind::PerpendicularAbout && !chosen(args, 3) {
+        return Err((Some("about"), "`about:` is the axis a quarter turn is read about, and a \
+            perpendicular that says no `sense:` turns neither way: say which, \
+            `perpendicular(sense: ccw, about: a)`, or leave `about:` out".to_string()));
+    }
+    if reader != Reader::Drawn {
+        return Ok(None);
+    }
+    let lines: Vec<EntRef> = args[..2].iter()
+        .filter_map(|a| match a {
+            Arg::Ent(e) if e.kind == EntKind::Line => Some(*e),
+            _ => None,
+        })
+        .collect();
+    let planes: Vec<Option<usize>> =
+        lines.iter().flat_map(|&l| operand_points(sk, l)).map(|p| sk.plane_of(p)).collect();
+    let Some(&Some(v)) = planes.first().filter(|_| lines.len() == 2) else { return Ok(None) };
+    if planes.iter().any(|&w| w != Some(v)) {
+        return Ok(None);
+    }
+    let normal = sk.frames[v].normal.map(|n| EntRef::axis(n as usize));
+    if !matches!(&args[2], Arg::Ent(e) if Some(*e) == normal) {
+        return Err((Some("about"), "two lines drawn in one plane turn about its normal, and \
+            `about:` may name that and nothing else (`P.normal`): a plane's sense is its \
+            normal's".to_string()));
+    }
+    // the plane's kind is the same slots with the axis taken out
+    let plane = if kind == CKind::AngleAbout { CKind::Angle } else { CKind::Perpendicular };
+    let mut out = args.to_vec();
+    out.remove(2);
+    let n = out.len();
+    Ok(Some((plane, out, vec![false; n])))
 }

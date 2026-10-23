@@ -142,9 +142,12 @@ pub enum K {
     Parallel3Sensed,
     AxisCoincidentSensed,
     LineOnAxisSensed,
+    // the directed angle about an axis, and its free twin (#558)
+    AngleAbout,
+    AngleAboutFree,
 }
 
-pub const N_KERNELS: usize = 97;
+pub const N_KERNELS: usize = 99;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3204,6 +3207,45 @@ fn turn_onto<T: Num>(a: V3<T>, b: V3<T>, s: f64, e1: V3<T>) -> V3<T> {
     x.map(|xi| xi * f)
 }
 
+/* -- the directed angle about an axis (#558) ---------------------------------------------------
+ *
+ * `angle`'s statement read about any axis: the turn about `â`, by the right-hand rule, carrying
+ * the first direction's shadow on the plane square to `â` onto the second's.  About a plane's
+ * normal it is `angle_gap` exactly — `â·(d₁ × d₂)` is the plane's cross and the shadows' dot its
+ * dot — and only the shadows are read, so neither direction need be square to the axis. */
+
+/// `wrap(atan2(â·(d₁ × d₂), d₁ₚ·d₂ₚ) − θ)` over (A, B, C, D, E, F): the two directions and the
+/// axis, each a segment.  The shadows are never built: `d₁ₚ·d₂ₚ = d₁·d₂ − (â·d₁)(â·d₂)`.  One
+/// root on the full turn, its cut at θ + π, the pose farthest from it, as in the plane.  A
+/// direction along the axis casts no shadow: each shadow's `|dₚ|² = |d|² − (â·d)²` is floored at
+/// `MIN_LINE_LEN` squared, as `angle_gap_jac` floors `|d|²`, and under it the row reads the half
+/// turn — a residual, never a NaN.
+fn angle_about_gap<T: Num>(v: &[T], theta: T) -> T {
+    let (d1, d2) = two_dirs(v);
+    let a = vunit(vsub(vec3(v, 15), vec3(v, 12)));
+    let (h1, h2) = (vdot(d1, a), vdot(d2, a));
+    let shadow = |d: V3<T>, h: T| {
+        d.iter().map(|x| x.val() * x.val()).sum::<f64>() - h.val() * h.val()
+    };
+    let floor = MIN_LINE_LEN * MIN_LINE_LEN;
+    if shadow(d1, h1) < floor || shadow(d2, h2) < floor {
+        return T::cst(std::f64::consts::PI);
+    }
+    let g = T::atan2(vdot(a, vcross(d1, d2)), vdot(d1, d2) - h1 * h2) - theta;
+    g - T::cst(g.val() - wrap_turn(g.val()))
+}
+
+/// Columns of `angle_about`: (A, B, C, D, E, F), K = (θ) — the turn, its sense applied
+/// (`Constraint::consts_on`), a quarter for the sided `perpendicular`.  Degree 0.
+fn angle_about_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [angle_about_gap(v, T::cst(k[0]))]
+}
+
+/// (A, B, C, D, E, F, a), K = (m, c): the same, θ = m·a + c.
+fn angle_about_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    [angle_about_gap(v, free_num(v[18], k))]
+}
+
 /// Columns of `parallel3_sensed`: (A, B, C, D), K = (e₁, e₂, s) — `parallel3`'s, and the sense.
 /// `turn(a, s·b)·e_k`: the angle from the first direction to the second, run the way `s` says,
 /// across the first.  Degree 0.
@@ -3791,6 +3833,8 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("parallel3_sensed", parallel3_sensed_rows, n_res: 2, n_par: 12, degree: 0, n_const: 7),
     num_kernel!("axis_coincident_sensed", axis_coincident_sensed_rows, n_res: 4, n_par: 12, degree: 1, n_const: 8),
     num_kernel!("line_on_axis_sensed", line_on_axis_sensed_rows, n_res: 4, n_par: 12, degree: 1, n_const: 7),
+    num_kernel!("angle_about", angle_about_rows, n_res: 1, n_par: 18, degree: 0, n_const: 1),
+    num_kernel!("angle_about_free", angle_about_free_rows, n_res: 1, n_par: 19, degree: 0, n_const: 2),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The
