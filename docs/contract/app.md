@@ -471,7 +471,11 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   a coarser level could not answer still *reading…*; the footer's verdict and the chooser's
   failing ink wait for the last level, so a coarse reading never flashes a failure the reading
   does not make (`a scenario read in a worker arrives a level at a time, the last its
-  reading`).  **In the box** (`ScenarioScene`) every coordinate is the core's (the marks,
+  reading`).  **A filled body's drive is `solventc`'s** (#567, analysis.md, "The page does not
+  drive a filled body"): the page solves on its own thread, so its core compiles no row for a
+  driving deflection of a solid that is no prism (`bodies::DRIVES_FILLED`) and its card's
+  sentence is the core's, judged as a claim and saying `` `solventc` drives it, the page does
+  not ``; nothing in the page decides it.  **In the box** (`ScenarioScene`) every coordinate is the core's (the marks,
   the picture: analysis.md, "A scenario drawn"); a glyph is chrome made in pixels about its
   anchor and scaled by `unit` every frame, so it keeps its size as the eye zooms — a plate for
   `fixed` on a face (a block at a point or along a line), a cone for `pinned` pointing at its

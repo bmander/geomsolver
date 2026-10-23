@@ -777,14 +777,148 @@ names another.
   face's along its two axes (`Stack::fold`) and then carried as a region's is. The constants carry
   the stack after the face's moves (`HEAD`'s `stacked`: how many nodes the face has). Refused where
   a region's is (**E040**): a direction the solve moves, a plane it turns, a side it does not move,
-  a solid left free. A driving deflection of a solid that is no prism compiles nothing yet: its
-  nodes are no functions of the drawing, and the report says nothing drives it. **Held to**: its
+  a solid left free. A driving deflection of a solid that is no prism is a row too, its mesh
+  moved by its sheets (#567, below). **Held to**: its
   gradient against central differences on the library's plank, at the solution and knocked off
   it, and on a plate with a round corner and a hole under a pressure on the arc, a force across it
   and its weight, knocked off it, to 1e-5 of the row's largest rate (`tests/jacobians.rs`,
   `a_solids_deflection_agrees_with_finite_differences`) — taken over 1e-2, since a solid's
   stiffness is good to fewer figures than a region's: over 1e-4 its rounding is a thousandth of
   the rate, over 1e-2 its truncation under a millionth.
+
+- **A filled body's nodes are functions of the drawing: its sheets move them** (#567;
+  `hulls::hull_of`, `interior::Hull`, `interior::Mover::Hull`, `HEAD`'s `hulled`). A solid that is
+  no prism — turned, united, cut — is its exact boundary refined and filled (`Mesh::filled`), and
+  every face of that boundary is a piece of a **sheet** a closed form of the drawing reads: each
+  face's path (`FacePath`) walked to the primitive it is a piece of
+  (`faces::face_primitive`; a placed copy on the way is refused) and named there — a prism's cap
+  (`near`, `far`: a plane at that ordinate of the face's plane), a prism's side (its profile's
+  line or circle, an arc's circle, swept along the plane's normal: a plane or a cylinder) or a
+  full turn's face (its profile's line or circle turned about the axis: a plane, a cone, a
+  cylinder, a sphere or a torus). A boolean trims a sheet and never changes it. A sheet reads its
+  profile's points' two numbers and its radii, and its plane — held where the solve moves none of
+  its numbers, else read off its origin's and its axes' nine (`Frame::Read`, `Sketch::basis`'s
+  reading) — and a turn's axis, held, a line of the plane (its points), or an axis's six numbers;
+  its level is its signed distance (on a turn's face the distance in the meridian half-plane) and
+  that distance's gradient, generic over `Num` (`Sheet::level`). Refused where written
+  (**E040**, `the solve cannot read the deflection: its face … is not moved`): a face of a placed
+  copy, a sweep, a round or a region, a drafted prism or a partial turn, a side swept from a spline
+  or a curve.
+  - **Each node of the boundary is tagged with the sheets it lies on** when the mesh is made: the
+    sheets of the facets it is a node of, each within a quarter of an element's size of it
+    (`hulls::NEAR`: a node of an edge left straight stands off its face by its chord's sag), the
+    nearest first, three at most, each meeting those before it rather than touching them (normals
+    no nearer parallel than a sine of 1e-2, `MEET`) — at the node, and again at its **foot**: from
+    where it was meshed, Gauss–Newton steps of least length `p ← p − Jᵀ(JJᵀ)⁻¹φ(p)` until a step
+    is no longer than 1e-13 of the extent (`Hull::foot`; on one sheet the nearest point, on two
+    the edge, on three the vertex), the foot within `NEAR` and on every sheet to 1e-9 of the
+    extent. A round's torus run tangent into the neck it rounds touches the neck's cylinder: a node
+    beside that seam is tagged with one, not both, whose foot would be a double root. A node no
+    foot is reached for is left untagged and follows the boundary.
+  - **The nodes are placed a stage at a time** (`Hull::places`, `Stage`): each vertex at its foot
+    from where it was meshed; each node of an edge moved harmonically along its curve from the
+    vertices (each side of a facet whose middle is the edge's and whose ends lie on its sheets,
+    weighed by its halves' lengths' inverses), each node of a face over its surface from the edges
+    (the facets' cotangent Laplacian, each cut in four), and each node of an edge or a face then at
+    its foot from there; the nodes inside harmonically through the volume from the whole boundary
+    (the linear Laplacian of the compile's mesh, each TET10 cut into its eight straight
+    tetrahedra). A curve's or a surface's Laplacian may hold a piece no held node reaches (a closed
+    circle's edge) and is taken a part in a billion heavier on its diagonal, so that piece stays
+    where it was meshed. Every tagged node stands at `x₀ + π(v, s) − π(v₀, x₀)` — its foot at the
+    columns from where its stage started it, less its foot where it was meshed (`Hull::feet0`) —
+    so at the compile's pose every node stands where it was meshed to the bit, and stands off the
+    moved boundary only as far as it stood off the one it was meshed on. Faces' nodes moved over
+    their surfaces, not projected from where they were meshed, keep a hole's wall's elements
+    upright as the hole grows: projected alone, the pin lug's caps' nodes stood still while the
+    bore's edges moved a millimetre under them and three elements turned over.
+  - **The gradient is the stages taken back** (`Hull::chain`): the inner nodes' onto the
+    boundary's through the volume's harmonic map (`−L_IBᵀ L_II⁻¹ g_I`, one solve per axis on its
+    factor); each face's then each edge's node onto the columns its foot reads and onto where it
+    started — `Dual`s carried through the Gauss–Newton steps, its own columns and its start's three
+    (`Hull::carried`, `Dual<8>` to `Dual<64>` by how many) — that start onto the stage before
+    through its harmonic map; each vertex onto its columns. A row reading more than 61 columns at
+    one node reads NaN. A measure reads the boundary alone, so its inner nodes stay where they were
+    meshed and no volume Laplacian is factored.
+  - **No B-rep is built while a row is read**: every sheet is a closed form of the columns, so a
+    step costs its placement (a few hundred milliseconds on the rod at four times its size, where
+    rebuilding its B-rep took 0.15 s a pose and a difference a column) and its structure's solves.
+  - **Held to** (`tests/hulls.rs`, `a_filled_bodys_mesh_moves_with_the_drawing`): on the pin lug
+    (its hole's diameter and its width changed) and the turned shaft (its barrel's radius and its
+    round's), meshed at four times a reading's size, every node stands where it was meshed at the
+    compile's pose to the bit; moved to the drawing solved at the changed dimensions, every tagged
+    node stands on the boundary rebuilt there as near as it stood on the one it was meshed on, to
+    1e-9 of the extent, and no element is turned over (`Tet10::jacobian_ratio`). The row's rate
+    against central differences over 1e-2 (`tests/jacobians.rs`): a turned bar at its solution and
+    knocked off it (`a_filled_bodys_deflection_agrees_with_finite_differences`), and the pin lug,
+    its hole driven, and the stepped shaft, its barrel driven, each at and off its solution (the slow
+    tier, `a_cut_and_a_turned_bodys_deflection_agree_with_finite_differences`), to 1e-5 of the
+    row's largest rate; a turned shaft's volume over its seventeen columns (`a_measure_agrees_with_
+    finite_differences_as_the_drawing_states_it`).
+
+- **A filled body's deflection, driven, is a row over its hull** (#567; `bodies::row`,
+  `bodies::filled_row`). `deflection(p, along: d) == v`, `p` a point of a filled body read in
+  three dimensions, compiles to `CKind::Deflection` as a prism's does: the solid meshed once where
+  the drawing stands, the point the node nearest it, held on `Sketch::meshed`, its structure under
+  the scenario with the deflection's weights on that node, and its nodes moved by its sheets.
+  Refused where a prism's is (**E040**: a direction the solve moves, a solid left free) and where a
+  sheet is not moved (above). **Held to a closed form** (`tests/hulls.rs`,
+  `a_turned_bars_radius_is_sized_by_its_stretch`): a round bar turned about its axis, of no
+  Poisson's ratio, its radius an unknown and its head driven to move `δ` under a pull `P`, is
+  sized to `√(P L / (π E δ))` within 5e-4 — the mesh's approximation of its section's circle,
+  meshed at 10mm and moved to 7.98mm — leaving no freedom, the report saying it
+  driven and held, and the claims' reading of the solved drawing, meshed afresh, agreeing with the
+  row within its error.
+- **A filled body's drive is solved coarse first** (#567; `bodies::LEVELS`, `prisms::Row::
+  coarser`, `Sketch::refine`, `solve::System::refined`). Each step of a drive over a filled body
+  is a solve of its structure and one of its adjoint (by CG over its corners where it is large),
+  so its row is made at four times a reading's size, where a step costs a sixtieth of one at its
+  own; a document solve that holds there has the row made again twice as fine where it ended,
+  compiled again and solved on from there, then again, to a reading's own size — each kept where it
+  settles, else the sketch and its meshes are put back and the drive stands on the coarser mesh. A
+  fold is met at the level it folds at (`Sketch::remesh` makes each row again at its own level).
+  `Sketch::mesh_at` makes a copy's rows at a reading's own size, where a drive that holds ends. The
+  CG's corners' factor keeps its pattern's analysis between steps (`cholesky::analysed`, as the
+  factor does): the topology is the row's. A step's solves start from nothing: a CG started from
+  the step before's moves would leave its last bits to the order the solve evaluated in, and a
+  row's value is a function of its columns alone.
+- **The library's driving rod** is `sized_conrod.sv` (#567, M5): the engine's connecting rod
+  imported as the engine designs it, its web's thickness a formal of the rod (`ConRod(pin, bore,
+  wt: Length = 5mm)`, the engine's four rods its default) given an unknown of the drawing, and
+  its small end's lower corner (`rod.sb`) driven to sink 0.29mm under 30kN pressed through its
+  small end's bore (0.304mm at the rod's 5mm, on the coarsest mesh). Its 28 sheets read 99 columns
+  over three planes, one of them (`swing`, the bolts' and the oil passage's) read off its own
+  numbers. Solved at four, two and one times a reading's size, the web is 6.59mm, leaving no
+  freedom; the row held at a reading's own size, the report says it driven and held, and the
+  claims' reading of the solved drawing, meshed afresh, reads 0.28999mm ± 0.00022mm. Its work is
+  pinned by counts (the slow tier, `tests/hulls.rs`, `the_librarys_rod_is_sized_by_its_sag`): the
+  last solve's evaluations within 8 and its rates within 6 (3 and 2), its structure solved by CG
+  over its corners within 45 iterations (37) at the size it is held at — about three minutes
+  natively, its fresh reading among them; a step at its own size is a placement (2.6 s), a solve
+  and an adjoint (12 s each), against 0.3 s and 2.3 s at four times it. A case whose solve takes
+  minutes is listed in `examples::SLOW`, which a default-tier test over every case leaves to the
+  slow tier. **Folded** (`a_filled_bodys_mesh_is_made_again_where_it_folds`, the slow tier): the
+  pin lug driven to give 0.02mm grows its hole from 16mm to 29.2mm in a lug 40mm wide; the mesh
+  made at its start reads NaN where the drive ends, so the solve folds on it, meshes again where it
+  stopped and holds, with no freedom left.
+- **A row read where it was last read is that reading** (#567; `interior::solved`'s `LAST`): a
+  step's trial that is accepted is where the next step's rate is taken, so the last filled body's
+  row read on a thread — its columns, its constants, its placement and its solved structure — is
+  kept, and read again where both are the same to the bit. The same numbers give the same row to
+  the bit, so what is kept changes no answer; it saves a solve a step.
+- **A drawing whose seeds leave its solid unbuilt stands where it solves before its rows are
+  made** (#567; `program::scenarios::stand`): the engine's rod, seeded view by view, has no B-rep
+  until its views are solved together, so no point of it falls in it and no row could be meshed.
+  Where a driving deflection of a point compiles no row where the drawing stands and a solid made
+  of a material is not built there, a copy of the drawing (its rows of measures, none of
+  deflections) is solved, and where it settles the drawing stands there before the rows are made.
+- **The page does not drive a filled body** (#567, M6; `bodies::DRIVES_FILLED`): the page's core
+  (`wasm32`) solves on the page's own thread, where a drive over a filled body's mesh — two solves
+  of its structure a step at each of three levels — would hold the page for as long as the drive
+  takes. There a driving deflection of a filled body compiles no row and is judged after the solve
+  as a claim is, and the report says so: `` stated == -1.2mm, which does not hold; `solventc`
+  drives it, the page does not: a filled body's drive solves its mesh at every step ``
+  (`report::scenario_answers`). `solventc` and the native library drive it. A mass or a volume of
+  a filled body reads no structure and drives in both.
 
 - **The library's driving solid** is `sized_plank.sv`: a steel plank drawn in plan, built in at its
   root and loaded at its end across its own plane — so it bends out of the face it is swept from,
@@ -811,9 +945,11 @@ names another.
 - **What S3 leaves.**
   - ~~**Not in the page.**~~ The page reads every scenario in the mesh worker, and draws the one
     chosen (below, "A scenario drawn").
-  - **No Hadamard derivative, and a filled body is not driven.** A prism's nodes are functions of
-    the drawing; a filled body's are the refinement's, so its driving deflection compiles nothing.
-    The boundary form `∫_Γ (V·n) w dΓ` over the faces' velocities is what would drive one.
+  - ~~**No Hadamard derivative, and a filled body is not driven.**~~ A filled body's nodes are
+    functions of the drawing since #567, moved by its sheets (above): the volume form of the shape
+    derivative, exact for the discrete row, where the boundary form `∫_Γ (V·n) w dΓ` is the
+    continuum's. Its faces must be a prism's or a full turn's: a round's, a sweep's, a placed
+    copy's are not moved yet.
   - **The error is a second reading's**, not the goal-oriented (dual-weighted residual) estimate
     the adjoint would give with the derivative: it costs a coarser mesh, and promises a bound only
     where the reading converges monotonically.
@@ -870,8 +1006,16 @@ names another.
     mesh's `Σ ∫ det J` is the area its boundary encloses wherever its inner nodes stand), so its
     nodes inside stay where they were meshed (`Moved::boundary`): no Laplacian is factored and
     none carried by the gradient. Refused where a region's deflection is (**E040**): a side that
-    is a spline or a curve, a plane the solve turns; a solid that is no prism (its volume's nodes
-    are no functions of the drawing, as a filled body's deflection's are not).
+    is a spline or a curve, a plane the solve turns.
+  - **A filled body's** (#567, `bodies::measured_row`): its exact boundary refined and filled once
+    where the drawing stands, at a reading's size, its boundary's nodes moved by its sheets
+    (`hulls::hull_of`, above) and its inner nodes left where they were meshed — a volume of a
+    conforming mesh is its boundary's, wherever its inner nodes stand — so no volume Laplacian is
+    factored. Refused where a filled body's deflection is for its sheets (**E040**). **Held to**
+    (`tests/measured.rs`, `a_volume_sizes_a_turned_shafts_radius`): a stepped shaft turned about
+    its axis, its shoulder rounded and its barrel's radius an unknown, sized by `volume(V) shaft`
+    to `√((V − π r² (L − s) − V_round) / (π s))` (the round's corner by Pappus) within 1e-4, for two
+    volumes, leaving no freedom, its mass claimed beside it kept and refuted on its sides.
 - **Claimed, it is judged on the solved drawing** (`measured::read`, `report::measure_answers`):
   `claim mass(m) B` within 1e-9 of `m`, `claim mass(<= m) B` and `claim mass(>= m) B` on their
   side (`beams::compares`, a requirement's rule) — read as a row reads it, with no moduli,

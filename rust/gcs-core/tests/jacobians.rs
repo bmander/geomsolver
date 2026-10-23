@@ -692,11 +692,61 @@ fn a_measure_agrees_with_finite_differences() {
     }
 }
 
+/// A driving row's rate against central differences over 1e-2 (a solid's stiffness is good to
+/// fewer figures than a region's: `a_solids_deflection_agrees_with_finite_differences`), at the
+/// drawing `src` solved to and in `rounds` more each knocked off it.
+fn filled_row_agrees(src: &str, rounds: usize, rng: &mut Rng) {
+    let mut sk = crate::common::solved(&crate::common::read(src));
+    for round in 0..=rounds {
+        if round > 0 {
+            for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                p.value += rng.uniform(-0.01, 0.01) * (1.0 + p.value.abs().min(10.0));
+            }
+        }
+        let c = sk.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap();
+        let v = c.local_values(&sk);
+        let ja = c.jacobian(&sk, &v);
+        let jn = gcs_core::fdcheck::fd_jacobian(|w| c.residual(&sk, w), &v, 1e-2);
+        let scale = gcs_core::linalg::absmax(&jn.data);
+        assert!(scale.is_finite() && scale > 0.0, "round {round}");
+        for (col, (a, n)) in ja.iter().zip(&jn.data).enumerate() {
+            assert!((a - n).abs() <= 1e-5 * scale, "round {round}: column {col}: {a} against {n}");
+        }
+    }
+}
+
+/// **A filled body's deflection, driven, agrees with its differences** (#567, M2 and M4): a
+/// turned bar's — no prism, so its exact boundary refined and filled once, each node of its
+/// boundary moved by the sheets it lies on (its base's and its head's planes, its side's
+/// cylinder, the vertices and edges where they meet) and those inside following harmonically —
+/// against central differences, at the solution and knocked off it, to 1e-5 of the row's largest
+/// rate.
+#[test]
+fn a_filled_bodys_deflection_agrees_with_finite_differences() {
+    filled_row_agrees(&crate::hulls::BAR.replace("SAG", "0.02mm"), 1, &mut Rng::new(567));
+}
+
+/// **A cut body's and a turned shaft's deflection, driven, agree with their differences** (#567,
+/// M2 and M4): the pin lug, its hole's diameter driven by its corner's give (a cylinder cut
+/// through a block: its caps and the bore meet in circles), and the stepped shaft, its barrel's
+/// radius driven by its head's (planes, cylinders and its shoulder's round, a torus run tangent
+/// into the neck and the step), each at the solution and knocked off it, to 1e-5 of the row's
+/// largest rate.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, two minutes: two filled bodies' rows \
+                                             differenced")]
+fn a_cut_and_a_turned_bodys_deflection_agree_with_finite_differences() {
+    let mut rng = Rng::new(568);
+    filled_row_agrees(&crate::hulls::LUG.replace("SAG", "0.015mm"), 1, &mut rng);
+    filled_row_agrees(&crate::hulls::SHAFT.replace("SAG", "0.0375mm"), 1, &mut rng);
+}
+
 /// **A mass and a volume, as the drawing states them** (`CKind::Mass`, `CKind::Volume`): a
 /// frame's row over its points' lifts and the unknowns its areas read — a section's breadth,
-/// its area not affine in it, and an L's reach — and a prism's over its face's points' numbers
-/// and its radii, its face's nodes moved with them (a round corner, a hole) — each stated of the
-/// drawing — against finite differences, at the solution and knocked off it.
+/// its area not affine in it, and an L's reach — a prism's over its face's points' numbers and
+/// its radii, its face's nodes moved with them (a round corner, a hole), and a turned shaft's, its
+/// boundary's nodes moved by its sheets (#567: planes, cylinders and a round's torus) — each
+/// stated of the drawing — against finite differences, at the solution and knocked off it.
 #[test]
 fn a_measure_agrees_with_finite_differences_as_the_drawing_states_it() {
     let frame = "\
@@ -752,8 +802,10 @@ in std.front {
 plate := solid(region, from: -2mm, to: 2mm) of steel
 mass(0.17584kg) plate
 ";
+    // a solid that is no prism, filled, its boundary moved by its sheets (#567)
+    let turned = format!("{}volume(115 * 1cm^3) shaft\n", crate::measured::TURNED);
     let mut rng = Rng::new(522);
-    for src in [frame, plate] {
+    for src in [frame, plate, &turned] {
         let mut sk = crate::common::solved(&crate::common::read(src));
         for round in 0..3 {
             if round > 0 {

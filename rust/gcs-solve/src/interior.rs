@@ -41,9 +41,11 @@ use crate::delaunay::tetra::EDGES;
 use crate::pcg::Lower;
 use crate::sparse::{Ata, Sym};
 
+mod hull;
 mod moved;
 mod plane;
 mod solid;
+pub use hull::{Axis, Frame, Hull, Profile, Sheet};
 pub use moved::{Edge, Moved, Node, Stack};
 pub use plane::{Laid, Tri6};
 pub use solid::{Borne, Tet10};
@@ -1176,6 +1178,11 @@ impl Structure {
 /* -- the solid element (#510 S3) ------------------------------------------------------------- */
 
 impl Structure {
+    /// Every solid element's ten nodes.
+    pub fn tet_nodes(&self) -> Vec<[usize; 10]> {
+        self.tets.iter().map(|t| t.n).collect()
+    }
+
     /// Solid element `i`'s thirty degrees of freedom: each node's move along x, y, then z.
     fn tet_dofs(&self, i: usize) -> [usize; 30] {
         let n = self.tets[i].n;
@@ -1598,15 +1605,56 @@ impl Bar {
 /* -- the row's constants ------------------------------------------------------------------ */
 
 /// The constants before the structure: `[dim, nodes, bars, beams, spreads, sized, tris, laid,
-/// moved, tets, borne, stacked, reads]` — `sized` how many unknowns the beams' sections are read
-/// over (`Sizing`), or −1 where each section's numbers are columns of their own; `tris` and
+/// moved, tets, borne, stacked, reads, hulled]` — `sized` how many unknowns the beams' sections
+/// are read over (`Sizing`), or −1 where each section's numbers are columns of their own; `tris` and
 /// `laid` the plane elements and the loads laid on them (#510 S2); `moved` how many columns of
 /// the drawing the nodes are read over (`Moved`), or −1 where their coordinates are the columns;
 /// `tets` and `borne` the solid elements and the loads they bear (#510 S3); `stacked` how many
 /// nodes of the plane a solid's nodes are stacked over (`Stack`), or −1 where the nodes are the
-/// plane's own; `reads` what the row reads (`Reads`: 0 a displacement, 1 the volume, 2 the mass)
+/// plane's own; `reads` what the row reads (`Reads`: 0 a displacement, 1 the volume, 2 the mass);
+/// `hulled` 1 where the nodes are a filled body's, moved by its sheets (`Hull`, #567), else 0
 /// — then the output stated, `J₀`, or where an unknown sets it, its `(m, c)`.
-pub const HEAD: usize = 13;
+pub const HEAD: usize = 14;
+
+/// **How a row's nodes move with the drawing**: a region's (and a prism's stacked over it,
+/// `Moved`), or a filled body's (`Hull`, #567).
+#[derive(Clone, Debug, PartialEq)]
+pub enum Mover {
+    Plane(Moved),
+    Hull(Hull),
+}
+
+impl Mover {
+    /// How many columns of the drawing the nodes are read over.
+    pub fn columns(&self) -> usize {
+        match self {
+            Mover::Plane(m) => m.columns,
+            Mover::Hull(h) => h.columns,
+        }
+    }
+
+    /// Its constants.
+    pub fn consts(&self) -> Vec<f64> {
+        match self {
+            Mover::Plane(m) => m.consts(),
+            Mover::Hull(h) => h.consts(),
+        }
+    }
+
+    /// How many constants it is.
+    pub fn width(&self) -> usize {
+        match self {
+            Mover::Plane(m) => m.width(),
+            Mover::Hull(h) => h.width(),
+        }
+    }
+}
+
+/// A row's nodes placed where its columns stand, with what their rate is carried by.
+enum Placing {
+    Plane(Moved, moved::Placed),
+    Hull(Hull, hull::Placed),
+}
 
 /// A beam's constants: its ends, its moduli, its density and its section's z.
 const BEAM: usize = 8;
@@ -1709,7 +1757,7 @@ impl Structure {
 
     /// `consts_sized`, and after them, where the nodes are read over the drawing's columns
     /// (#510 S2), how (`Moved::consts`).
-    pub fn consts_with(&self, stated: &[f64], sizing: Option<&Sizing>, moved: Option<&Moved>)
+    pub fn consts_with(&self, stated: &[f64], sizing: Option<&Sizing>, moved: Option<&Mover>)
         -> Vec<f64>
     {
         let sized = sizing.map_or(-1.0, |z| z.unknowns as f64);
@@ -1718,10 +1766,14 @@ impl Structure {
             .map(|n| n as f64));
         k.push(sized);
         k.extend([self.tris.len() as f64, self.laid.len() as f64]);
-        k.push(moved.map_or(-1.0, |m| m.columns as f64));
+        k.push(moved.map_or(-1.0, |m| m.columns() as f64));
         k.extend([self.tets.len() as f64, self.borne.len() as f64]);
-        k.push(moved.filter(|m| m.stack.is_some()).map_or(-1.0, |m| m.nodes.len() as f64));
+        k.push(match moved {
+            Some(Mover::Plane(m)) if m.stack.is_some() => m.nodes.len() as f64,
+            _ => -1.0,
+        });
         k.push(self.reads as u8 as f64);
+        k.push(matches!(moved, Some(Mover::Hull(_))) as u8 as f64);
         k.extend(stated);
         for b in &self.bars {
             k.extend([b.a as f64, b.b as f64, b.e]);
@@ -1782,7 +1834,7 @@ impl Structure {
     /// columns where they are (#510 S2) — every node held by it, in the plane.
     #[allow(clippy::type_complexity)]
     pub fn read_with(k: &[f64], free: bool)
-        -> Option<(Structure, &[f64], Option<Sizing>, Option<Moved>)>
+        -> Option<(Structure, &[f64], Option<Sizing>, Option<Mover>)>
     {
         let count = |v: f64| (v >= 0.0 && v.fract() == 0.0 && v < 1e9).then_some(v as usize);
         let head = k.get(..HEAD)?;
@@ -1926,6 +1978,15 @@ impl Structure {
         };
         let moved = match head[8] {
             v if v < 0.0 => None,
+            // a filled body's nodes, moved by its sheets (#567): every node of the solid's
+            _ if head[13] == 1.0 => {
+                let (h, used) = Hull::read(k.get(at..)?)?;
+                at += used;
+                let n = h.nodes.len();
+                let fits = n == s.nodes && s.dim == 3 && h.x0.len() == 3 * n
+                    && h.feet0.len() == 3 * n && head[8] == h.columns as f64 && head[11] < 0.0;
+                Some(Mover::Hull(fits.then_some(h)?))
+            }
             _ => {
                 let (m, used) = Moved::read(k.get(at..)?, head[11] >= 0.0)?;
                 at += used;
@@ -1936,9 +1997,12 @@ impl Structure {
                         Some(st) => st.of.len() == s.nodes && s.dim == 3
                             && head[11] == plane as f64,
                     };
-                Some(fits.then_some(m)?)
+                Some(Mover::Plane(fits.then_some(m)?))
             }
         };
+        if !(head[13] == 0.0 || head[13] == 1.0) {
+            return None;
+        }
         (at == k.len()).then_some((s, stated, sizing, moved))
     }
 
@@ -1953,7 +2017,7 @@ impl Structure {
     }
 
     /// `widths_sized`, its nodes read over the drawing's columns where `moved` is.
-    pub fn widths_with(&self, free: bool, sizing: Option<&Sizing>, moved: Option<&Moved>)
+    pub fn widths_with(&self, free: bool, sizing: Option<&Sizing>, moved: Option<&Mover>)
         -> (usize, usize)
     {
         let stated = if free { 2 } else { 1 };
@@ -1962,11 +2026,11 @@ impl Structure {
             sizing.iter().flat_map(|z| z.sections.iter().flatten()).map(|t| 1 + t.len()).sum();
         let laid: usize = self.laid.iter().map(Laid::width).sum();
         let borne: usize = self.borne.iter().map(Borne::width).sum();
-        let nodes = moved.map_or(self.dim * self.nodes, |m| m.columns);
+        let nodes = moved.map_or(self.dim * self.nodes, Mover::columns);
         (self.row_columns(sizing) - self.dim * self.nodes + nodes + free as usize,
          HEAD + stated + 3 * self.bars.len() + BEAM * self.beams.len() + spread
              + TRI * self.tris.len() + laid + TET * self.tets.len() + borne
-             + 3 * self.fixed.len() + tapes + moved.map_or(0, Moved::width))
+             + 3 * self.fixed.len() + tapes + moved.map_or(0, Mover::width))
     }
 
     /// How many columns a row over the structure reads before the unknown that may set its
@@ -2004,33 +2068,48 @@ fn free_at(n_par: usize, k: &[f64]) -> Option<bool> {
 /// One row read off its columns `v` and constants `k`: the structure, the columns it is solved
 /// at, what it states, whether an unknown sets its output, and where its sections are read over
 /// unknowns each one's value and rate in them.
-struct Row<'a> {
+struct Row {
     s: Structure,
     x: Vec<f64>,
-    stated: &'a [f64],
+    stated: Vec<f64>,
     free: bool,
     sized: Option<(usize, Vec<[crate::tape::Value; SECTION]>)>,
-    /// Where the nodes are read over the drawing's columns (#510 S2): how, and where they stand.
-    moved: Option<(Moved, moved::Placed)>,
+    /// Where the nodes are read over the drawing's columns (#510 S2, #567): how, and where they
+    /// stand.
+    moved: Option<Placing>,
 }
 
-impl<'a> Row<'a> {
-    fn read(v: &[f64], k: &'a [f64]) -> Option<Row<'a>> {
+impl Row {
+    fn read(v: &[f64], k: &[f64]) -> Option<Row> {
         let free = free_at(v.len(), k)?;
         let (s, stated, sizing, moved) = Structure::read_with(k, free)?;
+        let stated = stated.to_vec();
         if let Some(m) = moved {
             // a plane structure's nodes, read over the drawing: no areas and no sections
-            if v.len() != m.columns + free as usize || !s.bars.is_empty() || !s.beams.is_empty() {
+            if v.len() != m.columns() + free as usize || !s.bars.is_empty() || !s.beams.is_empty() {
                 return None;
             }
             // a measure reads the boundary alone: its inner nodes need no harmonic map
-            let placed = if s.reads.measure() {
-                m.boundary(&v[..m.columns])
-            } else {
-                m.places(&v[..m.columns])?
+            let measure = s.reads.measure();
+            let placing = match m {
+                Mover::Plane(m) => {
+                    let placed = if measure {
+                        m.boundary(&v[..m.columns])
+                    } else {
+                        m.places(&v[..m.columns])?
+                    };
+                    Placing::Plane(m, placed)
+                }
+                Mover::Hull(h) => {
+                    let placed = h.places(&v[..h.columns], &s.tet_nodes(), !measure)?;
+                    Placing::Hull(h, placed)
+                }
             };
-            let x = placed.x.clone();
-            return Some(Row { s, x, stated, free, sized: None, moved: Some((m, placed)) });
+            let x = match &placing {
+                Placing::Plane(_, p) => p.x.clone(),
+                Placing::Hull(_, p) => p.x.clone(),
+            };
+            return Some(Row { s, x, stated, free, sized: None, moved: Some(placing) });
         }
         let cols = s.row_columns(sizing.as_ref());
         if v.len() != cols + free as usize {
@@ -2053,8 +2132,10 @@ impl<'a> Row<'a> {
 
     /// The columns the structure is read over, before the unknown that may set its output.
     fn columns(&self) -> usize {
-        if let Some((m, _)) = &self.moved {
-            return m.columns;
+        match &self.moved {
+            Some(Placing::Plane(m, _)) => return m.columns,
+            Some(Placing::Hull(h, _)) => return h.columns,
+            None => {}
         }
         self.s.section_at(0) + self.sized.as_ref().map_or(SECTION * self.s.beams.len(), |z| z.0)
     }
@@ -2082,15 +2163,15 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
         let row = &mut j[n_par * i..n_par * (i + 1)];
         row.fill(0.0);
-        let Some((read, st)) = solved(v, k) else {
+        let Some(got) = solved(v, k) else {
             row.fill(f64::NAN);
             continue;
         };
-        read.rate(&st, v, row);
+        got.0.rate(&got.1, v, row);
     }
 }
 
-impl Row<'_> {
+impl Row {
     /// What the row reads where it stands, solved at `st`: the displacement `Σ weight · u`, or
     /// what the structure is made of (`Reads::Volume`, `Reads::Mass`), which no solve reads.
     fn output(&self, st: &Option<State>) -> f64 {
@@ -2112,10 +2193,19 @@ impl Row<'_> {
         };
         match (&self.sized, &self.moved) {
             // the nodes' rates carried through how they move with the drawing (#510 S2)
-            (_, Some((m, placed))) => {
+            (_, Some(Placing::Plane(m, placed))) => {
                 let mut g = vec![0.0; s.columns()];
                 gradient(&mut g);
                 m.chain(&v[..cols], placed, &g, &mut row[..cols]);
+            }
+            // a filled body's, through its sheets (#567)
+            (_, Some(Placing::Hull(h, placed))) => {
+                let mut g = vec![0.0; s.columns()];
+                gradient(&mut g);
+                if h.chain(&v[..cols], placed, &s.tet_nodes(), &g, &mut row[..cols]).is_none() {
+                    row.fill(f64::NAN);
+                    return;
+                }
             }
             (None, None) => gradient(&mut row[..cols]),
             // a section's rate carried to the unknowns it is read over
@@ -2139,23 +2229,52 @@ impl Row<'_> {
     }
 }
 
+/// A row read and solved (`solved`): the row, and its structure's displacements (none for a
+/// measure's).
+type Solved = std::rc::Rc<(Row, Option<State>)>;
+
+thread_local! {
+    /// **The last filled body's row solved on this thread** (#567): its columns, its constants,
+    /// and the row read and solved there — what `jac` reads again where `res` last stood, since a
+    /// step's trial that is accepted is where the next step's rate is taken.  Kept for a row over a
+    /// filled body's hull alone, whose reading is its placement and two solves of tens of
+    /// thousands of equations; the same numbers give the same row to the bit, so what is kept
+    /// changes no answer.
+    static LAST: std::cell::RefCell<Option<(Vec<f64>, Vec<f64>, Solved)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 /// One row read off its columns `v` and constants `k`, and its structure solved there — a
 /// measure's left unsolved (`None`), since it reads what the structure is made of; `None` where it
-/// cannot be read or solved.
-fn solved<'a>(v: &[f64], k: &'a [f64]) -> Option<(Row<'a>, Option<State>)> {
-    let read = Row::read(v, k)?;
-    if read.s.reads.measure() {
-        return Some((read, None));
+/// cannot be read or solved.  A filled body's row read where the last one was is that one
+/// (`LAST`).
+fn solved(v: &[f64], k: &[f64]) -> Option<Solved> {
+    let same = |a: &[f64], b: &[f64]| {
+        a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
+    };
+    let kept = LAST.with(|last| {
+        last.borrow().as_ref().filter(|(lv, lk, _)| same(lv, v) && same(lk, k))
+            .map(|(_, _, got)| got.clone())
+    });
+    if kept.is_some() {
+        return kept;
     }
-    let st = read.s.solve(&read.x).ok()?;
-    Some((read, Some(st)))
+    let read = Row::read(v, k)?;
+    let hulled = matches!(read.moved, Some(Placing::Hull(..)));
+    let st = if read.s.reads.measure() { None } else { Some(read.s.solve(&read.x).ok()?) };
+    let got: Solved = std::rc::Rc::new((read, st));
+    if hulled {
+        LAST.with(|last| *last.borrow_mut() = Some((v.to_vec(), k.to_vec(), got.clone())));
+    }
+    Some(got)
 }
 
 /// One row's output where its columns `v` stand, and what it states there; `None` where the row
 /// cannot be read or its structure solved there.
 pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
-    let (read, st) = solved(v, k)?;
-    Some((read.output(&st), read.target(v)))
+    let got = solved(v, k)?;
+    let (read, st) = (&got.0, &got.1);
+    Some((read.output(st), read.target(v)))
 }
 
 /// **Whether one row is out of reach where its columns `v` stand** (#510 P7): its output and
@@ -2164,12 +2283,13 @@ pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
 /// `scale`; with the output.  One structure solved for all three.  `None` where the row cannot
 /// be read or its structure solved there.
 pub fn reach_of(v: &[f64], k: &[f64], free: &[bool], scale: &[f64]) -> Option<(Reach, f64)> {
-    let (read, st) = solved(v, k)?;
+    let got = solved(v, k)?;
+    let (read, st) = (&got.0, &got.1);
     let mut g = vec![0.0; v.len()];
-    read.rate(&st, v, &mut g);
+    read.rate(st, v, &mut g);
     if !g.iter().all(|g| g.is_finite()) {
         return None;
     }
-    let output = read.output(&st);
+    let output = read.output(st);
     Some((analysis::reach(output, read.target(v), &g, scale, free), output))
 }

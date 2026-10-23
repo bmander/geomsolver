@@ -30,6 +30,10 @@ fn said(d: &Diagnosis) -> String {
 /// cases are read side by side (`par`), answered in the library's order.
 fn disagreements(free: std::ops::RangeInclusive<usize>) -> Vec<String> {
     gcs_core::par::map(&examples::CASES, |(_, key, _)| {
+        // a case whose solve takes minutes is the slow tier's
+        if !cfg!(feature = "slow") && examples::SLOW.contains(key) {
+            return None;
+        }
         let mut sk = examples::case(key)?;
         solve(&mut sk, SolveOpts::default());
         if !free.contains(&gcs_core::system::System::new(&sk).n_free) {

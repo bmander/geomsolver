@@ -4,6 +4,22 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.177] A filled body drives.** A driving `deflection(p, along: d) == v` of a point of a solid
+read in three dimensions that is no prism — turned, united, cut — is a row of the drawing, as a
+prism's is: the solid is meshed once where the drawing stands, the point naming the node nearest
+it, and within the solve its boundary's nodes move with the surfaces its faces lie on — a prism's
+caps and sides, a full turn's faces, each a function of the points, radii, planes and axes that make
+it, a boolean trimming it and never changing it — while its other nodes follow them. A `mass(m)` or
+`volume(v)` stated of such a solid is a row too, its boundary moved the same way. Through 0.176 the
+deflection compiled nothing and was judged after the solve, and the measure was **E040**. A face of
+a placed copy, a sweep, a round or a region, a drafted prism or a partial turn moves with nothing
+yet: the requirement is **E040**, naming the face. An implementation MAY solve such a drive on a
+coarse mesh first and finish it on its own; one that cannot afford a drive (a page solving on the
+thread it draws on) MAY judge it after the solve, as a claim, and SHOULD say where it is driven. The
+engine's connecting rod takes its web's thickness as a formal, `ConRod(pin, bore, wt: Length =
+5mm)`, its default the rod it was; `sized_conrod.sv` sizes it by its small end's sag. (Issue #567,
+from #510.)
+
 **[0.176] One definition form.** A braced definition is a function of its arguments and of the
 frame its instance stands in, and every one is held to it (§8.2): E108, E109, the diagnosis read
 through instances (D1–D3) and W207 apply to every drawn instance of every `component Name(…) { … }`,

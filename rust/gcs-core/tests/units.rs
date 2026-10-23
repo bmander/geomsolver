@@ -206,6 +206,10 @@ fn the_functions_have_signatures() {
 #[test]
 fn the_library_is_unchanged() {
     for &(key, ..) in examples::CASES.iter() {
+        // a case whose solve takes minutes is the slow tier's
+        if !cfg!(feature = "slow") && examples::SLOW.contains(&key) {
+            continue;
+        }
         let Some(mut sk) = examples::example(key) else { continue };
         let d = diagnose(&mut sk, DiagnoseOptions::default());
         assert!(d.dof >= 0, "{key}");
