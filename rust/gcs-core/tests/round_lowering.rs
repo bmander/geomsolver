@@ -649,6 +649,88 @@ fn a_slots_rounds_go_on_round_its_tangent_ends() {
     assert_eq!(kinds(&b).get("torus"), Some(&6));
 }
 
+/// `notch.sv`'s outline walked anticlockwise, each arc as its centre, its radius, the angle it
+/// starts at and its signed turn (a concave one's clockwise): the ends' arcs of 15, the waists'
+/// of 30 and the notches' fillets of 4, each fillet's centre `30 − 4` from its arcs' centres.
+fn notch_outline() -> Vec<([f64; 2], f64, f64, f64)> {
+    let f = 36.0 - (26.0_f64 * 26.0 - 9.0).sqrt();
+    let angle = |c: [f64; 2], p: [f64; 2]| (p[1] - c[1]).atan2(p[0] - c[0]);
+    // from `p` to `q` about `c`, anticlockwise where it is convex, else clockwise
+    let arc = |c: [f64; 2], r: f64, p: [f64; 2], q: [f64; 2], convex: bool| {
+        let (a, b) = (angle(c, p), angle(c, q));
+        (c, r, a, if convex { (b - a).rem_euclid(2.0 * PI) } else { -(a - b).rem_euclid(2.0 * PI) })
+    };
+    // where a fillet meets the waist's arc about `c`: on the line through both centres, 30 from `c`
+    let meet = |c: [f64; 2], fy: f64| {
+        let k = 30.0 / 26.0;
+        [c[0] + k * (0.0 - c[0]), c[1] + k * (fy - c[1])]
+    };
+    let (t1, t2) = (meet([3.0, 36.0], f), meet([-3.0, 36.0], f));
+    let (t3, t4) = (meet([-3.0, -36.0], -f), meet([3.0, -36.0], -f));
+    let (ne, nw, sw, se) = ([15.0, 12.0], [-15.0, 12.0], [-15.0, -12.0], [15.0, -12.0]);
+    vec![
+        arc([24.0, 0.0], 15.0, se, ne, true), arc([-3.0, 36.0], 30.0, ne, t2, false),
+        arc([0.0, f], 4.0, t2, t1, false), arc([3.0, 36.0], 30.0, t1, nw, false),
+        arc([-24.0, 0.0], 15.0, nw, sw, true), arc([3.0, -36.0], 30.0, sw, t4, false),
+        arc([0.0, -f], 4.0, t4, t3, false), arc([-3.0, -36.0], 30.0, t3, se, false),
+    ]
+}
+
+/// The volume of `notch.sv`'s plate, `depth` deep and drafted by `draft`, its far rim rounded by
+/// `r`. The outline's area `A` and perimeter `P` (Green over its arcs), drawn in by `s` at the
+/// ordinate `s / tan θ`: `A − P s + π s²` (Steiner: its turn is a whole one), integrated over the
+/// depth. Less the round's: at the far rim the material's angle is a right angle and the draft, the
+/// same section beside every arc, its area `a` (the ball's kite less its sector) and its centroid
+/// `δ` in from the rim; turned about each arc's axis at `R ∓ (s + δ)` (a convex arc's `−`), Pappus,
+/// it takes `a (P − 2π (s + δ))` over the eight.
+fn notch(depth: f64, draft: f64, r: f64) -> f64 {
+    let arcs = notch_outline();
+    let turn: f64 = arcs.iter().map(|a| a.3).sum();
+    assert!((turn - 2.0 * PI).abs() < 1e-12, "the outline turns {turn}");
+    let area: f64 = arcs.iter().map(|&([cx, cy], radius, a, phi)| {
+        let b = a + phi;
+        0.5 * (radius * cx * (b.sin() - a.sin()) - radius * cy * (b.cos() - a.cos()) + radius * radius * phi)
+    }).sum();
+    let perimeter: f64 = arcs.iter().map(|a| a.1 * a.3.abs()).sum();
+    let t = draft.tan();
+    let prism = area * depth - perimeter * t * depth * depth / 2.0 + PI * t * t * depth.powi(3) / 3.0;
+    // the section in the meridian: `u` in along the far face, `w` up the wall's side
+    let alpha = 0.5 * PI + draft;
+    let (e1, e2) = ([1.0, 0.0], [-draft.sin(), draft.cos()]);
+    let bisector = { let m = [e1[0] + e2[0], e1[1] + e2[1]]; let n = m[0].hypot(m[1]); [m[0] / n, m[1] / n] };
+    let (half, beta) = (0.5 * alpha, PI - alpha);
+    let along = r / half.tan();
+    let centre = [bisector[0] * r / half.sin(), bisector[1] * r / half.sin()];
+    let kite = (r * along, (along + along * e2[0] + 2.0 * centre[0]) / 6.0);
+    let sector = (0.5 * r * r * beta, centre[0] - bisector[0] * 4.0 * r * (0.5 * beta).sin() / (3.0 * beta));
+    let a = kite.0 - sector.0;
+    let delta = (kite.0 * kite.1 - sector.0 * sector.1) / a;
+    prism - a * (perimeter - 2.0 * PI * (depth * t + delta))
+}
+
+/// `notch.sv`: a round across tangent seams between arcs on a drafted prism (#574). Each side is a
+/// cone, so the far rim is eight stretches of rings, each going on from the next across a seam —
+/// concave into concave at the notches' roots, convex into concave at the ends — glued at the
+/// section they share. Unioned, two tori tangent along that section's circle were a trace too
+/// shallow to follow, refused at some drafts and radii and not others (the top notch's seam and not
+/// its mirror image). Every draft and radius the issue found refused, undrafted too: the closed
+/// form's volume to 1e-9.
+#[test]
+fn a_round_across_seams_between_arcs_on_a_drafted_prism_is_glued() {
+    let src = include_str!("../../examples/rounds/notch.sv");
+    for (draft, r) in [(3.0_f64, 1.0), (0.0, 1.0), (1.0, 1.0), (6.0, 0.5), (6.0, 1.5), (7.0, 1.0)] {
+        let drafted = if draft > 0.0 { format!(", draft: {draft}deg") } else { String::new() };
+        let text = src.replace(", draft: 3deg", &drafted)
+            .replace("round(r: 1mm)", &format!("round(r: {r}mm)"));
+        let e = solved(&text);
+        let b = exported(&e, "body");
+        let got = props::volume(&b);
+        let want = notch(5.0, draft.to_radians(), r);
+        assert!((got - want).abs() <= 1e-9 * want, "{draft}°, r {r}: {got} against {want}");
+        assert_eq!(kinds(&b).get("torus"), Some(&8), "{draft}°, r {r}");
+    }
+}
+
 /// `pad.sv`: the boss's root a ring, two of the plate's near edges each a run cut off flush at the
 /// plate's sides, and the bore drilled through after — the rounds read the faces the body has
 /// before it.

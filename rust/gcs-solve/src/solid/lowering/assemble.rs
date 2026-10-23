@@ -277,7 +277,34 @@ pub fn assemble<'a>(pieces: impl IntoIterator<Item = &'a Piece>) -> Assembly {
             }
         }
     }
+    // two stretches of rings going on from one another (a round across a tangent seam between two
+    // arcs, #574): one section, where one's turn ends and the other's starts — glued there, as a
+    // run to a ring, never unioned (two tori tangent along that section's circle meet in nothing
+    // a trace can follow)
+    let stretch = |g: &Ring| g.angle < std::f64::consts::TAU - 1e-12;
+    for (i, g) in out.rings.iter().enumerate().filter(|(_, g)| stretch(g)) {
+        for (k, h) in out.rings.iter().enumerate().skip(i + 1).filter(|(_, h)| stretch(h)) {
+            if same_section(g, h, size) {
+                out.joins.push([out.runs.len() + i, out.runs.len() + k]);
+            }
+        }
+    }
     out
+}
+
+/// Whether two rings' stretches meet in one section: at an end of each turn, each point of either
+/// one's section hull within a billionth of `size` of one of the other's (the pieces' caps there
+/// one face, `boolean::glued`'s to pair).
+fn same_section(g: &Ring, h: &Ring, size: f64) -> bool {
+    let hulls = |g: &Ring| {
+        let turn = crate::brep::geom::Rigid::turn(g.axis_origin, g.axis, g.angle);
+        let start = g.section.section_hull();
+        let end = start.iter().map(|&p| turn.point(p)).collect::<Vec<_>>();
+        [start, end]
+    };
+    let within = |a: &[V], b: &[V]| a.iter().all(|&p| b.iter().any(|&q| distance(p, q) <= 1e-9 * size));
+    let (a, b) = (hulls(g), hulls(h));
+    a.iter().any(|x| b.iter().any(|y| within(x, y) && within(y, x)))
 }
 
 impl Assembly {
