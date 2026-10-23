@@ -2021,7 +2021,8 @@ scenario tip_load {
   `1200cm^3` would be the cube of 1200 centimetres) is a row over the beam's members, or a member's
   line, sizing an unknown the area reads (`A: b * h`) or placing a joint, with no support and no
   load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
-  section's width and depth. `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
+  section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a
+  prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
   solve; a bound is a claim's alone. `solventc` prints each: `mass(arm) is 10kg: driven == 10kg,
   held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
   shows each: `sized_cantilever.sv` (a depth),

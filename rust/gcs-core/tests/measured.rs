@@ -181,6 +181,39 @@ fn the_librarys_weighed_cantilever_holds_what_it_drives() {
     assert!(said[0].ends_with("driven == 10kg, held"), "{said:?}");
 }
 
+/// **The library's demonstrations of a mass and a volume stated hold their closed forms**: the
+/// lightened web's hole, `√((L h − m / (ρ t)) / π)` within what the mesh leaves of the circle; the
+/// budget frame's tube, its side `(m / (ρ (H + R)) + 4w²) / 4w` with no support read; the gusset's
+/// leg, `2 V / (t a)` — each leaving no freedom, every row held and every claim beside it kept,
+/// the scenarios' and the drawing's alike.
+#[test]
+fn the_librarys_measures_hold_their_closed_forms() {
+    let pi = std::f64::consts::PI;
+    let cases: [(&str, &str, f64, f64); 3] = [
+        ("lightened_web", "r", ((160.0 * 60.0 - 0.11 / (2700e-9 * 5.0)) / pi).sqrt(), 1e-5),
+        ("mass_budget_frame", "s", (1.5 / (RHO * 1e-9 * 1000.0) + 16.0) / 8.0, 1e-9),
+        ("sized_gusset", "", 2.0 * 30000.0 / (5.0 * 100.0), 1e-9),
+    ];
+    for (key, name, want, tol) in cases {
+        let (e, mut sk) = sized(gcs_core::examples::source(key).unwrap());
+        let got = match name {
+            "" => sk.point_xy(crate::common::at_path(&e, "b").i()).1,
+            name => unknown(&sk, name),
+        };
+        assert!((got - want).abs() <= tol * want, "{key}: {got} against {want}");
+        assert_eq!(crate::common::dof(&mut sk), 0, "{key}");
+        for a in gcs_core::report::measure_answers(&sk, &e.measures) {
+            assert_eq!(a.holds, Some(true), "{key}: {}", a.text);
+        }
+        for s in &e.scenarios {
+            let (_, read) = gcs_core::diagnose::analysis::scenario_read(&sk, &s.scenario);
+            for a in gcs_core::report::scenario_answers(&sk, s, &read) {
+                assert_eq!(a.holds, Some(true), "{key}: {}", a.text);
+            }
+        }
+    }
+}
+
 /// **A volume sizes a hole**: a plate's hole an unknown circle, `volume(V) web` stated over the
 /// plate's face meshed once and moved with the drawing, its radius `√((L h − V / t) / π)` within
 /// what the mesh's quadratic sides leave of the circle — whether a scenario reads the solid in its

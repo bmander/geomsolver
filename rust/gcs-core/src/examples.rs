@@ -175,8 +175,8 @@ pub fn example(name: &str) -> Option<Sketch> {
         "solid_flange" | "solid_pulley" | "solid_elbow" | "solid_tray" | "solid_loft" | "nurbs"
         | "catenary" | "dido" | "sag" | "ring" | "fisheye" | "projectile" | "hyperbolic"
         | "sized_cantilever" | "reach_cantilever" | "shelf_bracket" | "portal_frame"
-        | "weighed_cantilever" | "sized_plate" | "tuning_fork" | "rounded_bracket"
-        | "pressure_pipe" | "gravity_wall"
+        | "weighed_cantilever" | "lightened_web" | "mass_budget_frame" | "sized_gusset"
+        | "sized_plate" | "tuning_fork" | "rounded_bracket" | "pressure_pipe" | "gravity_wall"
         | "drilled_plate" | "sized_plank" | "pressed_panel" | "flat_bar_strut"
         | "cantilever_plate" | "turned_shaft" | "pin_lug" => {
             document(source(name)?, name)
@@ -270,7 +270,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 68] = [
+pub const CASES: [(&str, &str, &str); 71] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "One hollow square section carried round a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -308,6 +308,9 @@ pub const CASES: [(&str, &str, &str); 68] = [
     ("A shelf bracket sized by its sag · two members, a spread load", "shelf_bracket", "a post built in at its foot and an arm off its head, rigid at the corner, one section for both, the shelf's 600N spread evenly along the arm: the depth found so the tip sinks 1.5mm is the root of the arm's bending, the post's turn under the arm's moment and its shortening — 29.50mm"),
     ("A portal frame sized by its sag · a tube, its weight", "portal_frame", "two posts and a beam of one round tube, its diameter the unknown: a 20kN load hung from the beam's middle (a point on the member, which cuts it) and the frame's own weight, which grows with the tube, sink the middle 2mm at a diameter of 221.8mm — the tube's area and second moments no affine function of the diameter, each read as a formula over it"),
     ("A cantilever sized by its sag and its mass · a mass drives", "weighed_cantilever", "the sized cantilever with its width `b` an unknown beside its depth `h`, its sag driven in its scenario and `mass(m) arm` stated of the drawing — what the beam is made of answers no load, so it is no scenario's: the mass is a row too, ρ b h L read with no solve, so two rows find two unknowns, the depth √((4 P L³ / (E sag)) / (b h)), 62.65mm, and the width 20.33mm at which it weighs 10kg.  Edit the mass and the section thins or thickens while the tip still sinks 4mm"),
+    ("A web lightened to a mass · a mass drives a hole", "lightened_web", "an aluminium web built in along its root with a round hole at its middle, its radius an unknown, and `mass(110g) web` stated of the drawing beside its scenario: the mass is a row over the web's face, meshed once and moved with the hole, so the solve finds the hole at which the web weighs 110g — 21.50mm — and the scenario reads the lightened web in plane stress and claims how far its end sinks.  Edit the mass and the hole grows or shrinks"),
+    ("A frame sized by its mass budget · a mass alone sizes a tube", "mass_budget_frame", "an L bracket of one square steel tube, its outer side an unknown, and `mass(1.5kg) frame` stated of the drawing: the mass needs no support and no load, so it alone sizes the tube — 25.88mm, ρ A (H + R) over the members — and the shelf's scenario claims how far the arm's end sinks at the section the budget gave.  Edit the budget and the claim is judged again"),
+    ("A gusset placed by its volume · a volume places a point", "sized_gusset", "a right-angled steel rib with one leg along the floor and its top free to slide up the wall, and `volume(30 * 1cm^3) rib` stated of the drawing: the volume is a row over the rib's face through its depth, so the solve slides its top to the height at which it holds 30cm³ — 120mm — and its mass is claimed beside it, `claim mass(<= 250g) rib`, judged on the solved drawing"),
     ("A plate sized by its sag · a requirement drives a region", "sized_plate", "a steel plate built in along its root and loaded along its end, read in plane stress over its face (`plane stress plate`), its depth `h` an unknown its sides' dimensions read, and `deflection(end_low, along: down) == sag` driving it: the face is meshed once in quadratic triangles, its nodes move with its sides, and the solve finds the depth at which the corner sinks 0.5mm under 4kN — 76.75mm, within 0.2% of Timoshenko's beam with its shear"),
     ("A tuning fork's modes · a solid read in its plane", "tuning_fork", "a steel fork built in at its stem and read in plane stress over the face it is cut from (`plane stress fork`): its modes in its own plane, `mode(fork, n)` — the whole fork rocking on its stem first, then its tines swinging against each other a little below the 764Hz of a tine built in at its root, since their base gives with them"),
     ("A rounded shelf bracket · stress answered where a corner is round", "rounded_bracket", "an L of steel plate, its post built in and a load hung along its arm, read in plane stress: its inside corner rounded by an arc, so `safety(bracket)` — the yield over the greatest von Mises stress — has an answer, 1.23; draw the corner sharp and the elastic stress there is unbounded, and the factor of safety says so and says to round it, while its deflection and its mass still answer"),
@@ -445,6 +448,9 @@ pub fn source(key: &str) -> Option<&'static str> {
         "shelf_bracket" => Some(include_str!("../../examples/shelf_bracket.sv")),
         "portal_frame" => Some(include_str!("../../examples/portal_frame.sv")),
         "weighed_cantilever" => Some(include_str!("../../examples/weighed_cantilever.sv")),
+        "lightened_web" => Some(include_str!("../../examples/lightened_web.sv")),
+        "mass_budget_frame" => Some(include_str!("../../examples/mass_budget_frame.sv")),
+        "sized_gusset" => Some(include_str!("../../examples/sized_gusset.sv")),
         "sized_plate" => Some(include_str!("../../examples/sized_plate.sv")),
         "tuning_fork" => Some(include_str!("../../examples/tuning_fork.sv")),
         "rounded_bracket" => Some(include_str!("../../examples/rounded_bracket.sv")),

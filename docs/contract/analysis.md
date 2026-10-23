@@ -808,7 +808,12 @@ names another.
   cannot be measured said (`what_cannot_be_measured_says_why`). **The library's case** is
   `weighed_cantilever.sv`: the sized cantilever with its width an unknown beside its depth, its
   sag driven and its mass stated of the drawing — 20.33mm by 62.65mm, each its closed form, no
-  freedom left, its claim kept (`the_librarys_weighed_cantilever_holds_what_it_drives`). The
+  freedom left, its claim kept (`the_librarys_weighed_cantilever_holds_what_it_drives`) — and
+  three more demonstrate each side of it (`the_librarys_measures_hold_their_closed_forms`):
+  `lightened_web.sv` (a hole sized by a mass over a prism's face, 21.50mm, beside a scenario that
+  reads the plate in its plane), `mass_budget_frame.sv` (a tube's side sized by a mass alone, no
+  support read, 25.88mm, its sag claimed in a scenario) and `sized_gusset.sv` (a point placed by
+  a volume, 120mm, its mass claimed with a bound). The
   library's and the corpus's mass claims (`rounded_bracket`, `pressed_panel`, `turned_shaft`,
   `gravity_wall`, `sized_plank`, `analysis/cantilever*`) are the drawing's. The kernel's gradient
   against central differences over bars, beams and curved triangles and tetrahedra held by

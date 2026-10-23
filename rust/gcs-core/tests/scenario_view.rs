@@ -9,11 +9,11 @@ use gcs_core::overview::scenario::{marks, Kind};
 use gcs_core::space::{distance, dot};
 
 /// The library's documents that state a scenario.
-const LIBRARY: [&str; 17] = [
+const LIBRARY: [&str; 19] = [
     "cantilever_plate", "pressure_pipe", "tuning_fork", "shelf_bracket", "pin_lug",
     "flat_bar_strut", "rounded_bracket", "pressed_panel", "sized_cantilever", "portal_frame",
     "turned_shaft", "drilled_plate", "reach_cantilever", "sized_plate", "gravity_wall",
-    "sized_plank", "weighed_cantilever",
+    "sized_plank", "weighed_cantilever", "lightened_web", "mass_budget_frame",
 ];
 
 /// A steel cantilever `L` long along x on the front, built in at `root`, and `P` at its tip along
