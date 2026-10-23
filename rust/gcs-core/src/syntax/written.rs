@@ -271,7 +271,15 @@ impl Written {
             }
             if !spec.iter().any(|(n, _)| *n == key.text) {
                 let word = &self.word.text;
-                let m = format!("`{word}` takes no `{}`", key.text);
+                // two directions in space turn neither way, but about an axis they do (#558)
+                let m = match (kind, key.text.as_str()) {
+                    (CKind::Angle3 | CKind::Perpendicular3, "sense") => format!(
+                        "two directions in space turn neither way, so `{word}` takes a `sense` \
+                         only with an axis to read the turn about: `{word}(…, sense: ccw, about: \
+                         a)`"
+                    ),
+                    _ => format!("`{word}` takes no `{}`", key.text),
+                };
                 return Err((key.span, m));
             }
         }

@@ -111,6 +111,9 @@ macro_rules! undrawn {
             | CKind::Angle3
             | CKind::Perpendicular3
             | CKind::Parallel3
+            // and a turn about an axis (#558), read about no one view's normal
+            | CKind::AngleAbout
+            | CKind::PerpendicularAbout
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
             | CKind::TangentCircleAt3

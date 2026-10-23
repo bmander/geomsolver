@@ -188,6 +188,9 @@ pub(super) fn in_space(
         return Ok((stated && drawn)
             .then(|| (CKind::CarriedPointIn, args.to_vec(), vec![false; args.len()])));
     }
+    if matches!(kind, CKind::AngleAbout | CKind::PerpendicularAbout) {
+        return about_axis(sk, kind, args, reader);
+    }
     let Some(pts) = view_points(sk, kind, args) else { return Ok(None) };
     // where each point is read: its plane, or `None` for a point in space (a document gives
     // every point one or the other before a relation is read: `entities::places`)
@@ -232,7 +235,8 @@ pub(super) fn in_space(
         CKind::Perpendicular => {
             if chosen(2) {
                 return Err((true, "`sense:` is which way a quarter turn goes in a plane, and two \
-                    lines in space turn neither way: square is all they can be".to_string()));
+                    lines in space turn neither way: square is all they can be, unless the turn \
+                    is read about an axis, `perpendicular(sense: ccw, about: a)`".to_string()));
             }
             CKind::Perpendicular3
         }
@@ -252,7 +256,8 @@ pub(super) fn in_space(
         CKind::Angle => {
             if chosen(3) {
                 return Err((true, "`sense:` is which way an angle turns in a plane, and two lines \
-                    in space turn neither way: the angle is unsigned".to_string()));
+                    in space turn neither way: the angle is unsigned, unless it is read about an \
+                    axis, `angle(θ, about: a)`".to_string()));
             }
             CKind::Angle3
         }
@@ -297,4 +302,46 @@ pub(super) fn in_space(
         }
     }
     Ok(Some((k3, out, left_out)))
+}
+
+/// **A turn read about an axis** (#558): `angle(θ, about: a)` and `perpendicular(sense:, about:
+/// a)`, the turn about `a` from the first direction's shadow square to it to the second's.  In
+/// space it is the kind as written.  Two lines drawn in one plane turn about its normal, so there
+/// `about:` names that normal or is refused, and names it to no effect: the plane's own `angle`
+/// or sided `perpendicular`, which a plane reads the same way round.  A perpendicular says which
+/// way, or there is no turn to read about anything.
+fn about_axis(
+    sk: &Sketch,
+    kind: CKind,
+    args: &[Arg],
+    reader: Reader,
+) -> Result<Option<(CKind, Vec<Arg>, Vec<bool>)>, (bool, String)> {
+    let sense = kind.side_slot().expect("a turn about an axis has a sense");
+    if kind == CKind::PerpendicularAbout && !matches!(&args[sense], Arg::Str(w) if !w.is_empty()) {
+        return Err((true, "`about:` is the axis a quarter turn is read about, and a \
+            perpendicular that says no `sense:` turns neither way: say which, `perpendicular(sense: \
+            ccw, about: a)`, or leave `about:` out".to_string()));
+    }
+    let pts: Vec<usize> = args[..2].iter()
+        .filter_map(|a| match a {
+            Arg::Ent(e) if e.kind == EntKind::Line => Some(operand_points(sk, *e)),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    let view = pts.first().and_then(|&p| sk.plane_of(p));
+    let drawn = |v: usize| pts.len() == 4 && pts.iter().all(|&p| sk.plane_of(p) == Some(v));
+    let Some(v) = view.filter(|&v| reader == Reader::Drawn && drawn(v)) else { return Ok(None) };
+    let normal = sk.frames[v].normal.map(|n| EntRef::new(EntKind::Axis, n as usize));
+    if !matches!(&args[2], Arg::Ent(e) if Some(*e) == normal) {
+        return Err((true, "two lines drawn in one plane turn about its normal, and `about:` may \
+            name that and nothing else (`P.normal`): a plane's sense is its normal's".to_string()));
+    }
+    let plane = match kind {
+        CKind::AngleAbout => (CKind::Angle, vec![args[0].clone(), args[1].clone(), args[3].clone(),
+                                                 args[4].clone()]),
+        _ => (CKind::Perpendicular, vec![args[0].clone(), args[1].clone(), args[3].clone()]),
+    };
+    let n = plane.1.len();
+    Ok(Some((plane.0, plane.1, vec![false; n])))
 }

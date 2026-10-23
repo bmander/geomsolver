@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.174] A directed angle about an axis.** `angle` and `perpendicular` take `about: a` (§9.4):
+`d1 angle(θ, about: a) d2` is the turn about axis `a`, by the right-hand rule and on the full turn,
+from `d1`'s shadow on the plane square to `a` to `d2`'s, and `d1 perpendicular(sense: ccw, about:
+a) d2` that turn at a quarter (`cw` the other). The directions are lines or axes, need not be square
+to `a`, and the row has one root, where the unsigned `angle` and the bare `perpendicular` in space
+hold either way round. `about:` is a label the language already reads as an axis (`solid(…,
+about:)`, `std.Turn(f, about:)`), and no keyword is added. In a plane `about:` is the plane's normal,
+unsaid: naming it is the plane's own statement, and naming anything else is **E040**, as are a
+`perpendicular` with `about:` and no `sense:` and `about:` on any other word. A `sense:` in space
+with no `about:` is refused as before, its message now naming `about:`. The V-twin's bank mates its
+cylinder's x a quarter turn clockwise about its z from the plane of swing's normal
+(`cyl.std.x perpendicular(sense: cw, about: cyl.std.z) pin.plane.normal`), where 0.173 left which
+way round its y stood to the seed; every position is unchanged. (Issue #558, from #523.)
+
 **[0.173] Which way an axis runs.** `parallel` takes `sense: same|opposite` (§9.4): the second
 direction runs the way the first does, or the other way, where `parallel` alone holds either way
 and leaves which to the seed. Between two lines in a plane it is the directed angle at no turn or a

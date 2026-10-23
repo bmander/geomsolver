@@ -949,7 +949,9 @@ fn across_views(
         Ok(None) => Some((ckind, spec, args, left_out)),
         Ok(Some((k, a, l))) => Some((k, k.spec(), a, l)),
         Err((selector, message)) => {
-            let key = ["side", "sense"].into_iter().find_map(|k| r.written.and_then(|w| w.key_span(k)));
+            // an axis a turn is read about is said at its key first: its sense is said by it (#558)
+            let key = ["about", "side", "sense"].into_iter()
+                .find_map(|k| r.written.and_then(|w| w.key_span(k)));
             cx.diags.push(Diag::within(
                 if selector { Code::E040 } else { Code::E062 },
                 if selector { key.unwrap_or(st.span) } else { st.span },

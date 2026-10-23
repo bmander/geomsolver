@@ -523,6 +523,14 @@ fn fixture(kind: CKind) -> (Sketch, Constraint) {
     if kind == CKind::Symmetric {
         args[2] = Arg::Ent(EntRef::line(l2));
     }
+    // a turn about an axis from it to a line across the views, about the other axis; a
+    // perpendicular about one says which way it turns, or is refused (#558)
+    if matches!(kind, CKind::AngleAbout | CKind::PerpendicularAbout) {
+        args[1] = Arg::Ent(EntRef::line(l2));
+    }
+    if kind == CKind::PerpendicularAbout {
+        args[3] = Arg::Str("ccw".into());
+    }
     // the tangent at a point of a spline — its rate there — reads the place of the contact
     // holding the point (#251, #365)
     if kind == CKind::Rate {

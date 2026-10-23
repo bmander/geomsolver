@@ -236,6 +236,14 @@ pub enum CKind {
     Perpendicular3,
     /// Two rows across the first line's direction — see `kernels::parallel3_res`.
     Parallel3,
+    /// **The directed angle about an axis** (#558): the turn about `about`, by the right-hand
+    /// rule and on the full turn, carrying the first direction's shadow on the plane square to
+    /// the axis onto the second's — `angle(θ, about: a)`, the plane's `angle` read about any
+    /// axis.  `sense: cw` turns the number, as in the plane.
+    AngleAbout,
+    /// `perpendicular(sense:, about: a)`: that turn at a quarter either way (#558), as the sided
+    /// `perpendicular` in a plane is `angle`'s kernel (#497).  No number, so no dimension.
+    PerpendicularAbout,
     /// `P coincident p`: a point on a plane in space, over the plane's axes and origin; the plane
     /// is any, not only the point's own.
     PointOnPlane,
@@ -452,7 +460,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 86] = [
+pub const ALL_KINDS: [CKind; 88] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -500,6 +508,8 @@ pub const ALL_KINDS: [CKind; 86] = [
     CKind::Angle3,
     CKind::Perpendicular3,
     CKind::Parallel3,
+    CKind::AngleAbout,
+    CKind::PerpendicularAbout,
     CKind::PointOnPlane,
     CKind::PointOnCircle3,
     CKind::ProjectSolved,
@@ -792,6 +802,8 @@ impl CKind {
             CKind::Angle3 => "Angle3",
             CKind::Perpendicular3 => "Perpendicular3",
             CKind::Parallel3 => "Parallel3",
+            CKind::AngleAbout => "AngleAbout",
+            CKind::PerpendicularAbout => "PerpendicularAbout",
             CKind::PointOnPlane => "PointOnPlane",
             CKind::PointOnCircle3 => "PointOnCircle3",
             CKind::PointOnLine3 => "PointOnLine3",
@@ -1029,6 +1041,20 @@ impl CKind {
             CKind::Angle3 => &[("l1", S::Direction), ("l2", S::Direction), ("theta", S::Angle)],
             CKind::Perpendicular3 => &[("l1", S::Direction), ("l2", S::Direction)],
             CKind::Parallel3 => &[("l1", S::Direction), ("l2", S::Direction), ("sense", S::Str)],
+            // the two directions and the axis the turn between them is read about (#558)
+            CKind::AngleAbout => &[
+                ("l1", S::Direction),
+                ("l2", S::Direction),
+                ("about", S::Direction),
+                ("theta", S::Angle),
+                ("sense", S::Str),
+            ],
+            CKind::PerpendicularAbout => &[
+                ("l1", S::Direction),
+                ("l2", S::Direction),
+                ("about", S::Direction),
+                ("sense", S::Str),
+            ],
             CKind::PointOnPlane => {
                 &[("p", S::Point), ("plane", S::Plane)]
             }
@@ -1254,8 +1280,8 @@ impl CKind {
             // a lifted or described statement spells the word and the reading comes back
             CKind::Coincident3 => ("coincident", Infix),
             CKind::Distance3 | CKind::PointLine3 | CKind::LineLine3 => ("distance", Infix),
-            CKind::Angle3 => ("angle", Infix),
-            CKind::Perpendicular3 => ("perpendicular", Infix),
+            CKind::Angle3 | CKind::AngleAbout => ("angle", Infix),
+            CKind::Perpendicular3 | CKind::PerpendicularAbout => ("perpendicular", Infix),
             CKind::Parallel3 => ("parallel", Infix),
             CKind::EqualLength3 => ("equal", Infix),
             CKind::PointOnPlane => ("coincident", Infix),
@@ -1327,6 +1353,8 @@ impl CKind {
             (CKind::Angle, 3) => &["ccw", "cw"][..],
             (CKind::EqualAngle, 4) => &["ccw", "cw"][..],
             (CKind::Perpendicular, 2) => &["ccw", "cw"][..],
+            // which way round the axis the turn is read (#558)
+            (CKind::AngleAbout, 4) | (CKind::PerpendicularAbout, 3) => &["ccw", "cw"][..],
             // which way the second direction runs along the first (#535)
             (CKind::Parallel | CKind::Parallel3 | CKind::LineOnAxis | CKind::AxisCoincident, 2) => {
                 &["same", "opposite"][..]
@@ -1389,6 +1417,9 @@ impl CKind {
             CKind::EqualAngle => (4, &[("ccw", 1.0), ("cw", -1.0)][..]),
             // the quarter turn from the first line to the second, either way (#497)
             CKind::Perpendicular => (2, &[("ccw", 1.0), ("cw", -1.0)][..]),
+            // and about an axis, by the right-hand rule (#558)
+            CKind::AngleAbout => (4, &[("ccw", 1.0), ("cw", -1.0)][..]),
+            CKind::PerpendicularAbout => (3, &[("ccw", 1.0), ("cw", -1.0)][..]),
             // the second direction run along the first, or turned round (#535)
             CKind::Parallel | CKind::Parallel3 | CKind::LineOnAxis | CKind::AxisCoincident => {
                 (2, &[("same", 1.0), ("opposite", -1.0)][..])
@@ -1724,6 +1755,8 @@ impl CKind {
             | CKind::Angle3
             | CKind::Perpendicular3
             | CKind::Parallel3
+            | CKind::AngleAbout
+            | CKind::PerpendicularAbout
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
             | CKind::TangentCircleAt3
@@ -1873,6 +1906,8 @@ impl CKind {
             CKind::Angle3 => K::Angle3,
             CKind::Perpendicular3 => K::Perpendicular3,
             CKind::Parallel3 => K::Parallel3,
+            // one kernel for both, the perpendicular's turn a quarter (#558)
+            CKind::AngleAbout | CKind::PerpendicularAbout => K::AngleAbout,
             CKind::PointOnPlane => K::PointOnPlane,
             CKind::PointOnCircle3 => K::PointOnCircle3,
             CKind::PointOnLine3 => K::PointOnLine3,
@@ -1949,6 +1984,7 @@ impl CKind {
             CKind::PointLine3 => K::PointLine3Free,
             CKind::LineLine3 => K::LineLine3Free,
             CKind::Angle3 => K::Angle3Free,
+            CKind::AngleAbout => K::AngleAboutFree,
             CKind::Coincident
             | CKind::Midpoint
             | CKind::DragTarget
@@ -2000,6 +2036,7 @@ impl CKind {
             | CKind::Coincident3
             | CKind::Perpendicular3
             | CKind::Parallel3
+            | CKind::PerpendicularAbout
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
             | CKind::TangentCircleAt3
@@ -2042,6 +2079,8 @@ impl CKind {
                 | CKind::Angle3
                 | CKind::Perpendicular3
                 | CKind::Parallel3
+                | CKind::AngleAbout
+                | CKind::PerpendicularAbout
                 | CKind::PointOnPlane
                 | CKind::PointOnCircle3
                 | CKind::TangentCircleAt3
