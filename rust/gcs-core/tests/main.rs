@@ -23,6 +23,7 @@ mod axis;
 mod axis_sense;
 mod bare_plane;
 mod beams;
+mod bindings;
 mod bodies;
 mod block_measure;
 mod block_order;

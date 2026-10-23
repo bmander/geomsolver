@@ -945,6 +945,8 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     // are then bound: one a section reads that nothing binds is said
     super::scenarios::drive(&mut cx.sk, &mut cx.map, &flat.body, &mut scenarios, &mut cx.diags);
     super::beams::sized(&cx.sk, &flat.body, &mut cx.diags);
+    // each solid a closed instance made, stamped with its binding (#566)
+    super::bound::stamp(&mut cx.sk, &cx.res, &flat.expansion.instances, &flat.expansion.rings);
     crate::modules::localize(p, &mut cx.diags);
     Elaborated {
         sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, measures, program: p.clone(),

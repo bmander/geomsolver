@@ -142,6 +142,82 @@ struct Shape {
 
 const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
 
+/// An evaluation's shape renamed for another instance of its binding (#566,
+/// `EvaluatedSolid::renamed`): the shape it was renamed from, by serial, and the renamed one,
+/// which keeps its own serial however often it is placed.
+#[derive(Clone, Debug)]
+pub struct Renamed {
+    of: u64,
+    shape: std::rc::Rc<Shape>,
+}
+
+/// A name made under one instance read as the same name under another (#566): `from` at its
+/// start rewritten `to`, and any other name left as it is (a face's own `near`, a route).
+pub(crate) struct Renaming<'n> {
+    pub from: &'n str,
+    pub to: &'n str,
+}
+
+impl Renaming<'_> {
+    pub(crate) fn name(&self, s: &str) -> String {
+        match s.strip_prefix(self.from) {
+            Some(rest) => format!("{}{rest}", self.to),
+            None => s.to_string(),
+        }
+    }
+}
+
+impl Shape {
+    /// The same shape under names `re` rewrites, a serial of its own: what a host keeps by
+    /// serial reads names too.  What it has worked out already is kept, renamed; what it has not
+    /// is left to be worked out from what is (the ray indices, which read no name, among them).
+    fn renamed(&self, re: &Renaming<'_>) -> Shape {
+        let pieces = |p: &[Piece]| p.iter().map(|q| Piece { path: re.name(&q.path), ..q.clone() })
+            .collect::<Vec<_>>();
+        let csg = Csg {
+            prims: self.csg.prims.iter().map(|p| Prim {
+                faces: p.faces.iter().map(|f| re.name(f)).collect(),
+                of: re.name(&p.of),
+                ..p.clone()
+            }).collect(),
+            term: self.csg.term.clone(),
+        };
+        fn kept<T>(v: Option<T>) -> OnceCell<T> {
+            v.map_or_else(OnceCell::new, OnceCell::from)
+        }
+        Shape {
+            serial: next_serial(),
+            name: re.name(&self.name),
+            policy: self.policy,
+            unit: self.unit,
+            epsilon: self.epsilon,
+            csg,
+            boundary: kept(self.boundary.get().map(|b| pieces(b))),
+            bounds: self.bounds,
+            paths: self.paths.iter().map(|(k, v)| (re.name(k), re.name(v))).collect(),
+            surviving: self.surviving.iter().map(|f| re.name(f)).collect(),
+            round: self.round.iter().map(|r| RoundFeature { of: re.name(&r.of), ..r.clone() })
+                .collect(),
+            surface: self.surface,
+            corner_normals: self.corner_normals.clone(),
+            exact: self.exact.as_ref().map(|(x, of)| (std::rc::Rc::new(x.renamed(re)), of.clone())),
+            edges: kept(self.edges.get().map(|e| e.iter()
+                .map(|e| Edge { path: re.name(&e.path), ..e.clone() }).collect())),
+            mesh: kept(self.mesh.get().map(|m| mesh::Mesh {
+                positions: m.positions.clone(),
+                normals: m.normals.clone(),
+                groups: m.groups.iter().map(|g| mesh::Group { path: re.name(&g.path), ..*g })
+                    .collect(),
+            })),
+            ray_indices: OnceCell::new(),
+            face_edges: kept(self.face_edges.get().map(|f| f.iter().map(|e| mesh::FaceEdge {
+                faces: (re.name(&e.faces.0), re.name(&e.faces.1)),
+                segs: e.segs.clone(),
+            }).collect())),
+        }
+    }
+}
+
 /// A serial no evaluation in this process has had (`Shape::serial`).
 fn next_serial() -> u64 {
     static SERIAL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
@@ -582,6 +658,26 @@ impl EvaluatedSolid {
             world_box: OnceCell::new(),
             shape: self.shape.clone(),
         }
+    }
+    /// **This evaluation's shape under another instance's names** (#566): every name it carries
+    /// that starts with `from` — the instance it was made in — rewritten to start with `to`.
+    /// Nothing is evaluated again: the geometry is this one's, a shape of its own only for its
+    /// names, kept to place wherever this evaluation stands (`placed`).
+    pub(crate) fn renamed(&self, from: &str, to: &str) -> Renamed {
+        Renamed {
+            of: self.shape.serial,
+            shape: std::rc::Rc::new(self.shape.renamed(&Renaming { from, to })),
+        }
+    }
+    /// **Another instance's solid of the same binding** (#566): this evaluation moved by
+    /// `motion`, under the names `renamed` gives its shape — renamed again from `from` to `to`
+    /// where it was renamed from another shape.
+    pub(crate) fn placed(&self, motion: &Rigid, renamed: &mut Renamed, from: &str, to: &str)
+        -> Self {
+        if renamed.of != self.shape.serial {
+            *renamed = self.renamed(from, to);
+        }
+        Self { shape: renamed.shape.clone(), ..self.moved(motion) }
     }
     /// A fresh evaluation's placement: at `origin`, turned nowhere.
     fn made(origin: WorldPoint, shape: Shape) -> Self {

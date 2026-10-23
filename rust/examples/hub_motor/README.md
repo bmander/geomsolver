@@ -81,12 +81,14 @@ in the section. It draws in the planes those are drawn in (`in f.o.plane`, `in f
 view is passed to it. It reads the numbers it is made to from `motor/dims.sv` as constants of its
 definition, listed in its file's `use motor.dims (…)`, so no table is passed at a call either.
 Where a corner is placed on a circle from an offset line, which has two crossings, a bound says
-it stands ahead of the axle (`f.o distance(>= 0, along: sc) a`). The part's root is stated, not
+it stands ahead of the axle (`std.origin distance(>= 0, along: sc) a`). The part's root is stated, not
 left to its seeds, and `solventc --lint` has nothing to say of the assembly.
 
 - **The end view** (`std.front`) is the electromagnetic section. One slot, one magnet and one
   hall sensor are drawn, and a `ring` turns each round: 51, 46 and 3 copies, with only the first
-  of each solved for.
+  of each solved for. The slot cutter and the magnet are definitions (`Slot`, `Magnet`), each
+  drawn about its frame's origin, the axle's centre: the ring places one instance of each, every
+  copy standing in the frame turned, so each is one solid evaluated and placed 51 or 46 times.
   - A slot is its walls' offsets from the two teeth's centrelines and the circles they stop on.
     Nothing is placed by a sine.
   - The lamination is the annulus less the 51 slot cutters.

@@ -174,7 +174,7 @@ impl<'a> Walk<'a> {
             local(keys::word_operand(i), r.span)
         }).collect();
         let stamp = Worded { ops, ..worded };
-        let Application { mut scope, from, set, .. } = app;
+        let Application { prefix, mut scope, from, set } = app;
         // what a word's body makes in a claim's block is the claim's witness (#460)
         scope.stamps.roles.witness = scope.stamps.roles.witness.or(u.rel.witness.map(|w| w.0));
         dims_at(&mut body, dims, u.at);
@@ -209,6 +209,9 @@ impl<'a> Walk<'a> {
                 _ => None,
             })
             .collect();
+        if !made.is_empty() {
+            self.words.declaring.insert(prefix);
+        }
         let places = |r: &Relation| r.form.written().is_some_and(|w| {
             w.word.text == "coincident" && w.rates.is_empty()
                 && w.ops.first().is_some_and(|o| o.path.is_empty() && made.iter().any(|m| {

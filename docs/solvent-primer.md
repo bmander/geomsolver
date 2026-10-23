@@ -572,6 +572,26 @@ from inside to anything the turn would move — outside geometry but the centre,
 place — or to a copy by index rather than `next`/`prev` (E021); a ring in a ring (E022); a plane,
 axis or motion declared in it, a point outside its view, or a hold on a copy (E023).
 
+**A ring places instances** (0.177). An instance declared in a ring stands in its copy's frame —
+the representative's turned `k · 360°/N` about `C` — so its body's relations may read its own
+`std.*` (`c right_of(d: 20mm) std.origin`), which the turn carries with each copy; a declaration
+built on a datum (`line(std.origin, c)`) is the same line in every copy and stays E021 unless the
+datum is the centre. Every copy of a closed instance is one binding (1.8): the hub motor's 46
+magnets are one magnet evaluated, its copies placed, and a pattern of them is still a `repeat`
+over the copies' solids:
+
+```
+in f.o.plane {
+  ring poles about f.o {
+    m := Magnet(theta: theta)
+  }
+}
+magnets := solid(m[0].body)
+repeat poles - 1 as i {
+  m[i + 1].body union magnets
+}
+```
+
 **Repetition over a chain.** `repeat e in CHAIN { … }` makes one copy per link of a named chain, in
 walk order, `e` that copy's edge — an operand, a field (`e.p1`), an argument. The chain may be open
 or closed and reached through an instance or group (`refs.pinion.profile`); `cycle e in CHAIN`
@@ -802,6 +822,30 @@ component Crank(o: point, datum: line, theta: Angle) {
     arm := line(o, tip)
     o distance(30mm) tip
     datum angle(theta) arm
+  }
+}
+```
+
+**One figure, many placements** (0.177). An instance whose only geometric input is the frame it
+stands in — its formals numbers (or groups of numbers), each given a constant, its call drawn in
+that frame or one of its datums — is **closed**, and its definition and arguments are its
+**binding**: what it makes is that binding read in its frame. Two closed instances of one binding
+are one figure placed twice, and `solventc` evaluates their solids once and places each by its
+frame. A definition given entities (`Crank(o, datum, …)`) is its own binding, as before. To make
+a part a pattern places, draw it about its own `std.origin` and give it numbers (1.7's ring, 1.12's
+frames):
+
+```
+component Magnet(theta: Angle) {                 // hub_motor/motor/rotor.sv
+  in std.front {
+    construction datum := line(std.origin, hint((10mm, 0mm)))
+    horizontal datum
+    length(10mm) datum
+    construction mc := line(std.origin, hint((Rr + 2mm, 0mm)))
+    length(Rr + 2mm) mc
+    datum angle(theta) mc
+    …
+    body := solid(face(inner, side_r, outer, side_l), from: -L / 2, to: L / 2)
   }
 }
 ```
@@ -1355,7 +1399,8 @@ frame `f`:
 | `std.origin` | a point in that front at `(0, 0)`, which is `f.origin` | |
 
 A point `in f` at `(x, y, z)` stands at `std.origin + x·std.x + y·std.y + z·std.z`, so a body in a
-frame moved by a rigid motion is the root's drawing moved by it; the datums add no freedom, and
+frame moved by a rigid motion is the root's drawing moved by it (and a closed instance's solids,
+1.8, are evaluated once and moved by it; a ring's copy stands in the frame turned, 1.7); the datums add no freedom, and
 what the body declares rides `f` (a joint carries it whole). A body that reads no datum is placed
 by what it is given (`ConRod(crank.pin1, end.bore)`): reading its `b.std` is E111. An axis starts
 as the frame's around it, and a relation leaving it either way round takes the nearer: write the

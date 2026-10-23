@@ -603,6 +603,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             class: so.class.clone(),
             copy: so.copy,
             material: so.material.clone(),
+            // its frames and turns are the source's: grafted, it is evaluated as its own
+            binding: None,
         });
         debug_assert_eq!(solid_map[i], Some(dst.solids.len() - 1));
         made.push(EntRef::solid(dst.solids.len() - 1));
