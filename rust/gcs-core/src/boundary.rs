@@ -284,8 +284,10 @@ impl World {
         let unsited = |r: &EntRef| r.kind == EntKind::Point && !map.of_entity.contains_key(r);
         let lift_of: BTreeMap<u32, [u32; 3]> = sk.lifts.iter().map(|l| (l.point, l.x)).collect();
         let mut curve_of: BTreeMap<EntRef, EntRef> = BTreeMap::new();
-        for &e in map.of_entity.keys()
-            .filter(|e| matches!(e.kind, EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline)) {
+        let curve = |e: &&EntRef| {
+            matches!(e.kind, EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline)
+        };
+        for &e in map.of_entity.keys().filter(curve) {
             for k in sk.children(e).into_iter().filter(unsited) {
                 let ps = with.entry(e).or_default();
                 ps.extend(sk.own_params(k));
@@ -396,8 +398,8 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
             let cols = columns(sk, c);
             // a row placing one thing is the instance's when that thing is — what it made, or the
             // point a plane it made stands at — whatever else it reads: a point's lift reads the
-            // plane it is drawn in, a twin's tie the plane it is held on, a plane's axis the line it
-            // is built along.  So the rows that tie what it made to the frame it stands in are its
+            // plane it is drawn in, a twin's tie the plane it is held on, a plane's axis the line
+            // it is built along.  So the rows that tie what it made to the frame it stands in are its
             // own, that frame's placement an input, and the lift of a point another draws in a
             // plane it made, or a plane another stands at its origin, are not
             let placed = |e: &EntRef| made.contains(e) || origins.contains(e);
@@ -430,13 +432,14 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
 
 /// What an intrinsic row places, where it reads more than that: a lift's point (not the plane it
 /// is drawn in), the origin a plane stands at (not the point it stands on), the axis held through
-/// a point or along a line, a twin held on a plane or folded onto its point.  `None` for a row whose every entity is
-/// what it places.
+/// a point or along a line, a twin held on a plane or folded onto its point.  `None` for a row
+/// whose every entity is what it places.
 fn subject(c: &Constraint) -> Option<EntRef> {
     match c.kind {
         CKind::Lift | CKind::ChartLift | CKind::Coincident3 | CKind::Parallel3
-        | CKind::PointOnPlane | CKind::Project | CKind::ProjectSolved => Some(c.args[0].ent()),
-        CKind::PointOnAxis => Some(c.args[1].ent()),
+        | CKind::PointOnPlane | CKind::ProjectSolved => Some(c.args[0].ent()),
+        // a twin's fold, `project(point, twin)` (`Sketch::tie_twin`), places the twin
+        CKind::PointOnAxis | CKind::Project => Some(c.args[1].ent()),
         _ => None,
     }
 }

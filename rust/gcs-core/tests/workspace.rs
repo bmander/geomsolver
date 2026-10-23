@@ -370,6 +370,7 @@ const BLOCKS: &str = "unit mm\nuse std (spins)\n\
     component Slab(x: Length) {\n\
       a := point hint((x, 0))\nb := point hint((x + 20mm, 0))\n\
       c := point hint((x + 20mm, 10))\nd := point hint((x, 10))\n\
+      fix((x, 0)) a\nfix((x + 20mm, 0)) b\nfix((x + 20mm, 10)) c\nfix((x, 10)) d\n\
       ab := line(a, b)\nbc := line(b, c)\ncd := line(c, d)\nda := line(d, a)\n\
       sec := face(ab, bc, cd, da)\n\
     }\n\

@@ -95,7 +95,7 @@ fn unsupported_exports_preserve_source_and_fragments() {
 fn lowering_preserves_source_and_distinguishes_instances_and_copies() {
     use gcs_core::ir::{Operation, PathStep};
     use gcs_core::syntax::RelationForm;
-    let source = "use std\ncomponent Part() {\nrepeat 2 {\nl := horizontal line\n}\n}\n\
+    let source = "use std\ncomponent Part() {\nrepeat 2 {\nl := horizontal line\nfix((0, 0)) l.p1\nlength(1) l\n}\n}\n\
         a := Part() in std.front\nb := Part() in std.front";
     let (p, errors) = crate::common::parse(source);
     assert!(errors.is_empty(), "{errors:?}");

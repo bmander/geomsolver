@@ -89,7 +89,7 @@ runs back), and `held::Step::numbers` reads them in place of the constants — s
 the rates and the rate of a contact, `PointOnEnvelope` and its words, and `PointOnMeshing` hold
 them as columns (`Meshing::new` reads the source's ratio off its parts).  `tests/jacobians.rs`
 FD-checks every such row over the joints' columns
-(`a_joints_free_numbers_agree_with_finite_differences`).  `std.Rolls(at, a, b, along: d)` holds
+(`a_joints_free_numbers_agree_with_finite_differences`).  `a rolls(at: p, along: d) b` holds
 the rate of `at` carried by `a` seen from `b`, at roll 0, to nothing along `d` — one row, the
 other parts of the rate zero by construction for parallel or meeting shafts with `at` on the line
 of centres.  `tests/frames.rs` is the gate: a pair's ratio solved from rolling against `−R/r`,
@@ -156,10 +156,10 @@ are [parameters.md](parameters.md)'s.  A frame declared in such a block still ri
 refused (`motions::values`).
 
 **A frame along a path** (#398 C, [0.145]): a joint held along a path, `g coincident f.axis`
-(`std.Along`, `std.AlongFrenet`), is no turn about a line but `MotionDef::Guided`, its pose read
-off the path after the solve (`motion::Guide`) — the rotation-minimising frame for ratio 0, the
-path's own for ratio 1, from where the frame is drawn.  What is drawn in it rides on it, and a face
-so drawn is swept as a declared parameter runs; a row reads no such motion.  The rules are
+(`std.Along`, `std.AlongFrenet`, each making the frame `f` it holds), is no turn about a line
+but `MotionDef::Guided`, its pose read off the path after the solve (`motion::Guide`) — the
+rotation-minimising frame for ratio 0, the path's own for ratio 1, from where the frame is drawn.
+What is drawn in it rides on it, and a face so drawn is swept as a declared parameter runs; a row reads no such motion.  The rules are
 [parameters.md](parameters.md)'s.
 
 **Not built in stage 4**: the app offers only planar frames as places to draw (a spatial chart is

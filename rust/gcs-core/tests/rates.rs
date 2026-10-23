@@ -270,18 +270,29 @@ loose := sweep(Loose(curvy, std.z).k over s)
             "{said}");
     let home = format!("{RATES}
 component Homely(g: spline, up: axis, s: Scalar) {{
-  st := std.OnSpline(g, up: up, s: s)
+  m := point
+  m coincident(t == s) g
+  q := point hint(at: m, along: g, by: 0.1)
+  tl := line(m, q)
+  g tangent(at: m) tl
+  length(10mm) tl
+  n := plane(u: hint(dir: up, turn: -90deg, about: tl), v: hint(dir: up))
+  n.origin coincident m
+  n.u perpendicular tl
+  n.v perpendicular tl
   initially {{
-    st.n.u perpendicular up
+    n.u perpendicular up
   }}
-  sec := Rect(st.n, off: 0mm, w: 2mm, h: 1mm)
+  sec := Rect(n, off: 0mm, w: 2mm, h: 1mm)
   k := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }}
 param s: Scalar over (0, 1)
 homely := sweep(Homely(curvy, std.z).k over s)
 ");
+    // away from its home the `initially` row is not stated and nothing turns the plane: the
+    // definition leaves it free there (E108, #562)
     let said = refused(&home, "homely");
-    assert!(said.contains("`initially`"), "{said}");
+    assert!(said.contains("`Homely` leaves 1 of its own unknowns free"), "{said}");
     let circle = format!("{RATES}
 component Round(g: path, up: axis, s: Scalar) {{
   st := std.On(g, up: up, s: s)

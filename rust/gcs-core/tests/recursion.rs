@@ -199,7 +199,8 @@ fn tiles(src: &str, depth: usize, sun: usize) {
 fn a_recursion_nothing_ends_is_refused() {
     let doc = |call: &str| {
         format!(
-            "use std\ncomponent F(a: point, n: Int) {{\n  m := point\n  when n > 0 {{\n    \
+            "use std\ncomponent F(a: point, n: Int) {{\n  m := point\n  a level(v) m\n  \
+             a distance(1, along: u) m\n  when n > 0 {{\n    \
              f := {call}\n  }}\n}}\nin std.front {{\n  o := point\n  x := F(o, n: 2)\n}}\n"
         )
     };

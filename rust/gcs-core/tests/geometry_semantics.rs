@@ -22,7 +22,7 @@ fn private_error(src: &str) {
 
 #[test]
 fn private_names_work_locally_but_not_through_external_paths() {
-    let component = "use std\ncomponent Part() { private center := point\nfix((0, 0)) center\npublic := line(center, hint((10, 0))) }\nin std.front {\np := Part()\n}\n";
+    let component = "use std\ncomponent Part() { private center := point\nfix((0, 0)) center\npublic := line(center, hint((10, 0)))\nfix((10, 0)) public.p2 }\nin std.front {\np := Part()\n}\n";
     let e = good(component);
     assert!(e.map.entity_path(&e.sketch, "p.center").is_none());
     assert!(e.map.entity_path(&e.sketch, "p.public.p1").is_some());
@@ -146,6 +146,8 @@ fn semantic_instance_roles_do_not_escape_to_arguments_or_consumers() {
         "\
 use std
 component Layout(c: point) { spoke := line(c, hint((10, 0)))
+c level(v) spoke.p2
+c distance(10, along: u) spoke.p2
 ring := radius(3) circle(center: c) }
 in std.front {
 borrowed := point
@@ -219,7 +221,8 @@ fn modifier_syntax_prints_and_invalid_uses_are_diagnosed() {
     let e = good(
         "\
 use std
-component Part() { private construction guide := radius(4) circle }
+component Part() { private construction guide := radius(4) circle
+fix((0, 0)) guide.center }
 in std.front {
 centerline p := Part()
 }
@@ -258,7 +261,7 @@ fn sheet(e: &program::Elaborated, body: &str) -> Result<String, drawing::Error> 
 
 #[test]
 fn sheets_hide_construction_by_default_and_can_reveal_it_semantically() {
-    let e = good("use std\ncomponent Part() { private construction centerline helper := line(hint((0, 0)), hint((10, 0))) }\nin std.front {\np := Part()\n}\n");
+    let e = good("use std\ncomponent Part() { private construction centerline helper := line(hint((0, 0)), hint((10, 0)))\nfix((0, 0)) helper.p1\nfix((10, 0)) helper.p2 }\nin std.front {\np := Part()\n}\n");
     assert!(e.sketch.style_of(EntRef::line(0)).shown());
     let hidden = sheet(&e, "").unwrap();
     assert!(!hidden.contains("stroke-dasharray"), "{hidden}");
@@ -348,9 +351,9 @@ private construction profile := borrowed -> (end := line(borrowed.p2, hint((10, 
 #[test]
 fn editor_does_not_publish_a_component_private_name_into_root_source() {
     for (source, allowed) in [
-        ("use std\ncomponent Part() { private p := point }\nin std.front {\npart := Part()\n}\n", false),
+        ("use std\ncomponent Part() { private p := point\nfix((0, 0)) p }\nin std.front {\npart := Part()\n}\n", false),
         ("use std\nin std.front {\nprivate p := point\n}\n", true),
-        ("use std\ncomponent Part() { p := point }\nin std.front {\nprivate part := Part()\n}\n", true),
+        ("use std\ncomponent Part() { p := point\nfix((0, 0)) p }\nin std.front {\nprivate part := Part()\n}\n", true),
     ] {
         let mut e = good(source);
         let mut changed = e.sketch.clone();

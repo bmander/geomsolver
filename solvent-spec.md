@@ -1524,8 +1524,8 @@ the frame is drawn, its **home** — the parameter where its origin stands on th
 much of the path's torsion it turns with: 0, the **rotation-minimising** frame, whose axes square
 to the tangent turn only as the tangent does (`On`'s and `Minimal`'s, §6.9), and 1, the path's
 **own frame**, its `u` toward the centre of curvature (`Frenet`'s); any other is **E080**, as is
-an advance. The standard library's `std.Along(f, g, up: u, home: h)` and `std.AlongFrenet(f, g,
-home: h)` state it and draw the frame at its home. Its pose is read off the path after the solve,
+an advance. The standard library's `std.Along(g, up: u, home: h)` and `std.AlongFrenet(g, home: h)`
+make the frame `f`, state it and draw it at its home. Its pose is read off the path after the solve,
 as a motion is (`x ↦ R(u) (x − c(h)) + c(u)`, `R(u)` the turn from the frame at the home to the one
 at `u`): a face drawn in it and swept as a declared parameter runs, `sweep(sec over s)` (§6.9),
 stands at every station where the frame does, `s` the path's parameter, and a frame drawn off its
@@ -2023,7 +2023,8 @@ body's is, and its derivative draws nothing. A set named anywhere else a referen
 `radius(5) ball`, a face's loop — is **E040**; `coincident` between two sets is **E040**, with
 parentheses **E040**; a set whose body uses itself, however indirectly, is
 **E003**. A set is handed to a component as a `set` formal **[0.71]** (§4.1) and used there by
-the formal's name (`std.CircleOnSphere(k, ball, view)`); a `group` formal refuses a named set.
+the formal's name, as a relation word's operand is (`k on_sphere(view: v) ball`); a `group`
+formal refuses a named set.
 
 **Set algebra** **[0.54]**. A body's statements all hold of its point, so **intersection is
 conjunction**: `on_both := { p | p coincident ball; p coincident shaft }` is the points on both, and

@@ -942,6 +942,7 @@ b := point hint((100, 0))
 ab := line(a, b)      // the base
 horizontal ab
 fix((0, 0)) a
+a distance(100) b
 }
 `;
 
@@ -975,7 +976,7 @@ test('a gesture is a source edit, and leaves everything else written', () => {
 });
 
 test('a drag writes its seeds back, once, and nothing else', () => {
-  const view = docView(ANNOTATED);
+  const view = docView(ANNOTATED.replace('a distance(100) b\n', ''));
   const cv = canvasOf(view);
   const b = view.sketch.points[1];
   const [sx, sy] = view.w2s(...b.xy);
@@ -1063,21 +1064,22 @@ test('Component packages what a band selected, and the selection follows it in',
   assert.equal(view.source, ANNOTATED, 'one undo step, word for word');
 });
 
-test('a point packaged into a component keeps where it was dragged through the next edit', () => {
-  const view = docView(ANNOTATED.replace('horizontal ab\n', ''));
+/** A definition determines what it makes (#562): a point packaged into a component is where its
+ *  rows put it, so a drag finds no freedom to take it off there, and the next edit keeps it. */
+test('a point packaged into a component stays where its definition puts it', () => {
+  const view = docView(ANNOTATED);
   view.autoSolve = true;
   drag(view, view.w2s(-30, 30), view.w2s(130, -30));
   assert.ok(view.makeComponent());
+  assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   view.selected = [];
   const [sx, sy] = view.w2s(...(view.doc.entity('part0.b') as Point).xy);
   drag(view, [sx, sy], [sx + 20, sy - 40]);
-  const moved = (view.doc.entity('part0.b') as Point).xy;
-  assert.ok(Math.hypot(moved[0] - 100, moved[1]) > 1, `the drag moved it: ${moved}`);
-  assert.ok(!view.source.includes('hint((100, 0))'),
-            `and wrote it into the definition:\n${view.source}`);
+  const held = (view.doc.entity('part0.b') as Point).xy;
+  assert.ok(Math.hypot(held[0] - 100, held[1]) < 1e-6, `the drag left it: ${held}`);
   view.addDatum('axis');                // a structural edit: the document is read again
   const after = (view.doc.entity('part0.b') as Point).xy;
-  assert.ok(Math.hypot(after[0] - moved[0], after[1] - moved[1]) < 1e-6, `${after} vs ${moved}`);
+  assert.ok(Math.hypot(after[0] - 100, after[1]) < 1e-6, `${after}`);
 });
 
 test('Component is refused, saying why, with nothing of the document selected', () => {

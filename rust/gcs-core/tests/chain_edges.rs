@@ -142,8 +142,10 @@ fix((0, 0)) o
 fix((0, 10)) q
 ax := line(o, q)
 }
-component Rect(w: Length, h: Length) {
+component Rect(o: point, w: Length, h: Length) {
   a := point hint((2, 0))
+  a distance(2mm, along: u) o
+  a horizontal o
   b := point hint((2mm + w, 0))
   c := point hint((2mm + w, h))
   d := point hint((2, h))
@@ -156,9 +158,7 @@ component Rect(w: Length, h: Length) {
   length(h) right
 }
 in std.front {
-r := Rect(w: 4mm, h: 3mm)
-r.a distance(2mm, along: u) o
-r.a horizontal o
+r := Rect(o, w: 4mm, h: 3mm)
 ring := solid(r.profile, about: ax)
 repeat e in r.profile as i {
   s := surface(ring, edge: e)
@@ -237,7 +237,10 @@ trail := (t1 := line(hint((0, 0)), hint((10, 0)))) ->
   (t2 := line(hint((10, 0)), hint((10, 10)))) -> (t3 := line)
 }
 component Late() {
-  p := line(hint((0, 20)), hint((5, 20))) -> line
+  p := (pa := line(hint((0, 20)), hint((5, 20)))) -> (pb := line)
+  fix((0, 20)) pa.p1
+  fix((5, 20)) pa.p2
+  fix((5, 30)) pb.p2
 }
 in std.front {
 late := Late()

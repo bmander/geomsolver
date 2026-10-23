@@ -132,8 +132,8 @@ pub enum Code {
     /// a `group` formal handed on whole and never read through
     W206,
     /// a definition whose rows have another pose its stated root choices admit: which it takes is
-    /// the seeds' choice (#461 PT5).  Asked by `solventc --lint` of the solved drawing, never raised
-    /// by elaboration
+    /// the seeds' choice (#461 PT5).  Asked by `solventc --lint` of the solved drawing, never
+    /// raised by elaboration
     W207,
 }
 

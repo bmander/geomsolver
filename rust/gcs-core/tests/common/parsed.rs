@@ -49,3 +49,14 @@ pub fn determined(src: &str) -> Elaborated {
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
     e
 }
+
+/// `read`, past the promise every definition is held to (`common::promise`): for a test of another
+/// rule whose bodies only relate what they are given, on purpose.
+pub fn read_past_promise(src: &str) -> Elaborated {
+    let (prog, errs) = parse(src);
+    assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
+    let e = elaborate(&prog);
+    let other: Vec<String> = super::other_errors(&e).iter().map(|d| d.message.clone()).collect();
+    assert!(other.is_empty(), "does not elaborate: {other:?}\n{src}");
+    e
+}

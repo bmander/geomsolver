@@ -45,20 +45,15 @@ in std.top {
 /// `std.On` as #251's spelling said it of a point drawn in the guide's view (#248, #249 were its
 /// own issues): the plane square to any path `g` where `m` is on it.
 const ON: &str = "\
-component On(g: path, view: plane, up: axis) {
+component On(g: path, view: plane, s: Scalar) {
   in view {
     m := point
-    m coincident g
+    m coincident(t == s) g
     q := point
     tl := line(m, q)
   }
   g tangent(at: m) tl
   length(10mm) tl
-  n := plane
-  n.origin coincident m
-  tl perpendicular n.u
-  n.u perpendicular up
-  n.v parallel up
 }
 ";
 
@@ -83,14 +78,13 @@ fn along(e: &Elaborated, m: &str, q: &str, (tx, ty): (f64, f64)) {
     assert!(cross.abs() < 1e-9, "({dx}, {dy}) is not along ({tx}, {ty})");
 }
 
-/// **One station word over a line, an arc and a spline**, each placed from outside, each
+/// **One station word over a line, an arc and a spline**, each placed at its station, each
 /// solved at DOF 0 with every equation independent; the tangent at each is the guide's own.
 #[test]
 fn one_station_word_stands_over_any_path() {
     let src = format!(
-        "{GUIDES}{ON}st := On(g, std.top, std.z)\nk0 distance(22.5mm, along: up) st.m\n\
-         sa := On(a, std.top, std.z)\nsa.m distance(20mm) e\n\
-         sl := On(l, std.top, std.z)\nl0 distance(20mm) sl.m\n"
+        "{GUIDES}{ON}st := On(g, std.top, s: 0.5)\nsa := On(a, std.top, s: 0.5)\n\
+         sl := On(l, std.top, s: 0.5)\n"
     );
     let mut e = read(&src);
     assert_eq!(solved(&mut e), (0, 0));
@@ -186,7 +180,7 @@ fn the_tangent_at_a_point_travels_with_its_contact() {
 /// A `path` is given something a point runs along; anything else is refused at the argument.
 #[test]
 fn a_path_is_given_something_to_run_along() {
-    let src = format!("{GUIDES}{ON}st := On(k0, std.top, std.z)\n");
+    let src = format!("{GUIDES}{ON}st := On(k0, std.top, s: 0.5)\n");
     refused(&src, "E103", "`g` is a path", "k0");
 }
 
@@ -226,10 +220,12 @@ in std.top {
   g := spline(k0, k1, k2, k3)
 }
 ";
-    // the component's formal, and a relation word, which settles by what it is given
+    // a relation word, which settles by what it is given — and not a definition, whose rows
+    // determine what it makes and say nothing of what it is given (#562)
+    refused(&format!("{PATHS}component Span(g: path, d: Length) {{\n  length(d) g\n}}\n\
+                      sl := Span(l, d: 40mm)\n"), "E109", "a fact about what it is given",
+            "length(d) g");
     let uses = [
-        "component Span(g: path, d: Length) {\n  length(d) g\n}\n\
-         sl := Span(l, d: 40mm)\nsa := Span(a, d: 40mm)\nsg := Span(g, d: 80mm)\n",
         "stretch(d) g := length(d) g\nstretch(d: 40mm) l\nstretch(d: 40mm) a\nstretch(d: 80mm) g\n",
     ];
     for u in uses {

@@ -359,6 +359,8 @@ fn an_instance_takes_a_class_whole() {
         "component Two(a: point) {\n\
            l := line(a, hint((1, 1)))\n\
            k := circle(center: a) hint(r: 2) class heavy\n\
+           fix((1, 1)) l.p2\n\
+           radius(2) k\n\
          }\n\
          o := point hint((0, 0))\n\
          t := Two(o) class phantom\n\

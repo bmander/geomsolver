@@ -11,10 +11,10 @@ half)`, apex at the line's start; the line is `.about`, since `axis` is an eleme
 cannot name bare), nothing drawn, no entity kind, kernel or `CKind` of their own.  A point on one
 is `p coincident S`, a line touching one `l tangent S` (below); two touching at a point with one
 tangent plane is `k1 tangent(at: m) k2` (below, #104; `std.TangentCones` is retired, #265),
-`std.Offset(S, d)` is the set `d` outside one (F4, below) and `std.CircleOnSphere(k, s, view)`
-stays a component.  An unbound number is the instance's unknown
-(`pc.half`, an angle in degrees); `edit::unknown_seeds` writes it back into the call's `hint(…)`
-(`InstVal::Hint` carries the span).  A lifted program declares it under a name it can write
+`std.Offset(S, d)` is the set `d` outside one (F4, below) and `k on_sphere(view: v) s` is a
+relation word (a component until #562, which held a circle it was given).  An unbound number is
+the instance's unknown (`pc.half`, an angle in degrees); `edit::unknown_seeds` writes it back
+into the call's `hint(…)` (`InstVal::Hint` carries the span).  A lifted program declares it under a name it can write
 (`lift::declarable`: `pc_half`, apart from every other unknown's) and every dimension reading
 it says so (`flatten::substitute_with`).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
 gates.

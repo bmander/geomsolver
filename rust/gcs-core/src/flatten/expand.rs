@@ -1168,6 +1168,26 @@ impl<'a> Walk<'a> {
         -> Option<crate::syntax::Relation> {
         let mut r2 = rel.clone();
         self.held.on_leg = self.leg_named(&r2, scope);
+        // a joint's numbers are what they are whoever says them — its ratio a plain number, its
+        // advance a length — so a word handing its own on (`f turns(2mm) l`) is held to them
+        let mut wrong = Vec::new();
+        let fixed = r2.form.written().filter(|w| w.word.text == "fix");
+        for a in fixed.map_or(&[][..], |w| &w.args) {
+            use crate::syntax::{Arg, OpArg};
+            let OpArg::Slot { key, arg: Arg::SeedExpr { text, span, .. } } = a else { continue };
+            let want = match key.text.as_str() {
+                "ratio" => crate::units::Dim::SCALAR,
+                "advance" => crate::units::Dim::LENGTH,
+                _ => continue,
+            };
+            let dim = super::values::value_aff(text, vals, self.units).map(|v| v.dim);
+            if let Some(e) = dim.ok().and_then(|d| d.require(want, &key.text).err()) {
+                wrong.push((*span, e));
+            }
+        }
+        for (span, e) in wrong {
+            self.err(Code::E103, span, e);
+        }
         if let Some(w) = r2.form.written_mut() {
             for a in w.args.iter_mut() {
                 match a {

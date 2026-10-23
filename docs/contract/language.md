@@ -566,8 +566,8 @@ components.dims.zB)`.
   its instance as a group of aliases (`HypoidPair`'s `gear_member := {ax: gear_cone.ax, …}`,
   `Tooth`'s `left` and `right`), or the parent reads it off a member one level down
   (`inlet.tbore.center`, a set's `flank.apex`).  The list is empty.  The rest are said, not held:
-  W201 waits on a word's unlabelled measure (#463), W202 on `std.Rolls` and `Standoff` (the
-  motion components are words since #464), W203 on a word that may leave a number to the solve
+  W201 waits on a word's unlabelled measure (#463), W202 on `Standoff` (the motion components are
+  words since #464, `rolls` since #562), W203 on a word that may leave a number to the solve
   (`std.Screw`'s pitch, a joint's ratio: a word's parameter left out is E040); W205 is a
   heuristic, since a flag chooses a model as often as a picture.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,

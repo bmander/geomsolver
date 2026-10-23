@@ -55,7 +55,8 @@ fn contact_coefficients_include_translation_and_both_moving_frames() {
 
 #[test]
 fn source_placements_and_boolean_sharing_preserve_contact_geometry() {
-    let src = format!("{SOURCE}\nindex := frame\nindex turns(1) ax\n\
+    let src = format!("{SOURCE}\nindex := frame\n\
+        ax coincident(sense: same) index.axis; fix(ratio == 1, advance == 0mm) index\n\
         placed := tool at(under: index) 90deg\n\
         outside := solid(tool)\nplaced cut outside\n\
         lens := solid(tool)\noutside cut lens\n\

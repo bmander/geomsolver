@@ -8,15 +8,18 @@
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::model::Sketch;
 
-/// `src` elaborated and solved, drawn in the front plane (`common::front`).
+/// `src` elaborated and solved, drawn in the front plane (`common::front`).  The bodies here are
+/// the smallest that show how a call binds, some only relating what they are given, so the
+/// promise every definition is held to is read past (`common::promise`).
 fn drawn(src: &str) -> Sketch {
     let (prog, errs) = crate::common::parse(&crate::common::front(src));
     assert!(errs.is_empty(), "does not parse: {errs:?}");
     let e = gcs_core::program::elaborate(&prog);
+    let other = crate::common::other_errors(&e);
     assert!(
-        e.ok(),
+        other.is_empty(),
         "does not elaborate: {:?}",
-        e.errors().map(|d| (d.code.as_str(), d.message.clone())).collect::<Vec<_>>()
+        other.iter().map(|d| (d.code.as_str(), d.message.clone())).collect::<Vec<_>>()
     );
     let mut sk = e.sketch;
     let r = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
@@ -184,12 +187,15 @@ fn a_copy_inside_an_instance_is_indexed_from_outside() {
 // allowed only where the eye can check it: the entities, in order, before every label, and
 // every number by name.
 
+/// What elaborating `src` says, but the promise every definition is held to: `Arm` only relates
+/// what it is given, the smallest body a call of two entities and a number has.
 fn diags(src: &str) -> Vec<String> {
     let (prog, errs) = crate::common::parse(src);
     assert!(errs.is_empty(), "does not parse: {errs:?}");
     gcs_core::program::elaborate(&prog)
         .diags
         .iter()
+        .filter(|d| !crate::common::promise(d))
         .map(|d| format!("{}: {}", d.code.as_str(), d.message))
         .collect()
 }
@@ -285,7 +291,9 @@ fn a_set_and_a_group_fill_only_their_own_formals() {
         let (prog, errs, linked) = gcs_core::library::parse_linked(&src);
         assert!(errs.is_empty() && linked.is_empty(), "{errs:?} {linked:?}");
         let e = gcs_core::program::elaborate(&prog);
-        assert!(e.ok(), "{call}: {:?}", e.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
+        let other = crate::common::other_errors(&e);
+        assert!(other.is_empty(), "{call}: {:?}",
+                other.iter().map(|d| &d.message).collect::<Vec<_>>());
         let p = crate::common::ent(&e, "p").i();
         let mut sk = e.sketch;
         assert!(gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default()).success);

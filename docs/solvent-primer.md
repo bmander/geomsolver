@@ -1414,8 +1414,8 @@ to the drawing; it means what its uses say:
 **The library's sets** draw nothing; each is a centre or a line and one number, which may be left
 unbound as an unknown (`r: hint(10mm)`; the solve writes it back):
 
-- `ball := std.Sphere(c, r: 12mm)`; `std.CircleOnSphere(k, ball, view)` puts circle `k` drawn in
-  `view` on it.
+- `ball := std.Sphere(c, r: 12mm)`; `k on_sphere(view: v) ball` puts circle `k` drawn in `v` on
+  it (a relation word, `use std (on_sphere)`).
 - `shaft := std.Cylinder(ax, r: 8mm)`; `shaft.about distance(shaft.r) l` states a touch directly
   (the line is `.about`, since `axis` is an element's word).
 - `gc := std.Cone(gax, half: 60deg)`: apex at the line's start, opening toward its end; a point on
@@ -2358,8 +2358,8 @@ in the block still rides on the frame with the value (E080).
 coincident f.axis` with `fix(ratio == 0, advance == 0mm) f`, stands where the path's parameter puts
 it — square to the tangent, turned as the path makes it from its home (where it is drawn), the
 rotation-minimising frame for ratio 0 and the path's own (toward its centre of curvature) for
-ratio 1. `std.Along(n, g, up: std.z, home: 0)` and `std.AlongFrenet(n, g)` say it and draw `n` at
-its home; a face drawn in `n` and swept over a declared `s` stands at every station where the frame
+ratio 1. `al := std.Along(g, up: std.z, home: 0)` and `std.AlongFrenet(g)` make the frame, `al.f`,
+and draw it at its home; a face drawn in `al.f` and swept over a declared `s` stands at every station where the frame
 does, `s` the path's own parameter. Its pose is read off the path after the solve, so a relation the
 solve holds reads none (E080).
 

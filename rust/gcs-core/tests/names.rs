@@ -93,13 +93,15 @@ fn an_unbound_input_is_one_unknown() {
 #[test]
 fn a_component_receives_an_input_as_an_argument() {
     let doc = format!(
-        "component T(p: point, q: point, w: Length) {{ p distance(w / 2) q }}\n\
-         {BASE}param w := 60\na distance(w) b\nt := T(b, c, w: w)\n"
+        "component T(p: point, w: Length) {{ q := point hint((60, 30))\n  p level(u) q\n  \
+         p distance(w / 2, along: v) q }}\n\
+         {BASE}param w := 60\na distance(w) b\nt := T(b, w: w) in std.front\n"
     );
     let (e, d) = read(&doc);
     assert!(d.is_empty(), "{d:?}");
+    let q = e.map.ent_named("t.q").unwrap().i();
     let sk = solved(e);
-    assert!((dist(&sk, 1, 2) - 30.0).abs() < 1e-9);
+    assert!((dist(&sk, 1, q) - 30.0).abs() < 1e-9);
 }
 
 /// A module's component cannot reach into the document that draws it: `w` there is the
@@ -126,15 +128,17 @@ fn a_modules_component_does_not_read_the_callers_names() {
 fn an_instances_unknown_is_read_by_its_dotted_path() {
     let doc = format!(
         "component T(p: point, q: point, w: Length) {{ p distance(w) q }}\n\
-         component U(p: point, q: point, r: point) {{ t := T(p, q)\n  q distance(t.w / 2) r }}\n\
-         {BASE}in std.front {{\nd := point hint((0, 40))\n}}\nu := U(a, b, c)\nc distance(u.t.w) d\n\
-         a distance(60) b\n"
+         component U(p: point, q: point) {{ t := T(p, q)\n  r := point hint((60, 30))\n  \
+         q level(u) r\n  q distance(t.w / 2, along: v) r }}\n\
+         {BASE}in std.front {{\nd := point hint((0, 40))\n}}\nu := U(a, b) in std.front\n\
+         c distance(u.t.w) d\na distance(60) b\n"
     );
     let (e, d) = read(&doc);
     assert!(d.is_empty(), "{d:?}");
+    let r = e.map.ent_named("u.r").unwrap().i();
     let sk = solved(e);
     assert!((dist(&sk, 0, 1) - 60.0).abs() < 1e-9);
-    assert!((dist(&sk, 1, 2) - 30.0).abs() < 1e-9);
+    assert!((dist(&sk, 1, r) - 30.0).abs() < 1e-9);
     assert!((dist(&sk, 2, 3) - 60.0).abs() < 1e-9);
     let (e, d) = read(&doc.replace("c distance(u.t.w) d", "c distance(u.t.ww) d"));
     assert!(d.iter().any(|m| m.starts_with("E101") && m.contains("`u.t.ww`")), "{d:?}");

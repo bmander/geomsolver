@@ -18,7 +18,8 @@ fn messages(e: &Elaborated) -> Vec<String> {
 fn an_unbound_formal_is_one_unknown_everywhere_it_is_read() {
     let src = "\
 use std
-component Arm(o: point, p: point, len: Length, theta: Angle) {
+component Arm(o: point, len: Length, theta: Angle, seed: Angle) {
+  p := point hint((o.x + len * cos(seed), o.y + len * sin(seed)))
   l := line(o, p)
   o distance(len) p
   x := point hint((1, 0))
@@ -29,10 +30,8 @@ component Arm(o: point, p: point, len: Length, theta: Angle) {
 }
 component Crank(o: point, theta: Angle) {
   twice := theta * 2
-  p := point hint((20, 10))
-  q := point hint((10, 20))
-  a := Arm(o, p, len: 30, theta: theta)
-  b := Arm(o, q, len: 30, theta: twice)
+  a := Arm(o, len: 30, theta: theta, seed: 27deg)
+  b := Arm(o, len: 30, theta: twice, seed: 63deg)
 }
 in std.front {
 o := point
@@ -52,7 +51,7 @@ c := Crank(o)
     let theta = e.sketch.params[e.sketch.free_vars["c.theta"] as usize].value;
     let at = |n: &str| e.sketch.point_xy(e.map.ent_named(n).unwrap().i());
     let bearing = |(x, y): (f64, f64)| y.atan2(x).to_degrees();
-    let (p, q) = (at("c.p"), at("c.q"));
+    let (p, q) = (at("c.a.p"), at("c.b.p"));
     let wrap = |a: f64| (a % 360.0 + 540.0) % 360.0 - 180.0;
     assert!((wrap(bearing(p) - theta)).abs() < 1e-6, "p at theta: {} vs {theta}", bearing(p));
     assert!((wrap(bearing(q) - 2.0 * theta)).abs() < 1e-6, "q at 2 theta: {} vs {theta}", bearing(q));

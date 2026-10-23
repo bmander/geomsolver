@@ -176,24 +176,25 @@ export function pickPlace(v: SketchView, sp: [number, number]): Place {
 }
 
 /** Seed a fresh `Rectangle` instance's corners where the gesture drew them.  The dragged span
- *  is already a solution of the component — the sides measure w and h and the corners are
- *  square — so the solve keeps it there.  The pose lives in the session only: an instance's
- *  geometry is written in the component's terms, and a pose written there would be a pose on
- *  every instance — the bargain every component interior strikes. */
+ *  is already a solution of the component — the sides measure w and h, the corners are square
+ *  and the first side is level — so the solve keeps it there.  `corner` is the point the
+ *  instance is given, the drawing's own, so its place is the document's to keep; the other
+ *  three are the instance's, written in the component's terms. */
 function placeRectangle(
   v: SketchView,
   name: string,
+  corner: string,
   x0: number,
   y0: number,
   x1: number,
   y1: number,
 ): void {
   const corners: [string, number, number][] = [
-    ['l1.p1', x0, y0],
     ['l1.p2', x1, y0],
     ['l2.p2', x1, y1],
     ['l3.p2', x0, y1],
   ];
+  seedNamed(v, corner, x0, y0);
   for (const [part, x, y] of corners) seedNamed(v, `${name}.${part}`, x, y);
   v.afterEdit();
 }
@@ -308,9 +309,9 @@ function lineClick(v: SketchView, sp: [number, number]): void {
 }
 
 /** A rectangle is a *component instance*: the gesture measures width and height, the document
- *  gains `rN := Rectangle(w: …, h: …)` — and the component itself, the first time — and the
- *  instance is then seeded where the gesture drew it.  The first click is a place, not a point:
- *  the statement's only numbers are the two lengths. */
+ *  gains a corner and `rN := Rectangle(pN, w: …, h: …)` — and the component itself, the first
+ *  time — and the instance is then seeded where the gesture drew it.  The first click is a
+ *  place, not a point: the statement's only numbers are the two lengths. */
 function rectClick(v: SketchView, sp: [number, number]): void {
   if (!v.pendingFit.length) {
     v.pendingFit = [pickPlace(v, sp)];
@@ -327,7 +328,7 @@ function rectClick(v: SketchView, sp: [number, number]): void {
     (v.plane && v.doc.nameOf(v.plane)) || '',
   );
   if (v.apply(e, `${e.names[0]}: Rectangle`)) {
-    placeRectangle(v, e.names[0], x0, y0, x1, y1);
+    placeRectangle(v, e.names[0], e.names[1], x0, y0, x1, y1);
   }
 }
 

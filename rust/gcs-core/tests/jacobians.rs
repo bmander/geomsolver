@@ -908,9 +908,9 @@ rate(w over t) perpendicular t
 
 /// A motion read (#326, #365, `envelope::screw`): a point it carries, and that point's rate — held
 /// square to a line (`std.sv`'s `reciprocal`), along an axis and measured along it, its distance
-/// free and stated (`std.Screw`) — under the mesh of two turns about skew shafts (the gear's a screw), a
-/// slide seen from a turn, a turn alone, and a turn about a point of a view seen from a turn about
-/// a line — every axis free, so the motion's columns are differentiated too.
+/// free (`std.Screw`) and stated — under the mesh of two turns about skew shafts (the gear's a
+/// screw), a slide seen from a turn, a turn alone, and a turn about a point of a view seen from a
+/// turn about a line — every axis free, so the motion's columns are differentiated too.
 /// Checked at the seeds and at points knocked off them.
 #[test]
 fn twist_relations_agree_with_finite_differences() {
@@ -950,7 +950,11 @@ fix(dir == (0.1, 0.9, 0.2)) jsa
 sb := std.Screw(jsa, slide, seen_from: spin)
 ksa := axis
 fix(dir == (0.8, 0.1, -0.5)) ksa
-sc := std.Screw(ksa, gear_turn, pitch: 3mm)
+sc := std.Screw(ksa, gear_turn)
+kc := point hint((1, -2, 3))
+mc := point hint((1, -2, 3))
+mc coincident(under: gear_turn, t == 0deg) kc
+rate(mc over t) distance(3mm, along: ksa)
 x := point hint((3, -2, 5))
 X := point hint((1, 1, 1))
 X coincident(under: gear_turn, seen_from: spin, t == 20) x
@@ -971,7 +975,7 @@ Z coincident(under: twirl, seen_from: spin, t == -35) q2
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch;
     let read = |c: &&Constraint| c.kind.reads_motion() || c.rate_source().is_some();
-    assert_eq!(sk.constraints.iter().filter(read).count(), 24);
+    assert_eq!(sk.constraints.iter().filter(read).count(), 26);
     assert!(sk.constraints.iter().any(|c| c.kind == CKind::RateDistance && c.free.is_some()),
             "a pitch left to the solve is read as a free column");
     let mut rng = Rng::new(326);

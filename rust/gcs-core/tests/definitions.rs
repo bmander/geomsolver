@@ -37,7 +37,7 @@ fn the_value_says_what_the_name_is() {
     let src = format!(
         "{PTS}w := 3 * 4\nl := line(a, b)\nk := circle(center: a) hint(r: w)\n\
          dims := {{size: w}}\n\
-         component Tick(o: point, dims: group) {{ t := point hint(x: dims.size) }}\n\
+         component Tick(o: point, dims: group) {{ t := point hint(x: dims.size)\nfix((dims.size, 0, 0)) t }}\n\
          t := Tick(a, dims: dims)\n"
     );
     let e = read(&src);

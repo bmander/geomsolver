@@ -70,8 +70,8 @@ const POINT: &str = "use std (spins, turns)\nin std.front {\n  o := point\n  fix
 
 #[test]
 fn a_declared_parameter_is_one_running_number() {
-    let e = built(&format!("unit mm\nturns := 3\nparam t: Angle over (0deg, 360deg)\n\
-        param s: Scalar over (0, turns)\nparam h: Length over (-1in, 2 * 5mm)\n{POINT}"));
+    let e = built(&format!("unit mm\nlaps := 3\nparam t: Angle over (0deg, 360deg)\n\
+        param s: Scalar over (0, laps)\nparam h: Length over (-1in, 2 * 5mm)\n{POINT}"));
     let p = &e.sketch.parameters;
     assert_eq!(p.len(), 3, "{p:?}");
     assert_eq!(p["t"], Running::new("t", Dim::ANGLE, 0.0, 360.0));

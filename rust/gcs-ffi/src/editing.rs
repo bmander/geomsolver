@@ -81,7 +81,7 @@ pub unsafe extern "C" fn gcs_elab_add_rectangle(
     plane_len: usize,
 ) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
-        // an empty name is the page: the instance takes no clause
+        // an empty name is no plane, which the core refuses: a rectangle is drawn in one
         let p = as_str(plane, plane_len);
         let p = (!p.is_empty()).then_some(p);
         out_edit(gcs_core::edit::add_rectangle(&(*h).program, w, hh, p.as_deref()))

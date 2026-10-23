@@ -24,12 +24,8 @@ component Drag(o: point, a: Length, u: Scalar) {
   string := line(p, q)
   length(a) string
   rate(p over u) parallel string
-}
-
-component Dragged(o: point, a: Length, u: Scalar) {
-  d := Drag(o, a: a, u: u)
   initially {
-    d.p level(right) o
+    p level(right) o
   }
 }
 
@@ -37,10 +33,9 @@ in std.front {
   o := point
   fix((0mm, 0mm)) o
   drag := Drag(o, a: 30mm, u: 0)
-  drag.p level(right) o
 }
 tractrix := trace(drag.p over u in (0, 3))
-written := trace(Dragged(o, a: 30mm, u: 0).d.p over u in (-3, 3))
+written := trace(Drag(o, a: 30mm, u: 0).p over u in (-3, 3))
 ";
 
 /// The tractrix's closed form, the string's end at `(a u, 0)`: `x = a(u − tanh u)`, `y = a sech u`.
@@ -80,7 +75,7 @@ const CLOTHOID: &str = "\
 unit mm
 use std (turns)
 
-component Clothoid(A: Length, s: Length) {
+component Clothoid(start: point, heading: line, A: Length, s: Length) {
   p := point
   q := point
   k := point
@@ -92,6 +87,10 @@ component Clothoid(A: Length, s: Length) {
   rate(p over s) parallel tl
   rate(p over s) distance(1, along: tl)
   rate(q over s) distance(10mm * s / A^2, along: nl)
+  initially {
+    p coincident start
+    heading angle(0deg) tl
+  }
 }
 
 in std.front {
@@ -100,9 +99,7 @@ in std.front {
   fix((0mm, 0mm)) o
   fix((10mm, 0mm)) x
   datum := line(o, x)
-  cl := Clothoid(A: 50mm, s: 0mm)
-  cl.p coincident o
-  datum angle(0deg) cl.tl
+  cl := Clothoid(o, datum, A: 50mm, s: 0mm)
 }
 spiral := trace(cl.p over s in (-100mm, 100mm))
 ";
@@ -183,7 +180,7 @@ const CATENARY: &str = "\
 unit mm
 use std (turns)
 
-component Chain(c: Length, v: Length, s: Length) {
+component Chain(start: point, c: Length, v: Length, s: Length) {
   p := point
   q := point
   tl := line(p, q)
@@ -191,6 +188,9 @@ component Chain(c: Length, v: Length, s: Length) {
   p distance(v + s, along: up) q
   rate(p over s) parallel tl
   rate(p over s) distance(1, along: tl)
+  initially {
+    p coincident start
+  }
 }
 
 in std.front {
@@ -198,8 +198,7 @@ in std.front {
   b := point
   fix((0mm, 0mm)) a
   fix((100mm, 0mm)) b
-  hang := Chain(c: hint(30mm), v: hint(-75mm), s: 0mm)
-  hang.p coincident a
+  hang := Chain(a, c: hint(30mm), v: hint(-75mm), s: 0mm)
   b coincident(t == 150mm) chain
 }
 chain := trace(hang.p over s in (0mm, 150mm))
@@ -495,13 +494,15 @@ component Round(o: point, u: Scalar) {
   p := point hint((0, 30))
   o distance(30mm) p
   rate(p over u) distance(1, along: right)
+  initially {
+    p level(right) o
+  }
 }
 
 in std.front {
   o := point
   fix((0mm, 0mm)) o
   r := Round(o, u: 0)
-  r.p level(right) o
 }
 arc := trace(r.p over u in (-40, 40))
 ";

@@ -408,7 +408,9 @@ use std
 component Wing(f: plane) {
   r := axis hint(dir: (1, 1, 0))
   r perpendicular f.v
+  r angle(45deg) f.u
   w := plane(u: r, v: f.v)
+  w.origin level(r) f.origin
 }
 one := Wing(std.front)
 two := Wing(std.top)
@@ -691,15 +693,15 @@ fn a_sphere_may_be_centred_in_space() {
 #[test]
 fn an_instance_passed_as_a_group_carries_its_numbers() {
     let doc = "unit mm\nuse std\n\
-component OnSphere(p: point, s: group) {\n  p distance(s.r) s.center\n}\n\
+component OnSphere(s: group) {\n  p := point hint((5, 45)) in std.side\n  fix(y == 45) p\n  \
+p distance(s.r) s.center\n}\n\
 in std.front {\n  c := point\n  fix((-8, 38)) c\n}\n\
 ball := std.Sphere(c, r: 12)\n\
-p := point hint((5, 45)) in std.side\n\
-OnSphere(p, ball)\n";
+on := OnSphere(ball)\n";
     let e = read(doc);
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
-    let d = norm(sub(sk.world_point(ent(&e, "p").i()), sk.world_point(ent(&e, "c").i())));
+    let d = norm(sub(sk.world_point(ent(&e, "on.p").i()), sk.world_point(ent(&e, "c").i())));
     assert!((d - 12.0).abs() < 1e-9, "{d}");
 }
 

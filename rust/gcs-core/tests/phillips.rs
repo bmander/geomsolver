@@ -531,9 +531,10 @@ claim L reciprocal(seen_from: rest) gear_turn
     let rate = first.sketch.constraints.iter().find(|c| c.kind == CKind::Rate).unwrap();
     assert_eq!(gcs_core::io::describe_with(rate, &|e| first.map.name_of(e).cloned()),
                "L reciprocal(seen_from: pinion_turn) gear_turn");
-    // the screw, its pitch stated, two carried points, their rates along the axis and the first's
-    // distance along it; and of the mesh read the other way, read as any motion is
-    for screw in ["std.Screw(isa, gear_turn, seen_from: pinion_turn, pitch: -32.199mm)",
+    // the screw, its pitch the motion's to say, two carried points, their rates along the axis
+    // and the first's distance along it; and of the mesh read the other way, read as any motion
+    // is
+    for screw in ["std.Screw(isa, gear_turn, seen_from: pinion_turn)",
                   "std.Screw(isa, pinion_turn, seen_from: gear_turn)"] {
         let text = format!("{src}isa := axis\nfix(dir == (-0.9, 0, -0.45)) isa\nscrew := {screw}\n");
         let (prog, errs) = crate::common::parse(&text);

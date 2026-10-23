@@ -139,11 +139,10 @@ fn a_retained_seam_must_satisfy_material_trims_on_both_faces() {
     let source = format!("{MODEL}
 component Sphere(o: point,size: Length) {{
   private bottom := point
-  private top := point
+  private top := point hint((0, size))
   fix((0, -size)) bottom
-  fix((0, size)) top
+  fix(x == 0) top
   private rim := arc(center: o,start: bottom,end: top)
-  radius(size) rim
   private diameter := line(top,bottom)
   ball := solid(face(rim,diameter),about: diameter)
   wall := surface(ball,rim)

@@ -434,8 +434,8 @@ where a rule came from.
     `fix(ratio == ρ, advance == 0mm) f`, `ρ` 0 or 1 (E080 otherwise, and for an advance), makes
     `MotionDef::Guided { guide, frame, frenet: ρ == 1 }`; the statement states no row
     (`Resolver::guides`, skipped by `elaborate::constraints`) and the joint's axis is held where it
-    stands.  `std.Along(f, g, up: u, home: h)` (ρ 0) and `std.AlongFrenet(f, g, home: h)` (ρ 1)
-    draw the frame at its home square to the path and state the joint.
+    stands.  `std.Along(g, up: u, home: h)` (ρ 0) and `std.AlongFrenet(g, home: h)` (ρ 1) make the
+    frame `f`, draw it at its home square to the path and state the joint.
   - **Read after the solve** (`motion::Guide`, `Step::Guided`): the path read four ways (`Path`: a
     line's and an arc's fraction of the run exactly; a spline, in a plane lifted or over points in
     space through `Sketch::spline_traced`, by its basis with three derivatives; a traced curve by

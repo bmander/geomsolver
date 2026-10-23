@@ -207,14 +207,17 @@ in std.front {{
   g := Gear(o, teeth: teeth, m: 2mm)
   f := frame
   f spins(-1) o
+  q := point
+  std.Turned(o, q)
 }}
 ");
     let (p, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&p);
     assert!(e.diags.iter().all(|d| !DRIFT.contains(&d.code)), "{:?}", e.diags);
-    // `std.Spin` is itself an asserting component, but std's, not this document's
-    assert_eq!(lint(&src), ["W201: teeth", "W202: std.Spin"]);
+    // a call of std's standing as a statement is this document's text; what `std.Turned` itself
+    // says is std's
+    assert_eq!(lint(&src), ["W201: teeth", "W202: std.Turned"]);
     assert!(DRIFT.iter().all(|c| c.as_str().starts_with("W2")));
 }
 

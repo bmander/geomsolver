@@ -65,10 +65,10 @@ fn layout_instances_can_be_passed_forward_without_an_extra_solve() {
 use std
 component Layout() { a := point
 fix((0, 0)) a
-b := point hint((20, 0)) }
-component Part(layout: group) { bar := line(layout.a, layout.b)
-horizontal bar
-layout.a distance(20) layout.b }
+b := point hint((20, 0))
+a level(v) b
+a distance(20, along: u) b }
+component Part(layout: group) { bar := line(layout.a, layout.b) }
 in std.front {
 part := Part(layout)
 layout := Layout()
@@ -325,7 +325,9 @@ component Part(width: Length) {
   dims := {width: width}
   a := point
   b := point
-  a distance(dims.width) b
+  fix((0, 0)) a
+  a level(v) b
+  a distance(dims.width, along: u) b
 }
 in std.front {
 one := Part()

@@ -2,11 +2,13 @@
 //! the three ways issue #43 found it saying it wrong: an angle written `60deg` drawn as
 //! `60deg°` (#14), a bare number printed to every digit a double has in the list and to four
 //! on the drawing (#15), and culprits named `P0` when the source called the point `corner`
-//! (#16).  One reading per number and one namer per report, both the core's.
+//! (#16).  One reading per number and one namer per report, both the core's.  The bodies here
+//! state dimensions over what they are given, to show how one reads through a definition, so the
+//! promise every definition is held to is read past (`common::promise`).
 
 use gcs_core::io;
 use gcs_core::model::Sketch;
-use crate::common::parsed::read;
+use crate::common::parsed::read_past_promise as read;
 
 fn dims(sk: &Sketch) -> Vec<String> {
     sk.user_constraints().iter().filter_map(|c| io::dimension_text(c)).collect()
@@ -246,7 +248,8 @@ use parts
     });
     assert!(linked.is_empty(), "{linked:?}");
     let e = gcs_core::program::elaborate(&prog);
-    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let other = crate::common::other_errors(&e);
+    assert!(other.is_empty(), "{:?}", other.iter().map(|d| &d.message).collect::<Vec<_>>());
     assert_eq!(dims(&e.sketch), ["40mm", "parts.w / 2"]);
 }
 
@@ -285,7 +288,8 @@ use std
     });
     assert!(linked.is_empty(), "{linked:?}");
     let e = gcs_core::program::elaborate(&prog);
-    assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
+    let other = crate::common::other_errors(&e);
+    assert!(other.is_empty(), "{:?}", other.iter().map(|d| &d.message).collect::<Vec<_>>());
     assert_eq!(dims(&e.sketch), ["13.3333mm", "4.44444mm", "1' 6 3/16\"", "2.5mm", "33.3333deg"]);
     let list: Vec<String> = e.sketch.user_constraints().iter().map(|c| io::describe(c)).collect();
     assert!(list[0].contains("distance(13.3333mm)"), "{}", list[0]);

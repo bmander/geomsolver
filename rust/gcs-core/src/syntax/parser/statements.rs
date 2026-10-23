@@ -6,7 +6,8 @@ use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::{self, over_chain, over_walks, set_at, Brackets, BLOCKS, ENERGY_WORDS};
 
-/// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part` promised.
+/// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part`
+/// promised.
 const PART_RETIRED: &str = "`part` is retired (#562): every definition is held to being a \
     function of what it is given, so write `component Name(…) { … }`";
 use crate::syntax::{

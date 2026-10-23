@@ -1340,8 +1340,11 @@ fn coincident_resolves_across_every_kind_it_reaches() {
 use std
 component Holder() {
   hub := point
+  fix((0, 0)) hub
   o := point hint((0, 0))
+  fix((0, 0)) o
   k := circle(center: o) hint(r: 20)
+  radius(20) k
 }
 in std.front {
 g := Holder()
@@ -1446,8 +1449,9 @@ fn a_parenthesised_prefix_opens_a_chain() {
 /// guess and the truth are the same string, so a spline can witness nothing here.
 #[test]
 fn a_slot_keeps_the_name_and_the_number_it_was_written_with() {
-    // a pin written over a component's parameters, settled by `flatten` and *pinned*
-    let e = read(&format!(
+    // a pin written over a component's parameters, settled by `flatten` and *pinned* — the spline
+    // its body draws placed by no row, which the promise refuses (#562) and this reads past
+    let e = crate::common::read_past_promise(&format!(
         "use std\ncomponent C(f: plane, t0: Scalar) {{\n{}  a coincident(t == t0) s\n}}\nc := C(std.front, t0: 0.25)\n",
         SPLINE.trim_start_matches("use std\n").replace("in std.front", "in f").replace('\n', "\n  ").trim_end_matches(' ')
     ));

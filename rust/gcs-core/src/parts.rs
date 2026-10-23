@@ -75,7 +75,8 @@ fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Option<(World, Vec<Read<'e>>
     let world = World::of(sk, &e.map);
     let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
     let zero = sk.zero;
-    let read = e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].braced()).map(|inst| {
+    let drawn = e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].braced());
+    let read = drawn.map(|inst| {
         let comp = &prog.components[inst.comp];
         let s = split(&e.map, sk, &world, inst);
         let rows: BTreeSet<u32> = s.kept.iter().copied()

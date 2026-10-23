@@ -354,9 +354,9 @@ fn the_ledger_counts_the_freedom_each_parameter_drives() {
 #[test]
 fn a_parameter_passed_down_through_parts_drives_what_they_draw() {
     let src = "unit mm\nuse std (offset)\n\
-        part Follower(o: point, lift: Length) {\n  f := point hint((o.x + 5mm, o.y + lift))\n  \
+        component Follower(o: point, lift: Length) {\n  f := point hint((o.x + 5mm, o.y + lift))\n  \
         f offset(dx: 5mm, dy: lift) o\n}\n\
-        part Cam(o: point, phase: Angle) {\n  reach := max(17mm, 20mm * cos(phase / 2) + 7mm)\n  \
+        component Cam(o: point, phase: Angle) {\n  reach := max(17mm, 20mm * cos(phase / 2) + 7mm)\n  \
         follower := Follower(o, lift: reach)\n}\n\
         param t: Angle over (0deg, 720deg)\n\
         in std.front {\n  o := point\n  fix((0, 0)) o\n  cam := Cam(o, phase: t)\n}\n";

@@ -171,7 +171,7 @@ fn a_click_writes_the_digits_its_pixel_justifies() {
 #[test]
 fn drawing_into_a_preview_keeps_new_geometry_inside_it() {
     for src in [
-        "component Part() {}\npreview {\n}\ntail := 1\n",
+        "use std\ncomponent Part() {}\npreview {\n}\ntail := 1\n",
         "use std\npreview {\nin std.front {\nexisting := point\n}\n// keep this comment\n}\ntail := 1\n",
     ] {
         let e = edit::add_point(&prog_of(src), 12.5, -3.0);
@@ -180,9 +180,11 @@ fn drawing_into_a_preview_keeps_new_geometry_inside_it() {
         assert!(p.preview.unwrap().contains(added.span.lo), "{}", e.text);
         assert!(elaborate(&p).ok());
         assert!(e.text.ends_with("tail := 1\n"));
-        let rect = edit::add_rectangle(&p, 30.0, 20.0, None);
+        let rect = edit::add_rectangle(&p, 30.0, 20.0, Some("std.front"));
         let p = prog_of(&rect.text);
-        assert!(elaborate(&p).ok());
+        let back = elaborate(&p);
+        assert!(back.ok(), "{:?}\n{}", back.errors().map(|d| &d.message).collect::<Vec<_>>(),
+            rect.text);
         let definition = p.component("Rectangle").unwrap();
         assert!(definition.span.hi <= p.preview.unwrap().lo);
         let instance = p.root().body.iter().find(|st| matches!(st.kind,
@@ -209,16 +211,18 @@ fn preview_gestures_keep_source_mappings_with_statements_after_the_block() {
 
 /// **The Rect tool writes a component, once, and instances after.**  The first rectangle
 /// brings the `Rectangle` definition with it — the chain of four lines welded at right
-/// angles — and every rectangle is one statement, `rN := Rectangle(w: …, h: …)`, each a rigid
-/// figure of its own (DOF 3: position and rotation).
+/// angles from a corner it is given, the first level — and every rectangle is a corner and one
+/// statement, `rN := Rectangle(pN, w: …, h: …)`, a figure placed by its corner (DOF 2).
 #[test]
 fn a_rectangle_is_a_component_instance() {
     let prog = prog_of("use std\nin std.front {\np9 := point hint((5, 5))\n}\n");
     let e = edit::add_rectangle(&prog, 120.0, 60.0, Some("std.front"));
     assert_eq!(e.kind, Kind::Structural);
-    assert_eq!(e.names, vec!["r0"]);
-    assert!(e.text.contains("component Rectangle(w: Length, h: Length)"), "{}", e.text);
-    assert!(e.text.contains("r0 := Rectangle(w: 120, h: 60)"), "{}", e.text);
+    assert_eq!(e.names, vec!["r0", "p0"]);
+    assert!(e.text.contains("component Rectangle(corner: point, w: Length, h: Length)"), "{}",
+        e.text);
+    assert!(e.text.contains("p0 := point in std.front\nr0 := Rectangle(p0, w: 120, h: 60)"), "{}",
+        e.text);
     let prog = prog_of(&e.text);
     let back = elaborate(&prog);
     assert!(back.ok(), "{:?}", back.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
@@ -226,7 +230,7 @@ fn a_rectangle_is_a_component_instance() {
 
     // the second rectangle reuses the definition: one component, two instances
     let e = edit::add_rectangle(&prog, 40.0, 40.0, Some("std.front"));
-    assert_eq!(e.names, vec!["r1"]);
+    assert_eq!(e.names, vec!["r1", "p1"]);
     assert_eq!(e.text.matches("component Rectangle").count(), 1, "{}", e.text);
     let back = elaborate(&prog_of(&e.text));
     assert!(back.ok(), "{:?}", back.errors().map(|d| d.message.clone()).collect::<Vec<_>>());
@@ -235,7 +239,7 @@ fn a_rectangle_is_a_component_instance() {
     let r = solve(&mut sk, SolveOpts::default());
     assert!(r.success, "{}", r.message);
     let d = gcs_core::diagnose::diagnose(&mut sk, gcs_core::diagnose::DiagnoseOptions::default());
-    assert_eq!(d.dof, 8, "a loose point (2) and two rigid rectangles (3 each)");
+    assert_eq!(d.dof, 6, "a loose point and two rectangles' corners (2 each)");
 }
 
 /// A minted name never collides with one already written, whatever it is.
@@ -276,10 +280,11 @@ use std
 component Pair() {
   a := point
   b := point hint((10, 0))
+  fix((0, 0)) a
+  fix((10, 0)) b
 }
 in std.front {
 q := Pair()
-fix((0, 0)) q.a
 }
 ";
     let prog = prog_of(src);
@@ -301,10 +306,11 @@ use std
 component Pair() {
   a := point
   b := point hint((10, 0))
+  fix((0, 0)) a
+  fix((10, 0)) b
 }
 in std.front {
 q := Pair()
-fix((0, 0)) q.a
 p := point hint((30, 5))
 r := point hint((40, 5))
 pr := line(p, r)
@@ -322,7 +328,7 @@ pr := line(p, r)
     assert!(!d.text.contains("p := point"), "{}", d.text);
     assert!(!d.text.contains("pr := line"), "and the line that named it: {}", d.text);
     assert!(d.text.contains("r := point hint((40, 5))"), "{}", d.text);
-    assert!(d.text.contains("q := Pair()\nfix((0, 0)) q.a\n"), "the component is untouched");
+    assert!(d.text.contains("q := Pair()\nr := point"), "the component is untouched");
     let back = elaborate(&prog_of(&d.text));
     assert!(back.ok(), "{:?}", back.errors().map(|x| &x.message).collect::<Vec<_>>());
 

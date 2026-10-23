@@ -4,21 +4,27 @@ use super::*;
 
 /// The rectangle the Rect tool draws: a **reusable component**, defined once per document, and
 /// one instance per gesture.  The definition is the chain a person would write — four lines
-/// welded corner to corner at right angles, the first two carrying the width and the height —
-/// so what a gesture leaves in the source is one statement, `r0 := Rectangle(w: 120, h: 60)`,
-/// and the drawing owns a `Rectangle` any later statement may instance again.  Where the
-/// figure *sits* is not in the statement: an instance's geometry is written in the component's
-/// terms, so its pose is the session's (the tool seeds it at the gesture) and a reload starts
-/// it from `scatter`, the same bargain every component's interior strikes.
+/// welded corner to corner at right angles from a corner it is given, the first level and the
+/// first two carrying the width and the height — so what a gesture leaves in the source is a
+/// corner and one statement, `p0 := point` and `r0 := Rectangle(p0, w: 120, h: 60)`, and the
+/// drawing owns a `Rectangle` any later statement may instance again.  A definition is a
+/// function of what it is given (#562): the corner is the instance's one freedom, a point of the
+/// drawing's own, and `names` is the instance's then the corner's, for the tool to seed at the
+/// gesture.
 pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edit {
+    // its first side is level, which a figure standing in space has no meaning for
+    let Some(plane) = plane.filter(|p| !p.is_empty()) else {
+        return Edit::none(prog, Some("a rectangle is drawn in a plane: choose one first".into()));
+    };
     let (at, lead) = append_at(prog);
     let mut with = lead;
     let mut edits = Vec::new();
     // the document's own: a module's `Rectangle` is no name a bare call reaches (§14.4)
     if prog.component("Rectangle").is_none() {
-        let definition = "component Rectangle(w: Length, h: Length) {\n  \
-             length(w) (l1 := line) -> perpendicular length(h) (l2 := line) -> \
-             perpendicular (l3 := line) -> perpendicular (l4 := line) -> close\n}\n\n";
+        let definition = "component Rectangle(corner: point, w: Length, h: Length) {\n  \
+             length(w) (l1 := line(corner)) -> perpendicular length(h) (l2 := line) -> \
+             perpendicular (l3 := line) -> perpendicular (l4 := line) -> close\n  \
+             horizontal l1\n}\n\n";
         if let Some(preview) = prog.preview {
             let start = preview.lo as usize;
             edits.push(Splice { at: Span::new(start, start), with: definition.into() });
@@ -34,21 +40,26 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
         .collect();
     let name =
         (0..).map(|i| format!("r{i}")).find(|n| !taken.contains(n.as_str())).unwrap_or_default();
-    let arg = |label: &str, v: f64| syntax::InstArg {
-        label: Some(syntax::Name::new(label)),
-        value: syntax::InstVal::Expr(num(v)),
+    let corner = mint(prog, EntKind::Point);
+    with.push_str(&format!("{corner} := point in {plane}\n"));
+    let arg = |label: Option<&str>, value: syntax::InstVal| syntax::InstArg {
+        label: label.map(syntax::Name::new),
+        value,
         span: Span::default(),
     };
+    let length = |label: &str, v: f64| arg(Some(label), syntax::InstVal::Expr(num(v)));
     let inst = syntax::Instance {
         annotations: Default::default(),
         name: syntax::Name::new(name.clone()),
         component: syntax::Name::new("Rectangle"),
-        args: vec![arg("w", w), arg("h", h)],
+        args: vec![
+            arg(None, syntax::InstVal::Ref(syntax::Ref::new(&corner))),
+            length("w", w),
+            length("h", h),
+        ],
         span: Span::default(),
-        // drawn in a view when the caller says so: the instance joins it whole (§6.7)
-        membership: plane
-            .map(|p| syntax::Membership::lifted(syntax::Ref::new(p)))
-            .unwrap_or_default(),
+        // drawn in the caller's view: the instance joins it whole (§6.7)
+        membership: syntax::Membership::lifted(syntax::Ref::new(plane)),
         class: Default::default(),
     };
     let mut line = String::new();
@@ -60,7 +71,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: Option<&str>) -> Edi
     Edit {
         text: splice(prog.text(), edits),
         kind: Kind::Structural,
-        names: vec![name],
+        names: vec![name, corner],
         refused: None,
         kept: 0,
     }

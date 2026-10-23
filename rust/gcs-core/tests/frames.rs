@@ -491,12 +491,12 @@ in std.top {
   Y := point hint((25, 5))
   Z := point hint((25, 5))
 }
-ring := frame
-ring spins(1) o
+carrier := frame
+carrier spins(1) o
 gear := frame
 gear spins(-2) c
 rest := frame
-X coincident(under: gear, seen_from: ring, t == 40) x
+X coincident(under: gear, seen_from: carrier, t == 40) x
 Y coincident(under: gear, seen_from: rest, t == 40) x
 Z coincident(under: gear, t == 40) x
 ";
@@ -815,8 +815,7 @@ pinion rolls(at: P, along: std.top.v) wheel
 #[test]
 fn a_gear_pairs_ratio_is_solved_from_rolling() {
     let mut e = build(&gears("hint((40, 0))\n  fix((40, 0)) c",
-                             "c coincident pinion.axis\n\
-                              pinion.axis parallel(sense: same) std.top.normal"));
+                             "param k: Scalar hint(-1)\npinion spins(k) c"));
     let r = solve::solve(&mut e.sketch, Default::default());
     assert!(r.success, "{r:?}");
     let (ratio, advance) = numbers(&e, "pinion");

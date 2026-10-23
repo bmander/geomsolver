@@ -91,6 +91,18 @@ pub fn read(src: &str) -> Elaborated {
     e
 }
 
+/// `read`, past the promise every definition is held to (`promise`): for a test of another rule
+/// whose bodies only relate what they are given, or leave a point free, on purpose.
+pub fn read_past_promise(src: &str) -> Elaborated {
+    let (prog, errs, linked) = gcs_core::library::parse_linked(src);
+    assert!(errs.is_empty() && linked.is_empty(), "does not parse: {errs:?} {linked:?}\n{src}");
+    let e = elaborate(&prog);
+    let other: Vec<String> =
+        other_errors(&e).iter().map(|d| format!("{} {}", d.code.as_str(), d.message)).collect();
+    assert!(other.is_empty(), "does not elaborate: {other:?}\n{src}");
+    e
+}
+
 /// The bearing an involute flank starts from, in degrees: the `phase` its instance was given — a
 /// `ring`'s turned copy's being its representative's, turned `k` steps of `360/n`.
 pub fn curve_phase(sk: &Sketch, ci: usize) -> f64 {
@@ -115,6 +127,19 @@ pub fn refused(src: &str, code: &str, needle: &str, at: &str) {
     let d = e.diags.iter().find(|d| d.code.as_str() == code && d.message.contains(needle))
         .unwrap_or_else(|| panic!("expected {code} `{needle}`\n{src}\n{saw:#?}"));
     assert_eq!(d.span.slice(prog.text()), at, "{saw:?}");
+}
+
+/// Whether `d` is the promise every definition is held to (#562, E108 and E109).  A test of
+/// another rule — how a call binds, how an edit splices — writes the smallest body that shows it,
+/// often one that only relates its operands or leaves a point free, and reads the document past
+/// these alone.
+pub fn promise(d: &gcs_core::program::Diag) -> bool {
+    matches!(d.code, gcs_core::program::Code::E108 | gcs_core::program::Code::E109)
+}
+
+/// `e`'s errors but the promise's (`promise`).
+pub fn other_errors(e: &Elaborated) -> Vec<&gcs_core::program::Diag> {
+    e.errors().filter(|d| !promise(d)).collect()
 }
 
 /// The entity the document calls `n`.

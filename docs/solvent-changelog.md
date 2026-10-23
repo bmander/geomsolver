@@ -20,8 +20,13 @@ face mill's two settings) to the pair's own rows, the spheres and the grinding w
 once, and `std.Frenet` holds its plane's `u` along its normal line rather than building the plane
 over it. `std.Turn`, `std.Spin` and `std.Slide`, kept beside the joint words since 0.154, are
 retired; `std.Rolls` is the word `a rolls(at: p, along: d) b`; `std.Screw(toward, m)` makes its
-axis, `s.isa`, running the way a held `toward` does. A circle carried whole by `mapped` holds its
-centre once. Every solved position is unchanged. (Issue #562, from #523.)
+axis, `s.isa`, running the way a held `toward` does. `std.Along(g, up: u)` and `std.AlongFrenet(g)`
+make the frame they hold, `f`, where they were given one; `std.CircleOnSphere(k, s, view)` is the
+word `k on_sphere(view: v) s`. A `fix` of a joint's ratio must be a plain number and of its advance
+a length (**E103**), the check the retired components made through their typed formals. The Rect
+tool's `Rectangle` stands at a corner it is given, its first side level, the corner a point of
+the document beside the instance. A circle carried whole by `mapped` holds its centre once. Every
+solved position is unchanged. (Issue #562, from #523.)
 
 **[0.174] A directed angle about an axis.** `angle` and `perpendicular` take `about: a` (§9.4):
 `d1 angle(θ, about: a) d2` is the turn about axis `a`, by the right-hand rule and on the full turn,

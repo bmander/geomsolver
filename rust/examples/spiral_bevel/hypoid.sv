@@ -113,8 +113,8 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
     crown_roll, pinion_roll, gear_roll, R: R, face: blank_design.width, depth: addendum,
     cutter_radius: cutter_radius)
   // ...where the pinion's and the gear's margins against undercut are equal, at M and at the toe
-  balance.mean.pinion_profile equal balance.mean.gear_profile
-  balance.at_toe.pinion_profile equal balance.at_toe.gear_profile
+  balance.margins.pinion_mean equal balance.margins.gear_mean
+  balance.margins.pinion_toe equal balance.margins.gear_toe
 
   // The tip relief: a topping beside each crown flank, kinked in the normal section N (square to
   // P on the trace normal, through the cutter's axis) `tip_relief` short of the addendum, and cut
@@ -407,6 +407,9 @@ component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set, out
   construction to_toe := line(trace.C, toe)
   T := plane(u: to_toe, v: ax)
   at_toe := Margins(T, toe, to_toe, ax, trace.C, pinion_flank, gear_flank, depth: depth)
+  // what the pair reads of them: each member's margin, at M and at the toe
+  margins := {pinion_mean: mean.pinion_profile, gear_mean: mean.gear_profile,
+    pinion_toe: at_toe.pinion_profile, gear_toe: at_toe.gear_profile}
 }
 
 // The members' margins against undercut in the section `s` through the cutter's axis `ax` and the
