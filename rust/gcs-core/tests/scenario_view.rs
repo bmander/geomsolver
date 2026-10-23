@@ -243,3 +243,56 @@ fn the_answers_beside_a_picture_are_the_answers() {
     let none = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, None);
     assert!(matches!(none.get("picture"), Some(gcs_core::json::Json::Null)));
 }
+
+/// **A scenario read progressively ends at the reading** (#510; `report::Levels`): every scenario
+/// read three times, its elements four times their size, then twice, then their own; each level
+/// says what it is but the last, which alone is final; the first estimates no error, each later
+/// one its change from the one before (a claim's: a driven requirement's value is its row's); and
+/// the last is `scenarios_pictured_json`'s reading, word
+/// for word and its picture to the figure.  After it there is no level.
+#[test]
+fn a_scenario_read_progressively_ends_at_the_reading() {
+    use gcs_core::json::Json;
+    for key in ["shelf_bracket", "sized_plate", "pin_lug"] {
+        let e = crate::common::read(gcs_core::examples::source(key).unwrap());
+        let sk = crate::common::solved(&e);
+        let mut levels = gcs_core::report::Levels::new();
+        let mut read = Vec::new();
+        while let Some(level) = levels.next(&sk, &e.scenarios, Some(0)) {
+            read.push(level);
+        }
+        assert!(levels.done() && levels.next(&sk, &e.scenarios, Some(0)).is_none());
+        let at: Vec<f64> = read.iter().map(|l| l.get("level").unwrap().as_f64()).collect();
+        assert_eq!(at, gcs_core::report::LEVELS.to_vec(), "{key}");
+        for (k, l) in read.iter().enumerate() {
+            let last = k + 1 == read.len();
+            assert!(matches!(l.get("final"), Some(Json::Bool(f)) if *f == last), "{key}");
+            let said = l.get("levelText").unwrap().dump(None);
+            assert_eq!(said == "\"\"", last, "{key}: level {k} says {said}");
+        }
+        let answers = |l: &Json| -> Vec<(Option<f64>, Option<f64>)> {
+            l.get("scenarios").unwrap().arr()[0].get("answers").unwrap().arr().iter().map(|a| {
+                let num = |k: &str| match a.get(k) { Some(Json::Null) | None => None,
+                                                     Some(v) => Some(v.as_f64()) };
+                let claim = a.get("grade").unwrap().dump(None) == "\"claim\"";
+                (num("value").filter(|_| claim), num("error"))
+            }).collect()
+        };
+        assert!(answers(&read[0]).iter().all(|a| a.1.is_none()), "{key}: a first error");
+        for k in 1..read.len() {
+            for ((v, err), (was, _)) in answers(&read[k]).into_iter().zip(answers(&read[k - 1])) {
+                if let (Some(v), Some(was), Some(err)) = (v, was, err) {
+                    assert!((err - (v - was).abs()).abs() <= 1e-9 * v.abs().max(1.0)
+                            || err == 0.0, "{key}: level {k}'s error {err}, its change {}",
+                            v - was);
+                }
+            }
+        }
+        let whole = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, Some(0));
+        let last = read.last().unwrap();
+        for part in ["scenarios", "picture"] {
+            assert_eq!(last.get(part).unwrap().dump(None), whole.get(part).unwrap().dump(None),
+                       "{key}: the last level's {part}");
+        }
+    }
+}

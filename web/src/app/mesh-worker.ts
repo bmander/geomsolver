@@ -14,15 +14,16 @@
  * verdicts once every claim is judged.
  *
  * A fourth reads the load scenarios (a `scenario` job, `scenario-view.ts`): every scenario's
- * answers and the picture of the one chosen, one reading, posted once read — its arrays'
- * buffers handed over rather than copied. */
+ * answers and the picture of the one chosen, a level at a time, coarsest first, each posted as it
+ * is read — its arrays' buffers handed over rather than copied — and a newer job ending it
+ * between levels. */
 import { ClaimJudge, solidClaims } from '../core/claims.js';
 import { ExactBuilder, FieldMesher, fieldJobs, unpaired, type MeshProgress } from '../core/field.js';
 import { install } from '../core/modules.js';
 import { Document } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
 import { unpairedClaims, type ClaimFrame, type ClaimJob } from './claim-judging.js';
-import { buffers, readScenarios, type ScenarioFrame, type ScenarioJob } from './scenario-view.js';
+import { buffers, drawnIndex, typed, type ScenarioFrame, type ScenarioJob } from './scenario-view.js';
 import type { ExactJob, Frame, Job, MeshJob } from './field-preview.js';
 
 /** Facets refined between looks at the message queue. */
@@ -60,24 +61,34 @@ scope.onmessage = (ev) => {
   ready.then(() => (job.kind === 'exact' ? exact(job) : run(job))).catch(fail);
 };
 
-/** **Read the scenarios of the page's drawing, and draw the one chosen**: one reading, posted
- *  once read.  A burst of edits starts only the last job, and the worker's drawing must name the
- *  scenario chosen as the page's does. */
+/** **Read the scenarios of the page's drawing, and draw the one chosen**: a level at a time,
+ *  coarsest first, each posted as it is read, letting messages in between — a newer job ends this
+ *  one before its finer levels.  A burst of edits starts only the last job, and the worker's
+ *  drawing must name the scenario chosen as the page's does. */
 async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promise<void> {
   await pause();
   if (job.id !== latest) return;
   install(job.modules);
   const doc = Document.read(job.text);
+  let levels: ReturnType<Document['scenarioLevels']> | null = null;
   try {
     doc.sketch.setX(job.x);
     if (job.drawn && !doc.scenarioNames().some((s) => s.name === job.drawn)) {
       throw new Error(`the worker's drawing states no scenario \`${job.drawn}\``);
     }
-    const got = readScenarios(doc, job.drawn);
-    if (job.id !== latest) return;
-    scope.postMessage({ id: job.id, scenarios: got.scenarios, picture: got.picture },
-                      buffers(got.picture));
+    const index = drawnIndex(doc, job.drawn);
+    levels = doc.scenarioLevels(index);
+    for (let got = levels.next(); got; got = levels.next()) {
+      if (job.id !== latest) return;
+      const picture = index >= 0 ? typed(got.picture) : null;
+      scope.postMessage({ id: job.id, scenarios: got.scenarios, picture, final: got.final,
+                          levelText: got.levelText }, buffers(picture));
+      if (got.final) return;
+      await pause();
+      if (job.id !== latest) return;
+    }
   } finally {
+    levels?.dispose();
     doc.dispose();
   }
 }

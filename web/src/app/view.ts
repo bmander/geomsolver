@@ -1625,7 +1625,9 @@ export class SketchView {
     }
     if (!r || r.scenarios) {
       this.scenarios = r?.scenarios ?? [];
-      this.onScenarios(this.scenarios);
+      // the footer says a verdict once the reading is final: a coarser level's answers are the
+      // card's to show while a finer one is read
+      if (!r?.reading) this.onScenarios(this.scenarios);
     }
     if (this.scenarioAnimate && this.picture && !this.swinging) this.setScenarioAnimate(true);
     this.onScenarioView();

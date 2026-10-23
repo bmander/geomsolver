@@ -225,6 +225,50 @@ pub unsafe extern "C" fn gcs_elab_scenarios_pictured_json(h: *mut Elaborated, s:
     })
 }
 
+/// A document's load scenarios being read a level at a time (`report::Levels`), with the drawing
+/// and the scenarios it reads: copies, so the reading outlives nothing it reads.
+pub struct ScenarioLevels {
+    sketch: Sketch,
+    scenarios: Vec<gcs_core::program::Stated>,
+    drawn: Option<usize>,
+    levels: gcs_core::report::Levels,
+}
+
+/// **Start reading every load scenario a level at a time** (`report::Levels`), at the pose the
+/// sketch stands in, drawing scenario `drawn` (−1 for none): what a worker steps with
+/// `gcs_scenario_levels_next`, posting each level as it comes.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_scenario_levels_new(h: *mut Elaborated, s: *mut Sketch,
+                                                      drawn: i32) -> *mut ScenarioLevels {
+    guard(std::ptr::null_mut(), move || {
+        Box::into_raw(Box::new(ScenarioLevels {
+            sketch: sk(s).clone(),
+            scenarios: (*h).scenarios.clone(),
+            drawn: usize::try_from(drawn).ok(),
+            levels: gcs_core::report::Levels::new(),
+        }))
+    })
+}
+
+/// **The next level read** (`Levels::next`): `gcs_elab_scenarios_pictured_json`'s `{ "scenarios",
+/// "picture" }` at it, with `"level"`, `"final"` and `"levelText"` — or null once every level is.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_scenario_levels_next(l: *mut ScenarioLevels) -> *mut u8 {
+    json_out(move || {
+        let l = &mut *l;
+        l.levels.next(&l.sketch, &l.scenarios, l.drawn).unwrap_or(Json::Null)
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn gcs_scenario_levels_free(l: *mut ScenarioLevels) {
+    guard((), move || {
+        if !l.is_null() {
+            drop(Box::from_raw(l));
+        }
+    })
+}
+
 /// **The document's load scenarios by name** (`report::scenario_names_json`): `[{ "name",
 /// "extends" }]` in the order written.  No analysis.
 #[no_mangle]

@@ -580,25 +580,56 @@ pub fn scenario_pictured(sk: &Sketch, sc: &Scenario)
     scenario_read_with(sk, sc, true)
 }
 
+/// **A scenario read at `coarser` times the readers' size, and estimated against a reading of it
+/// in hand** (#510; `report::Levels`, the page's progressive reading): its words, its answers —
+/// each with its error estimated against `against`, the same scenario read coarser, where given
+/// (`Read::estimated`), none otherwise — and, where `pictured`, its picture at this size.  At the
+/// readers' own size against a reading twice as coarse it is `scenario_pictured`, to the bit.
+pub fn scenario_read_at(sk: &Sketch, sc: &Scenario, coarser: f64,
+                        against: Option<&crate::beams::Read>, pictured: bool)
+    -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
+{
+    let (mut frames, drawn) = read_level(sk, sc, coarser, pictured);
+    if let Some(a) = against {
+        frames = frames.estimated(a);
+    }
+    said(sk, sc, frames, drawn)
+}
+
+/// Every reader of a scenario at `coarser` times its own size: frames, regions, solids in three
+/// dimensions, merged; and where `pictured`, how each body a line falls on moves.
+fn read_level(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
+    -> (crate::beams::Read, Vec<Result<crate::deformed::Body, String>>)
+{
+    let (mut r, mut drawn) = crate::beams::read_pictured(sk, sc, coarser, pictured);
+    let (p, d) = crate::prisms::read_pictured(sk, sc, coarser, pictured);
+    r.merge(p);
+    drawn.extend(d);
+    let (b, d) = crate::bodies::read_pictured(sk, sc, coarser, pictured);
+    r.merge(b);
+    drawn.extend(d);
+    (r, drawn)
+}
+
 fn scenario_read_with(sk: &Sketch, sc: &Scenario, pictured: bool)
     -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
 {
     // every reader at its own size, then, where anything is answered, twice as coarse: the
     // change is the error estimated beside each value (#510 S3)
-    let read = |coarser: f64, pictured: bool| {
-        let (mut r, mut drawn) = crate::beams::read_pictured(sk, sc, coarser, pictured);
-        let (p, d) = crate::prisms::read_pictured(sk, sc, coarser, pictured);
-        r.merge(p);
-        drawn.extend(d);
-        let (b, d) = crate::bodies::read_pictured(sk, sc, coarser, pictured);
-        r.merge(b);
-        drawn.extend(d);
-        (r, drawn)
-    };
-    let (mut frames, drawn) = read(1.0, pictured);
+    let (mut frames, drawn) = read_level(sk, sc, 1.0, pictured);
     if frames.answers.iter().any(|a| matches!(a, Some(Ok(_)))) {
-        frames = frames.estimated(&read(2.0, false).0);
+        frames = frames.estimated(&read_level(sk, sc, 2.0, false).0);
     }
+    said(sk, sc, frames, drawn)
+}
+
+/// What a scenario read says beside its answers — the motions its supports leave free, each
+/// re-entrant edge where a `safety` it states is unbounded, its readers' own words — and its
+/// picture.
+fn said(sk: &Sketch, sc: &Scenario, frames: crate::beams::Read,
+        drawn: Vec<Result<crate::deformed::Body, String>>)
+    -> (Vec<String>, crate::beams::Read, crate::deformed::Picture)
+{
     let picture = crate::deformed::Picture::of(drawn);
     let mut out = Vec::new();
     let mut holds = Vec::new();

@@ -836,6 +836,23 @@ scenario drawn, unless a rule names another.
   its scenarios fall and how the drawing moves under one`. The page's chooser and card are
   [app.md](app.md)'s.
 
+- **A scenario read progressively** (#510; `report::Levels`, `report::LEVELS`,
+  `diagnose::analysis::scenario_read_at`, FFI `gcs_elab_scenario_levels_new` /
+  `gcs_scenario_levels_next` / `gcs_scenario_levels_free`, `Document.scenarioLevels`). The worker
+  reads every scenario a level at a time, coarsest first: its elements four times their size,
+  then twice, then their own (a frame's pieces as many times fewer). Each level is
+  `scenarios_pictured_json`'s `{ "scenarios", "picture" }` read at it, with `"level"`, `"final"`
+  and `"levelText"` (what it is, in the core's words; empty at the last), and its errors are its
+  change from the level before (`Read::estimated`), none at the first. So the last level is the
+  reading — its own size estimated against twice as coarse — word for word and its picture to the
+  figure (`a_scenario_read_progressively_ends_at_the_reading`), for the coarsest level's cost
+  more, and the first comes in a fraction of the time: the engine's rod in the page's core
+  answers 1.3106mm at 7.8 s, 1.31504mm ± 0.0044mm at 20 s and 1.31687mm ± 0.0018mm at 49 s,
+  where the reading alone took 44 s. The worker posts each level as it comes and lets messages
+  in between levels, so an edit ends the job before its finer levels are paid for. A level a
+  coarser mesh cannot read says so as any reading does; the page holds it as provisional
+  ([app.md](app.md)).
+
 - **A scenario, parsed** (#510 P4, §9.11 [0.164]). `scenario NAME [: BASE] { … }` is
   `syntax::StmtKind::Scenario` (`syntax::Scenario`, its lines `Item`/`ItemKind`: a support, a load
   or a `RequirementText`), read by `parser/scenario.rs` alone. Its body is lines, not statements,

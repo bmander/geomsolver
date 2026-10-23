@@ -14,7 +14,7 @@
  * names anything is `structural`, because the name may be an unknown, and an unknown is a
  * column.
  */
-import type { Pictured, ScenarioMark } from './scenario.js';
+import type { Level, Pictured, ScenarioMark } from './scenario.js';
 import { Constraint } from './constraints.js';
 import { Kind, KINDS, Plane, Primitive, Sketch, fromWire } from './model.js';
 import type { Way } from './model.js';
@@ -244,6 +244,13 @@ export class Document {
     return takeJson<Pictured>(
       core().gcs_elab_scenarios_pictured_json(this.h, this.sketch.handle, drawn))
       ?? { scenarios: [], picture: null };
+  }
+
+  /** **Every load scenario read a level at a time** (`ScenarioLevels`), coarsest first, scenario
+   *  `drawn` (its index, −1 for none) pictured at each: what the worker steps, posting each level
+   *  as it comes.  The last level is `scenariosPictured(drawn)`'s reading. */
+  scenarioLevels(drawn: number): ScenarioLevels {
+    return ScenarioLevels.create(this.h, this.sketch.handle, drawn);
   }
 
   /** **The load scenarios the document states**, by name in the order written, and the one each
@@ -705,4 +712,29 @@ class Offsets {
 /** The canonical program for a sketch — the lift, and how a JSON document becomes a source one. */
 export function fromSketch(sk: Sketch): string {
   return takeStr(core().gcs_sketch_to_program(sk.handle));
+}
+
+/** **A document's load scenarios being read a level at a time** (`report::Levels`): the drawing
+ *  and its scenarios are copied in, so it outlives the document it was read from. */
+export class ScenarioLevels {
+  private constructor(private h: number) {}
+
+  static create(doc: number, sk: number, drawn: number): ScenarioLevels {
+    const h = core().gcs_elab_scenario_levels_new(doc, sk, drawn);
+    if (!h) throw new Error(lastError() || 'could not start reading the scenarios');
+    return new ScenarioLevels(h);
+  }
+
+  /** The next level read, or null once every level is; a reading the core could not make
+   *  throws its error. */
+  next(): Level | null {
+    const p = core().gcs_scenario_levels_next(this.h);
+    if (!p) throw new Error(lastError() || 'the scenarios could not be read');
+    return takeJson<Level | null>(p) ?? null;
+  }
+
+  dispose(): void {
+    if (this.h) core().gcs_scenario_levels_free(this.h);
+    this.h = 0;
+  }
 }

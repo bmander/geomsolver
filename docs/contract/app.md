@@ -461,7 +461,14 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   words; what the reading says (still reading, why a body is not drawn, the scenario's words);
   and a row per line of the scenario — the line as written, by its span, a load's value, a
   requirement's sentence in the verdict's ink — which puts the editor's caret on its line
-  (`goToSource`).  **In the box** (`ScenarioScene`) every coordinate is the core's (the marks,
+  (`goToSource`).  **The reading arrives a level at a time** (analysis.md, "A scenario read
+  progressively"; `ScenarioReading.receive`, `Reading.levelText`): each level's answers and
+  picture replace the last's at once, and while a finer one is read the card says which level
+  stands (the core's `levelText`), its rows' sentences dimmed (`provisional`) and a requirement
+  a coarser level could not answer still *reading…*; the footer's verdict and the chooser's
+  failing ink wait for the last level, so a coarse reading never flashes a failure the reading
+  does not make (`a scenario read in a worker arrives a level at a time, the last its
+  reading`).  **In the box** (`ScenarioScene`) every coordinate is the core's (the marks,
   the picture: analysis.md, "A scenario drawn"); a glyph is chrome made in pixels about its
   anchor and scaled by `unit` every frame, so it keeps its size as the eye zooms — a plate for
   `fixed` on a face (a block at a point or along a line), a cone for `pinned` pointing at its

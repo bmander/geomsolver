@@ -30,6 +30,8 @@ import { initCore } from '../core/wasm.js';
 import { canvasOf, fakeCanvas, pointer } from './canvas.js';
 import { click, clickSeen, clickWith, dblclickAt, docView, seenAt } from './views.js';
 import { paintCallouts } from '../app/paint.js';
+import { ScenarioReading, readScenarios, typed } from '../app/scenario-view.js';
+import type { ReadWorker, Reading, ScenarioFrame, ScenarioJob } from '../app/scenario-view.js';
 
 // the view schedules its repaints; nothing is being looked at, so run them inline
 (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame ??=
@@ -3033,4 +3035,41 @@ test('choosing a scenario writes nothing, and draws its marks and how the drawin
   assert.ok(view.load('use std\n'));
   assert.equal(view.scenario, '');
   assert.deepEqual(view.scenarioNames(), []);
+});
+
+test('a scenario read in a worker arrives a level at a time, the last its reading', () => {
+  // the shelf bracket (#510): a stub worker answers the job as the mesh worker does — each level
+  // of `Document.scenarioLevels`, posted in turn — and the reading tells each: a coarser level's
+  // answers still reading, with what it is, then the last, which is the reading made at once
+  const src = examples.source('shelf_bracket');
+  const doc = Document.read(src);
+  assert.ok(solve(doc.sketch).success);
+  const jobs: ScenarioJob[] = [];
+  const stub: ReadWorker = { postMessage: (j) => jobs.push(j), onmessage: null, onerror: null,
+                             onmessageerror: null };
+  const told: (Reading | null)[] = [];
+  const reading = new ScenarioReading((r) => told.push(r && { ...r }), () => stub);
+  reading.start(doc, 'shelf');
+  const job = jobs[0];
+  assert.ok(job.kind === 'scenario' && told.at(-1)?.reading);
+  const levels = doc.scenarioLevels(0);
+  const frames: ScenarioFrame[] = [];
+  for (let l = levels.next(); l; l = levels.next()) {
+    frames.push({ id: job.id, scenarios: l.scenarios, picture: typed(l.picture), final: l.final,
+                  levelText: l.levelText });
+  }
+  levels.dispose();
+  assert.deepEqual(frames.map((f) => f.final), [false, false, true]);
+  // a frame of an older job is not heard
+  const heard = told.length;
+  stub.onmessage!({ data: { ...frames[0], id: job.id - 1 } } as MessageEvent<ScenarioFrame>);
+  assert.equal(told.length, heard);
+  for (const f of frames) stub.onmessage!({ data: f } as MessageEvent<ScenarioFrame>);
+  const said = told.slice(heard);
+  assert.deepEqual(said.map((r) => r?.reading), [true, true, false]);
+  assert.ok(said[0]?.levelText && said[1]?.levelText && !said[2]?.levelText,
+            JSON.stringify(said.map((r) => r?.levelText)));
+  assert.ok(said[0]?.picture && said[0].scenarios?.length === 1);
+  assert.deepEqual(said[2]?.scenarios, readScenarios(doc, 'shelf').scenarios);
+  doc.dispose();
 });

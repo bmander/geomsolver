@@ -5,7 +5,9 @@
  * both.  A solid read in three dimensions takes seconds, so the reading is a worker's — its own
  * instance of `mesh-worker`, holding its own copy of the core — which elaborates the page's text,
  * takes the page's parameter values and posts the answers and the picture back.  The page is
- * never held for them.  Where there is no worker (node, a test), the reading is made at once on
+ * never held for them.  The worker reads a level at a time (`Document.scenarioLevels`): its
+ * elements four times their size, then twice, then their own, posting each, so a first answer
+ * and picture come in a fraction of the time and an edit ends the job before the finer levels.  Where there is no worker (node, a test), the reading is made at once on
  * the page's own thread, so a test sees what the page would.
  *
  * A job belongs to one state of the drawing and one choice — its text, where it stands, and the
@@ -50,21 +52,27 @@ export type ScenarioJob = {
   drawn: string;
 } | { kind: 'cancel'; id: number };
 
-/** What the worker hands back: the reading, or why there is none. */
+/** What the worker hands back: a level of the reading — the last `final` — or why there is
+ *  none.  A level before the last says what it is (`levelText`, the core's words). */
 export interface ScenarioFrame {
   id: number;
   scenarios?: Scenario[];
   picture?: Drawn | null;
+  final?: boolean;
+  levelText?: string;
   error?: string;
 }
 
 /** **The reading as the page tells it**: every scenario's answers, the picture of the one drawn
- *  (null for none, or while it is being read), whether a job is still out, and why it failed. */
+ *  (null for none, or while it is being read), whether a job is still out, and why it failed.
+ *  While a finer level is being read, the answers and the picture are a coarser level's, and
+ *  `levelText` says which (`report::Levels`). */
 export interface Reading {
   scenarios: Scenario[] | null;
   picture: Drawn | null;
   drawn: string;
   reading: boolean;
+  levelText?: string;
   error?: string;
 }
 
@@ -89,11 +97,16 @@ export function buffers(p: Drawn | null | undefined): ArrayBuffer[] {
     .map((a) => a.buffer as ArrayBuffer));
 }
 
+/** Scenario `drawn`'s index among the document's (by name, '' for none), −1 for none. */
+export function drawnIndex(doc: Document, drawn: string): number {
+  return drawn ? doc.scenarioNames().findIndex((s) => s.name === drawn) : -1;
+}
+
 /** **Read a document's scenarios and draw scenario `drawn`** (by name, '' for none), where the
- *  document stands: what the worker does, and the page itself with no worker. */
+ *  document stands, at once and at the readers' own size: what the page does with no worker. */
 export function readScenarios(doc: Document, drawn: string)
   : { scenarios: Scenario[]; picture: Drawn | null } {
-  const index = drawn ? doc.scenarioNames().findIndex((s) => s.name === drawn) : -1;
+  const index = drawnIndex(doc, drawn);
   const got = doc.scenariosPictured(index);
   return { scenarios: got.scenarios, picture: index >= 0 ? typed(got.picture) : null };
 }
@@ -183,11 +196,15 @@ export class ScenarioReading {
     this.told(this.state);
   }
 
+  /** A level arrived: its answers and its picture stand — a coarser level's still reading, with
+   *  what it is — until the next; the last ends the job. */
   private receive(f: ScenarioFrame): void {
     if (f.id !== this.job || !this.state) return;
     if (f.error) return this.fail(f.error);
+    const reading = f.final === false;
     this.state = { scenarios: f.scenarios ?? [], picture: f.picture ?? null,
-                   drawn: this.state.drawn, reading: false };
+                   drawn: this.state.drawn, reading,
+                   ...(reading && f.levelText ? { levelText: f.levelText } : {}) };
     this.told(this.state);
   }
 }

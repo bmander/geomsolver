@@ -87,9 +87,12 @@ export function refreshScenarioCard(view: SketchView): void {
       new Option(n.extends ? `${n.name} : ${n.extends}` : n.name, n.name)));
   }
   select.value = view.scenario;
-  const fails = view.scenarios.some((s) =>
-    s.words.length || s.answers.some((a) => a.holds !== true));
-  pick.classList.toggle('failed', fails);
+  // the failing ink is the last level's: a coarser one's answers do not move it
+  if (!view.scenarioReading?.reading) {
+    const fails = view.scenarios.some((s) =>
+      s.words.length || s.answers.some((a) => a.holds !== true));
+    pick.classList.toggle('failed', fails);
+  }
   card.hidden = !view.scenario;
   if (!view.scenario) return;
   // the head: the exaggeration, at the card's factor or the picture's own
@@ -109,7 +112,7 @@ export function refreshScenarioCard(view: SketchView): void {
   const sc = view.scenarios.find((s) => s.name === view.scenario);
   const said: string[] = [];
   if (r?.error) said.push(r.error);
-  else if (r?.reading) said.push('reading the scenario…');
+  else if (r?.reading) said.push(r.levelText ? `${r.levelText}…` : 'reading the scenario…');
   else if (p && !p.bodies.length && !p.words.length) said.push('nothing is read under it');
   else if (p && !moves) said.push('nothing is loaded, so nothing moves');
   const words = [...(p?.words ?? []), ...(sc?.words ?? [])].map(bare);
@@ -129,9 +132,12 @@ export function refreshScenarioCard(view: SketchView): void {
     let note = m.kind === 'load' || m.kind === 'pressure' || m.kind === 'accelerate' ? m.text : '';
     if (m.kind === 'requirement') {
       const a = sc?.answers.find((x) => x.index === m.index);
-      if (a) {
+      if (a && r?.reading && a.holds === null) {
+        note = 'reading…';            // no answer at a coarser level: the finer may have one
+      } else if (a) {
         note = bare(a.text);
         li.classList.add(a.holds === true ? 'kept' : 'refuted');
+        if (r?.reading) li.classList.add('provisional');
       } else if (r?.reading) {
         note = 'reading…';
       }
