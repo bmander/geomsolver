@@ -13,7 +13,7 @@ use components.parts
 use components.disc
 
 // `o` is the crank axis, seen end on, and `ref` the reference the angle is measured from.
-part Crank(o: point, ref: line, theta: Angle) {
+component Crank(o: point, ref: line, theta: Angle) {
   in o.plane {
     // at `theta = 0` the pin stands straight up the reference
     pin := point hint((o.x, o.y + R))

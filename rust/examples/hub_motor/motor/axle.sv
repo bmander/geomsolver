@@ -12,7 +12,7 @@ use motor.dims (axle_half, cable_d, cable_to, d_core, d_end, d_seat, exit_at, ex
                 flats_from, hub_r, key_h, key_l, key_t1, key_w, step_end, step_seat)
 use motor.parts (Datums)
 
-part Axle(f: Datums, to: point) {
+component Axle(f: Datums, to: point) {
   ah := axle_half
   rc := d_core / 2
   rs := d_seat / 2

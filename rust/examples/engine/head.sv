@@ -42,11 +42,11 @@ ybolt := 64mm
 rbolt := 5mm
 
 // A cam bearing cap, edge on or from above: a block `wcamb` long round the journal.
-part CamBearing(c: point) {
+component CamBearing(c: point) {
   cap := engine.parts.Box(c, x0: -wcamb / 2, y0: -(rcamj + camcap), x1: wcamb / 2, y1: rcamj + camcap)
 }
 
-part CylinderHead(cycle: Angle) {
+component CylinderHead(cycle: Angle) {
   // -- along the axis: the section through cylinder 1 -------------------------------------
   in std.side {
     // the casting: its face on the gasket, its sides, its top
@@ -302,7 +302,7 @@ part CylinderHead(cycle: Angle) {
 // end section's cap over the journal from the split line up, bored for the journal.  So `cycle`,
 // cylinder 1's angle in it — the assembly's running `t` — turns every lobe of both views and the
 // solid alike, at half its speed.
-part Camshaft(journal: circle, ref: line, c_s: point, intake: Int, cycle: Angle) {
+component Camshaft(journal: circle, ref: line, c_s: point, intake: Int, cycle: Angle) {
   center := intake * icenter + (1 - intake) * ecenter
   nose := intake * dn_i + (1 - intake) * dn_e    // how far its nose stands out
   lean := (1 - 2 * intake) * va      // the valve axis's lean off the bore's, counter-clockwise
@@ -380,7 +380,7 @@ part Camshaft(journal: circle, ref: line, c_s: point, intake: Int, cycle: Angle)
 // from where the station crosses the crank axis: so it is the end section carried along the axis,
 // its coordinates the end section's own, and the valves stand in it as the end section draws
 // cylinder 1's, by the same numbers.
-part Valves(h: group, cylinder: Int, aft: Int, cycle: Angle) {
+component Valves(h: group, cylinder: Int, aft: Int, cycle: Angle) {
   i := cylinder - 1
   x := front + 25mm + P / 2 + i * P + (2 * aft - 1) * vx
   off := 180deg * (i * (3 - i) / 2) + 360deg * (i - 2 * floor(i / 2))

@@ -19,7 +19,7 @@ use std
 
 a := 30mm
 
-component Pursuit(o: point, t: Scalar) {
+component Pursuit(o: point, away: Length, t: Scalar) {
   hare := point hint((0, 0))
   dog := point hint((0, 30))
   hare level(up) o
@@ -27,13 +27,15 @@ component Pursuit(o: point, t: Scalar) {
   chase := line(dog, hare)
   rate(dog over t) parallel chase            // the dog runs straight at it...
   rate(dog over t) distance(2, along: chase) // ...twice as fast
+  initially {
+    dog level(right) o                       // the home: the dog starts square to the line...
+    o distance(away, along: up) dog          // ...`away` from it
+  }
 }
 
 in std.front {
   o := point
   fix((0mm, 0mm)) o
-  run := Pursuit(o, t: 0)
-  run.dog level(right) o                     // the home: the dog starts square to the line...
-  o distance(a, along: up) run.dog           // ...a away
+  run := Pursuit(o, away: a, t: 0)
 }
 dog := trace(run.dog over t in (0, 25))

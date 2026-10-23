@@ -22,7 +22,7 @@ use hardware (oring_squeeze, oring_groove_w)
 use components.dims (D, L, clr, groove, oring, ph, pinclr, reye, rt, rw)
 use components.parts
 
-part Piston(f: group) {
+component Piston(f: group) {
   pw := D / 2 - clr
   // The selected O-ring and seal proportions determine the groove.
   grooveb := D - 2 * (1 - oring_squeeze) * oring

@@ -38,7 +38,7 @@ rseat := rfw - 16mm             // the ring's bore, and the flywheel's rim it is
 // counterweight rim; the rim an arc about the axis, `hcw` either side of the crank arm.  `crown`
 // and `heel` are where the arm's line crosses the eye and the rim — the throw's extreme points,
 // which the side view reads.
-part Throw(o: point, ax: line, theta: Angle, shape: group) {
+component Throw(o: point, ax: line, theta: Angle, shape: group) {
   pin := point hint((o.x + R * sin(theta), o.y + R * cos(theta)))
   arm := line(o, pin)
   o distance(R) pin
@@ -107,7 +107,7 @@ part Throw(o: point, ax: line, theta: Angle, shape: group) {
 
 // A web seen edge on: a rectangle between `x0` and `x1` along the axis whose top and bottom are
 // the heights of two points the end view placed.
-part WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
+component WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
   a := point hint((o.x + x0, top.y))
   b := point hint((o.x + x1, top.y))
   c := point hint((o.x + x1, bottom.y))
@@ -135,7 +135,7 @@ part WebSide(o: point, x0: Length, x1: Length, top: point, bottom: point) {
 //
 // Seen along the axis it is drawn as a draughtsman draws a gear, by its tip, pitch and root
 // circles, and its bore; edge on, as a band the face width wide with its root lines across it.
-part StarterRing(o: point, arm: line, o_s: point, at: Length) {
+component StarterRing(o: point, arm: line, o_s: point, at: Length) {
   hw := pi * mr / 4             // half the rack tooth's thickness at the pitch line
   ht := hw - hf * tan(alpha)    // … and at its tip
   hb := hw + 2 * mr * tan(alpha)  // … and at its back, two modules out
@@ -250,7 +250,7 @@ part StarterRing(o: point, arm: line, o_s: point, at: Length) {
 // section does, and `theta` the crank's turn — a formal, so the assembly says where it stands, or
 // leaves it to the solve.  Each pin is read by the rod that rides it, in both views at once
 // (`pin1` to `pin4`, cylinder by cylinder).
-part Crankshaft(o: point, ax: line, o_s: point, theta: Angle) {
+component Crankshaft(o: point, ax: line, o_s: point, theta: Angle) {
   // the shaft's own dimensions
   eP := rp + 12mm        // the pin's eye, outside
   rcw := 55mm            // the counterweight rim, clear of the cylinder walls' foot at the top

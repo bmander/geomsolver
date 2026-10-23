@@ -13,7 +13,7 @@ use std (vertical)
 // behind the other here) their teeth the pulley's whole width, each with its tooth roots dashed
 // across it; the tensioner's roller; and the belt, its width from its lowest point, under the
 // crank, to its highest, over the cams.
-part DriveSide(o: point, cam: point) {
+component DriveSide(o: point, cam: point) {
   ri := rcp - pld                // the crank pulley's tips, and a cam pulley's, twice its teeth
   rk := 2 * rcp - pld
   crank_near := engine.parts.Box(o, x0: xp0, y0: -(ri + bt + 2mm), x1: xp0 + wf, y1: ri + bt + 2mm)
@@ -32,7 +32,7 @@ part DriveSide(o: point, cam: point) {
     (beltf := line(b3.p, b0.p)) -> close
 }
 
-part SideSection(o: point) {
+component SideSection(o: point) {
   a0 := engine.parts.At(o, dx: front - 70mm, dy: 0mm)
   a1 := engine.parts.At(o, dx: back + 60mm, dy: 0mm)
   axisline := line(a0.p, a1.p)

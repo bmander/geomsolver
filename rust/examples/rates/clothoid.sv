@@ -13,7 +13,8 @@
 //   - `rate(q over s) distance(10mm * s / A^2, along: nl)`: the tangent's tip turns toward the
 //     normal at κ = s/A², a number over the formal like any dimension's.
 //
-// The drawn instance is the home: the straight ends at `o`, heading along the datum. The bend is
+// Where it starts is given, `start` and `heading`, and held `initially`, at the home alone: the
+// drawn instance starts where the straight ends, at `o`, heading along the datum. The bend is
 // the circle that osculates the transition where it ends, at s = L, so the track's curvature never
 // jumps: its radius is A²/L, claimed below, and its centre on the normal.
 //
@@ -24,7 +25,7 @@ use std
 A := 50mm
 L := 80mm
 
-component Clothoid(A: Length, s: Length) {
+component Clothoid(start: point, heading: line, A: Length, s: Length) {
   p := point
   q := point
   k := point
@@ -36,6 +37,10 @@ component Clothoid(A: Length, s: Length) {
   rate(p over s) parallel tl
   rate(p over s) distance(1, along: tl)                 // unit speed: s is arc length
   rate(q over s) distance(10mm * s / A^2, along: nl)    // the tangent turns at κ = s/A²
+  initially {
+    p coincident start                       // the home: where the straight ends...
+    heading angle(0deg) tl                   // ...heading the way it does
+  }
 }
 
 in std.front {
@@ -44,9 +49,7 @@ in std.front {
   fix((0mm, 0mm)) o
   fix((-40mm, 0mm)) x
   straight := line(x, o)
-  cl := Clothoid(A: A, s: 0mm)
-  cl.p coincident o                          // the home: where the straight ends...
-  straight angle(0deg) cl.tl                 // ...heading the way it does
+  cl := Clothoid(o, straight, A: A, s: 0mm)
   bend := circle hint(r: 30)
   transition curvature(t == L) bend          // the bend osculates the transition's end
   claim radius(A^2 / L) bend

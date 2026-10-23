@@ -5,6 +5,10 @@ use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::words::{self, over_chain, over_walks, set_at, Brackets, BLOCKS, ENERGY_WORDS};
+
+/// `part Name(…) { … }`, retired (#562): every braced definition is held to what `part` promised.
+const PART_RETIRED: &str = "`part` is retired (#562): every definition is held to being a \
+    function of what it is given, so write `component Name(…) { … }`";
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -1636,15 +1640,18 @@ impl<'a> P<'a> {
         Some(Use { name, span: Span::new(lo, self.prev_hi()), names })
     }
 
-    /// Whether `part Name(…) {` stands here (#461, `words::part_at`).
+    /// Whether the retired `part Name(…) {` stands here (#562, `words::part_at`).
     pub(super) fn part_ahead(&self) -> bool {
         words::part_at(&self.t, self.i)
     }
 
     pub(super) fn component(&mut self, next_id: &mut u32) -> Option<Component> {
         let lo = self.here().lo as usize;
-        let part = self.peek_word("part");
-        self.i += 1; // `component`, or `part`
+        // read on as `component` is, so what follows is still checked
+        if self.peek_word("part") {
+            self.fail(PART_RETIRED);
+        }
+        self.i += 1; // `component`, or the retired `part`
         let name = self.ident()?;
         let mut formals = Vec::new();
         if self.eat_p('(') {
@@ -1691,7 +1698,6 @@ impl<'a> P<'a> {
                 module: None,
                 set: Some(set),
                 symmetric,
-                part: false,
             });
         }
         let was = std::mem::replace(&mut self.in_comp, true);
@@ -1707,7 +1713,6 @@ impl<'a> P<'a> {
             module: None,
             set: None,
             symmetric: Vec::new(),
-            part,
         })
     }
 

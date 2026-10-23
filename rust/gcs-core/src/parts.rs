@@ -1,20 +1,23 @@
-//! **Parts** (#461, `docs/parts-plan.md` §3, §6): a component declared `part` is a function of
-//! what it is given, and the elaborator holds it to that.  Each drawn instance is read as the
-//! classifier reads one (`boundary::split`): what it made and the rows its body states, its inputs
-//! — every other column those rows read, an unbound numeric formal among them — held.  Then, over
-//! the structure of those rows alone, as the diagnosis reads a document's (Dulmage–Mendelsohn):
+//! **Parts** (#461, #562, `docs/parts-plan.md` §3, §6): every braced definition is a function of
+//! its arguments and of the frame its instance stands in, and the elaborator holds it to that —
+//! a *part* is any drawn instance of one.  Each is read as the classifier reads one
+//! (`boundary::split`): what it made and the rows its body states, its inputs — every other
+//! column those rows read, the frame it stands in among them — held.  Then, over the structure of
+//! those rows alone, as the diagnosis reads a document's (Dulmage–Mendelsohn):
 //!
 //! * **PT2, its own unknowns are its inputs' to determine.**  A maximum matching of its rows on
 //!   its own unknowns covers every unknown.  One left over is **E108** at the definition, naming
-//!   what it moves: the parent would have to place it by reaching inside, and a part's freedom is
-//!   a formal instead, which the parent binds or leaves unknown (FR2).
+//!   what it moves: the parent would have to place it by reaching inside, and a definition's
+//!   freedom is a formal instead, which the parent binds or leaves unknown (FR2).
 //! * **PT3, no fact about its operands alone.**  A row reading none of its own unknowns, or one
 //!   past what they take (the matching's over-determined rows), is **E109** at the row: a verb
 //!   fused to a noun, which belongs where the operands are given, or in a relation word (FR1).
+//!   A numeric formal the call left unbound was given by nothing, so a row may determine it: it
+//!   is a column here, and one no row reaches is the freedom exported to the parent.
 //!
 //! The structure, and not the numbers: deterministic and decided before any solve.  A claim, a
 //! claim block's witness and a bound state no row and are not counted.  Nothing here changes a
-//! row: a part is flattened and solved as any component is.  Each fault is said once for its
+//! row: a part is flattened and solved as any instance is.  Each fault is said once for its
 //! definition, against the first instance it was found in.
 //!
 //! **The diagnosis, read through the parts** (§6, `read`): what the flat solve's diagnosis says,
@@ -46,7 +49,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// How many of the unknowns left free, or of the rows, a message names before it counts the rest.
 const NAMED: usize = 6;
 
-/// One drawn instance of a part, read: its rows and unknowns set apart from the document.
+/// One drawn instance of a definition, read: its rows and unknowns set apart from the document.
 struct Read<'e> {
     inst: &'e Instanced,
     /// Its own unknowns: what it made, the numbers no entity owns that its rows read, and the free
@@ -56,19 +59,23 @@ struct Read<'e> {
     rows: BTreeSet<u32>,
     /// What else its rows read: what it is given.
     inputs: BTreeSet<u32>,
+    /// Its numeric formals the call left unbound, the free variables under its name that are
+    /// formals of its own: nothing gave them, so its rows may determine them, and a freedom left
+    /// in them is exported to the parent (FR2), not left free.
+    unbound: BTreeSet<u32>,
 }
 
-/// Every drawn instance of a part in `sk`, read, with the reading of the document they share —
-/// or `None` where the program defines no part.
+/// Every drawn instance of a braced definition in `sk`, read, with the reading of the document they
+/// share — or `None` where the program defines none.
 fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Option<(World, Vec<Read<'e>>)> {
     let prog = &e.program;
-    if !prog.components.iter().any(|c| c.part) {
+    if !prog.components.iter().any(|c| c.braced()) {
         return None;
     }
     let world = World::of(sk, &e.map);
     let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();
     let zero = sk.zero;
-    let read = e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].part).map(|inst| {
+    let read = e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].braced()).map(|inst| {
         let comp = &prog.components[inst.comp];
         let s = split(&e.map, sk, &world, inst);
         let rows: BTreeSet<u32> = s.kept.iter().copied()
@@ -77,15 +84,19 @@ fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Option<(World, Vec<Read<'e>>
         let formals: BTreeSet<String> =
             comp.formals.iter().map(|f| format!("{}{}", inst.prefix, f.name.text)).collect();
         let mut own = s.own;
-        own.extend(sk.free_vars.range(inst.prefix.clone()..)
-            .take_while(|(k, _)| k.starts_with(&inst.prefix))
-            .filter(|(k, _)| !formals.contains(*k))
-            .map(|(_, &p)| p));
+        let mut unbound = BTreeSet::new();
+        for (k, &p) in sk.free_vars.range(inst.prefix.clone()..)
+            .take_while(|(k, _)| k.starts_with(&inst.prefix)) {
+            match formals.contains(k) {
+                true => unbound.insert(p),
+                false => own.insert(p),
+            };
+        }
         let inputs = rows.iter().filter_map(|id| by_id.get(id))
             .flat_map(|c| columns(sk, c))
             .filter(|p| !own.contains(p) && Some(*p) != zero)
             .collect();
-        Read { inst, own, rows, inputs }
+        Read { inst, own, rows, inputs, unbound }
     }).collect();
     Some((world, read))
 }
@@ -130,20 +141,30 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
         let word = prog.component_id(inst.comp);
         let at = comp.name.as_ref().map(|n| n.span).unwrap_or(comp.span);
         let instance = inst.prefix.trim_end_matches('.');
-        // its own columns, numbered afresh, and its rows over them alone
-        let cols: Vec<usize> = r.own.iter()
-            .filter_map(|&p| usize::try_from(sys.col_of[p as usize]).ok())
-            .collect::<BTreeSet<usize>>().into_iter().collect();
-        let local: BTreeMap<usize, usize> = cols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
-        let mut adj: Vec<Vec<usize>> = Vec::new();
-        let mut row_c: Vec<u32> = Vec::new();
-        for &id in &r.rows {
-            for &k in rows_of.get(&id).map(Vec::as_slice).unwrap_or(&[]) {
-                adj.push(all[k].iter().filter_map(|c| local.get(c).copied()).collect());
-                row_c.push(id);
+        // its rows over the columns `of` alone, numbered afresh
+        let structure = |of: &BTreeSet<u32>| {
+            let cols: Vec<usize> = of.iter()
+                .filter_map(|&p| usize::try_from(sys.col_of[p as usize]).ok())
+                .collect::<BTreeSet<usize>>().into_iter().collect();
+            let local: BTreeMap<usize, usize> =
+                cols.iter().enumerate().map(|(k, &c)| (c, k)).collect();
+            let mut adj: Vec<Vec<usize>> = Vec::new();
+            let mut row_c: Vec<u32> = Vec::new();
+            for &id in &r.rows {
+                for &k in rows_of.get(&id).map(Vec::as_slice).unwrap_or(&[]) {
+                    adj.push(all[k].iter().filter_map(|c| local.get(c).copied()).collect());
+                    row_c.push(id);
+                }
             }
-        }
+            (cols, adj, row_c)
+        };
+        // PT2 is judged over its own unknowns, and PT3 over those and the formals the call left
+        // unbound, which its rows may determine or leave to the parent
+        let (cols, adj, _) = structure(&r.own);
         let dm = dulmage_mendelsohn(&adj, cols.len());
+        let (wide, adj, row_c) = structure(&r.own.union(&r.unbound).copied().collect());
+        let over: BTreeSet<usize> =
+            dulmage_mendelsohn(&adj, wide.len()).over_rows.into_iter().collect();
 
         // PT2: an own unknown no row reaches, the matching's unmatched columns
         let mut free: Vec<String> = Vec::new();
@@ -158,14 +179,13 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
         }
         if left > 0 && said.insert((inst.comp, "E108", String::new())) {
             out.push(Diag::new(Code::E108, at, None, format!(
-                "part `{word}` leaves {left} of its own unknowns free, moving {} (in \
-                 `{instance}`): a part is a function of what it is given — state what places \
-                 them inside it, or make the freedom a formal the parent binds or leaves unknown",
+                "`{word}` leaves {left} of its own unknowns free, moving {} (in `{instance}`): a \
+                 definition is a function of what it is given — state what places them inside \
+                 it, or make the freedom a formal the parent binds or leaves unknown",
                 listed(free))));
         }
 
         // PT3: a row of no own unknown, or past what they take
-        let over: BTreeSet<usize> = dm.over_rows.iter().copied().collect();
         let mut fused: Vec<u32> = Vec::new();
         for (k, cols) in adj.iter().enumerate() {
             if (cols.is_empty() || over.contains(&k)) && !fused.contains(&row_c[k]) {
@@ -176,15 +196,16 @@ pub fn check(e: &Elaborated) -> Vec<Diag> {
             let Some(c) = sk.constraint(id) else { continue };
             let text = crate::io::describe_with(c, &name_of);
             let site = map.site_of_constraint(id);
-            let message = match columns(sk, c).iter().any(|p| r.own.contains(p)) {
+            let mine = |p: &u32| r.own.contains(p) || r.unbound.contains(p);
+            let message = match columns(sk, c).iter().any(mine) {
                 false => format!(
-                    "part `{word}` states `{text}`, a fact about what it is given and not about \
+                    "`{word}` states `{text}`, a fact about what it is given and not about \
                      anything it makes (in `{instance}`): state it where those are given, or as \
                      a relation word"),
                 true => format!(
-                    "part `{word}` states `{text}` past what its own unknowns take (in \
-                     `{instance}`): a part's rows determine what it makes, and one more says \
-                     something of what it is given"),
+                    "`{word}` states `{text}` past what its own unknowns take (in `{instance}`): \
+                     a definition's rows determine what it makes, and one more says something of \
+                     what it is given"),
             };
             if said.insert((inst.comp, "E109", text)) {
                 out.push(Diag::new(Code::E109, site.map_or(at, |s| s.span), site.map(|s| s.stmt),
@@ -357,20 +378,20 @@ pub fn json(r: &Reading) -> Json {
 /// asked of a solved sketch, and only by `--lint`: a search is a heuristic and costs probe solves.
 pub fn roots(e: &Elaborated, solved: &Sketch) -> Vec<Diag> {
     let prog = &e.program;
-    if !prog.components.iter().any(|c| c.part) {
+    if !prog.components.iter().any(|c| c.braced()) {
         return Vec::new();
     }
     let mut out = Vec::new();
     for c in crate::boundary::classify(e, solved) {
         let comp = &prog.components[c.comp];
-        if !comp.part || c.class != crate::boundary::Class::LocallyDetermined {
+        if !comp.braced() || c.class != crate::boundary::Class::LocallyDetermined {
             continue;
         }
         let Some(a) = &c.analysis else { continue };
         let Some(r) = &a.roots else { continue };
         let at = comp.name.as_ref().map(|n| n.span).unwrap_or(comp.span);
         out.push(Diag::new(Code::W207, at, None, format!(
-            "part `{}` leaves which root it takes to its seeds: from {} scattered starts its rows \
+            "`{}` leaves which root it takes to its seeds: from {} scattered starts its rows \
              came to {} poses its stated choices admit (in `{}`) — state the one it means, with \
              `ccw`/`cw`, a `sense:` or a bound", c.name, r.starts, r.admitted, a.instance)));
     }

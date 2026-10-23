@@ -18,7 +18,7 @@ use motor.dims (brg_in, brg_od, brg_w, clear4, disc_bcd, disc_bolts, disc_depth,
                 half, lip, lip_r, pocket_in, Ro, Rr, spigot, spigot_r, spoke_d, spoke_r, tap5, web)
 use motor.parts (Datums)
 
-part Cover(f: Datums, screws: group, sg: Scalar, boss_to: Length, boss_r: Length,
+component Cover(f: Datums, screws: group, sg: Scalar, boss_to: Length, boss_r: Length,
            spoke_phase: Angle, disc: Int) {
   lip_in := brg_in + brg_w
   lip_out := lip_in + lip

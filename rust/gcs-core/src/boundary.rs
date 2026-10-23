@@ -279,6 +279,31 @@ impl World {
                 with.entry(e).or_default().extend(sk.own_params(axis));
             }
         }
+        // and a curve's points no name reaches (an arc's centre and ends, minted with it) are
+        // the curve's, with their hidden points: a row over them is about what made the curve
+        let unsited = |r: &EntRef| r.kind == EntKind::Point && !map.of_entity.contains_key(r);
+        let lift_of: BTreeMap<u32, [u32; 3]> = sk.lifts.iter().map(|l| (l.point, l.x)).collect();
+        let mut curve_of: BTreeMap<EntRef, EntRef> = BTreeMap::new();
+        for &e in map.of_entity.keys()
+            .filter(|e| matches!(e.kind, EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline)) {
+            for k in sk.children(e).into_iter().filter(unsited) {
+                let ps = with.entry(e).or_default();
+                ps.extend(sk.own_params(k));
+                ps.extend(lift_of.get(&k.idx).into_iter().flatten());
+                curve_of.entry(k).or_insert(e);
+            }
+        }
+        // and so is the plane an arc in space is drawn in, standing at its centre (`arcs_in_space`)
+        for (i, f) in sk.frames.iter().enumerate() {
+            let Some(c) = &f.chart else { continue };
+            let Some(&e) = curve_of.get(&EntRef::point(c.origin as usize))
+                .filter(|_| !map.of_entity.contains_key(&EntRef::frame(i))) else { continue };
+            let ps = with.entry(e).or_default();
+            ps.extend(sk.own_params(EntRef::frame(i)));
+            for a in [Some(c.u), Some(c.v), c.normal].into_iter().flatten() {
+                ps.extend(sk.own_params(EntRef::new(EntKind::Axis, a as usize)));
+            }
+        }
         for l in &sk.lifts {
             let pt = EntRef::point(l.point as usize);
             if map.of_entity.contains_key(&pt) {
@@ -369,15 +394,22 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
                 continue;
             }
             let cols = columns(sk, c);
+            // a row placing one thing is the instance's when that thing is — what it made, or the
+            // point a plane it made stands at — whatever else it reads: a point's lift reads the
+            // plane it is drawn in, a twin's tie the plane it is held on, a plane's axis the line it
+            // is built along.  So the rows that tie what it made to the frame it stands in are its
+            // own, that frame's placement an input, and the lift of a point another draws in a
+            // plane it made, or a plane another stands at its origin, are not
+            let placed = |e: &EntRef| made.contains(e) || origins.contains(e);
             // an arc's, an axis's or a plane's own rows (its ends at its radius, a unit
             // direction, a plane through its axes) are what it made, whatever else they read: an
-            // arc about an operand's centre places its ends from it (#461); and so is a point's
-            // lift, which reads the plane it is drawn in
-            let lift = matches!(c.kind, CKind::Lift | CKind::ChartLift);
-            let own_row = c.intrinsic && c.entities().iter()
-                .any(|e| (lift || e.kind != EntKind::Point) && made.contains(e)
-                    || origins.contains(e));
-            let ours = inside(c.id) || map.site_of_constraint(c.id).is_none() && (
+            // arc about an operand's centre places its ends from it (#461)
+            let own_row = c.intrinsic && match subject(c) {
+                Some(e) => placed(&e),
+                None => c.entities().iter().any(|e| e.kind != EntKind::Point && placed(e)),
+            };
+            let theirs = c.intrinsic && subject(c).is_some_and(|e| !placed(&e));
+            let ours = inside(c.id) || map.site_of_constraint(c.id).is_none() && !theirs && (
                 own_row
                 || cols.iter().any(|p| aux.contains(p))
                 || cols.iter().any(|p| mine.contains(p))
@@ -394,6 +426,19 @@ pub(crate) fn split(map: &SourceMap, sk: &Sketch, world: &World, inst: &Instance
     }
     let own: BTreeSet<u32> = mine.union(&aux).copied().collect();
     Split { made, own, kept }
+}
+
+/// What an intrinsic row places, where it reads more than that: a lift's point (not the plane it
+/// is drawn in), the origin a plane stands at (not the point it stands on), the axis held through
+/// a point or along a line, a twin held on a plane or folded onto its point.  `None` for a row whose every entity is
+/// what it places.
+fn subject(c: &Constraint) -> Option<EntRef> {
+    match c.kind {
+        CKind::Lift | CKind::ChartLift | CKind::Coincident3 | CKind::Parallel3
+        | CKind::PointOnPlane | CKind::Project | CKind::ProjectSolved => Some(c.args[0].ent()),
+        CKind::PointOnAxis => Some(c.args[1].ent()),
+        _ => None,
+    }
 }
 
 /// One instance, read: its rows and unknowns set apart from the document, ranked at its inputs

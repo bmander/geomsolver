@@ -19,7 +19,7 @@ use components.parts
 
 // f is the disc's own frame: origin on the crank axis, u toward the pin.  The disc is drawn in it,
 // so every number below is the part's own and the frame is all that turns.
-part Disc(f: group) {
+component Disc(f: group) {
   pinpocketd := pinhead + 0.5mm   // diametral clearance around the clevis head
   in f.axes {
     // the clevis pin's centre, the throw `R` along the arm

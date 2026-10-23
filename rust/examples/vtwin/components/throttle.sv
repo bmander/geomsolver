@@ -10,7 +10,7 @@ use components.parts
 
 // `c` is the barrel's centre, seen end on, and `ref` the line the lever's angle `phi` is measured
 // from: drawn in the plane `c` is drawn in, and sectioned along the plane through `c` square to it.
-part Throttle(c: point, ref: line, phi: Angle) {
+component Throttle(c: point, ref: line, phi: Angle) {
   lever_axes := std.Turned(c, tip) in c.plane
   hole_axes := std.Turned(c, cx) in c.plane
   dhole := wch   // the cross-hole matches the manifold passage

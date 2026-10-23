@@ -11,7 +11,7 @@ use std (above, below, left_of, offset, right_of)
 // stated as both circles on the run's other side, which is the outer tangent there — neither a
 // crossed one nor the run of no length where overlapping circles meet; the seeds are the two
 // contact points at the bearing square to the line of centres.
-part Span(k1: circle, k2: circle, side: Scalar) {
+component Span(k1: circle, k2: circle, side: Scalar) {
   a := point hint(at: k1, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
   b := point hint(at: k2, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
   s := line(a, b)
@@ -67,7 +67,7 @@ deep := ph + 2mm        // …and under its foot
 // thrust faces stand to each side and the relief's edge runs across between them; 0 across it
 // (the side view), where the relief takes the skirt's two corners.  What the outline hides — the
 // dish, the hollow, the bosses and the pin — is `hidden`, which the sheet draws dashed.
-part Piston(small: point, pin: Int) {
+component Piston(small: point, pin: Int) {
   // where the skirt's foot is drawn: the corner `r2` off the axis, `d1` under the crown, and the
   // foot across between the two corners at `d2`
   d1 := rl + pin * (ph - rl)
@@ -195,7 +195,7 @@ part Piston(small: point, pin: Int) {
 // below it — each seen down to the foot it ends at (`end_on` as the piston's `pin`).  Seen across
 // the pin, the bosses each side of the small end and the gudgeon pin in them, the pin's bore
 // along it; seen along it, a boss's square end.  The sheet draws all of it dashed.
-part Inside(small: point, end_on: Int) {
+component Inside(small: point, end_on: Int) {
   d1 := rl + end_on * (ph - rl)
   in small.plane {
     // the dish: a shallow sphere through its rim, `dd` deep on the axis, in two halves meeting
@@ -252,13 +252,13 @@ part Inside(small: point, end_on: Int) {
 
 // A point placed from `o` by two ordinates — the corner of an outline, a centre on a pitch.
 // One statement where a point and its two runs were three.
-part At(o: point, dx: Length, dy: Length) {
+component At(o: point, dx: Length, dy: Length) {
   p := point hint((o.x + dx, o.y + dy))
   p offset(dx: dx, dy: dy) o
 }
 
 // An axis-aligned rectangle about a point: `a` is its lower-left corner offset from `o`.
-part Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
+component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   a := point hint((o.x + x0, o.y + y0))
   b := point hint((o.x + x1, o.y + y0))
   c := point hint((o.x + x1, o.y + y1))

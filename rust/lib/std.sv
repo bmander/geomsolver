@@ -675,8 +675,9 @@ component Frenet(g: path, s: Scalar) {
   c := point
   g curvature(at: m) c
   nl := line(m, c)
-  n := plane(u: nl, v: hint(dir: tl, turn: -90deg, about: nl))
+  n := plane(u: hint(dir: nl), v: hint(dir: tl, turn: -90deg, about: nl))
   n.origin coincident m
+  n.u parallel(sense: same) nl
   n.v perpendicular tl
   n.v perpendicular n.u
 }
@@ -936,15 +937,16 @@ component Slide(f: frame, along: line, advance: Length) {
   fix(ratio == 0, advance == advance) f
 }
 
-// `a` and `b` roll on one another at `at` without slipping along the direction `along` (#383):
-// the point of `a`'s frame there, seen from `b`'s, does not move along it — the rate of the point
-// `a` carries, seen from `b`, at roll 0, nothing along it.  A joint's ratio left out is found so:
-// two gears' pitch circles rolling at their pitch point turn at the ratio of their radii, and a
-// ratio stated places the pitch point.  For two shafts parallel, or meeting, and `at` on the line
-// of centres the rate has no other part, so one direction, the circles' common tangent there, says
-// it all.
-component Rolls(at: point, a: frame, b: frame, along: axis) {
-  private moved := point
+// `a rolls(at: p, along: d) b`: frames `a` and `b` roll on one another at `p` without slipping
+// along the direction `d` (#383): the point of `a`'s frame there, seen from `b`'s, does not move
+// along it — the rate of the point `a` carries, seen from `b`, at roll 0, nothing along it.  A
+// joint's ratio left out is found so: two gears' pitch circles rolling at their pitch point turn
+// at the ratio of their radii, and a ratio stated places the pitch point.  For two shafts
+// parallel, or meeting, and `p` on the line of centres the rate has no other part, so one
+// direction, the circles' common tangent there, says it all.  A fact about the two frames, so a
+// word and not a definition: it makes nothing a drawing reads.
+a rolls(at, along) b := {
+  moved := point
   moved coincident(under: a, seen_from: b, t == 0deg) at
   rate(moved over t) distance(0mm, along: along)
 }

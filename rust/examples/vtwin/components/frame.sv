@@ -11,7 +11,7 @@ use components.throttle
 
 // Both banks use the same port timing, rotated: intake counter-clockwise of the bank,
 // exhaust clockwise, for a clockwise crank. The frame names both pivots, `pivots.r` and `pivots.l`.
-part FrameBank(o: point, ref: line, alpha: Angle) {
+component FrameBank(o: point, ref: line, alpha: Angle) {
   port_bearing := atan2(a * sin(beta), H + a * cos(beta))
   piv := point hint((o.x + H * sin(alpha), o.y + H * cos(alpha)))
   ax := line(o, piv)
@@ -48,7 +48,7 @@ part FrameBank(o: point, ref: line, alpha: Angle) {
 }
 
 // Plate outline, foot, and crankshaft bearing support. Depth zero is the plate's mid-plane.
-part FrameBlank(o: point) {
+component FrameBlank(o: point) {
   zf := tp / 2
   zb := -tp / 2
   zbb := zb - boss
@@ -86,7 +86,7 @@ part FrameBlank(o: point) {
 
 // A radial feed from the inset plenum to an intake port. The datum points from
 // the crank axis to the port; the feed overlaps both cavities at its ends.
-part IntakePassage(f: group) {
+component IntakePassage(f: group) {
   ax := line(f.u.p1, f.u.p2)
   a := point hint(at: f.axes, (rman, -wch / 2))
   b := point hint(at: f.axes, (rpl, -wch / 2))
@@ -111,7 +111,7 @@ part IntakePassage(f: group) {
 }
 
 // Inset plenum and radial intake feeds; rman leaves a wall beside the exhaust ports.
-part IntakeManifold(o: point, right: line, left: line) {
+component IntakeManifold(o: point, right: line, left: line) {
   kin := (rman - wch / 2) / rpl
   kout := (rman + wch / 2) / rpl
   intake_r := std.Turned(o, right.p2)
@@ -142,7 +142,7 @@ part IntakeManifold(o: point, right: line, left: line) {
 }
 
 // A square exhaust passage from a port to its nearest plate edge.
-part ExhaustPassage(opening: point, boundary: line) {
+component ExhaustPassage(opening: point, boundary: line) {
   outlet := point hint(((boundary.p1.x + boundary.p2.x) / 2, opening.y))
   outlet coincident boundary
   opening horizontal outlet
@@ -155,7 +155,7 @@ part ExhaustPassage(opening: point, boundary: line) {
 }
 
 // Inlet boss, coupling, plug outline, and the passage through the throttle bore.
-part FrameInlet(o: point) {
+component FrameInlet(o: point) {
   barbore := 2 * rbar + 0.2mm   // diametral running clearance
   coupling_base := bossh - cplin
   coupling_top := coupling_base + cpll
@@ -190,7 +190,7 @@ part FrameInlet(o: point) {
 }
 
 // One mid-plane section supplies all solids. The part sheet chooses the projections.
-part Frame(o: point, ref: line) {
+component Frame(o: point, ref: line) {
   zf := tp / 2
   zb := -tp / 2
   zch0 := -wch / 2

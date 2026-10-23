@@ -11,7 +11,7 @@ use motor.dims (d_core, hub_half, key_t2, key_w, L, Rb, web_half, window_d, wind
 use motor.parts (Datums)
 use motor.axle
 
-part Carrier(f: Datums, exit: solid) {
+component Carrier(f: Datums, exit: solid) {
   hh := hub_half
   wh := web_half
   rl := L / 2

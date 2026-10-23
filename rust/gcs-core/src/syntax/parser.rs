@@ -339,7 +339,6 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         module: None,
         set: None,
         symmetric: Vec::new(),
-        part: false,
     });
     let errs = std::mem::take(&mut st.errs);
     (p, errs)

@@ -181,11 +181,12 @@ impl Walk<'_> {
                 held(&mut body, name, local(&src(k)));
             }
         } else if let [Part::Edge { kind: EntKind::Circle, .. }] = parts.as_slice() {
-            // a circle about its centre's image, its radius scaled (`CKind::MappedCircle`)
+            // a circle about its centre's image, its radius scaled (`CKind::MappedCircle`), which
+            // carries the centre too: held by a row of its own as well, it would be said twice
             let name = named(0);
             let k = name.key().text.clone();
             let c = format!("{sec}#c0");
-            held(&mut body, key(&c), local(&format!("{}.center", src(0))));
+            body.push(stmt(StmtKind::Decl(point(key(&c), &local(&format!("{}.center", src(0)))))));
             body.push(stmt(StmtKind::Decl(round(EntKind::Circle, name, &[&c]))));
             body.push(stmt(StmtKind::Relation(carried(local(&k), local(&src(0))))));
             loop_kids.push(Kid::Ref(local(&k)));

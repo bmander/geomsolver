@@ -15,7 +15,7 @@ use components.parts
 
 // f is the flywheel's own frame: origin on the shaft, u along the set screw's reference.  The
 // flywheel is drawn in it, so every number below is the part's own.
-part Flywheel(f: group) {
+component Flywheel(f: group) {
   in f.axes {
     rim := circle(center: f.axes.origin) hint(r: rfw)
     radius(rfw) rim

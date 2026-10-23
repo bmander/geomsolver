@@ -26,7 +26,7 @@ use components.piston
 // `pin` is the crank pin and `piv` the pivot the cylinder rocks on; `z` is where the bank's rod
 // rides along the pin, its mid-plane off the plate's face.  The cylinder's bore is centred on it,
 // so its plate-side wall is what is left: a rod thicker on the bank whose rod rides outboard.
-part Bank(pin: point, piv: point, z: Length) {
+component Bank(pin: point, piv: point, z: Length) {
   in pin.plane {
     // Start on the branch extending from the pin through the pivot.
     crown := point hint(x: pin.x + L * cos(atan2(piv.y - pin.y, piv.x - pin.x)),

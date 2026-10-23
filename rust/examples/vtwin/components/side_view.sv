@@ -24,7 +24,7 @@ interface Span { top: point, bottom: point, bore_top: point, bore_bottom: point 
 // `o` is the crank axis, edge on; `crank_pin` and `pivot` the crank pin and a cylinder's pivot in
 // the view along the axis, and `near` and `far` the two cylinders there, bank B's nearest.  It is
 // drawn in the plane `o` is drawn in.
-part SideView(o: point, crank_pin: point, pivot: point, near: Span, far: Span) {
+component SideView(o: point, crank_pin: point, pivot: point, near: Span, far: Span) {
   tcylA := fwA + D + wall
   tcylB := fwB + D + wall
   mid := tp / 2

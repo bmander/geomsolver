@@ -50,14 +50,14 @@ zplug := deck - 60mm
 
 // A main bearing edge on, at the axis point `jc`: the shell above and below the journal, the
 // bulkhead rising from the shell to the cylinder walls, the cap hung below it.
-part MainBearingSide(jc: point) {
+component MainBearingSide(jc: point) {
   upper := engine.parts.Box(jc, x0: -wmb / 2, y0: rj, x1: wmb / 2, y1: rmb)
   lower := engine.parts.Box(jc, x0: -wmb / 2, y0: -rmb, x1: wmb / 2, y1: -rj)
   web := engine.parts.Box(jc, x0: -bulk / 2, y0: rmb, x1: bulk / 2, y1: deck - wall)
   cap := engine.parts.Box(jc, x0: -wmb / 2, y0: -(rmb + capd), x1: wmb / 2, y1: -rmb)
 }
 
-part EngineBlock() {
+component EngineBlock() {
   // -- along the axis: the section through cylinder 1 -------------------------------------
   in std.side {
     // the bore's walls, `wall` deep below the deck

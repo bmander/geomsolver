@@ -28,7 +28,7 @@ interface Datums {
 // A rectangle by its corners' ordinates from `o`, in the view it is drawn in: in the section, a
 // run along the axle (`x0` to `x1`) and a band of radius (`y0` to `y1`) — a turned part's
 // stations and diameters, which is how it is dimensioned.
-part Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
+component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   a := point
   b := point
   c := point
@@ -43,14 +43,14 @@ part Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
 
 // A point placed by its two ordinates from `o`: in the section, its station along the axle and
 // its radius — one shoulder of a turned profile.
-part At(o: point, dx: Length, dy: Length) {
+component At(o: point, dx: Length, dy: Length) {
   p := point
   p offset(dx: dx, dy: dy) o
 }
 
 // A plain ring turned about the axle: a bearing, a spacer, a locknut.
 // Drawn in the section, `s0` to `s1` along the axle and `r0` to `r1` from it.
-part Revolved(f: Datums, s0: Length, s1: Length, r0: Length, r1: Length) {
+component Revolved(f: Datums, s0: Length, s1: Length, r0: Length, r1: Length) {
   in f.so.plane {
     sec := Box(f.so, x0: s0, y0: r0, x1: s1, y1: r1)
   }
@@ -59,7 +59,7 @@ part Revolved(f: Datums, s0: Length, s1: Length, r0: Length, r1: Length) {
 
 // A circle of `n` holes of diameter `d` on radius `r` about the end view's centre, the first at
 // `phase` from the datum: drawn once and turned (`ring`), so a pattern is one hole solved for.
-part HoleCircle(f: Datums, n: Int, r: Length, d: Length, phase: Angle) {
+component HoleCircle(f: Datums, n: Int, r: Length, d: Length, phase: Angle) {
   in f.o.plane {
     ring n about f.o {
       c := point

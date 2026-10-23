@@ -10,7 +10,7 @@
 // piston, three on the throttle, #8-32 set screws in trapped nuts on the disc and the flywheel.
 //
 // The dimension table is `components.dims`, whose numbers each part reads as constants of its own
-// definition.  Each part is a `part`, a function of what it is mated to, with its own three
+// definition.  Each part is a definition, a function of what it is mated to, with its own three
 // views (`components.cylinder`, `components.piston`, `components.disc`, `components.flywheel`, `components.throttle`,
 // and the plate, `components.frame`): this sheet draws the plate in all of them, since it stands
 // still, and the moving parts in the plane of swing only; each part's own sheet

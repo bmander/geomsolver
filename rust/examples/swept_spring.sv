@@ -16,7 +16,8 @@ component Sphere(center: point, r: Length) {
   private bottom := point hint((center.x, center.y - r))
   private top := point hint((center.x, center.y + r))
   private diameter := line(bottom, top)
-  center midpoint diameter
+  // on the diameter, and the arc's ends both `r` from it: so its middle, said once
+  center coincident diameter
   vertical diameter
   private meridian := arc(center: center, start: bottom, end: top) hint(r: r)
   radius(r) meridian

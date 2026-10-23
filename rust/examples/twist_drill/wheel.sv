@@ -26,7 +26,8 @@ component GrindingWheel(side: plane, setting: Angle, wheel: group) {
   }
   private out := axis hint(dir: (-1, 0, 0))
   out perpendicular side
-  section := plane(u: hinge, v: out)
+  section := plane(u: hint(dir: hinge), v: out)
+  hinge parallel(sense: same) section.u
   side.origin coincident section.origin
 
   in section {
