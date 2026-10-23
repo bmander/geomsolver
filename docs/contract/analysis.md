@@ -971,7 +971,9 @@ scenario drawn, unless a rule names another.
   already in hand — supports, a body's boundary, the pairs a solve returned, a row's value and
   gradient — and none off a mesh: the motions supports leave free, unbounded stress at an edge, a
   degenerate modal pair, and a requirement out of reach. A word is a report, never a row: it
-  changes no solve and no count.
+  changes no count and no answer. One word ends work early: a requirement out of reach where a
+  solve stopped is not retried and not searched for a conflict (below), since neither could meet
+  it.
 
 - **A rigid-body motion is named from the supports, never from a factor** (`analysis::freedoms`).
   P1's Cholesky refuses only a pivot lost to rounding and P5's interior a least pivot under
@@ -1030,12 +1032,37 @@ scenario drawn, unless a rule names another.
   interior's row). A row that holds to what the solver accepts (`SolveOpts::acceptance_tol`, at the
   size of the larger of its value and what it states) is `Reached`. One that does not
   is `Held` where no column it reads is free. It is `Extreme` where its change over the free
-  columns, each moved by its own scale, is below `STATIONARY` (1e-6) of its value. A solve that
-  stopped there stopped at the extreme of what the row can be, short of what it states: the least
-  it reaches where it states less, else the most. Otherwise it `Moves`, and there is no verdict.
+  columns, each moved by its own scale, is below `STATIONARY` (1e-3) of its gap to what it
+  states: closing the gap along its rate would move them across a thousand times their scale. A
+  solve that stopped there stopped at the extreme of what the row can be, short of what it states:
+  the least it reaches where it states less, else the most. Otherwise it `Moves`, and there is no
+  verdict. Against the gap and not the value: a solve reaches an extreme only to within its step
+  (the drilled plate's hole driven toward nothing stops 0.08mm short, its row's rate a millionth of
+  its value), while a row a hair from what it states may move slowly and still reach it.
   The interior moves a coordinate by the structure's extent and an area by itself. Driving two
   bars' rise to half their least sink, a damped Newton stops at `h = √2 w`, and the verdict is
   the closed form's `3√3 P w / (4EA)` (`a_requirement_out_of_reach_says_so`).
+
+- **A requirement out of reach is the verdict on a failed solve** (`System::out_of_reach`,
+  `System::reach`). A driven deflection (`CKind::Deflection`) that does not hold where a solve
+  stopped is read by `interior::reach_of` — its output, what it states and the rate the solve
+  steps on — over the parameters it reads that the solve moves, each across the drawing's extent
+  in its own units (`Param::scale`). Where at least one fails and every one that fails is `Held`
+  or `Extreme`, the failure is the requirement's: any other row that does not hold is what the
+  pull toward it made (a hole's radius driven toward nothing reads its circle's row over a size
+  that went with it). The solve then runs none of its `RETRIES` (each starts again from the same
+  seeds toward the same extreme, every step an analysis factored), and the diagnosis — where the
+  drawing stands, or where its scratch solve stopped when that is no stationary point, as on a
+  page that puts a failed solve's pose back — files the rows as the conflict
+  (`Diagnosis::out_of_reach`, each with `Reach::text`; report `outOfReach`, `[id, words]`) and
+  searches for no other. The summary says `CONFLICT — a requirement out of reach of what drives
+  it: change what it states, or what drives it`, `solventc` prints each row with its words in
+  place of a `conflict:` line, and the page's banner says them. The drilled plate loaded ten
+  times over is the gate (`a_requirement_out_of_reach_is_the_verdict`): its least, with the hole
+  driven toward nothing, within 0.5% of the plain plate's sink, and the same verdict at both
+  poses; on the page it is answered in a few seconds where the cascade and the search took half a
+  minute. A hole driven *larger* than its mesh, made where it was compiled, can follow is not
+  out of reach — its row cannot be read past where the mesh folds, and it is still searched.
 
 - **A scenario's words, at the solved drawing** (`analysis::scenario_words`). Its supports'
   points come from what each names: a point; a line's ends; a solid's box (a solid spans space);
@@ -1052,7 +1079,8 @@ scenario drawn, unless a rule names another.
   document still exits 0.
 
 - **What P7 leaves to later stages.** No word yet reads an analysis's own results: the degenerate
-  pair and the out-of-reach verdict are said of pairs and rows a caller hands them, and a frame's
+  pair is said of pairs a caller hands it, the out-of-reach verdict of rows a caller hands it and
+  of a failed solve's driven deflections (above), and a frame's
   modes are S0's, but no repeated pair of theirs is named yet, and no scenario compiles a
   driving row until S1. The ring a pair is the ring's is
   given as a map of the freedoms; reading it off a drawing's `ring` is the modal stage's. The

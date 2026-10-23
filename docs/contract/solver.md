@@ -99,7 +99,12 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   supernodes consecutive) and factors `PAPᵀ = LLᵀ` left-looking, a dense panel per supernode.
   `analyse` reads the pattern only and `factor` the values, gathered by position into the
   panels, so a mesh moved within a solve refactors without its
-  analysis.  A pivot within the rounding of its own computation (`r_j·ε·a_jj`, `r_j` row j's
+  analysis.  A kernel keeps nothing between calls, so `cholesky::assembled` remembers it: the
+  last `KNOWN` (4) patterns a thread assembled — how its triplets are summed (`Summed`: the
+  sort's order, each triplet's entry) and their analysis — reused for the next assembly whose
+  triplets come at the same places in the same sequence, every one checked.  `from_triplets` sums
+  in that same recorded order, so a remembered analysis changes no bit: the drilled plate reads
+  the same safety, to the last figure, at under half the time an evaluation.  A pivot within the rounding of its own computation (`r_j·ε·a_jj`, `r_j` row j's
   count in L: Cholesky's backward error) or not positive is `NotPositive`, naming the column of
   A.  That is all the factor promises: a free body's rigid-body modes fall under it in AMD's
   order, but in a band order they can round just above it while a slender supported body's
@@ -147,7 +152,11 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   `System::stationary` tells apart two non-solutions: at a stationary point the residual is what
   the constraints cannot agree on (a conflict); elsewhere the solver merely stopped, the
   diagnosis solves a scratch copy, and a consistent drawing is `State::Unsolved` — no conflict
-  set, no culprits, the unsatisfied rows listed.
+  set, no culprits, the unsatisfied rows listed.  Before either, a failed drawing whose failing
+  driven deflections are all out of reach of what drives them (`System::out_of_reach`, at the
+  pose or where the scratch solve stopped) is a conflict of those rows, said with why
+  (`Diagnosis::out_of_reach`), and no conflict search runs; a solve whose first attempt stops so
+  runs none of its `RETRIES` (`analysis.md`, a requirement out of reach).
 - Its Jacobian twin: rank and null space are judged on `System::conditioned` — hard rows over
   `extent^(degree−1)`, columns in world length — against one absolute, dimensionless
   `system::RANK_TOL`.  Never a raw `J`, never relative to `σ₀` (the largest row may be in another

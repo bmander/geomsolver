@@ -256,8 +256,8 @@ impl Structure {
             let mut t = Vec::new();
             self.tris_into(&eq, true, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
             self.tets_into(&eq, true, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
-            let k = crate::cholesky::Symmetric::from_triplets(n_eq, &t);
-            let mut c = crate::cholesky::Cholesky::analyse(&k, crate::cholesky::Ordering::Amd);
+            // its pattern's analysis remembered between evaluations: the mesh's topology is fixed
+            let (k, mut c) = crate::cholesky::assembled(n_eq, &t, crate::cholesky::Ordering::Amd);
             c.factor(&k).map_err(|_| Failure::Free)?;
             c.solve(&mut rhs);
             if rhs.iter().any(|v| !v.is_finite()) {
@@ -1686,9 +1686,13 @@ impl Structure {
 /// A structure with no displacement to give (`Failure`), and constants that are no structure,
 /// read NaN, which the step rejects.
 pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
-    Kernel { name: "interior", n_res: 1, n_par, n_const, degree: 1, res, jac, const_jac: None,
+    Kernel { name: NAME, n_res: 1, n_par, n_const, degree: 1, res, jac, const_jac: None,
              form: None }
 }
+
+/// The kernel's name: what a compiled system knows a driven deflection's block by
+/// (`System::reach`), since the row (`CKind::Deflection`) and the kernel are one.
+pub const NAME: &str = "interior";
 
 /// Whether a row carries the unknown's column: one more than the columns its head says its
 /// structure reads — the nodes' coordinates, the bars' areas, then the sections or the unknowns
@@ -1816,4 +1820,19 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
             row[cols] = -read.stated[0];
         }
     }
+}
+
+/// **Whether one row is out of reach where its columns `v` stand** (#510 P7): its output and
+/// what it states there, and its rate in its columns — the rate the solve steps on (`jac`) —
+/// judged by `analysis::reach` over the columns `free` says the solve moves, each moved by its
+/// `scale`.  `None` where the row cannot be read or its structure solved there.
+pub fn reach_of(v: &[f64], k: &[f64], free: &[bool], scale: &[f64]) -> Option<Reach> {
+    let read = Row::read(v, k)?;
+    let st = read.s.solve(&read.x).ok()?;
+    let mut g = vec![0.0; v.len()];
+    jac(1, v, k, &mut g);
+    if !g.iter().all(|g| g.is_finite()) {
+        return None;
+    }
+    Some(analysis::reach(read.s.output(&st), read.target(v), &g, scale, free))
 }

@@ -22,7 +22,7 @@
 //! plane node along the plane's two axes.
 
 use crate::kernels::{Dual, Num};
-use crate::cholesky::{Cholesky, Ordering, Symmetric};
+use crate::cholesky::{assembled, Cholesky, Ordering};
 
 /// A side of the region, as the row's columns read it: each point by the column of its x (its y
 /// the next), a radius by its column.
@@ -213,8 +213,7 @@ impl Moved {
                 }
             }
         }
-        let l = Symmetric::from_triplets(m, &t);
-        let mut factor = Cholesky::analyse(&l, Ordering::Amd);
+        let (l, mut factor) = assembled(m, &t, Ordering::Amd);
         factor.factor(&l).ok()?;
         for (c, r) in rhs.iter_mut().enumerate() {
             factor.solve(r);

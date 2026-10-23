@@ -541,7 +541,12 @@ impl System {
         };
         // the pose `self`'s x was last evaluated at is `z`'s, until a retry that is not kept
         let mut in_step = true;
-        if opts.retry && dogleg {
+        // a requirement out of reach where the attempt stopped (#510 P7) is not the path's
+        // doing: every retry starts again from `z0` toward the same extreme, each step of it an
+        // analysis factored again, and the drawing still fails
+        if opts.retry && dogleg
+            && (res.success || self.out_of_reach(sk, &z, opts.acceptance_tol).is_none())
+        {
             for retry in RETRIES {
                 if !self.wants(retry, &res, &opts) {
                     continue;

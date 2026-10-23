@@ -11,6 +11,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::constraints::Constraint;
+use crate::diagnose::analysis::Reach;
 use crate::kernels::{self, Kernel, KernelKey};
 use crate::linalg::{rank_and_nullspace_with, rrqr_with, Mat, RankNull, Tol};
 use crate::model::{EntKind, EntRef, Sketch};
@@ -1322,6 +1323,67 @@ impl System {
             }
         }
         out
+    }
+
+    /// Whether row `row` is a driven deflection's (`CKind::Deflection`): the interior's kernel
+    /// (`interior::NAME`), an analysis's output, and the one row `reach` reads.
+    fn drives(&self, row: usize) -> bool {
+        let (b, _) = self.instance_of(row);
+        self.kernels[self.blocks[b].kid].name == crate::interior::NAME
+    }
+
+    /// **Whether hard row `row` is out of reach at `z`** (#510 P7): a driven deflection's verdict
+    /// (`interior::reach_of`) over the parameters it reads that the solve moves — a free column,
+    /// or one worked out from free ones — each moved across the drawing's extent in its own units
+    /// (`Param::scale`).  `None` for any other row, and for one that cannot be read there.
+    pub fn reach(&mut self, sk: &Sketch, z: &[f64], row: usize) -> Option<Reach> {
+        if !self.drives(row) {
+            return None;
+        }
+        self.apply_z(z);
+        let (b, i) = self.instance_of(row);
+        let (block, kn) = (&self.blocks[b], self.kernels[self.blocks[b].kid]);
+        let gidx = &block.gidx[i * kn.n_par..(i + 1) * kn.n_par];
+        let v: Vec<f64> = gidx.iter().map(|&g| self.x[g as usize]).collect();
+        let k = &block.consts[i * kn.n_const..(i + 1) * kn.n_const];
+        let free: Vec<bool> = gidx.iter().map(|&g| self.col_of[g as usize] != -1).collect();
+        let extent = self.extent.max(1.0);
+        let scale: Vec<f64> = gidx.iter().map(|&g| match sk.params[g as usize].scale {
+            s if s > 0.0 => extent / s,
+            _ => extent,
+        }).collect();
+        crate::interior::reach_of(&v, k, &free, &scale)
+    }
+
+    /// **A failed solve's requirements out of reach** (#510 P7): each driven deflection that does
+    /// not hold at `z` (over its own size, past `tol`), with its verdict (`reach`), where there is
+    /// one and every one is out of reach of what drives it — nothing it reads moves it toward what
+    /// it states, so no solve from here meets it.  Any other row that does not hold is left to be
+    /// what the pull toward the requirement made it: a hole's radius driven toward nothing reads
+    /// its own circle's row over a size that went with it.  `None` where no deflection fails, or
+    /// one that does moves or cannot be read: then the failure is the solve's or a conflict's.
+    pub fn out_of_reach(&mut self, sk: &Sketch, z: &[f64], tol: f64) -> Option<Vec<(u32, Reach)>> {
+        // a drawing driving no deflection pays nothing
+        if !self.blocks.iter().any(|b| self.kernels[b.kid].name == crate::interior::NAME) {
+            return None;
+        }
+        let r = self.residuals(z);
+        self.size_rows();
+        let mut out = Vec::new();
+        for row in 0..self.n_res {
+            // a NaN is no holding row, and no reading of one either
+            if !self.hard[row] || self.judged(row, r[row]) <= tol || !self.drives(row) {
+                continue;
+            }
+            match self.reach(sk, z, row) {
+                Some(v @ (Reach::Held | Reach::Extreme { .. })) => {
+                    let (b, i) = self.instance_of(row);
+                    out.push((self.blocks[b].cids[i], v));
+                }
+                _ => return None,
+            }
+        }
+        (!out.is_empty()).then_some(out)
     }
 
     /// Numerical rank of the Jacobian at z — the workhorse of Stage 2/4 diagnosis.  `tol` is

@@ -41,28 +41,10 @@ impl Symmetric {
     /// read: an entry above the diagonal is ignored, so an assembly of whole element matrices
     /// may be passed as it stands.
     pub fn from_triplets(n: usize, t: &[(usize, usize, f64)]) -> Symmetric {
-        let mut low: Vec<(usize, usize, f64)> =
-            t.iter().copied().filter(|&(i, j, _)| i >= j).collect();
-        for &(i, _, _) in &low {
-            assert!(i < n, "Symmetric::from_triplets: row {i} of {n}");
-        }
-        low.sort_unstable_by_key(|&(i, j, _)| (j, i));
-        let mut colptr = vec![0usize; n + 1];
-        let mut rowind = Vec::with_capacity(low.len());
-        let mut values: Vec<f64> = Vec::with_capacity(low.len());
-        for (q, &(i, j, v)) in low.iter().enumerate() {
-            if q > 0 && low[q - 1].0 == i && low[q - 1].1 == j {
-                *values.last_mut().unwrap() += v;
-            } else {
-                rowind.push(i);
-                values.push(v);
-                colptr[j + 1] += 1;
-            }
-        }
-        for j in 0..n {
-            colptr[j + 1] += colptr[j];
-        }
-        Symmetric { n, colptr, rowind, values }
+        let sum = Summed::of(n, t);
+        let low: Vec<(usize, usize, f64)> = t.iter().copied().filter(|&(i, j, _)| i >= j).collect();
+        let values = sum.values(&low);
+        Symmetric { values, ..sum.pattern }
     }
 
     /// `A x`, both triangles.
@@ -84,6 +66,115 @@ impl Symmetric {
     fn full_pattern(&self) -> (Vec<usize>, Vec<usize>) {
         bucket(self, self.n, |i, j, _| [Some((j, i)), (i != j).then_some((i, j))])
     }
+}
+
+/// **How triplets are summed into a pattern** (`Symmetric::from_triplets`): the pattern (no
+/// values), and the lower triangle's triplets in the order they are summed — `order[s]` the
+/// `s`th summed, by its place among them, landing on entry `place[s]` of the pattern.  The order
+/// is the sort's, which reads the triplets' places alone, so every assembly whose places come in
+/// the same sequence is summed in it, bit for bit.
+#[derive(Clone, Debug)]
+struct Summed {
+    pattern: Symmetric,
+    order: Vec<u32>,
+    place: Vec<u32>,
+}
+
+impl Summed {
+    fn of(n: usize, t: &[(usize, usize, f64)]) -> Summed {
+        // each triplet's place among them carried where its value was, so the sort is the one
+        // a matrix of values makes: the same type, the same places
+        let mut low: Vec<(usize, usize, f64)> = t.iter().filter(|&&(i, j, _)| i >= j)
+            .enumerate().map(|(q, &(i, j, _))| (i, j, f64::from_bits(q as u64))).collect();
+        assert!(low.len() < u32::MAX as usize, "Symmetric::from_triplets: {} entries", low.len());
+        for &(i, _, _) in &low {
+            assert!(i < n, "Symmetric::from_triplets: row {i} of {n}");
+        }
+        low.sort_unstable_by_key(|&(i, j, _)| (j, i));
+        let mut colptr = vec![0usize; n + 1];
+        let mut rowind = Vec::with_capacity(low.len());
+        let (mut order, mut place) = (Vec::with_capacity(low.len()), Vec::with_capacity(low.len()));
+        for (q, &(i, j, at)) in low.iter().enumerate() {
+            if q == 0 || low[q - 1].0 != i || low[q - 1].1 != j {
+                rowind.push(i);
+                colptr[j + 1] += 1;
+            }
+            order.push(at.to_bits() as u32);
+            place.push((rowind.len() - 1) as u32);
+        }
+        for j in 0..n {
+            colptr[j + 1] += colptr[j];
+        }
+        Summed { pattern: Symmetric { n, colptr, rowind, values: Vec::new() }, order, place }
+    }
+
+    /// The values of the lower triangle's triplets `low`, summed into the pattern in order: the
+    /// first onto an entry put there, the rest added to it.
+    fn values(&self, low: &[(usize, usize, f64)]) -> Vec<f64> {
+        let mut values = vec![0.0; self.pattern.rowind.len()];
+        for (s, (&q, &p)) in self.order.iter().zip(&self.place).enumerate() {
+            let v = low[q as usize].2;
+            match s > 0 && self.place[s - 1] == p {
+                true => values[p as usize] += v,
+                false => values[p as usize] = v,
+            }
+        }
+        values
+    }
+
+    /// Whether `low`'s places come in the sequence this was summed from: as many, and each
+    /// where it is summed to.
+    fn fits(&self, n: usize, low: &[(usize, usize, f64)]) -> bool {
+        let a = &self.pattern;
+        a.n == n && low.len() == self.order.len()
+            && self.order.iter().zip(&self.place).all(|(&q, &p)| {
+                let (i, j, _) = low[q as usize];
+                let p = p as usize;
+                j < n && (a.colptr[j]..a.colptr[j + 1]).contains(&p) && a.rowind[p] == i
+            })
+    }
+}
+
+/// How many patterns a thread remembers the analysis of (`assembled`): a moved region's two —
+/// its nodes' harmonic map and its stiffness — for each of a couple of rows.
+const KNOWN: usize = 4;
+
+thread_local! {
+    /// The patterns analysed last on this thread, the latest first: each its order, how its
+    /// triplets are summed, and its analysis (no panels).
+    static PATTERNS: std::cell::RefCell<Vec<(Ordering, Summed, Cholesky)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// **A pattern analysed once** (#510): `t` assembled (`Symmetric::from_triplets`) with the
+/// analysis of its pattern under `ordering`, nothing factored.  A mesh moved with the drawing's
+/// numbers is assembled again at every evaluation of its row — a kernel keeps nothing between
+/// calls — its topology fixed, and sorting its triplets and analysing its pattern are most of
+/// what an evaluation costs; so both are remembered on this thread for the last `KNOWN`
+/// patterns, for the next assembly whose triplets come at the same places in the same sequence.
+/// Its values are summed in the order `from_triplets` sums them, so what is remembered changes
+/// no bit of an answer.
+pub fn assembled(n: usize, t: &[(usize, usize, f64)], ordering: Ordering) -> (Symmetric, Cholesky) {
+    let low: Vec<(usize, usize, f64)> = t.iter().copied().filter(|&(i, j, _)| i >= j).collect();
+    PATTERNS.with(|known| {
+        let mut known = known.borrow_mut();
+        let at = known.iter().position(|(o, sum, _)| *o == ordering && sum.fits(n, &low));
+        let (o, sum, kept) = match at {
+            Some(at) => known.remove(at),
+            None => {
+                let sum = Summed::of(n, t);
+                let mut kept = Cholesky::analyse(&sum.pattern, ordering);
+                kept.lx = Vec::new();
+                (ordering, sum, kept)
+            }
+        };
+        let a = Symmetric { values: sum.values(&low), ..sum.pattern.clone() };
+        let mut c = kept.clone();
+        c.lx = vec![0.0; c.xp[c.supernodes()]];
+        known.insert(0, (o, sum, kept));
+        known.truncate(KNOWN);
+        (a, c)
+    })
 }
 
 /// The fill-reducing order the analysis starts from, before its postorder.
