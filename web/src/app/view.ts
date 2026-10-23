@@ -33,7 +33,7 @@ import { Param, Plane, Point, Primitive, Sketch, toWire } from '../core/model.js
 import * as params from '../core/parameters.js';
 import type { March, Parameter } from '../core/parameters.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
-import type { BodyWord, Region, Scenario } from '../core/program.js';
+import type { BodyWord, Region, Scenario, ScenarioAnswer } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import type { Item } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
@@ -329,6 +329,9 @@ export class SketchView {
    *  requirement refuted is a word of the footer's, as a claim about solids is.  Read in a
    *  worker with the picture (`scenarioRead`), so it lags the solve by the reading. */
   scenarios: Scenario[] = [];
+  /** What each mass and volume the drawing states comes to (#510, `mass(10kg) arm`), read with
+   *  the scenarios: a claim refuted is a word of the footer's too. */
+  measures: ScenarioAnswer[] = [];
   /** **The scenario drawn over the workspace** (#510), by name — '' for none: its supports and
    *  loads (`scenarioMarks`, read at once on every edit) and how the drawing moves under it
    *  (`picture`, read in a worker).  View state, as the plane chosen is: it writes nothing,
@@ -395,8 +398,9 @@ export class SketchView {
   /** The claims about solids being judged in the background, as the judging moves; null once the
    *  drawing has none. */
   onClaims: (judging: Judging | null) => void = () => {};
-  /** The load scenarios were read again, after a solve (`scenarios`). */
-  onScenarios: (scenarios: Scenario[]) => void = () => {};
+  /** The load scenarios and the drawing's measures were read again, after a solve (`scenarios`,
+   *  `measures`). */
+  onScenarios: (scenarios: Scenario[], measures: ScenarioAnswer[]) => void = () => {};
   /** The scenario drawn, its marks or its picture changed: the chooser and its card follow. */
   onScenarioView: () => void = () => {};
   /** A dimension callout was clicked: the shell puts the focus on that constraint. */
@@ -1625,7 +1629,8 @@ export class SketchView {
     }
     if (!r || r.scenarios) {
       this.scenarios = r?.scenarios ?? [];
-      this.onScenarios(this.scenarios);
+      this.measures = r?.measures ?? [];
+      this.onScenarios(this.scenarios, this.measures);
     }
     if (this.scenarioAnimate && this.picture && !this.swinging) this.setScenarioAnimate(true);
     this.onScenarioView();

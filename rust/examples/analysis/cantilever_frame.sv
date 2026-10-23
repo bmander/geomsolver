@@ -33,6 +33,9 @@ fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
 arm := beam(span, A: b * h, Iy: I_weak, Iz: I, J: 0.229 * h * b^3, Sy: h * b^2 / 6,
             Sz: b * h^2 / 6) of steel
 
+// what it is made of answers no load, so it is the drawing's, claimed of it
+claim mass(steel.rho * L * b * h) arm
+
 scenario tip_load {
   fixed foot
   load end P along: down
@@ -46,5 +49,4 @@ scenario free {
   fixed foot
   claim mode(arm, 1) >= 0.99 * first
   claim mode(arm, 1) <= 1.01 * first
-  claim mass(arm) == steel.rho * L * b * h
 }

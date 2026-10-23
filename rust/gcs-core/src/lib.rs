@@ -16,9 +16,9 @@ pub use gcs_solve::{
     amd, beams, bodies, brep, cgraph, cholesky, clear, clock, complex, constraints, contact_rate,
     csg, curve, decompose, deformed, delaunay, diagnose, eigen, envelope, expr, extremal, fmath,
     follow, generate, graft, graph, homotopy, integral, interior, interval, json, kernels, linalg,
-    lines, locus, mesh, model, motion, newton, ode, par, plane, prisms, progress, rates, rng, roots,
-    semantics, solid, solve, space, sparse, system, tape, taylor, topology, traced, units,
-    variational, vocab, witness,
+    lines, locus, measured, mesh, model, motion, newton, ode, par, plane, prisms, progress, rates,
+    rng, roots, semantics, solid, solve, space, sparse, system, tape, taylor, topology, traced,
+    units, variational, vocab, witness,
 };
 pub(crate) use gcs_solve::{bvh, intersection};
 

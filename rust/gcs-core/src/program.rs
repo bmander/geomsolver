@@ -23,6 +23,7 @@ mod envelopes;
 mod generated;
 mod rings;
 mod scenarios;
+mod measures;
 mod beams;
 mod source_map;
 mod variational;
@@ -33,6 +34,7 @@ mod traced;
 pub use diagnostics::{Code, Diag, Severity};
 pub use drift::{drift, DRIFT};
 pub use scenarios::{Line, Stated};
+pub use measures::MeasureStated;
 
 /// Geometry diagnostics belong after solving: a poor hint is not an invalid final profile.
 pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap) -> Vec<Diag> {

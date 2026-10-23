@@ -152,7 +152,8 @@ pub(super) fn sized(sk: &Sketch, body: &[&Statement], diags: &mut Vec<Diag>) {
             if let Some(n) = loose {
                 diags.push(Diag::within(Code::E040, *span, st.id, format!(
                     "`{n}` is an unknown nothing determines: a section is read over one a \
-                     requirement drives, `deflection(…) == …` in a scenario on `{}`'s frame",
+                     requirement drives, `deflection(…) == …` in a scenario on `{}`'s frame, or \
+                     `mass(…) == …` of a member whose area reads it",
                     b.name.text)));
             }
         }

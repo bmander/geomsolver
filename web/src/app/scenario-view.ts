@@ -16,7 +16,7 @@
  * typed so the worker can transfer them rather than copy. */
 import { related } from '../core/modules.js';
 import { samePose } from './claim-judging.js';
-import type { Document, Scenario } from '../core/program.js';
+import type { Document, Scenario, ScenarioAnswer } from '../core/program.js';
 import type { PictureBody, ScenarioPicture } from '../core/scenario.js';
 
 /** One body of a picture as the page holds it: the core's arrays, typed. */
@@ -57,14 +57,17 @@ export type ScenarioJob = {
 export interface ScenarioFrame {
   id: number;
   scenarios?: Scenario[];
+  measures?: ScenarioAnswer[];
   picture?: Drawn | null;
   error?: string;
 }
 
-/** **The reading as the page tells it**: every scenario's answers, the picture of the one drawn
- *  (null for none, or while it is being read), whether a job is still out, and why it failed. */
+/** **The reading as the page tells it**: every scenario's answers, what the drawing's masses and
+ *  volumes come to, the picture of the one drawn (null for none, or while it is being read),
+ *  whether a job is still out, and why it failed. */
 export interface Reading {
   scenarios: Scenario[] | null;
+  measures: ScenarioAnswer[] | null;
   picture: Drawn | null;
   drawn: string;
   reading: boolean;
@@ -95,10 +98,11 @@ export function buffers(p: Drawn | null | undefined): ArrayBuffer[] {
 /** **Read a document's scenarios and draw scenario `drawn`** (by name, '' for none), where the
  *  document stands: what the worker does, and the page itself with no worker. */
 export function readScenarios(doc: Document, drawn: string)
-  : { scenarios: Scenario[]; picture: Drawn | null } {
+  : { scenarios: Scenario[]; measures: ScenarioAnswer[]; picture: Drawn | null } {
   const index = drawn ? doc.scenarioNames().findIndex((s) => s.name === drawn) : -1;
   const got = doc.scenariosPictured(index);
-  return { scenarios: got.scenarios, picture: index >= 0 ? typed(got.picture) : null };
+  return { scenarios: got.scenarios, measures: got.measures ?? [],
+           picture: index >= 0 ? typed(got.picture) : null };
 }
 
 /** The worker, as this file uses it: a test hands in a stub. */
@@ -133,7 +137,7 @@ export class ScenarioReading {
   /** Read this document's scenarios where it stands, and draw `drawn` — unless the job in hand
    *  (or its reading) is of this very drawing and choice. */
   start(doc: Document, drawn: string): void {
-    if (!doc.scenarioNames().length) {
+    if (!doc.scenarioNames().length && !doc.measuresStated()) {
       if (this.of) this.cancel();
       this.of = null;
       if (this.state) { this.state = null; this.told(null); }
@@ -150,12 +154,13 @@ export class ScenarioReading {
     // what was said of the last drawing stands until this one is read: the answers are kept, so
     // the footer does not blink empty on every edit, and the picture goes, since it is of a pose
     // the drawing has left
-    this.state = { scenarios: this.state?.scenarios ?? null, picture: null, drawn,
-                   reading: true };
+    this.state = { scenarios: this.state?.scenarios ?? null,
+                   measures: this.state?.measures ?? null, picture: null, drawn, reading: true };
     if (!this.spawn) {
       try {
         const got = readScenarios(doc, drawn);
-        this.state = { scenarios: got.scenarios, picture: got.picture, drawn, reading: false };
+        this.state = { scenarios: got.scenarios, measures: got.measures, picture: got.picture,
+                       drawn, reading: false };
       } catch (e) {
         this.state = { ...this.state, reading: false, error: String(e) };
       }
@@ -194,8 +199,8 @@ export class ScenarioReading {
   private receive(f: ScenarioFrame): void {
     if (f.id !== this.job || !this.state) return;
     if (f.error) return this.fail(f.error);
-    this.state = { scenarios: f.scenarios ?? [], picture: f.picture ?? null,
-                   drawn: this.state.drawn, reading: false };
+    this.state = { scenarios: f.scenarios ?? [], measures: f.measures ?? [],
+                   picture: f.picture ?? null, drawn: this.state.drawn, reading: false };
     this.told(this.state);
   }
 }

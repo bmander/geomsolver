@@ -371,7 +371,7 @@ impl Sketch {
         let rows: Vec<_> = self.constraints.iter()
             .filter_map(|c| c.meshed_key(self).filter(|k| self.meshed.contains_key(k)).map(|k| (c, k)))
             .filter_map(|(c, k)| match c.made_row(self) {
-                Ok(crate::constraints::DeflectionRow::Meshed(r)) => Some((k, r)),
+                Ok(crate::constraints::InteriorRow::Meshed(r)) => Some((k, r)),
                 _ => None,
             })
             .collect();

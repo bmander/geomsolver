@@ -32,6 +32,13 @@ pub(crate) fn answers(e: &Elaborated)
     (out, words)
 }
 
+/// What each mass and volume `e` states comes to (#510), in the order written: its value, the
+/// error estimated beside it, and whether it holds.
+pub(crate) fn measured(e: &Elaborated) -> Vec<(f64, Option<f64>, bool)> {
+    gcs_core::report::measure_answers(&e.sketch, &e.measures).into_iter()
+        .map(|a| (a.value.expect(&a.text), a.error, a.holds == Some(true))).collect()
+}
+
 /// The one value `e` answers of `output`.
 pub(crate) fn value(e: &Elaborated, output: Output) -> f64 {
     let (got, words) = answers(e);
@@ -151,12 +158,12 @@ scenario pull {{
 #[test]
 fn a_sheet_pulled_answers_to_rounding() {
     let claims = "  claim deflection(k, along: std.x) >= 0mm\n  claim compliance(plate) >= 0J\n  \
-                  claim safety(plate) >= 1\n  claim mass(plate) >= 1g\n  \
-                  claim deflection(q, along: std.x) >= 0mm\n";
+                  claim safety(plate) >= 1\n  claim deflection(q, along: std.x) >= 0mm\n";
     let (w, h, t, s, young, nu, rho, yields) =
         (80.0, 30.0, 2.0, 40e3, 200e6, 0.3, 7850.0 * 1e-9, 250e3);
     for plane in ["stress", "strain"] {
-        let e = crate::common::text::solved(&sheet(plane, claims));
+        // its mass is the drawing's, claimed of it: no scenario's
+        let e = crate::common::text::solved(&(sheet(plane, claims) + "claim mass(>= 1g) plate\n"));
         let strain = plane == "strain";
         let e1 = if strain { young / (1.0 - nu * nu) } else { young };
         let (got, words) = answers(&e);
@@ -169,8 +176,10 @@ fn a_sheet_pulled_answers_to_rounding() {
         near(v[1], s * s * w * h * t / e1, "the pull's work");
         let mises = if strain { s * (1.0 - nu + nu * nu).sqrt() } else { s };
         near(v[2], yields / mises, "the factor of safety");
-        near(v[3], rho * w * h * t, "the mass");
-        near(v[4], s * 50.0 / e1, "the inner point's move");
+        near(v[3], s * 50.0 / e1, "the inner point's move");
+        let [(mass, _, kept)] = measured(&e)[..] else { panic!("one mass") };
+        near(mass, rho * w * h * t, "the mass");
+        assert!(kept);
     }
 }
 
@@ -350,10 +359,10 @@ fn a_regions_driving_row_is_refused_where_it_cannot_be_read() {
     // read as a solid, the plate's deflection drives it in space (#510 S3)
     let solid = plate.replace("  plane stress plate\n", "");
     let e = crate::common::read(&solid);
-    use gcs_core::constraints::{CKind, DeflectionRow};
+    use gcs_core::constraints::{CKind, InteriorRow};
     let row = e.sketch.constraints.iter().find(|c| c.kind == CKind::Deflection)
-        .map(|c| c.deflection_row(&e.sketch).expect("a row"));
-    let Some(DeflectionRow::Meshed(row)) = row else { panic!("a meshed row: {row:?}") };
+        .map(|c| c.interior_row(&e.sketch).expect("a row"));
+    let Some(InteriorRow::Meshed(row)) = row else { panic!("a meshed row: {row:?}") };
     assert_eq!(row.structure.dim, 3);
 }
 

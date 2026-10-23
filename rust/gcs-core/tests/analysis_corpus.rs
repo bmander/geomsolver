@@ -263,7 +263,6 @@ fn cantilever(case: &Case, e: &Elaborated) -> Vec<Answer> {
     vec![
         answer("tip_load", Output::Deflection, None, tip, about(0.01), EXACT),
         answer("free", Output::Mode, Some(1), mode, about(0.01), 1e-5),
-        answer("free", Output::Mass, None, rho * volume(&x), [1.0, 1.0], 1e-9),
     ]
 }
 
@@ -353,7 +352,6 @@ fn cantilever_frame(case: &Case, e: &Elaborated) -> Vec<Answer> {
         answer("tip_load", Output::Safety, None, safety, about(0.03), EXACT),
         answer("free", Output::Mode, Some(1), closed::cantilever_mode(young, iy, rho, a, l),
                about(0.01), 1e-5),
-        answer("free", Output::Mass, None, rho * a * l, [1.0, 1.0], 1e-9),
     ]
 }
 

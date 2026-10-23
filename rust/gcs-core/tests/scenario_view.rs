@@ -9,11 +9,11 @@ use gcs_core::overview::scenario::{marks, Kind};
 use gcs_core::space::{distance, dot};
 
 /// The library's documents that state a scenario.
-const LIBRARY: [&str; 16] = [
+const LIBRARY: [&str; 19] = [
     "cantilever_plate", "pressure_pipe", "tuning_fork", "shelf_bracket", "pin_lug",
     "flat_bar_strut", "rounded_bracket", "pressed_panel", "sized_cantilever", "portal_frame",
     "turned_shaft", "drilled_plate", "reach_cantilever", "sized_plate", "gravity_wall",
-    "sized_plank",
+    "sized_plank", "weighed_cantilever", "lightened_web", "mass_budget_frame",
 ];
 
 /// A steel cantilever `L` long along x on the front, built in at `root`, and `P` at its tip along
@@ -233,13 +233,13 @@ fn the_answers_beside_a_picture_are_the_answers() {
     let e = crate::common::read(gcs_core::examples::source("shelf_bracket").unwrap());
     let sk = crate::common::solved(&e);
     let alone = gcs_core::report::scenarios_json(&sk, &e.scenarios).dump(None);
-    let drawn = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, Some(0));
+    let drawn = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, &e.measures, Some(0));
     assert_eq!(drawn.get("scenarios").unwrap().dump(None), alone);
     let p = drawn.get("picture").unwrap();
     assert_eq!(p.get("bodies").unwrap().arr().len(), 1);
     let b = &p.get("bodies").unwrap().arr()[0];
     assert_eq!(b.get("rest").unwrap().arr().len(), b.get("moved").unwrap().arr().len());
     assert_eq!(b.get("size").unwrap().arr().len() * 3, b.get("rest").unwrap().arr().len());
-    let none = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, None);
+    let none = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, &e.measures, None);
     assert!(matches!(none.get("picture"), Some(gcs_core::json::Json::Null)));
 }

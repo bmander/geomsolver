@@ -79,10 +79,10 @@ impl Constraint {
         // a flank's regularity within a blank: the envelope's, the roll's, the regions' terms' and
         // the number (#345)
         // a deflection driven: its structure, a frame's sections read over its unknowns (#510 S1)
-        // or a region's nodes over the drawing (S2)
-        if self.kind == CKind::Deflection {
-            let d = self.args.get(3).map_or(0.0, Arg::num);
-            return self.deflection_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
+        // or a region's nodes over the drawing (S2) — and a mass or a volume, each its number last
+        if self.kind.interior() {
+            let d = self.args.last().map_or(0.0, Arg::num);
+            return self.interior_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
         }
         if self.kind == CKind::RegularWithin {
             let margin = self.kind.dimension_slot().map_or(0.0, |i| self.args[i].num());
@@ -523,6 +523,8 @@ impl Constraint {
             | CKind::CarriedPointIn
             | CKind::RegularWithin
             | CKind::Deflection
+            | CKind::Mass
+            | CKind::Volume
             | CKind::PointOnTraced
             | CKind::Project
             | CKind::Lift
@@ -924,8 +926,10 @@ impl Constraint {
                 self.regular_parts(sk).map(|p| p.columns(sk)).unwrap_or_default()
             }
             // a deflection driven: a frame's every joint's lift, then its sections' unknowns (#510
-            // S1); a region's points' numbers and radii (S2)
-            CKind::Deflection => self.deflection_parts(sk).map(|(_, c)| c).unwrap_or_default(),
+            // S1); a region's points' numbers and radii (S2) — a mass's or a volume's alike
+            CKind::Deflection | CKind::Mass | CKind::Volume => {
+                self.interior_parts(sk).map(|(_, c)| c).unwrap_or_default()
+            }
             // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
             // the plane the first is drawn in where it is read there, then the motion's axes
             CKind::CarriedPoint | CKind::CarriedPointIn if self.stated_roll() => {
@@ -1147,7 +1151,9 @@ impl Constraint {
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // every joint of the frame (#510 S1); a region's points are read in their plane (S2)
-            CKind::Deflection => self.deflection_row(sk).map(|r| r.lifted()).unwrap_or_default(),
+            CKind::Deflection | CKind::Mass | CKind::Volume => {
+                self.interior_row(sk).map(|r| r.lifted()).unwrap_or_default()
+            }
             // both points, then every point the motion's axes read (#326, #366)
             CKind::CarriedPoint | CKind::CarriedPointIn => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();

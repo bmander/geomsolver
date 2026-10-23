@@ -146,18 +146,15 @@ pub enum Output {
     Buckling,
     /// `compliance(b)`: the work the loads do on the body, an energy.
     Compliance,
-    /// `mass(b)`: the body's mass, its density over its volume.
-    Mass,
 }
 
 impl Output {
-    pub const ALL: [Output; 6] = [
+    pub const ALL: [Output; 5] = [
         Output::Deflection,
         Output::Safety,
         Output::Mode,
         Output::Buckling,
         Output::Compliance,
-        Output::Mass,
     ];
 
     pub fn word(self) -> &'static str {
@@ -167,7 +164,6 @@ impl Output {
             Output::Mode => "mode",
             Output::Buckling => "buckling",
             Output::Compliance => "compliance",
-            Output::Mass => "mass",
         }
     }
 
@@ -184,7 +180,6 @@ impl Output {
             Output::Compliance => {
                 Dim::LENGTH.mul(Dim::LENGTH).mul(Dim::MASS).div(Dim::TIME).div(Dim::TIME)
             }
-            Output::Mass => Dim::MASS,
         }
     }
 
