@@ -39,6 +39,9 @@ down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
 beam := solid(side, from: -b / 2, to: b / 2) of steel
 
+// what it is made of answers no load, so it is the drawing's, claimed of it
+claim mass(steel.rho * L * b * h) beam
+
 scenario tip_load {
   fixed beam.root
   load beam.tip P along: down
@@ -50,5 +53,4 @@ scenario free {
   fixed beam.root
   claim mode(beam, 1) >= 0.99 * first
   claim mode(beam, 1) <= 1.01 * first
-  claim mass(beam) == steel.rho * L * b * h
 }

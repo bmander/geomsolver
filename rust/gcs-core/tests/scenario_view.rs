@@ -233,13 +233,13 @@ fn the_answers_beside_a_picture_are_the_answers() {
     let e = crate::common::read(gcs_core::examples::source("shelf_bracket").unwrap());
     let sk = crate::common::solved(&e);
     let alone = gcs_core::report::scenarios_json(&sk, &e.scenarios).dump(None);
-    let drawn = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, Some(0));
+    let drawn = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, &e.measures, Some(0));
     assert_eq!(drawn.get("scenarios").unwrap().dump(None), alone);
     let p = drawn.get("picture").unwrap();
     assert_eq!(p.get("bodies").unwrap().arr().len(), 1);
     let b = &p.get("bodies").unwrap().arr()[0];
     assert_eq!(b.get("rest").unwrap().arr().len(), b.get("moved").unwrap().arr().len());
     assert_eq!(b.get("size").unwrap().arr().len() * 3, b.get("rest").unwrap().arr().len());
-    let none = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, None);
+    let none = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, &e.measures, None);
     assert!(matches!(none.get("picture"), Some(gcs_core::json::Json::Null)));
 }

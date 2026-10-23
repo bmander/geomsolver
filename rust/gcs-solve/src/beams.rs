@@ -913,19 +913,13 @@ pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
         out.answers[k] = match f {
             None => continue,
             Some(Err(m)) => Some(Err(m)),
-            Some(Ok(f)) => match Reads::of(r.output) {
-                // a measure reads what the members are made of, under no support and no load
-                Some(reads) => Some(measure(sk, &r.of, reads)),
-                None => {
-                    let wanted = modes.get(&f).copied().unwrap_or(0);
-                    match frames.entry(f)
-                        .or_insert_with(|| Analysed::new(sk, sc, &mesh, f, wanted))
-                    {
-                        Ok(a) => Some(answer(sk, &mesh, a, r)),
-                        Err(m) => Some(Err(m.text())),
-                    }
+            Some(Ok(f)) => {
+                let wanted = modes.get(&f).copied().unwrap_or(0);
+                match frames.entry(f).or_insert_with(|| Analysed::new(sk, sc, &mesh, f, wanted)) {
+                    Ok(a) => Some(answer(sk, &mesh, a, r)),
+                    Err(m) => Some(Err(m.text())),
                 }
-            },
+            }
         };
     }
     // a frame the supports leave free is said once, in the solver's words — those a requirement
@@ -971,7 +965,6 @@ fn answer(sk: &Sketch, mesh: &Mesh, a: &Analysed, r: &Requirement) -> Result<f64
             worst.ok_or_else(|| "it names no node of a frame".to_string())
         }
         Output::Compliance => Ok(dot_all(&a.f.s.forces(&a.f.x), &a.st.u)),
-        Output::Mass | Output::Volume => unreachable!("a measure is read before any analysis"),
         Output::Mode => {
             let n = r.count.unwrap_or(1) as usize;
             let v = *a.pairs(sk, mesh)?.values.get(n - 1).ok_or("it has fewer modes than that")?;
@@ -1045,8 +1038,8 @@ fn stress(r: &[f64; 12], q: V, h: f64, a: f64, sy: f64, sz: f64) -> f64 {
 }
 
 /// **A requirement's value as a reader reads it**, in the document's units: a deflection in its
-/// length (`1.6mm`), a frequency in hertz, a mass in kilograms, a volume in its length cubed
-/// (`72000mm³`), a compliance in joules, a factor as a plain number — six figures.
+/// length (`1.6mm`), a frequency in hertz, a compliance in joules, a factor as a plain number — six
+/// figures.
 pub fn value_text(sk: &Sketch, output: Output, v: f64) -> String {
     figures_text(sk, output, v, 6)
 }
@@ -1063,8 +1056,6 @@ fn figures_text(sk: &Sketch, output: Output, v: f64, figures: usize) -> String {
     match output {
         Output::Deflection => format!("{}{}", fig(v), sk.units.name()),
         Output::Mode => format!("{}Hz", fig(v)),
-        Output::Mass => format!("{}kg", fig(v)),
-        Output::Volume => format!("{}{}³", fig(v), sk.units.name()),
         Output::Compliance => format!("{}J", fig(sk.units.to_si(v, output.dim()))),
         Output::Safety | Output::Buckling => fig(v),
     }
@@ -1073,11 +1064,17 @@ fn figures_text(sk: &Sketch, output: Output, v: f64, figures: usize) -> String {
 /// Whether value `v` keeps requirement `r`: within a hair of rounding (1e-9 of what it states)
 /// of an equality, and on its side of an inequality.
 pub fn keeps(r: &Requirement, v: f64) -> bool {
-    let slack = 1e-9 * r.value.abs().max(v.abs());
-    match r.compare {
-        crate::expr::Cmp::Eq => (v - r.value).abs() <= slack,
-        crate::expr::Cmp::Le | crate::expr::Cmp::Lt => v <= r.value + slack,
-        crate::expr::Cmp::Ge | crate::expr::Cmp::Gt => v >= r.value - slack,
+    compares(r.compare, r.value, v)
+}
+
+/// Whether value `v` is on `compare`'s side of `stated`, within 1e-9 of it (`keeps`'s rule, a
+/// claimed mass's too).
+pub(crate) fn compares(compare: crate::expr::Cmp, stated: f64, v: f64) -> bool {
+    let slack = 1e-9 * stated.abs().max(v.abs());
+    match compare {
+        crate::expr::Cmp::Eq => (v - stated).abs() <= slack,
+        crate::expr::Cmp::Le | crate::expr::Cmp::Lt => v <= stated + slack,
+        crate::expr::Cmp::Ge | crate::expr::Cmp::Gt => v >= stated - slack,
         _ => false,
     }
 }

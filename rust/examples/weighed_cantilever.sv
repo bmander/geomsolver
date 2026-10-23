@@ -1,9 +1,10 @@
 // A cantilever sized by its sag and its mass (#510): the library's sized cantilever
-// (`sized_cantilever.sv`) with its width `b` an unknown beside its depth `h`, and two driving
-// requirements.  The tip's deflection is the frame's solve; the mass is what the beam is made of,
-// `ρ b h L`, read with no solve.  Two rows, two unknowns: `b h = m / (ρ L)` and Euler–Bernoulli's
-// `b h³ = 4 P L³ / (E sag)`, so the depth is √((4 P L³ / (E sag)) / (b h)) — 62.65mm — and the
-// width 20.33mm.  The claim beside them is judged at the section found.
+// (`sized_cantilever.sv`) with its width `b` an unknown beside its depth `h`, its tip's
+// deflection driven in its scenario and its mass stated of the drawing, `mass(m) arm` — what the
+// beam is made of, `ρ b h L`, answers no load and is read with no solve.  Two rows, two unknowns:
+// `b h = m / (ρ L)` and Euler–Bernoulli's `b h³ = 4 P L³ / (E sag)`, so the depth is
+// √((4 P L³ / (E sag)) / (b h)) — 62.65mm — and the width 20.33mm.  The claim beside them is
+// judged at the section found.
 unit mm
 use std
 
@@ -26,11 +27,11 @@ down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
 arm := beam(span, A: b * h, Iy: h * b^3 / 12, Iz: b * h^3 / 12, J: 0.229 * h * b^3,
             Sy: h * b^2 / 6, Sz: b * h^2 / 6) of steel
+mass(m) arm
 
 scenario tip_load {
   fixed foot
   load end P along: down
   deflection(end, along: down) == sag
-  mass(arm) == m
   claim safety(arm) >= 3
 }

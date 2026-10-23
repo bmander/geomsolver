@@ -189,17 +189,17 @@ pub enum CKind {
     /// from a driving requirement, never written as a statement, and carried by the Solvent source
     /// alone, as a beam is.
     Deflection,
-    /// **A mass, driven** (`beams::Row::measured`, `prisms::Row::measured`): `mass(arm) == 2kg`
-    /// in a `scenario`, what the requirement `requirement` of the scenario
-    /// `Sketch::scenarios[scenario]` names weighs — a beam's or a member's `ρ A L`, a prism's `ρ`
-    /// times its face's area through its depth.  One row, the interior's kernel reading the
-    /// structure's measure (`interior::Reads::Mass`) rather than its moves, its gradient its own:
-    /// no support, no load and no solve is read.  Its columns are a deflection's over the same
+    /// **A mass, driven** (`beams::Row::measured`, `prisms::Row::measured`): `mass(2kg) arm`, a
+    /// statement of the drawing — no scenario's, since what a body is made of answers no load —
+    /// what the statement `Sketch::measured[of]` names weighs: a beam's or a member's `ρ A L`, a
+    /// prism's `ρ` times its face's area through its depth.  One row, the interior's kernel reading
+    /// the structure's measure (`interior::Reads::Mass`) rather than its moves, its gradient its
+    /// own: no support, no load and no solve is read.  Its columns are a deflection's over the same
     /// structure — a frame's points' lifts and the unknowns its areas are read over, a face's
     /// points' numbers and its radii, its mesh the compile's moved with them (`Sketch::meshed`).
     /// Degree 1, as a deflection's.  Made by the elaborator, carried by the source alone.
     Mass,
-    /// **A volume, driven**: `volume(arm) == 72000mm^3`, `Mass` with no density read
+    /// **A volume, driven**: `volume(72 * 1cm^3) arm`, `Mass` with no density read
     /// (`interior::Reads::Volume`): a member's `A L`, a prism's face's area through its depth.
     Volume,
     /// **A point on a body traced in space** (#326, `traced`): `p coincident k`, three rows `p −
@@ -1019,11 +1019,10 @@ impl CKind {
             CKind::Deflection => {
                 &[("at", S::Point), ("along", S::Direction), ("scenario", S::Int), ("d", S::Length)]
             }
-            // the scenario, its requirement naming what is measured, and how much: a mass in
-            // kilograms, a volume in the drawing's length cubed — a scenario's number, no
-            // dimension drawn
-            CKind::Mass => &[("scenario", S::Int), ("requirement", S::Int), ("m", S::Float)],
-            CKind::Volume => &[("scenario", S::Int), ("requirement", S::Int), ("v", S::Float)],
+            // what is measured (the statement, by its index on `Sketch::measured`) and how much:
+            // a mass in kilograms, a volume in the drawing's length cubed — no dimension drawn
+            CKind::Mass => &[("of", S::Int), ("m", S::Float)],
+            CKind::Volume => &[("of", S::Int), ("v", S::Float)],
             // the place on a traced body: its formals', a curve's second held at none (#326)
             CKind::PointOnTraced => &[("p", S::Point), ("traced", S::Traced), ("u", S::Param), ("s", S::Param)],
             CKind::SplineTangentLine => {
@@ -1585,8 +1584,9 @@ impl CKind {
     }
 
     /// Whether a constraint of this kind is **the Solvent source's alone** (#510 S1): a frame's
-    /// deflection, mass or volume reads beams and a scenario, which no document JSON, rebuild walk
-    /// or flat program carries, so none of them carries the row either; the source states it
+    /// deflection reads beams and a scenario, and a mass or a volume a beam or a statement of the
+    /// drawing's measures (`Sketch::measured`), which no document JSON, rebuild walk or flat
+    /// program carries, so none of them carries the row either; the source states it
     /// again when it is elaborated.
     pub fn of_source(self) -> bool {
         self.interior()

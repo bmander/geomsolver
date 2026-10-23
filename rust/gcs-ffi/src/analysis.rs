@@ -211,7 +211,8 @@ pub unsafe extern "C" fn gcs_elab_scenarios_json(h: *mut Elaborated, s: *mut Ske
 }
 
 /// **What every load scenario says, and one's picture** (`report::scenarios_pictured_json`):
-/// `{ "scenarios", "picture" }`, the first `gcs_elab_scenarios_json`'s and the second how the
+/// `{ "scenarios", "picture", "measures" }`, the first `gcs_elab_scenarios_json`'s, the last what
+/// the drawing's masses and volumes come to (`report::measures_json`), and the second how the
 /// drawing moves under scenario `drawn` (its bodies' places at rest, their moves, triangles and
 /// edges as flat arrays, the largest move and the factor to draw it at) — or `null` for a
 /// `drawn` that is no scenario's index (−1 for none).  Its answers and its picture are one
@@ -221,8 +222,15 @@ pub unsafe extern "C" fn gcs_elab_scenarios_pictured_json(h: *mut Elaborated, s:
                                                           drawn: i32) -> *mut u8 {
     json_out(move || {
         let drawn = usize::try_from(drawn).ok();
-        gcs_core::report::scenarios_pictured_json(sk(s), &(*h).scenarios, drawn)
+        gcs_core::report::scenarios_pictured_json(sk(s), &(*h).scenarios, &(*h).measures, drawn)
     })
+}
+
+/// **How many masses and volumes the document states** (#510, `mass(10kg) arm`): whether a page
+/// has them to read beside its scenarios.  No analysis.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_measures_stated(h: *mut Elaborated) -> i32 {
+    guard(0, move || (*h).measures.len() as i32)
 }
 
 /// **The document's load scenarios by name** (`report::scenario_names_json`): `[{ "name",

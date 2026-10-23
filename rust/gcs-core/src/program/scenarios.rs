@@ -3,8 +3,7 @@
 //! (`Resolver::operand`), its numbers worked out and held to what they are — read once the
 //! drawing's geometry and solids are built.  A scenario of claims adds nothing to the drawing,
 //! so the solve, its counts and its diagnosis are the drawing's with it deleted; a driving
-//! deflection of a frame's joint is compiled into a row of the drawing (#510 S1, `drive`), and so
-//! is a driving mass or volume of a beam, a member or a prism.
+//! deflection of a frame's joint is compiled into a row of the drawing (#510 S1, `drive`).
 
 use super::resolve::{Operand, Resolver};
 use super::{Code, Diag};
@@ -183,13 +182,10 @@ pub(super) fn scenarios(
 /// reads in its plane (`prisms::of_region`), or (#510 S3) of a point of a solid it reads in three
 /// dimensions (`bodies::of_body`), becomes a `CKind::Deflection` of the drawing, solved
 /// under its scenario's supports and loads, which the sketch holds for it (`Sketch::scenarios`);
-/// the row stands where the requirement is written.  Every `mass(B) == m` and `volume(B) == v`
-/// of a beam or a member's line, or of a solid that is a prism, becomes a `CKind::Mass` or a
-/// `CKind::Volume`: what `B` is made of measured (`beams::Row::measured`, `prisms::Row::measured`),
-/// under no support and no load.  One the solve cannot read — a frame or a region the supports
-/// leave free, a direction the solve moves, a material of no density — is **E040** there.  Any
-/// other driving requirement (a solid's that is no prism; a mode or a safety) compiles nothing
-/// yet and is judged after the solve, as a claim is.
+/// the row stands where the requirement is written.  One the solve cannot read — a frame or a
+/// region the supports leave free, a direction the solve moves — is **E040** there.  Any other
+/// driving requirement (a solid's that is no prism; a mode or a safety) compiles nothing yet and
+/// is judged after the solve, as a claim is.
 pub(super) fn drive(
     sk: &mut Sketch,
     map: &mut super::source_map::SourceMap,
@@ -216,22 +212,10 @@ pub(super) fn drive(
                 sk.scenarios.push(s.scenario.clone());
                 sk.scenarios.len() as i64 - 1
             });
-            let scenario = at as usize;
-            let (kind, args, key) = match (r.output, &r.of, r.along) {
-                (Output::Deflection, Applied::Ent(p), Some(along)) => (
-                    CKind::Deflection,
-                    vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)],
-                    MeshedKey::Deflection { scenario, at: p.i(), along },
-                ),
-                (output, _, _) => (
-                    match output {
-                        Output::Mass => CKind::Mass,
-                        _ => CKind::Volume,
-                    },
-                    vec![Arg::Int(at), Arg::Int(k as i64), Arg::Num(r.value)],
-                    MeshedKey::Measure { scenario, requirement: k },
-                ),
-            };
+            let (Applied::Ent(p), Some(along)) = (&r.of, r.along) else { continue };
+            let kind = CKind::Deflection;
+            let args = vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)];
+            let key = MeshedKey::Deflection { scenario: at as usize, at: p.i(), along };
             let name =
                 |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
             // a region's or a solid's row is meshed once, here, and read so through every solve
@@ -265,8 +249,7 @@ pub(super) fn drive(
 
 /// **Whether a driving requirement compiles to a row**: a deflection along a direction of a
 /// frame's joint, of a point of a region read in its plane or of a solid read in three
-/// dimensions; a mass or a volume of a beam, of a line a beam is drawn on, or of a solid that is
-/// a prism.
+/// dimensions.
 fn drives(sk: &Sketch, sc: &Scenario, r: &Requirement) -> bool {
     match (r.output, &r.of) {
         (Output::Deflection, Applied::Ent(p)) => {
@@ -274,10 +257,6 @@ fn drives(sk: &Sketch, sc: &Scenario, r: &Requirement) -> bool {
                 && (crate::beams::of_frame(sk, sc, &r.of)
                     || crate::prisms::of_region(sk, sc, &r.of)
                     || crate::bodies::of_body(sk, sc, &r.of))
-        }
-        (Output::Mass | Output::Volume, of) => {
-            !crate::beams::members(sk, of).is_empty()
-                || of.solid().is_some_and(|s| crate::prisms::Region::of(sk, s).is_ok())
         }
         _ => false,
     }

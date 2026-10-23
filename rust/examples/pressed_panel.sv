@@ -37,6 +37,9 @@ down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
 panel := solid(square, from: 0mm, to: t) of steel
 
+// what it is made of answers no load, so it is the drawing's, claimed of it
+claim mass(steel.rho * a^2 * t) panel
+
 scenario pressed {
   fixed panel.south
   fixed panel.east
@@ -45,5 +48,4 @@ scenario pressed {
   pressure panel.near q
   claim deflection(middle, along: down) >= 0.97 * sag
   claim deflection(middle, along: down) <= 1.03 * sag
-  claim mass(panel) == steel.rho * a^2 * t
 }

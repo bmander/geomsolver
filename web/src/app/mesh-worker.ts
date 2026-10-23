@@ -75,7 +75,8 @@ async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promi
     }
     const got = readScenarios(doc, job.drawn);
     if (job.id !== latest) return;
-    scope.postMessage({ id: job.id, scenarios: got.scenarios, picture: got.picture },
+    scope.postMessage({ id: job.id, scenarios: got.scenarios, measures: got.measures,
+                        picture: got.picture },
                       buffers(got.picture));
   } finally {
     doc.dispose();

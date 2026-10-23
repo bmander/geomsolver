@@ -525,6 +525,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     println!("  {}", a.text);
                 }
             }
+            // and what the drawing states a beam or a solid is made of (#510)
+            for a in gcs_core::report::measure_answers(&sk, &e.measures) {
+                println!("  {}", a.text);
+            }
         }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
@@ -970,6 +974,10 @@ fn doc_json(
     let settled = r.is_some_and(|r| r.settled());
     if let Some((sk, _)) = d.filter(|_| settled && !e.scenarios.is_empty()) {
         doc.set("scenarios", report::scenarios_json(sk, &e.scenarios));
+    }
+    // and the masses and volumes the drawing states (#510), at the solved pose
+    if let Some((sk, _)) = d.filter(|_| settled && !e.measures.is_empty()) {
+        doc.set("measures", report::measures_json(sk, &e.measures));
     }
     // the document's parts, read through the diagnosis (#461), where it has any
     if let Some((sk, d)) = d {

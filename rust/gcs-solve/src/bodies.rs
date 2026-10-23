@@ -667,6 +667,11 @@ pub fn structure(sk: &Sketch, sc: &Scenario, solid: usize, coarser: f64)
     Ok((f.s, f.x))
 }
 
+/// What scenario `sc` names, and the point `at`: what a row's mesh stands a node at.
+fn named_applied(sc: &Scenario, at: usize) -> Vec<Applied> {
+    sc.applied().cloned().chain([Applied::Ent(crate::model::EntRef::point(at))]).collect()
+}
+
 /// The points a scenario names: what a stacked mesh makes nodes of.
 fn named_points(sc: &Scenario) -> Vec<usize> {
     let mut out: Vec<usize> = sc.applied().filter_map(|a| match a {
@@ -757,11 +762,6 @@ pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
     let mut read: BTreeMap<usize, Result<Analysed, Unread>> = BTreeMap::new();
     for (k, (r, s)) in sc.requirements.iter().zip(&of).enumerate() {
         let Some(s) = *s else { continue };
-        // a measure reads what the solid is made of, under no support and no load
-        if let Some(reads) = Reads::of(r.output) {
-            out.answers[k] = Some(measure(sk, s, reads, coarser));
-            continue;
-        }
         let a = read.entry(s).or_insert_with(|| {
             let mesh = mesh(sk, s, &named, coarser)?;
             Analysed::new(sk, sc, s, mesh, modes.get(&s).copied().unwrap_or(0))
@@ -816,7 +816,6 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
         Output::Compliance => {
             Ok(f.s.forces(&f.x).iter().zip(&a.state()?.u).map(|(p, u)| p * u).sum())
         }
-        Output::Mass | Output::Volume => unreachable!("a measure is read before any analysis"),
         Output::Mode => {
             let n = r.count.unwrap_or(1) as usize;
             let v = *a.pairs(sk)?.values.get(n - 1).ok_or("it has fewer modes than that")?;
@@ -843,7 +842,9 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
 /// a prism's as its driving row reads it, its face through its depth (`prisms::measure`); any
 /// other solid's over its own tetrahedra — what it is made of, read with no solve, so a solid its
 /// supports leave free has one.
-fn measure(sk: &Sketch, solid: usize, reads: Reads, coarser: f64) -> Result<f64, String> {
+pub(crate) fn measure(sk: &Sketch, solid: usize, reads: Reads, coarser: f64)
+    -> Result<f64, String>
+{
     if Region::of(sk, solid).is_ok() {
         return prisms::measure(sk, solid, reads, coarser);
     }
@@ -893,7 +894,8 @@ pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef)
     let st = mesh.stack.ok_or("it is read over no prism")?;
     let plane_x: Vec<f64> = st.plane.points.iter().flatten().copied().collect();
     let (mut moved, columns) =
-        prisms::moved_with(sk, sc, &st.region, &st.plane, &plane_x, Some(at), face_plane)?;
+        prisms::moved_with(sk, &named_applied(sc, at), &st.region, &st.plane, &plane_x,
+                           face_plane)?;
     let b = &st.region.basis;
     moved.stack = Some(crate::interior::Stack { basis: [b.o, b.u, b.v, b.normal()], of: st.of });
     Ok(prisms::Row { structure: s, moved, columns, x })

@@ -679,8 +679,8 @@ fn a_measure_agrees_with_finite_differences() {
 /// **A mass and a volume, as the drawing states them** (`CKind::Mass`, `CKind::Volume`): a
 /// frame's row over its points' lifts and the unknowns its areas read — a section's breadth,
 /// its area not affine in it, and an L's reach — and a prism's over its face's points' numbers
-/// and its radii, its face's nodes moved with them (a round corner, a hole), read in its plane and
-/// in three dimensions, against finite differences, at the solution and knocked off it.
+/// and its radii, its face's nodes moved with them (a round corner, a hole) — each stated of the
+/// drawing — against finite differences, at the solution and knocked off it.
 #[test]
 fn a_measure_agrees_with_finite_differences_as_the_drawing_states_it() {
     let frame = "\
@@ -701,10 +701,8 @@ in std.front {
   arm := line(corner, end)
 }
 tube := beam(post, arm, A: d^2 / 2, Iy: 0.05 * d^4, Iz: 0.05 * d^4, J: 0.1 * d^4) of steel
-scenario s {
-  mass(tube) == 3kg
-  volume(arm) == 200 * 1cm^3
-}
+mass(3kg) tube
+volume(200 * 1cm^3) arm
 ";
     let plate = "\
 unit mm
@@ -736,15 +734,10 @@ in std.front {
   region := face(low, end, round, top, back, holes: hole)
 }
 plate := solid(region, from: -2mm, to: 2mm) of steel
-scenario s {
-  READ
-  mass(plate) == 0.17584kg
-}
+mass(0.17584kg) plate
 ";
     let mut rng = Rng::new(522);
-    let srcs = [frame.to_string(), plate.replace("READ", "plane stress plate"),
-                plate.replace("READ", "")];
-    for src in &srcs {
+    for src in [frame, plate] {
         let mut sk = crate::common::solved(&crate::common::read(src));
         for round in 0..3 {
             if round > 0 {

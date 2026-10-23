@@ -647,35 +647,29 @@ impl Constraint {
     }
 
     /// **What a mass or a volume driven reads** (`CKind::Mass`, `CKind::Volume`): the members its
-    /// requirement names, a beam's or a line's (`beams::Row::measured`), or the prism it names
+    /// statement names, a beam's or a line's (`beams::Row::measured`), or the prism it names
     /// (`prisms::Row::measured`, its face's mesh) — or why the solve cannot read it.  A prism's
     /// row is the one meshed when it was compiled (`Sketch::meshed`), where there is one.
     fn measure_row(&self, sk: &Sketch) -> Result<InteriorRow, String> {
         let reads = self.kind.reads().ok_or("it measures nothing")?;
-        let (scenario, requirement, sc, of) = self.measured(sk)?;
-        if let Some(row) = sk.meshed.get(&MeshedKey::Measure { scenario, requirement }) {
+        let (at, m) = self.measured(sk)?;
+        if let Some(row) = sk.meshed.get(&MeshedKey::Measure(at)) {
             return Ok(InteriorRow::Meshed(row.clone()));
         }
-        if !crate::beams::members(sk, of).is_empty() {
-            return crate::beams::Row::measured(sk, of, reads).map(InteriorRow::Frame);
+        if !crate::beams::members(sk, &m.of).is_empty() {
+            return crate::beams::Row::measured(sk, &m.of, reads).map(InteriorRow::Frame);
         }
-        let solid = of.solid().ok_or("it is of no beam, no member of one and no solid")?;
-        crate::prisms::Row::measured(sk, sc, solid, reads).map(|r| InteriorRow::Meshed(r.into()))
+        let solid = m.of.solid().ok_or("it is of no beam, no member of one and no solid")?;
+        crate::prisms::Row::measured(sk, solid, reads).map(|r| InteriorRow::Meshed(r.into()))
     }
 
-    /// What a mass or a volume driven names: its scenario's index and its requirement's, the
-    /// scenario, and what the requirement is of.
-    fn measured<'s>(&self, sk: &'s Sketch)
-        -> Result<(usize, usize, &'s crate::model::Scenario, &'s crate::model::Applied), String>
-    {
-        let (Some(Arg::Int(k)), Some(Arg::Int(r))) = (self.args.first(), self.args.get(1)) else {
-            return Err("a measure driven names a scenario and its requirement".into());
+    /// What a mass or a volume driven names: the drawing's statement of it, and its index.
+    fn measured<'s>(&self, sk: &'s Sketch) -> Result<(usize, &'s crate::model::Measured), String> {
+        let Some(Arg::Int(k)) = self.args.first() else {
+            return Err("a measure driven names what the drawing states of it".into());
         };
-        let k = usize::try_from(*k).ok().filter(|&k| k < sk.scenarios.len())
-            .ok_or("it is read under no scenario the drawing holds")?;
-        let r = usize::try_from(*r).ok().filter(|&r| r < sk.scenarios[k].requirements.len())
-            .ok_or("it names no requirement of its scenario")?;
-        Ok((k, r, &sk.scenarios[k], &sk.scenarios[k].requirements[r].of))
+        usize::try_from(*k).ok().and_then(|k| Some((k, sk.measured.get(k)?)))
+            .ok_or_else(|| "it names no mass or volume the drawing states".into())
     }
 
     /// The unknowns a frame's sections are read over, without its structure (#510 S1); a region's
@@ -683,7 +677,7 @@ impl Constraint {
     /// read over (`beams::measured_unknowns`); a prism's, none.
     pub fn frame_unknowns(&self, sk: &Sketch) -> Result<Vec<String>, String> {
         if self.kind != CKind::Deflection {
-            return crate::beams::measured_unknowns(sk, self.measured(sk)?.3);
+            return crate::beams::measured_unknowns(sk, &self.measured(sk)?.1.of);
         }
         let (sc, at, _) = self.frame_read(sk)?;
         crate::beams::row_unknowns(sk, sc, at)

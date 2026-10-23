@@ -2,7 +2,7 @@
  * the drawing moves under it — the core's `report::scenario_marks_json` and
  * `report::scenarios_pictured_json`, typed.  No geometry here: every place, direction and move
  * is the core's, and `Document.scenarioMarks` / `Document.scenariosPictured` are the calls. */
-import type { Scenario } from './program.js';
+import type { Scenario, ScenarioAnswer } from './program.js';
 
 /** A point or a direction in space, in the document's units. */
 export type Vec3 = [number, number, number];
@@ -67,8 +67,10 @@ export interface ScenarioPicture {
   scale: number;
 }
 
-/** Every scenario's answers, and one's picture (null where none was asked for). */
+/** Every scenario's answers, and one's picture (null where none was asked for); and what each
+ *  mass and volume the drawing states comes to (#510), read beside them. */
 export interface Pictured {
   scenarios: Scenario[];
   picture: ScenarioPicture | null;
+  measures: ScenarioAnswer[];
 }

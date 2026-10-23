@@ -133,12 +133,11 @@ impl Reads {
         self != Reads::Displacement
     }
 
-    /// The measure a scenario's output reads, `mass` or `volume`; `None` for any other output.
-    pub fn of(output: crate::model::Output) -> Option<Reads> {
-        match output {
-            crate::model::Output::Mass => Some(Reads::Mass),
-            crate::model::Output::Volume => Some(Reads::Volume),
-            _ => None,
+    /// What a row of the drawing's `quantity` reads.
+    pub fn of(quantity: crate::model::Quantity) -> Reads {
+        match quantity {
+            crate::model::Quantity::Mass => Reads::Mass,
+            crate::model::Quantity::Volume => Reads::Volume,
         }
     }
 

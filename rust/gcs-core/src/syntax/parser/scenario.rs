@@ -99,7 +99,7 @@ impl P<'_> {
             let value = self.load_value(kind)?;
             return Some(ItemKind::Load { kind, at, value });
         }
-        if call && Output::parse(&w).is_some() {
+        if call && (Output::parse(&w).is_some() || crate::model::Quantity::parse(&w).is_some()) {
             return self.requirement(false).map(ItemKind::Requirement);
         }
         // `plane stress B`, `plane strain B` (#510 S2)
@@ -174,6 +174,13 @@ impl P<'_> {
 
     /// `deflection(X) <= 0.5mm`, the output's word next (`claim` read already where it is one).
     fn requirement(&mut self, claim: bool) -> Option<RequirementText> {
+        // what a body is made of answers no load: the drawing states it, never a scenario
+        if let Some(q) = self.word_at(self.i).and_then(crate::model::Quantity::parse) {
+            let w = q.word();
+            self.fail(&format!("a {w} answers to no load, so it is no scenario's: the drawing \
+                                states it, `{w}(…) arm`, or claims it, `claim {w}(<= …) arm`"));
+            return None;
+        }
         let Some(output) = self.word_at(self.i).and_then(Output::parse) else {
             let words = crate::syntax::one_of(&Output::ALL.map(Output::word));
             self.fail(&format!("a requirement is written over an output: {words}"));

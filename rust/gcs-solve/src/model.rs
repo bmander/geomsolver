@@ -32,6 +32,7 @@ mod caches;
 mod running;
 mod material;
 mod scenario;
+mod measured;
 mod beam;
 
 pub use entities::{
@@ -60,6 +61,7 @@ pub use scenario::{
     Applied, Grade, Hold, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading, Requirement,
     Scenario, Support,
 };
+pub use measured::{Measured, Quantity};
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub use measure::polyline_distance;
@@ -104,11 +106,11 @@ pub const HELD_R: u8 = 3;
 
 /// **What a driving row's mesh is held by on `Sketch::meshed`** (#510 S2, S3): a deflection's
 /// scenario (its index on `Sketch::scenarios`), point and direction, or a mass's or a volume's
-/// scenario and requirement among the scenario's.
+/// statement (its index on `Sketch::measured`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MeshedKey {
     Deflection { scenario: usize, at: usize, along: EntRef },
-    Measure { scenario: usize, requirement: usize },
+    Measure(usize),
 }
 
 #[derive(Default, Clone, Debug)]
@@ -270,6 +272,10 @@ pub struct Sketch {
     /// Only a scenario that drives is here: one of claims adds nothing to the drawing.  Set by
     /// elaboration and carried by the Solvent source alone, as a beam is: never written to JSON.
     pub scenarios: Vec<Scenario>,
+    /// **The masses and volumes the drawing states** (`model::Measured`), which a mass or a volume
+    /// driven (`CKind::Mass`, `CKind::Volume`) reads by index, and the claims judged after the
+    /// solve.  Set by elaboration and carried by the Solvent source alone: never written to JSON.
+    pub measured: Vec<Measured>,
     /// **The regions a driving row over a plane reads** (#510 S2), and the prisms one over a solid
     /// reads (#510 S3, its face's mesh stacked): each meshed once, where the drawing stood when its
     /// row was compiled (`prisms::Row`), by what the row names (`MeshedKey`) — so every compile

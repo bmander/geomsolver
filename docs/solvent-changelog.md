@@ -4,20 +4,24 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.174] A mass or a volume drives.** `volume(B)` joins a scenario's outputs (§9.11), a length
-cubed, answered wherever `mass(B)` is: a frame's members' `A L`, a region's face through its depth,
-a solid's volume. And `mass(B) == m` and `volume(B) == v` drive, as a deflection has since 0.168:
-each is a row of the drawing over a beam, a line a beam is drawn on, or a prism, its value what
-`B` is made of and its rate its own, so the solve sizes a section's area read over an unknown,
-places a joint, or moves a prism's points and radii (its face meshed once and moved with the
-drawing, as a driving deflection's region is) until it holds. Neither reads a support or a load: a
-scenario of nothing but a mass sizes what it names, and a claim of a mass or a volume is now
-answered of a frame, a region or a solid its supports leave free, where through 0.173 a frame or
-a region left free had no answer. A mass of a material stating no `rho` is **E040**; a mass or a
-volume of a solid that is no prism compiles nothing yet. A driven requirement is reported as its
-row reads it, whether or not its scenario reads what it names otherwise. A volume is reported in
-the document's length cubed (`42000mm³`). `volume` is contextual, read so only as a scenario's
-output, so a drawing that names something `volume` is unchanged. (Issue #510.)
+**[0.174] What a body is made of is the drawing's.** A mass and a volume answer no load, so
+neither is a scenario's: `mass(m) B` and `volume(v) B` are relations of the drawing, prefix words
+(§9.1, §9.11) over a beam, a line a beam is drawn on, or a solid. Stated, each is a row the solve
+holds — a beam's or a member's `ρ A L` (its `A L`), a prism's density times its face's area
+through its depth — so it sizes a section's area read over an unknown, places a joint, or moves a
+prism's points and radii, its face meshed once and moved with the drawing as a driving
+deflection's region is; it reads no support and no load, so a drawing with no scenario at all is
+sized by its mass. Claimed, each is judged on the solved drawing: `claim mass(m) B`, and — a claim
+alone, since a bound on a mass chooses no root — `claim mass(<= m) B` and `claim mass(>= m) B`,
+each value reported with its error beside the scenarios' answers (`mass(arm) is 10kg: driven ==
+10kg, held`); a volume in the document's length cubed (`42000mm³`), written `42 * 1cm^3`. A mass of
+a material stating no `rho` is **E040**, as is a bound not claimed and a measure of a solid that is
+no prism stated. **`mass(B)` is no scenario output now**: through 0.173 a scenario claimed it, read
+only where the scenario's supports held the body; `mass(…)` (or `volume(…)`) in a scenario is
+refused as it is parsed, naming the drawing's statement, so a document that claimed a mass in a
+scenario writes it out of it — `claim mass(B) <= 1kg` in `scenario s { … }` is `claim mass(<= 1kg)
+B` beside it. The library's and the corpus's mass claims are moved so. `mass` and `volume` are
+operator words, so no relation word may be defined as either. (Issue #510.)
 
 **[0.173] Which way an axis runs.** `parallel` takes `sense: same|opposite` (§9.4): the second
 direction runs the way the first does, or the other way, where `parallel` alone holds either way

@@ -34,13 +34,15 @@ down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
 wall := solid(section, from: -length / 2, to: length / 2) of concrete
 
+// what it is made of answers no load, so it is the drawing's, claimed of it
+claim mass(>= 0.999999 * concrete.rho * (crest + foot) / 2 * H * length) wall
+claim mass(<= 1.000001 * concrete.rho * (crest + foot) / 2 * H * length) wall
+
 scenario full {
   plane strain wall
   fixed wall.base
   accelerate wall (0m / 1s^2, 0m / 1s^2, -g)
   pressure wall.back water * g * H / 2
-  claim mass(wall) >= 0.999999 * concrete.rho * (crest + foot) / 2 * H * length
-  claim mass(wall) <= 1.000001 * concrete.rho * (crest + foot) / 2 * H * length
   claim deflection(top_front, along: std.x) <= 0.1mm
   claim mode(wall, 1) >= 50Hz
 }

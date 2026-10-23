@@ -46,6 +46,9 @@ in std.front {
 }
 shaft := solid(section, about: std.z) of steel
 
+// what it is made of answers no load, so it is the drawing's, claimed of it
+claim mass(>= steel.rho * pi * (R^2 * shoulder + r^2 * (L - shoulder))) shaft
+
 scenario pull {
   pinned shaft.base along: std.z
   pinned o along: std.x
@@ -54,5 +57,4 @@ scenario pull {
   pressure shaft.head -sigma
   claim deflection(k, along: std.z) >= 0mm
   claim safety(shaft) >= steel.yield / (2 * sigma)
-  claim mass(shaft) >= steel.rho * pi * (R^2 * shoulder + r^2 * (L - shoulder))
 }
