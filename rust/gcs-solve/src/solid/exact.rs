@@ -30,28 +30,30 @@ impl Exact {
     /// The same B-rep under names `re` rewrites (#566): its faces', their halves' and the leading
     /// ones'.
     pub(crate) fn renamed(&self, re: &super::evaluated::Renaming<'_>) -> Exact {
-        let mut brep = self.brep.clone();
+        self.with(self.brep.clone(), self.origin, re)
+    }
+
+    /// **Another instance's solid of the same binding** (#566): this B-rep moved by `motion` and
+    /// renamed from the instance `from` to `to`, about its origin moved — nothing built again.
+    pub(crate) fn placed(&self, motion: &Rigid, from: &str, to: &str) -> Exact {
+        // the B-rep is about its origin, in millimetres: the origin takes the motion's
+        // translation, and the B-rep its turn alone
+        let brep = self.brep.moved(&geom::Rigid { r: motion.r, t: [0.0; 3] });
+        self.with(brep, motion.point(self.origin), &super::evaluated::Renaming { from, to })
+    }
+
+    /// `brep` about `origin`, under this one's names rewritten by `re`.
+    fn with(&self, mut brep: Brep, origin: [f64; 3], re: &super::evaluated::Renaming<'_>) -> Exact {
         for f in &mut brep.faces {
             f.name = re.name(&f.name);
         }
         Exact {
             brep,
             mm: self.mm,
-            origin: self.origin,
+            origin,
             leading: self.leading.iter().map(|f| re.name(f)).collect(),
             named: self.named.iter().map(|(of, face)| (re.name(of), face.clone())).collect(),
         }
-    }
-
-    /// **Another instance's solid of the same binding** (#566): this B-rep moved by `motion` and
-    /// renamed from the instance `from` to `to`, about its origin moved — nothing built again.
-    pub(crate) fn placed(&self, motion: &Rigid, from: &str, to: &str) -> Exact {
-        let mut x = self.renamed(&super::evaluated::Renaming { from, to });
-        // the B-rep is about its origin, in millimetres: the origin takes the motion's
-        // translation, and the B-rep its turn alone
-        x.origin = motion.point(self.origin);
-        x.brep = x.brep.moved(&geom::Rigid { r: motion.r, t: [0.0; 3] });
-        x
     }
 }
 

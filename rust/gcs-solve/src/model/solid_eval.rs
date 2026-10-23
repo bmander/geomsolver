@@ -77,12 +77,10 @@ impl Sketch {
             return Err(format!("`{0} {1} {0}` joins a solid to itself", name(self, body), word.as_str()));
         }
         self.as_body(body);
-        // joined to, it is no longer what its instance's binding made (#566)
-        self.solids[body].binding = None;
         if self.solids[body].def.body_set(word).expect("a body").contains(&(tool as u32)) {
             return Ok(());
         }
-        self.solids[body].def.body_set(word).expect("a body").push(tool as u32);
+        self.redefine(body, |d| d.body_set(word).map(|set| set.push(tool as u32)));
         if crate::solid::reaches(self, body as u32, body as u32) {
             self.solids[body].def.body_set(word).expect("a body").pop();
             return Err(format!("`{}` would be made of itself: `{}` is made of it",
@@ -114,6 +112,16 @@ impl Sketch {
         copy.evaluated_solid(target, crate::solid::ApproximationPolicy::from_unit(0.0))
     }
 
+    /// Solid `i`'s definition changed where it stands by `change`, where it applies (`Some`):
+    /// what it then is is no longer what its instance's binding made (#566), so the binding goes.
+    pub(crate) fn redefine<R>(&mut self, i: usize, change: impl FnOnce(&mut SolidDef) -> Option<R>)
+        -> Option<R> {
+        let s = self.solids.get_mut(i)?;
+        let changed = change(&mut s.def)?;
+        s.binding = None;
+        Some(changed)
+    }
+
     /// What the document calls a solid.
     pub fn solid_name(&self, i: usize) -> String {
         self.solids.get(i).map(|s| s.name.clone()).unwrap_or_default()
@@ -125,8 +133,12 @@ impl Sketch {
         &self, i: usize, policy: crate::solid::ApproximationPolicy,
     ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
         let (policy, slot) = self.solid_slot(i, policy);
-        if let Some(placed) = self.placed_solid(i, policy, slot) {
-            return placed;
+        // one of a binding's solids its representative's evaluation placed (#566); a refusal of
+        // the representative's is asked of this one, so it names its own solid
+        if let Some(b) = self.bound(i) {
+            if let Ok(rep) = self.evaluated_solid(b.rep, policy) {
+                return Ok(self.placed_solid(i, &b, &rep, slot));
+            }
         }
         let key = crate::solid::ShapeKey::of(self, i);
         if let Some(found) = self.remembered(slot, &key) {
@@ -136,10 +148,7 @@ impl Sketch {
             || crate::solid::EvaluatedSolid::evaluate(self, i, policy).map(std::rc::Rc::new));
         let mut cache = self.caches.solid.borrow_mut();
         cache.retain(|(index, _), old| *index != i || old.key.same_shape(&key));
-        // Bound zoom-history memory without evicting report and mesh entries.
-        if cache.keys().filter(|(index, (kind, _))| *index == i && *kind == 2).count() >= 8 {
-            cache.retain(|(index, (kind, _)), _| *index != i || *kind != 2);
-        }
+        super::caches::cap_zoom(&mut cache, i);
         cache.insert(slot, super::caches::SolidSlot { key, built: value.clone(), moved: None });
         value
     }
@@ -152,8 +161,8 @@ impl Sketch {
         let (policy, slot) = self.solid_slot(i, policy);
         // one of a binding's placed copies is built wherever its representative is (#566)
         if let Some(b) = self.bound(i) {
-            if let Some(Ok(_)) = self.built_solid(b.rep, policy) {
-                return self.placed_solid(i, policy, slot);
+            if let Some(Ok(rep)) = self.built_solid(b.rep, policy) {
+                return Some(Ok(self.placed_solid(i, &b, &rep, slot)));
             }
         }
         self.remembered(slot, &crate::solid::ShapeKey::of(self, i))
@@ -189,35 +198,24 @@ impl Sketch {
         Some(Ok(solid))
     }
 
-    /// **Solid `i` as its binding's representative's evaluation placed** (#566), `None` where it
-    /// is evaluated as its own: a solid with no binding, the representative, or one whose
-    /// representative refuses (it is then asked of itself, so a refusal names its own solid).
-    /// The representative's shape is renamed once for as long as it is that shape, and placed
-    /// again only where the representative's evaluation or the motion has changed.
-    fn placed_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy,
-                    slot: (usize, (u8, u64)))
-        -> Option<Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>> {
-        let b = self.bound(i)?;
-        let rep = self.evaluated_solid(b.rep, policy).ok()?;
+    /// **Solid `i`, bound as `b`, as its representative's evaluation `rep` placed** (#566): the
+    /// representative's shape renamed once for as long as it is that shape, and placed again
+    /// only where the representative's evaluation or the motion has changed.
+    fn placed_solid(&self, i: usize, b: &super::Bound, rep: &std::rc::Rc<crate::solid::EvaluatedSolid>,
+                    slot: (usize, (u8, u64))) -> std::rc::Rc<crate::solid::EvaluatedSolid> {
         let mut cache = self.caches.placed.borrow_mut();
-        if let Some((renamed, of, motion, placed)) = cache.get_mut(&slot) {
-            if std::rc::Rc::ptr_eq(of, &rep) && *motion == b.motion {
-                return Some(Ok(placed.clone()));
-            }
-            if let Some(moved) = rep.placed(&b.motion, renamed) {
-                let moved = std::rc::Rc::new(moved);
-                (*of, *motion, *placed) = (rep, b.motion, moved.clone());
-                return Some(Ok(moved));
-            }
+        if let Some(hit) = cache.get(&slot).and_then(|(_, p)| p.hit(rep, &b.motion)) {
+            return hit;
         }
-        let renamed = rep.renamed(&b.from, &b.to);
-        let placed = std::rc::Rc::new(rep.placed(&b.motion, &renamed)?);
-        // as `evaluated_solid` bounds a solid's zoom history
-        if cache.keys().filter(|(index, (kind, _))| *index == i && *kind == 2).count() >= 8 {
-            cache.retain(|(index, (kind, _)), _| *index != i || *kind != 2);
-        }
-        cache.insert(slot, (renamed, rep, b.motion, placed.clone()));
-        Some(Ok(placed))
+        let mut renamed = match cache.remove(&slot) {
+            Some((renamed, _)) => renamed,
+            None => rep.renamed(&b.from, &b.to),
+        };
+        let placed = std::rc::Rc::new(rep.placed(&b.motion, &mut renamed, &b.from, &b.to));
+        super::caches::cap_zoom(&mut cache, i);
+        let placement = super::caches::Placement { of: rep.clone(), motion: b.motion, placed: placed.clone() };
+        cache.insert(slot, (renamed, placement));
+        placed
     }
 
     /// Solid `i`'s exact B-rep (`solid::Exact`), or why this kernel does not build it: built once
@@ -226,13 +224,12 @@ impl Sketch {
     pub fn exact_solid(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
         if let Some(b) = self.bound(i) {
             if let Ok(rep) = self.exact_solid(b.rep) {
-                if let Some((of, motion, placed)) = self.caches.placed_exact.borrow().get(&i) {
-                    if std::rc::Rc::ptr_eq(of, &rep) && *motion == b.motion {
-                        return Ok(placed.clone());
-                    }
+                let mut cache = self.caches.placed_exact.borrow_mut();
+                if let Some(hit) = cache.get(&i).and_then(|p| p.hit(&rep, &b.motion)) {
+                    return Ok(hit);
                 }
                 let placed = std::rc::Rc::new(rep.placed(&b.motion, &b.from, &b.to));
-                self.caches.placed_exact.borrow_mut().insert(i, (rep, b.motion, placed.clone()));
+                cache.insert(i, super::caches::Placement { of: rep, motion: b.motion, placed: placed.clone() });
                 return Ok(placed);
             }
         }
@@ -391,15 +388,18 @@ impl Sketch {
     /// says so to a binding.  False for a solid that is not a prism.
     pub fn set_prism(&mut self, i: usize, way: Way, d: f64) -> bool {
         let (from, to) = way.extents(d);
-        match self.solids.get_mut(i).map(|s| &mut s.def) {
-            Some(SolidDef::Prism { from: f, to: t, .. }) => {
+        let set = self.redefine(i, |d| match d {
+            SolidDef::Prism { from: f, to: t, .. } => {
                 *f = Extent::at(from);
                 *t = Extent::at(to);
-                self.shape_epoch = self.shape_epoch.wrapping_add(1);
-                true
+                Some(())
             }
-            _ => false,
+            _ => None,
+        });
+        if set.is_some() {
+            self.shape_epoch = self.shape_epoch.wrapping_add(1);
         }
+        set.is_some()
     }
 
     /// Re-turn a revolution where it stands through `degrees`, signed (positive right-handed
@@ -408,18 +408,21 @@ impl Sketch {
     /// not one, or no turn.
     pub fn set_turn(&mut self, i: usize, degrees: f64) -> bool {
         let Some((how_far, sense)) = turn_of(degrees) else { return false };
-        match self.solids.get_mut(i).map(|s| &mut s.def) {
-            Some(SolidDef::Revolve { sweep, sense: s, .. }) => {
+        let set = self.redefine(i, |d| match d {
+            SolidDef::Revolve { sweep, sense: s, .. } => {
                 *sweep = match how_far {
                     None => Extent { text: String::new(), value: std::f64::consts::TAU },
                     Some(d) => Extent { text: crate::vocab::num(d), value: d.to_radians() },
                 };
                 *s = sense;
-                self.shape_epoch = self.shape_epoch.wrapping_add(1);
-                true
+                Some(())
             }
-            _ => false,
+            _ => None,
+        });
+        if set.is_some() {
+            self.shape_epoch = self.shape_epoch.wrapping_add(1);
         }
+        set.is_some()
     }
 }
 

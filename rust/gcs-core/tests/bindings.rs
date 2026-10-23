@@ -11,7 +11,6 @@ use crate::common::{at_path, read, refused};
 use gcs_core::model::Sketch;
 use gcs_core::progress::{self, At, Kind, Listener, Work};
 use gcs_core::solid::{ApproximationPolicy as Policy, EvaluatedSolid};
-use gcs_core::solve::{solve, SolveOpts};
 
 /// A plate drawn about its frame's origin, off it by a millimetre, so a turn of the frame turns it
 /// and a move moves it.
@@ -54,8 +53,7 @@ fix(origin == (-40, 5, 12)) g
 
 fn solved(src: &str) -> (gcs_core::program::Elaborated, Sketch) {
     let e = read(src);
-    let mut sk = e.sketch.clone();
-    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let sk = crate::common::solved(&e);
     (e, sk)
 }
 
@@ -83,14 +81,19 @@ fn solid(e: &gcs_core::program::Elaborated, name: &str) -> usize {
     at_path(e, name).i()
 }
 
-/// Solid `i` evaluated as its own, its binding forgotten.
-fn fresh(sk: &Sketch, i: usize) -> Rc<EvaluatedSolid> {
+/// The drawing with every binding forgotten, and nothing remembered: each solid its own.
+fn unbound(sk: &Sketch) -> Sketch {
     let mut own = sk.clone();
     own.caches.clear();
     for s in &mut own.solids {
         s.binding = None;
     }
-    own.evaluated_solid(i, Policy::Report).unwrap()
+    own
+}
+
+/// Solid `i` evaluated as its own, its binding forgotten.
+fn fresh(sk: &Sketch, i: usize) -> Rc<EvaluatedSolid> {
+    unbound(sk).evaluated_solid(i, Policy::Report).unwrap()
 }
 
 /// How near a placed copy's every number is to a fresh evaluation's: a thousand times the solve's
@@ -148,12 +151,7 @@ fn two_closed_instances_with_equal_arguments_in_two_frames_are_built_once() {
     let (exact, builds) = counted(|| sk.exact_solid(two).unwrap());
     assert!(builds.is_empty(), "{builds:?}");
     assert!(exact.brep.faces.iter().all(|f| f.name.starts_with("two.")));
-    let mut own = sk.clone();
-    for s in &mut own.solids {
-        s.binding = None;
-    }
-    own.caches.clear();
-    let theirs = own.exact_solid(two).unwrap();
+    let theirs = unbound(&sk).exact_solid(two).unwrap();
     let corners = |x: &gcs_core::solid::Exact| {
         let mut c: Vec<[i64; 3]> = x.brep.vertices.iter()
             .map(|v| std::array::from_fn(|k| ((x.origin[k] + v.p[k] / x.mm) * 1e6).round() as i64))

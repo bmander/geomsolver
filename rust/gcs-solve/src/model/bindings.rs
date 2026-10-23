@@ -45,24 +45,24 @@ impl Sketch {
     /// swept solid (meshed elsewhere, by solid), or one reaching a solid no instance of its
     /// binding made (a tool joined from outside the instance).
     pub fn bound(&self, i: usize) -> Option<Bound> {
-        let b = self.solids.get(i)?.binding.as_ref()?;
-        if !self.shares(i) {
-            return None;
-        }
-        let rep = (0..i).find(|&j| self.solids[j].binding.as_ref().is_some_and(|c| c.key == b.key)
-            && self.shares(j))?;
-        let from = self.solids[rep].binding.as_ref()?.at.clone();
+        let rep = self.peers(i)?.next().filter(|&j| j < i)?;
+        let (from, to) = (&self.solids[rep].binding.as_ref()?.at, &self.solids[i].binding.as_ref()?.at);
         let motion = Rigid::between(&self.binding_pose(rep)?, &self.binding_pose(i)?);
-        Some(Bound { rep, motion, from, to: b.at.clone() })
+        Some(Bound { rep, motion, from: from.clone(), to: to.clone() })
     }
 
     /// Whether solid `i` is one of several solids of one binding: what another solid's recipe
     /// then asks `exact_solid` for, the representative's B-rep built once and placed.
     pub fn shared(&self, i: usize) -> bool {
-        let Some(b) = self.solids.get(i).and_then(|s| s.binding.as_ref()) else { return false };
-        self.shares(i) && self.solids.iter().enumerate().any(|(j, s)| {
-            j != i && s.binding.as_ref().is_some_and(|c| c.key == b.key) && self.shares(j)
-        })
+        self.peers(i).is_some_and(|mut p| p.next().is_some())
+    }
+
+    /// The other solids of solid `i`'s binding, by index, where it holds for `i` (`shares`).
+    fn peers(&self, i: usize) -> Option<impl Iterator<Item = usize> + '_> {
+        let key = &self.solids.get(i)?.binding.as_ref()?.key;
+        self.shares(i).then(|| (0..self.solids.len()).filter(move |&j| {
+            j != i && self.solids[j].binding.as_ref().is_some_and(|c| c.key == *key) && self.shares(j)
+        }))
     }
 
     /// Whether solid `i`'s evaluation is its binding's: every solid it reaches was made by its
@@ -96,12 +96,11 @@ impl Sketch {
         let at = match b.frame {
             Some(f) if (f as usize) < self.frames.len() => self.basis(f as usize),
             Some(_) => return None,
-            None => Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0; 3] },
+            None => Basis::world(),
         };
         let Some((about, k, n)) = b.turn else { return Some(at) };
-        // the copy's own turn (`Turn::cos_sin`): about a point, counter-clockwise in its view,
-        // which is right-handed about the view's normal; about an axis, right-handed about it
-        let (c, s) = Turn { copy: about, rep: about, about, k, n }.cos_sin();
+        // the copy's own turn (`Turn`): about a point, counter-clockwise in its view, which is
+        // right-handed about the view's normal; about an axis, right-handed about it
         let (o, d) = match about.kind {
             EntKind::Point if about.i() < self.points.len() => {
                 let normal = match self.plane_of(about.i()) {
@@ -117,12 +116,7 @@ impl Sketch {
             _ => return None,
         };
         let d = crate::space::normalised(d)?;
-        let turn = |v: [f64; 3]| {
-            let (dv, cross) = (crate::plane::dot(d, v), crate::space::cross(d, v));
-            std::array::from_fn(|k| c * v[k] + s * cross[k] + (1.0 - c) * dv * d[k])
-        };
-        let from_o = crate::space::sub(at.o, o);
-        let moved = turn(from_o);
-        Some(Basis { u: turn(at.u), v: turn(at.v), o: std::array::from_fn(|k| o[k] + moved[k]) })
+        let m = crate::brep::geom::Rigid::turn(o, d, std::f64::consts::TAU * k as f64 / n as f64);
+        Some(Basis { u: m.vector(at.u), v: m.vector(at.v), o: m.point(at.o) })
     }
 }

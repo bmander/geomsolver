@@ -248,6 +248,12 @@ impl Scope {
         self.prefixes.first().map(String::as_str).unwrap_or("")
     }
 
+    /// Whether this is the body of an instance declared in `ring` (#566), not the ring's own
+    /// body or a ring inside a body.
+    fn in_instance_of(&self, ring: &Ring) -> bool {
+        self.closed && self.instance_prefix().starts_with(&ring.prefix)
+    }
+
     /// The innermost *instance's* prefix — what a dotted name read inside a body is made
     /// absolute under (`t.w` in `u` is `u.t.w`).  A block copy's prefix (`#3.0.`) is skipped: a
     /// `cycle` is a repetition of statements written in the body around it.
@@ -655,6 +661,10 @@ struct WordState {
     /// application's bound variables.  A ring's representative is judged by the argument as
     /// written (E021), and not again where a body reads the name (#226).
     arguments: BTreeSet<String>,
+    /// The applications whose body declares something, by prefix: an operand read there may be
+    /// built on rather than related, which a ring's instance may not do with its frame's datums
+    /// (#566).
+    declaring: BTreeSet<String>,
 }
 
 /// The sets the walk made (§6.21) and how each is drawn (`Walk::sets`).

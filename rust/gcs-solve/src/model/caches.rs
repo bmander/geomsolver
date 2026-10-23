@@ -17,6 +17,34 @@ pub struct SolidSlot {
     pub moved: Option<(crate::plane::Basis, Rc<crate::solid::EvaluatedSolid>)>,
 }
 
+/// A solid of a binding as its representative's result placed (#566, `Caches::placed`): the
+/// result it was placed from, by identity, the motion it was placed by, and what that made.
+#[derive(Clone, Debug)]
+pub struct Placement<T> {
+    pub(crate) of: Rc<T>,
+    pub(crate) motion: crate::solid::Rigid,
+    pub(crate) placed: Rc<T>,
+}
+
+impl<T> Placement<T> {
+    /// What was placed, where it was placed from `of` by `motion`.
+    pub(crate) fn hit(&self, of: &Rc<T>, motion: &crate::solid::Rigid) -> Option<Rc<T>> {
+        (Rc::ptr_eq(&self.of, of) && self.motion == *motion).then(|| self.placed.clone())
+    }
+}
+
+/// Forget solid `i`'s zoom history in a cache by solid and approximation once it holds eight:
+/// its report and mesh entries are kept.
+pub(crate) fn cap_zoom<V>(cache: &mut BTreeMap<(usize, (u8, u64)), V>, i: usize) {
+    let zooms = (i, (2, 0))..=(i, (2, u64::MAX));
+    if cache.range(zooms.clone()).count() >= 8 {
+        let gone: Vec<_> = cache.range(zooms).map(|(k, _)| *k).collect();
+        for k in gone {
+            cache.remove(&k);
+        }
+    }
+}
+
 /// **The sketch's memos**: each result remembered against everything it was worked out from, so
 /// a miss works out what a hit remembers and none of it is state — a drawing reads the same with
 /// every one empty (`clear`). Interior, so `&Sketch` readers share them.
@@ -52,15 +80,11 @@ pub struct Caches {
     pub solid: RefCell<BTreeMap<(usize, (u8, u64)), SolidSlot>>,
     /// Each solid of a binding read as its representative's evaluation placed (#566), by solid and
     /// approximation: the representative's shape under its names, renamed once for every place
-    /// it is moved to, and the last placement — the representative's evaluation it was placed
-    /// from, by identity, the motion, and what that made, which a repaint asks again.
-    #[allow(clippy::type_complexity)]
-    pub(crate) placed: RefCell<BTreeMap<(usize, (u8, u64)), (crate::solid::Renamed,
-        Rc<crate::solid::EvaluatedSolid>, crate::solid::Rigid, Rc<crate::solid::EvaluatedSolid>)>>,
+    /// it is moved to, and the last placement, which a repaint asks again.
+    pub(crate) placed: RefCell<BTreeMap<(usize, (u8, u64)),
+        (crate::solid::Renamed, Placement<crate::solid::EvaluatedSolid>)>>,
     /// The same for each such solid's exact B-rep, by solid.
-    #[allow(clippy::type_complexity)]
-    pub(crate) placed_exact: RefCell<BTreeMap<usize, (Rc<crate::solid::Exact>, crate::solid::Rigid,
-        Rc<crate::solid::Exact>)>>,
+    pub(crate) placed_exact: RefCell<BTreeMap<usize, Placement<crate::solid::Exact>>>,
     /// Each static solid's exact B-rep (`solid::Exact`), remembered against `solid::reads` alone:
     /// it does not depend on an approximation, so it is built once for a geometry and only meshed
     /// again for each one the evaluated solids above ask for.

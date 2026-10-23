@@ -132,10 +132,10 @@ tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel ro
 `tests/ring.rs` and `tests/turns.rs` are the gates.
 **An instance declared in a ring stands in its copy's frame** ([0.177], #566): copy k's is the
 representative's frame turned k steps, as its entities are, so a relation of the instance's body
-reading the standard datums of the frame it stands in (`std.origin`, `std.x`, …: `Seen::datum`,
-`Lookup::reads_datum`, only for a scope whose instance prefix is under the ring's) is no E021 —
-nor is a relation word's operand there, where the application declares nothing (`declaring`, read
-in `judge_arguments`).  A declaration built on such a datum is the same datum in every copy,
+reading the standard datums of the frame it stands in (`std.origin`, `std.x`, …:
+`Lookup::reads_datum`, only where `Scope::in_instance_of` the ring) is not judged at all — nor is
+a relation word's operand there, where the application declares nothing (`WordState::declaring`,
+the applications whose body made a declaration, read in `judge_arguments`).  A declaration built on such a datum is the same datum in every copy,
 unturned, and stays E021 unless it is invariant already (the centre); so does a datum read by the
 ring's own body outside any instance, an entity argument and an outside reference.
 `tests/bindings.rs` is the gate (`a_ring_of_instances_is_built_once_and_each_copy_stands_turned`,
@@ -145,13 +145,13 @@ ring's own body outside any instance, an entity argument and an outside referenc
 aliases are absolute, gives each drawn instance of a definition (no set family) whose formals are
 numbers, or groups carrying numbers alone (no alias under the formal), each given a constant
 (`Aff::free` none), a `flatten::Bound`: a key of its component, the datum of its frame its call is
-drawn in (`drawn_in`: `page` with no `in`, `frame` for the frame itself, a datum's name, `o.plane`
-of the frame's origin its `front`; any other plane leaves it open) and its numbers by value, and
+drawn in (`drawn_in`: `page` with no `in`, `frame` for the frame itself, a datum's path or a
+field past one, `origin.plane`; any other plane leaves it open) and its numbers by value, and
 the frame it stands in (`Lookup::stood_in`, `datum`'s).  A body a pass did not walk (the datums'
 pass) keeps what the pass that walked it said.  `program::bound::stamp`, last in `finish`, stamps
 each solid with the innermost closed instance its name is under — the key, its path in the body
 and which of the solids so named it is, the frame's index, and the turn of the one ring copy past
-the first it is in (two such, and it stays its own) — as `model::Binding`; what the core does with
+the first it is in (`rings::copy_of`; two such, and it stays its own) — as `model::Binding`; what the core does with
 it is solids.md's.  No row, column or solved position changes.
 
 **`claim { … }`, a claim with witnesses of its own (§9.7, [0.151], #460):** hoisted as an `in` body

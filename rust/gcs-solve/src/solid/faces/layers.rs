@@ -154,7 +154,8 @@ fn stack(sk: &mut Sketch, b: usize, of: &BTreeMap<usize, usize>) {
         below = Some(layer as u32);
     }
     let last = |v: &[u32]| v.iter().copied().filter(|o| at(o) == Some(top)).collect();
-    sk.solids[b].def = SolidDef::Body {
+    let body = SolidDef::Body {
         stock: below.expect("a layer below the top"), on: last(&on), through: last(&through), bound: Vec::new(),
     };
+    sk.redefine(b, |d| { *d = body; Some(()) });
 }

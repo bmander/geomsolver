@@ -127,13 +127,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   `placed_solid` before the per-index memo: the representative's `Shape` renamed once from its
   instance's names to the copy's (`EvaluatedSolid::renamed`, `Renamed`: a serial of its own,
   kept while the representative is that shape) and moved by the motion (`placed`), remembered in
-  `Caches::placed` against the representative's evaluation by identity and the motion.
+  `Caches::placed` as a `Placement`: the representative's evaluation by identity and the motion.
   `exact_solid` places the representative's B-rep likewise (`Exact::placed`, `Caches::placed_exact`),
   and a recipe reaching a solid of a binding several share takes its B-rep from `exact_solid`,
   moved into its place (`exact::build`, `Sketch::shared`), so a union of a ring's instances builds
   one.  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did
-  not make (a tool joined from outside) or a swept one is its own, a body joined to (`join_body`,
-  a preview's) loses its stamp, a refusal of the representative's is asked of the copy itself, and
+  not make (a tool joined from outside) or a swept one is its own, a solid redefined where it
+  stands (`Sketch::redefine`: `join_body`, `set_prism`, `set_turn`, a stratum's body) loses its
+  stamp, a refusal of the representative's is asked of the copy itself, and
   `graft` drops the stamp.  Keyed by provenance, never by content: equal content is the tests'
   claim, not the lookup's.  `tests/bindings.rs` is the gate
   (`two_closed_instances_with_equal_arguments_in_two_frames_are_built_once`,

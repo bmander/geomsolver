@@ -204,9 +204,10 @@ impl Shape {
             edges: kept(self.edges.get().map(|e| e.iter()
                 .map(|e| Edge { path: re.name(&e.path), ..e.clone() }).collect())),
             mesh: kept(self.mesh.get().map(|m| mesh::Mesh {
-                groups: m.groups.iter().map(|g| mesh::Group { path: re.name(&g.path), ..g.clone() })
+                positions: m.positions.clone(),
+                normals: m.normals.clone(),
+                groups: m.groups.iter().map(|g| mesh::Group { path: re.name(&g.path), ..*g })
                     .collect(),
-                ..m.clone()
             })),
             ray_indices: OnceCell::new(),
             face_edges: kept(self.face_edges.get().map(|f| f.iter().map(|e| mesh::FaceEdge {
@@ -669,12 +670,14 @@ impl EvaluatedSolid {
         }
     }
     /// **Another instance's solid of the same binding** (#566): this evaluation moved by
-    /// `motion`, under the names `renamed` gives its shape — `None` where it is another shape's.
-    pub(crate) fn placed(&self, motion: &Rigid, renamed: &Renamed) -> Option<Self> {
-        (renamed.of == self.shape.serial).then(|| Self {
-            shape: renamed.shape.clone(),
-            ..self.moved(motion)
-        })
+    /// `motion`, under the names `renamed` gives its shape — renamed again from `from` to `to`
+    /// where it was renamed from another shape.
+    pub(crate) fn placed(&self, motion: &Rigid, renamed: &mut Renamed, from: &str, to: &str)
+        -> Self {
+        if renamed.of != self.shape.serial {
+            *renamed = self.renamed(from, to);
+        }
+        Self { shape: renamed.shape.clone(), ..self.moved(motion) }
     }
     /// A fresh evaluation's placement: at `origin`, turned nowhere.
     fn made(origin: WorldPoint, shape: Shape) -> Self {

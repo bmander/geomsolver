@@ -26,26 +26,17 @@ impl<'a> Walk<'a> {
                 bodies.entry(sc.owner.as_str()).or_insert(sc);
             }
         }
-        let look = self.look(alias);
         // a body this pass did not walk (the datums' pass after the document's) keeps what the
         // pass that walked it decided
-        let bound: Vec<Option<Option<Bound>>> = self.instances.iter().map(|info| {
-            let sc = bodies.get(info.prefix.as_str())?;
-            Some(self.closed(info, alias).then(|| {
-                let stands = sc.stands.as_deref()?;
-                let frame = look.stood_in(stands, sc);
-                let datum = drawn_in(&look, stands, sc, frame.as_deref())?;
-                let mut key = format!("{}\u{1f}{datum}", info.comp);
-                for (name, v) in &info.values {
-                    key.push_str(&format!("\u{1f}{name}={:016x}", v.c.to_bits()));
-                }
-                Some(Bound { key, frame })
-            }).flatten())
-        }).collect();
-        for (info, b) in self.instances.iter_mut().zip(bound) {
-            if let Some(b) = b {
-                info.binding = b;
-            }
+        let look = self.look(alias);
+        let bound: Vec<(usize, Option<Bound>)> = self.instances.iter().enumerate()
+            .filter_map(|(n, info)| {
+                let sc = bodies.get(info.prefix.as_str())?;
+                Some((n, self.closed(info, alias).then(|| bound(&look, info, sc)).flatten()))
+            })
+            .collect();
+        for (n, b) in bound {
+            self.instances[n].binding = b;
         }
     }
 
@@ -54,8 +45,8 @@ impl<'a> Walk<'a> {
         let comp = &self.prog.components[info.comp];
         let carries = |formal: &str| {
             let key = format!("{}{formal}", info.prefix);
-            alias.range(key.clone()..).take_while(|(k, _)| k.starts_with(&key))
-                .any(|(k, _)| k == &key || k[key.len()..].starts_with('.'))
+            let mut under = table::prefixed(alias, &key);
+            under.any(|(k, _)| resolve::under_member(k, &key))
         };
         info.drawn && !info.path.is_empty() && comp.set.is_none()
             && info.values.values().all(|v| v.free.is_none())
@@ -67,21 +58,31 @@ impl<'a> Walk<'a> {
     }
 }
 
+/// Closed instance `info`'s binding, its body read at `sc`: `None` where its call is drawn in a
+/// plane its frame does not make.
+fn bound(look: &Lookup<'_>, info: &InstanceInfo, sc: &Scope) -> Option<Bound> {
+    use std::fmt::Write;
+    let stands = sc.stands.as_deref()?;
+    let frame = look.stood_in(stands, sc);
+    let mut key = format!("{}\u{1f}{}", info.comp, drawn_in(look, stands, sc, frame.as_deref())?);
+    for (name, v) in &info.values {
+        let _ = write!(key, "\u{1f}{name}={:016x}", v.c.to_bits());
+    }
+    Some(Bound { key, frame })
+}
+
 /// What the body standing at `stands` is drawn in, as a datum of `frame`: `page` where no `in`
-/// stands around it, `frame` for the frame itself, the datum's name for one of its planes (the
-/// plane its origin is drawn in, `o.plane`, being its front) — `None` for any other plane,
-/// which the body would read beside its frame.
+/// stands around it, `frame` for the frame itself, and a datum's path for one of its planes or a
+/// field past one (`origin.plane`) — `None` for any other plane, which the body would read beside
+/// its frame.
 fn drawn_in(look: &Lookup<'_>, stands: &[InPlane], sc: &Scope, frame: Option<&str>)
     -> Option<String> {
     let Some(ip) = stands.last() else { return Some("page".into()) };
     let at = Scope { stands: None, ..Scope::written_at(ip, sc) };
     let (abs, rest) = look.raw(&ip.plane, &at)?;
-    let made = frame.map_or_else(|| "std.".to_string(), keys::frame_datums);
-    let datum = abs.strip_prefix(made.as_str());
-    match rest.as_slice() {
-        [] if Some(abs.as_str()) == frame => Some("frame".into()),
-        [] => datum.map(str::to_string),
-        [p] if p == "plane" && datum == Some("origin") => Some("front".into()),
-        _ => None,
+    if rest.is_empty() && Some(abs.as_str()) == frame {
+        return Some("frame".into());
     }
+    let made = frame.map_or_else(|| "std.".to_string(), keys::frame_datums);
+    abs.strip_prefix(made.as_str()).map(|datum| resolve::dotted(datum.to_string(), rest))
 }
