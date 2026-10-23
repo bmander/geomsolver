@@ -109,7 +109,7 @@ fn peel(r: &mut Refiner,inside: Vec<u32>,facets: &[([u32;3],u32,usize)],cells: &
             if on.len() < 2 || on.len() > 3 || tetra::least_dihedral(q) >= cells.dihedral { continue; }
             let area = (0..4).map(|i| { let f = facet_vertices(tet.v,i).map(|v| r.tri.points()[v as usize].p);
                 norm(cross(sub(f[1],f[0]),sub(f[2],f[0]))) }).fold(0.,f64::max);
-            if !(tetra::volume6(q).abs() <= 2.*thin*area) { continue; }
+            if !(tetra::volume6(q).abs() <= 2.*thin*area) || tet.v.iter().any(|v| uses[v] == 1) { continue; }
             // the faces it would leave on the boundary, each oriented out of its neighbour
             let mut out = Vec::new();
             for i in (0..4).filter(|i| !on.contains(i)) {
@@ -122,17 +122,20 @@ fn peel(r: &mut Refiner,inside: Vec<u32>,facets: &[([u32;3],u32,usize)],cells: &
                 out.push(f);
             }
             if out.len() + on.len() != 4 { continue; }
-            // every edge of the boundary still on two faces, every corner still on a cell
-            let mut count = edges.clone();
-            for &i in &on { let f = facet_vertices(tet.v,i); for k in 0..3 { *count.get_mut(&edge(f[k],f[(k+1)%3])).unwrap() -= 1; } }
-            for f in &out { for k in 0..3 { *count.entry(edge(f[k],f[(k+1)%3])).or_default() += 1; } }
-            let touched = (0..4).flat_map(|i| { let f = facet_vertices(tet.v,i); (0..3).map(move |k| edge(f[k],f[(k+1)%3])) });
-            if touched.into_iter().any(|e| count.get(&e).is_some_and(|&c| c != 0 && c != 2)) { continue; }
-            if tet.v.iter().any(|v| uses[v] == 1) { continue; }
+            // every edge of the boundary still on two faces: only its own six edges change
+            let sides = |f: [u32;3]| [0,1,2].map(|k| edge(f[k],f[(k+1)%3]));
+            let after: Vec<((u32,u32),i64)> = EDGES.iter().map(|&(a,b)| {
+                let e = edge(tet.v[a],tet.v[b]);
+                let gone = on.iter().filter(|&&i| sides(facet_vertices(tet.v,i)).contains(&e)).count();
+                let made = out.iter().filter(|f| sides(**f).contains(&e)).count();
+                (e,edges.get(&e).copied().unwrap_or(0) as i64-gone as i64+made as i64)
+            }).collect();
+            if after.iter().any(|&(_,c)| c != 0 && c != 2) { continue; }
             for &i in &on { faces.remove(&key(facet_vertices(tet.v,i))); }
             for f in out { faces.insert(key(f),f); }
-            count.retain(|_,c| *c > 0);
-            edges = count;
+            for (e,c) in after {
+                if c == 0 { edges.remove(&e); } else { edges.insert(e,c as usize); }
+            }
             for v in tet.v { *uses.get_mut(&v).unwrap() -= 1; }
             cell.remove(&t);
             peeled += 1;
@@ -142,8 +145,8 @@ fn peel(r: &mut Refiner,inside: Vec<u32>,facets: &[([u32;3],u32,usize)],cells: &
     }
     let kept: Vec<u32> = inside.into_iter().filter(|t| cell.contains(t)).collect();
     // the restricted facets in their order, then the faces a peel left, in order
-    let mut left = faces.clone();
     let mut boundary: Vec<[u32;3]> = Vec::with_capacity(faces.len());
+    let mut left = faces;
     for (f,_,_) in facets { if left.remove(&key(*f)).is_some() { boundary.push(*f); } }
     boundary.extend(left.into_values());
     (kept,boundary,peeled)

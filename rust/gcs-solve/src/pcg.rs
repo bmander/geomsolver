@@ -20,7 +20,7 @@
 //! `L z` by scattering down a column, `U z` and the backward sweep by gathering it, `K x` both —
 //! one copy of the matrix, which a factor fills twentyfold on a mesh in three dimensions.
 
-use crate::cholesky::{Cholesky, NotPositive, Ordering, Symmetric};
+use crate::cholesky::{Cholesky, Ordering, Symmetric};
 
 /// Where CG stops: the residual this fraction of the right-hand side's (the moves then good to
 /// about twenty times this, on the library's solids).
@@ -46,19 +46,18 @@ pub struct Lower {
 
 impl Lower {
     /// **The pattern of a mesh's equations**, its values zero: an entry wherever two equations'
-    /// nodes share an element.  `each` hands every element's nodes to its argument (it is asked
-    /// twice), node `m`'s degrees of freedom are `per·m..per·m + per`, and `eq` numbers them —
-    /// `None` where a support holds one — increasing with the degree of freedom, so a column's
-    /// rows come out in order.
-    pub fn pattern(nodes: usize, per: usize, each: &dyn Fn(&mut dyn FnMut(&[usize])),
-                   eq: &[Option<usize>], n: usize) -> Lower
+    /// nodes share an element.  `elements` are the elements' nodes, node `m`'s degrees of freedom
+    /// are `per·m..per·m + per`, and `eq` numbers them — `None` where a support holds one —
+    /// increasing with the degree of freedom, so a column's rows come out in order.
+    pub fn pattern<'a>(nodes: usize, per: usize, elements: impl IntoIterator<Item = &'a [usize]>,
+                       eq: &[Option<usize>], n: usize) -> Lower
     {
         // every element's nodes, and the elements each node is in
         let (mut flat, mut starts) = (Vec::new(), vec![0usize]);
-        each(&mut |ns: &[usize]| {
+        for ns in elements {
             flat.extend(ns.iter().map(|&v| v as u32));
             starts.push(flat.len());
-        });
+        }
         let mut inc = vec![0usize; nodes + 1];
         for &v in &flat {
             inc[v as usize + 1] += 1;
@@ -149,62 +148,54 @@ impl Lower {
 /// **A stiffness held for CG, and its corners' factor.**
 #[derive(Clone, Debug)]
 pub struct Pcg {
-    n: usize,
-    /// The lower triangle by column (`Lower`'s).
-    colptr: Vec<usize>,
-    rows: Vec<u32>,
-    values: Vec<f64>,
+    k: Lower,
     /// Each diagonal's inverse.
     inv: Vec<f64>,
-    /// Per equation, the corners' equations it is carried from and their weights (`P`'s row).
+    /// Per equation, the corners' equations it is carried from and their weights (`P`'s row: an
+    /// unused place is `(0, 0.0)`, which carries nothing).
     up: Vec<[(u32, f64); 2]>,
-    len: Vec<u8>,
     coarse: Cholesky,
     nc: usize,
 }
 
-/// CG did not reach `TOLERANCE` in `MOST` iterations: the residual it reached, relative.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Unconverged(pub f64);
-
 impl Pcg {
     /// `k` (its lower triangle) preconditioned by the corners' space: `up[e]` equation `e`'s row
-    /// of `P` (its first `len[e]` corners' equations, each with its weight), `coarse` the
-    /// Galerkin matrix `PᵀKP` over the `coarse.n` corners' equations.  `NotPositive` where the
-    /// corners' factor fails (a column of the corners' space; a structure the supports leave
-    /// free) or a diagonal of `k` is not positive.
-    pub fn new(k: Lower, up: Vec<[(u32, f64); 2]>, len: Vec<u8>, coarse: &Symmetric)
-        -> Result<Pcg, NotPositive>
-    {
+    /// of `P` (at most two corners' equations, each with its weight), `coarse` the Galerkin
+    /// matrix `PᵀKP` over the `coarse.n` corners' equations — or `k` back where the corners'
+    /// factor fails (a column of the corners' space; a structure the supports leave free) or a
+    /// diagonal of `k` is not positive, for a factor to say why.
+    pub fn new(k: Lower, up: Vec<[(u32, f64); 2]>, coarse: &Symmetric) -> Result<Pcg, Lower> {
         let n = k.n;
-        assert!(up.len() == n && len.len() == n, "Pcg::new: a row of P per equation");
+        assert!(up.len() == n, "Pcg::new: a row of P per equation");
         let mut inv = vec![0.0; n];
         for j in 0..n {
             let q = k.colptr[j];
             let d = if q < k.colptr[j + 1] && k.rows[q] as usize == j { k.values[q] } else { 0.0 };
             if !(d > 0.0) {
-                return Err(NotPositive { column: j, pivot: d });
+                return Err(k);
             }
             inv[j] = 1.0 / d;
         }
-        let mut coarse_factor = Cholesky::analyse(coarse, Ordering::Amd);
-        coarse_factor.factor(coarse)?;
-        Ok(Pcg { n, colptr: k.colptr, rows: k.rows, values: k.values, inv, up, len,
-                 coarse: coarse_factor, nc: coarse.n })
+        let mut factor = Cholesky::analyse(coarse, Ordering::Amd);
+        if factor.factor(coarse).is_err() {
+            return Err(k);
+        }
+        Ok(Pcg { k, inv, up, coarse: factor, nc: coarse.n })
     }
 
-    /// How many equations.
-    pub fn n(&self) -> usize {
-        self.n
+    /// The stiffness it holds, for a factor where CG does not settle.
+    pub fn into_lower(self) -> Lower {
+        self.k
     }
 
     /// `K x`.
     pub fn mul(&self, x: &[f64], y: &mut [f64]) {
+        let k = &self.k;
         y.fill(0.0);
-        for j in 0..self.n {
+        for j in 0..k.n {
             let mut s = 0.0;
-            for q in self.colptr[j]..self.colptr[j + 1] {
-                let (i, v) = (self.rows[q] as usize, self.values[q]);
+            for q in k.colptr[j]..k.colptr[j + 1] {
+                let (i, v) = (k.rows[q] as usize, k.values[q]);
                 if i == j {
                     s += v * x[j];
                 } else {
@@ -219,65 +210,58 @@ impl Pcg {
     /// The two-level cycle on `r`: `z` its preconditioned residual, `w` a scratch the size of
     /// both.
     fn cycle(&self, r: &[f64], z: &mut [f64], w: &mut [f64], wc: &mut [f64]) {
-        let n = self.n;
+        let k = &self.k;
+        // column j below its diagonal, as (row, entry)
+        let below = |j: usize| {
+            (k.colptr[j] + 1..k.colptr[j + 1]).map(|q| (k.rows[q] as usize, k.values[q]))
+        };
         // forward from zero, by columns: z_j = w_j / K_jj, then w_i −= K_ij z_j below it
         w.copy_from_slice(r);
-        for j in 0..n {
+        for j in 0..k.n {
             let zj = w[j] * self.inv[j];
             z[j] = zj;
-            for q in self.colptr[j] + 1..self.colptr[j + 1] {
-                w[self.rows[q] as usize] -= self.values[q] * zj;
+            for (i, v) in below(j) {
+                w[i] -= v * zj;
             }
         }
         // its residual r − (L + D + U) z = −U z: row j of U is column j of L
-        for j in 0..n {
-            let mut s = 0.0;
-            for q in self.colptr[j] + 1..self.colptr[j + 1] {
-                s += self.values[q] * z[self.rows[q] as usize];
-            }
-            w[j] = -s;
+        for j in 0..k.n {
+            w[j] = -below(j).map(|(i, v)| v * z[i]).sum::<f64>();
         }
         // the corners' correction
         wc.fill(0.0);
-        for e in 0..n {
-            for t in 0..self.len[e] as usize {
-                let (c, f) = self.up[e][t];
+        for (e, row) in self.up.iter().enumerate() {
+            for &(c, f) in row {
                 wc[c as usize] += f * w[e];
             }
         }
         self.coarse.solve(wc);
-        for e in 0..n {
-            for t in 0..self.len[e] as usize {
-                let (c, f) = self.up[e][t];
+        for (e, row) in self.up.iter().enumerate() {
+            for &(c, f) in row {
                 z[e] += f * wc[c as usize];
             }
         }
         // backward: w = r − L z, then z_j = (w_j − Σ_{i>j} K_ij z_i) / K_jj, last first
         w.copy_from_slice(r);
-        for j in 0..n {
+        for j in 0..k.n {
             let zj = z[j];
-            for q in self.colptr[j] + 1..self.colptr[j + 1] {
-                w[self.rows[q] as usize] -= self.values[q] * zj;
+            for (i, v) in below(j) {
+                w[i] -= v * zj;
             }
         }
-        for j in (0..n).rev() {
-            let mut s = w[j];
-            for q in self.colptr[j] + 1..self.colptr[j + 1] {
-                s -= self.values[q] * z[self.rows[q] as usize];
-            }
-            z[j] = s * self.inv[j];
+        for j in (0..k.n).rev() {
+            z[j] = (w[j] - below(j).map(|(i, v)| v * z[i]).sum::<f64>()) * self.inv[j];
         }
     }
 
     /// **`b` overwritten by `K⁻¹ b`**, to `TOLERANCE` of its residual: how many iterations it
-    /// took, or how near it came.
-    pub fn solve(&self, b: &mut [f64]) -> Result<usize, Unconverged> {
-        let n = self.n;
-        let norm = |v: &[f64]| v.iter().map(|x| x * x).sum::<f64>().sqrt();
-        let dot = |a: &[f64], c: &[f64]| a.iter().zip(c).map(|(x, y)| x * y).sum::<f64>();
+    /// took, or `None` where it did not settle in `MOST` (`b` then as it was).
+    pub fn solve(&self, b: &mut [f64]) -> Option<usize> {
+        use crate::linalg::{dot, norm};
+        let n = self.k.n;
         let bn = norm(b);
         if bn == 0.0 {
-            return Ok(0);
+            return Some(0);
         }
         let mut r = b.to_vec();
         let mut x = vec![0.0; n];
@@ -288,25 +272,24 @@ impl Pcg {
         self.cycle(&r, &mut z, &mut w, &mut wc);
         let mut p = z.clone();
         let mut rz = dot(&r, &z);
-        let mut rel = 1.0;
         for it in 1..=MOST {
             self.mul(&p, &mut kp);
             let pkp = dot(&p, &kp);
             if !(pkp > 0.0) {
-                return Err(Unconverged(rel));
+                return None;
             }
             let alpha = rz / pkp;
             for i in 0..n {
                 x[i] += alpha * p[i];
                 r[i] -= alpha * kp[i];
             }
-            rel = norm(&r) / bn;
+            let rel = norm(&r) / bn;
             if !rel.is_finite() {
-                return Err(Unconverged(rel));
+                return None;
             }
             if rel <= TOLERANCE {
                 b.copy_from_slice(&x);
-                return Ok(it);
+                return Some(it);
             }
             self.cycle(&r, &mut z, &mut w, &mut wc);
             let next = dot(&r, &z);
@@ -316,6 +299,6 @@ impl Pcg {
                 p[i] = z[i] + beta * p[i];
             }
         }
-        Err(Unconverged(rel))
+        None
     }
 }

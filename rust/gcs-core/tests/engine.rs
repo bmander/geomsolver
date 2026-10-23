@@ -86,7 +86,7 @@ fn valve(head: f64) -> f64 {
 fn project() -> PathBuf { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples") }
 
 /// A document of the engine's, solved, its modules read beside it.
-fn open(path: &str) -> Elaborated {
+pub(crate) fn open(path: &str) -> Elaborated {
     let source = std::fs::read_to_string(project().join(path)).unwrap();
     fixtures::read_beside(&source,&project(),&mut |_,text| text)
 }

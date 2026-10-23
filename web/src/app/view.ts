@@ -1623,11 +1623,11 @@ export class SketchView {
       this.picture = picture;
       this.scenarioEpoch += 1;
     }
-    if (!r || r.scenarios) {
+    // the scenarios' answers are a final reading's: a coarser level's, while a finer one is
+    // read, are the reading's own (`scenarioReading.scenarios`), for the card to show
+    if (!r || (r.scenarios && !r.reading)) {
       this.scenarios = r?.scenarios ?? [];
-      // the footer says a verdict once the reading is final: a coarser level's answers are the
-      // card's to show while a finer one is read
-      if (!r?.reading) this.onScenarios(this.scenarios);
+      this.onScenarios(this.scenarios);
     }
     if (this.scenarioAnimate && this.picture && !this.swinging) this.setScenarioAnimate(true);
     this.onScenarioView();

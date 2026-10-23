@@ -37,6 +37,7 @@ use crate::kernels::{curve_widths, Dual, Kernel, Num};
 use crate::linalg::{rank_and_nullspace, Mat};
 use crate::envelope::held;
 use crate::space::{add, dot, norm, scale, sub};
+use crate::delaunay::tetra::EDGES;
 use crate::pcg::Lower;
 use crate::sparse::{Ata, Sym};
 
@@ -168,10 +169,6 @@ impl Factor {
 /// factored.
 pub const ITERATIVE: usize = 50_000;
 
-/// The places of a side's middle node among a TET10's: `delaunay::tetra::EDGES`, its middles
-/// numbered 4–9.
-const TET_SIDES: [(usize, usize); 6] = crate::delaunay::tetra::EDGES;
-
 /// The displacements of a structure at `x`, with the factor they were solved on held for the
 /// adjoint.
 pub struct State {
@@ -185,7 +182,7 @@ pub struct State {
 impl State {
     /// Whether it was solved by CG (`pcg`), not on a factor.
     pub fn by_cg(&self) -> bool {
-        matches!(self.ata, Factor::Pcg(..))
+        self.iterations().is_some()
     }
 
     /// How many iterations CG took to solve it, where it was solved by CG.
@@ -290,25 +287,30 @@ impl Structure {
             .map(|(_, v)| v).collect();
         let factor = if self.meshed() {
             // a solid too large to factor is solved by CG over its corners' space (`pcg`); one
-            // whose corners' factor fails, or that CG does not settle, is factored after all —
-            // and its factor says whether the supports leave it free
-            if self.tris.is_empty() && iterative {
-                let (k, up, len, coarse) = self.cornered(x, &eq, n_eq)?;
-                if let Ok(cg) = crate::pcg::Pcg::new(k, up, len, &coarse) {
-                    let mut u = rhs.clone();
-                    let its = cg.solve(&mut u);
-                    if let (Ok(its), true) = (its, u.iter().all(|v| v.is_finite())) {
-                        let mut st = State { ata: Factor::Pcg(cg, its), eq, u: Vec::new() };
-                        st.u = st.scatter(&u);
-                        return Ok(st);
+            // whose corners' factor fails, or that CG does not settle, is factored after all, on
+            // the stiffness already assembled — and its factor says whether the supports leave
+            // it free
+            let k = if self.tris.is_empty() && iterative {
+                let (k, up, coarse) = self.cornered(x, &eq, n_eq)?;
+                match crate::pcg::Pcg::new(k, up, &coarse) {
+                    Ok(cg) => {
+                        let mut u = rhs.clone();
+                        match cg.solve(&mut u) {
+                            Some(its) if u.iter().all(|v| v.is_finite()) => {
+                                let mut st = State { ata: Factor::Pcg(cg, its), eq, u: Vec::new() };
+                                st.u = st.scatter(&u);
+                                return Ok(st);
+                            }
+                            _ => cg.into_lower(),
+                        }
                     }
+                    Err(k) => k,
                 }
-            }
+            } else {
+                self.assembled(x, &eq, n_eq)?
+            };
             // the factor reads the lower triangle alone
-            let mut t = Vec::new();
-            self.tris_into(&eq, true, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
-            self.tets_into(&eq, true, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
-            let k = crate::cholesky::Symmetric::from_triplets(n_eq, &t);
+            let k = k.symmetric();
             let mut c = crate::cholesky::Cholesky::analyse(&k, crate::cholesky::Ordering::Amd);
             c.factor(&k).map_err(|_| Failure::Free)?;
             c.solve(&mut rhs);
@@ -337,13 +339,31 @@ impl Structure {
         Ok(st)
     }
 
+    /// **A plane or a solid structure's stiffness**, its lower triangle over the equations `eq`
+    /// numbers, assembled in place (`pcg::Lower`): its pattern from the elements' nodes, then
+    /// each element's matrix added at its entries.
+    fn assembled(&self, x: &[f64], eq: &[Option<usize>], n_eq: usize) -> Result<Lower, Failure> {
+        let elements =
+            self.tris.iter().map(|t| &t.n[..]).chain(self.tets.iter().map(|t| &t.n[..]));
+        let mut k = Lower::pattern(self.nodes, self.per(), elements, eq, n_eq);
+        for i in 0..self.tris.len() {
+            let m = self.tris[i].stiffness(&self.tri_places(i, x))?;
+            k.add(&m, &self.tri_dofs(i).map(|d| eq[d]));
+        }
+        for i in 0..self.tets.len() {
+            let m = self.tets[i].stiffness(&self.tet_places(i, x))?;
+            k.add(&m, &self.tet_dofs(i).map(|d| eq[d]));
+        }
+        Ok(k)
+    }
+
     /// **A solid's stiffness and its corners' space** (`pcg`): `K` over the equations `eq`
-    /// numbers (its lower triangle), per equation its row of `P` — a corner's move its own, a
-    /// side's middle node's the mean of the side's ends', a support's held moves left out — and the
-    /// Galerkin matrix `PᵀKP` over the corners' equations, assembled element by element as
-    /// `P_eᵀ K_e P_e` (a side's ends are its own element's corners).
+    /// numbers (its lower triangle, `assembled`'s), per equation its row of `P` — a corner's move
+    /// its own, a side's middle node's the mean of the side's ends', a support's held moves left
+    /// out — and the Galerkin matrix `PᵀKP` over the corners' equations, assembled element by
+    /// element as `P_eᵀ K_e P_e` (a side's ends are its own element's corners).
     fn cornered(&self, x: &[f64], eq: &[Option<usize>], n_eq: usize)
-        -> Result<(Lower, Vec<[(u32, f64); 2]>, Vec<u8>, crate::cholesky::Symmetric), Failure>
+        -> Result<(Lower, Vec<[(u32, f64); 2]>, crate::cholesky::Symmetric), Failure>
     {
         // the corners' equations, by degree of freedom
         let mut corner = vec![false; self.nodes];
@@ -361,39 +381,36 @@ impl Structure {
             }
         }
         // both patterns from the mesh, then every element added in place
-        let all = |f: &mut dyn FnMut(&[usize])| self.tets.iter().for_each(|t| f(&t.n));
-        let corners = |f: &mut dyn FnMut(&[usize])| self.tets.iter().for_each(|t| f(&t.n[..4]));
-        let mut k = Lower::pattern(self.nodes, 3, &all, eq, n_eq);
-        let mut kc = Lower::pattern(self.nodes, 3, &corners, &ceq, nc);
+        let mut k = Lower::pattern(self.nodes, 3, self.tets.iter().map(|t| &t.n[..]), eq, n_eq);
+        let mut kc = Lower::pattern(self.nodes, 3, self.tets.iter().map(|t| &t.n[..4]), &ceq, nc);
         let mut ends: Vec<Option<(usize, usize)>> = vec![None; self.nodes];
         for i in 0..self.tets.len() {
             let m = self.tets[i].stiffness(&self.tet_places(i, x))?;
             let dofs = self.tet_dofs(i);
             k.add(&m, &dofs.map(|d| eq[d]));
-            let pmp = cornered::<30, 12>(&m, &dofs, 3, &TET_SIDES, eq);
+            let pmp = cornered::<30, 12>(&m, &dofs, 3, &EDGES, eq);
             kc.add(&pmp, &std::array::from_fn(|c| ceq[dofs[c]]));
             let n = self.tets[i].n;
-            for (k, &(a, b)) in TET_SIDES.iter().enumerate() {
+            for (k, &(a, b)) in EDGES.iter().enumerate() {
                 ends[n[4 + k]] = Some((n[a], n[b]));
             }
         }
         let mut up = vec![[(0u32, 0.0); 2]; n_eq];
-        let mut len = vec![0u8; n_eq];
         for (d, e) in eq.iter().enumerate() {
             let Some(e) = *e else { continue };
             let (node, c) = (d / 3, d % 3);
-            let from: Vec<(usize, f64)> = match (ceq[d], ends[node]) {
-                (Some(j), _) => vec![(j, 1.0)],
-                (None, Some((a, b))) => [a, b].iter().filter_map(|&v| ceq[3 * v + c])
-                    .map(|j| (j, 0.5)).collect(),
-                (None, None) => Vec::new(),
-            };
-            for (t, &(j, w)) in from.iter().enumerate() {
-                up[e][t] = (j as u32, w);
+            match (ceq[d], ends[node]) {
+                (Some(j), _) => up[e][0] = (j as u32, 1.0),
+                (None, Some((a, b))) => {
+                    let from = [a, b].into_iter().filter_map(|v| ceq[3 * v + c]);
+                    for (t, j) in from.enumerate() {
+                        up[e][t] = (j as u32, 0.5);
+                    }
+                }
+                (None, None) => {}
             }
-            len[e] = from.len() as u8;
         }
-        Ok((k, up, len, kc.symmetric()))
+        Ok((k, up, kc.symmetric()))
     }
 
     /// Every element's strain rows at `x`, each handed to `row` as its `(equation, entry)`s at the

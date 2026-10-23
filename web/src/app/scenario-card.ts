@@ -87,12 +87,9 @@ export function refreshScenarioCard(view: SketchView): void {
       new Option(n.extends ? `${n.name} : ${n.extends}` : n.name, n.name)));
   }
   select.value = view.scenario;
-  // the failing ink is the last level's: a coarser one's answers do not move it
-  if (!view.scenarioReading?.reading) {
-    const fails = view.scenarios.some((s) =>
-      s.words.length || s.answers.some((a) => a.holds !== true));
-    pick.classList.toggle('failed', fails);
-  }
+  const fails = view.scenarios.some((s) =>
+    s.words.length || s.answers.some((a) => a.holds !== true));
+  pick.classList.toggle('failed', fails);
   card.hidden = !view.scenario;
   if (!view.scenario) return;
   // the head: the exaggeration, at the card's factor or the picture's own
@@ -109,7 +106,8 @@ export function refreshScenarioCard(view: SketchView): void {
     p ? `the largest move, ${p.largestText}, drawn ${factorText(view.scenarioFactor)}` : '';
   // what the reading says: still going, failed, a body not drawn, the scenario's own words
   const r = view.scenarioReading;
-  const sc = view.scenarios.find((s) => s.name === view.scenario);
+  // the rows show the reading as it stands: a coarser level's answers while a finer is read
+  const sc = (r?.scenarios ?? view.scenarios).find((s) => s.name === view.scenario);
   const said: string[] = [];
   if (r?.error) said.push(r.error);
   else if (r?.reading) said.push(r.levelText ? `${r.levelText}…` : 'reading the scenario…');
@@ -132,9 +130,8 @@ export function refreshScenarioCard(view: SketchView): void {
     let note = m.kind === 'load' || m.kind === 'pressure' || m.kind === 'accelerate' ? m.text : '';
     if (m.kind === 'requirement') {
       const a = sc?.answers.find((x) => x.index === m.index);
-      if (a && r?.reading && a.holds === null) {
-        note = 'reading…';            // no answer at a coarser level: the finer may have one
-      } else if (a) {
+      // no answer at a coarser level is no verdict: the finer may have one
+      if (a && !(r?.reading && a.holds === null)) {
         note = bare(a.text);
         li.classList.add(a.holds === true ? 'kept' : 'refuted');
         if (r?.reading) li.classList.add('provisional');

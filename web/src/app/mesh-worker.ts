@@ -20,7 +20,7 @@
 import { ClaimJudge, solidClaims } from '../core/claims.js';
 import { ExactBuilder, FieldMesher, fieldJobs, unpaired, type MeshProgress } from '../core/field.js';
 import { install } from '../core/modules.js';
-import { Document } from '../core/program.js';
+import { Document, type ScenarioLevels } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
 import { unpairedClaims, type ClaimFrame, type ClaimJob } from './claim-judging.js';
 import { buffers, drawnIndex, typed, type ScenarioFrame, type ScenarioJob } from './scenario-view.js';
@@ -69,17 +69,22 @@ async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promi
   await pause();
   if (job.id !== latest) return;
   install(job.modules);
+  // the levels hold their own copy of the drawing: the document goes once they have it
   const doc = Document.read(job.text);
-  let levels: ReturnType<Document['scenarioLevels']> | null = null;
+  let levels: ScenarioLevels;
+  let index: number;
   try {
     doc.sketch.setX(job.x);
-    if (job.drawn && !doc.scenarioNames().some((s) => s.name === job.drawn)) {
+    index = drawnIndex(doc, job.drawn);
+    if (job.drawn && index < 0) {
       throw new Error(`the worker's drawing states no scenario \`${job.drawn}\``);
     }
-    const index = drawnIndex(doc, job.drawn);
     levels = doc.scenarioLevels(index);
+  } finally {
+    doc.dispose();
+  }
+  try {
     for (let got = levels.next(); got; got = levels.next()) {
-      if (job.id !== latest) return;
       const picture = index >= 0 ? typed(got.picture) : null;
       scope.postMessage({ id: job.id, scenarios: got.scenarios, picture, final: got.final,
                           levelText: got.levelText }, buffers(picture));
@@ -88,8 +93,7 @@ async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promi
       if (job.id !== latest) return;
     }
   } finally {
-    levels?.dispose();
-    doc.dispose();
+    levels.dispose();
   }
 }
 

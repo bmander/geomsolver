@@ -6,7 +6,7 @@ use crate::brep::query::{Located, Place};
 use crate::brep::topo::EdgeCurve;
 use crate::model::{FaceRef, Sketch};
 use crate::fmath::Det;
-use crate::space::{add, distance, dot, norm, scale, sub};
+use crate::space::{add, distance, dot, lerp, norm, scale, sub};
 use std::collections::BTreeSet;
 use std::f64::consts::PI;
 use super::{cached, readers_of, without, FacePath};
@@ -165,7 +165,7 @@ impl BodyFaces {
                 EdgeCurve::Curve(Curve::Line { .. } | Curve::Circle(..)) => {}
                 EdgeCurve::Curve(c @ Curve::Traced(t)) => {
                     let sag = t.pts.windows(2).enumerate().map(|(i, w)| {
-                        distance(c.point(i as f64 + 0.5), scale(add(w[0], w[1]), 0.5))
+                        distance(c.point(i as f64 + 0.5), lerp(w[0], w[1], 0.5))
                     }).fold(0.0, f64::max);
                     out.push((k as u32, (4.0 * sag + 2.0 * e.tol) / self.mm));
                 }
@@ -187,7 +187,7 @@ impl BodyFaces {
     /// toward `p`, turned to point the way the distance grows (the outward normal of the face
     /// nearest where `p` is on the boundary) — so a refinement places a crossing by Newton on
     /// readings rather than by bisection on signs.
-    pub fn reading(&self, p: V) -> (f64, usize, V) {
+    pub fn reading(&self, p: V) -> (f64, V) {
         let (v, fi, near) = self.nearest_point(p);
         let q = self.q(p);
         let d = sub(q, near);
@@ -197,7 +197,7 @@ impl BodyFaces {
         } else {
             self.outward(fi, q)
         };
-        (v, fi, g)
+        (v, g)
     }
 
     /// `signed_distance`, and the nearest point of the boundary (millimetres, about `origin`).
@@ -215,28 +215,29 @@ impl BodyFaces {
             return (f64::INFINITY, 0, q);
         }
         // how far each face's box is: no point of the face or its edges is nearer
-        let reach: Vec<f64> = (0..n).map(|fi| {
-            let (lo, hi) = self.loc.face_box(fi);
-            let gap: V = std::array::from_fn(|k| (lo[k] - q[k]).max(q[k] - hi[k]).max(0.0));
-            norm(gap) - self.loc.tol
-        }).collect();
+        let reach: Vec<f64> = (0..n).map(|fi| self.loc.face_gap(fi, q) - self.loc.tol).collect();
         let foot = |fi: usize| {
             let f = &b.faces[fi];
             let at = f.surface.point(f.surface.inverse(q));
             (distance(q, at), at)
         };
-        let mut edges: Vec<Option<(f64, f64)>> = vec![None; b.edges.len()];
-        let mut nearest = |e: u32| -> (f64, f64) {
-            *edges[e as usize].get_or_insert_with(|| self.loc.nearest(e, q))
-        };
-        // a distance reached: the nearest box's face
+        // a distance reached: the nearest box's face, or where its foot is off it, its edges'
+        // nearest points, kept for the edges' turn below
         let first = (0..n).min_by(|&a, &c| reach[a].total_cmp(&reach[c])).unwrap_or(0);
         let (d0, at0) = foot(first);
         let place0 = self.loc.face_place(first, at0);
+        let read: Vec<(u32, (f64, f64))> = if place0 != Place::Out {
+            Vec::new()
+        } else {
+            self.edges[first].iter().map(|&e| (e, self.loc.nearest(e, q))).collect()
+        };
         let reached = if place0 != Place::Out {
             d0
         } else {
-            self.edges[first].iter().map(|&e| nearest(e).1).fold(f64::INFINITY, f64::min)
+            read.iter().map(|r| r.1 .1).fold(f64::INFINITY, f64::min)
+        };
+        let nearest = |e: u32| -> (f64, f64) {
+            read.iter().find(|r| r.0 == e).map_or_else(|| self.loc.nearest(e, q), |r| r.1)
         };
         // each face whose box is within reach, its surface foot, nearest first
         let mut feet: Vec<(f64, usize, V)> = (0..n).filter(|&fi| reach[fi] <= reached).map(|fi| {
@@ -249,7 +250,7 @@ impl BodyFaces {
         }).copied();
         // an edge lies on the surfaces of the faces it bounds, so is no nearer than their feet
         // (but for a cone's, whose foot is on one generator), nor than their boxes
-        let mut least = reach.clone();
+        let mut least = reach;
         for &(d, fi, _) in &feet {
             if !matches!(b.faces[fi].surface, Surface::Cone(..)) {
                 least[fi] = least[fi].max(d);

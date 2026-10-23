@@ -6,6 +6,7 @@
 use gcs_core::delaunay::refine::{volume, Cells, Criteria, Domain, Readings};
 use gcs_core::model::Sketch;
 use gcs_core::solid::faces::BodyFaces;
+use gcs_core::space::{distance, norm};
 
 type P = [f64; 3];
 
@@ -61,16 +62,15 @@ fn a_bodys_reading_is_its_distance_and_its_gradient() {
                 let t = |a: usize, c: usize| lo[c] - 0.1 * extent
                     + (hi[c] - lo[c] + 0.2 * extent) * (a as f64 + 0.31) / (n as f64 + 1.0);
                 let p = [t(i, 0), t(j, 1), t(k, 2)];
-                let (v, _, g) = body.reading(p);
+                let (v, g) = body.reading(p);
                 assert_eq!(v, body.signed_distance(p).0, "at {p:?}");
-                let unit = (g[0] * g[0] + g[1] * g[1] + g[2] * g[2]).sqrt();
+                let unit = norm(g);
                 assert!((unit - 1.0).abs() <= 1e-9, "at {p:?} the gradient is {unit} long");
                 let foot = [p[0] - v * g[0], p[1] - v * g[1], p[2] - v * g[2]];
                 let on = body.signed_distance(foot).0;
                 assert!(on.abs() <= 1e-9 * extent, "at {p:?} the foot reads {on}");
                 if let Some((q, w)) = last {
-                    let d = ((p[0] - q[0]).powi(2) + (p[1] - q[1]).powi(2) + (p[2] - q[2]).powi(2))
-                        .sqrt();
+                    let d = distance(p, q);
                     assert!((v - w).abs() <= d * (1.0 + 1e-12), "not one-Lipschitz at {p:?}");
                 }
                 last = Some((p, v));
@@ -84,13 +84,13 @@ struct Ball(Readings);
 
 impl Domain for Ball {
     fn value(&mut self, p: P) -> f64 {
-        (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt() - 1.0
+        norm(p) - 1.0
     }
     fn readings(&self) -> Readings {
         self.0
     }
     fn reading(&mut self, p: P, _: bool) -> (f64, P) {
-        let r = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt().max(1e-300);
+        let r = norm(p).max(1e-300);
         (r - 1.0, [p[0] / r, p[1] / r, p[2] / r])
     }
 }
@@ -121,9 +121,7 @@ fn a_distances_readings_clear_a_crossings_bracket() {
 
 /// The engine's connecting rod (`engine/conrod.sv`, its preview), solved, and its body.
 fn conrod() -> (gcs_core::program::Elaborated, usize) {
-    let project = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
-    let source = std::fs::read_to_string(project.join("engine/conrod.sv")).unwrap();
-    let e = fixtures::read_beside(&source, &project, &mut |_, text| text);
+    let e = crate::engine::open("engine/conrod.sv");
     let solid = fixtures::solid(&e, "rod.body");
     (e, solid)
 }
@@ -132,7 +130,7 @@ fn conrod() -> (gcs_core::program::Elaborated, usize) {
 /// connecting rod under its gas load (`fired`) takes no more than this — counts, not times, so a
 /// slower machine passes and a lost speed-up fails.  Every crossing of its boundary is Newton's on
 /// the distance's readings, under 3.5 readings a crossing (2.8; bisection took 23), its queries
-/// within a fifth of 395,358, and CG over its corners settles in 45 iterations (37).  At four
+/// within a fifth of 394,212, and CG over its corners settles in 45 iterations (37).  At four
 /// times its reading's size, so the suite pays seconds; its own size is the slow tier's
 /// (`the_rods_reading_at_its_own_size_is_pinned`).
 #[test]
@@ -140,9 +138,8 @@ fn the_rods_reading_is_pinned_by_the_work_it_takes() {
     pinned(4.0, 480_000, 3.5, 45);
 }
 
-/// **The rod at its reading's own size** (#510, the slow tier): 77,648 TET10 and 385,368
-/// equations, its queries within a fifth of 1,419,046, 2.5 readings a crossing, CG in 40
-/// iterations (pinned at 50).
+/// **The rod at its reading's own size** (#510, the slow tier): 77,627 TET10, its queries within
+/// a fifth of 1,418,693, 2.5 readings a crossing, CG in 39 iterations (pinned at 50).
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, a minute: the rod at its own size")]
 fn the_rods_reading_at_its_own_size_is_pinned() {

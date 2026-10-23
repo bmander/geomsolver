@@ -118,8 +118,7 @@ impl crate::delaunay::refine::Domain for Boundary<'_> {
         if self.slack.is_some() { Readings::Distance } else { Readings::Agreeing }
     }
     fn reading(&mut self, p: V, _: bool) -> (f64, V) {
-        let (v, _, g) = self.body.reading(p);
-        (v, g)
+        self.body.reading(p)
     }
     fn slack(&self, p: V, v: f64) -> f64 {
         self.slack.as_ref().map_or(0.0, |s| self.body.slack_at(s, p, v))

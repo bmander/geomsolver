@@ -723,13 +723,13 @@ scenario drawn, unless a rule names another.
   bore, the rod at the table's crank angle — it sinks 0.675mm, bending as it leans, and weighs
   0.433kg). The suite holds its reading to the work it takes, counts and not times, so a slower
   machine passes and a lost speed-up fails: at four times its size every crossing Newton's, under
-  3.5 readings a crossing (2.8), its queries within a fifth of 395,358 and CG within 45 iterations
+  3.5 readings a crossing (2.8), its queries within a fifth of 394,212 and CG within 45 iterations
   (37) (`the_rods_reading_is_pinned_by_the_work_it_takes`); at its own size, the slow tier's, 2.5
-  readings a crossing, 1,419,046 queries and 40 iterations
+  readings a crossing, 1,418,693 queries and 39 iterations
   (`the_rods_reading_at_its_own_size_is_pinned`). `make bench` reads it a level at a time, its
-  seconds and memory beside each level: natively (`bench analysis`, the heap's peak counted) 6.8,
-  19.5 and 46.5 s, 92, 171 and 419 MB; in the page's core (`npm run bench`, the module's memory)
-  7.5, 20.1 and 49.8 s, 86, 162 and 378 MB.
+  seconds and memory beside each level: natively (`bench analysis`, the heap's peak counted) 4.5,
+  14.2 and 36.6 s, 91, 172 and 420 MB; in the page's core (`npm run bench`, the module's memory)
+  7.5, 19.2 and 45.7 s, 85, 163 and 378 MB.
 
 - **A solid's deflection, driven, is a row stacked over its face's** (#510 S3; `bodies::row`,
   `bodies::of_body`, `interior::Stack`, `DeflectionRow::Meshed`). `deflection(p, along: d) == v`,

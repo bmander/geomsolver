@@ -423,9 +423,7 @@ fn every_solid_case_of_the_library_says_what_it_claims() {
 #[test]
 fn a_sliver_on_the_boundary_is_peeled() {
     use gcs_core::delaunay::tetra::{least_dihedral, Tet10};
-    let project = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
-    let source = std::fs::read_to_string(project.join("engine/conrod.sv")).unwrap();
-    let e = fixtures::read_beside(&source, &project, &mut |_, text| text);
+    let e = crate::engine::open("engine/conrod.sv");
     let solid = fixtures::solid(&e, "rod.body");
     let mesh = gcs_core::bodies::mesh(&e.sketch, solid, &[], 4.0).expect("meshed");
     let least = mesh.tets.iter().map(|t| least_dihedral([0, 1, 2, 3].map(|k| mesh.nodes[t[k]])))

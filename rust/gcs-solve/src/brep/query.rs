@@ -277,20 +277,20 @@ pub(crate) fn face_box(b: &Brep,fi: usize) -> ([f64;3],[f64;3]) {
     (lo.map(|x| x-pad),hi.map(|x| x+pad))
 }
 
-/// A box about edge `e` (a degenerate edge its pole), grown as `face_box` grows a face's: its
-/// curve at seventeen places, padded by a quarter of their spacing, and a hair more.
+/// How far box `(lo, hi)` is from `p`: 0 inside it.
+fn gap((lo,hi): ([f64;3],[f64;3]),p: V) -> f64 {
+    norm(std::array::from_fn(|k| (lo[k]-p[k]).max(p[k]-hi[k]).max(0.)))
+}
+
+/// A box about edge `e`: its curve's enclosure over its stretch (`Curve::bounds`), a degenerate
+/// edge its pole, grown by the edge's tolerance and a hair.
 pub(crate) fn edge_box(b: &Brep,e: usize) -> ([f64;3],[f64;3]) {
     let edge = &b.edges[e];
-    let (mut lo,mut hi) = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
-    let mut step: f64 = 0.;
-    let mut last: Option<V> = None;
-    for j in 0..=16 {
-        let p = edge.point(edge.t[0]+(edge.t[1]-edge.t[0])*j as f64/16.,&b.vertices);
-        for k in 0..3 { lo[k] = lo[k].min(p[k]); hi[k] = hi[k].max(p[k]); }
-        if let Some(q) = last { step = step.max(distance(p,q)); }
-        last = Some(p);
-    }
-    let pad = step/4.+edge.tol+1e-9*b.size().max(1.);
+    let (lo,hi) = match &edge.curve {
+        EdgeCurve::Curve(c) => c.bounds(edge.t),
+        EdgeCurve::Degenerate => { let p = b.vertices[edge.v[0] as usize].p; (p,p) }
+    };
+    let pad = edge.tol+1e-9*b.size().max(1.);
     (lo.map(|x| x-pad),hi.map(|x| x+pad))
 }
 
@@ -350,7 +350,7 @@ pub fn curve_surface_within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol
 /// near the edges it may not be trusted (sampled at the middles, as `ssi`'s traces are: the
 /// chords are short enough that a middle's is a chord's).
 #[derive(Clone,Debug)]
-pub struct Outline { loops: Vec<Vec<Uv>>,sag: f64,bins: Bins }
+pub struct Outline { loops: Vec<Vec<Uv>>,sag: f64,bins: std::sync::OnceLock<Bins> }
 
 /// An outline's chords sorted into bands of `v` (`Outline::winding`): each band the chords whose
 /// `v` reaches into it, by loop and index.
@@ -404,9 +404,10 @@ impl Outline {
                 }
             }
             pts
-        }).collect::<Vec<_>>();
-        let bins = Bins::of(&loops);
-        Outline {loops,sag,bins}
+        }).collect();
+        // the bands are made when a winding is first asked: an outline asked once (a Boolean's
+        // piece) is cheaper scanned whole
+        Outline {loops,sag,bins:std::sync::OnceLock::new()}
     }
 
     /// The loops, each a closed polygon (its last point joined to its first).
@@ -423,7 +424,7 @@ impl Outline {
     /// How many times the loops wind about `p`, counter-clockwise in the parameters.
     /// Only the chords whose `v` reaches `p`'s band are read: no other crosses its level line.
     pub fn winding(&self,p: Uv) -> i32 {
-        let bins = &self.bins;
+        let bins = self.bins.get_or_init(|| Bins::of(&self.loops));
         if !(p[1] >= bins.lo && p[1] <= bins.hi) { return 0; }
         let mut w = 0;
         for &(k,i) in &bins.bands[bins.band(p[1])] {
@@ -549,11 +550,10 @@ impl<'a> Located<'a> {
     pub(crate) fn face_box(&self,fi: usize) -> ([f64;3],[f64;3]) { self.space[fi] }
 
     /// How far edge `e`'s box is from `p`: no point of the edge is nearer.
-    pub(crate) fn edge_gap(&self,e: u32,p: V) -> f64 {
-        let (lo,hi) = self.edge_space[e as usize];
-        let gap: V = std::array::from_fn(|k| (lo[k]-p[k]).max(p[k]-hi[k]).max(0.));
-        norm(gap)
-    }
+    pub(crate) fn edge_gap(&self,e: u32,p: V) -> f64 { gap(self.edge_space[e as usize],p) }
+
+    /// How far face `fi`'s box is from `p`: no point of the face or its edges is nearer.
+    pub(crate) fn face_gap(&self,fi: usize,p: V) -> f64 { gap(self.space[fi],p) }
 
     /// The point of an edge nearest `p`: its parameter and distance.
     pub(crate) fn nearest(&self,e: u32,p: V) -> (f64,f64) {
