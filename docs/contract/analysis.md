@@ -809,9 +809,10 @@ scenario drawn, unless a rule names another.
   evenly along them, a solid at its middle, faces a path names at up to `OVER` places spread over
   them (farthest-point, over each triangle cut finer than a sixth of the faces' reach). **A face
   is read off the mesh the workspace already draws** (`EvaluatedSolid::mesh` at the object's own
-  scale, its groups named `lug.root`, `pin.bore`: `names_group` takes the path after any leading part
-  of the solid's own name — a part's instance names its solid's groups from the instance, so
-  `rod.whole.bigbore` is `rod.body`'s `whole.bigbore`), so a mark on a face builds no exact boundary on the page's thread.
+  scale, its groups named `lug.root`, `pin.bore`: `names_group` takes the path after any
+  leading part of the solid's own name — a part's instance names its solid's groups from the
+  instance, so `rod.whole.bigbore` is `rod.body`'s `whole.bigbore`), so a mark on a face builds
+  no exact boundary on the page's thread.
   **A mark adds nothing to the drawing** (`a_mark_adds_nothing_to_the_drawing`); every line of
   every scenario of the library is one, its span the line it is written on
   (`every_line_of_a_scenario_is_a_mark`), and a pressure points into its face
