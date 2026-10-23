@@ -2005,8 +2005,8 @@ scenario tip_load {
   several lines: `beam(left, top, right, …)`.
 - **Joints** are where members' ends meet, or an end lies on another member; a point the scenario
   names on a member (a load's) cuts it there. Every joint is rigid.
-- **What is answered**: `deflection(p[, along: d])`, `mass(arm)`, `mode(arm, n)`, `buckling(arm)`,
-  `compliance(arm)`, `safety(arm)` (yield over `|N|/A + |My|/Sy + |Mz|/Sz`). `load arm 2kN along:
+- **What is answered**: `deflection(p[, along: d])`, `mass(arm)`, `volume(arm)`, `mode(arm, n)`,
+  `buckling(arm)`, `compliance(arm)`, `safety(arm)` (yield over `|N|/A + |My|/Sy + |Mz|/Sz`). `load arm 2kN along:
   down` spreads a force along the beam; `accelerate arm (0m / 1s^2, 0m / 1s^2, -9.81m / 1s^2)` is
   its weight. A claim is judged, never solved for: `solventc` prints its value and `kept` or
   `refuted`.
@@ -2014,8 +2014,13 @@ scenario tip_load {
   row of the drawing. Declare what it sizes, `param h: Length hint(40mm)`, and read the section
   over it (`Iz: b * h^3 / 12`, any formula); or let it place a joint (`foot distance(len) end`,
   `len` an unknown). `solventc` prints `driven == 4mm, held` and the unknown's value. `along:` is
-  an axis or a line the drawing holds. Any other driving requirement (`mode(arm, 1) == 30Hz`) is
-  only judged yet. The library shows each: `sized_cantilever.sv` (a depth),
+  an axis or a line the drawing holds.
+- **A driving mass or volume sizes it too**: `mass(arm) == 10kg` (or `volume(arm) == 1200 *
+  1cm^3`; `1200cm^3` would be the cube of 1200 centimetres) is a row over the beam's members, or a
+  member's line, reading what they are made of — so it needs no support and no load, and sizes an
+  unknown the area reads (`A: b * h`) or places a joint. Beside a driving deflection it sizes a
+  second unknown: a sag and a mass find a section's width and depth together. Any other driving
+  requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library shows each: `sized_cantilever.sv` (a depth),
   `reach_cantilever.sv` (a length), `shelf_bracket.sv` (two members, a load spread along the arm)
   and `portal_frame.sv` (a tube's diameter, a point on a member, the frame's weight).
 - `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
@@ -2067,7 +2072,9 @@ scenario pull {
   point of the region is a row. Its mesh is made once, where the drawing stands when it is
   elaborated, and its nodes move with the drawing — so seed the region near where it will be
   solved (a circle's `hint(r: …)` too). Its sides are lines, arcs and circles. The library's
-  `sized_plate.sv` finds a plate's depth so, and `drilled_plate.sv` a hole's radius.
+  `sized_plate.sv` finds a plate's depth so, and `drilled_plate.sv` a hole's radius. A driving
+  `mass(plate) == …` or `volume(plate) == …` of a prism is a row over its face the same way, its
+  depth through it, read in its plane or in three dimensions and needing no support.
 - **The library shows the rest**: `tuning_fork.sv` (modes in the plane), `rounded_bracket.sv` (a
   round that gives a corner's stress an answer), `pressure_pipe.sv` (plane strain, Lamé's closed
   form) and `gravity_wall.sv` (plane strain under its own weight).

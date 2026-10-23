@@ -256,17 +256,20 @@ pub struct Sketch {
     /// and carried by the Solvent source alone, as a solid's `of` is: never written to JSON.
     pub beams: Vec<Beam>,
     /// **The load scenarios a driving row reads** (#510 S1): a scenario's supports and loads,
-    /// which a frame's deflection driven under it (`CKind::Deflection`) is solved under, by index.
+    /// which a frame's deflection driven under it (`CKind::Deflection`) is solved under, by index
+    /// — and what a mass or a volume driven (`CKind::Mass`, `CKind::Volume`) names.
     /// Only a scenario that drives is here: one of claims adds nothing to the drawing.  Set by
     /// elaboration and carried by the Solvent source alone, as a beam is: never written to JSON.
     pub scenarios: Vec<Scenario>,
     /// **The regions a driving row over a plane reads** (#510 S2), and the prisms one over a solid
     /// reads (#510 S3, its face's mesh stacked): each meshed once, where the drawing stood when its
     /// row was compiled (`prisms::Row`), by what the row names — the
-    /// scenario's index here, the point and the direction — so every compile of the row through
-    /// a solve reads one topology, its nodes moving with the drawing, and shares it rather than
-    /// copying it.  Set by elaboration with the row, carried by the Solvent source alone.
-    pub meshed: BTreeMap<(usize, usize, EntRef), std::sync::Arc<crate::prisms::Row>>,
+    /// scenario's index here, then a deflection's point and its direction, or a mass's or a
+    /// volume's requirement among the scenario's and no direction — so every compile of the row
+    /// through a solve reads one topology, its nodes moving with the drawing, and shares it
+    /// rather than copying it.  Set by elaboration with the row, carried by the Solvent source
+    /// alone.
+    pub meshed: BTreeMap<(usize, usize, Option<EntRef>), std::sync::Arc<crate::prisms::Row>>,
     /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
     /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
     /// Presentation, as a wobble is: what is drawn moves and the document does not — a march

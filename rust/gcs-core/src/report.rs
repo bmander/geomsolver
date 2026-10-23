@@ -457,14 +457,15 @@ pub struct ScenarioAnswer {
 /// reached, its value its own row's — a region's on the mesh the row was compiled on and moved
 /// with the drawing (#510 S2), which a fresh mesh of the solved drawing reads to its
 /// discretisation, not to rounding; any other driving row or bound is said to hold or not, and
-/// that nothing drives it yet (S3–S4).
+/// that nothing drives it yet (S3–S4).  A driven requirement is said whenever its row has a value,
+/// whatever its reading answers: a mass or a volume is driven under no support, of a frame its
+/// scenario may leave free, and of a prism no reading need read.
 pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::beams::Read)
     -> Vec<ScenarioAnswer>
 {
     use crate::model::Grade;
     let mut out = Vec::new();
     for (k, r) in s.scenario.requirements.iter().enumerate() {
-        let Some(got) = &read.answers[k] else { continue };
         let head = s.heads[k].clone();
         let grade = r.grade().word();
         let stated = format!("{} {}", r.compare.text(),
@@ -473,12 +474,13 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
         let row = s.driven.get(k).copied().flatten().and_then(|id| sk.constraint(id)).map(|c| {
             c.residual(sk, &c.local_values(sk))[0] + r.value
         });
-        let got = match (got, row) {
-            (Ok(_), Some(v)) if v.is_finite() => &Ok(v),
-            _ => got,
+        let got = match (&read.answers[k], row) {
+            (_, Some(v)) if v.is_finite() => Ok(v),
+            (Some(got), _) => got.clone(),
+            (None, _) => continue,
         };
         let error = read.errors.get(k).copied().flatten();
-        let (value, holds, said) = match got {
+        let (value, holds, said) = match &got {
             Ok(v) => {
                 let keeps = crate::beams::keeps(r, *v);
                 let driven = s.driven.get(k).is_some_and(Option::is_some);

@@ -755,8 +755,22 @@ pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
     }
     let named = named_points(sc);
     let mut read: BTreeMap<usize, Result<Analysed, Unread>> = BTreeMap::new();
+    let mut filled: BTreeMap<usize, Result<Filled, Unread>> = BTreeMap::new();
     for (k, (r, s)) in sc.requirements.iter().zip(&of).enumerate() {
         let Some(s) = *s else { continue };
+        if r.output.measure() {
+            // a measure reads what the solid is made of, under no support and no load: of the
+            // solid analysed where it is, else of it meshed alone
+            let f = match read.get(&s) {
+                Some(Ok(a)) => Ok(&a.f),
+                _ => filled.entry(s).or_insert_with(|| {
+                    Filled::new(sk, sc, s, mesh(sk, s, &named, coarser)?)
+                }).as_ref(),
+            };
+            out.answers[k] =
+                Some(f.map_err(|m| m.text(&sk.solids[s].name)).and_then(|f| measure(sk, f, r)));
+            continue;
+        }
         let a = read.entry(s).or_insert_with(|| {
             let mesh = mesh(sk, s, &named, coarser)?;
             Analysed::new(sk, sc, s, mesh, modes.get(&s).copied().unwrap_or(0))
@@ -811,7 +825,7 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
         Output::Compliance => {
             Ok(f.s.forces(&f.x).iter().zip(&a.state()?.u).map(|(p, u)| p * u).sum())
         }
-        Output::Mass => Ok(property(sk, f.solid, Property::Rho)? * f.s.volume(&f.x)),
+        Output::Mass | Output::Volume => measure(sk, f, r),
         Output::Mode => {
             let n = r.count.unwrap_or(1) as usize;
             let v = *a.pairs(sk)?.values.get(n - 1).ok_or("it has fewer modes than that")?;
@@ -832,6 +846,16 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
             Ok(yields / worst)
         }
     }
+}
+
+/// **A mass or a volume over solid `f`** (`r` says which): `ρ ΣV`, or `ΣV` — what it is made of,
+/// which no solve reads, so a solid its supports leave free has one.
+fn measure(sk: &Sketch, f: &Filled, r: &Requirement) -> Result<f64, String> {
+    let rho = match r.output {
+        Output::Mass => property(sk, f.solid, Property::Rho)?,
+        _ => 1.0,
+    };
+    Ok(rho * f.s.volume(&f.x))
 }
 
 /* -- a driving row (#510 S3) ------------------------------------------------------------------ */
@@ -872,7 +896,7 @@ pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef)
     let st = mesh.stack.ok_or("it is read over no prism")?;
     let plane_x: Vec<f64> = st.plane.points.iter().flatten().copied().collect();
     let (mut moved, columns) =
-        prisms::moved_with(sk, sc, &st.region, &st.plane, &plane_x, at, face_plane)?;
+        prisms::moved_with(sk, sc, &st.region, &st.plane, &plane_x, Some(at), face_plane)?;
     let b = &st.region.basis;
     moved.stack = Some(crate::interior::Stack { basis: [b.o, b.u, b.v, b.normal()], of: st.of });
     Ok(prisms::Row { structure: s, moved, columns, x })

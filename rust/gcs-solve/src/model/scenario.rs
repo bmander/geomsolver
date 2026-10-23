@@ -148,16 +148,19 @@ pub enum Output {
     Compliance,
     /// `mass(b)`: the body's mass, its density over its volume.
     Mass,
+    /// `volume(b)`: the body's volume, what its mass is a density of.
+    Volume,
 }
 
 impl Output {
-    pub const ALL: [Output; 6] = [
+    pub const ALL: [Output; 7] = [
         Output::Deflection,
         Output::Safety,
         Output::Mode,
         Output::Buckling,
         Output::Compliance,
         Output::Mass,
+        Output::Volume,
     ];
 
     pub fn word(self) -> &'static str {
@@ -168,6 +171,7 @@ impl Output {
             Output::Buckling => "buckling",
             Output::Compliance => "compliance",
             Output::Mass => "mass",
+            Output::Volume => "volume",
         }
     }
 
@@ -185,6 +189,7 @@ impl Output {
                 Dim::LENGTH.mul(Dim::LENGTH).mul(Dim::MASS).div(Dim::TIME).div(Dim::TIME)
             }
             Output::Mass => Dim::MASS,
+            Output::Volume => Dim::LENGTH.mul(Dim::LENGTH).mul(Dim::LENGTH),
         }
     }
 
@@ -196,6 +201,12 @@ impl Output {
     /// Whether it may be read along a direction: `deflection(p, along: d)`.
     pub fn directed(self) -> bool {
         self == Output::Deflection
+    }
+
+    /// Whether it is a measure of what the body is made of (`mass`, `volume`): read of its
+    /// geometry and its density alone, under no support and no load.
+    pub fn measure(self) -> bool {
+        matches!(self, Output::Mass | Output::Volume)
     }
 }
 

@@ -366,7 +366,7 @@ fn kind(o: Output) -> Option<Kind> {
         Output::Deflection | Output::Safety => Some(Kind::Static),
         Output::Mode => Some(Kind::Frequency),
         Output::Buckling => Some(Kind::Buckle),
-        Output::Mass | Output::Compliance => None,
+        Output::Mass | Output::Volume | Output::Compliance => None,
     }
 }
 
@@ -689,6 +689,7 @@ fn judge(case: &Case, e: &Elaborated) -> Vec<(Bracket, f64)> {
                     // a B-rep is in millimetres, a mass in kilograms in any document
                     material.get(Property::Rho).unwrap() * volume(&x) * (x.mm * 1e-3).powi(3)
                 }
+                Output::Volume => volume(&x),
                 Output::Compliance => panic!("no case claims a compliance yet"),
             };
             out.push((b.clone(), v));

@@ -22,13 +22,16 @@
 //! meshed with one element between joints (exact for the joints' moves under loads at joints
 //! and spread evenly, which is all a static deflection reads), its nodes' columns the lifts of
 //! the drawing's points there and its sections read over the unknowns they state (`Sizing`).
+//! **A driving mass or volume is a row too** (`Row::measured`): `mass(arm) == 2kg` compiles to
+//! the same kernel over the members it names, each one element between its line's ends, reading
+//! what they are made of rather than how they move (`interior::Reads`), so it solves nothing.
 //! Every other requirement is judged after the solve, never solved for.
 
 use crate::diagnose::analysis::direction;
 use crate::eigen::{self, Pairs};
 use crate::graph::UnionFind;
 use crate::deformed::{self, Body, SAMPLES};
-use crate::interior::{self, Beam as Element, Failure, Sizing, Spread, State, Structure};
+use crate::interior::{self, Beam as Element, Failure, Reads, Sizing, Spread, State, Structure};
 use crate::model::{
     Applied, EntKind, EntRef, Hold, LoadKind, LoadValue, Output, Property, Requirement, Scenario,
     SectionProp, Sketch,
@@ -638,34 +641,81 @@ impl Row {
                 points[k] = mesh.points[i];
             }
         }
-        // each beam's four tapes over the frame's unknowns, compiled once for all its elements
-        let mut tapes: BTreeMap<usize, [Vec<f64>; interior::SECTION]> = BTreeMap::new();
-        let mut sections = Vec::with_capacity(member.len());
-        for (e, &m) in member.iter().enumerate() {
-            let beam = mesh.members[m].beam;
-            if !tapes.contains_key(&beam) {
-                let section = &sk.beams[beam].section;
-                let mut four: [Vec<f64>; interior::SECTION] = Default::default();
-                let stated = s.section(e, &x);
-                for ((t, p), &v) in four.iter_mut().zip(SectionProp::STIFFNESS).zip(stated) {
-                    let tape = match section.over.get(&p) {
-                        Some(over) => over.tape(&unknowns, sk.units)?,
-                        None => crate::tape::Tape::compile(
-                            &crate::expr::Ast::Num(v, crate::units::Dim::SCALAR), &unknowns)?,
-                    };
-                    *t = tape.flat;
-                }
-                tapes.insert(beam, four);
+        let beams: Vec<usize> = member.iter().map(|&m| mesh.members[m].beam).collect();
+        let sizing = sizing(sk, &s, &x, &beams, &unknowns, false)?;
+        Ok(Row { structure: s, sizing, points, unknowns, x })
+    }
+
+    /// **The row of `mass(of)` or `volume(of)`** (`reads`) over the drawing's beams: the members
+    /// `of` names — a beam's every line, or one line of a beam — each one element between its
+    /// line's ends (a member's measure is its whole length's, however it is cut), every node a
+    /// point of the drawing whose lift is its three columns, and the sections read over the
+    /// unknowns its area states — the one number of a section a measure reads, so it determines no
+    /// other.  It reads no support and no load, and of a material only a mass's density; or why
+    /// the solve cannot read it: `of` names no member, or a member of no length.
+    pub fn measured(sk: &Sketch, of: &Applied, reads: Reads) -> Result<Row, String> {
+        let lines: Vec<(usize, usize)> = match of {
+            Applied::Beam(b) => sk.beams[*b].lines.iter().map(|&l| (*b, l)).collect(),
+            Applied::Ent(e) if e.kind == EntKind::Line => {
+                sk.beams.iter().enumerate().filter(|(_, b)| b.lines.contains(&e.i()))
+                    .map(|(b, _)| (b, e.i())).take(1).collect()
             }
-            sections.push(tapes[&beam].clone());
+            _ => Vec::new(),
+        };
+        if lines.is_empty() {
+            return Err("it is of no beam and no member of one".into());
         }
-        let sizing = Sizing { unknowns: unknowns.len(), sections };
+        let mut points: Vec<usize> = Vec::new();
+        let mut node = |p: usize| match points.iter().position(|&q| q == p) {
+            Some(k) => k,
+            None => {
+                points.push(p);
+                points.len() - 1
+            }
+        };
+        let mut unknowns: Vec<String> = Vec::new();
+        let (mut elements, mut stated, mut beams) = (Vec::new(), Vec::new(), Vec::new());
+        for &(b, l) in &lines {
+            let beam = &sk.beams[b];
+            let ends = sk.line_ends(l);
+            if !(distance(sk.world_point(ends[0]), sk.world_point(ends[1])) > 0.0) {
+                return Err(format!("a line of `{}` has no length, so it is no member", beam.name));
+            }
+            let rho = match reads {
+                Reads::Mass => property(sk, b, Property::Rho)?,
+                _ => 0.0,
+            };
+            elements.push(Element { a: node(ends[0]), b: node(ends[1]), e: 0.0, g: 0.0, rho,
+                                    z: plane_normal(sk, l) });
+            stated.push(beam.section.stiffness(sk)?);
+            beams.push(b);
+            for n in beam.section.over.get(&SectionProp::A).iter().flat_map(|o| &o.unknowns) {
+                if !unknowns.contains(n) {
+                    unknowns.push(n.clone());
+                }
+            }
+        }
+        if unknowns.len() > crate::tape::MAX_VARS {
+            return Err(format!("its sections read {} unknowns, and a row reads at most {}",
+                               unknowns.len(), crate::tape::MAX_VARS));
+        }
+        let mut x: Vec<f64> = points.iter().flat_map(|&p| sk.world_point(p)).collect();
+        x.extend(stated.iter().flatten());
+        let n = points.len();
+        let mut s = Structure { dim: 3, nodes: n, beams: elements, reads, ..Structure::default() };
+        let dofs = s.per() * n;
+        (s.fixed, s.load, s.weight) = (vec![false; dofs], vec![0.0; dofs], vec![0.0; dofs]);
+        let sizing = sizing(sk, &s, &x, &beams, &unknowns, true)?;
         Ok(Row { structure: s, sizing, points, unknowns, x })
     }
 
     /// Whether the structure gives a displacement where the drawing stands, or why not — what
-    /// the row is refused for where it is stated (a frame the supports leave free).
+    /// the row is refused for where it is stated (a frame the supports leave free); a measure,
+    /// whether it measures anything there.
     pub fn check(&self) -> Result<(), String> {
+        if self.structure.reads.measure() {
+            return measures(&self.structure, &self.x);
+        }
         self.structure.solve(&self.x).map(|_| ())
             .map_err(|why| unsolved(&self.structure, &self.x, "the frame", why).text())
     }
@@ -679,6 +729,47 @@ impl Row {
     pub fn widths(&self) -> (usize, usize) {
         self.structure.widths_sized(false, Some(&self.sizing))
     }
+}
+
+/// **Whether a measure's row measures anything where the drawing stands** (`Reads::Volume`,
+/// `Reads::Mass`): a mass or a volume more than nothing — what it is refused for where it is
+/// stated otherwise (a material of no density).
+pub(crate) fn measures(s: &Structure, x: &[f64]) -> Result<(), String> {
+    let m = s.measure(x);
+    if m.is_finite() && m > 0.0 {
+        return Ok(());
+    }
+    let what = if s.reads == Reads::Mass { "mass" } else { "volume" };
+    Err(format!("it has no {what} where the drawing stands, so nothing it could be sized by"))
+}
+
+/// **Every element's section as four tapes over `unknowns`** (`Sizing`), `beams` each element's
+/// beam and `s`'s sections at `x` the numbers stated: a number its beam reads over unknowns, its
+/// tape; any other, a tape of one constant — and where `area`, every number but the area so,
+/// which is all a measure reads.  Compiled once a beam.
+fn sizing(sk: &Sketch, s: &Structure, x: &[f64], beams: &[usize], unknowns: &[String],
+          area: bool) -> Result<Sizing, String>
+{
+    let mut tapes: BTreeMap<usize, [Vec<f64>; interior::SECTION]> = BTreeMap::new();
+    let mut sections = Vec::with_capacity(beams.len());
+    for (e, &beam) in beams.iter().enumerate() {
+        if !tapes.contains_key(&beam) {
+            let section = &sk.beams[beam].section;
+            let mut four: [Vec<f64>; interior::SECTION] = Default::default();
+            let stated = s.section(e, x);
+            for ((t, p), &v) in four.iter_mut().zip(SectionProp::STIFFNESS).zip(stated) {
+                let tape = match section.over.get(&p).filter(|_| !area || p == SectionProp::A) {
+                    Some(over) => over.tape(unknowns, sk.units)?,
+                    None => crate::tape::Tape::compile(
+                        &crate::expr::Ast::Num(v, crate::units::Dim::SCALAR), unknowns)?,
+                };
+                *t = tape.flat;
+            }
+            tapes.insert(beam, four);
+        }
+        sections.push(tapes[&beam].clone());
+    }
+    Ok(Sizing { unknowns: unknowns.len(), sections })
 }
 
 /// The row's mesh — one element between joints, cut at the points the scenario names and at
@@ -819,6 +910,10 @@ pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
         out.answers[k] = match f {
             None => continue,
             Some(Err(m)) => Some(Err(m)),
+            // a measure reads what the frame is made of, under no support and no load
+            Some(Ok(f)) if r.output.measure() => Some(
+                Framed::new(sk, sc, &mesh, f).map_err(|u| u.text())
+                    .and_then(|framed| measure(sk, &mesh, &framed, r))),
             Some(Ok(f)) => {
                 let wanted = modes.get(&f).copied().unwrap_or(0);
                 match frames.entry(f).or_insert_with(|| Analysed::new(sk, sc, &mesh, f, wanted)) {
@@ -871,18 +966,7 @@ fn answer(sk: &Sketch, mesh: &Mesh, a: &Analysed, r: &Requirement) -> Result<f64
             worst.ok_or_else(|| "it names no node of a frame".to_string())
         }
         Output::Compliance => Ok(dot_all(&a.f.s.forces(&a.f.x), &a.st.u)),
-        Output::Mass => {
-            let ms = mesh.members_of(&r.of);
-            if ms.is_empty() {
-                return Err("a mass is of a beam or a member, and this names a point".into());
-            }
-            let mut m = 0.0;
-            for e in elements_of(&a.f.member, &ms) {
-                let length = a.f.s.beam_axes(e, &a.f.x).map_or(0.0, |x| x.0);
-                m += a.density(sk, mesh, e)? * a.f.s.section(e, &a.f.x)[0] * length;
-            }
-            Ok(m)
-        }
+        Output::Mass | Output::Volume => measure(sk, mesh, &a.f, r),
         Output::Mode => {
             let n = r.count.unwrap_or(1) as usize;
             let v = *a.pairs(sk, mesh)?.values.get(n - 1).ok_or("it has fewer modes than that")?;
@@ -922,6 +1006,27 @@ fn answer(sk: &Sketch, mesh: &Mesh, a: &Analysed, r: &Requirement) -> Result<f64
     }
 }
 
+/// **A mass or a volume over frame `f`** (`r` says which, and of what): `ρ A L`, or `A L`, over
+/// the members it names — what they are made of, which no solve reads, so a frame its supports
+/// leave free has one.
+fn measure(sk: &Sketch, mesh: &Mesh, f: &Framed, r: &Requirement) -> Result<f64, String> {
+    let ms = mesh.members_of(&r.of);
+    if ms.is_empty() {
+        return Err(format!("a {} is of a beam or a member, and this names a point",
+                           r.output.word()));
+    }
+    let mut m = 0.0;
+    for e in elements_of(&f.member, &ms) {
+        let length = f.s.beam_axes(e, &f.x).map_or(0.0, |x| x.0);
+        let rho = match r.output {
+            Output::Mass => property(sk, mesh.members[f.member[e]].beam, Property::Rho)?,
+            _ => 1.0,
+        };
+        m += rho * f.s.section(e, &f.x)[0] * length;
+    }
+    Ok(m)
+}
+
 /// `Σ aᵢbᵢ`.
 fn dot_all(a: &[f64], b: &[f64]) -> f64 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
@@ -956,8 +1061,8 @@ fn stress(r: &[f64; 12], q: V, h: f64, a: f64, sy: f64, sz: f64) -> f64 {
 }
 
 /// **A requirement's value as a reader reads it**, in the document's units: a deflection in its
-/// length (`1.6mm`), a frequency in hertz, a mass in kilograms, a compliance in joules, a factor
-/// as a plain number — six figures.
+/// length (`1.6mm`), a frequency in hertz, a mass in kilograms, a volume in its length cubed
+/// (`72000mm³`), a compliance in joules, a factor as a plain number — six figures.
 pub fn value_text(sk: &Sketch, output: Output, v: f64) -> String {
     figures_text(sk, output, v, 6)
 }
@@ -975,6 +1080,7 @@ fn figures_text(sk: &Sketch, output: Output, v: f64, figures: usize) -> String {
         Output::Deflection => format!("{}{}", fig(v), sk.units.name()),
         Output::Mode => format!("{}Hz", fig(v)),
         Output::Mass => format!("{}kg", fig(v)),
+        Output::Volume => format!("{}{}³", fig(v), sk.units.name()),
         Output::Compliance => format!("{}J", fig(sk.units.to_si(v, output.dim()))),
         Output::Safety | Output::Buckling => fig(v),
     }

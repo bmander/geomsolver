@@ -189,6 +189,19 @@ pub enum CKind {
     /// from a driving requirement, never written as a statement, and carried by the Solvent source
     /// alone, as a beam is.
     Deflection,
+    /// **A mass, driven** (`beams::Row::measured`, `prisms::Row::measured`): `mass(arm) == 2kg`
+    /// in a `scenario`, what the requirement `requirement` of the scenario
+    /// `Sketch::scenarios[scenario]` names weighs — a beam's or a member's `ρ A L`, a prism's `ρ`
+    /// times its face's area through its depth.  One row, the interior's kernel reading the
+    /// structure's measure (`interior::Reads::Mass`) rather than its moves, its gradient its own:
+    /// no support, no load and no solve is read.  Its columns are a deflection's over the same
+    /// structure — a frame's points' lifts and the unknowns its areas are read over, a face's
+    /// points' numbers and its radii, its mesh the compile's moved with them (`Sketch::meshed`).
+    /// Degree 1, as a deflection's.  Made by the elaborator, carried by the source alone.
+    Mass,
+    /// **A volume, driven**: `volume(arm) == 72000mm^3`, `Mass` with no density read
+    /// (`interior::Reads::Volume`): a member's `A L`, a prism's face's area through its depth.
+    Volume,
     /// **A point on a body traced in space** (#326, `traced`): `p coincident k`, three rows `p −
     /// X(u, s)` against the place `[u, s]` it owns (a curve's `s` held at none), so a point on a
     /// curve in space nets two and one on a surface one.  The body's geometry is columns.
@@ -452,7 +465,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 86] = [
+pub const ALL_KINDS: [CKind; 88] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -489,6 +502,8 @@ pub const ALL_KINDS: [CKind; 86] = [
     CKind::CarriedPoint,
     CKind::RegularWithin,
     CKind::Deflection,
+    CKind::Mass,
+    CKind::Volume,
     CKind::PointOnTraced,
     CKind::Project,
     CKind::Lift,
@@ -774,6 +789,8 @@ impl CKind {
             CKind::CarriedPointIn => "CarriedPointIn",
             CKind::RegularWithin => "RegularWithin",
             CKind::Deflection => "Deflection",
+            CKind::Mass => "Mass",
+            CKind::Volume => "Volume",
             CKind::PointOnTraced => "PointOnTraced",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
@@ -1002,6 +1019,11 @@ impl CKind {
             CKind::Deflection => {
                 &[("at", S::Point), ("along", S::Direction), ("scenario", S::Int), ("d", S::Length)]
             }
+            // the scenario, its requirement naming what is measured, and how much: a mass in
+            // kilograms, a volume in the drawing's length cubed — a scenario's number, no
+            // dimension drawn
+            CKind::Mass => &[("scenario", S::Int), ("requirement", S::Int), ("m", S::Float)],
+            CKind::Volume => &[("scenario", S::Int), ("requirement", S::Int), ("v", S::Float)],
             // the place on a traced body: its formals', a curve's second held at none (#326)
             CKind::PointOnTraced => &[("p", S::Point), ("traced", S::Traced), ("u", S::Param), ("s", S::Param)],
             CKind::SplineTangentLine => {
@@ -1197,6 +1219,9 @@ impl CKind {
             CKind::RegularWithin => ("regular", Infix),
             // a frame's deflection (#510 S1): a scenario's output, `deflection(at, along: d)`
             CKind::Deflection => ("deflection", Prefix),
+            // a mass or a volume driven: a scenario's output, `mass(arm)`, `volume(arm)`
+            CKind::Mass => ("mass", Prefix),
+            CKind::Volume => ("volume", Prefix),
             // a body traced in space (#326): a point on it, and at a point already on it a line
             // or a plane touching it, a line along a surface's normal and a circle osculating it
             CKind::PointOnTraced => ("coincident", Infix),
@@ -1560,11 +1585,17 @@ impl CKind {
     }
 
     /// Whether a constraint of this kind is **the Solvent source's alone** (#510 S1): a frame's
-    /// deflection reads beams and a scenario, which no document JSON, rebuild walk or flat program
-    /// carries, so none of them carries the row either; the source states it again when it is
-    /// elaborated.
+    /// deflection, mass or volume reads beams and a scenario, which no document JSON, rebuild walk
+    /// or flat program carries, so none of them carries the row either; the source states it
+    /// again when it is elaborated.
     pub fn of_source(self) -> bool {
-        self == CKind::Deflection
+        self.interior()
+    }
+
+    /// Whether its kernel is the interior's (`interior::kernel`, `KernelKey::Interior`): a
+    /// scenario's output driven — a deflection, a mass, a volume (#510).
+    pub fn interior(self) -> bool {
+        matches!(self, CKind::Deflection | CKind::Mass | CKind::Volume)
     }
 
     /// Whether this kind's kernel is built from the sketch at a width of its operands' (a
@@ -1573,8 +1604,8 @@ impl CKind {
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
                        | CKind::CarriedPoint | CKind::CarriedPointIn
-                       | CKind::RegularWithin | CKind::Deflection | CKind::Rate
-                       | CKind::RateDistance)
+                       | CKind::RegularWithin | CKind::Rate | CKind::RateDistance)
+            || self.interior()
             || self.envelope_contact().is_some()
             || self.meshing_contact().is_some()
             || self.traced_contact().is_some()
@@ -1701,8 +1732,10 @@ impl CKind {
             | CKind::RateDistance
             // a flank's regularity (#345): no contact
             | CKind::RegularWithin
-            // nor a frame's deflection (#510 S1)
+            // nor a frame's deflection (#510 S1), nor what a body is made of
             | CKind::Deflection
+            | CKind::Mass
+            | CKind::Volume
             // a point on a traced body is a contact, as one on a curve is
             | CKind::PointOnTraced
             | CKind::PointAlongLine
@@ -1809,8 +1842,8 @@ impl CKind {
             CKind::RegularWithin => {
                 panic!("a flank's regularity is read by a kernel built at its operands' widths")
             }
-            CKind::Deflection => {
-                panic!("a deflection is read by a kernel built at its structure's widths")
+            CKind::Deflection | CKind::Mass | CKind::Volume => {
+                panic!("a scenario's output is read by a kernel built at its structure's widths")
             }
             CKind::CarriedPoint | CKind::CarriedPointIn => {
                 panic!("a point a motion carries is read by a kernel built at its operands' widths")
@@ -1985,8 +2018,11 @@ impl CKind {
             | CKind::Rate
             | CKind::RateDistance
             | CKind::RegularWithin
-            // nor a frame's deflection (#510 S1): a scenario's number, stated, never an unknown
+            // nor a frame's deflection (#510 S1), mass or volume: a scenario's number, stated,
+            // never an unknown
             | CKind::Deflection
+            | CKind::Mass
+            | CKind::Volume
             // nor a contact with a traced body
             | CKind::PointOnTraced
             | CKind::PointAlongLine
@@ -2061,6 +2097,8 @@ impl CKind {
                 | CKind::RateDistance
                 | CKind::RegularWithin
                 | CKind::Deflection
+                | CKind::Mass
+                | CKind::Volume
                 | CKind::PointOnTraced
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis

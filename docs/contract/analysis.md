@@ -17,7 +17,9 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 (`model::PlaneReading`), `Sketch::meshed` or `DeflectionRow`; or `interior::Tet10`,
 `interior::Borne`, `interior::Stack` (`interior/solid.rs`), `bodies.rs`, `beams::Read::errors`,
 `cholesky::Cholesky::factor_ldl` or `eigen::UNBUCKLED`; or `deformed.rs`, `overview/scenario.rs`,
-a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn).
+a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn); or
+`interior::Reads`, `Structure::measure`, `CKind::Mass`, `CKind::Volume` or a reader's `measure`
+(a mass or a volume driven).
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
@@ -30,8 +32,9 @@ materials (P3), `rust/gcs-core/tests/linalg.rs` for the eigensolver (P2),
 frame's driving row (S1), `rust/gcs-core/tests/prisms.rs` for solids read in their plane and
 a region's driving row (S2, its mesher `rust/gcs-core/tests/plane_mesh.rs`), and
 `rust/gcs-core/tests/bodies.rs` for solids read in three dimensions, a solid's driving row and the
-errors estimated beside every answer (S3), and `rust/gcs-core/tests/scenario_view.rs` for a
-scenario drawn, unless a rule names another.
+errors estimated beside every answer (S3), `rust/gcs-core/tests/scenario_view.rs` for a
+scenario drawn, and `rust/gcs-core/tests/measured.rs` for a mass or a volume driven, unless a rule
+names another.
 
 - **An analysis output is a row, and its interior is a kernel** (#510 P5). A requirement whose
   value comes from `K(x)u = f`, `x` the drawing's numbers and `u` the displacements, is a kernel
@@ -271,8 +274,9 @@ scenario drawn, unless a rule names another.
   kernel (`KernelKey::Interior`, built at its frame's widths; one row, degree 1, `d·u − v`), so
   the flat solve, the decomposition and the diagnosis take it as any row: the sized cantilever
   leaves no freedom (`a_requirement_sizes_a_section`). Any other driving requirement — a solid's,
-  or a frame's mode, mass, buckling, compliance or safety, or a deflection with no `along:` —
-  compiles nothing, and the report says nothing drives it yet. The kind has no free twin (a
+  or a frame's mode, buckling, compliance or safety, or a deflection with no `along:` — compiles
+  nothing, and the report says nothing drives it yet (a mass and a volume drive since [0.174],
+  below). The kind has no free twin (a
   scenario's number reads no unknown) and is in `undrawn!`: a requirement's figure is the deformed
   frame, the drawing's to say.
 
@@ -343,7 +347,7 @@ scenario drawn, unless a rule names another.
 - **What S1 leaves.**
   - **One output drives**: a deflection of a joint along a direction. A deflection with no
     `along:` (a length, not linear in `u`), a beam's worst (a maximum), a compliance (`f(x)ᵀu`,
-    its own `∂J/∂x`), a mass, a mode (`φᵀ(K' − λM')φ`, P2's open derivative) and a safety (a
+    its own `∂J/∂x`), ~~a mass~~ (a row since [0.174], below), a mode (`φᵀ(K' − λM')φ`, P2's open derivative) and a safety (a
     maximum: S2's aggregation) are claims yet.
   - **A drag and a rebuild drop the row**: `graft` copies neither beams nor scenarios, so a part a
     gesture moves, a copy and a paste carry no frame row. Carrying them means remapping a beam's
@@ -510,8 +514,8 @@ scenario drawn, unless a rule names another.
 - **What S2 leaves.**
   - **Stress drives nothing yet.** A factor of safety is read at the nodes, a maximum: driving it
     needs its aggregation (a KS function or a p-norm, with its error reported) and its gradient,
-    and the edge diagnosis already says where it has no answer. Mass, compliance and modes are
-    claims too.
+    and the edge diagnosis already says where it has no answer. ~~Mass~~ (a row since [0.174],
+    below), compliance and modes are claims too.
   - **The mesh is the compile's**, made where the drawing stands when it is elaborated: a region
     whose seeds are far from its solution (a circle seeded at radius 1 that the solve grows ninefold)
     inverts elements as its nodes follow, and the row reads NaN. No remeshing when the motion
@@ -721,7 +725,8 @@ scenario drawn, unless a rule names another.
   - **The error is a second reading's**, not the goal-oriented (dual-weighted residual) estimate
     the adjoint would give with the derivative: it costs a coarser mesh, and promises a bound only
     where the reading converges monotonically.
-  - **Stress, modes, buckling, compliance and mass drive nothing yet**, as S2 left them.
+  - **Stress, modes, buckling and compliance drive nothing yet**, as S2 left them; ~~mass~~ drives
+    since [0.174] (below).
   - **A filled body's point is the node nearest it**, so a support at a point off a vertex holds a
     little of what it should not (the rod's 0.14%). A degenerate pair of a solid's modes (the
     plate's two) is found and not yet named with its ring (P7's word).
@@ -730,6 +735,69 @@ scenario drawn, unless a rule names another.
     (its buckling), the cantilever in 1.2 s, each read once at its own size. The
     Cholesky's update is formed four columns at a time (`cholesky::BLOCK`) and its dense panels a
     column at a time, and each read meshes afresh, twice (P5's two caches are still not kept).
+
+- **A mass or a volume, driven, is a row of what the body is made of** (#510; `CKind::Mass`,
+  `CKind::Volume`, `interior::Reads`, `beams::Row::measured`, `prisms::Row::measured`, §9.11
+  [0.174]). `volume(B)` is an output beside `mass(B)`, a length cubed, answered wherever a mass
+  is: a frame's members' `A L`, a region's `t Σ A`, a solid's `Σ V`. `mass(B) == m` or
+  `volume(B) == v` in a scenario, `B` a beam, a line a beam is drawn on, or a solid that is a
+  prism (`prisms::Region::of`), is compiled by the elaborator (`program::scenarios::drive`,
+  `drives`) into `[scenario: Int, requirement: Int, m: Float]` — the requirement by its index
+  among the scenario's held on `Sketch::scenarios`, so a beam, which is no entity, is named as the
+  requirement names it. It is the interior's kernel as a deflection is, at its structure's
+  widths, but its structure reads what it is made of (`Structure::reads`, the head's thirteenth
+  constant): `Structure::measure`, each bar's and beam's `A L`, each plane element's `t ∫ det J`,
+  each solid one's `∫ det J`, weighed by its density for a mass (a bar, of none, weighing
+  nothing), and its gradient its own (`Structure::measure_gradient`: a member's `w A ĝ` at its
+  ends and `w L` in its area, an element's `∂(∫ det J)` in `Dual` over its nodes' places) carried
+  through the sections' tapes or the nodes' motion as a deflection's adjoint is. No support, no
+  load and no factor is read, so no material's moduli, and a structure its supports leave free —
+  or that nothing holds — has a row: a scenario of nothing but `mass(arm) == 10kg` sizes `arm`.
+  Degree 1, a scenario's number as a deflection's is; no free twin; in `undrawn!`, no view
+  drawing a mass; the source's alone (`CKind::of_source`, `the row is the sources alone`).
+  - **A frame's** (`beams::Row::measured`): the members `B` names, each one element between its
+    line's ends (a member's measure is its whole length's, however a reading cuts it), every node a
+    point whose lift is its three columns, the sections tapes over the unknowns **its area**
+    reads (`sizing(…, area: true)`: the area's tape, every other number a constant) — a measure
+    reads only the area, so it binds no unknown it cannot determine. Refused (**E040**): a
+    member of no length, a mass of a material stating no `rho` (`measures`: nothing to size).
+  - **A prism's** (`prisms::Row::measured`): its face meshed once where the drawing stands, at a
+    reading's size with no point named a node, each element its face's through the prism's depth
+    — a prism's volume is its face's area through its depth whether the scenario reads it in its
+    plane or in three dimensions, so a solid read in three dimensions drives over its face's mesh
+    too, never its tetrahedra — its nodes moved with the drawing (`moved_with`, `at: None`) and the
+    row held on `Sketch::meshed` by `(scenario, requirement, None)`. Refused where a region's
+    deflection is (**E040**): a side that is a spline or a curve, a plane the solve turns.
+  - **Anything else compiles nothing**: a mass of a point, or of a solid that is no prism (turned,
+    united, cut) — its volume's nodes are no functions of the drawing, as a filled body's
+    deflection's are not — is judged after the solve, and the report says nothing drives it yet.
+  - **Held to closed forms** (`tests/measured.rs`): a depth sized by a mass, `m / (ρ b L)`, for
+    three masses, under no support and nothing said against it, a volume claimed beside it
+    (`a_mass_sizes_a_section`); a length placed by a volume, `V / A`
+    (`a_volume_places_a_node`); a width and a depth sized together by a mass and a tip's sag,
+    `b h = m / (ρ L)` and `b h³ = 4 P L³ / (E δ)` (`a_mass_and_a_sag_size_a_section_together`)
+    — each to 1e-9, leaving no freedom; a hole's radius sized by a plate's volume,
+    `√((L h − V/t) / π)` within 1e-5, read in its plane and in three dimensions
+    (`a_volume_sizes_a_hole`); what cannot be measured said (`what_cannot_be_measured_says_why`).
+    **The library's case** is `weighed_cantilever.sv`: the sized cantilever with its width an
+    unknown beside its depth, its sag and its mass both driven — 20.33mm by 62.65mm, each its
+    closed form, no freedom left, its claim kept
+    (`the_librarys_weighed_cantilever_holds_what_it_drives`).
+    The kernel's gradient against central differences over bars, beams and curved triangles and
+    tetrahedra held by nothing (`jacobians.rs`, `a_measure_agrees_with_finite_differences`), and
+    each row as the drawing states it — a frame's area not affine in its unknown and an L's reach,
+    a prism with a round corner and a hole in its plane and in three dimensions — at the solution
+    and knocked off it (`a_measure_agrees_with_finite_differences_as_the_drawing_states_it`).
+
+- **A mass or a volume is answered under no support** (`beams::measure`, `prisms::measure`,
+  `bodies::measure`): each reader reads a measure of the structure it has built — the frame, the
+  region meshed, the solid meshed — and never its solve, so a frame, a region or a solid its
+  supports leave free answers its mass, and a scenario asking nothing else says nothing against
+  it. A region or a solid analysed for another output is measured on that mesh, else meshed
+  alone. **A driven requirement is said whenever its row has a value** (`report::scenario_answers`),
+  whatever its reading answers: before, a frame left free had no answer to report beside a
+  driving deflection, which its row refuses anyway; now a volume driven of a prism no reading
+  reads (one made of no material) is reported as its row reads it.
 
 - **A scenario drawn: where its lines fall** (#510; `overview::scenario::marks`,
   `report::scenario_marks_json`, FFI `gcs_elab_scenario_marks_json`, `Document.scenarioMarks`).

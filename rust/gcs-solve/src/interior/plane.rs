@@ -85,6 +85,14 @@ fn side_shape_d(s: f64) -> [f64; 3] {
     [4.0 * s - 3.0, 4.0 - 8.0 * s, 4.0 * s - 1.0]
 }
 
+/// An element's area at its nodes' places `x`, `∫ det J` by the degree-four rule, over a number
+/// that may carry rates (`Tri6::area`'s, and a measure's gradient, `Structure::measure_gradient`).
+pub(crate) fn area_of<T: Num>(x: &[P<T>; 6]) -> T {
+    rule4().iter().fold(T::cst(0.0), |a, &(xi, eta, w)| {
+        a + T::cst(w) * jacobian(x, &shape_d(xi, eta)).1
+    })
+}
+
 /// The element's Jacobian at a point of it, `[[∂x/∂ξ, ∂y/∂ξ], [∂x/∂η, ∂y/∂η]]`, and its
 /// determinant.
 fn jacobian<T: Num>(x: &[P<T>; 6], d: &[[f64; 6]; 2]) -> ([[T; 2]; 2], T) {
@@ -209,7 +217,7 @@ impl Tri6 {
     /// Its area, `∫ det J` by the degree-four rule (exact: a curved element's `det J` is of degree
     /// two).
     pub fn area(&self, x: &[P<f64>; 6]) -> f64 {
-        rule4().iter().map(|&(xi, eta, w)| w * jacobian(&lift(x), &shape_d(xi, eta)).1.v).sum()
+        area_of(&lift(x)).v
     }
 
     /// **The stresses at its nodes** under its moves `u` (each node's x, then its y): `(σx, σy,

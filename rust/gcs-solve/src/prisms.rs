@@ -24,7 +24,7 @@ use crate::deformed::Body;
 use crate::delaunay::plane::{self as mesher, Criteria, Mesh, Side};
 use crate::diagnose::analysis::{self, direction, Held};
 use crate::eigen::{self, Pairs};
-use crate::interior::{Edge, Failure, Laid, Node, State, Structure, Tri6};
+use crate::interior::{Edge, Failure, Laid, Node, Reads, State, Structure, Tri6};
 use crate::kernels::{Dual, Num};
 use crate::model::{
     Applied, EntKind, EntRef, InPlane, LoadKind, LoadValue, Output, Property, Requirement,
@@ -796,9 +796,24 @@ pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
     }
     let mut read: Vec<Option<Result<Analysed, Unread>>> =
         (0..regions.len()).map(|_| None).collect();
+    let mut plated: Vec<Option<Result<Plated, Unread>>> =
+        (0..regions.len()).map(|_| None).collect();
     for (k, r) in sc.requirements.iter().enumerate() {
         let Some(i) = of(&r.of) else { continue };
         let (solid, plane, region) = &regions[i];
+        if r.output.measure() {
+            // a measure reads what the region is made of, under no support and no load: of the
+            // region analysed where it is, else of it meshed alone
+            let p = match &read[i] {
+                Some(Ok(a)) => Ok(&a.p),
+                _ => plated[i].get_or_insert_with(|| {
+                    Plated::new(sk, sc, region.clone()?, *plane, coarser)
+                }).as_ref(),
+            };
+            let name = &sk.solids[*solid].name;
+            out.answers[k] = Some(p.map_err(|m| m.text(name)).and_then(|p| measure(sk, p, r)));
+            continue;
+        }
         let a = read[i].get_or_insert_with(|| {
             let region = region.clone()?;
             Analysed::new(sk, sc, region, *plane, modes[i], coarser)
@@ -864,12 +879,7 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
         Output::Compliance => {
             Ok(p.s.forces(&p.x).iter().zip(&a.st.u).map(|(f, u)| f * u).sum())
         }
-        Output::Mass => {
-            let rho = property(sk, p.region.solid, Property::Rho)?;
-            let area: f64 = (0..p.s.tris.len()).map(|i| p.s.tris[i].area(&p.s.tri_places(i, &p.x)))
-                .sum();
-            Ok(rho * p.region.depth * area)
-        }
+        Output::Mass | Output::Volume => measure(sk, p, r),
         Output::Mode => {
             let n = r.count.unwrap_or(1) as usize;
             let v = *a.pairs(sk)?.values.get(n - 1).ok_or("it has fewer modes than that")?;
@@ -891,6 +901,18 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
             Ok(yields / worst)
         }
     }
+}
+
+/// **A mass or a volume over region `p`** (`r` says which): `ρ t Σ A`, or `t Σ A` — what it is
+/// made of, which no solve reads, so a region its supports leave free has one.
+fn measure(sk: &Sketch, p: &Plated, r: &Requirement) -> Result<f64, String> {
+    let rho = match r.output {
+        Output::Mass => property(sk, p.region.solid, Property::Rho)?,
+        _ => 1.0,
+    };
+    let area: f64 =
+        (0..p.s.tris.len()).map(|i| p.s.tris[i].area(&p.s.tri_places(i, &p.x))).sum();
+    Ok(rho * p.region.depth * area)
 }
 
 /* -- a driving row (#510 S2) ------------------------------------------------------------------ */
@@ -927,12 +949,13 @@ pub(crate) fn held_plane(sk: &Sketch, solid: usize) -> Result<Option<u32>, Strin
 
 /// **How a region's mesh moves with the drawing** (#510 S2; a solid's face's too, #510 S3): its
 /// nodes as functions of the drawing's columns — each node at a point of the drawing that point
-/// (a side's start, a point the scenario names, `at`), each node along a side the side's point at
-/// its parameter, the nodes inside a harmonic map of the boundary over `mesh` standing at `x` —
-/// and the columns, each point's two numbers in the plane, then each arc's or circle's radius.
+/// (a side's start, a point the scenario names, `at` where there is one), each node along a side
+/// the side's point at its parameter, the nodes inside a harmonic map of the boundary over `mesh`
+/// standing at `x` — and the columns, each point's two numbers in the plane, then each arc's or
+/// circle's radius.
 /// A side the row does not move (a spline's, a curve's) is refused.
 pub(crate) fn moved_with(sk: &Sketch, sc: &Scenario, region: &Region, mesh: &Mesh, x: &[f64],
-                         at: usize, face_plane: Option<u32>)
+                         at: Option<usize>, face_plane: Option<u32>)
     -> Result<(crate::interior::Moved, Vec<u32>), String>
 {
     let tol = ON * region.extent;
@@ -987,7 +1010,8 @@ pub(crate) fn moved_with(sk: &Sketch, sc: &Scenario, region: &Region, mesh: &Mes
             _ => {}
         }
     }
-    for a in sc.applied().chain([&Applied::Ent(EntRef::point(at))]) {
+    let at = at.map(|at| Applied::Ent(EntRef::point(at)));
+    for a in sc.applied().chain(at.as_ref()) {
         if let Applied::Ent(e) = a {
             if e.kind == EntKind::Point && point_of(sk, region, a).is_some() {
                 stands(e.i(), &mut at_point);
@@ -1041,13 +1065,45 @@ impl Row {
         let (d, _) = region.along(direction(sk, along)?);
         s.weight[2 * node] = d[0];
         s.weight[2 * node + 1] = d[1];
-        let (moved, columns) = moved_with(sk, sc, &region, &mesh, &x, at, face_plane)?;
+        let (moved, columns) = moved_with(sk, sc, &region, &mesh, &x, Some(at), face_plane)?;
+        Ok(Row { structure: s, moved, columns, x })
+    }
+
+    /// **The row of `mass(solid)` or `volume(solid)`** (`reads`) under scenario `sc`, `solid` a
+    /// prism: its face meshed once where the drawing stands, each element the face's through the
+    /// prism's depth — a prism's volume is its face's area through its depth, however it is read
+    /// (in its plane, or in three dimensions) — its nodes moved with the drawing as a
+    /// deflection's are (`moved_with`).  It reads no support and no load, and of a material only a
+    /// mass's density; or why the solve cannot read it: no prism, a plane the solve turns, or a
+    /// side the row does not move (a spline's, a curve's).
+    pub fn measured(sk: &Sketch, sc: &Scenario, solid: usize, reads: Reads)
+        -> Result<Row, String>
+    {
+        let region = Region::of(sk, solid)?;
+        let face_plane = held_plane(sk, solid)?;
+        let rho = match reads {
+            Reads::Mass => property(sk, solid, Property::Rho)?,
+            _ => 0.0,
+        };
+        let mesh = region.mesh_coarser(sk, &[], 1.0)?;
+        let tris: Vec<Tri6> = mesh.tris.iter()
+            .map(|&n| Tri6 { n, e: 0.0, nu: 0.0, rho, depth: region.depth, strain: false })
+            .collect();
+        let n = mesh.points.len();
+        let x: Vec<f64> = mesh.points.iter().flatten().copied().collect();
+        let s = Structure { dim: 2, nodes: n, fixed: vec![false; 2 * n], load: vec![0.0; 2 * n],
+                            weight: vec![0.0; 2 * n], tris, reads, ..Structure::default() };
+        let (moved, columns) = moved_with(sk, sc, &region, &mesh, &x, None, face_plane)?;
         Ok(Row { structure: s, moved, columns, x })
     }
 
     /// Whether the structure gives a displacement where the drawing stands, or why not — what
-    /// the row is refused for where it is stated (a region the supports leave free).
+    /// the row is refused for where it is stated (a region the supports leave free); a measure,
+    /// whether it measures anything there.
     pub fn check(&self) -> Result<(), String> {
+        if self.structure.reads.measure() {
+            return crate::beams::measures(&self.structure, &self.x);
+        }
         // a solid's row is stacked over its face's mesh (#510 S3)
         let what = if self.moved.stack.is_some() { "solid" } else { "region" };
         self.structure.solve(&self.x).map(|_| ()).map_err(|why| match why {

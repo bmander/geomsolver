@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.174] A mass or a volume drives.** `volume(B)` joins a scenario's outputs (§9.11), a length
+cubed, answered wherever `mass(B)` is: a frame's members' `A L`, a region's face through its depth,
+a solid's volume. And `mass(B) == m` and `volume(B) == v` drive, as a deflection has since 0.168:
+each is a row of the drawing over a beam, a line a beam is drawn on, or a prism, its value what
+`B` is made of and its rate its own, so the solve sizes a section's area read over an unknown,
+places a joint, or moves a prism's points and radii (its face meshed once and moved with the
+drawing, as a driving deflection's region is) until it holds. Neither reads a support or a load: a
+scenario of nothing but a mass sizes what it names, and a claim of a mass or a volume is now
+answered of a frame, a region or a solid its supports leave free, where through 0.173 a frame or
+a region left free had no answer. A mass of a material stating no `rho` is **E040**; a mass or a
+volume of a solid that is no prism compiles nothing yet. A driven requirement is reported as its
+row reads it, whether or not its scenario reads what it names otherwise. A volume is reported in
+the document's length cubed (`42000mm³`). `volume` is contextual, read so only as a scenario's
+output, so a drawing that names something `volume` is unchanged. (Issue #510.)
+
 **[0.173] Which way an axis runs.** `parallel` takes `sense: same|opposite` (§9.4): the second
 direction runs the way the first does, or the other way, where `parallel` alone holds either way
 and leaves which to the seed. Between two lines in a plane it is the directed angle at no turn or a
