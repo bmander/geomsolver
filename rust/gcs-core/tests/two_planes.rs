@@ -333,7 +333,7 @@ fn a_twin_across_a_plane_the_solve_places_is_judged_where_it_stands() {
     let src = turned("z");
     let mut e = read(&src);
     solve(&mut e.sketch, SolveOpts::default());
-    let d = gcs_core::program::solid_diagnostics(&e.sketch, &e.map);
+    let d = gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program);
     let d = d.iter().find(|d| d.code.as_str() == "E061" && d.message.contains("parallel"))
         .unwrap_or_else(|| panic!("{d:?}"));
     assert_eq!(d.span.slice(&src), "O := point hint((5, 0)) in n, std.front");

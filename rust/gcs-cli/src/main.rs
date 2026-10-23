@@ -499,7 +499,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let r = progress::during(solving, || solve(&mut sk, SolveOpts::default()));
     // a solve that stopped on its iteration limit is no answer, whatever its residual (#449)
     let solved = r.settled();
-    let mut invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
+    let mut invalid = gcs_core::program::solid_diagnostics(&sk, &e.map, &e.program);
     let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
     // a part that leaves its root to its seeds, read at the solved pose (#461 PT5)
     if opts.lint && !failed {
@@ -677,14 +677,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             (false,_) => {
                 let message = "native STEP/STL export requires a solved model".to_string();
                 eprintln!("solventc: {message}");
-                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                    span:Default::default(),stmt:None,message});
+                e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+                    Default::default(),None,message));
                 code = 1;
             }
             (true,Err(message)) => {
                 eprintln!("solventc: {message}");
-                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                    span:Default::default(),stmt:None,message});
+                e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+                    Default::default(),None,message));
                 code = 1;
             }
             (true,Ok(i)) => {
@@ -723,11 +723,11 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     },
                     Err(message) => {
                         let site = e.map.site_of(gcs_core::model::EntRef::solid(i));
-                        e.diags.push(gcs_core::program::Diag {
-                            code: gcs_core::program::Code::E080,
-                            span: site.map(|s| s.span).unwrap_or_default(),
-                            stmt: site.map(|s| s.stmt), message: message.clone(),
-                        });
+                        e.diags.push(gcs_core::program::Diag::new(
+                            gcs_core::program::Code::E080,
+                            site.map(|s| s.span).unwrap_or_default(),
+                            site.map(|s| s.stmt), message.clone(),
+                        ));
                         if !opts.json { eprintln!("solventc: {message}"); }
                         code = 1;
                     }
@@ -912,8 +912,8 @@ fn refused(e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core:
     eprintln!("solventc: {refusal}");
     cad::progress::refused(refusal.stage);
     let site = e.map.site_of(gcs_core::model::EntRef::solid(solid));
-    e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-        span:site.map(|s| s.span).unwrap_or_default(),stmt:site.map(|s| s.stmt),message:refusal.message});
+    e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+        site.map(|s| s.span).unwrap_or_default(),site.map(|s| s.stmt),refusal.message));
 }
 
 /// A length as `--tolerance` takes it: a number, and the millimetres its unit is worth (`None`
@@ -971,20 +971,30 @@ fn doc_json(
     positions: Json,
     components: Json,
 ) -> Json {
-    let said = |lo: u32, code: &str, sev: &str, message: &str| {
+    let place = |lo: u32| {
         let (line, col) = line_col(&s.text, lo);
-        json::object([
+        [("line", Json::Int(line as i64)), ("column", Json::Int(col as i64))]
+    };
+    let said = |lo: u32, code: &str, sev: &str, message: &str, cause: Option<u32>| {
+        let [line, column] = place(lo);
+        let mut d = json::object([
             ("code", Json::Str(code.to_string())),
             ("severity", Json::Str(sev.to_string())),
-            ("line", Json::Int(line as i64)),
-            ("column", Json::Int(col as i64)),
+            line,
+            column,
             ("message", Json::Str(message.to_string())),
-        ])
+        ]);
+        // where the fault a note follows from is said (#572): the diagnostic it points back at
+        if let (Some(at), Json::Obj(fields)) = (cause, &mut d) {
+            fields.push(("cause".into(), json::object(place(at))));
+        }
+        d
     };
     // a syntax error first, as the text report says it (`E001`, no `Code` of its own yet)
-    let diags: Vec<Json> = syntax.iter().map(|x| said(x.span.lo, "E001", "error", &x.message))
+    let diags: Vec<Json> = syntax.iter().map(|x| said(x.span.lo, "E001", "error", &x.message, None))
         .chain(e.diags.iter().map(|x| {
-            said(x.span.lo, x.code.as_str(), severity(x.severity()), &x.message)
+            said(x.span.lo, x.code.as_str(), severity(x.severity()), &x.message,
+                x.cause.map(|c| c.lo))
         }))
         .collect();
     let mut doc = json::object([

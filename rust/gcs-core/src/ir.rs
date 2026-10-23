@@ -204,10 +204,10 @@ impl Statement {
                 formal: c.formal, seen_from: c.seen_from, from: c.from, to: c.to, span: c.span,
                 body: c.body.into_iter().map(|s| Self::lower(s, path.clone())).collect::<Result<_, _>>()?,
             }),
-            S::Param(_) | S::Group(_) | S::Instance(_) | S::Block(_) | S::Set(_) => return Err(crate::program::Diag {
-                code: crate::program::Code::E103, span: st.span, stmt: Some(st.id),
-                message: "parameters, groups, sets, component instances and repetition are not supported inside a swept claim".into(),
-            }),
+            S::Param(_) | S::Group(_) | S::Instance(_) | S::Block(_) | S::Set(_) => return Err(crate::program::Diag::new(
+                crate::program::Code::E103, st.span, Some(st.id),
+                "parameters, groups, sets, component instances and repetition are not supported inside a swept claim".into(),
+            )),
         };
         Ok(Self { id: st.id, span: st.span, path, kind, turned: false })
     }

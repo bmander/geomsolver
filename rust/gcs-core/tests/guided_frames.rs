@@ -254,7 +254,7 @@ fn a_frame_along_a_path_refuses_what_it_cannot_mean() {
     // where the frame stands is the solve's: said once it has solved
     let mut e = crate::common::lenient::solved(&format!("{PATHS}{frame}cubic coincident n.axis\n\
         fix(ratio == 0, advance == 0mm) n\nfix(origin == (5, 5, 5)) n\n"));
-    let after = gcs_core::program::solid_diagnostics(&e.sketch, &e.map);
+    let after = gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program);
     assert!(after.iter().any(|d| d.message.contains("not drawn on its path")), "{after:?}");
     assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
     let s = said(&format!("{}X := point\nX coincident sec.a at 30deg\n",
