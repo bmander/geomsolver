@@ -67,7 +67,7 @@ impl Path {
                 let axis = |a: V| crate::space::normalised(a).ok_or("an arc's plane has no axes");
                 let (u, v) = (axis(basis.u)?, axis(basis.v)?);
                 // one said to turn clockwise is drawn from its end, and runs from its start (#573)
-                let (a0, sweep) = if sk.reversed.contains(&(g.i() as u32)) {
+                let (a0, sweep) = if sk.arc_reversed(g.i()) {
                     (a1, a0 - a1)
                 } else {
                     (a0, a1 - a0)

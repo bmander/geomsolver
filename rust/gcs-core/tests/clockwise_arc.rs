@@ -7,9 +7,10 @@
 //! the way clockwise from `a`, and a copy, the JSON and the lifted text keep it so.  Held against
 //! the same arc written counter-clockwise from its other end, the issue's workaround.
 
+use crate::common::at_path as ent;
 use crate::common::parsed::read;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, Diagnosis};
-use gcs_core::model::{EntRef, Sketch};
+use gcs_core::model::Sketch;
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
 
@@ -62,16 +63,24 @@ fn doc(frame: &str, bow: &str, more: &str) -> String {
     frame.replace("BOW", bow).replace("MORE", more)
 }
 
+/// What reads the arc by an end and by its turn: a line from `a` touching it `at`, and a point
+/// `t` of the way round.
+fn touched(at: &str, t: &str) -> String {
+    format!("radius(5mm) bow
+  q := point hint((22, -9))
+  l := line(a, q)
+  bow tangent(at: {at}) l
+  length(8mm) l
+  m := point hint((16, -2))
+  m coincident(t == {t}) bow")
+}
+
 fn solved(src: &str) -> (Elaborated, Diagnosis) {
     let mut e = read(src);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{r:?}\n{src}");
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
     (e, d)
-}
-
-fn ent(e: &Elaborated, name: &str) -> EntRef {
-    crate::common::at_path(e, name)
 }
 
 fn at(e: &Elaborated, name: &str) -> [f64; 3] {
@@ -119,12 +128,13 @@ fn a_free_radius_is_the_arcs_own() {
         assert_eq!(dc.dof, 1, "{dc:?}");
         let r = cw.sketch.round_radius(ent(&cw, bow)) as u32;
         assert!(dc.under_params.contains(&r), "{:?}", dc.under_params);
-        let name = |sk: &Sketch, p: &u32| sk.params[*p as usize].name.clone();
-        let mut free: Vec<String> = dc.under_params.iter().map(|p| name(&cw.sketch, p)).collect();
-        let mut theirs: Vec<String> = dd.under_params.iter().map(|p| name(&ccw.sketch, p)).collect();
-        free.sort();
-        theirs.sort();
-        assert_eq!(free, theirs);
+        let free = |sk: &Sketch, d: &Diagnosis| {
+            let mut names: Vec<&str> =
+                d.under_params.iter().map(|&p| sk.params[p as usize].name.as_str()).collect();
+            names.sort();
+            names.join(", ")
+        };
+        assert_eq!(free(&cw.sketch, &dc), free(&ccw.sketch, &dd));
     }
 }
 
@@ -134,32 +144,25 @@ fn a_free_radius_is_the_arcs_own() {
 /// its end, three quarters round.
 #[test]
 fn a_clockwise_arc_reads_its_ends_and_its_turn_as_written() {
-    let more = |at: &str, t: &str| format!("radius(5mm) bow
-  claim bow.start coincident a
-  claim bow.end coincident b
-  q := point hint((22, -9))
-  l := line(a, q)
-  bow tangent(at: {at}) l
-  length(8mm) l
-  m := point hint((16, -2))
-  m coincident(t == {t}) bow");
-    let (cw, dc) = solved(&doc(ONE, CW, &more("start", "0.25")));
+    let more = |at: &str, t: &str, (to_a, to_b): (&str, &str)| format!("{}
+  claim bow.{to_a} coincident a
+  claim bow.{to_b} coincident b", touched(at, t));
+    let (cw, dc) = solved(&doc(ONE, CW, &more("start", "0.25", ("start", "end"))));
     assert!(dc.claims_violated.is_empty() && dc.claims_theorem.len() == 2, "{dc:?}");
     assert_eq!(dc.dof, 0, "{dc:?}");
-    let ccw = solved(&doc(ONE, CCW, &more("end", "0.75")
-        .replace("bow.start coincident a", "bow.end coincident a")
-        .replace("bow.end coincident b", "bow.start coincident b"))).0;
+    let (ccw, dd) = solved(&doc(ONE, CCW, &more("end", "0.75", ("end", "start"))));
+    assert!(dd.claims_violated.is_empty() && dd.claims_theorem.len() == 2, "{dd:?}");
     for p in ["q", "m", "a", "b"] {
         near(at(&cw, p), at(&ccw, p), p);
     }
     // the quarter is below the centre's level, where `a` is, not above it by `b`
     assert!(at(&cw, "m")[1] < 0.0, "{:?}", at(&cw, "m"));
     let positions = gcs_core::report::positions(&cw.sketch, &cw.map);
-    let read = |n: &str| positions.iter().find(|(k, _)| k == n).map(|(_, v)| *v).unwrap();
+    let listed = |n: String| positions.iter().find(|(k, _)| *k == n).map(|(_, v)| *v).unwrap();
     for (end, p) in [("start", "a"), ("end", "b")] {
         let w = at(&cw, p);
-        assert!((read(&format!("bow.{end}.x")) - w[0]).abs() <= 1e-9, "bow.{end}.x");
-        assert!((read(&format!("bow.{end}.y")) - w[1]).abs() <= 1e-9, "bow.{end}.y");
+        let got = [listed(format!("bow.{end}.x")), listed(format!("bow.{end}.y")), w[2]];
+        near(got, w, &format!("bow.{end}"));
     }
 }
 
@@ -169,13 +172,7 @@ fn a_clockwise_arc_reads_its_ends_and_its_turn_as_written() {
 #[test]
 fn a_clockwise_arc_is_kept_as_written() {
     use gcs_core::{graft, io};
-    let (e, _) = solved(&doc(ONE, CW, "radius(5mm) bow
-  q := point hint((22, -9))
-  l := line(a, q)
-  bow tangent(at: start) l
-  length(8mm) l
-  m := point hint((16, -2))
-  m coincident(t == 0.25) bow"));
+    let (e, _) = solved(&doc(ONE, CW, &touched("start", "0.25")));
     let sk = &e.sketch;
     assert_eq!(sk.reversed.len(), 1);
     // read the other way round, the end and the quarter would be off where the drawing stands
@@ -188,7 +185,6 @@ fn a_clockwise_arc_is_kept_as_written() {
     }
     let mut lifted = gcs_core::program::to_program(sk);
     let text = gcs_core::syntax::render_flat(&mut lifted).unwrap().to_string();
-    assert!(text.contains("sense: cw)"), "{text}");
     assert!(text.contains("arc(center: p1, start: p2, end: p3, sense: cw)"), "{text}");
     let mut again = read(&text);
     assert!(solve(&mut again.sketch, SolveOpts::default()).success, "{text}");

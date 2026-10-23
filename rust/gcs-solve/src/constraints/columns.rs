@@ -177,7 +177,7 @@ impl Constraint {
             // where the fraction is read from: 1 for an arc said to turn clockwise and drawn from
             // its end (#573), whose `t` still runs from the start written
             CKind::PointAlongArc | CKind::PointAlongArc3 => {
-                vec![if sk.reversed.contains(&(self.args[1].ent().i() as u32)) { 1.0 } else { 0.0 }]
+                vec![if sk.arc_reversed(self.args[1].ent().i()) { 1.0 } else { 0.0 }]
             }
             CKind::AnnularDistance => vec![self.args[2].num()],
             CKind::Radius => vec![self.args[1].num()],
@@ -437,7 +437,7 @@ impl Constraint {
             CKind::TangentArcLine => {
                 let i = self.args[0].ent().i();
                 let a = &sk.arcs[i];
-                Some(if at(0) != sk.reversed.contains(&(i as u32)) { a.start } else { a.end } as usize)
+                Some(if at(0) != sk.arc_reversed(i) { a.start } else { a.end } as usize)
             }
             CKind::TangentLineCircleAt => {
                 let l = &sk.lines[self.args[0].ent().i()];

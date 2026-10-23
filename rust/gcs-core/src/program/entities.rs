@@ -798,21 +798,22 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
         _ => None,
     }).collect();
     for i in 0..sk.arcs.len() {
-        let pts = [sk.arcs[i].center, sk.arcs[i].start, sk.arcs[i].end].map(|p| p as usize);
+        let a = &sk.arcs[i];
+        let mut pts = [a.center, a.start, a.end].map(|p| p as usize);
         let planar = pts.iter().all(|&p| sk.plane_of(p).is_some());
         let cw = clockwise.get(&i);
+        let walked = back.contains(&i);
         // clockwise in a plane, and no chain entering it at its start: the counter-clockwise arc
         // from its end, drawn where it is
-        let reversed = planar && cw.is_some() && !back.contains(&i) && !forward.contains(&i);
-        let walked_back = back.contains(&i) || reversed;
-        if walked_back {
+        let reversed = planar && cw.is_some() && !walked && !forward.contains(&i);
+        let from_end = walked || reversed;
+        if from_end {
             let a = &mut sk.arcs[i];
             std::mem::swap(&mut a.start, &mut a.end);
+            pts.swap(1, 2);
             let set = if reversed { &mut sk.reversed } else { &mut sk.walked_back };
             set.insert(i as u32);
         }
-        let a = sk.arcs[i].clone();
-        let pts = [a.center, a.start, a.end].map(|p| p as usize);
         if let (false, Some(&(span, stmt))) = (planar, cw) {
             diags.push(Diag::within(Code::E040, span, stmt, "an arc over points in space turns \
                 the way its points stand, the short way round: `sense:` says which way an arc \
@@ -820,7 +821,7 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
             continue;
         }
         // walked from its end, an arc in a plane turns the other way from there
-        if planar && cw.is_some() == walked_back {
+        if planar && cw.is_some() == from_end {
             if reversed && half_turn(sk, pts) {
                 let Some(site) = map.site_of(EntRef::arc(i)) else { continue };
                 diags.push(Diag::within(Code::E060, site.span, site.stmt, HALF_TURN.to_string()));
@@ -867,8 +868,8 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
             && c.args[1].ent() == arc) {
             let at = c.args[0].ent().i();
             let to = match at {
-                x if x == a.start as usize => start,
-                x if x == a.end as usize => end,
+                x if x == pts[1] => start,
+                x if x == pts[2] => end,
                 _ => continue,
             };
             c.args[0] = crate::constraints::Arg::Ent(EntRef::point(to));
@@ -885,9 +886,9 @@ pub(super) fn arcs_in_space(sk: &mut Sketch, map: &super::SourceMap, deferred: &
 }
 
 /// What a clockwise arc whose centre and ends stand in a line is told: a half turn either way.
-const HALF_TURN: &str = "an arc turning clockwise — said to, or walked by a chain from its end — \
-    is drawn through its centre and its ends, and these stand in a line — a half turn, either way \
-    round: draw two arcs";
+const HALF_TURN: &str = "an arc turning clockwise — said to, or walked by a chain from its \
+    end — is drawn through its centre and its ends, and these stand in a line — a half turn, \
+    either way round: draw two arcs";
 
 /// Whether an arc's centre and ends, `pts`, stand in a line: no one plane through them, and no
 /// one way round from the start to the end.
@@ -1629,7 +1630,7 @@ fn rate_along(sk: &Sketch, g: EntRef, w: [f64; 3]) -> Result<[f64; 3], String> {
         EntKind::Arc => {
             let arc = &sk.arcs[g.i()];
             let (a0, a1) = sk.arc_angles(g.i());
-            let run = if sk.reversed.contains(&(g.i() as u32)) { (a1, a0) } else { (a0, a1) };
+            let run = if sk.arc_reversed(g.i()) { (a1, a0) } else { (a0, a1) };
             round(arc.center as usize, sk.radius_value(g).abs(), run)
         }
         EntKind::Circle => {

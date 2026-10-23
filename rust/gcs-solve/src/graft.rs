@@ -127,7 +127,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.params[rp].fixed = src.params[a.radius as usize].fixed;
         dst.arcs[ni].class = a.class.clone();
         // drawn from its end for its sense, it still reads its ends as written (#573)
-        if src.reversed.contains(&(i as u32)) {
+        if src.arc_reversed(i) {
             dst.reversed.insert(ni as u32);
         }
         arc_map[i] = Some(ni);

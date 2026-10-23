@@ -246,7 +246,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         kids.truncate(2);
     }
     // an arc said to turn clockwise is drawn from its end, and written as it was said (#573)
-    let reversed = e.kind == EntKind::Arc && sk.reversed.contains(&(e.i() as u32));
+    let reversed = e.kind == EntKind::Arc && sk.arc_reversed(e.i());
     if reversed {
         kids.swap(1, 2);
     }

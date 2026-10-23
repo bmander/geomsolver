@@ -241,10 +241,16 @@ impl Sketch {
     }
 
 
+    /// Whether arc `i` was said to turn clockwise and is drawn from its end (`reversed`, #573),
+    /// so what reads an end or a fraction of it reads it as written.
+    pub fn arc_reversed(&self, i: usize) -> bool {
+        self.reversed.contains(&(i as u32))
+    }
+
     /// Whether arc `i` is drawn from the end it was written with: walked so by a chain
-    /// (`walked_back`) or said to turn clockwise (`reversed`).
+    /// (`walked_back`) or said to turn clockwise (`arc_reversed`).
     pub fn drawn_from_end(&self, i: usize) -> bool {
-        self.walked_back.contains(&(i as u32)) || self.reversed.contains(&(i as u32))
+        self.walked_back.contains(&(i as u32)) || self.arc_reversed(i)
     }
 
     /// Params of any primitive, in the model's canonical order.

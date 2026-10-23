@@ -215,7 +215,7 @@ pub fn to_json(sk: &Sketch) -> Json {
                 ("class", class_json(&a.class)),
             ]);
             // said to turn clockwise and drawn from its end, read as written (#573)
-            if sk.reversed.contains(&(i as u32)) {
+            if sk.arc_reversed(i) {
                 o.set("reversed", true.into());
             }
             o
