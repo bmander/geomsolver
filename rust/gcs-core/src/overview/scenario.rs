@@ -19,10 +19,11 @@ use crate::model::{
 };
 use crate::diagnose::analysis::direction_text;
 use crate::program::Stated;
-use crate::solid::faces::same_step;
+use crate::solid::faces::FacePath;
 use crate::solid::{ApproximationPolicy, Box3, LocalPoint};
 use crate::space::{add, cross, distance, lerp, norm, normalised, scale, sub};
 use crate::units::Dim;
+use std::collections::BTreeMap;
 
 type V = [f64; 3];
 
@@ -220,8 +221,9 @@ impl Reach {
                 .flat_map(|&l| self.along(sk, EntRef { kind: EntKind::Line, idx: l as u32 }))
                 .collect()),
             Applied::Face(f) => {
-                let name = sk.solids.get(f.solid as usize)?.name.clone();
-                let tris = triangles(sk, f.solid as usize, |path| names_group(&name, f, path));
+                sk.solids.get(f.solid as usize)?;
+                let routes = crate::solid::operand_paths(sk, f.solid as usize);
+                let tris = triangles(sk, f.solid as usize, |path| names_group(&routes, f, path));
                 let (at, normal) = spread(&tris);
                 Anchors::of(at, normal, tris)
             }
@@ -296,17 +298,16 @@ fn triangles(sk: &Sketch, solid: usize, keep: impl Fn(&str) -> bool) -> Vec<[V; 
     out
 }
 
-/// Whether the mesh's group `group` (`lug.root`, `pin.bore`: its primitive's name and its face)
-/// is a face that path `f` past solid `solid` names: its segments from the first are the path's,
-/// with or without the solid's own name first — `lug.root` is `lug`'s `root`, and `pin.bore` its
-/// `pin.bore`.
-fn names_group(solid: &str, f: &FaceRef, group: &str) -> bool {
-    let segs: Vec<&str> = group.split('.').collect();
-    let starts = |segs: &[&str]| {
-        f.path.len() <= segs.len() && f.path.iter().zip(segs).all(|(a, b)| same_step(a, b))
-    };
-    let own: Vec<&str> = solid.split('.').collect();
-    starts(&segs) || (segs.starts_with(&own) && starts(&segs[own.len()..]))
+/// Whether the mesh's group `group` (`lug.root`, `pin.bore`, `rod.whole.bigbore`: a primitive's
+/// name, then its face) is a face that path `f` names, by the one rule a body's faces are named
+/// by (`FacePath::matches`): the primitive read by its route from the solid (`routes`,
+/// `document::operand_paths`), the longest of the solid's primitives' names the group starts with.
+fn names_group(routes: &BTreeMap<String, String>, f: &FaceRef, group: &str) -> bool {
+    let Some((name, route)) = routes.iter().filter(|(name, _)| {
+        group.len() > name.len() && group.starts_with(name.as_str())
+            && group.as_bytes()[name.len()] == b'.'
+    }).max_by_key(|(name, _)| name.len()) else { return false };
+    FacePath::new(route, &group[name.len() + 1..]).matches(&f.path)
 }
 
 /// **Up to `OVER` places spread over triangles**, and each one's outward normal: their

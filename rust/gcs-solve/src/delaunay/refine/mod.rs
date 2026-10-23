@@ -65,6 +65,9 @@ pub trait Domain {
     /// lies on the segment of the crossing just read, so a domain whose readings are searches may
     /// start from the last one's answer. Asked only when `readings` is not `Absent`.
     fn reading(&mut self,p: P,continues: bool) -> (f64,P) { let _ = continues; (self.value(p),[0.;3]) }
+    /// How much reading `v` at `p` may exceed the distance it stands for (`Readings::Distance`):
+    /// a reading clears the bracket of a crossing by its size less this.
+    fn slack(&self,p: P,v: f64) -> f64 { let _ = (p,v); 0. }
 }
 
 /// What a domain's readings are worth to a refinement.
@@ -79,6 +82,11 @@ pub enum Readings {
     /// Readings whose sign is `value`'s own at every point, and that never continue a search
     /// along another branch: no bracket needs checking.
     Agreeing,
+    /// `Agreeing` readings that are a distance from the boundary, the side its sign: no point
+    /// nearer a reading than its size (less the domain's `slack`) is across the boundary from it,
+    /// so a crossing's bracket closes by that much at every reading, and where Newton's step would leave the bracket
+    /// the next reading is at its near end — as far as the boundary is known not to be.
+    Distance,
 }
 
 impl<F: FnMut(P) -> f64> Domain for F {

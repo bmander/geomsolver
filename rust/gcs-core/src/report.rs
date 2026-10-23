@@ -361,6 +361,83 @@ pub fn scenarios_pictured_json(sk: &Sketch, scenarios: &[crate::program::Stated]
             ("measures", measures_json(sk, measures))])
 }
 
+/// **The sizes a page reads its scenarios at, coarsest first** (#510): each element four times
+/// the readers' own size, then twice, then their own.  Each level's error is estimated against
+/// the level before it, so the last is `scenarios_pictured_json`'s reading — its own size against
+/// twice as coarse — and the first, a fraction of the cost, comes in seconds.
+pub const LEVELS: [f64; 3] = [4.0, 2.0, 1.0];
+
+/// **Every scenario read progressively** (#510, `LEVELS`): a level a `next`, coarsest first,
+/// each holding what it read for the next to estimate its error against.  What a page's worker
+/// steps, posting each level as it comes and stopping when the drawing changes.  The drawing's
+/// masses and volumes answer no level (`measures_json`): read with the first, they stand beside
+/// every one; and a drawing with no scenario is read once, its last.
+#[derive(Clone, Debug, Default)]
+pub struct Levels {
+    at: usize,
+    last: Vec<Option<crate::beams::Read>>,
+    measures: Option<Json>,
+}
+
+impl Levels {
+    pub fn new() -> Levels {
+        Levels::default()
+    }
+
+    /// Whether every level has been read.
+    pub fn done(&self) -> bool {
+        self.at >= LEVELS.len()
+    }
+
+    /// **The next level**: `scenarios_pictured_json`'s `{ "scenarios", "picture", "measures" }`
+    /// read at it — its answers' errors against the level before, none at the first — with
+    /// `"level"`, how many times the readers' size its elements are, `"final"`, whether it is the
+    /// last, and `"levelText"`, what it is in the core's words (empty at the last).  `None` once
+    /// done.
+    pub fn next(&mut self, sk: &Sketch, scenarios: &[crate::program::Stated],
+                measures: &[crate::program::MeasureStated], drawn: Option<usize>)
+        -> Option<Json>
+    {
+        if scenarios.is_empty() {
+            self.at = self.at.max(LEVELS.len() - 1);
+        }
+        let coarser = *LEVELS.get(self.at)?;
+        let measures = self.measures.get_or_insert_with(|| measures_json(sk, measures)).clone();
+        self.last.resize(scenarios.len(), None);
+        let mut picture = Json::Null;
+        let all = scenarios.iter().enumerate().map(|(k, s)| {
+            let (words, read, p) = crate::diagnose::analysis::scenario_read_at(
+                sk, &s.scenario, coarser, self.last[k].as_ref(), Some(k) == drawn);
+            if Some(k) == drawn {
+                picture = picture_json(sk, &p);
+            }
+            let out = scenario_json(sk, s, words, &read);
+            self.last[k] = Some(read);
+            out
+        }).collect();
+        self.at += 1;
+        let last = self.done();
+        Some(object([
+            ("scenarios", Json::Arr(all)),
+            ("picture", picture),
+            ("measures", measures),
+            ("level", coarser.into()),
+            ("final", last.into()),
+            ("levelText", level_text(self.at - 1).into()),
+        ]))
+    }
+}
+
+/// What reading `LEVELS[k]` is, as a page says it while the next is read.
+fn level_text(k: usize) -> String {
+    match k {
+        0 => "a first reading, its elements four times their size: finer ones follow".into(),
+        1 => "a second reading, its elements twice their size, its errors against the first: \
+              the reading at their own size follows".into(),
+        _ => String::new(),
+    }
+}
+
 /// **A scenario's picture** (`deformed::Picture`) as a host draws it: per body its kind, name and
 /// solid, and flat arrays — its vertices at rest and their moves (three numbers each, to seven
 /// figures), each vertex's move as a fraction of the largest, its triangles and its mesh's edges

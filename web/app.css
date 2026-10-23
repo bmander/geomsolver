@@ -216,6 +216,7 @@ canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: 
 #scenario-lines code { font-family: var(--mono); white-space: pre-wrap; word-break: break-word; }
 #scenario-lines .said { display: block; color: var(--muted); }
 #scenario-lines li.kept .said { color: var(--ok); }
+#scenario-lines li.provisional .said { opacity: 0.6; }
 #scenario-lines li.refuted .said { color: var(--danger); }
 /* the workspace's own buttons — orbit — in its lower right corner, under a thumb: a finger's
    only (below), since a mouse orbits with its right button */

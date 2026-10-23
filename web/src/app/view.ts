@@ -1627,7 +1627,9 @@ export class SketchView {
       this.picture = picture;
       this.scenarioEpoch += 1;
     }
-    if (!r || r.scenarios) {
+    // the scenarios' answers are a final reading's: a coarser level's, while a finer one is
+    // read, are the reading's own (`scenarioReading.scenarios`), for the card to show
+    if (!r || (r.scenarios && !r.reading)) {
       this.scenarios = r?.scenarios ?? [];
       this.measures = r?.measures ?? [];
       this.onScenarios(this.scenarios, this.measures);

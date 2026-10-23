@@ -1,0 +1,11 @@
+// Presentation of conrod_stress.sv. Model geometry is independent of this drawing.
+model m from "conrod_stress.sv"
+
+sheet drawing {
+  size A4
+  label "A CONNECTING ROD, STRESSED" at (14mm, 18mm)
+  label "The engine's rod under its firing load: stress read where no sharp edge reaches" at (14mm, 28mm)
+  sketch end(m) from m.std.side at (105mm, 200mm) scale 0.8
+  style m.bore { display: none }
+  style m.top.p { display: none }
+}

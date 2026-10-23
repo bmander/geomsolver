@@ -277,6 +277,23 @@ pub(crate) fn face_box(b: &Brep,fi: usize) -> ([f64;3],[f64;3]) {
     (lo.map(|x| x-pad),hi.map(|x| x+pad))
 }
 
+/// How far box `(lo, hi)` is from `p`: 0 inside it.
+fn gap((lo,hi): ([f64;3],[f64;3]),p: V) -> f64 {
+    norm(std::array::from_fn(|k| (lo[k]-p[k]).max(p[k]-hi[k]).max(0.)))
+}
+
+/// A box about edge `e`: its curve's enclosure over its stretch (`Curve::bounds`), a degenerate
+/// edge its pole, grown by the edge's tolerance and a hair.
+pub(crate) fn edge_box(b: &Brep,e: usize) -> ([f64;3],[f64;3]) {
+    let edge = &b.edges[e];
+    let (lo,hi) = match &edge.curve {
+        EdgeCurve::Curve(c) => c.bounds(edge.t),
+        EdgeCurve::Degenerate => { let p = b.vertices[edge.v[0] as usize].p; (p,p) }
+    };
+    let pad = edge.tol+1e-9*b.size().max(1.);
+    (lo.map(|x| x-pad),hi.map(|x| x+pad))
+}
+
 /// `curve_surface` over only the stretches of `[t0, t1]` where the curve comes within `grow` of the
 /// box `bx` (a face's box in space): a crossing of a face is in its box, and a B-spline's signed
 /// distance, sampled along a ray four times the solid's size, is a foot found by Newton at every
@@ -333,7 +350,34 @@ pub fn curve_surface_within(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol
 /// near the edges it may not be trusted (sampled at the middles, as `ssi`'s traces are: the
 /// chords are short enough that a middle's is a chord's).
 #[derive(Clone,Debug)]
-pub struct Outline { loops: Vec<Vec<Uv>>,sag: f64 }
+pub struct Outline { loops: Vec<Vec<Uv>>,sag: f64,bins: std::sync::OnceLock<Bins> }
+
+/// An outline's chords sorted into bands of `v` (`Outline::winding`): each band the chords whose
+/// `v` reaches into it, by loop and index.
+#[derive(Clone,Debug,Default)]
+struct Bins { lo: f64,hi: f64,step: f64,bands: Vec<Vec<(u32,u32)>> }
+
+impl Bins {
+    /// About four chords a band, at most `MAX_BANDS` bands.
+    fn of(loops: &[Vec<Uv>]) -> Bins {
+        const MAX_BANDS: usize = 1024;
+        let (mut lo,mut hi) = (f64::INFINITY,f64::NEG_INFINITY);
+        for p in loops.iter().flatten() { lo = lo.min(p[1]); hi = hi.max(p[1]); }
+        let chords: usize = loops.iter().map(Vec::len).sum();
+        let n = (chords/4).clamp(1,MAX_BANDS);
+        if !(hi > lo) { return Bins {lo,hi,step:1.,bands:vec![Vec::new();1]}; }
+        let mut bins = Bins {lo,hi,step:(hi-lo)/n as f64,bands:vec![Vec::new();n]};
+        for (k,l) in loops.iter().enumerate() {
+            for i in 0..l.len() {
+                let (a,b) = (l[i][1],l[(i+1)%l.len()][1]);
+                for band in bins.band(a.min(b))..=bins.band(a.max(b)) { bins.bands[band].push((k as u32,i as u32)); }
+            }
+        }
+        bins
+    }
+    /// The band `v` falls in.
+    fn band(&self,v: f64) -> usize { (((v-self.lo)/self.step).floor().max(0.) as usize).min(self.bands.len()-1) }
+}
 
 impl Outline {
     /// The loops of `surface`'s face drawn to `bar`: each loop its runs in turn, each run its
@@ -361,7 +405,9 @@ impl Outline {
             }
             pts
         }).collect();
-        Outline {loops,sag}
+        // the bands are made when a winding is first asked: an outline asked once (a Boolean's
+        // piece) is cheaper scanned whole
+        Outline {loops,sag,bins:std::sync::OnceLock::new()}
     }
 
     /// The loops, each a closed polygon (its last point joined to its first).
@@ -376,16 +422,17 @@ impl Outline {
     }
 
     /// How many times the loops wind about `p`, counter-clockwise in the parameters.
+    /// Only the chords whose `v` reaches `p`'s band are read: no other crosses its level line.
     pub fn winding(&self,p: Uv) -> i32 {
+        let bins = self.bins.get_or_init(|| Bins::of(&self.loops));
+        if !(p[1] >= bins.lo && p[1] <= bins.hi) { return 0; }
         let mut w = 0;
-        for l in &self.loops {
-            let n = l.len();
-            for i in 0..n {
-                let (a,b) = (l[i],l[(i+1)%n]);
-                let cross = (b[0]-a[0])*(p[1]-a[1])-(p[0]-a[0])*(b[1]-a[1]);
-                if a[1] <= p[1] { if b[1] > p[1] && cross > 0. { w += 1; } }
-                else if b[1] <= p[1] && cross < 0. { w -= 1; }
-            }
+        for &(k,i) in &bins.bands[bins.band(p[1])] {
+            let l = &self.loops[k as usize];
+            let (a,b) = (l[i as usize],l[(i as usize+1)%l.len()]);
+            let cross = (b[0]-a[0])*(p[1]-a[1])-(p[0]-a[0])*(b[1]-a[1]);
+            if a[1] <= p[1] { if b[1] > p[1] && cross > 0. { w += 1; } }
+            else if b[1] <= p[1] && cross < 0. { w -= 1; }
         }
         w
     }
@@ -457,13 +504,15 @@ pub struct Located<'a> {
     space: Vec<([f64;3],[f64;3])>,
     /// Each face's seams (`Face::seams`), which bound nothing.
     seams: Vec<std::collections::BTreeSet<u32>>,
+    /// Each edge's box in space (`edge_box`).
+    edge_space: Vec<([f64;3],[f64;3])>,
 }
 
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,outlines,boxes,space,seams) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.outlines,l.boxes,l.space,l.seams) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,outlines,boxes,space,seams}
+        let (tol,coarse,outlines,boxes,space,seams,edge_space) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.outlines,l.boxes,l.space,l.seams,l.edge_space) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,outlines,boxes,space,seams,edge_space}
     }
     pub fn new(b: &'a Brep,tol: f64) -> Located<'a> {
         let coarse = (1e-4*b.size()).max(tol*8.);
@@ -484,7 +533,8 @@ impl<'a> Located<'a> {
         }
         let space = (0..b.faces.len()).map(|fi| face_box(b,fi)).collect();
         let seams = b.faces.iter().map(Face::seams).collect();
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,outlines,boxes,space,seams}
+        let edge_space = (0..b.edges.len()).map(|e| edge_box(b,e)).collect();
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,outlines,boxes,space,seams,edge_space}
     }
 
     /// The parameters of a point of face `fi`'s surface, on the branch of its periods its loops
@@ -499,6 +549,12 @@ impl<'a> Located<'a> {
     /// Face `fi`'s box in space (`face_box`).
     pub(crate) fn face_box(&self,fi: usize) -> ([f64;3],[f64;3]) { self.space[fi] }
 
+    /// How far edge `e`'s box is from `p`: no point of the edge is nearer.
+    pub(crate) fn edge_gap(&self,e: u32,p: V) -> f64 { gap(self.edge_space[e as usize],p) }
+
+    /// How far face `fi`'s box is from `p`: no point of the face or its edges is nearer.
+    pub(crate) fn face_gap(&self,fi: usize,p: V) -> f64 { gap(self.space[fi],p) }
+
     /// The point of an edge nearest `p`: its parameter and distance.
     pub(crate) fn nearest(&self,e: u32,p: V) -> (f64,f64) {
         let e = &self.b.edges[e as usize];
@@ -510,6 +566,14 @@ impl<'a> Located<'a> {
     /// one, away from every other edge, is in the face.
     pub fn face_place(&self,fi: usize,p: V) -> Place {
         let f: &Face = &self.b.faces[fi];
+        // where every edge's box is farther than the near-edge reading reaches, the winding
+        // decides, as it would with every edge measured
+        let near = self.coarse.max(2.*self.outlines[fi].sag());
+        if f.loops.iter().flatten().all(|c| self.edge_gap(c.edge,p) > near) {
+            let winding = self.outlines[fi].winding(self.uv(fi,p));
+            let inside = if f.reversed { winding < 0 } else { winding > 0 };
+            return if inside { Place::In } else { Place::Out }
+        }
         let mut closest: Option<(f64,&super::topo::Coedge,f64)> = None;
         let mut boundary = f64::INFINITY;
         for l in &f.loops { for c in l {

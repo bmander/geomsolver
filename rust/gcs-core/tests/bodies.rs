@@ -417,3 +417,100 @@ fn every_solid_case_of_the_library_says_what_it_claims() {
     assert!(safety.3.as_ref().unwrap_err().contains("round it"), "{safety:?}");
     assert!(measured(&e).iter().all(|m| m.2), "its mass, claimed of the drawing, is kept");
 }
+
+/// **A sliver lying on the boundary is peeled** (#510; `refine::volume`'s `peel`): the engine's
+/// connecting rod filled at four times its reading's size held a cell of no thickness flat on a
+/// planar face — two of its faces on the boundary, two corners protecting balls' centres, its
+/// least dihedral angle 0°, its stiffness nearly singular (CG took 552 iterations and missed the
+/// factor's moves by 2e-4).  Peeled, every element keeps a least dihedral angle of 3° or more, and
+/// the quadratic elements fill the rod's exact volume within 2e-3, as at that size they did before
+/// (the six cells peeled held 6e-5 of it).
+#[test]
+fn a_sliver_on_the_boundary_is_peeled() {
+    use gcs_core::delaunay::tetra::{least_dihedral, Tet10};
+    let e = crate::engine::open("engine/conrod.sv");
+    let solid = fixtures::solid(&e, "rod.body");
+    let mesh = gcs_core::bodies::mesh(&e.sketch, solid, &[], 4.0).expect("meshed");
+    let least = mesh.tets.iter().map(|t| least_dihedral([0, 1, 2, 3].map(|k| mesh.nodes[t[k]])))
+        .fold(180.0, f64::min);
+    assert!(least >= 3.0, "an element's least dihedral angle is {least}°");
+    let filled: f64 = mesh.tets.iter()
+        .map(|t| Tet10 { nodes: t.map(|n| mesh.nodes[n]) }.volume()).sum();
+    let x = e.sketch.exact_solid(solid).unwrap();
+    let exact = gcs_core::brep::props::volume(&x.brep) / x.mm.powi(3);
+    assert!((filled - exact).abs() <= 2e-3 * exact, "filled {filled}, exactly {exact}");
+    eprintln!("{} elements, least dihedral {least:.2}°, volume {filled} of {exact}",
+              mesh.tets.len());
+}
+
+/// **Stress is read where no sharp edge reaches** (#510; `analysis::reentrant_touching`): an L's
+/// inner edge leaves its stress unbounded, so its factor of safety as a whole has no answer, nor
+/// over a face the edge bounds (its riser) — but over a face clear of it (its head, its back,
+/// the load spread over the head) the greatest stress converges, and is read; the same refusal
+/// says which edge, and to round it.
+#[test]
+fn stress_is_read_where_no_sharp_edge_reaches() {
+    let l = "\
+unit mm
+use std
+steel := material(E: 200GPa, nu: 0.3, yield: 250MPa)
+in std.front {
+  a := point
+  b := point
+  c := point
+  d := point
+  f := point
+  g := point
+  fix((0mm, 0mm)) a
+  fix((40mm, 0mm)) b
+  fix((40mm, 10mm)) c
+  fix((10mm, 10mm)) d
+  fix((10mm, 40mm)) f
+  fix((0mm, 40mm)) g
+  outline := (foot := line(a, b)) -> (toe := line(b, c)) -> (step := line(c, d)) ->
+             (riser := line(d, f)) -> (head := line(f, g)) -> (back := line(g, a)) -> close
+}
+ell := solid(outline, from: -5mm, to: 5mm) of steel
+scenario hang {
+  fixed ell.foot
+  load ell.head 100N along: std.x
+  claim safety(ell) >= 1
+  claim safety(ell.riser) >= 1
+  claim safety(ell.head) >= 1
+  claim safety(ell.back) >= 1
+}
+";
+    let e = crate::common::text::solved(l);
+    let (got, words) = answers(&e);
+    assert!(words.is_empty(), "{words:?}");
+    for k in [0, 1] {
+        let why = got[k].3.as_ref().unwrap_err();
+        assert!(why.contains("round it") && why.contains("riser") && why.contains("step"),
+                "{why}");
+    }
+    let head = *got[2].3.as_ref().expect("the head's safety");
+    let back = *got[3].3.as_ref().expect("the back's safety");
+    assert!(head > 1.0 && back > 1.0 && head.is_finite() && back.is_finite(),
+            "head {head}, back {back}");
+}
+
+/// **The connecting rod, stressed, says what it claims** (#510, the slow tier:
+/// `conrod_stress.sv`, the engine's rod imported and loaded): it solves to no freedom, and every
+/// requirement — its sinking under the firing load, and its factor of safety over three faces no
+/// sharp edge reaches — has an answer with its error beside it, and keeps what it states.
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, a minute: the rod read in three dimensions")]
+fn the_connecting_rod_stressed_says_what_it_claims() {
+    let e = crate::common::read(gcs_core::examples::source("conrod_stress").unwrap());
+    let mut sk = crate::common::solved(&e);
+    assert_eq!(crate::common::dof(&mut sk), 0);
+    let s = &e.scenarios[0];
+    let (words, read) = scenario_read(&sk, &s.scenario);
+    assert!(words.is_empty(), "{words:?}");
+    let said = gcs_core::report::scenario_answers(&sk, s, &read);
+    assert_eq!(said.len(), 4, "{said:?}");
+    for a in &said {
+        assert!(a.text.ends_with("kept") && a.error.is_some(), "{}", a.text);
+        eprintln!("{}", a.text);
+    }
+}

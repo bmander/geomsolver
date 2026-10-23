@@ -9,7 +9,9 @@ import { diagnose } from '../core/diagnose.js';
 import * as examples from '../core/examples.js';
 import { Sketch } from '../core/model.js';
 import { Drag, METHODS, Method, System, now, solve } from '../core/system.js';
-import { initCore } from '../core/wasm.js';
+import { source } from '../core/modules.js';
+import { Document } from '../core/program.js';
+import { core, initCore } from '../core/wasm.js';
 
 type Make = () => Sketch;
 
@@ -145,7 +147,32 @@ export function format(rows: BenchLine[]): string {
           '', 'milliseconds, median.  * = the cached decomposition plan drove the drag.'].join('\n');
 }
 
+/** **A solid read a level at a time** (`engine/conrod.sv`'s `fired`, #510): the engine's rod
+ *  filled, solved by CG over its corners and read progressively (`Document.scenarioLevels`), as
+ *  the page's worker reads it — each level's seconds from the start, and the core's memory after
+ *  it (a module's memory only grows: its size is the peak).  The native `bench analysis` reads
+ *  the same. */
+export function benchAnalysis(): string[] {
+  const text = source('engine.conrod');
+  if (!text) return ['engine.conrod: not in the library'];
+  const doc = Document.read(text);
+  solve(doc.sketch);
+  const out: string[] = [];
+  const t0 = ms();
+  const levels = doc.scenarioLevels(0);
+  for (let l = levels.next(); l; l = levels.next()) {
+    const mb = core().memory.buffer.byteLength / 1e6;
+    out.push(`level ${l.level}: ${((ms() - t0) / 1000).toFixed(1).padStart(6)} s | memory `
+      + `${mb.toFixed(0).padStart(5)} MB | ${l.scenarios[0].answers[0]?.text ?? ''}`);
+  }
+  levels.dispose();
+  doc.dispose();
+  return out;
+}
+
 if (typeof process !== 'undefined' && process.argv?.[1]?.endsWith('bench.js')) {
   await initCore();
   console.log(format(bench()));
+  console.log(['', '== a solid read a level at a time (engine/conrod.sv, `fired`) ==',
+    ...benchAnalysis()].join('\n'));
 }

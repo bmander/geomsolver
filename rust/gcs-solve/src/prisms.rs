@@ -873,7 +873,7 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
                                          its plane, which it has no move for")),
         Output::Safety => {
             let body = BodyFaces::whole(sk, p.region.solid)?;
-            if let Some(edge) = analysis::reentrant(&body).first() {
+            if let Some(edge) = analysis::reentrant_of(&body, &r.of).first() {
                 return Err(edge.text());
             }
             let yields = property(sk, p.region.solid, Property::Yield)?;

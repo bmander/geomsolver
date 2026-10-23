@@ -74,3 +74,13 @@ export interface Pictured {
   picture: ScenarioPicture | null;
   measures: ScenarioAnswer[];
 }
+
+/** **One level of a progressive reading** (`report::Levels`): `Pictured` read with its elements
+ *  `level` times the readers' size, its errors against the level before; `final` at the last,
+ *  which is `Document.scenariosPictured`'s reading; `levelText` what it is, in the core's words
+ *  (empty at the last). */
+export interface Level extends Pictured {
+  level: number;
+  final: boolean;
+  levelText: string;
+}

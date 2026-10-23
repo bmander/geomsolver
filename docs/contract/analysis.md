@@ -20,7 +20,8 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn); or
 `interior::Reads`, `Structure::measure`, `CKind::Mass`, `CKind::Volume`, `model::Measured`,
 `measured.rs`, `program/measures.rs`, a reader's `measure` or `report::measure_answers` (what a body
-is made of, stated of the drawing).
+is made of, stated of the drawing); or `pcg.rs`, `Structure::solve_by` or
+`BodyFaces::reading`/`distance_slack` (a solid read faster).
 The epic these rules serve is #510 (design intent as structural performance), whose
 prerequisites and stages (P1–P8, S0–S4) are named there; this file holds the rules landed so
 far. The gate is `rust/gcs-core/tests/interior.rs` for the interior (P5),
@@ -636,6 +637,21 @@ names another.
   lie on the surface and the curves (P6); each facet of its boundary is on the face its middle is
   nearest. Its corners are protecting balls' centres, so vertices: a point at a corner is a node.
   A point anywhere else names the node nearest it, within an element's size (`Mesh::near`).
+  **The refinement reads the boundary by its distance** (`bodies::Boundary`): its value the
+  signed distance, its readings the distance and its gradient (`BodyFaces::reading`, the unit
+  vector from the nearest point toward the point, the way the distance grows), so each crossing
+  is placed by Newton; and where every face is a plane, a cylinder, a sphere or a torus and every
+  edge a line, a circle or a traced intersection, the value is the distance itself
+  (`BodyFaces::distance_slack`: a traced edge's nearest point found to within twice its chords'
+  sag, a slack paid only by a reading whose box reaches that edge), and each reading clears the
+  crossing's bracket by as much (`Readings::Distance`, [fields.md](fields.md)). A query reads only
+  the faces and edges whose boxes come within the distance first reached (`nearest_point`), and a
+  face's foot is placed on it or off it by its outline's winding alone where every edge's box is
+  farther than its near-edge reading reaches (`Located::face_place`, the outline's chords banded
+  by `v`): what reading every face would choose, so the same mesh. The engine's connecting rod
+  (77,654 TET10, 385,368 unknowns) meshes in 13 s where it took 73 s, its reading twice as coarse in
+  7 s where it took 35 s (`a_bodys_reading_is_its_distance_and_its_gradient`,
+  `a_distances_readings_clear_a_crossings_bracket`).
 
 - **What a line names on a solid** (#510 S3; `Filled::on`): a point its node; the solid, or the face
   a prism is swept from, the whole; a line its prism's wall was swept from, that wall's facets; a
@@ -666,7 +682,8 @@ names another.
   **No answer, and why**: a solid its supports leave free (said once as the scenario's word, ``
   scenario `pull` leaves `plate` free to slide along z ``); a material missing what is read; a
   support off the world's axes; a pressure on no face; a line naming a part of a body; a buckling
-  under loads that press nothing; a `safety` where the solid has a sharp re-entrant edge
+  under loads that press nothing; a `safety` where a sharp re-entrant edge reaches what it names
+  (the solid, or a face it touches: "Stress is read where no sharp edge reaches", below)
   (`analysis::reentrant`'s text in the answer). **Held to** (`tests/bodies.rs`): every solid case
   of the corpus answers its reference within 1% and keeps every claim, with nothing said against
   it (`every_solid_case_answers_its_reference`): the cantilever's sag −0.13% and its first mode
@@ -700,6 +717,52 @@ names another.
   6.39152mm ± 0.026mm: claimed >= 6.336mm, kept ``), and `--json` gives each answer's `error`
   (`report::ScenarioAnswer::error`). A driven requirement's value is its row's, its error the two
   readings' change.
+
+- **A solid too large to factor is solved by CG over its corners** (#510; `pcg::Pcg`,
+  `interior::ITERATIVE`, `Structure::solve_by`). In three dimensions a factor fills as `n^{4/3}`:
+  the conrod's 385,368 unknowns fill L to 183 million entries (1.5 GB) and 2.8e11 multiply–adds,
+  58 s. A solid of `ITERATIVE` (50,000) equations or more is solved instead by conjugate gradients
+  preconditioned by one two-level cycle — a Gauss–Seidel sweep forward from zero, the corners'
+  correction, a sweep backward — whose coarse space is the mesh's own corners: a TET10's field
+  restricted to its corners is the linear element's, and read at a side's middle node it is the
+  mean of the side's ends, in the element's coordinates, so the space nests exactly, a side
+  curved onto the boundary too. The corners' matrix is Galerkin's, `PᵀKP`, assembled element by
+  element (`P_eᵀ K_e P_e`, a side's ends its own element's corners) and factored under minimum
+  degree — a twentieth of the unknowns (57,603 on the conrod; 9 million entries of L, under a
+  second). The cycle is symmetric, so it preconditions CG, which stops at a residual of
+  `pcg::TOLERANCE` (1e-11) of the load's; the moves are then good to about twenty times that.
+  Every pass reads the stiffness's lower triangle by column, its only copy. **Both matrices are
+  assembled in place** (`pcg::Lower`): the pattern from the mesh's node adjacency (an entry
+  wherever two equations' nodes share an element, a column's rows counted first and allocated
+  once), then each element's matrix added at its entries — never as triplets, which for the rod
+  held 18 million, sorted into a copy and doubled as they grew: a 3 GB peak for a 175 MB matrix,
+  and 2.5 GB of the page's core, past what a browser gives a page. In place the solve peaks at
+  under 400 MB natively, and the page's core reads the rod in 378 MB. A structure the
+  supports leave free fails the corners' factor (its rigid motions are the corners' too), and
+  one CG does not settle in `pcg::MOST` (300) iterations — a mesh holding an element nearly
+  flat, where a small residual need not mean good moves (a sliver on the boundary is peeled for
+  that, below) — is factored after all, so the factor
+  still says which is free. A plane structure, whose factor fills as `n log n`, is always
+  factored, as are the eigensolver's pencils (`eigen`). The adjoint of a row solved by CG is CG's
+  again, on the same preconditioner. **Held to**: on each library solid (the lug, the shaft, the
+  panel, the plank), CG's moves are the factor's to 1e-8 of the largest
+  (`cg_over_the_corners_agrees_with_the_factor`). The conrod takes 56 iterations, 12 s, its
+  coarser reading 36; read whole — meshed, solved, read again twice as coarse for the error — it
+  answers in 41 s where it took 187 s, the same answer to every figure said.
+
+- **The rod's reading is pinned** (#510; `tests/iterative.rs`, `bench analysis`). The engine's
+  connecting rod is made of steel and its preview states a load scenario (`engine/conrod.sv`,
+  `fired`: the big end's bore held on its pin, 30kN pressed through the small end's along the
+  bore, the rod at the table's crank angle — it sinks 0.675mm, bending as it leans, and weighs
+  0.433kg). The suite holds its reading to the work it takes, counts and not times, so a slower
+  machine passes and a lost speed-up fails: at four times its size every crossing Newton's, under
+  3.5 readings a crossing (2.8), its queries within a fifth of 394,212 and CG within 45 iterations
+  (37) (`the_rods_reading_is_pinned_by_the_work_it_takes`); at its own size, the slow tier's, 2.5
+  readings a crossing, 1,418,693 queries and 39 iterations
+  (`the_rods_reading_at_its_own_size_is_pinned`). `make bench` reads it a level at a time, its
+  seconds and memory beside each level: natively (`bench analysis`, the heap's peak counted) 4.5,
+  14.2 and 36.6 s, 91, 172 and 420 MB; in the page's core (`npm run bench`, the module's memory)
+  7.5, 19.2 and 45.7 s, 85, 163 and 378 MB.
 
 - **A solid's deflection, driven, is a row stacked over its face's** (#510 S3; `bodies::row`,
   `bodies::of_body`, `interior::Stack`, `InteriorRow::Meshed`). `deflection(p, along: d) == v`,
@@ -759,7 +822,8 @@ names another.
   - **A filled body's point is the node nearest it**, so a support at a point off a vertex holds a
     little of what it should not (the rod's 0.14%). A degenerate pair of a solid's modes (the
     plate's two) is found and not yet named with its ring (P7's word).
-  - **Speed.** In layers as deep as its elements are wide Lamé's tube is 53,754 unknowns, factored
+  - **Speed.** ~~Every solid factored~~: one of `ITERATIVE` equations or more is solved by CG over
+    its corners (above). In layers as deep as its elements are wide Lamé's tube is 53,754 unknowns, factored
     in 9.4 s; at `LAYER` 2 it is read in 3.3 s, the plate in 5.1 s (its modes), the column in 2.2 s
     (its buckling), the cantilever in 1.2 s, each read once at its own size. The
     Cholesky's update is formed four columns at a time (`cholesky::BLOCK`) and its dense panels a
@@ -864,8 +928,10 @@ names another.
   evenly along them, a solid at its middle, faces a path names at up to `OVER` places spread over
   them (farthest-point, over each triangle cut finer than a sixth of the faces' reach). **A face
   is read off the mesh the workspace already draws** (`EvaluatedSolid::mesh` at the object's own
-  scale, its groups named `lug.root`, `pin.bore`: `names_group` takes the path with or without the
-  solid's own name first), so a mark on a face builds no exact boundary on the page's thread.
+  scale, its groups named `lug.root`, `pin.bore`: `names_group` takes the path after any
+  leading part of the solid's own name — a part's instance names its solid's groups from the
+  instance, so `rod.whole.bigbore` is `rod.body`'s `whole.bigbore`), so a mark on a face builds
+  no exact boundary on the page's thread.
   **A mark adds nothing to the drawing** (`a_mark_adds_nothing_to_the_drawing`); every line of
   every scenario of the library is one, its span the line it is written on
   (`every_line_of_a_scenario_is_a_mark`), and a pressure points into its face
@@ -917,6 +983,25 @@ names another.
   names with no analysis (`gcs_elab_scenario_names_json`); `core.test.ts`, `a document says where
   its scenarios fall and how the drawing moves under one`. The page's chooser and card are
   [app.md](app.md)'s.
+
+- **A scenario read progressively** (#510; `report::Levels`, `report::LEVELS`,
+  `diagnose::analysis::scenario_read_at`, FFI `gcs_elab_scenario_levels_new` /
+  `gcs_scenario_levels_next` / `gcs_scenario_levels_free`, `Document.scenarioLevels`). The worker
+  reads every scenario a level at a time, coarsest first: its elements four times their size, then
+  twice, then their own (a frame's pieces as many times fewer). Each level is
+  `scenarios_pictured_json`'s `{ "scenarios", "picture", "measures" }` read at it, with `"level"`,
+  `"final"` and `"levelText"` (what it is, in the core's words; empty at the last), and its errors
+  are its change from the level before (`Read::estimated`), none at the first. So the last level is
+  the reading — its own size estimated against twice as coarse — word for word and its picture to
+  the figure (`a_scenario_read_progressively_ends_at_the_reading`), for the coarsest level's cost
+  more, and the first comes in a fraction of the time: the engine's rod in the page's core answers
+  1.3106mm at 7.8 s, 1.31504mm ± 0.0044mm at 20 s and 1.31687mm ± 0.0018mm at 49 s, where the
+  reading alone took 44 s. The worker posts each level as it comes and lets messages in between
+  levels, so an edit ends the job before its finer levels are paid for. A level a coarser mesh
+  cannot read says so as any reading does; the page holds it as provisional ([app.md](app.md)). The
+  drawing's masses and volumes (`"measures"`) answer no load and so no level: read once with the
+  first, they stand beside every level; a drawing that states one and no scenario is read in one
+  level, its last.
 
 - **A scenario, parsed** (#510 P4, §9.11 [0.164]). `scenario NAME [: BASE] { … }` is
   `syntax::StmtKind::Scenario` (`syntax::Scenario`, its lines `Item`/`ItemKind`: a support, a load
@@ -1142,6 +1227,24 @@ names another.
   converges to. A rounded edge's faces meet tangent, and it is no corner
   (`williams_exponent_is_the_wedges_least_root`).
 
+- **Stress is read where no sharp edge reaches** (#510; `analysis::reentrant_touching`,
+  `reentrant_of`). Stress is unbounded only near a sharp re-entrant edge, so the edges a stress
+  requirement answers to are those it reaches: of `safety(S)`, the solid, every one; of
+  `safety(S.f)`, a face path, those that touch one of its faces — bounding it, or ending on it,
+  where the stress along the face grows as toward the edge itself. A face clear of every such edge
+  has a greatest stress a finer mesh converges to, and it is read, its error beside it, however
+  sharp the body is elsewhere; one an edge touches says which, and to round it, as the solid does.
+  The scenario's words say the same of each requirement by what it names. **Not covered**: a
+  support's or a load's own edge — a face held fixed beside a free one, a load laid on part of a
+  surface, a load at a point — makes stress of its own that a finer mesh does not converge
+  either (the rod's held bore reads 4.5 ± 0.65, against ± 0.04 to 0.08 elsewhere), and a
+  requirement over such a face is answered, its error saying how little to trust it
+  (`stress_is_read_where_no_sharp_edge_reaches`: an L's riser refused, its head and back read).
+  **The library's connecting rod, stressed** (`conrod_stress.sv`): the engine's rod imported
+  (`engine.conrod`), forged with sharp pockets and steps, so as a whole it has no factor of
+  safety — and over its small end's eye 1.28, its bore 1.56, the round into its big end 1.44
+  under 25kN of firing load (`the_connecting_rod_stressed_says_what_it_claims`, the slow tier).
+
 - **A degenerate modal pair is named, and the ring that makes it one** (`analysis::repeated`,
   `Repeated::wave`). The eigensolver says which of its values are one (`Pairs::runs`: consecutive
   values within its `GAP` of the first of each run), and a run of more than one is repeated. A run at rest (`AT_REST` of the
@@ -1250,6 +1353,22 @@ names another.
   ellipsoid). With features, every cell left bad has a protecting ball's centre for a corner
   (`Volume::protected`; the cube, 19 of 2,639 cells, least dihedral 7.8°; the cylinder, 5 of
   3,624).
+
+- **A sliver lying on the boundary is peeled** (#510; `refine/volume.rs`'s `peel`,
+  `VolumeReport::peeled`). A cell two or three of whose faces are restricted facets has every
+  corner on the surface. Where it is a sliver (its least dihedral under `Cells::dihedral`) and
+  thinner than the surface's `facet_distance` (its volume over its largest face, three times), it
+  is taken out of the volume when it is extracted, and its other faces are the boundary instead,
+  each oriented out of its neighbour by the exact `orient`: the surface moves by no more than its
+  own criterion lets a facet stand off it. Refinement cannot reach such a cell where its corners
+  are protecting balls' centres or its orthocentre is in a ball, and left in, it is nearly flat:
+  the engine's rod filled at four times its reading's size held one of no thickness on a planar
+  face (least dihedral 0°), and its stiffness was so near singular that CG took 552 iterations and
+  missed the factor's moves by 2e-4. A peel that would leave a boundary edge on other than two
+  faces, or a corner on no cell, is not made; cells are peeled in triangulation order until none
+  is. Peeled, the rod's least dihedral is 3.9° at that size (1.9° at its reading's, where it was
+  0.8°), its six peeled cells 6e-5 of its volume, and CG agrees with the factor to 2e-11
+  (`a_sliver_on_the_boundary_is_peeled`).
 
 - **The quadratic element is TET10, its nodes numbered as CalculiX numbers them**
   (`tetra::Tet10`, `EDGES`). The corners come first, then the edges 0–1, 1–2, 2–0, 0–3, 1–3,

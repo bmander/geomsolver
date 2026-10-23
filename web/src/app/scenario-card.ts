@@ -106,10 +106,11 @@ export function refreshScenarioCard(view: SketchView): void {
     p ? `the largest move, ${p.largestText}, drawn ${factorText(view.scenarioFactor)}` : '';
   // what the reading says: still going, failed, a body not drawn, the scenario's own words
   const r = view.scenarioReading;
-  const sc = view.scenarios.find((s) => s.name === view.scenario);
+  // the rows show the reading as it stands: a coarser level's answers while a finer is read
+  const sc = (r?.scenarios ?? view.scenarios).find((s) => s.name === view.scenario);
   const said: string[] = [];
   if (r?.error) said.push(r.error);
-  else if (r?.reading) said.push('reading the scenario…');
+  else if (r?.reading) said.push(r.levelText ? `${r.levelText}…` : 'reading the scenario…');
   else if (p && !p.bodies.length && !p.words.length) said.push('nothing is read under it');
   else if (p && !moves) said.push('nothing is loaded, so nothing moves');
   const words = [...(p?.words ?? []), ...(sc?.words ?? [])].map(bare);
@@ -129,9 +130,11 @@ export function refreshScenarioCard(view: SketchView): void {
     let note = m.kind === 'load' || m.kind === 'pressure' || m.kind === 'accelerate' ? m.text : '';
     if (m.kind === 'requirement') {
       const a = sc?.answers.find((x) => x.index === m.index);
-      if (a) {
+      // no answer at a coarser level is no verdict: the finer may have one
+      if (a && !(r?.reading && a.holds === null)) {
         note = bare(a.text);
         li.classList.add(a.holds === true ? 'kept' : 'refuted');
+        if (r?.reading) li.classList.add('provisional');
       } else if (r?.reading) {
         note = 'reading…';
       }

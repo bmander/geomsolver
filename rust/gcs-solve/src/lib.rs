@@ -51,6 +51,7 @@ pub mod motion;
 pub mod newton;
 pub mod ode;
 pub mod par;
+pub mod pcg;
 pub mod plane;
 pub mod prisms;
 pub mod progress;

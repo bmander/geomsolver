@@ -58,6 +58,16 @@ surface's inside after it is done (`Stage::Filling`); the rules are
 [analysis.md](analysis.md)'s. The surface stage is unchanged by them, except that a filling
 refinement takes its last build's surface, never an earlier one.
 
+**A distance's readings clear a crossing's bracket** (#510; `Readings::Distance`,
+`Domain::slack`): a domain whose readings are `Agreeing` and its value a distance from the
+boundary (one-Lipschitz, reading over the distance by no more than its `slack` there) says so,
+and Newton's crossing closes the bracket at every reading by the reading's size less the slack —
+no point nearer it than that is across the boundary — and where Newton's step would leave the
+bracket reads next at its near end, as far as the boundary is known not to be: on a body's
+boundary two or three readings a crossing where the bracket alone took a dozen, an orthocentre's
+nearest wall often another than the one its dual edge crosses. Any other domain is read as
+before (`a_distances_readings_clear_a_crossings_bracket`).
+
 **Meshing speed (2026-09-25):** sweeps read from adaptive distance fields (`solid/field/adf.rs`,
 `SweptField::cached`, `Source::Cached`): an octree per sweep and `Resolution`, exact corners,
 trilinear between, split while wider than a facet or its centre reads off by over a tenth of the

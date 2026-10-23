@@ -37,6 +37,8 @@ use crate::kernels::{curve_widths, Dual, Kernel, Num};
 use crate::linalg::{rank_and_nullspace, Mat};
 use crate::envelope::held;
 use crate::space::{add, dot, norm, scale, sub};
+use crate::delaunay::tetra::EDGES;
+use crate::pcg::Lower;
 use crate::sparse::{Ata, Sym};
 
 mod moved;
@@ -181,17 +183,29 @@ pub enum Failure {
 enum Factor {
     Ata(Ata),
     Cholesky(crate::cholesky::Cholesky),
+    /// A solid's stiffness held for CG over its corners' space (`pcg`, `ITERATIVE`), and how
+    /// many iterations its solve took.
+    Pcg(crate::pcg::Pcg, usize),
 }
 
 impl Factor {
-    /// `b` overwritten by `K⁻¹ b` on the factor in hand.
+    /// `b` overwritten by `K⁻¹ b` on the factor in hand (by CG, to `pcg::TOLERANCE`).
     fn resolve(&self, b: &mut [f64]) {
         match self {
             Factor::Ata(a) => a.resolve(b),
             Factor::Cholesky(c) => c.solve(b),
+            Factor::Pcg(cg, _) => {
+                let _ = cg.solve(b);
+            }
         }
     }
 }
+
+/// **The fewest equations a solid structure is solved by CG at** (`pcg`), not factored: in three
+/// dimensions a factor fills as `n^{4/3}` and costs `n²`, and at this size CG over the corners'
+/// space is already the faster.  A plane structure, whose factor fills as `n log n`, is always
+/// factored.
+pub const ITERATIVE: usize = 50_000;
 
 /// The displacements of a structure at `x`, with the factor they were solved on held for the
 /// adjoint.
@@ -204,6 +218,19 @@ pub struct State {
 }
 
 impl State {
+    /// Whether it was solved by CG (`pcg`), not on a factor.
+    pub fn by_cg(&self) -> bool {
+        self.iterations().is_some()
+    }
+
+    /// How many iterations CG took to solve it, where it was solved by CG.
+    pub fn iterations(&self) -> Option<usize> {
+        match self.ata {
+            Factor::Pcg(_, its) => Some(its),
+            _ => None,
+        }
+    }
+
     /// `f`, per degree of freedom, at the equations: the ones no support holds.
     fn gather(&self, f: &[f64]) -> Vec<f64> {
         self.eq.iter().zip(f).filter(|(e, _)| e.is_some()).map(|(_, v)| *v).collect()
@@ -284,18 +311,46 @@ impl Structure {
 
     /// Assemble `K(x)` as strain rows, factor it and solve `K u = f`.  A plane or a solid
     /// structure's stiffness is assembled whole and factored under minimum degree (#510 S2, S3):
-    /// a pivot lost to rounding is a motion the supports leave free.
+    /// a pivot lost to rounding is a motion the supports leave free.  A solid of `ITERATIVE`
+    /// equations or more is solved by CG over its corners' space instead (`pcg`).
     pub fn solve(&self, x: &[f64]) -> Result<State, Failure> {
+        self.solve_by(x, self.equations().1 >= ITERATIVE)
+    }
+
+    /// `solve`, by CG where `iterative` and the structure is a solid's (`pcg`), else factored —
+    /// and factored after all where CG cannot be had (`State::by_cg` says which).
+    pub fn solve_by(&self, x: &[f64], iterative: bool) -> Result<State, Failure> {
         let (eq, n_eq) = self.equations();
         let mut rhs: Vec<f64> = eq.iter().zip(self.forces(x)).filter(|(e, _)| e.is_some())
             .map(|(_, v)| v).collect();
         let factor = if self.meshed() {
-            // the factor reads the lower triangle alone
-            let mut t = Vec::new();
-            self.tris_into(&eq, true, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
-            self.tets_into(&eq, true, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
-            // its pattern's analysis remembered between evaluations: the mesh's topology is fixed
-            let (k, mut c) = crate::cholesky::assembled(n_eq, &t, crate::cholesky::Ordering::Amd);
+            // a solid too large to factor is solved by CG over its corners' space (`pcg`); one
+            // whose corners' factor fails, or that CG does not settle, is factored after all, on
+            // the stiffness already assembled — and its factor says whether the supports leave
+            // it free
+            let k = if self.tris.is_empty() && iterative {
+                let (k, up, coarse) = self.cornered(x, &eq, n_eq)?;
+                match crate::pcg::Pcg::new(k, up, &coarse) {
+                    Ok(cg) => {
+                        let mut u = rhs.clone();
+                        match cg.solve(&mut u) {
+                            Some(its) if u.iter().all(|v| v.is_finite()) => {
+                                let mut st = State { ata: Factor::Pcg(cg, its), eq, u: Vec::new() };
+                                st.u = st.scatter(&u);
+                                return Ok(st);
+                            }
+                            _ => cg.into_lower(),
+                        }
+                    }
+                    Err(k) => k,
+                }
+            } else {
+                self.assembled(x, &eq, n_eq)?
+            };
+            // the factor reads the lower triangle alone; its pattern's analysis remembered between
+            // evaluations, the mesh's topology fixed
+            let k = k.symmetric();
+            let mut c = crate::cholesky::analysed(&k, crate::cholesky::Ordering::Amd);
             c.factor(&k).map_err(|_| Failure::Free)?;
             c.solve(&mut rhs);
             if rhs.iter().any(|v| !v.is_finite()) {
@@ -321,6 +376,80 @@ impl Structure {
         let mut st = State { ata: factor, eq, u: Vec::new() };
         st.u = st.scatter(&rhs);
         Ok(st)
+    }
+
+    /// **A plane or a solid structure's stiffness**, its lower triangle over the equations `eq`
+    /// numbers, assembled in place (`pcg::Lower`): its pattern from the elements' nodes, then
+    /// each element's matrix added at its entries.
+    fn assembled(&self, x: &[f64], eq: &[Option<usize>], n_eq: usize) -> Result<Lower, Failure> {
+        let elements =
+            self.tris.iter().map(|t| &t.n[..]).chain(self.tets.iter().map(|t| &t.n[..]));
+        let mut k = Lower::pattern(self.nodes, self.per(), elements, eq, n_eq);
+        for i in 0..self.tris.len() {
+            let m = self.tris[i].stiffness(&self.tri_places(i, x))?;
+            k.add(&m, &self.tri_dofs(i).map(|d| eq[d]));
+        }
+        for i in 0..self.tets.len() {
+            let m = self.tets[i].stiffness(&self.tet_places(i, x))?;
+            k.add(&m, &self.tet_dofs(i).map(|d| eq[d]));
+        }
+        Ok(k)
+    }
+
+    /// **A solid's stiffness and its corners' space** (`pcg`): `K` over the equations `eq`
+    /// numbers (its lower triangle, `assembled`'s), per equation its row of `P` — a corner's move
+    /// its own, a side's middle node's the mean of the side's ends', a support's held moves left
+    /// out — and the Galerkin matrix `PᵀKP` over the corners' equations, assembled element by
+    /// element as `P_eᵀ K_e P_e` (a side's ends are its own element's corners).
+    fn cornered(&self, x: &[f64], eq: &[Option<usize>], n_eq: usize)
+        -> Result<(Lower, Vec<[(u32, f64); 2]>, crate::cholesky::Symmetric), Failure>
+    {
+        // the corners' equations, by degree of freedom
+        let mut corner = vec![false; self.nodes];
+        for t in &self.tets {
+            for &c in &t.n[..4] {
+                corner[c] = true;
+            }
+        }
+        let mut ceq: Vec<Option<usize>> = vec![None; eq.len()];
+        let mut nc = 0;
+        for (d, e) in eq.iter().enumerate() {
+            if e.is_some() && corner[d / 3] {
+                ceq[d] = Some(nc);
+                nc += 1;
+            }
+        }
+        // both patterns from the mesh, then every element added in place
+        let mut k = Lower::pattern(self.nodes, 3, self.tets.iter().map(|t| &t.n[..]), eq, n_eq);
+        let mut kc = Lower::pattern(self.nodes, 3, self.tets.iter().map(|t| &t.n[..4]), &ceq, nc);
+        let mut ends: Vec<Option<(usize, usize)>> = vec![None; self.nodes];
+        for i in 0..self.tets.len() {
+            let m = self.tets[i].stiffness(&self.tet_places(i, x))?;
+            let dofs = self.tet_dofs(i);
+            k.add(&m, &dofs.map(|d| eq[d]));
+            let pmp = cornered::<30, 12>(&m, &dofs, 3, &EDGES, eq);
+            kc.add(&pmp, &std::array::from_fn(|c| ceq[dofs[c]]));
+            let n = self.tets[i].n;
+            for (k, &(a, b)) in EDGES.iter().enumerate() {
+                ends[n[4 + k]] = Some((n[a], n[b]));
+            }
+        }
+        let mut up = vec![[(0u32, 0.0); 2]; n_eq];
+        for (d, e) in eq.iter().enumerate() {
+            let Some(e) = *e else { continue };
+            let (node, c) = (d / 3, d % 3);
+            match (ceq[d], ends[node]) {
+                (Some(j), _) => up[e][0] = (j as u32, 1.0),
+                (None, Some((a, b))) => {
+                    let from = [a, b].into_iter().filter_map(|v| ceq[3 * v + c]);
+                    for (t, j) in from.enumerate() {
+                        up[e][t] = (j as u32, 0.5);
+                    }
+                }
+                (None, None) => {}
+            }
+        }
+        Ok((k, up, kc.symmetric()))
     }
 
     /// Every element's strain rows at `x`, each handed to `row` as its `(equation, entry)`s at the
@@ -1234,6 +1363,54 @@ fn local_into<const M: usize>(m: &[[f64; M]; M], dofs: &[usize; M], eq: &[Option
             }
         }
     }
+}
+
+/// **An element's share of its mesh's corners' Galerkin matrix** (`pcg`): `P_eᵀ m P_e` over its
+/// `C` corners' degrees of freedom (its own first `C`), `P_e` carrying each corner's move to
+/// itself and each side's middle node's (`sides`, after the corners) from the side's ends', its
+/// held moves (no `eq`) left out.
+fn cornered<const M: usize, const C: usize>(m: &[[f64; M]; M], dofs: &[usize; M], dim: usize,
+                                            sides: &[(usize, usize)], eq: &[Option<usize>])
+    -> [[f64; C]; C]
+{
+    let corners = C / dim;
+    // P_e's rows: each local degree of freedom's corners' ones and weights
+    let from = |a: usize| -> ([(usize, f64); 2], usize) {
+        let (node, k) = (a / dim, a % dim);
+        if eq[dofs[a]].is_none() {
+            ([(0, 0.0); 2], 0)
+        } else if node < corners {
+            ([(a, 1.0), (0, 0.0)], 1)
+        } else {
+            let (i, j) = sides[node - corners];
+            ([(i * dim + k, 0.5), (j * dim + k, 0.5)], 2)
+        }
+    };
+    let rows: [([(usize, f64); 2], usize); M] = std::array::from_fn(from);
+    // m P_e, then P_eᵀ (m P_e)
+    let mut mp = [[0.0; C]; M];
+    for a in 0..M {
+        for b in 0..M {
+            let v = m[a][b];
+            if v == 0.0 {
+                continue;
+            }
+            let (r, n) = rows[b];
+            for &(c, w) in &r[..n] {
+                mp[a][c] += v * w;
+            }
+        }
+    }
+    let mut pmp = [[0.0; C]; C];
+    for a in 0..M {
+        let (r, n) = rows[a];
+        for &(c, w) in &r[..n] {
+            for d in 0..C {
+                pmp[c][d] += w * mp[a][d];
+            }
+        }
+    }
+    pmp
 }
 
 /// An element's strain rows `rows` over its degrees of freedom `dofs`, each over `unit` and laid

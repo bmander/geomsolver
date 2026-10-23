@@ -57,6 +57,9 @@ export interface Abi {
   gcs_elab_describe(h: number, sk: number, id: number): number;
   gcs_elab_scenarios_json(h: number, sk: number): number;
   gcs_elab_scenarios_pictured_json(h: number, sk: number, drawn: number): number;
+  gcs_elab_scenario_levels_new(h: number, sk: number, drawn: number): number;
+  gcs_scenario_levels_next(l: number): number;
+  gcs_scenario_levels_free(l: number): void;
   gcs_elab_scenario_marks_json(h: number, sk: number, k: number): number;
   gcs_elab_scenario_names_json(h: number): number;
   gcs_elab_measures_stated(h: number): number;

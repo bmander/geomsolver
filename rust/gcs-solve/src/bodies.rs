@@ -87,6 +87,8 @@ pub struct Mesh {
     /// to `prisms::ON` of its extent; a filled body's point names the node nearest it, within an
     /// element's size.
     pub near: f64,
+    /// What the refinement that filled it did (a filled body's; none for a stack).
+    pub report: Option<crate::delaunay::refine::VolumeReport>,
 }
 
 /// **A prism's mesh, its face's stacked**: the region, the face's mesh, and per node its node of
@@ -96,6 +98,31 @@ pub struct Stacked {
     pub region: Region,
     pub plane: Plane,
     pub of: Vec<(usize, f64)>,
+}
+
+/// **A body's boundary as a refinement reads it**: its signed distance, and as readings the
+/// distance and its gradient, so a crossing is placed by Newton in a few readings where
+/// bisection takes twenty signs — and where the distance is the distance itself (within
+/// `slack`, `BodyFaces::distance_slack`), each reading clears the crossing's bracket by as much.
+struct Boundary<'a> {
+    body: &'a BodyFaces,
+    slack: Option<Vec<(u32, f64)>>,
+}
+
+impl crate::delaunay::refine::Domain for Boundary<'_> {
+    fn value(&mut self, p: V) -> f64 {
+        self.body.signed_distance(p).0
+    }
+    fn readings(&self) -> crate::delaunay::refine::Readings {
+        use crate::delaunay::refine::Readings;
+        if self.slack.is_some() { Readings::Distance } else { Readings::Agreeing }
+    }
+    fn reading(&mut self, p: V, _: bool) -> (f64, V) {
+        self.body.reading(p)
+    }
+    fn slack(&self, p: V, v: f64) -> f64 {
+        self.slack.as_ref().map_or(0.0, |s| self.body.slack_at(s, p, v))
+    }
 }
 
 /// The key of a pair of nodes, either way round.
@@ -203,7 +230,8 @@ impl Mesh {
             };
             Some((f, wall))
         }).collect();
-        Ok(Mesh { nodes, tets, facets, stack: Some(Stacked { region, plane, of }), near: tol })
+        Ok(Mesh { nodes, tets, facets, stack: Some(Stacked { region, plane, of }), near: tol,
+                  report: None })
     }
 
     /// **A solid that is no prism, meshed by refining its exact boundary** (#510 S3, P6's
@@ -238,7 +266,7 @@ impl Mesh {
                                   edge_size: size, bisection: 1e-9 * extent,
                                   max_points: 200_000, normal_angle: 0.0 };
         let cells = Cells { radius_edge: 2.0, size, dihedral: 12.0 };
-        let domain = |p: V| body.signed_distance(p).0;
+        let domain = Boundary { body: &body, slack: body.distance_slack() };
         let v = volume(domain, centre, radius, &curves, &criteria, &cells)
             .map_err(|m| format!("`{}` is not meshed: {m}", sk.solids[solid].name))?;
         let tets: Vec<[usize; 10]> = v.elements.iter().map(|e| e.map(|n| n as usize)).collect();
@@ -248,7 +276,7 @@ impl Mesh {
             });
             (f, Wall::Face(body.signed_distance(middle).1))
         }).collect();
-        Ok(Mesh { nodes: v.nodes, tets, facets, stack: None, near: size })
+        Ok(Mesh { nodes: v.nodes, tets, facets, stack: None, near: size, report: Some(v.report) })
     }
 
     /// The node nearest `p`, within `tol`.
@@ -824,7 +852,7 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
         Output::Buckling => a.buckled(),
         Output::Safety => {
             let body = BodyFaces::whole(sk, f.solid)?;
-            if let Some(edge) = analysis::reentrant(&body).first() {
+            if let Some(edge) = analysis::reentrant_of(&body, &r.of).first() {
                 return Err(edge.text());
             }
             let yields = property(sk, f.solid, Property::Yield)?;

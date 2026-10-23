@@ -6,7 +6,7 @@ use crate::brep::query::{Located, Place};
 use crate::brep::topo::EdgeCurve;
 use crate::model::{FaceRef, Sketch};
 use crate::fmath::Det;
-use crate::space::{add, distance, dot, norm, scale, sub};
+use crate::space::{add, distance, dot, lerp, norm, scale, sub};
 use std::collections::BTreeSet;
 use std::f64::consts::PI;
 use super::{cached, readers_of, without, FacePath};
@@ -139,40 +139,141 @@ impl BodyFaces {
     /// foot is (`Surface::inverse`'s global foot: a plane, a cylinder, a sphere, a torus; a cone
     /// along one generator).
     pub fn signed_distance(&self, p: V) -> (f64, usize) {
+        let (v, fi, _) = self.nearest_point(p);
+        (v, fi)
+    }
+
+    /// **Whether `signed_distance` reads the distance itself, and how far off it may be near
+    /// which edges**: every face a plane, a cylinder, a sphere or a torus, whose foot is the
+    /// nearest point (`Surface::inverse`), and every edge a line, a circle or a pole, whose nearest
+    /// point is exact, or a traced intersection, found by its nearest chord and then Newton — off
+    /// the curve's nearest by twice its chords' sag at most, taken twice over with its tolerance
+    /// (model units).  Per traced edge that slack; `None` where any face or edge is read by a foot
+    /// that need not be the nearest.
+    pub fn distance_slack(&self) -> Option<Vec<(u32, f64)>> {
+        use crate::brep::geom::{Curve, Surface};
+        let b = &self.loc.b;
+        let faces = b.faces.iter().all(|f| matches!(f.surface,
+            Surface::Plane(..) | Surface::Cylinder(..) | Surface::Sphere(..) | Surface::Torus(..)));
+        if !faces {
+            return None;
+        }
+        let mut out = Vec::new();
+        for (k, e) in b.edges.iter().enumerate() {
+            match &e.curve {
+                EdgeCurve::Degenerate => {}
+                EdgeCurve::Curve(Curve::Line { .. } | Curve::Circle(..)) => {}
+                EdgeCurve::Curve(c @ Curve::Traced(t)) => {
+                    let sag = t.pts.windows(2).enumerate().map(|(i, w)| {
+                        distance(c.point(i as f64 + 0.5), lerp(w[0], w[1], 0.5))
+                    }).fold(0.0, f64::max);
+                    out.push((k as u32, (4.0 * sag + 2.0 * e.tol) / self.mm));
+                }
+                EdgeCurve::Curve(_) => return None,
+            }
+        }
+        Some(out)
+    }
+
+    /// How much `signed_distance` may read over the distance at `p`, having read `v` there: the
+    /// slack of each traced edge (`distance_slack`) whose box is within reach of `p`, else none.
+    pub fn slack_at(&self, slack: &[(u32, f64)], p: V, v: f64) -> f64 {
+        let q = self.q(p);
+        slack.iter().filter(|&&(e, s)| self.loc.edge_gap(e, q) <= (v.abs() + s) * self.mm)
+            .map(|&(_, s)| s).fold(0.0, f64::max)
+    }
+
+    /// `signed_distance` and its gradient: the unit vector from the nearest point of the boundary
+    /// toward `p`, turned to point the way the distance grows (the outward normal of the face
+    /// nearest where `p` is on the boundary) — so a refinement places a crossing by Newton on
+    /// readings rather than by bisection on signs.
+    pub fn reading(&self, p: V) -> (f64, V) {
+        let (v, fi, near) = self.nearest_point(p);
+        let q = self.q(p);
+        let d = sub(q, near);
+        let n = norm(d);
+        let g = if n > 0.0 && v != 0.0 {
+            scale(d, v.signum() / n)
+        } else {
+            self.outward(fi, q)
+        };
+        (v, g)
+    }
+
+    /// `signed_distance`, and the nearest point of the boundary (millimetres, about `origin`).
+    /// Only the faces whose boxes come within reach are read: the box nearest `q` gives a
+    /// distance reached (its face's foot where that is on the face, else its nearest edge), and
+    /// a face, or an edge of one, whose box is farther than that is no nearer.  What is chosen
+    /// is what reading every face would choose: the nearest foot on its face, first by index
+    /// among equals, and an edge only where strictly nearer than that, first by index.
+    fn nearest_point(&self, p: V) -> (f64, usize, V) {
         use crate::brep::geom::Surface;
         let q = self.q(p);
         let b = &self.loc.b;
-        // each face's surface foot, nearest first: the first on its face is the nearest foot
-        let mut feet: Vec<(f64, usize, V)> = b.faces.iter().enumerate().map(|(fi, f)| {
-            let foot = f.surface.point(f.surface.inverse(q));
-            (distance(q, foot), fi, foot)
+        let n = b.faces.len();
+        if n == 0 {
+            return (f64::INFINITY, 0, q);
+        }
+        // how far each face's box is: no point of the face or its edges is nearer
+        let reach: Vec<f64> = (0..n).map(|fi| self.loc.face_gap(fi, q) - self.loc.tol).collect();
+        let foot = |fi: usize| {
+            let f = &b.faces[fi];
+            let at = f.surface.point(f.surface.inverse(q));
+            (distance(q, at), at)
+        };
+        // a distance reached: the nearest box's face, or where its foot is off it, its edges'
+        // nearest points, kept for the edges' turn below
+        let first = (0..n).min_by(|&a, &c| reach[a].total_cmp(&reach[c])).unwrap_or(0);
+        let (d0, at0) = foot(first);
+        let place0 = self.loc.face_place(first, at0);
+        let read: Vec<(u32, (f64, f64))> = if place0 != Place::Out {
+            Vec::new()
+        } else {
+            self.edges[first].iter().map(|&e| (e, self.loc.nearest(e, q))).collect()
+        };
+        let reached = if place0 != Place::Out {
+            d0
+        } else {
+            read.iter().map(|r| r.1 .1).fold(f64::INFINITY, f64::min)
+        };
+        let nearest = |e: u32| -> (f64, f64) {
+            read.iter().find(|r| r.0 == e).map_or_else(|| self.loc.nearest(e, q), |r| r.1)
+        };
+        // each face whose box is within reach, its surface foot, nearest first
+        let mut feet: Vec<(f64, usize, V)> = (0..n).filter(|&fi| reach[fi] <= reached).map(|fi| {
+            let (d, at) = if fi == first { (d0, at0) } else { foot(fi) };
+            (d, fi, at)
         }).collect();
-        feet.sort_by(|a, c| a.0.total_cmp(&c.0));
-        let face = feet.iter().find(|&&(_, fi, foot)| self.loc.face_place(fi, foot) != Place::Out)
-            .map(|&(d, fi, _)| (d, fi));
+        feet.sort_by(|a, c| a.0.total_cmp(&c.0).then(a.1.cmp(&c.1)));
+        let face = feet.iter().take_while(|f| f.0 <= reached).find(|&&(_, fi, at)| {
+            if fi == first { place0 != Place::Out } else { self.loc.face_place(fi, at) != Place::Out }
+        }).copied();
         // an edge lies on the surfaces of the faces it bounds, so is no nearer than their feet
-        // (but for a cone's, whose foot is on one generator)
-        let mut least = vec![0.0; b.faces.len()];
+        // (but for a cone's, whose foot is on one generator), nor than their boxes
+        let mut least = reach;
         for &(d, fi, _) in &feet {
             if !matches!(b.faces[fi].surface, Surface::Cone(..)) {
-                least[fi] = d;
+                least[fi] = least[fi].max(d);
             }
         }
+        let mut near: Vec<u32> = feet.iter().flat_map(|f| self.edges[f.1].iter().copied()).collect();
+        near.sort_unstable();
+        near.dedup();
         let mut edge: Option<(u32, f64, f64)> = None;
-        for e in 0..b.edges.len() {
-            let below = self.bounding[e].iter().map(|&fi| least[fi]).fold(0.0, f64::max);
+        for e in near {
+            let below = self.bounding[e as usize].iter().map(|&fi| least[fi]).fold(0.0, f64::max);
             let best = edge.map_or(face.map_or(f64::INFINITY, |f| f.0), |(.., d)| d);
             if below >= best {
                 continue;
             }
-            let (t, d) = self.loc.nearest(e as u32, q);
+            let (t, d) = nearest(e);
             if d < best {
-                edge = Some((e as u32, t, d));
+                edge = Some((e, t, d));
             }
         }
         let Some((e, t, d)) = edge else {
-            let Some((d, fi)) = face else { return (f64::INFINITY, 0) };
-            return (self.side(fi, p).signum() * d / self.mm, fi);
+            let Some((d, fi, at)) = face else { return (f64::INFINITY, 0, q) };
+            return (self.side(fi, p).signum() * d / self.mm, fi, at);
         };
         let span = b.edges[e as usize].t;
         let sign = match self.convex(e) {
@@ -188,7 +289,7 @@ impl BodyFaces {
         // the face the edge bounds whose surface reads nearest the distance
         let off = |fi: usize| (self.side(fi, p) - v).abs();
         let fi = self.faces_of(e).iter().copied().min_by(|&a, &c| off(a).total_cmp(&off(c))).unwrap_or(0);
-        (v, fi)
+        (v, fi, b.edges[e as usize].point(t, &b.vertices))
     }
 
     /// The faces a reference names, by its path (`FacePath::matches`).
@@ -282,6 +383,9 @@ impl BodyFaces {
 
     /// The faces edge `e` bounds.
     pub fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
+
+    /// The edges bounding face `fi`, once each.
+    pub fn edges_of(&self, fi: usize) -> &[u32] { &self.edges[fi] }
 
     /// Edge `e`'s vertices, first to last.
     pub fn ends(&self, e: u32) -> [u32; 2] { self.loc.b.edges[e as usize].v }

@@ -178,7 +178,7 @@ pub fn example(name: &str) -> Option<Sketch> {
         | "weighed_cantilever" | "lightened_web" | "mass_budget_frame" | "sized_gusset"
         | "sized_plate" | "tuning_fork" | "rounded_bracket" | "pressure_pipe" | "gravity_wall"
         | "drilled_plate" | "sized_plank" | "pressed_panel" | "flat_bar_strut"
-        | "cantilever_plate" | "turned_shaft" | "pin_lug" => {
+        | "cantilever_plate" | "turned_shaft" | "pin_lug" | "conrod_stress" => {
             document(source(name)?, name)
         }
         "rect_fillets" => rect_fillets(100.0, 60.0, 10.0, 0.0),
@@ -270,7 +270,7 @@ pub fn bracket() -> Sketch {
 }
 
 /// The case library shown in the app: (label, key, one-line description).
-pub const CASES: [(&str, &str, &str); 71] = [
+pub const CASES: [(&str, &str, &str); 72] = [
     ("Mounting flange · solids", "solid_flange", "One stepped radial section turned about its axis, then a circular pattern of through holes; editable dimensions and three solid views."),
     ("V-belt pulley · solids", "solid_pulley", "A full revolution of a stepped section, with a revolved V-groove cutter and a shaft bore."),
     ("Hollow duct elbow · solids", "solid_elbow", "One hollow square section carried round a constrained circular arc; edit the guide angle, bend radius, or wall thickness."),
@@ -323,6 +323,7 @@ pub const CASES: [(&str, &str, &str); 71] = [
     ("A cantilevered plate's modes · bending and twisting", "cantilever_plate", "a steel plate built in along its root and free elsewhere, its modes out of its plane: it bends at 46.6Hz, a little stiffer than a beam (held from curling across its width), twists at 199Hz, above Saint-Venant's (its root holds its section from warping), and bends again at 290.6Hz"),
     ("A turned shaft · a solid of revolution, its stress answered", "turned_shaft", "a stepped steel shaft, its shoulder rounded, pulled along its axis: no prism, so it is read by refining its exact boundary and filling it in quadratic tetrahedra; the round gives its factor of safety an answer, 2.62 — a Kt of 1.59 in the neck, Peterson's — where a sharp or a chamfered shoulder says its stress is unbounded and to round it, and each answer's error is said beside it"),
     ("A pin lug · a body cut, a face named from it", "pin_lug", "a steel lug built in at its root, a pin hole cut through its end by another solid, and a 20kN pull spread over the hole's wall, named from the body it cuts (`lug.pin.bore`): a cut body is filled from its exact boundary, and its factor of safety, 1.86, puts the greatest stress at 1.6 times the net section's average"),
+    ("A connecting rod, stressed · stress where no sharp edge reaches", "conrod_stress", "the engine's connecting rod imported as the engine designs it (`engine.conrod`), its big end held on its crank pin and 25kN of firing load pressed through its small end: forged with sharp pockets and steps, the rod as a whole has no factor of safety — stress at a sharp re-entrant edge is unbounded — so it is read over faces no such edge reaches: its small end's eye 1.28, its bore 1.56, the round into the big end 1.44, each with its error beside it"),
     ("Hyperbolic plane · the shortest path", "hyperbolic", "Poincaré's half-plane, where length is `ds / y`: the curve from `a` to `b` that makes it least is an arc of a circle centred on the line `y = 0` — the hyperbolic plane's straight line, found from the principle alone.  Drag `b` and the arc swings round, meeting the line square on"),
     ("Belt over two pulleys", "belt_tangency", "each end on its circle and the line tangent to it — a double root: rank-deficient at every solution, yet nothing can move.  The second-order screen calls it rigid rather than 2 DOF"),
     ("Belt wrap · arc length", "belt_wrap", "an open belt over two pulleys, closed as one tangent chain, with nothing saying how far apart the pulleys are: `length(wrap) big` states the belt in contact with the big pulley — its radius times its sweep — and the centre distance follows.  Edit `wrap` and the second pulley moves"),
@@ -463,6 +464,7 @@ pub fn source(key: &str) -> Option<&'static str> {
         "cantilever_plate" => Some(include_str!("../../examples/cantilever_plate.sv")),
         "turned_shaft" => Some(include_str!("../../examples/turned_shaft.sv")),
         "pin_lug" => Some(include_str!("../../examples/pin_lug.sv")),
+        "conrod_stress" => Some(include_str!("../../examples/conrod_stress.sv")),
         "sag" => Some(include_str!("../../examples/sag.sv")),
         "ring" => Some(include_str!("../../examples/ring.sv")),
         "fisheye" => Some(include_str!("../../examples/fisheye.sv")),

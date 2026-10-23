@@ -84,6 +84,14 @@ impl Refiner<'_> {
             return self.bisected(a,sa,b);
         }
         self.report.newton += 1;
+        // A distance's reading clears the bracket of the boundary as far as it reads, a hair
+        // short of it.
+        let distance = self.domain.readings() == Readings::Distance;
+        let clear = |r: &Self,at: f64,v: f64,lo: &mut f64,hi: &mut f64| if distance {
+            let gap = (v.abs()*(1.-1e-9)-r.domain.slack(lerp(a,b,at),v)).max(0.)/len;
+            if side(v) == sa { *lo = lo.max((at+gap).min(*hi)) } else { *hi = hi.min((at-gap).max(*lo)) }
+        };
+        clear(self,0.,fa,&mut lo,&mut hi);
         let (mut s,mut f,mut df) = (0.,fa,da);
         for _ in 0..60 {
             if (hi-lo)*len <= tol { break; }
@@ -91,14 +99,15 @@ impl Refiner<'_> {
             let inside = newton > lo.min(hi) && newton < lo.max(hi);
             // Converged: the next Newton step is shorter than the tolerance.
             if inside && (newton-s).abs()*len <= 0.5*tol { s = newton; break; }
-            let next = if inside { newton } else { 0.5*(lo+hi) };
+            let next = if inside { newton } else if distance && lo > s { lo } else { 0.5*(lo+hi) };
             let (fn_,dn) = read(self,next);
             if !fn_.is_finite() { return self.bisected(a,sa,b); }
             // Not halving the value: the next step bisects, whatever Newton says.
             let slow = fn_.abs() > 0.5*f.abs();
-            if side(fn_) == sa { lo = next } else { hi = next }
+            if side(fn_) == sa { lo = lo.max(next) } else { hi = hi.min(next) }
+            clear(self,next,fn_,&mut lo,&mut hi);
             (s,f,df) = (next,fn_,dn);
-            if slow && inside { let (fm,dm) = read(self,0.5*(lo+hi)); let m = 0.5*(lo+hi);
+            if slow && inside && !distance { let (fm,dm) = read(self,0.5*(lo+hi)); let m = 0.5*(lo+hi);
                 if !fm.is_finite() { return self.bisected(a,sa,b); }
                 if side(fm) == sa { lo = m } else { hi = m }
                 (s,f,df) = (m,fm,dm); }
@@ -113,7 +122,7 @@ impl Refiner<'_> {
         let pad = tol/len;
         let (sl,sh) = ((lo.min(hi)-pad).max(0.),(lo.max(hi)+pad).min(1.));
         let (sl,sh) = if lo <= hi { (sl,sh) } else { (sh,sl) };
-        if self.domain.readings() != Readings::Agreeing && ((sl > 0. && self.side(lerp(a,b,sl)) != sa) || (sh < 1. && self.side(lerp(a,b,sh)) == sa)) {
+        if !matches!(self.domain.readings(),Readings::Agreeing|Readings::Distance) && ((sl > 0. && self.side(lerp(a,b,sl)) != sa) || (sh < 1. && self.side(lerp(a,b,sh)) == sa)) {
             self.report.fallbacks += 1;
             return self.bisected(a,sa,b);
         }

@@ -151,6 +151,38 @@ thread_local! {
     /// triplets are summed, and its analysis (no panels).
     static PATTERNS: std::cell::RefCell<Vec<(Ordering, Summed, Cholesky)>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// The patterns assembled in place (`analysed`) analysed last on this thread, the latest
+    /// first: each its order, its pattern (no values) and its analysis (no panels).
+    static ANALYSED: std::cell::RefCell<Vec<(Ordering, Symmetric, Cholesky)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// **A pattern assembled in place, analysed once** (#510): `assembled`'s memory for a matrix
+/// whose values were summed into its pattern as it was built (`pcg::Lower`) — the analysis of
+/// `a`'s pattern under `ordering`, nothing factored, remembered on this thread for the last
+/// `KNOWN` patterns, for the next matrix with the same columns and rows.
+pub fn analysed(a: &Symmetric, ordering: Ordering) -> Cholesky {
+    ANALYSED.with(|known| {
+        let mut known = known.borrow_mut();
+        let at = known.iter().position(|(o, p, _)| {
+            *o == ordering && p.n == a.n && p.colptr == a.colptr && p.rowind == a.rowind
+        });
+        let (_, pattern, kept) = match at {
+            Some(at) => known.remove(at),
+            None => {
+                let mut kept = Cholesky::analyse(a, ordering);
+                kept.lx = Vec::new();
+                let pattern = Symmetric { n: a.n, colptr: a.colptr.clone(),
+                                          rowind: a.rowind.clone(), values: Vec::new() };
+                (ordering, pattern, kept)
+            }
+        };
+        let mut c = kept.clone();
+        c.lx = vec![0.0; c.xp[c.supernodes()]];
+        known.insert(0, (ordering, pattern, kept));
+        known.truncate(KNOWN);
+        c
+    })
 }
 
 /// **A pattern analysed once** (#510): `t` assembled (`Symmetric::from_triplets`) with the
