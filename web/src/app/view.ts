@@ -1192,13 +1192,21 @@ export class SketchView {
     if (!fresh) this.releaseSystem();
     this.rediagnose(fresh ? this.lastSystem : null, settled);
     this.syncSource();        // the drawing changed, so the document has to say what it now says
-    this.fields.start(this.doc);
-    this.claims.start(this.doc);
-    this.readScenarios();
+    this.readBehind();
     this.followLater();
     if (!this.holding) this.onChanged();
     this.draw();
     return this.lastResult;
+  }
+
+  /** **Read the drawing again where it stands, off the page's thread**: the swept solids'
+   *  meshes, the solid claims' verdicts and the load scenarios' answers with the picture of the
+   *  one drawn.  At the end of an edit and at the release of a drag, which moves the drawing
+   *  without one: a job of this very text and pose is left standing, so a second ask is free. */
+  readBehind(): void {
+    this.fields.start(this.doc);
+    this.claims.start(this.doc);
+    this.readScenarios();
   }
 
   /** **An opening says which object it is building.**  An object is evaluated the first time

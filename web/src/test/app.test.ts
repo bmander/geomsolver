@@ -2934,6 +2934,61 @@ test('an opening held builds its objects one at a time, saying which, and tells 
   assert.equal(changed, 2);
 });
 
+/** A web built in along its root and loaded along its end, read in plane stress: its free corner
+ *  `end_high` moves the drawing a scenario is read over. */
+const LOADED_WEB = `unit mm
+use std
+alloy := material(E: 70GPa, nu: 0.33, rho: 2700kg / 1m^3, yield: 240MPa)
+in std.front {
+  root_low := point
+  end_low := point
+  end_high := point hint((160, 60))
+  root_high := point
+  fix((0mm, 0mm)) root_low
+  fix((160mm, 0mm)) end_low
+  fix((0mm, 60mm)) root_high
+  low := line(root_low, end_low)
+  end := line(end_low, end_high)
+  top := line(end_high, root_high)
+  root := line(root_high, root_low)
+  plate := face(low, end, top, root)
+}
+down := axis
+fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
+web := solid(plate, from: -2.5mm, to: 2.5mm) of alloy
+scenario hung {
+  plane stress web
+  fixed web.root
+  load web.end 2kN along: down
+}
+`;
+
+test('a drag let go reads the scenario drawn again, where the drawing was let go', (t) => {
+  // hidden while the drawing moves, the picture must not come back as it stood before the drag
+  const view = new SketchView(fakeCanvas(), Document.read(LOADED_WEB));
+  t.after(() => { view.doc.dispose(); });
+  assert.ok(view.load(LOADED_WEB));
+  view.chooseScenario('hung');
+  const before = view.picture;
+  assert.ok(before && before.bodies.length === 1, JSON.stringify(view.scenarioReading));
+  const corner = view.sketch.points.find((p) => view.doc.nameOf(p) === 'end_high')!;
+  const cv = canvasOf(view);
+  const [sx, sy] = view.seen(corner);
+  cv.fire('pointerdown', pointer(sx, sy, { pointerId: 1 }));
+  assert.equal(PlanDrag.live, 1, 'a press on the free corner starts a drag');
+  cv.fire('pointermove', pointer(sx + 40, sy - 30, { pointerId: 1 }));
+  view.box3d.scenario.paint(view);
+  assert.ok(!view.box3d.scenario.group.visible, 'the scenario is hidden while the drawing moves');
+  cv.fire('pointerup', pointer(sx + 40, sy - 30, { pointerId: 1 }));
+  assert.equal(PlanDrag.live, 0);
+  const after = view.picture;
+  assert.ok(after && after !== before, 'the drag let go left the picture of the pose before it');
+  assert.equal(view.scenarioReading?.reading, false);
+  const most = (b: Float32Array): number => b.reduce((m, x) => Math.max(m, Math.abs(x)), 0);
+  assert.ok(Math.abs(most(after.bodies[0].rest) - most(before.bodies[0].rest)) > 1,
+    'the picture is of the plate as it was let go');
+});
+
 test('choosing a scenario writes nothing, and draws its marks and how the drawing moves', () => {
   // the rounded bracket's shelf (#510): read on this thread with no worker, as the page reads it
   // in one — its answers to the footer, its marks at once, its picture with them
