@@ -660,11 +660,9 @@ fn notch_outline() -> Vec<([f64; 2], f64, f64, f64)> {
         let (a, b) = (angle(c, p), angle(c, q));
         (c, r, a, if convex { (b - a).rem_euclid(2.0 * PI) } else { -(a - b).rem_euclid(2.0 * PI) })
     };
-    // where a fillet meets the waist's arc about `c`: on the line through both centres, 30 from `c`
-    let meet = |c: [f64; 2], fy: f64| {
-        let k = 30.0 / 26.0;
-        [c[0] + k * (0.0 - c[0]), c[1] + k * (fy - c[1])]
-    };
+    // where a fillet (about `(0, fy)`) meets the waist's arc about `c`: on the line through both
+    // centres, 30 from `c`
+    let meet = |c: [f64; 2], fy: f64| { let k = 30.0 / 26.0; [c[0] * (1.0 - k), c[1] + k * (fy - c[1])] };
     let (t1, t2) = (meet([3.0, 36.0], f), meet([-3.0, 36.0], f));
     let (t3, t4) = (meet([-3.0, -36.0], -f), meet([3.0, -36.0], -f));
     let (ne, nw, sw, se) = ([15.0, 12.0], [-15.0, 12.0], [-15.0, -12.0], [15.0, -12.0]);
@@ -685,24 +683,24 @@ fn notch_outline() -> Vec<([f64; 2], f64, f64, f64)> {
 /// it takes `a (P − 2π (s + δ))` over the eight.
 fn notch(depth: f64, draft: f64, r: f64) -> f64 {
     let arcs = notch_outline();
-    let turn: f64 = arcs.iter().map(|a| a.3).sum();
+    let turn: f64 = arcs.iter().map(|&(_, _, _, phi)| phi).sum();
     assert!((turn - 2.0 * PI).abs() < 1e-12, "the outline turns {turn}");
     let area: f64 = arcs.iter().map(|&([cx, cy], radius, a, phi)| {
         let b = a + phi;
         0.5 * (radius * cx * (b.sin() - a.sin()) - radius * cy * (b.cos() - a.cos()) + radius * radius * phi)
     }).sum();
-    let perimeter: f64 = arcs.iter().map(|a| a.1 * a.3.abs()).sum();
+    let perimeter: f64 = arcs.iter().map(|&(_, radius, _, phi)| radius * phi.abs()).sum();
     let t = draft.tan();
     let prism = area * depth - perimeter * t * depth * depth / 2.0 + PI * t * t * depth.powi(3) / 3.0;
-    // the section in the meridian: `u` in along the far face, `w` up the wall's side
+    // the section in the meridian, by its reach `u` in along the far face from the rim: the wall
+    // leans out by the draft, so the bisector of the material's angle `α` is `α/2` from the face,
+    // the ball's centre `r / sin(α/2)` out along it and its touches `r / tan(α/2)` from the rim
     let alpha = 0.5 * PI + draft;
-    let (e1, e2) = ([1.0, 0.0], [-draft.sin(), draft.cos()]);
-    let bisector = { let m = [e1[0] + e2[0], e1[1] + e2[1]]; let n = m[0].hypot(m[1]); [m[0] / n, m[1] / n] };
     let (half, beta) = (0.5 * alpha, PI - alpha);
     let along = r / half.tan();
-    let centre = [bisector[0] * r / half.sin(), bisector[1] * r / half.sin()];
-    let kite = (r * along, (along + along * e2[0] + 2.0 * centre[0]) / 6.0);
-    let sector = (0.5 * r * r * beta, centre[0] - bisector[0] * 4.0 * r * (0.5 * beta).sin() / (3.0 * beta));
+    let centre = half.cos() * r / half.sin();
+    let kite = (r * along, (along - along * draft.sin() + 2.0 * centre) / 6.0);
+    let sector = (0.5 * r * r * beta, centre - half.cos() * 4.0 * r * (0.5 * beta).sin() / (3.0 * beta));
     let a = kite.0 - sector.0;
     let delta = (kite.0 * kite.1 - sector.0 * sector.1) / a;
     prism - a * (perimeter - 2.0 * PI * (depth * t + delta))
