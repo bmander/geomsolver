@@ -4,6 +4,26 @@ How to drive the solver from outside the language: the `solventc` compiler, soli
 TypeScript binding and the web app. The language itself is in the
 [primer](solvent-primer.md).
 
+## Prebuilt `solventc`
+
+Each release tag `v*` publishes `solventc` for x86-64 and arm64 Linux (static, musl: any
+distribution), x86-64 and arm64 macOS, and x86-64 Windows, built by
+[`.github/workflows/release.yml`](../.github/workflows/release.yml). Each archive holds the binary,
+the licence, the README and the [primer](solvent-primer.md). To install one:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bmander/geomsolver/main/scripts/install-solventc.sh | sh
+SOLVENTC_VERSION=v0.1.0 SOLVENTC_DIR=/usr/local/bin sh install-solventc.sh   # a tag, a directory
+solventc --version
+```
+
+The script checks the archive against the release's `SHA256SUMS`. Every archive is also at
+`https://github.com/bmander/geomsolver/releases/latest/download/solventc-<target>.tar.gz`
+(`.zip` for Windows). A released binary is the pure-Rust build: `--kernel occt` and OCCT's STEP
+need `make solventc OCCT=1` from source.
+
+To cut a release, push a tag: `git tag v0.1.0 && git push origin v0.1.0`.
+
 ## Building
 
 You need Rust and Node, nothing else.

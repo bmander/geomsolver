@@ -31,6 +31,13 @@ use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::syntax::{line_col, parse, Program, SynErr};
 use gcs_core::{expr, io, json, progress, report};
 
+// A released binary is stamped with its tag (`.github/workflows/release.yml` sets the variable);
+// a local build says the crate's version.
+const VERSION: &str = match option_env!("SOLVENTC_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 const USAGE: &str = "\
 solventc — check a Solvent document
 
@@ -90,6 +97,7 @@ solventc — check a Solvent document
     --width PX          the SVG's page width in pixels (default 800)
     --sheet NAME        select a sheet in a .svd drawing (its page size sets SVG size)
     -h, --help          this
+    -V, --version       the version of this build (a release says its tag)
 
 Exit codes: 0 every document elaborated and solved; 1 a document failed to parse or
 elaborate; 2 a document elaborated but did not solve.
@@ -293,6 +301,10 @@ fn main() -> ExitCode {
             "--allow-unsolved" => opts.allow_unsolved = true,
             "-h" | "--help" => {
                 print!("{USAGE}");
+                return ExitCode::SUCCESS;
+            }
+            "-V" | "--version" => {
+                println!("solventc {VERSION}");
                 return ExitCode::SUCCESS;
             }
             s if s.starts_with('-') => {
