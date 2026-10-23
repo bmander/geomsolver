@@ -363,13 +363,6 @@ impl Sketch {
         self.params.iter().map(|p| p.value).collect()
     }
 
-    /// Write the parameter vector.  A vector of the wrong length is not this sketch's — writing
-    /// the overlapping prefix would scatter one sketch's coordinates over another's — so it is
-    /// refused; `false` says nothing was written.
-    /// Write a whole parameter vector back — the one seam every solve and every drag comes
-    /// through, which is why the dimensions written in terms of a free variable are brought up
-    /// to date here: their number is that unknown's, and a reader of the drawing must not be
-    /// shown the one it had before the solve moved it.
     /// **Every driven deflection's mesh made again where the drawing stands** (#510 S2;
     /// `Sketch::meshed`): the row read as it is compiled with no mesh held, and kept where it
     /// meshes; a row that cannot be meshed here keeps the mesh it had.  Whether any was made,
@@ -408,6 +401,13 @@ impl Sketch {
         self.set_x(&here)
     }
 
+    /// Write the parameter vector.  A vector of the wrong length is not this sketch's — writing
+    /// the overlapping prefix would scatter one sketch's coordinates over another's — so it is
+    /// refused; `false` says nothing was written.
+    /// Write a whole parameter vector back — the one seam every solve and every drag comes
+    /// through, which is why the dimensions written in terms of a free variable are brought up
+    /// to date here: their number is that unknown's, and a reader of the drawing must not be
+    /// shown the one it had before the solve moved it.
     pub fn set_x(&mut self, x: &[f64]) -> bool {
         if x.len() != self.params.len() {
             return false;

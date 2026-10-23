@@ -540,9 +540,7 @@ pub unsafe extern "C" fn gcs_sketch_set_x(h: *mut Sketch, x: *const f64, n: usiz
 pub unsafe extern "C" fn gcs_sketch_meshed_at(h: *mut Sketch, out: *mut f64) -> i32 {
     guard(0, move || {
         let Some(x) = &sk(h).meshed_at else { return 0 };
-        for (i, v) in x.iter().enumerate() {
-            *out.add(i) = *v;
-        }
+        write(out, x);
         1
     })
 }

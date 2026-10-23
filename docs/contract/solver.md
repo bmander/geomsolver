@@ -153,11 +153,11 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   the constraints cannot agree on (a conflict); elsewhere the solver merely stopped, the
   diagnosis solves a scratch copy, and a consistent drawing is `State::Unsolved` — no conflict
   set, no culprits, the unsatisfied rows listed.  Before either, a failed drawing whose failing
-  driven deflections are all out of reach of what drives them (`System::out_of_reach`, at the
+  driven deflections are all out of reach of what drives them (`System::stop_at`, at the
   pose or where the scratch solve stopped) is a conflict of those rows, said with why
   (`Diagnosis::out_of_reach`), and no conflict search runs; a solve whose first attempt stops so
   runs none of its `RETRIES` (`analysis.md`, a requirement out of reach), nor one that stops
-  folded on a region's mesh (`System::folded`), whose meshes are made again where it stopped
+  folded on a region's mesh (`Stop::Folded`), whose meshes are made again where it stopped
   after `RECOVERIES`, up to `REMESHES` times (`System::remeshed`; `analysis.md`, a region is
   meshed again).  A drawing still at its mesh's edge then is said as one out of reach is.
 - Its Jacobian twin: rank and null space are judged on `System::conditioned` — hard rows over
@@ -479,7 +479,7 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   first pass that settled, else the stop bit for bit. Drags (`retry` off) never see it.
   **Only a settled solve is an answer** (#449): a recovery of a failed document solve
   (`RECOVERIES`, `System::recompiled`) is kept only where it settles — a remesh
-  (`Recovery::nearer`) also where it ends nearer to holding, still a failure, so that what is
+  (`recompiled`'s `nearer`) also where it ends nearer to holding, still a failure, so that what is
   said of the drawing is how far it read — since a recompile changes
   the yardstick — a point run off towards infinity (two equal circles' parallel tangents held to
   meet) widens the extent `resized` compiles at until a contact 0.13 mm off its 20 mm circle

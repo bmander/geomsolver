@@ -485,8 +485,8 @@ scenario drawn, unless a rule names another.
   written (**E040**): a region bounded by a spline or a curve (not moved yet), drawn in a plane the
   solve turns, under a direction the solve moves, or left free (`Row::check`).
 
-- **A region is meshed again where its mesh folds** (#510 S2; `System::folded`,
-  `System::mesh_edges`, `System::remeshed`). A mesh moved far enough folds: the drilled plate's
+- **A region is meshed again where its mesh folds** (#510 S2; `System::stop_at`'s
+  `Stop::Folded`, `System::remeshed`). A mesh moved far enough folds: the drilled plate's
   hole, meshed at 18mm, cannot be read past about 26.93mm, short of the 27.7mm a quarter of its
   load needs to sink its `sag`. A failed document solve is *folded* where a driven deflection over
   a mesh held on the sketch cannot be read where it stopped, or a step on along its rate — its
@@ -502,8 +502,9 @@ scenario drawn, unless a rule names another.
   meshes' discretisation. Where it was meshed again is kept (`Sketch::meshed_at`, the last
   pose; put back with the sketch) so a copy of the source reads on the same meshes (`mesh_at`,
   below: a page's worker). A drawing still at an edge when the meshes run out is said so, as a
-  requirement out of reach is (`beyond what its region's mesh can follow: the mesh folds a step
-  further, made again where the solve stopped, at 56.98mm`), and searched no further. The plate
+  requirement out of reach is (`Reach::Edge`: `beyond what its region's mesh can follow: the
+  mesh folds a step further, made again where the solve stopped, at 56.98mm`), and searched no
+  further. The plate
   is the gate (`a_regions_mesh_is_made_again_where_it_folds`): read at 26, at its edge a hair
   short of 26.93, folded past it; under a quarter load, and asked to sink 100mm, it holds what it
   states (a hole of 27.67mm; one 0.16mm from the plate's edge); and put back and asked its own
@@ -1075,8 +1076,9 @@ scenario drawn, unless a rule names another.
   bars' rise to half their least sink, a damped Newton stops at `h = √2 w`, and the verdict is
   the closed form's `3√3 P w / (4EA)` (`a_requirement_out_of_reach_says_so`).
 
-- **A requirement out of reach is the verdict on a failed solve** (`System::out_of_reach`,
-  `System::reach`). A driven deflection (`CKind::Deflection`) that does not hold where a solve
+- **A requirement out of reach is the verdict on a failed solve** (`System::stop_at`'s
+  `Stop::OutOfReach`, `System::reach`; read once where an attempt stops, `System::stop`, and
+  asked by every retry and recovery after it). A driven deflection (`CKind::Deflection`) that does not hold where a solve
   stopped is read by `interior::reach_of` — its output, what it states and the rate the solve
   steps on — over the parameters it reads that the solve moves, each across the drawing's extent
   in its own units (`Param::scale`). Where at least one fails and every one that fails is `Held`

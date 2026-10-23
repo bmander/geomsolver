@@ -1686,13 +1686,9 @@ impl Structure {
 /// A structure with no displacement to give (`Failure`), and constants that are no structure,
 /// read NaN, which the step rejects.
 pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
-    Kernel { name: NAME, n_res: 1, n_par, n_const, degree: 1, res, jac, const_jac: None,
+    Kernel { name: "interior", n_res: 1, n_par, n_const, degree: 1, res, jac, const_jac: None,
              form: None }
 }
-
-/// The kernel's name: what a compiled system knows a driven deflection's block by
-/// (`System::reach`), since the row (`CKind::Deflection`) and the kernel are one.
-pub const NAME: &str = "interior";
 
 /// Whether a row carries the unknown's column: one more than the columns its head says its
 /// structure reads — the nodes' coordinates, the bars' areas, then the sections or the unknowns
@@ -1770,10 +1766,7 @@ fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     let (n_par, n_const) = curve_widths(n, v, k);
     for i in 0..n {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
-        r[i] = Row::read(v, k).and_then(|row| {
-            let st = row.s.solve(&row.x).ok()?;
-            Some(row.s.output(&st) - row.target(v))
-        }).unwrap_or(f64::NAN);
+        r[i] = reading(v, k).map_or(f64::NAN, |(output, target)| output - target);
     }
 }
 
@@ -1787,24 +1780,33 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
             row.fill(f64::NAN);
             continue;
         };
-        let s = &read.s;
-        let Ok(st) = s.solve(&read.x) else {
+        let Ok(st) = read.s.solve(&read.x) else {
             row.fill(f64::NAN);
             continue;
         };
-        let cols = read.columns();
-        match (&read.sized, &read.moved) {
+        read.rate(&st, v, row);
+    }
+}
+
+impl Row<'_> {
+    /// The row's rate in its columns `v`, solved at `st`, into `row` (zeroed): the structure's
+    /// adjoint gradient carried to the drawing's columns, and the unknown's where it sets what the
+    /// row states.
+    fn rate(&self, st: &State, v: &[f64], row: &mut [f64]) {
+        let s = &self.s;
+        let cols = self.columns();
+        match (&self.sized, &self.moved) {
             // the nodes' rates carried through how they move with the drawing (#510 S2)
             (_, Some((m, placed))) => {
                 let mut g = vec![0.0; s.columns()];
-                s.gradient(&st, &read.x, &mut g);
+                s.gradient(st, &self.x, &mut g);
                 m.chain(&v[..cols], placed, &g, &mut row[..cols]);
             }
-            (None, None) => s.gradient(&st, &read.x, &mut row[..cols]),
+            (None, None) => s.gradient(st, &self.x, &mut row[..cols]),
             // a section's rate carried to the unknowns it is read over
             (Some((unknowns, sections)), None) => {
                 let mut g = vec![0.0; s.columns()];
-                s.gradient(&st, &read.x, &mut g);
+                s.gradient(st, &self.x, &mut g);
                 let direct = s.section_at(0);
                 row[..direct].copy_from_slice(&g[..direct]);
                 for (b, four) in sections.iter().enumerate() {
@@ -1816,8 +1818,8 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
                 }
             }
         }
-        if read.free {
-            row[cols] = -read.stated[0];
+        if self.free {
+            row[cols] = -self.stated[0];
         }
     }
 }
@@ -1833,12 +1835,13 @@ pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
 /// **Whether one row is out of reach where its columns `v` stand** (#510 P7): its output and
 /// what it states there, and its rate in its columns — the rate the solve steps on (`jac`) —
 /// judged by `analysis::reach` over the columns `free` says the solve moves, each moved by its
-/// `scale`.  `None` where the row cannot be read or its structure solved there.
+/// `scale`.  One structure solved for all three.  `None` where the row cannot be read or its
+/// structure solved there.
 pub fn reach_of(v: &[f64], k: &[f64], free: &[bool], scale: &[f64]) -> Option<Reach> {
     let read = Row::read(v, k)?;
     let st = read.s.solve(&read.x).ok()?;
     let mut g = vec![0.0; v.len()];
-    jac(1, v, k, &mut g);
+    read.rate(&st, v, &mut g);
     if !g.iter().all(|g| g.is_finite()) {
         return None;
     }

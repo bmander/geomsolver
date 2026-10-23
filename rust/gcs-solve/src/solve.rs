@@ -23,7 +23,7 @@ pub use turn::{TurnDrag, Turning};
 use crate::curve;
 use crate::model::Sketch;
 use crate::newton::{self, Info, Method};
-use crate::system::System;
+use crate::system::{Stop, System};
 
 /// A `SolveResult::status` of its own: every row holds, and a bound does not (§9.6).
 pub const BOUND_BROKEN: i32 = 5;
@@ -217,8 +217,8 @@ impl SolveOpts {
 /// contact on an envelope or a meshing needs none: it is seeded where its block comes up,
 /// `blocks::seed_contacts`.)  Then its regions are meshed where it ended, up to `REMESHES`
 /// times (`System::remeshed`).  None is tried where a requirement is out of reach where the
-/// solve ended (`System::out_of_reach`): each would solve again toward the same extreme.
-const RECOVERIES: [fn(&mut System, &mut Sketch, &[f64]) -> Option<Recovery>; 2] =
+/// solve ended (`Stop::OutOfReach`): each would solve again toward the same extreme.
+const RECOVERIES: [fn(&System, &mut Sketch, &[f64]) -> Option<Recovery>; 2] =
     [System::resized, System::recharted];
 
 /// How many times a failed document solve folded on its regions' meshes is meshed again where
@@ -227,22 +227,12 @@ const RECOVERIES: [fn(&mut System, &mut Sketch, &[f64]) -> Option<Recovery>; 2] 
 /// meshed where it stands and then again where that mesh folds.
 const REMESHES: usize = 3;
 
-/// Whether a solve ending at relative residual `now` ends nearer to holding than one at `was`:
-/// a reading is nearer than none.
-fn nearer(now: f64, was: f64) -> bool {
-    now < was || (was.is_nan() && !now.is_nan())
-}
-
 /// One recovery of a failed document solve (`RECOVERIES`): the system compiled again where the
 /// sketch stands, solved on from `from` (where it stands, when `None`), and kept only where that
 /// succeeds; else `back` puts the sketch back as it was (`System::recompiled`).
 struct Recovery {
     from: Option<Vec<f64>>,
     back: Back,
-    /// Whether a solve that does not settle is kept all the same where it ends nearer to holding
-    /// than the failed one: what a remesh learns is how far the drawing reads, and the diagnosis
-    /// says it from there.
-    nearer: bool,
 }
 
 /// What a recovery that fails puts back (`Recovery::back`).
@@ -324,28 +314,27 @@ impl System {
         let mut res = self.solve_unsteered(sk, opts);
         if opts.document() {
             res = unless_collapsed(sk, res);
-            let out_of_reach = !res.success && {
-                let z = self.z0(sk);
-                self.out_of_reach(sk, &z, opts.acceptance_tol).is_some()
-            };
-            for recovery in RECOVERIES.iter().filter(|_| !out_of_reach) {
-                if res.success {
-                    break;
+            // a requirement out of reach where the solve stopped is met by no recovery
+            if !matches!(self.stop, Stop::OutOfReach(_)) {
+                for recovery in RECOVERIES {
+                    if res.success {
+                        break;
+                    }
+                    if let Some(again) = recovery(self, sk, &start) {
+                        res = self.recompiled(sk, opts, res, again, false).0;
+                    }
                 }
-                if let Some(again) = recovery(self, sk, &start) {
-                    res = self.recompiled(sk, opts, res, again);
-                }
-            }
-            for _ in (0..REMESHES).filter(|_| !out_of_reach) {
-                if res.success {
-                    break;
-                }
-                let Some(again) = self.remeshed(sk) else { break };
-                let was = res.max_residual;
-                res = self.recompiled(sk, opts, res, again);
-                // put back, or no nearer: meshing there again comes to the same
-                if !res.success && !nearer(res.max_residual, was) {
-                    break;
+                for _ in 0..REMESHES {
+                    if res.success {
+                        break;
+                    }
+                    let Some(again) = self.remeshed(sk) else { break };
+                    let kept;
+                    (res, kept) = self.recompiled(sk, opts, res, again, true);
+                    // put back: meshing there again comes to the same
+                    if !kept {
+                        break;
+                    }
                 }
             }
         }
@@ -369,12 +358,12 @@ impl System {
     /// first block that places something at the drawing's size.  A document solve that fails
     /// where it ends at another size, more than `RESIZE` either way, is compiled again there and
     /// solved again from where it began; kept where it succeeds, else the first stands.
-    fn resized(&mut self, sk: &mut Sketch, start: &[f64]) -> Option<Recovery> {
+    fn resized(&self, sk: &mut Sketch, start: &[f64]) -> Option<Recovery> {
         let (was, now) = (self.extent.max(1.0), sk.extent());
         if !(now > RESIZE * was || now * RESIZE < was) {
             return None;
         }
-        Some(Recovery { from: Some(start.to_vec()), back: Back::Pose(sk.get_x()), nearer: false })
+        Some(Recovery { from: Some(start.to_vec()), back: Back::Pose(sk.get_x()) })
     }
 
     /// **A chart is gauged where the solve ends** (#217): a set's derivative along a chart
@@ -386,7 +375,7 @@ impl System {
     /// solve that fails is gauged again where it ends (`Sketch::charts_moved`) and, where a
     /// chart changed, compiled again and solved on from there; kept where it succeeds, else the
     /// first stands, its charts as they were.
-    fn recharted(&mut self, sk: &mut Sketch, _start: &[f64]) -> Option<Recovery> {
+    fn recharted(&self, sk: &mut Sketch, _start: &[f64]) -> Option<Recovery> {
         let moved = sk.charts_moved();
         if moved.is_empty() {
             return None;
@@ -395,30 +384,29 @@ impl System {
         for (d, c) in moved {
             sk.set_chart(d, c); // which tangents are free: compiled with them
         }
-        Some(Recovery { from: None, back: Back::Sketch(Box::new(before)), nearer: false })
+        Some(Recovery { from: None, back: Back::Sketch(Box::new(before)) })
     }
 
     /// **A region is meshed again where the solve ended** (#510 S2): a driven deflection over a
     /// region or a solid reads one mesh, made where the drawing stood when its row was compiled
     /// (`Sketch::meshed`), its nodes moving with the drawing — and a mesh moved far enough folds:
     /// a hole driven from 18mm toward the plate's edge cannot be read past 27mm of the mesh made
-    /// at 18, short of the radius that meets its sag.  A document solve that fails folded — a
-    /// driven row over a mesh that cannot be read where it ended, or a step on (`System::folded`)
-    /// — has each such row meshed again where it ended, compiled again there and solved on from
-    /// there; kept where that settles or ends nearer to holding — how far the drawing reads is
-    /// what the diagnosis says — else the sketch and its meshes are put back.  A row that cannot
-    /// be meshed there keeps the mesh it had.  Folded where it starts — a mesh made where an
-    /// earlier solve stopped, the drawing since put back — it is meshed where it stands.
-    fn remeshed(&mut self, sk: &mut Sketch) -> Option<Recovery> {
-        let z = self.z0(sk);
-        if !self.folded(sk, &z, SolveOpts::default().acceptance_tol) {
+    /// at 18, short of the radius that meets its sag.  A document solve whose attempt stopped
+    /// folded — a driven row over a mesh that cannot be read where it ended, or a step on
+    /// (`Stop::Folded`) — has its meshes made again where it ended (`Sketch::remesh`), compiled
+    /// again there and solved on from there; kept where that settles or ends nearer to holding —
+    /// how far the drawing reads is what the diagnosis says — else the sketch and its meshes are
+    /// put back.  Folded where it starts — a mesh made where an earlier solve stopped, the
+    /// drawing since put back — it is meshed where it stands.
+    fn remeshed(&self, sk: &mut Sketch) -> Option<Recovery> {
+        if !matches!(self.stop, Stop::Folded(_)) {
             return None;
         }
         let before = sk.clone();
         if !sk.remesh() {
             return None;
         }
-        Some(Recovery { from: None, back: Back::Sketch(Box::new(before)), nearer: true })
+        Some(Recovery { from: None, back: Back::Sketch(Box::new(before)) })
     }
 
     /// A system compiled where `sk` stands — as the recovery left it — then solved on from the
@@ -429,22 +417,27 @@ impl System {
     /// compiled at the extent the runaway left — two equal circles' external tangents held to
     /// meet, every row then over a drawing ten kilometres across, read a contact 0.13 mm off its
     /// 20 mm circle as 3e-8 and the drawing as solved.  Compiled at its own size from an unseeded
-    /// start, a drawing converges there.
+    /// start, a drawing converges there.  Where `nearer` — a remesh, whose news is how far the
+    /// drawing reads — one that ends nearer to holding is kept as well.  Whether it was kept.
     fn recompiled(
         &mut self,
         sk: &mut Sketch,
         opts: SolveOpts,
         res: SolveResult,
         again: Recovery,
-    ) -> SolveResult {
+        nearer: bool,
+    ) -> (SolveResult, bool) {
         let compiled = std::mem::replace(self, System::new(sk));
         if let Some(from) = &again.from {
             sk.set_x(from);
         }
         let solved = self.solve_unsteered(sk, opts);
         let solved = unless_collapsed(sk, solved);
-        if solved.settled() || (again.nearer && nearer(solved.max_residual, res.max_residual)) {
-            return solved;
+        // a reading is nearer than none
+        let closer = solved.max_residual < res.max_residual
+            || (res.max_residual.is_nan() && !solved.max_residual.is_nan());
+        if solved.settled() || (nearer && closer) {
+            return (solved, true);
         }
         *self = compiled;
         match again.back {
@@ -454,7 +447,7 @@ impl System {
             Back::Sketch(before) => *sk = *before,
         }
         self.resync(sk);
-        res
+        (res, false)
     }
 
     /// **A drawing is solved at its rows' own sizes** (#492): a failed document solve whose
@@ -598,14 +591,16 @@ impl System {
         };
         // the pose `self`'s x was last evaluated at is `z`'s, until a retry that is not kept
         let mut in_step = true;
-        // a requirement out of reach where the attempt stopped (#510 P7), or a mesh that folds
-        // a step on (#510 S2), is not the path's doing: every retry starts again from `z0`
-        // toward the same extreme or the same fold, each step of it an analysis factored again,
-        // and the drawing still fails — the fold a recovery's, meshed where it stopped
-        if opts.retry && dogleg
-            && (res.success || (self.out_of_reach(sk, &z, opts.acceptance_tol).is_none()
-                && !self.folded(sk, &z, opts.acceptance_tol)))
-        {
+        // why the attempt stopped, read once for every retry and recovery after it: a
+        // requirement out of reach (#510 P7), or a mesh that folds a step on (#510 S2), is not
+        // the path's doing — every retry starts again from `z0` toward the same extreme or the
+        // same fold, each step of it an analysis factored again, and the drawing still fails;
+        // the fold is a recovery's, meshed where it stopped
+        self.stop = match res.success || !opts.retry {
+            true => Stop::Other,
+            false => self.stop_at(sk, &z, opts.acceptance_tol),
+        };
+        if opts.retry && dogleg && self.stop == Stop::Other {
             for retry in RETRIES {
                 if !self.wants(retry, &res, &opts) {
                     continue;

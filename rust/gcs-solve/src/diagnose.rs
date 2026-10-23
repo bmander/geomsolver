@@ -21,7 +21,7 @@ use crate::linalg::{rank_and_nullspace, Mat};
 use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
-use crate::system::{Sizes, System};
+use crate::system::{Sizes, Stop, System};
 use crate::system::RANK_TOL;
 use crate::witness::{analyze_with, movable_columns, screen, shaky_warning, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
@@ -158,7 +158,7 @@ pub struct Diagnosis {
     pub conflicts: Option<Vec<u32>>,
     /// Each requirement out of reach of what drives it where the solve stopped (#510 P7), with
     /// why in the core's words (`Reach::text`): the conflict set, where there is one, and no
-    /// search was made for another (`System::out_of_reach`).
+    /// search was made for another (`System::stop_at`).
     pub out_of_reach: Vec<(u32, String)>,
     pub warnings: Vec<String>,
     /// Stage 4 analysis, on demand.
@@ -312,20 +312,17 @@ pub fn summary(d: &Diagnosis) -> String {
 }
 
 /// **What a failed drawing's driven deflections cannot meet where it stands at `z`**, each with
-/// why in words (#510 P7, S2): every failing one out of reach of what drives it
-/// (`System::out_of_reach`, `Reach::text`), else each stopped at the edge of the mesh it is read
-/// on, which folds a step further even meshed where the solve stopped (`System::mesh_edges`).
-/// Empty where neither is the failure.
+/// why in words (#510 P7, S2; `System::stop_at`, `Reach::text`): every failing one out of reach
+/// of what drives it, else each at the edge of the mesh it is read on.  Empty where neither is
+/// the failure.
 fn unmet(sys: &mut System, sk: &Sketch, z: &[f64], tol: f64) -> Vec<(u32, String)> {
     let spell = |v| crate::beams::value_text(sk, crate::model::Output::Deflection, v);
-    if let Some(found) = sys.out_of_reach(sk, z, tol) {
-        return found.into_iter().filter_map(|(c, v)| v.text(&spell).map(|t| (c, t))).collect();
+    match sys.stop_at(sk, z, tol) {
+        Stop::OutOfReach(rows) | Stop::Folded(rows) => {
+            rows.into_iter().filter_map(|(c, v)| v.text(&spell).map(|t| (c, t))).collect()
+        }
+        Stop::Other => Vec::new(),
     }
-    sys.mesh_edges(sk, z, tol).into_iter().map(|(c, value, _)| (c, format!(
-        "beyond what its region's mesh can follow: the mesh folds a step further, made again \
-         where the solve stopped, at {}",
-        spell(value)
-    ))).collect()
 }
 
 /// Constraints that could be deleted without losing any information, given `w`, a basis of the

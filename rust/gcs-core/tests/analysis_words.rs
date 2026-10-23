@@ -15,7 +15,7 @@ use gcs_core::interior::{Bar, Failure, Structure};
 use gcs_core::rng::Rng;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::sparse::Sym;
-use gcs_core::system::System;
+use gcs_core::system::{Stop, System};
 use std::f64::consts::PI;
 
 fn close(a: f64, b: f64, tol: f64) -> bool {
@@ -418,7 +418,7 @@ fn a_requirement_out_of_reach_says_so() {
 /// **A requirement out of reach is the verdict, and ends the search for one** (#510 P7): the
 /// library's drilled plate loaded ten times over sinks least with no hole at all, far more than
 /// its `sag`, so the solve drives the hole's radius toward nothing and stops short.  Where it
-/// stopped its one failing row is out of reach (`System::out_of_reach`), its least within a
+/// stopped its one failing row is out of reach (`System::stop_at`), its least within a
 /// hair of what the plate with no hole sinks under that load; and the diagnosis says so there,
 /// and where a page diagnoses it — the pose the drawing had, put back — naming the row as the
 /// conflict with why, and searching for no other.  Loaded as drawn it solves, and nothing is
@@ -437,7 +437,7 @@ fn a_requirement_out_of_reach_is_the_verdict() {
     let row = e.sketch.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap().id;
     let mut sys = System::new(&e.sketch);
     let z = sys.z0(&e.sketch);
-    let found = sys.out_of_reach(&e.sketch, &z, 1e-6).expect("out of reach");
+    let Stop::OutOfReach(found) = sys.stop_at(&e.sketch, &z, 1e-6) else { panic!("in reach") };
     let [(id, Reach::Extreme { value, least: true })] = found[..] else { panic!("{found:?}") };
     assert_eq!(id, row);
     // the plate with no hole, its sink a claim read under the same load

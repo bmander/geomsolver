@@ -442,6 +442,10 @@ pub enum Reach {
     /// It does not hold, and the numbers that drive it stand at an extreme of its value: `value`
     /// is the least they reach here where `least` (it states less), else the most.
     Extreme { value: f64, least: bool },
+    /// It does not hold, and the mesh it is read on folds a step further, even made again where
+    /// the solve stopped (#510 S2; `System::stop_at`): `value` is where it was read to.  Not
+    /// `analysis::reach`'s to say, which reads a row where it can be read.
+    Edge { value: f64 },
 }
 
 /// **Whether a row is out of reach of what drives it**: its `value` against what it states
@@ -485,6 +489,11 @@ impl Reach {
                 "out of reach of the dimensions that drive it: {} is the {} they reach here",
                 spell(value),
                 if least { "least" } else { "most" }
+            )),
+            Reach::Edge { value } => Some(format!(
+                "beyond what its region's mesh can follow: the mesh folds a step further, made \
+                 again where the solve stopped, at {}",
+                spell(value)
             )),
         }
     }

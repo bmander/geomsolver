@@ -615,7 +615,7 @@ impl Constraint {
     /// where there is one, so every compile through a solve reads one topology.
     pub fn deflection_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
         let (sc, at, along) = self.frame_read(sk)?;
-        if let Some(r) = self.meshed_key(sk).and_then(|key| sk.meshed.get(&key)) {
+        if let Some(r) = self.mesh_key(at, along).and_then(|key| sk.meshed.get(&key)) {
             return Ok(DeflectionRow::Meshed(r.clone()));
         }
         let of = crate::model::Applied::Ent(EntRef::point(at));
@@ -647,6 +647,11 @@ impl Constraint {
             return None;
         }
         let (_, at, along) = self.frame_read(sk).ok()?;
+        self.mesh_key(at, along)
+    }
+
+    /// `meshed_key` of the point `at` and the direction `along` it was read to name.
+    fn mesh_key(&self, at: usize, along: EntRef) -> Option<(usize, usize, EntRef)> {
         let Some(Arg::Int(k)) = self.args.get(2) else { return None };
         Some((usize::try_from(*k).ok()?, at, along))
     }

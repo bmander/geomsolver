@@ -42,9 +42,24 @@ pub struct Block {
 pub const RANK_TOL: f64 = 1e-9;
 
 /// How far past where a solve stopped a driven deflection is read to tell the edge of its mesh
-/// (`System::mesh_edges`), as a fraction of the drawing's extent: a step the solve could not
-/// take, and no further.
+/// (`System::stop_at`), as a fraction of the drawing's extent: a step the solve could not take,
+/// and no further.
 const EDGE: f64 = 1e-3;
+
+/// **Why a failed solve stopped where it did** (#510 P7, S2; `System::stop_at`): what every
+/// retry and recovery after the attempt asks (`System::stop`, set by the attempt), and the
+/// diagnosis says.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum Stop {
+    /// Nothing an analysis says: the solve's, or a conflict's.
+    #[default]
+    Other,
+    /// Every driven deflection that fails, out of reach of what drives it, with its verdict.
+    OutOfReach(Vec<(u32, Reach)>),
+    /// Folded on a mesh it is read on: each row at its edge with how far it read (none where one
+    /// cannot be read at all).
+    Folded(Vec<(u32, Reach)>),
+}
 
 thread_local! {
     /// What a compile makes stale on this thread: the `forget` of every cache keyed by where a
@@ -217,6 +232,11 @@ pub struct System {
     ata: Option<Ata>,
     /// The kernel of each block, by `Block::kid` — see `build_kernel`.
     kernels: Vec<Kernel>,
+    /// Whether each is the interior's (`KernelKey::Interior`): a driven deflection's.
+    interior: Vec<bool>,
+    /// Why the last attempt solved on this compile stopped short (`stop_at`), `Stop::Other`
+    /// where it did not, or nothing asked.
+    pub(crate) stop: Stop,
     /// The block-triangular order of the hard rows, worked out the first time it is asked for
     /// (`block_order`) and kept for the life of the compile, whose topology it is a fact about.
     order: Option<Arc<BlockOrder>>,
@@ -843,6 +863,7 @@ impl System {
             by_kernel.entry(c.kernel_key(sk)).or_default().push(i);
         }
         let table: Vec<Kernel> = by_kernel.keys().map(|&k| build_kernel(sk, k)).collect();
+        let interior = by_kernel.keys().map(|k| matches!(k, KernelKey::Interior { .. })).collect();
 
         let mut blocks: Vec<Block> = Vec::new();
         let mut slot_of = BTreeMap::new();
@@ -953,6 +974,8 @@ impl System {
             slot_of,
             ata: None,
             kernels: table,
+            interior,
+            stop: Stop::Other,
             order: None,
             tearings: BTreeMap::new(),
             const_slots: None,
@@ -1331,10 +1354,22 @@ impl System {
     }
 
     /// Whether row `row` is a driven deflection's (`CKind::Deflection`): the interior's kernel
-    /// (`interior::NAME`), an analysis's output, and the one row `reach` reads.
+    /// (`KernelKey::Interior`), an analysis's output, and the one row `reach` reads.
     fn drives(&self, row: usize) -> bool {
-        let (b, _) = self.instance_of(row);
-        self.kernels[self.blocks[b].kid].name == crate::interior::NAME
+        self.interior[self.blocks[self.instance_of(row).0].kid]
+    }
+
+    /// `f` of row `row`'s instance read at `z`: the system, the row's kernel, the parameters it
+    /// reads, their values (`gather`, as `residuals_into` reads them) and its constants.
+    fn with_instance<T>(&mut self, z: &[f64], row: usize,
+                        f: impl FnOnce(&System, Kernel, &[i32], &[f64], &[f64]) -> T) -> T {
+        self.apply_z(z);
+        let (b, i) = self.instance_of(row);
+        let (block, kn) = (&self.blocks[b], self.kernels[self.blocks[b].kid]);
+        let gidx = &block.gidx[i * kn.n_par..(i + 1) * kn.n_par];
+        let mut v = Vec::new();
+        gather(&mut v, &self.x, gidx);
+        f(self, kn, gidx, &v, &block.consts[i * kn.n_const..(i + 1) * kn.n_const])
     }
 
     /// **Whether hard row `row` is out of reach at `z`** (#510 P7): a driven deflection's verdict
@@ -1345,78 +1380,70 @@ impl System {
         if !self.drives(row) {
             return None;
         }
-        self.apply_z(z);
-        let (b, i) = self.instance_of(row);
-        let (block, kn) = (&self.blocks[b], self.kernels[self.blocks[b].kid]);
-        let gidx = &block.gidx[i * kn.n_par..(i + 1) * kn.n_par];
-        let v: Vec<f64> = gidx.iter().map(|&g| self.x[g as usize]).collect();
-        let k = &block.consts[i * kn.n_const..(i + 1) * kn.n_const];
-        let free: Vec<bool> = gidx.iter().map(|&g| self.col_of[g as usize] != -1).collect();
-        let extent = self.extent.max(1.0);
-        let scale: Vec<f64> = gidx.iter().map(|&g| match sk.params[g as usize].scale {
-            s if s > 0.0 => extent / s,
-            _ => extent,
-        }).collect();
-        crate::interior::reach_of(&v, k, &free, &scale)
+        self.with_instance(z, row, |sys, _, gidx, v, k| {
+            let extent = sys.extent.max(1.0);
+            let free: Vec<bool> = gidx.iter().map(|&g| sys.col_of[g as usize] != -1).collect();
+            let scale: Vec<f64> = gidx.iter().map(|&g| match sk.params[g as usize].scale {
+                s if s > 0.0 => extent / s,
+                _ => extent,
+            }).collect();
+            crate::interior::reach_of(v, k, &free, &scale)
+        })
     }
 
-    /// **A failed solve's requirements out of reach** (#510 P7): each driven deflection that does
-    /// not hold at `z` (over its own size, past `tol`), with its verdict (`reach`), where there is
-    /// one and every one is out of reach of what drives it — nothing it reads moves it toward what
-    /// it states, so no solve from here meets it.  Any other row that does not hold is left to be
-    /// what the pull toward the requirement made it: a hole's radius driven toward nothing reads
-    /// its own circle's row over a size that went with it.  `None` where no deflection fails, or
-    /// one that does moves or cannot be read: then the failure is the solve's or a conflict's.
-    pub fn out_of_reach(&mut self, sk: &Sketch, z: &[f64], tol: f64) -> Option<Vec<(u32, Reach)>> {
-        // a drawing driving no deflection pays nothing
-        if !self.blocks.iter().any(|b| self.kernels[b.kid].name == crate::interior::NAME) {
-            return None;
+    /// **Why a failed solve stopped at `z`** (#510 P7, S2), read once, the residuals evaluated
+    /// once: of the driven deflections that do not hold there (over their own size, past `tol`),
+    /// - every one out of reach of what drives it (`reach`: nothing it reads moves it toward
+    ///   what it states, so no solve from here meets it) — `Stop::OutOfReach`.  Any other row that
+    ///   does not hold is left to be what the pull toward the requirement made it: a hole's radius
+    ///   driven toward nothing reads its own circle's row over a size that went with it;
+    /// - else, in a drawing holding meshes (`Sketch::meshed`), one that cannot be read there, or a
+    ///   step on along its rate — its own Newton step, no longer than `EDGE` of the drawing's
+    ///   extent, or that step back, since on a mesh about to fold the rate may point either way —
+    ///   where the mesh it was compiled with folds: `Stop::Folded`, each read with where it was
+    ///   read to (`Reach::Edge`).  Every retry reads that mesh and stops there again; meshed where
+    ///   the solve stopped (`solve::System::remeshed`), it may read on;
+    /// - else `Stop::Other`: the failure is the solve's or a conflict's.
+    pub fn stop_at(&mut self, sk: &Sketch, z: &[f64], tol: f64) -> Stop {
+        if !self.interior.iter().any(|i| *i) {
+            return Stop::Other;
         }
         let r = self.residuals(z);
         self.size_rows();
+        // a NaN is no holding row
+        let failing: Vec<usize> = (0..self.n_res)
+            .filter(|&row| self.hard[row] && self.drives(row) && !(self.judged(row, r[row]) <= tol))
+            .collect();
+        if failing.is_empty() {
+            return Stop::Other;
+        }
+        let cid = |sys: &System, row: usize| {
+            let (b, i) = sys.instance_of(row);
+            sys.blocks[b].cids[i]
+        };
         let mut out = Vec::new();
-        for row in 0..self.n_res {
-            // a NaN is no holding row, and no reading of one either
-            if !self.hard[row] || self.judged(row, r[row]) <= tol || !self.drives(row) {
-                continue;
-            }
+        for &row in &failing {
             match self.reach(sk, z, row) {
-                Some(v @ (Reach::Held | Reach::Extreme { .. })) => {
-                    let (b, i) = self.instance_of(row);
-                    out.push((self.blocks[b].cids[i], v));
+                Some(v @ (Reach::Held | Reach::Extreme { .. })) => out.push((cid(self, row), v)),
+                _ => {
+                    out.clear();
+                    break;
                 }
-                _ => return None,
             }
         }
-        (!out.is_empty()).then_some(out)
-    }
-
-    /// **Where a failed solve stopped at the edge of a mesh** (#510 S2): each driven deflection
-    /// over a region or a solid (`Sketch::meshed`) that does not hold at `z` (past `tol`) and
-    /// cannot be read a step on along its rate — its own Newton step, no longer than `EDGE` of
-    /// the drawing's extent, or that step the other way, since on a mesh about to fold the rate
-    /// may point either way — where the mesh it was compiled with folds; with its value at `z`
-    /// and what it states.  Every retry reads that mesh and stops there again; meshed where
-    /// the solve stopped (`System::remeshed`), it may read on.
-    pub fn mesh_edges(&mut self, sk: &Sketch, z: &[f64], tol: f64) -> Vec<(u32, f64, f64)> {
-        if sk.meshed.is_empty() {
-            return Vec::new();
+        if !out.is_empty() {
+            return Stop::OutOfReach(out);
         }
-        let r = self.residuals(z);
-        self.size_rows();
-        let rows: Vec<usize> = (0..self.n_res).filter(|&row| {
-            let (b, i) = self.instance_of(row);
-            self.hard[row] && self.judged(row, r[row]) > tol && self.drives(row)
-                && sk.constraint(self.blocks[b].cids[i]).and_then(|c| c.meshed_key(sk))
-                    .is_some_and(|k| sk.meshed.contains_key(&k))
-        }).collect();
-        if rows.is_empty() {
-            return Vec::new();
+        if sk.meshed.is_empty() {
+            return Stop::Other;
+        }
+        if failing.iter().any(|&row| r[row].is_nan()) {
+            return Stop::Folded(Vec::new());
         }
         self.compute_csr(z);
         let reach = EDGE * self.extent.max(1.0);
         let mut edges = Vec::new();
-        for row in rows {
+        for row in failing {
             let span = self.csr_indptr[row] as usize..self.csr_indptr[row + 1] as usize;
             let g = self.csr_data[span.clone()].iter().map(|g| g * g).sum::<f64>().sqrt();
             if !(g > 0.0 && g.is_finite()) {
@@ -1430,43 +1457,21 @@ impl System {
                     on[self.csr_indices[p] as usize] -=
                         way * r[row].signum() * self.csr_data[p] / g * length;
                 }
-                self.residuals(&on)[row].is_nan()
+                self.with_instance(&on, row, |_, kn, _, v, k| {
+                    let mut at = [0.0];
+                    (kn.res)(1, v, k, &mut at);
+                    at[0].is_nan()
+                })
             });
             if folds {
-                let (b, i) = self.instance_of(row);
-                if let Some((value, target)) = self.reading(z, row) {
-                    edges.push((self.blocks[b].cids[i], value, target));
+                // where it was read to
+                let value = self.with_instance(z, row, |_, _, _, v, k| crate::interior::reading(v, k));
+                if let Some((value, _)) = value {
+                    edges.push((cid(self, row), Reach::Edge { value }));
                 }
             }
         }
-        edges
-    }
-
-    /// **Whether a failed solve stopped folded** (#510 S2): a driven deflection over a region or a
-    /// solid (`Sketch::meshed`) that cannot be read at `z` — its mesh folded where the drawing
-    /// stands — or that stopped at the edge of its mesh (`mesh_edges`).
-    pub fn folded(&mut self, sk: &Sketch, z: &[f64], tol: f64) -> bool {
-        if sk.meshed.is_empty() {
-            return false;
-        }
-        let r = self.residuals(z);
-        let unread = (0..self.n_res).any(|row| {
-            let (b, i) = self.instance_of(row);
-            self.hard[row] && r[row].is_nan() && self.drives(row)
-                && sk.constraint(self.blocks[b].cids[i]).and_then(|c| c.meshed_key(sk))
-                    .is_some_and(|k| sk.meshed.contains_key(&k))
-        });
-        unread || !self.mesh_edges(sk, z, tol).is_empty()
-    }
-
-    /// Row `row`'s reading at `z`, a driven deflection's: its value and what it states.
-    fn reading(&mut self, z: &[f64], row: usize) -> Option<(f64, f64)> {
-        self.apply_z(z);
-        let (b, i) = self.instance_of(row);
-        let (block, kn) = (&self.blocks[b], self.kernels[self.blocks[b].kid]);
-        let v: Vec<f64> =
-            block.gidx[i * kn.n_par..(i + 1) * kn.n_par].iter().map(|&g| self.x[g as usize]).collect();
-        crate::interior::reading(&v, &block.consts[i * kn.n_const..(i + 1) * kn.n_const])
+        if edges.is_empty() { Stop::Other } else { Stop::Folded(edges) }
     }
 
     /// Numerical rank of the Jacobian at z — the workhorse of Stage 2/4 diagnosis.  `tol` is

@@ -6,11 +6,11 @@
 //! pulled answers to rounding; and what has no answer says why.  The rules are
 //! `docs/contract/analysis.md`'s.
 use gcs_core::constraints::{Arg, CKind};
-use gcs_core::diagnose::analysis::scenario_read;
+use gcs_core::diagnose::analysis::{scenario_read, Reach};
 use gcs_core::model::{InPlane, Output, Sketch};
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::system::System;
+use gcs_core::system::{Stop, System};
 
 use crate::analysis_corpus::{read as read_case, Reading, CASES};
 
@@ -397,7 +397,7 @@ fn every_region_case_of_the_library_says_what_it_claims() {
 }
 
 /// **A region is meshed again where its mesh folds** (#510 S2; `System::remeshed`,
-/// `System::folded`, `System::mesh_edges`): the library's drilled plate under a quarter of its
+/// `System::stop_at`): the library's drilled plate under a quarter of its
 /// load sinks its `sag` only with a hole of about 27.7mm, which the mesh made where the hole was
 /// drawn, at 18, cannot follow — on that mesh the row cannot be read there at all, and a hair
 /// short of 27 it stands at the mesh's edge, read but not a step on.  The solve, stopped there,
@@ -429,21 +429,20 @@ fn a_regions_mesh_is_made_again_where_it_folds() {
     let drawn = e.sketch.clone();
     let id = deflection(&drawn);
     // on the mesh made at 18: read well inside, at its edge a hair short of 27, folded past it
-    for (at, edge, folded) in [(26.0, false, false), (26.9, true, true), (27.5, false, true)] {
+    let stop = |at: f64| {
         let mut sk = drawn.clone();
         for p in sk.free_indices() {
             sk.params[p as usize].value = at;
         }
         let mut sys = System::new(&sk);
         let z = sys.z0(&sk);
-        let edges = sys.mesh_edges(&sk, &z, 1e-6);
-        assert_eq!(edges.len(), edge as usize, "at {at}: {edges:?}");
-        if edge {
-            assert_eq!(edges[0].0, id);
-            assert!(edges[0].1 < 0.6 && edges[0].2 == 0.6, "at {at}: {edges:?}");
-        }
-        assert_eq!(sys.folded(&sk, &z, 1e-6), folded, "at {at}");
-    }
+        sys.stop_at(&sk, &z, 1e-6)
+    };
+    assert_eq!(stop(26.0), Stop::Other);
+    let Stop::Folded(edges) = stop(26.9) else { panic!("not at its edge") };
+    let [(row, Reach::Edge { value })] = edges[..] else { panic!("{edges:?}") };
+    assert!(row == id && value < 0.6, "{edges:?}");
+    assert_eq!(stop(27.5), Stop::Folded(Vec::new()));
     assert!(drawn.meshed_at.is_none());
     assert!(solve(&mut e.sketch, SolveOpts::default()).success);
     let r = radius(&e.sketch);
