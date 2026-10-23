@@ -69,6 +69,8 @@ async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promi
   install(job.modules);
   const doc = Document.read(job.text);
   try {
+    // the page's meshes, made where it made them again, before its pose
+    if (job.meshedAt) doc.sketch.meshAt(job.meshedAt);
     doc.sketch.setX(job.x);
     if (job.drawn && !doc.scenarioNames().some((s) => s.name === job.drawn)) {
       throw new Error(`the worker's drawing states no scenario \`${job.drawn}\``);

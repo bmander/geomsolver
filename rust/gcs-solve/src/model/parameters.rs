@@ -363,6 +363,38 @@ impl Sketch {
         self.params.iter().map(|p| p.value).collect()
     }
 
+    /// **Every driven deflection's mesh made again where the drawing stands** (#510 S2;
+    /// `Sketch::meshed`, `Constraint::made_row`), kept where it meshes; a row that cannot be
+    /// meshed here keeps the mesh it had.  Whether any was made, and if so the pose recorded
+    /// (`meshed_at`).
+    pub fn remesh(&mut self) -> bool {
+        let rows: Vec<_> = self.constraints.iter()
+            .filter_map(|c| c.meshed_key(self).filter(|k| self.meshed.contains_key(k)).map(|k| (c, k)))
+            .filter_map(|(c, k)| match c.made_row(self) {
+                Ok(crate::constraints::DeflectionRow::Meshed(r)) => Some((k, r)),
+                _ => None,
+            })
+            .collect();
+        let made = !rows.is_empty();
+        self.meshed.extend(rows);
+        if made {
+            self.meshed_at = Some(self.get_x());
+        }
+        made
+    }
+
+    /// **The drawing's meshes made where another stood** (`meshed_at` of a drawing of the same
+    /// source): stood at `x`, meshed again (`remesh`), and put back where it was.  False, and
+    /// nothing changed, for an `x` of another drawing.
+    pub fn mesh_at(&mut self, x: &[f64]) -> bool {
+        let here = self.get_x();
+        if !self.set_x(x) {
+            return false;
+        }
+        self.remesh();
+        self.set_x(&here)
+    }
+
     /// Write the parameter vector.  A vector of the wrong length is not this sketch's — writing
     /// the overlapping prefix would scatter one sketch's coordinates over another's — so it is
     /// refused; `false` says nothing was written.

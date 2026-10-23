@@ -11,6 +11,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::constraints::Constraint;
+use crate::diagnose::analysis::Reach;
 use crate::kernels::{self, Kernel, KernelKey};
 use crate::linalg::{rank_and_nullspace_with, rrqr_with, Mat, RankNull, Tol};
 use crate::model::{EntKind, EntRef, Sketch};
@@ -39,6 +40,25 @@ pub struct Block {
 /// residual by less than `RANK_TOL` of its own units" — so it is the same statement in every
 /// sketch at every size.  The one number the diagnosis, the witness and `System::rank` share.
 pub const RANK_TOL: f64 = 1e-9;
+
+/// How far past where a solve stopped a driven deflection is read to tell the edge of its mesh
+/// (`System::stop_at`), as a fraction of the drawing's extent: a step the solve could not take,
+/// and no further.
+const EDGE: f64 = 1e-3;
+
+/// **Why a failed solve stopped where it did** (#510 P7, S2; `System::stop_at`): what every
+/// retry and recovery after the attempt asks (`System::stop`, set by the attempt), and the
+/// diagnosis says.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Stop {
+    /// Nothing an analysis says: the solve's, or a conflict's.
+    Other,
+    /// Every driven deflection that fails, out of reach of what drives it, with its verdict.
+    OutOfReach(Vec<(u32, Reach)>),
+    /// Folded on a mesh it is read on: each row at its edge with how far it read (none where one
+    /// cannot be read at all).
+    Folded(Vec<(u32, Reach)>),
+}
 
 thread_local! {
     /// What a compile makes stale on this thread: the `forget` of every cache keyed by where a
@@ -211,6 +231,15 @@ pub struct System {
     ata: Option<Ata>,
     /// The kernel of each block, by `Block::kid` — see `build_kernel`.
     kernels: Vec<Kernel>,
+    /// Whether each is the interior's (`KernelKey::Interior`): a driven deflection's.
+    interior: Vec<bool>,
+    /// Why the last attempt solved on this compile stopped short (`stop_at`), `Stop::Other`
+    /// where it did not, or nothing asked.
+    pub(crate) stop: Stop,
+    /// Where the sketch stood when the document solve that failed with `stop` began (`solve`): a
+    /// page that puts a failed solve's pose back diagnoses there, and reads `stop` rather than
+    /// solving again (`diagnose::diagnose_with`).
+    pub(crate) stopped_from: Option<Vec<f64>>,
     /// The block-triangular order of the hard rows, worked out the first time it is asked for
     /// (`block_order`) and kept for the life of the compile, whose topology it is a fact about.
     order: Option<Arc<BlockOrder>>,
@@ -837,6 +866,7 @@ impl System {
             by_kernel.entry(c.kernel_key(sk)).or_default().push(i);
         }
         let table: Vec<Kernel> = by_kernel.keys().map(|&k| build_kernel(sk, k)).collect();
+        let interior = by_kernel.keys().map(|k| matches!(k, KernelKey::Interior { .. })).collect();
 
         let mut blocks: Vec<Block> = Vec::new();
         let mut slot_of = BTreeMap::new();
@@ -947,6 +977,9 @@ impl System {
             slot_of,
             ata: None,
             kernels: table,
+            interior,
+            stop: Stop::Other,
+            stopped_from: None,
             order: None,
             tearings: BTreeMap::new(),
             const_slots: None,
@@ -1322,6 +1355,117 @@ impl System {
             }
         }
         out
+    }
+
+    /// Whether row `row` is a driven deflection's (`CKind::Deflection`): the interior's kernel
+    /// (`KernelKey::Interior`), an analysis's output, and the one row `reach` reads.
+    fn drives(&self, row: usize) -> bool {
+        self.interior[self.blocks[self.instance_of(row).0].kid]
+    }
+
+    /// `f` of row `row`'s instance read at `z`: the system, the parameters the row reads, their
+    /// values (`gather`, as `residuals_into` reads them) and its constants.
+    fn with_instance<T>(&mut self, z: &[f64], row: usize,
+                        f: impl FnOnce(&System, &[i32], &[f64], &[f64]) -> T) -> T {
+        self.apply_z(z);
+        let (b, i) = self.instance_of(row);
+        let (block, kn) = (&self.blocks[b], self.kernels[self.blocks[b].kid]);
+        let gidx = &block.gidx[i * kn.n_par..(i + 1) * kn.n_par];
+        let mut v = Vec::new();
+        gather(&mut v, &self.x, gidx);
+        f(self, gidx, &v, &block.consts[i * kn.n_const..(i + 1) * kn.n_const])
+    }
+
+    /// **Whether hard row `row` is out of reach at `z`** (#510 P7): a driven deflection's verdict
+    /// (`interior::reach_of`) over the parameters it reads that the solve moves — a free column,
+    /// or one worked out from free ones — each moved across the drawing's extent in its own units
+    /// (`Param::scale`), with its value there.  `None` for any other row, and for one that cannot
+    /// be read there.
+    fn reach(&mut self, sk: &Sketch, z: &[f64], row: usize) -> Option<(Reach, f64)> {
+        if !self.drives(row) {
+            return None;
+        }
+        self.with_instance(z, row, |sys, gidx, v, k| {
+            let extent = sys.extent.max(1.0);
+            let free: Vec<bool> = gidx.iter().map(|&g| sys.col_of[g as usize] != -1).collect();
+            let scale: Vec<f64> = gidx.iter().map(|&g| match sk.params[g as usize].scale {
+                s if s > 0.0 => extent / s,
+                _ => extent,
+            }).collect();
+            crate::interior::reach_of(v, k, &free, &scale)
+        })
+    }
+
+    /// **Why a failed solve stopped at `z`** (#510 P7, S2), read once, the residuals evaluated
+    /// once: of the driven deflections that do not hold there (over their own size, past `tol`),
+    /// - every one out of reach of what drives it (`reach`: nothing it reads moves it toward
+    ///   what it states, so no solve from here meets it) — `Stop::OutOfReach`.  Any other row that
+    ///   does not hold is left to be what the pull toward the requirement made it: a hole's radius
+    ///   driven toward nothing reads its own circle's row over a size that went with it;
+    /// - else, in a drawing holding meshes (`Sketch::meshed`), one that cannot be read there, or a
+    ///   step on along its rate — its own Newton step, no longer than `EDGE` of the drawing's
+    ///   extent, or that step back, since on a mesh about to fold the rate may point either way —
+    ///   where the mesh it was compiled with folds: `Stop::Folded`, each read with where it was
+    ///   read to (`Reach::Edge`).  Every retry reads that mesh and stops there again; meshed where
+    ///   the solve stopped (`solve::System::remeshed`), it may read on;
+    /// - else `Stop::Other`: the failure is the solve's or a conflict's.
+    pub fn stop_at(&mut self, sk: &Sketch, z: &[f64], tol: f64) -> Stop {
+        if !self.interior.iter().any(|i| *i) {
+            return Stop::Other;
+        }
+        let r = self.residuals(z);
+        self.size_rows();
+        // a NaN is no holding row
+        let failing: Vec<usize> = (0..self.n_res)
+            .filter(|&row| self.hard[row] && self.drives(row) && !(self.judged(row, r[row]) <= tol))
+            .collect();
+        if failing.is_empty() {
+            return Stop::Other;
+        }
+        let cid = |sys: &System, row: usize| {
+            let (b, i) = sys.instance_of(row);
+            sys.blocks[b].cids[i]
+        };
+        let read: Vec<Option<(Reach, f64)>> = failing.iter().map(|&row| self.reach(sk, z, row))
+            .collect();
+        let out: Option<Vec<(u32, Reach)>> = failing.iter().zip(&read).map(|(&row, r)| match r {
+            Some((v @ (Reach::Held | Reach::Extreme { .. }), _)) => Some((cid(self, row), *v)),
+            _ => None,
+        }).collect();
+        if let Some(out) = out {
+            return Stop::OutOfReach(out);
+        }
+        if sk.meshed.is_empty() {
+            return Stop::Other;
+        }
+        if failing.iter().any(|&row| r[row].is_nan()) {
+            return Stop::Folded(Vec::new());
+        }
+        self.compute_csr(z);
+        let reach = EDGE * self.extent.max(1.0);
+        let mut edges = Vec::new();
+        for (row, read) in failing.into_iter().zip(read) {
+            let span = self.csr_indptr[row] as usize..self.csr_indptr[row + 1] as usize;
+            let g = self.csr_data[span.clone()].iter().map(|g| g * g).sum::<f64>().sqrt();
+            if !(g > 0.0 && g.is_finite()) {
+                continue;
+            }
+            // the row's own Newton step, −r g / |g|², no longer than `reach`, and back
+            let length = (r[row].abs() / g).min(reach);
+            let folds = [1.0, -1.0].into_iter().any(|way| {
+                let mut on = z.to_vec();
+                for p in span.clone() {
+                    on[self.csr_indices[p] as usize] -=
+                        way * r[row].signum() * self.csr_data[p] / g * length;
+                }
+                self.with_instance(&on, row, |_, _, v, k| crate::interior::reading(v, k).is_none())
+            });
+            // where it was read to
+            if let (true, Some((_, value))) = (folds, read) {
+                edges.push((cid(self, row), Reach::Edge { value }));
+            }
+        }
+        if edges.is_empty() { Stop::Other } else { Stop::Folded(edges) }
     }
 
     /// Numerical rank of the Jacobian at z — the workhorse of Stage 2/4 diagnosis.  `tol` is

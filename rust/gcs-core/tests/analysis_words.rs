@@ -3,8 +3,10 @@
 //! and the ring that makes it one, and a requirement out of reach of what drives it.  The rules
 //! are `docs/contract/analysis.md`'s.
 use gcs_core::diagnose::analysis::{
-    self, freedoms, freedoms_text, reach, repeated, williams, Freedom, Held, Reach,
+    self, freedoms, freedoms_text, reach, repeated, scenario_read, williams, Freedom, Held, Reach,
 };
+use gcs_core::constraints::CKind;
+use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::eigen::{self, Opts};
 use crate::interior::{braced, two_bar};
 use crate::linalg::spring;
@@ -12,6 +14,7 @@ use gcs_core::interior::{Bar, Failure, Structure};
 use gcs_core::rng::Rng;
 use gcs_core::solve::{solve, SolveOpts};
 use gcs_core::sparse::Sym;
+use gcs_core::system::{Stop, System};
 use std::f64::consts::PI;
 
 fn close(a: f64, b: f64, tol: f64) -> bool {
@@ -401,4 +404,69 @@ fn a_requirement_out_of_reach_says_so() {
                "out of reach: every number it reads is held, so nothing drives it");
     assert_eq!(s.reach(&x, value, &free), Ok(Reach::Reached));
     assert_eq!(reach(1.0, 1.0 + 1e-12, &[0.0], &[1.0], &[true]), Reach::Reached);
+    // judged against the lesser of the gap and the value: a row a hundred-thousandth from what
+    // it states, moving a ten-millionth of itself, still moves toward it; one asked a million
+    // times what it is, moving a tenth of itself, moves; one stopped at its least, four
+    // millimetres short, moves a millionth of itself and no more
+    assert_eq!(reach(1.0, 1.0 + 1e-5, &[5e-7], &[1.0], &[true]), Reach::Moves);
+    assert_eq!(reach(1.7, 1e6, &[0.17], &[1.0], &[true]), Reach::Moves);
+    let stopped = reach(4.79, 0.6, &[7.5e-6], &[1.0], &[true]);
+    assert_eq!(stopped, Reach::Extreme { value: 4.79, least: true });
+}
+
+/// **A requirement out of reach is the verdict, and ends the search for one** (#510 P7): the
+/// library's drilled plate loaded ten times over sinks least with no hole at all, far more than
+/// its `sag`, so the solve drives the hole's radius toward nothing and stops short.  Where it
+/// stopped its one failing row is out of reach (`System::stop_at`), its least within a
+/// hair of what the plate with no hole sinks under that load; and the diagnosis says so there,
+/// and where a page diagnoses it — the pose the drawing had, put back — naming the row as the
+/// conflict with why, and searching for no other.  Loaded as drawn it solves, and nothing is
+/// out of reach.
+#[test]
+fn a_requirement_out_of_reach_is_the_verdict() {
+    let src = gcs_core::examples::source("drilled_plate").unwrap();
+    let swap = |s: &str, a: &str, b: &str| {
+        assert!(s.contains(a), "the plate states `{a}`");
+        s.replace(a, b)
+    };
+    let heavy = swap(src, "P := 2kN", "P := 20kN");
+    let mut e = crate::common::read(&heavy);
+    let start = e.sketch.get_x();
+    assert!(!solve(&mut e.sketch, SolveOpts::default()).success);
+    let row = e.sketch.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap().id;
+    let mut sys = System::new(&e.sketch);
+    let z = sys.z0(&e.sketch);
+    let Stop::OutOfReach(found) = sys.stop_at(&e.sketch, &z, 1e-6) else { panic!("in reach") };
+    let [(id, Reach::Extreme { value, least: true })] = found[..] else { panic!("{found:?}") };
+    assert_eq!(id, row);
+    // the plate with no hole, its sink a claim read under the same load
+    let plain = swap(&heavy, "param r: Length hint(18mm)\n", "");
+    let plain = swap(&plain, "  hole := radius(r) circle(center: o) hint(r: 18)\n", "");
+    let plain = swap(&plain, ", holes: hole", "");
+    let plain = swap(&plain, "  deflection(end_low, along: down) == sag",
+                     "  claim deflection(end_low, along: down) <= 1m");
+    let p = crate::common::read(&plain);
+    let sk = crate::common::solved(&p);
+    let (_, read) = scenario_read(&sk, &p.scenarios[0].scenario);
+    let said = gcs_core::report::scenario_answers(&sk, &p.scenarios[0], &read);
+    let sinks = said[0].value.expect("the plain plate's sink");
+    assert!(close(value, sinks, 5e-3), "{value} against the plain plate's {sinks}");
+    for at in [None, Some(&start)] {
+        let mut sk = e.sketch.clone();
+        if let Some(x) = at {
+            sk.set_x(x);
+        }
+        let d = diagnose(&mut sk, DiagnoseOptions { settled: false, ..DiagnoseOptions::default() });
+        assert_eq!(d.status, State::Conflict, "{at:?}");
+        assert_eq!(d.conflicts, Some(vec![row]), "{at:?}");
+        let [(id, why)] = &d.out_of_reach[..] else { panic!("{:?}", d.out_of_reach) };
+        assert_eq!(*id, row);
+        assert!(why.starts_with("out of reach of the dimensions that drive it: ")
+                    && why.ends_with("mm is the least they reach here"), "{why}");
+        assert!(gcs_core::diagnose::summary(&d).contains("a requirement out of reach"));
+    }
+    let mut drawn = crate::common::read(src);
+    assert!(solve(&mut drawn.sketch, SolveOpts::default()).success);
+    let d = diagnose(&mut drawn.sketch, DiagnoseOptions::default());
+    assert!(d.out_of_reach.is_empty() && d.status == State::Well, "{:?}", d.status);
 }

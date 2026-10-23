@@ -614,13 +614,17 @@ impl Constraint {
     /// region's or a solid's row is the one meshed when it was compiled (`Sketch::meshed`),
     /// where there is one, so every compile through a solve reads one topology.
     pub fn deflection_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
-        let (sc, at, along) = self.frame_read(sk)?;
-        if let Some(Arg::Int(k)) = self.args.get(2) {
-            let key = usize::try_from(*k).ok().map(|k| (k, at, along));
-            if let Some(r) = key.and_then(|key| sk.meshed.get(&key)) {
-                return Ok(DeflectionRow::Meshed(r.clone()));
-            }
+        let (_, at, along) = self.frame_read(sk)?;
+        if let Some(r) = self.mesh_key(at, along).and_then(|key| sk.meshed.get(&key)) {
+            return Ok(DeflectionRow::Meshed(r.clone()));
         }
+        self.made_row(sk)
+    }
+
+    /// `deflection_row` made where the drawing stands, whatever mesh the sketch holds: what
+    /// elaboration holds and `Sketch::remesh` makes again.
+    pub fn made_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
+        let (sc, at, along) = self.frame_read(sk)?;
         let of = crate::model::Applied::Ent(EntRef::point(at));
         if crate::beams::of_frame(sk, sc, &of) {
             return crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame);
@@ -640,6 +644,23 @@ impl Constraint {
     pub fn frame_unknowns(&self, sk: &Sketch) -> Result<Vec<String>, String> {
         let (sc, at, _) = self.frame_read(sk)?;
         crate::beams::row_unknowns(sk, sc, at)
+    }
+
+    /// Where a driven deflection's mesh is held (`Sketch::meshed`): its scenario's index, its
+    /// point and its direction.  `None` for any other row, and one naming nothing the drawing
+    /// holds.
+    pub fn meshed_key(&self, sk: &Sketch) -> Option<(usize, usize, EntRef)> {
+        if self.kind != CKind::Deflection {
+            return None;
+        }
+        let (_, at, along) = self.frame_read(sk).ok()?;
+        self.mesh_key(at, along)
+    }
+
+    /// `meshed_key` of the point `at` and the direction `along` it was read to name.
+    fn mesh_key(&self, at: usize, along: EntRef) -> Option<(usize, usize, EntRef)> {
+        let Some(Arg::Int(k)) = self.args.get(2) else { return None };
+        Some((usize::try_from(*k).ok()?, at, along))
     }
 
     /// What a deflection driven names: its scenario, its point and its direction.

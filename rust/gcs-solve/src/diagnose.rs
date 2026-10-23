@@ -21,7 +21,7 @@ use crate::linalg::{rank_and_nullspace, Mat};
 use crate::model::{EntRef, Sketch};
 use crate::newton::Method;
 use crate::solve::SolveOpts;
-use crate::system::{Sizes, System};
+use crate::system::{Sizes, Stop, System};
 use crate::system::RANK_TOL;
 use crate::witness::{analyze_with, movable_columns, screen, shaky_warning, WitnessReport};
 use std::collections::{BTreeMap, BTreeSet};
@@ -156,6 +156,10 @@ pub struct Diagnosis {
     pub violated: Vec<u32>,
     /// Minimal conflict set.
     pub conflicts: Option<Vec<u32>>,
+    /// Each requirement out of reach of what drives it where the solve stopped (#510 P7), with
+    /// why in the core's words (`Reach::text`): the conflict set, where there is one, and no
+    /// search was made for another (`System::stop_at`).
+    pub out_of_reach: Vec<(u32, String)>,
     pub warnings: Vec<String>,
     /// Stage 4 analysis, on demand.
     pub witness: Option<WitnessReport>,
@@ -276,6 +280,12 @@ pub fn summary(d: &Diagnosis) -> String {
              stationary point; no verdict on them",
             d.violated.len()
         ));
+    } else if !d.out_of_reach.is_empty() {
+        parts.push(
+            "CONFLICT — a requirement out of reach of what drives it: change what it states, or \
+             what drives it"
+                .to_string(),
+        );
     } else if d.conflicts.as_ref().map(|c| !c.is_empty()).unwrap_or(false) {
         parts.push("CONFLICT — remove one of the listed constraints".to_string());
     } else if !d.violated.is_empty() {
@@ -299,6 +309,19 @@ pub fn summary(d: &Diagnosis) -> String {
         parts.push(format!("{} rigid cluster(s) in the distance graph", d.rigid_clusters.len()));
     }
     parts.join("; ")
+}
+
+/// **What a failed drawing's driven deflections cannot meet**, each with why in words (#510 P7,
+/// S2; `Reach::text`): every failing one out of reach of what drives it, else each at the edge of
+/// the mesh it is read on, as `stop` says.  Empty where neither is the failure.
+fn unmet(sk: &Sketch, stop: Stop) -> Vec<(u32, String)> {
+    let spell = |v| crate::beams::value_text(sk, crate::model::Output::Deflection, v);
+    match stop {
+        Stop::OutOfReach(rows) | Stop::Folded(rows) => {
+            rows.into_iter().filter_map(|(c, v)| v.text(&spell).map(|t| (c, t))).collect()
+        }
+        Stop::Other => Vec::new(),
+    }
 }
 
 /// Constraints that could be deleted without losing any information, given `w`, a basis of the
@@ -733,17 +756,33 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // warm-start better from where the drawing was.  Read as a conflict directly, a solve that ran out on a consistent four-bar named
     // three innocent statements to delete (issue #43).  The extra solve is paid only on this
     // path, which the app is rarely on (it solves before it diagnoses).
+    //
+    // A driven deflection the solve left at the extreme of what drives it, or at the edge of
+    // the mesh it is read on, short of what it states, is the verdict before either (#510 P7,
+    // S2; `unmet`): no solve from here meets it, and every trial of the search would factor its
+    // analysis at every step to find the set it already is — seconds of a page's thread, an edit
+    // at a time.  Read where the drawing stands, or, where that is no stationary point (a page
+    // puts a failed solve's pose back), where the scratch solve stopped.
+    let mut out_of_reach: Vec<(u32, String)> = Vec::new();
     let mut stalled = false;
     let mut unsettled = false;
     if !violated.is_empty() {
         let z = sys.z0(sk);
-        if !sys.stationary(&z) {
+        // where the solve that failed on `sys` began, it said why already
+        let stop = if sys.stopped_from.as_deref() == Some(&sk.get_x()[..]) {
+            sys.stop.clone()
+        } else {
+            sys.stop_at(sk, &z, opts.tol)
+        };
+        out_of_reach = unmet(sk, stop);
+        if out_of_reach.is_empty() && !sys.stationary(&z) {
             let mut scratch = sk.clone();
             let mut ssys = System::new(&scratch);
             if ssys.solve(&mut scratch, SolveOpts::default()).settled() {
                 stalled = true;
             } else {
-                unsettled = true;
+                out_of_reach = unmet(sk, ssys.stop.clone());
+                unsettled = out_of_reach.is_empty();
             }
         }
     }
@@ -864,7 +903,9 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // a pose no solve settled at is searched too where every row reads as holding there: what
     // reads as holding at that pose's extent may not hold at the drawing's (#449)
     let search = !violated.is_empty() || !opts.settled;
-    if !stalled && opts.conflicts.unwrap_or(search) {
+    if !out_of_reach.is_empty() {
+        conflict_set = Some(out_of_reach.iter().map(|(c, _)| *c).collect());
+    } else if !stalled && opts.conflicts.unwrap_or(search) {
         // Candidates = the structurally over-determined block (where a redundancy must live)
         // *together with* whatever is actually violated.  Not just the over-block: a consistent
         // duplicate (two Horizontals on one line) makes an over-block with nothing to do with an
@@ -1034,6 +1075,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
         redundant_distances: redundant,
         violated,
         conflicts: conflict_set,
+        out_of_reach,
         warnings,
         witness: wit,
         dof,

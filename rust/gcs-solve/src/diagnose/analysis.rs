@@ -43,8 +43,10 @@ const STRAIGHT: f64 = 1e-6;
 /// names: no pair of theirs is said to be degenerate.
 const AT_REST: f64 = 1e-8;
 /// A row's first-order change over the numbers that drive it, each moved by its own scale,
-/// below this fraction of its value: it stands at its extreme.
-const STATIONARY: f64 = 1e-6;
+/// below this fraction of how far it is from what it states, and of its own value: it stands at
+/// its extreme, since closing the gap, or changing it by itself, along its rate would move them
+/// across a thousand times their scale.
+const STATIONARY: f64 = 1e-3;
 
 /* -- the motions the supports leave --------------------------------------------------------- */
 
@@ -440,15 +442,24 @@ pub enum Reach {
     /// It does not hold, and the numbers that drive it stand at an extreme of its value: `value`
     /// is the least they reach here where `least` (it states less), else the most.
     Extreme { value: f64, least: bool },
+    /// It does not hold, and the mesh it is read on folds a step further, even made again where
+    /// the solve stopped (#510 S2; `System::stop_at`): `value` is where it was read to.  Not
+    /// `analysis::reach`'s to say, which reads a row where it can be read.
+    Edge { value: f64 },
 }
 
 /// **Whether a row is out of reach of what drives it**: its `value` against what it states
 /// (`target`), its gradient in its columns, each column's `scale` (how far that number is moved
 /// to be moved at all) and which columns are `free`.  A row that does not hold is out of reach
 /// where no column it reads is free, or where its change over the free ones, each moved by its
-/// scale, is below `STATIONARY` of its value: the solve that stopped there stopped at the
-/// extreme of what the row can be, short of what it states.  The extreme is a least where the
-/// row states less (a solve shrinking the gap stops at a minimum below it), else a most.
+/// scale, is below `STATIONARY` of the lesser of its gap to what it states and its own value:
+/// the solve that stopped there stopped at the extreme of what the row can be, short of what it
+/// states.  Not a millionth of the value, since a solve stops at an extreme only to within its
+/// step — a hole's radius driven toward nothing stopped 0.08mm short of it, where the row's rate
+/// is a millionth of its value and not yet less; and not of the gap alone, since a row a hair
+/// from what it states may move slowly and still reach it, and one asked a million times what
+/// it is moves by itself and is no extreme.  The extreme is a least where the row states less
+/// (a solve shrinking the gap stops at a minimum below it), else a most.
 pub fn reach(value: f64, target: f64, grad: &[f64], scale: &[f64], free: &[bool]) -> Reach {
     let size = value.abs().max(target.abs());
     if (value - target).abs() <= crate::solve::SolveOpts::default().acceptance_tol * size {
@@ -459,7 +470,7 @@ pub fn reach(value: f64, target: f64, grad: &[f64], scale: &[f64], free: &[bool]
     }
     let rate: f64 = (0..grad.len()).filter(|&i| free[i]).map(|i| (grad[i] * scale[i]).powi(2))
         .sum::<f64>().sqrt();
-    if rate <= STATIONARY * size {
+    if rate <= STATIONARY * (value - target).abs().min(value.abs()) {
         Reach::Extreme { value, least: value > target }
     } else {
         Reach::Moves
@@ -478,6 +489,11 @@ impl Reach {
                 "out of reach of the dimensions that drive it: {} is the {} they reach here",
                 spell(value),
                 if least { "least" } else { "most" }
+            )),
+            Reach::Edge { value } => Some(format!(
+                "beyond what its region's mesh can follow: the mesh folds a step further, made \
+                 again where the solve stopped, at {}",
+                spell(value)
             )),
         }
     }

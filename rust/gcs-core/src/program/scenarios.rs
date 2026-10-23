@@ -225,14 +225,17 @@ pub(super) fn drive(
                 |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
             // a region's or a solid's row is meshed once, here, and read so through every solve
             // (#510 S2, S3): held before it is validated, so the validation reads that mesh
-            let key = (at as usize, p.i(), along);
-            if let Ok(crate::constraints::DeflectionRow::Meshed(row)) =
-                Constraint::new(CKind::Deflection, args.clone()).deflection_row(sk)
+            let row = Constraint::new(CKind::Deflection, args.clone());
+            let key = row.meshed_key(sk);
+            if let (Some(key), Ok(crate::constraints::DeflectionRow::Meshed(row))) =
+                (key, row.made_row(sk))
             {
                 sk.meshed.insert(key, row);
             }
             if let Err(m) = crate::constraints::validate(sk, CKind::Deflection, &args, &name) {
-                sk.meshed.remove(&key);
+                if let Some(key) = key {
+                    sk.meshed.remove(&key);
+                }
                 diags.push(Diag::within(Code::E040, span, line.stmt, format!(
                     "`{}` cannot drive the drawing: {m}", s.heads[k])));
                 continue;
