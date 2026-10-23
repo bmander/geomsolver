@@ -3305,18 +3305,20 @@ pub(crate) fn arc_bearings<T: Num>(v: &[T]) -> (T, T) {
 }
 
 /// `r·(cos φ, sin φ)`, φ the bearing `t` of the way round the arc whose centre, start and end are
-/// `v`'s six columns.
-fn along_arc<T: Num>(v: &[T], r: T, t: T) -> (T, T) {
+/// `v`'s six columns — from its end where `back` is 1: an arc said to turn clockwise is drawn
+/// from its end (`Sketch::reversed`, #573), and its fraction runs from the start written.
+fn along_arc<T: Num>(v: &[T], r: T, t: T, back: f64) -> (T, T) {
     let (a, sweep) = arc_bearings(v);
+    let t = if back != 0.0 { T::cst(1.0) - t } else { t };
     let (s, c) = (a + t * sweep).sin_cos();
     (r * c, r * s)
 }
 
-/// Columns of `point_along_arc`: (p, c, s, e, r, t) — the point, the arc's centre, start and end,
-/// its radius, and the fraction.  `p − (c + r·(cos φ, sin φ))`, φ the bearing `t` of the way
-/// round.  Degree 1.
-fn point_along_arc_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
-    let (x, y) = along_arc(&v[2..8], v[8], v[9]);
+/// Columns of `point_along_arc`: (p, c, s, e, r, t), K = (back) — the point, the arc's centre,
+/// start and end, its radius, and the fraction, read from the end where `back` is 1.  `p − (c +
+/// r·(cos φ, sin φ))`, φ the bearing `t` of the way round.  Degree 1.
+fn point_along_arc_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    let (x, y) = along_arc(&v[2..8], v[8], v[9], k[0]);
     [v[0] - (v[2] + x), v[1] - (v[3] + y)]
 }
 
@@ -3328,14 +3330,14 @@ fn point_along_line_3<T: Num>(v: &[T], k: &[f64]) -> [T; 3] {
     point_along_line_rows::<T, 3>(v, k)
 }
 
-/// Columns of `point_along_arc3`: (X, C, r, du, dv, c, s, e, t) — the point's hidden point, the
-/// centre's, the radius, the arc's plane's axes, then the centre, start and end as drawn in it and
-/// the fraction.  `X − (C + r·(cos φ û + sin φ v̂))`, φ read in the plane as `point_along_arc`
-/// reads it.  Degree 1.
-fn point_along_arc3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 3] {
+/// Columns of `point_along_arc3`: (X, C, r, du, dv, c, s, e, t), K = (back) — the point's hidden
+/// point, the centre's, the radius, the arc's plane's axes, then the centre, start and end as
+/// drawn in it and the fraction.  `X − (C + r·(cos φ û + sin φ v̂))`, φ read in the plane as
+/// `point_along_arc` reads it.  Degree 1.
+fn point_along_arc3_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 3] {
     let (x, c3) = (vec3(v, 0), vec3(v, 3));
     let (u, w, _) = frame(vec3(v, 7), vec3(v, 10));
-    let (cs, sn) = along_arc(&v[13..19], v[6], v[19]);
+    let (cs, sn) = along_arc(&v[13..19], v[6], v[19], k[0]);
     [0, 1, 2].map(|t| x[t] - (c3[t] + cs * u[t] + sn * w[t]))
 }
 
@@ -3821,9 +3823,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     Kernel { name: "drag_seen", n_res: 3, n_par: 3, degree: 1, n_const: 13, res: drag_seen_res, jac: drag_seen_jac, const_jac: None, form: None },
     num_kernel!("line_on_axis", line_on_axis_rows, n_res: 4, n_par: 12, degree: 1, n_const: 6),
     num_kernel!("point_along_line", point_along_line_2, n_res: 2, n_par: 7, degree: 1, n_const: 0),
-    num_kernel!("point_along_arc", point_along_arc_rows, n_res: 2, n_par: 10, degree: 1, n_const: 0),
+    num_kernel!("point_along_arc", point_along_arc_rows, n_res: 2, n_par: 10, degree: 1, n_const: 1),
     num_kernel!("point_along_line3", point_along_line_3, n_res: 3, n_par: 10, degree: 1, n_const: 0),
-    num_kernel!("point_along_arc3", point_along_arc3_rows, n_res: 3, n_par: 20, degree: 1, n_const: 0),
+    num_kernel!("point_along_arc3", point_along_arc3_rows, n_res: 3, n_par: 20, degree: 1, n_const: 1),
     num_kernel!("mapped", mapped_rows, n_res: 2, n_par: 16, degree: 1, n_const: 0),
     num_kernel!("mapped_similar", mapped_similar_rows, n_res: 2, n_par: 12, degree: 1, n_const: 1),
     num_kernel!("mapped_circle", mapped_circle_rows, n_res: 3, n_par: 14, degree: 1, n_const: 1),

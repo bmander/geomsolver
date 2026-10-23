@@ -400,10 +400,23 @@ placement carries inside the blank; CLI test readers zero the offset.
   an arc** ([0.127], S6): an arc over points in space faces its minted plane as its points do, so
   L0's S-bend — a left turn then a right — is one chain (`in_space_a_chain_turns_either_way_at_an_arc`,
   Pappus, its second bend's plane facing −z).  **In a plane, an arc may turn clockwise** ([0.128],
-  `Decl::sense`, parsed for an arc as `sense: cw`, read as `Deferred::Clockwise`): drawn by
-  `arcs_in_space` in its plane turned over (normal reversed), counter-clockwise there from its
-  start, so a chain still enters every link at its start and its legs run forward — no leg is
-  walked end to start — and the S-bend in `std.top` is one chain
+  `Decl::sense`, parsed for an arc as `sense: cw`, read as `Deferred::Clockwise`).  **One no
+  chain enters at its start is the counter-clockwise arc from its end** (#573): `arcs_in_space`
+  swaps its start and end in its own plane and files it in `Sketch::reversed`, so it owns what
+  `arc(center: k, start: b, end: a)` owns — no minted plane, whose attitude and origin cost 36
+  unknowns an arc (each `ring` copy its own) and took the blame for the drawing's freedom — and
+  everything that reads an end or a fraction reads it as written: `resolve::follow` and
+  `Sketch::scalar_names` (`--where`, a seed's read) through `drawn_from_end`, a tangency's `at:
+  start|end` (`Constraint::contact_point`), a fraction's `t` (`point_along_arc`'s constant, its
+  seed in `infer`), a frame along it (`guide::Path::read`), a seed's step along it; `graft`, the
+  JSON (`"reversed"`) and the lifted text (`sense: cw`, ends as written) keep it.  A clockwise
+  half turn is E060 still.  `tests/clockwise_arc.rs`: the issue's arc and its ring at 9 unknowns
+  and no plane more, a free radius named as the arc's, the names, a tangency at `start` and
+  `t == 0.25` against the counter-clockwise arc's `end` and `0.75`, a copy, the JSON and the
+  lifted text read back.  One a chain enters at its start is drawn by `arcs_in_space` in its
+  plane turned over (normal reversed), counter-clockwise there from its start, so a chain still
+  enters every link at its start and its legs run forward — no leg is walked end to start — and
+  the S-bend in `std.top` is one chain
   (`a_chain_in_a_plane_turns_right_at_an_arc_said_to_turn_clockwise`).  **A chain walks an arc it
   enters at its end from there** ([0.129]): `program::entities::walked_back` reads each named
   chain before the arcs are drawn — an arc whose end the link before leaves at, or, first, whose
