@@ -9,8 +9,8 @@ use super::resolve::{Operand, Resolver};
 use super::{Code, Diag};
 use crate::ir::{Operation, Statement};
 use crate::model::{
-    Applied, EntKind, EntRef, Grade, InPlane, Load, LoadKind, LoadValue, MeshedKey, Output,
-    PlaneReading, Requirement, Scenario, Sketch, Support,
+    Applied, EntKind, EntRef, Grade, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading,
+    Requirement, Scenario, Sketch, Support,
 };
 use crate::syntax::{ItemKind, LoadText, Ref, Span, StmtId};
 use crate::units::Dim;
@@ -213,25 +213,27 @@ pub(super) fn drive(
                 sk.scenarios.len() as i64 - 1
             });
             let (Applied::Ent(p), Some(along)) = (&r.of, r.along) else { continue };
-            let kind = CKind::Deflection;
             let args = vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)];
-            let key = MeshedKey::Deflection { scenario: at as usize, at: p.i(), along };
             let name =
                 |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
             // a region's or a solid's row is meshed once, here, and read so through every solve
             // (#510 S2, S3): held before it is validated, so the validation reads that mesh
-            if let Ok(crate::constraints::InteriorRow::Meshed(row)) =
-                Constraint::new(kind, args.clone()).interior_row(sk)
+            let row = Constraint::new(CKind::Deflection, args.clone());
+            let key = row.meshed_key(sk);
+            if let (Some(key), Ok(crate::constraints::InteriorRow::Meshed(row))) =
+                (key, row.made_row(sk))
             {
                 sk.meshed.insert(key, row);
             }
-            if let Err(m) = crate::constraints::validate(sk, kind, &args, &name) {
-                sk.meshed.remove(&key);
+            if let Err(m) = crate::constraints::validate(sk, CKind::Deflection, &args, &name) {
+                if let Some(key) = key {
+                    sk.meshed.remove(&key);
+                }
                 diags.push(Diag::within(Code::E040, span, line.stmt, format!(
                     "`{}` cannot drive the drawing: {m}", s.heads[k])));
                 continue;
             }
-            let id = sk.add_quiet(Constraint::new(kind, args));
+            let id = sk.add_quiet(Constraint::new(CKind::Deflection, args));
             // made by the scenario's statement, and stood where its requirement is written
             map.record(st, super::source_map::Made::Con(id));
             if let Some(site) = map.of_constraint.get_mut(&id) {

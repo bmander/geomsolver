@@ -156,7 +156,7 @@ fn drive(
     let args = vec![Arg::Int(index as i64), Arg::Num(m.value)];
     let key = MeshedKey::Measure(index);
     if let Ok(crate::constraints::InteriorRow::Meshed(row)) =
-        Constraint::new(kind, args.clone()).interior_row(sk)
+        Constraint::new(kind, args.clone()).made_row(sk)
     {
         sk.meshed.insert(key, row);
     }

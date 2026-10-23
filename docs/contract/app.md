@@ -375,7 +375,10 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   reach it, and only those, open on a `subject` — the selection, else what it was last opened on,
   so focusing a constraint does not pull it away.  `openPanel` is how a clicked callout or the
   banner's culprits pick without selecting; `closePanel`, wired to `onSelect`, is a press on
-  nothing.
+  nothing.  The banner names a conflict's culprits to remove (`lists.ts::refreshBanner`); a
+  requirement out of reach of what drives it (`Diagnosis.outOfReach`, #510 P7) it says with the
+  core's words for why — `…: out of reach of the dimensions that drive it: 4.79mm is the least
+  they reach here` — since what is wrong is the number stated, not a statement to delete.
 - **The colouring is the parser's own scan** (`syntax::highlight`), not a second lexer in
   TypeScript, so a colour and the parser cannot disagree.  `Tint` names the classes and the
   stylesheet says what they look like; the front end writes one element per run, parsing nothing.

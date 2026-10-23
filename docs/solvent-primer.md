@@ -240,13 +240,13 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
 | `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s words (1.9): `use std (horizontal)`, then `a horizontal b` |
 | `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. Write it rather than `distance(0, along: …)`, which is refused |
-| `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned. `l1 angle(l3, l4) l2` equates two angles |
+| `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
 | `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
-| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), two lines in a plane only. `a parallel(sense: same) b`: the two run alike (`opposite`: apart), lines or axes, in a plane or in space; alone, either way, the seed's. `coincident` between a line and an axis or two axes takes the same `sense:` |
+| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), in a plane; in space only about an axis, `perpendicular(sense: ccw, about: a)`. `a parallel(sense: same) b`: the two run alike (`opposite`: apart), lines or axes, in a plane or in space; alone, either way, the seed's. `coincident` between a line and an axis or two axes takes the same `sense:` |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
@@ -262,7 +262,8 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `a distance(60, along: u) b` | `b.x − a.x = 60`, the run along the view's `u`; `along: v` is the rise, along its `v` (world z in `std.front`); `right`, `up`, … say it as a word |
 | `a distance(60, along: t) b` | `(b − a)·t̂ = 60` along axis or line `t` |
 | `a level(t) b` | level along `t`; `std`'s `a horizontal b` is `a level(up) b` |
-| `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s |
+| `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s, about the plane's normal |
+| `d1 angle(30deg, about: a) d2` | 30° about axis `a`, right handed, from `d1`'s shadow on the plane square to `a` to `d2`'s: lines or axes, in space; in a plane `a` may only be `P.normal` (E040) |
 | `l1 angle(30, sense: cw) l2` | 30° clockwise: `angle(-30)` said openly |
 | `l1 angle(l3, l4) l2` | angle `l1 → l2` equals angle `l3 → l4` |
 | `l1 angle(l3, l4, sense: cw) l2` | it equals the **mirror image** of `l3 → l4` |
@@ -320,14 +321,15 @@ their places in space; no selector is needed:
 | `a distance(30) b` | the true length |
 | `a distance(5) l`, `l1 distance(17.5) l2` | to the infinite line; along the common perpendicular |
 | `a coincident l`, `a coincident c` | on the line's extension; on the circle in its own view |
-| `l1 angle(90deg) l2` | the **unsigned** angle, strictly between 0° and 180° (say `parallel` for 0°) |
+| `l1 angle(90deg) l2` | the **unsigned** angle, strictly between 0° and 180° (say `parallel` for 0°); `angle(90deg, about: a)` the turn about `a` |
 | `parallel`, `perpendicular`, `equal` | directions, and true lengths |
 | `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
 | `a distance(20, along: std.z) b` | how far apart along the axis, in space |
 
 A word with no meaning in space — `horizontal`, a view's own `along: u` between two points (name
 the axis instead, `along: std.x`), `tangent` between drawn figures, the angle-equals-angle form — is **E062** across
-views; `sense:` and `side:` there are **E040**. Radii mean the same in every view.
+views; `side:` there is **E040**, and so is `sense:` unless `about:` names the axis its turn is read
+about. Radii mean the same in every view.
 
 ### 1.6 Values, unknowns and units
 
@@ -1194,6 +1196,7 @@ reads it.
 t := axis hint(dir: (0.8, 0, 0.5))   // the seed is a direction, normalised
 t perpendicular std.y
 t angle(30deg) std.x                  // unsigned, in space; 0° or 180° is E040: say `parallel`
+t angle(30deg, about: std.z) std.x    // or directed: the turn about std.z, one root
 p coincident t                        // a point on it gives it its place
 t coincident s                        // one line, either way round (four rows)
 l coincident t                        // a drawn line lying on it (four rows)

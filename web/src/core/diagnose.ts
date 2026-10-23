@@ -49,6 +49,9 @@ export interface Diagnosis {
   redundantDistances: Constraint[];
   violated: Constraint[];
   conflicts: Constraint[] | null;  /* minimal conflict set */
+  /* each requirement out of reach of what drives it where the solve stopped, and why in the
+   * core's words: the conflict set, where there is one (#510 P7) */
+  outOfReach: { constraint: Constraint; text: string }[];
   warnings: string[];
   witness: WitnessReport | null;   /* Stage 4 analysis, on demand */
   dof: number;
@@ -101,6 +104,7 @@ interface RawDiagnosis {
   redundantDistances: number[];
   violated: number[];
   conflicts: number[] | null;
+  outOfReach: [number, string][];
   warnings: string[];
   witness: Parameters<typeof reportFrom>[1] | null;
   dof: number;
@@ -150,6 +154,10 @@ function fromRaw(sk: Sketch, d: RawDiagnosis): Diagnosis {
     redundantDistances: cons(d.redundantDistances),
     violated: cons(d.violated),
     conflicts: d.conflicts === null ? null : cons(d.conflicts),
+    outOfReach: d.outOfReach.flatMap(([id, text]) => {
+      const c = sk.constraintById(id);
+      return c ? [{ constraint: c, text }] : [];
+    }),
     warnings: d.warnings,
     witness: d.witness ? reportFrom(sk, d.witness) : null,
     dof: d.dof,

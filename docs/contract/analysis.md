@@ -181,7 +181,7 @@ names another.
 - **A scenario names a beam as the beam it is** (#510 S0; `Applied::Beam`, its index on
   `Sketch::beams`). `Applied::entity` is `None` for one, and `Applied::solid` names a solid's.
   A beam is what a body load (`accelerate arm …`), a force spread along it (`load arm f along:
-  d`) and an output (`mode(arm, 1)`) are of — and, no scenario's, a mass (`mass(10kg) arm`, [0.174]); a support on one is **E040** ("hold its
+  d`) and an output (`mode(arm, 1)`) are of — and, no scenario's, a mass (`mass(10kg) arm`, [0.175]); a support on one is **E040** ("hold its
   ends"), and so is a pressure. `Stated::heads` keeps each requirement's output as written,
   `deflection(tip, along: down)`, for the report.
 
@@ -213,7 +213,7 @@ names another.
   - `deflection(X[, along: d])`: a joint's move along `d` (signed), or its length; of a beam or
     a line, the worst over its nodes;
   - `compliance(B)`: `fᵀu`, the work the scenario's loads do on the frame;
-  - ~~`mass(B)`~~: `ρ A L` over the members `B` names — through 0.173; [0.174] a mass is the
+  - ~~`mass(B)`~~: `ρ A L` over the members `B` names — through 0.174; [0.175] a mass is the
     drawing's (below);
   - `mode(B, n)`: the frame's `n`th frequency, `√λₙ / 2π` of `eigen::lowest(K, M)`;
   - `buckling(B)`: the least factor on the loads, `eigen::buckling(K, K_G)`, `K_G` from each
@@ -277,7 +277,7 @@ names another.
   the flat solve, the decomposition and the diagnosis take it as any row: the sized cantilever
   leaves no freedom (`a_requirement_sizes_a_section`). Any other driving requirement — a solid's,
   or a frame's mode, buckling, compliance or safety, or a deflection with no `along:` — compiles
-  nothing, and the report says nothing drives it yet (a mass is the drawing's since [0.174],
+  nothing, and the report says nothing drives it yet (a mass is the drawing's since [0.175],
   below). The kind has no free twin (a
   scenario's number reads no unknown) and is in `undrawn!`: a requirement's figure is the deformed
   frame, the drawing's to say.
@@ -349,7 +349,7 @@ names another.
 - **What S1 leaves.**
   - **One output drives**: a deflection of a joint along a direction. A deflection with no
     `along:` (a length, not linear in `u`), a beam's worst (a maximum), a compliance (`f(x)ᵀu`,
-    its own `∂J/∂x`), ~~a mass~~ (the drawing's row since [0.174], below), a mode (`φᵀ(K' − λM')φ`, P2's open derivative) and a safety (a
+    its own `∂J/∂x`), ~~a mass~~ (the drawing's row since [0.175], below), a mode (`φᵀ(K' − λM')φ`, P2's open derivative) and a safety (a
     maximum: S2's aggregation) are claims yet.
   - **A drag and a rebuild drop the row**: `graft` copies neither beams nor scenarios, so a part a
     gesture moves, a copy and a paste carry no frame row. Carrying them means remapping a beam's
@@ -448,7 +448,7 @@ names another.
 
 - **What a region answers** (#510 S2; `prisms::answer`): `deflection` a node's move in the plane
   along `d` (or its length), a side's or the solid's worst; `compliance` `fᵀu`; ~~`mass` `ρ t Σ A`~~
-  (the drawing's since [0.174]);
+  (the drawing's since [0.175]);
   `mode` `eigen::lowest(K, M)`; `safety` the yield over the greatest von Mises stress at the nodes
   `B` names, each node's stress the average of its elements' there. **No answer, and why**: a
   region its supports leave free, named in the solver's words with every node held across the
@@ -492,6 +492,31 @@ names another.
   written (**E040**): a region bounded by a spline or a curve (not moved yet), drawn in a plane the
   solve turns, under a direction the solve moves, or left free (`Row::check`).
 
+- **A region is meshed again where its mesh folds** (#510 S2; `System::stop_at`'s
+  `Stop::Folded`, `System::remeshed`). A mesh moved far enough folds: the drilled plate's
+  hole, meshed at 18mm, cannot be read past about 26.93mm, short of the 27.7mm a quarter of its
+  load needs to sink its `sag`. A failed document solve is *folded* where a driven deflection over
+  a mesh held on the sketch cannot be read where it stopped, or a step on along its rate — its
+  own Newton step, no longer than `EDGE` (1e-3) of the extent, or that step back, since on a
+  mesh about to fold the rate may point either way (its edge). Folded, the solve runs none of its
+  `RETRIES` (each reads the same mesh to the same fold); then, after `RECOVERIES`, each such row
+  is meshed again where the drawing stands (`Sketch::meshed` replaced; a row that cannot be
+  meshed there keeps its mesh), compiled and solved on from there, up to `REMESHES` (3) times,
+  each kept where it settles or ends nearer to holding — how far the drawing reads is what is
+  said of it — else the sketch and its meshes put back. Folded where it *starts* (a mesh an
+  earlier solve made, the drawing since put back) it is meshed where it stands. A driven answer
+  is its mesh's, so one solved on a mesh made elsewhere agrees with the drawing's own to the
+  meshes' discretisation. Where it was meshed again is kept (`Sketch::meshed_at`, the last
+  pose; put back with the sketch) so a copy of the source reads on the same meshes (`mesh_at`,
+  below: a page's worker). A drawing still at an edge when the meshes run out is said so, as a
+  requirement out of reach is (`Reach::Edge`: `beyond what its region's mesh can follow: the
+  mesh folds a step further, made again where the solve stopped, at 56.98mm`), and searched no
+  further. The plate
+  is the gate (`a_regions_mesh_is_made_again_where_it_folds`): read at 26, at its edge a hair
+  short of 26.93, folded past it; under a quarter load, and asked to sink 100mm, it holds what it
+  states (a hole of 27.67mm; one 0.16mm from the plate's edge); and put back and asked its own
+  `sag` on the mesh made by the edge, it solves to the drawing's radius within 0.5%.
+
 - **What the report says of a driven requirement is its row's** (#510 S2;
   `report::scenario_answers`). The row's value at the solved drawing (its residual plus what it
   states) is the requirement's value, so `driven == 0.5mm, held` judges what the solve held. A
@@ -517,7 +542,7 @@ names another.
 - **What S2 leaves.**
   - **Stress drives nothing yet.** A factor of safety is read at the nodes, a maximum: driving it
     needs its aggregation (a KS function or a p-norm, with its error reported) and its gradient,
-    and the edge diagnosis already says where it has no answer. ~~Mass~~ (a row since [0.174],
+    and the edge diagnosis already says where it has no answer. ~~Mass~~ (a row since [0.175],
     below), compliance and modes are claims too.
   - **The mesh is the compile's**, made where the drawing stands when it is elaborated: a region
     whose seeds are far from its solution (a circle seeded at radius 1 that the solve grows ninefold)
@@ -630,7 +655,7 @@ names another.
 
 - **What a solid answers** (#510 S3; `bodies::answer`): `deflection` a node's move along `d` (or its
   length), a face's or the solid's worst; `compliance` `fᵀu`; ~~`mass` `ρ ΣV`~~ (the drawing's
-  since [0.174]); `mode`
+  since [0.175]); `mode`
   `eigen::lowest(K, M)`; `buckling` the least factor `eigen::buckling(K, K_G)` reads, `K_G` of the
   stress the scenario's loads make; `safety` the yield over the greatest von Mises stress at the
   nodes it names, each node's the average of its elements'. Each is worked out once and only where
@@ -730,7 +755,7 @@ names another.
     the adjoint would give with the derivative: it costs a coarser mesh, and promises a bound only
     where the reading converges monotonically.
   - **Stress, modes, buckling and compliance drive nothing yet**, as S2 left them; ~~mass~~ drives
-    since [0.174] (below).
+    since [0.175] (below).
   - **A filled body's point is the node nearest it**, so a support at a point off a vertex holds a
     little of what it should not (the rod's 0.14%). A degenerate pair of a solid's modes (the
     plate's two) is found and not yet named with its ring (P7's word).
@@ -741,7 +766,7 @@ names another.
     column at a time, and each read meshes afresh, twice (P5's two caches are still not kept).
 
 - **What a body is made of is the drawing's, never a scenario's** (#510; `model::Measured`,
-  `program::measures`, `CKind::Mass`, `CKind::Volume`, `interior::Reads`, §9.11 [0.174]). A mass
+  `program::measures`, `CKind::Mass`, `CKind::Volume`, `interior::Reads`, §9.11 [0.175]). A mass
   and a volume answer no load, so `mass(m) B` and `volume(v) B` are relations of the drawing —
   operator words (`OPERATORS`, `builtin_word`'s prefix words) settled by no table, since `B` may
   be a beam, which is no entity, and beams are read last: a relation in either word is skipped
@@ -878,7 +903,13 @@ names another.
   `index`, and the picture of the scenario asked for — flat arrays, places and moves to seven
   figures — or `null`. **The page reads it in the mesh worker** (a `scenario` job, its own
   instance), never on its own thread: a solid read in three dimensions is seconds. The job is
-  keyed by the text, the pose and the scenario drawn, as the claims' is; the answers already said
+  keyed by the text, the pose, where its meshes were made again and the scenario drawn, as the
+  claims' is by the first two. The worker reads the text afresh, so it meshes it where the page
+  did (`Sketch::meshed_at`, `gcs_sketch_meshed_at`; `Sketch::mesh_at`, `gcs_sketch_mesh_at`;
+  `Sketch.meshedAt`/`meshAt`) before it stands it at the pose: a driven row is read on the mesh it
+  was solved on, to the bit (`core.test.ts`, `a drawing meshed again is read on its meshes by a
+  copy of its source`), and held, where its own mesh, made where it was drawn, folds before the
+  pose and would read the requirement unmet. The answers already said
   stand until the new ones come, and the picture goes at once (it is of a pose the edit may have
   left). With no worker (node) the reading is made at once, so the tests see what the page would
   (`app.test.ts`, `choosing a scenario writes nothing, and draws its marks and how the drawing
@@ -1065,7 +1096,9 @@ names another.
   already in hand — supports, a body's boundary, the pairs a solve returned, a row's value and
   gradient — and none off a mesh: the motions supports leave free, unbounded stress at an edge, a
   degenerate modal pair, and a requirement out of reach. A word is a report, never a row: it
-  changes no solve and no count.
+  changes no count and no answer. One word ends work early: a requirement out of reach where a
+  solve stopped is not retried and not searched for a conflict (below), since neither could meet
+  it.
 
 - **A rigid-body motion is named from the supports, never from a factor** (`analysis::freedoms`).
   P1's Cholesky refuses only a pivot lost to rounding and P5's interior a least pivot under
@@ -1124,12 +1157,42 @@ names another.
   interior's row). A row that holds to what the solver accepts (`SolveOpts::acceptance_tol`, at the
   size of the larger of its value and what it states) is `Reached`. One that does not
   is `Held` where no column it reads is free. It is `Extreme` where its change over the free
-  columns, each moved by its own scale, is below `STATIONARY` (1e-6) of its value. A solve that
-  stopped there stopped at the extreme of what the row can be, short of what it states: the least
-  it reaches where it states less, else the most. Otherwise it `Moves`, and there is no verdict.
+  columns, each moved by its own scale, is below `STATIONARY` (1e-3) of the lesser of its gap to
+  what it states and its own value: closing the gap, or changing the row by itself, along its
+  rate would move them across a thousand times their scale. A solve that stopped there stopped
+  at the extreme of what the row can be, short of what it states: the least it reaches where it
+  states less, else the most. Otherwise it `Moves`, and there is no verdict. Not a millionth of
+  the value: a solve reaches an extreme only to within its step (the drilled plate's hole driven
+  toward nothing stops 0.08mm short, its row's rate a millionth of its value). Not of the gap
+  alone: a row a hair from what it states may move slowly and still reach it, and one asked a
+  million times what it is moves by itself and is no extreme.
   The interior moves a coordinate by the structure's extent and an area by itself. Driving two
   bars' rise to half their least sink, a damped Newton stops at `h = √2 w`, and the verdict is
   the closed form's `3√3 P w / (4EA)` (`a_requirement_out_of_reach_says_so`).
+
+- **A requirement out of reach is the verdict on a failed solve** (`System::stop_at`'s
+  `Stop::OutOfReach`, `System::reach`; read once where an attempt stops, `System::stop`, and
+  asked by every retry and recovery after it). A driven deflection (`CKind::Deflection`) that does not hold where a solve
+  stopped is read by `interior::reach_of` — its output, what it states and the rate the solve
+  steps on — over the parameters it reads that the solve moves, each across the drawing's extent
+  in its own units (`Param::scale`). Where at least one fails and every one that fails is `Held`
+  or `Extreme`, the failure is the requirement's: any other row that does not hold is what the
+  pull toward it made (a hole's radius driven toward nothing reads its circle's row over a size
+  that went with it). The solve then runs none of its `RETRIES` nor its recoveries (each starts
+  again toward the same extreme, every step an analysis factored), and the diagnosis — where the
+  drawing stands; at the pose a failed solve began from, as on a page that puts a failed
+  solve's pose back, what that solve said (`System::stopped_from`), solving nothing again; else
+  where its scratch solve stopped when the pose is no stationary point — files the rows as the
+  conflict
+  (`Diagnosis::out_of_reach`, each with `Reach::text`; report `outOfReach`, `[id, words]`) and
+  searches for no other. The summary says `CONFLICT — a requirement out of reach of what drives
+  it: change what it states, or what drives it`, `solventc` prints each row with its words in
+  place of a `conflict:` line, and the page's banner says them. The drilled plate loaded ten
+  times over is the gate (`a_requirement_out_of_reach_is_the_verdict`): its least, with the hole
+  driven toward nothing, within 0.5% of the plain plate's sink, and the same verdict at both
+  poses; on the page it is answered in a few seconds where the cascade and the search took half a
+  minute. A hole driven *larger* than its mesh, made where it was compiled, can follow is not
+  out of reach: its mesh is made again where it folds (below).
 
 - **A scenario's words, at the solved drawing** (`analysis::scenario_words`). Its supports'
   points come from what each names: a point; a line's ends; a solid's box (a solid spans space);
@@ -1146,7 +1209,8 @@ names another.
   document still exits 0.
 
 - **What P7 leaves to later stages.** No word yet reads an analysis's own results: the degenerate
-  pair and the out-of-reach verdict are said of pairs and rows a caller hands them, and a frame's
+  pair is said of pairs a caller hands it, the out-of-reach verdict of rows a caller hands it and
+  of a failed solve's driven deflections (above), and a frame's
   modes are S0's, but no repeated pair of theirs is named yet, and no scenario compiles a
   driving row until S1. The ring a pair is the ring's is
   given as a map of the freedoms; reading it off a drawing's `ring` is the modal stage's. The

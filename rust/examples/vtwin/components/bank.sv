@@ -10,10 +10,10 @@
 // pivot along the rod and the piston's at the crown down it, so the two statements place both
 // parts, and the whole bank turns with the crank.  The cylinder is mated as a part is, by its
 // own datums (#548): its origin on the pivot, its z up the rod, the way the rod runs from the pin
-// (#535), and its x in the plane of swing, so its y is square to that plane.  Which way round
-// the y stands is its start's, the world's y, which is one of the two already.  Nothing here
-// reads the crank angle: the pin is wherever the assembly's `t` puts it, and the drawing is followed along
-// `t` from where it starts.  The crown's seed is where the closed form puts it, which is what
+// (#535), and its x in the plane of swing a quarter turn about z clockwise of that plane's normal
+// (#558), so its y stands square to the plane, against the normal.  Nothing here reads the crank
+// angle: the pin is wherever the assembly's `t` puts it, and the drawing is followed along `t`
+// from where it starts.  The crown's seed is where the closed form puts it, which is what
 // keeps the solve on the branch with the cylinder over the pin rather than folded back through
 // the pivot.
 
@@ -41,7 +41,7 @@ part Bank(pin: point, piv: point, z: Length) {
   cyl := components.cylinder.Cylinder(fw: z - D / 2)
   cyl.std.origin coincident piv
   cyl.std.z parallel(sense: same) rod
-  cyl.std.x perpendicular pin.plane.normal
+  cyl.std.x perpendicular(sense: cw, about: cyl.std.z) pin.plane.normal
   pis := components.piston.Piston(piston_axes)
   // what a view across the crank axis shows of the cylinder: the corners of its outline and of
   // its bore that stand highest and lowest, which are the left-hand top and right-hand bottom

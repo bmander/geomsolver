@@ -119,6 +119,8 @@ export interface Abi {
   gcs_sketch_rectangle(h: number, a: number, x1: number, y1: number, name: number, nameLen: number, out: number): void;
   gcs_sketch_get_x(h: number, out: number): void;
   gcs_sketch_set_x(h: number, x: number, n: number): number;
+  gcs_sketch_meshed_at(h: number, out: number): number;
+  gcs_sketch_mesh_at(h: number, x: number, n: number): number;
   gcs_sketch_perturb(h: number, sigma: number, seed: number): void;
   gcs_sketch_topology_key(h: number): number;
   gcs_sketch_extent(h: number): number;

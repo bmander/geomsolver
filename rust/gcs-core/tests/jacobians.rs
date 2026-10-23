@@ -339,6 +339,16 @@ fn all_constraints(seed: u32) -> Sketch {
             vec![e(axis_b), e(axis_a), Arg::Str("opposite".into())]),
         Constraint::new(CKind::LineOnAxis, vec![e(me1), e(axis_a), Arg::Str("same".into())]),
         Constraint::new(CKind::LineOnAxis, vec![e(me2), e(axis_a), Arg::Str("opposite".into())]),
+        // the turn about an axis or a line, from a line or an axis or a line drawn in a plane, and
+        // the sided perpendicular, a quarter of it (#558)
+        Constraint::new(CKind::AngleAbout,
+            vec![e(me1), e(axis_b), e(axis_a), Arg::Num(0.7), Arg::Str(String::new())]),
+        Constraint::new(CKind::AngleAbout,
+            vec![e(fold_line), e(me2), e(me1), Arg::Num(2.5), Arg::Str("cw".into())]),
+        Constraint::new(CKind::PerpendicularAbout,
+            vec![e(axis_a), e(me1), e(axis_b), Arg::Str("ccw".into())]),
+        Constraint::new(CKind::PerpendicularAbout,
+            vec![e(me2), e(in_pa), e(me1), Arg::Str("cw".into())]),
         // an axis and a plane: on it, along it and square to it, over a free plane and a held one;
         // and two planes a distance apart
         Constraint::new(CKind::AxisOnPlane, vec![e(axis_a), e(pce)]),
@@ -387,6 +397,12 @@ fn all_constraints(seed: u32) -> Sketch {
         },
         fx(CKind::Angle3, vec![e(me1), e(me2)], "t3 + 0.5", 0.9),
         fx(CKind::Angle3, vec![e(axis_b), e(me2)], "t3r + 0.5", 0.9),
+        // the turn about an axis, its sense turning the map (#558)
+        {
+            let mut c = fx(CKind::AngleAbout, vec![e(me1), e(axis_b), e(axis_a)], "ta + 0.5", 0.7);
+            c.args.push(Arg::Str("cw".into()));
+            c
+        },
         fx(CKind::Ordinate, vec![e(qe), e(EntRef::point(lc)), e(pce)], "n3 + 1", 1.2),
         fx(CKind::Ordinate, vec![e(s3), e(pe), e(pae)], "-2 * n4", 0.5),
         fx(CKind::Ordinate, vec![e(s3), e(qe), e(axis_b)], "o3 + 1", 1.2),

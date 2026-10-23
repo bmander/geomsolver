@@ -1358,6 +1358,47 @@ test('a document says what its load scenarios answer, a claim refuted as well as
   plain.dispose();
 });
 
+test('a requirement out of reach is said with why, where the page diagnoses it', () => {
+  // the drilled plate loaded ten times over sinks least with no hole at all, far more than its
+  // sag (#510 P7): the solve fails, and diagnosed at the pose the drawing had — what a page puts
+  // back after a failed solve — the row is the conflict, with the core's words for why
+  const src = examples.source('drilled_plate').replace(/^P := 2kN$/m, 'P := 20kN');
+  const doc = Document.read(src);
+  assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+  const before = doc.sketch.getX();
+  assert.equal(solve(doc.sketch).success, false);
+  doc.sketch.setX(before);
+  const d = diagnose(doc.sketch, { settled: false, solidClaims: false });
+  assert.equal(d.status, 'conflict');
+  assert.equal(d.outOfReach.length, 1, JSON.stringify(d.outOfReach.map((r) => r.text)));
+  assert.deepEqual(d.conflicts, [d.outOfReach[0].constraint]);
+  assert.match(d.outOfReach[0].text,
+    /^out of reach of the dimensions that drive it: 4\.79\d*mm is the least they reach here$/);
+  doc.dispose();
+});
+
+test('a drawing meshed again is read on its meshes by a copy of its source', () => {
+  // the drilled plate under a quarter of its load is solved on a mesh made again where the
+  // first one folded (#510 S2): a page's worker reads the same text afresh, meshes it where the
+  // page did (`meshedAt`, `meshAt`) and stands it where it solved, and reads what the page does
+  const src = examples.source('drilled_plate').replace(/^P := 2kN$/m, 'P := 0.5kN');
+  const page = Document.read(src);
+  assert.ok(page.ok, JSON.stringify(page.diagnostics));
+  assert.equal(page.sketch.meshedAt(), null);
+  assert.ok(solve(page.sketch).success);
+  const at = page.sketch.meshedAt();
+  assert.ok(at !== null && at.length === page.sketch.getX().length);
+  const worker = Document.read(src);
+  worker.sketch.meshAt(at);
+  worker.sketch.setX(page.sketch.getX());
+  const [mine, theirs] = [page, worker].map((d) => d.scenarios()[0].answers[0]);
+  assert.match(mine.text, /driven == 0\.6mm, held$/);
+  assert.deepEqual(theirs, mine);
+  assert.throws(() => worker.sketch.meshAt([1, 2, 3]));
+  page.dispose();
+  worker.dispose();
+});
+
 test('a document says where its scenarios fall and how the drawing moves under one', () => {
   // the shelf bracket's one scenario (#510): a mark for each of its four lines, every place the
   // core's and each mark's span the line as written; its answers read with its picture are the

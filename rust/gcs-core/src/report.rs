@@ -214,6 +214,13 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("redundantDistances", ids(&d.redundant_distances)),
         ("violated", ids(&d.violated)),
         ("conflicts", d.conflicts.as_ref().map(|c| ids(c)).unwrap_or(Json::Null)),
+        // each requirement out of reach of what drives it, and why (#510 P7): `[id, words]`
+        (
+            "outOfReach",
+            Json::Arr(d.out_of_reach.iter().map(|(id, text)| {
+                Json::Arr(vec![Json::Int(*id as i64), Json::Str(text.clone())])
+            }).collect()),
+        ),
         ("warnings", Json::Arr(d.warnings.iter().map(|s| Json::Str(s.clone())).collect())),
         ("witness", d.witness.as_ref().map(|w| witness_json(sk, w)).unwrap_or(Json::Null)),
         ("dof", d.dof.into()),

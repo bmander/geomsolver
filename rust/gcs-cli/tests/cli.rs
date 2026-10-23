@@ -739,6 +739,32 @@ edge of `ledge` and `riser`";
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// **A requirement out of reach is said with why** (#510 P7): the library's drilled plate loaded
+/// ten times over sinks least with no hole, far more than its `sag`, and the drawing does not
+/// solve; the summary says a requirement is out of reach, the row is said with the core's words
+/// for why in place of a `conflict:` line, and `--json` gives them as `outOfReach`.
+#[test]
+fn a_requirement_out_of_reach_is_said() {
+    let dir = std::env::temp_dir().join(format!("solventc-reach-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("heavy.sv");
+    let plate = std::fs::read_to_string(examples().join("drilled_plate.sv")).unwrap();
+    assert!(plate.contains("P := 2kN"));
+    std::fs::write(&source,plate.replace("P := 2kN","P := 20kN")).unwrap();
+    let path = source.to_str().unwrap();
+    let out = run(&[path,"--allow-unsolved"]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("did not solve"),"{said}");
+    assert!(said.contains("CONFLICT — a requirement out of reach of what drives it"),"{said}");
+    assert!(said.contains("  deflection(0.6, at: end_low, scenario: 0) down: out of reach of the \
+dimensions that drive it: 4.79"),"{said}");
+    assert!(!said.contains("  conflict: "),"{said}");
+    let json = String::from_utf8_lossy(&run(&[path,"--json","--allow-unsolved"]).stdout).into_owned();
+    assert!(json.contains("\"outOfReach\"") && json.contains("the least they reach here"),"{json}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// **A frame's answers are said** (#510 S0): under each scenario, every requirement on a frame
 /// with its value in the document's units, the error estimated beside it (#510 S3: nothing, at a
 /// joint a cubic is exact for) and whether it keeps what it states — a refuted claim is a

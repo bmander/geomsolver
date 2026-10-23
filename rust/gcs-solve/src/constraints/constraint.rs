@@ -607,12 +607,23 @@ impl Constraint {
         crate::envelope::regular::Parts::of(sk, flank, tool, blank)
     }
 
-    /// **What a scenario's output driven reads** (#510): a deflection's row (`deflection_row`),
-    /// or a mass's or a volume's (`measure_row`) — or why the solve cannot read it.
+    /// **What a row over a structure reads** (#510): the one held on `Sketch::meshed` where there
+    /// is one (`meshed_key`), so every compile through a solve reads one topology, else the row
+    /// made where the drawing stands (`made_row`) — or why the solve cannot read it.
     pub fn interior_row(&self, sk: &Sketch) -> Result<InteriorRow, String> {
+        if let Some(r) = self.meshed_key(sk).and_then(|key| sk.meshed.get(&key)) {
+            return Ok(InteriorRow::Meshed(r.clone()));
+        }
+        self.made_row(sk)
+    }
+
+    /// `interior_row` made where the drawing stands, whatever mesh the sketch holds: what
+    /// elaboration holds and `Sketch::remesh` makes again — a deflection's (`deflection_made`) or
+    /// a mass's or a volume's (`measure_made`).
+    pub fn made_row(&self, sk: &Sketch) -> Result<InteriorRow, String> {
         match self.kind {
-            CKind::Deflection => self.deflection_row(sk),
-            CKind::Mass | CKind::Volume => self.measure_row(sk),
+            CKind::Deflection => self.deflection_made(sk),
+            CKind::Mass | CKind::Volume => self.measure_made(sk),
             _ => Err("it reads no structure".into()),
         }
     }
@@ -620,18 +631,9 @@ impl Constraint {
     /// **What a deflection driven reads** (#510 S1, S2, S3): the frame its point is a joint of
     /// (`beams::Row`), or else the region read in its plane its point is in (`prisms::Row`), or
     /// else the solid read in three dimensions it is a point of (`bodies::row`, a `prisms::Row`
-    /// over the face's mesh stacked), under its scenario — or why the solve cannot read it.  A
-    /// region's or a solid's row is the one meshed when it was compiled (`Sketch::meshed`),
-    /// where there is one, so every compile through a solve reads one topology.
-    fn deflection_row(&self, sk: &Sketch) -> Result<InteriorRow, String> {
+    /// over the face's mesh stacked), under its scenario — or why the solve cannot read it.
+    fn deflection_made(&self, sk: &Sketch) -> Result<InteriorRow, String> {
         let (sc, at, along) = self.frame_read(sk)?;
-        if let Some(Arg::Int(k)) = self.args.get(2) {
-            let key = usize::try_from(*k).ok()
-                .map(|scenario| MeshedKey::Deflection { scenario, at, along });
-            if let Some(r) = key.and_then(|key| sk.meshed.get(&key)) {
-                return Ok(InteriorRow::Meshed(r.clone()));
-            }
-        }
         let of = crate::model::Applied::Ent(EntRef::point(at));
         if crate::beams::of_frame(sk, sc, &of) {
             return crate::beams::Row::of(sk, sc, at, along).map(InteriorRow::Frame);
@@ -648,14 +650,10 @@ impl Constraint {
 
     /// **What a mass or a volume driven reads** (`CKind::Mass`, `CKind::Volume`): the members its
     /// statement names, a beam's or a line's (`beams::Row::measured`), or the prism it names
-    /// (`prisms::Row::measured`, its face's mesh) — or why the solve cannot read it.  A prism's
-    /// row is the one meshed when it was compiled (`Sketch::meshed`), where there is one.
-    fn measure_row(&self, sk: &Sketch) -> Result<InteriorRow, String> {
+    /// (`prisms::Row::measured`, its face's mesh) — or why the solve cannot read it.
+    fn measure_made(&self, sk: &Sketch) -> Result<InteriorRow, String> {
         let reads = self.kind.reads().ok_or("it measures nothing")?;
-        let (at, m) = self.measured(sk)?;
-        if let Some(row) = sk.meshed.get(&MeshedKey::Measure(at)) {
-            return Ok(InteriorRow::Meshed(row.clone()));
-        }
+        let (_, m) = self.measured(sk)?;
         if !crate::beams::members(sk, &m.of).is_empty() {
             return crate::beams::Row::measured(sk, &m.of, reads).map(InteriorRow::Frame);
         }
@@ -681,6 +679,21 @@ impl Constraint {
         }
         let (sc, at, _) = self.frame_read(sk)?;
         crate::beams::row_unknowns(sk, sc, at)
+    }
+
+    /// **Where a row's mesh is held** (`Sketch::meshed`): a deflection's by its scenario's index,
+    /// its point and its direction, a mass's or a volume's by its statement's index on
+    /// `Sketch::measured`.  `None` for any other row, and one naming nothing the drawing holds.
+    pub fn meshed_key(&self, sk: &Sketch) -> Option<MeshedKey> {
+        match self.kind {
+            CKind::Deflection => {
+                let (_, at, along) = self.frame_read(sk).ok()?;
+                let Some(Arg::Int(k)) = self.args.get(2) else { return None };
+                Some(MeshedKey::Deflection { scenario: usize::try_from(*k).ok()?, at, along })
+            }
+            CKind::Mass | CKind::Volume => Some(MeshedKey::Measure(self.measured(sk).ok()?.0)),
+            _ => None,
+        }
     }
 
     /// What a deflection driven names: its scenario, its point and its direction.

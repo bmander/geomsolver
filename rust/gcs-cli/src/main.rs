@@ -542,7 +542,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 report_set(&sk, &e.map, &format!("driven by {}", p.name), &p.readers);
                 println!("  {}", gcs_core::report::parameter_text(&sk, &p.name));
             }
-            report_set(&sk, &e.map, "conflict", d.conflicts.as_deref().unwrap_or(&[]));
+            // a requirement out of reach is the whole conflict, said with why (#510 P7), not as
+            // one to remove
+            if d.out_of_reach.is_empty() {
+                report_set(&sk, &e.map, "conflict", d.conflicts.as_deref().unwrap_or(&[]));
+            }
+            for (id, why) in &d.out_of_reach {
+                if let Some(c) = sk.constraint(*id) {
+                    println!("  {}: {why}", io::describe_with(c, &|r| e.map.name_of(r).cloned()));
+                }
+            }
             report_set(&sk, &e.map, "over", &d.over);
             report_set(&sk, &e.map, "implied", &d.implied);
             report_set(&sk, &e.map, "claim refuted", &d.claims_violated);

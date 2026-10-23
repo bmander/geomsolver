@@ -283,6 +283,11 @@ pub struct Sketch {
     /// shares it rather than copying it.  Set by elaboration with the row, carried by the Solvent
     /// source alone.
     pub meshed: BTreeMap<MeshedKey, std::sync::Arc<crate::prisms::Row>>,
+    /// **Where the drawing stood when its meshes were last made again** (#510 S2;
+    /// `Sketch::remesh`): `None` while each is where elaboration made it.  A drawing read again
+    /// from its source is meshed there (`Sketch::mesh_at`) to read on the meshes this one was
+    /// solved on — a page's worker reading its scenarios, the same bits.
+    pub meshed_at: Option<Vec<f64>>,
     /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
     /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
     /// Presentation, as a wobble is: what is drawn moves and the document does not — a march
