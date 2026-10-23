@@ -314,11 +314,40 @@ pub struct Reentrant {
 /// once per pair at its sharpest.  A rounded edge is no corner — its faces meet tangent — and
 /// is not one; a convex edge's stress is bounded.
 pub fn reentrant(body: &BodyFaces) -> Vec<Reentrant> {
+    sharp(body, |_| true)
+}
+
+/// **The sharp re-entrant edges the stress over some of a body's faces reaches** (#510): those
+/// that touch one of `faces` — bounding it, or ending on it, where the stress along it grows as
+/// toward the edge itself.  Stress is unbounded only near the edge: a face clear of every such
+/// edge has a greatest stress a finer mesh converges to, however sharp the body is elsewhere.
+pub fn reentrant_touching(body: &BodyFaces, faces: &[usize]) -> Vec<Reentrant> {
+    let b = body.brep().0;
+    let corners: BTreeSet<u32> = faces.iter()
+        .flat_map(|&fi| body.edges_of(fi).iter().flat_map(|&e| b.edges[e as usize].v))
+        .collect();
+    sharp(body, |e| {
+        body.faces_of(e).iter().any(|f| faces.contains(f))
+            || b.edges[e as usize].v.iter().any(|v| corners.contains(v))
+    })
+}
+
+/// **The sharp re-entrant edges what a requirement names reaches**: a face path's, those touching
+/// its faces (`reentrant_touching`); anything else's — the solid, a point, a line — every one.
+pub fn reentrant_of(body: &BodyFaces, of: &Applied) -> Vec<Reentrant> {
+    match of {
+        Applied::Face(f) => reentrant_touching(body, &body.faces(f)),
+        _ => reentrant(body),
+    }
+}
+
+/// The sharp re-entrant edges among those `keep` keeps, once per pair of faces at its sharpest.
+fn sharp(body: &BodyFaces, keep: impl Fn(u32) -> bool) -> Vec<Reentrant> {
     // the sharpest edge of each pair, by its faces, its middle and its angle
     let mut by_pair: BTreeMap<(usize, usize), (usize, usize, V, f64)> = BTreeMap::new();
     for e in 0..body.brep().0.edges.len() as u32 {
         // a seam is no corner: `convex` is `None` there
-        if body.convex(e) != Some(false) {
+        if body.convex(e) != Some(false) || !keep(e) {
             continue;
         }
         let &[fa, fb] = body.faces_of(e) else { continue };
@@ -662,16 +691,24 @@ fn said(sk: &Sketch, sc: &Scenario, frames: crate::beams::Read,
             out.push(format!("scenario `{}` leaves {what} {free}", sc.name));
         }
     }
-    let asked: BTreeSet<usize> = sc.requirements.iter()
-        .filter(|r| r.output == Output::Safety)
-        .filter_map(|r| r.of.solid())
-        .filter(|&s| !read(s))
-        .collect();
-    for solid in asked {
-        let name = &sk.solids[solid].name;
+    // each requirement of stress, once per what it names: the solid's every sharp edge, a face
+    // path's those touching its faces
+    let mut asked: Vec<(usize, &Applied)> = Vec::new();
+    for r in sc.requirements.iter().filter(|r| r.output == Output::Safety) {
+        if let Some(s) = r.of.solid().filter(|&s| !read(s)) {
+            if !asked.iter().any(|&(t, of)| t == s && of == &r.of) {
+                asked.push((s, &r.of));
+            }
+        }
+    }
+    for (solid, of) in asked {
+        let name = match of {
+            Applied::Face(f) => format!("{}.{}", sk.solids[solid].name, f.path.join(".")),
+            _ => sk.solids[solid].name.clone(),
+        };
         match BodyFaces::whole(sk, solid) {
             Ok(body) => {
-                for edge in reentrant(&body) {
+                for edge in reentrant_of(&body, of) {
                     out.push(format!("scenario `{}`: `{}({name})` has no answer: {}",
                                      sc.name, Output::Safety.word(), edge.text()));
                 }

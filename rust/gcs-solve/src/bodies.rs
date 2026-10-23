@@ -849,7 +849,7 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
         Output::Buckling => a.buckled(),
         Output::Safety => {
             let body = BodyFaces::whole(sk, f.solid)?;
-            if let Some(edge) = analysis::reentrant(&body).first() {
+            if let Some(edge) = analysis::reentrant_of(&body, &r.of).first() {
                 return Err(edge.text());
             }
             let yields = property(sk, f.solid, Property::Yield)?;

@@ -74,6 +74,7 @@ const DOCS: &[(&str, Shape, i64, State)] = &[
     ("cantilever_plate", (9, 4, 0, 0), 0, State::Well),
     ("turned_shaft", (13, 6, 0, 1), 0, State::Well),
     ("pin_lug", (10, 4, 1, 0), 0, State::Well),
+    ("conrod_stress", (105, 86, 3, 8), 0, State::Well),
 ];
 
 #[test]

@@ -298,15 +298,16 @@ fn triangles(sk: &Sketch, solid: usize, keep: impl Fn(&str) -> bool) -> Vec<[V; 
 
 /// Whether the mesh's group `group` (`lug.root`, `pin.bore`: its primitive's name and its face)
 /// is a face that path `f` past solid `solid` names: its segments from the first are the path's,
-/// with or without the solid's own name first — `lug.root` is `lug`'s `root`, and `pin.bore` its
-/// `pin.bore`.
+/// after any leading part of the solid's own name — `lug.root` is `lug`'s `root`, and `pin.bore`
+/// its `pin.bore`; a solid of a part's instance has its groups named from the instance, so
+/// `rod.whole.bigbore` is `rod.body`'s `whole.bigbore`.  Only the solid's own groups are asked.
 fn names_group(solid: &str, f: &FaceRef, group: &str) -> bool {
     let segs: Vec<&str> = group.split('.').collect();
     let starts = |segs: &[&str]| {
         f.path.len() <= segs.len() && f.path.iter().zip(segs).all(|(a, b)| same_step(a, b))
     };
     let own: Vec<&str> = solid.split('.').collect();
-    starts(&segs) || (segs.starts_with(&own) && starts(&segs[own.len()..]))
+    (0..=own.len()).any(|k| segs.starts_with(&own[..k]) && starts(&segs[k..]))
 }
 
 /// **Up to `OVER` places spread over triangles**, and each one's outward normal: their

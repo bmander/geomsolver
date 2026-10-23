@@ -155,7 +155,8 @@ fn the_picture_moves_each_point_by_its_answer() {
 /// words, and its span in the document is the line it was written on.
 #[test]
 fn every_line_of_a_scenario_is_a_mark() {
-    for key in LIBRARY {
+    // and the rod stressed: its lines on the faces of a part's instance, named from the instance
+    for key in LIBRARY.into_iter().chain(["conrod_stress"]) {
         let src = gcs_core::examples::source(key).unwrap();
         let e = crate::common::read(src);
         for (k, s) in e.scenarios.iter().enumerate() {

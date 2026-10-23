@@ -649,7 +649,8 @@ scenario drawn, unless a rule names another.
   **No answer, and why**: a solid its supports leave free (said once as the scenario's word, ``
   scenario `pull` leaves `plate` free to slide along z ``); a material missing what is read; a
   support off the world's axes; a pressure on no face; a line naming a part of a body; a buckling
-  under loads that press nothing; a `safety` where the solid has a sharp re-entrant edge
+  under loads that press nothing; a `safety` where a sharp re-entrant edge reaches what it names
+  (the solid, or a face it touches: "Stress is read where no sharp edge reaches", below)
   (`analysis::reentrant`'s text in the answer). **Held to** (`tests/bodies.rs`): every solid case
   of the corpus answers its reference within 1% and keeps every claim, with nothing said against
   it (`every_solid_case_answers_its_reference`): the cantilever's sag −0.13% and its first mode
@@ -808,8 +809,9 @@ scenario drawn, unless a rule names another.
   evenly along them, a solid at its middle, faces a path names at up to `OVER` places spread over
   them (farthest-point, over each triangle cut finer than a sixth of the faces' reach). **A face
   is read off the mesh the workspace already draws** (`EvaluatedSolid::mesh` at the object's own
-  scale, its groups named `lug.root`, `pin.bore`: `names_group` takes the path with or without the
-  solid's own name first), so a mark on a face builds no exact boundary on the page's thread.
+  scale, its groups named `lug.root`, `pin.bore`: `names_group` takes the path after any leading part
+  of the solid's own name — a part's instance names its solid's groups from the instance, so
+  `rod.whole.bigbore` is `rod.body`'s `whole.bigbore`), so a mark on a face builds no exact boundary on the page's thread.
   **A mark adds nothing to the drawing** (`a_mark_adds_nothing_to_the_drawing`); every line of
   every scenario of the library is one, its span the line it is written on
   (`every_line_of_a_scenario_is_a_mark`), and a pressure points into its face
@@ -1094,6 +1096,24 @@ scenario drawn, unless a rule names another.
   a turn, 1 at a half turn or less). So a stress requirement there has no answer a finer mesh
   converges to. A rounded edge's faces meet tangent, and it is no corner
   (`williams_exponent_is_the_wedges_least_root`).
+
+- **Stress is read where no sharp edge reaches** (#510; `analysis::reentrant_touching`,
+  `reentrant_of`). Stress is unbounded only near a sharp re-entrant edge, so the edges a stress
+  requirement answers to are those it reaches: of `safety(S)`, the solid, every one; of
+  `safety(S.f)`, a face path, those that touch one of its faces — bounding it, or ending on it,
+  where the stress along the face grows as toward the edge itself. A face clear of every such edge
+  has a greatest stress a finer mesh converges to, and it is read, its error beside it, however
+  sharp the body is elsewhere; one an edge touches says which, and to round it, as the solid does.
+  The scenario's words say the same of each requirement by what it names. **Not covered**: a
+  support's or a load's own edge — a face held fixed beside a free one, a load laid on part of a
+  surface, a load at a point — makes stress of its own that a finer mesh does not converge
+  either (the rod's held bore reads 4.5 ± 0.65, against ± 0.04 to 0.08 elsewhere), and a
+  requirement over such a face is answered, its error saying how little to trust it
+  (`stress_is_read_where_no_sharp_edge_reaches`: an L's riser refused, its head and back read).
+  **The library's connecting rod, stressed** (`conrod_stress.sv`): the engine's rod imported
+  (`engine.conrod`), forged with sharp pockets and steps, so as a whole it has no factor of
+  safety — and over its small end's eye 1.28, its bore 1.56, the round into its big end 1.44
+  under 25kN of firing load (`the_connecting_rod_stressed_says_what_it_claims`, the slow tier).
 
 - **A degenerate modal pair is named, and the ring that makes it one** (`analysis::repeated`,
   `Repeated::wave`). The eigensolver says which of its values are one (`Pairs::runs`: consecutive

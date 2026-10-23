@@ -383,6 +383,9 @@ impl BodyFaces {
     /// The faces edge `e` bounds.
     pub fn faces_of(&self, e: u32) -> &[usize] { &self.bounding[e as usize] }
 
+    /// The edges bounding face `fi`, once each.
+    pub fn edges_of(&self, fi: usize) -> &[u32] { &self.edges[fi] }
+
     /// Edge `e`'s vertices, first to last.
     pub fn ends(&self, e: u32) -> [u32; 2] { self.loc.b.edges[e as usize].v }
 
