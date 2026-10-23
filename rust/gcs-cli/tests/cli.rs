@@ -510,6 +510,7 @@ fn a_solid_at_an_unsolved_pose_does_not_hide_the_diagnosis() {
     let not_built = text.find(gcs_core::program::NOT_BUILT).expect("the solid said as unbuilt");
     assert!(text.find("conflict:").unwrap() < not_built, "under the diagnosis: {text}");
     assert!(text.contains("hidden.sv:15:1: note[E080]: `ring`:"), "{text}");
+    assert_eq!(text.matches("the revolution axis crosses the profile").count(), 1, "once: {text}");
     assert!(!err.contains("error["), "no error of the document: {err}");
     // told an unsolved drawing is no failure, its solids are none either
     assert_eq!(run(&[&path, "--allow-unsolved"]).status.code(), Some(0));

@@ -620,7 +620,8 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     println!("  {name}: {text}");
                 }
             }
-            for w in &d.warnings {
+            // a solid's failure at an unsolved pose is said once, under `NOT_BUILT` below
+            for w in d.warnings.iter().filter(|w| !unbuilt.iter().any(|u| &u.message == *w)) {
                 println!("  note: {w}");
             }
         }
