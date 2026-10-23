@@ -412,3 +412,30 @@ fn every_solid_case_of_the_library_says_what_it_claims() {
     assert!(safety.3.as_ref().unwrap_err().contains("round it"), "{safety:?}");
     assert!(got.iter().any(|g| g.1 == Output::Mass && g.3.is_ok()));
 }
+
+/// **A sliver lying on the boundary is peeled** (#510; `refine::volume`'s `peel`): the engine's
+/// connecting rod filled at four times its reading's size held a cell of no thickness flat on a
+/// planar face — two of its faces on the boundary, two corners protecting balls' centres, its
+/// least dihedral angle 0°, its stiffness nearly singular (CG took 552 iterations and missed the
+/// factor's moves by 2e-4).  Peeled, every element keeps a least dihedral angle of 3° or more, and
+/// the quadratic elements fill the rod's exact volume within 2e-3, as at that size they did before
+/// (the six cells peeled held 6e-5 of it).
+#[test]
+fn a_sliver_on_the_boundary_is_peeled() {
+    use gcs_core::delaunay::tetra::{least_dihedral, Tet10};
+    let project = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let source = std::fs::read_to_string(project.join("engine/conrod.sv")).unwrap();
+    let e = fixtures::read_beside(&source, &project, &mut |_, text| text);
+    let solid = fixtures::solid(&e, "rod.body");
+    let mesh = gcs_core::bodies::mesh(&e.sketch, solid, &[], 4.0).expect("meshed");
+    let least = mesh.tets.iter().map(|t| least_dihedral([0, 1, 2, 3].map(|k| mesh.nodes[t[k]])))
+        .fold(180.0, f64::min);
+    assert!(least >= 3.0, "an element's least dihedral angle is {least}°");
+    let filled: f64 = mesh.tets.iter()
+        .map(|t| Tet10 { nodes: t.map(|n| mesh.nodes[n]) }.volume()).sum();
+    let x = e.sketch.exact_solid(solid).unwrap();
+    let exact = gcs_core::brep::props::volume(&x.brep) / x.mm.powi(3);
+    assert!((filled - exact).abs() <= 2e-3 * exact, "filled {filled}, exactly {exact}");
+    eprintln!("{} elements, least dihedral {least:.2}°, volume {filled} of {exact}",
+              mesh.tets.len());
+}

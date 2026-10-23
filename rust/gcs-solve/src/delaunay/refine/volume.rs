@@ -56,6 +56,8 @@ pub struct VolumeReport {
     pub least_dihedral: f64,
     /// Cells left breaking the criteria (where refinement could not reach them: see `CellReport`).
     pub bad_cells: usize,
+    /// Slivers lying on the boundary taken out of the volume (`peel`).
+    pub peeled: usize,
     /// Boundary edges whose node is on the surface, on a feature curve, and left straight.
     pub curved: usize,
     pub on_curves: usize,
@@ -77,6 +79,76 @@ impl Volume {
     pub fn quadratic_volume(&self) -> f64 { (0..self.elements.len()).map(|k| self.element(k).volume()).sum() }
 }
 
+/// **Slivers lying on the boundary, peeled** (#510): a cell two or three of whose faces are on the
+/// boundary has every corner on the surface; where it is a sliver (its least dihedral angle under
+/// the cells' bound) and thinner than the surface's `facet_distance` — its volume over its largest
+/// face, three times — it is taken out, and its other faces are the boundary instead: the surface
+/// moves by no more than its own criterion allows it to stand off, and the volume loses an element
+/// that is nearly flat, whose stiffness is nearly singular.  Refinement cannot reach such a cell
+/// when its corners are protecting balls' centres or its orthocentre lies in one.  A peel that would
+/// leave an edge of the boundary on other than two faces, or a corner on no cell, is not made.
+/// Cells in triangulation order, faces as `Refiner::extract` orients them, until none is peeled.
+fn peel(r: &mut Refiner,inside: Vec<u32>,facets: &[([u32;3],u32,usize)],cells: &Cells) -> (Vec<u32>,Vec<[u32;3]>,usize) {
+    let key = |f: [u32;3]| { let mut k = f; k.sort_unstable(); k };
+    let mut cell: std::collections::BTreeSet<u32> = inside.iter().copied().collect();
+    let mut faces: BTreeMap<[u32;3],[u32;3]> = facets.iter().map(|(f,_,_)| (key(*f),*f)).collect();
+    let mut edges: BTreeMap<(u32,u32),usize> = BTreeMap::new();
+    let edge = |a: u32,b: u32| (a.min(b),a.max(b));
+    for f in faces.values() { for k in 0..3 { *edges.entry(edge(f[k],f[(k+1)%3])).or_default() += 1; } }
+    let mut uses: BTreeMap<u32,usize> = BTreeMap::new();
+    for &t in &cell { for v in r.tri.tet(t).v { *uses.entry(v).or_default() += 1; } }
+    let thin = r.criteria.facet_distance;
+    let mut peeled = 0;
+    loop {
+        let mut changed = false;
+        let order: Vec<u32> = cell.iter().copied().collect();
+        for t in order {
+            let tet = r.tri.tet(t);
+            let q = tet.v.map(|v| r.tri.points()[v as usize].p);
+            let on: Vec<usize> = (0..4).filter(|&i| faces.contains_key(&key(facet_vertices(tet.v,i)))).collect();
+            if on.len() < 2 || on.len() > 3 || tetra::least_dihedral(q) >= cells.dihedral { continue; }
+            let area = (0..4).map(|i| { let f = facet_vertices(tet.v,i).map(|v| r.tri.points()[v as usize].p);
+                norm(cross(sub(f[1],f[0]),sub(f[2],f[0]))) }).fold(0.,f64::max);
+            if !(tetra::volume6(q).abs() <= 2.*thin*area) { continue; }
+            // the faces it would leave on the boundary, each oriented out of its neighbour
+            let mut out = Vec::new();
+            for i in (0..4).filter(|i| !on.contains(i)) {
+                let Some((n,j)) = r.tri.mirror(t,i) else { break };
+                if !cell.contains(&n) { break; }
+                let nt = r.tri.tet(n);
+                let mut f = facet_vertices(nt.v,j);
+                let p = |v: u32| r.tri.points()[v as usize].p;
+                if orient(p(f[0]),p(f[1]),p(f[2]),p(nt.v[j])) > 0 { f.swap(1,2); }
+                out.push(f);
+            }
+            if out.len() + on.len() != 4 { continue; }
+            // every edge of the boundary still on two faces, every corner still on a cell
+            let mut count = edges.clone();
+            for &i in &on { let f = facet_vertices(tet.v,i); for k in 0..3 { *count.get_mut(&edge(f[k],f[(k+1)%3])).unwrap() -= 1; } }
+            for f in &out { for k in 0..3 { *count.entry(edge(f[k],f[(k+1)%3])).or_default() += 1; } }
+            let touched = (0..4).flat_map(|i| { let f = facet_vertices(tet.v,i); (0..3).map(move |k| edge(f[k],f[(k+1)%3])) });
+            if touched.into_iter().any(|e| count.get(&e).is_some_and(|&c| c != 0 && c != 2)) { continue; }
+            if tet.v.iter().any(|v| uses[v] == 1) { continue; }
+            for &i in &on { faces.remove(&key(facet_vertices(tet.v,i))); }
+            for f in out { faces.insert(key(f),f); }
+            count.retain(|_,c| *c > 0);
+            edges = count;
+            for v in tet.v { *uses.get_mut(&v).unwrap() -= 1; }
+            cell.remove(&t);
+            peeled += 1;
+            changed = true;
+        }
+        if !changed { break; }
+    }
+    let kept: Vec<u32> = inside.into_iter().filter(|t| cell.contains(t)).collect();
+    // the restricted facets in their order, then the faces a peel left, in order
+    let mut left = faces.clone();
+    let mut boundary: Vec<[u32;3]> = Vec::with_capacity(faces.len());
+    for (f,_,_) in facets { if left.remove(&key(*f)).is_some() { boundary.push(*f); } }
+    boundary.extend(left.into_values());
+    (kept,boundary,peeled)
+}
+
 /// The volume the refiner holds, its boundary the restricted `facets` (`Refiner::extract`).
 pub(super) fn extract(r: &mut Refiner,facets: &[([u32;3],u32,usize)]) -> Result<Volume,String> {
     let cells = r.filling.as_ref().ok_or("no criteria for the cells")?.cells.clone();
@@ -90,6 +162,7 @@ pub(super) fn extract(r: &mut Refiner,facets: &[([u32;3],u32,usize)]) -> Result<
         inside.push(t);
     }
     if inside.is_empty() { return Err("the refinement found no cell inside the domain".into()); }
+    let (inside,facets,peeled) = peel(r,inside,facets,&cells);
     // Vertices renumbered in the order the cells meet them (looked up, never iterated), each
     // with the protecting ball it is, if any.
     let mut index: HashMap<u32,u32> = HashMap::new();
@@ -100,10 +173,10 @@ pub(super) fn extract(r: &mut Refiner,facets: &[([u32;3],u32,usize)]) -> Result<
         ball.push(r.ball_of.get(&v).copied());
         (vertices.len()-1) as u32
     }))).collect();
-    let boundary: Vec<[u32;3]> = facets.iter().map(|(f,_,_)| f.map(|v| index[&v])).collect();
+    let boundary: Vec<[u32;3]> = facets.iter().map(|f| f.map(|v| index[&v])).collect();
     let protected: Vec<bool> = ball.iter().map(Option::is_some).collect();
     let mut report = VolumeReport {surface:r.report.clone(),cells:r.filling.as_ref().map(|f| f.report.clone()).unwrap_or_default(),
-        least_dihedral:180.,least_jacobian:1.,..VolumeReport::default()};
+        least_dihedral:180.,least_jacobian:1.,peeled,..VolumeReport::default()};
     for &q in &tets {
         let q = q.map(|v| vertices[v as usize]);
         if !(tetra::volume6(q) > 0.) { return Err("a cell is flat in floating point".into()); }

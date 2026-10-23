@@ -700,7 +700,8 @@ scenario drawn, unless a rule names another.
   Every pass reads the stiffness's lower triangle by column, its only copy. A structure the
   supports leave free fails the corners' factor (its rigid motions are the corners' too), and
   one CG does not settle in `pcg::MOST` (300) iterations — a mesh holding an element nearly
-  flat, where a small residual need not mean good moves — is factored after all, so the factor
+  flat, where a small residual need not mean good moves (a sliver on the boundary is peeled for
+  that, below) — is factored after all, so the factor
   still says which is free. A plane structure, whose factor fills as `n log n`, is always
   factored, as are the eigensolver's pencils (`eigen`). The adjoint of a row solved by CG is CG's
   again, on the same preconditioner. **Held to**: on each library solid (the lug, the shaft, the
@@ -1134,6 +1135,22 @@ scenario drawn, unless a rule names another.
   ellipsoid). With features, every cell left bad has a protecting ball's centre for a corner
   (`Volume::protected`; the cube, 19 of 2,639 cells, least dihedral 7.8°; the cylinder, 5 of
   3,624).
+
+- **A sliver lying on the boundary is peeled** (#510; `refine/volume.rs`'s `peel`,
+  `VolumeReport::peeled`). A cell two or three of whose faces are restricted facets has every
+  corner on the surface. Where it is a sliver (its least dihedral under `Cells::dihedral`) and
+  thinner than the surface's `facet_distance` (its volume over its largest face, three times), it
+  is taken out of the volume when it is extracted, and its other faces are the boundary instead,
+  each oriented out of its neighbour by the exact `orient`: the surface moves by no more than its
+  own criterion lets a facet stand off it. Refinement cannot reach such a cell where its corners
+  are protecting balls' centres or its orthocentre is in a ball, and left in, it is nearly flat:
+  the engine's rod filled at four times its reading's size held one of no thickness on a planar
+  face (least dihedral 0°), and its stiffness was so near singular that CG took 552 iterations and
+  missed the factor's moves by 2e-4. A peel that would leave a boundary edge on other than two
+  faces, or a corner on no cell, is not made; cells are peeled in triangulation order until none
+  is. Peeled, the rod's least dihedral is 3.9° at that size (1.9° at its reading's, where it was
+  0.8°), its six peeled cells 6e-5 of its volume, and CG agrees with the factor to 2e-11
+  (`a_sliver_on_the_boundary_is_peeled`).
 
 - **The quadratic element is TET10, its nodes numbered as CalculiX numbers them**
   (`tetra::Tet10`, `EDGES`). The corners come first, then the edges 0–1, 1–2, 2–0, 0–3, 1–3,
