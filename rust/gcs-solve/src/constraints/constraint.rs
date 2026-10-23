@@ -615,11 +615,8 @@ impl Constraint {
     /// where there is one, so every compile through a solve reads one topology.
     pub fn deflection_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
         let (sc, at, along) = self.frame_read(sk)?;
-        if let Some(Arg::Int(k)) = self.args.get(2) {
-            let key = usize::try_from(*k).ok().map(|k| (k, at, along));
-            if let Some(r) = key.and_then(|key| sk.meshed.get(&key)) {
-                return Ok(DeflectionRow::Meshed(r.clone()));
-            }
+        if let Some(r) = self.meshed_key(sk).and_then(|key| sk.meshed.get(&key)) {
+            return Ok(DeflectionRow::Meshed(r.clone()));
         }
         let of = crate::model::Applied::Ent(EntRef::point(at));
         if crate::beams::of_frame(sk, sc, &of) {
@@ -640,6 +637,18 @@ impl Constraint {
     pub fn frame_unknowns(&self, sk: &Sketch) -> Result<Vec<String>, String> {
         let (sc, at, _) = self.frame_read(sk)?;
         crate::beams::row_unknowns(sk, sc, at)
+    }
+
+    /// Where a driven deflection's mesh is held (`Sketch::meshed`): its scenario's index, its
+    /// point and its direction.  `None` for any other row, and one naming nothing the drawing
+    /// holds.
+    pub fn meshed_key(&self, sk: &Sketch) -> Option<(usize, usize, EntRef)> {
+        if self.kind != CKind::Deflection {
+            return None;
+        }
+        let (_, at, along) = self.frame_read(sk).ok()?;
+        let Some(Arg::Int(k)) = self.args.get(2) else { return None };
+        Some((usize::try_from(*k).ok()?, at, along))
     }
 
     /// What a deflection driven names: its scenario, its point and its direction.

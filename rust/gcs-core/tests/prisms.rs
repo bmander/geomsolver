@@ -5,9 +5,12 @@
 //! Lamé's cylinder, exact in plane stress with its ends open, answers in either reading; a sheet
 //! pulled answers to rounding; and what has no answer says why.  The rules are
 //! `docs/contract/analysis.md`'s.
+use gcs_core::constraints::{Arg, CKind};
 use gcs_core::diagnose::analysis::scenario_read;
-use gcs_core::model::{InPlane, Output};
+use gcs_core::model::{InPlane, Output, Sketch};
 use gcs_core::program::Elaborated;
+use gcs_core::solve::{solve, SolveOpts};
+use gcs_core::system::System;
 
 use crate::analysis_corpus::{read as read_case, Reading, CASES};
 
@@ -391,4 +394,84 @@ fn every_region_case_of_the_library_says_what_it_claims() {
     let safety = got.iter().find(|g| g.1 == Output::Safety).unwrap();
     assert!(safety.3.as_ref().unwrap_err().contains("round it"), "{safety:?}");
     assert!(got.iter().any(|g| g.1 == Output::Deflection && g.3.is_ok()));
+}
+
+/// **A region is meshed again where its mesh folds** (#510 S2; `System::remeshed`,
+/// `System::folded`, `System::mesh_edges`): the library's drilled plate under a quarter of its
+/// load sinks its `sag` only with a hole of about 27.7mm, which the mesh made where the hole was
+/// drawn, at 18, cannot follow — on that mesh the row cannot be read there at all, and a hair
+/// short of 27 it stands at the mesh's edge, read but not a step on.  The solve, stopped there,
+/// meshes the plate again where it stopped and solves on: the corner sinks what it states, and
+/// the report reads it held — and so does the same source read afresh, meshed where this was
+/// meshed again (`Sketch::meshed_at`, `Sketch::mesh_at`) and stood where it solved, to the bit,
+/// as a page's worker reads it.  Asked to sink a hundred millimetres it meshes again where each mesh
+/// folds, and holds that too, with the hole all but through the plate.  Put back and asked its
+/// own sag, the drawing solves, though the mesh it holds was made by the plate's edge: to the
+/// radius it solves to as drawn, within what one mesh and another differ by.
+#[test]
+fn a_regions_mesh_is_made_again_where_it_folds() {
+    let src = gcs_core::examples::source("drilled_plate").unwrap();
+    let swap = |a: &str, b: &str| {
+        assert!(src.contains(a), "the plate states `{a}`");
+        src.replace(a, b)
+    };
+    let deflection = |sk: &Sketch| {
+        sk.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap().id
+    };
+    let radius = |sk: &Sketch| sk.params[sk.free_vars["r"] as usize].value;
+    let held = |e: &Elaborated, sk: &Sketch, sag: &str| {
+        let (_, read) = scenario_read(sk, &e.scenarios[0].scenario);
+        let said = gcs_core::report::scenario_answers(sk, &e.scenarios[0], &read);
+        assert!(said[0].text.ends_with(&format!("driven == {sag}, held")), "{}", said[0].text);
+    };
+
+    let mut e = crate::common::read(&swap("P := 2kN", "P := 0.5kN"));
+    let drawn = e.sketch.clone();
+    let id = deflection(&drawn);
+    // on the mesh made at 18: read well inside, at its edge a hair short of 27, folded past it
+    for (at, edge, folded) in [(26.0, false, false), (26.9, true, true), (27.5, false, true)] {
+        let mut sk = drawn.clone();
+        for p in sk.free_indices() {
+            sk.params[p as usize].value = at;
+        }
+        let mut sys = System::new(&sk);
+        let z = sys.z0(&sk);
+        let edges = sys.mesh_edges(&sk, &z, 1e-6);
+        assert_eq!(edges.len(), edge as usize, "at {at}: {edges:?}");
+        if edge {
+            assert_eq!(edges[0].0, id);
+            assert!(edges[0].1 < 0.6 && edges[0].2 == 0.6, "at {at}: {edges:?}");
+        }
+        assert_eq!(sys.folded(&sk, &z, 1e-6), folded, "at {at}");
+    }
+    assert!(drawn.meshed_at.is_none());
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    let r = radius(&e.sketch);
+    assert!(r > 27.0 && r < 28.5, "the hole is {r}");
+    held(&e, &e.sketch, "0.6mm");
+    let at = e.sketch.meshed_at.clone().expect("meshed again");
+    let mut again = crate::common::read(&swap("P := 2kN", "P := 0.5kN"));
+    assert!(again.sketch.mesh_at(&at) && again.sketch.set_x(&e.sketch.get_x()));
+    let value = |e: &Elaborated, sk: &Sketch| {
+        let (_, read) = scenario_read(sk, &e.scenarios[0].scenario);
+        gcs_core::report::scenario_answers(sk, &e.scenarios[0], &read)[0].value.unwrap()
+    };
+    assert_eq!(value(&again, &again.sketch).to_bits(), value(&e, &e.sketch).to_bits());
+    held(&again, &again.sketch, "0.6mm");
+
+    let mut e = crate::common::read(&swap("sag := 0.6mm", "sag := 100mm"));
+    let start = e.sketch.get_x();
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    let r = radius(&e.sketch);
+    assert!(r > 29.5 && r < 30.0, "the hole is {r}");
+    held(&e, &e.sketch, "100mm");
+    let mut sk = e.sketch.clone();
+    sk.set_x(&start);
+    let id = deflection(&sk);
+    sk.constraints.iter_mut().find(|c| c.id == id).unwrap().args[3] = Arg::Num(0.6);
+    // solved on a mesh made elsewhere, it agrees with the drawing's own to the meshes'
+    // discretisation, not to rounding
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let r = radius(&sk);
+    assert!((r - 19.2259).abs() < 5e-3 * 19.2259, "the hole is {r}");
 }

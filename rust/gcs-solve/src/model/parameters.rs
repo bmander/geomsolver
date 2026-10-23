@@ -370,6 +370,44 @@ impl Sketch {
     /// through, which is why the dimensions written in terms of a free variable are brought up
     /// to date here: their number is that unknown's, and a reader of the drawing must not be
     /// shown the one it had before the solve moved it.
+    /// **Every driven deflection's mesh made again where the drawing stands** (#510 S2;
+    /// `Sketch::meshed`): the row read as it is compiled with no mesh held, and kept where it
+    /// meshes; a row that cannot be meshed here keeps the mesh it had.  Whether any was made,
+    /// and if so the pose recorded (`meshed_at`).
+    pub fn remesh(&mut self) -> bool {
+        let keys: Vec<_> =
+            self.constraints.iter().filter_map(|c| c.meshed_key(self).map(|k| (c.id, k))).collect();
+        let mut made = false;
+        for (id, key) in keys {
+            let Some(old) = self.meshed.remove(&key) else { continue };
+            match self.constraint(id).map(|c| c.deflection_row(self)) {
+                Some(Ok(crate::constraints::DeflectionRow::Meshed(r))) => {
+                    self.meshed.insert(key, r);
+                    made = true;
+                }
+                _ => {
+                    self.meshed.insert(key, old);
+                }
+            }
+        }
+        if made {
+            self.meshed_at = Some(self.get_x());
+        }
+        made
+    }
+
+    /// **The drawing's meshes made where another stood** (`meshed_at` of a drawing of the same
+    /// source): stood at `x`, meshed again (`remesh`), and put back where it was.  False, and
+    /// nothing changed, for an `x` of another drawing.
+    pub fn mesh_at(&mut self, x: &[f64]) -> bool {
+        let here = self.get_x();
+        if !self.set_x(x) {
+            return false;
+        }
+        self.remesh();
+        self.set_x(&here)
+    }
+
     pub fn set_x(&mut self, x: &[f64]) -> bool {
         if x.len() != self.params.len() {
             return false;

@@ -156,7 +156,10 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   driven deflections are all out of reach of what drives them (`System::out_of_reach`, at the
   pose or where the scratch solve stopped) is a conflict of those rows, said with why
   (`Diagnosis::out_of_reach`), and no conflict search runs; a solve whose first attempt stops so
-  runs none of its `RETRIES` (`analysis.md`, a requirement out of reach).
+  runs none of its `RETRIES` (`analysis.md`, a requirement out of reach), nor one that stops
+  folded on a region's mesh (`System::folded`), whose meshes are made again where it stopped
+  after `RECOVERIES`, up to `REMESHES` times (`System::remeshed`; `analysis.md`, a region is
+  meshed again).  A drawing still at its mesh's edge then is said as one out of reach is.
 - Its Jacobian twin: rank and null space are judged on `System::conditioned` — hard rows over
   `extent^(degree−1)`, columns in world length — against one absolute, dimensionless
   `system::RANK_TOL`.  Never a raw `J`, never relative to `σ₀` (the largest row may be in another
@@ -475,7 +478,9 @@ changelog](../solvent-changelog.md)) says where a rule came from.
   the stop, kept if it converges (status 0), else from the start, kept if it settles, else the
   first pass that settled, else the stop bit for bit. Drags (`retry` off) never see it.
   **Only a settled solve is an answer** (#449): a recovery of a failed document solve
-  (`RECOVERIES`, `System::recompiled`) is kept only where it settles, since a recompile changes
+  (`RECOVERIES`, `System::recompiled`) is kept only where it settles — a remesh
+  (`Recovery::nearer`) also where it ends nearer to holding, still a failure, so that what is
+  said of the drawing is how far it read — since a recompile changes
   the yardstick — a point run off towards infinity (two equal circles' parallel tangents held to
   meet) widens the extent `resized` compiles at until a contact 0.13 mm off its 20 mm circle
   reads as 3e-8, and was accepted on the iteration limit.  `SolveResult::outcome` is the one

@@ -1822,6 +1822,14 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
     }
 }
 
+/// One row's output where its columns `v` stand, and what it states there; `None` where the row
+/// cannot be read or its structure solved there.
+pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
+    let read = Row::read(v, k)?;
+    let st = read.s.solve(&read.x).ok()?;
+    Some((read.s.output(&st), read.target(v)))
+}
+
 /// **Whether one row is out of reach where its columns `v` stand** (#510 P7): its output and
 /// what it states there, and its rate in its columns — the rate the solve steps on (`jac`) —
 /// judged by `analysis::reach` over the columns `free` says the solve moves, each moved by its

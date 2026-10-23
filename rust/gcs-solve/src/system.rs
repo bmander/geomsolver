@@ -41,6 +41,11 @@ pub struct Block {
 /// sketch at every size.  The one number the diagnosis, the witness and `System::rank` share.
 pub const RANK_TOL: f64 = 1e-9;
 
+/// How far past where a solve stopped a driven deflection is read to tell the edge of its mesh
+/// (`System::mesh_edges`), as a fraction of the drawing's extent: a step the solve could not
+/// take, and no further.
+const EDGE: f64 = 1e-3;
+
 thread_local! {
     /// What a compile makes stale on this thread: the `forget` of every cache keyed by where a
     /// contact's constants live, each put here by the cache itself (`forget_at_compile`).
@@ -1384,6 +1389,84 @@ impl System {
             }
         }
         (!out.is_empty()).then_some(out)
+    }
+
+    /// **Where a failed solve stopped at the edge of a mesh** (#510 S2): each driven deflection
+    /// over a region or a solid (`Sketch::meshed`) that does not hold at `z` (past `tol`) and
+    /// cannot be read a step on along its rate — its own Newton step, no longer than `EDGE` of
+    /// the drawing's extent, or that step the other way, since on a mesh about to fold the rate
+    /// may point either way — where the mesh it was compiled with folds; with its value at `z`
+    /// and what it states.  Every retry reads that mesh and stops there again; meshed where
+    /// the solve stopped (`System::remeshed`), it may read on.
+    pub fn mesh_edges(&mut self, sk: &Sketch, z: &[f64], tol: f64) -> Vec<(u32, f64, f64)> {
+        if sk.meshed.is_empty() {
+            return Vec::new();
+        }
+        let r = self.residuals(z);
+        self.size_rows();
+        let rows: Vec<usize> = (0..self.n_res).filter(|&row| {
+            let (b, i) = self.instance_of(row);
+            self.hard[row] && self.judged(row, r[row]) > tol && self.drives(row)
+                && sk.constraint(self.blocks[b].cids[i]).and_then(|c| c.meshed_key(sk))
+                    .is_some_and(|k| sk.meshed.contains_key(&k))
+        }).collect();
+        if rows.is_empty() {
+            return Vec::new();
+        }
+        self.compute_csr(z);
+        let reach = EDGE * self.extent.max(1.0);
+        let mut edges = Vec::new();
+        for row in rows {
+            let span = self.csr_indptr[row] as usize..self.csr_indptr[row + 1] as usize;
+            let g = self.csr_data[span.clone()].iter().map(|g| g * g).sum::<f64>().sqrt();
+            if !(g > 0.0 && g.is_finite()) {
+                continue;
+            }
+            // the row's own Newton step, −r g / |g|², no longer than `reach`, and back
+            let length = (r[row].abs() / g).min(reach);
+            let folds = [1.0, -1.0].into_iter().any(|way| {
+                let mut on = z.to_vec();
+                for p in span.clone() {
+                    on[self.csr_indices[p] as usize] -=
+                        way * r[row].signum() * self.csr_data[p] / g * length;
+                }
+                self.residuals(&on)[row].is_nan()
+            });
+            if folds {
+                let (b, i) = self.instance_of(row);
+                if let Some((value, target)) = self.reading(z, row) {
+                    edges.push((self.blocks[b].cids[i], value, target));
+                }
+            }
+        }
+        edges
+    }
+
+    /// **Whether a failed solve stopped folded** (#510 S2): a driven deflection over a region or a
+    /// solid (`Sketch::meshed`) that cannot be read at `z` — its mesh folded where the drawing
+    /// stands — or that stopped at the edge of its mesh (`mesh_edges`).
+    pub fn folded(&mut self, sk: &Sketch, z: &[f64], tol: f64) -> bool {
+        if sk.meshed.is_empty() {
+            return false;
+        }
+        let r = self.residuals(z);
+        let unread = (0..self.n_res).any(|row| {
+            let (b, i) = self.instance_of(row);
+            self.hard[row] && r[row].is_nan() && self.drives(row)
+                && sk.constraint(self.blocks[b].cids[i]).and_then(|c| c.meshed_key(sk))
+                    .is_some_and(|k| sk.meshed.contains_key(&k))
+        });
+        unread || !self.mesh_edges(sk, z, tol).is_empty()
+    }
+
+    /// Row `row`'s reading at `z`, a driven deflection's: its value and what it states.
+    fn reading(&mut self, z: &[f64], row: usize) -> Option<(f64, f64)> {
+        self.apply_z(z);
+        let (b, i) = self.instance_of(row);
+        let (block, kn) = (&self.blocks[b], self.kernels[self.blocks[b].kid]);
+        let v: Vec<f64> =
+            block.gidx[i * kn.n_par..(i + 1) * kn.n_par].iter().map(|&g| self.x[g as usize]).collect();
+        crate::interior::reading(&v, &block.consts[i * kn.n_const..(i + 1) * kn.n_const])
     }
 
     /// Numerical rank of the Jacobian at z — the workhorse of Stage 2/4 diagnosis.  `tol` is

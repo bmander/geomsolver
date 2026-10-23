@@ -485,6 +485,30 @@ scenario drawn, unless a rule names another.
   written (**E040**): a region bounded by a spline or a curve (not moved yet), drawn in a plane the
   solve turns, under a direction the solve moves, or left free (`Row::check`).
 
+- **A region is meshed again where its mesh folds** (#510 S2; `System::folded`,
+  `System::mesh_edges`, `System::remeshed`). A mesh moved far enough folds: the drilled plate's
+  hole, meshed at 18mm, cannot be read past about 26.93mm, short of the 27.7mm a quarter of its
+  load needs to sink its `sag`. A failed document solve is *folded* where a driven deflection over
+  a mesh held on the sketch cannot be read where it stopped, or a step on along its rate — its
+  own Newton step, no longer than `EDGE` (1e-3) of the extent, or that step back, since on a
+  mesh about to fold the rate may point either way (its edge). Folded, the solve runs none of its
+  `RETRIES` (each reads the same mesh to the same fold); then, after `RECOVERIES`, each such row
+  is meshed again where the drawing stands (`Sketch::meshed` replaced; a row that cannot be
+  meshed there keeps its mesh), compiled and solved on from there, up to `REMESHES` (3) times,
+  each kept where it settles or ends nearer to holding — how far the drawing reads is what is
+  said of it — else the sketch and its meshes put back. Folded where it *starts* (a mesh an
+  earlier solve made, the drawing since put back) it is meshed where it stands. A driven answer
+  is its mesh's, so one solved on a mesh made elsewhere agrees with the drawing's own to the
+  meshes' discretisation. Where it was meshed again is kept (`Sketch::meshed_at`, the last
+  pose; put back with the sketch) so a copy of the source reads on the same meshes (`mesh_at`,
+  below: a page's worker). A drawing still at an edge when the meshes run out is said so, as a
+  requirement out of reach is (`beyond what its region's mesh can follow: the mesh folds a step
+  further, made again where the solve stopped, at 56.98mm`), and searched no further. The plate
+  is the gate (`a_regions_mesh_is_made_again_where_it_folds`): read at 26, at its edge a hair
+  short of 26.93, folded past it; under a quarter load, and asked to sink 100mm, it holds what it
+  states (a hole of 27.67mm; one 0.16mm from the plate's edge); and put back and asked its own
+  `sag` on the mesh made by the edge, it solves to the drawing's radius within 0.5%.
+
 - **What the report says of a driven requirement is its row's** (#510 S2;
   `report::scenario_answers`). The row's value at the solved drawing (its residual plus what it
   states) is the requirement's value, so `driven == 0.5mm, held` judges what the solve held. A
@@ -784,7 +808,13 @@ scenario drawn, unless a rule names another.
   `index`, and the picture of the scenario asked for — flat arrays, places and moves to seven
   figures — or `null`. **The page reads it in the mesh worker** (a `scenario` job, its own
   instance), never on its own thread: a solid read in three dimensions is seconds. The job is
-  keyed by the text, the pose and the scenario drawn, as the claims' is; the answers already said
+  keyed by the text, the pose, where its meshes were made again and the scenario drawn, as the
+  claims' is by the first two. The worker reads the text afresh, so it meshes it where the page
+  did (`Sketch::meshed_at`, `gcs_sketch_meshed_at`; `Sketch::mesh_at`, `gcs_sketch_mesh_at`;
+  `Sketch.meshedAt`/`meshAt`) before it stands it at the pose: a driven row is read on the mesh it
+  was solved on, to the bit (`core.test.ts`, `a drawing meshed again is read on its meshes by a
+  copy of its source`), and held, where its own mesh, made where it was drawn, folds before the
+  pose and would read the requirement unmet. The answers already said
   stand until the new ones come, and the picture goes at once (it is of a pose the edit may have
   left). With no worker (node) the reading is made at once, so the tests see what the page would
   (`app.test.ts`, `choosing a scenario writes nothing, and draws its marks and how the drawing
@@ -1032,13 +1062,15 @@ scenario drawn, unless a rule names another.
   interior's row). A row that holds to what the solver accepts (`SolveOpts::acceptance_tol`, at the
   size of the larger of its value and what it states) is `Reached`. One that does not
   is `Held` where no column it reads is free. It is `Extreme` where its change over the free
-  columns, each moved by its own scale, is below `STATIONARY` (1e-3) of its gap to what it
-  states: closing the gap along its rate would move them across a thousand times their scale. A
-  solve that stopped there stopped at the extreme of what the row can be, short of what it states:
-  the least it reaches where it states less, else the most. Otherwise it `Moves`, and there is no
-  verdict. Against the gap and not the value: a solve reaches an extreme only to within its step
-  (the drilled plate's hole driven toward nothing stops 0.08mm short, its row's rate a millionth of
-  its value), while a row a hair from what it states may move slowly and still reach it.
+  columns, each moved by its own scale, is below `STATIONARY` (1e-3) of the lesser of its gap to
+  what it states and its own value: closing the gap, or changing the row by itself, along its
+  rate would move them across a thousand times their scale. A solve that stopped there stopped
+  at the extreme of what the row can be, short of what it states: the least it reaches where it
+  states less, else the most. Otherwise it `Moves`, and there is no verdict. Not a millionth of
+  the value: a solve reaches an extreme only to within its step (the drilled plate's hole driven
+  toward nothing stops 0.08mm short, its row's rate a millionth of its value). Not of the gap
+  alone: a row a hair from what it states may move slowly and still reach it, and one asked a
+  million times what it is moves by itself and is no extreme.
   The interior moves a coordinate by the structure's extent and an area by itself. Driving two
   bars' rise to half their least sink, a damped Newton stops at `h = √2 w`, and the verdict is
   the closed form's `3√3 P w / (4EA)` (`a_requirement_out_of_reach_says_so`).
@@ -1050,8 +1082,8 @@ scenario drawn, unless a rule names another.
   in its own units (`Param::scale`). Where at least one fails and every one that fails is `Held`
   or `Extreme`, the failure is the requirement's: any other row that does not hold is what the
   pull toward it made (a hole's radius driven toward nothing reads its circle's row over a size
-  that went with it). The solve then runs none of its `RETRIES` (each starts again from the same
-  seeds toward the same extreme, every step an analysis factored), and the diagnosis — where the
+  that went with it). The solve then runs none of its `RETRIES` nor its recoveries (each starts
+  again toward the same extreme, every step an analysis factored), and the diagnosis — where the
   drawing stands, or where its scratch solve stopped when that is no stationary point, as on a
   page that puts a failed solve's pose back — files the rows as the conflict
   (`Diagnosis::out_of_reach`, each with `Reach::text`; report `outOfReach`, `[id, words]`) and
@@ -1062,7 +1094,7 @@ scenario drawn, unless a rule names another.
   driven toward nothing, within 0.5% of the plain plate's sink, and the same verdict at both
   poses; on the page it is answered in a few seconds where the cascade and the search took half a
   minute. A hole driven *larger* than its mesh, made where it was compiled, can follow is not
-  out of reach — its row cannot be read past where the mesh folds, and it is still searched.
+  out of reach: its mesh is made again where it folds (below).
 
 - **A scenario's words, at the solved drawing** (`analysis::scenario_words`). Its supports'
   points come from what each names: a point; a line's ends; a solid's box (a solid spans space);

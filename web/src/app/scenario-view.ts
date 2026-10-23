@@ -46,6 +46,9 @@ export type ScenarioJob = {
   modules: [string, string][];
   /** The page's parameter values, so the worker's drawing is this one and not a fresh solve. */
   x: Float64Array;
+  /** Where the page's meshes were made again, if they were (`Sketch.meshedAt`): the worker's
+   *  are made there, so a driven row reads on the mesh it was solved on. */
+  meshedAt: Float64Array | null;
   /** The scenario to draw, by name — the worker checks its own drawing names it alike — or ''. */
   drawn: string;
 } | { kind: 'cancel'; id: number };
@@ -114,7 +117,8 @@ export class ScenarioReading {
   private worker: ReadWorker | null = null;
   private job = 0;
   /** The drawing and the choice the job in hand (or its reading) is of. */
-  private of: { text: string; x: Float64Array; drawn: string } | null = null;
+  private of: { text: string; x: Float64Array; meshedAt: Float64Array | null; drawn: string }
+    | null = null;
   private state: Reading | null = null;
 
   /** `told` hears the reading as it moves, and null once the drawing has no scenario; `spawn`
@@ -136,10 +140,13 @@ export class ScenarioReading {
       return;
     }
     const x = doc.sketch.getX();
+    const meshedAt = doc.sketch.meshedAt();
+    const sameMeshes = (a: Float64Array | null) =>
+      a === null || meshedAt === null ? a === meshedAt : samePose(a, meshedAt);
     if (this.of && this.of.text === doc.text && this.of.drawn === drawn
-        && samePose(this.of.x, x)) return;
+        && samePose(this.of.x, x) && sameMeshes(this.of.meshedAt)) return;
     this.job += 1;
-    this.of = { text: doc.text, x, drawn };
+    this.of = { text: doc.text, x, meshedAt, drawn };
     // what was said of the last drawing stands until this one is read: the answers are kept, so
     // the footer does not blink empty on every edit, and the picture goes, since it is of a pose
     // the drawing has left
@@ -166,7 +173,8 @@ export class ScenarioReading {
     }
     const modules = related(doc.text).filter((f) => f.provided)
       .map((f): [string, string] => [f.name, f.text]);
-    this.worker.postMessage({ kind: 'scenario', id: this.job, text: doc.text, modules, x, drawn });
+    this.worker.postMessage(
+      { kind: 'scenario', id: this.job, text: doc.text, modules, x, meshedAt, drawn });
     this.told(this.state);
   }
 

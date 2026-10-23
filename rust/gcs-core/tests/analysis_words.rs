@@ -405,10 +405,12 @@ fn a_requirement_out_of_reach_says_so() {
                "out of reach: every number it reads is held, so nothing drives it");
     assert_eq!(s.reach(&x, value, &free), Ok(Reach::Reached));
     assert_eq!(reach(1.0, 1.0 + 1e-12, &[0.0], &[1.0], &[true]), Reach::Reached);
-    // judged against the gap, not the value: a row a hundred-thousandth from what it states,
-    // moving a ten-millionth of itself, still moves toward it; one stopped at its least, four
+    // judged against the lesser of the gap and the value: a row a hundred-thousandth from what
+    // it states, moving a ten-millionth of itself, still moves toward it; one asked a million
+    // times what it is, moving a tenth of itself, moves; one stopped at its least, four
     // millimetres short, moves a millionth of itself and no more
     assert_eq!(reach(1.0, 1.0 + 1e-5, &[5e-7], &[1.0], &[true]), Reach::Moves);
+    assert_eq!(reach(1.7, 1e6, &[0.17], &[1.0], &[true]), Reach::Moves);
     let stopped = reach(4.79, 0.6, &[7.5e-6], &[1.0], &[true]);
     assert_eq!(stopped, Reach::Extreme { value: 4.79, least: true });
 }

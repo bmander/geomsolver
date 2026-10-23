@@ -1372,6 +1372,28 @@ test('a requirement out of reach is said with why, where the page diagnoses it',
   doc.dispose();
 });
 
+test('a drawing meshed again is read on its meshes by a copy of its source', () => {
+  // the drilled plate under a quarter of its load is solved on a mesh made again where the
+  // first one folded (#510 S2): a page's worker reads the same text afresh, meshes it where the
+  // page did (`meshedAt`, `meshAt`) and stands it where it solved, and reads what the page does
+  const src = examples.source('drilled_plate').replace(/^P := 2kN$/m, 'P := 0.5kN');
+  const page = Document.read(src);
+  assert.ok(page.ok, JSON.stringify(page.diagnostics));
+  assert.equal(page.sketch.meshedAt(), null);
+  assert.ok(solve(page.sketch).success);
+  const at = page.sketch.meshedAt();
+  assert.ok(at !== null && at.length === page.sketch.getX().length);
+  const worker = Document.read(src);
+  worker.sketch.meshAt(at);
+  worker.sketch.setX(page.sketch.getX());
+  const [mine, theirs] = [page, worker].map((d) => d.scenarios()[0].answers[0]);
+  assert.match(mine.text, /driven == 0\.6mm, held$/);
+  assert.deepEqual(theirs, mine);
+  assert.throws(() => worker.sketch.meshAt([1, 2, 3]));
+  page.dispose();
+  worker.dispose();
+});
+
 test('a document says where its scenarios fall and how the drawing moves under one', () => {
   // the shelf bracket's one scenario (#510): a mark for each of its four lines, every place the
   // core's and each mark's span the line as written; its answers read with its picture are the

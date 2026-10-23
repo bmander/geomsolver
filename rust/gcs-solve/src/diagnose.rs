@@ -311,6 +311,23 @@ pub fn summary(d: &Diagnosis) -> String {
     parts.join("; ")
 }
 
+/// **What a failed drawing's driven deflections cannot meet where it stands at `z`**, each with
+/// why in words (#510 P7, S2): every failing one out of reach of what drives it
+/// (`System::out_of_reach`, `Reach::text`), else each stopped at the edge of the mesh it is read
+/// on, which folds a step further even meshed where the solve stopped (`System::mesh_edges`).
+/// Empty where neither is the failure.
+fn unmet(sys: &mut System, sk: &Sketch, z: &[f64], tol: f64) -> Vec<(u32, String)> {
+    let spell = |v| crate::beams::value_text(sk, crate::model::Output::Deflection, v);
+    if let Some(found) = sys.out_of_reach(sk, z, tol) {
+        return found.into_iter().filter_map(|(c, v)| v.text(&spell).map(|t| (c, t))).collect();
+    }
+    sys.mesh_edges(sk, z, tol).into_iter().map(|(c, value, _)| (c, format!(
+        "beyond what its region's mesh can follow: the mesh folds a step further, made again \
+         where the solve stopped, at {}",
+        spell(value)
+    ))).collect()
+}
+
 /// Constraints that could be deleted without losing any information, given `w`, a basis of the
 /// left null space of the Jacobian (one column per dependency).
 ///
@@ -744,23 +761,18 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     // three innocent statements to delete (issue #43).  The extra solve is paid only on this
     // path, which the app is rarely on (it solves before it diagnoses).
     //
-    // A driven deflection the solve left at the extreme of what drives it, short of what it
-    // states, is the verdict before either (#510 P7): no solve from here meets it, and every
-    // trial of the search would factor its analysis at every step to find the set it already is
-    // — seconds of a page's thread, an edit at a time.  Read where the drawing stands, or, where
-    // that is no stationary point (a page puts a failed solve's pose back), where the scratch
-    // solve stopped.
-    let spell = |v| crate::beams::value_text(sk, crate::model::Output::Deflection, v);
-    let words = |found: Option<Vec<(u32, analysis::Reach)>>| -> Vec<(u32, String)> {
-        found.unwrap_or_default().into_iter().filter_map(|(c, v)| v.text(&spell).map(|t| (c, t)))
-            .collect()
-    };
+    // A driven deflection the solve left at the extreme of what drives it, or at the edge of
+    // the mesh it is read on, short of what it states, is the verdict before either (#510 P7,
+    // S2; `unmet`): no solve from here meets it, and every trial of the search would factor its
+    // analysis at every step to find the set it already is — seconds of a page's thread, an edit
+    // at a time.  Read where the drawing stands, or, where that is no stationary point (a page
+    // puts a failed solve's pose back), where the scratch solve stopped.
     let mut out_of_reach: Vec<(u32, String)> = Vec::new();
     let mut stalled = false;
     let mut unsettled = false;
     if !violated.is_empty() {
         let z = sys.z0(sk);
-        out_of_reach = words(sys.out_of_reach(sk, &z, opts.tol));
+        out_of_reach = unmet(sys, sk, &z, opts.tol);
         if out_of_reach.is_empty() && !sys.stationary(&z) {
             let mut scratch = sk.clone();
             let mut ssys = System::new(&scratch);
@@ -768,7 +780,7 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
                 stalled = true;
             } else {
                 let z = ssys.z0(&scratch);
-                out_of_reach = words(ssys.out_of_reach(&scratch, &z, opts.tol));
+                out_of_reach = unmet(&mut ssys, &scratch, &z, opts.tol);
                 unsettled = out_of_reach.is_empty();
             }
         }
