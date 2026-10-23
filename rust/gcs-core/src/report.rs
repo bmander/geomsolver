@@ -462,8 +462,8 @@ pub struct ScenarioAnswer {
 /// with the drawing (#510 S2), which a fresh mesh of the solved drawing reads to its
 /// discretisation, not to rounding; any other driving row or bound is said to hold or not, and
 /// that nothing drives it yet (S3–S4).  A driven requirement is said whenever its row has a value,
-/// whatever its reading answers: a mass or a volume is driven under no support, of a frame its
-/// scenario may leave free, and of a prism no reading need read.
+/// whatever its reading answers.  What a body is made of is no scenario's: the drawing's masses and
+/// volumes are said by `measure_answers`.
 pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::beams::Read)
     -> Vec<ScenarioAnswer>
 {

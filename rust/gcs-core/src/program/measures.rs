@@ -14,13 +14,11 @@ use crate::ir::{Operation as StmtKind, Statement};
 use crate::model::{Applied, EntKind, EntRef, Measured, MeshedKey, Quantity, Sketch};
 use crate::syntax::{OpArg, Span, StmtId};
 
-/// **A mass or a volume and where it was written**: its statement, the statement's span, what a
-/// report says it of (`mass(arm)`), its index on `Sketch::measured`, and its row where it drives
-/// one.
+/// **A mass or a volume and where it was written**: its statement, what a report says it of
+/// (`mass(arm)`), its index on `Sketch::measured`, and its row where it drives one.
 #[derive(Clone, Debug)]
 pub struct MeasureStated {
     pub stmt: StmtId,
-    pub span: Span,
     pub head: String,
     pub index: usize,
     pub driven: Option<u32>,
@@ -56,13 +54,12 @@ pub(super) fn measures(
         let head = format!("{}({})", q.word(), crate::syntax::ref_text(&w.ops[0]));
         let index = sk.measured.len();
         let claim = measured.claim;
-        let value = measured.value;
         sk.measured.push(measured);
-        let driven = if claim { None } else { drive(sk, map, st, q, index, value, &head, diags) };
+        let driven = if claim { None } else { drive(sk, map, st, index, &head, diags) };
         if !claim && driven.is_none() {
             continue;
         }
-        out.push(MeasureStated { stmt: st.id, span: st.span, head, index, driven });
+        out.push(MeasureStated { stmt: st.id, head, index, driven });
     }
     if out.iter().any(|m| m.driven.is_some()) {
         // the unknowns the members' areas are read over are bound once the rows read them
@@ -143,22 +140,20 @@ fn measurable(sk: &Sketch, e: EntRef) -> bool {
 /// A stated measure compiled to its row, `Sketch::measured[index]`: a prism's meshed once, here,
 /// and held before the row is validated so the validation reads that mesh — or refused where it
 /// is written (**E040**), the solve unable to read it.
-#[allow(clippy::too_many_arguments)]
 fn drive(
     sk: &mut Sketch,
     map: &mut SourceMap,
     st: &Statement,
-    q: Quantity,
     index: usize,
-    value: f64,
     head: &str,
     diags: &mut Vec<Diag>,
 ) -> Option<u32> {
-    let kind = match q {
+    let m = &sk.measured[index];
+    let kind = match m.quantity {
         Quantity::Mass => CKind::Mass,
         Quantity::Volume => CKind::Volume,
     };
-    let args = vec![Arg::Int(index as i64), Arg::Num(value)];
+    let args = vec![Arg::Int(index as i64), Arg::Num(m.value)];
     let key = MeshedKey::Measure(index);
     if let Ok(crate::constraints::InteriorRow::Meshed(row)) =
         Constraint::new(kind, args.clone()).interior_row(sk)

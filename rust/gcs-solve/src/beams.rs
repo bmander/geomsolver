@@ -22,9 +22,10 @@
 //! meshed with one element between joints (exact for the joints' moves under loads at joints
 //! and spread evenly, which is all a static deflection reads), its nodes' columns the lifts of
 //! the drawing's points there and its sections read over the unknowns they state (`Sizing`).
-//! **A driving mass or volume is a row too** (`Row::measured`): `mass(arm) == 2kg` compiles to
-//! the same kernel over the members it names, each one element between its line's ends, reading
-//! what they are made of rather than how they move (`interior::Reads`), so it solves nothing.
+//! **A mass or a volume the drawing states is a row too** (`Row::measured`): `mass(2kg) arm`
+//! compiles to the same kernel over the members it names, each one element between its line's
+//! ends, reading what they are made of rather than how they move (`interior::Reads`), so it
+//! solves nothing.  It is the drawing's, never a scenario's (`program::measures`).
 //! Every other requirement is judged after the solve, never solved for.
 
 use crate::diagnose::analysis::direction;
