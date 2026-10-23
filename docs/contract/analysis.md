@@ -14,7 +14,7 @@ material's JSON (`io::material_json`) or report (`report::materials_json`); or `
 `interior::Sizing`, `model::Over`, `Sketch::scenarios` or `program::scenarios::drive`; or
 `interior::Tri6`, `interior::Laid`, `interior::Moved` (`interior/plane.rs`, `interior/moved.rs`),
 `delaunay/plane.rs`, `prisms.rs`, a scenario's `plane stress`/`plane strain` line
-(`model::PlaneReading`), `Sketch::meshed` or `DeflectionRow`; or `interior::Tet10`,
+(`model::PlaneReading`), `Sketch::meshed` or `InteriorRow`; or `interior::Tet10`,
 `interior::Borne`, `interior::Stack` (`interior/solid.rs`), `bodies.rs`, `beams::Read::errors`,
 `cholesky::Cholesky::factor_ldl` or `eigen::UNBUCKLED`; or `deformed.rs`, `overview/scenario.rs`,
 a reader's `read_pictured` or `report::scenarios_pictured_json` (a scenario drawn); or
@@ -464,7 +464,7 @@ names another.
   (`gcs-cli/tests/cli.rs`, `a_plane_reading_is_said`).
 
 - **A region's deflection, driven, is a row whose mesh moves with the drawing** (#510 S2;
-  `prisms::Row`, `interior::Moved`, `DeflectionRow::Plane`). `deflection(p, along: d) == v`, `p` a
+  `prisms::Row`, `interior::Moved`, `InteriorRow::Plane`). `deflection(p, along: d) == v`, `p` a
   point of a region the scenario reads in its plane (`prisms::of_region`, tried after a frame's
   joint), compiles to `CKind::Deflection` as a frame's does, the interior's kernel at the region's
   widths. The epic's first difficulty, remeshing, met by keeping the topology: the region is
@@ -673,7 +673,7 @@ names another.
   readings' change.
 
 - **A solid's deflection, driven, is a row stacked over its face's** (#510 S3; `bodies::row`,
-  `bodies::of_body`, `interior::Stack`, `DeflectionRow::Meshed`). `deflection(p, along: d) == v`,
+  `bodies::of_body`, `interior::Stack`, `InteriorRow::Meshed`). `deflection(p, along: d) == v`,
   `p` a point of a prism read in three dimensions (tried after a frame's joint and a region's
   point), compiles to `CKind::Deflection` as a region's does, and its row is a region's
   (`prisms::Row`): the solid meshed once where the drawing stands when the row is compiled, held on
@@ -766,8 +766,11 @@ names another.
     — a prism's volume is its face's area through its depth whether the scenario reads it in its
     plane or in three dimensions, so a solid read in three dimensions drives over its face's mesh
     too, never its tetrahedra — its nodes moved with the drawing (`moved_with`, `at: None`) and the
-    row held on `Sketch::meshed` by `(scenario, requirement, None)`. Refused where a region's
-    deflection is (**E040**): a side that is a spline or a curve, a plane the solve turns.
+    row held on `Sketch::meshed` by `MeshedKey::Measure`. A measure reads only the boundary
+    (a conforming mesh's `Σ ∫ det J` is the area its boundary encloses wherever its inner nodes
+    stand), so its nodes inside stay where they were meshed (`Moved::boundary`): no Laplacian is
+    factored and none carried by the gradient. Refused where a region's deflection is
+    (**E040**): a side that is a spline or a curve, a plane the solve turns.
   - **Anything else compiles nothing**: a mass of a point, or of a solid that is no prism (turned,
     united, cut) — its volume's nodes are no functions of the drawing, as a filled body's
     deflection's are not — is judged after the solve, and the report says nothing drives it yet.
@@ -789,15 +792,17 @@ names another.
     a prism with a round corner and a hole in its plane and in three dimensions — at the solution
     and knocked off it (`a_measure_agrees_with_finite_differences_as_the_drawing_states_it`).
 
-- **A mass or a volume is answered under no support** (`beams::measure`, `prisms::measure`,
-  `bodies::measure`): each reader reads a measure of the structure it has built — the frame, the
-  region meshed, the solid meshed — and never its solve, so a frame, a region or a solid its
-  supports leave free answers its mass, and a scenario asking nothing else says nothing against
-  it. A region or a solid analysed for another output is measured on that mesh, else meshed
-  alone. **A driven requirement is said whenever its row has a value** (`report::scenario_answers`),
-  whatever its reading answers: before, a frame left free had no answer to report beside a
-  driving deflection, which its row refuses anyway; now a volume driven of a prism no reading
-  reads (one made of no material) is reported as its row reads it.
+- **A mass or a volume is answered as its row reads it, under no support** (`beams::measure`,
+  `prisms::measure`, `bodies::measure`): each reader measures, before any analysis and with no
+  moduli, supports or loads, the structure a driving row builds — a frame's members, a prism's
+  face through its depth (whether read in its plane or in three dimensions), and only a solid that
+  is no prism over its own tetrahedra — at its own size, so the error beside it is the same two
+  readings'. One formula (`Structure::measure`) is both the row's value and the reading's, and a
+  frame, a region or a solid its supports leave free answers its mass. **A driven requirement is
+  said whenever its row has a value** (`report::scenario_answers`), whatever its reading answers:
+  before, a frame left free had no answer to report beside a driving deflection, which its row
+  refuses anyway; now a volume driven of a prism no reading reads (one made of no material) is
+  reported as its row reads it.
 
 - **A scenario drawn: where its lines fall** (#510; `overview::scenario::marks`,
   `report::scenario_marks_json`, FFI `gcs_elab_scenario_marks_json`, `Document.scenarioMarks`).

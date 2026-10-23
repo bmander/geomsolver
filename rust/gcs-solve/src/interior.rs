@@ -132,6 +132,21 @@ impl Reads {
     pub fn measure(self) -> bool {
         self != Reads::Displacement
     }
+
+    /// The measure a scenario's output reads, `mass` or `volume`; `None` for any other output.
+    pub fn of(output: crate::model::Output) -> Option<Reads> {
+        match output {
+            crate::model::Output::Mass => Some(Reads::Mass),
+            crate::model::Output::Volume => Some(Reads::Volume),
+            _ => None,
+        }
+    }
+
+    /// What weighs a member or an element of density `rho`: its density for a mass, one for a
+    /// volume (or a displacement, which weighs nothing).
+    pub fn density(self, rho: f64) -> f64 {
+        if self == Reads::Mass { rho } else { 1.0 }
+    }
 }
 
 /// **A load spread along beams** (#510 S1), each carrying it as a force a length, `q`, in the
@@ -1089,29 +1104,39 @@ impl Structure {
     /// one's `∫ det J`, each weighed by its density for a mass (a bar, of none, weighing
     /// nothing).  No displacement is solved for.
     pub fn measure(&self, x: &[f64]) -> f64 {
+        let w = |rho: f64| self.reads.density(rho);
         let mut m = 0.0;
-        if self.reads != Reads::Mass {
-            for (i, b) in self.bars.iter().enumerate() {
-                m += norm(self.place(b.a, b.b, x)) * x[self.dim * self.nodes + i];
-            }
+        for (i, b) in self.bars.iter().enumerate() {
+            m += w(0.0) * norm(self.place(b.a, b.b, x)) * x[self.dim * self.nodes + i];
         }
         for (i, b) in self.beams.iter().enumerate() {
-            m += self.density(b.rho) * norm(self.place(b.a, b.b, x)) * self.section(i, x)[0];
+            m += w(b.rho) * norm(self.place(b.a, b.b, x)) * self.section(i, x)[0];
         }
         for (i, t) in self.tris.iter().enumerate() {
-            m += self.density(t.rho) * t.depth * t.area(&self.tri_places(i, x));
+            m += w(t.rho) * t.depth * t.area(&self.tri_places(i, x));
         }
         for (i, t) in self.tets.iter().enumerate() {
-            m += self.density(t.rho) * t.volume(&self.tet_places(i, x));
+            m += w(t.rho) * t.volume(&self.tet_places(i, x));
         }
         m
+    }
+
+    /// **The measure at `x`, where it is one**: a mass or a volume more than nothing — else why
+    /// it has none (a material of no density), which a row is refused for where it is stated.
+    pub fn measured(&self, x: &[f64]) -> Result<f64, String> {
+        let m = self.measure(x);
+        if m.is_finite() && m > 0.0 {
+            return Ok(m);
+        }
+        let what = if self.reads == Reads::Mass { "mass" } else { "volume" };
+        Err(format!("it has no {what} where the drawing stands, so nothing it could be sized by"))
     }
 
     /// **The measure's gradient in the columns at `x`, added into `g`**: its own `∂J/∂x`, with no
     /// adjoint — a member's `w A ĝ` at its ends and `w L` in its area, an element's `w ∂(∫ det J)`
     /// over its nodes' places (`Dual` over its twelve or thirty coordinates).
     pub fn measure_gradient(&self, x: &[f64], g: &mut [f64]) {
-        let dim = self.dim;
+        let (dim, w) = (self.dim, |rho: f64| self.reads.density(rho));
         let member = |a: usize, b: usize, at: usize, area: f64, w: f64, g: &mut [f64]| {
             let d = self.place(a, b, x);
             let l = norm(d);
@@ -1121,19 +1146,17 @@ impl Structure {
             }
             g[at] += w * l;
         };
-        if self.reads != Reads::Mass {
-            for (i, b) in self.bars.iter().enumerate() {
-                let at = dim * self.nodes + i;
-                member(b.a, b.b, at, x[at], 1.0, g);
-            }
+        for (i, b) in self.bars.iter().enumerate() {
+            let at = dim * self.nodes + i;
+            member(b.a, b.b, at, x[at], w(0.0), g);
         }
         for (i, b) in self.beams.iter().enumerate() {
             let at = self.section_at(i);
-            member(b.a, b.b, at, x[at], self.density(b.rho), g);
+            member(b.a, b.b, at, x[at], w(b.rho), g);
         }
         for (i, t) in self.tris.iter().enumerate() {
             let a = plane::area_of(&self.tri_places_d::<12>(i, x));
-            let w = self.density(t.rho) * t.depth;
+            let w = w(t.rho) * t.depth;
             for (k, &n) in t.n.iter().enumerate() {
                 for c in 0..2 {
                     g[2 * n + c] += w * a.g[2 * k + c];
@@ -1142,19 +1165,13 @@ impl Structure {
         }
         for (i, t) in self.tets.iter().enumerate() {
             let v = solid::volume_of(&self.tet_places_d::<30>(i, x));
-            let w = self.density(t.rho);
+            let w = w(t.rho);
             for (k, &n) in t.n.iter().enumerate() {
                 for c in 0..3 {
                     g[3 * n + c] += w * v.g[3 * k + c];
                 }
             }
         }
-    }
-
-    /// What a measure weighs a member or an element of density `rho` by: its density for a
-    /// mass, one for a volume.
-    fn density(&self, rho: f64) -> f64 {
-        if self.reads == Reads::Mass { rho } else { 1.0 }
     }
 
     /// **Each facet's and element's share of a load borne by the solid** (#510 S3), at `x`, over
@@ -1830,7 +1847,12 @@ impl<'a> Row<'a> {
             if v.len() != m.columns + free as usize || !s.bars.is_empty() || !s.beams.is_empty() {
                 return None;
             }
-            let placed = m.places(&v[..m.columns])?;
+            // a measure reads the boundary alone: its inner nodes need no harmonic map
+            let placed = if s.reads.measure() {
+                m.boundary(&v[..m.columns])
+            } else {
+                m.places(&v[..m.columns])?
+            };
             let x = placed.x.clone();
             return Some(Row { s, x, stated, free, sized: None, moved: Some((m, placed)) });
         }
@@ -1875,9 +1897,10 @@ fn res(n: usize, v: &[f64], k: &[f64], r: &mut [f64]) {
     for i in 0..n {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
         r[i] = Row::read(v, k).and_then(|row| {
-            let j = match row.s.reads.measure() {
-                true => row.s.measure(&row.x),
-                false => row.s.output(&row.s.solve(&row.x).ok()?),
+            let j = if row.s.reads.measure() {
+                row.s.measure(&row.x)
+            } else {
+                row.s.output(&row.s.solve(&row.x).ok()?)
             };
             Some(j - row.target(v))
         }).unwrap_or(f64::NAN);
@@ -1896,15 +1919,14 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         };
         let s = &read.s;
         // a measure solves nothing: its gradient is its own
-        let st = match s.reads.measure() {
-            true => None,
-            false => match s.solve(&read.x) {
-                Ok(st) => Some(st),
-                Err(_) => {
-                    row.fill(f64::NAN);
-                    continue;
-                }
-            },
+        let st = if s.reads.measure() {
+            None
+        } else {
+            let Ok(st) = s.solve(&read.x) else {
+                row.fill(f64::NAN);
+                continue;
+            };
+            Some(st)
         };
         let gradient = |g: &mut [f64]| match &st {
             Some(st) => s.gradient(st, &read.x, g),

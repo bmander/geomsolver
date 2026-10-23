@@ -202,12 +202,6 @@ impl Output {
     pub fn directed(self) -> bool {
         self == Output::Deflection
     }
-
-    /// Whether it is a measure of what the body is made of (`mass`, `volume`): read of its
-    /// geometry and its density alone, under no support and no load.
-    pub fn measure(self) -> bool {
-        matches!(self, Output::Mass | Output::Volume)
-    }
 }
 
 /// **Which of the three statements a requirement is** (#510): what the solve does with it.

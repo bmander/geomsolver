@@ -27,7 +27,7 @@ use crate::delaunay::plane::Mesh as Plane;
 use crate::delaunay::tetra::{self, EDGES};
 use crate::diagnose::analysis::{self, direction, Held};
 use crate::eigen::{self, Pairs};
-use crate::interior::{Borne, Failure, State, Structure, Tet10};
+use crate::interior::{Borne, Failure, Reads, State, Structure, Tet10};
 use crate::model::{
     Applied, EntKind, LoadKind, LoadValue, Output, Property, Requirement, Scenario, Sketch,
 };
@@ -755,20 +755,11 @@ pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
     }
     let named = named_points(sc);
     let mut read: BTreeMap<usize, Result<Analysed, Unread>> = BTreeMap::new();
-    let mut filled: BTreeMap<usize, Result<Filled, Unread>> = BTreeMap::new();
     for (k, (r, s)) in sc.requirements.iter().zip(&of).enumerate() {
         let Some(s) = *s else { continue };
-        if r.output.measure() {
-            // a measure reads what the solid is made of, under no support and no load: of the
-            // solid analysed where it is, else of it meshed alone
-            let f = match read.get(&s) {
-                Some(Ok(a)) => Ok(&a.f),
-                _ => filled.entry(s).or_insert_with(|| {
-                    Filled::new(sk, sc, s, mesh(sk, s, &named, coarser)?)
-                }).as_ref(),
-            };
-            out.answers[k] =
-                Some(f.map_err(|m| m.text(&sk.solids[s].name)).and_then(|f| measure(sk, f, r)));
+        // a measure reads what the solid is made of, under no support and no load
+        if let Some(reads) = Reads::of(r.output) {
+            out.answers[k] = Some(measure(sk, s, reads, coarser));
             continue;
         }
         let a = read.entry(s).or_insert_with(|| {
@@ -825,7 +816,7 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
         Output::Compliance => {
             Ok(f.s.forces(&f.x).iter().zip(&a.state()?.u).map(|(p, u)| p * u).sum())
         }
-        Output::Mass | Output::Volume => measure(sk, f, r),
+        Output::Mass | Output::Volume => unreachable!("a measure is read before any analysis"),
         Output::Mode => {
             let n = r.count.unwrap_or(1) as usize;
             let v = *a.pairs(sk)?.values.get(n - 1).ok_or("it has fewer modes than that")?;
@@ -848,14 +839,20 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
     }
 }
 
-/// **A mass or a volume over solid `f`** (`r` says which): `ρ ΣV`, or `ΣV` — what it is made of,
-/// which no solve reads, so a solid its supports leave free has one.
-fn measure(sk: &Sketch, f: &Filled, r: &Requirement) -> Result<f64, String> {
-    let rho = match r.output {
-        Output::Mass => property(sk, f.solid, Property::Rho)?,
-        _ => 1.0,
-    };
-    Ok(rho * f.s.volume(&f.x))
+/// **A mass or a volume of solid `solid`** (`reads`), meshed at `coarser` times a reading's size:
+/// a prism's as its driving row reads it, its face through its depth (`prisms::measure`); any
+/// other solid's over its own tetrahedra — what it is made of, read with no solve, so a solid its
+/// supports leave free has one.
+fn measure(sk: &Sketch, solid: usize, reads: Reads, coarser: f64) -> Result<f64, String> {
+    if Region::of(sk, solid).is_ok() {
+        return prisms::measure(sk, solid, reads, coarser);
+    }
+    let rho = if reads == Reads::Mass { property(sk, solid, Property::Rho)? } else { 0.0 };
+    let mesh = mesh(sk, solid, &[], coarser)?;
+    let tets = mesh.tets.iter().map(|&n| Tet10 { n, e: 0.0, nu: 0.0, rho }).collect();
+    let s = Structure { dim: 3, nodes: mesh.nodes.len(), tets, reads, ..Structure::default() };
+    let x: Vec<f64> = mesh.nodes.iter().flatten().copied().collect();
+    Ok(s.measure(&x))
 }
 
 /* -- a driving row (#510 S3) ------------------------------------------------------------------ */

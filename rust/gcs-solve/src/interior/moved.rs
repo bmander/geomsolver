@@ -177,6 +177,18 @@ impl Moved {
     /// **Every node's place at columns `v`**: the boundary's from the drawing, the inner nodes'
     /// by the harmonic map of the boundary's move — or `None` where the Laplacian does not factor.
     pub fn places(&self, v: &[f64]) -> Option<Placed> {
+        self.placed(v, true)
+    }
+
+    /// **The boundary's places at columns `v`, the inner nodes left where they were meshed**: all
+    /// a measure reads, since a conforming mesh's `Σ ∫ det J` is the area its boundary encloses
+    /// wherever its inner nodes stand — no Laplacian factored, and none carried by `chain`.
+    pub fn boundary(&self, v: &[f64]) -> Placed {
+        self.placed(v, false).expect("a boundary placed without a factor")
+    }
+
+    /// `places` where `harmonic`, else `boundary`.
+    fn placed(&self, v: &[f64], harmonic: bool) -> Option<Placed> {
         let n = self.nodes.len();
         let mut x = self.x0.clone();
         for (i, node) in self.nodes.iter().enumerate() {
@@ -193,7 +205,7 @@ impl Moved {
             }
         }
         let (inner, m) = self.inner();
-        if m == 0 {
+        if m == 0 || !harmonic {
             return Some(Placed { x: Stack::over(&self.stack, x), inner, factor: None });
         }
         let mut t: Vec<(usize, usize, f64)> = Vec::new();

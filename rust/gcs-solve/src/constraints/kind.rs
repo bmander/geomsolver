@@ -1595,7 +1595,16 @@ impl CKind {
     /// Whether its kernel is the interior's (`interior::kernel`, `KernelKey::Interior`): a
     /// scenario's output driven — a deflection, a mass, a volume (#510).
     pub fn interior(self) -> bool {
-        matches!(self, CKind::Deflection | CKind::Mass | CKind::Volume)
+        self == CKind::Deflection || self.reads().is_some()
+    }
+
+    /// The measure a mass or a volume driven reads of its structure; `None` for any other kind.
+    pub fn reads(self) -> Option<crate::interior::Reads> {
+        match self {
+            CKind::Mass => Some(crate::interior::Reads::Mass),
+            CKind::Volume => Some(crate::interior::Reads::Volume),
+            _ => None,
+        }
     }
 
     /// Whether this kind's kernel is built from the sketch at a width of its operands' (a

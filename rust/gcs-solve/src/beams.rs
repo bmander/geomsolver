@@ -654,17 +654,11 @@ impl Row {
     /// other.  It reads no support and no load, and of a material only a mass's density; or why
     /// the solve cannot read it: `of` names no member, or a member of no length.
     pub fn measured(sk: &Sketch, of: &Applied, reads: Reads) -> Result<Row, String> {
-        let lines: Vec<(usize, usize)> = match of {
-            Applied::Beam(b) => sk.beams[*b].lines.iter().map(|&l| (*b, l)).collect(),
-            Applied::Ent(e) if e.kind == EntKind::Line => {
-                sk.beams.iter().enumerate().filter(|(_, b)| b.lines.contains(&e.i()))
-                    .map(|(b, _)| (b, e.i())).take(1).collect()
-            }
-            _ => Vec::new(),
-        };
+        let lines = members(sk, of);
         if lines.is_empty() {
             return Err("it is of no beam and no member of one".into());
         }
+        let unknowns = measured_unknowns(sk, of)?;
         let mut points: Vec<usize> = Vec::new();
         let mut node = |p: usize| match points.iter().position(|&q| q == p) {
             Some(k) => k,
@@ -673,7 +667,6 @@ impl Row {
                 points.len() - 1
             }
         };
-        let mut unknowns: Vec<String> = Vec::new();
         let (mut elements, mut stated, mut beams) = (Vec::new(), Vec::new(), Vec::new());
         for &(b, l) in &lines {
             let beam = &sk.beams[b];
@@ -681,23 +674,11 @@ impl Row {
             if !(distance(sk.world_point(ends[0]), sk.world_point(ends[1])) > 0.0) {
                 return Err(format!("a line of `{}` has no length, so it is no member", beam.name));
             }
-            let rho = match reads {
-                Reads::Mass => property(sk, b, Property::Rho)?,
-                _ => 0.0,
-            };
+            let rho = if reads == Reads::Mass { property(sk, b, Property::Rho)? } else { 0.0 };
             elements.push(Element { a: node(ends[0]), b: node(ends[1]), e: 0.0, g: 0.0, rho,
                                     z: plane_normal(sk, l) });
             stated.push(beam.section.stiffness(sk)?);
             beams.push(b);
-            for n in beam.section.over.get(&SectionProp::A).iter().flat_map(|o| &o.unknowns) {
-                if !unknowns.contains(n) {
-                    unknowns.push(n.clone());
-                }
-            }
-        }
-        if unknowns.len() > crate::tape::MAX_VARS {
-            return Err(format!("its sections read {} unknowns, and a row reads at most {}",
-                               unknowns.len(), crate::tape::MAX_VARS));
         }
         let mut x: Vec<f64> = points.iter().flat_map(|&p| sk.world_point(p)).collect();
         x.extend(stated.iter().flatten());
@@ -714,7 +695,7 @@ impl Row {
     /// whether it measures anything there.
     pub fn check(&self) -> Result<(), String> {
         if self.structure.reads.measure() {
-            return measures(&self.structure, &self.x);
+            return self.structure.measured(&self.x).map(|_| ());
         }
         self.structure.solve(&self.x).map(|_| ())
             .map_err(|why| unsolved(&self.structure, &self.x, "the frame", why).text())
@@ -731,16 +712,48 @@ impl Row {
     }
 }
 
-/// **Whether a measure's row measures anything where the drawing stands** (`Reads::Volume`,
-/// `Reads::Mass`): a mass or a volume more than nothing — what it is refused for where it is
-/// stated otherwise (a material of no density).
-pub(crate) fn measures(s: &Structure, x: &[f64]) -> Result<(), String> {
-    let m = s.measure(x);
-    if m.is_finite() && m > 0.0 {
-        return Ok(());
+/// **The members a mass or a volume of `of` is over**, each `(beam, line)`: a beam's every line,
+/// or a line of the first beam drawn on it — none for anything else.
+pub fn members(sk: &Sketch, of: &Applied) -> Vec<(usize, usize)> {
+    match of {
+        Applied::Beam(b) => sk.beams[*b].lines.iter().map(|&l| (*b, l)).collect(),
+        Applied::Ent(e) if e.kind == EntKind::Line => {
+            sk.beams.iter().position(|b| b.lines.contains(&e.i())).map(|b| (b, e.i()))
+                .into_iter().collect()
+        }
+        _ => Vec::new(),
     }
-    let what = if s.reads == Reads::Mass { "mass" } else { "volume" };
-    Err(format!("it has no {what} where the drawing stands, so nothing it could be sized by"))
+}
+
+/// **The unknowns a mass's or a volume's row over `of` reads**: those its members' areas are read
+/// over — the one number of a section a measure reads — each once, at most a tape's variables.
+pub fn measured_unknowns(sk: &Sketch, of: &Applied) -> Result<Vec<String>, String> {
+    distinct(members(sk, of).iter()
+        .flat_map(|&(b, _)| sk.beams[b].section.over.get(&SectionProp::A))
+        .flat_map(|o| o.unknowns.iter().cloned()))
+}
+
+/// **A mass or a volume of `of`** (`reads`), a beam's or a member's, as its driving row reads it
+/// (`Row::measured`): what its members are made of, read with no solve, so a frame its supports
+/// leave free has one.
+pub(crate) fn measure(sk: &Sketch, of: &Applied, reads: Reads) -> Result<f64, String> {
+    let row = Row::measured(sk, of, reads)?;
+    Ok(row.structure.measure(&row.x))
+}
+
+/// Unknowns `names`, each once in the order first named — at most a tape's variables.
+fn distinct(names: impl Iterator<Item = String>) -> Result<Vec<String>, String> {
+    let mut unknowns: Vec<String> = Vec::new();
+    for n in names {
+        if !unknowns.contains(&n) {
+            unknowns.push(n);
+        }
+    }
+    if unknowns.len() > crate::tape::MAX_VARS {
+        return Err(format!("its sections read {} unknowns, and a row reads at most {}",
+                           unknowns.len(), crate::tape::MAX_VARS));
+    }
+    Ok(unknowns)
 }
 
 /// **Every element's section as four tapes over `unknowns`** (`Sizing`), `beams` each element's
@@ -790,17 +803,7 @@ fn frame_unknowns(sk: &Sketch, mesh: &Mesh, frame: usize) -> Result<Vec<String>,
         .map(|&(m, _)| mesh.members[m].beam).collect();
     beams.sort();
     beams.dedup();
-    let mut unknowns: Vec<String> = Vec::new();
-    for n in beams.iter().flat_map(|&b| sk.beams[b].section.unknowns()) {
-        if !unknowns.contains(&n) {
-            unknowns.push(n);
-        }
-    }
-    if unknowns.len() > crate::tape::MAX_VARS {
-        return Err(format!("its frame's sections read {} unknowns, and a row reads at most {}",
-                           unknowns.len(), crate::tape::MAX_VARS));
-    }
-    Ok(unknowns)
+    distinct(beams.iter().flat_map(|&b| sk.beams[b].section.unknowns()))
 }
 
 /// **The unknowns a driving deflection's row reads** (#510 S1): what `Row::of` reads them for,
@@ -910,17 +913,19 @@ pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
         out.answers[k] = match f {
             None => continue,
             Some(Err(m)) => Some(Err(m)),
-            // a measure reads what the frame is made of, under no support and no load
-            Some(Ok(f)) if r.output.measure() => Some(
-                Framed::new(sk, sc, &mesh, f).map_err(|u| u.text())
-                    .and_then(|framed| measure(sk, &mesh, &framed, r))),
-            Some(Ok(f)) => {
-                let wanted = modes.get(&f).copied().unwrap_or(0);
-                match frames.entry(f).or_insert_with(|| Analysed::new(sk, sc, &mesh, f, wanted)) {
-                    Ok(a) => Some(answer(sk, &mesh, a, r)),
-                    Err(m) => Some(Err(m.text())),
+            Some(Ok(f)) => match Reads::of(r.output) {
+                // a measure reads what the members are made of, under no support and no load
+                Some(reads) => Some(measure(sk, &r.of, reads)),
+                None => {
+                    let wanted = modes.get(&f).copied().unwrap_or(0);
+                    match frames.entry(f)
+                        .or_insert_with(|| Analysed::new(sk, sc, &mesh, f, wanted))
+                    {
+                        Ok(a) => Some(answer(sk, &mesh, a, r)),
+                        Err(m) => Some(Err(m.text())),
+                    }
                 }
-            }
+            },
         };
     }
     // a frame the supports leave free is said once, in the solver's words — those a requirement
@@ -966,7 +971,7 @@ fn answer(sk: &Sketch, mesh: &Mesh, a: &Analysed, r: &Requirement) -> Result<f64
             worst.ok_or_else(|| "it names no node of a frame".to_string())
         }
         Output::Compliance => Ok(dot_all(&a.f.s.forces(&a.f.x), &a.st.u)),
-        Output::Mass | Output::Volume => measure(sk, mesh, &a.f, r),
+        Output::Mass | Output::Volume => unreachable!("a measure is read before any analysis"),
         Output::Mode => {
             let n = r.count.unwrap_or(1) as usize;
             let v = *a.pairs(sk, mesh)?.values.get(n - 1).ok_or("it has fewer modes than that")?;
@@ -1004,27 +1009,6 @@ fn answer(sk: &Sketch, mesh: &Mesh, a: &Analysed, r: &Requirement) -> Result<f64
             Ok(yields / worst)
         }
     }
-}
-
-/// **A mass or a volume over frame `f`** (`r` says which, and of what): `ρ A L`, or `A L`, over
-/// the members it names — what they are made of, which no solve reads, so a frame its supports
-/// leave free has one.
-fn measure(sk: &Sketch, mesh: &Mesh, f: &Framed, r: &Requirement) -> Result<f64, String> {
-    let ms = mesh.members_of(&r.of);
-    if ms.is_empty() {
-        return Err(format!("a {} is of a beam or a member, and this names a point",
-                           r.output.word()));
-    }
-    let mut m = 0.0;
-    for e in elements_of(&f.member, &ms) {
-        let length = f.s.beam_axes(e, &f.x).map_or(0.0, |x| x.0);
-        let rho = match r.output {
-            Output::Mass => property(sk, mesh.members[f.member[e]].beam, Property::Rho)?,
-            _ => 1.0,
-        };
-        m += rho * f.s.section(e, &f.x)[0] * length;
-    }
-    Ok(m)
 }
 
 /// `Σ aᵢbᵢ`.

@@ -347,10 +347,10 @@ fn a_regions_driving_row_is_refused_where_it_cannot_be_read() {
     // read as a solid, the plate's deflection drives it in space (#510 S3)
     let solid = plate.replace("  plane stress plate\n", "");
     let e = crate::common::read(&solid);
-    use gcs_core::constraints::{CKind, DeflectionRow};
+    use gcs_core::constraints::{CKind, InteriorRow};
     let row = e.sketch.constraints.iter().find(|c| c.kind == CKind::Deflection)
-        .map(|c| c.deflection_row(&e.sketch).expect("a row"));
-    let Some(DeflectionRow::Meshed(row)) = row else { panic!("a meshed row: {row:?}") };
+        .map(|c| c.interior_row(&e.sketch).expect("a row"));
+    let Some(InteriorRow::Meshed(row)) = row else { panic!("a meshed row: {row:?}") };
     assert_eq!(row.structure.dim, 3);
 }
 

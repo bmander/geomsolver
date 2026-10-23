@@ -10,8 +10,8 @@ use super::resolve::{Operand, Resolver};
 use super::{Code, Diag};
 use crate::ir::{Operation, Statement};
 use crate::model::{
-    Applied, EntKind, EntRef, Grade, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading,
-    Requirement, Scenario, Sketch, Support,
+    Applied, EntKind, EntRef, Grade, InPlane, Load, LoadKind, LoadValue, MeshedKey, Output,
+    PlaneReading, Requirement, Scenario, Sketch, Support,
 };
 use crate::syntax::{ItemKind, LoadText, Ref, Span, StmtId};
 use crate::units::Dim;
@@ -216,24 +216,28 @@ pub(super) fn drive(
                 sk.scenarios.push(s.scenario.clone());
                 sk.scenarios.len() as i64 - 1
             });
+            let scenario = at as usize;
             let (kind, args, key) = match (r.output, &r.of, r.along) {
                 (Output::Deflection, Applied::Ent(p), Some(along)) => (
                     CKind::Deflection,
                     vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)],
-                    (at as usize, p.i(), Some(along)),
+                    MeshedKey::Deflection { scenario, at: p.i(), along },
                 ),
                 (output, _, _) => (
-                    if output == Output::Mass { CKind::Mass } else { CKind::Volume },
+                    match output {
+                        Output::Mass => CKind::Mass,
+                        _ => CKind::Volume,
+                    },
                     vec![Arg::Int(at), Arg::Int(k as i64), Arg::Num(r.value)],
-                    (at as usize, k, None),
+                    MeshedKey::Measure { scenario, requirement: k },
                 ),
             };
             let name =
                 |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
             // a region's or a solid's row is meshed once, here, and read so through every solve
             // (#510 S2, S3): held before it is validated, so the validation reads that mesh
-            if let Ok(crate::constraints::DeflectionRow::Meshed(row)) =
-                Constraint::new(kind, args.clone()).deflection_row(sk)
+            if let Ok(crate::constraints::InteriorRow::Meshed(row)) =
+                Constraint::new(kind, args.clone()).interior_row(sk)
             {
                 sk.meshed.insert(key, row);
             }
@@ -271,12 +275,9 @@ fn drives(sk: &Sketch, sc: &Scenario, r: &Requirement) -> bool {
                     || crate::prisms::of_region(sk, sc, &r.of)
                     || crate::bodies::of_body(sk, sc, &r.of))
         }
-        (Output::Mass | Output::Volume, Applied::Beam(_)) => true,
-        (Output::Mass | Output::Volume, Applied::Ent(e)) if e.kind == EntKind::Line => {
-            sk.beams.iter().any(|b| b.lines.contains(&e.i()))
-        }
         (Output::Mass | Output::Volume, of) => {
-            of.solid().is_some_and(|s| crate::prisms::Region::of(sk, s).is_ok())
+            !crate::beams::members(sk, of).is_empty()
+                || of.solid().is_some_and(|s| crate::prisms::Region::of(sk, s).is_ok())
         }
         _ => false,
     }

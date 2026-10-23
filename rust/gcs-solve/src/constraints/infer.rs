@@ -593,7 +593,7 @@ pub fn validate(
     // a frame's deflection is read where the solve can read its frame, and its frame is held
     // (#510 S1); a mass or a volume where it measures something
     if kind.interior() {
-        Constraint::new(kind, args.to_vec()).deflection_row(sk).and_then(|r| r.check())
+        Constraint::new(kind, args.to_vec()).interior_row(sk).and_then(|r| r.check())
             .map_err(|why| format!("the solve cannot read the {}: {why}",
                                    kind.operator().map_or("row", |(w, _)| w)))?;
     }

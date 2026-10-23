@@ -796,22 +796,12 @@ pub fn read_pictured(sk: &Sketch, sc: &Scenario, coarser: f64, pictured: bool)
     }
     let mut read: Vec<Option<Result<Analysed, Unread>>> =
         (0..regions.len()).map(|_| None).collect();
-    let mut plated: Vec<Option<Result<Plated, Unread>>> =
-        (0..regions.len()).map(|_| None).collect();
     for (k, r) in sc.requirements.iter().enumerate() {
         let Some(i) = of(&r.of) else { continue };
         let (solid, plane, region) = &regions[i];
-        if r.output.measure() {
-            // a measure reads what the region is made of, under no support and no load: of the
-            // region analysed where it is, else of it meshed alone
-            let p = match &read[i] {
-                Some(Ok(a)) => Ok(&a.p),
-                _ => plated[i].get_or_insert_with(|| {
-                    Plated::new(sk, sc, region.clone()?, *plane, coarser)
-                }).as_ref(),
-            };
-            let name = &sk.solids[*solid].name;
-            out.answers[k] = Some(p.map_err(|m| m.text(name)).and_then(|p| measure(sk, p, r)));
+        // a measure reads what the region is made of, under no support and no load
+        if let Some(reads) = Reads::of(r.output) {
+            out.answers[k] = Some(measure(sk, *solid, reads, coarser));
             continue;
         }
         let a = read[i].get_or_insert_with(|| {
@@ -879,7 +869,7 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
         Output::Compliance => {
             Ok(p.s.forces(&p.x).iter().zip(&a.st.u).map(|(f, u)| f * u).sum())
         }
-        Output::Mass | Output::Volume => measure(sk, p, r),
+        Output::Mass | Output::Volume => unreachable!("a measure is read before any analysis"),
         Output::Mode => {
             let n = r.count.unwrap_or(1) as usize;
             let v = *a.pairs(sk)?.values.get(n - 1).ok_or("it has fewer modes than that")?;
@@ -903,16 +893,33 @@ fn answer(sk: &Sketch, a: &Analysed, r: &Requirement) -> Result<f64, String> {
     }
 }
 
-/// **A mass or a volume over region `p`** (`r` says which): `ρ t Σ A`, or `t Σ A` — what it is
-/// made of, which no solve reads, so a region its supports leave free has one.
-fn measure(sk: &Sketch, p: &Plated, r: &Requirement) -> Result<f64, String> {
-    let rho = match r.output {
-        Output::Mass => property(sk, p.region.solid, Property::Rho)?,
-        _ => 1.0,
-    };
-    let area: f64 =
-        (0..p.s.tris.len()).map(|i| p.s.tris[i].area(&p.s.tri_places(i, &p.x))).sum();
-    Ok(rho * p.region.depth * area)
+/// **A mass or a volume of prism `solid`** (`reads`), its face meshed at `coarser` times a
+/// reading's size, as its driving row reads it (`Row::measured`): what it is made of, read with no
+/// solve, so a prism its supports leave free has one.
+pub(crate) fn measure(sk: &Sketch, solid: usize, reads: Reads, coarser: f64)
+    -> Result<f64, String>
+{
+    let (_, _, s, x) = measured(sk, solid, reads, coarser)?;
+    Ok(s.measure(&x))
+}
+
+/// **Prism `solid`'s face meshed for a measure** (`reads`), at `coarser` times a reading's size:
+/// its region, its mesh, each element the face's through the prism's depth, and where its nodes
+/// stand — no moduli, no support and no load read, and of a material only a mass's density.
+fn measured(sk: &Sketch, solid: usize, reads: Reads, coarser: f64)
+    -> Result<(Region, Mesh, Structure, Vec<f64>), String>
+{
+    let region = Region::of(sk, solid)?;
+    let rho = if reads == Reads::Mass { property(sk, solid, Property::Rho)? } else { 0.0 };
+    let mesh = region.mesh_coarser(sk, &[], coarser)?;
+    let tris: Vec<Tri6> = mesh.tris.iter()
+        .map(|&n| Tri6 { n, e: 0.0, nu: 0.0, rho, depth: region.depth, strain: false })
+        .collect();
+    let n = mesh.points.len();
+    let x: Vec<f64> = mesh.points.iter().flatten().copied().collect();
+    let s = Structure { dim: 2, nodes: n, fixed: vec![false; 2 * n], load: vec![0.0; 2 * n],
+                        weight: vec![0.0; 2 * n], tris, reads, ..Structure::default() };
+    Ok((region, mesh, s, x))
 }
 
 /* -- a driving row (#510 S2) ------------------------------------------------------------------ */
@@ -1079,20 +1086,8 @@ impl Row {
     pub fn measured(sk: &Sketch, sc: &Scenario, solid: usize, reads: Reads)
         -> Result<Row, String>
     {
-        let region = Region::of(sk, solid)?;
         let face_plane = held_plane(sk, solid)?;
-        let rho = match reads {
-            Reads::Mass => property(sk, solid, Property::Rho)?,
-            _ => 0.0,
-        };
-        let mesh = region.mesh_coarser(sk, &[], 1.0)?;
-        let tris: Vec<Tri6> = mesh.tris.iter()
-            .map(|&n| Tri6 { n, e: 0.0, nu: 0.0, rho, depth: region.depth, strain: false })
-            .collect();
-        let n = mesh.points.len();
-        let x: Vec<f64> = mesh.points.iter().flatten().copied().collect();
-        let s = Structure { dim: 2, nodes: n, fixed: vec![false; 2 * n], load: vec![0.0; 2 * n],
-                            weight: vec![0.0; 2 * n], tris, reads, ..Structure::default() };
+        let (region, mesh, s, x) = measured(sk, solid, reads, 1.0)?;
         let (moved, columns) = moved_with(sk, sc, &region, &mesh, &x, None, face_plane)?;
         Ok(Row { structure: s, moved, columns, x })
     }
@@ -1102,7 +1097,7 @@ impl Row {
     /// whether it measures anything there.
     pub fn check(&self) -> Result<(), String> {
         if self.structure.reads.measure() {
-            return crate::beams::measures(&self.structure, &self.x);
+            return self.structure.measured(&self.x).map(|_| ());
         }
         // a solid's row is stacked over its face's mesh (#510 S3)
         let what = if self.moved.stack.is_some() { "solid" } else { "region" };

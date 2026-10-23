@@ -79,10 +79,9 @@ impl Constraint {
         // a flank's regularity within a blank: the envelope's, the roll's, the regions' terms' and
         // the number (#345)
         // a deflection driven: its structure, a frame's sections read over its unknowns (#510 S1)
-        // or a region's nodes over the drawing (S2); a mass or a volume, its number last
+        // or a region's nodes over the drawing (S2) — and a mass or a volume, each its number last
         if self.kind.interior() {
-            let at = if self.kind == CKind::Deflection { 3 } else { 2 };
-            let d = self.args.get(at).map_or(0.0, Arg::num);
+            let d = self.args.last().map_or(0.0, Arg::num);
             return self.interior_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
         }
         if self.kind == CKind::RegularWithin {
@@ -1142,7 +1141,7 @@ impl Constraint {
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // every joint of the frame (#510 S1); a region's points are read in their plane (S2)
             CKind::Deflection | CKind::Mass | CKind::Volume => {
-                self.deflection_row(sk).map(|r| r.lifted()).unwrap_or_default()
+                self.interior_row(sk).map(|r| r.lifted()).unwrap_or_default()
             }
             // both points, then every point the motion's axes read (#326, #366)
             CKind::CarriedPoint | CKind::CarriedPointIn => {
