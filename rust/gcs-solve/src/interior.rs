@@ -92,6 +92,8 @@ pub const SECTION: usize = 4;
 /// constants.  A load spread along beams (`spread`, #510 S1) is a force of their geometry and
 /// their sections, so it moves with the columns: `f(x)`.  So does a load laid on plane elements
 /// (`laid`, #510 S2), of their places, and a load borne by solid elements (`borne`, #510 S3).
+/// What a row over it reads is `reads`: that displacement, or what the structure is made of —
+/// its volume or its mass, which no load moves.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Structure {
     pub dim: usize,
@@ -108,6 +110,42 @@ pub struct Structure {
     /// The solid elements (#510 S3), in a structure of `dim` 3.
     pub tets: Vec<Tet10>,
     pub borne: Vec<Borne>,
+    pub reads: Reads,
+}
+
+/// **What a row reads of its structure**: the displacement `Σ weight · u` its loads give (#510
+/// P5), one solve and its adjoint; or what it is made of, which no load moves and no solve reads
+/// — its volume (each bar's and beam's `A L`, each plane element's `t ∫ det J`, each solid one's
+/// `∫ det J`) or its mass (each beam's, plane element's and solid element's density times its
+/// volume; a bar carries none).  A measure's gradient is its own `∂J/∂x`, with no factor, so a
+/// structure its supports leave free, or holds by none, still has one (`Structure::measure`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Reads {
+    #[default]
+    Displacement,
+    Volume,
+    Mass,
+}
+
+impl Reads {
+    /// Whether it is a measure of the structure rather than a displacement of it.
+    pub fn measure(self) -> bool {
+        self != Reads::Displacement
+    }
+
+    /// What a row of the drawing's `quantity` reads.
+    pub fn of(quantity: crate::model::Quantity) -> Reads {
+        match quantity {
+            crate::model::Quantity::Mass => Reads::Mass,
+            crate::model::Quantity::Volume => Reads::Volume,
+        }
+    }
+
+    /// What weighs a member or an element of density `rho`: its density for a mass, one for a
+    /// volume (or a displacement, which weighs nothing).
+    pub fn density(self, rho: f64) -> f64 {
+        if self == Reads::Mass { rho } else { 1.0 }
+    }
 }
 
 /// **A load spread along beams** (#510 S1), each carrying it as a force a length, `q`, in the
@@ -1060,6 +1098,81 @@ impl Structure {
         (0..self.tets.len()).map(|i| self.tets[i].volume(&self.tet_places(i, x))).sum()
     }
 
+    /// **What the structure is made of, at `x`**, as `reads` says (`Reads::Volume`,
+    /// `Reads::Mass`): each bar's and beam's `A L`, each plane element's `t ∫ det J`, each solid
+    /// one's `∫ det J`, each weighed by its density for a mass (a bar, of none, weighing
+    /// nothing).  No displacement is solved for.
+    pub fn measure(&self, x: &[f64]) -> f64 {
+        let w = |rho: f64| self.reads.density(rho);
+        let mut m = 0.0;
+        for (i, b) in self.bars.iter().enumerate() {
+            m += w(0.0) * norm(self.place(b.a, b.b, x)) * x[self.dim * self.nodes + i];
+        }
+        for (i, b) in self.beams.iter().enumerate() {
+            m += w(b.rho) * norm(self.place(b.a, b.b, x)) * self.section(i, x)[0];
+        }
+        for (i, t) in self.tris.iter().enumerate() {
+            m += w(t.rho) * t.depth * t.area(&self.tri_places(i, x));
+        }
+        for (i, t) in self.tets.iter().enumerate() {
+            m += w(t.rho) * t.volume(&self.tet_places(i, x));
+        }
+        m
+    }
+
+    /// **The measure at `x`, where it is one**: a mass or a volume more than nothing — else why
+    /// it has none (a material of no density), which a row is refused for where it is stated.
+    pub fn measured(&self, x: &[f64]) -> Result<f64, String> {
+        let m = self.measure(x);
+        if m.is_finite() && m > 0.0 {
+            return Ok(m);
+        }
+        let what = if self.reads == Reads::Mass { "mass" } else { "volume" };
+        Err(format!("it has no {what} where the drawing stands, so nothing it could be sized by"))
+    }
+
+    /// **The measure's gradient in the columns at `x`, added into `g`**: its own `∂J/∂x`, with no
+    /// adjoint — a member's `w A ĝ` at its ends and `w L` in its area, an element's `w ∂(∫ det J)`
+    /// over its nodes' places (`Dual` over its twelve or thirty coordinates).
+    pub fn measure_gradient(&self, x: &[f64], g: &mut [f64]) {
+        let (dim, w) = (self.dim, |rho: f64| self.reads.density(rho));
+        let member = |a: usize, b: usize, at: usize, area: f64, w: f64, g: &mut [f64]| {
+            let d = self.place(a, b, x);
+            let l = norm(d);
+            for k in 0..dim {
+                g[dim * b + k] += w * area * d[k] / l;
+                g[dim * a + k] -= w * area * d[k] / l;
+            }
+            g[at] += w * l;
+        };
+        for (i, b) in self.bars.iter().enumerate() {
+            let at = dim * self.nodes + i;
+            member(b.a, b.b, at, x[at], w(0.0), g);
+        }
+        for (i, b) in self.beams.iter().enumerate() {
+            let at = self.section_at(i);
+            member(b.a, b.b, at, x[at], w(b.rho), g);
+        }
+        for (i, t) in self.tris.iter().enumerate() {
+            let a = plane::area_of(&self.tri_places_d::<12>(i, x));
+            let w = w(t.rho) * t.depth;
+            for (k, &n) in t.n.iter().enumerate() {
+                for c in 0..2 {
+                    g[2 * n + c] += w * a.g[2 * k + c];
+                }
+            }
+        }
+        for (i, t) in self.tets.iter().enumerate() {
+            let v = solid::volume_of(&self.tet_places_d::<30>(i, x));
+            let w = w(t.rho);
+            for (k, &n) in t.n.iter().enumerate() {
+                for c in 0..3 {
+                    g[3 * n + c] += w * v.g[3 * k + c];
+                }
+            }
+        }
+    }
+
     /// **Each facet's and element's share of a load borne by the solid** (#510 S3), at `x`, over
     /// a number that may carry rates (`N` = 30 its nodes' coordinates, a facet's six the first
     /// eighteen; 0 none): its nodes, their forces, and the measure an even load is spread by.
@@ -1308,14 +1421,15 @@ impl Bar {
 /* -- the row's constants ------------------------------------------------------------------ */
 
 /// The constants before the structure: `[dim, nodes, bars, beams, spreads, sized, tris, laid,
-/// moved, tets, borne, stacked]` — `sized` how many unknowns the beams' sections are read over
-/// (`Sizing`), or −1 where each section's numbers are columns of their own; `tris` and `laid` the
-/// plane elements and the loads laid on them (#510 S2); `moved` how many columns of the drawing
-/// the nodes are read over (`Moved`), or −1 where their coordinates are the columns; `tets` and
-/// `borne` the solid elements and the loads they bear (#510 S3); `stacked` how many nodes of the
-/// plane a solid's nodes are stacked over (`Stack`), or −1 where the nodes are the plane's own —
-/// then the output stated, `J₀`, or where an unknown sets it, its `(m, c)`.
-pub const HEAD: usize = 12;
+/// moved, tets, borne, stacked, reads]` — `sized` how many unknowns the beams' sections are read
+/// over (`Sizing`), or −1 where each section's numbers are columns of their own; `tris` and
+/// `laid` the plane elements and the loads laid on them (#510 S2); `moved` how many columns of
+/// the drawing the nodes are read over (`Moved`), or −1 where their coordinates are the columns;
+/// `tets` and `borne` the solid elements and the loads they bear (#510 S3); `stacked` how many
+/// nodes of the plane a solid's nodes are stacked over (`Stack`), or −1 where the nodes are the
+/// plane's own; `reads` what the row reads (`Reads`: 0 a displacement, 1 the volume, 2 the mass)
+/// — then the output stated, `J₀`, or where an unknown sets it, its `(m, c)`.
+pub const HEAD: usize = 13;
 
 /// A beam's constants: its ends, its moduli, its density and its section's z.
 const BEAM: usize = 8;
@@ -1430,6 +1544,7 @@ impl Structure {
         k.push(moved.map_or(-1.0, |m| m.columns as f64));
         k.extend([self.tets.len() as f64, self.borne.len() as f64]);
         k.push(moved.filter(|m| m.stack.is_some()).map_or(-1.0, |m| m.nodes.len() as f64));
+        k.push(self.reads as u8 as f64);
         k.extend(stated);
         for b in &self.bars {
             k.extend([b.a as f64, b.b as f64, b.e]);
@@ -1498,6 +1613,12 @@ impl Structure {
         let (n_bars, n_beams, n_spread) = (count(head[2])?, count(head[3])?, count(head[4])?);
         let (n_tris, n_laid) = (count(head[6])?, count(head[7])?);
         let (n_tets, n_borne) = (count(head[9])?, count(head[10])?);
+        let reads = match count(head[12])? {
+            0 => Reads::Displacement,
+            1 => Reads::Volume,
+            2 => Reads::Mass,
+            _ => return None,
+        };
         let mut at = HEAD;
         let mut take = |n: usize| -> Option<&[f64]> {
             let out = k.get(at..at.checked_add(n)?)?;
@@ -1591,6 +1712,7 @@ impl Structure {
             laid,
             tets,
             borne,
+            reads,
         };
         // a plane element is of the plane, a solid one of space, each moves without turning, and
         // neither is a member's nor the other's
@@ -1682,7 +1804,9 @@ impl Structure {
 /* -- the kernel --------------------------------------------------------------------------- */
 
 /// The kernel at a block's widths (`system::build_kernel`, `KernelKey::Interior`): one row, the
-/// output less what it states, `J(x) − J₀` or `J(x) − (m·a + c)`.  A displacement, so degree 1.
+/// output less what it states, `J(x) − J₀` or `J(x) − (m·a + c)`.  A displacement, so degree 1;
+/// a measure's row (`Reads::Volume`, `Reads::Mass`) is the same kernel, no solve made, its degree
+/// still 1 — the residual of a number a scenario states, not of a length the drawing draws.
 /// A structure with no displacement to give (`Failure`), and constants that are no structure,
 /// read NaN, which the step rejects.
 pub fn kernel(n_par: usize, n_const: usize) -> Kernel {
@@ -1722,7 +1846,12 @@ impl<'a> Row<'a> {
             if v.len() != m.columns + free as usize || !s.bars.is_empty() || !s.beams.is_empty() {
                 return None;
             }
-            let placed = m.places(&v[..m.columns])?;
+            // a measure reads the boundary alone: its inner nodes need no harmonic map
+            let placed = if s.reads.measure() {
+                m.boundary(&v[..m.columns])
+            } else {
+                m.places(&v[..m.columns])?
+            };
             let x = placed.x.clone();
             return Some(Row { s, x, stated, free, sized: None, moved: Some((m, placed)) });
         }
@@ -1785,24 +1914,37 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
 }
 
 impl Row<'_> {
+    /// What the row reads where it stands, solved at `st`: the displacement `Σ weight · u`, or
+    /// what the structure is made of (`Reads::Volume`, `Reads::Mass`), which no solve reads.
+    fn output(&self, st: &Option<State>) -> f64 {
+        match st {
+            Some(st) => self.s.output(st),
+            None => self.s.measure(&self.x),
+        }
+    }
+
     /// The row's rate in its columns `v`, solved at `st`, into `row` (zeroed): the structure's
-    /// adjoint gradient carried to the drawing's columns, and the unknown's where it sets what the
-    /// row states.
-    fn rate(&self, st: &State, v: &[f64], row: &mut [f64]) {
+    /// adjoint gradient — or a measure's own, where nothing is solved — carried to the drawing's
+    /// columns, and the unknown's where it sets what the row states.
+    fn rate(&self, st: &Option<State>, v: &[f64], row: &mut [f64]) {
         let s = &self.s;
         let cols = self.columns();
+        let gradient = |g: &mut [f64]| match st {
+            Some(st) => s.gradient(st, &self.x, g),
+            None => s.measure_gradient(&self.x, g),
+        };
         match (&self.sized, &self.moved) {
             // the nodes' rates carried through how they move with the drawing (#510 S2)
             (_, Some((m, placed))) => {
                 let mut g = vec![0.0; s.columns()];
-                s.gradient(st, &self.x, &mut g);
+                gradient(&mut g);
                 m.chain(&v[..cols], placed, &g, &mut row[..cols]);
             }
-            (None, None) => s.gradient(st, &self.x, &mut row[..cols]),
+            (None, None) => gradient(&mut row[..cols]),
             // a section's rate carried to the unknowns it is read over
             (Some((unknowns, sections)), None) => {
                 let mut g = vec![0.0; s.columns()];
-                s.gradient(st, &self.x, &mut g);
+                gradient(&mut g);
                 let direct = s.section_at(0);
                 row[..direct].copy_from_slice(&g[..direct]);
                 for (b, four) in sections.iter().enumerate() {
@@ -1820,19 +1962,23 @@ impl Row<'_> {
     }
 }
 
-/// One row read off its columns `v` and constants `k`, and its structure solved there; `None`
-/// where it cannot be read or solved.
-fn solved<'a>(v: &[f64], k: &'a [f64]) -> Option<(Row<'a>, State)> {
+/// One row read off its columns `v` and constants `k`, and its structure solved there — a
+/// measure's left unsolved (`None`), since it reads what the structure is made of; `None` where it
+/// cannot be read or solved.
+fn solved<'a>(v: &[f64], k: &'a [f64]) -> Option<(Row<'a>, Option<State>)> {
     let read = Row::read(v, k)?;
+    if read.s.reads.measure() {
+        return Some((read, None));
+    }
     let st = read.s.solve(&read.x).ok()?;
-    Some((read, st))
+    Some((read, Some(st)))
 }
 
 /// One row's output where its columns `v` stand, and what it states there; `None` where the row
 /// cannot be read or its structure solved there.
 pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
     let (read, st) = solved(v, k)?;
-    Some((read.s.output(&st), read.target(v)))
+    Some((read.output(&st), read.target(v)))
 }
 
 /// **Whether one row is out of reach where its columns `v` stand** (#510 P7): its output and
@@ -1847,6 +1993,6 @@ pub fn reach_of(v: &[f64], k: &[f64], free: &[bool], scale: &[f64]) -> Option<(R
     if !g.iter().all(|g| g.is_finite()) {
         return None;
     }
-    let output = read.s.output(&st);
+    let output = read.output(&st);
     Some((analysis::reach(output, read.target(v), &g, scale, free), output))
 }

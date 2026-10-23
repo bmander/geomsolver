@@ -30,7 +30,7 @@ The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `Trimmed
 `seed_joints` from what holds it, and two parameters, ratio 1 and advance 0) and held by
 ordinary relations: `std.sv`'s relation words `turns`, `screws`, `spins` (about the axis through
 `o` square to `o.plane`) and `slides` ([0.154], #464).  The components `std.Turn`, `std.Spin` and
-`std.Slide` they replaced are retired ([0.175], #562): each stated a fact about the frame it was
+`std.Slide` they replaced are retired ([0.176], #562): each stated a fact about the frame it was
 given, which no definition may (`tests/joint_words.rs`).  A `fix` of a joint holds its numbers to
 what they are — a ratio a plain number, an advance a length (E103) — whoever states it, so a word
 handing its own on (`f turns(2mm) l`) is refused as the components' typed formals refused it.

@@ -177,7 +177,7 @@ component Sphere(center: point, r: Length) := { p | p distance(r) center }
 // the sphere's centre on the circle's axis, and one point of the circle — `q`, level with the
 // centre in `v`, so it cannot slide round — at the sphere's radius from it.  Three equations,
 // independent wherever the circle is off the sphere's centre.  The toe or heel circle of a bevel
-// blank on its end sphere.  A fact about the circle and the sphere, so a word (through 0.174 the
+// blank on its end sphere.  A fact about the circle and the sphere, so a word (through 0.175 the
 // component `std.CircleOnSphere(k, s, view)`).
 //
 //   k on_sphere(view: std.side) ball
@@ -707,7 +707,7 @@ component Frenet(g: path, s: Scalar) {
 // (`On`'s and `Minimal`'s): drawn square to `g` where its parameter is `h`, `v` leaning toward `u`
 // and `u` square to it; its axes turn only as the tangent does.  The joint turns with none of the
 // path's torsion: its ratio 0.  The frame is its own, placed by its rows from what it is given
-// (through 0.174 it was handed one: `std.Along(f, g, up: u)`).
+// (through 0.175 it was handed one: `std.Along(f, g, up: u)`).
 component Along(g: path, up: axis, home: Scalar = 0) {
   private m := point
   m coincident(t == home) g

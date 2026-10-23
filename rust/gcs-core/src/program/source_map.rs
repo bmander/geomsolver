@@ -246,6 +246,9 @@ pub struct Elaborated {
     /// The document's load scenarios (#510 P4), in the order written: read over the drawing,
     /// adding nothing to it.
     pub scenarios: Vec<super::Stated>,
+    /// The masses and volumes the drawing states (#510), in the order written: each a row the
+    /// solve holds, or a claim judged after it (`report::measure_answers`).
+    pub measures: Vec<super::MeasureStated>,
     /// The program every span in here indexes.  Carried rather than borrowed: a span without the
     /// text it cuts is a pair of numbers about nothing, an edit needs the statements as well as
     /// the characters, and the caller that most needs all of it is across an ABI where a borrow

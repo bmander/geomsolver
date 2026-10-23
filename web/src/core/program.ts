@@ -243,7 +243,13 @@ export class Document {
   scenariosPictured(drawn: number): Pictured {
     return takeJson<Pictured>(
       core().gcs_elab_scenarios_pictured_json(this.h, this.sketch.handle, drawn))
-      ?? { scenarios: [], picture: null };
+      ?? { scenarios: [], picture: null, measures: [] };
+  }
+
+  /** **How many masses and volumes the document states** (#510, `mass(10kg) arm`): whether there
+   *  is anything to read beside its scenarios.  No analysis. */
+  measuresStated(): number {
+    return core().gcs_elab_measures_stated(this.h);
   }
 
   /** **The load scenarios the document states**, by name in the order written, and the one each

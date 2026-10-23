@@ -78,7 +78,7 @@ import {
 } from './ui.js';
 import { objectName, type Refining } from './field-preview.js';
 import type { Judging } from './claim-judging.js';
-import type { Scenario } from '../core/program.js';
+import type { Scenario, ScenarioAnswer } from '../core/program.js';
 import { bindScenarioCard, refreshScenarioCard } from './scenario-card.js';
 import { Tool } from './view.js';
 import { meshing } from './loading.js';
@@ -344,9 +344,10 @@ function sayJudging(j: Judging | null): void {
  *  failing, or a word of the scenario's (a structure left free, a stress unbounded), it stays,
  *  and in red. */
 let scenarioTimer = 0;
-function showScenarios(ss: Scenario[]): void {
+function showScenarios(ss: Scenario[], measures: ScenarioAnswer[] = []): void {
   clearTimeout(scenarioTimer);
-  const answers = ss.flatMap((s) => s.answers);
+  // a mass or a volume the drawing states is said beside the scenarios, and is none of theirs
+  const answers = [...ss.flatMap((s) => s.answers), ...measures];
   const words = ss.flatMap((s) => s.words);
   if (!answers.length && !words.length) { scenarioLine(''); return; }
   const held = answers.filter((a) => a.holds === true).length;
@@ -357,7 +358,8 @@ function showScenarios(ss: Scenario[]): void {
     words.length && `${words.length} warning${words.length === 1 ? '' : 's'}`,
     held && `${held} hold${held === 1 ? 's' : ''}`].filter(Boolean).join(', ');
   const all = [...words, ...answers.map((a) => a.text)].join('\n');
-  const label = ss.length === 1 ? `scenario ${ss[0].name}` : 'scenarios';
+  const label = !ss.length ? 'measures'
+    : ss.length === 1 && !measures.length ? `scenario ${ss[0].name}` : 'scenarios';
   const fails = failed + unanswered + words.length > 0;
   scenarioLine(`${label}: ${said}`, fails ? 'failed' : 'finished', all);
   if (!fails) scenarioTimer = window.setTimeout(() => scenarioLine(''), 5000);
@@ -714,7 +716,7 @@ timeline.refresh();
 view.onStatus = toast;
 view.onRefine = (list) => { showRefining(list); meshing(list); };
 view.onClaims = showJudging;
-view.onScenarios = (ss) => { showScenarios(ss); refreshScenarioCard(view); };
+view.onScenarios = (ss, ms) => { showScenarios(ss, ms); refreshScenarioCard(view); };
 view.onScenarioView = () => refreshScenarioCard(view);
 bindScenarioCard(view);
 refreshScenarioCard(view);

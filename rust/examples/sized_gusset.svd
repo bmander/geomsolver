@@ -1,0 +1,10 @@
+// Presentation of sized_gusset.sv. Model geometry is independent of this drawing.
+model m from "sized_gusset.sv"
+
+sheet drawing {
+  size A4
+  label "A GUSSET PLACED BY ITS VOLUME" at (14mm, 18mm)
+  label "Its leg up the wall is the one at which it holds 30cm³ of steel" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

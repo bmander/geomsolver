@@ -594,6 +594,10 @@ fn constraints(
             || cx.res.guides.contains(&st.id) {
             continue;
         }
+        // a mass or a volume is stated once the beams are read (#510, `measures`)
+        if super::measures::quantity(r).is_some() {
+            continue;
+        }
         // a relation reading a region's terms is stated once the solids hold them (#345)
         if r.form.written().is_some_and(|w| crate::constraints::reads_regions(&w.word.text)) {
             later.push(i);
@@ -933,6 +937,9 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     // solid is built (#510 P4)
     cx.sk.beams = super::beams::beams(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
     cx.res.beams = cx.sk.beams.iter().enumerate().map(|(i, b)| (b.name.clone(), i)).collect();
+    // what a beam or a solid is made of, stated of the drawing (#510): read once the beams are
+    let measures = super::measures::measures(&mut cx.sk, &cx.res, &mut cx.map, &flat.stating,
+                                             &mut cx.diags);
     let mut scenarios = super::scenarios::scenarios(&cx.sk, &cx.res, &flat.body, &mut cx.diags);
     // a driving deflection of a frame is a row (#510 S1), and the unknowns its sections read
     // are then bound: one a section reads that nothing binds is said
@@ -940,6 +947,7 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     super::beams::sized(&cx.sk, &flat.body, &mut cx.diags);
     crate::modules::localize(p, &mut cx.diags);
     Elaborated {
-        sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, program: p.clone(), taken: false,
+        sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, measures, program: p.clone(),
+        taken: false,
     }
 }

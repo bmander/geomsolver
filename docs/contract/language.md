@@ -227,7 +227,7 @@ says what it becomes.  A trace in a plane compiles its dimensions over the forma
 alone, so there the name is still E103 ("not something this curve can read").
 
 **Every braced definition is a function of its arguments and of the frame its instance stands in**
-(§8.2, [0.162], [0.175], #461, #562, [plan](../parts-plan.md)).  There is one definition form:
+(§8.2, [0.162], [0.176], #461, #562, [plan](../parts-plan.md)).  There is one definition form:
 `Component::braced` (named, no set family) is what `parts::check` reads, and relation words and set
 families are untouched.  `part Name(…) {` is refused by the parser (E100, `PART_RETIRED`, read
 through `words::part_at` so `part := solid(…)` and `part above(7) q` stay statements), and parsed on

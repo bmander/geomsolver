@@ -156,7 +156,7 @@ sl := Slider(std.front, a, b)
 
 /// A body that declares nothing and relates its operands is a verb (FR1): `a distance(6) b` over
 /// two formals, said as the row over its operands alone.  `Turning` is one too: it holds its
-/// frame's numbers by a `fix` and places its axis by rows (as `std.Spin` did, through 0.174).
+/// frame's numbers by a `fix` and places its axis by rows (as `std.Spin` did, through 0.175).
 #[test]
 fn a_body_relating_only_its_operands_asserts_only() {
     let cs = over_two_points("\

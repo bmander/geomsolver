@@ -55,7 +55,6 @@ scenario transport {
   pinned b1 along: down
   accelerate plate (0, 0, -3 * 9.81m / 1s^2)
   claim mode(plate, 1) >= 120Hz
-  claim mass(plate) <= 50g
 }
 ";
 
@@ -141,9 +140,8 @@ fn a_scenario_holds_its_supports_loads_and_requirements() {
     ]);
     let LoadValue::Vector([0.0, 0.0, az]) = transport.loads[0].value else { panic!() };
     assert!((az + 3.0 * 9810.0).abs() < 1e-9, "{az} mm/s²");
-    let [mode, mass] = &transport.requirements[..] else { panic!() };
+    let [mode] = &transport.requirements[..] else { panic!() };
     assert_eq!((mode.output, mode.count, mode.value), (Output::Mode, Some(1), 120.0));
-    assert_eq!((mass.output, mass.compare, mass.value), (Output::Mass, Cmp::Le, 0.05));
 }
 
 /// **A scenario adds nothing to the drawing**: no entity, no parameter, no row, and the drawing
@@ -252,10 +250,10 @@ fn a_scenario_is_tinted_as_it_reads() {
     assert_eq!(tint("claim"), Some(Tint::Word));
     assert_eq!(tint("mode"), Some(Tint::Relation));
     assert_eq!(tint("safety"), Some(Tint::Relation));
-    // and only in a scenario: elsewhere `mass(…)` is the call it reads as
-    let call = "m := mass(plate)\nload x\n";
+    // and only in a scenario: elsewhere `mode(…)` is the call it reads as
+    let call = "m := mode(plate)\nload x\n";
     let runs = highlight(call);
     let at = |w: &str| call.find(w).expect("written") as u32;
-    assert_eq!(runs.iter().find(|(_, s)| s.lo == at("mass")).map(|(t, _)| *t), Some(Tint::Type));
+    assert_eq!(runs.iter().find(|(_, s)| s.lo == at("mode")).map(|(t, _)| *t), Some(Tint::Type));
     assert!(!runs.iter().any(|(t, s)| s.lo == at("load") && *t == Tint::Word));
 }

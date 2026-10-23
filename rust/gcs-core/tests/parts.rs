@@ -3,7 +3,7 @@
 //! each drawn instance — every unknown it makes reached by its own rows, its inputs held (PT2,
 //! **E108**), and no row about its operands alone (PT3, **E109**) — and then solves it flat.  The
 //! frame an instance stands in is one of its inputs, and the rows that put what it makes in that
-//! frame are its own.  `part`, which made the promise through 0.174, is refused.
+//! frame are its own.  `part`, which made the promise through 0.175, is refused.
 use gcs_core::program::Elaborated;
 
 use crate::common::{at, read};

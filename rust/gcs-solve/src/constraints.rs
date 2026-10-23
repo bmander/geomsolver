@@ -13,7 +13,7 @@
 use crate::fmath::Det;
 use crate::expr::Free;
 use crate::kernels::{self, Kernel, K};
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{EntKind, EntRef, MeshedKey, Sketch};
 use crate::space::across;
 
 mod arg;

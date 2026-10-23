@@ -1,6 +1,6 @@
 # Parts: a component held to being a function of what it is given (#461)
 
-> **Superseded where it names the keyword (#562, Solvent 0.175).** `part` is no longer a word:
+> **Superseded where it names the keyword (#562, Solvent 0.176).** `part` is no longer a word:
 > every braced definition is held to what this plan made `part` promise (E108, E109, D1–D3, W207),
 > and `part Name(…) {` is refused, naming `component`. Read "a part" below as "a definition" where it
 > means the declaration, and as "an instance" where it means what the check reads; the frame an

@@ -147,6 +147,7 @@ mod make_component;
 mod many_instances;
 mod mapped;
 mod materials;
+mod measured;
 mod measurements;
 mod mechanism_examples;
 mod membership;
