@@ -419,10 +419,13 @@ fn a_regions_mesh_is_made_again_where_it_folds() {
         sk.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap().id
     };
     let radius = |sk: &Sketch| sk.params[sk.free_vars["r"] as usize].value;
-    let held = |e: &Elaborated, sk: &Sketch, sag: &str| {
+    let answer = |e: &Elaborated, sk: &Sketch| {
         let (_, read) = scenario_read(sk, &e.scenarios[0].scenario);
-        let said = gcs_core::report::scenario_answers(sk, &e.scenarios[0], &read);
-        assert!(said[0].text.ends_with(&format!("driven == {sag}, held")), "{}", said[0].text);
+        gcs_core::report::scenario_answers(sk, &e.scenarios[0], &read).swap_remove(0)
+    };
+    let held = |e: &Elaborated, sk: &Sketch, sag: &str| {
+        let said = answer(e, sk);
+        assert!(said.text.ends_with(&format!("driven == {sag}, held")), "{}", said.text);
     };
 
     let mut e = crate::common::read(&swap("P := 2kN", "P := 0.5kN"));
@@ -451,11 +454,8 @@ fn a_regions_mesh_is_made_again_where_it_folds() {
     let at = e.sketch.meshed_at.clone().expect("meshed again");
     let mut again = crate::common::read(&swap("P := 2kN", "P := 0.5kN"));
     assert!(again.sketch.mesh_at(&at) && again.sketch.set_x(&e.sketch.get_x()));
-    let value = |e: &Elaborated, sk: &Sketch| {
-        let (_, read) = scenario_read(sk, &e.scenarios[0].scenario);
-        gcs_core::report::scenario_answers(sk, &e.scenarios[0], &read)[0].value.unwrap()
-    };
-    assert_eq!(value(&again, &again.sketch).to_bits(), value(&e, &e.sketch).to_bits());
+    let value = |e: &Elaborated, sk: &Sketch| answer(e, sk).value.unwrap().to_bits();
+    assert_eq!(value(&again, &again.sketch), value(&e, &e.sketch));
     held(&again, &again.sketch, "0.6mm");
 
     let mut e = crate::common::read(&swap("sag := 0.6mm", "sag := 100mm"));

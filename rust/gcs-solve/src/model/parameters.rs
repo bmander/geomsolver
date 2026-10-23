@@ -364,25 +364,19 @@ impl Sketch {
     }
 
     /// **Every driven deflection's mesh made again where the drawing stands** (#510 S2;
-    /// `Sketch::meshed`): the row read as it is compiled with no mesh held, and kept where it
-    /// meshes; a row that cannot be meshed here keeps the mesh it had.  Whether any was made,
-    /// and if so the pose recorded (`meshed_at`).
+    /// `Sketch::meshed`, `Constraint::made_row`), kept where it meshes; a row that cannot be
+    /// meshed here keeps the mesh it had.  Whether any was made, and if so the pose recorded
+    /// (`meshed_at`).
     pub fn remesh(&mut self) -> bool {
-        let keys: Vec<_> =
-            self.constraints.iter().filter_map(|c| c.meshed_key(self).map(|k| (c.id, k))).collect();
-        let mut made = false;
-        for (id, key) in keys {
-            let Some(old) = self.meshed.remove(&key) else { continue };
-            match self.constraint(id).map(|c| c.deflection_row(self)) {
-                Some(Ok(crate::constraints::DeflectionRow::Meshed(r))) => {
-                    self.meshed.insert(key, r);
-                    made = true;
-                }
-                _ => {
-                    self.meshed.insert(key, old);
-                }
-            }
-        }
+        let rows: Vec<_> = self.constraints.iter()
+            .filter_map(|c| c.meshed_key(self).filter(|k| self.meshed.contains_key(k)).map(|k| (c, k)))
+            .filter_map(|(c, k)| match c.made_row(self) {
+                Ok(crate::constraints::DeflectionRow::Meshed(r)) => Some((k, r)),
+                _ => None,
+            })
+            .collect();
+        let made = !rows.is_empty();
+        self.meshed.extend(rows);
         if made {
             self.meshed_at = Some(self.get_x());
         }

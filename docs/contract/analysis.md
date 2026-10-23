@@ -1086,8 +1086,10 @@ scenario drawn, unless a rule names another.
   pull toward it made (a hole's radius driven toward nothing reads its circle's row over a size
   that went with it). The solve then runs none of its `RETRIES` nor its recoveries (each starts
   again toward the same extreme, every step an analysis factored), and the diagnosis — where the
-  drawing stands, or where its scratch solve stopped when that is no stationary point, as on a
-  page that puts a failed solve's pose back — files the rows as the conflict
+  drawing stands; at the pose a failed solve began from, as on a page that puts a failed
+  solve's pose back, what that solve said (`System::stopped_from`), solving nothing again; else
+  where its scratch solve stopped when the pose is no stationary point — files the rows as the
+  conflict
   (`Diagnosis::out_of_reach`, each with `Reach::text`; report `outOfReach`, `[id, words]`) and
   searches for no other. The summary says `CONFLICT — a requirement out of reach of what drives
   it: change what it states, or what drives it`, `solventc` prints each row with its words in

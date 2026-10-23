@@ -3,10 +3,9 @@
 //! and the ring that makes it one, and a requirement out of reach of what drives it.  The rules
 //! are `docs/contract/analysis.md`'s.
 use gcs_core::diagnose::analysis::{
-    self, freedoms, freedoms_text, reach, repeated, williams, Freedom, Held, Reach,
+    self, freedoms, freedoms_text, reach, repeated, scenario_read, williams, Freedom, Held, Reach,
 };
 use gcs_core::constraints::CKind;
-use gcs_core::diagnose::analysis::scenario_read;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::eigen::{self, Opts};
 use crate::interior::{braced, two_bar};

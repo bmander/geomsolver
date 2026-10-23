@@ -166,7 +166,7 @@ pub fn assembled(n: usize, t: &[(usize, usize, f64)], ordering: Ordering) -> (Sy
     PATTERNS.with(|known| {
         let mut known = known.borrow_mut();
         let at = known.iter().position(|(o, sum, _)| *o == ordering && sum.fits(n, &low));
-        let (o, sum, kept) = match at {
+        let (_, sum, kept) = match at {
             Some(at) => known.remove(at),
             None => {
                 let sum = Summed::of(n, &low);
@@ -178,7 +178,7 @@ pub fn assembled(n: usize, t: &[(usize, usize, f64)], ordering: Ordering) -> (Sy
         let a = Symmetric { values: sum.values(&low), ..sum.pattern.clone() };
         let mut c = kept.clone();
         c.lx = vec![0.0; c.xp[c.supernodes()]];
-        known.insert(0, (o, sum, kept));
+        known.insert(0, (ordering, sum, kept));
         known.truncate(KNOWN);
         (a, c)
     })

@@ -311,13 +311,12 @@ pub fn summary(d: &Diagnosis) -> String {
     parts.join("; ")
 }
 
-/// **What a failed drawing's driven deflections cannot meet where it stands at `z`**, each with
-/// why in words (#510 P7, S2; `System::stop_at`, `Reach::text`): every failing one out of reach
-/// of what drives it, else each at the edge of the mesh it is read on.  Empty where neither is
-/// the failure.
-fn unmet(sys: &mut System, sk: &Sketch, z: &[f64], tol: f64) -> Vec<(u32, String)> {
+/// **What a failed drawing's driven deflections cannot meet**, each with why in words (#510 P7,
+/// S2; `Reach::text`): every failing one out of reach of what drives it, else each at the edge of
+/// the mesh it is read on, as `stop` says.  Empty where neither is the failure.
+fn unmet(sk: &Sketch, stop: Stop) -> Vec<(u32, String)> {
     let spell = |v| crate::beams::value_text(sk, crate::model::Output::Deflection, v);
-    match sys.stop_at(sk, z, tol) {
+    match stop {
         Stop::OutOfReach(rows) | Stop::Folded(rows) => {
             rows.into_iter().filter_map(|(c, v)| v.text(&spell).map(|t| (c, t))).collect()
         }
@@ -769,15 +768,20 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
     let mut unsettled = false;
     if !violated.is_empty() {
         let z = sys.z0(sk);
-        out_of_reach = unmet(sys, sk, &z, opts.tol);
+        // where the solve that failed on `sys` began, it said why already
+        let stop = if sys.stopped_from.as_deref() == Some(&sk.get_x()[..]) {
+            sys.stop.clone()
+        } else {
+            sys.stop_at(sk, &z, opts.tol)
+        };
+        out_of_reach = unmet(sk, stop);
         if out_of_reach.is_empty() && !sys.stationary(&z) {
             let mut scratch = sk.clone();
             let mut ssys = System::new(&scratch);
             if ssys.solve(&mut scratch, SolveOpts::default()).settled() {
                 stalled = true;
             } else {
-                let z = ssys.z0(&scratch);
-                out_of_reach = unmet(&mut ssys, &scratch, &z, opts.tol);
+                out_of_reach = unmet(sk, ssys.stop.clone());
                 unsettled = out_of_reach.is_empty();
             }
         }

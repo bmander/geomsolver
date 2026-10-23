@@ -614,10 +614,17 @@ impl Constraint {
     /// region's or a solid's row is the one meshed when it was compiled (`Sketch::meshed`),
     /// where there is one, so every compile through a solve reads one topology.
     pub fn deflection_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
-        let (sc, at, along) = self.frame_read(sk)?;
+        let (_, at, along) = self.frame_read(sk)?;
         if let Some(r) = self.mesh_key(at, along).and_then(|key| sk.meshed.get(&key)) {
             return Ok(DeflectionRow::Meshed(r.clone()));
         }
+        self.made_row(sk)
+    }
+
+    /// `deflection_row` made where the drawing stands, whatever mesh the sketch holds: what
+    /// elaboration holds and `Sketch::remesh` makes again.
+    pub fn made_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
+        let (sc, at, along) = self.frame_read(sk)?;
         let of = crate::model::Applied::Ent(EntRef::point(at));
         if crate::beams::of_frame(sk, sc, &of) {
             return crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame);

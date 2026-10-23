@@ -49,10 +49,9 @@ const EDGE: f64 = 1e-3;
 /// **Why a failed solve stopped where it did** (#510 P7, S2; `System::stop_at`): what every
 /// retry and recovery after the attempt asks (`System::stop`, set by the attempt), and the
 /// diagnosis says.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Stop {
     /// Nothing an analysis says: the solve's, or a conflict's.
-    #[default]
     Other,
     /// Every driven deflection that fails, out of reach of what drives it, with its verdict.
     OutOfReach(Vec<(u32, Reach)>),
@@ -237,6 +236,10 @@ pub struct System {
     /// Why the last attempt solved on this compile stopped short (`stop_at`), `Stop::Other`
     /// where it did not, or nothing asked.
     pub(crate) stop: Stop,
+    /// Where the sketch stood when the document solve that failed with `stop` began (`solve`): a
+    /// page that puts a failed solve's pose back diagnoses there, and reads `stop` rather than
+    /// solving again (`diagnose::diagnose_with`).
+    pub(crate) stopped_from: Option<Vec<f64>>,
     /// The block-triangular order of the hard rows, worked out the first time it is asked for
     /// (`block_order`) and kept for the life of the compile, whose topology it is a fact about.
     order: Option<Arc<BlockOrder>>,
@@ -976,6 +979,7 @@ impl System {
             kernels: table,
             interior,
             stop: Stop::Other,
+            stopped_from: None,
             order: None,
             tearings: BTreeMap::new(),
             const_slots: None,
@@ -1359,28 +1363,29 @@ impl System {
         self.interior[self.blocks[self.instance_of(row).0].kid]
     }
 
-    /// `f` of row `row`'s instance read at `z`: the system, the row's kernel, the parameters it
-    /// reads, their values (`gather`, as `residuals_into` reads them) and its constants.
+    /// `f` of row `row`'s instance read at `z`: the system, the parameters the row reads, their
+    /// values (`gather`, as `residuals_into` reads them) and its constants.
     fn with_instance<T>(&mut self, z: &[f64], row: usize,
-                        f: impl FnOnce(&System, Kernel, &[i32], &[f64], &[f64]) -> T) -> T {
+                        f: impl FnOnce(&System, &[i32], &[f64], &[f64]) -> T) -> T {
         self.apply_z(z);
         let (b, i) = self.instance_of(row);
         let (block, kn) = (&self.blocks[b], self.kernels[self.blocks[b].kid]);
         let gidx = &block.gidx[i * kn.n_par..(i + 1) * kn.n_par];
         let mut v = Vec::new();
         gather(&mut v, &self.x, gidx);
-        f(self, kn, gidx, &v, &block.consts[i * kn.n_const..(i + 1) * kn.n_const])
+        f(self, gidx, &v, &block.consts[i * kn.n_const..(i + 1) * kn.n_const])
     }
 
     /// **Whether hard row `row` is out of reach at `z`** (#510 P7): a driven deflection's verdict
     /// (`interior::reach_of`) over the parameters it reads that the solve moves — a free column,
     /// or one worked out from free ones — each moved across the drawing's extent in its own units
-    /// (`Param::scale`).  `None` for any other row, and for one that cannot be read there.
-    pub fn reach(&mut self, sk: &Sketch, z: &[f64], row: usize) -> Option<Reach> {
+    /// (`Param::scale`), with its value there.  `None` for any other row, and for one that cannot
+    /// be read there.
+    fn reach(&mut self, sk: &Sketch, z: &[f64], row: usize) -> Option<(Reach, f64)> {
         if !self.drives(row) {
             return None;
         }
-        self.with_instance(z, row, |sys, _, gidx, v, k| {
+        self.with_instance(z, row, |sys, gidx, v, k| {
             let extent = sys.extent.max(1.0);
             let free: Vec<bool> = gidx.iter().map(|&g| sys.col_of[g as usize] != -1).collect();
             let scale: Vec<f64> = gidx.iter().map(|&g| match sk.params[g as usize].scale {
@@ -1421,17 +1426,13 @@ impl System {
             let (b, i) = sys.instance_of(row);
             sys.blocks[b].cids[i]
         };
-        let mut out = Vec::new();
-        for &row in &failing {
-            match self.reach(sk, z, row) {
-                Some(v @ (Reach::Held | Reach::Extreme { .. })) => out.push((cid(self, row), v)),
-                _ => {
-                    out.clear();
-                    break;
-                }
-            }
-        }
-        if !out.is_empty() {
+        let read: Vec<Option<(Reach, f64)>> = failing.iter().map(|&row| self.reach(sk, z, row))
+            .collect();
+        let out: Option<Vec<(u32, Reach)>> = failing.iter().zip(&read).map(|(&row, r)| match r {
+            Some((v @ (Reach::Held | Reach::Extreme { .. }), _)) => Some((cid(self, row), *v)),
+            _ => None,
+        }).collect();
+        if let Some(out) = out {
             return Stop::OutOfReach(out);
         }
         if sk.meshed.is_empty() {
@@ -1443,7 +1444,7 @@ impl System {
         self.compute_csr(z);
         let reach = EDGE * self.extent.max(1.0);
         let mut edges = Vec::new();
-        for row in failing {
+        for (row, read) in failing.into_iter().zip(read) {
             let span = self.csr_indptr[row] as usize..self.csr_indptr[row + 1] as usize;
             let g = self.csr_data[span.clone()].iter().map(|g| g * g).sum::<f64>().sqrt();
             if !(g > 0.0 && g.is_finite()) {
@@ -1457,18 +1458,11 @@ impl System {
                     on[self.csr_indices[p] as usize] -=
                         way * r[row].signum() * self.csr_data[p] / g * length;
                 }
-                self.with_instance(&on, row, |_, kn, _, v, k| {
-                    let mut at = [0.0];
-                    (kn.res)(1, v, k, &mut at);
-                    at[0].is_nan()
-                })
+                self.with_instance(&on, row, |_, _, v, k| crate::interior::reading(v, k).is_none())
             });
-            if folds {
-                // where it was read to
-                let value = self.with_instance(z, row, |_, _, _, v, k| crate::interior::reading(v, k));
-                if let Some((value, _)) = value {
-                    edges.push((cid(self, row), Reach::Edge { value }));
-                }
+            // where it was read to
+            if let (true, Some((_, value))) = (folds, read) {
+                edges.push((cid(self, row), Reach::Edge { value }));
             }
         }
         if edges.is_empty() { Stop::Other } else { Stop::Folded(edges) }

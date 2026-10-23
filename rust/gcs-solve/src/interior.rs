@@ -1776,11 +1776,7 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
         let (v, k) = (&v[n_par * i..n_par * (i + 1)], &k[n_const * i..n_const * (i + 1)]);
         let row = &mut j[n_par * i..n_par * (i + 1)];
         row.fill(0.0);
-        let Some(read) = Row::read(v, k) else {
-            row.fill(f64::NAN);
-            continue;
-        };
-        let Ok(st) = read.s.solve(&read.x) else {
+        let Some((read, st)) = solved(v, k) else {
             row.fill(f64::NAN);
             continue;
         };
@@ -1824,26 +1820,33 @@ impl Row<'_> {
     }
 }
 
+/// One row read off its columns `v` and constants `k`, and its structure solved there; `None`
+/// where it cannot be read or solved.
+fn solved<'a>(v: &[f64], k: &'a [f64]) -> Option<(Row<'a>, State)> {
+    let read = Row::read(v, k)?;
+    let st = read.s.solve(&read.x).ok()?;
+    Some((read, st))
+}
+
 /// One row's output where its columns `v` stand, and what it states there; `None` where the row
 /// cannot be read or its structure solved there.
 pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
-    let read = Row::read(v, k)?;
-    let st = read.s.solve(&read.x).ok()?;
+    let (read, st) = solved(v, k)?;
     Some((read.s.output(&st), read.target(v)))
 }
 
 /// **Whether one row is out of reach where its columns `v` stand** (#510 P7): its output and
 /// what it states there, and its rate in its columns — the rate the solve steps on (`jac`) —
 /// judged by `analysis::reach` over the columns `free` says the solve moves, each moved by its
-/// `scale`.  One structure solved for all three.  `None` where the row cannot be read or its
-/// structure solved there.
-pub fn reach_of(v: &[f64], k: &[f64], free: &[bool], scale: &[f64]) -> Option<Reach> {
-    let read = Row::read(v, k)?;
-    let st = read.s.solve(&read.x).ok()?;
+/// `scale`; with the output.  One structure solved for all three.  `None` where the row cannot
+/// be read or its structure solved there.
+pub fn reach_of(v: &[f64], k: &[f64], free: &[bool], scale: &[f64]) -> Option<(Reach, f64)> {
+    let (read, st) = solved(v, k)?;
     let mut g = vec![0.0; v.len()];
     read.rate(&st, v, &mut g);
     if !g.iter().all(|g| g.is_finite()) {
         return None;
     }
-    Some(analysis::reach(read.s.output(&st), read.target(v), &g, scale, free))
+    let output = read.s.output(&st);
+    Some((analysis::reach(output, read.target(v), &g, scale, free), output))
 }

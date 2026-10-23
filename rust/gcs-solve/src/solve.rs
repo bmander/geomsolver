@@ -341,6 +341,7 @@ impl System {
         if opts.document() && !res.success {
             res = self.at_own_sizes(sk, opts, res);
         }
+        self.stopped_from = (opts.document() && !res.success).then(|| start.clone());
         // what the recoveries leave is judged already; a steer moves it again.  The lines are
         // named where it is reported (`Diagnosis::collapsed`), not here
         if steers && res.success {
@@ -402,10 +403,13 @@ impl System {
         if !matches!(self.stop, Stop::Folded(_)) {
             return None;
         }
-        let before = sk.clone();
+        // the meshes are all a remesh changes: the sketch is copied only where one was made
+        let (meshed, at) = (sk.meshed.clone(), sk.meshed_at.clone());
         if !sk.remesh() {
             return None;
         }
+        let mut before = sk.clone();
+        (before.meshed, before.meshed_at) = (meshed, at);
         Some(Recovery { from: None, back: Back::Sketch(Box::new(before)) })
     }
 
@@ -596,9 +600,10 @@ impl System {
         // the path's doing — every retry starts again from `z0` toward the same extreme or the
         // same fold, each step of it an analysis factored again, and the drawing still fails;
         // the fold is a recovery's, meshed where it stopped
-        self.stop = match res.success || !opts.retry {
-            true => Stop::Other,
-            false => self.stop_at(sk, &z, opts.acceptance_tol),
+        self.stop = if res.success || !opts.retry {
+            Stop::Other
+        } else {
+            self.stop_at(sk, &z, opts.acceptance_tol)
         };
         if opts.retry && dogleg && self.stop == Stop::Other {
             for retry in RETRIES {
