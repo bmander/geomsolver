@@ -12,6 +12,10 @@
  *   * F7 and ⇧F7 step the caret to the next and the previous place (VS Code's keys), round the
  *     end of the file.
  *
+ * And one of this app's, whose text and drawing are one thing: the caret *put* on a name — by a
+ * click, an arrow, F7, never by typing — is told to `onName`, which selects what it names in the
+ * workspace (`names.ts`).
+ *
  * Which word is a name and which declaration it names is the core's — this module only asks, and
  * says nothing about Solvent.  The editor knows nothing of either: it is handed marks in a layer
  * of their own, beside the picked statement's. */
@@ -60,11 +64,15 @@ export class Occurrences {
   private index: { text: string; symbols: Symbols } | null = null;
   private indexer: ((text: string) => Symbols) | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** The caret was put where it rests, not carried there by typing: what `onName` is told of. */
+  private put = false;
+  /** Told of the name the caret was put on, once it rests there, with the index it is read in. */
+  onName: ((o: Occurrence, index: Symbols) => void) | null = null;
 
   constructor(private readonly ed: CodeEditor) {
     // an edit has already let go of what was lit (the editor drops a layer the text moved
     // under); either way the name is asked again once the caret rests
-    ed.onCaret(() => this.later());
+    ed.onCaret((edited) => { this.put = !edited; this.later(); });
     ed.box.addEventListener('keydown', (e) => {
       if (e.key !== 'F7' || e.metaKey || e.ctrlKey || e.altKey) return;
       if (this.step(e.shiftKey ? -1 : 1)) e.preventDefault();
@@ -77,6 +85,7 @@ export class Occurrences {
     if (indexer === this.indexer) return;
     this.indexer = indexer;
     this.index = null;
+    this.put = false;
     this.later();
   }
 
@@ -90,6 +99,9 @@ export class Occurrences {
     const text = this.ed.text;
     const index = (WORD.test(text[lo - 1] ?? '') || WORD.test(text[lo] ?? '')) && this.symbols();
     this.ed.setMarks(index ? occurrenceMarks(index, lo, hi) : [], LAYER);
+    const o = index && this.put && meant(index, lo, hi);
+    this.put = false;
+    if (o && index) this.onName?.(o, index);
   }
 
   /** Put the caret on the next (`1`) or previous (`-1`) place the name under it is named; whether
@@ -100,6 +112,7 @@ export class Occurrences {
     const to = index && stepTo(index, lo, hi, step);
     if (!to) return false;
     this.ed.select(to.lo);
+    this.put = true;
     this.update();
     return true;
   }
