@@ -108,7 +108,9 @@ pub fn seed_param(sk: &Sketch, kind: CKind, args: &[Arg], i: usize) -> f64 {
             let view = sk.plane_of(c);
             let (cx, cy) = sk.on_view_sheet(sk.world_point(c), view);
             let (px, py) = sk.on_view_sheet(sk.world_point(args[0].ent().i()), view);
-            arc_fraction((py - cy).datan2(px - cx), a0, a1 - a0)
+            let t = arc_fraction((py - cy).datan2(px - cx), a0, a1 - a0);
+            // an arc drawn from its end for its sense is read from the start written (#573)
+            if sk.reversed.contains(&(i as u32)) { 1.0 - t } else { t }
         }
         // a point a motion carries starts at the roll that carries its point nearest where it
         // stands (#365), as a point on a curve starts where the curve passes nearest it: at roll

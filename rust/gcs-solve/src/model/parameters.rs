@@ -241,6 +241,12 @@ impl Sketch {
     }
 
 
+    /// Whether arc `i` is drawn from the end it was written with: walked so by a chain
+    /// (`walked_back`) or said to turn clockwise (`reversed`).
+    pub fn drawn_from_end(&self, i: usize) -> bool {
+        self.walked_back.contains(&(i as u32)) || self.reversed.contains(&(i as u32))
+    }
+
     /// Params of any primitive, in the model's canonical order.
     /// The names of an entity's scalars under the name `n`, in `entity_params` order: the kind's
     /// own (`EntKind::scalar_names`), and a point in space's third coordinate, `n.z`, which a
@@ -249,6 +255,11 @@ impl Sketch {
         let mut names = e.kind.scalar_names(n)?;
         if e.kind == EntKind::Point && self.points[e.i()].z.is_some() {
             names.push(format!("{n}.z"));
+        }
+        // an arc drawn from its end — walked so by a chain, or said to turn clockwise — still
+        // names its ends as written (#363 S4, #573): its drawn start is `k.end`
+        if e.kind == EntKind::Arc && self.drawn_from_end(e.i()) {
+            names[2..6].rotate_left(2);
         }
         Some(names)
     }

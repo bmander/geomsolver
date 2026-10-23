@@ -47,6 +47,7 @@ mod chain;
 mod chain_edges;
 mod claim;
 mod claim_witness;
+mod clockwise_arc;
 mod closed_scopes;
 mod collapsed_side;
 mod collapsed_space;

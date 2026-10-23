@@ -204,15 +204,21 @@ pub fn to_json(sk: &Sketch) -> Json {
     let arcs: Vec<Json> = sk
         .arcs
         .iter()
-        .map(|a| {
-            object([
+        .enumerate()
+        .map(|(i, a)| {
+            let mut o = object([
                 ("center", (a.center as i64).into()),
                 ("start", (a.start as i64).into()),
                 ("end", (a.end as i64).into()),
                 ("r", sk.params[a.radius as usize].value.into()),
                 ("fixed", sk.params[a.radius as usize].fixed.into()),
                 ("class", class_json(&a.class)),
-            ])
+            ]);
+            // said to turn clockwise and drawn from its end, read as written (#573)
+            if sk.reversed.contains(&(i as u32)) {
+                o.set("reversed", true.into());
+            }
+            o
         })
         .collect();
     let splines: Vec<Json> = sk
@@ -528,6 +534,9 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         sk.params[rp].value = a.get("r").map(|v| v.as_f64()).unwrap_or(0.0);
         sk.params[rp].fixed = a.get("fixed").map(|v| v.as_bool()).unwrap_or(false);
         sk.arcs[ai].class = read_class(a);
+        if a.get("reversed").is_some_and(|v| v.as_bool()) {
+            sk.reversed.insert(ai as u32);
+        }
     }
     for s in d.get("splines").unwrap_or(&empty).arr() {
         let raw = s.get("ctrl").map(|v| v.arr().to_vec()).unwrap_or_default();
