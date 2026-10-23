@@ -77,6 +77,8 @@ part ConRod(pin: CrankPin, bore: line) {
   wt := 5mm              // web thickness
   hM := (hB + hS) / 2    // the shank's half-width at mid-length, where the section is cut
   oil := 1.5mm           // the oil passage, half its bore
+  // forged, quenched and tempered: what the rod and its cap are made of
+  steel := material(E: 210GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 900MPa)
 
   in pin.end.plane {
     // the small end rides the bore axis one rod length from the pin
@@ -404,9 +406,9 @@ part ConRod(pin: CrankPin, bore: line) {
   seat_r cut whole
   // split at the parting line: the rod, and its cap
   split := solid(face(cap0, cap1, cap2, cap3, -> close), from: front, to: back)
-  body := solid(whole)
+  body := solid(whole) of steel
   split cut body
-  cap := solid(whole)
+  cap := solid(whole) of steel
   split common cap
   // the small end's bush: the ring between its bore and the pin's, as wide as the small end
   bush := solid(face(smallbore, holes: pin_bore), from: front, to: back)
@@ -430,4 +432,12 @@ preview {
   }
   pin := {end: pe.p, side: ps.p}
   rod := ConRod(pin, bore)
+  // fired: the gas load on the piston at its peak, pressed through the small end's bore toward
+  // the crank, the big end's bore held on its pin
+  scenario fired {
+    fixed rod.body.whole.bigbore
+    load rod.body.whole.smallbore -30kN along: bore
+    claim deflection(rod.body, along: bore) <= 0mm
+    claim mass(rod.body) <= 1kg
+  }
 }

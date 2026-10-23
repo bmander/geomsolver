@@ -697,7 +697,13 @@ scenario drawn, unless a rule names another.
   degree — a twentieth of the unknowns (57,603 on the conrod; 9 million entries of L, under a
   second). The cycle is symmetric, so it preconditions CG, which stops at a residual of
   `pcg::TOLERANCE` (1e-11) of the load's; the moves are then good to about twenty times that.
-  Every pass reads the stiffness's lower triangle by column, its only copy. A structure the
+  Every pass reads the stiffness's lower triangle by column, its only copy. **Both matrices are
+  assembled in place** (`pcg::Lower`): the pattern from the mesh's node adjacency (an entry
+  wherever two equations' nodes share an element, a column's rows counted first and allocated
+  once), then each element's matrix added at its entries — never as triplets, which for the rod
+  held 18 million, sorted into a copy and doubled as they grew: a 3 GB peak for a 175 MB matrix,
+  and 2.5 GB of the page's core, past what a browser gives a page. In place the solve peaks at
+  under 400 MB natively, and the page's core reads the rod in 378 MB. A structure the
   supports leave free fails the corners' factor (its rigid motions are the corners' too), and
   one CG does not settle in `pcg::MOST` (300) iterations — a mesh holding an element nearly
   flat, where a small residual need not mean good moves (a sliver on the boundary is peeled for
@@ -709,6 +715,20 @@ scenario drawn, unless a rule names another.
   (`cg_over_the_corners_agrees_with_the_factor`). The conrod takes 56 iterations, 12 s, its
   coarser reading 36; read whole — meshed, solved, read again twice as coarse for the error — it
   answers in 41 s where it took 187 s, the same answer to every figure said.
+
+- **The rod's reading is pinned** (#510; `tests/iterative.rs`, `bench analysis`). The engine's
+  connecting rod is made of steel and its preview states a load scenario (`engine/conrod.sv`,
+  `fired`: the big end's bore held on its pin, 30kN pressed through the small end's along the
+  bore, the rod at the table's crank angle — it sinks 0.675mm, bending as it leans, and weighs
+  0.433kg). The suite holds its reading to the work it takes, counts and not times, so a slower
+  machine passes and a lost speed-up fails: at four times its size every crossing Newton's, under
+  3.5 readings a crossing (2.8), its queries within a fifth of 395,358 and CG within 45 iterations
+  (37) (`the_rods_reading_is_pinned_by_the_work_it_takes`); at its own size, the slow tier's, 2.5
+  readings a crossing, 1,419,046 queries and 40 iterations
+  (`the_rods_reading_at_its_own_size_is_pinned`). `make bench` reads it a level at a time, its
+  seconds and memory beside each level: natively (`bench analysis`, the heap's peak counted) 6.8,
+  19.5 and 46.5 s, 92, 171 and 419 MB; in the page's core (`npm run bench`, the module's memory)
+  7.5, 20.1 and 49.8 s, 86, 162 and 378 MB.
 
 - **A solid's deflection, driven, is a row stacked over its face's** (#510 S3; `bodies::row`,
   `bodies::of_body`, `interior::Stack`, `DeflectionRow::Meshed`). `deflection(p, along: d) == v`,

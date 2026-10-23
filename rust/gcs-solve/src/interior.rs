@@ -37,6 +37,7 @@ use crate::kernels::{curve_widths, Dual, Kernel, Num};
 use crate::linalg::{rank_and_nullspace, Mat};
 use crate::envelope::held;
 use crate::space::{add, dot, norm, scale, sub};
+use crate::pcg::Lower;
 use crate::sparse::{Ata, Sym};
 
 mod moved;
@@ -143,8 +144,9 @@ pub enum Failure {
 enum Factor {
     Ata(Ata),
     Cholesky(crate::cholesky::Cholesky),
-    /// A solid's stiffness held for CG over its corners' space (`pcg`, `ITERATIVE`).
-    Pcg(crate::pcg::Pcg),
+    /// A solid's stiffness held for CG over its corners' space (`pcg`, `ITERATIVE`), and how
+    /// many iterations its solve took.
+    Pcg(crate::pcg::Pcg, usize),
 }
 
 impl Factor {
@@ -153,7 +155,7 @@ impl Factor {
         match self {
             Factor::Ata(a) => a.resolve(b),
             Factor::Cholesky(c) => c.solve(b),
-            Factor::Pcg(cg) => {
+            Factor::Pcg(cg, _) => {
                 let _ = cg.solve(b);
             }
         }
@@ -183,7 +185,15 @@ pub struct State {
 impl State {
     /// Whether it was solved by CG (`pcg`), not on a factor.
     pub fn by_cg(&self) -> bool {
-        matches!(self.ata, Factor::Pcg(_))
+        matches!(self.ata, Factor::Pcg(..))
+    }
+
+    /// How many iterations CG took to solve it, where it was solved by CG.
+    pub fn iterations(&self) -> Option<usize> {
+        match self.ata {
+            Factor::Pcg(_, its) => Some(its),
+            _ => None,
+        }
     }
 
     /// `f`, per degree of freedom, at the equations: the ones no support holds.
@@ -283,11 +293,12 @@ impl Structure {
             // whose corners' factor fails, or that CG does not settle, is factored after all —
             // and its factor says whether the supports leave it free
             if self.tris.is_empty() && iterative {
-                let (k, up, coarse) = self.cornered(x, &eq, n_eq)?;
-                if let Ok(cg) = crate::pcg::Pcg::new(k, up, &coarse) {
+                let (k, up, len, coarse) = self.cornered(x, &eq, n_eq)?;
+                if let Ok(cg) = crate::pcg::Pcg::new(k, up, len, &coarse) {
                     let mut u = rhs.clone();
-                    if cg.solve(&mut u).is_ok() && u.iter().all(|v| v.is_finite()) {
-                        let mut st = State { ata: Factor::Pcg(cg), eq, u: Vec::new() };
+                    let its = cg.solve(&mut u);
+                    if let (Ok(its), true) = (its, u.iter().all(|v| v.is_finite())) {
+                        let mut st = State { ata: Factor::Pcg(cg, its), eq, u: Vec::new() };
                         st.u = st.scatter(&u);
                         return Ok(st);
                     }
@@ -332,8 +343,7 @@ impl Structure {
     /// Galerkin matrix `PᵀKP` over the corners' equations, assembled element by element as
     /// `P_eᵀ K_e P_e` (a side's ends are its own element's corners).
     fn cornered(&self, x: &[f64], eq: &[Option<usize>], n_eq: usize)
-        -> Result<(crate::cholesky::Symmetric, Vec<Vec<(usize, f64)>>, crate::cholesky::Symmetric),
-                  Failure>
+        -> Result<(Lower, Vec<[(u32, f64); 2]>, Vec<u8>, crate::cholesky::Symmetric), Failure>
     {
         // the corners' equations, by degree of freedom
         let mut corner = vec![false; self.nodes];
@@ -350,32 +360,40 @@ impl Structure {
                 nc += 1;
             }
         }
-        let mut t = Vec::new();
-        let mut tc = Vec::new();
+        // both patterns from the mesh, then every element added in place
+        let all = |f: &mut dyn FnMut(&[usize])| self.tets.iter().for_each(|t| f(&t.n));
+        let corners = |f: &mut dyn FnMut(&[usize])| self.tets.iter().for_each(|t| f(&t.n[..4]));
+        let mut k = Lower::pattern(self.nodes, 3, &all, eq, n_eq);
+        let mut kc = Lower::pattern(self.nodes, 3, &corners, &ceq, nc);
         let mut ends: Vec<Option<(usize, usize)>> = vec![None; self.nodes];
         for i in 0..self.tets.len() {
             let m = self.tets[i].stiffness(&self.tet_places(i, x))?;
             let dofs = self.tet_dofs(i);
-            local_into(&m, &dofs, eq, true, &mut t);
-            cornered_into::<30, 12>(&m, &dofs, 3, &TET_SIDES, eq, &ceq, &mut tc);
+            k.add(&m, &dofs.map(|d| eq[d]));
+            let pmp = cornered::<30, 12>(&m, &dofs, 3, &TET_SIDES, eq);
+            kc.add(&pmp, &std::array::from_fn(|c| ceq[dofs[c]]));
             let n = self.tets[i].n;
             for (k, &(a, b)) in TET_SIDES.iter().enumerate() {
                 ends[n[4 + k]] = Some((n[a], n[b]));
             }
         }
-        let mut up = vec![Vec::new(); n_eq];
+        let mut up = vec![[(0u32, 0.0); 2]; n_eq];
+        let mut len = vec![0u8; n_eq];
         for (d, e) in eq.iter().enumerate() {
             let Some(e) = *e else { continue };
-            let (node, k) = (d / 3, d % 3);
-            up[e] = match (ceq[d], ends[node]) {
-                (Some(c), _) => vec![(c, 1.0)],
-                (None, Some((a, b))) => [a, b].iter().filter_map(|&c| ceq[3 * c + k])
-                    .map(|c| (c, 0.5)).collect(),
+            let (node, c) = (d / 3, d % 3);
+            let from: Vec<(usize, f64)> = match (ceq[d], ends[node]) {
+                (Some(j), _) => vec![(j, 1.0)],
+                (None, Some((a, b))) => [a, b].iter().filter_map(|&v| ceq[3 * v + c])
+                    .map(|j| (j, 0.5)).collect(),
                 (None, None) => Vec::new(),
             };
+            for (t, &(j, w)) in from.iter().enumerate() {
+                up[e][t] = (j as u32, w);
+            }
+            len[e] = from.len() as u8;
         }
-        Ok((crate::cholesky::Symmetric::from_triplets(n_eq, &t), up,
-            crate::cholesky::Symmetric::from_triplets(nc, &tc)))
+        Ok((k, up, len, kc.symmetric()))
     }
 
     /// Every element's strain rows at `x`, each handed to `row` as its `(equation, entry)`s at the
@@ -1217,13 +1235,12 @@ fn local_into<const M: usize>(m: &[[f64; M]; M], dofs: &[usize; M], eq: &[Option
 }
 
 /// **An element's share of its mesh's corners' Galerkin matrix** (`pcg`): `P_eᵀ m P_e` over its
-/// `C` corners' degrees of freedom, `P_e` carrying each corner's move to itself and each side's
-/// middle node's (`sides`, after the corners) from the side's ends', its held moves (no `eq`)
-/// left out; added at the corners' equations `ceq` numbers, lower triangle.
-fn cornered_into<const M: usize, const C: usize>(m: &[[f64; M]; M], dofs: &[usize; M], dim: usize,
-                                                 sides: &[(usize, usize)], eq: &[Option<usize>],
-                                                 ceq: &[Option<usize>],
-                                                 t: &mut Vec<(usize, usize, f64)>)
+/// `C` corners' degrees of freedom (its own first `C`), `P_e` carrying each corner's move to
+/// itself and each side's middle node's (`sides`, after the corners) from the side's ends', its
+/// held moves (no `eq`) left out.
+fn cornered<const M: usize, const C: usize>(m: &[[f64; M]; M], dofs: &[usize; M], dim: usize,
+                                            sides: &[(usize, usize)], eq: &[Option<usize>])
+    -> [[f64; C]; C]
 {
     let corners = C / dim;
     // P_e's rows: each local degree of freedom's corners' ones and weights
@@ -1262,16 +1279,7 @@ fn cornered_into<const M: usize, const C: usize>(m: &[[f64; M]; M], dofs: &[usiz
             }
         }
     }
-    for c in 0..C {
-        let Some(ec) = ceq[dofs[c]] else { continue };
-        for d in 0..C {
-            if let Some(ed) = ceq[dofs[d]] {
-                if ec >= ed && pmp[c][d] != 0.0 {
-                    t.push((ec, ed, pmp[c][d]));
-                }
-            }
-        }
-    }
+    pmp
 }
 
 /// An element's strain rows `rows` over its degrees of freedom `dofs`, each over `unit` and laid

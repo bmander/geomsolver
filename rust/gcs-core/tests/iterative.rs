@@ -118,3 +118,51 @@ fn a_distances_readings_clear_a_crossings_bracket() {
     let (na, nd) = (agreeing.tets.len() as f64, distance.tets.len() as f64);
     assert!((na - nd).abs() <= 0.05 * na, "{nd} cells, against {na}");
 }
+
+/// The engine's connecting rod (`engine/conrod.sv`, its preview), solved, and its body.
+fn conrod() -> (gcs_core::program::Elaborated, usize) {
+    let project = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let source = std::fs::read_to_string(project.join("engine/conrod.sv")).unwrap();
+    let e = fixtures::read_beside(&source, &project, &mut |_, text| text);
+    let solid = fixtures::solid(&e, "rod.body");
+    (e, solid)
+}
+
+/// **The rod's reading is pinned by the work it takes** (#510): filled and solved, the engine's
+/// connecting rod under its gas load (`fired`) takes no more than this — counts, not times, so a
+/// slower machine passes and a lost speed-up fails.  Every crossing of its boundary is Newton's on
+/// the distance's readings, under 3.5 readings a crossing (2.8; bisection took 23), its queries
+/// within a fifth of 395,358, and CG over its corners settles in 45 iterations (37).  At four
+/// times its reading's size, so the suite pays seconds; its own size is the slow tier's
+/// (`the_rods_reading_at_its_own_size_is_pinned`).
+#[test]
+fn the_rods_reading_is_pinned_by_the_work_it_takes() {
+    pinned(4.0, 480_000, 3.5, 45);
+}
+
+/// **The rod at its reading's own size** (#510, the slow tier): 77,648 TET10 and 385,368
+/// equations, its queries within a fifth of 1,419,046, 2.5 readings a crossing, CG in 40
+/// iterations (pinned at 50).
+#[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, a minute: the rod at its own size")]
+fn the_rods_reading_at_its_own_size_is_pinned() {
+    pinned(1.0, 1_700_000, 3.0, 50);
+}
+
+fn pinned(coarser: f64, queries: usize, readings: f64, iterations: usize) {
+    let (e, solid) = conrod();
+    let mesh = gcs_core::bodies::mesh(&e.sketch, solid, &[], coarser).expect("meshed");
+    let r = mesh.report.as_ref().expect("a filled body's report");
+    let s = &r.surface;
+    eprintln!("{} elements: {} queries, {} readings over {} crossings, {} fallbacks",
+              mesh.tets.len(), s.queries, s.readings, s.crossings, s.fallbacks);
+    assert!(s.crossings > 0 && s.newton == s.crossings && s.fallbacks == 0, "{s:?}");
+    assert!((s.readings as f64) < readings * s.crossings as f64, "{s:?}");
+    assert!(s.queries <= queries, "{} queries, pinned at {queries}", s.queries);
+    let sc = &e.scenarios[0].scenario;
+    let (st, x) = gcs_core::bodies::structure(&e.sketch, sc, solid, coarser).expect("a structure");
+    let solved = st.solve(&x).expect("solved");
+    let its = solved.iterations().expect("solved by CG");
+    eprintln!("{} degrees of freedom, CG in {its} iterations", solved.u.len());
+    assert!(its <= iterations, "CG took {its} iterations, pinned at {iterations}");
+}

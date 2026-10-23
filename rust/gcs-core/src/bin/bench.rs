@@ -10,6 +10,8 @@
 //! benchmark harness would be the first.  Kill background CPU hogs before trusting the numbers —
 //! `uptime` first.
 
+use std::alloc::{GlobalAlloc, Layout, System as Heap};
+use std::sync::atomic::{AtomicUsize, Ordering::Relaxed};
 use std::time::Instant;
 
 use gcs_core::decompose::{PlanDrag, PlanSolver};
@@ -20,6 +22,41 @@ use gcs_core::solve::{Drag, SolveOpts};
 use gcs_core::system::System;
 
 const METHODS: [Method; 2] = [Method::DogLeg, Method::Lm];
+
+/// The heap's bytes held and the most held since `PEAK` was last reset: what the analysis bench
+/// says beside its times (the system allocator, counted; nothing else changes).
+static HELD: AtomicUsize = AtomicUsize::new(0);
+static PEAK: AtomicUsize = AtomicUsize::new(0);
+
+struct Counted;
+
+unsafe impl GlobalAlloc for Counted {
+    unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+        let p = Heap.alloc(l);
+        if !p.is_null() {
+            PEAK.fetch_max(HELD.fetch_add(l.size(), Relaxed) + l.size(), Relaxed);
+        }
+        p
+    }
+    unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+        Heap.dealloc(p, l);
+        HELD.fetch_sub(l.size(), Relaxed);
+    }
+    unsafe fn realloc(&self, p: *mut u8, l: Layout, n: usize) -> *mut u8 {
+        let q = Heap.realloc(p, l, n);
+        if !q.is_null() {
+            if n > l.size() {
+                PEAK.fetch_max(HELD.fetch_add(n - l.size(), Relaxed) + n - l.size(), Relaxed);
+            } else {
+                HELD.fetch_sub(l.size() - n, Relaxed);
+            }
+        }
+        q
+    }
+}
+
+#[global_allocator]
+static COUNTED: Counted = Counted;
 
 fn median(mut v: Vec<f64>) -> f64 {
     if v.is_empty() {
@@ -270,12 +307,38 @@ fn bench_rounded() {
              sk.solids.len(), median(again));
 }
 
+/// **A solid read in three dimensions, a level at a time** (`engine/conrod.sv`'s `fired`, #510):
+/// the engine's connecting rod filled (77,648 TET10 at its own size), solved by CG over its
+/// corners, and read progressively (`report::Levels`) — each level's time from the start, and the
+/// heap's peak above what was held before it.  `npm run bench` reads the same through wasm.
+fn bench_analysis() {
+    println!("\n== a solid read a level at a time (engine/conrod.sv, `fired`): s and MB ==");
+    let (prog, errs, _) =
+        gcs_core::library::parse_linked(include_str!("../../../examples/engine/conrod.sv"));
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = gcs_core::program::elaborate(&prog);
+    let mut sk = e.sketch.clone();
+    gcs_core::solve::solve(&mut sk, Default::default());
+    let base = HELD.load(Relaxed);
+    PEAK.store(base, Relaxed);
+    let t0 = Instant::now();
+    let mut levels = gcs_core::report::Levels::new();
+    while let Some(l) = levels.next(&sk, &e.scenarios, Some(0)) {
+        let said = l.get("scenarios").unwrap().arr()[0].get("answers").unwrap().arr()[0]
+            .get("text").unwrap().dump(None);
+        println!("level {}: {:6.1} s | heap peak {:6.0} MB | {said}",
+                 l.get("level").unwrap().as_f64(), t0.elapsed().as_secs_f64(),
+                 (PEAK.load(Relaxed) - base) as f64 / 1e6);
+    }
+}
+
 fn main() {
     // `bench delaunay [case]`: the triangulation alone, or one of its cases (for timing a single
     // case's CPU from outside, as `/usr/bin/time` does when the machine is busy).
     if std::env::args().nth(1).as_deref() == Some("meshing") { bench_meshing(); return; }
     if std::env::args().nth(1).as_deref() == Some("scrub") { bench_scrub(); return; }
     if std::env::args().nth(1).as_deref() == Some("rounded") { bench_rounded(); return; }
+    if std::env::args().nth(1).as_deref() == Some("analysis") { bench_analysis(); return; }
     if std::env::args().nth(1).as_deref() == Some("delaunay") { bench_delaunay(std::env::args().nth(2).as_deref()); return; }
     let cases = cases();
 
@@ -356,4 +419,5 @@ fn main() {
     bench_scrub();
     bench_rounded();
     bench_delaunay(None);
+    bench_analysis();
 }

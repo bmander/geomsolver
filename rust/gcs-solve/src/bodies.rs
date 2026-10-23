@@ -87,6 +87,8 @@ pub struct Mesh {
     /// to `prisms::ON` of its extent; a filled body's point names the node nearest it, within an
     /// element's size.
     pub near: f64,
+    /// What the refinement that filled it did (a filled body's; none for a stack).
+    pub report: Option<crate::delaunay::refine::VolumeReport>,
 }
 
 /// **A prism's mesh, its face's stacked**: the region, the face's mesh, and per node its node of
@@ -229,7 +231,8 @@ impl Mesh {
             };
             Some((f, wall))
         }).collect();
-        Ok(Mesh { nodes, tets, facets, stack: Some(Stacked { region, plane, of }), near: tol })
+        Ok(Mesh { nodes, tets, facets, stack: Some(Stacked { region, plane, of }), near: tol,
+                  report: None })
     }
 
     /// **A solid that is no prism, meshed by refining its exact boundary** (#510 S3, P6's
@@ -274,7 +277,7 @@ impl Mesh {
             });
             (f, Wall::Face(body.signed_distance(middle).1))
         }).collect();
-        Ok(Mesh { nodes: v.nodes, tets, facets, stack: None, near: size })
+        Ok(Mesh { nodes: v.nodes, tets, facets, stack: None, near: size, report: Some(v.report) })
     }
 
     /// The node nearest `p`, within `tol`.
