@@ -2510,25 +2510,27 @@ test('an anonymous element is named the moment the source must say it', () => {
 });
 
 test('the rect tool writes a component instance, and the component once', () => {
-  let d = Document.read('');
-  const first = d.addRectangle(120, 60);
+  let d = Document.read('use std\n');
+  const first = d.addRectangle(120, 60, 'std.front');
   assert.equal(first.kind, 'structural');
-  assert.equal(first.names[0], 'r0');
-  assert.ok(first.text.includes('component Rectangle(w: Length, h: Length)'), first.text);
-  assert.ok(first.text.includes('r0 := Rectangle(w: 120, h: 60)'), first.text);
+  assert.deepEqual(first.names, ['r0', 'p0']);
+  const definition = 'component Rectangle(corner: point, w: Length, h: Length)';
+  assert.ok(first.text.includes(definition), first.text);
+  const corner = 'p0 := point in std.front\nr0 := Rectangle(p0, w: 120, h: 60) in std.front';
+  assert.ok(first.text.includes(corner), first.text);
   d.dispose();
   d = Document.read(first.text);
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
 
-  const second = d.addRectangle(40, 40);
-  assert.equal(second.names[0], 'r1');
+  const second = d.addRectangle(40, 40, 'std.front');
+  assert.deepEqual(second.names, ['r1', 'p1']);
   assert.equal(second.text.split('component Rectangle').length, 2, 'one definition, reused');
   d.dispose();
   d = Document.read(second.text);
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   assert.equal(d.sketch.lines.length, 8);
   // the corners the tool then seeds are addressable by name, through the instance
-  for (const part of ['r0.l1.p1', 'r0.l1.p2', 'r0.l2.p2', 'r0.l3.p2']) {
+  for (const part of ['p0', 'r0.l1.p2', 'r0.l2.p2', 'r0.l3.p2']) {
     assert.ok(d.entity(part), `${part} resolves`);
   }
   d.dispose();
@@ -2659,7 +2661,7 @@ test('dragging the gear does not rewrite the gear', () => {
 test('a rectangle joins the view it is drawn in, whole', () => {
   const d = Document.read('use std\n');
   const e = d.addRectangle(30, 20, 'std.front');
-  assert.ok(e.text.includes(' := Rectangle(w: 30, h: 20) in std.front'), e.text);
+  assert.ok(e.text.includes(' := Rectangle(p0, w: 30, h: 20) in std.front'), e.text);
   const d2 = Document.read(e.text);
   assert.ok(d2.ok, d2.diagnostics.map((x) => x.message).join());
   const front = d2.entity('std.front');

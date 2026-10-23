@@ -91,11 +91,16 @@ pub struct Component {
     /// (`symmetric((a, la), (b, lb))`).  Empty for a family that says no such thing, and for every
     /// other component.  What the elaborator does with it is `flatten::same`.
     pub symmetric: Vec<Vec<Name>>,
-    /// `part Arm(pin: point) { … }` (#461): a component declared a **function of what it is
-    /// given** — its own unknowns determined by its own rows, its inputs held, and no row about
-    /// its operands alone — which the elaborator holds it to (`parts::check`).  Solved flat as
-    /// any component is.
-    pub part: bool,
+}
+
+impl Component {
+    /// **A braced definition** (#562): named, and no family of sets — a function of its
+    /// arguments and of the frame its instance stands in, which the elaborator holds every one to
+    /// (`parts::check`): its own unknowns determined by its own rows, its inputs held, and no row
+    /// about its operands alone.  Solved flat as any component is.
+    pub fn braced(&self) -> bool {
+        self.name.is_some() && self.set.is_none()
+    }
 }
 
 /// **A set, written as the points that satisfy a predicate** (§6.21): `{ p | p distance(12mm)

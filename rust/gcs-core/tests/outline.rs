@@ -12,7 +12,7 @@ use crate::common::gestures::build;
 
 /// A component instance, a ring, an object made of two features and `use std`.
 const DOC: &str = "unit mm\nuse std\n\
-component Pin(c: point) {\n  q := point hint((3, 0))\n  c distance(3) q\n  arm := line(c, q)\n}\n\
+component Pin(c: point) {\n  q := point hint((3, 0))\n  c distance(3) q\n  arm := line(c, q)\n  horizontal arm\n}\n\
 in std.front {\n  hub := point\n  fix((0, 0)) hub\n\
   ring 3 about hub {\n    tip := point hint((10, 1))\n    hub distance(10) tip\n\
     chord := line(tip, next.tip)\n  }\n\

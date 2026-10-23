@@ -20,7 +20,7 @@ use motor.dims (bo, end_turn_in, hall_l, hall_r0, hall_r1, hall_w, hs, L, overha
                 slot_pitch, slots, wt)
 use motor.parts (Datums)
 
-part Stator(f: Datums) {
+component Stator(f: Datums) {
   in f.o.plane {
     ring slots about f.o {
       // the slot's centreline, and the centrelines of the teeth either side of it

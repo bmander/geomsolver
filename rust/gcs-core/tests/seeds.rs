@@ -67,6 +67,10 @@ use std
 component Off(p: point, d: Length) {
 q := point hint((p.x + d, p.y))
 s := line(p, hint((p.x + d / 2, p.y + d)))
+p level(v) q
+p distance(d, along: u) q
+p distance(d / 2, along: u) s.p2
+p distance(d, along: v) s.p2
 }
 in std.front {
 a := point hint((10, 20))
@@ -88,7 +92,8 @@ component Bar(a: point, w: Length) {
 h := w / 2
 b := point hint((a.x + w, a.y + h))
 l := line(a, b)
-a distance(w) b
+a distance(w, along: u) b
+a distance(h, along: v) b
 }
 in std.front {
 o := point hint((0, 0))
@@ -104,6 +109,8 @@ use std
 w := 30
 component Bar(a: point, w: Length) {
 b := point hint((a.x + w, a.y))
+a level(v) b
+a distance(w, along: u) b
 }
 in std.front {
 o := point hint((0, 0))
@@ -125,6 +132,10 @@ component Span(k1: circle, k2: circle, side: Scalar) {
 a := point hint(at: k1, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
 b := point hint(at: k2, bearing: atan2(k2.center.y - k1.center.y, k2.center.x - k1.center.x) + side * 90deg)
 s := line(a, b)
+a coincident k1
+b coincident k2
+s tangent k1
+s tangent k2
 }
 in std.front {
 o := point hint((0, 0))

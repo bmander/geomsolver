@@ -1,5 +1,5 @@
 //! **Frames along a path** (#398 C): a jointed frame whose joint is held along a path (`std.Along`,
-//! `std.AlongFrenet`: `g coincident f.axis`) stands where the path's parameter puts it, its pose
+//! `std.AlongFrenet`, each the frame `f` it makes: `g coincident f.axis`) stands where the path's parameter puts it, its pose
 //! read off the path after the solve — a motion of its own kind (`MotionDef::Guided`), the
 //! rotation-minimising frame integrated by double reflection from its home or the path's own
 //! frame read off its derivatives.  What is drawn in it is drawn at the home, and a face drawn
@@ -78,9 +78,8 @@ param s: Scalar over (0, 1)
 /// A frame `n` along `guide` by `word` (its arguments `args`), a `w` × `h` rectangle drawn in it,
 /// and the rectangle swept as `s` runs: `along`.
 fn along(word: &str, guide: &str, args: &str) -> String {
-    format!("n := plane(u: hint(dir: std.x), v: hint(dir: std.z))
-std.{word}(n, {guide}{args})
-sec := Rect(n, w: 2mm, h: 1mm)
+    format!("al := std.{word}({guide}{args})
+sec := Rect(al.f, w: 2mm, h: 1mm)
 f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 along := sweep(f over s)
 ")
@@ -125,9 +124,9 @@ fn motion(e: &Elaborated, name: &str) -> Family {
 /// family is, the middle of its interval.  Their volumes agree.
 #[test]
 fn a_tube_in_a_frame_along_a_spline_is_todays_stations() {
-    for (guide, home) in [("curvy", ""), ("cubic", ", home: 0.5")] {
+    for (guide, home) in [("curvy", "0"), ("cubic", "0.5")] {
         let today = format!("today := sweep(Rider({guide}, std.z, w: 2mm, h: 1mm).f over s)\n");
-        let src = format!("{PATHS}{}{today}", along("Along", guide, &format!(", up: std.z{home}")));
+        let src = format!("{PATHS}{}{today}", along("Along", guide, &format!(", up: std.z, home: {home}")));
         same_solid(&determined(&src), "along", "today", guide);
     }
 }
@@ -169,11 +168,10 @@ component Helix(o: point, x: line, y: line, z: line, r: Length, pitch: Length, t
   o distance(pitch * turns * u, along: z) p
 }
 guide := trace(Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 2).p over u in (0, 1))
-n := plane(u: hint(dir: std.x), v: hint(dir: std.z))
-std.Along(n, guide, up: std.z, home: 0.3)
+al := std.Along(guide, up: std.z, home: 0.3)
 ";
     let e = determined(src);
-    let f = motion(&e, "n");
+    let f = motion(&e, "al.f");
     let (r, b): (f64, f64) = (10.0, 5.0 / (2.0 * PI));
     let c = r.hypot(b);
     let tau = b / (c * c);
@@ -214,7 +212,7 @@ std.Along(n, guide, up: std.z, home: 0.3)
 #[test]
 fn a_frame_along_a_spline_is_bounded_over_every_stretch() {
     let e = determined(&format!("{PATHS}{}", along("Along", "cubic", ", up: std.z, home: 0.5")));
-    let f = motion(&e, "n");
+    let f = motion(&e, "al.f");
     let pts: [V; 3] = [[0.0, 0.0, 0.0], [12.0, -3.0, 4.0], [40.0, 10.0, 25.0]];
     for k in 0..16 {
         let (a, b) = (k as f64 / 16.0, (k + 1) as f64 / 16.0);
@@ -238,7 +236,7 @@ fn a_frame_along_a_spline_is_bounded_over_every_stretch() {
     }
     // the path's own frame carries no bound on its torsion: it fails closed
     let e = determined(&format!("{PATHS}{}", along("AlongFrenet", "cubic", "")));
-    assert!(motion(&e, "n").bounds(I::new(0.0, 0.1).unwrap()).is_err());
+    assert!(motion(&e, "al.f").bounds(I::new(0.0, 0.1).unwrap()).is_err());
 }
 
 /// **What a frame along a path cannot mean is said**: a ratio other than 0 or 1, an advance, a

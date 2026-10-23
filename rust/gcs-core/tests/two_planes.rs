@@ -229,9 +229,9 @@ fn a_point_another_component_draws_is_drawn_in_this_ones_plane() {
     let src = format!(
         "{FOLDED}component Gear(p: plane) {{\n  M := point hint((20, 0)) in p\n}}\n\
          component Pinion(q: plane, gear: group) {{\n  gear.M coincident q\n  in q {{\n    \
-         t := point hint((20, 8))\n    l := line(gear.M, t)\n  }}\n}}\n\
-         gear := Gear(std.top)\npinion := Pinion(G, gear)\nfix(x == 20) gear.M\n\
-         pinion.l perpendicular std.x\n"
+         t := point hint((20, 8))\n    l := line(gear.M, t)\n  }}\n  gear.M level(std.x) t\n  \
+         gear.M distance(8mm) t\n}}\n\
+         gear := Gear(std.top)\npinion := Pinion(G, gear)\nfix(x == 20) gear.M\n"
     );
     let mut e = solved(&src);
     assert!(!kinds(&e).iter().any(|k| format!("{k:?}").contains("Plane")), "{:?}", kinds(&e));
@@ -243,7 +243,7 @@ fn a_point_another_component_draws_is_drawn_in_this_ones_plane() {
     let (a, b) = (e.sketch.world_point(end), e.sketch.world_point(m));
     assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-9), "{a:?} {b:?}");
     let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
-    assert_eq!(d.dof, 1, "t along the line l stands on: {:?}", d.warnings);
+    assert_eq!(d.dof, 0, "t on the line l stands on, 8mm from M: {:?}", d.warnings);
 }
 
 /// A claim is judged, so it draws nothing; the plane said first is put through the point, a row
@@ -302,13 +302,14 @@ fn a_projection_reads_each_point_in_its_own_plane() {
 #[test]
 fn a_point_its_instance_puts_in_a_view_keeps_the_row() {
     let src = format!(
-        "{FOLDED}component Foot(p: plane) {{\n  f := point hint((10, 0))\n  f coincident p\n}}\n\
+        "{FOLDED}component Foot(p: plane) {{\n  f := point hint((10, 0))\n  f coincident p\n  \
+         std.origin distance(10mm, along: std.x) f\n}}\n\
          foot := Foot(std.top) in G\n"
     );
     let e = read(&src);
     assert!(e.sketch.twins.is_empty());
     assert_eq!(e.sketch.plane_of(ent(&e, "foot.f").i()), Some(ent(&e, "G").i()));
-    assert_eq!(kinds(&e), vec![CKind::PointOnPlane]);
+    assert_eq!(kinds(&e).iter().filter(|k| **k == CKind::PointOnPlane).count(), 1);
 }
 
 /// A plane the solve turns — `n.v` along a line to a point in space, which nothing places before

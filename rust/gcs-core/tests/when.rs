@@ -78,6 +78,7 @@ fn the_names_inside_a_when_are_the_enclosing_scopes() {
           when d > 0mm {\n\
             tip := point hint((5, 5))\n\
             p distance(d) tip\n\
+            p level(u) tip\n\
           }\n\
         }\n\
         in std.front {\n\
@@ -285,6 +286,7 @@ fn a_when_compares_formals_by_what_they_were_given() {
           }\n\
           when p == q {\n\
             lone := point hint((1, 1))\n\
+            fix((1, 1)) lone\n\
           }\n\
         }\n\
         in std.front {\n\

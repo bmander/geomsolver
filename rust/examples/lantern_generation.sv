@@ -6,7 +6,7 @@
 // it refining).
 
 unit mm
-use std (coords, on_u, turns)
+use std (coords, on_u, turns, rolls)
 wheel_pitch := 16mm
 pinion_pitch := 8mm
 pin_throw := 6mm
@@ -39,7 +39,7 @@ wheel_turn turns(1) spindle
 param pinion_ratio: Scalar
 pinion_turn := frame
 pinion_turn turns(pinion_ratio) pinion_axis
-std.Rolls(pitch, pinion_turn, wheel_turn, along: std.front.normal)
+pinion_turn rolls(at: pitch, along: std.front.normal) wheel_turn
 
 // The blank: a disc out to the addendum circle, turned about the spindle.
 in std.front {

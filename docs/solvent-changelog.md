@@ -4,6 +4,30 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.176] One definition form.** A braced definition is a function of its arguments and of the
+frame its instance stands in, and every one is held to it (§8.2): E108, E109, the diagnosis read
+through instances (D1–D3) and W207 apply to every drawn instance of every `component Name(…) { … }`,
+where 0.162 held only those written `part`. `part` stops being a keyword: `part Name(…) {` is
+**E100**, saying to write `component`, and `part` is a name like any other. Set families and
+relation words are untouched. The frame an instance stands in is one of its inputs: the rows that
+tie what it makes to that frame (a lift, a plane's axes through its origin, a twin's tie) are its
+own, and a row placing what another instance made is that one's. A numeric formal the call leaves
+unbound may be determined by the instance's own rows, as its output, or left to the parent. The
+corpus's 56 `part` definitions are components; the definitions that broke the promise are fixed in
+their text: the flows (`rates/`) say their home `initially` from formals, `ngon.sv`'s `Ngon`
+exports its turn as `heading`, the hypoid's steps leave the numbers they set (`mn`, `rp`, `pa`, the
+face mill's two settings) to the pair's own rows, the spheres and the grinding wheel say each fact
+once, and `std.Frenet` holds its plane's `u` along its normal line rather than building the plane
+over it. `std.Turn`, `std.Spin` and `std.Slide`, kept beside the joint words since 0.154, are
+retired; `std.Rolls` is the word `a rolls(at: p, along: d) b`; `std.Screw(toward, m)` makes its
+axis, `s.isa`, running the way a held `toward` does. `std.Along(g, up: u)` and `std.AlongFrenet(g)`
+make the frame they hold, `f`, where they were given one; `std.CircleOnSphere(k, s, view)` is the
+word `k on_sphere(view: v) s`. A `fix` of a joint's ratio must be a plain number and of its advance
+a length (**E103**), the check the retired components made through their typed formals. The Rect
+tool's `Rectangle` stands at a corner it is given, its first side level, the corner a point of
+the document beside the instance. A circle carried whole by `mapped` holds its centre once. Every
+solved position is unchanged. (Issue #562, from #523.)
+
 **[0.175] What a body is made of is the drawing's.** A mass and a volume answer no load, so
 neither is a scenario's: `mass(m) B` and `volume(v) B` are relations of the drawing, prefix words
 (§9.1, §9.11) over a beam, a line a beam is drawn on, or a solid. Stated, each is a row the solve

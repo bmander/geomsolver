@@ -18,7 +18,7 @@ fn plane(e: &program::Elaborated, name: &str) -> usize {
 }
 
 /// A point in each standard plane, and one in space.
-const VIEWS: &str = "unit mm\nuse std\n\
+const VIEWS: &str = "unit mm\nuse std (spins)\n\
     f := point hint((10, 4)) in std.front\nfix((10, 4)) f\n\
     s := point hint((10, 4)) in std.side\nfix((10, 4)) s\n\
     t := point hint((10, 4)) in std.top\nfix((10, 4)) t\n\
@@ -72,7 +72,7 @@ fn a_point_drawn_in_no_plane_stands_in_space_where_it_was_seen() {
         let toward = [az.cos() * el.cos(), az.sin() * el.cos(), el.sin()];
         assert!((0..3).map(|k| at[k] * toward[k]).sum::<f64>().abs() < 1e-12, "{at:?}");
     }
-    let mut e = build("unit mm\nuse std\n");
+    let mut e = build("unit mm\nuse std (spins)\n");
     let (az, el) = (0.3, 0.4);
     let at = unseen(az, el, (12.0, -5.0));
     let p = e.sketch.point3(at, false, "");
@@ -143,7 +143,7 @@ fn a_pick_tells_apart_views_that_overlap_on_the_page() {
 /// it, nor a line beside it.
 #[test]
 fn a_band_takes_what_it_touches() {
-    let e = build("unit mm\nuse std\nin std.front {\n\
+    let e = build("unit mm\nuse std (spins)\nin std.front {\n\
         a := point hint((0, 0))\nfix((0, 0)) a\nb := point hint((20, 0))\nfix((20, 0)) b\n\
         across := line(a, b)\n\
         c := point hint((0, 10))\nfix((0, 10)) c\nd := point hint((20, 10))\nfix((20, 10)) d\n\
@@ -212,7 +212,7 @@ fn lines_are_picked_where_their_ends_stand() {
 /// page would put it.
 #[test]
 fn a_circle_on_a_tilted_plane_is_picked_on_its_rim() {
-    let e = build("unit mm\nuse std\nc := circle(center: o) hint(r: 5) in std.top\no := point in std.top\n\
+    let e = build("unit mm\nuse std (spins)\nc := circle(center: o) hint(r: 5) in std.top\no := point in std.top\n\
         fix((0, 0)) o\nfix(r == 5) c\n");
     let sk = &e.sketch;
     let (az, el) = (0.6, 0.5);
@@ -228,7 +228,7 @@ fn a_circle_on_a_tilted_plane_is_picked_on_its_rim() {
 /// A dimension's callout is laid out in its view and picked where the eye sees its number.
 #[test]
 fn a_callout_is_picked_where_the_eye_sees_it() {
-    let e = build("unit mm\nuse std\na := point in std.side\nb := point hint((30, 0)) in std.side\n\
+    let e = build("unit mm\nuse std (spins)\na := point in std.side\nb := point hint((30, 0)) in std.side\n\
         fix((0, 0)) a\na distance(30mm) b\nhorizontal line(a, b)\n");
     let sk = &e.sketch;
     let unit = 0.05;
@@ -279,7 +279,7 @@ fn the_report_says_each_view() {
 #[test]
 fn a_place_is_a_plane_in_space() {
     // the front stood off along its normal, which is -y
-    let e = build("unit mm\nuse std\nback := plane\nfix(origin == (0, -10, 0)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 0, 1)) back.v\n");
+    let e = build("unit mm\nuse std (spins)\nback := plane\nfix(origin == (0, -10, 0)) back\nfix(dir == (1, 0, 0)) back.u\nfix(dir == (0, 0, 1)) back.v\n");
     let views = gcs_core::overview::workspace::Views::new(&e.sketch);
     let (front, up, back) = (plane(&e, "std.front"), plane(&e, "std.up"), plane(&e, "back"));
     assert_eq!(views.place(None), None, "the page is its own first place");
@@ -307,7 +307,7 @@ fn the_bounds_reach_past_a_turned_section() {
 #[test]
 fn a_blank_sheet_is_framed_on_the_workspace() {
     let bounds = gcs_core::overview::workspace::bounds;
-    for (src, side) in [("use std\n", 125.0), ("unit in\nuse std\n", 125.0 / 25.4)] {
+    for (src, side) in [("use std (spins)\n", 125.0), ("unit in\nuse std (spins)\n", 125.0 / 25.4)] {
         let e = build(src);
         let proj = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
         let (x0, y0, x1, y1) = bounds(&e.sketch, &proj, 0.05).unwrap();
@@ -319,7 +319,7 @@ fn a_blank_sheet_is_framed_on_the_workspace() {
         let front = plane(&e, "std.front");
         assert!(panes_at(&e.sketch, &proj, (0.45 * side, -0.45 * side)).contains(&front));
     }
-    let e = build("use std\na := point hint((0, 0)) in std.front\nfix((0, 0)) a\n\
+    let e = build("use std (spins)\na := point hint((0, 0)) in std.front\nfix((0, 0)) a\n\
         b := point hint((400, 0)) in std.front\nfix((400, 0)) b\nl := line(a, b)\n");
     let proj = Projection::new(&e.sketch, -FRAC_PI_2, 0.0);
     let (x0, _, x1, _) = bounds(&e.sketch, &proj, 0.05).unwrap();
@@ -332,7 +332,7 @@ fn a_blank_sheet_is_framed_on_the_workspace() {
 #[test]
 fn a_curve_is_drawn_in_the_view_of_what_it_is_written_over() {
     let e = build("unit mm
-use std
+use std (spins)
 in std.top {
   centre := point
   fix((0, 0)) centre
@@ -342,9 +342,9 @@ in std.top {
   fix((120, 0)) apex
 }
 counter := frame
-std.Spin(counter, about: centre, on: std.top, ratio: -1)
+counter spins(-1) centre
 spin := frame
-std.Spin(spin, about: hub, on: std.top, ratio: -2 / 3)
+spin spins(-2 / 3) hub
 bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)
 flank := envelope(bore over t in (10deg, 170deg), under: counter, seen_from: spin)
 ");
@@ -366,10 +366,11 @@ flank := envelope(bore over t in (10deg, 170deg), under: counter, seen_from: spi
 
 /// A 20 × 10 block on `std.top`, 5 deep below it, and a second one under it — seen from above,
 /// the upper hides the lower — and a third with a bore cut through it, at x = 40.
-const BLOCKS: &str = "unit mm\nuse std\n\
+const BLOCKS: &str = "unit mm\nuse std (spins)\n\
     component Slab(x: Length) {\n\
       a := point hint((x, 0))\nb := point hint((x + 20mm, 0))\n\
       c := point hint((x + 20mm, 10))\nd := point hint((x, 10))\n\
+      fix((x, 0)) a\nfix((x + 20mm, 0)) b\nfix((x + 20mm, 10)) c\nfix((x, 10)) d\n\
       ab := line(a, b)\nbc := line(b, c)\ncd := line(c, d)\nda := line(d, a)\n\
       sec := face(ab, bc, cd, da)\n\
     }\n\
@@ -414,7 +415,7 @@ fn a_click_on_a_solid_picks_the_face_nearest_the_eye() {
 
 /// Axes on a drawing that reaches 50 out: a line along part of `std.x`, and an axis parallel to
 /// `std.y` through (10, 0, 10) — seen end on from the front.
-const AXES: &str = "unit mm\nuse std\nin std.front {\n\
+const AXES: &str = "unit mm\nuse std (spins)\nin std.front {\n\
     a := point hint((5, 0))\nb := point hint((25, 0))\nfar := point hint((40, 30))\n\
     on_x := line(a, b)\nfix((5, 0)) a\nfix((25, 0)) b\nfix((40, 30)) far\n}\n\
     t := axis hint(dir: (0, 1, 0))\nfix(dir == (0, 1, 0), origin == (10, 0, 10)) t\n";

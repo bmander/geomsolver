@@ -4,14 +4,14 @@ use std (horizontal, vertical, above, offset)
 use components.dims (grub, nutT, nutaf, nutin)
 
 // A point placed from `o` by two ordinates.
-part At(o: point, dx: Length, dy: Length) {
+component At(o: point, dx: Length, dy: Length) {
   p := point hint((o.x + dx, o.y + dy))
   o distance(dx, along: u) p
   o distance(dy, along: v) p
 }
 
 // An axis-aligned rectangle about `o`: `a` is its lower-left corner, offset from `o`.
-part Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
+component Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
   a := point hint((o.x + x0, o.y + y0))
   b := point hint((o.x + x1, o.y + y0))
   c := point hint((o.x + x1, o.y + y1))
@@ -25,7 +25,7 @@ part Box(o: point, x0: Length, y0: Length, x1: Length, y1: Length) {
 
 // A rectangle between `x0` and `x1` whose top and bottom are the heights of two points another
 // view placed — the side view's reading of a part the front view designs.
-part Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
+component Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
   a := point hint((o.x + x0, bottom.y))
   b := point hint((o.x + x1, bottom.y))
   c := point hint((o.x + x1, top.y))
@@ -43,7 +43,7 @@ part Slab(o: point, x0: Length, x1: Length, top: point, bottom: point) {
 
 // The same the other way up: a rectangle between `y0` and `y1` whose left and right are the
 // widths of two points another view placed — the top view's reading of the front's.
-part Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
+component Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
   a := point hint((left.x, o.y + y0))
   b := point hint((right.x, o.y + y0))
   c := point hint((right.x, o.y + y1))
@@ -60,7 +60,7 @@ part Wide(o: point, y0: Length, y1: Length, left: point, right: point) {
 }
 
 // A part sheet's datum: the part's axis up the page through `o`.
-part Axes(o: point) {
+component Axes(o: point) {
   up := point hint((o.x, o.y + 40mm))
   up above(d: 40) o
   ax := line(o, up)
@@ -70,7 +70,7 @@ part Axes(o: point) {
 // A set screw into the shaft: its clearance hole from the bore at `rin` out to the rim at
 // `rout`, and the pocket the nut is trapped in, `nutin` out from the bore.  Written in the
 // datum `f` along the screw's axis.  Drawn on the part's sheet only.
-part Grub(f: group, rin: Length, rout: Length) {
+component Grub(f: group, rin: Length, rout: Length) {
   ax := line(f.u.p1, f.u.p2)
   h0 := point hint(at: f.axes, (rin, grub / 2))
   h1 := point hint(at: f.axes, (rout, grub / 2))

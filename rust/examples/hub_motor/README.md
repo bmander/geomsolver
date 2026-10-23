@@ -1,7 +1,7 @@
 # A 1 hp e-bike hub motor
 
 A direct-drive, outer-rotor, brushless permanent-magnet hub motor for a 26" rear wheel, rated at
-one mechanical horsepower (746 W) from a 48 V pack. Every part is a Solvent `part`, a function of
+one mechanical horsepower (746 W) from a 48 V pack. Every part is a Solvent definition, a function of
 what it is drawn about and mated to; the assembly solves with no freedom left (`well`, DOF 0) and twelve clearance claims hold on the
 solids.
 

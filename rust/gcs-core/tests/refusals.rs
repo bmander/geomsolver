@@ -76,7 +76,7 @@ fn a_param_declared_twice_is_an_error() {
     assert!(d.iter().any(|m| m.starts_with("E001") && m.contains("`w` is declared twice")), "{d:?}");
     assert!(!e.ok());
     // one per body: a component may have its own
-    let (e, d) = read("use std\nw := 60\ncomponent C() { w := 5\n p := point hint((w, 0)) }\nin std.front {\nc := C()\n}\n");
+    let (e, d) = read("use std\nw := 60\ncomponent C() { w := 5\n p := point hint((w, 0))\n fix((w, 0)) p }\nin std.front {\nc := C()\n}\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
 }
 
@@ -92,7 +92,7 @@ fn a_param_may_read_one_declared_below_it() {
     assert!((sk.point_xy(2).1 - 30.0).abs() < 1e-9);
     // a block's param reads the binder and a param of the enclosing body written after the
     // block; a component's reads its formal and a sibling written below
-    let (e, d) = read("use std\nin std.front {\nrepeat 2 as i {\n p := point hint((k, 0))\n k := base + i * 10\n}\n}\nbase := 5\ncomponent C(n: Int) {\n half := whole / 2\n whole := n * 2\n q := point hint((half, whole))\n}\nin std.front {\nc := C(n: 4)\n}\n");
+    let (e, d) = read("use std\nin std.front {\nrepeat 2 as i {\n p := point hint((k, 0))\n k := base + i * 10\n}\n}\nbase := 5\ncomponent C(n: Int) {\n half := whole / 2\n whole := n * 2\n q := point hint((half, whole))\n fix((half, whole)) q\n}\nin std.front {\nc := C(n: 4)\n}\n");
     assert!(d.is_empty() && e.ok(), "{d:?}");
     let sk = e.sketch;
     assert!((sk.point_xy(0).0 - 5.0).abs() < 1e-9 && (sk.point_xy(1).0 - 15.0).abs() < 1e-9);
@@ -433,6 +433,7 @@ use std
 component Off(o: point, ax: line, d: Length, s: Side) {
 p := point hint((o.x, o.y + 20mm))
 p distance(d, side: s) ax
+p level(right) o
 }
 in std.front {
 a := point

@@ -309,7 +309,7 @@ fn component_previews_resolve_project_imports_for_models_and_drawings() {
     std::fs::write(dir.join("parts/dims.sv"), "width := 20mm\n").unwrap();
     let part = dir.join("parts/bar.sv");
     std::fs::write(&part, "use parts.dims\ncomponent Bar(w: Length) {\n\
-        a := point\nfix(x == 0, y == 0) a\nb := point\nfix(x == w, y == 0) b\n\
+        a := point\nfix(x == 0, y == 0, z == 0) a\nb := point\nfix(x == w, y == 0, z == 0) b\n\
         border := line(a, b)\n}\npreview {\nunit mm\ndemo := Bar(w: parts.dims.width)\n}\n").unwrap();
     let args = [part.to_str().unwrap(), "--json", "--where", "demo.b.x"];
     let result = run(&args);
@@ -665,9 +665,9 @@ fn the_drift_lint_is_said_when_asked_and_fails_nothing() {
     std::fs::create_dir_all(&dir).unwrap();
     let source = dir.join("level.sv");
     std::fs::write(&source,"\
-use std (horizontal)
-component Level(a: point, b: point) {
-  a horizontal b
+use std
+component Level(a: point, b: point, run: Length) {
+  a distance(run) b
 }
 in std.front {
   a := point

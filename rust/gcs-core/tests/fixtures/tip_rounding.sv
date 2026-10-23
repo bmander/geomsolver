@@ -3,16 +3,6 @@
 // for the fillet checks that hold the rounds' words to it.
 use std
 
-component TipRounding(pitch: line, base: line, tip: line, first: arc, second: arc,
-                      design: group, normal_module: Length) {
-  base parallel pitch
-  base angle(180deg) tip
-  pitch.p1 distance(design.base * normal_module, side: left) base
-  pitch.p1 distance(design.dedendum * normal_module, side: left) tip
-  radius(design.rounding * normal_module) first
-  first equal second
-}
-
 preview {
   unit mm
   proportions := {base: 2, dedendum: 1.25, rounding: 0.3}
@@ -34,7 +24,12 @@ preview {
     base angle(250deg) inner
     std.origin coincident inner
     pitch.p2 coincident outer
-    rounding := TipRounding(pitch, base, tip, outer_round, inner_round, proportions,
-      normal_module: 2mm)
+    // the base and the tip at their depths, and the two rounds of one radius
+    base parallel pitch
+    base angle(180deg) tip
+    pitch.p1 distance(proportions.base * 2mm, side: left) base
+    pitch.p1 distance(proportions.dedendum * 2mm, side: left) tip
+    radius(proportions.rounding * 2mm) outer_round
+    outer_round equal inner_round
   }
 }

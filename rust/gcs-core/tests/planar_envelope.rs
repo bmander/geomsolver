@@ -107,7 +107,7 @@ fn a_motion_off_the_plane_gives_no_envelope() {
     let el = solved(&wankel(105.,15.,"\
 bore := envelope(apex over t in (0deg, 1080deg), under: spin, seen_from: counter)
 tilt := frame
-std.Turn(tilt, about: rightward_line, ratio: 1)
+rightward_line coincident(sense: same) tilt.axis; fix(ratio == 1, advance == 0mm) tilt
 in std.front {
 rightward_line := horizontal line(std.origin, hint((1, 0)))
 length(1mm) rightward_line

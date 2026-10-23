@@ -7,7 +7,7 @@ use components.dims (D, H, L, R, a, boltac, boltaf, dport, head, ph, trapfit, tr
 // The cylinder stands in its own frame (#542): origin at the pivot, z toward the head.  The part is
 // drawn in the frame's `std.up`, z to the right and x to the left, so every number below is the
 // part's own and the frame is all that moves; fw is the plate-side wall thickness.
-part Cylinder(fw: Length) {
+component Cylinder(fw: Length) {
   // The skirt reaches the bore mouth at bottom dead centre.
   mouth_u := L - R - ph - H
   hw := D / 2 + wall

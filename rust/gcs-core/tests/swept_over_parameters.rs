@@ -22,7 +22,7 @@ const EXACT: f64 = 1e-10;
 /// `360deg · turns · s`, and a 2 mm square drawn in its block on the front plane, centred 10 from
 /// the axis.
 const EPIC: &str = "unit mm
-use std (on_u)
+use std (on_u, screws)
 
 param s: Scalar over (0, 1)
 r := 10mm
@@ -30,7 +30,7 @@ size := 2mm
 pitch := 4mm
 turns := 3
 screw := frame
-std.Turn(screw, about: std.top.normal, ratio: 1, advance: pitch)
+screw screws(pitch) std.top.normal
 fix(value == 360deg * turns * s) screw
 in screw {
   in std.front {
@@ -46,7 +46,7 @@ thread := sweep(sec over s)
 /// The same thread as `lofts/thread.sv` sweeps it: the square drawn in `std.Helix`'s axial plane,
 /// a face family over the instance written in place.
 const STATION: &str = "unit mm
-use std (on_u)
+use std (on_u, screws)
 
 component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
   st := std.Helix(base, pitch: pitch, turns: turns, s: s)

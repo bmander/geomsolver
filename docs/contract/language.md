@@ -226,33 +226,44 @@ the dimension (`program::traced::Lowering::dimension`); curves.md's "A number th
 says what it becomes.  A trace in a plane compiles its dimensions over the formals and the geometry
 alone, so there the name is still E103 ("not something this curve can read").
 
-**A part is a component held to being a function of what it is given** (§8.2, [0.162], #461,
-[plan](../parts-plan.md)).  `part Name(…) {` parses as `component` does with `Component::part`
-set; the parser reads the word so only where a definition's shape follows it (`part_ahead`: a
-name, a bracketed list, then `{`), so `part := solid(…)` and `part above(7) q` stay statements, and
-`highlight` tints it only there.  `parts::check` runs once `program::elaborate` has a document
-that elaborated with no error.  It reads each drawn instance of a part as the classifier reads one
-(`boundary::split`).  Its own unknowns are what it made, the numbers no entity owns that its rows
-read, and the free variables under its prefix that are no formal of its own.  Its rows are the
+**Every braced definition is a function of its arguments and of the frame its instance stands in**
+(§8.2, [0.162], [0.176], #461, #562, [plan](../parts-plan.md)).  There is one definition form:
+`Component::braced` (named, no set family) is what `parts::check` reads, and relation words and set
+families are untouched.  `part Name(…) {` is refused by the parser (E100, `PART_RETIRED`, read
+through `words::part_at` so `part := solid(…)` and `part above(7) q` stay statements), and parsed on
+as `component` so what follows is still checked; `highlight` and `symbols` no longer read the word.
+`parts::check` runs once `program::elaborate` has a document that elaborated with no error.  It
+reads each drawn instance as the classifier reads one (`boundary::split`).  Its own unknowns are
+what it made, the numbers no entity owns that its rows read, and the free variables under its
+prefix that are no formal of its own; the free variables under its prefix that *are* its formals
+— a number the call left unbound — are columns its rows may determine and need not (`Read::unbound`:
+in the over-determined block's matching, not in the matching E108 asks for).  Its rows are the
 acting ones among those kept.  Its inputs, held, are every other column (`boundary::reduced`).
-**What a lift reads is its point's and its plane's** (#501, `World::with`): a plane's axes are the
-plane's numbers and a point's hidden point (`Sketch::lifts`) the point's, so a part reading an
-operand in space — measuring along a frame it turns through it, or drawing in a frame the parent
-turned — takes the operand's hidden point and the frame's placement as inputs, and the lift of a
-point it made, with its row, as its own; the point a plane it made stands at is the plane's, its
-row too.  Before, those numbers were no entity's, so whichever part read one first took it, and
-with it every row the document placed the parent's frame by (E109 over rows it never wrote).  Two
-rules are judged over the compiled structure of those rows (`System::structure`,
+**The frame is an input** (#562): an intrinsic row places one thing, its *subject*
+(`boundary::subject`: a lift's point, the origin a plane stands at, an axis held through a point or
+along a line, a twin held on a plane or folded onto its point), and is the instance's exactly when
+that subject is something it made — so the lift of its point into the frame it stands in is its
+own and the frame's placement an input, and the lift of a point another instance draws in a plane
+this one made, or a plane another stands at this one's origin, is not this one's.  An intrinsic
+row with no single subject (an arc's ends on it, a unit direction) is the instance's when it names
+a non-point the instance made.  **What a lift reads is its point's and its plane's** (#501,
+`World::with`): a plane's axes are the plane's numbers and a point's hidden point (`Sketch::lifts`)
+the point's; and a curve's points no name reaches (an arc's centre and ends) and the plane an arc
+in space is drawn in (`arcs_in_space`) are the curve's.  Before, those numbers were no entity's,
+so whichever instance read one first took it, and with it every row over them.  Two rules are
+judged over the compiled structure of those rows (`System::structure`,
 `graph::dulmage_mendelsohn`):
 - **E108** at the definition's name: an own column the matching leaves unmatched, named by its
   entity or its free variable;
-- **E109** at the row's site: a row of no own column, or one of the over-determined block, worded
-  by whether it reads an own unknown at all.
+- **E109** at the row's site: a row of no own column or unbound formal, or one of the
+  over-determined block, worded by whether it reads either.
 
 Each fault is said once a definition (`said`), against the first instance it is found in.  The
-structure only, so it is deterministic and decided before the solve; nothing changes a row.
+structure only, so it is deterministic and decided before the solve; nothing changes a row.  A
+flow's home is the body's own (`initially`, from formals); a joint is a relation word (`turns`,
+`spins`, `slides`, `screws`, `rolls`), the components `std.Turn`/`Spin`/`Slide` retired.
 **PT5 is advice** (`parts::roots`, **W207**): `solventc --lint` asks, of the solved sketch, the
-classifier's root search for each part's first instance (`boundary::classify`), and names a part
+classifier's root search for each definition's first instance (`boundary::classify`), and names a part
 classed *locally determined, branch not chosen* — its scattered starts came to another pose its
 stated `ccw`/`cw` and its bounds admit (a bound sited under the instance is among the rows `split`
 keeps, read by `bounds_hold` on each probe's root, as the orientations are by `orientation`).  A
@@ -555,8 +566,8 @@ components.dims.zB)`.
   its instance as a group of aliases (`HypoidPair`'s `gear_member := {ax: gear_cone.ax, …}`,
   `Tooth`'s `left` and `right`), or the parent reads it off a member one level down
   (`inlet.tbore.center`, a set's `flank.apex`).  The list is empty.  The rest are said, not held:
-  W201 waits on a word's unlabelled measure (#463), W202 on `std.Rolls` and `Standoff` (the
-  motion components are words since #464), W203 on a word that may leave a number to the solve
+  W201 waits on a word's unlabelled measure (#463), W202 on `Standoff` (the motion components are
+  words since #464, `rolls` since #562), W203 on a word that may leave a number to the solve
   (`std.Screw`'s pitch, a joint's ratio: a word's parameter left out is E040); W205 is a
   heuristic, since a flag chooses a model as often as a picture.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,

@@ -80,14 +80,23 @@ pub fn fd_jacobian(sk: &Sketch, tol: f64) {
 
 /// `src` parsed and elaborated with no error, or the test fails with every diagnostic.
 pub fn read(src: &str) -> Elaborated {
+    read_but(src, |_| false)
+}
+
+/// `read`, past the promise every definition is held to (`promise`): for a test of another rule
+/// whose bodies only relate what they are given, or leave a point free, on purpose.
+pub fn read_past_promise(src: &str) -> Elaborated {
+    read_but(src, promise)
+}
+
+/// `src` parsed and elaborated with no error but those `pass` lets through.
+fn read_but(src: &str, pass: fn(&gcs_core::program::Diag) -> bool) -> Elaborated {
     let (prog, errs, linked) = gcs_core::library::parse_linked(src);
     assert!(errs.is_empty() && linked.is_empty(), "does not parse: {errs:?} {linked:?}\n{src}");
     let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}\n{src}",
-        e.errors().map(|d| format!("{} {}", d.code.as_str(), d.message)).collect::<Vec<_>>()
-    );
+    let said: Vec<String> = e.errors().filter(|d| !pass(d))
+        .map(|d| format!("{} {}", d.code.as_str(), d.message)).collect();
+    assert!(said.is_empty(), "does not elaborate: {said:?}\n{src}");
     e
 }
 
@@ -115,6 +124,19 @@ pub fn refused(src: &str, code: &str, needle: &str, at: &str) {
     let d = e.diags.iter().find(|d| d.code.as_str() == code && d.message.contains(needle))
         .unwrap_or_else(|| panic!("expected {code} `{needle}`\n{src}\n{saw:#?}"));
     assert_eq!(d.span.slice(prog.text()), at, "{saw:?}");
+}
+
+/// Whether `d` is the promise every definition is held to (#562, E108 and E109).  A test of
+/// another rule — how a call binds, how an edit splices — writes the smallest body that shows it,
+/// often one that only relates its operands or leaves a point free, and reads the document past
+/// these alone.
+pub fn promise(d: &gcs_core::program::Diag) -> bool {
+    matches!(d.code, gcs_core::program::Code::E108 | gcs_core::program::Code::E109)
+}
+
+/// `e`'s errors but the promise's (`promise`).
+pub fn other_errors(e: &Elaborated) -> Vec<&gcs_core::program::Diag> {
+    e.errors().filter(|d| !promise(d)).collect()
 }
 
 /// The entity the document calls `n`.

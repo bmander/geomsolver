@@ -312,12 +312,14 @@ component Arm(pin: Pin) {
   in pin.end.plane {
     tip := point
     pin.end distance(30mm) tip
+    pin.end level(up) tip
   }
 }
 component Rod(l: line) {
   in l.p1.plane {
     m := point
     l.p1 distance(5mm) m
+    l.p1 level(up) m
   }
 }
 pa := {end: o}
@@ -607,11 +609,15 @@ fn linked(src: &str) -> (Elaborated, Vec<gcs_core::program::Diag>) {
     (elaborate(&prog), diags)
 }
 
+/// `src` linked and elaborated.  The shelf's components are the smallest bodies a word can be
+/// read in, some only relating what they are given, so the promise every definition is held to
+/// is read past (`common::promise`).
 fn ok(src: &str) -> Elaborated {
     let (e, diags) = linked(src);
     assert!(diags.is_empty(), "{diags:?}");
-    let saw: Vec<String> = e.errors().map(|d| format!("{} {}", d.code.as_str(), d.message)).collect();
-    assert!(e.ok(), "{saw:?}\n{src}");
+    let saw: Vec<String> = crate::common::other_errors(&e).iter()
+        .map(|d| format!("{} {}", d.code.as_str(), d.message)).collect();
+    assert!(saw.is_empty(), "{saw:?}\n{src}");
     e
 }
 

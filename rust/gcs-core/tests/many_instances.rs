@@ -80,9 +80,14 @@ use std
 w := {w}
 h := {h}
 {margin}
-component Plate(a: point, b: point, c: point, d: point,
-                h1: circle, h2: circle, h3: circle, h4: circle,
-                w: Length, h: Length, e: Length) {{
+component Plate(a: point, w: Length, h: Length, e: Length) {{
+  b := point hint((a.x + w, a.y))
+  c := point hint((a.x + w, a.y + h))
+  d := point hint((a.x, a.y + h))
+  h1 := circle(hint((a.x + e, a.y + e))) hint(r: {r})
+  h2 := circle(hint((a.x + w - e, a.y + e))) hint(r: {r})
+  h3 := circle(hint((a.x + w - e, a.y + h - e))) hint(r: {r})
+  h4 := circle(hint((a.x + e, a.y + h - e))) hint(r: {r})
   horizontal (bot := line(a, b)) -> vertical (rt := line(b, c)) ->
     horizontal (top := line(c, d)) -> vertical (lf := line(d, a)) -> close
   length(w) bot
@@ -105,18 +110,8 @@ in std.front {{
     for i in 0..n {
         let x0 = (i % cols) as f64 * (w + 20.0);
         let y0 = (i / cols) as f64 * (h + 20.0);
-        let corners = [(x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h)];
-        for (k, (x, y)) in ["a", "b", "c", "d"].iter().zip(corners) {
-            writeln!(out, "  {k}{i} := point hint(({x}, {y}))").unwrap();
-        }
-        let holes = [(x0 + e, y0 + e), (x0 + w - e, y0 + e), (x0 + w - e, y0 + h - e),
-                     (x0 + e, y0 + h - e)];
-        for (k, (x, y)) in (1..).zip(holes) {
-            writeln!(out, "  c{i}_{k} := point hint(({x}, {y}))").unwrap();
-            writeln!(out, "  h{i}_{k} := circle(c{i}_{k}) hint(r: {r})").unwrap();
-        }
-        writeln!(out, "  P{i} := Plate(a{i}, b{i}, c{i}, d{i}, h{i}_1, h{i}_2, h{i}_3, h{i}_4, \
-                       w: w, h: h, e: e)").unwrap();
+        writeln!(out, "  a{i} := point hint(({x0}, {y0}))").unwrap();
+        writeln!(out, "  P{i} := Plate(a{i}, w: w, h: h, e: e)").unwrap();
         if i == 0 {
             writeln!(out, "  fix((0, 0)) a0").unwrap();
         } else {

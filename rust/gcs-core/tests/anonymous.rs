@@ -270,7 +270,7 @@ fn a_mint_survives_offsets_an_earlier_edit_moved() {
 /// parse it back.
 #[test]
 fn a_gesture_on_a_component_made_anonymous_element_says_why_it_is_refused() {
-    let mut e = read("use std\ncomponent Strut() {\n  line\n}\nin std.front {\ns1 := Strut()\n}\n");
+    let mut e = read("use std\ncomponent Strut() {\n  p := point\n  fix((0, 0)) p\n  q := point\n  fix((10, 0)) q\n  line(p, q)\n}\nin std.front {\ns1 := Strut()\n}\n");
     e.sketch.add(Constraint::one_line(CKind::Horizontal, EntRef::line(0)));
     let edit = reconciled(&mut e);
     assert_eq!(edit.kind, Kind::None);
@@ -289,6 +289,7 @@ fn an_instance_prefix_is_writable_and_a_block_prefix_is_not() {
 use std
 component Strut() {
   p := point hint((1, 0))
+  fix((1, 0)) p
 }
 in std.front {
 s1 := Strut()
@@ -305,8 +306,8 @@ cycle 2 {
     // the block's: shown and selected by, and never written into a statement — that last is
     // `writable_name`, which is the core's own and is exercised through the refusal below
     let copy = EntRef::point(1);
-    assert_eq!(e.map.name_of(copy).map(String::as_str), Some("#4.0.q"));
-    assert_eq!(e.map.ent_named("#4.0.q"), Some(copy), "it resolves");
+    assert_eq!(e.map.name_of(copy).map(String::as_str), Some("#5.0.q"));
+    assert_eq!(e.map.ent_named("#5.0.q"), Some(copy), "it resolves");
     // an anonymous declaration inside a block is neither
     let e = read("cycle 2 {\n  line\n}\n");
     assert_eq!(e.map.name_of(EntRef::line(0)), None);
@@ -406,6 +407,6 @@ w := trace(fam(c).p over u in (0, 1))
 /// other — the instances do not collide.
 #[test]
 fn an_anonymous_declaration_in_a_component_instances_cleanly() {
-    let e = read("use std\ncomponent Strut() {\n  line\n}\nin std.front {\ns1 := Strut()\ns2 := Strut()\n}\n");
+    let e = read("use std\ncomponent Strut() {\n  p := point\n  fix((0, 0)) p\n  q := point\n  fix((10, 0)) q\n  line(p, q)\n}\nin std.front {\ns1 := Strut()\ns2 := Strut()\n}\n");
     assert_eq!((e.sketch.points.len(), e.sketch.lines.len()), (4 + STD_POINTS, 2));
 }

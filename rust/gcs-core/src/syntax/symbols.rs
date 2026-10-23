@@ -9,7 +9,7 @@
 //! a word coloured `Def` gives a name, a plain one reads a name, a `Type` before its parentheses
 //! calls a component, a `Relation` the file defines or imports reads that word, a `Label` inside a
 //! component's or a word's call names the formal it fills.  On that it lays the language's scopes
-//! (§5): a component's, part's, interface's or relation word's body is a scope of its own, holding
+//! (§5): a component's, interface's or relation word's body is a scope of its own, holding
 //! its formals and its own declarations; a set's body (`{ p | … }`), a `claim { … }`'s and a
 //! `preview`'s are scopes their declarations stay in; a repetition (`repeat`, `cycle`, `ring`,
 //! `when`) or an `in` block shares the scope around it, but for the binders its header gives
@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 
 use super::highlight::{defined_word, tints, Tint};
 use super::lexer::{group_ahead, lex, Tok};
-use super::words::{is_name, part_at, set_at, BLOCKS, QUALIFIERS};
+use super::words::{is_name, set_at, BLOCKS, QUALIFIERS};
 use super::{Span, MAX_TEXT};
 use crate::model::EntKind;
 
@@ -49,7 +49,7 @@ pub enum SymbolKind {
     Formal,
     /// `as i`, `repeat e in …`, `{ p | … }`, `integral(… over p)` — bound for one body
     Binder,
-    /// `component Rung(…)`, `part Arm(…)`, `interface Size { … }`
+    /// `component Rung(…)`, `interface Size { … }`
     Component,
     /// `a right_of(d) b := …` — a relation word the file defines
     Word,
@@ -160,7 +160,7 @@ struct Scope<'a> {
     /// The declarations made in it are its own; otherwise they belong to the scope around it,
     /// as a repetition's do.
     owner: bool,
-    /// A component's, part's, interface's, word's or the document's: what a name nothing gives
+    /// A component's, interface's, word's or the document's: what a name nothing gives
     /// is told apart by.
     unit: bool,
     /// Names given here now are the scope's binders: a block's header, a set's binder, an
@@ -257,7 +257,7 @@ impl<'a> Build<'a> {
         let mut member: Option<usize> = None;
         // a relation word's head: the word's token, and the `:=` ending it
         let mut head: Option<(usize, usize)> = None;
-        // `component`, `part` or `interface` just read: the name after it opens the body
+        // `component` or `interface` just read: the name after it opens the body
         let mut unit: Option<bool> = None;
         // `use`: 1 the module's path, 2 the list it imports
         let mut using = 0u8;
@@ -404,7 +404,7 @@ impl<'a> Build<'a> {
                 if let Some(h) = defined_word(toks, i) {
                     head = Some(h);
                     cur = self.push(cur, Close::Statement(braces), true, true, false);
-                } else if w == "component" || w == "interface" || part_at(toks, i) {
+                } else if w == "component" || w == "interface" {
                     unit = Some(w == "interface");
                 } else if w == "use" {
                     using = 1;

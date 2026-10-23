@@ -16,7 +16,7 @@ use gcs_core::space::{norm, sub};
 /// rest at (30, 0)) three times as fast the other way; `x` is a point of the planet.
 const PLANET: &str = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.top {
   o := point
   fix((0, 0)) o
@@ -27,9 +27,9 @@ in std.top {
   X := point hint((10, 17))
 }
 arm := frame
-std.Spin(arm, about: o, on: std.top, ratio: 1)
+arm spins(1) o
 planet := frame
-std.Spin(planet, about: c, on: std.top, ratio: -3)
+planet spins(-3) c
 ";
 
 fn index(sk: &Sketch, name: &str) -> usize {
@@ -83,7 +83,7 @@ fn a_planets_point_on_its_arm_is_the_product_of_the_two_turns() {
 fn three_chained_turns_are_the_hand_product() {
     let src = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.top {
   a := point
   fix((0, 0)) a
@@ -95,11 +95,11 @@ in std.top {
   fix((42, -3)) x
 }
 first := frame
-std.Spin(first, about: a, on: std.top, ratio: 0.5)
+first spins(0.5) a
 second := frame
-std.Spin(second, about: b, on: std.top, ratio: 2)
+second spins(2) b
 third := frame
-std.Spin(third, about: c, on: std.top, ratio: -1.5)
+third spins(-1.5) c
 ";
     let mut e = build(src);
     let sk = &mut e.sketch;
@@ -142,7 +142,7 @@ std.Spin(third, about: c, on: std.top, ratio: -1.5)
 fn a_turn_on_a_slide_is_the_cycloid() {
     let src = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.top {
   g0 := point
   fix((0, 0)) g0
@@ -155,9 +155,9 @@ in std.top {
   fix((0, 0)) rim
 }
 slide := frame
-std.Slide(slide, along: ground, advance: 2 * pi * 8)
+slide slides(2 * pi * 8) ground
 roll := frame
-std.Spin(roll, about: hub, on: std.top, ratio: -1)
+roll spins(-1) hub
 ";
     let mut e = build(src);
     let sk = &mut e.sketch;
@@ -182,7 +182,7 @@ std.Spin(roll, about: hub, on: std.top, ratio: -1)
 fn coaxial_joints_fold_to_one_screw() {
     let src = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 o := point hint((1, 2, 3))
 z := point hint((2, 4, 13))
 fix((1, 2, 3)) o
@@ -196,15 +196,15 @@ in std.top {
   fix((3, 4)) c
 }
 lead := frame
-std.Turn(lead, about: shaft, ratio: 2, advance: 3mm)
+shaft coincident(sense: same) lead.axis; fix(ratio == 2, advance == 3mm) lead
 follow := frame
-std.Turn(follow, about: shaft, ratio: -0.5, advance: 1mm)
+shaft coincident(sense: same) follow.axis; fix(ratio == -0.5, advance == 1mm) follow
 skew := frame
-std.Turn(skew, about: other, ratio: 1, advance: 1mm)
+skew screws(1mm) other
 t1 := frame
-std.Spin(t1, about: c, on: std.top, ratio: 1)
+t1 spins(1) c
 t2 := frame
-std.Spin(t2, about: c, on: std.top, ratio: 2)
+t2 spins(2) c
 ";
     let mut e = build(src);
     let sk = &mut e.sketch;
@@ -270,7 +270,7 @@ fn a_chain_past_sixty_four_levels_is_refused() {
 /// `x` — at (10, 20, 30).
 const STOOD: &str = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 f := frame
 fix(dir == (0, 1, 0)) f.u
 fix(dir == (0, 0, 1)) f.v
@@ -323,7 +323,7 @@ s := point hint(at: f, (4, 5, 6))
 fn a_bare_frames_axes_are_placed_by_relations() {
     let src = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 a := point
 fix((5, 0, 0)) a
 b := point
@@ -425,7 +425,7 @@ fn joint_of(e: &gcs_core::program::Elaborated, name: &str) -> usize {
 fn a_joints_kind_is_read_off_what_holds_it() {
     let src = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.top {
   o := point
   fix((0, 0)) o
@@ -439,13 +439,13 @@ b := point
 fix((1, 2, 13)) b
 shaft := line(a, b)
 turned := frame
-std.Turn(turned, about: shaft, ratio: 2)
+turned turns(2) shaft
 screwed := frame
-std.Turn(screwed, about: shaft, ratio: 1, advance: 4mm)
+screwed screws(4mm) shaft
 spun := frame
-std.Spin(spun, about: o, on: std.top, ratio: -1)
+spun spins(-1) o
 slid := frame
-std.Slide(slid, along: rail, advance: 6mm)
+slid slides(6mm) rail
 free := frame
 fix(dir == (0, 1, 0), origin == (5, 0, 0)) free.axis
 fix(ratio == 3, advance == 0mm) free
@@ -479,7 +479,7 @@ fix(ratio == 3, advance == 0mm) free
 fn a_reading_seen_from_a_frame_is_the_relative() {
     let src = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.top {
   o := point
   fix((0, 0)) o
@@ -491,12 +491,12 @@ in std.top {
   Y := point hint((25, 5))
   Z := point hint((25, 5))
 }
-ring := frame
-std.Spin(ring, about: o, on: std.top, ratio: 1)
+carrier := frame
+carrier spins(1) o
 gear := frame
-std.Spin(gear, about: c, on: std.top, ratio: -2)
+gear spins(-2) c
 rest := frame
-X coincident(under: gear, seen_from: ring, t == 40) x
+X coincident(under: gear, seen_from: carrier, t == 40) x
 Y coincident(under: gear, seen_from: rest, t == 40) x
 Z coincident(under: gear, t == 40) x
 ";
@@ -519,26 +519,27 @@ Z coincident(under: gear, t == 40) x
 fn a_left_out_advance_is_none_and_a_left_out_observer_is_the_world() {
     let src = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 a := point
 fix((0, 0, 0)) a
 b := point
 fix((0, 0, 10)) b
 shaft := line(a, b)
 spin := frame
-std.Turn(spin, about: shaft, ratio: 2, advance: 3mm)
-isa := axis hint(dir: (0.1, 0.1, 1))
+shaft coincident(sense: same) spin.axis; fix(ratio == 2, advance == 3mm) spin
+isa := axis
+fix(dir == (0.1, 0.1, 1)) isa
 s := std.Screw(isa, spin)
 ";
     let mut e = build(src);
     assert!(solve::solve(&mut e.sketch, Default::default()).success);
     // the pitch: 3 mm a turn at two radians a radian, `3 / 2π` a radian of the roll
-    let d: [f64; 3] = e.sketch.axes[e.map.ent_named("isa").unwrap().i()].d
+    let d: [f64; 3] = e.sketch.axes[e.map.ent_named("s.isa").unwrap().i()].d
         .map(|q| e.sketch.params[q as usize].value);
     assert!(norm(gcs_core::space::cross(d, [0.0, 0.0, 1.0])) < 1e-9, "{d:?}");
-    let plain = build("unit mm\nuse std\na := point\nfix((0, 0, 0)) a\nb := point\n\
+    let plain = build("unit mm\nuse std (screws, slides, spins, turns)\na := point\nfix((0, 0, 0)) a\nb := point\n\
                        fix((0, 0, 10)) b\nshaft := line(a, b)\nturn := frame\n\
-                       std.Turn(turn, about: shaft, ratio: 1)\n");
+                       turn turns(1) shaft\n");
     let def = plain.sketch.motions[joint_of(&plain, "turn")].def.clone();
     assert!(matches!(def, MotionDef::Rotation { advance, .. } if advance == 0.0), "{def:?}");
 }
@@ -559,7 +560,7 @@ fn the_motion_spellings_are_refused_with_what_they_became() {
                 errs.iter().map(|e| &e.message).collect::<Vec<_>>());
     }
     let (prog, errs) = crate::common::parse(
-        "unit mm\nuse std\nin std.top {\n  x := point\n  X := point\n}\n\
+        "unit mm\nuse std (screws, slides, spins, turns)\nin std.top {\n  x := point\n  X := point\n}\n\
          still := frame\nX coincident(under: still, t == 10) x\n");
     assert!(errs.is_empty(), "{errs:?}");
     let e = gcs_core::program::elaborate(&prog);
@@ -567,8 +568,8 @@ fn the_motion_spellings_are_refused_with_what_they_became() {
             "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     // a joint's ratio pinned to a measurement of the drawing: none is read before the solve
     let (prog, _) = crate::common::parse(
-        "unit mm\nuse std\na := point\nb := point\nl := line(a, b)\nf := frame\n\
-         std.Turn(f, about: l, ratio: length(l) / 1mm)\n");
+        "unit mm\nuse std (screws, slides, spins, turns)\na := point\nb := point\nl := line(a, b)\nf := frame\n\
+         f turns(length(l) / 1mm) l\n");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.errors().any(|d| d.code.as_str() == "E107"),
             "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
@@ -585,7 +586,7 @@ fn the_motion_spellings_are_refused_with_what_they_became() {
 fn a_planet_drawn_in_its_arm_rides_on_both() {
     let src = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.top {
   o := point
   fix((0, 0)) o
@@ -606,8 +607,8 @@ in (arm := frame) {
     }
   }
 }
-std.Spin(arm, about: o, on: std.top, ratio: 1)
-std.Spin(planet, about: c, on: std.top, ratio: -3)
+arm spins(1) o
+planet spins(-3) c
 X coincident(t == 60deg) x
 Y coincident(under: planet, t == 60deg) still
 ";
@@ -635,7 +636,7 @@ Y coincident(under: planet, t == 60deg) still
 fn a_rack_riding_its_frame_cuts_what_the_reading_under_it_cuts() {
     let views = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.front {
   o := point
   fix((0, 0)) o
@@ -649,8 +650,8 @@ in std.front {
 }
 rack := frame
 blank := frame
-std.Spin(blank, about: o, on: std.front, ratio: 1)
-std.Slide(rack, along: slide, advance: 2 * pi * 30)
+blank spins(1) o
+rack slides(2 * pi * 30) slide
 ";
     let flank = "\
     f0 := point hint((30, 5))
@@ -682,7 +683,7 @@ std.Slide(rack, along: slide, advance: 2 * pi * 30)
 fn a_tool_riding_its_frame_is_placed_and_swept_as_under_it() {
     let head = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.front {
   o := point
   z := point
@@ -691,7 +692,7 @@ in std.front {
   ax := line(o, z)
 }
 turn := frame
-std.Turn(turn, about: ax, ratio: 1)
+turn turns(1) ax
 ";
     let tool = "\
     a := point
@@ -737,7 +738,7 @@ std.Turn(turn, about: ax, ratio: 1)
 fn riding_refuses_what_it_cannot_mean() {
     let head = "\
 unit mm
-use std
+use std (screws, slides, spins, turns)
 in std.top {
   o := point
   fix((0, 0)) o
@@ -746,9 +747,9 @@ in std.top {
   X := point hint((1, 1))
 }
 arm := frame
-std.Spin(arm, about: o, on: std.top, ratio: 1)
+arm spins(1) o
 other := frame
-std.Spin(other, about: c, on: std.top, ratio: 2)
+other spins(2) c
 ";
     let errors = |src: &str| -> Vec<String> {
         let (prog, errs) = crate::common::parse(src);
@@ -768,7 +769,7 @@ std.Spin(other, about: c, on: std.top, ratio: 2)
     let errs = errors(&mixed);
     assert!(errs.iter().any(|m| m.contains("rides on `arm`") && m.contains("on `other`")),
             "{errs:?}");
-    let (prog, _) = crate::common::parse("unit mm\nuse std\nin std.front {\n  in std.top {\n    \
+    let (prog, _) = crate::common::parse("unit mm\nuse std (screws, slides, spins, turns)\nin std.front {\n  in std.top {\n    \
         p := point\n  }\n}\n");
     let e = gcs_core::program::elaborate(&prog);
     assert!(e.ok());
@@ -792,7 +793,7 @@ fn numbers(e: &gcs_core::program::Elaborated, name: &str) -> (f64, f64) {
 fn gears(c: &str, pinion: &str) -> String {
     format!("\
 unit mm
-use std
+use std (rolls, screws, slides, spins, turns)
 in std.top {{
   o := point
   fix((0, 0)) o
@@ -801,20 +802,20 @@ in std.top {{
   fix((30, 0)) P
 }}
 wheel := frame
-std.Spin(wheel, about: o, on: std.top, ratio: 1)
+wheel spins(1) o
 pinion := frame
 {pinion}
-std.Rolls(P, pinion, wheel, along: std.top.v)
+pinion rolls(at: P, along: std.top.v) wheel
 ")
 }
 
 /// **A joint's ratio left to the solve is found by what holds it** (#383 stage 5): two pitch
-/// circles rolling at their pitch point without slipping (`std.Rolls`) turn at `−R/r` — the wheel
+/// circles rolling at their pitch point without slipping (`rolls`) turn at `−R/r` — the wheel
 /// 30 out at a radian a radian, the pinion 10 out three the other way.
 #[test]
 fn a_gear_pairs_ratio_is_solved_from_rolling() {
     let mut e = build(&gears("hint((40, 0))\n  fix((40, 0)) c",
-                             "std.Spin(pinion, about: c, on: std.top)"));
+                             "param k: Scalar hint(-1)\npinion spins(k) c"));
     let r = solve::solve(&mut e.sketch, Default::default());
     assert!(r.success, "{r:?}");
     let (ratio, advance) = numbers(&e, "pinion");
@@ -830,7 +831,7 @@ fn a_gear_pairs_ratio_is_solved_from_rolling() {
 #[test]
 fn a_stated_ratio_solves_the_centre_distance() {
     let mut e = build(&gears("hint((36, 0))\n  centres := line(o, P)\n  c coincident centres",
-                             "std.Spin(pinion, about: c, on: std.top, ratio: -3)"));
+                             "pinion spins(-3) c"));
     let r = solve::solve(&mut e.sketch, Default::default());
     assert!(r.success, "{r:?}");
     let c = crate::common::at(&e, "c");
@@ -839,12 +840,12 @@ fn a_stated_ratio_solves_the_centre_distance() {
 
 /// **A joint left free is reported free, with its numbers** (stage 5): a frame whose axis only a
 /// claim reads, place and direction, has the axis's four freedoms and its ratio and advance — six
-/// — and the diagnosis names each.  Its numbers stated, `std.Turn` with no ratio leaves the ratio
-/// alone free.
+/// — and the diagnosis names each.  Its axis held along the line and its advance stated, the ratio
+/// alone is free.
 #[test]
 fn a_free_joint_is_six_numbers_the_diagnosis_reports() {
     use gcs_core::diagnose::{diagnose, DiagnoseOptions};
-    let head = "unit mm\nuse std\na := point\nb := point\nfix((0, 0, 0)) a\nfix((0, 0, 10)) b\n\
+    let head = "unit mm\nuse std (screws, slides, spins, turns)\na := point\nb := point\nfix((0, 0, 0)) a\nfix((0, 0, 10)) b\n\
                 l := line(a, b)\nf := frame\n";
     let names = |e: &mut gcs_core::program::Elaborated| {
         let d = diagnose(&mut e.sketch, DiagnoseOptions::default());
@@ -858,7 +859,7 @@ fn a_free_joint_is_six_numbers_the_diagnosis_reports() {
     assert_eq!(dof, 6, "{free:?}");
     assert!(["f.ratio", "f.advance"].iter().all(|n| free.iter().any(|m| m == n)), "{free:?}");
     assert!(free.iter().filter(|n| n.starts_with("f.axis")).count() >= 4, "{free:?}");
-    let mut e = build(&format!("{head}std.Turn(f, about: l)\n"));
+    let mut e = build(&format!("{head}l coincident(sense: same) f.axis\nfix(advance == 0mm) f\n"));
     let (dof, free) = names(&mut e);
     assert_eq!((dof, free), (1, vec!["f.ratio".to_string()]));
 }

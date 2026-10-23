@@ -515,14 +515,18 @@ fn closing_lines_stay_implicit_across_reconciliation_and_reload() {
         format!(
             "unit mm\nuse std\ncomponent Patch(f: plane) {{\n{}\
              slab := solid(face(a, bc, cd, -> close), depth: 2mm)\n}}\npart := Patch(std.front)\n",
-            RECT.trim_start_matches("unit mm\nuse std\n").replace("in std.front", "in f"),
+            RECT.trim_start_matches("unit mm\nuse std\n").replace("in std.front", "in f")
+                .replace("vertical bc\n", "vertical bc\nhorizontal cd\nvertical da\n"),
         ),
         "\
 use std
 component Patch() {
-a := point hint((0, 0))
-b := point hint((60, 0))
-c := point hint((0, 40))
+a := point
+b := point
+c := point
+fix((0, 0)) a
+fix((60, 0)) b
+fix((0, 40)) c
 tri := face(a, b, c, -> close)
 }
 in std.front {
@@ -537,7 +541,7 @@ part := Patch()
             let mut sk = std::mem::take(&mut e.sketch);
             assert_eq!(sk.lines.len(), initial);
             let unchanged = edit::reconcile(&mut e, &sk);
-            assert_eq!(unchanged.kind, Kind::None);
+            assert_eq!(unchanged.kind, Kind::None, "{src}\n{}", unchanged.text);
             assert_eq!(unchanged.text, src);
             text = unchanged.text;
 
@@ -770,6 +774,10 @@ a := point hint((0, 0))
 b := point hint((10, 0))
 c := point hint((10, 20))
 d := point hint((0, 20))
+fix((0, 0)) a
+fix((10, 0)) b
+fix((10, 20)) c
+fix((0, 20)) d
 profile := (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close
 }
 component Slab(section: face, t: Length) {
@@ -1103,6 +1111,7 @@ fn section_holes_accept_multiple_component_loops_and_revolutions() {
     let src = format!("{RECT}\ncomponent Hole(y: Length) {{\n\
         p := point hint((25, y))\nq := point hint((35, y))\n\
         r := point hint((35, y + 10mm))\ns := point hint((25, y + 10mm))\n\
+        fix((25, y)) p\nfix((35, y)) q\nfix((35, y + 10mm)) r\nfix((25, y + 10mm)) s\n\
         profile := (a := line(p,q)) -> (b := line(q,r)) -> (c := line(r,s)) -> (d := line(s,p)) -> close\n}}\n\
         in std.front {{\nh0 := Hole(y: 5mm)\nh1 := Hole(y: 25mm)\n}}\n\
         section := face(ab, bc, cd, da, holes: h0.profile, h1.profile)\n\
@@ -1208,10 +1217,14 @@ use std
 component Bore(x: Length) {
 c := point hint((x, 0))
 bore := circle(center: c) hint(r: 1)
+fix((x, 0)) c
+radius(1) bore
 }
 component Part() {
 o := point
 outer := circle(center: o) hint(r: 10)
+fix((0, 0)) o
+radius(10) outer
 left := Bore(x: -3mm)
 right := Bore(x: 3mm)
 section := face(outer, holes: left.bore, right.bore)

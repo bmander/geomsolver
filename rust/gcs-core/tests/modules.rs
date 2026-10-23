@@ -15,10 +15,11 @@ const RUNG: &str = "\
 use std
 // a module: a param the caller can pass, and a drawing of its own that is not the document's
 len := 50
-component Rung(a: point, b: point, len: Length) {
+component Rung(a: point, len: Length) {
+  b := point
   e := line(a, b)
   horizontal e
-  a distance(len) b
+  a distance(len, along: u) b
 }
 in std.front {
 stray := point hint((999, 999))
@@ -30,11 +31,9 @@ use std
 use lib.rung
 in std.front {
 l0 := point
-r0 := point hint((50, 0))
 l1 := point hint((0, 20))
-r1 := point hint((50, 20))
-t0 := lib.rung.Rung(l0, r0, len: lib.rung.len)
-t1 := lib.rung.Rung(l1, r1, len: lib.rung.len)
+t0 := lib.rung.Rung(l0, len: lib.rung.len)
+t1 := lib.rung.Rung(l1, len: lib.rung.len)
 stile := line(l0, l1)
 vertical stile
 l0 distance(lib.rung.len) l1
@@ -47,15 +46,15 @@ fn shelf() -> BTreeMap<&'static str, &'static str> {
     m.insert("lib.rung", RUNG);
     m.insert("lib.bad", "component Bad(a: point) {\n  l := line(a,\n}\n");
     m.insert("lib.rung2", "use lib.rung\ncomponent Rung(a: point) { }\n");
-    m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, b: point, len: Length) { r := lib.rung.Rung(a, b, len: len) }\n");
+    m.insert("lib.diamond", "use lib.rung\ncomponent Step(a: point, len: Length) { r := lib.rung.Rung(a, len: len) }\n");
     m.insert("lib.loop_a", "use lib.loop_b\npa := 1\ncomponent A(p: point) { }\n");
     m.insert("lib.loop_b", "use lib.loop_a\npb := 2\ncomponent B(p: point) { }\n");
-    m.insert("lib.over", "use lib.rung\ntwice := 2 * lib.rung.len\ncomponent Long(a: point, b: point, twice: Length) { a distance(twice) b }\n");
+    m.insert("lib.over", "use lib.rung\ntwice := 2 * lib.rung.len\ncomponent Long(a: point, twice: Length) {\n  b := point\n  vertical (e := line(a, b))\n  b distance(twice, along: v) a\n}\n");
     m.insert("lib.units", "size := 10mm\ncomponent UnitLink(a: point, b: point, size: Length) { a distance(size) b }\n");
     m.insert("lib.table", "unit mm\nL := 150mm\nhalf := L / 2\nsizes := {gap: 5mm}\n");
     m.insert("lib.arm", "unit mm\nuse lib.table (half)\nreach := lib.table.L - half\n\
         a near b := a distance(lib.table.sizes.gap) b\n\
-        component Arm(a: point, b: point) { a distance(reach + lib.table.sizes.gap) b }\n\
+        component Arm(a: point) {\n  b := point\n  horizontal (e := line(a, b))\n  a distance(reach + lib.table.sizes.gap, along: u) b\n}\n\
         component Theirs(a: point, b: point) { a distance(mine) b }\n");
     m
 }
@@ -169,15 +168,15 @@ fn a_use_names_what_it_reads_bare() {
     // the ladder again, its rungs and their length imported by name beside the full path
     let src = LADDER
         .replace("use lib.rung\n", "use lib.rung (Rung, len)\n")
-        .replace("lib.rung.Rung(l0, r0, len: lib.rung.len)", "Rung(l0, r0, len: len)");
-    assert!(src.contains("Rung(l0, r0, len: len)") && src.contains("lib.rung.Rung(l1"));
+        .replace("lib.rung.Rung(l0, len: lib.rung.len)", "Rung(l0, len: len)");
+    assert!(src.contains("Rung(l0, len: len)") && src.contains("lib.rung.Rung(l1"));
     let (e, linked) = read(&src);
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.diags);
     let (full, _) = read(LADDER);
     assert_eq!(e.sketch.constraints.len(), full.sketch.constraints.len());
     // nothing listed is nothing imported: no prelude
-    let (e, _) = read(&LADDER.replace("lib.rung.Rung(l0, r0, len: lib.rung.len)", "Rung(l0, r0, len: 50)"));
+    let (e, _) = read(&LADDER.replace("lib.rung.Rung(l0, len: lib.rung.len)", "Rung(l0, len: 50)"));
     assert!(e.errors().any(|d| d.message.contains("use lib.rung (Rung)")), "{:?}", e.diags);
 }
 
@@ -199,13 +198,13 @@ fn two_files_may_define_one_name_and_one_file_may_not() {
 use std
 use lib.rung
 use lib.rung2
-component Rung(a: point) { b := point }
+component Rung(a: point) { b := point\n a level(v) b\n a distance(5, along: u) b }
 in std.front {
 p := point
 q := point
 mine := Rung(p)
 theirs := lib.rung2.Rung(p)
-used := lib.rung.Rung(p, q, len: 10)
+used := lib.rung.Rung(p, len: 10)
 }
 ";
     let (e, linked) = read(src);
@@ -274,7 +273,7 @@ use lib.diamond
 in std.front {
 a := point
 b := point
-s := lib.diamond.Step(a, b, len: lib.rung.len)
+s := lib.diamond.Step(a, len: lib.rung.len)
 }
 ");
     assert!(linked.is_empty(), "{linked:?}");
@@ -296,17 +295,15 @@ use std
 use lib.over
 in std.front {
 a := point
-b := point hint((100, 0))
-l := lib.over.Long(a, b, twice: lib.over.twice)
+l := lib.over.Long(a, twice: lib.over.twice)
 fix((0, 0)) a
-b distance(lib.over.twice, along: v) a
 }
 ");
     assert!(linked.is_empty(), "{linked:?}");
     assert!(e.ok(), "{:?}", e.errors().map(|d| &d.message).collect::<Vec<_>>());
     let mut sk = e.sketch.clone();
     gcs_core::solve::solve(&mut sk, Default::default());
-    let (x, y) = sk.point_xy(1);
+    let (x, y) = sk.point_xy(e.map.ent_named("l.b").unwrap().i());
     assert!((x.hypot(y) - 100.0).abs() < 1e-6 && (y + 100.0).abs() < 1e-6, "{x} {y}");
 }
 
@@ -364,16 +361,14 @@ use std
 use lib.arm
 in std.front {
   a := point
-  b := point hint((70, 0))
   fix((0, 0)) a
-  fix(y == 0) b
 }
-arm := lib.arm.Arm(a, b)
+arm := lib.arm.Arm(a) in std.front
 ");
     assert!(linked.is_empty() && e.ok(), "{linked:?} {:?}", e.diags);
     let mut sk = e.sketch.clone();
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
-    let b = sk.point_xy(e.map.ent_named("b").unwrap().i());
+    let b = sk.point_xy(e.map.ent_named("arm.b").unwrap().i());
     assert!((b.0 - 80.0).abs() < 1e-9, "{b:?}");
 }
 

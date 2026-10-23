@@ -39,17 +39,18 @@ use std
 component Rung(a: point, len: Length) {
   b := point hint((a.x + len, a.y))
   e := line(a, b)
-  a distance(len) b
+  a distance(len, along: u) b
+  a level(v) b
   repeat 2 as i {
     q := point hint((a.x, a.y + 10mm * (i + 1)))
+    a level(u) q
+    a distance(10mm * (i + 1), along: v) q
   }
 }
 in std.front {
 o := point
 r := Rung(o, len: 30)
 fix((0, 0)) r.a
-horizontal r.e
-r.b distance(5) r.q[1]
 }
 ";
     let (prog, errs) = parse(src);

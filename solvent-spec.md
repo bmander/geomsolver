@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.175 — October 2026**
+**Specification, Draft 0.176 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -1348,8 +1348,9 @@ subject and what it moves about or along the object, each of one number given ba
   all.
 
 Through 0.153 they were components called for their effect, `std.Turn(f, about: l, ratio: r,
-advance: a)`, `std.Spin(f, about: o, on: P, ratio: r)` and `std.Slide(f, along: l, advance: a)`;
-those are kept, with the same meaning, for one release.
+advance: a)`, `std.Spin(f, about: o, on: P, ratio: r)` and `std.Slide(f, along: l, advance: a)`,
+kept beside the words until **[0.176]**, which retires them: a definition states nothing about its
+operands alone (§8.2).
 
 **How it is read.** Before the solve the joint's kind is read off what holds it — an axis on a
 line with a ratio stated 0 is a slide, on a line a turn or a screw, through a point of a view and
@@ -1363,8 +1364,9 @@ the axis is: every relation that reads the motion during the solve (a point it c
 rate, a point on an envelope in space or on a meshing) reads it as a column, and what is built after the solve reads
 it where the solve left it. A profile generated in the plane (§6.15.1) is generated over stated
 numbers: one found by the solve is an error there. A joint whose numbers nothing holds is freedom,
-reported by the diagnosis like any other. **`std.Rolls(at, a, b, along: d)`** states that `a` and
-`b` roll on one another at the point `at` without slipping along the direction `d`: the point of
+reported by the diagnosis like any other. **`a rolls(at: p, along: d) b`** **[0.176]** (through
+0.175 the component `std.Rolls(p, a, b, along: d)`) states that `a` and `b` roll on one another at
+the point `p` without slipping along the direction `d`: the point of
 `a`'s frame there, seen from `b`'s, does not move along `d`. Two pitch circles rolling at their
 pitch point turn at `−R/r`, the ratio found from the radii or, stated, placing the pitch point.
 
@@ -1522,8 +1524,8 @@ the frame is drawn, its **home** — the parameter where its origin stands on th
 much of the path's torsion it turns with: 0, the **rotation-minimising** frame, whose axes square
 to the tangent turn only as the tangent does (`On`'s and `Minimal`'s, §6.9), and 1, the path's
 **own frame**, its `u` toward the centre of curvature (`Frenet`'s); any other is **E080**, as is
-an advance. The standard library's `std.Along(f, g, up: u, home: h)` and `std.AlongFrenet(f, g,
-home: h)` state it and draw the frame at its home. Its pose is read off the path after the solve,
+an advance. The standard library's `std.Along(g, up: u, home: h)` and `std.AlongFrenet(g, home: h)`
+make the frame `f`, state it and draw it at its home. Its pose is read off the path after the solve,
 as a motion is (`x ↦ R(u) (x − c(h)) + c(u)`, `R(u)` the turn from the frame at the home to the one
 at `u`): a face drawn in it and swept as a declared parameter runs, `sweep(sec over s)` (§6.9),
 stands at every station where the frame does, `s` the path's parameter, and a frame drawn off its
@@ -2021,7 +2023,8 @@ body's is, and its derivative draws nothing. A set named anywhere else a referen
 `radius(5) ball`, a face's loop — is **E040**; `coincident` between two sets is **E040**, with
 parentheses **E040**; a set whose body uses itself, however indirectly, is
 **E003**. A set is handed to a component as a `set` formal **[0.71]** (§4.1) and used there by
-the formal's name (`std.CircleOnSphere(k, ball, view)`); a `group` formal refuses a named set.
+the formal's name, as a relation word's operand is (`k on_sphere(view: v) ball`); a `group`
+formal refuses a named set.
 
 **Set algebra** **[0.54]**. A body's statements all hold of its point, so **intersection is
 conjunction**: `on_both := { p | p coincident ball; p coincident shaft }` is the points on both, and
@@ -2316,10 +2319,10 @@ fixed coordinate layout, so its needed members must be passed individually to a 
 
 ---
 
-### 8.2 Parts **[0.162]**
+### 8.2 Every definition is a function of its arguments **[0.162]** **[0.176]**
 
 ```solvent
-part CommonTangent(a: circle, b: circle) {
+component CommonTangent(a: circle, b: circle) {
   in a.center.plane {
     s := point hint(at: a.center, toward: b.center, by: 0.1, turn: 90deg)
     e := point hint(at: b.center, toward: a.center, by: 0.1, turn: -90deg)
@@ -2334,19 +2337,20 @@ part CommonTangent(a: circle, b: circle) {
 }
 ```
 
-A **part** is a component declared a function of what it is given. It is written `part Name(…) { … }` where `component` would stand, and it may hold whatever a component's body may. It is instantiated, flattened and solved exactly as a component is, so declaring one changes no number. `part` is a word only where a definition's shape follows it, `part Name(…) {`; elsewhere it is a name like any other. A set family (§6.21) is a predicate and is never a part.
+**[0.176]** A braced definition is a function of its arguments and of the frame its instance stands in. Every one is held to it; there is one definition form, and no keyword marks the promise. `part Name(…) { … }`, which made it in 0.162–0.175, is refused (**E100**, naming `component`); `part` is a name like any other. A set family (§6.21) makes no rows and a relation word (§9.9) states facts about its operands by design, so neither is held to it. Holding a definition to it changes no number: it is instantiated, flattened and solved as before.
 
-An instance of a part has **its own unknowns** and **inputs**:
+A drawn instance — a **part** — has **its own unknowns** and **inputs**:
 
 - Its own unknowns are the numbers of what it makes, the numbers no entity owns that its rows read (a contact's place), and the numbers its body leaves unknown (a formal of an instance inside it left unbound).
-- Its inputs are every other column its rows read, including a formal of its own that the call leaves unbound. That formal is the part's **exported freedom**, an unknown of the parent (a crank's angle).
+- Its inputs are every other column its rows read: what it was given, and the placement of the frame it stands in — an `in` frame, an instance's own frame (§6.7), or the world.
+- A numeric formal of its own that the call leaves unbound was given by nothing. Its rows may determine it, as an output of the instance; one they leave free is the instance's **exported freedom**, an unknown of the parent (a crank's angle).
 
-Its **rows** are those its body states, nested instances' included. A claim, a claim block's witness and a bound state no row. Two rules are held over the structure of those rows, the inputs held, in every drawn instance:
+Its **rows** are those its body states, nested instances' included, and the rows that tie what it makes to the frame it stands in: a point's lift into its plane, a plane's axes through its origin, a twin's tie. A row that places what another instance made is that one's, whatever of this one's it reads: the lift of a point another draws in a plane this one made is the other's. A claim, a claim block's witness and a bound state no row. Two rules are held over the structure of those rows, the inputs held, in every drawn instance:
 
-- **Its own rows place what it makes.** A maximum matching of its rows on its own unknowns MUST cover every unknown. One left over is **E108** at the definition, naming what it moves. A parent's statement over a part's outputs is a row of the parent, so it never completes the part from outside. A freedom a part leaves is a formal instead, which the parent binds or leaves unknown.
-- **It states nothing about its operands alone.** A row reading none of its own unknowns, or one past what they take (the matching's over-determined rows), is **E109** at the row. Such a fact belongs where the operands are given, or in a relation word (§9.9).
+- **Its own rows place what it makes.** A maximum matching of its rows on its own unknowns MUST cover every unknown. One left over is **E108** at the definition, naming what it moves. A parent's statement over an instance's outputs is a row of the parent, so it never completes the instance from outside. A freedom an instance leaves is a formal instead, which the parent binds or leaves unknown; a flow's home (§6.5) is said `initially` in its own body, from formals the parent binds.
+- **It states nothing about its operands alone.** A row reading none of its own unknowns or unbound formals, or one past what they take (the matching's over-determined rows), is **E109** at the row. Such a fact belongs where the operands are given, or in a relation word (§9.9).
 
-A root among several is chosen by a stated orientation (§9.6) or a bound, never by a seed alone; *non-normative:* the reference implementation's lint (**W207**, advice) names a part whose rows it finds another pose for that its stated choices admit. Neither rule reads the numbers: a part singular at its inputs is the diagnosis's to report, on the solved pose. Each fault is said once for its definition. *Non-normative:* a part is what a solve through boundaries would treat as a child (`docs/parts-plan.md`); the reference implementation solves it flat.
+A root among several is chosen by a stated orientation (§9.6) or a bound, never by a seed alone; *non-normative:* the reference implementation's lint (**W207**, advice) names a definition whose rows it finds another pose for that its stated choices admit. Neither rule reads the numbers: an instance singular at its inputs is the diagnosis's to report, on the solved pose. Each fault is said once for its definition, against its first instance. *Non-normative:* an instance is what a solve through boundaries would treat as a child, and what evaluating a definition once per binding of its arguments rests on (`docs/parts-plan.md`); the reference implementation solves it flat.
 
 ## 9. Constraints
 
@@ -2467,7 +2471,7 @@ Residual conventions: points are ℝ²; `×` is the scalar 2D cross product; `�
 | `touches(k: free curve, L: Line)` **[0.59]** | inside `k`'s problem (§9.10): its arc ends at o + σ·d̂ on `L`, `H` unbroken there, and (λ⁺ − λ⁻)·d̂ | 0 in the drawing | σ and the place along `k` the problem's own; `L`'s points columns of `k`, as its ends are; written `k touches L` |
 | *across views* **[0.24]** | the relation over the lifts X, Y of its points: X − Y (3); ‖X − Y‖² − e² (1); the point–line magnitude (1); the signed common perpendicular (1); two components of (X − A) × (B − A) across the line (2, `coincident` a line); â·b̂ − cos e (1); â·b̂ (1); (â × b̂) across â (2, `parallel`); ‖B − A‖² − ‖D − C‖² (1, `equal`); ‖X − C‖ − r and n·(X − C) (2, `coincident` a circle); **[0.25]** X − (A + B)/2 (3, `midpoint`); Q + P − 2F, F the foot of P on the line (3, `symmetry`) | as listed | §9.2 |
 | ~~`reciprocal(L: Line, m: Motion)`~~ **[0.105]**, the standard library's word **[0.130]** | (B − A)·v(A), v(x) = v₀ + ω × x the twist of `m` a radian | 1 | a force along `L` does no work on `m` (Ball); `m` a turn, a screw or a slide about a fixed line, or one relative to another, whose twist is the source's less the observer's; for a mesh the meshing law of a line of action; written `L reciprocal(seen_from: pinion) gear` **[0.135]** |
-| ~~`screw(t: Axis, m: Motion)`~~ **[0.105]**, `std.Screw(t, m)` **[0.130]** | two components of d̂ across ω̂, scaled by L; two of A − c across ω̂; h − ω·v₀/‖ω‖² | 5 | `t` on `m`'s instantaneous screw axis, through c = ω × v₀/‖ω‖² along ω; h, the pitch, the relation's own unknown, a length a radian, pinned as `pitch == h`; L the motion's first axis as drawn; written `isa screw mesh`; a twist turning nothing has no axis |
+| ~~`screw(t: Axis, m: Motion)`~~ **[0.105]**, `std.Screw(t, m)` **[0.130]**, `std.Screw(toward, m)` and its own axis `s.isa`, run the way `toward` does **[0.176]** | two components of d̂ across ω̂, scaled by L; two of A − c across ω̂; h − ω·v₀/‖ω‖² | 5 | `t` on `m`'s instantaneous screw axis, through c = ω × v₀/‖ω‖² along ω; h, the pitch, the relation's own unknown, a length a radian, pinned as `pitch == h`; L the motion's first axis as drawn; written `isa screw mesh`; a twist turning nothing has no axis |
 | `coincident(X, x, under: m, t)` **[0.106]** | X − Pose_m(t)·x | 3 | `X` is `x` as the moving frame sees it: carried by `m`'s pose at the roll `t`, in degrees, the relation's own unknown (pinned `t == τ`, or solved); X and x lifted; `m` any motion the solve reads, a turn about a point of a view read as the turn about the line through it square to the view; written `X coincident(under: m, t == τ) x` |
 | `coincident(X, x, at: τ)` **[0.138]** | X − Pose_m(τ)·x; drawn in a plane, its components along the plane's `u` and `v` | 3; 2 | the same at a roll the statement states, an Angle dimension — read again where a running number is, an unknown where a free name is — owning no unknown; written `X coincident x at(under: m) τ` (§6.14) |
 | `parallel(rate(p over t), l)`, `perpendicular(…)` **[0.130]** | r = ∂X/∂t of the contact holding `p`, every other column held: of a curve in its view (r × (B − A))/‖B − A‖ and r·(B − A)/‖B − A‖; in space two components of r across l̂, and r·l̂ | 1 in a view; 2 parallel in space, 1 square | one kernel for every contact (§6.5); the contact's slot shared, its other unknowns columns; `g tangent(at: p) l` the same statement |

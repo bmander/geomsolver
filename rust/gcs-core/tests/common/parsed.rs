@@ -24,14 +24,22 @@ pub fn build(src: &str) -> Elaborated {
 
 /// `src` parsed and elaborated with no error, or the test fails with every diagnostic.
 pub fn read(src: &str) -> Elaborated {
+    read_but(src, |_| false)
+}
+
+/// `read`, past the promise every definition is held to (`common::promise`): for a test of another
+/// rule whose bodies only relate what they are given, on purpose.
+pub fn read_past_promise(src: &str) -> Elaborated {
+    read_but(src, super::promise)
+}
+
+/// `src` parsed and elaborated with no error but those `pass` lets through.
+fn read_but(src: &str, pass: fn(&gcs_core::program::Diag) -> bool) -> Elaborated {
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "does not parse: {errs:?}\n{src}");
     let e = elaborate(&prog);
-    assert!(
-        e.ok(),
-        "does not elaborate: {:?}\n{src}",
-        e.errors().map(|d| d.message.clone()).collect::<Vec<_>>()
-    );
+    let said: Vec<&String> = e.errors().filter(|d| !pass(d)).map(|d| &d.message).collect();
+    assert!(said.is_empty(), "does not elaborate: {said:?}\n{src}");
     e
 }
 
@@ -49,3 +57,4 @@ pub fn determined(src: &str) -> Elaborated {
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
     e
 }
+

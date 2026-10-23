@@ -1,12 +1,17 @@
 //! The advisory component classifier (#452, `boundary.rs`): one component of
 //! each class, read through an instance in a solved document — the review's two-root point
 //! among them, locally determined with its branch left to the seeds.
-use crate::common::linked::solved;
 use gcs_core::boundary::{classify, Class, Classified, Reads};
+use gcs_core::program::Code;
 
-/// Every component of `src`, classified at its solve.
+/// Every component of `src`, classified at its solve.  A body that leaves a freedom or only
+/// relates its operands is one every definition is held against (#562, E108 and E109): such a
+/// document is refused, its sketch built all the same, and read here as before.
 fn classes(src: &str) -> Vec<Classified> {
-    let e = solved(src);
+    let mut e = crate::common::linked::build(src);
+    let other: Vec<_> = e.errors().filter(|d| !matches!(d.code, Code::E108 | Code::E109)).collect();
+    assert!(other.is_empty(), "{other:?}");
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
     classify(&e, &e.sketch)
 }
 
@@ -18,7 +23,7 @@ fn named<'a>(cs: &'a [Classified], name: &str) -> &'a Classified {
 fn over_two_points(components: &str, calls: &str) -> Vec<Classified> {
     classes(&format!("\
 unit mm
-use std (horizontal)
+use std (horizontal, spins)
 {components}
 in std.front {{
   a := point
@@ -95,7 +100,7 @@ two := Chosen(std.front, a, b)
 
     let cs = classes("\
 unit mm
-use std
+use std (spins)
 component Apex(view: plane, a: point, b: point) {
   in view {
     x := point hint((3, 4))
@@ -150,13 +155,18 @@ sl := Slider(std.front, a, b)
 }
 
 /// A body that declares nothing and relates its operands is a verb (FR1): `a distance(6) b` over
-/// two formals, said as the row over its operands alone.  `std.Spin` is one too: it holds its
-/// frame's numbers by a `fix` and places its axis by rows.
+/// two formals, said as the row over its operands alone.  `Turning` is one too: it holds its
+/// frame's numbers by a `fix` and places its axis by rows (as `std.Spin` did, through 0.175).
 #[test]
 fn a_body_relating_only_its_operands_asserts_only() {
     let cs = over_two_points("\
 component Apart(a: point, b: point) {
   a distance(6mm) b
+}
+component Turning(f: frame, about: point) {
+  about coincident f.axis
+  f.axis parallel(sense: same) std.front.normal
+  fix(ratio == 1, advance == 0mm) f
 }
 ", "\
 ap := Apart(a, b)
@@ -165,14 +175,14 @@ in std.front {
   fix((0, 0)) c
 }
 f := frame
-std.Spin(f, about: c, on: std.front, ratio: 1)
+turn := Turning(f, c)
 ");
     let ap = named(&cs, "Apart");
     assert_eq!(ap.class, Class::AssertsOnly, "{ap:?}");
     let a = ap.analysis.as_ref().unwrap();
     assert_eq!((a.unknowns, a.facts), (0, 1));
     assert_eq!(a.fact_rows, ["a distance(6mm) b"]);
-    let spin = named(&cs, "std.Spin");
+    let spin = named(&cs, "Turning");
     assert_eq!(spin.class, Class::AssertsOnly, "{spin:?}");
     assert!(!spin.analysis.as_ref().unwrap().held.is_empty(), "{spin:?}");
 }
@@ -184,7 +194,7 @@ std.Spin(f, about: c, on: std.front, ratio: 1)
 fn an_unbound_formal_is_an_exported_input_and_an_unknown_of_its_own_a_freedom() {
     let cs = classes("\
 unit mm
-use std
+use std (spins)
 component Crank(view: plane, o: point, ref: line, theta: Angle) {
   in view {
     tip := point hint(at: o, along: ref, by: 10)

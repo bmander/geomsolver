@@ -11,7 +11,7 @@ use std (horizontal)
 use motor.dims (half, L, magnet_arc, poles, Rm, Ro, Rr, screw_r, screws, tap4, tap_depth)
 use motor.parts (Datums)
 
-part Rotor(f: Datums, theta: Angle) {
+component Rotor(f: Datums, theta: Angle) {
   in f.o.plane {
     ring poles about f.o {
       construction mc := line(f.o, hint((Rr + 2mm, 0mm)))

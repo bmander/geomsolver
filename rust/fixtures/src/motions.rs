@@ -8,7 +8,7 @@
 pub const ROLLED: &str = "under: spin, seen_from: observer";
 
 /// A turn about the spindle (world z through the origin).
-pub const TURN_SPINDLE: &str = "turn := frame\nstd.Turn(turn, about: spindle, ratio: 1)\n";
+pub const TURN_SPINDLE: &str = "turn := frame\nspindle coincident(sense: same) turn.axis; fix(ratio == 1, advance == 0mm) turn\n";
 
 /// A turn about a vertical axis through (3, 0): the sphere's and cylinder's
 /// own axis, so their contact is motion-independent.
@@ -24,7 +24,7 @@ hub_up distance(5mm, along: v) std.front
 construction centerline own := line(hub, hub_up)
 }
 turn := frame
-std.Turn(turn, about: own, ratio: 1)
+own coincident(sense: same) turn.axis; fix(ratio == 1, advance == 0mm) turn
 ";
 
 /// A turn about the line y = 0 in the plane, through (3, 0) and (4, 0): a
@@ -41,7 +41,7 @@ hub_out level(v) std.front
 construction centerline tumbler := line(hub, hub_out)
 }
 turn := frame
-std.Turn(turn, about: tumbler, ratio: 1)
+tumbler coincident(sense: same) turn.axis; fix(ratio == 1, advance == 0mm) turn
 ";
 
 /// A turn about the vertical line through (2.5, 0): offset from the tools.
@@ -57,12 +57,12 @@ a1 distance(5mm, along: v) std.front
 construction centerline pivot := line(a0, a1)
 }
 turn := frame
-std.Turn(turn, about: pivot, ratio: 1)
+pivot coincident(sense: same) turn.axis; fix(ratio == 1, advance == 0mm) turn
 ";
 
 /// A translation along the spindle by `advance` per full turn of the parameter.
 pub fn slide_z(advance_mm: f64) -> String {
-    format!("feed := frame\nstd.Slide(feed, along: spindle, advance: {advance_mm}mm)\n")
+    format!("feed := frame\nspindle coincident(sense: same) feed.axis; fix(ratio == 0, advance == {advance_mm}mm) feed\n")
 }
 
 /// A translation along world x by `advance` per full turn.
@@ -76,7 +76,7 @@ rail_end level(v) std.front
 construction centerline rail := line(std.origin, rail_end)
 }}
 feed := frame
-std.Slide(feed, along: rail, advance: {advance_mm}mm)
+rail coincident(sense: same) feed.axis; fix(ratio == 0, advance == {advance_mm}mm) feed
 "))
 }
 
@@ -103,7 +103,7 @@ h1 distance({v1}mm, along: v) std.front
 construction centerline hinge := line(h0, h1)
 }}
 turn := frame
-std.Turn(turn, about: hinge, ratio: 1)
+hinge coincident(sense: same) turn.axis; fix(ratio == 1, advance == 0mm) turn
 "))
 }
 
@@ -123,9 +123,9 @@ hub_up distance(5mm, along: v) std.front
 construction centerline own := line(hub, hub_up)
 }}
 private spin := frame
-std.Turn(spin, about: own, ratio: {ratio})
+own coincident(sense: same) spin.axis; fix(ratio == {ratio}, advance == 0mm) spin
 private observer := frame
-std.Turn(observer, about: spindle, ratio: 1)
+spindle coincident(sense: same) observer.axis; fix(ratio == 1, advance == 0mm) observer
 "))
 }
 
@@ -147,9 +147,9 @@ xend level(v) std.front
 construction centerline xaxis := line(std.origin, xend)
 }
 private spin := frame
-std.Turn(spin, about: own, ratio: 0.25)
+own coincident(sense: same) spin.axis; fix(ratio == 0.25, advance == 0mm) spin
 private observer := frame
-std.Turn(observer, about: xaxis, ratio: 1)
+xaxis coincident(sense: same) observer.axis; fix(ratio == 1, advance == 0mm) observer
 ";
 
 /// Which axis a cradle roll's observer turns about.
@@ -210,8 +210,8 @@ hub_up distance(5mm, along: v) std.front
 construction centerline cradle := line(hub, hub_up)
 }}
 {axis}private spin := frame
-std.Turn(spin, about: cradle, ratio: {ratio})
+cradle coincident(sense: same) spin.axis; fix(ratio == {ratio}, advance == 0mm) spin
 private observer := frame
-std.Turn(observer, about: {about}, ratio: 1)
+{about} coincident(sense: same) observer.axis; fix(ratio == 1, advance == 0mm) observer
 "))
 }

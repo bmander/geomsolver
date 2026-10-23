@@ -136,8 +136,7 @@ fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers 
 ccw(a, b, c) | cw(a, b, c)              choose a root; adds no equation              (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
 [NAME :=] Component(ARGS) [in REF]      an instance                                  (1.8)
-component NAME(FORMALS) { statement* }  a component definition (not a value)
-part NAME(FORMALS) { statement* }       a component that is a function of its inputs  (1.8)
+component NAME(FORMALS) { statement* }  a definition: a function of its inputs         (1.8)
 a WORD(PARAMS) b := RELATION | { ... }  a relation word                              (1.9)
 repeat N [as i] { ... }                 N unrelated copies                           (1.7)
 cycle N [as i] { ... }                  N copies that close; `next`, `prev` in scope
@@ -779,21 +778,25 @@ steps read one another so (`gear: Gear, trace: Trace` in `spiral_bevel/hypoid.sv
 **Derive, don't restate**: keep a few design inputs and derive the rest, so changing one carries
 its dependents (the V-twin derives its cylinder, pockets and grooves from bore, throw and wall).
 
-**A part is a component that promises to be a function of what it is given**: `part Name(…) {
-… }`, written where `component` would be. The elaborator holds it to two rules, over each
-instance:
+**Every definition is a function of what it is given** (0.176): its arguments, and the frame its
+instance stands in. The elaborator holds every braced definition to it, over each drawn instance:
 - its own rows place everything it makes, or **E108** names what they leave free;
 - it states nothing about its operands alone, or **E109** names the row.
 
-A freedom it leaves is a formal the call leaves unbound (`Crank(o, d, theta: hint(30deg))`), which
-the parent places. A parent may relate a part's outputs (`r distance(10mm) a.tip`), but such a
-statement is the parent's and never completes the part. Choose a root with `ccw`/`cw`, a `sense:`
-(which way an axis runs along a direction) or a bound (1.11, held by the solve), not with a seed: `solventc --lint` names a part whose rows have another
-pose its stated choices admit (W207, advice). A part is solved like any component. Use one for
-anything a parent should be able to trust as a unit: a pulley, a rod on its pin, a belt run.
+The rows that put what it makes in the frame it stands in (a point's lift, a plane's axes) are its
+own, and where that frame stands is an input. A freedom it leaves is a formal the call leaves
+unbound (`Crank(o, d, theta: hint(30deg))`), which the parent places; a number the call leaves
+unbound its own rows may also determine, as an output (`pressure_shift: hint(10deg)`). A flow's
+home is its own to say, `initially`, from formals (`rates/tractrix.sv`). A parent may relate an
+instance's outputs (`r distance(10mm) a.tip`), but such a statement is the parent's and never
+completes the definition. A fact about the operands alone is a relation word (1.9), never a
+definition. Choose a root with `ccw`/`cw`, a `sense:` (which way an axis runs along a direction)
+or a bound (1.11, held by the solve), not with a seed: `solventc --lint` names a definition whose
+rows have another pose its stated choices admit (W207, advice). `part Name(…) {`, which made the
+promise through 0.175, is refused (E100): write `component`.
 
 ```
-part Crank(o: point, datum: line, theta: Angle) {
+component Crank(o: point, datum: line, theta: Angle) {
   in o.plane {
     tip := point hint((20, 20))
     arm := line(o, tip)
@@ -1412,8 +1415,8 @@ to the drawing; it means what its uses say:
 **The library's sets** draw nothing; each is a centre or a line and one number, which may be left
 unbound as an unknown (`r: hint(10mm)`; the solve writes it back):
 
-- `ball := std.Sphere(c, r: 12mm)`; `std.CircleOnSphere(k, ball, view)` puts circle `k` drawn in
-  `view` on it.
+- `ball := std.Sphere(c, r: 12mm)`; `k on_sphere(view: v) ball` puts circle `k` drawn in `v` on
+  it (a relation word, `use std (on_sphere)`).
 - `shaft := std.Cylinder(ax, r: 8mm)`; `shaft.about distance(shaft.r) l` states a touch directly
   (the line is `.about`, since `axis` is an element's word).
 - `gc := std.Cone(gax, half: 60deg)`: apex at the line's start, opening toward its end; a point on
@@ -2171,20 +2174,21 @@ handed about the line as drawn, and which way a joint goes is never left to a se
 `spins` reads the view from its point (`o.plane`); a point standing in space has none (E040).
 `screws` turns a radian a radian of the roll; a screw at another ratio is its relations written
 out, `l coincident f.axis` and `fix(ratio == r, advance == a) f`. The components `std.Turn`,
-`std.Spin` and `std.Slide` said the same through 0.153 and are kept for one release.
+`std.Spin` and `std.Slide` said the same through 0.153 and are retired (0.176).
 Roll 0 is as drawn: a member that must stand turned there is drawn turned.
 A motion never moves the sketch, and a frame with no joint stands still: the world. The ratio is
 `Scalar`; a measurement of the drawing there is E107.
 
 **A ratio may be the solve's**: given a declared unknown, `param k: Scalar` then `pinion
-turns(k) shaft`, it is found by a relation reading the motion. `std.Rolls` says the usual one —
-two pitch circles rolling at their pitch point without slipping along their common tangent:
+turns(k) shaft`, it is found by a relation reading the motion. `rolls` says the usual one (`use
+std (rolls)`) — two pitch circles rolling at their pitch point without slipping along their
+common tangent:
 
 ```sv
 wheel_turn turns(1) spindle
 param pinion_ratio: Scalar                                          // not stated: found
 pinion_turn turns(pinion_ratio) pinion_axis
-std.Rolls(pitch, pinion_turn, wheel_turn, along: std.front.normal)  // −R/r, from the radii
+pinion_turn rolls(at: pitch, along: std.front.normal) wheel_turn    // −R/r, from the radii
 ```
 
 State the ratio instead and the same relation places the pitch point (`lantern_generation.sv`). A
@@ -2367,8 +2371,8 @@ in the block still rides on the frame with the value (E080).
 coincident f.axis` with `fix(ratio == 0, advance == 0mm) f`, stands where the path's parameter puts
 it — square to the tangent, turned as the path makes it from its home (where it is drawn), the
 rotation-minimising frame for ratio 0 and the path's own (toward its centre of curvature) for
-ratio 1. `std.Along(n, g, up: std.z, home: 0)` and `std.AlongFrenet(n, g)` say it and draw `n` at
-its home; a face drawn in `n` and swept over a declared `s` stands at every station where the frame
+ratio 1. `al := std.Along(g, up: std.z, home: 0)` and `std.AlongFrenet(g)` make the frame, `al.f`,
+and draw it at its home; a face drawn in `al.f` and swept over a declared `s` stands at every station where the frame
 does, `s` the path's own parameter. Its pose is read off the path after the solve, so a relation the
 solve holds reads none (E080).
 
@@ -2437,8 +2441,9 @@ rate(X over t) distance(v, along: l)                  // its speed along l, a le
 The standard library says the two things a gear designer reads of a twist this way (`use std
 (reciprocal)`): `L reciprocal(seen_from: pinion_turn) gear_turn` — a force along `L` does no work
 on the motion, for a mesh the meshing law of a line of action (the members move as fast along `L`)
-— and `screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)`, the instantaneous screw axis `isa` and `screw.pitch`, its advance along
-`isa` a radian of the roll (give `pitch:` to pin it). Any motion the solve reads, seen from any frame (`spiral_bevel/phillips.sv`); seen from the
+— and `screw := std.Screw(toward, gear_turn, seen_from: pinion_turn)`, the instantaneous screw axis
+`screw.isa`, running the way the held direction `toward` does (`fix(dir == (-1, 0, 0)) toward`),
+and `screw.pitch`, its advance along it a radian of the roll (give `pitch:` to pin it). Any motion the solve reads, seen from any frame (`spiral_bevel/phillips.sv`); seen from the
 world, `seen_from:` names a frame at rest. A `claim L reciprocal(seen_from: g) m` carries its point all the same
 and judges the rate.
 

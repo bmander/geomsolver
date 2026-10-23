@@ -29,7 +29,7 @@ fn xy(e: &Elaborated, name: &str) -> (f64, f64) {
 }
 
 const TRI: &str = "\
-use std
+use std (turns)
 
 in std.front {
 a := point
@@ -79,7 +79,7 @@ fn applied_at_the_numbers_stated_and_not_added() {
 /// states, whatever a hint on the declaration says: a hint is only where a solve begins.
 #[test]
 fn a_fix_holds_what_it_names_and_beats_a_hint() {
-    let e = read("unit mm\nuse std\nhalf := 10mm\nin std.front {\na := point hint((3, 7))\nfix(x == -half) a\n}\n");
+    let e = read("unit mm\nuse std (turns)\nhalf := 10mm\nin std.front {\na := point hint((3, 7))\nfix(x == -half) a\n}\n");
     assert!(e.ok(), "{:?}", messages(&e));
     let p = &e.sketch.points[0];
     assert!(e.sketch.params[p.x as usize].fixed && !e.sketch.params[p.y as usize].fixed);
@@ -91,7 +91,7 @@ fn a_fix_holds_what_it_names_and_beats_a_hint() {
 #[test]
 fn a_seed_reads_a_held_point_and_never_moves_one() {
     let e = read("\
-use std
+use std (turns)
 in std.front {
 a := point
 fix((4, 5)) a
@@ -184,7 +184,7 @@ fn lifted_with_their_numbers_and_coloured_as_relations() {
 #[test]
 fn a_solve_writes_no_seed_for_a_held_number() {
     let src = "\
-use std
+use std (turns)
 in std.front {
 b := point
 fix((30, 0)) b
@@ -215,7 +215,7 @@ l.p1 distance(10) l.p2
 /// partial one — and taken away again when let go.
 #[test]
 fn a_hold_made_in_the_app_is_written_with_its_numbers() {
-    let src = "use std\nin std.front {\na := point hint((2, 3))\nb := point hint((7, 1))\nfix((7, 1)) b\n}\n";
+    let src = "use std (turns)\nin std.front {\na := point hint((2, 3))\nb := point hint((7, 1))\nfix((7, 1)) b\n}\n";
     let (prog, errs) = parse(src);
     assert!(errs.is_empty(), "{errs:?}");
     let mut e = elaborate(&prog);
@@ -237,7 +237,7 @@ fn a_hold_made_in_the_app_is_written_with_its_numbers() {
 #[test]
 fn a_hold_a_component_says_is_not_written_again_at_the_root() {
     let src = "\
-use std
+use std (turns)
 component Pin(p: point) {
   fix((1, 2, 3)) p
 }
@@ -247,7 +247,7 @@ fix((0, 0, 0)) a
 fix((0, 0, 10)) b
 ax := line(a, b)
 f := frame
-std.Turn(f, about: ax, ratio: 1)
+f turns(1) ax
 q := point
 Pin(q)
 ";
@@ -269,7 +269,7 @@ Pin(q)
 #[test]
 fn a_frame_with_a_joint_alone_is_held_by_its_joint() {
     let src = "\
-use std
+use std (turns)
 a := point
 b := point hint((0, 0, 10))
 fix((0, 0, 0)) a

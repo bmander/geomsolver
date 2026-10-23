@@ -53,10 +53,12 @@ L := line(P, ahead)
 P distance(10mm) ahead
 P distance(10mm * sin(pressure), along: std.y) ahead
 L reciprocal(seen_from: pinion_turn) gear_turn
-// the mesh's instantaneous screw axis, on the common perpendicular, and its pitch: `screw.pitch`,
-// the advance a radian of the mesh's roll — both read by rates of points the mesh carries (std.sv)
-isa := axis hint(dir: (-0.9, 0, -0.45))
-screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)
+// the mesh's instantaneous screw axis, on the common perpendicular, and its pitch: `screw.isa`,
+// running the way `toward` does, and `screw.pitch`, the advance a radian of the mesh's roll — both
+// read by rates of points the mesh carries (std.sv)
+toward := axis                               // the way it runs: back along x, as the mesh turns
+fix(dir == (-1, 0, 0)) toward
+screw := std.Screw(toward, gear_turn, seen_from: pinion_turn)
 
 // -- the rack and the flanks ---------------------------------------------------------------------
 // The plane square to L through P, sliding along L at the speed both members have along it; each

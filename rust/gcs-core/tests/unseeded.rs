@@ -35,10 +35,11 @@ component Hook(len: Length) {
            tip := point
            base := point
            base distance(len) tip
+           base level(v) tip
+           fix((0, 0)) base
          }
          in std.front {
          h := Hook(len: 30)
-         fix((0, 0)) h.base
          }
 ",
     );
@@ -57,6 +58,8 @@ component Hook(len: Length) {
            tip := point hint((3, 4))
            base := point hint((0, 0))
            base distance(len) tip
+           base level(v) tip
+           fix((0, 0)) base
          }
          in std.front {
          h := Hook(len: 30)
@@ -74,6 +77,8 @@ component Hook(len: Length) {
            tip := point hint((len, 0))
            base := point hint((0, 0))
            base distance(len) tip
+           base level(v) tip
+           fix((0, 0)) base
          }
          in std.front {
          h := Hook(len: 30)

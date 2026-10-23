@@ -154,9 +154,11 @@ fn signed_coordinates_follow_a_moving_datum_even_from_the_wrong_quadrant() {
     assert_eq!(back.constraints.iter().filter(|c| ordinate(c.kind)).count(), 2);
 }
 
+/// `Offset` only relates what it is given — refused for that (#562), and read past it here for
+/// what an alias carries.
 #[test]
 fn an_external_constraint_moves_the_datum_through_an_aliased_component_point() {
-    let mut e = build("unit mm\nuse std\ncomponent Offset(f: plane, p: point) {\n\
+    let mut e = crate::common::read_past_promise("unit mm\nuse std\ncomponent Offset(f: plane, p: point) {\n\
         p distance(3mm, along: u) f\np distance(-2mm, along: v) f\n}\n\
         in std.front {\no := point hint((10, 20))\nq := point hint((14, 20))\n\
         f := std.Turned(o, q)\nhorizontal f.u\no distance(4mm, along: u) q\n\
@@ -227,6 +229,7 @@ fn datum_axes_require_a_datum_and_lengths() {
 #[test]
 fn a_datum_child_remains_a_point_through_aliases_and_face_corners() {
     let e = build("unit mm\nuse std\ncomponent Inner(p: point) {\nq := point hint((p.x + 1mm, p.y + 2mm))\n\
+        p distance(1mm, along: u) q\np distance(2mm, along: v) q\n\
         border := line(p, q)\n}\ncomponent Outer(f: group) {\ni := Inner(f.u.p1)\n\
         triangle := face(f.u.p1, i.q, f.u.p2, -> close)\n}\nin std.front {\n\
         o := point hint((10, 20))\nt := point hint((14, 23))\nf := std.Turned(o, t)\n\

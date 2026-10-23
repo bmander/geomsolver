@@ -4,7 +4,7 @@ use gcs_core::{interval::minimum::{Options,Status,Stop},motion::Family,
 
 pub(super) fn rotation() -> Family {
     let (source,errors) = crate::common::parse("\
-use std
+use std (turns)
 in std.front {
 a := point
 b := point
@@ -13,7 +13,7 @@ fix((0, 1)) b
 ax := line(a,b)
 }
 turn := frame
-std.Turn(turn, about: ax, ratio: 1)
+turn turns(1) ax
 ");
     assert!(errors.is_empty());
     let mut model = program::elaborate(&source); assert!(model.ok());

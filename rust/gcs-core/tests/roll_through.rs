@@ -11,7 +11,7 @@ use gcs_core::{program, solid, solve, syntax};
 fn balls(at: &str, sweep: &str) -> String {
     format!("\
 unit mm
-use std
+use std (turns)
 tool_c := point
 fix((3, 0, 0)) tool_c
 blank_c := point
@@ -26,7 +26,7 @@ fix((0, 0, 0)) o
 fix((0, 0, 1)) top
 spindle := line(o, top)
 turn := frame
-std.Turn(turn, about: spindle, ratio: 1)
+turn turns(1) spindle
 construction removal := sweep(tool, {sweep})
 part := solid(blank)
 removal cut part

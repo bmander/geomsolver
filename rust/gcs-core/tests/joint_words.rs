@@ -1,8 +1,9 @@
 //! **A frame's joint as relation words** (Solvent §6.14 [0.154]; issue #464): `std.sv` states a
 //! joint as a word with the frame the subject and what it moves about or along the object —
 //! `f turns(r) l`, `f screws(a) l`, `f spins(r) o`, `f slides(a) l` — each its one number bare.
-//! Each moves the frame as the component it replaces did (`std.Turn`, `std.Spin`, `std.Slide`,
-//! kept for one release), and no document of the library calls those components any more.
+//! The components they replaced (`std.Turn`, `std.Spin`, `std.Slide`) are gone (#562): each stated
+//! only facts about the frame and the line it was given, which no definition may, and no document
+//! of the library calls them.
 use std::path::Path;
 
 use gcs_core::motion::Family;
@@ -49,26 +50,6 @@ fn near(a: [f64; 3], b: [f64; 3]) -> bool {
     (0..3).all(|i| (a[i] - b[i]).abs() < 1e-9)
 }
 
-const ROLLS: [f64; 5] = [-150.0, -30.0, 0.0, 45.0, 360.0];
-
-/// **Each word is the component it replaces**: the frame stands where the component's did at
-/// every roll, a turn, a screw, a turn in the view and a slide.
-#[test]
-fn each_joint_word_moves_the_frame_as_its_component_did() {
-    for (word, component) in [
-        ("m turns(-1.5) l", "std.Turn(m, about: l, ratio: -1.5)"),
-        ("m screws(4mm) l", "std.Turn(m, about: l, ratio: 1, advance: 4mm)"),
-        ("m screws(-4mm) l", "std.Turn(m, about: l, ratio: 1, advance: -4mm)"),
-        ("m spins(2) o", "std.Spin(m, about: o, on: std.front, ratio: 2)"),
-        ("m slides(6mm) l", "std.Slide(m, along: l, advance: 6mm)"),
-    ] {
-        let (said, was) = (carried(word, &ROLLS), carried(component, &ROLLS));
-        for ((s, w), deg) in said.iter().zip(&was).zip(ROLLS) {
-            assert!(near(*s, *w), "`{word}` at {deg}°: {s:?}, `{component}` {w:?}");
-        }
-    }
-}
-
 /// What each moves, said directly: a slide `6` a turn along `l` and turning not at all; a screw
 /// `4` a turn along `l` and back where it turned from after a whole turn; a turn in the view
 /// about `o`, square to the front, twice the roll.
@@ -92,7 +73,7 @@ fn each_joint_word_says_what_it_moves() {
 #[test]
 fn a_spin_about_a_point_in_space_is_refused() {
     refused(
-        "unit mm\nuse std (spins)\np := point hint((1, 2, 7))\nm := frame\nm spins(1) p\n",
+        "unit mm\nuse std (spins, screws, slides, turns)\np := point hint((1, 2, 7))\nm := frame\nm spins(1) p\n",
         "E040",
         "drawn in no plane",
         "m spins(1) p",

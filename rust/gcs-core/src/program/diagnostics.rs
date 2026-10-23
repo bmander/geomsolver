@@ -93,11 +93,11 @@ pub enum Code {
     /// the solve: a `param`, a seed, a constraint's number, a solid's extent or placement angle,
     /// a frame's ratio or advance (§6.14 [0.135])
     E107,
-    /// a part that leaves an unknown of its own free: its rows do not reach everything it makes,
-    /// so a parent would have to place it from outside (#461 PT2)
+    /// a definition that leaves an unknown of its own free: its rows do not reach everything it
+    /// makes, so a parent would have to place it from outside (#461 PT2, #562)
     E108,
-    /// a part stating a fact about what it is given rather than about what it makes: a row of
-    /// none of its own unknowns, or past what they take (#461 PT3)
+    /// a definition stating a fact about what it is given rather than about what it makes: a row
+    /// of none of its own unknowns, or past what they take (#461 PT3, #562)
     E109,
     /// an instance's frame read from outside, `b.std.z`, where its definition's body reads no
     /// standard datum: it is placed by its arguments, so a relation on its frame places nothing
@@ -131,9 +131,9 @@ pub enum Code {
     W205,
     /// a `group` formal handed on whole and never read through
     W206,
-    /// a part whose rows have another pose its stated root choices admit: which it takes is the
-    /// seeds' choice (#461 PT5).  Asked by `solventc --lint` of the solved drawing, never raised
-    /// by elaboration
+    /// a definition whose rows have another pose its stated root choices admit: which it takes is
+    /// the seeds' choice (#461 PT5).  Asked by `solventc --lint` of the solved drawing, never
+    /// raised by elaboration
     W207,
 }
 

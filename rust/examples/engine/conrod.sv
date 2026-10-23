@@ -31,7 +31,7 @@ interface CrankPin { end: point, side: point }
 // A cap bolt, turned about its axis from `a`, its head's underside, to `b`, its tip: the shank
 // `r` round, the head `rh` round and `h` deep.  Half its section is drawn beside the axis, in the
 // plane the two points are drawn in; `hole` is the shank's own turn, which the rod is bored by.
-part CapBolt(a: point, b: point, r: Length, rh: Length, h: Length) {
+component CapBolt(a: point, b: point, r: Length, rh: Length, h: Length) {
   in a.plane {
     construction stem := line(a, b)
     construction tip := point hint(at: b, toward: a, by: 0.1, turn: 90deg)
@@ -54,7 +54,7 @@ part CapBolt(a: point, b: point, r: Length, rh: Length, h: Length) {
   construction hole := solid(face(a, b, tip, foot, -> close), about: stem)
 }
 
-part ConRod(pin: CrankPin, bore: line) {
+component ConRod(pin: CrankPin, bore: line) {
   // the rod's own dimensions
   wB := pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
   wS := 22mm             // small end, along the crank axis

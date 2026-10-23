@@ -6,7 +6,7 @@ use crate::common::parsed::determined as solved;
 
 const SOURCE: &str = "\
 unit mm
-use std
+use std (turns)
 in std.front {
 o := point
 q := point
@@ -24,15 +24,14 @@ radius(1mm) meridian
 ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 roll := frame
-std.Turn(roll,about: spin_axis,ratio: 1)
+roll turns(1) spin_axis
 generated := envelope(wall over t in (-20deg, 20deg), under: roll)
 component Sphere(o: point, size: Length) {
   private bottom := point
-  private top := point
+  private top := point hint((0, size))
   fix((0, -size)) bottom
-  fix((0, size)) top
+  fix(x == 0) top
   private rim := arc(center: o,start: bottom,end: top)
-  radius(size) rim
   private ax := line(top,bottom)
   body := solid(face(rim,ax),about: ax)
 }

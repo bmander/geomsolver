@@ -34,7 +34,7 @@ throat := 16mm
 // one back down, both circles' centres on the walk's left; a flank leaves the base circle `90° -
 // lean` either side of the nose, `lean` the angle the flanks close in by.  The outline is
 // `profile`, a face, which the camshaft sweeps along the axis.
-part Lobe(c: point, ref: line, phi: Angle, dn: Length) {
+component Lobe(c: point, ref: line, phi: Angle, dn: Length) {
   lean := asin((rb - rn) / dn)
   n := point hint(x: c.x + dn * cos(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)),
                y: c.y + dn * sin(phi + atan2(ref.p2.y - ref.p1.y, ref.p2.x - ref.p1.x)))
@@ -67,7 +67,7 @@ part Lobe(c: point, ref: line, phi: Angle, dn: Length) {
 // `lift` off its seat by the lobe: the flat follower face stands `rb + lift` from the cam's
 // centre, which is where the lobe's outline reaches at this moment (see `dims.sv`) — so the face
 // is tangent to whichever of base circle, flank or nose is under it, without saying which.
-part Valve(seat: point, ax: line, lift: Length, head: Length) {
+component Valve(seat: point, ax: line, lift: Length, head: Length) {
   // the follower face: on the axis and square to it, `rb + lift` short of the cam's centre
   fc := point hint((ax.p2.x - (rb + lift) * (ax.p2.x - ax.p1.x) / stem, ax.p2.y - (rb + lift) * (ax.p2.y - ax.p1.y) / stem))
   fc coincident ax
@@ -117,7 +117,7 @@ part Valve(seat: point, ax: line, lift: Length, head: Length) {
 // follower's — so the sections turn with the axis however it leans, and lift with the valve.  A
 // corner is seeded where those two put it: `by` the fraction of the run up the axis to the cam's
 // centre (`up`), or down it to the seat (`down`), turned off the axis by `turn`.
-part Poppet(v: group) {
+component Poppet(v: group) {
   up := stem + rb + v.lift
   down := stem - v.lift
   // the valve, up the axis from the head's face `v.hd`
@@ -166,7 +166,7 @@ part Poppet(v: group) {
 // Each corner is measured from the axis and down it from the cam's centre, which no lift moves:
 // the line `cx` square to the axis there, `q` on its left.  The corners are seeded as the valve's
 // are, down the run `reach` from the cam's centre to the seat.
-part Bore(ax: line, head: Length) {
+component Bore(ax: line, head: Length) {
   reach := stem + rb
   rthroat := head / 2 + 0.5mm
   q := point hint(at: ax.p2, toward: ax.p1, by: 10mm / reach, turn: -90deg)

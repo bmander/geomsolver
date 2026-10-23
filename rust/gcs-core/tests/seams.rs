@@ -12,7 +12,7 @@ mod vertices;
 
 const MODEL: &str = "\
 unit mm
-use std (vertical)
+use std (vertical, turns)
 in std.front {
 o := point
 q := point
@@ -43,7 +43,7 @@ body := solid(profile,about: ax)
 first_surface := surface(body,low,from: 0deg,to: 90deg)
 second_surface := surface(body,high,from: 0deg,to: 90deg)
 roll := frame
-std.Turn(roll,about: spin_axis,ratio: 1)
+roll turns(1) spin_axis
 first_envelope := envelope(first_surface over t in (-20deg, 20deg), under: roll)
 second_envelope := envelope(second_surface over t in (-20deg, 20deg), under: roll)
 ";
@@ -139,11 +139,10 @@ fn a_retained_seam_must_satisfy_material_trims_on_both_faces() {
     let source = format!("{MODEL}
 component Sphere(o: point,size: Length) {{
   private bottom := point
-  private top := point
+  private top := point hint((0, size))
   fix((0, -size)) bottom
-  fix((0, size)) top
+  fix(x == 0) top
   private rim := arc(center: o,start: bottom,end: top)
-  radius(size) rim
   private diameter := line(top,bottom)
   ball := solid(face(rim,diameter),about: diameter)
   wall := surface(ball,rim)
@@ -182,8 +181,8 @@ fn an_unresolved_arc_radius_cannot_hide_a_gap_at_a_shared_vertex() {
 
 #[test]
 fn a_stationary_family_does_not_produce_a_falsely_unique_seam_intersection() {
-    let e = solved(&MODEL.replace("std.Turn(roll,about: spin_axis,ratio: 1)",
-        "std.Turn(roll,about: spin_axis,ratio: 0)"));
+    let e = solved(&MODEL.replace("roll turns(1) spin_axis",
+        "roll turns(0) spin_axis"));
     let seam = shared(&e);
     let result = seam.intersect(|c| c.position[1]-1.,[0.05,0.],options(&seam),1e-9);
     assert_eq!(result.unwrap_err(),Error::SingularIntersection);

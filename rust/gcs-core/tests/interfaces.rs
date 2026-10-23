@@ -145,7 +145,8 @@ interface Size {{ length: Length }}
 interface Design {{ at: point, size: Size }}
 component Bar(d: Design) {{
   tip := point hint((d.at.x + d.size.length, d.at.y))
-  d.at distance(d.size.length) tip
+  d.at level(v) tip
+  d.at distance(d.size.length, along: u) tip
 }}
 in std.front {{
   o := point
@@ -159,8 +160,8 @@ in std.front {{
     assert!(e.ok(), "{:?}", e.diags);
     said(&doc("{width: 3mm}"), Code::E103, &["no number `length`", "`Size`"]);
     // a group given where an interface asks for a nested one, and the body reading past it
-    let past = doc("{length: 12mm, width: 3mm}").replace("d.at distance(d.size.length) tip",
-        "d.at distance(d.size.width) tip");
+    let past = doc("{length: 12mm, width: 3mm}").replace("distance(d.size.length, along: u) tip",
+        "distance(d.size.width, along: u) tip");
     said(&past, Code::E101, &["no numeric member `d.size.width`"]);
 }
 
@@ -193,18 +194,21 @@ fn sets_and_solids_are_members() {
 unit mm
 use std
 interface Ball {{ about: point, bulk: set }}
-component Touch(b: Ball, q: point) {{ q coincident b.bulk }}
+component Touch(b: Ball) {{
+  q := point hint((3, 4))
+  q coincident b.bulk
+  b.about level(v) q
+}}
 in std.front {{
   o := point
   fix((0, 0)) o
-  q := point hint((3, 4))
   ball := {{about: o, bulk: {given}}}
-  t := Touch(ball, q)
+  t := Touch(ball)
 }}
 s := std.Sphere(o, r: 5mm)
 ");
     let e = solved(&doc("s"));
-    let q = e.sketch.point_xy(e.map.ent_named("q").unwrap().i());
+    let q = e.sketch.point_xy(e.map.ent_named("t.q").unwrap().i());
     assert!((q.0.hypot(q.1) - 5.0).abs() < 1e-8, "{q:?}");
     said(&doc("o"), Code::E103, &["`ball.bulk` is not a set"]);
 }
@@ -248,7 +252,8 @@ fn a_module_exports_one() {
     let shelf: BTreeMap<&str, &str> = [(
         "lib.gear",
         "interface Cone { O: point, module: Length }\n\
-         component Mark(c: Cone) { c.O distance(c.module) q\nq := point hint((1, 1)) }\n",
+         component Mark(c: Cone) { c.O distance(c.module, along: u) q\nc.O level(v) q\n\
+         q := point hint((1, 1)) }\n",
     )]
     .into_iter()
     .collect();

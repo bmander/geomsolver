@@ -57,7 +57,7 @@ component Pair(a: point, b: point, d: Length, along: line) {
 #[test]
 fn a_component_call_standing_as_a_statement_is_said() {
     let src = "\
-use std (horizontal)
+use std (horizontal, spins)
 component Level(a: point, b: point) {
   a horizontal b
 }
@@ -77,7 +77,7 @@ q inside std.Cylinder(ax, r: 8mm)
 #[test]
 fn a_component_that_makes_nothing_a_parent_reads_is_a_verb() {
     let src = "\
-use std (horizontal)
+use std (horizontal, spins)
 component Level(a: point, b: point) {
   a horizontal b
 }
@@ -200,21 +200,24 @@ component Plate(c: point, m: group) {
 /// it would without the lint; and a module the document reads is not the document's text.
 #[test]
 fn the_lint_is_asked_for_and_reads_only_the_documents_own_text() {
-    let src = format!("{GEAR}use std (horizontal)
+    let src = format!("{GEAR}use std (horizontal, spins)
 teeth := 12
 in std.front {{
   o := point
   g := Gear(o, teeth: teeth, m: 2mm)
   f := frame
-  std.Spin(f, about: o, on: std.front, ratio: -1)
+  f spins(-1) o
+  q := point
+  std.Turned(o, q)
 }}
 ");
     let (p, errs) = parse(&src);
     assert!(errs.is_empty(), "{errs:?}");
     let e = elaborate(&p);
     assert!(e.diags.iter().all(|d| !DRIFT.contains(&d.code)), "{:?}", e.diags);
-    // `std.Spin` is itself an asserting component, but std's, not this document's
-    assert_eq!(lint(&src), ["W201: teeth", "W202: std.Spin"]);
+    // a call of std's standing as a statement is this document's text; what `std.Turned` itself
+    // says is std's
+    assert_eq!(lint(&src), ["W201: teeth", "W202: std.Turned"]);
     assert!(DRIFT.iter().all(|c| c.as_str().starts_with("W2")));
 }
 

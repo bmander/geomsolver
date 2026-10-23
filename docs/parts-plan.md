@@ -1,5 +1,11 @@
 # Parts: a component held to being a function of what it is given (#461)
 
+> **Superseded where it names the keyword (#562, Solvent 0.176).** `part` is no longer a word:
+> every braced definition is held to what this plan made `part` promise (E108, E109, D1–D3, W207),
+> and `part Name(…) {` is refused, naming `component`. Read "a part" below as "a definition" where it
+> means the declaration, and as "an instance" where it means what the check reads; the frame an
+> instance stands in is one of its inputs. The rules themselves (PT1–PT5) stand.
+
 A design for review on #461. It decides the issue's candidates on what a boundary means for the
 language rather than on what it costs the solver. The rules a boundary must keep came from the
 solve-boundaries plan, and the style goals from the direction paper (#448). Both are retired, and
@@ -245,7 +251,7 @@ The same pattern runs through the corpus:
 * 1,236 reads go through it (`dims.L`);
 * the hub motor threads a `frame` group of the world's planes and origins into every part.
 
-## 3. `part`: declared, checked, solved flat
+## 3. `part`: declared, checked, solved flat (superseded by #562: every definition is checked)
 
 ```solvent
 part CommonTangent(a: circle, b: circle) {                      // [new]: `part`

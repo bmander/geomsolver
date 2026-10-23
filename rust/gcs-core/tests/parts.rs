@@ -1,8 +1,9 @@
-//! **Parts** (#461, `docs/parts-plan.md` §3): `part Name(…) { … }` is a component declared a
-//! function of what it is given, and the elaborator holds it to that over each instance — every
-//! unknown it makes reached by its own rows, its inputs held (PT2, **E108**), and no row about its
-//! operands alone (PT3, **E109**) — and then solves it flat, as any component.  `part` is a word
-//! only where a definition's shape follows it.
+//! **Parts** (#461, #562, `docs/parts-plan.md` §3): every braced definition is a function of its
+//! arguments and of the frame its instance stands in, and the elaborator holds it to that over
+//! each drawn instance — every unknown it makes reached by its own rows, its inputs held (PT2,
+//! **E108**), and no row about its operands alone (PT3, **E109**) — and then solves it flat.  The
+//! frame an instance stands in is one of its inputs, and the rows that put what it makes in that
+//! frame are its own.  `part`, which made the promise through 0.175, is refused.
 use gcs_core::program::Elaborated;
 
 use crate::common::{at, read};
@@ -19,12 +20,12 @@ fn errors(src: &str) -> Vec<(String, String, String)> {
         d.message.clone())).collect()
 }
 
-/// The common tangent of two circles, the left one from the first to the second, as a part:
+/// The common tangent of two circles, the left one from the first to the second:
 /// two points of its own and four rows, the root chosen by `ccw` — the direction paper's noun.
 const TANGENT: &str = "\
 unit mm
 use std
-part CommonTangent(a: circle, b: circle) {
+component CommonTangent(a: circle, b: circle) {
   in a.center.plane {
     s := point hint(at: a.center, toward: b.center, by: 0.1, turn: 90deg)
     e := point hint(at: b.center, toward: a.center, by: 0.1, turn: -90deg)
@@ -51,9 +52,8 @@ upper := CommonTangent(small, large)
 lower := CommonTangent(large, small)
 ";
 
-/// **A part is a component, held to a promise**: one whose rows place everything it makes from
-/// what it is given elaborates as a component does and is solved flat, both runs where the closed
-/// form puts them — the small rim's tangent point at `r₁ (sin φ, cos φ)` above and below, with
+/// **A definition is held to a promise**: one whose rows place everything it makes from what it
+/// is given elaborates and is solved flat, both runs where the closed form puts them — the small rim's tangent point at `r₁ (sin φ, cos φ)` above and below, with
 /// `sin φ = (r₂ − r₁) / c`.
 #[test]
 fn a_part_whose_rows_place_what_it_makes_is_a_component() {
@@ -78,7 +78,7 @@ fn a_part_that_leaves_a_freedom_is_refused_naming_it() {
     let got = errors("\
 unit mm
 use std
-part Loose(o: point) {
+component Loose(o: point) {
   in o.plane {
     tip := point hint((30, 0))
     o distance(30mm) tip
@@ -99,24 +99,24 @@ b := Loose(o)
 }
 
 /// **A freedom is exported as a formal** (FR2): the crank's angle, a formal the call leaves
-/// unbound, is an input, so the part whose rows place its tip from it stands — while the same
-/// body that leaves the angle to an instance inside it, unbound there, owns that number, and is
-/// refused for leaving it free.
+/// unbound, is an input, so the definition whose rows place its arm from it stands — while the
+/// same body that leaves the angle to an instance inside it, unbound there, owns that number, and
+/// is refused for leaving it free.
 #[test]
 fn a_freedom_is_a_formal_and_not_a_number_of_the_body() {
     let crank = |head: &str, angle: &str, call: &str| format!("\
 unit mm
 use std
-component Turned(datum: line, arm: line, t: Angle) {{
-  datum angle(t) arm
-}}
-part Crank(o: point, datum: line{head}) {{
+component Arm(o: point, datum: line, t: Angle) {{
   in o.plane {{
     tip := point hint((20, 20))
     arm := line(o, tip)
     o distance(30mm) tip
+    datum angle(t) arm
   }}
-  turn := Turned(datum, arm, t: {angle})
+}}
+component Crank(o: point, datum: line{head}) {{
+  turn := Arm(o, datum, t: {angle})
 }}
 in std.front {{
   o := point
@@ -140,7 +140,7 @@ fn a_part_stating_a_fact_about_its_operands_is_refused_at_the_row() {
     let fused = errors("\
 unit mm
 use std
-part Apex(a: point, b: point) {
+component Apex(a: point, b: point) {
   in a.plane {
     m := point hint((3, 4))
     m distance(5mm) a
@@ -162,7 +162,7 @@ x := Apex(o, q)
     let over = errors("\
 unit mm
 use std
-part Apex(a: point, b: point) {
+component Apex(a: point, b: point) {
   in a.plane {
     m := point hint((3, 4))
     m distance(5mm) a
@@ -190,7 +190,7 @@ fn a_parent_cannot_complete_a_part_and_may_relate_its_outputs() {
     let src = |part_rows: &str| format!("\
 unit mm
 use std
-part Arm(o: point) {{
+component Arm(o: point) {{
   in o.plane {{
     tip := point hint((30, 0))
     o distance(30mm) tip
@@ -215,10 +215,11 @@ in std.front {{
     assert!(e.diags.is_empty(), "{:?}", e.diags);
 }
 
-/// **`part` is a word only before a definition's shape** — `part Name(…) {` — so a document may
-/// still call a thing `part`, read its members and apply a word to it.
+/// **`part` is retired** (#562): `part Name(…) {` is refused, saying what to write, and `part` is a
+/// name like any other — a document may call a thing `part`, read its members and apply a word to
+/// it.
 #[test]
-fn part_stays_a_name() {
+fn part_is_refused_and_stays_a_name() {
     let e = read("\
 unit mm
 use std (horizontal)
@@ -232,9 +233,10 @@ in std.front {
 }
 ");
     assert!(e.diags.is_empty(), "{:?}", e.diags);
-    let parsed = gcs_core::library::parse_linked("component C(p: point) { }\npart D(p: point) { }\n").0;
-    let parts: Vec<bool> = parsed.components.iter().filter(|c| c.name.is_some()).map(|c| c.part).collect();
-    assert_eq!(parts, [false, true]);
+    let (_, errs) = crate::common::parse("component C(p: point) { }\npart D(p: point) { }\n");
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert!(errs[0].message.contains("`part` is retired")
+        && errs[0].message.contains("write `component Name(…) { … }`"), "{}", errs[0].message);
 }
 
 /// The diagnosis of `src` once solved, read through its parts (#461 D1–D3).
@@ -253,7 +255,7 @@ fn reading(src: &str) -> gcs_core::parts::Reading {
 const HELD_FROM_OUTSIDE: &str = "\
 unit mm
 use std (horizontal)
-part Arm(o: point) {
+component Arm(o: point) {
   in o.plane {
     tip := point hint((30, 0))
     o distance(30mm) tip
@@ -292,7 +294,7 @@ fn a_part_that_does_not_hold_is_named_with_its_inputs() {
     let r = reading("\
 unit mm
 use std
-part Apex(a: point, b: point) {
+component Apex(a: point, b: point) {
   in a.plane {
     m := point hint((5, 0.5))
     m distance(5mm) a
@@ -321,7 +323,7 @@ fn a_part_singular_at_its_inputs_is_said_with_its_rank() {
     let apex = |q: &str| format!("\
 unit mm
 use std
-part Apex(a: point, b: point) {{
+component Apex(a: point, b: point) {{
   in a.plane {{
     m := point hint((3, 4))
     m distance(5mm) a
@@ -352,14 +354,14 @@ fn a_part_that_leaves_its_root_to_its_seeds_is_named() {
     let e = read("\
 unit mm
 use std
-part Apex(a: point, b: point) {
+component Apex(a: point, b: point) {
   in a.plane {
     m := point hint((3, 4))
     m distance(5mm) a
     m distance(5mm) b
   }
 }
-part Chosen(a: point, b: point) {
+component Chosen(a: point, b: point) {
   in a.plane {
     m := point hint((3, 4))
     m distance(5mm) a
@@ -367,7 +369,7 @@ part Chosen(a: point, b: point) {
     ccw(a, b, m)
   }
 }
-part Bounded(a: point, b: point) {
+component Bounded(a: point, b: point) {
   in a.plane {
     m := point hint((3, 4))
     m distance(5mm) a
@@ -381,7 +383,7 @@ in std.front {
   q := point
   fix((6, 0)) q
 }
-part Unsensed(a: point, b: point) {
+component Unsensed(a: point, b: point) {
   l := line(a, b)
   t := axis hint(dir: (0.3, 0.9, 0.3))
   t parallel l
@@ -390,7 +392,7 @@ part Unsensed(a: point, b: point) {
   m coincident t
   a distance(5mm, along: t) m
 }
-part Sensed(a: point, b: point) {
+component Sensed(a: point, b: point) {
   l := line(a, b)
   t := axis hint(dir: (0.3, 0.9, 0.3))
   t parallel(sense: same) l
@@ -458,7 +460,7 @@ fn a_part_reading_its_operands_in_space_is_given_their_lifts() {
     let e = read("\
 unit mm
 use std
-part Mark(a: point, b: point) {
+component Mark(a: point, b: point) {
   in a.plane {
     t := std.Turned(a, b)
     m := point hint(at: t.axes, (4mm, 1mm))
@@ -466,7 +468,7 @@ part Mark(a: point, b: point) {
     m distance(1mm, along: v) t.axes
   }
 }
-part Disc(f: group) {
+component Disc(f: group) {
   in f.axes {
     se := point hint((3mm, -4mm))
     f.axes.origin distance(3mm, along: u) se
@@ -492,4 +494,85 @@ disc := Disc(f)
     let (c, s) = (0.5_f64.sqrt(), 0.5_f64.sqrt());
     let m = at(&e, "one.m");
     assert!((m[0] - (4.0 * c - s)).abs() < 1e-9 && (m[2] - (4.0 * s + c)).abs() < 1e-9, "{m:?}");
+}
+
+/// A post in the front of the frame it stands in, `len` up and 3 out, its own `std` read for it
+/// (#542) — and, with `lean`, a statement about where that frame stands.
+fn post(lean: &str) -> String {
+    format!("\
+unit mm
+use std
+component Post(len: Length) {{
+  in std.front {{
+    a := point
+    a coincident std.origin
+    b := point hint((3, len))
+    b distance(3mm, along: u) std.front
+    a distance(len) b
+  }}
+  {lean}
+}}
+seat := point
+fix((10, 20, 30)) seat
+bore := axis
+fix(dir == (0, 1, 0), origin == (10, 0, 30)) bore
+")
+}
+
+/// **The frame an instance stands in is one of its inputs** (#562): a body standing `in` a frame
+/// the parent places by relations reads that placement as given, and the rows that put what it
+/// makes in the frame (the lifts of its points) are its own — so it stands, as it does where the
+/// parent mates it by its datums (#548), `p.std.x` and the rest, in a frame of its own.
+#[test]
+fn a_body_standing_in_a_frame_is_given_where_the_frame_stands() {
+    let within = format!("{}in (f := frame) {{\n  p := Post(len: 40mm)\n}}\n\
+                          f.origin coincident seat\nf.u parallel bore\nf.v parallel std.z\n\
+                          f.u perpendicular f.v\n", post(""));
+    let e = read(&within);
+    assert!(e.diags.is_empty(), "{:?}", e.diags);
+    let mated = format!("{}p := Post(len: 40mm)\np.std.origin coincident seat\n\
+                         p.std.x parallel bore\np.std.y parallel std.z\n", post(""));
+    let mut e = read(&mated);
+    assert!(e.diags.is_empty(), "{:?}", e.diags);
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    // 3 along its x, the bore, and the rest of 40 along its z, x × y: the world's x
+    let (b, up) = (at(&e, "p.b"), (40.0f64 * 40.0 - 9.0).sqrt());
+    assert!((b[0] - (10.0 + up)).abs() < 1e-9 && (b[1] - 23.0).abs() < 1e-9
+        && (b[2] - 30.0).abs() < 1e-9, "{b:?}");
+}
+
+/// **A statement about the frame's own placement is still a fact about what it is given**: the
+/// post saying its frame's axes are square, which the parent places, is refused at the row.
+#[test]
+fn a_body_placing_the_frame_it_stands_in_is_refused_at_the_row() {
+    let got = errors(&format!("{}in (f := frame) {{\n  p := Post(len: 40mm)\n}}\n\
+                               f.origin coincident seat\nf.u parallel bore\nf.v parallel std.z\n",
+                              post("std.x perpendicular std.y")));
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!((got[0].0.as_str(), got[0].1.as_str()), ("E109", "std.x perpendicular std.y"));
+    assert!(got[0].2.contains("a fact about what it is given"), "{}", got[0].2);
+}
+
+/// **A point a definition draws in two plane formals is its own** (#529): the twin's ties are the
+/// definition's rows, so one ordinate along their common line places it — and the run with a
+/// level beside it says one thing twice there, which is refused.
+#[test]
+fn a_point_drawn_in_two_plane_formals_is_placed_by_its_own_rows() {
+    let twin = |placed: &str| format!("\
+unit mm
+use std (right_of)
+component Twin(s: plane, t: plane) {{
+  q := point in s, t
+  in s {{
+    {placed}
+  }}
+}}
+w := Twin(std.side, std.top)
+");
+    let mut e = read(&twin("s.origin distance(30mm, along: u) q"));
+    assert!(e.diags.is_empty(), "{:?}", e.diags);
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    assert!((at(&e, "w.q")[1] - 30.0).abs() < 1e-9, "{:?}", at(&e, "w.q"));
+    let twice = errors(&twin("q right_of(d: 30mm) s.origin"));
+    assert!(twice.iter().all(|(code, _, _)| code == "E109") && !twice.is_empty(), "{twice:?}");
 }

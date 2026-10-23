@@ -22,7 +22,7 @@
 unit mm
 use std
 
-component Chain(c: Length, v: Length, s: Length) {
+component Chain(start: point, c: Length, v: Length, s: Length) {
   p := point
   q := point
   tl := line(p, q)
@@ -30,6 +30,9 @@ component Chain(c: Length, v: Length, s: Length) {
   p distance(v + s, along: up) q             // ...and its rise, the weight below added
   rate(p over s) parallel tl                 // the chain runs along the pull
   rate(p over s) distance(1, along: tl)      // at unit speed: s is arc length
+  initially {
+    p coincident start                       // the home: the chain leaves `start`
+  }
 }
 
 in std.front {
@@ -37,8 +40,7 @@ in std.front {
   b := point
   fix((0mm, 0mm)) a
   fix((100mm, 0mm)) b
-  hang := Chain(c: hint(30mm), v: hint(-75mm), s: 0mm)
-  hang.p coincident a                        // the home: the chain leaves a
+  hang := Chain(a, c: hint(30mm), v: hint(-75mm), s: 0mm)
   b coincident(t == 150mm) chain             // ...and reaches b after its length
   rope := curve(a, b)
   length(150mm) rope

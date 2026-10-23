@@ -165,6 +165,10 @@ component Quarter(w: Scalar) {
   k1 := point hint((30mm, 17mm))
   k2 := point hint((17mm, 30mm))
   k3 := point hint((0mm, 30mm))
+  fix((30mm, 0mm)) k0
+  fix((30mm, 17mm)) k1
+  fix((17mm, 30mm)) k2
+  fix((0mm, 30mm)) k3
   s := spline(k0, k1, k2, k3) weights [1, w, w, 1]
 }
 q := Quarter(w: 2) in std.front

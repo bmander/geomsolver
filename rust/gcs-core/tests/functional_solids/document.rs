@@ -16,7 +16,7 @@ fn field(e: &program::Elaborated,name: &str) -> SpatialField {
 }
 const SPHERE: &str = "\
 unit mm
-use std
+use std (turns)
 in std.front {
 o := point
 a := point
@@ -35,7 +35,7 @@ fix((0, 1)) q
 spindle := line(z,q)
 }
 indexing := frame
-std.Turn(indexing, about: spindle, ratio: 1)
+indexing turns(1) spindle
 ";
 
 #[test]
@@ -75,7 +75,7 @@ fn source_bodies_holes_and_nested_placements_keep_material_and_finite_support() 
     assert!(body.support_bounds().unwrap().is_some());
     let e = read("\
 unit mm
-use std
+use std (turns)
 in std.front {
 o := point
 z := point
@@ -121,7 +121,7 @@ fn rounded_crown_source_matches_independent_analytic_material_queries() {
 fn major_arcs_and_reversed_edges_keep_their_finite_sector() {
     let source = "\
 unit mm
-use std
+use std (turns)
 in std.front {
 o := point
 z := point
@@ -188,7 +188,7 @@ fn partial_sweeps_fail_explicitly_while_prisms_and_concave_profiles_read() {
     // A reflex corner is no longer refused: the loop reads as its signed boundary distance.
     let e = read("\
 unit mm
-use std
+use std (turns)
 in std.front {
 o := point
 z := point

@@ -131,7 +131,7 @@ g := Bad(w: 10, phi: 20)
 #[test]
 fn the_unstated_radians_are_caught() {
     let head = "component G(phi: Angle) {\n  ivp := ";
-    let tail = "\n  p := point\n  fix(x == ivp, y == 0) p\n}\ng := G(phi: 20)\n";
+    let tail = "\n  p := point\n  fix(x == ivp, y == 0, z == 0) p\n}\ng := G(phi: 20)\n";
     says(&format!("{head}tan(phi) - phi{tail}"), "cannot be added");
     says(&format!("{head}tan(phi) * 180 / pi - phi{tail}"), "cannot be added");
     // said properly, it elaborates — and comes to the same number the conversion did
@@ -668,6 +668,10 @@ component Read(f: group, dims: group) {{
     b := point hint((60, 0))
   }}
   a distance({read}) b
+  in f.front {{
+    fix((0, 0)) a
+    a level(v) b
+  }}
 }}
 r := Read(frame, dims: dims)
 ")

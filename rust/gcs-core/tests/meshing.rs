@@ -24,7 +24,7 @@ pub(super) fn solved(src: &str) -> gcs_core::program::Elaborated {
 /// cone about the face mill's axis through M, its blades leaning 15°.
 pub(super) const MESH: &str = "\
 unit mm
-use std
+use std (turns)
 g0 := point hint((0, 0, 0))
 g1 := point hint((0, 0, 10))
 fix((0, 0, 0)) g0
@@ -36,9 +36,9 @@ fix((0mm, 72mm, 0mm)) p0
 fix((10mm, 72mm, 0mm)) p1
 pinion_ax := line(p0, p1)
 gear_turn := frame
-std.Turn(gear_turn, about: gear_ax, ratio: -0.5)
+gear_turn turns(-0.5) gear_ax
 pinion_turn := frame
-std.Turn(pinion_turn, about: pinion_ax, ratio: 1)
+pinion_turn turns(1) pinion_ax
 M := point hint((0, 48, 0))
 fix((0mm, 48mm, 0mm)) M
 C := point hint((28.28, 48, -28.28))
@@ -129,7 +129,7 @@ Q coincident(t == 0deg) contact
     let q = 1.01;
     let cut = src.replace("pinion_flank := envelope(flank over t in (-40deg, 40deg), under: gear_turn,",
         &format!("cutting_turn := frame\n\
-                  std.Turn(cutting_turn, about: gear_ax, ratio: -0.5 * {q})\n\
+                  cutting_turn turns(-0.5 * {q}) gear_ax\n\
                   pinion_flank := envelope(flank over t in (-40deg, 40deg), under: cutting_turn,"));
     let e = solved(&cut);
     let t = traced(&e.sketch, "contact", 24);
@@ -161,7 +161,7 @@ spine2 parallel spine
 apex2 distance(10mm) top2
 cutter := std.Cone(spine2, half: 15deg)
 cutting_turn := frame
-std.Turn(cutting_turn, about: gear_ax, ratio: -0.5 * {q})
+cutting_turn turns(-0.5 * {q}) gear_ax
 pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
 contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((1, 47, 1))
@@ -395,7 +395,7 @@ spine2 parallel spine
 apex2 distance(10mm) top2
 cutter := std.Cone(spine2, half: 15deg)
 cutting_turn := frame
-std.Turn(cutting_turn, about: gear_ax, ratio: -0.5 * {q})
+cutting_turn turns(-0.5 * {q}) gear_ax
 pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
 contact := meshing(pinion_flank, flank over t in (-20deg, 20deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
@@ -421,7 +421,7 @@ R coincident(lag == {lag}) contact
 /// writes them, so the flat form prints it.
 pub(super) const SIDE_MESHING: &str = "\
 unit mm
-use std
+use std (turns)
 in std.front {
   o := point
   q := point

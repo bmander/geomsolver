@@ -1,22 +1,12 @@
 // The spiral bevel's crown tooth section as it was drawn before the crown became a region about
 // the cutter's axis (#214): a six-edge chain revolved about a line, its tip's corners rounded by
-// tangent arcs (`TipRounding`). Kept as a drawn revolution the envelope, field and fillet checks
+// tangent arcs. Kept as a drawn revolution the envelope, field and fillet checks
 // read; the example's crown is `spiral_bevel/hypoid.sv`'s `Tooth`.
 //
 // Straight flanks at the pressure angle split by the shift, a base and a tip at their depths,
 // and the tip roundings; revolved about the cutter's axis the flanks are cones and the roundings
 // tori. Each flank stands a quarter of the backlash outside the line through its pitch point.
 use std
-
-component TipRounding(pitch: line, base: line, tip: line, first: arc, second: arc,
-                      design: group, normal_module: Length) {
-  base parallel pitch
-  base angle(180deg) tip
-  pitch.p1 distance(design.base * normal_module, side: left) base
-  pitch.p1 distance(design.dedendum * normal_module, side: left) tip
-  radius(design.rounding * normal_module) first
-  first equal second
-}
 
 component RackSection(lp: point, rp: point, design: group, normal_module: Length) {
   // Seeds only, rough, in pitch widths (the `pitch` line's run, half a normal pitch, so a
@@ -53,8 +43,13 @@ component RackSection(lp: point, rp: point, design: group, normal_module: Length
   // not the section (§9.6). A hundredth of a module; the narrowest land, the configured
   // hypoid's, is a sixth.
   length(>= 0.01 * design.module) tip
-  rounding := TipRounding(pitch, base, tip, outer_round, inner_round, design,
-    normal_module: normal_module)
+  // The base and the tip at their depths, and the tip's two rounds of one radius.
+  base parallel pitch
+  base angle(180deg) tip
+  pitch.p1 distance(design.base * normal_module, side: left) base
+  pitch.p1 distance(design.dedendum * normal_module, side: left) tip
+  radius(design.rounding * normal_module) outer_round
+  outer_round equal inner_round
 }
 
 preview {

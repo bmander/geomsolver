@@ -34,7 +34,7 @@ fn lift(t: f64) -> f64 {
 /// `R` that centre drawn in the follower, and `cut` the ball swept over `t` as the cam sees it:
 /// what the cam must not hold.  `extra` adds statements.
 fn cam(extra: &str) -> String {
-    format!("unit mm\nuse std\nparam t: Angle over (0deg, 360deg)\n\
+    format!("unit mm\nuse std (slides, spins)\nparam t: Angle over (0deg, 360deg)\n\
         in std.front {{\n\
         \x20 construction stem := line(std.origin, hint((0, 1)))\n\
         \x20 fix((0, 1)) stem.p2\n\
@@ -50,10 +50,10 @@ fn cam(extra: &str) -> String {
         }}\n\
         ball := solid(face(meridian, diameter), about: diameter)\n\
         cam := frame\n\
-        std.Spin(cam, about: std.origin, on: std.front, ratio: 1)\n\
+        cam spins(1) std.origin\n\
         fix(value == t) cam\n\
         follower := frame\n\
-        std.Slide(follower, along: stem, advance: 360mm)\n\
+        follower slides(360mm) stem\n\
         fix(value == {RISE}deg * (1 - cos(t))) follower\n\
         R := r0 in follower\n\
         cut := sweep(ball over t, under: follower, seen_from: cam)\n{extra}",
@@ -242,17 +242,17 @@ fn a_drive_refuses_what_it_cannot_mean() {
     let said = |extra: &str| crate::common::lenient::read(&cam(extra)).1;
     // a law is read over stated numbers, not an unknown the solve finds (#398 G)
     let s = said("param k: Scalar\nlift := frame\n\
-        std.Slide(lift, along: stem, advance: 360mm)\nfix(value == 5deg * k * (1 - cos(t))) lift\n\
+        lift slides(360mm) stem\nfix(value == 5deg * k * (1 - cos(t))) lift\n\
         X := point\nfix((0, 0, 22)) X\nX coincident r0 at(under: lift) 30deg\n");
     assert!(s.len() == 1 && s[0].starts_with("E080")
             && s[0].contains("reads `k`, which the drawing does not state"), "{s:?}");
     // one parameter drives a joint
     let s = said("param u: Angle over (0deg, 90deg)\nlift := frame\n\
-        std.Slide(lift, along: stem, advance: 360mm)\nfix(value == t + u) lift\n");
+        lift slides(360mm) stem\nfix(value == t + u) lift\n");
     assert!(s.len() == 1 && s[0].starts_with("E103") && s[0].contains("`t` and `u`"), "{s:?}");
     // the roll is an angle: a drive over a number of another kind is followed, not swept
     let s = said("param s: Scalar over (0, 1)\nlift := frame\n\
-        std.Slide(lift, along: stem, advance: 360mm)\nfix(value == 90deg * s) lift\n\
+        lift slides(360mm) stem\nfix(value == 90deg * s) lift\n\
         q := sweep(ball over t, under: lift)\n");
     assert!(s.len() == 1 && s[0].starts_with("E080") && s[0].contains("a Scalar"), "{s:?}");
     // nor does a relation held to a meshing under the drive, which reads its mesh's turns at a
@@ -269,7 +269,7 @@ fn a_drive_refuses_what_it_cannot_mean() {
 /// function the interval walker carries — and failing closed for one it does not.
 #[test]
 fn a_laws_jet_and_enclosure_agree_with_its_value() {
-    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std\nin std.front {\n  \
+    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std (slides, spins)\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
     let laws = ["5deg * (1 - cos(t))", "t + 20deg * sin(2 * t) - 3deg", "(t / 90deg) ^ 3 * 10deg",
                 "3 * sqrt(t * t + 1deg * 1deg)", "abs(t - 100deg) / 2",
@@ -304,7 +304,7 @@ fn a_laws_jet_and_enclosure_agree_with_its_value() {
     let law = Law::read(&e.sketch, "tan(t / 8)", "t").unwrap();
     assert!(law.enclose(I::new(0.0, 0.1).unwrap()).is_err());
     // a drive over the roll runs over an angle
-    let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std\nin std.front {\n  \
+    let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std (slides, spins)\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
     assert!(Law::read(&scalar.sketch, "90deg * s", "s").unwrap_err().contains("an angle"));
 }

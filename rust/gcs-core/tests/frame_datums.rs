@@ -59,27 +59,27 @@ component Probe(len: Length) {
     c distance(5mm, along: u) std.top
     c distance(7mm, along: v) std.top
     j := point hint((5, 20))
-    line(c, j) parallel std.y
-    c distance(13mm) j
+    c distance(13mm, along: std.y) j
+    c level(std.x) j
     g := point hint((-6, 7))
-    line(c, g) parallel std.back
-    c distance(11mm) g
+    c distance(11mm, along: std.back) g
+    c level(std.y) g
   }
   in std.side {
     d := point hint((2, 9))
     d distance(2mm, along: u) std.side
     d distance(9mm, along: v) std.side
     h := point hint((2, 20))
-    line(d, h) parallel std.z
-    d distance(11mm) h
+    d distance(11mm, along: std.z) h
+    d level(std.y) h
   }
   in std.up {
     e := point hint((4, 6))
     e distance(4mm, along: u) std.up
     e distance(6mm, along: v) std.up
     m := point hint((4, -5))
-    line(e, m) parallel std.x
-    e distance(11mm) m
+    e distance(11mm, along: std.x) m
+    e level(std.z) m
   }
 }
 ";
@@ -418,7 +418,7 @@ component Tick() {
   b := point
   a distance(5mm, along: u) std.top
   a distance(2mm, along: v) std.top
-  b coincident std.origin
+  b coincident std.top.origin
 }
 t := Tick() in std.top
 ";
@@ -475,7 +475,7 @@ fn an_instance_whose_std_nothing_outside_reads_stands_as_before() {
     }
     // and a body's own `std` read inside it is no read from outside
     let e = solved(&format!("{READS}component Pair() {{\n  one := Post(len: 40mm)\n  \
-                             q := point in std.front\n}}\npair := Pair()\n"));
+                             q := point in std.front\n  q coincident one.a\n}}\npair := Pair()\n"));
     assert!(e.map.ent_named("pair.one#frame").is_none() && e.map.ent_named("pair#frame").is_none());
 }
 
@@ -589,11 +589,16 @@ fn an_instances_frame_starts_where_the_frame_around_its_call_stands() {
 
 #[test]
 fn an_instance_nested_in_a_body_is_read_as_a_frame_by_its_path() {
-    // the root reads a datum of an instance inside another, by the path through it
+    // the root reads a datum of an instance inside another, by the path through it: placing what
+    // `Pair` makes from outside it, which `Pair` is refused for leaving free (#562, E108) — and
+    // which places it all the same
     let src = format!("{READS}component Pair() {{\n  one := Post(len: 40mm)\n}}\n\
                        pair := Pair()\n{}",
                       mated("pair.one.std.x", "pair.one.std.y", "pair.one.std.origin"));
-    let mut e = solved(&src);
+    let mut e = build(&src);
+    let codes: Vec<&str> = e.errors().map(|d| d.code.as_str()).collect();
+    assert_eq!(codes, ["E108"], "{:?}", e.diags);
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
     let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
     let want = SEATED.image(at(&root, "p.b"));

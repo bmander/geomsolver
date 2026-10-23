@@ -48,6 +48,8 @@ fix((0, 0)) a
 a distance(w) b
 }
 c := point hint((50, 40)) in std.front
+c distance(50mm, along: u) std.front
+c distance(40mm, along: v) std.front
 ac := line(a, c) in std.front
 ";
 
@@ -84,6 +86,7 @@ fn what_the_moved_text_reads_from_outside_is_handed_in_by_the_name_it_had() {
     assert!(
         text.contains(
             "component Part(front: plane, a: point) {\n  c := point hint((50, 40)) in front\n  \
+             c distance(50mm, along: u) front\n  c distance(40mm, along: v) front\n  \
              ac := line(a, c) in front\n}"
         ),
         "{text}"
@@ -97,13 +100,15 @@ fn what_the_moved_text_reads_from_outside_is_handed_in_by_the_name_it_had() {
 #[test]
 fn a_relation_goes_with_what_it_relates_and_one_reaching_outside_stays() {
     // `ab` alone: its points stay, so they are formals, and the relations on the points stay
-    // beside them, while `horizontal ab` names only what moved and goes
-    let text = taken(make(BASE, &["ab"]));
-    assert!(text.contains("component Part(a: point, b: point, front: plane) {"), "{text}");
-    assert!(text.contains("    ab := line(a, b)      // the base\n    horizontal ab\n"), "{text}");
-    assert!(text.contains("part0 := Part(a, b, std.front)\nin std.front {"), "{text}");
+    // beside them, while `horizontal ab` names only what moved and would go — a definition that
+    // says only that its two given points are level, refused in the elaborator's words (#562)
+    let d = make(BASE, &["ab"]);
+    assert_eq!(d.kind, Kind::None);
+    assert!(d.refused.unwrap().contains("a fact about what it is given"));
+    // `c` and `ac`: the line goes with its end, and reads `a`, which stays, as a formal
+    let text = taken(make(BASE, &["c", "ac"]));
+    assert!(text.contains("ac := line(a, c) in front"), "{text}");
     assert!(text.contains("fix((0, 0)) a\na distance(w) b\n}"), "{text}");
-    assert_eq!(text.matches("horizontal ab").count(), 1, "{text}");
     read(&text);
 }
 
@@ -117,6 +122,7 @@ t := 30deg
 k := 2
 in std.front {
 o := point
+fix((0, 0)) o
 q := point hint((20, 5))
 o distance(r * k) q
 std.x angle(t) line(o, q)
@@ -138,7 +144,8 @@ std.x angle(t) line(o, q)
 fn an_instance_selected_moves_whole_and_the_definition_follows_the_documents_own() {
     let src = "\
 use std
-component Rung(a: point, b: point, len: Length) {
+component Rung(a: point, len: Length) {
+  b := point hint((50, 0))
   e := line(a, b)
   horizontal e
   a distance(len) b
@@ -146,7 +153,8 @@ component Rung(a: point, b: point, len: Length) {
 in std.front {
 l0 := point
 r0 := point hint((50, 0))
-t0 := Rung(l0, r0, len: 50)
+t0 := Rung(l0, len: 50)
+r0 coincident t0.b
 fix((0, 0)) l0
 }
 ";
@@ -157,7 +165,8 @@ fix((0, 0)) l0
     assert!(rung < part, "after the document's own components:\n{text}");
     assert!(
         text.contains("component Part(front: plane, l0: point) {\n  in front {\n    \
-                       r0 := point hint((50, 0))\n    t0 := Rung(l0, r0, len: 50)\n  }\n}"),
+                       r0 := point hint((50, 0))\n    t0 := Rung(l0, len: 50)\n    \
+                       r0 coincident t0.b\n  }\n}"),
         "{text}"
     );
     assert!(text.contains("part0 := Part(std.front, l0)\nin std.front {\nl0 := point\n"), "{text}");
@@ -202,6 +211,9 @@ p := point
 q := point hint((40, 0))
 r := point hint((40, 30))
 (pq := line(p, q)) -> perpendicular (qr := line(q, r))
+fix((0, 0)) p
+fix((40, 0)) q
+length(30mm) qr
 }
 ";
     let d = make(src, &["pq"]);
@@ -222,8 +234,10 @@ in std.front {
 o := point
 repeat 3 as i {
   p := point hint((10 * i, 5))
+  fix((10 * i, 5)) p
 }
 q := point hint((0, 20))
+fix((0, 20)) q
 l := line(q, p[1])
 }
 ";
@@ -236,7 +250,7 @@ l := line(q, p[1])
     let copy = *e.map.names.iter().find(|(_, ns)| second(ns)).unwrap().0;
     let ents = [named(&e, "q"), named(&e, "l"), copy];
     let text = taken(edit::make_component(&e, &e.program, &e.sketch, &ents, &[], None));
-    let block = "    repeat 3 as i {\n      p := point hint((10 * i, 5))\n    }\n";
+    let block = "    repeat 3 as i {\n      p := point hint((10 * i, 5))\n      fix((10 * i, 5)) p\n    }\n";
     assert!(text.contains(block), "{text}");
 }
 

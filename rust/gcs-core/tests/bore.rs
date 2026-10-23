@@ -8,13 +8,13 @@ use gcs_core::{model::{EntKind,MotionDef},program};
 /// `counter`, turning the other way about the shaft, and the apex is `R` beyond the rotor's
 /// centre.  `seen_housing` reads the housing seen from the rotor, as the rotor's flanks are.
 pub fn wankel(r: f64, e: f64, extra: &str) -> String {
-    format!("unit mm\nuse std\n\
+    format!("unit mm\nuse std (spins)\n\
         centre := point in std.top\n\
         centre level(u) std.top\ncentre level(v) std.top\n\
         hub := point in std.top\n\
         hub distance({e}mm, along: u) std.top\nhub level(v) std.top\n\
-        counter := frame\nstd.Spin(counter, about: centre, on: std.top, ratio: -1)\n\
-        spin := frame\nstd.Spin(spin, about: hub, on: std.top, ratio: -2/3)\n\
+        counter := frame\ncounter spins(-1) centre\n\
+        spin := frame\nspin spins(-2/3) hub\n\
         apex := point in std.top\n\
         apex distance({x}mm, along: u) std.top\napex level(v) std.top\n\
         seen_housing := point\n\

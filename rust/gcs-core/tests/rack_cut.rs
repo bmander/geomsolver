@@ -7,7 +7,7 @@
 //! Every number is in the page: the blank a disc extruded 6 mm along the page's normal (`depth:`
 //! runs from −6 to 0), the rack tooth a trapezoid extruded past both of its faces, −8 to 2 (its
 //! caps clear of the blank), the blank turning about the page's normal through `o`
-//! (`std.Spin(turn, about: o, on: std.front, ratio: 1)`).  What is removed is checked against
+//! (`o coincident turn.axis; turn.axis parallel(sense: same) std.front.normal; fix(ratio == 1, advance == 0mm) turn`).  What is removed is checked against
 //! arithmetic (`space_area`), not a second kernel.
 
 use gcs_core::solid::admission::{admit_body, Condition, Error, Options};
@@ -51,9 +51,9 @@ tooth := face(t0, t1, t2, t3, -> close)
 construction rack_tooth := solid(tooth, from: -8mm, to: 2mm)
 
 turn := frame
-std.Spin(turn, about: o, on: std.front, ratio: 1)
+o coincident turn.axis; turn.axis parallel(sense: same) std.front.normal; fix(ratio == 1, advance == 0mm) turn
 rack := frame
-std.Slide(rack, along: slide, advance: 2 * pi * 20mm)
+slide coincident(sense: same) rack.axis; fix(ratio == 0, advance == 2 * pi * 20mm) rack
 construction space := sweep(rack_tooth over t in (-60deg, 60deg), under: rack, seen_from: turn)
 gear := solid(blank)
 space cut gear

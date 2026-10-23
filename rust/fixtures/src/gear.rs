@@ -31,8 +31,9 @@ pub fn configure(text: &str,params: &[(&str,f64)]) -> String {
 
 /// `text`, the pair, with the face mill's settings stated as the suites recorded the pair at
 /// before `hypoid.sv` found them (#283): the pressure shift `shift` in degrees and the cutter's
-/// radius 0.8 R, R the mean cone distance — and the balance that finds them dropped. Every
-/// number the suites recorded was taken of a pair so cut.
+/// radius 0.8 R, R the mean cone distance — and the balance that finds them dropped, with the
+/// equal margins the pair states of it. Every number the suites recorded was taken of a pair so
+/// cut.
 pub fn recorded_machine(text: &str,shift: f64) -> String {
     let seeds = "pressure_shift: hint(10deg), cutter_radius: hint(80mm))";
     assert!(text.contains(seeds),"the pair leaves its face mill's settings to the solve, seeded");
@@ -46,7 +47,12 @@ pub fn recorded_machine(text: &str,shift: f64) -> String {
         match c { '(' => depth += 1, ')' => { depth -= 1; if depth == 0 { return Some(k+1); } } _ => {} }
         None
     }).expect("the balance's call closes");
-    let end = end+out[end..].find('\n').map_or(0,|k| k+1);
+    let mut end = end+out[end..].find('\n').map_or(0,|k| k+1);
+    // and what the pair states of the margins it reads, the lines that follow it
+    while let Some(line) = out[end..].split_inclusive('\n').next()
+        .filter(|l| l.trim_start().starts_with("balance.") || l.trim_start().starts_with("// ...")) {
+        end += line.len();
+    }
     out.replace_range(at..end,"");
     out
 }

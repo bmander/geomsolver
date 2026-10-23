@@ -1162,6 +1162,23 @@ impl<'a> Walk<'a> {
         self.emit(StmtKind::ClaimOver(c2), st, scope, path);
     }
 
+    /// A joint's number in a `fix`, held to what it is whoever says it — its ratio a plain number,
+    /// its advance a length — so a word handing its own on (`f turns(2mm) l`) is refused (E103).
+    fn joint_number(&mut self, key: &crate::syntax::Name, arg: &crate::syntax::Arg, vals: &Vals) {
+        use crate::syntax::Ty;
+        let crate::syntax::Arg::SeedExpr { text, span, .. } = arg else { return };
+        let ty = match key.text.as_str() {
+            "ratio" => Ty::Scalar,
+            "advance" => Ty::Length,
+            _ => return,
+        };
+        // a text that does not work out is said where it settles
+        let Ok(a) = super::values::value_aff(text, vals, self.units) else { return };
+        if let Err(e) = super::values::typed(a, ty, &key.text) {
+            self.err(Code::E103, *span, e);
+        }
+    }
+
     /// A relation's numbers worked out against the parameters in scope, in either of its
     /// representations, and the enclosing instances' classes stamped over its own.
     pub(super) fn settle_relation(&mut self, rel: &crate::syntax::Relation, vals: &Vals, scope: &Scope)
@@ -1169,9 +1186,15 @@ impl<'a> Walk<'a> {
         let mut r2 = rel.clone();
         self.held.on_leg = self.leg_named(&r2, scope);
         if let Some(w) = r2.form.written_mut() {
+            let fix = w.word.text == "fix";
             for a in w.args.iter_mut() {
                 match a {
-                    crate::syntax::OpArg::Slot { arg, .. } => self.settle_arg(arg, vals, scope),
+                    crate::syntax::OpArg::Slot { key, arg } => {
+                        if fix {
+                            self.joint_number(key, arg, vals);
+                        }
+                        self.settle_arg(arg, vals, scope)
+                    }
                     crate::syntax::OpArg::Vector { parts, .. } => {
                         for arg in parts {
                             self.settle_arg(arg, vals, scope)

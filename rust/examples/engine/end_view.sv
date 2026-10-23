@@ -49,7 +49,7 @@ idl_dy := 150mm
 // exact build of a rack's sweep is refused for a profile drawn in `std.side`'s own axes, whose
 // u runs along the world's y: a concave corner where the tooth's tip is convex).  `flanged` is
 // 1 for a pulley with guide flanges, 0 for one whose teeth run its whole width.
-part Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
+component Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
   rp := n * tpitch / (2 * pi)
   in o.plane {
     tip := circle(center: o) hint(r: rp - pld)
@@ -133,7 +133,7 @@ part Pulley(o: point, n: Int, bore: Length, up: Scalar, flanged: Int) {
 // inside that stands off.  Each loop is one chain round the drive, every joint tangent: the
 // runs leave one wrap and meet the next without a crease, and where each wrap starts and ends is
 // where its runs touch it.  The belt is the band between them, across its width.
-part Drive(o: point, cam_i: point, cam_e: point) {
+component Drive(o: point, cam_i: point, cam_e: point) {
   crank := Pulley(o, n: nt, bore: rnose, up: -1, flanged: 1)
   intake := Pulley(cam_i, n: 2 * nt, bore: rcamj, up: 1, flanged: 0)
   exhaust := Pulley(cam_e, n: 2 * nt, bore: rcamj, up: 1, flanged: 0)
@@ -188,7 +188,7 @@ part Drive(o: point, cam_i: point, cam_e: point) {
   tensioner := solid(face(roller, holes: pin), from: xp0 + wf, to: xp1 - wf)
 }
 
-part EndSection(o: point) {
+component EndSection(o: point) {
   top := engine.parts.At(o, dx: 0mm, dy: deck + 30mm)
   bore := line(o, top.p)
 }

@@ -15,7 +15,7 @@
 // outline turned about the axle's centreline.  Every solid is a sweep of a face drawn in one of
 // them; a hole is a face drawn where it is seen round, swept through the part it bores.
 //
-// **The parts** (each its own module, each a `part`: a function of the frame it is drawn about and
+// **The parts** (each its own module, each a definition: a function of the frame it is drawn about and
 // what it is mated to, reading the table, `motor.dims`, as constants of its own definition):
 //
 //   motor.axle      Axle      4140, Ø24 / Ø20 / M14 × 1.5 with 10 mm flats; the key; the cable port
