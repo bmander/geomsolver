@@ -471,7 +471,9 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `rest + s·moved`, the factor written per frame, so the slider needs no round trip to the core
   and no coordinate is worked out in the page; each vertex coloured on the ramp by its move as a
   fraction of the largest.  A solid the picture deforms is ghosted beneath it.  A gesture moving
-  the drawing hides the scenario until the edit settles and the worker reads it again.
+  the drawing hides the scenario until the edit settles and the worker reads it again — a drag
+  too, read again where it is let go (`endGesture` asks `readBehind`, as `afterEdit` does), so
+  the picture never comes back as it stood before the drag.
 - **The timeline** (#398 L, [0.146]; `app/timeline.ts`, `SketchView.instant`, `showInstant`):
   a row per declared parameter in the viewport's lower left, its interval a slider whose solid
   part is what the march reached, hatched past it, the singular instant marked with the core's

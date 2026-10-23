@@ -571,6 +571,9 @@ export function endGesture(v: SketchView): void {
     // **the gesture becomes a source edit.**  One writeback, here, at the moment it is let go:
     // during the drag the text is stale and that is correct — a drag is one edit, not sixty.
     v.syncSeeds();
+    // and what is read behind the page is read again where it was let go: hidden while it moved,
+    // a scenario's picture would otherwise come back as it stood before the drag
+    v.readBehind();
   }
   if (!g.transient) v.onChanged();
   v.draw();
