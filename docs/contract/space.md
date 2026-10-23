@@ -10,8 +10,9 @@ own lift, no row); a 2D drawing is `use std` + `in std.front { … }`. There is 
 with neither plane nor `z` is only a 2D sketch's (JSON, hand-built tests), with no lift. An **axis**
 (`t := axis hint(dir: (x, y, z))`, `AxisE` a[3], d[3]; intrinsics `axis_unit`, `axis_foot` once a
 relation reads its place) is a directed line with no start; a drawn line reads as one. A plane
-over a line holds a hidden axis that is the line (`entities::axes_along`: intrinsic `Parallel3`
-and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line — each
+over a line holds a hidden axis that is the line (`entities::axes_along`: intrinsic `Parallel3`,
+sensed `same` so the axis runs from the line's `p1` toward its `p2` by its row and not its seed
+([0.173], #535), and `PointOnAxis` at its `p1`, or at the end it shares with the plane's other line — each
 line's own image of it, a twin's included (`Sketch::twinned`) — where the
 plane's two `PlaneAxis` rows give way to one intrinsic `Coincident3` of origin and end — four
 rows over three unknowns would be a dependency the structural count cannot see, #88). The lift

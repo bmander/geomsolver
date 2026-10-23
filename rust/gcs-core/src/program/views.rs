@@ -486,9 +486,8 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
 }
 
 /// Every axis a plane holds along a drawn line (`program::entities::axes_along`) turned to the
-/// line as it now stands, its sense included — `parallel` is satisfied both ways, so an axis
-/// seeded before its line's points were placed may stand against it, and a plane over it turn
-/// its back.
+/// line as it now stands — seeded before its line's points were placed, it may stand far from
+/// it, which its row (sensed, #535) would bring back the long way round.
 fn align(sk: &mut Sketch) {
     for (r, l) in along(sk) {
         if !sk.axes[r].d.iter().any(|&q| sk.params[q as usize].fixed) {

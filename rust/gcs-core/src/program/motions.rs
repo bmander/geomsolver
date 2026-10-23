@@ -74,7 +74,10 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body
                         }
                     }
                 }
-                "coincident" | "parallel" if w.ops.len() == 2 && w.args.is_empty() => {
+                // the joint's words hold its axis the way the line it is held to runs (#535)
+                "coincident" | "parallel" if w.ops.len() == 2 && w.args.iter().all(|a| {
+                    matches!(a, OpArg::Named(k, _) if k.text == "sense")
+                }) => {
                     let (a, b) = (ent(&w.ops[0]), ent(&w.ops[1]));
                     let other = match (a, b) {
                         (Some(a), Some(b)) if a == axis => b,

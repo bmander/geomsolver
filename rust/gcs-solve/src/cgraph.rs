@@ -531,6 +531,8 @@ pub fn build(sk: &Sketch) -> ConstraintGraph {
             CKind::Parallel | CKind::Perpendicular | CKind::Angle => {
                 let (i1, i2) = (c.args[0].ent().i(), c.args[1].ent().i());
                 let target = match c.kind {
+                    // run apart, a half turn (#535), which a direction class holds as alike
+                    CKind::Parallel if c.side() == Some(-1.0) => std::f64::consts::PI,
                     CKind::Parallel => 0.0,
                     CKind::Perpendicular => c.sense() * std::f64::consts::FRAC_PI_2,
                     _ => c.args[2].num(),

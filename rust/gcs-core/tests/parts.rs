@@ -345,6 +345,8 @@ x := Apex(o, q)
 /// **PT5, which root a part takes is stated** (W207, by `--lint`): a point 5 from two points 6
 /// apart has two poses; the part that leaves the choice to its seed is named, and the ones that
 /// state it, with `ccw` or with a bound (the hub motor's slot corners, ahead of the axle), are not.
+/// Nor is an axis held along a line that says which way it runs (#535), where one that does not
+/// is named: a point 5 along it stands on the line's side or the other.
 #[test]
 fn a_part_that_leaves_its_root_to_its_seeds_is_named() {
     let e = read("\
@@ -379,16 +381,37 @@ in std.front {
   q := point
   fix((6, 0)) q
 }
+part Unsensed(a: point, b: point) {
+  l := line(a, b)
+  t := axis hint(dir: (0.3, 0.9, 0.3))
+  t parallel l
+  a coincident t
+  m := point hint((3, 3, 3))
+  m coincident t
+  a distance(5mm, along: t) m
+}
+part Sensed(a: point, b: point) {
+  l := line(a, b)
+  t := axis hint(dir: (0.3, 0.9, 0.3))
+  t parallel(sense: same) l
+  a coincident t
+  m := point hint((3, 3, 3))
+  m coincident t
+  a distance(5mm, along: t) m
+}
 x := Apex(o, q)
 y := Chosen(o, q)
 z := Bounded(o, q)
+w := Unsensed(o, q)
+v := Sensed(o, q)
 ");
     let mut sk = e.sketch.clone();
     assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
     let said: Vec<(String, String)> = gcs_core::parts::roots(&e, &sk).iter()
         .map(|d| (d.code.as_str().to_string(), d.span.slice(e.text()).to_string()))
         .collect();
-    assert_eq!(said, [("W207".to_string(), "Apex".to_string())]);
+    assert_eq!(said, [("W207".to_string(), "Apex".to_string()),
+                      ("W207".to_string(), "Unsensed".to_string())]);
 }
 
 /// **The engine states every root its parts take** (#503): `--lint` names none of its parts, and

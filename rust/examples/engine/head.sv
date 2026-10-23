@@ -395,9 +395,7 @@ part Valves(h: group, cylinder: Int, aft: Int, cycle: Angle) {
   sc offset(dx: x, dy: 10mm) std.origin
   construction across := line(sa, sb)
   construction up := line(sa, sc)
-  station := plane(u: across, v: up)
-  sb distance(>= 0mm, along: u) station        // its axes run as their lines do
-  sc distance(>= 0mm, along: v) station
+  station := plane(u: across, v: up)           // its axes run as their lines do
   in station {
     construction seat_i := point hint((vs, deck + gasket + (D / 2 - vs) * tan(va)))
     construction seat_e := point hint((-vs, deck + gasket + (D / 2 - vs) * tan(va)))

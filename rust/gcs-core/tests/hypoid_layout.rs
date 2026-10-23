@@ -761,7 +761,9 @@ fn first_start(scenario: &str, jitters: &[f64], mut attempt: impl FnMut(f64,u32)
 /// met.  And from some, the block pass settles it.  Which root it settles on is the layout's; the
 /// rough starts' gates hold that.  The bevel pair: since the heading's square from O is said as
 /// parallel to MC (#217) the configured hypoid converges inside the limit from every jitter of a
-/// fifth tried, and so does every design at a few hundredths.
+/// fifth tried, and so does every design at a few hundredths; and since the grip's plane runs
+/// along its lines by its rows (#535) so does the bevel from every jitter of a fifth of the first
+/// 64, so the walk goes on to a tenth.
 #[test]
 fn a_stop_on_the_iteration_limit_is_rescued() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
@@ -770,7 +772,7 @@ fn a_stop_on_the_iteration_limit_is_rescued() {
     let (_,rows) = recorded();
     let (k,mut e) = solved_design("bevel");
     let reference = e.sketch.clone();
-    first_start("a limit stop the block pass settles",&[0.2],|jitter,seed| {
+    first_start("a limit stop the block pass settles",&[0.2,0.1],|jitter,seed| {
         let start = crate::common::jittered(&reference,jitter,seed);
         e.sketch = start.clone();
         let off = SolveOpts {blocks:BlockMode::Off,max_iter:LIMIT,..SolveOpts::default()};

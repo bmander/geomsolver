@@ -245,7 +245,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
-| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), two lines in a plane only |
+| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), two lines in a plane only. `a parallel(sense: same) b`: the two run alike (`opposite`: apart), lines or axes, in a plane or in space; alone, either way, the seed's. `coincident` between a line and an axis or two axes takes the same `sense:` |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
@@ -784,8 +784,8 @@ instance:
 
 A freedom it leaves is a formal the call leaves unbound (`Crank(o, d, theta: hint(30deg))`), which
 the parent places. A parent may relate a part's outputs (`r distance(10mm) a.tip`), but such a
-statement is the parent's and never completes the part. Choose a root with `ccw`/`cw` or a bound
-(1.11, held by the solve), not with a seed: `solventc --lint` names a part whose rows have another
+statement is the parent's and never completes the part. Choose a root with `ccw`/`cw`, a `sense:`
+(which way an axis runs along a direction) or a bound (1.11, held by the solve), not with a seed: `solventc --lint` names a part whose rows have another
 pose its stated choices admit (W207, advice). A part is solved like any component. Use one for
 anything a parent should be able to trust as a unit: a pulley, a rod on its pin, a belt run.
 
@@ -1213,7 +1213,9 @@ anything naming it; two held axes that do not meet are E067. A point drawn in a 
 `p.plane` (`t perpendicular p.plane`); one standing in space has none (E040). A plane over a
 line stands on it, and over two lines sharing an end, at that end. **A slot left out mints a free
 axis**: `P := plane` is seven freedoms, `plane(u: std.x)` mints only `P.v`. A minted axis starts as the front's unless seeded,
-`plane(v: hint(dir: (0, -1, 0)))` — seed one a relation will turn far. A seed may read the
+`plane(v: hint(dir: (0, -1, 0)))` — seed one a relation will turn far. An axis taken from a drawn line
+runs along it from its `p1` toward its `p2`: the row says so, not the seed, so `plane(u: across,
+v: up)` faces the way its lines say from any start and needs no bound to keep it there (0.173). A seed may read the
 direction off geometry: an axis (`hint(dir: up)`), a line from its `p1` to its `p2` in space
 (`hint(dir: g)`), a plane's normal (`hint(dir: P.normal)`, or `P.n`), turned about another (`hint(dir: up, turn:
 -90deg, about: g)`), so a word standing a plane square to a line it is handed seeds it from that
@@ -2147,6 +2149,9 @@ wheel := frame
 wheel spins(1) o                     // about a point, square to the view it is drawn in
 ```
 
+Each holds the joint's axis the way what it is held to runs (0.173): a line from `p1` toward `p2`,
+an axis its own way, and under `spins` the view's normal, out of it — so `turns(1)` turns right
+handed about the line as drawn, and which way a joint goes is never left to a seed.
 `spins` reads the view from its point (`o.plane`); a point standing in space has none (E040).
 `screws` turns a radian a radian of the roll; a screw at another ratio is its relations written
 out, `l coincident f.axis` and `fix(ratio == r, advance == a) f`. The components `std.Turn`,

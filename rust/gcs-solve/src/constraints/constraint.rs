@@ -729,17 +729,23 @@ impl Constraint {
                 (_, F::FrameN, true) => K::OrdinateFrameNFree,
             };
         }
-        // a perpendicular that says which way is a directed angle of a quarter turn: one root, and
-        // a gradient where the two lines start as one, which the square's dot has not (#497)
-        if self.kind == CKind::Perpendicular && self.side().is_some() {
-            return K::Angle;
-        }
-        // a side left unsaid is the magnitude form: both sides are solutions, and where the solve
-        // lands among them is the seed's business (§9.2)
-        if self.side().is_none() {
-            if let Some(k) = self.kind.magnitude_kernel(free) {
-                return k;
+        if self.side().is_some() {
+            match self.kind {
+                // a perpendicular that says which way is a directed angle of a quarter turn: one
+                // root, and a gradient where the two lines start as one, which the square's dot
+                // has not (#497); a parallel that says which way the second runs is one at no
+                // turn or a half (#535)
+                CKind::Perpendicular | CKind::Parallel => return K::Angle,
+                // in space the turn onto it, whose only root is the one said (#535)
+                CKind::Parallel3 => return K::Parallel3Sensed,
+                CKind::AxisCoincident => return K::AxisCoincidentSensed,
+                CKind::LineOnAxis => return K::LineOnAxisSensed,
+                _ => {}
             }
+        } else if let Some(k) = self.kind.magnitude_kernel(free) {
+            // a side left unsaid is the magnitude form: both sides are solutions, and where the
+            // solve lands among them is the seed's business (§9.2)
+            return k;
         }
         match free {
             true => self.kind.free_kernel().expect("a dimension has a free kernel"),
@@ -761,7 +767,10 @@ impl Constraint {
         if self.kind == CKind::Ordinate {
             return self.side().unwrap_or(1.0) * d;
         }
-        let Some(_) = self.kind.side_slot() else { return d };
+        // a side with no number to sign — which way a direction runs (#535) — signs nothing
+        if self.kind.side_slot().is_none() || self.dimensions().is_empty() {
+            return d;
+        }
         if let Some(s) = self.side() {
             return s * d;
         }

@@ -1072,12 +1072,14 @@ pub(super) fn axes_along(sk: &mut Sketch, deferred: &[Deferred]) {
         };
         for (k, (axis, line)) in [(u, lu), (v, lv)].into_iter().enumerate() {
             let Some(line) = line else { continue };
+            // the axis runs from the line's start toward its end, which the row says and no seed
+            // has to (#535): the turned-round axis, and the plane over it, are no root
             sk.turn_axis_along(axis, line);
-            let mut c = Constraint::two_line(
-                CKind::Parallel3,
-                EntRef::new(EntKind::Axis, axis),
-                EntRef::line(line),
-            );
+            let mut c = Constraint::new(CKind::Parallel3, vec![
+                Arg::Ent(EntRef::new(EntKind::Axis, axis)),
+                Arg::Ent(EntRef::line(line)),
+                Arg::Str("same".to_string()),
+            ]);
             c.intrinsic = true;
             sk.add(c);
             let at = shared.map_or(sk.lines[line].p1 as usize, |ends| ends[k]);

@@ -183,6 +183,9 @@ fn all_constraints(seed: u32) -> Sketch {
         // square the way it says, `angle`'s kernel at a quarter turn either way (#497)
         Constraint::new(CKind::Perpendicular, vec![e(le1), e(le2), Arg::Str("ccw".into())]),
         Constraint::new(CKind::Perpendicular, vec![e(le2), e(le1), Arg::Str("cw".into())]),
+        // alike the way it says, `angle`'s kernel at no turn or a half (#535)
+        Constraint::new(CKind::Parallel, vec![e(le1), e(le2), Arg::Str("same".into())]),
+        Constraint::new(CKind::Parallel, vec![e(le2), e(le1), Arg::Str("opposite".into())]),
         Constraint::new(CKind::Angle, vec![e(le1), e(le2), Arg::Num(0.7)]),
         // an angle stated as another, turning the same way and the other (`sense: cw`)
         Constraint::new(CKind::EqualAngle, vec![e(le1), e(le2), e(le2), e(me1)]),
@@ -328,6 +331,14 @@ fn all_constraints(seed: u32) -> Sketch {
         Constraint::new(CKind::AxisCoincident, vec![e(axis_a), e(axis_b)]),
         // a line lying on an axis
         Constraint::new(CKind::LineOnAxis, vec![e(me1), e(axis_a)]),
+        // and each the way it says, the turn onto the second its only root (#535)
+        Constraint::new(CKind::Parallel3, vec![e(me1), e(me2), Arg::Str("same".into())]),
+        Constraint::new(CKind::Parallel3, vec![e(axis_b), e(me2), Arg::Str("opposite".into())]),
+        Constraint::new(CKind::AxisCoincident, vec![e(axis_a), e(axis_b), Arg::Str("same".into())]),
+        Constraint::new(CKind::AxisCoincident,
+            vec![e(axis_b), e(axis_a), Arg::Str("opposite".into())]),
+        Constraint::new(CKind::LineOnAxis, vec![e(me1), e(axis_a), Arg::Str("same".into())]),
+        Constraint::new(CKind::LineOnAxis, vec![e(me2), e(axis_a), Arg::Str("opposite".into())]),
         // an axis and a plane: on it, along it and square to it, over a free plane and a held one;
         // and two planes a distance apart
         Constraint::new(CKind::AxisOnPlane, vec![e(axis_a), e(pce)]),

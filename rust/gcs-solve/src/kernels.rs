@@ -138,9 +138,13 @@ pub enum K {
     ChartLift,
     // a line along a plane's normal, its ends drawn anywhere
     LinePerpendicularPlane,
+    // `parallel3`, `axis_coincident` and `line_on_axis` that say which way the second runs (#535)
+    Parallel3Sensed,
+    AxisCoincidentSensed,
+    LineOnAxisSensed,
 }
 
-pub const N_KERNELS: usize = 94;
+pub const N_KERNELS: usize = 97;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3164,6 +3168,76 @@ fn line_on_axis_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
     [vdot(wp, e(0)), vdot(wp, e(1)), vdot(wq, e(0)), vdot(wq, e(1))]
 }
 
+/* -- a direction that runs the way another does (#535) ------------------------------------------
+ *
+ * `parallel3`'s rows, and the direction rows of `axis_coincident` and `line_on_axis`, vanish
+ * where the two directions run alike and where they run apart: the sense is the seed's.  A smooth
+ * residual of two rows over the sphere of directions has an even number of roots, so one root
+ * takes a residual with a seam; these read the turn carrying the first direction onto the second
+ * — its axis times its angle — whose size is the angle between them, π where they run apart, so
+ * the turned-round pose is never a root.  Near the root it is `â × b̂` to second order, the rows
+ * the unsensed kernels state.  The constant `s` (±1) turns the second round: `sense: opposite`. */
+
+/// The turn carrying `a` onto `s·b` (`s` ±1): `atan2(|a × b|, a·b)·(a × b)/|a × b|`, which reads
+/// only their directions, so neither need be a unit.  Near the root it is read by its series,
+/// `(a × b)·g(t)/(a·b)` with `t = |a × b|²/(a·b)²` and `g(t) = atan(√t)/√t`, so no root is taken
+/// where its gradient is wanted and a jet takes none at zero.  Exactly the other way round no axis
+/// is defined: there it is π along `e₁` less `(a × b)/(|a||b|)`, the residual and a gradient a
+/// step leaves that pose by — never a root.
+fn turn_onto<T: Num>(a: V3<T>, b: V3<T>, s: f64, e1: V3<T>) -> V3<T> {
+    let b = b.map(|x| x * T::cst(s));
+    let x = vcross(a, b);
+    let c = vdot(a, b);
+    let s2 = vdot(x, x);
+    let f = if c.val() > 0.0 && s2.val() < 1e-4 * c.val() * c.val() {
+        let t = s2 / (c * c);
+        let g = T::cst(1.0)
+            - t * (T::cst(1.0 / 3.0) - t * (T::cst(1.0 / 5.0) - t * T::cst(1.0 / 7.0)));
+        g / c
+    } else if s2.val() > 1e-24 * c.val() * c.val() {
+        let r = s2.sqrt();
+        T::atan2(r, c) / r
+    } else {
+        let p = vlen(a, MIN_LINE_LEN) * vlen(b, MIN_LINE_LEN);
+        return std::array::from_fn(|i| e1[i] * T::cst(std::f64::consts::PI) - x[i] / p);
+    };
+    x.map(|xi| xi * f)
+}
+
+/// Columns of `parallel3_sensed`: (A, B, C, D), K = (e₁, e₂, s) — `parallel3`'s, and the sense.
+/// `turn(a, s·b)·e_k`: the angle from the first direction to the second, run the way `s` says,
+/// across the first.  Degree 0.
+fn parallel3_sensed_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 2] {
+    let (a, b) = two_dirs(v);
+    let w = turn_onto(a, b, k[6], cst3(k, 0));
+    [vdot(w, cst3(k, 0)), vdot(w, cst3(k, 3))]
+}
+
+/// Columns of `axis_coincident_sensed`: (a₁, d₁, a₂, d₂), K = (e₁, e₂, L, s) —
+/// `axis_coincident`'s, and the sense.  Its turn rows are `L·turn(d₁, s·d₂)·e_k`, its offset
+/// rows `axis_coincident`'s.  All four lengths.  Degree 1.
+fn axis_coincident_sensed_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
+    let (a1, d1, a2, d2) = (vec3(v, 0), vunit(vec3(v, 3)), vec3(v, 6), vec3(v, 9));
+    let e = |t: usize| cst3(k, 3 * t);
+    let l = T::cst(k[6]);
+    let turn = turn_onto(d1, d2, k[7], e(0));
+    let off = vcross(vsub(a2, a1), d1);
+    [vdot(turn, e(0)) * l, vdot(turn, e(1)) * l, vdot(off, e(0)), vdot(off, e(1))]
+}
+
+/// Columns of `line_on_axis_sensed`: (A, B, a, d), K = (e₁, e₂, s) — `line_on_axis`'s, and the
+/// sense.  `A` on the axis, `point_on_axis`'s two rows, and the line running along it the way `s`
+/// says, `|B − A|·turn(d, s·(B − A))·e_k`: where `B` is on the axis that is `B`'s two rows to
+/// first order, and a line of no length is still on it.  Degree 1.
+fn line_on_axis_sensed_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 4] {
+    let (p, q, a, d) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9));
+    let [r0, r1] = across(vsub(p, a), d, k);
+    let run = vsub(q, p);
+    let turn = turn_onto(d, run, k[6], cst3(k, 0));
+    let l = vlen(run, 0.0);
+    [r0, r1, vdot(turn, cst3(k, 0)) * l, vdot(turn, cst3(k, 3)) * l]
+}
+
 /* -- a point at a fraction of a line's run and of an arc's turn (#248) ------------------------
  *
  * The contact owns its place `t`, as a spline's does: unpinned it is the point's own unknown, two
@@ -3714,6 +3788,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("tangent_circle_at3", tangent_circle_at3_rows, n_res: 2, n_par: 18, degree: 1, n_const: 0),
     num_kernel!("chart_lift", chart_lift_rows, n_res: 3, n_par: 15, degree: 1, n_const: 0),
     num_kernel!("line_perpendicular_plane", line_perpendicular_plane_rows, n_res: 2, n_par: 12, degree: 0, n_const: 6),
+    num_kernel!("parallel3_sensed", parallel3_sensed_rows, n_res: 2, n_par: 12, degree: 0, n_const: 7),
+    num_kernel!("axis_coincident_sensed", axis_coincident_sensed_rows, n_res: 4, n_par: 12, degree: 1, n_const: 8),
+    num_kernel!("line_on_axis_sensed", line_on_axis_sensed_rows, n_res: 4, n_par: 12, degree: 1, n_const: 7),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

@@ -883,19 +883,21 @@ scaled_radius(r, scale, s) k := radius(r * (1 + (scale - 1) * s)) k
 // shared roll) and an advance `f.advance` (along the axis a turn of the roll), held by relations
 // like anything else.  These are the words a designer states them in, the frame the subject and
 // what it moves about or along the object: `counter spins(-1) centre`.  Roll 0 is as drawn: a
-// member that must stand turned there is drawn turned.
+// member that must stand turned there is drawn turned.  The joint's axis runs the way what it is
+// held to does (#535) — a line from its start toward its end, an axis its own way, a view's
+// normal out of it — so which way a turn goes and a slide runs is the drawing's, never a seed's.
 
 // `f turns(ratio) l`: `f` turns about the line `l`, `ratio` radians a radian of the roll, and
 // moves not at all along it.
 f turns(ratio) l := {
-  l coincident f.axis
+  l coincident(sense: same) f.axis
   fix(ratio == ratio, advance == 0mm) f
 }
 
 // `f screws(advance) l`: `f` screws about the line `l`, a radian a radian of the roll, and
 // `advance` along it a turn — right-handed for a positive advance, left for a negative.
 f screws(advance) l := {
-  l coincident f.axis
+  l coincident(sense: same) f.axis
   fix(ratio == 1, advance == advance) f
 }
 
@@ -903,14 +905,14 @@ f screws(advance) l := {
 // radian of the roll — about the axis through `o` square to that view.
 f spins(ratio) o := {
   o coincident f.axis
-  f.axis parallel o.plane.normal
+  f.axis parallel(sense: same) o.plane.normal
   fix(ratio == ratio, advance == 0mm) f
 }
 
 // `f slides(advance) l`: `f` slides along the line `l`, `advance` a turn of the roll, turning not
 // at all.
 f slides(advance) l := {
-  l coincident f.axis
+  l coincident(sense: same) f.axis
   fix(ratio == 0, advance == advance) f
 }
 
@@ -919,18 +921,18 @@ f slides(advance) l := {
 // 1) `f screws(a) l`; `std.Spin(f, about: o, on: P, ratio: r)` is `f spins(r) o`, `o` drawn in
 // `P`; `std.Slide(f, along: l, advance: a)` is `f slides(a) l`.
 component Turn(f: frame, about: line, ratio: Scalar, advance: Length = 0mm) {
-  about coincident f.axis
+  about coincident(sense: same) f.axis
   fix(ratio == ratio, advance == advance) f
 }
 
 component Spin(f: frame, about: point, on: plane, ratio: Scalar) {
   about coincident f.axis
-  f.axis parallel on.normal
+  f.axis parallel(sense: same) on.normal
   fix(ratio == ratio, advance == 0mm) f
 }
 
 component Slide(f: frame, along: line, advance: Length) {
-  along coincident f.axis
+  along coincident(sense: same) f.axis
   fix(ratio == 0, advance == advance) f
 }
 

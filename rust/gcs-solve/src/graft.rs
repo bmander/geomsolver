@@ -854,13 +854,21 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let rows: Vec<&Constraint> =
             src.constraints.iter().filter(|c| c.intrinsic).filter(carried).collect();
         for c in rows {
-            let Some(ents) = c.entities().into_iter().map(remap).collect::<Option<Vec<_>>>() else {
+            // every slot as it states them, its entities the copies: which way an axis runs along
+            // its line among them (#535)
+            let Some(args) = c.args.iter()
+                .map(|a| match a {
+                    Arg::Ent(e) => remap(*e).map(Arg::Ent),
+                    a => Some(a.clone()),
+                })
+                .collect::<Option<Vec<_>>>()
+            else {
                 continue;
             };
             // a plane standing at a point has no `PlaneAxis` rows of its own for its in-plane
             // axes: they go, as `axes_along` takes them (its normal's stays)
             if c.kind == CKind::Coincident3 {
-                if let Some(p) = dst.plane_of_origin(ents[0].i()) {
+                if let Some(p) = dst.plane_of_origin(args[0].ent().i()) {
                     let (u, v) = (dst.frames[p].u as usize, dst.frames[p].v as usize);
                     let gone: Vec<u32> = dst.constraints.iter()
                         .filter(|d| d.intrinsic && d.kind == CKind::PlaneAxis)
@@ -873,7 +881,7 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
                     }
                 }
             }
-            let mut nc = Constraint::new(c.kind, ents.into_iter().map(Arg::Ent).collect());
+            let mut nc = Constraint::new(c.kind, args);
             nc.intrinsic = true;
             dst.add_quiet(nc);
         }
