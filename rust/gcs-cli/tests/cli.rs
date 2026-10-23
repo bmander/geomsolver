@@ -19,6 +19,13 @@ fn doc(name: &str) -> String {
 }
 
 #[test]
+fn version_is_said_and_succeeds() {
+    let output = run(&["--version"]);
+    assert_eq!(output.status.code(),Some(0));
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("solventc "));
+}
+
+#[test]
 fn unknown_stl_backend_is_refused() {
     let output = run(&["--stl-backend","unknown"]);
     assert_eq!(output.status.code(),Some(2));

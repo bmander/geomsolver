@@ -1,0 +1,108 @@
+# Publish `solventc` as a prebuilt binary for each platform, so a machine with no Rust on it (a
+# fresh VM, an agent's sandbox) can check a Solvent document straight away.
+#
+# Pushing a tag `v*` builds every target, runs each native build over the case library's truss,
+# and makes a GitHub release of the tag carrying one archive per target and their SHA256SUMS:
+#
+#     git tag v0.1.0 && git push origin v0.1.0
+#
+# The archive names carry no version, so `releases/latest/download/<name>` always names the newest
+# (what `scripts/install-solventc.sh` fetches).  Run by hand (Actions -> release -> Run workflow)
+# it builds and uploads the archives as workflow artefacts and publishes nothing.
+#
+# Only the pure-Rust build is released: `--kernel occt` and `--step` by OCCT need a native Open
+# CASCADE beside the binary, so they stay a build from source (`make solventc OCCT=1`).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # musl: one static binary that runs on any Linux, whatever its libc
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest, run: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm, run: true }
+          - { target: aarch64-apple-darwin, os: macos-latest, run: true }
+          # cross-built on the arm64 runner, which cannot run it
+          - { target: x86_64-apple-darwin, os: macos-latest, run: false }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest, run: true }
+    env:
+      SOLVENTC_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || format('0.1.0-dev+{0}', github.sha) }}
+      # a released binary carries no symbol table (22 MB to 19 on x86-64 Linux); a panic still
+      # says its file and line
+      CARGO_PROFILE_RELEASE_STRIP: symbols
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # from the root, as `make solventc` builds: the runner's default toolchain, stable
+      - name: Add the target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build solventc
+        run: cargo build --manifest-path rust/Cargo.toml --release --locked -p gcs-cli
+          --target ${{ matrix.target }}
+
+      - name: Stage the archive
+        id: stage
+        run: |
+          exe=solventc; [[ "${{ matrix.target }}" == *windows* ]] && exe=solventc.exe
+          name=solventc-${{ matrix.target }}
+          mkdir -p "dist/$name"
+          cp "rust/target/${{ matrix.target }}/release/$exe" "dist/$name/"
+          cp LICENSE README.md docs/solvent-primer.md "dist/$name/"
+          cd dist
+          if [[ "$exe" == *.exe ]]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null; echo "file=$name.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar czf "$name.tar.gz" "$name"; echo "file=$name.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+          echo "exe=dist/$name/$exe" >> "$GITHUB_OUTPUT"
+
+      # the binary as shipped, run over a document: it starts, it is stamped, it solves
+      - name: Smoke test
+        if: matrix.run
+        run: |
+          "${{ steps.stage.outputs.exe }}" --version
+          "${{ steps.stage.outputs.exe }}" rust/examples/truss.sv
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solventc-${{ matrix.target }}
+          path: dist/${{ steps.stage.outputs.file }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum solventc-* | tee SHA256SUMS
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY"
+          --title "solventc $GITHUB_REF_NAME" --generate-notes --verify-tag

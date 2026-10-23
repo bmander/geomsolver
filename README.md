@@ -10,7 +10,15 @@ compiler (`solventc`) and to WebAssembly for a browser sketcher.
 
 ## Quickstart
 
-You need Rust and Node.
+To check documents without building anything, install a prebuilt `solventc` (Linux and macOS, x86-64
+and arm64; Windows from the [releases page](https://github.com/bmander/geomsolver/releases)):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bmander/geomsolver/main/scripts/install-solventc.sh | sh
+solventc drawing.sv                        # ~/.local/bin/solventc, the primer beside it
+```
+
+To build everything, you need Rust and Node.
 
 ```sh
 make solventc                              # build/solventc
