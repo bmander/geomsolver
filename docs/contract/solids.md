@@ -115,6 +115,36 @@ placement carries inside the blank; CLI test readers zero the offset.
   `bench scrub` (in `make bench`) times a step: the stand against the objects asked for where it
   leaves them and against the same built afresh — 5 ms, 1.5 ms and 507 ms on the V-twin when this
   landed, so a step is the stand.
+  **Solids of one binding are one evaluation placed** (#566, [0.177]): a closed instance's solids
+  are a function of its definition and its arguments, in the frame it stands in, so the language
+  stamps each solid one makes with an opaque key and where the instance stands
+  (`model::Binding`: the key, the instance's prefix `at`, its frame, and the turn of the `ring`
+  copy it is in; `program::bound::stamp`, from `flatten::Bound`) — the core reads nothing else of
+  Solvent.  Of the solids sharing a key, the first by index is the representative; every other
+  is it placed (`Sketch::bound`: the motion `Rigid::between` the two instances' poses,
+  `Sketch::binding_pose` — the frame's basis, the world's axes for none, turned about the ring's
+  centre as the copy's entities are, `Turn`).  `evaluated_solid` and `built_solid` ask
+  `placed_solid` before the per-index memo: the representative's `Shape` renamed once from its
+  instance's names to the copy's (`EvaluatedSolid::renamed`, `Renamed`: a serial of its own,
+  kept while the representative is that shape) and moved by the motion (`placed`), remembered in
+  `Caches::placed` against the representative's evaluation by identity and the motion.
+  `exact_solid` places the representative's B-rep likewise (`Exact::placed`, `Caches::placed_exact`),
+  and a recipe reaching a solid of a binding several share takes its B-rep from `exact_solid`,
+  moved into its place (`exact::build`, `Sketch::shared`), so a union of a ring's instances builds
+  one.  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did
+  not make (a tool joined from outside) or a swept one is its own, a body joined to (`join_body`,
+  a preview's) loses its stamp, a refusal of the representative's is asked of the copy itself, and
+  `graft` drops the stamp.  Keyed by provenance, never by content: equal content is the tests'
+  claim, not the lookup's.  `tests/bindings.rs` is the gate
+  (`two_closed_instances_with_equal_arguments_in_two_frames_are_built_once`,
+  `a_copy_whose_frame_moves_is_placed_again_and_not_built`,
+  `unequal_arguments_are_two_builds_and_an_open_instance_is_built_as_its_own`,
+  `a_ring_of_instances_is_built_once_and_each_copy_stands_turned`,
+  `a_union_of_a_rings_instances_builds_one_of_them`): one build said to a listener, each placed
+  copy what a fresh evaluation of its own solid makes (volume, faces by name, every mesh corner and
+  the bounds within 10⁻⁹ mm).  The hub motor's magnets and slot cutters are two
+  bindings under 95 placements: 243 B-rep nodes built for the assembly's run before, 97 after, its
+  wall time unchanged (the leaf prisms were cheap).
   **A boolean takes its operands whole and gives back what it did not cut whole** (`csg.rs`,
   #313).  Each operand's polygons are clipped against the *other's* tree, never handed back as
   their own tree cut them (a ring's inner wall's planes cross its caps: 3,600 facets came back as

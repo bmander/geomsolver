@@ -4,6 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.177] One figure, many placements.** A closed instance — one whose only geometric input is
+the frame it stands in: a definition whose formals are numbers (or groups carrying numbers alone),
+each given a constant, its call drawn in that frame or one of its datums — has a **binding**, its
+definition and its arguments, and what it makes is a function of its binding read in that frame
+(§8.2): two closed instances of one binding are one figure under two placements. An instance
+declared in a `ring` stands in its copy's frame, the representative's turned: a relation of its
+body may read the standard datums of the frame it stands in (`std.origin`, `std.x`, …), and a
+relation word's operand there may too where the application declares nothing, where 0.47–0.176
+refused both (**E021**, narrowed, §12.5). A declaration built on such a datum, a datum read by the
+ring's own body outside any instance, an argument and every other outside reference are refused as
+before. So a pattern of parts is `ring N about C { p := Peg(r: 3mm) }`, one binding under N
+placements. The language gains no statement form, keyword or label. *Non-normative:* the reference
+implementation evaluates a binding's solids once — exact B-rep and mesh — and places each
+instance's by its frame, keyed by provenance; the solve is untouched. The hub motor's magnets
+(`Magnet(theta: θ)`) and slot cutters (`Slot()`) are each one instance in their ring, where the
+ring held the figure's statements and a `repeat` swept each copy's faces again: two bindings under 95
+placements, 243 B-rep nodes built for the assembly before and 97 after, and every solid the same.
+Every solved position is unchanged. (Issue #566, from #523 and #562.)
+
 **[0.176] One definition form.** A braced definition is a function of its arguments and of the
 frame its instance stands in, and every one is held to it (§8.2): E108, E109, the diagnosis read
 through instances (D1–D3) and W207 apply to every drawn instance of every `component Name(…) { … }`,

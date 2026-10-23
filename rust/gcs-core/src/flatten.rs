@@ -43,8 +43,10 @@ mod valued;
 mod same;
 mod table;
 mod framed;
+mod bound;
 
 pub use faces::{FaceAxis, FacePlane};
+pub use bound::Bound;
 
 pub(crate) use words::{faults as word_faults, file_number_names};
 pub(crate) use interfaces::check as interface_faults;
@@ -452,6 +454,9 @@ pub struct InstanceInfo {
     /// The instances and blocks enclosing its body's statements, this one last — the path every
     /// site of what it made starts with (`program::InstPath`).  Empty for one never expanded.
     pub path: Vec<PathStep>,
+    /// What it is a function of, where it is closed (#566): its binding's key and the frame it
+    /// stands in.  `None` for any other instance.
+    pub binding: Option<Bound>,
 }
 
 /// A block over a chain's edges, set aside by the walk until the chain it names can be found:

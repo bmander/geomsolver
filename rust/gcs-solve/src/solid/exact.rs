@@ -4,6 +4,7 @@
 //! and its round features read the same whichever kernel evaluated it. A boolean never renames:
 //! a face keeps the name of the operand face it is a piece of.
 use super::*;
+use crate::brep::geom;
 use crate::brep::topo::Brep;
 use crate::brep::recipe::{name_under, named_parts, Recipe};
 use std::collections::BTreeSet;
@@ -25,6 +26,35 @@ pub struct Exact {
     pub named: Vec<(String, String)>,
 }
 
+impl Exact {
+    /// The same B-rep under names `re` rewrites (#566): its faces', their halves' and the leading
+    /// ones'.
+    pub(crate) fn renamed(&self, re: &super::evaluated::Renaming<'_>) -> Exact {
+        let mut brep = self.brep.clone();
+        for f in &mut brep.faces {
+            f.name = re.name(&f.name);
+        }
+        Exact {
+            brep,
+            mm: self.mm,
+            origin: self.origin,
+            leading: self.leading.iter().map(|f| re.name(f)).collect(),
+            named: self.named.iter().map(|(of, face)| (re.name(of), face.clone())).collect(),
+        }
+    }
+
+    /// **Another instance's solid of the same binding** (#566): this B-rep moved by `motion` and
+    /// renamed from the instance `from` to `to`, about its origin moved — nothing built again.
+    pub(crate) fn placed(&self, motion: &Rigid, from: &str, to: &str) -> Exact {
+        let mut x = self.renamed(&super::evaluated::Renaming { from, to });
+        // the B-rep is about its origin, in millimetres: the origin takes the motion's
+        // translation, and the B-rep its turn alone
+        x.origin = motion.point(self.origin);
+        x.brep = x.brep.moved(&geom::Rigid { r: motion.r, t: [0.0; 3] });
+        x
+    }
+}
+
 /// Solid `si`'s exact B-rep, or why this kernel does not build it (no length unit, a sweep, a
 /// recipe node it refuses) — a caller then evaluates the facet term instead.
 pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
@@ -38,6 +68,16 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let mut leading = BTreeSet::new();
     for n in &recipe.nodes {
         let id = n.id;
+        // an operand of one binding with others is its representative's B-rep, built once and
+        // placed (#566), moved into this one's place; its faces are named already
+        if id as usize != si && sk.shared(id as usize) {
+            if let Ok(x) = sk.exact_solid(id as usize) {
+                let t = std::array::from_fn(|k| (x.origin[k] - origin[k]) * mm);
+                built.insert(id, x.brep.moved(&geom::Rigid { t, ..geom::Rigid::identity() }));
+                leading.extend(x.leading.iter().cloned());
+                continue;
+            }
+        }
         let mut b = n.node.built(&built, &BTreeMap::new(), floor)?;
         let sol = &sk.solids[id as usize];
         match &sol.def {

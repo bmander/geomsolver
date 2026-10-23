@@ -383,17 +383,37 @@ impl Lookup<'_> {
             let cand = segs[..take].join(".");
             self.names.contains(&cand).then(|| (cand, segs[take..].to_vec()))
         })?;
-        // the innermost frame among the places it stands, each read where it was written
-        let frame = stands.iter().rev().filter(|_| !self.standard.frames.is_empty())
+        let Some(frame) = self.stood_in(stands, sc) else { return Some((world, rest)) };
+        let datum = world.strip_prefix("std.").unwrap_or(&world);
+        Some(self.frame_datum(frame, datum, rest))
+    }
+
+    /// The frame a body standing at `stands` stands in: the innermost frame among those places,
+    /// each read where it was written — `None` for the world.
+    pub(super) fn stood_in(&self, stands: &[InPlane], sc: &Scope) -> Option<String> {
+        stands.iter().rev().filter(|_| !self.standard.frames.is_empty())
             .find_map(|ip| {
                 let at = Scope { stands: None, ..Scope::written_at(ip, sc) };
                 self.raw(&ip.plane, &at)
                     .filter(|(abs, rest)| rest.is_empty() && self.frame(abs))
                     .map(|(abs, _)| abs)
-            });
-        let Some(frame) = frame else { return Some((world, rest)) };
-        let datum = world.strip_prefix("std.").unwrap_or(&world);
-        Some(self.frame_datum(frame, datum, rest))
+            })
+    }
+
+    /// Whether `r`, read in `sc` as `abs`, is one of the standard datums of the frame the body
+    /// `sc` is in stands in (#566): `std.…` as written, read as `datum` reads it.
+    pub(super) fn reads_datum(&self, r: &Ref, sc: &Scope, abs: &str) -> bool {
+        if r.root.text != "std" {
+            return false;
+        }
+        let mut segs = vec![r.root.text.clone()];
+        for seg in &r.path {
+            let Seg::Field(f) = seg else { return false };
+            segs.push(f.text.clone());
+        }
+        self.datum(&segs, sc).is_some_and(|(d, rest)| {
+            std::iter::once(d).chain(rest).collect::<Vec<_>>().join(".") == abs
+        })
     }
 
     /// Frame `frame`'s own datum `datum` and the fields past it (#542): `x`, `y` and `z` its
@@ -580,6 +600,9 @@ pub(super) struct Seen {
     written: String,
     span: Span,
     abs: String,
+    /// Read by a relation of an instance declared in the ring, and one of the datums of the
+    /// frame its body stands in: a copy's frame is the representative's turned (#566).
+    datum: bool,
 }
 
 /// What a reference may resolve to once the walk is done: every name declared and every alias
@@ -640,6 +663,9 @@ fn rewrite(
         quiet, materials } = known;
     // only a ring's representative is judged by what it reads (E021)
     let judged = sc.block.ring.as_ref().is_some_and(|r| !r.turned);
+    // and a relation of an instance declared in it reads its own frame's datums turned (#566)
+    let instanced = matches!(k, StmtKind::Relation(_)) && sc.closed
+        && sc.block.ring.as_ref().is_some_and(|r| sc.instance_prefix().starts_with(&r.prefix));
     // a member read already (a set's `ends`, `sets::measured_sets`) is kept; `surface` and
     // `body` past a solid are read here, where no name declared under it is written so (#188)
     let member = |r: &Ref, abs: &str, rest: &mut Vec<String>| -> Option<Seg> {
@@ -686,11 +712,13 @@ fn rewrite(
             }
             // a formal reads what its call was given, judged at the argument as written
             let was = (judged && !through_argument(r, sc, arguments)).then(|| ref_text(r));
+            let datum = was.is_some() && instanced && look.reads_datum(r, sc,
+                &std::iter::once(&abs).chain(&rest).cloned().collect::<Vec<_>>().join("."));
             let member = member(r, &abs, &mut rest);
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).chain(member).collect();
             if let Some(was) = was {
-                seen.borrow_mut().push(Seen { written: was, span: r.span, abs: ref_text(r) });
+                seen.borrow_mut().push(Seen { written: was, span: r.span, abs: ref_text(r), datum });
             }
         }
         // named as written, so an index that picked no copy says which one it was
@@ -1430,12 +1458,17 @@ impl<'a> Walk<'a> {
                 *actual = alias.get(&format!("{}{formal}", info.prefix)).cloned();
             }
         }
+        // and what each closed one is a function of (#566)
+        self.bind_closed(&alias);
         let refused = self.refuse_dim_reads(&alias);
         let about = self.resolve_rings(&alias);
         // what a ring's representative reads, judged once every declaration is resolved (E021),
         // and every circle's centre, which a circle about a ring's is judged by
         let mut judged: Vec<(String, Vec<Seen>)> = Vec::new();
         let mut centres: BTreeMap<String, Option<String>> = BTreeMap::new();
+        // and where a ring's representative declares, which an application declaring nothing is
+        // told apart by
+        let mut declaring: BTreeSet<String> = BTreeSet::new();
         let out = std::mem::take(&mut self.out);
         // a set drawn as an element is named as the element (#105)
         let sets: BTreeSet<String> =
@@ -1482,6 +1515,9 @@ impl<'a> Walk<'a> {
                 }
             }
             if let Some(ring) = sc.block.ring.as_ref().filter(|r| !r.turned) {
+                if matches!(st.kind, StmtKind::Decl(_)) {
+                    declaring.insert(sc.prefix().to_string());
+                }
                 // a seed is no relation: it may start a copy anywhere (Invariant H), and a plane
                 // a point is drawn in is a place, not a position
                 let mut free = Vec::new();
@@ -1553,7 +1589,7 @@ impl<'a> Walk<'a> {
                 Err(d) => self.diagnostic(d),
             }
         }
-        self.judge_arguments(&alias, &mut judged);
+        self.judge_arguments(&alias, &declaring, &mut judged);
         self.normals = normals.into_inner();
         self.charts = charts.into_inner();
         self.joints = joints.into_inner();
@@ -1765,6 +1801,7 @@ impl<'a> Walk<'a> {
     fn judge_arguments(
         &self,
         alias: &BTreeMap<String, String>,
+        declaring: &BTreeSet<String>,
         judged: &mut Vec<(String, Vec<Seen>)>,
     ) {
         // an instance's entity argument and a use's operand, as written where the call stands:
@@ -1775,9 +1812,19 @@ impl<'a> Walk<'a> {
             if !arguments.contains(key) || through_argument(r, sc, arguments) {
                 continue;
             }
-            if let Some((abs, rest)) = self.look(alias).find(r, sc) {
+            let look = self.look(alias);
+            if let Some((abs, rest)) = look.find(r, sc) {
                 let abs = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
-                let seen = Seen { written: ref_text(r), span: r.span, abs };
+                // a relation word's operand, written in an instance declared in the ring, that
+                // reads the datums of the frame the instance stands in — where the application
+                // declares nothing, so it relates and builds nothing on them (#566)
+                let datum = self.words.use_aliases.contains(key) && sc.closed
+                    && sc.instance_prefix().starts_with(&ring.prefix)
+                    && key.rfind('.').is_some_and(|d| {
+                        !declaring.iter().any(|p| p.starts_with(&key[..=d]))
+                    })
+                    && look.reads_datum(r, sc, &abs);
+                let seen = Seen { written: ref_text(r), span: r.span, abs, datum };
                 judged.push((ring.prefix.clone(), vec![seen]));
             }
         }
@@ -1786,7 +1833,9 @@ impl<'a> Walk<'a> {
     /// E021: what a ring's representative reads must be what every turn of it would read alike —
     /// its own ring's entities (its own copy, or a neighbour by `next` and `prev`), the centre, a
     /// circle about the centre — or the copies would not be turns of it.  A value is no
-    /// reference, and seeds and planes were set aside.
+    /// reference, and seeds and planes were set aside.  A relation of an instance declared in
+    /// the ring may read the datums of the frame its body stands in (#566): the copy stands in
+    /// that frame turned, so what it reads there is the representative's read turned.
     fn judge_rings(
         &mut self,
         about: &BTreeMap<String, String>,
@@ -1805,7 +1854,8 @@ impl<'a> Walk<'a> {
                     }
                     continue;
                 }
-                let invariant = s.abs == *centre
+                // an instance's own frame's, read by its relation: every copy's turned alike
+                let invariant = s.datum || s.abs == *centre
                     || centres.get(&s.abs).is_some_and(|c| c.as_ref() == Some(centre))
                     || centres.contains_key(&s.abs) && *centre == format!("{}.center", s.abs);
                 if !invariant {

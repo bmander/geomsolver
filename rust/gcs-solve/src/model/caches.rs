@@ -50,6 +50,17 @@ pub struct Caches {
     /// solid that has only moved rigidly since is the same evaluation under a new placement
     /// (#412): a part drawn in its own frame, scrubbed along a timeline, is built once.
     pub solid: RefCell<BTreeMap<(usize, (u8, u64)), SolidSlot>>,
+    /// Each solid of a binding read as its representative's evaluation placed (#566), by solid and
+    /// approximation: the representative's shape under its names, renamed once for every place
+    /// it is moved to, and the last placement — the representative's evaluation it was placed
+    /// from, by identity, the motion, and what that made, which a repaint asks again.
+    #[allow(clippy::type_complexity)]
+    pub(crate) placed: RefCell<BTreeMap<(usize, (u8, u64)), (crate::solid::Renamed,
+        Rc<crate::solid::EvaluatedSolid>, crate::solid::Rigid, Rc<crate::solid::EvaluatedSolid>)>>,
+    /// The same for each such solid's exact B-rep, by solid.
+    #[allow(clippy::type_complexity)]
+    pub(crate) placed_exact: RefCell<BTreeMap<usize, (Rc<crate::solid::Exact>, crate::solid::Rigid,
+        Rc<crate::solid::Exact>)>>,
     /// Each static solid's exact B-rep (`solid::Exact`), remembered against `solid::reads` alone:
     /// it does not depend on an approximation, so it is built once for a geometry and only meshed
     /// again for each one the evaluated solids above ask for.
@@ -131,6 +142,8 @@ impl Caches {
         self.polyline.borrow_mut().clear();
         self.solid.borrow_mut().clear();
         self.exact.clear();
+        self.placed.borrow_mut().clear();
+        self.placed_exact.borrow_mut().clear();
         self.swept.clear();
         self.meridian.clear();
         self.general.clear();

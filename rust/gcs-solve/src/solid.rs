@@ -91,7 +91,7 @@ pub use surface::{RegionLocation,RegionSample,RevolvedRegion,RevolvedSurface,
 pub(crate) use raycast::RayIndex;
 use section::face_polys;
 pub use evaluated::{ApproximationPolicy, EvaluatedSolid, LocalPoint, WorldPoint, PagePoint, PageFrame, RoundFeature};
-pub use evaluated::Rigid;
+pub use evaluated::{Renamed, Rigid};
 
 use crate::model::{EntKind, EntRef, Roll, Sense, Sketch, SolidDef};
 use crate::plane::{self, Basis};

@@ -119,6 +119,7 @@ impl<'a> Walk<'a> {
             values: sub_vals.clone(),
             drawn,
             path: Vec::new(),
+            binding: None,
         });
         Some((comp, sub_vals, sides, key))
     }

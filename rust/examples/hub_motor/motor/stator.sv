@@ -9,7 +9,8 @@
 // walls' distances from two lines at stated angles, its far side the near side's mirror.
 //
 // The lamination is the annulus between the tips' circle and the bore, less the 51 slots: one
-// cutter, drawn once, its copies the ring's.  The copper is the band the coils fill — from the
+// cutter, a definition (`Slot`), and the ring places an instance of it in each slot — one
+// cutter evaluated, its 51 copies placed.  The copper is the band the coils fill — from the
 // slots' bottom to the wedges, over the stack and the end turns either side of it — less the
 // lamination: a coil side in each slot under its wedge (two a slot, one each of two teeth's
 // coils), and the end turns either side of the stack, which the covers must clear.  The three
@@ -20,57 +21,66 @@ use motor.dims (bo, end_turn_in, hall_l, hall_r0, hall_r1, hall_w, hs, L, overha
                 slot_pitch, slots, wt)
 use motor.parts (Datums)
 
+// A slot cutter, as above, drawn about its frame's origin — the axle's centre — in the end view.
+component Slot() {
+  in std.front {
+    // the slot's centreline, along the frame's x, and the centrelines of the teeth either side
+    construction sc := line(std.origin, hint((Rs + 3mm, 0mm)))
+    length(Rs + 3mm) sc
+    horizontal sc
+    construction t1 := line(std.origin, hint((Rs, -1mm)))
+    construction t2 := line(std.origin, hint((Rs, 1mm)))
+    length(Rs) t1
+    length(Rs) t2
+    t1 angle(slot_pitch / 2) sc
+    sc angle(slot_pitch / 2) t2
+    // the slot's near side (the clockwise one), from its bottom out past the tips
+    a := point hint((Ry, -2mm))
+    h := point hint((Rc, -3mm))
+    g := point hint((Rs - hs, -bo / 2))
+    k := point hint((Rs + 2mm, -bo / 2))
+    a distance(wt / 2, side: left) t1
+    h distance(wt / 2, side: left) t1
+    std.origin distance(Ry) a
+    std.origin distance(Rc) h
+    g distance(bo / 2, side: right) sc
+    k distance(bo / 2, side: right) sc
+    std.origin distance(Rs - hs) g
+    std.origin distance(Rs + 2mm) k
+    // each on its circle ahead of the axle, not on the circle's far side behind it
+    std.origin distance(>= 0, along: sc) a
+    std.origin distance(>= 0, along: sc) h
+    std.origin distance(>= 0, along: sc) g
+    std.origin distance(>= 0, along: sc) k
+    // and its far side, the mirror
+    b := point hint((Ry, 2mm))
+    c := point hint((Rc, 3mm))
+    d := point hint((Rs - hs, bo / 2))
+    e := point hint((Rs + 2mm, bo / 2))
+    a symmetry(sc) b
+    h symmetry(sc) c
+    g symmetry(sc) d
+    k symmetry(sc) e
+    bottom := line(a, b)
+    wall_r := line(b, c)
+    shoe_r := line(c, d)
+    // the cutter's run-out past the tips: its boundary, not the lamination's
+    construction lip_r := line(d, e)
+    construction mouth := line(e, k)
+    construction lip_l := line(k, g)
+    shoe_l := line(g, h)
+    wall_l := line(h, a)
+    cutter := solid(face(bottom, wall_r, shoe_r, lip_r, mouth, lip_l, shoe_l, wall_l),
+                    from: -L / 2 - 1mm, to: L / 2 + 1mm)
+  }
+}
+
 component Stator(f: Datums) {
   in f.o.plane {
+    // one slot drawn, its centreline on the datum, and the ring places it in every slot
     ring slots about f.o {
-      // the slot's centreline, and the centrelines of the teeth either side of it
-      construction sc := line(f.o, hint((Rs + 3mm, 0mm)))
-      length(Rs + 3mm) sc
-      construction t1 := line(f.o, hint((Rs, -1mm)))
-      construction t2 := line(f.o, hint((Rs, 1mm)))
-      length(Rs) t1
-      length(Rs) t2
-      t1 angle(slot_pitch / 2) sc
-      sc angle(slot_pitch / 2) t2
-      // the slot's near side (the clockwise one), from its bottom out past the tips
-      a := point hint((Ry, -2mm))
-      h := point hint((Rc, -3mm))
-      g := point hint((Rs - hs, -bo / 2))
-      k := point hint((Rs + 2mm, -bo / 2))
-      a distance(wt / 2, side: left) t1
-      h distance(wt / 2, side: left) t1
-      f.o distance(Ry) a
-      f.o distance(Rc) h
-      g distance(bo / 2, side: right) sc
-      k distance(bo / 2, side: right) sc
-      f.o distance(Rs - hs) g
-      f.o distance(Rs + 2mm) k
-      // each on its circle ahead of the axle, not on the circle's far side behind it
-      f.o distance(>= 0, along: sc) a
-      f.o distance(>= 0, along: sc) h
-      f.o distance(>= 0, along: sc) g
-      f.o distance(>= 0, along: sc) k
-      // and its far side, the mirror
-      b := point hint((Ry, 2mm))
-      c := point hint((Rc, 3mm))
-      d := point hint((Rs - hs, bo / 2))
-      e := point hint((Rs + 2mm, bo / 2))
-      a symmetry(sc) b
-      h symmetry(sc) c
-      g symmetry(sc) d
-      k symmetry(sc) e
-      bottom := line(a, b)
-      wall_r := line(b, c)
-      shoe_r := line(c, d)
-      // the cutter's run-out past the tips: its boundary, not the lamination's
-      construction lip_r := line(d, e)
-      construction mouth := line(e, k)
-      construction lip_l := line(k, g)
-      shoe_l := line(g, h)
-      wall_l := line(h, a)
+      slot := Slot()
     }
-    // the first slot stands on the datum
-    f.datum angle(0deg) sc[0]
     tips := circle(center: f.o) hint(r: Rs)
     radius(Rs) tips
     bore := circle(center: f.o) hint(r: Rb)
@@ -79,9 +89,7 @@ component Stator(f: Datums) {
   }
   lamination := solid(stack)
   repeat slots as i {
-    private slot := solid(face(bottom[i], wall_r[i], shoe_r[i], lip_r[i], mouth[i], lip_l[i],
-                               shoe_l[i], wall_l[i]), from: -L / 2 - 1mm, to: L / 2 + 1mm)
-    slot cut lamination
+    slot[i].cutter cut lamination
   }
 
   // -- the copper ---------------------------------------------------------------------------

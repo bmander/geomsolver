@@ -42,6 +42,7 @@ impl Sketch {
     pub fn solid(&mut self, def: SolidDef, name: &str) -> usize {
         self.solids.push(SolidE {
             def, name: name.to_string(), class: Classes::default(), copy: None, material: None,
+            binding: None,
         });
         self.solids.len() - 1
     }
@@ -76,6 +77,8 @@ impl Sketch {
             return Err(format!("`{0} {1} {0}` joins a solid to itself", name(self, body), word.as_str()));
         }
         self.as_body(body);
+        // joined to, it is no longer what its instance's binding made (#566)
+        self.solids[body].binding = None;
         if self.solids[body].def.body_set(word).expect("a body").contains(&(tool as u32)) {
             return Ok(());
         }
@@ -122,6 +125,9 @@ impl Sketch {
         &self, i: usize, policy: crate::solid::ApproximationPolicy,
     ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
         let (policy, slot) = self.solid_slot(i, policy);
+        if let Some(placed) = self.placed_solid(i, policy, slot) {
+            return placed;
+        }
         let key = crate::solid::ShapeKey::of(self, i);
         if let Some(found) = self.remembered(slot, &key) {
             return found;
@@ -143,7 +149,14 @@ impl Sketch {
     /// every frame.
     pub fn built_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy)
         -> Option<Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>> {
-        self.remembered(self.solid_slot(i, policy).1, &crate::solid::ShapeKey::of(self, i))
+        let (policy, slot) = self.solid_slot(i, policy);
+        // one of a binding's placed copies is built wherever its representative is (#566)
+        if let Some(b) = self.bound(i) {
+            if let Some(Ok(_)) = self.built_solid(b.rep, policy) {
+                return self.placed_solid(i, policy, slot);
+            }
+        }
+        self.remembered(slot, &crate::solid::ShapeKey::of(self, i))
     }
 
     /// The approximation solid `i` is evaluated at when `policy` is asked, and the slot of
@@ -176,9 +189,53 @@ impl Sketch {
         Some(Ok(solid))
     }
 
+    /// **Solid `i` as its binding's representative's evaluation placed** (#566), `None` where it
+    /// is evaluated as its own: a solid with no binding, the representative, or one whose
+    /// representative refuses (it is then asked of itself, so a refusal names its own solid).
+    /// The representative's shape is renamed once for as long as it is that shape, and placed
+    /// again only where the representative's evaluation or the motion has changed.
+    fn placed_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy,
+                    slot: (usize, (u8, u64)))
+        -> Option<Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>> {
+        let b = self.bound(i)?;
+        let rep = self.evaluated_solid(b.rep, policy).ok()?;
+        let mut cache = self.caches.placed.borrow_mut();
+        if let Some((renamed, of, motion, placed)) = cache.get_mut(&slot) {
+            if std::rc::Rc::ptr_eq(of, &rep) && *motion == b.motion {
+                return Some(Ok(placed.clone()));
+            }
+            if let Some(moved) = rep.placed(&b.motion, renamed) {
+                let moved = std::rc::Rc::new(moved);
+                (*of, *motion, *placed) = (rep, b.motion, moved.clone());
+                return Some(Ok(moved));
+            }
+        }
+        let renamed = rep.renamed(&b.from, &b.to);
+        let placed = std::rc::Rc::new(rep.placed(&b.motion, &renamed)?);
+        // as `evaluated_solid` bounds a solid's zoom history
+        if cache.keys().filter(|(index, (kind, _))| *index == i && *kind == 2).count() >= 8 {
+            cache.retain(|(index, (kind, _)), _| *index != i || *kind != 2);
+        }
+        cache.insert(slot, (renamed, rep, b.motion, placed.clone()));
+        Some(Ok(placed))
+    }
+
     /// Solid `i`'s exact B-rep (`solid::Exact`), or why this kernel does not build it: built once
-    /// for the geometry it reads, whatever approximation asks.
+    /// for the geometry it reads, whatever approximation asks — and once for its binding (#566),
+    /// a solid of one made by another instance being the representative's placed.
     pub fn exact_solid(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
+        if let Some(b) = self.bound(i) {
+            if let Ok(rep) = self.exact_solid(b.rep) {
+                if let Some((of, motion, placed)) = self.caches.placed_exact.borrow().get(&i) {
+                    if std::rc::Rc::ptr_eq(of, &rep) && *motion == b.motion {
+                        return Ok(placed.clone());
+                    }
+                }
+                let placed = std::rc::Rc::new(rep.placed(&b.motion, &b.from, &b.to));
+                self.caches.placed_exact.borrow_mut().insert(i, (rep, b.motion, placed.clone()));
+                return Ok(placed);
+            }
+        }
         let key = crate::solid::MemoKey::of(self, i);
         let build = || crate::progress::during(|| crate::progress::Work::build(self, i),
             || crate::solid::build_exact(self, i).map(std::rc::Rc::new));

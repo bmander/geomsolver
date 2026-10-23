@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.176 — October 2026**
+**Specification, Draft 0.177 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2352,6 +2352,8 @@ Its **rows** are those its body states, nested instances' included, and the rows
 
 A root among several is chosen by a stated orientation (§9.6) or a bound, never by a seed alone; *non-normative:* the reference implementation's lint (**W207**, advice) names a definition whose rows it finds another pose for that its stated choices admit. Neither rule reads the numbers: an instance singular at its inputs is the diagnosis's to report, on the solved pose. Each fault is said once for its definition, against its first instance. *Non-normative:* an instance is what a solve through boundaries would treat as a child, and what evaluating a definition once per binding of its arguments rests on (`docs/parts-plan.md`); the reference implementation solves it flat.
 
+**[0.177] One figure, many placements.** An instance is **closed** when its only geometric input is the frame it stands in: its definition is no set family, every formal is a number or a group carrying numbers alone, each is given a number known before the solve, and its call is drawn in that frame or one of the frame's datums (`std.front`, …, the plane its `std.origin` is drawn in), or in no plane at all. A closed instance's **binding** is its definition and its arguments, by value. What a closed instance makes is a function of its binding read in the frame it stands in: two closed instances of one binding are one figure, each placed by its own frame. An instance declared in a `ring` stands in its copy's frame (§12.5), so the copies of a ring's instance are one binding under N placements. *Non-normative:* the reference implementation evaluates a binding's solids once — their exact B-rep and their mesh — and places each instance's by the motion carrying one frame onto the other, keyed by the binding and never by what it evaluated to; the solve is untouched, every instance's interior flat in its parent's, and no solved position changes.
+
 ## 9. Constraints
 
 ### 9.1 Equational form
@@ -2867,6 +2869,7 @@ An entity declared **outside** a ring and referenced **inside** it MUST be invar
 - a `Circle` whose `.center` is (an alias of) the axis point: invariant;
 - any value-typed entity (`Scalar`, `Length`, `Angle` used as magnitude): invariant;
 - **[0.47]** a plane a ring-local point is drawn `in` (a place, not a position), and anything a seed's place reads (a seed is no constraint, §11): not judged;
+- **[0.177]** a standard datum of the frame an instance declared in the ring stands in (§8.2), read by a relation of that instance's body or as the operand of a relation word applied there that declares nothing: established. Copy k's instance stands in that frame turned gᵏ, and what it reads there is the representative's read turned. A declaration built on such a datum (`line(std.origin, c)`) makes the same datum in every copy, unturned, and is judged as any outside entity is — invariant only where it is one already, the axis point;
 - everything else: **not** established — error **E021** ("entity referenced in ring is not C_N-invariant"). **[0.47]** So is a copy of the ring's own reached by index from inside it (`tip[2]`): it reads the same copy from every turn; a neighbour is `next.tip` or `prev.tip`. An instance inside a ring — drawn, or written in place for a curve — and a relation word or set applied there are judged by what the call wrote: `Edge(u, next.u)` reads a neighbour exactly as `line(u, next.u)` does, and `Edge(u, u[2])` is refused at the argument, not inside the component.
 
 *Non-normative:* E021 is one of the language's best diagnostics; it converts "the solver produced something weird and asymmetric" into a precise compile-time message.
