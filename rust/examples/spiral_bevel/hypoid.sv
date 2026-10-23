@@ -55,10 +55,17 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
   // The pitch cones and the tooth trace.
   gear_cone := GearCone(std.top, std.y, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
     mean_module: mean_module)
-  trace := ToothTrace(std.top, gear_cone, R: R, spiral_angle: spiral_angle,
-    mean_module: mean_module, mn: mn, cutter_radius: cutter_radius)
+  trace := ToothTrace(std.top, gear_cone, spiral_angle: spiral_angle,
+    cutter_radius: cutter_radius)
+  // The normal module `mn` is the module seen square to the trace: O stands R / m modules from M,
+  // so `mn` R / m from the trace's normal.
+  gear_cone.O distance(mn * R / mean_module) trace.normal
   pinion_cone := PinionCone(std.top, std.z, gear_cone, trace, shaft_angle: shaft_angle,
     offset: offset, rp: rp, pa: pa)
+  // The bevel pinion's pitch radius `rp` is M's distance from the pinion's axis, and its pitch
+  // angle `pa` the gear's triangle's at M.
+  gear_cone.M distance(rp) pinion_cone.foot
+  gear_cone.to_apex angle(pa) gear_cone.to_foot
 
   // The blanks.
   blank_design := {width: 0.2 * R, addendum: addendum, back: 4 * mn, relief: end_relief}
@@ -105,6 +112,9 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
   balance := Balanced(std.top, gear_cone, trace, mill.ax, mill.inner_flank, mill.outer_flank,
     crown_roll, pinion_roll, gear_roll, R: R, face: blank_design.width, depth: addendum,
     cutter_radius: cutter_radius)
+  // ...where the pinion's and the gear's margins against undercut are equal, at M and at the toe
+  balance.mean.pinion_profile equal balance.mean.gear_profile
+  balance.at_toe.pinion_profile equal balance.at_toe.gear_profile
 
   // The tip relief: a topping beside each crown flank, kinked in the normal section N (square to
   // P on the trace normal, through the cutter's axis) `tip_relief` short of the addendum, and cut
@@ -172,10 +182,8 @@ component GearCone(P: plane, across: axis, pinion_teeth: Int, gear_teeth: Int,
 
 // The tooth trace: the circle about the cutter centre C through M, its normal C → M at 90° less
 // the spiral angle to the generator. H is where the heading at M, square to the normal, meets the
-// line from O parallel to it. The normal module `mn` is the module seen square to the trace: O
-// stands R / m modules from M, so `mn` R / m from the normal.
-component ToothTrace(P: plane, gear: Gear, R: Length, spiral_angle: Angle, mean_module: Length,
-    mn: Length, cutter_radius: Length) {
+// line from O parallel to it.
+component ToothTrace(P: plane, gear: Gear, spiral_angle: Angle, cutter_radius: Length) {
   C := point in P
   H := point in P
   normal := line(C, gear.M)
@@ -185,15 +193,15 @@ component ToothTrace(P: plane, gear: Gear, R: Length, spiral_angle: Angle, mean_
   gear.generator angle(90deg - spiral_angle, sense: cw) normal
   heading perpendicular normal
   to_heading parallel normal
-  gear.O distance(mn * R / mean_module) normal
 }
 
 // The pinion's cone, solved against the gear's: apex A in P, on the offset's side of O and behind
 // M; its axis `ax` square to P on the generator A → M (square to the level line `square`, its foot
 // above P); the shafts their angle and offset apart. The equal normal pitch sizes it with no
 // cosine: V, where A → M crosses O → H, keeps |MV| cos(spiral + offset angle) = R cos(spiral), and
-// is the apex of a virtual bevel pinion at the pitch angle `pa` of the gear's triangle at M; `rp`
-// is M's distance from both axes. With no offset A and V are O, and the two axes one.
+// is the apex of a virtual bevel pinion at the pitch angle `pa` and the pitch radius `rp` at M —
+// what the pair reads them as, the gear's triangle's angle and M's distance from the pinion's axis.
+// With no offset A and V are O, and the two axes one.
 component PinionCone(P: plane, up: axis, gear: Gear, trace: Trace, shaft_angle: Angle,
     offset: Length, rp: Length, pa: Angle) {
   A := point in P
@@ -216,10 +224,8 @@ component PinionCone(P: plane, up: axis, gear: Gear, trace: Trace, shaft_angle: 
   virtual_foot outside P
   gear.M level(ax) foot
   gear.M level(virtual_ax) virtual_foot
-  gear.M distance(rp) foot
   gear.M distance(rp) virtual_foot
   gear.ax skew(theta: shaft_angle, e: offset) ax
-  gear.to_apex angle(pa) gear.to_foot
   pitch_line angle(pa) virtual_ax
 }
 
@@ -378,9 +384,10 @@ component Blade(about: line, q: point, half: Angle, opens: Scalar) := { p |
 // (the gear's), trading the pinion's margin against undercut for the gear's; the cutter's radius
 // sets how those margins run along the face. Each member's flank is the envelope its crown flank
 // generates (§6.15.3), and the two settings are where the margins are equal in the normal
-// sections through M and through the toe of the trace. The toe's balance holds at more than one
-// radius: the cutter is no smaller than R, and the seeds choose among the rest. The solve tears
-// the two numbers out of their block (solver.md).
+// sections through M and through the toe of the trace, which the pair states of the margins this
+// reads: the two numbers are the pair's, which this is given. The toe's balance holds at more than
+// one radius: the cutter is no smaller than R, and the seeds choose among the rest. The solve
+// tears the two numbers out of their block (solver.md).
 component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set, outer: set,
     crown_roll: frame, pinion_roll: frame, gear_roll: frame, R: Length, face: Length,
     depth: Length, cutter_radius: Length) {
@@ -400,8 +407,6 @@ component Balanced(P: plane, gear: Gear, trace: Trace, ax: line, inner: set, out
   construction to_toe := line(trace.C, toe)
   T := plane(u: to_toe, v: ax)
   at_toe := Margins(T, toe, to_toe, ax, trace.C, pinion_flank, gear_flank, depth: depth)
-  mean.pinion_profile equal mean.gear_profile
-  at_toe.pinion_profile equal at_toe.gear_profile
 }
 
 // The members' margins against undercut in the section `s` through the cutter's axis `ax` and the

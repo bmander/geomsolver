@@ -24,7 +24,7 @@ const EXACT: f64 = 1e-10;
 /// the second as `under: screw, seen_from: turn`).
 const MOTIONS: &str = "\
 unit mm
-use std
+use std (screws, spins, turns)
 a0 := point hint((1, 2, 3))
 a1 := point hint((4, 3, 11))
 fix((1, 2, 3)) a0
@@ -36,9 +36,9 @@ fix((-5, 0, 2)) b0
 fix((-5, 9, 0)) b1
 bx := line(b0, b1)
 screw := frame
-std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw
 turn := frame
-std.Turn(turn, about: bx, ratio: -0.4)
+turn turns(-0.4) bx
 ";
 
 fn solved(src: &str) -> Elaborated {
@@ -148,13 +148,13 @@ in std.top {{
   T := point
 }}
 twirl := frame
-std.Spin(twirl, about: c, on: std.top, ratio: 0.7)
+twirl spins(0.7) c
 T coincident y at(under: twirl) 100deg
 up := point hint((0, 0, 10))
 fix((0, 0, 10)) up
 spindle := line(std.origin, up)
 lift := frame
-std.Turn(lift, about: spindle, ratio: 1, advance: 4mm)
+lift screws(4mm) spindle
 S := point
 S coincident x at(under: lift) 290deg
 ");
@@ -182,7 +182,7 @@ S coincident x at(under: lift) 290deg
 fn a_frame_carried_reads_what_its_source_rides_on() {
     let src = "\
 unit mm
-use std
+use std (screws, spins, turns)
 a0 := point hint((1, 2, 3))
 a1 := point hint((4, 3, 11))
 fix((1, 2, 3)) a0
@@ -199,7 +199,7 @@ in (screw := frame) {
   construction lv := line(o, q)
   base := plane(u: lu, v: lv)
 }
-std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw
 n := base at 40deg
 X := point
 X coincident q at 40deg
@@ -235,14 +235,14 @@ X coincident q at 40deg
 fn a_roll_owned_and_a_roll_stated_are_one_reading() {
     let src = "\
 unit mm
-use std
+use std (screws, spins, turns)
 a0 := point hint((1, 2, 3))
 a1 := point hint((4, 3, 11))
 fix((1, 2, 3)) a0
 fix((4, 3, 11)) a1
 ax := line(a0, a1)
 screw := frame
-std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw
 x := point hint((9, -4, 6))
 fix((9, -4, 6)) x
 P := point hint((9, -4, 6))
@@ -275,12 +275,12 @@ Q coincident x at(under: screw) 40deg
 fn a_roll_may_be_an_unknown_the_drawing_solves_for() {
     let src = "\
 unit mm
-use std
+use std (screws, spins, turns)
 param theta: Angle hint(10deg)
 x := point hint((10, 0, 0))
 fix((10, 0, 0)) x
 spin := frame
-std.Spin(spin, about: std.top.origin, on: std.top, ratio: 1)
+spin spins(1) std.top.origin
 X := point
 X coincident x at(under: spin) theta
 std.origin distance(5mm, along: std.y) X
@@ -301,7 +301,7 @@ std.origin distance(5mm, along: std.y) X
 #[test]
 fn a_helix_station_is_its_base_carried_by_its_screw() {
     for s in [0.0, 0.3, 0.85] {
-        let src = format!("unit mm\nuse std\nst := std.Helix(std.top, pitch: 4mm, turns: 3, \
+        let src = format!("unit mm\nuse std (screws, spins, turns)\nst := std.Helix(std.top, pitch: 4mm, turns: 3, \
                            s: {s})\n");
         let e = solved(&src);
         let screw = family(&e, "st.screw");
@@ -329,7 +329,7 @@ fn an_on_helix_station_is_square_to_its_helix() {
     let (r, p, turns) = (10.0, 5.0, 4.0);
     let lead = (TAU * r).hypot(p);
     for s in [0.0, 0.13, 0.6] {
-        let src = format!("unit mm\nuse std\nst := std.OnHelix(std.top, r: 10mm, pitch: 5mm, \
+        let src = format!("unit mm\nuse std (screws, spins, turns)\nst := std.OnHelix(std.top, r: 10mm, pitch: 5mm, \
                            turns: 4, s: {s})\n");
         let e = solved(&src);
         let t = TAU * turns * s;
@@ -346,7 +346,7 @@ fn an_on_helix_station_is_square_to_its_helix() {
 #[test]
 fn a_twisted_point_turns_within_its_plane() {
     for (twist, s) in [(250.0, 0.4), (1260.0, 0.75), (-90.0, 0.5)] {
-        let src = format!("unit mm\nuse std\ntw := std.Twisted(std.top, twist: {twist}deg, \
+        let src = format!("unit mm\nuse std (screws, spins, turns)\ntw := std.Twisted(std.top, twist: {twist}deg, \
                            reach: 7mm, s: {s})\n");
         let e = solved(&src);
         let a = f64::to_radians(twist * s);
@@ -361,9 +361,9 @@ fn a_twisted_point_turns_within_its_plane() {
 fn a_carried_frame_prints_back_and_is_refused_where_it_says_too_little() {
     // the flat form prints no component instance: the joints written out as `std.Turn` writes them
     let flat = MOTIONS
-        .replace("std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)",
+        .replace("ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw",
                  "ax coincident screw.axis\nfix(ratio == 1.5, advance == 7mm) screw")
-        .replace("std.Turn(turn, about: bx, ratio: -0.4)",
+        .replace("turn turns(-0.4) bx",
                  "bx coincident turn.axis\nfix(ratio == -0.4, advance == 0mm) turn");
     let src = format!("{flat}\
 n := std.front at(under: screw) 140deg

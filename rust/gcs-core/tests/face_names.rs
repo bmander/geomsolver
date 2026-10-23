@@ -37,7 +37,7 @@ fn a_path_names_a_face_from_its_route() {
 }
 
 /// A plate 60 × 20 × 10 with three holes cut through it by a `repeat`, each drill a copy.
-const DRILLED: &str = "unit mm\nuse std (chamfer)\nin std.front {\n\
+const DRILLED: &str = "unit mm\nuse std (chamfer, turns)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((60, 0)) b1\nfix((60, 20)) b2\nfix((0, 20)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -98,7 +98,7 @@ fn a_copy_written_in_a_block_is_named_by_its_index() {
 
 /// A block 40 × 24 × 12 on the front plane, its near face at y = 0, a copy of it turned a half
 /// turn about the z axis, and a body standing on that copy.
-const PLACED: &str = "unit mm\nuse std (round)\nin std.front {\n\
+const PLACED: &str = "unit mm\nuse std (round, turns)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -106,7 +106,7 @@ const PLACED: &str = "unit mm\nuse std (round)\nin std.front {\n\
     outline := face(south, east, north, west)\n\
     o := point\nz := point\nfix((0, 0)) o\nfix((0, 10)) z\nax := line(o, z)\n}\n\
     block := solid(outline, depth: 12mm)\n\
-    turn := frame\nstd.Turn(turn, about: ax, ratio: 1)\n\
+    turn := frame\nturn turns(1) ax\n\
     moved := block at(under: turn) 180deg\n\
     pad := solid(moved)\n";
 

@@ -12,7 +12,7 @@ use gcs_core::{graft,model::MotionDef,motion,program,
 /// `small_len` (10), and `slope` 30° off `big`.
 const DRAWING: &str = "\
 unit mm
-use std
+use std (screws, slides, turns)
 big_len := 30mm
 small_len := 10mm
 in std.front {
@@ -113,9 +113,9 @@ fn refused(src: &str,code: &str,words: &str) {
 /// before the solve.
 #[test]
 fn a_stated_ratio_turns_as_the_number_it_states_and_follows_an_edit() {
-    let turns = "stated := frame\nstd.Turn(stated, about: ax, ratio: big_len / small_len)\n\
-        plain := frame\nstd.Turn(plain, about: ax, ratio: 3)\n\
-        edited := frame\nstd.Turn(edited, about: ax, ratio: 2)\n";
+    let turns = "stated := frame\nstated turns(big_len / small_len) ax\n\
+        plain := frame\nplain turns(3) ax\n\
+        edited := frame\nedited turns(2) ax\n";
     let src = format!("{DRAWING}{turns}");
     let e = read(&src);
     let (ratio,advance) = e.sketch.motions[joint(&e,"stated")].rotation(&e.sketch).unwrap();
@@ -136,7 +136,7 @@ fn a_stated_ratio_turns_as_the_number_it_states_and_follows_an_edit() {
         for k in 0..3 { assert!((u[k]-v[k]).abs() < 1e-9,"{u:?} != {v:?}"); }
     }
     refused(&format!("{DRAWING}measured := frame\n\
-        std.Turn(measured, about: ax, ratio: length(big) / length(small))\n"),
+        measured turns(length(big) / length(small)) ax\n"),
         "E107","`length(big)` measures the solved drawing");
 }
 
@@ -146,17 +146,17 @@ fn a_stated_ratio_turns_as_the_number_it_states_and_follows_an_edit() {
 #[test]
 fn a_joints_ratio_and_advance_are_stated_and_a_measured_one_is_refused() {
     for tail in [
-        "screw := frame\nstd.Turn(screw, about: ax, ratio: radius(wheel) / distance(o, k1))\n",
-        "screw := frame\nstd.Turn(screw, about: ax, ratio: 1, advance: distance(k0, big))\n",
-        "slide := frame\nstd.Slide(slide, along: ax, advance: length(small) / 2)\n",
+        "screw := frame\nscrew turns(radius(wheel) / distance(o, k1)) ax\n",
+        "screw := frame\nscrew screws(distance(k0, big)) ax\n",
+        "slide := frame\nslide slides(length(small) / 2) ax\n",
     ] {
         refused(&format!("{DRAWING}{tail}"),"E107",gcs_core::expr::MEASURE_MARK);
     }
     // o is the origin and k1 (sin 60°, −7.5); k0 stands 4 below the line `big` runs along
     let expect = 12./0.8660254037844387f64.hypot(7.5);
     let e = read(&format!("{DRAWING}screw := frame\n\
-        std.Turn(screw, about: ax, ratio: {expect}, advance: 4mm)\n\
-        slide := frame\nstd.Slide(slide, along: ax, advance: small_len / 2)\n"));
+        ax coincident(sense: same) screw.axis; fix(ratio == {expect}, advance == 4mm) screw\n\
+        slide := frame\nslide slides(small_len / 2) ax\n"));
     let (ratio,advance) = e.sketch.motions[joint(&e,"screw")].rotation(&e.sketch).unwrap();
     assert!((ratio-expect).abs() < 1e-12 && (advance-4.).abs() < 1e-12,"{ratio} {advance}");
     let slide = &e.sketch.motions[joint(&e,"slide")];
@@ -175,7 +175,7 @@ fn a_joints_ratio_and_advance_are_stated_and_a_measured_one_is_refused() {
 #[test]
 fn a_placed_solid_moves_when_the_number_its_frame_turns_by_does() {
     let src = format!("{DRAWING}turn := frame\n\
-        std.Turn(turn, about: ax, ratio: big_len / small_len)\n\
+        turn turns(big_len / small_len) ax\n\
         moved := stock at(under: turn) 30deg\n");
     let inside = WorldPoint([2.,-1.,1.]);
     let mut seen = Vec::new();
@@ -198,7 +198,7 @@ fn a_placed_solid_moves_when_the_number_its_frame_turns_by_does() {
 #[test]
 fn a_placed_solids_motion_is_copied_with_it_and_goes_with_its_axis() {
     let e = read(&format!("{DRAWING}turn := frame\n\
-        std.Turn(turn, about: ax, ratio: big_len / small_len)\n\
+        turn turns(big_len / small_len) ax\n\
         moved := stock at(under: turn) 30deg\n"));
     let copied = graft::copy(&e.sketch,&[e.map.ent_named("moved").unwrap()]);
     assert_eq!(copied.motions.len(),1);
@@ -241,7 +241,7 @@ fn the_flat_print_keeps_a_joints_number_as_written() {
 fn a_ratio_inside_a_component_is_stated_from_the_instances_numbers() {
     let pair = |ratio: &str| format!("\
 unit mm
-use std
+use std (screws, slides, turns)
 component Pair(ax: line, big: Length, small: Length) {{
   r0 := point
   r1 := point hint((30, -4))
@@ -254,7 +254,7 @@ component Pair(ax: line, big: Length, small: Length) {{
   pinion := horizontal line(s0,s1)
   s0 distance(small) s1
   turn := frame
-  std.Turn(turn, about: ax, ratio: {ratio})
+  turn turns({ratio}) ax
 }}
 in std.front {{
 o := point
@@ -286,11 +286,11 @@ fn a_measurement_read_before_the_solve_is_refused_with_the_stratum() {
     // a solid's extent is settled at elaboration
     refused(&format!("{DRAWING}tall := solid(profile, depth: length(small))\n"),"E107",mark);
     // an attitude and a placement angle are both read before anything measures
-    refused(&format!("{DRAWING}turn := frame\nstd.Turn(turn, about: ax, ratio: 1)\n\
+    refused(&format!("{DRAWING}turn := frame\nturn turns(1) ax\n\
         moved := stock at(under: turn) angle(big, slope)\n"),"E107",mark);
     // and a joint's numbers are held by relations, so they are too
-    refused(&format!("{DRAWING}turn := frame\nstd.Turn(turn, about: ax, ratio: 1, \
-        advance: length(small))\n"),"E107",mark);
+    refused(&format!("{DRAWING}turn := frame\nturn screws(\
+        advance: length(small)) ax\n"),"E107",mark);
     // one refusal, not one per path that carried it
     let d = diag(&format!("{DRAWING}k := length(big)\n"));
     assert_eq!(d.iter().filter(|(_,m)| m.contains(mark)).count(),1,"{d:?}");
@@ -304,10 +304,10 @@ fn a_measurement_in_a_joint_is_refused_by_its_stratum_and_its_arguments_are_name
     let mark = gcs_core::expr::MEASURE_MARK;
     for ratio in ["length(big)","length(o) / length(small)","radius(big) / 1mm",
                   "length(nothing) / length(small)"] {
-        refused(&format!("{DRAWING}turn := frame\nstd.Turn(turn, about: ax, ratio: {ratio})\n"),
+        refused(&format!("{DRAWING}turn := frame\nturn turns({ratio}) ax\n"),
             "E107",mark);
     }
-    let d = diag(&format!("{DRAWING}turn := frame\nstd.Turn(turn, about: ax, ratio: length(3))\n"));
+    let d = diag(&format!("{DRAWING}turn := frame\nturn turns(length(3)) ax\n"));
     assert!(d.iter().any(|(_,m)| m.contains("its arguments are names")),"{d:?}");
 }
 
@@ -328,8 +328,8 @@ fn the_retired_motion_is_refused_naming_its_replacement() {
         "f slides(a) l");
     refused(&format!("{DRAWING}turn := motion(about: ax, ratio: 3, phase: angle(big, slope))\n"),
         "roll 0 is as drawn");
-    refused(&format!("{DRAWING}a1 := frame\nstd.Turn(a1, about: ax, ratio: 1)\n\
-        b1 := frame\nstd.Turn(b1, about: ax, ratio: 2)\nrel := motion(a1, relative_to: b1)\n"),
+    refused(&format!("{DRAWING}a1 := frame\na1 turns(1) ax\n\
+        b1 := frame\nb1 turns(2) ax\nrel := motion(a1, relative_to: b1)\n"),
         "`under: a, seen_from: b`");
 }
 
@@ -343,9 +343,9 @@ fn the_spiral_bevel_rolls_by_tooth_count_are_its_trig_ratios() {
     assert!(text.contains(anchor));
     let e = fixtures::gear::read(&text.replace(anchor,&format!("{anchor}\
   trig_pinion_roll := frame\n\
-  std.Turn(trig_pinion_roll, about: pinion_cone.ax, ratio: 1 / sin(atan2(24, 48)))\n\
+  trig_pinion_roll turns(1 / sin(atan2(24, 48))) pinion_cone.ax\n\
   trig_gear_roll := frame\n\
-  std.Turn(trig_gear_roll, about: gear_cone.ax, ratio: -1 / sin(atan2(48, 24)))\n")));
+  trig_gear_roll turns(-1 / sin(atan2(48, 24))) gear_cone.ax\n")));
     let find = |name: &str| joint(&e,&format!("pair.{name}"));
     for member in ["pinion_roll","gear_roll"] {
         let (counted,trig) = (find(member),find(&format!("trig_{member}")));

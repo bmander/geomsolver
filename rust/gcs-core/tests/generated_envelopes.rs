@@ -4,7 +4,7 @@ use crate::common::parsed::{build, solved};
 
 const MODEL: &str = "\
 unit mm
-use std
+use std (turns)
 in std.front {
 o := point
 q := point
@@ -22,7 +22,7 @@ radius(1mm) meridian
 ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 roll := frame
-std.Turn(roll,about: spin_axis,ratio: 1)
+roll turns(1) spin_axis
 generated := envelope(wall over t in (-20deg, 20deg), under: roll)
 ";
 fn near(a: [f64;3],b: [f64;3]) {
@@ -92,7 +92,7 @@ fn envelope_searches_respect_the_declared_source_span() {
 #[test]
 fn envelope_declarations_round_trip_and_follow_dependency_copy_delete() {
     // the flat form prints no component instance: the joint written out as `std.Turn` writes it
-    let e = solved(&MODEL.replace("std.Turn(roll,about: spin_axis,ratio: 1)",
+    let e = solved(&MODEL.replace("roll turns(1) spin_axis",
         "spin_axis coincident roll.axis\nfix(ratio == 1, advance == 0mm) roll"));
     let mut p = e.program.clone();
     let text = syntax::render_flat(&mut p).unwrap().to_string();
@@ -169,8 +169,8 @@ fn envelope_roots_on_domain_edges_are_reached_without_accepting_false_boundary_r
         Error::NotConverged);
     // A surface family with no motion has an identically zero equation; it does not
     // define an isolated characteristic, even though its initial residual is zero.
-    let e = solved(&MODEL.replace("std.Turn(roll,about: spin_axis,ratio: 1)",
-        "std.Turn(roll,about: spin_axis,ratio: 0)"));
+    let e = solved(&MODEL.replace("roll turns(1) spin_axis",
+        "roll turns(0) spin_axis"));
     let stationary = GeneratedEnvelope::named(&e.sketch,0).unwrap();
     assert_eq!(stationary.intersect(|_,_| [0.,0.],[0.125,0.05,0.1],options).unwrap_err(),
         Error::SingularIntersection);

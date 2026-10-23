@@ -7,7 +7,7 @@ mod contact;
 
 const AXES: &str = "\
 unit mm
-use std
+use std (slides, spins, turns)
 in std.front {
 a := point
 b := point
@@ -64,8 +64,8 @@ fn near(a: [f64;3], b: [f64;3], tol: f64) {
 fn inverse_motion_speed_bounds_cover_offset_axes_and_shared_relative_graphs() {
     // the two relatives share both frames' nodes: each reads the other's observer as its source
     let e = solved(&format!("{AXES}\n\
-        turn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n\
-        observer := frame\nstd.Turn(observer,about: other,ratio: -3)\n{}{}",
+        turn := frame\nturn turns(2) ax\n\
+        observer := frame\nobserver turns(-3) other\n{}{}",
         reading("turn","observer"),reading("observer","turn")));
     let nodes = [("turn",joint(&e,"turn")),("observer",joint(&e,"observer")),
         ("relative",seen(&e,"turn","observer")),("reverse",seen(&e,"observer","turn"))];
@@ -91,8 +91,8 @@ fn inverse_motion_speed_bounds_cover_offset_axes_and_shared_relative_graphs() {
 fn motions_follow_directed_axes_and_exact_relative_velocity() {
     // the reading before the frames it reads
     let e = solved(&format!("{AXES}{}\
-        turn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n\
-        observer := frame\nstd.Turn(observer,about: other,ratio: -0.3)\n",
+        turn := frame\nturn turns(2) ax\n\
+        observer := frame\nobserver turns(-0.3) other\n",
         reading("turn","observer")));
     let (turn,observer,relative) =
         (joint(&e,"turn"),joint(&e,"observer"),seen(&e,"turn","observer"));
@@ -149,8 +149,8 @@ fn motions_round_trip_and_remap_transitive_dependencies() {
 fn motion_component_formals_preserve_private_dependencies() {
     // a frame seen from itself stands still: the private one inside, the public one outside
     let src = format!("{AXES}component Rotate(ax: line,x: point,rate: Scalar) {{\n\
-        private spin := frame\nstd.Turn(spin,about: ax,ratio: rate)\n\
-        turn := frame\nstd.Turn(turn,about: ax,ratio: rate)\n\
+        private spin := frame\nspin turns(rate) ax\n\
+        turn := frame\nturn turns(rate) ax\n\
         out := point\nout coincident(under: spin,seen_from: spin,t == 40deg) x\n}}\n\
         component Observe(m: frame,x: point) {{\n\
         out := point\nout coincident(under: m,seen_from: m,t == 40deg) x\n}}\n\
@@ -175,10 +175,10 @@ fn motions_reject_wrong_units_missing_references_and_retired_spellings() {
     for (tail,want) in [
         ("bad := frame\no coincident bad.axis\nbad.axis parallel std.front.normal\n\
           fix(ratio == 1,advance == 2mm) bad","has no advance"),
-        ("bad := frame\nstd.Turn(bad,about: missing,ratio: 1)","missing"),
-        ("bad := frame\nstd.Turn(bad,about: ax,ratio: 2mm)","ratio"),
+        ("bad := frame\nbad turns(1) missing","missing"),
+        ("bad := frame\nbad turns(2mm) ax","ratio"),
         // a joint's number no `fix` states is the solve's (stage 5); one measured is no number
-        ("bad := frame\nstd.Turn(bad,about: ax,ratio: length(ax) / 1mm)","measures the solved"),
+        ("bad := frame\nbad turns(length(ax) / 1mm) ax","measures the solved"),
         ("bad := point\nbad coincident(under: ax,t == 0deg) x","a motion is read off a frame"),
         ("still := frame\nbad := point\nbad coincident(under: still,t == 0deg) x","does not move"),
     ] {
@@ -205,7 +205,7 @@ fn motions_reject_wrong_units_missing_references_and_retired_spellings() {
 #[test]
 fn motion_axes_use_world_geometry_and_follow_solved_point_edits() {
     let mut e = solved("unit mm
-use std
+use std (slides, spins, turns)
 in std.front {
   a := point
   b := point
@@ -216,7 +216,7 @@ in std.front {
   ax := line(a,b)
 }
 turn := frame
-std.Turn(turn,about: ax,ratio: 1)
+turn turns(1) ax
 ");
     // a quarter turn on, at roll 90°
     let (m,quarter) = (joint(&e,"turn"),std::f64::consts::FRAC_PI_2);
@@ -249,7 +249,7 @@ std.Turn(turn,about: ax,ratio: 1)
 /// relatives — 64 levels, and no cycle — are held over nodes made by hand.
 #[test]
 fn motion_dependency_depth_is_bounded_and_runtime_cycles_are_rejected() {
-    let mut e = solved(&format!("{AXES}base := frame\nstd.Turn(base,about: ax,ratio: 1)\n"));
+    let mut e = solved(&format!("{AXES}base := frame\nbase turns(1) ax\n"));
     let base = joint(&e,"base");
     // m0 reads m1 reads … m69 reads base, each seen from base: the recursion is 70 deep
     let first = e.sketch.motions.len();
@@ -267,7 +267,7 @@ fn motion_dependency_depth_is_bounded_and_runtime_cycles_are_rejected() {
 /// the cache does not hide the depth.
 #[test]
 fn cached_motion_dependencies_do_not_bypass_the_depth_limit() {
-    let mut e = solved(&format!("{AXES}base := frame\nstd.Turn(base,about: ax,ratio: 1)\n"));
+    let mut e = solved(&format!("{AXES}base := frame\nbase turns(1) ax\n"));
     let base = joint(&e,"base");
     let mut prev = base;
     for _ in 0..70 {
@@ -287,8 +287,8 @@ fn cached_motion_dependencies_do_not_bypass_the_depth_limit() {
 fn screws_and_translations_follow_their_closed_forms() {
     use gcs_core::interval::Interval as I;
     let e = solved(&format!("{AXES}\n\
-        tap := frame\nstd.Turn(tap,about: ax,ratio: 2,advance: 3mm)\n\
-        feed := frame\nstd.Slide(feed,along: other,advance: 10mm)\n{}",reading("tap","feed")));
+        tap := frame\nax coincident(sense: same) tap.axis; fix(ratio == 2, advance == 3mm) tap\n\
+        feed := frame\nfeed slides(10mm) other\n{}",reading("tap","feed")));
     let tap = motion::Family::read(&e.sketch,joint(&e,"tap")).unwrap();
     let feed = motion::Family::read(&e.sketch,joint(&e,"feed")).unwrap();
     let relative = motion::Family::read(&e.sketch,seen(&e,"tap","feed")).unwrap();
@@ -348,10 +348,10 @@ fn screws_and_translations_follow_their_closed_forms() {
 #[test]
 fn a_pose_alone_is_the_motion_without_its_derivative() {
     let mut e = solved(&format!("{AXES}\n\
-        tap := frame\nstd.Turn(tap,about: ax,ratio: 2,advance: 3mm)\n\
-        feed := frame\nstd.Slide(feed,along: other,advance: 10mm)\n\
-        turn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n\
-        observer := frame\nstd.Turn(observer,about: other,ratio: -3)\n{}{}",
+        tap := frame\nax coincident(sense: same) tap.axis; fix(ratio == 2, advance == 3mm) tap\n\
+        feed := frame\nfeed slides(10mm) other\n\
+        turn := frame\nturn turns(2) ax\n\
+        observer := frame\nobserver turns(-3) other\n{}{}",
         reading("tap","feed"),reading("turn","observer")));
     // and a relative of a relative, made by hand: a document reads one frame seen from another
     let (rolled,turn) = (seen(&e,"turn","observer"),joint(&e,"turn"));
@@ -378,7 +378,7 @@ fn a_pose_alone_is_the_motion_without_its_derivative() {
 #[test]
 fn a_turn_about_a_point_is_a_rotation_square_to_its_view() {
     let e = solved(&format!("{AXES}turn := frame\n\
-        std.Spin(turn,about: a,on: std.front,ratio: 2)\n"));
+        turn spins(2) a\n"));
     // the page stands in space as the front view: its points are lifted through its basis; read
     // at 0.7 on from 15°, where a turn twice the roll stands 30° on
     let page = gcs_core::plane::Basis::page();
@@ -399,7 +399,7 @@ fn two_turns_about_parallel_axes_are_the_wankel_rotors_planetary_motion() {
     let (r,e) = (105.,15.);
     let src = format!("\
 unit mm
-use std
+use std (slides, spins, turns)
 in std.front {{
 shaft := line(std.origin, hint((0, 1)))
 fix((0, 1)) shaft.p2
@@ -412,9 +412,9 @@ c1 distance(1mm, along: v) std.front
 rotor_axis := line(c0, c1)
 }}
 counter := frame
-std.Turn(counter, about: shaft, ratio: -1)
+counter turns(-1) shaft
 spin := frame
-std.Turn(spin, about: rotor_axis, ratio: -2/3)
+spin turns(-2/3) rotor_axis
 rotor := point
 rotor coincident(under: spin, seen_from: counter, t == 0deg) c0
 housing := point

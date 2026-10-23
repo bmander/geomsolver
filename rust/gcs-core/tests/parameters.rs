@@ -24,7 +24,7 @@ const CLAIM: &str = include_str!("fixtures/solid_issue51/sweep_possible.sv");
 /// An envelope in space over a stated roll (`tests/generated_envelopes.rs`'s).
 const ENVELOPE: &str = "\
 unit mm
-use std
+use std (spins, turns)
 in std.front {
 o := point
 q := point
@@ -42,7 +42,7 @@ radius(1mm) meridian
 ring := solid(face(meridian),about: ax)
 wall := surface(ring,meridian)
 roll := frame
-std.Turn(roll,about: spin_axis,ratio: 1)
+roll turns(1) spin_axis
 generated := envelope(wall over t in (-20deg, 20deg), under: roll)
 ";
 
@@ -66,7 +66,7 @@ fn built(src: &str) -> Elaborated {
 }
 
 /// A point, so a document is a drawing.
-const POINT: &str = "use std\nin std.front {\n  o := point\n  fix((0, 0)) o\n}\n";
+const POINT: &str = "use std (spins, turns)\nin std.front {\n  o := point\n  fix((0, 0)) o\n}\n";
 
 #[test]
 fn a_declared_parameter_is_one_running_number() {
@@ -199,14 +199,14 @@ fn the_rolls_a_reading_states_are_intervals_of_the_shared_roll() {
 /// A screw about a line in space and a point at rest, for the readings at an instant (#391 S2).
 const SCREW: &str = "\
 unit mm
-use std
+use std (spins, turns)
 a0 := point hint((1, 2, 3))
 a1 := point hint((4, 3, 11))
 fix((1, 2, 3)) a0
 fix((4, 3, 11)) a1
 ax := line(a0, a1)
 screw := frame
-std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw
 x := point hint((9, -4, 6))
 fix((9, -4, 6)) x
 ";
@@ -279,7 +279,7 @@ fn a_reading_over_a_declared_parameter_reads_its_interval() {
     let env = ENVELOPE.replace("envelope(wall over t in (-20deg, 20deg), under: roll)",
                                "envelope(wall over r, under: roll)");
     let flat = format!("param r: Angle over (-20deg, 20deg)\n{}", env.replace(
-        "std.Turn(roll,about: spin_axis,ratio: 1)",
+        "roll turns(1) spin_axis",
         "spin_axis coincident roll.axis\nfix(ratio == 1, advance == 0mm) roll"));
     let e = built(&flat);
     assert_eq!(e.sketch.envelopes[0].roll, Running::new("r", Dim::ANGLE, -20.0, 20.0));
@@ -358,7 +358,7 @@ fn near(got: [f64; 3], want: [f64; 3], what: &str) {
 fn what_is_drawn_in_a_jointed_frame_stands_where_its_value_puts_it() {
     let e = solved(&format!("{SCREW}fix(value == 40deg) screw\nn := std.front in screw\n\
         X := x in screw\nm := std.front at(under: screw) 40deg\nY := x at(under: screw) 40deg\n\
-        still := frame\nstd.Turn(still, about: ax, ratio: 2)\nr := std.front in still\n"));
+        still := frame\nstill turns(2) ax\nr := std.front in still\n"));
     let screw = family(&e, "screw");
     let pose = screw.at(40f64.to_radians()).unwrap();
     let front = chart(&e, "std.front");
@@ -414,12 +414,12 @@ fn what_is_drawn_in_a_jointed_frame_stands_where_its_value_puts_it() {
 fn a_joints_value_may_be_an_unknown_the_drawing_solves_for() {
     let e = solved("\
 unit mm
-use std
+use std (spins, turns)
 param theta: Angle hint(10deg)
 x := point hint((10, 0, 0))
 fix((10, 0, 0)) x
 spin := frame
-std.Spin(spin, about: std.top.origin, on: std.top, ratio: 1)
+spin spins(1) std.top.origin
 fix(value == theta) spin
 X := x in spin
 std.origin distance(5mm, along: std.y) X
@@ -441,7 +441,7 @@ std.origin distance(5mm, along: std.y) X
 fn a_joints_value_prints_back_and_refuses_what_it_cannot_mean() {
     // the flat form prints no instance: the joint written out as `std.Turn` writes it, its value
     // beside its other numbers
-    let flat = SCREW.replace("std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)",
+    let flat = SCREW.replace("ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw",
         "ax coincident screw.axis\nfix(ratio == 1.5, advance == 7mm, value == 40deg) screw");
     let src = format!("{flat}n := std.front in screw\nX := x in screw\n");
     let (mut prog, errs) = parse(&src);
@@ -467,8 +467,8 @@ fn a_joints_value_prints_back_and_refuses_what_it_cannot_mean() {
     refused("fix(value == 10mm) screw", "E103", "`value` is Angle, and this is Length");
     refused("fix(value == 10deg) screw\nin screw {\n  p := point\n}", "E080",
             "rides on `screw`, which has a value");
-    refused("in (arm := frame) {\n  planet := frame\n}\nstd.Turn(arm, about: ax, ratio: 1)\n\
-             std.Turn(planet, about: ax, ratio: 2)\nfix(value == 10deg) planet", "E080",
+    refused("in (arm := frame) {\n  planet := frame\n}\narm turns(1) ax\n\
+             planet turns(2) ax\nfix(value == 10deg) planet", "E080",
             "a frame with a value rides on none");
     // and a frame drawn in one that does not move is drawn in nothing that carries it
     refused("still := frame\nn := std.front in still", "E040", "does not move");
@@ -503,7 +503,7 @@ fn a_joints_value_may_run_over_a_declared_parameter() {
 /// numbers.  It once took the statement out, and the cam on the timeline stopped turning.
 #[test]
 fn a_joints_value_survives_a_reconcile() {
-    let flat = SCREW.replace("std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)",
+    let flat = SCREW.replace("ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw",
         "ax coincident screw.axis\nfix(ratio == 1.5, advance == 7mm, value == t) screw");
     for src in [format!("{SCREW}param t: Angle over (-30deg, 400deg)\nfix(value == t) screw\n\
                          X := x in screw\n"),

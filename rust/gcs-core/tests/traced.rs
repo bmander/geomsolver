@@ -14,7 +14,7 @@ use gcs_core::traced::{self, Need};
 /// Three axes through the origin, drawn in space as lines, for a body to measure along.
 const AXES: &str = "\
 unit mm
-use std
+use std (screws)
 o := point hint((0, 0, 0))
 fix((0, 0, 0)) o
 X1 := point hint((10, 0, 0))
@@ -41,7 +41,7 @@ k := trace(Helix(o, xl, yl, zl, r: 5mm, lead: 3mm).p over u in (0deg, 720deg))
 s0 := point hint((5, 0, 0))
 fix((5, 0, 0)) s0
 screw := frame
-std.Turn(screw, about: zl, ratio: 1, advance: 3mm)
+screw screws(3mm) zl
 component Screwed(p0: point, m: frame, u: Angle) {
   p := point hint((5, 0, 0))
   p coincident(under: m, t == u) p0

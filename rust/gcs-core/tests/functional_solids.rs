@@ -108,7 +108,7 @@ fn spatial_composition_bounds_lenses_shells_and_shared_empty_results() {
 fn spatial_transforms_use_inverse_fixed_poses_and_refuse_invalid_angles() {
     use gcs_core::{program,solve,motion::Family};
     let (source,errors) = crate::common::parse("\
-use std
+use std (turns)
 in std.front {
 a := point
 b := point
@@ -117,7 +117,7 @@ fix((1, 1)) b
 ax := line(a,b)
 }
 turn := frame
-std.Turn(turn, about: ax, ratio: 1)
+turn turns(1) ax
 ");
     assert!(errors.is_empty());
     let mut model = program::elaborate(&source); assert!(model.ok());

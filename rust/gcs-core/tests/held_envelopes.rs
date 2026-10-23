@@ -17,7 +17,7 @@ use gcs_core::space::{cross, dot, norm, sub};
 /// torus) — under the mesh of two skew shafts, one of them a screw.
 const SIDES: &str = "\
 unit mm
-use std
+use std (spins, turns)
 in std.front {
   o := point
   q := point
@@ -51,9 +51,9 @@ fix((5, 40, 3)) g1
 fix((9, 41, 13)) g2
 gear_ax := line(g1, g2)
 spin := frame
-std.Turn(spin, about: ax, ratio: 1)
+spin turns(1) ax
 gear_turn := frame
-std.Turn(gear_turn, about: gear_ax, ratio: -0.4, advance: 3mm)
+gear_ax coincident(sense: same) gear_turn.axis; fix(ratio == -0.4, advance == 3mm) gear_turn
 f1 := envelope(side over t in (-60deg, 60deg), under: spin, seen_from: gear_turn)
 f2 := envelope(round over t in (-60deg, 60deg), under: spin, seen_from: gear_turn)
 ";
@@ -210,7 +210,7 @@ fn a_point_held_to_a_cone_sets_envelope_is_on_it() {
 /// `(10, 0, 0)` leaning 20°, generating under a mesh of shafts square to one another and offset.
 const CONE: &str = "\
 unit mm
-use std
+use std (spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((0, 0, 10))
 fix((0, 0, 0)) o
@@ -225,9 +225,9 @@ fix((10, 30, 0)) b
 gear_ax := line(a, b)
 cone := std.ConeThrough(ax, q, lean: 20deg)
 spin := frame
-std.Turn(spin, about: ax, ratio: 1)
+spin turns(1) ax
 gear_turn := frame
-std.Turn(gear_turn, about: gear_ax, ratio: -0.5)
+gear_turn turns(-0.5) gear_ax
 flank := envelope(cone over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
 p := point hint((9, 3, 1))
 fix(x == 9, z == 1) p
@@ -241,7 +241,7 @@ p coincident flank
 /// that plane is the outer cylinder's own: centred on the axis, 35 in radius.
 const ANNULUS: &str = "\
 unit mm
-use std
+use std (spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((0, 0, 10))
 fix((0, 0, 0)) o
@@ -254,7 +254,7 @@ fix((30, 0, 5)) c2
 cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: 5mm)
 turn := frame
-std.Turn(turn, about: ax, ratio: 1)
+turn turns(1) ax
 flank := envelope(cyl over t in (-30deg, 30deg), under: turn)
 in std.top {
   p := point hint((34, 9))
@@ -362,9 +362,9 @@ f1 curvature(at: p) osc
 #[test]
 fn every_envelope_contact_prints_and_parses() {
     // the flat form prints no component instance: the joints written out as `std.Turn` writes them
-    let sides = SIDES.replace("std.Turn(spin, about: ax, ratio: 1)",
+    let sides = SIDES.replace("spin turns(1) ax",
         "ax coincident spin.axis\nfix(ratio == 1, advance == 0mm) spin")
-        .replace("std.Turn(gear_turn, about: gear_ax, ratio: -0.4, advance: 3mm)",
+        .replace("gear_ax coincident(sense: same) gear_turn.axis; fix(ratio == -0.4, advance == 3mm) gear_turn",
         "gear_ax coincident gear_turn.axis\nfix(ratio == -0.4, advance == 3mm) gear_turn");
     let src = format!("{sides}\
 p := point hint((3, 1, 8))
@@ -522,9 +522,9 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
     refused(&ANNULUS.replace("p coincident flank\n", ""), "the normal at `p` is taken where a contact holds");
     refused(&ANNULUS.replace("cyl := std.Cylinder(cax, r: 5mm)", "cyl := std.Sphere(c1, r: 5mm)"),
             "the solve reads the envelope of a cone's or a cylinder's surface");
-    let planar = ANNULUS.replace("std.Turn(turn, about: ax, ratio: 1)",
+    let planar = ANNULUS.replace("turn turns(1) ax",
         "in std.top {\n  tc := point hint((0, 0))\n}\nfix((0, 0)) tc\n\
-         std.Spin(turn, about: tc, on: std.top, ratio: 1)");
+         turn spins(1) tc");
     let (lined, viewed) = (elaborated(ANNULUS), elaborated(&planar));
     for n in ["p", "m", "w", "kc"] {
         let (a, b) = (crate::common::at(&lined, n), crate::common::at(&viewed, n));
@@ -536,7 +536,7 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
 /// place along a rail, and hinted elsewhere (`HINT`, #304).
 const ANNULUS_PLACED: &str = "\
 unit mm
-use std
+use std (spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((0, 0, 10))
 fix((0, 0, 0)) o
@@ -559,7 +559,7 @@ c2 coincident(t == 0.5) high
 cax := line(c1, c2)
 cyl := std.Cylinder(cax, r: 5mm)
 turn := frame
-std.Turn(turn, about: ax, ratio: 1)
+turn turns(1) ax
 flank := envelope(cyl over t in (-30deg, 30deg), under: turn)
 in std.top {
   p := point hint((34, 9))

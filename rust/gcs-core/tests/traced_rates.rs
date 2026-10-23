@@ -14,7 +14,7 @@ use gcs_core::program::elaborate;
 
 const TRACTRIX: &str = "\
 unit mm
-use std
+use std (turns)
 
 component Drag(o: point, a: Length, u: Scalar) {
   q := point
@@ -78,7 +78,7 @@ fn a_dragged_point_traces_the_tractrix() {
 
 const CLOTHOID: &str = "\
 unit mm
-use std
+use std (turns)
 
 component Clothoid(A: Length, s: Length) {
   p := point
@@ -181,7 +181,7 @@ spiral curvature(t == 80mm) osc
 
 const CATENARY: &str = "\
 unit mm
-use std
+use std (turns)
 
 component Chain(c: Length, v: Length, s: Length) {
   p := point
@@ -237,7 +237,7 @@ fn a_two_point_problem_is_shot_through_the_flow() {
 
 const GEODESIC: &str = "\
 unit mm
-use std
+use std (turns)
 
 component Geodesic(o: point, top: point, half: Angle, s: Length) {
   ax := line(o, top)
@@ -353,7 +353,7 @@ h distance(10mm) h2
 
 const HELIX: &str = "\
 unit mm
-use std
+use std (turns)
 
 component Wound(x0: point, vert: line, spin: frame, s: Length) {
   x := point hint((20, 0, 0))
@@ -372,7 +372,7 @@ top := point hint((0, 0, 10))
 fix((0, 0, 10)) top
 za := line(o, top)
 spin := frame
-std.Turn(spin, about: za, ratio: 1)
+spin turns(1) za
 x0 := point hint((20, 0, 0))
 fix((20, 0, 0)) x0
 helix := trace(Wound(x0, za, spin, s: 0mm).X over s in (-60mm, 60mm))
@@ -470,14 +470,14 @@ fn a_rate_is_read_only_as_a_direction() {
         assert!(errs.iter().any(|e| e.contains(said)), "{row}: {errs:?}");
     }
     // along a turn a rate has no unit yet
-    let errs = errors("unit mm\nuse std\ncomponent Turn(o: point, x: line, u: Angle) {\n  \
+    let errs = errors("unit mm\nuse std (turns)\ncomponent Turn(o: point, x: line, u: Angle) {\n  \
         p := point hint((10, 0))\n  t := line(o, p)\n  o distance(10mm) p\n  \
         x angle(u) t\n  rate(p over u) perpendicular t\n}\nin std.front {\n  o := point\n  \
         e := point\n  x := line(o, e)\n  fix((0, 0)) o\n  fix((10, 0)) e\n}\n\
         k := trace(Turn(o, x, u: 0deg).p over u in (0deg, 90deg))\n");
     assert!(errs.iter().any(|e| e.contains("a rate along an angle is not yet read")), "{errs:?}");
     // outside a component nothing runs
-    let errs = errors("unit mm\nuse std\nin std.front {\n  p := point\n  q := point\n  \
+    let errs = errors("unit mm\nuse std (turns)\nin std.front {\n  p := point\n  q := point\n  \
                        l := line(p, q)\n  rate(p over s) parallel l\n}\n");
     assert!(errs.iter().any(|e| e.contains("`s` is no formal here")), "{errs:?}");
 }
@@ -489,7 +489,7 @@ fn a_rate_is_read_only_as_a_direction() {
 fn a_march_is_refused_where_its_rates_lose_rank() {
     let src = "\
 unit mm
-use std
+use std (turns)
 
 component Round(o: point, u: Scalar) {
   p := point hint((0, 30))

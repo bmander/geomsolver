@@ -18,7 +18,7 @@ use gcs_core::space::{add, cross, dot, norm, scale, sub, unit};
 /// point where the two touch at the start; `path`, its envelope under the roll, is its path there.
 const ROLLING: &str = "\
 unit mm
-use std
+use std (spins, turns)
 in std.top {
   o := point
   fix((0, 0)) o
@@ -28,9 +28,9 @@ in std.top {
   fix((40, 0)) x
 }
 fixed_turn := frame
-std.Spin(fixed_turn, about: o, on: std.top, ratio: 1)
+fixed_turn spins(1) o
 rolling_turn := frame
-std.Spin(rolling_turn, about: c, on: std.top, ratio: -2)
+rolling_turn spins(-2) c
 path := envelope(x over t in (-180deg, 180deg), under: rolling_turn, seen_from: fixed_turn)
 ";
 
@@ -123,11 +123,11 @@ b1 := point hint((-5, 9, 0))
 fix((-5, 0, 2)) b0
 fix((-5, 9, 0)) b1
 bx := line(b0, b1)
-use std
+use std (spins, turns)
 screw := frame
-std.Turn(screw, about: ax, ratio: 1.5, advance: 7mm)
+ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw
 turn := frame
-std.Turn(turn, about: bx, ratio: -0.4)
+turn turns(-0.4) bx
 x := point hint((9, -4, 6))
 fix((9, -4, 6)) x
 P := point hint((9, -4, 6))
@@ -162,9 +162,9 @@ fn a_carried_point_prints_back_and_names_a_motion() {
         {f}.axis parallel std.top.normal\nfix(ratio == {r}, advance == 0mm) {f}\n");
     let src = format!("{ROLLING}in std.top {{\n  X := point hint((50, 0))\n}}\n\
                        X coincident(under: rolling_turn, seen_from: fixed_turn, t == 30) x\n")
-        .replace("std.Spin(fixed_turn, about: o, on: std.top, ratio: 1)\n",
+        .replace("fixed_turn spins(1) o\n",
                  &spin("fixed_turn", "o", 1))
-        .replace("std.Spin(rolling_turn, about: c, on: std.top, ratio: -2)\n",
+        .replace("rolling_turn spins(-2) c\n",
                  &spin("rolling_turn", "c", -2))
         .replace("path := envelope(x over t in (-180deg, 180deg), under: rolling_turn, seen_from: fixed_turn)\n", "");
     let (mut prog, errs) = crate::common::parse(&src);

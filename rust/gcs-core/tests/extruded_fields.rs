@@ -31,7 +31,7 @@ fix((0, 10)) z
 ax := line(o, z)
 }
 turn := frame
-std.Turn(turn, about: ax, ratio: 1)
+ax coincident(sense: same) turn.axis; fix(ratio == 1, advance == 0mm) turn
 moved := block at(under: turn) 40deg
 ";
 

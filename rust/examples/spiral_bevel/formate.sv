@@ -48,10 +48,13 @@ component FormatePair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, s
   // The pitch cones and the tooth trace.
   gear_cone := GearCone(std.top, std.y, pinion_teeth: pinion_teeth, gear_teeth: gear_teeth,
     mean_module: mean_module)
-  trace := ToothTrace(std.top, gear_cone, R: R, spiral_angle: spiral_angle,
-    mean_module: mean_module, mn: mn, cutter_radius: 0.8 * R)
+  // the pair's numbers, as `HypoidPair` sets them
+  trace := ToothTrace(std.top, gear_cone, spiral_angle: spiral_angle, cutter_radius: 0.8 * R)
+  gear_cone.O distance(mn * R / mean_module) trace.normal
   pinion_cone := PinionCone(std.top, std.z, gear_cone, trace, shaft_angle: shaft_angle,
     offset: offset, rp: rp, pa: pa)
+  gear_cone.M distance(rp) pinion_cone.foot
+  gear_cone.to_apex angle(pa) gear_cone.to_foot
 
   // The blanks.
   blank_design := {width: 0.2 * R, addendum: addendum, back: 4 * mn, relief: end_relief}

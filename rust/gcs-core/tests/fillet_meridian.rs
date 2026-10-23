@@ -192,7 +192,7 @@ fn entity(e: &Elaborated, name: &str) -> usize {
 }
 
 /// #145's crown tip rounding as it was drawn (`fixtures/tip_rounding.sv`'s preview): a section's
-/// two tip corners rounded by `TipRounding`'s drawn tangent arcs.  The sharp section, from the drawn lines' carriers,
+/// two tip corners rounded by drawn tangent arcs.  The sharp section, from the drawn lines' carriers,
 /// rounded by the prototype: the same centres and feet.
 #[test]
 fn the_crown_tip_rounding_is_the_balls() {
@@ -397,7 +397,7 @@ fn the_end_relief_lowered_is_the_region_read_point_by_point() {
 
 /// **The crown's tip rounding by the word** (#183 step 6): the section drawn sharp from the same
 /// carriers, swept a little either side of its view, its tip's two edges rounded by `round` — the
-/// field's boundary passes through `TipRounding`'s drawn arcs, and a point a twentieth of the
+/// field's boundary passes through the drawn arcs, and a point a twentieth of the
 /// radius either side of an arc is on that side.
 #[test]
 fn the_crown_tip_rounding_is_the_words() {

@@ -4,11 +4,10 @@ use gcs_core::{envelope::IntersectionOptions,seam::{BoundarySeam,BoundarySeamTol
 pub(super) const SPHERE: &str = "\
 component Sphere(origin: point, size: Length) {
   private bottom := point
-  private top := point
+  private top := point hint((0, size))
   fix((0, -size)) bottom
-  fix((0, size)) top
+  fix(x == 0) top
   private rim := arc(center: origin,start: bottom,end: top)
-  radius(size) rim
   private diameter := line(top,bottom)
   private carrier := solid(face(rim,diameter),about: diameter)
   wall := surface(carrier,rim)

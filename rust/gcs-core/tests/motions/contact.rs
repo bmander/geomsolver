@@ -11,10 +11,10 @@ fn family(source_rate: f64,observer_rate: f64) -> motion::Family {
 /// (`program::motions`), and a turn seen from a slide is no contact the reduction reads.
 fn from_axes(axes: &str,source_rate: f64,observer_rate: f64) -> motion::Family {
     let observer = if observer_rate == 0. { "observer := frame\n".to_string() } else {
-        format!("observer := frame\nstd.Turn(observer,about: other,ratio: {observer_rate})\n")
+        format!("observer := frame\nobserver turns({observer_rate}) other\n")
     };
     let e = solved(&format!("{axes}\n\
-        source := frame\nstd.Turn(source,about: ax,ratio: {source_rate})\n{observer}{}",
+        source := frame\nsource turns({source_rate}) ax\n{observer}{}",
         reading("source","observer")));
     let node = if observer_rate == 0. { joint(&e,"source") } else { seen(&e,"source","observer") };
     motion::Family::read(&e.sketch,node).unwrap()
@@ -122,7 +122,7 @@ fn empty_constant_and_double_root_contacts_are_not_confused() {
     let stationary = family(0.,0.5);
     assert_eq!(stationary.normal_velocity(turned(90.)).unwrap().roots([-1.,1.],1e-10,8)
         .unwrap_err(),Error::Degenerate);
-    let mut e = solved(&format!("{AXES}\nspin := frame\nstd.Turn(spin,about: ax,ratio: 1)\n{}",
+    let mut e = solved(&format!("{AXES}\nspin := frame\nspin turns(1) ax\n{}",
         reading("spin","spin")));
     // the spin seen from itself, seen from the spin again: made by hand, as a document reads one
     // frame seen from another
@@ -154,8 +154,8 @@ fn a_racks_contact_equation_is_affine_in_the_roll() {
     let mut found = 0;
     for (advance,ratio) in [(5.,0.7),(-3.,-1.5),(12.,2.)] {
         let e = solved(&format!("{AXES}\n\
-            slide := frame\nstd.Slide(slide,along: other,advance: {advance}mm)\n\
-            blank := frame\nstd.Turn(blank,about: ax,ratio: {ratio})\n{}",
+            slide := frame\nslide slides({advance}mm) other\n\
+            blank := frame\nblank turns({ratio}) ax\n{}",
             reading("slide","blank")));
         let family = motion::Family::read(&e.sketch,seen(&e,"slide","blank")).unwrap();
         for surface in surfaces {

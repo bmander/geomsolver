@@ -485,6 +485,9 @@ component Slot(p: Point, w: Length) {
   a distance(w) b
   l := line(a, b)
   arm := line(p, a)
+  length(5) arm
+  horizontal arm
+  horizontal l
 }
 ";
 
@@ -544,23 +547,43 @@ t := Two(q, std.x, std.y) in front
             "{:?}", e.diags.iter().map(|d| &d.message).collect::<Vec<_>>());
     // a plane inside is left alone: its origin is its own
     let e = read(&format!(
-        "{VIEWS}component D(a: axis, b: axis) {{\n  f := plane(u: a, v: b)\n  c := point hint((1, 2))\n}}\nd1 := D(std.x, std.y) in front\n"
+        "{VIEWS}component D(a: axis, b: axis) {{\n  f := plane(u: a, v: b)\n  c := point hint((1, 2))\n  fix((1, 2)) c\n}}\nd1 := D(std.x, std.y) in front\n"
     ));
     assert_eq!(e.sketch.plane_of(at(&e, "d1.c")), Some(at(&e, "front")));
     let f = at(&e, "d1.f");
     assert_eq!(e.sketch.plane_of(e.sketch.frames[f].origin as usize), Some(f));
 }
 
+/// A slot its own rows do not place (`a` free beside `p`), which reads alike in a view and in
+/// space: refused for that (#562, E108), and read here for what removing a plane does to it.
+const LOOSE_SLOT: &str = "\
+component Slot(p: Point, w: Length) {
+  a := point hint((0, 0))
+  b := point hint((10, 0))
+  a distance(w) b
+  l := line(a, b)
+  arm := line(p, a)
+}
+";
+
+/// `src` elaborated, its only errors E108 at `Slot`.
+fn loose(src: &str) -> gcs_core::program::Elaborated {
+    let e = crate::common::linked::build(src);
+    let codes: Vec<&str> = e.errors().map(|d| d.code.as_str()).collect();
+    assert_eq!(codes, ["E108"], "{:?}", e.diags);
+    e
+}
+
 #[test]
 fn removing_the_plane_takes_an_instances_clause() {
-    let src = format!("{VIEWS}{SLOT}x := point hint((5, 5))\ns1 := Slot(x, w: 12) in top\n");
-    let e = read(&src);
+    let src = format!("{VIEWS}{LOOSE_SLOT}x := point hint((5, 5))\ns1 := Slot(x, w: 12) in top\n");
+    let e = loose(&src);
     let top = e.map.ent_named("top").unwrap();
     let out = edit::remove(&e, &e.program, &e.sketch, &[top], &[]);
     assert_eq!(out.kind, Kind::Structural, "{:?}", out.refused);
     assert!(out.text.contains("s1 := Slot(x, w: 12)\n"), "the instance stays: {}", out.text);
     assert!(!out.text.contains("in top"), "{}", out.text);
-    let back = read(&out.text);
+    let back = loose(&out.text);
     assert_eq!(back.sketch.plane_of(at(&back, "s1.a")), None);
 }
 
@@ -616,8 +639,10 @@ fn an_instance_in_plane_resolves_in_the_callers_scope() {
     let top = at(&e, "top");
     assert_eq!(e.sketch.plane_of(at(&e, "k.top")), Some(top));
     let e = read(&format!(
-        "{VIEWS}\ncomponent Dot(o: point) {{\n top := point hint((5, 5))\n o distance(5) top\n}}\n\
-         component Pair(o: point) {{\n top := point hint((9, 9))\n d := Dot(o)\n}}\n\
+        "{VIEWS}\ncomponent Dot(o: point) {{\n top := point hint((5, 5))\n o distance(5) top\n \
+         o horizontal top\n}}\n\
+         component Pair(o: point) {{\n top := point hint((9, 9))\n d := Dot(o)\n \
+         top distance(4) d.top\n top horizontal d.top\n}}\n\
          k := Pair(top.origin) in top\n"
     ));
     let top = at(&e, "top");

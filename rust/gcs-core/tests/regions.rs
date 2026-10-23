@@ -135,7 +135,8 @@ fn a_line_joining_two_loops_is_no_face_and_says_so() {
 fn a_rectangle_instance_is_named_through_its_instance() {
     let src = "unit mm\nuse std\ncomponent Rectangle(w: Length, h: Length) {\n  \
         length(w) (l1 := line) -> perpendicular length(h) (l2 := line) -> \
-        perpendicular (l3 := line) -> perpendicular (l4 := line) -> close\n}\n\
+        perpendicular (l3 := line) -> perpendicular (l4 := line) -> close\n  \
+        fix((0, 0)) l1.p1\n  horizontal l1\n}\n\
         r0 := Rectangle(w: 30, h: 20) in std.front\n";
     let mut e = build(src);
     assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);

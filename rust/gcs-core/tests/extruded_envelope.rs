@@ -44,9 +44,9 @@ fix((24, -3.026666)) t3
 tooth := face(t0, t1, rack_flank, t3, -> close)
 construction rack_tooth := solid(tooth, from: -8mm, to: 2mm)
 turn := frame
-std.Spin(turn, about: o, on: std.front, ratio: 1)
+turn spins(1) o
 rack := frame
-std.Slide(rack, along: slide, advance: 2 * pi * 20mm)
+rack slides(2 * pi * 20mm) slide
 construction space := sweep(rack_tooth over t in (-60deg, 60deg), under: rack, seen_from: turn)
 side := surface(rack_tooth, edge: rack_flank)
 flank := envelope(side over t in (-30deg, 30deg), under: rack, seen_from: turn)
@@ -54,7 +54,7 @@ flank := envelope(side over t in (-30deg, 30deg), under: rack, seen_from: turn)
 
 /// The tooth space drawn in `std.front`.
 fn rack() -> String {
-    format!("unit mm\nuse std\nin std.front {{\n{DRAWN}}}\n{MADE}")
+    format!("unit mm\nuse std (slides, spins)\nin std.front {{\n{DRAWN}}}\n{MADE}")
 }
 
 /// A plane square to the front, through its horizontal 1.9 above `o` (its `u` the front's `x`,
@@ -122,7 +122,7 @@ fn a_side_generated_under_a_drive_reads_its_law() {
         assert!(solve(&mut e.sketch, SolveOpts::default()).success);
         e.sketch.lifted(ent(&e, "p").i())
     };
-    let src = across(3.).replacen("use std\n", "use std\nparam t: Angle over (-60deg, 60deg)\n", 1)
+    let src = across(3.).replacen("use std (slides, spins)\n", "use std (slides, spins)\nparam t: Angle over (-60deg, 60deg)\n", 1)
         + "fix(value == 2 * (t / 2)) rack\n";
     let mut e = build(&src);
     assert!(e.ok(), "{:?}", e.diags);

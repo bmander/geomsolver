@@ -333,9 +333,9 @@ area factor against the sweep's admission.
 crown. The design is one line of action `L` through the pitch point. A force along `L` does no work
 on the members' relative motion when the two move as fast along it:
 `L reciprocal(seen_from: pinion_turn) gear_turn`, which fixes its helix angle once its pressure
-angle is stated. `screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)` draws the mesh's
-instantaneous screw axis, on the shafts' common perpendicular, and `screw.pitch` is its advance a
-radian of the mesh's roll. Both are the standard library's, rates of points the mesh carries (#365):
+angle is stated. `screw := std.Screw(toward, gear_turn, seen_from: pinion_turn)` draws the mesh's
+instantaneous screw axis, `screw.isa`, on the shafts' common perpendicular and running the way the
+held direction `toward` does, and `screw.pitch` is its advance a radian of the mesh's roll. Both are the standard library's, rates of points the mesh carries (#365):
 a motion's twist has no words of its own. Each member's flank is then the involute helicoid a plane
 square to `L` sweeps sliding along it at that speed, seen from the member: its rack,
 `std.HalfSpace(P, L, d: 0mm)` under `slide` seen from the member
@@ -343,11 +343,12 @@ square to `L` sweeps sliding along it at that speed, seen from the member: its r
 for their normal, at the ratio's roll:
 
 ```sh
-build/solventc rust/examples/spiral_bevel/phillips.sv --where screw.pitch --where isa
+build/solventc rust/examples/spiral_bevel/phillips.sv --where screw.pitch --where screw.isa
 #   bearing: point contact; transmission error (the gear's angle) 0° … 8.1e-14° over the phase
 #   -15° … 15°, the path of contact 8.34989 long
 #   screw.pitch = -32.1994
-#   isa.px = 0, isa.py = 57.6, isa.pz = 0; isa.x = -0.894427, isa.y = 0, isa.z = -0.447214
+#   screw.isa.px = 0, screw.isa.py = 57.6, screw.isa.pz = 0; screw.isa.x = -0.894427,
+#   screw.isa.y = 0, screw.isa.z = -0.447214
 ```
 
 Ball's pitch is −28.8 a radian of turn about the axis; the mesh turns √1.25 about it a radian of

@@ -4,6 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.175] One definition form.** A braced definition is a function of its arguments and of the
+frame its instance stands in, and every one is held to it (§8.2): E108, E109, the diagnosis read
+through instances (D1–D3) and W207 apply to every drawn instance of every `component Name(…) { … }`,
+where 0.162 held only those written `part`. `part` stops being a keyword: `part Name(…) {` is
+**E100**, saying to write `component`, and `part` is a name like any other. Set families and
+relation words are untouched. The frame an instance stands in is one of its inputs: the rows that
+tie what it makes to that frame (a lift, a plane's axes through its origin, a twin's tie) are its
+own, and a row placing what another instance made is that one's. A numeric formal the call leaves
+unbound may be determined by the instance's own rows, as its output, or left to the parent. The
+corpus's 56 `part` definitions are components; the definitions that broke the promise are fixed in
+their text: the flows (`rates/`) say their home `initially` from formals, `ngon.sv`'s `Ngon`
+exports its turn as `heading`, the hypoid's steps leave the numbers they set (`mn`, `rp`, `pa`, the
+face mill's two settings) to the pair's own rows, the spheres and the grinding wheel say each fact
+once, and `std.Frenet` holds its plane's `u` along its normal line rather than building the plane
+over it. `std.Turn`, `std.Spin` and `std.Slide`, kept beside the joint words since 0.154, are
+retired; `std.Rolls` is the word `a rolls(at: p, along: d) b`; `std.Screw(toward, m)` makes its
+axis, `s.isa`, running the way a held `toward` does. A circle carried whole by `mapped` holds its
+centre once. Every solved position is unchanged. (Issue #562, from #523.)
+
 **[0.174] A directed angle about an axis.** `angle` and `perpendicular` take `about: a` (§9.4):
 `d1 angle(θ, about: a) d2` is the turn about axis `a`, by the right-hand rule and on the full turn,
 from `d1`'s shadow on the plane square to `a` to `d2`'s, and `d1 perpendicular(sense: ccw, about:

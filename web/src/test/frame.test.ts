@@ -9,7 +9,7 @@ await initCore();
 
 test('a frame turning returns world position and exact velocity through the ABI', () => {
   const doc = Document.read(`unit mm
-use std
+use std (turns)
 in std.front {
 a := point
 b := point
@@ -18,7 +18,7 @@ fix((2, 1)) b
 ax := line(a,b)
 }
 turn := frame
-std.Turn(turn, about: ax, ratio: 3)
+turn turns(3) ax
 still := frame
 `);
   try {

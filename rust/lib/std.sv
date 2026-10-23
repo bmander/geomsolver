@@ -161,7 +161,7 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 // `r` from the centre (§6.21), a set and nothing drawn.  A point on it is `p coincident ball`, a
 // line touching it `l tangent ball`; two touching outside are `a.center distance(a.r + b.r)
 // b.center`, the radius read by the instance's name, and a circle drawn in another view lying on
-// it is `std.CircleOnSphere`.  Leave `r` unbound and it is an unknown of the drawing.  Not a
+// it is `k on_sphere(view: v) ball`.  Leave `r` unbound and it is an unknown of the drawing.  Not a
 // solid: a ball is a half disc turned about its diameter.
 //
 //   use std
@@ -173,18 +173,19 @@ component CenteredRectangle(center: point, w: Length, h: Length) {
 //   p coincident ball
 component Sphere(center: point, r: Length) := { p | p distance(r) center }
 
-// A circle `k` drawn in `view` lying on the sphere `s` all the way round: the sphere's centre on
-// the circle's axis, and one point of the circle — `q`, level with the centre in `view`, so it
-// cannot slide round — at the sphere's radius from it.  Three equations, independent wherever
-// the circle is off the sphere's centre.  The toe or heel circle of a bevel blank on its end
-// sphere.
+// `k on_sphere(view: v) s`: a circle `k` drawn in `v` lying on the sphere `s` all the way round:
+// the sphere's centre on the circle's axis, and one point of the circle — `q`, level with the
+// centre in `v`, so it cannot slide round — at the sphere's radius from it.  Three equations,
+// independent wherever the circle is off the sphere's centre.  The toe or heel circle of a bevel
+// blank on its end sphere.  A fact about the circle and the sphere, so a word (through 0.174 the
+// component `std.CircleOnSphere(k, s, view)`).
 //
-//   std.CircleOnSphere(k, ball, std.side)
-component CircleOnSphere(k: circle, s: set, view: plane) {
-  private q := point hint(at: k, bearing: 0deg) in view
+//   k on_sphere(view: std.side) ball
+k on_sphere(view) s := {
+  q := point hint(at: k, bearing: 0deg) in view
   q coincident k
   k.center horizontal q
-  private n := axis
+  n := axis
   n perpendicular view
   k.center coincident n
   s.center coincident n
@@ -694,25 +695,27 @@ component Frenet(g: path, s: Scalar) {
 // every station (`On`, `Minimal` and `Frenet` above), this frame is a motion, read once.
 //
 //   param s: Scalar over (0, 1)
-//   n := plane(u: hint(dir: std.x), v: hint(dir: std.z))
-//   std.Along(n, g, up: std.z)
-//   in n {
-//     k := circle(center: n.origin)
+//   along := std.Along(g, up: std.z)
+//   in along.f {
+//     k := circle(center: along.f.origin)
 //     radius(2mm) k
 //   }
 //   sec := face(k)
 //   tube := sweep(sec over s)
 
-// `f` along `g`, its rotation-minimising frame (`On`'s and `Minimal`'s): drawn square to `g` where
-// its parameter is `home`, `v` leaning toward `up` and `u` square to it; its axes turn only as the
-// tangent does.  The joint turns with none of the path's torsion: its ratio 0.
-component Along(f: frame, g: path, up: axis, home: Scalar = 0) {
+// `std.Along(g, up: u, home: h)` makes `f`, a frame along `g`, its rotation-minimising frame
+// (`On`'s and `Minimal`'s): drawn square to `g` where its parameter is `h`, `v` leaning toward `u`
+// and `u` square to it; its axes turn only as the tangent does.  The joint turns with none of the
+// path's torsion: its ratio 0.  The frame is its own, placed by its rows from what it is given
+// (through 0.174 it was handed one: `std.Along(f, g, up: u)`).
+component Along(g: path, up: axis, home: Scalar = 0) {
   private m := point
   m coincident(t == home) g
   private q := point hint(at: m, along: g, by: 0.1)
   private tl := line(m, q)
   g tangent(at: m) tl
   length(10mm) tl
+  f := plane(u: hint(dir: up, turn: -90deg, about: tl), v: hint(dir: up))
   f.origin coincident m
   f.u perpendicular tl
   f.v perpendicular tl
@@ -722,11 +725,11 @@ component Along(f: frame, g: path, up: axis, home: Scalar = 0) {
   fix(ratio == 0, advance == 0mm) f
 }
 
-// `f` along `g`, the path's own frame (`Frenet`'s): drawn square to `g` where its parameter is
-// `home`, `u` toward the centre of curvature there and `v` the binormal; it turns with the path's
-// torsion besides.  A path with no curvature somewhere has no such frame there.  The joint turns
-// with all of the path's torsion: its ratio 1.
-component AlongFrenet(f: frame, g: path, home: Scalar = 0) {
+// `std.AlongFrenet(g, home: h)` makes `f`, a frame along `g`, the path's own frame (`Frenet`'s):
+// drawn square to `g` where its parameter is `h`, `u` toward the centre of curvature there and `v`
+// the binormal; it turns with the path's torsion besides.  A path with no curvature somewhere has
+// no such frame there.  The joint turns with all of the path's torsion: its ratio 1.
+component AlongFrenet(g: path, home: Scalar = 0) {
   private m := point
   m coincident(t == home) g
   private q := point hint(at: m, along: g, by: 0.1)
@@ -736,6 +739,7 @@ component AlongFrenet(f: frame, g: path, home: Scalar = 0) {
   private c := point
   g curvature(at: m) c
   private nl := line(m, c)
+  f := plane(u: hint(dir: nl), v: hint(dir: tl, turn: -90deg, about: nl))
   f.origin coincident m
   f.u parallel nl
   f.v perpendicular tl
@@ -917,26 +921,6 @@ f slides(advance) l := {
   fix(ratio == 0, advance == advance) f
 }
 
-// The joints as components, kept for one release (0.154) beside the words above, which say each
-// as a relation: `std.Turn(f, about: l, ratio: r)` is `f turns(r) l`, with `advance: a` (at ratio
-// 1) `f screws(a) l`; `std.Spin(f, about: o, on: P, ratio: r)` is `f spins(r) o`, `o` drawn in
-// `P`; `std.Slide(f, along: l, advance: a)` is `f slides(a) l`.
-component Turn(f: frame, about: line, ratio: Scalar, advance: Length = 0mm) {
-  about coincident(sense: same) f.axis
-  fix(ratio == ratio, advance == advance) f
-}
-
-component Spin(f: frame, about: point, on: plane, ratio: Scalar) {
-  about coincident f.axis
-  f.axis parallel(sense: same) on.normal
-  fix(ratio == ratio, advance == 0mm) f
-}
-
-component Slide(f: frame, along: line, advance: Length) {
-  along coincident(sense: same) f.axis
-  fix(ratio == 0, advance == advance) f
-}
-
 // `a rolls(at: p, along: d) b`: frames `a` and `b` roll on one another at `p` without slipping
 // along the direction `d` (#383): the point of `a`'s frame there, seen from `b`'s, does not move
 // along it — the rate of the point `a` carries, seen from `b`, at roll 0, nothing along it.  A
@@ -974,10 +958,13 @@ l reciprocal(seen_from) m := {
 // The instantaneous screw axis of a frame's motion, seen from `seen_from` where it is given (a
 // frame left out is at rest: the world): `isa`, the axis every point of which `m` moves along it,
 // and `pitch`, how fast — a length a radian of the roll, Ball's pitch times how fast the motion
-// turns about the axis.  `s := std.Screw(isa, gear, seen_from: pinion)` with no pitch given solves
-// it, and `s.pitch` reads it.  Two points of the axis carried: their rates along it place it, and
-// the first's speed along it is the pitch.  A motion that turns nothing (a slide) has no such axis.
-component Screw(isa: axis, m: frame, seen_from: frame, pitch: Length) {
+// turns about the axis.  `s := std.Screw(toward, gear, seen_from: pinion)` with no pitch given
+// solves it, and `s.isa` and `s.pitch` read it.  Two points of the axis carried: their rates along
+// it place it, and the first's speed along it is the pitch.  Which way the axis runs, and so the
+// pitch's sign, is said by `toward`, a direction the caller holds: the axis runs its way (a bound,
+// which adds no row).  A motion that turns nothing (a slide) has no such axis.
+component Screw(toward: axis, m: frame, seen_from: frame, pitch: Length) {
+  isa := axis
   private origin := point
   fix((0, 0, 0)) origin
   private a := point
@@ -986,6 +973,7 @@ component Screw(isa: axis, m: frame, seen_from: frame, pitch: Length) {
   b coincident isa
   origin level(isa) a
   a distance(10mm, along: isa) b
+  a distance(>= 0mm, along: toward) b
   private moved_a := point
   private moved_b := point
   moved_a coincident(under: m, seen_from: seen_from, t == 0deg) a

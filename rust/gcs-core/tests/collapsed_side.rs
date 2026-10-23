@@ -13,7 +13,19 @@ use gcs_core::newton::Method;
 use gcs_core::program::Elaborated;
 use gcs_core::solve::{solve, SolveOpts, COLLAPSED};
 
-use crate::common::{ent, read};
+use crate::common::ent;
+
+/// `src` elaborated as it was drawn: a rectangle no row places, and in the second case held from
+/// outside, is a definition the language refuses (#562, E108 and E109) — its sketch built all the
+/// same, and solved here as before.
+fn read(src: &str) -> Elaborated {
+    let e = crate::common::linked::build(src);
+    let other: Vec<_> = e.errors()
+        .filter(|d| !matches!(d.code, gcs_core::program::Code::E108 | gcs_core::program::Code::E109))
+        .collect();
+    assert!(other.is_empty(), "{other:?}");
+    e
+}
 
 /// The document as it was drawn: the four corners unseeded, the circle a bystander.
 const RECT: &str = "use std\n\n\

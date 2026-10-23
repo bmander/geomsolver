@@ -8,7 +8,7 @@ fn contains(b: [I;3],p: [f64;3]) {
 
 #[test]
 fn interval_rotations_include_axis_normalization_offset_and_both_senses() {
-    let e = solved(&format!("{AXES}\nturn := frame\nstd.Turn(turn,about: ax,ratio: -2)\n"));
+    let e = solved(&format!("{AXES}\nturn := frame\nturn turns(-2) ax\n"));
     let family = motion::Family::read(&e.sketch,joint(&e,"turn")).unwrap();
     // over a window from 15° before roll 0, where the turn stands 30° on
     let s = 15f64.to_radians();
@@ -32,8 +32,8 @@ fn interval_rotations_include_axis_normalization_offset_and_both_senses() {
 #[test]
 fn relative_motion_bounds_cover_input_boxes_and_nested_observer_inverses() {
     let mut e = solved(&format!("{AXES}\n\
-        turn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n\
-        observer := frame\nstd.Turn(observer,about: other,ratio: -0.3)\n{}",
+        turn := frame\nturn turns(2) ax\n\
+        observer := frame\nobserver turns(-0.3) other\n{}",
         reading("turn","observer")));
     // and the relative seen from the turn again, made by hand: a document reads one frame seen
     // from another
@@ -56,7 +56,7 @@ fn relative_motion_bounds_cover_input_boxes_and_nested_observer_inverses() {
 
 #[test]
 fn motion_bounds_retain_solved_snapshots_and_enclose_angles_of_any_size() {
-    let mut e = solved(&format!("{AXES}\nturn := frame\nstd.Turn(turn,about: ax,ratio: 2)\n"));
+    let mut e = solved(&format!("{AXES}\nturn := frame\nturn turns(2) ax\n"));
     let turn = joint(&e,"turn");
     let family = motion::Family::read(&e.sketch,turn).unwrap();
     // Many turns wide, the bounds hold every pose in them, the identity among them; a single

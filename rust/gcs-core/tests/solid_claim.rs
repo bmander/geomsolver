@@ -36,7 +36,7 @@ fn block(tag: &str, x: f64, y: f64, w: f64, lo: f64, hi: f64) -> String {
 
 #[test]
 fn a_clearance_is_measured_and_reported() {
-    let src = format!("unit mm\nuse std\n{}{}claim sA_ clear(2mm) sB_\nclaim sA_ clear(4mm) sB_\n",
+    let src = format!("unit mm\nuse std (turns)\n{}{}claim sA_ clear(2mm) sB_\nclaim sA_ clear(4mm) sB_\n",
                       block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
                       block("B", 13.0, 0.0, 10.0, -5.0, 0.0));
     let v = verdicts(&read(&src));
@@ -56,7 +56,7 @@ fn containment_is_a_question_about_the_object() {
     // B stands *strictly* inside A — three clear on every side, depth included.  Sharing a face
     // would make `inside` true and `fits` false, which is right and is not what this is about
     let src = format!(
-        "unit mm\nuse std\n{}{}claim sB_ inside sA_\nclaim sA_ inside sB_\nclaim sB_ fits(1mm) sA_\n\
+        "unit mm\nuse std (turns)\n{}{}claim sB_ inside sA_\nclaim sA_ inside sB_\nclaim sB_ fits(1mm) sA_\n\
          claim sB_ fits(4mm) sA_\n",
         block("A", 0.0, 0.0, 20.0, -10.0, 0.0),
         block("B", 5.0, 5.0, 10.0, -7.0, -3.0)
@@ -72,7 +72,7 @@ fn containment_is_a_question_about_the_object() {
 /// clear: one claim over the travel and one at the pose.
 const SLIDING: &str = "\
 unit mm
-use std (horizontal, vertical)
+use std (horizontal, vertical, turns)
 in std.front {
 o := point
 fix((0, 0)) o
@@ -147,7 +147,7 @@ fn a_claim_about_a_solid_can_never_act() {
     // §9.7's property, one stratum out: adding one changes no equation, no rank, no DOF and no
     // parameter.  It is the whole reason a claim is safe to write.
     let plain = format!(
-        "unit mm\nuse std\n{}{}",
+        "unit mm\nuse std (turns)\n{}{}",
         block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
         block("B", 13.0, 0.0, 10.0, -5.0, 0.0)
     );
@@ -166,7 +166,7 @@ fn a_claim_about_a_solid_can_never_act() {
 #[test]
 fn what_is_written_wrong_is_refused() {
     let two = format!(
-        "unit mm\nuse std\n{}{}",
+        "unit mm\nuse std (turns)\n{}{}",
         block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
         block("B", 13.0, 0.0, 10.0, -5.0, 0.0)
     );
@@ -206,14 +206,14 @@ fn what_is_written_wrong_is_refused() {
 /// once at the top and once inside the component that makes them.
 const SWUNG: &str = "\
 unit mm
-use std
+use std (turns)
 component Ball(c: point, r: Length) {
   ball := { p | p distance(<= r) c }
   body := solid(ball)
 }
 component Swing(ax: line, a: point, b: point) {
   spin := frame
-  std.Turn(spin, about: ax, ratio: 1)
+  spin turns(1) ax
   arm := Ball(a, r: 2mm)
   post := Ball(b, r: 3mm)
   swung := arm.body at(under: spin) 0deg

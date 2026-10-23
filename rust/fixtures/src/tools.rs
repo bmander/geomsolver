@@ -360,7 +360,7 @@ private qa := line(q3, q0)
 construction ring_blank := solid(face(qb, qw, qt, qa), about: spindle)
 part := solid(ring_blank)
 index := frame
-std.Turn(index, about: spindle, ratio: 1)
+spindle coincident(sense: same) index.axis; fix(ratio == 1, advance == 0mm) index
 in std.front {{
 repeat {count} as i {{
   indexed := removal at(under: index) i * 360deg / {count}
