@@ -48,12 +48,14 @@ down := axis
 fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
 bracket := solid(section, from: -t / 2, to: t / 2) of steel
 
+// what it is made of answers no load, so it is the drawing's, claimed of it
+claim mass(>= 0.999 * steel.rho * t * area) bracket
+claim mass(<= 1.001 * steel.rho * t * area) bracket
+
 scenario shelf {
   plane stress bracket
   fixed bracket.base
   load bracket.tip P along: down
   claim deflection(f, along: down) <= 1mm
   claim safety(bracket) >= 1
-  claim mass(bracket) >= 0.999 * steel.rho * t * area
-  claim mass(bracket) <= 1.001 * steel.rho * t * area
 }

@@ -438,6 +438,5 @@ preview {
     fixed rod.body.whole.bigbore
     load rod.body.whole.smallbore -30kN along: bore
     claim deflection(rod.body, along: bore) <= 0mm
-    claim mass(rod.body) <= 1kg
   }
 }

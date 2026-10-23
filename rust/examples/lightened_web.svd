@@ -1,0 +1,10 @@
+// Presentation of lightened_web.sv. Model geometry is independent of this drawing.
+model m from "lightened_web.sv"
+
+sheet drawing {
+  size A4
+  label "A WEB LIGHTENED TO A MASS" at (14mm, 18mm)
+  label "Its hole is the one at which it weighs 110g" at (14mm, 28mm)
+  sketch front(m) at (40mm, 110mm)
+  dimensions in front
+}

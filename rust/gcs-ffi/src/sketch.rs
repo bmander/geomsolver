@@ -533,6 +533,33 @@ pub unsafe extern "C" fn gcs_sketch_set_x(h: *mut Sketch, x: *const f64, n: usiz
     })
 }
 
+/// **Where the sketch's meshes were last made again** (`Sketch::meshed_at`, #510 S2), written to
+/// `out` as `gcs_sketch_get_x` writes its pose: 1, or 0 and nothing written while each is where
+/// elaboration made it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_meshed_at(h: *mut Sketch, out: *mut f64) -> i32 {
+    guard(0, move || {
+        let Some(x) = &sk(h).meshed_at else { return 0 };
+        write(out, x);
+        1
+    })
+}
+
+/// **The sketch's meshes made where another drawing of its source stood** (`Sketch::mesh_at`):
+/// 0, or −1 for a pose of another length.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_mesh_at(h: *mut Sketch, x: *const f64, n: usize) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        if s.mesh_at(std::slice::from_raw_parts(x, n)) {
+            0
+        } else {
+            set_error(format!("mesh_at: {n} values for {} params", s.params.len()));
+            -1
+        }
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_perturb(h: *mut Sketch, sigma: f64, seed: u32) {
     guard((), move || {

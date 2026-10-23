@@ -1326,31 +1326,77 @@ test('a solid crosses the ABI as a mesh a viewer can use', () => {
 });
 
 test('a document says what its load scenarios answer, a claim refuted as well as kept', () => {
-  // the rounded bracket under its own load keeps all four claims; under a hundred thousand times
-  // that, the deflection and the factor of safety are refuted and the mass still kept — said in
-  // the core's words, the page's footer and its diagnosis reading these (#510)
+  // the rounded bracket under its own load keeps both its scenario's claims; under a hundred
+  // thousand times that, the deflection and the factor of safety are refuted — and its mass,
+  // claimed of the drawing and no scenario's, is kept either way, read beside the scenarios —
+  // said in the core's words, the page's footer and its diagnosis reading these (#510)
   const read = (load: string) => {
     const src = examples.source('rounded_bracket').replace(/^P := 1kN$/m, `P := ${load}`);
     const doc = Document.read(src);
     assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
     assert.ok(solve(doc.sketch).success);
     const ss = doc.scenarios();
+    const measures = doc.scenariosPictured(-1).measures;
+    assert.ok(measures.length === 2 && measures.every((m) => m.holds === true),
+      JSON.stringify(measures));
+    assert.match(measures[0].text, /^mass\(bracket\) is .*kg.*: claimed >= .*kg, kept$/);
     doc.dispose();
     return ss;
   };
   const kept = read('1kN');
   assert.deepEqual(kept.map((s) => s.name), ['shelf']);
-  assert.equal(kept[0].answers.length, 4);
+  assert.equal(kept[0].answers.length, 2);
   assert.ok(kept[0].answers.every((a) => a.holds === true && a.grade === 'claim'),
     JSON.stringify(kept));
   const heavy = read('100000kN')[0].answers;
-  assert.deepEqual(heavy.map((a) => a.holds), [false, false, true, true]);
+  assert.deepEqual(heavy.map((a) => a.holds), [false, false]);
   assert.match(heavy[1].text, /^scenario `shelf`: safety\(bracket\) is .*: claimed >= 1, refuted$/);
   assert.ok(heavy[0].value! > 1e4, `the tip moves ${heavy[0].value}mm`);
   // a document with no scenario says none
   const plain = Document.read('a := point hint((0, 0))\n');
   assert.deepEqual(plain.scenarios(), []);
   plain.dispose();
+});
+
+test('a requirement out of reach is said with why, where the page diagnoses it', () => {
+  // the drilled plate loaded ten times over sinks least with no hole at all, far more than its
+  // sag (#510 P7): the solve fails, and diagnosed at the pose the drawing had — what a page puts
+  // back after a failed solve — the row is the conflict, with the core's words for why
+  const src = examples.source('drilled_plate').replace(/^P := 2kN$/m, 'P := 20kN');
+  const doc = Document.read(src);
+  assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+  const before = doc.sketch.getX();
+  assert.equal(solve(doc.sketch).success, false);
+  doc.sketch.setX(before);
+  const d = diagnose(doc.sketch, { settled: false, solidClaims: false });
+  assert.equal(d.status, 'conflict');
+  assert.equal(d.outOfReach.length, 1, JSON.stringify(d.outOfReach.map((r) => r.text)));
+  assert.deepEqual(d.conflicts, [d.outOfReach[0].constraint]);
+  assert.match(d.outOfReach[0].text,
+    /^out of reach of the dimensions that drive it: 4\.79\d*mm is the least they reach here$/);
+  doc.dispose();
+});
+
+test('a drawing meshed again is read on its meshes by a copy of its source', () => {
+  // the drilled plate under a quarter of its load is solved on a mesh made again where the
+  // first one folded (#510 S2): a page's worker reads the same text afresh, meshes it where the
+  // page did (`meshedAt`, `meshAt`) and stands it where it solved, and reads what the page does
+  const src = examples.source('drilled_plate').replace(/^P := 2kN$/m, 'P := 0.5kN');
+  const page = Document.read(src);
+  assert.ok(page.ok, JSON.stringify(page.diagnostics));
+  assert.equal(page.sketch.meshedAt(), null);
+  assert.ok(solve(page.sketch).success);
+  const at = page.sketch.meshedAt();
+  assert.ok(at !== null && at.length === page.sketch.getX().length);
+  const worker = Document.read(src);
+  worker.sketch.meshAt(at);
+  worker.sketch.setX(page.sketch.getX());
+  const [mine, theirs] = [page, worker].map((d) => d.scenarios()[0].answers[0]);
+  assert.match(mine.text, /driven == 0\.6mm, held$/);
+  assert.deepEqual(theirs, mine);
+  assert.throws(() => worker.sketch.meshAt([1, 2, 3]));
+  page.dispose();
+  worker.dispose();
 });
 
 test('a document says where its scenarios fall and how the drawing moves under one', () => {
@@ -1492,8 +1538,8 @@ test('the registry the binding generates its classes from matches the kernels', 
     // length is built at its spline's count, an envelope contact at its source's and its motion's,
     // a point on a meshing at its flanks' and its motion's (#283), and a motion's twist read at
     // its motion's and a contact with a body traced in space at its body's (#326), and a rate of
-    // a contact at its source's (#365), and a frame's deflection at its frame's (#510 S1).  Every
-    // other type names a static kernel, and must.
+    // a contact at its source's (#365), and a frame's deflection, mass and volume at its frame's
+    // (#510 S1).  Every other type names a static kernel, and must.
     if (t.kernel === -1) {
       // exactly the kinds with a curve, an envelope, a meshing, a motion, a traced or a carrier
       // slot, the spline's length and an energy's stationarity
@@ -1501,7 +1547,8 @@ test('the registry the binding generates its classes from matches the kernels', 
         .some(([, k]) => k === 'curve' || k === 'envelope' || k === 'meshing' || k === 'motion'
           || k === 'traced' || k === 'carrier');
       assert.ok(built || t.name === 'SplineLength' || t.name === 'Stationary'
-        || t.name === 'Deflection', `${t.name} has no static kernel`);
+        || t.name === 'Deflection' || t.name === 'Mass' || t.name === 'Volume',
+      `${t.name} has no static kernel`);
     } else {
       assert.ok(t.kernel >= 0 && t.kernel < reg.kernels.length, t.name);
     }

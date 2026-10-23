@@ -175,6 +175,18 @@ pub fn ends(sk: &Sketch, l: EntRef) -> ([f64; 3], [f64; 3]) {
     (sk.world_point(l.p1 as usize), sk.world_point(l.p2 as usize))
 }
 
+/// An axis's direction as it stands.
+pub fn dir(sk: &Sketch, axis: usize) -> [f64; 3] {
+    sk.axes[axis].d.map(|p| sk.params[p as usize].value)
+}
+
+/// The axis's direction set to `d`, as a seed.
+pub fn set_dir(sk: &mut Sketch, axis: usize, d: [f64; 3]) {
+    for (k, q) in sk.axes[axis].d.into_iter().enumerate() {
+        sk.params[q as usize].value = d[k];
+    }
+}
+
 /// The unit vector along `a`.
 pub fn unit(a: [f64; 3]) -> [f64; 3] {
     let l = norm(a);

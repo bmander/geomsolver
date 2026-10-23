@@ -339,6 +339,16 @@ fn all_constraints(seed: u32) -> Sketch {
             vec![e(axis_b), e(axis_a), Arg::Str("opposite".into())]),
         Constraint::new(CKind::LineOnAxis, vec![e(me1), e(axis_a), Arg::Str("same".into())]),
         Constraint::new(CKind::LineOnAxis, vec![e(me2), e(axis_a), Arg::Str("opposite".into())]),
+        // the turn about an axis or a line, from a line or an axis or a line drawn in a plane, and
+        // the sided perpendicular, a quarter of it (#558)
+        Constraint::new(CKind::AngleAbout,
+            vec![e(me1), e(axis_b), e(axis_a), Arg::Num(0.7), Arg::Str(String::new())]),
+        Constraint::new(CKind::AngleAbout,
+            vec![e(fold_line), e(me2), e(me1), Arg::Num(2.5), Arg::Str("cw".into())]),
+        Constraint::new(CKind::PerpendicularAbout,
+            vec![e(axis_a), e(me1), e(axis_b), Arg::Str("ccw".into())]),
+        Constraint::new(CKind::PerpendicularAbout,
+            vec![e(me2), e(in_pa), e(me1), Arg::Str("cw".into())]),
         // an axis and a plane: on it, along it and square to it, over a free plane and a held one;
         // and two planes a distance apart
         Constraint::new(CKind::AxisOnPlane, vec![e(axis_a), e(pce)]),
@@ -387,6 +397,12 @@ fn all_constraints(seed: u32) -> Sketch {
         },
         fx(CKind::Angle3, vec![e(me1), e(me2)], "t3 + 0.5", 0.9),
         fx(CKind::Angle3, vec![e(axis_b), e(me2)], "t3r + 0.5", 0.9),
+        // the turn about an axis, its sense turning the map (#558)
+        {
+            let mut c = fx(CKind::AngleAbout, vec![e(me1), e(axis_b), e(axis_a)], "ta + 0.5", 0.7);
+            c.args.push(Arg::Str("cw".into()));
+            c
+        },
         fx(CKind::Ordinate, vec![e(qe), e(EntRef::point(lc)), e(pce)], "n3 + 1", 1.2),
         fx(CKind::Ordinate, vec![e(s3), e(pe), e(pae)], "-2 * n4", 0.5),
         fx(CKind::Ordinate, vec![e(s3), e(qe), e(axis_b)], "o3 + 1", 1.2),
@@ -635,47 +651,181 @@ scenario s {
     }
 }
 
+/// **A measure of a structure** (`interior::Reads::Volume`, `Reads::Mass`): what it is made of,
+/// with no solve read — bars and beams in the plane and in space, a sheet of quadratic triangles
+/// and a block of quadratic tetrahedra, every node of both knocked about so their sides curve —
+/// its own gradient in every column against central differences, stated and with its number an
+/// unknown, two instances in one block.  A bar weighs nothing; a structure held by nothing still
+/// has a measure.
+#[test]
+fn a_measure_agrees_with_finite_differences() {
+    use gcs_core::interior::Reads;
+    let mut rng = Rng::new(520);
+    let mut cases = Vec::new();
+    for dim in [2, 3] {
+        cases.push(crate::interior::braced(dim, 7, &mut rng));
+        cases.push(crate::interior::framed(dim, 6, &mut rng));
+    }
+    let mut knocked = |(s, mut x): (gcs_core::interior::Structure, Vec<f64>), by: f64| {
+        for v in &mut x {
+            *v += rng.uniform(-by, by);
+        }
+        (s, x)
+    };
+    let mut r = Rng::new(521);
+    cases.push(knocked(crate::interior::sheet(3, 2, 4.0, 2.0, 0.2, false, &mut r), 0.04));
+    cases.push(knocked(crate::interior::block([2, 1, 1], [2.0, 1.0, 1.0], 0.1, &mut r), 0.02));
+    for (mut s, x) in cases {
+        s.fixed.fill(false);
+        s.beams.iter_mut().for_each(|b| b.rho = 3.0);
+        s.tris.iter_mut().for_each(|t| t.rho = 2.5);
+        s.tets.iter_mut().for_each(|t| t.rho = 1.5);
+        for reads in [Reads::Volume, Reads::Mass] {
+            s.reads = reads;
+            let weighs = !(s.beams.is_empty() && s.tris.is_empty() && s.tets.is_empty());
+            if reads == Reads::Mass && !weighs {
+                assert_eq!(s.measure(&x), 0.0, "a bar weighs nothing");
+                continue;
+            }
+            kernel_agrees(&s, &x, 1e-6, &mut rng, &format!("{reads:?}, {} nodes", s.nodes));
+        }
+    }
+}
+
+/// **A mass and a volume, as the drawing states them** (`CKind::Mass`, `CKind::Volume`): a
+/// frame's row over its points' lifts and the unknowns its areas read — a section's breadth,
+/// its area not affine in it, and an L's reach — and a prism's over its face's points' numbers
+/// and its radii, its face's nodes moved with them (a round corner, a hole) — each stated of the
+/// drawing — against finite differences, at the solution and knocked off it.
+#[test]
+fn a_measure_agrees_with_finite_differences_as_the_drawing_states_it() {
+    let frame = "\
+unit mm
+use std (horizontal)
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
+param d: Length hint(30mm)
+param reach: Length hint(400mm)
+in std.front {
+  foot := point
+  corner := point
+  end := point hint((400, 600))
+  fix((0mm, 0mm)) foot
+  fix((0mm, 600mm)) corner
+  corner horizontal end
+  corner distance(reach) end
+  post := line(foot, corner)
+  arm := line(corner, end)
+}
+tube := beam(post, arm, A: d^2 / 2, Iy: 0.05 * d^4, Iz: 0.05 * d^4, J: 0.1 * d^4) of steel
+mass(3kg) tube
+volume(200 * 1cm^3) arm
+";
+    let plate = "\
+unit mm
+use std (horizontal, vertical)
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
+param r: Length hint(9mm)
+in std.front {
+  a := point
+  b := point hint((120, 0))
+  c := point hint((120, 30))
+  k := point hint((100, 30))
+  d := point hint((100, 50))
+  e := point
+  o := point
+  fix((0mm, 0mm)) a
+  fix((0mm, 50mm)) e
+  fix((40mm, 25mm)) o
+  fix((120mm, 0mm)) b
+  b vertical c
+  b distance(30mm) c
+  c horizontal k
+  k vertical d
+  low := line(a, b)
+  end := line(b, c)
+  round := radius(20mm) arc(center: k, start: c, end: d)
+  top := line(d, e)
+  back := line(e, a)
+  hole := radius(r) circle(center: o) hint(r: 9)
+  region := face(low, end, round, top, back, holes: hole)
+}
+plate := solid(region, from: -2mm, to: 2mm) of steel
+mass(0.17584kg) plate
+";
+    let mut rng = Rng::new(522);
+    for src in [frame, plate] {
+        let mut sk = crate::common::solved(&crate::common::read(src));
+        for round in 0..3 {
+            if round > 0 {
+                for p in sk.params.iter_mut().filter(|p| !p.fixed) {
+                    p.value += rng.uniform(-0.01, 0.01) * (1.0 + p.value.abs().min(10.0));
+                }
+            }
+            let rows: Vec<_> = sk.constraints.iter().filter(|c| c.kind.interior()).collect();
+            assert!(!rows.is_empty());
+            for c in rows {
+                let v = c.local_values(&sk);
+                let ja = c.jacobian(&sk, &v);
+                let jn = gcs_core::fdcheck::fd_jacobian(|w| c.residual(&sk, w), &v, 1e-4);
+                let scale = gcs_core::linalg::absmax(&jn.data);
+                assert!(scale.is_finite() && scale > 0.0, "round {round}");
+                for (col, (a, n)) in ja.iter().zip(&jn.data).enumerate() {
+                    assert!((a - n).abs() <= 1e-6 * scale,
+                            "{:?}, round {round}: column {col}: {a} against {n}", c.kind);
+                }
+            }
+        }
+    }
+}
+
+/// The interior's kernel over structure `s` at `x` — stated, and with its number an unknown, two
+/// instances in one block, the second's nodes moved and its areas grown — against central
+/// differences over `step`.
+fn kernel_agrees(s: &gcs_core::interior::Structure, x: &[f64], step: f64, rng: &mut Rng,
+                 what: &str) {
+    use gcs_core::fdcheck::fd_jacobian;
+    use gcs_core::kernels::KernelKey;
+    for stated in [&[0.3][..], &[1.7, -0.2]] {
+        let free = stated.len() == 2;
+        let (n_par, n_const) = s.widths(free);
+        let kn = gcs_core::system::build_kernel(
+            &Sketch::new(), KernelKey::Interior { n_par, n_const });
+        let mut one = x.to_vec();
+        if free {
+            one.push(rng.uniform(-1.0, 1.0));
+        }
+        let two: Vec<f64> = one.iter().map(|v| v * 1.1 + 0.05).collect();
+        let v = [one, two].concat();
+        let k = [s.consts(stated), s.consts(stated)].concat();
+        let res = |w: &[f64]| {
+            let mut r = vec![0.0; 2];
+            (kn.res)(2, w, &k, &mut r);
+            r
+        };
+        let jn = fd_jacobian(res, &v, step);
+        let mut ja = vec![0.0; 2 * n_par];
+        (kn.jac)(2, &v, &k, &mut ja);
+        let scale = gcs_core::linalg::absmax(&jn.data);
+        assert!(scale.is_finite() && scale > 0.0, "{what}");
+        for (i, a) in ja.iter().enumerate() {
+            let (row, col) = (i / n_par, i % n_par);
+            let n = jn.data[row * 2 * n_par + row * n_par + col];
+            assert!((a - n).abs() <= 1e-7 + 1e-6 * scale,
+                    "{what}, free {free}: row {row} column {col}: {a} against {n}");
+        }
+    }
+}
+
 fn interior_agrees(
     make: fn(usize, usize, &mut Rng) -> (gcs_core::interior::Structure, Vec<f64>),
     first: u32,
     step: f64,
 ) {
-    use gcs_core::fdcheck::fd_jacobian;
-    use gcs_core::kernels::KernelKey;
     for seed in 0..5u32 {
         let mut rng = Rng::new(seed + first);
         for dim in [2, 3] {
             let (s, x) = make(dim, 6 + seed as usize, &mut rng);
-            for stated in [&[0.3][..], &[1.7, -0.2]] {
-                let free = stated.len() == 2;
-                let (n_par, n_const) = s.widths(free);
-                let kn = gcs_core::system::build_kernel(
-                    &Sketch::new(), KernelKey::Interior { n_par, n_const });
-                let mut one = x.clone();
-                if free {
-                    one.push(rng.uniform(-1.0, 1.0));
-                }
-                // a second instance, its nodes moved and its areas grown
-                let two: Vec<f64> = one.iter().map(|v| v * 1.1 + 0.05).collect();
-                let v = [one, two].concat();
-                let k = [s.consts(stated), s.consts(stated)].concat();
-                let res = |w: &[f64]| {
-                    let mut r = vec![0.0; 2];
-                    (kn.res)(2, w, &k, &mut r);
-                    r
-                };
-                let jn = fd_jacobian(res, &v, step);
-                let mut ja = vec![0.0; 2 * n_par];
-                (kn.jac)(2, &v, &k, &mut ja);
-                let scale = gcs_core::linalg::absmax(&jn.data);
-                for (i, a) in ja.iter().enumerate() {
-                    let (row, col) = (i / n_par, i % n_par);
-                    let n = jn.data[row * 2 * n_par + row * n_par + col];
-                    assert!((a - n).abs() <= 1e-7 + 1e-6 * scale,
-                            "seed {seed}, {dim}D, free {free}: row {row} column {col}: {a} \
-                             against {n}");
-                }
-            }
+            kernel_agrees(&s, &x, step, &mut rng, &format!("seed {seed}, {dim}D"));
         }
     }
 }

@@ -106,6 +106,13 @@ fn shape_d(p: [f64; 3]) -> [[f64; 10]; 3] {
     }))
 }
 
+/// An element's volume at its nodes' places `x`, `∫ det J` by the degree-five rule, over a
+/// number that may carry rates (`Tet10::volume`'s, and a measure's gradient,
+/// `Structure::measure_gradient`).
+pub(crate) fn volume_of<T: Num>(x: &[P<T>; 10]) -> T {
+    rule5().iter().fold(T::cst(0.0), |a, &(p, w)| a + T::cst(w) * jacobian(x, &shape_d(p)).1)
+}
+
 /// The element's Jacobian at a point of it, `J[r][c] = ∂x_c/∂ξ_r`, and its determinant.
 fn jacobian<T: Num>(x: &[P<T>; 10], d: &[[f64; 10]; 3]) -> ([[T; 3]; 3], T) {
     let mut j = [[T::cst(0.0); 3]; 3];
@@ -272,7 +279,7 @@ impl Tet10 {
     /// Its volume, `∫ det J` by the degree-five rule (exact: a curved element's `det J` is of
     /// degree three).
     pub fn volume(&self, x: &[P<f64>; 10]) -> f64 {
-        rule5().iter().map(|&(p, w)| w * jacobian(&lift(x), &shape_d(p)).1.v).sum()
+        volume_of(&lift(x)).v
     }
 
     /// The derivatives of the shape functions in x, y and z at `(ξ, η, ζ)`, and `det J` there —

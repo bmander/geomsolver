@@ -7,7 +7,7 @@ use gcs_core::diagnose::analysis::scenario_read;
 use gcs_core::model::Output;
 
 use crate::analysis_corpus::{read as read_case, Reading, CASES};
-use crate::prisms::{answers, value};
+use crate::prisms::{answers, measured, value};
 
 /// **Every solid case of the corpus answers its reference** (#510 S3), read in three
 /// dimensions: the cantilever's tip sag and first mode, Euler's column's buckling factor, Lamé's
@@ -100,11 +100,11 @@ scenario pull {{
 fn a_bar_pulled_answers_to_rounding() {
     let claims = "  claim deflection(k, along: std.x) >= 0mm\n  \
                   claim deflection(k, along: std.z) <= 0mm\n  claim compliance(plate) >= 0J\n  \
-                  claim safety(plate) >= 1\n  claim mass(plate) >= 1g\n  \
-                  claim deflection(q, along: std.x) >= 0mm\n";
+                  claim safety(plate) >= 1\n  claim deflection(q, along: std.x) >= 0mm\n";
     let (w, h, t, s, young, nu, rho, yields) =
         (80.0, 30.0, 10.0, 40e3, 200e6, 0.3, 7850.0 * 1e-9, 250e3);
-    let e = crate::common::text::solved(&bar(claims));
+    // its mass is the drawing's, claimed of it: no scenario's
+    let e = crate::common::text::solved(&(bar(claims) + "claim mass(>= 1g) plate\n"));
     let (words, read) = scenario_read(&e.sketch, &e.scenarios[0].scenario);
     assert!(words.is_empty(), "{words:?}");
     let v: Vec<f64> = read.answers.iter().map(|a| a.clone().unwrap().unwrap()).collect();
@@ -115,12 +115,14 @@ fn a_bar_pulled_answers_to_rounding() {
     near(v[1], -nu * s * h / young, "the corner's narrowing");
     near(v[2], s * s * w * h * t / young, "the pull's work");
     near(v[3], yields / s, "the factor of safety");
-    near(v[4], rho * w * h * t, "the mass");
-    near(v[5], s * 50.0 / young, "the inner point's move");
+    near(v[4], s * 50.0 / young, "the inner point's move");
     for (k, error) in read.errors.iter().enumerate() {
         let error = error.expect("an estimate");
         assert!(error <= 1e-9 * v[k].abs(), "answer {k}'s estimate is {error}");
     }
+    let [(mass, Some(error), true)] = measured(&e)[..] else { panic!("one mass, kept") };
+    near(mass, rho * w * h * t, "the mass");
+    assert!(error <= 1e-9 * mass, "the mass's estimate is {error}");
 }
 
 /// **What has no answer says why** (#510 S3): a bar its supports leave free to slide (said once,
@@ -207,7 +209,8 @@ fn a_requirement_sizes_a_plank() {
     assert!(words.is_empty(), "{words:?}");
     let said = gcs_core::report::scenario_answers(&e.sketch, s, &read);
     assert!(said[0].text.contains("driven == 0.9mm, held"), "{}", said[0].text);
-    assert!(said[1].text.ends_with("kept"), "{}", said[1].text);
+    // its mass, claimed of the drawing, at the width found
+    assert!(measured(&e).iter().all(|m| m.2), "its mass is kept");
     let fresh = read.answers[0].clone().unwrap().unwrap();
     let error = read.errors[0].expect("an estimate");
     assert!((fresh - 0.9).abs() <= error.max(1e-4), "{fresh} ± {error} against 0.9mm");
@@ -256,8 +259,8 @@ scenario pull {
   claim deflection(k, along: std.z) <= 0mm
   claim compliance(bar) >= 0J
   claim safety(bar) >= 1
-  claim mass(bar) >= 1g
 }
+claim mass(>= 1g) bar
 ";
 
 /// **A body that is no prism is filled and answers** (#510 S3, `bodies::Mesh::filled`): the bar
@@ -276,13 +279,16 @@ fn a_body_of_two_blocks_answers_to_rounding() {
     let (words, read) = scenario_read(&e.sketch, &e.scenarios[0].scenario);
     assert!(words.is_empty(), "{words:?}");
     let v: Vec<f64> = read.answers.iter().map(|a| a.clone().unwrap().unwrap()).collect();
-    let want = [s * w / young, -nu * s * h / young, s * s * w * h * t / young, yields / s,
-                rho * w * h * t];
+    let want = [s * w / young, -nu * s * h / young, s * s * w * h * t / young, yields / s];
     for (k, (&got, want)) in v.iter().zip(want).enumerate() {
         assert!((got - want).abs() <= 1e-6 * want.abs(), "answer {k} is {got}, not {want}");
         let error = read.errors[k].expect("an estimate");
         assert!(error <= 1e-6 * want.abs(), "answer {k}'s estimate is {error}");
     }
+    // its mass, the drawing's, over its own tetrahedra
+    let [(mass, Some(error), true)] = measured(&e)[..] else { panic!("one mass, kept") };
+    let want = rho * w * h * t;
+    assert!((mass - want).abs() <= 1e-6 * want && error <= 1e-6 * want, "{mass} ± {error}");
     let e = crate::common::text::solved(&UNITED.replace("bar.tail.right", "tail.right"));
     let (_, read) = scenario_read(&e.sketch, &e.scenarios[0].scenario);
     let said = read.answers[0].clone().unwrap().unwrap_err();
@@ -318,9 +324,9 @@ scenario pull {
   pinned a along: std.y
   pressure rod.head -sigma
   claim deflection(c, along: std.z) >= 0mm
-  claim mass(rod) >= 0kg
   claim safety(rod) >= 1
 }
+claim mass(>= 1g) rod
 ";
 
 /// **A turned rod answers its closed forms** (#510 S3): a solid of revolution is no prism, so
@@ -336,9 +342,8 @@ fn a_turned_rod_answers_its_closed_forms() {
     assert!(words.is_empty(), "{words:?}");
     let moved = read.answers[0].clone().unwrap().unwrap();
     assert!((moved - s * l / young).abs() <= 2e-3 * s * l / young, "{moved}");
-    let mass = read.answers[1].clone().unwrap().unwrap();
+    let [(mass, Some(error), true)] = measured(&e)[..] else { panic!("one mass, kept") };
     let want = rho * std::f64::consts::PI * r * r * l;
-    let error = read.errors[1].expect("an estimate");
     assert!((mass - want).abs() <= error && error <= 1e-2 * want, "{mass} ± {error}: {want}");
 }
 
@@ -410,7 +415,7 @@ fn every_solid_case_of_the_library_says_what_it_claims() {
     let (got, _) = answers(&e);
     let safety = got.iter().find(|g| g.1 == Output::Safety).unwrap();
     assert!(safety.3.as_ref().unwrap_err().contains("round it"), "{safety:?}");
-    assert!(got.iter().any(|g| g.1 == Output::Mass && g.3.is_ok()));
+    assert!(measured(&e).iter().all(|m| m.2), "its mass, claimed of the drawing, is kept");
 }
 
 /// **A sliver lying on the boundary is peeled** (#510; `refine::volume`'s `peel`): the engine's

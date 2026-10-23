@@ -2993,7 +2993,8 @@ test('a drag let go reads the scenario drawn again, where the drawing was let go
 
 test('choosing a scenario writes nothing, and draws its marks and how the drawing moves', () => {
   // the rounded bracket's shelf (#510): read on this thread with no worker, as the page reads it
-  // in one — its answers to the footer, its marks at once, its picture with them
+  // in one — its answers to the footer with the drawing's mass claims, its marks at once, its
+  // picture with them
   const src = examples.source('rounded_bracket');
   const view = new SketchView(fakeCanvas(), Document.read(src));
   assert.ok(view.load(src));
@@ -3001,7 +3002,9 @@ test('choosing a scenario writes nothing, and draws its marks and how the drawin
   assert.deepEqual(view.scenarioNames().map((n) => n.name), ['shelf']);
   assert.equal(view.scenario, '');
   assert.equal(view.picture, null);
-  assert.ok(view.scenarios.length === 1 && view.scenarios[0].answers.length === 4);
+  assert.ok(view.scenarios.length === 1 && view.scenarios[0].answers.length === 2);
+  assert.ok(view.measures.length === 2 && view.measures.every((m) => m.holds === true),
+    JSON.stringify(view.measures));
   view.chooseScenario('shelf');
   assert.equal(view.source, text, 'choosing a scenario wrote to the document');
   assert.ok(view.scenarioMarks.length >= 4, JSON.stringify(view.scenarioMarks.map((m) => m.kind)));

@@ -79,10 +79,10 @@ impl Constraint {
         // a flank's regularity within a blank: the envelope's, the roll's, the regions' terms' and
         // the number (#345)
         // a deflection driven: its structure, a frame's sections read over its unknowns (#510 S1)
-        // or a region's nodes over the drawing (S2)
-        if self.kind == CKind::Deflection {
-            let d = self.args.get(3).map_or(0.0, Arg::num);
-            return self.deflection_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
+        // or a region's nodes over the drawing (S2) — and a mass or a volume, each its number last
+        if self.kind.interior() {
+            let d = self.args.last().map_or(0.0, Arg::num);
+            return self.interior_parts(sk).map(|(r, _)| r.consts(d)).unwrap_or_default();
         }
         if self.kind == CKind::RegularWithin {
             let margin = self.kind.dimension_slot().map_or(0.0, |i| self.args[i].num());
@@ -198,6 +198,10 @@ impl Constraint {
                 vec![s * self.args[2].num(), pinned]
             }
             CKind::Angle3 => vec![self.args[2].num()],
+            // the turn about the axis, `sense: cw` turning it as in the plane, and the sided
+            // perpendicular's a quarter (#558)
+            CKind::AngleAbout => vec![self.sense() * self.args[3].num()],
+            CKind::PerpendicularAbout => vec![self.sense() * std::f64::consts::FRAC_PI_2],
             // two directions across a line as its hidden points stand now — the first line of a
             // parallel, the line a point is on — refreshed with every `refresh_consts`, so they
             // follow the line between solves
@@ -461,6 +465,9 @@ impl Constraint {
             CKind::Perpendicular | CKind::Parallel | CKind::Parallel3 if self.side().is_some() => {
                 &[]
             }
+            // the turn about an axis (#558) reads a direction with no shadow as the half turn,
+            // and an axis of no length as none, so neither holds there
+            CKind::AngleAbout | CKind::PerpendicularAbout => &[],
             CKind::Perpendicular | CKind::Parallel | CKind::Perpendicular3 | CKind::Parallel3 => {
                 &[0, 1]
             }
@@ -516,6 +523,8 @@ impl Constraint {
             | CKind::CarriedPointIn
             | CKind::RegularWithin
             | CKind::Deflection
+            | CKind::Mass
+            | CKind::Volume
             | CKind::PointOnTraced
             | CKind::Project
             | CKind::Lift
@@ -917,8 +926,10 @@ impl Constraint {
                 self.regular_parts(sk).map(|p| p.columns(sk)).unwrap_or_default()
             }
             // a deflection driven: a frame's every joint's lift, then its sections' unknowns (#510
-            // S1); a region's points' numbers and radii (S2)
-            CKind::Deflection => self.deflection_parts(sk).map(|(_, c)| c).unwrap_or_default(),
+            // S1); a region's points' numbers and radii (S2) — a mass's or a volume's alike
+            CKind::Deflection | CKind::Mass | CKind::Volume => {
+                self.interior_parts(sk).map(|(_, c)| c).unwrap_or_default()
+            }
             // a point a motion carries to a stated roll (#366): both points' lifts, the axes of
             // the plane the first is drawn in where it is read there, then the motion's axes
             CKind::CarriedPoint | CKind::CarriedPointIn if self.stated_roll() => {
@@ -1032,6 +1043,10 @@ impl Constraint {
             | CKind::Midpoint3
             | CKind::Symmetric3 => self.lifted_columns(sk),
             CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => self.axis_columns(sk),
+            // and the axis the turn is read about after them (#558)
+            CKind::AngleAbout | CKind::PerpendicularAbout => {
+                [self.axis_columns(sk), self.direction_columns(sk, 2)].concat()
+            }
             // and the plane's origin and axes after them
             CKind::PointOnPlane | CKind::LineOnPlane => {
                 [self.lifted_columns(sk), plane_columns(sk, e(1).i())].concat()
@@ -1136,16 +1151,23 @@ impl Constraint {
             // every point the envelope and the regions' terms read (#345)
             CKind::RegularWithin => self.regular_parts(sk).map(|p| p.lifted()).unwrap_or_default(),
             // every joint of the frame (#510 S1); a region's points are read in their plane (S2)
-            CKind::Deflection => self.deflection_row(sk).map(|r| r.lifted()).unwrap_or_default(),
+            CKind::Deflection | CKind::Mass | CKind::Volume => {
+                self.interior_row(sk).map(|r| r.lifted()).unwrap_or_default()
+            }
             // both points, then every point the motion's axes read (#326, #366)
             CKind::CarriedPoint | CKind::CarriedPointIn => {
                 let parts = self.motion_parts(sk).map(|p| p.lifted()).unwrap_or_default();
                 [vec![e(0).i(), e(1).i()], parts].concat()
             }
             CKind::Symmetric3 => [vec![e(0).i(), e(1).i()], ends(2).to_vec()].concat(),
-            // a direction's operands: a line's ends are lifted, and an axis is in space already
-            CKind::Angle3 | CKind::Perpendicular3 | CKind::Parallel3 => (0..2)
-                .filter(|&i| e(i).kind == EntKind::Line)
+            // a direction's operands, and the axis a turn is read about (#558): a line's ends are
+            // lifted, and an axis is in space already
+            CKind::Angle3
+            | CKind::Perpendicular3
+            | CKind::Parallel3
+            | CKind::AngleAbout
+            | CKind::PerpendicularAbout => (0..self.args.len())
+                .filter(|&i| matches!(&self.args[i], Arg::Ent(x) if x.kind == EntKind::Line))
                 .flat_map(ends)
                 .collect(),
             _ => [ends(0), ends(1)].concat(),

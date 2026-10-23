@@ -4,6 +4,39 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.175] What a body is made of is the drawing's.** A mass and a volume answer no load, so
+neither is a scenario's: `mass(m) B` and `volume(v) B` are relations of the drawing, prefix words
+(§9.1, §9.11) over a beam, a line a beam is drawn on, or a solid. Stated, each is a row the solve
+holds — a beam's or a member's `ρ A L` (its `A L`), a prism's density times its face's area
+through its depth — so it sizes a section's area read over an unknown, places a joint, or moves a
+prism's points and radii, its face meshed once and moved with the drawing as a driving
+deflection's region is; it reads no support and no load, so a drawing with no scenario at all is
+sized by its mass. Claimed, each is judged on the solved drawing: `claim mass(m) B`, and — a claim
+alone, since a bound on a mass chooses no root — `claim mass(<= m) B` and `claim mass(>= m) B`,
+each value reported with its error beside the scenarios' answers (`mass(arm) is 10kg: driven ==
+10kg, held`); a volume in the document's length cubed (`42000mm³`), written `42 * 1cm^3`. A mass of
+a material stating no `rho` is **E040**, as is a bound not claimed and a measure of a solid that is
+no prism stated. **`mass(B)` is no scenario output now**: through 0.174 a scenario claimed it, read
+only where the scenario's supports held the body; `mass(…)` (or `volume(…)`) in a scenario is
+refused as it is parsed, naming the drawing's statement, so a document that claimed a mass in a
+scenario writes it out of it — `claim mass(B) <= 1kg` in `scenario s { … }` is `claim mass(<= 1kg)
+B` beside it. The library's and the corpus's mass claims are moved so. `mass` and `volume` are
+operator words, so no relation word may be defined as either. (Issue #510.)
+
+**[0.174] A directed angle about an axis.** `angle` and `perpendicular` take `about: a` (§9.4):
+`d1 angle(θ, about: a) d2` is the turn about axis `a`, by the right-hand rule and on the full turn,
+from `d1`'s shadow on the plane square to `a` to `d2`'s, and `d1 perpendicular(sense: ccw, about:
+a) d2` that turn at a quarter (`cw` the other). The directions are lines or axes, need not be square
+to `a`, and the row has one root, where the unsigned `angle` and the bare `perpendicular` in space
+hold either way round. `about:` is a label the language already reads as an axis (`solid(…,
+about:)`, `std.Turn(f, about:)`), and no keyword is added. In a plane `about:` is the plane's normal,
+unsaid: naming it is the plane's own statement, and naming anything else is **E040**, as are a
+`perpendicular` with `about:` and no `sense:` and `about:` on any other word. A `sense:` in space
+with no `about:` is refused as before, its message now naming `about:`. The V-twin's bank mates its
+cylinder's x a quarter turn clockwise about its z from the plane of swing's normal
+(`cyl.std.x perpendicular(sense: cw, about: cyl.std.z) pin.plane.normal`), where 0.173 left which
+way round its y stood to the seed; every position is unchanged. (Issue #558, from #523.)
+
 **[0.173] Which way an axis runs.** `parallel` takes `sense: same|opposite` (§9.4): the second
 direction runs the way the first does, or the other way, where `parallel` alone holds either way
 and leaves which to the seed. Between two lines in a plane it is the directed angle at no turn or a

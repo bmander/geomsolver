@@ -79,3 +79,4 @@ pub mod witness;
 pub mod bvh;
 #[doc(hidden)]
 pub mod intersection;
+pub mod measured;

@@ -323,7 +323,7 @@ fn bench_analysis() {
     PEAK.store(base, Relaxed);
     let t0 = Instant::now();
     let mut levels = gcs_core::report::Levels::new();
-    while let Some(l) = levels.next(&sk, &e.scenarios, Some(0)) {
+    while let Some(l) = levels.next(&sk, &e.scenarios, &e.measures, Some(0)) {
         let said = l.get("scenarios").unwrap().arr()[0].get("answers").unwrap().arr()[0]
             .get("text").unwrap().dump(None);
         println!("level {}: {:6.1} s | heap peak {:6.0} MB | {said}",

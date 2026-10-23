@@ -214,6 +214,13 @@ pub fn diagnosis_json(sk: &Sketch, d: &Diagnosis) -> Json {
         ("redundantDistances", ids(&d.redundant_distances)),
         ("violated", ids(&d.violated)),
         ("conflicts", d.conflicts.as_ref().map(|c| ids(c)).unwrap_or(Json::Null)),
+        // each requirement out of reach of what drives it, and why (#510 P7): `[id, words]`
+        (
+            "outOfReach",
+            Json::Arr(d.out_of_reach.iter().map(|(id, text)| {
+                Json::Arr(vec![Json::Int(*id as i64), Json::Str(text.clone())])
+            }).collect()),
+        ),
         ("warnings", Json::Arr(d.warnings.iter().map(|s| Json::Str(s.clone())).collect())),
         ("witness", d.witness.as_ref().map(|w| witness_json(sk, w)).unwrap_or(Json::Null)),
         ("dof", d.dof.into()),
@@ -333,9 +340,12 @@ fn scenario_json(sk: &Sketch, s: &crate::program::Stated, words: Vec<String>,
 /// **What every load scenario says, and scenario `drawn`'s picture** (#510): `scenarios_json`,
 /// and beside it the picture of the one asked to be drawn (`deformed::Picture`, `picture_json`)
 /// — its answers and its picture one reading, each body analysed once for both — or `null`
-/// where `drawn` is none of them.
+/// where `drawn` is none of them; and what the drawing's masses and volumes come to
+/// (`measures_json`), read with them since a solid's may be meshed for seconds too.
 pub fn scenarios_pictured_json(sk: &Sketch, scenarios: &[crate::program::Stated],
-                               drawn: Option<usize>) -> Json {
+                               measures: &[crate::program::MeasureStated], drawn: Option<usize>)
+    -> Json
+{
     let mut picture = Json::Null;
     let all = scenarios.iter().enumerate().map(|(k, s)| {
         let (words, read) = if Some(k) == drawn {
@@ -347,7 +357,8 @@ pub fn scenarios_pictured_json(sk: &Sketch, scenarios: &[crate::program::Stated]
         };
         scenario_json(sk, s, words, &read)
     }).collect();
-    object([("scenarios", Json::Arr(all)), ("picture", picture)])
+    object([("scenarios", Json::Arr(all)), ("picture", picture),
+            ("measures", measures_json(sk, measures))])
 }
 
 /// **The sizes a page reads its scenarios at, coarsest first** (#510): each element four times
@@ -358,11 +369,14 @@ pub const LEVELS: [f64; 3] = [4.0, 2.0, 1.0];
 
 /// **Every scenario read progressively** (#510, `LEVELS`): a level a `next`, coarsest first,
 /// each holding what it read for the next to estimate its error against.  What a page's worker
-/// steps, posting each level as it comes and stopping when the drawing changes.
+/// steps, posting each level as it comes and stopping when the drawing changes.  The drawing's
+/// masses and volumes answer no level (`measures_json`): read with the first, they stand beside
+/// every one; and a drawing with no scenario is read once, its last.
 #[derive(Clone, Debug, Default)]
 pub struct Levels {
     at: usize,
     last: Vec<Option<crate::beams::Read>>,
+    measures: Option<Json>,
 }
 
 impl Levels {
@@ -375,13 +389,20 @@ impl Levels {
         self.at >= LEVELS.len()
     }
 
-    /// **The next level**: `scenarios_pictured_json`'s `{ "scenarios", "picture" }` read at it —
-    /// its answers' errors against the level before, none at the first — with `"level"`, how many
-    /// times the readers' size its elements are, `"final"`, whether it is the last, and
-    /// `"levelText"`, what it is in the core's words (empty at the last).  `None` once done.
+    /// **The next level**: `scenarios_pictured_json`'s `{ "scenarios", "picture", "measures" }`
+    /// read at it — its answers' errors against the level before, none at the first — with
+    /// `"level"`, how many times the readers' size its elements are, `"final"`, whether it is the
+    /// last, and `"levelText"`, what it is in the core's words (empty at the last).  `None` once
+    /// done.
     pub fn next(&mut self, sk: &Sketch, scenarios: &[crate::program::Stated],
-                drawn: Option<usize>) -> Option<Json> {
+                measures: &[crate::program::MeasureStated], drawn: Option<usize>)
+        -> Option<Json>
+    {
+        if scenarios.is_empty() {
+            self.at = self.at.max(LEVELS.len() - 1);
+        }
         let coarser = *LEVELS.get(self.at)?;
+        let measures = self.measures.get_or_insert_with(|| measures_json(sk, measures)).clone();
         self.last.resize(scenarios.len(), None);
         let mut picture = Json::Null;
         let all = scenarios.iter().enumerate().map(|(k, s)| {
@@ -399,6 +420,7 @@ impl Levels {
         Some(object([
             ("scenarios", Json::Arr(all)),
             ("picture", picture),
+            ("measures", measures),
             ("level", coarser.into()),
             ("final", last.into()),
             ("levelText", level_text(self.at - 1).into()),
@@ -523,14 +545,15 @@ pub struct ScenarioAnswer {
 /// reached, its value its own row's — a region's on the mesh the row was compiled on and moved
 /// with the drawing (#510 S2), which a fresh mesh of the solved drawing reads to its
 /// discretisation, not to rounding; any other driving row or bound is said to hold or not, and
-/// that nothing drives it yet (S3–S4).
+/// that nothing drives it yet (S3–S4).  A driven requirement is said whenever its row has a value,
+/// whatever its reading answers.  What a body is made of is no scenario's: the drawing's masses and
+/// volumes are said by `measure_answers`.
 pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::beams::Read)
     -> Vec<ScenarioAnswer>
 {
     use crate::model::Grade;
     let mut out = Vec::new();
     for (k, r) in s.scenario.requirements.iter().enumerate() {
-        let Some(got) = &read.answers[k] else { continue };
         let head = s.heads[k].clone();
         let grade = r.grade().word();
         let stated = format!("{} {}", r.compare.text(),
@@ -539,12 +562,13 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
         let row = s.driven.get(k).copied().flatten().and_then(|id| sk.constraint(id)).map(|c| {
             c.residual(sk, &c.local_values(sk))[0] + r.value
         });
-        let got = match (got, row) {
-            (Ok(_), Some(v)) if v.is_finite() => &Ok(v),
-            _ => got,
+        let got = match (&read.answers[k], row) {
+            (_, Some(v)) if v.is_finite() => Ok(v),
+            (Some(got), _) => got.clone(),
+            (None, _) => continue,
         };
         let error = read.errors.get(k).copied().flatten();
-        let (value, holds, said) = match got {
+        let (value, holds, said) = match &got {
             Ok(v) => {
                 let keeps = crate::beams::keeps(r, *v);
                 let driven = s.driven.get(k).is_some_and(Option::is_some);
@@ -570,6 +594,66 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
         out.push(ScenarioAnswer { index: k, head, grade, value, error, holds, text });
     }
     out
+}
+
+/// **What a mass or a volume the drawing states comes to** (#510, `program::MeasureStated`),
+/// read on the solved drawing (`measured::read`) — its value, the error beside it, whether it holds
+/// and the sentence: `` mass(arm) is 10kg: driven == 10kg, held ``, `` mass(plank) is 0.85kg ±
+/// 0.0001kg: claimed <= 1kg, kept ``.  A stated one's value is its row's (its residual plus what it
+/// states), what the solve held; a claim's is the reading's.  No scenario's: what a body is made of
+/// answers no load.
+pub fn measure_answers(sk: &Sketch, measures: &[crate::program::MeasureStated])
+    -> Vec<ScenarioAnswer>
+{
+    measures.iter().enumerate().filter_map(|(k, ms)| {
+        let m = sk.measured.get(ms.index)?;
+        let q = m.quantity;
+        let stated =
+            format!("{} {}", m.compare.text(), crate::measured::value_text(sk, q, m.value));
+        let read = crate::measured::read(sk, m);
+        let row = ms.driven.and_then(|id| sk.constraint(id))
+            .map(|c| c.residual(sk, &c.local_values(sk))[0] + m.value)
+            .filter(|v| v.is_finite());
+        let got = match (row, read) {
+            (Some(v), read) => Ok((v, read.ok().and_then(|r| r.1))),
+            (None, read) => read,
+        };
+        let head = ms.head.clone();
+        let grade = if m.claim { "claim" } else { "driving" };
+        let (value, error, holds, text) = match got {
+            Ok((v, error)) => {
+                let keeps = crate::measured::keeps(m, v);
+                let verdict = match (m.claim, keeps) {
+                    (true, true) => format!("claimed {stated}, kept"),
+                    (true, false) => format!("claimed {stated}, refuted"),
+                    (false, true) => format!("driven {stated}, held"),
+                    (false, false) => format!("driven {stated}, not reached"),
+                };
+                let mut said = crate::measured::value_text(sk, q, v);
+                if let Some(e) = error {
+                    said = format!("{said} {}", crate::measured::error_text(sk, q, e));
+                }
+                (Some(v), error, Some(keeps), format!("{head} is {said}: {verdict}"))
+            }
+            Err(why) => (None, None, None, format!("{head} has no answer: {why}")),
+        };
+        Some(ScenarioAnswer { index: k, head, grade, value, error, holds, text })
+    }).collect()
+}
+
+/// **`measure_answers` as JSON**: per mass or volume stated, in the order written, its
+/// `requirement` (what it is of), `grade` (`driving` or `claim`), `value`, `error`, `holds` and
+/// `text`.
+pub fn measures_json(sk: &Sketch, measures: &[crate::program::MeasureStated]) -> Json {
+    Json::Arr(measure_answers(sk, measures).into_iter().map(|a| object([
+        ("index", Json::Int(a.index as i64)),
+        ("requirement", a.head.as_str().into()),
+        ("grade", a.grade.into()),
+        ("value", a.value.map_or(Json::Null, Json::from)),
+        ("error", a.error.map_or(Json::Null, Json::from)),
+        ("holds", a.holds.map_or(Json::Null, Json::from)),
+        ("text", a.text.as_str().into()),
+    ])).collect())
 }
 
 /// **The parameters a drawing declares** (#398 L), for a timeline: each by name, what it is and

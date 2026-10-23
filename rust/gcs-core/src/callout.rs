@@ -111,6 +111,9 @@ macro_rules! undrawn {
             | CKind::Angle3
             | CKind::Perpendicular3
             | CKind::Parallel3
+            // and a turn about an axis (#558), read about no one view's normal
+            | CKind::AngleAbout
+            | CKind::PerpendicularAbout
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
             | CKind::TangentCircleAt3
@@ -141,8 +144,11 @@ macro_rules! undrawn {
             // finds
             | CKind::RegularWithin
             // nor a frame's deflection (#510 S1): a scenario's requirement, whose figure is the
-            // deformed frame, which is presentation the drawing's `.svd` is to say
+            // deformed frame, which is presentation the drawing's `.svd` is to say — nor what a
+            // body is made of, a mass or a volume, which no view of the drawing draws
             | CKind::Deflection
+            | CKind::Mass
+            | CKind::Volume
             // nor a point carried by a motion, at a roll it owns or one stated: a turn about
             // whatever the motion turns about, which no view of the drawing shows (#366)
             | CKind::CarriedPoint

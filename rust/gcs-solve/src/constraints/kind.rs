@@ -189,6 +189,19 @@ pub enum CKind {
     /// from a driving requirement, never written as a statement, and carried by the Solvent source
     /// alone, as a beam is.
     Deflection,
+    /// **A mass, driven** (`beams::Row::measured`, `prisms::Row::measured`): `mass(2kg) arm`, a
+    /// statement of the drawing — no scenario's, since what a body is made of answers no load —
+    /// what the statement `Sketch::measured[of]` names weighs: a beam's or a member's `ρ A L`, a
+    /// prism's `ρ` times its face's area through its depth.  One row, the interior's kernel reading
+    /// the structure's measure (`interior::Reads::Mass`) rather than its moves, its gradient its
+    /// own: no support, no load and no solve is read.  Its columns are a deflection's over the same
+    /// structure — a frame's points' lifts and the unknowns its areas are read over, a face's
+    /// points' numbers and its radii, its mesh the compile's moved with them (`Sketch::meshed`).
+    /// Degree 1, as a deflection's.  Made by the elaborator, carried by the source alone.
+    Mass,
+    /// **A volume, driven**: `volume(72 * 1cm^3) arm`, `Mass` with no density read
+    /// (`interior::Reads::Volume`): a member's `A L`, a prism's face's area through its depth.
+    Volume,
     /// **A point on a body traced in space** (#326, `traced`): `p coincident k`, three rows `p −
     /// X(u, s)` against the place `[u, s]` it owns (a curve's `s` held at none), so a point on a
     /// curve in space nets two and one on a surface one.  The body's geometry is columns.
@@ -236,6 +249,14 @@ pub enum CKind {
     Perpendicular3,
     /// Two rows across the first line's direction — see `kernels::parallel3_res`.
     Parallel3,
+    /// **The directed angle about an axis** (#558): the turn about `about`, by the right-hand
+    /// rule and on the full turn, carrying the first direction's shadow on the plane square to
+    /// the axis onto the second's — `angle(θ, about: a)`, the plane's `angle` read about any
+    /// axis.  `sense: cw` turns the number, as in the plane.
+    AngleAbout,
+    /// `perpendicular(sense:, about: a)`: that turn at a quarter either way (#558), as the sided
+    /// `perpendicular` in a plane is `angle`'s kernel (#497).  No number, so no dimension.
+    PerpendicularAbout,
     /// `P coincident p`: a point on a plane in space, over the plane's axes and origin; the plane
     /// is any, not only the point's own.
     PointOnPlane,
@@ -452,7 +473,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 86] = [
+pub const ALL_KINDS: [CKind; 90] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -489,6 +510,8 @@ pub const ALL_KINDS: [CKind; 86] = [
     CKind::CarriedPoint,
     CKind::RegularWithin,
     CKind::Deflection,
+    CKind::Mass,
+    CKind::Volume,
     CKind::PointOnTraced,
     CKind::Project,
     CKind::Lift,
@@ -500,6 +523,8 @@ pub const ALL_KINDS: [CKind; 86] = [
     CKind::Angle3,
     CKind::Perpendicular3,
     CKind::Parallel3,
+    CKind::AngleAbout,
+    CKind::PerpendicularAbout,
     CKind::PointOnPlane,
     CKind::PointOnCircle3,
     CKind::ProjectSolved,
@@ -774,6 +799,8 @@ impl CKind {
             CKind::CarriedPointIn => "CarriedPointIn",
             CKind::RegularWithin => "RegularWithin",
             CKind::Deflection => "Deflection",
+            CKind::Mass => "Mass",
+            CKind::Volume => "Volume",
             CKind::PointOnTraced => "PointOnTraced",
             CKind::Project => "Project",
             CKind::AxisOnPlane => "AxisOnPlane",
@@ -792,6 +819,8 @@ impl CKind {
             CKind::Angle3 => "Angle3",
             CKind::Perpendicular3 => "Perpendicular3",
             CKind::Parallel3 => "Parallel3",
+            CKind::AngleAbout => "AngleAbout",
+            CKind::PerpendicularAbout => "PerpendicularAbout",
             CKind::PointOnPlane => "PointOnPlane",
             CKind::PointOnCircle3 => "PointOnCircle3",
             CKind::PointOnLine3 => "PointOnLine3",
@@ -1002,6 +1031,10 @@ impl CKind {
             CKind::Deflection => {
                 &[("at", S::Point), ("along", S::Direction), ("scenario", S::Int), ("d", S::Length)]
             }
+            // what is measured (the statement, by its index on `Sketch::measured`) and how much:
+            // a mass in kilograms, a volume in the drawing's length cubed — no dimension drawn
+            CKind::Mass => &[("of", S::Int), ("m", S::Float)],
+            CKind::Volume => &[("of", S::Int), ("v", S::Float)],
             // the place on a traced body: its formals', a curve's second held at none (#326)
             CKind::PointOnTraced => &[("p", S::Point), ("traced", S::Traced), ("u", S::Param), ("s", S::Param)],
             CKind::SplineTangentLine => {
@@ -1029,6 +1062,20 @@ impl CKind {
             CKind::Angle3 => &[("l1", S::Direction), ("l2", S::Direction), ("theta", S::Angle)],
             CKind::Perpendicular3 => &[("l1", S::Direction), ("l2", S::Direction)],
             CKind::Parallel3 => &[("l1", S::Direction), ("l2", S::Direction), ("sense", S::Str)],
+            // the two directions and the axis the turn between them is read about (#558)
+            CKind::AngleAbout => &[
+                ("l1", S::Direction),
+                ("l2", S::Direction),
+                ("about", S::Direction),
+                ("theta", S::Angle),
+                ("sense", S::Str),
+            ],
+            CKind::PerpendicularAbout => &[
+                ("l1", S::Direction),
+                ("l2", S::Direction),
+                ("about", S::Direction),
+                ("sense", S::Str),
+            ],
             CKind::PointOnPlane => {
                 &[("p", S::Point), ("plane", S::Plane)]
             }
@@ -1197,6 +1244,9 @@ impl CKind {
             CKind::RegularWithin => ("regular", Infix),
             // a frame's deflection (#510 S1): a scenario's output, `deflection(at, along: d)`
             CKind::Deflection => ("deflection", Prefix),
+            // a mass or a volume driven: a scenario's output, `mass(arm)`, `volume(arm)`
+            CKind::Mass => ("mass", Prefix),
+            CKind::Volume => ("volume", Prefix),
             // a body traced in space (#326): a point on it, and at a point already on it a line
             // or a plane touching it, a line along a surface's normal and a circle osculating it
             CKind::PointOnTraced => ("coincident", Infix),
@@ -1254,8 +1304,8 @@ impl CKind {
             // a lifted or described statement spells the word and the reading comes back
             CKind::Coincident3 => ("coincident", Infix),
             CKind::Distance3 | CKind::PointLine3 | CKind::LineLine3 => ("distance", Infix),
-            CKind::Angle3 => ("angle", Infix),
-            CKind::Perpendicular3 => ("perpendicular", Infix),
+            CKind::Angle3 | CKind::AngleAbout => ("angle", Infix),
+            CKind::Perpendicular3 | CKind::PerpendicularAbout => ("perpendicular", Infix),
             CKind::Parallel3 => ("parallel", Infix),
             CKind::EqualLength3 => ("equal", Infix),
             CKind::PointOnPlane => ("coincident", Infix),
@@ -1327,6 +1377,8 @@ impl CKind {
             (CKind::Angle, 3) => &["ccw", "cw"][..],
             (CKind::EqualAngle, 4) => &["ccw", "cw"][..],
             (CKind::Perpendicular, 2) => &["ccw", "cw"][..],
+            // which way round the axis the turn is read (#558)
+            (CKind::AngleAbout, 4) | (CKind::PerpendicularAbout, 3) => &["ccw", "cw"][..],
             // which way the second direction runs along the first (#535)
             (CKind::Parallel | CKind::Parallel3 | CKind::LineOnAxis | CKind::AxisCoincident, 2) => {
                 &["same", "opposite"][..]
@@ -1389,6 +1441,9 @@ impl CKind {
             CKind::EqualAngle => (4, &[("ccw", 1.0), ("cw", -1.0)][..]),
             // the quarter turn from the first line to the second, either way (#497)
             CKind::Perpendicular => (2, &[("ccw", 1.0), ("cw", -1.0)][..]),
+            // and about an axis, by the right-hand rule (#558)
+            CKind::AngleAbout => (4, &[("ccw", 1.0), ("cw", -1.0)][..]),
+            CKind::PerpendicularAbout => (3, &[("ccw", 1.0), ("cw", -1.0)][..]),
             // the second direction run along the first, or turned round (#535)
             CKind::Parallel | CKind::Parallel3 | CKind::LineOnAxis | CKind::AxisCoincident => {
                 (2, &[("same", 1.0), ("opposite", -1.0)][..])
@@ -1560,11 +1615,27 @@ impl CKind {
     }
 
     /// Whether a constraint of this kind is **the Solvent source's alone** (#510 S1): a frame's
-    /// deflection reads beams and a scenario, which no document JSON, rebuild walk or flat program
-    /// carries, so none of them carries the row either; the source states it again when it is
-    /// elaborated.
+    /// deflection reads beams and a scenario, and a mass or a volume a beam or a statement of the
+    /// drawing's measures (`Sketch::measured`), which no document JSON, rebuild walk or flat
+    /// program carries, so none of them carries the row either; the source states it
+    /// again when it is elaborated.
     pub fn of_source(self) -> bool {
-        self == CKind::Deflection
+        self.interior()
+    }
+
+    /// Whether its kernel is the interior's (`interior::kernel`, `KernelKey::Interior`): a
+    /// scenario's output driven — a deflection, a mass, a volume (#510).
+    pub fn interior(self) -> bool {
+        self == CKind::Deflection || self.reads().is_some()
+    }
+
+    /// The measure a mass or a volume driven reads of its structure; `None` for any other kind.
+    pub fn reads(self) -> Option<crate::interior::Reads> {
+        match self {
+            CKind::Mass => Some(crate::interior::Reads::Mass),
+            CKind::Volume => Some(crate::interior::Reads::Volume),
+            _ => None,
+        }
     }
 
     /// Whether this kind's kernel is built from the sketch at a width of its operands' (a
@@ -1573,8 +1644,8 @@ impl CKind {
     pub fn built(self) -> bool {
         matches!(self, CKind::SplineLength | CKind::Stationary | CKind::CurveTouchesLine
                        | CKind::CarriedPoint | CKind::CarriedPointIn
-                       | CKind::RegularWithin | CKind::Deflection | CKind::Rate
-                       | CKind::RateDistance)
+                       | CKind::RegularWithin | CKind::Rate | CKind::RateDistance)
+            || self.interior()
             || self.envelope_contact().is_some()
             || self.meshing_contact().is_some()
             || self.traced_contact().is_some()
@@ -1701,8 +1772,10 @@ impl CKind {
             | CKind::RateDistance
             // a flank's regularity (#345): no contact
             | CKind::RegularWithin
-            // nor a frame's deflection (#510 S1)
+            // nor a frame's deflection (#510 S1), nor what a body is made of
             | CKind::Deflection
+            | CKind::Mass
+            | CKind::Volume
             // a point on a traced body is a contact, as one on a curve is
             | CKind::PointOnTraced
             | CKind::PointAlongLine
@@ -1724,6 +1797,8 @@ impl CKind {
             | CKind::Angle3
             | CKind::Perpendicular3
             | CKind::Parallel3
+            | CKind::AngleAbout
+            | CKind::PerpendicularAbout
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
             | CKind::TangentCircleAt3
@@ -1809,8 +1884,8 @@ impl CKind {
             CKind::RegularWithin => {
                 panic!("a flank's regularity is read by a kernel built at its operands' widths")
             }
-            CKind::Deflection => {
-                panic!("a deflection is read by a kernel built at its structure's widths")
+            CKind::Deflection | CKind::Mass | CKind::Volume => {
+                panic!("a scenario's output is read by a kernel built at its structure's widths")
             }
             CKind::CarriedPoint | CKind::CarriedPointIn => {
                 panic!("a point a motion carries is read by a kernel built at its operands' widths")
@@ -1873,6 +1948,8 @@ impl CKind {
             CKind::Angle3 => K::Angle3,
             CKind::Perpendicular3 => K::Perpendicular3,
             CKind::Parallel3 => K::Parallel3,
+            // one kernel for both, the perpendicular's turn a quarter (#558)
+            CKind::AngleAbout | CKind::PerpendicularAbout => K::AngleAbout,
             CKind::PointOnPlane => K::PointOnPlane,
             CKind::PointOnCircle3 => K::PointOnCircle3,
             CKind::PointOnLine3 => K::PointOnLine3,
@@ -1949,6 +2026,7 @@ impl CKind {
             CKind::PointLine3 => K::PointLine3Free,
             CKind::LineLine3 => K::LineLine3Free,
             CKind::Angle3 => K::Angle3Free,
+            CKind::AngleAbout => K::AngleAboutFree,
             CKind::Coincident
             | CKind::Midpoint
             | CKind::DragTarget
@@ -1985,8 +2063,11 @@ impl CKind {
             | CKind::Rate
             | CKind::RateDistance
             | CKind::RegularWithin
-            // nor a frame's deflection (#510 S1): a scenario's number, stated, never an unknown
+            // nor a frame's deflection (#510 S1), mass or volume: a scenario's number, stated,
+            // never an unknown
             | CKind::Deflection
+            | CKind::Mass
+            | CKind::Volume
             // nor a contact with a traced body
             | CKind::PointOnTraced
             | CKind::PointAlongLine
@@ -2000,6 +2081,7 @@ impl CKind {
             | CKind::Coincident3
             | CKind::Perpendicular3
             | CKind::Parallel3
+            | CKind::PerpendicularAbout
             | CKind::PointOnPlane
             | CKind::PointOnCircle3
             | CKind::TangentCircleAt3
@@ -2042,6 +2124,8 @@ impl CKind {
                 | CKind::Angle3
                 | CKind::Perpendicular3
                 | CKind::Parallel3
+                | CKind::AngleAbout
+                | CKind::PerpendicularAbout
                 | CKind::PointOnPlane
                 | CKind::PointOnCircle3
                 | CKind::TangentCircleAt3
@@ -2061,6 +2145,8 @@ impl CKind {
                 | CKind::RateDistance
                 | CKind::RegularWithin
                 | CKind::Deflection
+                | CKind::Mass
+                | CKind::Volume
                 | CKind::PointOnTraced
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis

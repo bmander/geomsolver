@@ -1047,6 +1047,7 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         .is_some_and(|a| matches!(a, Arg::Dim { .. }));
     let mut instant: Vec<String> = Vec::new();
     let mut roll = String::new();
+    let mut about = None;
     for (i, (name, sk)) in spec.iter().enumerate() {
         let Some(a) = args.get(i).and_then(|a| a.as_ref()) else { continue };
         // an entity slot the core infers — a projection's planes — is never spelled: the
@@ -1076,6 +1077,9 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
         } else if sk.takes_ref() && *name == "by" {
             // and the tool a flank is cut by (#345)
             parens.push(format!("by: {}", write_arg(name, *sk, a)));
+        } else if sk.takes_ref() && *name == "about" {
+            // and the axis a turn is read about (#558), last, after the sense it reads
+            about = Some(format!("about: {}", write_arg(name, *sk, a)));
         } else if sk.takes_ref() && *name == "under" && stated {
             // the motion a point is read by at an instant is the instant's (#391 S2)
             instant.push(format!("under: {}", write_arg(name, *sk, a)));
@@ -1100,6 +1104,7 @@ pub fn operator_text(kind: CKind, args: &[Option<Arg>]) -> String {
             parens.push(write_arg(name, *sk, a));
         }
     }
+    parens.extend(about);
     // the third entity of `symmetry` goes in the parentheses with everything else that is not
     // one of the two operands — and a call's operands all do, as does the second pair of an
     // angle made equal to another.  In spec order and ahead of any selector, which is where a

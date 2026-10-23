@@ -5,9 +5,12 @@
 //! Lamé's cylinder, exact in plane stress with its ends open, answers in either reading; a sheet
 //! pulled answers to rounding; and what has no answer says why.  The rules are
 //! `docs/contract/analysis.md`'s.
-use gcs_core::diagnose::analysis::scenario_read;
-use gcs_core::model::{InPlane, Output};
+use gcs_core::constraints::{Arg, CKind};
+use gcs_core::diagnose::analysis::{scenario_read, Reach};
+use gcs_core::model::{InPlane, Output, Sketch};
 use gcs_core::program::Elaborated;
+use gcs_core::solve::{solve, SolveOpts};
+use gcs_core::system::{Stop, System};
 
 use crate::analysis_corpus::{read as read_case, Reading, CASES};
 
@@ -27,6 +30,13 @@ pub(crate) fn answers(e: &Elaborated)
         }
     }
     (out, words)
+}
+
+/// What each mass and volume `e` states comes to (#510), in the order written: its value, the
+/// error estimated beside it, and whether it holds.
+pub(crate) fn measured(e: &Elaborated) -> Vec<(f64, Option<f64>, bool)> {
+    gcs_core::report::measure_answers(&e.sketch, &e.measures).into_iter()
+        .map(|a| (a.value.expect(&a.text), a.error, a.holds == Some(true))).collect()
 }
 
 /// The one value `e` answers of `output`.
@@ -148,12 +158,12 @@ scenario pull {{
 #[test]
 fn a_sheet_pulled_answers_to_rounding() {
     let claims = "  claim deflection(k, along: std.x) >= 0mm\n  claim compliance(plate) >= 0J\n  \
-                  claim safety(plate) >= 1\n  claim mass(plate) >= 1g\n  \
-                  claim deflection(q, along: std.x) >= 0mm\n";
+                  claim safety(plate) >= 1\n  claim deflection(q, along: std.x) >= 0mm\n";
     let (w, h, t, s, young, nu, rho, yields) =
         (80.0, 30.0, 2.0, 40e3, 200e6, 0.3, 7850.0 * 1e-9, 250e3);
     for plane in ["stress", "strain"] {
-        let e = crate::common::text::solved(&sheet(plane, claims));
+        // its mass is the drawing's, claimed of it: no scenario's
+        let e = crate::common::text::solved(&(sheet(plane, claims) + "claim mass(>= 1g) plate\n"));
         let strain = plane == "strain";
         let e1 = if strain { young / (1.0 - nu * nu) } else { young };
         let (got, words) = answers(&e);
@@ -166,8 +176,10 @@ fn a_sheet_pulled_answers_to_rounding() {
         near(v[1], s * s * w * h * t / e1, "the pull's work");
         let mises = if strain { s * (1.0 - nu + nu * nu).sqrt() } else { s };
         near(v[2], yields / mises, "the factor of safety");
-        near(v[3], rho * w * h * t, "the mass");
-        near(v[4], s * 50.0 / e1, "the inner point's move");
+        near(v[3], s * 50.0 / e1, "the inner point's move");
+        let [(mass, _, kept)] = measured(&e)[..] else { panic!("one mass") };
+        near(mass, rho * w * h * t, "the mass");
+        assert!(kept);
     }
 }
 
@@ -347,10 +359,10 @@ fn a_regions_driving_row_is_refused_where_it_cannot_be_read() {
     // read as a solid, the plate's deflection drives it in space (#510 S3)
     let solid = plate.replace("  plane stress plate\n", "");
     let e = crate::common::read(&solid);
-    use gcs_core::constraints::{CKind, DeflectionRow};
+    use gcs_core::constraints::{CKind, InteriorRow};
     let row = e.sketch.constraints.iter().find(|c| c.kind == CKind::Deflection)
-        .map(|c| c.deflection_row(&e.sketch).expect("a row"));
-    let Some(DeflectionRow::Meshed(row)) = row else { panic!("a meshed row: {row:?}") };
+        .map(|c| c.interior_row(&e.sketch).expect("a row"));
+    let Some(InteriorRow::Meshed(row)) = row else { panic!("a meshed row: {row:?}") };
     assert_eq!(row.structure.dim, 3);
 }
 
@@ -391,4 +403,83 @@ fn every_region_case_of_the_library_says_what_it_claims() {
     let safety = got.iter().find(|g| g.1 == Output::Safety).unwrap();
     assert!(safety.3.as_ref().unwrap_err().contains("round it"), "{safety:?}");
     assert!(got.iter().any(|g| g.1 == Output::Deflection && g.3.is_ok()));
+}
+
+/// **A region is meshed again where its mesh folds** (#510 S2; `System::remeshed`,
+/// `System::stop_at`): the library's drilled plate under a quarter of its
+/// load sinks its `sag` only with a hole of about 27.7mm, which the mesh made where the hole was
+/// drawn, at 18, cannot follow — on that mesh the row cannot be read there at all, and a hair
+/// short of 27 it stands at the mesh's edge, read but not a step on.  The solve, stopped there,
+/// meshes the plate again where it stopped and solves on: the corner sinks what it states, and
+/// the report reads it held — and so does the same source read afresh, meshed where this was
+/// meshed again (`Sketch::meshed_at`, `Sketch::mesh_at`) and stood where it solved, to the bit,
+/// as a page's worker reads it.  Asked to sink a hundred millimetres it meshes again where each mesh
+/// folds, and holds that too, with the hole all but through the plate.  Put back and asked its
+/// own sag, the drawing solves, though the mesh it holds was made by the plate's edge: to the
+/// radius it solves to as drawn, within what one mesh and another differ by.
+#[test]
+fn a_regions_mesh_is_made_again_where_it_folds() {
+    let src = gcs_core::examples::source("drilled_plate").unwrap();
+    let swap = |a: &str, b: &str| {
+        assert!(src.contains(a), "the plate states `{a}`");
+        src.replace(a, b)
+    };
+    let deflection = |sk: &Sketch| {
+        sk.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap().id
+    };
+    let radius = |sk: &Sketch| sk.params[sk.free_vars["r"] as usize].value;
+    let answer = |e: &Elaborated, sk: &Sketch| {
+        let (_, read) = scenario_read(sk, &e.scenarios[0].scenario);
+        gcs_core::report::scenario_answers(sk, &e.scenarios[0], &read).swap_remove(0)
+    };
+    let held = |e: &Elaborated, sk: &Sketch, sag: &str| {
+        let said = answer(e, sk);
+        assert!(said.text.ends_with(&format!("driven == {sag}, held")), "{}", said.text);
+    };
+
+    let mut e = crate::common::read(&swap("P := 2kN", "P := 0.5kN"));
+    let drawn = e.sketch.clone();
+    let id = deflection(&drawn);
+    // on the mesh made at 18: read well inside, at its edge a hair short of 27, folded past it
+    let stop = |at: f64| {
+        let mut sk = drawn.clone();
+        for p in sk.free_indices() {
+            sk.params[p as usize].value = at;
+        }
+        let mut sys = System::new(&sk);
+        let z = sys.z0(&sk);
+        sys.stop_at(&sk, &z, 1e-6)
+    };
+    assert_eq!(stop(26.0), Stop::Other);
+    let Stop::Folded(edges) = stop(26.9) else { panic!("not at its edge") };
+    let [(row, Reach::Edge { value })] = edges[..] else { panic!("{edges:?}") };
+    assert!(row == id && value < 0.6, "{edges:?}");
+    assert_eq!(stop(27.5), Stop::Folded(Vec::new()));
+    assert!(drawn.meshed_at.is_none());
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    let r = radius(&e.sketch);
+    assert!(r > 27.0 && r < 28.5, "the hole is {r}");
+    held(&e, &e.sketch, "0.6mm");
+    let at = e.sketch.meshed_at.clone().expect("meshed again");
+    let mut again = crate::common::read(&swap("P := 2kN", "P := 0.5kN"));
+    assert!(again.sketch.mesh_at(&at) && again.sketch.set_x(&e.sketch.get_x()));
+    let value = |e: &Elaborated, sk: &Sketch| answer(e, sk).value.unwrap().to_bits();
+    assert_eq!(value(&again, &again.sketch), value(&e, &e.sketch));
+    held(&again, &again.sketch, "0.6mm");
+
+    let mut e = crate::common::read(&swap("sag := 0.6mm", "sag := 100mm"));
+    let start = e.sketch.get_x();
+    assert!(solve(&mut e.sketch, SolveOpts::default()).success);
+    let r = radius(&e.sketch);
+    assert!(r > 29.5 && r < 30.0, "the hole is {r}");
+    held(&e, &e.sketch, "100mm");
+    let mut sk = e.sketch.clone();
+    sk.set_x(&start);
+    let id = deflection(&sk);
+    sk.constraints.iter_mut().find(|c| c.id == id).unwrap().args[3] = Arg::Num(0.6);
+    // solved on a mesh made elsewhere, it agrees with the drawing's own to the meshes'
+    // discretisation, not to rounding
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let r = radius(&sk);
+    assert!((r - 19.2259).abs() < 5e-3 * 19.2259, "the hole is {r}");
 }

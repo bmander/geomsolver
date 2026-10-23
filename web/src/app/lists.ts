@@ -299,7 +299,10 @@ function refreshBanner(): void {
   }
   const ix = new io.Index(view.sketch);
   if (d.status === 'conflict') {
-    bannerText.textContent = d.conflicts?.length
+    // a requirement out of reach is said with why, in the core's words: nothing to remove
+    bannerText.textContent = d.outOfReach.length
+      ? `⚠ ${d.outOfReach.map((r) => `${io.describe(r.constraint, view.doc)}: ${r.text}`).join('; ')}`
+      : d.conflicts?.length
       ? `⚠ Conflicting constraints — remove one of: ${d.conflicts.map((c) => io.describe(c, view.doc)).join(', ')}`
       : `⚠ ${d.violated.length} constraint(s) cannot be satisfied`;
     banner.className = 'conflict';

@@ -366,7 +366,7 @@ fn kind(o: Output) -> Option<Kind> {
         Output::Deflection | Output::Safety => Some(Kind::Static),
         Output::Mode => Some(Kind::Frequency),
         Output::Buckling => Some(Kind::Buckle),
-        Output::Mass | Output::Compliance => None,
+        Output::Compliance => None,
     }
 }
 
@@ -684,11 +684,6 @@ fn judge(case: &Case, e: &Elaborated) -> Vec<(Bracket, f64)> {
                 }
                 Output::Mode => answered.modes[b.count.unwrap() as usize - 1][3],
                 Output::Buckling => answered.buckling[0][1],
-                // the B-rep's volume, not CalculiX's: the one output with no analysis in it
-                Output::Mass => {
-                    // a B-rep is in millimetres, a mass in kilograms in any document
-                    material.get(Property::Rho).unwrap() * volume(&x) * (x.mm * 1e-3).powi(3)
-                }
                 Output::Compliance => panic!("no case claims a compliance yet"),
             };
             out.push((b.clone(), v));

@@ -525,6 +525,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     println!("  {}", a.text);
                 }
             }
+            // and what the drawing states a beam or a solid is made of (#510)
+            for a in gcs_core::report::measure_answers(&sk, &e.measures) {
+                println!("  {}", a.text);
+            }
         }
         if let Some(d) = &d {
             println!("  {}", gcs_core::diagnose::summary(d));
@@ -538,7 +542,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 report_set(&sk, &e.map, &format!("driven by {}", p.name), &p.readers);
                 println!("  {}", gcs_core::report::parameter_text(&sk, &p.name));
             }
-            report_set(&sk, &e.map, "conflict", d.conflicts.as_deref().unwrap_or(&[]));
+            // a requirement out of reach is the whole conflict, said with why (#510 P7), not as
+            // one to remove
+            if d.out_of_reach.is_empty() {
+                report_set(&sk, &e.map, "conflict", d.conflicts.as_deref().unwrap_or(&[]));
+            }
+            for (id, why) in &d.out_of_reach {
+                if let Some(c) = sk.constraint(*id) {
+                    println!("  {}: {why}", io::describe_with(c, &|r| e.map.name_of(r).cloned()));
+                }
+            }
             report_set(&sk, &e.map, "over", &d.over);
             report_set(&sk, &e.map, "implied", &d.implied);
             report_set(&sk, &e.map, "claim refuted", &d.claims_violated);
@@ -970,6 +983,10 @@ fn doc_json(
     let settled = r.is_some_and(|r| r.settled());
     if let Some((sk, _)) = d.filter(|_| settled && !e.scenarios.is_empty()) {
         doc.set("scenarios", report::scenarios_json(sk, &e.scenarios));
+    }
+    // and the masses and volumes the drawing states (#510), at the solved pose
+    if let Some((sk, _)) = d.filter(|_| settled && !e.measures.is_empty()) {
+        doc.set("measures", report::measures_json(sk, &e.measures));
     }
     // the document's parts, read through the diagnosis (#461), where it has any
     if let Some((sk, d)) = d {

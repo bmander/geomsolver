@@ -211,7 +211,8 @@ pub unsafe extern "C" fn gcs_elab_scenarios_json(h: *mut Elaborated, s: *mut Ske
 }
 
 /// **What every load scenario says, and one's picture** (`report::scenarios_pictured_json`):
-/// `{ "scenarios", "picture" }`, the first `gcs_elab_scenarios_json`'s and the second how the
+/// `{ "scenarios", "picture", "measures" }`, the first `gcs_elab_scenarios_json`'s, the last what
+/// the drawing's masses and volumes come to (`report::measures_json`), and the second how the
 /// drawing moves under scenario `drawn` (its bodies' places at rest, their moves, triangles and
 /// edges as flat arrays, the largest move and the factor to draw it at) — or `null` for a
 /// `drawn` that is no scenario's index (−1 for none).  Its answers and its picture are one
@@ -221,7 +222,7 @@ pub unsafe extern "C" fn gcs_elab_scenarios_pictured_json(h: *mut Elaborated, s:
                                                           drawn: i32) -> *mut u8 {
     json_out(move || {
         let drawn = usize::try_from(drawn).ok();
-        gcs_core::report::scenarios_pictured_json(sk(s), &(*h).scenarios, drawn)
+        gcs_core::report::scenarios_pictured_json(sk(s), &(*h).scenarios, &(*h).measures, drawn)
     })
 }
 
@@ -230,6 +231,7 @@ pub unsafe extern "C" fn gcs_elab_scenarios_pictured_json(h: *mut Elaborated, s:
 pub struct ScenarioLevels {
     sketch: Sketch,
     scenarios: Vec<gcs_core::program::Stated>,
+    measures: Vec<gcs_core::program::MeasureStated>,
     drawn: Option<usize>,
     levels: gcs_core::report::Levels,
 }
@@ -244,6 +246,7 @@ pub unsafe extern "C" fn gcs_elab_scenario_levels_new(h: *mut Elaborated, s: *mu
         Box::into_raw(Box::new(ScenarioLevels {
             sketch: sk(s).clone(),
             scenarios: (*h).scenarios.clone(),
+            measures: (*h).measures.clone(),
             drawn: usize::try_from(drawn).ok(),
             levels: gcs_core::report::Levels::new(),
         }))
@@ -251,12 +254,12 @@ pub unsafe extern "C" fn gcs_elab_scenario_levels_new(h: *mut Elaborated, s: *mu
 }
 
 /// **The next level read** (`Levels::next`): `gcs_elab_scenarios_pictured_json`'s `{ "scenarios",
-/// "picture" }` at it, with `"level"`, `"final"` and `"levelText"` — or null once every level is.
+/// "picture", "measures" }` at it, with `"level"`, `"final"` and `"levelText"` — or null once every level is.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_scenario_levels_next(l: *mut ScenarioLevels) -> *mut u8 {
     json_out(move || {
         let l = &mut *l;
-        l.levels.next(&l.sketch, &l.scenarios, l.drawn).unwrap_or(Json::Null)
+        l.levels.next(&l.sketch, &l.scenarios, &l.measures, l.drawn).unwrap_or(Json::Null)
     })
 }
 
@@ -267,6 +270,13 @@ pub unsafe extern "C" fn gcs_scenario_levels_free(l: *mut ScenarioLevels) {
             drop(Box::from_raw(l));
         }
     })
+}
+
+/// **How many masses and volumes the document states** (#510, `mass(10kg) arm`): whether a page
+/// has them to read beside its scenarios.  No analysis.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_measures_stated(h: *mut Elaborated) -> i32 {
+    guard(0, move || (*h).measures.len() as i32)
 }
 
 /// **The document's load scenarios by name** (`report::scenario_names_json`): `[{ "name",

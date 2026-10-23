@@ -240,12 +240,13 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
 | `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s words (1.9): `use std (horizontal)`, then `a horizontal b` |
 | `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. Write it rather than `distance(0, along: …)`, which is refused |
-| `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned. `l1 angle(l3, l4) l2` equates two angles |
+| `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
+| `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
 | `length` | prefix | any path: a line (the distance between its ends); an arc (radius × counter-clockwise sweep); a spline or free curve (its whole length). `distance` relates two things and `length` measures one, so `distance(d) l` on a line is refused, naming `length(d) l` |
 | `symmetry(line)` | infix | two points |
 | `midpoint` | infix | a point and a line |
-| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), two lines in a plane only. `a parallel(sense: same) b`: the two run alike (`opposite`: apart), lines or axes, in a plane or in space; alone, either way, the seed's. `coincident` between a line and an axis or two axes takes the same `sense:` |
+| `parallel`, `perpendicular` | infix | two lines; an axis and a line or axis; an axis and a plane; `perpendicular` a line and a plane (the line along its normal, in space); `parallel` two planes. `l1 perpendicular(sense: ccw) l2`: `l2` a quarter turn anticlockwise of `l1` (`cw` the other way), in a plane; in space only about an axis, `perpendicular(sense: ccw, about: a)`. `a parallel(sense: same) b`: the two run alike (`opposite`: apart), lines or axes, in a plane or in space; alone, either way, the seed's. `coincident` between a line and an axis or two axes takes the same `sense:` |
 | `project` | infix | two points in two planes: two images of one point in space (1.12) |
 | `mapped(from -> a, …)` | infix | `q mapped(from -> a, to -> b, third -> c) p`: `q` where the affine map taking the three sources to the three targets carries `p`; two pairs the similarity, `mirror: true` reversing its turn. Sources in one plane, `q` and targets in one (may differ). Two circles under two pairs: centre carried, radius scaled |
 | `fix` | prefix | an entity's own numbers, whole or by member (1.4) |
@@ -261,7 +262,8 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `a distance(60, along: u) b` | `b.x − a.x = 60`, the run along the view's `u`; `along: v` is the rise, along its `v` (world z in `std.front`); `right`, `up`, … say it as a word |
 | `a distance(60, along: t) b` | `(b − a)·t̂ = 60` along axis or line `t` |
 | `a level(t) b` | level along `t`; `std`'s `a horizontal b` is `a level(up) b` |
-| `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s |
+| `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s, about the plane's normal |
+| `d1 angle(30deg, about: a) d2` | 30° about axis `a`, right handed, from `d1`'s shadow on the plane square to `a` to `d2`'s: lines or axes, in space; in a plane `a` may only be `P.normal` (E040) |
 | `l1 angle(30, sense: cw) l2` | 30° clockwise: `angle(-30)` said openly |
 | `l1 angle(l3, l4) l2` | angle `l1 → l2` equals angle `l3 → l4` |
 | `l1 angle(l3, l4, sense: cw) l2` | it equals the **mirror image** of `l3 → l4` |
@@ -319,14 +321,15 @@ their places in space; no selector is needed:
 | `a distance(30) b` | the true length |
 | `a distance(5) l`, `l1 distance(17.5) l2` | to the infinite line; along the common perpendicular |
 | `a coincident l`, `a coincident c` | on the line's extension; on the circle in its own view |
-| `l1 angle(90deg) l2` | the **unsigned** angle, strictly between 0° and 180° (say `parallel` for 0°) |
+| `l1 angle(90deg) l2` | the **unsigned** angle, strictly between 0° and 180° (say `parallel` for 0°); `angle(90deg, about: a)` the turn about `a` |
 | `parallel`, `perpendicular`, `equal` | directions, and true lengths |
 | `a midpoint l`, `a symmetry(l) b` | the midpoint in space; a half turn about the line |
 | `a distance(20, along: std.z) b` | how far apart along the axis, in space |
 
 A word with no meaning in space — `horizontal`, a view's own `along: u` between two points (name
 the axis instead, `along: std.x`), `tangent` between drawn figures, the angle-equals-angle form — is **E062** across
-views; `sense:` and `side:` there are **E040**. Radii mean the same in every view.
+views; `side:` there is **E040**, and so is `sense:` unless `about:` names the axis its turn is read
+about. Radii mean the same in every view.
 
 ### 1.6 Values, unknowns and units
 
@@ -1193,6 +1196,7 @@ reads it.
 t := axis hint(dir: (0.8, 0, 0.5))   // the seed is a direction, normalised
 t perpendicular std.y
 t angle(30deg) std.x                  // unsigned, in space; 0° or 180° is E040: say `parallel`
+t angle(30deg, about: std.z) std.x    // or directed: the turn about std.z, one root
 p coincident t                        // a point on it gives it its place
 t coincident s                        // one line, either way round (four rows)
 l coincident t                        // a drawn line lying on it (four rows)
@@ -2005,7 +2009,7 @@ scenario tip_load {
   several lines: `beam(left, top, right, …)`.
 - **Joints** are where members' ends meet, or an end lies on another member; a point the scenario
   names on a member (a load's) cuts it there. Every joint is rigid.
-- **What is answered**: `deflection(p[, along: d])`, `mass(arm)`, `mode(arm, n)`, `buckling(arm)`,
+- **What is answered**: `deflection(p[, along: d])`, `mode(arm, n)`, `buckling(arm)`,
   `compliance(arm)`, `safety(arm)` (yield over `|N|/A + |My|/Sy + |Mz|/Sz`). `load arm 2kN along:
   down` spreads a force along the beam; `accelerate arm (0m / 1s^2, 0m / 1s^2, -9.81m / 1s^2)` is
   its weight. A claim is judged, never solved for: `solventc` prints its value and `kept` or
@@ -2014,8 +2018,17 @@ scenario tip_load {
   row of the drawing. Declare what it sizes, `param h: Length hint(40mm)`, and read the section
   over it (`Iz: b * h^3 / 12`, any formula); or let it place a joint (`foot distance(len) end`,
   `len` an unknown). `solventc` prints `driven == 4mm, held` and the unknown's value. `along:` is
-  an axis or a line the drawing holds. Any other driving requirement (`mode(arm, 1) == 30Hz`) is
-  only judged yet. The library shows each: `sized_cantilever.sv` (a depth),
+  an axis or a line the drawing holds.
+- **A mass is the drawing's, not a scenario's**: what a body is made of answers no load, so it is
+  written beside the scenarios, never in one — `mass(10kg) arm` (or `volume(1200 * 1cm^3) arm`;
+  `1200cm^3` would be the cube of 1200 centimetres) is a row over the beam's members, or a member's
+  line, sizing an unknown the area reads (`A: b * h`) or placing a joint, with no support and no
+  load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
+  section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a
+  prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
+  solve; a bound is a claim's alone. `solventc` prints each: `mass(arm) is 10kg: driven == 10kg,
+  held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
+  shows each: `sized_cantilever.sv` (a depth),
   `reach_cantilever.sv` (a length), `shelf_bracket.sv` (two members, a load spread along the arm)
   and `portal_frame.sv` (a tube's diameter, a point on a member, the frame's weight).
 - `pinned` holds a joint's moves, `fixed` its turns too, so a beam pinned at both ends is free to
@@ -2060,14 +2073,16 @@ scenario pull {
   it is a node of the mesh. A hold across the thickness (`pinned m along: std.y` in the front)
   holds nothing the plane moves, and `fixed` holds what `pinned` does.
 - **What is answered**: `deflection(p[, along: d])` (or a side's, the solid's worst),
-  `compliance`, `mass`, `mode(plate, n)` and `safety(plate)`; the material states `E` and `nu`.
+  `compliance`, `mode(plate, n)` and `safety(plate)`; the material states `E` and `nu`.
   `buckling` has no answer (a plate buckles out of its plane), nor does a load across the plane,
   nor a `safety` where a sharp inside corner leaves the stress unbounded: round it.
 - **A driving deflection sizes the region**: `deflection(corner, along: down) == 0.5mm` at a
   point of the region is a row. Its mesh is made once, where the drawing stands when it is
   elaborated, and its nodes move with the drawing — so seed the region near where it will be
   solved (a circle's `hint(r: …)` too). Its sides are lines, arcs and circles. The library's
-  `sized_plate.sv` finds a plate's depth so, and `drilled_plate.sv` a hole's radius.
+  `sized_plate.sv` finds a plate's depth so, and `drilled_plate.sv` a hole's radius. A prism's
+  `mass(…) plate` or `volume(…) plate`, stated of the drawing, is a row over its face the same way,
+  its depth through it, whatever reads it and needing no support.
 - **The library shows the rest**: `tuning_fork.sv` (modes in the plane), `rounded_bracket.sv` (a
   round that gives a corner's stress an answer), `pressure_pipe.sv` (plane strain, Lamé's closed
   form) and `gravity_wall.sv` (plane strain under its own weight).
@@ -2106,8 +2121,9 @@ scenario press {
   its parts' faces from itself, `bar.tail.right`, not `tail.right`; a point in a prism is a node,
   in any other solid the node nearest it.  A support holds along the world's axes, and `fixed`
   holds what `pinned` does.
-- **What is answered**: all six — `deflection`, `compliance`, `mass`, `mode`, `buckling` and
-  `safety` (von Mises at the nodes); the material states `E` and `nu`.  A load that presses
+- **What is answered**: all five — `deflection`, `compliance`, `mode`, `buckling` and `safety`
+  (von Mises at the nodes); the material states `E` and `nu`.  Its mass is the drawing's
+  (`claim mass(<= 2kg) shaft`), read over its own mesh.  A load that presses
   nothing buckles nothing, and a sharp inside edge leaves `safety` unanswered: round it.
 - **Every answer has its error beside it**, a frame's and a region's too: the change from the
   same reading twice as coarse, `is 6.39152mm ± 0.026mm`.  Where the two agree to rounding it is

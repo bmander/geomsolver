@@ -429,9 +429,9 @@ impl Constraint {
             });
             return Key::Traced { contact: c as u8, n_par, n_const };
         }
-        // a deflection driven, at its frame's or its region's widths (#510 S1, S2)
-        if self.kind == CKind::Deflection {
-            let (n_par, n_const) = self.deflection_parts(sk).map_or((0, 0), |(r, _)| r.widths());
+        // a deflection, a mass or a volume driven, at its frame's or its region's widths (#510)
+        if self.kind.interior() {
+            let (n_par, n_const) = self.interior_parts(sk).map_or((0, 0), |(r, _)| r.widths());
             return Key::Interior { n_par, n_const };
         }
         // a flank's regularity within a blank, at its block's widths (#345)
@@ -607,39 +607,93 @@ impl Constraint {
         crate::envelope::regular::Parts::of(sk, flank, tool, blank)
     }
 
+    /// **What a row over a structure reads** (#510): the one held on `Sketch::meshed` where there
+    /// is one (`meshed_key`), so every compile through a solve reads one topology, else the row
+    /// made where the drawing stands (`made_row`) — or why the solve cannot read it.
+    pub fn interior_row(&self, sk: &Sketch) -> Result<InteriorRow, String> {
+        if let Some(r) = self.meshed_key(sk).and_then(|key| sk.meshed.get(&key)) {
+            return Ok(InteriorRow::Meshed(r.clone()));
+        }
+        self.made_row(sk)
+    }
+
+    /// `interior_row` made where the drawing stands, whatever mesh the sketch holds: what
+    /// elaboration holds and `Sketch::remesh` makes again — a deflection's (`deflection_made`) or
+    /// a mass's or a volume's (`measure_made`).
+    pub fn made_row(&self, sk: &Sketch) -> Result<InteriorRow, String> {
+        match self.kind {
+            CKind::Deflection => self.deflection_made(sk),
+            CKind::Mass | CKind::Volume => self.measure_made(sk),
+            _ => Err("it reads no structure".into()),
+        }
+    }
+
     /// **What a deflection driven reads** (#510 S1, S2, S3): the frame its point is a joint of
     /// (`beams::Row`), or else the region read in its plane its point is in (`prisms::Row`), or
     /// else the solid read in three dimensions it is a point of (`bodies::row`, a `prisms::Row`
-    /// over the face's mesh stacked), under its scenario — or why the solve cannot read it.  A
-    /// region's or a solid's row is the one meshed when it was compiled (`Sketch::meshed`),
-    /// where there is one, so every compile through a solve reads one topology.
-    pub fn deflection_row(&self, sk: &Sketch) -> Result<DeflectionRow, String> {
+    /// over the face's mesh stacked), under its scenario — or why the solve cannot read it.
+    fn deflection_made(&self, sk: &Sketch) -> Result<InteriorRow, String> {
         let (sc, at, along) = self.frame_read(sk)?;
-        if let Some(Arg::Int(k)) = self.args.get(2) {
-            let key = usize::try_from(*k).ok().map(|k| (k, at, along));
-            if let Some(r) = key.and_then(|key| sk.meshed.get(&key)) {
-                return Ok(DeflectionRow::Meshed(r.clone()));
-            }
-        }
         let of = crate::model::Applied::Ent(EntRef::point(at));
         if crate::beams::of_frame(sk, sc, &of) {
-            return crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame);
+            return crate::beams::Row::of(sk, sc, at, along).map(InteriorRow::Frame);
         }
         if crate::prisms::of_region(sk, sc, &of) {
             return crate::prisms::Row::of(sk, sc, at, along)
-                .map(|r| DeflectionRow::Meshed(r.into()));
+                .map(|r| InteriorRow::Meshed(r.into()));
         }
         if crate::bodies::of_body(sk, sc, &of) {
-            return crate::bodies::row(sk, sc, at, along).map(|r| DeflectionRow::Meshed(r.into()));
+            return crate::bodies::row(sk, sc, at, along).map(|r| InteriorRow::Meshed(r.into()));
         }
-        crate::beams::Row::of(sk, sc, at, along).map(DeflectionRow::Frame)
+        crate::beams::Row::of(sk, sc, at, along).map(InteriorRow::Frame)
+    }
+
+    /// **What a mass or a volume driven reads** (`CKind::Mass`, `CKind::Volume`): the members its
+    /// statement names, a beam's or a line's (`beams::Row::measured`), or the prism it names
+    /// (`prisms::Row::measured`, its face's mesh) — or why the solve cannot read it.
+    fn measure_made(&self, sk: &Sketch) -> Result<InteriorRow, String> {
+        let reads = self.kind.reads().ok_or("it measures nothing")?;
+        let (_, m) = self.measured(sk)?;
+        if !crate::beams::members(sk, &m.of).is_empty() {
+            return crate::beams::Row::measured(sk, &m.of, reads).map(InteriorRow::Frame);
+        }
+        let solid = m.of.solid().ok_or("it is of no beam, no member of one and no solid")?;
+        crate::prisms::Row::measured(sk, solid, reads).map(|r| InteriorRow::Meshed(r.into()))
+    }
+
+    /// What a mass or a volume driven names: the drawing's statement of it, and its index.
+    fn measured<'s>(&self, sk: &'s Sketch) -> Result<(usize, &'s crate::model::Measured), String> {
+        let Some(Arg::Int(k)) = self.args.first() else {
+            return Err("a measure driven names what the drawing states of it".into());
+        };
+        usize::try_from(*k).ok().and_then(|k| Some((k, sk.measured.get(k)?)))
+            .ok_or_else(|| "it names no mass or volume the drawing states".into())
     }
 
     /// The unknowns a frame's sections are read over, without its structure (#510 S1); a region's
-    /// point is no joint, so it reads none.
+    /// point is no joint, so it reads none.  A mass's or a volume's, those its members' areas are
+    /// read over (`beams::measured_unknowns`); a prism's, none.
     pub fn frame_unknowns(&self, sk: &Sketch) -> Result<Vec<String>, String> {
+        if self.kind != CKind::Deflection {
+            return crate::beams::measured_unknowns(sk, &self.measured(sk)?.1.of);
+        }
         let (sc, at, _) = self.frame_read(sk)?;
         crate::beams::row_unknowns(sk, sc, at)
+    }
+
+    /// **Where a row's mesh is held** (`Sketch::meshed`): a deflection's by its scenario's index,
+    /// its point and its direction, a mass's or a volume's by its statement's index on
+    /// `Sketch::measured`.  `None` for any other row, and one naming nothing the drawing holds.
+    pub fn meshed_key(&self, sk: &Sketch) -> Option<MeshedKey> {
+        match self.kind {
+            CKind::Deflection => {
+                let (_, at, along) = self.frame_read(sk).ok()?;
+                let Some(Arg::Int(k)) = self.args.get(2) else { return None };
+                Some(MeshedKey::Deflection { scenario: usize::try_from(*k).ok()?, at, along })
+            }
+            CKind::Mass | CKind::Volume => Some(MeshedKey::Measure(self.measured(sk).ok()?.0)),
+            _ => None,
+        }
     }
 
     /// What a deflection driven names: its scenario, its point and its direction.
@@ -659,16 +713,16 @@ impl Constraint {
         Ok((sc, at.i(), *along))
     }
 
-    /// `deflection_row` and the columns it reads — a frame's every joint's lift, then every
+    /// `interior_row` and the columns it reads — a frame's every joint's lift, then every
     /// unknown its sections are read over, where the solve can read them all (the lifts minted and
-    /// the unknowns bound); a region's points' numbers and radii.
-    pub fn deflection_parts(&self, sk: &Sketch) -> Option<(DeflectionRow, Vec<u32>)> {
-        let row = match self.deflection_row(sk).ok()? {
-            DeflectionRow::Meshed(r) => {
+    /// the unknowns bound); a region's points' numbers and radii.  A mass's or a volume's alike.
+    pub fn interior_parts(&self, sk: &Sketch) -> Option<(InteriorRow, Vec<u32>)> {
+        let row = match self.interior_row(sk).ok()? {
+            InteriorRow::Meshed(r) => {
                 let cols = r.columns.clone();
-                return Some((DeflectionRow::Meshed(r), cols));
+                return Some((InteriorRow::Meshed(r), cols));
             }
-            DeflectionRow::Frame(r) => r,
+            InteriorRow::Frame(r) => r,
         };
         let mut cols = Vec::with_capacity(3 * row.points.len() + row.unknowns.len());
         for &p in &row.points {
@@ -681,7 +735,7 @@ impl Constraint {
             }
             cols.push(q);
         }
-        Some((DeflectionRow::Frame(row), cols))
+        Some((InteriorRow::Frame(row), cols))
     }
 
     /// What a contact reads of its envelope (`envelope::held::Parts`), where the solve can read it.
@@ -875,8 +929,8 @@ impl Constraint {
                 }
                 // a flank's least area factor (#345)
                 None if self.kind == CKind::RegularWithin => 1,
-                // a frame's deflection (#510 S1)
-                None if self.kind == CKind::Deflection => 1,
+                // a frame's deflection (#510 S1), a mass or a volume
+                None if self.kind.interior() => 1,
                 None => kernels::kernel(self.kernel()).n_res,
             },
         }
@@ -1079,34 +1133,35 @@ impl Constraint {
 
 /// **What a deflection driven reads** (#510 S1, S2, S3): a frame's row, or a mesh's — a
 /// region's, or a solid's stacked over its face's — each the interior's kernel at its own widths.
+/// A mass or a volume driven reads one too, measuring its structure (`interior::Reads`).
 #[derive(Clone, Debug, PartialEq)]
-pub enum DeflectionRow {
+pub enum InteriorRow {
     Frame(crate::beams::Row),
     Meshed(std::sync::Arc<crate::prisms::Row>),
 }
 
-impl DeflectionRow {
+impl InteriorRow {
     /// Its constants, stating the deflection `d`.
     pub fn consts(&self, d: f64) -> Vec<f64> {
         match self {
-            DeflectionRow::Frame(r) => r.consts(d),
-            DeflectionRow::Meshed(r) => r.consts(d),
+            InteriorRow::Frame(r) => r.consts(d),
+            InteriorRow::Meshed(r) => r.consts(d),
         }
     }
 
     /// Its widths, `(n_par, n_const)`.
     pub fn widths(&self) -> (usize, usize) {
         match self {
-            DeflectionRow::Frame(r) => r.widths(),
-            DeflectionRow::Meshed(r) => r.widths(),
+            InteriorRow::Frame(r) => r.widths(),
+            InteriorRow::Meshed(r) => r.widths(),
         }
     }
 
     /// Whether its structure gives a displacement where the drawing stands, or why not.
     pub fn check(&self) -> Result<(), String> {
         match self {
-            DeflectionRow::Frame(r) => r.check(),
-            DeflectionRow::Meshed(r) => r.check(),
+            InteriorRow::Frame(r) => r.check(),
+            InteriorRow::Meshed(r) => r.check(),
         }
     }
 
@@ -1114,8 +1169,8 @@ impl DeflectionRow {
     /// points are read in their face's plane.
     pub fn lifted(&self) -> Vec<usize> {
         match self {
-            DeflectionRow::Frame(r) => r.points.clone(),
-            DeflectionRow::Meshed(_) => Vec::new(),
+            InteriorRow::Frame(r) => r.points.clone(),
+            InteriorRow::Meshed(_) => Vec::new(),
         }
     }
 }

@@ -18,7 +18,7 @@
  * typed so the worker can transfer them rather than copy. */
 import { related } from '../core/modules.js';
 import { samePose } from './claim-judging.js';
-import type { Document, Scenario } from '../core/program.js';
+import type { Document, Scenario, ScenarioAnswer } from '../core/program.js';
 import type { PictureBody, ScenarioPicture } from '../core/scenario.js';
 
 /** One body of a picture as the page holds it: the core's arrays, typed. */
@@ -48,6 +48,9 @@ export type ScenarioJob = {
   modules: [string, string][];
   /** The page's parameter values, so the worker's drawing is this one and not a fresh solve. */
   x: Float64Array;
+  /** Where the page's meshes were made again, if they were (`Sketch.meshedAt`): the worker's
+   *  are made there, so a driven row reads on the mesh it was solved on. */
+  meshedAt: Float64Array | null;
   /** The scenario to draw, by name — the worker checks its own drawing names it alike — or ''. */
   drawn: string;
 } | { kind: 'cancel'; id: number };
@@ -57,18 +60,20 @@ export type ScenarioJob = {
 export interface ScenarioFrame {
   id: number;
   scenarios?: Scenario[];
+  measures?: ScenarioAnswer[];
   picture?: Drawn | null;
   final?: boolean;
   levelText?: string;
   error?: string;
 }
 
-/** **The reading as the page tells it**: every scenario's answers, the picture of the one drawn
- *  (null for none, or while it is being read), whether a job is still out, and why it failed.
- *  While a finer level is being read, the answers and the picture are a coarser level's, and
- *  `levelText` says which (`report::Levels`). */
+/** **The reading as the page tells it**: every scenario's answers, what the drawing's masses and
+ *  volumes come to, the picture of the one drawn (null for none, or while it is being read),
+ *  whether a job is still out, and why it failed.  While a finer level is being read, the answers
+ *  and the picture are a coarser level's, and `levelText` says which (`report::Levels`). */
 export interface Reading {
   scenarios: Scenario[] | null;
+  measures: ScenarioAnswer[] | null;
   picture: Drawn | null;
   drawn: string;
   reading: boolean;
@@ -105,10 +110,11 @@ export function drawnIndex(doc: Document, drawn: string): number {
 /** **Read a document's scenarios and draw scenario `drawn`** (by name, '' for none), where the
  *  document stands, at once and at the readers' own size: what the page does with no worker. */
 export function readScenarios(doc: Document, drawn: string)
-  : { scenarios: Scenario[]; picture: Drawn | null } {
+  : { scenarios: Scenario[]; measures: ScenarioAnswer[]; picture: Drawn | null } {
   const index = drawnIndex(doc, drawn);
   const got = doc.scenariosPictured(index);
-  return { scenarios: got.scenarios, picture: index >= 0 ? typed(got.picture) : null };
+  return { scenarios: got.scenarios, measures: got.measures ?? [],
+           picture: index >= 0 ? typed(got.picture) : null };
 }
 
 /** The worker, as this file uses it: a test hands in a stub. */
@@ -127,7 +133,8 @@ export class ScenarioReading {
   private worker: ReadWorker | null = null;
   private job = 0;
   /** The drawing and the choice the job in hand (or its reading) is of. */
-  private of: { text: string; x: Float64Array; drawn: string } | null = null;
+  private of: { text: string; x: Float64Array; meshedAt: Float64Array | null; drawn: string }
+    | null = null;
   private state: Reading | null = null;
 
   /** `told` hears the reading as it moves, and null once the drawing has no scenario; `spawn`
@@ -142,26 +149,30 @@ export class ScenarioReading {
   /** Read this document's scenarios where it stands, and draw `drawn` — unless the job in hand
    *  (or its reading) is of this very drawing and choice. */
   start(doc: Document, drawn: string): void {
-    if (!doc.scenarioNames().length) {
+    if (!doc.scenarioNames().length && !doc.measuresStated()) {
       if (this.of) this.cancel();
       this.of = null;
       if (this.state) { this.state = null; this.told(null); }
       return;
     }
     const x = doc.sketch.getX();
+    const meshedAt = doc.sketch.meshedAt();
+    const sameMeshes = (a: Float64Array | null) =>
+      a === null || meshedAt === null ? a === meshedAt : samePose(a, meshedAt);
     if (this.of && this.of.text === doc.text && this.of.drawn === drawn
-        && samePose(this.of.x, x)) return;
+        && samePose(this.of.x, x) && sameMeshes(this.of.meshedAt)) return;
     this.job += 1;
-    this.of = { text: doc.text, x, drawn };
+    this.of = { text: doc.text, x, meshedAt, drawn };
     // what was said of the last drawing stands until this one is read: the answers are kept, so
     // the footer does not blink empty on every edit, and the picture goes, since it is of a pose
     // the drawing has left
-    this.state = { scenarios: this.state?.scenarios ?? null, picture: null, drawn,
-                   reading: true };
+    this.state = { scenarios: this.state?.scenarios ?? null,
+                   measures: this.state?.measures ?? null, picture: null, drawn, reading: true };
     if (!this.spawn) {
       try {
         const got = readScenarios(doc, drawn);
-        this.state = { scenarios: got.scenarios, picture: got.picture, drawn, reading: false };
+        this.state = { scenarios: got.scenarios, measures: got.measures, picture: got.picture,
+                       drawn, reading: false };
       } catch (e) {
         this.state = { ...this.state, reading: false, error: String(e) };
       }
@@ -179,7 +190,8 @@ export class ScenarioReading {
     }
     const modules = related(doc.text).filter((f) => f.provided)
       .map((f): [string, string] => [f.name, f.text]);
-    this.worker.postMessage({ kind: 'scenario', id: this.job, text: doc.text, modules, x, drawn });
+    this.worker.postMessage(
+      { kind: 'scenario', id: this.job, text: doc.text, modules, x, meshedAt, drawn });
     this.told(this.state);
   }
 
@@ -202,8 +214,8 @@ export class ScenarioReading {
     if (f.id !== this.job || !this.state) return;
     if (f.error) return this.fail(f.error);
     const reading = f.final === false;
-    this.state = { scenarios: f.scenarios ?? [], picture: f.picture ?? null,
-                   drawn: this.state.drawn, reading,
+    this.state = { scenarios: f.scenarios ?? [], measures: f.measures ?? [],
+                   picture: f.picture ?? null, drawn: this.state.drawn, reading,
                    ...(reading && f.levelText ? { levelText: f.levelText } : {}) };
     this.told(this.state);
   }

@@ -279,7 +279,9 @@ impl<'a> P<'a> {
                     // and `coincident(under: m)` names the motion carrying the point (#326)
                     let motion = word == "coincident"
                         && (name.text == "under" || name.text == "seen_from");
-                    let v = if self.path_ahead() || along || point || motion {
+                    // and `angle(θ, about: a)` the axis its turn is read about (#558)
+                    let axis = matches!(word, "angle" | "perpendicular") && name.text == "about";
+                    let v = if self.path_ahead() || along || point || motion || axis {
                         Arg::Ref(self.refr()?)
                     } else {
                         self.sel_value()?

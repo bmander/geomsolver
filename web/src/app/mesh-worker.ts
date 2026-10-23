@@ -74,6 +74,8 @@ async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promi
   let levels: ScenarioLevels;
   let index: number;
   try {
+    // the page's meshes, made where it made them again, before its pose
+    if (job.meshedAt) doc.sketch.meshAt(job.meshedAt);
     doc.sketch.setX(job.x);
     index = drawnIndex(doc, job.drawn);
     if (job.drawn && index < 0) {
@@ -86,8 +88,8 @@ async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promi
   try {
     for (let got = levels.next(); got; got = levels.next()) {
       const picture = index >= 0 ? typed(got.picture) : null;
-      scope.postMessage({ id: job.id, scenarios: got.scenarios, picture, final: got.final,
-                          levelText: got.levelText }, buffers(picture));
+      scope.postMessage({ id: job.id, scenarios: got.scenarios, measures: got.measures, picture,
+                          final: got.final, levelText: got.levelText }, buffers(picture));
       if (got.final) return;
       await pause();
       if (job.id !== latest) return;

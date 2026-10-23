@@ -789,6 +789,24 @@ export class Sketch {
     if (!ok) throw new Error(lastError() || 'setX: wrong length');
   }
 
+  /** Where this drawing's meshes were last made again (#510 S2, `Sketch::meshed_at`), as a
+   *  parameter vector; null while each is where elaboration made it. */
+  meshedAt(): Float64Array | null {
+    const n = this.counts()[0];
+    return withBuf(Math.max(n, 1), 8, (b) =>
+      core().gcs_sketch_meshed_at(this.handle, b.ptr) === 1 ? b.f64.slice(0, n) : null);
+  }
+
+  /** Make this drawing's meshes where another drawing of its source made its own (`meshedAt`),
+   *  so it reads on the meshes that one was solved on. */
+  meshAt(x: ArrayLike<number>): void {
+    const ok = withBuf(Math.max(x.length, 1), 8, (b) => {
+      b.set(x);
+      return core().gcs_sketch_mesh_at(this.handle, b.ptr, x.length) === 0;
+    });
+    if (!ok) throw new Error(lastError() || 'meshAt: wrong length');
+  }
+
   freeIndices(): Int32Array {
     const out: number[] = [];
     this.params.forEach((p, i) => {

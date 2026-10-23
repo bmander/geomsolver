@@ -9,11 +9,11 @@ use gcs_core::overview::scenario::{marks, Kind};
 use gcs_core::space::{distance, dot};
 
 /// The library's documents that state a scenario.
-const LIBRARY: [&str; 16] = [
+const LIBRARY: [&str; 19] = [
     "cantilever_plate", "pressure_pipe", "tuning_fork", "shelf_bracket", "pin_lug",
     "flat_bar_strut", "rounded_bracket", "pressed_panel", "sized_cantilever", "portal_frame",
     "turned_shaft", "drilled_plate", "reach_cantilever", "sized_plate", "gravity_wall",
-    "sized_plank",
+    "sized_plank", "weighed_cantilever", "lightened_web", "mass_budget_frame",
 ];
 
 /// A steel cantilever `L` long along x on the front, built in at `root`, and `P` at its tip along
@@ -234,14 +234,14 @@ fn the_answers_beside_a_picture_are_the_answers() {
     let e = crate::common::read(gcs_core::examples::source("shelf_bracket").unwrap());
     let sk = crate::common::solved(&e);
     let alone = gcs_core::report::scenarios_json(&sk, &e.scenarios).dump(None);
-    let drawn = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, Some(0));
+    let drawn = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, &e.measures, Some(0));
     assert_eq!(drawn.get("scenarios").unwrap().dump(None), alone);
     let p = drawn.get("picture").unwrap();
     assert_eq!(p.get("bodies").unwrap().arr().len(), 1);
     let b = &p.get("bodies").unwrap().arr()[0];
     assert_eq!(b.get("rest").unwrap().arr().len(), b.get("moved").unwrap().arr().len());
     assert_eq!(b.get("size").unwrap().arr().len() * 3, b.get("rest").unwrap().arr().len());
-    let none = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, None);
+    let none = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, &e.measures, None);
     assert!(matches!(none.get("picture"), Some(gcs_core::json::Json::Null)));
 }
 
@@ -249,20 +249,21 @@ fn the_answers_beside_a_picture_are_the_answers() {
 /// read three times, its elements four times their size, then twice, then their own; each level
 /// says what it is but the last, which alone is final; the first estimates no error, each later
 /// one its change from the one before (a claim's: a driven requirement's value is its row's); and
-/// the last is `scenarios_pictured_json`'s reading, word
-/// for word and its picture to the figure.  After it there is no level.
+/// the last is `scenarios_pictured_json`'s reading, word for word, its picture to the figure and
+/// the drawing's masses and volumes beside it.  After it there is no level; and a drawing that
+/// states a mass but no scenario is read once, at its own size.
 #[test]
 fn a_scenario_read_progressively_ends_at_the_reading() {
     use gcs_core::json::Json;
-    for key in ["shelf_bracket", "sized_plate", "pin_lug"] {
+    for key in ["shelf_bracket", "sized_plate", "pin_lug", "weighed_cantilever"] {
         let e = crate::common::read(gcs_core::examples::source(key).unwrap());
         let sk = crate::common::solved(&e);
         let mut levels = gcs_core::report::Levels::new();
         let mut read = Vec::new();
-        while let Some(level) = levels.next(&sk, &e.scenarios, Some(0)) {
+        while let Some(level) = levels.next(&sk, &e.scenarios, &e.measures, Some(0)) {
             read.push(level);
         }
-        assert!(levels.done() && levels.next(&sk, &e.scenarios, Some(0)).is_none());
+        assert!(levels.done() && levels.next(&sk, &e.scenarios, &e.measures, Some(0)).is_none());
         let at: Vec<f64> = read.iter().map(|l| l.get("level").unwrap().as_f64()).collect();
         assert_eq!(at, gcs_core::report::LEVELS.to_vec(), "{key}");
         for (k, l) in read.iter().enumerate() {
@@ -289,11 +290,22 @@ fn a_scenario_read_progressively_ends_at_the_reading() {
                 }
             }
         }
-        let whole = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, Some(0));
+        let whole = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, &e.measures,
+                                                               Some(0));
         let last = read.last().unwrap();
-        for part in ["scenarios", "picture"] {
+        for part in ["scenarios", "picture", "measures"] {
             assert_eq!(last.get(part).unwrap().dump(None), whole.get(part).unwrap().dump(None),
                        "{key}: the last level's {part}");
         }
     }
+    let e = crate::common::read(gcs_core::examples::source("sized_gusset").unwrap());
+    let sk = crate::common::solved(&e);
+    assert!(e.scenarios.is_empty() && !e.measures.is_empty());
+    let mut levels = gcs_core::report::Levels::new();
+    let once = levels.next(&sk, &e.scenarios, &e.measures, None).expect("a level");
+    assert!(levels.next(&sk, &e.scenarios, &e.measures, None).is_none());
+    assert!(matches!(once.get("final"), Some(Json::Bool(true))));
+    let whole = gcs_core::report::scenarios_pictured_json(&sk, &e.scenarios, &e.measures, None);
+    let said = |j: &Json| j.get("measures").unwrap().dump(None);
+    assert_eq!(said(&once), said(&whole));
 }

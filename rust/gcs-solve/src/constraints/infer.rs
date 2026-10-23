@@ -591,10 +591,11 @@ pub fn validate(
             .map_err(|why| format!("the solve cannot read the flank's regularity: {why}"))?;
     }
     // a frame's deflection is read where the solve can read its frame, and its frame is held
-    // (#510 S1)
-    if kind == CKind::Deflection {
-        Constraint::new(kind, args.to_vec()).deflection_row(sk).and_then(|r| r.check())
-            .map_err(|why| format!("the solve cannot read the deflection: {why}"))?;
+    // (#510 S1); a mass or a volume where it measures something
+    if kind.interior() {
+        Constraint::new(kind, args.to_vec()).interior_row(sk).and_then(|r| r.check())
+            .map_err(|why| format!("the solve cannot read the {}: {why}",
+                                   kind.operator().map_or("row", |(w, _)| w)))?;
     }
     // a point is carried by a motion the solve can read (#326)
     if kind.reads_motion() {

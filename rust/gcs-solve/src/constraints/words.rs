@@ -242,6 +242,10 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
     // an axis is in space, so a direction relation naming one is the relation in space
     let axes = |a: EntKind, b: EntKind| matches!((a, b), (Axis, Axis | Line) | (Line, Axis));
     let at_point = sel("at").is_some_and(|w| w.is_empty());
+    // a turn read about an axis named (#558): two directions, drawn or in space
+    let about = |a: EntKind, b: EntKind| {
+        sel("about").is_some() && (matches!((a, b), (Line, Line)) || axes(a, b))
+    };
     Some(match word {
         // incidence, and two points being one: what it means is the kinds of its operands
         "coincident" => match (a, b) {
@@ -358,6 +362,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             _ => return None,
         },
         "angle" => match (a, b) {
+            (x, y) if about(x, y) => CKind::AngleAbout,
             (Line, Line) => CKind::Angle,
             (x, y) if axes(x, y) => CKind::Angle3,
             _ => return None,
@@ -379,6 +384,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             _ => return None,
         },
         "perpendicular" => match (a, b) {
+            (x, y) if about(x, y) => CKind::PerpendicularAbout,
             (Line, Line) => CKind::Perpendicular,
             (x, y) if axes(x, y) => CKind::Perpendicular3,
             // square to a plane: along its normal
@@ -535,6 +541,7 @@ pub fn builtin_word(word: &str, fixity: Fixity) -> bool {
             Fixity::Call => call_word(w),
             Fixity::Prefix => {
                 matches!(gauge_op(w).map(CKind::operator), Some(Some((_, Fixity::Prefix))))
+                    || crate::model::Quantity::parse(w).is_some()
                     || EntKind::ALL
                         .iter()
                         .any(|&k| prefix_op(w, k).is_some() || retired_prefix(w, k).is_some())
@@ -610,7 +617,7 @@ pub fn retired_prefix(word: &str, on: EntKind) -> Option<&'static str> {
 /// table (`gauge_op`), so a class, a placement and the chain's lookahead treat them as any
 /// other word.  None of the three is a prefix word a chain can open a link with: `prefix_op`
 /// declines them, so `fix(x == 0) point p -> …` is no chain.
-pub const OPERATORS: [&str; 26] = [
+pub const OPERATORS: [&str; 28] = [
     "distance", "tangent", "equal", "curvature", "horizontal", "vertical", "level", "angle",
     "radius", "length", "coincident", "midpoint", "parallel", "perpendicular", "symmetry", "project",
     "touches", "fix", "ccw", "cw",
@@ -618,6 +625,9 @@ pub const OPERATORS: [&str; 26] = [
     "mapped",
     // a flank regular within its blank (#345), written `regular(…) within`
     "regular",
+    // what a body is made of (#510), `mass(10kg) arm`: settled by no table but read once the
+    // beams and solids are built (`program::measures`)
+    "mass", "volume",
     // **the words that relate two solids** (§9.8).  They are operators so that a statement
     // reads the way every other statement does; they settle to no `CKind` and compile no row,
     // because a solid is evaluated after the drawing is solved and a claim about one is judged

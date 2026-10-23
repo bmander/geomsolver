@@ -9,8 +9,8 @@ use super::resolve::{Operand, Resolver};
 use super::{Code, Diag};
 use crate::ir::{Operation, Statement};
 use crate::model::{
-    Applied, EntKind, EntRef, Grade, InPlane, Load, LoadKind, LoadValue, PlaneReading, Requirement,
-    Scenario, Sketch, Support,
+    Applied, EntKind, EntRef, Grade, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading,
+    Requirement, Scenario, Sketch, Support,
 };
 use crate::syntax::{ItemKind, LoadText, Ref, Span, StmtId};
 use crate::units::Dim;
@@ -184,8 +184,8 @@ pub(super) fn scenarios(
 /// under its scenario's supports and loads, which the sketch holds for it (`Sketch::scenarios`);
 /// the row stands where the requirement is written.  One the solve cannot read — a frame or a
 /// region the supports leave free, a direction the solve moves — is **E040** there.  Any other
-/// driving requirement (a solid's that is no prism; a mode, a mass or a safety) compiles
-/// nothing yet and is judged after the solve, as a claim is.
+/// driving requirement (a solid's that is no prism; a mode or a safety) compiles nothing yet and
+/// is judged after the solve, as a claim is.
 pub(super) fn drive(
     sk: &mut Sketch,
     map: &mut super::source_map::SourceMap,
@@ -199,15 +199,7 @@ pub(super) fn drive(
         let mut index: Option<i64> = None;
         for k in 0..s.scenario.requirements.len() {
             let r = &s.scenario.requirements[k];
-            let (Grade::Driving, crate::model::Output::Deflection, Applied::Ent(p), Some(along)) =
-                (r.grade(), r.output, &r.of, r.along)
-            else {
-                continue;
-            };
-            if p.kind != EntKind::Point || !(crate::beams::of_frame(sk, &s.scenario, &r.of)
-                || crate::prisms::of_region(sk, &s.scenario, &r.of)
-                || crate::bodies::of_body(sk, &s.scenario, &r.of))
-            {
+            if r.grade() != Grade::Driving || !drives(sk, &s.scenario, r) {
                 continue;
             }
             let line = s.requirements[k];
@@ -220,19 +212,23 @@ pub(super) fn drive(
                 sk.scenarios.push(s.scenario.clone());
                 sk.scenarios.len() as i64 - 1
             });
+            let (Applied::Ent(p), Some(along)) = (&r.of, r.along) else { continue };
             let args = vec![Arg::Ent(*p), Arg::Ent(along), Arg::Int(at), Arg::Num(r.value)];
             let name =
                 |e: EntRef| map.name_of(e).cloned().unwrap_or_else(|| crate::model::entity_name(e));
             // a region's or a solid's row is meshed once, here, and read so through every solve
             // (#510 S2, S3): held before it is validated, so the validation reads that mesh
-            let key = (at as usize, p.i(), along);
-            if let Ok(crate::constraints::DeflectionRow::Meshed(row)) =
-                Constraint::new(CKind::Deflection, args.clone()).deflection_row(sk)
+            let row = Constraint::new(CKind::Deflection, args.clone());
+            let key = row.meshed_key(sk);
+            if let (Some(key), Ok(crate::constraints::InteriorRow::Meshed(row))) =
+                (key, row.made_row(sk))
             {
                 sk.meshed.insert(key, row);
             }
             if let Err(m) = crate::constraints::validate(sk, CKind::Deflection, &args, &name) {
-                sk.meshed.remove(&key);
+                if let Some(key) = key {
+                    sk.meshed.remove(&key);
+                }
                 diags.push(Diag::within(Code::E040, span, line.stmt, format!(
                     "`{}` cannot drive the drawing: {m}", s.heads[k])));
                 continue;
@@ -250,6 +246,21 @@ pub(super) fn drive(
     // the unknowns the frames' sections are read over are bound once the rows read them
     if added {
         crate::expr::evaluate(sk);
+    }
+}
+
+/// **Whether a driving requirement compiles to a row**: a deflection along a direction of a
+/// frame's joint, of a point of a region read in its plane or of a solid read in three
+/// dimensions.
+fn drives(sk: &Sketch, sc: &Scenario, r: &Requirement) -> bool {
+    match (r.output, &r.of) {
+        (Output::Deflection, Applied::Ent(p)) => {
+            p.kind == EntKind::Point && r.along.is_some()
+                && (crate::beams::of_frame(sk, sc, &r.of)
+                    || crate::prisms::of_region(sk, sc, &r.of)
+                    || crate::bodies::of_body(sk, sc, &r.of))
+        }
+        _ => false,
     }
 }
 

@@ -32,6 +32,7 @@ mod caches;
 mod running;
 mod material;
 mod scenario;
+mod measured;
 mod beam;
 
 pub use entities::{
@@ -60,6 +61,7 @@ pub use scenario::{
     Applied, Grade, Hold, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading, Requirement,
     Scenario, Support,
 };
+pub use measured::{Measured, Quantity};
 pub use geometry::{Box2, grow};
 pub use topology::{edge_ends, expand};
 pub use measure::polyline_distance;
@@ -101,6 +103,15 @@ pub const HELD_X: u8 = 0;
 pub const HELD_Y: u8 = 1;
 pub const HELD_Z: u8 = 2;
 pub const HELD_R: u8 = 3;
+
+/// **What a driving row's mesh is held by on `Sketch::meshed`** (#510 S2, S3): a deflection's
+/// scenario (its index on `Sketch::scenarios`), point and direction, or a mass's or a volume's
+/// statement (its index on `Sketch::measured`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum MeshedKey {
+    Deflection { scenario: usize, at: usize, along: EntRef },
+    Measure(usize),
+}
 
 #[derive(Default, Clone, Debug)]
 pub struct Sketch {
@@ -256,17 +267,27 @@ pub struct Sketch {
     /// and carried by the Solvent source alone, as a solid's `of` is: never written to JSON.
     pub beams: Vec<Beam>,
     /// **The load scenarios a driving row reads** (#510 S1): a scenario's supports and loads,
-    /// which a frame's deflection driven under it (`CKind::Deflection`) is solved under, by index.
+    /// which a frame's deflection driven under it (`CKind::Deflection`) is solved under, by index
+    /// — and what a mass or a volume driven (`CKind::Mass`, `CKind::Volume`) names.
     /// Only a scenario that drives is here: one of claims adds nothing to the drawing.  Set by
     /// elaboration and carried by the Solvent source alone, as a beam is: never written to JSON.
     pub scenarios: Vec<Scenario>,
+    /// **The masses and volumes the drawing states** (`model::Measured`), which a mass or a volume
+    /// driven (`CKind::Mass`, `CKind::Volume`) reads by index, and the claims judged after the
+    /// solve.  Set by elaboration and carried by the Solvent source alone: never written to JSON.
+    pub measured: Vec<Measured>,
     /// **The regions a driving row over a plane reads** (#510 S2), and the prisms one over a solid
     /// reads (#510 S3, its face's mesh stacked): each meshed once, where the drawing stood when its
-    /// row was compiled (`prisms::Row`), by what the row names — the
-    /// scenario's index here, the point and the direction — so every compile of the row through
-    /// a solve reads one topology, its nodes moving with the drawing, and shares it rather than
-    /// copying it.  Set by elaboration with the row, carried by the Solvent source alone.
-    pub meshed: BTreeMap<(usize, usize, EntRef), std::sync::Arc<crate::prisms::Row>>,
+    /// row was compiled (`prisms::Row`), by what the row names (`MeshedKey`) — so every compile
+    /// of the row through a solve reads one topology, its nodes moving with the drawing, and
+    /// shares it rather than copying it.  Set by elaboration with the row, carried by the Solvent
+    /// source alone.
+    pub meshed: BTreeMap<MeshedKey, std::sync::Arc<crate::prisms::Row>>,
+    /// **Where the drawing stood when its meshes were last made again** (#510 S2;
+    /// `Sketch::remesh`): `None` while each is where elaboration made it.  A drawing read again
+    /// from its source is meshed there (`Sketch::mesh_at`) to read on the meshes this one was
+    /// solved on — a page's worker reading its scenarios, the same bits.
+    pub meshed_at: Option<Vec<f64>>,
     /// **Where a declared parameter's march stands the drawing** (#398 L): the instant shown, and
     /// the drawing at home, where it was drawn, to go back to (`follow::stand`, `follow::home`).
     /// Presentation, as a wobble is: what is drawn moves and the document does not — a march
