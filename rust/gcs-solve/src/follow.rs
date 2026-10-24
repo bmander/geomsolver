@@ -35,6 +35,11 @@
 //! - *Still* (#498): what the parameter does not reach — the blocks of the drawing's order no
 //!   reader's row is in or reads through — is set aside at every station and keeps its numbers to
 //!   the bit (`Still`): only what moves is solved.
+//! - *Implied* (#591): a statement the others already imply — a row with no column of its own,
+//!   the over part of the drawing's order, holding at home — is left out of every station solve
+//!   (`implied`) and judged where each station ends: a station where it does not hold does not
+//!   stand.  Solved, it made the drawing's order not square, which read every station's rank whole
+//!   and set nothing aside.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -431,7 +436,9 @@ pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
     let f = {
         MARCHING.set(true);
         let _marching = Marching;
-        Rc::new(follow(sk, name))
+        // said to whoever listens, how far it has got on its gauge: a long march is no hang
+        let following = || crate::progress::Work::follow(name);
+        Rc::new(crate::progress::during(following, || follow(sk, name)))
     };
     sk.caches.followed.borrow_mut().insert(name.to_string(), (key, f.clone()));
     f
@@ -464,9 +471,10 @@ pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
     let mut sk = sk.clone();
     home(&mut sk);
     let elsewhere = over.from + (over.to - over.from) * ELSEWHERE;
+    let implied = implied(&sk);
     let mut reading = reading;
     loop {
-        let still = Still::of(&sk, held, &reading, elsewhere);
+        let still = Still::of(&sk, held, &reading, elsewhere, &implied);
         let followed = march(sk.clone(), &over, held, &still);
         // a row set aside that read otherwise at a station reads the parameter: marched again
         // with it solved, so every orientation is read over the one system
@@ -563,6 +571,9 @@ fn march(mut sk: Sketch, over: &Running, held: u32, still: &Still) -> Result<Fol
         if off <= EASY * moved + floor || trail.len() < 2 {
             h = (step * GROW).min(coarsest);
         }
+        crate::progress::gauge(|| format!("now at {} of ({}, {})", reading(over, t, sk.units),
+                                          reading(over, over.from, sk.units),
+                                          reading(over, over.to, sk.units)));
         trail.push(Station { at: t, x });
     }
     Ok(Followed { over: over.clone(), stations: trail, singular: None, held, still: still.clone() })
@@ -638,7 +649,66 @@ pub(crate) fn settle(sk: &mut Sketch, held: u32, t: f64, outer: &[String], still
     if !solved {
         return Err("does not solve".into());
     }
+    if !still.implied_hold(sk) {
+        return Err("a statement implied where the drawing starts does not hold".into());
+    }
     Ok(sys)
+}
+
+/// **The statements the rest of `sk` implies** (#591), by id, ascending: rows of the over part
+/// of its block-triangular order (`System::block_order`) — which have no column of their own —
+/// that hold where it stands and whose rank the rest of that part has without them, so what is
+/// left of it is square and of full rank.  Each is a whole statement, the last written tried
+/// first.  Carried, such a row left the drawing's order not square, and every station of a march
+/// had its rank read whole and nothing set aside (`Still`, `Jacobian`): one row restating what a
+/// point's two planes say made a march of a few hundred unknowns a hundred times slower.  None
+/// where the order has an under part (the march refuses it, `not_held`), where its over part is
+/// short of rank or wider than `ORIENTED`, or where no choice of whole statements squares it.
+fn implied(sk: &Sketch) -> Vec<u32> {
+    let mut sys = System::new(sk);
+    let order = sys.block_order();
+    let n = order.over_cols.len();
+    if order.over_rows.is_empty() || !order.under_rows.is_empty() || !order.under_cols.is_empty()
+        || n > ORIENTED {
+        return Vec::new();
+    }
+    let z = sys.z0(sk);
+    let r = sys.residuals(&z);
+    sys.size_rows();
+    let acceptance = crate::solve::SolveOpts::default().acceptance_tol;
+    if order.over_rows.iter().any(|&row| !(sys.judged(row, r[row]) < acceptance)) {
+        return Vec::new();
+    }
+    let j = sys.conditioned_sparse(&z);
+    let tol = crate::linalg::Tol::Abs(crate::system::RANK_TOL);
+    let rank = |rows: &[usize]| crate::linalg::rrqr_with(&j.dense(rows, &order.over_cols), tol).0;
+    if rank(&order.over_rows) < n {
+        return Vec::new();
+    }
+    // each statement by its id, the last written first
+    let mut statements: Vec<(u32, (usize, usize))> = order.over_rows.iter().map(|&row| {
+        let (b, i) = sys.instance_of(row);
+        (sys.blocks[b].cids[i], (b, i))
+    }).collect();
+    statements.sort_unstable_by(|a, b| b.cmp(a));
+    statements.dedup();
+    let (mut rows, mut out) = (order.over_rows.clone(), Vec::new());
+    for (cid, inst) in statements {
+        if rows.len() == n {
+            break;
+        }
+        let own = sys.rows_of(&[inst]);
+        let rest: Vec<usize> = rows.iter().filter(|r| !own.contains(r)).copied().collect();
+        if rank(&rest) == n {
+            rows = rest;
+            out.push(cid);
+        }
+    }
+    if rows.len() != n {
+        return Vec::new();
+    }
+    out.sort_unstable();
+    out
 }
 
 /// **What a march leaves where it stands** (#498): the statements and unknowns of the blocks of
@@ -654,7 +724,8 @@ pub(crate) fn settle(sk: &mut Sketch, held: u32, t: f64, outer: &[String], still
 /// elsewhere (`ELSEWHERE`).  One that still reads otherwise at a station than at home, a constant
 /// read off where what moves stands, is not set aside there (`missed`), and the march is made
 /// again with it among the readers (`follow`).  Nothing is set aside of a drawing whose order is
-/// not square, whose rank is read whole.
+/// not square, whose rank is read whole — once what it implies (`implied`) is left out, which
+/// every station solve leaves out too, and judges where it ends (`implied_hold`).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Still {
     /// The statements set aside, by id, ascending.
@@ -663,6 +734,9 @@ pub(crate) struct Still {
     params: Vec<u32>,
     /// What each statement reads at home (`read`), by id.
     reads: BTreeMap<u32, Vec<f64>>,
+    /// The statements the rest implies (`implied`), by id, ascending: no row of any station's
+    /// solve, judged where it ends.
+    implied: Vec<u32>,
     /// The statements a station found reading otherwise (`aside`): rows reading the parameter.
     missed: std::cell::RefCell<BTreeSet<u32>>,
 }
@@ -670,14 +744,24 @@ pub(crate) struct Still {
 impl Still {
     /// What the parameter held in `held` and read by the statements `reading` does not reach in
     /// `sk`, at home — nor where it is held at `elsewhere`, where a row reading it some way no
-    /// text says reads otherwise.
-    fn of(sk: &Sketch, held: u32, reading: &[u32], elsewhere: f64) -> Still {
+    /// text says reads otherwise — with the statements `implied` left out.
+    fn of(sk: &Sketch, held: u32, reading: &[u32], elsewhere: f64, implied: &[u32]) -> Still {
+        let only = Still { implied: implied.to_vec(), ..Still::default() };
+        let mut left = None;
+        let sk: &Sketch = match implied {
+            [] => sk,
+            _ => {
+                let left = left.insert(sk.clone());
+                let _ = only.aside(left);
+                left
+            }
+        };
         let mut sys = System::new(sk);
         let order = sys.block_order();
         let square = order.over_rows.is_empty() && order.over_cols.is_empty()
             && order.under_rows.is_empty() && order.under_cols.is_empty();
         if !square || order.blocks.len() < 2 {
-            return Still::default();
+            return only;
         }
         let z = sys.z0(sk);
         let r = sys.residuals(&z);
@@ -732,32 +816,26 @@ impl Still {
         let reads = sk.constraints.iter().filter(|c| rows.binary_search(&c.id).is_ok())
             .map(|c| (c.id, read(sk, c, &spans.0)))
             .collect();
-        Still { rows, params, reads, ..Still::default() }
+        Still { rows, params, reads, ..only }
     }
 
     /// Set it aside in `sk`, where what it reads is what it read at home: its statements carried
-    /// (`Constraint::carried`, which compiles no row) and its unknowns held — what was changed,
-    /// for `Aside::give_back`.
+    /// (`Constraint::carried`, which compiles no row) and its unknowns held, and what is implied
+    /// carried wherever — what was changed, for `Aside::give_back`.
     fn aside(&self, sk: &mut Sketch) -> Aside {
-        if self.rows.is_empty() {
-            return Aside::default();
+        let carry = |sk: &Sketch, of: &[u32]| -> Vec<usize> {
+            sk.constraints.iter().enumerate()
+                .filter(|(_, c)| !c.carried && of.binary_search(&c.id).is_ok())
+                .map(|(i, _)| i)
+                .collect()
+        };
+        let (mut rows, mut params) = (carry(sk, &self.implied), Vec::new());
+        if !self.rows.is_empty() && !self.misses(sk) {
+            rows.extend(carry(sk, &self.rows));
+            params = self.params.iter().map(|&p| p as usize)
+                .filter(|&p| sk.params.get(p).is_some_and(|q| !q.fixed))
+                .collect();
         }
-        let spans = crate::curve::contact_spans(sk);
-        let missed: Vec<u32> = sk.constraints.iter()
-            .filter(|c| self.reads.get(&c.id).is_some_and(|was| *was != read(sk, c, &spans)))
-            .map(|c| c.id)
-            .collect();
-        if !missed.is_empty() {
-            self.missed.borrow_mut().extend(missed);
-            return Aside::default();
-        }
-        let rows: Vec<usize> = sk.constraints.iter().enumerate()
-            .filter(|(_, c)| !c.carried && self.rows.binary_search(&c.id).is_ok())
-            .map(|(i, _)| i)
-            .collect();
-        let params: Vec<usize> = self.params.iter().map(|&p| p as usize)
-            .filter(|&p| sk.params.get(p).is_some_and(|q| !q.fixed))
-            .collect();
         for &i in &rows {
             sk.constraints[i].carried = true;
         }
@@ -765,6 +843,39 @@ impl Still {
             sk.params[p].fixed = true;
         }
         Aside { rows, params }
+    }
+
+    /// Whether a statement set aside reads otherwise in `sk` than it read at home: one that does
+    /// reads the parameter, and is kept in `missed`.
+    fn misses(&self, sk: &Sketch) -> bool {
+        let spans = crate::curve::contact_spans(sk);
+        let missed: Vec<u32> = sk.constraints.iter()
+            .filter(|c| self.reads.get(&c.id).is_some_and(|was| *was != read(sk, c, &spans)))
+            .map(|c| c.id)
+            .collect();
+        let any = !missed.is_empty();
+        self.missed.borrow_mut().extend(missed);
+        any
+    }
+
+    /// Whether every statement the rest implies holds where `sk` stands, each row judged as a
+    /// solve judges it (`System::max_relative_residual`): compiled alone, the rest carried.
+    fn implied_hold(&self, sk: &mut Sketch) -> bool {
+        if self.implied.is_empty() {
+            return true;
+        }
+        let was: Vec<bool> = sk.constraints.iter().map(|c| c.carried).collect();
+        for c in &mut sk.constraints {
+            c.carried = c.carried || self.implied.binary_search(&c.id).is_err();
+        }
+        let mut sys = System::new(sk);
+        let z = sys.z0(sk);
+        let acceptance = crate::solve::SolveOpts::default().acceptance_tol;
+        let holds = sys.max_relative_residual(&z) < acceptance;
+        for (c, w) in sk.constraints.iter_mut().zip(was) {
+            c.carried = w;
+        }
+        holds
     }
 }
 
