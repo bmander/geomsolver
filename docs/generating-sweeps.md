@@ -139,6 +139,43 @@ cell by cell. The accuracy meter reads it as the envelope's region times the bla
 (`accuracy::Planar`). Below the limiting K = R/e = 3 the bore crosses itself and the pocket is no
 face, refused before any row is read.
 
+### Prisms cut under a planar motion: the planar subtraction class
+
+A conjugate wheel (#590) is what a tool would cut if it were a gear shaper: `space :=
+sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)`, `space cut
+wheel`. Its tool is always in mesh (E1), its arms' straight sides touch twice in a passage (E2),
+and a stepped or drafted handle is no single revolution or prism (T1). Each of those rows exists so
+that no sheet needs trimming; under a motion that keeps the tool's plane the trimming is cheap and
+exact in the plane. Within a slab of the blank that every member spans or misses, the section is
+the same at every height (or, drafted, moves as its draft does), and so is what the sweep removes:
+`R = ∪ₜ poseₜ(section)`, the slab's cut the blank less `R`'s prism. A prism sweep the generating
+rows refuse at T1, T2, E1 or E2 is asked these rows instead (`solid::planar_subtraction`):
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| P1 | The motion turns the tools' plane in itself about axes square to it, the same face up. | Every pose is a rigid motion of the plane. | The motion. |
+| Q1 | The tool is prisms square to that plane, their profiles lines and arcs, joined by `union` and `common`; a drafted one is read at stations through its slab (#607). | Each piece's contact is exact. | The member that is not. |
+| Q2 | Every member's caps lie outside the blank, or on a plane where the blank is split into slabs. | Within a slab the section is one; the cap planes inside the blank are the slab planes, so a stepped tool's bands split the blank themselves. | The blank whose extent is unknown. |
+| Q3 | The roll is a whole period of the motion (the tool stands where it began, its own symmetry counted), or the tool is clear of the blank at both ends. | A whole period closes `R` and leaves no caps (#585). | The roll, the pose in the blank and the period to roll. |
+| Q4 | The kept boundary is regular: its pieces meet at corners or leave the blank's shadow, with no fold and no crossing. | What the region keeps must be loops the builder can fit. | The end that meets nothing, the fold or the crossing. |
+
+`R`'s boundary (`envelope::swept_region`) is read from every candidate a piece of the section can
+make — a line's contact (the foot of the perpendicular from the instant centre), each side of an
+arc's, a corner's path while the line from the instant centre lies in its fan of normals, and, over
+a roll that is no period, every edge held at each end pose — each point valid only on the section's
+boundary at its own pose and **kept only where it lies outside the section at every pose**: the
+meaning of the cut, which drops a second contact, an envelope's other branch and every trim at a
+concave corner where members meet. Kept stretches are linked with `R` on their left through
+crossings (solved exactly), junctions at one roll, end poses and the sides of a box about the
+blank's shadow, so only loops meeting the blank are built. Each slab is the blank less its loops'
+prism (`brep::sweep::subtraction`, one Boolean a placement); a drafted slab is lofted through
+stations, each stretch a B-spline surface. Nothing is traced, split or judged cell by cell, and
+field agreement gates the export as for every sweep. The #585 star wheel is 24 candidates and 33
+kept stretches, read in half a second; its volume agrees with arithmetic made apart from the core
+to 1e-4, with the field's at every probe 0.02 mm off the surface, and lies below the long form's
+(#589) by its scallop; drafted 8° it is lofted through nine stations and exports in seconds
+(`tests/planar_subtraction.rs`).
+
 ### Undercut is excluded deliberately
 
 A pinion with few teeth often has some undercut. There, the envelope of the blade tip's
@@ -157,7 +194,8 @@ the checks read are checked once: the gear's 24 indexed cuts are one check.
 Everything outside the class is refused at elaboration or export, never meshed on a
 best-effort basis. The refusal names the condition row and the witness. The tumbling, slid
 and tilted cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its
-caps clear and a pocketed prism's under a planar motion are outside the classes. Their fixtures stay
+caps clear, a pocketed prism's under a planar motion and a prism tool's under a motion that keeps
+its plane are outside the classes. Their fixtures stay
 in the tree as **negative controls**: each must
 produce its refusal.
 

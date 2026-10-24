@@ -35,6 +35,16 @@ Newton, memoised. A `construction` solid is never an object. App example `spiral
 (`hypoid.sv`). `solventc --stl-backend refine` skips admission, gated by field agreement
 (`SOLVENT_FEATURES=field`).
 
+**A drafted prism of any loop is read by its sections** (#607, #588; `solid/field/sections.rs`): a
+convex loop of lines and whole circles is its profile's field moved, exactly (`draftable`); any
+other loop of lines and arcs is read at a point as the signed distance to its section at the
+point's depth — every side moved `|w| tan draft` into the material along its own normal, each corner
+where its moved sides meet (`build::drafted`'s section), a line–line corner moving affinely —
+divided by `√(1 + (tan·mitre)²)`, the most the field can change per unit length, so it stays
+one-Lipschitz with the drafted sides its zero; its interval bound is its value at a box's middle
+widened by the box's half-diagonal.  A section that loses a side within the prism's depths is
+refused when read.  `planar_subtraction::the_field_reads_a_drafted_plus`.
+
 **An operand built exactly is read by its own boundary** (#419; `document.rs`'s `built`,
 `field/built.rs`): a body some of whose terms read its faces (the stratum's late ones: a round),
 with neither a sweep nor a region only the field builds among what it reads (`solid::has_sweep`),

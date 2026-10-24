@@ -184,6 +184,7 @@ mod phillips;
 mod pick;
 mod planar;
 mod planar_envelope;
+mod planar_subtraction;
 mod placed_numbers;
 mod plane;
 mod plane_lang;

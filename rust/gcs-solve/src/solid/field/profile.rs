@@ -23,7 +23,7 @@ impl Edge {
     // Connectivity comes from the source vertices. Reconstructing a constrained
     // arc endpoint with radius and trigonometry adds source-solve and rounding
     // residuals; those must not turn one shared vertex into two separate ones.
-    fn endpoints(&self) -> [P;2] {
+    pub(crate) fn endpoints(&self) -> [P;2] {
         match *self {
             Self::Line {a,b,..} => [a,b],
             Self::Arc {sweep,ends,..} if sweep.abs() < TAU => ends,
@@ -31,7 +31,7 @@ impl Edge {
             Self::Conic {a,b,..} => [a,b],
         }
     }
-    fn reversed(mut self) -> Self {
+    pub(crate) fn reversed(mut self) -> Self {
         match &mut self {
             Self::Line {a,b,..} => std::mem::swap(a,b),
             Self::Arc {start,sweep,ends,..} => {
@@ -41,7 +41,7 @@ impl Edge {
         }
         self
     }
-    fn tangent(&self,t: f64) -> P {
+    pub(crate) fn tangent(&self,t: f64) -> P {
         match *self {
             Self::Line {a,b,..} => delta(b,a),
             Self::Arc {start,sweep,..} => {
@@ -51,7 +51,7 @@ impl Edge {
             Self::Conic {..} => self.conic().tangent(t),
         }
     }
-    fn area_twice(&self) -> f64 {
+    pub(crate) fn area_twice(&self) -> f64 {
         match *self {
             Self::Line {a,b,..} => cross(a,b),
             Self::Arc {center,radius,sweep,..} =>
@@ -65,7 +65,7 @@ impl Edge {
     }
     // The farthest boundary point from planar zero; material lies within the
     // convex hull of its boundary, hence inside this disk.
-    fn reach(&self) -> f64 {
+    pub(crate) fn reach(&self) -> f64 {
         match *self {
             Self::Line {a,b,..} => a[0].dhypot(a[1]).max(b[0].dhypot(b[1])),
             Self::Arc {center,radius,..} => center[0].dhypot(center[1])+radius,
@@ -80,7 +80,7 @@ impl Edge {
 /// `join` is the distance an endpoint put on a revolution axis was moved by,
 /// so the edges sharing that point join within it as well as within the
 /// roundoff of the conversion.
-fn ordered(edges: &[Edge],join: f64) -> Result<Vec<Edge>,String> {
+pub(super) fn ordered(edges: &[Edge],join: f64) -> Result<Vec<Edge>,String> {
     let scale = edges.iter().map(Edge::reach).fold(0_f64,f64::max);
     let tolerance = (scale*f64::EPSILON*128.).max(join);
     if edges.is_empty() { return Err("empty material profile".into()); }

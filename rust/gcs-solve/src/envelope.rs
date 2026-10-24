@@ -16,6 +16,7 @@ pub mod meshing;
 pub mod planar;
 pub mod regular;
 pub mod screw;
+pub mod swept_region;
 pub use named::GeneratedEnvelope;
 
 use crate::plane::{cross, dot, scaled};

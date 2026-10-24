@@ -10,6 +10,7 @@ pub mod helical;
 pub mod planar;
 pub mod sector;
 pub mod sheet;
+pub mod subtraction;
 
 use crate::brep::pattern::{self,Built as Patterned};
 use crate::model::Sketch;
@@ -97,6 +98,9 @@ pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say
         // what a planar sweep leaves is the blank within its envelope's prism (`planar::cut`)
         crate::solid::admission::Class::Planar(_) => Err(ExportRefusal::at(Stage::Reach,
             format!("`{}`: a planar sweep is built by its envelope, not a sheet",prepared.cuts[k].name))),
+        // what a subtraction sweep removes is its swept region's prism (`subtraction::cut`)
+        crate::solid::admission::Class::Subtraction(_) => Err(ExportRefusal::at(Stage::Reach,
+            format!("`{}`: a planar subtraction sweep is built by its swept region, not a sheet",prepared.cuts[k].name))),
     }
 }
 
@@ -151,6 +155,7 @@ pub fn build(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admission
     -> Result<Built,ExportRefusal> {
     let prepared = prepare(sk,body,recipe,admission,say)?;
     if planar::all(&prepared) { return Ok(Built::Whole(planar::cut(sk,body,recipe,&prepared,tolerance,say)?)) }
+    if subtraction::all(&prepared) { return Ok(Built::Whole(subtraction::cut(sk,body,recipe,&prepared,tolerance,say)?)) }
     let sheets = crate::par::indices(prepared.sweeps(),|k| sheet(&prepared,k,tolerance,say)).into_iter().collect::<Result<Vec<_>,_>>()?;
     let plan = plan(sk,body,recipe,&prepared,&sheets,say);
     finish(cut(sk,body,recipe,&prepared,&sheets,plan,say)?,say)

@@ -81,18 +81,28 @@ fn a_racks_sweep_is_admitted() {
     assert!(sweep.least_area_factor > 1e-3);
 }
 
-/// A rack tooth no longer than the blank is thick has caps in it, and the class cuts with a
-/// prism's sides only: refused at T1, naming the cap.
+/// A rack tooth no longer than the blank is thick has a cap in it, and the generating class cuts
+/// with a prism's sides only (T1); the planar subtraction class (#606) splits the blank at the cap
+/// instead (Q2) — the slab the tooth misses keeps all of the blank, the one it spans is cut by the
+/// same space — so the gear is the space taken out of 5 mm of the blank's 6.
 #[test]
-fn a_rack_with_a_cap_in_the_blank_is_refused() {
+fn a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans() {
+    use gcs_core::brep::{export, sweep::Say};
     let src = SPACE.replace("solid(tooth, from: -8mm, to: 2mm)", "solid(tooth, from: -5mm, to: 2mm)");
-    match admit(&src) {
-        Err(Error::Refused(r)) => {
-            assert_eq!(r.condition, Condition::Tool);
-            assert!(r.message.contains("a cap of the prism"), "{}", r.message);
-        }
-        other => panic!("not refused at T1: {:?}", other.map(|_| ())),
-    }
+    let admission = admit(&src).unwrap_or_else(|e| panic!("{e}"));
+    let [sweep] = admission.sweeps() else { panic!("one sweep") };
+    let gcs_core::solid::admission::Class::Subtraction(found) = &sweep.class else { panic!("{:?}", sweep.class) };
+    assert_eq!(found.slabs.len(), 1, "the slab the tooth misses has no region");
+    let mut e = build(&src);
+    let r = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let gear = e.map.ent_named("gear").unwrap().i();
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let exact = export::exact(&e.sketch, gear, None, None, &say).unwrap_or_else(|r| panic!("{}", r.message));
+    let removed = PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid);
+    let want = 5. * space_area(400, 4000);
+    assert!((removed - want).abs() < 0.03, "removed {removed:.5} mm³, the space being {want:.5}");
+    export::stl(&e.sketch, gear, &exact, None, &say).unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));
 }
 
 /// The tooth space's area by arithmetic: at each radius the circle meets the moved trapezoid in
@@ -353,4 +363,25 @@ fn the_rack_cut_gear_example_is_admitted() {
         let off = (p.0 * tx + p.1 * ty).abs() / tx.hypot(ty);
         assert!((off - rb).abs() < 1e-6, "at roll {t} the involute's normal is {off} from the centre, not {rb}");
     }
+}
+
+
+/// **Two classes, one cut** (#606): the tooth united with itself is no generating tool (T1 refuses a
+/// union), so the planar subtraction class cuts it, as the region its section sweeps; the tooth
+/// alone the generating class cuts, by its sheet.  What the two remove agrees to the fits'.
+#[test]
+fn the_tooth_united_with_itself_cuts_as_the_tooth_does() {
+    use gcs_core::brep::{export, sweep::Say};
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let twin = SPACE.replace("construction space := sweep(rack_tooth",
+        "construction twin := solid(rack_tooth)\nconstruction both := solid(rack_tooth)\ntwin union both\nconstruction space := sweep(both");
+    let removed = |src: &str| {
+        let mut e = build(src);
+        gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+        let gear = e.map.ent_named("gear").unwrap().i();
+        let exact = export::exact(&e.sketch, gear, None, None, &say).unwrap_or_else(|r| panic!("{}", r.message));
+        PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid)
+    };
+    let (sheet, region) = (removed(SPACE), removed(&twin));
+    assert!((sheet - region).abs() < 1e-5 * sheet, "the sheet removes {sheet:.6} mm³, the region {region:.6}");
 }

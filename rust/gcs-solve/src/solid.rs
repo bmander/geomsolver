@@ -78,6 +78,7 @@ mod sweep_contacts;
 pub mod admission;
 pub mod constant_twist;
 pub mod planar_class;
+pub mod planar_subtraction;
 pub mod agreement;
 pub mod accuracy;
 pub mod contracts;
@@ -446,6 +447,17 @@ fn in_facet(f: &Facet, x: [f64; 3]) -> Hit {
 /// Exporters and diagnostics share this check, including every operand of a body.
 pub fn validate(sk: &Sketch, si: usize) -> Result<(), String> {
     validate_at(sk, si, REPORT_UNIT).map(|_| ())
+}
+
+/// Why solid `si` is not built, where it is not: `validate`'s refusal, or — a continuous sweep being
+/// drawn by its material field alone — its field's, said at the sweep's statement and in a solved
+/// document as in any other (#588).
+pub fn refusal(sk: &Sketch, si: usize) -> Result<(), String> {
+    validate(sk, si)?;
+    let s = &sk.solids[si];
+    let SolidDef::Swept { source, .. } = s.def else { return Ok(()) };
+    MaterialField::read(sk, si, cad::AXIS_TOLERANCE).map(|_| ()).map_err(|e|
+        format!("`{}` sweeps `{}`, whose material the field does not read: {e}", s.name, sk.solids[source as usize].name))
 }
 
 /// Whether a continuous motion sweep is among the solid's operands: its boundary is then the

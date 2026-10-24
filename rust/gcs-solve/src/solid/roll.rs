@@ -91,6 +91,12 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
         }
         k += ahead;
         if let Some(w) = (0..2).find(|&w| ends[w].is_none() && f64::from(k) * STEP >= REACH) {
+            // a tool never clear either way is always in mesh: the roll to state is a period
+            if ends.iter().all(Option::is_none) {
+                if let Some(p) = period(&tool, support, &family) {
+                    return Err(format!("its tool is always in mesh with it: {}", advice(0.0, p)));
+                }
+            }
             return Err(format!("its tool is not clear of it within two turns {} of 0",
                                ["below", "above"][w]));
         }
@@ -100,6 +106,53 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
         return Err("its tool does not meet it at 0, so no roll about 0 meets it".into());
     }
     Ok([lo, hi])
+}
+
+/// The least roll, a degree at a time within `PERIOD_TURNS` turns, after which `family` stands
+/// `tool` where it stood at 0 again — a whole period of the pair as the observer sees it, the
+/// tool's own symmetry counted: the tool's field read alike, to rounding, at every point of a grid
+/// over its support carried back from the later pose as from the first (a turn of the tool onto
+/// itself leaves its distances where they were; any other moves some of them).  None for a tool the
+/// motion does not move.
+fn period(tool: &SpatialField, support: [I; 3], family: &crate::motion::Family) -> Option<f64> {
+    let n = 12;
+    let lo = support.map(|x| x.bounds()[0]);
+    let hi = support.map(|x| x.bounds()[1]);
+    let size = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
+    let first = family.pose_at(0.0).ok()?;
+    let points: Vec<([f64; 3], f64)> = (0..n * n * n).map(|i| {
+        let at = [i % n, (i / n) % n, i / (n * n)];
+        let x: [f64; 3] = std::array::from_fn(|k| lo[k] + (hi[k] - lo[k]) * (at[k] as f64 + 0.5) / n as f64);
+        (first.point(x), tool.value(x))
+    }).collect();
+    if !points.iter().any(|p| p.1 < 0.0) { return None; }
+    // the points inside the tool first: most rolls move one of them out at once
+    let mut points = points;
+    points.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let near = 1e-7 * (1.0 + size);
+    first_alike(0.0, PERIOD_TURNS, |t| family.pose_at(t).is_ok_and(|m| {
+        let back = m.inverse();
+        points.iter().all(|&(y, v)| (tool.value(back.point(y)) - v).abs() <= near)
+    }))
+}
+
+/// How many turns a period is looked for through.
+pub const PERIOD_TURNS: f64 = 12.0;
+
+/// The least roll after `from`, a `STEP` at a time within `turns` turns, at which `alike` says the
+/// tool stands where it stood at `from` — none where it does a step on (a tool the motion does not
+/// move, a ball on its axis, has no period).  Every period the core names is found by it
+/// (`period`, `swept_region::Setting::period`).
+pub fn first_alike(from: f64, turns: f64, alike: impl Fn(f64) -> bool) -> Option<f64> {
+    if alike(from + STEP) { return None; }
+    (2..=(turns * 360.0) as u32).map(|k| from + f64::from(k) * STEP).find(|&t| alike(t))
+}
+
+/// What a refusal says to state for a roll from `from` through a whole period to `to` (radians):
+/// the words every such refusal uses.
+pub fn advice(from: f64, to: f64) -> String {
+    let degrees = |x: f64| (x.to_degrees() * 1e6).round() / 1e6;
+    format!("roll it a whole period, `over t in ({}deg, {}deg)`", degrees(from), degrees(to))
 }
 
 /// Whether `tool` under every pose of `family` over `span` is proved clear of `blank`: the

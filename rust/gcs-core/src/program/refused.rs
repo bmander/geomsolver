@@ -62,10 +62,11 @@ struct Causes<'a> {
 
 impl<'a> Causes<'a> {
     fn new(sk: &'a Sketch) -> Causes<'a> {
-        // every solid but a body, validated: a body's refusal is its operands'
+        // every solid but a body, refused where it is not built (`solid::refusal`: a sweep whose
+        // field cannot be read too, #588): a body's refusal is its operands'
         let refused = sk.solids.iter().enumerate()
             .filter(|(_, s)| !matches!(s.def, SolidDef::Body { .. }))
-            .filter_map(|(i, _)| Some((i, crate::solid::validate(sk, i).err()?)))
+            .filter_map(|(i, _)| Some((i, crate::solid::refusal(sk, i).err()?)))
             .collect();
         let on = (0..sk.solids.len()).map(|i| crate::solid::built_on(sk, i)).collect();
         let mut causes = Causes { sk, refused, on, root: BTreeSet::new() };
