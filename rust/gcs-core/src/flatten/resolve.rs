@@ -1224,7 +1224,7 @@ impl<'a> Walk<'a> {
         alias: &dyn Aliases,
     ) -> Option<Vec<String>> {
         let (abs, rest) = self.look(alias).find(r, sc)?;
-        let all = self.faces.given.get(&abs)?;
+        let all = &self.faces.given.get(&abs)?.paths;
         let at = sc.prefix();
         Some(all.iter().filter(|f| f.listed_by(&rest, at)).map(|f| format!("{abs}.{}", f.text())).collect())
     }
@@ -1399,6 +1399,8 @@ impl<'a> Walk<'a> {
         }
         let outer = std::mem::take(&mut self.out);
         self.aside.held = outer.len();
+        // what the copies make is the document's statement's that met the block
+        self.faces.at = p.at;
         let b = b.clone();
         let vars: Vec<Name> = named.iter().map(|(v, _)| (*v).clone()).collect();
         let edges: Vec<(&Name, &[Link])> =

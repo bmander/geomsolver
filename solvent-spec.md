@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.186 — October 2026**
+**Specification, Draft 0.187 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -912,7 +912,8 @@ meet at a corner, the ball touching all three. `round(r: 2mm) X` is `X round(r: 
 edge among `X`'s faces. `A chamfer(d: 1mm) B` cuts every such edge by the flat `d` along each
 face, measured from the other face's surface, and `chamfer(d: 1mm) X` every edge among `X`'s.
 Faces that do not meet make nothing, so `block.near round(r: 2mm) block` rounds the near rim
-alone, its runs mitred where they cross at the corners. Each is a relation word whose body makes
+alone, its runs mitred where they cross at the corners; **[0.187]** the words pair only faces
+that meet (`b meets a`, §12.9), and three at a corner only where each meets the other two. Each is a relation word whose body makes
 solids from sets over the faces (`std.Run`, `std.Fill`, `std.Corner`, `std.CornerFill`,
 `std.Flat`, `std.FlatFill`) and joins them to the body the faces are of (§9.9), so a document may
 define its own the same way. **[0.148]** Each of those sets is `symmetric` in its faces (§6.21),
@@ -2993,6 +2994,8 @@ The body is made **once** where `COND` holds and **not at all** where it does no
 `COND` is comparisons of two numbers, `<`, `<=`, `>`, `>=`, `==` and `!=`, joined by `and`, `or` and `not` (`or` binds loosest, then `and`, then `not`); a parenthesis holds a number or a condition. A number alone is no condition, and a comparison is no number. Each comparison is between two numbers of one dimension, as `+` is (§3.3): `relief > 0mm`, not `relief > 0`; two dimensions are **E103**. The comparison is exact, with no tolerance, so `<` and `==` are never both true. Every comparison is worked out, so a mistake on a side `and` or `or` could skip is still said.
 
 **[0.91] Identity.** Two names of which one is no number compare by what they stand for: `a == b` holds where both name the same thing — an entity, or a face (§6.21) — reached through every formal and binder (a formal is what its call gave it, a face repeat's binder its face), and `a != b` where they do not. `c in B` holds where what `c` names is one of the faces the face path `B` names (§6.9). These join numbers' comparisons under `and`, `or` and `not` alike, and are decided where the block is elaborated — inside a block over a solid's faces, once the faces are named (§12.8). A number on one side and something drawn on the other is **E103**, as is something drawn under `<`, `<=`, `>` or `>=`, and `in` over what names no faces; a name that stands for nothing is **E101**. `when` is thereby the language's one conditional: a switch is `when flag == 1 { … }`, never a `repeat` over a count of zero or one, which named what it made as copies.
+
+**[0.187] Faces that meet.** `a meets b` holds where `a` and `b` name faces of one solid (a face repeat's binders, §12.8) that share a point of its boundary — an edge or a corner — as the solid is made by the terms that do not read its faces (§6.21), so a face a Boolean ate meets none. Like every condition it is decided where the block is elaborated, and so **where the drawing is seeded** (§4.3), as the way a corner round turns is (§6.6): a pair the condition reads apart that meets where the drawing solves left out a copy that would have made something, and is **E080** at the document's statement that made the block, naming the two faces. Two faces of different solids, and a face a round of the solid made that the faces it reads do not have, are taken to meet. A name that is no face is **E103**. It is what lets a word over a body's faces in pairs and threes — `std`'s `round` and `chamfer` (§6.9) — make copies only for faces that touch: a body lists every face of every operand, eaten or not, and its threes are as many as the cube of them.
 
 **A `when` repeats nothing, so it has no index and no copy.** What its body declares is named as if written beside the block — `p_in`, and in a component `t.tip` — never with a copy's index, and is reached from outside by that name; where the condition does not hold, nothing of the body is made, and a name only it declares is undefined (**E101**). The numbers a body defines are its own. A statement inside it is one statement as any is (§12.7), reached once or not at all, so a solve writes its seeds back as at the top level (§4.3). An index binder (`as i`) and a body ending mid-joint (§6.6), which threads onto a next copy there is none of, are syntax errors.
 

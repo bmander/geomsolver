@@ -15,10 +15,9 @@ use super::{
 };
 use super::{Again, Code, Diag, Elaborated, Made, SourceMap};
 use crate::expr;
-use crate::flatten::Expansion;
+use crate::flatten::{Expansion, Listed};
 use crate::ir::{Operation as StmtKind, Statement};
 use crate::model::{entity_name, EntKind, EntRef, Sketch};
-use crate::solid::faces::FacePath;
 use crate::style::Presented;
 use crate::syntax::{Program, StmtId};
 use std::collections::{BTreeMap, BTreeSet};
@@ -85,7 +84,7 @@ pub(super) fn elaborate_in(
     p: &Program,
     refused: &BTreeSet<String>,
     crossed: &BTreeMap<String, Vec<f64>>,
-    faces: &BTreeMap<String, Vec<FacePath>>,
+    faces: &BTreeMap<String, Listed>,
     faces_settled: bool,
 ) -> Result<Elaborated, Again> {
     let mut cx = Elab {
@@ -209,10 +208,16 @@ fn check_text(cx: &mut Elab<'_>) {
 fn expand(
     cx: &mut Elab<'_>,
     refused: &BTreeSet<String>,
-    faces: &BTreeMap<String, Vec<FacePath>>,
+    faces: &BTreeMap<String, Listed>,
 ) -> Expansion {
     let mut expansion = crate::flatten::expand_faces(cx.doc, cx.sk.units, refused, faces);
+    // an expansion cut short at its limit is no drawing: what was made of it reads names the
+    // rest would have made, so nothing is built, and its one E103 is all that is said (#625)
+    if expansion.overflowed {
+        expansion.flat.clear();
+    }
     cx.map.private_names = expansion.private_names.clone();
+    cx.map.apart = std::mem::take(&mut expansion.apart);
     // an instance drawn has its path; one cut short (a recursion refused) has none and is not one
     cx.map.instances = expansion.instances.iter().filter(|i| !i.drawn || !i.path.is_empty())
         .map(|i| super::Instanced { path: super::InstPath(i.path.clone()), prefix: i.prefix.clone(),
@@ -788,7 +793,7 @@ fn place_planes(
 fn solids_and_surfaces(
     cx: &mut Elab<'_>,
     flat: &Flat<'_>,
-    faces: &BTreeMap<String, Vec<FacePath>>,
+    faces: &BTreeMap<String, Listed>,
     settled: bool,
     generated: &BTreeSet<StmtId>,
     held: &BTreeSet<StmtId>,
@@ -798,13 +803,19 @@ fn solids_and_surfaces(
     solids(sk, res, map, body, skip, probes, diags);
     super::solids::carry_legs(sk);
     // the faces of the solids a block runs over, named for the next pass (#183 F4)
-    let unnamed: BTreeMap<String, Vec<FacePath>> = flat.expansion.face_repeats.iter()
+    let unnamed: BTreeMap<String, Listed> = flat.expansion.face_repeats.iter()
         .filter(|abs| !(settled && faces.contains_key(*abs)))
         .filter_map(|abs| {
             res.of.get(abs).filter(|e| e.kind == EntKind::Solid && e.i() < sk.solids.len())
-                .map(|e| (abs.clone(), crate::solid::faces::face_paths(sk, e.i())))
+                .map(|e| (abs.clone(), e.i(), crate::solid::faces::face_paths(sk, e.i())))
         })
-        .filter(|(abs, now)| faces.get(abs) != Some(now))
+        .filter(|(abs, _, now)| faces.get(abs).map(|l| &l.paths) != Some(now))
+        // which of them meet, read where the drawing is seeded (#625): checked again where it
+        // is solved (`program::meets`)
+        .map(|(abs, i, paths)| {
+            let meets = crate::solid::faces::Meets::read(sk, i, &paths);
+            (abs, Listed { paths, meets })
+        })
         .collect();
     if !unnamed.is_empty() {
         return Err(Again::Faces(unnamed));

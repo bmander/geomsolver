@@ -4,6 +4,21 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
+`a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner
+of its boundary as made by the terms that do not read its faces (§12.9). It is decided where the
+block is elaborated, so where the drawing is seeded; a pair it reads apart that meets where the
+drawing solves is **E080** at the document's statement that made the block. Faces of two solids,
+and a face a round made that the faces it reads have not, are taken to meet; a name that is no
+face is **E103**. `std`'s `A round(r) B` and `A chamfer(d) B` now pair only faces that meet, and
+round a corner only of three that each meet the other two, so a round over a body's faces makes
+copies for its edges and corners rather than for every two and three of the faces it lists: a disc
+whose web four turned spokes cut was past the expansion's limit of 200000 statements, and builds in
+under a second. An expansion past that limit is said once, at the document's statement that
+reached it, and nothing of it is built, where before each body the walk was in said it, at the
+`use std` line, and every name the rest would have made was then said missing. Every solved
+position is unchanged. (Issue #625.)
+
 **[0.186] An orientation word may be a name.** `ccw` and `cw` are calls and nothing else (§9.6),
 so a definition may bear either as a name (`cw := ConjugateWheel(…)`, a conjugate wheel) and the
 word with no `(` after it is that name wherever it stands (§1.3): `claim cw.body clear(1mm)

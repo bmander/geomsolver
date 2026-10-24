@@ -55,6 +55,9 @@ fn out_of_reach(name: &str, vals: &Vals, scope: &Scope) -> Option<(Code, String)
 pub(super) trait Names {
     fn stands(&self, name: &str) -> Option<String>;
     fn faces(&self, name: &str) -> Option<Vec<String>>;
+    /// Whether two faces, each by what its name stands for, share a point (#625): `None` where
+    /// either is no face a solid lists.
+    fn meets(&self, a: &str, b: &str) -> Option<bool>;
     /// Whether the unknown `name` is a face family's running number (#243 L5).
     fn running(&self, name: &str) -> bool;
 }
@@ -66,7 +69,8 @@ pub(super) trait Names {
 ///
 /// A name that is no number may still be compared for **identity** (#267): `a != b` holds where
 /// the two stand for different things (`Names::stands`), `c in B` where what `c` stands for is
-/// one of the faces `B` names.  A number on one side and geometry on the other is E103.
+/// one of the faces `B` names, `a meets b` where two faces share a point (#625, `Names::meets`).
+/// A number on one side and geometry on the other is E103.
 pub(super) fn condition(
     text: &str,
     env: &Vals,
@@ -116,6 +120,14 @@ fn holds(
                 )));
             };
             faces.contains(&me)
+        }
+        Cond::Meets(x, y) => {
+            let (p, q) = (stands(x)?, stands(y)?);
+            names.meets(&p, &q).ok_or_else(|| (Code::E103, format!(
+                "`{x} meets {y}` asks whether two faces of a solid share a point, and `{}` is \
+                 no face: name a face a `repeat … in` runs over",
+                if names.faces(x).is_none() { x } else { y }
+            )))?
         }
         Cond::Cmp(op @ (Cmp::Eq | Cmp::Ne), Ast::Var(x), Ast::Var(y))
             if !env.contains_key(x.as_str()) || !env.contains_key(y.as_str()) =>
@@ -191,15 +203,15 @@ fn claimed(
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
     fn membership(c: &Cond) -> bool {
         match c {
-            Cond::In(..) => true,
+            Cond::In(..) | Cond::Meets(..) => true,
             Cond::And(a, b) | Cond::Or(a, b) => membership(a) || membership(b),
             Cond::Not(a) => membership(a),
             Cond::Cmp(..) => false,
         }
     }
     if membership(&c) {
-        return Err(said(Code::E103, "a claim over values compares numbers; `in` asks of \
-            faces, and is a `when`'s".into()));
+        return Err(said(Code::E103, "a claim over values compares numbers; `in` and `meets` \
+            ask of faces, and are a `when`'s".into()));
     }
     let mut reads = Vec::new();
     for name in c.deps() {

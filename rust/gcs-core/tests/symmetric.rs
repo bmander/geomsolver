@@ -69,15 +69,17 @@ fn volume(e: &Elaborated, name: &str) -> f64 {
     props::volume(&exact.solid)
 }
 
-/// **Each edge and corner once** (#415's table): `bores.sv` has nine faces, so `round(r) X` reached
-/// 72 ordered pairs and 504 ordered triples, a run and a fill for each — 1152 region solids, where
-/// 36 pairs and 84 triples are 240.
+/// **Each edge and corner once** (#415's table): `bores.sv` has nine faces, of which seven pairs
+/// meet and two threes meet pairwise (#625: the cusps' walls with each face of the slab), so
+/// `round(r) X` reaches 14 ordered pairs and 12 ordered triples, a run and a fill for each — 52
+/// region solids, where 7 pairs and 2 triples are 18.  (Before `meets`, every pair and three of
+/// the nine: 1152 written ordered, 240 so.)
 #[test]
 fn a_body_rounded_all_over_states_each_edge_and_corner_once() {
     let src = include_str!("../../examples/rounds/bores.sv");
     let once = read(src).sketch.solids.len();
     let every = read(&ordered(src)).sketch.solids.len();
-    assert_eq!(every - once, 1152 - 240, "{every} solids written ordered, {once} so");
+    assert_eq!(every - once, 52 - 18, "{every} solids written ordered, {once} so");
 }
 
 /// The block rounded all over and chamfered all over, each by the library's words and by the
