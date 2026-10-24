@@ -312,6 +312,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         bare: e.kind == EntKind::Frame && !sk.frames[e.i()].planar(),
         carried: None,
         material: None,
+        round: None,
     }
 }
 

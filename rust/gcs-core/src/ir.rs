@@ -81,6 +81,8 @@ pub struct Decl {
     pub bare: bool,
     /// What a solid is made of (#510 P3, `syntax::Decl::material`).
     pub material: Option<syntax::Ref>,
+    /// A corner round (#576, `syntax::Decl::round`).
+    pub round: Option<Box<syntax::Round>>,
 }
 
 /// The same operands as syntax, with inline faces lowered to declarations of this stage.
@@ -126,6 +128,7 @@ impl From<syntax::Decl> for Decl {
             sense: d.sense,
             bare: d.bare,
             material: d.material,
+            round: d.round,
         }
     }
 }

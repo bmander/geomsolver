@@ -1051,6 +1051,14 @@ impl<'a> Walk<'a> {
                 return;
             }
         };
+        // a round at the body's end gives up the first link's entry in every copy, and a
+        // `repeat`'s first copy is entered by nothing (#576)
+        if let Some(j) = b.joint.as_ref().filter(|j| j.round && !b.kind.wraps()) {
+            self.err(Code::E040, j.span, "a round at the end of a `repeat`'s body would round \
+                a corner its first copy does not have: round the corners inside the body, or \
+                close the copies in a `cycle` or a `ring`");
+            return;
+        }
         self.copies(b, st, scope, path, depth, n, &[]);
     }
 
