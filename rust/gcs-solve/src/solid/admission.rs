@@ -424,10 +424,13 @@ fn coarse_at(at: f64,n: usize) -> f64 { (at/(n.max(2)-1) as f64).clamp(0.,1.) }
 struct Fine { reads: Reads,samples: usize,near_double_roots: usize,hits: Vec<(Hit,usize,usize)>,gaps: Vec<f64>,least: f64,
     signs: BTreeMap<(usize,usize),([usize;2],[Option<V>;2])> }
 
-/// Admit or refuse every swept cut of the body `root`. The sweeps are checked side by side and a
-/// placement's reads against the first placement's on every core; what is admitted or refused, and
-/// with which evidence, is what checking them one after another in order says.
+/// Admit or refuse every swept cut of the body `root` (the body it places, where `root` is a
+/// placement). The sweeps are checked side by side and a placement's reads against the first
+/// placement's on every core; what is admitted or refused, and with which evidence, is what
+/// checking them one after another in order says.
 pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission,Error> {
+    // a body placed by a rigid motion is the body moved: the body it places is admitted (#619)
+    let root = cad::placed(sk,root).map_err(Error::Unreadable)?.map_or(root,|(inner,_)| inner);
     let (field,cuts) = static_remainder(sk,root,options.axis_tolerance).map_err(Error::Unreadable)?;
     let mut by_sweep: BTreeMap<usize,Vec<Motion>> = BTreeMap::new();
     let mut order = Vec::new();

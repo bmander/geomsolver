@@ -319,3 +319,61 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
     assert_eq!((d.code, d.at(e.text()).0), (Code::E080, 23), "{d:?}");
     assert!(d.message.starts_with("`space` sweeps `pyramid`, whose material the field does not read"), "{d:?}");
 }
+
+/// The wheel stood by a frame turning with it at `degrees` of its value (`x in f`), and a body made
+/// from that copy (#619).
+fn stood(degrees: f64) -> String {
+    format!("{}held := frame\nheld turns(-4 / 6) spindle\nfix(value == {degrees}deg) held\nshown := wheel in held\ncopy := solid(shown)\n",
+        wheel(STAR, PERIOD))
+}
+
+/// **A wheel a frame stands is the wheel moved** (#619): built once and its boundary carried by the
+/// frame's turn, so `shown` and a body made from it export with the wheel's volume, and at 30° of
+/// the handle every vertex is the wheel's turned 20° back about the spindle.  The page's build by
+/// stages moves it as the export does, and the report reads all three from one B-rep, moved.
+#[test]
+fn a_wheel_a_frame_stands_is_the_wheel_moved() {
+    for degrees in [0., 30.] {
+        let src = stood(degrees);
+        let (e, w) = solved(&src);
+        let solid = |name: &str| e.map.ent_named(name).unwrap().i();
+        let built = |i: usize| {
+            let exact = export::exact(&e.sketch, i, None, None, &say())
+                .unwrap_or_else(|r| panic!("{degrees}°: refused at {:?}: {}", r.stage, r.message));
+            export::stl(&e.sketch, i, &exact, None, &say())
+                .unwrap_or_else(|r| panic!("{degrees}°: the STL refused at {:?}: {}", r.stage, r.message));
+            exact.solid
+        };
+        let wheel = built(w);
+        let v = props::volume(&wheel);
+        for name in ["shown", "copy"] {
+            let moved = built(solid(name));
+            assert!((props::volume(&moved) - v).abs() <= 1e-9 * v, "{degrees}°: `{name}` {} mm³ against {v}", props::volume(&moved));
+        }
+        // the handle's 30° is the wheel's −20°, about the spindle through (−50, 0) along z
+        let (s, c) = (-2. * degrees.to_radians() / 3.).sin_cos();
+        let shown = built(solid("shown"));
+        for (a, b) in wheel.vertices.iter().zip(&shown.vertices) {
+            let (x, y) = (a.p[0] + 50., a.p[1]);
+            let want = [c * x - s * y - 50., s * x + c * y, a.p[2]];
+            assert!((0..3).all(|k| (b.p[k] - want[k]).abs() < 1e-9), "{degrees}°: {:?} against {want:?}", b.p);
+        }
+        let display = |i: usize| {
+            let mut builder = export::Builder::new(&e.sketch, i).unwrap_or_else(|r| panic!("{}", r.message));
+            while !builder.step().unwrap_or_else(|r| panic!("{degrees}°: {}", r.message)) {}
+            builder.display().unwrap().volume
+        };
+        let shown_at = display(solid("shown"));
+        for name in ["wheel", "copy"] {
+            let volume = display(solid(name));
+            assert!((volume - shown_at).abs() <= 1e-9 * volume, "{degrees}°: `{name}`'s display {volume} against {shown_at}");
+        }
+        let names = ["wheel", "shown", "copy"];
+        gcs_core::brep::export::supply_exact_where(&e.sketch, &|i| names.contains(&e.sketch.solids[i].name.as_str()));
+        let report = gcs_core::report::positions_where(&e.sketch, &e.map, &|n| names.contains(&n));
+        let read = |name: &str| report.iter().find(|(k, _)| *k == format!("{name}.volume")).map(|r| r.1).unwrap();
+        for name in ["shown", "copy"] {
+            assert!((read(name) - read("wheel")).abs() <= 1e-6 * v, "{degrees}°: `{name}` reads {} against {}", read(name), read("wheel"));
+        }
+    }
+}

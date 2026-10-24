@@ -39,6 +39,12 @@ pub struct Built {
 impl Built {
     /// The sector the copies are made of: the faces `mesh`'s triangles say they are of.
     pub fn sector(&self) -> &Brep { &self.sector }
+    /// The pattern carried by the rigid motion `m`: its solid, its sector and its axis moved, its
+    /// copies and their partners as they were (a placed body's, #619).
+    pub fn moved(&self,m: &Rigid) -> Built {
+        Built {solid:self.solid.moved(m),sides:self.sides,step:self.step,matched:self.matched,sector:self.sector.moved(m),
+            o:m.point(self.o),a:m.vector(self.a),count:self.count,partner:self.partner.clone(),edge_partner:self.edge_partner.clone()}
+    }
     /// The solid's mesh within `bar` (`mesh::mesh`), made as the sector's — its sides left out, its far
     /// side sampled as its near side turned — turned into every copy, the copies sharing their seam
     /// points by index: the same in every copy to the turn's rounding, as the solid is.
