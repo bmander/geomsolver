@@ -992,6 +992,8 @@ p on_u(d: 20) P                  // on P's u axis, 20 out; on_v
 a skew(theta: 90deg, e: 20mm) b  // two lines crossed: the angle and the common perpendicular
 a turned(theta: 180deg) b        // a the length of b, turned from it
 n square(up: std.z) g            // plane n square to line g, its v along up (up square to g)
+g seats(turn: 15deg, up: std.z, east: std.x) p   // instance g mated on p (1.12)
+q raised(d: 12mm, along: std.z) p                // q 12 up from p, on the axis through it
 hangs(L: 150mm) rope             // a hanging rope's length and energy (1.10)
 ```
 
@@ -1499,6 +1501,27 @@ by what it is given (`ConRod(crank.pin1, end.bore)`): reading its `b.std` is E11
 as the frame's around it, and a relation leaving it either way round takes the nearer: write the
 mate so. The body's file says `use std`, a module's by its own; a relation word reads only its
 operands, `std` included (E101).
+
+**A mate said once is a relation word over the instance**: a word's body may read the datums of
+an instance it is given, as an operand or a parameter (`g.std.origin`), and that use reads them
+from outside as a statement writing `d.std.origin` would, so the instance stands in its own
+frame. `std` says the common one (`use std (seats, raised)`):
+
+```sv
+in std.top {
+  hub := point
+  fix((40, 0)) hub
+}
+st := point
+st raised(d: 12mm, along: std.z) hub              // a station 12 up from the hub
+g := Gear(teeth: 24)
+g seats(turn: 15deg, up: std.z, east: std.x) st   // origin on st, z up, x 15° from std.x about z
+```
+
+`seats` is the three relations above on `g.std` — `g.std.origin coincident p`, `g.std.z
+parallel(sense: same) up`, `east angle(turn, about: up) g.std.x` — and a word of the document's
+own may say any other mate the same way. A word over an instance whose body reads no datum is
+E111 at the use; a culprit reads as the word (`g seats(turn: 15deg, …) st`).
 
 **Model relationships, not coordinate tables**: a rectangle is perpendicular
 sides, a width, a height and a position against a datum, not an ordinate for every corner; the

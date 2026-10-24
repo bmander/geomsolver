@@ -50,7 +50,8 @@ pub use bound::Bound;
 
 pub(crate) use words::{faults as word_faults, file_number_names};
 pub(crate) use interfaces::check as interface_faults;
-pub(crate) use keys::{frame_datum, frame_datums, frame_instance, image, image_datum, is_probe};
+pub(crate) use keys::{frame_datum, frame_datums, frame_instance, image, image_datum, instance_frame,
+                      is_probe};
 use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};

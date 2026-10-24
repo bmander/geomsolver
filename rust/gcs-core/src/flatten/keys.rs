@@ -151,7 +151,7 @@ pub(crate) fn image_datum(instance: &str, datum: &str) -> String {
 
 /// The frame an instance read as one stands in (#548), `{instance}#frame`: what its `b.std.D`
 /// names the datums of, declared beside the call.
-pub(super) fn instance_frame(instance: &str) -> String {
+pub(crate) fn instance_frame(instance: &str) -> String {
     format!("{instance}#frame")
 }
 

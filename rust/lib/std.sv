@@ -75,6 +75,28 @@ P square(up) l := {
   P.u perpendicular up
 }
 
+// A part seated (#595): an instance drawn about its own origin, placed by a mate on its frame
+// said once — its origin on `p`, its z running along `up` and its x turned `turn` from `east`
+// about `up`, right handed: `gear seats(turn: 15deg, up: std.z, east: std.x) hub`.  The mate of
+// 1.12 written out is these three relations on `g.std`.
+g seats(turn, up, east) p := {
+  g.std.origin coincident p
+  g.std.z parallel(sense: same) up
+  east angle(turn, about: up) g.std.x
+}
+
+// A point raised from another (#595): `q` stands `d` from `p` along `along`, on the axis through
+// `p` that runs that way — `q raised(d: 12mm, along: std.z) p`, a station above a point drawn in
+// a plane, where a part's origin seats at its height.  An axis rather than a line from `p` to `q`,
+// so the direction stays held at any `d`.
+q raised(d, along) p := {
+  private l := axis
+  l parallel along
+  p coincident l
+  q coincident l
+  p distance(d, along: along) q
+}
+
 // A rope hanging (#121): a curve `L` long that makes its height, integrated along it, least —
 // `hangs(L: 150mm) rope` of a free curve `rope := curve(a, b)`.  The view's down is the way it
 // falls.  What it comes to is the catenary, which nothing here says.

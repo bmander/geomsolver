@@ -311,16 +311,23 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     if solid_word(cx, r, st) {
         return None;
     }
-    // the defined word it was written with, its operands the entities they name (§9.9)
-    // — but for a set (§6.21), which is no entity and is named as written
+    // the defined word it was written with, its operands the entities they name (§9.9) — but
+    // for a set (§6.21), which is no entity and is named as written, and an instance whose frame
+    // the word's body reads (#595), named as the instance
     let word = r.word.as_ref().and_then(|w| {
-        let ops = w.ops.iter().map(|o| cx.res.entity(&cx.sk, o));
-        Some(crate::constraints::WordUse {
-            word: w.word.clone(),
-            ops: ops.collect::<Option<Vec<EntRef>>>()?,
-            args: w.args.clone(),
-            sets: w.sets.clone(),
-        })
+        let mut ops = Vec::new();
+        let mut sets = w.sets.clone();
+        for (i, o) in w.ops.iter().enumerate() {
+            match cx.res.entity(&cx.sk, o) {
+                Some(e) => ops.push(e),
+                None if o.path.is_empty() && cx.res
+                    .lookup(&Ref::new(crate::flatten::instance_frame(&o.root.text)))
+                    .is_some() => sets.push((i, o.root.text.clone())),
+                None => return None,
+            }
+        }
+        sets.sort();
+        Some(crate::constraints::WordUse { word: w.word.clone(), ops, args: w.args.clone(), sets })
     });
     // a region's term is named by the set the region's body used, where it used one (#212):
     // `tip` for `p inside tip` in `region`'s body, else the region's own name

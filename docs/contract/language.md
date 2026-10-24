@@ -60,7 +60,16 @@ path to a point (`in pin.end.plane`), is that point's plane, so a body draws whe
 drawn with no plane formal. `planes::memberships` reads every other membership first and then
 those reading a point's plane round by round, each once its point is drawn (`waits`, `frame_of`);
 one whose point is drawn nowhere after the last round is E040 at the reference, as a point in space
-is. `tests/relation_words.rs` (`a_body_draws_in_the_plane_its_operand_is_drawn_in`) is the gate. A point standing in space is E040 at the operand, or at the use where the
+is. `tests/relation_words.rs` (`a_body_draws_in_the_plane_its_operand_is_drawn_in`) is the gate. **An
+instance's frame** ([0.185], #595): a body reading `g.std.D` of an operand or an entity parameter
+`g` makes the use read the datums of the instance given for `g` — the pre-pass
+(`framed::read_outside`) asks each use of a defined word what its body reads (`use_reads`,
+through the words it uses in turn, a cycle ending it), so the instance stands in its own frame as
+`d.std.D` written would make it, and the application reads the alias as an instance's datum
+(`Lookup::instance_datum`); E111 for an instance whose body reads none is said at the use's word
+(`Walk::resolve`), and `WordUse` names the instance as written beside the sets (`sets`), so the
+culprit reads `d seats(…) b`. `std.seats` and `std.raised` are the words; `tests/frame_datums.rs`
+(`a_relation_word_over_an_instance_reads_its_frame_and_places_it`) is the gate. A point standing in space is E040 at the operand, or at the use where the
 operand is a word's body's — a relation that cannot settle says first why an operand whose name is
 found names nothing past it (`relations::constrain`), rather than that it has no kind; before the
 memberships (a declaration's child) it is refused as not yet known. `Relation::word` (`Worded`) rides to

@@ -11,7 +11,9 @@ use super::keys;
 use super::resolve::read_segments;
 use super::{InPlane, Scope, Walk};
 use crate::ir::PathStep;
-use crate::syntax::{Chained, Component, Decl, DeclName, Name, Ref, Span, Stmt, StmtKind};
+use crate::constraints::builtin_word;
+use crate::syntax::{Arg, Chained, Component, Decl, DeclName, Name, OpArg, Ref, Span, Stmt, StmtKind,
+                    Written};
 
 impl<'a> Walk<'a> {
     /// **The pre-pass** (#548): every instance a body's statements read the datums of from
@@ -25,18 +27,91 @@ impl<'a> Walk<'a> {
         let mut read = Vec::new();
         for st in body {
             self.paths(st, &mut |parts| {
-                if let Some(k) = self.datum_at(parts).filter(|&k| k > 0) {
-                    read.push(format!("{}{}", scope.prefix(), parts[..k].join(".")));
+                if let Some(of) = self.datum_of(parts) {
+                    read.push(format!("{}{}", scope.prefix(), of.join(".")));
+                }
+            });
+            // and a relation word's use reads what its body reads of what it is given (#595)
+            self.words_used(st, &mut |w| {
+                for parts in self.use_reads(w, scope.module, &mut Vec::new()) {
+                    read.push(format!("{}{}", scope.prefix(), parts.join(".")));
                 }
             });
         }
         self.standard.outside.extend(read);
     }
 
+    /// Every relation statement `st` writes with a word a file defines, a block's included.
+    fn words_used(&self, st: &'a Stmt, f: &mut dyn FnMut(&'a Written)) {
+        match &st.kind {
+            StmtKind::Relation(r) => {
+                let defined = r.form.written().filter(|w| !builtin_word(&w.word.text, w.fixity));
+                if let Some(w) = defined {
+                    f(w);
+                }
+            }
+            StmtKind::Block(b) => b.stmts().for_each(|inner| self.words_used(inner, f)),
+            _ => {}
+        }
+    }
+
+    /// **The datums a word's use reads** (#595): the paths, as the use writes them, of what it
+    /// gives the word — an operand or an entity parameter — whose datums its body reads from
+    /// outside, `g.std.origin` of an operand `g`, directly or through a word it uses in turn.  A
+    /// word is an instance's mate when its body reads the instance's frame, so the instance it is
+    /// given stands in one.  `seen` ends a recursion, which the application refuses (E003).
+    fn use_reads(&self, w: &Written, from: Option<usize>, seen: &mut Vec<usize>)
+        -> Vec<Vec<String>> {
+        let Some(k) = self.prog.resolve_word(&w.word.text, w.fixity, from) else {
+            return Vec::new();
+        };
+        if seen.contains(&k) {
+            return Vec::new();
+        }
+        seen.push(k);
+        let def = &self.prog.words[k];
+        // what the body reads past each name it holds, before the `std`
+        let mut read: Vec<Vec<String>> = Vec::new();
+        for st in &def.body {
+            self.paths(st, &mut |parts| read.extend(self.datum_of(parts).map(<[String]>::to_vec)));
+            self.words_used(st, &mut |inner| {
+                read.extend(self.use_reads(inner, def.module, seen));
+            });
+        }
+        seen.pop();
+        // each put in the use's terms: an operand as the use writes it, a parameter as the
+        // reference it was given
+        let given = |name: &str| -> Option<Vec<String>> {
+            if let Some(j) = def.operands.iter().position(|o| o.text == name) {
+                return w.ops.get(j).map(read_segments);
+            }
+            let (text, span) = w.args.iter().find_map(|a| match a {
+                OpArg::Named(n, Arg::Dim { text, span }) if n.text == name => Some((text, span)),
+                // a word of one parameter takes it bare
+                OpArg::Dim(text, span) if def.params.len() == 1 && def.params[0].text == name => {
+                    Some((text, span))
+                }
+                _ => None,
+            })?;
+            crate::syntax::reference_at(text, span.lo as usize).map(|r| read_segments(&r))
+        };
+        read.into_iter().filter_map(|parts| {
+            let mut out = given(&parts[0])?;
+            out.extend(parts[1..].iter().cloned());
+            Some(out)
+        }).collect()
+    }
+
     /// Where a path reads a standard datum: the first segment `std` with a datum's name after it.
     fn datum_at(&self, parts: &[String]) -> Option<usize> {
         (0..parts.len().saturating_sub(1))
             .find(|&k| parts[k] == "std" && self.names.contains(&format!("std.{}", parts[k + 1])))
+    }
+
+    /// What a path reads the datums of from outside: the segments before its `std`, where there
+    /// are any (`cyl` of `cyl.std.y`).
+    fn datum_of<'p>(&self, parts: &'p [String]) -> Option<&'p [String]> {
+        self.datum_at(parts).filter(|&k| k > 0).map(|k| &parts[..k])
     }
 
     /// Every dotted path statement `st` writes, as its segments, to `f`: those its text reads
