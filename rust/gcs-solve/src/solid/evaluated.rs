@@ -340,11 +340,10 @@ impl EvaluatedSolid {
         let name = sk.solid_name(si);
         match sk.field_meshing.get() {
             FieldMeshing::Deferred => Err(format!("`{name}`: its surface is still being meshed")),
+            // the refinement knows no solid, so its refusal is named here, as its setup's is (#614)
             FieldMeshing::Now => {
-                // a refinement's refusal names the solid it refused (#614), as its setup's does
-                let own = format!("`{name}`: ");
-                let named = |e: String| if e.starts_with(&own) { e } else { format!("{own}{e}") };
-                let surface = FieldMesher::new(sk, si).and_then(FieldMesher::finish).map_err(named)?;
+                let surface = FieldMesher::new(sk, si)?.finish()
+                    .map_err(|e| format!("`{name}`: {e}"))?;
                 Self::from_surface(sk, si, policy, unit, &surface)
             }
         }

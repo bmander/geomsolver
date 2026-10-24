@@ -1231,9 +1231,8 @@ fn a_png_is_refused_what_it_cannot_draw() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-/// A wheel cut by a star handle's sweep, of the planar subtraction class (#614): the star's round
-/// tips and fillets leave its field a crease the mesher cannot protect, and the kernel builds it
-/// exactly in a tenth of a second.
+/// A star handle swept through a wheel's place, and a block beside it (#614): the star's round
+/// tips and fillets leave the sweep's field a crease the mesher cannot protect.
 const STAR_WHEEL: &str = "\
 unit mm
 use std
@@ -1311,7 +1310,8 @@ in std.top {
 block := solid(face(bsq.loop), from: 0mm, to: 10mm)
 ";
 
-/// The wheel the star's sweep cuts, beside the block.
+/// The wheel the star's sweep cuts, of the planar subtraction class: its field fails the mesher
+/// as the sweep's does, and the kernel builds it exactly in a tenth of a second.
 const STAR_WHEEL_CUT: &str = "\
 in std.top {
   wo := point

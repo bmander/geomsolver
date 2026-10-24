@@ -3,10 +3,11 @@
 //! A part is checked by looking at it, and where agents work there is no page to look at.  So
 //! the CLI draws what the box draws (`web/src/app/box3d.ts`): the objects the workspace shows
 //! (`overview::shown_objects`), each the mesh the core cuts it to there
-//! (`ApproximationPolicy::Mesh`, `solid::mesh_unit`), placed by its own placement, with the
-//! creases the box strokes over it — and its silhouettes, which a picture without an orbit needs
-//! to read a round thing as round.  Opened on a part file, that is its `preview`: the solids the
-//! preview builds, about the world's origin, as the workspace opens the file.
+//! (`ApproximationPolicy::Mesh`, `solid::mesh_unit`; a swept one's of its exact build where the
+//! kernel builds one, as the box replaces its field's preview), placed by its own placement,
+//! with the creases the box strokes over it — and its silhouettes, which a picture without an
+//! orbit needs to read a round thing as round.  Opened on a part file, that is its `preview`: the
+//! solids the preview builds, about the world's origin, as the workspace opens the file.
 //!
 //! **A depth buffer, not a painter's sort.**  Each triangle is scan-converted at twice the
 //! picture's resolution and kept per pixel where it is nearest the eye, then the edges are drawn
