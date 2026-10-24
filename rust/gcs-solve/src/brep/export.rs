@@ -65,6 +65,7 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
         }
         false => super::recipe::build(&recipe.recipe).at(Stage::Blank)?,
     };
+    if solid.faces.is_empty() { return Err(emptied(sk,body)) }
     let tol = 1e-9*solid.size().max(1.);
     solid.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Blank,format!("the built boundary is invalid: {e}")))?;
     if let Some([a,b]) = solid.self_touching(tol).first() {
@@ -121,19 +122,46 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
             cut from, and build `{}` from it",solid.name,sk.solids[c as usize].name,solid.name)))
     }
     let mut built = part(*stock as usize)?;
+    if built.faces.is_empty() {
+        return Err(empty(&solid.name,&format!("its stock `{}` holds no material",sk.solids[*stock as usize].name)))
+    }
     for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"common")] {
         for &o in operands {
             let operand = part(o as usize)?;
+            let name = &sk.solids[o as usize].name;
             built = super::boolean::combined(&built,&operand,op,0.)
-                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{}`: {e}",solid.name,sk.solids[o as usize].name)))?;
+                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",solid.name)))?;
+            // the statement that left nothing, named as the document writes it (#617)
+            if built.faces.is_empty() {
+                return Err(empty(&solid.name,&format!("`{name} {word} {}` leaves no material",solid.name)))
+            }
         }
     }
     Ok(built)
 }
 
+/// **An empty body refused as a fact of the document** (#617): a Boolean that leaves no material
+/// is what was drawn, not a limit of the encoding, so its export says which solid is empty and
+/// why — never a float32 rounding read off the empty solid's infinite bounds, nor a file of no
+/// faces.
+fn empty(name: &str,why: &str) -> ExportRefusal {
+    ExportRefusal::at(Stage::Fuse,format!("`{name}` is empty: {why}, so there is nothing to write"))
+}
+
+/// Why solid `body`, built empty from its recipe, holds nothing: a body's operands combined again
+/// one statement at a time (`combine`) until one leaves no material — only once the whole is
+/// known empty, so a solid that builds pays nothing for it.
+fn emptied(sk: &Sketch,body: usize) -> ExportRefusal {
+    if matches!(sk.solids[body].def,crate::model::SolidDef::Body {..}) {
+        if let Err(e) = combine(sk,body,&mut |o| built_static(sk,o)) { return e }
+    }
+    empty(&sk.solids[body].name,"it leaves no material")
+}
+
 /// The STEP file of a built solid, parsed back and held to it (every reference, the topology's
 /// counts, units, and each face's surface and its numbers), with what the check counted.
 pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
+    if exact.solid.faces.is_empty() { return Err(empty(name,"it leaves no material")) }
     let started = crate::clock::Instant::now();
     let text = super::step::write(&exact.solid,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1)).at(Stage::Step)?;
     let verified = super::step_check::verify(&text,&super::step_check::Solid::of(&exact.solid))
@@ -148,6 +176,7 @@ pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> 
 /// turned into its copies), no triangle turned against its surface, its shells closed — and a
 /// swept body's held to its material field, refused where they disagree.
 pub fn stl(sk: &Sketch,body: usize,exact: &Exact,tolerance: Option<Tolerance>,say: &Say) -> Result<Vec<u8>,ExportRefusal> {
+    if exact.solid.faces.is_empty() { return Err(empty(&sk.solids[body].name,"it leaves no material")) }
     let started = crate::clock::Instant::now();
     let bar = tolerance.map_or(GROSS,|t| t.deflection());
     // meshed within what float32 coordinates leave of the bar (never finer than an eighth of it),
