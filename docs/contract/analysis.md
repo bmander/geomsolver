@@ -5,7 +5,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 `syntax/scenario.rs`, `syntax/parser/scenario.rs`, `program/scenarios.rs`, or write a `scenario`;
 or `model/material.rs`, a `material(…)` group (`flatten::values::material`), a solid's `of`, or a
 material's JSON (`io::material_json`) or report (`report::materials_json`); or `eigen.rs`,
-`sparse::Sym`, `sparse::Ldl` or `sparse::Pencil`; or `diagnose/analysis.rs`, `Structure::free`,
+`cholesky::Symmetric`, `sparse::Ldl` or `sparse::Pencil`; or `diagnose/analysis.rs`,
+`Structure::free`,
 `Structure::reach`, `BodyFaces::whole` or a scenario's report (`report::scenarios_json`); or
 `delaunay/refine/cells.rs`, `delaunay/refine/volume.rs` or `delaunay/tetra.rs`; or a case of
 `rust/examples/analysis/` or `tests/analysis_corpus*`; or `interior::Beam`, `model/beam.rs`,
@@ -124,10 +125,12 @@ names another.
   its column, so the element's stiffness is linear in its section. In the plane only the stretch
   and the bending about z are rows (`IN_PLANE`, read once in `beam_local`). So the beam joins
   `solve` and `free`'s mechanism by the one row builder (`rows`), as P7 asked; `stiffness` (a
-  `Sym`, for a pencil) sums the same rows into each beam's twelve-by-twelve matrix in its axes,
-  turned as the mass and the geometric stiffness are (`beams_into`). A node's components are one
-  table (`components`: which of the six in space the structure has), so `per`, `dof` and its
-  inverse read it alone. `free` holds a held turn as the body's turn, and where there are beams the body is
+  `cholesky::Symmetric`, for a pencil) sums the same rows into each beam's twelve-by-twelve matrix
+  in its axes, turned as the mass and the geometric stiffness are (`beams_into`), as triplets of
+  the lower triangle: a frame has a few hundred unknowns and no mesh to lay a pattern from, so
+  its matrices stay on triplets, where a mesh's are assembled in place (#632, below). A node's
+  components are one table (`components`: which of the six in space the structure has), so
+  `per`, `dof` and its inverse read it alone. `free` holds a held turn as the body's turn, and where there are beams the body is
   no longer the nodes' places alone: a twist about a line of nodes turns them.
 
 - **A beam's gradient is its mutual energy's, carried in its axes** (#510 S0;
@@ -732,7 +735,8 @@ names another.
   second). The cycle is symmetric, so it preconditions CG, which stops at a residual of
   `pcg::TOLERANCE` (1e-11) of the load's; the moves are then good to about twenty times that.
   Every pass reads the stiffness's lower triangle by column, its only copy. **Both matrices are
-  assembled in place** (`pcg::Lower`): the pattern from the mesh's node adjacency (an entry
+  assembled in place** (`cholesky::Symmetric::pattern` and `add`): the pattern from the mesh's
+  node adjacency (an entry
   wherever two equations' nodes share an element, a column's rows counted first and allocated
   once), then each element's matrix added at its entries — never as triplets, which for the rod
   held 18 million, sorted into a copy and doubled as they grew: a 3 GB peak for a 175 MB matrix,
@@ -1252,24 +1256,41 @@ names another.
   exposes it to the page.  `report::material_text` is the CLI's line, `material steel: E 200GPa,
   …, of disc`.  `gcs-ffi/tests/materials.rs` checks the ABI and its JSON round trip.
 
-- **A symmetric matrix is given by its entries** (#510 P2; `sparse::Sym`). `from_triplets` takes
-  every entry of the matrix, both triangles, and sums the ones named twice, as an assembly adds
-  element matrices into a global one; nothing is mirrored, so an entry given on one side only is
-  not symmetric and is not a matrix the factor answers for.
+- **One sparse symmetric matrix: its lower triangle** (#510 P2, #632; `cholesky::Symmetric`).
+  What the factor, CG (`pcg`) and the eigensolver all read, by column, rows increasing, as `u32`.
+  **A mesh's is assembled in place**: `Symmetric::pattern` lays the mesh's equations' pattern
+  from its elements' nodes and `add` sums each element's matrix into it. A plane or a solid
+  structure's stiffness, mass and geometric stiffness (`Structure::stiffness`, `mass`,
+  `stressed`, all through `in_place`) come out on that one pattern, so a pencil of any two is on
+  it, never a triplet assembly of a mesh: three at once (K, K_G and their union) were the peak
+  `pcg.rs` names. A frame's are assembled from triplets (`from_triplets` reads the lower triangle
+  and ignores the upper, so whole element matrices may be given; `beams_into` gives the lower
+  alone). **A solve holds the stiffness it was made with** (`State::stiffness`: the factor's
+  input, or CG's matrix), and a reader's modes and buckling read it there rather than assemble it
+  again (`bodies.rs`, `prisms.rs`). `a_meshs_matrices_are_assembled_in_place_on_one_pattern`
+  holds the three on one pattern against their triplets, the solve's stiffness to the bit,
+  factored and by CG, and the pencils' pairs against the triplets'. `sparse::Sym` is `Ata`'s
+  alone, private. On the corpus's column (buckling) `solventc` went from 1.80 s and 273 MB at its
+  peak to 0.97 s and 193 MB, on the flat bar from 0.66 s and 120 MB to 0.42 s and 88 MB, and on
+  the plate's modes from 4.03 s and 276 MB to 3.68 s and 259 MB.
 
-- **One sparse factor for a symmetric matrix given by its entries** (#510 P2, S3; `sparse::Ldl`).
+- **One sparse factor for a symmetric matrix** (#510 P2, S3; `sparse::Ldl`).
   Since S3 it is P1's supernodal factor as `LDLᵀ` (`cholesky::Cholesky::factor_ldl`) under
   approximate minimum degree, the analysis `factor` reads, so a mesh's pencils fill as its
   stiffness does; the up-looking LDLᵀ under RCM (`sparse::Factor`) is the normal equations' alone
   (`sparse::Ata`). Without pivoting: an SPD matrix factors stably, an indefinite one when no pivot
   is zero (`None` when one is), and **its negative pivots are its negative eigenvalues**
   (Sylvester), so `A − μB`'s count the pencil's eigenvalues below μ when B is positive definite.
-  **A pencil is analysed once** (`sparse::Pencil`): `L − μR` on the union of the two patterns, its
-  lower triangles and its analysis made at construction, so each shift and each count is a numeric
-  factor and no more. `sparse_ldl_solves_and_counts_negative_eigenvalues` holds the solve and the
-  count against the reference on membranes shifted into their spectrum. On the corpus's plate (24,840
-  unknowns) a factor of its pencil went from 2.27 s to 0.98 s, and on Lamé's tube (53,754) from
-  22.5 s to 9.5 s, the Cholesky's own time.
+  **A pencil is analysed once** (`sparse::Pencil`): `L − μR` on the union of the two patterns —
+  a mesh's one pattern, borrowed and not copied, or two frames' merged column by column — its
+  analysis made at construction through `cholesky::analysed` (#632), so the order the static solve
+  found for the same pattern is not found again, and each shift, each count and the check that R
+  is definite (`Pencil::right`) is a numeric factor and no more (`factor_ldl_values`: the shifted
+  values on the pattern, no copy of it). `Ldl::new` analyses through the same cache.
+  `sparse_ldl_solves_and_counts_negative_eigenvalues` holds the solve and the count against the
+  reference on membranes shifted into their spectrum. On the corpus's plate (24,840 unknowns) a
+  factor of its pencil went from 2.27 s to 0.98 s, and on Lamé's tube (53,754) from 22.5 s to
+  9.5 s, the Cholesky's own time.
 
 - **One iteration for every pencil `L x = λ R x`** (#510 P2; `eigen.rs`'s `solve`): shift-invert
   Lanczos on `T = (L − σR)⁻¹R`, self-adjoint in `xᵀBy` with B the side that is positive definite,

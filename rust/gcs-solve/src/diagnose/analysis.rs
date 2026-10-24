@@ -17,13 +17,13 @@
 //! Each reads geometry or numbers already in hand — supports, a body's boundary, the pairs a
 //! solve returned, a row's value and gradient — and no mesh.
 
+use crate::cholesky::Symmetric;
 use crate::eigen::Pairs;
 use crate::json::fmt_g;
 use crate::linalg::{dot as vdot, min_norm_solve, orthonormalize, rank_and_nullspace, Mat};
 use crate::model::{Applied, EntKind, EntRef, Hold, Output, Scenario, Sketch};
 use crate::solid::faces::BodyFaces;
 use crate::space::{add, cross, dot, normalised, norm, scale, sub};
-use crate::sparse::Sym;
 use crate::vocab::all_of;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::PI;
@@ -417,8 +417,8 @@ impl Repeated {
     /// `Some(k)`.
     /// `None` where the run is not a pair, where the step keeps each mode (the pair is not the
     /// ring's), or where it acts as no turn of the ring.
-    pub fn wave(&self, p: &Pairs, b: &Sym, turn: &dyn Fn(&[f64]) -> Vec<f64>, order: usize)
-        -> Option<usize> {
+    pub fn wave(&self, p: &Pairs, b: &Symmetric, turn: &dyn Fn(&[f64]) -> Vec<f64>,
+                order: usize) -> Option<usize> {
         if self.count != 2 || order < 3 {
             return None;
         }
