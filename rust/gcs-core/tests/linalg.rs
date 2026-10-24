@@ -242,11 +242,6 @@ fn symmetric_eigenvalues_agree_with_nalgebra() {
 use gcs_core::eigen::{self, Opts, Pairs, Refusal};
 use gcs_core::sparse::{Ldl, Pencil};
 
-/// A `Symmetric` as the reference's dense matrix, both triangles.
-fn dense(a: &Symmetric) -> DMatrix<f64> {
-    dense_of(a)
-}
-
 /// The entries of a `Symmetric`'s lower triangle, as triplets.
 fn entries(a: &Symmetric) -> Vec<(usize, usize, f64)> {
     (0..a.n).flat_map(|j| {
@@ -358,9 +353,10 @@ fn sparse_ldl_solves_and_counts_negative_eigenvalues() {
         f.solve(&mut x);
         // the property: A x = b
         assert_vec_close(&a.mul_vec(&x), &b, 1e-9, "A x");
-        let want = dense(&a).lu().solve(&DMatrix::from_column_slice(n, 1, &b)).unwrap();
+        let want = dense_of(&a).lu().solve(&DMatrix::from_column_slice(n, 1, &b)).unwrap();
         assert_vec_close(&x, want.as_slice(), 1e-9, "solve against the reference");
-        let negative = dense(&a).symmetric_eigen().eigenvalues.iter().filter(|&&e| e < 0.0).count();
+        let negative =
+            dense_of(&a).symmetric_eigen().eigenvalues.iter().filter(|&&e| e < 0.0).count();
         assert_eq!(f.negative_pivots(), negative, "inertia, seed {seed}");
         if shift == 0.0 {
             assert_eq!(negative, 0, "the held membrane is positive definite");
@@ -378,7 +374,7 @@ fn lowest_modes_agree_with_the_dense_reference() {
         let (k, m) = (grid(seed, nx, ny, true), grid_mass(seed + 20, nx, ny));
         let got = eigen::lowest(&k, &m, count, &Opts::default()).expect("the modes");
         assert_eq!(got.values.len(), count);
-        let want = ref_pencil(&dense(&k), &dense(&m));
+        let want = ref_pencil(&dense_of(&k), &dense_of(&m));
         for (i, (&g, &w)) in got.values.iter().zip(&want).enumerate() {
             assert!(close(g, w, 1e-9 * w.abs()), "mode {i}, seed {seed}: {g} vs {w}");
         }
@@ -406,7 +402,7 @@ fn a_free_ring_has_its_rigid_mode_and_every_pair() {
     let lam = |j: usize| 4.0 * k / m * (pi * j as f64 / nodes as f64).sin().powi(2);
     let analytic = [0.0, lam(1), lam(1), lam(2), lam(2), lam(3), lam(3), lam(4), lam(4), lam(5)];
     assert_vec_close(&got.values, &analytic, 1e-10, "the ring's modes");
-    let want = ref_pencil(&dense(&stiff), &dense(&mass));
+    let want = ref_pencil(&dense_of(&stiff), &dense_of(&mass));
     assert_vec_close(&got.values, &want[..count], 1e-10, "against the reference");
     // the zero is the ring turning rigidly: every node moves alike
     let turn = &got.vectors[0];
@@ -488,7 +484,7 @@ fn buckling_finds_eulers_loads() {
             assert!(close(g, w, 1e-4 * w), "load {i} held at {held:?}: {g} vs Euler's {w}");
         }
         // the reference: −K_G φ = θ K φ, θ = 1/λ, the largest θ first
-        let mut theta = ref_pencil(&(-dense(&kg)), &dense(&k));
+        let mut theta = ref_pencil(&(-dense_of(&kg)), &dense_of(&k));
         theta.reverse();
         for (i, &g) in got.values.iter().enumerate() {
             assert!(close(g, 1.0 / theta[i], 1e-9 * g), "load {i}: {g} vs {}", 1.0 / theta[i]);

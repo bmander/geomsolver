@@ -498,19 +498,24 @@ impl<'a> Pencil<'a> {
 
 /// The pattern `a ∪ b`, no values: each column's rows merged, increasing.
 fn union(a: &Symmetric, b: &Symmetric) -> Symmetric {
-    let next = |m: &Symmetric, q: usize, end: usize| (q < end).then(|| m.rowind[q]);
     let mut colptr = vec![0usize; a.n + 1];
     let mut rowind = Vec::with_capacity(a.rowind.len().max(b.rowind.len()));
     for j in 0..a.n {
-        let (mut p, mut q, pe, qe) = (a.colptr[j], b.colptr[j], a.colptr[j + 1], b.colptr[j + 1]);
-        loop {
-            let r = match (next(a, p, pe), next(b, q, qe)) {
-                (Some(x), Some(y)) => x.min(y),
-                (Some(x), None) | (None, Some(x)) => x,
-                (None, None) => break,
+        let (mut p, mut q) = (a.colptr[j], b.colptr[j]);
+        let (pe, qe) = (a.colptr[j + 1], b.colptr[j + 1]);
+        while p < pe || q < qe {
+            // the lesser of the two columns' next rows, taken from each that holds it
+            let r = if q == qe || (p < pe && a.rowind[p] <= b.rowind[q]) {
+                a.rowind[p]
+            } else {
+                b.rowind[q]
             };
-            p += (next(a, p, pe) == Some(r)) as usize;
-            q += (next(b, q, qe) == Some(r)) as usize;
+            if p < pe && a.rowind[p] == r {
+                p += 1;
+            }
+            if q < qe && b.rowind[q] == r {
+                q += 1;
+            }
             rowind.push(r);
         }
         colptr[j + 1] = rowind.len();

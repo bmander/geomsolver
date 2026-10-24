@@ -8,10 +8,10 @@
 //! `θ = 1/(λ − σ)` are largest for the λ just above σ — and a Krylov method finds the largest
 //! first.  The modes are `L = K`, `R = B = M`, σ found below the spectrum, so those are the
 //! lowest.  Buckling is `L = B = K`, `R = −K_G`, σ = 0: a supported structure's K is positive
-//! definite, and the largest θ are the lowest positive load factors.  Both are lower triangles
-//! (`cholesky::Symmetric`), a mesh's on its one pattern; the pencil's pattern is analysed once,
-//! through the cache the static solve analysed it in (`sparse::Pencil`, #632), and each shift is
-//! a numeric factor; each step is one solve and one product.  The basis is kept
+//! definite, and the largest θ are the lowest positive load factors.  L and R are lower
+//! triangles (`cholesky::Symmetric`), a mesh's both on its one pattern, which the pencil analyses
+//! once, through the cache the static solve analysed it in (`sparse::Pencil`, #632): the factor
+//! of `L − σR` is a numeric one, and each step is one solve and one product.  The basis is kept
 //! B-orthonormal by full reorthogonalization, and the iteration restarts thickly (Wu & Simon):
 //! the wanted Ritz vectors are kept, the rest dropped, and the residual the kept ones share is
 //! the next vector.
@@ -25,9 +25,9 @@
 //!
 //! Every draw is the seeded `rng::Rng`'s, so a pencil has one answer.
 
+use crate::cholesky::Symmetric;
 use crate::linalg::{dot, norm, sym_eigen, Mat};
 use crate::rng::Rng;
-use crate::cholesky::Symmetric;
 use crate::sparse::{Ldl, Pencil};
 
 /// What a solve found: the eigenvalues ascending, each with its vector and its residual.  A mode
