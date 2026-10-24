@@ -62,10 +62,18 @@ struct Causes<'a> {
 
 impl<'a> Causes<'a> {
     fn new(sk: &'a Sketch) -> Causes<'a> {
-        // every solid but a body, validated: a body's refusal is its operands'
+        // every solid but a body, validated: a body's refusal is its operands'.  A sweep is
+        // drawn by its material field alone, so one whose field cannot be read is refused too
+        // (#588): a solved document says so at its statement rather than draw nothing silently
         let refused = sk.solids.iter().enumerate()
             .filter(|(_, s)| !matches!(s.def, SolidDef::Body { .. }))
-            .filter_map(|(i, _)| Some((i, crate::solid::validate(sk, i).err()?)))
+            .filter_map(|(i, s)| Some((i, crate::solid::validate(sk, i)
+                .and_then(|()| match s.def {
+                    SolidDef::Swept { source, .. } => crate::solid::MaterialField::read(sk, i, crate::solid::cad::AXIS_TOLERANCE)
+                        .map(|_| ()).map_err(|e| format!("`{}` sweeps `{}`, whose material the field does not read: {e}",
+                            s.name, sk.solids[source as usize].name)),
+                    _ => Ok(()),
+                }).err()?)))
             .collect();
         let on = (0..sk.solids.len()).map(|i| crate::solid::built_on(sk, i)).collect();
         let mut causes = Causes { sk, refused, on, root: BTreeSet::new() };

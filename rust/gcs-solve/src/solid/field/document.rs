@@ -145,12 +145,20 @@ fn face_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> 
     Ok((basis,loops))
 }
 
+/// A prism's face as the field reads it: the plane its loops are drawn in, and its loops of lines
+/// and arcs in that plane's coordinates (a curve's chords), the first its outer loop.
+pub(crate) fn prism_loops(sk: &Sketch,face: usize) -> Result<(Basis,Vec<Vec<Edge>>),String> { face_loops(sk,face) }
+
 fn extruded(sk: &Sketch,face: usize,range: [f64;2],draft: f64) -> Result<ExtrudedField,String> {
     let (basis,loops) = face_loops(sk,face)?;
-    if draft != 0. { PlanarField::draftable(&loops,0.)?; }
-    ExtrudedField::new(PlanarField::from_loops(&loops,0.)?,basis.o,basis.u,basis.v,range)
-        .map(|f| f.drafted(draft))
-        .map_err(|e| format!("material field: {e:?}"))
+    let field = ExtrudedField::new(PlanarField::from_loops(&loops,0.)?,basis.o,basis.u,basis.v,range)
+        .map_err(|e| format!("material field: {e:?}"))?;
+    // a loop the profile's field moves as a draft does is read so, exactly; any other by its
+    // sections (#607)
+    match draft != 0. && PlanarField::draftable(&loops,0.).is_err() {
+        true => field.drafted_sections(&loops,draft),
+        false => Ok(field.drafted(draft)),
+    }
 }
 
 // The ordinates along a face's normal spanned by every material source's support:

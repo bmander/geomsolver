@@ -75,6 +75,15 @@ impl Edge {
     }
 }
 
+/// One loop's edges in walk order, each walked the way the walk goes (`ordered`, joined to
+/// rounding): what a drafted prism's sections are read from (`sections`).
+pub(super) fn ordered_loop(edges: &[Edge]) -> Result<Vec<Edge>,String> { ordered(edges,0.) }
+/// Twice the signed area an edge sweeps about the origin: their sum is a loop's, positive
+/// counter-clockwise.
+pub(super) fn area_twice(e: &Edge) -> f64 { e.area_twice() }
+/// An edge walked the other way.
+pub(super) fn reversed(e: Edge) -> Edge { e.reversed() }
+
 /// Boundary order and individual edge direction need not match a face's written
 /// operand order. Reconstruct one loop before checking turning and convexity.
 /// `join` is the distance an endpoint put on a revolution axis was moved by,

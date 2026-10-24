@@ -289,6 +289,8 @@ impl Builder {
                 // a planar sweep's body is its blank within its envelope: no sheet, no sector
                 if super::sweep::planar::all(&prepared) {
                     State::Finish(super::sweep::Cut::Whole(super::sweep::planar::cut(sk,body,recipe,&prepared,None,&say)?))
+                } else if super::sweep::subtraction::all(&prepared) {
+                    State::Finish(super::sweep::Cut::Whole(super::sweep::subtraction::cut(sk,body,recipe,&prepared,None,&say)?))
                 } else { State::Sheets(prepared,Vec::new()) }
             }
             State::Sheets(prepared,mut sheets) => {

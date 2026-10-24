@@ -796,6 +796,62 @@ pub fn sheets(nets: Vec<(crate::brep::nurbs::Net,String)>) -> Result<Brep,String
     Ok(b)
 }
 
+/// A solid lofted along a plane's normal (#607): each loop of its section a ring of B-spline
+/// surfaces one after another along `u` — each net's last iso-`u` curve the next one's first, as
+/// `sheets` joins them, and the last's the first's — with `v` running along `n` from the plane at
+/// ordinate `h[0]` about `origin` to the one at `h[1]`, every net's first and last rows of poles in
+/// those planes; capped by those planes. The first loop is the outer one, walked with the material
+/// on its left (counter-clockwise about `n`), the rest its holes (clockwise).
+pub fn lofted(origin: V,n: V,h: [f64;2],loops: Vec<Vec<crate::brep::nurbs::Net>>) -> Result<Brep,String> {
+    let n = unit(n);
+    let plane = Frame::about(origin,n);
+    let mut b = Brep::default();
+    let row = |net: &crate::brep::nurbs::Net,i: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),
+        poles:net.poles[i].clone(),weights:None})) };
+    let column = |net: &crate::brep::nurbs::Net,j: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),
+        poles:net.poles.iter().map(|r| r[j]).collect(),weights:None})) };
+    let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
+    let (mut bottom_loops,mut top_loops) = (Vec::new(),Vec::new());
+    for nets in &loops {
+        let m = nets.len();
+        if m == 0 { return Err("a lofted loop of no faces".into()) }
+        for net in nets { net.check()?; }
+        let [_,[v0,v1]] = nets[0].domain();
+        let bv: Vec<u32> = nets.iter().map(|net| { let [[u0,_],_] = net.domain(); b.vertex(net.point(u0,v0)) }).collect();
+        let tv: Vec<u32> = nets.iter().map(|net| { let [[u0,_],_] = net.domain(); b.vertex(net.point(u0,v1)) }).collect();
+        // the rails, each net's first iso-u curve; the last's last is the first's first
+        let rails: Vec<u32> = (0..m).map(|k| b.edge(EdgeCurve::Curve(row(&nets[k],0)),[v0,v1],[bv[k],tv[k]])).collect();
+        let mut bottom = Vec::new();
+        let mut top = Vec::new();
+        for k in 0..m {
+            let net = &nets[k];
+            let [[u0,u1],[w0,w1]] = net.domain();
+            if (w0-v0).abs() > 1e-12*(1.+v0.abs()) || (w1-v1).abs() > 1e-12*(1.+v1.abs()) {
+                return Err("a lofted loop's faces must share their v domain".into())
+            }
+            let k1 = (k+1)%m;
+            let last = net.poles[0].len()-1;
+            let e0 = b.edge(EdgeCurve::Curve(column(net,0)),[u0,u1],[bv[k],bv[k1]]);
+            let e2 = b.edge(EdgeCurve::Curve(column(net,last)),[u0,u1],[tv[k],tv[k1]]);
+            bottom.push(e0); top.push(e2);
+            let lp = vec![
+                Coedge {edge:e0,reversed:false,pcurve:line([u0,v0],[u1,v0])},
+                Coedge {edge:rails[k1],reversed:false,pcurve:line([u1,v0],[u1,v1])},
+                Coedge {edge:e2,reversed:true,pcurve:line([u0,v1],[u1,v1])},
+                Coedge {edge:rails[k],reversed:true,pcurve:line([u0,v0],[u0,v1])},
+            ];
+            b.faces.push(Face {surface:Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net.clone())),reversed:false,
+                loops:vec![lp],name:String::new()});
+        }
+        bottom_loops.push((0..m).rev().map(|k| Coedge {edge:bottom[k],reversed:true,pcurve:on_plane()}).collect::<Vec<_>>());
+        top_loops.push((0..m).map(|k| Coedge {edge:top[k],reversed:false,pcurve:on_plane()}).collect::<Vec<_>>());
+    }
+    let cap = |at: f64| Surface::Plane(Frame {o:add(plane.o,scale(n,at)),..plane});
+    b.faces.push(Face {surface:cap(h[0]),reversed:true,loops:bottom_loops,name:"far".into()});
+    b.faces.push(Face {surface:cap(h[1]),reversed:false,loops:top_loops,name:"near".into()});
+    Ok(b)
+}
+
 /// A sheet: the whole of a B-spline surface as one face, bounded by its four boundary curves
 /// (each its net's outermost row or column of poles, exactly), its sense the net's own.
 pub fn sheet(net: crate::brep::nurbs::Net) -> Result<Brep,String> {

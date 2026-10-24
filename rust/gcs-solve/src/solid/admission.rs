@@ -21,7 +21,7 @@ type V = [f64;3];
 /// The rows of the class, in the order they are asked.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
 pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing, Regular, Once, Edgewise, Lead,
-    Plane, Prisms, Period, Envelope, Wall }
+    Plane, Prisms, Period, Envelope, Wall, Members, Slabs, Closes, Kept }
 
 impl Condition {
     pub fn code(self) -> &'static str {
@@ -29,7 +29,8 @@ impl Condition {
             Condition::Stationary => "M2", Condition::Reach => "E0", Condition::Clearance => "E1", Condition::Single => "E2",
             Condition::Fold => "E3", Condition::Crossing => "E4", Condition::Regular => "S1", Condition::Once => "S2",
             Condition::Edgewise => "S3", Condition::Lead => "S4", Condition::Plane => "P1", Condition::Prisms => "P2",
-            Condition::Period => "P3", Condition::Envelope => "P4", Condition::Wall => "P5" }
+            Condition::Period => "P3", Condition::Envelope => "P4", Condition::Wall => "P5", Condition::Members => "Q1",
+            Condition::Slabs => "Q2", Condition::Closes => "Q3", Condition::Kept => "Q4" }
     }
     /// What the row asks, in the words the scope document uses.
     pub fn rule(self) -> &'static str {
@@ -54,6 +55,12 @@ impl Condition {
             Condition::Period => "the roll is a whole period of the motion",
             Condition::Envelope => "the pocket's inner envelope is one regular loop that neither folds nor crosses itself",
             Condition::Wall => "the stock's outer wall never reaches the blank",
+            Condition::Members => "the tool is prisms square to the plane the motion keeps, of lines and arcs, joined by union and \
+                common",
+            Condition::Slabs => "every member's caps lie outside the blank, or on a plane the blank is split at",
+            Condition::Closes => "the roll is a whole period of the motion, or the tool is clear of the blank at both its ends",
+            Condition::Kept => "the swept region's boundary is regular: its pieces meet at corners or leave the blank's shadow, with no \
+                fold and no crossing",
         }
     }
 }
@@ -72,13 +79,13 @@ pub struct Refusal {
 
 /// The class a sweep's rows are read from.
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Asked { Generating,ConstantTwist,Planar }
+pub enum Asked { Generating,ConstantTwist,Planar,Subtraction }
 
 impl Refusal {
     /// The class the sweep was asked to join, by its motion and its tool.
     pub fn class(&self) -> &'static str {
         match self.asked { Asked::Generating => "generating-sweep class",Asked::ConstantTwist => "constant-twist class",
-            Asked::Planar => "planar generating class" }
+            Asked::Planar => "planar generating class",Asked::Subtraction => "planar subtraction class" }
     }
 }
 
@@ -185,7 +192,8 @@ pub struct SweepEvidence {
 /// blank at the first placement, or a planar motion's of a pocketed prism (rows P1–P5), with the
 /// pocket's inner envelope.
 #[derive(Clone,Debug)]
-pub enum Class { Generating,ConstantTwist(Box<super::constant_twist::Characteristic>),Planar(Box<super::planar_class::Found>) }
+pub enum Class { Generating,ConstantTwist(Box<super::constant_twist::Characteristic>),Planar(Box<super::planar_class::Found>),
+    Subtraction(Box<super::planar_subtraction::Found>) }
 
 /// A body admitted to the class, and the only way to have one: `admit_body` makes it, so a
 /// construction that takes one cannot be reached without the gate.
@@ -440,12 +448,13 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // a pocketed prism under a planar motion: rows P1–P5, every placement checked, the blank boxed
     // by its own boundary (a field's support is a construction's box, not the material's)
     let mut planar: Vec<SweepEvidence> = Vec::new();
-    let planar_box = order.iter().any(|s| asked[s] == Asked::Planar).then(|| -> Option<(V,V)> {
+    let blank_box = || -> Option<(V,V)> {
         let mm = cad::millimetres(sk);
         let blank = crate::brep::recipe::build(&cad::recipe_static(sk,root).ok()?.recipe).ok()?;
         let (lo,hi) = blank.bounds();
         Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
-    }).flatten();
+    };
+    let planar_box = order.iter().any(|s| asked[s] == Asked::Planar).then(blank_box).flatten();
     for &swept in order.iter().filter(|s| asked[s] == Asked::Planar) {
         let refused = |(c,m,w): super::planar_class::Failure,pose: Motion| refuse(swept,c,m,w.map(|p| pose.point(p)));
         let class = super::planar_class::Planar::read(sk,swept,options).map_err(|f| refused(f,by_sweep[&swept][0]))?;
@@ -509,8 +518,26 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: compared in {:?}",clock.elapsed()); }
     let mut admission = Admission {body:root,sweeps:planar};
     let mut alike = alike.into_iter();
+    // a prism sweep under a motion keeping its plane refused at a row the planar subtraction class
+    // does not ask — a union or a draft in the tool, a concave corner, a roll never clear, a second
+    // contact — asked that class's rows instead (Q1–Q4), every placement at once
+    let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
+        let refused = |(condition,message,witness): super::planar_subtraction::Failure| Error::Refused(Refusal {condition,
+            sweep:names[&swept].clone(),message,witness,asked:Asked::Subtraction});
+        let class = super::planar_subtraction::Subtraction::read(sk,swept).map_err(refused)?;
+        let inside = |p: V| field.value(p) < -options.margin;
+        let found = class.check(&by_sweep[&swept],&inside,blank_box()).map_err(refused)?;
+        let mut evidence = class.evidence(found);
+        evidence.sweep = swept; evidence.name = names[&swept].clone();
+        evidence.placements = by_sweep[&swept].iter().map(|&pose| Placement {pose,equivalent_to:None}).collect();
+        Ok(evidence)
+    };
     for (result,&swept) in first.into_iter().zip(&order) {
-        let (contacts,found,reads) = result?;
+        let (contacts,found,reads) = match result {
+            Err(Error::Refused(r)) if matches!(r.condition,Condition::Tool|Condition::Corner|Condition::Clearance|Condition::Single)
+                && super::planar_subtraction::asks(sk,swept) => { admission.sweeps.push(subtract(swept)?); continue }
+            result => result?,
+        };
         let poses = &by_sweep[&swept];
         let mut placements = vec![Placement {pose:poses[0],equivalent_to:None}];
         let mut checked: Vec<(usize,Reads)> = vec![(0,reads)];

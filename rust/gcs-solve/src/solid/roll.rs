@@ -91,6 +91,13 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
         }
         k += ahead;
         if let Some(w) = (0..2).find(|&w| ends[w].is_none() && f64::from(k) * STEP >= REACH) {
+            // a tool never clear either way is always in mesh: the roll to state is a period
+            if ends.iter().all(Option::is_none) {
+                if let Some(p) = period(&tool, support, &family) {
+                    return Err(format!("its tool is always in mesh with it: roll it a whole period, `over t in (0deg, {}deg)`",
+                                       (p.to_degrees()*1e6).round()/1e6));
+                }
+            }
             return Err(format!("its tool is not clear of it within two turns {} of 0",
                                ["below", "above"][w]));
         }
@@ -101,6 +108,32 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
     }
     Ok([lo, hi])
 }
+
+/// The least roll, a degree at a time within `PERIOD_TURNS` turns, after which `family` stands
+/// `tool` where it stood at 0 again — a whole period of the pair as the observer sees it, the
+/// tool's own symmetry counted: the tool's field read alike, to rounding, at every point of a grid
+/// over its support carried back from the later pose as from the first (a turn of the tool onto
+/// itself leaves its distances where they were; any other moves some of them).
+fn period(tool: &SpatialField, support: [I; 3], family: &crate::motion::Family) -> Option<f64> {
+    let n = 12;
+    let lo = support.map(|x| x.bounds()[0]);
+    let hi = support.map(|x| x.bounds()[1]);
+    let size = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
+    let first = family.pose_at(0.0).ok()?;
+    let points: Vec<([f64; 3], f64)> = (0..n * n * n).map(|i| {
+        let at = [i % n, (i / n) % n, i / (n * n)];
+        let x: [f64; 3] = std::array::from_fn(|k| lo[k] + (hi[k] - lo[k]) * (at[k] as f64 + 0.5) / n as f64);
+        (first.point(x), tool.value(x))
+    }).collect();
+    if !points.iter().any(|p| p.1 < 0.0) { return None; }
+    let near = 1e-7 * (1.0 + size);
+    (1..=(PERIOD_TURNS * 360.0) as u32).map(|k| f64::from(k) * STEP).find(|&t| {
+        family.pose_at(t).is_ok_and(|m| { let back = m.inverse(); points.iter().all(|&(y, v)| (tool.value(back.point(y)) - v).abs() <= near) })
+    })
+}
+
+/// How many turns `period` looks through.
+const PERIOD_TURNS: f64 = 12.0;
 
 /// Whether `tool` under every pose of `family` over `span` is proved clear of `blank`: the
 /// tool's support and the span split, a box and the poses over its span at a time, until each box

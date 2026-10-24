@@ -168,7 +168,8 @@ Wankel's period are design. `fixtures::gear::roll` restates one member's roll (n
 in the slow tier each member built as its stated roll built it).
 
 **Generating sweeps and the native export** ([docs/generating-sweeps.md](../generating-sweeps.md)):
-`solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class.
+`solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class and the
+planar classes (below).
 `solid::admission::admit_body` checks rows T1–E4 (revolved line/arc tools, rotation with changing
 contact, clear at both limits, one contact per point, no fold, no self-crossing), sampled, refusing
 with row and witness; it checks a placement once when the blank reads alike at every point
@@ -248,6 +249,39 @@ its prism (`brep::sweep::planar`), metered as envelope × slab (`accuracy::Plana
 MOTION` advances the placements under it (`Sweep::motion`). A profile field's walls are boxed
 (`Boxes`); `ssi` cuts an extrusion square in closed form and `boolean` gives its iso edges straight
 pcurves. `rust/examples/wankel/`, `fixtures::wankel`, `tests/{bore,planar_envelope,wankel}.rs`.
+
+**Planar subtraction (#606, #607, #590):** a sweep of prisms under a motion that turns their
+plane in itself is the blank less the region its section sweeps, slab by slab
+(`solid::planar_subtraction`, rows P1, Q1–Q4 in [docs/generating-sweeps.md](../generating-sweeps.md)).
+`admit_body` asks it of a prism tool the generating rows refuse at T1, T2, E1 or E2 — a union or a
+draft in the tool, a concave corner, a roll never clear of the blank, a second contact — so a rack
+is still built by its sheet (`extruded`). The slabs are the blank cut at every member's cap within
+it, two next to each other with one section (every member undrafted, the same faces joined alike,
+`Subtraction::key`) read as one. In each, `envelope::swept_region` reads the region `R = ∪ₜ
+poseₜ(section)` within a box about the blank's shadow at every placement: its candidates are
+each line's contact (the foot of the perpendicular from the instant centre, `ν·(ωJx + b) = 0` in the
+tool's frame), each side of an arc's (`e ∥ ωc − Jb`), each corner's path while the line from the
+instant centre lies within its fan of normals (its sides read off the section, so a corner where
+members meet is the section's), and — over a roll that is no whole period — every edge held at each
+end pose; a point is a candidate only where it lies on the section's boundary at its own pose
+(`Kind::at`), and kept only where it lies outside the section at every pose (`Keep::outside`,
+`envelope::planar`'s test turned round). Kept stretches are found on a grid of a quarter degree,
+their ends bisected; walked with `R` on the left they join where they cross (solved together,
+`meet`), run on into each other at the same roll, meet at an end pose (the contact on the held
+edge, exactly) or leave the box, which carries the loop round to the next stretch entering. A
+whole period is where the motion takes the section onto itself (`Setting::alike`: the tool's
+symmetry counted, the star's 540° at 4:6), and a roll that is neither one nor clear of the blank at
+both ends is refused naming the period (`period`). `brep::sweep::subtraction` builds each
+counter-clockwise loop and the clockwise ones within it as a profile (each stretch a cubic B-spline
+fitted through its exact points within `FIT_MM` or the tolerance's fit, a ring split at its middle)
+carried through its slab, a hair past the blank where the slab ends at its face, and cuts it from
+the blank at every placement; a drafted slab (#607) is read at `STATIONS` heights and lofted
+(`build::lofted`, a B-spline surface a stretch, cubic along it and across the stations) through
+every other one, held to the ones between within the fit's bar, its loops matched station for
+station or refused. `accuracy::Subtracted` meters it; a `through:` roll never clear of its body is
+refused saying the period to state (`roll::period`). `tests/planar_subtraction.rs` is the gate
+(the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,
+one arm through, Q3, the drafted wheel at 10 µm).
 
 **Export tolerance ([plan](../native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets

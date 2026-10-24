@@ -305,6 +305,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   the document holds it (`refused::Placing`): a site in a module at the deepest instance on its
   path the document holds (the round that used `std.round`), else at the `use`
   (`modules::localize`).  `tests/refused_once.rs` is the gate.
+  A continuous sweep is drawn by its material field alone, so one whose field cannot be read is
+  refused too, at its statement and in a solved document as in any other (#588: "`space` sweeps
+  `pyramid`, whose material the field does not read: …"), and what is built on it follows as
+  N080 — never a solved report and a solid that silently names nothing
+  (`planar_subtraction::a_sweep_the_field_cannot_read_is_said_at_its_statement`).
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
   `sweep(I(…).f over s)` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by an `over`

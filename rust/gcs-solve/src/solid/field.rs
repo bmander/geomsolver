@@ -5,6 +5,9 @@ use crate::interval::{Error,Interval as I};
 #[allow(unused_imports)]
 use crate::fmath::Det;
 mod profile;
+mod sections;
+pub(crate) use sections::{oriented,Sections};
+pub(crate) use document::prism_loops;
 mod spatial;
 mod document;
 pub use document::CHORD_SLACK;
@@ -305,7 +308,10 @@ pub struct ExtrudedField { profile:PlanarField,origin:V,frame:[V;3],range:I,
     /// A draft's tangent and cosine (#245; 0 and 1 where there is none): the sides at depth `w`
     /// read as the profile's field plus `|w| tan`, times the cosine, so the field stays
     /// one-Lipschitz and is a tilted side's exact distance where the profile's is its line's.
-    draft:[f64;2] }
+    draft:[f64;2],
+    /// A drafted loop the profile's field cannot move (#607): each depth's section read itself
+    /// (`sections`), in place of the profile's field.
+    sections:Option<std::sync::Arc<sections::Sections>> }
 
 impl ExtrudedField {
     /// `range` holds the two ordinates in either order; a zero thickness is refused.
@@ -327,7 +333,17 @@ impl ExtrudedField {
             u[0].mul(v[1])?.sub(u[1].mul(v[0])?)?];
         let origin = point(origin)?;
         let plain = [origin.map(mid),u.map(mid),v.map(mid),n.map(mid)];
-        Ok(Self {profile,origin,frame:[u,v,n],range,plain,draft:[0.,1.]})
+        Ok(Self {profile,origin,frame:[u,v,n],range,plain,draft:[0.,1.],sections:None})
+    }
+
+    /// Its sides tapered by `angle` (radians) from the profile's plane where the profile's own
+    /// field does not move as a draft does (#607): every depth's section read as the profile's
+    /// `loops` moved into their material (`sections::Sections`), refused where one within the
+    /// prism's depths loses a side.
+    pub(crate) fn drafted_sections(mut self,loops: &[Vec<crate::solid::surface::Edge>],angle: f64) -> Result<Self,String> {
+        let [lo,hi] = self.range.bounds();
+        self.sections = Some(std::sync::Arc::new(sections::Sections::new(loops,angle,[lo,hi])?));
+        Ok(self)
     }
 
     /// Its sides tapered by `angle` (radians) from the profile's plane (#245): the section at
@@ -347,9 +363,12 @@ impl ExtrudedField {
     /// A finite world box enclosing all regularized material, when the profile
     /// construction gives one; `None` is an unknown support, not unboundedness.
     pub fn support_bounds(&self) -> Result<Option<V>,Error> {
-        let Some(radius) = self.profile.radius_bound()? else { return Ok(None); };
+        let radius = match &self.sections {
+            Some(s) => s.reach(),
+            None => match self.profile.radius_bound()? { Some(r) => r,None => return Ok(None) },
+        };
         // a draft leaning out grows the section, a sharp corner's furthest: not bounded here
-        if self.draft[0] < 0. { return Ok(None); }
+        if self.draft[0] < 0. && self.sections.is_none() { return Ok(None); }
         let disk = I::new(-radius,radius)?;
         let mut result = self.origin;
         // |a u_k + b v_k| <= sqrt(a^2 + b^2) for orthonormal u, v.
@@ -361,7 +380,8 @@ impl ExtrudedField {
     pub fn value(&self,p: [f64;3]) -> f64 {
         let c = self.frame_of(p);
         let [lo,hi] = self.range.bounds();
-        self.side(self.profile.value([c[0],c[1]]),c[2]).max((lo-c[2]).max(c[2]-hi))
+        let side = match &self.sections { Some(s) => s.value([c[0],c[1]],c[2]),None => self.side(self.profile.value([c[0],c[1]]),c[2]) };
+        side.max((lo-c[2]).max(c[2]-hi))
     }
 
     /// A point in the frame's (u, v, depth).
@@ -373,20 +393,24 @@ impl ExtrudedField {
 
     /// The profile's pieces, each run along the depth, then the two caps (the near end, then the
     /// far).
-    pub fn piece_count(&self) -> usize { self.profile.piece_count()+2 }
+    pub fn piece_count(&self) -> usize { self.side_pieces()+2 }
+    fn side_pieces(&self) -> usize { self.sections.as_ref().map_or_else(|| self.profile.piece_count(),|s| s.pieces()) }
     pub fn value_piece(&self,p: [f64;3]) -> (f64,usize) {
         let c = self.frame_of(p);
         let [lo,hi] = self.range.bounds();
-        let n = self.profile.piece_count();
-        let side = self.profile.value_piece([c[0],c[1]],&mut 0);
-        let side = (self.side(side.0,c[2]),side.1);
+        let n = self.side_pieces();
+        let side = match &self.sections {
+            Some(s) => s.value_piece([c[0],c[1]],c[2]),
+            None => { let side = self.profile.value_piece([c[0],c[1]],&mut 0); (self.side(side.0,c[2]),side.1) }
+        };
         [side,(lo-c[2],n),(c[2]-hi,n+1)].into_iter().fold((f64::NEG_INFINITY,0),|a,b| if b.0 > a.0 { b } else { a })
     }
     pub fn carrier(&self,p: [f64;3],piece: usize) -> Option<f64> {
         let c = self.frame_of(p);
         let [lo,hi] = self.range.bounds();
-        let n = self.profile.piece_count();
+        let n = self.side_pieces();
         if piece == n { Some(lo-c[2]) } else if piece == n+1 { Some(c[2]-hi) }
+        else if let Some(s) = &self.sections { s.carrier([c[0],c[1]],c[2],piece) }
         else { self.profile.carrier([c[0],c[1]],piece,&mut 0).map(|v| self.side(v,c[2])) }
     }
 
@@ -399,6 +423,14 @@ impl ExtrudedField {
         }
         let [lo,hi] = self.range.bounds();
         let slab = max(I::point(lo)?.sub(c[2])?,c[2].sub(I::point(hi)?)?);
+        // a drafted section read at the box's middle, one-Lipschitz about it
+        if let Some(s) = &self.sections {
+            let mid = c.map(|x| { let [a,b] = x.bounds(); 0.5*(a+b) });
+            let half = c.iter().map(|x| { let [a,b] = x.bounds(); 0.5*(b-a) }).fold(0.,|r: f64,h| r.dhypot(h));
+            let v = s.value([mid[0],mid[1]],mid[2]);
+            let slack = 1e-12*(1.+v.abs()+half);
+            return Ok(max(I::new(v-half-slack,v+half+slack)?,slab))
+        }
         let mut side = self.profile.bounds([c[0],c[1]])?;
         let [t,cos] = self.draft;
         if t != 0. {
