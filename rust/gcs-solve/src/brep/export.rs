@@ -363,8 +363,8 @@ pub fn supply_exact(sk: &Sketch) { supply_exact_where(sk,&|_| true) }
 /// recipe, so a host gives it to what only looks at the solid.
 pub fn supply(sk: &Sketch,body: usize,built: &Exact) {
     if sk.supplied_exact_solid(body).is_some() { return }
-    let mm = cad::millimetres(sk);
     if built.swept {
+        let mm = cad::millimetres(sk);
         sk.supply_exact_solid(body,crate::solid::exact::named(built.solid.clone(),mm,[0.;3],Default::default()));
     } else if sk.solids[body].binding.is_none() && !mirrored_within(sk,body) {
         sk.supply_exact_solid(body,crate::solid::exact::about_origin(sk,body,&built.solid));

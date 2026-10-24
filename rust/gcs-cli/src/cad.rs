@@ -177,9 +177,10 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     if rust_kernel() { return brep::export(sk,body,step,stl,tolerance,seen) }
     #[cfg(feature="occt")]
     {
-        let _ = seen;
         use progress::stage;
         use gcs_core::solid::export::AtStage;
+        // OCCT builds no B-rep of the core's to give the pictures
+        let _ = seen;
         progress::start();
         let recipe = body.recipe.as_ref().map_err(Clone::clone).at(Stage::Blank)?;
         let session = native::Session::new().at(Stage::Blank)?;

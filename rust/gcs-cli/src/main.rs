@@ -222,7 +222,7 @@ impl Default for Opts {
 
 /// What an output may be told beside its path (#592): which solid, and for a picture its eye, its
 /// size and what it leaves out.
-#[derive(Clone, Default)]
+#[derive(Default)]
 struct Qualifiers {
     solid: Option<String>,
     view: Option<picture::Eye>,
@@ -291,16 +291,38 @@ impl Opts {
     fn pictured(&self) -> bool {
         self.outputs.iter().any(|o| matches!(o.writes, Writes::Png(_)))
     }
+
+    /// `--stl PATH` or `--step PATH`: beside the export before it where that writes the other
+    /// format and was told no solid of its own since (`--stl a.stl --step a.step --solid body`),
+    /// else an export of its own.
+    fn add_export(&mut self, stl: Option<String>, step: Option<String>) {
+        let last = self.outputs.last_mut();
+        if let Some(Output { writes: Writes::Export { stl: s, step: t }, own }) = last {
+            let beside = stl.is_some() && s.is_none() || step.is_some() && t.is_none();
+            if own.solid.is_none() && beside {
+                if stl.is_some() { *s = stl; } else { *t = step; }
+                return;
+            }
+        }
+        self.outputs.push(Output::new(Writes::Export { stl, step }));
+    }
 }
 
-/// The options that take one value a run, whatever its outputs.
+/// `value` for a qualifier's `slot`, refused where `flag` was given it already (`at` says whose).
+fn qualify<T>(slot: &mut Option<T>, value: T, flag: &str, at: &str) -> Result<(), String> {
+    match slot.replace(value) {
+        Some(_) => Err(format!("`{flag}` given twice {at}")),
+        None => Ok(()),
+    }
+}
+
+/// The options that take one value a run, whatever its outputs: each said once (#592), a second
+/// refused, never taken over the first.
 const ONCE: [&str; 8] = ["--stl-backend", "--kernel", "--verify-step", "--sheet", "--output",
                          "--width", "--tolerance", "--measure-samples"];
 
 fn main() -> ExitCode {
     let mut opts = Opts::default();
-    // the options that take one value a run, each said once (#592): a second is refused, never
-    // taken over the first
     let mut given: std::collections::BTreeSet<&str> = Default::default();
     let mut paths: Vec<String> = Vec::new();
     let mut said: Option<watch::Say> = None;
@@ -320,7 +342,7 @@ fn main() -> ExitCode {
                 _ => return misuse("--stl-backend needs occt, mesh or refine"),
             },
             "--step" => match args.next() {
-                Some(p) => opts.export(None, Some(p)),
+                Some(p) => opts.add_export(None, Some(p)),
                 None => return misuse("--step needs a path"),
             },
             "--kernel" => match args.next().as_deref() {
@@ -356,9 +378,7 @@ fn main() -> ExitCode {
             "--view" => match args.next().as_deref().map(picture::eye) {
                 Some(Ok(eye)) => {
                     let (q, at) = opts.qualified(true);
-                    if q.view.replace(eye).is_some() {
-                        return misuse(format!("`--view` given twice {at}"));
-                    }
+                    if let Err(m) = qualify(&mut q.view, eye, "--view", &at) { return misuse(m); }
                 }
                 Some(Err(m)) => return misuse(m),
                 None => return misuse("--view needs a view"),
@@ -366,9 +386,7 @@ fn main() -> ExitCode {
             "--size" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|n| (16..=4096).contains(n)) {
                 Some(n) => {
                     let (q, at) = opts.qualified(true);
-                    if q.size.replace(n).is_some() {
-                        return misuse(format!("`--size` given twice {at}"));
-                    }
+                    if let Err(m) = qualify(&mut q.size, n, "--size", &at) { return misuse(m); }
                 }
                 None => return misuse("--size needs a side in pixels, 16 to 4096"),
             },
@@ -381,15 +399,13 @@ fn main() -> ExitCode {
                 None => return misuse("--hide needs a name"),
             },
             "--stl" => match args.next() {
-                Some(p) => opts.export(Some(p), None),
+                Some(p) => opts.add_export(Some(p), None),
                 None => return misuse("--stl needs a path"),
             },
             "--solid" => match args.next() {
                 Some(n) => {
                     let (q, at) = opts.qualified(false);
-                    if q.solid.replace(n).is_some() {
-                        return misuse(format!("`--solid` given twice {at}"));
-                    }
+                    if let Err(m) = qualify(&mut q.solid, n, "--solid", &at) { return misuse(m); }
                 }
                 None => return misuse("--solid needs a name"),
             },
@@ -434,15 +450,13 @@ fn main() -> ExitCode {
     if paths.is_empty() {
         return misuse("no document given");
     }
-    for o in &opts.outputs {
+    if let Some(o) = opts.outputs.first().filter(|_| paths.len() != 1) {
         let flag = match o.writes {
             Writes::Export { .. } => "--stl or --step",
             Writes::Gltf(_) => "--gltf",
             Writes::Png(_) => "--png",
         };
-        if paths.len() != 1 {
-            return misuse(format!("{flag} writes one file, so it takes one document"));
-        }
+        return misuse(format!("{flag} writes one file, so it takes one document"));
     }
     let native = opts.outputs.iter().any(|o| match &o.writes {
         Writes::Export { stl, step } =>
@@ -505,23 +519,6 @@ fn main() -> ExitCode {
         println!("{}", json::object([("documents", Json::Arr(docs))]).dump(Some(2)));
     }
     ExitCode::from(worst)
-}
-
-impl Opts {
-    /// `--stl PATH` or `--step PATH`: beside the export before it where that writes the other
-    /// format and was told no solid of its own since (`--stl a.stl --step a.step --solid body`),
-    /// else an export of its own.
-    fn export(&mut self, stl: Option<String>, step: Option<String>) {
-        let last = self.outputs.last_mut();
-        if let Some(Output { writes: Writes::Export { stl: s, step: t }, own }) = last {
-            let beside = stl.is_some() && s.is_none() || step.is_some() && t.is_none();
-            if own.solid.is_none() && beside {
-                if stl.is_some() { *s = stl; } else { *t = step; }
-                return;
-            }
-        }
-        self.outputs.push(Output::new(Writes::Export { stl, step }));
-    }
 }
 
 /// One document: its exit code, and its JSON report when one was asked for.
@@ -813,14 +810,12 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     // two of them read is built once (#592).  The pictures read a copy of it given what each
     // export built: an export's own build is the same solid as the memo's, its faces named by its
     // recipe, which a picture never reads and every other output does
-    let seen = opts.pictured().then(|| sk.clone());
-    for o in &opts.outputs {
-        if let Writes::Export { stl, step } = &o.writes {
-            let solid = opts.solid(&o.own);
-            let to = (stl.as_deref(), step.as_deref());
-            if export(&sk, &mut e, opts, solid, to, seen.as_ref(), solved) != 0 {
-                code = 1;
-            }
+    let exports: Vec<&Output> =
+        opts.outputs.iter().filter(|o| matches!(o.writes, Writes::Export { .. })).collect();
+    let seen = (opts.pictured() && !exports.is_empty()).then(|| sk.clone());
+    for o in exports {
+        if !export(&sk, &mut e, opts, o, seen.as_ref(), solved) {
+            code = 1;
         }
     }
     if let Some(path) = &opts.output {
@@ -919,12 +914,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
 }
 
 /// One export of a solid (`--stl` and `--step`, #592): admitted, built once for both formats and
-/// written, each refusal said in the core's words and recorded at the solid's statement; its exit
-/// code.  `seen`, where the run draws pictures, is the sketch they read, given what it built.
-fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>,
-          (stl, step): (Option<&str>, Option<&str>), seen: Option<&Sketch>, solved: bool) -> u8 {
-    let mut code = 0;
-    let (mut stl, mut step) = (stl.map(String::from), step.map(String::from));
+/// written, each refusal said in the core's words and recorded at the solid's statement; whether
+/// all of it was.  `seen`, where the run draws pictures, is the sketch they read, given what it
+/// built.
+fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option<&Sketch>,
+          solved: bool) -> bool {
+    let Writes::Export { stl, step } = &o.writes else { return true };
+    let (mut stl, mut step, solid) = (stl.clone(), step.clone(), opts.solid(&o.own));
+    let mut ok = true;
     // A body with swept cuts is built only when every sweep is in the generating class
     // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
     // nothing is written, so an earlier output stays as it was. The class is what the native
@@ -939,7 +936,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>,
             if b.swept() && !native {
                 if let Err(refusal) = b.admit(sk) {
                     refused(e,i,refusal);
-                    code = 1;
+                    ok = false;
                     stl = None;
                     step = None;
                 }
@@ -952,11 +949,11 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>,
         if let Ok(i) = pick_solid(sk,solid) {
             if let Err(refusal) = cad::field_mesh::export_refine(sk,i,&path) {
                 refused(e,i,refusal);
-                code = 1;
+                ok = false;
             }
         }
         #[cfg(not(feature="occt"))]
-        { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); code = 1; }
+        { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); ok = false; }
         stl = None;
     }
     if step.is_some() || (stl.is_some() && opts.native_stl) {
@@ -966,23 +963,23 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>,
                 eprintln!("solventc: {message}");
                 e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
                     Default::default(),None,message));
-                code = 1;
+                ok = false;
             }
             (true,Err(message)) => {
                 eprintln!("solventc: {message}");
                 e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
                     Default::default(),None,message));
-                code = 1;
+                ok = false;
             }
             (true,Ok(i)) => {
                 let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(sk,i));
                 match tolerance(sk,opts) {
-                    Err(message) => { eprintln!("solventc: {message}"); code = 1; }
+                    Err(message) => { eprintln!("solventc: {message}"); ok = false; }
                     Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t,seen) {
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(e,i,refusal);
-                        code = 1;
+                        ok = false;
                     },
                 }
             }
@@ -998,7 +995,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>,
                 match sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).and_then(|s| s.stl()) {
                     Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
                         eprintln!("solventc: {err}");
-                        code = 1;
+                        ok = false;
                     },
                     Err(message) => {
                         let site = e.map.site_of(gcs_core::model::EntRef::solid(i));
@@ -1008,17 +1005,17 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>,
                             site.map(|s| s.stmt), message.clone(),
                         ));
                         if !opts.json { eprintln!("solventc: {message}"); }
-                        code = 1;
+                        ok = false;
                     }
                 }
             }
             Err(m) => {
                 eprintln!("solventc: {m}");
-                code = 1;
+                ok = false;
             }
         }
     }
-    code
+    ok
 }
 
 fn check_drawing(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
