@@ -61,7 +61,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   (`Sketch::rescale`, written out by kind: a `Param` cannot say it is a length).
 - **A value is read back, and claimed** (#596, [0.180]).  Each definition a body works out to a
   number (`ratio := teeth / 12 * 4`, a `param`, a group's member) is recorded under its absolute
-  name (`t1.m` in an instance) as a `flatten::Valued` — value, `Dim`, span — by
+  name (`t1.m` in an instance) as a `flatten::Valued` (its value and `Dim`) by
   `Walk::named_values`, never in a curve's compile over its variables (`sym`), never a hidden
   copy's (`#3.0.w`), and never one affine in an unknown, which is the solve's to give; it reaches
   `Elaborated::values`.  `Dim::reading` says one to `READING_SIG` figures in the unit it reads in

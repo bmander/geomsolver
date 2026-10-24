@@ -154,14 +154,10 @@ fn holds(
                                  expression (`min`, `max` and `abs` say one in pieces)"
                             )));
                         }
-                        let what = if u == name {
-                            format!("`{name}` is")
-                        } else {
-                            format!("`{name}` reads `{u}`,")
-                        };
                         return Err((Code::E040, format!(
-                            "{what} an unknown of the drawing, and a `when` is decided before the \
-                             solve: compare numbers the document states"
+                            "{} an unknown of the drawing, and a `when` is decided before the \
+                             solve: compare numbers the document states",
+                            reads_unknown(&name, u)
                         )));
                     }
                     Some(None) => {}
@@ -175,6 +171,12 @@ fn holds(
     })
 }
 
+/// How a name that is, or is written over, the unknown `u` is said to be one: `` `beta` is `` or
+/// `` `k` reads `beta`, ``, ahead of what an unknown cannot be read by.
+fn reads_unknown(name: &str, u: &str) -> String {
+    if u == name { format!("`{name}` is") } else { format!("`{name}` reads `{u}`,") }
+}
+
 /// Whether a claim over values holds (#596), and each name it reads with its value; or the code
 /// and the words for why it cannot be decided — a name that is no number here E101, one that is
 /// or reads an unknown of the drawing E040 (a value is worked out before the solve), two
@@ -184,7 +186,7 @@ fn claimed(
     env: &Vals,
     scope: &Scope,
     units: Units,
-) -> Result<(bool, Vec<(String, Aff)>), (Code, String)> {
+) -> Result<(bool, Vec<(String, super::Valued)>), (Code, String)> {
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
     fn membership(c: &Cond) -> bool {
@@ -208,19 +210,14 @@ fn claimed(
                              numbers the document names")));
                 return Err(said(code, e));
             }
-            Some(a) if a.free.is_some() => {
-                let u = a.free.as_deref().unwrap_or_default();
-                let what = if u == name {
-                    format!("`{name}` is")
-                } else {
-                    format!("`{name}` reads `{u}`,")
-                };
+            Some(Aff { free: Some(u), .. }) => {
                 return Err(said(Code::E040, format!(
-                    "{what} an unknown of the drawing, and a claim over values is judged before \
-                     the solve: a relation claims what the solve gives"
+                    "{} an unknown of the drawing, and a claim over values is judged before the \
+                     solve: a relation claims what the solve gives",
+                    reads_unknown(&name, u)
                 )));
             }
-            Some(a) => reads.push((name, a.clone())),
+            Some(a) => reads.push((name, super::Valued { value: a.c, dim: a.dim })),
         }
     }
     let holds = expr::judge_in(&c, env).map_err(|e| {
@@ -1124,9 +1121,11 @@ impl<'a> Walk<'a> {
         }
         for d in pending {
             let abs = format!("{prefix}{}", d.name);
-            let Some(a) = vals.get(&d.name).filter(|_| !abs.contains('#')) else { continue };
-            let Some(value) = a.number().filter(|v| v.is_finite()) else { continue };
-            self.values.entry(abs).or_insert(super::Valued { value, dim: a.dim, span: d.span });
+            let Some(a) = vals.get(&d.name) else { continue };
+            let Some(value) = a.number().filter(|v| v.is_finite() && !abs.contains('#')) else {
+                continue;
+            };
+            self.values.entry(abs).or_insert(super::Valued { value, dim: a.dim });
         }
     }
 
@@ -1136,7 +1135,6 @@ impl<'a> Walk<'a> {
     pub(super) fn value_claim(
         &mut self,
         c: &crate::syntax::ValueClaim,
-        st: &Stmt,
         vals: &Vals,
         scope: &Scope,
         prefix: &str,
@@ -1146,14 +1144,10 @@ impl<'a> Walk<'a> {
         }
         match claimed(&c.text, vals, scope, self.units) {
             Ok((holds, reads)) => {
-                let reads = reads.into_iter().map(|(name, a)| {
-                    let value = super::Valued { value: a.c, dim: a.dim, span: c.span };
-                    (format!("{prefix}{name}"), value)
-                });
+                let reads = reads.into_iter().map(|(name, v)| (format!("{prefix}{name}"), v));
                 self.value_claims.push(super::ValueClaimed {
                     text: c.text.clone(),
                     span: c.span,
-                    stmt: st.id,
                     holds,
                     reads: reads.collect(),
                 });

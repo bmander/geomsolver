@@ -409,13 +409,12 @@ pub struct Expansion {
 
 /// **A number the document names** (#596): `ratio := teeth / 12 * 4`, a `param`, a group's
 /// member, as the walk worked it out — of its dimension, in the document's own units (a length in
-/// its unit, the bases beyond length and angle in SI's) — and where it is defined.  Only a
-/// number: one affine in an unknown of the drawing is the solve's to give, and is not here.
-#[derive(Clone, Debug, PartialEq)]
+/// its unit, the bases beyond length and angle in SI's).  Only a number: one affine in an unknown
+/// of the drawing is the solve's to give, and is not here.
+#[derive(Clone, Debug)]
 pub struct Valued {
     pub value: f64,
     pub dim: crate::units::Dim,
-    pub span: Span,
 }
 
 /// **A claim over values, judged** (#596): `claim torque >= 2Nm` where it stands, its text as
@@ -426,7 +425,6 @@ pub struct Valued {
 pub struct ValueClaimed {
     pub text: String,
     pub span: Span,
-    pub stmt: crate::syntax::StmtId,
     pub holds: bool,
     pub reads: Vec<(String, Valued)>,
 }

@@ -166,7 +166,7 @@ impl<'a> Walk<'a> {
                 }
                 StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
                 // a claim over values: decided here, over the numbers in scope (#596)
-                StmtKind::ValueClaim(c) => self.value_claim(c, st, vals, scope, &prefix),
+                StmtKind::ValueClaim(c) => self.value_claim(c, vals, scope, &prefix),
                 StmtKind::Instance(inst) => {
                     if self.walk_instance(inst, st, scope, vals, path, depth).is_break() {
                         return;

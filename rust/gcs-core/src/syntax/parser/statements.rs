@@ -304,8 +304,8 @@ impl<'a> P<'a> {
     /// number, a bracket, a sign or a function of numbers (`sqrt(…)`), or its first reference is
     /// followed by arithmetic or a comparison — where a relation has its word.
     fn value_claim_ahead(&self, j: usize) -> bool {
-        let numeric = |k: usize| matches!(self.t.get(k).map(|(t, _)| t), Some(Tok::EqEq)
-            | Some(Tok::P('<' | '>' | '!' | '+' | '-' | '*' | '/' | '^')));
+        let numeric = |k: usize| matches!(self.t.get(k).map(|(t, _)| t),
+            Some(Tok::EqEq | Tok::P('<' | '>' | '!' | '+' | '-' | '*' | '/' | '^')));
         match self.t.get(j).map(|(t, _)| t) {
             Some(Tok::Num(_) | Tok::P('(' | '-')) => true,
             Some(Tok::Ident(w)) if matches!(self.t.get(j + 1), Some((Tok::P('('), _))) => {

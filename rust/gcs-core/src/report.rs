@@ -668,9 +668,10 @@ pub fn value_text(units: crate::units::Units, name: &str, v: &crate::flatten::Va
 pub fn value_claim_text(units: crate::units::Units, c: &crate::flatten::ValueClaimed) -> String {
     let verdict = if c.holds { "theorem" } else { "refuted" };
     let reads: Vec<String> = c.reads.iter().map(|(n, v)| value_text(units, n, v)).collect();
-    match reads.is_empty() {
-        true => format!("claim {} — {verdict}", c.text),
-        false => format!("claim {} — {verdict}: {}", c.text, reads.join(", ")),
+    if reads.is_empty() {
+        format!("claim {} — {verdict}", c.text)
+    } else {
+        format!("claim {} — {verdict}: {}", c.text, reads.join(", "))
     }
 }
 
