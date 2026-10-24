@@ -104,9 +104,19 @@ build/solventc rust/examples/solid_flange.sv --solid flange --stl flange.stl
 build/solventc rust/examples/solid_flange.sv --solid flange --step flange.step --stl flange.stl
 build/solventc part.sv --step part.step --tolerance 0.01mm   # within a stated fabrication bar
 build/solventc part.sv --gltf part.glb                       # every face a named node
+build/solventc bot.sv --step-assembly bot.step               # every part, as one STEP assembly
 ```
 
-One run can write many outputs. Each `--stl`, `--step`, `--gltf` and `--png` is an output of its
+`--step-assembly` writes every object of the document as one STEP file with a product structure,
+for a CAD system to open as an assembly. Each object is a part. A sub-assembly is made for each
+step of the objects' names, so `wheel.hub` is `hub` inside `wheel`. Objects of one binding (closed
+instances of one definition with the same arguments, or the copies of a `ring`) are one part,
+built once and placed where each instance stands. A part a closed instance makes is written in
+its instance's frame. A mirrored instance is a part of its own. `--solid NAME` after it narrows
+the file to the objects under that name. The core's kernel writes it; `--kernel occt` writes one
+solid at a time.
+
+One run can write many outputs. Each `--stl`, `--step`, `--step-assembly`, `--gltf` and `--png` is an output of its
 own, and every one of them reads the run's single build of a solid. So a part that takes minutes
 to shape is shaped once however many files are made of it:
 

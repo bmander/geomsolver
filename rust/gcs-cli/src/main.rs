@@ -74,6 +74,11 @@ diagnosed, and the report says where it stands.
                         --solid: every output of a run reads the one build of a solid)
     --step PATH         write an analytic STEP solid (by the kernel --kernel names); beside an
                         --stl with no --solid between them, the same solid's
+    --step-assembly PATH
+                        write every object as one STEP assembly (by the core's kernel): a part
+                        each, the objects of one binding one part placed where each instance
+                        stands, a sub-assembly each step of their names; --solid narrows it to
+                        the objects under a name
     --kernel NAME       rust (default) or occt: which kernel builds a solid's STEP and STL (rust,
                         the core's own B-rep, a swept body of the generating class included;
                         occt, where the build has it, kept as the oracle)
@@ -126,6 +131,8 @@ Examples:
                                               a solid, for a printer
     solventc bot.sv --stl wheel.stl --solid wheel --stl frame.stl --solid frame
                                               two solids, each built once
+    solventc bot.sv --step-assembly bot.step
+                                              every part, as one assembly for a CAD system
     solventc part.sv --png top.png --view top --png iso.png --view isometric
                                               two pictures, the solids built once
     solventc drawing.svd --sheet front -o front.svg
@@ -237,6 +244,8 @@ enum Writes {
     /// `--stl PATH` and `--step PATH`, one solid built once for both: the output of a drawing
     /// that is not a picture, and the reason a printer can be given a part at all.
     Export { stl: Option<String>, step: Option<String> },
+    /// `--step-assembly PATH` — the objects as one STEP product structure, a part each.
+    Assembly(String),
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
     Gltf(String),
     /// `--png PATH` — the objects as the workspace shows them, drawn without a page (#541), from
@@ -259,7 +268,7 @@ impl Output {
     fn paths(&self) -> Vec<&str> {
         match &self.writes {
             Writes::Export { stl, step } => stl.iter().chain(step).map(String::as_str).collect(),
-            Writes::Gltf(p) | Writes::Png(p) => vec![p.as_str()],
+            Writes::Assembly(p) | Writes::Gltf(p) | Writes::Png(p) => vec![p.as_str()],
         }
     }
 }
@@ -369,6 +378,10 @@ fn main() -> ExitCode {
                 Some(w) if w.is_finite() && w > 0.0 => opts.width = w,
                 _ => return misuse("--width needs a page width in pixels"),
             },
+            "--step-assembly" => match args.next() {
+                Some(p) => opts.outputs.push(Output::new(Writes::Assembly(p))),
+                None => return misuse("--step-assembly needs a path"),
+            },
             "--gltf" => match args.next() {
                 Some(p) => opts.outputs.push(Output::new(Writes::Gltf(p))),
                 None => return misuse("--gltf needs a path"),
@@ -455,6 +468,7 @@ fn main() -> ExitCode {
     if let Some(o) = opts.outputs.first().filter(|_| paths.len() != 1) {
         let flag = match o.writes {
             Writes::Export { .. } => "--stl or --step",
+            Writes::Assembly(_) => "--step-assembly",
             Writes::Gltf(_) => "--gltf",
             Writes::Png(_) => "--png",
         };
@@ -463,11 +477,12 @@ fn main() -> ExitCode {
     let native = opts.outputs.iter().any(|o| match &o.writes {
         Writes::Export { stl, step } =>
             step.is_some() || (stl.is_some() && !opts.refine && opts.native_stl),
+        Writes::Assembly(_) => true,
         _ => false,
     });
     if opts.tolerance.is_some() && opts.measure.is_empty() && !native {
         return misuse("--tolerance holds a native export (or a measurement) to it; give --step, \
-            --stl by the kernel's export, or --measure");
+            --step-assembly, --stl by the kernel's export, or --measure");
     }
     if opts.output.is_some() && paths.len() != 1 {
         return misuse("--output writes one file, so it takes one document");
@@ -812,11 +827,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     // two of them read is built once (#592).  The pictures read a copy of it given what each
     // export built: an export's own build is the same solid as the memo's, its faces named by its
     // recipe, which a picture never reads and every other output does
-    let exports: Vec<&Output> =
-        opts.outputs.iter().filter(|o| matches!(o.writes, Writes::Export { .. })).collect();
+    let exports: Vec<&Output> = opts.outputs.iter()
+        .filter(|o| matches!(o.writes, Writes::Export { .. } | Writes::Assembly(_))).collect();
     let seen = (opts.pictured() && !exports.is_empty()).then(|| sk.clone());
     for o in exports {
-        if !export(&sk, &mut e, opts, o, seen.as_ref(), solved) {
+        let written = match &o.writes {
+            Writes::Assembly(path) =>
+                assembly(&sk, &mut e, s, opts, path, opts.solid(&o.own), seen.as_ref(), solved),
+            _ => export(&sk, &mut e, opts, o, seen.as_ref(), solved),
+        };
+        if !written {
             code = 1;
         }
     }
@@ -831,7 +851,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     for o in &opts.outputs {
         let solid = opts.solid(&o.own);
         match &o.writes {
-            Writes::Export { .. } => {}
+            Writes::Export { .. } | Writes::Assembly(_) => {}
             Writes::Gltf(path) => {
                 // a named solid, or **every object the document has** — glTF holds a scene, so
                 // unlike an STL it need not be told which one part of an assembly to be
@@ -1158,6 +1178,49 @@ fn tolerance(sk: &Sketch,opts: &Opts) -> Result<Option<gcs_core::solid::export::
     let Some((value,per)) = opts.tolerance else { return Ok(None) };
     let per = match per { Some(p) => p, None => gcs_core::solid::cad::millimetres(sk) };
     gcs_core::solid::export::Tolerance::new(value*per).map(Some)
+}
+
+/// `--step-assembly PATH` (`cad::brep::export_assembly`): the objects under `solid`, else every
+/// object, as one assembly named for the document; whether it was written. A refusal is said in
+/// the core's words and, where one solid's build refused, recorded at its statement.
+fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str, solid: Option<&str>,
+            seen: Option<&Sketch>, solved: bool) -> bool {
+    let fail = |e: &mut Elaborated, message: String| {
+        eprintln!("solventc: {message}");
+        e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+            Default::default(), None, message));
+        false
+    };
+    if !solved {
+        return fail(e, "native STEP/STL export requires a solved model".into());
+    }
+    if !cad::rust_kernel() {
+        return fail(e, "--step-assembly is written by the core's kernel; --kernel occt writes one solid \
+            (--step)".into());
+    }
+    let objects: Vec<usize> = gcs_core::overview::objects(sk).into_iter()
+        .filter(|&i| solid.is_none_or(|n| under(&sk.solids[i].name, n)
+            || under(&gcs_core::vocab::public_path(&sk.solids[i].name), n))).collect();
+    if objects.is_empty() {
+        return fail(e, match solid {
+            Some(n) => format!("no object called `{n}`, or under it, to write"),
+            None => "this document has no solid to write".into(),
+        });
+    }
+    let name = std::path::Path::new(&s.name).file_stem().and_then(|n| n.to_str()).unwrap_or("assembly");
+    let name = match solid { Some(n) => format!("{name}.{n}"), None => name.to_string() };
+    let t = match tolerance(sk, opts) {
+        Ok(t) => t,
+        Err(message) => { eprintln!("solventc: {message}"); return false }
+    };
+    match cad::brep::export_assembly(sk, &objects, &name, path, t, seen) {
+        Ok(()) => true,
+        Err((Some(i), refusal)) => { refused(e, i, refusal); false }
+        Err((None, refusal)) => {
+            cad::progress::refused(refusal.stage);
+            fail(e, refusal.to_string())
+        }
+    }
 }
 
 /// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it

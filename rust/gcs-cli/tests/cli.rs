@@ -688,6 +688,77 @@ fn the_rust_kernel_exports_a_static_solid() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// **The objects as one STEP assembly** (`--step-assembly`): two instances of one plate and a
+/// plate of another size are two parts under three uses, each in a sub-assembly named for its
+/// instance, the file parsed back against that structure; `--solid` narrows it to the objects
+/// under a name; and OCCT, which writes one solid, is refused it.
+#[test]
+fn the_objects_are_written_as_one_step_assembly() {
+    let dir = std::env::temp_dir().join(format!("solventc-assembly-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = dir.join("plates.sv");
+    std::fs::write(&model,PLATES).unwrap();
+    let file = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let (all,one) = (file("plates.step"),file("two.step"));
+    let result = run(&[model.to_str().unwrap(),"--no-diagnose","--progress","--step-assembly",&all,
+        "--tolerance","0.01mm"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("the assembly: 2 parts, 3 sub-assemblies, 3 objects placed"),"{stderr}");
+    assert!(stderr.contains("6 products and 6 uses, each the assembly's"),"{stderr}");
+    let text = std::fs::read_to_string(&all).unwrap();
+    assert_eq!(text.matches("MANIFOLD_SOLID_BREP(").count(),2,"one plate built and written once for two instances");
+    assert_eq!(text.matches("NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(),6);
+    for name in ["plates","one","two","three","one.body","three.body"] {
+        assert!(text.contains(&format!("PRODUCT('{name}','{name}'")),"no product `{name}`");
+    }
+    assert!(text.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE('two.body','two.body'"));
+    let result = run(&[model.to_str().unwrap(),"--no-diagnose","--step-assembly",&one,"--solid","two"]);
+    assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));
+    let text = std::fs::read_to_string(&one).unwrap();
+    assert!(text.contains("PRODUCT('plates.two','plates.two'") && text.contains("PRODUCT('two.body','two.body'"));
+    assert_eq!(text.matches("NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(),2);
+    let refused = run(&[model.to_str().unwrap(),"--no-diagnose","--step-assembly",&file("occt.step"),
+        "--kernel","occt"]);
+    assert_eq!(refused.status.code(),Some(1));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--step-assembly is written by the core's kernel"));
+    assert!(!dir.join("occt.step").exists());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A plate drawn about its frame's origin, two of one size in turned frames and one of another.
+const PLATES: &str = "\
+unit mm
+use std (offset)
+component Plate(w: Length, d: Length, h: Length) {
+  in std.front {
+    a := point hint((1, 1))
+    b := point hint((w, 1))
+    c := point hint((w, d))
+    e := point hint((1, d))
+    a offset(dx: 1mm, dy: 1mm) std.origin
+    b offset(dx: w, dy: 1mm) std.origin
+    c offset(dx: w, dy: d) std.origin
+    e offset(dx: 1mm, dy: d) std.origin
+    ab := line(a, b)
+    bc := line(b, c)
+    ce := line(c, e)
+    ea := line(e, a)
+    body := solid(face(ab, bc, ce, ea), from: 0mm, to: h)
+  }
+}
+in (f := frame) { one := Plate(w: 30mm, d: 20mm, h: 5mm) }
+fix(dir == (0, 1, 0)) f.u
+fix(dir == (0, 0, 1)) f.v
+fix(origin == (10, 20, 30)) f
+in (g := frame) { two := Plate(w: 30mm, d: 20mm, h: 5mm) }
+fix(dir == (0, 0, 1)) g.u
+fix(dir == (1, 0, 0)) g.v
+fix(origin == (-40, 5, 12)) g
+in (h := frame) { three := Plate(w: 40mm, d: 20mm, h: 5mm) }
+fix(origin == (0, 0, -50)) h
+";
+
 /// A block with a bore through it, `body`, built of `block`: two solids to write.
 const BORED: &str = "\
 unit mm

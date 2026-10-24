@@ -257,6 +257,30 @@ placement carries inside the blank; CLI test readers zero the offset.
   *objects* (`overview::objects`) — a bore is a hole in a part, not a part — and glTF holds a
   scene, so it need not be told which part of an assembly to be.  `solventc --gltf`,
   `File ▸ Export solid (glTF)` / `(STL)`.
+- **The objects leave as one STEP assembly** (`brep::export::assembly`, `step::write_assembly`):
+  AP214's product structure, a root product named for the document, **a part per object** and a
+  sub-assembly per step of the objects' names as a reader writes them (`vocab::public_path`:
+  `wheel.hub` is `hub` in `wheel`, `p[0].body` a ring's copy), each sub-assembly placed at its
+  parent's axes.  **The objects of one binding are one part, built once** and used where each
+  instance stands: a solid a closed instance made is written in its instance's frame
+  (`Sketch::binding_pose`, orthonormal, in millimetres) and used placed by it, so the part is the
+  representative's build (`Sketch::bound`) moved into that frame, named for the first object it
+  is (the representative may not be in the file).  A representative that is
+  mirrored publishes its build reflected, which is not the binding's own evaluation, so the
+  part is then the first unmirrored object of the binding's; **a mirrored object is a part of its
+  own**, its reflection in its solid and its placement proper (STEP places by right-handed axes).
+  Any other object is written where it stands and used at the root's axes.  A part is written
+  once however often it is used: each use a next assembly usage occurrence, its shape the
+  transformation carrying the child's axes onto its placement, each an item of its
+  representation.  The file is parsed back against the structure it was written from
+  (`step_check::verify_assembly`): each product by name, a part's one solid walked as a
+  single-solid file's is, every face, edge and vertex one part's, and every use one of the
+  structure's with its placement.  One part refused refuses the file, said at that solid's
+  statement.  The core's kernel writes it (`solventc --step-assembly`, `--solid` narrowing it to
+  the objects under a name); OCCT, which writes one solid, is refused it.  `tests/step_assembly.rs`
+  is the gate (`every_object_is_its_part_carried_where_it_stands`: each object's part, carried
+  down the tree, has the object's own build's volume and bounds, and each one's every vertex lies
+  on the other's boundary).
 - **A mesh is welded, and grouped by face** (`mesh.rs`).
   **Welding** is a T-junction fix and not a vertex merge: `weld` puts the vertices lying on an
   edge's interior into it.  A hash **cell** is sized to the object (`scale / 128`) while the

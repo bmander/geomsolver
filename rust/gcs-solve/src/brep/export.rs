@@ -12,6 +12,7 @@ use super::pattern::Built as Patterned;
 use super::sweep::Say;
 use super::boolean::Op;
 use super::topo::Brep;
+use super::geom::Frame;
 use crate::model::Sketch;
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use crate::solid::{admission,agreement,cad,contracts,MaterialField};
@@ -183,6 +184,93 @@ pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> 
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
     (say.stage)(&format!("the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's ({:?})",
         verified.entities,verified.faces,verified.edges,verified.vertices,started.elapsed()));
+    (say.mark)(Stage::Step);
+    Ok(text)
+}
+
+/// **The objects `objects` of the sketch as an assembly** (`step::Assembly`), `name` its root
+/// product's: a part of each object, a sub-assembly of each step of their names as a reader writes
+/// them (`wheel.hub` is `hub` in `wheel`, placed where the root's axes are; `p[0].body` a ring's
+/// copy's), and the objects of one binding one part, built once — its representative's
+/// (`Sketch::bound`), named for the first object it is — and used where each instance stands. A
+/// solid a closed instance made is written in its instance's frame (`Sketch::binding_pose`) and
+/// used placed by that frame; a mirrored one is its own part, its reflection in its solid and its
+/// placement proper; any other is written where it stands, and used at the root's axes. Each part
+/// built is given to `built`, as the world has it. A refusal says which solid's build refused.
+pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Tolerance>,say: &Say,built: &mut dyn FnMut(usize,&Exact))
+    -> Result<super::step::Assembly,(usize,ExportRefusal)> {
+    use super::step::{Assembly,Product,Usage};
+    use crate::space::{dot,norm};
+    let mm = cad::millimetres(sk);
+    // the frame a solid's instance stands in (millimetres), where it has one a placement can say:
+    // `u` and `v` unit and square, so `u × v` is too
+    let frame = |i: usize| sk.solids[i].binding.as_ref().and(sk.binding_pose(i))
+        .filter(|b| (norm(b.u)-1.).abs() <= 1e-9 && (norm(b.v)-1.).abs() <= 1e-9 && dot(b.u,b.v).abs() <= 1e-9)
+        .map(|b| Frame {o:b.o.map(|x| x*mm),x:b.u,y:b.v,z:b.normal()});
+    // each object's part — the solid it is built as: an unmirrored object of a binding its
+    // representative's, whose build as the world has it is the binding's own evaluation unless
+    // the representative is mirrored; then the first such object's
+    let reps: Vec<Option<usize>> = objects.iter().map(|&i| sk.bound(i)
+        .filter(|b| b.mirror.is_none() && b.rep != i && frame(i).is_some() && frame(b.rep).is_some()).map(|b| b.rep)).collect();
+    let unmirrored = |j: usize| sk.solids[j].binding.as_ref().is_none_or(|b| b.mirror.is_none());
+    let source = |k: usize| match reps[k] {
+        Some(r) if unmirrored(r) => r,
+        Some(r) => objects[reps.iter().position(|&x| x == Some(r)).unwrap_or(k)],
+        None => objects[k],
+    };
+    // what the source calls each solid, as a reader writes it (`p[0].body`, a ring's copy)
+    let named = |i: usize| crate::vocab::public_path(&sk.solids[i].name);
+    let mut products = vec![Product {name:name.to_string(),solid:None}];
+    let mut uses = Vec::new();
+    // the sub-assemblies first, each step of a name after the one it is in
+    let mut groups: Vec<String> = Vec::new();
+    let group = |groups: &[String],path: &str| groups.iter().position(|g| g == path).map_or(0,|g| g+1);
+    for &i in objects {
+        let name = named(i);
+        let steps: Vec<&str> = name.split('.').collect();
+        for k in 1..steps.len() {
+            let path = steps[..k].join(".");
+            if groups.contains(&path) { continue }
+            let parent = group(&groups,&steps[..k-1].join("."));
+            groups.push(path.clone());
+            uses.push(Usage {parent,child:products.len(),name:path.clone(),placement:Frame::WORLD});
+            products.push(Product {name:path,solid:None});
+        }
+    }
+    // then the parts, each built once, and each object a use of its part in its group
+    let mut parts: std::collections::BTreeMap<usize,usize> = Default::default();
+    for (k,&i) in objects.iter().enumerate() {
+        let source = source(k);
+        let part = match parts.get(&source) {
+            Some(&p) => p,
+            None => {
+                let x = exact(sk,source,None,tolerance,say).map_err(|e| (source,e))?;
+                built(source,&x);
+                // about its instance's frame where it has one, and named for the first object it
+                // is, which the file holds where the source may not
+                let solid = match frame(source) { Some(f) => x.solid.moved(&f.unplacing()),None => x.solid };
+                products.push(Product {name:named(i),solid:Some(solid)});
+                parts.insert(source,products.len()-1);
+                products.len()-1
+            }
+        };
+        let name = named(i);
+        let parent = name.rsplit_once('.').map_or(0,|(g,_)| group(&groups,g));
+        uses.push(Usage {parent,child:part,name,placement:frame(i).unwrap_or(Frame::WORLD)});
+    }
+    (say.stage)(&format!("the assembly: {} parts, {} sub-assemblies, {} objects placed",parts.len(),groups.len(),objects.len()));
+    Ok(Assembly {products,uses})
+}
+
+/// The STEP file of an assembly, parsed back and held to it as `step` holds a solid's: each part's
+/// solid, and every use of a product where the assembly places it (`step_check::verify_assembly`).
+pub fn assembly_step(a: &super::step::Assembly,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
+    let started = crate::clock::Instant::now();
+    let text = super::step::write_assembly(a,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1)).at(Stage::Step)?;
+    let verified = super::step_check::verify_assembly(&text,&super::step_check::Structure::of(a))
+        .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the assembly: {e}")))?;
+    (say.stage)(&format!("the STEP output: {} entities; {} products and {} uses, each the assembly's; {} faces, {} edges and {} vertices, \
+        each a part's ({:?})",verified.entities,a.products.len(),a.uses.len(),verified.faces,verified.edges,verified.vertices,started.elapsed()));
     (say.mark)(Stage::Step);
     Ok(text)
 }
