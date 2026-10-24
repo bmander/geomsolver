@@ -270,6 +270,7 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
                         the body they each read leaves them touching along a line, not built yet (#218): {e}")),
                     (false,Kind::Open) => e.saying(|e| format!("{key}: the kernel left the body open applying a round or \
                         chamfer to it, a failure of its own: {e}")),
+                    _ if name.is_empty() => e.saying(|e| format!("{key}: {e}")),
                     _ => e.saying(|e| format!("{key} `{name}`: {e}")),
                 }
             })?;
@@ -290,8 +291,10 @@ impl Recipe {
         let mut built = BTreeMap::new();
         // each node's primitives, keyed as its faces are named, and their routes from it
         let mut routes: BTreeMap<i64,(&str,&str,BTreeMap<String,String>)> = BTreeMap::new();
+        // each node's name, for what a body built of it says
+        let names: BTreeMap<i64,String> = self.nodes.iter().map(|n| (n.id,n.name.clone())).collect();
         for Named {id,name,step,node} in &self.nodes {
-            let mut b = node.built(&built,&BTreeMap::new(),0.).map_err(|e| e.saying(|e| format!("`{name}`: {e}")))?;
+            let mut b = node.built(&built,&names,0.).map_err(|e| e.saying(|e| format!("`{name}`: {e}")))?;
             let mut own = BTreeMap::new();
             match node {
                 Node::Lowered(_) => {}

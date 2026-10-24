@@ -22,8 +22,12 @@ edge by more than the sag; nearer, the side of the nearest edge says (`Located::
 `boolean`'s `reading`: a piece's inner points, a hole's host). A piece of a Boolean is kept or
 dropped at an `Inner` point (made only by `reading::inside`, so no unread point classifies a
 piece): a middle of a level line's span across the piece's outline read so, the outline drawn
-finer while none is. A fixed polygon of a circle once cut its chords short by more than a
-narrow strip beside it is wide, and read the strip at the hole next to it (a turned rim's chamfer
+finer while none is; then, where every middle is on the other's boundary along no face of its
+own on that surface, a point either side of the middles (a boss tangent to a side at its middle,
+#597, `brep::a_boss_tangent_to_a_face_inside_it`). A piece no point of which leaves the other's
+boundary that way is refused naming its face and the other's it touches. A fixed polygon of a
+circle once cut its chords short by more than a narrow strip beside it is wide, and read the strip
+at the hole next to it (a turned rim's chamfer
 from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly`).
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
@@ -68,11 +72,12 @@ rational one's Gauss stretch by stretch) and **closes every
 loop in the face's parameters** across the kernel's gaps (unclosed, the volume moved with the
 origin). The mesher is a neighbour-array CDT, refined for sag **and** for a facet turning from the
 surface's outward normal (signed); slivers get a point off the longest side; points nearer than
-1e-9 are welded. An edge is sampled from first pieces no midpoint test can be blind to: a
-B-spline's knot spans, a family rail's pieces, a screwed rail a quarter turn at most
-(`edge_params`; a coil of four turns has its ends, middle and quarter points in one line, and was
-one chord). `Mesh::turned` counts facets facing against their surface (thicker than bar/100);
-the export refuses any.
+1e-9 are welded, and a vertex a face's loops pass through twice at one place (a hole touching the
+outer loop, #597) is one corner of its triangulation. An edge is sampled from first pieces no
+midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a
+quarter turn at most (`edge_params`; a coil of four turns has its ends, middle and quarter
+points in one line, and was one chord). `Mesh::turned` counts facets facing against their
+surface (thicker than bar/100); the export refuses any.
 **Phase 2 (the pattern ours):** `brep::pattern` turns a one-sector body into the whole (the
 kernel's union is never made): sides matched by a pitch's turn, revolution faces keep the sector's
 surface with pcurves shifted along `u`, pieces of one surface across a side become one face, a ring

@@ -276,6 +276,53 @@ fn booleans_of_faces_on_one_surface() {
     }
 }
 
+#[test]
+fn a_boss_tangent_to_a_face_inside_it() {
+    // a round boss in a block, flush with its top and bottom or not, touching its side along a
+    // line through that face's middle (#597): every middle of the side's spans is on the boss
+    use gcs_core::brep::boolean::{boolean,Op};
+    use gcs_core::brep::mesh::mesh;
+    let a = block([-20.,-20.,0.],[20.,20.,10.]);
+    for (z,depth) in [([0.,10.],10.),([2.,8.],6.)] {
+        let boss = rod([-16.,0.,0.],4.,z);
+        let bossed = 16.*PI*depth;
+        for (op,want) in [(Op::Union,16000.),(Op::Cut,16000.-bossed),(Op::Common,bossed)] {
+            let what = format!("{op:?} of a boss {z:?}");
+            let r = boolean(&a,&boss,op,1e-9).unwrap_or_else(|e| panic!("{what}: {e}"));
+            r.check(1e-8).unwrap_or_else(|e| panic!("{what}: {e}"));
+            let v = volume(&r);
+            assert!((v-want).abs() <= 1e-10*want,"{what}: {v} against {want}");
+            mesh(&r,1e-2,0.1).unwrap_or_else(|e| panic!("{what}: meshed: {e}"));
+        }
+    }
+}
+
+#[test]
+fn a_flush_boss_tangent_to_a_blocks_side_builds_as_the_block() {
+    // the issue's document (#597): a screw boss in a block's corner, flush with its wall
+    let e = crate::common::text::solved("\
+unit mm
+use std
+in std.top {
+  c := point hint((0, 0))
+  fix((0mm, 0mm)) c
+  sq := std.CenteredRectangle(c, w: 40mm, h: 40mm)
+  o := point hint((-16, 0))
+  c distance(-16mm, along: u) o
+  c level(v) o
+  rim := radius(4mm) circle(center: o)
+}
+box := solid(face(sq.loop), from: 0mm, to: 10mm)
+boss := solid(face(rim), from: 0mm, to: 10mm)
+part := solid(box)
+boss union part
+");
+    let x = e.sketch.exact_solid(crate::common::ent(&e,"part").i()).unwrap_or_else(|m| panic!("`part`: {m}"));
+    x.brep.check(1e-8).unwrap();
+    let v = volume(&x.brep);
+    assert!((v-16000.).abs() <= 1e-9*16000.,"{v}");
+    gcs_core::brep::mesh::mesh(&x.brep,1e-2,0.1).unwrap();
+}
 
 
 /// `∫_a^b f` by Simpson's rule on `n` (even) steps.
