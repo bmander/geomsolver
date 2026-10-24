@@ -431,15 +431,14 @@ impl SweptRegion {
                 if runs[j].why[0] == End::Box { continue }
                 let d = dist(at[i][1],at[j][0]);
                 if d > loose { continue }
-                let turn = match (d <= join,heading(&runs[i],at[i][1],1),heading(&runs[j],at[j][0],0)) {
-                    (true,Some(x),Some(y)) => cross(x,y).datan2(dot(x,y)),
-                    _ => f64::INFINITY,
+                let turn = if d > join { f64::INFINITY } else {
+                    heading(&runs[i],at[i][1],1).zip(heading(&runs[j],at[j][0],0)).map_or(f64::INFINITY,|(x,y)| cross(x,y).datan2(dot(x,y)))
                 };
-                pairs.push((if d <= join { 0. } else { d },turn,i,j))
+                pairs.push((d,turn,i,j))
             }
         }
-        pairs.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.total_cmp(&y.1)).then(x.2.cmp(&y.2)).then(x.3.cmp(&y.3)));
-        let pairs: Vec<(f64,usize,usize)> = pairs.into_iter().map(|(_,_,i,j)| (dist(at[i][1],at[j][0]),i,j)).collect();
+        let rank = |d: f64| if d <= join { 0. } else { d };
+        pairs.sort_by(|x,y| rank(x.0).total_cmp(&rank(y.0)).then(x.1.total_cmp(&y.1)).then(x.2.cmp(&y.2)).then(x.3.cmp(&y.3)));
         // an edge held at an end pose joined to the contact the roll ends at: tangent there, so the
         // keeping test finds its end only roughly; the contact is on the edge, and is that end
         let tangent = |fixed: &Run,other: &Run,end: usize,p: P| -> Option<f64> {
@@ -448,7 +447,7 @@ impl SweptRegion {
             let x = s.back(*at)?.point(p);
             (edge.distance(x) <= join).then(|| parameter(edge,x))
         };
-        for (d,i,j) in pairs {
+        for (d,_,i,j) in pairs {
             if next[i].is_some() || taken[j] { continue }
             if let Some(u) = tangent(&runs[j],&runs[i],0,at[i][1]) {
                 runs[j].ends[0] = u; at[j][0] = at[i][1];

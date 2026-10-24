@@ -63,12 +63,15 @@ const STAR: &str = "star := solid(plus, from: -10mm, to: 0mm)";
 const DRAFTED: &str = "star := solid(plus, from: -10mm, to: 0mm, draft: 8deg)";
 const PERIOD: &str = "space := sweep(star over t in (0deg, 540deg), under: tool_turn, seen_from: wheel_turn)\nspace cut wheel";
 
-fn solved(src: &str) -> (Elaborated, usize) {
+fn solved(src: &str) -> (Elaborated, usize) { solved_body(src, "wheel") }
+
+/// `solved`, with the body named `body`.
+fn solved_body(src: &str, body: &str) -> (Elaborated, usize) {
     let mut e = crate::common::build(src);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    let wheel = e.map.ent_named("wheel").unwrap().i();
-    (e, wheel)
+    let id = e.map.ent_named(body).unwrap().i();
+    (e, id)
 }
 
 fn say() -> Say<'static> { Say { stage: &|_: &str| {}, mark: &|_| {} } }
@@ -78,10 +81,7 @@ fn cut(src: &str, held: Option<Tolerance>) -> f64 { cut_body(src, "wheel", held)
 
 /// `cut`, of the body named `body`.
 fn cut_body(src: &str, body: &str, held: Option<Tolerance>) -> f64 {
-    let mut e = crate::common::build(src);
-    let r = solve(&mut e.sketch, SolveOpts::default());
-    assert!(r.success, "{}", r.message);
-    let wheel = e.map.ent_named(body).unwrap().i();
+    let (e, wheel) = solved_body(src, body);
     let exact = export::exact(&e.sketch, wheel, None, held, &say())
         .unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
     exact.solid.check(1e-6).unwrap();
@@ -388,6 +388,7 @@ gear := solid(face(tip, holes: hole), from: 0mm, to: 5mm)
 /// and removes twelve spaces.
 #[test]
 fn a_tooth_space_cut_at_a_turned_copy_is_the_space_turned() {
+    // the tip circle's radius is 4.8 + 0.24 + 0.8 mm, the hole's 1 mm, the blank 5 mm thick
     let blank = PI * (5.84 * 5.84 - 1.) * 5.;
     let one = blank - cut_body(&pinion("space cut gear"), "gear", None);
     let turned = blank - cut_body(&pinion("turned := space at(under: index) 30deg\nturned cut gear"), "gear", None);
