@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.180] A block's word may be a name.** `repeat`, `cycle`, `ring` and `when` open a block only
+where a header follows them (§1.3): `ring := Gear(…)` names a ring gear, and a statement starting
+with the name is about it where the next token is `.` or a constraint word with no `{` opened on the
+line — `ring.std.origin coincident hub`, `ring coincident hub`. A definition was already admitted;
+a statement reading it was taken for the block's header and refused with the block's message, at a
+column inside the statement (`a \`ring\` names what its copies turn about`). A header always runs on
+its line to its `{`, so no block is read otherwise than before. (Issue #598.)
+
 **[0.179] A corner round is a joint.** `A -> round(r: R) B` rounds the corner where the lines `A`
 and `B` of a chain meet with an arc of radius `R` tangent to both (§6.6): the arc (named where it
 stands, `-> (k := round(r: R))`), its radius, a tangency at each end and the corner kept on both
