@@ -301,12 +301,13 @@ impl<'a> P<'a> {
         // that is a call.  `claim parallel(…)` has the shape too — a binary relation's name
         // doubles as an infix joint word — but `claim` qualifies a statement, it never names an
         // element: a word that *opens* a statement is not an operand, however the next word reads
-        // — save a block's word a document has defined, standing as that name (#598)
+        // — save a block's word a document has defined, standing as that name (#598), and an
+        // orientation word with no `(` after it (#616)
         if (!OPENERS.contains(&w.as_str())
             || BLOCKS.contains(&w.as_str()) && !words::opens_block(&self.t, self.i))
             && EntKind::parse(w).is_none()
             && !prefix_word(w)
-            && !is_operator(w)
+            && (!is_operator(w) || words::call_named(&self.t, self.i))
         {
             // the operand may be a dotted name — `l.p1 distance(6) l.p2` — so the word that
             // relates it is looked for past the whole reference, not at the next token.  The

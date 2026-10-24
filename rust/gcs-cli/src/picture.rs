@@ -3,10 +3,11 @@
 //! A part is checked by looking at it, and where agents work there is no page to look at.  So
 //! the CLI draws what the box draws (`web/src/app/box3d.ts`): the objects the workspace shows
 //! (`overview::shown_objects`), each the mesh the core cuts it to there
-//! (`ApproximationPolicy::Mesh`, `solid::mesh_unit`), placed by its own placement, with the
-//! creases the box strokes over it — and its silhouettes, which a picture without an orbit needs
-//! to read a round thing as round.  Opened on a part file, that is its `preview`: the solids the
-//! preview builds, about the world's origin, as the workspace opens the file.
+//! (`ApproximationPolicy::Mesh`, `solid::mesh_unit`; a swept one's of its exact build where the
+//! kernel builds one, as the box replaces its field's preview), placed by its own placement,
+//! with the creases the box strokes over it — and its silhouettes, which a picture without an
+//! orbit needs to read a round thing as round.  Opened on a part file, that is its `preview`: the
+//! solids the preview builds, about the world's origin, as the workspace opens the file.
 //!
 //! **A depth buffer, not a painter's sort.**  Each triangle is scan-converted at twice the
 //! picture's resolution and kept per pixel where it is nearest the eye, then the edges are drawn
@@ -146,11 +147,16 @@ fn seen(f: &Frame, p: [f64; 3]) -> [f64; 3] {
 pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> {
     let axes = eye_frame(ask.eye.az, ask.eye.el);
     let instances = instances(sk);
+    let chosen = chosen(sk, ask)?;
+    // a swept object drawn from its exact surface where this kernel builds one, as the workspace
+    // replaces its field's preview with it, and from its field only where the build is refused
+    // (#614): a field the mesher cannot close leaves out a solid the export builds
+    gcs_core::brep::export::supply_exact_where(sk, &|i| chosen.contains(&i));
     // each solid evaluated once, its frame, its colour and its edges in the eye's coordinates;
     // its triangles are read from its own mesh when they are filled, not copied out
     let (mut solids, mut unbuilt) = (Vec::new(), Vec::new());
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for i in chosen(sk, ask)? {
+    for i in chosen {
         let solid = match sk.evaluated_solid(i, ApproximationPolicy::Mesh) {
             Ok(s) => s,
             Err(why) => { unbuilt.push(why); continue; }

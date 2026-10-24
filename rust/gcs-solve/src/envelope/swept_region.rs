@@ -20,7 +20,9 @@
 //!    another (two crossing, solved exactly), where it runs on into another (an edge's contact
 //!    reaching its corner, at the same roll), where the roll ends, or where it leaves the box,
 //!    which then carries the loop round its sides counter-clockwise to the next stretch entering.
-//!    A loop counter-clockwise bounds a piece of `R`, one clockwise a hole in it.
+//!    Where several meet at one point the boundary of the union turns the most to the right, and a
+//!    hair of a stretch joined at neither end (#613) bounds nothing.  A loop counter-clockwise
+//!    bounds a piece of `R`, one clockwise a hole in it.
 //!
 //! What the loops do not decide is refused naming why and where (`Condition::Kept`): a stretch with
 //! no partner, a fold, a crossing.
@@ -380,6 +382,14 @@ impl SweptRegion {
         }
         if debug() { eprintln!("region: {} candidates, {} runs ({:?})",candidates.len(),runs.len(),clock.elapsed()); }
         let point = |k: usize,u: f64| candidates[k].at(s,u,f64::INFINITY);
+        // a stretch of no length — one sample kept where its candidate's domain ends and the next
+        // not, its ends and its middle one point — is no piece of the boundary (#612)
+        let tiny = 1e-6*(1.+s.scale);
+        runs.retain(|r| {
+            let at = |f: f64| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*f).map(|h| h.at);
+            let (Some(a),Some(m),Some(b)) = (at(0.),at(0.5),at(1.)) else { return true };
+            dist(a,m) > tiny || dist(m,b) > tiny
+        });
         // each stretch walked with the region on its left: the outward normal on its right
         for r in &mut runs {
             let mid = 0.5*(r.ends[0]+r.ends[1]);
@@ -412,16 +422,31 @@ impl SweptRegion {
         let loose = 1e-3*(1.+s.scale);
         let mut next: Vec<Option<usize>> = vec![None;runs.len()];
         let mut taken = vec![false;runs.len()];
-        let mut pairs: Vec<(f64,usize,usize)> = Vec::new();
+        // a stretch's direction at its end `e` (0 its start, 1 its end), walked: a chord of a
+        // ten-thousandth of it
+        let heading = |r: &Run,p: P,e: usize| -> Option<P> {
+            let q = point(r.candidate,r.ends[e]+(r.ends[1-e]-r.ends[e])*1e-4)?.at;
+            let d = if e == 0 { sub(q,p) } else { sub(p,q) };
+            (length(d) > 0.).then(|| unit(d))
+        };
+        // where several stretches meet at one point (an end pose's corner, where a held edge, the
+        // corner's path and a hair of the next edge the keeping test's tolerance keeps all start),
+        // the boundary of a union turns the most to the right: those pairs go first, by that turn
+        let mut pairs: Vec<(f64,f64,usize,usize)> = Vec::new();
         for i in 0..runs.len() {
             if runs[i].why[1] == End::Box { continue }
             for j in 0..runs.len() {
                 if runs[j].why[0] == End::Box { continue }
                 let d = dist(at[i][1],at[j][0]);
-                if d <= loose { pairs.push((d,i,j)) }
+                if d > loose { continue }
+                let turn = if d > join { f64::INFINITY } else {
+                    heading(&runs[i],at[i][1],1).zip(heading(&runs[j],at[j][0],0)).map_or(f64::INFINITY,|(x,y)| cross(x,y).datan2(dot(x,y)))
+                };
+                pairs.push((d,turn,i,j))
             }
         }
-        pairs.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2)));
+        let rank = |d: f64| if d <= join { 0. } else { d };
+        pairs.sort_by(|x,y| rank(x.0).total_cmp(&rank(y.0)).then(x.1.total_cmp(&y.1)).then(x.2.cmp(&y.2)).then(x.3.cmp(&y.3)));
         // an edge held at an end pose joined to the contact the roll ends at: tangent there, so the
         // keeping test finds its end only roughly; the contact is on the edge, and is that end
         let tangent = |fixed: &Run,other: &Run,end: usize,p: P| -> Option<f64> {
@@ -430,7 +455,7 @@ impl SweptRegion {
             let x = s.back(*at)?.point(p);
             (edge.distance(x) <= join).then(|| parameter(edge,x))
         };
-        for (d,i,j) in pairs {
+        for (d,_,i,j) in pairs {
             if next[i].is_some() || taken[j] { continue }
             if let Some(u) = tangent(&runs[j],&runs[i],0,at[i][1]) {
                 runs[j].ends[0] = u; at[j][0] = at[i][1];
@@ -474,6 +499,18 @@ impl SweptRegion {
         // the loops, walked from each stretch not yet in one
         let mut loops: Vec<Loop> = Vec::new();
         let mut used = vec![false;runs.len()];
+        // a spur, a hair of a stretch joined at neither end or only to itself (the edge beside an end
+        // pose's corner, kept as far as the keeping test's tolerance reaches past the corner's
+        // path), bounds nothing
+        let hair = |r: &Run,p: P| (1..=8).all(|k| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*k as f64/8.)
+            .is_some_and(|h| dist(h.at,p) <= loose));
+        for k in 0..runs.len() {
+            let alone = next[k].is_none() && !taken[k] || next[k] == Some(k);
+            if alone && hair(&runs[k],at[k][0]) {
+                if debug() { eprintln!("region: a spur of {:?} at {:?} dropped",candidates[runs[k].candidate],at[k][0]) }
+                used[k] = true;
+            }
+        }
         for first in 0..runs.len() {
             if used[first] { continue }
             let mut pieces: Vec<Piece> = Vec::new();
@@ -499,7 +536,6 @@ impl SweptRegion {
             }
             // a sliver a few rounding errors long (where three sides meet at an end pose) is no piece:
             // its neighbours meet at its start
-            let tiny = 1e-6*(1.+s.scale);
             let mut k = 0;
             while pieces.len() > 3 && k < pieces.len() {
                 let n = pieces.len();
@@ -546,6 +582,26 @@ impl SweptRegion {
     pub fn polyline(&self,l: usize,per: usize) -> Vec<P> {
         let n = self.loops[l].pieces.len();
         (0..n).flat_map(|k| (0..per).filter_map(move |j| self.point(l,k,j as f64/per as f64))).collect()
+    }
+
+    /// What loop `l`'s pieces are, in order: each stretch's candidate, or a step along the box.
+    fn shape(&self,l: usize) -> Vec<Option<usize>> {
+        self.loops[l].pieces.iter().map(|p| match *p { Piece::Run {candidate,..} => Some(candidate),Piece::Side {..} => None }).collect()
+    }
+
+    /// Each of `base`'s loops as one of this region's and how far round it starts, where the two
+    /// are alike loop for loop and piece for piece (a drafted slab's region at two heights, one
+    /// loop lofted to the other); none where they are not.
+    pub fn matching(&self,base: &SweptRegion) -> Option<Vec<(usize,usize)>> {
+        if self.loops.len() != base.loops.len() { return None }
+        (0..base.loops.len()).map(|l| {
+            let want = base.shape(l);
+            (0..self.loops.len()).find_map(|m| {
+                let have = self.shape(m);
+                (have.len() == want.len()).then(|| (0..have.len()).find(|&r| (0..have.len()).all(|k| have[(k+r)%have.len()] == want[k])))
+                    .flatten().map(|r| (m,r))
+            })
+        }).collect()
     }
 
     /// Each loop bounding a piece of the region (counter-clockwise) with the holes in it: the

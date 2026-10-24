@@ -63,19 +63,25 @@ const STAR: &str = "star := solid(plus, from: -10mm, to: 0mm)";
 const DRAFTED: &str = "star := solid(plus, from: -10mm, to: 0mm, draft: 8deg)";
 const PERIOD: &str = "space := sweep(star over t in (0deg, 540deg), under: tool_turn, seen_from: wheel_turn)\nspace cut wheel";
 
-fn solved(src: &str) -> (Elaborated, usize) {
+fn solved(src: &str) -> (Elaborated, usize) { solved_body(src, "wheel") }
+
+/// `solved`, with the body named `body`.
+fn solved_body(src: &str, body: &str) -> (Elaborated, usize) {
     let mut e = crate::common::build(src);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    let wheel = e.map.ent_named("wheel").unwrap().i();
-    (e, wheel)
+    let id = e.map.ent_named(body).unwrap().i();
+    (e, id)
 }
 
 fn say() -> Say<'static> { Say { stage: &|_: &str| {}, mark: &|_| {} } }
 
 /// The wheel built exactly, its STL written within `held` and agreeing with the field: its volume.
-fn cut(src: &str, held: Option<Tolerance>) -> f64 {
-    let (e, wheel) = solved(src);
+fn cut(src: &str, held: Option<Tolerance>) -> f64 { cut_body(src, "wheel", held) }
+
+/// `cut`, of the body named `body`.
+fn cut_body(src: &str, body: &str, held: Option<Tolerance>) -> f64 {
+    let (e, wheel) = solved_body(src, body);
     let exact = export::exact(&e.sketch, wheel, None, held, &say())
         .unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
     exact.solid.check(1e-6).unwrap();
@@ -266,6 +272,151 @@ fn the_drafted_star_cuts_its_wheel() {
     assert!(v > square && v < square * 1.15, "{v} against the square arms' {square}");
 }
 
+/// The radiator valve's star handle as measured (#612): four arms with straight sides, tips of
+/// 3.25 mm and fillets of 4 mm between them, `span` across the tips and `waist` across opposite
+/// fillets, on a plane 1.1 mm under the top; a wheel of 46.1 mm 60 mm off the stem, 15 mm thick.
+/// `tool` declares `star` from `StarOutline`s.
+fn handle(tool: &str) -> String {
+    format!("\
+unit mm
+use std
+use std (vertical, turns)
+
+interface StarSizes {{
+  span: Length, waist: Length, tip_r: Length, fillet_r: Length
+}}
+component StarOutline(top: plane, s: StarSizes) {{
+  in top {{
+    hub := point
+    hub coincident top.origin
+    ring 4 about hub {{
+      tip_c := point hint((s.span / 2 - s.tip_r, 0))
+      fillet_c := point hint(((s.waist / 2 + s.fillet_r) / sqrt(2), (s.waist / 2 + s.fillet_r) / sqrt(2)))
+      apex := point hint((s.span / 2, 0))
+      hub distance(s.waist / 2 + s.fillet_r) fillet_c
+      line(fillet_c, tip_c) equal line(fillet_c, next.tip_c)
+      ccw(hub, tip_c, fillet_c)
+      apex coincident(t == s.span / (s.span - 2 * s.tip_r)) line(hub, tip_c)
+      p1 := point hint((tip_c.x, s.tip_r))
+      p2 := point hint((fillet_c.x - 0.2 * s.fillet_r, fillet_c.y - 0.98 * s.fillet_r))
+      p3 := point hint((fillet_c.x - 0.98 * s.fillet_r, fillet_c.y - 0.2 * s.fillet_r))
+      p4 := point hint((s.tip_r, tip_c.x))
+      tip_half := arc(center: tip_c, start: apex, end: p1)
+      side := line(p1, p2)
+      fillet := arc(center: fillet_c, start: p3, end: p2)
+      next_side := line(p3, p4)
+      next_tip_half := arc(center: next.tip_c, start: p4, end: next.apex)
+      radius(s.fillet_r) fillet
+      side tangent(at: p1) tip_half
+      side tangent(at: p2) fillet
+      next_side tangent(at: p1) fillet
+      next_side tangent(at: p2) next_tip_half
+      ccw(p1, p2, tip_c)
+      cw(p1, p2, fillet_c)
+      ccw(p3, p4, next.tip_c)
+      cw(p3, p4, fillet_c)
+    }}
+    hub distance(s.span / 2 - s.tip_r, along: u) tip_c[0]
+    hub level(v) tip_c[0]
+    outline := face(tip_half[0], side[0], fillet[0], next_side[0], next_tip_half[0],
+                    tip_half[1], side[1], fillet[1], next_side[1], next_tip_half[1],
+                    tip_half[2], side[2], fillet[2], next_side[2], next_tip_half[2],
+                    tip_half[3], side[3], fillet[3], next_side[3], next_tip_half[3])
+  }}
+}}
+
+in std.front {{
+  construction stem := vertical line(std.origin, hint((0, 10)))
+  length(10mm) stem
+  wc := point hint((-60, 0))
+  std.origin distance(-60mm, along: u) wc
+  construction spindle := vertical line(wc, hint((-60, 10)))
+  length(10mm) spindle
+}}
+top := plane
+fix(origin == (0mm, 0mm, -1.1mm)) top
+fix(dir == (1, 0, 0)) top.u
+fix(dir == (0, 1, 0)) top.v
+{tool}
+in std.top {{
+  wo := point
+  wo coincident wc
+  rim := radius(46.1mm) circle(center: wo)
+}}
+handle_turn := frame
+handle_turn turns(1) stem
+wheel_turn := frame
+wheel_turn turns(-4 / 6) spindle
+space := sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)
+wheel := solid(face(rim), from: -15.6mm, to: -0.6mm)
+space cut wheel
+")
+}
+
+/// The handle's outline moved `d` into itself, as an 8° draft moves it at depth `d / tan 8°`:
+/// the tips' radius less `d`, the fillets' more, their centres where they were.
+fn outline(name: &str, d: f64) -> String {
+    format!("{name} := StarOutline(top, s: {{span: {}mm, waist: {}mm, tip_r: {}mm, fillet_r: {}mm}})",
+        74.2 - 2. * d, 25.8 - 2. * d, 3.25 - d, 4. + d)
+}
+
+/// **The drafted handle cuts its wheel** (#612): the arms narrow 8° through the 14.5 mm the wheel
+/// spans, and the ring the hub sweeps narrows with them, so its inner edge crosses the sides of
+/// the box the region is read within, 48 mm about the wheel's centre: two loops below, a hole in
+/// the box above, and no change at all within the blank.  The slab's box is grown until
+/// its stations are alike, and one slab is lofted.  The drafted star removes the least: its wheel
+/// keeps more than the square arms' and than six bands stepped down it, each its widest section
+/// over its band.
+#[test]
+fn the_drafted_handle_cuts_its_wheel() {
+    let drafted = format!("{}\nstar := solid(plan.outline, from: -16mm, to: 0mm, draft: 8deg)", outline("plan", 0.));
+    let src = handle(&drafted);
+    let (e, w) = solved(&src);
+    let admitted = admit_body(&e.sketch, w, &Options::default()).unwrap_or_else(|f| panic!("{f}"));
+    let [sweep] = admitted.sweeps() else { panic!("one sweep") };
+    let Class::Subtraction(found) = &sweep.class else { panic!("{:?}", sweep.class) };
+    let [slab] = found.slabs.as_slice() else { panic!("{} slabs", found.slabs.len()) };
+    let (_, base) = &slab.stations[0];
+    for (z, r) in &slab.stations {
+        assert!(r.matching(base).is_some() && r.loops.len() == 2, "at {z}: {} loops", r.loops.len());
+    }
+    let v = cut(&src, Some(Tolerance { millimetres: 0.01 }));
+    let square = cut(&handle(&format!("{}\nstar := solid(plan.outline, from: -16mm, to: 0mm)", outline("plan", 0.))), None);
+    // six bands through the 14.5 mm the star spans in the wheel, the last on to its foot
+    let (band, tan) = (14.5 / 6., 8f64.to_radians().tan());
+    let mut stepped = String::new();
+    for k in 0..6 {
+        let from = if k == 5 { -16. } else { -band * (k + 1) as f64 };
+        stepped += &format!("{}\nband{k} := solid(plan{k}.outline, from: {from}mm, to: {}mm)\n", outline(&format!("plan{k}"), band * k as f64 * tan),
+            -band * k as f64);
+    }
+    stepped += "star := solid(band0)\n";
+    for k in 1..6 { stepped += &format!("band{k} union star\n") }
+    let stepped = cut(&handle(&stepped), None);
+    assert!(v > stepped && stepped > square, "drafted {v:.3} mm³, stepped {stepped:.3}, square {square:.3}");
+}
+
+/// **A drafted tool whose region changes within the blank is refused where it does** (#612): a
+/// disc of 3 mm 25 mm off the stem, drafted 12°, traces a path with three loops in the wheel, and
+/// the thinner the disc the more of each loop's island it leaves.  Where an island's edge changes
+/// is the blank's own, so no box makes the stations alike; the refusal says the depth of the disc
+/// to step it at, between the two stations that differ.
+#[test]
+fn a_drafted_tool_whose_islands_change_is_refused_at_their_depth() {
+    let disc = "in std.top {\n  dc := point\n  dc coords(du: 25mm, dv: 1mm) std.top\n  disc := circle(center: dc) hint(r: 3)\n  radius(3mm) disc\n}\n\
+        star := solid(face(disc), from: -10mm, to: 0mm, draft: 12deg)";
+    let (e, w) = solved(&wheel(disc, &PERIOD.replace("540deg", "1080deg")));
+    match admit_body(&e.sketch, w, &Options::default()) {
+        Err(Error::Refused(r)) => {
+            assert_eq!(r.condition, Condition::Slabs, "{r}");
+            let m = r.to_string();
+            let at = m.split("step the tool at about ").nth(1).and_then(|t| t.split(' ').next()).and_then(|t| t.parse::<f64>().ok());
+            assert!(at.is_some_and(|z| (-8. ..-2.).contains(&z)) && m.contains("of `star`"), "{m}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
 /// **The field reads a drafted prism of any loop** (#607, #588): the plus is not convex, so its
 /// drafted prism is read as the signed distance to its section at each height — at depth `w` an
 /// arm's side stands `|w| tan 8°` inside where it is drawn.
@@ -318,6 +469,79 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
     let [d] = &diags[..] else { panic!("{diags:#?}") };
     assert_eq!((d.code, d.at(e.text()).0), (Code::E080, 23), "{d:?}");
     assert!(d.message.starts_with("`space` sweeps `pyramid`, whose material the field does not read"), "{d:?}");
+}
+
+/// #613's pinion: 12 teeth of module 0.8, its tooth spaces cut by one tooth of the basic rack (its
+/// pitch line shifted +0.3 m) rolled across the blank on the pitch circle, from clear of the tip to
+/// clear of it; `cuts` cuts `space` (or its copies about the spindle) from `gear`.
+fn pinion(cuts: &str) -> String {
+    format!("\
+unit mm
+use std
+use std (vertical, turns, slides, coords, on_v)
+
+m := 0.8mm
+N := 12
+phi := 20deg
+R := m * N / 2
+Rp := R + 0.3 * m
+Rt := Rp + m
+hw := pi * m / 4
+reach := sqrt(Rt ^ 2 - (Rp - 1.25 * m) ^ 2) + hw + 1.5 * m * tan(phi)
+window := reach / R * 1rad
+
+in std.front {{
+  construction spindle := vertical line(std.origin, hint((0, 10)))
+  length(10mm) spindle
+}}
+in std.top {{
+  construction rack_line := line(hint((10, Rp)), hint((0, Rp)))
+  rack_line.p1 coords(du: 10mm, dv: Rp) std.top
+  rack_line.p2 on_v(d: Rp) std.top
+  a := point hint((-hw - 1.5 * m * tan(phi), Rp + 1.5 * m))
+  b := point hint((-hw + 1.25 * m * tan(phi), Rp - 1.25 * m))
+  c := point hint((hw - 1.25 * m * tan(phi), Rp - 1.25 * m))
+  d := point hint((hw + 1.5 * m * tan(phi), Rp + 1.5 * m))
+  a coords(du: -hw - 1.5 * m * tan(phi), dv: Rp + 1.5 * m) std.top
+  b coords(du: -hw + 1.25 * m * tan(phi), dv: Rp - 1.25 * m) std.top
+  c coords(du: hw - 1.25 * m * tan(phi), dv: Rp - 1.25 * m) std.top
+  d coords(du: hw + 1.5 * m * tan(phi), dv: Rp + 1.5 * m) std.top
+  rack_tooth := face(a, b, c, d, -> close)
+  tip := circle(center: std.top.origin) hint(r: Rt)
+  radius(Rt) tip
+  hole := circle(center: std.top.origin) hint(r: 1)
+  radius(1mm) hole
+}}
+tooth := solid(rack_tooth, from: -1mm, to: 6mm)
+blank_turn := frame
+blank_turn turns(1) spindle
+rack := frame
+rack slides(2 * pi * R) rack_line
+index := frame
+index turns(1) spindle
+space := sweep(tooth over t in (-window, window), under: rack, seen_from: blank_turn)
+gear := solid(face(tip, holes: hole), from: 0mm, to: 5mm)
+{cuts}
+")
+}
+
+/// **A tooth space cut at a copy turned 30° is the space turned** (#613): the blank's box at a
+/// placement no quarter turn reaches past the rack tooth's tip at each end pose, where the held top
+/// edge, the corner's path and a hair of the flank the keeping test's tolerance keeps all meet.  The
+/// boundary takes the corner's path (the rightmost turn) and the hair is dropped, so the copy alone
+/// removes what the space removes, and a whole pinion — eleven copies — builds, agrees with the field
+/// and removes twelve spaces.
+#[test]
+fn a_tooth_space_cut_at_a_turned_copy_is_the_space_turned() {
+    // the tip circle's radius is 4.8 + 0.24 + 0.8 mm, the hole's 1 mm, the blank 5 mm thick
+    let blank = PI * (5.84 * 5.84 - 1.) * 5.;
+    let one = blank - cut_body(&pinion("space cut gear"), "gear", None);
+    let turned = blank - cut_body(&pinion("turned := space at(under: index) 30deg\nturned cut gear"), "gear", None);
+    assert!(one > 10. && (turned - one).abs() < 1e-3 * one, "the copy removes {turned:.5} mm³, the space {one:.5}");
+    let copies: String = (1..12).map(|k| format!("t{k} := space at(under: index) {}deg\nt{k} cut gear\n", 30 * k)).collect();
+    let whole = blank - cut_body(&pinion(&format!("space cut gear\n{copies}")), "gear", None);
+    // the spaces are apart: twelve remove twelve times one
+    assert!((whole - 12. * one).abs() < 1e-4 * whole, "twelve spaces remove {whole:.5} mm³, one {one:.5}");
 }
 
 /// The wheel stood by a frame turning with it at `degrees` of its value (`x in f`), and a body made
@@ -374,6 +598,29 @@ fn a_wheel_a_frame_stands_is_the_wheel_moved() {
             assert!((read(name) - read("wheel")).abs() <= 1e-6 * v, "{degrees}°: `{name}` reads {} against {}", read(name), read("wheel"));
         }
     }
+}
+
+/// What `solventc --where` reads of solid `name`: its exact B-rep supplied where a sweep builds
+/// one, then the report's positions under the name.
+fn read(e: &Elaborated, name: &str) -> Vec<(String, f64)> {
+    let asked = |n: &str| n == name || n.starts_with(&format!("{name}."));
+    export::supply_exact_where(&e.sketch, &|i| asked(&e.sketch.solids[i].name));
+    gcs_core::report::positions_where(&e.sketch, &e.map, &asked).into_iter()
+        .filter(|(n, _)| asked(n)).collect()
+}
+
+/// **A Boolean of the cut wheel that leaves no material is empty, and its volume is 0** (#618):
+/// the star the wheel was cut by shares nothing with it, so the common of the two is built with no
+/// faces — a body with no material, read as a static one's empty Boolean is, and not a solid that
+/// failed to build, whose name would read nothing.
+#[test]
+fn a_swept_bodys_empty_boolean_reads_volume_zero() {
+    let space = format!("{PERIOD}\noverlap := solid(wheel)\nstar common overlap");
+    let (e, _) = solved(&wheel(STAR, &space));
+    let said = read(&e, "overlap");
+    let at = |n: &str| said.iter().find(|(k, _)| k == n).map(|r| r.1);
+    assert_eq!((at("overlap.volume"), at("overlap.area")), (Some(0.0), Some(0.0)), "{said:?}");
+    assert!(!said.iter().any(|(n, _)| n.starts_with("overlap.bounds")), "{said:?}");
 }
 
 /// **A claim about a cut wheel is judged from its exact build** (#615): the radiator bot's star

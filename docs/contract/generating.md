@@ -232,7 +232,10 @@ where the profile's curvature jumps, the section does not), fitted by the shared
 (`brep::sweep::helical`). A body built from swept material (`drill := solid(fluted)`, `shank union
 drill`) is built by the body rule over exact operands (`brep::export::compose`; the page's `Builder`
 too) and measured by it over operand meters (`accuracy::Meter`). A drawing reads a swept object's
-exact B-rep (`brep::export::supply_exact`, `Sketch::supply_exact_solid`). Kernel rules it found: every
+exact B-rep (`brep::export::supply_exact`, `Sketch::supply_exact_solid`); one built with no faces is
+a body with no material, read as a static solid's empty Boolean is (`overlap.volume = 0`), never as a
+solid that failed to build, whose name would read nothing (#618,
+`planar_subtraction::a_swept_bodys_empty_boolean_reads_volume_zero`). Kernel rules it found: every
 vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a traced fit is laid and
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
@@ -279,9 +282,14 @@ members meet is the section's), and — over a roll that is no whole period — 
 end pose; a point is a candidate only where it lies on the section's boundary at its own pose
 (`Kind::at`), and kept only where it lies outside the section at every pose (`Keep::outside`,
 `envelope::planar`'s test turned round). Kept stretches are found on a grid of a quarter degree,
-their ends bisected; walked with `R` on the left they join where they cross (solved together,
+their ends bisected, and one of no length (a sample kept where its candidate's domain ends, its
+ends and middle one point) dropped (#612); walked with `R` on the left they join where they cross (solved together,
 `meet`), run on into each other at the same roll, meet at an end pose (the contact on the held
-edge, exactly) or leave the box, which carries the loop round to the next stretch entering. A
+edge, exactly) or leave the box, which carries the loop round to the next stretch entering. Where
+several meet at one point (an end pose's corner: the held edge, the corner's path, and a hair of the
+next edge the keeping test's tolerance keeps), the union's boundary takes the rightmost turn, and a
+hair joined at neither end, or only to itself, is dropped (#613: a placement turned 30° boxes the
+blank past a rack tooth's tip, which no quarter turn does). A
 whole period is where the motion takes the section onto itself (`Setting::alike`: the tool's
 symmetry counted, the star's 540° at 4:6), and a roll that is neither one nor clear of the blank at
 both ends is refused naming the period. `brep::sweep::subtraction` builds each
@@ -291,12 +299,19 @@ carried through its slab, a hair past the blank where the slab ends at its face,
 the blank at every placement; a drafted slab (#607) is read at `STATIONS` heights and lofted
 (`build::lofted`, a B-spline surface a stretch, cubic along it and across the stations) through
 every other one, held to the ones between within the fit's bar, its loops matched station for
-station or refused. `accuracy::Subtracted` meters it, reading each sweep by the class's own
+station (`SweptRegion::matching`). Admission reads its stations within the box grown by each of
+`GROWN` in turn until they are alike (#612): the box's sides lie outside the blank, so a change of
+shape only where they cut the region is the box's — the measured handle's hub ring, narrowing
+with the draft, crosses them 48 mm about the wheel's centre. A change in every box is the blank's
+own, refused at Q2 naming the drafted member's depth to step the tool at, found between the two
+stations that differ. `accuracy::Subtracted` meters it, reading each sweep by the class's own
 `planar_subtraction::admit`; a `through:` roll never clear of its body is refused saying the period
 to state. Every period is found by one search (`roll::first_alike`: a degree at a time, none for a
 tool the motion does not move) and said in one form (`roll::advice`). `tests/planar_subtraction.rs` is the gate
 (the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,
-one arm through, Q3, the drafted wheel at 10 µm).
+one arm through, Q3, the drafted wheel at 10 µm, the measured drafted handle above six bands
+stepped down it and the square arms, a drafted disc whose islands change refused at their depth,
+#613's pinion cut at a copy turned 30° and whole).
 
 **Export tolerance ([plan](../native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets
@@ -307,6 +322,13 @@ half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::s
 `brep::export::written_within`: far from the origin refused, #60); the mesh contract counts clusters
 (`TinyTriangles::clustered`); the field is probed at max(2 tol, 2 µm).
 `--measure FILE` checks an export (`solid::accuracy`) and exits 1 over tolerance.
+**An empty body is refused as one** (#617): a body built with no face is what the document drew,
+not a limit of the encoding, so `brep::export::exact` refuses it, whatever path built it, saying
+which solid is empty and which statement emptied it (`` `shared` is empty: `b common shared` leaves
+no material, so there is nothing to write ``, or its stock holding none) — `combine` checks after
+each Boolean, and a static body found empty is combined again a statement at a time to name it
+(`emptied`) — never a float32 rounding read off its infinite bounds, nor a STEP file of no faces.
+`an_empty_body_is_refused_naming_the_statement_that_emptied_it` (`tests/brep_export.rs`).
 
 **One sector, sewn round ([plan](../native-speed-plan.md)):** a body whose swept cuts are turns
 of one placement about one axis (`solid::sector::indexing`), from a blank alike under the turn, is
