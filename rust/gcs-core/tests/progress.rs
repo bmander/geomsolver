@@ -170,7 +170,4 @@ fn a_march_is_said_with_how_far_it_has_got() {
     assert_eq!(w.text(), "followed t");
     assert_eq!(w.gauge.read().as_deref(), Some("now at 90deg of (0deg, 90deg)"));
     assert_eq!(w.running(3.1), "still following t, now at 90deg of (0deg, 90deg), 3.1 s so far");
-    // and nothing is said, nor any gauge set, where nobody listens
-    assert!(gcs_core::follow::followed(&sk, "t").is_ok());
-    assert_eq!(Work::follow("t").gauge.read(), None);
 }

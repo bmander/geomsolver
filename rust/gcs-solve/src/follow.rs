@@ -37,9 +37,9 @@
 //!   the bit (`Still`): only what moves is solved.
 //! - *Implied* (#591): a statement the others already imply — a row with no column of its own,
 //!   the over part of the drawing's order, holding at home — is left out of every station solve
-//!   (`implied`) and judged where each station ends, a station where it does not hold not solved:
-//!   carried, it made the drawing's order not square, which read every station's rank whole and
-//!   set nothing aside.
+//!   (`implied`) and judged where each station ends: a station where it does not hold does not
+//!   stand.  Solved, it made the drawing's order not square, which read every station's rank whole
+//!   and set nothing aside.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -685,22 +685,23 @@ fn implied(sk: &Sketch) -> Vec<u32> {
     if rank(&order.over_rows) < n {
         return Vec::new();
     }
-    let mut instances: Vec<(usize, usize)> =
-        order.over_rows.iter().map(|&row| sys.instance_of(row)).collect();
-    instances.sort_unstable();
-    instances.dedup();
-    let cid = |&(b, i): &(usize, usize)| sys.blocks[b].cids[i];
-    instances.sort_by_key(|i| std::cmp::Reverse(cid(i)));
+    // each statement by its id, the last written first
+    let mut statements: Vec<(u32, (usize, usize))> = order.over_rows.iter().map(|&row| {
+        let (b, i) = sys.instance_of(row);
+        (sys.blocks[b].cids[i], (b, i))
+    }).collect();
+    statements.sort_unstable_by(|a, b| b.cmp(a));
+    statements.dedup();
     let (mut rows, mut out) = (order.over_rows.clone(), Vec::new());
-    for inst in &instances {
+    for (cid, inst) in statements {
         if rows.len() == n {
             break;
         }
-        let own = sys.rows_of(&[*inst]);
+        let own = sys.rows_of(&[inst]);
         let rest: Vec<usize> = rows.iter().filter(|r| !own.contains(r)).copied().collect();
         if rank(&rest) == n {
             rows = rest;
-            out.push(cid(inst));
+            out.push(cid);
         }
     }
     if rows.len() != n {
@@ -746,14 +747,14 @@ impl Still {
     /// text says reads otherwise — with the statements `implied` left out.
     fn of(sk: &Sketch, held: u32, reading: &[u32], elsewhere: f64, implied: &[u32]) -> Still {
         let only = Still { implied: implied.to_vec(), ..Still::default() };
-        let left;
-        let sk = if implied.is_empty() {
-            sk
-        } else {
-            let mut l = sk.clone();
-            let _ = only.aside(&mut l);
-            left = l;
-            &left
+        let mut left = None;
+        let sk: &Sketch = match implied {
+            [] => sk,
+            _ => {
+                let left = left.insert(sk.clone());
+                let _ = only.aside(left);
+                left
+            }
         };
         let mut sys = System::new(sk);
         let order = sys.block_order();
@@ -828,34 +829,33 @@ impl Still {
                 .map(|(i, _)| i)
                 .collect()
         };
-        let implied = carry(sk, &self.implied);
-        for &i in &implied {
-            sk.constraints[i].carried = true;
+        let (mut rows, mut params) = (carry(sk, &self.implied), Vec::new());
+        if !self.rows.is_empty() && !self.misses(sk) {
+            rows.extend(carry(sk, &self.rows));
+            params = self.params.iter().map(|&p| p as usize)
+                .filter(|&p| sk.params.get(p).is_some_and(|q| !q.fixed))
+                .collect();
         }
-        if self.rows.is_empty() {
-            return Aside { rows: implied, params: Vec::new() };
-        }
-        let spans = crate::curve::contact_spans(sk);
-        let missed: Vec<u32> = sk.constraints.iter()
-            .filter(|c| self.reads.get(&c.id).is_some_and(|was| *was != read(sk, c, &spans)))
-            .map(|c| c.id)
-            .collect();
-        if !missed.is_empty() {
-            self.missed.borrow_mut().extend(missed);
-            return Aside { rows: implied, params: Vec::new() };
-        }
-        let mut rows = carry(sk, &self.rows);
-        let params: Vec<usize> = self.params.iter().map(|&p| p as usize)
-            .filter(|&p| sk.params.get(p).is_some_and(|q| !q.fixed))
-            .collect();
         for &i in &rows {
             sk.constraints[i].carried = true;
         }
         for &p in &params {
             sk.params[p].fixed = true;
         }
-        rows.extend(implied);
         Aside { rows, params }
+    }
+
+    /// Whether a statement set aside reads otherwise in `sk` than it read at home: one that does
+    /// reads the parameter, and is kept in `missed`.
+    fn misses(&self, sk: &Sketch) -> bool {
+        let spans = crate::curve::contact_spans(sk);
+        let missed: Vec<u32> = sk.constraints.iter()
+            .filter(|c| self.reads.get(&c.id).is_some_and(|was| *was != read(sk, c, &spans)))
+            .map(|c| c.id)
+            .collect();
+        let any = !missed.is_empty();
+        self.missed.borrow_mut().extend(missed);
+        any
     }
 
     /// Whether every statement the rest implies holds where `sk` stands, each row judged as a
