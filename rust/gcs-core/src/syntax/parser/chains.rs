@@ -51,20 +51,22 @@ struct Joint {
 }
 
 /// `round(r: R)` or `(k := round(r: R))` at a threaded joint (#576): the arc's name where one is
-/// written, the radius's parentheses as `radius` reads them, and where the word's text runs.
+/// written, the radius as written and where, and where the word's text runs.
 struct RoundWord {
     name: Option<Name>,
-    args: Vec<OpArg>,
+    radius: (String, Span),
     span: Span,
 }
 
 /// Where a round's arc meets its two lines, worked out by `P::round_corner`: the corner they
 /// were written meeting at, where a side named it, and the two points the arc is tangent at —
-/// the arriving line's exit and the leaving line's entry, each its own point now.
+/// the arriving line's exit and the leaving line's entry, each its own point now — and the
+/// plane the arc is drawn in, its lines' where the chain declares one.
 struct RoundEnds {
     corner: Option<Ref>,
     start: Ref,
     end: Ref,
+    membership: crate::syntax::Membership,
 }
 
 /// The trailing clauses a chain's line carried (`P::chain_trailers`): a placement and where it
@@ -200,6 +202,48 @@ fn boundary_ref(root: Name, kind: EntKind, slot: usize) -> Ref {
         span: Span::default(),
     }
 }
+/// The relation a chain states by a word over its operands, as a lone statement writing the same
+/// word would: a prefix word over its link, a joint's word between two, a round's rows.
+fn word_relation(
+    word: Name,
+    fixity: Fixity,
+    ops: Vec<Ref>,
+    args: Vec<OpArg>,
+    span: Span,
+) -> Relation {
+    Relation {
+        place: None,
+        place_span: Span::default(),
+        form: crate::syntax::RelationForm::Written(Written {
+            word,
+            fixity,
+            ops,
+            args,
+            span,
+            rates: Vec::new(),
+        }),
+        claim: false,
+        witness: None,
+        class: Classes::default(),
+        class_span: Span::default(),
+        word: None,
+        along: None,
+        space: false,
+        initially: false,
+        within: Vec::new(),
+        name: None,
+    }
+}
+
+/// The declaration statements of an open joint's first and last links among what the chain
+/// emitted: both are declarations (`P::open_ends` said so), and links emit theirs in link order,
+/// so they are the slice's first and last `Decl`.
+fn boundary_decls(made: &[Stmt]) -> Option<(crate::syntax::StmtId, crate::syntax::StmtId)> {
+    let mut decls = made.iter().filter(|s| matches!(s.kind, StmtKind::Decl(_)));
+    let first = decls.next()?.id;
+    Some((first, decls.last().map_or(first, |s| s.id)))
+}
+
 /// The links a named chain walks, in order: each link, and between two that a round joins the
 /// arc it mints (#576) — the edge the walk runs along there — and after the last, the closing
 /// joint's.
@@ -544,12 +588,11 @@ impl<'a> P<'a> {
             self.fail("a round says its radius: `-> round(r: 2mm)`");
             return None;
         }
-        let (text, span) = self.raw_number()?;
+        let radius = self.raw_number()?;
         if !self.want_p(')') || (named && !self.want_p(')')) {
             return None;
         }
-        let args = vec![OpArg::Dim(text, span)];
-        Some(Some(RoundWord { name, args, span: Span::new(lo, self.prev_hi()) }))
+        Some(Some(RoundWord { name, radius, span: Span::new(lo, self.prev_hi()) }))
     }
 
     /// What a named chain may not be: left open at a block's brace, or joined by anything but
@@ -821,11 +864,6 @@ impl<'a> P<'a> {
                 false => self.thread(&mut links, n - 1, 0, c.span),
             }
         }
-        let membership: Vec<crate::syntax::Membership> = (0..joints.len())
-            .map(|k| Self::round_membership(&links[k], &links[k + 1]))
-            .collect();
-        let sealed_membership =
-            close.as_ref().map(|_| Self::round_membership(&links[n - 1], &links[0]));
         // the links are consumed below, so what a joint needs of them — the entity and its kind
         // where that is known — is taken first, and only where there are joints to need it
         let sig: Vec<(Ref, Option<EntKind>)> = match chained {
@@ -839,8 +877,7 @@ impl<'a> P<'a> {
             if i > 0 && joints[i - 1].sound {
                 if let (Some(rw), Some(ends)) = (joints[i - 1].round.take(), rounds[i - 1].take()) {
                     let (from, to) = (sig[i - 1].0.clone(), sig[i].0.clone());
-                    let m = membership[i - 1].clone();
-                    out.extend(self.round_stmts(rw, &from, &to, ends, m, next_id));
+                    out.extend(self.round_stmts(rw, &from, &to, ends, next_id));
                 }
                 let j = &joints[i - 1];
                 for k in 0..j.words.len() {
@@ -898,8 +935,7 @@ impl<'a> P<'a> {
         if let Some(mut c) = close {
             if let (Some(rw), Some(ends)) = (c.round.take(), sealed) {
                 let (from, to) = (sig[n - 1].0.clone(), sig[0].0.clone());
-                let m = sealed_membership.unwrap_or_default();
-                out.extend(self.round_stmts(rw, &from, &to, ends, m, next_id));
+                out.extend(self.round_stmts(rw, &from, &to, ends, next_id));
                 // the round's span stops at its word, and the line runs on through `close`
                 if let Some(tail) = out.last_mut() {
                     tail.span = Span::new(tail.span.lo as usize, c.span.hi as usize);
@@ -1008,28 +1044,8 @@ impl<'a> P<'a> {
     ) -> Option<()> {
         for (word, args) in &link.prefixes {
             let sp = word.span;
-            let rel = Relation {
-                place: None,
-                place_span: Span::default(),
-                form: crate::syntax::RelationForm::Written(Written {
-                    word: word.clone(),
-                    fixity: Fixity::Prefix,
-                    ops: vec![ent.clone()],
-                    args: args.clone(),
-                    span: sp,
-                    rates: Vec::new(),
-                }),
-                claim: false,
-                witness: None,
-                class: Classes::default(),
-                class_span: Span::default(),
-                word: None,
-                along: None,
-                space: false,
-                initially: false,
-                within: Vec::new(),
-                name: None,
-            };
+            let ops = vec![ent.clone()];
+            let rel = word_relation(word.clone(), Fixity::Prefix, ops, args.clone(), sp);
             let id = self.mint_stmt(next_id, sp)?;
             out.push(Stmt {
                 id,
@@ -1149,12 +1165,7 @@ impl<'a> P<'a> {
         made: &[Stmt],
         next_id: &mut u32,
     ) {
-        // both boundary links are declarations (`open_ends` said so), and links emit their
-        // declarations in link order — so the slice's first and last `Decl` are theirs
-        let mut decls = made.iter().filter(|s| matches!(s.kind, StmtKind::Decl(_)));
-        let first_id = decls.next().map(|s| s.id);
-        let last_id = decls.last().map(|s| s.id).or(first_id);
-        let (Some(first_id), Some(last_id)) = (first_id, last_id) else { return };
+        let Some((first_id, last_id)) = boundary_decls(made) else { return };
         let lref = le.entity.clone();
         let rref = under_root("next", &fe.entity, j.span);
         let mut stmts = Vec::new();
@@ -1248,6 +1259,13 @@ impl<'a> P<'a> {
                 return None;
             }
         }
+        let membership = [li, ri]
+            .into_iter()
+            .find_map(|i| match &links[i].body {
+                LinkBody::Decl(d) => Some(d.membership.clone()),
+                LinkBody::Ref(_) => None,
+            })
+            .unwrap_or_default();
         // each line ends at a point of its own now, where the arc touches it
         for (side, slot) in [(li, exit), (ri, entry)] {
             if let LinkBody::Decl(d) = &mut links[side].body {
@@ -1263,7 +1281,7 @@ impl<'a> P<'a> {
             true => under_root("next", &end_ref(&links[ri], entry), at),
             false => end_ref(&links[ri], entry),
         };
-        Some(RoundEnds { corner, start, end })
+        Some(RoundEnds { corner, start, end, membership })
     }
 
     /// **The statements a round is sugar for** (#576): its arc, named or keyed, from the
@@ -1277,10 +1295,10 @@ impl<'a> P<'a> {
         from: &Ref,
         to: &Ref,
         ends: RoundEnds,
-        membership: crate::syntax::Membership,
         next_id: &mut u32,
     ) -> Vec<Stmt> {
         let at = rw.span;
+        let (r, r_at) = rw.radius.clone();
         let arc = round_ref(&rw);
         let name = round_name(&rw);
         let keyed = rw.name.is_none();
@@ -1293,7 +1311,7 @@ impl<'a> P<'a> {
         ];
         d.seed = vec![0.0];
         d.seed_text = vec![None];
-        d.membership = membership;
+        d.membership = ends.membership.clone();
         d.mint_close = keyed.then_some(at.hi as usize);
         d.round = Some(Box::new(crate::syntax::Round {
             from: from.clone(),
@@ -1301,35 +1319,15 @@ impl<'a> P<'a> {
             corner: ends.corner.clone(),
         }));
         let relation = |word: &str, fixity: Fixity, ops: Vec<Ref>, args: Vec<OpArg>| {
-            StmtKind::Relation(Relation {
-                place: None,
-                place_span: Span::default(),
-                form: crate::syntax::RelationForm::Written(Written {
-                    word: Name { text: word.to_string(), span: at },
-                    fixity,
-                    ops,
-                    args,
-                    span: at,
-                    rates: Vec::new(),
-                }),
-                claim: false,
-                witness: None,
-                class: Classes::default(),
-                class_span: Span::default(),
-                word: None,
-                along: None,
-                space: false,
-                initially: false,
-                within: Vec::new(),
-                name: None,
-            })
+            let word = Name { text: word.to_string(), span: at };
+            StmtKind::Relation(word_relation(word, fixity, ops, args, at))
         };
         let touch = |p: &Ref| {
             vec![OpArg::Named(Name { text: "at".into(), span: at }, Arg::Ref(p.clone()))]
         };
         let mut kinds = vec![
             StmtKind::Decl(d),
-            relation("radius", Fixity::Prefix, vec![arc.clone()], rw.args),
+            relation("radius", Fixity::Prefix, vec![arc.clone()], vec![OpArg::Dim(r, r_at)]),
             relation("tangent", Fixity::Infix, vec![arc.clone(), from.clone()], touch(&ends.start)),
             relation("tangent", Fixity::Infix, vec![arc.clone(), to.clone()], touch(&ends.end)),
         ];
@@ -1347,17 +1345,6 @@ impl<'a> P<'a> {
         out
     }
 
-    /// The membership a round's arc is drawn with: its lines', where the chain declares one.
-    fn round_membership(left: &Link, right: &Link) -> crate::syntax::Membership {
-        [left, right]
-            .into_iter()
-            .find_map(|l| match &l.body {
-                LinkBody::Decl(d) => Some(d.membership.clone()),
-                LinkBody::Ref(_) => None,
-            })
-            .unwrap_or_default()
-    }
-
     /// An open joint's round, settled (#576): the statements a round in the chain would state,
     /// the leaving line spelled through `next` — and no weld, since the round's own arc joins
     /// the two copies.
@@ -1370,18 +1357,10 @@ impl<'a> P<'a> {
         made: &[Stmt],
         next_id: &mut u32,
     ) {
-        let mut decls = made.iter().filter(|s| matches!(s.kind, StmtKind::Decl(_)));
-        let first_id = decls.next().map(|s| s.id);
-        let last_id = decls.last().map(|s| s.id).or(first_id);
-        let (Some(first_id), Some(last_id)) = (first_id, last_id) else { return };
+        let Some((first_id, last_id)) = boundary_decls(made) else { return };
         let Some(rw) = j.round else { return };
-        let membership = made.iter().find_map(|s| match &s.kind {
-            StmtKind::Decl(d) if d.kind == EntKind::Line => Some(d.membership.clone()),
-            _ => None,
-        });
         let to = under_root("next", &fe.entity, j.span);
-        let stmts = self.round_stmts(rw, &le.entity, &to, ends, membership.unwrap_or_default(),
-                                     next_id);
+        let stmts = self.round_stmts(rw, &le.entity, &to, ends, next_id);
         self.open = Some(OpenJoint {
             stmts,
             words: j.words,
@@ -1509,28 +1488,8 @@ impl<'a> P<'a> {
         // `program::constrain` settles both.  The chain contributes the one thing it knows and
         // the operator cannot: *which end* two links meet at.
         let written = |w: &str, ops: Vec<Ref>, args: Vec<OpArg>| {
-            Some(Relation {
-                place: None,
-                place_span: Span::default(),
-                form: crate::syntax::RelationForm::Written(Written {
-                    word: Name { text: w.to_string(), span: at },
-                    fixity: Fixity::Infix,
-                    ops,
-                    args,
-                    span: at,
-                    rates: Vec::new(),
-                }),
-                claim: false,
-                witness: None,
-                class: Classes::default(),
-                class_span: Span::default(),
-                word: None,
-                along: None,
-                space: false,
-                initially: false,
-                within: Vec::new(),
-                name: None,
-            })
+            let word = Name { text: w.to_string(), span: at };
+            Some(word_relation(word, Fixity::Infix, ops, args, at))
         };
         let end = |w: &str| {
             vec![OpArg::Named(Name { text: "at".into(), span: at }, Arg::Word(w.to_string()))]

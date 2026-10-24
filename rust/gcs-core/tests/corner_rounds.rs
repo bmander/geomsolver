@@ -44,6 +44,19 @@ fn near(a: (f64, f64), b: (f64, f64)) -> bool {
     (a.0 - b.0).abs() < 1e-7 && (a.1 - b.1).abs() < 1e-7
 }
 
+/// What the diagnosis of `src` warns of, solved as far as it will go.
+fn warnings(src: &str) -> Vec<String> {
+    let mut sk = build(src).sketch;
+    let _ = gcs_core::solve::solve(&mut sk, Default::default());
+    gcs_core::diagnose::diagnose(&mut sk, Default::default()).warnings
+}
+
+/// Whether `body`, drawn in the front plane, is refused by the parser with a message opening so.
+fn refused_where_written(body: &str, opening: &str) {
+    let (_, errs) = crate::common::parse(&format!("in std.front {{\n{body}}}\n"));
+    assert!(errs.iter().any(|e| e.message.starts_with(opening)), "{opening}: {errs:?}");
+}
+
 /// How far an arc turns from its start to its end, counter-clockwise, in degrees.
 fn sweep(c: (f64, f64), s: (f64, f64), e: (f64, f64)) -> f64 {
     let a = (s.1 - c.1).atan2(s.0 - c.0);
@@ -263,7 +276,7 @@ fn the_star_handle_solves_on_one_root() {
 
 #[test]
 fn a_round_too_large_for_its_line_is_said_by_name() {
-    // r 12 on a 20 × 16 rectangle: the short sides take 24 of their 16
+    // r 9 at two corners of a 20 × 16 rectangle: the short side between them takes 18 of its 16
     let src = "\
 use std
 in std.front {
@@ -279,12 +292,9 @@ fix((0, 16)) d
   (top := line(c, d)) -> (left := line(d, a)) -> close
 }
 ";
-    let e = build(src);
-    let mut sk = e.sketch.clone();
-    let _ = gcs_core::solve::solve(&mut sk, Default::default());
-    let d = gcs_core::diagnose::diagnose(&mut sk, Default::default());
-    assert!(d.warnings.iter().any(|w| w == "`br` (r 9mm) and `tr` (r 9mm) overlap on `right`: \
-        they set back 9mm and 9mm from corners 16mm apart"), "{:#?}", d.warnings);
+    let said = warnings(src);
+    assert!(said.iter().any(|w| w == "`br` (r 9mm) and `tr` (r 9mm) overlap on `right`: \
+        they set back 9mm and 9mm from corners 16mm apart"), "{said:#?}");
     // one round alone on a line: the largest radius the line takes
     let src = "\
 use std
@@ -298,12 +308,9 @@ fix((40, 6)) c
 (bottom := line(a, b)) -> (k := round(r: 8)) (up := line(b, c)) -> (back := line(c, a)) -> close
 }
 ";
-    let e = build(src);
-    let mut sk = e.sketch.clone();
-    let _ = gcs_core::solve::solve(&mut sk, Default::default());
-    let d = gcs_core::diagnose::diagnose(&mut sk, Default::default());
-    assert!(d.warnings.iter().any(|w| w == "`k` (r 8mm) runs past `up`'s far end; it fits up \
-        to r 6mm"), "{:#?}", d.warnings);
+    let said = warnings(src);
+    assert!(said.iter().any(|w| w == "`k` (r 8mm) runs past `up`'s far end; it fits up \
+        to r 6mm"), "{said:#?}");
 }
 
 #[test]
@@ -315,22 +322,17 @@ fn what_a_round_cannot_round_is_refused() {
 }
 
 #[test]
-fn a_round_names_its_corner_once() {
-    let (_, errs) = crate::common::parse("in std.front {\na := point\nb := point\nc := point\n\
-        d := point\n(l := line(a, b)) -> round(r: 2) (m := line(c, d))\n}\n");
-    assert!(errs.iter().any(|e| e.message.starts_with("the round's corner is named twice")),
-            "{errs:?}");
-    let (_, errs) = crate::common::parse("in std.front {\na := point\nb := point\n\
-        (l := line(a, b)) -> round(r: 2) equal (m := line(b, a))\n}\n");
-    assert!(errs.iter().any(|e| e.message.starts_with("a round is the whole of its joint")),
-            "{errs:?}");
-    let (_, errs) = crate::common::parse("in std.front {\na := point\nb := point\n\
-        (l := line(a, b)) -> round() (m := line(b, a))\n}\n");
-    assert!(errs.iter().any(|e| e.message.starts_with("a round says its radius")), "{errs:?}");
-    let (_, errs) = crate::common::parse("in std.front {\na := point\nb := point\n\
-        (l := line(a, b)) -> round(r: 2) (k := arc(center: a))\n}\n");
-    assert!(errs.iter().any(|e| e.message == "a round rounds the corner where two lines meet, \
-        and this is an arc"), "{errs:?}");
+fn a_round_is_refused_where_it_is_written() {
+    let points = "a := point\nb := point\nc := point\nd := point\n";
+    refused_where_written(&format!("{points}(l := line(a, b)) -> round(r: 2) (m := line(c, d))\n"),
+                          "the round's corner is named twice");
+    refused_where_written(&format!("{points}(l := line(a, b)) -> round(r: 2) equal \
+                                    (m := line(b, a))\n"), "a round is the whole of its joint");
+    refused_where_written(&format!("{points}(l := line(a, b)) -> round() (m := line(b, a))\n"),
+                          "a round says its radius");
+    refused_where_written(&format!("{points}(l := line(a, b)) -> round(r: 2) \
+                                    (k := arc(center: a))\n"),
+                          "a round rounds the corner where two lines meet, and this is an arc");
 }
 
 #[test]

@@ -113,9 +113,13 @@ impl Sketch {
     }
 }
 
-/// A length as a message says it, to two places.
-fn said(sk: &Sketch, v: f64) -> String {
-    crate::units::Dim::LENGTH.number_text((v * 100.0).round() / 100.0, sk.units)
+/// A length as a message says it, to two places — rounded, or where it is a bound, down.
+fn said(sk: &Sketch, v: f64, down: bool) -> String {
+    let v = match down {
+        true => (v * 100.0 + 1e-6).floor() / 100.0,
+        false => (v * 100.0).round() / 100.0,
+    };
+    crate::units::Dim::LENGTH.number_text(v, sk.units)
 }
 
 /// **The rounds that do not fit where the drawing stands** (#576), each said by name: a round
@@ -132,43 +136,37 @@ pub fn overruns(sk: &Sketch) -> Vec<String> {
                 k.names[0], k.names[1], k.names[2]));
         }
     }
+    let radius = |k: &Round| sk.params[sk.arcs[k.arc as usize].radius as usize].value;
     // each line some round sets back along, once: the round at its start and at its end
     let mut lines: Vec<u32> = sk.rounds.iter().flat_map(|k| [k.from, k.to]).collect();
     lines.sort_unstable();
     lines.dedup();
     for l in lines {
-        let entering = sk.rounds.iter().position(|k| k.to == l);
-        let leaving = sk.rounds.iter().position(|k| k.from == l);
         let line = &sk.lines[l as usize];
         let (a, b) = (sk.round_far(line.p1), sk.round_far(line.p2));
         let long = (b.0 - a.0).hypot(b.1 - a.1);
-        let back = |i: Option<usize>| i.and_then(|i| at[i]).map_or(0.0, |r| r.setback);
+        // the round the line is entered from, and the one it leaves into, each with its setback
+        let set = |i: Option<usize>| {
+            i.and_then(|i| Some((&sk.rounds[i], at[i]?))).filter(|(_, r)| r.setback > 0.0)
+        };
+        let entering = set(sk.rounds.iter().position(|k| k.to == l));
+        let leaving = set(sk.rounds.iter().position(|k| k.from == l));
+        let back = |r: Option<(&Round, Rounded)>| r.map_or(0.0, |(_, r)| r.setback);
         let (da, db) = (back(entering), back(leaving));
         if da + db <= long * (1.0 + 1e-9) + 1e-9 {
             continue;
         }
-        let name = |i: usize| &sk.rounds[i];
-        let radius = |i: usize| {
-            sk.params[sk.arcs[sk.rounds[i].arc as usize].radius as usize].value
-        };
-        let line_name = |i: usize, from: bool| {
-            let k = name(i);
-            if from { &k.names[1] } else { &k.names[2] }
-        };
-        match (entering.filter(|_| da > 0.0), leaving.filter(|_| db > 0.0)) {
-            (Some(i), Some(j)) => out.push(format!(
+        match (entering, leaving) {
+            (Some((i, _)), Some((j, _))) => out.push(format!(
                 "`{}` (r {}) and `{}` (r {}) overlap on `{}`: they set back {} and {} from \
                  corners {} apart",
-                name(i).names[0], said(sk, radius(i)), name(j).names[0], said(sk, radius(j)),
-                line_name(j, true), said(sk, da), said(sk, db), said(sk, long))),
-            (Some(i), None) | (None, Some(i)) => {
-                let from = Some(i) == leaving;
-                let fits = at[i].map_or(0.0, |r| long * r.half_tan);
-                let fits = (fits * 100.0 + 1e-6).floor() / 100.0;
+                i.names[0], said(sk, radius(i), false), j.names[0], said(sk, radius(j), false),
+                j.names[1], said(sk, da, false), said(sk, db, false), said(sk, long, false))),
+            (Some((k, r)), None) | (None, Some((k, r))) => {
+                let name = if k.from == l { &k.names[1] } else { &k.names[2] };
                 out.push(format!(
-                    "`{}` (r {}) runs past `{}`'s far end; it fits up to r {}",
-                    name(i).names[0], said(sk, radius(i)), line_name(i, from),
-                    crate::units::Dim::LENGTH.number_text(fits, sk.units)));
+                    "`{}` (r {}) runs past `{name}`'s far end; it fits up to r {}",
+                    k.names[0], said(sk, radius(k), false), said(sk, long * r.half_tan, true)));
             }
             (None, None) => {}
         }

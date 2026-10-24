@@ -22,7 +22,7 @@ use super::entities::Deferred;
 use super::source_map::public_path;
 use super::{Code, Diag};
 use crate::ir::{Operation, Statement};
-use crate::model::{rounded, EntKind, EntRef, Round};
+use crate::model::{rounded, EntKind, EntRef, Round, Sketch};
 use std::collections::BTreeSet;
 
 /// One round as the drawing has it, resolved: its statement, arc, lines and corner.
@@ -58,6 +58,7 @@ pub(super) fn rounds(
                 crate::syntax::ref_text(what))));
             continue;
         };
+        // a corner that is no point is said by the `coincident`s holding it to the lines
         let corner = match &k.corner {
             Some(c) => match cx.res.entity(&cx.sk, c).filter(|e| e.kind == EntKind::Point) {
                 Some(p) => Some(p.i()),
@@ -83,9 +84,7 @@ pub(super) fn rounds(
         return;
     }
     // what each is called, for the messages said here and after a solve
-    let called = |e: EntRef| {
-        cx.map.name_of(e).filter(|n| !n.contains("#a")).map(|n| public_path(n))
-    };
+    let called = |e: EntRef| cx.map.name_of(e).map(|n| public_path(n));
     cx.sk.rounds = found.iter().map(|f| {
         let (from, to) = (EntRef::line(f.from), EntRef::line(f.to));
         let lines = [called(from), called(to)].map(|n| n.unwrap_or_else(|| "a line".into()));
@@ -123,20 +122,10 @@ pub(super) fn rounds(
         let sk = &mut cx.sk;
         let seeds = [(start as usize, round.start), (end as usize, round.end),
                      (centre, round.center)];
-        for (p, q) in seeds {
-            if !scattered.contains(&p) {
-                continue;
-            }
-            for (param, v) in sk.point_params(p).into_iter().zip([q.0, q.1]) {
-                let x = &mut sk.params[param as usize];
-                if !x.fixed && !held.contains(&param) {
-                    x.value = v;
-                }
-            }
+        for (p, q) in seeds.into_iter().filter(|(p, _)| scattered.contains(p)) {
+            seed(sk, &sk.point_params(p), &[q.0, q.1], held);
         }
-        if !sk.params[radius as usize].fixed && !held.contains(&radius) {
-            sk.params[radius as usize].value = r;
-        }
+        seed(sk, &[radius], &[r], held);
         // at a right turn the arc is drawn from its end, counter-clockwise from there
         sk.rounds[n].turn = round.turn;
         if round.turn < 0 {
@@ -172,26 +161,29 @@ pub(super) fn rounds(
         .map(|c| (c.args[0].ent().i(), c.args[1].ent().i(), c.args[2].value(sk)))
         .collect();
     for (p, arc, t) in along {
-        let a = &sk.arcs[arc];
-        let (c, s, e) = (sk.point_xy(a.center as usize), sk.point_xy(a.start as usize),
-                         sk.point_xy(a.end as usize));
-        let r = sk.params[a.radius as usize].value;
-        let from = (s.1 - c.1).atan2(s.0 - c.0);
-        let sweep = ((e.1 - c.1).atan2(e.0 - c.0) - from).rem_euclid(std::f64::consts::TAU);
-        let (sin, cos) = (from + t * sweep).sin_cos();
-        for (param, v) in sk.point_params(p).into_iter().zip([c.0 + r * cos, c.1 + r * sin]) {
-            let x = &mut sk.params[param as usize];
-            if !x.fixed && !held.contains(&param) {
-                x.value = v;
-            }
+        let (a0, a1) = sk.arc_angles(arc);
+        let c = sk.point_xy(sk.arcs[arc].center as usize);
+        let r = sk.params[sk.arcs[arc].radius as usize].value;
+        let (sin, cos) = (a0 + t * (a1 - a0)).sin_cos();
+        seed(sk, &sk.point_params(p), &[c.0 + r * cos, c.1 + r * sin], held);
+    }
+    sk.settle_turns();
+}
+
+/// Each of `params` written its value in `to`, but a held one: fixed, or carried across in a pass
+/// before.
+fn seed(sk: &mut Sketch, params: &[u32], to: &[f64], held: &BTreeSet<u32>) {
+    for (&p, &v) in params.iter().zip(to) {
+        let x = &mut sk.params[p as usize];
+        if !x.fixed && !held.contains(&p) {
+            x.value = v;
         }
     }
-    cx.sk.settle_turns();
 }
 
 /// The radius round `arc` states: its `radius` row's number — a `ring`'s turned copy's, its
 /// representative's — or where it has none the arc's own.
-fn stated_radius(sk: &crate::model::Sketch, arc: usize) -> f64 {
+fn stated_radius(sk: &Sketch, arc: usize) -> f64 {
     let of = sk.turn_of(EntRef::arc(arc)).map_or(EntRef::arc(arc), |t| t.rep);
     sk.constraints.iter()
         .find(|c| c.kind == crate::constraints::CKind::Radius && c.args[0].ent() == of)
