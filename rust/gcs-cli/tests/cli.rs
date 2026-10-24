@@ -700,7 +700,8 @@ fn the_objects_are_written_as_one_step_assembly() {
     std::fs::write(&model,PLATES).unwrap();
     let file = |name: &str| dir.join(name).to_string_lossy().into_owned();
     let (all,one) = (file("plates.step"),file("two.step"));
-    let result = run(&[model.to_str().unwrap(),"--no-diagnose","--progress","--step-assembly",&all,"--tolerance","0.01mm"]);
+    let result = run(&[model.to_str().unwrap(),"--no-diagnose","--progress","--step-assembly",&all,
+        "--tolerance","0.01mm"]);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert_eq!(result.status.code(),Some(0),"{stderr}");
     assert!(stderr.contains("the assembly: 2 parts, 3 sub-assemblies, 3 objects placed"),"{stderr}");
@@ -717,7 +718,8 @@ fn the_objects_are_written_as_one_step_assembly() {
     let text = std::fs::read_to_string(&one).unwrap();
     assert!(text.contains("PRODUCT('plates.two','plates.two'") && text.contains("PRODUCT('two.body','two.body'"));
     assert_eq!(text.matches("NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(),2);
-    let refused = run(&[model.to_str().unwrap(),"--no-diagnose","--step-assembly",&file("occt.step"),"--kernel","occt"]);
+    let refused = run(&[model.to_str().unwrap(),"--no-diagnose","--step-assembly",&file("occt.step"),
+        "--kernel","occt"]);
     assert_eq!(refused.status.code(),Some(1));
     assert!(String::from_utf8_lossy(&refused.stderr).contains("--step-assembly is written by the core's kernel"));
     assert!(!dir.join("occt.step").exists());

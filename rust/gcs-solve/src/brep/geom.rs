@@ -81,6 +81,8 @@ fn conic_bounds(f: &Frame,a: f64,b: f64,[t0,t1]: [f64;2],ends: [V;2]) -> Box3 {
 pub struct Frame { pub o: V,pub x: V,pub y: V,pub z: V }
 
 impl Frame {
+    /// The world's own axes.
+    pub const WORLD: Frame = Frame {o:[0.;3],x:[1.,0.,0.],y:[0.,1.,0.],z:[0.,0.,1.]};
     /// The frame at `o` whose `z` is along `z` and whose `x` is `x` made square to it.
     pub fn new(o: V,z: V,x: V) -> Frame {
         let z = unit(z);
@@ -103,6 +105,10 @@ impl Frame {
     pub fn dir_local(&self,d: V) -> V { [dot(d,self.x),dot(d,self.y),dot(d,self.z)] }
     /// The local coordinates of `p`.
     pub fn local(&self,p: V) -> V { let d = sub(p,self.o); [dot(d,self.x),dot(d,self.y),dot(d,self.z)] }
+    /// The motion carrying local coordinates to where they stand (`at`).
+    pub fn placing(&self) -> Rigid { Rigid {r:[0,1,2].map(|k| [self.x[k],self.y[k],self.z[k]]),t:self.o} }
+    /// The motion carrying a point to its local coordinates (`local`).
+    pub fn unplacing(&self) -> Rigid { Rigid {r:[self.x,self.y,self.z],t:[self.x,self.y,self.z].map(|a| -dot(a,self.o))} }
     pub fn moved(&self,m: &Rigid) -> Frame {
         Frame {o:m.point(self.o),x:m.vector(self.x),y:m.vector(self.y),z:m.vector(self.z)}
     }

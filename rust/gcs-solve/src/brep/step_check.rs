@@ -510,8 +510,8 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
     let n = s.products.len();
     let (mut defined,mut reps) = (vec![0u32;n],vec![0u32;n]);
     let mut items: Vec<BTreeSet<u32>> = vec![BTreeSet::new();n];
-    let (mut faces,mut edges,mut vertices,mut splines,mut solids) = (0,BTreeSet::new(),BTreeSet::new(),0,0);
-    let (mut edge_uses,mut vertex_uses) = (0,0);
+    // each part's solids, walked
+    let (mut walked,mut solids): (Vec<Walked>,usize) = (Vec::new(),0);
     for (p,(k,(name,solid))) in products.iter().zip(s.products.iter().enumerate().rev()) {
         let what = format!("the product `{name}`");
         let written = p.simple().and_then(|(_,v)| v.get(1)).and_then(Value::text);
@@ -529,13 +529,14 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
         let Some(solid) = solid else { continue };
         let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP")).collect();
         if breps.len() != solid.solids { return Err(format!("{what}: its representation has {} solids, the part {}",breps.len(),solid.solids)) }
-        let walked = walk(&file,&breps,solid,false,&|_| {}).map_err(|e| format!("{what}: {e}"))?;
-        (faces,splines,solids) = (faces+walked.faces,splines+walked.splines,solids+breps.len());
-        (edge_uses,vertex_uses) = (edge_uses+walked.edges.len(),vertex_uses+walked.vertices.len());
-        edges.extend(walked.edges);
-        vertices.extend(walked.vertices);
+        walked.push(walk(&file,&breps,solid,false,&|_| {}).map_err(|e| format!("{what}: {e}"))?);
+        solids += breps.len();
     }
     // every face, edge and vertex is one part's
+    let sum = |f: &dyn Fn(&Walked) -> usize| walked.iter().map(f).sum::<usize>();
+    let (faces,splines,edge_uses,vertex_uses) = (sum(&|w| w.faces),sum(&|w| w.splines),sum(&|w| w.edges.len()),sum(&|w| w.vertices.len()));
+    let edges: BTreeSet<u32> = walked.iter().flat_map(|w| w.edges.iter().copied()).collect();
+    let vertices: BTreeSet<u32> = walked.iter().flat_map(|w| w.vertices.iter().copied()).collect();
     if solids != file.count("MANIFOLD_SOLID_BREP") { return Err(format!("the file has {} solids, its parts {solids}",file.count("MANIFOLD_SOLID_BREP"))) }
     if faces != file.count("ADVANCED_FACE") { return Err(format!("the file has {} faces, its parts {faces}",file.count("ADVANCED_FACE"))) }
     if edge_uses != edges.len() || edges.len() != file.count("EDGE_CURVE") {

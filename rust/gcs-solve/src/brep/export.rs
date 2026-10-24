@@ -12,7 +12,7 @@ use super::pattern::Built as Patterned;
 use super::sweep::Say;
 use super::boolean::Op;
 use super::topo::Brep;
-use super::geom::{Frame,Rigid};
+use super::geom::Frame;
 use crate::model::Sketch;
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use crate::solid::{admission,agreement,cad,contracts,MaterialField};
@@ -200,70 +200,65 @@ pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> 
 pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Tolerance>,say: &Say,built: &mut dyn FnMut(usize,&Exact))
     -> Result<super::step::Assembly,(usize,ExportRefusal)> {
     use super::step::{Assembly,Product,Usage};
-    let identity = Frame {o:[0.;3],x:[1.,0.,0.],y:[0.,1.,0.],z:[0.,0.,1.]};
+    use crate::space::{dot,norm};
     let mm = cad::millimetres(sk);
-    // the frame a solid's instance stands in (millimetres), where it has one a placement can say
-    let frame = |i: usize| sk.solids[i].binding.as_ref().and(sk.binding_pose(i)).and_then(|b| {
-        let f = Frame {o:b.o.map(|x| x*mm),x:b.u,y:b.v,z:b.normal()};
-        let unit = |v: [f64;3]| (crate::space::norm(v)-1.).abs() <= 1e-9;
-        let square = |a: [f64;3],b: [f64;3]| crate::space::dot(a,b).abs() <= 1e-9;
-        (unit(f.x) && unit(f.y) && unit(f.z) && square(f.x,f.y) && square(f.y,f.z) && square(f.z,f.x)).then_some(f)
-    });
-    // each object's part — the solid it is built as — and where that part stands: an unmirrored
-    // object of a binding its representative's, built as the world has it, which is the binding's
-    // own evaluation unless the representative is mirrored; then the first such object's
+    // the frame a solid's instance stands in (millimetres), where it has one a placement can say:
+    // `u` and `v` unit and square, so `u × v` is too
+    let frame = |i: usize| sk.solids[i].binding.as_ref().and(sk.binding_pose(i))
+        .filter(|b| (norm(b.u)-1.).abs() <= 1e-9 && (norm(b.v)-1.).abs() <= 1e-9 && dot(b.u,b.v).abs() <= 1e-9)
+        .map(|b| Frame {o:b.o.map(|x| x*mm),x:b.u,y:b.v,z:b.normal()});
+    // each object's part — the solid it is built as: an unmirrored object of a binding its
+    // representative's, whose build as the world has it is the binding's own evaluation unless
+    // the representative is mirrored; then the first such object's
+    let reps: Vec<Option<usize>> = objects.iter().map(|&i| sk.bound(i)
+        .filter(|b| b.mirror.is_none() && b.rep != i && frame(i).is_some() && frame(b.rep).is_some()).map(|b| b.rep)).collect();
     let unmirrored = |j: usize| sk.solids[j].binding.as_ref().is_none_or(|b| b.mirror.is_none());
-    let reps: Vec<Option<usize>> = objects.iter().map(|&i| match sk.bound(i) {
-        Some(b) if b.mirror.is_none() && b.rep != i && frame(i).is_some() && frame(b.rep).is_some() => Some(b.rep),
-        _ => None,
-    }).collect();
-    let placed: Vec<(usize,usize,Option<Frame>)> = objects.iter().zip(&reps).map(|(&i,&rep)| match rep {
-        Some(r) if unmirrored(r) => (i,r,frame(i)),
-        Some(r) => (i,reps.iter().position(|&x| x == Some(r)).map_or(i,|k| objects[k]),frame(i)),
-        None => (i,i,frame(i)),
-    }).collect();
+    let source = |k: usize| match reps[k] {
+        Some(r) if unmirrored(r) => r,
+        Some(r) => objects[reps.iter().position(|&x| x == Some(r)).unwrap_or(k)],
+        None => objects[k],
+    };
     // what the source calls each solid, as a reader writes it (`p[0].body`, a ring's copy)
     let named = |i: usize| crate::vocab::public_path(&sk.solids[i].name);
     let mut products = vec![Product {name:name.to_string(),solid:None}];
     let mut uses = Vec::new();
     // the sub-assemblies first, each step of a name after the one it is in
     let mut groups: Vec<String> = Vec::new();
-    for &(i,..) in &placed {
+    let group = |groups: &[String],path: &str| groups.iter().position(|g| g == path).map_or(0,|g| g+1);
+    for &i in objects {
         let name = named(i);
         let steps: Vec<&str> = name.split('.').collect();
         for k in 1..steps.len() {
             let path = steps[..k].join(".");
             if groups.contains(&path) { continue }
-            let parent = groups.iter().position(|g| *g == steps[..k-1].join(".")).map_or(0,|g| g+1);
+            let parent = group(&groups,&steps[..k-1].join("."));
             groups.push(path.clone());
-            uses.push(Usage {parent,child:products.len(),name:path.clone(),placement:identity});
+            uses.push(Usage {parent,child:products.len(),name:path.clone(),placement:Frame::WORLD});
             products.push(Product {name:path,solid:None});
         }
     }
     // then the parts, each built once, and each object a use of its part in its group
     let mut parts: std::collections::BTreeMap<usize,usize> = Default::default();
-    for &(i,source,at) in &placed {
+    for (k,&i) in objects.iter().enumerate() {
+        let source = source(k);
         let part = match parts.get(&source) {
             Some(&p) => p,
             None => {
                 let x = exact(sk,source,None,tolerance,say).map_err(|e| (source,e))?;
                 built(source,&x);
-                // about its own frame where its instance has one
-                let solid = match frame(source) {
-                    Some(f) => x.solid.moved(&Rigid {r:[f.x,f.y,f.z],t:[f.x,f.y,f.z].map(|row| -crate::space::dot(row,f.o))}),
-                    None => x.solid,
-                };
-                // named for the first object it is, which the file holds where the source may not
+                // about its instance's frame where it has one, and named for the first object it
+                // is, which the file holds where the source may not
+                let solid = match frame(source) { Some(f) => x.solid.moved(&f.unplacing()),None => x.solid };
                 products.push(Product {name:named(i),solid:Some(solid)});
                 parts.insert(source,products.len()-1);
                 products.len()-1
             }
         };
         let name = named(i);
-        let parent = name.rsplit_once('.').and_then(|(g,_)| groups.iter().position(|x| x == g)).map_or(0,|g| g+1);
-        uses.push(Usage {parent,child:part,name,placement:at.unwrap_or(identity)});
+        let parent = name.rsplit_once('.').map_or(0,|(g,_)| group(&groups,g));
+        uses.push(Usage {parent,child:part,name,placement:frame(i).unwrap_or(Frame::WORLD)});
     }
-    (say.stage)(&format!("the assembly: {} parts, {} sub-assemblies, {} objects placed",parts.len(),groups.len(),placed.len()));
+    (say.stage)(&format!("the assembly: {} parts, {} sub-assemblies, {} objects placed",parts.len(),groups.len(),objects.len()));
     Ok(Assembly {products,uses})
 }
 

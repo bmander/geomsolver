@@ -6,7 +6,7 @@
 //! where it stands.
 
 use crate::common::read_solved as solved;
-use gcs_core::brep::geom::{Frame, Rigid};
+use gcs_core::brep::geom::Frame;
 use gcs_core::brep::query::{Located, Place};
 use gcs_core::brep::topo::Brep;
 use gcs_core::brep::{export, props, step, step_check, sweep::Say};
@@ -72,30 +72,26 @@ fn quiet() -> Say<'static> {
     Say { stage: &nothing, mark: &unmarked }
 }
 
-/// The drawing's objects as an assembly, and each object's own build where it stands.
+/// The drawing's objects as an assembly, each part built once, and the objects.
 fn built(sk: &Sketch) -> (step::Assembly, Vec<usize>) {
     let objects = gcs_core::overview::objects(sk);
     let mut parts = Vec::new();
     let a = export::assembly(sk, &objects, "drawing", None, &quiet(), &mut |i, _| parts.push(i))
         .unwrap_or_else(|(i, e)| panic!("{}: {e}", sk.solids[i].name));
-    assert_eq!(parts.len(), a.products.iter().filter(|p| p.solid.is_some()).count(), "a part built once");
+    assert_eq!(parts.len(), a.products.iter().filter(|p| p.solid.is_some()).count());
     (a, objects)
-}
-
-/// The motion carrying a frame's axes onto it: from its own coordinates into those it stands among.
-fn motion(f: &Frame) -> Rigid {
-    Rigid { r: std::array::from_fn(|i| [f.x[i], f.y[i], f.z[i]]), t: f.o }
 }
 
 /// The part a use of `name` places, and that part where it stands in the world: carried by its
 /// placement and each placement up the tree to the root.
 fn placed(a: &step::Assembly, name: &str) -> (usize, Brep) {
     let u = a.uses.iter().find(|u| u.name == name).unwrap_or_else(|| panic!("no use `{name}`"));
-    let mut solid = a.products[u.child].solid.clone().expect("a use of an object places a part").moved(&motion(&u.placement));
+    let part = a.products[u.child].solid.as_ref().expect("a use of an object places a part");
+    let mut solid = part.moved(&u.placement.placing());
     let mut parent = u.parent;
     while parent != 0 {
         let up = a.uses.iter().find(|w| w.child == parent).expect("a sub-assembly is used");
-        solid = solid.moved(&motion(&up.placement));
+        solid = solid.moved(&up.placement.placing());
         parent = up.parent;
     }
     (u.child, solid)
@@ -108,12 +104,13 @@ fn same(a: &Brep, b: &Brep, what: &str) {
     assert!((va - vb).abs() <= 1e-9 * vb.abs(), "{what}: {va} against {vb}");
     let (x, y) = (a.bounds(), b.bounds());
     for k in 0..3 {
-        assert!((x.0[k] - y.0[k]).abs() <= 1e-9 && (x.1[k] - y.1[k]).abs() <= 1e-9, "{what}: {x:?} against {y:?}");
+        assert!((x.0[k] - y.0[k]).abs() <= 1e-9 && (x.1[k] - y.1[k]).abs() <= 1e-9,
+                "{what}: {x:?} against {y:?}");
     }
     for (one, other) in [(a, b), (b, a)] {
         let located = Located::new(other, 1e-9);
         for v in &one.vertices {
-            assert_eq!(located.solid_place(v.p), Place::On, "{what}: {:?} is off the other's boundary", v.p);
+            assert_eq!(located.solid_place(v.p), Place::On, "{what}: {:?} is off the other's", v.p);
         }
     }
 }
@@ -146,7 +143,8 @@ fn the_objects_of_one_binding_are_one_part_and_a_mirrored_one_its_own() {
     assert_eq!(part("p[0].body"), part("p[2].body"));
     assert_eq!(a.products.iter().filter(|p| p.solid.is_some()).count(), 4);
     // a sub-assembly per instance, each holding its object
-    let groups: Vec<&str> = a.products.iter().filter(|p| p.solid.is_none()).map(|p| p.name.as_str()).collect();
+    let groups: Vec<&str> =
+        a.products.iter().filter(|p| p.solid.is_none()).map(|p| p.name.as_str()).collect();
     assert_eq!(groups, ["drawing", "one", "two", "three", "four", "p[0]", "p[1]", "p[2]"]);
     // the part of an instance is written in its instance's frame: the plate's corner drawn at
     // (1, 1) off its frame's origin in its front view, the frame's (x, z) there
@@ -162,10 +160,11 @@ fn the_file_is_parsed_back_against_the_assembly() {
     let text = export::assembly_step(&a, "drawing", None, &quiet()).unwrap();
     let structure = step_check::Structure::of(&a);
     let verified = step_check::verify_assembly(&text, &structure).unwrap();
-    let faces: usize = a.products.iter().filter_map(|p| p.solid.as_ref()).map(|s| s.faces.len()).sum();
+    let faces: usize =
+        a.products.iter().filter_map(|p| p.solid.as_ref()).map(|s| s.faces.len()).sum();
     assert_eq!(verified.faces, faces);
     assert_eq!(text.matches("NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(), a.uses.len());
-    assert_eq!(text.matches("MANIFOLD_SOLID_BREP(").count(), 4, "a part written once, however often it is used");
+    assert_eq!(text.matches("MANIFOLD_SOLID_BREP(").count(), 4, "a part written once, used often");
     // a use placed elsewhere is not the assembly's
     let item = text.find("ITEM_DEFINED_TRANSFORMATION('','',#").unwrap();
     let to = text[item..].split(['#', ')']).nth(2).unwrap();
@@ -173,7 +172,8 @@ fn the_file_is_parsed_back_against_the_assembly() {
     let point = text[axes..].split(['#', ',']).nth(3).unwrap();
     let line = text.find(&format!("\n#{point} = CARTESIAN_POINT('',(")).unwrap() + 1;
     let end = line + text[line..].find('\n').unwrap();
-    let moved = format!("{}#{point} = CARTESIAN_POINT('',(0.5,0.5,0.5));{}", &text[..line], &text[end..]);
+    let moved =
+        format!("{}#{point} = CARTESIAN_POINT('',(0.5,0.5,0.5));{}", &text[..line], &text[end..]);
     let e = step_check::verify_assembly(&moved, &structure).expect_err("a use moved");
     assert!(e.contains("is not a use the assembly has"), "{e}");
     // and a product renamed is not
@@ -184,7 +184,6 @@ fn the_file_is_parsed_back_against_the_assembly() {
 
 #[test]
 fn an_assembly_that_is_not_a_tree_laid_out_top_down_is_refused() {
-    let at = Frame { o: [0.; 3], x: [1., 0., 0.], y: [0., 1., 0.], z: [0., 0., 1.] };
     let (_, sk) = solved(DRAWING);
     let (a, _) = built(&sk);
     let part = a.products.iter().find_map(|p| p.solid.clone()).unwrap();
@@ -193,12 +192,16 @@ fn an_assembly_that_is_not_a_tree_laid_out_top_down_is_refused() {
         step::Product { name: "part".into(), solid: Some(part.clone()) },
         step::Product { name: "more".into(), solid: Some(part.clone()) },
     ];
-    let usage = |parent, child| step::Usage { parent, child, name: format!("{parent}/{child}"), placement: at };
-    let refused = |uses: Vec<step::Usage>| step::Assembly { products: products(), uses }.check().unwrap_err();
+    let usage = |parent, child| {
+        step::Usage { parent, child, name: format!("{parent}/{child}"), placement: Frame::WORLD }
+    };
+    let refused =
+        |uses: Vec<step::Usage>| step::Assembly { products: products(), uses }.check().unwrap_err();
     assert!(refused(vec![usage(0, 1), usage(1, 2)]).contains("is used as an assembly"));
     assert!(refused(vec![usage(0, 1)]).contains("`more` is in no assembly"));
     assert!(refused(vec![usage(0, 1), usage(2, 2)]).contains("does not come before it"));
-    let fine = step::Assembly { products: products(), uses: vec![usage(0, 1), usage(0, 2), usage(0, 1)] };
+    let fine =
+        step::Assembly { products: products(), uses: vec![usage(0, 1), usage(0, 2), usage(0, 1)] };
     assert!(fine.check().is_ok());
     assert!(step::write_assembly(&fine, "fine", 1e-4).is_ok());
 }

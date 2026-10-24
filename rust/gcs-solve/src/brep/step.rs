@@ -359,7 +359,7 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
     let (_,shape) = product(&mut o,&name,context,pctx,&mut None);
     let gctx = geometric(&mut o,tol);
     let solid = solid(&mut o,b,tol)?;
-    let origin = o.placement(&ORIGIN);
+    let origin = o.placement(&Frame::WORLD);
     let rep = o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"));
     o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
     Ok(file(&name,&o.text))
@@ -422,7 +422,7 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String>
     let mut written: Vec<(usize,usize,usize)> = vec![(0,0,0);a.products.len()];
     for (k,p) in a.products.iter().enumerate().rev() {
         let (definition,shape) = product(&mut o,&p.name.replace('\'',"''"),context,pctx,&mut dctx);
-        let origin = o.placement(&ORIGIN);
+        let origin = o.placement(&Frame::WORLD);
         let rep = match &p.solid {
             Some(b) => {
                 let solid = solid(&mut o,b,tol)?;
@@ -450,9 +450,6 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String>
     }
     Ok(file(&name.replace('\'',"''"),&o.text))
 }
-
-/// The world's own axes, where a representation's items are placed.
-const ORIGIN: Frame = Frame {o:[0.;3],x:[1.,0.,0.],y:[0.,1.,0.],z:[0.,0.,1.]};
 
 /// The application a file's products are defined in (AP214's), its context's id.
 fn application(o: &mut Out) -> usize {
