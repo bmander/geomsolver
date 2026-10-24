@@ -72,6 +72,15 @@ impl Basis {
         dot(self.o, self.normal())
     }
 
+    /// **This plane as a cut stands it**: moved `by` along its own unit normal, and turned to face
+    /// the other way where `flip` (`u` and `v` exchanged, so the normal is reversed and the plane
+    /// is the same) — the other side taken away.
+    pub fn moved_along(&self, by: f64, flip: bool) -> Basis {
+        let n = unit(self.normal()).unwrap_or([0.0; 3]);
+        let o = std::array::from_fn(|k| self.o[k] + by * n[k]);
+        if flip { Basis { u: self.v, v: self.u, o } } else { Basis { o, ..*self } }
+    }
+
     /// `u × v`: toward the viewer.
     pub fn normal(&self) -> [f64; 3] {
         cross(self.u, self.v)

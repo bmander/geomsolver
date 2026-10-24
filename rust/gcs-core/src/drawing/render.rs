@@ -70,6 +70,19 @@ pub fn named_view(name: &str) -> Option<Basis> {
     };
     Some(Basis { u, v, o: [0.; 3] })
 }
+/// **A plane a reader names outside a drawing** (`solventc --section`): a view's word through the
+/// world origin (`named_view`: `front`, `top`, …), its normal toward that view's eye, or a model
+/// plane by its path (`std.top`, `bracket.mid`) as the solve left it.
+pub fn plane_named(sk: &Sketch, names: &SourceMap, name: &str)
+    -> Result<Basis, String>
+{
+    if let Some(b) = named_view(name) { return Ok(b); }
+    names.entity_path(sk, name)
+        .filter(|e| e.kind == EntKind::Frame && sk.frames[e.i()].planar())
+        .map(|e| sk.basis(e.i()))
+        .ok_or_else(|| format!("`{name}` is not a model plane, nor a view's word (front, back, \
+            right, left, top, bottom, isometric)"))
+}
 fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result<Basis, Error> {
     if let Some(b) = named_view(name) { return Ok(b); }
     let (_, path, model) = split(name, models, span)?;

@@ -10,7 +10,7 @@ mod highlight;
 use crate::style::Style;
 use crate::syntax::Span;
 pub use parser::parse;
-pub use render::{named_view, render, Model};
+pub use render::{named_view, plane_named, render, Model};
 pub use compile::compile;
 pub use highlight::highlight;
 

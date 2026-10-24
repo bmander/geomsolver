@@ -871,6 +871,15 @@ impl EvaluatedSolid {
             Surface::Csg => mesh::grouped(self.boundary()),
         })
     }
+    /// **The solid cut by a plane in the world** (`mesh::section`): the side `cut`'s normal points
+    /// to taken away, and where the plane meets the mesh it is drawn as, in the solid's own
+    /// coordinates as its mesh is — loops and the face the cut leaves, that face turned to the
+    /// side taken away.  The cut's normal is carried in as a direction, so a mirrored placement
+    /// (#578) takes away the same side of the world.
+    pub fn section(&self, cut: &Basis) -> mesh::Section {
+        let o = self.to_local(WorldPoint(cut.o)).0;
+        mesh::section(self.mesh(), o, self.vector_to_local(cut.normal()))
+    }
     /// Where two of its faces meet, by their paths, read off its mesh once (`mesh::face_edges`):
     /// what a round or a chamfer is written along.  In the solid's own coordinates.
     pub fn face_edges(&self) -> &[mesh::FaceEdge] {
