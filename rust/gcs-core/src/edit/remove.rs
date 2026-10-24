@@ -339,7 +339,7 @@ pub(super) fn mentions(st: &Stmt, names: &std::collections::BTreeSet<String>) ->
         // it is the document's to keep, and what it names gone is said there (E101)
         StmtKind::Branch(_) | StmtKind::Instance(_) | StmtKind::Param(_) | StmtKind::Block(_)
         | StmtKind::Style(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_)
-        | StmtKind::Scenario(_) | StmtKind::Beam(_) => {}
+        | StmtKind::Scenario(_) | StmtKind::Beam(_) | StmtKind::ValueClaim(_) => {}
     }
     hit
 }

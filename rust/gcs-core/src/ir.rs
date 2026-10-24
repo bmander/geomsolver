@@ -207,6 +207,12 @@ impl Statement {
                 formal: c.formal, seen_from: c.seen_from, from: c.from, to: c.to, span: c.span,
                 body: c.body.into_iter().map(|s| Self::lower(s, path.clone())).collect::<Result<_, _>>()?,
             }),
+            // judged once, over the numbers the document states, before there is a pose (#596)
+            S::ValueClaim(c) => return Err(crate::program::Diag::new(
+                crate::program::Code::E103, c.span, Some(st.id),
+                "a claim over values is judged once, before the solve; it stands outside a swept \
+                 claim".into(),
+            )),
             S::Param(_) | S::Group(_) | S::Instance(_) | S::Block(_) | S::Set(_) => return Err(crate::program::Diag::new(
                 crate::program::Code::E103, st.span, Some(st.id),
                 "parameters, groups, sets, component instances and repetition are not supported inside a swept claim".into(),

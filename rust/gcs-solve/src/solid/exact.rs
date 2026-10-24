@@ -74,6 +74,9 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let floor = 16.0 * f64::EPSILON * origin.iter().fold(0.0f64, |m, x| m.max(x.abs())) * mm;
     let mut built = BTreeMap::new();
     let mut leading = BTreeSet::new();
+    // each node's name, for what a body built of it says
+    let names: BTreeMap<i64, String> =
+        recipe.nodes.iter().map(|n| (n.id, n.name.clone())).collect();
     for n in &recipe.nodes {
         let id = n.id;
         // an operand of one binding with others is its representative's B-rep, built once and
@@ -96,7 +99,7 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
             leading.extend(x.leading.iter().cloned());
             continue;
         }
-        let mut b = n.node.built(&built, &BTreeMap::new(), floor)?;
+        let mut b = n.node.built(&built, &names, floor)?;
         let sol = &sk.solids[id as usize];
         match &sol.def {
             SolidDef::Placed { source, .. } => {

@@ -7,8 +7,8 @@ use crate::style::Classes;
 use crate::syntax::lexer::Tok;
 use crate::syntax::names::refs_eq;
 use crate::syntax::words::{
-    joint_word, link_word, named_link_at, opens_link, past_args, past_bracket, prefix_word, word_at,
-    Brackets, OPENERS,
+    self, joint_word, link_word, named_link_at, opens_link, past_args, past_bracket, prefix_word,
+    word_at, Brackets, BLOCKS, OPENERS,
 };
 use crate::syntax::{
     build_rank, ref_text, under_root, Arg, Chained, Decl, DeclName, Fall, Kid, Name, OpArg,
@@ -301,7 +301,9 @@ impl<'a> P<'a> {
         // that is a call.  `claim parallel(…)` has the shape too — a binary relation's name
         // doubles as an infix joint word — but `claim` qualifies a statement, it never names an
         // element: a word that *opens* a statement is not an operand, however the next word reads
-        if !OPENERS.contains(&w.as_str())
+        // — save a block's word a document has defined, standing as that name (#598)
+        if (!OPENERS.contains(&w.as_str())
+            || BLOCKS.contains(&w.as_str()) && !words::opens_block(&self.t, self.i))
             && EntKind::parse(w).is_none()
             && !prefix_word(w)
             && !is_operator(w)

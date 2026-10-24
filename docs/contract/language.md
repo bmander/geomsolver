@@ -61,7 +61,7 @@ drawn with no plane formal. `planes::memberships` reads every other membership f
 those reading a point's plane round by round, each once its point is drawn (`waits`, `frame_of`);
 one whose point is drawn nowhere after the last round is E040 at the reference, as a point in space
 is. `tests/relation_words.rs` (`a_body_draws_in_the_plane_its_operand_is_drawn_in`) is the gate. **An
-instance's frame** ([0.180], #595): a body reading `g.std.D` of an operand or an entity parameter
+instance's frame** ([0.185], #595): a body reading `g.std.D` of an operand or an entity parameter
 `g` makes the use read the datums of the instance given for `g` — the pre-pass
 (`framed::read_outside`) asks each use of a defined word what its body reads (`use_reads`,
 through the words it uses in turn, a cycle ending it), so the instance stands in its own frame as
@@ -139,6 +139,13 @@ written, `next.u` a turn, and a body reading the formal is not judged again: `Wo
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.
+**A block's word may be a name** ([0.182], #598): `ring := Disc(…)` is a definition like any
+(`defines` reads it before any keyword), and a statement opening with the word reads it as that
+name where `words::opens_block` says no block opens — the next token `.`, `:=`, or a constraint
+word with no `{` on the line; a header (a count, a condition, a walk) always runs on its line to
+its `{`.  The parser's dispatch (`stmt`), its relation lookahead (`chain_starts`, which takes no
+other opener as an operand), the colouring and the symbol index all ask it.
+`a_block_word_defined_as_a_name_is_read_as_that_name` (`tests/ring.rs`) is the gate.
 **An instance declared in a ring stands in its copy's frame** ([0.177], #566): copy k's is the
 representative's frame turned k steps, as its entities are, so a relation of the instance's body
 reading the standard datums of the frame it stands in (`std.origin`, `std.x`, …:
@@ -474,7 +481,21 @@ geometry aliases; `dims: group` is a required formal. Groups nest, by name or in
 group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. A **`set`
 formal** (`Ty::Set`, #191) takes a set — named, or a family's instance, which is both a set and an
 instance — and a `group` formal no named set; each refusal is E103 at the argument
-(`Checks::groups`, checked in `resolve` against `sets` / `group_names`). Only a number may be
+(`Checks::groups`, checked in `resolve` against `sets` / `group_names`). **A group is a value**
+(#594, [0.184]): `small := sizes`, a definition whose text names a group (`Walk::group_named`:
+the body's, a group formal, one under the scope's prefixes, a bare import, or the file's), is
+an alias of it found before the body's numbers are worked out (`definitions`, a name for a name
+in any order), its members named under it as a member naming a group's are, and recorded in
+`Walk::group_aliases`; a group written in braces where a `group` formal takes it is defined under
+`keys::literal` (`Walk::group_literal`: its numbers over the caller's, a member naming geometry
+an alias read in the caller's scope) and bound as one named, its numbers read by the formal's
+name so an interface says what it lacks by that name; braces at any other formal are E103. A
+closed body hands on a group of its file whole as it reads its numbers (`Walk::file_group`, by
+the key the file holds it under: its own, `{module}.g`, a used module's path, or a bare import),
+unless a formal or a name of the body hides it; one carrying geometry, itself or through a group
+it names (`carries_geometry`), is E103 at the argument, and an instance is no group of the file
+(`Walk::defined_groups`). `value_read` says a group read as a number is one. `tests/group_values.rs`
+is the gate. Only a number may be
 left out of a call ([0.95]): an entity, path, group or set formal left out is E103 at the call
 (`Walk::bind`) — but for **a point formal drawn in a plane formal**, `center: point in on`
 (`Formal::within`), which the instance then owns: `Walk::owned_points` declares it as its body

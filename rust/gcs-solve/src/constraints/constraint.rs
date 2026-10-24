@@ -618,11 +618,18 @@ impl Constraint {
     }
 
     /// `interior_row` made where the drawing stands, whatever mesh the sketch holds: what
-    /// elaboration holds and `Sketch::remesh` makes again — a deflection's (`deflection_made`) or
-    /// a mass's or a volume's (`measure_made`).
+    /// elaboration holds — a deflection's (`deflection_made`) or a mass's or a volume's
+    /// (`measure_made`), a filled body's deflection at its coarsest level (`bodies::COARSEST`).
     pub fn made_row(&self, sk: &Sketch) -> Result<InteriorRow, String> {
+        self.made_row_at(sk, crate::bodies::COARSEST)
+    }
+
+    /// `made_row`, a filled body's mesh `coarser` times a reading's size (#567):
+    /// what `Sketch::remesh` makes again at the level the row it holds was made at, and
+    /// `Sketch::refine` at the next finer.  Any other row's mesh is at a reading's own size.
+    pub fn made_row_at(&self, sk: &Sketch, coarser: f64) -> Result<InteriorRow, String> {
         match self.kind {
-            CKind::Deflection => self.deflection_made(sk),
+            CKind::Deflection => self.deflection_made(sk, coarser),
             CKind::Mass | CKind::Volume => self.measure_made(sk),
             _ => Err("it reads no structure".into()),
         }
@@ -632,7 +639,7 @@ impl Constraint {
     /// (`beams::Row`), or else the region read in its plane its point is in (`prisms::Row`), or
     /// else the solid read in three dimensions it is a point of (`bodies::row`, a `prisms::Row`
     /// over the face's mesh stacked), under its scenario — or why the solve cannot read it.
-    fn deflection_made(&self, sk: &Sketch) -> Result<InteriorRow, String> {
+    fn deflection_made(&self, sk: &Sketch, coarser: f64) -> Result<InteriorRow, String> {
         let (sc, at, along) = self.frame_read(sk)?;
         let of = crate::model::Applied::Ent(EntRef::point(at));
         if crate::beams::of_frame(sk, sc, &of) {
@@ -643,7 +650,8 @@ impl Constraint {
                 .map(|r| InteriorRow::Meshed(r.into()));
         }
         if crate::bodies::of_body(sk, sc, &of) {
-            return crate::bodies::row(sk, sc, at, along).map(|r| InteriorRow::Meshed(r.into()));
+            return crate::bodies::row(sk, sc, at, along, coarser)
+                .map(|r| InteriorRow::Meshed(r.into()));
         }
         crate::beams::Row::of(sk, sc, at, along).map(InteriorRow::Frame)
     }

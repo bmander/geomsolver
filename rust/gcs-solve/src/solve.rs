@@ -227,6 +227,19 @@ const RECOVERIES: [fn(&System, &mut Sketch, &[f64]) -> Option<Recovery>; 2] =
 /// meshed where it stands and then again where that mesh folds.
 const REMESHES: usize = 3;
 
+/// **The sketch's meshes made again by `make`** (`Sketch::remesh`, `Sketch::refine`), as a
+/// recovery solved on from where it stands; none where `make` made none.  The meshes are all it
+/// changes, so the sketch is copied only where one was made, its old meshes put in the copy.
+fn remade(sk: &mut Sketch, make: fn(&mut Sketch) -> bool) -> Option<Recovery> {
+    let (meshed, at) = (sk.meshed.clone(), sk.meshed_at.clone());
+    if !make(sk) {
+        return None;
+    }
+    let mut before = sk.clone();
+    (before.meshed, before.meshed_at) = (meshed, at);
+    Some(Recovery { from: None, back: Back::Sketch(Box::new(before)) })
+}
+
 /// One recovery of a failed document solve (`RECOVERIES`): the system compiled again where the
 /// sketch stands, solved on from `from` (where it stands, when `None`), and kept only where that
 /// succeeds; else `back` puts the sketch back as it was (`System::recompiled`).
@@ -297,6 +310,10 @@ impl System {
     /// plan solver's fallback and a front end that compiled a system for itself alike.
     pub fn solve(&mut self, sk: &mut Sketch, opts: SolveOpts) -> SolveResult {
         let res = self.solve_steered(sk, opts);
+        // a filled body's last row read is let go: its mesh, its factors, its stiffness
+        if opts.document() {
+            crate::interior::forget();
+        }
         // a circle's gauge taken again where the normal now stands: it moves nothing a row
         // reads but the gauge's own, which still holds (`Sketch::retake_round_gauges`)
         if sk.retake_round_gauges() {
@@ -340,6 +357,16 @@ impl System {
         }
         if opts.document() && !res.success {
             res = self.at_own_sizes(sk, opts, res);
+        }
+        // a filled body's driving row solved coarse first is meshed finer where it holds, and
+        // solved on from there, to a reading's own size (#567)
+        while opts.document() && res.success {
+            let Some(again) = self.refined(sk) else { break };
+            let kept;
+            (res, kept) = self.recompiled(sk, opts, res, again, false);
+            if !kept {
+                break;
+            }
         }
         self.stopped_from = (opts.document() && !res.success).then(|| start.clone());
         // what the recoveries leave is judged already; a steer moves it again.  The lines are
@@ -403,14 +430,18 @@ impl System {
         if !matches!(self.stop, Stop::Folded(_)) {
             return None;
         }
-        // the meshes are all a remesh changes: the sketch is copied only where one was made
-        let (meshed, at) = (sk.meshed.clone(), sk.meshed_at.clone());
-        if !sk.remesh() {
-            return None;
-        }
-        let mut before = sk.clone();
-        (before.meshed, before.meshed_at) = (meshed, at);
-        Some(Recovery { from: None, back: Back::Sketch(Box::new(before)) })
+        remade(sk, Sketch::remesh)
+    }
+
+    /// **A filled body's driving row is meshed finer where its coarse solve holds** (#567,
+    /// `bodies::COARSEST`): each step of a drive over a filled body's mesh is a solve of its
+    /// structure and one of its adjoint, so it is drawn first at four times a reading's size,
+    /// where a step costs a sixtieth; a document solve that holds there has its mesh made again
+    /// twice as fine where it ended (`Sketch::refine`), compiled again and solved on from there,
+    /// until it is a reading's own size — kept where that settles, else the sketch and its meshes
+    /// are put back, the drive held on the coarser mesh.
+    fn refined(&self, sk: &mut Sketch) -> Option<Recovery> {
+        remade(sk, Sketch::refine)
     }
 
     /// A system compiled where `sk` stands — as the recovery left it — then solved on from the

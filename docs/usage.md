@@ -43,6 +43,7 @@ make test-slow  # the slow tier as well
 build/solventc rust/examples/*.sv            # parse, elaborate, solve, diagnose, report
 build/solventc --json rust/examples/gear.sv  # the same numbers, structured
 build/solventc drawing.sv --where hinge      # the numbers under one name
+build/solventc drive.sv --where torque       # a value the document names, in its unit
 build/solventc --components drawing.sv       # each component against the boundary contract
 build/solventc --lint drawing.sv             # also where its text drifts from the style (advisory)
 build/solventc --help                        # every option

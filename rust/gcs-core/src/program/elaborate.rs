@@ -953,7 +953,9 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     super::bound::stamp(&mut cx.sk, &cx.res, &flat.expansion.instances, &flat.expansion.rings);
     crate::modules::localize(p, &mut cx.diags);
     Elaborated {
-        sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, measures, program: p.clone(),
-        taken: false,
+        sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, measures,
+        values: flat.expansion.values.clone(),
+        value_claims: flat.expansion.value_claims.clone(),
+        program: p.clone(), taken: false,
     }
 }

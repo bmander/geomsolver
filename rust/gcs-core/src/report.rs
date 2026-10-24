@@ -577,6 +577,12 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
                     (Grade::Claim, false) => format!("claimed {stated}, refuted"),
                     (Grade::Driving, true) if driven => format!("driven {stated}, held"),
                     (Grade::Driving, false) if driven => format!("driven {stated}, not reached"),
+                    // a filled body's drive is the native core's (#567, `DRIVES_FILLED`)
+                    (Grade::Driving, holds) if natively(sk, &s.scenario, r) => {
+                        let holds = if holds { "holds" } else { "does not hold" };
+                        format!("stated {stated}, which {holds}; `solventc` drives it, the page \
+                                 does not: a filled body's drive solves its mesh at every step")
+                    }
                     (_, true) => format!("stated {stated}, which holds; nothing drives it yet"),
                     (_, false) => format!("stated {stated}, which does not hold; nothing drives \
                                            it yet"),
@@ -594,6 +600,13 @@ pub fn scenario_answers(sk: &Sketch, s: &crate::program::Stated, read: &crate::b
         out.push(ScenarioAnswer { index: k, head, grade, value, error, holds, text });
     }
     out
+}
+
+/// Whether requirement `r` of scenario `sc` is a deflection of a filled body that the native core
+/// drives and this one does not (#567, `bodies::DRIVES_FILLED`): the page's.
+fn natively(sk: &Sketch, sc: &crate::model::Scenario, r: &crate::model::Requirement) -> bool {
+    !crate::bodies::DRIVES_FILLED && r.output == crate::model::Output::Deflection
+        && r.along.is_some() && crate::bodies::of_filled(sk, sc, &r.of)
 }
 
 /// **What a mass or a volume the drawing states comes to** (#510, `program::MeasureStated`),
@@ -653,6 +666,55 @@ pub fn measures_json(sk: &Sketch, measures: &[crate::program::MeasureStated]) ->
         ("error", a.error.map_or(Json::Null, Json::from)),
         ("holds", a.holds.map_or(Json::Null, Json::from)),
         ("text", a.text.as_str().into()),
+    ])).collect())
+}
+
+/// **A number the document names, as a reader is told it** (#596): `torque = 0.0864 N·m`, to
+/// `READING_SIG` figures in the unit it reads in (`Dim::reading`).
+pub fn value_text(units: crate::units::Units, name: &str, v: &crate::flatten::Valued) -> String {
+    format!("{name} = {}", v.dim.reading(v.value, units, crate::expr::READING_SIG))
+}
+
+/// **A claim over values, judged** (#596): `claim torque >= 2Nm — refuted: torque = 0.0864 N·m`,
+/// what it says, whether it is a theorem or refuted (a value is worked out before the solve, so
+/// it is never consuming), and each value it reads.
+pub fn value_claim_text(units: crate::units::Units, c: &crate::flatten::ValueClaimed) -> String {
+    let verdict = if c.holds { "theorem" } else { "refuted" };
+    let reads: Vec<String> = c.reads.iter().map(|(n, v)| value_text(units, n, v)).collect();
+    if reads.is_empty() {
+        format!("claim {} — {verdict}", c.text)
+    } else {
+        format!("claim {} — {verdict}: {}", c.text, reads.join(", "))
+    }
+}
+
+/// **`value_text` as JSON** (#596): each name to its `value` in the unit it reads in, that
+/// `unit` (empty for a plain number), its `dim` and its `text`.
+pub fn values_json<'v>(
+    units: crate::units::Units,
+    values: impl IntoIterator<Item = (&'v String, &'v crate::flatten::Valued)>,
+) -> Json {
+    Json::Obj(values.into_iter().map(|(name, v)| {
+        let (value, unit) = v.dim.read_in(v.value, units);
+        (name.clone(), object([
+            ("value", value.into()),
+            ("unit", unit.as_str().into()),
+            ("dim", v.dim.name().into()),
+            ("text", value_text(units, name, v).into()),
+        ]))
+    }).collect())
+}
+
+/// **`value_claim_text` as JSON** (#596): per claim over values, in the order walked, its
+/// `claim` as written, `holds`, the `values` it reads (`values_json`) and its `text`.
+pub fn value_claims_json(units: crate::units::Units, claims: &[crate::flatten::ValueClaimed])
+    -> Json
+{
+    Json::Arr(claims.iter().map(|c| object([
+        ("claim", c.text.as_str().into()),
+        ("holds", c.holds.into()),
+        ("values", values_json(units, c.reads.iter().map(|(n, v)| (n, v)))),
+        ("text", value_claim_text(units, c).into()),
     ])).collect())
 }
 

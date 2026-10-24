@@ -437,9 +437,10 @@ impl Outline {
         w
     }
 
-    /// The middles of the spans level lines across the loops have inside them, widest first:
-    /// points to read inside the drawing, never yet the face's (`sag`).
-    pub fn spans(&self) -> Vec<Uv> {
+    /// The points `at` (a fraction, ½ the middle) of the way along the spans level lines across
+    /// the loops have inside them, widest first: points to read inside the drawing, never yet the
+    /// face's (`sag`).
+    pub fn spans(&self,at: f64) -> Vec<Uv> {
         let (mut vlo,mut vhi) = (f64::INFINITY,f64::NEG_INFINITY);
         for p in self.loops.iter().flatten() { vlo = vlo.min(p[1]); vhi = vhi.max(p[1]); }
         let mut found: Vec<(f64,Uv)> = Vec::new();
@@ -455,7 +456,7 @@ impl Outline {
             }
             xs.sort_by(|a,b| a.total_cmp(b));
             for w in xs.chunks(2) {
-                if w.len() == 2 && w[1] > w[0] { found.push((w[1]-w[0],[(w[0]+w[1])/2.,v])); }
+                if w.len() == 2 && w[1] > w[0] { found.push((w[1]-w[0],[w[0]+at*(w[1]-w[0]),v])); }
             }
         }
         found.sort_by(|a,b| b.0.total_cmp(&a.0));

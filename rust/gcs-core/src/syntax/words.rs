@@ -33,6 +33,26 @@ pub(super) const OPENERS: [&str; 20] = [
 
 pub(super) const BLOCKS: [&str; 4] = ["repeat", "cycle", "ring", "when"];
 
+/// **A block's word opening its block** (#598), not standing as a name.  A document may define a
+/// block's word (`ring := Disc(r: 5mm)`), and a statement that starts with it then reads it as
+/// that name where what follows is a field of it (`ring.rim.center coincident hub`), its
+/// definition, or a relation word with no brace opened on the line (`ring coincident hub`) —
+/// none of which a block's header begins with, a header being a count, a condition or a walk
+/// that runs on its line to the `{`.
+pub(super) fn opens_block(toks: &[(Tok, Span)], at: usize) -> bool {
+    if !matches!(toks.get(at), Some((Tok::Ident(w), _)) if BLOCKS.contains(&w.as_str())) {
+        return false;
+    }
+    match toks.get(at + 1).map(|(t, _)| t) {
+        Some(Tok::P('.')) | Some(Tok::Define) => false,
+        Some(Tok::Ident(n)) if is_operator(n) => toks[at + 1..]
+            .iter()
+            .take_while(|(t, _)| *t != Tok::Nl)
+            .any(|(t, _)| *t == Tok::P('{')),
+        _ => true,
+    }
+}
+
 /// `repeat e in rack.profile`: a block runs over a chain's edges when the tokens from `at` (the
 /// one after its word) are a name and `in`, which no count expression can begin with, `in` being
 /// no operator.  The parser and the colouring both ask it.

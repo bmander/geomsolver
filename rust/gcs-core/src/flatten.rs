@@ -359,6 +359,11 @@ pub struct Expansion {
     /// Every material the document states (`steel := material(E: 200GPa, …)`, #510 P3), by
     /// absolute name.
     pub materials: BTreeMap<String, crate::model::Material>,
+    /// Every number the document names and the walk worked out (#596), by absolute name — see
+    /// `Valued`.
+    pub values: BTreeMap<String, Valued>,
+    /// Every claim over values, judged, in the order walked (#596) — see `ValueClaimed`.
+    pub value_claims: Vec<ValueClaimed>,
     /// Every `ring` expanded, its centre resolved — what the elaborator turns copies about.
     pub rings: Vec<RingInfo>,
     /// Every set drawn as an element, for the elaborator to judge (`lowering`, #105).
@@ -401,6 +406,28 @@ pub struct Expansion {
     /// its traced body would: the name the text reads it by (`#f12.g.p2.y`), the declaration it
     /// resolved to and the fields past it — for the elaborator to hold as the geometry stands.
     pub reads: Vec<(String, String, Vec<String>)>,
+}
+
+/// **A number the document names** (#596): `ratio := teeth / 12 * 4`, a `param`, a group's
+/// member, as the walk worked it out — of its dimension, in the document's own units (a length in
+/// its unit, the bases beyond length and angle in SI's).  Only a number: one affine in an unknown
+/// of the drawing is the solve's to give, and is not here.
+#[derive(Clone, Debug)]
+pub struct Valued {
+    pub value: f64,
+    pub dim: crate::units::Dim,
+}
+
+/// **A claim over values, judged** (#596): `claim torque >= 2Nm` where it stands, its text as
+/// written, whether it holds, and each value it reads by absolute name, as it was worked out.  A
+/// value is worked out before the solve, so the claim is a theorem or refuted, never consuming;
+/// one that cannot be decided is a diagnostic, and is not here.
+#[derive(Clone, Debug)]
+pub struct ValueClaimed {
+    pub text: String,
+    pub span: Span,
+    pub holds: bool,
+    pub reads: Vec<(String, Valued)>,
 }
 
 /// **A face family's running number** (#243 L1), as the walk carries it: a free value named
@@ -560,6 +587,13 @@ struct Walk<'a> {
     /// and the frames that refuse them — see `Datums`.
     standard: Datums,
     group_names: BTreeSet<String>,
+    /// The names a definition gives a group by naming it (`small := sizes`, or a member
+    /// `{bar: bar}`, #594), by absolute key, to the group's: an alias of that group, never a
+    /// group of its own.
+    group_aliases: BTreeMap<String, String>,
+    /// The groups the source defines in braces (`g := {…}`, and one in place in it), by absolute
+    /// key: of `group_names`, the ones that are no instance, no typed formal and no argument.
+    defined_groups: BTreeSet<String>,
     /// Every interface of the program, resolved once (`interfaces::shapes`).
     shapes: Vec<std::rc::Rc<interfaces::Shape>>,
     /// The groups interfaces type (`Walk::typed`), by absolute key, to the interface's name.
@@ -575,6 +609,12 @@ struct Walk<'a> {
     /// The materials declared so far — see `Expansion::materials` — or `None` for one whose
     /// properties were refused: still a name a solid's `of` may give, already said to be wrong.
     materials: BTreeMap<String, Option<crate::model::Material>>,
+    /// The values worked out and the claims over them judged so far — see `Expansion::values`
+    /// and `Expansion::value_claims` — the claims by where each stands and the prefix it is
+    /// walked under, so a body walked again (§6.21) judges nothing twice.
+    values: BTreeMap<String, Valued>,
+    value_claims: Vec<ValueClaimed>,
+    claims_judged: BTreeSet<(Span, String)>,
     /// Every reading at an instant walked and not yet settled (#391 S2): what it reads, and the
     /// scope that names it in — see `carried`.
     readings: Vec<(Ref, Scope)>,
@@ -823,6 +863,8 @@ impl<'a> Walk<'a> {
                 ..Datums::default()
             },
             group_names: BTreeSet::new(),
+            group_aliases: BTreeMap::new(),
+            defined_groups: BTreeSet::new(),
             shapes: interfaces::shapes(prog),
             typed: BTreeMap::new(),
             checks: Checks::default(),
@@ -830,6 +872,9 @@ impl<'a> Walk<'a> {
             unknowns: BTreeMap::new(),
             parameters: BTreeMap::new(),
             materials: BTreeMap::new(),
+            values: BTreeMap::new(),
+            value_claims: Vec::new(),
+            claims_judged: BTreeSet::new(),
             readings: Vec::new(),
             instantiating: Vec::new(),
             rings: Rings::default(),
@@ -952,6 +997,8 @@ impl<'a> Walk<'a> {
             unknowns: self.unknowns,
             parameters: self.parameters,
             materials: self.materials.into_iter().filter_map(|(k, m)| Some((k, m?))).collect(),
+            values: self.values,
+            value_claims: self.value_claims,
             rings: self.rings.infos,
             lowered,
             twins: self.twins,

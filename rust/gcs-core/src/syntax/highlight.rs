@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use super::lexer::{lex, Tok};
 use super::words::{
     joint_word, link_word, opens_link, over_chain, over_walks, past_args, set_at, trails_decl, word_at,
-    word_definition_at, BLOCKS, MODIFIERS, QUALIFIERS,
+    word_definition_at, opens_block, BLOCKS, MODIFIERS, QUALIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
 use crate::constraints::{is_operator, Fixity};
@@ -233,7 +233,7 @@ pub(super) fn tints(toks: &[(Tok, Span)]) -> Vec<Option<Tint>> {
                     }
                     None => {
                         let (tint, then) = tint_word(w, prev, toks, i, at, &known, ring);
-                        ring |= at == Next::Start && w == "ring";
+                        ring |= at == Next::Start && w == "ring" && opens_block(toks, i);
                         at = then;
                         tint
                     }
@@ -385,7 +385,8 @@ fn tint_start(
     if w == "in" {
         return (Some(Tint::Word), Next::Word);
     }
-    if w == "preview" || BLOCKS.contains(&w) {
+    // a block's word a document has defined is that name where it stands as one (#598)
+    if w == "preview" || opens_block(toks, i) {
         // `repeat e in rack.profile` — the edge is a name the block declares, as the
         // index after `as` is
         let over = BLOCKS.contains(&w) && over_chain(toks, i + 1);

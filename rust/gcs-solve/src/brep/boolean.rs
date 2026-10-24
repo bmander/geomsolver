@@ -383,10 +383,18 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                     && located[other].face_place(g,p) == Place::In
             });
             let Some(g) = partner else {
-                let near: Vec<String> = (0..solids[other].faces.len()).filter(|&g| solids[other].faces[g].surface.implicit(p).abs() <= tol)
-                    .map(|g| format!("{} {:?} same {}",solids[other].faces[g].surface.kind(),located[other].face_place(g,p),
-                        super::ssi::same(&f.surface,&solids[other].faces[g].surface,tol))).collect();
-                return Err(format!("a piece of a {} touches the other solid's boundary at {p:?} ({})",f.surface.kind(),near.join(", ")))
+                // every point read inside the piece on the other's boundary, and on no face of
+                // the other's on its surface: a contact the arrangement did not cut it along
+                let named = |f: &Face| match f.name.is_empty() {
+                    true => format!("a {}",f.surface.kind()),
+                    false => format!("`{}` (a {})",f.name,f.surface.kind()),
+                };
+                let near: Vec<String> = solids[other].faces.iter().enumerate()
+                    .filter(|&(g,h)| h.surface.implicit(p).abs() <= tol && located[other].face_place(g,p) != Place::Out)
+                    .map(|(_,h)| named(h)).collect();
+                let near = if near.is_empty() { "the other solid's boundary".to_string() } else { near.join(" and ") };
+                return Err(format!("a piece of {} touches {near} at {p:?} along no face of either: \
+                    move the one off the other's face, or into it",named(f)))
             };
             let normal = |face: &Face| {
                 let n = face.surface.normal_raw(face.surface.inverse(p));
@@ -1188,10 +1196,21 @@ mod reading {
         })
     }
 
+    /// Where along a level line's span across a piece its points are read (`inside`): its middle,
+    /// then a point each side of it, for a piece the other solid touches along a line through
+    /// every middle (a boss tangent to the face at its middle, #597).
+    const ALONG: [f64;3] = [0.5,0.3,0.7];
+
     /// Points inside a piece, the best first: the middles of the spans level lines across its
     /// outline have inside it (`Outline::spans`), widest first, each read against the piece
-    /// (`judged`) and given only where it is inside; drawn finer while none is.
+    /// (`judged`) and given only where it is inside; drawn finer while none is. Then, read alike,
+    /// the points off the middles (`ALONG`).
     pub(super) fn inside<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool) -> impl Iterator<Item=Inner>+'a {
+        ALONG.into_iter().flat_map(move |at| along(piece,f,out,pool,at))
+    }
+
+    /// The points `at` the way along the spans (`inside`).
+    fn along<'a>(piece: &'a [Vec<Half>],f: &'a Face,out: &'a [WEdge],pool: &'a Pool,at: f64) -> impl Iterator<Item=Inner>+'a {
         let mut bars = finer(bar(piece,out,pool),pool.tol);
         let mut round: Option<(Outline,std::vec::IntoIter<Uv>)> = None;
         let mut any = false;
@@ -1204,7 +1223,7 @@ mod reading {
                 if any { return None }
             }
             let drawn = outline(piece,f,out,pool,bars.next()?);
-            let queue = drawn.spans().into_iter();
+            let queue = drawn.spans(at).into_iter();
             round = Some((drawn,queue));
         })
     }

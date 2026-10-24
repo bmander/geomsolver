@@ -4,7 +4,7 @@ use super::P;
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{self, over_chain, over_walks, set_at, Brackets, BLOCKS, ENERGY_WORDS};
+use crate::syntax::words::{self, over_chain, over_walks, set_at, Brackets, ENERGY_WORDS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -129,7 +129,7 @@ impl<'a> P<'a> {
         // `distance(p, f1) + distance(p, f2) <= 10mm`, `2 * distance(p, a) >= …` — a bound on
         // measurements (#183 F3), told from a relation by a comparison outside every bracket —
         // and from a block's header, `when length(l) > 0mm { … }` (#210)
-        let block = matches!(self.peek(), Some(Tok::Ident(w)) if BLOCKS.contains(&w.as_str()));
+        let block = words::opens_block(&self.t, self.i);
         if !block && self.compared_ahead() && self.measures_ahead() {
             return self.measured().map(StmtKind::Measured);
         }
@@ -177,7 +177,7 @@ impl<'a> P<'a> {
                 );
                 None
             }
-            b if BLOCKS.contains(&b) => {
+            _ if block => {
                 self.i += 1;
                 let kind = match w.as_str() {
                     "repeat" => BlockKind::Repeat,
@@ -196,6 +196,9 @@ impl<'a> P<'a> {
             {
                 self.claim_over(next_id)
             }
+            // `claim torque >= 2Nm` — a comparison of the document's values (#596), judged
+            // while elaborating
+            "claim" if self.value_claim_ahead(self.i + 1) => self.value_claim(),
             // `claim vertical(rail)` — a relation stated as expected to add no rank
             "claim" => {
                 self.i += 1;
@@ -295,6 +298,36 @@ impl<'a> P<'a> {
             }
             _ => {}
         }
+    }
+
+    /// Whether a claim's statement from token `j` on compares numbers (#596): it opens with a
+    /// number, a bracket, a sign or a function of numbers (`sqrt(…)`), or its first reference is
+    /// followed by arithmetic or a comparison — where a relation has its word.
+    fn value_claim_ahead(&self, j: usize) -> bool {
+        let numeric = |k: usize| matches!(self.t.get(k).map(|(t, _)| t),
+            Some(Tok::EqEq | Tok::P('<' | '>' | '!' | '+' | '-' | '*' | '/' | '^')));
+        match self.t.get(j).map(|(t, _)| t) {
+            Some(Tok::Num(_) | Tok::P('(' | '-')) => true,
+            Some(Tok::Ident(w)) if matches!(self.t.get(j + 1), Some((Tok::P('('), _))) => {
+                crate::expr::FUNCTIONS.iter().any(|f| f.0 == w)
+                    && !crate::constraints::is_operator(w)
+            }
+            Some(Tok::Ident(_)) => self.past_ref(j).is_some_and(numeric),
+            _ => false,
+        }
+    }
+
+    /// `claim torque >= 2Nm`, `claim` next: the comparison's text, to the statement's end, which
+    /// `expr` reads once the flattener has the numbers in scope (#596).
+    fn value_claim(&mut self) -> Option<StmtKind> {
+        let lo = self.here().lo as usize;
+        self.i += 1;
+        let from = self.here().lo as usize;
+        self.i = self.level_end(false);
+        let text = self.text_from(from).trim().to_string();
+        let span = Span::new(lo, self.prev_hi());
+        self.end_of_stmt();
+        Some(StmtKind::ValueClaim(crate::syntax::ValueClaim { text, span }))
     }
 
     /// `claim over NAME in (from, to) { … }`, `claim` next: claims judged as the drawing runs

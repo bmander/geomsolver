@@ -176,7 +176,9 @@ impl Pcg {
             }
             inv[j] = 1.0 / d;
         }
-        let mut factor = Cholesky::analyse(coarse, Ordering::Amd);
+        // its pattern's analysis remembered between evaluations (`cholesky::analysed`): a row
+        // over a mesh held through a solve assembles the same pattern at every step (#567)
+        let mut factor = crate::cholesky::analysed(coarse, Ordering::Amd);
         if factor.factor(coarse).is_err() {
             return Err(k);
         }
