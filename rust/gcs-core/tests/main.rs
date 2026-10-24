@@ -127,6 +127,7 @@ mod meshing_problem;
 mod highlight;
 mod homotopy;
 mod hub_motor;
+mod hulls;
 mod hypoid_drive;
 mod hypoid_layout;
 mod hypoid_machine;

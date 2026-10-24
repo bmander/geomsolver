@@ -59,7 +59,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **turn**, so `tau == 2 * pi * 1rad`; radians are written `* 1rad`, not `* 180 / pi`.  Storing
   the unit costs the solve nothing, and `graft::paste` converts between documents' units
   (`Sketch::rescale`, written out by kind: a `Param` cannot say it is a length).
-- **A value is read back, and claimed** (#596, [0.180]).  Each definition a body works out to a
+- **A value is read back, and claimed** (#596, [0.182]).  Each definition a body works out to a
   number (`ratio := teeth / 12 * 4`, a `param`, a group's member) is recorded under its absolute
   name (`t1.m` in an instance) as a `flatten::Valued` (its value and `Dim`) by
   `Walk::named_values`, never in a curve's compile over its variables (`sym`), never a hidden

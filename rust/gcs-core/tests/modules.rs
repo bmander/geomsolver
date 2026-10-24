@@ -117,6 +117,42 @@ fn preview_solves_only_when_its_file_is_opened() {
     assert!(positions.iter().any(|(n, v)| n == "sample.c.r" && (*v - 14.0).abs() < 1e-8));
 }
 
+/// **A module's parameter is its drawing's** (#593, [0.180]): a part declaring the parameter its
+/// own drawing runs over, opened on its own to scrub its joint, is `use`d as it stands — the
+/// parameter left out with the drawing, as the preview is — and nothing outside names it.
+#[test]
+fn a_modules_parameter_is_left_out_with_its_drawing() {
+    let part = "unit mm\nuse std\nsizes := {r: 10mm, h: 5mm}\ncomponent Disc(s: group) {\n  \
+        in std.top {\n    rim := radius(s.r) circle(center: std.top.origin)\n  }\n  \
+        body := solid(face(rim), from: 0mm, to: s.h)\n}\n\
+        param spin: Angle over (0deg, 360deg)\nd := Disc(sizes)\n";
+    let elaborated = |src: &str| {
+        let (mut prog, errs) = parse(src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let linked = link(&mut prog, &mut |name| {
+            (name == "part").then(|| part.to_string()).or_else(|| gcs_core::library::resolve(name))
+        });
+        (elaborate(&prog), linked)
+    };
+    // opened, the part's own parameter is the document's
+    let (opened, linked) = elaborated(part);
+    assert!(linked.is_empty(), "{linked:?}");
+    assert!(opened.ok(), "{:?}", opened.diags);
+    assert!(opened.sketch.parameters.contains_key("spin"), "{:?}", opened.sketch.parameters);
+    // used, it is not: the using document has none of its own
+    let (used, linked) = elaborated("unit mm\nuse std\nuse part (Disc, sizes)\nd := Disc(sizes)\n");
+    assert!(linked.is_empty(), "{linked:?}");
+    assert!(used.ok(), "{:?}", used.errors().map(|d| &d.message).collect::<Vec<_>>());
+    assert!(used.sketch.parameters.is_empty(), "{:?}", used.sketch.parameters);
+    assert_eq!(used.sketch.solids.len(), opened.sketch.solids.len());
+    // and nothing outside the part names it, bare or by its path
+    let (e, _) = elaborated("unit mm\nuse std\nuse part (spin)\n");
+    assert!(e.errors().any(|d| d.code.as_str() == "E101" && d.message.contains("spin")),
+        "{:?}", e.diags);
+    let (e, _) = elaborated("unit mm\nuse std\nuse part\nw := 2 * part.spin\n");
+    assert!(e.errors().any(|d| d.message.contains("part.spin")), "{:?}", e.diags);
+}
+
 #[test]
 fn preview_is_a_single_top_level_block() {
     let runs = gcs_core::syntax::highlight("preview { p := point }");
