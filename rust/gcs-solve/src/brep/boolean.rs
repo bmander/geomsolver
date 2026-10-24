@@ -5,8 +5,8 @@
 //! assembled, their edges shared by construction.
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::geom::{around,Uv,V};
-use super::query::{crossings_in,face_box,curve_surface_within,Located,Meets,Outline,Place};
+use super::geom::{around,Box3,Uv,V};
+use super::query::{crossings_in,curve_surface_within,Located,Meets,Outline,Place};
 use super::ssi::{intersect,Ssi};
 use super::topo::{reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use crate::space::{distance,norm};
@@ -86,6 +86,9 @@ struct Arranged<'a> {
     pool: Pool,
     out: Vec<WEdge>,
     pieces: Vec<(usize,usize,Vec<Vec<Half>>)>,
+    /// Each solid's faces clear of the other: whose boxes miss the box the other's faces fill, so
+    /// nothing of the other meets them and all of each lies outside it (#589).
+    clear: [Vec<bool>;2],
 }
 
 /// **Two solids sharing a face, joined there** (the pieces of a chain of fillets, each ending in
@@ -347,24 +350,62 @@ fn cut_at(s: &mut Brep,cuts: &BTreeMap<u32,Vec<V>>,tol: f64) -> Option<BTreeMap<
 /// One step of the body rule: `solid` combined with `operand` by `op`, to a tolerance of the two's
 /// size (never under `floor`, mm), and checked.
 pub fn combined(solid: &Brep,operand: &Brep,op: Op,floor: f64) -> Result<Brep,super::KernelError> {
+    Ok(combined_known(solid,None,operand,op,floor)?.0)
+}
+
+/// **What a Boolean knows of the faces it hands on** (#589), beside its result's faces: each one's
+/// box in space where it is a face of an operand carried whole (`Arranged::clear`: nothing of the
+/// other met it), and whether it was checked whole as a face of a result before (`Brep::check`).
+/// A run of Booleans on one solid (a body's operands, one after another) hands it from each to the
+/// next, so a face far from every operand is boxed and checked once, not once an operand.
+#[derive(Clone,Debug,Default)]
+pub struct Known { boxes: Vec<Option<Box3>>,checked: Vec<bool> }
+
+impl Known {
+    /// Face `fi`'s box, where it is known.
+    fn face_box(&self,fi: usize) -> Option<Box3> { self.boxes.get(fi).copied().flatten() }
+}
+
+/// `combined`, `solid`'s faces known as `known` says (the last step of a run handed on), and what
+/// the result's are.
+pub fn combined_known(solid: &Brep,known: Option<&Known>,operand: &Brep,op: Op,floor: f64)
+    -> Result<(Brep,Known),super::KernelError> {
     let tol = super::geom::tolerance_over(solid.size().max(operand.size()),floor);
-    let mut out = boolean(solid,operand,op,tol)?;
+    let (mut out,mut known) = boolean_known(solid,known,operand,op,tol)?;
     // material touching itself along a line (two rounds of separate statements meeting where the
     // body they each read leaves them so, #218): each such edge held twice, a solid's boundary
     // pinched there
-    if let Err(e) = out.check(10.*tol) {
+    if let Err(e) = out.check_settled(10.*tol,&known.checked) {
         if e.kind != super::Kind::NotManifold || !matches!(out.unpinched(),Ok(n) if n > 0) { return Err(e) }
         out.check(10.*tol)?;
+        // its edges split: nothing of it is handed on
+        known.boxes.clear();
     }
-    Ok(out)
+    known.checked = vec![true;out.faces.len()];
+    Ok((out,known))
 }
 
 /// `a` combined with `b` by `op`, to `tol` (a length).
-pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
-    let Arranged {solids,located,pool,out,pieces,..} = arrange(a,b,tol)?;
+pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> { Ok(boolean_known(a,None,b,op,tol)?.0) }
+
+/// `boolean`, `a`'s faces known as `known` says, and what the result's are (`Known`): the boxes
+/// of those carried whole, and which of them were checked (`a`'s that were).
+fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Result<(Brep,Known),String> {
+    let Arranged {solids,located,pool,out,pieces,clear} = arrange(a,known,b,tol)?;
     let mut kept: Vec<Face> = Vec::new();
+    let mut handed = Known::default();
     for (s,fi,piece) in pieces {
         let f = &solids[s].faces[fi];
+        // a face clear of the other solid is one piece, whole and outside it: no point of it need
+        // be placed (a large solid's faces far from a small one, the most of them, #589)
+        if clear[s][fi] {
+            if op == Op::Union || op == Op::Cut && s == 0 {
+                kept.push(piece_face(f,&piece,false));
+                handed.boxes.push(Some(located[s].face_box(fi)));
+                handed.checked.push(s == 0 && known.is_some_and(|k| k.checked.get(fi) == Some(&true)));
+            }
+            continue
+        }
         // place a point inside the piece against the other solid: the first of its inner
         // points not on the other's boundary (a piece may touch it tangentially), or one on
         // it where the other has a face on this surface
@@ -409,8 +450,10 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
         if !keep { continue }
         let flip = op == Op::Cut && s == 1;
         kept.push(piece_face(f,&piece,flip));
+        handed.boxes.push(None);
+        handed.checked.push(false);
     }
-    Ok(assemble(&out,&pool,kept))
+    Ok((assemble(&out,&pool,kept),handed))
 }
 
 /// A piece of face `f` as a face of its own: its cycles as loops, each turned the other way round
@@ -425,11 +468,12 @@ fn piece_face(f: &Face,piece: &[Vec<Half>],flip: bool) -> Face {
 }
 
 /// The faces of `a` and `b` split where the other crosses them (`Arranged`).
-fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> {
+/// `a`'s faces' boxes are taken from `known` where it has them (`Known`).
+fn arrange<'a>(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> {
     // `SOLVENT_BREP_DEBUG` narrates every pair of faces: the curves, the spans kept and dropped
     let debug = super::debug();
     let solids = [a,b];
-    let located = [Located::new(a,tol),Located::new(b,tol)];
+    let located = [Located::boxed(a,tol,&|fi| known.and_then(|k| k.face_box(fi))),Located::new(b,tol)];
     let mut pool = Pool::new(tol);
     // the working edges: A's, then B's, their vertices pooled
     let mut edges: Vec<WEdge> = Vec::new();
@@ -439,8 +483,11 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
         let ids: Vec<u32> = sol.vertices.iter().map(|v| pool.at(v.p)).collect();
         for e in &sol.edges { edges.push(WEdge {curve:e.curve.clone(),t:e.t,v:[ids[e.v[0] as usize],ids[e.v[1] as usize]]}); }
     }
-    let boxes: [Vec<_>;2] = [(0..a.faces.len()).map(|i| face_box(a,i)).collect(),(0..b.faces.len()).map(|i| face_box(b,i)).collect()];
+    let boxes: [Vec<_>;2] = [0,1].map(|s| (0..solids[s].faces.len()).map(|i| located[s].face_box(i)).collect::<Vec<_>>());
     let pad = 4.*tol;
+    // the box each solid's faces fill, and the faces of each clear of the other's (`Arranged::clear`)
+    let reach = boxes.each_ref().map(|bx| bx.iter().fold(super::geom::EMPTY,|mut r,b| { super::geom::widen(&mut r,*b); r }));
+    let clear = [0,1].map(|s| boxes[s].iter().map(|bx| !overlap(bx,&reach[1-s],pad)).collect::<Vec<_>>());
     let clock = crate::clock::Instant::now();
     let (mut t_grid,mut t_trace) = (0f64,0f64);
     // 1. every edge against every face of the other solid: where it crosses, a vertex on both
@@ -463,13 +510,17 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
         for (i,e) in solids[s].edges.iter().enumerate() {
             let EdgeCurve::Curve(c) = &e.curve else { continue };
             let we = first_edge[s]+i;
+            // a sampled chord may cut inside its curve's bulge: pad by the sagitta's bound
+            let sag = c.speed()*(e.t[1]-e.t[0])/32.;
+            // an edge whose enclosure misses the box the other's faces fill meets none of them
+            // (its samples lie within it), and is not sampled (#589); a trace's enclosure is
+            // measured, not proved, so a trace is sampled whatever it says
+            if !matches!(c,super::geom::Curve::Traced(_)) && !overlap(&c.bounds(e.t),&reach[other],pad+sag) { continue }
             let mut ebox = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
             for j in 0..=32 {
                 let p = c.point(e.t[0]+(e.t[1]-e.t[0])*j as f64/32.);
                 for k in 0..3 { ebox.0[k] = ebox.0[k].min(p[k]); ebox.1[k] = ebox.1[k].max(p[k]); }
             }
-            // a sampled chord may cut inside its curve's bulge: pad by the sagitta's bound
-            let sag = c.speed()*(e.t[1]-e.t[0])/32.;
             for (fi,f) in solids[other].faces.iter().enumerate() {
                 if !overlap(&ebox,&boxes[other][fi],pad+sag) { continue }
                 let started = crate::clock::Instant::now();
@@ -750,6 +801,8 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
             let loc = &located[s];
             let mut halves: Vec<Half> = Vec::new();
             let mut on: Vec<u32> = Vec::new();
+            // where each loop's halves end
+            let mut loop_ends: Vec<usize> = Vec::new();
             for l in &f.loops { for c in l {
                 let we = first_edge[s]+c.edge as usize;
                 let orig = &solids[s].edges[c.edge as usize];
@@ -775,7 +828,16 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
                     halves.push(Half {edge:r,along,pcurve,from,to});
                     on.push(r);
                 }
-            } }
+            } loop_ends.push(halves.len()); }
+            // a face clear of the other is nothing but its loops, its edges' pieces in their order
+            // round them (`Arranged::clear`): one piece, not traced again (#589)
+            if clear[s][fi] {
+                let mut halves = halves.into_iter();
+                let mut start = 0;
+                let piece = loop_ends.iter().map(|&end| { let l = halves.by_ref().take(end-start).collect(); start = end; l }).collect();
+                pieces.push((s,fi,piece));
+                continue
+            }
             // an edge the other solid leaves across this face: both ways round, its parameters
             // walked from its middle out, each step unwrapped from the last
             let internal = |r: u32,halves: &mut Vec<Half>,on: &mut Vec<u32>| {
@@ -834,7 +896,7 @@ fn arrange<'a>(a: &'a Brep,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> 
         eprintln!("time: arrange: edges against faces {t1:.2} s; face pairs {:.2} s (grid seeds {t_grid:.2}, traces {t_trace:.2}); \
             the rest {:.2} s",t2-t1,clock.elapsed().as_secs_f64()-t2);
     }
-    Ok(Arranged {solids,located,pool,out,pieces})
+    Ok(Arranged {solids,located,pool,out,pieces,clear})
 }
 
 /// **A root found where an edge meets a surface flatly is known only as the stretch of the edge
@@ -879,11 +941,19 @@ fn flat_roots(solids: [&Brep;2],loose: &[Loose],cuts: &mut [Vec<(f64,u32)>],on_f
 /// it, off its ends, and where along it; each edge boxed by its curve's enclosure, on every core.
 fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &std::collections::BTreeSet<u32>,
     pad: f64,tol: f64) -> Vec<Vec<(f64,u32)>> {
+    // the vertices in order along x: an edge reads those within its box's stretch of x, not every
+    // vertex (#589), each in the pool's order
+    let mut along: Vec<u32> = (0..pool.pts.len() as u32).collect();
+    along.sort_by(|&v,&w| pool.pts[v as usize][0].total_cmp(&pool.pts[w as usize][0]).then(v.cmp(&w)));
     crate::par::indices(edges.len(),|we| -> Vec<(f64,u32)> {
         let e = &edges[we];
         let EdgeCurve::Curve(c) = &e.curve else { return Vec::new() };
         let (lo,hi) = c.bounds(e.t);
-        (0..pool.pts.len() as u32).filter_map(|v| {
+        let first = along.partition_point(|&v| pool.pts[v as usize][0] < lo[0]-pad);
+        let last = along.partition_point(|&v| pool.pts[v as usize][0] <= hi[0]+pad);
+        let mut near = along[first..last.max(first)].to_vec();
+        near.sort_unstable();
+        near.into_iter().filter_map(|v| {
             if v == e.v[0] || v == e.v[1] || gone.contains(&v) || cuts[we].iter().any(|&(_,w)| w == v) { return None }
             let p = pool.pts[v as usize];
             if (0..3).any(|k| p[k] < lo[k]-pad || p[k] > hi[k]+pad) { return None }
@@ -1030,15 +1100,19 @@ fn pieces_of_face(f: &Face,halves: &[Half],out: &[WEdge],pool: &Pool) -> Result<
     // uses of one vertex otherwise agree only as well as their pcurves do, a fitted curve's end to
     // within its fit)
     let mut nodes: Vec<(u32,Uv)> = Vec::new();
-    let node_of = |v: u32,uv: Uv,nodes: &mut Vec<(u32,Uv)>| -> usize {
-        if let Some(i) = nodes.iter().position(|&(w,p)| w == v && (p[0]-uv[0]).abs() < 1e-3 && (p[1]-uv[1]).abs() < 1e-3) { return i }
+    // each vertex's nodes, so a face of many edges finds one without reading every node (#589)
+    let mut of_vertex: BTreeMap<u32,Vec<usize>> = BTreeMap::new();
+    let mut node_of = |v: u32,uv: Uv| -> usize {
+        let mine = of_vertex.entry(v).or_default();
+        if let Some(&i) = mine.iter().find(|&&i| { let p = nodes[i].1; (p[0]-uv[0]).abs() < 1e-3 && (p[1]-uv[1]).abs() < 1e-3 }) { return i }
         nodes.push((v,uv));
+        mine.push(nodes.len()-1);
         nodes.len()-1
     };
     let ends: Vec<(usize,usize)> = halves.iter().map(|h| {
         let e = &out[h.edge as usize];
         let (v0,v1) = if h.along { (e.v[0],e.v[1]) } else { (e.v[1],e.v[0]) };
-        (node_of(v0,h.from,&mut nodes),node_of(v1,h.to,&mut nodes))
+        (node_of(v0,h.from),node_of(v1,h.to))
     }).collect();
     // each half's direction leaving its start and arriving at its end, as lengths, oriented
     let dir = |h: &Half,at_start: bool| -> f64 {
@@ -1256,7 +1330,7 @@ pub fn split(solid: &Brep,sheets: &Brep,tol: f64) -> Result<Vec<Brep>,String> {
     }
     let sheets = &sheets;
     let clock = crate::clock::Instant::now();
-    let Arranged {solids,located,pool,out,pieces,..} = arrange(solid,sheets,tol)?;
+    let Arranged {solids,located,pool,out,pieces,..} = arrange(solid,None,sheets,tol)?;
     let arranged = clock.elapsed().as_secs_f64();
     let face_of = |i: usize,flip: bool| -> Face {
         let (s,fi,piece) = &pieces[i];

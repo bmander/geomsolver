@@ -54,6 +54,16 @@ pub enum Pcurve {
 }
 
 impl Pcurve {
+    /// Whether the edge's image in the face's parameters is a straight segment, each point of it
+    /// an affine function of the edge's parameter: a line given so, or a line in space inverted
+    /// onto a plane. A loop of such is the polygon of its corners (#589).
+    pub fn straight(&self,edge: &Edge,surface: &Surface) -> bool {
+        match self {
+            Pcurve::Line {..} => true,
+            Pcurve::Inverse {..} => matches!((surface,&edge.curve),(Surface::Plane(_),EdgeCurve::Curve(Curve::Line {..}))),
+            Pcurve::Curve(_) => false,
+        }
+    }
     /// The parameters at the edge's parameter `t` of `edge`, on `surface`.
     pub fn at(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> Uv {
         let s = if edge.t[1] > edge.t[0] { (t-edge.t[0])/(edge.t[1]-edge.t[0]) } else { 0. };
@@ -252,7 +262,11 @@ impl Brep {
     /// non-degenerate edge used twice, once each way, and every degenerate one once. An edge used
     /// as often each way, more than once, is a `Kind::NotManifold` refusal (`NOT_MANIFOLD` opens
     /// what it says); one used more often one way, or never, is `Kind::Open` (`OPEN`).
-    pub fn check(&self,tol: f64) -> Result<(),super::KernelError> {
+    pub fn check(&self,tol: f64) -> Result<(),super::KernelError> { self.check_settled(tol,&[]) }
+
+    /// `check`, each face `settled` marks (one carried whole from a solid checked before, #589)
+    /// read for its loops' ends and its edges' uses alone: its geometry is what was checked.
+    pub fn check_settled(&self,tol: f64,settled: &[bool]) -> Result<(),super::KernelError> {
         let mut uses = vec![(0usize,0usize);self.edges.len()];
         for (i,e) in self.edges.iter().enumerate() {
             if let EdgeCurve::Curve(c) = &e.curve {
@@ -265,6 +279,7 @@ impl Brep {
         }
         for (fi,f) in self.faces.iter().enumerate() {
             if f.loops.is_empty() { return Err(format!("face {fi} ({}) has no loop",f.name).into()) }
+            let settled = settled.get(fi) == Some(&true);
             for (li,l) in f.loops.iter().enumerate() {
                 if l.is_empty() { return Err(format!("face {fi} ({}): loop {li} is empty",f.name).into()) }
                 for (k,c) in l.iter().enumerate() {
@@ -272,6 +287,9 @@ impl Brep {
                     if self.ends(c)[1] != self.ends(next)[0] {
                         return Err(format!("face {fi} ({}): loop {li} breaks after use {k}",f.name).into())
                     }
+                    let u = &mut uses[c.edge as usize];
+                    if c.reversed { u.1 += 1 } else { u.0 += 1 }
+                    if settled { continue }
                     // the same place, reached on the same branch of the surface's periods
                     let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
                     // each pcurve's end within twice its edge's tolerance of the vertex (its image to the
@@ -281,14 +299,16 @@ impl Brep {
                         return Err(format!("face {fi} ({}): loop {li} breaks in parameters after use {k}: {a:?} to {b:?}",f.name).into())
                     }
                     let e = &self.edges[c.edge as usize];
-                    for j in 0..=8 {
+                    // a line on a plane, straight in its parameters, is off it most at an end
+                    let flat = matches!((&f.surface,&e.curve),(Surface::Plane(_),EdgeCurve::Curve(Curve::Line {..})))
+                        && c.pcurve.straight(e,&f.surface);
+                    for j in (0..=8).filter(|&j| !flat || j%8 == 0) {
                         let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
                         let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
                         if d > tol.max(e.tol) { return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it",f.name,c.edge).into()) }
                     }
-                    let u = &mut uses[c.edge as usize];
-                    if c.reversed { u.1 += 1 } else { u.0 += 1 }
                 }
+                if settled { continue }
                 let area = self.loop_area(f,l);
                 let ccw = area > 0.;
                 if (li == 0) != (ccw != f.reversed) {
@@ -430,7 +450,8 @@ impl Brep {
         let mut pts: Vec<Uv> = Vec::new();
         for c in l {
             let e = &self.edges[c.edge as usize];
-            let n = 32;
+            // a straight image is its first corner's (the next use's first is its last)
+            let n = if c.pcurve.straight(e,&f.surface) { 1 } else { 32 };
             let mut ts: Vec<f64> = (0..n).map(|j| e.t[0]+(e.t[1]-e.t[0])*j as f64/n as f64).collect();
             ts.push(e.t[1]);
             if c.reversed { ts.reverse(); }

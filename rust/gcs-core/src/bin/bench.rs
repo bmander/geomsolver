@@ -332,6 +332,64 @@ fn bench_analysis() {
     }
 }
 
+/// **A shaper's run of bites** (#589): #585's plus-shaped tool stood at a run of rolls over a whole
+/// turn of a wheel's blank, each copy cut from it, one statement a bite — a step half as fine is
+/// twice the bites, and its build is to cost about twice as much, not four times.
+const BITES: &str = "\
+unit mm
+use std
+use std (vertical, turns, coords)
+in std.front {
+  construction stem := vertical line(std.origin, hint((0, 10)))
+  length(10mm) stem
+  wc := point hint((-50, 0))
+  std.origin distance(-50mm, along: u) wc
+  construction spindle := vertical line(wc, hint((-50, 10)))
+  length(10mm) spindle
+}
+in std.top {
+  repeat 4 as k {
+    a := point hint((30 * cos(90deg * k) - 4 * sin(90deg * k), 30 * sin(90deg * k) + 4 * cos(90deg * k)))
+    b := point hint((30 * cos(90deg * k) + 4 * sin(90deg * k), 30 * sin(90deg * k) - 4 * cos(90deg * k)))
+    c := point hint((4 * cos(90deg * k + 45deg) * sqrt(2), 4 * sin(90deg * k + 45deg) * sqrt(2)))
+    a coords(du: 30mm * cos(90deg * k) - 4mm * sin(90deg * k), dv: 30mm * sin(90deg * k) + 4mm * cos(90deg * k)) std.top
+    b coords(du: 30mm * cos(90deg * k) + 4mm * sin(90deg * k), dv: 30mm * sin(90deg * k) - 4mm * cos(90deg * k)) std.top
+    c coords(du: 4mm * sqrt(2) * cos(90deg * k - 45deg), dv: 4mm * sqrt(2) * sin(90deg * k - 45deg)) std.top
+  }
+  plus := face(c[0], b[0], a[0], c[1], b[1], a[1], c[2], b[2], a[2], c[3], b[3], a[3], -> close)
+  wo := point
+  wo coincident wc
+  rim := circle(center: wo) hint(r: 40)
+  radius(40mm) rim
+}
+star := solid(plus, from: -10mm, to: 0mm)
+tool_turn := frame
+tool_turn turns(1) stem
+wheel_turn := frame
+wheel_turn turns(-4 / 6) spindle
+blank := solid(face(rim), from: -8mm, to: -2mm)
+wheel := solid(blank)
+repeat round(540deg / step) as j {
+  bite := star at(under: tool_turn, seen_from: wheel_turn) (j * step)
+  bite cut wheel
+}
+";
+
+fn bench_bites() {
+    println!("\n== a shaper's run of bites (#589): the wheel's exact build, ms ==");
+    for step in [6, 4, 2] {
+        let text = BITES.replace("wheel := solid(blank)", &format!("step := {step}deg\nwheel := solid(blank)"));
+        let (prog, errs, _) = gcs_core::library::parse_linked(&text);
+        assert!(errs.is_empty(), "{errs:?}");
+        let mut sk = gcs_core::program::elaborate(&prog).sketch;
+        gcs_core::solve::solve(&mut sk, Default::default());
+        let wheel = sk.solids.iter().position(|s| s.name == "wheel").expect("the wheel");
+        let t0 = Instant::now();
+        let built = sk.exact_solid(wheel).expect("builds");
+        println!("{:3} bites ({step}°): {:8.1} ms | {} faces", 540 / step, ms(t0), built.brep.faces.len());
+    }
+}
+
 fn main() {
     // `bench delaunay [case]`: the triangulation alone, or one of its cases (for timing a single
     // case's CPU from outside, as `/usr/bin/time` does when the machine is busy).
@@ -339,6 +397,7 @@ fn main() {
     if std::env::args().nth(1).as_deref() == Some("scrub") { bench_scrub(); return; }
     if std::env::args().nth(1).as_deref() == Some("rounded") { bench_rounded(); return; }
     if std::env::args().nth(1).as_deref() == Some("analysis") { bench_analysis(); return; }
+    if std::env::args().nth(1).as_deref() == Some("bites") { bench_bites(); return; }
     if std::env::args().nth(1).as_deref() == Some("delaunay") { bench_delaunay(std::env::args().nth(2).as_deref()); return; }
     let cases = cases();
 
@@ -418,6 +477,7 @@ fn main() {
     bench_meshing();
     bench_scrub();
     bench_rounded();
+    bench_bites();
     bench_delaunay(None);
     bench_analysis();
 }

@@ -33,6 +33,20 @@ from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
 extreme angle). Never a sample grid: extremes between samples were missed.
+**A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the
+other's faces fill is clear of it (`boolean::Arranged::clear`) — nothing of the other meets it, so
+it is one piece, its own loops, outside the other: kept by a union and by a cut of the solid it
+belongs to, dropped otherwise, with no point of it read; an edge whose `Curve::bounds` misses that
+box is not sampled against the other's faces. A face's outline is drawn the first time it is asked
+about (`Located::drawn`), its box read once (`Located::boxed`), the solid's size once. A run of
+Booleans on one solid (a body's operands, `recipe::body`) hands each step's `boolean::Known` to the
+next (`combined_known`): the box of each face it carried whole, and which were checked as faces of
+a result, which `Brep::check_settled` reads for their loops' ends and their edges' uses alone. A
+plane's `Surface::inverse` and `d1` are its frame's coordinates, read before any angle; a straight
+image in a face's parameters (`Pcurve::straight`) is its corners in `loop_area` and its ends in the
+check. So a shaper's run of 270 bites against a blank (`bench bites`, in `make bench`) builds in 3.3 s
+where it took 21.8; what remains grows with the blank's two faces every bite meets (each of 744 edges
+by the end, traced again at every bite). `brep::a_run_of_cuts_hands_its_far_faces_on` is the gate.
 **The recipe is read once** (`recipe::Recipe::read`): every reader — this kernel's build and
 meridian, `section`, the swept cutter and sector, `solid::exact`/`canal`, the native host's
 `Session` — matches a typed `recipe::Node`, never the JSON; a profile stays as written

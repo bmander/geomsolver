@@ -283,14 +283,15 @@ fn gap((lo,hi): ([f64;3],[f64;3]),p: V) -> f64 {
 }
 
 /// A box about edge `e`: its curve's enclosure over its stretch (`Curve::bounds`), a degenerate
-/// edge its pole, grown by the edge's tolerance and a hair.
-pub(crate) fn edge_box(b: &Brep,e: usize) -> ([f64;3],[f64;3]) {
+/// edge its pole, grown by the edge's tolerance and a hair of `size`, the solid's (`Brep::size`,
+/// which walks every edge and face, so read once for all of them: #589).
+pub(crate) fn edge_box(b: &Brep,e: usize,size: f64) -> ([f64;3],[f64;3]) {
     let edge = &b.edges[e];
     let (lo,hi) = match &edge.curve {
         EdgeCurve::Curve(c) => c.bounds(edge.t),
         EdgeCurve::Degenerate => { let p = b.vertices[edge.v[0] as usize].p; (p,p) }
     };
-    let pad = edge.tol+1e-9*b.size().max(1.);
+    let pad = edge.tol+1e-9*size.max(1.);
     (lo.map(|x| x-pad),hi.map(|x| x+pad))
 }
 
@@ -497,30 +498,46 @@ pub struct Located<'a> {
     /// ones by the winding of its loops' outline, drawn to an eighth of it (and never nearer than
     /// twice the outline's `sag`).
     coarse: f64,
-    /// Each face's loops drawn in its parameters, to an eighth of `coarse`.
-    outlines: Vec<Outline>,
-    /// Each face's parameter box.
-    boxes: Vec<[Uv;2]>,
+    /// Each face's loops drawn in its parameters, to an eighth of `coarse`, and its parameter box:
+    /// drawn the first time the face is asked about, so a Boolean of a large solid with a small one
+    /// draws the faces near the small one, not every face (#589).
+    drawn: Vec<std::sync::OnceLock<(Outline,[Uv;2])>>,
     /// Each face's box in space (`face_box`).
     space: Vec<([f64;3],[f64;3])>,
     /// Each face's seams (`Face::seams`), which bound nothing.
     seams: Vec<std::collections::BTreeSet<u32>>,
     /// Each edge's box in space (`edge_box`).
     edge_space: Vec<([f64;3],[f64;3])>,
+    /// The solid's size (`Brep::size`), read once.
+    size: f64,
 }
 
 impl<'a> Located<'a> {
     /// A located boundary that keeps its own copy.
     pub fn owned(b: Brep,tol: f64) -> Located<'static> {
-        let (tol,coarse,outlines,boxes,space,seams,edge_space) = { let l = Located::new(&b,tol); (l.tol,l.coarse,l.outlines,l.boxes,l.space,l.seams,l.edge_space) };
-        Located {b:std::borrow::Cow::Owned(b),tol,coarse,outlines,boxes,space,seams,edge_space}
+        let (tol,coarse,drawn,space,seams,edge_space,size) = { let l = Located::new(&b,tol);
+            (l.tol,l.coarse,l.drawn,l.space,l.seams,l.edge_space,l.size) };
+        Located {b:std::borrow::Cow::Owned(b),tol,coarse,drawn,space,seams,edge_space,size}
     }
-    pub fn new(b: &'a Brep,tol: f64) -> Located<'a> {
-        let coarse = (1e-4*b.size()).max(tol*8.);
-        let mut outlines = Vec::new();
-        let mut boxes = Vec::new();
-        for f in &b.faces {
-            let outline = Outline::of(&f.surface,coarse/8.,f.loops.iter().map(|l| l.iter().map(|c| {
+    pub fn new(b: &'a Brep,tol: f64) -> Located<'a> { Located::boxed(b,tol,&|_| None) }
+
+    /// `new`, each face's box in space taken from `known` where it has one (`face_box` where not):
+    /// a face a Boolean carried whole has the box it had (#589).
+    pub(crate) fn boxed(b: &'a Brep,tol: f64,known: &dyn Fn(usize) -> Option<([f64;3],[f64;3])>) -> Located<'a> {
+        let size = b.size();
+        let coarse = (1e-4*size).max(tol*8.);
+        let drawn = (0..b.faces.len()).map(|_| std::sync::OnceLock::new()).collect();
+        let space = (0..b.faces.len()).map(|fi| known(fi).unwrap_or_else(|| face_box(b,fi))).collect();
+        let seams = b.faces.iter().map(Face::seams).collect();
+        let edge_space = (0..b.edges.len()).map(|e| edge_box(b,e,size)).collect();
+        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,drawn,space,seams,edge_space,size}
+    }
+
+    /// Face `fi`'s outline and its parameter box, drawn once.
+    fn drawn(&self,fi: usize) -> &(Outline,[Uv;2]) {
+        self.drawn[fi].get_or_init(|| {
+            let (b,f) = (&*self.b,&self.b.faces[fi]);
+            let outline = Outline::of(&f.surface,self.coarse/8.,f.loops.iter().map(|l| l.iter().map(|c| {
                 let e = &b.edges[c.edge as usize];
                 move |s: f64| {
                     let t = if c.reversed { e.t[1]-(e.t[1]-e.t[0])*s } else { e.t[0]+(e.t[1]-e.t[0])*s };
@@ -529,20 +546,15 @@ impl<'a> Located<'a> {
             })));
             let mut bx = [[f64::INFINITY;2],[f64::NEG_INFINITY;2]];
             for p in outline.loops().iter().flatten() { for k in 0..2 { bx[0][k] = bx[0][k].min(p[k]); bx[1][k] = bx[1][k].max(p[k]); } }
-            outlines.push(outline);
-            boxes.push(bx);
-        }
-        let space = (0..b.faces.len()).map(|fi| face_box(b,fi)).collect();
-        let seams = b.faces.iter().map(Face::seams).collect();
-        let edge_space = (0..b.edges.len()).map(|e| edge_box(b,e)).collect();
-        Located {b:std::borrow::Cow::Borrowed(b),tol,coarse,outlines,boxes,space,seams,edge_space}
+            (outline,bx)
+        })
     }
 
     /// The parameters of a point of face `fi`'s surface, on the branch of its periods its loops
     /// are drawn on.
     pub fn uv(&self,fi: usize,p: V) -> Uv {
         let f = &self.b.faces[fi];
-        let bx = self.boxes[fi];
+        let bx = self.drawn(fi).1;
         let mid = [(bx[0][0]+bx[1][0])/2.,(bx[0][1]+bx[1][1])/2.];
         unwrap(f.surface.inverse_near(p,mid),mid,f.surface.periods())
     }
@@ -569,9 +581,9 @@ impl<'a> Located<'a> {
         let f: &Face = &self.b.faces[fi];
         // where every edge's box is farther than the near-edge reading reaches, the winding
         // decides, as it would with every edge measured
-        let near = self.coarse.max(2.*self.outlines[fi].sag());
+        let near = self.coarse.max(2.*self.drawn(fi).0.sag());
         if f.loops.iter().flatten().all(|c| self.edge_gap(c.edge,p) > near) {
-            let winding = self.outlines[fi].winding(self.uv(fi,p));
+            let winding = self.drawn(fi).0.winding(self.uv(fi,p));
             let inside = if f.reversed { winding < 0 } else { winding > 0 };
             return if inside { Place::In } else { Place::Out }
         }
@@ -587,7 +599,7 @@ impl<'a> Located<'a> {
         if d <= self.tol { return Place::In }
         let uv = self.uv(fi,p);
         let e = &self.b.edges[c.edge as usize];
-        if d <= self.coarse.max(2.*self.outlines[fi].sag()) && t > e.t[0] && t < e.t[1] {
+        if d <= self.coarse.max(2.*self.drawn(fi).0.sag()) && t > e.t[0] && t < e.t[1] {
             // near one edge's interior: which side of it, in the face's parameters — the point
             // on the branch beside each use of the edge (a seam is used twice, once each side of
             // the face), inside if beside any use it is on the face's side
@@ -601,7 +613,7 @@ impl<'a> Located<'a> {
             });
             return if inside { Place::In } else { Place::Out }
         }
-        let winding = self.outlines[fi].winding(uv);
+        let winding = self.drawn(fi).0.winding(uv);
         // a reversed face's loops turn the other way round
         let inside = if f.reversed { winding < 0 } else { winding > 0 };
         if inside { Place::In } else { Place::Out }
@@ -614,7 +626,7 @@ impl<'a> Located<'a> {
         for (fi,f) in self.b.faces.iter().enumerate() {
             if f.surface.implicit(p).abs() <= self.tol && self.face_place(fi,p) != Place::Out { return Place::On }
         }
-        let reach = 4.*self.b.size()+distance(p,self.b.vertices.first().map_or(p,|v| v.p));
+        let reach = 4.*self.size+distance(p,self.b.vertices.first().map_or(p,|v| v.p));
         const DIRECTIONS: [V;5] = [[0.5773,0.6124,0.5402],[-0.3172,0.8123,-0.4893],[0.7071,-0.3162,0.6325],
             [-0.6412,-0.5123,0.5712],[0.1234,-0.4321,-0.8934]];
         'dirs: for d in DIRECTIONS {
