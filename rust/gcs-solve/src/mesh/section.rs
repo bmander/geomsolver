@@ -292,7 +292,7 @@ pub fn section(m: &Mesh, o: [f64; 3], n: [f64; 3]) -> Section {
     out
 }
 
-/// Twice nothing: the shoelace area of a closed polygon, positive counter-clockwise.
+/// The shoelace area of a closed polygon, positive counter-clockwise.
 fn signed_area(q: &[P]) -> f64 {
     let n = q.len();
     (0..n).map(|i| {
@@ -341,7 +341,6 @@ struct Node {
     p: [f64; 3],
     prev: usize,
     next: usize,
-    alive: bool,
 }
 
 /// **An outer loop and its holes as triangles** — the outer counter-clockwise, the holes
@@ -360,7 +359,6 @@ fn triangulate(rings: &[(&[[f64; 3]], &[P])]) -> Vec<[[f64; 3]; 3]> {
                 p: pts[i],
                 prev: first + (i + n - 1) % n,
                 next: first + (i + 1) % n,
-                alive: true,
             });
         }
         first
@@ -405,17 +403,16 @@ fn triangulate(rings: &[(&[[f64; 3]], &[P])]) -> Vec<[[f64; 3]; 3]> {
     // how many corners have been looked at since the last was clipped: once all have, none is
     // an ear
     let mut since = 0;
-    let unlink = |nodes: &mut Vec<Node>, b: usize| {
+    let unlink = |nodes: &mut [Node], b: usize| {
         let (a, c) = (nodes[b].prev, nodes[b].next);
         nodes[a].next = c;
         nodes[c].prev = a;
-        nodes[b].alive = false;
     };
     while left > 3 {
         let (a, b, c) = (nodes[at].prev, at, nodes[at].next);
-        let turn = turn(nodes[a].q, nodes[b].q, nodes[c].q);
+        let bend = turn(nodes[a].q, nodes[b].q, nodes[c].q);
         let stuck = since > left;
-        if turn == 0 && !stuck {
+        if bend == 0 && !stuck {
             // a corner on the line between its neighbours (a bridge's doubled corner, a spike)
             // bounds nothing: dropped, no triangle
             unlink(&mut nodes, b);
@@ -424,7 +421,7 @@ fn triangulate(rings: &[(&[[f64; 3]], &[P])]) -> Vec<[[f64; 3]; 3]> {
             since = 0;
             continue;
         }
-        if turn > 0 && (stuck || ear(&nodes, a, b, c)) {
+        if bend > 0 && (stuck || ear(&nodes, a, b, c)) {
             out.push([nodes[a].p, nodes[b].p, nodes[c].p]);
             unlink(&mut nodes, b);
             left -= 1;
@@ -524,7 +521,8 @@ fn bridge(nodes: &[Node], outer: usize, m: usize) -> Option<usize> {
         let q = nodes[k].q;
         if k != p && q[0] >= qm[0] {
             let reflex = orient2(nodes[nodes[k].prev].q, q, nodes[nodes[k].next].q) <= 0;
-            let held = orient2(t0, t1, q) >= 0 && orient2(t1, t2, q) >= 0 && orient2(t2, t0, q) >= 0;
+            let held =
+                orient2(t0, t1, q) >= 0 && orient2(t1, t2, q) >= 0 && orient2(t2, t0, q) >= 0;
             if reflex && held {
                 let (dx, dy) = (q[0] - qm[0], q[1] - qm[1]);
                 let angle = (dy.abs() / dx.dhypot(dy).max(f64::MIN_POSITIVE), dx.dhypot(dy));

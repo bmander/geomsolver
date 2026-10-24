@@ -60,6 +60,16 @@ import {
 } from '../core/workspace.js';
 import type { View, Workspace } from '../core/workspace.js';
 
+/** **How the workspace is sectioned**: every object cut by the plane named `plane` — one of the
+ *  document's, or a standard plane it does not have yet — moved `offset` (the drawing's unit)
+ *  along that plane's normal, the side the normal points to taken away, or the other side where
+ *  `flip`. */
+export interface Sectioning {
+  plane: string;
+  flip: boolean;
+  offset: number;
+}
+
 /** **What of an object is picked**: which object (its name, and its index in the current sketch)
  *  and the part of it — a face, named where it was made; an edge, by the two faces meeting
  *  there; or, with neither, the object whole, a body. */
@@ -304,14 +314,11 @@ export class SketchView {
   hiddenEnts = new Set<Primitive>();
   hiddenSolids = new Set<number>();
   hiddenEpoch = 0;
-  /** **The workspace sectioned** (`core/section.ts`): every object cut by the plane named
-   *  `plane` — one of the document's, or a standard plane it does not have yet — moved `offset`
-   *  (the drawing's unit) along that plane's normal, the side the normal points to taken away, or
-   *  the other side where `flip`.  View state, as the orbit is: never saved, solved or undone,
-   *  set on every drawing the view is handed (`applySection`), carried across an edit by the
-   *  plane's name, let go when the name no longer reaches a plane and by a load.  `sectionEpoch` counts
-   *  each change, so the box re-cuts. */
-  section: { plane: string; flip: boolean; offset: number } | null = null;
+  /** **The workspace sectioned** (`core/section.ts`, `Sectioning`).  View state, as the orbit
+   *  is: never saved, solved or undone, set on every drawing the view is handed
+   *  (`applySection`), carried across an edit by the plane's name, let go when the name no longer
+   *  reaches a plane and by a load.  `sectionEpoch` counts each change, so the box re-cuts. */
+  section: Sectioning | null = null;
   sectionEpoch = 0;
   /** The solids selected, each by the face the click landed on — the third selection, exclusive
    *  with the other two for the picture's reason: a solid is not a `Primitive`, nothing
@@ -1859,7 +1866,7 @@ export class SketchView {
 
   /** **Section the workspace**, or stop: `next` names its plane, which side it keeps and how far
    *  along its normal it is moved.  The core is told (`applySection`) and the box re-cuts. */
-  setSection(next: { plane: string; flip: boolean; offset: number } | null): void {
+  setSection(next: Sectioning | null): void {
     this.section = next;
     this.sectionEpoch++;
     this.applySection();

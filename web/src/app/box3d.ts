@@ -27,6 +27,7 @@ import { own, placement, preview, shownObjects } from '../core/mesh.js';
 import type { Face, Mesh, Placement } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import { clipPlane, sectioned } from '../core/section.js';
+import type { Sectioned } from '../core/section.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
@@ -266,7 +267,7 @@ export class Box3D {
     this.stats.capped = 0;
     if (!this.clipping.length) return;
     for (const [index, held] of this.placed) {
-      let cut;
+      let cut: Sectioned | null;
       try {
         cut = sectioned(v.sketch, index, 0);
       } catch {
@@ -276,16 +277,10 @@ export class Box3D {
       const group = new THREE.Group();
       group.matrixAutoUpdate = false;
       group.matrix.copy(held.group.matrix);
-      if (cut.face.length && v.showSolid) {
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(Float32Array.from(cut.face), 3));
-        group.add(new THREE.Mesh(g, hatched()));
-      }
+      if (cut.face.length && v.showSolid) group.add(new THREE.Mesh(at(cut.face), hatched()));
       if (cut.outline.length) {
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position',
-                       new THREE.Float32BufferAttribute(Float32Array.from(cut.outline), 3));
-        group.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: INK.edge })));
+        group.add(new THREE.LineSegments(at(cut.outline),
+                                         new THREE.LineBasicMaterial({ color: INK.edge })));
       }
       this.caps.add(group);
       this.stats.capped++;
@@ -699,6 +694,13 @@ function faceMesh(m: Mesh, f: Face, clippingPlanes: THREE.Plane[]): THREE.Mesh {
   face.name = f.path;
   face.userData.face = f.path;
   return face;
+}
+
+/** A geometry of nothing but the core's points, three doubles each. */
+function at(points: Float64Array): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(Float32Array.from(points), 3));
+  return g;
 }
 
 /** **A cut face's material**: its ink, crossed by hatching laid in the picture's own pixels —

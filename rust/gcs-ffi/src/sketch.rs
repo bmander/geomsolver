@@ -192,12 +192,10 @@ pub unsafe extern "C" fn gcs_sketch_set_cut(h: *mut Sketch, frame: *const f64, f
             sk(h).cut = None;
             return 0;
         }
-        let f = std::slice::from_raw_parts(frame, 9);
-        let Some(b) = gcs_core::plane::Basis::explicit([f[0], f[1], f[2]], [f[3], f[4], f[5]]) else {
+        let Some(b) = frame_of(frame) else {
             set_error("a section's frame spans no plane");
             return -1;
         };
-        let b = gcs_core::plane::Basis { o: [f[6], f[7], f[8]], ..b };
         sk(h).cut = Some(b.moved_along(offset, flip != 0));
         0
     })

@@ -322,7 +322,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `edges_near`): a face hit in front of the plane is not met, an edge is offered only where the
   cut keeps it, and a ray that meets the plane inside the material (`EvaluatedSolid::contains`)
   meets the object whole — its cut face is no face of the document, so `under` lists the object
-  and not a face.  `app.test.ts` ("a section cuts the objects by a plane") is the gate.
+  and not a face.  `app.test.ts` ("a section cuts the objects") is the gate.
   **`⇧⌘B` toggles the solid's surfaces** (on by default; off is a
   wireframe).  The flat shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is what
   `overview_json` offers a front end without a depth buffer.

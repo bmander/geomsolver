@@ -73,9 +73,7 @@ pub fn named_view(name: &str) -> Option<Basis> {
 /// **A plane a reader names outside a drawing** (`solventc --section`): a view's word through the
 /// world origin (`named_view`: `front`, `top`, …), its normal toward that view's eye, or a model
 /// plane by its path (`std.top`, `bracket.mid`) as the solve left it.
-pub fn plane_named(sk: &Sketch, names: &SourceMap, name: &str)
-    -> Result<Basis, String>
-{
+pub fn plane_named(sk: &Sketch, names: &SourceMap, name: &str) -> Result<Basis, String> {
     if let Some(b) = named_view(name) { return Ok(b); }
     names.entity_path(sk, name)
         .filter(|e| e.kind == EntKind::Frame && sk.frames[e.i()].planar())

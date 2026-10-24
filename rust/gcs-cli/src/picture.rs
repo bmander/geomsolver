@@ -258,8 +258,8 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
 }
 
 /// How a triangle is filled: shaded, where it is the solid's own surface — each sample a cut
-/// takes away (its corners' heights over the plane given, `Section::height`) left out — or hatched, where it is a face
-/// a cut left, winning a tie in depth by the slack given.
+/// takes away (its corners' heights over the plane given, `Section::height`) left out — or
+/// hatched, where it is a face a cut left, winning a tie in depth by the slack given.
 #[derive(Clone, Copy)]
 enum Fill {
     Shaded(Option<[f64; 3]>),

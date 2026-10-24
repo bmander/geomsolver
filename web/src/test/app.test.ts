@@ -2643,7 +2643,7 @@ test('the Fillet tool picks edges a click at a time, and Enter writes them as st
   assert.equal(view.source, before, 'the round is one undo step');
 });
 
-test('a section cuts the objects by a plane: the box caps them, a pick passes by what it took', () => {
+test('a section cuts the objects: the box caps them, a pick passes by what it took', () => {
   const view = docView(BLOCK);
   view.orbit = { az: 0.6, el: 0.5 };
   assert.equal(clipPlane(view.sketch), null, 'nothing is cut until asked');

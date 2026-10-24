@@ -162,11 +162,7 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
 pub unsafe extern "C" fn gcs_workspace_reach_along(h: *mut Sketch, frame: *const f64,
                                                    out: *mut f64) -> i32 {
     guard(-1, move || {
-        let f = std::slice::from_raw_parts(frame, 9);
-        let Some(b) = gcs_core::plane::Basis::explicit([f[0], f[1], f[2]], [f[3], f[4], f[5]]) else {
-            return 0;
-        };
-        let b = gcs_core::plane::Basis { o: [f[6], f[7], f[8]], ..b };
+        let Some(b) = frame_of(frame) else { return 0 };
         match gcs_core::overview::workspace::reach_along(sk(h), &b) {
             Some((lo, hi)) => { write(out, &[lo, hi]); 2 }
             None => 0,

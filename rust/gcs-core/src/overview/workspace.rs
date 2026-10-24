@@ -696,7 +696,8 @@ pub fn under(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64
     crossings(sk, proj, at, |solid, face, depth| {
         // the face a section leaves is no face of the document: the object it cuts is listed
         if !face.is_empty() {
-            parts.push((depth, 1, Under::Face(solid_hit(proj, at, solid, face.to_string(), depth))));
+            let hit = solid_hit(proj, at, solid, face.to_string(), depth);
+            parts.push((depth, 1, Under::Face(hit)));
         }
     });
     parts.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));

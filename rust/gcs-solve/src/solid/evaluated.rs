@@ -877,14 +877,18 @@ impl EvaluatedSolid {
     /// side taken away.  The cut's normal is carried in as a direction, so a mirrored placement
     /// (#578) takes away the same side of the world.
     pub fn section(&self, cut: &Basis) -> mesh::Section {
-        let o = self.to_local(WorldPoint(cut.o)).0;
-        mesh::section(self.mesh(), o, self.vector_to_local(cut.normal()))
+        let (o, n) = self.local_cut(cut);
+        mesh::section(self.mesh(), o, n)
     }
     /// The plane `section` cuts by, in the solid's own coordinates, with nothing cut: which side of
     /// it a point is on, as a pick asks (`mesh::section_plane`).
     pub fn cut_plane(&self, cut: &Basis) -> mesh::Section {
-        let o = self.to_local(WorldPoint(cut.o)).0;
-        mesh::section_plane(self.mesh(), o, self.vector_to_local(cut.normal()))
+        let (o, n) = self.local_cut(cut);
+        mesh::section_plane(self.mesh(), o, n)
+    }
+    /// A cut's point and normal in the solid's own coordinates.
+    fn local_cut(&self, cut: &Basis) -> ([f64; 3], [f64; 3]) {
+        (self.to_local(WorldPoint(cut.o)).0, self.vector_to_local(cut.normal()))
     }
     /// Where two of its faces meet, by their paths, read off its mesh once (`mesh::face_edges`):
     /// what a round or a chamfer is written along.  In the solid's own coordinates.
