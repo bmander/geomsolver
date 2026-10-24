@@ -1231,6 +1231,151 @@ fn a_png_is_refused_what_it_cannot_draw() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A wheel cut by a star handle's sweep, of the planar subtraction class (#614): the star's round
+/// tips and fillets leave its field a crease the mesher cannot protect, and the kernel builds it
+/// exactly in a tenth of a second.
+const STAR_WHEEL: &str = "\
+unit mm
+use std
+use std (vertical, turns)
+
+interface StarSizes {
+  span: Length, waist: Length, tip_r: Length, fillet_r: Length
+}
+
+component StarOutline(top: plane, s: StarSizes) {
+  in top {
+    hub := point
+    hub coincident top.origin
+    ring 4 about hub {
+      tip_c := point hint((s.span / 2 - s.tip_r, 0))
+      fillet_c := point hint(((s.waist / 2 + s.fillet_r) / sqrt(2),
+                              (s.waist / 2 + s.fillet_r) / sqrt(2)))
+      apex := point hint((s.span / 2, 0))
+      hub distance(s.waist / 2 + s.fillet_r) fillet_c
+      line(fillet_c, tip_c) equal line(fillet_c, next.tip_c)
+      ccw(hub, tip_c, fillet_c)
+      apex coincident(t == s.span / (s.span - 2 * s.tip_r)) line(hub, tip_c)
+      p1 := point hint((tip_c.x, s.tip_r))
+      p2 := point hint((fillet_c.x - 0.2 * s.fillet_r, fillet_c.y - 0.98 * s.fillet_r))
+      p3 := point hint((fillet_c.x - 0.98 * s.fillet_r, fillet_c.y - 0.2 * s.fillet_r))
+      p4 := point hint((s.tip_r, tip_c.x))
+      tip_half := arc(center: tip_c, start: apex, end: p1)
+      side := line(p1, p2)
+      fillet := arc(center: fillet_c, start: p3, end: p2)
+      next_side := line(p3, p4)
+      next_tip_half := arc(center: next.tip_c, start: p4, end: next.apex)
+      radius(s.fillet_r) fillet
+      side tangent(at: p1) tip_half
+      side tangent(at: p2) fillet
+      next_side tangent(at: p1) fillet
+      next_side tangent(at: p2) next_tip_half
+      ccw(p1, p2, tip_c)
+      cw(p1, p2, fillet_c)
+      ccw(p3, p4, next.tip_c)
+      cw(p3, p4, fillet_c)
+    }
+    hub distance(s.span / 2 - s.tip_r, along: u) tip_c[0]
+    hub level(v) tip_c[0]
+    outline := face(tip_half[0], side[0], fillet[0], next_side[0], next_tip_half[0],
+                    tip_half[1], side[1], fillet[1], next_side[1], next_tip_half[1],
+                    tip_half[2], side[2], fillet[2], next_side[2], next_tip_half[2],
+                    tip_half[3], side[3], fillet[3], next_side[3], next_tip_half[3])
+  }
+}
+
+in std.front {
+  construction stem := vertical line(std.origin, hint((0, 10)))
+  length(10mm) stem
+  wc := point hint((-60, 0))
+  std.origin distance(-60mm, along: u) wc
+  construction spindle := vertical line(wc, hint((-60, 10)))
+  length(10mm) spindle
+}
+top := plane
+fix(origin == (0mm, 0mm, -1.1mm)) top
+fix(dir == (1, 0, 0)) top.u
+fix(dir == (0, 1, 0)) top.v
+plan := StarOutline(top, s: {span: 74.2mm, waist: 25.8mm, tip_r: 3.25mm, fillet_r: 4mm})
+star := solid(plan.outline, from: -16mm, to: 0mm)
+handle_turn := frame
+handle_turn turns(1) stem
+wheel_turn := frame
+wheel_turn turns(-4 / 6) spindle
+space := sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)
+in std.top {
+  bc := point hint((-60, 70))
+  fix((-60mm, 70mm)) bc
+  bsq := std.CenteredRectangle(bc, w: 10mm, h: 10mm)
+}
+block := solid(face(bsq.loop), from: 0mm, to: 10mm)
+";
+
+/// The wheel the star's sweep cuts, beside the block.
+const STAR_WHEEL_CUT: &str = "\
+in std.top {
+  wo := point
+  wo coincident wc
+  rim := radius(46.1mm) circle(center: wo)
+}
+wheel := solid(face(rim), from: -15.6mm, to: -0.6mm)
+space cut wheel
+";
+
+/// **A swept object is pictured from its exact build** (#614), as the workspace replaces its
+/// field's preview with it: the star wheel, whose field the mesher cannot close, is drawn alone
+/// and beside the block, each in its own colour, and the run exits 0.
+#[test]
+fn a_swept_object_is_pictured_from_its_exact_build() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-swept-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("star_wheel.sv");
+    std::fs::write(&source, format!("{STAR_WHEEL}{STAR_WHEEL_CUT}")).unwrap();
+    let draw = |name: &str, extra: &[&str]| {
+        let png = dir.join(format!("{name}.png"));
+        let mut args = vec![source.to_str().unwrap(), "--no-diagnose", "--no-progress", "--size",
+                            "240", "--view", "top", "--png", png.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        let out = run(&args);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(0), "{name}: {stderr}");
+        assert!(!stderr.contains("could not be protected"), "{name}: {stderr}");
+        read_png(&std::fs::read(png).unwrap())
+    };
+    let (wheel, block) = (middle(&draw("wheel", &["--solid", "wheel"])),
+                          middle(&draw("block", &["--solid", "block"])));
+    let paper = [250, 250, 250];
+    assert!(wheel != paper && block != paper && wheel != block, "{wheel:?} {block:?}");
+    let (_, _, rgb) = draw("both", &[]);
+    let count = |c: [u8; 3]| rgb.as_chunks::<3>().0.iter().filter(|p| **p == c).count();
+    assert!(count(wheel) > 4 * count(block) && count(block) > 0,
+            "the wheel drawn beside the block: {} of the wheel's pixels, {} of the block's",
+            count(wheel), count(block));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// **A picture missing a solid fails, naming it** (#614): the star's sweep standing as an object
+/// of its own, which no kernel builds exactly and whose field the mesher cannot close, is left
+/// out of the picture — said against the picture with its solid's name, the rest still drawn and
+/// written, and the run exits 1, so a picture with a part missing is never taken for the whole.
+#[test]
+fn a_picture_missing_a_solid_fails_naming_it() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-missing-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("star.sv");
+    std::fs::write(&source, STAR_WHEEL).unwrap();
+    let png = dir.join("p.png");
+    let path = png.to_str().unwrap();
+    let out = run(&[source.to_str().unwrap(), "--no-diagnose", "--no-progress", "--size", "120",
+                    "--png", path]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains(&format!("solventc: {path}: `space`: ")), "{stderr}");
+    let (_, _, rgb) = read_png(&std::fs::read(&png).unwrap());
+    assert!(rgb.as_chunks::<3>().0.iter().any(|p| *p != [250, 250, 250]), "the block is drawn");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// **A solid read in its plane is said** (#510 S2): the corpus's Kirsch plate, `plane stress
 /// plate` in its scenario, has its factor of safety said under the scenario — kept — and a
 /// buckling asked of it says why it has none; the document still exits 0.

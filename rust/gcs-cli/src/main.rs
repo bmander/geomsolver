@@ -87,7 +87,8 @@ diagnosed, and the report says where it stands.
     --gltf PATH         write a solid as binary glTF: every face a named node
     --png PATH          draw what the workspace shows as a PNG (a part file: its preview), each
                         object shaded in its instance's colour, depth-buffered, with its creases
-                        and silhouettes; --solid draws one solid or one instance's objects.
+                        and silhouettes, a swept one from its exact build where the kernel
+                        builds it; --solid draws one solid or one instance's objects.
                         Repeatable, each with its own --view, --size and --hide
     --view VIEW         the eye --png draws from: home (default, as the workspace opens), a view
                         a sheet names (front, back, right, left, top, bottom, isometric), or
@@ -131,8 +132,9 @@ Examples:
                                               one sheet of a drawing, as SVG
 
 Exit codes: 0 every document elaborated and solved; 1 a document failed to parse or
-elaborate; 2 a document elaborated but did not solve; 64 the command line was wrong (an
-unknown option, an option missing its value, no document).
+elaborate, or an output was refused or left a solid out (a picture is still written, each solid
+missing from it named); 2 a document elaborated but did not solve; 64 the command line was
+wrong (an unknown option, an option missing its value, no document).
 
 The language is in the primer: solvent-primer.md beside an installed solventc, or
 docs/solvent-primer.md in the repository (https://github.com/bmander/geomsolver/tree/main/docs);
@@ -869,8 +871,11 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 };
                 match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
                     Ok((bytes, unbuilt)) => {
-                        // an object that does not evaluate is left out, as the box leaves it, and said
-                        for why in unbuilt { eprintln!("solventc: {why}"); }
+                        // an object that does not evaluate is left out, as the box leaves it, and
+                        // said against the picture it is missing from: the picture is written, and
+                        // the run fails, since it is not the whole of what was asked (#614)
+                        for why in &unbuilt { eprintln!("solventc: {path}: {why}"); }
+                        if !unbuilt.is_empty() { code = 1; }
                         if let Err(err) = cad::output::write(path, &bytes) {
                             eprintln!("solventc: {err}");
                             code = 1;

@@ -113,8 +113,15 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   silhouettes), from the box's eye (`eye_frame`; `home` is `view.ts`'s three-quarter view, and a
   named view is a sheet's, `drawing::named_view`).  A part file is its `preview`, so it draws that.  A
   **depth buffer** at two samples a pixel, never a painter's sort, each instance one colour by
-  the order the document's objects come in (so a cutaway keeps it); an object that does not
-  evaluate is left out and its reason said.  The PNG writer is the CLI's (`png.rs`, fixed-code
+  the order the document's objects come in (so a cutaway keeps it).  A swept object is drawn
+  from its exact build where this kernel builds one (`brep::export::supply_exact_where`, the
+  display's admission), as the workspace replaces its field's preview with it, and from its field
+  only where that build is refused (#614: a field the mesher cannot close no longer leaves out a
+  solid the export builds; `a_swept_object_is_pictured_from_its_exact_build`).  An object that
+  does not evaluate is left out, said against the picture with its solid's name (a field
+  mesher's refusal names it, `EvaluatedSolid::of_field`), and the run exits 1 with the picture
+  written: a picture missing a part is never taken for the whole
+  (`a_picture_missing_a_solid_fails_naming_it`).  The PNG writer is the CLI's (`png.rs`, fixed-code
   deflate); it computes no geometry, and `tests/cli.rs` reads its pictures back.
   **A long run says what it is doing** (#320): the core tells whoever listens on its thread
   (`progress::listen`) when work begins and ends — the elaboration, the solve and the diagnosis,

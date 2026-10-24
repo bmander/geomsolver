@@ -146,11 +146,16 @@ fn seen(f: &Frame, p: [f64; 3]) -> [f64; 3] {
 pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> {
     let axes = eye_frame(ask.eye.az, ask.eye.el);
     let instances = instances(sk);
+    let chosen = chosen(sk, ask)?;
+    // a swept object drawn from its exact surface where this kernel builds one, as the workspace
+    // replaces its field's preview with it, and from its field only where the build is refused
+    // (#614): a field the mesher cannot close leaves out a solid the export builds
+    gcs_core::brep::export::supply_exact_where(sk, &|i| chosen.contains(&i));
     // each solid evaluated once, its frame, its colour and its edges in the eye's coordinates;
     // its triangles are read from its own mesh when they are filled, not copied out
     let (mut solids, mut unbuilt) = (Vec::new(), Vec::new());
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for i in chosen(sk, ask)? {
+    for i in chosen {
         let solid = match sk.evaluated_solid(i, ApproximationPolicy::Mesh) {
             Ok(s) => s,
             Err(why) => { unbuilt.push(why); continue; }
