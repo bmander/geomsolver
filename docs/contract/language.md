@@ -146,6 +146,12 @@ word with no `{` on the line; a header (a count, a condition, a walk) always run
 its `{`.  The parser's dispatch (`stmt`), its relation lookahead (`chain_starts`, which takes no
 other opener as an operand), the colouring and the symbol index all ask it.
 `a_block_word_defined_as_a_name_is_read_as_that_name` (`tests/ring.rs`) is the gate.
+**An orientation word may be a name** ([0.186], #616): `ccw` and `cw` are calls and nothing else,
+so either with no `(` after it is a name the document defined (`cw := ConjugateWheel(…)`) — at a
+statement's head (`claim cw.body clear(1mm) ccw.body`) or after a joint (`hub coincident
+cw.rim.center`).  `words::call_named` says so; the relation parser (`relation`), the chain
+lookahead (`chain_starts`) and the colouring ask it, and `joint_word` never admits a call word.
+`an_orientation_word_defined_as_a_name_is_read_as_that_name` (`tests/orientation.rs`) is the gate.
 **An instance declared in a ring stands in its copy's frame** ([0.177], #566): copy k's is the
 representative's frame turned k steps, as its entities are, so a relation of the instance's body
 reading the standard datums of the frame it stands in (`std.origin`, `std.x`, …:

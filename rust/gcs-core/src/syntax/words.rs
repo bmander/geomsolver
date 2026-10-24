@@ -2,7 +2,7 @@
 
 use super::lexer::{ident_char, ident_start, Tok};
 use super::Span;
-use crate::constraints::{is_operator, CKind, Fixity};
+use crate::constraints::{call_word, is_operator, CKind, Fixity};
 use crate::model::EntKind;
 
 // `port` and `ellipse` are retired and `ring` is not yet (bmander/geomsolver#47), and each is kept
@@ -53,6 +53,15 @@ pub(super) fn opens_block(toks: &[(Tok, Span)], at: usize) -> bool {
     }
 }
 
+/// **An orientation word standing as a name** (#616).  `ccw` and `cw` are written as calls,
+/// `ccw(a, b, c)`, and nothing else: a document may define either (`cw := ConjugateWheel(…)`),
+/// and the word not followed by its `(` is then that name — `claim cw.body clear(1mm) ccw.body`,
+/// `cw coincident hub`.  The parser's relation, its chain lookahead and the colouring ask it.
+pub(super) fn call_named(toks: &[(Tok, Span)], at: usize) -> bool {
+    matches!(toks.get(at), Some((Tok::Ident(w), _)) if call_word(w))
+        && !matches!(toks.get(at + 1), Some((Tok::P('('), _)))
+}
+
 /// `repeat e in rack.profile`: a block runs over a chain's edges when the tokens from `at` (the
 /// one after its word) are a name and `in`, which no count expression can begin with, `in` being
 /// no operator.  The parser and the colouring both ask it.
@@ -83,9 +92,11 @@ pub(super) fn over_walks(toks: &[(Tok, Span)], at: usize) -> bool {
     matches!(toks.get(i + 2), Some((Tok::Ident(w), _)) if w == "in")
 }
 
-/// Whether the operator registry admits this joint word.
+/// Whether the operator registry admits this joint word — not `ccw` or `cw`, which are calls and
+/// never stand between operands, so `hub coincident cw.rim.center` reads a name after the joint
+/// (#616).
 pub(super) fn joint_word(w: &str) -> bool {
-    is_operator(w)
+    is_operator(w) && !call_word(w)
 }
 
 /// The words that shape a statement without naming anything — a modifier the parser eats where it

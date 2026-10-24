@@ -219,3 +219,33 @@ fn a_traced_bodys_drawing_is_unchanged() {
         assert_eq!(bits(&sk), bits(&free), "{name}");
     }
 }
+
+/// **An orientation word may be a name** (#616): `cw := Disc(…)` is a definition like any, and
+/// the word with no `(` after it is that name wherever it stands — opening a claim, a relation or
+/// a chain, or after a joint.  The orientation words are calls and nothing else, so `cw(a, b, c)`
+/// is still the predicate.
+#[test]
+fn an_orientation_word_defined_as_a_name_is_read_as_that_name() {
+    let disc = "unit mm\nuse std\ncomponent Disc(r: Length) {\n  in std.top {\n    rim := \
+                radius(r) circle(center: std.top.origin)\n  }\n  body := solid(face(rim), \
+                from: 0mm, to: 2mm)\n}\ncw := Disc(r: 5mm)\nccw := Disc(r: 3mm)\n";
+    // the issue's claim: about the two discs, not `cw(…)` missing its brackets
+    let e = read(&format!("{disc}claim cw.body clear(1mm) ccw.body\n"));
+    assert_eq!(e.sketch.solid_claims.len(), 1);
+    for line in [
+        "cw.rim.center coincident ccw.rim.center",
+        "ccw.rim.center coincident cw.rim.center",
+        "in std.top {\n  hub := point\n}\nhub coincident cw.rim.center",
+    ] {
+        solved(&format!("{disc}{line}\n"));
+    }
+    // the colouring reads it as the name it is, not as a relation
+    use gcs_core::syntax::{highlight, Tint};
+    let src = format!("{disc}cw.rim.center coincident ccw.rim.center\n");
+    let at = src.rfind("cw.rim.center coincident").unwrap();
+    let tint = highlight(&src).into_iter().find(|(_, s)| s.lo as usize == at).map(|(t, _)| t);
+    assert_ne!(tint, Some(Tint::Relation));
+    // and the predicate is still written as a call
+    let e = solved(&apex((3.0, 4.0), "cw(a, b, x)"));
+    assert!(close(x_at(&e), (3.0, -4.0)), "cw(a, b, x): {:?}", x_at(&e));
+}
