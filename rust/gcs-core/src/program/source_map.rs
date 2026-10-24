@@ -39,6 +39,10 @@ pub struct SourceMap {
     /// Each twin of a point drawn in several planes (§6.7), to the point: a twin is called by the
     /// point's name, and written by it, since a statement naming the point reads it there.
     pub(crate) twin_of: BTreeMap<EntRef, EntRef>,
+    /// Each image a mirrored instance publishes (#578), to its preimage: the image is called by
+    /// the name the body gave the preimage, and written by it, since the statement that drew
+    /// the one drew the other.
+    pub(crate) image_of: BTreeMap<EntRef, EntRef>,
     /// The numbers held by a `fix` the root does not state at its top level — a component's,
     /// `std.Turn` holding the joint of a frame the root declared: said where they are, so a
     /// reconcile never writes them again at the root (`edit::reconcile`'s gauges).
@@ -175,8 +179,10 @@ impl SourceMap {
         self.writable.contains(&self.called(e)).then(|| self.name_of(e)).flatten()
     }
 
-    /// The entity whose name `e` goes by: the point a twin is of, else `e`.
+    /// The entity whose name `e` goes by: the point a twin is of, the preimage an image is of
+    /// (#578), else `e`.
     fn called(&self, e: EntRef) -> EntRef {
+        let e = self.image_of.get(&e).copied().unwrap_or(e);
         self.twin_of.get(&e).copied().unwrap_or(e)
     }
 

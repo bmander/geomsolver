@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.177 — October 2026**
+**Specification, Draft 0.178 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2354,6 +2354,36 @@ A root among several is chosen by a stated orientation (§9.6) or a bound, never
 
 **[0.177] One figure, many placements.** An instance is **closed** when its only geometric input is the frame it stands in: its definition is no set family, every formal is a number or a group carrying numbers alone, each is given a number known before the solve, and its call is drawn in that frame or one of the frame's datums (`std.front`, …, the plane its `std.origin` is drawn in), or in no plane at all. A closed instance's **binding** is its definition and its arguments, by value. What a closed instance makes is a function of its binding read in the frame it stands in: two closed instances of one binding are one figure, each placed by its own frame. An instance declared in a `ring` stands in its copy's frame (§12.5), so the copies of a ring's instance are one binding under N placements. *Non-normative:* the reference implementation evaluates a binding's solids once — their exact B-rep and their mesh — and places each instance's by the motion carrying one frame onto the other, keyed by the binding and never by what it evaluated to; the solve is untouched, every instance's interior flat in its parent's, and no solved position changes.
 
+**[0.178] A mirrored placement.** A closed instance's call MAY end in the trailer `mirrored(P)`, `P`
+one of the words `front`, `top` and `side` — the body's own datum planes, named by word as `sense:
+cw` is, since the three differ by a half-turn and only the body's own plane says which hand is
+meant in its terms; any other word is a syntax error. The instance is then its binding reflected
+in the plane `P` of the frame it stands in, which reverses that frame's axis square to it (`y`, `z`
+and `x` respectively), and every frame stays right-handed: no row reads a reflected datum. Its body
+is solved as its **preimage**, where the same instance unmirrored stands, so its rows, freedoms and
+diagnosis are that instance's and its names are its own. What it publishes is its **image**:
+
+- every entity its body makes, read from outside the instance, is that entity reflected — a point
+  drawn in one of the frame's datum planes the same two numbers in that plane's image (the plane
+  over the frame's axes, the reversed one reversed), a point drawn in the frame its three numbers
+  there with the reversed one negated, a circle's and an arc's radius its own (an arc still runs
+  counter-clockwise in its plane's own coordinates), a line and a curve over its points' images;
+- `b.std.D` read from outside names the image's datums, so `b.std.x × b.std.y = −b.std.z`;
+- every solid it makes is the solid its preimage makes, reflected in that plane.
+
+The image is linear in the preimage's numbers, with weights ±1, wherever the frame stands, so a
+mirrored instance placed by mates is held as its preimage would be. A mirrored instance MUST be
+closed: one given an entity, a group carrying one or an unknown is **E112**, since what it was
+given would, reflected, no longer touch it. In this draft **E112** also refuses a mirrored instance
+declared in a `ring` or in another mirrored body, and a body that declares a plane, an axis, a
+frame, a curve or a motion, whose numbers are the world's and whose image is no linear function of
+them. A document that writes no `mirrored` elaborates as before. *Non-normative:* the reference
+implementation derives the image's numbers from the preimage's, owning no column, draws the image
+and not the preimage, and evaluates a mirrored instance's solids as the binding's — a left and a
+right of one binding are one evaluation — reflected by an improper rigid motion: the B-rep's faces'
+senses turned and its loops walked the other way round, each surface placed right-handed again, the
+mesh's winding turned where it is written.
+
 ## 9. Constraints
 
 ### 9.1 Equational form
@@ -3232,6 +3262,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E108 | a part whose rows leave one of its own unknowns free, so that a parent would have to place it from outside (§8.2) **[0.162]** |
 | E109 | a part stating a fact about what it is given rather than about what it makes: a row of none of its own unknowns, or past what they take (§8.2) **[0.162]** |
 | E111 | an instance's datums read from outside (`b.std.z`, §8) where its definition's body, and those of the definitions it calls, read no standard datum: it is placed by its arguments, so a relation on its frame would place nothing **[0.171]** |
+| E112 | a mirrored instance (`mirrored(front)`, §8.2) the reflection cannot be made of: one that is not closed — given an entity, a group carrying one or an unknown, which reflected would no longer touch its body — and, in this draft, one in a `ring` or in another mirrored body, or one whose body declares a plane, an axis, a frame, a curve or a motion **[0.178]** |
 
 **[0.18]** The reference implementation raises all four (**[0.42]** E083 is gone, with `against`). A negative sweep and a picture asked of the wrong kind are **E040** by the rules those codes already state (a magnitude written with a sign, §9.2 **[0.17]**; a kind mismatch, §14.1), and an unresolved name in any of these statements is **E101**, so no new code is spent on either.
 
@@ -3526,8 +3557,10 @@ claim_over     = "claim" "over" ref [ "seen_from" ref ] "in" "(" expr "," expr "
    family form and 0.3's `trace … where { … }` are retired and MUST NOT parse. *)
 curve          = ( ref | ref "(" [ args ] ")" "." ref )
                  "over" IDENT "in" "(" expr "," expr ")" ;
-instance       = ref "(" [ args ] ")" [ "in" ref ] ;   (* a used module's component by its full
-                                                          path, §14.4 [0.30]; `in`, §6.7 *)
+instance       = ref "(" [ args ] ")" [ "in" ref ]     (* a used module's component by its full
+                 [ "mirrored" "(" ( "front" | "top" | "side" ) ")" ] ;
+                                                       (* path, §14.4 [0.30]; `in`, §6.7; a
+                                                          mirrored placement, §8.2 [0.178] *)
 args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] ( expr | hint_clause ) ; (* `w: hint(60)` leaves the formal unbound
                                                           and seeds it, §5 [0.41] *)

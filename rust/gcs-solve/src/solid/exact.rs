@@ -35,11 +35,17 @@ impl Exact {
 
     /// **Another instance's solid of the same binding** (#566): this B-rep moved by `motion` and
     /// renamed from the instance `from` to `to`, about its origin moved — nothing built again.
-    pub(crate) fn placed(&self, motion: &Rigid, from: &str, to: &str) -> Exact {
+    /// A motion that reflects (a mirrored instance's, #578) reflects the B-rep (`Brep::reflected`),
+    /// or says why it cannot.
+    pub(crate) fn placed(&self, motion: &Rigid, from: &str, to: &str) -> Result<Exact, String> {
         // the B-rep is about its origin, in millimetres: the origin takes the motion's
         // translation, and the B-rep its turn alone
-        let brep = self.brep.moved(&geom::Rigid { r: motion.r, t: [0.0; 3] });
-        self.with(brep, motion.point(self.origin), &super::evaluated::Renaming { from, to })
+        let turn = geom::Rigid { r: motion.r, t: [0.0; 3] };
+        let brep = match motion.improper() {
+            true => self.brep.reflected(&turn)?,
+            false => self.brep.moved(&turn),
+        };
+        Ok(self.with(brep, motion.point(self.origin), &super::evaluated::Renaming { from, to }))
     }
 
     /// `brep` about `origin`, under this one's names rewritten by `re`.
@@ -71,14 +77,24 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     for n in &recipe.nodes {
         let id = n.id;
         // an operand of one binding with others is its representative's B-rep, built once and
-        // placed (#566), moved into this one's place; its faces are named already
-        if id as usize != si && sk.shared(id as usize) {
-            if let Ok(x) = sk.exact_solid(id as usize) {
-                let t = std::array::from_fn(|k| (x.origin[k] - origin[k]) * mm);
-                built.insert(id, x.brep.moved(&geom::Rigid { t, ..geom::Rigid::identity() }));
-                leading.extend(x.leading.iter().cloned());
-                continue;
-            }
+        // placed (#566), moved into this one's place; its faces are named already.  One of this
+        // solid's own instance is read where this one is built, its preimage (#578); a mirrored
+        // one of another instance is read as it is published, reflected
+        let bound = |i: usize| sk.solids[i].binding.as_ref();
+        let own = bound(id as usize).zip(bound(si)).is_some_and(|(a, b)| a.at == b.at);
+        let mirrored = bound(id as usize).is_some_and(|b| b.mirror.is_some());
+        let leaf = if id as usize == si {
+            None
+        } else if own {
+            sk.shared(id as usize).then(|| sk.exact_preimage(id as usize))
+        } else {
+            (sk.shared(id as usize) || mirrored).then(|| sk.exact_solid(id as usize))
+        };
+        if let Some(Ok(x)) = leaf {
+            let t = std::array::from_fn(|k| (x.origin[k] - origin[k]) * mm);
+            built.insert(id, x.brep.moved(&geom::Rigid { t, ..geom::Rigid::identity() }));
+            leading.extend(x.leading.iter().cloned());
+            continue;
         }
         let mut b = n.node.built(&built, &BTreeMap::new(), floor)?;
         let sol = &sk.solids[id as usize];

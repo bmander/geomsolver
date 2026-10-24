@@ -365,6 +365,12 @@ impl Sketch {
         // a face family's station is written in place and never drawn (#243 L1)
         let stations = self.stations();
         v.retain(|e| !stations.contains(e));
+        // a mirrored instance is drawn as its image (#578): its preimage, solved, is not, nor
+        // the datums its image is drawn in, which stand where its frame's do
+        if !self.mirrors.is_empty() {
+            let unseen = self.unseen_of_mirrors();
+            v.retain(|e| !unseen.contains(e));
+        }
         v.extend((0..self.curves.len()).map(|i| EntRef::new(EntKind::Curve, i)));
         v
     }

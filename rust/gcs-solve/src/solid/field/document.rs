@@ -188,7 +188,7 @@ fn built(sk: &Sketch,i: usize) -> Option<BuiltField> {
     sk.caches.built.get_or(i,crate::solid::MemoKey::of(sk,i),|| {
         let [_,_,on_late,through_late] = crate::solid::faces::stratum(sk,i,on.iter().copied(),through.iter().copied());
         if on_late.is_empty() && through_late.is_empty() || crate::solid::has_sweep(sk,i) { return None }
-        sk.exact_solid(i).ok().and_then(|e| BuiltField::new(&e))
+        sk.exact_preimage(i).ok().and_then(|e| BuiltField::new(&e))
     })
 }
 

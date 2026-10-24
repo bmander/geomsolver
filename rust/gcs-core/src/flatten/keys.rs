@@ -126,7 +126,7 @@ pub(super) fn side_axis(face: &str, edge: &str) -> String {
 
 /// The prefix a frame's own standard datums are made under (#542), `{frame}#std.`: what `std.front`
 /// names in a body standing in the frame, and no name the source can read the frame's by.
-pub(super) fn frame_datums(frame: &str) -> String {
+pub(crate) fn frame_datums(frame: &str) -> String {
     format!("{frame}#std.")
 }
 
@@ -134,6 +134,19 @@ pub(super) fn frame_datums(frame: &str) -> String {
 /// datum's name in `std`'s `FrameDatums`.
 pub(crate) fn frame_datum(key: &str) -> Option<(&str, &str)> {
     key.rsplit_once("#std.")
+}
+
+/// **An image** (#578): what a reference from outside a mirrored instance reads where it names
+/// `key`, something the instance's body made — `{key}#image`, a key the source cannot write,
+/// bound by the elaborator to the entity's image (`program::mirrors`).
+pub(crate) fn image(key: &str) -> String {
+    format!("{key}#image")
+}
+
+/// The image of datum `datum` of the frame mirrored instance `instance` (its prefix, `left.`)
+/// stands in (#578), `{instance}#std.{datum}`: what its `b.std.D` names from outside.
+pub(crate) fn image_datum(instance: &str, datum: &str) -> String {
+    format!("{}{datum}", frame_datums(instance))
 }
 
 /// The frame an instance read as one stands in (#548), `{instance}#frame`: what its `b.std.D`

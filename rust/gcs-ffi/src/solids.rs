@@ -28,12 +28,24 @@ pub unsafe extern "C" fn gcs_solid_mesh(
         if m.positions.len() > cap.max(0) as usize {
             return -1;
         }
-        for (i, p) in m.positions.chunks_exact(3).enumerate() {
-            let w = solid.to_world(gcs_core::solid::LocalPoint([p[0], p[1], p[2]])).0;
-            for (k, value) in w.into_iter().enumerate() { out.add(3 * i + k).write(value); }
-        }
+        let world = |p: [f64; 3]| solid.to_world(gcs_core::solid::LocalPoint(p)).0;
+        write_world(&m.positions, solid.improper(), world, out);
         m.positions.len() as i32
     })
+}
+
+/// A mesh's triples (`Mesh::positions` or `normals`) written into `out` as `to_world` takes each,
+/// each triangle's corners in the order it stands in the world: turned round where the solid's
+/// placement reflects (#578), so it still faces out.
+unsafe fn write_world(v: &[f64], reflected: bool, to_world: impl Fn([f64; 3]) -> [f64; 3],
+                      out: *mut f64) {
+    for (t, tri) in v.chunks_exact(9).enumerate() {
+        for (k, corner) in [0, 1, 2].into_iter().enumerate() {
+            let c = if reflected && corner > 0 { 3 - corner } else { corner };
+            let w = to_world([tri[3 * c], tri[3 * c + 1], tri[3 * c + 2]]);
+            for (j, value) in w.into_iter().enumerate() { out.add(9 * t + 3 * k + j).write(value); }
+        }
+    }
 }
 
 /// The normals of that mesh, one per vertex: a face's own where it is flat, and the average of
@@ -57,10 +69,7 @@ pub unsafe extern "C" fn gcs_solid_normals(
         if m.normals.len() > cap.max(0) as usize {
             return -1;
         }
-        for (i, n) in m.normals.chunks_exact(3).enumerate() {
-            let w = solid.vector_to_world([n[0], n[1], n[2]]);
-            for (k, value) in w.into_iter().enumerate() { out.add(3 * i + k).write(value); }
-        }
+        write_world(&m.normals, solid.improper(), |n| solid.vector_to_world(n), out);
         m.normals.len() as i32
     })
 }

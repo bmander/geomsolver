@@ -51,7 +51,7 @@ pub use solids::{
 pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
 pub use solid_eval::{Way, turn_of};
 pub use construction::{ThreePointArc, three_point_arc};
-pub use turns::{Turn, Derivation};
+pub use turns::{Turn, Mirror, Images, Derivation};
 pub use bindings::{Binding, Bound};
 pub use duals::{Dual, Move, Moves, Toward};
 pub use rates::{RateRow, RateWord};
@@ -178,6 +178,10 @@ pub struct Sketch {
     /// A `ring`'s copies, each the representative turned (`model/turns.rs`): document state like
     /// `branches`, saved and grafted, from which the derived parameters are worked out.
     pub turns: Vec<Turn>,
+    /// A mirrored instance's images, each an entity of its body reflected (`model/turns.rs`,
+    /// #578): document state like `turns`, saved and grafted, from which more derived parameters
+    /// are worked out.
+    pub mirrors: Vec<Mirror>,
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,

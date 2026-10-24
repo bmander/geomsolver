@@ -4,12 +4,11 @@
 //! by count (one build, one evaluation, said to a listener) and by the property: each placed copy
 //! is what a fresh evaluation of its own solid makes, within the solve's own tolerance.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::common::{at_path, read, refused};
+use crate::common::{counted, read_solved as solved, refused, solid_named as solid};
 use gcs_core::model::Sketch;
-use gcs_core::progress::{self, At, Kind, Listener, Work};
+use gcs_core::progress::Kind;
 use gcs_core::solid::{ApproximationPolicy as Policy, EvaluatedSolid};
 
 /// A plate drawn about its frame's origin, off it by a millimetre, so a turn of the frame turns it
@@ -49,36 +48,6 @@ fix(dir == (0, 0, 1)) g.u
 fix(dir == (1, 0, 0)) g.v
 fix(origin == (-40, 5, 12)) g
 ")
-}
-
-fn solved(src: &str) -> (gcs_core::program::Elaborated, Sketch) {
-    let e = read(src);
-    let sk = crate::common::solved(&e);
-    (e, sk)
-}
-
-/// The solids built and evaluated while `work` runs, by index, in the order begun.
-#[derive(Default)]
-struct Builds(RefCell<Vec<(Kind, usize)>>);
-
-impl Listener for Builds {
-    fn begin(&self, work: &Work) {
-        if let (Kind::Build | Kind::Evaluate, Some(At::Solid(i))) = (work.kind, work.at) {
-            self.0.borrow_mut().push((work.kind, i));
-        }
-    }
-    fn end(&self, _: &Work, _: f64, _: f64) {}
-}
-
-fn counted<T>(work: impl FnOnce() -> T) -> (T, Vec<(Kind, usize)>) {
-    let heard = Rc::new(Builds::default());
-    let out = progress::listen(heard.clone(), work);
-    let builds = heard.0.borrow().clone();
-    (out, builds)
-}
-
-fn solid(e: &gcs_core::program::Elaborated, name: &str) -> usize {
-    at_path(e, name).i()
 }
 
 /// The drawing with every binding forgotten, and nothing remembered: each solid its own.

@@ -50,7 +50,7 @@ pub use bound::Bound;
 
 pub(crate) use words::{faults as word_faults, file_number_names};
 pub(crate) use interfaces::check as interface_faults;
-pub(crate) use keys::{frame_datum, frame_instance, is_probe};
+pub(crate) use keys::{frame_datum, frame_datums, frame_instance, image, image_datum, is_probe};
 use crate::lowering::Lowered;
 
 pub(crate) use values::{substitute_with, value_aff, value_read};
@@ -322,6 +322,10 @@ struct Datums {
     /// their body reads no datum, to the name of their definition.
     outside: BTreeSet<String>,
     refused: BTreeMap<String, String>,
+    /// **The mirrored instances** (#578), by prefix (`left.`): what a reference from outside
+    /// reads under one is its image (`keys::image`), and its `b.std.D` its image's datums
+    /// (`keys::image_datum`).
+    mirrored: BTreeSet<String>,
 }
 
 /// A frame declared (#524, #542): a reading at an instant (`Walk::walk_reading_at`) is one where
@@ -463,6 +467,18 @@ pub struct InstanceInfo {
     /// What it is a function of, where it is closed (#566): its binding's key and the frame it
     /// stands in.  `None` for any other instance.
     pub binding: Option<Bound>,
+    /// Where the call is mirrored, `mirrored(front)` (#578).  `None` for any other.
+    pub mirror: Option<Mirroring>,
+}
+
+/// **A mirrored call** (#578): the axis of the frame it stands in its image reverses
+/// (`syntax::Mirrored::axis`), where the trailer is written, and where the call gives what a
+/// closed instance is not given — an entity, a group or an unknown — which a refusal points at.
+#[derive(Clone, Debug)]
+pub struct Mirroring {
+    pub axis: u8,
+    pub span: Span,
+    pub given: Option<Span>,
 }
 
 /// A block over a chain's edges, set aside by the walk until the chain it names can be found:

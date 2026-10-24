@@ -357,6 +357,20 @@ pub fn to_json(sk: &Sketch) -> Json {
             ("n", Json::Int(tn.n as i64)),
         ])).collect();
     if !turns.is_empty() { doc.set("turns", Json::Arr(turns)); }
+    // a mirrored instance's images (#578), only when there is one: which entity is which reflected,
+    // and which of its numbers are negated
+    let mirrors: Vec<Json> = sk.mirrors.iter().map(|m| {
+        let mut o = object([
+            ("copy", ref_json(m.copy)),
+            ("rep", ref_json(m.rep)),
+            ("negated", Json::Int(m.negated as i64)),
+        ]);
+        if m.datum {
+            o.set("datum", Json::Bool(true));
+        }
+        o
+    }).collect();
+    if !mirrors.is_empty() { doc.set("mirrors", Json::Arr(mirrors)); }
     // the root choices the document states (#157), only when there is one: each also a record of
     // `branches`, which the plan rewrites; these a solve holds the drawing to
     if !sk.orientations.is_empty() {
@@ -790,6 +804,27 @@ pub fn from_json(d: &Json) -> Result<Sketch, String> {
         || sk.turns.iter().any(|tn| copies.contains(&tn.rep) || copies.contains(&tn.about))
     {
         return Err("a turned copy is turned once, from an entity that is not itself a copy".into());
+    }
+    for item in d.get("mirrors").unwrap_or(&empty).arr() {
+        let ent = |key: &str| -> Result<EntRef, String> {
+            let a = item.get(key).ok_or(format!("an image needs `{key}`"))?;
+            ref_from_json(&sk, a, &format!("an image's `{key}`"))
+        };
+        let (copy, rep) = (ent("copy")?, ent("rep")?);
+        let negated = item.get("negated").map(Json::as_i64).unwrap_or(0);
+        if copy.kind != rep.kind || copy == rep || !(0..64).contains(&negated)
+            || sk.mirrored_params(copy).len() != sk.mirrored_params(rep).len()
+        {
+            return Err("an image is an entity of its representative's kind and numbers".into());
+        }
+        let datum = item.get("datum").is_some_and(Json::as_bool);
+        sk.mirror(crate::model::Mirror { copy, rep, negated: negated as u8, datum });
+    }
+    // an image is of no image, and is its image once
+    let derived: Vec<&crate::model::Mirror> = sk.mirrors.iter().filter(|m| !m.datum).collect();
+    let images: BTreeSet<EntRef> = derived.iter().map(|m| m.copy).collect();
+    if images.len() != derived.len() || sk.mirrors.iter().any(|m| images.contains(&m.rep)) {
+        return Err("an image is reflected once, from an entity that is not itself an image".into());
     }
     sk.settle_turns();
     // a chart a document did not gauge is gauged where its point stands (§6.21)

@@ -30,6 +30,13 @@ pub struct Exact { pub solid: Brep,pub pattern: Option<Patterned>,pub indexed: O
 /// Solid `body` of the sketch built by this kernel. A body with swept cuts is admitted to the
 /// generating-sweep class first (`admission` where the host made it, else here).
 pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
+    // a mirrored instance's solid, or one built of one, is the core's exact B-rep, which reads a
+    // mirrored solid as it is published, reflected (#578)
+    let mirrored = mirrored_within(sk,body);
+    if mirrored && cad::contains_sweep(sk,body) {
+        return Err(ExportRefusal::at(Stage::Blank,format!("`{}` reads a mirrored instance's solid, and a sweep is not reflected yet",
+            sk.solids[body].name)))
+    }
     if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
     if !recipe.sweeps.is_empty() {
@@ -51,7 +58,13 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
         })
     }
     let started = crate::clock::Instant::now();
-    let solid = super::recipe::build(&recipe.recipe).at(Stage::Blank)?;
+    let solid = match mirrored {
+        true => {
+            let x = sk.exact_solid(body).at(Stage::Blank)?;
+            x.brep.moved(&super::geom::Rigid {t:x.origin.map(|k| k*x.mm),..super::geom::Rigid::identity()})
+        }
+        false => super::recipe::build(&recipe.recipe).at(Stage::Blank)?,
+    };
     let tol = 1e-9*solid.size().max(1.);
     solid.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Blank,format!("the built boundary is invalid: {e}")))?;
     if let Some([a,b]) = solid.self_touching(tol).first() {
@@ -66,6 +79,18 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
     (say.stage)(&format!("built the solid by the Rust kernel: {:.6} mm³, {} faces, {} edges ({:?})",super::props::volume(&solid),
         solid.faces.len(),solid.edges.len(),started.elapsed()));
     Ok(Exact {solid,pattern:None,indexed:None,swept:false})
+}
+
+/// Whether solid `body` is a mirrored instance's, or reaches one among its operands (#578).
+fn mirrored_within(sk: &Sketch,body: usize) -> bool {
+    let mut pending = vec![body];
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(i) = pending.pop() {
+        if !seen.insert(i) { continue }
+        if sk.solids[i].binding.as_ref().is_some_and(|b| b.mirror.is_some()) { return true }
+        pending.extend(sk.solids[i].operands().into_iter().map(|o| o as usize));
+    }
+    false
 }
 
 /// A body built from swept material (`cad::swept_operands`): each operand built exactly — a body with

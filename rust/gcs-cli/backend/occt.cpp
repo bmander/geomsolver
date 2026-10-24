@@ -723,6 +723,19 @@ int solvent_cad_transform(Cad* cad,int source,const double* matrix) noexcept {
         return cad->put(result,true,result.ShapeType() == TopAbs_SOLID ? volume : std::nan(""));
     });
 }
+// A shape mirrored in the plane through `at` square to `normal` (`gp_Trsf::SetMirror`): the
+// oracle a reflected B-rep is held to (#578, `tests/mirror_oracle.rs`).
+int solvent_cad_mirror(Cad* cad,int source,const double* at,const double* normal) noexcept {
+    SOLVENT_PROBE("solvent_cad_mirror");
+    return guarded(cad,[&] {
+        gp_Trsf mirror;
+        mirror.SetMirror(gp_Ax2(point(at),direction(normal)));
+        BRepBuilderAPI_Transform moved(cad->at(source),mirror,true);
+        auto result = moved.Shape();
+        const double volume = validate(result);
+        return cad->put(result,true,result.ShapeType() == TopAbs_SOLID ? volume : std::nan(""));
+    });
+}
 int solvent_cad_bounds(Cad* cad,const int* ids,int count,double* bounds) noexcept {
     SOLVENT_PROBE("solvent_cad_bounds");
     return guarded(cad,[&] {

@@ -84,7 +84,7 @@ pub struct Caches {
     pub(crate) placed: RefCell<BTreeMap<(usize, (u8, u64)),
         (crate::solid::Renamed, Placement<crate::solid::EvaluatedSolid>)>>,
     /// The same for each such solid's exact B-rep, by solid.
-    pub(crate) placed_exact: RefCell<BTreeMap<usize, Placement<crate::solid::Exact>>>,
+    pub(crate) placed_exact: RefCell<BTreeMap<(usize, bool), Placement<crate::solid::Exact>>>,
     /// Each static solid's exact B-rep (`solid::Exact`), remembered against `solid::reads` alone:
     /// it does not depend on an approximation, so it is built once for a geometry and only meshed
     /// again for each one the evaluated solids above ask for.

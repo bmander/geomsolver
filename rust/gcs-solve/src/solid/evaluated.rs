@@ -247,7 +247,7 @@ impl EvaluatedSolid {
         // the exact B-rep where this kernel builds and meshes one, the facet term where it does
         // not, an empty solid among them (`SOLVENT_SOLIDS=facets` asks for it throughout)
         if !facets_only() {
-            let exact = sk.exact_solid(si)
+            let exact = sk.exact_preimage(si)
                 .and_then(|x| Self::from_brep(sk, si, policy, unit, operands.clone(), &x));
             if let Ok(solid) = exact {
                 return Ok(solid);
@@ -601,6 +601,12 @@ impl EvaluatedSolid {
     pub fn rotation(&self) -> [[f64; 3]; 3] {
         self.rotation.unwrap_or(IDENTITY)
     }
+    /// Whether the placement reflects (#578): a mirrored instance's solid, its rotation's
+    /// determinant −1.  Every world output written as triangles or polygons then turns their
+    /// winding, so a face's corners still run counter-clockwise about its outward normal.
+    pub fn improper(&self) -> bool {
+        self.rotation.is_some_and(|r| det3(&r) < 0.0)
+    }
     /// The placement as a 4×4 matrix, column-major (a renderer's): local to world.
     pub fn matrix(&self) -> [f64; 16] {
         let (r, o) = (self.rotation(), self.origin.0);
@@ -664,10 +670,12 @@ impl EvaluatedSolid {
     /// Nothing is evaluated again: the geometry is this one's, a shape of its own only for its
     /// names, kept to place wherever this evaluation stands (`placed`).
     pub(crate) fn renamed(&self, from: &str, to: &str) -> Renamed {
-        Renamed {
-            of: self.shape.serial,
-            shape: std::rc::Rc::new(self.shape.renamed(&Renaming { from, to })),
-        }
+        // a solid read as its own, reflected (#578), keeps its names and shares its shape
+        let shape = match from == to {
+            true => self.shape.clone(),
+            false => std::rc::Rc::new(self.shape.renamed(&Renaming { from, to })),
+        };
+        Renamed { of: self.shape.serial, shape }
     }
     /// **Another instance's solid of the same binding** (#566): this evaluation moved by
     /// `motion`, under the names `renamed` gives its shape — renamed again from `from` to `to`
@@ -860,10 +868,14 @@ impl EvaluatedSolid {
         if self.rotation.is_none() {
             return translate_pieces(self.boundary(), self.origin.0);
         }
-        self.boundary().iter().map(|p| Piece {
-            pts: p.pts.iter().map(|&x| self.to_world(LocalPoint(x)).0).collect(),
-            n: self.vector_to_world(p.n),
-            ..p.clone()
+        let flip = self.improper();
+        self.boundary().iter().map(|p| {
+            let mut pts: Vec<[f64; 3]> =
+                p.pts.iter().map(|&x| self.to_world(LocalPoint(x)).0).collect();
+            if flip {
+                pts.reverse();
+            }
+            Piece { pts, n: self.vector_to_world(p.n), ..p.clone() }
         }).collect()
     }
     pub fn world_edges(&self) -> Vec<Edge> {
@@ -897,6 +909,14 @@ impl EvaluatedSolid {
         for v in m.positions.chunks_exact_mut(3).chain(m.normals.chunks_exact_mut(3)) {
             let w = self.vector_to_world([v[0], v[1], v[2]]);
             v.copy_from_slice(&w);
+        }
+        // reflected, each triangle is wound the other way round, so it still faces out (#578)
+        if self.improper() {
+            for t in m.positions.chunks_exact_mut(9).chain(m.normals.chunks_exact_mut(9)) {
+                for k in 0..3 {
+                    t.swap(3 + k, 6 + k);
+                }
+            }
         }
         std::borrow::Cow::Owned(m)
     }
@@ -936,15 +956,24 @@ impl EvaluatedSolid {
             let w = other.vector_to_world(n);
             self.vector_to_local(pose.as_ref().map_or(w, |m| m.vector(w)))
         };
+        // one reflected and the other not, the motion between them reflects: wound back (#578)
+        let flip = self.improper() != other.improper();
         for p in &mut csg.prims {
             p.bbox = Box3::empty();
             for f in &mut p.facets {
                 for x in &mut f.pts { *x = point(*x); p.bbox.add(*x); }
+                if flip {
+                    f.pts.reverse();
+                }
                 f.n = vector(f.n);
             }
         }
-        let pieces = other.boundary().iter().map(|q| Piece {
-            pts: q.pts.iter().map(|&x| point(x)).collect(), n: vector(q.n), ..q.clone()
+        let pieces = other.boundary().iter().map(|q| {
+            let mut pts: Vec<[f64; 3]> = q.pts.iter().map(|&x| point(x)).collect();
+            if flip {
+                pts.reverse();
+            }
+            Piece { pts, n: vector(q.n), ..q.clone() }
         }).collect();
         (csg, pieces)
     }
@@ -960,6 +989,10 @@ pub struct Rigid {
 }
 
 impl Rigid {
+    /// No motion at all.
+    pub fn identity() -> Rigid {
+        Rigid { r: IDENTITY, t: [0.0; 3] }
+    }
     /// The motion carrying plane `from` onto plane `to`: its origin onto the other's, and its
     /// axes and normal onto the other's.
     pub fn between(from: &Basis, to: &Basis) -> Rigid {
@@ -974,12 +1007,45 @@ impl Rigid {
         let moved = r.map(|row| plane::dot(row, from.o));
         Rigid { r, t: std::array::from_fn(|k| to.o[k] - moved[k]) }
     }
+    /// **The reflection in a plane of `at`** (#578): the plane through its origin square to its
+    /// axis `axis` — 0 its `u` (its side), 1 its `v` (its front), 2 its normal (its top) — what
+    /// a mirrored instance standing in `at` is published by.  `x ↦ x − 2m(m·(x − o))`, an
+    /// improper motion: its determinant is −1.
+    pub fn reflection(at: &Basis, axis: u8) -> Rigid {
+        let m = match axis {
+            0 => at.u,
+            1 => at.v,
+            _ => at.normal(),
+        };
+        let m = crate::space::normalised(m).unwrap_or(m);
+        let r = std::array::from_fn(|i| std::array::from_fn(|j| {
+            (if i == j { 1.0 } else { 0.0 }) - 2.0 * m[i] * m[j]
+        }));
+        let mo = 2.0 * plane::dot(m, at.o);
+        Rigid { r, t: m.map(|x| x * mo) }
+    }
+    /// `self` after `first`: `x ↦ self(first(x))`.
+    pub fn after(&self, first: &Rigid) -> Rigid {
+        let r = std::array::from_fn(|i| std::array::from_fn(|j| {
+            (0..3).map(|k| self.r[i][k] * first.r[k][j]).sum()
+        }));
+        Rigid { r, t: self.point(first.t) }
+    }
+    /// Whether it reflects: its rotation's determinant is negative.
+    pub fn improper(&self) -> bool {
+        det3(&self.r) < 0.0
+    }
     pub fn point(&self, x: [f64; 3]) -> [f64; 3] {
         std::array::from_fn(|k| plane::dot(self.r[k], x) + self.t[k])
     }
     pub fn vector(&self, v: [f64; 3]) -> [f64; 3] {
         self.r.map(|row| plane::dot(row, v))
     }
+}
+
+/// The determinant of a 3×3 matrix by rows: its rows' triple product.
+fn det3(r: &[[f64; 3]; 3]) -> f64 {
+    plane::dot(crate::space::cross(r[0], r[1]), r[2])
 }
 
 /// The angle an exact solid's edge's chords may turn (radians): the sagitta decides on a large
