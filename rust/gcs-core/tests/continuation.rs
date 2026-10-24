@@ -186,6 +186,60 @@ fn a_large_drawings_singular_instants_are_read_by_its_blocks() {
     assert!((s.at - limit).abs() < 1e-3, "{} against {limit}", s.at);
 }
 
+/// Three points along a horizontal, each pair said to be horizontal: the third saying is what the
+/// first two imply (a relation-only dependency), a row with no unknown of its own.
+const IMPLIED: &str = "  p := point\n  fix((0, -80)) p\n  q := point hint((10, -80))\n  \
+    r := point hint((20, -80))\n  p distance(10) q\n  q distance(10) r\n  \
+    horizontal line(p, q)\n  horizontal line(q, r)\n  horizontal line(p, r)\n";
+
+/// A four-bar beside `n` points that do not move, and `extra`, with `horizontal` in scope.
+fn four_bar_by(n: usize, extra: &str) -> String {
+    let (g, r, l, k) = (40.0, 10.0, 35.0, 25.0);
+    four_bar(g, r, l, k, "(0deg, 360deg)", &format!("{}{extra}", standing_by(n, g)))
+        .replace("use std\n", "use std\nuse std (horizontal)\n")
+}
+
+/// **A statement the others imply is left out of the march** (#591): carried, it left the
+/// drawing's order not square, so every station read the whole drawing's rank and set nothing
+/// aside — a hundred times slower on a few hundred unknowns.  Left out and judged where each
+/// station ends, the march is the one the drawing without it makes, station for station, and
+/// what the crank does not reach stands where it stood at home to the bit (#498).
+#[test]
+fn a_statement_the_others_imply_is_left_out_of_the_march() {
+    let without = solved(&four_bar_by(100, &IMPLIED.replace("  horizontal line(p, r)\n", "")));
+    let e = solved(&four_bar_by(100, IMPLIED));
+    let (was, f) = (follow(&without.sketch, "t").expect("followed"),
+                    follow(&e.sketch, "t").expect("followed"));
+    assert_eq!(f.singular, was.singular);
+    assert_eq!(f.stations.iter().map(|s| s.at).collect::<Vec<_>>(),
+               was.stations.iter().map(|s| s.at).collect::<Vec<_>>());
+    let mut sk = e.sketch.clone();
+    gcs_core::follow::stand(&mut sk, "t", 90.0).expect("stood");
+    let still: Vec<usize> = (0..sk.params.len())
+        .filter(|&i| ["p.", "q", "r."].iter().any(|n| sk.params[i].name.starts_with(n)))
+        .collect();
+    assert!(still.len() > 200, "{}", still.len());
+    for i in still {
+        let (was, now) = (e.sketch.params[i].value, sk.params[i].value);
+        assert!(was.to_bits() == now.to_bits(), "`{}`: {was} != {now}", sk.params[i].name);
+    }
+    assert!(at(&sk, &e, "b").1 > 9.9, "the crank stands at 90deg");
+}
+
+/// A statement implied where the drawing starts and nowhere else — the rocker's pin held as far
+/// from the crank's pivot as it stands at home — is left out of each station's solve as well,
+/// and a station where it does not hold does not stand: the march stops where it starts.
+#[test]
+fn a_statement_implied_only_where_the_drawing_starts_stops_the_march() {
+    let (g, r, l, k) = (40.0, 10.0, 35.0, 25.0);
+    let (x, y) = closed_c(g, r, l, k, 0.0, 1.0).expect("assembled");
+    let e = solved(&four_bar(g, r, l, k, "(0deg, 360deg)",
+                             &format!("  a distance({}) c\n", x.hypot(y))));
+    let f = follow(&e.sketch, "t").expect("followed");
+    let s = f.singular.expect("stopped");
+    assert!(s.kind == Kind::Limit && s.at < 1e-3, "{s:?}");
+}
+
 #[test]
 fn a_drawing_not_held_is_not_followed() {
     // no rocker: the coupler swings free at every instant, a free function of `t`

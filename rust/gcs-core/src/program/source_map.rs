@@ -255,6 +255,11 @@ pub struct Elaborated {
     /// The masses and volumes the drawing states (#510), in the order written: each a row the
     /// solve holds, or a claim judged after it (`report::measure_answers`).
     pub measures: Vec<super::MeasureStated>,
+    /// Every number the document names, worked out while elaborating (#596), by absolute name:
+    /// what `report::value_text` says and `--where` reads beside the geometry.
+    pub values: std::collections::BTreeMap<String, crate::flatten::Valued>,
+    /// Every claim over values, judged before the solve (#596), in the order walked.
+    pub value_claims: Vec<crate::flatten::ValueClaimed>,
     /// The program every span in here indexes.  Carried rather than borrowed: a span without the
     /// text it cuts is a pair of numbers about nothing, an edit needs the statements as well as
     /// the characters, and the caller that most needs all of it is across an ABI where a borrow

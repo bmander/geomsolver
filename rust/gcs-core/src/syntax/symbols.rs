@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 
 use super::highlight::{defined_word, tints, Tint};
 use super::lexer::{group_ahead, lex, Tok};
-use super::words::{is_name, set_at, BLOCKS, QUALIFIERS};
+use super::words::{is_name, opens_block, set_at, QUALIFIERS};
 use super::{Span, MAX_TEXT};
 use crate::model::EntKind;
 
@@ -409,7 +409,7 @@ impl<'a> Build<'a> {
                 } else if w == "use" {
                     using = 1;
                     continue;
-                } else if BLOCKS.contains(&w) {
+                } else if opens_block(toks, i) {
                     cur = self.push(cur, Close::Statement(braces), false, false, w != "when");
                 } else if w == "in" {
                     cur = self.push(cur, Close::Statement(braces), false, false, false);

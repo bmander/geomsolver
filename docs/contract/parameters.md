@@ -28,9 +28,13 @@ where a rule came from.
   `ParamDecl` with `Input::over` (`syntax::Over`: the two ends' text, the word's span),
   `P::param_over`. It says what it is (`Length`, `Angle` or `Scalar`; none, or `Int`, is a syntax
   error), takes no `:=` and no `hint(…)` (syntax errors: it is neither a value nor an unknown),
-  and stands where a `param` may (the parser refuses one in a component or a block; a module's is
-  E040, `parameter_axis`). The flattener (`Walk::parameter_axis`, after `work_out`, so an end may
-  read any number the body defines) works each end out as a constant of the declared type, finite
+  and stands where a `param` may (the parser refuses one in a component or a block). A module's is
+  its drawing's (#593, [0.181]): `modules::link` leaves it out of the root it keeps, as it leaves
+  the preview, so a part declaring one is `use`d as it stands, and no table of a module's numbers
+  (`module_params`, `file_number_names`, an import's `defines`) has it — `tests/modules.rs`'s
+  `a_modules_parameter_is_left_out_with_its_drawing`. The flattener (`Walk::parameter_axis`,
+  after `work_out`, so an end may read any number the body defines) works each end out as a
+  constant of the declared type, finite
   — reading an unknown of the drawing, or the wrong dimension, is E103 — and the interval
   increasing (E103), and records it once: `Expansion::parameters` → `Sketch::parameters`, by
   name. **It is no unknown**: it makes no free value, no `Declared`, no column. `syntax::print`
@@ -217,7 +221,19 @@ where a rule came from.
     the stride's tangencies to the path its toe traces); a station that finds a set-aside row
     reading otherwise than at home (a constant read off where a moving part stands, as a valued
     frame's block's) solves the whole drawing, and the march is made again with that row a
-    reader, so every orientation is read over one system.  Nothing is set aside of a drawing whose order is not square.  The start's
+    reader, so every orientation is read over one system.  Nothing is set aside of a drawing whose
+    order is not square — once **what it implies is left out** (`follow::implied`, #591): the rows
+    of the order's over part at home, which have no unknown of their own, that hold there and
+    whose rank the rest of that part has without them, whole statements tried the last written
+    first until what is left is square and of full rank (none where there is an under part, the
+    over part is short of rank or wider than `ORIENTED`, or no choice of statements squares it).
+    They are carried at every station solve and every stand like what is set aside, and judged
+    where each ends (`Still::implied_hold`, the solve's own measure): a station where one does not
+    hold does not stand, so a statement implied at home alone stops the march where it starts, as
+    the drawing solved with it did.  Carried, one row restating what a point's two planes say
+    made the order not square, every station's rank read whole and nothing set aside — a march of
+    586 unknowns took 44 s rather than 0.2 (`continuation.rs`,
+    `a_statement_the_others_imply_is_left_out_of_the_march`).  The start's
     rank and every orientation are read over what is solved, the rest's blocks of full rank and
     the same at every instant.  Smaller, each station is cheaper: the V-twin's march and a stand
     take half what they did.

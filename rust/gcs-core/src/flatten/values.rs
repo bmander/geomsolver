@@ -154,14 +154,10 @@ fn holds(
                                  expression (`min`, `max` and `abs` say one in pieces)"
                             )));
                         }
-                        let what = if u == name {
-                            format!("`{name}` is")
-                        } else {
-                            format!("`{name}` reads `{u}`,")
-                        };
                         return Err((Code::E040, format!(
-                            "{what} an unknown of the drawing, and a `when` is decided before the \
-                             solve: compare numbers the document states"
+                            "{} an unknown of the drawing, and a `when` is decided before the \
+                             solve: compare numbers the document states",
+                            reads_unknown(&name, u)
                         )));
                     }
                     Some(None) => {}
@@ -173,6 +169,62 @@ fn holds(
             })?
         }
     })
+}
+
+/// How a name that is, or is written over, the unknown `u` is said to be one: `` `beta` is `` or
+/// `` `k` reads `beta`, ``, ahead of what an unknown cannot be read by.
+fn reads_unknown(name: &str, u: &str) -> String {
+    if u == name { format!("`{name}` is") } else { format!("`{name}` reads `{u}`,") }
+}
+
+/// Whether a claim over values holds (#596), and each name it reads with its value; or the code
+/// and the words for why it cannot be decided — a name that is no number here E101, one that is
+/// or reads an unknown of the drawing E040 (a value is worked out before the solve), two
+/// dimensions compared or a text that is no comparison E103, a measurement E107.
+fn claimed(
+    text: &str,
+    env: &Vals,
+    scope: &Scope,
+    units: Units,
+) -> Result<(bool, Vec<(String, super::Valued)>), (Code, String)> {
+    let said = |code, e: String| (code, format!("`{text}`: {e}"));
+    let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
+    fn membership(c: &Cond) -> bool {
+        match c {
+            Cond::In(..) => true,
+            Cond::And(a, b) | Cond::Or(a, b) => membership(a) || membership(b),
+            Cond::Not(a) => membership(a),
+            Cond::Cmp(..) => false,
+        }
+    }
+    if membership(&c) {
+        return Err(said(Code::E103, "a claim over values compares numbers; `in` asks of \
+            faces, and is a `when`'s".into()));
+    }
+    let mut reads = Vec::new();
+    for name in c.deps() {
+        match env.get(&name) {
+            None => {
+                let (code, e) = out_of_reach(&name, env, scope).unwrap_or_else(|| (Code::E101,
+                    format!("`{name}` is not a number here: a claim over values compares the \
+                             numbers the document names")));
+                return Err(said(code, e));
+            }
+            Some(Aff { free: Some(u), .. }) => {
+                return Err(said(Code::E040, format!(
+                    "{} an unknown of the drawing, and a claim over values is judged before the \
+                     solve: a relation claims what the solve gives",
+                    reads_unknown(&name, u)
+                )));
+            }
+            Some(a) => reads.push((name, super::Valued { value: a.c, dim: a.dim })),
+        }
+    }
+    let holds = expr::judge_in(&c, env).map_err(|e| {
+        let code = if e.fault == expr::Fault::Measure { Code::E107 } else { Code::E103 };
+        said(code, e.message)
+    })?;
+    Ok((holds, reads))
 }
 
 /// A number worked out while elaborating.
@@ -846,6 +898,7 @@ impl<'a> Walk<'a> {
         if !self.work_out(&pending, vals, scope, &prefix, &running) {
             return;
         }
+        self.named_values(&pending, vals, &prefix);
         // a parameter axis's interval may read any number the body defines (#391 S1), and a
         // material's properties are read as one once they are worked out (#510 P3)
         for st in body {
@@ -1251,6 +1304,50 @@ impl<'a> Walk<'a> {
             waiting = rest;
         }
         true
+    }
+
+    /// Each definition worked out to a number, recorded under its absolute name for a reader to
+    /// ask for (#596, `Expansion::values`): the drawing's, never a curve's compile over its
+    /// variables, nor a hidden copy's (`#3.0.w`).
+    fn named_values(&mut self, pending: &[Def], vals: &Vals, prefix: &str) {
+        if self.sym.is_some() {
+            return;
+        }
+        for d in pending {
+            let abs = format!("{prefix}{}", d.name);
+            let Some(a) = vals.get(&d.name) else { continue };
+            let Some(value) = a.number().filter(|v| v.is_finite() && !abs.contains('#')) else {
+                continue;
+            };
+            self.values.entry(abs).or_insert(super::Valued { value, dim: a.dim });
+        }
+    }
+
+    /// **A claim over values** (#596), `claim torque >= 2Nm`: decided over the numbers in scope
+    /// and recorded with each it reads (`Expansion::value_claims`), or what keeps it from being
+    /// decided said where it stands.  Judged once where a body is walked again (§6.21).
+    pub(super) fn value_claim(
+        &mut self,
+        c: &crate::syntax::ValueClaim,
+        vals: &Vals,
+        scope: &Scope,
+        prefix: &str,
+    ) {
+        if self.sym.is_some() || !self.claims_judged.insert((c.span, prefix.to_string())) {
+            return;
+        }
+        match claimed(&c.text, vals, scope, self.units) {
+            Ok((holds, reads)) => {
+                let reads = reads.into_iter().map(|(name, v)| (format!("{prefix}{name}"), v));
+                self.value_claims.push(super::ValueClaimed {
+                    text: c.text.clone(),
+                    span: c.span,
+                    holds,
+                    reads: reads.collect(),
+                });
+            }
+            Err((code, m)) => self.err(code, c.span, m),
+        }
     }
 
     /// **A parameter axis** (#391 S1, `param t: Angle over (a, b)`): its interval worked out

@@ -5,10 +5,12 @@
 //! and ends to whoever listens on this thread (`listen`); with nobody listening, `during` runs the
 //! work and names nothing.  The words are the core's (`Work::done`, `Work::running`,
 //! `Timings::lines`); the clock is `clock::Instant`, which reads zero where there is none; what to
-//! print, and when, is the listener's.
+//! print, and when, is the listener's.  Work that knows how far it has got says so on its gauge
+//! (`gauge`), which a listener reads while it runs (`Work::running`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use crate::clock::Instant;
 use crate::model::Sketch;
@@ -29,6 +31,8 @@ pub enum Kind {
     Evaluate,
     /// A claim about solids judged, at every pose it is asked at.
     Claim,
+    /// A drawing followed along a declared parameter (`follow::followed`).
+    Follow,
 }
 
 impl Kind {
@@ -48,44 +52,95 @@ pub enum At {
     Stmt(u32),
 }
 
-/// One piece of work: its kind, what it is about as the source names it, and where.
+/// One piece of work: its kind, what it is about as the source names it, where, and how far it
+/// has got.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Work {
     pub kind: Kind,
     pub subject: String,
     pub at: Option<At>,
+    pub gauge: Gauge,
+}
+
+/// **How far a piece of work has got** (#591), in the core's words (`now at 120deg of (0deg,
+/// 360deg)`), set by the work while it runs (`gauge`) and read by a listener, on another thread
+/// if it likes: every copy of a work shares one.  What it reads is no part of what the work is,
+/// so any two gauges are equal.
+#[derive(Clone, Debug, Default)]
+pub struct Gauge(Arc<Mutex<Option<String>>>);
+
+impl Gauge {
+    /// What it reads, where the work has said.
+    pub fn read(&self) -> Option<String> {
+        self.0.lock().ok().and_then(|g| g.clone())
+    }
+
+    fn set(&self, text: String) {
+        if let Ok(mut g) = self.0.lock() {
+            *g = Some(text);
+        }
+    }
+}
+
+impl PartialEq for Gauge {
+    fn eq(&self, _: &Gauge) -> bool {
+        true
+    }
+}
+
+impl Eq for Gauge {}
+
+impl PartialOrd for Gauge {
+    fn partial_cmp(&self, other: &Gauge) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Gauge {
+    fn cmp(&self, _: &Gauge) -> std::cmp::Ordering {
+        std::cmp::Ordering::Equal
+    }
 }
 
 impl Work {
+    fn of(kind: Kind, subject: impl Into<String>, at: Option<At>) -> Work {
+        Work { kind, subject: subject.into(), at, gauge: Gauge::default() }
+    }
+
     /// Document `name` elaborated.
     pub fn elaborate(name: &str) -> Work {
-        Work { kind: Kind::Elaborate, subject: name.to_string(), at: None }
+        Work::of(Kind::Elaborate, name, None)
     }
 
     /// The solve of `sk`, counted in the unknowns it moves (the diagnosis's params).
     pub fn solve(sk: &Sketch) -> Work {
         let n = sk.free_indices().len();
-        Work { kind: Kind::Solve, subject: format!("{n} params"), at: None }
+        Work::of(Kind::Solve, format!("{n} params"), None)
     }
 
     /// Document `name` diagnosed.
     pub fn diagnose(name: &str) -> Work {
-        Work { kind: Kind::Diagnose, subject: name.to_string(), at: None }
+        Work::of(Kind::Diagnose, name, None)
     }
 
     /// Solid `i`'s exact B-rep built.
     pub fn build(sk: &Sketch, i: usize) -> Work {
-        Work { kind: Kind::Build, subject: sk.solid_name(i), at: Some(At::Solid(i)) }
+        Work::of(Kind::Build, sk.solid_name(i), Some(At::Solid(i)))
     }
 
     /// Solid `i` evaluated.
     pub fn evaluate(sk: &Sketch, i: usize) -> Work {
-        Work { kind: Kind::Evaluate, subject: sk.solid_name(i), at: Some(At::Solid(i)) }
+        Work::of(Kind::Evaluate, sk.solid_name(i), Some(At::Solid(i)))
     }
 
     /// A claim judged: `text` is the claim as the report words it (`claim a clear(1mm) b`).
     pub fn claim(text: String, stmt: u32) -> Work {
-        Work { kind: Kind::Claim, subject: text, at: Some(At::Stmt(stmt)) }
+        Work::of(Kind::Claim, text, Some(At::Stmt(stmt)))
+    }
+
+    /// The drawing followed along its declared parameter `name`.
+    pub fn follow(name: &str) -> Work {
+        Work::of(Kind::Follow, name, None)
     }
 
     fn verb(&self) -> (&'static str, &'static str) {
@@ -96,6 +151,7 @@ impl Work {
             Kind::Build => ("built", "building"),
             Kind::Evaluate => ("evaluated", "evaluating"),
             Kind::Claim => ("judged", "judging"),
+            Kind::Follow => ("followed", "following"),
         }
     }
 
@@ -115,9 +171,11 @@ impl Work {
     }
 
     /// The line said while it is still going, `elapsed` seconds in: `still building
-    /// stator.copper, 10 s so far`.
+    /// stator.copper, 10 s so far`, and how far it has got where its gauge says: `still following
+    /// t, now at 120deg of (0deg, 360deg), 3.1 s so far`.
     pub fn running(&self, elapsed: f64) -> String {
-        format!("still {} {}, {} so far", self.verb().1, self.subject, seconds(elapsed))
+        let far = self.gauge.read().map_or(String::new(), |g| format!("{g}, "));
+        format!("still {} {}, {far}{} so far", self.verb().1, self.subject, seconds(elapsed))
     }
 }
 
@@ -136,8 +194,9 @@ pub trait Listener {
 
 thread_local! {
     static LISTENER: RefCell<Option<Rc<dyn Listener>>> = const { RefCell::new(None) };
-    /// For each piece of work open on this thread, the seconds its own nested work has taken.
-    static OPEN: RefCell<Vec<f64>> = const { RefCell::new(Vec::new()) };
+    /// For each piece of work open on this thread, the seconds its own nested work has taken,
+    /// and its gauge.
+    static OPEN: RefCell<Vec<(f64, Gauge)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Puts back what was listening before, and closes what was left open, however the work it was
@@ -168,18 +227,28 @@ pub fn during<T>(what: impl FnOnce() -> Work, work: impl FnOnce() -> T) -> T {
     let Some(listener) = LISTENER.with(|l| l.borrow().clone()) else { return work() };
     let what = what();
     listener.begin(&what);
-    OPEN.with(|o| o.borrow_mut().push(0.));
+    OPEN.with(|o| o.borrow_mut().push((0., what.gauge.clone())));
     let clock = Instant::now();
     let result = work();
     let total = clock.elapsed().as_secs_f64();
     let nested = OPEN.with(|o| {
         let mut o = o.borrow_mut();
-        let nested = o.pop().unwrap_or(0.);
-        if let Some(parent) = o.last_mut() { *parent += total; }
+        let nested = o.pop().map_or(0., |(n, _)| n);
+        if let Some(parent) = o.last_mut() { parent.0 += total; }
         nested
     });
     listener.end(&what, total, (total - nested).max(0.));
     result
+}
+
+/// Say how far the innermost work open on this thread has got, on its gauge: `text` is only made
+/// when somebody listens.
+pub fn gauge(text: impl FnOnce() -> String) {
+    OPEN.with(|o| {
+        if let Some((_, g)) = o.borrow().last() {
+            g.set(text());
+        }
+    });
 }
 
 /// Time spent, by piece of work: what a summary at the end of a run reads.  The same work done

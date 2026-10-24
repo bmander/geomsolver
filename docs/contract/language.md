@@ -130,6 +130,13 @@ written, `next.u` a turn, and a body reading the formal is not judged again: `Wo
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.
+**A block's word may be a name** ([0.182], #598): `ring := Disc(…)` is a definition like any
+(`defines` reads it before any keyword), and a statement opening with the word reads it as that
+name where `words::opens_block` says no block opens — the next token `.`, `:=`, or a constraint
+word with no `{` on the line; a header (a count, a condition, a walk) always runs on its line to
+its `{`.  The parser's dispatch (`stmt`), its relation lookahead (`chain_starts`, which takes no
+other opener as an operand), the colouring and the symbol index all ask it.
+`a_block_word_defined_as_a_name_is_read_as_that_name` (`tests/ring.rs`) is the gate.
 **An instance declared in a ring stands in its copy's frame** ([0.177], #566): copy k's is the
 representative's frame turned k steps, as its entities are, so a relation of the instance's body
 reading the standard datums of the frame it stands in (`std.origin`, `std.x`, …:
@@ -466,7 +473,7 @@ group registered so `Bar(design.bar)` binds); an instance may pass as a layout g
 formal** (`Ty::Set`, #191) takes a set — named, or a family's instance, which is both a set and an
 instance — and a `group` formal no named set; each refusal is E103 at the argument
 (`Checks::groups`, checked in `resolve` against `sets` / `group_names`). **A group is a value**
-(#594, [0.180]): `small := sizes`, a definition whose text names a group (`Walk::group_named`:
+(#594, [0.184]): `small := sizes`, a definition whose text names a group (`Walk::group_named`:
 the body's, a group formal, one under the scope's prefixes, a bare import, or the file's), is
 an alias of it found before the body's numbers are worked out (`definitions`, a name for a name
 in any order), its members named under it as a member naming a group's are, and recorded in

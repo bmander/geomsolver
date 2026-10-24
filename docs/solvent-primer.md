@@ -132,6 +132,7 @@ NAME := envelope | meshing | surface(...)                                       
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 claim { DECL* CONSTRAINT* }             a claim with witnesses of its own              (1.11)
+claim CONDITION                         a comparison of the document's values, judged  (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
 ccw(a, b, c) | cw(a, b, c)              choose a root; adds no equation              (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
@@ -444,7 +445,12 @@ c distance(1' 6 3/16") d            // one literal: spaces separate the parts, a
   torque := power / (omega / 1rad)    // a torque: torque / 1Nm is 27.9
   amps := power / (48V * 0.86)        // amps + torque is refused
   freq := 46 / 2 * omega / turn       // 97.8Hz
+  claim torque >= 20Nm                // judged before the solve (1.11)
   ```
+
+  `solventc --where torque` reads it back in its unit, `torque = 27.9251 N·m`: a figure in SI,
+  a length or an area in the document's unit, an angle in degrees (`255rpm` is `1530 deg/s`),
+  whatever the document's lengths are in.
 - **There is no string literal**: `"` is the inch mark, and a word argument is bare (`at: start`).
 - A value, input, formal or index named after a built-in (`tau`, `pi`, `min`, …) does not shadow
   it and ends up with two values: W112. Rename it.
@@ -936,7 +942,9 @@ use std (horizontal, vertical)        // and import those two words bare
 ```
 
 A module is a Solvent document read for its components, relation words and top-level values and
-groups; its own drawing is not drawn. **Nothing is imported bare unless the `use` names it**: a
+groups; its own drawing is not drawn, and neither is a parameter that runs (`param spin: Angle over
+(…)`, 1.6): it is the drawing's, so a part file that declares one to scrub its own joint is used as
+it stands, and nothing outside it names the parameter. **Nothing is imported bare unless the `use` names it**: a
 module's names are written by full path — `engine.parts.Rod(…)`, `engine.dims.D` — or bare where
 listed in brackets. Imports are per file, not transitive, with no prelude; a relation word is only
 ever bare, so a file using one imports it, and `std.front` needs the file's own `use std`.
@@ -1198,6 +1206,14 @@ Use claims for what a figure was drawn to show (the altitudes concur; the traced
 A claim may not own or read an unknown. `claim over rotor_turn in (0deg, 1080deg) { … }` judges at
 sampled poses of a frame's motion, reading solids placed under it, and reports the worst; over an
 unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value.
+
+**A claim over values.** A design table's figures are claimed as a drawing's facts are:
+`claim handle_stall_torque >= 2Nm`, `claim 2 * ratio > 30 and teeth != 12` — a comparison of the
+document's numbers, written as a `when`'s condition. A value is worked out before the solve, so
+it is judged there, a **theorem** or **refuted**, never consuming, within rounding (`claim torque
+== 0.0864Nm` holds of `0.006Nm * 16 * 0.9`); in a component's body, once per instance. The CLI
+says each with what it reads: `claim torque >= 2Nm — refuted: torque = 0.0864 N·m`. It may not
+read an unknown, nor a value written over one (E040: a relation claims what the solve gives).
 
 **A claim with witnesses of its own.** Some claims need geometry to be stated at all: "the two
 runs of a belt meet on the line of centres" needs a point on both runs. Declared as ordinary
@@ -2150,7 +2166,8 @@ scenario tip_load {
   line, sizing an unknown the area reads (`A: b * h`) or placing a joint, with no support and no
   load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
   section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a
-  prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
+  prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`), and over a
+  turned or cut solid moves its faces (0.180). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
   solve; a bound is a claim's alone. `solventc` prints each: `mass(arm) is 10kg: driven == 10kg,
   held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
   shows each: `sized_cantilever.sv` (a depth),
@@ -2257,6 +2274,13 @@ scenario press {
   a prism read so is a row, as a region's is, its face's nodes moved with the drawing and the
   solid's stacked over them.  The library's `sized_plank.sv` finds a plank's width so, bent across
   its own plane, which no reading in that plane can.
+- **A driving deflection sizes a filled body** (0.180): a turned, united or cut solid's point is a
+  row too, its boundary's nodes moved by the surfaces its faces lie on — a prism's caps and sides,
+  a full turn's faces — and the rest following.  `solventc` solves it on a coarse mesh first and
+  finishes on the reading's own; the page judges it, as a claim, and says `solventc` drives it.
+  `sized_conrod.sv` finds the engine's rod's web thickness so (`ConRod(pin, bore, wt: wt)`, `param
+  wt: Length hint(5mm)`).  A face of a round, a sweep, a placed copy, a drafted prism or a partial
+  turn moves with nothing yet: E040.  `volume(v) shaft` of a turned shaft sizes it the same way.
 - **The library shows the rest**: `pressed_panel.sv` (a pressure on a cap, across the plane),
   `flat_bar_strut.sv` (buckling across the thickness), `cantilever_plate.sv` (modes out of the
   plane: bending, twisting), `turned_shaft.sv` (a turned solid, a round making its stress
@@ -2267,7 +2291,8 @@ scenario press {
 | `pinned plate.left along: tilted`, off the world's axes | no answer — not read under yet |
 | `pressure tail.right p`, `tail` united into `bar` | no answer — name it from the body, `bar.tail.…` |
 | `claim buckling(plate) >= 1` under a pull | no answer — the loads press nothing |
-| `deflection(p, along: d) == v` in a turned solid | judged, not driven — a prism's row alone |
+| `deflection(p, along: d) == v` in a drafted or rounded solid | E040 — its face … is not moved |
+| `deflection(p, along: d) == v` in a turned solid, in the page | judged — `solventc` drives it |
 
 ### 1.15 Frames that move, and generated geometry
 
@@ -2686,7 +2711,10 @@ A redundancy among pure relations (a fourth `perpendicular` round a rectangle) i
 **`--where NAME`** prints the numbers under a name: a point's (`hinge.x`), an instance's
 (`--where t0`), a plane's (`--where std.side`), a solid's measurements (`--where body`), or one
 number (`--where body.volume`). Under `--json` they are a `positions` table. It is quicker than a
-`claim` for testing a position.
+`claim` for testing a position. A value the document names is read the same way, in its unit:
+`--where ratio` prints `ratio = 16`, `--where torque` `torque = 0.0864 N·m`, `--where dims`
+each member of a group; under `--json` they are a `values` table, each with its `value`, `unit`
+and `text`.
 
 Two habits: **fix something** (a figure nothing holds is under by three however determined its
 shape), and **say the branch** — with a bound or a `ccw` where a side matters, since the solver

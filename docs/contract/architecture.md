@@ -66,7 +66,11 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `--json` is `report::*_json`.
   **Where a name landed is part of the report**: `report::positions` zips `EntKind::scalar_names`
   against `Sketch::entity_params` (`hinge.x`, `base.r`); `--where NAME` filters it (a name and
-  everything under it), `--json` publishes it, narrowed by the same flag. Exit codes 0/1/2 are
+  everything under it), `--json` publishes it, narrowed by the same flag.  **And so is what a
+  value came to** (#596): `Elaborated::values` is read by the same rule, each line
+  `report::value_text` (`torque = 0.0864 N·m`), published as `values` (`report::values_json`);
+  each claim over values is `report::value_claim_text`, said under the outcome line and published
+  as `valueClaims` (`a_documents_values_are_read_and_claimed`). Exit codes 0/1/2 are
   `Diag::severity` and `SolveResult::success`; 64 is the command line itself (`misuse`: the one
   line saying what was wrong, the synopsis and a pointer to `--help`, never the whole of it), and
   `--help` names every option the parser reads (`help_lists_every_option_examples_and_the_primer`).
@@ -94,11 +98,16 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   **A long run says what it is doing** (#320): the core tells whoever listens on its thread
   (`progress::listen`) when work begins and ends — the elaboration, the solve and the diagnosis,
   which the CLI wraps in `progress::during`, and inside them each solid built
-  (`Sketch::exact_solid`) or evaluated (`Sketch::evaluated_solid`) and each claim about solids
-  judged — timed by `clock::Instant` and worded by `progress::Work`; with nobody listening the
-  work is not even named.  `solventc --progress` says each on stderr when it is done (the same work
-  again, a solid at each pose of a sweep, the first time only), and work still going past 5 s is
-  said again, then each time it doubles, so a slow boolean is told from a hang; on a terminal,
+  (`Sketch::exact_solid`) or evaluated (`Sketch::evaluated_solid`), each claim about solids
+  judged, and each march along a declared parameter (`follow::followed`, #591) — timed by
+  `clock::Instant` and worded by `progress::Work`; with nobody listening the work is not even
+  named.  Work that knows how far it has got says so on its `Gauge` (`progress::gauge`, which sets
+  the innermost open work's; shared by every copy, so a listener on another thread reads it, and
+  no part of what the work is): a march says the instant it has reached, `still following t, now
+  at 120deg of (0deg, 360deg), 3.1 s so far` (`tests/progress.rs`).  `solventc --progress` says
+  each on stderr when it is done (the same work again, a solid at each pose of a sweep, the first
+  time only), and work still going past 5 s is said again, then each time it doubles, so a slow
+  boolean, or a long march, is told from a hang; on a terminal,
   unasked, the stages of a second or more are said (`--no-progress` silences it).  `--timings`
   lists the solids and claims by their own time after the report, each at its statement — a
   module's solid at the document's instance of it (`Program::document_stmt`).

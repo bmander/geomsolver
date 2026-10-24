@@ -381,13 +381,31 @@ impl Sketch {
     }
 
     /// **Every driven deflection's mesh made again where the drawing stands** (#510 S2;
-    /// `Sketch::meshed`, `Constraint::made_row`), kept where it meshes; a row that cannot be
-    /// meshed here keeps the mesh it had.  Whether any was made, and if so the pose recorded
-    /// (`meshed_at`).
+    /// `Sketch::meshed`, `Constraint::made_row_at`), each at the level it was made at, kept where
+    /// it meshes; a row that cannot be meshed here keeps the mesh it had.  Whether any was made,
+    /// and if so the pose recorded (`meshed_at`).
     pub fn remesh(&mut self) -> bool {
+        self.remade(Some)
+    }
+
+    /// **Every driving row a filled body is solved coarse on made again twice as fine where the
+    /// drawing stands** (#567, `bodies::COARSEST`): what a document solve that holds on a coarse
+    /// mesh is solved on from.  Whether any was made, and if so the pose recorded (`meshed_at`);
+    /// none where every row is at a reading's own size.
+    pub fn refine(&mut self) -> bool {
+        self.remade(|held| (held > 1.0).then_some(0.5 * held))
+    }
+
+    /// The rows held on `meshed` made again where the drawing stands, each at the level `level`
+    /// gives for the level it was made at (none: left as it is); a row that cannot be meshed here
+    /// keeps the mesh it had.  Whether any was made, and if so the pose recorded (`meshed_at`).
+    fn remade(&mut self, level: impl Fn(f64) -> Option<f64>) -> bool {
         let rows: Vec<_> = self.constraints.iter()
-            .filter_map(|c| c.meshed_key(self).filter(|k| self.meshed.contains_key(k)).map(|k| (c, k)))
-            .filter_map(|(c, k)| match c.made_row(self) {
+            .filter_map(|c| {
+                let k = c.meshed_key(self)?;
+                Some((c, k, level(self.meshed.get(&k)?.coarser)?))
+            })
+            .filter_map(|(c, k, at)| match c.made_row_at(self, at) {
                 Ok(crate::constraints::InteriorRow::Meshed(r)) => Some((k, r)),
                 _ => None,
             })
@@ -401,14 +419,15 @@ impl Sketch {
     }
 
     /// **The drawing's meshes made where another stood** (`meshed_at` of a drawing of the same
-    /// source): stood at `x`, meshed again (`remesh`), and put back where it was.  False, and
-    /// nothing changed, for an `x` of another drawing.
+    /// source): stood at `x`, meshed again at a reading's own size — where a drive that held ends,
+    /// a filled body's levels refined (#567) — and put back where it was.  False, and nothing
+    /// changed, for an `x` of another drawing.
     pub fn mesh_at(&mut self, x: &[f64]) -> bool {
         let here = self.get_x();
         if !self.set_x(x) {
             return false;
         }
-        self.remesh();
+        self.remade(|_| Some(1.0));
         self.set_x(&here)
     }
 

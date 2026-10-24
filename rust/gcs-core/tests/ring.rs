@@ -166,6 +166,37 @@ fn a_ring_names_its_centre() {
     assert!(errs.iter().any(|e| e.message.contains("`ring N about C")), "{errs:?}");
 }
 
+/// A block's word is a name a document may define (#598): `ring := Disc(…)` is a ring gear, and
+/// a statement opening with it — a field of it, or a relation word with no brace on the line —
+/// is about that name, never a ring's header, which always runs on to its `{`.
+#[test]
+fn a_block_word_defined_as_a_name_is_read_as_that_name() {
+    for w in ["ring", "repeat", "cycle", "when"] {
+        let field = format!(
+            "unit mm\nuse std\ncomponent Disc(r: Length) {{\n  in std.top {{\n    rim := \
+             radius(r) circle(center: std.top.origin)\n  }}\n}}\n{w} := Disc(r: 5mm)\n\
+             in std.top {{\n  hub := point\n}}\n{w}.rim.center coincident hub\n"
+        );
+        solved(&field);
+        let bare = format!(
+            "unit mm\nuse std\nin std.top {{\n  {w} := point\n  hub := point\n  \
+             fix((20, 0)) hub\n}}\n{w} coincident hub\n"
+        );
+        solved(&bare);
+        // and the colouring reads it as the name it is, not as the word opening a block
+        use gcs_core::syntax::{highlight, Tint};
+        let tinted: Vec<Tint> = highlight(&field)
+            .into_iter()
+            .filter(|(_, s)| field[s.lo as usize..].starts_with(&format!("{w}.")))
+            .map(|(t, _)| t)
+            .collect();
+        assert!(!tinted.contains(&Tint::Word), "{w}: {tinted:?}");
+    }
+    // a ring's own header is still one, its centre still owed
+    let (_, errs) = crate::common::parse("hub := point\nring 3 {\n  p := point\n}\n");
+    assert!(errs.iter().any(|e| e.message.contains("`ring N about C")), "{errs:?}");
+}
+
 #[test]
 fn a_solve_writes_the_representatives_seed() {
     let (prog, _, _) = gcs_core::library::parse_linked(RING);

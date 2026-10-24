@@ -24,7 +24,7 @@ use crate::deformed::Body;
 use crate::delaunay::plane::{self as mesher, Criteria, Mesh, Side};
 use crate::diagnose::analysis::{self, direction, Held};
 use crate::eigen::{self, Pairs};
-use crate::interior::{Edge, Failure, Laid, Node, Reads, State, Structure, Tri6};
+use crate::interior::{Edge, Failure, Laid, Mover, Node, Reads, State, Structure, Tri6};
 use crate::kernels::{Dual, Num};
 use crate::model::{
     Applied, EntKind, EntRef, InPlane, LoadKind, LoadValue, Output, Property, Requirement,
@@ -928,10 +928,13 @@ fn measured(sk: &Sketch, solid: usize, reads: Reads, coarser: f64)
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     pub structure: Structure,
-    pub moved: crate::interior::Moved,
+    pub moved: crate::interior::Mover,
     pub columns: Vec<u32>,
     /// Where the structure stands: its nodes' places at the drawing.
     pub x: Vec<f64>,
+    /// How many times a reading's size its mesh is: a filled body's driving row is solved coarse
+    /// first (#567, `bodies::COARSEST`); every other row is at a reading's own.
+    pub coarser: f64,
 }
 
 /// The plane prism `solid`'s face is drawn in (`None` the page), or why a driving row cannot
@@ -1068,7 +1071,7 @@ impl Row {
         let named: Vec<Applied> =
             sc.applied().cloned().chain([Applied::Ent(EntRef::point(at))]).collect();
         let (moved, columns) = moved_with(sk, &named, &region, &mesh, &x, face_plane)?;
-        Ok(Row { structure: s, moved, columns, x })
+        Ok(Row { structure: s, moved: Mover::Plane(moved), columns, x, coarser: 1.0 })
     }
 
     /// **The row of `mass(m) solid` or `volume(v) solid`** (`reads`), `solid` a prism: its face
@@ -1079,10 +1082,14 @@ impl Row {
     /// cannot read it: no prism, a plane the solve turns, or a side the row does not move (a
     /// spline's, a curve's).
     pub fn measured(sk: &Sketch, solid: usize, reads: Reads) -> Result<Row, String> {
+        // a solid that is no prism, its boundary refined and filled (#567)
+        if Region::of(sk, solid).is_err() {
+            return crate::bodies::measured_row(sk, solid, reads);
+        }
         let face_plane = held_plane(sk, solid)?;
         let (region, mesh, s, x) = measured(sk, solid, reads, 1.0)?;
         let (moved, columns) = moved_with(sk, &[], &region, &mesh, &x, face_plane)?;
-        Ok(Row { structure: s, moved, columns, x })
+        Ok(Row { structure: s, moved: Mover::Plane(moved), columns, x, coarser: 1.0 })
     }
 
     /// Whether the structure gives a displacement where the drawing stands, or why not — what
@@ -1093,7 +1100,10 @@ impl Row {
             return self.structure.measured(&self.x).map(|_| ());
         }
         // a solid's row is stacked over its face's mesh (#510 S3)
-        let what = if self.moved.stack.is_some() { "solid" } else { "region" };
+        let what = match &self.moved {
+            Mover::Plane(m) if m.stack.is_none() => "region",
+            _ => "solid",
+        };
         self.structure.solve(&self.x).map(|_| ()).map_err(|why| match why {
             Failure::Free => format!("its {what} is free: its supports leave it a motion"),
             _ => format!("its {what} gives no displacement"),

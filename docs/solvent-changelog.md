@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.180] A group is a value.** `small := sizes`, where `sizes` names a group (the file's, a
+**[0.184] A group is a value.** `small := sizes`, where `sizes` names a group (the file's, a
 group formal, a nested one or a used module's, `engine.dims.handle`), names the same group: its
 members read through either name, either handed to a `group` formal, nothing made. A group may be
 written in braces where a `group` formal takes it, `Bar({length: s.length + 2 * o, origin: o})`,
@@ -16,6 +16,54 @@ hides it; one naming the file's geometry is **E103**, the drawing out of a body'
 A group read as a number is said to be a group (`` `engine.dims.handle` is a group, and a group is
 not a number``) rather than as a member its module lacks. The language gains no word. Every solved
 position is unchanged. (Issue #594.)
+
+**[0.183] A claim over values.** `claim` before a comparison of the document's numbers —
+`claim handle_stall_torque >= 2Nm`, `claim 2 * ratio > 30 and teeth != 12`, a condition as a
+`when` writes one — asserts it of the values it reads (§9.7). A value is worked out before the
+solve, so the claim is judged there, a **theorem** or **violated** and never consuming, each
+comparison kept within 10⁻⁹ of rounding; in a component's body it is judged once per instance.
+One reading an unknown of the drawing, or a value written over one, is **E040**; a name that is
+no number **E101**, two dimensions compared **E103**. A statement after `claim` is a condition
+where it opens with a number, a bracket, a sign or a function of numbers, or where its first name
+is followed by arithmetic or a comparison; every relation claim reads as it did. *Non-normative:*
+the reference implementation carries every number a document names out of elaboration under its
+absolute name, and says one in the unit it reads in — a power of length and angle in the
+document's unit and degrees, a figure with a mass, a time or a current in SI (`torque = 0.0864
+N·m` in any document's lengths); `solventc --where ratio` reads one, `--json` gives them as
+`values`, and each claim is said with what it reads (`claim torque >= 2Nm — refuted: torque =
+0.0864 N·m`), as `valueClaims` under `--json`. (Issue #596.)
+
+**[0.182] A block's word may be a name.** `repeat`, `cycle`, `ring` and `when` open a block only
+where a header follows them (§1.3): `ring := Gear(…)` names a ring gear, and a statement starting
+with the name is about it where the next token is `.` or a constraint word with no `{` opened on the
+line — `ring.std.origin coincident hub`, `ring coincident hub`. A definition was already admitted;
+a statement reading it was taken for the block's header and refused with the block's message, at a
+column inside the statement (`a \`ring\` names what its copies turn about`). A header always runs on
+its line to its `{`, so no block is read otherwise than before. (Issue #598.)
+
+**[0.181] A module's parameter is its drawing's.** A file that declares a parameter that runs
+(`param spin: Angle over (0deg, 360deg)`, §6.3) beside the drawing that reads it — a part opened on
+its own to scrub its joint — is now a module as it stands (§14.4): `use` leaves the parameter out
+with the drawing, as it leaves the drawing and the `preview`, where through 0.180 it was **E040**
+at the `use`. A component never saw one, so nothing a module contributes changes; a module's
+parameter is named by nothing outside it (`part.spin` names nothing, and `use part (spin)` is
+**E101**). A file opened as the document reads its parameters as before. (Issue #593.)
+
+**[0.180] A filled body drives.** A driving `deflection(p, along: d) == v` of a point of a solid
+read in three dimensions that is no prism — turned, united, cut — is a row of the drawing, as a
+prism's is: the solid is meshed once where the drawing stands, the point naming the node nearest
+it, and within the solve its boundary's nodes move with the surfaces its faces lie on — a prism's
+caps and sides, a full turn's faces, each a function of the points, radii, planes and axes that make
+it, a boolean trimming it and never changing it — while its other nodes follow them. A `mass(m)` or
+`volume(v)` stated of such a solid is a row too, its boundary moved the same way. Through 0.179 the
+deflection compiled nothing and was judged after the solve, and the measure was **E040**. A face of
+a placed copy, a sweep, a round or a region, a drafted prism or a partial turn moves with nothing
+yet: the requirement is **E040**, naming the face. An implementation MAY solve such a drive on a
+coarse mesh first and finish it on its own; one that cannot afford a drive (a page solving on the
+thread it draws on) MAY judge it after the solve, as a claim, and SHOULD say where it is driven. The
+engine's connecting rod takes its web's thickness as a formal, `ConRod(pin, bore, wt: Length =
+5mm)`, its default the rod it was; `sized_conrod.sv` sizes it by its small end's sag. (Issue #567,
+from #510.)
 
 **[0.179] A corner round is a joint.** `A -> round(r: R) B` rounds the corner where the lines `A`
 and `B` of a chain meet with an arc of radius `R` tangent to both (§6.6): the arc (named where it
