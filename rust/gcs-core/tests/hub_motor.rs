@@ -93,6 +93,12 @@ fn the_motor_solves_with_nothing_left_free_and_every_fit_holds() {
     assert!(d.warnings.is_empty(),"{:?}",d.warnings);
     assert_eq!(d.solid_claims.len(),12);
     for c in &d.solid_claims { assert_eq!(c.holds(),Some(true),"{}",c.text()); }
+    // and the covers' clearance holes, each cover's own, on the ring's tapped holes: a theorem of
+    // the drawing, the mirrored one's image as the other (#578)
+    let claims = sk.constraints.iter().filter(|c| c.claim).count();
+    assert_eq!(claims,24);
+    assert!(d.claims_violated.is_empty() && d.claims_consuming.is_empty(),"{:?}",d.claims_violated);
+    assert_eq!(d.claims_theorem.len(),claims);
 }
 
 /// The lamination is the annulus less 51 slots; the copper the band the coils fill, the stack's

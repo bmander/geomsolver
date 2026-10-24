@@ -35,6 +35,7 @@ mod material;
 mod scenario;
 mod measured;
 mod beam;
+mod rounds;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -51,13 +52,14 @@ pub use solids::{
 pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
 pub use solid_eval::{Way, turn_of};
 pub use construction::{ThreePointArc, three_point_arc};
-pub use turns::{Turn, Derivation};
+pub use turns::{Turn, Mirror, Images, Derivation};
 pub use bindings::{Binding, Bound};
 pub use duals::{Dual, Move, Moves, Toward};
 pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
 pub use running::Running;
 pub use material::{Material, Property};
+pub use rounds::{overruns, rounded, Round, Rounded};
 pub use beam::{Beam, Over, Section, SectionProp};
 pub use scenario::{
     Applied, Grade, Hold, InPlane, Load, LoadKind, LoadValue, Output, PlaneReading, Requirement,
@@ -178,6 +180,10 @@ pub struct Sketch {
     /// A `ring`'s copies, each the representative turned (`model/turns.rs`): document state like
     /// `branches`, saved and grafted, from which the derived parameters are worked out.
     pub turns: Vec<Turn>,
+    /// A mirrored instance's images, each an entity of its body reflected (`model/turns.rs`,
+    /// #578): document state like `turns`, saved and grafted, from which more derived parameters
+    /// are worked out.
+    pub mirrors: Vec<Mirror>,
     pub constraints: Vec<Constraint>,
     /// Recorded root choices (Stage 5), persisted with the document.
     pub branches: BTreeMap<String, i32>,
@@ -252,6 +258,11 @@ pub struct Sketch {
     /// (`point_along_arc`, its constant), a frame along it runs from `a`.  Set by the elaborator
     /// (`program::entities::arcs_in_space`), carried by `graft` and the JSON.
     pub reversed: std::collections::BTreeSet<u32>,
+    /// **The corner rounds a chain's joints mint** (#576), each with the lines it rounds and its
+    /// corner (`model::Round`): what a round that does not fit is said by (`overruns`) and what a
+    /// chain walking a round drawn from its end reads it entered at its end by.  Set by the
+    /// elaborator (`program::rounds`); derived state, never saved.
+    pub rounds: Vec<Round>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,

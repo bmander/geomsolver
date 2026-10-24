@@ -403,6 +403,7 @@ fn a_name_declared_twice_is_an_error() {
             bare: false,
             carried: None,
             material: None,
+            round: None,
         }));
     }
     render_flat(&mut p).unwrap();

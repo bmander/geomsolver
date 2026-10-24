@@ -23,6 +23,10 @@ impl<'a> Walk<'a> {
         n: usize,
         ranges: &[(usize, usize)],
     ) {
+        // a round's arc joins the two copies itself, and welds nothing (#576)
+        if j.round {
+            return;
+        }
         let pairs = if kind.wraps() { n } else { n.saturating_sub(1) };
         for i in 0..pairs {
             let k = (i + 1) % n;
@@ -120,6 +124,13 @@ impl<'a> Walk<'a> {
             drawn,
             path: Vec::new(),
             binding: None,
+            mirror: inst.mirror.as_ref().and_then(|m| Some(Mirroring {
+                axis: m.axis()?,
+                span: m.span,
+                given: inst.args.iter()
+                    .find(|a| !matches!(a.value, crate::syntax::InstVal::Expr(_)))
+                    .map(|a| a.span),
+            })),
         });
         Some((comp, sub_vals, sides, key))
     }

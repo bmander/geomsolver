@@ -117,6 +117,7 @@ pub(super) fn elaborate_in(
     let (generated, held_in_space) = held_envelopes(&mut cx, &flat, &planar, &extruded);
     let (after_solids, on_followed) = constraints(&mut cx, &flat, &drawn, &kept_off);
     walked(&mut cx, &deferred, &held);
+    super::rounds::rounds(&mut cx, &flat.body, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
     solids_and_surfaces(&mut cx, &flat, faces, faces_settled, &generated, &held_in_space)?;
@@ -520,6 +521,9 @@ fn holds(
     cx.sk.seed_normals();
     // a ring's copies, turns of its representative: after the holds, which a copy may not have
     rings::rings(&mut cx.sk, &cx.res, &cx.map, &flat.expansion.rings, &mut cx.diags);
+    // a mirrored instance's images, over its preimage and the rings' copies in it (#578)
+    super::mirrors::mirrors(&mut cx.sk, &mut cx.res, &mut cx.map, &flat.expansion.instances,
+                            &mut cx.diags);
     held
 }
 

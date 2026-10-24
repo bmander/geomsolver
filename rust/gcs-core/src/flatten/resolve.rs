@@ -302,6 +302,12 @@ impl Lookup<'_> {
         let frame = super::keys::instance_frame(&abs);
         let datum = rest.get(1).filter(|d| self.names.contains(&format!("std.{d}")));
         match datum {
+            // a mirrored instance's are its image's (#578)
+            Some(d) if self.standard.frames.contains_key(&frame)
+                && self.standard.mirrored.contains(&format!("{abs}.")) => {
+                self.standard.read.borrow_mut().insert(frame);
+                Some((super::keys::image_datum(&format!("{abs}."), d), rest[2..].to_vec()))
+            }
             Some(d) if self.standard.frames.contains_key(&frame) => {
                 Some(self.frame_datum(frame, d, rest[2..].to_vec()))
             }
@@ -704,6 +710,18 @@ fn rewrite(
             let was = (judged && !through_argument(r, sc, arguments)
                 && !(instanced && look.reads_datum(r, sc, &abs, &rest))).then(|| ref_text(r));
             let member = member(r, &abs, &mut rest);
+            // what a mirrored instance's body made, read from outside it, is its image (#578): a
+            // solid is published reflected, and keeps its name
+            let abs = match look.standard.mirrored.iter()
+                .find(|p| abs.starts_with(p.as_str())
+                    && !sc.prefixes.iter().any(|q| q.starts_with(p.as_str())))
+            {
+                Some(p) if !solids.contains(&abs)
+                    && !abs.starts_with(&super::keys::image_datum(p, "")) => {
+                    super::keys::image(&abs)
+                }
+                _ => abs,
+            };
             r.root = Name { text: abs, span: r.root.span };
             r.path = rest.into_iter().map(|f| Seg::Field(Name::new(f))).chain(member).collect();
             if let Some(was) = was {
@@ -909,6 +927,13 @@ fn rewrite_decl(
     // a circle's normal is a name of the scope (#363 S6)
     if let Some(r) = d.normal.as_mut() {
         fix(r, bad);
+    }
+    // a corner round's lines and corner are names of the scope its chain was written in (#576)
+    if let Some(k) = d.round.as_mut() {
+        let k = &mut **k;
+        for r in [&mut k.from, &mut k.to].into_iter().chain(k.corner.as_mut()) {
+            fix(r, bad);
+        }
     }
     // a revolution's axis is a line of the body like any other name it writes
     for r in d.sweep.as_mut().map(|s| s.references_mut()).unwrap_or_default() {

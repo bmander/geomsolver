@@ -35,8 +35,21 @@ impl<'a> Walk<'a> {
                 Some((n, self.closed(info, alias).then(|| bound(&look, info, sc)).flatten()))
             })
             .collect();
+        let mut open = Vec::new();
         for (n, b) in bound {
-            self.instances[n].binding = b;
+            let info = &mut self.instances[n];
+            info.binding = b;
+            // a mirrored instance is a closed one reflected (#578)
+            if let (None, Some(m)) = (&info.binding, &info.mirror) {
+                let name = info.prefix.trim_end_matches('.').to_string();
+                open.push((m.given.unwrap_or(m.span), name));
+            }
+        }
+        for (span, name) in open {
+            self.once(Code::E112, span, format!("`{name}` is mirrored, and a mirrored instance is \
+                a closed one: its formals numbers, or groups of numbers, each given a constant, \
+                and its call drawn in its frame or one of its datums — what it is given would, \
+                reflected, no longer touch its body"));
         }
     }
 

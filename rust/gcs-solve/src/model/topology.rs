@@ -267,6 +267,11 @@ impl Sketch {
             let _ = write!(s, "|t{:?}{}{:?}{}{}{}{}", tn.copy.kind, tn.copy.idx, tn.rep.kind, tn.rep.idx,
                 tn.about.idx, tn.k, tn.n);
         }
+        // and a mirrored instance's images, as its turns are (#578)
+        for m in &self.mirrors {
+            let _ = write!(s, "|m{:?}{}{:?}{}{}", m.copy.kind, m.copy.idx, m.rep.kind, m.rep.idx,
+                m.negated);
+        }
         s
     }
 

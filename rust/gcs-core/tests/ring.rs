@@ -3,7 +3,7 @@
 //! it (`model::Turn`).  Held here against the same drawing stated as a `cycle` with every turn
 //! written out, and against each refusal the spec names.
 
-use crate::common::{at_path as ent, read, refused};
+use crate::common::{at_path as ent, read, read_solved as solved, refused};
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::model::Sketch;
 use gcs_core::solve::{solve, SolveOpts};
@@ -14,13 +14,6 @@ fn xy(sk: &Sketch, e: gcs_core::model::EntRef) -> (f64, f64) {
     (sk.params[p.x as usize].value, sk.params[p.y as usize].value)
 }
 
-fn solved(src: &str) -> (gcs_core::program::Elaborated, Sketch) {
-    let e = read(src);
-    let mut sk = e.sketch.clone();
-    let r = solve(&mut sk, SolveOpts::default());
-    assert!(r.success, "{r:?}");
-    (e, sk)
-}
 
 const RING: &str = "
 unit mm

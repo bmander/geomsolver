@@ -63,6 +63,7 @@ pub fn add_rectangle(prog: &Program, w: f64, h: f64, plane: &str) -> Edit {
         // drawn in the caller's view: the instance joins it whole (§6.7)
         membership: syntax::Membership::lifted(syntax::Ref::new(plane)),
         class: Default::default(),
+        mirror: None,
     };
     let mut line = String::new();
     for (k, st) in [StmtKind::Decl(point), StmtKind::Instance(inst)].iter().enumerate() {
@@ -205,6 +206,7 @@ pub(super) fn gesture_decl(kind: EntKind, name: &str, children: Vec<Vec<syntax::
         bare: false,
         carried: None,
         material: None,
+        round: None,
     }
 }
 

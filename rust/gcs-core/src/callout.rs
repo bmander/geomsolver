@@ -337,6 +337,7 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
     let mut out = Vec::with_capacity(sk.constraints.len());
     // a face family's station is never drawn, nor its dimensions (#243 L1)
     let stations = sk.stations();
+    let images = sk.images();
     for c in &sk.constraints {
         if !stations.is_empty() && c.entities().iter().any(|e| stations.contains(e)) {
             continue;
@@ -347,18 +348,21 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
         // row stated as its derivative (§6.21), whose number is its row's, nor a bound, which
         // says which root and states no size (§9.6)
         let asked = ids.map(|ids| ids.contains(&c.id));
-        // a dimension goes with what it reads, once the outline has hidden every entity of it
-        // (#435), unless it is the one asked for
+        if asked == Some(false) || ((c.repeated || c.elsewhere) && asked.is_none()) || c.soft
+            || c.intrinsic || c.along.is_some() || c.bound.is_some()
+            || !style_of(sk, c).dimensioned() {
+            continue;
+        }
+        // drawn on what it reads as that is drawn — a mirrored body's image (#578) — and gone
+        // with it, once the outline has hidden every entity of it (#435), unless it is the one
+        // asked for
+        let drawn = sk.drawn_constraint(c, &images);
+        let c = drawn.as_ref().unwrap_or(c);
         if asked.is_none() && !sk.hidden.is_empty() {
             let read = c.entities();
             if !read.is_empty() && read.iter().all(|e| !sk.shown(*e)) {
                 continue;
             }
-        }
-        if asked == Some(false) || ((c.repeated || c.elsewhere) && asked.is_none()) || c.soft
-            || c.intrinsic || c.along.is_some() || c.bound.is_some()
-            || !style_of(sk, c).dimensioned() {
-            continue;
         }
         if let Some(k) = pen.one(c) {
             out.push(k);
@@ -530,6 +534,9 @@ fn wrap(th: f64) -> f64 {
 /// The frame a dimension's callout hangs off, or `None` for a constraint that has no callout or
 /// whose geometry has gone degenerate.
 pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
+    // a mirrored body's hangs off its image (#578)
+    let drawn = sk.drawn_constraint(c, &sk.images());
+    let c = drawn.as_ref().unwrap_or(c);
     match c.kind {
         CKind::Distance | CKind::PointLineDistance | CKind::ParallelDistance => {
             let (a, b) = ends(sk, c)?;

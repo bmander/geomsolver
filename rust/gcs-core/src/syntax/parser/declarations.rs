@@ -278,6 +278,7 @@ impl<'a> P<'a> {
             bare: false,
             carried: None,
             material,
+            round: None,
         })
     }
 
@@ -349,6 +350,7 @@ impl<'a> P<'a> {
             bare: false,
             carried: None,
             material: None,
+            round: None,
         });
     }
 
@@ -1054,7 +1056,7 @@ impl<'a> P<'a> {
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,over,side,ease:None}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,carried:None,
-            material:None,
+            material:None, round:None,
         })
     }
 
@@ -1160,7 +1162,7 @@ impl<'a> P<'a> {
             computed:None,class,class_span,seed_at:None,seed_names:vec![],sweep:None,seen_from,
             angular_span:Some(crate::syntax::AngularSpan {from,to,over,side:None,ease}),
             membership:Membership::default(),list_span:Span::new(start.lo as usize,end),close:None,mint_close:None,through:None,normal:None,sense:None,bare:false,carried:None,
-            material:None,
+            material:None, round:None,
         })
     }
 
@@ -1221,6 +1223,7 @@ impl<'a> P<'a> {
             bare: true,
             carried: None,
             material: None,
+            round: None,
         })
     }
 

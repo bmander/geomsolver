@@ -17,24 +17,23 @@ use super::nurbs::Net;
 use super::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
 use super::vec3;
 use crate::json::Json;
-use crate::space::{cross,dot};
 use std::sync::Arc;
 
 fn field<'a>(j: &'a Json,k: &str) -> Result<&'a Json,String> { super::field(j,k,"brep json") }
 fn reals(j: &Json) -> Vec<f64> { j.arr().iter().map(Json::as_f64).collect() }
 
-/// A placement's axes as written, and whether they are right-handed.
-fn axes(j: &Json) -> Result<(Frame,bool),String> {
+/// A placement's axes as written, right-handed or not (`Frame::right`).
+fn axes(j: &Json) -> Result<Frame,String> {
     let f = field(j,"frame")?;
     let (o,x,y,z) = (vec3(field(f,"o")?),vec3(field(f,"x")?),vec3(field(f,"y")?),vec3(field(f,"z")?));
-    Ok((Frame {o,x,y,z},dot(cross(z,x),y) > 0.))
+    Ok(Frame {o,x,y,z})
 }
 
 fn curve(j: &Json) -> Result<Curve,String> {
     Ok(match field(j,"kind")?.as_str() {
         "line" => Curve::Line {p:vec3(field(j,"p")?),d:vec3(field(j,"d")?)},
-        "circle" => Curve::Circle(axes(j)?.0,field(j,"r")?.as_f64()),
-        "ellipse" => Curve::Ellipse(axes(j)?.0,field(j,"a")?.as_f64(),field(j,"b")?.as_f64()),
+        "circle" => Curve::Circle(axes(j)?,field(j,"r")?.as_f64()),
+        "ellipse" => Curve::Ellipse(axes(j)?,field(j,"a")?.as_f64(),field(j,"b")?.as_f64()),
         "bspline" => {
             let (degree,knots) = (field(j,"degree")?.as_f64() as usize,reals(field(j,"knots")?));
             let poles = field(j,"poles")?.arr().iter().map(vec3).collect();
@@ -59,14 +58,10 @@ fn surface(j: &Json) -> Result<(Surface,bool),String> {
         net.check().map_err(|m| format!("brep json: {m}"))?;
         return Ok((Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),false))
     }
-    let (f,right) = axes(j)?;
+    let f = axes(j)?;
     let num = |k: &str| field(j,k).map(Json::as_f64);
     // a left-handed placement made right-handed: a plane by its normal, a revolution by its y
-    let (turned,flip) = match (right,kind) {
-        (true,_) => (f,false),
-        (false,"plane") => (Frame {z:cross(f.x,f.y),..f},false),
-        (false,_) => (Frame {y:cross(f.z,f.x),..f},true),
-    };
+    let (turned,flip) = f.rehanded(kind != "plane");
     let s = match kind {
         "plane" => Surface::Plane(turned),
         "cylinder" => Surface::Cylinder(turned,num("r")?),
@@ -79,18 +74,10 @@ fn surface(j: &Json) -> Result<(Surface,bool),String> {
 }
 
 /// A curve in a face's parameters, its `u` negated where the face's surface runs it the other way
-/// (a rational one's weights unchanged: negating a coordinate is linear).
+/// (`Pcurve::u_negated`).
 fn pcurve(j: &Json,flip: bool) -> Result<Pcurve,String> {
-    let mut c = curve(j)?;
-    if flip {
-        let neg = |p: V| [-p[0],p[1],p[2]];
-        c = match c {
-            Curve::Line {p,d} => Curve::Line {p:neg(p),d:neg(d)},
-            Curve::BSpline(b) => Curve::BSpline(Arc::new(BSpline {poles:b.poles.iter().map(|&p| neg(p)).collect(),..(*b).clone()})),
-            other => other,
-        };
-    }
-    Ok(Pcurve::Curve(Arc::new(c)))
+    let c = Pcurve::Curve(Arc::new(curve(j)?));
+    Ok(if flip { c.u_negated() } else { c })
 }
 
 /// The B-rep the JSON describes, each edge's tolerance measured.

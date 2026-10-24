@@ -851,6 +851,32 @@ impl<'a> Walk<'a> {
         else {
             return ControlFlow::Continue(());
         };
+        // a mirrored call (#578): what it makes, read from outside, is its image — but for one in
+        // a ring, or in another mirrored body, whose turn or reflection an image is not composed
+        // with yet
+        if let Some(m) = &inst.mirror {
+            let within = self.standard.mirrored.iter()
+                .find(|p| scope.prefixes.iter().any(|q| q.starts_with(p.as_str()))).cloned();
+            let why = match (&scope.block.ring, within) {
+                (Some(_), _) => Some("in a `ring`, whose turn an image is not composed with yet: \
+                                      mirror the ring's instance outside it".to_string()),
+                (None, Some(p)) => Some(format!("in the body of `{}`, which is mirrored itself, \
+                    and an image is not reflected again yet", p.trim_end_matches('.'))),
+                (None, None) => None,
+            };
+            match why {
+                Some(why) => {
+                    let name = &inst.name.text;
+                    self.once(Code::E112, m.span, format!("`{name}` is mirrored {why}"));
+                    if let Some(info) = self.instances.last_mut().filter(|i| i.prefix == key) {
+                        info.mirror = None;
+                    }
+                }
+                None => {
+                    self.standard.mirrored.insert(key.clone());
+                }
+            }
+        }
         // the instance's own `in`, or the one already in force around it — both at once
         // nest (#383): the one around it is ridden on, as are the instance's further blocks
         let mut rides = scope.stamps.rides.clone();
@@ -1051,6 +1077,14 @@ impl<'a> Walk<'a> {
                 return;
             }
         };
+        // a round at the body's end gives up the first link's entry in every copy, and a
+        // `repeat`'s first copy is entered by nothing (#576)
+        if let Some(j) = b.joint.as_ref().filter(|j| j.round && !b.kind.wraps()) {
+            self.err(Code::E040, j.span, "a round at the end of a `repeat`'s body would round \
+                a corner its first copy does not have: round the corners inside the body, or \
+                close the copies in a `cycle` or a `ring`");
+            return;
+        }
         self.copies(b, st, scope, path, depth, n, &[]);
     }
 

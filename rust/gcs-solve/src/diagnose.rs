@@ -633,6 +633,8 @@ pub fn diagnose_with(sk: &mut Sketch, sys: &mut System, opts: DiagnoseOptions) -
 
     // -- witness analysis (Stage 4), on demand --
     let mut warnings: Vec<String> = Vec::new();
+    // a corner round that does not fit, said by name before the profile it spoils (#576)
+    warnings.extend(crate::model::overruns(sk));
     for (i, s) in sk.solids.iter().enumerate() {
         if !matches!(s.def, crate::model::SolidDef::Body { .. }) {
             if let Err(message) = crate::solid::validate(sk, i) { warnings.push(message); }

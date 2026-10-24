@@ -87,6 +87,26 @@ impl Pcurve {
             }
         }
     }
+    /// The same curve with its `u` negated: what it is on its face's surface placed so that its
+    /// `u` runs the other way (`Frame::rehanded`, a revolution's). Negating a coordinate is linear,
+    /// so a rational curve's weights are unchanged.
+    pub fn u_negated(&self) -> Pcurve {
+        let neg = |p: Uv| [-p[0],p[1]];
+        let neg3 = |p: V| [-p[0],p[1],p[2]];
+        let frame = |f: super::geom::Frame| super::geom::Frame {o:neg3(f.o),x:neg3(f.x),y:neg3(f.y),z:f.z};
+        match self {
+            Pcurve::Line {a,b} => Pcurve::Line {a:neg(*a),b:neg(*b)},
+            Pcurve::Inverse {a,b} => Pcurve::Inverse {a:neg(*a),b:neg(*b)},
+            Pcurve::Curve(c) => Pcurve::Curve(std::sync::Arc::new(match &**c {
+                Curve::Line {p,d} => Curve::Line {p:neg3(*p),d:neg3(*d)},
+                Curve::BSpline(b) => Curve::BSpline(std::sync::Arc::new(super::geom::BSpline {
+                    poles:b.poles.iter().map(|&p| neg3(p)).collect(),..(**b).clone()})),
+                Curve::Circle(f,r) => Curve::Circle(frame(*f),*r),
+                Curve::Ellipse(f,a,b) => Curve::Ellipse(frame(*f),*a,*b),
+                other => other.clone(),
+            })),
+        }
+    }
 }
 
 /// `uv` moved by whole periods to be nearest `near`.
@@ -162,6 +182,31 @@ impl Brep {
         for e in &mut b.edges { if let EdgeCurve::Curve(c) = &mut e.curve { *c = c.moved(m); } }
         for f in &mut b.faces { f.surface = f.surface.moved(m); }
         b
+    }
+    /// **Every geometric position reflected by the improper motion `m`** (#578): what a mirrored
+    /// instance's solid is, its body's own B-rep moved. Each face's surface is reflected and placed
+    /// right-handed again (`Surface::reflected`); a reflection turns which way a loop walks about
+    /// the material, so every loop is walked the other way round, and the sense a face's
+    /// material normal has against its surface's `S_u × S_v` — which the reflection turns, and a
+    /// surface of revolution's `u` running the other way turns back — follows, its pcurves'
+    /// `u` negated where it runs so. Every edge is still used once each way.
+    pub fn reflected(&self,m: &Rigid) -> Result<Brep,String> {
+        let mut b = self.clone();
+        for v in &mut b.vertices { v.p = m.point(v.p); }
+        for e in &mut b.edges { if let EdgeCurve::Curve(c) = &mut e.curve { *c = c.reflected(m)?; } }
+        for f in &mut b.faces {
+            let (surface,flip) = f.surface.reflected(m)?;
+            f.surface = surface;
+            f.reversed = f.reversed == flip;
+            for l in &mut f.loops {
+                let mut walked = reverse_loop(std::mem::take(l));
+                if flip {
+                    for c in &mut walked { c.pcurve = c.pcurve.u_negated(); }
+                }
+                *l = walked;
+            }
+        }
+        Ok(b)
     }
     /// A box about every point of the boundary, never smaller than it and exact where its geometry
     /// is analytic: its vertices, each edge's `Curve::bounds`, and where a face may bulge past its

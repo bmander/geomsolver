@@ -419,7 +419,7 @@ impl Sketch {
     }
 
     /// The three Params of where a plane stands, `name.x` … `name.z`.
-    fn plane_place(&mut self, o: [f64; 3], name: &str) -> [u32; 3] {
+    pub(super) fn plane_place(&mut self, o: [f64; 3], name: &str) -> [u32; 3] {
         [0, 1, 2].map(|k| self.param(o[k], false, &format!("{name}.{}", ["x", "y", "z"][k])) as u32)
     }
 
@@ -435,7 +435,7 @@ impl Sketch {
     }
 
     /// The plane over axes `u`, `v` standing at `op`, its origin drawn in it, and no row.
-    fn chart_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
+    pub(super) fn chart_plane(&mut self, u: usize, v: usize, op: [u32; 3], origin: usize) -> usize {
         let pi = self.frames.len();
         self.points[origin].plane = Some(pi as u32);
         self.frames.push(FrameE::charted(Chart { u: u as u32, v: v as u32, o: op, origin: origin as u32,

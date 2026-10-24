@@ -67,26 +67,26 @@ stator := motor.stator.Stator(frame)
 
 // -- what turns: the ring and its magnets, and the covers screwed to its ends -------------------
 rotor := motor.rotor.Rotor(frame, theta: motor.dims.theta)
-left := motor.cover.Cover(frame, rotor.screw, sg: -1, boss_to: disc_face, boss_r: disc_r,
-                          spoke_phase: 0deg, disc: 1)
-right := motor.cover.Cover(frame, rotor.screw, sg: 1, boss_to: fw_to, boss_r: fw_r,
-                           spoke_phase: 180deg / spokes, disc: 0)
+// each cover drawn as the right-hand one, and the brake side's mirrored in the mid-plane (#578)
+left := motor.cover.Cover(boss_to: disc_face, boss_r: disc_r, spoke_phase: 0deg,
+                          disc: 1) mirrored(front)
+right := motor.cover.Cover(boss_to: fw_to, boss_r: fw_r, spoke_phase: 180deg / spokes, disc: 0)
 
 // -- between them: the bearings on the axle's shoulders, and what clamps their inner races -----
 // Each bearing stands on a shoulder of the carrier's seat; a spacer tube runs from its inner
 // race to the step down to the thread, and the flanged locknut on the thread clamps the two
-// against the shoulder, its face where the dropout's is, 67.5 from the mid-plane.
+// against the shoulder, its face where the dropout's is, 67.5 from the mid-plane.  Each on the
+// left is the right one mirrored in the mid-plane: three figures, each placed twice.
 brg_out := brg_in + brg_w
-bearing_l := motor.parts.Revolved(frame, s0: -brg_out, s1: -brg_in, r0: brg_id / 2, r1: brg_od / 2)
-bearing_r := motor.parts.Revolved(frame, s0: brg_in, s1: brg_out, r0: brg_id / 2, r1: brg_od / 2)
-spacer_l := motor.parts.Revolved(frame, s0: -step_end, s1: -brg_out, r0: d_seat / 2,
-                                 r1: motor.dims.spacer_r)
-spacer_r := motor.parts.Revolved(frame, s0: brg_out, s1: step_end, r0: d_seat / 2,
-                                 r1: motor.dims.spacer_r)
-nut_l := motor.parts.Revolved(frame, s0: -old / 2, s1: -step_end, r0: d_end / 2,
-                              r1: motor.dims.nut_r)
-nut_r := motor.parts.Revolved(frame, s0: step_end, s1: old / 2, r0: d_end / 2,
-                              r1: motor.dims.nut_r)
+bearing_l := motor.parts.Revolved(s0: brg_in, s1: brg_out, r0: brg_id / 2,
+                                  r1: brg_od / 2) mirrored(front)
+bearing_r := motor.parts.Revolved(s0: brg_in, s1: brg_out, r0: brg_id / 2, r1: brg_od / 2)
+spacer_l := motor.parts.Revolved(s0: brg_out, s1: step_end, r0: d_seat / 2,
+                                 r1: motor.dims.spacer_r) mirrored(front)
+spacer_r := motor.parts.Revolved(s0: brg_out, s1: step_end, r0: d_seat / 2, r1: motor.dims.spacer_r)
+nut_l := motor.parts.Revolved(s0: step_end, s1: old / 2, r0: d_end / 2,
+                              r1: motor.dims.nut_r) mirrored(front)
+nut_r := motor.parts.Revolved(s0: step_end, s1: old / 2, r0: d_end / 2, r1: motor.dims.nut_r)
 
 // -- the fits -------------------------------------------------------------------------------
 claim stator.lamination clear(0.5mm) rotor.magnets      // the air gap, 0.6 drawn
@@ -101,3 +101,8 @@ claim carrier.body clear(1mm) bearing_l.body
 claim carrier.body clear(1mm) bearing_r.body
 claim spacer_l.body clear(0.5mm) left.body              // the spacers turn with the axle, not
 claim spacer_r.body clear(0.5mm) right.body             // the covers: they clear the lips
+// the covers' clearance holes, drawn by each cover from the table, on the ring's tapped holes
+repeat motor.dims.screws as i {
+  claim left.clear[i].center coincident rotor.screw[i].center
+  claim right.clear[i].center coincident rotor.screw[i].center
+}

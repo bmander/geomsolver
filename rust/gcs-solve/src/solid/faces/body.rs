@@ -71,7 +71,7 @@ impl BodyFaces {
         let ex = if swept {
             crate::solid::exact::swept(from, body)
         } else if remembered {
-            from.exact_solid(body).map(|e| (*e).clone())
+            from.exact_preimage(body).map(|e| (*e).clone())
         } else {
             crate::solid::exact::build(from, body)
         }.map_err(|e| format!("`{name}`'s faces: {e}"))?;

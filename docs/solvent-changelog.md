@@ -4,13 +4,13 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.178] A filled body drives.** A driving `deflection(p, along: d) == v` of a point of a solid
+**[0.180] A filled body drives.** A driving `deflection(p, along: d) == v` of a point of a solid
 read in three dimensions that is no prism — turned, united, cut — is a row of the drawing, as a
 prism's is: the solid is meshed once where the drawing stands, the point naming the node nearest
 it, and within the solve its boundary's nodes move with the surfaces its faces lie on — a prism's
 caps and sides, a full turn's faces, each a function of the points, radii, planes and axes that make
 it, a boolean trimming it and never changing it — while its other nodes follow them. A `mass(m)` or
-`volume(v)` stated of such a solid is a row too, its boundary moved the same way. Through 0.177 the
+`volume(v)` stated of such a solid is a row too, its boundary moved the same way. Through 0.179 the
 deflection compiled nothing and was judged after the solve, and the measure was **E040**. A face of
 a placed copy, a sweep, a round or a region, a drafted prism or a partial turn moves with nothing
 yet: the requirement is **E040**, naming the face. An implementation MAY solve such a drive on a
@@ -19,6 +19,43 @@ thread it draws on) MAY judge it after the solve, as a claim, and SHOULD say whe
 engine's connecting rod takes its web's thickness as a formal, `ConRod(pin, bore, wt: Length =
 5mm)`, its default the rod it was; `sized_conrod.sv` sizes it by its small end's sag. (Issue #567,
 from #510.)
+**[0.179] A corner round is a joint.** `A -> round(r: R) B` rounds the corner where the lines `A`
+and `B` of a chain meet with an arc of radius `R` tangent to both (§6.6): the arc (named where it
+stands, `-> (k := round(r: R))`), its radius, a tangency at each end and the corner kept on both
+lines as construction, each line now ending at a point of its own where the arc touches it. The
+arc lies inside the corner, on the side the walk turns toward there — counter-clockwise at a left
+turn, drawn from its end at a right one — held there by three stated orientations, so no seed and
+no `ccw`/`cw` chooses which of the four tangent circles is meant; its points start where the
+corner puts them. A trailing round at a `cycle`'s or `ring`'s `}` rounds the corner into the next
+copy, and `-> round(…) close` the corner that closes a loop. A round at a straight-through corner,
+or at a `repeat`'s brace, is **E040**. The language gains no keyword: `round` is read so only
+beside a marker, and a bare `A round(r) B` is still `std`'s round of solids. *Non-normative:* the
+reference implementation says a round that does not fit after the solve (`` `k` (r 9mm) runs past
+`up`'s far end; it fits up to r 6mm``, two rounds overlapping on one line). The star handle of the
+issue is four arms written as their corners: DOF 0, one root. Every solved position is unchanged.
+(Issue #576.)
+
+**[0.178] A mirrored placement.** A closed instance's call may end in `mirrored(front)`,
+`mirrored(top)` or `mirrored(side)` (§8.2): the instance is its binding reflected in that datum plane
+of the frame it stands in. Its body is solved as the preimage, where the same instance unmirrored
+stands — the same rows, freedoms and diagnosis — and what it publishes, read from outside, is the
+image: each entity its body makes reflected, its datums `b.std.D` the image's (`b.std.x × b.std.y =
+−b.std.z`), its solids reflected; every frame stays right-handed. A mirrored instance that is not
+closed is **E112**, new, and so for now is one in a `ring` or in another mirrored body, and a body
+declaring a plane, an axis, a frame, a curve or a motion. The language gains one trailer and no
+keyword or statement form; `mapped(…, mirror: true)`, which mirrors a profile within a drawing (a
+loft's handed section), stays. *Non-normative:* the reference implementation derives the image from
+the preimage with weights ±1, draws the image, and evaluates a left and a right of one binding once,
+the reflection an improper rigid motion of the B-rep and the mesh. The hub motor's `Cover` and
+`Revolved` are closed, drawing their frame's datum and axle from their own `std`: the brake-side
+cover is `Cover(…) mirrored(front)`, and the left bearing, spacer and locknut are the right ones
+mirrored, so `sg: Scalar`, its two `when` blocks, the corpus's only `mapped(…, mirror: true)`, the
+`min`/`max` round the tapped holes and the six hand-negated stations go — 961 lines where there
+were 964, 311 labelled arguments where there were 329, 14 solids built for its objects where there
+were 17, and every solid the same to 5·10⁻¹² mm. Each cover draws its clearance holes, and the ring
+its tapped holes, as a ring of its own from the table's numbers, and the assembly claims they meet. (Issue #578, from #523, #562
+and #566.)
+
 **[0.177] One figure, many placements.** A closed instance — one whose only geometric input is
 the frame it stands in: a definition whose formals are numbers (or groups carrying numbers alone),
 each given a constant, its call drawn in that frame or one of its datums — has a **binding**, its

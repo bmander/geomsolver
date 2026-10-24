@@ -17,13 +17,11 @@ use crate::model::{EntKind, EntRef, Sketch, Turn};
 use std::collections::BTreeSet;
 
 fn refuse(diags: &mut Vec<Diag>, span: crate::syntax::Span, message: String) {
-    if !diags.iter().any(|d| d.code == Code::E023 && d.span == span) {
-        diags.push(Diag::new(Code::E023, span, None, message));
-    }
+    Diag::once(diags, Code::E023, span, message);
 }
 
 /// What the source calls an entity, for a message: its public path (`tip[1]`), else its kind.
-fn called(map: &SourceMap, e: EntRef) -> String {
+pub(super) fn called(map: &SourceMap, e: EntRef) -> String {
     map.name_of(e).map(|n| format!("`{}`", public_path(n))).unwrap_or_else(|| e.kind.a())
 }
 

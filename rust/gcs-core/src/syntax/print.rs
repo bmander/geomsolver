@@ -158,6 +158,9 @@ pub fn write_stmt_to(out: &mut String, k: &StmtKind) -> Result<(), PrintError> {
 fn printable(k: &StmtKind) -> Result<(), PrintError> {
     match k {
         StmtKind::Chain(_) => Err(PrintError { construct: "named chains" }),
+        // a round's arc is turned, seeded and its branch stated from its corner, which no
+        // longhand says (#576)
+        StmtKind::Decl(d) if d.round.is_some() => Err(PrintError { construct: "corner rounds" }),
         // a face carried by a map is a definition, written as one (#357)
         StmtKind::Block(b) if b.image.is_some() => Ok(()),
         StmtKind::Block(_) => Err(PrintError { construct: "repeat and cycle blocks" }),
@@ -217,6 +220,9 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
             if !i.class.is_empty() {
                 out.push_str(" class ");
                 out.push_str(&i.class.0.join(" "));
+            }
+            if let Some(m) = &i.mirror {
+                out.push_str(&format!(" mirrored({})", m.plane.text));
             }
         }
         StmtKind::Param(p) => {

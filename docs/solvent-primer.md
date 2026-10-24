@@ -464,7 +464,9 @@ LINK   ::= PREFIX* DECL | REF
 PREFIX ::= a one-operand constraint word         horizontal, vertical, radius(..)
          | step(u: E, dv: E, from: P)            where a line's end stands (below)
 JOINT  ::= '->' INFIX* ['->']  |  INFIX+ ['->']  at least one marker or word
+         | '->' ROUND ['->']                     a corner rounded (below)
 INFIX  ::= tangent | equal | any two-operand constraint word
+ROUND  ::= round(r: E)  |  '(' NAME ':=' round(r: E) ')'
 ```
 
 **`->` states that two links share a boundary point; nothing else does.** Threading runs left to
@@ -483,6 +485,48 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 - `equal` is polymorphic (length or radius); `a equal b equal c` is two statements.
 - `profile := … -> close` names the traversal, which a solid can sweep (1.14); its edges keep
   their own names. Every joint in a named chain carries `->`.
+
+**A corner round is a joint.** `A -> round(r: R) B`, `A` and `B` lines written meeting at a
+corner, rounds that corner with an arc of radius `R` tangent to both — the arc it mints, its two
+tangencies and its branch all said by the one word. Name the arc where it stands,
+`-> (k := round(r: 2mm))`, to list it in a face or dimension it; unnamed, it is still an edge of a
+named chain.
+
+- **The corner stays, as construction.** The point the two lines were written meeting at is the
+  *virtual corner*: kept on both lines, dimensioned like any point. Each line now ends at a point
+  of its own, where the arc touches it: `A.p2` is `k.start`, `B.p1` is `k.end`.
+- **The walk chooses the branch; no seed does.** The arc lies inside the corner, on the side the
+  walk turns toward there — counter-clockwise at a corner it turns left at (convex, for a
+  counter-clockwise outline), clockwise at one it turns right at (concave). Of the four circles
+  tangent to both lines that is the only root (three stated orientations hold it there).
+- **Seeds come from the corner.** The tangency points start `R / tan(θ/2)` from the corner along
+  each line, the centre `R / sin(θ/2)` along the bisector, so a rounded outline is written as its
+  corners: hint those, or hold them, and nothing else.
+- A trailing `-> round(…)` at a `cycle`'s or a `ring`'s `}` rounds the corner the next copy is
+  entered by (a `repeat`'s first copy has none: E040). `-> round(r: R) close` rounds the corner
+  that closes a loop.
+- A round that does not fit is said by name after the solve: `` `k` (r 9mm) runs past `up`'s far
+  end; it fits up to r 6mm``, two rounds whose setbacks overlap on one line, a corner its lines run
+  straight through (E040 where it is drawn so).
+
+```
+in std.front {
+  ring 4 about hub {                                  // a star handle's four arms
+    tip := point hint((40, 0))
+    notch := point hint((7, 7))
+    hub distance(10) notch
+    hub distance(40) tip
+    line(notch, tip) equal line(notch, next.tip)
+    (side := line(tip, notch)) -> (fillet := round(r: 3))
+      (next_side := line(notch, next.tip)) -> (tip_round := round(r: 4))
+  }
+}
+```
+
+Refused: a round beside a line and an arc (lines only, for now), its corner named differently by
+the two sides, a corner named while a side is declared elsewhere (its end is its own point, the
+arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std`'s
+round of the edges where two solids' faces meet (1.14).
 
 **A step says where a line's end stands, one number per run.** `step(…)` before a line, or before
 a chain's link, gives the end's ordinates by label: `du`, `dv` from the line's start, `u`, `v` from
@@ -849,6 +893,29 @@ component Magnet(theta: Angle) {                 // hub_motor/motor/rotor.sv
   }
 }
 ```
+
+**A mirrored placement** (0.178). A closed instance may be placed as its mirror image: the trailer
+`mirrored(front)`, `mirrored(top)` or `mirrored(side)` names one of the body's own datum planes, and
+the instance is its binding reflected in that plane of the frame it stands in. Draw the part once,
+as the right-hand one, and the left is the same call mirrored:
+
+```
+left := motor.cover.Cover(boss_to: disc_face, boss_r: disc_r, spoke_phase: 0deg,
+                          disc: 1) mirrored(front)          // hub_motor.sv: the brake side
+right := motor.cover.Cover(boss_to: fw_to, boss_r: fw_r, spoke_phase: 180deg / spokes, disc: 0)
+bearing_l := motor.parts.Revolved(s0: brg_in, s1: brg_out, r0: brg_id / 2,
+                                  r1: brg_od / 2) mirrored(front)
+```
+
+The body is solved where it stands unmirrored — its rows, freedoms and diagnosis are the same
+instance's, and it is named as written (`left.lip_bore`) — and what the instance publishes is the
+image: a relation, a claim or a solid outside reads `left.clear[3]` reflected, `left.body` is the
+body's solid reflected (every frame stays right-handed), and the drawing shows the image with its
+dimensions. A left and a right of one binding are one figure, evaluated once. Write the trailer on
+the call's last line. A mirrored instance must be closed (an entity it was given would, reflected,
+no longer touch it), and is refused **E112** in a `ring`, in another mirrored body, or where its body
+declares a plane, an axis, a frame or a curve — draw in the frame's own datums. `mapped(…, mirror:
+true)` (1.5) still mirrors one profile within a drawing, a loft's handed section.
 
 ### 1.9 Modules, relation words and previews
 
@@ -1401,7 +1468,9 @@ frame `f`:
 A point `in f` at `(x, y, z)` stands at `std.origin + x·std.x + y·std.y + z·std.z`, so a body in a
 frame moved by a rigid motion is the root's drawing moved by it (and a closed instance's solids,
 1.8, are evaluated once and moved by it; a ring's copy stands in the frame turned, 1.7); the datums add no freedom, and
-what the body declares rides `f` (a joint carries it whole). A body that reads no datum is placed
+what the body declares rides `f` (a joint carries it whole). A mirrored instance's datums read from
+outside are its image's (1.8): `b.std.x × b.std.y = −b.std.z`, the mirrored axis reversed, so a
+mate on them places the mirrored part. A body that reads no datum is placed
 by what it is given (`ConRod(crank.pin1, end.bore)`): reading its `b.std` is E111. An axis starts
 as the frame's around it, and a relation leaving it either way round takes the nearer: write the
 mate so. The body's file says `use std`, a module's by its own; a relation word reads only its
@@ -2074,7 +2143,7 @@ scenario tip_load {
   load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
   section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a
   prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`), and over a
-  turned or cut solid moves its faces (0.178). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
+  turned or cut solid moves its faces (0.180). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
   solve; a bound is a claim's alone. `solventc` prints each: `mass(arm) is 10kg: driven == 10kg,
   held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
   shows each: `sized_cantilever.sv` (a depth),
@@ -2181,7 +2250,7 @@ scenario press {
   a prism read so is a row, as a region's is, its face's nodes moved with the drawing and the
   solid's stacked over them.  The library's `sized_plank.sv` finds a plank's width so, bent across
   its own plane, which no reading in that plane can.
-- **A driving deflection sizes a filled body** (0.178): a turned, united or cut solid's point is a
+- **A driving deflection sizes a filled body** (0.180): a turned, united or cut solid's point is a
   row too, its boundary's nodes moved by the surfaces its faces lie on — a prism's caps and sides,
   a full turn's faces — and the rest following.  `solventc` solves it on a coarse mesh first and
   finishes on the reading's own; the page judges it, as a claim, and says `solventc` drives it.

@@ -18,7 +18,7 @@ solids.
 | `motor/parts.sv` | bearings, spacers, locknuts; the frame (`Datums`); drawing helpers | 6004-2RS; steel tube; M14 × 1.5 flanged nuts |
 
 Each part file ends with a `preview { … }`: opened on its own, it draws the assembly's frame and
-that part in it (the carrier on its axle, the brake-side cover on the ring's screw circle, and
+that part in it (the carrier on its axle, the brake-side cover, mirrored, and
 the right-hand bearing, spacer and locknut for `motor/parts.sv`). Each solves with no freedom
 left and builds the solid the assembly does; `use` leaves the block out.
 
@@ -78,7 +78,12 @@ half a pitch side to side. That is 2.2 mm clear of the ring for the spoke heads.
 The motor is drawn in two views of one frame (see `motor/parts.sv`). Each part is given the frame
 as `Datums`: the axle's centre and a datum line in the end view, and its mid-plane and centreline
 in the section. It draws in the planes those are drawn in (`in f.o.plane`, `in f.so.plane`), so no
-view is passed to it. It reads the numbers it is made to from `motor/dims.sv` as constants of its
+view is passed to it. The covers and the plain rings (`Cover`, `Revolved`) are closed: given
+numbers alone, each draws the frame's datum and axle from its own `std`, as the assembly does. So
+each left-hand part is its right-hand one mirrored in the mid-plane, `Cover(…) mirrored(front)`:
+the brake-side cover is the right-hand cover's profile with the disc's boss and holes, solved
+where the right-hand one stands and reflected, and the left bearing, spacer and locknut are the
+right ones placed a second time, reflected — three figures under six placements. It reads the numbers it is made to from `motor/dims.sv` as constants of its
 definition, listed in its file's `use motor.dims (…)`, so no table is passed at a call either.
 Where a corner is placed on a circle from an offset line, which has two crossings, a bound says
 it stands ahead of the axle (`std.origin distance(>= 0, along: sc) a`). The part's root is stated, not
@@ -102,12 +107,13 @@ left to its seeds, and `solventc --lint` has nothing to say of the assembly.
   - The keyway is cut along the axle from the end view.
   - The cable port is drawn in the plan and swept straight up.
   - The holes (spoke, screw, window, tapped) are drawn round where they are seen round and swept
-    through their part. The covers' screw holes are drawn on the very centres of the ring's tapped
-    holes, which are handed in.
+    through their part. Each cover draws its screw holes from the table's numbers, the very
+    circle and pitch the ring's tapped holes are drawn on, and the assembly claims they meet.
 
 The claims at the end of `hub_motor.sv` are the fits the assembly depends on: the air gap, the end
 turns clear of the covers, the hall sensors under the magnets and between the shoes, the carrier
-clear of the bearings and covers, and the spacers clear of the lips.
+clear of the bearings and covers, and the spacers clear of the lips — and each cover's screw holes
+on the ring's tapped holes.
 
 ```
 make solventc

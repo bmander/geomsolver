@@ -227,7 +227,7 @@ impl Gauges {
         self.holds.entry(param).or_default().push((v, st.span, st.id, field, of));
     }
 
-    fn orient(&mut self, key: String, v: i32, what: String, st: &Stmt) {
+    pub(super) fn orient(&mut self, key: String, v: i32, what: String, st: &Stmt) {
         self.branches.entry(key).or_default().push((v, what, st.span, st.id));
     }
 
