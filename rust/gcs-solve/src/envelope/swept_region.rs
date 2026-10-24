@@ -380,6 +380,14 @@ impl SweptRegion {
         }
         if debug() { eprintln!("region: {} candidates, {} runs ({:?})",candidates.len(),runs.len(),clock.elapsed()); }
         let point = |k: usize,u: f64| candidates[k].at(s,u,f64::INFINITY);
+        // a stretch of no length — one sample kept where its candidate's domain ends and the next
+        // not, its ends and its middle one point — is no piece of the boundary (#612)
+        let tiny = 1e-6*(1.+s.scale);
+        runs.retain(|r| {
+            let at = |f: f64| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*f).map(|h| h.at);
+            let (Some(a),Some(m),Some(b)) = (at(0.),at(0.5),at(1.)) else { return true };
+            dist(a,m) > tiny || dist(m,b) > tiny
+        });
         // each stretch walked with the region on its left: the outward normal on its right
         for r in &mut runs {
             let mid = 0.5*(r.ends[0]+r.ends[1]);
@@ -499,7 +507,6 @@ impl SweptRegion {
             }
             // a sliver a few rounding errors long (where three sides meet at an end pose) is no piece:
             // its neighbours meet at its start
-            let tiny = 1e-6*(1.+s.scale);
             let mut k = 0;
             while pieces.len() > 3 && k < pieces.len() {
                 let n = pieces.len();
@@ -546,6 +553,26 @@ impl SweptRegion {
     pub fn polyline(&self,l: usize,per: usize) -> Vec<P> {
         let n = self.loops[l].pieces.len();
         (0..n).flat_map(|k| (0..per).filter_map(move |j| self.point(l,k,j as f64/per as f64))).collect()
+    }
+
+    /// What loop `l`'s pieces are, in order: each stretch's candidate, or a step along the box.
+    fn shape(&self,l: usize) -> Vec<Option<usize>> {
+        self.loops[l].pieces.iter().map(|p| match *p { Piece::Run {candidate,..} => Some(candidate),Piece::Side {..} => None }).collect()
+    }
+
+    /// Each of `base`'s loops as one of this region's and how far round it starts, where the two
+    /// are alike loop for loop and piece for piece (a drafted slab's region at two heights, one
+    /// loop lofted to the other); none where they are not.
+    pub fn matching(&self,base: &SweptRegion) -> Option<Vec<(usize,usize)>> {
+        if self.loops.len() != base.loops.len() { return None }
+        (0..base.loops.len()).map(|l| {
+            let want = base.shape(l);
+            (0..self.loops.len()).find_map(|m| {
+                let have = self.shape(m);
+                (have.len() == want.len()).then(|| (0..have.len()).find(|&r| (0..have.len()).all(|k| have[(k+r)%have.len()] == want[k])))
+                    .flatten().map(|r| (m,r))
+            })
+        }).collect()
     }
 
     /// Each loop bounding a piece of the region (counter-clockwise) with the holes in it: the
