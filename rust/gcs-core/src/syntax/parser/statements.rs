@@ -196,6 +196,9 @@ impl<'a> P<'a> {
             {
                 self.claim_over(next_id)
             }
+            // `claim torque >= 2Nm` — a comparison of the document's values (#596), judged
+            // while elaborating
+            "claim" if self.value_claim_ahead(self.i + 1) => self.value_claim(),
             // `claim vertical(rail)` — a relation stated as expected to add no rank
             "claim" => {
                 self.i += 1;
@@ -295,6 +298,36 @@ impl<'a> P<'a> {
             }
             _ => {}
         }
+    }
+
+    /// Whether a claim's statement from token `j` on compares numbers (#596): it opens with a
+    /// number, a bracket, a sign or a function of numbers (`sqrt(…)`), or its first reference is
+    /// followed by arithmetic or a comparison — where a relation has its word.
+    fn value_claim_ahead(&self, j: usize) -> bool {
+        let numeric = |k: usize| matches!(self.t.get(k).map(|(t, _)| t), Some(Tok::EqEq)
+            | Some(Tok::P('<' | '>' | '!' | '+' | '-' | '*' | '/' | '^')));
+        match self.t.get(j).map(|(t, _)| t) {
+            Some(Tok::Num(_) | Tok::P('(' | '-')) => true,
+            Some(Tok::Ident(w)) if matches!(self.t.get(j + 1), Some((Tok::P('('), _))) => {
+                crate::expr::FUNCTIONS.iter().any(|f| f.0 == w)
+                    && !crate::constraints::is_operator(w)
+            }
+            Some(Tok::Ident(_)) => self.past_ref(j).is_some_and(numeric),
+            _ => false,
+        }
+    }
+
+    /// `claim torque >= 2Nm`, `claim` next: the comparison's text, to the statement's end, which
+    /// `expr` reads once the flattener has the numbers in scope (#596).
+    fn value_claim(&mut self) -> Option<StmtKind> {
+        let lo = self.here().lo as usize;
+        self.i += 1;
+        let from = self.here().lo as usize;
+        self.i = self.level_end(false);
+        let text = self.text_from(from).trim().to_string();
+        let span = Span::new(lo, self.prev_hi());
+        self.end_of_stmt();
+        Some(StmtKind::ValueClaim(crate::syntax::ValueClaim { text, span }))
     }
 
     /// `claim over NAME in (from, to) { … }`, `claim` next: claims judged as the drawing runs

@@ -8,8 +8,8 @@ mod parser;
 pub use document::{evaluate, has_expr, set_dimension, sync_free, ExprError, ExprItem, Fault};
 pub use document::{bind_free, declared_reads, eval_declared};
 pub use eval::{
-    decide, decide_in, eval, eval_in, eval_measured, reading, to_arg_units, to_user_units, Aff, Env,
-    Measurer, READING_SIG,
+    decide, decide_in, eval, eval_in, eval_measured, judge_in, reading, to_arg_units,
+    to_user_units, Aff, Env, Measurer, READING_SIG,
 };
 pub use names::{measure_call, name_at, NameScan, LEXER};
 pub use parser::{is_literal, literal, names_unit, notation, parse, parse_condition_in, parse_in};
@@ -217,6 +217,20 @@ impl Cmp {
             Cmp::Ge => a >= b,
             Cmp::Eq => a == b,
             Cmp::Ne => a != b,
+        }
+    }
+
+    /// Whether `a` stands so to `b` **within a hair of rounding** (1e-9 of the larger), as a
+    /// requirement is kept (`beams::compares`): what a claim over values is judged by (#596),
+    /// since `0.006Nm * 16 * 0.9` is 0.0864 N·m to every figure a person states it in and not
+    /// to the last bit.  A strict comparison is its closed one, and `!=` holds where `==` does not.
+    pub fn keeps(self, a: f64, b: f64) -> bool {
+        let slack = 1e-9 * a.abs().max(b.abs());
+        match self {
+            Cmp::Lt | Cmp::Le => a <= b + slack,
+            Cmp::Gt | Cmp::Ge => a >= b - slack,
+            Cmp::Eq => (a - b).abs() <= slack,
+            Cmp::Ne => (a - b).abs() > slack,
         }
     }
 }

@@ -205,7 +205,7 @@ fn asserting(c: &Component, out: &mut Vec<Diag>) {
         StmtKind::Decl(_) | StmtKind::Chain(_) | StmtKind::Instance(_) | StmtKind::Param(_)
         | StmtKind::Set(_) | StmtKind::Derived(_) => public = true,
         StmtKind::Relation(_) | StmtKind::Measured(_) | StmtKind::Minimize(_)
-        | StmtKind::Branch(_) | StmtKind::SolidRel(_) => states = true,
+        | StmtKind::Branch(_) | StmtKind::SolidRel(_) | StmtKind::ValueClaim(_) => states = true,
         StmtKind::Block(_) | StmtKind::ClaimOver(_) | StmtKind::Group(_) | StmtKind::Style(_)
         | StmtKind::Unit(_) | StmtKind::Scenario(_) => {}
         StmtKind::Beam(_) => public = true,

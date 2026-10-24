@@ -132,6 +132,7 @@ NAME := envelope | meshing | surface(...)                                       
 WORD[(ARGS)] REF | REF WORD[(ARGS)] REF [hint(SLOT: E, ...)]   a constraint          (1.5)
 claim CONSTRAINT                        judged, never solved for                     (1.11)
 claim { DECL* CONSTRAINT* }             a claim with witnesses of its own              (1.11)
+claim CONDITION                         a comparison of the document's values, judged  (1.11)
 fix((E, E[, E])) REF | fix(MEMBER == E, ...) REF   hold an entity's own numbers      (1.4)
 ccw(a, b, c) | cw(a, b, c)              choose a root; adds no equation              (1.5)
 K minimizes E | K maximizes E           a free curve's energy                        (1.10)
@@ -444,7 +445,12 @@ c distance(1' 6 3/16") d            // one literal: spaces separate the parts, a
   torque := power / (omega / 1rad)    // a torque: torque / 1Nm is 27.9
   amps := power / (48V * 0.86)        // amps + torque is refused
   freq := 46 / 2 * omega / turn       // 97.8Hz
+  claim torque >= 20Nm                // judged before the solve (1.11)
   ```
+
+  `solventc --where torque` reads it back in its unit, `torque = 27.9251 N·m`: a figure in SI,
+  a length or an area in the document's unit, an angle in degrees (`255rpm` is `1530 deg/s`),
+  whatever the document's lengths are in.
 - **There is no string literal**: `"` is the inch mark, and a word argument is bare (`at: start`).
 - A value, input, formal or index named after a built-in (`tau`, `pi`, `min`, …) does not shadow
   it and ends up with two values: W112. Rename it.
@@ -1190,6 +1196,14 @@ Use claims for what a figure was drawn to show (the altitudes concur; the traced
 A claim may not own or read an unknown. `claim over rotor_turn in (0deg, 1080deg) { … }` judges at
 sampled poses of a frame's motion, reading solids placed under it, and reports the worst; over an
 unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value.
+
+**A claim over values.** A design table's figures are claimed as a drawing's facts are:
+`claim handle_stall_torque >= 2Nm`, `claim 2 * ratio > 30 and teeth != 12` — a comparison of the
+document's numbers, written as a `when`'s condition. A value is worked out before the solve, so
+it is judged there, a **theorem** or **refuted**, never consuming, within rounding (`claim torque
+== 0.0864Nm` holds of `0.006Nm * 16 * 0.9`); in a component's body, once per instance. The CLI
+says each with what it reads: `claim torque >= 2Nm — refuted: torque = 0.0864 N·m`. It may not
+read an unknown, nor a value written over one (E040: a relation claims what the solve gives).
 
 **A claim with witnesses of its own.** Some claims need geometry to be stated at all: "the two
 runs of a belt meet on the line of centres" needs a point on both runs. Declared as ordinary
@@ -2678,7 +2692,10 @@ A redundancy among pure relations (a fourth `perpendicular` round a rectangle) i
 **`--where NAME`** prints the numbers under a name: a point's (`hinge.x`), an instance's
 (`--where t0`), a plane's (`--where std.side`), a solid's measurements (`--where body`), or one
 number (`--where body.volume`). Under `--json` they are a `positions` table. It is quicker than a
-`claim` for testing a position.
+`claim` for testing a position. A value the document names is read the same way, in its unit:
+`--where ratio` prints `ratio = 16`, `--where torque` `torque = 0.0864 N·m`, `--where dims`
+each member of a group; under `--json` they are a `values` table, each with its `value`, `unit`
+and `text`.
 
 Two habits: **fix something** (a figure nothing holds is under by three however determined its
 shape), and **say the branch** — with a bound or a `ccw` where a side matters, since the solver

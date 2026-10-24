@@ -426,6 +426,8 @@ pub enum StmtKind {
     /// `arm := beam(span, A: …) of steel` — a frame's members (#510 S0), see `BeamDecl`.  Its
     /// name is the drawing's, read by a scenario; it adds nothing the solve reads.
     Beam(BeamDecl),
+    /// `claim torque >= 2Nm` — a claim over the document's values (#596), see `ValueClaim`.
+    ValueClaim(ValueClaim),
 }
 
 impl StmtKind {
@@ -443,7 +445,8 @@ impl StmtKind {
             StmtKind::Beam(b) => Some(&b.name),
             StmtKind::Relation(_) | StmtKind::Branch(_) | StmtKind::Block(_) | StmtKind::Style(_)
             | StmtKind::SolidRel(_) | StmtKind::ClaimOver(_) | StmtKind::Unit(_)
-            | StmtKind::Minimize(_) | StmtKind::Measured(_) | StmtKind::Scenario(_) => None,
+            | StmtKind::Minimize(_) | StmtKind::Measured(_) | StmtKind::Scenario(_)
+            | StmtKind::ValueClaim(_) => None,
         }
     }
 }
@@ -501,6 +504,16 @@ pub struct ClaimOver {
     pub from: Arg,
     pub to: Arg,
     pub body: Vec<Stmt>,
+    pub span: Span,
+}
+
+/// `claim torque >= 2Nm`, `claim 2 * ratio == 32` — **a claim over values** (#596): a
+/// comparison of the numbers a document names, worked out while elaborating as a `when`'s
+/// condition is, so it is judged before there is a solve — a theorem or refuted, never consuming
+/// — and may read no unknown of the drawing.  `text` is the comparison as written, after `claim`.
+#[derive(Clone, Debug)]
+pub struct ValueClaim {
+    pub text: String,
     pub span: Span,
 }
 

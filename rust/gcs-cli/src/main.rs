@@ -50,8 +50,9 @@ views and dimensions over the models it imports).  Each is parsed, elaborated, s
 diagnosed, and the report says where it stands.
 
     --json              structured output instead of the text report
-    --where NAME        where a name landed: its own numbers and everything under it
-                        (repeatable; the whole table in --json when none is given)
+    --where NAME        where a name landed: its own numbers and everything under it, and a
+                        value the document names, in its unit (repeatable; the whole table in
+                        --json when none is given)
     --no-diagnose       solve only; skip the diagnosis
     --lint              also say where the document's own text drifts from the language's style
                         (W201-W206: a pun, a bare component statement, an asserting component, a
@@ -109,6 +110,7 @@ Examples:
     solventc part.sv                          check a document: solved, and how constrained
     solventc --json part.sv                   the same report, structured
     solventc part.sv --where hinge            the numbers under one name
+    solventc drive.sv --where torque          a value, in its unit: torque = 0.0864 N·m
     solventc part.sv --png part.png           look at it, as the workspace shows it
     solventc part.sv --stl part.stl --solid body
                                               a solid, for a printer
@@ -491,7 +493,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             println!("{}: did not elaborate", s.name);
         }
         return (1, opts.json.then(|| {
-            doc_json(s, &errs, None, None, &e, &[], Json::Null, Json::Null)
+            doc_json(s, &errs, None, None, &e, &[], Json::Null, Json::Null, &opts.wanted)
         }));
     }
 
@@ -516,7 +518,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     e.diags.extend(invalid);
     if failed {
         return (1, opts.json.then(|| {
-            doc_json(s, &[], Some(&r), None, &e, &[], Json::Null, Json::Null)
+            doc_json(s, &[], Some(&r), None, &e, &[], Json::Null, Json::Null, &opts.wanted)
         }));
     }
     let diagnosing = || progress::Work::diagnose(&s.name);
@@ -535,6 +537,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         // each material the document states, and what is made of it (#510 P3)
         for name in sk.materials.keys() {
             println!("  material {}", gcs_core::report::material_text(&sk, name));
+        }
+        // each claim over the document's values, judged before the solve (#596)
+        for c in &e.value_claims {
+            println!("  {}", gcs_core::report::value_claim_text(sk.units, c));
         }
         // what each scenario's supports leave free, and where a stress it asks for is
         // unbounded (#510 P7), then what its frames answer of each requirement (#510 S0): read
@@ -634,7 +640,8 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         }
         for q in &opts.wanted {
             let rows = wanted(&sk, &e.map, std::slice::from_ref(q));
-            if rows.is_empty() {
+            let values = values_wanted(&e, std::slice::from_ref(q));
+            if rows.is_empty() && values.is_empty() {
                 println!("  where {q}: the source names nothing there");
             }
             for (n, v) in rows {
@@ -642,6 +649,10 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 // exactly — so it is read to `READING_SIG` like every other number a person is
                 // shown, and converted by nothing: it is already in the units of the drawing
                 println!("  {n} = {}", expr::reading(SpecKind::Scalar, v));
+            }
+            // and a number the document names, in the unit it reads in (#596)
+            for (n, v) in values {
+                println!("  {}", report::value_text(sk.units, n, v));
             }
         }
     }
@@ -822,7 +833,8 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             let components = components.as_ref()
                 .map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json).collect()));
             doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
-                     positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null))
+                     positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null),
+                     &opts.wanted)
         }),
     )
 }
@@ -895,6 +907,15 @@ fn wanted(
         return all;
     }
     all.into_iter().filter(|(n, _)| names.iter().any(|q| under(n, q))).collect()
+}
+
+/// The numbers the document names (#596) a reader asked for, by the rule `wanted` reads
+/// positions by: a name matches itself and everything under it.  Empty asks for every one.
+fn values_wanted<'e>(e: &'e Elaborated, names: &[String])
+    -> Vec<(&'e String, &'e gcs_core::flatten::Valued)>
+{
+    e.values.iter().filter(|(n, _)| names.is_empty() || names.iter().any(|q| under(n, q)))
+        .collect()
 }
 
 /// Whether `name` is `asked` or something under it: `cyl` reaches `cyl.pivot.x`, and `head`
@@ -976,8 +997,10 @@ fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize,
 }
 
 /// One document's report.  `positions` is where the names landed (`--where`, or all of them),
-/// and is `Null` for a document that never got as far as a drawing.  `unbuilt` is what the solids
-/// said of a pose the solve did not settle on (#571), apart from the document's `diagnostics`.
+/// and is `Null` for a document that never got as far as a drawing; `wanted` is the names
+/// `--where` asked, which the document's values are read by too (#596).  `unbuilt` is what the
+/// solids said of a pose the solve did not settle on (#571), apart from the document's
+/// `diagnostics`.
 fn doc_json(
     s: &Source,
     syntax: &[SynErr],
@@ -987,6 +1010,7 @@ fn doc_json(
     unbuilt: &[gcs_core::program::Diag],
     positions: Json,
     components: Json,
+    wanted: &[String],
 ) -> Json {
     let place = |lo: u32| {
         let (line, col) = line_col(&s.text, lo);
@@ -1030,6 +1054,14 @@ fn doc_json(
             ("why", Json::Str(gcs_core::program::NOT_BUILT.to_string())),
             ("diagnostics", Json::Arr(notes.collect())),
         ]));
+    }
+    // the numbers the document names, as `--where` asks (or every one), and each claim over
+    // them, judged before the solve (#596)
+    if !e.values.is_empty() {
+        doc.set("values", report::values_json(e.sketch.units, values_wanted(e, wanted)));
+    }
+    if !e.value_claims.is_empty() {
+        doc.set("valueClaims", report::value_claims_json(e.sketch.units, &e.value_claims));
     }
     // each scenario's words (#510 P7) at the solved pose, where the document states any
     let settled = r.is_some_and(|r| r.settled());

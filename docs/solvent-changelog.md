@@ -4,6 +4,22 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.180] A claim over values.** `claim` before a comparison of the document's numbers —
+`claim handle_stall_torque >= 2Nm`, `claim 2 * ratio > 30 and teeth != 12`, a condition as a
+`when` writes one — asserts it of the values it reads (§9.7). A value is worked out before the
+solve, so the claim is judged there, a **theorem** or **violated** and never consuming, each
+comparison kept within 10⁻⁹ of rounding; in a component's body it is judged once per instance.
+One reading an unknown of the drawing, or a value written over one, is **E040**; a name that is
+no number **E101**, two dimensions compared **E103**. A statement after `claim` is a condition
+where it opens with a number, a bracket, a sign or a function of numbers, or where its first name
+is followed by arithmetic or a comparison; every relation claim reads as it did. *Non-normative:*
+the reference implementation carries every number a document names out of elaboration under its
+absolute name, and says one in the unit it reads in — a power of length and angle in the
+document's unit and degrees, a figure with a mass, a time or a current in SI (`torque = 0.0864
+N·m` in any document's lengths); `solventc --where ratio` reads one, `--json` gives them as
+`values`, and each claim is said with what it reads (`claim torque >= 2Nm — refuted: torque =
+0.0864 N·m`), as `valueClaims` under `--json`. (Issue #596.)
+
 **[0.179] A corner round is a joint.** `A -> round(r: R) B` rounds the corner where the lines `A`
 and `B` of a chain meet with an arc of radius `R` tangent to both (§6.6): the arc (named where it
 stands, `-> (k := round(r: R))`), its radius, a tangency at each end and the corner kept on both

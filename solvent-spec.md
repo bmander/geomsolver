@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.179 — October 2026**
+**Specification, Draft 0.180 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2634,6 +2634,33 @@ anything else in it is an error. Its relations are claims, under every rule abov
 outside a block, a claim of another block included, MUST NOT name its witness (**E040**). A
 claim that holds only under a condition on the document's numbers is written inside a `when`
 (§12.9): `when rb != ra { claim { … } }` is not made at all where the condition is false.
+
+**Claims over values.** **[0.180]**
+
+```
+claim <condition>                 // a comparison of numbers, as a `when`'s: claim torque >= 2Nm
+```
+
+A design table's figures (§3.3) are what a design is held to as often as its geometry is: a
+gear train's ratio, the torque at a wheel. `claim` before a comparison of the document's numbers
+— a condition as §12.9 writes one, comparisons of one dimension joined by `and`, `or` and `not` —
+asserts it of the values it reads. A statement after `claim` is a condition, and not a relation,
+where it opens with a number, a bracket, a sign or a function of numbers, or where its first name
+is followed by arithmetic or a comparison: the place a relation has its word.
+
+A value is worked out before the solve, so the claim is judged there, where it stands — in a
+component's body once for each instance, over that instance's numbers — and the trichotomy
+collapses: a claim over values is a **theorem** where it holds and **violated** where it does not,
+never *consuming*. It holds within rounding: each comparison is kept to 10⁻⁹ of the larger side,
+so `claim torque == 0.0864Nm` is a theorem of `torque := 0.006Nm * 16 * 0.9`. It MUST NOT read an
+unknown of the drawing, nor a value written over one (**E040**): what the solve gives is claimed
+by a relation. A name that is no number in scope is **E101**, two dimensions compared **E103**,
+and a measurement of the drawing **E107**, as in a `when`. It compiles nothing, so it acts no
+more than any claim does; it is not made inside a swept claim (`claim over`), which judges poses.
+
+*Non-normative:* the reference implementation says each claim over values with the values it reads
+in their units (`claim torque >= 2Nm — refuted: torque = 0.0864 N·m`), and `solventc --where NAME`
+reads a value the document names as it reads a position.
 
 ### 9.8 Claims about solids **[0.18]**
 
