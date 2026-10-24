@@ -325,7 +325,8 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
 fn read(e: &Elaborated, name: &str) -> Vec<(String, f64)> {
     let asked = |n: &str| n == name || n.starts_with(&format!("{name}."));
     export::supply_exact_where(&e.sketch, &|i| asked(&e.sketch.solids[i].name));
-    gcs_core::report::positions_where(&e.sketch, &e.map, &asked)
+    gcs_core::report::positions_where(&e.sketch, &e.map, &asked).into_iter()
+        .filter(|(n, _)| asked(n)).collect()
 }
 
 /// **A Boolean of the cut wheel that leaves no material is empty, and its volume is 0** (#618):
@@ -334,10 +335,10 @@ fn read(e: &Elaborated, name: &str) -> Vec<(String, f64)> {
 /// failed to build, whose name would read nothing.
 #[test]
 fn a_swept_bodys_empty_boolean_reads_volume_zero() {
-    let (e, _) = solved(&wheel(STAR, &format!("{PERIOD}\noverlap := solid(wheel)\nstar common overlap")));
-    let read = read(&e, "overlap");
-    let volume = read.iter().find(|(n, _)| n == "overlap.volume").unwrap_or_else(|| panic!("{read:?}"));
-    assert_eq!(volume.1, 0.0, "{read:?}");
-    assert_eq!(read.iter().find(|(n, _)| n == "overlap.area").map(|r| r.1), Some(0.0), "{read:?}");
-    assert!(!read.iter().any(|(n, _)| n.starts_with("overlap.bounds")), "{read:?}");
+    let space = format!("{PERIOD}\noverlap := solid(wheel)\nstar common overlap");
+    let (e, _) = solved(&wheel(STAR, &space));
+    let said = read(&e, "overlap");
+    let at = |n: &str| said.iter().find(|(k, _)| k == n).map(|r| r.1);
+    assert_eq!((at("overlap.volume"), at("overlap.area")), (Some(0.0), Some(0.0)), "{said:?}");
+    assert!(!said.iter().any(|(n, _)| n.starts_with("overlap.bounds")), "{said:?}");
 }

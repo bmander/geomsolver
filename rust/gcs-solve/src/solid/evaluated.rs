@@ -238,8 +238,7 @@ impl EvaluatedSolid {
         };
         let operands = validate_at(sk, si, unit)?;
         if sweeps_among(sk, &operands) {
-            // a swept solid's exact B-rep where a host supplied one, else its field's surface: one
-            // built with no faces is a body with no material, its volume 0 (#618)
+            // a swept solid's exact B-rep where a host supplied one, else its field's surface
             if let Some(exact) = sk.supplied_exact_solid(si) {
                 return Self::from_brep(sk, si, policy, unit, operands, &exact);
             }
@@ -407,8 +406,7 @@ impl EvaluatedSolid {
             brep_faces.push(fi);
             facets.push(Facet { pts: vec![a, b3, c], n, face: index[fi as usize], smooth });
         }
-        // a B-rep with no faces is a body with no material (#618), and one whose faces mesh to
-        // nothing a failure
+        // (one with faces that mesh to nothing is a failure, not an empty solid)
         if facets.is_empty() && !b.faces.is_empty() {
             return Err(format!("`{name}`: the exact solid meshed to nothing"));
         }

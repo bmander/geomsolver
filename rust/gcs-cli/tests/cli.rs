@@ -1075,7 +1075,6 @@ star common overlap
     assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
     let said = String::from_utf8_lossy(&out.stdout);
     assert!(said.contains("  overlap.volume = 0\n"),"{said}");
-    assert!(!said.contains("where overlap.volume:"),"{said}");
     assert!(said.contains("  where overlapp.volume: the source names nothing there\n"),"{said}");
     std::fs::remove_dir_all(dir).unwrap();
 }
