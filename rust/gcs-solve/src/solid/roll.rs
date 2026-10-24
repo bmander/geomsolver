@@ -94,8 +94,7 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
             // a tool never clear either way is always in mesh: the roll to state is a period
             if ends.iter().all(Option::is_none) {
                 if let Some(p) = period(&tool, support, &family) {
-                    return Err(format!("its tool is always in mesh with it: roll it a whole period, `over t in (0deg, {}deg)`",
-                                       (p.to_degrees()*1e6).round()/1e6));
+                    return Err(format!("its tool is always in mesh with it: {}", advice(0.0, p)));
                 }
             }
             return Err(format!("its tool is not clear of it within two turns {} of 0",
@@ -127,18 +126,34 @@ fn period(tool: &SpatialField, support: [I; 3], family: &crate::motion::Family) 
         (first.point(x), tool.value(x))
     }).collect();
     if !points.iter().any(|p| p.1 < 0.0) { return None; }
+    // the points inside the tool first: most rolls move one of them out at once
+    let mut points = points;
+    points.sort_by(|a, b| a.1.total_cmp(&b.1));
     let near = 1e-7 * (1.0 + size);
-    let alike = |t: f64| family.pose_at(t).is_ok_and(|m| {
+    first_alike(0.0, PERIOD_TURNS, |t| family.pose_at(t).is_ok_and(|m| {
         let back = m.inverse();
         points.iter().all(|&(y, v)| (tool.value(back.point(y)) - v).abs() <= near)
-    });
-    // a tool the motion does not move (a ball on its axis) has no period
-    if alike(STEP) { return None; }
-    (2..=(PERIOD_TURNS * 360.0) as u32).map(|k| f64::from(k) * STEP).find(|&t| alike(t))
+    }))
 }
 
-/// How many turns `period` looks through.
-const PERIOD_TURNS: f64 = 12.0;
+/// How many turns a period is looked for through.
+pub const PERIOD_TURNS: f64 = 12.0;
+
+/// The least roll after `from`, a `STEP` at a time within `turns` turns, at which `alike` says the
+/// tool stands where it stood at `from` — none where it does a step on (a tool the motion does not
+/// move, a ball on its axis, has no period).  Every period the core names is found by it
+/// (`period`, `swept_region::Setting::period`).
+pub fn first_alike(from: f64, turns: f64, alike: impl Fn(f64) -> bool) -> Option<f64> {
+    if alike(from + STEP) { return None; }
+    (2..=(turns * 360.0) as u32).map(|k| from + f64::from(k) * STEP).find(|&t| alike(t))
+}
+
+/// What a refusal says to state for a roll from `from` through a whole period to `to` (radians):
+/// the words every such refusal uses.
+pub fn advice(from: f64, to: f64) -> String {
+    let degrees = |x: f64| (x.to_degrees() * 1e6).round() / 1e6;
+    format!("roll it a whole period, `over t in ({}deg, {}deg)`", degrees(from), degrees(to))
+}
 
 /// Whether `tool` under every pose of `family` over `span` is proved clear of `blank`: the
 /// tool's support and the span split, a box and the poses over its span at a time, until each box

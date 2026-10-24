@@ -62,8 +62,10 @@ impl Map {
 #[derive(Clone,Debug)]
 struct Member { face: usize,loops: Vec<Vec<Edge>>,span: [f64;2],drafted: Option<Drafted> }
 
+/// A drafted member's sections (read in the plane's coordinates) and how a height is a depth of it:
+/// the height of its face, and which way along the normal its depth runs.
 #[derive(Clone,Debug)]
-struct Drafted { sections: crate::solid::field::Sections,map: Map,at: f64,sign: f64 }
+struct Drafted { sections: crate::solid::field::Sections,at: f64,sign: f64 }
 
 impl Member {
     /// Whether the member reaches height `h`.
@@ -73,11 +75,7 @@ impl Member {
     /// a drafted section is read at the slab's ends too, and a little past the blank's), or none.
     fn at(&self,h: f64,within: f64) -> Option<Vec<Vec<Edge>>> {
         if !self.reaches(within) { return None }
-        let Some(d) = &self.drafted else { return Some(self.loops.clone()) };
-        let loops = d.sections.section_at((h-d.at)*d.sign).ok()?;
-        // a face turned over walks its loops the other way: walked back, its material on the left
-        let mapped: Vec<Vec<Edge>> = loops.iter().map(|l| l.iter().map(|e| d.map.edge(e)).collect()).collect();
-        crate::solid::field::oriented(&mapped).ok()
+        match &self.drafted { Some(d) => d.sections.section_at((h-d.at)*d.sign).ok(),None => Some(self.loops.clone()) }
     }
 }
 
@@ -87,15 +85,15 @@ impl Member {
 pub struct Subtraction { plane: Plane,members: Vec<Member>,tree: Tree,family: crate::motion::Family,roll: [f64;2],name: String,
     tool: String,scale: f64 }
 
-/// One slab of the blank: its heights along the plane's normal and the region the section there
-/// sweeps — drafted, the region at each station through it (the first at its lower height).
+/// One slab of the blank: its heights along the plane's normal, how far its cut reaches (a hair
+/// past the blank where the slab ends at its face) and the region the section there sweeps —
+/// drafted, the region at each station through it, the first at the lower end of its reach.
 #[derive(Clone,Debug)]
-pub struct Slab { pub heights: [f64;2],pub stations: Vec<(f64,SweptRegion)> }
+pub struct Slab { pub heights: [f64;2],pub reach: [f64;2],pub stations: Vec<(f64,SweptRegion)> }
 
-/// What the class found: the plane, how far along its normal the blank reaches (where a cut runs a
-/// hair past it), and each slab a member reaches, lowest first.
+/// What the class found: the plane and each slab a member reaches, lowest first.
 #[derive(Clone,Debug)]
-pub struct Found { pub plane: Plane,pub heights: [f64;2],pub slabs: Vec<Slab> }
+pub struct Found { pub plane: Plane,pub slabs: Vec<Slab> }
 
 /// Whether `swept`'s tool is prisms joined by union and common (Q1, structurally) under a motion
 /// that keeps the first one's plane (P1, at a few rolls): the sweeps this class asks where the
@@ -109,11 +107,7 @@ pub fn asks(sk: &Sketch,swept: usize) -> bool {
     let n = basis.normal();
     let n = n.map(|x| x/norm(n));
     let (Ok(family),Ok([a,b])) = (crate::motion::Family::read(sk,*motion as usize),super::roll::interval(sk,swept)) else { return false };
-    let size = 1.+norm(basis.o);
-    (0..=4).all(|k| family.at(a+(b-a)*k as f64/4.).is_ok_and(|m| {
-        let o = basis.o;
-        dot(m.vector(n),n) > 1.-1e-9 && dot(crate::space::sub(m.point(o),o),n).abs() <= 1e-9*size && dot(m.velocity(o),n).abs() <= 1e-9*size
-    }))
+    (0..=4).all(|k| family.at(a+(b-a)*k as f64/4.).is_ok_and(|m| crate::envelope::swept_region::keeps(&m,basis.o,n,1.+norm(basis.o))))
 }
 
 /// The tool's solid graph as a tree of prisms, each pushed to `members` (its id).
@@ -178,30 +172,28 @@ impl Subtraction {
             let mapped: Vec<Vec<Edge>> = loops.iter().map(|l| l.iter().map(|e| map.edge(e)).collect()).collect();
             let oriented = crate::solid::field::oriented(&mapped).map_err(|e| q1(format!("`{name}`: {e}")))?;
             let drafted = match draft {
-                Some(d) if d.value != 0. => Some(Drafted {sections:crate::solid::field::Sections::new(&loops,d.value,[from.value,to.value])
-                    .map_err(|e| q1(format!("`{name}`: {e}")))?,map,at,sign}),
+                Some(d) if d.value != 0. => Some(Drafted {sections:crate::solid::field::Sections::new(&mapped,d.value,[from.value,to.value])
+                    .map_err(|e| q1(format!("`{name}`: {e}")))?,at,sign}),
                 _ => None,
             };
             members.push(Member {face:*face as usize,loops:oriented,span:[a.min(b),a.max(b)],drafted});
         }
         let family = crate::motion::Family::read(sk,*motion as usize).map_err(|e| (Condition::Plane,e,None))?;
         let roll = super::roll::interval(sk,swept).map_err(|m| (Condition::Closes,m,None))?;
-        let scale = members.iter().flat_map(|m| m.loops.iter().flatten()).map(|e| match *e {
-            Edge::Line {a,b,..} => a[0].dhypot(a[1]).max(b[0].dhypot(b[1])),
-            Edge::Arc {center,radius,..} => center[0].dhypot(center[1])+radius,
-            Edge::Conic {..} => 0.,
-        }).fold(0.,f64::max);
+        let scale = members.iter().flat_map(|m| m.loops.iter().flatten()).map(Edge::reach).fold(0.,f64::max);
         Ok(Subtraction {plane,members,tree,family,roll,name:sk.solids[swept].name.clone(),tool:tool.name.clone(),scale})
     }
 
-    /// The section at height `h` of the slab whose middle is `within`.
-    fn section(&self,h: f64,within: f64) -> Section {
-        Section {members:self.members.iter().map(|m| m.at(h,within)).collect(),tree:self.tree.clone()}
+    /// What the swept region at height `h` of the slab whose middle is `within` is read from: the
+    /// section there, the motion, the plane and the roll.
+    fn setting(&self,h: f64,within: f64) -> Result<Setting,Failure> {
+        let section = Section::new(self.members.iter().map(|m| m.at(h,within)).collect(),&self.tree)
+            .map_err(|e| (Condition::Members,format!("`{}`'s section: {e}",self.tool),None))?;
+        Ok(Setting {section,family:self.family.clone(),plane:self.plane,roll:self.roll,scale:self.scale})
     }
 
-    fn setting(&self,h: f64,within: f64) -> Setting {
-        Setting {section:self.section(h,within),family:self.family.clone(),plane:self.plane,roll:self.roll,scale:self.scale}
-    }
+    /// Whether any member reaches height `h`.
+    fn reached(&self,h: f64) -> bool { self.members.iter().any(|m| m.reaches(h)) }
 
     /// Q2–Q4 over every placement (`poses`, the sweep's frame in the body's), the blank read in the
     /// body by `inside` and boxed there by `bounds` (its least and greatest corner): the slabs the
@@ -244,49 +236,39 @@ impl Subtraction {
             }
             merged.push(s);
         }
-        // Q3: a whole period, or the tool clear of the blank at both ends of the roll
-        let middle = 0.5*(heights[0]+heights[1]);
-        let h = merged.iter().map(|s| s.1).find(|&h| !self.section(h,h).is_empty()).unwrap_or(middle);
-        let probe = self.setting(h,h);
-        let [a,b] = self.roll;
-        let whole = probe.alike(a,b);
-        if !whole {
-            for &(_,h) in &merged {
-                let setting = self.setting(h,h);
-                if setting.section.is_empty() { continue }
-                for t in self.roll {
-                    for p in setting.covered(t,48) {
-                        let w = pl.world(p,h);
-                        if let Some(x) = poses.iter().map(|pose| pose.point(w)).find(|&x| inside(x)) {
-                            let period = setting.period(a,8.).map_or(String::new(),|p| format!(": roll it a whole period, `over t in \
-                                ({:.6}deg, {:.6}deg)`",a.to_degrees(),p.to_degrees()).replace(".000000deg","deg"));
-                            return Err((Condition::Closes,format!("`{}`'s tool `{}` lies in the blank at roll {:.4} degrees{period}",self.name,
-                                self.tool,t.to_degrees()),Some(x)))
-                        }
-                    }
-                }
-            }
-        }
-        // each slab's region, within the box; a drafted slab's at stations through it (#607), from a
-        // little past the blank where the slab ends at its face
+        // each slab a member reaches: Q3, a whole period of its section or its tool clear of the blank
+        // at both ends of the roll; then its region within the box, a drafted slab's at stations
+        // through it (#607), from a little past the blank where the slab ends at its face
+        let past = PAST*(heights[1]-heights[0]);
         let mut found = Vec::new();
         for (slab,h) in merged {
-            if self.section(h,h).is_empty() { continue }
+            if !self.reached(h) { continue }
+            let setting = self.setting(h,h)?;
+            let [a,b] = self.roll;
+            let whole = setting.alike(a,b);
+            if !whole {
+                let covered: Vec<V> = self.roll.iter().flat_map(|&t| setting.covered(t,48)).map(|p| pl.world(p,h)).collect();
+                let hit = crate::par::map(&covered,|&w| poses.iter().map(|pose| pose.point(w)).find(|&x| inside(x)));
+                if let Some((k,x)) = hit.into_iter().enumerate().find_map(|(k,x)| x.map(|x| (k,x))) {
+                    let t = if k < covered.len()/2 { a } else { b };
+                    let period = setting.period(a).map_or(String::new(),|p| format!(": {}",crate::solid::roll::advice(a,p)));
+                    return Err((Condition::Closes,format!("`{}`'s tool `{}` lies in the blank at roll {:.4} degrees{period}",self.name,
+                        self.tool,t.to_degrees()),Some(x)))
+                }
+            }
             let drafted = self.members.iter().any(|m| m.drafted.is_some() && m.reaches(h));
-            let reach = [slab[0]-if slab[0] == heights[0] { PAST*(heights[1]-heights[0]) } else { 0. },
-                slab[1]+if slab[1] == heights[1] { PAST*(heights[1]-heights[0]) } else { 0. }];
-            let heights = slab;
+            let reach = [slab[0]-if slab[0] == heights[0] { past } else { 0. },slab[1]+if slab[1] == heights[1] { past } else { 0. }];
             let at: Vec<f64> = if drafted { stations(reach,STATIONS) } else { vec![h] };
-            let regions = crate::par::map(&at,|&z| SweptRegion::read(self.setting(z,h),bounds,whole)
+            let regions = crate::par::map(&at,|&z| SweptRegion::read(if drafted { self.setting(z,h)? } else { setting.clone() },bounds,whole)
                 .map_err(|r| (r.row,r.message,r.witness.map(|p| poses[0].point(pl.world(p,z))))));
             let mut stations = Vec::new();
             for (z,r) in at.into_iter().zip(regions) { stations.push((z,r?)) }
-            found.push(Slab {heights,stations});
+            found.push(Slab {heights:slab,reach,stations});
         }
         if found.iter().all(|s| s.stations.iter().all(|(_,r)| r.loops.is_empty())) {
             return Err((Condition::Reach,format!("no part of the region `{}` sweeps reaches the blank",self.name),None))
         }
-        Ok(Found {plane:pl,heights,slabs:found})
+        Ok(Found {plane:pl,slabs:found})
     }
 
     /// What the section at height `h` is made of, the same for two heights exactly where their
@@ -311,15 +293,28 @@ impl Subtraction {
         match parts.len() { 0 => None,1 => parts.pop(),_ => Some(format!("{}({})",if common { "C" } else { "U" },parts.join(","))) }
     }
 
-    /// The sweep's evidence, the slabs its finding, sampled as `found` says.
-    pub fn evidence(&self,found: Found) -> SweepEvidence {
+    /// Sweep `swept`'s evidence over `poses`, every one checked, the slabs its finding, sampled as
+    /// `found` says.
+    fn evidence(&self,swept: usize,poses: &[Motion],found: Found) -> SweepEvidence {
         let regions = found.slabs.iter().flat_map(|s| s.stations.iter().map(|(_,r)| r));
         let (candidates,runs) = regions.fold((0,0),|(c,k),r| (c+r.read[0],k+r.read[1]));
-        let steps = ((self.roll[1]-self.roll[0]).to_degrees()*4.).ceil() as usize;
-        SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples:candidates,contacts:runs,spacing:0.25_f64.to_radians(),
+        let per = crate::envelope::swept_region::PER_DEGREE;
+        let steps = ((self.roll[1]-self.roll[0]).to_degrees()*per).ceil() as usize;
+        let placements = poses.iter().map(|&pose| super::admission::Placement {pose,equivalent_to:None}).collect();
+        SweepEvidence {sweep:swept,name:self.name.clone(),placements,samples:candidates,contacts:runs,spacing:(1./per).to_radians(),
             least_area_factor:1.,near_double_roots:0,near_tangent_pairs:0,basis:Basis::Sampled {rows:candidates,columns:steps},
             equivalence:Equivalence::Sampled,class:Class::Subtraction(Box::new(found))}
     }
+}
+
+/// Sweep `swept`, cut from a blank at `poses` (the sweep's frame in the body's), the blank read by
+/// `inside` and boxed by `bounds`, admitted to the class (rows P1, Q1–Q4) with its evidence, or
+/// refused by row: what admission asks of it, and what the accuracy meter reads.
+pub fn admit(sk: &Sketch,swept: usize,poses: &[Motion],inside: &(dyn Fn(V) -> bool+Sync),bounds: Option<(V,V)>)
+    -> Result<SweepEvidence,Failure> {
+    let class = Subtraction::read(sk,swept)?;
+    let found = class.check(poses,inside,bounds)?;
+    Ok(class.evidence(swept,poses,found))
 }
 
 /// How far past the blank's faces a cut through them reaches, as a share of the blank's height.

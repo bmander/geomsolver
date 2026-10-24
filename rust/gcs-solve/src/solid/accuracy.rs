@@ -211,7 +211,7 @@ pub struct Meter {
 /// side by the loops' parity), a drafted slab's read between its two stations nearest the point's
 /// height. Exact on every face away from where a region's wall meets the blank's.
 #[derive(Clone,Debug)]
-struct Subtracted { blank: SpatialField,cuts: Vec<Removed>,flanks: usize }
+struct Subtracted { cuts: Vec<Removed>,flanks: usize }
 
 /// One placement of one swept region: its slabs, the pose it stands at in the body (and back), and
 /// the first of the meter's surfaces its walls are.
@@ -222,7 +222,7 @@ struct Removed { found: std::sync::Arc<super::planar_subtraction::Found>,chords:
 /// A region's loop as chords: each one's ends, the piece it is of and the fractions of the piece its
 /// ends are at.
 #[derive(Clone,Debug)]
-struct Chords { lines: Vec<([f64;2],[f64;2],usize,[f64;2])> }
+struct Chords { lines: Vec<([f64;2],[f64;2],usize,[f64;2])>,points: Vec<[f64;2]> }
 
 impl Chords {
     fn of(region: &crate::envelope::swept_region::SweptRegion,l: usize) -> Chords {
@@ -235,7 +235,7 @@ impl Chords {
                 if let (Some(a),Some(b)) = (at[j],at[j+1]) { lines.push((a,b,k,[j as f64/per as f64,(j+1) as f64/per as f64])) }
             }
         }
-        Chords {lines}
+        Chords {points:lines.iter().map(|c| c.0).collect(),lines}
     }
 }
 
@@ -246,7 +246,6 @@ impl Removed {
         let region = &self.found.slabs[s].stations[j].1;
         let loops = &self.chords[s][j];
         let mut best: Option<(f64,usize,usize,f64)> = None;
-        let mut crossings = 0;
         for (l,c) in loops.iter().enumerate() {
             for &(a,b,k,f) in &c.lines {
                 let d = [b[0]-a[0],b[1]-a[1]];
@@ -254,9 +253,9 @@ impl Removed {
                 let t = if len > 0. { (((x[0]-a[0])*d[0]+(x[1]-a[1])*d[1])/len).clamp(0.,1.) } else { 0. };
                 let g = (x[0]-a[0]-t*d[0]).dhypot(x[1]-a[1]-t*d[1]);
                 if best.is_none_or(|b| g < b.0) { best = Some((g,l,k,f[0]+t*(f[1]-f[0]))) }
-                if (a[1] > x[1]) != (b[1] > x[1]) && x[0] < a[0]+(x[1]-a[1])*(b[0]-a[0])/(b[1]-a[1]) { crossings += 1 }
             }
         }
+        let inside = loops.iter().filter(|c| crate::envelope::swept_region::parity(&c.points,x)).count()%2 == 1;
         let (mut gap,l,k,f0) = best?;
         let dist = |f: f64| region.point(l,k,f).map_or(f64::INFINITY,|p| (p[0]-x[0]).dhypot(p[1]-x[1]));
         let (_,fm) = crate::roots::brent(&dist,(f0-2./64.).max(0.),(f0+2./64.).min(1.),1e-13,100,|_,_| false);
@@ -267,7 +266,7 @@ impl Removed {
         let t = [b[0]-a[0],b[1]-a[1]];
         let len = t[0].dhypot(t[1]).max(1e-300);
         // the region on the left of its loops: inward is the tangent turned left
-        Some((if crossings%2 == 1 { -gap } else { gap },foot,[-t[1]/len,t[0]/len]))
+        Some((if inside { -gap } else { gap },foot,[-t[1]/len,t[0]/len]))
     }
 
     /// The signed distance into the removed material at body point `p` (negative inside it), the
@@ -295,19 +294,21 @@ impl Removed {
 }
 
 impl Subtracted {
-    fn nearest(&self,p: V) -> Option<Nearest> {
-        // the blank's own: its field, its gradient the outward normal
-        let b = self.blank.value(p);
-        let h = 1e-6*(1.+norm(p));
-        let g: V = std::array::from_fn(|k| { let mut a = p; let mut c = p; a[k] += h; c[k] -= h; (self.blank.value(a)-self.blank.value(c))/(2.*h) });
-        let g = normalised(g).unwrap_or([0.,0.,1.]);
-        let mut best = Nearest {distance:b,surface:self.flanks,foot:sub(p,scale(g,b)),normal:g,placement:None,roll:None};
+    /// The nearest face of the body `blank` (the blank's field) less every region: the blank's
+    /// own where its value is the greater, its gradient the outward normal.
+    fn nearest(&self,blank: &SpatialField,p: V) -> Option<Nearest> {
+        let b = blank.value(p);
+        let mut best: Option<Nearest> = None;
         for (i,c) in self.cuts.iter().enumerate() {
             let Some((d,foot,normal)) = c.nearest(p) else { continue };
-            // the body is the blank outside every region: its value the greater
-            if -d > best.distance { best = Nearest {distance:-d,surface:c.surface,foot,normal,placement:Some(i),roll:None} }
+            if -d > b && best.is_none_or(|n| -d > n.distance) {
+                best = Some(Nearest {distance:-d,surface:c.surface,foot,normal,placement:Some(i),roll:None})
+            }
         }
-        Some(best)
+        best.or_else(|| {
+            let g = normalised(blank.reading(p,&super::field::Query::at(p),0).gradient).unwrap_or([0.,0.,1.]);
+            Some(Nearest {distance:b,surface:self.flanks,foot:sub(p,scale(g,b)),normal:g,placement:None,roll:None})
+        })
     }
 }
 
@@ -541,13 +542,9 @@ impl Meter {
         if !cuts.is_empty() && cuts.iter().all(|c| super::planar_class::asks(sk,c.swept)) {
             return Self::planar(sk,body,blank,statics,cuts,options);
         }
-        // a blank cut by sweeps of the planar subtraction class, as admission reads them
+        // a blank cut by sweeps of the planar subtraction class, each read as that class reads it
         if !cuts.is_empty() && cuts.iter().all(|c| super::planar_subtraction::asks(sk,c.swept)) {
-            if let Ok(admitted) = super::admission::admit_body(sk,body,&super::admission::Options::default()) {
-                if admitted.sweeps().iter().all(|e| matches!(e.class,super::admission::Class::Subtraction(_))) {
-                    return Self::subtracted(sk,body,blank,cuts,&admitted,options)
-                }
-            }
+            if let Ok(meter) = Self::subtracted(sk,body,blank.clone(),&cuts,options) { return Ok(meter) }
         }
         let mut surfaces = Vec::new();
         let mut faces = Vec::new();
@@ -618,33 +615,32 @@ impl Meter {
 
     /// `read` for a blank cut by sweeps of the planar subtraction class, each placement its swept
     /// regions through its slabs (`Subtracted`).
-    fn subtracted(sk: &Sketch,body: usize,blank: SpatialField,cuts: Vec<cad::SweptCut>,admitted: &super::admission::Admission,options: Options)
-        -> Result<Self,String> {
+    fn subtracted(sk: &Sketch,body: usize,blank: SpatialField,cuts: &[cad::SweptCut],options: Options) -> Result<Self,String> {
         let mut surfaces: Vec<Surface> = Vec::new();
         let mut removed = Vec::new();
-        let mut read: Vec<(usize,std::sync::Arc<super::planar_subtraction::Found>,std::sync::Arc<Vec<Vec<Vec<Chords>>>>,usize)> = Vec::new();
-        for cut in &cuts {
-            let (found,chords,surface) = match read.iter().find(|r| r.0 == cut.swept) {
-                Some(r) => (r.1.clone(),r.2.clone(),r.3),
-                None => {
-                    let evidence = admitted.sweeps().iter().find(|e| e.sweep == cut.swept).ok_or("a cut was not admitted")?;
-                    let super::admission::Class::Subtraction(found) = &evidence.class else { return Err("not a subtraction sweep".into()) };
-                    let found = std::sync::Arc::new((**found).clone());
-                    let chords = std::sync::Arc::new(found.slabs.iter().map(|s| s.stations.iter()
-                        .map(|(_,r)| (0..r.loops.len()).map(|l| Chords::of(r,l)).collect()).collect()).collect::<Vec<Vec<Vec<Chords>>>>());
-                    surfaces.push(Surface {name:format!("{} flank",sk.solids[cut.swept].name),generated:true});
-                    read.push((cut.swept,found.clone(),chords.clone(),surfaces.len()-1));
-                    (found,chords,surfaces.len()-1)
-                }
-            };
-            removed.push(Removed {found,chords,pose:(cut.pose,cut.pose.inverse()),surface});
+        let bounds = super::admission::blank_box(sk,body);
+        // the blank read as admission reads it
+        let margin = super::admission::Options::default().margin;
+        let inside = |p: V| blank.value(p) < -margin;
+        let mut swept: Vec<usize> = cuts.iter().map(|c| c.swept).collect();
+        swept.sort(); swept.dedup();
+        for s in swept {
+            let poses: Vec<Motion> = cuts.iter().filter(|c| c.swept == s).map(|c| c.pose).collect();
+            let evidence = super::planar_subtraction::admit(sk,s,&poses,&inside,bounds).map_err(|(_,m,_)| m)?;
+            let super::admission::Class::Subtraction(found) = evidence.class else { return Err("not a subtraction sweep".into()) };
+            let chords: Vec<Vec<Vec<Chords>>> = found.slabs.iter().map(|s| s.stations.iter()
+                .map(|(_,r)| (0..r.loops.len()).map(|l| Chords::of(r,l)).collect()).collect()).collect();
+            let (found,chords) = (std::sync::Arc::new(*found),std::sync::Arc::new(chords));
+            surfaces.push(Surface {name:format!("{} flank",sk.solids[s].name),generated:true});
+            for pose in poses {
+                removed.push(Removed {found:found.clone(),chords:chords.clone(),pose:(pose,pose.inverse()),surface:surfaces.len()-1});
+            }
         }
         let flanks = surfaces.len();
         surfaces.push(Surface {name:format!("{} blank",sk.solids[body].name),generated:false});
         let field = MaterialField::read(sk,body,cad::AXIS_TOLERANCE)?;
-        let subtracted = Subtracted {blank:blank.clone(),cuts:removed,flanks};
         Ok(Self {exact:None,surfaces,blank,faces:Vec::new(),sweeps:Vec::new(),field,options,operands:Vec::new(),planar:None,
-            subtracted:Some(subtracted)})
+            subtracted:Some(Subtracted {cuts:removed,flanks})})
     }
 
     pub fn surfaces(&self) -> &[Surface] { &self.surfaces }
@@ -665,7 +661,7 @@ impl Meter {
     pub fn nearest(&self,p: V) -> Option<Nearest> {
         if let Some(exact) = &self.exact { return exact.nearest(p).filter(|n| n.distance.abs() <= self.options.reach) }
         if let Some(planar) = &self.planar { return planar.nearest(p).filter(|n| n.distance.abs() <= self.options.reach) }
-        if let Some(s) = &self.subtracted { return s.nearest(p).filter(|n| n.distance.abs() <= self.options.reach) }
+        if let Some(s) = &self.subtracted { return s.nearest(&self.blank,p).filter(|n| n.distance.abs() <= self.options.reach) }
         if !self.operands.is_empty() { return self.composed(p) }
         let mut candidates = Vec::new();
         for (i,face) in self.faces.iter().enumerate() {

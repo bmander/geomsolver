@@ -273,15 +273,17 @@ their ends bisected; walked with `R` on the left they join where they cross (sol
 edge, exactly) or leave the box, which carries the loop round to the next stretch entering. A
 whole period is where the motion takes the section onto itself (`Setting::alike`: the tool's
 symmetry counted, the star's 540° at 4:6), and a roll that is neither one nor clear of the blank at
-both ends is refused naming the period (`period`). `brep::sweep::subtraction` builds each
+both ends is refused naming the period. `brep::sweep::subtraction` builds each
 counter-clockwise loop and the clockwise ones within it as a profile (each stretch a cubic B-spline
 fitted through its exact points within `FIT_MM` or the tolerance's fit, a ring split at its middle)
 carried through its slab, a hair past the blank where the slab ends at its face, and cuts it from
 the blank at every placement; a drafted slab (#607) is read at `STATIONS` heights and lofted
 (`build::lofted`, a B-spline surface a stretch, cubic along it and across the stations) through
 every other one, held to the ones between within the fit's bar, its loops matched station for
-station or refused. `accuracy::Subtracted` meters it; a `through:` roll never clear of its body is
-refused saying the period to state (`roll::period`). `tests/planar_subtraction.rs` is the gate
+station or refused. `accuracy::Subtracted` meters it, reading each sweep by the class's own
+`planar_subtraction::admit`; a `through:` roll never clear of its body is refused saying the period
+to state. Every period is found by one search (`roll::first_alike`: a degree at a time, none for a
+tool the motion does not move) and said in one form (`roll::advice`). `tests/planar_subtraction.rs` is the gate
 (the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,
 one arm through, Q3, the drafted wheel at 10 µm).
 

@@ -28,21 +28,13 @@
 use crate::fmath::Det;
 use crate::motion::Family;
 use crate::solid::admission::Condition;
+use crate::brep::plane2::{add,cross,dist,dot,left,meet,norm as length,scale,sub,unit,Carrier,Touch};
+use crate::solid::PlanarField;
 use crate::solid::surface::Edge;
 
 type P = [f64;2];
 type V = [f64;3];
 
-fn cross(a: P,b: P) -> f64 { a[0]*b[1]-a[1]*b[0] }
-fn dot(a: P,b: P) -> f64 { a[0]*b[0]+a[1]*b[1] }
-fn sub(a: P,b: P) -> P { [a[0]-b[0],a[1]-b[1]] }
-fn add(a: P,b: P) -> P { [a[0]+b[0],a[1]+b[1]] }
-fn scale(a: P,k: f64) -> P { [a[0]*k,a[1]*k] }
-fn length(a: P) -> f64 { a[0].dhypot(a[1]) }
-fn dist(a: P,b: P) -> f64 { length(sub(a,b)) }
-fn unit(a: P) -> P { let l = length(a); if l > 0. { scale(a,1./l) } else { a } }
-/// A quarter turn counter-clockwise.
-fn left(a: P) -> P { [-a[1],a[0]] }
 /// A quarter turn clockwise: the outward normal of a walk with its material on its left.
 fn right(a: P) -> P { [a[1],-a[0]] }
 
@@ -53,6 +45,13 @@ pub struct Refusal { pub row: Condition,pub message: String,pub witness: Option<
 fn refuse(row: Condition,message: impl Into<String>,witness: Option<P>) -> Refusal { Refusal {row,message:message.into(),witness} }
 
 fn debug() -> bool { std::env::var_os("SOLVENT_REGION_DEBUG").is_some() }
+
+/// Whether pose `m` keeps the plane through `o` square to unit `n` in itself, the same face up and
+/// not moving off it (P1), to `1e-9` of `size`.
+pub(crate) fn keeps(m: &crate::envelope::Motion,o: V,n: V,size: f64) -> bool {
+    use crate::space::{dot,sub};
+    dot(sub(m.point(o),o),n).abs() <= 1e-9*size && dot(m.velocity(o),n).abs() <= 1e-9*size && dot(m.vector(n),n) >= 1.-1e-9
+}
 
 /// The plane the motion keeps, in space: a point of it, two unit axes in it and its unit normal.
 #[derive(Clone,Copy,Debug)]
@@ -73,34 +72,37 @@ impl Plane {
 pub enum Tree { Member(usize),Union(Vec<Tree>),Common(Vec<Tree>) }
 
 /// The tool's section at one height, in the plane's coordinates: each member's loops walked with
-/// its material on the left (none where the member does not reach the height), and how they
-/// combine.
+/// its material on the left (none where the member does not reach the height), how they combine,
+/// and the field they make (`PlanarField`'s, joined as the tree joins them; none where empty).
 #[derive(Clone,Debug)]
-pub struct Section { pub(crate) members: Vec<Option<Vec<Vec<Edge>>>>,pub tree: Tree }
+pub struct Section { members: Vec<Option<Vec<Vec<Edge>>>>,field: Option<PlanarField> }
 
 impl Section {
-    /// A member's signed distance at `p`: its loops' nearest edge, signed by ray parity; nothing
-    /// (+∞) where the member is absent.
-    fn member(&self,m: usize,p: P) -> f64 {
-        let Some(loops) = &self.members[m] else { return f64::INFINITY };
-        let (mut best,mut crossings) = (f64::INFINITY,0);
-        for e in loops.iter().flatten() {
-            best = best.min(e.distance(p));
-            crossings += e.crossings(p);
+    /// The section of `members` joined as `tree` says, refused where a member's loops are no field.
+    pub(crate) fn new(members: Vec<Option<Vec<Vec<Edge>>>>,tree: &Tree) -> Result<Section,String> {
+        fn join(members: &[Option<Vec<Vec<Edge>>>],t: &Tree) -> Result<Option<PlanarField>,String> {
+            let (ts,common) = match t {
+                Tree::Member(m) => return members[*m].as_ref().map(|l| PlanarField::from_loops(l,0.)).transpose(),
+                Tree::Union(ts) => (ts,false),
+                Tree::Common(ts) => (ts,true),
+            };
+            let mut out: Option<PlanarField> = None;
+            for t in ts {
+                // what is held in common with nothing is nothing
+                let Some(f) = join(members,t)? else { if common { return Ok(None) } else { continue } };
+                out = Some(match out {
+                    None => f,
+                    Some(o) => if common { o.intersection(f) } else { o.union(f) }.map_err(|e| format!("{e:?}"))?,
+                });
+            }
+            Ok(out)
         }
-        if crossings%2 == 1 { -best } else { best }
-    }
-
-    fn tree(&self,t: &Tree,p: P) -> f64 {
-        match t {
-            Tree::Member(m) => self.member(*m,p),
-            Tree::Union(ts) => ts.iter().map(|t| self.tree(t,p)).fold(f64::INFINITY,f64::min),
-            Tree::Common(ts) => ts.iter().map(|t| self.tree(t,p)).fold(f64::NEG_INFINITY,f64::max),
-        }
+        let field = join(&members,tree)?;
+        Ok(Section {members,field})
     }
 
     /// The section's field at `p`: negative inside, one-Lipschitz, zero on its boundary.
-    pub fn value(&self,p: P) -> f64 { self.tree(&self.tree,p) }
+    pub fn value(&self,p: P) -> f64 { self.field.as_ref().map_or(f64::INFINITY,|f| f.value(p)) }
 
     /// Whether no member reaches this height.
     pub fn is_empty(&self) -> bool { self.members.iter().all(Option::is_none) }
@@ -145,10 +147,7 @@ impl Setting {
         // ω from Aᵀ Ȧ = ω J: the first column of Ȧ against A's second
         let omega = cross(a0,du);
         let b = [a[0][0]*dc[0]+a[1][0]*dc[1],a[0][1]*dc[0]+a[1][1]*dc[1]];
-        let n = pl.n;
-        let off = crate::space::dot(crate::space::sub(m.point(o),o),n);
-        let turn = crate::space::dot(m.vector(n),n);
-        if off.abs() > 1e-9*self.scale || crate::space::dot(m.velocity(o),n).abs() > 1e-9*self.scale || turn < 1.-1e-9 {
+        if !keeps(&m,o,pl.n,self.scale) {
             return Err(refuse(Condition::Plane,format!("`{}` carries the tool out of its plane, or turns it over",self.family.name),None))
         }
         Ok(Rigid {a,c,omega,b})
@@ -166,6 +165,9 @@ impl Setting {
 
     fn tolerance(&self) -> f64 { 1e-6*(1.+self.scale) }
 
+    /// How near the section's boundary a point is on it: rounding's, at the section's size.
+    fn on(&self) -> f64 { 1e-9*(1.+self.scale) }
+
     /// Points of the section's boundary, `per` an edge, and each a hair inside it.
     fn samples(&self,per: usize) -> Vec<(P,P)> {
         let h = 1e-4*(1.+self.scale);
@@ -174,27 +176,28 @@ impl Setting {
             let (x,y) = (e.at(f-1e-6),e.at(f+1e-6));
             let p = e.at(f);
             (p,add(p,scale(unit(left(sub(y,x))),h)))
-        })).filter(|&(p,q)| self.section.value(p).abs() <= 1e-9*(1.+self.scale) && self.section.value(q) < 0.).collect()
+        })).filter(|&(p,q)| self.section.value(p).abs() <= self.on() && self.section.value(q) < 0.).collect()
     }
 
     /// Whether the section stands where it stood at roll `t0` again at `t1`: the motion between
     /// the two takes it onto itself (a whole period of the pair as the observer sees it, the tool's
     /// own symmetry counted), read at points of its boundary and a hair inside them.
-    pub fn alike(&self,t0: f64,t1: f64) -> bool {
+    pub fn alike(&self,t0: f64,t1: f64) -> bool { self.alike_at(&self.samples(8),t0,t1) }
+
+    /// `alike`, read at `samples` (`samples`'s).
+    fn alike_at(&self,samples: &[(P,P)],t0: f64,t1: f64) -> bool {
         let (Some(b0),Some(m1)) = (self.back(t0),self.family.pose_at(t1).ok()) else { return false };
         let pl = &self.plane;
         let carried = |x: P| b0.point(pl.page(m1.point(pl.world(x,0.))));
         let near = 1e-7*(1.+self.scale);
-        let samples = self.samples(8);
         !samples.is_empty() && samples.iter().all(|&(p,q)| self.section.value(carried(p)).abs() <= near && self.section.value(carried(q)) < 0.)
     }
 
-    /// The least roll after `t0`, a degree at a time and within `turns` turns, at which the section
-    /// stands again where it stood at `t0` (`alike`).
-    pub fn period(&self,t0: f64,turns: f64) -> Option<f64> {
-        let step = std::f64::consts::PI/180.;
-        let last = (turns*360.) as usize;
-        (1..=last).find(|&k| self.alike(t0,t0+step*k as f64)).map(|k| t0+step*k as f64)
+    /// The least roll after `t0`, a degree at a time within `PERIOD_TURNS` turns, at which the
+    /// section stands again where it stood at `t0` (`alike`, by `roll::first_alike`).
+    pub fn period(&self,t0: f64) -> Option<f64> {
+        let samples = self.samples(8);
+        crate::solid::roll::first_alike(t0,crate::solid::roll::PERIOD_TURNS,|t| self.alike_at(&samples,t0,t))
     }
 
     /// The section's points (boundary and a grid inside it) carried by the pose at `t`, in the
@@ -229,8 +232,8 @@ enum Kind {
     /// lies within its fan of normals — its velocity crossing one side's normal outward and the
     /// other's inward — and joins a side's contact exactly where that one reaches it.
     Corner { x: P,inward: P,normals: [P;2] },
-    /// An edge at the pose of roll `at`.
-    Fixed { edge: Edge,at: f64 },
+    /// An edge at the pose of roll `at`, and that pose.
+    Fixed { edge: Edge,at: f64,pose: Rigid },
 }
 
 /// One point of a candidate: where it is in the plane, and the section's outward normal there.
@@ -245,15 +248,7 @@ impl Kind {
     /// boundary at its own pose (`on`, the section's tolerance).
     fn at(&self,s: &Setting,u: f64,on: f64) -> Option<Hit> {
         let (x,outward,pose) = match self {
-            Kind::Fixed {edge,at} => {
-                let x = edge.at(u);
-                let t = match *edge {
-                    Edge::Line {a,b,..} => unit(sub(b,a)),
-                    Edge::Arc {start,sweep,..} => { let (sn,cs) = (start+u*sweep).dsin_cos(); scale([-sn,cs],sweep.signum()) }
-                    Edge::Conic {..} => return None,
-                };
-                (x,right(t),s.rigid(*at).ok()?)
-            }
+            Kind::Fixed {edge,pose,..} => { let x = edge.at(u); (x,right(tangent(edge,x)),*pose) }
             _ => {
                 let r = s.rigid(u).ok()?;
                 let (w,b) = (r.omega,r.b);
@@ -285,7 +280,7 @@ impl Kind {
                 }
             }
         };
-        if s.section.value(x).abs() > on { return None }
+        if on.is_finite() && s.section.value(x).abs() > on { return None }
         Some(Hit {at:pose.point(x),outward:unit(pose.vector(outward))})
     }
 }
@@ -303,7 +298,7 @@ pub struct Loop { pub pieces: Vec<Piece>,pub corners: Vec<P>,pub area: f64 }
 
 /// The region's boundary within the box: its loops, and what they are read from.
 #[derive(Clone,Debug)]
-pub struct SweptRegion { pub setting: Setting,candidates: Vec<Kind>,pub loops: Vec<Loop>,pub bounds: [P;2],
+pub struct SweptRegion { pub setting: Setting,candidates: Vec<Kind>,pub loops: Vec<Loop>,
     /// How many candidates were read, and kept stretches found.
     pub read: [usize;2] }
 
@@ -317,11 +312,13 @@ enum End { Domain,Valid,Kept,Box }
 struct Run { candidate: usize,ends: [f64;2],why: [End;2] }
 
 /// Samples of the roll per degree, and of a fixed edge.
-const PER_DEGREE: f64 = 4.;
+pub const PER_DEGREE: f64 = 4.;
 const EDGE_SAMPLES: usize = 400;
 /// Roll steps a turn of the keeping test's grid takes, and the least stretch it halves to.
 const KEEP_PER_TURN: f64 = 1440.;
 const KEEP_STEP: f64 = 1e-3;
+/// How many grid poses apart the keeping test's first readings are.
+const STRIDE: usize = 32;
 
 impl SweptRegion {
     /// The boundary of the region `setting`'s section sweeps over its roll, within `bounds` (the
@@ -338,10 +335,10 @@ impl SweptRegion {
         for &t in times.iter().step_by(16) { s.rigid(t)?; }
         let backs: Vec<Back> = times.iter().map(|&t| s.back(t).ok_or_else(|| refuse(Condition::Plane,"the motion cannot be read",None)))
             .collect::<Result<_,_>>()?;
-        let keep = Keep {setting:s,backs:&backs,times:&times,tol:s.tolerance(),
+        let keep = Keep {setting:s,backs:&backs,times:&times,marks:Keep::marks(backs.len()),tol:s.tolerance(),
             domain:crate::interval::Interval::new(a,b).map_err(|_| refuse(Condition::Period,"the roll is no interval",None))?};
         let candidates = candidates(s,whole);
-        let on = 1e-9*(1.+s.scale);
+        let on = s.on();
         let inside = |p: P| (0..2).all(|k| p[k] >= bounds[0][k] && p[k] <= bounds[1][k]);
         // each candidate sampled over its domain: where it is valid, inside the box and kept
         let state = |k: usize,u: f64| -> Result<(),End> {
@@ -395,7 +392,7 @@ impl SweptRegion {
             let n = 32;
             let at: Vec<Hit> = (0..=n).filter_map(|j| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*j as f64/n as f64)).collect();
             for w in at.windows(2) {
-                if dot(sub(w[1].at,w[0].at),left(w[0].outward)) < -1e-9*(1.+s.scale) {
+                if dot(sub(w[1].at,w[0].at),left(w[0].outward)) < -s.on() {
                     return Err(refuse(Condition::Kept,"the swept region's boundary folds back on itself",Some(w[0].at)))
                 }
             }
@@ -410,7 +407,7 @@ impl SweptRegion {
             }
         }
         // each stretch's end joined to the start of the next: where they meet exactly (two
-        // crossing, solved together), run on into each other or the box carries one to the next
+        // crossing, solved together by `joined`), run on into each other or the box carries one to the next
         let join = 1e-7*(1.+s.scale);
         let loose = 1e-3*(1.+s.scale);
         let mut next: Vec<Option<usize>> = vec![None;runs.len()];
@@ -428,7 +425,7 @@ impl SweptRegion {
         // an edge held at an end pose joined to the contact the roll ends at: tangent there, so the
         // keeping test finds its end only roughly; the contact is on the edge, and is that end
         let tangent = |fixed: &Run,other: &Run,end: usize,p: P| -> Option<f64> {
-            let Kind::Fixed {edge,at} = &candidates[fixed.candidate] else { return None };
+            let Kind::Fixed {edge,at,..} = &candidates[fixed.candidate] else { return None };
             if other.why[1-end] != End::Domain || matches!(candidates[other.candidate],Kind::Fixed {..}) { return None }
             let x = s.back(*at)?.point(p);
             (edge.distance(x) <= join).then(|| parameter(edge,x))
@@ -441,7 +438,7 @@ impl SweptRegion {
                 runs[i].ends[1] = u; at[i][1] = at[j][0];
             } else if d > join {
                 // two stretches crossing: where their curves meet, solved for both parameters
-                let Some((ui,uj,p)) = meet(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],loose) else { continue };
+                let Some((ui,uj,p)) = joined(&point,runs[i].candidate,runs[i].ends[1],runs[j].candidate,runs[j].ends[0],loose) else { continue };
                 runs[i].ends[1] = ui; runs[j].ends[0] = uj;
                 at[i][1] = p; at[j][0] = p;
             }
@@ -519,7 +516,7 @@ impl SweptRegion {
             loops.push(Loop {pieces:(0..4).map(|k| Piece::Side {a:c[k],b:c[(k+1)%4]}).collect(),corners:c.to_vec(),area:0.});
         }
         let read = [candidates.len(),runs.len()];
-        let mut region = SweptRegion {setting,candidates,loops,bounds,read};
+        let mut region = SweptRegion {setting,candidates,loops,read};
         for k in 0..region.loops.len() {
             let pts = region.polyline(k,16);
             region.loops[k].area = pts.iter().zip(pts.iter().cycle().skip(1)).map(|(p,q)| cross(*p,*q)).sum::<f64>()/2.;
@@ -551,17 +548,20 @@ impl SweptRegion {
         (0..n).flat_map(|k| (0..per).filter_map(move |j| self.point(l,k,j as f64/per as f64))).collect()
     }
 
-    /// Whether a point of the plane lies inside the swept region, by the loops' ray parity; the
-    /// region is read within the box only.
-    pub fn holds(&self,p: P,per: usize) -> bool {
-        let mut crossings = 0;
-        for l in 0..self.loops.len() {
-            let pts = self.polyline(l,per);
-            for (x,y) in pts.iter().zip(pts.iter().cycle().skip(1)) {
-                if (x[1] > p[1]) != (y[1] > p[1]) && p[0] < x[0]+(p[1]-x[1])*(y[0]-x[0])/(y[1]-x[1]) { crossings += 1 }
-            }
-        }
-        crossings%2 == 1
+    /// Each loop bounding a piece of the region (counter-clockwise) with the holes in it: the
+    /// clockwise loops within it and within no smaller one. A cutter is each such loop and its
+    /// holes, read off polylines `per` points a piece.
+    pub fn nesting(&self,per: usize) -> Vec<(usize,Vec<usize>)> {
+        let polylines: Vec<Vec<P>> = (0..self.loops.len()).map(|l| self.polyline(l,per)).collect();
+        let area = |l: usize| self.loops[l].area;
+        let outer: Vec<usize> = (0..self.loops.len()).filter(|&l| area(l) > 0.).collect();
+        outer.iter().map(|&l| {
+            let holes = (0..self.loops.len()).filter(|&h| area(h) < 0.).filter(|&h| {
+                let p = polylines[h][0];
+                parity(&polylines[l],p) && !outer.iter().any(|&o| o != l && area(o) < area(l) && parity(&polylines[o],p))
+            }).collect();
+            (l,holes)
+        }).collect()
     }
 
     /// No two chords of the loops meet but at a shared corner.
@@ -595,7 +595,7 @@ impl SweptRegion {
 
 /// Where candidates `i` near parameter `ui` and `j` near `uj` meet: Newton on both parameters,
 /// kept within `reach` of where it started.
-fn meet(point: &dyn Fn(usize,f64) -> Option<Hit>,i: usize,ui: f64,j: usize,uj: f64,reach: f64) -> Option<(f64,f64,P)> {
+fn joined(point: &dyn Fn(usize,f64) -> Option<Hit>,i: usize,ui: f64,j: usize,uj: f64,reach: f64) -> Option<(f64,f64,P)> {
     let (mut x,mut y) = (ui,uj);
     let start = point(i,x)?.at;
     for _ in 0..40 {
@@ -622,7 +622,7 @@ fn meet(point: &dyn Fn(usize,f64) -> Option<Hit>,i: usize,ui: f64,j: usize,uj: f
 /// the roll is no whole period, every edge held at each end pose.
 fn candidates(s: &Setting,whole: bool) -> Vec<Kind> {
     let section = &s.section;
-    let on = 1e-9*(1.+s.scale);
+    let on = s.on();
     let edges: Vec<(usize,&Edge)> = section.members.iter().enumerate()
         .flat_map(|(m,l)| l.iter().flatten().flatten().map(move |e| (m,e))).collect();
     let mut out: Vec<Kind> = Vec::new();
@@ -652,16 +652,16 @@ fn candidates(s: &Setting,whole: bool) -> Vec<Kind> {
             }
         }
     }
-    let size = 1e-9*(1.+s.scale);
     let mut seen: Vec<P> = Vec::new();
     for (x,_) in corners {
-        if seen.iter().any(|&y| dist(x,y) <= size) { continue }
+        if seen.iter().any(|&y| dist(x,y) <= on) { continue }
         seen.push(x);
         if let Some((inward,normals)) = fan(section,x,1e-6*(1.+s.scale)) { out.push(Kind::Corner {x,inward,normals}) }
     }
     if !whole {
         for at in s.roll {
-            for (_,e) in &edges { out.push(Kind::Fixed {edge:(*e).clone(),at}) }
+            let Ok(pose) = s.rigid(at) else { continue };
+            for (_,e) in &edges { out.push(Kind::Fixed {edge:(*e).clone(),at,pose}) }
         }
     }
     // one candidate of each curve: members of a union that share an edge sweep it once
@@ -675,16 +675,15 @@ fn candidates(s: &Setting,whole: bool) -> Vec<Kind> {
             Kind::Line {a,d,length} => vec![0.,a[0],a[1],d[0],d[1],*length],
             Kind::Arc {edge:e,side} => [vec![1.,*side],edge(e)].concat(),
             Kind::Corner {x,..} => vec![2.,x[0],x[1]],
-            Kind::Fixed {edge:e,at} => [vec![3.,*at],edge(e)].concat(),
+            Kind::Fixed {edge:e,at,..} => [vec![3.,*at],edge(e)].concat(),
         }
     };
-    let near = 1e-9*(1.+s.scale);
-    let mut kept: Vec<Kind> = Vec::new();
+    let mut kept: Vec<(Vec<f64>,Kind)> = Vec::new();
     for k in out {
         let x = key(&k);
-        if !kept.iter().any(|y| { let y = key(y); y.len() == x.len() && x.iter().zip(&y).all(|(p,q)| (p-q).abs() <= near) }) { kept.push(k) }
+        if !kept.iter().any(|(y,_)| y.len() == x.len() && x.iter().zip(y).all(|(p,q)| (p-q).abs() <= on)) { kept.push((x,k)) }
     }
-    kept
+    kept.into_iter().map(|(_,k)| k).collect()
 }
 
 /// An edge's unit tangent, the way it is walked, at its point `p`.
@@ -694,6 +693,12 @@ fn tangent(e: &Edge,p: P) -> P {
         Edge::Arc {center,sweep,..} => scale(unit(left(sub(p,center))),sweep.signum()),
         Edge::Conic {..} => [1.,0.],
     }
+}
+
+/// Whether `p` lies within the closed polyline `poly`, by ray parity.
+pub fn parity(poly: &[P],p: P) -> bool {
+    poly.iter().zip(poly.iter().cycle().skip(1))
+        .filter(|(x,y)| (x[1] > p[1]) != (y[1] > p[1]) && p[0] < x[0]+(p[1]-x[1])*(y[0]-x[0])/(y[1]-x[1])).count()%2 == 1
 }
 
 /// The parameter of edge `e` (0 to 1 along it) nearest `x`.
@@ -734,83 +739,64 @@ fn fan(section: &Section,x: P,r: f64) -> Option<(P,[P;2])> {
     Some((mid,[right(t1),left(t2)]))
 }
 
-/// Where two edges cross (a line's or an arc's carrier met within both).
+/// Where two edges cross: their carriers' meeting (`plane2::meet`) within both, a point on an
+/// edge no farther from it than rounding.
 fn crossing(a: &Edge,b: &Edge) -> Vec<P> {
-    let carrier = |e: &Edge| -> Option<(P,P,f64)> { match *e {
-        Edge::Line {a,b,..} => Some((a,sub(b,a),0.)),
-        Edge::Arc {center,radius,..} => Some((center,[0.,0.],radius)),
+    let carrier = |e: &Edge| match *e {
+        Edge::Line {a,b,..} => Some(Carrier::Line {p:a,d:unit(sub(b,a))}),
+        Edge::Arc {center,radius,..} => Some(Carrier::Circle {c:center,r:radius}),
         Edge::Conic {..} => None,
-    } };
+    };
     let (Some(x),Some(y)) = (carrier(a),carrier(b)) else { return Vec::new() };
-    let mut points: Vec<P> = Vec::new();
-    match (x.2 == 0.,y.2 == 0.) {
-        (true,true) => {
-            let w = cross(x.1,y.1);
-            if w.abs() > 1e-15 { points.push(add(x.0,scale(x.1,cross(sub(y.0,x.0),y.1)/w))) }
-        }
-        (true,false) | (false,true) => {
-            let ((p,d,_),(c,_,r)) = if x.2 == 0. { (x,y) } else { (y,x) };
-            let d = unit(d);
-            let f = sub(p,c);
-            let (bb,k) = (2.*dot(f,d),dot(f,f)-r*r);
-            let disc = bb*bb-4.*k;
-            if disc >= 0. { let q = disc.sqrt(); points.extend([add(p,scale(d,(-bb-q)/2.)),add(p,scale(d,(-bb+q)/2.))]) }
-        }
-        (false,false) => {
-            let (c0,r0,c1,r1) = (x.0,x.2,y.0,y.2);
-            let d = sub(c1,c0);
-            let l = length(d);
-            if l > 0. {
-                let aa = (r0*r0-r1*r1+l*l)/(2.*l);
-                let h2 = r0*r0-aa*aa;
-                if h2 >= 0. {
-                    let m = add(c0,scale(d,aa/l));
-                    let n = scale(left(d),h2.sqrt()/l);
-                    points.extend([add(m,n),sub(m,n)]);
-                }
-            }
-        }
-    }
-    // within both edges: a point on an edge is no farther from it than rounding
-    points.into_iter().filter(|&p| a.distance(p) <= 1e-9*(1.+length(p)) && b.distance(p) <= 1e-9*(1.+length(p))).collect()
+    meet(x,y,Touch::Exact).unwrap_or_default().into_iter()
+        .filter(|&p| a.distance(p) <= 1e-9*(1.+length(p)) && b.distance(p) <= 1e-9*(1.+length(p))).collect()
 }
 
 /// What decides that a point of the plane is kept: outside the section at every pose of the roll.
-struct Keep<'a> { setting: &'a Setting,backs: &'a [Back],times: &'a [f64],tol: f64,domain: crate::interval::Interval }
+struct Keep<'a> { setting: &'a Setting,backs: &'a [Back],times: &'a [f64],marks: Vec<usize>,tol: f64,domain: crate::interval::Interval }
 
 impl Keep<'_> {
+    /// The grid poses read first: every `STRIDE`th, and the last.
+    fn marks(n: usize) -> Vec<usize> {
+        let mut marks: Vec<usize> = (0..n).step_by(STRIDE.min(n-1)).collect();
+        if *marks.last().expect("a mark") != n-1 { marks.push(n-1) }
+        marks
+    }
+
     /// Whether `y` lies outside the section at every pose, to `tol`: the section's signed distance
-    /// at `y` carried back, read on the grid's poses and between two readings bounded below by
-    /// the lesser less the point's speed times half the step (the distance is one-Lipschitz), the
-    /// stretch halved where that bound is not yet above `-tol` — down to `KEEP_STEP` of the roll,
-    /// where both readings within it are taken for the stretch: at a contact the distance is zero
-    /// and flat, and a Lipschitz bound would halve to the roundoff to clear it.
+    /// at `y` carried back, read on the grid's marks and between two readings bounded below by the
+    /// lesser less the point's speed times half the stretch (the distance is one-Lipschitz), the
+    /// stretch halved where that bound is not yet above `-tol` — on the grid's own poses while it
+    /// has them, then off it, down to `KEEP_STEP` of the roll, where both readings within it are
+    /// taken for the stretch: at a contact the distance is zero and flat, and a Lipschitz bound
+    /// would halve to the roundoff to clear it.
     fn outside(&self,y: P) -> bool {
         let s = self.setting;
-        let world = s.plane.world(y,0.);
-        let Ok(speed) = s.family.inverse_point_speed_bound(world,self.domain) else { return false };
         let read = |b: &Back| s.section.value(b.point(y));
-        let n = self.backs.len();
-        let stride = 32.min(n-1);
-        let mut marks: Vec<usize> = (0..n).step_by(stride).collect();
-        if *marks.last().expect("a mark") != n-1 { marks.push(n-1) }
-        let mut values = Vec::with_capacity(marks.len());
-        for &j in &marks {
+        let mut values = Vec::with_capacity(self.marks.len());
+        for &j in &self.marks {
             let v = read(&self.backs[j]);
             if v < -self.tol { return false }
             values.push(v);
         }
-        let mut stack: Vec<(f64,f64,f64,f64)> = marks.windows(2).zip(values.windows(2))
-            .map(|(m,v)| (self.times[m[0]],self.times[m[1]],v[0],v[1])).collect();
-        while let Some((a,b,va,vb)) = stack.pop() {
+        let Ok(speed) = s.family.inverse_point_speed_bound(s.plane.world(y,0.),self.domain) else { return false };
+        // a stretch by its ends' rolls and readings, and their grid indices while it is on the grid
+        let mut stack: Vec<(f64,f64,f64,f64,Option<[usize;2]>)> = self.marks.windows(2).zip(values.windows(2))
+            .map(|(m,v)| (self.times[m[0]],self.times[m[1]],v[0],v[1],Some([m[0],m[1]]))).collect();
+        while let Some((a,b,va,vb,on)) = stack.pop() {
             if va.min(vb)-speed*(b-a)/2. >= -self.tol { continue }
             if b-a <= KEEP_STEP { continue }
-            let m = 0.5*(a+b);
-            let Some(back) = s.back(m) else { return false };
-            let vm = read(&back);
+            let (m,vm,halves) = match on {
+                Some([i,j]) if j-i >= 2 => { let k = (i+j)/2; (self.times[k],read(&self.backs[k]),[Some([i,k]),Some([k,j])]) }
+                _ => {
+                    let m = 0.5*(a+b);
+                    let Some(back) = s.back(m) else { return false };
+                    (m,read(&back),[None,None])
+                }
+            };
             if vm < -self.tol { return false }
-            stack.push((a,m,va,vm));
-            stack.push((m,b,vm,vb));
+            stack.push((a,m,va,vm,halves[0]));
+            stack.push((m,b,vm,vb,halves[1]));
         }
         true
     }

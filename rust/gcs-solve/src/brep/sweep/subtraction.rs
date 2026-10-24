@@ -45,8 +45,7 @@ fn profiles(region: &SweptRegion,scale: f64,fit: f64,name: &str) -> Result<Vec<J
         // a loop of one stretch (a whole ring) is split at its middle: an edge has two ends
         let halves: Vec<(usize,[f64;2])> = if n == 1 { vec![(0,[0.,0.5]),(0,[0.5,1.])] } else { (0..n).map(|k| (k,[0.,1.])).collect() };
         Ok(Json::Arr(halves.into_iter().map(|(k,[f0,f1])| {
-            let at = |f: f64| if f <= 0. { Some(lp.corners[k]) } else if f >= 1. { Some(lp.corners[(k+1)%n]) } else { region.point(l,k,f) };
-            let (Some(a),Some(b)) = (at(f0),at(f1)) else {
+            let (Some(a),Some(b)) = (region.point(l,k,f0),region.point(l,k,f1)) else {
                 return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: its swept region's boundary cannot be read")))
             };
             match lp.pieces[k] {
@@ -60,26 +59,9 @@ fn profiles(region: &SweptRegion,scale: f64,fit: f64,name: &str) -> Result<Vec<J
             }
         }).collect::<Result<Vec<_>,_>>()?))
     };
-    let polylines: Vec<Vec<P>> = (0..region.loops.len()).map(|l| region.polyline(l,8)).collect();
-    let holds = |outer: &[P],p: P| {
-        let mut crossings = 0;
-        for (x,y) in outer.iter().zip(outer.iter().cycle().skip(1)) {
-            if (x[1] > p[1]) != (y[1] > p[1]) && p[0] < x[0]+(p[1]-x[1])*(y[0]-x[0])/(y[1]-x[1]) { crossings += 1 }
-        }
-        crossings%2 == 1
-    };
     let mut out = Vec::new();
-    for l in (0..region.loops.len()).filter(|&l| region.loops[l].area > 0.) {
-        let mut loops = vec![edges(l)?];
-        for h in (0..region.loops.len()).filter(|&h| region.loops[h].area < 0.) {
-            // a hole is the outer loop's where it lies within it, and within no smaller outer loop
-            let p = polylines[h][0];
-            let within = |o: usize| holds(&polylines[o],p);
-            if !within(l) { continue }
-            let smaller = (0..region.loops.len()).any(|o| o != l && region.loops[o].area > 0. && region.loops[o].area < region.loops[l].area
-                && within(o));
-            if !smaller { loops.push(edges(h)?) }
-        }
+    for (l,holes) in region.nesting(8) {
+        let loops = std::iter::once(l).chain(holes).map(edges).collect::<Result<Vec<_>,_>>()?;
         out.push(object([("loops",Json::Arr(loops)),("origin",vec(plane.o.map(|x| x*scale))),("normal",vec(plane.n))]));
     }
     Ok(out)
@@ -98,16 +80,12 @@ pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tol
             return Err(ExportRefusal::at(Stage::Admission,format!("`{name}` is not a planar subtraction sweep")))
         };
         let clock = crate::clock::Instant::now();
-        let [lo,hi] = found.heights;
-        let past = crate::solid::planar_subtraction::PAST*(hi-lo);
         let mut cutters: Vec<Brep> = Vec::new();
         for slab in &found.slabs {
-            // a hair past the blank where the slab ends at its face
-            let reach = [slab.heights[0]-if slab.heights[0] == lo { past } else { 0. },slab.heights[1]+if slab.heights[1] == hi { past } else { 0. }];
             match slab.stations.as_slice() {
                 [(_,region)] => for profile in profiles(region,scale,fit,name)? {
                     let p = crate::brep::build::Profile::from_json(&profile).at(Stage::Reach)?;
-                    cutters.push(crate::brep::build::prism(&p,reach[0]*scale,reach[1]*scale).at(Stage::Reach)?);
+                    cutters.push(crate::brep::build::prism(&p,slab.reach[0]*scale,slab.reach[1]*scale).at(Stage::Reach)?);
                 },
                 stations => cutters.extend(lofted(stations,scale,fit,name)?),
             }
@@ -177,6 +155,9 @@ fn lofted(stations: &[(f64,SweptRegion)],scale: f64,fit: f64,name: &str) -> Resu
     let interpolate = |pts: &[(f64,f64)],at: &[f64]| crate::curve::interpolating_ctrl_at(pts,at.to_vec())
         .ok_or_else(|| refused("its drafted tool's swept region could not be interpolated".into()));
     let vs: Vec<f64> = lofted.iter().map(|&j| along(stations[j].0)).collect();
+    // across the stations each pole's column is interpolated, its heights the stations'
+    let heights: Vec<(f64,f64)> = lofted.iter().map(|&j| (stations[j].0,0.)).collect();
+    let (hs,vknots,_) = interpolate(&heights,&vs)?;
     let net_of = |l: usize,k: usize| -> Result<Net,ExportRefusal> {
         let mut samples = 8;
         loop {
@@ -199,21 +180,20 @@ fn lofted(stations: &[(f64,SweptRegion)],scale: f64,fit: f64,name: &str) -> Resu
                 ctrl.push(c); uknots = knots;
             }
             if worst > fit && samples < 1024 { samples *= 2; continue }
-            // across the stations, each pole's column through them; the heights the stations'
-            let heights: Vec<(f64,f64)> = lofted.iter().map(|&j| (stations[j].0,0.)).collect();
-            let (hs,vknots,_) = interpolate(&heights,&vs)?;
             let mut poles: Vec<Vec<[f64;3]>> = Vec::new();
             for i in 0..ctrl[0].len() {
                 let column: Vec<(f64,f64)> = ctrl.iter().map(|c| c[i]).collect();
                 let (c,_,_) = interpolate(&column,&vs)?;
                 poles.push(c.iter().zip(&hs).map(|(&(x,y),&(h,_))| plane.world([x,y],h).map(|x| x*scale)).collect());
             }
-            return Ok(Net {du:crate::curve::DEGREE,dv:crate::curve::DEGREE,uknots,vknots,poles,weights:None})
+            return Ok(Net {du:crate::curve::DEGREE,dv:crate::curve::DEGREE,uknots,vknots:vknots.clone(),poles,weights:None})
         }
     };
+    let pieces: Vec<(usize,usize)> = (0..base.loops.len()).flat_map(|l| (0..base.loops[l].pieces.len()).map(move |k| (l,k))).collect();
+    let mut built = crate::par::map(&pieces,|&(l,k)| net_of(l,k)).into_iter();
     let mut nets: Vec<Vec<Net>> = Vec::new();
     for l in 0..base.loops.len() {
-        nets.push((0..base.loops[l].pieces.len()).map(|k| net_of(l,k)).collect::<Result<_,_>>()?);
+        nets.push(built.by_ref().take(base.loops[l].pieces.len()).collect::<Result<_,_>>()?);
     }
     // the stations between, read off the loft: a piece's quarter points and middle
     for &j in &held {
@@ -234,19 +214,9 @@ fn lofted(stations: &[(f64,SweptRegion)],scale: f64,fit: f64,name: &str) -> Resu
         }
     }
     // a cutter of each outer loop and the holes within it
-    let polylines: Vec<Vec<P>> = (0..base.loops.len()).map(|l| base.polyline(l,8)).collect();
-    let holds = |outer: &[P],p: P| outer.iter().zip(outer.iter().cycle().skip(1))
-        .filter(|(x,y)| (x[1] > p[1]) != (y[1] > p[1]) && p[0] < x[0]+(p[1]-x[1])*(y[0]-x[0])/(y[1]-x[1])).count()%2 == 1;
-    let area = |l: usize| base.loops[l].area;
     let mut out = Vec::new();
-    for l in (0..base.loops.len()).filter(|&l| area(l) > 0.) {
-        let mut rings = vec![nets[l].clone()];
-        for h in (0..base.loops.len()).filter(|&h| area(h) < 0.) {
-            let p = polylines[h][0];
-            if !holds(&polylines[l],p) { continue }
-            if (0..base.loops.len()).any(|o| o != l && area(o) > 0. && area(o) < area(l) && holds(&polylines[o],p)) { continue }
-            rings.push(nets[h].clone());
-        }
+    for (l,holes) in base.nesting(8) {
+        let rings = std::iter::once(l).chain(holes).map(|h| nets[h].clone()).collect();
         out.push(crate::brep::build::lofted(plane.o.map(|x| x*scale),plane.n,[z0*scale,z1*scale],rings).map_err(refused)?);
     }
     Ok(out)

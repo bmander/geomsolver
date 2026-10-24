@@ -448,12 +448,9 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // a pocketed prism under a planar motion: rows P1–P5, every placement checked, the blank boxed
     // by its own boundary (a field's support is a construction's box, not the material's)
     let mut planar: Vec<SweepEvidence> = Vec::new();
-    let blank_box = || -> Option<(V,V)> {
-        let mm = cad::millimetres(sk);
-        let blank = crate::brep::recipe::build(&cad::recipe_static(sk,root).ok()?.recipe).ok()?;
-        let (lo,hi) = blank.bounds();
-        Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
-    };
+    // built once, where a planar class first asks for it
+    let boxed = std::cell::OnceCell::new();
+    let blank_box = || -> Option<(V,V)> { *boxed.get_or_init(|| blank_box(sk,root)) };
     let planar_box = order.iter().any(|s| asked[s] == Asked::Planar).then(blank_box).flatten();
     for &swept in order.iter().filter(|s| asked[s] == Asked::Planar) {
         let refused = |(c,m,w): super::planar_class::Failure,pose: Motion| refuse(swept,c,m,w.map(|p| pose.point(p)));
@@ -517,53 +514,60 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     });
     if std::env::var_os("SOLVENT_ADMISSION_TIMES").is_some() { eprintln!("admission: compared in {:?}",clock.elapsed()); }
     let mut admission = Admission {body:root,sweeps:planar};
-    let mut alike = alike.into_iter();
-    // a prism sweep under a motion keeping its plane refused at a row the planar subtraction class
-    // does not ask — a union or a draft in the tool, a concave corner, a roll never clear, a second
-    // contact — asked that class's rows instead (Q1–Q4), every placement at once
+    // each sweep's later placements, read alike or not
+    let mut by: Vec<Vec<bool>> = vec![Vec::new();order.len()];
+    for (&(k,_),a) in later.iter().zip(alike) { by[k].push(a) }
+    let alike = by;
+    // a prism sweep under a motion keeping its plane that the generating rows refuse, at any row and
+    // any placement, is asked the planar subtraction class's rows instead (Q1–Q4), every placement
+    // at once: what those rows guard against — a union or a draft in the tool, a concave corner, a
+    // roll never clear, a second contact — its swept region does not need
     let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
-        let refused = |(condition,message,witness): super::planar_subtraction::Failure| Error::Refused(Refusal {condition,
-            sweep:names[&swept].clone(),message,witness,asked:Asked::Subtraction});
-        let class = super::planar_subtraction::Subtraction::read(sk,swept).map_err(refused)?;
         let inside = |p: V| field.value(p) < -options.margin;
-        let found = class.check(&by_sweep[&swept],&inside,blank_box()).map_err(refused)?;
-        let mut evidence = class.evidence(found);
-        evidence.sweep = swept; evidence.name = names[&swept].clone();
-        evidence.placements = by_sweep[&swept].iter().map(|&pose| Placement {pose,equivalent_to:None}).collect();
-        Ok(evidence)
+        super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|
+            Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness,asked:Asked::Subtraction}))
     };
-    for (result,&swept) in first.into_iter().zip(&order) {
-        let (contacts,found,reads) = match result {
-            Err(Error::Refused(r)) if matches!(r.condition,Condition::Tool|Condition::Corner|Condition::Clearance|Condition::Single)
-                && super::planar_subtraction::asks(sk,swept) => { admission.sweeps.push(subtract(swept)?); continue }
-            result => result?,
-        };
-        let poses = &by_sweep[&swept];
-        let mut placements = vec![Placement {pose:poses[0],equivalent_to:None}];
-        let mut checked: Vec<(usize,Reads)> = vec![(0,reads)];
-        let mut found = found;
-        if let Some((origin,axis)) = revolved {
-            placements.extend(poses.iter().skip(1).map(|pose| Placement {pose:*pose,equivalent_to:Some(0)}));
-            found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
-            found.equivalence = Equivalence::Revolved {origin,axis};
-            admission.sweeps.push(found);
-            continue;
-        }
-        for (k,pose) in poses.iter().enumerate().skip(1) {
-            if alike.next().expect("one answer a later placement") {
-                placements.push(Placement {pose:*pose,equivalent_to:Some(0)}); continue;
+    for (k,(result,&swept)) in first.into_iter().zip(&order).enumerate() {
+        let generating = (|| -> Result<SweepEvidence,Error> {
+            let (contacts,found,reads) = result?;
+            let poses = &by_sweep[&swept];
+            let mut placements = vec![Placement {pose:poses[0],equivalent_to:None}];
+            let mut checked: Vec<(usize,Reads)> = vec![(0,reads)];
+            let mut found = found;
+            if let Some((origin,axis)) = revolved {
+                placements.extend(poses.iter().skip(1).map(|pose| Placement {pose:*pose,equivalent_to:Some(0)}));
+                found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
+                found.equivalence = Equivalence::Revolved {origin,axis};
+                return Ok(found)
             }
-            let inside = inside_at(*pose);
-            let same = checked.iter().skip(1).find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
-            if let Some((j,_)) = same { placements.push(Placement {pose:*pose,equivalent_to:Some(*j)}); continue; }
-            let (_,reads) = check(&contacts,*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
-            checked.push((k,reads));
-            placements.push(Placement {pose:*pose,equivalent_to:None});
-        }
-        found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
-        admission.sweeps.push(found);
+            for (j,pose) in poses.iter().enumerate().skip(1) {
+                if alike[k][j-1] { placements.push(Placement {pose:*pose,equivalent_to:Some(0)}); continue; }
+                let inside = inside_at(*pose);
+                let same = checked.iter().skip(1).find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
+                if let Some((i,_)) = same { placements.push(Placement {pose:*pose,equivalent_to:Some(*i)}); continue; }
+                let (_,reads) = check(&contacts,*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
+                checked.push((j,reads));
+                placements.push(Placement {pose:*pose,equivalent_to:None});
+            }
+            found.sweep = swept; found.name = names[&swept].clone(); found.placements = placements;
+            Ok(found)
+        })();
+        admission.sweeps.push(match generating {
+            Err(Error::Refused(_)) if super::planar_subtraction::asks(sk,swept) => subtract(swept)?,
+            other => other?,
+        });
     }
     Ok(admission)
+}
+
+/// The box body `root`'s static blank lies in (model units, least and greatest corner), read off
+/// its own boundary built by this kernel: a field's support is a construction's box, not the
+/// material's. What the planar classes box the blank by.
+pub fn blank_box(sk: &Sketch,root: usize) -> Option<(V,V)> {
+    let mm = cad::millimetres(sk);
+    let blank = crate::brep::recipe::build(&cad::recipe_static(sk,root).ok()?.recipe).ok()?;
+    let (lo,hi) = blank.bounds();
+    Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
 }
 
 /// One in-blank contact of the fine pass.
