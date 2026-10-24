@@ -714,8 +714,8 @@ bore cut body
 
 /// **Several outputs, one build** (#592): two pictures, each with its own eye and size, and two
 /// exports, each with its own solid — `body`'s STL and STEP beside each other — come out of one
-/// run, and the body is built once for all of them: the export reads the build the pictures
-/// read.
+/// run, and the body is built once for all of them: the pictures read the export's build, and
+/// are what each draws alone, byte for byte.
 #[test]
 fn several_outputs_of_one_run_build_each_solid_once() {
     let dir = std::env::temp_dir().join(format!("solventc-outputs-{}",std::process::id()));
@@ -730,8 +730,18 @@ fn several_outputs_of_one_run_build_each_solid_once() {
         "--stl",&body_stl,"--step",&body_step,"--solid","body","--stl",&block_stl,"--solid","block"]);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert_eq!(result.status.code(),Some(0),"{stderr}");
-    let builds = stderr.lines().filter(|l| l.contains("] built body in")).count();
-    assert_eq!(builds,1,"the body is built once for its pictures and its export:\n{stderr}");
+    let builds = stderr.lines().filter(|l| l.contains("built the solid by the Rust kernel")
+        || l.contains("] built body in")).count();
+    assert_eq!(builds,2,"the body and the block built once each for every output:\n{stderr}");
+    assert!(!stderr.contains("] built body in"),"the pictures read the export's build:\n{stderr}");
+    let alone = |name: &str,extra: &[&str]| {
+        let png = file(name);
+        let out = run(&[&[model.to_str().unwrap(),"--no-diagnose","--png",&png][..],extra].concat());
+        assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+        std::fs::read(png).unwrap()
+    };
+    assert_eq!(std::fs::read(&top).unwrap(),alone("top_alone.png",&["--view","top","--size","200"]));
+    assert_eq!(std::fs::read(&home).unwrap(),alone("home_alone.png",&["--size","120"]));
     let (top,home) = (read_png(&std::fs::read(&top).unwrap()),read_png(&std::fs::read(&home).unwrap()));
     assert_eq!(top.0.max(top.1),200,"the run's size where a picture is told none");
     assert_eq!(home.0.max(home.1),120,"a picture's own size");

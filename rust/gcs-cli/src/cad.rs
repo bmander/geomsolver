@@ -170,11 +170,14 @@ pub(crate) fn read_back(session: &native::Session,b: &gcs_core::brep::topo::Brep
 /// swept body against its material field, then replace the outputs: a failure anywhere leaves them
 /// all as they were. Held to a `tolerance`, a swept body's sheets are refined into it, the STL is
 /// meshed within the rest of it and the field is probed as near as it says; without one the
-/// export keeps its gross bars (`Tolerance`).
-pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,tolerance: Option<Tolerance>) -> Result<(),ExportRefusal> {
-    if rust_kernel() { return brep::export(sk,body,step,stl,tolerance) }
+/// export keeps its gross bars (`Tolerance`). The core's kernel gives what it built to `seen`, the
+/// sketch the run's pictures read (#592).
+pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,tolerance: Option<Tolerance>,seen: Option<&Sketch>)
+    -> Result<(),ExportRefusal> {
+    if rust_kernel() { return brep::export(sk,body,step,stl,tolerance,seen) }
     #[cfg(feature="occt")]
     {
+        let _ = seen;
         use progress::stage;
         use gcs_core::solid::export::AtStage;
         progress::start();
@@ -474,7 +477,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     }
     #[cfg(not(feature="occt"))]
     {
-        let _ = (sk,body,step,stl,tolerance);
+        let _ = (sk,body,step,stl,tolerance,seen);
         Err(ExportRefusal::at(Stage::Blank,"CAD export by OCCT requires native OCCT support; build with `make solventc OCCT=1` \
             or Cargo's `--features occt`, or export by the core's kernel (`--kernel rust`)"))
     }

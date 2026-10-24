@@ -809,12 +809,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         }
     }
     let mut code = if solved || opts.allow_unsolved { 0 } else { 2 };
-    // each export in its turn, then the pictures: every one reads `sk`, so a solid two of them
-    // read is built once (#592)
+    // each export in its turn, then the pictures, of one solved sketch and its memo, so a solid
+    // two of them read is built once (#592).  The pictures read a copy of it given what each
+    // export built: an export's own build is the same solid as the memo's, its faces named by its
+    // recipe, which a picture never reads and every other output does
+    let seen = opts.pictured().then(|| sk.clone());
     for o in &opts.outputs {
         if let Writes::Export { stl, step } = &o.writes {
             let solid = opts.solid(&o.own);
-            if export(&sk, &mut e, opts, solid, stl.as_deref(), step.as_deref(), solved) != 0 {
+            let to = (stl.as_deref(), step.as_deref());
+            if export(&sk, &mut e, opts, solid, to, seen.as_ref(), solved) != 0 {
                 code = 1;
             }
         }
@@ -868,7 +872,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     solid,
                     hide,
                 };
-                match picture::render(&sk, &ask) {
+                match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
                     Ok((bytes, unbuilt)) => {
                         // an object that does not evaluate is left out, as the box leaves it, and said
                         for why in unbuilt { eprintln!("solventc: {why}"); }
@@ -916,9 +920,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
 
 /// One export of a solid (`--stl` and `--step`, #592): admitted, built once for both formats and
 /// written, each refusal said in the core's words and recorded at the solid's statement; its exit
-/// code.
-fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>, stl: Option<&str>,
-          step: Option<&str>, solved: bool) -> u8 {
+/// code.  `seen`, where the run draws pictures, is the sketch they read, given what it built.
+fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>,
+          (stl, step): (Option<&str>, Option<&str>), seen: Option<&Sketch>, solved: bool) -> u8 {
     let mut code = 0;
     let (mut stl, mut step) = (stl.map(String::from), step.map(String::from));
     // A body with swept cuts is built only when every sweep is in the generating class
@@ -974,7 +978,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, solid: Option<&str>, stl
                 let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(sk,i));
                 match tolerance(sk,opts) {
                     Err(message) => { eprintln!("solventc: {message}"); code = 1; }
-                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t) {
+                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t,seen) {
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(e,i,refusal);

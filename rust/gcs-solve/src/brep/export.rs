@@ -58,7 +58,13 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
         })
     }
     let started = crate::clock::Instant::now();
-    let solid = built_static(sk,body)?;
+    let solid = match mirrored {
+        true => {
+            let x = sk.exact_solid(body).at(Stage::Blank)?;
+            x.brep.moved(&super::geom::Rigid {t:x.origin.map(|k| k*x.mm),..super::geom::Rigid::identity()})
+        }
+        false => super::recipe::build(&recipe.recipe).at(Stage::Blank)?,
+    };
     let tol = 1e-9*solid.size().max(1.);
     solid.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Blank,format!("the built boundary is invalid: {e}")))?;
     if let Some([a,b]) = solid.self_touching(tol).first() {
@@ -99,18 +105,9 @@ fn compose(sk: &Sketch,body: usize,tolerance: Option<Tolerance>,say: &Say) -> Re
     Ok(Exact {solid:built,pattern:None,indexed:None,swept:true})
 }
 
-/// A static solid built by this kernel, where it stands (millimetres): the drawing's own memo of
-/// it (`Sketch::exact_solid`, about its origin, moved back), so a run that pictures, measures and
-/// exports one solid builds it once (#592), a solid of one binding with others is its
-/// representative's placed (#566) and a mirrored one is read as it is published, reflected (#578).
-/// Where the memo does not build it, its recipe is built here, and refused with the cause.
+/// A static solid built from its recipe by this kernel.
 fn built_static(sk: &Sketch,o: usize) -> Result<Brep,ExportRefusal> {
-    match sk.exact_solid(o) {
-        Ok(x) => Ok(x.brep.moved(&super::geom::Rigid {t:x.origin.map(|k| k*x.mm),..super::geom::Rigid::identity()})),
-        // a mirrored solid's recipe is its preimage's, unreflected
-        Err(e) if mirrored_within(sk,o) => Err(ExportRefusal::at(Stage::Blank,e)),
-        Err(_) => super::recipe::build(&cad::recipe_static(sk,o).at(Stage::Blank)?.recipe).at(Stage::Blank),
-    }
+    super::recipe::build(&cad::recipe_static(sk,o).at(Stage::Blank)?.recipe).at(Stage::Blank)
 }
 
 /// The body rule over operands `part` builds (millimetres): the stock, plus what is put on it, minus
@@ -357,12 +354,20 @@ impl Builder {
 /// meshed only for an object whose build is refused.
 pub fn supply_exact(sk: &Sketch) { supply_exact_where(sk,&|_| true) }
 
-/// Give the drawing swept `body`'s exact B-rep as an export `built` it, where none is supplied
-/// yet: what else a host reads of the body, a picture or a report, reads that build rather than
-/// meshing its field again (#592).  A static body's export read the drawing's own memo already.
+/// Give the drawing `body`'s exact B-rep as an export `built` it, where it holds none yet: what a
+/// host reads of the body after, a picture, then reads that build rather than building it again
+/// or meshing its field (#592).  A swept body's is about the world's origin, as `supply_exact`
+/// gives it; a static one's about its own (`solid::exact::about_origin`), and none is given for a
+/// solid of a binding, which its representative's build places, or one reaching a mirrored solid.
+/// The B-rep is the export's: the same solid as the drawing's own build, its faces named by its
+/// recipe, so a host gives it to what only looks at the solid.
 pub fn supply(sk: &Sketch,body: usize,built: &Exact) {
-    if built.swept && sk.supplied_exact_solid(body).is_none() {
-        sk.supply_exact_solid(body,crate::solid::exact::named(built.solid.clone(),cad::millimetres(sk),[0.;3],Default::default()));
+    if sk.supplied_exact_solid(body).is_some() { return }
+    let mm = cad::millimetres(sk);
+    if built.swept {
+        sk.supply_exact_solid(body,crate::solid::exact::named(built.solid.clone(),mm,[0.;3],Default::default()));
+    } else if sk.solids[body].binding.is_none() && !mirrored_within(sk,body) {
+        sk.supply_exact_solid(body,crate::solid::exact::about_origin(sk,body,&built.solid));
     }
 }
 
