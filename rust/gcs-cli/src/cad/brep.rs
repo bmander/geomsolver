@@ -45,3 +45,23 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     if let Some(seen) = seen { brep::export::supply(seen,body.index,&exact); }
     Ok(())
 }
+
+/// An assembly's STEP by the core's kernel (`brep::export::assembly`): `objects` each a part, the
+/// objects of one binding one part built once, written and parsed back against the assembly, and
+/// staged, so a refusal leaves the file as it was. A refusal says which solid's build refused.
+pub fn export_assembly(sk: &Sketch,objects: &[usize],name: &str,path: &str,tolerance: Option<Tolerance>,seen: Option<&Sketch>)
+    -> Result<(),(Option<usize>,ExportRefusal)> {
+    super::progress::start();
+    let say = brep::sweep::Say {stage:&|line: &str| stage(line),mark:&|m| super::mark(m)};
+    let assembly = brep::export::assembly(sk,objects,name,tolerance,&say,&mut |i,built| {
+        // the run's pictures read this build of the part (#592)
+        if let Some(seen) = seen { brep::export::supply(seen,i,built); }
+    }).map_err(|(i,e)| (Some(i),e))?;
+    let text = brep::export::assembly_step(&assembly,name,tolerance,&say).map_err(|e| (None,e))?;
+    let mut staged = output::Staged::new();
+    staged.write(path,"step",text.as_bytes()).map_err(|e| (None,ExportRefusal::at(Stage::Step,e)))?;
+    stage("staged the STEP output");
+    staged.commit().map_err(|e| (None,ExportRefusal::at(Stage::Written,e)))?;
+    super::mark(Stage::Written);
+    Ok(())
+}

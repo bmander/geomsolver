@@ -353,23 +353,144 @@ fn pcurve(o: &mut Out,b: &Brep,fi: usize,u: &super::topo::Coedge,surface: usize,
 /// Refused where a loft's face or rail cannot be fitted within `FIT`.
 pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
     let mut o = Out {text:String::new(),next:1};
-    let context = o.add("APPLICATION_CONTEXT('core data for automotive mechanical design processes')".into());
-    o.add(format!("APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#{context})"));
+    let context = application(&mut o);
     let pctx = o.add(format!("PRODUCT_CONTEXT('',#{context},'mechanical')"));
     let name = name.replace('\'',"''");
+    let (_,shape) = product(&mut o,&name,context,pctx,&mut None);
+    let gctx = geometric(&mut o,tol);
+    let solid = solid(&mut o,b,tol)?;
+    let origin = o.placement(&ORIGIN);
+    let rep = o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"));
+    o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
+    Ok(file(&name,&o.text))
+}
+
+/// **An assembly as STEP's product structure** (AP214): products, each a part with its solid or an
+/// assembly of others, and each use of a product in an assembly placed where it stands there. The
+/// first product is the root; a product is used only by products before it, so the structure is
+/// a tree laid out top down, and a part one definition however many times it is used.
+pub struct Assembly { pub products: Vec<Product>,pub uses: Vec<Usage> }
+
+/// A product: a part, its solid in its own coordinates (millimetres), or an assembly (`None`).
+pub struct Product { pub name: String,pub solid: Option<Brep> }
+
+/// A use of product `child` in the assembly `parent`, named, its own axes standing at `placement`
+/// in the parent's (right-handed, orthonormal, millimetres).
+pub struct Usage { pub parent: usize,pub child: usize,pub name: String,pub placement: Frame }
+
+impl Assembly {
+    /// Refused where it is not a tree laid out top down: a use of a product not after its
+    /// parent, a part used as an assembly, a product other than the root no assembly uses, or an
+    /// assembly with nothing in it.
+    pub fn check(&self) -> Result<(),String> {
+        let n = self.products.len();
+        if n == 0 { return Err("an assembly has no product".into()) }
+        let mut used = vec![false;n];
+        let mut parent = vec![false;n];
+        for u in &self.uses {
+            if u.parent >= u.child || u.child >= n {
+                return Err(format!("the use `{}` places product {} in product {}, which does not come before it",u.name,u.child,u.parent))
+            }
+            if self.products[u.parent].solid.is_some() {
+                return Err(format!("the part `{}` is used as an assembly, of `{}`",self.products[u.parent].name,self.products[u.child].name))
+            }
+            used[u.child] = true;
+            parent[u.parent] = true;
+        }
+        if let Some(k) = (1..n).find(|&k| !used[k]) { return Err(format!("`{}` is in no assembly",self.products[k].name)) }
+        if let Some(k) = (0..n).find(|&k| self.products[k].solid.is_none() && !parent[k]) {
+            return Err(format!("the assembly `{}` has nothing in it",self.products[k].name))
+        }
+        Ok(())
+    }
+}
+
+/// The assembly as a STEP file, `name` the file's own: every part's solid written once, as in
+/// `write`, and every use as the next assembly usage occurrence of its product in its parent's,
+/// its shape the transformation carrying the child's axes onto its placement among the parent's
+/// (a part's representation and an assembly's each list its own axes, and an assembly's the
+/// placement of each product it uses).  The products are written the last first, so each
+/// child's representation is written before its parent's.
+pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String> {
+    a.check()?;
+    let mut o = Out {text:String::new(),next:1};
+    let context = application(&mut o);
+    let pctx = o.add(format!("PRODUCT_CONTEXT('',#{context},'mechanical')"));
+    let gctx = geometric(&mut o,tol);
+    let mut dctx = None;
+    // each product's definition, representation and its own axes there, once written
+    let mut written: Vec<(usize,usize,usize)> = vec![(0,0,0);a.products.len()];
+    for (k,p) in a.products.iter().enumerate().rev() {
+        let (definition,shape) = product(&mut o,&p.name.replace('\'',"''"),context,pctx,&mut dctx);
+        let origin = o.placement(&ORIGIN);
+        let rep = match &p.solid {
+            Some(b) => {
+                let solid = solid(&mut o,b,tol)?;
+                o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"))
+            }
+            None => {
+                let uses: Vec<(&Usage,usize)> = a.uses.iter().filter(|u| u.parent == k).map(|u| (u,o.placement(&u.placement))).collect();
+                let items: Vec<String> = std::iter::once(origin).chain(uses.iter().map(|&(_,at)| at)).map(|i| format!("#{i}")).collect();
+                let rep = o.add(format!("SHAPE_REPRESENTATION('',({}),#{gctx})",items.join(",")));
+                for (u,at) in uses {
+                    let (child,child_rep,child_origin) = written[u.child];
+                    let used = u.name.replace('\'',"''");
+                    let moved = o.add(format!("ITEM_DEFINED_TRANSFORMATION('','',#{child_origin},#{at})"));
+                    let relation = o.add(format!("( REPRESENTATION_RELATIONSHIP('','',#{child_rep},#{rep}) \
+                        REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#{moved}) SHAPE_REPRESENTATION_RELATIONSHIP() )"));
+                    let occurrence = o.add(format!("NEXT_ASSEMBLY_USAGE_OCCURRENCE('{used}','{used}','',#{definition},#{child},$)"));
+                    let occurrence_shape = o.add(format!("PRODUCT_DEFINITION_SHAPE('','',#{occurrence})"));
+                    o.add(format!("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION(#{relation},#{occurrence_shape})"));
+                }
+                rep
+            }
+        };
+        o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
+        written[k] = (definition,rep,origin);
+    }
+    Ok(file(&name.replace('\'',"''"),&o.text))
+}
+
+/// The world's own axes, where a representation's items are placed.
+const ORIGIN: Frame = Frame {o:[0.;3],x:[1.,0.,0.],y:[0.,1.,0.],z:[0.,0.,1.]};
+
+/// The application a file's products are defined in (AP214's), its context's id.
+fn application(o: &mut Out) -> usize {
+    let context = o.add("APPLICATION_CONTEXT('core data for automotive mechanical design processes')".into());
+    o.add(format!("APPLICATION_PROTOCOL_DEFINITION('international standard','automotive_design',2000,#{context})"));
+    context
+}
+
+/// A product named `name` (escaped already), its definition and that definition's shape: their ids.
+/// The definition's context is written beside the first product, and shared by every other.
+fn product(o: &mut Out,name: &str,context: usize,pctx: usize,dctx: &mut Option<usize>) -> (usize,usize) {
     let product = o.add(format!("PRODUCT('{name}','{name}','',(#{pctx}))"));
     o.add(format!("PRODUCT_RELATED_PRODUCT_CATEGORY('part',$,(#{product}))"));
     let formation = o.add(format!("PRODUCT_DEFINITION_FORMATION('','',#{product})"));
-    let dctx = o.add(format!("PRODUCT_DEFINITION_CONTEXT('part definition',#{context},'design')"));
+    let dctx = *dctx.get_or_insert_with(|| o.add(format!("PRODUCT_DEFINITION_CONTEXT('part definition',#{context},'design')")));
     let definition = o.add(format!("PRODUCT_DEFINITION('design','',#{formation},#{dctx})"));
     let shape = o.add(format!("PRODUCT_DEFINITION_SHAPE('','',#{definition})"));
-    // the units, and the geometry's context
+    (definition,shape)
+}
+
+/// The units (millimetres, radians), and the context the geometry is written in: its id.
+fn geometric(o: &mut Out,tol: f64) -> usize {
     let mm = o.add("( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )".into());
     let rad = o.add("( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )".into());
     let sr = o.add("( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )".into());
     let uncertainty = o.add(format!("UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE({}),#{mm},'distance_accuracy_value','confusion accuracy')",real(tol.max(1e-7))));
-    let gctx = o.add(format!("( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#{uncertainty})) \
-        GLOBAL_UNIT_ASSIGNED_CONTEXT((#{mm},#{rad},#{sr})) REPRESENTATION_CONTEXT('Context #1','3D Context with UNIT and UNCERTAINTY') )"));
+    o.add(format!("( GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#{uncertainty})) \
+        GLOBAL_UNIT_ASSIGNED_CONTEXT((#{mm},#{rad},#{sr})) REPRESENTATION_CONTEXT('Context #1','3D Context with UNIT and UNCERTAINTY') )"))
+}
+
+/// The file around its data section, `name` (escaped already) its own.
+fn file(name: &str,data: &str) -> String {
+    format!("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('Solvent model'),'2;1');\nFILE_NAME('{name}','',(''),(''),'Solvent','Solvent','');\n\
+        FILE_SCHEMA(('AUTOMOTIVE_DESIGN {{ 1 0 10303 214 1 1 1 1 }}'));\nENDSEC;\nDATA;\n{data}ENDSEC;\nEND-ISO-10303-21;\n")
+}
+
+/// The solid's topology and geometry, bottom up, to its manifold solid: its id.
+fn solid(o: &mut Out,b: &Brep,tol: f64) -> Result<usize,String> {
     // the topology, bottom up
     // only the vertices a written edge ends at (a pole's degenerate edge is not written)
     let mut wanted = vec![false;b.vertices.len()];
@@ -391,7 +512,7 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
             Curve::Ellipse(f,a,bb) => { let p = o.placement(f); o.add(format!("ELLIPSE('',#{p},{},{})",real(*a),real(*bb))) }
             Curve::BSpline(bs) => {
                 let ids: Vec<String> = bs.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                spline(&mut o,bs.degree,&ids,&bs.knots,bs.weights.as_deref())
+                spline(o,bs.degree,&ids,&bs.knots,bs.weights.as_deref())
             }
             // a loft's rail: the cubic through it, fitted within `FIT`, its parameter the rail's
             Curve::Iso(bl,u) => {
@@ -401,7 +522,7 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
                     None => return Err("a loft's rail could not be fitted (it is degenerate)".into()),
                 };
                 let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                spline(&mut o,fit.degree,&ids,&fit.knots,None)
+                spline(o,fit.degree,&ids,&fit.knots,None)
             }
             // a family's rail or rim likewise, its parameter the rail's or the rim's
             Curve::Rail(..) | Curve::Rim(..) => {
@@ -414,18 +535,18 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
                 // its knots the edge's own parameters
                 let knots: Vec<f64> = fit.knots.iter().map(|k| t0+(t1-t0)*k).collect();
                 let ids: Vec<String> = fit.poles.iter().map(|&p| format!("#{}",o.point(p))).collect();
-                spline(&mut o,fit.degree,&ids,&knots,None)
+                spline(o,fit.degree,&ids,&knots,None)
             }
             Curve::Traced(_) => {
                 let ts = samples(c,e.t,tol,&|a,z| distance(c.point((a+z)/2.),crate::space::lerp(c.point(a),c.point(z),0.5)));
                 let ids: Vec<String> = ts.iter().map(|&t| format!("#{}",o.point(c.point(t)))).collect();
-                bspline(&mut o,&ids,&ts)
+                bspline(o,&ids,&ts)
             }
         };
         // the edge's curve in each face that uses it: a seam's two in one face, or one in each
         let uses: Vec<(usize,&super::topo::Coedge)> = b.faces.iter().enumerate()
             .flat_map(|(fi,f)| f.loops.iter().flatten().filter(|c| c.edge as usize == ei).map(move |c| (fi,c))).collect();
-        let pcurves: Vec<String> = uses.iter().map(|&(fi,u)| format!("#{}",pcurve(&mut o,b,fi,u,surfaces[fi],context2,tol))).collect();
+        let pcurves: Vec<String> = uses.iter().map(|&(fi,u)| format!("#{}",pcurve(o,b,fi,u,surfaces[fi],context2,tol))).collect();
         let seam = uses.len() == 2 && uses[0].0 == uses[1].0;
         let geometry = o.add(format!("{}('',#{curve},({}),.PCURVE_S1.)",if seam { "SEAM_CURVE" } else { "SURFACE_CURVE" },pcurves.join(",")));
         Ok(Some(o.add(format!("EDGE_CURVE('',#{},#{},#{geometry},.T.)",vertices[e.v[0] as usize],vertices[e.v[1] as usize]))))
@@ -447,10 +568,5 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
         faces.push(format!("#{}",o.add(format!("ADVANCED_FACE('',({}),#{surface},{})",bounds.join(","),if f.reversed { ".F." } else { ".T." }))));
     }
     let shell = o.add(format!("CLOSED_SHELL('',({}))",faces.join(",")));
-    let solid = o.add(format!("MANIFOLD_SOLID_BREP('',#{shell})"));
-    let origin = o.placement(&Frame {o:[0.;3],x:[1.,0.,0.],y:[0.,1.,0.],z:[0.,0.,1.]});
-    let rep = o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"));
-    o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
-    Ok(format!("ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('Solvent model'),'2;1');\nFILE_NAME('{name}','',(''),(''),'Solvent','Solvent','');\n\
-        FILE_SCHEMA(('AUTOMOTIVE_DESIGN {{ 1 0 10303 214 1 1 1 1 }}'));\nENDSEC;\nDATA;\n{}ENDSEC;\nEND-ISO-10303-21;\n",o.text))
+    Ok(o.add(format!("MANIFOLD_SOLID_BREP('',#{shell})")))
 }

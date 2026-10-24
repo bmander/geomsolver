@@ -89,7 +89,7 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   takes text and has no filesystem** (it runs in wasm).
   `--stl` writes binary STL through `gcs_core::mesh` (`--solid` says which).
   **A run's outputs are a list, and each solid is built once for all of them** (#592): every
-  `--stl`/`--step` pair, `--gltf` and `--png` is an output of its own (`Writes`), and a
+  `--stl`/`--step` pair, `--step-assembly`, `--gltf` and `--png` is an output of its own (`Writes`), and a
   qualifier (`--solid`; `--view`, `--size`, `--hide` for a picture) belongs to the last output
   before it that it qualifies, or, given before every output, to each output told none of its
   own (`Opts::qualified`).  A `--measure` reads the solid the run wrote its file from.  An option
