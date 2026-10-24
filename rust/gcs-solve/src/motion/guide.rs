@@ -66,7 +66,13 @@ impl Path {
                 let c = sk.lifted(arc.center as usize);
                 let axis = |a: V| crate::space::normalised(a).ok_or("an arc's plane has no axes");
                 let (u, v) = (axis(basis.u)?, axis(basis.v)?);
-                Ok(Path::Arc { c, u, v, r: sk.radius_value(g).abs(), a0, sweep: a1 - a0 })
+                // one said to turn clockwise is drawn from its end, and runs from its start (#573)
+                let (a0, sweep) = if sk.arc_reversed(g.i()) {
+                    (a1, a0 - a1)
+                } else {
+                    (a0, a1 - a0)
+                };
+                Ok(Path::Arc { c, u, v, r: sk.radius_value(g).abs(), a0, sweep })
             }
             EntKind::Spline => Ok(spline(sk, g.i())),
             EntKind::Traced => {

@@ -15,6 +15,7 @@
  * every solve would take the line out from under the cursor. */
 import type { Mark } from './editor.js';
 import { Occurrences } from './occurrences.js';
+import { Names, selectRows, selectionMarks } from './names.js';
 import { highlight, symbols, type Diagnostic, type SourceMap, type SourceSpan }
   from '../core/program.js';
 import type { ClaimVerdict } from '../core/claims.js';
@@ -32,6 +33,33 @@ const ptext = ped.box;
 /** The name under the caret, lit wherever else the text names it — a program's names, read by
  *  the core; nothing in a drawing or a text file. */
 const occurrences = new Occurrences(ped);
+/** The editor's layer what is selected in the workspace is named in. */
+const SELECTED = 'selected';
+/** The text the drawing came from, joined to the outline of what it made (`names.ts`) — the
+ *  names the caret's lighting already read, once per text and outline, and only while the box
+ *  holds that text: a draft's offsets are its own. */
+let joined: Names | null = null;
+function names(): Names | null {
+  const doc = view.doc;
+  if (!doc.live || ped.text !== doc.text || typed || showingText() || drawingActive()
+    || (!project && activeFile)) return null;
+  const index = occurrences.symbols();
+  if (!index) return null;
+  const outline = view.outline();
+  if (joined?.index !== index || joined.outline !== outline) {
+    joined = new Names(doc.text, index, outline);
+  }
+  return joined;
+}
+// a name the caret is put on selects what it names in the workspace, as a press there would:
+// the window, the status line and the outline follow it
+occurrences.onName = (o) => {
+  const n = names();
+  if (!n || view.gesture || !selectRows(view, n.rowsAt(o))) return;
+  view.onSelect();
+  view.onChanged();
+  view.draw();
+};
 
 /** The text the panel last put there.  An identical reprint is one string compare and no write,
  *  which is what makes refreshing on every change affordable. */
@@ -336,6 +364,7 @@ export function refreshProgram(): void {
   ped.colouring = activeFile.endsWith('.svd') ? drawingHighlight : highlight;
   occurrences.names = activeFile.endsWith('.svd') || showingText() ? null : symbols;
   ped.setText(text, quiet ? [] : marks());
+  markSelected();               // the new text let go of the names the old one lit
   ppanel.classList.remove('dirty');
   ppanelState.textContent = imported ? ' — imported file, read only' : '';
   showDiags(quiet ? [] : view.doc.diagnostics);
@@ -378,10 +407,11 @@ export function applyProgram(): boolean {
   ppanelState.textContent = '';
   // The solve and the diagnosis happened inside `setProgram`, back when `typed` was still true —
   // so the refresh it triggered took the early exit above and the marks still describe the
-  // document as it was before this apply.  Nothing will come back for them, either: `shown` now
-  // equals the text, so the next `refreshProgram` returns at its own guard.  This is the moment
-  // the panel stops being a draft, and so the moment it has to catch up with what was judged.
-  markStatement();
+  // document as it was before this apply, and the box the text as typed: the solve committed its
+  // seeds to the document since.  This is the moment the panel stops being a draft, and so the
+  // moment it has to catch up with what was judged and what the text came to — a box behind the
+  // document is one whose names select nothing (`names`).
+  refreshProgram();
   return view.doc.ok;
 }
 
@@ -495,6 +525,14 @@ export function markStatement(): void {
   if (switching || drawingActive() || showingText() || ppanel.hidden || (!project && activeFile)
     || typed || view.gesture) return;
   ped.setMarks(marks());
+  markSelected();
+}
+
+/** Light every place the text names what is selected in the workspace, as the name under the
+ *  caret is lit (`names.ts`) — in a layer of its own, which an edit lets go of. */
+function markSelected(): void {
+  const n = names();
+  ped.setMarks(n ? selectionMarks(view, n) : [], SELECTED);
 }
 
 /** Mark it *and* bring it on screen — what a deliberate pick does, as against the drawing moving

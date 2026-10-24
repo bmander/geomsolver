@@ -245,6 +245,11 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
     if e.kind == EntKind::Frame {
         kids.truncate(2);
     }
+    // an arc said to turn clockwise is drawn from its end, and written as it was said (#573)
+    let reversed = e.kind == EntKind::Arc && sk.arc_reversed(e.i());
+    if reversed {
+        kids.swap(1, 2);
+    }
     let mut children: Vec<Vec<Kid>> = Vec::new();
     let mut taken = 0usize;
     for (_, field) in e.kind.fields() {
@@ -308,7 +313,7 @@ pub(crate) fn lift_decl(sk: &Sketch, e: EntRef) -> Decl {
         mint_close: None,
         through: None,
         normal: None,
-        sense: None,
+        sense: reversed.then_some(crate::syntax::Sense::Cw),
         bare: e.kind == EntKind::Frame && !sk.frames[e.i()].planar(),
         carried: None,
         material: None,

@@ -321,12 +321,12 @@ pub(super) fn follow(sk: &Sketch, mut e: EntRef, path: &[Seg]) -> Result<EntRef,
             };
             continue;
         }
-        // an arc a chain walks from its end is drawn from there (#363 S4), and its `start` is
-        // still the point written as its start
+        // an arc a chain walks from its end is drawn from there (#363 S4), and so is one said to
+        // turn clockwise (#573), and its `start` is still the point written as its start
         let swapped;
         let f = match f.text.as_str() {
             "start" | "end" if e.kind == EntKind::Arc
-                && sk.walked_back.contains(&(e.i() as u32)) =>
+                && sk.drawn_from_end(e.i()) =>
             {
                 swapped = crate::syntax::Name::new(if f.text == "start" { "end" } else { "start" });
                 &swapped

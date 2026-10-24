@@ -23,12 +23,7 @@ pub unsafe extern "C" fn gcs_program_elaborate(ptr: *const u8, len: usize) -> *m
         // text, and everything after them is about a text that was already wrong
         let mut all: Vec<program::Diag> = errs
             .iter()
-            .map(|s| program::Diag {
-                code: program::Code::E100,
-                span: s.span,
-                stmt: None,
-                message: s.message.clone(),
-            })
+            .map(|s| program::Diag::new(program::Code::E100, s.span, None, s.message.clone()))
             .collect();
         all.append(&mut linked);
         all.append(&mut e.diags);

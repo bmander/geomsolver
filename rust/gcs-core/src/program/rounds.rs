@@ -6,7 +6,7 @@
 //! - **The walk chooses the branch, no seed does.**  The round lies inside its corner, on the
 //!   side the walk turns toward there: an arc runs counter-clockwise from its start, so at a
 //!   corner the walk turns right at it is drawn from its end — start and end swapped, the names
-//!   kept as written (`Sketch::walked_back`, which `resolve::follow` reads) — and the round's
+//!   kept as written (`Sketch::reversed`, #573, which names, `at:` and `t` read) — and the round's
 //!   centre is held on the turn's side of both lines and of its own chord, three stated
 //!   orientations (`Gauges::orient`), so of the four circles tangent to both lines the one inside
 //!   the corner is the only root.
@@ -131,7 +131,7 @@ pub(super) fn rounds(
         if round.turn < 0 {
             let a = &mut sk.arcs[f.arc];
             std::mem::swap(&mut a.start, &mut a.end);
-            sk.walked_back.insert(f.arc as u32);
+            sk.reversed.insert(f.arc as u32);
         }
         if f.st.turned {
             continue;
@@ -161,6 +161,8 @@ pub(super) fn rounds(
         .map(|c| (c.args[0].ent().i(), c.args[1].ent().i(), c.args[2].value(sk)))
         .collect();
     for (p, arc, t) in along {
+        // a round drawn from its end runs its `t` from the end written as its start
+        let t = if sk.arc_reversed(arc) { 1.0 - t } else { t };
         let (a0, a1) = sk.arc_angles(arc);
         let c = sk.point_xy(sk.arcs[arc].center as usize);
         let r = sk.params[sk.arcs[arc].radius as usize].value;

@@ -135,11 +135,18 @@ fn an_inside_fillet_turns_the_way_its_corner_does() {
     assert!(near(c, (15.0, 15.0)), "{c:?}");
     assert!(near(s, (10.0, 15.0)) && near(t, (15.0, 10.0)), "{s:?} {t:?}");
     assert!((sweep(c, s, t) - 90.0).abs() < 1e-6);
-    assert!(sk.walked_back.contains(&(k as u32)));
+    assert!(sk.arc_reversed(k));
     // and the names are as the walk wrote them: its start on `c`, where the walk enters it
     let src = format!("{BRACKET}q := point\nq coincident fillet.start\n");
     let g = build(&src);
     let sk = solved(&g);
+    // and its turn runs as walked: `t == 0` where the walk enters it, on `c`
+    let at_c = build(&BRACKET.replace("outline :=", "w := point\nw coincident(t == 0.25) fillet\n\
+        outline :="));
+    let skw = solved(&at_c);
+    let w = skw.point_xy(ent(&at_c, "w").i());
+    let quarter = std::f64::consts::FRAC_PI_8;
+    assert!(near(w, (15.0 - 5.0 * quarter.sin(), 15.0 - 5.0 * quarter.cos())), "{w:?}");
     // `q` stands in space, drawn where the arc's start is in the front plane
     let q = sk.world_point(ent(&g, "q").i());
     assert!(near((q[0], q[2]), (15.0, 10.0)), "{q:?}");
@@ -261,7 +268,7 @@ fn the_star_handle_solves_on_one_root() {
         assert!((r - want_r).abs() < 1e-9);
         assert!(sweep(c, s, t) < 180.0, "arc {i}: {}", sweep(c, s, t));
         if i % 2 == 0 {
-            assert!(sk.walked_back.contains(&(i as u32)));
+            assert!(sk.arc_reversed(i));
             let d = c.0.hypot(c.1);
             assert!(d > 10.0 && (d - at_hub).abs() < 0.5, "{d}");
         }

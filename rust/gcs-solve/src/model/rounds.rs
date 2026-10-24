@@ -9,7 +9,7 @@ use super::Sketch;
 /// point there) and the one it leaves along (`to`, whose `p1` is), the corner they were written
 /// meeting at where one was written, and the way the corner turns — `1` left, the arc
 /// counter-clockwise from `from` to `to`; `-1` right, the arc drawn from its end (start and end
-/// swapped, `Sketch::walked_back` keeping the names).  What each is called, for a message.  Set
+/// swapped and filed in `Sketch::reversed`, so what reads it reads it as written).  What each is called, for a message.  Set
 /// by the elaborator (`program::rounds`).
 #[derive(Clone, Debug)]
 pub struct Round {

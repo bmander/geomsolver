@@ -346,8 +346,9 @@ came from.
   `repeat`; `stamp_frame` stamps an open joint's statements too.  **What only the drawn corner
   says** is `program::rounds`, after the walk's seeds: the turn at the seeded corner
   (`model::rounded`, its sides toward the corners the lines run to, `Sketch::round_far`) — at a
-  right turn the arc's start and end swapped and `Sketch::walked_back` keeping the names, so
-  `validate_chain` reads it entered at its start; each scattered point it touches seeded `R /
+  right turn the arc's start and end swapped and filed in `Sketch::reversed` (#573: names, `at:`
+  and `t == …` read it as written), so `validate_chain` reads it entered at its start; each
+  scattered point it touches seeded `R /
   tan(θ/2)` from the corner, its centre on the bisector, the radius the `radius` row's (a ring
   copy's, its representative's); and, on a stated statement, three orientations through
   `Gauges::orient` — the centre on the turn's side of `A`, of `B` and of its chord — so the one
