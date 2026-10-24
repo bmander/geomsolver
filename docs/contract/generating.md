@@ -315,11 +315,11 @@ half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::s
 (`TinyTriangles::clustered`); the field is probed at max(2 tol, 2 µm).
 `--measure FILE` checks an export (`solid::accuracy`) and exits 1 over tolerance.
 **An empty body is refused as one** (#617): a body built with no face is what the document drew,
-not a limit of the encoding, so `brep::export` refuses its STL and its STEP saying which solid is
-empty and which statement emptied it (`` `shared` is empty: `b common shared` leaves no material,
-so there is nothing to write ``, or its stock holding none) — `combine` checks after each Boolean,
-and a static body found empty is combined again a statement at a time to name it — never a float32
-rounding read off its infinite bounds, nor a file of no faces.
+not a limit of the encoding, so `brep::export::exact` refuses it, whatever path built it, saying
+which solid is empty and which statement emptied it (`` `shared` is empty: `b common shared` leaves
+no material, so there is nothing to write ``, or its stock holding none) — `combine` checks after
+each Boolean, and a static body found empty is combined again a statement at a time to name it
+(`emptied`) — never a float32 rounding read off its infinite bounds, nor a STEP file of no faces.
 `an_empty_body_is_refused_naming_the_statement_that_emptied_it` (`tests/brep_export.rs`).
 
 **One sector, sewn round ([plan](../native-speed-plan.md)):** a body whose swept cuts are turns
