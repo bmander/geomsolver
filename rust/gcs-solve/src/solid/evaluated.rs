@@ -670,10 +670,12 @@ impl EvaluatedSolid {
     /// Nothing is evaluated again: the geometry is this one's, a shape of its own only for its
     /// names, kept to place wherever this evaluation stands (`placed`).
     pub(crate) fn renamed(&self, from: &str, to: &str) -> Renamed {
-        Renamed {
-            of: self.shape.serial,
-            shape: std::rc::Rc::new(self.shape.renamed(&Renaming { from, to })),
-        }
+        // a solid read as its own, reflected (#578), keeps its names and shares its shape
+        let shape = match from == to {
+            true => self.shape.clone(),
+            false => std::rc::Rc::new(self.shape.renamed(&Renaming { from, to })),
+        };
+        Renamed { of: self.shape.serial, shape }
     }
     /// **Another instance's solid of the same binding** (#566): this evaluation moved by
     /// `motion`, under the names `renamed` gives its shape — renamed again from `from` to `to`
@@ -1015,8 +1017,7 @@ impl Rigid {
             1 => at.v,
             _ => at.normal(),
         };
-        let n = plane::dot(m, m).sqrt();
-        let m = m.map(|x| x / n);
+        let m = crate::space::normalised(m).unwrap_or(m);
         let r = std::array::from_fn(|i| std::array::from_fn(|j| {
             (if i == j { 1.0 } else { 0.0 }) - 2.0 * m[i] * m[j]
         }));
@@ -1042,11 +1043,9 @@ impl Rigid {
     }
 }
 
-/// The determinant of a 3×3 matrix by rows.
+/// The determinant of a 3×3 matrix by rows: its rows' triple product.
 fn det3(r: &[[f64; 3]; 3]) -> f64 {
-    r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
-        - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
-        + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0])
+    plane::dot(crate::space::cross(r[0], r[1]), r[2])
 }
 
 /// The angle an exact solid's edge's chords may turn (radians): the sagitta decides on a large

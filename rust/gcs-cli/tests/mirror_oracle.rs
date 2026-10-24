@@ -89,7 +89,7 @@ fn a_reflection_is_occts_mirror() {
         let (v,w) = (gcs_core::brep::props::volume(&ours.brep),session.volume(mirrored).unwrap());
         assert!(((v-w)/w).abs() < 1e-9,"{word}: {v} against OCCT's {w}");
         let kinds = |b: &gcs_core::brep::topo::Brep| {
-            let mut k: Vec<String> = b.faces.iter().map(|f| format!("{:?}",f.surface).split('(').next().unwrap().to_string()).collect();
+            let mut k: Vec<&str> = b.faces.iter().map(|f| f.surface.kind()).collect();
             k.sort();
             k
         };

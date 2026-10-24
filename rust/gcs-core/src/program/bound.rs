@@ -40,11 +40,10 @@ pub(super) fn stamp(sk: &mut Sketch, res: &Resolver, instances: &[InstanceInfo],
         let name = &sk.solids[si].name;
         // a mirrored instance's every solid is its own, reflected, however deep it was made
         // (#578): the outermost mirrored instance it is under, else the innermost closed one
-        let under = |c: &&(&InstanceInfo, &str, Option<u32>, Option<(EntRef, u32, u32)>)| {
-            name.starts_with(&c.0.prefix)
-        };
-        let found = closed.iter().enumerate().rev().find(|(_, c)| c.0.mirror.is_some() && under(c))
-            .or_else(|| closed.iter().enumerate().find(|(_, c)| under(c)));
+        let under = |p: &str| name.starts_with(p);
+        let found = closed.iter().enumerate().rev()
+            .find(|(_, c)| c.0.mirror.is_some() && under(&c.0.prefix))
+            .or_else(|| closed.iter().enumerate().find(|(_, c)| under(&c.0.prefix)));
         let Some((n, &(inst, key, frame, turn))) = found else { continue };
         let path = name[inst.prefix.len()..].to_string();
         let nth = seen.entry((n, path.clone())).or_default();

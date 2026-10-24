@@ -51,7 +51,7 @@ pub use solids::{
 pub use region::{RegionShape, RegionTerm, TermNumber, FaceRef, Target};
 pub use solid_eval::{Way, turn_of};
 pub use construction::{ThreePointArc, three_point_arc};
-pub use turns::{Turn, Mirror, Derivation};
+pub use turns::{Turn, Mirror, Images, Derivation};
 pub use bindings::{Binding, Bound};
 pub use duals::{Dual, Move, Moves, Toward};
 pub use rates::{RateRow, RateWord};

@@ -857,10 +857,10 @@ impl Surface {
                 (Surface::Revolution(f,Arc::new(c.reflected(m)?)),flip)
             }
             Surface::Extrusion(f,ref c) => (Surface::Extrusion(turned(f).0,Arc::new(c.reflected(m)?)),false),
-            Surface::BSpline(f,_) => match self.moved(m) {
-                Surface::BSpline(_,net) => (Surface::BSpline(f.moved(m).rehanded(false).0,net),false),
-                _ => unreachable!(),
-            },
+            Surface::BSpline(..) => {
+                let Surface::BSpline(f,net) = self.moved(m) else { unreachable!() };
+                (Surface::BSpline(f.rehanded(false).0,net),false)
+            }
             Surface::Blend(..) | Surface::Family(..) => return Err(
                 "a swept section's face is not reflected yet: a mirrored body is drawn of planes, \
                  surfaces of revolution, extrusions and B-spline sheets".to_string()),

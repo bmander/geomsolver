@@ -169,8 +169,9 @@ negated, one in space in the world likewise; a radius its own; a datum's image a
 frame's axes with the mirrored one reversed, `Sketch::image_plane`/`image_axis`, standing where
 the frame does — linear with weights ±1 wherever the frame stands), and a point of the frame's
 datums the body draws over (`std.origin`) is imaged as the point at its numbers in its plane's
-image.  A reference from outside the instance to something its body made is read as the image
-(`flatten::resolve`'s `fix`: any prefix of the statement's scope under the instance is inside, so
+image — a datum image (`Mirror::datum`), not derived and not unique to its datum, read only by
+the body's own dimensions.  A reference from outside the instance to something its body made is
+read as the image (`flatten::resolve`'s `fix`: any prefix of the statement's scope under the instance is inside, so
 a relation word applied in the body reads the preimage), under `keys::image` — `{key}#image`,
 bound by the elaborator to every key of the preimage — but a solid, which is published reflected
 and keeps its name; and `b.std.D` from outside names the image's datums (`Lookup::instance_datum`,
@@ -178,7 +179,8 @@ and keeps its name; and `b.std.D` from outside names the image's datums (`Lookup
 −b.std.z`.  The image goes by its preimage's name (`SourceMap::image_of`, read in `called`), its
 site and its statement's (`also_made`); the preimage is not drawn (`Sketch::drawn`, through
 `unseen_of_mirrors`, the image datums neither), and a dimension of the body is drawn on the image
-(`Sketch::drawn_constraint`, in `callout::layout_selected` and `frame`).  Each solid the instance
+(`Sketch::drawn_constraint` over `Sketch::images`, in `callout::layout_selected` and `frame`
+and in `Views::constraint_view`, so it is laid out in the image's view).  Each solid the instance
 makes is stamped with its binding and the axis (`model::Binding::mirror`, `bound::stamp`: the
 outermost mirrored instance a solid is under, else the innermost closed one).  **E112** refuses
 what a reflection cannot be made of: a mirrored call that is not closed (`bind_closed`: at the
@@ -189,7 +191,8 @@ function of its numbers (`mirrors::images`).  Every document that does not say `
 elaborates to the same solve.  `tests/mirrored.rs` is the gate
 (`an_images_planar_entities_hold_its_preimages_numbers`, `a_relation_outside_reads_the_image`,
 `a_mirrored_instance_placed_by_mates_is_held_wholly`, `what_a_reflection_cannot_be_made_of_is_refused`,
-`a_document_that_says_mirrored_prints_it_back`).
+`a_document_that_says_mirrored_prints_it_back`,
+`a_mirrored_bodys_dimension_is_laid_out_in_its_images_view`).
 
 **`claim { … }`, a claim with witnesses of its own (§9.7, [0.151], #460):** hoisted as an `in` body
 is (`parser::statements::witnessed`), the block minting a statement id of its own; `stamp_witness`

@@ -13,6 +13,7 @@
 //! evaluation reflected (`model::Binding::mirror`), and no row is added or taken away.
 
 use super::resolve::Resolver;
+use super::rings::called;
 use super::source_map::{public_path, SourceMap};
 use super::{Code, Diag};
 use crate::flatten::InstanceInfo;
@@ -35,14 +36,13 @@ const AXES: [(&str, (usize, bool)); 4] = [("x", (0, true)), ("y", (1, true)), ("
                                           ("back", (0, false))];
 
 fn refuse(diags: &mut Vec<Diag>, span: crate::syntax::Span, message: String) {
-    if !diags.iter().any(|d| d.code == Code::E112 && d.span == span) {
-        diags.push(Diag::new(Code::E112, span, None, message));
-    }
+    Diag::once(diags, Code::E112, span, message);
 }
 
-/// What the source calls an entity, for a message: its public path, else its kind.
-fn called(map: &SourceMap, e: EntRef) -> String {
-    map.name_of(e).map(|n| format!("`{}`", public_path(n))).unwrap_or_else(|| e.kind.a())
+/// `key` bound to `e`, by no name a reader is shown: what a reference from outside reads.
+fn publish(res: &mut Resolver, map: &mut SourceMap, key: String, e: EntRef) {
+    map.bind(&key, e, crate::syntax::Named::No);
+    res.of.insert(key, e);
 }
 
 /// One mirrored instance's frame read for its images: its axes, the plane its image datums stand
@@ -58,8 +58,9 @@ struct Mirroring<'m> {
     frame: Option<usize>,
     /// Where an image datum stands: the frame, or the world's front.
     place: usize,
-    /// Each of the frame's datum planes, by index, to its name.
+    /// Each of the frame's datum planes, by index, to its name, and its `std.origin`.
     datums: BTreeMap<usize, &'static str>,
+    origin: Option<usize>,
     reversed: BTreeMap<usize, usize>,
     planes: BTreeMap<&'static str, usize>,
 }
@@ -72,20 +73,23 @@ impl Mirroring<'_> {
             return base;
         }
         *self.reversed.entry(base).or_insert_with(|| {
-            sk.image_axis(base, &format!("{}#std.reversed{k}", self.prefix))
+            sk.image_axis(base, &crate::flatten::image_datum(self.prefix, &format!("reversed{k}")))
         })
     }
 
-    /// Datum plane `name`'s image: the plane over its axes' images, where the frame stands.
-    fn plane(&mut self, sk: &mut Sketch, name: &'static str) -> Option<usize> {
+    /// Datum plane `name`'s image (one of `PLANES`): the plane over its axes' images, where the
+    /// frame stands.
+    fn plane(&mut self, sk: &mut Sketch, name: &'static str) -> usize {
         if let Some(&p) = self.planes.get(name) {
-            return Some(p);
+            return p;
         }
-        let (_, [a, b]) = PLANES.iter().find(|(n, _)| *n == name)?;
+        let (_, [a, b]) = PLANES.iter().find(|(n, _)| *n == name).expect("a datum plane");
         let (u, v) = (self.axis(sk, *a), self.axis(sk, *b));
-        let p = sk.image_plane(u, v, self.place, &crate::flatten::image_datum(self.prefix, name));
+        // standing where the datum it is the image of does, where that is made
+        let of = self.datums.iter().find(|(_, &d)| d == name).map_or(self.place, |(&p, _)| p);
+        let p = sk.image_plane(u, v, of, &crate::flatten::image_datum(self.prefix, name));
         self.planes.insert(name, p);
-        Some(p)
+        p
     }
 }
 
@@ -104,7 +108,7 @@ pub(super) fn mirrors(
         let frame = match &bound.frame {
             Some(f) => match res.of.get(f) {
                 Some(e) if e.kind == EntKind::Frame && sk.frames[e.i()].chart.is_some() => {
-                    Some(e.i())
+                    Some((e.i(), f.as_str()))
                 }
                 _ => continue,
             },
@@ -113,11 +117,10 @@ pub(super) fn mirrors(
         // the frame's own axes, and its datums by index
         let world = |key: &str| res.of.get(key).copied();
         let (axes, place) = match frame {
-            Some(f) => {
-                let c = sk.frames[f].chart.clone().expect("charted");
-                let name = format!("{}.normal", bound.frame.as_deref().unwrap_or(""));
-                let n = sk.plane_normal(f, &name);
-                ([c.u as usize, c.v as usize, n], f)
+            Some((f, key)) => {
+                let (u, v) = sk.frames[f].chart.as_ref().map(|c| (c.u, c.v)).expect("charted");
+                let n = sk.plane_normal(f, &format!("{key}.normal"));
+                ([u as usize, v as usize, n], f)
             }
             None => match (world("std.x"), world("std.y"), world("std.z"), world("std.front")) {
                 (Some(x), Some(y), Some(z), Some(front)) => ([x.i(), y.i(), z.i()], front.i()),
@@ -129,7 +132,7 @@ pub(super) fn mirrors(
             },
         };
         let datum_key = |d: &str| match &bound.frame {
-            Some(f) => format!("{f}#std.{d}"),
+            Some(f) => format!("{}{d}", crate::flatten::frame_datums(f)),
             None => format!("std.{d}"),
         };
         let datums = PLANES.iter().filter_map(|(d, _)| {
@@ -137,7 +140,8 @@ pub(super) fn mirrors(
             Some((e.i(), *d))
         }).collect();
         let mut at = Mirroring {
-            prefix: &inst.prefix, name, axis: m.axis as usize, axes, frame, place, datums,
+            prefix: &inst.prefix, name, axis: m.axis as usize, axes, frame: frame.map(|f| f.0),
+            place, datums, origin: res.of.get(&datum_key("origin")).map(|e| e.i()),
             reversed: BTreeMap::new(), planes: BTreeMap::new(),
         };
         images(sk, res, map, &mut at, diags);
@@ -146,26 +150,18 @@ pub(super) fn mirrors(
         let own = bound.frame.as_deref().and_then(crate::flatten::frame_instance)
             .is_some_and(|i| format!("{i}.") == inst.prefix);
         if own {
+            let key = |d: &str| crate::flatten::image_datum(&inst.prefix, d);
             for (d, _) in PLANES {
-                if let Some(p) = at.plane(sk, d) {
-                    let e = EntRef::frame(p);
-                    let key = crate::flatten::image_datum(&inst.prefix, d);
-                    res.of.insert(key.clone(), e);
-                    map.bind(&key, e, crate::syntax::Named::No);
-                    if let Some(o) = sk.frames[p].chart.as_ref().map(|c| c.origin) {
-                        if d == "front" {
-                            let key = crate::flatten::image_datum(&inst.prefix, "origin");
-                            res.of.insert(key.clone(), EntRef::point(o as usize));
-                            map.bind(&key, EntRef::point(o as usize), crate::syntax::Named::No);
-                        }
-                    }
-                }
+                let p = at.plane(sk, d);
+                publish(res, map, key(d), EntRef::frame(p));
             }
+            // its origin, the front's
+            let front = at.plane(sk, "front");
+            let origin = sk.frames[front].origin;
+            publish(res, map, key("origin"), EntRef::point(origin as usize));
             for (d, along) in AXES {
                 let e = EntRef::new(EntKind::Axis, at.axis(sk, along));
-                let key = crate::flatten::image_datum(&inst.prefix, d);
-                res.of.insert(key.clone(), e);
-                map.bind(&key, e, crate::syntax::Named::No);
+                publish(res, map, key(d), e);
             }
         }
     }
@@ -186,39 +182,39 @@ fn images(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap, at: &mut Mir
     // what the body draws over and did not make: its frame's datums' points, held, each imaged as
     // the point at its numbers in its plane's image — the image datum's origin where it stands
     // there (`std.origin`, `std.side.origin`)
-    let over: Vec<usize> = made.keys().flat_map(|&e| match e.kind {
-        EntKind::Line => vec![sk.lines[e.i()].p1, sk.lines[e.i()].p2],
-        EntKind::Circle => vec![sk.circles[e.i()].center],
-        EntKind::Arc => { let a = &sk.arcs[e.i()]; vec![a.center, a.start, a.end] }
-        EntKind::Spline => sk.splines[e.i()].ctrl.clone(),
-        _ => vec![],
-    }).map(|p| p as usize).filter(|&p| !made.contains_key(&EntRef::point(p))).collect();
+    let drawn = [EntKind::Line, EntKind::Circle, EntKind::Arc, EntKind::Spline];
+    let origins = at.datums.keys().map(|&d| EntRef::point(sk.frames[d].origin as usize))
+        .chain(at.origin.map(EntRef::point));
+    let over: Vec<EntRef> = made.keys().filter(|e| drawn.contains(&e.kind))
+        .flat_map(|&e| sk.children(e)).chain(origins).filter(|p| !made.contains_key(p)).collect();
     for p in over {
-        if image.contains_key(&EntRef::point(p)) {
+        if image.contains_key(&p) {
             continue;
         }
-        let q = &sk.points[p];
-        let held = sk.point_all_params(p).iter().all(|&k| sk.params[k as usize].fixed);
-        let Some(&d) = q.plane.filter(|_| held).and_then(|pl| at.datums.get(&(pl as usize)))
+        let held = sk.point_all_params(p.i()).iter().all(|&k| sk.params[k as usize].fixed);
+        let Some(&d) = sk.points[p.i()].plane.filter(|_| held)
+            .and_then(|pl| at.datums.get(&(pl as usize)))
         else {
             continue;
         };
-        let Some(plane) = at.plane(sk, d) else { continue };
-        let (x, y) = sk.point_xy(p);
-        let origin = sk.frames[plane].chart.as_ref().map(|c| c.origin as usize);
-        let copy = match origin {
-            Some(o) if (x, y) == (0.0, 0.0) => o,
+        let plane = at.plane(sk, d);
+        let (x, y) = sk.point_xy(p.i());
+        let copy = match sk.frames[plane].origin as usize {
+            o if (x, y) == (0.0, 0.0) => o,
             _ => {
-                let c = sk.point(x, y, true, &format!("{}#image", sk.point_label(p)));
+                let c = sk.point(x, y, true, &format!("{}#image", sk.point_label(p.i())));
                 sk.points[c].plane = Some(plane as u32);
                 c
             }
         };
-        image.insert(EntRef::point(p), EntRef::point(copy));
+        // recorded, so what the body draws over it is drawn over the image (`Sketch::images`)
+        let copy = EntRef::point(copy);
+        sk.mirror(Mirror { copy, rep: p, negated: 0, datum: true });
+        image.insert(p, copy);
     }
     let order = [EntKind::Point, EntKind::Line, EntKind::Circle, EntKind::Arc, EntKind::Spline];
+    let span = |map: &SourceMap, e| map.site_of(e).map_or(crate::syntax::Span::default(), |s| s.span);
     for e in made.keys().copied().filter(|e| !order.contains(&e.kind)) {
-        let span = map.site_of(e).map_or(crate::syntax::Span::default(), |s| s.span);
         let why = match e.kind {
             EntKind::Frame | EntKind::Axis => "whose numbers are the world's, so its image is no \
                 linear function of them: declare it outside, or draw in the frame's own datums",
@@ -228,12 +224,11 @@ fn images(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap, at: &mut Mir
             // what is evaluated, and published reflected
             _ => continue,
         };
-        refuse(diags, span, format!("`{}` is mirrored, and its body declares {}, {why}", at.name,
-                                    called(map, e)));
+        refuse(diags, span(map, e), format!("`{}` is mirrored, and its body declares {}, {why}",
+                                            at.name, called(map, e)));
     }
     for kind in order {
-        for (&e, _) in made.iter().filter(|(e, _)| e.kind == kind) {
-            let span = map.site_of(e).map_or(crate::syntax::Span::default(), |s| s.span);
+        for &e in made.keys().filter(|e| e.kind == kind) {
             let made = match kind {
                 EntKind::Point => point(sk, at, e.i()),
                 EntKind::Line => {
@@ -294,14 +289,14 @@ fn images(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap, at: &mut Mir
                 Ok(copy) => copy,
                 Err(why) => {
                     let what = called(map, e);
-                    refuse(diags, span, format!("`{}` is mirrored, and {what} {why}", at.name));
+                    refuse(diags, span(map, e), format!("`{}` is mirrored, and {what} {why}", at.name));
                     continue;
                 }
             };
             // a point's numbers were derived as it was made; a round's radius, here, and a line
             // or a spline, which owns none, recorded so its preimage is drawn as it
             if kind != EntKind::Point {
-                sk.mirror(Mirror { copy, rep: e, negated: 0 });
+                sk.mirror(Mirror { copy, rep: e, negated: 0, datum: false });
             }
             image.insert(e, copy);
         }
@@ -310,9 +305,7 @@ fn images(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap, at: &mut Mir
     for (e, keys) in &made {
         let Some(&copy) = image.get(e) else { continue };
         for key in keys {
-            let key = crate::flatten::image(key);
-            res.of.insert(key.clone(), copy);
-            map.bind(&key, copy, crate::syntax::Named::No);
+            publish(res, map, crate::flatten::image(key), copy);
         }
         map.image_of.insert(copy, *e);
         map.also_made(*e, copy);
@@ -324,16 +317,16 @@ fn images(sk: &mut Sketch, res: &mut Resolver, map: &mut SourceMap, at: &mut Mir
 /// the world's.
 fn point(sk: &mut Sketch, at: &mut Mirroring<'_>, q: usize) -> Result<EntRef, String> {
     let rep = sk.points[q].clone();
+    let (x, y) = sk.point_xy(q);
     let value = |p: u32| sk.params[p as usize].value;
-    let (x, y) = (value(rep.x), value(rep.y));
     let label = format!("{}#image", sk.point_label(q));
     let (p, negated) = match (rep.plane, rep.chart, rep.z) {
         (Some(plane), _, _) => {
             let Some(&d) = at.datums.get(&(plane as usize)) else {
-                return Err(format!("is drawn in a plane that is none of the datums of the frame it \
-                    stands in, which a mirrored body draws in"));
+                return Err("is drawn in a plane that is none of the datums of the frame it stands \
+                    in, which a mirrored body draws in".to_string());
             };
-            let image = at.plane(sk, d).ok_or("is drawn in a datum with no image")?;
+            let image = at.plane(sk, d);
             let p = sk.point(x, y, false, &label);
             sk.points[p].plane = Some(image as u32);
             (p, 0)
@@ -349,6 +342,6 @@ fn point(sk: &mut Sketch, at: &mut Mirroring<'_>, q: usize) -> Result<EntRef, St
         _ => return Err("stands where its image is no linear function of its numbers: draw it in \
                          the frame's datums, or in the frame".to_string()),
     };
-    sk.mirror(Mirror { copy: EntRef::point(p), rep: EntRef::point(q), negated });
+    sk.mirror(Mirror { copy: EntRef::point(p), rep: EntRef::point(q), negated, datum: false });
     Ok(EntRef::point(p))
 }

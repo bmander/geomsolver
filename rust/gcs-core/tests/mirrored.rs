@@ -8,14 +8,10 @@
 //! right of one binding build once, a mirrored instance placed by mates is held wholly, and what
 //! a reflection cannot be made of is refused.
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::common::{read, refused};
+use crate::common::{read, read_solved as solved, refused, solid_named as solid};
 use gcs_core::brep::props;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
-use gcs_core::model::{EntRef, Sketch};
-use gcs_core::progress::{self, At, Kind, Listener, Work};
+use gcs_core::model::EntRef;
 use gcs_core::solid::ApproximationPolicy as Policy;
 
 /// A plate in the front plane, off its frame's origin and not square to it, so a reflection in
@@ -77,34 +73,11 @@ fn doc(defs: &str, body: &str) -> String {
     format!("unit mm\nuse std (offset, horizontal)\n{defs}\n{body}")
 }
 
-fn solved(src: &str) -> (gcs_core::program::Elaborated, Sketch) {
-    let e = read(src);
-    let sk = crate::common::solved(&e);
-    (e, sk)
-}
-
-fn solid(e: &gcs_core::program::Elaborated, name: &str) -> usize {
-    crate::common::at_path(e, name).i()
-}
-
 /// The solids built while `work` runs, by index.
-#[derive(Default)]
-struct Builds(RefCell<Vec<usize>>);
-
-impl Listener for Builds {
-    fn begin(&self, work: &Work) {
-        if let (Kind::Build, Some(At::Solid(i))) = (work.kind, work.at) {
-            self.0.borrow_mut().push(i);
-        }
-    }
-    fn end(&self, _: &Work, _: f64, _: f64) {}
-}
-
 fn builds<T>(work: impl FnOnce() -> T) -> (T, Vec<usize>) {
-    let heard = Rc::new(Builds::default());
-    let out = progress::listen(heard.clone(), work);
-    let built = heard.0.borrow().clone();
-    (out, built)
+    let (out, heard) = crate::common::counted(work);
+    (out, heard.into_iter().filter(|(k, _)| *k == gcs_core::progress::Kind::Build).map(|(_, i)| i)
+        .collect())
 }
 
 /// An exact solid's vertices in the world, in the drawing's units, each rounded to a nanometre.
@@ -170,13 +143,12 @@ fn a_reflected_brep_holds_over_planes_cylinders_cones_and_a_torus() {
     let (r, l) = (solid(&e, "right.body"), solid(&e, "left.body"));
     let (right, left) = (sk.exact_solid(r).unwrap(), sk.exact_solid(l).unwrap());
     let kinds = |b: &gcs_core::brep::topo::Brep| {
-        let mut k: Vec<String> = b.faces.iter().map(|f| format!("{:?}", f.surface)
-            .split('(').next().unwrap().to_string()).collect();
+        let mut k: Vec<&str> = b.faces.iter().map(|f| f.surface.kind()).collect();
         k.sort();
         k.dedup();
         k
     };
-    assert_eq!(kinds(&left.brep), ["Cone", "Cylinder", "Plane", "Torus"]);
+    assert_eq!(kinds(&left.brep), ["cone", "cylinder", "plane", "torus"]);
     assert_eq!(kinds(&left.brep), kinds(&right.brep));
     left.brep.check(1e-9 * left.brep.size()).unwrap();
     // every placement right-handed again
@@ -366,6 +338,66 @@ fn a_mirrored_instance_placed_by_mates_is_held_wholly() {
     let (y0, y1) = (lo[1] / x.mm + x.origin[1], hi[1] / x.mm + x.origin[1]);
     assert!((y0 - 20.0).abs() < 1e-6 && (y1 - 25.0).abs() < 1e-6, "{y0} … {y1}");
     assert!((lo[0] / x.mm + x.origin[0] - 11.0).abs() < 1e-6, "{lo:?}");
+}
+
+/// A body built of a mirrored instance's solid reads it as it is published, reflected — in the
+/// core's exact B-rep and in the native export alike.
+#[test]
+fn a_body_built_of_a_mirrored_solid_reads_it_reflected() {
+    let src = doc(PLATE, "right := Plate(w: 30mm, d: 20mm, h: 5mm)\n\
+        left := Plate(w: 30mm, d: 20mm, h: 5mm) mirrored(side)\n\
+        both := solid(left.body)\nright.body union both\n");
+    let (e, sk) = solved(&src);
+    let both = solid(&e, "both");
+    let core = sk.exact_solid(both).unwrap();
+    let say = gcs_core::brep::sweep::Say { stage: &|_| {}, mark: &|_| {} };
+    let exported = gcs_core::brep::export::exact(&sk, both, None, None, &say).unwrap();
+    // both plates: x from −30 to 30, in millimetres in the world
+    let (lo, hi) = exported.solid.bounds();
+    assert!((lo[0] + 30.0).abs() < 1e-6 && (hi[0] - 30.0).abs() < 1e-6, "{lo:?} … {hi:?}");
+    let (vc, ve) = (props::volume(&core.brep), props::volume(&exported.solid));
+    assert!((vc - ve).abs() <= 1e-9 * vc, "{vc} against {ve}");
+}
+
+/// A mirrored body's dimension is laid out in its image's view: the view its image's points are
+/// drawn in, not the preimage's.
+#[test]
+fn a_mirrored_bodys_dimension_is_laid_out_in_its_images_view() {
+    let src = doc(PLATE, "left := Plate(w: 30mm, d: 20mm, h: 5mm) mirrored(side)\n");
+    let (e, sk) = solved(&src);
+    let views = gcs_core::overview::workspace::Views::new(&sk);
+    let rim = crate::common::at_path(&e, "left.rim");
+    let radius = sk.constraints.iter()
+        .find(|c| c.kind == gcs_core::constraints::CKind::Radius && c.entities().contains(&rim))
+        .unwrap();
+    let image = sk.points[sk.circles[image(&e, "left.rim").i()].center as usize].plane;
+    assert_eq!(views.constraint_view(&sk, radius), Ok(image.map(|p| p as usize)));
+    assert_ne!(image, sk.points[sk.circles[rim.i()].center as usize].plane);
+    // and every dimension of the body is laid out in one view where the same body's is
+    // unmirrored, the datums it reads imaged with it: its ordinates' origin, and their axis, the
+    // image's `x` reversed (an axis is read as on the page, which a mirror in the side turns over,
+    // so those are compared by what they read)
+    let plain = crate::common::read_solved(&doc(PLATE, "left := Plate(w: 30mm, d: 20mm, h: 5mm)\n")).1;
+    let unmirrored = gcs_core::overview::workspace::Views::new(&plain);
+    assert_eq!(plain.constraints.len(), sk.constraints.len());
+    let images = sk.images();
+    let std_x = crate::common::at_path(&e, "std.x");
+    let axis = |k: &gcs_core::model::EntRef| k.kind == gcs_core::model::EntKind::Axis;
+    for (c, d) in sk.constraints.iter().zip(&plain.constraints).filter(|(c, _)| !c.intrinsic) {
+        let drawn = sk.drawn_constraint(c, &images);
+        if c.entities().iter().any(axis) {
+            let drawn = drawn.expect("the body's ordinate is drawn on its image");
+            assert!(!drawn.entities().contains(&std_x), "{:?} reads `std.x`, not its image", c.kind);
+            continue;
+        }
+        assert_eq!(views.constraint_view(&sk, c).is_ok(), unmirrored.constraint_view(&plain, d).is_ok(),
+                   "{:?}", c.kind);
+    }
+    let origin = crate::common::at_path(&e, "std.origin");
+    assert!(images.datums.contains_key(&origin));
+    let theirs = gcs_core::constraints::Constraint::two_line(gcs_core::constraints::CKind::Coincident,
+        origin, origin);
+    assert!(sk.drawn_constraint(&theirs, &images).is_none());
 }
 
 #[test]

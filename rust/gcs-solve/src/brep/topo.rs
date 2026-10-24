@@ -87,9 +87,6 @@ impl Pcurve {
             }
         }
     }
-}
-
-impl Pcurve {
     /// The same curve with its `u` negated: what it is on its face's surface placed so that its
     /// `u` runs the other way (`Frame::rehanded`, a revolution's). Negating a coordinate is linear,
     /// so a rational curve's weights are unchanged.

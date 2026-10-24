@@ -153,9 +153,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   solid's own entities are the preimage's, solved where the body stands unmirrored, so it is its
   binding's representative's own evaluation (`Sketch::own_solid`, the memo, its binding unread)
   carried where its preimage stands and reflected in the frame's plane square to the axis
-  (`Sketch::bound`: `raw` the motion between the two poses, `motion` that after
-  `Rigid::reflection`; a mirrored solid is always bound, its own representative where nothing else
-  shares its key).  So a left and a right of one binding are one build (`placed_solid`), whichever
+  (`Sketch::bound`: `Bound::raw` the motion between the two poses, `Bound::motion` that after
+  its `mirror`, a `Rigid::reflection`; a mirrored solid is always bound, `Bound::tried` falling
+  back to its own preimage reflected where the representative does not build).  So a left and a right of one binding are one build (`placed_solid`), whichever
   comes first, and `exact_solid` places the representative's own B-rep by the improper motion
   (`Exact::placed` reflects it, `Brep::reflected`); `exact_preimage` is the B-rep where the preimage
   stands, which the solid's own evaluation, its built field and its faces read, and a recipe of one
@@ -166,12 +166,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   so a face still faces out — `world_boundary`, `oriented_mesh` (STL, glTF, `world_mesh`, and the
   ABI's `gcs_solid_mesh`/`gcs_solid_normals`), a claim's `relative` read of one against another
   (wound back where exactly one is reflected); a host placing the shape by `matrix()` reads a
-  determinant −1, which three.js and glTF wind by.  The native export builds the body where it was
-  solved and reflects it (`export::exact`; a sweep in a mirrored body is refused).  Volume, mass
+  determinant −1, which three.js and glTF wind by.  The native export takes a body that reaches a
+  mirrored solid among its operands as the core publishes it (`export::exact` reads
+  `exact_solid`, the body's own or an outside one built of it; a sweep in it is refused).  Volume, mass
   and `clear` read the shape, unchanged.  `tests/mirrored.rs` is the gate
   (`every_image_vertex_is_its_preimages_reflection_and_the_volume_is_equal`: in each of the three
   planes, every exact vertex the right's reflected, the volume equal, the check holding, the mesh
-  wound outward; `a_left_and_a_right_of_one_binding_build_once`, either order).  The hub motor's
+  wound outward; `a_left_and_a_right_of_one_binding_build_once`, either order;
+  `a_body_built_of_a_mirrored_solid_reads_it_reflected`, in the core and the export alike).  The hub motor's
   covers and its bearings, spacers and locknuts are mirrored: 17 builds for its objects before, 14
   after (three figures under six placements), every one of its 226 solids' vertices the same to
   5·10⁻¹² mm.

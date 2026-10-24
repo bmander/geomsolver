@@ -82,21 +82,19 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
         // one of another instance is read as it is published, reflected
         let bound = |i: usize| sk.solids[i].binding.as_ref();
         let own = bound(id as usize).zip(bound(si)).is_some_and(|(a, b)| a.at == b.at);
-        let leaf = match own {
-            _ if id as usize == si => None,
-            true => sk.shared(id as usize).then(|| sk.exact_preimage(id as usize)),
-            false => {
-                let mirrored = bound(id as usize).is_some_and(|b| b.mirror.is_some());
-                (sk.shared(id as usize) || mirrored).then(|| sk.exact_solid(id as usize))
-            }
+        let mirrored = bound(id as usize).is_some_and(|b| b.mirror.is_some());
+        let leaf = if id as usize == si {
+            None
+        } else if own {
+            sk.shared(id as usize).then(|| sk.exact_preimage(id as usize))
+        } else {
+            (sk.shared(id as usize) || mirrored).then(|| sk.exact_solid(id as usize))
         };
-        if let Some(found) = leaf {
-            if let Ok(x) = found {
-                let t = std::array::from_fn(|k| (x.origin[k] - origin[k]) * mm);
-                built.insert(id, x.brep.moved(&geom::Rigid { t, ..geom::Rigid::identity() }));
-                leading.extend(x.leading.iter().cloned());
-                continue;
-            }
+        if let Some(Ok(x)) = leaf {
+            let t = std::array::from_fn(|k| (x.origin[k] - origin[k]) * mm);
+            built.insert(id, x.brep.moved(&geom::Rigid { t, ..geom::Rigid::identity() }));
+            leading.extend(x.leading.iter().cloned());
+            continue;
         }
         let mut b = n.node.built(&built, &BTreeMap::new(), floor)?;
         let sol = &sk.solids[id as usize];

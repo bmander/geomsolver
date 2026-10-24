@@ -742,7 +742,7 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
     // a mirrored body's entity is published as its image, which goes by its name (#578)
     let images = sk.images();
     for (&e, names) in &map.names {
-        let e = images.get(&e).copied().unwrap_or(e);
+        let e = images.of.get(&e).copied().unwrap_or(e);
         let params = sk.entity_params(e);
         for n in names {
             let Some(scalars) = sk.scalar_names(e, n) else { continue };

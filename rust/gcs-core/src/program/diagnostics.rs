@@ -214,6 +214,14 @@ pub struct Diag {
 }
 
 impl Diag {
+    /// `code` said at `span`, once however often a pass reaches it: a refusal of a definition's,
+    /// met at every instance of it.
+    pub(super) fn once(diags: &mut Vec<Diag>, code: Code, span: Span, message: String) {
+        if !diags.iter().any(|d| d.code == code && d.span == span) {
+            diags.push(Diag::new(code, span, None, message));
+        }
+    }
+
     /// A diagnostic at `span`, in the statement `stmt` where there is one.
     pub fn new(code: Code, span: Span, stmt: Option<StmtId>, message: String) -> Diag {
         Diag { code, span, stmt, message }

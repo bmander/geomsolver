@@ -37,16 +37,34 @@ pub struct Binding {
 }
 
 /// A solid read as another's evaluation placed (`Sketch::bound`): the representative, the motion
-/// carrying its own evaluation onto this one, and the prefix its names are rewritten from and to.
-/// `raw` is the motion carrying it onto where this one's preimage stands — `motion` itself but
-/// for a mirrored solid, which is that reflected (#578).
+/// carrying its own evaluation onto where this one's preimage stands, the reflection a mirrored
+/// one is published by after it (#578), and the prefix its names are rewritten from and to.
 #[derive(Clone, Debug)]
 pub struct Bound {
     pub rep: usize,
-    pub motion: Rigid,
     pub raw: Rigid,
+    pub mirror: Option<Rigid>,
     pub from: String,
     pub to: String,
+}
+
+impl Bound {
+    /// The motion carrying the representative's own evaluation onto this solid as it is
+    /// published: `raw`, then reflected where it is mirrored.
+    pub fn motion(&self) -> Rigid {
+        self.mirror.map_or(self.raw, |m| m.after(&self.raw))
+    }
+
+    /// The bindings solid `i` is read through, in the order they are asked: this one, and where
+    /// its representative is another and it is mirrored, its own evaluation reflected — which a
+    /// representative's refusal falls back to, so the solid is never published unreflected.
+    pub fn tried(self, i: usize) -> impl Iterator<Item = Bound> {
+        let alone = (self.rep != i && self.mirror.is_some()).then(|| Bound {
+            rep: i, raw: Rigid::identity(), mirror: self.mirror, from: self.to.clone(),
+            to: self.to.clone(),
+        });
+        std::iter::once(self).chain(alone)
+    }
 }
 
 impl Sketch {
@@ -60,7 +78,7 @@ impl Sketch {
         let b = self.solids.get(i)?.binding.as_ref()?;
         let rep = self.peers(i).and_then(|mut p| p.next()).filter(|&j| j < i).unwrap_or(i);
         let mirror = match b.mirror {
-            Some(axis) => Some(Rigid::reflection(&self.binding_pose(i)?, axis)),
+            Some(_) => Some(self.mirror_of(i)?),
             None if rep == i => return None,
             None => None,
         };
@@ -68,8 +86,7 @@ impl Sketch {
         let raw = if rep == i { Rigid::identity() } else {
             Rigid::between(&self.binding_pose(rep)?, &self.binding_pose(i)?)
         };
-        let motion = mirror.map_or(raw, |m| m.after(&raw));
-        Some(Bound { rep, motion, raw, from: from.clone(), to: b.at.clone() })
+        Some(Bound { rep, raw, mirror, from: from.clone(), to: b.at.clone() })
     }
 
     /// **The reflection a mirrored solid is published by** (#578): in the plane of the frame its

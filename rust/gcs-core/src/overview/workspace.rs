@@ -64,6 +64,9 @@ pub struct Views {
     places: Vec<Option<usize>>,
     /// A length below which two places in space are one, scaled to the drawing.
     tol: f64,
+    /// What each mirrored body's preimage is drawn as (#578, `Sketch::images`): a figure on one
+    /// is laid out in its image's view.
+    images: crate::model::Images,
 }
 
 /// Where a view sits in `Views`' tables: the page first, then each plane.
@@ -131,7 +134,7 @@ impl Views {
             })
             .collect();
         let space = sk.points.iter().map(|p| p.z.is_some()).collect();
-        Views { placements, points: views(sk), space, tol, places }
+        Views { placements, points: views(sk), space, tol, places, images: sk.images() }
     }
 
     /// The view point `p` stands in.
@@ -181,10 +184,11 @@ impl Views {
     }
 
     /// The view a constraint's figure — its callout — is laid out in: the one every entity it
-    /// names stands in, `Err` where they stand apart.
+    /// names stands in, as it is drawn, `Err` where they stand apart.
     pub fn constraint_view(&self, sk: &Sketch, c: &crate::constraints::Constraint) -> Result<Option<usize>, ()> {
         let mut seen: Option<Option<usize>> = None;
-        for a in &c.args {
+        let drawn = sk.drawn_constraint(c, &self.images);
+        for a in &drawn.as_ref().unwrap_or(c).args {
             let crate::constraints::Arg::Ent(r) = a else { continue };
             let v = self.entity_view(sk, *r)?;
             match seen {

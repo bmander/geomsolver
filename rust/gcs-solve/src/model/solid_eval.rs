@@ -136,25 +136,12 @@ impl Sketch {
         // one of a binding's solids its representative's evaluation placed (#566); a refusal of
         // the representative's is asked of this one, so it names its own solid — and a mirrored
         // one's own is reflected still (#578)
-        if let Some(b) = self.bound(i) {
-            match self.own_solid(b.rep, policy) {
-                Ok(rep) => return Ok(self.placed_solid(i, &b, &rep, slot)),
-                Err(_) if b.rep != i => if let Some(own) = self.self_bound(i, &b) {
-                    let rep = self.own_solid(i, policy)?;
-                    return Ok(self.placed_solid(i, &own, &rep, slot));
-                },
-                Err(e) => return Err(e),
+        for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
+            if let Ok(rep) = self.own_solid(b.rep, policy) {
+                return Ok(self.placed_solid(i, &b, &rep, slot));
             }
         }
         self.own_solid(i, policy)
-    }
-
-    /// A mirrored solid `i` bound as `b`, read as its own representative: reflected where it
-    /// stands (#578) — `None` for any other.
-    fn self_bound(&self, i: usize, b: &super::Bound) -> Option<super::Bound> {
-        let mirror = self.mirror_of(i)?;
-        Some(super::Bound { rep: i, motion: mirror, raw: crate::solid::Rigid::identity(),
-                            from: b.to.clone(), to: b.to.clone() })
     }
 
     /// **Solid `i` evaluated as its own**, from the entities it reads, its binding unread: what a
@@ -183,20 +170,12 @@ impl Sketch {
         let (policy, slot) = self.solid_slot(i, policy);
         // one of a binding's placed copies is built wherever its representative is (#566), a
         // mirrored one wherever its own is (#578)
-        if let Some(b) = self.bound(i) {
+        for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
             let rep = self.remembered(self.solid_slot(b.rep, policy).1,
                                       &crate::solid::ShapeKey::of(self, b.rep));
-            return match rep {
-                Some(Ok(rep)) => Some(Ok(self.placed_solid(i, &b, &rep, slot))),
-                _ if b.rep == i => rep,
-                _ => self.remembered(slot, &crate::solid::ShapeKey::of(self, i)).map(|own| {
-                    let own = own?;
-                    Ok(match self.self_bound(i, &b) {
-                        Some(m) => self.placed_solid(i, &m, &own, slot),
-                        None => own,
-                    })
-                }),
-            };
+            if let Some(Ok(rep)) = rep {
+                return Some(Ok(self.placed_solid(i, &b, &rep, slot)));
+            }
         }
         self.remembered(slot, &crate::solid::ShapeKey::of(self, i))
     }
@@ -236,17 +215,17 @@ impl Sketch {
     /// only where the representative's evaluation or the motion has changed.
     fn placed_solid(&self, i: usize, b: &super::Bound, rep: &std::rc::Rc<crate::solid::EvaluatedSolid>,
                     slot: (usize, (u8, u64))) -> std::rc::Rc<crate::solid::EvaluatedSolid> {
-        let mut cache = self.caches.placed.borrow_mut();
-        if let Some(hit) = cache.get(&slot).and_then(|(_, p)| p.hit(rep, &b.motion)) {
+        let (mut cache, motion) = (self.caches.placed.borrow_mut(), b.motion());
+        if let Some(hit) = cache.get(&slot).and_then(|(_, p)| p.hit(rep, &motion)) {
             return hit;
         }
         let mut renamed = match cache.remove(&slot) {
             Some((renamed, _)) => renamed,
             None => rep.renamed(&b.from, &b.to),
         };
-        let placed = std::rc::Rc::new(rep.placed(&b.motion, &mut renamed, &b.from, &b.to));
+        let placed = std::rc::Rc::new(rep.placed(&motion, &mut renamed, &b.from, &b.to));
         super::caches::cap_zoom(&mut cache, i);
-        let placement = super::caches::Placement { of: rep.clone(), motion: b.motion, placed: placed.clone() };
+        let placement = super::caches::Placement { of: rep.clone(), motion, placed: placed.clone() };
         cache.insert(slot, (renamed, placement));
         placed
     }
@@ -268,28 +247,22 @@ impl Sketch {
     /// `exact_solid` (`mirrored`) or `exact_preimage`.
     fn exact_placed(&self, i: usize, mirrored: bool)
         -> Result<std::rc::Rc<crate::solid::Exact>, String> {
-        if let Some(b) = self.bound(i) {
-            let motion = if mirrored { b.motion } else { b.raw };
-            if b.rep != i || mirrored {
-                if let Ok(rep) = self.own_exact(b.rep) {
-                    let mut cache = self.caches.placed_exact.borrow_mut();
-                    let slot = (i, mirrored);
-                    if let Some(hit) = cache.get(&slot).and_then(|p| p.hit(&rep, &motion)) {
-                        return Ok(hit);
-                    }
-                    let placed = std::rc::Rc::new(rep.placed(&motion, &b.from, &b.to)?);
-                    let placement = super::caches::Placement { of: rep, motion, placed: placed.clone() };
-                    cache.insert(slot, placement);
-                    return Ok(placed);
-                }
-                // the representative refused: asked of this one, reflected where it is mirrored
-                if b.rep != i && mirrored {
-                    if let Some(m) = self.mirror_of(i) {
-                        let own = self.own_exact(i)?;
-                        return Ok(std::rc::Rc::new(own.placed(&m, &b.to, &b.to)?));
-                    }
-                }
+        for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
+            // an unmirrored solid's preimage is the solid itself
+            let mirrored = mirrored && b.mirror.is_some();
+            if b.rep == i && !mirrored {
+                break;
             }
+            let Ok(rep) = self.own_exact(b.rep) else { continue };
+            let motion = if mirrored { b.motion() } else { b.raw };
+            let mut cache = self.caches.placed_exact.borrow_mut();
+            let slot = (i, mirrored);
+            if let Some(hit) = cache.get(&slot).and_then(|p| p.hit(&rep, &motion)) {
+                return Ok(hit);
+            }
+            let placed = std::rc::Rc::new(rep.placed(&motion, &b.from, &b.to)?);
+            cache.insert(slot, super::caches::Placement { of: rep, motion, placed: placed.clone() });
+            return Ok(placed);
         }
         self.own_exact(i)
     }
