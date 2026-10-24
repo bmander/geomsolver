@@ -593,13 +593,23 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let (_,su,sv) = f.surface.d1(mid);
         let (ku,kv) = (norm(su).max(least),norm(sv).max(least));
         let place = |uv: Uv| [if f.reversed { -uv[0]*ku } else { uv[0]*ku },uv[1]*kv];
+        // a vertex two loops (or one loop twice) pass through at one place — a hole touching the
+        // outer loop, a boss tangent to the face's edge (#597) — is one corner: two corners at one
+        // place leave the triangulation a triangle of no area across the boundary there. One vertex
+        // at two places (either side of a seam) stays two
+        let mut corners: std::collections::BTreeMap<u32,Vec<usize>> = std::collections::BTreeMap::new();
         for run in &raw {
             let mut l = Vec::new();
             for &(uv,i) in run {
-                pts.push(place(uv));
+                let q = place(uv);
+                let at = |k: &usize| { let d = [pts[*k][0]-q[0],pts[*k][1]-q[1]]; d[0]*d[0]+d[1]*d[1] <= weld*weld };
+                let same = corners.get(&i).and_then(|ks| ks.iter().copied().find(at));
+                if let Some(k) = same { l.push(k); continue }
+                pts.push(q);
                 uvs.push(uv);
                 ids.push(i);
                 l.push(pts.len()-1);
+                corners.entry(i).or_default().push(pts.len()-1);
             }
             loops.push(l);
         }

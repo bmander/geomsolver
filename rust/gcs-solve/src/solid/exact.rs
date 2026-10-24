@@ -74,8 +74,11 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let floor = 16.0 * f64::EPSILON * origin.iter().fold(0.0f64, |m, x| m.max(x.abs())) * mm;
     let mut built = BTreeMap::new();
     let mut leading = BTreeSet::new();
+    // each node's name, for what a body built of it says
+    let mut names = BTreeMap::new();
     for n in &recipe.nodes {
         let id = n.id;
+        names.insert(id, n.name.clone());
         // an operand of one binding with others is its representative's B-rep, built once and
         // placed (#566), moved into this one's place; its faces are named already.  One of this
         // solid's own instance is read where this one is built, its preimage (#578); a mirrored
@@ -96,7 +99,7 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
             leading.extend(x.leading.iter().cloned());
             continue;
         }
-        let mut b = n.node.built(&built, &BTreeMap::new(), floor)?;
+        let mut b = n.node.built(&built, &names, floor)?;
         let sol = &sk.solids[id as usize];
         match &sol.def {
             SolidDef::Placed { source, .. } => {
