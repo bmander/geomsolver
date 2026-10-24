@@ -240,15 +240,18 @@ fn symmetric_eigenvalues_agree_with_nalgebra() {
 // --- the sparse symmetric factor and the eigensolver (#510, P2) ----------------------------------
 
 use gcs_core::eigen::{self, Opts, Pairs, Refusal};
-use gcs_core::sparse::{Ldl, Pencil, Sym};
+use gcs_core::sparse::{Ldl, Pencil};
 
-/// A `Sym` as the reference's dense matrix.
-fn dense(a: &Sym) -> DMatrix<f64> {
-    let mut d = DMatrix::zeros(a.n, a.n);
-    for (i, j, v) in a.entries() {
-        d[(i, j)] += v;
-    }
-    d
+/// A `Symmetric` as the reference's dense matrix, both triangles.
+fn dense(a: &Symmetric) -> DMatrix<f64> {
+    dense_of(a)
+}
+
+/// The entries of a `Symmetric`'s lower triangle, as triplets.
+fn entries(a: &Symmetric) -> Vec<(usize, usize, f64)> {
+    (0..a.n).flat_map(|j| {
+        (a.colptr[j]..a.colptr[j + 1]).map(move |q| (a.rowind[q] as usize, j, a.values[q]))
+    }).collect()
 }
 
 /// A spring of stiffness `k` between freedoms `a` and `b`, as an assembly adds it: its 2×2 block.
@@ -259,7 +262,7 @@ pub(crate) fn spring(t: &mut Vec<(usize, usize, f64)>, a: usize, b: usize, k: f6
 /// The springs of an `nx × ny` grid, random stiffnesses: a membrane's stiffness, as an assembly
 /// adds it, with the boundary's nodes held to the ground by a spring
 /// of their own when `held`.
-fn grid(seed: u32, nx: usize, ny: usize, held: bool) -> Sym {
+fn grid(seed: u32, nx: usize, ny: usize, held: bool) -> Symmetric {
     let mut rng = Rng::new(seed);
     let id = |i: usize, j: usize| i * ny + j;
     let mut t: Vec<(usize, usize, f64)> = Vec::new();
@@ -276,12 +279,12 @@ fn grid(seed: u32, nx: usize, ny: usize, held: bool) -> Sym {
             }
         }
     }
-    Sym::from_triplets(nx * ny, &t)
+    Symmetric::from_triplets(nx * ny, &t)
 }
 
 /// A consistent-looking mass on the same grid: each node's own, and a sixth of the lighter
 /// neighbour's coupling along every spring — diagonally dominant, so positive definite.
-fn grid_mass(seed: u32, nx: usize, ny: usize) -> Sym {
+fn grid_mass(seed: u32, nx: usize, ny: usize) -> Symmetric {
     let mut rng = Rng::new(seed);
     let n = nx * ny;
     let m: Vec<f64> = (0..n).map(|_| rng.uniform(1.0, 3.0)).collect();
@@ -296,7 +299,7 @@ fn grid_mass(seed: u32, nx: usize, ny: usize) -> Sym {
             }
         }
     }
-    Sym::from_triplets(n, &t)
+    Symmetric::from_triplets(n, &t)
 }
 
 /// The pencil's eigenvalues by the reference, ascending: `B = L Lᵀ`, then `L⁻¹ A L⁻ᵀ`'s.
@@ -314,7 +317,7 @@ fn ref_pencil(a: &DMatrix<f64>, b: &DMatrix<f64>) -> Vec<f64> {
 /// B-orthonormal, A-orthogonal with λ on the diagonal, every residual small, and nothing missed:
 /// Sylvester's count just below the highest value found equals the number found below that, and
 /// just above it is at least the number found (more when `count` cut a repeated value).
-fn assert_pencil_pairs(a: &Sym, b: &Sym, got: &Pairs, what: &str) {
+fn assert_pencil_pairs(a: &Symmetric, b: &Symmetric, got: &Pairs, what: &str) {
     let k = got.values.len();
     let ab: Vec<(Vec<f64>, Vec<f64>)> =
         got.vectors.iter().map(|x| (a.mul_vec(x), b.mul_vec(x))).collect();
@@ -345,9 +348,9 @@ fn assert_pencil_pairs(a: &Sym, b: &Sym, got: &Pairs, what: &str) {
 fn sparse_ldl_solves_and_counts_negative_eigenvalues() {
     for (seed, nx, ny, shift) in [(1u32, 6usize, 5usize, 0.0), (2, 7, 7, 1.3), (3, 4, 9, 3.1)] {
         let (l, r) = (grid(seed, nx, ny, true), grid_mass(seed + 10, nx, ny));
-        let mut t: Vec<(usize, usize, f64)> = l.entries().collect();
-        t.extend(r.entries().map(|(i, j, v)| (i, j, -shift * v)));
-        let a = Sym::from_triplets(l.n, &t);
+        let mut t = entries(&l);
+        t.extend(entries(&r).into_iter().map(|(i, j, v)| (i, j, -shift * v)));
+        let a = Symmetric::from_triplets(l.n, &t);
         let n = a.n;
         let f = Ldl::new(&a).expect("a factor");
         let b = rand_vec(100 + seed, n);
@@ -394,8 +397,8 @@ fn a_free_ring_has_its_rigid_mode_and_every_pair() {
     for a in 0..nodes {
         spring(&mut t, a, (a + 1) % nodes, k);
     }
-    let stiff = Sym::from_triplets(nodes, &t);
-    let mass = Sym::from_triplets(nodes, &(0..nodes).map(|i| (i, i, m)).collect::<Vec<_>>());
+    let stiff = Symmetric::from_triplets(nodes, &t);
+    let mass = Symmetric::from_triplets(nodes, &(0..nodes).map(|i| (i, i, m)).collect::<Vec<_>>());
     let count = 10;
     let got = eigen::lowest(&stiff, &mass, count, &Opts::default()).expect("the modes");
     assert_eq!(got.values.len(), count);
@@ -425,7 +428,7 @@ fn lowest_modes_of_a_large_membrane_hold_their_properties() {
 /// Euler–Bernoulli elements on a column of `elements` equal lengths: the stiffness and the
 /// geometric stiffness of a unit compression, each element's 4×4 on (w, θ) at its two ends.
 /// `held` lists the freedoms fixed (dropped).
-fn column(elements: usize, length: f64, ei: f64, held: &[usize]) -> (Sym, Sym) {
+fn column(elements: usize, length: f64, ei: f64, held: &[usize]) -> (Symmetric, Symmetric) {
     let h = length / elements as f64;
     let ke = [
         [12.0, 6.0 * h, -12.0, 6.0 * h],
@@ -461,7 +464,7 @@ fn column(elements: usize, length: f64, ei: f64, held: &[usize]) -> (Sym, Sym) {
             }
         }
     }
-    (Sym::from_triplets(n, &tk), Sym::from_triplets(n, &tg))
+    (Symmetric::from_triplets(n, &tk), Symmetric::from_triplets(n, &tg))
 }
 
 /// Euler's loads: a pinned–pinned column buckles at `j² π² EI / L²`, a cantilever first at
@@ -515,7 +518,7 @@ fn buckling_refuses_what_has_no_load() {
     let (free, kg) = column(10, 1.0, 1.0, &[]);
     assert_eq!(eigen::buckling(&free, &kg, 3, &Opts::default()).err(), Some(Refusal::NotDefinite));
     // and a mass that is not definite is refused for the modes
-    let massless = Sym::from_triplets(free.n, &[(0, 0, 1.0)]);
+    let massless = Symmetric::from_triplets(free.n, &[(0, 0, 1.0)]);
     let modes = eigen::lowest(&free, &massless, 2, &Opts::default());
     assert_eq!(modes.err(), Some(Refusal::NotDefinite));
 }
@@ -646,8 +649,8 @@ fn dense_of(a: &Symmetric) -> DMatrix<f64> {
     let mut m = DMatrix::zeros(a.n, a.n);
     for j in 0..a.n {
         for q in a.colptr[j]..a.colptr[j + 1] {
-            m[(a.rowind[q], j)] = a.values[q];
-            m[(j, a.rowind[q])] = a.values[q];
+            m[(a.rowind[q] as usize, j)] = a.values[q];
+            m[(j, a.rowind[q] as usize)] = a.values[q];
         }
     }
     m
@@ -721,7 +724,7 @@ fn sparse_cholesky_solves_a_tetrahedral_stiffness() {
             for j in 0..n {
                 for q in a.colptr[j]..a.colptr[j + 1] {
                     a.values[q] *= 3.0;
-                    if a.rowind[q] == j {
+                    if a.rowind[q] as usize == j {
                         a.values[q] += rng.uniform(0.0, 1.0);
                     }
                 }
@@ -811,7 +814,7 @@ fn a_pivot_lost_to_rounding_is_refused() {
             if i == j {
                 // the diagonal is each column's first entry
                 let q = held.colptr[p[i]];
-                assert_eq!(held.rowind[q], p[i]);
+                assert_eq!(held.rowind[q] as usize, p[i]);
                 let a = held.values[q];
                 assert!(v * v > 0.1 * a, "{ordering:?}: pivot {} of {a}", v * v);
             }

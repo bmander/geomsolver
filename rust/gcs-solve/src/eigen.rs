@@ -8,8 +8,10 @@
 //! `θ = 1/(λ − σ)` are largest for the λ just above σ — and a Krylov method finds the largest
 //! first.  The modes are `L = K`, `R = B = M`, σ found below the spectrum, so those are the
 //! lowest.  Buckling is `L = B = K`, `R = −K_G`, σ = 0: a supported structure's K is positive
-//! definite, and the largest θ are the lowest positive load factors.  The factor of `L − σR` is
-//! made once (`sparse::Pencil`); each step is one solve and one product.  The basis is kept
+//! definite, and the largest θ are the lowest positive load factors.  Both are lower triangles
+//! (`cholesky::Symmetric`), a mesh's on its one pattern; the pencil's pattern is analysed once,
+//! through the cache the static solve analysed it in (`sparse::Pencil`, #632), and each shift is
+//! a numeric factor; each step is one solve and one product.  The basis is kept
 //! B-orthonormal by full reorthogonalization, and the iteration restarts thickly (Wu & Simon):
 //! the wanted Ritz vectors are kept, the rest dropped, and the residual the kept ones share is
 //! the next vector.
@@ -25,7 +27,8 @@
 
 use crate::linalg::{dot, norm, sym_eigen, Mat};
 use crate::rng::Rng;
-use crate::sparse::{Ldl, Pencil, Sym};
+use crate::cholesky::Symmetric;
+use crate::sparse::{Ldl, Pencil};
 
 /// What a solve found: the eigenvalues ascending, each with its vector and its residual.  A mode
 /// is normalized in the mass (`φᵀ M φ = 1`), a buckling shape in the stiffness (`φᵀ K φ = 1`): the
@@ -123,7 +126,7 @@ fn axpy(a: f64, x: &[f64], y: &mut [f64]) {
 struct Operator<'a> {
     n: usize,
     op: &'a dyn Fn(&[f64], &[f64]) -> Vec<f64>,
-    b: &'a Sym,
+    b: &'a Symmetric,
 }
 
 /// `w <- w − Σ ⟨v_i, w⟩ v_i` over `basis`, twice ("twice is enough", Kahan–Parlett), and the
@@ -264,7 +267,9 @@ fn definite(m: Option<Ldl>) -> Option<Ldl> {
 /// from L (buckling, σ = 0) rather than R (the modes, σ found).  Each round finds at least one
 /// pair or stops, and a search the count says is short of a pair is `NoConvergence` (`NoShift`
 /// where no μ near the top factors to count at), never an answer.
-fn solve(l: &Sym, r: &Sym, inner_l: bool, count: usize, opts: &Opts) -> Result<Pairs, Refusal> {
+fn solve(l: &Symmetric, r: &Symmetric, inner_l: bool, count: usize, opts: &Opts)
+    -> Result<Pairs, Refusal>
+{
     let n = l.n;
     if n == 0 || count == 0 {
         return Ok(Pairs::default());
@@ -277,7 +282,7 @@ fn solve(l: &Sym, r: &Sym, inner_l: bool, count: usize, opts: &Opts) -> Result<P
     let (b, sigma, factor) = if inner_l {
         (l, 0.0, definite(pencil.factor(0.0)).ok_or(Refusal::NotDefinite)?)
     } else {
-        definite(Ldl::new(r)).ok_or(Refusal::NotDefinite)?;
+        definite(pencil.right()).ok_or(Refusal::NotDefinite)?;
         // a Rayleigh quotient, so no eigenvalue is above the least ratio; moved down until
         // Sylvester's count says nothing is below
         let (dl, dr) = (l.diag(), r.diag());
@@ -365,7 +370,9 @@ fn solve(l: &Sym, r: &Sym, inner_l: bool, count: usize, opts: &Opts) -> Result<P
 /// value of zero.  The shift is found, not given: `SHIFT` of the smallest diagonal ratio
 /// `A_ii / B_ii` below zero (that ratio is a Rayleigh quotient, so no eigenvalue is above it),
 /// moved further down until Sylvester's count says nothing is below it.
-pub fn lowest(a: &Sym, b: &Sym, count: usize, opts: &Opts) -> Result<Pairs, Refusal> {
+pub fn lowest(a: &Symmetric, b: &Symmetric, count: usize, opts: &Opts)
+    -> Result<Pairs, Refusal>
+{
     solve(a, b, false, count, opts)
 }
 
@@ -379,6 +386,8 @@ pub fn lowest(a: &Sym, b: &Sym, count: usize, opts: &Opts) -> Result<Pairs, Refu
 /// θ of the iteration about zero, where it would converge on nothing: so Sylvester's count is
 /// asked first, and no negative pivot of `K + μ K_G` at `μ = UNBUCKLED` is no factor below it,
 /// none returned.
-pub fn buckling(k: &Sym, kg: &Sym, count: usize, opts: &Opts) -> Result<Pairs, Refusal> {
+pub fn buckling(k: &Symmetric, kg: &Symmetric, count: usize, opts: &Opts)
+    -> Result<Pairs, Refusal>
+{
     solve(k, &kg.scaled(-1.0), true, count, opts)
 }

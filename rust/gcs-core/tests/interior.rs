@@ -935,6 +935,92 @@ fn a_solid_element_is_rigid_in_six_motions_and_weighs_its_volume() {
     assert_eq!(t.stiffness(&over).err(), Some(Failure::Collapsed));
 }
 
+/// **A mesh's matrices are one pattern's, assembled in place** (#632): a solid's stiffness, mass
+/// and geometric stiffness come out on the mesh's one pattern, each the sum of its elements'
+/// matrices (against the same sums given as triplets); the stiffness its displacements were
+/// solved with, factored or by CG, is the one `stiffness` assembles, to the bit; and the modes
+/// and the buckling of the matrices in place are the triplets' own.
+#[test]
+fn a_meshs_matrices_are_assembled_in_place_on_one_pattern() {
+    use gcs_core::cholesky::Symmetric;
+    use gcs_core::eigen::{self, Opts};
+    let (h, p) = (10.0, 5.0);
+    let mut rng = Rng::new(17);
+    let (mut s, x) = block([2, 2, 2], [20.0, 20.0, h], 0.2, &mut rng);
+    for i in 0..s.nodes {
+        if x[3 * i + 2].abs() < 1e-9 {
+            s.fixed[3 * i..3 * i + 3].fill(true);
+        }
+    }
+    s.borne = vec![interior::Borne::Pressure {
+        facets: facets_where(&s, &x, |q| (q[2] - h).abs() < 1e-9), p }];
+    let factored = s.solve_by(&x, false).unwrap();
+    let k = s.stiffness(&x).unwrap();
+    let m = s.mass(&x).unwrap();
+    let kg = s.stressed(&x, &factored.u).unwrap();
+    assert!(k.same_pattern(&m) && k.same_pattern(&kg), "one pattern");
+    // the same sums as triplets, both triangles, at the equations no support holds
+    let mut eq = vec![None; s.fixed.len()];
+    let mut n = 0;
+    for (d, held) in s.fixed.iter().enumerate() {
+        if !held {
+            eq[d] = Some(n);
+            n += 1;
+        }
+    }
+    let triplets = |local: &dyn Fn(usize) -> [[f64; 30]; 30]| {
+        let mut t = Vec::new();
+        for (i, tet) in s.tets.iter().enumerate() {
+            let e = local(i);
+            let at: [Option<usize>; 30] = std::array::from_fn(|a| eq[3 * tet.n[a / 3] + a % 3]);
+            for a in 0..30 {
+                for b in 0..30 {
+                    if let (Some(ea), Some(eb)) = (at[a], at[b]) {
+                        t.push((ea, eb, e[a][b]));
+                    }
+                }
+            }
+        }
+        Symmetric::from_triplets(n, &t)
+    };
+    let places = |i: usize| s.tet_places(i, &x);
+    let tk = triplets(&|i| s.tets[i].stiffness(&places(i)).unwrap());
+    let tm = triplets(&|i| s.tets[i].mass(&places(i)).unwrap());
+    let tg = triplets(&|i| {
+        let u: [f64; 30] = std::array::from_fn(|a| factored.u[3 * s.tets[i].n[a / 3] + a % 3]);
+        s.tets[i].geometric(&places(i), &u).unwrap()
+    });
+    let v: Vec<f64> = (0..n).map(|_| rng.uniform(-1.0, 1.0)).collect();
+    for (what, got, want) in [("K", &k, &tk), ("M", &m, &tm), ("K_G", &kg, &tg)] {
+        let (a, b) = (got.mul_vec(&v), want.mul_vec(&v));
+        let scale = b.iter().fold(0.0f64, |s, w| s.max(w.abs()));
+        for i in 0..n {
+            assert!((a[i] - b[i]).abs() <= 1e-12 * scale, "{what} v at {i}: {} against {}",
+                    a[i], b[i]);
+        }
+    }
+    // the stiffness each solve was made with, read again by no assembly
+    let cg = s.solve_by(&x, true).unwrap();
+    assert!(cg.by_cg() && !factored.by_cg());
+    for st in [&factored, &cg] {
+        let held = st.stiffness().expect("a mesh's solve holds its stiffness");
+        assert!(held.same_pattern(&k) && held.values == k.values, "the solve's own stiffness");
+    }
+    // the pencils in place against the triplets'
+    let close = |a: &[f64], b: &[f64], what: &str| {
+        assert_eq!(a.len(), b.len(), "{what}");
+        for (a, b) in a.iter().zip(b) {
+            assert!((a - b).abs() <= 1e-9 * b.abs(), "{what}: {a} against {b}");
+        }
+    };
+    let opts = Opts::default();
+    let modes = eigen::lowest(&k, &m, 4, &opts).unwrap();
+    close(&modes.values, &eigen::lowest(&tk, &tm, 4, &opts).unwrap().values, "modes");
+    let buckled = eigen::buckling(&k, &kg, 1, &opts).unwrap();
+    assert_eq!(buckled.values.len(), 1, "a pressed block buckles");
+    close(&buckled.values, &eigen::buckling(&tk, &tg, 1, &opts).unwrap().values, "buckling");
+}
+
 /// **A solid structure's adjoint gradient agrees with its differences** (#510 S3): blocks of
 /// knocked-about elements with their middle nodes moved off their edges (curved), held at their
 /// near faces, under every load a solid bears at once — a pressure on the far face, a force
