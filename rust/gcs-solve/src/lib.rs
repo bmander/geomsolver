@@ -37,6 +37,7 @@ pub mod generate;
 pub mod graft;
 pub mod graph;
 pub mod homotopy;
+pub mod hulls;
 pub mod integral;
 pub mod interior;
 pub mod interval;

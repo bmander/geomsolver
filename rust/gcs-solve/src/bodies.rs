@@ -56,6 +56,12 @@ pub const LAYER: f64 = 2.0;
 /// its extent.
 pub const FILLED: f64 = 1.0 / 16.0;
 
+/// **The coarsest level a filled body's driving row is solved at** (#567), a multiple of a
+/// reading's size: meshed first at four times it, where a step costs a sixtieth of one at its own
+/// size, and once the drawing holds there meshed again twice as fine where it stands and solved on
+/// from there, until it is a reading's own (`Sketch::refine`, `solve::System::solve`).
+pub const COARSEST: f64 = 4.0;
+
 /// How many pieces a feature curve of a body's boundary is read in, for its protection.
 const CURVE: usize = 64;
 
@@ -876,21 +882,53 @@ pub(crate) fn measure(sk: &Sketch, solid: usize, reads: Reads, coarser: f64)
     if Region::of(sk, solid).is_ok() {
         return prisms::measure(sk, solid, reads, coarser);
     }
+    let (_, s, x) = measuring(sk, solid, reads, coarser)?;
+    Ok(s.measure(&x))
+}
+
+/// **Solid `solid` meshed for a measure** (`reads`), at `coarser` times a reading's size: its
+/// mesh, each element its tetrahedron of no moduli, and where its nodes stand — no support and no
+/// load read, and of a material only a mass's density (`prisms::measured`'s, for a filled body).
+fn measuring(sk: &Sketch, solid: usize, reads: Reads, coarser: f64)
+    -> Result<(Mesh, Structure, Vec<f64>), String>
+{
     let rho = if reads == Reads::Mass { property(sk, solid, Property::Rho)? } else { 0.0 };
     let mesh = mesh(sk, solid, &[], coarser)?;
     let tets = mesh.tets.iter().map(|&n| Tet10 { n, e: 0.0, nu: 0.0, rho }).collect();
-    let s = Structure { dim: 3, nodes: mesh.nodes.len(), tets, reads, ..Structure::default() };
+    let n = mesh.nodes.len();
+    let s = Structure { dim: 3, nodes: n, fixed: vec![false; 3 * n], load: vec![0.0; 3 * n],
+                        weight: vec![0.0; 3 * n], tets, reads, ..Structure::default() };
     let x: Vec<f64> = mesh.nodes.iter().flatten().copied().collect();
-    Ok(s.measure(&x))
+    Ok((mesh, s, x))
 }
 
 /* -- a driving row (#510 S3) ------------------------------------------------------------------ */
 
+/// **Whether a filled body's deflection drives here** (#567): natively — `solventc`, the native
+/// library — it does.  The page's core (`wasm32`) solves on the page's own thread, where a drive
+/// over a filled body's mesh (a solve of its structure and of its adjoint at every step, at each
+/// level from `COARSEST` down) would hold the page for as long as the drive takes — minutes, for the engine's
+/// rod — so there the requirement compiles no row and is judged after the solve, as a claim is,
+/// and the report says where it is driven (`report::scenario_answers`).  A mass or a volume of a
+/// filled body reads no structure, and is driven in both.
+pub const DRIVES_FILLED: bool = cfg!(not(target_arch = "wasm32"));
+
 /// **Whether what a requirement names is a point of a solid read in three dimensions** (#510
-/// S3), a prism: what a driving row over a solid may be compiled at.
+/// S3): a prism's, or a filled body's where those drive (#567, `DRIVES_FILLED`) — what a driving
+/// row over a solid may be compiled at.
 pub fn of_body(sk: &Sketch, sc: &Scenario, of: &Applied) -> bool {
-    matches!(of, Applied::Ent(e) if e.kind == EntKind::Point)
-        && solid_of(sk, sc, of).is_some_and(|s| Region::of(sk, s).is_ok())
+    point_solid(sk, sc, of).is_some_and(|s| DRIVES_FILLED || Region::of(sk, s).is_ok())
+}
+
+/// Whether what a requirement names is a point of a filled body read in three dimensions: a
+/// solid that is no prism, whose driving deflection is driven natively alone (`DRIVES_FILLED`).
+pub fn of_filled(sk: &Sketch, sc: &Scenario, of: &Applied) -> bool {
+    point_solid(sk, sc, of).is_some_and(|s| Region::of(sk, s).is_err())
+}
+
+/// The solid read in three dimensions that what a requirement names is a point of, if it is one.
+fn point_solid(sk: &Sketch, sc: &Scenario, of: &Applied) -> Option<usize> {
+    matches!(of, Applied::Ent(e) if e.kind == EntKind::Point).then(|| solid_of(sk, sc, of))?
 }
 
 /// **The row of `deflection(at, along: along)` under scenario `sc`** over the solid whose point
@@ -901,12 +939,15 @@ pub fn of_body(sk: &Sketch, sc: &Scenario, of: &Applied) -> bool {
 /// solid moves as the face's node it stands over does.  Refused as a region's is: a direction
 /// the solve moves (its own, a load's), a plane it turns, a side it does not move (a spline's,
 /// a curve's).
-pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef)
+pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef, coarser: f64)
     -> Result<prisms::Row, String>
 {
     crate::beams::directions_held(sk, sc, along)?;
     let of = Applied::Ent(crate::model::EntRef::point(at));
     let solid = solid_of(sk, sc, &of).ok_or("it is of a point of no solid the scenario reads")?;
+    if Region::of(sk, solid).is_err() {
+        return filled_row(sk, sc, solid, at, along, coarser);
+    }
     let face_plane = prisms::held_plane(sk, solid)?;
     let mut named = named_points(sc);
     named.push(at);
@@ -926,5 +967,43 @@ pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef)
                            face_plane)?;
     let b = &st.region.basis;
     moved.stack = Some(crate::interior::Stack { basis: [b.o, b.u, b.v, b.normal()], of: st.of });
-    Ok(prisms::Row { structure: s, moved, columns, x })
+    Ok(prisms::Row { structure: s, moved: crate::interior::Mover::Plane(moved), columns, x,
+                     coarser: 1.0 })
+}
+
+/// **The row of `deflection(at, along: along)` under scenario `sc` over solid `solid`, a filled
+/// body** (#567): the row a prism's is, its solid meshed once where the drawing stands — its
+/// exact boundary refined and filled, the point `at` the node nearest it — and its nodes moved
+/// by the body's sheets (`hulls::hull_of`, `interior::Hull`): each node of the boundary on the
+/// sheets it was meshed on, each inside following them harmonically.  Refused where a sheet is
+/// one the row does not move (a placed copy's face, a sweep's, a round's, a drafted prism's or a
+/// partial turn's, a side swept from a spline), or the solid is left free.
+fn filled_row(sk: &Sketch, sc: &Scenario, solid: usize, at: usize, along: crate::model::EntRef,
+              coarser: f64) -> Result<prisms::Row, String>
+{
+    let mut named = named_points(sc);
+    named.push(at);
+    let f = Filled::new(sk, sc, solid, mesh(sk, solid, &named, coarser)?)
+        .map_err(|u| u.text(&sk.solids[solid].name))?;
+    let node = f.mesh.node_at(sk.world_point(at), f.mesh.near)
+        .ok_or("its point is no node of its solid's mesh")?;
+    let Filled { mesh, mut s, x, .. } = f;
+    let d = direction(sk, along)?;
+    for c in 0..3 {
+        s.weight[3 * node + c] = d[c];
+    }
+    let (hull, columns) = crate::hulls::hull_of(sk, solid, &mesh)?;
+    Ok(prisms::Row { structure: s, moved: crate::interior::Mover::Hull(hull), columns, x, coarser })
+}
+
+/// **The row of `mass(m) solid` or `volume(v) solid`** (`reads`), `solid` a filled body (#567):
+/// its exact boundary refined and filled once where the drawing stands, at a reading's size, its
+/// boundary's nodes moved by its sheets (`hulls::hull_of`) and its inner nodes left where they
+/// were meshed — a measure reads the boundary alone.  It reads no support and no load, and of a
+/// material only a mass's density.
+pub(crate) fn measured_row(sk: &Sketch, solid: usize, reads: Reads) -> Result<prisms::Row, String> {
+    let (mesh, s, x) = measuring(sk, solid, reads, 1.0)?;
+    let (hull, columns) = crate::hulls::hull_of(sk, solid, &mesh)?;
+    Ok(prisms::Row { structure: s, moved: crate::interior::Mover::Hull(hull), columns, x,
+                     coarser: 1.0 })
 }

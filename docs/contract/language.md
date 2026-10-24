@@ -130,7 +130,7 @@ written, `next.u` a turn, and a body reading the formal is not judged again: `Wo
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
 tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
 `tests/ring.rs` and `tests/turns.rs` are the gates.
-**A block's word may be a name** ([0.180], #598): `ring := Disc(…)` is a definition like any
+**A block's word may be a name** ([0.182], #598): `ring := Disc(…)` is a definition like any
 (`defines` reads it before any keyword), and a statement opening with the word reads it as that
 name where `words::opens_block` says no block opens — the next token `.`, `:=`, or a constraint
 word with no `{` on the line; a header (a count, a condition, a walk) always runs on its line to

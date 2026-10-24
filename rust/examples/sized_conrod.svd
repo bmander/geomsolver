@@ -1,0 +1,11 @@
+// Presentation of sized_conrod.sv. Model geometry is independent of this drawing.
+model m from "sized_conrod.sv"
+
+sheet drawing {
+  size A4
+  label "A CONNECTING ROD SIZED BY ITS SAG" at (14mm, 18mm)
+  label "Its web is as thick as makes the small end sink 0.29mm under its firing load" at (14mm, 28mm)
+  sketch end(m) from m.std.side at (105mm, 200mm) scale 0.8
+  style m.bore { display: none }
+  style m.top.p { display: none }
+}

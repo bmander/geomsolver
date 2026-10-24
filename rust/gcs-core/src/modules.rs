@@ -9,9 +9,11 @@
 //!
 //! What a module contributes is exactly its component definitions and relation words, plus the
 //! top-level parameters and groups available to the importing root (§6.3, §9.9) — each by its
-//! full path, or bare where the importing `use` names it (`use std (horizontal)`).  Its own drawing — whatever loose statements it holds — is its own
-//! and is not drawn here, so `gear.sv` is a module as it stands.  Two definitions of one component
-//! name, wherever they come from, are refused: there is no shadowing (§5).
+//! full path, or bare where the importing `use` names it (`use std (horizontal)`).  Its own
+//! drawing — whatever loose statements it holds, its `preview` and the parameters that run over
+//! an interval for it (#593) — is its own and is not drawn here, so `gear.sv` is a module as it
+//! stands.  Two definitions of one component name, wherever they come from, are refused: there is
+//! no shadowing (§5).
 //!
 //! **Every span stays one integer.**  A module is parsed at a `base` past the end of everything
 //! linked before it (`syntax::parse_from`), so its statements' spans and ids join the document's
@@ -20,7 +22,7 @@
 //! own place named in the message.
 
 use crate::program::{Code, Diag};
-use crate::syntax::{parse_from, Component, Module, Program, Span};
+use crate::syntax::{parse_from, Component, Module, Program, Span, StmtKind};
 use std::collections::{BTreeSet, VecDeque};
 
 /// The most modules one document may link, transitively — the same kind of bound `MAX_STMTS` is.
@@ -93,6 +95,10 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
         if let Some(preview) = mp.preview {
             root.body.retain(|st| !preview.contains(st.span.lo));
         }
+        // and a parameter that runs (`param spin: Angle over (…)`) belongs to the drawing that
+        // reads it, which is not drawn here (#593): a component never sees one, so a file opened
+        // to scrub its joint is used as it stands
+        root.body.retain(|st| !matches!(&st.kind, StmtKind::Param(pd) if pd.over().is_some()));
         let mut comps_seen: BTreeSet<String> = BTreeSet::new();
         for mut c in comps {
             c.module = Some(k);

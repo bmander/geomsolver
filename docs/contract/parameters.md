@@ -28,9 +28,13 @@ where a rule came from.
   `ParamDecl` with `Input::over` (`syntax::Over`: the two ends' text, the word's span),
   `P::param_over`. It says what it is (`Length`, `Angle` or `Scalar`; none, or `Int`, is a syntax
   error), takes no `:=` and no `hint(…)` (syntax errors: it is neither a value nor an unknown),
-  and stands where a `param` may (the parser refuses one in a component or a block; a module's is
-  E040, `parameter_axis`). The flattener (`Walk::parameter_axis`, after `work_out`, so an end may
-  read any number the body defines) works each end out as a constant of the declared type, finite
+  and stands where a `param` may (the parser refuses one in a component or a block). A module's is
+  its drawing's (#593, [0.181]): `modules::link` leaves it out of the root it keeps, as it leaves
+  the preview, so a part declaring one is `use`d as it stands, and no table of a module's numbers
+  (`module_params`, `file_number_names`, an import's `defines`) has it — `tests/modules.rs`'s
+  `a_modules_parameter_is_left_out_with_its_drawing`. The flattener (`Walk::parameter_axis`,
+  after `work_out`, so an end may read any number the body defines) works each end out as a
+  constant of the declared type, finite
   — reading an unknown of the drawing, or the wrong dimension, is E103 — and the interval
   increasing (E103), and records it once: `Expansion::parameters` → `Sketch::parameters`, by
   name. **It is no unknown**: it makes no free value, no `Declared`, no column. `syntax::print`
