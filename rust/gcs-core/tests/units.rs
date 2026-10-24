@@ -206,8 +206,7 @@ fn the_functions_have_signatures() {
 #[test]
 fn the_library_is_unchanged() {
     for &(key, ..) in examples::CASES.iter() {
-        // a case whose solve takes minutes is the slow tier's
-        if !cfg!(feature = "slow") && examples::SLOW.contains(&key) {
+        if examples::left_to_slow_tier(key) {
             continue;
         }
         let Some(mut sk) = examples::example(key) else { continue };

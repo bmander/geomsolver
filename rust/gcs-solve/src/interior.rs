@@ -1178,11 +1178,6 @@ impl Structure {
 /* -- the solid element (#510 S3) ------------------------------------------------------------- */
 
 impl Structure {
-    /// Every solid element's ten nodes.
-    pub fn tet_nodes(&self) -> Vec<[usize; 10]> {
-        self.tets.iter().map(|t| t.n).collect()
-    }
-
     /// Solid element `i`'s thirty degrees of freedom: each node's move along x, y, then z.
     fn tet_dofs(&self, i: usize) -> [usize; 30] {
         let n = self.tets[i].n;
@@ -1656,6 +1651,16 @@ enum Placing {
     Hull(Hull, hull::Placed),
 }
 
+impl Placing {
+    /// How many columns of the drawing the nodes are read over.
+    fn columns(&self) -> usize {
+        match self {
+            Placing::Plane(m, _) => m.columns,
+            Placing::Hull(h, _) => h.columns,
+        }
+    }
+}
+
 /// A beam's constants: its ends, its moduli, its density and its section's z.
 const BEAM: usize = 8;
 
@@ -1976,10 +1981,16 @@ impl Structure {
                 Some(Sizing { unknowns, sections })
             }
         };
+        let hulled = match head[13] {
+            h if h == 1.0 => true,
+            h if h == 0.0 => false,
+            _ => return None,
+        };
         let moved = match head[8] {
-            v if v < 0.0 => None,
+            v if v < 0.0 && !hulled => None,
+            v if v < 0.0 => return None,
             // a filled body's nodes, moved by its sheets (#567): every node of the solid's
-            _ if head[13] == 1.0 => {
+            _ if hulled => {
                 let (h, used) = Hull::read(k.get(at..)?)?;
                 at += used;
                 let n = h.nodes.len();
@@ -2000,9 +2011,6 @@ impl Structure {
                 Some(Mover::Plane(fits.then_some(m)?))
             }
         };
-        if !(head[13] == 0.0 || head[13] == 1.0) {
-            return None;
-        }
         (at == k.len()).then_some((s, stated, sizing, moved))
     }
 
@@ -2091,23 +2099,23 @@ impl Row {
             }
             // a measure reads the boundary alone: its inner nodes need no harmonic map
             let measure = s.reads.measure();
-            let placing = match m {
+            // the places move into the row: the rate reads its factors alone
+            let (placing, x) = match m {
                 Mover::Plane(m) => {
-                    let placed = if measure {
+                    let mut placed = if measure {
                         m.boundary(&v[..m.columns])
                     } else {
                         m.places(&v[..m.columns])?
                     };
-                    Placing::Plane(m, placed)
+                    let x = std::mem::take(&mut placed.x);
+                    (Placing::Plane(m, placed), x)
                 }
                 Mover::Hull(h) => {
-                    let placed = h.places(&v[..h.columns], &s.tet_nodes(), !measure)?;
-                    Placing::Hull(h, placed)
+                    let tets: Vec<[usize; 10]> = s.tets.iter().map(|t| t.n).collect();
+                    let mut placed = h.places(&v[..h.columns], &tets, !measure)?;
+                    let x = std::mem::take(&mut placed.x);
+                    (Placing::Hull(h, placed), x)
                 }
-            };
-            let x = match &placing {
-                Placing::Plane(_, p) => p.x.clone(),
-                Placing::Hull(_, p) => p.x.clone(),
             };
             return Some(Row { s, x, stated, free, sized: None, moved: Some(placing) });
         }
@@ -2132,10 +2140,8 @@ impl Row {
 
     /// The columns the structure is read over, before the unknown that may set its output.
     fn columns(&self) -> usize {
-        match &self.moved {
-            Some(Placing::Plane(m, _)) => return m.columns,
-            Some(Placing::Hull(h, _)) => return h.columns,
-            None => {}
+        if let Some(p) = &self.moved {
+            return p.columns();
         }
         self.s.section_at(0) + self.sized.as_ref().map_or(SECTION * self.s.beams.len(), |z| z.0)
     }
@@ -2167,7 +2173,7 @@ fn jac(n: usize, v: &[f64], k: &[f64], j: &mut [f64]) {
             row.fill(f64::NAN);
             continue;
         };
-        got.0.rate(&got.1, v, row);
+        got.row.rate(&got.state, v, row);
     }
 }
 
@@ -2202,7 +2208,7 @@ impl Row {
             (_, Some(Placing::Hull(h, placed))) => {
                 let mut g = vec![0.0; s.columns()];
                 gradient(&mut g);
-                if h.chain(&v[..cols], placed, &s.tet_nodes(), &g, &mut row[..cols]).is_none() {
+                if h.chain(&v[..cols], placed, &g, &mut row[..cols]).is_none() {
                     row.fill(f64::NAN);
                     return;
                 }
@@ -2229,26 +2235,34 @@ impl Row {
     }
 }
 
-/// A row read and solved (`solved`): the row, and its structure's displacements (none for a
+/// **A row read and solved** (`solved`): the row, and its structure's displacements (none for a
 /// measure's).
-type Solved = std::rc::Rc<(Row, Option<State>)>;
+struct Solved {
+    row: Row,
+    state: Option<State>,
+}
 
 thread_local! {
-    /// **The last filled body's row solved on this thread** (#567): its columns, its constants,
-    /// and the row read and solved there — what `jac` reads again where `res` last stood, since a
-    /// step's trial that is accepted is where the next step's rate is taken.  Kept for a row over a
-    /// filled body's hull alone, whose reading is its placement and two solves of tens of
-    /// thousands of equations; the same numbers give the same row to the bit, so what is kept
-    /// changes no answer.
-    static LAST: std::cell::RefCell<Option<(Vec<f64>, Vec<f64>, Solved)>> =
+    /// **The last meshed row solved on this thread** (#567): its columns, its constants, and the
+    /// row read and solved there — what `jac` reads again where `res` last stood, since a step's
+    /// trial that is accepted is where the next step's rate is taken.  Kept for a row over a mesh
+    /// moved with the drawing (a region's, a prism's, a filled body's), whose reading is its
+    /// placement and its structure's solve; the same numbers give the same row to the bit, so what
+    /// is kept changes no answer.  Let go when a document solve ends (`forget`).
+    static LAST: std::cell::RefCell<Option<(Vec<f64>, Vec<f64>, std::rc::Rc<Solved>)>> =
         const { std::cell::RefCell::new(None) };
+}
+
+/// **The last row solved on this thread let go** (`LAST`): a filled body's holds its mesh, its
+/// placement's factors and its stiffness, so a document solve lets it go when it ends.
+pub fn forget() {
+    LAST.with(|last| *last.borrow_mut() = None);
 }
 
 /// One row read off its columns `v` and constants `k`, and its structure solved there — a
 /// measure's left unsolved (`None`), since it reads what the structure is made of; `None` where it
-/// cannot be read or solved.  A filled body's row read where the last one was is that one
-/// (`LAST`).
-fn solved(v: &[f64], k: &[f64]) -> Option<Solved> {
+/// cannot be read or solved.  A meshed row read where the last one was is that one (`LAST`).
+fn solved(v: &[f64], k: &[f64]) -> Option<std::rc::Rc<Solved>> {
     let same = |a: &[f64], b: &[f64]| {
         a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits())
     };
@@ -2259,11 +2273,11 @@ fn solved(v: &[f64], k: &[f64]) -> Option<Solved> {
     if kept.is_some() {
         return kept;
     }
-    let read = Row::read(v, k)?;
-    let hulled = matches!(read.moved, Some(Placing::Hull(..)));
-    let st = if read.s.reads.measure() { None } else { Some(read.s.solve(&read.x).ok()?) };
-    let got: Solved = std::rc::Rc::new((read, st));
-    if hulled {
+    let row = Row::read(v, k)?;
+    let meshed = row.moved.is_some();
+    let state = if row.s.reads.measure() { None } else { Some(row.s.solve(&row.x).ok()?) };
+    let got = std::rc::Rc::new(Solved { row, state });
+    if meshed {
         LAST.with(|last| *last.borrow_mut() = Some((v.to_vec(), k.to_vec(), got.clone())));
     }
     Some(got)
@@ -2273,7 +2287,7 @@ fn solved(v: &[f64], k: &[f64]) -> Option<Solved> {
 /// cannot be read or its structure solved there.
 pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
     let got = solved(v, k)?;
-    let (read, st) = (&got.0, &got.1);
+    let (read, st) = (&got.row, &got.state);
     Some((read.output(st), read.target(v)))
 }
 
@@ -2284,7 +2298,7 @@ pub fn reading(v: &[f64], k: &[f64]) -> Option<(f64, f64)> {
 /// be read or its structure solved there.
 pub fn reach_of(v: &[f64], k: &[f64], free: &[bool], scale: &[f64]) -> Option<(Reach, f64)> {
     let got = solved(v, k)?;
-    let (read, st) = (&got.0, &got.1);
+    let (read, st) = (&got.row, &got.state);
     let mut g = vec![0.0; v.len()];
     read.rate(st, v, &mut g);
     if !g.iter().all(|g| g.is_finite()) {

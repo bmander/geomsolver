@@ -372,7 +372,7 @@ impl Sketch {
     }
 
     /// **Every driving row a filled body is solved coarse on made again twice as fine where the
-    /// drawing stands** (#567, `bodies::LEVELS`): what a document solve that holds on a coarse
+    /// drawing stands** (#567, `bodies::COARSEST`): what a document solve that holds on a coarse
     /// mesh is solved on from.  Whether any was made, and if so the pose recorded (`meshed_at`);
     /// none where every row is at a reading's own size.
     pub fn refine(&mut self) -> bool {
@@ -388,7 +388,7 @@ impl Sketch {
                 let k = c.meshed_key(self)?;
                 Some((c, k, level(self.meshed.get(&k)?.coarser)?))
             })
-            .filter_map(|(c, k, at)| match c.made_row_at(self, Some(at)) {
+            .filter_map(|(c, k, at)| match c.made_row_at(self, at) {
                 Ok(crate::constraints::InteriorRow::Meshed(r)) => Some((k, r)),
                 _ => None,
             })

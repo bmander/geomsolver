@@ -36,11 +36,10 @@ fn edited(key: &str, edits: &[(&str, &str)]) -> (String, String) {
 #[test]
 fn a_filled_bodys_mesh_moves_with_the_drawing() {
     let cases = [
-        (edited("pin_lug", &[("d := 16mm", "d := 17mm"), ("w := 40mm", "w := 41mm")]), 1.0),
-        (edited("turned_shaft", &[("R := 20mm", "R := 21mm"), ("rho := 4mm", "rho := 4.5mm")]),
-         1.0),
+        edited("pin_lug", &[("d := 16mm", "d := 17mm"), ("w := 40mm", "w := 41mm")]),
+        edited("turned_shaft", &[("R := 20mm", "R := 21mm"), ("rho := 4mm", "rho := 4.5mm")]),
     ];
-    for ((from, to), most) in &cases {
+    for (from, to) in &cases {
         let (sk0, s) = solid(from);
         let (sk1, _) = solid(to);
         let mesh = gcs_core::bodies::mesh(&sk0, s, &[], 4.0).expect("meshed");
@@ -48,45 +47,27 @@ fn a_filled_bodys_mesh_moves_with_the_drawing() {
         let at = |sk: &Sketch| -> Vec<f64> {
             cols.iter().map(|&c| sk.params[c as usize].value).collect()
         };
-        let tets: Vec<[usize; 10]> = mesh.tets.clone();
-        let here = hull.places(&at(&sk0), &tets, true).expect("placed where it was meshed");
+        let here = hull.places(&at(&sk0), &mesh.tets, true).expect("placed where it was meshed");
         let x0: Vec<f64> = mesh.nodes.iter().flatten().copied().collect();
         assert!(here.x.iter().zip(&x0).all(|(a, b)| a.to_bits() == b.to_bits()),
                 "{}: moved where it was meshed", sk0.solids[s].name);
-        let there = hull.places(&at(&sk1), &tets, true).expect("placed where the drawing moved");
+        let there = hull.places(&at(&sk1), &mesh.tets, true).expect("placed where it moved");
         let (b0, b1) = (BodyFaces::whole(&sk0, s).unwrap(), BodyFaces::whole(&sk1, s).unwrap());
-        let extent = hull.extent;
-        let (mut tagged, mut moved) = (0, 0.0f64);
-        for i in 0..mesh.nodes.len() {
-            if hull.nodes[i].is_empty() {
-                continue;
-            }
-            tagged += 1;
-            let p = [there.x[3 * i], there.x[3 * i + 1], there.x[3 * i + 2]];
+        let node = |x: &[f64], n: usize| [x[3 * n], x[3 * n + 1], x[3 * n + 2]];
+        let mut moved = 0.0f64;
+        for i in (0..mesh.nodes.len()).filter(|&i| !hull.nodes[i].is_empty()) {
+            let p = node(&there.x, i);
             let (d0, d1) = (b0.signed_distance(mesh.nodes[i]).0.abs(), b1.signed_distance(p).0.abs());
-            assert!(d1 <= d0 + 1e-9 * extent, "node {i} on {:?}: {d1} off where it stood {d0} off",
-                    hull.nodes[i]);
+            assert!(d1 <= d0 + 1e-9 * hull.extent,
+                    "node {i} on {:?}: {d1} off where it stood {d0} off", hull.nodes[i]);
             moved = moved.max(gcs_core::space::distance(p, mesh.nodes[i]));
         }
-        assert!(moved >= 0.99 * most && tagged > 0, "{tagged} tagged, moved {moved}");
-        let ratio = |x: &[f64], e: &[usize; 10]| {
-            Tet10 { nodes: e.map(|n| [x[3 * n], x[3 * n + 1], x[3 * n + 2]]) }.jacobian_ratio()
-        };
-        let mut bad = 0;
+        // each moves a millimetre: the lug's width, the shaft's barrel
+        assert!(moved >= 0.99, "moved {moved}");
         for e in &mesh.tets {
-            let (r0, r1) = (ratio(&x0, e), ratio(&there.x, e));
-            if !(r1 > 0.0) {
-                bad += 1;
-                eprintln!("turned over: {r0} -> {r1}: {:?}", e.map(|n| (n, hull.nodes[n].clone())));
-                for n in e {
-                    let p = [there.x[3 * n], there.x[3 * n + 1], there.x[3 * n + 2]];
-                    eprintln!("  {n}: {:?} -> {:?}", mesh.nodes[*n], p);
-                }
-            }
+            let t = Tet10 { nodes: e.map(|n| node(&there.x, n)) };
+            assert!(t.jacobian_ratio() > 0.0, "{e:?} turned over");
         }
-        assert!(bad == 0, "{bad} elements turned over");
-        eprintln!("{}: {} nodes, {tagged} on its sheets, {} sheets, moved {moved:.4}",
-                  sk0.solids[s].name, mesh.nodes.len(), hull.sheets.len());
     }
 }
 
@@ -126,55 +107,20 @@ scenario pull {
 }
 ";
 
-/// A stepped shaft turned about its axis, its barrel's radius `R` an unknown, its head's give
-/// under a pull on it driven.
-pub const SHAFT: &str = "unit mm
-use std (horizontal, vertical)
-r := 12mm
-rho := 4mm
-shoulder := 60mm
-L := 160mm
-sigma := 60MPa
-param R: Length hint(20mm)
-steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
-in std.front {
-  o := point
-  a := point hint((20, 0))
-  b := point hint((20, 60))
-  f := point
-  c := point
-  g := point
-  h := point
-  k := point
-  fix((0mm, 0mm)) o
-  o horizontal a
-  o distance(R) a
-  a vertical b
-  b horizontal f
-  fix((r + rho, shoulder)) f
-  fix((r + rho, shoulder + rho)) c
-  fix((r, shoulder + rho)) g
-  fix((r, L)) h
-  fix((0mm, L)) k
-  base := line(o, a)
-  barrel := line(a, b)
-  step := line(b, f)
-  round := arc(center: c, start: g, end: f) hint(r: rho)
-  neck := line(g, h)
-  head := line(h, k)
-  spine := line(k, o)
-  section := face(base, barrel, step, round, neck, head, spine)
-}
-shaft := solid(section, about: std.z) of steel
-scenario pull {
+/// The stepped shaft whose barrel's radius `R` is an unknown (`measured::TURNED`), its head's give
+/// under a pull on it driven to `sag`.
+pub fn shaft(sag: &str) -> String {
+    format!("{}sigma := 60MPa
+scenario pull {{
   pinned shaft.base along: std.z
   pinned o along: std.x
   pinned o along: std.y
   pinned a along: std.y
   pressure shaft.head -sigma
-  deflection(k, along: std.z) == SAG
+  deflection(k, along: std.z) == {sag}
+}}
+", crate::measured::TURNED)
 }
-";
 
 /// A round bar turned about its axis, its radius `r` an unknown, held along its axis at its base
 /// and pulled along it at its head — of no Poisson's ratio, so the points holding it across hold
@@ -268,7 +214,6 @@ fn the_librarys_rod_is_sized_by_its_sag() {
     assert_eq!(gcs_core::io::dumps(&e.sketch, None), gcs_core::io::dumps(&case, None));
     let res = gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
     assert!(res.success, "{}", res.message);
-    eprintln!("solved: {} evaluations, {} rates in the last solve", res.nfev, res.njev);
     assert!(res.nfev <= 8 && res.njev <= 6, "{} evaluations, {} rates", res.nfev, res.njev);
     let sk = &mut e.sketch;
     let wt = sk.params[*sk.free_vars.get("wt").expect("wt") as usize].value;
@@ -288,7 +233,6 @@ fn the_librarys_rod_is_sized_by_its_sag() {
     let fresh = read.answers[0].clone().unwrap().unwrap();
     let error = read.errors[0].expect("an estimate");
     assert!((fresh - 0.29).abs() <= error.max(1e-3), "{fresh} ± {error} against 0.29mm");
-    eprintln!("wt = {wt}; CG {its}; afresh {fresh} ± {error}");
 }
 
 /// **A filled body's mesh is made again where it folds** (#567, M5; the slow tier): the pin lug

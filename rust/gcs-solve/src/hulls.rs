@@ -179,8 +179,7 @@ impl Builder {
 
 /// Sheet `s`'s normal at `p` where the columns stand at `v`, made unit.
 fn unit_level(hull: &Hull, s: usize, v: &[f64], p: [f64; 3]) -> [f64; 3] {
-    let (_, g) = hull.level_at(s, v, p);
-    crate::space::scale(g, 1.0 / crate::space::norm(g))
+    crate::space::unit(hull.level_at(s, v, p).1)
 }
 
 /// Whether sheets whose unit normals at a place are `normals` (one, two or three) meet there
@@ -207,27 +206,21 @@ pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>
     let body = BodyFaces::whole(sk, solid)?;
     let mut b = Builder::default();
     let paths = body.paths();
-    let mut face_sheet: Vec<Option<usize>> = vec![None; paths.len()];
-    for (fi, path) in paths.iter().enumerate() {
-        let p = crate::solid::faces::face_primitive(sk, solid, &path.route)
-            .map_err(|why| format!("its face `{}` is not moved: {why}", path.text()))?;
-        face_sheet[fi] = Some(b.sheet(sk, p, &path.face)
-            .map_err(|why| format!("its face `{}` is not moved: {why}", path.text()))?);
-    }
+    let face_sheet: Vec<usize> = paths.iter().map(|path| {
+        crate::solid::faces::face_primitive(sk, solid, &path.route)
+            .and_then(|p| b.sheet(sk, p, &path.face))
+            .map_err(|why| format!("its face `{}` is not moved: {why}", path.text()))
+    }).collect::<Result<_, _>>()?;
     let n = mesh.nodes.len();
-    let x0: Vec<f64> = mesh.nodes.iter().flatten().copied().collect();
-    let (lo, hi) = mesh.nodes.iter().fold(([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]), |(l, h), p| {
-        (std::array::from_fn(|k| l[k].min(p[k])), std::array::from_fn(|k| h[k].max(p[k])))
-    });
-    let extent = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
     let mut hull = Hull { columns: b.columns.len(), frames: b.frames, sheets: b.sheets,
-                          nodes: vec![Vec::new(); n], x0: x0.clone(), feet0: vec![0.0; 3 * n],
-                          extent };
+                          nodes: vec![Vec::new(); n],
+                          x0: mesh.nodes.iter().flatten().copied().collect(),
+                          feet0: vec![0.0; 3 * n], extent: mesh.extent() };
     // each node of a facet, the sheets of the facets it is a node of and how many
     let mut candidates: BTreeMap<usize, BTreeMap<usize, usize>> = BTreeMap::new();
     for (f, wall) in &mesh.facets {
         let Wall::Face(fi) = *wall else { continue };
-        let Some(s) = face_sheet.get(fi).copied().flatten() else { continue };
+        let Some(&s) = face_sheet.get(fi) else { continue };
         for &node in f {
             *candidates.entry(node).or_default().entry(s).or_default() += 1;
         }
@@ -235,22 +228,22 @@ pub fn hull_of(sk: &Sketch, solid: usize, mesh: &Mesh) -> Result<(Hull, Vec<u32>
     let v0: Vec<f64> = b.columns.iter().map(|&c| sk.params[c as usize].value).collect();
     let near = NEAR * mesh.near;
     for (node, sheets) in candidates {
-        let p = [x0[3 * node], x0[3 * node + 1], x0[3 * node + 2]];
+        let p = mesh.nodes[node];
         // nearest first, the sheet more of its facets lie on first among equals
         let mut on: Vec<(f64, usize, usize, [f64; 3])> = sheets.into_iter().filter_map(|(s, count)| {
             let (phi, g) = hull.level_at(s, &v0, p);
-            let len = crate::space::norm(g);
-            (phi.abs() <= near && len > 0.0)
-                .then(|| (phi.abs(), usize::MAX - count, s, crate::space::scale(g, 1.0 / len)))
+            (phi.abs() <= near && crate::space::norm(g) > 0.0)
+                .then(|| (phi.abs(), usize::MAX - count, s, crate::space::unit(g)))
         }).collect();
         on.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
         let mut chosen: Vec<usize> = Vec::new();
+        let mut normals: Vec<[f64; 3]> = Vec::new();
         for (_, _, s, g) in on {
-            let mut normals: Vec<[f64; 3]> = chosen.iter().map(|&c| unit_level(&hull, c, &v0, p))
-                .collect();
             normals.push(g);
             if chosen.len() < 3 && meet(&normals) {
                 chosen.push(s);
+            } else {
+                normals.pop();
             }
         }
         // the sheets it lies on are those whose foot it reaches from where it was meshed, near

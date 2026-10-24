@@ -305,7 +305,6 @@ fn a_volume_sizes_a_turned_shafts_radius() {
         assert!(said[0].ends_with("held"), "{}", said[0]);
         assert!(said[1].ends_with("claimed <= 1.1kg, kept"), "{}", said[1]);
         assert!(said[2].ends_with("claimed >= 1.1kg, refuted"), "{}", said[2]);
-        eprintln!("{v}: R = {got} against {want}");
     }
 }
 

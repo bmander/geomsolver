@@ -122,6 +122,12 @@ pub const EXAMPLES: [&str; 5] =
 /// solves every case reads these in the slow tier alone (`feature = "slow"`).
 pub const SLOW: [&str; 1] = ["sized_conrod"];
 
+/// Whether a test that solves every case leaves case `key` to the slow tier (`SLOW`): where the
+/// tier it runs in is the default one.
+pub fn left_to_slow_tier(key: &str) -> bool {
+    !cfg!(feature = "slow") && SLOW.contains(&key)
+}
+
 /// A cubic B-spline with a follower held tangent to it and a point riding along it —
 /// `spline_follower.sv`.  The control points are written out, so their number is the document's
 /// and not an argument: a spline names its children one by one, and no count can stand in.

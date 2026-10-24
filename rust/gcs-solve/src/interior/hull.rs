@@ -32,7 +32,9 @@
 //! boundary alone, so its inner nodes stay where they were meshed.
 
 use crate::cholesky::{assembled, Cholesky, Ordering};
+use crate::envelope::held::{cross as vcross, dot as vdot, vadd, vscale, vsub};
 use crate::kernels::{Dual, Num};
+use crate::space::{cross, dot, norm, sub};
 
 /// The most Gauss–Newton steps a foot takes.
 const STEPS: usize = 40;
@@ -100,22 +102,34 @@ pub struct Hull {
 /// inside each moved harmonically from the stages before (an edge's and a face's then at its
 /// foot from there).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Stage {
+enum Stage {
     Vertex,
     Edge,
     Face,
     Inner,
 }
 
+/// The stages moved harmonically, in the order they are placed, each by the Laplacian `weights`
+/// reads for it; the vertices before them are placed at their feet alone.
+const HARMONIC: [Stage; 3] = [Stage::Edge, Stage::Face, Stage::Inner];
+
+/// **A stage moved harmonically** (`harmonic`): its free nodes numbered among themselves, its
+/// Laplacian's factor over them, and each pair of a free node and a held one with its weight —
+/// all its rate needs taken back (`adjoint`).
+struct Harmonic {
+    at: Vec<Option<usize>>,
+    factor: Cholesky,
+    held: Vec<(usize, usize, f64)>,
+}
+
 /// The places worked out at some columns: every node's, where each tagged node's foot started,
-/// each node's stage, each harmonic stage's free nodes and factor (an edge's, a face's, the
-/// volume's), and the boundary's facets.
+/// each node's stage, and each harmonic stage's map (`HARMONIC`'s order; none where nothing was
+/// free or it was not asked for).
 pub struct Placed {
     pub x: Vec<f64>,
     start: Vec<f64>,
     stage: Vec<Stage>,
-    factors: [Option<(Vec<Option<usize>>, Cholesky)>; 3],
-    facets: Vec<[usize; 6]>,
+    maps: [Option<Harmonic>; 3],
 }
 
 /// **The nodes `free` moved harmonically from the rest** over the Laplacian `weights` hands on —
@@ -123,11 +137,9 @@ pub struct Placed {
 /// node), every other node's move read off `x` against `x0`.  A Laplacian of a curve or a surface
 /// (`regular`) may hold a piece no held node reaches (a closed circle's edge, a face of none): its
 /// diagonal is taken a part in a billion heavier, so that piece stays where it was meshed.  The
-/// free nodes' numbering and the factor, none where nothing is free; `None` where the Laplacian
-/// does not factor.
+/// map, none where nothing is free; `None` where the Laplacian does not factor.
 fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), x0: &[f64],
-            x: &mut [f64], regular: bool)
-    -> Option<Option<(Vec<Option<usize>>, Cholesky)>>
+            x: &mut [f64], regular: bool) -> Option<Option<Harmonic>>
 {
     let mut m = 0;
     let at: Vec<Option<usize>> =
@@ -136,6 +148,7 @@ fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), 
         return Some(None);
     }
     let mut t: Vec<(usize, usize, f64)> = Vec::new();
+    let mut held: Vec<(usize, usize, f64)> = Vec::new();
     let mut rhs = [vec![0.0; m], vec![0.0; m], vec![0.0; m]];
     let mut diagonal = vec![0.0; m];
     weights(&mut |a, b, w| {
@@ -146,6 +159,7 @@ fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), 
             match at[q] {
                 Some(iq) => t.push((ip, iq, -w)),
                 None => {
+                    held.push((ip, q, w));
                     for c in 0..3 {
                         rhs[c][ip] += w * (x[3 * q + c] - x0[3 * q + c]);
                     }
@@ -169,7 +183,7 @@ fn harmonic(free: &[bool], weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), 
             }
         }
     }
-    Some(Some((at, factor)))
+    Some(Some(Harmonic { at, factor, held }))
 }
 
 /// `x` moved by `d`: itself, to the bit, where `d` is nothing.
@@ -177,12 +191,11 @@ fn moved(x: f64, d: f64) -> f64 {
     if d == 0.0 { x } else { x + d }
 }
 
-/// **A harmonic map's rate taken back**: the gradient `g` (three a node) at the free nodes `at`
-/// numbers carried onto the nodes they were moved from, `λ = L_FF⁻¹ g_F` and each held node `h`
-/// gaining `Σ_f w_fh λ_f` — the free nodes' gradient then spent.
-fn adjoint(at: &[Option<usize>], factor: &Cholesky,
-           weights: &dyn Fn(&mut dyn FnMut(usize, usize, f64)), g: &mut [f64])
-{
+/// **A harmonic map's rate taken back**: the gradient `g` (three a node) at its free nodes
+/// carried onto the nodes they were moved from, `λ = L_FF⁻¹ g_F` and each held node `h` gaining
+/// `Σ_f w_fh λ_f` — the free nodes' gradient then spent.
+fn adjoint(map: &Harmonic, g: &mut [f64]) {
+    let at = &map.at;
     let m = at.iter().flatten().count();
     let mut lam = [vec![0.0; m], vec![0.0; m], vec![0.0; m]];
     for (c, l) in lam.iter_mut().enumerate() {
@@ -191,17 +204,13 @@ fn adjoint(at: &[Option<usize>], factor: &Cholesky,
                 l[k] = g[3 * i + c];
             }
         }
-        factor.solve(l);
+        map.factor.solve(l);
     }
-    weights(&mut |a, b, w| {
-        for (p, q) in [(a, b), (b, a)] {
-            if let (Some(ip), None) = (at[p], at[q]) {
-                for c in 0..3 {
-                    g[3 * q + c] += w * lam[c][ip];
-                }
-            }
+    for &(ip, q, w) in &map.held {
+        for c in 0..3 {
+            g[3 * q + c] += w * lam[c][ip];
         }
-    });
+    }
     for (i, k) in at.iter().enumerate() {
         if k.is_some() {
             g[3 * i..3 * i + 3].fill(0.0);
@@ -210,15 +219,19 @@ fn adjoint(at: &[Option<usize>], factor: &Cholesky,
 }
 
 /// **The boundary of a mesh of quadratic tetrahedra**, unturned: every face on one element, as
-/// `[a, b, c, ab, bc, ca]`.
+/// `[a, b, c, ab, bc, ca]` (`bodies::boundary`'s, which turns each out of the material: a
+/// Laplacian reads no turn, and its weights summed in this order are the ones the row is held
+/// to).
 fn surface(tets: &[[usize; 10]]) -> Vec<[usize; 6]> {
     use crate::delaunay::tetra::EDGES;
     let mut faces: std::collections::BTreeMap<[usize; 3], (usize, usize, u32)> = Default::default();
     for (t, e) in tets.iter().enumerate() {
         for far in 0..4 {
-            let mut f: Vec<usize> = (0..4).filter(|&c| c != far).map(|c| e[c]).collect();
+            let mut f = [0, 1, 2, 3].map(|c| e[c]);
+            f.swap(far, 3);
+            let mut f = [f[0], f[1], f[2]];
             f.sort_unstable();
-            faces.entry([f[0], f[1], f[2]]).or_insert((t, far, 0)).2 += 1;
+            faces.entry(f).or_insert((t, far, 0)).2 += 1;
         }
     }
     let middle = |e: &[usize; 10], i: usize, j: usize| {
@@ -235,28 +248,14 @@ fn surface(tets: &[[usize; 10]]) -> Vec<[usize; 6]> {
 
 type V<T> = [T; 3];
 
-fn vsub<T: Num>(a: V<T>, b: V<T>) -> V<T> {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn vadd<T: Num>(a: V<T>, b: V<T>) -> V<T> {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
-}
-
-fn vscale<T: Num>(a: V<T>, s: T) -> V<T> {
-    [a[0] * s, a[1] * s, a[2] * s]
-}
-
-fn vdot<T: Num>(a: V<T>, b: V<T>) -> T {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn vcross<T: Num>(a: V<T>, b: V<T>) -> V<T> {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
-}
-
+/// A unit vector along `a`: NaN where it has no length, a degenerate sheet, which `foot` refuses.
 fn unit<T: Num>(a: V<T>) -> V<T> {
     vscale(a, T::cst(1.0) / vdot(a, a).sqrt())
+}
+
+/// Node `i`'s three numbers of `x`.
+fn at(x: &[f64], i: usize) -> [f64; 3] {
+    [x[3 * i], x[3 * i + 1], x[3 * i + 2]]
 }
 
 impl Profile {
@@ -428,9 +427,11 @@ impl Hull {
         None
     }
 
-    /// The columns node `i`'s sheets read, in order and once each.
-    fn node_columns(&self, i: usize) -> Vec<usize> {
-        let mut out: Vec<usize> = self.nodes[i].iter().flat_map(|&s| self.sheet_columns(s)).collect();
+    /// The columns node `i`'s sheets read, in order and once each, each sheet's read from
+    /// `sheets` (`sheet_columns`).
+    fn node_columns(&self, i: usize, sheets: &[Vec<usize>]) -> Vec<usize> {
+        let mut out: Vec<usize> = self.nodes[i].iter().flat_map(|&s| sheets[s].iter().copied())
+            .collect();
         out.sort_unstable();
         out.dedup();
         out
@@ -497,37 +498,46 @@ impl Hull {
         let stage = self.stages(&facets);
         let mut x = self.x0.clone();
         let mut start = self.x0.clone();
-        let mut factors: [Option<(Vec<Option<usize>>, Cholesky)>; 3] = [None, None, None];
-        for (k, s) in [Stage::Vertex, Stage::Edge, Stage::Face, Stage::Inner].into_iter().enumerate() {
-            if s == Stage::Inner && !inside {
-                break;
-            }
-            if k > 0 {
-                // moved harmonically from the stages before
-                let free: Vec<bool> = stage.iter().map(|&t| t == s).collect();
-                let weights = |put: &mut dyn FnMut(usize, usize, f64)| match s {
-                    Stage::Edge => self.curve_weights(&facets, &stage, put),
-                    Stage::Face => self.surface_weights(&facets, put),
-                    _ => self.volume_weights(tets, put),
-                };
-                let made = harmonic(&free, &weights, &self.x0, &mut x, s != Stage::Inner)?;
-                for i in (0..n).filter(|&i| free[i]) {
-                    start[3 * i..3 * i + 3].copy_from_slice(&x[3 * i..3 * i + 3]);
-                }
-                factors[k - 1] = made;
-            }
-            if s == Stage::Inner {
-                break;
-            }
+        let feet = |s: Stage, start: &[f64], x: &mut [f64]| -> Option<()> {
             for i in (0..n).filter(|&i| stage[i] == s && !self.nodes[i].is_empty()) {
-                let from = [start[3 * i], start[3 * i + 1], start[3 * i + 2]];
-                let f = self.foot_at(i, v, from)?;
+                let f = self.foot_at(i, v, at(start, i))?;
                 for c in 0..3 {
                     x[3 * i + c] = moved(self.x0[3 * i + c], f[c] - self.feet0[3 * i + c]);
                 }
             }
+            Some(())
+        };
+        feet(Stage::Vertex, &start, &mut x)?;
+        let mut maps: [Option<Harmonic>; 3] = [None, None, None];
+        for (k, s) in HARMONIC.into_iter().enumerate() {
+            if s == Stage::Inner && !inside {
+                break;
+            }
+            // moved harmonically from the stages before
+            let free: Vec<bool> = stage.iter().map(|&t| t == s).collect();
+            let weights = |put: &mut dyn FnMut(usize, usize, f64)| {
+                self.weights(s, &facets, &stage, tets, put)
+            };
+            maps[k] = harmonic(&free, &weights, &self.x0, &mut x, s != Stage::Inner)?;
+            for i in (0..n).filter(|&i| free[i]) {
+                start[3 * i..3 * i + 3].copy_from_slice(&x[3 * i..3 * i + 3]);
+            }
+            if s != Stage::Inner {
+                feet(s, &start, &mut x)?;
+            }
         }
-        Some(Placed { x, start, stage, factors, facets })
+        Some(Placed { x, start, stage, maps })
+    }
+
+    /// The Laplacian stage `s` is moved by: a curve's for an edge's nodes, the surface's for a
+    /// face's, the volume's for those inside.
+    fn weights(&self, s: Stage, facets: &[[usize; 6]], stage: &[Stage], tets: &[[usize; 10]],
+               put: &mut dyn FnMut(usize, usize, f64)) {
+        match s {
+            Stage::Edge => self.curve_weights(facets, stage, put),
+            Stage::Face => self.surface_weights(facets, put),
+            _ => self.volume_weights(tets, put),
+        }
     }
 
     /// **The curves' Laplacian**: each side of a facet whose middle is a node of an edge and whose
@@ -535,7 +545,7 @@ impl Hull {
     /// handed to `put` once per facet it is a side of.
     fn curve_weights(&self, facets: &[[usize; 6]], stage: &[Stage],
                      put: &mut dyn FnMut(usize, usize, f64)) {
-        let p = |i: usize| [self.x0[3 * i], self.x0[3 * i + 1], self.x0[3 * i + 2]];
+        let p = |i: usize| at(&self.x0, i);
         let along = |m: usize, e: usize| {
             matches!(stage[e], Stage::Edge | Stage::Vertex)
                 && self.nodes[m].iter().all(|s| self.nodes[e].contains(s))
@@ -546,7 +556,7 @@ impl Hull {
                     continue;
                 }
                 for e in [a, b] {
-                    let l = norm3(sub3(p(e), p(m)));
+                    let l = norm(sub(p(e), p(m)));
                     if l > 0.0 {
                         put(m, e, 1.0 / l);
                     }
@@ -559,16 +569,16 @@ impl Hull {
     /// sides weighed by half the cotangent of the angle across it, handed to `put` once a
     /// triangle.
     fn surface_weights(&self, facets: &[[usize; 6]], put: &mut dyn FnMut(usize, usize, f64)) {
-        let p = |i: usize| [self.x0[3 * i], self.x0[3 * i + 1], self.x0[3 * i + 2]];
+        let p = |i: usize| at(&self.x0, i);
         for t in facets {
             for [a, b, c] in [[t[0], t[3], t[5]], [t[3], t[1], t[4]], [t[5], t[4], t[2]],
                               [t[3], t[4], t[5]]] {
                 for (i, j, k) in [(a, b, c), (b, c, a), (c, a, b)] {
                     // the side i–j, its angle at k
-                    let (u, w) = (sub3(p(i), p(k)), sub3(p(j), p(k)));
-                    let s = norm3(cross3(u, w));
+                    let (u, w) = (sub(p(i), p(k)), sub(p(j), p(k)));
+                    let s = norm(cross(u, w));
                     if s > 0.0 {
-                        put(i, j, 0.5 * dot3(u, w) / s);
+                        put(i, j, 0.5 * dot(u, w) / s);
                     }
                 }
             }
@@ -581,7 +591,7 @@ impl Hull {
     /// A sum of such pairs is the stiffness of the linear Poisson element, positive definite once
     /// the boundary is held.
     fn volume_weights(&self, tets: &[[usize; 10]], put: &mut dyn FnMut(usize, usize, f64)) {
-        let p = |i: usize| [self.x0[3 * i], self.x0[3 * i + 1], self.x0[3 * i + 2]];
+        let p = |i: usize| at(&self.x0, i);
         for e in tets {
             // the middles of 0–1, 1–2, 2–0, 0–3, 1–3, 2–3 (`tetra::EDGES`)
             let [c0, c1, c2, c3, m01, m12, m20, m03, m13, m23] = *e;
@@ -589,22 +599,22 @@ impl Hull {
                       [m03, m13, m23, c3], [m01, m23, m20, m12], [m01, m23, m12, m13],
                       [m01, m23, m13, m03], [m01, m23, m03, m20]] {
                 let x = q.map(p);
-                let e1 = sub3(x[1], x[0]);
-                let e2 = sub3(x[2], x[0]);
-                let e3 = sub3(x[3], x[0]);
-                let det = dot3(e1, cross3(e2, e3));
+                let e1 = sub(x[1], x[0]);
+                let e2 = sub(x[2], x[0]);
+                let e3 = sub(x[3], x[0]);
+                let det = dot(e1, cross(e2, e3));
                 if !(det.abs() > 0.0) {
                     continue;
                 }
-                let g1 = cross3(e2, e3).map(|c| c / det);
-                let g2 = cross3(e3, e1).map(|c| c / det);
-                let g3 = cross3(e1, e2).map(|c| c / det);
+                let g1 = cross(e2, e3).map(|c| c / det);
+                let g2 = cross(e3, e1).map(|c| c / det);
+                let g3 = cross(e1, e2).map(|c| c / det);
                 let g0 = [0, 1, 2].map(|c| -(g1[c] + g2[c] + g3[c]));
                 let g = [g0, g1, g2, g3];
                 let vol = det.abs() / 6.0;
                 for a in 0..4 {
                     for b in a + 1..4 {
-                        put(q[a], q[b], -vol * dot3(g[a], g[b]));
+                        put(q[a], q[b], -vol * dot(g[a], g[b]));
                     }
                 }
             }
@@ -618,48 +628,45 @@ impl Hull {
     /// started (`Dual`s through the Gauss–Newton steps), that start's onto the stage before
     /// through its harmonic map; the vertices' onto their columns.  `None` where a foot is not
     /// reached, or reads more columns than a rate is carried in.
-    pub fn chain(&self, v: &[f64], placed: &Placed, tets: &[[usize; 10]], g: &[f64],
-                 row: &mut [f64]) -> Option<()>
-    {
+    pub fn chain(&self, v: &[f64], placed: &Placed, g: &[f64], row: &mut [f64]) -> Option<()> {
         let n = self.nodes.len();
         let mut g = g[..3 * n].to_vec();
-        let stage = &placed.stage;
-        for (k, s) in [Stage::Inner, Stage::Face, Stage::Edge, Stage::Vertex].into_iter().enumerate() {
-            if s != Stage::Inner {
-                for i in (0..n).filter(|&i| stage[i] == s && !self.nodes[i].is_empty()) {
-                    let gi = [g[3 * i], g[3 * i + 1], g[3 * i + 2]];
-                    if gi.iter().all(|&q| q == 0.0) {
-                        continue;
-                    }
-                    let start = [placed.start[3 * i], placed.start[3 * i + 1],
-                                 placed.start[3 * i + 2]];
-                    let back = self.carried(i, v, start, gi, row)?;
-                    g[3 * i..3 * i + 3].copy_from_slice(&back);
+        let sheets: Vec<Vec<usize>> =
+            (0..self.sheets.len()).map(|s| self.sheet_columns(s)).collect();
+        // a stage's tagged nodes onto their columns and where they started
+        let carry = |s: Stage, g: &mut [f64], row: &mut [f64]| -> Option<()> {
+            for i in (0..n).filter(|&i| placed.stage[i] == s && !self.nodes[i].is_empty()) {
+                let gi = at(g, i);
+                if gi.iter().all(|&q| q == 0.0) {
+                    continue;
                 }
+                let local = self.node_columns(i, &sheets);
+                let back = self.carried(i, v, &local, at(&placed.start, i), gi, row)?;
+                g[3 * i..3 * i + 3].copy_from_slice(&back);
+            }
+            Some(())
+        };
+        for (k, s) in HARMONIC.into_iter().enumerate().rev() {
+            if s != Stage::Inner {
+                carry(s, &mut g, row)?;
             }
             // the stage's starts onto the stage before, through its harmonic map
-            if let Some((free, f)) = (k < 3).then(|| placed.factors[2 - k].as_ref()).flatten() {
-                let weights = |put: &mut dyn FnMut(usize, usize, f64)| match s {
-                    Stage::Edge => self.curve_weights(&placed.facets, stage, put),
-                    Stage::Face => self.surface_weights(&placed.facets, put),
-                    _ => self.volume_weights(tets, put),
-                };
-                adjoint(free, f, &weights, &mut g);
+            if let Some(map) = &placed.maps[k] {
+                adjoint(map, &mut g);
             }
         }
-        Some(())
+        carry(Stage::Vertex, &mut g, row)
     }
 
-    /// Node `i`'s rate carried: `gᵀ ∂π/∂v` added into `row` at the columns its foot reads, and
-    /// `gᵀ ∂π/∂s` returned, its rate in where it started.
-    fn carried(&self, i: usize, v: &[f64], start: [f64; 3], g: [f64; 3], row: &mut [f64])
-        -> Option<[f64; 3]>
+    /// Node `i`'s rate carried, from `start`: `gᵀ ∂π/∂v` added into `row` at the columns `local`
+    /// its foot reads, and `gᵀ ∂π/∂s` returned, its rate in where it started.
+    fn carried(&self, i: usize, v: &[f64], local: &[usize], start: [f64; 3], g: [f64; 3],
+               row: &mut [f64]) -> Option<[f64; 3]>
     {
-        let local = self.node_columns(i);
         let k = local.len();
         macro_rules! carried {
             ($n:literal) => {{
-                let f = self.foot_rate::<$n>(i, v, &local, start)?;
+                let f = self.foot_rate::<$n>(i, v, local, start)?;
                 for (j, &c) in local.iter().enumerate() {
                     row[c] += (0..3).map(|a| g[a] * f[a].g[j]).sum::<f64>();
                 }
@@ -839,20 +846,4 @@ fn solve_gram<T: Num>(levels: &[(T, V<T>)]) -> Option<Vec<T>> {
         }
         _ => return None,
     })
-}
-
-fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
-}
-
-fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
-}
-
-fn norm3(a: [f64; 3]) -> f64 {
-    dot3(a, a).sqrt()
-}
-
-fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }

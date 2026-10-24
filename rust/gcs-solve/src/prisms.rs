@@ -933,7 +933,7 @@ pub struct Row {
     /// Where the structure stands: its nodes' places at the drawing.
     pub x: Vec<f64>,
     /// How many times a reading's size its mesh is: a filled body's driving row is solved coarse
-    /// first (#567, `bodies::LEVELS`); every other row is at a reading's own.
+    /// first (#567, `bodies::COARSEST`); every other row is at a reading's own.
     pub coarser: f64,
 }
 

@@ -868,7 +868,7 @@ names another.
   meshed at 10mm and moved to 7.98mm — leaving no freedom, the report saying it
   driven and held, and the claims' reading of the solved drawing, meshed afresh, agreeing with the
   row within its error.
-- **A filled body's drive is solved coarse first** (#567; `bodies::LEVELS`, `prisms::Row::
+- **A filled body's drive is solved coarse first** (#567; `bodies::COARSEST`, `prisms::Row::
   coarser`, `Sketch::refine`, `solve::System::refined`). Each step of a drive over a filled body
   is a solve of its structure and one of its adjoint (by CG over its corners where it is large),
   so its row is made at four times a reading's size, where a step costs a sixtieth of one at its
@@ -896,15 +896,20 @@ names another.
   natively, its fresh reading among them; a step at its own size is a placement (2.6 s), a solve
   and an adjoint (12 s each), against 0.3 s and 2.3 s at four times it. A case whose solve takes
   minutes is listed in `examples::SLOW`, which a default-tier test over every case leaves to the
-  slow tier. **Folded** (`a_filled_bodys_mesh_is_made_again_where_it_folds`, the slow tier): the
+  slow tier (`examples::left_to_slow_tier`). **Folded**
+  (`a_filled_bodys_mesh_is_made_again_where_it_folds`, the slow tier): the
   pin lug driven to give 0.02mm grows its hole from 16mm to 29.2mm in a lug 40mm wide; the mesh
   made at its start reads NaN where the drive ends, so the solve folds on it, meshes again where it
   stopped and holds, with no freedom left.
 - **A row read where it was last read is that reading** (#567; `interior::solved`'s `LAST`): a
-  step's trial that is accepted is where the next step's rate is taken, so the last filled body's
-  row read on a thread — its columns, its constants, its placement and its solved structure — is
-  kept, and read again where both are the same to the bit. The same numbers give the same row to
-  the bit, so what is kept changes no answer; it saves a solve a step.
+  step's trial that is accepted is where the next step's rate is taken, so the last row over a
+  mesh moved with the drawing read on a thread — a region's, a prism's, a filled body's: its
+  columns, its constants, its placement and its solved structure — is kept, and read again where
+  both are the same to the bit. The same numbers give the same row to the bit, so what is kept
+  changes no answer; it saves a solve a step. A document solve lets it go when it ends
+  (`interior::forget`): a filled body's holds its mesh, its factors and its stiffness. A harmonic
+  stage keeps each pair of a free node and a held one with its weight (`Harmonic::held`), so its
+  rate is taken back without the Laplacian's weights read again.
 - **A drawing whose seeds leave its solid unbuilt stands where it solves before its rows are
   made** (#567; `program::scenarios::stand`): the engine's rod, seeded view by view, has no B-rep
   until its views are solved together, so no point of it falls in it and no row could be meshed.

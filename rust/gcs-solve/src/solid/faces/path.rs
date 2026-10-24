@@ -224,30 +224,7 @@ fn revolved(sk: &Sketch, p: usize, face: &str, pose: crate::envelope::Motion, na
 
 /// The primitive a route reaches from solid `i`, and the pose the placements along it put it at.
 fn face_reach(sk: &Sketch, i: usize, route: &[String]) -> Result<(usize, crate::envelope::Motion), String> {
-    let s = sk.solids.get(i).ok_or("no such solid")?;
-    match &s.def {
-        SolidDef::Body { .. } => {
-            for o in s.operands().into_iter().map(|o| o as usize) {
-                let operand = &sk.solids[o];
-                // a swept solid's own sweep, split off as its stock, adds no step
-                if operand.name == s.name {
-                    if let Ok(found) = face_reach(sk, o, route) { return Ok(found) }
-                    continue;
-                }
-                if let Some(rest) = crate::solid::past_step(operand, route) {
-                    return face_reach(sk, o, rest);
-                }
-            }
-            Err(format!("`{}` has no operand `{}`", s.name, route.join(".")))
-        }
-        SolidDef::Placed { source, motion, at } => {
-            let (p, inner) = face_reach(sk, *source as usize, route)?;
-            let outer = crate::motion::Family::read(sk, *motion as usize)?.at(at.value)?;
-            Ok((p, inner.then(outer)))
-        }
-        _ if route.is_empty() => Ok((i, crate::envelope::Motion::identity())),
-        _ => Err(format!("`{}` is a primitive, with no operand `{}`", s.name, route.join("."))),
-    }
+    walk(sk, i, route, true)
 }
 
 /// **The primitive a route reaches from solid `i` where no placement stands on the way** (#567):
@@ -255,6 +232,14 @@ fn face_reach(sk: &Sketch, i: usize, route: &[String]) -> Result<(usize, crate::
 /// stands — a placed copy's faces are its source's at a pose, which a driving row does not move
 /// yet.
 pub(crate) fn face_primitive(sk: &Sketch, i: usize, route: &[String]) -> Result<usize, String> {
+    walk(sk, i, route, false).map(|(p, _)| p)
+}
+
+/// The route walked from solid `i` through its operands to the primitive it reaches, and the pose
+/// the placements along it put that at — a placement refused where `placed` is not.
+fn walk(sk: &Sketch, i: usize, route: &[String], placed: bool)
+    -> Result<(usize, crate::envelope::Motion), String>
+{
     let s = sk.solids.get(i).ok_or("no such solid")?;
     match &s.def {
         SolidDef::Body { .. } => {
@@ -262,17 +247,22 @@ pub(crate) fn face_primitive(sk: &Sketch, i: usize, route: &[String]) -> Result<
                 let operand = &sk.solids[o];
                 // a swept solid's own sweep, split off as its stock, adds no step
                 if operand.name == s.name {
-                    if let Ok(found) = face_primitive(sk, o, route) { return Ok(found) }
+                    if let Ok(found) = walk(sk, o, route, placed) { return Ok(found) }
                     continue;
                 }
                 if let Some(rest) = crate::solid::past_step(operand, route) {
-                    return face_primitive(sk, o, rest);
+                    return walk(sk, o, rest, placed);
                 }
             }
             Err(format!("`{}` has no operand `{}`", s.name, route.join(".")))
         }
-        SolidDef::Placed { .. } => Err(format!("`{}` is a placed copy", s.name)),
-        _ if route.is_empty() => Ok(i),
+        SolidDef::Placed { .. } if !placed => Err(format!("`{}` is a placed copy", s.name)),
+        SolidDef::Placed { source, motion, at } => {
+            let (p, inner) = walk(sk, *source as usize, route, placed)?;
+            let outer = crate::motion::Family::read(sk, *motion as usize)?.at(at.value)?;
+            Ok((p, inner.then(outer)))
+        }
+        _ if route.is_empty() => Ok((i, crate::envelope::Motion::identity())),
         _ => Err(format!("`{}` is a primitive, with no operand `{}`", s.name, route.join("."))),
     }
 }

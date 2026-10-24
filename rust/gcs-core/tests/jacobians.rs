@@ -694,10 +694,10 @@ fn a_measure_agrees_with_finite_differences() {
 
 /// A driving row's rate against central differences over 1e-2 (a solid's stiffness is good to
 /// fewer figures than a region's: `a_solids_deflection_agrees_with_finite_differences`), at the
-/// drawing `src` solved to and in `rounds` more each knocked off it.
-fn filled_row_agrees(src: &str, rounds: usize, rng: &mut Rng) {
+/// drawing `src` solved to (round 0) and in each later round of `rounds` knocked further off it.
+fn solid_row_agrees(src: &str, rounds: std::ops::Range<usize>, rng: &mut Rng) {
     let mut sk = crate::common::solved(&crate::common::read(src));
-    for round in 0..=rounds {
+    for round in rounds {
         if round > 0 {
             for p in sk.params.iter_mut().filter(|p| !p.fixed) {
                 p.value += rng.uniform(-0.01, 0.01) * (1.0 + p.value.abs().min(10.0));
@@ -723,7 +723,7 @@ fn filled_row_agrees(src: &str, rounds: usize, rng: &mut Rng) {
 /// rate.
 #[test]
 fn a_filled_bodys_deflection_agrees_with_finite_differences() {
-    filled_row_agrees(&crate::hulls::BAR.replace("SAG", "0.02mm"), 1, &mut Rng::new(567));
+    solid_row_agrees(&crate::hulls::BAR.replace("SAG", "0.02mm"), 0..2, &mut Rng::new(567));
 }
 
 /// **A cut body's and a turned shaft's deflection, driven, agree with their differences** (#567,
@@ -737,8 +737,8 @@ fn a_filled_bodys_deflection_agrees_with_finite_differences() {
                                              differenced")]
 fn a_cut_and_a_turned_bodys_deflection_agree_with_finite_differences() {
     let mut rng = Rng::new(568);
-    filled_row_agrees(&crate::hulls::LUG.replace("SAG", "0.015mm"), 1, &mut rng);
-    filled_row_agrees(&crate::hulls::SHAFT.replace("SAG", "0.0375mm"), 1, &mut rng);
+    solid_row_agrees(&crate::hulls::LUG.replace("SAG", "0.015mm"), 0..2, &mut rng);
+    solid_row_agrees(&crate::hulls::shaft("0.0375mm"), 0..2, &mut rng);
 }
 
 /// **A mass and a volume, as the drawing states them** (`CKind::Mass`, `CKind::Volume`): a
@@ -1601,29 +1601,11 @@ scenario s {
 ";
     let mut rng = Rng::new(513);
     // the holed plate's mesh is the larger, and is read once, knocked off its solution: its
-    // nodes moved off where they were meshed and its row off what it states
+    // nodes moved off where they were meshed and its row off what it states.  A solid's stiffness
+    // is good to fewer figures than a region's, its rounding in a difference over 1e-4 of a
+    // millimetre a thousandth of the rate: the difference is taken over 1e-2, where its
+    // truncation is under 1e-6 of it
     let plank = gcs_core::examples::source("sized_plank").unwrap();
-    for (src, rounds) in [(plank, 0..2), (holed, 1..2)] {
-        let mut sk = crate::common::solved(&crate::common::read(src));
-        for round in rounds {
-            if round > 0 {
-                for p in sk.params.iter_mut().filter(|p| !p.fixed) {
-                    p.value += rng.uniform(-0.01, 0.01) * (1.0 + p.value.abs().min(10.0));
-                }
-            }
-            // a solid's stiffness is good to fewer figures than a region's, its rounding in a
-            // difference over 1e-4 of a millimetre a thousandth of the rate: the difference is
-            // taken over 1e-2, where its truncation is under 1e-6 of it
-            let c = sk.constraints.iter().find(|c| c.kind == CKind::Deflection).unwrap();
-            let v = c.local_values(&sk);
-            let ja = c.jacobian(&sk, &v);
-            let jn = gcs_core::fdcheck::fd_jacobian(|w| c.residual(&sk, w), &v, 1e-2);
-            let scale = gcs_core::linalg::absmax(&jn.data);
-            assert!(scale.is_finite() && scale > 0.0, "round {round}");
-            for (col, (a, n)) in ja.iter().zip(&jn.data).enumerate() {
-                assert!((a - n).abs() <= 1e-5 * scale,
-                        "round {round}: column {col}: {a} against {n}");
-            }
-        }
-    }
+    solid_row_agrees(plank, 0..2, &mut rng);
+    solid_row_agrees(holed, 1..2, &mut rng);
 }
