@@ -255,7 +255,9 @@ plane in itself is the blank less the region its section sweeps, slab by slab
 (`solid::planar_subtraction`, rows P1, Q1–Q4 in [docs/generating-sweeps.md](../generating-sweeps.md)).
 `admit_body` asks it of a prism tool the generating rows refuse at T1, T2, E1 or E2 — a union or a
 draft in the tool, a concave corner, a roll never clear of the blank, a second contact — so a rack
-is still built by its sheet (`extruded`). The slabs are the blank cut at every member's cap within
+is still built by its sheet (`extruded`), and a rack tooth with a cap in the blank, or united with
+itself, by its region (`rack_cut::a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans`,
+`the_tooth_united_with_itself_cuts_as_the_tooth_does`: the two classes agree to 1e-5). The slabs are the blank cut at every member's cap within
 it, two next to each other with one section (every member undrafted, the same faces joined alike,
 `Subtraction::key`) read as one. In each, `envelope::swept_region` reads the region `R = ∪ₜ
 poseₜ(section)` within a box about the blank's shadow at every placement: its candidates are

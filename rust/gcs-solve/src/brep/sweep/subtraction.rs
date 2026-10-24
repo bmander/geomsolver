@@ -98,8 +98,7 @@ pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tol
             return Err(ExportRefusal::at(Stage::Admission,format!("`{name}` is not a planar subtraction sweep")))
         };
         let clock = crate::clock::Instant::now();
-        let (Some(first),Some(last)) = (found.slabs.first(),found.slabs.last()) else { continue };
-        let (lo,hi) = (first.heights[0],last.heights[1]);
+        let [lo,hi] = found.heights;
         let past = crate::solid::planar_subtraction::PAST*(hi-lo);
         let mut cutters: Vec<Brep> = Vec::new();
         for slab in &found.slabs {

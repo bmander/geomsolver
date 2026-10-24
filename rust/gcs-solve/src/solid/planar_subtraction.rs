@@ -92,9 +92,10 @@ pub struct Subtraction { plane: Plane,members: Vec<Member>,tree: Tree,family: cr
 #[derive(Clone,Debug)]
 pub struct Slab { pub heights: [f64;2],pub stations: Vec<(f64,SweptRegion)> }
 
-/// What the class found: the plane and each slab, lowest first.
+/// What the class found: the plane, how far along its normal the blank reaches (where a cut runs a
+/// hair past it), and each slab a member reaches, lowest first.
 #[derive(Clone,Debug)]
-pub struct Found { pub plane: Plane,pub slabs: Vec<Slab> }
+pub struct Found { pub plane: Plane,pub heights: [f64;2],pub slabs: Vec<Slab> }
 
 /// Whether `swept`'s tool is prisms joined by union and common (Q1, structurally) under a motion
 /// that keeps the first one's plane (P1, at a few rolls): the sweeps this class asks where the
@@ -285,7 +286,7 @@ impl Subtraction {
         if found.iter().all(|s| s.stations.iter().all(|(_,r)| r.loops.is_empty())) {
             return Err((Condition::Reach,format!("no part of the region `{}` sweeps reaches the blank",self.name),None))
         }
-        Ok(Found {plane:pl,slabs:found})
+        Ok(Found {plane:pl,heights,slabs:found})
     }
 
     /// What the section at height `h` is made of, the same for two heights exactly where their

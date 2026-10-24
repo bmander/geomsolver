@@ -664,7 +664,27 @@ fn candidates(s: &Setting,whole: bool) -> Vec<Kind> {
             for (_,e) in &edges { out.push(Kind::Fixed {edge:(*e).clone(),at}) }
         }
     }
-    out
+    // one candidate of each curve: members of a union that share an edge sweep it once
+    let key = |k: &Kind| -> Vec<f64> {
+        let edge = |e: &Edge| match *e {
+            Edge::Line {a,b,..} => vec![0.,a[0],a[1],b[0],b[1]],
+            Edge::Arc {center,radius,start,sweep,..} => vec![1.,center[0],center[1],radius,start,sweep],
+            Edge::Conic {..} => vec![2.],
+        };
+        match k {
+            Kind::Line {a,d,length} => vec![0.,a[0],a[1],d[0],d[1],*length],
+            Kind::Arc {edge:e,side} => [vec![1.,*side],edge(e)].concat(),
+            Kind::Corner {x,..} => vec![2.,x[0],x[1]],
+            Kind::Fixed {edge:e,at} => [vec![3.,*at],edge(e)].concat(),
+        }
+    };
+    let near = 1e-9*(1.+s.scale);
+    let mut kept: Vec<Kind> = Vec::new();
+    for k in out {
+        let x = key(&k);
+        if !kept.iter().any(|y| { let y = key(y); y.len() == x.len() && x.iter().zip(&y).all(|(p,q)| (p-q).abs() <= near) }) { kept.push(k) }
+    }
+    kept
 }
 
 /// An edge's unit tangent, the way it is walked, at its point `p`.
