@@ -179,6 +179,45 @@ pub unsafe extern "C" fn gcs_sketch_set_hidden(h: *mut Sketch, ptr: *const u8, l
     })
 }
 
+/// **The plane the workspace is sectioned by** (`Sketch::cut`): a plane's frame in the world,
+/// nine doubles `u`, `v`, `o` (`gcs_plane_frame3`'s), moved `offset` along its normal and turned
+/// to keep the other side where `flip` is nonzero (`Basis::moved_along`); a null `frame` takes the
+/// section away.  View state, which the host re-applies to every drawing it is handed.  Returns 0,
+/// or -1 for a frame that spans no plane.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_set_cut(h: *mut Sketch, frame: *const f64, flip: i32,
+                                            offset: f64) -> i32 {
+    guard(-1, move || {
+        if frame.is_null() {
+            sk(h).cut = None;
+            return 0;
+        }
+        let f = std::slice::from_raw_parts(frame, 9);
+        let Some(b) = gcs_core::plane::Basis::explicit([f[0], f[1], f[2]], [f[3], f[4], f[5]]) else {
+            set_error("a section's frame spans no plane");
+            return -1;
+        };
+        let b = gcs_core::plane::Basis { o: [f[6], f[7], f[8]], ..b };
+        sk(h).cut = Some(b.moved_along(offset, flip != 0));
+        0
+    })
+}
+
+/// The section as a renderer clips by: four doubles, a unit normal toward what the cut keeps and
+/// a constant, so a point `p` is kept where `normal·p + constant` is positive — three.js's
+/// `Plane`.  Returns 4, or 0 where the workspace is not sectioned.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_cut(h: *mut Sketch, out: *mut f64) -> i32 {
+    guard(-1, move || {
+        let Some(c) = sk(h).cut else { return 0 };
+        let Some(n) = gcs_core::plane::unit(c.normal()) else { return 0 };
+        let kept = n.map(|x| -x);
+        let constant = gcs_core::plane::dot(n, c.o);
+        write(out, &[kept[0], kept[1], kept[2], constant]);
+        4
+    })
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_line(h: *mut Sketch, p1: i32, p2: i32) -> i32 {
     guard(-1, move || {

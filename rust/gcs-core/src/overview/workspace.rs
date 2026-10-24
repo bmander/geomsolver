@@ -464,8 +464,10 @@ pub struct SolidHit {
 }
 
 /// The object face the eye's ray through `at` meets nearest the viewer — what a click on a solid
-/// picks.  Asked of each object's mesh (`ApproximationPolicy::Mesh`, the box's own), culled by its
-/// box: the ray is a line, since the eye is orthographic and stands outside everything.
+/// picks; under a section (`Sketch::cut`), the face it leaves, met inside the material, is the
+/// object whole (a face of `""`).  Asked of each object's mesh (`ApproximationPolicy::Mesh`, the
+/// box's own), culled by its box: the ray is a line, since the eye is orthographic and stands
+/// outside everything.
 pub fn pick_solid(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Option<SolidHit> {
     let mut best: Option<(usize, String, f64)> = None;
     crossings(sk, proj, at, |solid, face, depth| {
@@ -501,16 +503,55 @@ fn crossings(sk: &Sketch, proj: &Projection, at: (f64, f64),
         // the ray in the solid's own coordinates: a rigid motion keeps its depths
         let o = solid.to_local(crate::solid::WorldPoint(foot)).0;
         let along = solid.vector_to_local(toward);
+        // a section leaves out what it took away, and the face it leaves is the object's
+        let cut = sk.cut.as_ref().map(|c| solid.cut_plane(c));
+        let ray = |t: f64| -> [f64; 3] { std::array::from_fn(|k| o[k] + t * along[k]) };
+        let kept = |t: f64| cut.as_ref().is_none_or(|c| c.keeps(ray(t)));
         let m = solid.mesh();
         for group in &m.groups {
             let nearest = (group.start..group.start + group.count)
                 .filter_map(|t| line_meets_triangle(o, along, &m.positions[9 * t..9 * t + 9]))
+                .filter(|&t| kept(t))
                 .fold(f64::NEG_INFINITY, f64::max);
             if nearest > f64::NEG_INFINITY {
                 visit(i, &group.path, nearest);
             }
         }
+        if let Some(c) = &cut {
+            let across = dot(c.normal, along);
+            if across != 0.0 {
+                let t = dot(c.normal, sub(c.origin, o)) / across;
+                if solid.contains(crate::solid::LocalPoint(ray(t))) {
+                    visit(i, "", t);
+                }
+            }
+        }
     }
+}
+
+/// **How far the objects shown reach along a plane's normal** (`Basis::normal`, unit), from the
+/// plane: the least and the most, over the corners of each one's box in the world — the range a
+/// section moved along that normal (`Basis::moved_along`) sweeps them over.  `None` where no
+/// object evaluates, or the plane has no normal.
+pub fn reach_along(sk: &Sketch, plane: &Basis) -> Option<(f64, f64)> {
+    let n = crate::plane::unit(plane.normal())?;
+    let mut reach: Option<(f64, f64)> = None;
+    for i in super::shown_objects(sk) {
+        let Ok(solid) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else {
+            continue;
+        };
+        let b = solid.world_bounds();
+        if b.is_empty() {
+            continue;
+        }
+        for c in 0..8 {
+            let p: [f64; 3] =
+                std::array::from_fn(|k| if c & (1 << k) == 0 { b.lo[k] } else { b.hi[k] });
+            let h = dot(n, sub(p, plane.o));
+            reach = Some(reach.map_or((h, h), |(lo, hi)| (lo.min(h), hi.max(h))));
+        }
+    }
+    reach
 }
 
 /// Where two faces of object `solid` meet, in space (`EvaluatedSolid::face_edges`): what the
@@ -564,10 +605,15 @@ fn edges_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64)
         }
         let slack = 1e-3 * (0..3).fold(0f64, |m, k| m.max(w.hi[k] - w.lo[k]));
         let world = |p: [f64; 3]| solid.to_world(crate::solid::LocalPoint(p)).0;
+        // of an edge a section cuts, only what it keeps
+        let cut = sk.cut.as_ref().map(|c| solid.cut_plane(c));
         for e in solid.face_edges() {
             // the place on this edge nearest the pointer, as the eye sees it
             let mut best: Option<(f64, [f64; 3])> = None;
             for &[a, b] in &e.segs {
+                let Some((a, b)) = cut.as_ref().map_or(Some((a, b)), |c| c.clip(a, b)) else {
+                    continue;
+                };
                 let (a, b) = (world(a), world(b));
                 let (sa, sb) = (proj.seen(a), proj.seen(b));
                 let d = (sb.0 - sa.0, sb.1 - sa.1);
@@ -648,7 +694,10 @@ pub fn under(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64, unit: f64
         })
         .collect();
     crossings(sk, proj, at, |solid, face, depth| {
-        parts.push((depth, 1, Under::Face(solid_hit(proj, at, solid, face.to_string(), depth))));
+        // the face a section leaves is no face of the document: the object it cuts is listed
+        if !face.is_empty() {
+            parts.push((depth, 1, Under::Face(solid_hit(proj, at, solid, face.to_string(), depth))));
+        }
     });
     parts.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
     // and each object met, in the order its nearest part was

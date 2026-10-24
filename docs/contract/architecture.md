@@ -123,6 +123,18 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   written: a picture missing a part is never taken for the whole
   (`a_picture_missing_a_solid_fails_naming_it`).  The PNG writer is the CLI's (`png.rs`, fixed-code
   deflate); it computes no geometry, and `tests/cli.rs` reads its pictures back.
+  **`--section PLANE` cuts what a picture draws** (`EvaluatedSolid::section`, solids.md): a view's
+  word through the world origin, its normal toward that view's eye (`front` takes away what is
+  nearer a front view's eye), or a model plane by its path, both read by the core
+  (`drawing::plane_named`); `-PLANE` keeps the other side and `PLANE@LENGTH` moves it along its
+  normal (`Basis::moved_along`; a bare number in the document's unit), the text checked as a
+  command line (64) before any document is read.  Each sample of a triangle the cut takes away
+  is left out (its height is linear across it, so the triangle is clipped exactly), each edge
+  clipped by `Section::clip`, the cut face filled hatched in the picture's own pixels, winning a
+  tie with a face lying in the plane, and its loops inked; the picture is fitted to what is kept.
+  A plane that takes away everything fails the picture (1, nothing written), as a plane the
+  document lacks does.  What a section takes away whole is drawn as if hidden, byte for byte
+  (`a_section_takes_away_what_is_in_front_of_its_plane`).
   **A long run says what it is doing** (#320): the core tells whoever listens on its thread
   (`progress::listen`) when work begins and ends — the elaboration, the solve and the diagnosis,
   which the CLI wraps in `progress::during`, and inside them each solid built

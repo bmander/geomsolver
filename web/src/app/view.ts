@@ -41,6 +41,8 @@ import { Camera, ViewCam } from './camera.js';
 import * as edit from './edit.js';
 import * as extent from './extent.js';
 import * as hidden from './hidden.js';
+import { setCut } from '../core/section.js';
+import type { Frame3 } from '../core/section.js';
 import type { Row } from '../core/outline.js';
 import type { Handle, LiveExtent } from './extent.js';
 import * as dimension from './dimension.js';
@@ -302,6 +304,15 @@ export class SketchView {
   hiddenEnts = new Set<Primitive>();
   hiddenSolids = new Set<number>();
   hiddenEpoch = 0;
+  /** **The workspace sectioned** (`core/section.ts`): every object cut by the plane named
+   *  `plane` — one of the document's, or a standard plane it does not have yet — moved `offset`
+   *  (the drawing's unit) along that plane's normal, the side the normal points to taken away, or
+   *  the other side where `flip`.  View state, as the orbit is: never saved, solved or undone,
+   *  set on every drawing the view is handed (`applySection`), carried across an edit by the
+   *  plane's name, let go when the name no longer reaches a plane and by a load.  `sectionEpoch` counts
+   *  each change, so the box re-cuts. */
+  section: { plane: string; flip: boolean; offset: number } | null = null;
+  sectionEpoch = 0;
   /** The solids selected, each by the face the click landed on — the third selection, exclusive
    *  with the other two for the picture's reason: a solid is not a `Primitive`, nothing
    *  constrains one beside a point, and holding both would leave Delete ambiguous. */
@@ -389,6 +400,8 @@ export class SketchView {
   onLoad: () => void = () => {};
   /** Fired when what the outline hides changes, so its eyes follow. */
   onHidden: () => void = () => {};
+  /** Fired when the section is turned on or off, moved or flipped, so its bar follows. */
+  onSection: () => void = () => {};
   /** Per gesture frame: the sketch's structure and the constraint list are unchanged, so
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
@@ -862,9 +875,18 @@ export class SketchView {
    *  they are kept where the read is refused, the drawing staying as it was. */
   private another(read: () => boolean): boolean {
     const held = this.hiddenRows;
+    const cut = this.section;
     this.hiddenRows = new Set();
-    if (read()) return true;
+    this.section = null;
+    if (read()) {
+      if (cut) {
+        this.sectionEpoch++;
+        this.onSection();
+      }
+      return true;
+    }
     this.hiddenRows = held;
+    this.section = cut;
     return false;
   }
 
@@ -931,6 +953,8 @@ export class SketchView {
     }
     // what the outline hid, by path, on the drawing just taken (a load emptied it first)
     hidden.carryHidden(this);
+    // the section by its plane's name, on the drawing just taken (a load let it go first)
+    this.applySection();
     if (this.liveExtent && !extent.liveHandle(this)) this.endExtent();
     const again = heldPlane ? this.doc.entity(heldPlane) : undefined;
     this.plane = again instanceof Plane ? again : null;
@@ -1831,6 +1855,50 @@ export class SketchView {
     if (this.openSpace) return '';
     if (this.pendingPlane) return this.pendingPlane;
     return (this.plane && this.doc.nameOf(this.plane)) || 'std.front';
+  }
+
+  /** **Section the workspace**, or stop: `next` names its plane, which side it keeps and how far
+   *  along its normal it is moved.  The core is told (`applySection`) and the box re-cuts. */
+  setSection(next: { plane: string; flip: boolean; offset: number } | null): void {
+    this.section = next;
+    this.sectionEpoch++;
+    this.applySection();
+    this.onSection();
+    this.draw();
+  }
+
+  /** Section by the plane being drawn on (the front where none is), or stop sectioning. */
+  toggleSection(): void {
+    if (this.section) return this.setSection(null);
+    const plane = this.planeName || 'std.front';
+    this.setSection({ plane, flip: false, offset: 0 });
+    this.onStatus(`section on ${plane}`);
+  }
+
+  /** The frame of the section's plane, where it stands now: a plane of the document, or a
+   *  standard one the document does not have yet, read from the library's.  Null where the
+   *  section's plane is no plane. */
+  sectionFrame(): Frame3 | null {
+    if (!this.section) return null;
+    const name = this.section.plane;
+    const found = this.doc.entity(name);
+    if (found instanceof Plane) return found.frame3;
+    if (!(STANDARD_PLANES as readonly string[]).includes(name)) return null;
+    const std = standardDocument().entity(name);
+    return std instanceof Plane ? std.frame3 : null;
+  }
+
+  /** **Tell the drawing where it is sectioned**: the cut set on the core's sketch, so the box
+   *  draws and the picks pass by what it took away.  A section whose plane no longer resolves
+   *  is let go. */
+  applySection(): void {
+    const frame = this.sectionFrame();
+    if (this.section && !frame) {
+      this.section = null;
+      this.sectionEpoch++;
+      this.onSection();
+    }
+    setCut(this.sketch, frame && this.section && { frame, ...this.section });
   }
 
   /** **Sketch on a plane**: make it the one the next thing is drawn in, and turn the eye square

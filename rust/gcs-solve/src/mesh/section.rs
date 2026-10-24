@@ -114,27 +114,35 @@ impl Section {
     }
 }
 
-/// **`m` cut by the plane through `o` whose normal is `n`** (not necessarily unit): the side `n`
-/// points to taken away.  Empty where the plane misses the surface; where `n` has no direction,
-/// empty and taking everything away.
-pub fn section(m: &Mesh, o: [f64; 3], n: [f64; 3]) -> Section {
+/// **The plane `section` cuts `m` by, and nothing cut**: its rule of what is kept (`height`,
+/// `keeps`, `clip`) with no loops and no face — what a pick asks of a cut, which must not slice
+/// the mesh to be told which side of the plane a point is on.  Where `n` has no direction it
+/// takes everything away.
+pub fn plane(m: &Mesh, o: [f64; 3], n: [f64; 3]) -> Section {
     let Some(n) = normalised(n).filter(|n| n.iter().all(|x| x.is_finite())) else {
         return Section { origin: o, ..Section::default() };
     };
-    let corners = m.positions.as_chunks::<3>().0;
-    if corners.is_empty() {
-        return Section { origin: o, normal: n, ..Section::default() };
-    }
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
-    for p in corners {
+    for p in m.positions.as_chunks::<3>().0 {
         for k in 0..3 {
             lo[k] = lo[k].min(p[k]);
             hi[k] = hi[k].max(p[k]);
         }
     }
     let extent = (0..3).fold(0.0f64, |e, k| e.max(hi[k] - lo[k]));
-    let on = extent * ON;
-    let mut out = Section { origin: o, normal: n, on, ..Section::default() };
+    Section { origin: o, normal: n, on: extent * ON, ..Section::default() }
+}
+
+/// **`m` cut by the plane through `o` whose normal is `n`** (not necessarily unit): the side `n`
+/// points to taken away.  Empty where the plane misses the surface; where `n` has no direction,
+/// empty and taking everything away.
+pub fn section(m: &Mesh, o: [f64; 3], n: [f64; 3]) -> Section {
+    let mut out = plane(m, o, n);
+    let n = out.normal;
+    if n == [0.0; 3] {
+        return out;
+    }
+    let on = out.on;
     // how far a corner stands out of the plane, snapped onto it within the mesh's resolution
     let height = |p: [f64; 3]| out.height(p);
     // taken away: in front of the plane, or on it

@@ -18,7 +18,8 @@ import { callouts, pairOf } from '../core/callout.js';
 import type { PairDimension } from '../core/callout.js';
 import { PlanDrag } from '../core/decompose.js';
 import { solve } from '../core/system.js';
-import { DimAlt, SketchView } from '../app/view.js';
+import { DimAlt, SketchView, partOf } from '../app/view.js';
+import { clipPlane, reachAlong } from '../core/section.js';
 import { hitName } from '../app/view.js';
 import type { Hit, SolidPick } from '../app/view.js';
 import { eyeFrame, pickEdgeSeen, roundSize, solidEdges } from '../core/workspace.js';
@@ -2640,6 +2641,46 @@ test('the Fillet tool picks edges a click at a time, and Enter writes them as st
   assert.equal(view.tool, 'fillet', 'the tool stays down for the next');
   view.undo();
   assert.equal(view.source, before, 'the round is one undo step');
+});
+
+test('a section cuts the objects by a plane: the box caps them, a pick passes by what it took', () => {
+  const view = docView(BLOCK);
+  view.orbit = { az: 0.6, el: 0.5 };
+  assert.equal(clipPlane(view.sketch), null, 'nothing is cut until asked');
+  view.setSection({ plane: 'std.top', flip: false, offset: 0 });
+  const frame = view.sectionFrame()!;
+  const [lo, hi] = reachAlong(view.sketch, frame)!;
+  assert.ok(hi - lo > 4.9 && hi - lo < 5.1, 'the block reaches its depth along the top plane');
+  const mid = (lo + hi) / 2;
+  const at = (z: number) => view.solidAt(...seenAt(view, [10, 5, z]))!;
+  const whole = at(mid);
+  assert.equal(partOf(whole), 'face', 'uncut where the plane passes it by, a face is picked');
+  // through the middle, the half toward the plane's normal (up) taken away: looking down onto the
+  // cut, the ray meets the face it leaves, and that is the block whole
+  view.setSection({ plane: 'std.top', flip: false, offset: mid });
+  view.box3d.sync(view);
+  assert.equal(view.box3d.stats.capped, 1, 'the block is capped');
+  assert.ok(clipPlane(view.sketch), 'the box clips by the core\'s plane');
+  assert.equal(partOf(at(mid)), 'body', 'the cut face is the object\'s');
+  // kept the other way, the upper half stands and its top is a face again
+  view.setSection({ plane: 'std.top', flip: true, offset: mid });
+  assert.equal(partOf(at(mid)), 'face');
+  // an edit keeps the section by its plane's name; a load lets it go
+  view.setProgram(view.source + '\n', false);
+  assert.deepEqual(view.section, { plane: 'std.top', flip: true, offset: mid });
+  assert.ok(clipPlane(view.sketch), 'set on the drawing just taken');
+  view.load(BLOCK);
+  assert.equal(view.section, null);
+  assert.equal(clipPlane(view.sketch), null);
+  view.box3d.sync(view);
+  assert.equal(view.box3d.stats.capped, 0, 'no section, no caps');
+  // toggled on, it cuts by the plane being drawn on
+  view.choosePlane('std.top', false);
+  view.toggleSection();
+  const now = (v: SketchView) => v.section;
+  assert.equal(now(view)?.plane, 'std.top');
+  view.toggleSection();
+  assert.equal(view.section, null);
 });
 
 test('the Chamfer tool takes a face for every edge of it, at the size typed; Esc lets go', () => {

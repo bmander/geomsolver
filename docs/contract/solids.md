@@ -291,6 +291,30 @@ placement carries inside the blank; CLI test readers zero the offset.
   was changed in place (`shapeEpoch`).  `Box3D.sync` brings the scene up without rendering, and
   `stats` counts what it cut and what it only moved: `timeline.test.ts` scrubs
   `vtwin/assembly.sv` cutting nothing.
+- **A solid is cut by a plane off the mesh it is drawn as** (`mesh/section.rs`,
+  `EvaluatedSolid::section`).  The plane takes away the side its normal points to, and **a point
+  on it goes with what stands in front of it** (`Section::height` snaps within `1e-9` of the
+  mesh's extent, the weld's resolution, to nought, and nought is taken away): a face lying in the
+  plane is cut along its rim and nowhere else.  **Each crossing is a point of a mesh edge,
+  computed once** — filed by the edge's corners' bits, lower first, then by its own bits, so
+  crossings at one corner on the plane are one point — and since the mesh is welded, a closed
+  surface's crossings chain into closed loops with no tolerance (an odd-degree point starts an
+  open chain, drawn and never filled).  **Which loop is a hole is how deep it is nested**, never
+  which way the triangles wound it: even depth bounds material and is turned counter-clockwise
+  about the normal, odd depth is a hole in the smallest loop one level out and turned clockwise.
+  The face the cut leaves is each outer loop with its holes bridged in (Eberly, from each hole's
+  rightmost corner) and its ears clipped by the exact `orient2`, a turn within `1e-12` of
+  straight dropped as no corner (three points along one side made a sliver either way); its
+  triangles are counter-clockwise about the normal, the face facing the side taken away.
+  `Section::keeps`/`clip` are **the one rule** every consumer of a cut reads — `solventc --png`
+  leaves out each sample and edge the cut takes away by it, the workspace's picks pass by them
+  (`Sketch::cut`, app.md) — so what is drawn ends where the face begins.  `section_plane` is the
+  rule with nothing sliced, for a pick.  Gates: `tests/cut_planes.rs` — the plate cut across its
+  depth (outline counter-clockwise, hole clockwise) and through its hole (two pieces, either
+  normal), a plane on a face or past the solid, a turned part across its axis (a ring), and
+  library parts (flange, pulley, tray, elbow, a pattern) cut through their middles along each axis
+  both ways, every cut closed, on its plane, facing the side taken away and **exactly its loops'
+  area** (outer less holes, to `1e-9`).
 - **A face is one loop and a solid's faces are named by path** (§6.8).  A face is a closed loop of
   edges on the one plane every point agrees about — *read* off the memberships, never written on
   the face.  There are **no holes**: a hole is a solid that `cut`s the body.  An `in` block leaves

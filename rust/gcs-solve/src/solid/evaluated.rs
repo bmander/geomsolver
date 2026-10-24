@@ -880,6 +880,12 @@ impl EvaluatedSolid {
         let o = self.to_local(WorldPoint(cut.o)).0;
         mesh::section(self.mesh(), o, self.vector_to_local(cut.normal()))
     }
+    /// The plane `section` cuts by, in the solid's own coordinates, with nothing cut: which side of
+    /// it a point is on, as a pick asks (`mesh::section_plane`).
+    pub fn cut_plane(&self, cut: &Basis) -> mesh::Section {
+        let o = self.to_local(WorldPoint(cut.o)).0;
+        mesh::section_plane(self.mesh(), o, self.vector_to_local(cut.normal()))
+    }
     /// Where two of its faces meet, by their paths, read off its mesh once (`mesh::face_edges`):
     /// what a round or a chamfer is written along.  In the solid's own coordinates.
     pub fn face_edges(&self) -> &[mesh::FaceEdge] {

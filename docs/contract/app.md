@@ -305,7 +305,25 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   a swept object still being meshed is not one —
   `an_object_that_does_not_evaluate_is_reported_with_its_reason`); sketches on planes are the 2D canvas's, stroked over
   it.  Its camera is set from `v.orbit` and the eye's camera; the current plane's pane is bold, a
-  material write per frame.  **`⇧⌘B` toggles the solid's surfaces** (on by default; off is a
+  material write per frame.  **A section** (`⇧X`, View ▸ Section; `SketchView.section`) cuts
+  every object by a plane — the one being drawn on when it is turned on, then whichever the
+  section bar (`section-bar.ts`, the viewport's upper left) chooses among `planeChoices`, a
+  standard plane the document lacks read from the library's — moved along that plane's normal
+  over the range the objects reach (`workspace::reach_along`, `gcs_workspace_reach_along`) and
+  flipped to keep the other side.  View state as `hidden` is: **set on the core's sketch**
+  (`Sketch::cut`, `gcs_sketch_set_cut`, `core/section.ts`) on every drawing the view is handed and
+  again as the pose moves its plane, carried across an edit by the plane's name, let go by a load
+  or a name that no longer reaches a plane.  The box clips every object's materials (faces,
+  creases, lit edges, a Boolean's preview) by the one plane the core gives
+  (`gcs_sketch_cut`, three's `Plane`), and hangs each object's cut face and outline
+  (`gcs_solid_section`, one buffer: the face's count, the face, the outline), in its own
+  coordinates, in a group its matrix places; the face is hatched in device pixels and drawn a hair
+  toward the eye.  **A pick passes by what the cut took away** (`workspace::crossings`,
+  `edges_near`): a face hit in front of the plane is not met, an edge is offered only where the
+  cut keeps it, and a ray that meets the plane inside the material (`EvaluatedSolid::contains`)
+  meets the object whole — its cut face is no face of the document, so `under` lists the object
+  and not a face.  `app.test.ts` ("a section cuts the objects by a plane") is the gate.
+  **`⇧⌘B` toggles the solid's surfaces** (on by default; off is a
   wireframe).  The flat shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is what
   `overview_json` offers a front end without a depth buffer.
 
