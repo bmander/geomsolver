@@ -928,7 +928,9 @@ use std (horizontal, vertical)        // and import those two words bare
 ```
 
 A module is a Solvent document read for its components, relation words and top-level values and
-groups; its own drawing is not drawn. **Nothing is imported bare unless the `use` names it**: a
+groups; its own drawing is not drawn, and neither is a parameter that runs (`param spin: Angle over
+(…)`, 1.6): it is the drawing's, so a part file that declares one to scrub its own joint is used as
+it stands, and nothing outside it names the parameter. **Nothing is imported bare unless the `use` names it**: a
 module's names are written by full path — `engine.parts.Rod(…)`, `engine.dims.D` — or bare where
 listed in brackets. Imports are per file, not transitive, with no prelude; a relation word is only
 ever bare, so a file using one imports it, and `std.front` needs the file's own `use std`.
