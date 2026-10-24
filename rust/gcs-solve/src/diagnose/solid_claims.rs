@@ -171,9 +171,9 @@ enum Poses {
 /// What the claim in hand reads once, before its first pose.
 fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     use crate::model::SolidDef;
-    // a swept operand measured where the drawing stands reads its exact B-rep where this kernel
-    // builds one, as the drawing's own reading of it does, and its field only where it is refused
-    // (#615): the field's mesher may not resolve a body that builds exactly
+    // a swept operand read at the drawing's pose is measured from its exact B-rep, as the drawing
+    // reads it, and from its field only where the build is refused: the field's mesher may fail
+    // on a body that builds exactly (#615)
     let exact = || {
         for i in [c.a as usize, c.b as usize] { crate::brep::export::supply_exact_of(sk, i) }
     };

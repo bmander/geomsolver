@@ -1788,8 +1788,8 @@ pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
             );
         }
     }
-    // Every unresolved pose is disclosed, including failed solves and uncertain geometry, and
-    // the drawing's own failed pose once, above.
+    // Every unresolved pose is disclosed, including failed solves and uncertain geometry; a lone
+    // claim's failure is said once, above.
     for p in v.poses().iter().filter(|p| failed_here.is_none() && p.holds().is_none()) {
         let reason = match p.evaluation() {
             Err(reason) => reason.to_string(),
