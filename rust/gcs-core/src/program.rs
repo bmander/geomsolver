@@ -22,6 +22,7 @@ mod motions;
 mod envelopes;
 mod generated;
 mod rings;
+mod rounds;
 mod scenarios;
 mod measures;
 mod beams;

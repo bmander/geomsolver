@@ -206,6 +206,7 @@ pub(super) fn gesture_decl(kind: EntKind, name: &str, children: Vec<Vec<syntax::
         bare: false,
         carried: None,
         material: None,
+        round: None,
     }
 }
 

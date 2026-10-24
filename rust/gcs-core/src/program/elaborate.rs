@@ -117,6 +117,7 @@ pub(super) fn elaborate_in(
     let (generated, held_in_space) = held_envelopes(&mut cx, &flat, &planar, &extruded);
     let (after_solids, on_followed) = constraints(&mut cx, &flat, &drawn, &kept_off);
     walked(&mut cx, &deferred, &held);
+    super::rounds::rounds(&mut cx, &flat.body, &deferred, &held);
     twins(&mut cx, &flat);
     place_planes(&mut cx, &deferred, &held, settled);
     solids_and_surfaces(&mut cx, &flat, faces, faces_settled, &generated, &held_in_space)?;

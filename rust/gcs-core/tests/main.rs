@@ -60,6 +60,7 @@ mod contact_trace;
 mod continuation;
 mod coordinates;
 mod copies;
+mod corner_rounds;
 mod correspondence;
 mod crease;
 mod crown_regions;

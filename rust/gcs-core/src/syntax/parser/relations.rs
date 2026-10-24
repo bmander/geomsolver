@@ -442,7 +442,7 @@ impl<'a> P<'a> {
     }
 
     /// The number an operator states, as written, up to the `,` or `)` that ends it.
-    fn raw_number(&mut self) -> Option<(String, Span)> {
+    pub(super) fn raw_number(&mut self) -> Option<(String, Span)> {
         self.raw_until(|t| *t == Tok::P(','), "expected the number this states")
     }
 

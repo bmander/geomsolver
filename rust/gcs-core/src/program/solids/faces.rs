@@ -13,7 +13,7 @@ pub(super) fn chain_face(c: &crate::syntax::NamedChain) -> Decl {
         curve: None, computed: None, class: Classes::default(), seed_at: None,
         seed_names: Vec::new(), sweep: None, seen_from: None, angular_span: None,
         membership: crate::syntax::Membership::default(), normal: None, sense: None,
-        bare: false, material: None,
+        bare: false, material: None, round: None,
     }
 }
 
@@ -27,8 +27,15 @@ pub(super) fn validate_chain(
     let mut previous = None;
     for r in &c.links {
         let e = res.entity(sk, r).filter(|e| e.i() < sk.count(e.kind));
+        // a round at a right turn is drawn from its end, and walked from its start as written
+        // (#576)
+        let back = |e: EntRef| e.kind == EntKind::Arc
+            && sk.rounds.iter().any(|k| k.arc as usize == e.i() && k.turn < 0);
         let pair = e.filter(|e| matches!(e.kind, EntKind::Line | EntKind::Arc))
-            .and_then(|e| crate::model::edge_ends(sk, e));
+            .and_then(|e| crate::model::edge_ends(sk, e).map(|(s, t)| match back(e) {
+                true => (t, s),
+                false => (s, t),
+            }));
         let Some((start, end)) = pair else {
             diags.push(Diag::within(
                 Code::E080, r.span, st.id,

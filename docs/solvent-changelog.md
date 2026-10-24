@@ -4,6 +4,22 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.179] A corner round is a joint.** `A -> round(r: R) B` rounds the corner where the lines `A`
+and `B` of a chain meet with an arc of radius `R` tangent to both (§6.6): the arc (named where it
+stands, `-> (k := round(r: R))`), its radius, a tangency at each end and the corner kept on both
+lines as construction, each line now ending at a point of its own where the arc touches it. The
+arc lies inside the corner, on the side the walk turns toward there — counter-clockwise at a left
+turn, drawn from its end at a right one — held there by three stated orientations, so no seed and
+no `ccw`/`cw` chooses which of the four tangent circles is meant; its points start where the
+corner puts them. A trailing round at a `cycle`'s or `ring`'s `}` rounds the corner into the next
+copy, and `-> round(…) close` the corner that closes a loop. A round at a straight-through corner,
+or at a `repeat`'s brace, is **E040**. The language gains no keyword: `round` is read so only
+beside a marker, and a bare `A round(r) B` is still `std`'s round of solids. *Non-normative:* the
+reference implementation says a round that does not fit after the solve (`` `k` (r 9mm) runs past
+`up`'s far end; it fits up to r 6mm``, two rounds overlapping on one line). The star handle of the
+issue is four arms written as their corners: DOF 0, one root. Every solved position is unchanged.
+(Issue #576.)
+
 **[0.178] A mirrored placement.** A closed instance's call may end in `mirrored(front)`,
 `mirrored(top)` or `mirrored(side)` (§8.2): the instance is its binding reflected in that datum plane
 of the frame it stands in. Its body is solved as the preimage, where the same instance unmirrored

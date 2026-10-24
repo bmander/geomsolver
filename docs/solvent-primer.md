@@ -464,7 +464,9 @@ LINK   ::= PREFIX* DECL | REF
 PREFIX ::= a one-operand constraint word         horizontal, vertical, radius(..)
          | step(u: E, dv: E, from: P)            where a line's end stands (below)
 JOINT  ::= '->' INFIX* ['->']  |  INFIX+ ['->']  at least one marker or word
+         | '->' ROUND ['->']                     a corner rounded (below)
 INFIX  ::= tangent | equal | any two-operand constraint word
+ROUND  ::= round(r: E)  |  '(' NAME ':=' round(r: E) ')'
 ```
 
 **`->` states that two links share a boundary point; nothing else does.** Threading runs left to
@@ -483,6 +485,48 @@ right (`p1 -> p2` on a line, `start -> end` counter-clockwise on an arc).
 - `equal` is polymorphic (length or radius); `a equal b equal c` is two statements.
 - `profile := … -> close` names the traversal, which a solid can sweep (1.14); its edges keep
   their own names. Every joint in a named chain carries `->`.
+
+**A corner round is a joint.** `A -> round(r: R) B`, `A` and `B` lines written meeting at a
+corner, rounds that corner with an arc of radius `R` tangent to both — the arc it mints, its two
+tangencies and its branch all said by the one word. Name the arc where it stands,
+`-> (k := round(r: 2mm))`, to list it in a face or dimension it; unnamed, it is still an edge of a
+named chain.
+
+- **The corner stays, as construction.** The point the two lines were written meeting at is the
+  *virtual corner*: kept on both lines, dimensioned like any point. Each line now ends at a point
+  of its own, where the arc touches it: `A.p2` is `k.start`, `B.p1` is `k.end`.
+- **The walk chooses the branch; no seed does.** The arc lies inside the corner, on the side the
+  walk turns toward there — counter-clockwise at a corner it turns left at (convex, for a
+  counter-clockwise outline), clockwise at one it turns right at (concave). Of the four circles
+  tangent to both lines that is the only root (three stated orientations hold it there).
+- **Seeds come from the corner.** The tangency points start `R / tan(θ/2)` from the corner along
+  each line, the centre `R / sin(θ/2)` along the bisector, so a rounded outline is written as its
+  corners: hint those, or hold them, and nothing else.
+- A trailing `-> round(…)` at a `cycle`'s or a `ring`'s `}` rounds the corner the next copy is
+  entered by (a `repeat`'s first copy has none: E040). `-> round(r: R) close` rounds the corner
+  that closes a loop.
+- A round that does not fit is said by name after the solve: `` `k` (r 9mm) runs past `up`'s far
+  end; it fits up to r 6mm``, two rounds whose setbacks overlap on one line, a corner its lines run
+  straight through (E040 where it is drawn so).
+
+```
+in std.front {
+  ring 4 about hub {                                  // a star handle's four arms
+    tip := point hint((40, 0))
+    notch := point hint((7, 7))
+    hub distance(10) notch
+    hub distance(40) tip
+    line(notch, tip) equal line(notch, next.tip)
+    (side := line(tip, notch)) -> (fillet := round(r: 3))
+      (next_side := line(notch, next.tip)) -> (tip_round := round(r: 4))
+  }
+}
+```
+
+Refused: a round beside a line and an arc (lines only, for now), its corner named differently by
+the two sides, a corner named while a side is declared elsewhere (its end is its own point, the
+arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std`'s
+round of the edges where two solids' faces meet (1.14).
 
 **A step says where a line's end stands, one number per run.** `step(…)` before a line, or before
 a chain's link, gives the end's ordinates by label: `du`, `dv` from the line's start, `u`, `v` from

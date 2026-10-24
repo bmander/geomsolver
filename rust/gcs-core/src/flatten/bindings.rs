@@ -23,6 +23,10 @@ impl<'a> Walk<'a> {
         n: usize,
         ranges: &[(usize, usize)],
     ) {
+        // a round's arc joins the two copies itself, and welds nothing (#576)
+        if j.round {
+            return;
+        }
         let pairs = if kind.wraps() { n } else { n.saturating_sub(1) };
         for i in 0..pairs {
             let k = (i + 1) % n;

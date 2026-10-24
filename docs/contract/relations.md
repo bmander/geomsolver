@@ -331,6 +331,33 @@ came from.
   name-link boundary is refused until #35.  A statement in a braced body ends at the `}`
   (`end_of_stmt`).  `square.sv`, `ngon.sv` are the cases; `tests/open_joint.rs` is the gate, and
   `tests/chain.rs` holds `rect_fillets`'s chain spelling to the shipped longhand.
+- **A corner round is a joint** (#576, [0.179]): `A -> round(r: R) B` (`-> (k := round(r: R))` to
+  name the arc) is read by `chains::round_word` only beside a marker — a bare `A round(r) B` stays
+  `std`'s round of solids — and is the whole of its joint (another word there is refused).  It is
+  sugar the parser writes (`round_corner`, `round_stmts`): the corner the two lines were written
+  meeting at (either side, or both agreeing; a side that is a reference refuses a named corner)
+  leaves both declared slots, each now an implicit child — `A.p2`, `B.p1` — and the round states
+  the arc over them (centre implicit, `Decl::round` naming the lines and the corner), `radius`,
+  `k tangent(at: A.p2) A` and `… B` (`TangentCircleAt`, the point named, so no `at: start|end`
+  depends on which way it turns) and the corner `coincident` both lines; every statement
+  `Chained::Link`, the round's span, deleted only with its line.  A named chain walks the arc
+  between its lines (`chain_links`); `-> round(…) close` rounds the closing corner; an open
+  joint's round is `OpenJoint::round`, which welds nothing (`Walk::weld`) and is E040 in a
+  `repeat`; `stamp_frame` stamps an open joint's statements too.  **What only the drawn corner
+  says** is `program::rounds`, after the walk's seeds: the turn at the seeded corner
+  (`model::rounded`, its sides toward the corners the lines run to, `Sketch::round_far`) — at a
+  right turn the arc's start and end swapped and filed in `Sketch::reversed` (#573: names, `at:`
+  and `t == …` read it as written), so `validate_chain` reads it entered at its start; each
+  scattered point it touches seeded `R /
+  tan(θ/2)` from the corner, its centre on the bisector, the radius the `radius` row's (a ring
+  copy's, its representative's); and, on a stated statement, three orientations through
+  `Gauges::orient` — the centre on the turn's side of `A`, of `B` and of its chord — so the one
+  root is the round inside the corner.  A corner straight through or folded back as seeded is
+  E040.  `Sketch::rounds` (`model::Round`) carries each, and `model::overruns` says after a solve,
+  in `Diagnosis::warnings`, a round past its line's end (with the radius that fits) and two
+  overlapping on one line.  `render_flat` refuses it.  `tests/corner_rounds.rs` is the gate: the
+  slot's pocket to `rounds/slot.sv`'s longhand to 1e-9 in volume, drafted and with its solid
+  round, the inside fillet drawn from its end, the star handle at DOF 0 on one root.
 - A **step** (#330, Solvent §6.6 [0.101]) is a prefix word over a line, `step(u: s, dv: b) l`,
   the end's ordinates by label — `du`/`dv` from `l.p1`, `u`/`v` from the frame's origin — and the
   ordinate it does not name kept.  It is **no operator and no `CKind`**: `constraints::step_word`

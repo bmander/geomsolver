@@ -928,6 +928,13 @@ fn rewrite_decl(
     if let Some(r) = d.normal.as_mut() {
         fix(r, bad);
     }
+    // a corner round's lines and corner are names of the scope its chain was written in (#576)
+    if let Some(k) = d.round.as_mut() {
+        let k = &mut **k;
+        for r in [&mut k.from, &mut k.to].into_iter().chain(k.corner.as_mut()) {
+            fix(r, bad);
+        }
+    }
     // a revolution's axis is a line of the body like any other name it writes
     for r in d.sweep.as_mut().map(|s| s.references_mut()).unwrap_or_default() {
         fix(r, bad);

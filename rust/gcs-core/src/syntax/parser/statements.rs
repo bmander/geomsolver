@@ -91,7 +91,14 @@ fn stamp_frame(stmts: &mut [Stmt], plane: &Ref, errs: &mut Vec<SynErr>) {
                     d.membership.ride_in(plane);
                 }
             }
-            StmtKind::Block(b) => stamp_frame(&mut b.body, plane, errs),
+            StmtKind::Block(b) => {
+                stamp_frame(&mut b.body, plane, errs);
+                // and what a joint left open at its brace states between the copies — a round's
+                // arc among it (#576)
+                if let Some(j) = &mut b.joint {
+                    stamp_frame(&mut j.stmts, plane, errs);
+                }
+            }
             // a step measured in no frame of its own is measured in the view its line is drawn
             // in (#330): the block's plane, handed on as a reference — which no source writes,
             // a written `from:` being kept as its text — so the flattener tells the two apart
@@ -1471,6 +1478,7 @@ impl<'a> P<'a> {
             bare: false,
             carried: None,
             material: None,
+            round: None,
         })
     }
 

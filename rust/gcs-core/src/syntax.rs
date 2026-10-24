@@ -756,6 +756,9 @@ pub struct OpenJoint {
     pub named: OpenNamed,
     /// The joint's own text — the marker through the last word — for errors about it.
     pub span: Span,
+    /// The joint is a corner round (#576): its statements mint the arc joining the two copies,
+    /// and there is no weld — each line ends at a point of its own, the arc's.
+    pub round: bool,
 }
 
 /// Which of an open joint's sides declares the shared point.
@@ -1045,6 +1048,21 @@ pub struct Decl {
     /// of the scope (`syntax::GroupDecl::material`).  `None` for every other declaration, and for
     /// a solid that says nothing of it.
     pub material: Option<Ref>,
+    /// **A corner round** (#576): the arc a chain's `A -> round(r: R) B` mints, tangent to both
+    /// lines where they were written meeting — oriented, seeded and its branch stated by the
+    /// elaborator from that corner (`program::rounds`).  `None` for every other declaration.
+    pub round: Option<Box<Round>>,
+}
+
+/// What a corner round rounds (`Decl::round`, #576): the line the walk arrives along, the one
+/// it leaves along, and the point the two were written meeting at — the **virtual corner**, kept
+/// as construction on both lines — where a side names it.  The arc's own start is on `from` and
+/// its end on `to`; which way it turns is the corner's, read where it is drawn.
+#[derive(Clone, Debug)]
+pub struct Round {
+    pub from: Ref,
+    pub to: Ref,
+    pub corner: Option<Ref>,
 }
 
 /// What a reading at an instant reads and by what (`Decl::carried`, #366, #391 S2): the source,
@@ -1106,6 +1124,7 @@ impl Decl {
             bare: false,
             carried: None,
             material: None,
+            round: None,
         }
     }
 
@@ -1167,6 +1186,7 @@ impl Decl {
             bare: false,
             carried: None,
             material: None,
+            round: None,
         }
     }
 }
