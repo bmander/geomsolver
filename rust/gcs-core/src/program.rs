@@ -38,6 +38,12 @@ pub use drift::{drift, DRIFT};
 pub use scenarios::{Line, Stated};
 pub use measures::MeasureStated;
 
+/// The line a front end says `solid_diagnostics` under when the solve did not settle (#571).  A
+/// failed solve stops anywhere, and a profile straddling its axis there blames a statement
+/// nothing is wrong with: what the solids say of that pose is said after the solve's own report
+/// and its diagnosis, as notes under this line, and is never the document's error or its exit.
+pub const NOT_BUILT: &str = "not built: the drawing did not solve";
+
 /// Geometry diagnostics belong after solving: a poor hint is not an invalid final profile.
 ///
 /// One cause is said once (#572, `refused`): a solid refused because a solid it is built on is

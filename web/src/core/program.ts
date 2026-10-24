@@ -654,7 +654,7 @@ function crossed<W, R>(text: string, entry: (p: number, n: number) => number,
 
 /** The first of `0..n` for which `before` is false, `before` holding of a prefix — where a sorted
  *  array is cut. */
-function partition(n: number, before: (k: number) => boolean): number {
+export function partition(n: number, before: (k: number) => boolean): number {
   let lo = 0, hi = n;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;

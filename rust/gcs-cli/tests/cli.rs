@@ -484,6 +484,53 @@ fn the_whole_library_reports() {
     }
 }
 
+/// **A solid read at a pose the solve did not settle on does not hide the solve** (#571).  Two
+/// statements about `p1` conflict, and where the solve stops the rectangle straddles the axis it is
+/// turned about.  The run says it did not solve, with its diagnosis, and exits 2; what the solid
+/// says of that pose is a note under the core's `NOT_BUILT`, not an error of the document — and
+/// under `--json`, `diagnosis` is filled and `diagnostics` does not hold it.
+#[test]
+fn a_solid_at_an_unsolved_pose_does_not_hide_the_diagnosis() {
+    let dir = std::env::temp_dir().join(format!("solventc-unbuilt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("a place to write");
+    let path = dir.join("hidden.sv");
+    std::fs::write(&path, "unit mm\nuse std\nin std.front {\n  p0 := point\n\
+        \x20 p1 := point hint((12, 0))\n  p2 := point hint((12, 5))\n  p3 := point hint((2, 5))\n\
+        \x20 fix((2, 0)) p0\n\
+        \x20 sec := horizontal (e0 := line(p0, p1)) -> vertical (e1 := line(p1, p2)) ->\n\
+        \x20        horizontal (e2 := line(p2, p3)) -> vertical (e3 := line(p3, p0)) -> close\n\
+        \x20 p0 distance(10) p1\n  p1 distance(5) p2\n  std.origin distance(-6mm, along: u) p1\n}\n\
+        ring := solid(sec, about: std.z)\n").expect("write");
+    let path = path.to_string_lossy().into_owned();
+    let out = run(&[&path]);
+    let (text, err) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert_eq!(out.status.code(), Some(2), "did not solve, whatever the solid does: {text}{err}");
+    assert!(text.contains("hidden.sv: did not solve"), "{text}");
+    assert!(text.contains("  conflict: std.origin distance(-6mm, along: u) p1"), "{text}");
+    let not_built = text.find(gcs_core::program::NOT_BUILT).expect("the solid said as unbuilt");
+    assert!(text.find("conflict:").unwrap() < not_built, "under the diagnosis: {text}");
+    assert!(text.contains("hidden.sv:15:1: note[E080]: `ring`:"), "{text}");
+    assert_eq!(text.matches("the revolution axis crosses the profile").count(), 1, "once: {text}");
+    assert!(!err.contains("error["), "no error of the document: {err}");
+    // told an unsolved drawing is no failure, its solids are none either
+    assert_eq!(run(&[&path, "--allow-unsolved"]).status.code(), Some(0));
+
+    let out = run(&["--json", &path]);
+    assert_eq!(out.status.code(), Some(2));
+    let v = gcs_core::json::parse(&String::from_utf8_lossy(&out.stdout)).expect("valid JSON");
+    let d = &v.get("documents").expect("documents").arr()[0];
+    let conflicts = d.get("diagnosis").and_then(|g| g.get("conflicts")).expect("the diagnosis");
+    assert_eq!(conflicts.arr().len(), 3, "the conflict, as the text says it");
+    assert!(d.get("diagnostics").unwrap().arr().is_empty(), "no error of the document");
+    let unbuilt = d.get("notBuilt").expect("what was not built");
+    assert_eq!(unbuilt.get("why").unwrap().as_str(), gcs_core::program::NOT_BUILT);
+    let notes = unbuilt.get("diagnostics").unwrap().arr();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].get("code").unwrap().as_str(), "E080");
+    assert_eq!(notes[0].get("severity").unwrap().as_str(), "note");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// A document that does not elaborate exits 1, and says where — `file:line:col`, with the column
 /// counting **characters**.  Offsets cross from the core in UTF-8 bytes, and a document with a
 /// non-ASCII character before the offending token is the ordinary case (`gear.sv` has an em dash

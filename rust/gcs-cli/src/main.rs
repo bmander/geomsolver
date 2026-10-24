@@ -490,7 +490,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         if !opts.json {
             println!("{}: did not elaborate", s.name);
         }
-        return (1, opts.json.then(|| doc_json(s, &errs, None, None, &e, Json::Null, Json::Null)));
+        return (1, opts.json.then(|| {
+            doc_json(s, &errs, None, None, &e, &[], Json::Null, Json::Null)
+        }));
     }
 
     let mut sk = e.sketch.clone();
@@ -500,9 +502,12 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     // a solve that stopped on its iteration limit is no answer, whatever its residual (#449)
     let solved = r.settled();
     let mut invalid = gcs_core::program::solid_diagnostics(&sk, &e.map, &e.program);
+    // read at a pose the solve did not settle on, they are no finding about the document: said
+    // under the solve's report, never in place of it, and never the exit (#571)
+    let unbuilt = if solved { Vec::new() } else { std::mem::take(&mut invalid) };
     let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
     // a part that leaves its root to its seeds, read at the solved pose (#461 PT5)
-    if opts.lint && !failed {
+    if opts.lint && !failed && unbuilt.is_empty() {
         invalid.extend(gcs_core::parts::roots(&e, &sk));
     }
     if !opts.json {
@@ -510,7 +515,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     }
     e.diags.extend(invalid);
     if failed {
-        return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null, Json::Null)));
+        return (1, opts.json.then(|| {
+            doc_json(s, &[], Some(&r), None, &e, &[], Json::Null, Json::Null)
+        }));
     }
     let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
@@ -613,8 +620,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     println!("  {name}: {text}");
                 }
             }
-            for w in &d.warnings {
+            // a solid's failure at an unsolved pose is said once, under `NOT_BUILT` below
+            for w in d.warnings.iter().filter(|w| !unbuilt.iter().any(|u| &u.message == *w)) {
                 println!("  note: {w}");
+            }
+        }
+        if !unbuilt.is_empty() {
+            println!("  {}", gcs_core::program::NOT_BUILT);
+            for d in &unbuilt {
+                let (line, col) = line_col(&s.text, d.span.lo);
+                println!("    {}:{line}:{col}: note[{}]: {}", s.name, d.code.as_str(), d.message);
             }
         }
         for q in &opts.wanted {
@@ -806,7 +821,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         opts.json.then(|| {
             let components = components.as_ref()
                 .map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json).collect()));
-            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e,
+            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
                      positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null))
         }),
     )
@@ -961,13 +976,15 @@ fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize,
 }
 
 /// One document's report.  `positions` is where the names landed (`--where`, or all of them),
-/// and is `Null` for a document that never got as far as a drawing.
+/// and is `Null` for a document that never got as far as a drawing.  `unbuilt` is what the solids
+/// said of a pose the solve did not settle on (#571), apart from the document's `diagnostics`.
 fn doc_json(
     s: &Source,
     syntax: &[SynErr],
     r: Option<&gcs_core::solve::SolveResult>,
     d: Option<(&Sketch, &gcs_core::diagnose::Diagnosis)>,
     e: &Elaborated,
+    unbuilt: &[gcs_core::program::Diag],
     positions: Json,
     components: Json,
 ) -> Json {
@@ -1006,6 +1023,14 @@ fn doc_json(
         ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
         ("components", components),
     ]);
+    if !unbuilt.is_empty() {
+        let notes = unbuilt.iter().map(|x| said(x.span.lo, x.code.as_str(), "note", &x.message,
+            x.cause.map(|c| c.lo)));
+        doc.set("notBuilt", json::object([
+            ("why", Json::Str(gcs_core::program::NOT_BUILT.to_string())),
+            ("diagnostics", Json::Arr(notes.collect())),
+        ]));
+    }
     // each scenario's words (#510 P7) at the solved pose, where the document states any
     let settled = r.is_some_and(|r| r.settled());
     if let Some((sk, _)) = d.filter(|_| settled && !e.scenarios.is_empty()) {
