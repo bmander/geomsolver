@@ -96,12 +96,23 @@ pub struct Slab { pub heights: [f64;2],pub stations: Vec<(f64,SweptRegion)> }
 #[derive(Clone,Debug)]
 pub struct Found { pub plane: Plane,pub slabs: Vec<Slab> }
 
-/// Whether `swept`'s tool is prisms on one plane joined by union and common, which this class asks
-/// where the generating class's rows would refuse it (Q1, structurally).
+/// Whether `swept`'s tool is prisms joined by union and common (Q1, structurally) under a motion
+/// that keeps the first one's plane (P1, at a few rolls): the sweeps this class asks where the
+/// generating class's rows would refuse them. Any other keeps the generating class's refusal.
 pub fn asks(sk: &Sketch,swept: usize) -> bool {
-    let SolidDef::Swept {source,..} = &sk.solids[swept].def else { return false };
+    let SolidDef::Swept {source,motion,..} = &sk.solids[swept].def else { return false };
     let mut members = Vec::new();
-    tree(sk,*source as usize,&mut members).is_ok() && !members.is_empty()
+    if tree(sk,*source as usize,&mut members).is_err() || members.is_empty() { return false }
+    let SolidDef::Prism {face,..} = &sk.solids[members[0]].def else { return false };
+    let Ok((basis,_)) = crate::solid::field::prism_loops(sk,*face as usize) else { return false };
+    let n = basis.normal();
+    let n = n.map(|x| x/norm(n));
+    let (Ok(family),Ok([a,b])) = (crate::motion::Family::read(sk,*motion as usize),super::roll::interval(sk,swept)) else { return false };
+    let size = 1.+norm(basis.o);
+    (0..=4).all(|k| family.at(a+(b-a)*k as f64/4.).is_ok_and(|m| {
+        let o = basis.o;
+        dot(m.vector(n),n) > 1.-1e-9 && dot(crate::space::sub(m.point(o),o),n).abs() <= 1e-9*size && dot(m.velocity(o),n).abs() <= 1e-9*size
+    }))
 }
 
 /// The tool's solid graph as a tree of prisms, each pushed to `members` (its id).
