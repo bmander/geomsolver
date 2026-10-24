@@ -199,17 +199,19 @@ impl<'a> Walk<'a> {
 
     /// **A group written where a `group` formal takes it** (#594), `Disc({r: 5mm, h: 2mm})`:
     /// defined under `at`, a key no source writes, as `at := {…}` would be where the call is
-    /// written — its numbers worked out over the caller's and returned under `at`, a member
-    /// naming geometry an alias read in the caller's scope, one naming a group carrying that
-    /// group's numbers, and one written in place a group under it.  It is then handed on as a
-    /// group named is, so an interface typing the formal judges it as it would one.
+    /// written — a member naming geometry an alias read in the caller's scope, one naming a
+    /// group carrying that group's numbers, and one written in place a group under it.  It is
+    /// then handed on as a group named is, so an interface typing the formal judges it as it
+    /// would one.  Its numbers, worked out over the caller's, are returned under `read_as`, the
+    /// formal's name, which is how what it lacks is said.
     fn group_literal(
         &mut self,
         at: &str,
+        read_as: &str,
         fields: &[crate::syntax::InstArg],
         scope: &Scope,
         vals: &Vals,
-    ) -> BTreeMap<String, Aff> {
+    ) -> Vals {
         use crate::syntax::InstVal;
         let mut numbers: BTreeMap<String, Aff> = BTreeMap::new();
         self.names.insert(at.to_string());
@@ -241,19 +243,20 @@ impl<'a> Walk<'a> {
                     }
                     // geometry, or a group whose numbers it carries, as a definition's member
                     super::copy_members(vals, &text, &name, &mut numbers);
-                    let (r, at) = match self.file_group(&text, scope) {
-                        Some(abs) => (Ref::dotted(&abs, r.span), Scope::absolute(scope.access.clone())),
+                    let (r, read) = match self.file_group(&text, scope) {
+                        Some(abs) => anywhere(&abs, r.span, scope),
                         None => (r.clone(), scope.clone()),
                     };
                     self.checks.group_fields.push((name.clone(), field.span));
-                    self.aliases.push((name, r, at));
+                    self.aliases.push((name, r, read));
                 }
                 InstVal::Hint(..) => self.err(Code::E103, field.span,
-                    "a `hint(…)` leaves a call's formal unbound and seeds it; a group's member is \
-                     a value"),
+                    "a `hint(…)` leaves a call's formal unbound and seeds it; a group's member \
+                     is a value"),
             }
         }
-        numbers
+        Vals::of(numbers.into_iter().map(|(k, v)| (format!("{read_as}{}", &k[at.len()..]), v))
+            .collect())
     }
 
     /// Bind an instantiation's arguments to the component's formals.
@@ -294,23 +297,15 @@ impl<'a> Walk<'a> {
             // a group written where it is taken (#594) is one of the call's own, defined under a
             // key no source writes and handed on by it, as a group named first would be, with
             // its numbers read from there
-            let (literal, named);
-            let value = match (&f.ty, &a.value) {
+            let literal = match (&f.ty, &a.value) {
                 (Ty::Group, InstVal::Group(fields)) => {
                     let at = keys::literal(&formal_name(&prefix, &inst.name.text, &f.name.text));
-                    let numbers = self.group_literal(&at, fields, scope, vals);
-                    // read by the formal's name, which is how what it lacks is said
-                    let under = |(k, v): (String, Aff)| (format!("{}{}", f.name.text, &k[at.len()..]), v);
-                    literal = Some(Vals::of(numbers.into_iter().map(under).collect()));
-                    named = InstVal::Ref(Ref::dotted(&at, a.span));
-                    &named
+                    let numbers = self.group_literal(&at, &f.name.text, fields, scope, vals);
+                    Some((numbers, InstVal::Ref(Ref::dotted(&at, a.span))))
                 }
-                _ => {
-                    literal = None;
-                    &a.value
-                }
+                _ => None,
             };
-            match (&f.ty, value) {
+            match (&f.ty, literal.as_ref().map_or(&a.value, |(_, named)| named)) {
                 // braces are a definition's, or a member's of one, or a group formal's argument
                 (_, InstVal::Group(_)) => self.err(Code::E103, a.span, format!(
                     "`{}` takes no group: a group is written in braces where it is defined, \
@@ -321,26 +316,25 @@ impl<'a> Walk<'a> {
                     // what a body reads of its file, it hands on (#594): a file's group named
                     // inside a definition is the file's, under the key the walk holds it by — as
                     // a group written here is, whose numbers are read by the formal's name
-                    let file = match literal {
-                        Some(_) => Some(ref_text(r)),
-                        None => self.file_group(&ref_text(r), scope),
-                    };
-                    if file.is_none() && self.file_group_any(&ref_text(r), scope).is_some() {
-                        self.err(Code::E103, a.span, format!(
-                            "`{}` names geometry of the file, which a definition reads only as \
-                             it is handed it: take it as a formal", ref_text(r)));
-                        continue;
-                    }
-                    let actual = match literal {
-                        Some(_) => f.name.text.clone(),
-                        None => ref_text(r),
+                    let text = ref_text(r);
+                    let (file, actual) = match &literal {
+                        Some(_) => (Some(text), f.name.text.clone()),
+                        None => match self.file_group_any(&text, scope) {
+                            Some(k) if self.carries_geometry(&k, 0) => {
+                                self.err(Code::E103, a.span, format!(
+                                    "`{text}` names geometry of the file, which a definition \
+                                     reads only as it is handed it: take it as a formal"));
+                                continue;
+                            }
+                            k => (k, text),
+                        },
                     };
                     let (r, scope) = match file {
-                        Some(abs) => (Ref::dotted(&abs, r.span), Scope::absolute(scope.access.clone())),
+                        Some(abs) => anywhere(&abs, r.span, scope),
                         None => (r.clone(), scope.clone()),
                     };
                     let (r, scope) = (&r, &scope);
-                    let vals = literal.as_ref().unwrap_or(vals);
+                    let vals = literal.as_ref().map_or(vals, |(numbers, _)| numbers);
                     let key = formal_name(&prefix, &inst.name.text, &f.name.text);
                     // typed by an interface (§8.1 [0.84]): a group of its own holding what the
                     // interface declares, the whole argument under a key no source writes, for
@@ -807,4 +801,10 @@ fn formals_of<'c, 'i>(
 /// and where a trace keeps an argument's text.
 fn formal_name(prefix: &str, inst: &str, formal: &str) -> String {
     format!("{prefix}{inst}.{formal}")
+}
+
+/// A file's group named by the key the walk holds it under (`file_group`), and the scope that
+/// reads such a key from anywhere.
+fn anywhere(abs: &str, span: Span, scope: &Scope) -> (Ref, Scope) {
+    (Ref::dotted(abs, span), Scope::absolute(scope.access.clone()))
 }

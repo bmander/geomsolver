@@ -278,6 +278,11 @@ impl<T: Table + ?Sized> expr::Env for Over<'_, T> {
     }
 }
 
+/// A dotted name's first segment (`dims` of `dims.handle_dims`).
+fn head(name: &str) -> &str {
+    name.split_once('.').map_or(name, |(h, _)| h)
+}
+
 /// Whether a definition's text is a name and nothing else (`sizes`, `dims.handle_dims`).
 fn is_reference(text: &str) -> bool {
     text.trim().split('.').all(|seg| {
@@ -866,8 +871,8 @@ impl<'a> Walk<'a> {
         for (name, reference, absolute) in self.named_first(references, &prefix) {
             let abs = format!("{prefix}{name}");
             self.checks.group_fields.push((abs.clone(), reference.span));
-            let at = if absolute { root.clone() } else { at.clone() };
-            self.aliases.push((abs, reference, at));
+            let read = if absolute { &root } else { &at };
+            self.aliases.push((abs, reference, read.clone()));
         }
     }
 
@@ -913,22 +918,26 @@ impl<'a> Walk<'a> {
         if !scope.closed {
             return None;
         }
-        let root = text.split('.').next().unwrap_or(text);
-        let known = |k: &str| self.group_names.contains(k) || self.group_aliases.contains_key(k);
-        let near = |k: &str| self.names.contains(k) || known(k);
-        if scope.groups.contains(root) || scope.prefixes.iter().any(|p| near(&format!("{p}{root}")))
+        let root = head(text);
+        let near = |k: String| self.names.contains(&k) || self.group_known(&k);
+        if scope.groups.contains(root) || scope.prefixes.iter().any(|p| near(format!("{p}{root}")))
         {
             return None;
         }
-        let module = |k: usize| self.prog.modules[k].name.clone();
-        let own = scope.module.map_or_else(|| text.to_string(), |k| format!("{}.{text}", module(k)));
-        let imported = self.prog.imported(root, scope.module).map(|k| format!("{}.{text}", module(k)));
+        let module = |k: usize| format!("{}.{text}", self.prog.modules[k].name);
+        let own = scope.module.map_or_else(|| text.to_string(), module);
+        let imported = self.prog.imported(root, scope.module).map(module);
         [Some(own), Some(text.to_string()), imported].into_iter().flatten()
             .find(|k| self.defined_groups.contains(k) || self.group_aliases.contains_key(k))
     }
 
+    /// Whether `key` is a group the walk knows, or a name for one.
+    fn group_known(&self, key: &str) -> bool {
+        self.group_names.contains(key) || self.group_aliases.contains_key(key)
+    }
+
     /// Whether the group `key` names geometry, itself or through a group it names.
-    fn carries_geometry(&self, key: &str, depth: usize) -> bool {
+    pub(super) fn carries_geometry(&self, key: &str, depth: usize) -> bool {
         if depth > MAX_DEPTH {
             return true;
         }
@@ -953,9 +962,7 @@ impl<'a> Walk<'a> {
         scope: &Scope,
     ) -> Option<(String, bool)> {
         let prefix = scope.prefix();
-        let root = text.split('.').next().unwrap_or(text);
-        let known = |k: &String| self.group_names.contains(k) || self.group_aliases.contains_key(k);
-        if here.contains(root) {
+        if here.contains(head(text)) {
             return here.contains(text).then(|| (format!("{prefix}{text}"), false));
         }
         if scope.groups.contains(text) {
@@ -963,14 +970,24 @@ impl<'a> Walk<'a> {
         }
         let scoped = scope.prefixes.iter().map(|p| format!("{p}{text}"));
         let open = (!scope.closed).then(|| {
-            let imported = self.prog.imported(root, scope.module)
+            let imported = self.prog.imported(head(text), scope.module)
                 .map(|k| format!("{}.{text}", self.prog.modules[k].name));
             std::iter::once(text.to_string()).chain(imported)
         });
-        if let Some(k) = scoped.chain(open.into_iter().flatten()).find(known) {
+        if let Some(k) = scoped.chain(open.into_iter().flatten()).find(|k| self.group_known(k)) {
             return Some((k, false));
         }
         self.file_group(text, scope).map(|k| (k, true))
+    }
+
+    /// A name for a group (`abs`), written as `written`, an alias of the group `group_named`
+    /// found: the reference it is an alias by — the file's group by its key, read from anywhere
+    /// (the `bool`), or as written — recorded in `group_aliases`.
+    fn alias_group(&mut self, abs: String, written: Ref, (to, file): (String, bool))
+        -> (Ref, bool) {
+        let r = if file { Ref::dotted(&to, written.span) } else { written };
+        self.group_aliases.insert(abs, to);
+        (r, file)
     }
 
     /// The definitions of a body to work out: every `param` (an unknown declared as it is met)
@@ -1003,9 +1020,11 @@ impl<'a> Walk<'a> {
         let mut aliased: BTreeMap<&str, (String, bool)> = BTreeMap::new();
         loop {
             let found: Vec<(&str, (String, bool))> = body.iter().filter_map(|st| match &st.kind {
-                StmtKind::Param(pd) if pd.input.is_none() && !aliased.contains_key(pd.name.text.as_str())
-                    && is_reference(&pd.text) =>
-                    self.group_named(pd.text.trim(), &groups, scope).map(|g| (pd.name.text.as_str(), g)),
+                StmtKind::Param(pd) if pd.input.is_none() && is_reference(&pd.text)
+                    && !aliased.contains_key(pd.name.text.as_str()) => {
+                    let group = self.group_named(pd.text.trim(), &groups, scope)?;
+                    Some((pd.name.text.as_str(), group))
+                }
                 _ => None,
             }).collect();
             if found.is_empty() { break; }
@@ -1034,17 +1053,12 @@ impl<'a> Walk<'a> {
                     let text = match &field.value {
                         crate::syntax::InstVal::Ref(r) => {
                             let text = ref_text(r);
-                            let (r, absolute) = match self.group_named(&text, &groups, scope) {
-                                Some((to, absolute)) => {
-                                    self.group_aliases.insert(format!("{prefix}{name}"), to.clone());
-                                    match absolute {
-                                        true => (Ref::dotted(&to, r.span), true),
-                                        false => (r.clone(), false),
-                                    }
-                                }
+                            let abs = format!("{prefix}{name}");
+                            let (r, file) = match self.group_named(&text, &groups, scope) {
+                                Some(group) => self.alias_group(abs, r.clone(), group),
                                 None => (r.clone(), false),
                             };
-                            references.push((name.clone(), r, absolute));
+                            references.push((name.clone(), r, file));
                             text
                         }
                         crate::syntax::InstVal::Expr(t) => t.clone(),
@@ -1078,12 +1092,11 @@ impl<'a> Walk<'a> {
             }
             // a name for a group: its members named under it, as a member naming a group's are,
             // and the name an alias of the group
-            if let Some((to, absolute)) = aliased.get(pd.name.text.as_str()) {
+            if let Some(group) = aliased.get(pd.name.text.as_str()) {
                 let text = pd.text.trim();
-                let r = Ref::dotted(if *absolute { to } else { text }, pd.span);
-                let absolute = *absolute;
-                self.group_aliases.insert(format!("{prefix}{}", pd.name.text), to.clone());
-                references.push((pd.name.text.clone(), r, absolute));
+                let abs = format!("{prefix}{}", pd.name.text);
+                let (r, file) = self.alias_group(abs, Ref::dotted(text, pd.span), group.clone());
+                references.push((pd.name.text.clone(), r, file));
                 pending.push(Def {
                     name: pd.name.text.clone(),
                     text: text.to_string(),
