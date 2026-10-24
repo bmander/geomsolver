@@ -142,11 +142,35 @@ fn timings_count_work_done_again_and_rank_by_own_time() {
 
 #[test]
 fn the_words_are_the_cores() {
-    let w = Work { kind: Kind::Build, subject: "stator.lamination".into(), at: None };
+    let w = Work { kind: Kind::Build, subject: "stator.lamination".into(), at: None,
+                  gauge: Default::default() };
     assert_eq!(w.done(2.1, 2.1), "built stator.lamination in 2.1 s");
     assert_eq!(w.done(2.0, 0.5), "built stator.lamination in 2.0 s (0.5 s its own)");
     assert_eq!(w.running(10.), "still building stator.lamination, 10.0 s so far");
     assert_eq!(progress::seconds(0.0123), "12 ms");
     let sk = solved();
     assert_eq!(Work::solve(&sk).text(), format!("solved for {} params", sk.free_indices().len()));
+}
+
+/// **A march is said, and how far it has got** (#591): a drawing followed along its parameter is
+/// work like any stage, so a long one is told from a hang, and its gauge says where it stands.
+#[test]
+fn a_march_is_said_with_how_far_it_has_got() {
+    let src = "unit mm\nuse std\nparam t: Angle over (0deg, 90deg)\nin std.front {\n  \
+        a := point\n  d := point\n  b := point hint((10, 0))\n  c := point hint((40, 25))\n  \
+        fix((0, 0)) a\n  fix((40, 0)) d\n  a distance(10) b\n  b distance(35) c\n  \
+        c distance(25) d\n  line(a, d) angle(t) line(a, b)\n}\n";
+    let mut sk = read(src).sketch;
+    assert!(gcs_core::solve::solve(&mut sk, Default::default()).success);
+    let heard = Rc::new(Heard::default());
+    let f = progress::listen(heard.clone(), || gcs_core::follow::followed(&sk, "t"));
+    assert!(f.is_ok());
+    let said = heard.said.borrow();
+    let w = said.iter().flatten().find(|w| w.kind == Kind::Follow).expect("said");
+    assert_eq!(w.text(), "followed t");
+    assert_eq!(w.gauge.read().as_deref(), Some("now at 90deg of (0deg, 90deg)"));
+    assert_eq!(w.running(3.1), "still following t, now at 90deg of (0deg, 90deg), 3.1 s so far");
+    // and nothing is said, nor any gauge set, where nobody listens
+    assert!(gcs_core::follow::followed(&sk, "t").is_ok());
+    assert_eq!(Work::follow("t").gauge.read(), None);
 }

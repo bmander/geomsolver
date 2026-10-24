@@ -217,7 +217,19 @@ where a rule came from.
     the stride's tangencies to the path its toe traces); a station that finds a set-aside row
     reading otherwise than at home (a constant read off where a moving part stands, as a valued
     frame's block's) solves the whole drawing, and the march is made again with that row a
-    reader, so every orientation is read over one system.  Nothing is set aside of a drawing whose order is not square.  The start's
+    reader, so every orientation is read over one system.  Nothing is set aside of a drawing whose
+    order is not square — once **what it implies is left out** (`follow::implied`, #591): the rows
+    of the order's over part at home, which have no unknown of their own, that hold there and
+    whose rank the rest of that part has without them, whole statements tried the last written
+    first until what is left is square and of full rank (none where there is an under part, the
+    over part is short of rank or wider than `ORIENTED`, or no choice of statements squares it).
+    They are carried at every station solve and every stand like what is set aside, and judged
+    where each ends (`Still::implied_hold`, the solve's own measure): a station where one does not
+    hold does not stand, so a statement implied at home alone stops the march where it starts, as
+    the drawing solved with it did.  Carried, one row restating what a point's two planes say
+    made the order not square, every station's rank read whole and nothing set aside — a march of
+    586 unknowns took 44 s rather than 0.2 (`continuation.rs`,
+    `a_statement_the_others_imply_is_left_out_of_the_march`).  The start's
     rank and every orientation are read over what is solved, the rest's blocks of full rank and
     the same at every instant.  Smaller, each station is cheaper: the V-twin's march and a stand
     take half what they did.
