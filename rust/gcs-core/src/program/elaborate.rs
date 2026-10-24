@@ -215,7 +215,6 @@ fn expand(
     // rest would have made, so nothing is built, and its one E103 is all that is said (#625)
     if expansion.overflowed {
         expansion.flat.clear();
-        expansion.face_repeats.clear();
     }
     cx.map.private_names = expansion.private_names.clone();
     cx.map.apart = std::mem::take(&mut expansion.apart);

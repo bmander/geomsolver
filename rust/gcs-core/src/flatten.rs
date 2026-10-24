@@ -759,7 +759,7 @@ struct SetState<'a> {
 
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
 /// from the solid, and which of them meet (#625, `Meets`), where its boundary says.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Listed {
     pub paths: Vec<crate::solid::faces::FacePath>,
     pub meets: Option<crate::solid::faces::Meets>,

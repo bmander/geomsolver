@@ -8,9 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 /// The faces a solid lists (`face_paths`), each by its name as written from the solid
 /// (`FacePath::text`), and the listed faces it shares a point with, read off the stratum
 /// (`cached`: the body as made by the terms that do not read its faces) where the drawing
-/// stands: an edge or a corner of its boundary.  A face a Boolean ate shares none.  `None` where
-/// that boundary cannot say — a face a round of the body made, which the stratum may not have.
-#[derive(Clone, Debug, Default, PartialEq)]
+/// stands: a corner of its boundary, so every edge's ends too.  A face a Boolean ate shares none.
+/// `None` where that boundary cannot say — a face a round of the body made, which the stratum
+/// may not have.
+#[derive(Clone, Debug)]
 pub struct Meets {
     faces: BTreeMap<String, Option<BTreeSet<String>>>,
 }
@@ -24,13 +25,10 @@ impl Meets {
             return None;
         }
         let read = cached(sk, body).ok()?;
-        let b = read.brep().0;
-        // each patch's edges and corners
-        let at: Vec<(BTreeSet<u32>, BTreeSet<u32>)> = (0..b.faces.len()).map(|fi| {
-            let es: BTreeSet<u32> = read.edges_of(fi).iter().copied().collect();
-            let vs = es.iter().flat_map(|&e| read.ends(e)).collect();
-            (es, vs)
-        }).collect();
+        // each patch's corners: two patches sharing an edge share its ends
+        let corners: Vec<BTreeSet<u32>> = (0..read.brep().0.faces.len())
+            .map(|fi| read.edges_of(fi).iter().flat_map(|&e| read.ends(e)).collect())
+            .collect();
         let patches = |f: &FacePath| -> Vec<usize> {
             read.paths().iter().enumerate()
                 .filter(|(_, p)| p.route == f.route && p.face == f.face)
@@ -38,9 +36,8 @@ impl Meets {
         };
         let mine: Vec<(String, Vec<usize>)> =
             listed.iter().map(|f| (f.text(), patches(f))).collect();
-        let touch = |a: &[usize], b: &[usize]| a.iter().any(|&i| b.iter().any(|&j| {
-            i == j || !at[i].0.is_disjoint(&at[j].0) || !at[i].1.is_disjoint(&at[j].1)
-        }));
+        let touch = |a: &[usize], b: &[usize]| a.iter()
+            .any(|&i| b.iter().any(|&j| i == j || !corners[i].is_disjoint(&corners[j])));
         let faces = listed.iter().zip(&mine).map(|(f, (text, own))| {
             // a round's face the stratum has not: it cannot say what that one meets
             let unread = f.of.is_some() && own.is_empty();
@@ -59,7 +56,4 @@ impl Meets {
             _ => true,
         }
     }
-
-    /// Whether `a` is a face the solid lists.
-    pub fn lists(&self, a: &str) -> bool { self.faces.contains_key(a) }
 }

@@ -7,15 +7,16 @@
 use super::{public_path, Code, Diag, SourceMap};
 use crate::model::{EntKind, Sketch};
 use crate::solid::faces::{face_paths, Meets};
-use std::collections::BTreeMap;
+use crate::syntax::Span;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One E080 for each statement and solid whose faces read apart meet where the drawing stands
 /// in `sk`: the first such pair named, and how many more.
 pub(super) fn apart(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
     let mut read: BTreeMap<&str, Option<Meets>> = BTreeMap::new();
-    let mut met: Vec<(crate::syntax::Span, &str, &[String; 2], usize)> = Vec::new();
+    let mut met: Vec<(Span, &str, &[String; 2], usize)> = Vec::new();
     // each pair once, whichever way round it was asked
-    let mut said = std::collections::BTreeSet::new();
+    let mut said = BTreeSet::new();
     for a in &map.apart {
         let [x, y] = &a.faces;
         if !said.insert((a.at, a.solid.as_str(), x.min(y), x.max(y))) {
@@ -25,7 +26,7 @@ pub(super) fn apart(sk: &Sketch, map: &SourceMap) -> Vec<Diag> {
             let e = map.ent_named(&a.solid).filter(|e| e.kind == EntKind::Solid)?;
             Meets::read(sk, e.i(), &face_paths(sk, e.i()))
         });
-        if !meets.as_ref().is_some_and(|m| m.meets(&a.faces[0], &a.faces[1])) {
+        if !meets.as_ref().is_some_and(|m| m.meets(x, y)) {
             continue;
         }
         match met.iter_mut().find(|m| m.0 == a.at && m.1 == a.solid) {

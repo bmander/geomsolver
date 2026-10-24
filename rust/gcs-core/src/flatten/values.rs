@@ -126,7 +126,7 @@ fn holds(
             names.meets(&p, &q).ok_or_else(|| (Code::E103, format!(
                 "`{x} meets {y}` asks whether two faces of a solid share a point, and `{}` is \
                  no face: name a face a `repeat … in` runs over",
-                if names.meets(&p, &p).is_none() { x } else { y }
+                if names.faces(x).is_none() { x } else { y }
             )))?
         }
         Cond::Cmp(op @ (Cmp::Eq | Cmp::Ne), Ast::Var(x), Ast::Var(y))
