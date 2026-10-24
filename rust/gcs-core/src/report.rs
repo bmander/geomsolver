@@ -1736,7 +1736,15 @@ pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
         SolidOutcome::Indeterminate => "undecided",
     };
     let mut text = format!("{} — {outcome}", v.text());
-    if v.valid_samples().next().is_none() {
+    // a claim at the drawing's pose that could not be measured says why, which names the solid
+    // (#615); poses that did not solve are a sweep's
+    let failed_here = match v.poses() {
+        [p] if v.sweep().is_none() => p.evaluation().err(),
+        _ => None,
+    };
+    if let Some(reason) = failed_here {
+        text += &format!(": {reason}");
+    } else if v.valid_samples().next().is_none() {
         text += ": no solved valid poses";
     }
     if let Some(i) = v
@@ -1780,8 +1788,9 @@ pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
             );
         }
     }
-    // Every unresolved pose is disclosed, including failed solves and uncertain geometry.
-    for p in v.poses().iter().filter(|p| p.holds().is_none()) {
+    // Every unresolved pose is disclosed, including failed solves and uncertain geometry; a lone
+    // claim's failure is said once, above.
+    for p in v.poses().iter().filter(|p| failed_here.is_none() && p.holds().is_none()) {
         let reason = match p.evaluation() {
             Err(reason) => reason.to_string(),
             Ok(e) => match e.predicate() {
