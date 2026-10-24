@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.180] A module's parameter is its drawing's.** A file that declares a parameter that runs
+(`param spin: Angle over (0deg, 360deg)`, §6.3) beside the drawing that reads it — a part opened on
+its own to scrub its joint — is now a module as it stands (§14.4): `use` leaves the parameter out
+with the drawing, as it leaves the drawing and the `preview`, where through 0.179 it was **E040**
+at the `use`. A component never saw one, so nothing a module contributes changes; a module's
+parameter is named by nothing outside it (`part.spin` names nothing, and `use part (spin)` is
+**E101**). A file opened as the document reads its parameters as before. (Issue #593.)
+
 **[0.179] A corner round is a joint.** `A -> round(r: R) B` rounds the corner where the lines `A`
 and `B` of a chain meet with an arc of radius `R` tangent to both (§6.6): the arc (named where it
 stands, `-> (k := round(r: R))`), its radius, a tangency at each end and the corner kept on both
