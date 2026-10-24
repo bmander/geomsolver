@@ -75,10 +75,10 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
     let mut built = BTreeMap::new();
     let mut leading = BTreeSet::new();
     // each node's name, for what a body built of it says
-    let mut names = BTreeMap::new();
+    let names: BTreeMap<i64, String> =
+        recipe.nodes.iter().map(|n| (n.id, n.name.clone())).collect();
     for n in &recipe.nodes {
         let id = n.id;
-        names.insert(id, n.name.clone());
         // an operand of one binding with others is its representative's B-rep, built once and
         // placed (#566), moved into this one's place; its faces are named already.  One of this
         // solid's own instance is read where this one is built, its preimage (#578); a mirrored

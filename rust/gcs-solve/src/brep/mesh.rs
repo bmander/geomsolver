@@ -602,8 +602,8 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
             let mut l = Vec::new();
             for &(uv,i) in run {
                 let q = place(uv);
-                let at = |k: &usize| { let d = [pts[*k][0]-q[0],pts[*k][1]-q[1]]; d[0]*d[0]+d[1]*d[1] <= weld*weld };
-                let same = corners.get(&i).and_then(|ks| ks.iter().copied().find(at));
+                let here = |k: &usize| { let d = [pts[*k][0]-q[0],pts[*k][1]-q[1]]; d[0]*d[0]+d[1]*d[1] <= weld*weld };
+                let same = corners.get(&i).and_then(|ks| ks.iter().copied().find(here));
                 if let Some(k) = same { l.push(k); continue }
                 pts.push(q);
                 uvs.push(uv);

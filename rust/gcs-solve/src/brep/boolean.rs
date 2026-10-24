@@ -389,11 +389,11 @@ pub fn boolean(a: &Brep,b: &Brep,op: Op,tol: f64) -> Result<Brep,String> {
                     true => format!("a {}",f.surface.kind()),
                     false => format!("`{}` (a {})",f.name,f.surface.kind()),
                 };
-                let near: Vec<String> = (0..solids[other].faces.len())
-                    .filter(|&g| solids[other].faces[g].surface.implicit(p).abs() <= tol && located[other].face_place(g,p) != Place::Out)
-                    .map(|g| named(&solids[other].faces[g])).collect();
+                let near: Vec<String> = solids[other].faces.iter().enumerate()
+                    .filter(|&(g,h)| h.surface.implicit(p).abs() <= tol && located[other].face_place(g,p) != Place::Out)
+                    .map(|(_,h)| named(h)).collect();
                 let near = if near.is_empty() { "the other solid's boundary".to_string() } else { near.join(" and ") };
-                return Err(format!("a piece of {} touches {near} at {p:?}: a contact along no face of either, not built; \
+                return Err(format!("a piece of {} touches {near} at {p:?} along no face of either: \
                     move the one off the other's face, or into it",named(f)))
             };
             let normal = |face: &Face| {

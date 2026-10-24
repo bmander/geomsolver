@@ -292,9 +292,8 @@ impl Recipe {
         // each node's primitives, keyed as its faces are named, and their routes from it
         let mut routes: BTreeMap<i64,(&str,&str,BTreeMap<String,String>)> = BTreeMap::new();
         // each node's name, for what a body built of it says
-        let mut names = BTreeMap::new();
+        let names: BTreeMap<i64,String> = self.nodes.iter().map(|n| (n.id,n.name.clone())).collect();
         for Named {id,name,step,node} in &self.nodes {
-            names.insert(*id,name.clone());
             let mut b = node.built(&built,&names,0.).map_err(|e| e.saying(|e| format!("`{name}`: {e}")))?;
             let mut own = BTreeMap::new();
             match node {
