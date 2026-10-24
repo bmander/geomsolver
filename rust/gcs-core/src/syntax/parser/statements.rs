@@ -4,7 +4,7 @@ use super::P;
 use crate::model::EntKind;
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
-use crate::syntax::words::{self, over_chain, over_walks, set_at, Brackets, BLOCKS, ENERGY_WORDS};
+use crate::syntax::words::{self, over_chain, over_walks, set_at, Brackets, ENERGY_WORDS};
 use crate::syntax::{
     Arg, Block, BlockKind, BodyWord, Branch, Chained, ClaimOver, Component, CurveSpec, CurveTarget,
     Decl, DeclName, EdgesOf, DerivedDecl, Formal, InBlock, InstArg, InstVal, Instance, Membership,
@@ -129,7 +129,7 @@ impl<'a> P<'a> {
         // `distance(p, f1) + distance(p, f2) <= 10mm`, `2 * distance(p, a) >= …` — a bound on
         // measurements (#183 F3), told from a relation by a comparison outside every bracket —
         // and from a block's header, `when length(l) > 0mm { … }` (#210)
-        let block = matches!(self.peek(), Some(Tok::Ident(w)) if BLOCKS.contains(&w.as_str()));
+        let block = words::opens_block(&self.t, self.i);
         if !block && self.compared_ahead() && self.measures_ahead() {
             return self.measured().map(StmtKind::Measured);
         }
@@ -177,7 +177,7 @@ impl<'a> P<'a> {
                 );
                 None
             }
-            b if BLOCKS.contains(&b) => {
+            _ if block => {
                 self.i += 1;
                 let kind = match w.as_str() {
                     "repeat" => BlockKind::Repeat,
