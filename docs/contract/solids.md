@@ -1,8 +1,9 @@
 # Solids
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `solid.rs`,
-`csg.rs`, `mesh.rs`, `hidden.rs`, `gltf.rs`, or `hypoid.sv`. An issue number (#n) or a spec version
-([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule came from.
+`csg.rs`, `mesh.rs`, `hidden.rs`, `gltf.rs`, `program/refused.rs`, or `hypoid.sv`. An issue number
+(#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says where a
+rule came from.
 
 **The body rule's third side (0.22):** `tip common body` keeps what the body has in common with
 `tip`: a solid is its stock, plus `union`, minus what `cut`s it, within what it is in `common`
@@ -261,6 +262,18 @@ placement carries inside the blank; CLI test readers zero the offset.
   A name whose face a boolean ate is a *fact the report carries*, never an error.
   E080 a face that is not a loop on one plane, E081 a revolution's axis, E082 a face a body no
   longer has, E084 a section cut across its own view.
+- **One cause is said once** (#572, `program::refused`).  After the solve a solid is refused
+  (E080) in its own words only where nothing it is built on is refused (`solid::built_on`: its
+  operands, and the solids a region's terms read — the body whose faces a round reads; a body is
+  never refused itself, its operands are).  A solid refused only because such a root is, and a
+  face borne on a body built on one (E082), is said by its statement **once**, as not built:
+  **N080**, a note naming the roots, where each is said and the named solid between ("not built:
+  it is built on `body`, made of `slot` (21:1), which could not be built"), `Diag::cause` the
+  first root's span (`cause` under `solventc --json`).  So a round is one line however many
+  `taken`s and `filled`s it made, and no piece of a region is a diagnostic.  Each is said where
+  the document holds it (`refused::Placing`): a site in a module at the deepest instance on its
+  path the document holds (the round that used `std.round`), else at the `use`
+  (`modules::localize`).  `tests/refused_once.rs` is the gate.
 
 - **A face family is a face that runs** (§6.9 [0.97], `solid/family.rs`; #243 L1).
   `sweep(I(…).f over s)` parses to `Sweep::Family(FamilySpec)` (`parser::family`, by an `over`

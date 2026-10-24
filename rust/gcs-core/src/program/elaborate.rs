@@ -148,9 +148,9 @@ fn station_reads(cx: &mut Elab<'_>, flat: &Flat<'_>) {
         });
         let Some((e, field, value)) = found else {
             let at = cx.res.declared_at.get(abs).copied().unwrap_or_default();
-            cx.diags.push(Diag { code: Code::E103, span: at, stmt: None, message: format!(
+            cx.diags.push(Diag::new(Code::E103, at, None, format!(
                 "`{read}` is no number of the geometry a station can read: a point's `x`, `y` or \
-                 `z`, or a circle's or an arc's `r`") });
+                 `z`, or a circle's or an arc's `r`")));
             continue;
         };
         cx.sk.hold(read, value, crate::units::Dim::LENGTH);

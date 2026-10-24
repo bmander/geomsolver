@@ -231,7 +231,7 @@ pub(crate) fn check(p: &Program, diags: &mut Vec<crate::program::Diag>) {
     use crate::program::Diag;
     let mut said: Vec<Diag> = Vec::new();
     let mut say = |code: Code, span: Span, message: String| {
-        said.push(Diag { code, span, stmt: None, message });
+        said.push(Diag::new(code, span, None, message));
     };
     let mut first: BTreeMap<(Option<usize>, &str), Span> = BTreeMap::new();
     for f in &p.interfaces {

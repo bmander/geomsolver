@@ -45,8 +45,10 @@ pub fn compile(
             if !r.success { return Err(fail(format!("did not solve: {}", r.message))) }
             // a swept object drawn from its exact surface where one builds, as the page draws it
             crate::brep::export::supply_exact(&e.sketch);
-            if let Some(d) = crate::program::solid_diagnostics(&e.sketch, &e.map).first() {
-                return Err(fail(d.message.clone()));
+            let refused = crate::program::solid_diagnostics(&e.sketch, &e.map, &e.program);
+            if let Some(d) = refused.into_iter()
+                .find(|d| d.severity() == crate::program::Severity::Error) {
+                return Err(fail(d.message));
             }
             if let Some(at) = &m.at {
                 let fail = |message: String| Error {

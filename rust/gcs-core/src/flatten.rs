@@ -836,7 +836,7 @@ impl<'a> Walk<'a> {
     }
 
     fn err(&mut self, code: Code, span: Span, message: impl Into<String>) {
-        self.diagnostic(Diag { code, span, stmt: None, message: message.into() });
+        self.diagnostic(Diag::new(code, span, None, message.into()));
     }
 
     /// An error said once at its place, however many times the walk passes it — a block in a

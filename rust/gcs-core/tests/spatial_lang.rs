@@ -295,7 +295,7 @@ a project b
     let t = axis_t(&e, &sk);
     let beta = t[2].atan2(t[0]);
     assert!((beta - 40f64.atan2(30.0)).abs() < 1e-6, "beta := {}", beta.to_degrees());
-    assert!(solid_diagnostics(&sk, &e.map).is_empty());
+    assert!(solid_diagnostics(&sk, &e.map, &e.program).is_empty());
 }
 
 /// Two solved planes a `project` relates that come out parallel are refused after the solve, and
@@ -311,7 +311,7 @@ a := point hint((3, 4)) in std.front
 b := point hint((3, 4)) in q
 a project b
 ");
-    let diags = solid_diagnostics(&e.sketch, &e.map);
+    let diags = solid_diagnostics(&e.sketch, &e.map, &e.program);
     assert!(diags.iter().any(|d| d.code.as_str() == "E065" && d.message.contains("parallel")),
             "{diags:?}");
     let e = read("\
@@ -322,7 +322,7 @@ a := point hint((3, 4)) in std.front
 b := point hint((7, 1)) in q
 a distance(5) b
 ");
-    let diags = solid_diagnostics(&e.sketch, &e.map);
+    let diags = solid_diagnostics(&e.sketch, &e.map, &e.program);
     assert!(diags.iter().any(|d| d.code.as_str() == "W113"), "{diags:?}");
 }
 
