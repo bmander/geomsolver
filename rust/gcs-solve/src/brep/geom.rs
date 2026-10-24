@@ -590,6 +590,8 @@ impl Surface {
     }
     /// `S`, `S_u`, `S_v`.
     pub fn d1(&self,[u,v]: Uv) -> (V,V,V) {
+        // a plane's point is its frame's, read before any angle (`inverse`)
+        if let Surface::Plane(f) = self { return (f.at([u,v,0.]),f.x,f.y) }
         let (su,cu) = u.dsin_cos();
         match self {
             Surface::Extrusion(f,c) => {
@@ -682,6 +684,9 @@ impl Surface {
         let wrap = |a: f64| { let a = a.rem_euclid(TAU); if a >= TAU { 0. } else { a } };
         let f = self.frame();
         let [x,y,z] = f.local(p);
+        // a plane's parameters are its frame's coordinates, read before any angle (#589: a large
+        // solid's planar faces are inverted at every reading of their edges)
+        if let Surface::Plane(_) = self { return [x,y] }
         let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
         let rho = x.dhypot(y);
         match self {

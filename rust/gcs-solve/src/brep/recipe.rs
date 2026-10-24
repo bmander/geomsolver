@@ -252,13 +252,15 @@ fn beside(a: &Brep,b: &Brep,floor: f64) -> Built {
 /// makes (a round's fills, then its cuts: the stratum, #183 F6), where `n` lists them.
 fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
     let mut solid = built.get(&n.stock).ok_or("recipe: `stock` not built before its user")?.clone();
+    // what each step knows of the faces it hands the next (`boolean::Known`, #589)
+    let mut known: Option<super::boolean::Known> = None;
     for ((key,list),op) in n.sets().into_iter().zip([Op::Union,Op::Cut,Op::Common,Op::Union,Op::Cut]) {
         // the late sets (fills, then cuts) are what reads the faces the rest make
         let written = !key.ends_with("_late");
         for x in list {
             let operand = built.get(x).ok_or(format!("recipe: an operand not built before its body"))?;
             let name = built_names.get(x).cloned().unwrap_or_default();
-            solid = combined(&solid,operand,op,floor).map_err(|e| {
+            let (s,k) = super::boolean::combined_known(&solid,known.as_ref(),operand,op,floor).map_err(|e| {
                 // **what the stratum leaves**: each round or chamfer is read off the body as the
                 // terms before them leave it, never off another, so two of separate statements
                 // meeting at a vertex (a fill and a run of other radii) or across a corner a fill
@@ -274,6 +276,7 @@ fn body(n: &Body,built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,f
                     _ => e.saying(|e| format!("{key} `{name}`: {e}")),
                 }
             })?;
+            (solid,known) = (s,Some(k));
         }
     }
     Ok(solid)

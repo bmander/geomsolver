@@ -224,6 +224,43 @@ fn booleans_of_boxes_crossing_in_general_position() {
     }
 }
 
+/// **A Boolean's work is where its solids meet** (#589): a face of one clear of the other's box is
+/// carried whole, kept or dropped without being read (`boolean::Arranged::clear`), and a run of
+/// Booleans on one solid hands each step's knowledge of the faces it carried to the next
+/// (`boolean::combined_known`), so a face no operand comes near is boxed and checked once. The
+/// solids are what the same Booleans make one at a time, whole and checked.
+#[test]
+fn a_run_of_cuts_hands_its_far_faces_on() {
+    use gcs_core::brep::boolean::{boolean,combined,combined_known,Op};
+    // a solid far from the other, every face of each clear of it
+    let a = block([0.,0.,0.],[2.,2.,2.]);
+    let far = block([10.,10.,10.],[11.,12.,13.]);
+    for (op,want,faces) in [(Op::Union,14.,12),(Op::Cut,8.,6),(Op::Common,0.,0)] {
+        let r = boolean(&a,&far,op,1e-9).unwrap_or_else(|e| panic!("{op:?}: {e}"));
+        assert_eq!(r.faces.len(),faces,"{op:?}");
+        if faces > 0 { r.check(1e-8).unwrap_or_else(|e| panic!("{op:?}: {e}")); }
+        close(volume(&r),want);
+    }
+    // a bar notched 24 times across its top, each notch 2 × 10 × 1, each Boolean meeting two of the
+    // bar's faces and carrying the rest whole
+    let bar = block([0.,0.,0.],[100.,10.,2.]);
+    let notch = |k: usize| block([4.*k as f64+1.,-1.,1.],[4.*k as f64+3.,11.,3.]);
+    let (mut one,mut run,mut known) = (bar.clone(),bar.clone(),None);
+    for k in 0..24 {
+        one = combined(&one,&notch(k),Op::Cut,0.).unwrap_or_else(|e| panic!("notch {k}: {e}"));
+        let (r,k2) = combined_known(&run,known.as_ref(),&notch(k),Op::Cut,0.).unwrap_or_else(|e| panic!("notch {k}: {e}"));
+        (run,known) = (r,Some(k2));
+    }
+    // each checked whole: what the run left unchecked was checked before
+    run.check(1e-8).unwrap();
+    close(volume(&one),2000.-24.*20.);
+    close(volume(&run),volume(&one));
+    assert_eq!((run.faces.len(),run.edges.len()),(one.faces.len(),one.edges.len()));
+    // the bar's bottom, ends, front and back, its top in the 25 pieces between the notches, and
+    // each notch's floor and walls
+    assert_eq!(run.faces.len(),5+25+24*3);
+}
+
 #[test]
 fn a_pocket_and_a_bore() {
     use gcs_core::brep::boolean::{boolean,Op};
