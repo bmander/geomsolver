@@ -559,6 +559,13 @@ struct Walk<'a> {
     /// and the frames that refuse them — see `Datums`.
     standard: Datums,
     group_names: BTreeSet<String>,
+    /// The names a definition gives a group by naming it (`small := sizes`, or a member
+    /// `{bar: bar}`, #594), by absolute key, to the group's: an alias of that group, never a
+    /// group of its own.
+    group_aliases: BTreeMap<String, String>,
+    /// The groups the source defines in braces (`g := {…}`, and one in place in it), by absolute
+    /// key: of `group_names`, the ones that are no instance, no typed formal and no argument.
+    defined_groups: BTreeSet<String>,
     /// Every interface of the program, resolved once (`interfaces::shapes`).
     shapes: Vec<std::rc::Rc<interfaces::Shape>>,
     /// The groups interfaces type (`Walk::typed`), by absolute key, to the interface's name.
@@ -822,6 +829,8 @@ impl<'a> Walk<'a> {
                 ..Datums::default()
             },
             group_names: BTreeSet::new(),
+            group_aliases: BTreeMap::new(),
+            defined_groups: BTreeSet::new(),
             shapes: interfaces::shapes(prog),
             typed: BTreeMap::new(),
             checks: Checks::default(),

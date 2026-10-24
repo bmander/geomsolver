@@ -465,7 +465,21 @@ geometry aliases; `dims: group` is a required formal. Groups nest, by name or in
 group registered so `Bar(design.bar)` binds); an instance may pass as a layout group. A **`set`
 formal** (`Ty::Set`, #191) takes a set — named, or a family's instance, which is both a set and an
 instance — and a `group` formal no named set; each refusal is E103 at the argument
-(`Checks::groups`, checked in `resolve` against `sets` / `group_names`). Only a number may be
+(`Checks::groups`, checked in `resolve` against `sets` / `group_names`). **A group is a value**
+(#594, [0.180]): `small := sizes`, a definition whose text names a group (`Walk::group_named`:
+the body's, a group formal, one under the scope's prefixes, a bare import, or the file's), is
+an alias of it found before the body's numbers are worked out (`definitions`, a name for a name
+in any order), its members named under it as a member naming a group's are, and recorded in
+`Walk::group_aliases`; a group written in braces where a `group` formal takes it is defined under
+`keys::literal` (`Walk::group_literal`: its numbers over the caller's, a member naming geometry
+an alias read in the caller's scope) and bound as one named, its numbers read by the formal's
+name so an interface says what it lacks by that name; braces at any other formal are E103. A
+closed body hands on a group of its file whole as it reads its numbers (`Walk::file_group`, by
+the key the file holds it under: its own, `{module}.g`, a used module's path, or a bare import),
+unless a formal or a name of the body hides it; one carrying geometry, itself or through a group
+it names (`carries_geometry`), is E103 at the argument, and an instance is no group of the file
+(`Walk::defined_groups`). `value_read` says a group read as a number is one. `tests/group_values.rs`
+is the gate. Only a number may be
 left out of a call ([0.95]): an entity, path, group or set formal left out is E103 at the call
 (`Walk::bind`) — but for **a point formal drawn in a plane formal**, `center: point in on`
 (`Formal::within`), which the instance then owns: `Walk::owned_points` declares it as its body

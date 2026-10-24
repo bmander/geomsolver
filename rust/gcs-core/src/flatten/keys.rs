@@ -160,6 +160,12 @@ pub(crate) fn frame_instance(key: &str) -> Option<&str> {
     key.strip_suffix("#frame")
 }
 
+/// A group written in braces where a `group` formal takes it (#594), defined under the formal's
+/// key: `{formal}#group`, which the formal is then an alias of.
+pub(super) fn literal(formal: &str) -> String {
+    format!("{formal}#group")
+}
+
 /// What an interface-typed formal was given, whole (§8.1 [0.84]): `{formal}#given`, judged once
 /// every name is known.
 pub(super) const GIVEN: &str = "#given";

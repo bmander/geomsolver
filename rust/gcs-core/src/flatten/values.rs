@@ -227,12 +227,22 @@ pub(crate) fn value_read<T: Table + ?Sized>(
     // each declared unknown it reads and `env` does not bind, read before `env` rather than
     // added to a copy of it
     let declared = expr::declared_reads(&p.body, |name| env.has(name), unknowns);
-    let a = expr::eval_in(&p.body, &Over { own: &declared, env })?;
+    // a group read as a number — `dims.handle_dims` of a module — is said to be one, rather
+    // than as a member its owner lacks or a number of no dimension (#594): asked only of a text
+    // that does not come to a number
+    let group = || p.body.deps().into_iter().filter(|n| !env.has(n) && !declared.contains_key(n))
+        .find_map(|n| env.under(&format!("{n}.")).into_keys().next().map(|one| format!(
+            "`{n}` is a group, and a group is not a number: read one of its members, as `{one}`")));
+    let a = expr::eval_in(&p.body, &Over { own: &declared, env })
+        .map_err(|e| group().unwrap_or_else(|| e.to_string()))?;
     match (a.number(), &a.free) {
         (Some(v), _) if !v.is_finite() => Err(format!("comes to {v}")),
         // an unknown the scope *bound* — a formal left unbound, a param over one — carries on;
         // a name nothing binds is the document's, and a component's numbers cannot read it
         (None, Some(n)) if !declared.contains_key(n) && !env.binds(n) => {
+            if let Some(e) = group() {
+                return Err(e);
+            }
             // a member a group or a vector does not have — `o.z` of `o := (1, 2)` — is said so
             if let Some((owner, member)) = n.rsplit_once('.') {
                 let prefix = format!("{owner}.");
@@ -268,9 +278,18 @@ impl<T: Table + ?Sized> expr::Env for Over<'_, T> {
     }
 }
 
+/// Whether a definition's text is a name and nothing else (`sizes`, `dims.handle_dims`).
+fn is_reference(text: &str) -> bool {
+    text.trim().split('.').all(|seg| {
+        let mut chars = seg.chars();
+        chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+            && chars.all(|c| c.is_alphanumeric() || c == '_')
+    })
+}
+
 /// A group's members by their names under `owner` (`dims.bore`), a group written in place
 /// listed before its own members (`dims.cyl`, then `dims.cyl.bore`).
-fn members_of<'a>(
+pub(super) fn members_of<'a>(
     owner: &str,
     fields: &'a [crate::syntax::InstArg],
     out: &mut Vec<(String, &'a crate::syntax::Name, &'a crate::syntax::InstArg)>,
@@ -836,17 +855,122 @@ impl<'a> Walk<'a> {
             }
         }
         let references: Vec<_> =
-            references.into_iter().filter(|(name, _)| !vals.contains_key(name)).collect();
+            references.into_iter().filter(|(name, _, _)| !vals.contains_key(name)).collect();
         if references.is_empty() {
             return;
         }
-        // one table for every alias the body makes, shared
+        // one table for every alias the body makes, shared; a file's group named by the key
+        // the file holds it under, read from nowhere in particular (`file_group`)
         let at = Scope { vals: std::rc::Rc::new(vals.clone()), ..scope.clone() };
-        for (name, reference) in references {
+        let root = Scope::absolute(scope.access.clone());
+        for (name, reference, absolute) in self.named_first(references, &prefix) {
             let abs = format!("{prefix}{name}");
             self.checks.group_fields.push((abs.clone(), reference.span));
-            self.aliases.push((abs, reference, at.clone()));
+            let at = if absolute { root.clone() } else { at.clone() };
+            self.aliases.push((abs, reference, at));
         }
+    }
+
+    /// A body's references ordered so a name for a group comes after the name it is for, where
+    /// that is another of them (`tiny := smaller` above `smaller := small`): the alias table reads
+    /// its aliases in the order they were made.  A cycle keeps its order, and is said elsewhere.
+    fn named_first(&self, references: Vec<(String, Ref, bool)>, prefix: &str)
+        -> Vec<(String, Ref, bool)> {
+        let mut ordered = Vec::with_capacity(references.len());
+        let mut left = references;
+        while !left.is_empty() {
+            let pending: BTreeSet<String> =
+                left.iter().map(|(n, _, _)| format!("{prefix}{n}")).collect();
+            let waits = |to: &String| pending.iter().any(|p| {
+                to == p || to.strip_prefix(p.as_str()).is_some_and(|r| r.starts_with('.'))
+            });
+            let (ready, rest): (Vec<_>, Vec<_>) = left.into_iter().partition(|(n, _, _)| {
+                self.group_aliases.get(&format!("{prefix}{n}")).is_none_or(|to| !waits(to))
+            });
+            if ready.is_empty() {
+                ordered.extend(rest);
+                break;
+            }
+            ordered.extend(ready);
+            left = rest;
+        }
+        ordered
+    }
+
+    /// The group of the file a definition's body is written in that `text` names, by the key
+    /// the walk holds it under, where nothing nearer does (#594): a body reads its file's
+    /// constants, and a group of numbers alone among them is handed on as the file's root hands
+    /// it — the file's own (`sizes`, or `{module}.sizes` in a module), a used module's by its
+    /// path (`dims.handle_dims`), or one a `use` imports bare.  A formal, or a name the body
+    /// declares, hides it; a group carrying geometry is the file's drawing, out of the body's
+    /// reach as the drawing is.
+    pub(super) fn file_group(&self, text: &str, scope: &Scope) -> Option<String> {
+        self.file_group_any(text, scope).filter(|k| !self.carries_geometry(k, 0))
+    }
+
+    /// `file_group`, geometry or none.
+    pub(super) fn file_group_any(&self, text: &str, scope: &Scope) -> Option<String> {
+        if !scope.closed {
+            return None;
+        }
+        let root = text.split('.').next().unwrap_or(text);
+        let known = |k: &str| self.group_names.contains(k) || self.group_aliases.contains_key(k);
+        let near = |k: &str| self.names.contains(k) || known(k);
+        if scope.groups.contains(root) || scope.prefixes.iter().any(|p| near(&format!("{p}{root}")))
+        {
+            return None;
+        }
+        let module = |k: usize| self.prog.modules[k].name.clone();
+        let own = scope.module.map_or_else(|| text.to_string(), |k| format!("{}.{text}", module(k)));
+        let imported = self.prog.imported(root, scope.module).map(|k| format!("{}.{text}", module(k)));
+        [Some(own), Some(text.to_string()), imported].into_iter().flatten()
+            .find(|k| self.defined_groups.contains(k) || self.group_aliases.contains_key(k))
+    }
+
+    /// Whether the group `key` names geometry, itself or through a group it names.
+    fn carries_geometry(&self, key: &str, depth: usize) -> bool {
+        if depth > MAX_DEPTH {
+            return true;
+        }
+        if let Some(to) = self.group_aliases.get(key) {
+            return self.carries_geometry(to, depth + 1);
+        }
+        let under = format!("{key}.");
+        self.aliases.iter().filter(|(a, _, _)| a.starts_with(&under)).any(|(a, _, _)| {
+            !self.group_aliases.contains_key(a) || self.carries_geometry(a, depth + 1)
+        })
+    }
+
+    /// The group `text`, all a definition writes after its `:=` or a member after its label,
+    /// names in scope (#594), by the key the walk holds it under — `None` where it names none:
+    /// one the body defines or names (`here`), a group formal or a group around the body, one in
+    /// force under the scope's prefixes, one a `use` imports bare, or one of a definition's file
+    /// (`file_group`), which it is read from wherever it stands (the `bool`).
+    fn group_named(
+        &self,
+        text: &str,
+        here: &BTreeSet<String>,
+        scope: &Scope,
+    ) -> Option<(String, bool)> {
+        let prefix = scope.prefix();
+        let root = text.split('.').next().unwrap_or(text);
+        let known = |k: &String| self.group_names.contains(k) || self.group_aliases.contains_key(k);
+        if here.contains(root) {
+            return here.contains(text).then(|| (format!("{prefix}{text}"), false));
+        }
+        if scope.groups.contains(text) {
+            return Some((format!("{prefix}{text}"), false));
+        }
+        let scoped = scope.prefixes.iter().map(|p| format!("{p}{text}"));
+        let open = (!scope.closed).then(|| {
+            let imported = self.prog.imported(root, scope.module)
+                .map(|k| format!("{}.{text}", self.prog.modules[k].name));
+            std::iter::once(text.to_string()).chain(imported)
+        });
+        if let Some(k) = scoped.chain(open.into_iter().flatten()).find(known) {
+            return Some((k, false));
+        }
+        self.file_group(text, scope).map(|k| (k, true))
     }
 
     /// The definitions of a body to work out: every `param` (an unknown declared as it is met)
@@ -859,16 +983,44 @@ impl<'a> Walk<'a> {
         vals: &mut Vals,
         scope: &Scope,
         prefix: &str,
-    ) -> (Vec<Def>, Vec<(String, Ref)>, BTreeSet<String>) {
+    ) -> (Vec<Def>, Vec<(String, Ref, bool)>, BTreeSet<String>) {
         let mut pending: Vec<Def> = Vec::new();
         let mut references = Vec::new();
         let mut here: BTreeSet<String> = BTreeSet::new();
+        // **a group is a value** (#594): `small := sizes` names the group `sizes` names, an alias
+        // whose members are read through either name — found among the body's groups, its own
+        // in place, and the definitions found so far to name one, `a := b` before `b := sizes`
+        let mut groups: BTreeSet<String> = BTreeSet::new();
+        for st in body {
+            let StmtKind::Group(g) = &st.kind else { continue };
+            let mut members = Vec::new();
+            members_of(&g.name.text, &g.fields, &mut members);
+            groups.insert(g.name.text.clone());
+            groups.extend(members.iter()
+                .filter(|(_, _, f)| matches!(f.value, crate::syntax::InstVal::Group(_)))
+                .map(|(name, _, _)| name.clone()));
+        }
+        let mut aliased: BTreeMap<&str, (String, bool)> = BTreeMap::new();
+        loop {
+            let found: Vec<(&str, (String, bool))> = body.iter().filter_map(|st| match &st.kind {
+                StmtKind::Param(pd) if pd.input.is_none() && !aliased.contains_key(pd.name.text.as_str())
+                    && is_reference(&pd.text) =>
+                    self.group_named(pd.text.trim(), &groups, scope).map(|g| (pd.name.text.as_str(), g)),
+                _ => None,
+            }).collect();
+            if found.is_empty() { break; }
+            for (name, group) in found {
+                aliased.insert(name, group);
+                groups.insert(name.to_string());
+            }
+        }
         for st in body {
             if let StmtKind::Group(g) = &st.kind {
                 let abs = format!("{prefix}{}", g.name.text);
                 if !self.group_names.insert(abs.clone()) {
                     self.err(Code::E001, g.name.span, format!("`{}` is declared twice", g.name.text));
                 }
+                self.defined_groups.insert(abs.clone());
                 self.names.insert(abs);
                 // a group written in place is the outer one's members under its own name, and
                 // a group in its own right: `dims.cyl` may be handed on as `dims` may
@@ -881,8 +1033,19 @@ impl<'a> Walk<'a> {
                     }
                     let text = match &field.value {
                         crate::syntax::InstVal::Ref(r) => {
-                            references.push((name.clone(), r.clone()));
-                            ref_text(r)
+                            let text = ref_text(r);
+                            let (r, absolute) = match self.group_named(&text, &groups, scope) {
+                                Some((to, absolute)) => {
+                                    self.group_aliases.insert(format!("{prefix}{name}"), to.clone());
+                                    match absolute {
+                                        true => (Ref::dotted(&to, r.span), true),
+                                        false => (r.clone(), false),
+                                    }
+                                }
+                                None => (r.clone(), false),
+                            };
+                            references.push((name.clone(), r, absolute));
+                            text
                         }
                         crate::syntax::InstVal::Expr(t) => t.clone(),
                         crate::syntax::InstVal::Hint(..) => {
@@ -894,6 +1057,7 @@ impl<'a> Walk<'a> {
                         crate::syntax::InstVal::Group(_) => {
                             let abs = format!("{prefix}{name}");
                             self.group_names.insert(abs.clone());
+                            self.defined_groups.insert(abs.clone());
                             self.names.insert(abs);
                             continue;
                         }
@@ -910,6 +1074,23 @@ impl<'a> Walk<'a> {
             }
             // a parameter axis is no definition to work out: its interval is read once they are
             if pd.over().is_some() {
+                continue;
+            }
+            // a name for a group: its members named under it, as a member naming a group's are,
+            // and the name an alias of the group
+            if let Some((to, absolute)) = aliased.get(pd.name.text.as_str()) {
+                let text = pd.text.trim();
+                let r = Ref::dotted(if *absolute { to } else { text }, pd.span);
+                let absolute = *absolute;
+                self.group_aliases.insert(format!("{prefix}{}", pd.name.text), to.clone());
+                references.push((pd.name.text.clone(), r, absolute));
+                pending.push(Def {
+                    name: pd.name.text.clone(),
+                    text: text.to_string(),
+                    span: pd.span,
+                    group_ref: true,
+                    ty: None,
+                });
                 continue;
             }
             let ty = pd.input.as_ref().and_then(|i| i.ty);
