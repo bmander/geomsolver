@@ -1022,6 +1022,63 @@ in std.front {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// **An empty Boolean of a swept body reads its volume, 0** (#618): the #585 wheel, cut by its star
+/// over a whole period, shares nothing with the star, so the common of the two is built with no
+/// material — `overlap.volume = 0`, as a static one's empty common reads — while a name the source
+/// does not have still names nothing.
+#[test]
+fn a_swept_bodys_empty_common_reads_volume_zero() {
+    let dir = std::env::temp_dir().join(format!("solventc-overlap-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("overlap.sv");
+    std::fs::write(&source,"\
+unit mm
+use std
+use std (vertical, turns, coords)
+in std.front {
+  construction stem := vertical line(std.origin, hint((0, 10)))
+  length(10mm) stem
+  wc := point hint((-50, 0))
+  std.origin distance(-50mm, along: u) wc
+  construction spindle := vertical line(wc, hint((-50, 10)))
+  length(10mm) spindle
+}
+in std.top {
+  repeat 4 as k {
+    a := point hint((30 * cos(90deg * k) - 4 * sin(90deg * k), 30 * sin(90deg * k) + 4 * cos(90deg * k)))
+    b := point hint((30 * cos(90deg * k) + 4 * sin(90deg * k), 30 * sin(90deg * k) - 4 * cos(90deg * k)))
+    c := point hint((4 * cos(90deg * k + 45deg) * sqrt(2), 4 * sin(90deg * k + 45deg) * sqrt(2)))
+    a coords(du: 30mm * cos(90deg * k) - 4mm * sin(90deg * k), dv: 30mm * sin(90deg * k) + 4mm * cos(90deg * k)) std.top
+    b coords(du: 30mm * cos(90deg * k) + 4mm * sin(90deg * k), dv: 30mm * sin(90deg * k) - 4mm * cos(90deg * k)) std.top
+    c coords(du: 4mm * sqrt(2) * cos(90deg * k - 45deg), dv: 4mm * sqrt(2) * sin(90deg * k - 45deg)) std.top
+  }
+  plus := face(c[0], b[0], a[0], c[1], b[1], a[1], c[2], b[2], a[2], c[3], b[3], a[3], -> close)
+  wo := point
+  wo coincident wc
+  rim := circle(center: wo) hint(r: 40)
+  radius(40mm) rim
+}
+star := solid(plus, from: -10mm, to: 0mm)
+tool_turn := frame
+tool_turn turns(1) stem
+wheel_turn := frame
+wheel_turn turns(-4 / 6) spindle
+blank := solid(face(rim), from: -8mm, to: -2mm)
+space := sweep(star over t in (0deg, 540deg), under: tool_turn, seen_from: wheel_turn)
+wheel := solid(blank)
+space cut wheel
+overlap := solid(wheel)
+star common overlap
+").unwrap();
+    let path = source.to_str().unwrap();
+    let out = run(&[path,"--where","overlap.volume","--where","overlapp.volume"]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    assert!(said.contains("  overlap.volume = 0\n"),"{said}");
+    assert!(said.contains("  where overlapp.volume: the source names nothing there\n"),"{said}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// **A driving deflection is said driven** (#510 S1): the library's sized cantilever solves to
 /// the depth its tip sinks 4mm at, and `solventc` says the requirement is driven and held, and
 /// the unknown it sized.

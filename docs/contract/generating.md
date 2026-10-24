@@ -232,7 +232,10 @@ where the profile's curvature jumps, the section does not), fitted by the shared
 (`brep::sweep::helical`). A body built from swept material (`drill := solid(fluted)`, `shank union
 drill`) is built by the body rule over exact operands (`brep::export::compose`; the page's `Builder`
 too) and measured by it over operand meters (`accuracy::Meter`). A drawing reads a swept object's
-exact B-rep (`brep::export::supply_exact`, `Sketch::supply_exact_solid`). Kernel rules it found: every
+exact B-rep (`brep::export::supply_exact`, `Sketch::supply_exact_solid`); one built with no faces is
+a body with no material, read as a static solid's empty Boolean is (`overlap.volume = 0`), never as a
+solid that failed to build, whose name would read nothing (#618,
+`planar_subtraction::a_swept_bodys_empty_boolean_reads_volume_zero`). Kernel rules it found: every
 vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a traced fit is laid and
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.

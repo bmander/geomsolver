@@ -245,11 +245,12 @@ impl EvaluatedSolid {
             return Self::of_field(sk, si, policy, unit);
         }
         // the exact B-rep where this kernel builds and meshes one, the facet term where it does
-        // not, an empty solid among them (`SOLVENT_SOLIDS=facets` asks for it throughout)
+        // not, an empty solid among them, whose B-rep has no faces (`SOLVENT_SOLIDS=facets` asks
+        // for it throughout)
         if !facets_only() {
-            let exact = sk.exact_preimage(si)
-                .and_then(|x| Self::from_brep(sk, si, policy, unit, operands.clone(), &x));
-            if let Ok(solid) = exact {
+            let exact = sk.exact_preimage(si).ok().filter(|x| !x.brep.faces.is_empty())
+                .map(|x| Self::from_brep(sk, si, policy, unit, operands.clone(), &x));
+            if let Some(Ok(solid)) = exact {
                 return Ok(solid);
             }
         }
@@ -352,6 +353,7 @@ impl EvaluatedSolid {
     /// approximation's sagitta stands in as one polyhedral primitive whose facets carry their
     /// faces' paths, so classification, edges and views read it as they read any other — and a
     /// face's facets meet another face's at a crease, the B-rep's edge. Its volume is the B-rep's.
+    /// A B-rep with no faces is a solid with no material, its volume 0 (#618).
     fn from_brep(
         sk: &Sketch,
         si: usize,
@@ -410,7 +412,10 @@ impl EvaluatedSolid {
             brep_faces.push(fi);
             facets.push(Facet { pts: vec![a, b3, c], n, face: index[fi as usize], smooth });
         }
-        if facets.is_empty() { return Err(format!("`{name}`: the exact solid meshed to nothing")); }
+        // (one with faces that mesh to nothing is a failure, not an empty solid)
+        if facets.is_empty() && !b.faces.is_empty() {
+            return Err(format!("`{name}`: the exact solid meshed to nothing"));
+        }
         let prim = Prim { facets, bbox, faces, of: String::new(), exact: true };
         let csg = Csg { prims: vec![prim], term: Term::Prim(0) };
         let epsilon = csg.epsilon();
@@ -425,7 +430,8 @@ impl EvaluatedSolid {
         let curved: BTreeSet<&str> =
             boundary.iter().filter(|p| p.smooth).map(|p| p.path.as_str()).collect();
         let round = round_features(sk, operands, &curved, origin)?;
-        let volume = crate::brep::props::volume(b) / (mm * mm * mm);
+        let volume =
+            if b.faces.is_empty() { 0.0 } else { crate::brep::props::volume(b) / (mm * mm * mm) };
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
             name,
