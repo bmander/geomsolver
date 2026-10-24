@@ -344,15 +344,13 @@ fn a_wheel_a_frame_stands_is_the_wheel_moved() {
                 .unwrap_or_else(|r| panic!("{degrees}°: the STL refused at {:?}: {}", r.stage, r.message));
             exact.solid
         };
-        let wheel = built(w);
+        let (wheel, shown) = (built(w), built(solid("shown")));
         let v = props::volume(&wheel);
-        for name in ["shown", "copy"] {
-            let moved = built(solid(name));
-            assert!((props::volume(&moved) - v).abs() <= 1e-9 * v, "{degrees}°: `{name}` {} mm³ against {v}", props::volume(&moved));
+        for (name, moved) in [("shown", props::volume(&shown)), ("copy", props::volume(&built(solid("copy"))))] {
+            assert!((moved - v).abs() <= 1e-9 * v, "{degrees}°: `{name}` {moved} mm³ against {v}");
         }
         // the handle's 30° is the wheel's −20°, about the spindle through (−50, 0) along z
         let (s, c) = (-2. * degrees.to_radians() / 3.).sin_cos();
-        let shown = built(solid("shown"));
         for (a, b) in wheel.vertices.iter().zip(&shown.vertices) {
             let (x, y) = (a.p[0] + 50., a.p[1]);
             let want = [c * x - s * y - 50., s * x + c * y, a.p[2]];

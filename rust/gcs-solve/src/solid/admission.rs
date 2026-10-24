@@ -430,7 +430,7 @@ struct Fine { reads: Reads,samples: usize,near_double_roots: usize,hits: Vec<(Hi
 /// checking them one after another in order says.
 pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission,Error> {
     // a body placed by a rigid motion is the body moved: the body it places is admitted (#619)
-    let root = cad::placed(sk,root).map_err(Error::Unreadable)?.map_or(root,|(inner,_)| inner);
+    let root = cad::placed_swept(sk,root).map_err(Error::Unreadable)?.map_or(root,|(inner,_)| inner);
     let (field,cuts) = static_remainder(sk,root,options.axis_tolerance).map_err(Error::Unreadable)?;
     let mut by_sweep: BTreeMap<usize,Vec<Motion>> = BTreeMap::new();
     let mut order = Vec::new();

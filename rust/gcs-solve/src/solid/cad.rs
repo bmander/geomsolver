@@ -87,16 +87,20 @@ pub(crate) fn swept_operands(sk: &Sketch,i: usize) -> Vec<usize> {
     std::iter::once(stock).chain(on).chain(bound).map(|&o| o as usize).filter(|&o| contains_sweep(sk,o)).collect()
 }
 
-/// The solid a chain of placements ends in (`x in f`, `x at(…) τ`), and the pose (model units) the
-/// chain stands it at; none where solid `i` is no placement.  A rigid motion moves a body's exact
-/// boundary without building it again: the body built is the solid it places, moved (#619).
-pub(crate) fn placed(sk: &Sketch,i: usize) -> Result<Option<(usize,crate::envelope::Motion)>,String> {
-    let SolidDef::Placed {source,motion,at} = &sk.solids[i].def else { return Ok(None) };
-    let outer = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
-    Ok(Some(match placed(sk,*source as usize)? {
-        Some((inner,pose)) => (inner,pose.then(outer)),
-        None => (*source as usize,outer),
-    }))
+/// The solid a chain of placements ends in (`x in f`, `x at(…) τ`) where it holds a continuous
+/// sweep, and the pose (model units) the chain stands it at; none where solid `i` is no placement,
+/// or places only static material.  A rigid motion moves a swept body's exact boundary without
+/// building it again: the body built is the solid it places, moved (#619).
+pub(crate) fn placed_swept(sk: &Sketch,i: usize) -> Result<Option<(usize,crate::envelope::Motion)>,String> {
+    fn chain(sk: &Sketch,i: usize) -> Result<Option<(usize,crate::envelope::Motion)>,String> {
+        let SolidDef::Placed {source,motion,at} = &sk.solids[i].def else { return Ok(None) };
+        let outer = crate::motion::Family::read(sk,*motion as usize)?.at(at.value)?;
+        Ok(Some(match chain(sk,*source as usize)? {
+            Some((inner,pose)) => (inner,pose.then(outer)),
+            None => (*source as usize,outer),
+        }))
+    }
+    Ok(chain(sk,i)?.filter(|&(inner,_)| contains_sweep(sk,inner)))
 }
 
 /// A cut operand that is a sweep or a chain of placements ending in one.

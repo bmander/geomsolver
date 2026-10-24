@@ -11,7 +11,6 @@ use crate::fmath::Det;
 use super::pattern::Built as Patterned;
 use super::sweep::Say;
 use super::boolean::Op;
-use super::geom::Rigid;
 use super::topo::Brep;
 use crate::model::Sketch;
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
@@ -40,8 +39,8 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
     }
     // a body placed by a rigid motion (`x in f`) is the body it places, built once and moved
     // (#619): its volume the body's, its pattern and the turn its agreement folds by moved with it
-    if let Some((inner,pose)) = cad::placed(sk,body).at(Stage::Blank)?.filter(|&(inner,_)| cad::contains_sweep(sk,inner)) {
-        let m = Rigid::from_rows(&cad::placement_matrix(pose,cad::millimetres(sk)));
+    if let Some((inner,pose)) = cad::placed_swept(sk,body).at(Stage::Blank)? {
+        let m = super::sweep::sector::placed(pose,cad::millimetres(sk));
         let built = exact(sk,inner,admitted,tolerance,say)?;
         (say.stage)(&format!("`{}` is `{}` moved",sk.solids[body].name,sk.solids[inner].name));
         return Ok(Exact {solid:built.solid.moved(&m),pattern:built.pattern.map(|p| p.moved(&m)),
@@ -269,7 +268,7 @@ pub struct Builder { sk: Sketch,body: usize,recipe: cad::StaticRecipe,state: Sta
     operand: usize,
     /// Where `body` is placed (#619): the motion its build is moved by (mm), and the one the
     /// combined body is moved by after, where a placement places that.
-    moved: [Option<Rigid>;2] }
+    moved: [Option<super::geom::Rigid>;2] }
 
 impl Builder {
     /// The build of swept solid `body` of `sk` (a copy of the sketch is kept), or why it has none:
@@ -277,13 +276,10 @@ impl Builder {
     pub fn new(sk: &Sketch,body: usize) -> Result<Builder,ExportRefusal> {
         if body >= sk.solids.len() { return Err(ExportRefusal::at(Stage::Blank,"no such solid in this drawing")) }
         // a placement of a swept body (`x in f`): the body it places, built and moved (#619)
-        let placed = |i: usize| -> Result<(usize,Option<crate::envelope::Motion>),ExportRefusal> {
-            Ok(match cad::placed(sk,i).at(Stage::Blank)? {
-                Some((inner,pose)) if cad::contains_sweep(sk,inner) => (inner,Some(pose)),
-                _ => (i,None),
-            })
+        let placed = |i: usize| -> Result<(usize,Option<super::geom::Rigid>),ExportRefusal> {
+            Ok(cad::placed_swept(sk,i).at(Stage::Blank)?
+                .map_or((i,None),|(inner,pose)| (inner,Some(super::sweep::sector::placed(pose,cad::millimetres(sk))))))
         };
-        let rigid = |pose: crate::envelope::Motion| Rigid::from_rows(&cad::placement_matrix(pose,cad::millimetres(sk)));
         let (body,whole) = placed(body)?;
         // a body built from swept material: its one operand holding sweeps built by the stages
         let swept = cad::swept_operands(sk,body);
@@ -292,9 +288,9 @@ impl Builder {
                 return Err(ExportRefusal::at(Stage::Blank,format!("`{}` is built from {} swept bodies; its display is built from one",
                     sk.solids[body].name,swept.len())))
             };
-            let (inner,pose) = placed(operand)?;
-            (inner,Some(body),operand,[pose.map(rigid),whole.map(rigid)])
-        } else { (body,None,body,[whole.map(rigid),None]) };
+            let (inner,moved) = placed(operand)?;
+            (inner,Some(body),operand,[moved,whole])
+        } else { (body,None,body,[whole,None]) };
         let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
         if recipe.sweeps.is_empty() {
             return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))

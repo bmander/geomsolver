@@ -239,7 +239,7 @@ graded by length and never crowds a vertex it must pass, a cone at its apex writ
 
 **A swept body placed is the body moved (#619):** a chain of placements (`shown := wheel in held`,
 `x at(under: f) τ`) ending in a body with swept cuts is that body built once and its boundary carried
-by the chain's pose (`cad::placed`): `brep::export::exact` moves the B-rep, its pattern
+by the chain's pose (`cad::placed_swept`): `brep::export::exact` moves the B-rep, its pattern
 (`pattern::Built::moved`) and the turn its field agreement folds by, the page's `Builder` moves its
 build (`sweep::Built::moved`) before the body rule takes it as the operand it stands for, and
 `admit_body` admits the body placed. Its volume is the body's to rounding, and a body made from it
