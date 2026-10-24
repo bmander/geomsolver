@@ -113,7 +113,8 @@ fn through(sk: &Sketch, source: usize, motion: usize, body: usize) -> Result<[f6
 /// `tool` where it stood at 0 again — a whole period of the pair as the observer sees it, the
 /// tool's own symmetry counted: the tool's field read alike, to rounding, at every point of a grid
 /// over its support carried back from the later pose as from the first (a turn of the tool onto
-/// itself leaves its distances where they were; any other moves some of them).
+/// itself leaves its distances where they were; any other moves some of them).  None for a tool the
+/// motion does not move.
 fn period(tool: &SpatialField, support: [I; 3], family: &crate::motion::Family) -> Option<f64> {
     let n = 12;
     let lo = support.map(|x| x.bounds()[0]);
@@ -127,9 +128,13 @@ fn period(tool: &SpatialField, support: [I; 3], family: &crate::motion::Family) 
     }).collect();
     if !points.iter().any(|p| p.1 < 0.0) { return None; }
     let near = 1e-7 * (1.0 + size);
-    (1..=(PERIOD_TURNS * 360.0) as u32).map(|k| f64::from(k) * STEP).find(|&t| {
-        family.pose_at(t).is_ok_and(|m| { let back = m.inverse(); points.iter().all(|&(y, v)| (tool.value(back.point(y)) - v).abs() <= near) })
-    })
+    let alike = |t: f64| family.pose_at(t).is_ok_and(|m| {
+        let back = m.inverse();
+        points.iter().all(|&(y, v)| (tool.value(back.point(y)) - v).abs() <= near)
+    });
+    // a tool the motion does not move (a ball on its axis) has no period
+    if alike(STEP) { return None; }
+    (2..=(PERIOD_TURNS * 360.0) as u32).map(|k| f64::from(k) * STEP).find(|&t| alike(t))
 }
 
 /// How many turns `period` looks through.
