@@ -4,6 +4,14 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.182] A block's word may be a name.** `repeat`, `cycle`, `ring` and `when` open a block only
+where a header follows them (§1.3): `ring := Gear(…)` names a ring gear, and a statement starting
+with the name is about it where the next token is `.` or a constraint word with no `{` opened on the
+line — `ring.std.origin coincident hub`, `ring coincident hub`. A definition was already admitted;
+a statement reading it was taken for the block's header and refused with the block's message, at a
+column inside the statement (`a \`ring\` names what its copies turn about`). A header always runs on
+its line to its `{`, so no block is read otherwise than before. (Issue #598.)
+
 **[0.181] A module's parameter is its drawing's.** A file that declares a parameter that runs
 (`param spin: Angle over (0deg, 360deg)`, §6.3) beside the drawing that reads it — a part opened on
 its own to scrub its joint — is now a module as it stands (§14.4): `use` leaves the parameter out
