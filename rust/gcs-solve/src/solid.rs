@@ -58,7 +58,7 @@ pub use document::resolve;
 pub use reads::{reads,Memo,MemoKey,ShapeKey};
 mod static_boundary;
 pub use static_boundary::{static_solid,indexed,indexed_faces,primitive_triangles,StaticSolid,static_solid_at_unit};
-pub use document::{evaluation_operands,operand_paths,past_step,reaches,route_step};
+pub use document::{built_on,evaluation_operands,operand_paths,past_step,reaches,route_step};
 use document::{frame_origin,resolve_at};
 mod field;
 pub use field::{PlanarField,RevolvedField,ExtrudedField,SpatialField,SweptField,SweepEvaluator,SweepError,CHORD_SLACK};

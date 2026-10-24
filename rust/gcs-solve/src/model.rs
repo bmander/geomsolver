@@ -247,6 +247,15 @@ pub struct Sketch {
     /// is drawn to (`program::resolve::follow`).  Set by the elaborator
     /// (`program::entities::walked_back`, read by `arcs_in_space`).
     pub walked_back: std::collections::BTreeSet<u32>,
+    /// **The arcs said to turn clockwise in a plane and drawn from their end** (#573): `arc(
+    /// center: c, start: a, end: b, sense: cw)` that no chain enters at its start is the
+    /// counter-clockwise arc from `b` to `a`, the same arc in its own plane, so it owns nothing
+    /// the arc it describes does not.  Its start and end are stored swapped, and what reads an
+    /// end or a fraction of its turn reads it as written: `at: start` is `a`
+    /// (`Constraint::contact_point`), `t == 0` is `a` and `t` runs clockwise to `b`
+    /// (`point_along_arc`, its constant), a frame along it runs from `a`.  Set by the elaborator
+    /// (`program::entities::arcs_in_space`), carried by `graft` and the JSON.
+    pub reversed: std::collections::BTreeSet<u32>,
     /// Each free curve's energy as `settle_variational` last read it: its statements, pegs and
     /// whether its length is free.  Derived state, never saved.
     pub variational: Vec<crate::variational::Energy>,

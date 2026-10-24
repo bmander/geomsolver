@@ -32,7 +32,7 @@ fn read(src: &str) -> program::Elaborated {
 
 fn positions(src: &str) -> BTreeMap<String, f64> {
     let e = read(src);
-    let errors = program::solid_diagnostics(&e.sketch, &e.map);
+    let errors = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
     assert!(errors.is_empty(), "{errors:?}");
     report::positions(&e.sketch, &e.map).into_iter().collect()
 }
@@ -136,7 +136,7 @@ fn invalid_solved_profiles_and_revolution_axes_are_diagnosed() {
         source(9).replace("fix((5, 10)) b", "fix((5, 0)) b"),
     ] {
         let e = read(&src);
-        let errors = program::solid_diagnostics(&e.sketch, &e.map);
+        let errors = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
         assert!(!errors.is_empty());
         assert!(errors.iter().all(|d| d.span.hi > d.span.lo));
         assert!(!report::positions(&e.sketch, &e.map)
@@ -168,7 +168,7 @@ fn invalid_solved_profiles_and_revolution_axes_are_diagnosed() {
                 .join(", ")
         );
         let e = read(&src);
-        assert!(!program::solid_diagnostics(&e.sketch, &e.map).is_empty());
+        assert!(!program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
     }
 }
 
@@ -222,7 +222,7 @@ fn depth_is_a_positive_magnitude_even_when_it_is_an_expression() {
 fn geometry_validation_uses_the_solved_shape_instead_of_its_hint() {
     // p2 starts at p1. Its dimensions move it to the fourth corner before validation runs.
     let e = read("unit mm\nuse std\nin std.front {\np0 := point\nfix((0, 0)) p0\np1 := point\nfix((10, 0)) p1\np2 := point hint((10, 0))\np3 := point\nfix((0, 10)) p3\np0 distance(10mm, along: u) p2\np0 distance(10mm, along: v) p2\n}\nf := face(p0,p1,p2,p3, -> close)\nresult := solid(f, depth: 5mm)\n");
-    assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
+    assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
     near(
         report::positions(&e.sketch, &e.map)
             .into_iter()

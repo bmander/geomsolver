@@ -42,6 +42,22 @@ pub fn evaluation_operands(sk: &Sketch, i: usize) -> Result<Vec<u32>, String> {
     }
 }
 
+/// The solids solid `i` is built on (#572): what it is evaluated over (`evaluation_operands`, its
+/// operands where that walk refuses), and a region's the solids its terms read — the body whose
+/// faces a round reads.  Each once, in index order; nothing for no solid.
+pub fn built_on(sk: &Sketch, i: usize) -> Vec<usize> {
+    let Some(s) = sk.solids.get(i) else { return Vec::new() };
+    let mut on: Vec<usize> = evaluation_operands(sk, i).unwrap_or_else(|_| s.operands())
+        .into_iter().map(|o| o as usize).collect();
+    if let SolidDef::Region { terms, .. } = &s.def {
+        on.extend(terms.iter().flat_map(|t| t.shape.entities())
+            .filter(|e| e.kind == crate::model::EntKind::Solid).map(|e| e.i()));
+    }
+    on.sort_unstable();
+    on.dedup();
+    on
+}
+
 /// Does `from` reach `goal` through its operands?  The guard on the term walk, and the one thing
 /// a document can write that has no object behind it.
 pub fn reaches(sk: &Sketch, from: u32, goal: u32) -> bool {

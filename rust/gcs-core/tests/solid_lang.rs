@@ -836,7 +836,7 @@ fn named_chains_inherit_planes_and_revolve_with_arcs() {
     let old = src.replace("profile := ", "")
         .replace("ball := solid(profile,", "sec := face(rim, ax)\nball := solid(sec,");
     assert_eq!(volume(&e, "ball"), volume(&read(&old), "ball"));
-    assert!(gcs_core::program::solid_diagnostics(&e.sketch, &e.map).is_empty());
+    assert!(gcs_core::program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
 }
 
 #[test]

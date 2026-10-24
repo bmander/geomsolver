@@ -140,6 +140,12 @@ pub enum Code {
     /// the seeds' choice (#461 PT5).  Asked by `solventc --lint` of the solved drawing, never
     /// raised by elaboration
     W207,
+    /// A note (the `N` block is ours): what is not built because of a fault said elsewhere, said
+    /// once at its own statement, `cause` the fault's span (#572).
+    ///
+    /// a statement whose solids are not built because a solid they are built on was refused
+    /// (E080 there): a round over a body whose operand did not build
+    N080,
 }
 
 impl Code {
@@ -192,6 +198,7 @@ impl Code {
             Code::W205 => "W205",
             Code::W206 => "W206",
             Code::W207 => "W207",
+            Code::N080 => "N080",
         }
     }
 
@@ -200,6 +207,7 @@ impl Code {
             Code::W110 | Code::W112 | Code::W113 | Code::W114 | Code::W115 | Code::W201
             | Code::W202 | Code::W203 | Code::W204 | Code::W205 | Code::W206
             | Code::W207 => Severity::Warning,
+            Code::N080 => Severity::Note,
             _ => Severity::Error,
         }
     }
@@ -211,6 +219,9 @@ pub struct Diag {
     pub span: Span,
     pub stmt: Option<StmtId>,
     pub message: String,
+    /// Where the fault this one follows from is said, for a diagnostic that only follows from
+    /// one (N080, #572): a reader's reference back to it, beside the words.
+    pub cause: Option<Span>,
 }
 
 impl Diag {
@@ -224,17 +235,17 @@ impl Diag {
 
     /// A diagnostic at `span`, in the statement `stmt` where there is one.
     pub fn new(code: Code, span: Span, stmt: Option<StmtId>, message: String) -> Diag {
-        Diag { code, span, stmt, message }
+        Diag { code, span, stmt, message, cause: None }
     }
 
     /// A diagnostic at `span` within the statement `stmt`.
     pub fn within(code: Code, span: Span, stmt: StmtId, message: String) -> Diag {
-        Diag { code, span, stmt: Some(stmt), message }
+        Diag::new(code, span, Some(stmt), message)
     }
 
     /// A diagnostic on a whole statement: its span and its id.
     pub(crate) fn on(code: Code, st: &crate::ir::Statement, message: String) -> Diag {
-        Diag { code, span: st.span, stmt: Some(st.id), message }
+        Diag::new(code, st.span, Some(st.id), message)
     }
 
     pub fn severity(&self) -> Severity {

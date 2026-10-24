@@ -170,15 +170,15 @@ fn sampling_method_and_actual_attempt_count_are_serialized() {
 fn input_edge_names_cannot_steal_sweep_cap_names() {
     for name in ["near", "far"] {
         let e = read(&source("cap_collision").replace("near", name));
-        let errors = program::solid_diagnostics(&e.sketch, &e.map);
+        let errors = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
         assert!(errors.iter().any(|d| d.message.contains("collides")), "{errors:?}");
     }
     let e = case("cap_collision_control");
-    assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
+    assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
     let src=source("cap_collision_control").replace("bottom","start")
         .replace("result := solid(f,depth: 2mm)","in std.front {\nax0 := point\nfix((-1, 0)) ax0\nax1 := point\nfix((-1, 5)) ax1\nax := line(ax0,ax1)\n}\nresult := solid(f,about:ax,sweep:90deg)");
     let e = read(&src);
-    assert!(!program::solid_diagnostics(&e.sketch, &e.map).is_empty());
+    assert!(!program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
 }
 
 #[test]
@@ -375,11 +375,11 @@ fn named_profiles_preserve_sweep_cap_collision_diagnostics() {
         .replace("near := line(a,b)\nright := line(b,c)\ntop := line(c,d)\nleft := line(d,a)\nf := face(near,right,top,left)",
             "use std\nin std.front {\nf := (near := line(a,b)) -> (right := line(b,c)) -> (top := line(c,d)) -> (left := line(d,a)) -> close\n}\n");
     let e = read(&src);
-    assert!(program::solid_diagnostics(&e.sketch, &e.map)
+    assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program)
         .iter()
         .any(|d| d.message.contains("collides")));
     let e = read(&src.replace("near", "bottom"));
-    assert!(program::solid_diagnostics(&e.sketch, &e.map).is_empty());
+    assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program).is_empty());
     close(mesh::volume(&e.sketch.solid_boundary(si(&e, "result"), solid::REPORT_UNIT)), 100.0);
 }
 

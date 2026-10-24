@@ -241,7 +241,7 @@ turn turns(1) ax
     e.sketch.params[bp[0] as usize].value = xy.0;
     e.sketch.params[bp[1] as usize].value = xy.1;
     assert!(motion::evaluate(&e.sketch,m,0.).unwrap_err().contains("nondegenerate"));
-    assert!(program::solid_diagnostics(&e.sketch,&e.map).iter()
+    assert!(program::solid_diagnostics(&e.sketch, &e.map, &e.program).iter()
         .any(|d| d.message.contains("nondegenerate")));
 }
 

@@ -296,6 +296,9 @@ impl Ring {
         let turn = crate::brep::geom::Rigid::turn(self.axis_origin, self.axis, self.angle);
         (turn.point(self.section.origin), turn.vector(self.section.along))
     }
+
+    /// Whether it turns short of a whole turn: a stretch, with an end at each side.
+    fn stretch(&self) -> bool { self.angle < std::f64::consts::TAU - 1e-12 }
 }
 
 /// A piece of what a region is built as; a region is the union of its pieces, and one of none
