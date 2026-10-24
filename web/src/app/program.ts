@@ -157,10 +157,17 @@ async function chooseFile(name: string): Promise<void> {
   if (name === activeFile || !project || !sourceFile(name)) { selectFile(name); return; }
   loading(`${name.endsWith('.svd') ? 'rendering' : 'reading'} ${name}…`);
   await painted();
+  await held(() => selectFile(name));
+}
+
+/** An opening run with the view held: afterwards the loading modal names each object as it is
+ *  built, and stays until the swept ones have a surface.  The caller has painted the modal
+ *  saying what is being read, since the reading holds the thread. */
+export async function held<T>(open: () => T): Promise<T> {
   awaitSurfaces();
   buildingObjects();
   view.hold();
-  try { selectFile(name); }
+  try { return open(); }
   finally {
     await view.buildObjects(loading, painted);
     opened();

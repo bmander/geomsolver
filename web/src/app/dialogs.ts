@@ -4,8 +4,8 @@ import * as C from '../core/constraints.js';
 import { exampleCases } from './example-catalog.js';
 import * as remote from './remote.js';
 import { githubProject, parseGithub } from './github.js';
-import { awaitSurfaces, buildingObjects, loaded, loading, opened, painted } from './loading.js';
-import { openProject, openSide } from './program.js';
+import { loaded, loading, painted } from './loading.js';
+import { held, openProject, openSide } from './program.js';
 import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
 import { Point } from '../core/model.js';
@@ -54,18 +54,20 @@ export async function openCase(): Promise<void> {
   await openExample(cases[i].key);
 }
 
-let exampleRequest = 0;
+/** The latest opening, of an example or a GitHub project: one fetched after another was asked
+ *  for is dropped, and the newer one owns the loading modal. */
+let openingRequest = 0;
 export async function openExample(key: string, navigation: 'push' | 'replace' | 'none' = 'push',
   file?: string): Promise<void> {
-  const request = ++exampleRequest;
+  const request = ++openingRequest;
   try {
     loading(`fetching ${key}…`);
     const bundle = await remote.drawing(key, file);
-    if (request !== exampleRequest) return;
+    if (request !== openingRequest) return;
     // the reading holds the thread, so the modal saying so is painted first
     loading(`reading ${bundle.source}…`);
     await painted();
-    if (request !== exampleRequest) return;
+    if (request !== openingRequest) return;
     const updateUrl = (selected: string | undefined, method: 'push' | 'replace') => {
       const url = new URL(location.href);
       url.searchParams.set('example', bundle.key);
@@ -73,17 +75,8 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
       else url.searchParams.delete('file');
       if (url.href !== location.href) history[method === 'push' ? 'pushState' : 'replaceState'](null, '', url);
     };
-    awaitSurfaces();
-    buildingObjects();
-    view.hold();
-    try {
-      openProject(bundle, { directory: bundle.directory, entry: bundle.entry,
-        onSelect: (path) => updateUrl(path, 'replace') });
-    } finally {
-      // each object built in turn, the modal saying which, and the view let go however it went
-      await view.buildObjects(loading, painted);
-    }
-    opened();
+    await held(() => openProject(bundle, { directory: bundle.directory, entry: bundle.entry,
+      onSelect: (path) => updateUrl(path, 'replace') }));
     if (navigation !== 'none') {
       updateUrl(file || bundle.key !== key ? bundle.source : undefined, navigation);
     }
@@ -95,7 +88,7 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
  *  panel's tree, the address asked for in a form since the browser has no picker for it, and a
  *  token beside it for a private one, held in this page's memory and nowhere else. */
 let githubAddress = '', githubToken = '';
-export async function openGithub(): Promise<boolean> {
+export async function openGithub(): Promise<void> {
   if (!await askFields('Open GitHub project', (body) => {
     addText(body, 'address', githubAddress, (v) => { githubAddress = v; },
       'A repository (https://github.com/owner/repo, or owner/repo), a folder in it '
@@ -105,28 +98,25 @@ export async function openGithub(): Promise<boolean> {
     + 'only to api.github.com, and kept only until the page is closed');
     token.type = 'password'; token.autocomplete = 'off';
     token.placeholder = 'optional, for a private repository';
-  })) return false;
+  })) return;
   const address = parseGithub(githubAddress);
-  if (!address) { toast('That is not a GitHub repository address'); return false; }
+  if (!address) { toast('That is not a GitHub repository address'); return; }
+  const request = ++openingRequest;
   try {
     loading(`fetching ${address.owner}/${address.repo}…`);
-    const bundle = await githubProject(address, githubToken || undefined);
+    const bundle = await githubProject(address, githubToken);
+    if (request !== openingRequest) return;
     loading(`reading ${bundle.label}…`);
     await painted();
-    awaitSurfaces();
-    buildingObjects();
-    view.hold();
-    let ok = false;
-    try { ok = openProject(bundle, { directory: bundle.directory }); }
-    finally { await view.buildObjects(loading, painted); }
+    if (!await held(() => openProject(bundle, { directory: bundle.directory }))) return;
     // what was asked for is the repository's files, so the panel turns to them
-    if (ok) { dropExampleAddress(); openSide('project'); toast(`opened ${bundle.label}`); }
-    opened();
-    return ok;
+    clearExampleAddress();
+    openSide('project');
+    toast(`opened ${bundle.label}`);
   } catch (e) {
+    if (request !== openingRequest) return;
     loaded();
     toast(`Could not open GitHub project: ${(e as Error).message}`);
-    return false;
   }
 }
 
@@ -135,13 +125,13 @@ export async function openGithub(): Promise<boolean> {
  *  a step back to the bare address would open a blank sheet — and an example still on its way
  *  is dropped. */
 export function leaveExample(): void {
-  dropExampleAddress();
+  ++openingRequest;
   loaded();
+  clearExampleAddress();
 }
-/** The address's example taken off, and one on its way dropped, leaving the modal as it is: a
- *  GitHub project's own meshing may be what it is showing. */
-function dropExampleAddress(): void {
-  ++exampleRequest;
+/** The address's example taken off, leaving the modal as it is: a GitHub project's own meshing
+ *  may be what it is showing. */
+function clearExampleAddress(): void {
   const url = new URL(location.href);
   url.searchParams.delete('example');
   url.searchParams.delete('file');

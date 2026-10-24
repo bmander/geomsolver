@@ -20,7 +20,7 @@ test('a GitHub address names a repository, and in it a ref and a folder or a fil
 });
 
 /** A repository with the branch `feat/x`, served as GitHub's API and raw host would. */
-function served(asked: string[]) {
+function served(asked: string[] = []) {
   const tree = [
     { path: 'README.md', type: 'blob' },
     { path: 'models', type: 'tree' },
@@ -33,13 +33,12 @@ function served(asked: string[]) {
     const url = String(input);
     asked.push(url);
     const api = 'https://api.github.com/repos/o/r';
-    if (url === api) return Response.json({ default_branch: 'main' });
-    if (url === `${api}/git/trees/main?recursive=1`
-      || url === `${api}/git/trees/feat/x?recursive=1`) {
+    if (['HEAD', 'main', 'feat/x'].some((ref) => url === `${api}/git/trees/${ref}?recursive=1`)) {
       return Response.json({ tree, truncated: false });
     }
     if (url.startsWith(`${api}/git/trees/`)) return new Response('', { status: 404 });
-    const raw = /^https:\/\/raw\.githubusercontent\.com\/o\/r\/(?:main|feat\/x)\/(.+)$/.exec(url);
+    const raw = /^https:\/\/raw\.githubusercontent\.com\/o\/r\/(?:HEAD|main|feat\/x)\/(.+)$/
+      .exec(url);
     if (raw && tree.some((e) => e.path === raw[1])) return new Response(`// ${raw[1]}`);
     return new Response('', { status: 404 });
   };
@@ -50,6 +49,7 @@ test('a repository opens on its default branch, its Solvent and text files in th
     const asked: string[] = [];
     t.mock.method(globalThis, 'fetch', served(asked));
     const bundle = await githubProject(parseGithub('o/r')!);
+    assert.equal(asked.filter((url) => url.startsWith('https://api.github.com/')).length, 1);
     assert.equal(bundle.directory, 'r');
     assert.deepEqual(Object.keys(bundle.files).sort(),
       ['r/README.md', 'r/models/part.sv', 'r/models/part.svd', 'r/other/x.sv']);
@@ -71,7 +71,7 @@ test('a folder on a branch with a slash opens that folder; a file address select
   });
 
 test('an address with no Solvent files, or an unknown ref, says so', async (t) => {
-  t.mock.method(globalThis, 'fetch', served([]));
+  t.mock.method(globalThis, 'fetch', served());
   await assert.rejects(githubProject(parseGithub('github.com/o/r/tree/main/nothing')!), /no \.sv/);
   await assert.rejects(githubProject(parseGithub('github.com/o/r/tree/nope')!), /no such branch/);
 });
@@ -84,11 +84,10 @@ test('a token reads every file through the API, and only the API sees it', async
     const h = (init?.headers ?? {}) as Record<string, string>;
     seen.push({ url, auth: h.Authorization, accept: h.Accept });
     if (!h.Authorization) return new Response('', { status: 404 });
-    if (url === api) return Response.json({ default_branch: 'main' });
-    if (url === `${api}/git/trees/main?recursive=1`) {
+    if (url === `${api}/git/trees/HEAD?recursive=1`) {
       return Response.json({ tree: [{ path: 'a.sv', type: 'blob' }], truncated: false });
     }
-    if (url === `${api}/contents/a.sv?ref=main`) return new Response('point p');
+    if (url === `${api}/contents/a.sv?ref=HEAD`) return new Response('point p');
     return new Response('', { status: 404 });
   });
   await assert.rejects(githubProject(parseGithub('o/r')!), /needs a token/);
