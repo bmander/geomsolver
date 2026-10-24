@@ -151,10 +151,16 @@ fn member(
         .or_else(|| path.last().copied()).expect("a membership names a frame");
     let r = &crate::syntax::Ref { span: r_span, ..r.clone() };
     let rides = path.len() > 1 || !sk.carriers_of(&frames).is_empty();
-    let points: Vec<usize> = match me.kind {
+    let mut points: Vec<usize> = match me.kind {
         EntKind::Point => vec![me.i()],
         _ => sk.children(me).into_iter().map(|k| k.i()).collect(),
     };
+    // a part drawn already where it was declared — in a plane, or along a frame's axes — is read
+    // there by what is drawn in a spatial frame, as a line in space reads it, and keeps its own
+    // path (#624): a cone's lines in a seated part through a point drawn in its front
+    if me.kind != EntKind::Point && !sk.frames[plane].planar() {
+        points.retain(|&p| sk.plane_of(p).is_none() && sk.points[p].chart.is_none());
+    }
     // what it rides on, kept for the readings at a roll: a point declared elsewhere keeps
     // the path it was drawn with
     if rides {

@@ -719,3 +719,46 @@ fn a_relation_word_over_an_instance_whose_body_reads_no_datum_is_refused_at_the_
     assert!(d.message.contains("`Post`'s body reads no standard datum"), "{}", d.message);
     assert_eq!(d.span.lo as usize, at, "{d:?}");
 }
+
+/// A peg whose cone about its spindle passes through a point drawn in its front (#624).
+const PEG: &str = "\
+unit mm
+use std (vertical, coords, raised, seats, spins)
+use std
+component Peg() {
+  in std.front {
+    spindle := vertical line(std.origin, hint((0, 10)))
+    length(10mm) spindle
+    q := point hint((5, 3))
+    q coords(du: 5mm, dv: 3mm) std.front
+  }
+  cone := std.ConeThrough(spindle, q, lean: -45deg)
+}
+";
+
+#[test]
+fn a_seated_parts_cone_reads_a_point_drawn_in_its_front() {
+    // the cone's lines stand in the part's own frame and read `q` where its front draws it
+    // (#624): the seated part is the unseated one carried whole
+    let seat = "at := point\nat raised(d: 20mm, along: std.x) std.origin\n";
+    let mut e = solved(&format!("{PEG}placed := Peg()\n{seat}\
+                                 placed seats(turn: 30deg, up: std.z, east: std.x) at\n"));
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    let root = solved(&format!("{PEG}placed := Peg()\n"));
+    let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+    let pose = Pose { u: [c, s, 0.0], v: [-s, c, 0.0], o: [20.0, 0.0, 0.0] };
+    for name in ["placed.q", "placed.cone.apex", "placed.cone.foot"] {
+        let (got, want) = (at(&e, name), pose.image(at(&root, name)));
+        assert!(near(got, want), "{name}: {got:?} against {want:?}");
+    }
+    // and riding a frame with a joint, the line through `q` rides it as the point does
+    let e = solved(&format!("{PEG}in std.top {{\n  o := point\n  fix((0, 0)) o\n}}\n\
+                             in (arm := frame) {{\n  placed := Peg()\n}}\n{}arm spins(1) o\n{seat}\
+                             placed seats(turn: 0deg, up: std.z, east: std.x) at\n",
+                            Pose::WORLD.place("arm")));
+    let arm = crate::common::ent(&e, "arm").i() as u32;
+    for name in ["placed.q", "placed.cone.spine"] {
+        let carried = e.sketch.carriers(crate::common::ent(&e, name)).unwrap();
+        assert_eq!(carried, vec![arm], "{name}");
+    }
+}
