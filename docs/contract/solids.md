@@ -215,6 +215,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   claim decided within the faceting is **undecided**, a third answer.  The implicit min/max
   reading of a term is only a lower bound for a difference, so it culls; the answer is piece
   against piece.
+  **A swept operand is measured from its exact B-rep** where this kernel builds one and the
+  claim reads the drawing's pose (one pose, or a roll moving an operand rigidly): the judge
+  supplies it (`brep::export::supply_exact_of`) before reading, as a drawing reads an object's,
+  and meshes the field only for a build refused (#615).  A lone claim that cannot be measured
+  says why on its line (`— undecided: <reason>`, the solid named where its field would not
+  mesh); "no solved valid poses" is a sweep's, whose poses are solved.  `planar_subtraction.rs`'s
+  `a_claim_about_a_cut_wheel_reads_its_exact_build`, `solid_claim.rs`'s
+  `a_claim_not_measured_at_the_drawing_pose_says_why`.
   **`claim over crank.theta in (0deg, 360deg) { … }`** sweeps one of the drawing's **free
   variables** (never a `param`), reporting the *worst* pose; it is **sampling** at `SWEEP_STEPS`
   and says so.  Claims are read **after phase 4** (a free variable is what `expr::evaluate`

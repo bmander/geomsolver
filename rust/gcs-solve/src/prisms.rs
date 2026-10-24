@@ -687,8 +687,9 @@ impl Analysed {
     fn pairs(&self, sk: &Sketch) -> Result<&Pairs, String> {
         self.pairs.get_or_init(|| {
             property(sk, self.p.region.solid, Property::Rho)?;
-            let k = self.p.s.stiffness(&self.p.x).map_err(|_| "no stiffness".to_string())?;
-            modes(&self.p.s, &self.p.x, &k, self.modes)
+            // the stiffness its displacements were solved with (#632)
+            let k = self.st.stiffness().ok_or_else(|| "no stiffness".to_string())?;
+            modes(&self.p.s, &self.p.x, k, self.modes)
         }).as_ref().map_err(Clone::clone)
     }
 
@@ -736,7 +737,7 @@ fn unsolved(p: &Plated, why: Failure) -> Unread {
 
 /// **The lowest `count` modes of a mesh's structure** `s` standing at `x`, its stiffness `k` in
 /// hand: its mass's pencil with it (`eigen::lowest`), or why they are not found.
-pub(crate) fn modes(s: &Structure, x: &[f64], k: &crate::sparse::Sym, count: usize)
+pub(crate) fn modes(s: &Structure, x: &[f64], k: &crate::cholesky::Symmetric, count: usize)
     -> Result<Pairs, String>
 {
     let m = s.mass(x).map_err(|_| "no mass".to_string())?;

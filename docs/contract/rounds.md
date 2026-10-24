@@ -27,7 +27,7 @@ of each (`flatten::same`, [language.md](language.md)): `rounds/bores.sv` is 18 r
 (240, not 1152, before the words paired only faces that meet).
 `tests/symmetric.rs` holds the count and the block rounded and chamfered all over to the words
 written without `symmetric`.
-**Only faces that meet** (#625, [0.186]): the words pair `a` and `b` only where `b meets a`, and
+**Only faces that meet** (#625, [0.187]): the words pair `a` and `b` only where `b meets a`, and
 round a corner only of three that each meet the other two ([language.md](language.md)), so a body
 whose faces are many — every operand's listed, eaten or not — makes copies for its edges and
 corners, not for the cube of its faces: #625's web cut by four turned spokes lists 28 faces and

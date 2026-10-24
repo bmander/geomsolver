@@ -4,6 +4,7 @@ use super::P;
 use crate::constraints::{builtin_word, call_word, is_operator, Fixity};
 use crate::style::Classes;
 use crate::syntax::lexer::Tok;
+use crate::syntax::words;
 use crate::syntax::{seed_arg, Arg, Cmp, Name, OpArg, Ref, Relation, Span, Written};
 
 /// The words a rate is read by (#339 D2): each reads a direction, which a rate is.
@@ -16,15 +17,17 @@ impl<'a> P<'a> {
         let lo = self.here().lo as usize;
         let mut rates = Vec::new();
         let (word, fixity, ops, args) = match self.peek().cloned() {
-            // `ccw(a, b, c)`: every operand in the parentheses and none after them
-            Some(Tok::Ident(w)) if call_word(&w) => {
+            // `ccw(a, b, c)`: every operand in the parentheses and none after them — and the
+            // word with no `(` after it a name the document defined (#616), `cw.body clear(…) b`
+            Some(Tok::Ident(w)) if call_word(&w) && !words::call_named(&self.t, self.i) => {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;
                 let args = self.op_args(&word.text, Fixity::Call)?;
                 (word, Fixity::Call, Vec::new(), args)
             }
-            Some(Tok::Ident(w)) if (is_operator(&w) || self.defined_prefix_ahead())
-                && !self.rate_ahead() =>
+            Some(Tok::Ident(w))
+                if (is_operator(&w) && !call_word(&w) || self.defined_prefix_ahead())
+                    && !self.rate_ahead() =>
             {
                 let word = Name { text: w, span: self.here() };
                 self.i += 1;

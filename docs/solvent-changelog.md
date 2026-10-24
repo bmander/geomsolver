@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.186] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
+**[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
 `a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner
 of its boundary as made by the terms that do not read its faces (§12.9). It is decided where the
 block is elaborated, so where the drawing is seeded; a pair it reads apart that meets where the
@@ -18,6 +18,15 @@ under a second. An expansion past that limit is said once, at the document's sta
 reached it, and nothing of it is built, where before each body the walk was in said it, at the
 `use std` line, and every name the rest would have made was then said missing. Every solved
 position is unchanged. (Issue #625.)
+
+**[0.186] An orientation word may be a name.** `ccw` and `cw` are calls and nothing else (§9.6),
+so a definition may bear either as a name (`cw := ConjugateWheel(…)`, a conjugate wheel) and the
+word with no `(` after it is that name wherever it stands (§1.3): `claim cw.body clear(1mm)
+ccw.body`, `cw.rim.center coincident hub`, `hub coincident cw.rim.center`. A definition was already
+admitted and the name read mid-statement; a statement opening with it was taken for the predicate
+missing its brackets (**E001**, then **E040** or **E103** about an orientation), and one reading it
+after a constraint word took it for a second joint word. `ccw(a, b, c)` reads as before. (Issue
+#616.)
 
 **[0.185] A mate said once.** A relation word's body may read the datums of an instance it is
 given, as an operand or an entity parameter (`g.std.origin`, §9.9), and a statement writing the

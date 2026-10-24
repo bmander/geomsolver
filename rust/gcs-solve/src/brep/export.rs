@@ -28,8 +28,16 @@ pub struct Exact { pub solid: Brep,pub pattern: Option<Patterned>,pub indexed: O
     pub swept: bool }
 
 /// Solid `body` of the sketch built by this kernel. A body with swept cuts is admitted to the
-/// generating-sweep class first (`admission` where the host made it, else here).
+/// generating-sweep class first (`admission` where the host made it, else here). A body built with
+/// no face is refused as empty (`emptied`), however it was built, so no file is written of it.
 pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
+    let built = build(sk,body,admitted,tolerance,say)?;
+    if built.solid.faces.is_empty() { return Err(emptied(sk,body)) }
+    Ok(built)
+}
+
+/// Solid `body` built by whichever path its operands take (`exact`).
+fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
     // a mirrored instance's solid, or one built of one, is the core's exact B-rep, which reads a
     // mirrored solid as it is published, reflected (#578)
     let mirrored = mirrored_within(sk,body);
@@ -130,14 +138,40 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
             cut from, and build `{}` from it",solid.name,sk.solids[c as usize].name,solid.name)))
     }
     let mut built = part(*stock as usize)?;
+    if built.faces.is_empty() {
+        return Err(empty(&solid.name,&format!("its stock `{}` holds no material",sk.solids[*stock as usize].name)))
+    }
     for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"common")] {
         for &o in operands {
             let operand = part(o as usize)?;
+            let name = &sk.solids[o as usize].name;
             built = super::boolean::combined(&built,&operand,op,0.)
-                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{}`: {e}",solid.name,sk.solids[o as usize].name)))?;
+                .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",solid.name)))?;
+            // the statement that left nothing, named as the document writes it (#617)
+            if built.faces.is_empty() {
+                return Err(empty(&solid.name,&format!("`{name} {word} {}` leaves no material",solid.name)))
+            }
         }
     }
     Ok(built)
+}
+
+/// **An empty body refused as a fact of the document** (#617): a Boolean that leaves no material
+/// is what was drawn, not a limit of the encoding, so its export says which solid is empty and
+/// why — never a float32 rounding read off the empty solid's infinite bounds, nor a file of no
+/// faces.
+fn empty(name: &str,why: &str) -> ExportRefusal {
+    ExportRefusal::at(Stage::Fuse,format!("`{name}` is empty: {why}, so there is nothing to write"))
+}
+
+/// Why solid `body`, built empty, holds nothing. A body built from swept material has said so in
+/// `combine`; a static one has its operands combined again one statement at a time until one
+/// leaves no material — only once the whole is known empty, so a solid that builds pays nothing.
+fn emptied(sk: &Sketch,body: usize) -> ExportRefusal {
+    if matches!(sk.solids[body].def,crate::model::SolidDef::Body {..}) && !cad::contains_sweep(sk,body) {
+        if let Err(e) = combine(sk,body,&mut |o| built_static(sk,o)) { return e }
+    }
+    empty(&sk.solids[body].name,"it leaves no material")
 }
 
 /// The STEP file of a built solid, parsed back and held to it (every reference, the topology's
@@ -401,6 +435,13 @@ pub fn supply(sk: &Sketch,body: usize,built: &Exact) {
 /// B-rep, moved, and neither a field (#619).
 pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {
     supply_each(sk,(0..sk.solids.len()).filter(|&i| sk.is_swept(i) && wanted(i)))
+}
+
+/// Swept solid `i` given its exact B-rep where this kernel builds one and it holds none yet: what a
+/// claim about it measures (#615), as a drawing reads it. A solid with no sweep reads its own build
+/// already, and a refused build leaves its field to be meshed.
+pub fn supply_exact_of(sk: &Sketch,i: usize) {
+    supply_each(sk,std::iter::once(i).filter(|&i| i < sk.solids.len() && sk.is_swept(i)))
 }
 
 /// Each of the swept `solids` given its exact B-rep where this kernel builds one and it holds none.

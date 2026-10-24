@@ -291,6 +291,24 @@ fn a_judge_stepped_a_pose_at_a_time_comes_to_the_verdicts() {
     assert_eq!(judge.verdicts().len(), 2);
 }
 
+/// **A claim at the drawing's pose that cannot be measured says why** (#615), in its own line:
+/// "no solved valid poses" is a sweep's, whose poses are solved, and a lone claim has none.
+#[test]
+fn a_claim_not_measured_at_the_drawing_pose_says_why() {
+    let src = format!("unit mm\nuse std (turns)\n{}{}claim sA_ clear(2mm) sB_\n",
+                      block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
+                      block("B", 13.0, 0.0, 10.0, -5.0, 0.0));
+    let mut sk = read(&src).sketch.clone();
+    let _ = gcs_core::solve::solve(&mut sk, gcs_core::solve::SolveOpts::default());
+    // a corner moved off where its constraints put it
+    sk.params.iter_mut().find(|p| !p.fixed).expect("a free parameter").value += 1.0;
+    let [v] = &gcs_core::diagnose::judge_solids(&sk)[..] else { panic!("one claim") };
+    assert_eq!(v.holds(), None);
+    assert_eq!(gcs_core::report::solid_claim_text(v),
+               "claim sA_ clear(2mm) sB_ — undecided: current pose does not satisfy the drawing's \
+                constraints");
+}
+
 /// **A page's diagnosis leaves the claims about solids to its worker**: asked not to judge them it
 /// says nothing of them, and everything else it says is what it says judging them — a solid claim
 /// reads the solved pose and enters nothing above it.

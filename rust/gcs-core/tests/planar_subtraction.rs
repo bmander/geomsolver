@@ -63,19 +63,25 @@ const STAR: &str = "star := solid(plus, from: -10mm, to: 0mm)";
 const DRAFTED: &str = "star := solid(plus, from: -10mm, to: 0mm, draft: 8deg)";
 const PERIOD: &str = "space := sweep(star over t in (0deg, 540deg), under: tool_turn, seen_from: wheel_turn)\nspace cut wheel";
 
-fn solved(src: &str) -> (Elaborated, usize) {
+fn solved(src: &str) -> (Elaborated, usize) { solved_body(src, "wheel") }
+
+/// `solved`, with the body named `body`.
+fn solved_body(src: &str, body: &str) -> (Elaborated, usize) {
     let mut e = crate::common::build(src);
     let r = solve(&mut e.sketch, SolveOpts::default());
     assert!(r.success, "{}", r.message);
-    let wheel = e.map.ent_named("wheel").unwrap().i();
-    (e, wheel)
+    let id = e.map.ent_named(body).unwrap().i();
+    (e, id)
 }
 
 fn say() -> Say<'static> { Say { stage: &|_: &str| {}, mark: &|_| {} } }
 
 /// The wheel built exactly, its STL written within `held` and agreeing with the field: its volume.
-fn cut(src: &str, held: Option<Tolerance>) -> f64 {
-    let (e, wheel) = solved(src);
+fn cut(src: &str, held: Option<Tolerance>) -> f64 { cut_body(src, "wheel", held) }
+
+/// `cut`, of the body named `body`.
+fn cut_body(src: &str, body: &str, held: Option<Tolerance>) -> f64 {
+    let (e, wheel) = solved_body(src, body);
     let exact = export::exact(&e.sketch, wheel, None, held, &say())
         .unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
     exact.solid.check(1e-6).unwrap();
@@ -465,6 +471,79 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
     assert!(d.message.starts_with("`space` sweeps `pyramid`, whose material the field does not read"), "{d:?}");
 }
 
+/// #613's pinion: 12 teeth of module 0.8, its tooth spaces cut by one tooth of the basic rack (its
+/// pitch line shifted +0.3 m) rolled across the blank on the pitch circle, from clear of the tip to
+/// clear of it; `cuts` cuts `space` (or its copies about the spindle) from `gear`.
+fn pinion(cuts: &str) -> String {
+    format!("\
+unit mm
+use std
+use std (vertical, turns, slides, coords, on_v)
+
+m := 0.8mm
+N := 12
+phi := 20deg
+R := m * N / 2
+Rp := R + 0.3 * m
+Rt := Rp + m
+hw := pi * m / 4
+reach := sqrt(Rt ^ 2 - (Rp - 1.25 * m) ^ 2) + hw + 1.5 * m * tan(phi)
+window := reach / R * 1rad
+
+in std.front {{
+  construction spindle := vertical line(std.origin, hint((0, 10)))
+  length(10mm) spindle
+}}
+in std.top {{
+  construction rack_line := line(hint((10, Rp)), hint((0, Rp)))
+  rack_line.p1 coords(du: 10mm, dv: Rp) std.top
+  rack_line.p2 on_v(d: Rp) std.top
+  a := point hint((-hw - 1.5 * m * tan(phi), Rp + 1.5 * m))
+  b := point hint((-hw + 1.25 * m * tan(phi), Rp - 1.25 * m))
+  c := point hint((hw - 1.25 * m * tan(phi), Rp - 1.25 * m))
+  d := point hint((hw + 1.5 * m * tan(phi), Rp + 1.5 * m))
+  a coords(du: -hw - 1.5 * m * tan(phi), dv: Rp + 1.5 * m) std.top
+  b coords(du: -hw + 1.25 * m * tan(phi), dv: Rp - 1.25 * m) std.top
+  c coords(du: hw - 1.25 * m * tan(phi), dv: Rp - 1.25 * m) std.top
+  d coords(du: hw + 1.5 * m * tan(phi), dv: Rp + 1.5 * m) std.top
+  rack_tooth := face(a, b, c, d, -> close)
+  tip := circle(center: std.top.origin) hint(r: Rt)
+  radius(Rt) tip
+  hole := circle(center: std.top.origin) hint(r: 1)
+  radius(1mm) hole
+}}
+tooth := solid(rack_tooth, from: -1mm, to: 6mm)
+blank_turn := frame
+blank_turn turns(1) spindle
+rack := frame
+rack slides(2 * pi * R) rack_line
+index := frame
+index turns(1) spindle
+space := sweep(tooth over t in (-window, window), under: rack, seen_from: blank_turn)
+gear := solid(face(tip, holes: hole), from: 0mm, to: 5mm)
+{cuts}
+")
+}
+
+/// **A tooth space cut at a copy turned 30° is the space turned** (#613): the blank's box at a
+/// placement no quarter turn reaches past the rack tooth's tip at each end pose, where the held top
+/// edge, the corner's path and a hair of the flank the keeping test's tolerance keeps all meet.  The
+/// boundary takes the corner's path (the rightmost turn) and the hair is dropped, so the copy alone
+/// removes what the space removes, and a whole pinion — eleven copies — builds, agrees with the field
+/// and removes twelve spaces.
+#[test]
+fn a_tooth_space_cut_at_a_turned_copy_is_the_space_turned() {
+    // the tip circle's radius is 4.8 + 0.24 + 0.8 mm, the hole's 1 mm, the blank 5 mm thick
+    let blank = PI * (5.84 * 5.84 - 1.) * 5.;
+    let one = blank - cut_body(&pinion("space cut gear"), "gear", None);
+    let turned = blank - cut_body(&pinion("turned := space at(under: index) 30deg\nturned cut gear"), "gear", None);
+    assert!(one > 10. && (turned - one).abs() < 1e-3 * one, "the copy removes {turned:.5} mm³, the space {one:.5}");
+    let copies: String = (1..12).map(|k| format!("t{k} := space at(under: index) {}deg\nt{k} cut gear\n", 30 * k)).collect();
+    let whole = blank - cut_body(&pinion(&format!("space cut gear\n{copies}")), "gear", None);
+    // the spaces are apart: twelve remove twelve times one
+    assert!((whole - 12. * one).abs() < 1e-4 * whole, "twelve spaces remove {whole:.5} mm³, one {one:.5}");
+}
+
 /// The wheel stood by a frame turning with it at `degrees` of its value (`x in f`), and a body made
 /// from that copy (#619).
 fn stood(degrees: f64) -> String {
@@ -542,4 +621,22 @@ fn a_swept_bodys_empty_boolean_reads_volume_zero() {
     let at = |n: &str| said.iter().find(|(k, _)| k == n).map(|r| r.1);
     assert_eq!((at("overlap.volume"), at("overlap.area")), (Some(0.0), Some(0.0)), "{said:?}");
     assert!(!said.iter().any(|(n, _)| n.starts_with("overlap.bounds")), "{said:?}");
+}
+
+/// **A claim about a cut wheel is judged from its exact build** (#615): the radiator bot's star
+/// handle swept through its wheel, a document where nothing runs, and a field the mesher cannot
+/// protect the feature curves of.  The claim reads the B-rep the drawing reads, and the star at
+/// the drawing's pose sits in the pocket it cut: no gap, so `clear(0.1mm)` is refuted, measured
+/// within its uncertainty of nothing.
+#[test]
+fn a_claim_about_a_cut_wheel_reads_its_exact_build() {
+    let (e, wheel) = solved(include_str!("fixtures/star_wheel.sv"));
+    let [v] = &gcs_core::diagnose::judge_solids(&e.sketch)[..] else { panic!("one claim") };
+    assert!(e.sketch.supplied_exact_solid(wheel).is_some(), "the wheel is read from its B-rep");
+    assert_eq!(v.outcome(), gcs_core::diagnose::SolidOutcome::Refuted, "{v:?}");
+    let i = v.measurement().and_then(|m| m.interval()).unwrap_or_else(|| panic!("{v:?}"));
+    assert!(i.lower() <= 0.0 && 0.0 <= i.upper() && i.upper() < 0.1, "{i:?}");
+    let text = gcs_core::report::solid_claim_text(v);
+    assert!(text.starts_with("claim wheel clear(0.1mm) star — refuted, measured "), "{text}");
+    assert!(!text.contains("poses") && !text.contains("unresolved"), "{text}");
 }

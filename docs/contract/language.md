@@ -146,6 +146,12 @@ word with no `{` on the line; a header (a count, a condition, a walk) always run
 its `{`.  The parser's dispatch (`stmt`), its relation lookahead (`chain_starts`, which takes no
 other opener as an operand), the colouring and the symbol index all ask it.
 `a_block_word_defined_as_a_name_is_read_as_that_name` (`tests/ring.rs`) is the gate.
+**An orientation word may be a name** ([0.186], #616): `ccw` and `cw` are calls and nothing else,
+so either with no `(` after it is a name the document defined (`cw := ConjugateWheel(…)`) — at a
+statement's head (`claim cw.body clear(1mm) ccw.body`) or after a joint (`hub coincident
+cw.rim.center`).  `words::call_named` says so; the relation parser (`relation`), the chain
+lookahead (`chain_starts`) and the colouring ask it, and `joint_word` never admits a call word.
+`an_orientation_word_defined_as_a_name_is_read_as_that_name` (`tests/orientation.rs`) is the gate.
 **An instance declared in a ring stands in its copy's frame** ([0.177], #566): copy k's is the
 representative's frame turned k steps, as its entities are, so a relation of the instance's body
 reading the standard datums of the frame it stands in (`std.origin`, `std.x`, …:
@@ -259,7 +265,7 @@ block over faces has no filter of its own: `repeat b in B if …` is a syntax er
 flag == 1`, never `repeat flag` — the count of zero or one named its copies (`sm[0]`), a `when`
 keeps the name (`sm`).
 
-**Faces that meet ([0.186], #625).** `a meets b` (`Cond::Meets`, made by `parse_condition_in`
+**Faces that meet ([0.187], #625).** `a meets b` (`Cond::Meets`, made by `parse_condition_in`
 only, refused by `expr::decide`) holds where two faces of one solid share an edge or a corner of
 its stratum. The elaborator reads it as it names a solid's faces (`solids_and_surfaces`), where the
 drawing is seeded: `solid::faces::Meets::read` over `faces::cached`, each listed `FacePath` matched

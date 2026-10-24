@@ -4,8 +4,8 @@ use std::collections::BTreeSet;
 
 use super::lexer::{lex, Tok};
 use super::words::{
-    joint_word, link_word, opens_link, over_chain, over_walks, past_args, set_at, trails_decl, word_at,
-    word_definition_at, opens_block, BLOCKS, MODIFIERS, QUALIFIERS,
+    call_named, joint_word, link_word, opens_link, over_chain, over_walks, past_args, set_at,
+    trails_decl, word_at, word_definition_at, opens_block, BLOCKS, MODIFIERS, QUALIFIERS,
 };
 use super::{Span, Ty, MAX_TEXT};
 use crate::constraints::{is_operator, Fixity};
@@ -424,8 +424,8 @@ fn tint_start(
     }
     // the operator table, not the registry's names: `coincident` and `equal` are constraints
     // the language writes and are not any `CKind`'s name, and `point_on_circle` is a
-    // name no document writes any more (spec §9.1)
-    (is_operator(w).then_some(Tint::Relation), Next::Word)
+    // name no document writes any more (spec §9.1) — and `cw` with no `(` a name (#616)
+    ((is_operator(w) && !call_named(toks, i)).then_some(Tint::Relation), Next::Word)
 }
 
 /// What a word is inside a statement (`tint_word`): a type, a label, a name defined in place,

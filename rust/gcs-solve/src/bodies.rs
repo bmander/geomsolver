@@ -22,6 +22,7 @@
 //! loads that press nothing.
 
 use crate::beams::Read;
+use crate::cholesky::Symmetric;
 use crate::deformed::Body;
 use crate::delaunay::plane::Mesh as Plane;
 use crate::delaunay::tetra::{self, EDGES};
@@ -34,7 +35,6 @@ use crate::model::{
 use crate::prisms::{self, property, Region, Unread, ON};
 use crate::solid::faces::BodyFaces;
 use crate::space::{dot, norm, scale, sub};
-use crate::sparse::Sym;
 use std::cell::OnceCell;
 use std::collections::BTreeMap;
 
@@ -545,7 +545,7 @@ impl Filled {
 struct Analysed {
     f: Filled,
     st: OnceCell<Result<State, String>>,
-    k: OnceCell<Result<Sym, String>>,
+    k: OnceCell<Result<Symmetric, String>>,
     modes: usize,
     pairs: OnceCell<Result<Pairs, String>>,
     buckled: OnceCell<Result<f64, String>>,
@@ -601,8 +601,12 @@ impl Analysed {
         Ok([u[3 * i], u[3 * i + 1], u[3 * i + 2]])
     }
 
-    /// Its stiffness, assembled once for its modes and its buckling.
-    fn stiffness(&self) -> Result<&Sym, String> {
+    /// Its stiffness, for its modes and its buckling: the one its displacements were solved
+    /// with where they were (`State::stiffness`, #632), else assembled once.
+    fn stiffness(&self) -> Result<&Symmetric, String> {
+        if let Some(k) = self.st.get().and_then(|st| st.as_ref().ok()?.stiffness()) {
+            return Ok(k);
+        }
         let k = || self.f.s.stiffness(&self.f.x).map_err(|_| "no stiffness".to_string());
         self.k.get_or_init(k).as_ref().map_err(Clone::clone)
     }
@@ -619,6 +623,7 @@ impl Analysed {
     /// geometric stiffness of the stress the loads make.
     fn buckled(&self) -> Result<f64, String> {
         self.buckled.get_or_init(|| {
+            // the displacements first, so the stiffness is theirs
             let kg = self.f.s.stressed(&self.f.x, &self.state()?.u)
                 .map_err(|_| "an element of its mesh is turned over".to_string())?;
             let pairs = eigen::buckling(self.stiffness()?, &kg, 1, &eigen::Opts::default())
