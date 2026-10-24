@@ -57,7 +57,7 @@ pub fn sphere_centres(recipe: &Recipe,frame: Frame,size: f64) -> Vec<V> {
 }
 
 /// A placement's rigid motion in millimetres.
-pub(super) fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
+pub(crate) fn placed(pose: Motion,scale: f64) -> Rigid { Rigid::from_rows(&cad::placement_matrix(pose,scale)) }
 
 /// A placed sheet's faces under the key of the cut that places it (`cad::SweptCut::key`), each
 /// still named by the cutter's face that made it (#212): `indexed` and `flank`, as `solid::exact`

@@ -240,6 +240,17 @@ vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a t
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
 
+**A swept body placed is the body moved (#619):** a chain of placements (`shown := wheel in held`,
+`x at(under: f) τ`) ending in a body with swept cuts is that body built once and its boundary carried
+by the chain's pose (`cad::placed_swept`): `brep::export::exact` moves the B-rep, its pattern
+(`pattern::Built::moved`) and the turn its field agreement folds by, the page's `Builder` moves its
+build (`sweep::Built::moved`) before the body rule takes it as the operand it stands for, and
+`admit_body` admits the body placed. Its volume is the body's to rounding, and a body made from it
+(`copy := solid(shown)`) is composed over it. A report asked of a swept solid supplies its exact
+B-rep whether or not it is an object (`supply_exact_where`; a drawing's `supply_exact` keeps to
+objects), so the body and its placements read one B-rep and no field. `tests/planar_subtraction.rs`
+(`a_wheel_a_frame_stands_is_the_wheel_moved`).
+
 **The Wankel, the planar class (#65):** a point's planar envelope is its path (`bore :=
 envelope(apex, under: rotor_turn, …)`); `generate::chosen` skips a stationary root. A generated
 curve over whole turns of its motion is closed (`Sketch::curve_closed`), a face's lone loop, split
