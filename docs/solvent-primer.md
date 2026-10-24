@@ -865,7 +865,7 @@ bearing_l := motor.parts.Revolved(s0: brg_in, s1: brg_out, r0: brg_id / 2,
 
 The body is solved where it stands unmirrored — its rows, freedoms and diagnosis are the same
 instance's, and it is named as written (`left.lip_bore`) — and what the instance publishes is the
-image: a relation, a claim or a solid outside reads `left.clear.c[3]` reflected, `left.body` is the
+image: a relation, a claim or a solid outside reads `left.clear[3]` reflected, `left.body` is the
 body's solid reflected (every frame stays right-handed), and the drawing shows the image with its
 dimensions. A left and a right of one binding are one figure, evaluated once. Write the trailer on
 the call's last line. A mirrored instance must be closed (an entity it was given would, reflected,

@@ -69,9 +69,18 @@ component Cover(boss_to: Length, boss_r: Length, spoke_phase: Angle, disc: Int) 
   }
 
   // the cap screws' clearance holes, on the ring's tapped holes' circle, half a pitch off the datum
-  clear := motor.parts.HoleCircle(f, n: screws, r: screw_r, d: clear4, phase: 180deg / screws)
+  in f.o.plane {
+    ring screws about f.o {
+      c := point
+      f.o distance(screw_r) c
+      clear := circle(center: c) hint(r: clear4 / 2)
+      radius(clear4 / 2) clear
+      private construction clear_radial := line(f.o, c)
+    }
+  }
+  f.datum angle(180deg / screws) clear_radial[0]
   repeat screws as i {
-    private screw := solid(face(clear.hole[i]), through: body)
+    private screw := solid(face(clear[i]), through: body)
     screw cut body
   }
 

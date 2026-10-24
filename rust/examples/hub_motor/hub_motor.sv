@@ -103,6 +103,6 @@ claim spacer_l.body clear(0.5mm) left.body              // the spacers turn with
 claim spacer_r.body clear(0.5mm) right.body             // the covers: they clear the lips
 // the covers' clearance holes, drawn by each cover from the table, on the ring's tapped holes
 repeat motor.dims.screws as i {
-  claim left.clear.c[i] coincident rotor.screw.c[i]
-  claim right.clear.c[i] coincident rotor.screw.c[i]
+  claim left.clear[i].center coincident rotor.screw[i].center
+  claim right.clear[i].center coincident rotor.screw[i].center
 }

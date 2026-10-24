@@ -19,10 +19,10 @@ the reflection an improper rigid motion of the B-rep and the mesh. The hub motor
 `Revolved` are closed, drawing their frame's datum and axle from their own `std`: the brake-side
 cover is `Cover(…) mirrored(front)`, and the left bearing, spacer and locknut are the right ones
 mirrored, so `sg: Scalar`, its two `when` blocks, the corpus's only `mapped(…, mirror: true)`, the
-`min`/`max` round the tapped holes and the six hand-negated stations go — 942 lines where there
-were 964, 315 labelled arguments where there were 329, 14 solids built for its objects where there
-were 17, and every solid the same to 5·10⁻¹² mm. Each cover's clearance holes are drawn from the
-table, and the assembly claims they stand on the ring's tapped holes. (Issue #578, from #523, #562
+`min`/`max` round the tapped holes and the six hand-negated stations go — 961 lines where there
+were 964, 311 labelled arguments where there were 329, 14 solids built for its objects where there
+were 17, and every solid the same to 5·10⁻¹² mm. Each cover draws its clearance holes, and the ring
+its tapped holes, as a ring of its own from the table's numbers, and the assembly claims they meet. (Issue #578, from #523, #562
 and #566.)
 
 **[0.177] One figure, many placements.** A closed instance — one whose only geometric input is
