@@ -58,7 +58,12 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   asks `gcs_program_uses`, fetches each through the app and hands it over, transitively; linking
   stays the core's (`modules::link`, in the CLI's order).  The dev server serves `rust/examples/` as
   `examples/…` and `app/remote.ts` asks it first (edits show on refresh, no wasm rebuild), else the
-  compiled-in copy is read.
+  compiled-in copy is read.  **File ▸ Open GitHub project gathers texts and nothing more**:
+  `app/github.ts` reads a repository's (or a folder's) project files — the tree from GitHub's API,
+  the files from `raw.githubusercontent.com`, or, given a token for a private repository, from
+  the API's contents, the token held in the page's memory and sent to `api.github.com` only — and
+  opens them as a drawing folder is opened (`program::openProject`), the panel on its tree
+  (`github.test.ts`).
 * **CLI** (`rust/gcs-cli/`): `solventc` parses, elaborates, solves, diagnoses and reports on a
   document, and resolves modules (`engine/parts.sv` beside the document or an ancestor, then
   `library::MODULES`). It **invents no wording**: a per-document line is `diagnose::summary`, a

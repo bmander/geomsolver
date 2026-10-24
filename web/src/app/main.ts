@@ -59,7 +59,7 @@ import { drawingActive, exportDrawingSvg } from './drawing.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
   about, alternatives, doOpen, flipBranch, insertComponent, insertPlane, leaveExample, openCase,
-  openExample, options, report, reportSolve, showDiagnosis,
+  openExample, openGithub, options, report, reportSolve, showDiagnosis,
 } from './dialogs.js';
 import { closeChooser, onChoose, onContextMenu, onWays } from './choose.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
@@ -476,6 +476,10 @@ const MENUS: [string, (MenuItem | null)[]][] = [
     { label: 'Open…', onClick: () => void doOpen() },
     { label: 'Open drawing folder…',
       onClick: () => void openDrawing().then((opened) => { if (opened) leaveExample(); }) },
+    { label: 'Open GitHub project…',
+      onClick: () => void openGithub(),
+      title: 'The Solvent files of a GitHub repository, or of a folder in one, as the '
+        + 'project\u2019s file tree.  A private one asks for a token' },
     { label: 'Open examples…', onClick: () => void openCase() },
     null,
     { label: 'Save', onClick: () => {
@@ -563,7 +567,8 @@ const MENUS: [string, (MenuItem | null)[]][] = [
 ];
 for (const [label, items] of MENUS) {
   // The file menu and Help work in either view. Geometry commands need a selected model file.
-  const shared = new Set(['New', 'Open…', 'Open drawing folder…', 'Open examples…',
+  const shared = new Set(['New', 'Open…', 'Open drawing folder…', 'Open GitHub project…',
+    'Open examples…',
     'Save', 'Export SVG', 'Program', 'Solvent language primer', 'GitHub project']);
   for (const item of items) {
     if (!item || shared.has(item.label)) continue;

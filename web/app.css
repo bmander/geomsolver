@@ -318,7 +318,7 @@ dialog a:hover { text-decoration: underline; }
 .dag path { fill: none; stroke: var(--muted); stroke-width: 1.2; }
 .dag marker path { fill: var(--muted); stroke: none; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--line); }
-dialog input[type=number], dialog input[type=text] {
+dialog input[type=number], dialog input[type=text], dialog input[type=password] {
   font: inherit; width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 5px;
 }
 dialog .choices { display: flex; flex-direction: column; gap: 4px; }
