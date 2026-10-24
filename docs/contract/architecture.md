@@ -82,7 +82,19 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   (`a_solid_at_an_unsolved_pose_does_not_hide_the_diagnosis`).
   The importer seam is a `Source { name, text }` list in, a report per source out — **the core
   takes text and has no filesystem** (it runs in wasm).
-  `--stl` writes binary STL through `gcs_core::mesh` (`--solid` says which).  `--output` writes SVG
+  `--stl` writes binary STL through `gcs_core::mesh` (`--solid` says which).
+  **A run's outputs are a list, and each solid is built once for all of them** (#592): every
+  `--stl`/`--step` pair, `--gltf` and `--png` is an output of its own (`Writes`), and a
+  qualifier (`--solid`; `--view`, `--size`, `--hide` for a picture) belongs to the last output
+  before it that it qualifies, or, given before every output, to each output told none of its
+  own (`Opts::qualified`).  A `--measure` reads the solid the run wrote its file from.  An option
+  that takes one value (`ONCE`), a qualifier given twice to one output, two outputs to one file
+  and a qualifier with nothing to qualify are each refused as a command line (64), never dropped
+  (`a_repeated_option_or_output_is_refused`).  Every output reads the one solved sketch, so its
+  memo builds a solid once: the export of a static body reads `Sketch::exact_solid` (about its
+  origin, moved back; its recipe built only where the memo refuses), as the picture's evaluation
+  does, and a swept body's export is supplied back to the sketch (`brep::export::supply`) for the
+  pictures after it (`several_outputs_of_one_run_build_each_solid_once`).  `--output` writes SVG
   through `gcs_core::svg`, as `File ▸ Export SVG` does; it **chooses a `unit`** from the page width
   (`--width`) and every constant size follows.  The *camera* is never consulted.
   **`--png` draws what the workspace shows, headless** (#541, `gcs-cli/src/picture.rs`): the

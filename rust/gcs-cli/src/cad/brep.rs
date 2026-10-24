@@ -40,5 +40,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     }
     staged.commit().map_err(|e| ExportRefusal::at(Stage::Written,e))?;
     super::mark(Stage::Written);
+    // what else the run reads of a swept body (a picture) reads this build (#592)
+    brep::export::supply(sk,body.index,&exact);
     Ok(())
 }
