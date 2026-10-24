@@ -26,13 +26,18 @@
 
 use crate::amd;
 
-/// A symmetric matrix held by its lower triangle, compressed by column: column `j`'s rows are
-/// `rowind[colptr[j]..colptr[j + 1]]`, each `>= j`, increasing, with their `values`.
+/// **A symmetric matrix held by its lower triangle**, compressed by column: column `j`'s rows are
+/// `rowind[colptr[j]..colptr[j + 1]]`, each `>= j`, increasing, with their `values`.  The one
+/// sparse symmetric matrix a mesh makes (#632): its stiffness, its mass and its geometric
+/// stiffness, assembled in place on the mesh's pattern (`pattern`, `add`) — never as triplets,
+/// which for a solid of 385,368 equations held 18 million of them, copied once to sort and
+/// doubled as they grew: three gigabytes at its peak, where the matrix itself is 175 MB — and
+/// what the factor, CG (`pcg`) and the eigensolver's pencil (`sparse::Pencil`) all read.
 #[derive(Clone, Debug)]
 pub struct Symmetric {
     pub n: usize,
     pub colptr: Vec<usize>,
-    pub rowind: Vec<usize>,
+    pub rowind: Vec<u32>,
     pub values: Vec<f64>,
 }
 
@@ -47,12 +52,111 @@ impl Symmetric {
         Symmetric { values, ..sum.pattern }
     }
 
+    /// **The pattern of a mesh's equations**, its values zero: an entry wherever two equations'
+    /// nodes share an element.  `elements` are the elements' nodes, node `m`'s degrees of freedom
+    /// are `per·m..per·m + per`, and `eq` numbers them — `None` where a support holds one —
+    /// increasing with the degree of freedom, so a column's rows come out in order.  A mesh's
+    /// stiffness, mass and geometric stiffness are all assembled on it, so a pencil of any two is
+    /// on it too.
+    pub fn pattern<'a>(nodes: usize, per: usize, elements: impl IntoIterator<Item = &'a [usize]>,
+                       eq: &[Option<usize>], n: usize) -> Symmetric
+    {
+        // every element's nodes, and the elements each node is in
+        let (mut flat, mut starts) = (Vec::new(), vec![0usize]);
+        for ns in elements {
+            flat.extend(ns.iter().map(|&v| v as u32));
+            starts.push(flat.len());
+        }
+        let mut inc = vec![0usize; nodes + 1];
+        for &v in &flat {
+            inc[v as usize + 1] += 1;
+        }
+        for v in 0..nodes {
+            inc[v + 1] += inc[v];
+        }
+        let mut of = vec![0u32; flat.len()];
+        let mut at = inc.clone();
+        for e in 0..starts.len() - 1 {
+            for &v in &flat[starts[e]..starts[e + 1]] {
+                of[at[v as usize]] = e as u32;
+                at[v as usize] += 1;
+            }
+        }
+        // each node's neighbours at or after it, in order
+        let (mut adj, mut adjp): (Vec<u32>, _) = (Vec::new(), vec![0usize]);
+        let mut near: Vec<u32> = Vec::new();
+        for v in 0..nodes {
+            near.clear();
+            for &e in &of[inc[v]..inc[v + 1]] {
+                let e = e as usize;
+                near.extend(flat[starts[e]..starts[e + 1]].iter().filter(|&&m| m as usize >= v));
+            }
+            near.sort_unstable();
+            near.dedup();
+            adj.extend_from_slice(&near);
+            adjp.push(adj.len());
+        }
+        drop((flat, starts, of, inc));
+        // each equation's column: its node's neighbours' equations from its own on, counted
+        // first so the rows are allocated once
+        let column = |d: usize, e: usize, out: &mut dyn FnMut(usize)| {
+            let v = d / per;
+            for &m in &adj[adjp[v]..adjp[v + 1]] {
+                for k in 0..per {
+                    if let Some(r) = eq[m as usize * per + k].filter(|&r| r >= e) {
+                        out(r);
+                    }
+                }
+            }
+        };
+        let mut colptr = vec![0usize; n + 1];
+        for (d, e) in eq.iter().enumerate() {
+            let Some(e) = *e else { continue };
+            let mut count = 0;
+            column(d, e, &mut |_| count += 1);
+            colptr[e + 1] = count;
+        }
+        for e in 0..n {
+            colptr[e + 1] += colptr[e];
+        }
+        let mut rowind = Vec::with_capacity(colptr[n]);
+        for (d, e) in eq.iter().enumerate() {
+            let Some(e) = *e else { continue };
+            column(d, e, &mut |r| rowind.push(r as u32));
+        }
+        let values = vec![0.0; rowind.len()];
+        Symmetric { n, colptr, rowind, values }
+    }
+
+    /// Add element matrix `m` at the equations `eqs` (`None` where held: left out), its lower
+    /// triangle into the pattern.
+    pub fn add<const M: usize>(&mut self, m: &[[f64; M]; M], eqs: &[Option<usize>; M]) {
+        for a in 0..M {
+            let Some(ea) = eqs[a] else { continue };
+            for b in 0..M {
+                let Some(eb) = eqs[b] else { continue };
+                if ea < eb || m[a][b] == 0.0 {
+                    continue;
+                }
+                let (lo, hi) = (self.colptr[eb], self.colptr[eb + 1]);
+                let at = self.rowind[lo..hi].binary_search(&(ea as u32))
+                    .expect("Symmetric::add: an entry outside the pattern");
+                self.values[lo + at] += m[a][b];
+            }
+        }
+    }
+
+    /// Whether `b` has this matrix's pattern: the same columns and rows.
+    pub fn same_pattern(&self, b: &Symmetric) -> bool {
+        self.n == b.n && self.colptr == b.colptr && self.rowind == b.rowind
+    }
+
     /// `A x`, both triangles.
     pub fn mul_vec(&self, x: &[f64]) -> Vec<f64> {
         let mut y = vec![0.0; self.n];
         for j in 0..self.n {
             for q in self.colptr[j]..self.colptr[j + 1] {
-                let (i, v) = (self.rowind[q], self.values[q]);
+                let (i, v) = (self.rowind[q] as usize, self.values[q]);
                 y[i] += v * x[j];
                 if i != j {
                     y[j] += v * x[i];
@@ -60,6 +164,36 @@ impl Symmetric {
             }
         }
         y
+    }
+
+    /// The diagonal, zero where nothing is stored: each column's first row, where it is its own.
+    pub fn diag(&self) -> Vec<f64> {
+        (0..self.n).map(|j| {
+            let q = self.colptr[j];
+            let own = q < self.colptr[j + 1] && self.rowind[q] as usize == j;
+            if own { self.values[q] } else { 0.0 }
+        }).collect()
+    }
+
+    /// The largest column sum of |A|, both triangles: a bound on its 2-norm, the scale a
+    /// residual is read at.
+    pub fn norm1(&self) -> f64 {
+        let mut sum = vec![0.0; self.n];
+        for j in 0..self.n {
+            for q in self.colptr[j]..self.colptr[j + 1] {
+                let (i, v) = (self.rowind[q] as usize, self.values[q].abs());
+                sum[j] += v;
+                if i != j {
+                    sum[i] += v;
+                }
+            }
+        }
+        sum.into_iter().fold(0.0f64, f64::max)
+    }
+
+    /// `c A`.
+    pub fn scaled(&self, c: f64) -> Symmetric {
+        Symmetric { values: self.values.iter().map(|v| c * v).collect(), ..self.clone() }
     }
 
     /// The pattern with both triangles, by column: what an ordering reads.
@@ -97,7 +231,7 @@ impl Summed {
         let (mut order, mut place) = (Vec::with_capacity(low.len()), Vec::with_capacity(low.len()));
         for (q, &(i, j, at)) in low.iter().enumerate() {
             if q == 0 || low[q - 1].0 != i || low[q - 1].1 != j {
-                rowind.push(i);
+                rowind.push(i as u32);
                 colptr[j + 1] += 1;
             }
             order.push(at.to_bits() as u32);
@@ -132,7 +266,7 @@ impl Summed {
             && self.order.iter().zip(&self.place).all(|(&q, &p)| {
                 let (i, j, _) = low[q as usize];
                 let p = p as usize;
-                j < n && (a.colptr[j]..a.colptr[j + 1]).contains(&p) && a.rowind[p] == i
+                j < n && (a.colptr[j]..a.colptr[j + 1]).contains(&p) && a.rowind[p] as usize == i
             })
     }
 }
@@ -158,14 +292,15 @@ thread_local! {
 }
 
 /// **A pattern assembled in place, analysed once** (#510): `assembled`'s memory for a matrix
-/// whose values were summed into its pattern as it was built (`pcg::Lower`) — the analysis of
-/// `a`'s pattern under `ordering`, nothing factored, remembered on this thread for the last
-/// `KNOWN` patterns, for the next matrix with the same columns and rows.
+/// whose values were summed into its pattern as it was built (`Symmetric::pattern`, `add`) —
+/// the analysis of `a`'s pattern under `ordering`, nothing factored, remembered on this thread
+/// for the last `KNOWN` patterns, for the next matrix with the same columns and rows: the static
+/// solve's stiffness, then the pencils of its modes and its buckling on the same pattern (#632).
 pub fn analysed(a: &Symmetric, ordering: Ordering) -> Cholesky {
     ANALYSED.with(|known| {
         let mut known = known.borrow_mut();
         let at = known.iter().position(|(o, p, _)| {
-            *o == ordering && p.n == a.n && p.colptr == a.colptr && p.rowind == a.rowind
+            *o == ordering && p.same_pattern(a)
         });
         let (_, pattern, kept) = match at {
             Some(at) => known.remove(at),
@@ -432,23 +567,29 @@ impl Cholesky {
     /// gathered by position).  On a pivot not positive the factor is left unusable and the
     /// column named.
     pub fn factor(&mut self, a: &Symmetric) -> Result<(), NotPositive> {
-        self.numeric(a, false).map(|_| ()).map_err(|(column, pivot)| NotPositive { column, pivot })
+        assert!(a.n == self.n, "Cholesky::factor: not the pattern analysed");
+        self.numeric(&a.values, false).map(|_| ())
+            .map_err(|(column, pivot)| NotPositive { column, pivot })
     }
 
     /// **Factor `a` as `LDLᵀ`, without pivoting** (#510 S3): `a` symmetric, positive definite or
     /// not, on the pattern analysed.  Its count of negative pivots — the number of `a`'s
     /// eigenvalues below zero, Sylvester's inertia — or the column whose pivot is zero.
     pub fn factor_ldl(&mut self, a: &Symmetric) -> Result<usize, ZeroPivot> {
-        self.numeric(a, true).map_err(|(column, _)| ZeroPivot { column })
+        assert!(a.n == self.n, "Cholesky::factor: not the pattern analysed");
+        self.factor_ldl_values(&a.values)
     }
 
-    /// The numeric factor, `LLᵀ` or, where `ldl`, `LDLᵀ`: the count of negative pivots, or the
-    /// column (of A) and pivot it stopped at.
-    fn numeric(&mut self, a: &Symmetric, ldl: bool) -> Result<usize, (usize, f64)> {
-        assert!(
-            a.n == self.n && a.values.len() == self.gather.len(),
-            "Cholesky::factor: not the pattern analysed"
-        );
+    /// `factor_ldl` of the matrix on the pattern analysed whose values, in its order, are
+    /// `values`: a pencil's `L − μR` factored at each shift with no copy of its pattern.
+    pub fn factor_ldl_values(&mut self, values: &[f64]) -> Result<usize, ZeroPivot> {
+        self.numeric(values, true).map_err(|(column, _)| ZeroPivot { column })
+    }
+
+    /// The numeric factor of the values `values` on the pattern analysed, `LLᵀ` or, where `ldl`,
+    /// `LDLᵀ`: the count of negative pivots, or the column (of A) and pivot it stopped at.
+    fn numeric(&mut self, values: &[f64], ldl: bool) -> Result<usize, (usize, f64)> {
+        assert!(values.len() == self.gather.len(), "Cholesky::factor: not the pattern analysed");
         self.factored = false;
         self.ldl = ldl;
         let ns = self.supernodes();
@@ -472,7 +613,7 @@ impl Cholesky {
             // gather A's columns, the panel zeroed as it is reached
             lx[base..base + ncol * nrow].fill(0.0);
             for &(q, at) in &self.gather[self.gp[s]..self.gp[s + 1]] {
-                lx[at] = a.values[q];
+                lx[at] = values[q];
             }
             diag.clear();
             diag.extend((0..ncol).map(|c| lx[base + c * nrow + c]));
@@ -659,7 +800,7 @@ fn bucket<T: Copy + Default>(
     let mut ptr = vec![0usize; nb + 1];
     for j in 0..a.n {
         for q in a.colptr[j]..a.colptr[j + 1] {
-            for (b, _) in emit(a.rowind[q], j, q).into_iter().flatten() {
+            for (b, _) in emit(a.rowind[q] as usize, j, q).into_iter().flatten() {
                 ptr[b + 1] += 1;
             }
         }
@@ -671,7 +812,7 @@ fn bucket<T: Copy + Default>(
     let mut out = vec![T::default(); ptr[nb]];
     for j in 0..a.n {
         for q in a.colptr[j]..a.colptr[j + 1] {
-            for (b, t) in emit(a.rowind[q], j, q).into_iter().flatten() {
+            for (b, t) in emit(a.rowind[q] as usize, j, q).into_iter().flatten() {
                 out[at[b]] = t;
                 at[b] += 1;
             }

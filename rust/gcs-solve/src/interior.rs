@@ -38,8 +38,8 @@ use crate::linalg::{rank_and_nullspace, Mat};
 use crate::envelope::held;
 use crate::space::{add, dot, norm, scale, sub};
 use crate::delaunay::tetra::EDGES;
-use crate::pcg::Lower;
-use crate::sparse::{Ata, Sym};
+use crate::cholesky::Symmetric;
+use crate::sparse::Ata;
 
 mod hull;
 mod moved;
@@ -184,7 +184,9 @@ pub enum Failure {
 /// fills.
 enum Factor {
     Ata(Ata),
-    Cholesky(crate::cholesky::Cholesky),
+    /// The factor, and the stiffness it was made from: what a pencil reads (`State::stiffness`),
+    /// a twentieth of its factor's fill in three dimensions.
+    Cholesky(crate::cholesky::Cholesky, Symmetric),
     /// A solid's stiffness held for CG over its corners' space (`pcg`, `ITERATIVE`), and how
     /// many iterations its solve took.
     Pcg(crate::pcg::Pcg, usize),
@@ -195,7 +197,7 @@ impl Factor {
     fn resolve(&self, b: &mut [f64]) {
         match self {
             Factor::Ata(a) => a.resolve(b),
-            Factor::Cholesky(c) => c.solve(b),
+            Factor::Cholesky(c, _) => c.solve(b),
             Factor::Pcg(cg, _) => {
                 let _ = cg.solve(b);
             }
@@ -230,6 +232,18 @@ impl State {
         match self.ata {
             Factor::Pcg(_, its) => Some(its),
             _ => None,
+        }
+    }
+
+    /// **The stiffness it was solved with**, a plane or a solid structure's lower triangle over
+    /// the equations no support holds — the matrix `Structure::stiffness` assembles, held where
+    /// the solve already did, so a reader's modes and buckling assemble it no second time (#632).
+    /// `None` for bars and beams, solved on their strain rows.
+    pub fn stiffness(&self) -> Option<&Symmetric> {
+        match &self.ata {
+            Factor::Cholesky(_, k) => Some(k),
+            Factor::Pcg(cg, _) => Some(cg.lower()),
+            Factor::Ata(_) => None,
         }
     }
 
@@ -351,14 +365,13 @@ impl Structure {
             };
             // the factor reads the lower triangle alone; its pattern's analysis remembered between
             // evaluations, the mesh's topology fixed
-            let k = k.symmetric();
             let mut c = crate::cholesky::analysed(&k, crate::cholesky::Ordering::Amd);
             c.factor(&k).map_err(|_| Failure::Free)?;
             c.solve(&mut rhs);
             if rhs.iter().any(|v| !v.is_finite()) {
                 return Err(Failure::Free);
             }
-            Factor::Cholesky(c)
+            Factor::Cholesky(c, k)
         } else {
             let (mut indptr, mut indices, mut data) = (vec![0i32], Vec::new(), Vec::new());
             self.rows(x, &eq, |row| {
@@ -381,19 +394,32 @@ impl Structure {
     }
 
     /// **A plane or a solid structure's stiffness**, its lower triangle over the equations `eq`
-    /// numbers, assembled in place (`pcg::Lower`): its pattern from the elements' nodes, then
-    /// each element's matrix added at its entries.
-    fn assembled(&self, x: &[f64], eq: &[Option<usize>], n_eq: usize) -> Result<Lower, Failure> {
+    /// numbers, assembled in place (`in_place`).
+    fn assembled(&self, x: &[f64], eq: &[Option<usize>], n_eq: usize)
+        -> Result<Symmetric, Failure>
+    {
+        self.in_place(eq, n_eq, |i| self.tris[i].stiffness(&self.tri_places(i, x)),
+                      |i| self.tets[i].stiffness(&self.tet_places(i, x)))
+    }
+
+    /// **A plane or a solid structure's matrix**, its lower triangle over the equations `eq`
+    /// numbers, assembled in place (#632): its pattern from the elements' nodes
+    /// (`Symmetric::pattern`), then each plane element's matrix `tri(i)` and each solid
+    /// element's `tet(i)` added at its entries.  The stiffness, the mass and the geometric
+    /// stiffness of one mesh all come out on the one pattern, so a pencil of two is on it too.
+    fn in_place(&self, eq: &[Option<usize>], n_eq: usize,
+                tri: impl Fn(usize) -> Result<[[f64; 12]; 12], Failure>,
+                tet: impl Fn(usize) -> Result<[[f64; 30]; 30], Failure>)
+        -> Result<Symmetric, Failure>
+    {
         let elements =
             self.tris.iter().map(|t| &t.n[..]).chain(self.tets.iter().map(|t| &t.n[..]));
-        let mut k = Lower::pattern(self.nodes, self.per(), elements, eq, n_eq);
+        let mut k = Symmetric::pattern(self.nodes, self.per(), elements, eq, n_eq);
         for i in 0..self.tris.len() {
-            let m = self.tris[i].stiffness(&self.tri_places(i, x))?;
-            k.add(&m, &self.tri_dofs(i).map(|d| eq[d]));
+            k.add(&tri(i)?, &self.tri_dofs(i).map(|d| eq[d]));
         }
         for i in 0..self.tets.len() {
-            let m = self.tets[i].stiffness(&self.tet_places(i, x))?;
-            k.add(&m, &self.tet_dofs(i).map(|d| eq[d]));
+            k.add(&tet(i)?, &self.tet_dofs(i).map(|d| eq[d]));
         }
         Ok(k)
     }
@@ -404,7 +430,7 @@ impl Structure {
     /// out — and the Galerkin matrix `PᵀKP` over the corners' equations, assembled element by
     /// element as `P_eᵀ K_e P_e` (a side's ends are its own element's corners).
     fn cornered(&self, x: &[f64], eq: &[Option<usize>], n_eq: usize)
-        -> Result<(Lower, Vec<[(u32, f64); 2]>, crate::cholesky::Symmetric), Failure>
+        -> Result<(Symmetric, Vec<[(u32, f64); 2]>, Symmetric), Failure>
     {
         // the corners' equations, by degree of freedom
         let mut corner = vec![false; self.nodes];
@@ -422,8 +448,10 @@ impl Structure {
             }
         }
         // both patterns from the mesh, then every element added in place
-        let mut k = Lower::pattern(self.nodes, 3, self.tets.iter().map(|t| &t.n[..]), eq, n_eq);
-        let mut kc = Lower::pattern(self.nodes, 3, self.tets.iter().map(|t| &t.n[..4]), &ceq, nc);
+        let mut k =
+            Symmetric::pattern(self.nodes, 3, self.tets.iter().map(|t| &t.n[..]), eq, n_eq);
+        let mut kc =
+            Symmetric::pattern(self.nodes, 3, self.tets.iter().map(|t| &t.n[..4]), &ceq, nc);
         let mut ends: Vec<Option<(usize, usize)>> = vec![None; self.nodes];
         for i in 0..self.tets.len() {
             let m = self.tets[i].stiffness(&self.tet_places(i, x))?;
@@ -451,7 +479,7 @@ impl Structure {
                 (None, None) => {}
             }
         }
-        Ok((k, up, kc.symmetric()))
+        Ok((k, up, kc))
     }
 
     /// Every element's strain rows at `x`, each handed to `row` as its `(equation, entry)`s at the
@@ -487,10 +515,17 @@ impl Structure {
     }
 
     /// **`K(x)`, assembled** over the equations no support holds — the matrix `solve` factors,
-    /// for a pencil (`eigen.rs`) to read: each bar's strain row's outer product, each beam's
-    /// twelve-by-twelve stiffness `Σ p rrᵀ` in its own axes, turned.
-    pub fn stiffness(&self, x: &[f64]) -> Result<Sym, Failure> {
+    /// for a pencil (`eigen.rs`) to read, its lower triangle.  A plane or a solid structure's is
+    /// assembled in place on its mesh's pattern (`in_place`), the one `solve` factors, which a
+    /// solved `State` holds already (`State::stiffness`).  A frame's — each bar's strain row's
+    /// outer product, each beam's twelve-by-twelve stiffness `Σ p rrᵀ` in its own axes, turned —
+    /// is assembled from triplets, its lower triangle's alone: a frame has a few hundred
+    /// unknowns, and no mesh to lay a pattern from.
+    pub fn stiffness(&self, x: &[f64]) -> Result<Symmetric, Failure> {
         let (eq, n_eq) = self.equations();
+        if self.meshed() {
+            return self.assembled(x, &eq, n_eq);
+        }
         let mut t = Vec::new();
         for (i, b) in self.bars.iter().enumerate() {
             let (d, l, ea) = self.bar_at(i, x);
@@ -498,7 +533,7 @@ impl Structure {
             let mut row = Vec::new();
             self.strain(b, scale(d, (ea / l).sqrt() / l), &eq, |e, v| row.push((e, v)));
             for &(i, a) in &row {
-                t.extend(row.iter().map(|&(j, b)| (i, j, a * b)));
+                t.extend(row.iter().filter(|&&(j, _)| j <= i).map(|&(j, b)| (i, j, a * b)));
             }
         }
         self.beams_into(x, &eq, &mut t, |i, l, _| {
@@ -514,9 +549,7 @@ impl Structure {
             }
             Ok(m)
         })?;
-        self.tris_into(&eq, false, &mut t, |i| self.tris[i].stiffness(&self.tri_places(i, x)))?;
-        self.tets_into(&eq, false, &mut t, |i| self.tets[i].stiffness(&self.tet_places(i, x)))?;
-        Ok(Sym::from_triplets(n_eq, &t))
+        Ok(Symmetric::from_triplets(n_eq, &t))
     }
 
     /// Whether it is a mesh of plane or solid elements, assembled whole and factored under
@@ -917,7 +950,8 @@ impl Structure {
     }
 
     /// Every beam's twelve-by-twelve matrix in its own axes, `local(i, length, axes)`, turned
-    /// into the world's and added at the equations `eq` numbers, as triplets.
+    /// into the world's and added at the equations `eq` numbers, as triplets of its lower
+    /// triangle, all a `Symmetric` reads.
     fn beams_into(&self, x: &[f64], eq: &[Option<usize>], t: &mut Vec<(usize, usize, f64)>,
                   local: impl Fn(usize, D, &Axes) -> Result<[[f64; 12]; 12], Failure>)
         -> Result<(), Failure>
@@ -936,7 +970,7 @@ impl Structure {
                 Some((e, col))
             }).collect();
             for (ei, ci) in &at {
-                for (ej, cj) in &at {
+                for (ej, cj) in at.iter().filter(|(ej, _)| ej <= ei) {
                     let mut s = 0.0;
                     for p in 0..12 {
                         if ci[p] == 0.0 {
@@ -959,8 +993,14 @@ impl Structure {
     /// `ρAL/6·[2 1; 1 2]` along itself, `ρ(Iy + Iz)L/6·[2 1; 1 2]` in its twist, and the cubic's
     /// `ρAL/420·[156 22L 54 −13L; …]` in each plane it bends in.  A bar carries none.  Euler–
     /// Bernoulli's: no inertia of the section's turn in bending.
-    pub fn mass(&self, x: &[f64]) -> Result<Sym, Failure> {
+    /// A plane or a solid structure's is each element's consistent mass, assembled in place on
+    /// the pattern its stiffness is (`in_place`).
+    pub fn mass(&self, x: &[f64]) -> Result<Symmetric, Failure> {
         let (eq, n_eq) = self.equations();
+        if self.meshed() {
+            return self.in_place(&eq, n_eq, |i| self.tris[i].mass(&self.tri_places(i, x)),
+                                 |i| self.tets[i].mass(&self.tet_places(i, x)));
+        }
         let mut t = Vec::new();
         self.beams_into(x, &eq, &mut t, |i, l, _| {
             let (l, s) = (l.v, self.section(i, x));
@@ -974,16 +1014,14 @@ impl Structure {
             bending(&mut m, &cubic, rho * a * l / 420.0);
             Ok(m)
         })?;
-        self.tris_into(&eq, false, &mut t, |i| self.tris[i].mass(&self.tri_places(i, x)))?;
-        self.tets_into(&eq, false, &mut t, |i| self.tets[i].mass(&self.tet_places(i, x)))?;
-        Ok(Sym::from_triplets(n_eq, &t))
+        Ok(Symmetric::from_triplets(n_eq, &t))
     }
 
     /// **The geometric stiffness** (#510 S0) of each beam carrying the pull `axial[i]` (negative
     /// pressing), over the equations no support holds: the cubic's `N/30L·[36 3L −36 3L; …]` in
     /// each plane it bends in, and `N(Iy + Iz)/(AL)·[1 −1; −1 1]` in its twist — what
     /// `eigen::buckling` reads beside `stiffness`.
-    pub fn geometric(&self, x: &[f64], axial: &[f64]) -> Result<Sym, Failure> {
+    pub fn geometric(&self, x: &[f64], axial: &[f64]) -> Result<Symmetric, Failure> {
         let (eq, n_eq) = self.equations();
         let mut t = Vec::new();
         self.beams_into(x, &eq, &mut t, |i, l, _| {
@@ -997,7 +1035,7 @@ impl Structure {
             bending(&mut m, &cubic, n / (30.0 * l));
             Ok(m)
         })?;
-        Ok(Sym::from_triplets(n_eq, &t))
+        Ok(Symmetric::from_triplets(n_eq, &t))
     }
 }
 
@@ -1046,17 +1084,6 @@ impl Structure {
         } else {
             plane::var(p[k], 2 * k)
         })
-    }
-
-    /// Every plane element's twelve-by-twelve matrix, `local(i)`, added at the equations `eq`
-    /// numbers, as triplets (`local_into`).
-    fn tris_into(&self, eq: &[Option<usize>], lower: bool, t: &mut Vec<(usize, usize, f64)>,
-                 local: impl Fn(usize) -> Result<[[f64; 12]; 12], Failure>) -> Result<(), Failure>
-    {
-        for i in 0..self.tris.len() {
-            local_into(&local(i)?, &self.tri_dofs(i), eq, lower, t);
-        }
-        Ok(())
     }
 
     /// Node `n`'s place in the plane at `x`.
@@ -1200,28 +1227,16 @@ impl Structure {
         })
     }
 
-    /// Every solid element's thirty-by-thirty matrix, `local(i)`, added at the equations `eq`
-    /// numbers, as triplets (`local_into`).
-    fn tets_into(&self, eq: &[Option<usize>], lower: bool, t: &mut Vec<(usize, usize, f64)>,
-                 local: impl Fn(usize) -> Result<[[f64; 30]; 30], Failure>) -> Result<(), Failure>
-    {
-        for i in 0..self.tets.len() {
-            local_into(&local(i)?, &self.tet_dofs(i), eq, lower, t);
-        }
-        Ok(())
-    }
-
     /// **The geometric stiffness of the solid elements** (#510 S3) under the stress the moves `u`
     /// (per degree of freedom) make, over the equations no support holds: each element's `∫ ∇Nᵀ
-    /// σ ∇N dV` — what `eigen::buckling` reads beside `stiffness`.
-    pub fn stressed(&self, x: &[f64], u: &[f64]) -> Result<Sym, Failure> {
+    /// σ ∇N dV` — what `eigen::buckling` reads beside `stiffness`, assembled in place on the
+    /// pattern the stiffness is (`in_place`), so their pencil is on it too.
+    pub fn stressed(&self, x: &[f64], u: &[f64]) -> Result<Symmetric, Failure> {
         let (eq, n_eq) = self.equations();
-        let mut t = Vec::new();
-        self.tets_into(&eq, false, &mut t, |i| {
+        self.in_place(&eq, n_eq, |_| Ok([[0.0; 12]; 12]), |i| {
             let ue: [f64; 30] = self.tet_dofs(i).map(|d| u[d]);
             self.tets[i].geometric(&self.tet_places(i, x), &ue).ok_or(Failure::Collapsed)
-        })?;
-        Ok(Sym::from_triplets(n_eq, &t))
+        })
     }
 
     /// The solid elements' volume at `x`.
@@ -1348,24 +1363,6 @@ impl Structure {
 /// One share of a load laid on the plane or borne by a solid: its nodes, each node's force of `C`
 /// components, and the measure it lies over, over a number carrying `N` rates.
 type Share<const N: usize, const C: usize> = (Vec<usize>, Vec<[Dual<N>; C]>, Dual<N>);
-
-/// An element's `M`-by-`M` matrix `m` over its degrees of freedom `dofs`, added at the equations
-/// `eq` numbers as triplets — its lower triangle alone where `lower`, which is all a Cholesky
-/// reads.
-fn local_into<const M: usize>(m: &[[f64; M]; M], dofs: &[usize; M], eq: &[Option<usize>],
-                              lower: bool, t: &mut Vec<(usize, usize, f64)>)
-{
-    for a in 0..M {
-        let Some(ea) = eq[dofs[a]] else { continue };
-        for b in 0..M {
-            if let (Some(eb), true) = (eq[dofs[b]], m[a][b] != 0.0) {
-                if !lower || ea >= eb {
-                    t.push((ea, eb, m[a][b]));
-                }
-            }
-        }
-    }
-}
 
 /// **An element's share of its mesh's corners' Galerkin matrix** (`pcg`): `P_eᵀ m P_e` over its
 /// `C` corners' degrees of freedom (its own first `C`), `P_e` carrying each corner's move to

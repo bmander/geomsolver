@@ -5,6 +5,7 @@
 use gcs_core::diagnose::analysis::{
     self, freedoms, freedoms_text, reach, repeated, scenario_read, williams, Freedom, Held, Reach,
 };
+use gcs_core::cholesky::Symmetric;
 use gcs_core::constraints::CKind;
 use gcs_core::diagnose::{diagnose, DiagnoseOptions, State};
 use gcs_core::eigen::{self, Opts};
@@ -13,7 +14,6 @@ use crate::linalg::spring;
 use gcs_core::interior::{Bar, Failure, Structure};
 use gcs_core::rng::Rng;
 use gcs_core::solve::{solve, SolveOpts};
-use gcs_core::sparse::Sym;
 use gcs_core::system::{Stop, System};
 use std::f64::consts::PI;
 
@@ -326,8 +326,8 @@ fn a_degenerate_pair_is_named_with_its_ring() {
     for a in 0..nodes {
         spring(&mut t, a, (a + 1) % nodes, k);
     }
-    let stiff = Sym::from_triplets(nodes, &t);
-    let mass = Sym::from_triplets(nodes, &(0..nodes).map(|i| (i, i, m)).collect::<Vec<_>>());
+    let stiff = Symmetric::from_triplets(nodes, &t);
+    let mass = Symmetric::from_triplets(nodes, &(0..nodes).map(|i| (i, i, m)).collect::<Vec<_>>());
     let got = eigen::lowest(&stiff, &mass, 10, &Opts::default()).expect("the modes");
     let runs = repeated(&got);
     assert_eq!(runs.iter().map(|r| (r.first, r.count)).collect::<Vec<_>>(),
@@ -344,8 +344,8 @@ fn a_degenerate_pair_is_named_with_its_ring() {
 
     // two masses on two equal springs to the ground, and a third stiffer: a pair, but the step
     // that keeps each is no turn of theirs
-    let apart = Sym::from_triplets(3, &[(0, 0, 2.0), (1, 1, 2.0), (2, 2, 5.0)]);
-    let unit = Sym::from_triplets(3, &[(0, 0, 1.0), (1, 1, 1.0), (2, 2, 1.0)]);
+    let apart = Symmetric::from_triplets(3, &[(0, 0, 2.0), (1, 1, 2.0), (2, 2, 5.0)]);
+    let unit = Symmetric::from_triplets(3, &[(0, 0, 1.0), (1, 1, 1.0), (2, 2, 1.0)]);
     let got = eigen::lowest(&apart, &unit, 3, &Opts::default()).expect("the modes");
     let runs = repeated(&got);
     assert_eq!(runs.iter().map(|r| (r.first, r.count)).collect::<Vec<_>>(), [(0, 2)]);

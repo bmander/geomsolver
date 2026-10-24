@@ -3,10 +3,14 @@
 //! an up-looking LDLᵀ (Davis).  Regularizing the diagonal keeps rank-deficient
 //! (under-constrained) systems solvable, which is the normal case while editing.
 //!
-//! A symmetric matrix given by its entries (`Sym`) — a stiffness, a mass — is factored by P1's
-//! supernodal LDLᵀ under minimum degree (`Ldl`, #510 S3), and so is a pencil `L − μR` analysed
-//! once and factored at each μ the eigensolver asks for (`Pencil`, `eigen.rs`, #510 P2), whose
-//! pivots' signs count the eigenvalues below μ.
+//! A mesh's symmetric matrix (`cholesky::Symmetric`, its lower triangle) — a stiffness, a mass —
+//! is factored by P1's supernodal LDLᵀ under minimum degree (`Ldl`, #510 S3), and so is a pencil
+//! `L − μR` analysed once and factored at each μ the eigensolver asks for (`Pencil`, `eigen.rs`,
+//! #510 P2), whose pivots' signs count the eigenvalues below μ.
+
+use std::borrow::Cow;
+
+use crate::cholesky::{analysed, Cholesky, Ordering, Symmetric};
 
 /// Reverse Cuthill–McKee on the pattern of A: short, and the sketch graphs this solver sees
 /// (trusses, chains, rings) are close to banded once relabelled this way.
@@ -390,84 +394,18 @@ impl Ata {
     }
 }
 
-/// A sparse symmetric matrix, both triangles stored, in compressed columns (each column's rows
-/// ascending).  What an assembly makes: `from_triplets` sums repeated entries, the way element
-/// matrices are added into a global one.
+/// JᵀJ for `Ata`: a sparse symmetric matrix, both triangles stored, in compressed columns (each
+/// column's rows ascending), refilled in place.  A mesh's matrices are `cholesky::Symmetric`, the
+/// lower triangle, assembled in place on the mesh's pattern (#632).
 #[derive(Clone, Debug)]
-pub struct Sym {
-    pub n: usize,
+struct Sym {
+    n: usize,
     ap: Vec<i32>,
     ai: Vec<i32>,
     ax: Vec<f64>,
 }
 
 impl Sym {
-    /// The n×n matrix whose `(i, j)` entry is the sum of the triplets naming it.  Every entry
-    /// of the matrix is given, below the diagonal as well as above; one given on a side only
-    /// is not mirrored, and a matrix that is not symmetric is not one this factors.
-    pub fn from_triplets(n: usize, entries: &[(usize, usize, f64)]) -> Sym {
-        let mut t: Vec<(usize, usize, f64)> = entries.to_vec();
-        t.sort_unstable_by_key(|e| (e.1, e.0));
-        let mut ap = vec![0i32; n + 1];
-        let mut ai: Vec<i32> = Vec::with_capacity(t.len());
-        let mut ax: Vec<f64> = Vec::with_capacity(t.len());
-        let mut last: Option<(usize, usize)> = None;
-        for &(i, j, v) in &t {
-            assert!(i < n && j < n, "entry ({i}, {j}) outside a {n}×{n} matrix");
-            if last == Some((i, j)) {
-                *ax.last_mut().unwrap() += v;
-                continue;
-            }
-            last = Some((i, j));
-            ai.push(i as i32);
-            ax.push(v);
-            ap[j + 1] += 1;
-        }
-        for j in 0..n {
-            ap[j + 1] += ap[j];
-        }
-        Sym { n, ap, ai, ax }
-    }
-
-    /// Its lower triangle by column, what `cholesky` factors: the entries `(i, j)` with `i ≥ j`,
-    /// in the order they are stored.
-    fn lower(&self) -> crate::cholesky::Symmetric {
-        let mut colptr = vec![0usize; self.n + 1];
-        let (mut rowind, mut values) = (Vec::new(), Vec::new());
-        for j in 0..self.n {
-            for p in self.ap[j] as usize..self.ap[j + 1] as usize {
-                if self.ai[p] as usize >= j {
-                    rowind.push(self.ai[p] as usize);
-                    values.push(self.ax[p]);
-                }
-            }
-            colptr[j + 1] = rowind.len();
-        }
-        crate::cholesky::Symmetric { n: self.n, colptr, rowind, values }
-    }
-
-    /// The stored entries, `(row, column, value)`, column by column.
-    pub fn entries(&self) -> impl Iterator<Item = (usize, usize, f64)> + '_ {
-        (0..self.n).flat_map(move |j| {
-            (self.ap[j] as usize..self.ap[j + 1] as usize)
-                .map(move |p| (self.ai[p] as usize, j, self.ax[p]))
-        })
-    }
-
-    /// `A x`.  Both triangles are stored, so the columns read as rows.
-    pub fn mul_vec(&self, x: &[f64]) -> Vec<f64> {
-        let mut y = vec![0.0; self.n];
-        crate::system::csr_mul(&self.ap, &self.ai, &self.ax, x, &mut y);
-        y
-    }
-
-    /// The diagonal, zero where nothing is stored.
-    pub fn diag(&self) -> Vec<f64> {
-        let mut d = vec![0.0; self.n];
-        self.diag_into(&mut d);
-        d
-    }
-
     fn diag_into(&self, out: &mut [f64]) {
         for j in 0..self.n {
             let (lo, hi) = (self.ap[j] as usize, self.ap[j + 1] as usize);
@@ -477,54 +415,28 @@ impl Sym {
             };
         }
     }
-
-    /// The largest column sum of |A|: a bound on its 2-norm, the scale a residual is read at.
-    pub fn norm1(&self) -> f64 {
-        let mut sum = vec![0.0; self.n];
-        for (_, j, v) in self.entries() {
-            sum[j] += v.abs();
-        }
-        sum.into_iter().fold(0.0f64, f64::max)
-    }
-
-    /// `c A`.
-    pub fn scaled(&self, c: f64) -> Sym {
-        Sym { ax: self.ax.iter().map(|v| c * v).collect(), ..self.clone() }
-    }
-
-    /// `m`'s values on this matrix's pattern, which holds every entry of `m`'s.
-    fn scatter(&self, m: &Sym) -> Vec<f64> {
-        let mut out = vec![0.0; self.ax.len()];
-        for (i, j, v) in m.entries() {
-            let (lo, hi) = (self.ap[j] as usize, self.ap[j + 1] as usize);
-            let at = self.ai[lo..hi].binary_search(&(i as i32)).expect("an entry of the union");
-            out[lo + at] += v;
-        }
-        out
-    }
 }
 
-/// The LDLᵀ of a `Sym`, without pivoting: P1's supernodal factor under approximate minimum
-/// degree (`cholesky::Cholesky::factor_ldl`, #510 S3), where a mesh's pencils are factored.  An
-/// SPD matrix factors stably; an indefinite one (a pencil shifted into its spectrum) factors when
-/// no pivot is zero, and its pivots then carry its inertia (Sylvester): as many negative as the
-/// matrix has negative eigenvalues.
+/// The LDLᵀ of a `cholesky::Symmetric`, without pivoting: P1's supernodal factor under
+/// approximate minimum degree (`cholesky::Cholesky::factor_ldl`, #510 S3), where a mesh's pencils
+/// are factored.  An SPD matrix factors stably; an indefinite one (a pencil shifted into its
+/// spectrum) factors when no pivot is zero, and its pivots then carry its inertia (Sylvester): as
+/// many negative as the matrix has negative eigenvalues.
 pub struct Ldl {
-    factor: crate::cholesky::Cholesky,
+    factor: Cholesky,
     negative: usize,
 }
 
 impl Ldl {
-    /// The factor of `a`, or `None` on a zero pivot.
-    pub fn new(a: &Sym) -> Option<Ldl> {
-        let low = a.lower();
-        let factor = crate::cholesky::Cholesky::analyse(&low, crate::cholesky::Ordering::Amd);
-        Ldl::of(factor, &low)
+    /// The factor of `a`, or `None` on a zero pivot: its pattern analysed through
+    /// `cholesky::analysed`, so one analysed already is not ordered again.
+    pub fn new(a: &Symmetric) -> Option<Ldl> {
+        Ldl::of(analysed(a, Ordering::Amd), &a.values)
     }
 
-    /// `factor`'s analysis given `a`'s values, or `None` on a zero pivot.
-    fn of(mut factor: crate::cholesky::Cholesky, a: &crate::cholesky::Symmetric) -> Option<Ldl> {
-        let negative = factor.factor_ldl(a).ok()?;
+    /// `factor`'s analysis given the values `values` on its pattern, or `None` on a zero pivot.
+    fn of(mut factor: Cholesky, values: &[f64]) -> Option<Ldl> {
+        let negative = factor.factor_ldl_values(values).ok()?;
         Some(Ldl { factor, negative })
     }
 
@@ -540,36 +452,86 @@ impl Ldl {
     }
 }
 
-/// The pencil `L − μR` of two `Sym`s, on the union of their patterns, ordered and analysed
-/// once (under minimum degree, #510 S3): a shift, or a count of the eigenvalues below one, is a
-/// numeric factor and no more.
-pub struct Pencil {
-    /// L's lower triangle on the pattern L ∪ R, and R's values on it.
-    lower: (crate::cholesky::Symmetric, Vec<f64>),
+/// **The pencil `L − μR` of two symmetric matrices**, on the union of their patterns, analysed
+/// once under minimum degree (#510 S3): a shift, or a count of the eigenvalues below one, is a
+/// numeric factor and no more.  A mesh's stiffness, mass and geometric stiffness are all
+/// assembled on the mesh's one pattern (`cholesky::Symmetric::pattern`, #632), so their union is
+/// that pattern, held by reference, not copied; and it is analysed through `cholesky::analysed`,
+/// so the order the static solve found for it is not found again.  Two matrices of different
+/// patterns (a frame's, assembled from triplets) are merged column by column.
+pub struct Pencil<'a> {
+    /// L on the pattern L ∪ R.
+    l: Cow<'a, Symmetric>,
+    /// R's values on it.
+    r: Cow<'a, [f64]>,
     /// The pattern's analysis.
-    symbolic: crate::cholesky::Cholesky,
+    symbolic: Cholesky,
 }
 
-impl Pencil {
-    pub fn new(l: &Sym, r: &Sym) -> Pencil {
+impl<'a> Pencil<'a> {
+    pub fn new(l: &'a Symmetric, r: &'a Symmetric) -> Pencil<'a> {
         assert_eq!(l.n, r.n, "a pencil of matrices of different sizes");
-        let mut t: Vec<(usize, usize, f64)> = l.entries().collect();
-        t.extend(r.entries().map(|(i, j, _)| (i, j, 0.0)));
-        let mut u = Sym::from_triplets(l.n, &t);
-        u.ax = u.scatter(r);
-        let low_r = u.lower().values;
-        u.ax = u.scatter(l);
-        let low = u.lower();
-        let symbolic =
-            crate::cholesky::Cholesky::analyse(&low, crate::cholesky::Ordering::Amd);
-        Pencil { lower: (low, low_r), symbolic }
+        let (l, r) = if l.same_pattern(r) {
+            (Cow::Borrowed(l), Cow::Borrowed(&r.values[..]))
+        } else {
+            let u = union(l, r);
+            let (lv, rv) = (scatter(&u, l), scatter(&u, r));
+            (Cow::Owned(Symmetric { values: lv, ..u }), Cow::Owned(rv))
+        };
+        let symbolic = analysed(&l, Ordering::Amd);
+        Pencil { l, r, symbolic }
     }
 
     /// The factor of `L − μR`, or `None` on a zero pivot.
     pub fn factor(&self, mu: f64) -> Option<Ldl> {
-        let (l, r) = &self.lower;
-        let values = l.values.iter().zip(r).map(|(l, r)| l - mu * r).collect();
-        let at = crate::cholesky::Symmetric { values, ..l.clone() };
-        Ldl::of(self.symbolic.clone(), &at)
+        let values: Vec<f64> =
+            self.l.values.iter().zip(&*self.r).map(|(l, r)| l - mu * r).collect();
+        Ldl::of(self.symbolic.clone(), &values)
     }
+
+    /// The factor of R alone, on the pencil's analysis, or `None` on a zero pivot: whether R is
+    /// definite, read without ordering its pattern again.
+    pub fn right(&self) -> Option<Ldl> {
+        Ldl::of(self.symbolic.clone(), &self.r)
+    }
+}
+
+/// The pattern `a ∪ b`, no values: each column's rows merged, increasing.
+fn union(a: &Symmetric, b: &Symmetric) -> Symmetric {
+    let mut colptr = vec![0usize; a.n + 1];
+    let mut rowind = Vec::with_capacity(a.rowind.len().max(b.rowind.len()));
+    for j in 0..a.n {
+        let (mut p, mut q) = (a.colptr[j], b.colptr[j]);
+        let (pe, qe) = (a.colptr[j + 1], b.colptr[j + 1]);
+        while p < pe || q < qe {
+            // the lesser of the two columns' next rows, taken from each that holds it
+            let r = if q == qe || (p < pe && a.rowind[p] <= b.rowind[q]) {
+                a.rowind[p]
+            } else {
+                b.rowind[q]
+            };
+            if p < pe && a.rowind[p] == r {
+                p += 1;
+            }
+            if q < qe && b.rowind[q] == r {
+                q += 1;
+            }
+            rowind.push(r);
+        }
+        colptr[j + 1] = rowind.len();
+    }
+    Symmetric { n: a.n, colptr, rowind, values: Vec::new() }
+}
+
+/// `m`'s values on the pattern `u`, which holds every entry of `m`'s.
+fn scatter(u: &Symmetric, m: &Symmetric) -> Vec<f64> {
+    let mut out = vec![0.0; u.rowind.len()];
+    for j in 0..m.n {
+        let (lo, hi) = (u.colptr[j], u.colptr[j + 1]);
+        for q in m.colptr[j]..m.colptr[j + 1] {
+            let at = u.rowind[lo..hi].binary_search(&m.rowind[q]).expect("an entry of the union");
+            out[lo + at] = m.values[q];
+        }
+    }
+    out
 }

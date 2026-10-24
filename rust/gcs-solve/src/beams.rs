@@ -28,6 +28,7 @@
 //! solves nothing.  It is the drawing's, never a scenario's (`program::measures`).
 //! Every other requirement is judged after the solve, never solved for.
 
+use crate::cholesky::Symmetric;
 use crate::diagnose::analysis::direction;
 use crate::eigen::{self, Pairs};
 use crate::graph::UnionFind;
@@ -39,7 +40,6 @@ use crate::model::{
 };
 use crate::solid::Box3;
 use crate::space::{distance, dot, lerp, norm, normalised, scale, sub};
-use crate::sparse::Sym;
 use crate::vocab::all_of;
 use std::cell::OnceCell;
 use std::collections::BTreeMap;
@@ -297,7 +297,7 @@ struct Analysed {
     spread: Vec<V>,
     /// How many modes the requirements on the frame ask for, at most.
     modes: usize,
-    stiffness: OnceCell<Result<Sym, String>>,
+    stiffness: OnceCell<Result<Symmetric, String>>,
     pairs: OnceCell<Result<Pairs, String>>,
     buckled: OnceCell<Result<f64, String>>,
     actions: OnceCell<Vec<Option<[f64; 12]>>>,
@@ -536,8 +536,9 @@ impl Analysed {
         property(sk, mesh.members[self.f.member[e]].beam, Property::Rho)
     }
 
-    /// `K`, assembled once.
-    fn stiffness(&self) -> Result<&Sym, String> {
+    /// `K`, assembled once, from triplets: a frame's displacements are solved on its strain
+    /// rows, which hold no stiffness to read again, and its matrices are small.
+    fn stiffness(&self) -> Result<&Symmetric, String> {
         self.stiffness
             .get_or_init(|| self.f.s.stiffness(&self.f.x).map_err(|_| "no stiffness".into()))
             .as_ref().map_err(Clone::clone)
