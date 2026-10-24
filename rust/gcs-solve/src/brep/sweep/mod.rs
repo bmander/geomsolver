@@ -29,6 +29,14 @@ pub enum Built { Sector { sector: sector::Sector,pattern: Patterned },Whole(crat
 impl Built {
     /// The whole solid: the pattern's, or the one built whole.
     pub fn into_solid(self) -> crate::brep::topo::Brep { match self { Built::Sector {pattern,..} => pattern.solid,Built::Whole(s) => s } }
+    /// The body carried by the rigid motion `m` (mm): a placed body's, the body it places moved (#619).
+    pub fn moved(self,m: &crate::brep::geom::Rigid) -> Built {
+        match self {
+            Built::Sector {sector,pattern} => Built::Sector {sector:sector::Sector {piece:sector.piece.moved(m),origin:m.point(sector.origin),
+                axis:m.vector(sector.axis),..sector},pattern:pattern.moved(m)},
+            Built::Whole(s) => Built::Whole(s.moved(m)),
+        }
+    }
 }
 
 /// How near a sector's far side's vertex must be to its near side's turned for the pattern to
