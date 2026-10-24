@@ -155,7 +155,7 @@ rows refuse at T1, T2, E1 or E2 is asked these rows instead (`solid::planar_subt
 | --- | --- | --- | --- |
 | P1 | The motion turns the tools' plane in itself about axes square to it, the same face up. | Every pose is a rigid motion of the plane. | The motion. |
 | Q1 | The tool is prisms square to that plane, their profiles lines and arcs, joined by `union` and `common`; a drafted one is read at stations through its slab (#607). | Each piece's contact is exact. | The member that is not. |
-| Q2 | Every member's caps lie outside the blank, or on a plane where the blank is split into slabs. | Within a slab the section is one; the cap planes inside the blank are the slab planes, so a stepped tool's bands split the blank themselves. | The blank whose extent is unknown. |
+| Q2 | Every member's caps lie outside the blank, or on a plane where the blank is split into slabs; a drafted slab's region keeps its shape through the slab. | Within a slab the section is one (drafted, one shape lofted); the cap planes inside the blank are the slab planes, so a stepped tool's bands split the blank themselves. | The blank whose extent is unknown; the depth of a drafted member where its region changes, to step the tool at. |
 | Q3 | The roll is a whole period of the motion (the tool stands where it began, its own symmetry counted), or the tool is clear of the blank at both ends. | A whole period closes `R` and leaves no caps (#585). | The roll, the pose in the blank and the period to roll. |
 | Q4 | The kept boundary is regular: its pieces meet at corners or leave the blank's shadow, with no fold and no crossing. | What the region keeps must be loops the builder can fit. | The end that meets nothing, the fold or the crossing. |
 
@@ -174,7 +174,9 @@ field agreement gates the export as for every sweep. The #585 star wheel is 24 c
 kept stretches, read in half a second; its volume agrees with arithmetic made apart from the core
 to 1e-4, with the field's at every probe 0.02 mm off the surface, and lies below the long form's
 (#589) by its scallop; drafted 8° it is lofted through nine stations and exports in seconds
-(`tests/planar_subtraction.rs`).
+(`tests/planar_subtraction.rs`). A drafted slab's stations are read within a box grown until they
+are alike, since a change only where the box's sides cut the region is none of the blank's; the
+radiator valve's measured handle is one (#612).
 
 ### Undercut is excluded deliberately
 

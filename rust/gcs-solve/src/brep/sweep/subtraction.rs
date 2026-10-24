@@ -105,13 +105,6 @@ pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,tol
     Ok(solid)
 }
 
-/// What a loop's pieces are, in order: each stretch's candidate, or a step along the box. Two loops
-/// at two heights are one loop lofted where these agree, the one turned to start where the other
-/// does.
-fn shape(region: &SweptRegion,l: usize) -> Vec<Option<usize>> {
-    region.loops[l].pieces.iter().map(|p| match *p { Piece::Run {candidate,..} => Some(candidate),Piece::Side {..} => None }).collect()
-}
-
 /// A drafted slab's cutters (#607): its stations' regions, alike loop for loop and piece for piece,
 /// lofted through every other station — each piece a B-spline surface, cubic along the piece through
 /// its points at the same fractions at every station, cubic across them — and held at the stations
@@ -122,25 +115,11 @@ fn lofted(stations: &[(f64,SweptRegion)],scale: f64,fit: f64,name: &str) -> Resu
     let refused = |why: String| ExportRefusal::at(Stage::Reach,format!("`{name}`: {why}"));
     let (base,first) = (&stations[0].1,stations[0].0);
     let plane = base.setting.plane;
-    // each station's loop matching each of the first's, and how far round it starts
-    let mut matched: Vec<Vec<(usize,usize)>> = Vec::new();
-    for (z,region) in stations {
-        if region.loops.len() != base.loops.len() {
-            return Err(refused(format!("its drafted tool's swept region has {} loops at height {:.4} and {} at {:.4}: its shape changes \
-                within the slab",base.loops.len(),first,region.loops.len(),z)))
-        }
-        let mut row = Vec::new();
-        for l in 0..base.loops.len() {
-            let want = shape(base,l);
-            let found = (0..region.loops.len()).find_map(|m| {
-                let have = shape(region,m);
-                (have.len() == want.len()).then(|| (0..have.len()).find(|&r| (0..have.len()).all(|k| have[(k+r)%have.len()] == want[k]))).flatten()
-                    .map(|r| (m,r))
-            }).ok_or_else(|| refused(format!("its drafted tool's swept region changes its shape between heights {first:.4} and {z:.4}")))?;
-            row.push(found);
-        }
-        matched.push(row);
-    }
+    // each station's loop matching each of the first's, and how far round it starts: admission
+    // read them alike (`planar_subtraction::Subtraction::check`)
+    let matched: Vec<Vec<(usize,usize)>> = stations.iter().map(|(z,region)| region.matching(base)
+        .ok_or_else(|| refused(format!("its drafted tool's swept region changes its shape between heights {first:.4} and {z:.4}"))))
+        .collect::<Result<_,_>>()?;
     // the lofted stations, every other one; the ones between hold the loft to the bar
     let (lofted,held): (Vec<usize>,Vec<usize>) = (0..stations.len()).partition(|j| j%2 == 0);
     if lofted.len() < 4 { return Err(refused("a drafted slab is lofted through four stations at least".into())) }

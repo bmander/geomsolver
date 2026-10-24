@@ -56,11 +56,11 @@ impl Map {
     }
 }
 
-/// One prism of the tool: its face, the face's loops in the plane's coordinates (each walked with
-/// its material on its left), how far along the normal it reaches, and — drafted — its sections
-/// and how a height is a depth of it.
+/// One prism of the tool: its name and face, the face's loops in the plane's coordinates (each
+/// walked with its material on its left), how far along the normal it reaches, and — drafted — its
+/// sections and how a height is a depth of it.
 #[derive(Clone,Debug)]
-struct Member { face: usize,loops: Vec<Vec<Edge>>,span: [f64;2],drafted: Option<Drafted> }
+struct Member { name: String,face: usize,loops: Vec<Vec<Edge>>,span: [f64;2],drafted: Option<Drafted> }
 
 /// A drafted member's sections (read in the plane's coordinates) and how a height is a depth of it:
 /// the height of its face, and which way along the normal its depth runs.
@@ -176,7 +176,7 @@ impl Subtraction {
                     .map_err(|e| q1(format!("`{name}`: {e}")))?,at,sign}),
                 _ => None,
             };
-            members.push(Member {face:*face as usize,loops:oriented,span:[a.min(b),a.max(b)],drafted});
+            members.push(Member {name,face:*face as usize,loops:oriented,span:[a.min(b),a.max(b)],drafted});
         }
         let family = crate::motion::Family::read(sk,*motion as usize).map_err(|e| (Condition::Plane,e,None))?;
         let roll = super::roll::interval(sk,swept).map_err(|m| (Condition::Closes,m,None))?;
@@ -214,8 +214,10 @@ impl Subtraction {
             }
         }
         let size = (shadow[1][0]-shadow[0][0]).max(shadow[1][1]-shadow[0][1]).max(heights[1]-heights[0]);
-        let pad = 0.02*size+1e-6*(1.+self.scale);
-        let bounds: [P;2] = [[shadow[0][0]-pad,shadow[0][1]-pad],[shadow[1][0]+pad,shadow[1][1]+pad]];
+        let boxed = |grown: f64| -> [P;2] {
+            let pad = PAD*grown*size+1e-6*(1.+self.scale);
+            [[shadow[0][0]-pad,shadow[0][1]-pad],[shadow[1][0]+pad,shadow[1][1]+pad]]
+        };
         // Q2: the slabs, split at every cap within the blank; a slab no member reaches cuts nothing
         let mut planes: Vec<f64> = vec![heights[0],heights[1]];
         for m in &self.members { for h in m.span { if h > heights[0]+SAME && h < heights[1]-SAME { planes.push(h) } } }
@@ -258,17 +260,62 @@ impl Subtraction {
             }
             let drafted = self.members.iter().any(|m| m.drafted.is_some() && m.reaches(h));
             let reach = [slab[0]-if slab[0] == heights[0] { past } else { 0. },slab[1]+if slab[1] == heights[1] { past } else { 0. }];
-            let at: Vec<f64> = if drafted { stations(reach,STATIONS) } else { vec![h] };
-            let regions = crate::par::map(&at,|&z| SweptRegion::read(if drafted { self.setting(z,h)? } else { setting.clone() },bounds,whole)
-                .map_err(|r| (r.row,r.message,r.witness.map(|p| poses[0].point(pl.world(p,z))))));
-            let mut stations = Vec::new();
-            for (z,r) in at.into_iter().zip(regions) { stations.push((z,r?)) }
+            let read = |z: f64,bounds: [P;2]| SweptRegion::read(if drafted { self.setting(z,h)? } else { setting.clone() },bounds,whole)
+                .map_err(|r| (r.row,r.message,r.witness.map(|p| poses[0].point(pl.world(p,z)))));
+            let stations = if drafted { self.drafted(reach,h,&read,&boxed)? } else { vec![(h,read(h,boxed(1.))?)] };
             found.push(Slab {heights:slab,reach,stations});
         }
         if found.iter().all(|s| s.stations.iter().all(|(_,r)| r.loops.is_empty())) {
             return Err((Condition::Reach,format!("no part of the region `{}` sweeps reaches the blank",self.name),None))
         }
         Ok(Found {plane:pl,slabs:found})
+    }
+
+    /// A drafted slab's stations through `reach` (`h` its middle), each region read by `read`
+    /// within the box `boxed` grows by each of `GROWN` in turn, until every station's loops are
+    /// the first's piece for piece: where the region is cut by the box's sides is no part of the
+    /// blank, so a change of shape only there is the box's (#612). A change that holds in every box
+    /// is refused at the depth of the drafted member it happens at, found between the stations.
+    fn drafted(&self,reach: [f64;2],h: f64,read: &(dyn Fn(f64,[P;2]) -> Result<SweptRegion,Failure>+Sync),boxed: &dyn Fn(f64) -> [P;2])
+        -> Result<Vec<(f64,SweptRegion)>,Failure> {
+        let at = stations(reach,STATIONS);
+        let mut first: Option<Vec<SweptRegion>> = None;
+        for (k,&grown) in GROWN.iter().enumerate() {
+            let bounds = boxed(grown);
+            let regions = match crate::par::map(&at,|&z| read(z,bounds)).into_iter().collect::<Result<Vec<_>,_>>() {
+                Ok(r) => r,
+                Err(e) if k == 0 => return Err(e),
+                Err(_) => continue,
+            };
+            if regions.iter().all(|r| r.matching(&regions[0]).is_some()) { return Ok(at.into_iter().zip(regions).collect()) }
+            first.get_or_insert(regions);
+        }
+        // the first box's stations: the last alike to the first and the next, and where between
+        let first = first.expect("the first box was read");
+        let j = (1..first.len()).find(|&j| first[j].matching(&first[0]).is_none()).expect("a station unlike the first");
+        let bounds = boxed(1.);
+        let unlike = |z: f64| read(z,bounds).map_or(true,|r| r.matching(&first[0]).is_none());
+        let [mut lo,mut hi] = [at[j-1],at[j]];
+        for _ in 0..2 {
+            let zs: Vec<f64> = (1..8).map(|i| lo+(hi-lo)*i as f64/8.).collect();
+            let marks = crate::par::map(&zs,|&z| unlike(z));
+            let i = marks.iter().position(|&m| m).unwrap_or(zs.len());
+            (lo,hi) = (if i == 0 { lo } else { zs[i-1] },if i == zs.len() { hi } else { zs[i] });
+        }
+        let member = self.members.iter().find(|m| m.drafted.is_some() && m.reaches(h)).expect("a drafted member");
+        let d = member.drafted.as_ref().expect("drafted");
+        let depth = |z: f64| (z-d.at)*d.sign;
+        let shape = |r: &SweptRegion| {
+            let (n,holes) = (r.loops.len(),r.loops.iter().filter(|l| l.area < 0.).count());
+            let pieces: usize = r.loops.iter().map(|l| l.pieces.len()).sum();
+            format!("{n} loop{} of {pieces} pieces{}",if n == 1 { "" } else { "s" },match holes { 0 => String::new(),1 => " (one a hole)".into(),
+                h => format!(" ({h} of them holes)") })
+        };
+        let (a,b) = (shape(&first[j-1]),shape(&first[j]));
+        let b = if a == b { format!("{b} of other stretches") } else { b };
+        Err((Condition::Slabs,format!("`{}`'s drafted tool `{}` sweeps a region whose shape changes within its slab, from {a} at depth {:.4} \
+            of `{}` to {b} at {:.4}: step the tool at about {:.4} (a cap there splits the slab), or draft it less",self.name,self.tool,
+            depth(at[j-1]),member.name,depth(at[j]),depth(0.5*(lo+hi))),None))
     }
 
     /// What the section at height `h` is made of, the same for two heights exactly where their
@@ -319,6 +366,11 @@ pub fn admit(sk: &Sketch,swept: usize,poses: &[Motion],inside: &(dyn Fn(V) -> bo
 
 /// How far past the blank's faces a cut through them reaches, as a share of the blank's height.
 pub const PAST: f64 = 1e-3;
+
+/// The pad about the blank's shadow a swept region is read within, as a share of the blank's size,
+/// and what a drafted slab grows it by, in turn, until its stations' regions are alike (#612).
+const PAD: f64 = 0.02;
+const GROWN: [f64;3] = [1.,5.,25.];
 
 /// How many stations a drafted slab is read at, its ends among them: every other one lofted through,
 /// the rest holding the loft to the fit's bar (`brep::sweep::subtraction`).
