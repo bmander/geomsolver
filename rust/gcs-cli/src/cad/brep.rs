@@ -9,7 +9,8 @@ use gcs_core::brep;
 use gcs_core::model::Sketch;
 use gcs_core::solid::export::Tolerance;
 
-pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,tolerance: Option<Tolerance>) -> Result<(),ExportRefusal> {
+pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,tolerance: Option<Tolerance>,seen: Option<&Sketch>)
+    -> Result<(),ExportRefusal> {
     super::progress::start();
     let say = brep::sweep::Say {stage:&|line: &str| stage(line),mark:&|m| super::mark(m)};
     let exact = brep::export::exact(sk,body.index,body.admission.as_ref(),tolerance,&say)?;
@@ -40,5 +41,7 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
     }
     staged.commit().map_err(|e| ExportRefusal::at(Stage::Written,e))?;
     super::mark(Stage::Written);
+    // the run's pictures read this build of the body (#592)
+    if let Some(seen) = seen { brep::export::supply(seen,body.index,&exact); }
     Ok(())
 }

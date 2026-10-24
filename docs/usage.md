@@ -104,6 +104,20 @@ build/solventc part.sv --step part.step --tolerance 0.01mm   # within a stated f
 build/solventc part.sv --gltf part.glb                       # every face a named node
 ```
 
+One run can write many outputs. Each `--stl`, `--step`, `--gltf` and `--png` is an output of its
+own, and every one of them reads the run's single build of a solid. So a part that takes minutes
+to shape is shaped once however many files are made of it:
+
+```sh
+build/solventc bot.sv --stl wheel.stl --solid wheel --stl frame.stl --solid frame \
+    --png cut.png --hide frame --png iso.png --view isometric
+```
+
+`--solid`, `--view`, `--size` and `--hide` qualify the output before them: `--solid` the last
+output, the rest the last `--png`. Given before every output, they apply to each output that is
+not told its own. An `--stl` and a `--step` with no `--solid` between them are one solid's. An
+option that takes one value is refused when it is given twice, and so are two outputs to one file.
+
 STEP and STL are built by the core's own B-rep kernel. The same code runs in the browser, so native
 and browser exports are identical byte for byte. Building with `make solventc OCCT=1` (set
 `OCCT_ROOT` for a custom prefix) adds Open CASCADE as an oracle: `--kernel occt`, and

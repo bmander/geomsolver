@@ -354,6 +354,23 @@ impl Builder {
 /// meshed only for an object whose build is refused.
 pub fn supply_exact(sk: &Sketch) { supply_exact_where(sk,&|_| true) }
 
+/// Give the drawing `body`'s exact B-rep as an export `built` it, where it holds none yet: what a
+/// host reads of the body after, a picture, then reads that build rather than building it again
+/// or meshing its field (#592).  A swept body's is about the world's origin, as `supply_exact`
+/// gives it; a static one's about its own (`solid::exact::about_origin`), and none is given for a
+/// solid of a binding, which its representative's build places, or one reaching a mirrored solid.
+/// The B-rep is the export's: the same solid as the drawing's own build, its faces named by its
+/// recipe, so a host gives it to what only looks at the solid.
+pub fn supply(sk: &Sketch,body: usize,built: &Exact) {
+    if sk.supplied_exact_solid(body).is_some() { return }
+    if built.swept {
+        let mm = cad::millimetres(sk);
+        sk.supply_exact_solid(body,crate::solid::exact::named(built.solid.clone(),mm,[0.;3],Default::default()));
+    } else if sk.solids[body].binding.is_none() && !mirrored_within(sk,body) {
+        sk.supply_exact_solid(body,crate::solid::exact::about_origin(sk,body,&built.solid));
+    }
+}
+
 /// `supply_exact` for the swept objects `wanted` takes (by solid index): a report asked of one
 /// solid builds no other.
 pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {

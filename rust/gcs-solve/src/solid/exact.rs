@@ -145,6 +145,15 @@ pub(crate) fn named(mut brep: Brep, mm: f64, origin: [f64; 3], leading: BTreeSet
     Exact { brep, mm, origin, leading, named }
 }
 
+/// Static solid `si`'s B-rep as an export built it where it stands (millimetres,
+/// `brep::export::exact`), as an `Exact` about the solid's origin, as `build` stands one (#592).
+pub(crate) fn about_origin(sk: &Sketch, si: usize, world: &Brep) -> Exact {
+    let mm = cad::millimetres(sk);
+    let origin = frame_origin(sk, si, REPORT_UNIT);
+    let t = origin.map(|x| -x * mm);
+    named(world.moved(&geom::Rigid { t, ..geom::Rigid::identity() }), mm, origin, BTreeSet::new())
+}
+
 /// Swept body `si`'s exact B-rep as this kernel builds it (`brep::export::exact`, at the gross
 /// bars), about the origin, each face named as `build` names a static solid's (#212): the blank's
 /// by its primitive, a cut's by the placement that cuts it and the cutter's face that made it.

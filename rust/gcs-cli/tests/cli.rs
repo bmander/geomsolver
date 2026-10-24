@@ -677,7 +677,19 @@ fn the_rust_kernel_exports_a_static_solid() {
     std::fs::create_dir_all(&dir).unwrap();
     let model = dir.join("model.sv");
     let (stl,step) = (dir.join("model.stl"),dir.join("model.step"));
-    std::fs::write(&model,"\
+    std::fs::write(&model,BORED).unwrap();
+    let result = run(&[model.to_str().unwrap(),"--solid","body","--kernel","rust","--stl",stl.to_str().unwrap(),
+        "--step",step.to_str().unwrap(),"--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("built the solid by the Rust kernel") && stderr.contains("each the solid's"),"{stderr}");
+    gcs_core::mesh::stl_shells(&std::fs::read(&stl).unwrap()).unwrap();
+    assert!(std::fs::read_to_string(&step).unwrap().starts_with("ISO-10303-21;"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A block with a bore through it, `body`, built of `block`: two solids to write.
+const BORED: &str = "\
 unit mm
 use std
 in std.front {
@@ -698,15 +710,71 @@ block := solid(face(o, b, a, d, -> close), depth: 3)
 bore := solid(face(c), from: -5, to: 5)
 body := solid(block)
 bore cut body
-").unwrap();
-    let result = run(&[model.to_str().unwrap(),"--solid","body","--kernel","rust","--stl",stl.to_str().unwrap(),
-        "--step",step.to_str().unwrap(),"--no-diagnose"]);
+";
+
+/// **Several outputs, one build** (#592): two pictures, each with its own eye and size, and two
+/// exports, each with its own solid — `body`'s STL and STEP beside each other — come out of one
+/// run, and the body is built once for all of them: the pictures read the export's build, and
+/// are what each draws alone, byte for byte.
+#[test]
+fn several_outputs_of_one_run_build_each_solid_once() {
+    let dir = std::env::temp_dir().join(format!("solventc-outputs-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = dir.join("bored.sv");
+    std::fs::write(&model,BORED).unwrap();
+    let file = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let (top,home,body_stl,body_step,block_stl) =
+        (file("top.png"),file("home.png"),file("body.stl"),file("body.step"),file("block.stl"));
+    let result = run(&[model.to_str().unwrap(),"--no-diagnose","--progress","--size","200",
+        "--png",&top,"--view","top","--png",&home,"--size","120",
+        "--stl",&body_stl,"--step",&body_step,"--solid","body","--stl",&block_stl,"--solid","block"]);
     let stderr = String::from_utf8_lossy(&result.stderr);
     assert_eq!(result.status.code(),Some(0),"{stderr}");
-    assert!(stderr.contains("built the solid by the Rust kernel") && stderr.contains("each the solid's"),"{stderr}");
-    gcs_core::mesh::stl_shells(&std::fs::read(&stl).unwrap()).unwrap();
-    assert!(std::fs::read_to_string(&step).unwrap().starts_with("ISO-10303-21;"));
-    let _ = std::fs::remove_dir_all(&dir);
+    let builds = stderr.lines().filter(|l| l.contains("built the solid by the Rust kernel")
+        || l.contains("] built body in")).count();
+    assert_eq!(builds,2,"the body and the block built once each for every output:\n{stderr}");
+    assert!(!stderr.contains("] built body in"),"the pictures read the export's build:\n{stderr}");
+    let alone = |name: &str,extra: &[&str]| {
+        let png = file(name);
+        let out = run(&[&[model.to_str().unwrap(),"--no-diagnose","--png",&png][..],extra].concat());
+        assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+        std::fs::read(png).unwrap()
+    };
+    assert_eq!(std::fs::read(&top).unwrap(),alone("top_alone.png",&["--view","top","--size","200"]));
+    assert_eq!(std::fs::read(&home).unwrap(),alone("home_alone.png",&["--size","120"]));
+    let (top,home) = (read_png(&std::fs::read(&top).unwrap()),read_png(&std::fs::read(&home).unwrap()));
+    assert_eq!(top.0.max(top.1),200,"the run's size where a picture is told none");
+    assert_eq!(home.0.max(home.1),120,"a picture's own size");
+    assert_ne!((top.0,top.1),(home.0,home.1),"each picture from its own eye");
+    let (body,block) = (std::fs::read(&body_stl).unwrap(),std::fs::read(&block_stl).unwrap());
+    gcs_core::mesh::stl_shells(&body).unwrap();
+    gcs_core::mesh::stl_shells(&block).unwrap();
+    assert_ne!(body,block,"each export its own solid");
+    assert!(std::fs::read_to_string(&body_step).unwrap().starts_with("ISO-10303-21;"));
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// **A repeated flag is never silently dropped** (#592): an option that takes one value a run,
+/// a qualifier given twice to one output, two outputs to one file and a qualifier with nothing to
+/// qualify are each refused as a command line, before anything is read or written.
+#[test]
+fn a_repeated_option_or_output_is_refused() {
+    for (args,why) in [
+        (&["x.sv","--width","400","--width","800"][..],"`--width` given twice; it takes one value a run"),
+        (&["x.sv","-o","a.svg","--output","b.svg"][..],"`--output` given twice; it takes one value a run"),
+        (&["x.sv","--png","a.png","--png","a.png"][..],"two outputs write `a.png`"),
+        (&["x.sv","--stl","a.stl","--solid","p","--stl","a.stl","--solid","q"][..],"two outputs write `a.stl`"),
+        (&["x.sv","--png","a.png","--view","top","--view","left"][..],"`--view` given twice for `a.png`"),
+        (&["x.sv","--stl","a.stl","--solid","p","--solid","q"][..],"`--solid` given twice for `a.stl`"),
+        (&["x.sv","--solid","p","--solid","q","--stl","a.stl"][..],"`--solid` given twice before every output"),
+        (&["x.sv","--stl","a.stl","--view","top"][..],"`--view` qualifies a --png, and none is given"),
+        (&["x.sv","--solid","p"][..],"`--solid` says which solid an output writes, and none is given"),
+    ] {
+        let output = run(args);
+        assert_eq!(output.status.code(),Some(64),"{args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.starts_with(&format!("solventc: {why}\n")),"{args:?}: {stderr}");
+    }
 }
 
 /// Two blocks three apart and a claim about their clearance, written to a file of its own.

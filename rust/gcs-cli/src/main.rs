@@ -70,8 +70,10 @@ diagnosed, and the report says where it stands.
                         freedoms, locally determined, branch chosen, and whether it reads the
                         world.  Advisory: nothing is refused on its word
     -o, --output PATH   write an SVG (one file, so one document)
-    --stl PATH          write a solid as binary STL (one file, so one document)
-    --step PATH         write an analytic STEP solid (by the kernel --kernel names)
+    --stl PATH          write a solid as binary STL (one document; repeatable, each with its own
+                        --solid: every output of a run reads the one build of a solid)
+    --step PATH         write an analytic STEP solid (by the kernel --kernel names); beside an
+                        --stl with no --solid between them, the same solid's
     --kernel NAME       rust (default) or occt: which kernel builds a solid's STEP and STL (rust,
                         the core's own B-rep, a swept body of the generating class included;
                         occt, where the build has it, kept as the oracle)
@@ -85,7 +87,8 @@ diagnosed, and the report says where it stands.
     --gltf PATH         write a solid as binary glTF: every face a named node
     --png PATH          draw what the workspace shows as a PNG (a part file: its preview), each
                         object shaded in its instance's colour, depth-buffered, with its creases
-                        and silhouettes; --solid draws one solid or one instance's objects
+                        and silhouettes; --solid draws one solid or one instance's objects.
+                        Repeatable, each with its own --view, --size and --hide
     --view VIEW         the eye --png draws from: home (default, as the workspace opens), a view
                         a sheet names (front, back, right, left, top, bottom, isometric), or
                         az,el in degrees
@@ -98,13 +101,19 @@ diagnosed, and the report says where it stands.
                         mm, um, cm, m, in and thou name their own); a swept body's sheets are
                         refined into it, the STL meshed within it, and --measure judges by it.
                         Without it the native export keeps its gross bars (no fabrication claim)
-    --measure PATH      measure an exported STEP or STL against the solid's exact surface
-                        (repeatable; STEP requires a native OCCT build)
+    --measure PATH      measure an exported STEP or STL against the solid's exact surface: the
+                        solid this run wrote it from, else the one --solid gives before every
+                        output (repeatable; STEP requires a native OCCT build)
     --measure-samples N about how many points to measure a file at (default 20000)
     --width PX          the SVG's page width in pixels (default 800)
     --sheet NAME        select a sheet in a .svd drawing (its page size sets SVG size)
     -h, --help          this
     -V, --version       the version of this build (a release says its tag)
+
+--solid, --view, --size and --hide qualify an output: given after one, the last before them that
+they qualify (--solid any output, the rest a --png); given before every output, each output told
+none of its own.  An option that takes one value is refused given twice, and so is an output
+given twice to one path.
 
 Examples:
     solventc part.sv                          check a document: solved, and how constrained
@@ -114,6 +123,10 @@ Examples:
     solventc part.sv --png part.png           look at it, as the workspace shows it
     solventc part.sv --stl part.stl --solid body
                                               a solid, for a printer
+    solventc bot.sv --stl wheel.stl --solid wheel --stl frame.stl --solid frame
+                                              two solids, each built once
+    solventc part.sv --png top.png --view top --png iso.png --view isometric
+                                              two pictures, the solids built once
     solventc drawing.svd --sheet front -o front.svg
                                               one sheet of a drawing, as SVG
 
@@ -156,22 +169,14 @@ struct Opts {
     lint: bool,
     allow_unsolved: bool,
     output: Option<String>,
-    /// `--stl PATH` — the one output of a drawing that is not a picture, and the reason a
-    /// printer can be given a part at all.
-    stl: Option<String>,
-    step: Option<String>,
+    /// What the run writes of its solids, in the order the command line gives it (#592): every
+    /// one reads the sketch the run solved, so a solid two of them read is built once.
+    outputs: Vec<Output>,
+    /// The qualifiers given before every output: each output's where it is told none of its own.
+    run: Qualifiers,
     native_stl: bool,
     /// `--stl-backend refine`: the core's Delaunay refinement of the material field.
     refine: bool,
-    /// `--gltf PATH` — the object as a viewer opens it, every face named.
-    gltf: Option<String>,
-    /// `--png PATH` — the objects as the workspace shows them, drawn without a page (#541), from
-    /// `--view`'s eye at `--size`, less `--hide`'s.
-    png: Option<String>,
-    view: picture::Eye,
-    size: usize,
-    hide: Vec<String>,
-    solid: Option<String>,
     /// `--measure PATH` — exported files to measure against the solid's exact surface.
     measure: Vec<String>,
     measure_samples: usize,
@@ -199,16 +204,10 @@ impl Default for Opts {
             lint: false,
             allow_unsolved: false,
             output: None,
-            stl: None,
-            step: None,
+            outputs: Vec::new(),
+            run: Qualifiers::default(),
             native_stl: true,
             refine: false,
-            gltf: None,
-            png: None,
-            view: picture::HOME,
-            size: 1200,
-            hide: Vec::new(),
-            solid: None,
             measure: Vec::new(),
             measure_samples: 20000,
             tolerance: None,
@@ -221,12 +220,120 @@ impl Default for Opts {
     }
 }
 
+/// What an output may be told beside its path (#592): which solid, and for a picture its eye, its
+/// size and what it leaves out.
+#[derive(Default)]
+struct Qualifiers {
+    solid: Option<String>,
+    view: Option<picture::Eye>,
+    size: Option<usize>,
+    hide: Option<Vec<String>>,
+}
+
+/// What one output writes.
+enum Writes {
+    /// `--stl PATH` and `--step PATH`, one solid built once for both: the output of a drawing
+    /// that is not a picture, and the reason a printer can be given a part at all.
+    Export { stl: Option<String>, step: Option<String> },
+    /// `--gltf PATH` — the object as a viewer opens it, every face named.
+    Gltf(String),
+    /// `--png PATH` — the objects as the workspace shows them, drawn without a page (#541), from
+    /// `--view`'s eye at `--size`, less `--hide`'s.
+    Png(String),
+}
+
+/// One file a run writes from its solids, and what it was told of its own.
+struct Output {
+    writes: Writes,
+    own: Qualifiers,
+}
+
+impl Output {
+    fn new(writes: Writes) -> Output {
+        Output { writes, own: Qualifiers::default() }
+    }
+
+    /// The files it writes.
+    fn paths(&self) -> Vec<&str> {
+        match &self.writes {
+            Writes::Export { stl, step } => stl.iter().chain(step).map(String::as_str).collect(),
+            Writes::Gltf(p) | Writes::Png(p) => vec![p.as_str()],
+        }
+    }
+}
+
+impl Opts {
+    /// The qualifiers a qualifier given now sets, and how a refusal says which: the last output
+    /// it qualifies (a picture's alone where `png`), else the run's.
+    fn qualified(&mut self, png: bool) -> (&mut Qualifiers, String) {
+        match self.outputs.iter_mut().rev().find(|o| !png || matches!(o.writes, Writes::Png(_))) {
+            Some(o) => {
+                let at = format!("for `{}`", o.paths()[0]);
+                (&mut o.own, at)
+            }
+            None => (&mut self.run, "before every output".into()),
+        }
+    }
+
+    /// The solid `o` writes: its own, else the run's.
+    fn solid<'a>(&'a self, o: &'a Qualifiers) -> Option<&'a str> {
+        o.solid.as_deref().or(self.run.solid.as_deref())
+    }
+
+    /// The solid `--measure PATH` is measured against: the one this run wrote `path` from, else
+    /// the run's.
+    fn measured(&self, path: &str) -> Option<&str> {
+        self.outputs.iter().find(|o| o.paths().contains(&path))
+            .map_or(self.run.solid.as_deref(), |o| self.solid(&o.own))
+    }
+
+    /// Whether any output writes a picture.
+    fn pictured(&self) -> bool {
+        self.outputs.iter().any(|o| matches!(o.writes, Writes::Png(_)))
+    }
+
+    /// `--stl PATH` or `--step PATH`: beside the export before it where that writes the other
+    /// format and was told no solid of its own since (`--stl a.stl --step a.step --solid body`),
+    /// else an export of its own.
+    fn add_export(&mut self, stl: Option<String>, step: Option<String>) {
+        let last = self.outputs.last_mut();
+        if let Some(Output { writes: Writes::Export { stl: s, step: t }, own }) = last {
+            let beside = stl.is_some() && s.is_none() || step.is_some() && t.is_none();
+            if own.solid.is_none() && beside {
+                if stl.is_some() { *s = stl; } else { *t = step; }
+                return;
+            }
+        }
+        self.outputs.push(Output::new(Writes::Export { stl, step }));
+    }
+}
+
+/// `value` for a qualifier's `slot`, refused where `flag` was given it already (`at` says whose).
+fn qualify<T>(slot: &mut Option<T>, value: T, flag: &str, at: &str) -> Result<(), String> {
+    match slot.replace(value) {
+        Some(_) => Err(format!("`{flag}` given twice {at}")),
+        None => Ok(()),
+    }
+}
+
+/// The options that take one value a run, whatever its outputs: each said once (#592), a second
+/// refused, never taken over the first.
+const ONCE: [&str; 8] = ["--stl-backend", "--kernel", "--verify-step", "--sheet", "--output",
+                         "--width", "--tolerance", "--measure-samples"];
+
 fn main() -> ExitCode {
     let mut opts = Opts::default();
+    let mut given: std::collections::BTreeSet<&str> = Default::default();
     let mut paths: Vec<String> = Vec::new();
     let mut said: Option<watch::Say> = None;
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
+        let flag = if a == "-o" { "--output" } else { a.as_str() };
+        if let Some(&once) = ONCE.iter().find(|&&f| f == flag) {
+            if !given.insert(once) {
+                return misuse(format!("`{once}` given twice; it takes one value a run"));
+            }
+        }
         match a.as_str() {
             "--stl-backend" => match args.next().as_deref() {
                 Some("occt") => { opts.native_stl = true; cad::ask_occt(); }
@@ -235,7 +342,7 @@ fn main() -> ExitCode {
                 _ => return misuse("--stl-backend needs occt, mesh or refine"),
             },
             "--step" => match args.next() {
-                Some(p) => opts.step = Some(p),
+                Some(p) => opts.add_export(None, Some(p)),
                 None => return misuse("--step needs a path"),
             },
             "--kernel" => match args.next().as_deref() {
@@ -261,32 +368,45 @@ fn main() -> ExitCode {
                 _ => return misuse("--width needs a page width in pixels"),
             },
             "--gltf" => match args.next() {
-                Some(p) => opts.gltf = Some(p),
+                Some(p) => opts.outputs.push(Output::new(Writes::Gltf(p))),
                 None => return misuse("--gltf needs a path"),
             },
             "--png" => match args.next() {
-                Some(p) => opts.png = Some(p),
+                Some(p) => opts.outputs.push(Output::new(Writes::Png(p))),
                 None => return misuse("--png needs a path"),
             },
             "--view" => match args.next().as_deref().map(picture::eye) {
-                Some(Ok(eye)) => opts.view = eye,
+                Some(Ok(eye)) => {
+                    let (q, at) = opts.qualified(true);
+                    if let Err(m) = qualify(&mut q.view, eye, "--view", &at) { return misuse(m); }
+                }
                 Some(Err(m)) => return misuse(m),
                 None => return misuse("--view needs a view"),
             },
             "--size" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|n| (16..=4096).contains(n)) {
-                Some(n) => opts.size = n,
+                Some(n) => {
+                    let (q, at) = opts.qualified(true);
+                    if let Err(m) = qualify(&mut q.size, n, "--size", &at) { return misuse(m); }
+                }
                 None => return misuse("--size needs a side in pixels, 16 to 4096"),
             },
             "--hide" => match args.next() {
-                Some(n) => opts.hide.extend(n.split(',').map(str::trim).filter(|n| !n.is_empty()).map(String::from)),
+                Some(n) => {
+                    let names = n.split(',').map(str::trim).filter(|n| !n.is_empty());
+                    opts.qualified(true).0.hide.get_or_insert_with(Vec::new)
+                        .extend(names.map(String::from));
+                }
                 None => return misuse("--hide needs a name"),
             },
             "--stl" => match args.next() {
-                Some(p) => opts.stl = Some(p),
+                Some(p) => opts.add_export(Some(p), None),
                 None => return misuse("--stl needs a path"),
             },
             "--solid" => match args.next() {
-                Some(n) => opts.solid = Some(n),
+                Some(n) => {
+                    let (q, at) = opts.qualified(false);
+                    if let Err(m) = qualify(&mut q.solid, n, "--solid", &at) { return misuse(m); }
+                }
                 None => return misuse("--solid needs a name"),
             },
             "--measure" => match args.next() {
@@ -330,21 +450,45 @@ fn main() -> ExitCode {
     if paths.is_empty() {
         return misuse("no document given");
     }
-    if opts.gltf.is_some() && paths.len() != 1 {
-        return misuse("--gltf writes one file, so it takes one document");
+    if let Some(o) = opts.outputs.first().filter(|_| paths.len() != 1) {
+        let flag = match o.writes {
+            Writes::Export { .. } => "--stl or --step",
+            Writes::Gltf(_) => "--gltf",
+            Writes::Png(_) => "--png",
+        };
+        return misuse(format!("{flag} writes one file, so it takes one document"));
     }
-    if (opts.stl.is_some() || opts.step.is_some()) && paths.len() != 1 {
-        return misuse("--stl/--step writes one file, so it takes one document");
-    }
-    if opts.tolerance.is_some() && opts.measure.is_empty() && opts.step.is_none() && (opts.stl.is_none() || opts.refine || !opts.native_stl) {
+    let native = opts.outputs.iter().any(|o| match &o.writes {
+        Writes::Export { stl, step } =>
+            step.is_some() || (stl.is_some() && !opts.refine && opts.native_stl),
+        _ => false,
+    });
+    if opts.tolerance.is_some() && opts.measure.is_empty() && !native {
         return misuse("--tolerance holds a native export (or a measurement) to it; give --step, \
             --stl by the kernel's export, or --measure");
     }
-    if opts.png.is_some() && paths.len() != 1 {
-        return misuse("--png writes one file, so it takes one document");
-    }
     if opts.output.is_some() && paths.len() != 1 {
         return misuse("--output writes one file, so it takes one document");
+    }
+    // two outputs to one file would leave only the second (#592)
+    let mut written: Vec<&str> = opts.output.iter().map(String::as_str).collect();
+    for p in opts.outputs.iter().flat_map(Output::paths) {
+        if written.contains(&p) {
+            return misuse(format!("two outputs write `{p}`"));
+        }
+        written.push(p);
+    }
+    // a qualifier given before every output and qualifying none would be dropped
+    let run = &opts.run;
+    if run.solid.is_some() && opts.outputs.is_empty() && opts.measure.is_empty() {
+        return misuse("`--solid` says which solid an output writes, and none is given");
+    }
+    let qualified = [("--view", run.view.is_some()), ("--size", run.size.is_some()),
+                     ("--hide", run.hide.is_some())];
+    for (flag, given) in qualified {
+        if given && !opts.pictured() {
+            return misuse(format!("`{flag}` qualifies a --png, and none is given"));
+        }
     }
     // a person watching a terminal is told of slow work unasked; a pipe or a file only on asking
     use std::io::IsTerminal;
@@ -662,69 +806,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         }
     }
     let mut code = if solved || opts.allow_unsolved { 0 } else { 2 };
-    let mut stl = opts.stl.clone();
-    let mut step = opts.step.clone();
-    // A body with swept cuts is built only when every sweep is in the generating class
-    // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
-    // nothing is written, so an earlier output stays as it was. The class is what the native
-    // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
-    // only the field, and is gated by the field-agreement probe instead.
-    // A native export admits the body itself, beside the first of its construction.
-    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
-    let mut body = None;
-    if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
-        if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
-            let mut b = cad::Body::read(&sk,i);
-            if b.swept() && !native {
-                if let Err(refusal) = b.admit(&sk) {
-                    refused(&mut e,i,refusal);
-                    code = 1;
-                    stl = None;
-                    step = None;
-                }
-            }
-            body = Some(b);
-        }
-    }
-    if let Some(path) = stl.clone().filter(|_| opts.refine && solved) {
-        #[cfg(feature="occt")]
-        if let Ok(i) = pick_solid(&sk,opts.solid.as_deref()) {
-            if let Err(refusal) = cad::field_mesh::export_refine(&sk,i,&path) {
-                refused(&mut e,i,refusal);
-                code = 1;
-            }
-        }
-        #[cfg(not(feature="occt"))]
-        { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); code = 1; }
-        stl = None;
-    }
-    if step.is_some() || (stl.is_some() && opts.native_stl) {
-        match (solved,pick_solid(&sk,opts.solid.as_deref())) {
-            (false,_) => {
-                let message = "native STEP/STL export requires a solved model".to_string();
-                eprintln!("solventc: {message}");
-                e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
-                    Default::default(),None,message));
-                code = 1;
-            }
-            (true,Err(message)) => {
-                eprintln!("solventc: {message}");
-                e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
-                    Default::default(),None,message));
-                code = 1;
-            }
-            (true,Ok(i)) => {
-                let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(&sk,i));
-                match tolerance(&sk,opts) {
-                    Err(message) => { eprintln!("solventc: {message}"); code = 1; }
-                    Ok(t) => if let Err(refusal) = cad::export(&sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t) {
-                        // refused admission, nothing is written (the mesh backend's STL included)
-                        if refusal.stage == cad::Stage::Admission { stl = None; }
-                        refused(&mut e,i,refusal);
-                        code = 1;
-                    },
-                }
-            }
+    // each export in its turn, then the pictures, of one solved sketch and its memo, so a solid
+    // two of them read is built once (#592).  The pictures read a copy of it given what each
+    // export built: an export's own build is the same solid as the memo's, its faces named by its
+    // recipe, which a picture never reads and every other output does
+    let exports: Vec<&Output> =
+        opts.outputs.iter().filter(|o| matches!(o.writes, Writes::Export { .. })).collect();
+    let seen = (opts.pictured() && !exports.is_empty()).then(|| sk.clone());
+    for o in exports {
+        if !export(&sk, &mut e, opts, o, seen.as_ref(), solved) {
+            code = 1;
         }
     }
     if let Some(path) = &opts.output {
@@ -735,81 +826,64 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             code = 1;
         }
     }
-    if let Some(path) = stl.as_ref().filter(|_| !opts.native_stl) {
-        // the mesh is `gcs_core::mesh`'s for `svg`'s reason: a printer's file and a drawing are
-        // two readings of one boundary, and a second walk would be a second object
-        match pick_solid(&sk, opts.solid.as_deref()) {
-            Ok(i) => {
-                // cut to the *object*, not to the report: a printer resolves a tenth of a
-                // millimetre and a volume is quoted to four digits, and those are not one number
-                match sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).and_then(|s| s.stl()) {
-                    Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
-                        eprintln!("solventc: {err}");
-                        code = 1;
+    for o in &opts.outputs {
+        let solid = opts.solid(&o.own);
+        match &o.writes {
+            Writes::Export { .. } => {}
+            Writes::Gltf(path) => {
+                // a named solid, or **every object the document has** — glTF holds a scene, so
+                // unlike an STL it need not be told which one part of an assembly to be
+                let which: Vec<usize> = match solid {
+                    Some(_) => match pick_solid(&sk, solid) {
+                        Ok(i) => vec![i],
+                        Err(m) => {
+                            eprintln!("solventc: {m}");
+                            code = 1;
+                            Vec::new()
+                        }
                     },
-                    Err(message) => {
-                        let site = e.map.site_of(gcs_core::model::EntRef::solid(i));
-                        e.diags.push(gcs_core::program::Diag::new(
-                            gcs_core::program::Code::E080,
-                            site.map(|s| s.span).unwrap_or_default(),
-                            site.map(|s| s.stmt), message.clone(),
-                        ));
-                        if !opts.json { eprintln!("solventc: {message}"); }
-                        code = 1;
+                    None => gcs_core::overview::objects(&sk),
+                };
+                if which.is_empty() && solid.is_none() {
+                    eprintln!("solventc: this document has no solid to write");
+                    code = 1;
+                } else if !which.is_empty() {
+                    match gcs_core::gltf::checked_glb(&sk, &which, gcs_core::solid::ApproximationPolicy::Mesh) {
+                        Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
+                            eprintln!("solventc: {err}"); code = 1;
+                        },
+                        Err(message) => { eprintln!("solventc: {message}"); code = 1; }
                     }
                 }
             }
-            Err(m) => {
-                eprintln!("solventc: {m}");
-                code = 1;
-            }
-        }
-    }
-    if let Some(path) = &opts.gltf {
-        // a named solid, or **every object the document has** — glTF holds a scene, so unlike an
-        // STL it need not be told which one part of an assembly to be
-        let which: Vec<usize> = match &opts.solid {
-            Some(_) => match pick_solid(&sk, opts.solid.as_deref()) {
-                Ok(i) => vec![i],
-                Err(m) => {
-                    eprintln!("solventc: {m}");
-                    code = 1;
-                    Vec::new()
-                }
-            },
-            None => gcs_core::overview::objects(&sk),
-        };
-        if which.is_empty() && opts.solid.is_none() {
-            eprintln!("solventc: this document has no solid to write");
-            code = 1;
-        } else if !which.is_empty() {
-            match gcs_core::gltf::checked_glb(&sk, &which, gcs_core::solid::ApproximationPolicy::Mesh) {
-                Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
-                    eprintln!("solventc: {err}"); code = 1;
-                },
-                Err(message) => { eprintln!("solventc: {message}"); code = 1; }
-            }
-        }
-    }
-    if let Some(path) = &opts.png {
-        // what the workspace shows, at the pose the run reached: a drawing that did not solve is
-        // still looked at, as its SVG is still written
-        let ask = picture::Ask { eye: opts.view, size: opts.size, solid: opts.solid.as_deref(), hide: &opts.hide };
-        match picture::render(&sk, &ask) {
-            Ok((bytes, unbuilt)) => {
-                // an object that does not evaluate is left out, as the box leaves it, and said
-                for why in unbuilt { eprintln!("solventc: {why}"); }
-                if let Err(err) = cad::output::write(path, &bytes) {
-                    eprintln!("solventc: {err}");
-                    code = 1;
+            Writes::Png(path) => {
+                // what the workspace shows, at the pose the run reached: a drawing that did not
+                // solve is still looked at, as its SVG is still written
+                let (own, run) = (&o.own, &opts.run);
+                let hide = own.hide.as_ref().or(run.hide.as_ref()).map_or(&[][..], Vec::as_slice);
+                let ask = picture::Ask {
+                    eye: own.view.or(run.view).unwrap_or(picture::HOME),
+                    size: own.size.or(run.size).unwrap_or(1200),
+                    solid,
+                    hide,
+                };
+                match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
+                    Ok((bytes, unbuilt)) => {
+                        // an object that does not evaluate is left out, as the box leaves it, and said
+                        for why in unbuilt { eprintln!("solventc: {why}"); }
+                        if let Err(err) = cad::output::write(path, &bytes) {
+                            eprintln!("solventc: {err}");
+                            code = 1;
+                        }
+                    }
+                    Err(m) => { eprintln!("solventc: {m}"); code = 1; }
                 }
             }
-            Err(m) => { eprintln!("solventc: {m}"); code = 1; }
         }
     }
     // measured after anything written, so one run may export a file and measure it
     for path in &opts.measure {
-        let lines = if solved { pick_solid(&sk,opts.solid.as_deref()).and_then(|i| {
+        let lines = if solved { pick_solid(&sk,opts.measured(path)).and_then(|i| {
             let t = tolerance(&sk,opts)?.map(|t| t.millimetres);
             cad::measure::report(&sk,i,path,opts.measure_samples,t)
         }) }
@@ -839,9 +913,113 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     )
 }
 
+/// One export of a solid (`--stl` and `--step`, #592): admitted, built once for both formats and
+/// written, each refusal said in the core's words and recorded at the solid's statement; whether
+/// all of it was.  `seen`, where the run draws pictures, is the sketch they read, given what it
+/// built.
+fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option<&Sketch>,
+          solved: bool) -> bool {
+    let Writes::Export { stl, step } = &o.writes else { return true };
+    let (mut stl, mut step, solid) = (stl.clone(), step.clone(), opts.solid(&o.own));
+    let mut ok = true;
+    // A body with swept cuts is built only when every sweep is in the generating class
+    // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
+    // nothing is written, so an earlier output stays as it was. The class is what the native
+    // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
+    // only the field, and is gated by the field-agreement probe instead.
+    // A native export admits the body itself, beside the first of its construction.
+    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
+    let mut body = None;
+    if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
+        if let Ok(i) = pick_solid(sk,solid) {
+            let mut b = cad::Body::read(sk,i);
+            if b.swept() && !native {
+                if let Err(refusal) = b.admit(sk) {
+                    refused(e,i,refusal);
+                    ok = false;
+                    stl = None;
+                    step = None;
+                }
+            }
+            body = Some(b);
+        }
+    }
+    if let Some(path) = stl.clone().filter(|_| opts.refine && solved) {
+        #[cfg(feature="occt")]
+        if let Ok(i) = pick_solid(sk,solid) {
+            if let Err(refusal) = cad::field_mesh::export_refine(sk,i,&path) {
+                refused(e,i,refusal);
+                ok = false;
+            }
+        }
+        #[cfg(not(feature="occt"))]
+        { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); ok = false; }
+        stl = None;
+    }
+    if step.is_some() || (stl.is_some() && opts.native_stl) {
+        match (solved,pick_solid(sk,solid)) {
+            (false,_) => {
+                let message = "native STEP/STL export requires a solved model".to_string();
+                eprintln!("solventc: {message}");
+                e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+                    Default::default(),None,message));
+                ok = false;
+            }
+            (true,Err(message)) => {
+                eprintln!("solventc: {message}");
+                e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+                    Default::default(),None,message));
+                ok = false;
+            }
+            (true,Ok(i)) => {
+                let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(sk,i));
+                match tolerance(sk,opts) {
+                    Err(message) => { eprintln!("solventc: {message}"); ok = false; }
+                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t,seen) {
+                        // refused admission, nothing is written (the mesh backend's STL included)
+                        if refusal.stage == cad::Stage::Admission { stl = None; }
+                        refused(e,i,refusal);
+                        ok = false;
+                    },
+                }
+            }
+        }
+    }
+    if let Some(path) = stl.as_ref().filter(|_| !opts.native_stl) {
+        // the mesh is `gcs_core::mesh`'s for `svg`'s reason: a printer's file and a drawing are
+        // two readings of one boundary, and a second walk would be a second object
+        match pick_solid(sk, solid) {
+            Ok(i) => {
+                // cut to the *object*, not to the report: a printer resolves a tenth of a
+                // millimetre and a volume is quoted to four digits, and those are not one number
+                match sk.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh).and_then(|s| s.stl()) {
+                    Ok(bytes) => if let Err(err) = cad::output::write(path, &bytes) {
+                        eprintln!("solventc: {err}");
+                        ok = false;
+                    },
+                    Err(message) => {
+                        let site = e.map.site_of(gcs_core::model::EntRef::solid(i));
+                        e.diags.push(gcs_core::program::Diag::new(
+                            gcs_core::program::Code::E080,
+                            site.map(|s| s.span).unwrap_or_default(),
+                            site.map(|s| s.stmt), message.clone(),
+                        ));
+                        if !opts.json { eprintln!("solventc: {message}"); }
+                        ok = false;
+                    }
+                }
+            }
+            Err(m) => {
+                eprintln!("solventc: {m}");
+                ok = false;
+            }
+        }
+    }
+    ok
+}
+
 fn check_drawing(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
-    let result = if opts.stl.is_some() || opts.step.is_some() || opts.gltf.is_some() || opts.png.is_some()
-        || opts.solid.is_some() {
+    let result = if !opts.outputs.is_empty() || opts.run.solid.is_some() {
         Err(gcs_core::drawing::Error { span: Default::default(),
             message: "STL/STEP/glTF/PNG export selects geometry from a .sv model, not a .svd drawing".into() })
     } else {
