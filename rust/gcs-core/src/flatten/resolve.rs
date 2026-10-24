@@ -1554,7 +1554,19 @@ impl<'a> Walk<'a> {
                 rescope_seeds(&mut st.kind, &sc, self.look(&alias), &mut bad);
             }
             let clean = bad.is_empty();
+            // a relation word's body reading the frame of an instance it was given that has none
+            // is said where the word is used, as its other faults are, and not in its definition
+            // (#595)
+            let used = match &st.kind {
+                StmtKind::Relation(r) if r.word.is_some() => r.form.written().map(|w| w.word.span),
+                _ => None,
+            };
             for (code, span, msg) in bad {
+                let inside = st.span.lo <= span.lo && span.hi <= st.span.hi;
+                let span = match used {
+                    Some(at) if code == Code::E111 && !inside => at,
+                    _ => span,
+                };
                 self.err(code, span, msg);
             }
             // a relation reading what was said to name nothing is not stated: stated, it would

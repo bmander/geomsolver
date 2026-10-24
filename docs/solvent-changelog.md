@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.180] A mate said once.** A relation word's body may read the datums of an instance it is
+given, as an operand or an entity parameter (`g.std.origin`, §9.9), and a statement writing the
+word reads them from outside as one writing `d.std.origin` would (§8): the instance stands in a
+frame of its own, placed by the body's relations — through any word the body uses in turn, an
+instance whose body reads no datum **E111** where the word is used, a culprit read as the word
+(`d seats(turn: 15deg, up: std.z, east: std.x) b`). Through 0.179 such a use was refused, each of
+the body's relations saying it did not know what its operands were (**E040**). The standard library
+gains two words: `g seats(turn, up, east) p`, the mate of an instance drawn about its own origin —
+its origin on `p`, its z along `up`, its x turned `turn` from `east` about `up` — and `q raised(d,
+along) p`, `q` the distance `d` from `p` along `along` on the axis through `p` that runs that way,
+the station a part's origin seats on. The language gains no keyword or statement form, and every
+solved position is unchanged. (Issue #595.)
+
 **[0.179] A corner round is a joint.** `A -> round(r: R) B` rounds the corner where the lines `A`
 and `B` of a chain meet with an arc of radius `R` tangent to both (§6.6): the arc (named where it
 stands, `-> (k := round(r: R))`), its radius, a tangency at each end and the corner kept on both

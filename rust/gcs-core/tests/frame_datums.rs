@@ -619,3 +619,115 @@ fn an_instance_whose_body_reads_no_datum_is_refused_its_frame() {
     let e = build(&format!("{READS}p := Post(len: 40mm)\nq := point\np.std.zork coincident q\n"));
     assert!(!e.ok() && e.diags.iter().all(|d| d.code != Code::E111), "{:?}", e.diags);
 }
+
+/// A mate said by a relation word the document defines, over the instance as its operand (#595).
+const SEATS: &str = "\
+g seats_at(up, east) p := {
+  g.std.origin coincident p
+  g.std.x parallel east
+  g.std.y parallel up
+}
+";
+
+#[test]
+fn a_relation_word_over_an_instance_reads_its_frame_and_places_it() {
+    // the mate's three statements said once: the instance stands in a frame of its own though no
+    // statement of the document writes `p.std`
+    let src = format!("{READS}{SEATS}p := Post(len: 40mm)\n\
+                       seat := point\nfix((10, 20, 30)) seat\n\
+                       bore := axis\nfix(dir == (0, 1, 0), origin == (10, 0, 30)) bore\n\
+                       p seats_at(up: std.z, east: bore) seat\n");
+    let mut e = solved(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    for name in ["a", "b"] {
+        let (got, want) = (at(&e, &format!("p.{name}")),
+                           SEATED.image(at(&root, &format!("p.{name}"))));
+        assert!(near(got, want), "p.{name}: {got:?} against {want:?}");
+    }
+    // and a word whose body uses that word, its operand passed on, reads the frame through it;
+    // the culprit reads as the word written
+    let src = format!("{READS}{SEATS}g upright(up, east) p := g seats_at(up: up, east: east) p\n\
+                       g upright_twice(up, east) p := g upright(up: up, east: east) p\n\
+                       p := Post(len: 40mm)\n\
+                       seat := point\nfix((10, 20, 30)) seat\n\
+                       bore := axis\nfix(dir == (0, 1, 0), origin == (10, 0, 30)) bore\n\
+                       p upright_twice(up: std.z, east: bore) seat\n");
+    let e = build(&src);
+    assert!(e.ok(), "{:?}", e.diags);
+    let mut e = solved(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    let want = SEATED.image(at(&root, "p.b"));
+    assert!(near(at(&e, "p.b"), want), "{:?} against {want:?}", at(&e, "p.b"));
+    let said = crate::common::said(&e);
+    assert!(said.iter().any(|s| s == "p upright_twice(up: std.z, east: bore) seat"), "{said:?}");
+}
+
+#[test]
+fn a_relation_word_given_an_instance_as_a_parameter_reads_its_frame() {
+    // the instance named in the parentheses rather than as an operand
+    let src = format!("{READS}x seat_of(part, up) p := {{\n  part.std.origin coincident p\n  \
+                       part.std.x parallel x\n  part.std.y parallel up\n}}\n\
+                       p := Post(len: 40mm)\n\
+                       seat := point\nfix((10, 20, 30)) seat\n\
+                       bore := axis\nfix(dir == (0, 1, 0), origin == (10, 0, 30)) bore\n\
+                       bore seat_of(part: p, up: std.z) seat\n");
+    let mut e = solved(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    let want = SEATED.image(at(&root, "p.b"));
+    assert!(near(at(&e, "p.b"), want), "{:?} against {want:?}", at(&e, "p.b"));
+}
+
+#[test]
+fn std_seats_a_part_on_a_station_raised_from_a_point_in_one_line_each() {
+    // the radiator's placement (#595): a station 25 up from a point drawn in the top, and the
+    // post seated on it, its x turned 30° from the world's about z
+    let src = format!("{READS}\
+in std.top {{
+  base := point
+  fix((10, 20)) base
+}}
+st := point
+st raised(d: 25mm, along: std.z) base
+p := Post(len: 40mm)
+p seats(turn: 30deg, up: std.z, east: std.x) st
+").replace("use std\n", "use std (seats, raised)\n");
+    let mut e = solved(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    assert!(near(at(&e, "st"), [10.0, 20.0, 25.0]), "{:?}", at(&e, "st"));
+    let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+    let pose = Pose { u: [c, s, 0.0], v: [-s, c, 0.0], o: [10.0, 20.0, 25.0] };
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    for name in ["a", "b"] {
+        let (got, want) = (at(&e, &format!("p.{name}")),
+                           pose.image(at(&root, &format!("p.{name}"))));
+        assert!(near(got, want), "p.{name}: {got:?} against {want:?}");
+    }
+    // a station below, along an axis of the drawing's own: the axis's way, not the seed's
+    let src = format!("{READS}\
+in std.top {{
+  base := point
+  fix((10, 20)) base
+}}
+tilt := axis
+fix(dir == (0.6, 0, 0.8), origin == (0, 0, 0)) tilt
+st := point hint((0, 0, 0))
+st raised(d: -10mm, along: tilt) base
+").replace("use std\n", "use std (raised)\n");
+    let mut e = solved(&src);
+    assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+    assert!(near(at(&e, "st"), [4.0, 20.0, -8.0]), "{:?}", at(&e, "st"));
+}
+
+#[test]
+fn a_relation_word_over_an_instance_whose_body_reads_no_datum_is_refused_at_the_use() {
+    let src = format!("{HANDED}{SEATS}p := Post(std.front, std.origin, len: 40mm)\nq := point\n\
+                       p seats_at(up: std.z, east: std.x) q\n");
+    let e = build(&src);
+    let at = src.rfind("seats_at(up").unwrap();
+    let d = e.diags.iter().find(|d| d.code == Code::E111)
+        .unwrap_or_else(|| panic!("not refused: {:?}", e.diags));
+    assert!(d.message.contains("`Post`'s body reads no standard datum"), "{}", d.message);
+    assert_eq!(d.span.lo as usize, at, "{d:?}");
+}

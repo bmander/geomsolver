@@ -81,7 +81,10 @@ helper: model contours with alignments, incidences, symmetry and dimensions — 
 `offset`, `right_of`/`left_of`/`above`/`below`, `coords`, `on_u`/`on_v` are pairs of those
 dimensions (an ordinate and an ordinate or a level) said as one statement, still dimensions;
 `skew` and `turned` are the same for two lines (#103's corpus pass), `P square(up: d) l` the three
-statements a plane square to a line takes (#250). Components have no
+statements a plane square to a line takes (#250). `g seats(turn, up, east) p` is the three relations
+of a mate on an instance's frame (#595, [language.md](language.md)), and `q raised(d, along) p`
+a point `d` along a direction from another, on the axis through it — held by an axis, not a line
+from `p` to `q`, so its direction stands at any `d`. Components have no
 implicit frame; `instance := Part(f) in view` supplies membership. Aliases keep subentity paths
 (`f.origin`). Calls may omit `name :=`; anonymous keys stay out of user-facing names. E.g. `cyl
 := Cylinder(std.Turned(std.origin, up), fw: components.dims.fwA)`
