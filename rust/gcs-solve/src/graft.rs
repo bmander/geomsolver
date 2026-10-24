@@ -126,6 +126,10 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         dst.params[rp].value = src.params[a.radius as usize].value;
         dst.params[rp].fixed = src.params[a.radius as usize].fixed;
         dst.arcs[ni].class = a.class.clone();
+        // drawn from its end for its sense, it still reads its ends as written (#573)
+        if src.arc_reversed(i) {
+            dst.reversed.insert(ni as u32);
+        }
         arc_map[i] = Some(ni);
         made.push(EntRef::arc(ni));
     }
@@ -603,6 +607,8 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             class: so.class.clone(),
             copy: so.copy,
             material: so.material.clone(),
+            // its frames and turns are the source's: grafted, it is evaluated as its own
+            binding: None,
         });
         debug_assert_eq!(solid_map[i], Some(dst.solids.len() - 1));
         made.push(EntRef::solid(dst.solids.len() - 1));

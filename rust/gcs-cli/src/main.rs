@@ -38,10 +38,16 @@ const VERSION: &str = match option_env!("SOLVENTC_VERSION") {
     None => env!("CARGO_PKG_VERSION"),
 };
 
+const SYNOPSIS: &str = "solventc [OPTIONS] FILE...";
+
 const USAGE: &str = "\
 solventc — check a Solvent document
 
     solventc [OPTIONS] FILE...
+
+Each FILE is a model (.sv: geometry, constraints, hints and claims) or a drawing (.svd: sheets,
+views and dimensions over the models it imports).  Each is parsed, elaborated, solved and
+diagnosed, and the report says where it stands.
 
     --json              structured output instead of the text report
     --where NAME        where a name landed: its own numbers and everything under it
@@ -65,9 +71,9 @@ solventc — check a Solvent document
     -o, --output PATH   write an SVG (one file, so one document)
     --stl PATH          write a solid as binary STL (one file, so one document)
     --step PATH         write an analytic STEP solid (by the kernel --kernel names)
-    --kernel NAME       rust (default) or occt: which kernel builds a solid's STEP and STL (rust, the
-                        core's own B-rep, a swept body of the generating class included; occt,
-                        where the build has it, kept as the oracle)
+    --kernel NAME       rust (default) or occt: which kernel builds a solid's STEP and STL (rust,
+                        the core's own B-rep, a swept body of the generating class included;
+                        occt, where the build has it, kept as the oracle)
     --verify-step HOW   light (default): the written file parsed and checked against the solid,
                         its topology, surfaces and their numbers; full: that, and read back by
                         the kernel, repaired as a reader would, checked and measured
@@ -99,9 +105,35 @@ solventc — check a Solvent document
     -h, --help          this
     -V, --version       the version of this build (a release says its tag)
 
+Examples:
+    solventc part.sv                          check a document: solved, and how constrained
+    solventc --json part.sv                   the same report, structured
+    solventc part.sv --where hinge            the numbers under one name
+    solventc part.sv --png part.png           look at it, as the workspace shows it
+    solventc part.sv --stl part.stl --solid body
+                                              a solid, for a printer
+    solventc drawing.svd --sheet front -o front.svg
+                                              one sheet of a drawing, as SVG
+
 Exit codes: 0 every document elaborated and solved; 1 a document failed to parse or
-elaborate; 2 a document elaborated but did not solve.
+elaborate; 2 a document elaborated but did not solve; 64 the command line was wrong (an
+unknown option, an option missing its value, no document).
+
+The language is in the primer: solvent-primer.md beside an installed solventc, or
+docs/solvent-primer.md in the repository (https://github.com/bmander/geomsolver/tree/main/docs);
+exports, drawings and the app are in docs/usage.md there.
 ";
+
+/// The exit code of a command line that could not be read (`EX_USAGE`), kept apart from 1 and 2,
+/// which say what a document is.
+const MISUSE: u8 = 64;
+
+/// Refuse a command line: what was wrong, the synopsis and where the options are, never the whole
+/// of `USAGE`, which would push the one line that matters off the screen.
+fn misuse(why: impl std::fmt::Display) -> ExitCode {
+    eprintln!("solventc: {why}\nusage: {SYNOPSIS}\n`solventc --help` says every option.");
+    ExitCode::from(MISUSE)
+}
 
 /// One document, as the core sees it: a name to report against and the text itself.
 ///
@@ -198,98 +230,80 @@ fn main() -> ExitCode {
                 Some("occt") => { opts.native_stl = true; cad::ask_occt(); }
                 Some("mesh") => opts.native_stl = false,
                 Some("refine") => opts.refine = true,
-                _ => { eprintln!("solventc: --stl-backend needs occt, mesh or refine"); return ExitCode::from(2); }
+                _ => return misuse("--stl-backend needs occt, mesh or refine"),
             },
             "--step" => match args.next() {
                 Some(p) => opts.step = Some(p),
-                None => { eprintln!("solventc: --step needs a path"); return ExitCode::from(2); }
+                None => return misuse("--step needs a path"),
             },
             "--kernel" => match args.next().as_deref() {
                 Some("occt") => cad::ask_occt(),
                 Some("rust") => { cad::use_rust_kernel(); opts.native_stl = true; }
-                _ => { eprintln!("solventc: --kernel needs occt or rust"); return ExitCode::from(2); }
+                _ => return misuse("--kernel needs occt or rust"),
             },
             "--verify-step" => match args.next().as_deref() {
                 Some("light") => {}
                 Some("full") => cad::verify_step_fully(),
-                _ => { eprintln!("solventc: --verify-step needs light or full"); return ExitCode::from(2); }
+                _ => return misuse("--verify-step needs light or full"),
             },
             "--sheet" => match args.next() {
                 Some(n) => opts.sheet = Some(n),
-                None => { eprintln!("solventc: --sheet needs a name"); return ExitCode::from(2); }
+                None => return misuse("--sheet needs a name"),
             },
             "--output" | "-o" => match args.next() {
                 Some(p) => opts.output = Some(p),
-                None => {
-                    eprintln!("solventc: --output needs a path");
-                    return ExitCode::from(2);
-                }
+                None => return misuse("--output needs a path"),
             },
             "--width" => match args.next().and_then(|v| v.parse::<f64>().ok()) {
                 Some(w) if w.is_finite() && w > 0.0 => opts.width = w,
-                _ => {
-                    eprintln!("solventc: --width needs a page width in pixels");
-                    return ExitCode::from(2);
-                }
+                _ => return misuse("--width needs a page width in pixels"),
             },
-            "--gltf" | "--glb" => match args.next() {
+            "--gltf" => match args.next() {
                 Some(p) => opts.gltf = Some(p),
-                None => {
-                    eprintln!("solventc: --gltf needs a path");
-                    return ExitCode::from(2);
-                }
+                None => return misuse("--gltf needs a path"),
             },
             "--png" => match args.next() {
                 Some(p) => opts.png = Some(p),
-                None => { eprintln!("solventc: --png needs a path"); return ExitCode::from(2); }
+                None => return misuse("--png needs a path"),
             },
             "--view" => match args.next().as_deref().map(picture::eye) {
                 Some(Ok(eye)) => opts.view = eye,
-                Some(Err(m)) => { eprintln!("solventc: {m}"); return ExitCode::from(2); }
-                None => { eprintln!("solventc: --view needs a view"); return ExitCode::from(2); }
+                Some(Err(m)) => return misuse(m),
+                None => return misuse("--view needs a view"),
             },
             "--size" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|n| (16..=4096).contains(n)) {
                 Some(n) => opts.size = n,
-                None => { eprintln!("solventc: --size needs a side in pixels, 16 to 4096"); return ExitCode::from(2); }
+                None => return misuse("--size needs a side in pixels, 16 to 4096"),
             },
             "--hide" => match args.next() {
                 Some(n) => opts.hide.extend(n.split(',').map(str::trim).filter(|n| !n.is_empty()).map(String::from)),
-                None => { eprintln!("solventc: --hide needs a name"); return ExitCode::from(2); }
+                None => return misuse("--hide needs a name"),
             },
             "--stl" => match args.next() {
                 Some(p) => opts.stl = Some(p),
-                None => {
-                    eprintln!("solventc: --stl needs a path");
-                    return ExitCode::from(2);
-                }
+                None => return misuse("--stl needs a path"),
             },
             "--solid" => match args.next() {
                 Some(n) => opts.solid = Some(n),
-                None => {
-                    eprintln!("solventc: --solid needs a name");
-                    return ExitCode::from(2);
-                }
+                None => return misuse("--solid needs a name"),
             },
             "--measure" => match args.next() {
                 Some(p) => opts.measure.push(p),
-                None => { eprintln!("solventc: --measure needs a path"); return ExitCode::from(2); }
+                None => return misuse("--measure needs a path"),
             },
             // the value is optional: what follows is taken only when it reads as a length
             "--tolerance" => match args.peek().map(|v| length(v)) {
                 Some(Some(Ok(t))) => { args.next(); opts.tolerance = Some(t); }
-                Some(Some(Err(m))) => { eprintln!("solventc: --tolerance: {m}"); return ExitCode::from(2); }
+                Some(Some(Err(m))) => return misuse(format!("--tolerance: {m}")),
                 _ => opts.tolerance = Some((gcs_core::solid::export::Tolerance::FABRICATION.millimetres,Some(1.))),
             },
             "--measure-samples" => match args.next().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n > 0) {
                 Some(n) => opts.measure_samples = n,
-                None => { eprintln!("solventc: --measure-samples needs a positive count"); return ExitCode::from(2); }
+                None => return misuse("--measure-samples needs a positive count"),
             },
             "--where" => match args.next() {
                 Some(n) => opts.wanted.push(n),
-                None => {
-                    eprintln!("solventc: --where needs a name");
-                    return ExitCode::from(2);
-                }
+                None => return misuse("--where needs a name"),
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
@@ -307,42 +321,33 @@ fn main() -> ExitCode {
                 println!("solventc {VERSION}");
                 return ExitCode::SUCCESS;
             }
-            s if s.starts_with('-') => {
-                eprintln!("solventc: unknown option `{s}`\n\n{USAGE}");
-                return ExitCode::from(2);
-            }
+            s if s.starts_with('-') => return misuse(format!("unknown option `{s}`")),
             s => paths.push(s.to_string()),
         }
     }
+    if paths.is_empty() {
+        return misuse("no document given");
+    }
     if opts.gltf.is_some() && paths.len() != 1 {
-        eprintln!("solventc: --gltf writes one file, so it takes one document");
-        return ExitCode::from(2);
+        return misuse("--gltf writes one file, so it takes one document");
     }
     if (opts.stl.is_some() || opts.step.is_some()) && paths.len() != 1 {
-        eprintln!("solventc: --stl/--step writes one file, so it takes one document");
-        return ExitCode::from(2);
+        return misuse("--stl/--step writes one file, so it takes one document");
     }
     if opts.tolerance.is_some() && opts.measure.is_empty() && opts.step.is_none() && (opts.stl.is_none() || opts.refine || !opts.native_stl) {
-        eprintln!("solventc: --tolerance holds a native export (or a measurement) to it; give --step, --stl by the kernel's \
-            export, or --measure");
-        return ExitCode::from(2);
+        return misuse("--tolerance holds a native export (or a measurement) to it; give --step, \
+            --stl by the kernel's export, or --measure");
     }
     if opts.png.is_some() && paths.len() != 1 {
-        eprintln!("solventc: --png writes one file, so it takes one document");
-        return ExitCode::from(2);
+        return misuse("--png writes one file, so it takes one document");
     }
     if opts.output.is_some() && paths.len() != 1 {
-        eprintln!("solventc: --output writes one file, so it takes one document");
-        return ExitCode::from(2);
+        return misuse("--output writes one file, so it takes one document");
     }
     // a person watching a terminal is told of slow work unasked; a pipe or a file only on asking
     use std::io::IsTerminal;
     let terminal = std::io::stderr().is_terminal();
     opts.say = said.unwrap_or(if terminal { watch::Say::Slow } else { watch::Say::Nothing });
-    if paths.is_empty() {
-        eprint!("{USAGE}");
-        return ExitCode::from(2);
-    }
 
     let mut sources: Vec<Source> = Vec::new();
     for p in &paths {
@@ -485,7 +490,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         if !opts.json {
             println!("{}: did not elaborate", s.name);
         }
-        return (1, opts.json.then(|| doc_json(s, &errs, None, None, &e, Json::Null, Json::Null)));
+        return (1, opts.json.then(|| {
+            doc_json(s, &errs, None, None, &e, &[], Json::Null, Json::Null)
+        }));
     }
 
     let mut sk = e.sketch.clone();
@@ -494,10 +501,13 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let r = progress::during(solving, || solve(&mut sk, SolveOpts::default()));
     // a solve that stopped on its iteration limit is no answer, whatever its residual (#449)
     let solved = r.settled();
-    let mut invalid = gcs_core::program::solid_diagnostics(&sk, &e.map);
+    let mut invalid = gcs_core::program::solid_diagnostics(&sk, &e.map, &e.program);
+    // read at a pose the solve did not settle on, they are no finding about the document: said
+    // under the solve's report, never in place of it, and never the exit (#571)
+    let unbuilt = if solved { Vec::new() } else { std::mem::take(&mut invalid) };
     let failed = invalid.iter().any(|d| d.severity() == Severity::Error);
     // a part that leaves its root to its seeds, read at the solved pose (#461 PT5)
-    if opts.lint && !failed {
+    if opts.lint && !failed && unbuilt.is_empty() {
         invalid.extend(gcs_core::parts::roots(&e, &sk));
     }
     if !opts.json {
@@ -505,7 +515,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     }
     e.diags.extend(invalid);
     if failed {
-        return (1, opts.json.then(|| doc_json(s, &[], Some(&r), None, &e, Json::Null, Json::Null)));
+        return (1, opts.json.then(|| {
+            doc_json(s, &[], Some(&r), None, &e, &[], Json::Null, Json::Null)
+        }));
     }
     let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
@@ -608,8 +620,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     println!("  {name}: {text}");
                 }
             }
-            for w in &d.warnings {
+            // a solid's failure at an unsolved pose is said once, under `NOT_BUILT` below
+            for w in d.warnings.iter().filter(|w| !unbuilt.iter().any(|u| &u.message == *w)) {
                 println!("  note: {w}");
+            }
+        }
+        if !unbuilt.is_empty() {
+            println!("  {}", gcs_core::program::NOT_BUILT);
+            for d in &unbuilt {
+                let (line, col) = line_col(&s.text, d.span.lo);
+                println!("    {}:{line}:{col}: note[{}]: {}", s.name, d.code.as_str(), d.message);
             }
         }
         for q in &opts.wanted {
@@ -672,14 +692,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             (false,_) => {
                 let message = "native STEP/STL export requires a solved model".to_string();
                 eprintln!("solventc: {message}");
-                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                    span:Default::default(),stmt:None,message});
+                e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+                    Default::default(),None,message));
                 code = 1;
             }
             (true,Err(message)) => {
                 eprintln!("solventc: {message}");
-                e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-                    span:Default::default(),stmt:None,message});
+                e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+                    Default::default(),None,message));
                 code = 1;
             }
             (true,Ok(i)) => {
@@ -718,11 +738,11 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     },
                     Err(message) => {
                         let site = e.map.site_of(gcs_core::model::EntRef::solid(i));
-                        e.diags.push(gcs_core::program::Diag {
-                            code: gcs_core::program::Code::E080,
-                            span: site.map(|s| s.span).unwrap_or_default(),
-                            stmt: site.map(|s| s.stmt), message: message.clone(),
-                        });
+                        e.diags.push(gcs_core::program::Diag::new(
+                            gcs_core::program::Code::E080,
+                            site.map(|s| s.span).unwrap_or_default(),
+                            site.map(|s| s.stmt), message.clone(),
+                        ));
                         if !opts.json { eprintln!("solventc: {message}"); }
                         code = 1;
                     }
@@ -801,7 +821,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         opts.json.then(|| {
             let components = components.as_ref()
                 .map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json).collect()));
-            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e,
+            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
                      positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null))
         }),
     )
@@ -907,8 +927,8 @@ fn refused(e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core:
     eprintln!("solventc: {refusal}");
     cad::progress::refused(refusal.stage);
     let site = e.map.site_of(gcs_core::model::EntRef::solid(solid));
-    e.diags.push(gcs_core::program::Diag {code:gcs_core::program::Code::E080,
-        span:site.map(|s| s.span).unwrap_or_default(),stmt:site.map(|s| s.stmt),message:refusal.message});
+    e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+        site.map(|s| s.span).unwrap_or_default(),site.map(|s| s.stmt),refusal.message));
 }
 
 /// A length as `--tolerance` takes it: a number, and the millimetres its unit is worth (`None`
@@ -956,30 +976,42 @@ fn pick_solid(sk: &gcs_core::model::Sketch, name: Option<&str>) -> Result<usize,
 }
 
 /// One document's report.  `positions` is where the names landed (`--where`, or all of them),
-/// and is `Null` for a document that never got as far as a drawing.
+/// and is `Null` for a document that never got as far as a drawing.  `unbuilt` is what the solids
+/// said of a pose the solve did not settle on (#571), apart from the document's `diagnostics`.
 fn doc_json(
     s: &Source,
     syntax: &[SynErr],
     r: Option<&gcs_core::solve::SolveResult>,
     d: Option<(&Sketch, &gcs_core::diagnose::Diagnosis)>,
     e: &Elaborated,
+    unbuilt: &[gcs_core::program::Diag],
     positions: Json,
     components: Json,
 ) -> Json {
-    let said = |lo: u32, code: &str, sev: &str, message: &str| {
+    let place = |lo: u32| {
         let (line, col) = line_col(&s.text, lo);
-        json::object([
+        [("line", Json::Int(line as i64)), ("column", Json::Int(col as i64))]
+    };
+    let said = |lo: u32, code: &str, sev: &str, message: &str, cause: Option<u32>| {
+        let [line, column] = place(lo);
+        let mut d = json::object([
             ("code", Json::Str(code.to_string())),
             ("severity", Json::Str(sev.to_string())),
-            ("line", Json::Int(line as i64)),
-            ("column", Json::Int(col as i64)),
+            line,
+            column,
             ("message", Json::Str(message.to_string())),
-        ])
+        ]);
+        // where the fault a note follows from is said (#572): the diagnostic it points back at
+        if let (Some(at), Json::Obj(fields)) = (cause, &mut d) {
+            fields.push(("cause".into(), json::object(place(at))));
+        }
+        d
     };
     // a syntax error first, as the text report says it (`E001`, no `Code` of its own yet)
-    let diags: Vec<Json> = syntax.iter().map(|x| said(x.span.lo, "E001", "error", &x.message))
+    let diags: Vec<Json> = syntax.iter().map(|x| said(x.span.lo, "E001", "error", &x.message, None))
         .chain(e.diags.iter().map(|x| {
-            said(x.span.lo, x.code.as_str(), severity(x.severity()), &x.message)
+            said(x.span.lo, x.code.as_str(), severity(x.severity()), &x.message,
+                x.cause.map(|c| c.lo))
         }))
         .collect();
     let mut doc = json::object([
@@ -991,6 +1023,14 @@ fn doc_json(
         ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
         ("components", components),
     ]);
+    if !unbuilt.is_empty() {
+        let notes = unbuilt.iter().map(|x| said(x.span.lo, x.code.as_str(), "note", &x.message,
+            x.cause.map(|c| c.lo)));
+        doc.set("notBuilt", json::object([
+            ("why", Json::Str(gcs_core::program::NOT_BUILT.to_string())),
+            ("diagnostics", Json::Arr(notes.collect())),
+        ]));
+    }
     // each scenario's words (#510 P7) at the solved pose, where the document states any
     let settled = r.is_some_and(|r| r.settled());
     if let Some((sk, _)) = d.filter(|_| settled && !e.scenarios.is_empty()) {

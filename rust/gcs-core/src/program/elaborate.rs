@@ -148,9 +148,9 @@ fn station_reads(cx: &mut Elab<'_>, flat: &Flat<'_>) {
         });
         let Some((e, field, value)) = found else {
             let at = cx.res.declared_at.get(abs).copied().unwrap_or_default();
-            cx.diags.push(Diag { code: Code::E103, span: at, stmt: None, message: format!(
+            cx.diags.push(Diag::new(Code::E103, at, None, format!(
                 "`{read}` is no number of the geometry a station can read: a point's `x`, `y` or \
-                 `z`, or a circle's or an arc's `r`") });
+                 `z`, or a circle's or an arc's `r`")));
             continue;
         };
         cx.sk.hold(read, value, crate::units::Dim::LENGTH);
@@ -945,6 +945,8 @@ fn finish(mut cx: Elab<'_>, flat: &Flat<'_>) -> Elaborated {
     // are then bound: one a section reads that nothing binds is said
     super::scenarios::drive(&mut cx.sk, &mut cx.map, &flat.body, &mut scenarios, &mut cx.diags);
     super::beams::sized(&cx.sk, &flat.body, &mut cx.diags);
+    // each solid a closed instance made, stamped with its binding (#566)
+    super::bound::stamp(&mut cx.sk, &cx.res, &flat.expansion.instances, &flat.expansion.rings);
     crate::modules::localize(p, &mut cx.diags);
     Elaborated {
         sketch: cx.sk, map: cx.map, diags: cx.diags, scenarios, measures, program: p.clone(),

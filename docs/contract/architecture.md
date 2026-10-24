@@ -67,8 +67,17 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   **Where a name landed is part of the report**: `report::positions` zips `EntKind::scalar_names`
   against `Sketch::entity_params` (`hinge.x`, `base.r`); `--where NAME` filters it (a name and
   everything under it), `--json` publishes it, narrowed by the same flag. Exit codes 0/1/2 are
-  `Diag::severity` and `SolveResult::success`.  The importer seam is a `Source { name, text }` list
-  in, a report per source out — **the core takes text and has no filesystem** (it runs in wasm).
+  `Diag::severity` and `SolveResult::success`; 64 is the command line itself (`misuse`: the one
+  line saying what was wrong, the synopsis and a pointer to `--help`, never the whole of it), and
+  `--help` names every option the parser reads (`help_lists_every_option_examples_and_the_primer`).
+  **A solid read at an unsolved pose never hides the solve** (#571): `solid_diagnostics` of a
+  pose the solve did not settle on blame statements nothing is wrong with, so they are no
+  document error and no exit — the run says its outcome and its diagnosis, then
+  `program::NOT_BUILT` with each as a `note[E080]` line beneath; `--json` fills `diagnosis` and
+  carries them as `notBuilt`, apart from `diagnostics`; the exit stays 2
+  (`a_solid_at_an_unsolved_pose_does_not_hide_the_diagnosis`).
+  The importer seam is a `Source { name, text }` list in, a report per source out — **the core
+  takes text and has no filesystem** (it runs in wasm).
   `--stl` writes binary STL through `gcs_core::mesh` (`--solid` says which).  `--output` writes SVG
   through `gcs_core::svg`, as `File ▸ Export SVG` does; it **chooses a `unit`** from the page width
   (`--width`) and every constant size follows.  The *camera* is never consulted.

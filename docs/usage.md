@@ -48,10 +48,15 @@ build/solventc --lint drawing.sv             # also where its text drifts from t
 build/solventc --help                        # every option
 ```
 
-The exit codes are `0` (elaborated and solved), `1` (did not parse or elaborate) and `2` (did not
-solve, unless `--allow-unsolved`), so you can check a document in CI. A diagnostic carries its
-span, for example `gear.sv:31:14: error[E040]: …`. The wording of the report is the core's, so the
-CLI and the app describe a drawing the same way.
+The exit codes are `0` (elaborated and solved), `1` (did not parse or elaborate), `2` (did not
+solve, unless `--allow-unsolved`, whatever its solids do) and `64` (the command line was wrong:
+an unknown option, an option missing its value, no document), so you can check a document in CI.
+A wrong command line says what was wrong and the synopsis, and points at `--help`; `--help` has
+every option, examples and where the primer is. A diagnostic carries its span, for example
+`gear.sv:31:14: error[E040]: …`. A solid that cannot be built from where a failed solve stopped is
+said after the diagnosis, under `not built: the drawing did not solve`, as a note and not an error
+of the document. The wording of the report is the core's, so the CLI and the app describe a
+drawing the same way.
 
 `--lint` adds the drift lint's warnings, `W201`–`W206`: a pun (`teeth: teeth`) in a call, a
 component call standing as a statement, a component that only states relations, a path reaching

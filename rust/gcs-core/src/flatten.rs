@@ -43,8 +43,10 @@ mod valued;
 mod same;
 mod table;
 mod framed;
+mod bound;
 
 pub use faces::{FaceAxis, FacePlane};
+pub use bound::Bound;
 
 pub(crate) use words::{faults as word_faults, file_number_names};
 pub(crate) use interfaces::check as interface_faults;
@@ -244,6 +246,12 @@ impl Scope {
     /// The innermost prefix — what a name declared here is put under.
     fn prefix(&self) -> &str {
         self.prefixes.first().map(String::as_str).unwrap_or("")
+    }
+
+    /// Whether this is the body of an instance declared in `ring` (#566), not the ring's own
+    /// body or a ring inside a body.
+    fn in_instance_of(&self, ring: &Ring) -> bool {
+        self.closed && self.instance_prefix().starts_with(&ring.prefix)
     }
 
     /// The innermost *instance's* prefix — what a dotted name read inside a body is made
@@ -452,6 +460,9 @@ pub struct InstanceInfo {
     /// The instances and blocks enclosing its body's statements, this one last — the path every
     /// site of what it made starts with (`program::InstPath`).  Empty for one never expanded.
     pub path: Vec<PathStep>,
+    /// What it is a function of, where it is closed (#566): its binding's key and the frame it
+    /// stands in.  `None` for any other instance.
+    pub binding: Option<Bound>,
 }
 
 /// A block over a chain's edges, set aside by the walk until the chain it names can be found:
@@ -650,6 +661,10 @@ struct WordState {
     /// application's bound variables.  A ring's representative is judged by the argument as
     /// written (E021), and not again where a body reads the name (#226).
     arguments: BTreeSet<String>,
+    /// The applications whose body declares something, by prefix: an operand read there may be
+    /// built on rather than related, which a ring's instance may not do with its frame's datums
+    /// (#566).
+    declaring: BTreeSet<String>,
 }
 
 /// The sets the walk made (§6.21) and how each is drawn (`Walk::sets`).
@@ -821,7 +836,7 @@ impl<'a> Walk<'a> {
     }
 
     fn err(&mut self, code: Code, span: Span, message: impl Into<String>) {
-        self.diagnostic(Diag { code, span, stmt: None, message: message.into() });
+        self.diagnostic(Diag::new(code, span, None, message.into()));
     }
 
     /// An error said once at its place, however many times the walk passes it — a block in a

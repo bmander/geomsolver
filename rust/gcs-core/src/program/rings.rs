@@ -27,6 +27,12 @@ fn called(map: &SourceMap, e: EntRef) -> String {
     map.name_of(e).map(|n| format!("`{}`", public_path(n))).unwrap_or_else(|| e.kind.a())
 }
 
+/// Which copy of `ring` the name `key` is under, and the rest of it past the copy's prefix.
+pub(super) fn copy_of<'k>(ring: &RingInfo, key: &'k str) -> Option<(u32, &'k str)> {
+    let (k, tail) = key.strip_prefix(&ring.prefix)?.split_once('.')?;
+    Some((k.parse().ok()?, tail))
+}
+
 /// Record every ring's turned copies — after the holds, so a hold on a copy can be told, and
 /// before anything reads a copy's numbers.
 pub(super) fn rings(
@@ -68,10 +74,7 @@ pub(super) fn rings(
         let mut seen: BTreeSet<EntRef> = BTreeSet::new();
         let mut pairs: Vec<(EntRef, EntRef, u32)> = Vec::new();
         for (key, copy) in map.keys() {
-            let Some((k, tail)) = key.strip_prefix(&ring.prefix).and_then(|r| r.split_once('.')) else {
-                continue;
-            };
-            let Ok(k) = k.parse::<u32>() else { continue };
+            let Some((k, tail)) = copy_of(ring, key) else { continue };
             if k == 0 || k >= ring.n || !seen.insert(copy) {
                 continue;
             }

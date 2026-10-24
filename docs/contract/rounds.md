@@ -220,7 +220,13 @@ its flat — or at a cylinder or a sphere it runs into, carried a
 quarter of the way through what its section's points spend in that solid and kept on its side,
 `Kept`: the twin bar's rim), a run and a stretch going on from one
 another **glued** at their shared section (a face going on tangent across a seam is no end,
-`BodyFaces::continues`, the field's and the lowering's one rule),
+`BodyFaces::continues`, the field's and the lowering's one rule), and so two stretches going on
+from one another across a seam between arcs (#574, `assemble::same_section`: one's turn ending in
+the section the other's starts in, the two cones or cylinders tangent along the seam's line) —
+never unioned, for two tori tangent along that section's circle meet in nothing a trace can
+follow, and their union was refused at some drafts and radii and not at others (`rounds/notch.sv`,
+a drafted dog-bone notched in each waist, its far rim eight stretches: the closed form's volume to
+1e-9 at every draft and radius the issue found refused),
 `Corner` (`corner_at` each vertex three faces share, planes or a cylinder or a sphere among
 them, #218: the ball `r` from each surface, a 3×3 solve on the tangent planes then Newton's steps
 on the signed distances, `roots::newton_onto` — none for planes; the vertex within its normal

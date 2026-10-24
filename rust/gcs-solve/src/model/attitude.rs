@@ -20,7 +20,7 @@ impl Sketch {
     pub fn basis(&self, i: usize) -> crate::plane::Basis {
         // a frame with no axes of its own reads as the world does (#383): along x, up y, out z
         let Some(p) = self.frames[i].chart.as_ref() else {
-            return crate::plane::Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0; 3] };
+            return crate::plane::Basis::world();
         };
         let dir = |r: u32| self.axes[r as usize].d.map(|q| self.params[q as usize].value);
         let o = p.o.map(|q| self.params[q as usize].value);

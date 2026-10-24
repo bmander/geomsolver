@@ -174,6 +174,11 @@ impl Constraint {
                 vec![if matches!(self.args[6], Arg::Bool(true)) { -1.0 } else { 1.0 }]
             }
             CKind::ArcLength | CKind::CurveLength => vec![self.args[1].num()],
+            // where the fraction is read from: 1 for an arc said to turn clockwise and drawn from
+            // its end (#573), whose `t` still runs from the start written
+            CKind::PointAlongArc | CKind::PointAlongArc3 => {
+                vec![if sk.arc_reversed(self.args[1].ent().i()) { 1.0 } else { 0.0 }]
+            }
             CKind::AnnularDistance => vec![self.args[2].num()],
             CKind::Radius => vec![self.args[1].num()],
             // the word times the radius: the centre stands off the line on the side it names
@@ -428,9 +433,11 @@ impl Constraint {
             _ => true,
         };
         match self.kind {
+            // an arc drawn from its end for its sense names its ends as written (#573)
             CKind::TangentArcLine => {
-                let a = &sk.arcs[self.args[0].ent().i()];
-                Some(if at(0) { a.start } else { a.end } as usize)
+                let i = self.args[0].ent().i();
+                let a = &sk.arcs[i];
+                Some(if at(0) != sk.arc_reversed(i) { a.start } else { a.end } as usize)
             }
             CKind::TangentLineCircleAt => {
                 let l = &sk.lines[self.args[0].ent().i()];

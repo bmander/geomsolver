@@ -572,6 +572,26 @@ from inside to anything the turn would move — outside geometry but the centre,
 place — or to a copy by index rather than `next`/`prev` (E021); a ring in a ring (E022); a plane,
 axis or motion declared in it, a point outside its view, or a hold on a copy (E023).
 
+**A ring places instances** (0.177). An instance declared in a ring stands in its copy's frame —
+the representative's turned `k · 360°/N` about `C` — so its body's relations may read its own
+`std.*` (`c right_of(d: 20mm) std.origin`), which the turn carries with each copy; a declaration
+built on a datum (`line(std.origin, c)`) is the same line in every copy and stays E021 unless the
+datum is the centre. Every copy of a closed instance is one binding (1.8): the hub motor's 46
+magnets are one magnet evaluated, its copies placed, and a pattern of them is still a `repeat`
+over the copies' solids:
+
+```
+in f.o.plane {
+  ring poles about f.o {
+    m := Magnet(theta: theta)
+  }
+}
+magnets := solid(m[0].body)
+repeat poles - 1 as i {
+  m[i + 1].body union magnets
+}
+```
+
 **Repetition over a chain.** `repeat e in CHAIN { … }` makes one copy per link of a named chain, in
 walk order, `e` that copy's edge — an operand, a field (`e.p1`), an argument. The chain may be open
 or closed and reached through an instance or group (`refs.pinion.profile`); `cycle e in CHAIN`
@@ -802,6 +822,30 @@ component Crank(o: point, datum: line, theta: Angle) {
     arm := line(o, tip)
     o distance(30mm) tip
     datum angle(theta) arm
+  }
+}
+```
+
+**One figure, many placements** (0.177). An instance whose only geometric input is the frame it
+stands in — its formals numbers (or groups of numbers), each given a constant, its call drawn in
+that frame or one of its datums — is **closed**, and its definition and arguments are its
+**binding**: what it makes is that binding read in its frame. Two closed instances of one binding
+are one figure placed twice, and `solventc` evaluates their solids once and places each by its
+frame. A definition given entities (`Crank(o, datum, …)`) is its own binding, as before. To make
+a part a pattern places, draw it about its own `std.origin` and give it numbers (1.7's ring, 1.12's
+frames):
+
+```
+component Magnet(theta: Angle) {                 // hub_motor/motor/rotor.sv
+  in std.front {
+    construction datum := line(std.origin, hint((10mm, 0mm)))
+    horizontal datum
+    length(10mm) datum
+    construction mc := line(std.origin, hint((Rr + 2mm, 0mm)))
+    length(Rr + 2mm) mc
+    datum angle(theta) mc
+    …
+    body := solid(face(inner, side_r, outer, side_l), from: -L / 2, to: L / 2)
   }
 }
 ```
@@ -1355,7 +1399,8 @@ frame `f`:
 | `std.origin` | a point in that front at `(0, 0)`, which is `f.origin` | |
 
 A point `in f` at `(x, y, z)` stands at `std.origin + x·std.x + y·std.y + z·std.z`, so a body in a
-frame moved by a rigid motion is the root's drawing moved by it; the datums add no freedom, and
+frame moved by a rigid motion is the root's drawing moved by it (and a closed instance's solids,
+1.8, are evaluated once and moved by it; a ring's copy stands in the frame turned, 1.7); the datums add no freedom, and
 what the body declares rides `f` (a joint carries it whole). A body that reads no datum is placed
 by what it is given (`ConRod(crank.pin1, end.bore)`): reading its `b.std` is E111. An axis starts
 as the frame's around it, and a relation leaving it either way round takes the nearer: write the
@@ -2029,7 +2074,7 @@ scenario tip_load {
   load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
   section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a
   prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`), and over a
-  turned or cut solid moves its faces (0.177). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
+  turned or cut solid moves its faces (0.178). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
   solve; a bound is a claim's alone. `solventc` prints each: `mass(arm) is 10kg: driven == 10kg,
   held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
   shows each: `sized_cantilever.sv` (a depth),
@@ -2136,7 +2181,7 @@ scenario press {
   a prism read so is a row, as a region's is, its face's nodes moved with the drawing and the
   solid's stacked over them.  The library's `sized_plank.sv` finds a plank's width so, bent across
   its own plane, which no reading in that plane can.
-- **A driving deflection sizes a filled body** (0.177): a turned, united or cut solid's point is a
+- **A driving deflection sizes a filled body** (0.178): a turned, united or cut solid's point is a
   row too, its boundary's nodes moved by the surfaces its faces lie on — a prism's caps and sides,
   a full turn's faces — and the rest following.  `solventc` solves it on a coarse mesh first and
   finishes on the reading's own; the page judges it, as a claim, and says `solventc` drives it.
@@ -2554,7 +2599,7 @@ a,b` leaves those out, each a name and everything under it, for a cutaway
 (`--hide block.casting,head`).  An open box, a belt off its pulleys, a piston not at its stroke —
 a picture shows what no number in the report does.
 
-Exit codes: 0 solved, 1 did not parse or elaborate, 2 did not solve. A successful solve does not
+Exit codes: 0 solved, 1 did not parse or elaborate, 2 did not solve, 64 a wrong command line. A successful solve does not
 mean the model is fully constrained: read the diagnosis — parameter and equation counts, the
 **DOF**, and culprit lines (`over:`, `conflict:`, `implied:`). The status (`diagnosis.status` under
 `--json`):

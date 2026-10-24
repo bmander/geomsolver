@@ -414,6 +414,20 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   layer)`; the default layer is the panel's picked statement and verdicts, `occurrences` this) and
   tells **the caret** (`onCaret(edited)`, once per move or edit however many events report it),
   which is all a feature reading the word under the caret needs.
+- **The text and the drawing are one thing, read two ways** (`app/names.ts`): what is selected in
+  the workspace — an entity, a body, by a press, a band or the outline — is lit wherever the text
+  names it, in the occurrences' inks and a layer of its own (`selected`, which an edit lets go
+  of); and the caret *put* on a name — a click, an arrow, F7, never typing (`Occurrences.onName`)
+  — selects what it names, as a press there would (`onSelect`, `onChanged`), a hidden row shown
+  first.  One join of two core answers, the outline's rows and the text's names: a row is the
+  symbol its statement gives under the last part of its path (a module's datum, written nowhere
+  here, the member its whole path reads, `std.front`), named where it is written as a part of
+  that path — `t0.mid` and the bare `mid` inside `Rung` are `t0`'s, `t1.mid` is not, and the
+  `mid` `Rung` declares is every instance's.  An instance named selects every member it made; a
+  name that makes nothing (a number, a formal, a module's datums whole) leaves the selection
+  where it was.  Only while the box holds the document's own text (`names`): a draft's offsets
+  are its own, which is why an apply reprints the box with the seeds its solve committed.
+  `web/src/test/names.test.ts` is the gate.
 - Offsets cross the ABI in **UTF-8 bytes** and index a **UTF-16 string** on the other side
   (`gear.sv` has an em dash).  `core/program.ts::Offsets` is the conversion and `Document.adopt`
   is the **one seam** every report crosses: diagnostics, source map, coloured runs and names are

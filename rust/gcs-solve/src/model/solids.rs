@@ -394,6 +394,10 @@ pub struct SolidE {
     /// What it is made of, `solid(…) of steel` (#510 P3): a key of `Sketch::materials`.  `None`
     /// for a solid that says nothing of it.
     pub material: Option<String>,
+    /// What it is a function of, where a closed instance made it (#566): its binding's key and
+    /// the frame the instance stands in.  Solids of one key are one evaluation, placed by each
+    /// one's frame (`Sketch::bound`).  `None` for any other solid, evaluated as its own.
+    pub binding: Option<super::Binding>,
 }
 
 /// A named implicit envelope, over an interval of the shared roll (a `Running`, #391 S1; its

@@ -55,21 +55,21 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
             continue;
         }
         if prog.modules.len() >= MAX_MODULES {
-            diags.push(Diag {
-                code: Code::E070,
-                span: at,
-                stmt: None,
-                message: format!("a document may not link more than {MAX_MODULES} modules"),
-            });
+            diags.push(Diag::new(
+                Code::E070,
+                at,
+                None,
+                format!("a document may not link more than {MAX_MODULES} modules"),
+            ));
             break;
         }
         let Some(text) = resolve(&name) else {
-            diags.push(Diag {
-                code: Code::E070,
-                span: at,
-                stmt: None,
-                message: format!("no module `{name}`"),
-            });
+            diags.push(Diag::new(
+                Code::E070,
+                at,
+                None,
+                format!("no module `{name}`"),
+            ));
             continue;
         };
         let base = prog.virtual_len();
@@ -79,7 +79,7 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
         let (mp, errs) = parse_from(&text, base, prog.next_stmt().max(MODULE_STMTS));
         prog.set_next_stmt(mp.next_stmt());
         for e in errs {
-            diags.push(Diag { code: Code::E100, span: e.span, stmt: None, message: e.message });
+            diags.push(Diag::new(Code::E100, e.span, None, e.message));
         }
         let k = prog.modules.len();
         let mut comps = mp.components;
@@ -99,12 +99,12 @@ pub fn link(prog: &mut Program, resolve: &mut dyn FnMut(&str) -> Option<String>)
             let Some(cname) = c.name.as_ref() else { continue };
             // a module's names are its own (§14.4): only two definitions in one file clash
             if comps_seen.contains(&cname.text) {
-                diags.push(Diag {
-                    code: Code::E071,
-                    span: c.span,
-                    stmt: None,
-                    message: format!("`{}` is defined twice in `{name}`", cname.text),
-                });
+                diags.push(Diag::new(
+                    Code::E071,
+                    c.span,
+                    None,
+                    format!("`{}` is defined twice in `{name}`", cname.text),
+                ));
                 continue;
             }
             comps_seen.insert(cname.text.clone());

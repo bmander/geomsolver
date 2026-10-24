@@ -45,6 +45,12 @@ pub fn unit(a: [f64; 3]) -> Option<[f64; 3]> {
 }
 
 impl Basis {
+    /// The world's own axes: `u = x`, `v = y`, out along z, at the origin — what a frame with no
+    /// axes of its own reads as.
+    pub fn world() -> Basis {
+        Basis { u: [1.0, 0.0, 0.0], v: [0.0, 1.0, 0.0], o: [0.0; 3] }
+    }
+
     /// The front plane: `u = x`, `v = z`, viewer at −y — `std.front`, and where a 2D sketch's
     /// points are read in space.
     pub fn page() -> Basis {
