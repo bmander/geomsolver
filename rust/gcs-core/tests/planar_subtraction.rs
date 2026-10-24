@@ -266,6 +266,151 @@ fn the_drafted_star_cuts_its_wheel() {
     assert!(v > square && v < square * 1.15, "{v} against the square arms' {square}");
 }
 
+/// The radiator valve's star handle as measured (#612): four arms with straight sides, tips of
+/// 3.25 mm and fillets of 4 mm between them, `span` across the tips and `waist` across opposite
+/// fillets, on a plane 1.1 mm under the top; a wheel of 46.1 mm 60 mm off the stem, 15 mm thick.
+/// `tool` declares `star` from `StarOutline`s.
+fn handle(tool: &str) -> String {
+    format!("\
+unit mm
+use std
+use std (vertical, turns)
+
+interface StarSizes {{
+  span: Length, waist: Length, tip_r: Length, fillet_r: Length
+}}
+component StarOutline(top: plane, s: StarSizes) {{
+  in top {{
+    hub := point
+    hub coincident top.origin
+    ring 4 about hub {{
+      tip_c := point hint((s.span / 2 - s.tip_r, 0))
+      fillet_c := point hint(((s.waist / 2 + s.fillet_r) / sqrt(2), (s.waist / 2 + s.fillet_r) / sqrt(2)))
+      apex := point hint((s.span / 2, 0))
+      hub distance(s.waist / 2 + s.fillet_r) fillet_c
+      line(fillet_c, tip_c) equal line(fillet_c, next.tip_c)
+      ccw(hub, tip_c, fillet_c)
+      apex coincident(t == s.span / (s.span - 2 * s.tip_r)) line(hub, tip_c)
+      p1 := point hint((tip_c.x, s.tip_r))
+      p2 := point hint((fillet_c.x - 0.2 * s.fillet_r, fillet_c.y - 0.98 * s.fillet_r))
+      p3 := point hint((fillet_c.x - 0.98 * s.fillet_r, fillet_c.y - 0.2 * s.fillet_r))
+      p4 := point hint((s.tip_r, tip_c.x))
+      tip_half := arc(center: tip_c, start: apex, end: p1)
+      side := line(p1, p2)
+      fillet := arc(center: fillet_c, start: p3, end: p2)
+      next_side := line(p3, p4)
+      next_tip_half := arc(center: next.tip_c, start: p4, end: next.apex)
+      radius(s.fillet_r) fillet
+      side tangent(at: p1) tip_half
+      side tangent(at: p2) fillet
+      next_side tangent(at: p1) fillet
+      next_side tangent(at: p2) next_tip_half
+      ccw(p1, p2, tip_c)
+      cw(p1, p2, fillet_c)
+      ccw(p3, p4, next.tip_c)
+      cw(p3, p4, fillet_c)
+    }}
+    hub distance(s.span / 2 - s.tip_r, along: u) tip_c[0]
+    hub level(v) tip_c[0]
+    outline := face(tip_half[0], side[0], fillet[0], next_side[0], next_tip_half[0],
+                    tip_half[1], side[1], fillet[1], next_side[1], next_tip_half[1],
+                    tip_half[2], side[2], fillet[2], next_side[2], next_tip_half[2],
+                    tip_half[3], side[3], fillet[3], next_side[3], next_tip_half[3])
+  }}
+}}
+
+in std.front {{
+  construction stem := vertical line(std.origin, hint((0, 10)))
+  length(10mm) stem
+  wc := point hint((-60, 0))
+  std.origin distance(-60mm, along: u) wc
+  construction spindle := vertical line(wc, hint((-60, 10)))
+  length(10mm) spindle
+}}
+top := plane
+fix(origin == (0mm, 0mm, -1.1mm)) top
+fix(dir == (1, 0, 0)) top.u
+fix(dir == (0, 1, 0)) top.v
+{tool}
+in std.top {{
+  wo := point
+  wo coincident wc
+  rim := radius(46.1mm) circle(center: wo)
+}}
+handle_turn := frame
+handle_turn turns(1) stem
+wheel_turn := frame
+wheel_turn turns(-4 / 6) spindle
+space := sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)
+wheel := solid(face(rim), from: -15.6mm, to: -0.6mm)
+space cut wheel
+")
+}
+
+/// The handle's outline moved `d` into itself, as an 8° draft moves it at depth `d / tan 8°`:
+/// the tips' radius less `d`, the fillets' more, their centres where they were.
+fn outline(name: &str, d: f64) -> String {
+    format!("{name} := StarOutline(top, s: {{span: {}mm, waist: {}mm, tip_r: {}mm, fillet_r: {}mm}})",
+        74.2 - 2. * d, 25.8 - 2. * d, 3.25 - d, 4. + d)
+}
+
+/// **The drafted handle cuts its wheel** (#612): the arms narrow 8° through the 14.5 mm the wheel
+/// spans, and the ring the hub sweeps narrows with them, so its inner edge crosses the sides of
+/// the box the region is read within, 48 mm about the wheel's centre: two loops below, a hole in
+/// the box above, and no change at all within the blank.  The slab's box is grown until
+/// its stations are alike, and one slab is lofted.  The drafted star removes the least: its wheel
+/// keeps more than the square arms' and than six bands stepped down it, each its widest section
+/// over its band.
+#[test]
+fn the_drafted_handle_cuts_its_wheel() {
+    let drafted = format!("{}\nstar := solid(plan.outline, from: -16mm, to: 0mm, draft: 8deg)", outline("plan", 0.));
+    let src = handle(&drafted);
+    let (e, w) = solved(&src);
+    let admitted = admit_body(&e.sketch, w, &Options::default()).unwrap_or_else(|f| panic!("{f}"));
+    let [sweep] = admitted.sweeps() else { panic!("one sweep") };
+    let Class::Subtraction(found) = &sweep.class else { panic!("{:?}", sweep.class) };
+    let [slab] = found.slabs.as_slice() else { panic!("{} slabs", found.slabs.len()) };
+    let (_, base) = &slab.stations[0];
+    for (z, r) in &slab.stations {
+        assert!(r.matching(base).is_some() && r.loops.len() == 2, "at {z}: {} loops", r.loops.len());
+    }
+    let v = cut(&src, Some(Tolerance { millimetres: 0.01 }));
+    let square = cut(&handle(&format!("{}\nstar := solid(plan.outline, from: -16mm, to: 0mm)", outline("plan", 0.))), None);
+    // six bands through the 14.5 mm the star spans in the wheel, the last on to its foot
+    let (band, tan) = (14.5 / 6., 8f64.to_radians().tan());
+    let mut stepped = String::new();
+    for k in 0..6 {
+        let from = if k == 5 { -16. } else { -band * (k + 1) as f64 };
+        stepped += &format!("{}\nband{k} := solid(plan{k}.outline, from: {from}mm, to: {}mm)\n", outline(&format!("plan{k}"), band * k as f64 * tan),
+            -band * k as f64);
+    }
+    stepped += "star := solid(band0)\n";
+    for k in 1..6 { stepped += &format!("band{k} union star\n") }
+    let stepped = cut(&handle(&stepped), None);
+    assert!(v > stepped && stepped > square, "drafted {v:.3} mm³, stepped {stepped:.3}, square {square:.3}");
+}
+
+/// **A drafted tool whose region changes within the blank is refused where it does** (#612): a
+/// disc of 3 mm 25 mm off the stem, drafted 12°, traces a path with three loops in the wheel, and
+/// the thinner the disc the more of each loop's island it leaves.  Where an island's edge changes
+/// is the blank's own, so no box makes the stations alike; the refusal says the depth of the disc
+/// to step it at, between the two stations that differ.
+#[test]
+fn a_drafted_tool_whose_islands_change_is_refused_at_their_depth() {
+    let disc = "in std.top {\n  dc := point\n  dc coords(du: 25mm, dv: 1mm) std.top\n  disc := circle(center: dc) hint(r: 3)\n  radius(3mm) disc\n}\n\
+        star := solid(face(disc), from: -10mm, to: 0mm, draft: 12deg)";
+    let (e, w) = solved(&wheel(disc, &PERIOD.replace("540deg", "1080deg")));
+    match admit_body(&e.sketch, w, &Options::default()) {
+        Err(Error::Refused(r)) => {
+            assert_eq!(r.condition, Condition::Slabs, "{r}");
+            let m = r.to_string();
+            let at = m.split("step the tool at about ").nth(1).and_then(|t| t.split(' ').next()).and_then(|t| t.parse::<f64>().ok());
+            assert!(at.is_some_and(|z| (-8. ..-2.).contains(&z)) && m.contains("of `star`"), "{m}");
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
 /// **The field reads a drafted prism of any loop** (#607, #588): the plus is not convex, so its
 /// drafted prism is read as the signed distance to its section at each height — at depth `w` an
 /// arm's side stands `|w| tan 8°` inside where it is drawn.
@@ -318,4 +463,60 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
     let [d] = &diags[..] else { panic!("{diags:#?}") };
     assert_eq!((d.code, d.at(e.text()).0), (Code::E080, 23), "{d:?}");
     assert!(d.message.starts_with("`space` sweeps `pyramid`, whose material the field does not read"), "{d:?}");
+}
+
+/// The wheel stood by a frame turning with it at `degrees` of its value (`x in f`), and a body made
+/// from that copy (#619).
+fn stood(degrees: f64) -> String {
+    format!("{}held := frame\nheld turns(-4 / 6) spindle\nfix(value == {degrees}deg) held\nshown := wheel in held\ncopy := solid(shown)\n",
+        wheel(STAR, PERIOD))
+}
+
+/// **A wheel a frame stands is the wheel moved** (#619): built once and its boundary carried by the
+/// frame's turn, so `shown` and a body made from it export with the wheel's volume, and at 30° of
+/// the handle every vertex is the wheel's turned 20° back about the spindle.  The page's build by
+/// stages moves it as the export does, and the report reads all three from one B-rep, moved.
+#[test]
+fn a_wheel_a_frame_stands_is_the_wheel_moved() {
+    for degrees in [0., 30.] {
+        let src = stood(degrees);
+        let (e, w) = solved(&src);
+        let solid = |name: &str| e.map.ent_named(name).unwrap().i();
+        let built = |i: usize| {
+            let exact = export::exact(&e.sketch, i, None, None, &say())
+                .unwrap_or_else(|r| panic!("{degrees}°: refused at {:?}: {}", r.stage, r.message));
+            export::stl(&e.sketch, i, &exact, None, &say())
+                .unwrap_or_else(|r| panic!("{degrees}°: the STL refused at {:?}: {}", r.stage, r.message));
+            exact.solid
+        };
+        let (wheel, shown) = (built(w), built(solid("shown")));
+        let v = props::volume(&wheel);
+        for (name, moved) in [("shown", props::volume(&shown)), ("copy", props::volume(&built(solid("copy"))))] {
+            assert!((moved - v).abs() <= 1e-9 * v, "{degrees}°: `{name}` {moved} mm³ against {v}");
+        }
+        // the handle's 30° is the wheel's −20°, about the spindle through (−50, 0) along z
+        let (s, c) = (-2. * degrees.to_radians() / 3.).sin_cos();
+        for (a, b) in wheel.vertices.iter().zip(&shown.vertices) {
+            let (x, y) = (a.p[0] + 50., a.p[1]);
+            let want = [c * x - s * y - 50., s * x + c * y, a.p[2]];
+            assert!((0..3).all(|k| (b.p[k] - want[k]).abs() < 1e-9), "{degrees}°: {:?} against {want:?}", b.p);
+        }
+        let display = |i: usize| {
+            let mut builder = export::Builder::new(&e.sketch, i).unwrap_or_else(|r| panic!("{}", r.message));
+            while !builder.step().unwrap_or_else(|r| panic!("{degrees}°: {}", r.message)) {}
+            builder.display().unwrap().volume
+        };
+        let shown_at = display(solid("shown"));
+        for name in ["wheel", "copy"] {
+            let volume = display(solid(name));
+            assert!((volume - shown_at).abs() <= 1e-9 * volume, "{degrees}°: `{name}`'s display {volume} against {shown_at}");
+        }
+        let names = ["wheel", "shown", "copy"];
+        gcs_core::brep::export::supply_exact_where(&e.sketch, &|i| names.contains(&e.sketch.solids[i].name.as_str()));
+        let report = gcs_core::report::positions_where(&e.sketch, &e.map, &|n| names.contains(&n));
+        let read = |name: &str| report.iter().find(|(k, _)| *k == format!("{name}.volume")).map(|r| r.1).unwrap();
+        for name in ["shown", "copy"] {
+            assert!((read(name) - read("wheel")).abs() <= 1e-6 * v, "{degrees}°: `{name}` reads {} against {}", read(name), read("wheel"));
+        }
+    }
 }

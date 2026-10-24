@@ -237,6 +237,17 @@ vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a t
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
 
+**A swept body placed is the body moved (#619):** a chain of placements (`shown := wheel in held`,
+`x at(under: f) τ`) ending in a body with swept cuts is that body built once and its boundary carried
+by the chain's pose (`cad::placed_swept`): `brep::export::exact` moves the B-rep, its pattern
+(`pattern::Built::moved`) and the turn its field agreement folds by, the page's `Builder` moves its
+build (`sweep::Built::moved`) before the body rule takes it as the operand it stands for, and
+`admit_body` admits the body placed. Its volume is the body's to rounding, and a body made from it
+(`copy := solid(shown)`) is composed over it. A report asked of a swept solid supplies its exact
+B-rep whether or not it is an object (`supply_exact_where`; a drawing's `supply_exact` keeps to
+objects), so the body and its placements read one B-rep and no field. `tests/planar_subtraction.rs`
+(`a_wheel_a_frame_stands_is_the_wheel_moved`).
+
 **The Wankel, the planar class (#65):** a point's planar envelope is its path (`bore :=
 envelope(apex, under: rotor_turn, …)`); `generate::chosen` skips a stationary root. A generated
 curve over whole turns of its motion is closed (`Sketch::curve_closed`), a face's lone loop, split
@@ -268,7 +279,8 @@ members meet is the section's), and — over a roll that is no whole period — 
 end pose; a point is a candidate only where it lies on the section's boundary at its own pose
 (`Kind::at`), and kept only where it lies outside the section at every pose (`Keep::outside`,
 `envelope::planar`'s test turned round). Kept stretches are found on a grid of a quarter degree,
-their ends bisected; walked with `R` on the left they join where they cross (solved together,
+their ends bisected, and one of no length (a sample kept where its candidate's domain ends, its
+ends and middle one point) dropped (#612); walked with `R` on the left they join where they cross (solved together,
 `meet`), run on into each other at the same roll, meet at an end pose (the contact on the held
 edge, exactly) or leave the box, which carries the loop round to the next stretch entering. A
 whole period is where the motion takes the section onto itself (`Setting::alike`: the tool's
@@ -280,12 +292,18 @@ carried through its slab, a hair past the blank where the slab ends at its face,
 the blank at every placement; a drafted slab (#607) is read at `STATIONS` heights and lofted
 (`build::lofted`, a B-spline surface a stretch, cubic along it and across the stations) through
 every other one, held to the ones between within the fit's bar, its loops matched station for
-station or refused. `accuracy::Subtracted` meters it, reading each sweep by the class's own
+station (`SweptRegion::matching`). Admission reads its stations within the box grown by each of
+`GROWN` in turn until they are alike (#612): the box's sides lie outside the blank, so a change of
+shape only where they cut the region is the box's — the measured handle's hub ring, narrowing
+with the draft, crosses them 48 mm about the wheel's centre. A change in every box is the blank's
+own, refused at Q2 naming the drafted member's depth to step the tool at, found between the two
+stations that differ. `accuracy::Subtracted` meters it, reading each sweep by the class's own
 `planar_subtraction::admit`; a `through:` roll never clear of its body is refused saying the period
 to state. Every period is found by one search (`roll::first_alike`: a degree at a time, none for a
 tool the motion does not move) and said in one form (`roll::advice`). `tests/planar_subtraction.rs` is the gate
 (the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,
-one arm through, Q3, the drafted wheel at 10 µm).
+one arm through, Q3, the drafted wheel at 10 µm, the measured drafted handle above six bands
+stepped down it and the square arms, a drafted disc whose islands change refused at their depth).
 
 **Export tolerance ([plan](../native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets
