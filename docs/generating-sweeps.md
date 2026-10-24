@@ -167,7 +167,11 @@ boundary at its own pose and **kept only where it lies outside the section at ev
 meaning of the cut, which drops a second contact, an envelope's other branch and every trim at a
 concave corner where members meet. Kept stretches are linked with `R` on their left through
 crossings (solved exactly), junctions at one roll, end poses and the sides of a box about the
-blank's shadow, so only loops meeting the blank are built. Each slab is the blank less its loops'
+blank's shadow, so only loops meeting the blank are built. Where several stretches meet at one
+point — at an end pose's corner, the held edge, the corner's path and a hair of the next edge
+that the keeping test's tolerance keeps — the boundary of the union takes the rightmost turn, and a
+hair joined at neither end is dropped as bounding nothing (#613: a box reaching past the rack
+tooth's tip, as a placement turned 30° makes it, meets one). Each slab is the blank less its loops'
 prism (`brep::sweep::subtraction`, one Boolean a placement); a drafted slab is lofted through
 stations, each stretch a B-spline surface. Nothing is traced, split or judged cell by cell, and
 field agreement gates the export as for every sweep. The #585 star wheel is 24 candidates and 33

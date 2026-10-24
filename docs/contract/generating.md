@@ -270,7 +270,11 @@ end pose; a point is a candidate only where it lies on the section's boundary at
 `envelope::planar`'s test turned round). Kept stretches are found on a grid of a quarter degree,
 their ends bisected; walked with `R` on the left they join where they cross (solved together,
 `meet`), run on into each other at the same roll, meet at an end pose (the contact on the held
-edge, exactly) or leave the box, which carries the loop round to the next stretch entering. A
+edge, exactly) or leave the box, which carries the loop round to the next stretch entering. Where
+several meet at one point (an end pose's corner: the held edge, the corner's path, and a hair of the
+next edge the keeping test's tolerance keeps), the union's boundary takes the rightmost turn, and a
+hair joined at neither end, or only to itself, is dropped (#613: a placement turned 30° boxes the
+blank past a rack tooth's tip, which no quarter turn does). A
 whole period is where the motion takes the section onto itself (`Setting::alike`: the tool's
 symmetry counted, the star's 540° at 4:6), and a roll that is neither one nor clear of the blank at
 both ends is refused naming the period. `brep::sweep::subtraction` builds each
@@ -285,7 +289,7 @@ station or refused. `accuracy::Subtracted` meters it, reading each sweep by the 
 to state. Every period is found by one search (`roll::first_alike`: a degree at a time, none for a
 tool the motion does not move) and said in one form (`roll::advice`). `tests/planar_subtraction.rs` is the gate
 (the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,
-one arm through, Q3, the drafted wheel at 10 µm).
+one arm through, Q3, the drafted wheel at 10 µm, #613's pinion cut at a copy turned 30° and whole).
 
 **Export tolerance ([plan](../native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets

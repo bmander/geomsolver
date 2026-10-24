@@ -20,7 +20,9 @@
 //!    another (two crossing, solved exactly), where it runs on into another (an edge's contact
 //!    reaching its corner, at the same roll), where the roll ends, or where it leaves the box,
 //!    which then carries the loop round its sides counter-clockwise to the next stretch entering.
-//!    A loop counter-clockwise bounds a piece of `R`, one clockwise a hole in it.
+//!    Where several meet at one point the boundary of the union turns the most to the right, and a
+//!    hair of a stretch joined at neither end (#613) bounds nothing.  A loop counter-clockwise
+//!    bounds a piece of `R`, one clockwise a hole in it.
 //!
 //! What the loops do not decide is refused naming why and where (`Condition::Kept`): a stretch with
 //! no partner, a fold, a crossing.
@@ -412,16 +414,32 @@ impl SweptRegion {
         let loose = 1e-3*(1.+s.scale);
         let mut next: Vec<Option<usize>> = vec![None;runs.len()];
         let mut taken = vec![false;runs.len()];
-        let mut pairs: Vec<(f64,usize,usize)> = Vec::new();
+        // a stretch's direction at its end `e` (0 its start, 1 its end), walked: a chord of a
+        // ten-thousandth of it
+        let heading = |r: &Run,p: P,e: usize| -> Option<P> {
+            let q = point(r.candidate,r.ends[e]+(r.ends[1-e]-r.ends[e])*1e-4)?.at;
+            let d = if e == 0 { sub(q,p) } else { sub(p,q) };
+            (length(d) > 0.).then(|| unit(d))
+        };
+        // where several stretches meet at one point (an end pose's corner, where a held edge, the
+        // corner's path and a hair of the next edge the keeping test's tolerance keeps all start),
+        // the boundary of a union turns the most to the right: those pairs go first, by that turn
+        let mut pairs: Vec<(f64,f64,usize,usize)> = Vec::new();
         for i in 0..runs.len() {
             if runs[i].why[1] == End::Box { continue }
             for j in 0..runs.len() {
                 if runs[j].why[0] == End::Box { continue }
                 let d = dist(at[i][1],at[j][0]);
-                if d <= loose { pairs.push((d,i,j)) }
+                if d > loose { continue }
+                let turn = match (d <= join,heading(&runs[i],at[i][1],1),heading(&runs[j],at[j][0],0)) {
+                    (true,Some(x),Some(y)) => cross(x,y).datan2(dot(x,y)),
+                    _ => f64::INFINITY,
+                };
+                pairs.push((if d <= join { 0. } else { d },turn,i,j))
             }
         }
-        pairs.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)).then(x.2.cmp(&y.2)));
+        pairs.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.total_cmp(&y.1)).then(x.2.cmp(&y.2)).then(x.3.cmp(&y.3)));
+        let pairs: Vec<(f64,usize,usize)> = pairs.into_iter().map(|(_,_,i,j)| (dist(at[i][1],at[j][0]),i,j)).collect();
         // an edge held at an end pose joined to the contact the roll ends at: tangent there, so the
         // keeping test finds its end only roughly; the contact is on the edge, and is that end
         let tangent = |fixed: &Run,other: &Run,end: usize,p: P| -> Option<f64> {
@@ -474,6 +492,18 @@ impl SweptRegion {
         // the loops, walked from each stretch not yet in one
         let mut loops: Vec<Loop> = Vec::new();
         let mut used = vec![false;runs.len()];
+        // a spur, a hair of a stretch joined at neither end or only to itself (the edge beside an end
+        // pose's corner, kept as far as the keeping test's tolerance reaches past the corner's
+        // path), bounds nothing
+        let hair = |r: &Run,p: P| (1..=8).all(|k| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*k as f64/8.)
+            .is_some_and(|h| dist(h.at,p) <= loose));
+        for k in 0..runs.len() {
+            let alone = next[k].is_none() && !taken[k] || next[k] == Some(k);
+            if alone && hair(&runs[k],at[k][0]) {
+                if debug() { eprintln!("region: a spur of {:?} at {:?} dropped",candidates[runs[k].candidate],at[k][0]) }
+                used[k] = true;
+            }
+        }
         for first in 0..runs.len() {
             if used[first] { continue }
             let mut pieces: Vec<Piece> = Vec::new();

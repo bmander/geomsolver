@@ -74,8 +74,14 @@ fn solved(src: &str) -> (Elaborated, usize) {
 fn say() -> Say<'static> { Say { stage: &|_: &str| {}, mark: &|_| {} } }
 
 /// The wheel built exactly, its STL written within `held` and agreeing with the field: its volume.
-fn cut(src: &str, held: Option<Tolerance>) -> f64 {
-    let (e, wheel) = solved(src);
+fn cut(src: &str, held: Option<Tolerance>) -> f64 { cut_body(src, "wheel", held) }
+
+/// `cut`, of the body named `body`.
+fn cut_body(src: &str, body: &str, held: Option<Tolerance>) -> f64 {
+    let mut e = crate::common::build(src);
+    let r = solve(&mut e.sketch, SolveOpts::default());
+    assert!(r.success, "{}", r.message);
+    let wheel = e.map.ent_named(body).unwrap().i();
     let exact = export::exact(&e.sketch, wheel, None, held, &say())
         .unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
     exact.solid.check(1e-6).unwrap();
@@ -318,4 +324,76 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
     let [d] = &diags[..] else { panic!("{diags:#?}") };
     assert_eq!((d.code, d.at(e.text()).0), (Code::E080, 23), "{d:?}");
     assert!(d.message.starts_with("`space` sweeps `pyramid`, whose material the field does not read"), "{d:?}");
+}
+
+/// #613's pinion: 12 teeth of module 0.8, its tooth spaces cut by one tooth of the basic rack (its
+/// pitch line shifted +0.3 m) rolled across the blank on the pitch circle, from clear of the tip to
+/// clear of it; `cuts` cuts `space` (or its copies about the spindle) from `gear`.
+fn pinion(cuts: &str) -> String {
+    format!("\
+unit mm
+use std
+use std (vertical, turns, slides, coords, on_v)
+
+m := 0.8mm
+N := 12
+phi := 20deg
+R := m * N / 2
+Rp := R + 0.3 * m
+Rt := Rp + m
+hw := pi * m / 4
+reach := sqrt(Rt ^ 2 - (Rp - 1.25 * m) ^ 2) + hw + 1.5 * m * tan(phi)
+window := reach / R * 1rad
+
+in std.front {{
+  construction spindle := vertical line(std.origin, hint((0, 10)))
+  length(10mm) spindle
+}}
+in std.top {{
+  construction rack_line := line(hint((10, Rp)), hint((0, Rp)))
+  rack_line.p1 coords(du: 10mm, dv: Rp) std.top
+  rack_line.p2 on_v(d: Rp) std.top
+  a := point hint((-hw - 1.5 * m * tan(phi), Rp + 1.5 * m))
+  b := point hint((-hw + 1.25 * m * tan(phi), Rp - 1.25 * m))
+  c := point hint((hw - 1.25 * m * tan(phi), Rp - 1.25 * m))
+  d := point hint((hw + 1.5 * m * tan(phi), Rp + 1.5 * m))
+  a coords(du: -hw - 1.5 * m * tan(phi), dv: Rp + 1.5 * m) std.top
+  b coords(du: -hw + 1.25 * m * tan(phi), dv: Rp - 1.25 * m) std.top
+  c coords(du: hw - 1.25 * m * tan(phi), dv: Rp - 1.25 * m) std.top
+  d coords(du: hw + 1.5 * m * tan(phi), dv: Rp + 1.5 * m) std.top
+  rack_tooth := face(a, b, c, d, -> close)
+  tip := circle(center: std.top.origin) hint(r: Rt)
+  radius(Rt) tip
+  hole := circle(center: std.top.origin) hint(r: 1)
+  radius(1mm) hole
+}}
+tooth := solid(rack_tooth, from: -1mm, to: 6mm)
+blank_turn := frame
+blank_turn turns(1) spindle
+rack := frame
+rack slides(2 * pi * R) rack_line
+index := frame
+index turns(1) spindle
+space := sweep(tooth over t in (-window, window), under: rack, seen_from: blank_turn)
+gear := solid(face(tip, holes: hole), from: 0mm, to: 5mm)
+{cuts}
+")
+}
+
+/// **A tooth space cut at a copy turned 30° is the space turned** (#613): the blank's box at a
+/// placement no quarter turn reaches past the rack tooth's tip at each end pose, where the held top
+/// edge, the corner's path and a hair of the flank the keeping test's tolerance keeps all meet.  The
+/// boundary takes the corner's path (the rightmost turn) and the hair is dropped, so the copy alone
+/// removes what the space removes, and a whole pinion — eleven copies — builds, agrees with the field
+/// and removes twelve spaces.
+#[test]
+fn a_tooth_space_cut_at_a_turned_copy_is_the_space_turned() {
+    let blank = PI * (5.84 * 5.84 - 1.) * 5.;
+    let one = blank - cut_body(&pinion("space cut gear"), "gear", None);
+    let turned = blank - cut_body(&pinion("turned := space at(under: index) 30deg\nturned cut gear"), "gear", None);
+    assert!(one > 10. && (turned - one).abs() < 1e-3 * one, "the copy removes {turned:.5} mm³, the space {one:.5}");
+    let copies: String = (1..12).map(|k| format!("t{k} := space at(under: index) {}deg\nt{k} cut gear\n", 30 * k)).collect();
+    let whole = blank - cut_body(&pinion(&format!("space cut gear\n{copies}")), "gear", None);
+    // the spaces are apart: twelve remove twelve times one
+    assert!((whole - 12. * one).abs() < 1e-4 * whole, "twelve spaces remove {whole:.5} mm³, one {one:.5}");
 }
