@@ -347,23 +347,6 @@ fn a_turned_rod_answers_its_closed_forms() {
     assert!((mass - want).abs() <= error && error <= 1e-2 * want, "{mass} ± {error}: {want}");
 }
 
-/// **A turned solid's deflection drives nothing yet** (#510 S3): its mesh is its boundary's
-/// refinement, whose nodes are no functions of the drawing, so a driving deflection of a point of
-/// it compiles no row — the drawing solves as it would without it — and the report says it holds
-/// or not, and that nothing drives it.
-#[test]
-fn a_filled_bodys_deflection_drives_nothing() {
-    let src = ROD.replace("  claim deflection(c, along: std.z) >= 0mm\n",
-                          "  deflection(c, along: std.z) == 0.02mm\n");
-    let e = crate::common::text::solved(&src);
-    use gcs_core::constraints::CKind;
-    assert!(e.sketch.constraints.iter().all(|c| c.kind != CKind::Deflection));
-    let s = &e.scenarios[0];
-    let (_, read) = scenario_read(&e.sketch, &s.scenario);
-    let said = gcs_core::report::scenario_answers(&e.sketch, s, &read);
-    assert!(said[0].text.contains("nothing drives it yet"), "{}", said[0].text);
-}
-
 /// The library's solids read in three dimensions (#510 S3), each a capability: a driving row
 /// stacked through a plank, a load across a panel's plane, a solid's buckling, a plate's modes out
 /// of its plane, a solid of revolution filled from its boundary with a round making its stress

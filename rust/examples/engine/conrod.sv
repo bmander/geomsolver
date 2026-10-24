@@ -54,7 +54,9 @@ component CapBolt(a: point, b: point, r: Length, rh: Length, h: Length) {
   construction hole := solid(face(a, b, tip, foot, -> close), about: stem)
 }
 
-component ConRod(pin: CrankPin, bore: line) {
+// Its web's thickness `wt` is the one dimension of its own a caller may give: an unknown of the
+// drawing where a requirement sizes it (`sized_conrod.sv`), 5mm where it is left out.
+component ConRod(pin: CrankPin, bore: line, wt: Length = 5mm) {
   // the rod's own dimensions
   wB := pinlen - 4mm     // big end, along the crank axis: the pin less 2 of clearance a side
   wS := 22mm             // small end, along the crank axis
@@ -74,7 +76,6 @@ component ConRod(pin: CrankPin, bore: line) {
   rodd := 12mm           // …and this far into the rod, where it is screwed
   fl := 18mm             // I-section: flange width, the shank's thickness across the engine
   ft := 4mm              // flange thickness
-  wt := 5mm              // web thickness
   hM := (hB + hS) / 2    // the shank's half-width at mid-length, where the section is cut
   oil := 1.5mm           // the oil passage, half its bore
   // forged, quenched and tempered: what the rod and its cap are made of

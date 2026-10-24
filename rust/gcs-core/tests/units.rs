@@ -206,6 +206,9 @@ fn the_functions_have_signatures() {
 #[test]
 fn the_library_is_unchanged() {
     for &(key, ..) in examples::CASES.iter() {
+        if examples::left_to_slow_tier(key) {
+            continue;
+        }
         let Some(mut sk) = examples::example(key) else { continue };
         let d = diagnose(&mut sk, DiagnoseOptions::default());
         assert!(d.dof >= 0, "{key}");
