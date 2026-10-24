@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.184] A group is a value.** `small := sizes`, where `sizes` names a group (the file's, a
+group formal, a nested one or a used module's, `engine.dims.handle`), names the same group: its
+members read through either name, either handed to a `group` formal, nothing made. A group may be
+written in braces where a `group` formal takes it, `Bar({length: s.length + 2 * o, origin: o})`,
+its members read in the caller's scope and an interface typing the formal judging it at the
+argument; braces given to a formal that takes no group are **E103**, where before every braced
+argument was. A body hands on a group among its file's constants, as it reads its members:
+`Disc(sizes)` inside a component, by the file's name for it, unless a formal or a name of the body
+hides it; one naming the file's geometry is **E103**, the drawing out of a body's reach as before.
+A group read as a number is said to be a group (`` `engine.dims.handle` is a group, and a group is
+not a number``) rather than as a member its module lacks. The language gains no word. Every solved
+position is unchanged. (Issue #594.)
+
 **[0.183] A claim over values.** `claim` before a comparison of the document's numbers —
 `claim handle_stall_torque >= 2Nm`, `claim 2 * ratio > 30 and teeth != 12`, a condition as a
 `when` writes one — asserts it of the values it reads (§9.7). A value is worked out before the

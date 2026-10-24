@@ -819,6 +819,14 @@ be passed as a group, exposing its geometry but not its local values. A group fo
 supplied, and a missing member is an error. A traced component (1.10) needs fixed scalar or entity
 formals, so pass members individually there.
 
+A group is a value. `small := sizes` names the same group (`small.length` reads `sizes.length`),
+and so does a module's by its path, `hd := engine.dims.handle`. A group may be written where a
+group formal takes it, its members read where the call is — `Bar(layout, dims: {length: s.length
++ 2 * o})` — so a group passed once needs no name. And what a body reads it hands on: a component
+reads its file's constants (above), and a group of numbers among them is a group argument there
+too, `d := Disc(sizes)`. A group naming the file's geometry is the file's drawing, out of the
+body's reach; take it as a formal.
+
 **Interfaces** name a group's shape. Written at the top of a file, as a component is, each
 member as a formal is, separated by commas or line breaks; a member may be typed by another
 interface:

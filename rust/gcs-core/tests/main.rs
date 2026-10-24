@@ -120,6 +120,7 @@ mod generation;
 mod generation_examples;
 mod guided_frames;
 mod geometry_semantics;
+mod group_values;
 mod held_envelopes;
 mod helix;
 mod meshing;
