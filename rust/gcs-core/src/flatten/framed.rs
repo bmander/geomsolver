@@ -27,8 +27,8 @@ impl<'a> Walk<'a> {
         let mut read = Vec::new();
         for st in body {
             self.paths(st, &mut |parts| {
-                if let Some(k) = self.datum_at(parts).filter(|&k| k > 0) {
-                    read.push(format!("{}{}", scope.prefix(), parts[..k].join(".")));
+                if let Some(of) = self.datum_of(parts) {
+                    read.push(format!("{}{}", scope.prefix(), of.join(".")));
                 }
             });
             // and a relation word's use reads what its body reads of what it is given (#595)
@@ -73,11 +73,7 @@ impl<'a> Walk<'a> {
         // what the body reads past each name it holds, before the `std`
         let mut read: Vec<Vec<String>> = Vec::new();
         for st in &def.body {
-            self.paths(st, &mut |parts| {
-                if let Some(k) = self.datum_at(parts).filter(|&k| k > 0) {
-                    read.push(parts[..k].to_vec());
-                }
-            });
+            self.paths(st, &mut |parts| read.extend(self.datum_of(parts).map(<[String]>::to_vec)));
             self.words_used(st, &mut |inner| {
                 read.extend(self.use_reads(inner, def.module, seen));
             });
@@ -89,14 +85,15 @@ impl<'a> Walk<'a> {
             if let Some(j) = def.operands.iter().position(|o| o.text == name) {
                 return w.ops.get(j).map(read_segments);
             }
-            let text = w.args.iter().find_map(|a| match a {
+            let (text, span) = w.args.iter().find_map(|a| match a {
                 OpArg::Named(n, Arg::Dim { text, span }) if n.text == name => Some((text, span)),
+                // a word of one parameter takes it bare
                 OpArg::Dim(text, span) if def.params.len() == 1 && def.params[0].text == name => {
                     Some((text, span))
                 }
                 _ => None,
             })?;
-            crate::syntax::reference_at(text.0, text.1.lo as usize).map(|r| read_segments(&r))
+            crate::syntax::reference_at(text, span.lo as usize).map(|r| read_segments(&r))
         };
         read.into_iter().filter_map(|parts| {
             let mut out = given(&parts[0])?;
@@ -109,6 +106,12 @@ impl<'a> Walk<'a> {
     fn datum_at(&self, parts: &[String]) -> Option<usize> {
         (0..parts.len().saturating_sub(1))
             .find(|&k| parts[k] == "std" && self.names.contains(&format!("std.{}", parts[k + 1])))
+    }
+
+    /// What a path reads the datums of from outside: the segments before its `std`, where there
+    /// are any (`cyl` of `cyl.std.y`).
+    fn datum_of<'p>(&self, parts: &'p [String]) -> Option<&'p [String]> {
+        self.datum_at(parts).filter(|&k| k > 0).map(|k| &parts[..k])
     }
 
     /// Every dotted path statement `st` writes, as its segments, to `f`: those its text reads

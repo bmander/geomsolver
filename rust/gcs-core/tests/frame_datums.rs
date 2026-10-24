@@ -449,16 +449,16 @@ in std.front {
 /// A seat in space, a bore's axis through it, and a datum across: what `READS`'s post is mated
 /// to, its x along the bore and its y up, by relations on the datums written `x`, `y` and `o`.
 fn mated(x: &str, y: &str, o: &str) -> String {
-    format!("\
+    format!("{SEAT}{o} coincident seat\n{x} parallel bore\n{y} parallel std.z\n")
+}
+
+/// The seat and the bore `mated` places the post on.
+const SEAT: &str = "\
 seat := point
 fix((10, 20, 30)) seat
 bore := axis
 fix(dir == (0, 1, 0), origin == (10, 0, 30)) bore
-{o} coincident seat
-{x} parallel bore
-{y} parallel std.z
-")
-}
+";
 
 /// Where `mated` puts the post.
 const SEATED: Pose = Pose { u: [0.0, 1.0, 0.0], v: [0.0, 0.0, 1.0], o: [10.0, 20.0, 30.0] };
@@ -629,36 +629,34 @@ g seats_at(up, east) p := {
 }
 ";
 
+/// That `e`'s `p`, a `Post(len: 40mm)`, stands where `pose` takes the root's.
+fn post_at(e: &Elaborated, pose: &Pose) {
+    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
+    for name in ["p.a", "p.b"] {
+        let (got, want) = (at(e, name), pose.image(at(&root, name)));
+        assert!(near(got, want), "{name}: {got:?} against {want:?}");
+    }
+}
+
 #[test]
 fn a_relation_word_over_an_instance_reads_its_frame_and_places_it() {
     // the mate's three statements said once: the instance stands in a frame of its own though no
     // statement of the document writes `p.std`
-    let src = format!("{READS}{SEATS}p := Post(len: 40mm)\n\
-                       seat := point\nfix((10, 20, 30)) seat\n\
-                       bore := axis\nfix(dir == (0, 1, 0), origin == (10, 0, 30)) bore\n\
+    let src = format!("{READS}{SEATS}{SEAT}p := Post(len: 40mm)\n\
                        p seats_at(up: std.z, east: bore) seat\n");
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
-    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
-    for name in ["a", "b"] {
-        let (got, want) = (at(&e, &format!("p.{name}")),
-                           SEATED.image(at(&root, &format!("p.{name}"))));
-        assert!(near(got, want), "p.{name}: {got:?} against {want:?}");
-    }
+    post_at(&e, &SEATED);
     // and a word whose body uses that word, its operand passed on, reads the frame through it;
     // the culprit reads as the word written
-    let src = format!("{READS}{SEATS}g upright(up, east) p := g seats_at(up: up, east: east) p\n\
+    let src = format!("{READS}{SEATS}{SEAT}\
+                       g upright(up, east) p := g seats_at(up: up, east: east) p\n\
                        g upright_twice(up, east) p := g upright(up: up, east: east) p\n\
                        p := Post(len: 40mm)\n\
-                       seat := point\nfix((10, 20, 30)) seat\n\
-                       bore := axis\nfix(dir == (0, 1, 0), origin == (10, 0, 30)) bore\n\
                        p upright_twice(up: std.z, east: bore) seat\n");
-    let e = build(&src);
-    assert!(e.ok(), "{:?}", e.diags);
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
-    let want = SEATED.image(at(&root, "p.b"));
-    assert!(near(at(&e, "p.b"), want), "{:?} against {want:?}", at(&e, "p.b"));
+    post_at(&e, &SEATED);
     let said = crate::common::said(&e);
     assert!(said.iter().any(|s| s == "p upright_twice(up: std.z, east: bore) seat"), "{said:?}");
 }
@@ -666,17 +664,13 @@ fn a_relation_word_over_an_instance_reads_its_frame_and_places_it() {
 #[test]
 fn a_relation_word_given_an_instance_as_a_parameter_reads_its_frame() {
     // the instance named in the parentheses rather than as an operand
-    let src = format!("{READS}x seat_of(part, up) p := {{\n  part.std.origin coincident p\n  \
+    let src = format!("{READS}{SEAT}x seat_of(part, up) p := {{\n  part.std.origin coincident p\n  \
                        part.std.x parallel x\n  part.std.y parallel up\n}}\n\
                        p := Post(len: 40mm)\n\
-                       seat := point\nfix((10, 20, 30)) seat\n\
-                       bore := axis\nfix(dir == (0, 1, 0), origin == (10, 0, 30)) bore\n\
                        bore seat_of(part: p, up: std.z) seat\n");
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
-    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
-    let want = SEATED.image(at(&root, "p.b"));
-    assert!(near(at(&e, "p.b"), want), "{:?} against {want:?}", at(&e, "p.b"));
+    post_at(&e, &SEATED);
 }
 
 #[test]
@@ -697,13 +691,7 @@ p seats(turn: 30deg, up: std.z, east: std.x) st
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
     assert!(near(at(&e, "st"), [10.0, 20.0, 25.0]), "{:?}", at(&e, "st"));
     let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
-    let pose = Pose { u: [c, s, 0.0], v: [-s, c, 0.0], o: [10.0, 20.0, 25.0] };
-    let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
-    for name in ["a", "b"] {
-        let (got, want) = (at(&e, &format!("p.{name}")),
-                           pose.image(at(&root, &format!("p.{name}"))));
-        assert!(near(got, want), "p.{name}: {got:?} against {want:?}");
-    }
+    post_at(&e, &Pose { u: [c, s, 0.0], v: [-s, c, 0.0], o: [10.0, 20.0, 25.0] });
     // a station below, along an axis of the drawing's own: the axis's way, not the seed's
     let src = format!("{READS}\
 in std.top {{
