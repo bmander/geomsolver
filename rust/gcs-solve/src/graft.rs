@@ -950,6 +950,12 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             dst.turn(crate::model::Turn { copy, rep, about, ..*tn });
         }
     }
+    // and a mirrored instance's images, where the image and its representative both came (#578)
+    for m in &src.mirrors {
+        if let (Some(copy), Some(rep)) = (remap(m.copy), remap(m.rep)) {
+            dst.mirror(crate::model::Mirror { copy, rep, ..*m });
+        }
+    }
     dst.settle_turns();
     // each free curve's energy, its pegs and its definition, read again from what came (#144)
     dst.settle_variational();
@@ -1108,6 +1114,11 @@ impl Part {
                 turned.entry(a).or_default().push(b);
                 turned.entry(b).or_default().push(a);
             }
+        }
+        // as an image does with what it is the image of (#578)
+        for m in &sk.mirrors {
+            turned.entry(m.copy).or_default().push(m.rep);
+            turned.entry(m.rep).or_default().push(m.copy);
         }
         // a plane is a wall when it cannot move: its axes held as well as where it stands
         let wall = |e: EntRef| match e.kind {

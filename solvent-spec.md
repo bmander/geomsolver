@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.178 — October 2026**
+**Specification, Draft 0.179 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -520,7 +520,7 @@ PREFIX ::= a constraint name whose spec is one entity slot     // horizontal, ve
          | "step" "(" STEPARG ("," STEPARG)* ")"                // [0.101] step(u: s, dv: b)
 STEPARG ::= ("u" | "v" | "du" | "dv") ":" EXPR | "from" ":" REF
 JOINT  ::= "->" INFIX* ["->"] | INFIX+ ["->"]                  // at least one marker or word
-         | "->" ROUND ["->"]                                     // [0.178] a corner rounded
+         | "->" ROUND ["->"]                                     // [0.179] a corner rounded
 INFIX  ::= "tangent" | "equal" | a constraint name whose spec is two entity slots
 ROUND  ::= "round" "(" ["r" ":"] EXPR ")" | "(" NAME ":=" "round" "(" ["r" ":"] EXPR ")" ")"
 ```
@@ -571,7 +571,7 @@ Naming a chain never closes an endpoint gap by itself.
 
 **[0.8] A block body may end mid-joint.** Inside a `repeat`, `cycle` or `ring` body (§12), the body's final chain may end in a *threaded* joint — the marker, or the marker with words — standing at the body's `}`: the trailing joint threads the chain onto the **next copy's** first link, and is stated between copy i's last link and copy i+1's first exactly as an in-chain joint would be — the weld a shared point, every worded tangency the regular at-form. Which pairs are stated is the block's kind: `cycle` and `ring` wrap, so every copy states it and the trailing joint is the loop's closure — `cycle N { length(d) line -> angle(a) }` is the dimensioned N-gon, with no `close`, no names and no written points — while `repeat` does not wrap, so the *last* copy's trailing joint is simply not stated and `repeat N { line -> angle(a) }` is an open polyline of N sides and N−1 corners, the natural reading rather than an error. Both boundary links MUST be declarations of kinds with ends (a name-link's boundary is §6.6's ordinary rule: the point must be named where it stands), and at most one of the two boundary slots may name its point — both named are two *different* points across the copy seam, and that coincidence is stated longhand. Where the construct can mean nothing — a `component` body, a trace block, the top level — it is an error, and an unthreaded trailing word still wants its right operand. The joint is one written joint however many copies state it: each stated copy keeps the one statement identity, told apart by the instance path (§12.7). A statement inside a braced body also ends at the body's `}` as at a line break, so the whole of a block may sit on one line.
 
-**[0.178] A corner round is a joint.** `A -> round(r: R) B`, where `A` and `B` are lines the chain joins at a corner, rounds that corner with an arc of radius `R` tangent to both, and is short for statements a person could write: an arc (named where the round is, `-> (k := round(r: R))`, and otherwise anonymous, §6.2), `radius(R) k`, `k tangent(at: A.p2) A` and `k tangent(at: B.p1) B`, and, where a side names the point the two were written meeting at, that point `coincident` both lines. That point is the **virtual corner**: it stays a point of the drawing, dimensioned as any, and neither line ends at it — each declared side's slot there is an implicit child (§6.2), the point the arc touches it at, so `A.p2` is `k.start` and `B.p1` is `k.end`. The corner may be named by either side or both in agreement; named while a side is a reference to a line declared elsewhere it is refused (that side's end is its own point, the arc's), and with no side naming it the round keeps no corner. What the longhand cannot say the round MUST: **the arc lies inside the corner**, on the side the walk `A → B` turns toward there, counter-clockwise from its start at a corner the walk turns left at and drawn from its end at one it turns right at, the names kept as written; its centre is on that side of `A`, of `B` and of its own chord — three stated orientations (§9.6), so of the four circles tangent to both lines the one inside the corner is the only root. Which way the corner turns is read where the drawing is seeded. *Non-normative:* each tangency point the round mints starts `R / tan(θ/2)` from the corner along its line, the centre `R / sin(θ/2)` along the bisector, `θ` the corner's angle between the corners its lines run to. A round at a corner its lines run straight through or fold back on, as drawn, is **E040**; one beside an arc, or a joint stating a word beside it, is refused where written. A trailing round at a `cycle`'s or a `ring`'s `}` rounds the corner the next copy is entered by; a `repeat`'s first copy is entered by nothing, so there it is **E040**. A bare `A round(r) B`, with no marker, is still `std`'s round of solids (§6.9). An implementation SHOULD say a round that does not fit the drawing as solved in the round's own terms: one whose setback runs past its line's far end, with the largest radius the line takes, and two whose setbacks on one line exceed it.
+**[0.179] A corner round is a joint.** `A -> round(r: R) B`, where `A` and `B` are lines the chain joins at a corner, rounds that corner with an arc of radius `R` tangent to both, and is short for statements a person could write: an arc (named where the round is, `-> (k := round(r: R))`, and otherwise anonymous, §6.2), `radius(R) k`, `k tangent(at: A.p2) A` and `k tangent(at: B.p1) B`, and, where a side names the point the two were written meeting at, that point `coincident` both lines. That point is the **virtual corner**: it stays a point of the drawing, dimensioned as any, and neither line ends at it — each declared side's slot there is an implicit child (§6.2), the point the arc touches it at, so `A.p2` is `k.start` and `B.p1` is `k.end`. The corner may be named by either side or both in agreement; named while a side is a reference to a line declared elsewhere it is refused (that side's end is its own point, the arc's), and with no side naming it the round keeps no corner. What the longhand cannot say the round MUST: **the arc lies inside the corner**, on the side the walk `A → B` turns toward there, counter-clockwise from its start at a corner the walk turns left at and drawn from its end at one it turns right at, the names kept as written; its centre is on that side of `A`, of `B` and of its own chord — three stated orientations (§9.6), so of the four circles tangent to both lines the one inside the corner is the only root. Which way the corner turns is read where the drawing is seeded. *Non-normative:* each tangency point the round mints starts `R / tan(θ/2)` from the corner along its line, the centre `R / sin(θ/2)` along the bisector, `θ` the corner's angle between the corners its lines run to. A round at a corner its lines run straight through or fold back on, as drawn, is **E040**; one beside an arc, or a joint stating a word beside it, is refused where written. A trailing round at a `cycle`'s or a `ring`'s `}` rounds the corner the next copy is entered by; a `repeat`'s first copy is entered by nothing, so there it is **E040**. A bare `A round(r) B`, with no marker, is still `std`'s round of solids (§6.9). An implementation SHOULD say a round that does not fit the drawing as solved in the round's own terms: one whose setback runs past its line's far end, with the largest radius the line takes, and two whose setbacks on one line exceed it.
 
 Each desugared statement keeps an identity of its own and a span into the chain's text, so a caret, a diagnosis culprit and a splice land on the word that stated the thing. (§12.7 is many instances from one statement; a chain is several statements from one *line*, each still its own.) Deleting a chain-borne constraint is therefore a splice — a threaded joint steps down to the bare corner `->`, a prefix word goes where it stands, and **[0.8]** an unthreaded joint becomes a statement break, its span grown over a terminal name-link that a break would leave dangling (inside a chain that closes there is no safe break, and the deletion is refused). Deleting a link is refused: no splice takes one link out and leaves a chain behind, so that edit belongs to the source.
 
@@ -2358,6 +2358,36 @@ A root among several is chosen by a stated orientation (§9.6) or a bound, never
 
 **[0.177] One figure, many placements.** An instance is **closed** when its only geometric input is the frame it stands in: its definition is no set family, every formal is a number or a group carrying numbers alone, each is given a number known before the solve, and its call is drawn in that frame or one of the frame's datums (`std.front`, …, the plane its `std.origin` is drawn in), or in no plane at all. A closed instance's **binding** is its definition and its arguments, by value. What a closed instance makes is a function of its binding read in the frame it stands in: two closed instances of one binding are one figure, each placed by its own frame. An instance declared in a `ring` stands in its copy's frame (§12.5), so the copies of a ring's instance are one binding under N placements. *Non-normative:* the reference implementation evaluates a binding's solids once — their exact B-rep and their mesh — and places each instance's by the motion carrying one frame onto the other, keyed by the binding and never by what it evaluated to; the solve is untouched, every instance's interior flat in its parent's, and no solved position changes.
 
+**[0.178] A mirrored placement.** A closed instance's call MAY end in the trailer `mirrored(P)`, `P`
+one of the words `front`, `top` and `side` — the body's own datum planes, named by word as `sense:
+cw` is, since the three differ by a half-turn and only the body's own plane says which hand is
+meant in its terms; any other word is a syntax error. The instance is then its binding reflected
+in the plane `P` of the frame it stands in, which reverses that frame's axis square to it (`y`, `z`
+and `x` respectively), and every frame stays right-handed: no row reads a reflected datum. Its body
+is solved as its **preimage**, where the same instance unmirrored stands, so its rows, freedoms and
+diagnosis are that instance's and its names are its own. What it publishes is its **image**:
+
+- every entity its body makes, read from outside the instance, is that entity reflected — a point
+  drawn in one of the frame's datum planes the same two numbers in that plane's image (the plane
+  over the frame's axes, the reversed one reversed), a point drawn in the frame its three numbers
+  there with the reversed one negated, a circle's and an arc's radius its own (an arc still runs
+  counter-clockwise in its plane's own coordinates), a line and a curve over its points' images;
+- `b.std.D` read from outside names the image's datums, so `b.std.x × b.std.y = −b.std.z`;
+- every solid it makes is the solid its preimage makes, reflected in that plane.
+
+The image is linear in the preimage's numbers, with weights ±1, wherever the frame stands, so a
+mirrored instance placed by mates is held as its preimage would be. A mirrored instance MUST be
+closed: one given an entity, a group carrying one or an unknown is **E112**, since what it was
+given would, reflected, no longer touch it. In this draft **E112** also refuses a mirrored instance
+declared in a `ring` or in another mirrored body, and a body that declares a plane, an axis, a
+frame, a curve or a motion, whose numbers are the world's and whose image is no linear function of
+them. A document that writes no `mirrored` elaborates as before. *Non-normative:* the reference
+implementation derives the image's numbers from the preimage's, owning no column, draws the image
+and not the preimage, and evaluates a mirrored instance's solids as the binding's — a left and a
+right of one binding are one evaluation — reflected by an improper rigid motion: the B-rep's faces'
+senses turned and its loops walked the other way round, each surface placed right-handed again, the
+mesh's winding turned where it is written.
+
 ## 9. Constraints
 
 ### 9.1 Equational form
@@ -3236,6 +3266,7 @@ The numerical method is unspecified. Whatever the method, a conforming solver:
 | E108 | a part whose rows leave one of its own unknowns free, so that a parent would have to place it from outside (§8.2) **[0.162]** |
 | E109 | a part stating a fact about what it is given rather than about what it makes: a row of none of its own unknowns, or past what they take (§8.2) **[0.162]** |
 | E111 | an instance's datums read from outside (`b.std.z`, §8) where its definition's body, and those of the definitions it calls, read no standard datum: it is placed by its arguments, so a relation on its frame would place nothing **[0.171]** |
+| E112 | a mirrored instance (`mirrored(front)`, §8.2) the reflection cannot be made of: one that is not closed — given an entity, a group carrying one or an unknown, which reflected would no longer touch its body — and, in this draft, one in a `ring` or in another mirrored body, or one whose body declares a plane, an axis, a frame, a curve or a motion **[0.178]** |
 
 **[0.18]** The reference implementation raises all four (**[0.42]** E083 is gone, with `against`). A negative sweep and a picture asked of the wrong kind are **E040** by the rules those codes already state (a magnitude written with a sign, §9.2 **[0.17]**; a kind mismatch, §14.1), and an unresolved name in any of these statements is **E101**, so no new code is spent on either.
 
@@ -3530,8 +3561,10 @@ claim_over     = "claim" "over" ref [ "seen_from" ref ] "in" "(" expr "," expr "
    family form and 0.3's `trace … where { … }` are retired and MUST NOT parse. *)
 curve          = ( ref | ref "(" [ args ] ")" "." ref )
                  "over" IDENT "in" "(" expr "," expr ")" ;
-instance       = ref "(" [ args ] ")" [ "in" ref ] ;   (* a used module's component by its full
-                                                          path, §14.4 [0.30]; `in`, §6.7 *)
+instance       = ref "(" [ args ] ")" [ "in" ref ]     (* a used module's component by its full
+                 [ "mirrored" "(" ( "front" | "top" | "side" ) ")" ] ;
+                                                       (* path, §14.4 [0.30]; `in`, §6.7; a
+                                                          mirrored placement, §8.2 [0.178] *)
 args           = arg { "," arg } ;
 arg            = [ IDENT ":" ] ( expr | hint_clause ) ; (* `w: hint(60)` leaves the formal unbound
                                                           and seeds it, §5 [0.41] *)

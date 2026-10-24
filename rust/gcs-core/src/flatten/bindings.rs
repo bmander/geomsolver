@@ -124,6 +124,13 @@ impl<'a> Walk<'a> {
             drawn,
             path: Vec::new(),
             binding: None,
+            mirror: inst.mirror.as_ref().and_then(|m| Some(Mirroring {
+                axis: m.axis()?,
+                span: m.span,
+                given: inst.args.iter()
+                    .find(|a| !matches!(a.value, crate::syntax::InstVal::Expr(_)))
+                    .map(|a| a.span),
+            })),
         });
         Some((comp, sub_vals, sides, key))
     }

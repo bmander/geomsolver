@@ -65,11 +65,21 @@ component Rotor(f: Datums, theta: Angle) {
     m[i + 1].body union magnets
   }
 
-  // the covers' screws: M4, tapped `tap_depth` into each end, half a pitch off the datum
-  screw := motor.parts.HoleCircle(f, n: screws, r: screw_r, d: tap4, phase: 180deg / screws)
+  // the covers' screws: M4, tapped `tap_depth` into each end, on the mid-wall circle half a pitch
+  // off the datum — the circle and pitch each cover's clearance holes are drawn on
+  in f.o.plane {
+    ring screws about f.o {
+      tap := point
+      f.o distance(screw_r) tap
+      screw := circle(center: tap) hint(r: tap4 / 2)
+      radius(tap4 / 2) screw
+      private construction tap_radial := line(f.o, tap)
+    }
+  }
+  f.datum angle(180deg / screws) tap_radial[0]
   repeat screws as i {
-    private left := solid(face(screw.hole[i]), from: half - tap_depth, to: half)
-    private right := solid(face(screw.hole[i]), from: -half, to: -half + tap_depth)
+    private left := solid(face(screw[i]), from: half - tap_depth, to: half)
+    private right := solid(face(screw[i]), from: -half, to: -half + tap_depth)
     left cut ring
     right cut ring
   }

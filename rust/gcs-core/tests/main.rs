@@ -150,6 +150,7 @@ mod loft_examples;
 mod make_component;
 mod many_instances;
 mod mapped;
+mod mirrored;
 mod materials;
 mod measured;
 mod measurements;

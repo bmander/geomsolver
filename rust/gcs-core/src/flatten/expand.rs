@@ -851,6 +851,32 @@ impl<'a> Walk<'a> {
         else {
             return ControlFlow::Continue(());
         };
+        // a mirrored call (#578): what it makes, read from outside, is its image — but for one in
+        // a ring, or in another mirrored body, whose turn or reflection an image is not composed
+        // with yet
+        if let Some(m) = &inst.mirror {
+            let within = self.standard.mirrored.iter()
+                .find(|p| scope.prefixes.iter().any(|q| q.starts_with(p.as_str()))).cloned();
+            let why = match (&scope.block.ring, within) {
+                (Some(_), _) => Some("in a `ring`, whose turn an image is not composed with yet: \
+                                      mirror the ring's instance outside it".to_string()),
+                (None, Some(p)) => Some(format!("in the body of `{}`, which is mirrored itself, \
+                    and an image is not reflected again yet", p.trim_end_matches('.'))),
+                (None, None) => None,
+            };
+            match why {
+                Some(why) => {
+                    let name = &inst.name.text;
+                    self.once(Code::E112, m.span, format!("`{name}` is mirrored {why}"));
+                    if let Some(info) = self.instances.last_mut().filter(|i| i.prefix == key) {
+                        info.mirror = None;
+                    }
+                }
+                None => {
+                    self.standard.mirrored.insert(key.clone());
+                }
+            }
+        }
         // the instance's own `in`, or the one already in force around it — both at once
         // nest (#383): the one around it is ridden on, as are the instance's further blocks
         let mut rides = scope.stamps.rides.clone();

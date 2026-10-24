@@ -162,6 +162,40 @@ pub fn solved(e: &Elaborated) -> Sketch {
     sk
 }
 
+/// `src` read (`read`) and solved: the elaboration, and its sketch solved.
+pub fn read_solved(src: &str) -> (Elaborated, Sketch) {
+    let e = read(src);
+    let sk = solved(&e);
+    (e, sk)
+}
+
+/// The solid the document calls `n`, by index.
+pub fn solid_named(e: &Elaborated, n: &str) -> usize {
+    at_path(e, n).i()
+}
+
+/// The solids built and evaluated while `work` runs, by index, in the order begun.
+#[derive(Default)]
+struct Builds(std::cell::RefCell<Vec<(gcs_core::progress::Kind, usize)>>);
+
+impl gcs_core::progress::Listener for Builds {
+    fn begin(&self, work: &gcs_core::progress::Work) {
+        use gcs_core::progress::{At, Kind};
+        if let (Kind::Build | Kind::Evaluate, Some(At::Solid(i))) = (work.kind, work.at) {
+            self.0.borrow_mut().push((work.kind, i));
+        }
+    }
+    fn end(&self, _: &gcs_core::progress::Work, _: f64, _: f64) {}
+}
+
+/// What `work` returns, and the solids built and evaluated while it ran (`Builds`).
+pub fn counted<T>(work: impl FnOnce() -> T) -> (T, Vec<(gcs_core::progress::Kind, usize)>) {
+    let heard = std::rc::Rc::new(Builds::default());
+    let out = gcs_core::progress::listen(heard.clone(), work);
+    let builds = heard.0.borrow().clone();
+    (out, builds)
+}
+
 /// The freedom a sketch has left.
 pub fn dof(sk: &mut Sketch) -> i64 {
     diagnose(sk, DiagnoseOptions::default()).dof

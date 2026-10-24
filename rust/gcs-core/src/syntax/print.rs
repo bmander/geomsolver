@@ -221,6 +221,9 @@ fn write_stmt(out: &mut String, k: &StmtKind) {
                 out.push_str(" class ");
                 out.push_str(&i.class.0.join(" "));
             }
+            if let Some(m) = &i.mirror {
+                out.push_str(&format!(" mirrored({})", m.plane.text));
+            }
         }
         StmtKind::Param(p) => {
             if let Some(input) = &p.input {

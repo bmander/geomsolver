@@ -106,6 +106,21 @@ impl Frame {
     pub fn moved(&self,m: &Rigid) -> Frame {
         Frame {o:m.point(self.o),x:m.vector(self.x),y:m.vector(self.y),z:m.vector(self.z)}
     }
+    /// Whether its axes are right-handed, `y` on the turn from `z` to `x`.
+    pub fn right(&self) -> bool { dot(cross(self.z,self.x),self.y) > 0. }
+    /// **Its axes made right-handed again** (#578), as a surface placed on them reads them: one
+    /// read by its `x` and `y` (a plane, a circle) keeps those and takes `z = x × y`; one turned
+    /// about its `z` (a surface of revolution) keeps its axis and `x` and takes `y = z × x`,
+    /// which runs its turn the other way — whether it did is returned beside the frame.  What a
+    /// native kernel's left-handed placement is read as (`brep::json`) and a reflected B-rep is
+    /// placed by (`Brep::reflected`).
+    pub fn rehanded(self,about_z: bool) -> (Frame,bool) {
+        match (self.right(),about_z) {
+            (true,_) => (self,false),
+            (false,false) => (Frame {z:cross(self.x,self.y),..self},false),
+            (false,true) => (Frame {y:cross(self.z,self.x),..self},true),
+        }
+    }
 }
 
 /// A rigid motion: `p ↦ R p + t`, R row-major.
@@ -823,6 +838,34 @@ impl Surface {
                 poles:n.poles.iter().map(|row| row.iter().map(|&p| m.point(p)).collect()).collect(),..(**n).clone()})),
         }
     }
+    /// **The surface reflected by the improper motion `m`** (#578), placed right-handed again
+    /// (`Frame::rehanded`): a plane and a B-spline sheet by their normal, an extrusion by its `y`
+    /// (its section's frame, which no parameter reads), and a surface of revolution by its `y`,
+    /// which runs its `u` the other way — whether it does is returned beside it, so a face's
+    /// pcurves follow.  Refused for a blend and a family's wall, whose sweeps a reflection
+    /// would turn the other way.
+    pub fn reflected(&self,m: &Rigid) -> Result<(Surface,bool),String> {
+        let turned = |f: Frame| f.moved(m).rehanded(true);
+        Ok(match *self {
+            Surface::Plane(f) => (Surface::Plane(f.moved(m).rehanded(false).0),false),
+            Surface::Cylinder(f,r) => { let (f,flip) = turned(f); (Surface::Cylinder(f,r),flip) }
+            Surface::Cone(f,r,a) => { let (f,flip) = turned(f); (Surface::Cone(f,r,a),flip) }
+            Surface::Sphere(f,r) => { let (f,flip) = turned(f); (Surface::Sphere(f,r),flip) }
+            Surface::Torus(f,big,r) => { let (f,flip) = turned(f); (Surface::Torus(f,big,r),flip) }
+            Surface::Revolution(f,ref c) => {
+                let (f,flip) = turned(f);
+                (Surface::Revolution(f,Arc::new(c.reflected(m)?)),flip)
+            }
+            Surface::Extrusion(f,ref c) => (Surface::Extrusion(turned(f).0,Arc::new(c.reflected(m)?)),false),
+            Surface::BSpline(..) => {
+                let Surface::BSpline(f,net) = self.moved(m) else { unreachable!() };
+                (Surface::BSpline(f.rehanded(false).0,net),false)
+            }
+            Surface::Blend(..) | Surface::Family(..) => return Err(
+                "a swept section's face is not reflected yet: a mirrored body is drawn of planes, \
+                 surfaces of revolution, extrusions and B-spline sheets".to_string()),
+        })
+    }
     /// Where, strictly inside `[a, b]` of parameter `k` (0 for u, 1 for v), the surface stops
     /// being smooth: its swept curve's knots.
     pub fn breaks(&self,k: usize,span: [f64;2]) -> Vec<f64> {
@@ -1169,5 +1212,20 @@ impl Curve {
             Curve::Rail(ref w,u) => Curve::Rail(Arc::new(w.moved(m)),u),
             Curve::Rim(ref w,s) => Curve::Rim(Arc::new(w.moved(m)),s),
         }
+    }
+    /// **The curve reflected by the improper motion `m`** (#578): its points the reflection's and
+    /// its parameter its own — a circle's or an ellipse's frame made right-handed by its normal,
+    /// which its points do not read, and a traced intersection between its two surfaces
+    /// reflected.  Refused for a loft's or a family's rail and rim, as their surfaces are.
+    pub fn reflected(&self,m: &Rigid) -> Result<Curve,String> {
+        Ok(match *self {
+            Curve::Line {..} | Curve::BSpline(_) => self.moved(m),
+            Curve::Circle(f,r) => Curve::Circle(f.moved(m).rehanded(false).0,r),
+            Curve::Ellipse(f,a,b) => Curve::Ellipse(f.moved(m).rehanded(false).0,a,b),
+            Curve::Traced(ref c) => Curve::Traced(std::sync::Arc::new(Traced {a:c.a.reflected(m)?.0,
+                b:c.b.reflected(m)?.0,pts:c.pts.iter().map(|&p| m.point(p)).collect(),closed:c.closed})),
+            Curve::Iso(..) | Curve::Rail(..) | Curve::Rim(..) => return Err(
+                "a swept section's edge is not reflected yet".to_string()),
+        })
     }
 }

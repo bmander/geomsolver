@@ -195,7 +195,7 @@ impl Session {
         let seam = unit(cross(cross(axis,seed),axis));
         let turn = |angle: f64| turned_about(origin,axis,angle);
         let mut regions: BTreeMap<i64,c_int> = BTreeMap::new();
-        for Named {id,name,node} in nodes {
+        for Named {id,name,node,..} in nodes {
             let region = match node {
                 Node::Revolve {profile,origin: o,axis: a,angle} => {
                     if (angle.abs()-std::f64::consts::TAU).abs() > 1e-9 {
@@ -275,7 +275,7 @@ impl Session {
     /// Every node of the recipe built in turn, each checked, and the root returned.
     pub(crate) fn built(&self,recipe: &Recipe) -> Result<c_int,String> {
         let mut shapes = BTreeMap::new();
-        for Named {id,name,node} in &recipe.nodes {
+        for Named {id,name,node,..} in &recipe.nodes {
             let make = || -> Result<c_int,String> {
                 let id = match node {
                     Node::Body(body) => {

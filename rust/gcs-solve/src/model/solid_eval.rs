@@ -134,12 +134,21 @@ impl Sketch {
     ) -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
         let (policy, slot) = self.solid_slot(i, policy);
         // one of a binding's solids its representative's evaluation placed (#566); a refusal of
-        // the representative's is asked of this one, so it names its own solid
-        if let Some(b) = self.bound(i) {
-            if let Ok(rep) = self.evaluated_solid(b.rep, policy) {
+        // the representative's is asked of this one, so it names its own solid — and a mirrored
+        // one's own is reflected still (#578)
+        for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
+            if let Ok(rep) = self.own_solid(b.rep, policy) {
                 return Ok(self.placed_solid(i, &b, &rep, slot));
             }
         }
+        self.own_solid(i, policy)
+    }
+
+    /// **Solid `i` evaluated as its own**, from the entities it reads, its binding unread: what a
+    /// binding's representative is, and what is placed where a solid is its binding's (#566).
+    fn own_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy)
+        -> Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String> {
+        let (policy, slot) = self.solid_slot(i, policy);
         let key = crate::solid::ShapeKey::of(self, i);
         if let Some(found) = self.remembered(slot, &key) {
             return found;
@@ -159,9 +168,12 @@ impl Sketch {
     pub fn built_solid(&self, i: usize, policy: crate::solid::ApproximationPolicy)
         -> Option<Result<std::rc::Rc<crate::solid::EvaluatedSolid>, String>> {
         let (policy, slot) = self.solid_slot(i, policy);
-        // one of a binding's placed copies is built wherever its representative is (#566)
-        if let Some(b) = self.bound(i) {
-            if let Some(Ok(rep)) = self.built_solid(b.rep, policy) {
+        // one of a binding's placed copies is built wherever its representative is (#566), a
+        // mirrored one wherever its own is (#578)
+        for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
+            let rep = self.remembered(self.solid_slot(b.rep, policy).1,
+                                      &crate::solid::ShapeKey::of(self, b.rep));
+            if let Some(Ok(rep)) = rep {
                 return Some(Ok(self.placed_solid(i, &b, &rep, slot)));
             }
         }
@@ -203,17 +215,17 @@ impl Sketch {
     /// only where the representative's evaluation or the motion has changed.
     fn placed_solid(&self, i: usize, b: &super::Bound, rep: &std::rc::Rc<crate::solid::EvaluatedSolid>,
                     slot: (usize, (u8, u64))) -> std::rc::Rc<crate::solid::EvaluatedSolid> {
-        let mut cache = self.caches.placed.borrow_mut();
-        if let Some(hit) = cache.get(&slot).and_then(|(_, p)| p.hit(rep, &b.motion)) {
+        let (mut cache, motion) = (self.caches.placed.borrow_mut(), b.motion());
+        if let Some(hit) = cache.get(&slot).and_then(|(_, p)| p.hit(rep, &motion)) {
             return hit;
         }
         let mut renamed = match cache.remove(&slot) {
             Some((renamed, _)) => renamed,
             None => rep.renamed(&b.from, &b.to),
         };
-        let placed = std::rc::Rc::new(rep.placed(&b.motion, &mut renamed, &b.from, &b.to));
+        let placed = std::rc::Rc::new(rep.placed(&motion, &mut renamed, &b.from, &b.to));
         super::caches::cap_zoom(&mut cache, i);
-        let placement = super::caches::Placement { of: rep.clone(), motion: b.motion, placed: placed.clone() };
+        let placement = super::caches::Placement { of: rep.clone(), motion, placed: placed.clone() };
         cache.insert(slot, (renamed, placement));
         placed
     }
@@ -222,17 +234,41 @@ impl Sketch {
     /// for the geometry it reads, whatever approximation asks — and once for its binding (#566),
     /// a solid of one made by another instance being the representative's placed.
     pub fn exact_solid(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
-        if let Some(b) = self.bound(i) {
-            if let Ok(rep) = self.exact_solid(b.rep) {
-                let mut cache = self.caches.placed_exact.borrow_mut();
-                if let Some(hit) = cache.get(&i).and_then(|p| p.hit(&rep, &b.motion)) {
-                    return Ok(hit);
-                }
-                let placed = std::rc::Rc::new(rep.placed(&b.motion, &b.from, &b.to));
-                cache.insert(i, super::caches::Placement { of: rep, motion: b.motion, placed: placed.clone() });
-                return Ok(placed);
+        self.exact_placed(i, true)
+    }
+
+    /// Solid `i`'s exact B-rep where its preimage stands (#578): `exact_solid`'s but for a mirrored
+    /// solid's, which is this one reflected — what the solid's own evaluation and a recipe of its
+    /// own instance read, both drawn where the body was solved.
+    pub fn exact_preimage(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
+        self.exact_placed(i, false)
+    }
+
+    /// `exact_solid` (`mirrored`) or `exact_preimage`.
+    fn exact_placed(&self, i: usize, mirrored: bool)
+        -> Result<std::rc::Rc<crate::solid::Exact>, String> {
+        for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
+            // an unmirrored solid's preimage is the solid itself
+            let mirrored = mirrored && b.mirror.is_some();
+            if b.rep == i && !mirrored {
+                break;
             }
+            let Ok(rep) = self.own_exact(b.rep) else { continue };
+            let motion = if mirrored { b.motion() } else { b.raw };
+            let mut cache = self.caches.placed_exact.borrow_mut();
+            let slot = (i, mirrored);
+            if let Some(hit) = cache.get(&slot).and_then(|p| p.hit(&rep, &motion)) {
+                return Ok(hit);
+            }
+            let placed = std::rc::Rc::new(rep.placed(&motion, &b.from, &b.to)?);
+            cache.insert(slot, super::caches::Placement { of: rep, motion, placed: placed.clone() });
+            return Ok(placed);
         }
+        self.own_exact(i)
+    }
+
+    /// Solid `i`'s exact B-rep built as its own, from the entities it reads.
+    fn own_exact(&self, i: usize) -> Result<std::rc::Rc<crate::solid::Exact>, String> {
         let key = crate::solid::MemoKey::of(self, i);
         let build = || crate::progress::during(|| crate::progress::Work::build(self, i),
             || crate::solid::build_exact(self, i).map(std::rc::Rc::new));

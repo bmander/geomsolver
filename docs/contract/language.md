@@ -154,6 +154,46 @@ and which of the solids so named it is, the frame's index, and the turn of the o
 the first it is in (`rings::copy_of`; two such, and it stays its own) — as `model::Binding`; what the core does with
 it is solids.md's.  No row, column or solved position changes.
 
+**A mirrored placement** ([0.178], #578): `left := Cover(…) mirrored(front)` — a trailer on an
+instance's call (`syntax::Mirrored`, beside `in` and `class`, read on the call's own line, printed
+back last), naming one of the body's own datum planes by its word, `front`, `top` or `side`
+(anything else a parse error); `Mirrored::axis` is the frame's axis square to it (`y`, `z`, `x`).
+It is the instance's binding reflected in that plane of the frame it stands in, every frame
+staying right-handed.  **The body is solved as its preimage**: the flattener walks it once, as it
+walks any closed instance, so its rows, its freedoms and its diagnosis are those of the same
+instance unmirrored, and its names are its own (`left.a`).  **What it publishes is its image**
+(`program::mirrors`, after the rings' turns): each point, line, circle, arc and spline its body
+made has an image (`model::Mirror`, derived — a point drawn in one of the frame's datum planes the
+same two numbers in that plane's image, one in the frame itself its three with the mirrored one
+negated, one in space in the world likewise; a radius its own; a datum's image a plane over the
+frame's axes with the mirrored one reversed, `Sketch::image_plane`/`image_axis`, standing where
+the frame does — linear with weights ±1 wherever the frame stands), and a point of the frame's
+datums the body draws over (`std.origin`) is imaged as the point at its numbers in its plane's
+image — a datum image (`Mirror::datum`), not derived and not unique to its datum, read only by
+the body's own dimensions.  A reference from outside the instance to something its body made is
+read as the image (`flatten::resolve`'s `fix`: any prefix of the statement's scope under the instance is inside, so
+a relation word applied in the body reads the preimage), under `keys::image` — `{key}#image`,
+bound by the elaborator to every key of the preimage — but a solid, which is published reflected
+and keeps its name; and `b.std.D` from outside names the image's datums (`Lookup::instance_datum`,
+`keys::image_datum`, `{b.}#std.D`), so a mate reads the mirrored part and `b.std.x × b.std.y =
+−b.std.z`.  The image goes by its preimage's name (`SourceMap::image_of`, read in `called`), its
+site and its statement's (`also_made`); the preimage is not drawn (`Sketch::drawn`, through
+`unseen_of_mirrors`, the image datums neither), and a dimension of the body is drawn on the image
+(`Sketch::drawn_constraint` over `Sketch::images`, in `callout::layout_selected` and `frame`
+and in `Views::constraint_view`, so it is laid out in the image's view).  Each solid the instance
+makes is stamped with its binding and the axis (`model::Binding::mirror`, `bound::stamp`: the
+outermost mirrored instance a solid is under, else the innermost closed one).  **E112** refuses
+what a reflection cannot be made of: a mirrored call that is not closed (`bind_closed`: at the
+first argument that is no number, an entity it would no longer touch reflected, else at the
+trailer), one in a `ring` or in another mirrored body (`walk_instance`), and a body declaring a
+plane, an axis, a frame, a curve or a motion, or drawing a point where its image is no linear
+function of its numbers (`mirrors::images`).  Every document that does not say `mirrored`
+elaborates to the same solve.  `tests/mirrored.rs` is the gate
+(`an_images_planar_entities_hold_its_preimages_numbers`, `a_relation_outside_reads_the_image`,
+`a_mirrored_instance_placed_by_mates_is_held_wholly`, `what_a_reflection_cannot_be_made_of_is_refused`,
+`a_document_that_says_mirrored_prints_it_back`,
+`a_mirrored_bodys_dimension_is_laid_out_in_its_images_view`).
+
 **`claim { … }`, a claim with witnesses of its own (§9.7, [0.151], #460):** hoisted as an `in` body
 is (`parser::statements::witnessed`), the block minting a statement id of its own; `stamp_witness`
 marks each declaration in it (through a `when`) with the block's id as `GeometryRoles::witness` and

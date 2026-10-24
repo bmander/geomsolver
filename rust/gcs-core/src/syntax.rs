@@ -547,6 +547,30 @@ pub struct Instance {
     /// `t2 := Throw(…) class phantom` — every declaration the expansion makes carries these
     /// classes under its own (§13.2), the way `in` puts the whole instance in a view.
     pub class: Classes,
+    /// `left := Cover(…) mirrored(front)` (#578): the instance is its binding reflected in one of
+    /// its body's own datum planes.  `None` for every other call.
+    pub mirror: Option<Mirrored>,
+}
+
+/// **A mirrored placement** (#578): the trailer `mirrored(front)`, `mirrored(top)` or
+/// `mirrored(side)`, naming one of the body's own datum planes by its word — the three differ by
+/// a half-turn, so the body's own plane says which hand is meant in the body's terms.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mirrored {
+    pub plane: Name,
+    /// The whole trailer, `mirrored(front)`.
+    pub span: Span,
+}
+
+impl Mirrored {
+    /// The words a mirrored placement names its plane by.
+    pub const PLANES: [&'static str; 3] = ["side", "front", "top"];
+
+    /// The axis of the frame the instance stands in its image reverses, the one square to the
+    /// plane: 0 its `x` (the mirror in `side`), 1 its `y` (`front`), 2 its `z` (`top`).
+    pub fn axis(&self) -> Option<u8> {
+        Self::PLANES.iter().position(|w| *w == self.plane.text).map(|k| k as u8)
+    }
 }
 
 impl Instance {

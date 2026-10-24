@@ -894,6 +894,29 @@ component Magnet(theta: Angle) {                 // hub_motor/motor/rotor.sv
 }
 ```
 
+**A mirrored placement** (0.178). A closed instance may be placed as its mirror image: the trailer
+`mirrored(front)`, `mirrored(top)` or `mirrored(side)` names one of the body's own datum planes, and
+the instance is its binding reflected in that plane of the frame it stands in. Draw the part once,
+as the right-hand one, and the left is the same call mirrored:
+
+```
+left := motor.cover.Cover(boss_to: disc_face, boss_r: disc_r, spoke_phase: 0deg,
+                          disc: 1) mirrored(front)          // hub_motor.sv: the brake side
+right := motor.cover.Cover(boss_to: fw_to, boss_r: fw_r, spoke_phase: 180deg / spokes, disc: 0)
+bearing_l := motor.parts.Revolved(s0: brg_in, s1: brg_out, r0: brg_id / 2,
+                                  r1: brg_od / 2) mirrored(front)
+```
+
+The body is solved where it stands unmirrored — its rows, freedoms and diagnosis are the same
+instance's, and it is named as written (`left.lip_bore`) — and what the instance publishes is the
+image: a relation, a claim or a solid outside reads `left.clear[3]` reflected, `left.body` is the
+body's solid reflected (every frame stays right-handed), and the drawing shows the image with its
+dimensions. A left and a right of one binding are one figure, evaluated once. Write the trailer on
+the call's last line. A mirrored instance must be closed (an entity it was given would, reflected,
+no longer touch it), and is refused **E112** in a `ring`, in another mirrored body, or where its body
+declares a plane, an axis, a frame or a curve — draw in the frame's own datums. `mapped(…, mirror:
+true)` (1.5) still mirrors one profile within a drawing, a loft's handed section.
+
 ### 1.9 Modules, relation words and previews
 
 ```
@@ -1445,7 +1468,9 @@ frame `f`:
 A point `in f` at `(x, y, z)` stands at `std.origin + x·std.x + y·std.y + z·std.z`, so a body in a
 frame moved by a rigid motion is the root's drawing moved by it (and a closed instance's solids,
 1.8, are evaluated once and moved by it; a ring's copy stands in the frame turned, 1.7); the datums add no freedom, and
-what the body declares rides `f` (a joint carries it whole). A body that reads no datum is placed
+what the body declares rides `f` (a joint carries it whole). A mirrored instance's datums read from
+outside are its image's (1.8): `b.std.x × b.std.y = −b.std.z`, the mirrored axis reversed, so a
+mate on them places the mirrored part. A body that reads no datum is placed
 by what it is given (`ConRod(crank.pin1, end.bore)`): reading its `b.std` is E111. An axis starts
 as the frame's around it, and a relation leaving it either way round takes the nearer: write the
 mate so. The body's file says `use std`, a module's by its own; a relation word reads only its

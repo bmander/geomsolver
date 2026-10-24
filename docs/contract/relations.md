@@ -331,7 +331,7 @@ came from.
   name-link boundary is refused until #35.  A statement in a braced body ends at the `}`
   (`end_of_stmt`).  `square.sv`, `ngon.sv` are the cases; `tests/open_joint.rs` is the gate, and
   `tests/chain.rs` holds `rect_fillets`'s chain spelling to the shipped longhand.
-- **A corner round is a joint** (#576, [0.178]): `A -> round(r: R) B` (`-> (k := round(r: R))` to
+- **A corner round is a joint** (#576, [0.179]): `A -> round(r: R) B` (`-> (k := round(r: R))` to
   name the arc) is read by `chains::round_word` only beside a marker — a bare `A round(r) B` stays
   `std`'s round of solids — and is the whole of its joint (another word there is refused).  It is
   sugar the parser writes (`round_corner`, `round_stmts`): the corner the two lines were written

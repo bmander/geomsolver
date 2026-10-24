@@ -449,8 +449,26 @@ impl<'a> P<'a> {
         // (§6.7) — and `class phantom` — every declaration it makes carries the class
         let mut membership = Membership::default();
         let mut class = Classes::default();
+        let mut mirror = None;
         loop {
-            if membership.plane().is_none() && self.peek_word("in") {
+            if mirror.is_none() && self.peek_word("mirrored")
+                && self.t.get(self.i + 1).map(|(t, _)| t) == Some(&Tok::P('('))
+            {
+                // `mirrored(front)` (#578): one of the body's own datum planes, by its word
+                let mlo = self.here().lo as usize;
+                self.i += 2;
+                let plane = self.ident()?;
+                if !crate::syntax::Mirrored::PLANES.contains(&plane.text.as_str()) {
+                    self.fail("a mirrored instance names one of its body's own datum planes: \
+                               `mirrored(front)`, `mirrored(top)` or `mirrored(side)`");
+                    return None;
+                }
+                if !self.want_p(')') {
+                    return None;
+                }
+                let span = Span::new(mlo, self.prev_hi());
+                mirror = Some(crate::syntax::Mirrored { plane, span });
+            } else if membership.plane().is_none() && self.peek_word("in") {
                 let plo = self.here().lo as usize;
                 self.i += 1;
                 let r = self.refr()?;
@@ -475,6 +493,7 @@ impl<'a> P<'a> {
             span: Span::new(lo, self.prev_hi()),
             membership,
             class,
+            mirror,
         })
     }
 
@@ -1313,6 +1332,7 @@ impl<'a> P<'a> {
                 span: Span::new(lo, self.prev_hi()),
                 membership: Membership::default(),
                 class: Classes::default(),
+                mirror: None,
             };
             CurveTarget::Anon(inst, point)
         } else {
@@ -1412,6 +1432,7 @@ impl<'a> P<'a> {
             span: Span::new(lo, list_span.hi as usize - 1),
             membership: Membership::default(),
             class: Classes::default(),
+            mirror: None,
         };
         let at = self.prev_hi();
         let (class, class_span) = self.class_clause(at);
@@ -1841,6 +1862,7 @@ impl<'a> P<'a> {
                 span: Span::new(at, self.prev_hi()),
                 membership: Membership::default(),
                 class: Classes::default(),
+                mirror: None,
             };
             (name, StmtKind::Instance(inst))
         };
