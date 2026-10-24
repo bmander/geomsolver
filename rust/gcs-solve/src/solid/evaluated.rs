@@ -337,9 +337,15 @@ impl EvaluatedSolid {
         if let Some(surface) = sk.supplied_field(si) {
             return Self::from_surface(sk, si, policy, unit, &surface);
         }
+        let name = sk.solid_name(si);
         match sk.field_meshing.get() {
-            FieldMeshing::Deferred => Err(format!("`{}`: its surface is still being meshed", sk.solid_name(si))),
-            FieldMeshing::Now => Self::from_surface(sk, si, policy, unit, &FieldMesher::new(sk, si)?.finish()?),
+            FieldMeshing::Deferred => Err(format!("`{name}`: its surface is still being meshed")),
+            // the refinement knows no solid, so its refusal is named here, as its setup's is (#614)
+            FieldMeshing::Now => {
+                let surface = FieldMesher::new(sk, si)?.finish()
+                    .map_err(|e| format!("`{name}`: {e}"))?;
+                Self::from_surface(sk, si, policy, unit, &surface)
+            }
         }
     }
     /// A static solid from its exact B-rep (`solid::Exact`): the B-rep meshed within the
