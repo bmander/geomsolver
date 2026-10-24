@@ -2,7 +2,7 @@
 
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use super::{Ast, Cond, ExprError, Measure, Op, CONSTANTS};
+use super::{Ast, Cmp, Cond, ExprError, Measure, Op, CONSTANTS};
 use crate::constraints::SpecKind;
 use crate::units::Dim;
 use std::collections::BTreeMap;
@@ -156,6 +156,19 @@ pub fn decide(c: &Cond, env: &BTreeMap<String, Aff>) -> Result<bool, ExprError> 
 
 /// `decide` over any `Env`.
 pub fn decide_in(c: &Cond, env: &dyn Env) -> Result<bool, ExprError> {
+    decide_by(c, env, Cmp::holds)
+}
+
+/// `decide_in` as a claim over values is judged (#596): each comparison kept within a hair of
+/// rounding (`Cmp::keeps`), never exactly.
+pub fn judge_in(c: &Cond, env: &dyn Env) -> Result<bool, ExprError> {
+    decide_by(c, env, Cmp::keeps)
+}
+
+/// `decide_in`, each comparison of two numbers decided by `holds`.
+fn decide_by(c: &Cond, env: &dyn Env, holds: fn(Cmp, f64, f64) -> bool)
+    -> Result<bool, ExprError>
+{
     Ok(match c {
         Cond::Cmp(op, a, b) => {
             let (x, y) = (ev(a, env, None)?, ev(b, env, None)?);
@@ -175,17 +188,17 @@ pub fn decide_in(c: &Cond, env: &dyn Env) -> Result<bool, ExprError> {
                     v.free.as_deref().unwrap_or("")
                 ))),
             };
-            op.holds(number(&x)?, number(&y)?)
+            holds(*op, number(&x)?, number(&y)?)
         }
         Cond::And(a, b) => {
-            let (p, q) = (decide_in(a, env)?, decide_in(b, env)?);
+            let (p, q) = (decide_by(a, env, holds)?, decide_by(b, env, holds)?);
             p && q
         }
         Cond::Or(a, b) => {
-            let (p, q) = (decide_in(a, env)?, decide_in(b, env)?);
+            let (p, q) = (decide_by(a, env, holds)?, decide_by(b, env, holds)?);
             p || q
         }
-        Cond::Not(a) => !decide_in(a, env)?,
+        Cond::Not(a) => !decide_by(a, env, holds)?,
         Cond::In(a, b) => {
             return Err(ExprError::from(format!(
                 "`{a} in {b}` asks what `{a}` stands for, which is no number"

@@ -186,6 +186,47 @@ impl Dim {
         text
     }
 
+    /// **A value as a reader is told it** (#596): `value`, of this dimension in the document's
+    /// own units, to `figures` significant figures and in the unit it reads in — a power of length
+    /// and angle in the document's unit and degrees (`12 mm`, `144 mm^2`, `30 deg`), anything
+    /// with a mass, a time or a current in SI (a design table's figures are), by the unit's name
+    /// where SI has one (`0.0864 N·m`) and by its bases where not (`3 m^2·kg`); a plain number
+    /// bare.
+    pub fn reading(self, value: f64, units: Units, figures: usize) -> String {
+        let (v, unit) = self.read_in(value, units);
+        let fig = crate::json::fmt_g(v, figures);
+        if unit.is_empty() { fig } else { format!("{fig} {unit}") }
+    }
+
+    /// `reading`'s number and unit apart: `value` in the unit it reads in, and that unit's name
+    /// (empty for a plain number).
+    pub fn read_in(self, value: f64, units: Units) -> (f64, String) {
+        if self.is_scalar() {
+            return (value, String::new());
+        }
+        if self.mass.is_zero() && self.time.is_zero() && self.current.is_zero() {
+            return (value, self.spelt(units.name()));
+        }
+        let si = units.to_si(value, self);
+        match SI.iter().find(|&&(_, d)| d == self) {
+            Some((unit, _)) => (si, unit.to_string()),
+            None => (si, self.spelt("m")),
+        }
+    }
+
+    /// The bases a value is in, a length in `length`: `mm^2`, `m^2·kg`, `deg·mm^-1`.
+    fn spelt(self, length: &str) -> String {
+        let bases = [length, "deg", "kg", "s", "A"];
+        let parts: Vec<String> = self.powers().into_iter().zip(bases)
+            .filter(|((power, _), _)| !power.is_zero())
+            .map(|((power, _), unit)| match power == Rat::ONE {
+                true => unit.to_string(),
+                false => format!("{unit}^{}", power.text()),
+            })
+            .collect();
+        parts.join("·")
+    }
+
     pub fn is_scalar(self) -> bool {
         self == Dim::SCALAR
     }

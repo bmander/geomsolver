@@ -669,6 +669,55 @@ pub fn measures_json(sk: &Sketch, measures: &[crate::program::MeasureStated]) ->
     ])).collect())
 }
 
+/// **A number the document names, as a reader is told it** (#596): `torque = 0.0864 N·m`, to
+/// `READING_SIG` figures in the unit it reads in (`Dim::reading`).
+pub fn value_text(units: crate::units::Units, name: &str, v: &crate::flatten::Valued) -> String {
+    format!("{name} = {}", v.dim.reading(v.value, units, crate::expr::READING_SIG))
+}
+
+/// **A claim over values, judged** (#596): `claim torque >= 2Nm — refuted: torque = 0.0864 N·m`,
+/// what it says, whether it is a theorem or refuted (a value is worked out before the solve, so
+/// it is never consuming), and each value it reads.
+pub fn value_claim_text(units: crate::units::Units, c: &crate::flatten::ValueClaimed) -> String {
+    let verdict = if c.holds { "theorem" } else { "refuted" };
+    let reads: Vec<String> = c.reads.iter().map(|(n, v)| value_text(units, n, v)).collect();
+    if reads.is_empty() {
+        format!("claim {} — {verdict}", c.text)
+    } else {
+        format!("claim {} — {verdict}: {}", c.text, reads.join(", "))
+    }
+}
+
+/// **`value_text` as JSON** (#596): each name to its `value` in the unit it reads in, that
+/// `unit` (empty for a plain number), its `dim` and its `text`.
+pub fn values_json<'v>(
+    units: crate::units::Units,
+    values: impl IntoIterator<Item = (&'v String, &'v crate::flatten::Valued)>,
+) -> Json {
+    Json::Obj(values.into_iter().map(|(name, v)| {
+        let (value, unit) = v.dim.read_in(v.value, units);
+        (name.clone(), object([
+            ("value", value.into()),
+            ("unit", unit.as_str().into()),
+            ("dim", v.dim.name().into()),
+            ("text", value_text(units, name, v).into()),
+        ]))
+    }).collect())
+}
+
+/// **`value_claim_text` as JSON** (#596): per claim over values, in the order walked, its
+/// `claim` as written, `holds`, the `values` it reads (`values_json`) and its `text`.
+pub fn value_claims_json(units: crate::units::Units, claims: &[crate::flatten::ValueClaimed])
+    -> Json
+{
+    Json::Arr(claims.iter().map(|c| object([
+        ("claim", c.text.as_str().into()),
+        ("holds", c.holds.into()),
+        ("values", values_json(units, c.reads.iter().map(|(n, v)| (n, v)))),
+        ("text", value_claim_text(units, c).into()),
+    ])).collect())
+}
+
 /// **The parameters a drawing declares** (#398 L), for a timeline: each by name, what it is and
 /// the interval it runs over, its ends in the units a person reads (degrees for an angle) and as
 /// read.  No march: that is `parameter_json`'s, asked of one parameter.

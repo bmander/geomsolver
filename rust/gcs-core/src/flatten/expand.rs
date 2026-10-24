@@ -134,7 +134,8 @@ impl<'a> Walk<'a> {
                 Pass::Along(_) if !relation => continue,
                 Pass::Made
                     if relation
-                        || matches!(st.kind, StmtKind::ClaimOver(_) | StmtKind::Minimize(_) | StmtKind::Measured(_)) =>
+                        || matches!(st.kind, StmtKind::ClaimOver(_) | StmtKind::Minimize(_)
+                            | StmtKind::Measured(_) | StmtKind::ValueClaim(_)) =>
                 {
                     continue
                 }
@@ -164,6 +165,8 @@ impl<'a> Walk<'a> {
                     self.walk_decl(d, st, scope, vals, path, &prefix)
                 }
                 StmtKind::Param(_) | StmtKind::Group(_) => {} // worked out above, before the walk
+                // a claim over values: decided here, over the numbers in scope (#596)
+                StmtKind::ValueClaim(c) => self.value_claim(c, vals, scope, &prefix),
                 StmtKind::Instance(inst) => {
                     if self.walk_instance(inst, st, scope, vals, path, depth).is_break() {
                         return;

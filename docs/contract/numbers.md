@@ -59,6 +59,23 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **turn**, so `tau == 2 * pi * 1rad`; radians are written `* 1rad`, not `* 180 / pi`.  Storing
   the unit costs the solve nothing, and `graft::paste` converts between documents' units
   (`Sketch::rescale`, written out by kind: a `Param` cannot say it is a length).
+- **A value is read back, and claimed** (#596, [0.183]).  Each definition a body works out to a
+  number (`ratio := teeth / 12 * 4`, a `param`, a group's member) is recorded under its absolute
+  name (`t1.m` in an instance) as a `flatten::Valued` (its value and `Dim`) by
+  `Walk::named_values`, never in a curve's compile over its variables (`sym`), never a hidden
+  copy's (`#3.0.w`), and never one affine in an unknown, which is the solve's to give; it reaches
+  `Elaborated::values`.  `Dim::reading` says one to `READING_SIG` figures in the unit it reads in
+  (`Dim::read_in`): a power of length and angle in the document's unit and degrees (`144 mm^2`),
+  anything with a mass, a time or a current in SI — the `SI` table's name where it has one
+  (`0.0864 N·m`), its bases where not (`2 m^2·kg`) — so a figure says the same in every
+  document.  `claim COND` (`syntax::ValueClaim`, told from a relation claim by
+  `value_claim_ahead`: a number, a bracket, a sign or a function first, or arithmetic or a
+  comparison past the first reference) is judged in the walk where it stands, once per prefix
+  (`Walk::claims_judged`), by `flatten::values::claimed`: `when`'s rules for what a name may be
+  (E101, E040 for an unknown or a value over one, E103, E107) and `expr::judge_in`, each
+  comparison by `Cmp::keeps` (10⁻⁹ of the larger side) rather than `Cmp::holds`.  The verdict is
+  a `flatten::ValueClaimed` in `Elaborated::value_claims`, theorem or refuted, never consuming;
+  a refused one is a diagnostic and no verdict.  `tests/values.rs` is the gate.
 - **A number is named one way, and an unknown is declared** (issue #77; Solvent §3.4, §5, §6.3,
   [0.41]).  `w := 60` is a value; `param w := 60` (`ParamDecl::input`, a modifier the parser reads
   in `statements.rs::input`) marks one of the document's **inputs**, the only lines

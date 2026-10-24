@@ -912,6 +912,48 @@ does not hold; nothing drives it yet\n",
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// **A document's values are read** (#596): `--where` on a value says it in its unit, a claim
+/// over values is judged before the solve and said with what it reads — a refuted one a report,
+/// so the document still exits 0 — and `--json` gives both, as `values` and `valueClaims`.
+#[test]
+fn a_documents_values_are_read_and_claimed() {
+    let dir = std::env::temp_dir().join(format!("solventc-values-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("values.sv");
+    std::fs::write(&source,"\
+unit mm
+use std
+teeth := 48
+ratio := teeth / 12 * 4
+torque := 0.006Nm * ratio * 0.9
+claim torque >= 2Nm
+claim ratio == 16
+in std.front {
+  a := point
+  fix((0, 0)) a
+}
+").unwrap();
+    let path = source.to_str().unwrap();
+    let out = run(&[path, "--where", "ratio", "--where", "torque"]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    for line in [
+        "  ratio = 16\n",
+        "  torque = 0.0864 N·m\n",
+        "  claim torque >= 2Nm — refuted: torque = 0.0864 N·m\n",
+        "  claim ratio == 16 — theorem: ratio = 16\n",
+    ] {
+        assert!(said.contains(line),"{line}\n{said}");
+    }
+    assert!(!said.contains("names nothing there"),"{said}");
+    let json = run(&[path,"--json","--where","torque"]).stdout;
+    let json = String::from_utf8_lossy(&json).into_owned();
+    assert!(json.contains("\"values\"") && json.contains("\"unit\": \"N·m\"")
+            && !json.contains("\"teeth\"") && json.contains("\"valueClaims\"")
+            && json.contains("\"holds\": false"),"{json}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// **A driving deflection is said driven** (#510 S1): the library's sized cantilever solves to
 /// the depth its tip sinks 4mm at, and `solventc` says the requirement is driven and held, and
 /// the unknown it sized.
