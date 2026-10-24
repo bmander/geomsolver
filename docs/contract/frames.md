@@ -41,7 +41,12 @@ in the `in`s around its call, so it rides that frame by this same rule and is ca
 joint outside (`an_instance_in_a_frame_with_a_joint_rides_it`); it starts at that frame's pose
 (`views::instance_frames`).  At rest a riding point
 is drawn where it stands: `Sketch::world_point` reads no joint, so no relation naming no roll sees
-riding at all.  A point already riding keeps its path: drawn again on another is E060.
+riding at all.  A point already riding keeps its path: drawn again on another is E060.  A line
+(or anything drawn) declared in a spatial frame reads a part already drawn where it was declared
+— in a plane, or along a frame's axes — where it is, as a line in space does, and leaves its path
+alone (#624, `planes::member`): `std.ConeThrough` in a seated part, its lines through a point the
+part draws in its front (`a_seated_parts_cone_reads_a_point_drawn_in_its_front`); the parts'
+carriers must still agree.
 
 **A reading at a roll infers its carrier** (stage 4): where a reading leaves `under:` out, the
 motion is what its tool rides on, seen from the frame `seen_from:` names (`motions::riding`,

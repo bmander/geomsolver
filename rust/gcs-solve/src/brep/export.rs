@@ -525,6 +525,13 @@ pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {
     supply_each(sk,(0..sk.solids.len()).filter(|&i| sk.is_swept(i) && wanted(i)))
 }
 
+/// Swept solid `i` given its exact B-rep where this kernel builds one and it holds none yet: what a
+/// claim about it measures (#615), as a drawing reads it. A solid with no sweep reads its own build
+/// already, and a refused build leaves its field to be meshed.
+pub fn supply_exact_of(sk: &Sketch,i: usize) {
+    supply_each(sk,std::iter::once(i).filter(|&i| i < sk.solids.len() && sk.is_swept(i)))
+}
+
 /// Each of the swept `solids` given its exact B-rep where this kernel builds one and it holds none.
 fn supply_each(sk: &Sketch,solids: impl Iterator<Item=usize>) {
     // a sketch that leaves meshing to its host has its surfaces supplied by it
