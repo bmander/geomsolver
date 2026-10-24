@@ -367,7 +367,8 @@ fn the_drafted_handle_cuts_its_wheel() {
     let src = handle(&drafted);
     let (e, w) = solved(&src);
     let admitted = admit_body(&e.sketch, w, &Options::default()).unwrap_or_else(|f| panic!("{f}"));
-    let Class::Subtraction(found) = &admitted.sweeps()[0].class else { panic!("{:?}", admitted.sweeps()[0].class) };
+    let [sweep] = admitted.sweeps() else { panic!("one sweep") };
+    let Class::Subtraction(found) = &sweep.class else { panic!("{:?}", sweep.class) };
     let [slab] = found.slabs.as_slice() else { panic!("{} slabs", found.slabs.len()) };
     let (_, base) = &slab.stations[0];
     for (z, r) in &slab.stations {

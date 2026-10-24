@@ -279,21 +279,17 @@ impl Subtraction {
     fn drafted(&self,reach: [f64;2],h: f64,read: &(dyn Fn(f64,[P;2]) -> Result<SweptRegion,Failure>+Sync),boxed: &dyn Fn(f64) -> [P;2])
         -> Result<Vec<(f64,SweptRegion)>,Failure> {
         let at = stations(reach,STATIONS);
-        let mut first: Option<Vec<SweptRegion>> = None;
-        for (k,&grown) in GROWN.iter().enumerate() {
-            let bounds = boxed(grown);
-            let regions = match crate::par::map(&at,|&z| read(z,bounds)).into_iter().collect::<Result<Vec<_>,_>>() {
-                Ok(r) => r,
-                Err(e) if k == 0 => return Err(e),
-                Err(_) => continue,
-            };
-            if regions.iter().all(|r| r.matching(&regions[0]).is_some()) { return Ok(at.into_iter().zip(regions).collect()) }
-            first.get_or_insert(regions);
+        let within = |bounds: [P;2]| crate::par::map(&at,|&z| read(z,bounds)).into_iter().collect::<Result<Vec<_>,_>>();
+        let alike = |regions: &[SweptRegion]| regions.iter().all(|r| r.matching(&regions[0]).is_some());
+        // the first box's refusal is the slab's; a grown box that refuses is passed over
+        let bounds = boxed(GROWN[0]);
+        let first = within(bounds)?;
+        if alike(&first) { return Ok(at.into_iter().zip(first).collect()) }
+        if let Some(regions) = GROWN[1..].iter().filter_map(|&grown| within(boxed(grown)).ok()).find(|r| alike(r)) {
+            return Ok(at.into_iter().zip(regions).collect())
         }
         // the first box's stations: the last alike to the first and the next, and where between
-        let first = first.expect("the first box was read");
         let j = (1..first.len()).find(|&j| first[j].matching(&first[0]).is_none()).expect("a station unlike the first");
-        let bounds = boxed(1.);
         let unlike = |z: f64| read(z,bounds).map_or(true,|r| r.matching(&first[0]).is_none());
         let [mut lo,mut hi] = [at[j-1],at[j]];
         for _ in 0..2 {
@@ -302,8 +298,8 @@ impl Subtraction {
             let i = marks.iter().position(|&m| m).unwrap_or(zs.len());
             (lo,hi) = (if i == 0 { lo } else { zs[i-1] },if i == zs.len() { hi } else { zs[i] });
         }
-        let member = self.members.iter().find(|m| m.drafted.is_some() && m.reaches(h)).expect("a drafted member");
-        let d = member.drafted.as_ref().expect("drafted");
+        let (member,d) = self.members.iter().find_map(|m| m.drafted.as_ref().filter(|_| m.reaches(h)).map(|d| (m,d)))
+            .expect("a drafted member");
         let depth = |z: f64| (z-d.at)*d.sign;
         let shape = |r: &SweptRegion| {
             let (n,holes) = (r.loops.len(),r.loops.iter().filter(|l| l.area < 0.).count());
