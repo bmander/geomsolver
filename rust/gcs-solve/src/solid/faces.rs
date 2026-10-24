@@ -13,10 +13,12 @@ use std::collections::BTreeSet;
 
 mod body;
 mod layers;
+mod meets;
 mod path;
 pub(crate) use body::along_run;
 pub use body::{reading, BodyFaces, Read, Reading};
 pub use layers::layer;
+pub use meets::Meets;
 pub use path::{face_paths, face_source, FacePath, FaceSource};
 pub use path::same_step;
 pub(crate) use path::face_primitive;

@@ -323,25 +323,27 @@ impl Parser {
     }
 
     fn compared(&mut self) -> Result<Cond, String> {
-        // `c in B` (#267): a name among the things another names, which only the elaborator
-        // can tell — so both sides are names, and neither is arithmetic
+        // `c in B` (#267): a name among the things another names, and `a meets b` (#625): two
+        // faces sharing a point, which only the elaborator can tell — so both sides are names,
+        // and neither is arithmetic
         if let (Tok::Ident(x), Some(Tok::Ident(w))) =
             (self.peek().clone(), self.toks.get(self.pos + 1).map(|t| &t.0))
         {
-            if w == "in" {
+            if w == "in" || w == "meets" {
+                let w = w.clone();
                 self.next();
                 self.next();
                 let Tok::Ident(y) = self.peek().clone() else {
-                    return Err(format!("expected a name after `{x} in` at {}", self.here()));
+                    return Err(format!("expected a name after `{x} {w}` at {}", self.here()));
                 };
                 self.next();
-                return Ok(Cond::In(x, y));
+                return Ok(if w == "in" { Cond::In(x, y) } else { Cond::Meets(x, y) });
             }
         }
         let lhs = self.expr()?;
         let Tok::Cmp(op) = *self.peek() else {
             return Err(format!(
-                "expected a comparison (`<`, `<=`, `>`, `>=`, `==` or `!=`) or `in` at {}",
+                "expected a comparison (`<`, `<=`, `>`, `>=`, `==` or `!=`), `in` or `meets` at {}",
                 self.here()
             ));
         };

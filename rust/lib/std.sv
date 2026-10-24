@@ -458,12 +458,13 @@ component FlatFill(a: face, b: face, la: Length, lb: Length) symmetric((a, la), 
 // `A round(r: 3mm) B`: every edge where a face of `A` meets a face of `B` rounded by a ball of radius
 // `r` — taken away where it is convex, filled where it is concave, read off the geometry — and
 // where three such edges meet, the ball touching all three.  Faces that do not meet make
-// nothing.  Its material acts on the body the faces are of, as made by the terms that do not
-// read it.  `round(r) X` is every edge among `X`'s faces.
+// nothing, so only faces that meet are paired (`meets`, #625): a body's faces are many, and
+// three at a time they are more.  Its material acts on the body the faces are of, as made by
+// the terms that do not read it.  `round(r) X` is every edge among `X`'s faces.
 A round(r) B := {
   repeat a in A {
     repeat b in B {
-      when b != a {
+      when b != a and b meets a {
         run := Run(a, b, r: r)
         taken := solid(run)
         taken cut A.body
@@ -471,7 +472,7 @@ A round(r) B := {
         filled := solid(fill)
         filled union A.body
         repeat c in A {
-          when c in B and c != a and c != b {
+          when c in B and c != a and c != b and c meets a and c meets b {
             corner := Corner(a, b, c, r: r)
             cornered := solid(corner)
             cornered cut A.body
@@ -491,7 +492,7 @@ round(r) X := X round(r: r) X
 A chamfer(d) B := {
   repeat a in A {
     repeat b in B {
-      when b != a {
+      when b != a and b meets a {
         flat := Flat(a, b, la: d, lb: d)
         taken := solid(flat)
         taken cut A.body

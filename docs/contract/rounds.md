@@ -23,9 +23,15 @@ over two of its own sets (`set` formals, #191; `p inside S(…)` may be written 
 **Each edge and corner once** (#415, [0.148]): the six sets are `symmetric` in their faces
 (`Flat`'s each with its leg, `symmetric((a, la), (b, lb))`), so the words — which reach an edge
 as `(a, b)` and `(b, a)` and a corner in six orders — make one set, one solid and one cut or fill
-of each (`flatten::same`, [language.md](language.md)): `rounds/bores.sv` is 240 regions, not 1152.
+of each (`flatten::same`, [language.md](language.md)): `rounds/bores.sv` is 18 regions, not 52
+(240, not 1152, before the words paired only faces that meet).
 `tests/symmetric.rs` holds the count and the block rounded and chamfered all over to the words
 written without `symmetric`.
+**Only faces that meet** (#625, [0.186]): the words pair `a` and `b` only where `b meets a`, and
+round a corner only of three that each meet the other two ([language.md](language.md)), so a body
+whose faces are many — every operand's listed, eaten or not — makes copies for its edges and
+corners, not for the cube of its faces: #625's web cut by four turned spokes lists 28 faces and
+rounds 16 edges and no corner (`tests/meets.rs`).
 A set's `S.surface` is the set with each bound made an equality (`Written::equality`,
 `sets::surface_of`; a grown side's is the offset surface); a distance from a one-bound region's
 surface reads it (`sets::one_bound`); a set measured from is applied under `PredWalk::held`, so each
@@ -302,8 +308,9 @@ is empty). Elaboration of many face-reading regions is linear: `flatten::Walk::r
 plain declared name without building the alias table, and
 `region::in_general_position`/`folded` key a face-reading region on `reads_own` and the strata
 (`faces::cached`'s `Arc`s), never `reads` (which walks the body's every other round). Nor is a
-body rounded all over quadratic in its rounds (`rounds/bores.sv`: nine faces, 240 regions; 1152, one
-for each order of every pair and triple, before #415): a
+body rounded all over quadratic in its rounds (`rounds/bores.sv`: nine faces, 18 regions, one for
+each pair and three that meet, #625; 240 for every pair and three, and 1152, one for each order,
+before #415): a
 `when` reads only the aliases its condition names (`flatten::resolve::Lazy`, the table's own
 rule per key; each answer held to the whole table under debug assertions, on a walk of a few
 hundred aliases), and so does each pass over the blocks set aside; a

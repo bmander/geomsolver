@@ -574,7 +574,9 @@ at all where it does not, decided over the numbers in scope before the solve: co
 `<=`, `>`, `>=`, `==`, `!=`) of two numbers of one dimension — `relief > 0mm`, never `relief > 0`
 (E103) — joined by `and`, `or` and `not`. Two drawn things compare by **identity**: `a != b`
 holds where the names stand for different things (a formal is what its call gave), and `c in B`
-where `c` is one of the faces `B` names (1.14). There is no copy: what the body declares keeps
+where `c` is one of the faces `B` names (1.14); `a meets b` where two faces of a solid share an
+edge or a corner, read where the drawing is seeded (a pair it reads apart that the solve brings
+together is E080). There is no copy: what the body declares keeps
 its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
 an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
 index, a trailing joint. `when` is the one conditional: write a switch as `when flag == 1 { … }`,
@@ -2052,6 +2054,7 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 | `meeting := { q \| q coincident a.surface; q coincident b.surface; q inside crease.ends }` | where the surfaces meet, short of where the edge ends |
 | `repeat a in A { repeat b in B { when b != a { … } } }` | a copy per pair of faces, each made where the two differ |
 | `when c in B and c != a { … }` | made where `c` is one of `B`'s faces and not `a` |
+| `when b != a and b meets a { … }` | made where the two faces share an edge or a corner |
 | `taken := solid(run)`, `taken cut A.body` | a solid of a set, cut from the body `A`'s faces are of |
 
 `.ends`, `.surface` and `.body` are members only past a set or a solid where nothing declared

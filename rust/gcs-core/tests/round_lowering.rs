@@ -60,14 +60,14 @@ fn lowered(e: &Elaborated) -> (usize, usize) {
 }
 
 /// `block.sv`: its near rim's four runs mitred at the corners (each a prism whose face is a
-/// cylinder), its far rim's four flats; the near face's run against the far face, and every fill
-/// at a convex edge, hold nowhere. The volume is the block less the four runs' sections along the
+/// cylinder), its far rim's four flats; every fill at a convex edge holds nowhere, and the near
+/// face and the far face, which do not meet, make nothing (#625). The volume is the block less the four runs' sections along the
 /// rim, less what two runs crossing at each corner take twice (`∫ s(z)² dz`, `(5/3 − π/2) r³`), and
 /// the same for the flats (`d³/3` each corner).
 #[test]
 fn the_blocks_rims_are_built_exactly() {
     let e = solved(include_str!("../../examples/rounds/block.sv"));
-    assert_eq!(lowered(&e), (8, 12));
+    assert_eq!(lowered(&e), (8, 8));
     let b = exported(&e, "block");
     let (r, d, rim) = (2.0, 1.0, 2.0 * (40.0 + 24.0));
     let near = (1.0 - PI / 4.0) * r * r * rim - 4.0 * (5.0 / 3.0 - PI / 2.0) * r * r * r;
@@ -222,7 +222,7 @@ fn a_run_cut_off_at_a_slant_by_the_face_it_ends_on() {
 fn a_leaning_rim_runs_out_at_every_corner() {
     let src = BLOCK.replace("fix((40, 24)) b2", "fix((30, 24)) b2");
     let e = solved(&format!("{src}block.near round(r: 2mm) block\n"));
-    assert_eq!(lowered(&e), (4, 6));
+    assert_eq!(lowered(&e), (4, 4));
     let b = exported(&e, "block");
     let (r, rim) = (2.0, 40.0 + 26.0 + 30.0 + 24.0);
     let whole = (40.0 + 30.0) / 2.0 * 24.0 * 12.0;

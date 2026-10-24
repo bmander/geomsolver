@@ -259,6 +259,26 @@ block over faces has no filter of its own: `repeat b in B if …` is a syntax er
 flag == 1`, never `repeat flag` — the count of zero or one named its copies (`sm[0]`), a `when`
 keeps the name (`sm`).
 
+**Faces that meet ([0.186], #625).** `a meets b` (`Cond::Meets`, made by `parse_condition_in`
+only, refused by `expr::decide`) holds where two faces of one solid share an edge or a corner of
+its stratum. The elaborator reads it as it names a solid's faces (`solids_and_surfaces`), where the
+drawing is seeded: `solid::faces::Meets::read` over `faces::cached`, each listed `FacePath` matched
+to its patches by route and face, beside the paths in `flatten::Listed` and read again only when
+the paths change. `expand::Asked::meets` answers it; faces of two solids, a face a round made that
+the stratum has not, and a body with a swept cut (no `Meets`) meet. A pair read apart that alone
+left a block out (the condition asked again with every pair meeting) is an `flatten::Apart` at the
+document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`, and
+`program::meets::apart` reads it again in `solid_diagnostics` where the drawing is solved: a pair
+that meets there is E080, once per statement and solid. `std.sv`'s `round` and `chamfer` pair
+only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the
+block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars, the pin
+seeded off its plate).
+
+**The expansion's limit is said once (#625).** A walk past `MAX_FLAT` statements says one E103
+at the root body's statement it was walking (`FaceState::at`), naming where in a module it had got
+to, and stops every body (`Walk::overflowed`); the elaborator builds nothing of the expansion
+(`Expansion::overflowed` clears `flat`), so no name the rest would have made is said missing.
+
 **`rate(x over s)` and `initially { … }` (§6.5 [0.119], §6.9 [0.116], #339 D2, D3):** both
 reserved (`syntax::words::OPENERS`).  A rate is an **operand** of a relation (`P::operand`,
 `rate_ahead`), recorded as `syntax::RateOf { op, over }` on the `Written` — the reference stays a

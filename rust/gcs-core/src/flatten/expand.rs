@@ -127,6 +127,9 @@ impl<'a> Walk<'a> {
         let lowered = self.valued_blocks(body);
         let body: &[Stmt] = lowered.as_deref().unwrap_or(body);
         for st in body {
+            if depth == 0 {
+                self.faces.at = st.span;
+            }
             // a set's body walked again for a tangency states its relations' derivatives and
             // makes nothing a second time, and one walked for what it makes states nothing (§6.21)
             let relation = matches!(st.kind, StmtKind::Relation(_));
@@ -141,12 +144,26 @@ impl<'a> Walk<'a> {
                 }
                 _ => {}
             }
+            // said once, at the document's statement that expands to them (#625): every body
+            // the walk is in stops here, and what is made of so much is no drawing
             if self.emitted() >= MAX_FLAT {
-                self.err(
-                    Code::E103,
-                    st.span,
-                    format!("more than {MAX_FLAT} statements once expanded"),
-                );
+                if !self.overflowed {
+                    self.overflowed = true;
+                    let at = self.faces.at;
+                    // where in a module the walk had got to (`modules::localize`'s words)
+                    let within = match self.prog.source_at(st.span.lo as usize) {
+                        (Some(k), local) if at != st.span => {
+                            let m = &self.prog.modules[k];
+                            let (line, col) = crate::syntax::line_col(&m.text, local as u32);
+                            format!(", {}:{line}:{col} reached", m.name)
+                        }
+                        _ => String::new(),
+                    };
+                    self.err(Code::E103, at, format!(
+                        "more than {MAX_FLAT} statements once expanded{within}: the drawing is cut \
+                         short, and nothing of it is built"
+                    ));
+                }
                 return;
             }
             match &st.kind {
@@ -1037,7 +1054,22 @@ impl<'a> Walk<'a> {
         // are its own
         if b.kind == BlockKind::When {
             let names = Asked::new(self, scope);
-            match super::values::condition(&b.count, vals, scope, self.units, &names) {
+            let decided = super::values::condition(&b.count, vals, scope, self.units, &names);
+            // faces read apart where the drawing is seeded that alone left the block out, to be
+            // read again where it is solved (#625)
+            let apart = names.apart.take();
+            let alone = matches!(decided, Ok(false)) && !apart.is_empty() && {
+                names.every.set(true);
+                matches!(super::values::condition(&b.count, vals, scope, self.units, &names),
+                    Ok(true))
+            };
+            drop(names);
+            if alone {
+                let at = self.faces.at;
+                self.faces.apart.extend(apart.into_iter()
+                    .map(|(solid, faces)| super::Apart { solid, faces, at }));
+            }
+            match decided {
                 Ok(true) => {
                     // a frame of its own over the numbers around it, which it shares (#405)
                     let mut sub = Vals::over(scope.vals.clone());
@@ -1058,6 +1090,7 @@ impl<'a> Walk<'a> {
                 scope: scope.clone(),
                 path: path.to_vec(),
                 depth,
+                at: self.faces.at,
             });
             self.out.push((st.clone(), path.to_vec(), scope.clone()));
             return;
@@ -1859,6 +1892,11 @@ struct Asked<'w, 'a> {
     walk: &'w Walk<'a>,
     scope: &'w Scope,
     alias: super::resolve::Lazy<'w, 'a>,
+    /// Every pair of faces `meets` read apart (#625): the solid, and each face by its name from it.
+    apart: std::cell::RefCell<Vec<(String, [String; 2])>>,
+    /// Whether every two faces are read as meeting: the condition asked again, to tell whether
+    /// the pairs read apart are what left the block out.
+    every: std::cell::Cell<bool>,
 }
 
 /// The most aliases a walk may have made for `Asked` to hold each answer to the walk's whole table
@@ -1868,7 +1906,22 @@ const CHECKED: usize = 512;
 
 impl<'w, 'a> Asked<'w, 'a> {
     fn new(walk: &'w Walk<'a>, scope: &'w Scope) -> Self {
-        Asked { walk, scope, alias: super::resolve::Lazy::new(walk) }
+        Asked {
+            walk,
+            scope,
+            alias: super::resolve::Lazy::new(walk),
+            apart: Default::default(),
+            every: Default::default(),
+        }
+    }
+
+    /// The solid a face is listed by and its name from that solid, by what the face stands for
+    /// (`disc.opening.rim`): the faces the elaborator gave the walk.
+    fn face<'s>(&'s self, abs: &'s str) -> Option<(&'s str, &'s str, &'s super::Listed)> {
+        self.walk.faces.given.iter().find_map(|(solid, listed)| {
+            let rest = abs.strip_prefix(solid.as_str())?.strip_prefix('.')?;
+            listed.paths.iter().any(|f| f.text() == rest).then_some((solid.as_str(), rest, listed))
+        })
     }
 
     /// `ask` of `name`, through the aliases read lazily.
@@ -1890,6 +1943,20 @@ impl super::values::Names for Asked<'_, '_> {
 
     fn faces(&self, name: &str) -> Option<Vec<String>> {
         self.ask(name, |r, alias| self.walk.faces_named(r, self.scope, alias))
+    }
+
+    /// Faces of one solid by its `Meets`, read where the drawing is seeded; faces of two, or of
+    /// one whose boundary does not say, as meeting.
+    fn meets(&self, a: &str, b: &str) -> Option<bool> {
+        let ((solid, ra, listed), (other, rb, _)) = (self.face(a)?, self.face(b)?);
+        if self.every.get() || solid != other {
+            return Some(true);
+        }
+        let met = listed.meets.as_ref().is_none_or(|m| m.meets(ra, rb));
+        if !met {
+            self.apart.borrow_mut().push((solid.to_string(), [ra.to_string(), rb.to_string()]));
+        }
+        Some(met)
     }
 
     fn running(&self, name: &str) -> bool {

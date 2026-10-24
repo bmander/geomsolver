@@ -25,6 +25,7 @@ mod rings;
 mod rounds;
 mod scenarios;
 mod measures;
+mod meets;
 mod beams;
 mod bound;
 mod mirrors;
@@ -100,6 +101,8 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
             diags.push(refuse(EntRef::new(crate::model::EntKind::Envelope, i), message));
         }
     }
+    // faces read apart where the drawing is seeded that meet where it is solved (#625)
+    diags.extend(meets::apart(sk, map));
     // a module's own place, where no statement of the document made it
     crate::modules::localize(p, &mut diags);
     diags
@@ -252,7 +255,7 @@ const FACE_PASSES: usize = 8;
 /// none, or solids a block runs over the faces of, named.
 enum Again {
     Refused(BTreeSet<String>),
-    Faces(BTreeMap<String, Vec<crate::solid::faces::FacePath>>),
+    Faces(BTreeMap<String, crate::flatten::Listed>),
 }
 
 /// The points whose seeds break a bound, or an orientation the document states (#157), carried

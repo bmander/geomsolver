@@ -204,6 +204,11 @@ fn decide_by(c: &Cond, env: &dyn Env, holds: fn(Cmp, f64, f64) -> bool)
                 "`{a} in {b}` asks what `{a}` stands for, which is no number"
             )))
         }
+        Cond::Meets(a, b) => {
+            return Err(ExprError::from(format!(
+                "`{a} meets {b}` asks whether two faces share a point, which is no number"
+            )))
+        }
     })
 }
 
