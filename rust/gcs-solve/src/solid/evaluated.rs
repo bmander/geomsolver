@@ -339,7 +339,14 @@ impl EvaluatedSolid {
         }
         match sk.field_meshing.get() {
             FieldMeshing::Deferred => Err(format!("`{}`: its surface is still being meshed", sk.solid_name(si))),
-            FieldMeshing::Now => Self::from_surface(sk, si, policy, unit, &FieldMesher::new(sk, si)?.finish()?),
+            FieldMeshing::Now => {
+                // the mesher's own refusal names no solid; what it refuses is this one's (#615)
+                let surface = FieldMesher::new(sk, si)?.finish().map_err(|e| {
+                    format!("`{}` could not be meshed from its material field: {e}",
+                            sk.solid_name(si))
+                })?;
+                Self::from_surface(sk, si, policy, unit, &surface)
+            }
         }
     }
     /// A static solid from its exact B-rep (`solid::Exact`): the B-rep meshed within the

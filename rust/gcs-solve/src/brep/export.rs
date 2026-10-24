@@ -376,16 +376,21 @@ pub fn supply(sk: &Sketch,body: usize,built: &Exact) {
 /// `supply_exact` for the swept objects `wanted` takes (by solid index): a report asked of one
 /// solid builds no other.
 pub fn supply_exact_where(sk: &Sketch,wanted: &dyn Fn(usize) -> bool) {
+    for job in sk.field_jobs().into_iter().filter(|j| wanted(j.solid)) { supply_exact_of(sk,job.solid) }
+}
+
+/// Swept solid `i` given its exact B-rep where this kernel builds one and it holds none yet, object
+/// or not: what a claim about it measures (#615), as a drawing reads an object's. A solid with no
+/// sweep reads its own build already, and a refused build leaves its field to be meshed.
+pub fn supply_exact_of(sk: &Sketch,i: usize) {
     // a sketch that leaves meshing to its host has its surfaces supplied by it
     if sk.field_meshing.get() != crate::solid::FieldMeshing::Now { return }
+    if i >= sk.solids.len() || !sk.is_swept(i) || sk.supplied_exact_solid(i).is_some() { return }
     let say = Say {stage:&|_: &str| {},mark:&|_| {}};
-    let mm = cad::millimetres(sk);
-    for job in sk.field_jobs().into_iter().filter(|j| wanted(j.solid) && sk.supplied_exact_solid(j.solid).is_none()) {
-        // admitted as a display is, which is looked at and not made
-        let admitted = cad::swept_operands(sk,job.solid).is_empty().then(|| admission::admit_body(sk,job.solid,&DISPLAY_ADMISSION).ok()).flatten();
-        let Ok(built) = exact(sk,job.solid,admitted.as_ref(),None,&say) else { continue };
-        sk.supply_exact_solid(job.solid,crate::solid::exact::named(built.solid,mm,[0.;3],Default::default()));
-    }
+    // admitted as a display is, which is looked at and not made
+    let admitted = cad::swept_operands(sk,i).is_empty().then(|| admission::admit_body(sk,i,&DISPLAY_ADMISSION).ok()).flatten();
+    let Ok(built) = exact(sk,i,admitted.as_ref(),None,&say) else { return };
+    sk.supply_exact_solid(i,crate::solid::exact::named(built.solid,cad::millimetres(sk),[0.;3],Default::default()));
 }
 
 /// The admission a display asks: a quarter of the export's samples each way, on both its grids. A

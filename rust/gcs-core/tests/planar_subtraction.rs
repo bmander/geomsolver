@@ -319,3 +319,21 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
     assert_eq!((d.code, d.at(e.text()).0), (Code::E080, 23), "{d:?}");
     assert!(d.message.starts_with("`space` sweeps `pyramid`, whose material the field does not read"), "{d:?}");
 }
+
+/// **A claim about a cut wheel is judged from its exact build** (#615): the radiator bot's star
+/// handle swept through its wheel, a document where nothing runs, and a field the mesher cannot
+/// protect the feature curves of.  The claim reads the B-rep the drawing reads, and the star at
+/// the drawing's pose sits in the pocket it cut: no gap, so `clear(0.1mm)` is refuted, measured
+/// within its uncertainty of nothing.
+#[test]
+fn a_claim_about_a_cut_wheel_reads_its_exact_build() {
+    let (e, wheel) = solved(include_str!("fixtures/star_wheel.sv"));
+    let [v] = &gcs_core::diagnose::judge_solids(&e.sketch)[..] else { panic!("one claim") };
+    assert!(e.sketch.supplied_exact_solid(wheel).is_some(), "the wheel is read from its B-rep");
+    assert_eq!(v.outcome(), gcs_core::diagnose::SolidOutcome::Refuted, "{v:?}");
+    let i = v.measurement().and_then(|m| m.interval()).unwrap_or_else(|| panic!("{v:?}"));
+    assert!(i.lower() <= 0.0 && 0.0 <= i.upper() && i.upper() < 0.1, "{i:?}");
+    let text = gcs_core::report::solid_claim_text(v);
+    assert!(text.starts_with("claim wheel clear(0.1mm) star — refuted, measured "), "{text}");
+    assert!(!text.contains("poses") && !text.contains("unresolved"), "{text}");
+}

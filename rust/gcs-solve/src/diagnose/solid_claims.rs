@@ -171,7 +171,16 @@ enum Poses {
 /// What the claim in hand reads once, before its first pose.
 fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     use crate::model::SolidDef;
-    let Some(sw) = &c.over else { return Poses::Current };
+    // a swept operand measured where the drawing stands reads its exact B-rep where this kernel
+    // builds one, as the drawing's own reading of it does, and its field only where it is refused
+    // (#615): the field's mesher may not resolve a body that builds exactly
+    let exact = || {
+        for i in [c.a as usize, c.b as usize] { crate::brep::export::supply_exact_of(sk, i) }
+    };
+    let Some(sw) = &c.over else {
+        exact();
+        return Poses::Current;
+    };
     let Some(m) = sw.motion() else { return Poses::Solved };
     let placed: Vec<(usize, f64)> = sk.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
         SolidDef::Placed { motion, at, .. } if *motion == m => Some((i, at.value)),
@@ -196,6 +205,7 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     let Some((a_moves, at)) = rigid else { return Poses::Replaced { scratch: sk.clone(), placed } };
     let policy = crate::solid::ApproximationPolicy::from_unit(crate::solid::REPORT_UNIT);
     let read = || -> Result<Poses, String> {
+        exact();
         let family = crate::motion::Family::read(sk, m as usize)?;
         let home = family.at(at)?.inverse();
         let (a, b) = (sk.evaluated_solid(a, policy)?, sk.evaluated_solid(b, policy)?);
