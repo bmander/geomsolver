@@ -238,6 +238,76 @@ fn a_volume_sizes_a_hole() {
     }
 }
 
+/// A stepped shaft turned about its axis, its shoulder rounded, its barrel's radius `R` an
+/// unknown: no prism, so its exact boundary is refined and filled (#567).
+pub const TURNED: &str = "unit mm
+use std (horizontal, vertical)
+r := 12mm
+rho := 4mm
+shoulder := 60mm
+L := 160mm
+param R: Length hint(20mm)
+steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
+in std.front {
+  o := point
+  a := point hint((20, 0))
+  b := point hint((20, 60))
+  f := point
+  c := point
+  g := point
+  h := point
+  k := point
+  fix((0mm, 0mm)) o
+  o horizontal a
+  o distance(R) a
+  a vertical b
+  b horizontal f
+  fix((r + rho, shoulder)) f
+  fix((r + rho, shoulder + rho)) c
+  fix((r, shoulder + rho)) g
+  fix((r, L)) h
+  fix((0mm, L)) k
+  base := line(o, a)
+  barrel := line(a, b)
+  step := line(b, f)
+  round := arc(center: c, start: g, end: f) hint(r: rho)
+  neck := line(g, h)
+  head := line(h, k)
+  spine := line(k, o)
+  section := face(base, barrel, step, round, neck, head, spine)
+}
+shaft := solid(section, about: std.z) of steel
+";
+
+/// **A volume sizes a turned shaft's radius** (#567, M3): a solid of revolution is no prism, its
+/// exact boundary refined and filled once where the drawing stands and its boundary's nodes moved
+/// by its sheets — its barrel's cylinder, its step's and its base's planes as the radius grows —
+/// so `volume(V) shaft` is a row, and the solve finds the barrel's radius at which the shaft holds
+/// `V`: `R = √((V − V_neck − V_round) / (π s))`, the neck's `π r² (L − s)` and the round's corner
+/// by Pappus, within 1e-4 — the mesh's quadratic approximation of its curved faces — leaving no
+/// freedom; and its mass claimed beside it is kept and refuted on its sides.
+#[test]
+fn a_volume_sizes_a_turned_shafts_radius() {
+    use std::f64::consts::PI;
+    // the round's corner: the square of its radius beside the neck less the quarter disc, turned
+    let round = 2.0 * PI * 14.0 * 16.0 - 2.0 * PI * (16.0 - 16.0 / (3.0 * PI)) * 4.0 * PI;
+    for v in [115000.0, 130000.0] {
+        let lines = format!("volume({} * 1cm^3) shaft\nclaim mass(<= 1.1kg) shaft\n\
+                             claim mass(>= 1.1kg) shaft\n", v / 1000.0);
+        let (e, mut sk) = sized(&format!("{TURNED}{lines}"));
+        let rows: Vec<_> = sk.constraints.iter().filter(|c| c.kind == CKind::Volume).collect();
+        assert_eq!(rows.len(), 1);
+        let want = ((v - PI * 144.0 * 100.0 - round) / (PI * 60.0)).sqrt();
+        let got = unknown(&sk, "R");
+        assert!((got - want).abs() <= 1e-4 * want, "{v}: {got} against {want}");
+        assert_eq!(crate::common::dof(&mut sk), 0);
+        let said = said(&e, &sk);
+        assert!(said[0].ends_with("held"), "{}", said[0]);
+        assert!(said[1].ends_with("claimed <= 1.1kg, kept"), "{}", said[1]);
+        assert!(said[2].ends_with("claimed >= 1.1kg, refuted"), "{}", said[2]);
+    }
+}
+
 /// **The corpus's cantilevers claim their mass of the drawing** (`analysis/cantilever.sv`, a solid,
 /// and `analysis/cantilever_frame.sv`, a frame): each `claim mass(ρ L b h) …` is kept, its value
 /// `ρ L b h` to 1e-9, with nothing for its error.

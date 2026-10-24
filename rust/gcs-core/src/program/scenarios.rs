@@ -194,6 +194,7 @@ pub(super) fn drive(
     diags: &mut Vec<Diag>,
 ) {
     use crate::constraints::{Arg, CKind, Constraint};
+    stand(sk, scenarios);
     let mut added = false;
     for s in scenarios.iter_mut() {
         let mut index: Option<i64> = None;
@@ -246,6 +247,33 @@ pub(super) fn drive(
     // the unknowns the frames' sections are read over are bound once the rows read them
     if added {
         crate::expr::evaluate(sk);
+    }
+}
+
+/// **A drawing whose seeds leave a solid unbuilt stands where it solves before its rows are made**
+/// (#567): a driving row over a filled body is meshed where the drawing stands, off the body's
+/// exact boundary, which a drawing that stands only at its seeds may not close — the engine's rod,
+/// seeded view by view, until its views are solved together.  Where a driving deflection of a
+/// point compiles no row where the drawing stands and a solid made of a material is not built
+/// there, a copy of the drawing is solved, and where that settles the drawing stands where it did,
+/// so the rows are made — and their meshes moved by the solve — from there.  Natively alone: the
+/// page's core drives no filled body (`bodies::DRIVES_FILLED`).
+fn stand(sk: &mut Sketch, scenarios: &[Stated]) {
+    // the page's core drives no filled body, so it has none to stand for
+    let wanted = crate::bodies::DRIVES_FILLED && scenarios.iter().any(|s| s.scenario.requirements.iter().any(|r| {
+        r.grade() == Grade::Driving && r.output == Output::Deflection && r.along.is_some()
+            && matches!(&r.of, Applied::Ent(p) if p.kind == EntKind::Point)
+            && !drives(sk, &s.scenario, r)
+    }));
+    let unbuilt = || (0..sk.solids.len()).any(|s| {
+        sk.solids[s].material.is_some() && crate::solid::faces::BodyFaces::whole(sk, s).is_err()
+    });
+    if !wanted || !unbuilt() {
+        return;
+    }
+    let mut stood = sk.clone();
+    if crate::solve::solve(&mut stood, crate::solve::SolveOpts::default()).success {
+        sk.set_x(&stood.get_x());
     }
 }
 

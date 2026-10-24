@@ -2144,7 +2144,8 @@ scenario tip_load {
   line, sizing an unknown the area reads (`A: b * h`) or placing a joint, with no support and no
   load; beside a driving deflection it sizes a second unknown, as `weighed_cantilever.sv` finds a
   section's width and depth, and alone it sizes a whole frame (`mass_budget_frame.sv`); over a
-  prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
+  prism it sizes a hole (`lightened_web.sv`) or places a point (`sized_gusset.sv`), and over a
+  turned or cut solid moves its faces (0.180). `claim mass(<= 2kg) arm` (`>=`, or a number alone) is judged after the
   solve; a bound is a claim's alone. `solventc` prints each: `mass(arm) is 10kg: driven == 10kg,
   held`. Any other driving requirement (`mode(arm, 1) == 30Hz`) is only judged yet. The library
   shows each: `sized_cantilever.sv` (a depth),
@@ -2251,6 +2252,13 @@ scenario press {
   a prism read so is a row, as a region's is, its face's nodes moved with the drawing and the
   solid's stacked over them.  The library's `sized_plank.sv` finds a plank's width so, bent across
   its own plane, which no reading in that plane can.
+- **A driving deflection sizes a filled body** (0.180): a turned, united or cut solid's point is a
+  row too, its boundary's nodes moved by the surfaces its faces lie on — a prism's caps and sides,
+  a full turn's faces — and the rest following.  `solventc` solves it on a coarse mesh first and
+  finishes on the reading's own; the page judges it, as a claim, and says `solventc` drives it.
+  `sized_conrod.sv` finds the engine's rod's web thickness so (`ConRod(pin, bore, wt: wt)`, `param
+  wt: Length hint(5mm)`).  A face of a round, a sweep, a placed copy, a drafted prism or a partial
+  turn moves with nothing yet: E040.  `volume(v) shaft` of a turned shaft sizes it the same way.
 - **The library shows the rest**: `pressed_panel.sv` (a pressure on a cap, across the plane),
   `flat_bar_strut.sv` (buckling across the thickness), `cantilever_plate.sv` (modes out of the
   plane: bending, twisting), `turned_shaft.sv` (a turned solid, a round making its stress
@@ -2261,7 +2269,8 @@ scenario press {
 | `pinned plate.left along: tilted`, off the world's axes | no answer — not read under yet |
 | `pressure tail.right p`, `tail` united into `bar` | no answer — name it from the body, `bar.tail.…` |
 | `claim buckling(plate) >= 1` under a pull | no answer — the loads press nothing |
-| `deflection(p, along: d) == v` in a turned solid | judged, not driven — a prism's row alone |
+| `deflection(p, along: d) == v` in a drafted or rounded solid | E040 — its face … is not moved |
+| `deflection(p, along: d) == v` in a turned solid, in the page | judged — `solventc` drives it |
 
 ### 1.15 Frames that move, and generated geometry
 

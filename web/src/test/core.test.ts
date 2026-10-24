@@ -1358,6 +1358,21 @@ test('a document says what its load scenarios answer, a claim refuted as well as
   plain.dispose();
 });
 
+test('a filled body\'s drive is solventc\'s, and the page says so', () => {
+  // the turned shaft's head driven to move 0.03mm (#567): natively a row moved by the shaft's
+  // sheets, in the page's core none — the page solves on its own thread — and the requirement is
+  // judged after the solve, in the core's words saying who drives it
+  const src = examples.source('turned_shaft')
+    .replace('  claim deflection(k, along: std.z) >= 0mm', '  deflection(k, along: std.z) == 0.03mm');
+  const doc = Document.read(src);
+  assert.ok(doc.ok, JSON.stringify(doc.diagnostics));
+  assert.ok(solve(doc.sketch).success);
+  const [answer] = doc.scenarios()[0].answers;
+  assert.match(answer.text,
+    /^scenario `pull`: deflection\(k, along: std\.z\) is .*: stated == 0\.03mm, which (holds|does not hold); `solventc` drives it, the page does not: a filled body's drive solves its mesh at every step$/);
+  doc.dispose();
+});
+
 test('a requirement out of reach is said with why, where the page diagnoses it', () => {
   // the drilled plate loaded ten times over sinks least with no hole at all, far more than its
   // sag (#510 P7): the solve fails, and diagnosed at the pose the drawing had — what a page puts

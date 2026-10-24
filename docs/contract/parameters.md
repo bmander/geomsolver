@@ -29,7 +29,7 @@ where a rule came from.
   `P::param_over`. It says what it is (`Length`, `Angle` or `Scalar`; none, or `Int`, is a syntax
   error), takes no `:=` and no `hint(…)` (syntax errors: it is neither a value nor an unknown),
   and stands where a `param` may (the parser refuses one in a component or a block). A module's is
-  its drawing's (#593, [0.180]): `modules::link` leaves it out of the root it keeps, as it leaves
+  its drawing's (#593, [0.181]): `modules::link` leaves it out of the root it keeps, as it leaves
   the preview, so a part declaring one is `use`d as it stands, and no table of a module's numbers
   (`module_params`, `file_number_names`, an import's `defines`) has it — `tests/modules.rs`'s
   `a_modules_parameter_is_left_out_with_its_drawing`. The flattener (`Walk::parameter_axis`,
