@@ -394,19 +394,15 @@ fn boolean_known(a: &Brep,known: Option<&Known>,b: &Brep,op: Op,tol: f64) -> Res
     let Arranged {solids,located,pool,out,pieces,clear} = arrange(a,known,b,tol)?;
     let mut kept: Vec<Face> = Vec::new();
     let mut handed = Known::default();
-    // the pieces each face is split into: a face carried whole is one
-    let mut count: [Vec<usize>;2] = [vec![0;a.faces.len()],vec![0;b.faces.len()]];
-    for &(s,fi,_) in &pieces { count[s][fi] += 1; }
     for (s,fi,piece) in pieces {
         let f = &solids[s].faces[fi];
-        // a face clear of the other solid is whole and outside it: no point of it need be placed
-        // (a large solid's faces far from a small one, the most of them, #589)
+        // a face clear of the other solid is one piece, whole and outside it: no point of it need
+        // be placed (a large solid's faces far from a small one, the most of them, #589)
         if clear[s][fi] {
-            if matches!(op,Op::Union) || op == Op::Cut && s == 0 {
+            if op == Op::Union || op == Op::Cut && s == 0 {
                 kept.push(piece_face(f,&piece,false));
-                let whole = count[s][fi] == 1;
-                handed.boxes.push(whole.then(|| located[s].face_box(fi)));
-                handed.checked.push(whole && s == 0 && known.is_some_and(|k| k.checked.get(fi) == Some(&true)));
+                handed.boxes.push(Some(located[s].face_box(fi)));
+                handed.checked.push(s == 0 && known.is_some_and(|k| k.checked.get(fi) == Some(&true)));
             }
             continue
         }
@@ -472,7 +468,7 @@ fn piece_face(f: &Face,piece: &[Vec<Half>],flip: bool) -> Face {
 }
 
 /// The faces of `a` and `b` split where the other crosses them (`Arranged`).
-/// (`known`: what a run's last step knows of `a`'s faces, their boxes taken from it.)
+/// `a`'s faces' boxes are taken from `known` where it has them (`Known`).
 fn arrange<'a>(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Result<Arranged<'a>,String> {
     // `SOLVENT_BREP_DEBUG` narrates every pair of faces: the curves, the spans kept and dropped
     let debug = super::debug();
@@ -518,7 +514,7 @@ fn arrange<'a>(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Result
             let sag = c.speed()*(e.t[1]-e.t[0])/32.;
             // an edge whose enclosure misses the box the other's faces fill meets none of them
             // (its samples lie within it), and is not sampled (#589); a trace's enclosure is
-            // measured, not proved, so a trace is
+            // measured, not proved, so a trace is sampled whatever it says
             if !matches!(c,super::geom::Curve::Traced(_)) && !overlap(&c.bounds(e.t),&reach[other],pad+sag) { continue }
             let mut ebox = ([f64::INFINITY;3],[f64::NEG_INFINITY;3]);
             for j in 0..=32 {
@@ -834,12 +830,11 @@ fn arrange<'a>(a: &'a Brep,known: Option<&Known>,b: &'a Brep,tol: f64) -> Result
                 }
             } loop_ends.push(halves.len()); }
             // a face clear of the other is nothing but its loops, its edges' pieces in their order
-            // round them (`Arranged::clear`): one piece, traced as they are (#589)
+            // round them (`Arranged::clear`): one piece, not traced again (#589)
             if clear[s][fi] {
-                let mut piece = Vec::with_capacity(loop_ends.len());
                 let mut halves = halves.into_iter();
                 let mut start = 0;
-                for &end in &loop_ends { piece.push(halves.by_ref().take(end-start).collect()); start = end; }
+                let piece = loop_ends.iter().map(|&end| { let l = halves.by_ref().take(end-start).collect(); start = end; l }).collect();
                 pieces.push((s,fi,piece));
                 continue
             }
@@ -947,7 +942,7 @@ fn flat_roots(solids: [&Brep;2],loose: &[Loose],cuts: &mut [Vec<(f64,u32)>],on_f
 fn vertices_inside(edges: &[WEdge],cuts: &[Vec<(f64,u32)>],pool: &Pool,gone: &std::collections::BTreeSet<u32>,
     pad: f64,tol: f64) -> Vec<Vec<(f64,u32)>> {
     // the vertices in order along x: an edge reads those within its box's stretch of x, not every
-    // vertex (#589), in the pool's order as before
+    // vertex (#589), each in the pool's order
     let mut along: Vec<u32> = (0..pool.pts.len() as u32).collect();
     along.sort_by(|&v,&w| pool.pts[v as usize][0].total_cmp(&pool.pts[w as usize][0]).then(v.cmp(&w)));
     crate::par::indices(edges.len(),|we| -> Vec<(f64,u32)> {

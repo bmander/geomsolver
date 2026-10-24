@@ -279,6 +279,7 @@ impl Brep {
         }
         for (fi,f) in self.faces.iter().enumerate() {
             if f.loops.is_empty() { return Err(format!("face {fi} ({}) has no loop",f.name).into()) }
+            let settled = settled.get(fi) == Some(&true);
             for (li,l) in f.loops.iter().enumerate() {
                 if l.is_empty() { return Err(format!("face {fi} ({}): loop {li} is empty",f.name).into()) }
                 for (k,c) in l.iter().enumerate() {
@@ -286,11 +287,9 @@ impl Brep {
                     if self.ends(c)[1] != self.ends(next)[0] {
                         return Err(format!("face {fi} ({}): loop {li} breaks after use {k}",f.name).into())
                     }
-                    if settled.get(fi) == Some(&true) {
-                        let u = &mut uses[c.edge as usize];
-                        if c.reversed { u.1 += 1 } else { u.0 += 1 }
-                        continue
-                    }
+                    let u = &mut uses[c.edge as usize];
+                    if c.reversed { u.1 += 1 } else { u.0 += 1 }
+                    if settled { continue }
                     // the same place, reached on the same branch of the surface's periods
                     let (a,b) = (self.uv_ends(f,c)[1],self.uv_ends(f,next)[0]);
                     // each pcurve's end within twice its edge's tolerance of the vertex (its image to the
@@ -301,16 +300,15 @@ impl Brep {
                     }
                     let e = &self.edges[c.edge as usize];
                     // a line on a plane, straight in its parameters, is off it most at an end
-                    let flat = matches!(f.surface,Surface::Plane(_)) && c.pcurve.straight(e,&f.surface);
+                    let flat = matches!((&f.surface,&e.curve),(Surface::Plane(_),EdgeCurve::Curve(Curve::Line {..})))
+                        && c.pcurve.straight(e,&f.surface);
                     for j in (0..=8).filter(|&j| !flat || j%8 == 0) {
                         let t = e.t[0]+(e.t[1]-e.t[0])*j as f64/8.;
                         let d = distance(f.surface.point(c.pcurve.at(t,e,&f.surface,&self.vertices)),e.point(t,&self.vertices));
                         if d > tol.max(e.tol) { return Err(format!("face {fi} ({}): edge {}'s pcurve is {d:e} off it",f.name,c.edge).into()) }
                     }
-                    let u = &mut uses[c.edge as usize];
-                    if c.reversed { u.1 += 1 } else { u.0 += 1 }
                 }
-                if settled.get(fi) == Some(&true) { continue }
+                if settled { continue }
                 let area = self.loop_area(f,l);
                 let ccw = area > 0.;
                 if (li == 0) != (ccw != f.reversed) {

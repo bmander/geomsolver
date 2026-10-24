@@ -284,7 +284,7 @@ fn gap((lo,hi): ([f64;3],[f64;3]),p: V) -> f64 {
 
 /// A box about edge `e`: its curve's enclosure over its stretch (`Curve::bounds`), a degenerate
 /// edge its pole, grown by the edge's tolerance and a hair of `size`, the solid's (`Brep::size`,
-/// read once for all its edges: it walks every edge and face, #589).
+/// which walks every edge and face, so read once for all of them: #589).
 pub(crate) fn edge_box(b: &Brep,e: usize,size: f64) -> ([f64;3],[f64;3]) {
     let edge = &b.edges[e];
     let (lo,hi) = match &edge.curve {

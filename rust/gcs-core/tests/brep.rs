@@ -248,8 +248,9 @@ fn a_run_of_cuts_hands_its_far_faces_on() {
     let (mut one,mut run,mut known) = (bar.clone(),bar.clone(),None);
     for k in 0..24 {
         one = combined(&one,&notch(k),Op::Cut,0.).unwrap_or_else(|e| panic!("notch {k}: {e}"));
-        let (r,k2) = combined_known(&run,known.as_ref(),&notch(k),Op::Cut,0.).unwrap_or_else(|e| panic!("notch {k}: {e}"));
-        (run,known) = (r,Some(k2));
+        let (r,handed) = combined_known(&run,known.as_ref(),&notch(k),Op::Cut,0.)
+            .unwrap_or_else(|e| panic!("notch {k}: {e}"));
+        (run,known) = (r,Some(handed));
     }
     // each checked whole: what the run left unchecked was checked before
     run.check(1e-8).unwrap();
