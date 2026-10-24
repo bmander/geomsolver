@@ -103,6 +103,11 @@ pub enum Code {
     /// standard datum: it is placed by its arguments, so a relation on its frame places nothing
     /// (#548)
     E111,
+    /// a mirrored instance the reflection cannot be made of (#578): one that is not closed — an
+    /// entity it is given would, reflected, no longer touch the body — one in a `ring` or in
+    /// another mirrored body, or a body declaring a plane, an axis, a frame or a motion, whose
+    /// numbers are the world's and whose image is no linear function of them
+    E112,
     /// an expression that would not compute — the last number stands
     W110,
     /// a declaration over a built-in name (§3.3, §5): the built-in is what an expression reads
@@ -174,6 +179,7 @@ impl Code {
             Code::E108 => "E108",
             Code::E109 => "E109",
             Code::E111 => "E111",
+            Code::E112 => "E112",
             Code::W110 => "W110",
             Code::W112 => "W112",
             Code::W113 => "W113",

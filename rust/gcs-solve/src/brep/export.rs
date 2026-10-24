@@ -30,6 +30,12 @@ pub struct Exact { pub solid: Brep,pub pattern: Option<Patterned>,pub indexed: O
 /// Solid `body` of the sketch built by this kernel. A body with swept cuts is admitted to the
 /// generating-sweep class first (`admission` where the host made it, else here).
 pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
+    // a mirrored instance's solid is its body's built where it was solved, reflected (#578)
+    let mirror = sk.mirror_of(body);
+    if mirror.is_some() && cad::contains_sweep(sk,body) {
+        return Err(ExportRefusal::at(Stage::Blank,format!("`{}` is a mirrored instance's, and a sweep is not reflected yet",
+            sk.solids[body].name)))
+    }
     if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
     if !recipe.sweeps.is_empty() {
@@ -52,6 +58,13 @@ pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tol
     }
     let started = crate::clock::Instant::now();
     let solid = super::recipe::build(&recipe.recipe).at(Stage::Blank)?;
+    let solid = match mirror {
+        Some(m) => {
+            let mm = cad::millimetres(sk);
+            solid.reflected(&super::geom::Rigid {r:m.r,t:m.t.map(|x| x*mm)}).map_err(|e| ExportRefusal::at(Stage::Blank,e))?
+        }
+        None => solid,
+    };
     let tol = 1e-9*solid.size().max(1.);
     solid.check(10.*tol).map_err(|e| ExportRefusal::at(Stage::Blank,format!("the built boundary is invalid: {e}")))?;
     if let Some([a,b]) = solid.self_touching(tol).first() {

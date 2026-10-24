@@ -337,7 +337,11 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
     let mut out = Vec::with_capacity(sk.constraints.len());
     // a face family's station is never drawn, nor its dimensions (#243 L1)
     let stations = sk.stations();
+    // and a mirrored body's dimension is drawn on its image (#578)
+    let images = sk.images();
     for c in &sk.constraints {
+        let drawn = sk.drawn_constraint(c, &images);
+        let c = drawn.as_ref().unwrap_or(c);
         if !stations.is_empty() && c.entities().iter().any(|e| stations.contains(e)) {
             continue;
         }
@@ -530,6 +534,9 @@ fn wrap(th: f64) -> f64 {
 /// The frame a dimension's callout hangs off, or `None` for a constraint that has no callout or
 /// whose geometry has gone degenerate.
 pub fn frame(sk: &Sketch, c: &Constraint) -> Option<Frame> {
+    // a mirrored body's hangs off its image (#578)
+    let drawn = sk.drawn_constraint(c, &sk.images());
+    let c = drawn.as_ref().unwrap_or(c);
     match c.kind {
         CKind::Distance | CKind::PointLineDistance | CKind::ParallelDistance => {
             let (a, b) = ends(sk, c)?;

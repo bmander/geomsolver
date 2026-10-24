@@ -162,3 +162,26 @@ a field taking splines as chords within `CHORD_SLACK`. Edge sampling and `curve:
 quarter points (a midpoint misses a cubic's S-bend).
 Phase 0: `SOLVENT_ABI_TRACE=FILE` logs native entry points, Boolean face pairs
 (`backend/probe.hpp`, `BOPDS_InterfFF`) and smallest pieces; `rust/gcs-cli/tools/abi_trace.py`.
+**A B-rep is reflected by an improper motion** (#578, `Brep::reflected`): what a mirrored
+instance's solid is, its body's own B-rep moved by a rigid motion of determinant −1. Every point
+is the reflection's and every parameter its own: a vertex and an edge's curve moved (`Curve::reflected`
+— a line's and a B-spline's poles; a circle's and an ellipse's frame made right-handed by its normal,
+which its points do not read; a traced intersection between its two surfaces reflected), and each
+face's surface reflected and placed right-handed again by the one rule a native kernel's
+left-handed placement is read by (`Frame::rehanded`, `brep::json`): a plane and a B-spline sheet
+by their normal `z = x × y`, an extrusion by its section's `y`, and a surface of revolution
+(cylinder, cone, sphere, torus, a curve turned) by `y = z × x`, which runs its `u` the other way,
+so its pcurves' `u` is negated (`Pcurve::u_negated`, a circle's and an ellipse's in its parameters
+too). A reflection turns which way a loop walks about the material, so every loop is walked the
+other way round (`reverse_loop`); and it turns `S_u × S_v` against the material normal, which a
+revolution's `u` run the other way turns back, so a face's sense is turned exactly where its `u`
+was not. Every edge is still used once each way, and `Brep::check` holds. A blend's or a family's
+face (a swept section's), whose carry a reflection would turn the other way, is refused by name.
+`tests/mirrored.rs` is the gate (`a_reflected_brep_holds_over_planes_cylinders_cones_and_a_torus`:
+the check, every placement right-handed, every vertex its preimage's reflection and the volume;
+`a_reflected_faces_material_side_pcurves_and_loops_follow`: on a B-spline sheet and every face of a
+turned part, a point and its material normal reflected, each pcurve on its edge, each loop's
+signed area in its parameters agreeing with its face's sense), and `gcs-cli/tests/mirror_oracle.rs`
+in the native slow tier (`OCCT=1`) holds it to OCCT's `gp_Trsf::SetMirror`
+(`solvent_cad_mirror`): the body built by OCCT where it was solved, mirrored there and dumped back,
+its volume, its faces by kind and every vertex ours.

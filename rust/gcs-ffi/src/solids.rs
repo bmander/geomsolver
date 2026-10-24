@@ -24,14 +24,12 @@ pub unsafe extern "C" fn gcs_solid_mesh(
             Ok(s) => s,
             Err(message) => { set_error(message); return -1; }
         };
-        let m = solid.mesh();
+        // in the world, wound as it stands there (a mirrored solid's the other way, #578)
+        let m = solid.world_mesh();
         if m.positions.len() > cap.max(0) as usize {
             return -1;
         }
-        for (i, p) in m.positions.chunks_exact(3).enumerate() {
-            let w = solid.to_world(gcs_core::solid::LocalPoint([p[0], p[1], p[2]])).0;
-            for (k, value) in w.into_iter().enumerate() { out.add(3 * i + k).write(value); }
-        }
+        std::ptr::copy_nonoverlapping(m.positions.as_ptr(), out, m.positions.len());
         m.positions.len() as i32
     })
 }
@@ -53,14 +51,11 @@ pub unsafe extern "C" fn gcs_solid_normals(
             Ok(s) => s,
             Err(message) => { set_error(message); return -1; }
         };
-        let m = solid.mesh();
+        let m = solid.oriented_mesh();
         if m.normals.len() > cap.max(0) as usize {
             return -1;
         }
-        for (i, n) in m.normals.chunks_exact(3).enumerate() {
-            let w = solid.vector_to_world([n[0], n[1], n[2]]);
-            for (k, value) in w.into_iter().enumerate() { out.add(3 * i + k).write(value); }
-        }
+        std::ptr::copy_nonoverlapping(m.normals.as_ptr(), out, m.normals.len());
         m.normals.len() as i32
     })
 }

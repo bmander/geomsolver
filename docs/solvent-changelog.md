@@ -4,6 +4,27 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.178] A mirrored placement.** A closed instance's call may end in `mirrored(front)`,
+`mirrored(top)` or `mirrored(side)` (§8.2): the instance is its binding reflected in that datum plane
+of the frame it stands in. Its body is solved as the preimage, where the same instance unmirrored
+stands — the same rows, freedoms and diagnosis — and what it publishes, read from outside, is the
+image: each entity its body makes reflected, its datums `b.std.D` the image's (`b.std.x × b.std.y =
+−b.std.z`), its solids reflected; every frame stays right-handed. A mirrored instance that is not
+closed is **E112**, new, and so for now is one in a `ring` or in another mirrored body, and a body
+declaring a plane, an axis, a frame, a curve or a motion. The language gains one trailer and no
+keyword or statement form; `mapped(…, mirror: true)`, which mirrors a profile within a drawing (a
+loft's handed section), stays. *Non-normative:* the reference implementation derives the image from
+the preimage with weights ±1, draws the image, and evaluates a left and a right of one binding once,
+the reflection an improper rigid motion of the B-rep and the mesh. The hub motor's `Cover` and
+`Revolved` are closed, drawing their frame's datum and axle from their own `std`: the brake-side
+cover is `Cover(…) mirrored(front)`, and the left bearing, spacer and locknut are the right ones
+mirrored, so `sg: Scalar`, its two `when` blocks, the corpus's only `mapped(…, mirror: true)`, the
+`min`/`max` round the tapped holes and the six hand-negated stations go — 942 lines where there
+were 964, 315 labelled arguments where there were 329, 14 solids built for its objects where there
+were 17, and every solid the same to 5·10⁻¹² mm. Each cover's clearance holes are drawn from the
+table, and the assembly claims they stand on the ring's tapped holes. (Issue #578, from #523, #562
+and #566.)
+
 **[0.177] One figure, many placements.** A closed instance — one whose only geometric input is
 the frame it stands in: a definition whose formals are numbers (or groups carrying numbers alone),
 each given a constant, its call drawn in that frame or one of its datums — has a **binding**, its

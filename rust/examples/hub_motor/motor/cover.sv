@@ -1,25 +1,41 @@
 // A side cover: the hub's end wall, its bearing housing and its spoke flange in one casting.
 //
-// One profile turned about the axle, drawn once as the right-hand cover's and carried onto the
-// left (`sg`: +1 right, −1 left) as its mirror image in the mid-plane (#357): a spigot entering
-// the rotor ring's bore, which centres it; the web that closes the end, its outer face's rim
-// thinned to the spoke flange; the bearing boss, its pocket open inboard and the lip outboard
-// that the bearing's outer race stands against; and a boss beyond the lip `boss_to` from the
-// mid-plane and `boss_r` in radius — the brake disc's mount on the left, the freewheel's thread
-// on the right.
+// One profile turned about the axle, drawn as the right-hand cover's: a spigot entering the
+// rotor ring's bore, which centres it; the web that closes the end, its outer face's rim thinned
+// to the spoke flange; the bearing boss, its pocket open inboard and the lip outboard that the
+// bearing's outer race stands against; and a boss beyond the lip `boss_to` from the mid-plane and
+// `boss_r` in radius — the freewheel's thread on the right, the brake disc's mount on the left.
+// The left cover is this one mirrored in the mid-plane (#578): `Cover(…) mirrored(front)`.
 //
-// The holes are drilled along the axle, from the end view: the spoke holes round the flange,
-// staggered half a pitch between the two flanges (`spoke_phase`), and the cap screws' clearance
-// holes on the very centres the rotor ring's tapped holes stand on, which are handed in.  The
-// disc side (`disc: 1`) is also tapped for the brake disc's six M5 bolts.
+// A cover is closed: a function of its numbers alone, drawn about the frame it stands in — its
+// own datum and axle drawn from its `std`, as the assembly draws the frame's.  The holes are
+// drilled along the axle, from the end view: the spoke holes round the flange, staggered half a
+// pitch between the two flanges (`spoke_phase`), and the cap screws' clearance holes on the very
+// circle and pitch the rotor ring's tapped holes are drawn on, from the same numbers of
+// `motor.dims` (the assembly claims they meet).  The disc side (`disc: 1`) is also tapped for the
+// brake disc's six M5 bolts.
 
 use std (horizontal)
 use motor.dims (brg_in, brg_od, brg_w, clear4, disc_bcd, disc_bolts, disc_depth, flange_r, flange_t,
-                half, lip, lip_r, pocket_in, Ro, Rr, spigot, spigot_r, spoke_d, spoke_r, tap5, web)
+                half, lip, lip_r, pocket_in, Ro, Rr, screw_r, screws, spigot, spigot_r, spoke_d,
+                spoke_r, tap5, web)
 use motor.parts (Datums)
 
-component Cover(f: Datums, screws: group, sg: Scalar, boss_to: Length, boss_r: Length,
-           spoke_phase: Angle, disc: Int) {
+component Cover(boss_to: Length, boss_r: Length, spoke_phase: Angle, disc: Int) {
+  // the frame it stands in, as the assembly draws it: the end view's datum and the axle's
+  // centreline in the section
+  in std.front {
+    construction centerline datum := line(std.origin, hint((150, 0)))
+    horizontal datum
+    length(150mm) datum
+  }
+  in std.side {
+    construction centerline ax := line(std.side.origin, hint((100, 0)))
+    horizontal ax
+    length(100mm) ax
+  }
+  f := {o: std.origin, datum: datum, so: std.side.origin, ax: ax}
+
   lip_in := brg_in + brg_w
   lip_out := lip_in + lip
   outer := half + web
@@ -42,20 +58,7 @@ component Cover(f: Datums, screws: group, sg: Scalar, boss_to: Length, boss_r: L
                step(u: lip_in) (pocket := line) ->
                step(v: lip_r) (lip_face := line) -> close
   }
-  // the left cover's profile is the right's mirrored in the mid-plane, the side view's `v` through
-  // its origin: the map taking that line's points to themselves, reversing the turn
-  when sg == 1 {
-    body := solid(profile, about: f.ax)
-  }
-  when sg == -1 {
-    in f.so.plane {
-      private rim := point
-      rim level(u) f.so
-      f.so distance(Ro, along: v) rim
-    }
-    mirrored := profile mapped(f.so -> f.so, rim -> rim, mirror: true) in f.so.plane
-    body := solid(mirrored, about: f.ax)
-  }
+  body := solid(profile, about: f.ax)
 
   // the spoke holes, through the flange
   spokes := motor.parts.HoleCircle(f, n: motor.dims.spokes, r: spoke_r, d: spoke_d,
@@ -65,51 +68,28 @@ component Cover(f: Datums, screws: group, sg: Scalar, boss_to: Length, boss_r: L
     spoke cut body
   }
 
-  // the cap screws' clearance holes, each on a tapped hole's centre in the ring
-  in f.o.plane {
-    repeat motor.dims.screws as i {
-      clear := circle(center: screws.c[i]) hint(r: clear4 / 2)
-      radius(clear4 / 2) clear
-    }
-  }
-  repeat motor.dims.screws as i {
-    private screw := solid(face(clear[i]), through: body)
+  // the cap screws' clearance holes, on the ring's tapped holes' circle, half a pitch off the datum
+  clear := motor.parts.HoleCircle(f, n: screws, r: screw_r, d: clear4, phase: 180deg / screws)
+  repeat screws as i {
+    private screw := solid(face(clear.hole[i]), through: body)
     screw cut body
   }
 
-  // the brake disc's six M5 holes, `disc_depth` into the boss's face
+  // the brake disc's six M5 holes, `disc_depth` into the boss's face: the end view's normal runs
+  // toward −y, so the face `boss_to` out stands at `−boss_to` along it, and the holes run inboard
   when disc == 1 {
     disc_holes := motor.parts.HoleCircle(f, n: disc_bolts, r: disc_bcd / 2, d: tap5, phase: 0deg)
-    // the boss's face along the end view's normal (−y), and the holes run inboard from it
-    face_h := -sg * boss_to
     repeat disc_bolts as i {
-      private tapped := solid(face(disc_holes.hole[i]),
-                              from: min(face_h, face_h + sg * disc_depth),
-                              to: max(face_h, face_h + sg * disc_depth))
+      private tapped := solid(face(disc_holes.hole[i]), from: -boss_to, to: disc_depth - boss_to)
       tapped cut body
     }
   }
 }
 
-// Open this file to preview the brake-side cover alone.  The ring's tapped holes it is drilled
-// on are drawn as `motor.rotor` draws them, half a pitch off the datum.
+// Open this file to preview the brake-side cover alone: the right-hand cover's profile with the
+// disc's boss, mirrored in the mid-plane.
 preview {
   unit mm
-  // the frame, as the assembly draws it: the end view's datum and the axle's centreline
-  in std.front {
-    construction centerline datum := line(std.origin, hint((150, 0)))
-    horizontal datum
-    length(150mm) datum
-  }
-  in std.side {
-    construction centerline ax := line(std.side.origin, hint((100, 0)))
-    horizontal ax
-    length(100mm) ax
-  }
-  frame := {o: std.origin, datum: datum, so: std.side.origin, ax: ax}
-
-  screw := motor.parts.HoleCircle(frame, n: motor.dims.screws, r: motor.dims.screw_r,
-                                  d: motor.dims.tap4, phase: 180deg / motor.dims.screws)
-  left := Cover(frame, screw, sg: -1, boss_to: motor.dims.disc_face, boss_r: motor.dims.disc_r,
-                spoke_phase: 0deg, disc: 1)
+  left := Cover(boss_to: motor.dims.disc_face, boss_r: motor.dims.disc_r, spoke_phase: 0deg,
+                disc: 1) mirrored(front)
 }

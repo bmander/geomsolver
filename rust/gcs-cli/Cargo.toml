@@ -59,3 +59,8 @@ required-features = ["occt"]
 name = "fillet_oracle"
 path = "tests/fillet_oracle.rs"
 required-features = ["occt"]
+
+[[test]]
+name = "mirror_oracle"
+path = "tests/mirror_oracle.rs"
+required-features = ["occt"]

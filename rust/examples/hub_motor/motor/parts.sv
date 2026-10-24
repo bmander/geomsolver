@@ -48,13 +48,19 @@ component At(o: point, dx: Length, dy: Length) {
   p offset(dx: dx, dy: dy) o
 }
 
-// A plain ring turned about the axle: a bearing, a spacer, a locknut.
-// Drawn in the section, `s0` to `s1` along the axle and `r0` to `r1` from it.
-component Revolved(f: Datums, s0: Length, s1: Length, r0: Length, r1: Length) {
-  in f.so.plane {
-    sec := Box(f.so, x0: s0, y0: r0, x1: s1, y1: r1)
+// A plain ring turned about the axle: a bearing, a spacer, a locknut.  Drawn in the section of
+// the frame it stands in, `s0` to `s1` along the axle and `r0` to `r1` from it, about its own
+// axle's centreline, as the assembly draws the frame's: closed, so the left one of a pair is the
+// right one mirrored in the mid-plane (`Revolved(…) mirrored(front)`, #578), one figure placed
+// twice.
+component Revolved(s0: Length, s1: Length, r0: Length, r1: Length) {
+  in std.side {
+    construction centerline ax := line(std.side.origin, hint((100, 0)))
+    horizontal ax
+    length(100mm) ax
+    sec := Box(std.side.origin, x0: s0, y0: r0, x1: s1, y1: r1)
   }
-  body := solid(sec.profile, about: f.ax)
+  body := solid(sec.profile, about: ax)
 }
 
 // A circle of `n` holes of diameter `d` on radius `r` about the end view's centre, the first at
@@ -76,24 +82,11 @@ component HoleCircle(f: Datums, n: Int, r: Length, d: Length, phase: Angle) {
 // shoulder, the spacer from its inner race to the step, and the flanged locknut.
 preview {
   unit mm
-  // the frame, as the assembly draws it: the end view's datum and the axle's centreline
-  in std.front {
-    construction centerline datum := line(std.origin, hint((150, 0)))
-    horizontal datum
-    length(150mm) datum
-  }
-  in std.side {
-    construction centerline ax := line(std.side.origin, hint((100, 0)))
-    horizontal ax
-    length(100mm) ax
-  }
-  frame := {o: std.origin, datum: datum, so: std.side.origin, ax: ax}
-
   brg_out := motor.dims.brg_in + motor.dims.brg_w
-  bearing := Revolved(frame, s0: motor.dims.brg_in, s1: brg_out, r0: motor.dims.brg_id / 2,
+  bearing := Revolved(s0: motor.dims.brg_in, s1: brg_out, r0: motor.dims.brg_id / 2,
                       r1: motor.dims.brg_od / 2)
-  spacer := Revolved(frame, s0: brg_out, s1: motor.dims.step_end, r0: motor.dims.d_seat / 2,
+  spacer := Revolved(s0: brg_out, s1: motor.dims.step_end, r0: motor.dims.d_seat / 2,
                      r1: motor.dims.spacer_r)
-  nut := Revolved(frame, s0: motor.dims.step_end, s1: motor.dims.old / 2,
+  nut := Revolved(s0: motor.dims.step_end, s1: motor.dims.old / 2,
                   r0: motor.dims.d_end / 2, r1: motor.dims.nut_r)
 }

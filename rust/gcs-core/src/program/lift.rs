@@ -363,6 +363,7 @@ fn lift_curve(sk: &Sketch, i: usize) -> crate::syntax::CurveSpec {
                 span: Span::default(),
                 membership: Default::default(),
                 class: Default::default(),
+                mirror: None,
             },
             Ref::new(def.port.clone()),
         ),

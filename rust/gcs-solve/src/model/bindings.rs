@@ -27,28 +27,56 @@ pub struct Binding {
     /// Where the instance is a copy of a `ring`'s body past the first: that frame turned `k`
     /// steps of `τ/n` about the ring's centre, as the copy's entities are (`Turn`).
     pub turn: Option<(EntRef, u32, u32)>,
+    /// Where the instance is mirrored (#578): the axis of the frame it stands in that its image
+    /// reverses — 0 its `u` (the mirror in its side plane), 1 its `v` (its front), 2 its normal
+    /// (its top).  Its body is solved where it stands unmirrored, and the solid is that
+    /// evaluation reflected in the frame's plane square to the axis (`Rigid::reflection`).  Not
+    /// part of the key: a left and a right of one binding are one evaluation, and the hand is
+    /// recorded here, beside it, for whoever asks which is which.
+    pub mirror: Option<u8>,
 }
 
 /// A solid read as another's evaluation placed (`Sketch::bound`): the representative, the motion
-/// carrying it onto this one, and the prefix its names are rewritten from and to.
+/// carrying its own evaluation onto this one, and the prefix its names are rewritten from and to.
+/// `raw` is the motion carrying it onto where this one's preimage stands — `motion` itself but
+/// for a mirrored solid, which is that reflected (#578).
 #[derive(Clone, Debug)]
 pub struct Bound {
     pub rep: usize,
     pub motion: Rigid,
+    pub raw: Rigid,
     pub from: String,
     pub to: String,
 }
 
 impl Sketch {
     /// **Solid `i` as its binding's representative placed** (#566): `None` for a solid with no
-    /// binding, for the representative itself, and for one whose binding does not hold — a
-    /// swept solid (meshed elsewhere, by solid), or one reaching a solid no instance of its
-    /// binding made (a tool joined from outside the instance).
+    /// binding and for the representative itself, unmirrored.  A solid whose binding does not
+    /// hold for its peers — a swept solid (meshed elsewhere, by solid), or one reaching a solid
+    /// no instance of its binding made (a tool joined from outside the instance) — is its own
+    /// representative.  A mirrored solid (#578) is always placed: its representative's own
+    /// evaluation, which may be its own, carried where its preimage stands and reflected there.
     pub fn bound(&self, i: usize) -> Option<Bound> {
-        let rep = self.peers(i)?.next().filter(|&j| j < i)?;
-        let (from, to) = (&self.solids[rep].binding.as_ref()?.at, &self.solids[i].binding.as_ref()?.at);
-        let motion = Rigid::between(&self.binding_pose(rep)?, &self.binding_pose(i)?);
-        Some(Bound { rep, motion, from: from.clone(), to: to.clone() })
+        let b = self.solids.get(i)?.binding.as_ref()?;
+        let rep = self.peers(i).and_then(|mut p| p.next()).filter(|&j| j < i).unwrap_or(i);
+        let mirror = match b.mirror {
+            Some(axis) => Some(Rigid::reflection(&self.binding_pose(i)?, axis)),
+            None if rep == i => return None,
+            None => None,
+        };
+        let from = &self.solids[rep].binding.as_ref()?.at;
+        let raw = if rep == i { Rigid::identity() } else {
+            Rigid::between(&self.binding_pose(rep)?, &self.binding_pose(i)?)
+        };
+        let motion = mirror.map_or(raw, |m| m.after(&raw));
+        Some(Bound { rep, motion, raw, from: from.clone(), to: b.at.clone() })
+    }
+
+    /// **The reflection a mirrored solid is published by** (#578): in the plane of the frame its
+    /// instance stands in square to the axis its image reverses — `None` for any other solid.
+    pub fn mirror_of(&self, i: usize) -> Option<Rigid> {
+        let axis = self.solids.get(i)?.binding.as_ref()?.mirror?;
+        Some(Rigid::reflection(&self.binding_pose(i)?, axis))
     }
 
     /// Whether solid `i` is one of several solids of one binding: what another solid's recipe

@@ -26,6 +26,7 @@ mod scenarios;
 mod measures;
 mod beams;
 mod bound;
+mod mirrors;
 mod source_map;
 mod variational;
 mod witnessed;

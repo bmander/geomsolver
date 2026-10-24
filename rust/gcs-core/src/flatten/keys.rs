@@ -136,6 +136,19 @@ pub(crate) fn frame_datum(key: &str) -> Option<(&str, &str)> {
     key.rsplit_once("#std.")
 }
 
+/// **An image** (#578): what a reference from outside a mirrored instance reads where it names
+/// `key`, something the instance's body made — `{key}#image`, a key the source cannot write,
+/// bound by the elaborator to the entity's image (`program::mirrors`).
+pub(crate) fn image(key: &str) -> String {
+    format!("{key}#image")
+}
+
+/// The image of datum `datum` of the frame mirrored instance `instance` (its prefix, `left.`)
+/// stands in (#578), `{instance}#std.{datum}`: what its `b.std.D` names from outside.
+pub(crate) fn image_datum(instance: &str, datum: &str) -> String {
+    format!("{instance}#std.{datum}")
+}
+
 /// The frame an instance read as one stands in (#548), `{instance}#frame`: what its `b.std.D`
 /// names the datums of, declared beside the call.
 pub(super) fn instance_frame(instance: &str) -> String {
