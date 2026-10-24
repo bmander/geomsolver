@@ -3,8 +3,9 @@
 import * as C from '../core/constraints.js';
 import { exampleCases } from './example-catalog.js';
 import * as remote from './remote.js';
+import { githubProject, parseGithub } from './github.js';
 import { awaitSurfaces, buildingObjects, loaded, loading, opened, painted } from './loading.js';
-import { openProject } from './program.js';
+import { openProject, openSide } from './program.js';
 import * as io from '../core/io.js';
 import { applyAlternative, enumerateStep, isCurrent } from '../core/homotopy.js';
 import { Point } from '../core/model.js';
@@ -90,12 +91,57 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
   catch (e) { loaded(); toast(`Could not open example: ${(e as Error).message}`); }
 }
 
+/** A GitHub repository, or a folder or a file in one, opened as the project: its files in the
+ *  panel's tree, the address asked for in a form since the browser has no picker for it, and a
+ *  token beside it for a private one, held in this page's memory and nowhere else. */
+let githubAddress = '', githubToken = '';
+export async function openGithub(): Promise<boolean> {
+  if (!await askFields('Open GitHub project', (body) => {
+    addText(body, 'address', githubAddress, (v) => { githubAddress = v; },
+      'A repository (https://github.com/owner/repo, or owner/repo), a folder in it '
+    + '(…/tree/branch/folder) or a file (…/blob/branch/file.svd)');
+    const token = addText(body, 'token', githubToken, (v) => { githubToken = v.trim(); },
+      'For a private repository: a GitHub token that can read its contents.  It is sent '
+    + 'only to api.github.com, and kept only until the page is closed');
+    token.type = 'password'; token.autocomplete = 'off';
+    token.placeholder = 'optional, for a private repository';
+  })) return false;
+  const address = parseGithub(githubAddress);
+  if (!address) { toast('That is not a GitHub repository address'); return false; }
+  try {
+    loading(`fetching ${address.owner}/${address.repo}…`);
+    const bundle = await githubProject(address, githubToken || undefined);
+    loading(`reading ${bundle.label}…`);
+    await painted();
+    awaitSurfaces();
+    buildingObjects();
+    view.hold();
+    let ok = false;
+    try { ok = openProject(bundle, { directory: bundle.directory }); }
+    finally { await view.buildObjects(loading, painted); }
+    // what was asked for is the repository's files, so the panel turns to them
+    if (ok) { dropExampleAddress(); openSide('project'); toast(`opened ${bundle.label}`); }
+    opened();
+    return ok;
+  } catch (e) {
+    loaded();
+    toast(`Could not open GitHub project: ${(e as Error).message}`);
+    return false;
+  }
+}
+
 /** The address names an example only while that example is the document: another one (File ▸
- *  New, Open, a drawing folder) takes `example` and `file` off it, in place — a step back to the
- *  bare address would open a blank sheet — and an example still on its way is dropped. */
+ *  New, Open, a drawing folder, a GitHub project) takes `example` and `file` off it, in place —
+ *  a step back to the bare address would open a blank sheet — and an example still on its way
+ *  is dropped. */
 export function leaveExample(): void {
-  ++exampleRequest;
+  dropExampleAddress();
   loaded();
+}
+/** The address's example taken off, and one on its way dropped, leaving the modal as it is: a
+ *  GitHub project's own meshing may be what it is showing. */
+function dropExampleAddress(): void {
+  ++exampleRequest;
   const url = new URL(location.href);
   url.searchParams.delete('example');
   url.searchParams.delete('file');
