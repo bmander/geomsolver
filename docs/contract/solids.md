@@ -135,7 +135,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   one.  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did
   not make (a tool joined from outside) or a swept one is its own — but to the exact export, where
   a closed instance's swept body whose motions are the instance's own is its binding's first
-  unmirrored solid's build placed, built once a drawing and tolerance (`Sketch::bound_swept`,
+  unmirrored solid's build placed, built once a drawing and tolerance (`Sketch::bound_where`,
   `Caches::swept_exact`, `brep::export::exact`;
   `swept_speed::two_closed_instances_of_a_swept_gear_are_built_once_and_placed`) — a solid redefined where it
   stands (`Sketch::redefine`: `join_body`, `set_prism`, `set_turn`, a stratum's body) loses its

@@ -10,7 +10,7 @@ use super::geom::{Frame,V};
 /// The greatest degree evaluated (on the stack): OCCT's own bound.
 pub const MAX_DEGREE: usize = 25;
 const W: usize = MAX_DEGREE+1;
-/// The degrees evaluated with a small table, the cubics and their like (most of what is read).
+/// The degrees under this evaluated with a table that size (a cubic's or less in one of four).
 const SMALL: usize = 10;
 
 #[derive(Clone,Debug,PartialEq)]
@@ -22,11 +22,11 @@ fn weighs(weights: &[f64],count: usize) -> bool { weights.len() == count && weig
 
 /// `C`, `C'`, `C''` from the weighted sums `A⁽ᵏ⁾ = Σ N⁽ᵏ⁾ w P` and `W⁽ᵏ⁾ = Σ N⁽ᵏ⁾ w` (Piegl and
 /// Tiller A4.2).
-fn quotient(a: [V;3],w: [f64;3]) -> (V,V,V) {
+fn quotient(a: [V;3],w: [f64;3]) -> [V;3] {
     let c0: V = std::array::from_fn(|c| a[0][c]/w[0]);
     let c1: V = std::array::from_fn(|c| (a[1][c]-w[1]*c0[c])/w[0]);
     let c2: V = std::array::from_fn(|c| (a[2][c]-2.*w[1]*c1[c]-w[2]*c0[c])/w[0]);
-    (c0,c1,c2)
+    [c0,c1,c2]
 }
 
 impl BSpline {
@@ -68,20 +68,19 @@ impl BSpline {
             if let Some(w) = &self.weights {
                 let (mut out,mut ws) = ([[0.;3];3],[0.;3]);
                 for (k,row) in ders.iter().enumerate().take(n.min(p)+1) {
-                    for (j,&n) in row.iter().enumerate().take(p+1) {
-                        let (q,nw) = (self.poles[s-p+j],n*w[s-p+j]);
-                        for c in 0..3 { out[k][c] += nw*q[c]; }
-                        ws[k] += nw;
+                    for (j,&b) in row.iter().enumerate().take(p+1) {
+                        let (q,bw) = (self.poles[s-p+j],b*w[s-p+j]);
+                        for c in 0..3 { out[k][c] += bw*q[c]; }
+                        ws[k] += bw;
                     }
                 }
-                let (c0,c1,c2) = quotient(out,ws);
-                return [c0,c1,c2]
+                return quotient(out,ws)
             }
             let mut out = [[0.;3];3];
             for (k,row) in ders.iter().enumerate().take(n.min(p)+1) {
-                for (j,&n) in row.iter().enumerate().take(p+1) {
+                for (j,&b) in row.iter().enumerate().take(p+1) {
                     let q = self.poles[s-p+j];
-                    for c in 0..3 { out[k][c] += n*q[c]; }
+                    for c in 0..3 { out[k][c] += b*q[c]; }
                 }
             }
             out
@@ -192,16 +191,11 @@ fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
 /// to 25) in one of `W`.
 #[inline]
 fn with_basis<R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
-    if p < 4 {
-        let (s,d) = basis_ders_in::<4>(p,u,count,t,n);
-        f(s,&[&d[0],&d[1],&d[2]])
-    } else if p < SMALL {
-        let (s,d) = basis_ders_in::<SMALL>(p,u,count,t,n);
-        f(s,&[&d[0],&d[1],&d[2]])
-    } else {
-        let (s,d) = basis_ders_in::<W>(p,u,count,t,n);
+    fn tabled<const M: usize,R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
+        let (s,d) = basis_ders_in::<M>(p,u,count,t,n);
         f(s,&[&d[0],&d[1],&d[2]])
     }
+    if p < 4 { tabled::<4,R>(p,u,count,t,n,f) } else if p < SMALL { tabled::<SMALL,R>(p,u,count,t,n,f) } else { tabled::<W,R>(p,u,count,t,n,f) }
 }
 
 /// A Bézier curve's point at `f`, its poles in homogeneous coordinates: de Casteljau's steps.

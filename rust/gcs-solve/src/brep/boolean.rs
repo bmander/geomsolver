@@ -56,7 +56,8 @@ impl WEdge {
 #[derive(Clone,Debug)]
 struct Half { edge: u32,along: bool,pcurve: Pcurve,from: Uv,to: Uv }
 
-fn overlap(a: &([f64;3],[f64;3]),b: &([f64;3],[f64;3]),pad: f64) -> bool {
+/// Whether two boxes meet, each grown by `pad`.
+pub(crate) fn overlap(a: &([f64;3],[f64;3]),b: &([f64;3],[f64;3]),pad: f64) -> bool {
     (0..3).all(|k| a.0[k] <= b.1[k]+pad && b.0[k] <= a.1[k]+pad)
 }
 

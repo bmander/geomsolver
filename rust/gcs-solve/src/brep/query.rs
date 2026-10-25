@@ -182,7 +182,8 @@ pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) 
     if let (&Curve::Line {p,d},Surface::Cylinder(c,r)) = (curve,surface) { return line_cylinder(p,d,[t0,t1],c,*r,tol) }
     let f = |t: f64| surface.implicit(curve.point(t));
     let length = (t1-t0)*curve.speed();
-    let n = ((length/surface.feature()*16.).ceil() as usize)
+    let (lo,hi) = curve.bounds([t0,t1]);
+    let n = ((length/surface.feature_within(lo,hi)*16.).ceil() as usize)
         .max(if curve.period().is_some() { ((t1-t0)/(std::f64::consts::PI/32.)).ceil() as usize } else { 1 })
         .clamp(16,1<<14);
     let ts: Vec<f64> = (0..=n).map(|i| t0+(t1-t0)*i as f64/n as f64).collect();
@@ -606,8 +607,7 @@ impl<'a> Located<'a> {
             let hint = f.loops.iter().flatten().find(|u| u.edge == c.edge).map_or(uv,|u| u.pcurve.at(t,e,&f.surface,&self.b.vertices));
             let raw = f.surface.inverse_near(p,hint);
             let inside = f.loops.iter().flatten().filter(|u| u.edge == c.edge).any(|u| {
-                let q = u.pcurve.at(t,e,&f.surface,&self.b.vertices);
-                let mut dq = u.pcurve.derivative(t,e,&f.surface,&self.b.vertices);
+                let (q,mut dq) = u.pcurve.at_and_derivative(t,e,&f.surface,&self.b.vertices);
                 if u.reversed { dq = [-dq[0],-dq[1]]; }
                 beside(f,q,dq,raw)
             });
@@ -712,13 +712,11 @@ pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
     // batch at a time across the cores, ahead of the choice
     let mut order: Vec<usize> = (0..candidates.len()).filter(|&i| depth[i] > 0.).collect();
     order.sort_by(|&i,&j| depth[j].total_cmp(&depth[i]));
+    let open = |chosen: &[(V,f64)],i: usize|
+        !chosen.first().is_some_and(|f| chosen.iter().any(|c| distance(c.0,candidates[i]) < f.1/2.));
     let mut chosen: Vec<(V,f64)> = Vec::new();
-    let mut next = 0;
-    while next < order.len() && chosen.len() < capacity {
-        let batch = &order[next..(next+4*crate::par::threads()).min(order.len())];
-        next += batch.len();
-        let open = |chosen: &[(V,f64)],i: usize|
-            !chosen.first().is_some_and(|f| chosen.iter().any(|c| distance(c.0,candidates[i]) < f.1/2.));
+    for batch in order.chunks(4*crate::par::threads()) {
+        if chosen.len() == capacity { break }
         let asked: Vec<usize> = batch.iter().copied().filter(|&i| open(&chosen,i)).collect();
         let inside = crate::par::map(&asked,|&i| winding(candidates[i]) > 0.5);
         for (&i,inside) in asked.iter().zip(inside) {

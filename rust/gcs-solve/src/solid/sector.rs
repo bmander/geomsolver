@@ -358,17 +358,16 @@ impl Boundary {
         for &p in points {
             let [s,_,phi] = self.frame.coordinates(self.slices,p);
             let off = wrapped(phi-self.angle_at(s),self.pitch);
-            let (mut worst,mut any) = (f64::INFINITY,false);
+            let (mut clear,mut any) = (f64::INFINITY,false);
             // every slice whose window holds this point
             let r = self.frame.radius(p);
             for ((k,g),&nearest) in self.knots.iter().zip(&self.gaps).zip(&self.inner) {
                 if (s-k).abs() > h/2. { continue; }
                 any = true;
                 let within = (off-g[0]).min(g[1]-off);
-                worst = worst.min(if within > 0. { (within*r).max(nearest-r) } else { within*r });
+                clear = clear.min(if within > 0. { (within*r).max(nearest-r) } else { within*r });
             }
             if !any { continue; }
-            let clear = worst;
             if clear <= 0. {
                 return Err(format!("the side at {:?} lies {:.4} mm into a cut's slice ({:.3} degrees off its angle there, at slice {s:.3})",
                     p.map(|x| (x*1e3).round()/1e3),-clear,off.to_degrees()));

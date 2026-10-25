@@ -381,7 +381,7 @@ impl Boxes {
             let d = edges[k].distance(p);
             if d < found.get() { found.set(d) }
         });
-        if found.get() < s { super::Side::Below } else if found.get() == s { super::Side::At } else { super::Side::Above }
+        super::Side::of(found.get(),s)
     }
 
     /// How many of the edges `p`'s ray toward +x crosses.

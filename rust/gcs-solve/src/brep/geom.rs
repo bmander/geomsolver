@@ -504,7 +504,7 @@ fn net_grid_inverse(n: &super::nurbs::Net,p: V) -> Uv {
 /// The signed distance from `(ρ, z)` to a curve drawn in the same half-plane (`meridian` its
 /// `(ρ, z)` at its parameter), its normal the tangent turned clockwise; the foot's parameter too.
 fn plane_side(c: &Curve,t: f64,p: [f64;2],meridian: &dyn Fn(V) -> [f64;2],along: &dyn Fn(V) -> [f64;2]) -> (f64,[f64;2]) {
-    let (x,d,_) = c.d2(t);
+    let (x,d) = c.d1(t);
     let [fr,fz] = meridian(x);
     let [dr,dz] = along(d);
     let l = dr.dhypot(dz);
@@ -512,6 +512,9 @@ fn plane_side(c: &Curve,t: f64,p: [f64;2],meridian: &dyn Fn(V) -> [f64;2],along:
     let n = [dz/l,-dr/l];
     ((p[0]-fr)*n[0]+(p[1]-fz)*n[1],n)
 }
+
+/// An angle in `[0, 2π)`.
+fn wrap(a: f64) -> f64 { let a = a.rem_euclid(TAU); if a >= TAU { 0. } else { a } }
 
 /// The least radius of curvature a planar curve has over its domain, sampled (infinite where it
 /// is straight), and never more than its extent.
@@ -702,30 +705,31 @@ impl Surface {
                 if crate::space::distance(b.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { b.inverse(p) }
             }
             // a spline swept or turned likewise, its curve's foot from the hint's
-            Surface::Extrusion(f,c) => match &**c {
-                Curve::BSpline(b) => {
-                    let [x,y,_] = f.local(p);
-                    let t = b.refined(f.at([x,y,0.]),hint[0]);
-                    let uv = [t,dot(sub(p,b.point(t)),f.z)];
-                    if crate::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-                }
-                _ => self.inverse(p),
-            },
-            Surface::Revolution(f,c) => match &**c {
-                Curve::BSpline(b) => {
-                    let [x,y,z] = f.local(p);
-                    let u = if x == 0. && y == 0. { 0. } else { y.datan2(x).rem_euclid(TAU) };
-                    let u = if u >= TAU { 0. } else { u };
-                    let uv = [u,b.refined(f.at([x.dhypot(y),0.,z]),hint[1])];
-                    if crate::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
-                }
-                _ => self.inverse(p),
-            },
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) if matches!(**c,Curve::BSpline(_)) => {
+                let Curve::BSpline(b) = &**c else { unreachable!() };
+                let uv = self.swept_inverse(p,&|q,k| b.refined(q,hint[k])).expect("a swept curve");
+                if crate::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
+            }
             _ => self.inverse(p),
         }
     }
+    /// A swept or turned curve's parameters of `p`, its curve's at the foot `foot` finds of the
+    /// point in the curve's plane (the curve's parameter the `k`th); `None` for any other surface.
+    fn swept_inverse(&self,p: V,foot: &dyn Fn(V,usize) -> f64) -> Option<Uv> {
+        let [x,y,z] = self.frame().local(p);
+        match self {
+            Surface::Extrusion(f,c) => {
+                let t = foot(f.at([x,y,0.]),0);
+                Some([t,dot(sub(p,c.point(t)),f.z)])
+            }
+            Surface::Revolution(f,_) => {
+                let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
+                Some([u,foot(f.at([x.dhypot(y),0.,z]),1)])
+            }
+            _ => None,
+        }
+    }
     pub fn inverse(&self,p: V) -> Uv {
-        let wrap = |a: f64| { let a = a.rem_euclid(TAU); if a >= TAU { 0. } else { a } };
         let f = self.frame();
         let [x,y,z] = f.local(p);
         // a plane's parameters are its frame's coordinates, read before any angle (#589: a large
@@ -734,11 +738,7 @@ impl Surface {
         let u = if x == 0. && y == 0. { 0. } else { wrap(y.datan2(x)) };
         let rho = x.dhypot(y);
         match self {
-            Surface::Extrusion(_,c) => {
-                let t = c.inverse(f.at([x,y,0.]));
-                return [t,dot(sub(p,c.point(t)),f.z)]
-            }
-            Surface::Revolution(_,c) => return [u,c.inverse(f.at([rho,0.,z]))],
+            Surface::Extrusion(_,c) | Surface::Revolution(_,c) => return self.swept_inverse(p,&|q,_| c.inverse(q)).expect("a swept curve"),
             Surface::Blend(_,b) => return b.inverse(p),
             Surface::BSpline(_,n) => return net_inverse(n,p),
             Surface::Family(_,w) => return w.inverse(p),
@@ -1094,7 +1094,6 @@ impl Curve {
     /// exact for a point on a line or circle, and for an ellipse refined by Newton from its
     /// eccentric angle.
     pub fn inverse(&self,p: V) -> f64 {
-        let wrap = |a: f64| { let a = a.rem_euclid(TAU); if a >= TAU { 0. } else { a } };
         match *self {
             Curve::Traced(ref c) => {
                 // the nearest chord, then Newton on (C − p)·C'

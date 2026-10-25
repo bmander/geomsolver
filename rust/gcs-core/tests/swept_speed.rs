@@ -6,12 +6,11 @@ use crate::common::build;
 use gcs_core::brep::geom::{Curve, Frame, Surface};
 use gcs_core::brep::nurbs::{arc, interpolate, BSpline};
 use gcs_core::rng::Rng;
+use gcs_core::space::{distance as dist, dot, sub};
 use std::f64::consts::{FRAC_PI_4, TAU};
 use std::sync::Arc;
 
 type V = [f64; 3];
-
-fn dist(a: V, b: V) -> f64 { ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt() }
 
 /// The curve's nearest point to `p` by a walk over a thousand samples a span refined by Newton:
 /// what the foot is held to, written apart from it.
@@ -26,9 +25,8 @@ fn walked(b: &BSpline, p: V) -> f64 {
     let mut t = best.1;
     for _ in 0..50 {
         let (x, d, dd) = b.d2(t);
-        let e = [x[0] - p[0], x[1] - p[1], x[2] - p[2]];
-        let g = e[0] * d[0] + e[1] * d[1] + e[2] * d[2];
-        let h = d[0] * d[0] + d[1] * d[1] + d[2] * d[2] + e[0] * dd[0] + e[1] * dd[1] + e[2] * dd[2];
+        let e = sub(x, p);
+        let (g, h) = (dot(e, d), dot(d, d) + dot(e, dd));
         if !(h > 0.) { break }
         t = (t - g / h).clamp(a, z);
     }
@@ -262,9 +260,9 @@ b_at raised(d: 40mm, along: std.x) std.origin
 b seats(turn: 15deg, up: std.z, east: std.x) b_at
 ";
 
-/// **Two closed instances of one swept gear are one build** (`Sketch::bound_swept`, #566): the
-/// second's exact B-rep is the first's moved where it stands — said so — with the first's volume,
-/// and its mesh agrees with its own material field.
+/// **Two closed instances of one swept gear are one build** (`Sketch::bound_where`, #566): the
+/// second's exact B-rep is the first's moved where it stands — said so — its faces named in its
+/// own instance, with the first's volume, and its mesh agrees with its own material field.
 #[test]
 fn two_closed_instances_of_a_swept_gear_are_built_once_and_placed() {
     use gcs_core::brep::{export, sweep::Say};
@@ -273,11 +271,12 @@ fn two_closed_instances_of_a_swept_gear_are_built_once_and_placed() {
     let (a, b) = (e.map.ent_named("a.gear").unwrap().i(), e.map.ent_named("b.gear").unwrap().i());
     let said = std::sync::Mutex::new(Vec::<String>::new());
     let say = Say { stage: &|l: &str| said.lock().unwrap().push(l.to_string()), mark: &|_| {} };
-    assert_eq!(e.sketch.bound_swept(b).map(|(rep, _)| rep), Some(a));
+    assert_eq!(e.sketch.bound_where(b, true).map(|bound| bound.rep), Some(a));
     let first = export::exact(&e.sketch, a, None, None, &say).unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
     said.lock().unwrap().clear();
     let second = export::exact(&e.sketch, b, None, None, &say).unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
     assert!(said.lock().unwrap().iter().any(|l| l.contains("is `a.gear` placed")), "{:?}", said.lock().unwrap());
+    assert!(second.solid.faces.iter().all(|f| !f.name.starts_with("a.")), "a face of the copy keeps the first's name");
     let volume = gcs_core::brep::props::volume;
     assert!((volume(&first.solid) - volume(&second.solid)).abs() < 1e-9 * volume(&first.solid));
     export::stl(&e.sketch, b, &second, None, &say).unwrap_or_else(|r| panic!("the copy's STL refused at {:?}: {}", r.stage, r.message));

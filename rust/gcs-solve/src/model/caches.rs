@@ -89,7 +89,7 @@ pub struct Caches {
     /// it does not depend on an approximation, so it is built once for a geometry and only meshed
     /// again for each one the evaluated solids above ask for.
     pub exact: Memo<Result<Rc<crate::solid::Exact>, String>>,
-    /// Each swept body another of its binding places (`Sketch::bound_swept`), built exactly by
+    /// Each swept body another of its binding places (`Sketch::bound_where`), built exactly by
     /// this kernel (`brep::export::exact`) to the tolerance it was asked at, against
     /// `solid::reads`: a closed instance's gear, shaped once and placed for every copy.
     pub(crate) swept_exact: Memo<(Option<u64>, Rc<crate::brep::export::Exact>)>,

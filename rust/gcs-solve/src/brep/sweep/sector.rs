@@ -7,8 +7,8 @@
 use crate::fmath::Det;
 use super::Say;
 use super::sheet::{Fitted,surface_grid};
-use crate::brep::boolean::split;
-use crate::brep::geom::Rigid;
+use crate::brep::boolean::{overlap,split};
+use crate::brep::geom::{Box3,Rigid};
 use crate::brep::props::volume;
 use crate::brep::query::interior;
 use crate::brep::topo::Brep;
@@ -67,20 +67,26 @@ fn keyed(mut sheet: Brep,key: &str) -> Brep {
     sheet
 }
 
-/// The sheets in batches, each sheet in the first whose sheets' boxes all stand more than `gap`
-/// from its own: a batch's sheets meet none of each other, so one split by all of them at once is
-/// the splits by each in turn, and a cell is arranged against a batch where it was against a sheet.
-fn apart(sheets: &[Brep],gap: f64) -> Vec<Vec<usize>> {
-    let boxes: Vec<(V,V)> = sheets.iter().map(Brep::bounds).collect();
-    let clear = |a: &(V,V),b: &(V,V)| (0..3).any(|k| a.0[k] > b.1[k]+gap || b.0[k] > a.1[k]+gap);
+/// `cells` split by every sheet of `tools` (each with its box) a batch at a time, each sheet in the
+/// first batch whose boxes all stand more than `gap` from its own: a batch's sheets meet none of
+/// each other, so one split by all of them at once is the splits by each in turn, and a cell is
+/// arranged against a batch where it was against a sheet. The cells, and the most sheets a split
+/// took at once.
+fn split_by(mut cells: Vec<Brep>,tools: &[(Brep,Box3)],gap: f64) -> Result<(Vec<Brep>,usize),String> {
     let mut batches: Vec<Vec<usize>> = Vec::new();
-    for k in 0..sheets.len() {
-        match batches.iter_mut().find(|b| b.iter().all(|&j| clear(&boxes[k],&boxes[j]))) {
+    for k in 0..tools.len() {
+        match batches.iter_mut().find(|b| b.iter().all(|&j| !overlap(&tools[k].1,&tools[j].1,gap))) {
             Some(b) => b.push(k),
             None => batches.push(vec![k]),
         }
     }
-    batches
+    for batch in &batches {
+        let mut sheet = tools[batch[0]].0.clone();
+        for &k in &batch[1..] { sheet.join(&tools[k].0); }
+        let parts = crate::par::map(&cells,|c| split(c,&sheet,SPLIT_TOL));
+        cells = parts.into_iter().collect::<Result<Vec<_>,_>>()?.into_iter().flatten().collect();
+    }
+    Ok((cells,batches.iter().map(Vec::len).max().unwrap_or(0)))
 }
 
 /// The blank of `recipe` as its meridian region turned once from the half-plane along `seam`, or
@@ -269,15 +275,12 @@ pub fn construct(recipe: &StaticRecipe,distinct: &[usize],premises: Premises,say
             halves.len()))
     };
     if halves.len() != 2 { return Err(format!("the sides split the blank into {} cells, not two",halves.len())) }
-    let mut cells = vec![wedge];
-    for sheet in &tools {
-        let parts = crate::par::map(&cells,|c| split(c,sheet,SPLIT_TOL));
-        cells = parts.into_iter().collect::<Result<Vec<_>,_>>()?.into_iter().flatten().collect();
-    }
+    let (count,size) = (tools.len(),wedge.size());
+    let (mut cells,_) = split_by(vec![wedge],&tools.into_iter().map(|t| { let b = t.bounds(); (t,b) }).collect::<Vec<_>>(),1e-3*size)?;
     for c in &cells { c.check(1e-6).map_err(|e| format!("a cell of the split is invalid: {e}"))?; }
     let volumes: Vec<f64> = cells.iter().map(volume).collect();
     (say.stage)(&format!("split the blank by the sides into the sector of {share:.6} mm³, and it by {} sheets into {} cells ({:?})",
-        tools.len(),cells.len(),clock.elapsed()));
+        count,cells.len(),clock.elapsed()));
     (say.mark)(crate::solid::export::Stage::Split);
     let clock = crate::clock::Instant::now();
     let sampled = crate::par::map(&cells,|c| interior(c,4)).into_iter().collect::<Result<Vec<_>,_>>()?;
@@ -306,7 +309,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
         for cut in recipe.sweeps.iter().filter(|c| c.swept == s) {
             let tool = keyed(sheets[k].faces.moved(&placed(cut.pose,scale_mm)),&cut.key);
             let (a,b) = tool.bounds();
-            if (0..3).all(|i| a[i] <= hi[i] && b[i] >= lo[i]) { tools.push(tool); }
+            if (0..3).all(|i| a[i] <= hi[i] && b[i] >= lo[i]) { tools.push((tool,(a,b))); }
         }
     }
     // a solid of revolution made again with its seams opposite the cuts, as a sector's blank is: a
@@ -314,7 +317,7 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
     let read = Recipe::read(&recipe.recipe)?;
     let blank = match read.meridian([1.,0.,0.]) {
         Ok((_,origin,axis)) => {
-            let centres: Vec<V> = tools.iter().map(|t| { let (a,b) = t.bounds(); std::array::from_fn(|k| (a[k]+b[k])/2.) }).collect();
+            let centres: Vec<V> = tools.iter().map(|(_,(a,b))| std::array::from_fn(|k| (a[k]+b[k])/2.)).collect();
             let c: V = std::array::from_fn(|k| centres.iter().map(|p| p[k]).sum::<f64>()/centres.len().max(1) as f64);
             let a = scale(axis,1./norm(axis));
             let r = sub(sub(c,origin),scale(a,dot(sub(c,origin),a)));
@@ -323,17 +326,11 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
         Err(e) if e.kind == Kind::Refused => blank.clone(),
         Err(e) => return Err(e.into()),
     };
-    let mut cells = vec![blank.clone()];
-    let batches = apart(&tools,1e-3*blank.size());
-    for batch in &batches {
-        let sheet = batch.iter().skip(1).fold(tools[batch[0]].clone(),|s,&k| s.joined(&tools[k]));
-        let parts = crate::par::map(&cells,|c| split(c,&sheet,SPLIT_TOL));
-        cells = parts.into_iter().collect::<Result<Vec<_>,_>>()?.into_iter().flatten().collect();
-    }
+    let (mut cells,widest) = split_by(vec![blank.clone()],&tools,1e-3*blank.size())?;
     for c in &cells { c.check(1e-6).map_err(|e| format!("a cell of the split is invalid: {e}"))?; }
     let volumes: Vec<f64> = cells.iter().map(volume).collect();
     (say.stage)(&format!("split the blank of {:.6} mm³ by {} placed sheets, {} at once at most, into {} cells ({:?})",volume(&blank),
-        tools.len(),batches.iter().map(Vec::len).max().unwrap_or(0),cells.len(),clock.elapsed()));
+        tools.len(),widest,cells.len(),clock.elapsed()));
     (say.mark)(crate::solid::export::Stage::Split);
     let clock = crate::clock::Instant::now();
     let body_field = Millimetres::<MaterialField>::read(sk,body,cad::AXIS_TOLERANCE)?;
