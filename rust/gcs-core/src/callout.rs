@@ -134,6 +134,14 @@ macro_rules! undrawn {
             | CKind::LinePerpendicularPlane
             | CKind::PlaneParallel
             | CKind::PlaneDistance
+            // a plane touching a path, and where on a line a contact's interval bounds a point
+            // (#645): in space, stating no number of one view; a development's length is its
+            // panel's, read and not stated
+            | CKind::PlaneTangentLine
+            | CKind::PlaneTangentRound
+            | CKind::PlaneSupportsCorner
+            | CKind::LineFraction
+            | CKind::DevelopedLength
             // a contact with an envelope in space states no number (#283)
             | CKind::PointOnEnvelope
             // nor does a point on the path of contact of two flanks: its lag is a slot a pin

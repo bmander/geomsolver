@@ -36,6 +36,7 @@ mod scenario;
 mod measured;
 mod beam;
 mod rounds;
+mod developed;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -43,6 +44,7 @@ pub use entities::{
     LiftE, article, entity_name, kind_initial,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
+pub use developed::{developed_def, Developed, Rail};
 pub use solids::{
     FaceLoop, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Roll, Sense, SolidDef, SolidE, EnvelopeE,

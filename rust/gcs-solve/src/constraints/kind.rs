@@ -170,6 +170,26 @@ pub enum CKind {
     /// (`std.Twisted`'s) is held by exactly as many rows as it has numbers.  `program::reading`
     /// turns a `CarriedPoint` into it, as it turns a relation in space into its kind in a view.
     CarriedPointIn,
+    /// **A development's home ruling as long as its panel's** (#645): `|g − f| = L`, `f` and `g`
+    /// the ends of a laid rail's home ruling — the curve's two arguments — and `L` the panel's
+    /// ruling there, read off the rails as the drawing stands (constants read off the pose).
+    /// Intrinsic, minted with the laid rail (`program::developed`) and nowhere else.
+    DevelopedLength,
+    /// **`T tangent(at: m) l`, a plane touching a straight path** (#645): the plane through `m`
+    /// holding the line's direction — two rows, `(m − O)·n̂` and `n̂·(B − A)`, in space.
+    PlaneTangentLine,
+    /// **`T tangent(at: m) k`, a plane touching a round** (#645): the plane through `m` holding
+    /// the round's tangent there, `n̂·(k̂ × (m − c))` beside `m` on the plane.
+    PlaneTangentRound,
+    /// **A plane supporting a path at a corner** (#645): through the corner where two lines of a
+    /// chain meet, holding a direction between their two one-sided tangents, `λ` of the way from
+    /// the one into it to the one out (an unknown the constraint owns) — what `T tangent(at: m)
+    /// chain` states where `m` is the chain's joint.
+    PlaneSupportsCorner,
+    /// **Where a point on a line stands along it** (#645): the fraction `(p − a)·(b − a)/|b − a|²`
+    /// of its run, bounded — `p coincident(t in (0, 1)) line(a, b)` is the point on the line and
+    /// this within `(0, 1)`: the segment.  A bound and never a row.
+    LineFraction,
     /// **A generated flank regular within its blank** (#345 S3, `envelope::regular`): `flank
     /// regular(>= m, by: tool) within blank`, the least area factor the flank — a held envelope,
     /// its source a face of `tool` — takes over the part of it the tool cuts within `blank`,
@@ -473,7 +493,7 @@ impl FamilyKernel {
 }
 
 /// Every concrete constraint type, in the order the registry lists them.
-pub const ALL_KINDS: [CKind; 90] = [
+pub const ALL_KINDS: [CKind; 95] = [
     CKind::Coincident,
     CKind::Distance,
     CKind::Midpoint,
@@ -564,6 +584,11 @@ pub const ALL_KINDS: [CKind; 90] = [
     CKind::RateDistance,
     CKind::TangentCircleAt3,
     CKind::CarriedPointIn,
+    CKind::DevelopedLength,
+    CKind::PlaneTangentLine,
+    CKind::PlaneTangentRound,
+    CKind::PlaneSupportsCorner,
+    CKind::LineFraction,
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -797,6 +822,11 @@ impl CKind {
             CKind::PointOnMeshing => "PointOnMeshing",
             CKind::CarriedPoint => "CarriedPoint",
             CKind::CarriedPointIn => "CarriedPointIn",
+            CKind::DevelopedLength => "DevelopedLength",
+            CKind::PlaneTangentLine => "PlaneTangentLine",
+            CKind::PlaneTangentRound => "PlaneTangentRound",
+            CKind::PlaneSupportsCorner => "PlaneSupportsCorner",
+            CKind::LineFraction => "LineFraction",
             CKind::RegularWithin => "RegularWithin",
             CKind::Deflection => "Deflection",
             CKind::Mass => "Mass",
@@ -858,6 +888,8 @@ impl CKind {
         matches!(
             self,
             CKind::Project
+                // a development's home ruling's length, its panel built from the rails (#645)
+                | CKind::DevelopedLength
                 | CKind::Parallel3
                 | CKind::PointOnLine3
                 | CKind::PointOnAxis
@@ -1003,6 +1035,16 @@ impl CKind {
             CKind::TangentCircleAt | CKind::TangentCircleAt3 => {
                 &[("circle", S::CircleOrArc), ("line", S::Line), ("at", S::Point)]
             }
+            CKind::DevelopedLength => &[("curve", S::Curve)],
+            CKind::PlaneTangentLine => &[("plane", S::Plane), ("line", S::Line), ("at", S::Point)],
+            CKind::PlaneTangentRound => {
+                &[("plane", S::Plane), ("round", S::CircleOrArc), ("at", S::Point)]
+            }
+            CKind::PlaneSupportsCorner => &[
+                ("plane", S::Plane), ("into", S::Line), ("out", S::Line), ("at", S::Point),
+                ("lambda", S::Param),
+            ],
+            CKind::LineFraction => &[("p", S::Point), ("line", S::Line), ("t", S::Ratio)],
             CKind::CurveCurvature => {
                 &[("curve", S::Curve), ("circle", S::CircleOrArc), ("t", S::Param)]
             }
@@ -1190,6 +1232,8 @@ impl CKind {
             CKind::CarriedPoint | CKind::CarriedPointIn => Some(Dim::SCALAR),
             // a place on a traced body: its formals' numbers, as a curve's parameter is
             CKind::PointOnTraced => Some(Dim::SCALAR),
+            // how far between a corner's two tangents a plane supporting it lies (#645)
+            CKind::PlaneSupportsCorner => Some(Dim::SCALAR),
             _ => None,
         }
     }
@@ -1240,6 +1284,14 @@ impl CKind {
             CKind::RateDistance => ("distance", Infix),
             // a point as the moving frame sees it (#326), at a stated roll too (#366)
             CKind::CarriedPoint | CKind::CarriedPointIn => ("coincident", Infix),
+            // a plane touching a path at a point (#645)
+            CKind::PlaneTangentLine | CKind::PlaneTangentRound | CKind::PlaneSupportsCorner => {
+                ("tangent", Infix)
+            }
+            // where on a line a point of it is, read by a contact over an interval (#645)
+            CKind::LineFraction => ("coincident", Infix),
+            // a development's own row, minted with its laid rail
+            CKind::DevelopedLength => return None,
             // a flank's regularity within a blank (#345): written `regular(…) within`
             CKind::RegularWithin => ("regular", Infix),
             // a frame's deflection (#510 S1): a scenario's output, `deflection(at, along: d)`
@@ -1560,6 +1612,8 @@ impl CKind {
                 | CKind::Angle3
                 // a flank's least area factor (#345): at least a margin, read as found
                 | CKind::RegularWithin
+                // where on a line a point stands, a contact's interval (#645)
+                | CKind::LineFraction
         )
     }
 
@@ -1770,6 +1824,13 @@ impl CKind {
             | CKind::CarriedPoint
             | CKind::CarriedPointIn
             | CKind::RateDistance
+            // a plane touching a path at a point the drawing holds (#645): regular, no double
+            // root; a development's length and a line's fraction: no contact
+            | CKind::PlaneTangentLine
+            | CKind::PlaneTangentRound
+            | CKind::PlaneSupportsCorner
+            | CKind::DevelopedLength
+            | CKind::LineFraction
             // a flank's regularity (#345): no contact
             | CKind::RegularWithin
             // nor a frame's deflection (#510 S1), nor what a body is made of
@@ -1890,6 +1951,11 @@ impl CKind {
             CKind::CarriedPoint | CKind::CarriedPointIn => {
                 panic!("a point a motion carries is read by a kernel built at its operands' widths")
             }
+            CKind::DevelopedLength => K::DevelopedLength,
+            CKind::PlaneTangentLine => K::PlaneTangentLine,
+            CKind::PlaneTangentRound => K::PlaneTangentRound,
+            CKind::PlaneSupportsCorner => K::PlaneSupportsCorner,
+            CKind::LineFraction => K::LineFraction,
             CKind::Rate | CKind::RateDistance => {
                 panic!("a rate's kernel is its contact's source's (`Constraint::kernel_key`)")
             }
@@ -2063,6 +2129,13 @@ impl CKind {
             | CKind::Rate
             | CKind::RateDistance
             | CKind::RegularWithin
+            // nor a development's length, read off its panel, nor a plane touching a path, nor a
+            // line's fraction, a bound's number stated (#645)
+            | CKind::DevelopedLength
+            | CKind::PlaneTangentLine
+            | CKind::PlaneTangentRound
+            | CKind::PlaneSupportsCorner
+            | CKind::LineFraction
             // nor a frame's deflection (#510 S1), mass or volume: a scenario's number, stated,
             // never an unknown
             | CKind::Deflection
@@ -2148,6 +2221,10 @@ impl CKind {
                 | CKind::Mass
                 | CKind::Volume
                 | CKind::PointOnTraced
+                | CKind::PlaneTangentLine
+                | CKind::PlaneTangentRound
+                | CKind::PlaneSupportsCorner
+                | CKind::LineFraction
                 | CKind::PointOnAxis
                 | CKind::LineOnAxis
                 | CKind::AxisOnPlane

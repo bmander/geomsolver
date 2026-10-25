@@ -4,6 +4,7 @@
 //! Evaluate expressions once after all declarations and constraints are built.
 
 mod curves;
+mod developed;
 mod diagnostics;
 mod drift;
 mod elaborate;

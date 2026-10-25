@@ -29,6 +29,10 @@ pub enum OpArg {
     /// an offset no source writes: a set's use (`p distance(<= d, side: outside) S`, §6.21) puts it
     /// on a cone's number, so the bound is on the distance from its surface (`model::RegionTerm`).
     Bound { cmp: Cmp, span: Span, hi: Option<(String, Span)>, grow: Option<(String, Span)> },
+    /// **A contact over an interval** (#645): `p coincident(t in (0, 1)) line(m, n)`, the slot
+    /// `key` held within `(lo, hi)` — on a line the segment between its ends.  Where on the curve,
+    /// never a distance: no set it stands in is made a region by it.
+    Within { key: Name, lo: (String, Span), hi: (String, Span) },
 }
 
 /// An operator spelling retained through resolution, with operands and arguments

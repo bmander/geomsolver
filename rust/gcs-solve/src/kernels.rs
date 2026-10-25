@@ -145,9 +145,17 @@ pub enum K {
     // the directed angle about an axis, and its free twin (#558)
     AngleAbout,
     AngleAboutFree,
+    // a development's home ruling as long as the panel's (#645)
+    DevelopedLength,
+    // a plane touching a line, a round, and a corner of two lines at a point of each (#645)
+    PlaneTangentLine,
+    PlaneTangentRound,
+    PlaneSupportsCorner,
+    // where a point on a line stands along it, a fraction of its run: a contact's interval (#645)
+    LineFraction,
 }
 
-pub const N_KERNELS: usize = 99;
+pub const N_KERNELS: usize = 104;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -403,6 +411,7 @@ pub fn point_on_body_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
     let (name, res, jac): (&'static str, KernelFn, KernelFn) = match body {
         ENVELOPE => ("point_on_envelope", point_on_body_res::<ENVELOPE>, point_on_body_jac::<ENVELOPE>),
         EXTREMAL => ("point_on_extremal", point_on_body_res::<EXTREMAL>, point_on_body_jac::<EXTREMAL>),
+        DEVELOPED => ("point_on_developed", point_on_body_res::<DEVELOPED>, point_on_body_jac::<DEVELOPED>),
         _ => ("point_on_trace", point_on_body_res::<TRACE>, point_on_body_jac::<TRACE>),
     };
     Kernel { name, n_res: 2, n_par: 3 + n_theta, n_const, degree: 1, res, jac, const_jac: None, form: None }
@@ -444,6 +453,7 @@ pub fn curve_tangent_kernel(n_theta: usize, n_const: usize, body: u8) -> Kernel 
         TRACE => ("trace_tangent_line", curve_tangent_res::<TRACE>, curve_tangent_jac::<TRACE>),
         ENVELOPE => ("envelope_tangent_line", curve_tangent_res::<ENVELOPE>, curve_tangent_jac::<ENVELOPE>),
         EXTREMAL => ("extremal_tangent_line", curve_tangent_res::<EXTREMAL>, curve_tangent_jac::<EXTREMAL>),
+        DEVELOPED => ("developed_tangent_line", curve_tangent_res::<DEVELOPED>, curve_tangent_jac::<DEVELOPED>),
         _ => ("curve_tangent_line", curve_tangent_res::<FORMULA>, curve_tangent_jac::<FORMULA>),
     };
     Kernel { name, n_res: 2, n_par: 1 + n_theta + 4, n_const, degree: 1, res, jac, const_jac: None, form: None }
@@ -508,6 +518,7 @@ pub fn curve_curvature_kernel(n_theta: usize, n_const: usize, body: u8, formed: 
         TRACE => ("trace_curvature", curve_curvature_res::<TRACE>, curve_curvature_jac::<TRACE>),
         ENVELOPE => ("envelope_curvature", curve_curvature_res::<ENVELOPE>, curve_curvature_jac::<ENVELOPE>),
         EXTREMAL => ("extremal_curvature", curve_curvature_res::<EXTREMAL>, curve_curvature_jac::<EXTREMAL>),
+        DEVELOPED => ("developed_curvature", curve_curvature_res::<DEVELOPED>, curve_curvature_jac::<DEVELOPED>),
         _ => ("curve_curvature", curve_curvature_res::<FORMULA>, curve_curvature_jac::<FORMULA>),
     };
     let (res, jac): (KernelFn, KernelFn) = if formed { (res, jac) } else { (refused_res, refused_jac) };
@@ -1786,6 +1797,9 @@ pub const TRACE: u8 = 1;
 pub const ENVELOPE: u8 = 2;
 /// A free curve's: its energy's Lagrangian and its pegs, its shape solved (`extremal.rs`).
 pub const EXTREMAL: u8 = 3;
+/// A panel's rail laid flat (#645): the rails, the layer and the home point, the panel built and
+/// laid from them (`developable.rs`).
+pub const DEVELOPED: u8 = 4;
 
 /// **A spline's rate at its parameter** (#365): `C′(t)` over one span's columns `[t, x₀, y₀, …]`,
 /// its knots and weights `k`, and — where `grad` — how it moves with each column: `C″` with `t`,
@@ -1822,6 +1836,7 @@ pub(crate) fn curve_rate(body: u8, k: &[f64], cols: &[f64], grad: bool)
             TRACE => curve_value::<TRACE>(k, u, theta, 1),
             ENVELOPE => curve_value::<ENVELOPE>(k, u, theta, 1),
             EXTREMAL => curve_value::<EXTREMAL>(k, u, theta, 1),
+            DEVELOPED => curve_value::<DEVELOPED>(k, u, theta, 1),
             _ => curve_value::<FORMULA>(k, u, theta, 1),
         };
         return Some((c[1], Vec::new()));
@@ -1830,6 +1845,7 @@ pub(crate) fn curve_rate(body: u8, k: &[f64], cols: &[f64], grad: bool)
         TRACE => curve_frame::<TRACE>(k, u, theta, 2),
         ENVELOPE => curve_frame::<ENVELOPE>(k, u, theta, 2),
         EXTREMAL => curve_frame::<EXTREMAL>(k, u, theta, 2),
+        DEVELOPED => curve_frame::<DEVELOPED>(k, u, theta, 2),
         _ => curve_frame::<FORMULA>(k, u, theta, 2),
     };
     let partial = (0..cols.len()).map(|c| [f.g[1][0][c], f.g[1][1][c]]).collect();
@@ -1861,6 +1877,7 @@ fn body_val<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], need: u8, gradient
     match BODY {
         ENVELOPE => crate::generate::kernel_eval(k, u, theta, need, gradient),
         EXTREMAL => crate::extremal::kernel_eval(k, u, theta, need, gradient),
+        DEVELOPED => crate::developable::kernel_eval(k, u, theta, need, gradient),
         _ => crate::locus::kernel_eval_to(k, u, theta, need),
     }
 }
@@ -1871,6 +1888,7 @@ fn curve_frame<const BODY: u8>(k: &[f64], u: f64, theta: &[f64], need: u8) -> Cu
         let fr = match BODY {
             ENVELOPE => crate::generate::kernel_frame(k, u, theta, need),
             EXTREMAL => crate::extremal::kernel_frame(k, u, theta, need),
+            DEVELOPED => crate::developable::kernel_frame(k, u, theta, need),
             _ => crate::locus::kernel_frame(k, u, theta, need),
         };
         let v = fr.val;
@@ -3353,6 +3371,62 @@ fn tangent_circle_at3_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
     [vdot(r, d), vdot(n, d)]
 }
 
+/// Columns of `developed_length`: (f, g), the home ruling's ends drawn in the plane a
+/// development is laid in, K = (L), the panel's home ruling's length as the drawing stands
+/// (#645).  `|g − f| − L`: the image as long as the ruling.  Degree 1.
+fn developed_length_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let (dx, dy) = (v[2] - v[0], v[3] - v[1]);
+    [(dx * dx + dy * dy).sqrt() - T::cst(k[0])]
+}
+
+/// Columns of `plane_tangent_line`: (M, A, B, O, du, dv) — the point of contact's hidden point,
+/// the line's ends', the plane's origin and axes (#645).  `(M − O)·n̂` and `n̂·(B − A)`: the
+/// plane through the point holding the line's direction — a plane touching a straight path, at
+/// any point of it or its end.  Degree 1.
+fn plane_tangent_line_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let (_, _, n) = frame(vec3(v, 12), vec3(v, 15));
+    let (m, o) = (vec3(v, 0), vec3(v, 9));
+    [vdot(vsub(m, o), n), vdot(n, vsub(vec3(v, 6), vec3(v, 3)))]
+}
+
+/// Columns of `plane_tangent_round`: (M, C, O, du, dv, ku, kv) — the point of contact's hidden
+/// point, the round's centre's, the plane's origin and axes, the round's plane's axes (#645).
+/// `(M − O)·n̂` and `n̂·(k̂ × (M − C))`: the plane through the point holding the round's tangent
+/// there, square to its radius in its own plane.  Degree 1.
+fn plane_tangent_round_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let (_, _, n) = frame(vec3(v, 9), vec3(v, 12));
+    let (_, _, k) = frame(vec3(v, 15), vec3(v, 18));
+    let (m, c, o) = (vec3(v, 0), vec3(v, 3), vec3(v, 6));
+    [vdot(vsub(m, o), n), vdot(n, vcross(k, vsub(m, c)))]
+}
+
+/// Columns of `plane_supports_corner`: (J, A, B, O, du, dv, λ) — the corner's hidden point, the
+/// far ends of the link into it and the link out of it, the plane's origin and axes, and how far
+/// between the two links' directions the plane lies (#645).  `(J − O)·n̂` and `n̂·((1 − λ)·â +
+/// λ·b̂)·ℓ`, `â` along the link in, `b̂` along the link out, `ℓ` their mean length: a plane through
+/// the corner holding a direction between its two one-sided tangents — it *supports* the path
+/// there.  Degree 1.
+fn plane_supports_corner_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
+    let (_, _, n) = frame(vec3(v, 12), vec3(v, 15));
+    let (j, a, b, o, lam) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9), v[21]);
+    let (into, out) = (vsub(j, a), vsub(b, j));
+    let len = (vdot(into, into).sqrt() + vdot(out, out).sqrt()) * T::cst(0.5);
+    let (ai, bo) = (vunit(into), vunit(out));
+    let t = [0, 1, 2].map(|q| (T::cst(1.0) - lam) * ai[q] + lam * bo[q]);
+    [vdot(vsub(j, o), n), vdot(n, t) * len]
+}
+
+/// Columns of `line_fraction`: (P, A, B) — a point's hidden point and a line's ends', K = (c)
+/// (#645).  `(P − A)·(B − A) / |B − A|² − c`: where the point stands along the line, a fraction
+/// of its run — what a contact over an interval (`coincident(t in (0, 1))`) bounds.  Degree 0.
+fn line_fraction_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let (p, a, b) = (vec3(v, 0), vec3(v, 3), vec3(v, 6));
+    let d = vsub(b, a);
+    let l2 = vdot(d, d);
+    let l2 = if l2.val() > MIN_LINE_LEN * MIN_LINE_LEN { l2 } else { T::cst(MIN_LINE_LEN * MIN_LINE_LEN) };
+    [vdot(vsub(p, a), d) / l2 - T::cst(k[0])]
+}
+
 /// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
 fn axis_parallel_plane_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 1] {
     let (_, _, n) = frame(vec3(v, 3), vec3(v, 6));
@@ -3837,6 +3911,11 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("line_on_axis_sensed", line_on_axis_sensed_rows, n_res: 4, n_par: 12, degree: 1, n_const: 7),
     num_kernel!("angle_about", angle_about_rows, n_res: 1, n_par: 18, degree: 0, n_const: 1),
     num_kernel!("angle_about_free", angle_about_free_rows, n_res: 1, n_par: 19, degree: 0, n_const: 2),
+    num_kernel!("developed_length", developed_length_rows, n_res: 1, n_par: 4, degree: 1, n_const: 1),
+    num_kernel!("plane_tangent_line", plane_tangent_line_rows, n_res: 2, n_par: 18, degree: 1, n_const: 0),
+    num_kernel!("plane_tangent_round", plane_tangent_round_rows, n_res: 2, n_par: 21, degree: 1, n_const: 0),
+    num_kernel!("plane_supports_corner", plane_supports_corner_rows, n_res: 2, n_par: 22, degree: 1, n_const: 0),
+    num_kernel!("line_fraction", line_fraction_rows, n_res: 1, n_par: 9, degree: 0, n_const: 1),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

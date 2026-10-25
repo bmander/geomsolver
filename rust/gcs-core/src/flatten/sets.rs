@@ -91,6 +91,16 @@ fn names_surface(rest: &[String]) -> bool {
 }
 
 impl Site {
+    /// Its literal, as a use reads it.
+    pub(super) fn lit(&self) -> &SetLit {
+        &self.lit
+    }
+
+    /// The scope its body reads names in.
+    pub(super) fn scope(&self) -> &Scope {
+        &self.scope
+    }
+
     /// A set made other than by a statement the walk met: a face of a solid (`faces`).
     pub(super) fn new(lit: SetLit, scope: Scope, depth: usize) -> Site {
         Site::of(lowered(lit), scope, depth)
@@ -127,16 +137,16 @@ pub(super) struct Made<'m> {
 /// One use of a set (§6.21), as `expand_set_uses` found it: the statement as written (`Use`), its
 /// relation, the operands naming sets — each by its place and the set by absolute name — and
 /// how every relation the use makes reads (`Relation::word`), its parentheses left to each case.
-struct SetUse<'u> {
-    u: Use<'u>,
-    w: &'u Written,
+pub(super) struct SetUse<'u> {
+    pub(super) u: Use<'u>,
+    pub(super) w: &'u Written,
     found: Vec<(usize, String)>,
     worded: Worded,
 }
 
 impl SetUse<'_> {
     /// The one set a use of one uses: its operand, and the set by absolute name.
-    fn set(&self) -> (usize, &str) {
+    pub(super) fn set(&self) -> (usize, &str) {
         let (k, abs) = &self.found[0];
         (*k, abs)
     }
@@ -834,6 +844,10 @@ impl<'a> Walk<'a> {
         if let Some((other, outside)) = self.side_of_set(abs, alias) {
             return self.reach_across(su, lowered, other, outside, alias);
         }
+        // a recognised sheet (#645): built exactly as a band, never applied as a body
+        if let Some(rails) = self.sheet_rails(&self.sets.made[abs].clone(), alias) {
+            return self.reach_sheet(su, &lowered, rails, abs, alias);
+        }
         let Reach { cmp, text, grows, args } = match reach_of(&lowered, &set) {
             Ok(r) => r,
             Err(m) => return self.once(Code::E040, at, m),
@@ -1212,6 +1226,12 @@ pub(super) fn instance_part(lit: &SetLit) -> (Vec<Stmt>, SetLit) {
             _ => None,
         }
     }
+    // a point on a ruling between the body's own points (`p coincident(t in (0, 1)) line(m, n)`,
+    // #645): where on the ruling is each use's, so the points it joins are each use's, and all
+    // that places them — a body with an interval contact of its point is the set's whole
+    if super::developable::within_point(lit) {
+        return (Vec::new(), lit.clone());
+    }
     let judged: Vec<_> = lit.body.iter().map(reads).collect();
     // the names that read the point, grown until no statement adds one
     let mut reading: BTreeSet<&str> = BTreeSet::from([lit.bound.text.as_str()]);
@@ -1234,7 +1254,7 @@ pub(super) fn instance_part(lit: &SetLit) -> (Vec<Stmt>, SetLit) {
 }
 
 /// A statement's written relation, where it is one.
-fn written_of(st: &Stmt) -> Option<&crate::syntax::Written> {
+pub(super) fn written_of(st: &Stmt) -> Option<&crate::syntax::Written> {
     match &st.kind {
         StmtKind::Relation(r) => r.form.written(),
         _ => None,

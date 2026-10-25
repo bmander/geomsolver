@@ -342,6 +342,8 @@ impl Drawn {
                     B::Extremal(_) => crate::kernels::EXTREMAL,
                     B::Followed(_) => return Err("a point traced over a parameter is drawn, and no \
                         marched body starts on it (#391)".into()),
+                    B::Developed(_) => return Err("a panel's rail laid flat is drawn, and no \
+                        marched body starts on it (#645)".into()),
                 };
                 if cv.extrusion || sk.curve_turn(i).is_some() {
                     return Err("a curve standing for a surface, or a ring's turned copy, is no \

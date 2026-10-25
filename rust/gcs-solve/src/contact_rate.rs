@@ -59,26 +59,35 @@ pub enum Source {
     Carried = 7,
     /// A point on an envelope in space: `[u, v, t, source…, motion…]`.
     Envelope = 8,
+    /// A point on a panel's rail laid flat (#645), in its view: `[t, θ…]`.
+    Developed = 9,
 }
 
 impl Source {
-    pub const ALL: [Source; 9] = [Source::Spline, Source::Formula, Source::Trace, Source::Profile,
-                                  Source::Extremal, Source::Traced, Source::Meshing,
-                                  Source::Carried, Source::Envelope];
+    pub const ALL: [Source; 10] = [Source::Spline, Source::Formula, Source::Trace,
+                                   Source::Profile, Source::Extremal, Source::Traced,
+                                   Source::Meshing, Source::Carried, Source::Envelope,
+                                   Source::Developed];
 
     /// Read in a view, as against in space.
     pub fn planar(self) -> bool {
-        (self as u8) <= Source::Extremal as u8
+        (self as u8) <= Source::Extremal as u8 || self == Source::Developed
     }
 
     /// A curve's body as its kernels say it (`kernels::FORMULA` …).
     fn body(self) -> u8 {
-        (self as u8).saturating_sub(1)
+        match self {
+            Source::Developed => crate::kernels::DEVELOPED,
+            _ => (self as u8).saturating_sub(1),
+        }
     }
 
     /// A curve of this body.
     pub fn curve(body: u8) -> Source {
-        Source::ALL[1 + body.min(3) as usize]
+        match body {
+            crate::kernels::DEVELOPED => Source::Developed,
+            _ => Source::ALL[1 + body.min(3) as usize],
+        }
     }
 
     /// The form its rate is held to a line in.
@@ -343,7 +352,8 @@ fn source_frame(h: &Header, cols: &[f64], grad: bool) -> Option<Read> {
     };
     match h.source {
         Source::Spline => planar(crate::kernels::spline_rate(cols, h.own, grad)),
-        Source::Formula | Source::Trace | Source::Profile | Source::Extremal => {
+        Source::Formula | Source::Trace | Source::Profile | Source::Extremal
+        | Source::Developed => {
             planar(crate::kernels::curve_rate(h.source.body(), h.own, cols, grad))
         }
         Source::Traced => crate::traced::frame(cols, h.own, h.slot, second, grad),
