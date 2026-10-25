@@ -457,11 +457,13 @@ impl Sketch {
     }
 
     /// **Plane `pi`'s normal, `P.normal`**: an axis along `u × v` through its origin, minted the
-    /// first time it is asked for, under `name`.  Held so by three intrinsic rows — square to
-    /// each axis (`Perpendicular3`) and through the origin (`PlaneAxis`) — which leave it its
-    /// sense, so it is seeded along `u × v` (`seed_normals`) and a solve, which moves it
-    /// continuously, keeps it there.  Three unknowns and three rows for its direction, the unit
-    /// row among them, and its place's two against `PlaneAxis`'s two: no freedom of its own.
+    /// first time it is asked for, under `name`.  Held so by three intrinsic rows — square to `u`
+    /// (`Perpendicular3`), a quarter turn on from `v` about `u` (`PerpendicularAbout`, `ccw`),
+    /// which holds it square to `v` on `u × v`'s side, and through the origin (`PlaneAxis`) — and
+    /// seeded along `u × v` (`seed_normals`).  Three unknowns and three rows for its direction,
+    /// the unit row among them, and its place's two against `PlaneAxis`'s two: no freedom of its
+    /// own, and no root against `u × v` (#629), so a solve cannot turn it over and leave its
+    /// plane mirrored.
     pub fn plane_normal(&mut self, pi: usize, name: &str) -> usize {
         if let Some(n) = self.frames[pi].normal {
             return n as usize;
@@ -476,22 +478,25 @@ impl Sketch {
     pub fn stand_normal(&mut self, pi: usize, n: usize) {
         use crate::constraints::{Arg, CKind};
         self.frames[pi].normal = Some(n as u32);
-        let (u, v) = (self.frames[pi].u as usize, self.frames[pi].v as usize);
+        let [u, v] = [self.frames[pi].u, self.frames[pi].v]
+            .map(|r| EntRef::new(EntKind::Axis, r as usize));
         let axis = EntRef::new(EntKind::Axis, n);
-        for side in [u, v] {
-            let mut c = Constraint::two_line(CKind::Perpendicular3, axis, EntRef::new(EntKind::Axis, side));
+        let rows = [
+            Constraint::two_line(CKind::Perpendicular3, axis, u),
+            Constraint::new(CKind::PerpendicularAbout,
+                vec![Arg::Ent(v), Arg::Ent(axis), Arg::Ent(u), Arg::Str("ccw".into())]),
+            Constraint::new(CKind::PlaneAxis, vec![Arg::Ent(EntRef::frame(pi)), Arg::Ent(axis)]),
+        ];
+        for mut c in rows {
             c.intrinsic = true;
             self.add_quiet(c);
         }
-        let mut c = Constraint::new(CKind::PlaneAxis, vec![Arg::Ent(EntRef::frame(pi)), Arg::Ent(axis)]);
-        c.intrinsic = true;
-        self.add_quiet(c);
         self.seed_normal(pi);
     }
 
     /// Every plane's normal turned along `u × v` as its axes now stand, and stood through where
-    /// it stands — after anything that moves a plane's seed, since the normal's rows hold it
-    /// square to the axes either way round.
+    /// it stands — after anything that moves a plane's seed, since a normal left against `u × v`
+    /// would start the solve at its rows' cut.
     pub fn seed_normals(&mut self) {
         for pi in 0..self.frames.len() {
             self.seed_normal(pi);

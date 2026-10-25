@@ -122,12 +122,20 @@ the declaration (`fields()` and the JSON keys stay three) but `PlaneE::normal`, 
 a reference reads it — the flattener records each (`Expansion::normals`, in `rewrite`'s `fix`)
 and `build_plane` mints it with the plane (`Sketch::plane_normal`, bound as `P.normal`), so a later
 declaration may name it and an earlier one is E040 (`follow_building`). Its rows are intrinsic:
-`Perpendicular3` to each axis and `PlaneAxis` through `o` — three rows over its direction with the
-unit row, two over its place, no freedom; `axes_along` keeps its `PlaneAxis` where it swaps the
-plane's for a `Coincident3`. The rows leave its sense, so `Sketch::seed_normals` turns it along
-`u × v` after `axes_along`, in `views::place` (which reads it off the axes, never solves it:
-placed with them, its rows not taken) and after `settle_turns`; the solve keeps the sense by
-continuity. `follow` resolves it; `hint(dir: P.normal)` reads the basis as `P.n` does. **Drawn
+`Perpendicular3` to `u`, `PerpendicularAbout(v, n, about: u, ccw)` — square to `v` and a quarter
+turn on from it about `u`, so on `u × v`'s side — and `PlaneAxis` through `o`: three rows over its
+direction with the unit row, two over its place, no freedom. **Its sense is a row** (#629): a
+normal against `u × v` is no root but the turn's cut, so a solve cannot turn it over alone and
+leave the plane mirrored with every row holding (a part seated on its frame once stood upside
+down so, solved). `axes_along` keeps its `PlaneAxis` where it swaps the plane's for a
+`Coincident3`. `Sketch::seed_normals` turns it along `u × v` after `axes_along`, in
+`views::place` and after `settle_turns`. `place` solves the statements reading a normal without
+its rows, then reads it off the axes again; where a round solved it against them, the plane is
+turned over (`views::turn_over`: its free `v` reversed, else its `u`), so the solve starts on the
+statement's side and not at the cut. `tests/plane_normal.rs`
+(`a_normal_held_against_its_seed_turns_its_plane_over`) and `tests/frame_datums.rs`
+(`a_part_seated_a_half_turn_round_on_a_raised_station_stands_upright`) are the gates for the
+sense. `follow` resolves it; `hint(dir: P.normal)` reads the basis as `P.n` does. **Drawn
 nowhere**: `Sketch::drawn` leaves it out (so the workspace's scene, picks and boxes) and
 `nearest_axis` skips it. JSON writes a plane's `"normal"` (an axis index) only where one was read,
 and the reader and `graft` give it its rows again (`stand_normal`); `lift` names it `vK.normal`
