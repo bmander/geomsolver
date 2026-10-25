@@ -709,6 +709,47 @@ st raised(d: -10mm, along: tilt) base
 }
 
 #[test]
+fn a_part_seated_a_half_turn_round_on_a_raised_station_stands_upright() {
+    // #629: within a few degrees of a half turn, the frame's normal came out along `up` with its
+    // `v` left where it was seeded — a mirrored frame, every row holding — and the part stood
+    // upside down, solved.  Now it stands its z along `up` at every turn.
+    const DISC: &str = "\
+unit mm
+use std
+use std (seats, raised, coords)
+component Part() {
+  in std.top {
+    c := point hint((3, 1))
+    c coords(du: 3mm, dv: 1mm) std.top
+    rim := radius(1mm) circle(center: c)
+  }
+  b := solid(face(rim), from: 1mm, to: 2mm)
+}
+in std.top {
+  c := point hint((-100, 20))
+  c coords(du: -100mm, dv: 20mm) std.top
+}
+at := point
+at raised(d: 75mm, along: std.z) c
+";
+    for turn in [176.0, 179.0, 180.0, -179.0, 90.0, 0.0] {
+        let src = format!("{DISC}p := Part()\np seats(turn: {turn}deg, up: std.z, east: std.x) at\n");
+        let mut e = solved(&src);
+        assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
+        let (c, s) = (f64::to_radians(turn).cos(), f64::to_radians(turn).sin());
+        let pose = Pose { u: [c, s, 0.0], v: [-s, c, 0.0], o: [-100.0, 20.0, 75.0] };
+        let (got, want) = (at(&e, "p.c"), pose.image([3.0, 1.0, 0.0]));
+        assert!(near(got, want), "at {turn}°: {got:?} against {want:?}");
+        // and the frame is right handed, so the solid placed by it stands up off the seat
+        let f = crate::common::ent(&e, "p#frame").i();
+        let pl = &e.sketch.frames[f];
+        let d = |r: u32| crate::common::dir(&e.sketch, r as usize);
+        let up = gcs_core::space::cross(d(pl.u), d(pl.v));
+        assert!(near(up, [0.0, 0.0, 1.0]), "at {turn}°: u × v is {up:?}");
+    }
+}
+
+#[test]
 fn a_relation_word_over_an_instance_whose_body_reads_no_datum_is_refused_at_the_use() {
     let src = format!("{HANDED}{SEATS}p := Post(std.front, std.origin, len: 40mm)\nq := point\n\
                        p seats_at(up: std.z, east: std.x) q\n");
