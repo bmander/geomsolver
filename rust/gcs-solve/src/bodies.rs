@@ -28,7 +28,7 @@ use crate::delaunay::plane::Mesh as Plane;
 use crate::delaunay::tetra::{self, EDGES};
 use crate::diagnose::analysis::{self, direction, Held};
 use crate::eigen::{self, Pairs};
-use crate::interior::{Borne, Failure, Reads, State, Structure, Tet10};
+use crate::interior::{Borne, Drive, Failure, Mover, Reads, State, Structure, Tet10};
 use crate::model::{
     Applied, EntKind, LoadKind, LoadValue, Output, Property, Requirement, Scenario, Sketch,
 };
@@ -972,7 +972,7 @@ pub fn row(sk: &Sketch, sc: &Scenario, at: usize, along: crate::model::EntRef, c
                            face_plane)?;
     let b = &st.region.basis;
     moved.stack = Some(crate::interior::Stack { basis: [b.o, b.u, b.v, b.normal()], of: st.of });
-    Ok(prisms::Row { structure: s, moved: crate::interior::Mover::Plane(moved), columns, x,
+    Ok(prisms::Row { structure: s, drive: Drive::Moved(Mover::Plane(moved)), columns, x,
                      coarser: 1.0 })
 }
 
@@ -998,7 +998,7 @@ fn filled_row(sk: &Sketch, sc: &Scenario, solid: usize, at: usize, along: crate:
         s.weight[3 * node + c] = d[c];
     }
     let (hull, columns) = crate::hulls::hull_of(sk, solid, &mesh)?;
-    Ok(prisms::Row { structure: s, moved: crate::interior::Mover::Hull(hull), columns, x, coarser })
+    Ok(prisms::Row { structure: s, drive: Drive::Moved(Mover::Hull(hull)), columns, x, coarser })
 }
 
 /// **The row of `mass(m) solid` or `volume(v) solid`** (`reads`), `solid` a filled body (#567):
@@ -1009,6 +1009,6 @@ fn filled_row(sk: &Sketch, sc: &Scenario, solid: usize, at: usize, along: crate:
 pub(crate) fn measured_row(sk: &Sketch, solid: usize, reads: Reads) -> Result<prisms::Row, String> {
     let (mesh, s, x) = measuring(sk, solid, reads, 1.0)?;
     let (hull, columns) = crate::hulls::hull_of(sk, solid, &mesh)?;
-    Ok(prisms::Row { structure: s, moved: crate::interior::Mover::Hull(hull), columns, x,
+    Ok(prisms::Row { structure: s, drive: Drive::Moved(Mover::Hull(hull)), columns, x,
                      coarser: 1.0 })
 }

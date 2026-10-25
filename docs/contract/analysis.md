@@ -76,6 +76,23 @@ names another.
   cosines, so it is a displacement and the row is of **degree 1**. The residual is `J − J₀`, or
   `J − (m·a + c)` with an unknown.
 
+- **A row's constants are one walk, and its drive one tag** (#638; `interior/consts.rs`). What
+  drives a row's columns is one `interior::Drive`: the structure's own numbers each a column
+  (`Stated`), its beams' sections read over unknowns (`Sized`, S1), or its nodes read over the
+  drawing's columns (`Moved`, a region's, a prism's or a filled body's, S2, S3 and #567) — never
+  two, and a moved row has no bars and no beams. The head is named (`Head`: the counts, what the
+  row reads, the drive's tag and how many columns the drive reads), so no slot is read by its
+  number, and the kernel tells from it alone whether the row carries the unknown's column
+  (`consts::columns`). One walk writes the constants (`Structure::write`), into a vector
+  (`Structure::consts`) or into a count (`Structure::widths`), so a row's width is what its writer
+  writes; one walk reads them back in the same order (`Structure::read`) over a cursor whose every
+  step is bounded (`Take`), and refuses — `None`, never a panic, since a document's constants
+  reach it through the wasm core — a count out of range, an index past its count, a tape reading
+  past its unknowns, a mover that does not fit the structure, a constant short or left over.
+  **Held to**: each drive read back as itself, the structure and what it states, its width its
+  constants' length; cut anywhere, one longer, a slot of the head out of range or the tag
+  another's, no row (`interior.rs`, `a_rows_drive_is_its_constants`).
+
 - **A structure with no displacement to give is a failure, never a number** (#510 P5).
   `Failure::Free`: the supports leave a motion that costs no energy. The factor has an exactly
   zero pivot, or its least pivot as a fraction of its diagonal (`Ata::least_pivot`, recorded
@@ -140,7 +157,7 @@ names another.
   itself. It agrees with central differences of the value over random braced frames in the plane
   and in space, stated and free (`jacobians.rs`, `a_frames_interior_agrees_with_finite_differences`;
   a frame's normal equations square a stiffer conditioning than a truss's, so its difference is
-  taken over 1e-4). The constants carry beams (`HEAD` is `[dim, nodes, bars, beams]`, each beam
+  taken over 1e-4). The constants carry beams (the head counts them, each beam
   `(a, b, E, G, ρ, z)`), written and read back exactly (`a_frame_is_its_constants`). No word
   compiles to the row yet: that is S1's.
 
@@ -312,9 +329,9 @@ names another.
   the section reads it, and one no row binds — no driving row on its frame and no dimension — is
   **E040** too (`program::beams::sized`): nothing determines it. The kernel solves the structure at
   the sections the tapes give, and carries each section's rate to the unknowns by the tape's
-  gradient (`interior::jac`); the constants carry the tapes after the structure (`HEAD`'s `sized`,
-  −1 where the sections are columns of their own, so P5's and S0's rows are unchanged).
-  `Structure::read_sized` refuses constants that are not whole, which the kernel reads as NaN.
+  gradient (`interior::jac`); the constants carry the tapes after the structure (`Drive::Sized`, the
+  head's `over` its unknowns; a row whose sections are columns of their own is `Drive::Stated`).
+  `Structure::read` refuses constants that are not whole, which the kernel reads as NaN.
 
 - **A spread load moves with its members** (#510 S1; `interior::Spread`, `Structure::forces`). A
   force spread evenly along beams is its whole over their length, `q = F / Σ L`, the same force
@@ -480,7 +497,7 @@ names another.
   before the row is validated, so the validation reads it) so that every compile of the row
   through a solve — and every residual after it — reads one mesh. Within it the nodes are
   functions of the row's columns, each region point's two numbers in the plane and each arc's or
-  circle's radius (`Moved`, its constants after the structure's, `HEAD`'s `moved`): a node at a
+  circle's radius (`Moved`, its constants after the structure's, `Drive::Moved`): a node at a
   point of the drawing (a side's start, a point the scenario names) is that point; a node along a
   side is the side's point at the parameter it was meshed at (a line's `a + s(b − a)`, an arc's at
   the fraction `s` of its turn, a circle's at `2πs`); the nodes inside follow the boundary
@@ -598,9 +615,9 @@ names another.
   elements (`F ∫ N dV / Σ V`), the same force however the solid grows; a body load `b ∫ N dV`. One
   function per kind of share (`facet_load`, `element_load`) lays the load and, over `Dual`, its
   `λᵀ∂f/∂x`, an even load's whole also reading `−(Σ λᵀfₑ)/S² ∂S`, as the plane's do. The row's
-  constants carry them after the plane loads (`HEAD` is twelve: `tets`, `borne`, and `stacked`
-  below), each `[kind, count, a, b, c]` then its facets or elements; a solid element's are its ten
-  nodes, its modulus, ratio and density.
+  constants carry them after the plane loads (the head counts `tets` and `borne`), each
+  `[kind, count, a, b, c]` then its facets or elements; a solid element's are its ten nodes, its
+  modulus, ratio and density.
 
 - **A solid is read in three dimensions where a requirement names it and nothing else reads it**
   (#510 S3; `bodies::read`, `scenario_read`). A solid made of a material, named by a requirement —
@@ -779,7 +796,7 @@ names another.
   solid stands over its face's node at its ordinate along the plane's normal (`Stack`: `o + p₀u +
   p₁v + h n`), so it moves as that node does; a gradient in the solid's places is folded onto the
   face's along its two axes (`Stack::fold`) and then carried as a region's is. The constants carry
-  the stack after the face's moves (`HEAD`'s `stacked`: how many nodes the face has). Refused where
+  the stack after the face's moves (`Drive::Moved`, the head's tag a prism's). Refused where
   a region's is (**E040**): a direction the solve moves, a plane it turns, a side it does not move,
   a solid left free. A driving deflection of a solid that is no prism is a row too, its mesh
   moved by its sheets (#567, below). **Held to**: its
@@ -791,8 +808,8 @@ names another.
   the rate, over 1e-2 its truncation under a millionth.
 
 - **A filled body's nodes are functions of the drawing: its sheets move them** (#567;
-  `hulls::hull_of`, `interior::Hull`, `interior::Mover::Hull`, `HEAD`'s `hulled`). A solid that is
-  no prism — turned, united, cut — is its exact boundary refined and filled (`Mesh::filled`), and
+  `hulls::hull_of`, `interior::Hull`, `interior::Mover::Hull`, its head's tag `Hull`). A solid that
+  is no prism — turned, united, cut — is its exact boundary refined and filled (`Mesh::filled`), and
   every face of that boundary is a piece of a **sheet** a closed form of the drawing reads: each
   face's path (`FacePath`) walked to the primitive it is a piece of
   (`faces::face_primitive`; a placed copy on the way is refused) and named there — a prism's cap
