@@ -462,7 +462,8 @@ impl Sketch {
     /// which holds it square to `v` on `u × v`'s side, and through the origin (`PlaneAxis`) — and
     /// seeded along `u × v` (`seed_normals`).  Three unknowns and three rows for its direction,
     /// the unit row among them, and its place's two against `PlaneAxis`'s two: no freedom of its
-    /// own, and against `u × v` no root.
+    /// own, and no root against `u × v` (#629), so a solve cannot turn it over and leave its
+    /// plane mirrored.
     pub fn plane_normal(&mut self, pi: usize, name: &str) -> usize {
         if let Some(n) = self.frames[pi].normal {
             return n as usize;
@@ -480,9 +481,6 @@ impl Sketch {
         let [u, v] = [self.frames[pi].u, self.frames[pi].v]
             .map(|r| EntRef::new(EntKind::Axis, r as usize));
         let axis = EntRef::new(EntKind::Axis, n);
-        // square to `u`, and a quarter turn on from `v` about `u` (#629): `u × v`'s way and never
-        // against it, which two unsensed squares would let a solve land on, turning the normal
-        // over while the axes stay
         let rows = [
             Constraint::two_line(CKind::Perpendicular3, axis, u),
             Constraint::new(CKind::PerpendicularAbout,
@@ -497,8 +495,8 @@ impl Sketch {
     }
 
     /// Every plane's normal turned along `u × v` as its axes now stand, and stood through where
-    /// it stands — after anything that moves a plane's seed, which a normal against `u × v` would
-    /// start the solve at its rows' cut.
+    /// it stands — after anything that moves a plane's seed, since a normal left against `u × v`
+    /// would start the solve at its rows' cut.
     pub fn seed_normals(&mut self) {
         for pi in 0..self.frames.len() {
             self.seed_normal(pi);

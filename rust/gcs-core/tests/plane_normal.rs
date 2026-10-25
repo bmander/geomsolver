@@ -1,9 +1,10 @@
 //! **A plane's normal, `P.normal`**: an axis along `u × v` through the plane's origin, minted where
 //! the document reads it (`Sketch::plane_normal`) and held so by the plane's own rows — square to
-//! each axis on `u × v`'s side, through the origin — with no freedom of its own.  Held here against `u × v` as
-//! solved, sense and all, against the freedoms it adds (none), the places it may be read (a
-//! relation, a later plane's slot, a component's formal, a `hint(dir:)`), a plane declared after
-//! the reading, JSON and a lifted program, and the workspace, which draws it nowhere.
+//! each axis on `u × v`'s side, through the origin — with no freedom of its own.  Held here
+//! against `u × v` as solved, sense and all, against the freedoms it adds (none), the places it
+//! may be read (a relation, a later plane's slot, a component's formal, a `hint(dir:)`), a plane
+//! declared after the reading, JSON and a lifted program, and the workspace, which draws it
+//! nowhere.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Sketch};
@@ -119,8 +120,7 @@ l parallel P.normal
 
 /// A normal held against the way its plane was seeded turns the plane over, never itself alone
 /// (#629): `P` seeded facing up, its `u` held along x and its normal down, has its `v` along −y.
-/// Square to both axes either way round, the normal turned alone would satisfy every row and
-/// leave `u × v` up, so what stands on the plane would stand mirrored.
+/// Turned alone, the normal would leave `u × v` up and what stands on the plane mirrored.
 #[test]
 fn a_normal_held_against_its_seed_turns_its_plane_over() {
     let e = read("\

@@ -708,12 +708,9 @@ st raised(d: -10mm, along: tilt) base
     assert!(near(at(&e, "st"), [4.0, 20.0, -8.0]), "{:?}", at(&e, "st"));
 }
 
-#[test]
-fn a_part_seated_a_half_turn_round_on_a_raised_station_stands_upright() {
-    // #629: within a few degrees of a half turn, the frame's normal came out along `up` with its
-    // `v` left where it was seeded — a mirrored frame, every row holding — and the part stood
-    // upside down, solved.  Now it stands its z along `up` at every turn.
-    const DISC: &str = "\
+/// A disc of radius 1 about (3, 1) in its part's top, and a station 75 above a point drawn in the
+/// world's (#629).
+const DISC: &str = "\
 unit mm
 use std
 use std (seats, raised, coords)
@@ -732,12 +729,19 @@ in std.top {
 at := point
 at raised(d: 75mm, along: std.z) c
 ";
+
+#[test]
+fn a_part_seated_a_half_turn_round_on_a_raised_station_stands_upright() {
+    // near a half turn the frame's normal could come out along `up` with its `v` left where it
+    // was seeded: a mirrored frame, every row holding, and the part upside down (#629)
     for turn in [176.0, 179.0, 180.0, -179.0, 90.0, 0.0] {
-        let src = format!("{DISC}p := Part()\np seats(turn: {turn}deg, up: std.z, east: std.x) at\n");
+        let src = format!("{DISC}p := Part()\n\
+                           p seats(turn: {turn}deg, up: std.z, east: std.x) at\n");
         let mut e = solved(&src);
         assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
-        let (c, s) = (f64::to_radians(turn).cos(), f64::to_radians(turn).sin());
-        let pose = Pose { u: [c, s, 0.0], v: [-s, c, 0.0], o: [-100.0, 20.0, 75.0] };
+        let t = f64::to_radians(turn);
+        let pose = Pose { u: [t.cos(), t.sin(), 0.0], v: [-t.sin(), t.cos(), 0.0],
+                          o: [-100.0, 20.0, 75.0] };
         let (got, want) = (at(&e, "p.c"), pose.image([3.0, 1.0, 0.0]));
         assert!(near(got, want), "at {turn}°: {got:?} against {want:?}");
         // and the frame is right handed, so the solid placed by it stands up off the seat

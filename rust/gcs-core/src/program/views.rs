@@ -487,11 +487,10 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
 }
 
 /// **Each plane whose normal a round solved against its axes' `u × v` turned over** (#629): a
-/// normal is solved here alone, its rows not taken, and is then seeded along `u × v` again
-/// (`Sketch::seed_normals`), so where a statement turned it the other way it would start the
-/// solve a half turn from its statement, held there by its rows (sensed, so that pose is no
-/// root).  Its plane is turned over instead, its `v` reversed (else its `u`) — a free axis, whose
-/// statements, unsensed, hold either way.
+/// normal is solved here without its rows and then seeded along `u × v` again
+/// (`Sketch::seed_normals`), which would start the solve a half turn from its statement, at its
+/// rows' cut.  The plane is turned over instead: its `v` reversed, else its `u`, whichever is
+/// still free.
 fn turn_over(sk: &mut Sketch, item: &BTreeSet<u32>, placed: &Placed) {
     use crate::space::{cross, dot};
     for p in sk.charted() {
