@@ -44,6 +44,18 @@ linear span across whose second row is its first moved by one step is met in the
 curve carried along the step onto it (`ssi::intersect`), exactly, not traced and fitted.
 `swept_speed::a_swept_gears_faces_mesh_along_their_rulings` and
 `a_plane_across_a_swept_sheet_meets_it_in_its_curve_carried_there` are the gates.
+**A spline extruded meets a surface the same all along it in closed form** (#644,
+`ssi::extruded`): a plane along the extrusion or a cylinder about a line along it in the lines
+along it through where the spline crosses or touches that surface, exactly; a cone about such a
+line in the spline carried along it onto the cone, a quintic over the spline's own parameter on
+its knots each twice more (`nurbs::interpolate_on`, so the spline itself is held exactly and only
+the height is fitted), a span halved where it strays past a quarter of the tolerance. Only where
+every meeting is steeper than `ssi::SHALLOW`: a touch or a crossing nearly one (a tool's side in
+the pocket it cut, along the pocket's wall) is traced, where touches are read. Traced, a
+straight meeting took the step the spline's sharpest turn anywhere allows — a tooth space's prism
+met its tip in eight thousand steps fitted through a thousand, and a 16-tooth pinion's STEP grew
+sixfold. `brep::an_extruded_spline_meets_surfaces_along_it_in_closed_form` and
+`planar_subtraction::a_flanks_prism_meets_the_tip_and_the_chamfers_in_closed_form` are the gates.
 **A B-spline curve's foot** (`BSpline::nearest`) is the nearest of seventeen samples a knot span,
 read off the span's Bézier form, the spans nearest box first and none past the nearest sample
 found, refined by Newton; each thread holds the last few feet by curve and point (a trace asks a

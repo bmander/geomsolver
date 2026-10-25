@@ -1,9 +1,11 @@
 //! Where two surfaces meet, in closed form where it has one: two planes in a line; surfaces of
 //! revolution about one axis (a plane square to it, a cylinder, a cone, a sphere centred on it, a
 //! torus) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
-//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines. The
-//! rest is left to be traced (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no
-//! seed reaches is searched for (`unseen`).
+//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines; a
+//! spline extruded and a plane or a cylinder running its way in lines, and a cone about a line its
+//! way in the spline carried onto the cone (`extruded`). The rest is left to be traced
+//! (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no seed reaches is searched
+//! for (`unseen`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
@@ -52,7 +54,35 @@ impl Meridian {
 /// comes within `tol`.
 fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
     let rz = |t: f64| { let q = sub(s.point(t),o); let h = dot(q,z); [norm(sub(q,scale(z,h))),h] };
-    let g = |t: f64| other.implicit(rz(t));
+    spline_roots(s,&|t| other.implicit(rz(t)),&|t| { let [r,h] = rz(t); [r,h,0.] },tol).into_iter().map(rz).collect()
+}
+
+/// The parameters at which `g` along the spline `s` changes sign, refined, and at which a sampled
+/// minimum of its size comes within `tol` (a touch): one each where `at` puts them within `tol` of
+/// each other.
+fn spline_roots(s: &super::nurbs::BSpline,g: &dyn Fn(f64) -> f64,at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
+    let [a,b] = s.domain();
+    let ts = spline_samples(s);
+    let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
+    let mut out: Vec<f64> = Vec::new();
+    let push = |t: f64,out: &mut Vec<f64>| if !out.iter().any(|&u| distance(at(u),at(t)) <= tol) { out.push(t) };
+    for i in 0..ts.len()-1 {
+        let (x,y) = (gs[i],gs[i+1]);
+        if x.abs() <= tol { push(ts[i],&mut out); }
+        if x.abs() > tol && y.abs() > tol && (x < 0.) != (y < 0.) {
+            let t = crate::roots::bracketed_root(|t| Some(g(t)),ts[i],x,ts[i+1],y,1e-15*(b-a));
+            push(t,&mut out);
+        } else if i+2 < ts.len() && y.abs() < x.abs() && y.abs() < gs[i+2].abs() && (x < 0.) == (y < 0.) && y.abs() > tol {
+            let (t,v) = crate::roots::brent(&|t| g(t).abs(),ts[i],ts[i+2],1e-15*(b-a),200,|_,_| false);
+            if v <= tol { push(t,&mut out); }
+        }
+    }
+    if gs[ts.len()-1].abs() <= tol { push(b,&mut out); }
+    out
+}
+
+/// Where a spline's crossings are looked for: 32 steps a knot span, both ends included.
+fn spline_samples(s: &super::nurbs::BSpline) -> Vec<f64> {
     let [a,b] = s.domain();
     let mut cuts = vec![a];
     cuts.extend(s.breaks([a,b]));
@@ -60,22 +90,84 @@ fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -
     let mut ts: Vec<f64> = Vec::new();
     for w in cuts.windows(2) { for j in 0..32 { ts.push(w[0]+(w[1]-w[0])*j as f64/32.); } }
     ts.push(b);
-    let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
-    let mut out: Vec<[f64;2]> = Vec::new();
-    let push = |p: [f64;2],out: &mut Vec<[f64;2]>| if !out.iter().any(|q| (q[0]-p[0]).dhypot(q[1]-p[1]) <= tol) { out.push(p) };
-    for i in 0..ts.len()-1 {
-        let (x,y) = (gs[i],gs[i+1]);
-        if x.abs() <= tol { push(rz(ts[i]),&mut out); }
-        if x.abs() > tol && y.abs() > tol && (x < 0.) != (y < 0.) {
-            let t = crate::roots::bracketed_root(|t| Some(g(t)),ts[i],x,ts[i+1],y,1e-15*(b-a));
-            push(rz(t),&mut out);
-        } else if i+2 < ts.len() && y.abs() < x.abs() && y.abs() < gs[i+2].abs() && (x < 0.) == (y < 0.) && y.abs() > tol {
-            let (t,v) = crate::roots::brent(&|t| g(t).abs(),ts[i],ts[i+2],1e-15*(b-a),200,|_,_| false);
-            if v <= tol { push(rz(t),&mut out); }
-        }
+    ts
+}
+
+/// **A spline extruded along `f.z` and a surface the same all along that way** (#644: a tooth
+/// space's prism cut from a turned blank): a plane along it or a cylinder about a line along it
+/// meets the spline's face in the lines along it through where the spline crosses or touches that
+/// surface, exactly; a cone about a line along it, in the spline carried along it onto the cone
+/// (`lifted`). None for any other surface, a cone's curve that will not be written so, or a
+/// meeting anywhere at under `SHALLOW` — a touch, a crossing nearly one — which the trace and the
+/// Boolean read as touching (a tool in the pocket it cut, its side along the pocket's wall): traced.
+/// So is a plane or a cylinder the spline may meet twice between two of the samples its crossings
+/// are read at — the distance's extreme between them past nothing from both, or within `tol` of
+/// it — which the samples alone would read as no meeting.
+/// (Traced, a straight meeting took a step as short as the spline's sharpest turn anywhere allows,
+/// thousands of them, and was fitted through a thousand.)
+fn extruded(f: &Frame,c: &Curve,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    let Curve::BSpline(sp) = c else { return None };
+    let g = s.frame();
+    let along = norm(cross(f.z,g.z)) <= 1e-12;
+    // the sine of the angle the two meet at, at the spline's `t` carried to `p`
+    let steep = |t: f64,p: V| norm(cross(unit(cross(sp.d1(t).1,f.z)),unit(s.gradient(p)))) >= SHALLOW;
+    match *s {
+        Surface::Plane(_) if dot(f.z,g.z).abs() <= 1e-12 => {}
+        Surface::Cylinder(..) if along => {}
+        Surface::Cone(_,r,a) if along => return lifted(sp,g,r,a,tol,&steep).map(|q| vec![q]),
+        _ => return None,
     }
-    if gs[ts.len()-1].abs() <= tol { push(rz(b),&mut out); }
-    out
+    // (a plane's and a cylinder's signed distance is the same all along the extrusion)
+    let gap = |t: f64| s.implicit(sp.point(t));
+    let rate = |t: f64| { let (p,d) = sp.d1(t); dot(s.gradient(p),d) };
+    let [t0,t1] = sp.domain();
+    for w in spline_samples(sp).windows(2) {
+        let (r0,r1) = (rate(w[0]),rate(w[1]));
+        if (r0 < 0.) == (r1 < 0.) { continue }
+        let x = crate::roots::bracketed_root(|t| Some(rate(t)),w[0],r0,w[1],r1,1e-15*(t1-t0));
+        let g = gap(x);
+        if g.abs() <= tol || g*gap(w[0]) <= 0. && g*gap(w[1]) <= 0. { return None }
+    }
+    let roots = spline_roots(sp,&gap,&|t| sp.point(t),tol);
+    roots.iter().all(|&t| steep(t,sp.point(t)))
+        .then(|| roots.into_iter().map(|t| Curve::Line {p:sp.point(t),d:f.z}).collect())
+}
+
+/// A cubic spline carried along the axis of the cone `g`, `r`, `α` onto it: each of its points to
+/// the cone's height at its radius, read in `ρ ≥ 0` as a meridian's crossings are. Written as a
+/// quintic over the spline's own parameter on its own knots, each twice more — which hold the
+/// spline itself exactly, so only the height is fitted, and as the sixth power of a span (a cubic
+/// took five times the poles) — a span halved wherever the carried curve strays from it farther
+/// than a quarter of `tol` at a quarter point (as a traced curve is fitted, `fitted`). None for a
+/// spline not polynomial cubic, a cone nearly a cylinder, a spline coming near the axis, the two
+/// meeting anywhere at an angle not `steep`, or past 4096 spans.
+fn lifted(sp: &super::nurbs::BSpline,g: &Frame,r: f64,a: f64,tol: f64,steep: &dyn Fn(f64,V) -> bool)
+    -> Option<Curve> {
+    let (sa,ca) = a.dsin_cos();
+    if sp.degree != 3 || sp.weights.is_some() || !(sa.abs() > 1e-9) { return None }
+    let radius = |t: f64| { let w = sub(sp.point(t),g.o); norm(sub(w,scale(g.z,dot(w,g.z)))) };
+    let q = |t: f64| {
+        let (x,rho) = (sp.point(t),radius(t));
+        add(x,scale(g.z,(rho-r)*ca/sa-dot(sub(x,g.o),g.z)))
+    };
+    // the spline's knots each twice more, so a quintic on them holds the cubic as it joins
+    let mut knots: Vec<f64> = super::nurbs::distinct(&sp.knots).into_iter().flat_map(|(k,n)| std::iter::repeat_n(k,n+2)).collect();
+    for _ in 0..24 {
+        let fit = super::nurbs::interpolate_on(&q,5,knots.clone())?;
+        let spans: Vec<[f64;2]> = super::nurbs::distinct(&knots).windows(2).map(|w| [w[0].0,w[1].0]).collect();
+        let mut halves = Vec::new();
+        for [t0,t1] in spans.iter().copied() {
+            let quarters = [0.25,0.5,0.75].map(|s| t0+(t1-t0)*s);
+            // near the axis the carried curve turns as sharply as the spline is near it
+            if quarters.iter().any(|&t| radius(t) <= 1e-3*sp.hull_length() || !steep(t,q(t))) { return None }
+            if quarters.iter().any(|&t| distance(fit.point(t),q(t)) > tol/4.) { halves.push((t0+t1)/2.); }
+        }
+        if halves.is_empty() { return Some(Curve::BSpline(std::sync::Arc::new(fit))) }
+        if spans.len()+halves.len() > 4096 { return None }
+        knots.extend(halves);
+        knots.sort_by(f64::total_cmp);
+    }
+    None
 }
 
 /// A surface's meridian about the axis through `o` along the unit `z`, where it is a surface of
@@ -236,6 +328,8 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 _ => Ssi::Traced,
             }
         }
+        (Surface::Extrusion(e,c),ref s) | (ref s,Surface::Extrusion(e,c))
+            if let Some(curves) = extruded(&e,&c,s,tol) => Ssi::Curves(curves),
         (Surface::Plane(pl),Surface::BSpline(_,net)) | (Surface::BSpline(_,net),Surface::Plane(pl)) => {
             // a sheet one linear span across, its second row its first moved by one step `d` (a
             // curve swept along a line, as a generating sweep's sheet is), and a plane the step

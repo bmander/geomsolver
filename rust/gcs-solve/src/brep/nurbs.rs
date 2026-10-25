@@ -281,8 +281,30 @@ pub fn interpolate(pts: &[V],t: &[f64],degree: usize) -> Option<BSpline> {
     let m = pts.len();
     let degree = degree.min(m.checked_sub(1)?);
     if degree == 0 || t.len() != m || t.windows(2).any(|w| !(w[1] > w[0])) { return None }
-    let knots = averaged(t,degree);
-    let s = BSpline {degree,knots,poles:vec![[0.;3];m],weights:None};
+    collocated(BSpline {degree,knots:averaged(t,degree),poles:vec![[0.;3];m],weights:None},pts,t)
+}
+
+/// The B-spline of `degree` on the clamped `knots` through `f` at their Greville abscissae,
+/// each pole's mean of the `degree` knots past its first: a collocation always well posed
+/// (Schoenberg–Whitney), so every curve of that degree on those knots, or on fewer of them, is
+/// its own interpolant exactly. None where the knots are no clamped vector (an inner knot more
+/// than `degree` times over, or fewer than `degree + 1` poles).
+pub fn interpolate_on(f: &dyn Fn(f64) -> V,degree: usize,knots: Vec<f64>) -> Option<BSpline> {
+    let m = knots.len().checked_sub(degree+1)?;
+    if degree == 0 || degree > MAX_DEGREE || m <= degree || knots.windows(2).any(|w| !(w[1] >= w[0]))
+        || knots[0] != knots[degree] || knots[m] != knots[m+degree]
+        || knots[1..knots.len()-1].windows(degree+1).any(|w| w[0] == w[degree] && w[0] > knots[0] && w[0] < knots[m+degree]) {
+        return None
+    }
+    let t: Vec<f64> = (0..m).map(|i| knots[i+1..=i+degree].iter().sum::<f64>()/degree as f64).collect();
+    if t.windows(2).any(|w| !(w[1] > w[0])) { return None }
+    collocated(BSpline {degree,knots,poles:vec![[0.;3];m],weights:None},&t.iter().map(|&t| f(t)).collect::<Vec<_>>(),&t)
+}
+
+/// The poles of `s` (its degree and knots) through `pts` at the increasing parameters `t`: one
+/// collocation solve per coordinate, in its band where it is long.
+fn collocated(s: BSpline,pts: &[V],t: &[f64]) -> Option<BSpline> {
+    let (m,degree) = (pts.len(),s.degree);
     if m > BANDED { if let Some(poles) = banded(&s,pts,t) { return Some(BSpline {poles,..s}) } }
     // the collocation matrix: each parameter's basis functions, in the columns of its span
     let mut n = vec![0.;m*m];
