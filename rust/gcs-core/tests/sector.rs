@@ -145,3 +145,20 @@ fn a_blanks_section_span_is_read_and_one_reaching_its_axis_refused() {
     let disc = |p: V| p[0].hypot(p[1]) <= 5. && (0. ..=2.).contains(&p[2]);
     assert!(sector::section_span(frame,Slices::Planes,[[-6.,-6.,-1.],[6.,6.,3.]],&disc).is_err());
 }
+
+/// **A side running in to its blank's bore is clear by how far inside the cuts it runs**: a
+/// spoked gear's side reaches its bore, where its gap's angle is a hair of a length, but every
+/// cut is out at the teeth; a point nearer the axis than every contact of its slice is that much
+/// nearer than any of them.
+#[test]
+fn a_side_reaching_its_bore_is_clear_by_its_radial_gap() {
+    let (indexing,cuts) = spiral(48,0.05);
+    let pitch = TAU/48.;
+    let b = Boundary::choose(&indexing,&cuts,&[Slices::Planes]).unwrap();
+    let half = (pitch-0.05)/2.;
+    // in to a radius of 0.5: the gap's angle there is two hundredths of a millimetre, but the
+    // nearest contact is 3.5 mm out, so the least clearance is the gap's out among the cuts
+    let (grid,_) = b.grid([-1.,11.],[0.5,5.5],9);
+    let clear = b.clearance_of(&grid).unwrap();
+    assert!(clear > 0.95*4.*half && clear < 5.5*half,"{clear}");
+}

@@ -33,6 +33,12 @@ from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
 extreme angle). Never a sample grid: extremes between samples were missed.
+**A B-spline curve's foot** (`BSpline::nearest`) is the nearest of seventeen samples a knot span,
+read off the span's Bézier form, the spans nearest box first and none past the nearest sample
+found, refined by Newton; each thread holds the last few feet by curve and point (a trace asks a
+swept surface's distance and gradient at one point), the answer it would find again. A spline swept
+or turned is inverted near a hint (a pcurve's) by Newton on its curve where that lands on the
+surface, and globally otherwise, as a sheet is.
 **A Boolean's work is where its solids meet** (#589): a face of one whose box misses the box the
 other's faces fill is clear of it (`boolean::Arranged::clear`) — nothing of the other meets it, so
 it is one piece, its own loops, outside the other: kept by a union and by a cut of the solid it
