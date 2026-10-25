@@ -75,7 +75,8 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
     // along the axis, their tangents alike, and a coil's rail read so was one chord (#243 L6)
     let mut cuts = vec![edge.t[0]];
     let near = 1e-6*(edge.t[1]-edge.t[0]);
-    if let super::geom::Curve::BSpline(_) | super::geom::Curve::Rail(..) = c {
+    let knots = match c { super::geom::Curve::BSpline(_) => c.breaks(edge.t),_ => Vec::new() };
+    if let super::geom::Curve::Rail(..) = c {
         // (a knot is a cut only a bar or more along from the last one and from the end: a fit's
         // knots crowd where it bends, and a cut at each fans slivers there)
         let end = c.point(edge.t[1]);
@@ -109,9 +110,10 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
         let off = distance(pm,add(pa,scale(chord,s)));
         let (ta,tz) = (c.tangent(a),c.tangent(z));
         let turn = (dot(ta,tz)/(norm(ta)*norm(tz)).max(1e-300)).clamp(-1.,1.).dacos();
-        // and the quarter points, which a stretch centred on an inflection cannot hide
-        let strays = || [0.25,0.75].iter().any(|&f| {
-            let q = c.point(a+(z-a)*f);
+        // and the quarter points, which a stretch centred on an inflection cannot hide, and every
+        // knot it spans: one inflection at most a cubic's span, which its ends then bracket
+        let strays = || [0.25,0.75].iter().map(|&f| a+(z-a)*f).chain(knots.iter().copied().filter(|&k| k > a && k < z)).any(|t| {
+            let q = c.point(t);
             let s = if l2 > 0. { (dot(sub(q,pa),chord)/l2).clamp(0.,1.) } else { 0. };
             distance(q,add(pa,scale(chord,s))) > bar
         });
@@ -489,6 +491,21 @@ fn crossings(b: &Brep,fi: usize,samples: &[(Vec<f64>,Vec<u32>)]) -> Vec<(usize,f
     out
 }
 
+/// How much a straight parameter's scale is shrunk (`straight`).
+const STRAIGHT: f64 = 1e-3;
+
+/// The parameter a surface is straight along, where it is: a swept curve's, a cylinder's or a
+/// cone's `v` (its rulings), and a sheet's of one linear span across.
+fn straight(s: &super::geom::Surface) -> Option<usize> {
+    use super::geom::Surface;
+    match s {
+        Surface::Extrusion(..) | Surface::Cylinder(..) | Surface::Cone(..) => Some(1),
+        Surface::BSpline(_,n) if n.dv == 1 && n.poles[0].len() == 2 => Some(1),
+        Surface::BSpline(_,n) if n.du == 1 && n.poles.len() == 2 => Some(0),
+        _ => None,
+    }
+}
+
 pub fn mesh(b: &Brep,bar: f64,angular: f64) -> Result<Mesh,String> { Ok(mesh_with(b,bar,angular,&|_| true,None)?.0) }
 
 /// A sector's far side sampled as its near side turned (`brep::pattern`): the turn from one copy to
@@ -592,6 +609,10 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let mid = [(lo[0]+hi[0])/2.,(lo[1]+hi[1])/2.];
         let (_,su,sv) = f.surface.d1(mid);
         let (ku,kv) = (norm(su).max(least),norm(sv).max(least));
+        // a surface straight along one parameter sags nothing along it: that parameter's scale
+        // shrunk, the triangulation joins neighbouring rulings across the face's whole run of it,
+        // where refining it as a plane would cut it as finely along the rulings as across them
+        let (ku,kv) = match straight(&f.surface) { Some(0) => (ku*STRAIGHT,kv),Some(_) => (ku,kv*STRAIGHT),None => (ku,kv) };
         let place = |uv: Uv| [if f.reversed { -uv[0]*ku } else { uv[0]*ku },uv[1]*kv];
         // a vertex two loops (or one loop twice) pass through at one place — a hole touching the
         // outer loop, a boss tangent to the face's edge (#597) — is one corner: two corners at one
