@@ -553,7 +553,7 @@ fn a_frames_interior_agrees_with_finite_differences() {
 #[test]
 fn a_sized_frames_interior_agrees_with_finite_differences() {
     use gcs_core::fdcheck::fd_jacobian;
-    use gcs_core::interior::Sizing;
+    use gcs_core::interior::{Drive, Sizing};
     let vars = ["u".to_string(), "w".to_string()];
     let tape = |text: &str| {
         let ast = gcs_core::expr::parse_in(text, gcs_core::units::Units::default()).unwrap();
@@ -568,9 +568,9 @@ fn a_sized_frames_interior_agrees_with_finite_differences() {
                 [tape(&format!("{k} * u * w + 1")), tape(&format!("u^2 / {k} + 0.5")),
                  tape("w^3 / 4 + u"), tape(&format!("{k} + 0 * u"))]
             }).collect();
-            let sizing = Sizing { unknowns: 2, sections };
-            let (n_par, n_const) = s.widths_sized(false, Some(&sizing));
-            let k = s.consts_sized(&[0.3], Some(&sizing));
+            let drive = Drive::Sized(Sizing { unknowns: 2, sections });
+            let (n_par, n_const) = s.widths(false, &drive);
+            let k = s.consts(&[0.3], &drive);
             assert_eq!(n_const, k.len());
             let kn = gcs_core::system::build_kernel(
                 &Sketch::new(), gcs_core::kernels::KernelKey::Interior { n_par, n_const });
@@ -836,10 +836,11 @@ mass(0.17584kg) plate
 fn kernel_agrees(s: &gcs_core::interior::Structure, x: &[f64], step: f64, rng: &mut Rng,
                  what: &str) {
     use gcs_core::fdcheck::fd_jacobian;
+    use gcs_core::interior::Drive;
     use gcs_core::kernels::KernelKey;
     for stated in [&[0.3][..], &[1.7, -0.2]] {
         let free = stated.len() == 2;
-        let (n_par, n_const) = s.widths(free);
+        let (n_par, n_const) = s.widths(free, &Drive::Stated);
         let kn = gcs_core::system::build_kernel(
             &Sketch::new(), KernelKey::Interior { n_par, n_const });
         let mut one = x.to_vec();
@@ -848,7 +849,7 @@ fn kernel_agrees(s: &gcs_core::interior::Structure, x: &[f64], step: f64, rng: &
         }
         let two: Vec<f64> = one.iter().map(|v| v * 1.1 + 0.05).collect();
         let v = [one, two].concat();
-        let k = [s.consts(stated), s.consts(stated)].concat();
+        let k = [s.consts(stated, &Drive::Stated), s.consts(stated, &Drive::Stated)].concat();
         let res = |w: &[f64]| {
             let mut r = vec![0.0; 2];
             (kn.res)(2, w, &k, &mut r);

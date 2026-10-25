@@ -33,7 +33,8 @@ use crate::diagnose::analysis::direction;
 use crate::eigen::{self, Pairs};
 use crate::graph::UnionFind;
 use crate::deformed::{self, Body, SAMPLES};
-use crate::interior::{self, Beam as Element, Failure, Reads, Sizing, Spread, State, Structure};
+use crate::interior::{self, Beam as Element, Drive, Failure, Reads, Sizing, Spread, State,
+                      Structure};
 use crate::model::{
     Applied, EntKind, EntRef, Hold, LoadKind, LoadValue, Output, Property, Requirement, Scenario,
     SectionProp, Sketch,
@@ -613,7 +614,8 @@ fn unsolved(s: &Structure, x: &[f64], names: &str, why: Failure) -> Unread {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Row {
     pub structure: Structure,
-    pub sizing: Sizing,
+    /// Its sections read over its unknowns (`Drive::Sized`).
+    pub drive: Drive,
     pub points: Vec<usize>,
     pub unknowns: Vec<String>,
     /// Where the structure stands: the nodes' places and the sections, at the drawing.
@@ -645,7 +647,7 @@ impl Row {
         }
         let beams: Vec<usize> = member.iter().map(|&m| mesh.members[m].beam).collect();
         let sizing = sizing(sk, &s, &x, &beams, &unknowns, false)?;
-        Ok(Row { structure: s, sizing, points, unknowns, x })
+        Ok(Row { structure: s, drive: Drive::Sized(sizing), points, unknowns, x })
     }
 
     /// **The row of `mass(of)` or `volume(of)`** (`reads`) over the drawing's beams: the members
@@ -689,7 +691,7 @@ impl Row {
         let dofs = s.per() * n;
         (s.fixed, s.load, s.weight) = (vec![false; dofs], vec![0.0; dofs], vec![0.0; dofs]);
         let sizing = sizing(sk, &s, &x, &beams, &unknowns, true)?;
-        Ok(Row { structure: s, sizing, points, unknowns, x })
+        Ok(Row { structure: s, drive: Drive::Sized(sizing), points, unknowns, x })
     }
 
     /// Whether the structure gives a displacement where the drawing stands, or why not — what
@@ -705,12 +707,12 @@ impl Row {
 
     /// Its constants, stating the deflection `d`.
     pub fn consts(&self, d: f64) -> Vec<f64> {
-        self.structure.consts_sized(&[d], Some(&self.sizing))
+        self.structure.consts(&[d], &self.drive)
     }
 
     /// Its widths, `(n_par, n_const)`.
     pub fn widths(&self) -> (usize, usize) {
-        self.structure.widths_sized(false, Some(&self.sizing))
+        self.structure.widths(false, &self.drive)
     }
 }
 
