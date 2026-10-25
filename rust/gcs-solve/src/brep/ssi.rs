@@ -54,7 +54,8 @@ impl Meridian {
 /// comes within `tol`.
 fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
     let rz = |t: f64| { let q = sub(s.point(t),o); let h = dot(q,z); [norm(sub(q,scale(z,h))),h] };
-    spline_roots(s,&|t| other.implicit(rz(t)),&|t| { let [r,h] = rz(t); [r,h,0.] },tol).into_iter().map(rz).collect()
+    let at = |t: f64| { let [r,h] = rz(t); [r,h,0.] };
+    spline_roots(s,&|t| other.implicit(rz(t)),&at,tol).into_iter().map(rz).collect()
 }
 
 /// The parameters at which `g` along the spline `s` changes sign, refined, and at which a sampled
@@ -95,16 +96,14 @@ fn spline_samples(s: &super::nurbs::BSpline) -> Vec<f64> {
 
 /// **A spline extruded along `f.z` and a surface the same all along that way** (#644: a tooth
 /// space's prism cut from a turned blank): a plane along it or a cylinder about a line along it
-/// meets the spline's face in the lines along it through where the spline crosses or touches that
-/// surface, exactly; a cone about a line along it, in the spline carried along it onto the cone
-/// (`lifted`). None for any other surface, a cone's curve that will not be written so, or a
-/// meeting anywhere at under `SHALLOW` — a touch, a crossing nearly one — which the trace and the
-/// Boolean read as touching (a tool in the pocket it cut, its side along the pocket's wall): traced.
-/// So is a plane or a cylinder the spline may meet twice between two of the samples its crossings
-/// are read at — the distance's extreme between them past nothing from both, or within `tol` of
-/// it — which the samples alone would read as no meeting.
-/// (Traced, a straight meeting took a step as short as the spline's sharpest turn anywhere allows,
-/// thousands of them, and was fitted through a thousand.)
+/// meets the spline's face in the lines along it through where the spline crosses that surface,
+/// exactly; a cone about a line along it, in the spline carried along it onto the cone (`lifted`).
+/// Traced instead — None — for any other surface, a cone's curve that will not be written so, and
+/// wherever the two may touch, which the trace and the Boolean read (a tool's side in the pocket
+/// it cut, along the pocket's wall): a meeting at under `SHALLOW`, or the distance along the
+/// spline turning between two samples within `tol` of zero or past it (two crossings the samples
+/// alone would read as none). (Traced, a straight meeting took a step as short as the
+/// spline's sharpest turn anywhere allows, thousands of them, and was fitted through a thousand.)
 fn extruded(f: &Frame,c: &Curve,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
     let Curve::BSpline(sp) = c else { return None };
     let g = s.frame();
@@ -117,7 +116,8 @@ fn extruded(f: &Frame,c: &Curve,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
         Surface::Cone(_,r,a) if along => return lifted(sp,g,r,a,tol,&steep).map(|q| vec![q]),
         _ => return None,
     }
-    // (a plane's and a cylinder's signed distance is the same all along the extrusion)
+    // (a plane's and a cylinder's signed distance is the same all along the extrusion), and where
+    // it turns between two samples
     let gap = |t: f64| s.implicit(sp.point(t));
     let rate = |t: f64| { let (p,d) = sp.d1(t); dot(s.gradient(p),d) };
     let [t0,t1] = sp.domain();
@@ -151,15 +151,19 @@ fn lifted(sp: &super::nurbs::BSpline,g: &Frame,r: f64,a: f64,tol: f64,steep: &dy
         add(x,scale(g.z,(rho-r)*ca/sa-dot(sub(x,g.o),g.z)))
     };
     // the spline's knots each twice more, so a quintic on them holds the cubic as it joins
-    let mut knots: Vec<f64> = super::nurbs::distinct(&sp.knots).into_iter().flat_map(|(k,n)| std::iter::repeat_n(k,n+2)).collect();
+    let mut knots: Vec<f64> = super::nurbs::distinct(&sp.knots).into_iter()
+        .flat_map(|(k,n)| std::iter::repeat_n(k,n+2)).collect();
     for _ in 0..24 {
         let fit = super::nurbs::interpolate_on(&q,5,knots.clone())?;
-        let spans: Vec<[f64;2]> = super::nurbs::distinct(&knots).windows(2).map(|w| [w[0].0,w[1].0]).collect();
+        let breaks = super::nurbs::distinct(&knots);
+        let spans: Vec<[f64;2]> = breaks.windows(2).map(|w| [w[0].0,w[1].0]).collect();
         let mut halves = Vec::new();
-        for [t0,t1] in spans.iter().copied() {
+        for &[t0,t1] in &spans {
             let quarters = [0.25,0.5,0.75].map(|s| t0+(t1-t0)*s);
             // near the axis the carried curve turns as sharply as the spline is near it
-            if quarters.iter().any(|&t| radius(t) <= 1e-3*sp.hull_length() || !steep(t,q(t))) { return None }
+            if quarters.iter().any(|&t| radius(t) <= 1e-3*sp.hull_length() || !steep(t,q(t))) {
+                return None
+            }
             if quarters.iter().any(|&t| distance(fit.point(t),q(t)) > tol/4.) { halves.push((t0+t1)/2.); }
         }
         if halves.is_empty() { return Some(Curve::BSpline(std::sync::Arc::new(fit))) }

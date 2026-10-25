@@ -50,8 +50,10 @@ along it through where the spline crosses or touches that surface, exactly; a co
 line in the spline carried along it onto the cone, a quintic over the spline's own parameter on
 its knots each twice more (`nurbs::interpolate_on`, so the spline itself is held exactly and only
 the height is fitted), a span halved where it strays past a quarter of the tolerance. Only where
-every meeting is steeper than `ssi::SHALLOW`: a touch or a crossing nearly one (a tool's side in
-the pocket it cut, along the pocket's wall) is traced, where touches are read. Traced, a
+every meeting is steeper than `ssi::SHALLOW` and no two crossings may hide between the samples
+crossings are read at (the distance turning there within the tolerance of zero or past it): a
+touch or a crossing nearly one (a tool's side in the pocket it cut, along the pocket's wall) is
+traced, where touches are read. Traced, a
 straight meeting took the step the spline's sharpest turn anywhere allows — a tooth space's prism
 met its tip in eight thousand steps fitted through a thousand, and a 16-tooth pinion's STEP grew
 sixfold. `brep::an_extruded_spline_meets_surfaces_along_it_in_closed_form` and
