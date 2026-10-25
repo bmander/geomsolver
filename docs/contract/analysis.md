@@ -615,8 +615,9 @@ names another.
   elements (`F ∫ N dV / Σ V`), the same force however the solid grows; a body load `b ∫ N dV`. One
   function per kind of share (`facet_load`, `element_load`) lays the load and, over `Dual`, its
   `λᵀ∂f/∂x`, an even load's whole also reading `−(Σ λᵀfₑ)/S² ∂S`, as the plane's do. The row's
-  constants carry them after the plane loads (the head counts `tets` and `borne`), each `[kind, count, a, b, c]` then its facets or elements; a solid element's are its ten
-  nodes, its modulus, ratio and density.
+  constants carry them after the plane loads (the head counts `tets` and `borne`), each
+  `[kind, count, a, b, c]` then its facets or elements; a solid element's are its ten nodes, its
+  modulus, ratio and density.
 
 - **A solid is read in three dimensions where a requirement names it and nothing else reads it**
   (#510 S3; `bodies::read`, `scenario_read`). A solid made of a material, named by a requirement —
@@ -807,8 +808,8 @@ names another.
   the rate, over 1e-2 its truncation under a millionth.
 
 - **A filled body's nodes are functions of the drawing: its sheets move them** (#567;
-  `hulls::hull_of`, `interior::Hull`, `interior::Mover::Hull`, the head's tag a filled body's). A solid that is
-  no prism — turned, united, cut — is its exact boundary refined and filled (`Mesh::filled`), and
+  `hulls::hull_of`, `interior::Hull`, `interior::Mover::Hull`, its head's tag `Hull`). A solid that
+  is no prism — turned, united, cut — is its exact boundary refined and filled (`Mesh::filled`), and
   every face of that boundary is a piece of a **sheet** a closed form of the drawing reads: each
   face's path (`FacePath`) walked to the primitive it is a piece of
   (`faces::face_primitive`; a placed copy on the way is refused) and named there — a prism's cap

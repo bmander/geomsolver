@@ -49,11 +49,11 @@ impl Drive {
 /// `Hull` a filled body's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Tag {
-    Stated,
-    Sized,
-    Plane,
-    Stacked,
-    Hull,
+    Stated = 0,
+    Sized = 1,
+    Plane = 2,
+    Stacked = 3,
+    Hull = 4,
 }
 
 /// How many constants the head is (`Head`).
@@ -162,7 +162,7 @@ impl Mover {
     }
 
     /// Its constants.
-    pub fn consts(&self) -> Vec<f64> {
+    fn consts(&self) -> Vec<f64> {
         match self {
             Mover::Plane(m) => m.consts(),
             Mover::Hull(h) => h.consts(),
@@ -170,7 +170,7 @@ impl Mover {
     }
 
     /// How many constants it is.
-    pub fn width(&self) -> usize {
+    fn width(&self) -> usize {
         match self {
             Mover::Plane(m) => m.width(),
             Mover::Hull(h) => h.width(),
@@ -390,7 +390,7 @@ impl Structure {
     /// the drive's payload: where the sections are sized, every beam's four tapes, each
     /// `(length, flat…)`; where the nodes are moved, how (`Mover::consts`).
     pub fn consts(&self, stated: &[f64], drive: &Drive) -> Vec<f64> {
-        let mut k = Vec::with_capacity(self.widths(stated.len() == 2, drive).1);
+        let mut k = Vec::new();
         self.write(stated, drive, &mut k);
         k
     }
