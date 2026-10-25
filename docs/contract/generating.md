@@ -326,8 +326,11 @@ half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::s
 not a limit of the encoding, so `brep::export::exact` refuses it, whatever path built it, saying
 which solid is empty and which statement emptied it (`` `shared` is empty: `b common shared` leaves
 no material, so there is nothing to write ``, or its stock holding none) — `combine` checks after
-each Boolean, and a static body found empty is combined again a statement at a time to name it
-(`emptied`) — never a float32 rounding read off its infinite bounds, nor a STEP file of no faces.
+each Boolean and builds the body empty with the statement that emptied it (`Exact::emptied`), and a
+static body found empty is combined again a statement at a time to name it (`emptied`) — never a
+float32 rounding read off its infinite bounds, nor a STEP file of no faces.  The refusal is the
+file's alone: a drawing given the same build (`supply_exact`) reads a body with no material, its
+volume 0 (#618).
 `an_empty_body_is_refused_naming_the_statement_that_emptied_it` (`tests/brep_export.rs`).
 
 **One sector, sewn round ([plan](../native-speed-plan.md)):** a body whose swept cuts are turns
