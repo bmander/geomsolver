@@ -33,6 +33,17 @@ from 32 out, `round_lowering::a_wide_turned_rim_is_chamfered_and_rounded_exactly
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's
 extreme angle). Never a sample grid: extremes between samples were missed.
+**A mesh runs along a surface's rulings** (`brep::mesh`): a face on a surface straight along one
+parameter — a swept curve's, a cylinder's or a cone's `v`, a sheet one linear span across — is
+triangulated with that parameter's scale shrunk (`STRAIGHT`), so its triangles join neighbouring
+rulings across the face and only the curved way is refined; every triangle is still held to the
+bar in space. An edge's samples are its chords within the bar at their middles, their quarter
+points and every knot they span (one inflection at most a cubic's span), not a cut at every knot:
+a fitted curve of hundreds of spans is sampled as finely as it bends. A plane crossing a sheet one
+linear span across whose second row is its first moved by one step is met in the first row's
+curve carried along the step onto it (`ssi::intersect`), exactly, not traced and fitted.
+`swept_speed::a_swept_gears_faces_mesh_along_their_rulings` and
+`a_plane_across_a_swept_sheet_meets_it_in_its_curve_carried_there` are the gates.
 **A B-spline curve's foot** (`BSpline::nearest`) is the nearest of seventeen samples a knot span,
 read off the span's Bézier form, the spans nearest box first and none past the nearest sample
 found, refined by Newton; each thread holds the last few feet by curve and point (a trace asks a

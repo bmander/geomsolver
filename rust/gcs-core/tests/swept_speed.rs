@@ -281,3 +281,56 @@ fn two_closed_instances_of_a_swept_gear_are_built_once_and_placed() {
     assert!((volume(&first.solid) - volume(&second.solid)).abs() < 1e-9 * volume(&first.solid));
     export::stl(&e.sketch, b, &second, None, &say).unwrap_or_else(|r| panic!("the copy's STL refused at {:?}: {}", r.stage, r.message));
 }
+
+/// **A plane across a swept sheet meets it in its curve carried there** (`ssi::intersect`): a
+/// sheet one linear span across, its second row its first moved along a line, as a generating
+/// sweep's sheet is, cut by a plane the line crosses — the curve carried along the line onto the
+/// plane, its poles the sheet's, not a trace fitted through hundreds; nothing past the sheet's ends,
+/// and a plane leaving it through its sides traced as before.
+#[test]
+fn a_plane_across_a_swept_sheet_meets_it_in_its_curve_carried_there() {
+    use gcs_core::brep::nurbs::Net;
+    use gcs_core::brep::ssi::{intersect, Ssi};
+    let pts: Vec<V> = (0..9).map(|i| { let x = i as f64; [x, (0.7 * x).sin() * 2., 0.] }).collect();
+    let ts: Vec<f64> = (0..9).map(|i| i as f64 / 8.).collect();
+    let curve = interpolate(&pts, &ts, 3).unwrap();
+    let rise = [0.3, -0.2, 5.];
+    let net = Net { du: 3, dv: 1, uknots: curve.knots.clone(), vknots: vec![0., 0., 1., 1.],
+        poles: curve.poles.iter().map(|&p| vec![p, [p[0] + rise[0], p[1] + rise[1], p[2] + rise[2]]]).collect(), weights: None };
+    let sheet = Surface::BSpline(Frame::about([0.; 3], [0., 0., 1.]), Arc::new(net.clone()));
+    let up = gcs_core::space::unit(rise);
+    let at = |h: f64| Surface::Plane(Frame::about([0., 0., h], up));
+    let Ssi::Curves(found) = intersect(&at(2.), &sheet, 1e-9) else { panic!("traced") };
+    let [Curve::BSpline(c)] = &found[..] else { panic!("{found:?}") };
+    assert_eq!(c.poles.len(), curve.poles.len());
+    for k in 0..=40 {
+        let u = k as f64 / 40.;
+        // on the plane, and on the sheet: the first row's point carried along the line
+        let q = c.point(u);
+        let level = dot(up, [0., 0., 2.]);
+        let s = (level - dot(up, curve.point(u))) / dot(up, rise);
+        assert!((dot(up, q) - level).abs() < 1e-12 && dist(q, net.point(u, s)) < 1e-12, "{u}");
+    }
+    assert!(matches!(intersect(&sheet, &at(9.), 1e-9), Ssi::Curves(v) if v.is_empty()));
+    // a plane through the sheet's middle steeply, leaving it through its sides
+    let leaning = Surface::Plane(Frame::about([4., 0., 2.], [1., 0., 0.4]));
+    assert!(matches!(intersect(&leaning, &sheet, 1e-9), Ssi::Traced));
+}
+
+/// **A swept gear's faces mesh along their rulings** (`brep::mesh`): a surface straight along a
+/// parameter is triangulated as strips across it, each triangle running a ruling's length, so the
+/// twenty-tooth spur's STL is a few thousand triangles — within the bar, none turned — and not the
+/// fine fill a plane's refinement would make.
+#[test]
+fn a_swept_gears_faces_mesh_along_their_rulings() {
+    use gcs_core::brep::{export, mesh, sweep::Say};
+    let mut e = build(SPURS);
+    assert!(gcs_core::solve::solve(&mut e.sketch, Default::default()).success);
+    let a = e.map.ent_named("a.gear").unwrap().i();
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let x = export::exact(&e.sketch, a, None, None, &say).unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
+    let m = match &x.pattern { Some(p) => p.mesh(0.01, export::ANGULAR), None => mesh::mesh(&x.solid, 0.01, export::ANGULAR) }.unwrap();
+    eprintln!("{} triangles, sag {:.2e}", m.tris.len(), m.sag);
+    assert!(m.sag <= 0.01 && m.turned == 0);
+    assert!(m.tris.len() < 6000, "{} triangles", m.tris.len());
+}

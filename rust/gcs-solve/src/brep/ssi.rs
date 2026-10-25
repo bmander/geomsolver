@@ -236,6 +236,25 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 _ => Ssi::Traced,
             }
         }
+        (Surface::Plane(pl),Surface::BSpline(_,net)) | (Surface::BSpline(_,net),Surface::Plane(pl)) => {
+            // a sheet one linear span across, its second row its first moved by one step `d` (a
+            // curve swept along a line, as a generating sweep's sheet is), and a plane the step
+            // crosses: the first row's curve carried along the step onto the plane, exactly (the
+            // carrying is affine, so its poles carried are the curve's) — where every pole lands
+            // within the sheet's span, nothing where none does, and traced where they part
+            if net.dv != 1 || net.poles[0].len() != 2 || net.weights.is_some() { return Ssi::Traced }
+            let d = sub(net.poles[0][1],net.poles[0][0]);
+            let along = dot(pl.z,d);
+            if net.poles.iter().any(|r| norm(sub(sub(r[1],r[0]),d)) > tol) || !(along.abs() > 1e-9*norm(d)) { return Ssi::Traced }
+            let steps: Vec<f64> = net.poles.iter().map(|r| dot(pl.z,sub(pl.o,r[0]))/along).collect();
+            let slack = tol/norm(d);
+            if steps.iter().all(|&s| s < -slack) || steps.iter().all(|&s| s > 1.+slack) { return Ssi::Curves(vec![]) }
+            if steps.iter().any(|&s| !(-slack..=1.+slack).contains(&s)) { return Ssi::Traced }
+            match super::nurbs::BSpline::new(net.du,net.uknots.clone(),net.poles.iter().zip(&steps).map(|(r,&s)| add(r[0],scale(d,s))).collect()) {
+                Ok(c) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(c))]),
+                Err(_) => Ssi::Traced,
+            }
+        }
         (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if norm(cross(f.z,g.z)) <= 1e-12 => {
             // parallel axes: the sections' circles meet in the lines' feet
             let w = sub(g.o,f.o);
