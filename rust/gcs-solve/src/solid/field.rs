@@ -81,6 +81,34 @@ fn intersection_support(a: Option<V>,b: Option<V>) -> Option<V> {
 
 fn mid(x: I) -> f64 { x.mid() }
 
+/// Where a field's plain value stands against a level `t`, as comparing `value(p)` with `t` says
+/// (`Nan` where the value is no number): read where only that is asked, a Boolean's second operand
+/// left unread where its first decides, and a loop's nearest edge sought only within the level.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub(crate) enum Side { Below,At,Above,Nan }
+
+impl Side {
+    pub(crate) fn of(v: f64,t: f64) -> Side {
+        if v < t { Side::Below } else if v > t { Side::Above } else if v == t { Side::At } else { Side::Nan }
+    }
+    /// The side of `-v` against `-t`, `v`'s against `t` being this.
+    fn negated(self) -> Side { match self { Side::Below => Side::Above,Side::Above => Side::Below,s => s } }
+    /// The side of `f64::min` of the two values (a number over no number), `other`'s read only
+    /// where this one's does not decide it.
+    fn min(self,other: impl FnOnce() -> Side) -> Side {
+        if self == Side::Below { return Side::Below }
+        match (self,other()) {
+            (Side::Nan,o) => o,
+            (s,Side::Nan) => s,
+            (_,Side::Below) => Side::Below,
+            (Side::At,_) | (_,Side::At) => Side::At,
+            _ => Side::Above,
+        }
+    }
+    /// The side of `f64::max` of the two values, likewise.
+    fn max(self,other: impl FnOnce() -> Side) -> Side { self.negated().min(|| other().negated()).negated() }
+}
+
 #[derive(Clone,Debug)]
 enum Node {
     /// `plain` is the midpoints in plain floating point, `value`'s: the through point, then the
@@ -159,6 +187,17 @@ impl PlanarField {
             Node::Intersection(a,b) => a.value(p).max(b.value(p)),
             Node::Difference(a,b) => a.value(p).max(-b.value(p)),
             Node::Profile(profile) => profile.value(p),
+        }
+    }
+
+    /// `Side::of(self.value(p), t)`, its Booleans' second operands read only where needed.
+    pub(crate) fn side(&self,p: [f64;2],t: f64) -> Side {
+        match &self.node {
+            Node::HalfPlane {..} | Node::Disk {..} => Side::of(self.value(p),t),
+            Node::Union(a,b) => a.side(p,t).min(|| b.side(p,t)),
+            Node::Intersection(a,b) => a.side(p,t).max(|| b.side(p,t)),
+            Node::Difference(a,b) => a.side(p,t).max(|| b.side(p,-t).negated()),
+            Node::Profile(profile) => profile.side(p,t),
         }
     }
 
@@ -382,6 +421,17 @@ impl ExtrudedField {
         let [lo,hi] = self.range.bounds();
         let side = match &self.sections { Some(s) => s.value([c[0],c[1]],c[2]),None => self.side(self.profile.value([c[0],c[1]]),c[2]) };
         side.max((lo-c[2]).max(c[2]-hi))
+    }
+
+    /// `Side::of(self.value(p), t)`: the caps first, the profile only where they leave it open.
+    pub(crate) fn side_of(&self,p: [f64;3],t: f64) -> Side {
+        let c = self.frame_of(p);
+        let [lo,hi] = self.range.bounds();
+        let cap = Side::of((lo-c[2]).max(c[2]-hi),t);
+        match &self.sections {
+            None if self.draft[0] == 0. => cap.max(|| self.profile.side([c[0],c[1]],t)),
+            _ => Side::of(self.value(p),t),
+        }
     }
 
     /// A point in the frame's (u, v, depth).

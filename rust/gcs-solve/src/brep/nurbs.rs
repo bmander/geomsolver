@@ -57,31 +57,37 @@ impl BSpline {
     }
     fn span(&self,t: f64) -> usize { span(self.degree,&self.knots,self.poles.len(),t) }
     /// `C`, `C'`, `C''` at `t` (clamped into the domain).
-    pub fn d2(&self,t: f64) -> (V,V,V) {
+    pub fn d2(&self,t: f64) -> (V,V,V) { let [x,d,dd] = self.ders(t,2); (x,d,dd) }
+    /// `C`, `C'` at `t` (clamped into the domain): `d2`'s, its second derivative not read.
+    pub fn d1(&self,t: f64) -> (V,V) { let [x,d,_] = self.ders(t,1); (x,d) }
+    /// `C` and its derivatives up to order `n` (at most 2; zero past it) at `t`, clamped.
+    fn ders(&self,t: f64,n: usize) -> [V;3] {
         let p = self.degree;
         let [a,b] = self.domain();
-        let (s,ders) = basis_ders(p,&self.knots,self.poles.len(),t.clamp(a,b),2);
-        if let Some(w) = &self.weights {
-            let (mut out,mut ws) = ([[0.;3];3],[0.;3]);
-            for (k,row) in ders.iter().enumerate().take(2.min(p)+1) {
+        with_basis(p,&self.knots,self.poles.len(),t.clamp(a,b),n,|s,ders| {
+            if let Some(w) = &self.weights {
+                let (mut out,mut ws) = ([[0.;3];3],[0.;3]);
+                for (k,row) in ders.iter().enumerate().take(n.min(p)+1) {
+                    for (j,&n) in row.iter().enumerate().take(p+1) {
+                        let (q,nw) = (self.poles[s-p+j],n*w[s-p+j]);
+                        for c in 0..3 { out[k][c] += nw*q[c]; }
+                        ws[k] += nw;
+                    }
+                }
+                let (c0,c1,c2) = quotient(out,ws);
+                return [c0,c1,c2]
+            }
+            let mut out = [[0.;3];3];
+            for (k,row) in ders.iter().enumerate().take(n.min(p)+1) {
                 for (j,&n) in row.iter().enumerate().take(p+1) {
-                    let (q,nw) = (self.poles[s-p+j],n*w[s-p+j]);
-                    for c in 0..3 { out[k][c] += nw*q[c]; }
-                    ws[k] += nw;
+                    let q = self.poles[s-p+j];
+                    for c in 0..3 { out[k][c] += n*q[c]; }
                 }
             }
-            return quotient(out,ws)
-        }
-        let mut out = [[0.;3];3];
-        for (k,row) in ders.iter().enumerate().take(2.min(p)+1) {
-            for (j,&n) in row.iter().enumerate().take(p+1) {
-                let q = self.poles[s-p+j];
-                for c in 0..3 { out[k][c] += n*q[c]; }
-            }
-        }
-        (out[0],out[1],out[2])
+            out
+        })
     }
-    pub fn point(&self,t: f64) -> V { self.d2(t).0 }
+    pub fn point(&self,t: f64) -> V { self.ders(t,0)[0] }
     /// The length of the control polygon, a bound on the curve's (a rational one's too: its de
     /// Casteljau steps cut corners).
     pub fn hull_length(&self) -> f64 { self.poles.windows(2).map(|w| crate::space::distance(w[0],w[1])).sum() }
@@ -89,6 +95,84 @@ impl BSpline {
     /// there.
     pub fn poles_over(&self,[a,b]: [f64;2]) -> &[V] {
         &self.poles[self.span(a.min(b))-self.degree..=self.span(a.max(b))]
+    }
+    /// The parameter of the curve's point nearest `p`: the nearest of samples across every knot
+    /// span, then Newton on (C − p)·C'. A span lies in its poles' hull, so the distance to their
+    /// box bounds its samples' from below: spans are read nearest box first, and none past the
+    /// nearest sample found, which finds the sample the whole walk would (the earlier of two as
+    /// near). A span's samples are read off its Bézier form, by de Casteljau's steps.
+    pub fn nearest(&self,p: V) -> f64 {
+        if self.degree < 4 { self.nearest_in::<4>(p) } else { self.nearest_in::<W>(p) }
+    }
+    /// `nearest`, a span's Bézier poles in a table of `M` (more than the degree).
+    fn nearest_in<const M: usize>(&self,p: V) -> f64 {
+        let (deg,n) = (self.degree,self.poles.len());
+        let [a,_] = self.domain();
+        let mut spans: Vec<(f64,usize)> = (deg..n).filter(|&s| self.knots[s] < self.knots[s+1]).map(|s| {
+            let poles = &self.poles[s-deg..=s];
+            let gap: [f64;3] = std::array::from_fn(|i| {
+                let (lo,hi) = poles.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),q| (l.min(q[i]),h.max(q[i])));
+                (lo-p[i]).max(p[i]-hi).max(0.)
+            });
+            (crate::space::norm(gap)*(1.-1e-12),s)
+        }).collect();
+        spans.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
+        let mut best = (f64::INFINITY,a);
+        for (bound,s) in spans {
+            if bound > best.0 { break }
+            let (w0,w1) = (self.knots[s],self.knots[s+1]);
+            let bezier = self.bezier::<M>(s);
+            for j in 0..=16 {
+                let f = j as f64/16.;
+                let t = w0+(w1-w0)*f;
+                let d = crate::space::distance(casteljau::<M>(&bezier[..=deg],f),p);
+                if d < best.0 || (d == best.0 && t < best.1) { best = (d,t); }
+            }
+        }
+        self.refined(p,best.1)
+    }
+    /// The foot of `p` on the curve found by Newton on (C − p)·C' from `t` alone (a local search:
+    /// the nearest where `t` is nearest it).
+    pub fn refined(&self,p: V,t: f64) -> f64 {
+        let [a,z] = self.domain();
+        let mut t = t.clamp(a,z);
+        for _ in 0..20 {
+            let (x,d,dd) = self.d2(t);
+            let e = crate::space::sub(x,p);
+            let g = crate::space::dot(e,d);
+            let h = crate::space::dot(d,d)+crate::space::dot(e,dd);
+            if !(h > 0.) { break }
+            let next = (t-g/h).clamp(a,z);
+            if (next-t).abs() <= 1e-15*(z-a) { t = next; break }
+            t = next;
+        }
+        t
+    }
+    /// Span `s`'s Bézier poles (`degree + 1` of them, in homogeneous coordinates: each weighed by
+    /// its weight, the weight last), each the curve's blossom at the span's ends taken so many
+    /// times each (de Boor's steps with an argument a step).
+    fn bezier<const M: usize>(&self,s: usize) -> [[f64;4];M] {
+        let deg = self.degree;
+        let (lo,hi) = (self.knots[s],self.knots[s+1]);
+        let lift = |j: usize| -> [f64;4] {
+            let (q,w) = (self.poles[j],self.weights.as_ref().map_or(1.,|w| w[j]));
+            [q[0]*w,q[1]*w,q[2]*w,w]
+        };
+        let mut out = [[0.;4];M];
+        for (i,o) in out.iter_mut().enumerate().take(deg+1) {
+            let mut d = [[0.;4];M];
+            for (j,e) in d.iter_mut().enumerate().take(deg+1) { *e = lift(s-deg+j); }
+            for r in 1..=deg {
+                let x = if r <= deg-i { lo } else { hi };
+                for j in (r..=deg).rev() {
+                    let (k0,k1) = (self.knots[s+j-deg],self.knots[s+1+j-r]);
+                    let alpha = (x-k0)/(k1-k0);
+                    for c in 0..4 { d[j][c] = (1.-alpha)*d[j-1][c]+alpha*d[j][c]; }
+                }
+            }
+            *o = d[deg];
+        }
+        out
     }
 }
 
@@ -102,14 +186,37 @@ fn span(degree: usize,knots: &[f64],count: usize,t: f64) -> usize {
     lo
 }
 
-/// The span holding `t`, and there the `degree + 1` basis functions and their derivatives up to
-/// order `n` (at most 2) — Piegl and Tiller's A2.3, on the stack: a degree under `SMALL` in a table
-/// that size, a higher one (OCCT approximates up to 25) in one of `W`.
-fn basis_ders(p: usize,u: &[f64],count: usize,t: f64,n: usize) -> (usize,[[f64;W];3]) {
-    if p < SMALL { basis_ders_in::<SMALL>(p,u,count,t,n) } else { basis_ders_in::<W>(p,u,count,t,n) }
+/// `f` of the span holding `t`, and there the `degree + 1` basis functions and their derivatives
+/// up to order `n` (at most 2) — Piegl and Tiller's A2.3, on the stack: a cubic's or less in a
+/// table of four, a degree under `SMALL` in a table that size, a higher one (OCCT approximates up
+/// to 25) in one of `W`.
+#[inline]
+fn with_basis<R>(p: usize,u: &[f64],count: usize,t: f64,n: usize,f: impl FnOnce(usize,&[&[f64];3]) -> R) -> R {
+    if p < 4 {
+        let (s,d) = basis_ders_in::<4>(p,u,count,t,n);
+        f(s,&[&d[0],&d[1],&d[2]])
+    } else if p < SMALL {
+        let (s,d) = basis_ders_in::<SMALL>(p,u,count,t,n);
+        f(s,&[&d[0],&d[1],&d[2]])
+    } else {
+        let (s,d) = basis_ders_in::<W>(p,u,count,t,n);
+        f(s,&[&d[0],&d[1],&d[2]])
+    }
 }
 
-fn basis_ders_in<const M: usize>(p: usize,u: &[f64],count: usize,t: f64,n: usize) -> (usize,[[f64;W];3]) {
+/// A Bézier curve's point at `f`, its poles in homogeneous coordinates: de Casteljau's steps.
+fn casteljau<const M: usize>(poles: &[[f64;4]],f: f64) -> V {
+    let mut d = [[0.;4];M];
+    d[..poles.len()].copy_from_slice(poles);
+    for r in 1..poles.len() {
+        for j in 0..poles.len()-r {
+            for c in 0..4 { d[j][c] = (1.-f)*d[j][c]+f*d[j+1][c]; }
+        }
+    }
+    [d[0][0]/d[0][3],d[0][1]/d[0][3],d[0][2]/d[0][3]]
+}
+
+fn basis_ders_in<const M: usize>(p: usize,u: &[f64],count: usize,t: f64,n: usize) -> (usize,[[f64;M];3]) {
     let s = span(p,u,count,t);
     let mut ndu = [[0.;M];M];
     let (mut left,mut right) = ([0.;M],[0.;M]);
@@ -127,7 +234,7 @@ fn basis_ders_in<const M: usize>(p: usize,u: &[f64],count: usize,t: f64,n: usize
         ndu[j][j] = saved;
     }
     let orders = n.min(p).min(2);
-    let mut ders = [[0.;W];3];
+    let mut ders = [[0.;M];3];
     for j in 0..=p { ders[0][j] = ndu[j][p]; }
     let mut a2 = [[0.;M];2];
     for r in 0..=p {
@@ -396,31 +503,33 @@ impl Net {
     pub fn d1(&self,u: f64,v: f64) -> (V,V,V) {
         let [[u0,u1],[v0,v1]] = self.domain();
         let (nu,nv) = (self.poles.len(),self.poles[0].len());
-        let (su,bu) = basis_ders(self.du,&self.uknots,nu,u.clamp(u0,u1),1);
-        let (sv,bv) = basis_ders(self.dv,&self.vknots,nv,v.clamp(v0,v1),1);
-        if let Some(w) = &self.weights {
-            let (mut a,mut ws) = ([[0.;3];3],[0.;3]);
+        with_basis(self.du,&self.uknots,nu,u.clamp(u0,u1),1,|su,bu|
+        with_basis(self.dv,&self.vknots,nv,v.clamp(v0,v1),1,|sv,bv| {
+            if let Some(w) = &self.weights {
+                let (mut a,mut ws) = ([[0.;3];3],[0.;3]);
+                for i in 0..=self.du {
+                    let (row,wrow) = (&self.poles[su-self.du+i],&w[su-self.du+i]);
+                    for j in 0..=self.dv {
+                        let (q,wq) = (row[sv-self.dv+j],wrow[sv-self.dv+j]);
+                        let n = [bu[0][i]*bv[0][j]*wq,bu[1][i]*bv[0][j]*wq,bu[0][i]*bv[1][j]*wq];
+                        for k in 0..3 { for c in 0..3 { a[k][c] += n[k]*q[c]; } ws[k] += n[k]; }
+                    }
+                }
+                let s: V = std::array::from_fn(|c| a[0][c]/ws[0]);
+                return (s,std::array::from_fn(|c| (a[1][c]-ws[1]*s[c])/ws[0]),
+                    std::array::from_fn(|c| (a[2][c]-ws[2]*s[c])/ws[0]))
+            }
+            let mut out = [[0.;3];3];
             for i in 0..=self.du {
-                let (row,wrow) = (&self.poles[su-self.du+i],&w[su-self.du+i]);
+                let row = &self.poles[su-self.du+i];
                 for j in 0..=self.dv {
-                    let (q,wq) = (row[sv-self.dv+j],wrow[sv-self.dv+j]);
-                    let n = [bu[0][i]*bv[0][j]*wq,bu[1][i]*bv[0][j]*wq,bu[0][i]*bv[1][j]*wq];
-                    for k in 0..3 { for c in 0..3 { a[k][c] += n[k]*q[c]; } ws[k] += n[k]; }
+                    let q = row[sv-self.dv+j];
+                    let (n,nu_,nv_) = (bu[0][i]*bv[0][j],bu[1][i]*bv[0][j],bu[0][i]*bv[1][j]);
+                    for c in 0..3 { out[0][c] += n*q[c]; out[1][c] += nu_*q[c]; out[2][c] += nv_*q[c]; }
                 }
             }
-            let s: V = std::array::from_fn(|c| a[0][c]/ws[0]);
-            return (s,std::array::from_fn(|c| (a[1][c]-ws[1]*s[c])/ws[0]),std::array::from_fn(|c| (a[2][c]-ws[2]*s[c])/ws[0]))
-        }
-        let mut out = [[0.;3];3];
-        for i in 0..=self.du {
-            let row = &self.poles[su-self.du+i];
-            for j in 0..=self.dv {
-                let q = row[sv-self.dv+j];
-                let (n,nu_,nv_) = (bu[0][i]*bv[0][j],bu[1][i]*bv[0][j],bu[0][i]*bv[1][j]);
-                for c in 0..3 { out[0][c] += n*q[c]; out[1][c] += nu_*q[c]; out[2][c] += nv_*q[c]; }
-            }
-        }
-        (out[0],out[1],out[2])
+            (out[0],out[1],out[2])
+        }))
     }
     pub fn point(&self,u: f64,v: f64) -> V { self.d1(u,v).0 }
     /// The curve along `u` through the `j`th column of poles: the iso line at the `v` that column
@@ -433,45 +542,46 @@ impl Net {
     pub fn d2(&self,u: f64,v: f64) -> [V;6] {
         let [[u0,u1],[v0,v1]] = self.domain();
         let (nu,nv) = (self.poles.len(),self.poles[0].len());
-        let (su,bu) = basis_ders(self.du,&self.uknots,nu,u.clamp(u0,u1),2);
-        let (sv,bv) = basis_ders(self.dv,&self.vknots,nv,v.clamp(v0,v1),2);
-        // (u order, v order) of each output
-        const ORDERS: [(usize,usize);6] = [(0,0),(1,0),(0,1),(2,0),(1,1),(0,2)];
-        if let Some(w) = &self.weights {
-            let (mut a,mut ws) = ([[0.;3];6],[0.;6]);
+        with_basis(self.du,&self.uknots,nu,u.clamp(u0,u1),2,|su,bu|
+        with_basis(self.dv,&self.vknots,nv,v.clamp(v0,v1),2,|sv,bv| {
+            // (u order, v order) of each output
+            const ORDERS: [(usize,usize);6] = [(0,0),(1,0),(0,1),(2,0),(1,1),(0,2)];
+            if let Some(w) = &self.weights {
+                let (mut a,mut ws) = ([[0.;3];6],[0.;6]);
+                for i in 0..=self.du {
+                    let (row,wrow) = (&self.poles[su-self.du+i],&w[su-self.du+i]);
+                    for j in 0..=self.dv {
+                        let (q,wq) = (row[sv-self.dv+j],wrow[sv-self.dv+j]);
+                        for (k,&(x,y)) in ORDERS.iter().enumerate() {
+                            let n = bu[x][i]*bv[y][j]*wq;
+                            for c in 0..3 { a[k][c] += n*q[c]; }
+                            ws[k] += n;
+                        }
+                    }
+                }
+                // the quotient rule, order by order (Piegl and Tiller A4.4)
+                let at = |f: &dyn Fn(usize) -> f64| -> V { std::array::from_fn(f) };
+                let s = at(&|c| a[0][c]/ws[0]);
+                let su_ = at(&|c| (a[1][c]-ws[1]*s[c])/ws[0]);
+                let sv_ = at(&|c| (a[2][c]-ws[2]*s[c])/ws[0]);
+                let suu = at(&|c| (a[3][c]-2.*ws[1]*su_[c]-ws[3]*s[c])/ws[0]);
+                let suv = at(&|c| (a[4][c]-ws[1]*sv_[c]-ws[2]*su_[c]-ws[4]*s[c])/ws[0]);
+                let svv = at(&|c| (a[5][c]-2.*ws[2]*sv_[c]-ws[5]*s[c])/ws[0]);
+                return [s,su_,sv_,suu,suv,svv]
+            }
+            let mut out = [[0.;3];6];
             for i in 0..=self.du {
-                let (row,wrow) = (&self.poles[su-self.du+i],&w[su-self.du+i]);
+                let row = &self.poles[su-self.du+i];
                 for j in 0..=self.dv {
-                    let (q,wq) = (row[sv-self.dv+j],wrow[sv-self.dv+j]);
-                    for (k,&(x,y)) in ORDERS.iter().enumerate() {
-                        let n = bu[x][i]*bv[y][j]*wq;
-                        for c in 0..3 { a[k][c] += n*q[c]; }
-                        ws[k] += n;
+                    let q = row[sv-self.dv+j];
+                    for (k,&(a,b)) in ORDERS.iter().enumerate() {
+                        let n = bu[a][i]*bv[b][j];
+                        for c in 0..3 { out[k][c] += n*q[c]; }
                     }
                 }
             }
-            // the quotient rule, order by order (Piegl and Tiller A4.4)
-            let at = |f: &dyn Fn(usize) -> f64| -> V { std::array::from_fn(f) };
-            let s = at(&|c| a[0][c]/ws[0]);
-            let su_ = at(&|c| (a[1][c]-ws[1]*s[c])/ws[0]);
-            let sv_ = at(&|c| (a[2][c]-ws[2]*s[c])/ws[0]);
-            let suu = at(&|c| (a[3][c]-2.*ws[1]*su_[c]-ws[3]*s[c])/ws[0]);
-            let suv = at(&|c| (a[4][c]-ws[1]*sv_[c]-ws[2]*su_[c]-ws[4]*s[c])/ws[0]);
-            let svv = at(&|c| (a[5][c]-2.*ws[2]*sv_[c]-ws[5]*s[c])/ws[0]);
-            return [s,su_,sv_,suu,suv,svv]
-        }
-        let mut out = [[0.;3];6];
-        for i in 0..=self.du {
-            let row = &self.poles[su-self.du+i];
-            for j in 0..=self.dv {
-                let q = row[sv-self.dv+j];
-                for (k,&(a,b)) in ORDERS.iter().enumerate() {
-                    let n = bu[a][i]*bv[b][j];
-                    for c in 0..3 { out[k][c] += n*q[c]; }
-                }
-            }
-        }
-        out
+            out
+        }))
     }
     /// The surface over `[u0, u1] × [v0, v1]` (within its domain) alone, exactly: the same points at
     /// the same parameters, only the net that reaches there.

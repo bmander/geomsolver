@@ -23,6 +23,7 @@ pub const ANGULAR: f64 = 0.2;
 
 /// A body built exactly: its B-rep, and, built as one sector, the pattern that meshes it and the
 /// turn its field agreement reads each probe in.
+#[derive(Clone,Debug)]
 pub struct Exact { pub solid: Brep,pub pattern: Option<Patterned>,pub indexed: Option<([f64;3],[f64;3],usize)>,
     /// Whether the body cuts sweeps, so its mesh is held to its material field.
     pub swept: bool }
@@ -54,6 +55,34 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
         return Ok(Exact {solid:built.solid.moved(&m),pattern:built.pattern.map(|p| p.moved(&m)),
             indexed:built.indexed.map(|(o,a,n)| (m.point(o),m.vector(a),n)),swept:built.swept})
     }
+    // a closed instance's swept body is its binding's representative's build placed (#566): built
+    // once for the drawing and the tolerance, and moved where each copy stands
+    if let Some((rep,raw)) = sk.bound_swept(body).filter(|_| cad::contains_sweep(sk,body)) {
+        let key = crate::solid::MemoKey::of(sk,rep);
+        let tol = tolerance.map(|t| t.millimetres.to_bits());
+        let held = sk.caches.swept_exact.get(rep,&key).filter(|(t,_)| *t == tol).map(|(_,e)| e);
+        let built = match held {
+            Some(e) => e,
+            None => {
+                let e = std::rc::Rc::new(own(sk,rep,if rep == body { admitted } else { None },tolerance,say)?);
+                sk.caches.swept_exact.put(rep,key,(tol,e.clone()));
+                e
+            }
+        };
+        if rep == body { return Ok((*built).clone()) }
+        let mm = cad::millimetres(sk);
+        let m = super::geom::Rigid {r:raw.r,t:raw.t.map(|k| k*mm)};
+        (say.stage)(&format!("`{}` is `{}` placed: one build of their binding",sk.solids[body].name,sk.solids[rep].name));
+        return Ok(Exact {solid:built.solid.moved(&m),pattern:built.pattern.as_ref().map(|p| p.moved(&m)),
+            indexed:built.indexed.map(|(o,a,n)| (m.point(o),m.vector(a),n)),swept:built.swept})
+    }
+    own(sk,body,admitted,tolerance,say)
+}
+
+/// Solid `body` built as its own: from swept material (`compose`), with swept cuts of its own, or
+/// from its recipe.
+fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
+    let mirrored = mirrored_within(sk,body);
     if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
     if !recipe.sweeps.is_empty() {

@@ -225,6 +225,30 @@ impl Carry {
 }
 
 thread_local! {
+    /// The feet each thread found last on B-spline curves, each with its curve (held, so that its
+    /// address is no other's) and the point asked: a trace asks a swept surface its distance and
+    /// then its gradient at one point, both through the foot, and a march asks again where it
+    /// landed. The answer found once, as it would be found again.
+    static HELD_CURVE_FEET: std::cell::RefCell<([Option<(Arc<BSpline>,V,f64)>;8],usize)> =
+        const { std::cell::RefCell::new(([const { None };8],0)) };
+}
+
+/// `b.nearest(p)`, held for the next to ask of the same curve and point.
+fn nearest_held(b: &Arc<BSpline>,p: V) -> f64 {
+    let same = |q: &V| (0..3).all(|k| q[k].to_bits() == p[k].to_bits());
+    let held = HELD_CURVE_FEET.with(|c| c.borrow().0.iter().flatten().find(|(c,q,_)| Arc::ptr_eq(c,b) && same(q))
+        .map(|e| e.2));
+    if let Some(t) = held { return t }
+    let t = b.nearest(p);
+    HELD_CURVE_FEET.with(|c| {
+        let (slots,next) = &mut *c.borrow_mut();
+        slots[*next] = Some((b.clone(),p,t));
+        *next = (*next+1)%slots.len();
+    });
+    t
+}
+
+thread_local! {
     /// The last foot each thread found on each of the last few blends (by their addresses), as a
     /// face family's wall keeps its own: only ever a start, held to settling near the point.
     static LAST_BLEND_FOOT: std::cell::Cell<[(usize,Uv);4]> = const { std::cell::Cell::new([(0,[0.;2]);4]) };
@@ -595,11 +619,11 @@ impl Surface {
         let (su,cu) = u.dsin_cos();
         match self {
             Surface::Extrusion(f,c) => {
-                let (x,d,_) = c.d2(u);
+                let (x,d) = c.d1(u);
                 return (add(x,scale(f.z,v)),d,f.z)
             }
             Surface::Revolution(f,c) => {
-                let (x,d,_) = c.d2(v);
+                let (x,d) = c.d1(v);
                 let (q,e) = (f.local(x),f.dir_local(d));
                 let turn = |q: V| [q[0]*cu-q[1]*su,q[0]*su+q[1]*cu,q[2]];
                 let r = turn(q);
@@ -677,6 +701,26 @@ impl Surface {
                 let uv = b.newton(p,hint);
                 if crate::space::distance(b.d1(uv).0,p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { b.inverse(p) }
             }
+            // a spline swept or turned likewise, its curve's foot from the hint's
+            Surface::Extrusion(f,c) => match &**c {
+                Curve::BSpline(b) => {
+                    let [x,y,_] = f.local(p);
+                    let t = b.refined(f.at([x,y,0.]),hint[0]);
+                    let uv = [t,dot(sub(p,b.point(t)),f.z)];
+                    if crate::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
+                }
+                _ => self.inverse(p),
+            },
+            Surface::Revolution(f,c) => match &**c {
+                Curve::BSpline(b) => {
+                    let [x,y,z] = f.local(p);
+                    let u = if x == 0. && y == 0. { 0. } else { y.datan2(x).rem_euclid(TAU) };
+                    let u = if u >= TAU { 0. } else { u };
+                    let uv = [u,b.refined(f.at([x.dhypot(y),0.,z]),hint[1])];
+                    if crate::space::distance(self.point(uv),p) <= 1e-6*(1.+dot(p,p).sqrt()) { uv } else { self.inverse(p) }
+                }
+                _ => self.inverse(p),
+            },
             _ => self.inverse(p),
         }
     }
@@ -827,6 +871,15 @@ impl Surface {
                 (crate::space::distance(lo,hi)/16.).max(f64::MIN_POSITIVE)
             }
         }
+    }
+    /// `feature` within the box `[lo, hi]`: a cone's least radius of curvature there, `ρ / cos α`
+    /// at its least radius `ρ` in the box (the radius at its frame's origin says nothing of the
+    /// box, and is nothing where that origin is the apex), never less than `feature`'s.
+    pub fn feature_within(&self,lo: V,hi: V) -> f64 {
+        let Surface::Cone(f,_,a) = *self else { return self.feature() };
+        let c = sub(scale(add(lo,hi),0.5),f.o);
+        let rho = norm(sub(c,scale(f.z,dot(c,f.z))))-0.5*crate::space::distance(lo,hi);
+        self.feature().max(rho/a.dcos().abs().max(1e-12))
     }
     pub fn moved(&self,m: &Rigid) -> Surface {
         match *self {
@@ -1031,8 +1084,12 @@ impl Curve {
             _ => vec![],
         }
     }
-    pub fn point(&self,t: f64) -> V { self.d2(t).0 }
-    pub fn tangent(&self,t: f64) -> V { self.d2(t).1 }
+    pub fn point(&self,t: f64) -> V { if let Curve::BSpline(b) = self { b.point(t) } else { self.d2(t).0 } }
+    pub fn tangent(&self,t: f64) -> V { self.d1(t).1 }
+    /// `C`, `C'`: `d2`'s, a B-spline's second derivative not read.
+    pub fn d1(&self,t: f64) -> (V,V) {
+        match self { Curve::BSpline(b) => b.d1(t),_ => { let (x,d,_) = self.d2(t); (x,d) } }
+    }
     /// The parameter of the point of the curve nearest `p` (`t ∈ [0, 2π)` on a closed curve);
     /// exact for a point on a line or circle, and for an ellipse refined by Newton from its
     /// eccentric angle.
@@ -1082,48 +1139,8 @@ impl Curve {
                 }
                 v
             }
-            Curve::BSpline(ref b) => {
-                // the nearest of samples across every knot span, then Newton on (C − p)·C'. A span
-                // lies in its poles' hull, so the distance to their box bounds its samples' from
-                // below: spans are read nearest box first, and none past the nearest sample found,
-                // which finds the sample the whole walk would (the earlier of two as near)
-                let [a,z] = b.domain();
-                let mut cuts = vec![a];
-                cuts.extend(b.breaks([a,z]));
-                cuts.push(z);
-                let reach = |w: &[f64]| -> f64 {
-                    let poles = b.poles_over([w[0],w[1]]);
-                    let gap: [f64;3] = std::array::from_fn(|i| {
-                        let (lo,hi) = poles.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),q| (l.min(q[i]),h.max(q[i])));
-                        (lo-p[i]).max(p[i]-hi).max(0.)
-                    });
-                    norm(gap)*(1.-1e-12)
-                };
-                let mut spans: Vec<(f64,usize)> = cuts.windows(2).enumerate().map(|(i,w)| (reach(w),i)).collect();
-                spans.sort_by(|x,y| x.0.total_cmp(&y.0).then(x.1.cmp(&y.1)));
-                let mut best = (f64::INFINITY,a);
-                for (bound,i) in spans {
-                    if bound > best.0 { break }
-                    let w = [cuts[i],cuts[i+1]];
-                    for j in 0..=16 {
-                        let t = w[0]+(w[1]-w[0])*j as f64/16.;
-                        let d = crate::space::distance(b.point(t),p);
-                        if d < best.0 || (d == best.0 && t < best.1) { best = (d,t); }
-                    }
-                }
-                let mut t = best.1;
-                for _ in 0..20 {
-                    let (x,d,dd) = b.d2(t);
-                    let e = sub(x,p);
-                    let g = dot(e,d);
-                    let h = dot(d,d)+dot(e,dd);
-                    if !(h > 0.) { break }
-                    let next = (t-g/h).clamp(a,z);
-                    if (next-t).abs() <= 1e-15*(z-a) { t = next; break }
-                    t = next;
-                }
-                t
-            }
+            // the nearest of samples across every knot span, then Newton: once a point
+            Curve::BSpline(ref b) => nearest_held(b,p),
             Curve::Line {p: q,d} => dot(sub(p,q),d),
             Curve::Circle(f,_) => { let [x,y,_] = f.local(p); wrap(y.datan2(x)) }
             Curve::Ellipse(f,a,b) => {

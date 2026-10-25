@@ -372,6 +372,18 @@ impl Boxes {
         best.get()
     }
 
+    /// Where the nearest edge's distance stands against `s` (at least 0), as `nearest`'s would:
+    /// a box farther than `s` is passed by as one farther than the nearest found is, so only the
+    /// edges within `s` are measured.
+    fn nearest_side(&self,edges: &[Edge],p: P,s: f64) -> super::Side {
+        let found = std::cell::Cell::new(f64::INFINITY);
+        self.0.query_nearest(|b| b.gap(crate::bvh::Bounds {lo:p,hi:p}),|| found.get().min(s),|k| {
+            let d = edges[k].distance(p);
+            if d < found.get() { found.set(d) }
+        });
+        if found.get() < s { super::Side::Below } else if found.get() == s { super::Side::At } else { super::Side::Above }
+    }
+
     /// How many of the edges `p`'s ray toward +x crosses.
     fn crossings(&self,edges: &[Edge],p: P) -> usize {
         let mut count = 0;
@@ -476,6 +488,15 @@ impl Profile {
 
     /// The signed boundary distance at a point, in plain floating point.
     pub(super) fn value(&self,p: P) -> f64 { self.value_edge(p).0 }
+    /// `Side::of(self.value(p), t)`: the ray's parity first, then the nearest edge sought only
+    /// within the level, the value being the nearest distance outside and its negative inside.
+    pub(super) fn side(&self,p: P,t: f64) -> super::Side {
+        let inside = self.boxes.crossings(&self.edges,p)%2 == 1;
+        let s = if inside { -t } else { t };
+        // a distance is no less than 0
+        let side = if s < 0. { super::Side::Above } else { self.boxes.nearest_side(&self.edges,p,s) };
+        if inside { side.negated() } else { side }
+    }
 
     pub(super) fn bounds(&self,p: [I;2]) -> Result<I,Error> {
         let nearest = self.boxes.bounds(&self.walls,p)?.expect("a profile keeps at least one wall");

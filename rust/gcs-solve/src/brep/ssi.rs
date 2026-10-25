@@ -421,7 +421,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V
         ill-conditioned there, not built yet",a.kind(),b.kind(),norm(cross(a.gradient(p),b.gradient(p))).dasin().to_degrees(),p[0],p[1],p[2]);
     let probe = Traced {a:a.clone(),b:b.clone(),pts:vec![],closed:false};
     let diag = norm(sub(hi,lo)).max(tol);
-    let h0 = (a.feature().min(b.feature())/12.).min(diag/24.).max(diag*1e-4);
+    let h0 = (a.feature_within(lo,hi).min(b.feature_within(lo,hi))/12.).min(diag/24.).max(diag*1e-4);
     let inside = |p: V,pad: f64| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad);
     let mut curves: Vec<Curve> = Vec::new();
     // the seeds projected onto both, once; those landing on both are where a patch's edge crosses
@@ -697,7 +697,7 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
     let pad = 4.*tol;
     if (0..3).any(|k| !(hi[k]+pad >= lo[k]-pad)) { return Ok(None) }
     let diag = norm(sub(hi,lo));
-    let leaf = (a.feature().min(b.feature()).min(diag)/64.).max(diag*1e-4).max(16.*tol);
+    let leaf = (a.feature_within(lo,hi).min(b.feature_within(lo,hi)).min(diag)/64.).max(diag*1e-4).max(16.*tol);
     let floor = (leaf*1e-6).max(4.*tol);
     // the known curves' points, filed by place, read within a cell's reach of its middle
     let spacing = leaf/2.;

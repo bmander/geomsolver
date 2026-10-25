@@ -110,11 +110,17 @@ impl Edge {
                 }
                 let lo = start.min(start+sweep);
                 let hi = start.max(start+sweep);
-                let mut angles = vec![lo];
+                // the sweep's ends and the turning heights between (a sweep under a turn has two
+                // at most), on the stack: a field asks of every edge at every point it reads
                 let first = ((lo-FRAC_PI_2)/PI).floor() as i32+1;
                 let last = ((hi-FRAC_PI_2)/PI).ceil() as i32;
-                for k in first..last { angles.push(FRAC_PI_2+f64::from(k)*PI); }
-                angles.push(hi);
+                let (mut held,mut more) = ([0.;8],Vec::new());
+                let n = (last-first).max(0) as usize+2;
+                let angles: &mut [f64] = if n <= held.len() { &mut held[..n] } else { more.resize(n,0.); &mut more };
+                angles[0] = lo;
+                for (j,k) in (first..last).enumerate() { angles[j+1] = FRAC_PI_2+f64::from(k)*PI; }
+                angles[n-1] = hi;
+                let angles = &*angles;
                 let zs = if sweep > 0. { [ends[0][1],ends[1][1]] }
                     else { [ends[1][1],ends[0][1]] };
                 angles.windows(2).enumerate().filter(|(i,a)| {

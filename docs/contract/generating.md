@@ -354,3 +354,19 @@ meridian section turned once (`Session::construct_meridian`, `solvent_cad_revolv
 `SOLVENT_BLANK=booleans`); field agreement probes one sector, reading cuts not proved positive
 (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); STEP text is
 formatted on every core, the kernel's to the byte (`SOLVENT_STEP_TEXT_CHECK`).
+
+**Speed of the Rust kernel's swept cuts:** every shortcut reads what the long way read. A placement
+is compared with the first by `SpatialField::below` (`value(p) < t`, a Boolean's second operand
+unread where its first decides, a loop's nearest edge sought only within the level, the parity of
+its ray first). A body built whole is split by its placed sheets a batch at a time, each sheet in
+the first batch whose boxes stand clear of its own (`sector::apart`): sheets that meet none of each
+other split as one. A cell's interior points (`query::interior`) are the deepest first by a
+hierarchy of its mesh's triangles, the winding number asked only of the points the choice reaches.
+Under these, the class's Booleans are seeded and traced as any are (brep.md), a cone's step read at
+its radius in the pair's box (`Surface::feature_within`, not at its frame's origin, which may be
+its apex), and a spline's foot found as `brep.md` says. A blank's prism of whole circles about the
+line, along it, is turned as its section (`Recipe::meridian`), so a chamfered gear's blank is made
+again about the axis and built as one sector; a side running in to its bore is clear of the cuts
+by its gap's angle times its radius, or by how far nearer the axis than every contact of its slice
+it runs where that is more (`Boundary::clearance_of`). `tests/swept_speed.rs` and
+`sector::a_side_reaching_its_bore_is_clear_by_its_radial_gap` are the gates.

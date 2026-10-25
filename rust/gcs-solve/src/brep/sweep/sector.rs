@@ -67,6 +67,22 @@ fn keyed(mut sheet: Brep,key: &str) -> Brep {
     sheet
 }
 
+/// The sheets in batches, each sheet in the first whose sheets' boxes all stand more than `gap`
+/// from its own: a batch's sheets meet none of each other, so one split by all of them at once is
+/// the splits by each in turn, and a cell is arranged against a batch where it was against a sheet.
+fn apart(sheets: &[Brep],gap: f64) -> Vec<Vec<usize>> {
+    let boxes: Vec<(V,V)> = sheets.iter().map(Brep::bounds).collect();
+    let clear = |a: &(V,V),b: &(V,V)| (0..3).any(|k| a.0[k] > b.1[k]+gap || b.0[k] > a.1[k]+gap);
+    let mut batches: Vec<Vec<usize>> = Vec::new();
+    for k in 0..sheets.len() {
+        match batches.iter_mut().find(|b| b.iter().all(|&j| clear(&boxes[k],&boxes[j]))) {
+            Some(b) => b.push(k),
+            None => batches.push(vec![k]),
+        }
+    }
+    batches
+}
+
 /// The blank of `recipe` as its meridian region turned once from the half-plane along `seam`, or
 /// by its Booleans turned about the axis till its seams lie there.
 fn blank_from(recipe: &Recipe,origin: V,axis: V,seam: V) -> Result<Brep,String> {
@@ -308,14 +324,16 @@ pub fn whole(sk: &Sketch,body: usize,recipe: &StaticRecipe,blank: &Brep,distinct
         Err(e) => return Err(e.into()),
     };
     let mut cells = vec![blank.clone()];
-    for sheet in &tools {
-        let parts = crate::par::map(&cells,|c| split(c,sheet,SPLIT_TOL));
+    let batches = apart(&tools,1e-3*blank.size());
+    for batch in &batches {
+        let sheet = batch.iter().skip(1).fold(tools[batch[0]].clone(),|s,&k| s.joined(&tools[k]));
+        let parts = crate::par::map(&cells,|c| split(c,&sheet,SPLIT_TOL));
         cells = parts.into_iter().collect::<Result<Vec<_>,_>>()?.into_iter().flatten().collect();
     }
     for c in &cells { c.check(1e-6).map_err(|e| format!("a cell of the split is invalid: {e}"))?; }
     let volumes: Vec<f64> = cells.iter().map(volume).collect();
-    (say.stage)(&format!("split the blank of {:.6} mm³ by {} placed sheets into {} cells ({:?})",volume(&blank),tools.len(),cells.len(),
-        clock.elapsed()));
+    (say.stage)(&format!("split the blank of {:.6} mm³ by {} placed sheets, {} at once at most, into {} cells ({:?})",volume(&blank),
+        tools.len(),batches.iter().map(Vec::len).max().unwrap_or(0),cells.len(),clock.elapsed()));
     (say.mark)(crate::solid::export::Stage::Split);
     let clock = crate::clock::Instant::now();
     let body_field = Millimetres::<MaterialField>::read(sk,body,cad::AXIS_TOLERANCE)?;

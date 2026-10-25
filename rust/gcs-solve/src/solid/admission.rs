@@ -476,7 +476,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             options),
         None => check(contacts,inside,options),
     };
-    let inside_at = |pose: Motion| move |p: V| field.value(pose.point(p)) < -options.margin;
+    let inside_at = |pose: Motion| move |p: V| field.below(pose.point(p),-options.margin);
     // Each sweep's tool read, then its first placement checked.
     let tools: Vec<Result<SweepContacts,Error>> = order.iter().map(|&swept| {
         let SolidDef::Swept {source,..} = &sk.solids[swept].def else { unreachable!("a swept cut is a sweep") };

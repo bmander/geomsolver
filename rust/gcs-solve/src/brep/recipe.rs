@@ -519,6 +519,39 @@ fn meridian_region(recipe: &Recipe,seam: V) -> Result<(Profile,V,V),KernelError>
                         .map(|seg| { let step = super::planar::Step {seg,chart:None,tag}; tag += 1; step }).collect()).collect())
                 }
             }
+            // a prism of whole circles about the line, along it: the turn of its section, from its
+            // hole's radius (or the line) to its rim's, between its caps
+            Node::Prism {profile,from,to,draft} if draft.unwrap_or(0.) == 0. => {
+                let profile = Profile::of(profile)?;
+                let n = unit(profile.normal);
+                let circles: Option<Vec<f64>> = profile.loops.iter().map(|l| match l.as_slice() {
+                    [ProfileEdge::Arc {frame,r,span:None}] if on_line(frame.o) => Some(*r),
+                    _ => None,
+                }).collect();
+                let Some(radii) = circles.filter(|_| norm(cross(n,axis)) <= 1e-12) else {
+                    return Err(refused(format!("`{name}` is a prism, not a revolution")))
+                };
+                let outer = (0..radii.len()).max_by(|&i,&j| radii[i].total_cmp(&radii[j])).ok_or("recipe: a prism of no loop")?;
+                let holes: Vec<usize> = (0..radii.len()).filter(|&i| i != outer).collect();
+                if holes.len() > 1 || holes.iter().any(|&i| radii[i] >= radii[outer]) {
+                    return Err(refused(format!("`{name}` is a prism of circles nested more than a rim and its hole")))
+                }
+                let base = dot(sub(profile.origin,origin),axis);
+                let along = dot(n,axis);
+                let ((z0,far),(z1,near)) = {
+                    let (a,b) = ((base+from.min(*to)*along,"far"),(base+from.max(*to)*along,"near"));
+                    if a.0 <= b.0 { (a,b) } else { (b,a) }
+                };
+                let (rim,hole) = (radii[outer],holes.first().map_or(0.,|&i| radii[i]));
+                let first = names.len() as u32+1;
+                names.push(name_under(name,far));
+                names.push(name_under(name,&profile.name(outer,0)));
+                names.push(name_under(name,near));
+                names.push(holes.first().map_or(String::new(),|&i| name_under(name,&profile.name(i,0))));
+                let corners = [[hole,z0],[rim,z0],[rim,z1],[hole,z1]];
+                Region::new(vec![(0..4).map(|k| super::planar::Step {seg:super::planar::Seg::Line {a:corners[k],b:corners[(k+1)%4]},
+                    chart:None,tag:first+k as u32}).collect()])
+            }
             Node::Body(b) => {
                 let mut region = regions.get(&b.stock).ok_or("recipe: a stock not built before its body")?.clone();
                 // (no late set: a body of revolutions has no readers of its faces)

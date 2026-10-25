@@ -205,6 +205,9 @@ pub struct Boundary {
     /// Each slice's gap about the side, radians from it: the cuts in the slice and half a slice
     /// either side, read with the side's own turn across them taken out.
     pub gaps: Vec<[f64;2]>,
+    /// Each slice's least radius of the contacts its gap was read over: a point of the side nearer
+    /// the axis is that much nearer at least than any of them.
+    pub inner: Vec<f64>,
     /// The span of slices the cuts reach.
     pub span: [f64;2],
     /// The least gap either side of the side, as a length: its angle times the least radius of
@@ -264,13 +267,14 @@ impl Boundary {
             phase.push(match phase.last() { Some(&previous) => angle+((previous-angle)/pitch).round()*pitch, None => angle });
         }
         if knots.is_empty() { return Err("no slice holds a contact".into()); }
-        let mut b = Boundary {frame,slices,pitch,knots,phase,curve:[0.;4],gaps:Vec::new(),span:[lo,hi],clearance:f64::INFINITY};
+        let mut b = Boundary {frame,slices,pitch,knots,phase,curve:[0.;4],gaps:Vec::new(),inner:Vec::new(),span:[lo,hi],
+            clearance:f64::INFINITY};
         b.fit();
         // Then the gaps again, over each slice and half its neighbours, with the side's turn across
         // them taken out — a spiral cut turns across a slice by much of its gap — and the side moved
         // to their middles, twice; the third reading is the gaps kept.
         for round in 0..3 {
-            let mut gaps = Vec::new();
+            let (mut gaps,mut inner) = (Vec::new(),Vec::new());
             let mut clearance = f64::INFINITY;
             for &k in &b.knots {
                 let window: Vec<&(f64,f64,f64)> = read.iter().filter(|r| (r.0-k).abs() <= h).collect();
@@ -280,12 +284,13 @@ impl Boundary {
                 let least = window.iter().map(|r| r.2).fold(f64::INFINITY,f64::min);
                 clearance = clearance.min((-gap[0]).min(gap[1])*least);
                 gaps.push(gap);
+                inner.push(least);
             }
             if round < 2 {
                 let moved: Vec<f64> = b.knots.iter().zip(&gaps).map(|(&k,g)| b.angle_at(k)+(g[0]+g[1])/2.).collect();
                 b.phase = moved;
                 b.fit();
-            } else { b.gaps = gaps; b.clearance = clearance; }
+            } else { b.gaps = gaps; b.inner = inner; b.clearance = clearance; }
         }
         b.phase = b.knots.iter().map(|&k| b.angle_at(k)).collect();
         Ok(b)
@@ -343,8 +348,10 @@ impl Boundary {
     }
 
     /// The least clearance of `points` (the side as built, where it is in the blank) from the
-    /// cuts, as a length: how far inside its slice's gap each lies, times its radius. A point
-    /// outside the cuts' span is clear of every cut. Refused at a point outside a gap.
+    /// cuts, as a length: how far inside its slice's gap each lies, times its radius — or, nearer
+    /// the axis than every contact of the slice, how much nearer, where that is more (a spoked
+    /// wheel's side runs in to its bore, where the gap's angle is a hair). A point outside the
+    /// cuts' span is clear of every cut. Refused at a point outside a gap.
     pub fn clearance_of(&self,points: &[V]) -> Result<f64,String> {
         let h = (self.span[1]-self.span[0])/SLICES as f64;
         let mut least = f64::INFINITY;
@@ -353,13 +360,15 @@ impl Boundary {
             let off = wrapped(phi-self.angle_at(s),self.pitch);
             let (mut worst,mut any) = (f64::INFINITY,false);
             // every slice whose window holds this point
-            for (k,g) in self.knots.iter().zip(&self.gaps) {
+            let r = self.frame.radius(p);
+            for ((k,g),&nearest) in self.knots.iter().zip(&self.gaps).zip(&self.inner) {
                 if (s-k).abs() > h/2. { continue; }
                 any = true;
-                worst = worst.min((off-g[0]).min(g[1]-off));
+                let within = (off-g[0]).min(g[1]-off);
+                worst = worst.min(if within > 0. { (within*r).max(nearest-r) } else { within*r });
             }
             if !any { continue; }
-            let clear = worst*self.frame.radius(p);
+            let clear = worst;
             if clear <= 0. {
                 return Err(format!("the side at {:?} lies {:.4} mm into a cut's slice ({:.3} degrees off its angle there, at slice {s:.3})",
                     p.map(|x| (x*1e3).round()/1e3),-clear,off.to_degrees()));

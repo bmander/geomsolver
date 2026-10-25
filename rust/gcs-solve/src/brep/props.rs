@@ -193,9 +193,9 @@ fn integrated(b: &Brep,f: &Face,area: bool) -> Vec<Vec<(f64,f64)>> {
                 let span = e.t[1]-e.t[0];
                 let periodic = pu.is_some() || pv.is_some() || matches!(&e.curve,EdgeCurve::Curve(c) if c.period().is_some());
                 let mut integrand = |t: f64| {
-                    let dv = c.pcurve.derivative(t,e,s,&b.vertices)[other];
+                    let ([u,v],d) = c.pcurve.at_and_derivative(t,e,s,&b.vertices);
+                    let dv = d[other];
                     if dv == 0. { return 0. }
-                    let [u,v] = c.pcurve.at(t,e,s,&b.vertices);
                     sign*big_g(u,v)*dv
                 };
                 // where the edge's curve or its curve in the face's parameters may jump in a derivative
