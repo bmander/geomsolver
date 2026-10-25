@@ -68,11 +68,13 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
     let edge = &b.edges[e];
     let EdgeCurve::Curve(c) = &edge.curve else { return vec![edge.t[0],edge.t[1]] };
     let mut out = vec![edge.t[0]];
-    // the first pieces: a closed edge in three; a B-spline's every knot span (one inflection at most
-    // in a cubic's, which the quarter points below see though a midpoint test is blind to it), a
-    // family's rail at its pieces' joints likewise; a rail screwed about an axis a quarter turn at
-    // most a piece: a whole number of turns puts its ends, middle and quarter points in one line
-    // along the axis, their tangents alike, and a coil's rail read so was one chord (#243 L6)
+    // the first pieces: a closed edge in three; a family's rail at its pieces' joints (one inflection
+    // at most between them, which the quarter points below see though a midpoint test is blind to
+    // it); a rail screwed about an axis a quarter turn at most a piece: a whole number of turns puts
+    // its ends, middle and quarter points in one line along the axis, their tangents alike, and a
+    // coil's rail read so was one chord (#243 L6). A B-spline is not cut at its knots, but each
+    // chord is held at every knot it spans (`strays`): a fitted curve's hundreds of spans are
+    // sampled as finely as it bends, not one piece a span at least
     let mut cuts = vec![edge.t[0]];
     let near = 1e-6*(edge.t[1]-edge.t[0]);
     let knots = match c { super::geom::Curve::BSpline(_) => c.breaks(edge.t),_ => Vec::new() };
@@ -112,7 +114,8 @@ fn edge_params(b: &Brep,e: usize,bar: f64,angular: f64) -> Vec<f64> {
         let turn = (dot(ta,tz)/(norm(ta)*norm(tz)).max(1e-300)).clamp(-1.,1.).dacos();
         // and the quarter points, which a stretch centred on an inflection cannot hide, and every
         // knot it spans: one inflection at most a cubic's span, which its ends then bracket
-        let strays = || [0.25,0.75].iter().map(|&f| a+(z-a)*f).chain(knots.iter().copied().filter(|&k| k > a && k < z)).any(|t| {
+        let spanned = &knots[knots.partition_point(|&k| k <= a)..knots.partition_point(|&k| k < z)];
+        let strays = || [0.25,0.75].iter().map(|&f| a+(z-a)*f).chain(spanned.iter().copied()).any(|t| {
             let q = c.point(t);
             let s = if l2 > 0. { (dot(sub(q,pa),chord)/l2).clamp(0.,1.) } else { 0. };
             distance(q,add(pa,scale(chord,s))) > bar

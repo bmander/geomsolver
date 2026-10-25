@@ -236,13 +236,12 @@ pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
                 _ => Ssi::Traced,
             }
         }
-        (Surface::Plane(_),Surface::BSpline(..)) | (Surface::BSpline(..),Surface::Plane(_)) => {
+        (Surface::Plane(pl),Surface::BSpline(_,net)) | (Surface::BSpline(_,net),Surface::Plane(pl)) => {
             // a sheet one linear span across, its second row its first moved by one step `d` (a
             // curve swept along a line, as a generating sweep's sheet is), and a plane the step
             // crosses: the first row's curve carried along the step onto the plane, exactly (the
             // carrying is affine, so its poles carried are the curve's) — where every pole lands
             // within the sheet's span, nothing where none does, and traced where they part
-            let (pl,net) = match (a,b) { (Surface::Plane(p),Surface::BSpline(_,n)) | (Surface::BSpline(_,n),Surface::Plane(p)) => (*p,n),_ => unreachable!() };
             if net.dv != 1 || net.poles[0].len() != 2 || net.weights.is_some() { return Ssi::Traced }
             let d = sub(net.poles[0][1],net.poles[0][0]);
             let along = dot(pl.z,d);
