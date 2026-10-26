@@ -315,10 +315,10 @@ such a `region`) glues them to the body in turn (`boolean::glued`), nothing inte
 the edges and vertices the glued faces took with them (`Brep::compacted`); the native host fuses
 them.  Unioned, a ball tangent to a cylinder along a circle is refused by the Booleans; glued, a
 block grown is Steiner's volume to 1e-15.  Gated by the region's field (`agreement::gate`, built
-about the body's boundary), which reads within every face of a body with a concave edge as its
-material (`SetDistance::Material`, `Reading::material`): nothing within it, else the nearest of its
-faces' patches — no one surface's side bounds such a body, and the projection onto the nearest
-face's side runs on past its patch at a convex corner.  Refused by name, the field's: a concave
+about the body's boundary), which reads within (or beyond) every face of a body, and nothing
+more, by the body's own signed distance (`SetDistance::Body`, `BodyFaces::signed_distance`, where
+`distance_slack` says it is exact) — no one surface's side bounds a body with a concave edge, and
+the projection onto the nearest face's side runs on past its patch at a convex corner.  Refused by name, the field's: a concave
 edge on a curved face (a post's foot, its bisector a cone), a corner where a convex edge stands
 between two concave ones (a boss's foot), a concave corner of more than three faces, a face beside
 a concave edge that is no convex polygon or narrower than the reach, an edge shorter than the
@@ -327,7 +327,7 @@ carries, a convex corner no prism's, a bore no wider than the reach, a body a te
 its faces (a round).  `tests/grown.rs` is the gate (a block, a post, a hex bar and a bored plate to
 their closed forms to 1e-9; a body in two pieces; an L-block's step and a pocketed tray to
 Steiner's with its concave edges' terms negative, `−d² L` each, a step's end `−2d³/3` and a pocket's
-floor corner `+d³`; the field of a body with a concave edge).
+floor corner `+d³`; the field of a body with a concave edge, grown and shrunk).
 
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`

@@ -689,23 +689,6 @@ impl Reading {
         self.faces.iter().map(|&fi| (self.body.patch_distance(fi, p), fi))
             .min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, fi)| fi)
     }
-    /// Where the faces are every face of their body and some edge between them is concave: the
-    /// distance from the material they bound — nothing within it, else the nearest of their
-    /// patches.  No one surface's side bounds such a body, so its distance is never a projection
-    /// onto the side of the face nearest (which runs on past its patch at a convex corner).
-    pub fn material(&self) -> bool {
-        let concave = |fi: usize| self.body.edges[fi].iter().any(|&e| self.body.convex(e) == Some(false));
-        self.faces.len() == self.body.loc.b.faces.len() && !self.smooth && self.faces.iter().any(|&fi| concave(fi))
-    }
-
-    /// The distance from the material the faces bound (`material`).
-    pub fn material_distance(&self, p: V) -> f64 {
-        if self.body.loc.solid_place(self.body.q(p)) != Place::Out {
-            return 0.0;
-        }
-        self.distance(p, false)
-    }
-
     /// The distance from the faces' patches, or (`surface`) their surfaces — a smooth surface's
     /// the one of the piece whose patch is nearest, so it follows the faces across their seams
     /// and runs on past their edges as the nearest piece's surface does.

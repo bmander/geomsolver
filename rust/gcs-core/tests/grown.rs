@@ -82,8 +82,11 @@ const STANDING: &str = "unit mm\nuse std\nin std.top {\n\
 fn exact(e: &Elaborated, name: &str) -> std::rc::Rc<Exact> {
     let s = ent(e, name).i();
     let r = route(&e.sketch, s).unwrap_or_else(|m| panic!("`{name}`: {m}"));
-    if let Route::Grown(Err(why)) = &r { panic!("`{name}`: {why}") }
-    assert!(matches!(r, Route::Grown(Ok(_))), "`{name}` is not built as a body grown");
+    match r {
+        Route::Grown(Ok(_)) => {}
+        Route::Grown(Err(why)) => panic!("`{name}`: {why}"),
+        _ => panic!("`{name}` is not built as a body grown"),
+    }
     e.sketch.exact_solid(s).unwrap_or_else(|m| panic!("`{name}`: {m}"))
 }
 
@@ -175,10 +178,10 @@ fn concave_edges_grown_are_built_exactly() {
 }
 
 /// Within a body with a concave edge no one face's side bounds the material, so its field reads
-/// the distance from the nearest of the body's faces' patches: at a convex corner of the step the
-/// edge's, never the plane's of a face beside it.
+/// the body's own signed distance: at a convex corner of the step the edge's, never the plane's of
+/// a face beside it; shrunk, at its inner corner the corner's.
 #[test]
-fn a_concave_bodys_field_reads_its_nearest_patch() {
+fn a_concave_bodys_field_reads_its_signed_distance() {
     let e = solved(&format!("{BLOCKS}gl := std.Grown(step, d: 1mm)\n"));
     let field = MaterialField::read(&e.sketch, ent(&e, "gl.body").i(), 1e-10).unwrap();
     // about the edge along y through (0, 100), beside a face, and in the step's inner corner
@@ -187,6 +190,11 @@ fn a_concave_bodys_field_reads_its_nearest_patch() {
         let got = field.side(p);
         assert!((got - (want - 1.0)).abs() <= 1e-9, "{p:?}: {got} against {}", want - 1.0);
     }
+    // shrunk, beyond it alike: within the step's inner corner, the corner's distance
+    let e = solved(&format!("{BLOCKS}gs := std.Grown(step, d: -1mm)\n"));
+    let field = MaterialField::read(&e.sketch, ent(&e, "gs.body").i(), 1e-10).unwrap();
+    let (got, want) = (field.side([9.4, 8.0, 109.4]), 1.0 - 0.6 * 2f64.sqrt());
+    assert!((got - want).abs() <= 1e-9, "{got} against {want}");
 }
 
 /// A boss's foot, a convex edge standing between two concave ones, leaves the body grown to the
@@ -227,4 +235,3 @@ fn a_prism_far_from_its_planes_origin_has_its_own_box() {
         assert!(size[k] <= want + 1e-6, "{size:?}");
     }
 }
-

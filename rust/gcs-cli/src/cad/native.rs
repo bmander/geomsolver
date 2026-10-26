@@ -1,6 +1,6 @@
 //! The native kernel (OCCT, through `backend/`): a session constructing the core's recipes,
 //! and the swept construction over it. What is written, and whether, is `cad::output`'s.
-use gcs_core::brep::recipe::{Edge,Named,Node,Recipe,Stroke};
+use gcs_core::brep::recipe::{Edge,Kept,Named,Node,Recipe,Stroke};
 use gcs_core::json::Json;
 use std::{collections::BTreeMap,ffi::{c_char,c_int,c_void,CStr,CString}};
 pub(crate) use super::progress::{beside,holding,mark,side_by_side,stage,under};
@@ -101,6 +101,17 @@ impl Session {
         }
         self.result(unsafe { solvent_cad_face(self.0,ids.as_ptr(),ids.len() as c_int) })
     }
+    /// A region in general position (`solid::bounded`, #238), or a grown body's piece cut back
+    /// (`solid::grown`): the common of the primitives it keeps within, less those it keeps outside.
+    fn region(&self,pieces: &[Kept],shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
+        let mut id = None;
+        for piece in pieces {
+            let p = self.primitive(&piece.node,shapes)?;
+            id = Some(match id { None => p,Some(s) => self.boolean(s,p,if piece.keep { "bound" } else { "cut" })? });
+        }
+        id.ok_or_else(|| "a region of no pieces".into())
+    }
+
     fn primitive(&self,node: &Node,shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
         let (profile,start,end) = match node {
             Node::Canal {..} => return Err("native CAD export does not build a ball's tube (a ball swept by a turn or a screw); \
@@ -289,16 +300,7 @@ impl Session {
                         }
                         id
                     }
-                    Node::Region(pieces) => {
-                        // a region in general position (`solid::bounded`, #238): the common of the
-                        // primitives it keeps within, less those it keeps outside
-                        let mut id = None;
-                        for piece in pieces {
-                            let p = self.primitive(&piece.node,&shapes)?;
-                            id = Some(match id { None => p,Some(s) => self.boolean(s,p,if piece.keep { "bound" } else { "cut" })? });
-                        }
-                        id.ok_or("a region of no pieces")?
-                    }
+                    Node::Region(pieces) => self.region(pieces,&shapes)?,
                     Node::Grown {body,pieces} => {
                         // a region within reach of a body (`solid::grown`): the body and its pieces'
                         // union, where the core's kernel glues them; a piece beside a concave edge
@@ -306,14 +308,7 @@ impl Session {
                         let mut id = shapes[body];
                         for piece in pieces {
                             let p = match piece {
-                                Node::Region(kept) => {
-                                    let mut p = None;
-                                    for k in kept {
-                                        let q = self.primitive(&k.node,&shapes)?;
-                                        p = Some(match p { None => q,Some(s) => self.boolean(s,q,"bound")? });
-                                    }
-                                    p.ok_or("a grown body's piece of no pieces")?
-                                }
+                                Node::Region(kept) => self.region(kept,&shapes)?,
                                 piece => self.primitive(piece,&shapes)?,
                             };
                             id = self.boolean(id,p,"on")?;
