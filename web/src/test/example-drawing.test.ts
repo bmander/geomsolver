@@ -109,6 +109,13 @@ test('menu examples open files or directories with one V-twin choice', async (t)
     'pitch.sv']) {
     assert.ok(rates.files[`rates/${name}`], name);
   }
+  const developable = await remote.drawing('developable');
+  assert.equal(developable.source, 'developable/frustum.sv');
+  for (const name of ['README.md', 'frustum.sv', 'offset_adapter.sv', 'tilted_adapter.sv',
+    'cut_cylinder.sv', 'square_to_round.sv', 'dory_panel.sv', 'dory_panel.svd']) {
+    assert.ok(developable.files[`developable/${name}`], name);
+  }
+  assert.ok(drawings.info(developable.files['developable/dory_panel.svd']).sheets.length);
   const paths = await remote.drawing('paths');
   assert.equal(paths.source, 'paths/coil.sv');
   for (const name of ['README.md', 'coil.sv', 'frenet.sv', 'bent_pipe.sv', 'routed_line.sv',

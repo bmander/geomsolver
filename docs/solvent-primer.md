@@ -233,9 +233,9 @@ whichever is written first (`l tangent g` is `g tangent l`).
 
 | word | fixity | operands and options |
 |---|---|---|
-| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve; in space, a point, line or axis to a plane, a point or line to an axis, two axes; a point to a set (1.13) |
+| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve; in space, a point, line or axis to a plane, a point or line to an axis, two axes; a point to a set (1.13); a point to a line over an interval, `p coincident(t in (0, 1)) line(m, n)`, the segment (1.14, *Developable panels*) |
 | `distance` | infix | two points (length; with `along:`, an **ordinate**: signed from the first to the second along an axis, a line, or the view's own `u`/`v`, `right`/`left`/`up`/`down` with the sign said); a point and a line, or two lines (a magnitude, `side:` picks the side); two concentric circles or arcs; a point and a plane (`along: u`/`v`/`n`); two planes (along the first's normal) |
-| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13) |
+| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13); a plane to a line, circle, arc or curve traced in space `at:` a point held on it — the plane through the point holding the tangent, `T tangent(at: m) k` (1.14, *Developable panels*) |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
 | `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s words (1.9): `use std (horizontal)`, then `a horizontal b` |
@@ -1953,6 +1953,53 @@ the set's surface is (`heel := std.Sphere(apex)`, `M distance(w / 2, side: insid
 solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
 `Blank`).
 
+#### Developable panels
+
+**A sheet cut flat and bent to shape comes off flat only where it is developable**: ruled, with one
+tangent plane along each straight ruling. Two words of `std` say it — the panel, a set, and its
+pattern, a figure — and the core recognises them and builds both exactly:
+
+```
+use std
+panel := std.Developable(lower, upper)                     // the set: what the panel is
+skin := { q | q distance(<= 2mm, side: outside) panel }    // the sheet, 2 thick: its band
+reducer := solid(skin)
+flat := std.Development(panel, s, d: 1mm) in blank         // its neutral layer, laid flat
+flat.f coincident corner                                   // a figure with three freedoms,
+line(flat.f, flat.g) parallel edge                         // placed by relations
+```
+
+- **The rulings are solved, not paired.** `Developable(a, b)`'s body puts its point on the ruling
+  between `m` on `a` and `n` on `b` where one plane touches both (`T tangent(at: m) a`, `T
+  tangent(at: n, sense: same) b`, `p coincident(t in (0, 1)) line(m, n)`). Rails may be lines,
+  arcs, circles, splines (in space too), curves — `std.Ellipse` drawn in a tilted plane — or named
+  chains, closed or open.
+- **Why `sense: same`.** Through a tangent of `a` two planes touch `b`: the one `b` runs through the
+  way `a` does, and the crossing one, a bow-tie that cuts through itself. The body excludes it; no
+  seed decides.
+- **Corners and ends fan.** At a chain's corner the plane supports it between its two sides, so a
+  rectangle to a round is four planar triangles and four cones about the corners; where one rail
+  runs on past the other's end, the end fans (a dory's stem and transom).
+- **Sides.** The outside is the side `T`'s normal points to, `a′ × (n − m)`: give the rails the other
+  way round to turn it — and to turn the pattern face down. A duct whose lower rim runs
+  counter-clockwise seen from above, with the upper rim second, has its outside out.
+- **The sheet is the band** `distance(<= t, side: outside)` from the panel, measured along its
+  normal, so square at its edges; `solid(…)` of it reports volume, faces (`inside`, `outside`, `a`,
+  `b`, `start`, `end`) and bounds; STEP refuses it, once.
+- **The pattern.** `std.Development(S, s, d: d) in P` lays the layer `d` out (the sheet's middle:
+  half its thickness) in plane `P`, outside up, from the ruling through `s` on `S.a` — a band's
+  seam. It draws `flat.a`, `flat.b` (curves of `P`), `flat.f`, `flat.g` (the home ruling's ends) and
+  the end rulings `flat.start`, `flat.end` (a band's `flat.seam`, `flat.seam_end`). It has **three
+  freedoms** until relations place it; `--where flat` prints each rail's laid length, the pattern's
+  area and its box, and `--where panel` its rulings, fans and whether it closes.
+- **Refused, once (E080), where `a` is**: rulings that fold (one rail would run back — a rail with an
+  S in it seen along the rulings, where the panel turns flat), a ruling along a rail, no root of
+  `sense: same`, a band that does not come round, one rail closed and one open. Choose rails that
+  turn one way: a hull's chine and sheer each in a plane and convex in it never fold.
+
+The series is [`rust/examples/developable/`](../rust/examples/developable/), its README in reading
+order; `dory_panel.svd` is the cut file.
+
 #### Materials
 
 A material is declared once and named by the solids made of it:
@@ -3312,6 +3359,8 @@ land against the shore is an arc of a circle, `R sin α = 50`, `2Rα = 130`, to 
 8. In space, draw each thing in the plane that shows it true, relate across planes with ordinary
    words, build a plane the solve turns on axes, and check with `--where PLANE`.
 9. Add `claim`s for the consequences the figure was drawn to show.
+   A sheet cut flat and bent is `std.Developable(a, b)`, its band `distance(<= t, side: outside)`
+   and its pattern `std.Development(panel, s, d: t / 2) in plane`, placed by two relations.
 10. Build solids from the solved profiles, then write their presentation in a `.svd`.
 
 The worked corpus is `rust/examples/`, each file headed with its purpose. Read `rect_fillets.sv`
@@ -3324,6 +3373,7 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | traced mechanisms and curves | [Jansen](../rust/examples/jansen.sv), [Peaucellier](../rust/examples/peaucellier.sv), [gear trace](../rust/examples/gear_trace.sv) |
 | curves stated by their rates | the [rates](../rust/examples/rates/) series: a tractrix drawn and written in place, a clothoid transition, a chain shot to its far end, a pursuit refused at the capture, a geodesic on a cone |
 | repeated features and components | [flange](../rust/examples/solid_flange.sv) |
+| sheets cut flat and bent | the [developable](../rust/examples/developable/) series: a frustum's sector, duct adapters, a mitre template, a rectangle to a round, a dory's strake on its plywood |
 | lofts and sweeps along a path | [elbow](../rust/examples/solid_elbow.sv), [reducer](../rust/examples/solid_loft.sv), [bend](../rust/examples/solid_bend.sv), [square to diamond](../rust/examples/solid_twist.sv), and the [lofts](../rust/examples/lofts/) series: a chain as a path, twist and scale laws, threads and springs, several sections on rails, two faces drawn apart, a section held to its rails |
 | a reusable solid with a preview | [cylinder component](../rust/examples/vtwin/components/cylinder.sv), [its drawing](../rust/examples/vtwin/cylinder.svd) |
 | views and projection | [bracket](../rust/examples/bracket.sv) |

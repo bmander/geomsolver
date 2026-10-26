@@ -702,3 +702,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   the section puts what it makes *on* that plane (the disc's and plate's sections are mid-planes).
   A **hex pocket about a radial line** (`parts.Grub`) is neither sweep nor turn, so it stays four
   hidden lines; a feature drawn as a *centreline* (the exhaust vents) is told its width, `wch`.
+
+**A sheet's band is a solid of its own route** (#645, [developables.md](developables.md)).
+`region::form` reads a band term first (`Form::Sheet`), before a meridian or general position, and
+`Route::Sheet` is the band faceted from its panel's rulings (`solid::sheet::Band::primitive`,
+`Caches::sheet`), so volume, area, faces, bounds, glTF and STL read it as any evaluated solid; the
+recipe refuses it once (`cad.rs`: its exact ruled walls are not yet written to STEP), and the field
+refuses it (`field/document.rs`). Its refusals are the panel's, in the core's words, said at the
+solid once (`solid::refusal`); the messages carry no solid name, which `refusal`'s callers add.

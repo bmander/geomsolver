@@ -4,6 +4,30 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.188] Developable panels.** A sheet cut flat and bent to shape — a plywood boat's strake, a
+duct adapter, a rectangle to a round — is written as two definitions in `std.sv`: `std.Developable(a,
+b)`, the set of points on the ruling between a point of `a` and a point of `b` where one plane
+touches both, `b` running through it the way `a` does, and `std.Development(S, s, d)`, the panel's
+layer `d` out laid in a plane from the ruling through `s`, an isometry along rulings stated and
+nothing else (§6.21). The core recognises the bodies by what they say, a hand-written copy too, and
+builds them exactly: the rulings where `det(a′, b′, b − a) = 0`, fans at corners and at ends, a band
+come round, and the pattern by integrating the isometry; refusals (rulings that fold, a ruling along
+a rail, no ruling of `sense: same`, a band that does not come round, one rail closed and one open)
+are **E080**, once at each use. The definitions needed four additions, each general. **A plane
+touching a path**, `T tangent(at: m) k`, `k` a line, a circle, an arc or a curve traced in space:
+`m` in the plane and the path's tangent there in it (§9.2); `sense:`, how a second path runs
+through it, is read between two in a sheet's body. **A contact over an interval**, `p coincident(t
+in (0, 1)) line(m, n)`: the incidence and its place bounded, which in a set's body does not make
+the set a region (§6.21). **Rates against rates** in a body that states a rate: `rate(x over s)
+equal rate(y over s)` and `rate(x over s) angle(rate(y over s), l) k`, through 0.187 refused as
+reading two rates or a magnitude (§6.5). **The sides of a sheet**: `q distance(<= d, side:
+outside) S` of a sheet is its band along the normal, square at its edges, and `solid(…)` of it is
+the sheet, faceted from its rulings (its STEP refused until the ruled walls are written exactly);
+`std.Offset(S, d:)` is its layer. `--where` reads a panel's `rulings`, `fans`, `closed` and `area`,
+and a pattern's laid rails' lengths, its area and its box. A plane touching a line at a point,
+through 0.187 **E040**, now holds it; every other solved position is unchanged. Examples in
+`rust/examples/developable/`. (Issue #645.)
+
 **[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
 `a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner
 of its boundary as made by the terms that do not read its faces (§12.9). It is decided where the
