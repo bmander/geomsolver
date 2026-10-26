@@ -522,11 +522,11 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
 /// the faces asked of, or along an edge they touch along (`boolean`): there a seed traces nothing
 /// and a march ends.
 pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,String> {
-    trace_beside(a,b,seeds,&|_| false,lo,hi,tol)
+    trace_beside(a,b,seeds,&mut |_| false,lo,hi,tol)
 }
 
 /// `trace`, ending where it comes `beside` a known meeting.
-pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &dyn Fn(V) -> bool,lo: V,hi: V,tol: f64)
+pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64)
     -> Result<Vec<Curve>,String> {
     use super::geom::Traced;
     let tangent = |p: V| -> Option<V> {
@@ -800,7 +800,7 @@ fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
 /// guessed. Two curves nearer than `leaf` are not told apart. `Ok(None)`: every part of the face is
 /// clear of `b` or beside a known curve. Both surfaces must be `searchable`.
 pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
-    unseen_beside(a,domain,b,known,&[],&|_| false,lo,hi,tol)
+    unseen_beside(a,domain,b,known,&[],&mut |_| false,lo,hi,tol)
 }
 
 /// `unseen`, known also the curves `stretches` over their stretches (edges the two touch along),
@@ -808,7 +808,7 @@ pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,
 /// where the two touch alone, its branches traced up to it) answered as beside a known curve.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],stretches: &[(&Curve,[f64;2])],
-    beside: &dyn Fn(V) -> bool,lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
+    beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
     // a cap on the cells asked, far past any face this kernel builds, that a pathology ends at
     const CELLS: usize = 4_000_000;
     let pad = 4.*tol;
