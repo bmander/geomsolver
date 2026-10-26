@@ -12,6 +12,7 @@ use super::pattern::Built as Patterned;
 use super::sweep::Say;
 use super::boolean::Op;
 use super::topo::Brep;
+use super::geom::Frame;
 use crate::model::Sketch;
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use crate::solid::{admission,agreement,cad,contracts,MaterialField};
@@ -23,16 +24,31 @@ pub const ANGULAR: f64 = 0.2;
 
 /// A body built exactly: its B-rep, and, built as one sector, the pattern that meshes it and the
 /// turn its field agreement reads each probe in.
+#[derive(Clone,Debug)]
 pub struct Exact { pub solid: Brep,pub pattern: Option<Patterned>,pub indexed: Option<([f64;3],[f64;3],usize)>,
     /// Whether the body cuts sweeps, so its mesh is held to its material field.
-    pub swept: bool }
+    pub swept: bool,
+    /// Built with no face, the statement that left it no material, as the document writes it (#617).
+    pub emptied: Option<String> }
+
+impl Exact {
+    /// The body carried by the rigid motion `m` (mm): its pattern and the turn its agreement folds
+    /// by moved with it.
+    pub fn moved(&self,m: &super::geom::Rigid) -> Exact {
+        Exact {solid:self.solid.moved(m),pattern:self.pattern.as_ref().map(|p| p.moved(m)),
+            indexed:self.indexed.map(|(o,a,n)| (m.point(o),m.vector(a),n)),swept:self.swept,
+            emptied:self.emptied.clone()}
+    }
+}
 
 /// Solid `body` of the sketch built by this kernel. A body with swept cuts is admitted to the
 /// generating-sweep class first (`admission` where the host made it, else here). A body built with
 /// no face is refused as empty (`emptied`), however it was built, so no file is written of it.
 pub fn exact(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
     let built = build(sk,body,admitted,tolerance,say)?;
-    if built.solid.faces.is_empty() { return Err(emptied(sk,body)) }
+    if built.solid.faces.is_empty() {
+        return Err(match &built.emptied { Some(why) => empty(&sk.solids[body].name,why),None => emptied(sk,body) })
+    }
     Ok(built)
 }
 
@@ -51,9 +67,41 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
         let m = super::sweep::sector::placed(pose,cad::millimetres(sk));
         let built = exact(sk,inner,admitted,tolerance,say)?;
         (say.stage)(&format!("`{}` is `{}` moved",sk.solids[body].name,sk.solids[inner].name));
-        return Ok(Exact {solid:built.solid.moved(&m),pattern:built.pattern.map(|p| p.moved(&m)),
-            indexed:built.indexed.map(|(o,a,n)| (m.point(o),m.vector(a),n)),swept:built.swept})
+        return Ok(built.moved(&m))
     }
+    // a closed instance's swept body is its binding's representative's build placed (#566): built
+    // once for the drawing and the tolerance, and moved where each copy stands, its faces renamed
+    // from the representative's instance to the copy's
+    let bound = sk.bound_where(body,true);
+    let rep = bound.as_ref().map_or(body,|b| b.rep);
+    if cad::contains_sweep(sk,body) && sk.shared_where(body,true) && sk.solids[rep].binding.as_ref().is_some_and(|b| b.mirror.is_none()) {
+        let key = crate::solid::MemoKey::of(sk,rep);
+        let tol = tolerance.map(|t| t.millimetres.to_bits());
+        let held = sk.caches.swept_exact.get(rep,&key).filter(|(t,_)| *t == tol).map(|(_,e)| e);
+        let built = match held {
+            Some(e) => e,
+            None => {
+                let e = std::rc::Rc::new(own(sk,rep,if rep == body { admitted } else { None },false,tolerance,say)?);
+                sk.caches.swept_exact.put(rep,key,(tol,e.clone()));
+                e
+            }
+        };
+        let Some(b) = bound else { return Ok((*built).clone()) };
+        let mm = cad::millimetres(sk);
+        let mut placed = built.moved(&super::geom::Rigid {r:b.raw.r,t:b.raw.t.map(|k| k*mm)});
+        for f in &mut placed.solid.faces {
+            if let Some(rest) = f.name.strip_prefix(b.from.as_str()) { f.name = format!("{}{rest}",b.to); }
+        }
+        (say.stage)(&format!("`{}` is `{}` placed: one build of their binding",sk.solids[body].name,sk.solids[rep].name));
+        return Ok(placed)
+    }
+    own(sk,body,admitted,mirrored,tolerance,say)
+}
+
+/// Solid `body` built as its own: from swept material (`compose`), with swept cuts of its own, or
+/// from its recipe (as published, where it reads a `mirrored` solid).
+fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored: bool,tolerance: Option<Tolerance>,say: &Say)
+    -> Result<Exact,ExportRefusal> {
     if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
     if !recipe.sweeps.is_empty() {
@@ -66,11 +114,11 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
             super::sweep::Built::Sector {sector,pattern} => {
                 (say.stage)(&format!("the solid by the Rust kernel: {} sectors, {} faces, {} edges",sector.count,pattern.solid.faces.len(),
                     pattern.solid.edges.len()));
-                Exact {solid:pattern.solid.clone(),pattern:Some(pattern),indexed:Some((sector.origin,sector.axis,sector.count)),swept:true}
+                Exact {solid:pattern.solid.clone(),pattern:Some(pattern),indexed:Some((sector.origin,sector.axis,sector.count)),swept:true,emptied:None}
             }
             super::sweep::Built::Whole(solid) => {
                 (say.stage)(&format!("the solid by the Rust kernel: {} faces, {} edges",solid.faces.len(),solid.edges.len()));
-                Exact {solid,pattern:None,indexed:None,swept:true}
+                Exact {solid,pattern:None,indexed:None,swept:true,emptied:None}
             }
         })
     }
@@ -95,7 +143,7 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
     }
     (say.stage)(&format!("built the solid by the Rust kernel: {:.6} mm³, {} faces, {} edges ({:?})",super::props::volume(&solid),
         solid.faces.len(),solid.edges.len(),started.elapsed()));
-    Ok(Exact {solid,pattern:None,indexed:None,swept:false})
+    Ok(Exact {solid,pattern:None,indexed:None,swept:false,emptied:None})
 }
 
 /// Whether solid `body` is a mirrored instance's, or reaches one among its operands (#578).
@@ -115,11 +163,11 @@ fn mirrored_within(sk: &Sketch,body: usize) -> bool {
 /// (`combine`).
 fn compose(sk: &Sketch,body: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<Exact,ExportRefusal> {
     let started = crate::clock::Instant::now();
-    let built = combine(sk,body,&mut |o| if cad::contains_sweep(sk,o) { Ok(exact(sk,o,None,tolerance,say)?.solid) } else { built_static(sk,o) })?;
+    let (built,emptied) = combine(sk,body,&mut |o| if cad::contains_sweep(sk,o) { Ok(exact(sk,o,None,tolerance,say)?.solid) } else { built_static(sk,o) })?;
     (say.stage)(&format!("`{}` built from its swept material by this kernel: {:.6} mm³, {} faces ({:?})",sk.solids[body].name,
         super::props::volume(&built),built.faces.len(),started.elapsed()));
     (say.mark)(Stage::Fuse);
-    Ok(Exact {solid:built,pattern:None,indexed:None,swept:true})
+    Ok(Exact {solid:built,pattern:None,indexed:None,swept:true,emptied})
 }
 
 /// A static solid built from its recipe by this kernel.
@@ -129,8 +177,11 @@ fn built_static(sk: &Sketch,o: usize) -> Result<Brep,ExportRefusal> {
 
 /// The body rule over operands `part` builds (millimetres): the stock, plus what is put on it, minus
 /// what cuts it, within what bounds it, by this kernel's Booleans. A sweep cut from it directly is
-/// refused: the swept material is named apart, as `fluted` is from `drill`.
-fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,ExportRefusal>) -> Result<Brep,ExportRefusal> {
+/// refused: the swept material is named apart, as `fluted` is from `drill`.  A body left with no
+/// material is built empty, with why (#617): no later statement puts material back, and an export
+/// refuses it where a drawing reads it, its volume 0 (#618).
+fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,ExportRefusal>)
+    -> Result<(Brep,Option<String>),ExportRefusal> {
     let solid = &sk.solids[body];
     let crate::model::SolidDef::Body {stock,on,through,bound} = &solid.def else { unreachable!("a composed solid is a body") };
     if let Some(&c) = through.iter().find(|&&c| cad::contains_sweep(sk,c as usize)) {
@@ -139,7 +190,7 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
     }
     let mut built = part(*stock as usize)?;
     if built.faces.is_empty() {
-        return Err(empty(&solid.name,&format!("its stock `{}` holds no material",sk.solids[*stock as usize].name)))
+        return Ok((built,Some(format!("its stock `{}` holds no material",sk.solids[*stock as usize].name))))
     }
     for (operands,op,word) in [(on,Op::Union,"union"),(through,Op::Cut,"cut"),(bound,Op::Common,"common")] {
         for &o in operands {
@@ -149,11 +200,11 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
                 .map_err(|e| ExportRefusal::at(Stage::Fuse,format!("`{}`: {word} `{name}`: {e}",solid.name)))?;
             // the statement that left nothing, named as the document writes it (#617)
             if built.faces.is_empty() {
-                return Err(empty(&solid.name,&format!("`{name} {word} {}` leaves no material",solid.name)))
+                return Ok((built,Some(format!("`{name} {word} {}` leaves no material",solid.name))))
             }
         }
     }
-    Ok(built)
+    Ok((built,None))
 }
 
 /// **An empty body refused as a fact of the document** (#617): a Boolean that leaves no material
@@ -164,12 +215,16 @@ fn empty(name: &str,why: &str) -> ExportRefusal {
     ExportRefusal::at(Stage::Fuse,format!("`{name}` is empty: {why}, so there is nothing to write"))
 }
 
-/// Why solid `body`, built empty, holds nothing. A body built from swept material has said so in
+/// Why solid `body`, built empty, holds nothing. A body built from swept material was told so by
 /// `combine`; a static one has its operands combined again one statement at a time until one
 /// leaves no material — only once the whole is known empty, so a solid that builds pays nothing.
 fn emptied(sk: &Sketch,body: usize) -> ExportRefusal {
     if matches!(sk.solids[body].def,crate::model::SolidDef::Body {..}) && !cad::contains_sweep(sk,body) {
-        if let Err(e) = combine(sk,body,&mut |o| built_static(sk,o)) { return e }
+        match combine(sk,body,&mut |o| built_static(sk,o)) {
+            Ok((_,Some(why))) => return empty(&sk.solids[body].name,&why),
+            Err(e) => return e,
+            Ok((_,None)) => {}
+        }
     }
     empty(&sk.solids[body].name,"it leaves no material")
 }
@@ -183,6 +238,93 @@ pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> 
         .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the solid: {e}")))?;
     (say.stage)(&format!("the STEP output: {} entities; {} faces, {} edges and {} vertices, each the solid's ({:?})",
         verified.entities,verified.faces,verified.edges,verified.vertices,started.elapsed()));
+    (say.mark)(Stage::Step);
+    Ok(text)
+}
+
+/// **The objects `objects` of the sketch as an assembly** (`step::Assembly`), `name` its root
+/// product's: a part of each object, a sub-assembly of each step of their names as a reader writes
+/// them (`wheel.hub` is `hub` in `wheel`, placed where the root's axes are; `p[0].body` a ring's
+/// copy's), and the objects of one binding one part, built once — its representative's
+/// (`Sketch::bound`), named for the first object it is — and used where each instance stands. A
+/// solid a closed instance made is written in its instance's frame (`Sketch::binding_pose`) and
+/// used placed by that frame; a mirrored one is its own part, its reflection in its solid and its
+/// placement proper; any other is written where it stands, and used at the root's axes. Each part
+/// built is given to `built`, as the world has it. A refusal says which solid's build refused.
+pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Tolerance>,say: &Say,built: &mut dyn FnMut(usize,&Exact))
+    -> Result<super::step::Assembly,(usize,ExportRefusal)> {
+    use super::step::{Assembly,Product,Usage};
+    use crate::space::{dot,norm};
+    let mm = cad::millimetres(sk);
+    // the frame a solid's instance stands in (millimetres), where it has one a placement can say:
+    // `u` and `v` unit and square, so `u × v` is too
+    let frame = |i: usize| sk.solids[i].binding.as_ref().and(sk.binding_pose(i))
+        .filter(|b| (norm(b.u)-1.).abs() <= 1e-9 && (norm(b.v)-1.).abs() <= 1e-9 && dot(b.u,b.v).abs() <= 1e-9)
+        .map(|b| Frame {o:b.o.map(|x| x*mm),x:b.u,y:b.v,z:b.normal()});
+    // each object's part — the solid it is built as: an unmirrored object of a binding its
+    // representative's, whose build as the world has it is the binding's own evaluation unless
+    // the representative is mirrored; then the first such object's
+    let reps: Vec<Option<usize>> = objects.iter().map(|&i| sk.bound(i)
+        .filter(|b| b.mirror.is_none() && b.rep != i && frame(i).is_some() && frame(b.rep).is_some()).map(|b| b.rep)).collect();
+    let unmirrored = |j: usize| sk.solids[j].binding.as_ref().is_none_or(|b| b.mirror.is_none());
+    let source = |k: usize| match reps[k] {
+        Some(r) if unmirrored(r) => r,
+        Some(r) => objects[reps.iter().position(|&x| x == Some(r)).unwrap_or(k)],
+        None => objects[k],
+    };
+    // what the source calls each solid, as a reader writes it (`p[0].body`, a ring's copy)
+    let named = |i: usize| crate::vocab::public_path(&sk.solids[i].name);
+    let mut products = vec![Product {name:name.to_string(),solid:None}];
+    let mut uses = Vec::new();
+    // the sub-assemblies first, each step of a name after the one it is in
+    let mut groups: Vec<String> = Vec::new();
+    let group = |groups: &[String],path: &str| groups.iter().position(|g| g == path).map_or(0,|g| g+1);
+    for &i in objects {
+        let name = named(i);
+        let steps: Vec<&str> = name.split('.').collect();
+        for k in 1..steps.len() {
+            let path = steps[..k].join(".");
+            if groups.contains(&path) { continue }
+            let parent = group(&groups,&steps[..k-1].join("."));
+            groups.push(path.clone());
+            uses.push(Usage {parent,child:products.len(),name:path.clone(),placement:Frame::WORLD});
+            products.push(Product {name:path,solid:None});
+        }
+    }
+    // then the parts, each built once, and each object a use of its part in its group
+    let mut parts: std::collections::BTreeMap<usize,usize> = Default::default();
+    for (k,&i) in objects.iter().enumerate() {
+        let source = source(k);
+        let part = match parts.get(&source) {
+            Some(&p) => p,
+            None => {
+                let x = exact(sk,source,None,tolerance,say).map_err(|e| (source,e))?;
+                built(source,&x);
+                // about its instance's frame where it has one, and named for the first object it
+                // is, which the file holds where the source may not
+                let solid = match frame(source) { Some(f) => x.solid.moved(&f.unplacing()),None => x.solid };
+                products.push(Product {name:named(i),solid:Some(solid)});
+                parts.insert(source,products.len()-1);
+                products.len()-1
+            }
+        };
+        let name = named(i);
+        let parent = name.rsplit_once('.').map_or(0,|(g,_)| group(&groups,g));
+        uses.push(Usage {parent,child:part,name,placement:frame(i).unwrap_or(Frame::WORLD)});
+    }
+    (say.stage)(&format!("the assembly: {} parts, {} sub-assemblies, {} objects placed",parts.len(),groups.len(),objects.len()));
+    Ok(Assembly {products,uses})
+}
+
+/// The STEP file of an assembly, parsed back and held to it as `step` holds a solid's: each part's
+/// solid, and every use of a product where the assembly places it (`step_check::verify_assembly`).
+pub fn assembly_step(a: &super::step::Assembly,name: &str,tolerance: Option<Tolerance>,say: &Say) -> Result<String,ExportRefusal> {
+    let started = crate::clock::Instant::now();
+    let text = super::step::write_assembly(a,name,tolerance.map_or(1e-4,|t| t.deflection()*0.1)).at(Stage::Step)?;
+    let verified = super::step_check::verify_assembly(&text,&super::step_check::Structure::of(a))
+        .map_err(|e| ExportRefusal::at(Stage::Step,format!("the STEP file does not describe the assembly: {e}")))?;
+    (say.stage)(&format!("the STEP output: {} entities; {} products and {} uses, each the assembly's; {} faces, {} edges and {} vertices, \
+        each a part's ({:?})",verified.entities,a.products.len(),a.uses.len(),verified.faces,verified.edges,verified.vertices,started.elapsed()));
     (say.mark)(Stage::Step);
     Ok(text)
 }
@@ -362,8 +504,9 @@ impl Builder {
             State::Compose(built) => {
                 let outer = self.outer.expect("a composed build has its body");
                 let mut inner = Some(built.into_solid());
-                let solid = combine(sk,outer,&mut |o| if o == self.operand {
+                let (solid,emptied) = combine(sk,outer,&mut |o| if o == self.operand {
                     inner.take().ok_or_else(|| ExportRefusal::at(Stage::Fuse,"the swept body is used twice")) } else { built_static(sk,o) })?;
+                if let Some(why) = emptied { return Err(empty(&sk.solids[outer].name,&why)) }
                 (say.stage)(&format!("`{}` combined from its swept material",sk.solids[outer].name));
                 State::Mesh(super::sweep::Built::Whole(match &self.moved[1] { Some(m) => solid.moved(m),None => solid }))
             }
@@ -445,17 +588,34 @@ pub fn supply_exact_of(sk: &Sketch,i: usize) {
 }
 
 /// Each of the swept `solids` given its exact B-rep where this kernel builds one and it holds none.
+/// One built with no face is given too: what the drawing reads of it is a body with no material,
+/// its volume 0 (#618), where only a file of it is refused as empty (`exact`, #617).
 fn supply_each(sk: &Sketch,solids: impl Iterator<Item=usize>) {
     // a sketch that leaves meshing to its host has its surfaces supplied by it
     if sk.field_meshing.get() != crate::solid::FieldMeshing::Now { return }
-    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    for i in solids { supply_one(sk,i) }
+}
+
+/// Swept solid `i` given its exact B-rep where it holds none (`supply_each`).
+fn supply_one(sk: &Sketch,i: usize) {
+    if sk.supplied_exact_solid(i).is_some() { return }
     let mm = cad::millimetres(sk);
-    for i in solids.filter(|&i| sk.supplied_exact_solid(i).is_none()) {
-        // admitted as a display is, which is looked at and not made
-        let admitted = cad::swept_operands(sk,i).is_empty().then(|| admission::admit_body(sk,i,&DISPLAY_ADMISSION).ok()).flatten();
-        let Ok(built) = exact(sk,i,admitted.as_ref(),None,&say) else { continue };
-        sk.supply_exact_solid(i,crate::solid::exact::named(built.solid,mm,[0.;3],Default::default()));
+    // a body placed by a rigid motion is the body it places, supplied once and moved (#619): a
+    // claim along a roll places a wheel at each pose, and each is that one build, not its own.
+    // A supplied B-rep stands where it was built, about no origin, so the pose moves it whole
+    if let Ok(Some((inner,pose))) = cad::placed_swept(sk,i) {
+        if sk.is_swept(inner) { supply_one(sk,inner) }
+        if let Some(x) = sk.supplied_exact_solid(inner) {
+            let brep = x.brep.moved(&super::sweep::sector::placed(pose,mm));
+            sk.supply_exact_solid(i,crate::solid::Exact {brep,mm,origin:[0.;3],leading:x.leading.clone(),named:x.named.clone()});
+            return
+        }
     }
+    // admitted as a display is, which is looked at and not made
+    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    let admitted = cad::swept_operands(sk,i).is_empty().then(|| admission::admit_body(sk,i,&DISPLAY_ADMISSION).ok()).flatten();
+    let Ok(built) = build(sk,i,admitted.as_ref(),None,&say) else { return };
+    sk.supply_exact_solid(i,crate::solid::exact::named(built.solid,mm,[0.;3],Default::default()));
 }
 
 /// The admission a display asks: a quarter of the export's samples each way, on both its grids. A

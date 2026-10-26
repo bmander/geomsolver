@@ -217,7 +217,8 @@ fn a_value_over_an_unknown_is_the_unknown_scaled() {
 /// **A name declared over a built-in is said** (issue #48, item 2).  `tau := 35deg` read
 /// 35° where the flattener substituted the text and a full turn where `expr::eval` worked a
 /// number out, so one name had two values and the lever it turned stood at 360° with nothing
-/// said.  W112 at every declaration of a number's name: a `param`, a formal, a block's index.
+/// said.  W112 at every declaration of a number's name: a `param`, a formal, a block's index or
+/// item.
 #[test]
 fn a_name_that_shadows_a_built_in_is_said() {
     let w112 = |src: &str| -> Vec<String> {
@@ -234,6 +235,10 @@ fn a_name_that_shadows_a_built_in_is_said() {
     let d = w112(&format!("{BASE}cycle 3 as pi {{ p := point hint((10 * pi, 0)) }}\n"));
     assert_eq!(d.len(), 1, "{d:?}");
     assert!(d[0].contains("a block's index"), "{d:?}");
+    // and a list's item (§12.10)
+    let d = w112(&format!("{BASE}repeat tau in [1mm, 2mm] {{ p := point }}\n"));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!(d[0].contains("a block's item"), "{d:?}");
     // a function's name is built in as much as a constant's
     let d = w112(&format!("min := 3\n{BASE}"));
     assert!(d[0].contains("a built-in function"), "{d:?}");

@@ -46,6 +46,7 @@ build/solventc drawing.sv --where hinge      # the numbers under one name
 build/solventc drive.sv --where torque       # a value the document names, in its unit
 build/solventc --components drawing.sv       # each component against the boundary contract
 build/solventc --lint drawing.sv             # also where its text drifts from the style (advisory)
+build/solventc --no-check bot.sv             # its claims about solids left unjudged: no solid built
 build/solventc --help                        # every option
 ```
 
@@ -65,6 +66,13 @@ drawing the same way.
 component call standing as a statement, a component that only states relations, a path reaching
 through one instance into another, an `Int` read only by `when`, and a `group` handed on unread
 ([the contract](contract/language.md)). They are advisory and never change the exit code.
+
+`--no-check` leaves the claims about solids (`clear`, `fits`, `inside`) unjudged, so a run builds
+no solid for one: the quick look at a layout whose full check builds every part. Where their
+verdicts would be, the report says how many it left (`3 claims about solids not judged`;
+`solidClaimsUnjudged` in `--json`). The claims over values and over the geometry build nothing
+and are judged still. An export (`--stl`, `--step-assembly`) judges the claims too unless told
+`--no-check`, so a script that only writes files can say it.
 
 ### Models and drawings
 
@@ -104,9 +112,19 @@ build/solventc rust/examples/solid_flange.sv --solid flange --stl flange.stl
 build/solventc rust/examples/solid_flange.sv --solid flange --step flange.step --stl flange.stl
 build/solventc part.sv --step part.step --tolerance 0.01mm   # within a stated fabrication bar
 build/solventc part.sv --gltf part.glb                       # every face a named node
+build/solventc bot.sv --step-assembly bot.step               # every part, as one STEP assembly
 ```
 
-One run can write many outputs. Each `--stl`, `--step`, `--gltf` and `--png` is an output of its
+`--step-assembly` writes every object of the document as one STEP file with a product structure,
+for a CAD system to open as an assembly. Each object is a part. A sub-assembly is made for each
+step of the objects' names, so `wheel.hub` is `hub` inside `wheel`. Objects of one binding (closed
+instances of one definition with the same arguments, or the copies of a `ring`) are one part,
+built once and placed where each instance stands. A part a closed instance makes is written in
+its instance's frame. A mirrored instance is a part of its own. `--solid NAME` after it narrows
+the file to the objects under that name. The core's kernel writes it; `--kernel occt` writes one
+solid at a time.
+
+One run can write many outputs. Each `--stl`, `--step`, `--step-assembly`, `--gltf` and `--png` is an output of its
 own, and every one of them reads the run's single build of a solid. So a part that takes minutes
 to shape is shaped once however many files are made of it:
 

@@ -111,6 +111,30 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A developable panel's band (#645) exports as STL whatever the kernel — its faceting, exact to
+/// its rulings — and its STEP is refused once, in the core's words, with no file written.
+#[test]
+fn a_developable_band_writes_its_stl_and_refuses_its_step() {
+    let dir = std::env::temp_dir().join(format!("solventc-band-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (stl, step) = (dir.join("transition.stl"), dir.join("transition.step"));
+    let source = doc("developable/offset_transition.sv");
+    let wrote = run(&[&source, "--solid", "transition", "--stl", stl.to_str().unwrap(),
+                      "--no-diagnose"]);
+    assert_eq!(wrote.status.code(), Some(0), "{}", String::from_utf8_lossy(&wrote.stderr));
+    let bytes = std::fs::read(&stl).unwrap();
+    assert!(bytes.len() > 84 && bytes.len() == 84 + 50 * u32::from_le_bytes(
+        bytes[80..84].try_into().unwrap()) as usize, "a binary STL");
+    let refused = run(&[&source, "--solid", "transition", "--step", step.to_str().unwrap(),
+                        "--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(refused.status.code(), Some(1), "{stderr}");
+    assert_eq!(stderr.matches("not yet written to STEP").count(), 1, "{stderr}");
+    assert!(!step.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// A refined mesh the field-agreement probe refuses is never written: the swept torus meshed
 /// so coarsely its facets leave the field, and the earlier output is left as it was.
 #[cfg(feature="occt")]
@@ -579,6 +603,30 @@ fn no_diagnose_solves_only() {
     assert!(!text.contains("DOF"), "{text}");
 }
 
+/// `--no-check` judges no claim about solids and says how many it left, in the text and in the
+/// JSON, so a run that judged none is never read as one where each held; the claim over a sweep
+/// that would be 37 poses is none.
+#[test]
+fn no_check_leaves_the_claims_about_solids_unjudged_and_says_so() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/fixtures/solid_issue51/sampling_disclosure.sv");
+    let path = path.to_str().unwrap();
+    let out = run(&[path, "--no-check"]);
+    assert_eq!(out.status.code(), Some(0));
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("  1 claim about solids not judged\n"), "{text}");
+    assert!(!text.contains("sampling 37 poses") && !text.contains("claim over"), "{text}");
+    let out = run(&[path, "--no-check", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let json = gcs_core::json::parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+    let doc = &json.get("documents").unwrap().arr()[0];
+    assert_eq!(doc.get("solidClaimsUnjudged").map(|n| n.as_i64()), Some(1));
+    assert!(doc.get("diagnosis").unwrap().get("solidClaims").unwrap().arr().is_empty());
+    // judged, it is said with its verdict, and nothing is said unjudged
+    let text = String::from_utf8(run(&[path]).stdout).unwrap();
+    assert!(text.contains("sampling 37 poses") && !text.contains("not judged"), "{text}");
+}
+
 /// `--output` writes an SVG, and the writer is the **core's** — an "export SVG" button in the
 /// web app must not be a second implementation.
 #[test]
@@ -687,6 +735,77 @@ fn the_rust_kernel_exports_a_static_solid() {
     assert!(std::fs::read_to_string(&step).unwrap().starts_with("ISO-10303-21;"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// **The objects as one STEP assembly** (`--step-assembly`): two instances of one plate and a
+/// plate of another size are two parts under three uses, each in a sub-assembly named for its
+/// instance, the file parsed back against that structure; `--solid` narrows it to the objects
+/// under a name; and OCCT, which writes one solid, is refused it.
+#[test]
+fn the_objects_are_written_as_one_step_assembly() {
+    let dir = std::env::temp_dir().join(format!("solventc-assembly-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = dir.join("plates.sv");
+    std::fs::write(&model,PLATES).unwrap();
+    let file = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let (all,one) = (file("plates.step"),file("two.step"));
+    let result = run(&[model.to_str().unwrap(),"--no-diagnose","--progress","--step-assembly",&all,
+        "--tolerance","0.01mm"]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(0),"{stderr}");
+    assert!(stderr.contains("the assembly: 2 parts, 3 sub-assemblies, 3 objects placed"),"{stderr}");
+    assert!(stderr.contains("6 products and 6 uses, each the assembly's"),"{stderr}");
+    let text = std::fs::read_to_string(&all).unwrap();
+    assert_eq!(text.matches("MANIFOLD_SOLID_BREP(").count(),2,"one plate built and written once for two instances");
+    assert_eq!(text.matches("NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(),6);
+    for name in ["plates","one","two","three","one.body","three.body"] {
+        assert!(text.contains(&format!("PRODUCT('{name}','{name}'")),"no product `{name}`");
+    }
+    assert!(text.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE('two.body','two.body'"));
+    let result = run(&[model.to_str().unwrap(),"--no-diagnose","--step-assembly",&one,"--solid","two"]);
+    assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));
+    let text = std::fs::read_to_string(&one).unwrap();
+    assert!(text.contains("PRODUCT('plates.two','plates.two'") && text.contains("PRODUCT('two.body','two.body'"));
+    assert_eq!(text.matches("NEXT_ASSEMBLY_USAGE_OCCURRENCE(").count(),2);
+    let refused = run(&[model.to_str().unwrap(),"--no-diagnose","--step-assembly",&file("occt.step"),
+        "--kernel","occt"]);
+    assert_eq!(refused.status.code(),Some(1));
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("--step-assembly is written by the core's kernel"));
+    assert!(!dir.join("occt.step").exists());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A plate drawn about its frame's origin, two of one size in turned frames and one of another.
+const PLATES: &str = "\
+unit mm
+use std (offset)
+component Plate(w: Length, d: Length, h: Length) {
+  in std.front {
+    a := point hint((1, 1))
+    b := point hint((w, 1))
+    c := point hint((w, d))
+    e := point hint((1, d))
+    a offset(dx: 1mm, dy: 1mm) std.origin
+    b offset(dx: w, dy: 1mm) std.origin
+    c offset(dx: w, dy: d) std.origin
+    e offset(dx: 1mm, dy: d) std.origin
+    ab := line(a, b)
+    bc := line(b, c)
+    ce := line(c, e)
+    ea := line(e, a)
+    body := solid(face(ab, bc, ce, ea), from: 0mm, to: h)
+  }
+}
+in (f := frame) { one := Plate(w: 30mm, d: 20mm, h: 5mm) }
+fix(dir == (0, 1, 0)) f.u
+fix(dir == (0, 0, 1)) f.v
+fix(origin == (10, 20, 30)) f
+in (g := frame) { two := Plate(w: 30mm, d: 20mm, h: 5mm) }
+fix(dir == (0, 0, 1)) g.u
+fix(dir == (1, 0, 0)) g.v
+fix(origin == (-40, 5, 12)) g
+in (h := frame) { three := Plate(w: 40mm, d: 20mm, h: 5mm) }
+fix(origin == (0, 0, -50)) h
+";
 
 /// A block with a bore through it, `body`, built of `block`: two solids to write.
 const BORED: &str = "\

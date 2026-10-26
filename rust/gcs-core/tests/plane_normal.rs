@@ -1,9 +1,10 @@
 //! **A plane's normal, `P.normal`**: an axis along `u × v` through the plane's origin, minted where
 //! the document reads it (`Sketch::plane_normal`) and held so by the plane's own rows — square to
-//! each axis, through the origin — with no freedom of its own.  Held here against `u × v` as
-//! solved, sense and all, against the freedoms it adds (none), the places it may be read (a
-//! relation, a later plane's slot, a component's formal, a `hint(dir:)`), a plane declared after
-//! the reading, JSON and a lifted program, and the workspace, which draws it nowhere.
+//! each axis on `u × v`'s side, through the origin — with no freedom of its own.  Held here
+//! against `u × v` as solved, sense and all, against the freedoms it adds (none), the places it
+//! may be read (a relation, a later plane's slot, a component's formal, a `hint(dir:)`), a plane
+//! declared after the reading, JSON and a lifted program, and the workspace, which draws it
+//! nowhere.
 use gcs_core::diagnose::{diagnose, DiagnoseOptions};
 use gcs_core::io;
 use gcs_core::model::{EntKind, EntRef, Sketch};
@@ -115,6 +116,29 @@ l parallel P.normal
     let pi = ent(&e, "P").i();
     is_u_cross_v(&sk, pi);
     assert!(norm(sub(dir(&sk, normal(&sk, pi)), [1.0, 0.0, 0.0])) < 1e-9);
+}
+
+/// A normal held against the way its plane was seeded turns the plane over, never itself alone
+/// (#629): `P` seeded facing up, its `u` held along x and its normal down, has its `v` along −y.
+/// Turned alone, the normal would leave `u × v` up and what stands on the plane mirrored.
+#[test]
+fn a_normal_held_against_its_seed_turns_its_plane_over() {
+    let e = read("\
+use std
+P := plane(u: hint(dir: (1, 0, 0)), v: hint(dir: (0, 1, 0)))
+fix(origin == (0, 0, 0)) P
+fix(dir == (1, 0, 0)) P.u
+P.v perpendicular P.u
+down := axis
+fix(dir == (0, 0, -1), origin == (0, 0, 0)) down
+P.normal parallel(sense: same) down
+");
+    let sk = solved(&e.sketch);
+    let pi = ent(&e, "P").i();
+    is_u_cross_v(&sk, pi);
+    assert!(norm(sub(dir(&sk, sk.frames[pi].v as usize), [0.0, -1.0, 0.0])) < 1e-9);
+    assert!(norm(sub(dir(&sk, normal(&sk, pi)), [0.0, 0.0, -1.0])) < 1e-9);
+    assert_eq!(dof(&e.sketch), 0);
 }
 
 /// A later plane may stand on it — `plane(u: P.normal, …)` — a component may read its plane

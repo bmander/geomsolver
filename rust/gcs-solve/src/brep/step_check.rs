@@ -27,6 +27,7 @@ impl<'a> Value<'a> {
     fn number(&self) -> Option<f64> { match self { Value::Real(x) => Some(*x),Value::Int(i) => Some(*i as f64),_ => None } }
     fn int(&self) -> Option<i64> { if let Value::Int(i) = self { Some(*i) } else { None } }
     fn word(&self) -> Option<&'a str> { if let Value::Enum(e) = self { Some(e) } else { None } }
+    fn text(&self) -> Option<&'a str> { if let Value::Str(s) = self { Some(s) } else { None } }
     fn logical(&self) -> Option<bool> { match self.word()? { "T" => Some(true),"F" => Some(false),_ => None } }
     /// Every reference in it, depth first.
     fn references(&self,out: &mut impl FnMut(u32)) {
@@ -303,63 +304,112 @@ pub struct Verified { pub entities: usize,pub faces: usize,pub edges: usize,pub 
 
 fn near(a: f64,b: f64) -> bool { (a-b).abs() <= NEAR*(1.+a.abs().max(b.abs())) }
 
+/// A file's entities, every instance number defined once and every reference resolved, its units
+/// the millimetre and the radian.
+struct File<'a> { entities: Vec<Entity<'a>>,index: Vec<u32> }
+
+impl<'a> File<'a> {
+    fn read(text: &'a str,lap: &dyn Fn(&str)) -> Result<File<'a>,String> {
+        let entities = entities(text)?;
+        lap("parsed");
+        // every instance number once, and every reference to one
+        let most = entities.iter().map(|e| e.id).max().unwrap_or(0) as usize;
+        if most > 4*entities.len()+16 { return Err(format!("instance numbers up to #{most} for {} entities",entities.len())) }
+        let mut index = vec![u32::MAX;most+1];
+        for (k,e) in entities.iter().enumerate() {
+            if index[e.id as usize] != u32::MAX { return Err(format!("#{} is defined twice",e.id)) }
+            index[e.id as usize] = k as u32;
+        }
+        let dangling = crate::par::indices(entities.len().div_ceil(4096),|chunk| {
+            let mut bad = None;
+            for e in &entities[chunk*4096..((chunk+1)*4096).min(entities.len())] {
+                for (_,values) in &e.parts { for v in values { v.references(&mut |r| {
+                    if bad.is_none() && index.get(r as usize).is_none_or(|&k| k == u32::MAX) { bad = Some((e.id,r)); }
+                }) } }
+            }
+            bad
+        });
+        if let Some((from,to)) = dangling.into_iter().flatten().next() { return Err(format!("#{from} refers to #{to}, which the file does not define")) }
+        lap("resolved");
+        // the units
+        let unit = |kind: &str,prefix: Option<&str>,name: &str| entities.iter().any(|e| e.is(kind) && e.part("SI_UNIT").is_some_and(|v| v.len() == 2
+            && v[0].word() == prefix && v[1].word() == Some(name)));
+        if !unit("LENGTH_UNIT",Some("MILLI"),"METRE") { return Err("the file's length unit is not the millimetre".into()) }
+        if !unit("PLANE_ANGLE_UNIT",None,"RADIAN") { return Err("the file's plane angle unit is not the radian".into()) }
+        Ok(File {entities,index})
+    }
+    fn get(&self,r: u32) -> &Entity<'a> { &self.entities[self.index[r as usize] as usize] }
+    /// The simple entity `r` refers to, of one of `kinds`: its kind and parameters.
+    fn of(&self,r: Option<u32>,kinds: &[&str],what: &str) -> Result<(&'a str,&[Value<'a>]),String> {
+        let r = r.ok_or_else(|| format!("{what}: a reference expected"))?;
+        let e = self.get(r);
+        match e.simple() { Some((name,values)) if kinds.contains(&name) => Ok((name,values)),
+            _ => Err(format!("{what}: #{r} is {}, not {}",e.parts.iter().map(|p| p.0).collect::<Vec<_>>().join("+"),kinds.join(" or "))) }
+    }
+    fn count(&self,name: &str) -> usize { self.entities.iter().filter(|e| e.is(name)).count() }
+    /// The simple entities of `kind`, in the file's order.
+    fn all(&self,kind: &str) -> Vec<&Entity<'a>> { self.entities.iter().filter(|e| e.simple().is_some_and(|(n,_)| n == kind)).collect() }
+    /// The entities of `kind` by what their parameter `at` refers to.
+    fn referring(&self,kind: &str,at: usize) -> BTreeMap<u32,Vec<u32>> {
+        let mut by: BTreeMap<u32,Vec<u32>> = BTreeMap::new();
+        for e in self.all(kind) {
+            if let Some(r) = e.simple().and_then(|(_,v)| v.get(at)).and_then(Value::reference) { by.entry(r).or_default().push(e.id); }
+        }
+        by
+    }
+}
+
+/// The one entity `by` lists for `r`, else why not.
+fn one(by: &BTreeMap<u32,Vec<u32>>,r: u32,what: &str) -> Result<u32,String> {
+    match by.get(&r).map(Vec::as_slice) {
+        Some(&[x]) => Ok(x),
+        Some(many) => Err(format!("{what}: {} of them for #{r}, not one",many.len())),
+        None => Err(format!("{what}: none for #{r}")),
+    }
+}
+
+/// What walking a solid's topology found: its faces, the edges and vertices they use, and how many
+/// of its faces are on B-splines.
+struct Walked { faces: usize,edges: BTreeSet<u32>,vertices: BTreeSet<u32>,splines: usize }
+
 /// Verify a STEP file's text against the solid it was written from.
 pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
     let debug = std::env::var_os("SOLVENT_STEP_DEBUG").is_some();
     let clock = crate::clock::Instant::now();
     let lap = |what: &str| if debug { eprintln!("step check: {what} {:?}",clock.elapsed()) };
-    let entities = entities(text)?;
-    lap("parsed");
-    // every instance number once, and every reference to one
-    let most = entities.iter().map(|e| e.id).max().unwrap_or(0) as usize;
-    if most > 4*entities.len()+16 { return Err(format!("instance numbers up to #{most} for {} entities",entities.len())) }
-    let mut index = vec![u32::MAX;most+1];
-    for (k,e) in entities.iter().enumerate() {
-        if index[e.id as usize] != u32::MAX { return Err(format!("#{} is defined twice",e.id)) }
-        index[e.id as usize] = k as u32;
-    }
-    let dangling = crate::par::indices(entities.len().div_ceil(4096),|chunk| {
-        let mut bad = None;
-        for e in &entities[chunk*4096..((chunk+1)*4096).min(entities.len())] {
-            for (_,values) in &e.parts { for v in values { v.references(&mut |r| {
-                if bad.is_none() && index.get(r as usize).is_none_or(|&k| k == u32::MAX) { bad = Some((e.id,r)); }
-            }) } }
-        }
-        bad
-    });
-    if let Some((from,to)) = dangling.into_iter().flatten().next() { return Err(format!("#{from} refers to #{to}, which the file does not define")) }
-    lap("resolved");
-    let get = |r: u32| &entities[index[r as usize] as usize];
-    let of = |r: Option<u32>,kinds: &[&str],what: &str| -> Result<(&str,&[Value]),String> {
-        let r = r.ok_or_else(|| format!("{what}: a reference expected"))?;
-        let e = get(r);
-        match e.simple() { Some((name,values)) if kinds.contains(&name) => Ok((name,values)),
-            _ => Err(format!("{what}: #{r} is {}, not {}",e.parts.iter().map(|p| p.0).collect::<Vec<_>>().join("+"),kinds.join(" or "))) }
-    };
-    let count = |name: &str| entities.iter().filter(|e| e.is(name)).count();
-    // the units
-    let unit = |kind: &str,prefix: Option<&str>,name: &str| entities.iter().any(|e| e.is(kind) && e.part("SI_UNIT").is_some_and(|v| v.len() == 2
-        && v[0].word() == prefix && v[1].word() == Some(name)));
-    if !unit("LENGTH_UNIT",Some("MILLI"),"METRE") { return Err("the file's length unit is not the millimetre".into()) }
-    if !unit("PLANE_ANGLE_UNIT",None,"RADIAN") { return Err("the file's plane angle unit is not the radian".into()) }
+    let file = File::read(text,&lap)?;
     // the topology, from the shape representation down
-    let breps: Vec<&Entity> = entities.iter().filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP")).collect();
-    let represented: BTreeSet<u32> = entities.iter().filter(|e| e.is("ADVANCED_BREP_SHAPE_REPRESENTATION"))
+    let breps = file.all("MANIFOLD_SOLID_BREP");
+    let represented: BTreeSet<u32> = file.entities.iter().filter(|e| e.is("ADVANCED_BREP_SHAPE_REPRESENTATION"))
         .flat_map(|e| e.part("ADVANCED_BREP_SHAPE_REPRESENTATION").and_then(|v| v.get(1)).and_then(Value::list).unwrap_or(&[])
             .iter().filter_map(Value::reference).collect::<Vec<_>>()).collect();
-    let shells_in_file = count("CLOSED_SHELL")+count("OPEN_SHELL");
-    if breps.len() != solid.solids || shells_in_file != solid.shells || count("MANIFOLD_SOLID_BREP") != breps.len() {
+    let shells_in_file = file.count("CLOSED_SHELL")+file.count("OPEN_SHELL");
+    if breps.len() != solid.solids || shells_in_file != solid.shells || file.count("MANIFOLD_SOLID_BREP") != breps.len() {
         return Err(format!("the file has {} solids and {shells_in_file} shells, the solid {} and {}",breps.len(),solid.solids,solid.shells));
     }
-    let mut faces: Vec<u32> = Vec::new();
     for b in &breps {
         if !represented.contains(&b.id) { return Err(format!("the solid #{} is not an item of the shape representation",b.id)) }
-        let (_,shell) = of(b.simple().unwrap().1.get(1).and_then(Value::reference),&["CLOSED_SHELL"],&format!("the solid #{}",b.id))?;
+    }
+    let walked = walk(&file,&breps,solid,true,&lap)?;
+    lap("walked");
+    Ok(Verified {entities:file.entities.len(),faces:walked.faces,edges:walked.edges.len(),vertices:walked.vertices.len(),splines:walked.splines})
+}
+
+/// Walk the solids `breps` from their closed shells down against `solid`: each face, in the
+/// shells' order, bounded by loops of oriented edges or a pole's vertex, of the solid face's sense
+/// and on its surface; every edge used twice; as many edges and vertices as the solid. `whole`
+/// where they are the file's only solids, so the file has no face, edge or vertex the walk leaves
+/// out.
+fn walk(file: &File,breps: &[&Entity],solid: &Solid,whole: bool,lap: &dyn Fn(&str)) -> Result<Walked,String> {
+    let count = |name: &str| if whole { Some(file.count(name)) } else { None };
+    let mut faces: Vec<u32> = Vec::new();
+    for b in breps {
+        let (_,shell) = file.of(b.simple().unwrap().1.get(1).and_then(Value::reference),&["CLOSED_SHELL"],&format!("the solid #{}",b.id))?;
         faces.extend(shell.get(1).and_then(Value::list).ok_or("a closed shell without faces")?.iter().map(|f| f.reference().ok_or("a shell's face is not a reference"))
             .collect::<Result<Vec<_>,_>>()?);
     }
-    if faces.len() != solid.faces.len() || count("ADVANCED_FACE") != faces.len() {
-        return Err(format!("the file's shells list {} faces of its {} faces, the solid has {}",faces.len(),count("ADVANCED_FACE"),solid.faces.len()));
+    if faces.len() != solid.faces.len() || count("ADVANCED_FACE").is_some_and(|n| n != faces.len()) {
+        return Err(format!("the file's shells list {} faces of its {} faces, the solid has {}",faces.len(),file.count("ADVANCED_FACE"),solid.faces.len()));
     }
     lap("counted");
     let mut uses: BTreeMap<u32,u32> = BTreeMap::new();
@@ -371,34 +421,34 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
     let mut implied = 0;
     for (k,(&f,expected)) in faces.iter().zip(&solid.faces).enumerate() {
         let what = format!("face {k} (#{f})");
-        let (_,face) = of(Some(f),&["ADVANCED_FACE"],&what)?;
+        let (_,face) = file.of(Some(f),&["ADVANCED_FACE"],&what)?;
         let bounds = face.get(1).and_then(Value::list).ok_or_else(|| format!("{what}: no bounds"))?;
-        let only_vertices = !bounds.is_empty() && bounds.iter().all(|b| of(b.reference(),&["FACE_BOUND","FACE_OUTER_BOUND"],&what)
-            .ok().and_then(|(_,b)| of(b.get(1).and_then(Value::reference),&["EDGE_LOOP","VERTEX_LOOP"],&what).ok())
+        let only_vertices = !bounds.is_empty() && bounds.iter().all(|b| file.of(b.reference(),&["FACE_BOUND","FACE_OUTER_BOUND"],&what)
+            .ok().and_then(|(_,b)| file.of(b.get(1).and_then(Value::reference),&["EDGE_LOOP","VERTEX_LOOP"],&what).ok())
             .is_some_and(|(kind,_)| kind == "VERTEX_LOOP"));
         if only_vertices && expected.kind == TORUS { implied += 2; }
         for bound in bounds {
-            let (_,bound) = of(bound.reference(),&["FACE_BOUND","FACE_OUTER_BOUND"],&what)?;
+            let (_,bound) = file.of(bound.reference(),&["FACE_BOUND","FACE_OUTER_BOUND"],&what)?;
             bound.get(2).and_then(Value::logical).ok_or_else(|| format!("{what}: a bound without an orientation"))?;
             // a loop of edges, or the one vertex a pole leaves (the writer writes no degenerate edge)
-            let (kind,edge_loop) = of(bound.get(1).and_then(Value::reference),&["EDGE_LOOP","VERTEX_LOOP"],&what)?;
+            let (kind,edge_loop) = file.of(bound.get(1).and_then(Value::reference),&["EDGE_LOOP","VERTEX_LOOP"],&what)?;
             if kind == "VERTEX_LOOP" {
                 let vertex = edge_loop.get(1).and_then(Value::reference);
-                let (_,point) = of(vertex,&["VERTEX_POINT"],&what)?;
-                of(point.get(1).and_then(Value::reference),&["CARTESIAN_POINT"],&what)?;
+                let (_,point) = file.of(vertex,&["VERTEX_POINT"],&what)?;
+                file.of(point.get(1).and_then(Value::reference),&["CARTESIAN_POINT"],&what)?;
                 vertices.insert(vertex.unwrap());
                 continue;
             }
             for oriented in edge_loop.get(1).and_then(Value::list).ok_or_else(|| format!("{what}: an empty loop"))? {
-                let (_,oriented) = of(oriented.reference(),&["ORIENTED_EDGE"],&what)?;
+                let (_,oriented) = file.of(oriented.reference(),&["ORIENTED_EDGE"],&what)?;
                 oriented.get(4).and_then(Value::logical).ok_or_else(|| format!("{what}: an oriented edge without an orientation"))?;
                 let edge = oriented.get(3).and_then(Value::reference);
-                let (_,curve) = of(edge,&["EDGE_CURVE"],&what)?;
+                let (_,curve) = file.of(edge,&["EDGE_CURVE"],&what)?;
                 *uses.entry(edge.unwrap()).or_insert(0) += 1;
                 for v in [1,2] {
                     let vertex = curve.get(v).and_then(Value::reference);
-                    let (_,point) = of(vertex,&["VERTEX_POINT"],&what)?;
-                    of(point.get(1).and_then(Value::reference),&["CARTESIAN_POINT"],&what)?;
+                    let (_,point) = file.of(vertex,&["VERTEX_POINT"],&what)?;
+                    file.of(point.get(1).and_then(Value::reference),&["CARTESIAN_POINT"],&what)?;
                     vertices.insert(vertex.unwrap());
                 }
             }
@@ -407,17 +457,145 @@ pub fn verify(text: &str,solid: &Solid) -> Result<Verified,String> {
         if same_sense != (expected.reversed == expected.indirect) { return Err(format!("{what}: its sense is {same_sense}, the solid's face \
             {}{}",if expected.reversed { "reversed" } else { "forward" },if expected.indirect { " on a left-handed placement" } else { "" })) }
         let surface = face.get(2).and_then(Value::reference).ok_or_else(|| format!("{what}: no surface"))?;
-        if surface_matches(&get,surface,expected).map_err(|e| format!("{what}: {e}"))? { splines += 1; }
+        if surface_matches(&|r| file.get(r),surface,expected).map_err(|e| format!("{what}: {e}"))? { splines += 1; }
     }
     if let Some((e,n)) = uses.iter().find(|(_,&n)| n != 2) { return Err(format!("the edge #{e} is used {n} times by the shell's faces, not twice")) }
-    if uses.len()+implied != solid.edges || count("EDGE_CURVE") != uses.len() {
-        return Err(format!("the file's faces use {} of its {} edges, the solid has {}",uses.len(),count("EDGE_CURVE"),solid.edges));
+    if uses.len()+implied != solid.edges || count("EDGE_CURVE").is_some_and(|n| n != uses.len()) {
+        return Err(format!("the file's faces use {} of its {} edges, the solid has {}",uses.len(),file.count("EDGE_CURVE"),solid.edges));
     }
-    if vertices.len() != solid.vertices || count("VERTEX_POINT") != vertices.len() {
-        return Err(format!("the file's edges end at {} of its {} vertices, the solid has {}",vertices.len(),count("VERTEX_POINT"),solid.vertices));
+    if vertices.len() != solid.vertices || count("VERTEX_POINT").is_some_and(|n| n != vertices.len()) {
+        return Err(format!("the file's edges end at {} of its {} vertices, the solid has {}",vertices.len(),file.count("VERTEX_POINT"),solid.vertices));
     }
-    lap("walked");
-    Ok(Verified {entities:entities.len(),faces:faces.len(),edges:uses.len(),vertices:vertices.len(),splines})
+    Ok(Walked {faces:faces.len(),edges:uses.into_keys().collect(),vertices,splines})
+}
+
+/// The product structure an assembly's STEP file must say (`crate::brep::step::write_assembly`):
+/// each product's name and, for a part, the solid it is; and each use of a product in an
+/// assembly.
+pub struct Structure { pub products: Vec<(String,Option<Solid>)>,pub uses: Vec<Use> }
+
+/// A use of product `child` in product `parent`, its axes standing at `placement` among the
+/// parent's: its origin, its z and its x.
+pub struct Use { pub parent: usize,pub child: usize,pub placement: [f64;9] }
+
+impl Structure {
+    /// The structure a STEP file of the assembly `a` must say.
+    pub fn of(a: &crate::brep::step::Assembly) -> Structure {
+        Structure {
+            products: a.products.iter().map(|p| (p.name.clone(),p.solid.as_ref().map(Solid::of))).collect(),
+            uses: a.uses.iter().map(|u| {
+                let f = &u.placement;
+                Use {parent:u.parent,child:u.child,placement:[f.o[0],f.o[1],f.o[2],f.z[0],f.z[1],f.z[2],f.x[0],f.x[1],f.x[2]]}
+            }).collect(),
+        }
+    }
+}
+
+/// Verify an assembly's STEP file against the structure it was written from: each product by
+/// name, written the last first, its definition's one shape represented once — a part's by an
+/// advanced B-rep whose one solid is walked against the part's as `verify` walks one, an
+/// assembly's by a shape representation; every face, edge and vertex in the file one part's; and
+/// every next assembly usage occurrence one of the structure's uses, each once: its parent's and
+/// its child's definitions, its shape the child's representation carried into the parent's by a
+/// transformation from the child's own axes to the use's placement, each an item of its
+/// representation.  What was counted is summed over the parts.
+pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
+    let file = File::read(text,&|_| {})?;
+    let products = file.all("PRODUCT");
+    if products.len() != s.products.len() {
+        return Err(format!("the file has {} products, the assembly {}",products.len(),s.products.len()))
+    }
+    let (formations,definitions) = (file.referring("PRODUCT_DEFINITION_FORMATION",2),file.referring("PRODUCT_DEFINITION",2));
+    let (shapes,represented) = (file.referring("PRODUCT_DEFINITION_SHAPE",2),file.referring("SHAPE_DEFINITION_REPRESENTATION",0));
+    let n = s.products.len();
+    let (mut defined,mut reps) = (vec![0u32;n],vec![0u32;n]);
+    let mut items: Vec<BTreeSet<u32>> = vec![BTreeSet::new();n];
+    // each part's solids, walked
+    let (mut walked,mut solids): (Vec<Walked>,usize) = (Vec::new(),0);
+    for (p,(k,(name,solid))) in products.iter().zip(s.products.iter().enumerate().rev()) {
+        let what = format!("the product `{name}`");
+        let written = p.simple().and_then(|(_,v)| v.get(1)).and_then(Value::text);
+        if written != Some(name.replace('\'',"''").as_str()) { return Err(format!("{what}: the file's is named {written:?}")) }
+        let definition = one(&definitions,one(&formations,p.id,&format!("{what}'s formation"))?,&format!("{what}'s definition"))?;
+        let shape = one(&shapes,definition,&format!("{what}'s shape"))?;
+        let rep = one(&represented,shape,&format!("{what}'s representation"))?;
+        let rep = file.get(rep).simple().and_then(|(_,v)| v.get(1)).and_then(Value::reference)
+            .ok_or_else(|| format!("{what}: its shape's representation is not a reference"))?;
+        let kind = if solid.is_some() { "ADVANCED_BREP_SHAPE_REPRESENTATION" } else { "SHAPE_REPRESENTATION" };
+        let (_,values) = file.of(Some(rep),&[kind],&format!("{what}'s representation"))?;
+        items[k] = values.get(1).and_then(Value::list).ok_or_else(|| format!("{what}: a representation without items"))?
+            .iter().filter_map(Value::reference).collect();
+        (defined[k],reps[k]) = (definition,rep);
+        let Some(solid) = solid else { continue };
+        let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP")).collect();
+        if breps.len() != solid.solids { return Err(format!("{what}: its representation has {} solids, the part {}",breps.len(),solid.solids)) }
+        walked.push(walk(&file,&breps,solid,false,&|_| {}).map_err(|e| format!("{what}: {e}"))?);
+        solids += breps.len();
+    }
+    // every face, edge and vertex is one part's
+    let sum = |f: &dyn Fn(&Walked) -> usize| walked.iter().map(f).sum::<usize>();
+    let (faces,splines,edge_uses,vertex_uses) = (sum(&|w| w.faces),sum(&|w| w.splines),sum(&|w| w.edges.len()),sum(&|w| w.vertices.len()));
+    let edges: BTreeSet<u32> = walked.iter().flat_map(|w| w.edges.iter().copied()).collect();
+    let vertices: BTreeSet<u32> = walked.iter().flat_map(|w| w.vertices.iter().copied()).collect();
+    if solids != file.count("MANIFOLD_SOLID_BREP") { return Err(format!("the file has {} solids, its parts {solids}",file.count("MANIFOLD_SOLID_BREP"))) }
+    if faces != file.count("ADVANCED_FACE") { return Err(format!("the file has {} faces, its parts {faces}",file.count("ADVANCED_FACE"))) }
+    if edge_uses != edges.len() || edges.len() != file.count("EDGE_CURVE") {
+        return Err(format!("the file has {} edges, its parts {edge_uses} ({} apart)",file.count("EDGE_CURVE"),edges.len()))
+    }
+    if vertex_uses != vertices.len() || vertices.len() != file.count("VERTEX_POINT") {
+        return Err(format!("the file has {} vertices, its parts {vertex_uses} ({} apart)",file.count("VERTEX_POINT"),vertices.len()))
+    }
+    // the uses
+    let occurrences = file.all("NEXT_ASSEMBLY_USAGE_OCCURRENCE");
+    if occurrences.len() != s.uses.len() { return Err(format!("the file has {} uses of a product, the assembly {}",occurrences.len(),s.uses.len())) }
+    let shown = file.referring("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION",1);
+    let mut placed = vec![false;s.uses.len()];
+    for nauo in occurrences {
+        let what = format!("the use #{}",nauo.id);
+        let values = nauo.simple().unwrap().1;
+        let product = |at: usize| values.get(at).and_then(Value::reference).and_then(|r| defined.iter().position(|&d| d == r))
+            .ok_or_else(|| format!("{what}: its {} is no product's definition",if at == 3 { "assembly" } else { "product" }));
+        let (parent,child) = (product(3)?,product(4)?);
+        let shape = one(&shapes,nauo.id,&format!("{what}'s shape"))?;
+        let cdsr = one(&shown,shape,&format!("{what}'s representation"))?;
+        let relation = file.get(cdsr).simple().and_then(|(_,v)| v.first()).and_then(Value::reference)
+            .ok_or_else(|| format!("{what}: its representation is not a relationship"))?;
+        let relation = file.get(relation);
+        let related = relation.part("REPRESENTATION_RELATIONSHIP").filter(|_| relation.is("SHAPE_REPRESENTATION_RELATIONSHIP"))
+            .ok_or_else(|| format!("{what}: #{} is not a shape representation relationship",relation.id))?;
+        if related.get(2).and_then(Value::reference) != Some(reps[child]) || related.get(3).and_then(Value::reference) != Some(reps[parent]) {
+            return Err(format!("{what}: its relationship is not of `{}`'s representation to `{}`'s",s.products[child].0,s.products[parent].0))
+        }
+        let moved = relation.part("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION").and_then(|v| v.first()).and_then(Value::reference);
+        let (_,moved) = file.of(moved,&["ITEM_DEFINED_TRANSFORMATION"],&what)?;
+        let [from,to] = [2,3].map(|k| moved.get(k).and_then(Value::reference));
+        let (Some(from),Some(to)) = (from.filter(|r| items[child].contains(r)),to.filter(|r| items[parent].contains(r))) else {
+            return Err(format!("{what}: its transformation is not between items of `{}`'s and `{}`'s representations",s.products[child].0,
+                s.products[parent].0))
+        };
+        if !placement(&file,from,&what)?.iter().zip([0.,0.,0.,0.,0.,1.,1.,0.,0.]).all(|(&a,b)| near(a,b)) {
+            return Err(format!("{what}: its transformation is not from `{}`'s own axes",s.products[child].0))
+        }
+        let at = placement(&file,to,&what)?;
+        let Some(u) = (0..s.uses.len()).find(|&u| !placed[u] && s.uses[u].parent == parent && s.uses[u].child == child
+            && s.uses[u].placement.iter().zip(&at).all(|(&a,&b)| near(a,b))) else {
+            return Err(format!("{what}: `{}` in `{}` at {at:?} is not a use the assembly has",s.products[child].0,s.products[parent].0))
+        };
+        placed[u] = true;
+    }
+    Ok(Verified {entities:file.entities.len(),faces,edges:edges.len(),vertices:vertices.len(),splines})
+}
+
+/// The axis placement `r`'s numbers: its origin, z and x.
+fn placement(file: &File,r: u32,what: &str) -> Result<[f64;9],String> {
+    let (_,a) = file.of(Some(r),&["AXIS2_PLACEMENT_3D"],what)?;
+    let mut out = [0.;9];
+    for (k,(at,kind)) in [(1,"CARTESIAN_POINT"),(2,"DIRECTION"),(3,"DIRECTION")].into_iter().enumerate() {
+        let (_,v) = file.of(a.get(at).and_then(Value::reference),&[kind],what)?;
+        let xyz = v.get(1).and_then(Value::list).filter(|l| l.len() == 3).ok_or_else(|| format!("{what}: a {kind} without three numbers"))?;
+        for (j,x) in xyz.iter().enumerate() { out[3*k+j] = x.number().ok_or_else(|| format!("{what}: a {kind}'s number expected"))?; }
+    }
+    Ok(out)
 }
 
 /// Whether the surface `r` is the solid's face's `expected`: an error where it is not, and

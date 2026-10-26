@@ -126,6 +126,19 @@ impl Constraint {
             let s = self.side().unwrap_or(1.0);
             return vec![s * f.m, s * f.c];
         }
+        // a development's home ruling, read off its panel as the drawing stands (#645)
+        if self.kind == CKind::DevelopedLength {
+            let built = sk.development_of(self.args[0].ent().i());
+            let len = built.as_deref().and_then(|d| d.as_ref().ok()).map(|d| d.home_length());
+            // until the panel can be built, the length the image has: the row holds, and is read
+            // again where the solve stops
+            let now = || {
+                let c = &sk.curves[self.args[0].ent().i()];
+                let (f, g) = (sk.point_xy(c.args[0].i()), sk.point_xy(c.args[1].i()));
+                (g.0 - f.0).hypot(g.1 - f.1)
+            };
+            return vec![len.unwrap_or_else(now)];
+        }
         if let Some(k) = self.curve_consts(sk, span) {
             return k;
         }
@@ -180,6 +193,8 @@ impl Constraint {
                 vec![if sk.arc_reversed(self.args[1].ent().i()) { 1.0 } else { 0.0 }]
             }
             CKind::AnnularDistance => vec![self.args[2].num()],
+            // the fraction a contact's interval bounds (#645)
+            CKind::LineFraction => vec![self.args[2].num()],
             CKind::Radius => vec![self.args[1].num()],
             // the word times the radius: the centre stands off the line on the side it names
             CKind::TangentLineCircle => vec![self.side().unwrap_or(1.0)],
@@ -322,6 +337,10 @@ impl Constraint {
                 }
                 // nothing is held to a followed point not lowered (`validate`)
                 crate::model::CurveBody::Followed(None) => Vec::new(),
+                // a laid rail's rails, layer and home, read as the drawing now stands
+                crate::model::CurveBody::Developed(x) => {
+                    sk.developed_consts(curve.i()).unwrap_or_else(|| vec![0.0; x.n_const])
+                }
             };
             // a point in space reads the curve's plane first: its basis in space, `u`, `v`, `o`
             if self.kind == CKind::PointOnExtrusion {
@@ -355,6 +374,7 @@ impl Constraint {
                     }
                     Some(crate::model::CurveBody::Envelope(_)) => kernels::ENVELOPE,
                     Some(crate::model::CurveBody::Extremal(_)) => kernels::EXTREMAL,
+                    Some(crate::model::CurveBody::Developed(_)) => kernels::DEVELOPED,
                     _ => kernels::FORMULA,
                 };
                 Source::curve(body)
@@ -533,6 +553,13 @@ impl Constraint {
             | CKind::Mass
             | CKind::Volume
             | CKind::PointOnTraced
+            // a development's length, a plane touching a path and a line's fraction (#645): a
+            // segment's own `b − a`, or a corner's links read through their ends
+            | CKind::DevelopedLength
+            | CKind::PlaneTangentLine
+            | CKind::PlaneTangentRound
+            | CKind::PlaneSupportsCorner
+            | CKind::LineFraction
             | CKind::Project
             | CKind::Lift
             | CKind::ChartLift
@@ -844,6 +871,23 @@ impl Constraint {
                 let v = self.attitude_read(sk).expect("a circle in space is drawn in a plane");
                 [self.lifted_columns(sk), plane_columns(sk, v)[3..].to_vec()].concat()
             }
+            // the curve's columns, its home ruling's ends (#645)
+            CKind::DevelopedLength => sk.entity_params(e(0)),
+            // the lifts, then the plane's origin and axes — and a round's plane's axes, and a
+            // corner's share of its two tangents (#645)
+            CKind::PlaneTangentLine => {
+                [self.lifted_columns(sk), plane_columns(sk, e(0).i())].concat()
+            }
+            CKind::PlaneTangentRound => {
+                let v = sk.plane_of(sk.round_center(e(1))).expect("a round in space is drawn in a plane");
+                [self.lifted_columns(sk), plane_columns(sk, e(0).i()), plane_columns(sk, v)[3..].to_vec()]
+                    .concat()
+            }
+            CKind::PlaneSupportsCorner => {
+                [self.lifted_columns(sk), plane_columns(sk, e(0).i()), vec![self.args[4].param()]]
+                    .concat()
+            }
+            CKind::LineFraction => self.lifted_columns(sk),
             CKind::Radius => vec![rad(0)],
             CKind::EqualRadius | CKind::AnnularDistance => vec![rad(0), rad(1)],
             CKind::TangentLineCircle => [ln(0), centre(1), vec![rad(1)]].concat(),
@@ -1113,6 +1157,19 @@ impl Constraint {
             CKind::TangentCircleAt3 => {
                 [vec![e(2).i(), sk.round_center(e(0))], ends(1).to_vec()].concat()
             }
+            // the point of contact, then the line's ends or the round's centre (#645)
+            CKind::PlaneTangentLine => [vec![e(2).i()], ends(1).to_vec()].concat(),
+            CKind::PlaneTangentRound => vec![e(2).i(), sk.round_center(e(1))],
+            // the corner, then the far end of the link into it and of the link out of it
+            CKind::PlaneSupportsCorner => {
+                let j = e(3).i();
+                let far = |i: usize| {
+                    let [a, b] = ends(i);
+                    if a == j || sk.twinned(a, j) { b } else { a }
+                };
+                vec![j, far(1), far(2)]
+            }
+            CKind::LineFraction => [vec![e(0).i()], ends(1).to_vec()].concat(),
             CKind::PointOnExtrusion | CKind::PointOnAxis => vec![e(0).i()],
             // what it states about, then every point its envelope's source and motion read (#283)
             // the point, then every point its envelope's source and motion read (#283)

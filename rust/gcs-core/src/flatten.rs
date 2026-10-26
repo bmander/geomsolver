@@ -32,6 +32,7 @@ mod resolve;
 mod words;
 mod apply;
 mod sets;
+pub mod developable;
 mod faces;
 mod interfaces;
 mod keys;
@@ -44,6 +45,8 @@ mod same;
 mod table;
 mod framed;
 mod bound;
+mod members;
+mod lists;
 
 pub use faces::{FaceAxis, FacePlane};
 pub use bound::Bound;
@@ -368,6 +371,15 @@ pub struct Expansion {
     pub rings: Vec<RingInfo>,
     /// Every set drawn as an element, for the elaborator to judge (`lowering`, #105).
     pub lowered: Vec<Lowered>,
+    /// Every band of a recognised sheet at a region solid's probe (#645): its term is the band,
+    /// built exactly (`model::RegionShape::Sheet`).
+    pub sheets: Vec<developable::SheetInfo>,
+    /// Every recognised development (#645): its laid rails made by the elaborator
+    /// (`model::Developed`).
+    pub developed: Vec<developable::DevelopedInfo>,
+    /// Every set recognised as a developable panel (#645), by its absolute name and its rails:
+    /// what the report reads it by.
+    pub panels: Vec<(String, [developable::RailInfo; 2])>,
     /// Every point drawn in further planes and each of its twins, by absolute key (§6.7).
     pub twins: Vec<(String, String)>,
     /// What every reference reading a member `normal` reads it of, absolute (`P.normal` gives
@@ -406,6 +418,21 @@ pub struct Expansion {
     /// its traced body would: the name the text reads it by (`#f12.g.p2.y`), the declaration it
     /// resolved to and the fields past it — for the elaborator to hold as the geometry stands.
     pub reads: Vec<(String, String, Vec<String>)>,
+    /// Every pair of faces a `when` left apart (#625): faces it read as meeting nowhere where the
+    /// drawing is seeded, which made the copy nothing — for the elaborator to read again where
+    /// it is solved (`program::meets`).
+    pub apart: Vec<Apart>,
+    /// Whether the walk stopped at `MAX_FLAT`, its statements cut short: no drawing.
+    pub overflowed: bool,
+}
+
+/// **Two faces of a solid a `when … meets …` left apart** (#625): the solid by its absolute
+/// name, the faces by theirs from it, and the document's statement that made the block.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Apart {
+    pub solid: String,
+    pub faces: [String; 2],
+    pub at: Span,
 }
 
 /// **A number the document names** (#596): `ratio := teeth / 12 * 4`, a `param`, a group's
@@ -518,6 +545,8 @@ struct Pending {
     scope: Scope,
     path: Vec<PathStep>,
     depth: usize,
+    /// The document's statement it was met under (`FaceState::at`).
+    at: Span,
 }
 
 /// One link of a walk a block runs over (#243 L8).
@@ -565,6 +594,14 @@ struct Walk<'a> {
     /// `resolve::Lazy` last read (only ever added to, so brought up to date from there).
     alias_keys: std::cell::RefCell<(usize, BTreeMap<String, Vec<usize>>)>,
     instances: Vec<InstanceInfo>,
+    /// The developments met, their sets resolved once every set is known (#645).
+    developing: Vec<developable::Pending>,
+    /// The developments resolved — see `Expansion::developed`.
+    developed: Vec<developable::DevelopedInfo>,
+    /// The sets recognised as panels — see `Expansion::panels`.
+    panels: Vec<(String, [developable::RailInfo; 2])>,
+    /// The chains and closed paths a panel's rail may name (#645).
+    rails_seen: developable::RailsSeen,
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
     sym: Option<Sym>,
     /// Root values, used to diagnose accidental capture by a closed component.
@@ -576,6 +613,8 @@ struct Walk<'a> {
     /// `file_numbers` gives.
     constants: BTreeMap<Option<usize>, (std::rc::Rc<Vals>, std::rc::Rc<BTreeSet<String>>)>,
     diagnostics: Vec<Diag>,
+    /// Whether the walk has made `MAX_FLAT` statements, said once (`Expansion::overflowed`).
+    overflowed: bool,
     /// Every call already read for how its arguments are written (`check_call`), by where it is
     /// written.  The question is about the *text* — which formal a written argument lands on — so
     /// it is asked once per call however many times the walk binds it: thirty copies of a `cycle`
@@ -736,15 +775,30 @@ struct SetState<'a> {
     applying: bool,
     /// Every region solid's probe — see `Expansion::probes`.
     probes: Vec<String>,
+    /// Each band of a recognised sheet at a probe (#645) — see `Expansion::sheets`.
+    sheets: Vec<developable::SheetInfo>,
+}
+
+/// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
+/// from the solid, and which of them meet (#625, `Meets`), where its boundary says.
+#[derive(Clone, Debug)]
+pub struct Listed {
+    pub paths: Vec<crate::solid::faces::FacePath>,
+    pub meets: Option<crate::solid::faces::Meets>,
 }
 
 /// The solids' faces read as sets, and the blocks over them (`Walk::faces`).
 #[derive(Default)]
 struct FaceState {
-    /// Each solid's faces, by the path they are named by from it, where the elaborator has said
-    /// (#183 F4) — see `Expansion::face_repeats`.
-    given: BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
+    /// Each solid's faces, where the elaborator has said (#183 F4) — see
+    /// `Expansion::face_repeats`.
+    given: BTreeMap<String, Listed>,
     repeats: BTreeSet<String>,
+    /// See `Expansion::apart`.
+    apart: BTreeSet<Apart>,
+    /// The document's own statement being walked — its root body's — where a block set aside
+    /// was met: what a fault deep in what it expands to is said at (#625).
+    at: Span,
     /// See `Expansion::face_planes` and `face_axes`.
     planes: Vec<FacePlane>,
     axes: Vec<FaceAxis>,
@@ -767,7 +821,7 @@ pub fn expand_faces(
     prog: &Program,
     units: Units,
     unlowered: &BTreeSet<String>,
-    faces: &BTreeMap<String, Vec<crate::solid::faces::FacePath>>,
+    faces: &BTreeMap<String, Listed>,
 ) -> Expansion {
     let mut w = Walk::new(prog, units, None);
     w.sets.unlowered = unlowered;
@@ -855,6 +909,7 @@ impl<'a> Walk<'a> {
             module_vals: vec![None; prog.modules.len()],
             constants: BTreeMap::new(),
             diagnostics: Vec::new(),
+            overflowed: false,
             called: BTreeSet::new(),
             standard: Datums {
                 files,
@@ -885,7 +940,12 @@ impl<'a> Walk<'a> {
                 unlowered: &NONE,
                 applying: false,
                 probes: Vec::new(),
+                sheets: Vec::new(),
             },
+            developing: Vec::new(),
+            developed: Vec::new(),
+            panels: Vec::new(),
+            rails_seen: Default::default(),
             twins: Vec::new(),
             normals: BTreeSet::new(),
             charts: BTreeSet::new(),
@@ -970,6 +1030,8 @@ impl<'a> Walk<'a> {
         // may hold a block over a chain
         self.face_sets();
         self.expand_sets();
+        // each development, its set known (#645)
+        self.developments();
         self.expand_pending();
         self.expand_fits();
         let (mut flat, mut aliases) = self.resolve();
@@ -1007,12 +1069,17 @@ impl<'a> Walk<'a> {
             joints: self.joints,
             quiet: self.quiet,
             probes: self.sets.probes,
+            sheets: self.sets.sheets,
+            developed: self.developed,
+            panels: self.panels,
             face_repeats: self.faces.repeats,
             face_planes: self.faces.planes,
             face_axes: self.faces.axes,
             kinds: self.checks.kinds,
             held: self.held.names,
             reads: self.held.reads,
+            apart: self.faces.apart.into_iter().collect(),
+            overflowed: self.overflowed,
         }
     }
 }

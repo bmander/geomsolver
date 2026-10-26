@@ -248,8 +248,11 @@ build (`sweep::Built::moved`) before the body rule takes it as the operand it st
 `admit_body` admits the body placed. Its volume is the body's to rounding, and a body made from it
 (`copy := solid(shown)`) is composed over it. A report asked of a swept solid supplies its exact
 B-rep whether or not it is an object (`supply_exact_where`; a drawing's `supply_exact` keeps to
-objects), so the body and its placements read one B-rep and no field. `tests/planar_subtraction.rs`
-(`a_wheel_a_frame_stands_is_the_wheel_moved`).
+objects), so the body and its placements read one B-rep and no field: a placement's is the body's
+own supplied B-rep moved (`brep::export::supply_one`), never a build of its own, so a claim that
+places a wheel at thirteen poses builds it once (the radiator bot's full check, 156 s to 55 s).
+`tests/planar_subtraction.rs` (`a_wheel_a_frame_stands_is_the_wheel_moved`,
+`a_placed_wheel_is_supplied_as_the_wheel_moved`).
 
 **The Wankel, the planar class (#65):** a point's planar envelope is its path (`bore :=
 envelope(apex, under: rotor_turn, …)`); `generate::chosen` skips a stationary root. A generated
@@ -326,8 +329,11 @@ half (OCCT's deflection is no bound), float32 rounding counted with it (`mesh::s
 not a limit of the encoding, so `brep::export::exact` refuses it, whatever path built it, saying
 which solid is empty and which statement emptied it (`` `shared` is empty: `b common shared` leaves
 no material, so there is nothing to write ``, or its stock holding none) — `combine` checks after
-each Boolean, and a static body found empty is combined again a statement at a time to name it
-(`emptied`) — never a float32 rounding read off its infinite bounds, nor a STEP file of no faces.
+each Boolean and builds the body empty with the statement that emptied it (`Exact::emptied`), and a
+static body found empty is combined again a statement at a time to name it (`emptied`) — never a
+float32 rounding read off its infinite bounds, nor a STEP file of no faces.  The refusal is the
+file's alone: a drawing given the same build (`supply_exact`) reads a body with no material, its
+volume 0 (#618).
 `an_empty_body_is_refused_naming_the_statement_that_emptied_it` (`tests/brep_export.rs`).
 
 **One sector, sewn round ([plan](../native-speed-plan.md)):** a body whose swept cuts are turns
@@ -354,3 +360,19 @@ meridian section turned once (`Session::construct_meridian`, `solvent_cad_revolv
 `SOLVENT_BLANK=booleans`); field agreement probes one sector, reading cuts not proved positive
 (`agreement::Sector`, `MaterialField::without_cuts`; `SOLVENT_AGREEMENT=whole`); STEP text is
 formatted on every core, the kernel's to the byte (`SOLVENT_STEP_TEXT_CHECK`).
+
+**Speed of the Rust kernel's swept cuts:** every shortcut reads what the long way read. A placement
+is compared with the first by `SpatialField::below` (`value(p) < t`, a Boolean's second operand
+unread where its first decides, a loop's nearest edge sought only within the level, the parity of
+its ray first). A body built whole is split by its placed sheets a batch at a time, each sheet in
+the first batch whose boxes stand clear of its own (`sector::apart`): sheets that meet none of each
+other split as one. A cell's interior points (`query::interior`) are the deepest first by a
+hierarchy of its mesh's triangles, the winding number asked only of the points the choice reaches.
+Under these, the class's Booleans are seeded and traced as any are (brep.md), a cone's step read at
+its radius in the pair's box (`Surface::feature_within`, not at its frame's origin, which may be
+its apex), and a spline's foot found as `brep.md` says. A blank's prism of whole circles about the
+line, along it, is turned as its section (`Recipe::meridian`), so a chamfered gear's blank is made
+again about the axis and built as one sector; a side running in to its bore is clear of the cuts
+by its gap's angle times its radius, or by how far nearer the axis than every contact of its slice
+it runs where that is more (`Boundary::clearance_of`). `tests/swept_speed.rs` and
+`sector::a_side_reaching_its_bore_is_clear_by_its_radial_gap` are the gates.

@@ -127,6 +127,9 @@ impl<'a> Walk<'a> {
         let lowered = self.valued_blocks(body);
         let body: &[Stmt] = lowered.as_deref().unwrap_or(body);
         for st in body {
+            if depth == 0 {
+                self.faces.at = st.span;
+            }
             // a set's body walked again for a tangency states its relations' derivatives and
             // makes nothing a second time, and one walked for what it makes states nothing (§6.21)
             let relation = matches!(st.kind, StmtKind::Relation(_));
@@ -141,12 +144,26 @@ impl<'a> Walk<'a> {
                 }
                 _ => {}
             }
+            // said once, at the document's statement that expands to them (#625): every body
+            // the walk is in stops here, and what is made of so much is no drawing
             if self.emitted() >= MAX_FLAT {
-                self.err(
-                    Code::E103,
-                    st.span,
-                    format!("more than {MAX_FLAT} statements once expanded"),
-                );
+                if !self.overflowed {
+                    self.overflowed = true;
+                    let at = self.faces.at;
+                    // where in a module the walk had got to (`modules::localize`'s words)
+                    let within = match self.prog.source_at(st.span.lo as usize) {
+                        (Some(k), local) if at != st.span => {
+                            let m = &self.prog.modules[k];
+                            let (line, col) = crate::syntax::line_col(&m.text, local as u32);
+                            format!(", {}:{line}:{col} reached", m.name)
+                        }
+                        _ => String::new(),
+                    };
+                    self.err(Code::E103, at, format!(
+                        "more than {MAX_FLAT} statements once expanded{within}: the drawing is cut \
+                         short, and nothing of it is built"
+                    ));
+                }
                 return;
             }
             match &st.kind {
@@ -348,6 +365,7 @@ impl<'a> Walk<'a> {
         if scope.stamps.anonymous {
             chain.name = crate::syntax::DeclName::Key(chain.name.key().clone());
         }
+        self.rails_seen.chains.insert(chain.name.key().text.clone(), (chain.clone(), scope.clone()));
         self.emit(StmtKind::Chain(chain), st, scope, path);
     }
 
@@ -364,6 +382,10 @@ impl<'a> Walk<'a> {
     ) {
         let abs = format!("{prefix}{}", d.name.key().text);
         self.names.insert(abs.clone());
+        // a path that comes round, which a panel's rail may name (#645)
+        if d.kind == crate::model::EntKind::Circle || d.close.is_some() {
+            self.rails_seen.closed.insert(abs.clone());
+        }
         // a frame, whose own standard datums an instance standing in it reads (#542)
         if d.bare {
             self.declare_frame(abs.clone(), None, path);
@@ -1013,7 +1035,12 @@ impl<'a> Walk<'a> {
             at_call.stamps.plane = None;
             self.body(&owned, &at_call, &mut sub_vals, path, depth + 1);
         }
-        self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
+        // a development (#645): laid by the core, its body read and not walked
+        match super::developable::development_body(comp) {
+            Some(dev) => self.walk_development(&dev, comp, inst, st, scope, &sc, &mut sub_vals,
+                                               &instance_path, depth + 1),
+            None => self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1),
+        }
         if !own.is_empty() {
             self.body(&own, &sc, &mut sub_vals, &instance_path, depth + 1);
         }
@@ -1037,7 +1064,22 @@ impl<'a> Walk<'a> {
         // are its own
         if b.kind == BlockKind::When {
             let names = Asked::new(self, scope);
-            match super::values::condition(&b.count, vals, scope, self.units, &names) {
+            let decided = super::values::condition(&b.count, vals, scope, self.units, &names);
+            // faces read apart where the drawing is seeded that alone left the block out, to be
+            // read again where it is solved (#625)
+            let apart = names.apart.take();
+            let alone = matches!(decided, Ok(false)) && !apart.is_empty() && {
+                names.every.set(true);
+                matches!(super::values::condition(&b.count, vals, scope, self.units, &names),
+                    Ok(true))
+            };
+            drop(names);
+            if alone {
+                let at = self.faces.at;
+                self.faces.apart.extend(apart.into_iter()
+                    .map(|(solid, faces)| super::Apart { solid, faces, at }));
+            }
+            match decided {
                 Ok(true) => {
                     // a frame of its own over the numbers around it, which it shares (#405)
                     let mut sub = Vals::over(scope.vals.clone());
@@ -1048,7 +1090,22 @@ impl<'a> Walk<'a> {
             }
             return;
         }
-        if b.over.is_some() {
+        // a copy per item of a list, named or written in place (§12.10): the items are numbers
+        // in force here, so the block is expanded where it stands
+        let list = match self.list_of(b, vals) {
+            Some(Ok((var, items))) => {
+                if self.declares(b, var) {
+                    return;
+                }
+                Some((var, items))
+            }
+            Some(Err((span, m))) => {
+                self.err(Code::E103, span, m);
+                return;
+            }
+            None => None,
+        };
+        if list.is_none() && b.over.is_some() {
             // how many is the chain's, and the chain may be a name no walk has
             // reached yet (a forward reference, or one inside an instance written
             // further down): expanded once every name is known, where the block
@@ -1058,27 +1115,31 @@ impl<'a> Walk<'a> {
                 scope: scope.clone(),
                 path: path.to_vec(),
                 depth,
+                at: self.faces.at,
             });
             self.out.push((st.clone(), path.to_vec(), scope.clone()));
             return;
         }
-        // a count is a whole number: a computed one (`360deg / 15deg`) may carry
-        // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
-        let n = match value_of(&b.count, vals, self.units) {
-            Ok(v) if v.is_finite() && v >= 0.0
-                && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
-            Ok(v) => {
-                self.err(
-                    Code::E103,
-                    b.span,
-                    format!("`{}` is {v}, which is not a count", b.count),
-                );
-                return;
-            }
-            Err(e) => {
-                self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
-                return;
-            }
+        let n = match &list {
+            Some((_, items)) => items.len(),
+            // a count is a whole number: a computed one (`360deg / 15deg`) may carry
+            // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
+            None => match value_of(&b.count, vals, self.units) {
+                Ok(v) if v.is_finite() && v >= 0.0
+                    && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
+                Ok(v) => {
+                    self.err(
+                        Code::E103,
+                        b.span,
+                        format!("`{}` is {v}, which is not a count", b.count),
+                    );
+                    return;
+                }
+                Err(e) => {
+                    self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
+                    return;
+                }
+            },
         };
         // a round at the body's end gives up the first link's entry in every copy, and a
         // `repeat`'s first copy is entered by nothing (#576)
@@ -1088,7 +1149,19 @@ impl<'a> Walk<'a> {
                 close the copies in a `cycle` or a `ring`");
             return;
         }
-        self.copies(b, st, scope, path, depth, n, &[]);
+        let items = list.as_ref().map(|(var, items)| (*var, items.as_slice()));
+        self.copies(b, st, scope, path, depth, n, &[], items);
+    }
+
+    /// Whether the body declares what each copy calls its edge or its item, which would hide it:
+    /// said, E001.
+    pub(super) fn declares(&mut self, b: &Block, var: &Name) -> bool {
+        let hidden =
+            b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| n.text == var.text));
+        if hidden {
+            self.err(Code::E001, var.span, format!("`{}` is declared twice", var.text));
+        }
+        hidden
     }
 
     /// A relation: a defined word's body applied, or its numbers worked out in the scope and
@@ -1120,6 +1193,24 @@ impl<'a> Walk<'a> {
             return;
         }
         let Some(mut r2) = self.settle_relation(rel, vals, scope) else { return };
+        // a contact over an interval (#645): the incidence, and — no set's body, where it would
+        // make a region of what bounds where on the ruling — where on the line, a bound
+        if let Some(within) = self.within(&mut r2) {
+            if scope.twin().is_none() {
+                let mut fraction = r2.clone();
+                if let Some(w) = fraction.form.written_mut() {
+                    let (key, lo, hi) = within;
+                    let marker = Name { text: crate::syntax::WITHIN.into(), span: key.span };
+                    w.args = vec![crate::syntax::OpArg::Dim(lo.0, lo.1),
+                                  crate::syntax::OpArg::Bound { cmp: crate::syntax::Cmp::In,
+                                                                span: key.span, hi: Some(hi),
+                                                                grow: None },
+                                  crate::syntax::OpArg::Named(marker,
+                                                              crate::syntax::Arg::Word(key.text))];
+                }
+                self.emit(StmtKind::Relation(fraction), st, scope, path);
+            }
+        }
         if let Some(twin) = scope.twin() {
             // a claim, a gauge and a bound state no row, so they have no
             // derivative
@@ -1135,6 +1226,22 @@ impl<'a> Walk<'a> {
             r2.along = Some(twin.clone());
         }
         self.emit(StmtKind::Relation(r2), st, scope, path);
+    }
+
+    /// A contact over an interval's interval taken out of the relation (#645), leaving its
+    /// incidence: the slot, its low end and its high end — `None` where it states none, or
+    /// (said) one over a slot other than a contact's `t`.
+    fn within(&mut self, r2: &mut crate::syntax::Relation)
+        -> Option<(crate::syntax::Name, (String, Span), (String, Span))> {
+        let w = r2.form.written_mut()?;
+        let k = w.args.iter().position(|a| matches!(a, crate::syntax::OpArg::Within { .. }))?;
+        let crate::syntax::OpArg::Within { key, lo, hi } = w.args.remove(k) else { return None };
+        if key.text != "t" || w.word.text != "coincident" {
+            let m = format!("an interval is of a contact's place, `p coincident(t in (0, 1))                 line(m, n)`: `{}` is no contact's `t`", key.text);
+            self.err(Code::E040, key.span, m);
+            return None;
+        }
+        Some((key, lo, hi))
     }
 
     /// An energy: each integrand with the scope's numbers written in (#121).
@@ -1243,6 +1350,11 @@ impl<'a> Walk<'a> {
                     }
                     crate::syntax::OpArg::Bound { hi, grow, .. } => {
                         for (text, span) in hi.iter_mut().chain(grow.iter_mut()) {
+                            self.settle_dim(text, *span, vals, scope)
+                        }
+                    }
+                    crate::syntax::OpArg::Within { lo, hi, .. } => {
+                        for (text, span) in [lo, hi] {
                             self.settle_dim(text, *span, vals, scope)
                         }
                     }
@@ -1459,6 +1571,8 @@ impl<'a> Walk<'a> {
     /// holds each copy's edge — the link as the chain wrote it and the scope it was written in —
     /// and copy `k` gets an alias `<block>#<id>.<k>.<var>` for it, which is how `e` is found
     /// through the copy's prefix like any name, and passed on to an instance as any alias is.
+    /// Where it runs over a list, `items` holds each copy's item, whose numbers copy `k` reads
+    /// under the name it calls it by (`h`, `h.x`), as it reads its index.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn copies(
         &mut self,
@@ -1469,10 +1583,13 @@ impl<'a> Walk<'a> {
         depth: usize,
         n: usize,
         edges: &[(&Name, &[Link])],
+        items: Option<(&Name, &[super::lists::Item])>,
     ) {
-        // a block's index and its edge binder are names of each copy, and one over a name the
-        // enclosing scope already has would read two ways in one body (E002): said once per block
-        let binders = b.binder.iter().chain(edges.iter().map(|(v, _)| *v));
+        // a block's index and its edge or item binder are names of each copy, and one over a name
+        // the enclosing scope already has would read two ways in one body (E002): said once per
+        // block
+        let binders = b.binder.iter().chain(edges.iter().map(|(v, _)| *v))
+            .chain(items.map(|(v, _)| v));
         for name in binders {
             let taken = scope.vals.contains_key(&name.text)
                 || scope.groups.contains(&name.text)
@@ -1523,6 +1640,21 @@ impl<'a> Walk<'a> {
             if let Some(i) = &b.binder {
                 sub.insert(i.text.clone(), Aff::num(k as f64));
             }
+            // an item that is a group of numbers is a group by the copy's name for it, handed on
+            // as one (`Hole(h)`)
+            let mut groups = scope.groups.clone();
+            if let Some((var, items)) = items {
+                for (member, a) in &items[k] {
+                    sub.insert(format!("{}{member}", var.text), a.clone());
+                }
+                if items[k].iter().any(|(member, _)| !member.is_empty()) {
+                    groups = std::rc::Rc::new(
+                        scope.groups.iter().cloned().chain([var.text.clone()]).collect());
+                    let key = format!("{block_prefix}{k}.{}", var.text);
+                    self.names.insert(key.clone());
+                    self.group_names.insert(key);
+                }
+            }
             for (var, links) in edges {
                 let key = format!("{block_prefix}{k}.{}", var.text);
                 match &links[k] {
@@ -1554,7 +1686,7 @@ impl<'a> Walk<'a> {
                 // `next` and `prev` mean something only where the copies close
                 closed: scope.closed,
                 forbidden: scope.forbidden.clone(),
-                groups: scope.groups.clone(),
+                groups,
                 vals: std::rc::Rc::new(sub.clone()),
                 sides: scope.sides.clone(),
                 module: scope.module,
@@ -1859,6 +1991,11 @@ struct Asked<'w, 'a> {
     walk: &'w Walk<'a>,
     scope: &'w Scope,
     alias: super::resolve::Lazy<'w, 'a>,
+    /// Every pair of faces `meets` read apart (#625): the solid, and each face by its name from it.
+    apart: std::cell::RefCell<Vec<(String, [String; 2])>>,
+    /// Whether every two faces are read as meeting: the condition asked again, to tell whether
+    /// the pairs read apart are what left the block out.
+    every: std::cell::Cell<bool>,
 }
 
 /// The most aliases a walk may have made for `Asked` to hold each answer to the walk's whole table
@@ -1868,7 +2005,22 @@ const CHECKED: usize = 512;
 
 impl<'w, 'a> Asked<'w, 'a> {
     fn new(walk: &'w Walk<'a>, scope: &'w Scope) -> Self {
-        Asked { walk, scope, alias: super::resolve::Lazy::new(walk) }
+        Asked {
+            walk,
+            scope,
+            alias: super::resolve::Lazy::new(walk),
+            apart: Default::default(),
+            every: Default::default(),
+        }
+    }
+
+    /// The solid a face is listed by and its name from that solid, by what the face stands for
+    /// (`disc.opening.rim`): the faces the elaborator gave the walk.
+    fn face<'s>(&'s self, abs: &'s str) -> Option<(&'s str, &'s str, &'s super::Listed)> {
+        self.walk.faces.given.iter().find_map(|(solid, listed)| {
+            let rest = abs.strip_prefix(solid.as_str())?.strip_prefix('.')?;
+            listed.paths.iter().any(|f| f.text() == rest).then_some((solid.as_str(), rest, listed))
+        })
     }
 
     /// `ask` of `name`, through the aliases read lazily.
@@ -1890,6 +2042,20 @@ impl super::values::Names for Asked<'_, '_> {
 
     fn faces(&self, name: &str) -> Option<Vec<String>> {
         self.ask(name, |r, alias| self.walk.faces_named(r, self.scope, alias))
+    }
+
+    /// Faces of one solid by its `Meets`, read where the drawing is seeded; faces of two, or of
+    /// one whose boundary does not say, as meeting.
+    fn meets(&self, a: &str, b: &str) -> Option<bool> {
+        let ((solid, ra, listed), (other, rb, _)) = (self.face(a)?, self.face(b)?);
+        if self.every.get() || solid != other {
+            return Some(true);
+        }
+        let met = listed.meets.as_ref().is_none_or(|m| m.meets(ra, rb));
+        if !met {
+            self.apart.borrow_mut().push((solid.to_string(), [ra.to_string(), rb.to_string()]));
+        }
+        Some(met)
     }
 
     fn running(&self, name: &str) -> bool {
@@ -1994,3 +2160,4 @@ impl Table for Seeded<'_> {
         out
     }
 }
+

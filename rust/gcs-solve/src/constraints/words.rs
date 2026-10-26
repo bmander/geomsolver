@@ -256,6 +256,9 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // at a fraction of the way along where the place is written (`t == 0.25`, or a
             // seed for it), and only there: no `t`, no column (#248)
             (Point, Line) if sel("t").is_some() => CKind::PointAlongLine,
+            // where on a line a point stands, an interval of it (#645): the bound a contact over
+            // an interval states beside its incidence, `p coincident(t in (0, 1)) l`
+            (Point, Line) if sel("fraction").is_some() => CKind::LineFraction,
             (Point, Arc) if sel("t").is_some() => CKind::PointAlongArc,
             (Point, Line) => CKind::PointOnLine,
             (Point, k) if round(k) => CKind::PointOnCircle,
@@ -318,6 +321,10 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             // where the body is one (`program::relations`)
             (Traced, Line | Axis) if at_point => CKind::Rate,
             (Traced, Plane) if at_point => CKind::Rate,
+            // a plane touching a path at a point a contact holds on it (#645): containing a
+            // line, or a round's tangent there
+            (Plane, Line) if at_point => CKind::PlaneTangentLine,
+            (Plane, k) if round(k) && at_point => CKind::PlaneTangentRound,
             // tangency at a named end of the line is the regular form; the bare pair is
             // rank-deficient at every solution, so `at:` is how a drawing says which
             (Line, k) if round(k) => match sel("at") {

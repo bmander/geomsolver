@@ -84,17 +84,15 @@ impl Pcurve {
                 let l = edge.t[1]-edge.t[0];
                 [(b[0]-a[0])/l,(b[1]-a[1])/l]
             }
-            Pcurve::Inverse {..} => {
-                let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
-                let uv = self.at(t,edge,surface,vertices);
-                let (_,su,sv) = surface.d1(uv);
-                let d = c.tangent(t);
-                // least squares [S_u S_v] x = C'
-                let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
-                let (b1,b2) = (dot(su,d),dot(sv,d));
-                let det = a11*a22-a12*a12;
-                [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det]
-            }
+            Pcurve::Inverse {..} => inverse_derivative(self.at(t,edge,surface,vertices),t,edge,surface),
+        }
+    }
+    /// `at` and `derivative` at `t`: an inverse curve's point found on the surface once for both.
+    pub fn at_and_derivative(&self,t: f64,edge: &Edge,surface: &Surface,vertices: &[Vertex]) -> (Uv,Uv) {
+        let uv = self.at(t,edge,surface,vertices);
+        match self {
+            Pcurve::Inverse {..} => (uv,inverse_derivative(uv,t,edge,surface)),
+            _ => (uv,self.derivative(t,edge,surface,vertices)),
         }
     }
     /// The same curve with its `u` negated: what it is on its face's surface placed so that its
@@ -117,6 +115,19 @@ impl Pcurve {
             })),
         }
     }
+}
+
+/// `d(u, v)/dt` of the curve of points of `surface` nearest the edge's, at its point's parameters
+/// `uv`: the edge's tangent by least squares in `[S_u S_v]` there.
+fn inverse_derivative(uv: Uv,t: f64,edge: &Edge,surface: &Surface) -> Uv {
+    let EdgeCurve::Curve(c) = &edge.curve else { return [0.;2] };
+    let (_,su,sv) = surface.d1(uv);
+    let d = c.tangent(t);
+    // least squares [S_u S_v] x = C'
+    let (a11,a12,a22) = (dot(su,su),dot(su,sv),dot(sv,sv));
+    let (b1,b2) = (dot(su,d),dot(sv,d));
+    let det = a11*a22-a12*a12;
+    [(a22*b1-a12*b2)/det,(a11*b2-a12*b1)/det]
 }
 
 /// `uv` moved by whole periods to be nearest `near`.
@@ -164,11 +175,15 @@ impl Brep {
     /// The faces of `self` and of `other` as one B-rep, sharing nothing (two sheets to split by at once).
     pub fn joined(&self,other: &Brep) -> Brep {
         let mut c = self.clone();
-        let (nv,ne) = (c.vertices.len() as u32,c.edges.len() as u32);
-        c.vertices.extend(other.vertices.iter().cloned());
-        c.edges.extend(other.edges.iter().cloned().map(|mut e| { e.v = e.v.map(|v| v+nv); e }));
-        c.faces.extend(other.faces.iter().cloned().map(|mut f| { for co in f.loops.iter_mut().flatten() { co.edge += ne; } f }));
+        c.join(other);
         c
+    }
+    /// `other`'s faces added to these, sharing nothing (`joined`, in place).
+    pub fn join(&mut self,other: &Brep) {
+        let (nv,ne) = (self.vertices.len() as u32,self.edges.len() as u32);
+        self.vertices.extend(other.vertices.iter().cloned());
+        self.edges.extend(other.edges.iter().cloned().map(|mut e| { e.v = e.v.map(|v| v+nv); e }));
+        self.faces.extend(other.faces.iter().cloned().map(|mut f| { for co in f.loops.iter_mut().flatten() { co.edge += ne; } f }));
     }
     pub fn edge(&mut self,curve: EdgeCurve,t: [f64;2],v: [u32;2]) -> u32 {
         self.edges.push(Edge {curve,t,v,tol:0.});

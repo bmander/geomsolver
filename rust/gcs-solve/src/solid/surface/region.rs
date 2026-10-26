@@ -110,18 +110,20 @@ impl Edge {
                 }
                 let lo = start.min(start+sweep);
                 let hi = start.max(start+sweep);
-                let mut angles = vec![lo];
+                // the sweep's ends and the turning heights between, read as asked: a field asks of
+                // every edge at every point it reads
                 let first = ((lo-FRAC_PI_2)/PI).floor() as i32+1;
                 let last = ((hi-FRAC_PI_2)/PI).ceil() as i32;
-                for k in first..last { angles.push(FRAC_PI_2+f64::from(k)*PI); }
-                angles.push(hi);
+                let n = (last-first).max(0) as usize+2;
+                let angle = |j: usize| if j == 0 { lo } else if j == n-1 { hi } else { FRAC_PI_2+f64::from(first+j as i32-1)*PI };
                 let zs = if sweep > 0. { [ends[0][1],ends[1][1]] }
                     else { [ends[1][1],ends[0][1]] };
-                angles.windows(2).enumerate().filter(|(i,a)| {
+                (0..n-1).filter(|&i| {
+                    let a = [angle(i),angle(i+1)];
                     // Shared source vertices have exactly the same ordinate on both
                     // edges. Reconstructing one with sin(pi) can open a spurious ray gap.
-                    let za = if *i == 0 { zs[0] } else { center[1]+radius*a[0].dsin() };
-                    let zb = if *i+2 == angles.len() { zs[1] }
+                    let za = if i == 0 { zs[0] } else { center[1]+radius*a[0].dsin() };
+                    let zb = if i+2 == n { zs[1] }
                         else { center[1]+radius*a[1].dsin() };
                     if (za > p[1]) == (zb > p[1]) { return false; }
                     let y = (p[1]-center[1])/radius;

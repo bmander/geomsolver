@@ -36,6 +36,7 @@ mod scenario;
 mod measured;
 mod beam;
 mod rounds;
+pub mod developed;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -43,6 +44,7 @@ pub use entities::{
     LiftE, article, entity_name, kind_initial,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
+pub use developed::{developed_def, Developed, Panel, Rail};
 pub use solids::{
     FaceLoop, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Roll, Sense, SolidDef, SolidE, EnvelopeE,
@@ -298,6 +300,11 @@ pub struct Sketch {
     /// driven (`CKind::Mass`, `CKind::Volume`) reads by index, and the claims judged after the
     /// solve.  Set by elaboration and carried by the Solvent source alone: never written to JSON.
     pub measured: Vec<Measured>,
+    /// **The developable panels the document names** (#645): each set recognised as a panel a
+    /// plane touches along each ruling, by its name and its rails, which the report reads
+    /// (`{panel}.rulings`, `{panel}.closed`).  Set by elaboration and carried by the Solvent
+    /// source alone, as a beam is: never written to JSON.
+    pub panels: Vec<Panel>,
     /// **The regions a driving row over a plane reads** (#510 S2), and the prisms one over a solid
     /// reads (#510 S3, its face's mesh stacked): each meshed once, where the drawing stood when its
     /// row was compiled (`prisms::Row`), by what the row names (`MeshedKey`) — so every compile

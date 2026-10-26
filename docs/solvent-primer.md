@@ -110,6 +110,7 @@ param NAME[: TYPE] [:= EXPR] [hint(E)]  an input; with no value, an unknown     
 param NAME: TYPE over (E, E)            a parameter that runs over an interval       (1.6)
 NAME := {LABEL: VALUE, ...}             a group: values and geometry as one argument (1.8)
 NAME := (E, E[, E])                     a vector, read as NAME.x, NAME.y             (1.4)
+NAME := [ITEM, ...]                     a list: numbers, vectors or groups, in order (1.7)
 [private] [construction] [NAME :=] KIND[(CHILD | hint(...), ...)] [hint(MEMBER: E, ...)]
      [knots [...]] [weights [E, ...]] [in REF[, REF]]   an entity; every part optional (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve      (1.10)
@@ -146,6 +147,7 @@ repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle
 repeat e in FACE [as i] { ... }         a copy per edge of a face's walk          (1.7)
 cycle (a, b) in (W1, W2) { ... }        walks in step: link k of each in copy k   (1.7)
 repeat a in SOLID { ... }               a copy per face of a solid                   (1.14)
+repeat h in LIST [as i] { ... }         a copy per item of a list, `h` the item      (1.7)
 when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
 NAME := trace(INSTANCE.POINT over FORMAL in (A, B))   a curve                         (1.10)
@@ -233,13 +235,13 @@ whichever is written first (`l tangent g` is `g tangent l`).
 
 | word | fixity | operands and options |
 |---|---|---|
-| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve; in space, a point, line or axis to a plane, a point or line to an axis, two axes; a point to a set (1.13) |
+| `coincident` | infix | two points; a point to a line, circle, arc, spline or curve; in space, a point, line or axis to a plane, a point or line to an axis, two axes; a point to a set (1.13); a point to a line over an interval, `p coincident(t in (0, 1)) line(m, n)`, the segment (1.14, *Developable panels*) |
 | `distance` | infix | two points (length; with `along:`, an **ordinate**: signed from the first to the second along an axis, a line, or the view's own `u`/`v`, `right`/`left`/`up`/`down` with the sign said); a point and a line, or two lines (a magnitude, `side:` picks the side); two concentric circles or arcs; a point and a plane (`along: u`/`v`/`n`); two planes (along the first's normal) |
-| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13) |
+| `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13); a plane to a line, circle, arc or curve traced in space `at:` a point held on it — the plane through the point holding the tangent, `T tangent(at: m) k` (1.14, *Developable panels*) |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
 | `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s words (1.9): `use std (horizontal)`, then `a horizontal b` |
-| `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. Write it rather than `distance(0, along: …)`, which is refused |
+| `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. `distance(0, along: …)` is the same row with a number of zero, a dimension |
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
 | `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
@@ -335,6 +337,13 @@ about. Radii mean the same in every view.
 
 **Expressions**: `+ - * / ^`, parentheses, `pi`, `tau`, and `sqrt abs sin cos tan asin acos atan
 atan2 exp ln log floor ceil round min max hypot`. **Trigonometry is in degrees.**
+
+**A chosen number**: `if(COND, A, B)` is `A` where `COND` holds and `B` where not, `COND` a
+`when`'s comparisons (1.7) — `pitch := if(n > 12, 2mm, 3mm)`, or a copy's own number in one
+statement, `a distance(if(k == 0, 5mm, 7mm * k)) q` in `repeat 3 as k`. It is decided before the
+solve: a condition reading an unknown is E103. Both sides agree in dimension (`if(c, w, 10)`,
+`w` a length, is E103: write `10mm`). In a traced curve's formula it may read only the
+document's numbers, not the component's formals — choose at the call, `Lobe(c, a: if(…))`.
 
 **Values.** `w := 60` is worked out while elaborating. A value may read others written anywhere in
 its body or an enclosing one; one defined in terms of itself is E041. A dimension reads names and
@@ -574,11 +583,14 @@ at all where it does not, decided over the numbers in scope before the solve: co
 `<=`, `>`, `>=`, `==`, `!=`) of two numbers of one dimension — `relief > 0mm`, never `relief > 0`
 (E103) — joined by `and`, `or` and `not`. Two drawn things compare by **identity**: `a != b`
 holds where the names stand for different things (a formal is what its call gave), and `c in B`
-where `c` is one of the faces `B` names (1.14). There is no copy: what the body declares keeps
+where `c` is one of the faces `B` names (1.14); `a meets b` where two faces of a solid share an
+edge or a corner, read where the drawing is seeded (a pair it reads apart that the solve brings
+together is E080). There is no copy: what the body declares keeps
 its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
 an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
-index, a trailing joint. `when` is the one conditional: write a switch as `when flag == 1 { … }`,
-never `repeat flag { … }`, and two as `when a == 1 and b == 1`.
+index, a trailing joint. `when` is the one conditional of statements: write a switch as `when
+flag == 1 { … }`, never `repeat flag { … }`, and two as `when a == 1 and b == 1`; a number that
+differs by case is one statement, `if(flag == 1, 3mm, 5mm)` (1.6).
 
 ```
 unit mm
@@ -684,6 +696,35 @@ holes.sv: solved
   #22.2.hole.r = 4
 ```
 
+**Repetition over a list.** A pattern that stands on no grid is said as the places it is at. A
+list is values in order, in brackets — each item a number, a vector or a group in braces — and
+`repeat h in LIST { … }` makes a copy per item, `h` that copy's item: a number read as `h`, or a
+group of numbers read by member (`h.x`, `h.y`) and handed on whole (`Hole(h)`). The list may be
+written in place (`repeat d in [2mm, 3mm] { … }`); `as i` is the index as before, and `cycle h in
+LIST` closes. A list is a group whose members are its items by place, so it may be a group's member
+(`board := {holes: [...]}`, read as `board.holes`), imported (`use boards (uno_holes)`) and read in
+a definition's body as the file's constants are. An Uno's four mounting holes:
+
+```
+unit mm
+use std (coords)
+
+top_y := 48.26mm
+uno_holes := [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]
+
+in std.top {
+  repeat h in uno_holes {
+    c := point
+    c coords(du: h.x, dv: h.y) std.top
+    hole := radius(1.6mm) circle(center: c)
+  }
+}
+```
+
+Refused: an item that is no value (E103, at the item), a group of labelled members run over as a
+list (E103), a body declaration named as the item (E001), a labelled item or a `hint` in a list (a
+syntax error). A `ring` runs over no list.
+
 **A face's walk, and walks in step.** `repeat e in f` runs over a face's edges in walk
 order — a chain it is made of, the edges it names, or for a face of corners (`face(a, b, c, ->
 close)`) the straight run from each corner to the next, `e.p1` the corner it leaves. `cycle (ea,
@@ -733,7 +774,11 @@ t0 := Rung(l0, r0, len: 50)
   drawn with its crank free so (2.10). Seed one in its place: `Crank(o, datum, theta: hint(30deg))`.
 - **An instance's numbers are read by its name**: every numeric formal, bound or not, is
   `inst.formal` — `p distance(ball.r) ball.center` — and travels with an instance passed as a
-  `group`. Values a body declares are not read this way.
+  `group`. So is every number its body defines: `shield.top` is `Shield`'s
+  `top := u.pcb_t + …` worked out from what that call gave it, in a definition
+  (`shield_z := uno_z + shield.top`), a dimension or another call, written anywhere in the body;
+  a path reaches through an instance the body writes (`st.base.top`). Write the formula once, in
+  the component, and read it: a copy outside is a second formula to drift.
 - **Scope is closed.** A body sees only its formals and its own declarations: geometry and the
   document's unknowns must be passed in. Component definitions and built-in functions remain
   callable. Repetition blocks share the enclosing scope.
@@ -1246,12 +1291,16 @@ where it is false the claim is not made at all.
 
 Three claim words apply only to solids: `claim bore inside stock`, `claim disc clear(2mm) cyl`,
 `claim head fits(0.15mm) trap`. The report gives the measurement, and one within the faceting of a
-round face is **undecided**:
+round face is **undecided**. One that does not hold says where to look: the face of each solid by
+its path, and the point where they come nearest — or, overlapping, the deepest of their common
+material:
 
 ```
   claim bore inside stock — undecided, measured 0 (interval [-0.0006000000000000001, 0.0006000000000000001])
+    nearest at (24.9993, 10, 14.9182), between bore.k and stock.far
     unresolved: containment is within curved-faceting uncertainty
   claim bore clear(2mm) stock — refuted, measured -9.999665339174008 (interval [-10.00026533917401, -9.999065339174006])
+    deepest at (20, 0, 15), between bore.k and stock.far
 ```
 
 **A bound** is a dimension's number that adds no row: it says which of the drawing's solutions is
@@ -1951,6 +2000,53 @@ the set's surface is (`heel := std.Sphere(apex)`, `M distance(w / 2, side: insid
 solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
 `Blank`).
 
+#### Developable panels
+
+**A sheet cut flat and bent to shape comes off flat only where it is developable**: ruled, with one
+tangent plane along each straight ruling. Two words of `std` say it — the panel, a set, and its
+pattern, a figure — and the core recognises them and builds both exactly:
+
+```
+use std
+panel := std.Developable(lower, upper)                     // the set: what the panel is
+skin := { q | q distance(<= 2mm, side: outside) panel }    // the sheet, 2 thick: its band
+reducer := solid(skin)
+flat := std.Development(panel, s, d: 1mm) in blank         // its neutral layer, laid flat
+flat.f coincident corner                                   // a figure with three freedoms,
+line(flat.f, flat.g) parallel edge                         // placed by relations
+```
+
+- **The rulings are solved, not paired.** `Developable(a, b)`'s body puts its point on the ruling
+  between `m` on `a` and `n` on `b` where one plane touches both (`T tangent(at: m) a`, `T
+  tangent(at: n, sense: same) b`, `p coincident(t in (0, 1)) line(m, n)`). Rails may be lines,
+  arcs, circles, splines (in space too), curves — `std.Ellipse` drawn in a tilted plane — or named
+  chains, closed or open.
+- **Why `sense: same`.** Through a tangent of `a` two planes touch `b`: the one `b` runs through the
+  way `a` does, and the crossing one, a bow-tie that cuts through itself. The body excludes it; no
+  seed decides.
+- **Corners and ends fan.** At a chain's corner the plane supports it between its two sides, so a
+  rectangle to a round is four planar triangles and four cones about the corners; where one rail
+  runs on past the other's end, the end fans (a dory's stem and transom).
+- **Sides.** The outside is the side `T`'s normal points to, `a′ × (n − m)`: give the rails the other
+  way round to turn it — and to turn the pattern face down. A duct whose lower rim runs
+  counter-clockwise seen from above, with the upper rim second, has its outside out.
+- **The sheet is the band** `distance(<= t, side: outside)` from the panel, measured along its
+  normal, so square at its edges; `solid(…)` of it reports volume, faces (`inside`, `outside`, `a`,
+  `b`, `start`, `end`) and bounds; STEP refuses it, once.
+- **The pattern.** `std.Development(S, s, d: d) in P` lays the layer `d` out (the sheet's middle:
+  half its thickness) in plane `P`, outside up, from the ruling through `s` on `S.a` — a band's
+  seam. It draws `flat.a`, `flat.b` (curves of `P`), `flat.f`, `flat.g` (the home ruling's ends) and
+  the end rulings `flat.start`, `flat.end` (a band's `flat.seam`, `flat.seam_end`). It has **three
+  freedoms** until relations place it; `--where flat` prints each rail's laid length, the pattern's
+  area and its box, and `--where panel` its rulings, fans and whether it closes.
+- **Refused, once (E080), where `a` is**: rulings that fold (one rail would run back — a rail with an
+  S in it seen along the rulings, where the panel turns flat), a ruling along a rail, no root of
+  `sense: same`, a band that does not come round, one rail closed and one open. Choose rails that
+  turn one way: a hull's chine and sheer each in a plane and convex in it never fold.
+
+The series is [`rust/examples/developable/`](../rust/examples/developable/), its README in reading
+order; `dory_panel.svd` is the cut file.
+
 #### Materials
 
 A material is declared once and named by the solids made of it:
@@ -2052,6 +2148,7 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 | `meeting := { q \| q coincident a.surface; q coincident b.surface; q inside crease.ends }` | where the surfaces meet, short of where the edge ends |
 | `repeat a in A { repeat b in B { when b != a { … } } }` | a copy per pair of faces, each made where the two differ |
 | `when c in B and c != a { … }` | made where `c` is one of `B`'s faces and not `a` |
+| `when b != a and b meets a { … }` | made where the two faces share an edge or a corner |
 | `taken := solid(run)`, `taken cut A.body` | a solid of a set, cut from the body `A`'s faces are of |
 
 `.ends`, `.surface` and `.body` are members only past a set or a solid where nothing declared
@@ -3311,6 +3408,8 @@ land against the shore is an arc of a circle, `R sin α = 50`, `2Rα = 130`, to 
 8. In space, draw each thing in the plane that shows it true, relate across planes with ordinary
    words, build a plane the solve turns on axes, and check with `--where PLANE`.
 9. Add `claim`s for the consequences the figure was drawn to show.
+   A sheet cut flat and bent is `std.Developable(a, b)`, its band `distance(<= t, side: outside)`
+   and its pattern `std.Development(panel, s, d: t / 2) in plane`, placed by two relations.
 10. Build solids from the solved profiles, then write their presentation in a `.svd`.
 
 The worked corpus is `rust/examples/`, each file headed with its purpose. Read `rect_fillets.sv`
@@ -3323,6 +3422,7 @@ first; `gear_trace.sv` is the deepest; `engine.sv` and its `engine/` modules are
 | traced mechanisms and curves | [Jansen](../rust/examples/jansen.sv), [Peaucellier](../rust/examples/peaucellier.sv), [gear trace](../rust/examples/gear_trace.sv) |
 | curves stated by their rates | the [rates](../rust/examples/rates/) series: a tractrix drawn and written in place, a clothoid transition, a chain shot to its far end, a pursuit refused at the capture, a geodesic on a cone |
 | repeated features and components | [flange](../rust/examples/solid_flange.sv) |
+| sheets cut flat and bent | the [developable](../rust/examples/developable/) series: a frustum's sector, duct adapters, a mitre template, a rectangle to a round, a dory's strake on its plywood |
 | lofts and sweeps along a path | [elbow](../rust/examples/solid_elbow.sv), [reducer](../rust/examples/solid_loft.sv), [bend](../rust/examples/solid_bend.sv), [square to diamond](../rust/examples/solid_twist.sv), and the [lofts](../rust/examples/lofts/) series: a chain as a path, twist and scale laws, threads and springs, several sections on rails, two faces drawn apart, a section held to its rails |
 | a reusable solid with a preview | [cylinder component](../rust/examples/vtwin/components/cylinder.sv), [its drawing](../rust/examples/vtwin/cylinder.svd) |
 | views and projection | [bracket](../rust/examples/bracket.sv) |

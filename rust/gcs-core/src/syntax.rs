@@ -29,7 +29,7 @@ pub use scenario::{Item, ItemKind, LoadText, RequirementText, Scenario};
 pub use symbols::{symbols, Occurrence, Symbol, SymbolKind, Symbols};
 pub use source::{line_col, Module, Name, Program, StmtId, SynErr, Use, MAX_STMTS, MAX_TEXT};
 pub use words::{equal_kind, is_name, reserved_word};
-pub use written::{OpArg, RateOf, Written};
+pub use written::{OpArg, RateOf, Written, ARG_RATES, WITHIN};
 pub use crate::vocab::{camel, num, one_of, snake, BodyWord, Cmp, Span};
 
 use crate::constraints::{CKind, Fixity};
@@ -622,6 +622,14 @@ pub enum InstVal {
     Hint(String, Span),
 }
 
+/// Whether a group's members are a list's items (`holes := [(0, 0), (4, 2)]`, §12.10): each
+/// labelled by its place, `0`, `1`, …, a label the source cannot write.  An empty group is a
+/// group.
+pub fn is_list(fields: &[InstArg]) -> bool {
+    !fields.is_empty() && fields.iter().enumerate()
+        .all(|(k, f)| f.label.as_ref().is_some_and(|l| l.text == k.to_string()))
+}
+
 /// A number defined by name: `w := 60`, a value worked out while elaborating, or — under the
 /// word `param` — one of the document's **inputs** (§6.3): `param bore: Length := 50mm`, which a
 /// host may give another value, or `param beta: Angle hint(30deg)`, which nothing binds and is
@@ -693,8 +701,12 @@ pub struct Block {
     /// Where `count` is written, for what is said about it.
     pub head: Span,
     /// `repeat e in rack.profile { … }` — one copy per edge of a named chain, in traversal order,
-    /// with `e` naming that copy's edge (§6.6, §12).
+    /// with `e` naming that copy's edge (§6.6, §12).  A list a name stands for (`repeat h in
+    /// holes`) is written so too, and told from a chain where the block is walked.
     pub over: Option<EdgesOf>,
+    /// `repeat h in [(0mm, 0mm), (12mm, 4mm)] { … }` — one copy per item of a list written in
+    /// place, `h` that copy's item (§12.10).
+    pub items: Option<Items>,
     /// `as i` — the index, available to every expression inside.
     pub binder: Option<Name>,
     pub body: Vec<Stmt>,
@@ -712,6 +724,14 @@ pub struct Block {
     /// name one the source cannot write) that makes no copies — the flattener builds the image
     /// instead (`flatten::image`).  `None` for every block written as one.
     pub image: Option<FaceImage>,
+}
+
+/// A list written in place as what a block runs over (`Block::items`): the name each copy calls
+/// its item, and the items, labelled by place as a list's members are (`0`, `1`, …).
+#[derive(Clone, Debug)]
+pub struct Items {
+    pub var: Name,
+    pub list: Vec<InstArg>,
 }
 
 /// What a face carried by a map is (`Block::image`, #357): the image's name, the word and its

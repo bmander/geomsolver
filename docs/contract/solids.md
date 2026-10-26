@@ -133,7 +133,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   and a recipe reaching a solid of a binding several share takes its B-rep from `exact_solid`,
   moved into its place (`exact::build`, `Sketch::shared`), so a union of a ring's instances builds
   one.  A key holds only while it does (`Sketch::shares`): a solid reaching one its instance did
-  not make (a tool joined from outside) or a swept one is its own, a solid redefined where it
+  not make (a tool joined from outside) or a swept one is its own — but to the exact export, where
+  a closed instance's swept body whose motions are the instance's own is its binding's first
+  unmirrored solid's build placed, built once a drawing and tolerance (`Sketch::bound_where`,
+  `Caches::swept_exact`, `brep::export::exact`;
+  `swept_speed::two_closed_instances_of_a_swept_gear_are_built_once_and_placed`) — a solid redefined where it
   stands (`Sketch::redefine`: `join_body`, `set_prism`, `set_turn`, a stratum's body) loses its
   stamp, a refusal of the representative's is asked of the copy itself, and
   `graft` drops the stamp.  Keyed by provenance, never by content: equal content is the tests'
@@ -215,6 +219,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   claim decided within the faceting is **undecided**, a third answer.  The implicit min/max
   reading of a term is only a lower bound for a difference, so it culls; the answer is piece
   against piece.
+  **And where** (`clear::Nearest`): the face of each solid by its public path
+  (`vocab::public_path`: `near_screw[1].post.rim`) and a world point on each — where two apart
+  come nearest, of pairs as near the two facing most squarely; one point where boundaries touch or
+  cross; and where material is common, the centre of the deepest ball `overlap` found
+  (`deepest`), with the face of each nearest it.  A sweep that held the moving operand still says
+  its points where the motion stands them (`GeometricEvidence::moved`).  The text says it under a
+  claim refuted or undecided, the JSON (`nearest`) always.  `solid_claim.rs`'s
+  `a_refuted_claim_names_the_faces_and_where`, `a_refuted_sweep_says_where_at_its_counterexample`.
   **A swept operand is measured from its exact B-rep** where this kernel builds one and the
   claim reads the drawing's pose (one pose, or a roll moving an operand rigidly): the judge
   supplies it (`brep::export::supply_exact_of`) before reading, as a drawing reads an object's,
@@ -257,6 +269,30 @@ placement carries inside the blank; CLI test readers zero the offset.
   *objects* (`overview::objects`) — a bore is a hole in a part, not a part — and glTF holds a
   scene, so it need not be told which part of an assembly to be.  `solventc --gltf`,
   `File ▸ Export solid (glTF)` / `(STL)`.
+- **The objects leave as one STEP assembly** (`brep::export::assembly`, `step::write_assembly`):
+  AP214's product structure, a root product named for the document, **a part per object** and a
+  sub-assembly per step of the objects' names as a reader writes them (`vocab::public_path`:
+  `wheel.hub` is `hub` in `wheel`, `p[0].body` a ring's copy), each sub-assembly placed at its
+  parent's axes.  **The objects of one binding are one part, built once** and used where each
+  instance stands: a solid a closed instance made is written in its instance's frame
+  (`Sketch::binding_pose`, orthonormal, in millimetres) and used placed by it, so the part is the
+  representative's build (`Sketch::bound`) moved into that frame, named for the first object it
+  is (the representative may not be in the file).  A representative that is
+  mirrored publishes its build reflected, which is not the binding's own evaluation, so the
+  part is then the first unmirrored object of the binding's; **a mirrored object is a part of its
+  own**, its reflection in its solid and its placement proper (STEP places by right-handed axes).
+  Any other object is written where it stands and used at the root's axes.  A part is written
+  once however often it is used: each use a next assembly usage occurrence, its shape the
+  transformation carrying the child's axes onto its placement, each an item of its
+  representation.  The file is parsed back against the structure it was written from
+  (`step_check::verify_assembly`): each product by name, a part's one solid walked as a
+  single-solid file's is, every face, edge and vertex one part's, and every use one of the
+  structure's with its placement.  One part refused refuses the file, said at that solid's
+  statement.  The core's kernel writes it (`solventc --step-assembly`, `--solid` narrowing it to
+  the objects under a name); OCCT, which writes one solid, is refused it.  `tests/step_assembly.rs`
+  is the gate (`every_object_is_its_part_carried_where_it_stands`: each object's part, carried
+  down the tree, has the object's own build's volume and bounds, and each one's every vertex lies
+  on the other's boundary).
 - **A mesh is welded, and grouped by face** (`mesh.rs`).
   **Welding** is a T-junction fix and not a vertex merge: `weld` puts the vertices lying on an
   edge's interior into it.  A hash **cell** is sized to the object (`scale / 128`) while the
@@ -698,3 +734,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   the section puts what it makes *on* that plane (the disc's and plate's sections are mid-planes).
   A **hex pocket about a radial line** (`parts.Grub`) is neither sweep nor turn, so it stays four
   hidden lines; a feature drawn as a *centreline* (the exhaust vents) is told its width, `wch`.
+
+**A sheet's band is a solid of its own route** (#645, [developables.md](developables.md)).
+`region::form` reads a band term first (`Form::Sheet`), before a meridian or general position, and
+`Route::Sheet` is the band faceted from its panel's rulings (`solid::sheet::Band::primitive`,
+`Caches::sheet`), so volume, area, faces, bounds, glTF and STL read it as any evaluated solid; the
+recipe refuses it once (`cad.rs`: its exact ruled walls are not yet written to STEP), and the field
+refuses it (`field/document.rs`). Its refusals are the panel's, in the core's words, said at the
+solid once (`solid::refusal`); the messages carry no solid name, which `refusal`'s callers add.

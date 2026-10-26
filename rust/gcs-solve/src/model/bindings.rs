@@ -75,8 +75,15 @@ impl Sketch {
     /// representative.  A mirrored solid (#578) is always placed: its representative's own
     /// evaluation, which may be its own, carried where its preimage stands and reflected there.
     pub fn bound(&self, i: usize) -> Option<Bound> {
+        self.bound_where(i, false)
+    }
+
+    /// `bound`, a closed instance's swept solid placed too where `swept` (`shares_where`): what
+    /// the exact export asks (`brep::export::exact`), since a sweep's own build, which no field
+    /// meshes, is as much a function of the instance's definition and arguments as any solid's.
+    pub fn bound_where(&self, i: usize, swept: bool) -> Option<Bound> {
         let b = self.solids.get(i)?.binding.as_ref()?;
-        let rep = self.peers(i).and_then(|mut p| p.next()).filter(|&j| j < i).unwrap_or(i);
+        let rep = self.peers_where(i, swept).and_then(|mut p| p.next()).filter(|&j| j < i).unwrap_or(i);
         let mirror = match b.mirror {
             Some(_) => Some(self.mirror_of(i)?),
             None if rep == i => return None,
@@ -99,20 +106,27 @@ impl Sketch {
     /// Whether solid `i` is one of several solids of one binding: what another solid's recipe
     /// then asks `exact_solid` for, the representative's B-rep built once and placed.
     pub fn shared(&self, i: usize) -> bool {
-        self.peers(i).is_some_and(|mut p| p.next().is_some())
+        self.shared_where(i, false)
     }
 
-    /// The other solids of solid `i`'s binding, by index, where it holds for `i` (`shares`).
-    fn peers(&self, i: usize) -> Option<impl Iterator<Item = usize> + '_> {
+    /// `shared`, its swept solids too where `swept` (`bound_where`).
+    pub fn shared_where(&self, i: usize, swept: bool) -> bool {
+        self.peers_where(i, swept).is_some_and(|mut p| p.next().is_some())
+    }
+
+    /// The other solids of solid `i`'s binding, by index, where it holds for `i`
+    /// (`shares_where`).
+    fn peers_where(&self, i: usize, swept: bool) -> Option<impl Iterator<Item = usize> + '_> {
         let key = &self.solids.get(i)?.binding.as_ref()?.key;
-        self.shares(i).then(|| (0..self.solids.len()).filter(move |&j| {
-            j != i && self.solids[j].binding.as_ref().is_some_and(|c| c.key == *key) && self.shares(j)
+        self.shares_where(i, swept).then(|| (0..self.solids.len()).filter(move |&j| {
+            j != i && self.solids[j].binding.as_ref().is_some_and(|c| c.key == *key) && self.shares_where(j, swept)
         }))
     }
 
     /// Whether solid `i`'s evaluation is its binding's: every solid it reaches was made by its
-    /// own instance, and nothing it reaches is meshed elsewhere.
-    fn shares(&self, i: usize) -> bool {
+    /// own instance, and nothing it reaches is meshed elsewhere — but where `swept`, a sweep of
+    /// the instance's own (its motion the instance's), whose exact build no field meshes.
+    fn shares_where(&self, i: usize, swept: bool) -> bool {
         let Some(at) = self.solids[i].binding.as_ref().map(|b| &b.at) else { return false };
         let mut pending = vec![i as u32];
         let mut seen = std::collections::BTreeSet::new();
@@ -122,7 +136,12 @@ impl Sketch {
             }
             let Some(s) = self.solids.get(j as usize) else { return false };
             let own = s.binding.as_ref().is_some_and(|b| b.at == *at);
-            if !own || matches!(s.def, SolidDef::Swept { .. }) {
+            let alone = match s.def {
+                SolidDef::Swept { motion, .. } => !swept || !self.motions.get(motion as usize)
+                    .is_some_and(|m| m.name.starts_with(at.as_str())),
+                _ => false,
+            };
+            if !own || alone {
                 return false;
             }
             match crate::solid::evaluation_operands(self, j as usize) {

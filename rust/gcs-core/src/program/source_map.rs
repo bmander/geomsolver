@@ -51,6 +51,9 @@ pub struct SourceMap {
     /// its names do and which of the program's components it is — what a reader asking what one
     /// instance made, and of which definition, reads (`boundary`).
     pub instances: Vec<Instanced>,
+    /// Every pair of faces a `when … meets …` read apart where the drawing is seeded (#625), to
+    /// be read again where it is solved (`program::meets`).
+    pub(crate) apart: Vec<crate::flatten::Apart>,
     /// Each number a `fix` held, with the path of the statement holding it: whose `fix` it was.
     /// A gauge makes no constraint, so no `of_constraint` site says so.
     pub holds: Vec<(u32, InstPath)>,

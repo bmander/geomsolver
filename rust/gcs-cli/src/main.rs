@@ -54,6 +54,9 @@ diagnosed, and the report says where it stands.
                         value the document names, in its unit (repeatable; the whole table in
                         --json when none is given)
     --no-diagnose       solve only; skip the diagnosis
+    --no-check          judge no claim about solids (clear, fits, inside), so no solid is built
+                        for one: the report says how many were left unjudged.  The claims over
+                        values and over the geometry, which build nothing, are judged still
     --lint              also say where the document's own text drifts from the language's style
                         (W201-W206: a pun, a bare component statement, an asserting component, a
                         deep path, a presentation flag, a group threaded unread), and (W207) a
@@ -74,6 +77,11 @@ diagnosed, and the report says where it stands.
                         --solid: every output of a run reads the one build of a solid)
     --step PATH         write an analytic STEP solid (by the kernel --kernel names); beside an
                         --stl with no --solid between them, the same solid's
+    --step-assembly PATH
+                        write every object as one STEP assembly (by the core's kernel): a part
+                        each, the objects of one binding one part placed where each instance
+                        stands, a sub-assembly each step of their names; --solid narrows it to
+                        the objects under a name
     --kernel NAME       rust (default) or occt: which kernel builds a solid's STEP and STL (rust,
                         the core's own B-rep, a swept body of the generating class included;
                         occt, where the build has it, kept as the oracle)
@@ -126,11 +134,14 @@ Examples:
     solventc --json part.sv                   the same report, structured
     solventc part.sv --where hinge            the numbers under one name
     solventc drive.sv --where torque          a value, in its unit: torque = 0.0864 N·m
+    solventc bot.sv --no-check                the layout, solved, its solids' claims unjudged
     solventc part.sv --png part.png           look at it, as the workspace shows it
     solventc part.sv --stl part.stl --solid body
                                               a solid, for a printer
     solventc bot.sv --stl wheel.stl --solid wheel --stl frame.stl --solid frame
                                               two solids, each built once
+    solventc bot.sv --step-assembly bot.step
+                                              every part, as one assembly for a CAD system
     solventc part.sv --png top.png --view top --png iso.png --view isometric
                                               two pictures, the solids built once
     solventc part.sv --png cut.png --section front
@@ -174,6 +185,8 @@ struct Opts {
     /// a file something else reads.
     wanted: Vec<String>,
     no_diagnose: bool,
+    /// `--no-check`: the claims about solids left unjudged, said by how many.
+    no_check: bool,
     /// `--lint`: the drift lint's warnings (`program::drift`) beside elaboration's.
     lint: bool,
     allow_unsolved: bool,
@@ -210,6 +223,7 @@ impl Default for Opts {
             json: false,
             wanted: Vec::new(),
             no_diagnose: false,
+            no_check: false,
             lint: false,
             allow_unsolved: false,
             output: None,
@@ -246,6 +260,8 @@ enum Writes {
     /// `--stl PATH` and `--step PATH`, one solid built once for both: the output of a drawing
     /// that is not a picture, and the reason a printer can be given a part at all.
     Export { stl: Option<String>, step: Option<String> },
+    /// `--step-assembly PATH` — the objects as one STEP product structure, a part each.
+    Assembly(String),
     /// `--gltf PATH` — the object as a viewer opens it, every face named.
     Gltf(String),
     /// `--png PATH` — the objects as the workspace shows them, drawn without a page (#541), from
@@ -268,7 +284,7 @@ impl Output {
     fn paths(&self) -> Vec<&str> {
         match &self.writes {
             Writes::Export { stl, step } => stl.iter().chain(step).map(String::as_str).collect(),
-            Writes::Gltf(p) | Writes::Png(p) => vec![p.as_str()],
+            Writes::Assembly(p) | Writes::Gltf(p) | Writes::Png(p) => vec![p.as_str()],
         }
     }
 }
@@ -378,6 +394,10 @@ fn main() -> ExitCode {
                 Some(w) if w.is_finite() && w > 0.0 => opts.width = w,
                 _ => return misuse("--width needs a page width in pixels"),
             },
+            "--step-assembly" => match args.next() {
+                Some(p) => opts.outputs.push(Output::new(Writes::Assembly(p))),
+                None => return misuse("--step-assembly needs a path"),
+            },
             "--gltf" => match args.next() {
                 Some(p) => opts.outputs.push(Output::new(Writes::Gltf(p))),
                 None => return misuse("--gltf needs a path"),
@@ -450,6 +470,7 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
+            "--no-check" => opts.no_check = true,
             "--lint" => opts.lint = true,
             "--progress" => said = Some(watch::Say::Everything),
             "--no-progress" => said = Some(watch::Say::Nothing),
@@ -474,6 +495,7 @@ fn main() -> ExitCode {
     if let Some(o) = opts.outputs.first().filter(|_| paths.len() != 1) {
         let flag = match o.writes {
             Writes::Export { .. } => "--stl or --step",
+            Writes::Assembly(_) => "--step-assembly",
             Writes::Gltf(_) => "--gltf",
             Writes::Png(_) => "--png",
         };
@@ -482,11 +504,12 @@ fn main() -> ExitCode {
     let native = opts.outputs.iter().any(|o| match &o.writes {
         Writes::Export { stl, step } =>
             step.is_some() || (stl.is_some() && !opts.refine && opts.native_stl),
+        Writes::Assembly(_) => true,
         _ => false,
     });
     if opts.tolerance.is_some() && opts.measure.is_empty() && !native {
         return misuse("--tolerance holds a native export (or a measurement) to it; give --step, \
-            --stl by the kernel's export, or --measure");
+            --step-assembly, --stl by the kernel's export, or --measure");
     }
     if opts.output.is_some() && paths.len() != 1 {
         return misuse("--output writes one file, so it takes one document");
@@ -689,7 +712,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
         .then(|| progress::during(diagnosing, || {
-            diagnose(&mut sk, DiagnoseOptions { settled: solved, ..DiagnoseOptions::default() })
+            diagnose(&mut sk, DiagnoseOptions {
+                settled: solved, solid_claims: !opts.no_check, ..DiagnoseOptions::default()
+            })
         }));
     // read at the solved pose, before anything below builds or exports
     let components = opts.components.then(|| gcs_core::boundary::classify(&e, &sk));
@@ -775,6 +800,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             for v in &d.solid_claims {
                 println!("  {}", gcs_core::report::solid_claim_text(v));
             }
+            if opts.no_check && !sk.solid_claims.is_empty() {
+                println!("  {}", gcs_core::report::solid_claims_unjudged_text(sk.solid_claims.len()));
+            }
             // each meshing's contact over its phase, in the core's words (#283)
             for i in 0..sk.meshings.len() {
                 println!("  {}", gcs_core::report::meshing_text(&sk, i));
@@ -831,11 +859,16 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     // two of them read is built once (#592).  The pictures read a copy of it given what each
     // export built: an export's own build is the same solid as the memo's, its faces named by its
     // recipe, which a picture never reads and every other output does
-    let exports: Vec<&Output> =
-        opts.outputs.iter().filter(|o| matches!(o.writes, Writes::Export { .. })).collect();
+    let exports: Vec<&Output> = opts.outputs.iter()
+        .filter(|o| matches!(o.writes, Writes::Export { .. } | Writes::Assembly(_))).collect();
     let seen = (opts.pictured() && !exports.is_empty()).then(|| sk.clone());
     for o in exports {
-        if !export(&sk, &mut e, opts, o, seen.as_ref(), solved) {
+        let written = match &o.writes {
+            Writes::Assembly(path) =>
+                assembly(&sk, &mut e, s, opts, path, opts.solid(&o.own), seen.as_ref(), solved),
+            _ => export(&sk, &mut e, opts, o, seen.as_ref(), solved),
+        };
+        if !written {
             code = 1;
         }
     }
@@ -850,7 +883,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     for o in &opts.outputs {
         let solid = opts.solid(&o.own);
         match &o.writes {
-            Writes::Export { .. } => {}
+            Writes::Export { .. } | Writes::Assembly(_) => {}
             Writes::Gltf(path) => {
                 // a named solid, or **every object the document has** — glTF holds a scene, so
                 // unlike an STL it need not be told which one part of an assembly to be
@@ -936,9 +969,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         opts.json.then(|| {
             let components = components.as_ref()
                 .map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json).collect()));
-            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
-                     positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null),
-                     &opts.wanted)
+            let mut doc = doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
+                                   positions.unwrap_or(Json::Null),
+                                   components.unwrap_or(Json::Null), &opts.wanted);
+            // the claims `solidClaims` leaves out, so an empty list is not read as none stated
+            if opts.no_check && d.is_some() && !sk.solid_claims.is_empty() {
+                doc.set("solidClaimsUnjudged", Json::Int(sk.solid_claims.len() as i64));
+            }
+            doc
         }),
     )
 }
@@ -952,13 +990,17 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
     let Writes::Export { stl, step } = &o.writes else { return true };
     let (mut stl, mut step, solid) = (stl.clone(), step.clone(), opts.solid(&o.own));
     let mut ok = true;
+    // a developable panel's band has no exact walls to write (#645): its STL is its faceting,
+    // exact to its rulings, whatever kernel would write a solid's; its STEP is refused once below
+    let faceted = pick_solid(sk, solid).is_ok_and(|i| gcs_core::solid::sheet::is_band(sk, i));
+    let native_stl = opts.native_stl && !faceted;
     // A body with swept cuts is built only when every sweep is in the generating class
     // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
     // nothing is written, so an earlier output stays as it was. The class is what the native
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
     // A native export admits the body itself, beside the first of its construction.
-    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
+    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && native_stl && !opts.refine));
     let mut body = None;
     if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
         if let Ok(i) = pick_solid(sk,solid) {
@@ -986,7 +1028,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
         { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); ok = false; }
         stl = None;
     }
-    if step.is_some() || (stl.is_some() && opts.native_stl) {
+    if step.is_some() || (stl.is_some() && native_stl) {
         match (solved,pick_solid(sk,solid)) {
             (false,_) => {
                 let message = "native STEP/STL export requires a solved model".to_string();
@@ -1005,7 +1047,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
                 let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(sk,i));
                 match tolerance(sk,opts) {
                     Err(message) => { eprintln!("solventc: {message}"); ok = false; }
-                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t,seen) {
+                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| native_stl),t,seen) {
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(e,i,refusal);
@@ -1015,7 +1057,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
             }
         }
     }
-    if let Some(path) = stl.as_ref().filter(|_| !opts.native_stl) {
+    if let Some(path) = stl.as_ref().filter(|_| !native_stl) {
         // the mesh is `gcs_core::mesh`'s for `svg`'s reason: a printer's file and a drawing are
         // two readings of one boundary, and a second walk would be a second object
         match pick_solid(sk, solid) {
@@ -1222,6 +1264,49 @@ fn tolerance(sk: &Sketch,opts: &Opts) -> Result<Option<gcs_core::solid::export::
     let Some((value,per)) = opts.tolerance else { return Ok(None) };
     let per = match per { Some(p) => p, None => gcs_core::solid::cad::millimetres(sk) };
     gcs_core::solid::export::Tolerance::new(value*per).map(Some)
+}
+
+/// `--step-assembly PATH` (`cad::brep::export_assembly`): the objects under `solid`, else every
+/// object, as one assembly named for the document; whether it was written. A refusal is said in
+/// the core's words and, where one solid's build refused, recorded at its statement.
+fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str, solid: Option<&str>,
+            seen: Option<&Sketch>, solved: bool) -> bool {
+    let fail = |e: &mut Elaborated, message: String| {
+        eprintln!("solventc: {message}");
+        e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
+            Default::default(), None, message));
+        false
+    };
+    if !solved {
+        return fail(e, "native STEP/STL export requires a solved model".into());
+    }
+    if !cad::rust_kernel() {
+        return fail(e, "--step-assembly is written by the core's kernel; --kernel occt writes one solid \
+            (--step)".into());
+    }
+    let objects: Vec<usize> = gcs_core::overview::objects(sk).into_iter()
+        .filter(|&i| solid.is_none_or(|n| under(&sk.solids[i].name, n)
+            || under(&gcs_core::vocab::public_path(&sk.solids[i].name), n))).collect();
+    if objects.is_empty() {
+        return fail(e, match solid {
+            Some(n) => format!("no object called `{n}`, or under it, to write"),
+            None => "this document has no solid to write".into(),
+        });
+    }
+    let name = std::path::Path::new(&s.name).file_stem().and_then(|n| n.to_str()).unwrap_or("assembly");
+    let name = match solid { Some(n) => format!("{name}.{n}"), None => name.to_string() };
+    let t = match tolerance(sk, opts) {
+        Ok(t) => t,
+        Err(message) => { eprintln!("solventc: {message}"); return false }
+    };
+    match cad::brep::export_assembly(sk, &objects, &name, path, t, seen) {
+        Ok(()) => true,
+        Err((Some(i), refusal)) => { refused(e, i, refusal); false }
+        Err((None, refusal)) => {
+            cad::progress::refused(refusal.stage);
+            fail(e, refusal.to_string())
+        }
+    }
 }
 
 /// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it

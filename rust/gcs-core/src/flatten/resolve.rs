@@ -1224,7 +1224,7 @@ impl<'a> Walk<'a> {
         alias: &dyn Aliases,
     ) -> Option<Vec<String>> {
         let (abs, rest) = self.look(alias).find(r, sc)?;
-        let all = self.faces.given.get(&abs)?;
+        let all = &self.faces.given.get(&abs)?.paths;
         let at = sc.prefix();
         Some(all.iter().filter(|f| f.listed_by(&rest, at)).map(|f| format!("{abs}.{}", f.text())).collect())
     }
@@ -1319,8 +1319,9 @@ impl<'a> Walk<'a> {
                     Code::E103,
                     r.span,
                     format!(
-                        "`{}` is not a named chain nor a face: `{} {} in …` runs over the edges \
-                         of a chain written `name := line -> …`, or of a face",
+                        "`{}` is not a named chain, a face nor a list: `{} {} in …` runs over \
+                         the edges of a chain written `name := line -> …` or of a face, or the \
+                         items of a list, `name := [a, b, …]`",
                         ref_text(r),
                         if b.kind.wraps() { "cycle" } else { "repeat" },
                         over.var.text
@@ -1391,20 +1392,19 @@ impl<'a> Walk<'a> {
             return;
         }
         // a declaration of the body called what each copy calls its edge would hide it
-        for (var, _) in &named {
-            if b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| n.text == var.text)) {
-                self.err(Code::E001, var.span, format!("`{}` is declared twice", var.text));
-                return;
-            }
+        if named.iter().any(|(var, _)| self.declares(b, var)) {
+            return;
         }
         let outer = std::mem::take(&mut self.out);
         self.aside.held = outer.len();
+        // what the copies make is the document's statement's that met the block
+        self.faces.at = p.at;
         let b = b.clone();
         let vars: Vec<Name> = named.iter().map(|(v, _)| (*v).clone()).collect();
         let edges: Vec<(&Name, &[Link])> =
             vars.iter().zip(&walks).map(|(v, (l, _))| (v, l.as_slice())).collect();
         let n = walks[0].0.len();
-        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges);
+        self.copies(&b, &p.st, &p.scope, &p.path, p.depth, n, &edges, None);
         let made = std::mem::replace(&mut self.out, outer);
         self.aside.held = 0;
         self.out.splice(at..at, made);

@@ -29,6 +29,10 @@ pub enum OpArg {
     /// an offset no source writes: a set's use (`p distance(<= d, side: outside) S`, §6.21) puts it
     /// on a cone's number, so the bound is on the distance from its surface (`model::RegionTerm`).
     Bound { cmp: Cmp, span: Span, hi: Option<(String, Span)>, grow: Option<(String, Span)> },
+    /// **A contact over an interval** (#645): `p coincident(t in (0, 1)) line(m, n)`, the slot
+    /// `key` held within `(lo, hi)` — on a line the segment between its ends.  Where on the curve,
+    /// never a distance: no set it stands in is made a region by it.
+    Within { key: Name, lo: (String, Span), hi: (String, Span) },
 }
 
 /// An operator spelling retained through resolution, with operands and arguments
@@ -45,6 +49,27 @@ pub struct Written {
     /// The operands written as a **rate** (#339 D2): `rate(p over s)` is operand `op` read as
     /// its rate along the formal `over`, never as itself.  Empty for every other relation.
     pub rates: Vec<RateOf>,
+}
+
+/// Where a rate in a relation's parentheses (`angle(rate(m over u), l)`, #645) is numbered from:
+/// past the two operands, the `k`th entity there `RateOf::op` `ARG_RATES + k`.
+pub const ARG_RATES: usize = 2;
+
+/// The selector the flattener marks a contact's interval with (#645), beside its low end and its
+/// `in:` bound: `p coincident(t in (a, b)) l`'s place bounded, which no source can spell (`#`), so
+/// a bound written `coincident(in: (a, b))` is never read as one.
+pub const WITHIN: &str = "#within";
+
+impl Written {
+    /// Where the operand `RateOf::op` names is: `Ok` an operand's index, `Err` the index in
+    /// `args` of an entity in the parentheses.
+    pub fn rated_at(&self, op: usize) -> Option<Result<usize, usize>> {
+        if op < ARG_RATES {
+            return (op < self.ops.len()).then_some(Ok(op));
+        }
+        self.args.iter().enumerate().filter(|(_, a)| matches!(a, OpArg::Ent(_)))
+            .nth(op - ARG_RATES).map(|(i, _)| Err(i))
+    }
 }
 
 /// One operand of a relation written as its rate along a formal, `rate(x over s)` (#339 D2):
@@ -278,6 +303,12 @@ impl Written {
                          only with an axis to read the turn about: `{word}(…, sense: ccw, about: \
                          a)`"
                     ),
+                    // how a path runs through a plane another touches (#645)
+                    (CKind::PlaneTangentLine | CKind::PlaneTangentRound | CKind::Rate, "sense") => {
+                        "`sense:` is how a second path runs through a plane the first touches, read \
+                         between the two where a panel's body states both (`std.Developable`): of \
+                         one plane and one path it says nothing".to_string()
+                    }
                     _ => format!("`{word}` takes no `{}`", key.text),
                 };
                 return Err((key.span, m));

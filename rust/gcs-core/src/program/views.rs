@@ -466,6 +466,7 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
     for &q in &item {
         sk.params[q as usize].value = part.params[q as usize].value;
     }
+    turn_over(sk, &item, placed);
     // placed: what the statements taken leave no freedom
     let d = crate::diagnose::diagnose(&mut part, Default::default());
     let under: BTreeSet<u32> = d.under_params.iter().copied().collect();
@@ -481,6 +482,35 @@ fn solve_taken(sk: &mut Sketch, reads: &[Reads], taken: &BTreeSet<u32>, placed: 
             && (held(sk, &pl.o) || pl.o.iter().all(|q| item.contains(q)));
         if !placed.planes[p] {
             placed.planes[p] = o_ok && placed.axes[pl.u as usize] && placed.axes[pl.v as usize];
+        }
+    }
+}
+
+/// **Each plane whose normal a round solved against its axes' `u × v` turned over** (#629): a
+/// normal is solved here without its rows and then seeded along `u × v` again
+/// (`Sketch::seed_normals`), which would start the solve a half turn from its statement, at its
+/// rows' cut.  The plane is turned over instead: its `v` reversed, else its `u`, whichever is
+/// still free.
+fn turn_over(sk: &mut Sketch, item: &BTreeSet<u32>, placed: &Placed) {
+    use crate::space::{cross, dot};
+    for p in sk.charted() {
+        let pl = &sk.frames[p];
+        let Some(n) = pl.normal.map(|n| n as usize) else { continue };
+        if !sk.axes[n].d.iter().all(|q| item.contains(q)) {
+            continue;
+        }
+        let d = |r: usize| sk.axes[r].d.map(|q| sk.params[q as usize].value);
+        if dot(cross(d(pl.u as usize), d(pl.v as usize)), d(n)) >= 0.0 {
+            continue;
+        }
+        let free = |r: usize| {
+            !placed.axes[r] && !sk.axes[r].d.iter().any(|&q| sk.params[q as usize].fixed)
+        };
+        let Some(r) = [pl.v as usize, pl.u as usize].into_iter().find(|&r| free(r)) else {
+            continue;
+        };
+        for q in sk.axes[r].d {
+            sk.params[q as usize].value = -sk.params[q as usize].value;
         }
     }
 }

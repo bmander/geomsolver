@@ -120,6 +120,22 @@ impl SpatialField {
         }
     }
 
+    /// Whether `value(p) < t`, its Booleans' second operands read only where their first leaves it
+    /// open and a prism's loop's nearest edge sought only within the level: what a point's being
+    /// inside asks.
+    pub fn below(&self,p: [f64;3],t: f64) -> bool { self.side(p,t) == super::Side::Below }
+    fn side(&self,p: [f64;3],t: f64) -> super::Side {
+        use super::Side;
+        match self.node.as_ref() {
+            Node::Extruded(source) => source.side_of(p,t),
+            Node::Revolved(_) | Node::Region(_) | Node::Built(_) => Side::of(self.value(p),t),
+            Node::Transformed {source,pose} => source.side(pose.inverse_point_mid(p),t),
+            Node::Union(a,b) => a.side(p,t).min(|| b.side(p,t)),
+            Node::Intersection(a,b) => a.side(p,t).max(|| b.side(p,t)),
+            Node::Difference(a,b) => a.side(p,t).max(|| b.side(p,-t).negated()),
+        }
+    }
+
     /// The value, gradient and deciding leaf at a point (`reading.rs`), to `q`'s step and tie,
     /// leaves numbered depth-first from `first`.
     pub fn reading(&self,p: [f64;3],q: &super::Query,first: usize) -> super::Reading {

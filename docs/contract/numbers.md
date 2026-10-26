@@ -59,6 +59,22 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **turn**, so `tau == 2 * pi * 1rad`; radians are written `* 1rad`, not `* 180 / pi`.  Storing
   the unit costs the solve nothing, and `graft::paste` converts between documents' units
   (`Sketch::rescale`, written out by kind: a `Param` cannot say it is a length).
+- **A number may be chosen** ([0.191]): `if(c, a, b)` (`Ast::If`) is `a` where the condition
+  holds and `b` where not — a value, where `when` is a block of statements, so a number that
+  differs between a block's copies is one statement.  `c` is a `when`'s `Cond`, read by
+  `Parser::choice` after `if(` (in `FUNCTIONS` at arity 3, so `builtin`, the highlighter and
+  the flattener's substitution know the word, but never an `Ast::Call`); `in` and `meets` are
+  refused there, being what a name stands for, which is a `when`'s to decide.  `eval` decides
+  it as `when` does (`Cmp::holds`, exact), before the solve: a condition reading a name that is
+  or reads an unknown is refused, saying which, by the path any value that cannot be worked out
+  takes (E103 for a value, W110 for a dimension, as `sin(beta)` is); a side may be one, scaled
+  and offset.  **Both sides are worked out** and must agree (`Dim::agree`, as `+`'s operands:
+  `if(c, w, 10)` with `w` a length is refused), so the side not taken still says its mistake.
+  `deps`, `map_vars`, `measures` and `affine_in` read the condition with the sides (affine in a
+  name its condition does not read).  **A tape runs no branch**: `Tape::compile` decides an
+  `if` over constants as it compiles and walks the side taken; one whose condition reads a
+  variable of the tape — the running formal, a bound formal (a column), the geometry — is
+  refused, saying to choose where the component is called.  `tests/choice.rs` is the gate.
 - **A value is read back, and claimed** (#596, [0.183]).  Each definition a body works out to a
   number (`ratio := teeth / 12 * 4`, a `param`, a group's member) is recorded under its absolute
   name (`t1.m` in an instance) as a `flatten::Valued` (its value and `Dim`) by
