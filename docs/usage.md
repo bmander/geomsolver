@@ -46,6 +46,7 @@ build/solventc drawing.sv --where hinge      # the numbers under one name
 build/solventc drive.sv --where torque       # a value the document names, in its unit
 build/solventc --components drawing.sv       # each component against the boundary contract
 build/solventc --lint drawing.sv             # also where its text drifts from the style (advisory)
+build/solventc --no-check bot.sv             # its claims about solids left unjudged: no solid built
 build/solventc --help                        # every option
 ```
 
@@ -65,6 +66,13 @@ drawing the same way.
 component call standing as a statement, a component that only states relations, a path reaching
 through one instance into another, an `Int` read only by `when`, and a `group` handed on unread
 ([the contract](contract/language.md)). They are advisory and never change the exit code.
+
+`--no-check` leaves the claims about solids (`clear`, `fits`, `inside`) unjudged, so a run builds
+no solid for one: the quick look at a layout whose full check builds every part. Where their
+verdicts would be, the report says how many it left (`3 claims about solids not judged`;
+`solidClaimsUnjudged` in `--json`). The claims over values and over the geometry build nothing
+and are judged still. An export (`--stl`, `--step-assembly`) judges the claims too unless told
+`--no-check`, so a script that only writes files can say it.
 
 ### Models and drawings
 

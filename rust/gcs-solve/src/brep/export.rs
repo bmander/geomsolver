@@ -593,14 +593,29 @@ pub fn supply_exact_of(sk: &Sketch,i: usize) {
 fn supply_each(sk: &Sketch,solids: impl Iterator<Item=usize>) {
     // a sketch that leaves meshing to its host has its surfaces supplied by it
     if sk.field_meshing.get() != crate::solid::FieldMeshing::Now { return }
-    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    for i in solids { supply_one(sk,i) }
+}
+
+/// Swept solid `i` given its exact B-rep where it holds none (`supply_each`).
+fn supply_one(sk: &Sketch,i: usize) {
+    if sk.supplied_exact_solid(i).is_some() { return }
     let mm = cad::millimetres(sk);
-    for i in solids.filter(|&i| sk.supplied_exact_solid(i).is_none()) {
-        // admitted as a display is, which is looked at and not made
-        let admitted = cad::swept_operands(sk,i).is_empty().then(|| admission::admit_body(sk,i,&DISPLAY_ADMISSION).ok()).flatten();
-        let Ok(built) = build(sk,i,admitted.as_ref(),None,&say) else { continue };
-        sk.supply_exact_solid(i,crate::solid::exact::named(built.solid,mm,[0.;3],Default::default()));
+    // a body placed by a rigid motion is the body it places, supplied once and moved (#619): a
+    // claim along a roll places a wheel at each pose, and each is that one build, not its own
+    if let Ok(Some((inner,pose))) = cad::placed_swept(sk,i) {
+        if sk.is_swept(inner) { supply_one(sk,inner) }
+        if let Some(x) = sk.supplied_exact_solid(inner) {
+            let m = super::sweep::sector::placed(pose,mm);
+            sk.supply_exact_solid(i,crate::solid::Exact {brep:x.brep.moved(&m),mm:x.mm,origin:x.origin,
+                leading:x.leading.clone(),named:x.named.clone()});
+            return
+        }
     }
+    // admitted as a display is, which is looked at and not made
+    let say = Say {stage:&|_: &str| {},mark:&|_| {}};
+    let admitted = cad::swept_operands(sk,i).is_empty().then(|| admission::admit_body(sk,i,&DISPLAY_ADMISSION).ok()).flatten();
+    let Ok(built) = build(sk,i,admitted.as_ref(),None,&say) else { return };
+    sk.supply_exact_solid(i,crate::solid::exact::named(built.solid,mm,[0.;3],Default::default()));
 }
 
 /// The admission a display asks: a quarter of the export's samples each way, on both its grids. A

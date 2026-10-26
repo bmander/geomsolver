@@ -1726,6 +1726,14 @@ pub fn meshings_json(sk: &Sketch) -> Json {
     Json::Arr((0..sk.meshings.len()).map(one).collect())
 }
 
+/// **The claims about solids a report was asked to leave unjudged** (`solventc --no-check`): how
+/// many there are, said where their verdicts would be, so a run that judged none is never read as
+/// one where every one held.
+pub fn solid_claims_unjudged_text(n: usize) -> String {
+    let s = if n == 1 { "" } else { "s" };
+    format!("{n} claim{s} about solids not judged")
+}
+
 /// The same immutable claim result supplies terminal and JSON reports.
 pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
     use crate::diagnose::SolidOutcome;

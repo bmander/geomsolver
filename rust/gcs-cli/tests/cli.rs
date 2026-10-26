@@ -579,6 +579,30 @@ fn no_diagnose_solves_only() {
     assert!(!text.contains("DOF"), "{text}");
 }
 
+/// `--no-check` judges no claim about solids and says how many it left, in the text and in the
+/// JSON, so a run that judged none is never read as one where each held; the claim over a sweep
+/// that would be 37 poses is none.
+#[test]
+fn no_check_leaves_the_claims_about_solids_unjudged_and_says_so() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/fixtures/solid_issue51/sampling_disclosure.sv");
+    let path = path.to_str().unwrap();
+    let out = run(&[path, "--no-check"]);
+    assert_eq!(out.status.code(), Some(0));
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("  1 claim about solids not judged\n"), "{text}");
+    assert!(!text.contains("sampling 37 poses") && !text.contains("claim over"), "{text}");
+    let out = run(&[path, "--no-check", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let json = gcs_core::json::parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+    let doc = &json.get("documents").unwrap().arr()[0];
+    assert_eq!(doc.get("solidClaimsUnjudged").map(|n| n.as_i64()), Some(1));
+    assert!(doc.get("diagnosis").unwrap().get("solidClaims").unwrap().arr().is_empty());
+    // judged, it is said with its verdict, and nothing is said unjudged
+    let text = String::from_utf8(run(&[path]).stdout).unwrap();
+    assert!(text.contains("sampling 37 poses") && !text.contains("not judged"), "{text}");
+}
+
 /// `--output` writes an SVG, and the writer is the **core's** — an "export SVG" button in the
 /// web app must not be a second implementation.
 #[test]
