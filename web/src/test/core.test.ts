@@ -2720,9 +2720,11 @@ test('related files include transitive libraries and host overrides without dupl
   modules.provide('demo.b', b);
   try {
     const files = modules.related('use demo.a\nuse demo.b\n');
-    assert.deepEqual(files.map((f) => f.path), ['demo/a.sv', 'demo/b.sv', 'std.sv', 'hardware.sv']);
+    // `hardware` brings `std.shapes` in, a module under `std` and a file of its own
+    assert.deepEqual(files.map((f) => f.path),
+      ['demo/a.sv', 'demo/b.sv', 'std.sv', 'hardware.sv', 'std/shapes.sv']);
     // what the host handed over is marked, and the library's own is not
-    assert.deepEqual(files.map((f) => f.provided), [true, true, false, false]);
+    assert.deepEqual(files.map((f) => f.provided), [true, true, false, false, false]);
     // installing a list replaces what was handed over with it
     modules.install([['demo.a', a]]);
     assert.ok(modules.provided('demo.a') && !modules.provided('demo.b'));
