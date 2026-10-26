@@ -22,13 +22,34 @@ async function fetchText(path: string): Promise<string | null> {
   }
 }
 
+/** What the host has of the examples: the sources packed into the build, and the examples'
+ *  own listing where it serves them — the demo server lists them at `examples/index.json`, and
+ *  only a host that does is asked for a file.  A static host (GitHub Pages) has neither the list
+ *  nor the files, and asking it for each would be a refusal per file, one after another down the
+ *  chain of uses. */
+interface Host { packed: string | null; index: string | null }
+
+const host = async (): Promise<Host> => {
+  const [packed, index] = await Promise.all(
+    [fetchText('dist/examples/sources.json'), fetchText('examples/index.json')]);
+  return { packed, index };
+};
+
+/** Asked for while the core is still arriving, by a page that opens on an example: the one
+ *  opening after it takes it, and any later one asks again. */
+let early: Promise<Host> | null = null;
+export function prefetch(): void { early ??= host(); }
+
 /** Main authored drawing and the files it reads. Fresh files on the demo server override
  *  the source bundle shipped with static builds. Geometry parsing stays in the core. */
 export async function drawing(key: string, selectedFile?: string): Promise<ExampleBundle> {
   const entry = exampleTarget(key);
   const target = entry.target;
   const stem = key.split(':')[0];
-  const packed = await fetchText('dist/examples/sources.json');
+  const asking = early ?? host();
+  early = null;
+  const { packed, index } = await asking;
+  const served = index !== null;
   const fallback: Record<string, string> = packed === null ? {} : JSON.parse(packed);
   const files: Record<string, string> = {};
   const asked = new Set<string>();
@@ -40,7 +61,7 @@ export async function drawing(key: string, selectedFile?: string): Promise<Examp
   const read = async (path: string): Promise<string | null> => {
     if (asked.has(path)) return files[path] ?? null;
     asked.add(path);
-    const text = await fetchText(`examples/${path}`) ?? fallback[path] ?? null;
+    const text = (served ? await fetchText(`examples/${path}`) : null) ?? fallback[path] ?? null;
     if (text !== null) files[path] = text;
     return text;
   };
@@ -81,7 +102,6 @@ export async function drawing(key: string, selectedFile?: string): Promise<Examp
     }
   };
   if (directory) {
-    const index = await fetchText('examples/index.json');
     const paths: string[] = index === null ? Object.keys(fallback) : JSON.parse(index);
     const members = paths.filter((p) => p.startsWith(`${directory}/`) && projectFile(p));
     await Promise.all(members.map(read));

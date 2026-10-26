@@ -7,6 +7,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>gcs sketcher</title>
 <link rel="stylesheet" href="./app.css">
+<!-- the solver is most of what the page waits for: ask for it now, beside the page's own script,
+     rather than once that script has arrived and run (`core/wasm.ts` asks for this same address) -->
+<link rel="preload" href="./dist/wasm/gcs.wasm" as="fetch" type="application/wasm" crossorigin>
 </head>
 <body>
 <div id="app">
@@ -131,11 +134,12 @@
   </main>
   <footer><span id="toast"></span><span id="component"></span><span id="stats"></span><span id="refine"></span><span id="claims"></span><span id="scenarios"></span></footer>
 </div>
-<!-- while the page has nothing worth touching: the solver starting, an example arriving, its solve,
-     its swept solids' first surfaces (`app/loading.ts`) -->
-<div id="loading" role="progressbar" aria-busy="true" aria-labelledby="loading-label">
+<!-- while the page has nothing worth touching: the page's script arriving (a sweep, till it runs),
+     the solver arriving and starting, an example arriving, its solve, its swept solids' first
+     surfaces (`app/loading.ts`) -->
+<div id="loading" class="sweeping" role="progressbar" aria-busy="true" aria-labelledby="loading-label">
   <div class="loading-card">
-    <p id="loading-label">loading solver…</p>
+    <p id="loading-label">loading the sketcher…</p>
     <div class="loading-bar"><div id="loading-fill"></div></div>
   </div>
 </div>
