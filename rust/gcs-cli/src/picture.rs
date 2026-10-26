@@ -20,6 +20,8 @@
 //! sample of a triangle the cut takes away left out (its height above the plane is linear across
 //! it, so this is the triangle clipped exactly), each edge cut where it crosses; the face the cut
 //! leaves is filled hatched, as a draughtsman marks a cut face, and its loops inked as corners.
+//! A slab (`PLANE±LENGTH`) is two such cuts facing apart, each drawn under the other: a sample, an
+//! edge or a cut face is kept where every cut keeps it but its own.
 //!
 //! **Nothing here is geometry the core has not already given.**  The eye is the core's
 //! (`workspace::eye_frame`, the box's camera; a named view is a sheet's, `drawing::named_view`),
@@ -69,9 +71,9 @@ pub struct Ask<'a> {
     pub solid: Option<&'a str>,
     /// `--hide`: the objects to leave out, each by a name and everything under it (a cutaway).
     pub hide: &'a [String],
-    /// `--section`: the plane in the world each solid is cut by, the side its normal points to
-    /// taken away.
-    pub section: Option<Basis>,
+    /// `--section`: the planes in the world each solid is cut by, each taking away the side its
+    /// normal points to — none, one, or two facing apart that keep a slab between them.
+    pub section: Vec<Basis>,
 }
 
 /// The solids a picture draws: the one `--solid` names (else the objects under that name), or
@@ -182,8 +184,8 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
         any = true;
         let o = solid.origin().0;
         let frame: Frame = axes.map(|e| (solid.vector_to_local(e), dot(e, o)));
-        let cut = ask.section.map(|c| solid.section(&c));
-        let kept = |p: [f64; 3]| cut.as_ref().is_none_or(|c| c.keeps(p));
+        let cuts: Vec<_> = ask.section.iter().map(|c| solid.section(c)).collect();
+        let kept = |p: [f64; 3]| cuts.iter().all(|c| c.keeps(p));
         let mut fit = |p: [f64; 3]| {
             let q = seen(&frame, p);
             for k in 0..3 {
@@ -194,15 +196,21 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
         for p in solid.mesh().positions.as_chunks::<3>().0 {
             if kept(*p) { fit(*p); }
         }
+        // an edge clipped by every cut but those it is drawn for: a cut's own outline lies in it
+        let clipped = |a: [f64; 3], b: [f64; 3], own: Option<usize>| cuts.iter().enumerate()
+            .filter(|&(k, _)| Some(k) != own)
+            .try_fold((a, b), |(a, b), (_, c)| c.clip(a, b));
         let mut edges: Vec<[[f64; 3]; 2]> = solid.drawn_edges(frame[2].0, &[]).iter()
-            .filter_map(|e| match &cut { Some(c) => c.clip(e.a, e.b), None => Some((e.a, e.b)) })
+            .filter_map(|e| clipped(e.a, e.b, None))
             .map(|(a, b)| [seen(&frame, a), seen(&frame, b)]).collect();
-        if let Some(c) = &cut {
-            for p in c.triangles.as_chunks::<3>().0 { fit(*p); }
-            let outline = c.segments();
-            edges.extend(outline.iter().map(|[a, b]| [seen(&frame, *a), seen(&frame, *b)]));
+        for (k, c) in cuts.iter().enumerate() {
+            for p in c.triangles.as_chunks::<3>().0 {
+                if cuts.iter().enumerate().all(|(j, d)| j == k || d.keeps(*p)) { fit(*p); }
+            }
+            edges.extend(c.segments().iter().filter_map(|[a, b]| clipped(*a, *b, Some(k)))
+                .map(|(a, b)| [seen(&frame, a), seen(&frame, b)]));
         }
-        solids.push((solid, frame, pigment(&instances, &sk.solids[i].name), edges, cut));
+        solids.push((solid, frame, pigment(&instances, &sk.solids[i].name), edges, cuts));
     }
     if !lo[0].is_finite() {
         if any {
@@ -226,23 +234,30 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
     let light = normalised(LIGHT).expect("the light has a direction");
     // a cut face wins a tie with a face of the solid lying in the plane it is cut in
     let tie = ((hi[2] - lo[2]) * 1e-6) as f32;
-    for (solid, frame, pigment, _, cut) in &solids {
+    // each triangle's corners' heights over the cuts it is drawn under
+    let mut away: Vec<[f64; 3]> = Vec::new();
+    for (solid, frame, pigment, _, cuts) in &solids {
         let m = solid.mesh();
         let normal = |n: [f64; 3]| frame.map(|(row, _)| dot(row, n));
         for (t, n) in m.positions.as_chunks::<9>().0.iter().zip(m.normals.as_chunks::<9>().0) {
             let corner = |k: usize| [t[3 * k], t[3 * k + 1], t[3 * k + 2]];
             let normal_at = |k: usize| normal([n[3 * k], n[3 * k + 1], n[3 * k + 2]]);
-            let heights = cut.as_ref().map(|c| [0, 1, 2].map(|k| c.height(corner(k))));
-            if heights.is_some_and(|h| h.iter().all(|&x| x >= 0.0)) { continue; }
+            away.clear();
+            away.extend(cuts.iter().map(|c| [0, 1, 2].map(|k| c.height(corner(k)))));
+            if away.iter().any(|h| h.iter().all(|&x| x >= 0.0)) { continue; }
             canvas.triangle([0, 1, 2].map(|k| place(seen(frame, corner(k)))),
-                            [0, 1, 2].map(normal_at), *pigment, light, Fill::Shaded(heights));
+                            [0, 1, 2].map(normal_at), *pigment, light, Fill::Shaded(&away));
         }
-        if let Some(c) = cut {
+        for (own, c) in cuts.iter().enumerate() {
             let facing = normal(c.normal);
             for t in c.triangles.as_chunks::<9>().0 {
                 let corner = |k: usize| [t[3 * k], t[3 * k + 1], t[3 * k + 2]];
+                away.clear();
+                away.extend(cuts.iter().enumerate().filter(|&(j, _)| j != own)
+                    .map(|(_, d)| [0, 1, 2].map(|k| d.height(corner(k)))));
+                if away.iter().any(|h| h.iter().all(|&x| x >= 0.0)) { continue; }
                 canvas.triangle([0, 1, 2].map(|k| place(seen(frame, corner(k)))), [facing; 3],
-                                *pigment, light, Fill::Hatched(tie));
+                                *pigment, light, Fill::Hatched(&away, tie));
             }
         }
     }
@@ -257,13 +272,14 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
     Ok((crate::png::encode(w, h, &canvas.down()), unbuilt))
 }
 
-/// How a triangle is filled: shaded, where it is the solid's own surface — each sample a cut
-/// takes away (its corners' heights over the plane given, `Section::height`) left out — or
-/// hatched, where it is a face a cut left, winning a tie in depth by the slack given.
+/// How a triangle is filled: shaded, where it is the solid's own surface, or hatched, where it
+/// is a face a cut left, winning a tie in depth by the slack given.  Either way each sample a cut
+/// takes away is left out, its corners' heights over each plane given (`Section::height`): a
+/// face a cut left is given every cut but its own.
 #[derive(Clone, Copy)]
-enum Fill {
-    Shaded(Option<[f64; 3]>),
-    Hatched(f32),
+enum Fill<'a> {
+    Shaded(&'a [[f64; 3]]),
+    Hatched(&'a [[f64; 3]], f32),
 }
 
 /// The samples being drawn: a colour and a depth each, the depth `-∞` where nothing is.
@@ -305,18 +321,19 @@ impl Canvas {
                 let w1 = edge(p[2], p[0], sx, sy) * per;
                 let w2 = 1.0 - w0 - w1;
                 if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 { continue; }
-                if let Fill::Shaded(Some(h)) = fill {
-                    if w0 * h[0] + w1 * h[1] + w2 * h[2] >= 0.0 { continue; }
-                }
+                let (away, tie) = match fill {
+                    Fill::Shaded(away) => (away, 0.0),
+                    Fill::Hatched(away, tie) => (away, tie),
+                };
+                if away.iter().any(|h| w0 * h[0] + w1 * h[1] + w2 * h[2] >= 0.0) { continue; }
                 let z = (w0 * p[0][2] + w1 * p[1][2] + w2 * p[2][2]) as f32;
                 let k = y * self.w + x;
-                let tie = if let Fill::Hatched(t) = fill { t } else { 0.0 };
                 if z + tie <= self.depth[k] { continue; }
                 self.depth[k] = z.max(self.depth[k]);
                 let m: [f64; 3] = std::array::from_fn(|c| w0 * n[0][c] + w1 * n[1][c] + w2 * n[2][c]);
                 let lit = normalised(m).map_or(1.0, |m| dot(m, light).abs());
                 let mut shade = AMBIENT + (1.0 - AMBIENT) * lit;
-                if matches!(fill, Fill::Hatched(_)) && (x + y) % HATCH < HATCH_INK {
+                if matches!(fill, Fill::Hatched(..)) && (x + y) % HATCH < HATCH_INK {
                     shade *= HATCH_SHADE;
                 }
                 self.colour[k] = pigment.map(|c| (c * shade).round().clamp(0.0, 255.0) as u8);

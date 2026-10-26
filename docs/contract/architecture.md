@@ -126,9 +126,13 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   **`--section PLANE` cuts what a picture draws** (`EvaluatedSolid::section`, solids.md): a view's
   word through the world origin, its normal toward that view's eye (`front` takes away what is
   nearer a front view's eye), or a model plane by its path, both read by the core
-  (`drawing::plane_named`); `-PLANE` keeps the other side and `PLANE@LENGTH` moves it along its
-  normal (`Basis::moved_along`; a bare number in the document's unit), the text checked as a
-  command line (64) before any document is read.  Each sample of a triangle the cut takes away
+  (`drawing::plane_named`), or `AXIS=LENGTH` square to a world axis, facing the picture's eye so
+  what is nearer it is taken away (`drawing::plane_across`; `a_section_across_an_axis_faces_the_eye`,
+  #657); `-PLANE` keeps the other side, `PLANE@LENGTH` moves it along its normal
+  (`Basis::moved_along`; a bare number in the document's unit), and `PLANE±LENGTH` (or `+-`) is a
+  slab, two cuts facing apart, each sample, edge and cut face kept where every cut but its own
+  keeps it (`a_slab_keeps_a_thickness_either_side`); the text is checked as a command line (64)
+  before any document is read.  Each sample of a triangle the cut takes away
   is left out (its height is linear across it, so the triangle is clipped exactly), each edge
   clipped by `Section::clip`, the cut face filled hatched in the picture's own pixels, winning a
   tie with a face lying in the plane, and its loops inked; the picture is fitted to what is kept.

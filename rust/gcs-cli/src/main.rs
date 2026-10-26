@@ -106,9 +106,12 @@ diagnosed, and the report says where it stands.
                         separated (repeatable): a cutaway
     --section PLANE     cut what --png draws by a plane, the side its normal points to taken
                         away and each cut face hatched: a view's word through the origin (front
-                        takes away what is nearer a front view's eye; top, right, …) or a model
-                        plane by its path (std.top, bracket.mid); -PLANE keeps the other side,
-                        PLANE@LENGTH moves it along its normal (top@5mm, -std.front@-2)
+                        takes away what is nearer a front view's eye; top, right, …), a model
+                        plane by its path (std.top, bracket.mid), or AXIS=LENGTH square to a world
+                        axis, what is nearer the eye taken away (y=-12.5mm, z=0); -PLANE keeps the
+                        other side, PLANE@LENGTH moves it along its normal (top@5mm,
+                        -std.front@-2), PLANE±LENGTH (or +-) keeps a slab that thick either side
+                        (y=-12.5mm±5mm)
     --solid NAME        which solid to export; defaults to the only Boolean root
     --tolerance [LENGTH] export for fabrication: the native STEP/STL within LENGTH of the exact
                         surface (default 0.01mm; a bare number is in the document's unit, and
@@ -146,6 +149,8 @@ Examples:
                                               two pictures, the solids built once
     solventc part.sv --png cut.png --section front
                                               the front half taken away, the cut hatched
+    solventc bot.sv --png cut.png --view front --section 'y=-12.5mm±5mm'
+                                              a slab 10mm thick, seen from the front
     solventc drawing.svd --sheet front -o front.svg
                                               one sheet of a drawing, as SVG
 
@@ -456,7 +461,8 @@ fn main() -> ExitCode {
             },
             // the value is optional: what follows is taken only when it reads as a length
             "--tolerance" => match args.peek().map(|v| length(v)) {
-                Some(Some(Ok(t))) => { args.next(); opts.tolerance = Some(t); }
+                Some(Some(Ok(t))) if t.0 > 0. => { args.next(); opts.tolerance = Some(t); }
+                Some(Some(Ok(_))) => return misuse("--tolerance: a tolerance is a positive length"),
                 Some(Some(Err(m))) => return misuse(format!("--tolerance: {m}")),
                 _ => opts.tolerance = Some((gcs_core::solid::export::Tolerance::FABRICATION.millimetres,Some(1.))),
             },
@@ -915,13 +921,15 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 // solve is still looked at, as its SVG is still written
                 let (own, run) = (&o.own, &opts.run);
                 let hide = own.hide.as_ref().or(run.hide.as_ref()).map_or(&[][..], Vec::as_slice);
+                let eye = own.view.or(run.view).unwrap_or(picture::HOME);
+                let toward = gcs_core::overview::workspace::eye_frame(eye.az, eye.el)[2];
                 let section = match own.section.as_ref().or(run.section.as_ref())
-                    .map(|n| cut_plane(&sk, &e.map, n)).transpose() {
-                    Ok(c) => c,
+                    .map(|n| cut_plane(&sk, &e.map, n, toward)).transpose() {
+                    Ok(c) => c.unwrap_or_default(),
                     Err(m) => { eprintln!("solventc: {path}: {m}"); code = 1; continue; }
                 };
                 let ask = picture::Ask {
-                    eye: own.view.or(run.view).unwrap_or(picture::HOME),
+                    eye,
                     size: own.size.or(run.size).unwrap_or(1200),
                     solid,
                     hide,
@@ -1202,8 +1210,9 @@ fn refused(e: &mut gcs_core::program::Elaborated,solid: usize,refusal: gcs_core:
         site.map(|s| s.span).unwrap_or_default(),site.map(|s| s.stmt),refusal.message));
 }
 
-/// A length as `--tolerance` takes it: a number, and the millimetres its unit is worth (`None`
-/// for none written, the document's own). `None` when the text is no length at all.
+/// A length as `--tolerance` and `--section` take it: a number, nought or more, and the
+/// millimetres its unit is worth (`None` for none written, the document's own). `None` when the
+/// text is no length at all.
 fn length(text: &str) -> Option<Result<(f64,Option<f64>),String>> {
     let split = text.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(text.len());
     let (number,unit) = text.split_at(split);
@@ -1216,46 +1225,99 @@ fn length(text: &str) -> Option<Result<(f64,Option<f64>),String>> {
             _ => return (!unit.contains('.') && !unit.contains('/')).then(|| Err(format!("`{unit}` is not a length unit"))),
         },
     };
-    Some(if value > 0. && value.is_finite() { Ok((value,per)) } else { Err("a tolerance is a positive length".into()) })
+    Some(if value.is_finite() { Ok((value,per)) } else { Err("a length is a finite number".into()) })
+}
+
+/// A length as `--section` writes one: a [`length`] with a sign before it.
+type Signed = (f64, Option<f64>);
+
+fn signed(text: &str) -> Option<Signed> {
+    let (sign, magnitude) = match text.strip_prefix('-') {
+        Some(m) => (-1.0, m),
+        None => (1.0, text.strip_prefix('+').unwrap_or(text)),
+    };
+    match length(magnitude) {
+        Some(Ok((v, per))) => Some((sign * v, per)),
+        _ => None,
+    }
+}
+
+/// The plane `--section` names: a plane read by the core, or one square to a world axis at a
+/// length along it (`y=-12.5mm`), facing the eye.
+enum Named<'a> {
+    Plane(&'a str),
+    Across(usize, Signed),
 }
 
 /// `--section`'s plane as written, read apart from any document: whether it keeps the other side
-/// (a leading `-`), the plane's name, and how far it is moved along its normal (after `@`: a
-/// signed number, and the millimetres its unit is worth, `None` for the document's own).
-fn cut_written(text: &str) -> Result<(bool, &str, Option<(f64, Option<f64>)>), String> {
+/// (a leading `-`), the plane it names, how far it is moved along its normal (after `@`), and
+/// the half-thickness of the slab it keeps (after `±` or `+-`).  A length is a number and the
+/// millimetres its unit is worth, `None` for the document's own.
+struct Written<'a> {
+    flip: bool,
+    plane: Named<'a>,
+    by: Option<Signed>,
+    slab: Option<Signed>,
+}
+
+fn cut_written(text: &str) -> Result<Written<'_>, String> {
     let (flip, rest) = text.strip_prefix('-').map_or((false, text), |r| (true, r));
+    let (rest, slab) = match rest.split_once('±').or_else(|| rest.split_once("+-")) {
+        None => (rest, None),
+        Some((r, h)) => match signed(h).filter(|h| h.0 > 0.0) {
+            Some(h) => (r, Some(h)),
+            None => return Err(format!("--section keeps a slab a length either side of its plane, \
+                `y=5mm±2mm`, not `±{h}`")),
+        },
+    };
     let (name, by) = rest.split_once('@').map_or((rest, None), |(n, b)| (n, Some(b)));
     if name.is_empty() {
         return Err(format!("--section needs a plane's name, not `{text}`"));
     }
     let by = match by {
         None => None,
-        Some(b) => {
-            let (sign, magnitude) = match b.strip_prefix('-') {
-                Some(m) => (-1.0, m),
-                None => (1.0, b.strip_prefix('+').unwrap_or(b)),
+        Some(b) => match signed(b) {
+            Some(b) => Some(b),
+            None => return Err(format!("--section moves a plane by a length, `{name}@5mm`, \
+                not `@{b}`")),
+        },
+    };
+    let plane = match name.split_once('=') {
+        None => Named::Plane(name),
+        Some((axis, at)) => {
+            let Some(axis) = ["x", "y", "z"].iter().position(|a| *a == axis) else {
+                return Err(format!("--section puts a plane across x, y or z, not `{axis}`"));
             };
-            match length(magnitude) {
-                Some(Ok((v, per))) => Some((sign * v, per)),
-                _ => return Err(format!("--section moves a plane by a length, `{name}@5mm`, \
-                    not `@{b}`")),
+            match signed(at) {
+                Some(at) => Named::Across(axis, at),
+                None => return Err(format!("--section puts a plane across an axis at a length, \
+                    `y=-12.5mm`, not `{name}`")),
             }
         }
     };
-    Ok((flip, name, by))
+    Ok(Written { flip, plane, by, slab })
 }
 
-/// `--section`'s plane in the world, read against the solved document: the plane it names
-/// (`drawing::plane_named`), moved and turned as written.
-fn cut_plane(sk: &Sketch, map: &gcs_core::program::SourceMap, text: &str)
-    -> Result<gcs_core::plane::Basis, String> {
-    let (flip, name, by) = cut_written(text)?;
-    let plane = gcs_core::drawing::plane_named(sk, map, name)?;
-    let by = by.map_or(0.0, |(v, per)| match per {
+/// `--section`'s planes in the world, read against the solved document and the eye it is seen
+/// from (`toward` it): the plane it names (`drawing::plane_named`, or `plane_across` facing the
+/// eye), moved and turned as written — or, for a slab, that plane moved out either way and
+/// facing out, so the two keep what lies between them.
+fn cut_plane(sk: &Sketch, map: &gcs_core::program::SourceMap, text: &str, toward: [f64; 3])
+    -> Result<Vec<gcs_core::plane::Basis>, String> {
+    let w = cut_written(text)?;
+    let native = |(v, per): Signed| match per {
         Some(per) => v * per / gcs_core::solid::cad::millimetres(sk),
         None => v,
-    });
-    Ok(plane.moved_along(by, flip))
+    };
+    let plane = match w.plane {
+        Named::Plane(name) => gcs_core::drawing::plane_named(sk, map, name)?,
+        Named::Across(axis, at) => gcs_core::drawing::plane_across(axis, native(at), toward),
+    };
+    let by = w.by.map_or(0.0, native);
+    Ok(match w.slab.map(native) {
+        None => vec![plane.moved_along(by, w.flip)],
+        Some(half) => vec![plane.moved_along(by + half, false), plane.moved_along(by - half, true)],
+    })
 }
 
 /// The export tolerance `--tolerance` asked for, in native millimetres: a bare number is in the
