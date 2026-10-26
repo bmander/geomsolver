@@ -481,6 +481,22 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   (`web/tools/overlay.mjs`) drives headless Chrome against the *real* `CodeEditor`: metrics agree,
   colouring moves no glyph, the copy follows to both ends.  Not in `npm test`: it needs Chrome,
   and `make test` must not.
+- **The page says it is arriving, and asks for the core first** (`index.html`, `core/wasm.ts`,
+  `app/shell.ts`).  The core is most of what a visit waits for (megabytes, against the bundle's
+  hundreds of kilobytes), so `index.html` *preloads* `dist/wasm/gcs.wasm` beside its own script
+  rather than after it has run, and `initCore` fetches that same address and compiles the
+  module **as it arrives** (`fromResponse`, `instantiateStreaming`; a host not saying
+  `application/wasm` gets it compiled whole).  Its `progress` hears bytes and no words — the
+  bytes counted on a clone of the body, against the module's size, written into the bundle as
+  `GCS_WASM_BYTES` by `tools/bundle.js` since a compressing host's Content-Length is the
+  compressed size; told no size, it counts nothing (`wasm.test.ts`).  The words are the shell's:
+  the modal is in the page before any script, sweeping (`loading the sketcher…`); the download
+  is 90% of the bar, rewritten only when its label changes, then `starting the solver…` and
+  `starting the sketcher…`, painted (in a visible tab) before the page wires itself and reads
+  its first document.  A page opening on an example asks for its sources while the core arrives
+  (`remote.prefetch`); the packed sources are asked for once a page, and only a file the host
+  lists at `examples/index.json` (the demo server) is asked for — a static host lists none, and
+  asking would be a refusal per file down the chain of uses.
 - `SketchView` holds a `Document` (`core/program.ts`), not a `Sketch`: `view.sketch` is what the
   source came to and `view.source` the document.  **A new document is one verb**,
   `SketchView.load` (File ▸ New is `newDocument`; Open and a test case too): the outgoing text is

@@ -6,6 +6,8 @@ import { expand, type Primitive } from '../core/model.js';
 import { initCore } from '../core/wasm.js';
 import { Document, highlight } from '../core/program.js';
 import { CodeEditor } from './editor.js';
+import { loading, painted } from './loading.js';
+import { prefetch } from './remote.js';
 import { SketchView } from './view.js';
 
 export const canvas = document.getElementById('canvas') as HTMLCanvasElement;
@@ -36,16 +38,37 @@ export const pdiags = document.getElementById('pdiags') as HTMLElement;
 export const componentEl = document.getElementById('component') as HTMLElement;
 export const footerEl = document.querySelector('footer') as HTMLElement;
 
-// the loading modal stays up until the first document is open — an example's opening
-// (`openExample`) or the blank sheet's — which puts it away
-await initCore();
-
 /** Example routes open an authored drawing after the shell is wired; the bare address opens a
  *  blank sheet, and stays the bare address.  The model editor starts empty; opening an example
- *  never loads its assembly as the active document. */
+ *  never loads its assembly as the active document.  An example's sources are asked for now,
+ *  while the core arrives, rather than after it. */
 const url = new URL(location.href);
 export const initialExample: string | null = url.searchParams.get('example')
   ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1] ?? null;
+if (initialExample) prefetch();
+
+// the loading modal stays up until the first document is open — an example's opening
+// (`openExample`) or the blank sheet's — which puts it away.  Till then its bar is the core
+// arriving, most of the wait on any connection (the modal rewritten only when its words change,
+// not per chunk), and then what is left: the core starting, and the page wiring itself and
+// reading its first document, which holds the thread — so that is said, and painted, before it
+// starts (unless the page is out of sight, where nothing is painted to wait for).  A core that
+// never arrives is said too, rather than left as a download that has stopped moving
+const MB = (n: number): string => (n / 1e6).toFixed(1);
+let said = '';
+try {
+  await initCore({ progress: (got, total) => {
+    const what = got < total ? `downloading the solver — ${MB(got)} of ${MB(total)} MB`
+      : 'starting the solver…';
+    if (what !== said) loading(said = what, 0.9 * got / total);
+  } });
+} catch (e) {
+  loading('the solver could not be loaded — reload the page to try again', 0);
+  throw e;
+}
+loading('starting the sketcher…', 0.95);
+if (document.visibilityState === 'visible') await painted();
+
 export const view = new SketchView(canvas, Document.read(''), boxCanvas);
 export let currentConstraint: Constraint | null = null;
 

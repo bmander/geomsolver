@@ -410,24 +410,67 @@ export function onInit(h: () => void): void {
   else hooks.push(h);
 }
 
-async function wasmBytes(url?: string): Promise<BufferSource> {
-  const target = url ?? new URL('../wasm/gcs.wasm', import.meta.url).href;
+/** What a loading core says of itself: the bytes of the module arrived so far, of `total`.  The
+ *  words are the page's; the last call, with every byte in, is the core starting. */
+export type CoreProgress = (received: number, total: number) => void;
+
+/** The module's size in bytes, written into the page's bundle when it is built
+ *  (`tools/bundle.js`).  A host that compresses the module sends the compressed size as its
+ *  Content-Length, while the body yields the module itself, so the header cannot say how much is
+ *  left; unbundled (the test suite) there is no such constant. */
+declare const GCS_WASM_BYTES: number | undefined;
+
+const compile = async (bytes: BufferSource): Promise<WebAssembly.Instance> =>
+  (await WebAssembly.instantiate(bytes, {})).instance;
+
+/** Instantiate the module a response carries.  The module is **compiled as it arrives**
+ *  (`instantiateStreaming`), so its compilation overlaps the download rather than following it,
+ *  and a browser may keep the compiled code for the next visit; a host that does not say
+ *  `application/wasm` gets the bytes compiled whole.  Given the module's `size`, `progress` hears
+ *  the bytes arrive, counted on a clone of the body so the compiler reads the original. */
+export async function fromResponse(res: Response, progress?: CoreProgress,
+                                   size?: number): Promise<WebAssembly.Instance> {
+  const counted = progress && size && res.body ? count(res.clone(), progress, size) : undefined;
+  const streaming = typeof WebAssembly.instantiateStreaming === 'function'
+    && /^application\/wasm\b/.test(res.headers.get('content-type') ?? '');
+  const made = streaming ? WebAssembly.instantiateStreaming(res, {}).then((m) => m.instance)
+    : res.arrayBuffer().then(compile);
+  const [instance] = await Promise.all([made, counted]);
+  return instance;
+}
+
+/** Read a response's body to its end, saying how much of it has arrived. */
+async function count(res: Response, progress: CoreProgress, total: number): Promise<void> {
+  const reader = res.body!.getReader();
+  let got = 0;
+  progress(0, total);
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    got += read.value.byteLength;
+    progress(Math.min(got, total), total);
+  }
+  progress(total, total);
+}
+
+async function instantiate(progress?: CoreProgress): Promise<WebAssembly.Instance> {
+  const target = new URL('../wasm/gcs.wasm', import.meta.url).href;
   if (typeof fetch === 'function' && !target.startsWith('file:')) {
+    // the page asks for this same address in a preload, so the response is usually on its way
+    // before this module has even run
     const res = await fetch(target);
     if (!res.ok) throw new Error(`could not fetch ${target}: ${res.status}`);
-    return await res.arrayBuffer();
+    return fromResponse(res, progress,
+                        typeof GCS_WASM_BYTES === 'number' ? GCS_WASM_BYTES : undefined);
   }
   const { readFile } = await import('node:fs/promises');
   const { fileURLToPath } = await import('node:url');
-  return await readFile(target.startsWith('file:') ? fileURLToPath(target) : target);
+  return compile(await readFile(fileURLToPath(target)));
 }
 
-/** Load the core once; every later call returns the same instance. */
-export async function initCore(opts?: { url?: string; bytes?: BufferSource }): Promise<Abi> {
+/** Load the core once; every later call returns the same instance.  `progress` hears it arrive
+ *  (`fromResponse`), where it is fetched. */
+export async function initCore(opts?: { progress?: CoreProgress }): Promise<Abi> {
   if (abi) return abi;
-  const bytes = opts?.bytes ?? (await wasmBytes(opts?.url));
-  const { instance } = await WebAssembly.instantiate(bytes, {});
-  abi = instance.exports as unknown as Abi;
+  abi = (await instantiate(opts?.progress)).exports as unknown as Abi;
   for (const h of hooks.splice(0)) h();
   return abi;
 }

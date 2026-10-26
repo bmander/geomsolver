@@ -40,7 +40,8 @@ core suite is filtered as `cargo test chain::`),
 `cd web && npm test`, `make bench` (the native `bench` binary and `npm run bench`, read side by
 side), `cd web && npm run serve`.
 
-`npm run build` is `tsc` (module per file, what `node --test` runs against) then esbuild, which
+`npm run build` is `tsc` (module per file, what `node --test` runs against) then esbuild
+(`tools/bundle.js`, which writes the core's size in as `GCS_WASM_BYTES`), which
 rolls `dist/app/main.js` into one `dist/app/bundle.js`, what the page loads.  The bundle is written
 *beside* the entry module: `core/wasm.ts` finds the core at `../wasm/gcs.wasm` relative to
 `import.meta.url`, which under bundling is the bundle's URL.  The node-only fallback imports in
