@@ -104,6 +104,7 @@ fn a_blank_offset_reads_as_its_offset() {
 /// (`solid_spline`) reads as that offset on the analytic route (the B-rep's extrusion) and on the
 /// field's (the spline as chords).
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 17 s: a spline face offset")]
 fn a_static_spline_face_offset_reads_as_its_offset() {
     let (_,e) = fixtures::examples().into_iter().find(|(n,_)| n == "solid_spline.sv").unwrap();
     let mut sk = e.unwrap().sketch;

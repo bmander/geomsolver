@@ -271,6 +271,7 @@ fn off_the_front(s: f64, x: f64, z: f64) -> f64 {
 /// `πR`.  And `fisheye.sv`'s free-curve ray from the same source crosses every front square to it,
 /// at the optical length the closed form gives its point: the march and the extremal agree.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 13 s: the fish-eye's fronts marched")]
 fn fish_eye_fronts_refocus_square_to_the_rays() {
     let e = determined(include_str!("../../examples/rates/fisheye_fronts.sv"));
     let wave = index(&e, "wave");

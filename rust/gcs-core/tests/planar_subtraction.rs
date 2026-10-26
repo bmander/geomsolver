@@ -368,6 +368,7 @@ fn outline(name: &str, d: f64) -> String {
 /// keeps more than the square arms' and than six bands stepped down it, each its widest section
 /// over its band.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 22 s: the handle cut from its wheel")]
 fn the_drafted_handle_cuts_its_wheel() {
     let drafted = format!("{}\nstar := solid(plan.outline, from: -16mm, to: 0mm, draft: 8deg)", outline("plan", 0.));
     let src = handle(&drafted);

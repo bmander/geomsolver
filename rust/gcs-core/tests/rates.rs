@@ -191,6 +191,7 @@ three_quarters := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f over s
 /// is zero) — a 2 × 1 rectangle along four turns of a helix of radius 10 and pitch 5, in the
 /// minimal frame, is 2 · 4√((20π)² + 5²) mm³, as in `std.OnHelix`'s.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: a tube along a helix")]
 fn a_tube_on_a_helix_is_its_section_along_its_length() {
     let e = with("
 param s: Scalar over (0, 1)

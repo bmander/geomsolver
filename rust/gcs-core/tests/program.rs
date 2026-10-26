@@ -636,10 +636,13 @@ fn one_bad_line_costs_one_line() {
 /// than unwinding, so a document that is not a document must still come back as a diagnostic.
 #[test]
 fn nothing_in_the_parser_panics() {
-    for (_, sk) in cases() {
+    // every prefix in the slow tier; every third in the fast one (twenty seconds to seven), a
+    // different third for each case, so a push still cuts each kind of token somewhere
+    let step = if cfg!(feature = "slow") { 1 } else { 3 };
+    for (k, (_, sk)) in cases().into_iter().enumerate() {
         let text = to_program(&sk).text().to_string();
         // every prefix, cut only on a character boundary
-        for i in 0..text.len() {
+        for i in (k % step..text.len()).step_by(step) {
             if text.is_char_boundary(i) {
                 let (p, _) = crate::common::parse(&text[..i]);
                 let _ = elaborate(&p);

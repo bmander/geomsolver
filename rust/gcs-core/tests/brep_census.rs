@@ -336,6 +336,7 @@ fn brep_body_debug() {
 /// line across the root their cross products. The exact kernel reads each flank as the B-spline
 /// fitted within `FIT_MM`, which bounds its error by the flanks' length times the depth.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 18 s: an involute tooth built")]
 fn an_involute_tooth_is_its_closed_form() {
     let (_,e) = fixtures::examples().into_iter().find(|(n,_)| n == "solid_tooth.sv").unwrap();
     let mut sk = e.unwrap().sketch;
