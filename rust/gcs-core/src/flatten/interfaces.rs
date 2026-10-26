@@ -132,31 +132,8 @@ impl<'a> Walk<'a> {
         sub: &mut BTreeMap<String, Aff>,
         span: Span,
     ) {
-        for (name, member) in &shape.members {
-            let (from, to) = (format!("{actual}.{name}"), format!("{formal}.{name}"));
-            match member {
-                Member::Number(ty) => {
-                    let why = match vals.get(&from).map(|v| typed(v.clone(), *ty, &to)) {
-                        Some(Ok(v)) => {
-                            sub.insert(to, v);
-                            continue;
-                        }
-                        Some(Err(e)) => e,
-                        None => format!(
-                            "`{actual}` has no number `{name}`, which `{}` asks for ({})",
-                            shape.name, member.a()
-                        ),
-                    };
-                    self.err(Code::E103, span, why);
-                    sub.insert(to, Aff::num(0.0).as_dim(ty.dim()));
-                }
-                Member::Group(Some(inner)) => {
-                    self.interface_numbers(inner, &from, &to, vals, sub, span)
-                }
-                // a group or a set carries what it carries (`s.r` of a sphere)
-                Member::Group(None) | Member::Set => super::copy_members(vals, &from, &to, sub),
-                Member::Entity(_) => {}
-            }
+        for why in shaped_numbers(shape, actual, formal, vals, sub) {
+            self.err(Code::E103, span, why);
         }
     }
 
@@ -295,4 +272,44 @@ fn reaches(p: &Program, from: usize, to: usize, seen: &mut BTreeSet<usize>) -> b
         p.resolve_interface(&n.text, f.module)
             .is_ok_and(|j| j == to || (seen.insert(j) && reaches(p, j, to, seen)))
     })
+}
+
+/// `Walk::interface_numbers`, saying nothing: the numbers copied in, and why each one that stands
+/// in at nothing does.  What an instance's body works out from outside it reads the call so
+/// (`members`), and leaves the saying to the call.
+pub(super) fn shaped_numbers(
+    shape: &Shape,
+    actual: &str,
+    formal: &str,
+    vals: &Vals,
+    sub: &mut BTreeMap<String, Aff>,
+) -> Vec<String> {
+    let mut said = Vec::new();
+    for (name, member) in &shape.members {
+        let (from, to) = (format!("{actual}.{name}"), format!("{formal}.{name}"));
+        match member {
+            Member::Number(ty) => {
+                let why = match vals.get(&from).map(|v| typed(v.clone(), *ty, &to)) {
+                    Some(Ok(v)) => {
+                        sub.insert(to, v);
+                        continue;
+                    }
+                    Some(Err(e)) => e,
+                    None => format!(
+                        "`{actual}` has no number `{name}`, which `{}` asks for ({})",
+                        shape.name, member.a()
+                    ),
+                };
+                said.push(why);
+                sub.insert(to, Aff::num(0.0).as_dim(ty.dim()));
+            }
+            Member::Group(Some(inner)) => {
+                said.extend(shaped_numbers(inner, &from, &to, vals, sub));
+            }
+            // a group or a set carries what it carries (`s.r` of a sphere)
+            Member::Group(None) | Member::Set => super::copy_members(vals, &from, &to, sub),
+            Member::Entity(_) => {}
+        }
+    }
+    said
 }
