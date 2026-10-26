@@ -13,32 +13,40 @@ export interface ExampleBundle extends DrawingBundle {
   key: string; directory?: string; entry: string;
 }
 
-async function fetchText(path: string): Promise<string | null> {
+async function fetchText(path: string, cache: RequestCache = 'no-store'): Promise<string | null> {
   try {
-    const r = await fetch(path, { cache: 'no-store' });
+    const r = await fetch(path, { cache });
     return r.ok ? await r.text() : null;
   } catch {
     return null;
   }
 }
 
-/** What the host has of the examples: the sources packed into the build, and the examples'
- *  own listing where it serves them — the demo server lists them at `examples/index.json`, and
- *  only a host that does is asked for a file.  A static host (GitHub Pages) has neither the list
- *  nor the files, and asking it for each would be a refusal per file, one after another down the
- *  chain of uses. */
-interface Host { packed: string | null; index: string | null }
+/** The sources packed into the build: fixed for the page's life, so asked for once (and again
+ *  only after a refusal), through the browser's cache. */
+let packing: Promise<Record<string, string>> | null = null;
+const packed = (): Promise<Record<string, string>> =>
+  packing ??= fetchText('dist/examples/sources.json', 'default').then((text) => {
+    if (text === null) packing = null;
+    return text === null ? {} : JSON.parse(text);
+  });
 
-const host = async (): Promise<Host> => {
-  const [packed, index] = await Promise.all(
-    [fetchText('dist/examples/sources.json'), fetchText('examples/index.json')]);
-  return { packed, index };
+/** The examples the host serves fresh: the demo server lists them at `examples/index.json`, and
+ *  only a file listed is asked for — anything else is the packed copy.  A static host (GitHub
+ *  Pages) lists none, and asking it for each file would be a refusal per file, one after another
+ *  down the chain of uses.  Asked at each opening, so a file added since shows. */
+const listing = async (): Promise<string[] | null> => {
+  const index = await fetchText('examples/index.json');
+  return index === null ? null : JSON.parse(index);
 };
 
 /** Asked for while the core is still arriving, by a page that opens on an example: the one
- *  opening after it takes it, and any later one asks again. */
-let early: Promise<Host> | null = null;
-export function prefetch(): void { early ??= host(); }
+ *  opening after it takes the listing, and any later one asks again. */
+let early: Promise<string[] | null> | null = null;
+export function prefetch(): void {
+  void packed();
+  early ??= listing();
+}
 
 /** Main authored drawing and the files it reads. Fresh files on the demo server override
  *  the source bundle shipped with static builds. Geometry parsing stays in the core. */
@@ -46,11 +54,10 @@ export async function drawing(key: string, selectedFile?: string): Promise<Examp
   const entry = exampleTarget(key);
   const target = entry.target;
   const stem = key.split(':')[0];
-  const asking = early ?? host();
+  const asking = early ?? listing();
   early = null;
-  const { packed, index } = await asking;
-  const served = index !== null;
-  const fallback: Record<string, string> = packed === null ? {} : JSON.parse(packed);
+  const [fallback, index] = await Promise.all([packed(), asking]);
+  const listed = new Set(index ?? []);
   const files: Record<string, string> = {};
   const asked = new Set<string>();
   const visitedModels = new Set<string>(), visitedDrawings = new Set<string>();
@@ -61,7 +68,8 @@ export async function drawing(key: string, selectedFile?: string): Promise<Examp
   const read = async (path: string): Promise<string | null> => {
     if (asked.has(path)) return files[path] ?? null;
     asked.add(path);
-    const text = (served ? await fetchText(`examples/${path}`) : null) ?? fallback[path] ?? null;
+    const text = (listed.has(path) ? await fetchText(`examples/${path}`) : null)
+      ?? fallback[path] ?? null;
     if (text !== null) files[path] = text;
     return text;
   };
@@ -102,7 +110,7 @@ export async function drawing(key: string, selectedFile?: string): Promise<Examp
     }
   };
   if (directory) {
-    const paths: string[] = index === null ? Object.keys(fallback) : JSON.parse(index);
+    const paths = index ?? Object.keys(fallback);
     const members = paths.filter((p) => p.startsWith(`${directory}/`) && projectFile(p));
     await Promise.all(members.map(read));
     // Read all files, including part drawings unreachable from the assembly. Follow their

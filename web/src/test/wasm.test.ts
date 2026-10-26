@@ -30,37 +30,31 @@ function sent(bytes: Uint8Array, chunks: number, headers: Record<string, string>
   return new Response(body, { headers });
 }
 
-type Heard = [string, number | undefined][];
+type Heard = [number, number][];
 
-test('a module compiled as it arrives says how much has, then that it is starting', async () => {
+test('a module compiled as it arrives says how much has, the last word every byte', async () => {
   const bytes = module(40_000);
   const heard: Heard = [];
   const instance = await fromResponse(
     sent(bytes, 8, { 'content-type': 'application/wasm' }),
-    (what, done) => heard.push([what, done]), bytes.length);
+    (got, total) => heard.push([got, total]), bytes.length);
   assert.ok(instance instanceof WebAssembly.Instance);
-  const fractions = heard.map(([, f]) => f).filter((f): f is number => f !== undefined);
-  assert.equal(fractions[0], 0, 'the bar starts empty');
-  assert.ok(fractions.every((f, i) => i === 0 || f >= fractions[i - 1]), 'and only fills');
-  assert.equal(fractions.at(-1), 1, 'to full once every byte is in');
-  assert.ok(heard.some(([w]) => /^downloading the solver — 0\.0\d? of 0\.0\d? MB$/.test(w)), 'in MB');
-  assert.deepEqual(heard.at(-1), ['starting the solver…', undefined]);
+  assert.ok(heard.every(([, total]) => total === bytes.length), 'of the module\'s own size');
+  assert.deepEqual(heard[0], [0, bytes.length], 'the bar starts empty');
+  assert.ok(heard.every(([got], i) => i === 0 || got >= heard[i - 1][0]), 'and only fills');
+  assert.ok(heard.length > 3, 'a chunk at a time');
+  assert.deepEqual(heard.at(-1), [bytes.length, bytes.length], 'to full once every byte is in');
 });
 
-test('a compressed response\'s length is not the module\'s, so it is not taken for one', async () => {
+test('a size the page was not told is not guessed, and nothing is counted', async () => {
   const bytes = module(20_000);
   const heard: Heard = [];
+  // a compressing host's Content-Length is the compressed size, not the module's
   await fromResponse(
     sent(bytes, 4, { 'content-type': 'application/wasm', 'content-encoding': 'gzip',
                      'content-length': '3000' }),
-    (what, done) => heard.push([what, done]));
-  assert.ok(heard.every(([, f]) => f === undefined), 'a sweep, not a fraction past one');
-  // one with nothing compressed says its own size
-  const plain: Heard = [];
-  await fromResponse(
-    sent(bytes, 4, { 'content-type': 'application/wasm', 'content-length': String(bytes.length) }),
-    (what, done) => plain.push([what, done]));
-  assert.equal(plain.filter(([, f]) => f !== undefined).at(-1)?.[1], 1);
+    (got, total) => heard.push([got, total]));
+  assert.deepEqual(heard, []);
 });
 
 test('a host that does not say application/wasm still gets the module compiled', async () => {

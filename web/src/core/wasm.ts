@@ -410,9 +410,9 @@ export function onInit(h: () => void): void {
   else hooks.push(h);
 }
 
-/** What a loading core says of itself: the stage it is in, and how much of it is done where that
- *  is known — the bytes of the module arrived, then a stage with no fraction while it starts. */
-export type CoreProgress = (what: string, fraction?: number) => void;
+/** What a loading core says of itself: the bytes of the module arrived so far, of `total`.  The
+ *  words are the page's; the last call, with every byte in, is the core starting. */
+export type CoreProgress = (received: number, total: number) => void;
 
 /** The module's size in bytes, written into the page's bundle when it is built
  *  (`tools/bundle.js`).  A host that compresses the module sends the compressed size as its
@@ -420,69 +420,57 @@ export type CoreProgress = (what: string, fraction?: number) => void;
  *  left; unbundled (the test suite) there is no such constant. */
 declare const GCS_WASM_BYTES: number | undefined;
 
-const MB = (n: number): string => (n / 1e6).toFixed(1);
+const compile = async (bytes: BufferSource): Promise<WebAssembly.Instance> =>
+  (await WebAssembly.instantiate(bytes, {})).instance;
 
 /** Instantiate the module a response carries.  The module is **compiled as it arrives**
  *  (`instantiateStreaming`), so its compilation overlaps the download rather than following it,
  *  and a browser may keep the compiled code for the next visit; a host that does not say
- *  `application/wasm` gets the bytes compiled whole.  `progress` hears the bytes arrive, counted
- *  on a clone of the body so the compiler reads the original, and then that the core is starting.
- *  `size` is how many bytes the body yields, where something other than the response knows. */
+ *  `application/wasm` gets the bytes compiled whole.  Given the module's `size`, `progress` hears
+ *  the bytes arrive, counted on a clone of the body so the compiler reads the original. */
 export async function fromResponse(res: Response, progress?: CoreProgress,
                                    size?: number): Promise<WebAssembly.Instance> {
-  const counted = progress && res.body ? count(res.clone(), progress, size) : undefined;
+  const counted = progress && size && res.body ? count(res.clone(), progress, size) : undefined;
   const streaming = typeof WebAssembly.instantiateStreaming === 'function'
     && /^application\/wasm\b/.test(res.headers.get('content-type') ?? '');
-  const made = streaming ? WebAssembly.instantiateStreaming(res, {})
-    : res.arrayBuffer().then((bytes) => WebAssembly.instantiate(bytes, {}));
-  const [{ instance }] = await Promise.all([made, counted]);
+  const made = streaming ? WebAssembly.instantiateStreaming(res, {}).then((m) => m.instance)
+    : res.arrayBuffer().then(compile);
+  const [instance] = await Promise.all([made, counted]);
   return instance;
 }
 
-/** Read a response's body to its end, saying how much of it has arrived: a fraction where the
- *  size is known — from `size`, else from a Content-Length nothing compressed — else the bytes. */
-async function count(res: Response, progress: CoreProgress, size?: number): Promise<void> {
-  const length = Number(res.headers.get('content-length'));
-  const total = size ?? (!res.headers.get('content-encoding') && length > 0 ? length : undefined);
+/** Read a response's body to its end, saying how much of it has arrived. */
+async function count(res: Response, progress: CoreProgress, total: number): Promise<void> {
   const reader = res.body!.getReader();
   let got = 0;
-  progress('downloading the solver…', total ? 0 : undefined);
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    got += value.byteLength;
-    if (total) progress(`downloading the solver — ${MB(Math.min(got, total))} of ${MB(total)} MB`,
-                        Math.min(got / total, 1));
-    else progress(`downloading the solver — ${MB(got)} MB`);
+  progress(0, total);
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    got += read.value.byteLength;
+    progress(Math.min(got, total), total);
   }
-  progress('starting the solver…');
+  progress(total, total);
 }
 
-async function instantiate(opts?: { url?: string; progress?: CoreProgress }):
-    Promise<WebAssembly.Instance> {
-  const target = opts?.url ?? new URL('../wasm/gcs.wasm', import.meta.url).href;
+async function instantiate(progress?: CoreProgress): Promise<WebAssembly.Instance> {
+  const target = new URL('../wasm/gcs.wasm', import.meta.url).href;
   if (typeof fetch === 'function' && !target.startsWith('file:')) {
     // the page asks for this same address in a preload, so the response is usually on its way
     // before this module has even run
     const res = await fetch(target);
     if (!res.ok) throw new Error(`could not fetch ${target}: ${res.status}`);
-    return fromResponse(res, opts?.progress,
+    return fromResponse(res, progress,
                         typeof GCS_WASM_BYTES === 'number' ? GCS_WASM_BYTES : undefined);
   }
   const { readFile } = await import('node:fs/promises');
   const { fileURLToPath } = await import('node:url');
-  const bytes = await readFile(target.startsWith('file:') ? fileURLToPath(target) : target);
-  return (await WebAssembly.instantiate(bytes, {})).instance;
+  return compile(await readFile(fileURLToPath(target)));
 }
 
 /** Load the core once; every later call returns the same instance.  `progress` hears it arrive
- *  and start (`fromResponse`), where it is fetched. */
-export async function initCore(opts?: { url?: string; bytes?: BufferSource;
-                                        progress?: CoreProgress }): Promise<Abi> {
+ *  (`fromResponse`), where it is fetched. */
+export async function initCore(opts?: { progress?: CoreProgress }): Promise<Abi> {
   if (abi) return abi;
-  const instance = opts?.bytes ? (await WebAssembly.instantiate(opts.bytes, {})).instance
-    : await instantiate(opts);
-  abi = instance.exports as unknown as Abi;
+  abi = (await instantiate(opts?.progress)).exports as unknown as Abi;
   for (const h of hooks.splice(0)) h();
   return abi;
 }
