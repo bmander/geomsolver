@@ -1013,3 +1013,61 @@ fn appending_to_a_document_that_uses_a_module_keeps_the_module_in_the_map() {
     assert_eq!(text.matches(" in std.side").count(), 3, "{text}");
     assert!(!text.contains("fix("), "the library's datums are not the document's: {text}");
 }
+
+/// **A top-level value given for one run** (#656): the text comes back with only the values
+/// spliced — every other byte and every line where it was — and elaborates to what was given, a
+/// value in another unit read in the document's; what was given over what is said in the order
+/// asked.  A name that is no top-level value is refused, naming it.
+#[test]
+fn a_top_level_value_is_given_for_a_run_and_nothing_else_is() {
+    let src = "\
+unit mm
+use std
+shaped := 1                    // 1: shape the gears; 0: blanks
+checks := 0
+travel := 2mm
+param bore: Length := 50mm
+param beta: Angle hint(30deg)
+component Box(r: Length) {
+  inner := r * 2
+}
+in std.front {
+  a := point
+  fix((0, 0)) a
+}
+";
+    let set = |kv: &[(&str, &str)]| {
+        let kv: Vec<(String, String)> =
+            kv.iter().map(|(n, v)| (n.to_string(), v.to_string())).collect();
+        edit::rebind(src, &kv)
+    };
+    let (text, rebound) =
+        set(&[("checks", "1"), ("travel", " 3cm "), ("bore", "travel * 2")]).unwrap();
+    assert_eq!(text, src.replace("checks := 0", "checks := 1")
+        .replace("travel := 2mm", "travel := 3cm")
+        .replace("Length := 50mm", "Length := travel * 2"));
+    assert_eq!(text.lines().count(), src.lines().count());
+    let said: Vec<String> = rebound.iter().map(gcs_core::report::rebound_text).collect();
+    assert_eq!(said, ["set checks := 1 (the document writes 0)",
+                      "set travel := 3cm (the document writes 2mm)",
+                      "set bore := travel * 2 (the document writes 50mm)"]);
+    let e = elaborate(&prog_of(&text));
+    assert!(e.ok(), "{:?}", e.diags);
+    for (name, v) in [("shaped", 1.0), ("checks", 1.0), ("travel", 30.0), ("bore", 60.0)] {
+        assert_eq!(e.values[name].value, v, "{name}");
+    }
+    for (kv, why) in [
+        (&[("nope", "1")][..], "the document binds no value `nope` at its top level"),
+        (&[("inner", "1")][..], "`inner` is bound inside component `Box`"),
+        (&[("a", "1")][..], "`a` is bound at the top level, but not to a value"),
+        (&[("beta", "1deg")][..], "`beta` is an input nothing binds"),
+        (&[("checks", "1 +")][..], "`checks` is given `1 +`, which is no expression"),
+        (&[("checks", " ")][..], "`checks` is given no value"),
+        (&[(" ", "1")][..], "a value `1` is given no name"),
+        (&[("checks", "1\n2")][..], "`checks` is given a value of more than one line"),
+        (&[("checks", "1"), ("checks", "2")][..], "`checks` is given a value twice"),
+    ] {
+        let refused = set(kv).unwrap_err();
+        assert!(refused.starts_with(why), "{kv:?}: {refused}");
+    }
+}

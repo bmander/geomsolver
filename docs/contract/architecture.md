@@ -75,7 +75,16 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   value came to** (#596): `Elaborated::values` is read by the same rule, each line
   `report::value_text` (`torque = 0.0864 N·m`), published as `values` (`report::values_json`);
   each claim over values is `report::value_claim_text`, said under the outcome line and published
-  as `valueClaims` (`a_documents_values_are_read_and_claimed`). Exit codes 0/1/2 are
+  as `valueClaims` (`a_documents_values_are_read_and_claimed`).  **A top-level value can be
+  given for one run** (#656): `--set NAME=VALUE` hands the text and the values to
+  `edit::rebind`, which splices each value where the document's top-level `NAME := …` writes
+  its own — every other byte and every line kept, so the run reports under the file's own name,
+  resolves its modules beside it and places a diagnostic on the author's line — and refuses, in
+  its words and exit 64, a name inside a component, one that is no value, an input nothing
+  binds, or a value that is no expression; the report says `report::rebound_text` first under
+  the outcome, published as `set` (`report::rebound_json`), and `--set` takes one model
+  (`a_value_is_set_for_a_run`, `a_top_level_value_is_given_for_a_run_and_nothing_else_is`).
+  Exit codes 0/1/2 are
   `Diag::severity` and `SolveResult::success`; 64 is the command line itself (`misuse`: the one
   line saying what was wrong, the synopsis and a pointer to `--help`, never the whole of it), and
   `--help` names every option the parser reads (`help_lists_every_option_examples_and_the_primer`).

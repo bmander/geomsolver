@@ -44,6 +44,7 @@ build/solventc rust/examples/*.sv            # parse, elaborate, solve, diagnose
 build/solventc --json rust/examples/gear.sv  # the same numbers, structured
 build/solventc drawing.sv --where hinge      # the numbers under one name
 build/solventc drive.sv --where torque       # a value the document names, in its unit
+build/solventc --set checks=1 bot.sv         # a top-level value, for this run only
 build/solventc --components drawing.sv       # each component against the boundary contract
 build/solventc --lint drawing.sv             # also where its text drifts from the style (advisory)
 build/solventc --no-check bot.sv             # its claims about solids left unjudged: no solid built
@@ -55,6 +56,14 @@ was refused or left a solid out: a `--png` missing a solid is still written, eac
 named against it), `2` (did not solve, unless `--allow-unsolved`, whatever its solids do) and
 `64` (the command line was wrong: an unknown option, an option missing its value, no document),
 so you can check a document in CI.
+
+`--set NAME=VALUE` (repeatable) reads VALUE where the document's top-level `NAME := …` writes
+its own, for that run only: a switch flipped (`--set checks=1`, `--set shaped=0`) without a copy
+of the file beside it. VALUE is an expression in the document's units (`--set travel=3mm`), the
+report keeps the file's name and says each value given first (`set checks := 1 (the document
+writes 0)`; `set` in `--json`), and it works with every output. A name inside a component, in a
+`use`d module, or that is no value is refused with exit 64.
+
 A wrong command line says what was wrong and the synopsis, and points at `--help`; `--help` has
 every option, examples and where the primer is. A diagnostic carries its span, for example
 `gear.sv:31:14: error[E040]: …`. A solid that cannot be built from where a failed solve stopped is

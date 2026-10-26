@@ -1143,6 +1143,63 @@ in std.front {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// **A top-level value given for one run** (#656): `--set` reads another value where the document
+/// binds one, the file left as it was and the report under its own name, saying first what was
+/// given over what — and `--json` carries it as `set`.  A name that is no top-level value, a
+/// value that is no expression, or a second document is the command line's fault, exit 64.
+#[test]
+fn a_value_is_set_for_a_run() {
+    let dir = std::env::temp_dir().join(format!("solventc-set-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("switches.sv");
+    let text = "\
+unit mm
+use std
+checks := 0      // 1: judge every clearance
+travel := 2mm
+claim checks == 0
+component Box(r: Length) {
+  inner := r * 2
+}
+in std.front {
+  a := point
+  fix((0, 0)) a
+}
+";
+    std::fs::write(&source,text).unwrap();
+    let path = source.to_str().unwrap();
+    let out = run(&["--set","checks=1","--set","travel=3cm",path,"--where","travel"]);
+    assert_eq!(out.status.code(),Some(0),"{}",String::from_utf8_lossy(&out.stderr));
+    let said = String::from_utf8_lossy(&out.stdout);
+    let first = [format!("{path}: solved"),"  set checks := 1 (the document writes 0)".into(),
+                 "  set travel := 3cm (the document writes 2mm)".into()];
+    assert!(said.lines().take(3).eq(first.iter().map(String::as_str)),"{said}");
+    assert!(said.contains("  claim checks == 0 — refuted: checks = 1\n")
+            && said.contains("  travel = 30 mm\n"),"{said}");
+    assert_eq!(std::fs::read_to_string(&source).unwrap(),text,"the file is left as it was");
+    let json = String::from_utf8_lossy(&run(&["--json","--set","checks=1",path]).stdout).into_owned();
+    assert!(json.contains("\"set\"") && json.contains("\"written\": \"0\""),"{json}");
+    // a value the run reads is a value the document may refuse, said where the binding is
+    let out = run(&["--set","checks=nothing",path]);
+    assert_eq!(out.status.code(),Some(1));
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(said.contains(&format!("{path}:3:11: error[")),"{said}");
+    let other = dir.join("other.sv");
+    std::fs::write(&other,text).unwrap();
+    for (args,why) in [
+        (vec!["--set","nope=1",path],"the document binds no value `nope` at its top level"),
+        (vec!["--set","checks",path],"--set needs NAME=VALUE"),
+        (vec!["--set","checks=1",path,other.to_str().unwrap()],"--set gives a value of one document"),
+    ] {
+        let out = run(&args);
+        assert_eq!(out.status.code(),Some(64),"{args:?}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.starts_with("solventc: ") && stderr.contains(why),"{args:?}: {stderr}");
+        assert!(out.stdout.is_empty(),"{args:?}");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// **An empty Boolean of a swept body reads its volume, 0** (#618): the #585 wheel, cut by its star
 /// over a whole period, shares nothing with the star, so the common of the two is built with no
 /// material — `overlap.volume = 0`, as a static one's empty common reads — while a name the source
