@@ -4,7 +4,9 @@
 // angle read from `s`, of any size and under any law — is the same statement with the corners
 // written against turned axes (`docs/lofts/l0/twisted_duct.sv`).
 unit mm
-use std (coords)
+use std
+use std.place (coords)
+use std.stations
 length := 40mm
 half := 10mm
 reach := 12mm
@@ -12,7 +14,7 @@ reach := 12mm
 // The section at station `s`: each corner the square's mixed with the diamond's, in the plane
 // square to the guide there.
 component Twisted(g: line, up: axis, half: Length, reach: Length, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   in st.n {
     a := point
     b := point

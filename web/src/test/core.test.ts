@@ -1982,8 +1982,9 @@ test('a name nothing defines is a free variable that ties the dimensions reading
 
 test('an ellipse is a curve of the library, and a point solves onto its rim', () => {
   const d = Document.read(
-    'use std\nin std.front {\no := point\nfix((10, 5)) o\np := point hint((11, 9))\n}\n'
-    + 'e := trace(std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360))\np coincident e hint(t: 80)\n');
+    'use std\nuse std.shapes\n'
+    + 'in std.front {\no := point\nfix((10, 5)) o\np := point hint((11, 9))\n}\n'
+    + 'e := trace(std.shapes.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360))\np coincident e hint(t: 80)\n');
   assert.ok(d.ok, JSON.stringify(d.diagnostics));
   const sk = d.sketch;
   assert.equal(sk.curves.length, 1);

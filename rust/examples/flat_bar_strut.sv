@@ -6,7 +6,8 @@
 // second moment, and the factor on the pressure at which it buckles is that over the load the
 // pressure lays on its head.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 
 L := 600mm
 b := 40mm

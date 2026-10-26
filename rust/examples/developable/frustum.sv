@@ -14,6 +14,7 @@
 // same angle. The band's volume is πℓ((r₁ + r₂)·t + t² cos α) for a band t thick: 52517.6 at t = 2.
 unit mm
 use std
+use std.panels
 
 r1 := 50mm
 r2 := 30mm
@@ -40,7 +41,7 @@ in up {
   radius(r2) upper
 }
 
-panel := std.Developable(lower, upper)            // the panel: what a plane touches both rims along
+panel := std.panels.Developable(lower, upper)     // the panel: what a plane touches both rims along
 skin := { q | q distance(<= t, side: outside) panel }
 reducer := solid(skin)                            // the sheet, t thick, square at its edges
 
@@ -48,7 +49,7 @@ blank := plane
 fix(origin == (0mm, 0mm, -150mm)) blank
 fix(dir == (1, 0, 0)) blank.u
 fix(dir == (0, 1, 0)) blank.v
-flat := std.Development(panel, s, d: t / 2) in blank   // its neutral layer, laid flat
+flat := std.panels.Development(panel, s, d: t / 2) in blank   // its neutral layer, laid flat
 in blank {
   corner := point
   fix((0mm, 0mm)) corner

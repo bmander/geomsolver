@@ -126,7 +126,8 @@ scenario pull {{
 /// and pulled along it at its head — of no Poisson's ratio, so the points holding it across hold
 /// nothing of a narrowing.
 pub const BAR: &str = "unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 L := 100mm
 P := 10kN
 param r: Length hint(10mm)

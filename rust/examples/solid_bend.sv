@@ -1,7 +1,10 @@
 // A hollow duct that narrows as it bends: one hollow square section carried round a constrained
 // arc, its half size running from the inlet's to the outlet's as it turns about the bend's axis.
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
+use std.shapes
+use std.stations
 bend_radius := 30mm
 inlet_half := 9mm
 outlet_half := 6mm
@@ -9,15 +12,15 @@ wall := 2mm
 bend_angle := 90deg
 
 component Section(c: point, size: Length, wall: Length) {
-  private outer := std.CenteredRectangle(c, w: size, h: size)
-  private inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  private outer := std.shapes.CenteredRectangle(c, w: size, h: size)
+  private inner := std.shapes.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
   profile := face(outer.loop, holes: inner.loop)
 }
 
 // The section at station `s`: square to the guide there, its half size the inlet's mixed with the
 // outlet's.
 component Bend(g: arc, up: axis, inlet: Length, outlet: Length, wall: Length, s: Scalar) {
-  st := std.OnArc(g, up: up, s: s)
+  st := std.stations.OnArc(g, up: up, s: s)
   sec := Section(st.n.origin, size: 2 * (inlet + (outlet - inlet) * s), wall: wall) in st.n
 }
 

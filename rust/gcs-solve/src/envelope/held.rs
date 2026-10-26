@@ -1,14 +1,14 @@
 //! **An envelope the solve sees** (#283, step 2).
 //!
 //! `flank := envelope(source over t in (a, b), under: m)` over a surface of revolution — a cone or
-//! a cylinder set (`std.Cone`, `std.ConeThrough`, `std.Cylinder`), or a line, arc or circle of a
-//! revolution's profile (`surface(rev, edge: e)`) — under a motion in space is the locus where the
-//! moving source's normal is square to its velocity, `n · ∂X/∂t = 0`.  A point held to it, a line
-//! in its tangent plane or along its normal there, a plane touching it and a circle osculating it
-//! are rows of the drawing: each owns or shares a **place** `[u, v, t]` — along the source's
-//! meridian, round its axis, and the motion's roll — and reads the source's geometry and the
-//! motion's axes as columns, so the numbers that make the source (a cutter's lean, where its axis
-//! stands) solve from what the envelope is held to.
+//! a cylinder set (`std.sets.Cone`, `std.sets.ConeThrough`, `std.sets.Cylinder`), or a line, arc or
+//! circle of a revolution's profile (`surface(rev, edge: e)`) — under a motion in space is the
+//! locus where the moving source's normal is square to its velocity, `n · ∂X/∂t = 0`.  A point held
+//! to it, a line in its tangent plane or along its normal there, a plane touching it and a circle
+//! osculating it are rows of the drawing: each owns or shares a **place** `[u, v, t]` — along the
+//! source's meridian, round its axis, and the motion's roll — and reads the source's geometry and
+//! the motion's axes as columns, so the numbers that make the source (a cutter's lean, where its
+//! axis stands) solve from what the envelope is held to.
 //!
 //! The envelope's normal at a point is the moving source's normal there (the two touch), so its
 //! curvature needs no second solve: along a direction `w` in `ker ∇g` of the place, the shape
@@ -49,17 +49,17 @@ pub const STEP: usize = 6;
 pub enum Source {
     /// A segment `p1 → p2` (a revolution's line, `surface(rev, edge: l)`): `[a, b, p1, p2]`.
     Line = 1,
-    /// A cone's generator from the axis's start at the half angle (`std.Cone`, and
-    /// `std.ConeThrough` about its spine): `[a, b]`, the half its number.
+    /// A cone's generator from the axis's start at the half angle (`std.sets.Cone`, and
+    /// `std.sets.ConeThrough` about its spine): `[a, b]`, the half its number.
     Cone = 2,
-    /// A line parallel to the axis at the radius (`std.Cylinder`): `[a, b]`, the radius its
+    /// A line parallel to the axis at the radius (`std.sets.Cylinder`): `[a, b]`, the radius its
     /// number.
     Cylinder = 3,
     /// A circle about a centre in a plane (a revolution's arc or circle): `[a, b, c, r, U, V]`.
     Round = 4,
-    /// A plane square to the axis, its number along the axis from a point `o` (`std.HalfSpace`'s
-    /// face, #326): `[a, b, o]`. Not a revolution: its place is `[u, v]` along two directions
-    /// in it, both lengths, so its normal is the axis's direction everywhere.
+    /// A plane square to the axis, its number along the axis from a point `o`
+    /// (`std.sets.HalfSpace`'s face, #326): `[a, b, o]`. Not a revolution: its place is `[u, v]`
+    /// along two directions in it, both lengths, so its normal is the axis's direction everywhere.
     Plane = 5,
 }
 

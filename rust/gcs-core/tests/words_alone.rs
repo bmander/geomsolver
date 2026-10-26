@@ -24,7 +24,7 @@ fn solved(src: &str) -> Elaborated {
 /// and a bound on the line's point chooses, from no seed at all, either way.
 #[test]
 fn a_skew_distances_side_is_chosen_by_a_bound() {
-    let base = "unit mm\nuse std (skew)\n\
+    let base = "unit mm\nuse std\nuse std.place (skew)\n\
                 gax := line(std.origin)\nfix((0, 0, 10)) gax.p2\n\
                 a := point\nb := point\nfix(x == 0, z == 3) a\nfix(x == 10, z == 3) b\n\
                 a level(std.y) b\npax := line(a, b)\ngax skew(theta: 90deg, e: 5mm) pax\n";
@@ -63,10 +63,10 @@ fn an_unseeded_triangle_stands_where_its_words_say_at_its_own_size() {
 /// again where it ends, the line stands up.
 #[test]
 fn a_line_parallel_to_a_held_axis_stands_along_it() {
-    let src = "unit mm\nuse std\n\
+    let src = "unit mm\nuse std\nuse std.sets\n\
                C := point in std.top\nq := point in std.top\nfix((10, 20)) C\nfix((30, 20)) q\n\
                ax := line(C)\nax parallel std.z\nC distance(30, along: std.z) ax.p2\n\
-               k := std.ConeThrough(ax, q, lean: 20deg)\n";
+               k := std.sets.ConeThrough(ax, q, lean: 20deg)\n";
     let e = solved(src);
     let (p2, apex) = (at(&e, "ax.p2"), at(&e, "k.apex"));
     assert!((p2[0] - 10.0).abs() < 1e-9 && (p2[1] - 20.0).abs() < 1e-9, "{p2:?}");
@@ -83,10 +83,10 @@ fn a_line_parallel_to_a_held_axis_stands_along_it() {
 /// grow.
 #[test]
 fn an_angles_bound_is_held_to_the_solves_tolerance() {
-    let src = "unit mm\nuse std\n\
+    let src = "unit mm\nuse std\nuse std.sets\n\
                C := point in std.top\nq := point in std.top\nfix((0, 0)) C\nfix((300, 0)) q\n\
                ax := line(C)\nax parallel std.z\nC distance(100, along: std.z) ax.p2\n\
-               k := std.ConeThrough(ax, q, lean: -10deg)\n\
+               k := std.sets.ConeThrough(ax, q, lean: -10deg)\n\
                grown := { p | p distance(<= 0.5mm, side: inside) k }\n\
                kink := point in std.front\nkink coincident grown.surface\n\
                C distance(5mm, along: ax) kink\nC distance(>= 0mm, along: std.x) kink\n";
@@ -105,10 +105,10 @@ fn an_angles_bound_is_held_to_the_solves_tolerance() {
 /// where the failed solve ends (`System::recharted`), the point stands on the surface.
 #[test]
 fn a_chart_is_gauged_where_the_solve_ends() {
-    let src = "unit mm\nuse std\n\
+    let src = "unit mm\nuse std\nuse std.sets\n\
                C := point in std.top\nq := point in std.top\nfix((0, 0)) C\nfix((50, 0)) q\n\
                ax := line(C)\nax parallel std.z\nC distance(100, along: std.z) ax.p2\n\
-               k := std.ConeThrough(ax, q, lean: 20deg)\n\
+               k := std.sets.ConeThrough(ax, q, lean: 20deg)\n\
                grown := { p | p distance(<= 0.5mm, side: inside) k }\n\
                kink := point in std.front\nkink coincident grown.surface\n\
                C distance(-2mm, along: ax) kink\nC distance(>= 0mm, along: std.x) kink\n";

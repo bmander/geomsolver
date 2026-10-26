@@ -1,13 +1,14 @@
-// A square lofted to a triangle (#243 L8): two faces of different corner counts. `std.Ruled`
-// pairs corners by their places in the walks, so the walks must be as long (a square of four to
-// a triangle of three is refused, naming both). The triangle is given a fourth corner by naming
-// a point on one of its edges — `m`, the middle of its left side — and walking through it: a
-// statement, never inferred. Where the corner goes says how the loft twists.
+// A square lofted to a triangle (#243 L8): two faces of different corner counts.
+// `std.stations.Ruled` pairs corners by their places in the walks, so the walks must be as long (a
+// square of four to a triangle of three is refused, naming both). The triangle is given a fourth
+// corner by naming a point on one of its edges — `m`, the middle of its left side — and walking
+// through it: a statement, never inferred. Where the corner goes says how the loft twists.
 // Closed form: the corners run linearly between parallel ends, so the prismatoid is exact:
 // 30/6 · (400 + 4·287.5 + 200) = 8750 mm³ as drawn.
 // Edit `length` or `side`, or move `m` along the edge (`t == 0.5`).
 unit mm
 use std
+use std.stations
 
 length := 30mm
 side := 20mm
@@ -40,4 +41,4 @@ in end_plane {
 square := face(a0, a1, a2, a3, -> close)
 triangle := face(t0, t1, t2, m, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.Ruled(square, triangle).f over s)
+body := sweep(std.stations.Ruled(square, triangle).f over s)

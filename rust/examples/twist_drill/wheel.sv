@@ -3,7 +3,8 @@
 // along, `setting` from the drill's side datum; its rim comes within `nearest` of the drill's
 // axis. Every face it grinds with meets the next one tangent, so its characteristic under a
 // screw runs smoothly from face to face (docs/generating-sweeps.md, the constant-twist class).
-use std (coords)
+use std
+use std.place (coords)
 
 // `wheel` gives the wheel's radius to its rim (`rim`), how near the drill's axis the rim comes
 // (`nearest`), the round's radius (`round`), the flanks' lean from the wheel's radius (`flank`),

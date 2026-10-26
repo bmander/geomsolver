@@ -216,13 +216,13 @@ impl<'a> P<'a> {
             return Some(Vec::new());
         }
         // a side takes nothing in its parentheses: one grown by a distance is that distance from
-        // the surface (§6.21, #266), and the set grown is `std.Offset`
+        // the surface (§6.21, #266), and the set grown is `std.sets.Offset`
         if fixity == Fixity::Infix {
             if let Some(cmp) = crate::constraints::plane_side_word(word) {
                 let side = if cmp == Cmp::Le { "outside" } else { "inside" };
                 self.fail(&format!("`{word}` takes nothing in its parentheses: a point at most \
                     `d` on `S`'s {side} is `p distance(<= d, side: {side}) S`, and `S` grown by \
-                    `d` is the set `std.Offset(S, d: d)`"));
+                    `d` is the set `std.sets.Offset(S, d: d)`"));
                 return None;
             }
         }

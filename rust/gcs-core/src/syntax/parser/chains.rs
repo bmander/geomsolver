@@ -485,7 +485,7 @@ impl<'a> P<'a> {
                 self.skip_ends();
             }
             // a corner round (#576) is the whole of its joint, read only beside a marker — a bare
-            // `A round(r) B` is `std`'s round of the edges where two solids' faces meet
+            // `A round(r) B` is `std.rounds`' round of the edges where two solids' faces meet
             let round = match thread {
                 true => self.round_word()?,
                 false => None,

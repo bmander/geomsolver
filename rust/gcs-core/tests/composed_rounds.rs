@@ -13,7 +13,7 @@ use crate::common::{ent, parse, text::solved};
 /// A disc of radius `r` drawn about the front plane's origin and swept 20 deep (y from 0 to 20),
 /// `rim` its wall, `near` and `far` its caps; then `rest`.
 fn disc(r: f64, rest: &str) -> String {
-    format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
+    format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
              rim := circle(center: o) hint(r: {r})\n  radius({r}mm) rim\n}}\n\
              plate := solid(face(rim), depth: 20mm)\n{rest}")
 }
@@ -147,7 +147,7 @@ fn uses_that_name_each_other_are_refused() {
 /// A plate of 40, its far rim rounded 4 (the far face flat out to 36, then a torus), a boss of 25
 /// about (10, 0) standing on it from y = 20 to 30 — its foot reaching 35, a millimetre short of the
 /// round — and the boss's foot chamfered 2 against the plate's far face.
-const SPILL: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n  o := point\n  fix((0, 0)) o\n  \
+const SPILL: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n  o := point\n  fix((0, 0)) o\n  \
     rim := circle(center: o) hint(r: 40)\n  radius(40mm) rim\n  q := point\n  fix((10, 0)) q\n  \
     foot := circle(center: q) hint(r: 25)\n  radius(25mm) foot\n}\n\
     plate := solid(face(rim), depth: 20mm)\nplate.rim round(r: 4mm) plate.far\n\
@@ -358,7 +358,7 @@ fn a_chamfer_spilled_onto_a_round_is_built_whichever_face_goes_on() {
 /// boss of 26 about the same axis standing on it from y = 20 to 30, and the boss's foot treated by
 /// `how` against the far face — 2 out from the boss, past the seam at 27.
 fn coaxial(how: &str) -> String {
-    format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
+    format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {{\n  o := point\n  fix((0, 0)) o\n  \
         rim := circle(center: o) hint(r: 30)\n  radius(30mm) rim\n  foot := circle(center: o) hint(r: 26)\n  \
         radius(26mm) foot\n}}\nplate := solid(face(rim), depth: 20mm)\nplate.rim round(r: 3mm) plate.far\n\
         boss := solid(face(foot), from: -30mm, to: -20mm)\npart := solid(plate)\nboss union part\n\
@@ -398,13 +398,13 @@ fn a_round_spilled_onto_a_round_about_one_axis_is_built() {
 }
 
 
-/// The spilled chamfer's fill (#422), worked out from `std.FlatFill`'s own words over the part of
-/// `rounds/spill.sv` with a boss of `r`: in each half-plane through the boss's axis, between the
-/// chain (the far face's plane, then the rim's torus past the seam at 30.54 from the plate's axis)
-/// and where the distances from the chain and from the boss's wall, each over 2, sum to one —
-/// that height found by bisection, the area's moment about the axis by Gauss–Legendre between the
-/// wall, where the chain changes piece and the leg — turned about the axis by the trapezoid rule
-/// (each half-plane's moment periodic in its angle).  Nothing of the core is asked.
+/// The spilled chamfer's fill (#422), worked out from `std.rounds.FlatFill`'s own words over the
+/// part of `rounds/spill.sv` with a boss of `r`: in each half-plane through the boss's axis,
+/// between the chain (the far face's plane, then the rim's torus past the seam at 30.54 from the
+/// plate's axis) and where the distances from the chain and from the boss's wall, each over 2, sum
+/// to one — that height found by bisection, the area's moment about the axis by Gauss–Legendre
+/// between the wall, where the chain changes piece and the leg — turned about the axis by the
+/// trapezoid rule (each half-plane's moment periodic in its angle).  Nothing of the core is asked.
 fn spilled_fill(r: f64) -> f64 {
     // the boss's axis on the far face, from `spill.sv`'s plane and its centre in it
     let (cx, cz) = (-0.110911353 - 8.4, 8.93063091 - 6.7);
@@ -510,8 +510,8 @@ fn spilled_round(r: f64, ball: f64) -> String {
     spilled(r).replace("boss.plate.far chamfer(d: 2mm) boss.foot", &format!("boss.plate.far round(r: {ball}mm) boss.foot"))
 }
 
-/// The spilled round's fill (#422's rung 3), worked out from `std.Fill`'s own words over the part
-/// of `rounds/spill.sv` with a boss of `r` rounded `ball`: a point beside the edge — above the
+/// The spilled round's fill (#422's rung 3), worked out from `std.rounds.Fill`'s own words over the
+/// part of `rounds/spill.sv` with a boss of `r` rounded `ball`: a point beside the edge — above the
 /// chain (the far face, then the rim's torus past the seam at 30.54), outside the boss's wall — is
 /// the fill's where no ball of that radius whose centre stands at least `ball` from the chain and
 /// from the wall reaches it.  The nearest such centre is the point of the chain's offset or the
@@ -644,7 +644,7 @@ fn a_round_spilled_onto_a_rounded_plate_is_built_exactly_at_every_radius() {
 /// the round at y = 20 − 2 tan 22.5°, the round into the slope — and a rib 20 long on the top, its
 /// front wall at y = 17, 6 tall; then `rest`.
 fn sloped(rest: &str) -> String {
-    format!("unit mm\nuse std (round, chamfer)\nin std.side {{\n  b0 := point\n  b1 := point\n  b2 := point\n  \
+    format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.side {{\n  b0 := point\n  b1 := point\n  b2 := point\n  \
         b3 := point\n  fix((0, 0)) b0\n  fix((30, 0)) b1\n  fix((20, 10)) b2\n  fix((0, 10)) b3\n  \
         (bottom := line(b0, b1)) -> (slope := line(b1, b2)) -> (top := line(b2, b3)) -> (back := line(b3, b0)) -> close\n  \
         outline := face(bottom, slope, top, back)\n  r0 := point\n  r1 := point\n  r2 := point\n  r3 := point\n  \
@@ -704,7 +704,7 @@ fn tilted_with(depth: f64, bosses: &[(f64, f64, f64)], rest: &str) -> String {
     let solids: String = (0..bosses.len()).map(|k| format!("{n} := solid(face({n}_k), from: 0mm, to: 30mm)\n", n = name(k)))
         .collect();
     let unions: String = (0..bosses.len()).map(|k| format!("{} union part\n", name(k))).collect();
-    format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n  w0 := point\n  w1 := point\n  w2 := point\n  \
+    format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {{\n  w0 := point\n  w1 := point\n  w2 := point\n  \
         w3 := point\n  fix((0, 0)) w0\n  fix((40, 0)) w1\n  fix((40, 10)) w2\n  fix((0, 20)) w3\n  \
         (wb := line(w0, w1)) -> (we := line(w1, w2)) -> (wt := line(w2, w3)) -> (ww := line(w3, w0)) -> close\n  \
         side_f := face(wb, we, wt, ww)\n}}\nin std.top {{\n{drawn}}}\n\
@@ -712,7 +712,7 @@ fn tilted_with(depth: f64, bosses: &[(f64, f64, f64)], rest: &str) -> String {
         {solids}part := solid(wedge)\n{unions}{rest}")
 }
 
-/// The tilted chamfer's fill (#422's rung 5), worked out from `std.FlatFill`'s own words, for a boss
+/// The tilted chamfer's fill (#422's rung 5), worked out from `std.rounds.FlatFill`'s own words, for a boss
 /// of radius `rb` whose axis stands upright at `x0` (30 and 6 in `tilted`): about its axis, between
 /// the chain — the slope `z = 20 − x/4`, then past its seam at x ≈ 37.73 the round of 3 about the
 /// line through (37, 7.66) along y — and where the distances from the chain's nearest face and from
@@ -774,7 +774,7 @@ fn a_chamfer_along_a_traced_edge_spilled_onto_a_round_is_built() {
     assert!((got - want).abs() <= 1e-8 * want, "{got} against {want}");
 }
 
-/// The tilted round's fill (#422's rung 5), worked out from `std.Fill`'s own words, as
+/// The tilted round's fill (#422's rung 5), worked out from `std.rounds.Fill`'s own words, as
 /// `spilled_round_fill` is: about the boss's axis (upright through (30, −12)), above the chain (the
 /// slope, then past its seam the round of 3 about the line through (37, 7.66) along y) and outside
 /// the wall, a point is the fill's where no ball of `ball` whose centre stands at least that far

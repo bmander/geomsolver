@@ -8,7 +8,8 @@
 //! - **a circle**: closed, the fraction of a turn from its plane's `u` toward its `v`;
 //! - **a spline**: its knot parameter, over control points in space (a plane's lifted);
 //! - **a curve traced in space**: its formal;
-//! - **a curve drawn in a plane by a formula** (`CurveBody::Exprs`, `std.Ellipse`): its formal,
+//! - **a curve drawn in a plane by a formula** (`CurveBody::Exprs`, `std.shapes.Ellipse`): its
+//! formal,
 //!   lifted by its plane's basis — the formula's own derivatives, never differences;
 //! - **a chain** of lines and arcs: `s` from 0 to the count of its links, link `k` while `s` is in
 //!   `(k, k + 1)`, the place on its run; closed where it comes round.
@@ -117,7 +118,7 @@ impl Path {
                 let d = sk.curve_defs.get(cv.def as usize).ok_or("no such curve")?;
                 let CurveBody::Exprs { x, y } = &d.body else {
                     return Err("a curve drawn in a plane is a path where a formula draws it \
-                                (`point(x: …, y: …)`, `std.Ellipse`)".into());
+                                (`point(x: …, y: …)`, `std.shapes.Ellipse`)".into());
                 };
                 if sk.curve_turn(g.i()).is_some() {
                     return Err("a ring's turned copy of a curve is no path: name the curve it \

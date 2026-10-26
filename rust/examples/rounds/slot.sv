@@ -10,7 +10,8 @@
 // own walls, and stays sharp. Orbit (right-drag) to see both chains. Edit a radius and apply
 // (⌘↵); the surfaces refine in the background.
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 in std.front {
   // the plate, 80 × 50

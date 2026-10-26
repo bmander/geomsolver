@@ -90,7 +90,7 @@ pub(crate) fn ref_text(r: &Ref) -> String {
 pub struct NameUse {
     /// The dotted parts as written, `std` then `front`, each at its span.
     pub parts: Vec<(String, Span)>,
-    /// Whether a `(` follows: a call, `std.Polygon(…)`, which names no entity.
+    /// Whether a `(` follows: a call, `std.shapes.Polygon(…)`, which names no entity.
     pub called: bool,
 }
 

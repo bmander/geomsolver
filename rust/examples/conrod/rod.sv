@@ -6,7 +6,7 @@
 //
 // `engine/conrod.sv` draws a rod in its plane of swing, where the shank-to-eye fillets are 42
 // statement lines of 2D geometry. Here the sketch is the sharp outline, and every round and
-// chamfer is one statement of `std.sv`'s words over the faces the solids gave the rod: the
+// chamfer is one statement of `std.rounds`' words over the faces the solids gave the rod: the
 // rounds act on the rod as its other terms leave it (the stratum), so it does not matter that the
 // edges they round are where an eye meets the shank or a pocket was cut.
 //
@@ -14,7 +14,8 @@
 // width across the engine along y. Orbit (right-drag) to see the pockets and the rounds. Edit a
 // number and apply (⌘↵); rod.svd is the drawing.
 unit mm
-use std (round, chamfer)
+use std
+use std.rounds (round, chamfer)
 
 L := 140mm       // centre to centre
 eB := 30mm       // big-end eye, outside

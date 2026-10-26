@@ -5,9 +5,10 @@
 // the other grown by its leg) and fitted, its strips on both walls built as a rolled round's are.
 //
 // The main pipe is drawn on the side plane, the branch on the top plane. Orbit (right-drag) to see
-// the flat. Edit `d` and apply (⌘↵), or round it instead (`use std (round)`, `round(r: d)`).
+// the flat. Edit `d` and apply (⌘↵), or round it instead (`use std.rounds (round)`, `round(r: d)`).
 unit mm
-use std (chamfer)
+use std
+use std.rounds (chamfer)
 
 d := 1mm   // the flat's legs
 

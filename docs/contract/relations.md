@@ -39,7 +39,7 @@ came from.
   carries into space (`reading::in_space`) and through a copy (`graft`).  Exactly the other way
   round no turn's axis is defined, and the row reads π along `e₁` less the cross product over the
   lengths: a residual with a gradient a step leaves that pose by.  **The rule:** an axis the
-  language holds to a direction unasked runs its way — `axes_along`'s intrinsic row and `std`'s
+  language holds to a direction unasked runs its way — `axes_along`'s intrinsic row and `std.motion`'s
   joint words are sensed `same`.  No number, so no dimension and no callout.
   `tests/axis_sense.rs` is the gate, the kernels' rows in `jacobians.rs`.
 - **A turn is read about an axis named** ([0.174], #558).  `angle(θ, about: a)` is
@@ -91,7 +91,7 @@ came from.
   whatever it comes to, a literal zero as much as a name for one or `(x0 + x1) / 2` (Solvent
   [0.188]: through 0.187 the literal was E040, naming the level, so a component placing a point
   by its ordinates had to branch on each being zero); `a horizontal b`
-  is `std`'s word for `level(up)` (`use std (horizontal)`, §9.9), and the printer
+  is `std.place`'s word for `level(up)` (`use std.place (horizontal)`, §9.9), and the printer
   (`print::ordinate_text`) spells each case back.  `tests/ordinate.rs` is the gate.
 
 - **`distance` relates two things; `length` measures one** (#269, Solvent 0.90).  A path's
@@ -138,17 +138,17 @@ came from.
   (`rate_contact`); one at a point no contact holds is E040 naming the statement (`tangents_at`).
   **A motion is an operand** (#326, [0.105]): `SpecKind::Motion`, the slot a motion fills — of a
   point it carries, below.  Its twist has no words of its own (#365, [0.130]): `reciprocal` and
-  `screw` are the standard library's, rates of carried points (`L reciprocal m`, `std.Screw(isa,
-  m)`), so neither is an `OPERATORS` word any more, and `std.sv` may define them.
-  **The rate of a contact** (#365, [0.130]): `CKind::Rate`, slots `(on: Carrier, to: Against, at:
-  Point, t: Param, over: Str, word: Str)`, and `CKind::RateDistance` (`on`, `along: Direction`,
-  `at`, `d: Length`, `t`, `over`) — every statement at a point a contact holds, its word what of the
-  contact's frame it holds (curves.md's "The rate of a contact"): `rate(p over t) parallel l` /
-  `perpendicular l`, and `rate(X over t) distance(d, along: l)`; `g tangent(at: m) l` of a spline, a
-  curve, a meshing or a traced curve (`tangent`), of a traced surface or an envelope (`in_plane`);
-  `S perpendicular(at: p) l` of a surface or a meshing (`normal`); `S tangent(at: p) P` (`plane`);
-  `S curvature(at: p) k` (`curvature`).  `infix_op` settles every such `at:` word to `Rate` and
-  `settle` fills its word and `over` from the word written and the operands
+  `screw` are the standard library's, rates of carried points (`L reciprocal m`,
+  `std.motion.Screw(isa, m)`), so neither is an `OPERATORS` word any more, and `std.motion` may
+  define them. **The rate of a contact** (#365, [0.130]): `CKind::Rate`, slots `(on: Carrier, to:
+  Against, at: Point, t: Param, over: Str, word: Str)`, and `CKind::RateDistance` (`on`, `along:
+  Direction`, `at`, `d: Length`, `t`, `over`) — every statement at a point a contact holds, its word
+  what of the contact's frame it holds (curves.md's "The rate of a contact"): `rate(p over t)
+  parallel l` / `perpendicular l`, and `rate(X over t) distance(d, along: l)`; `g tangent(at: m) l`
+  of a spline, a curve, a meshing or a traced curve (`tangent`), of a traced surface or an envelope
+  (`in_plane`); `S perpendicular(at: p) l` of a surface or a meshing (`normal`); `S tangent(at: p)
+  P` (`plane`); `S curvature(at: p) k` (`curvature`).  `infix_op` settles every such `at:` word to
+  `Rate` and `settle` fills its word and `over` from the word written and the operands
   (`relations::traced_contact` turns a traced surface's `tangent` into `in_plane` and refuses a
   curve's surface words); `settle_rate` lowers a written relation one of whose rates the flattener
   marked a slot (`RateOf::slot`), before any word table: one rate, of a point, the other operand a
@@ -336,7 +336,7 @@ came from.
   `tests/chain.rs` holds `rect_fillets`'s chain spelling to the shipped longhand.
 - **A corner round is a joint** (#576, [0.179]): `A -> round(r: R) B` (`-> (k := round(r: R))` to
   name the arc) is read by `chains::round_word` only beside a marker — a bare `A round(r) B` stays
-  `std`'s round of solids — and is the whole of its joint (another word there is refused).  It is
+  `std.rounds`' round of solids — and is the whole of its joint (another word there is refused).  It is
   sugar the parser writes (`round_corner`, `round_stmts`): the corner the two lines were written
   meeting at (either side, or both agreeing; a side that is a reference refuses a named corner)
   leaves both declared slots, each now an implicit child — `A.p2`, `B.p1` — and the round states

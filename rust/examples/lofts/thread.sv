@@ -2,10 +2,10 @@
 // The thread is the epic's helix (#391, #398): a frame turning about the top plane's normal and
 // rising `pitch` a turn, whose value is `360deg · turns · s`, and the square drawn in its block
 // on the front plane, through the axis — it stands where the value puts it, so swept as `s` runs
-// it sweeps a thread. The flight is `std.Helix(base, pitch:, turns:, s:)`'s station, `base`
-// carried by the same screw about its normal (#366): a section drawn in its `n`, square to the
-// axis, sweeps a twisted prism. Each is the screw's sweep of its section, exactly, and a negative
-// pitch winds left-handed.
+// it sweeps a thread. The flight is `std.stations.Helix(base, pitch:, turns:, s:)`'s station,
+// `base` carried by the same screw about its normal (#366): a section drawn in its `n`, square to
+// the axis, sweeps a twisted prism. Each is the screw's sweep of its section, exactly, and a
+// negative pitch winds left-handed.
 // Closed forms:
 //   thread: a 2 mm square centred 10 from the axis, 3 turns at a pitch of 4; an axial section
 //     under a screw sweeps its area times its centroid's circle a turn (Pappus):
@@ -14,7 +14,11 @@
 //     the axis under a screw sweeps its area times the rise (Cavalieri): 8 · 30 = 240 mm³.
 // Edit `r`, `size`, `pitch` or `turns` (a negative pitch for a left-hand thread).
 unit mm
-use std (coords, on_u, screws)
+use std
+use std.place (coords, on_u)
+use std.shapes
+use std.stations
+use std.motion (screws)
 
 r := 10mm
 size := 2mm
@@ -22,7 +26,7 @@ pitch := 4mm
 turns := 3
 
 component Flight(off: Length, w: Length, h: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.Helix(std.top, pitch: pitch, turns: turns, s: s)
+  st := std.stations.Helix(std.top, pitch: pitch, turns: turns, s: s)
   in st.n {
     a := point
     b := point
@@ -47,7 +51,7 @@ in screw {
     c := point
     c on_u(d: r) std.front
   }
-  sq := std.CenteredRectangle(c, w: size, h: size) in std.front
+  sq := std.shapes.CenteredRectangle(c, w: size, h: size) in std.front
   sec := face(sq.loop)
 }
 thread := sweep(sec over s)

@@ -335,8 +335,8 @@ flat l
     assert_eq!(tint_of(src, "d: 5"), Some(Tint::Label));
     assert_eq!(tint_of(src, "flat l\n"), Some(Tint::Relation));
     // an imported word, and the module it comes from
-    let src = "use std (right_of)\ncentre right_of(d: ring) std.origin\nx := Turned(o, t)\n";
-    assert_eq!(tint_of(src, "std ("), Some(Tint::Type));
+    let src = "use std\nuse std.place (right_of)\ncentre right_of(d: ring) std.origin\nx := Turned(o, t)\n";
+    assert_eq!(tint_of(src, "place ("), Some(Tint::Type));
     assert_eq!(tint_of(src, "right_of)"), None);
     assert_eq!(tint_of(src, "right_of(d"), Some(Tint::Relation));
     assert_eq!(tint_of(src, "Turned"), Some(Tint::Type), "a component call is still a call");

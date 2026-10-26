@@ -1,7 +1,7 @@
 //! **A developable panel's band as a solid** (#645): `solid(skin)` over `skin := { q | q
 //! distance(<= 6mm, side: outside) panel }`, the panel a set the core recognises as
-//! `std.Developable`'s (`RegionShape::Sheet`).  A distance from a sheet is measured along its
-//! normal from a foot on it, and past its edges there is no foot, so the band is square there:
+//! `std.panels.Developable`'s (`RegionShape::Sheet`).  A distance from a sheet is measured along
+//! its normal from a foot on it, and past its edges there is no foot, so the band is square there:
 //! each station is the planar quad between a ruling and the ruling moved along the normal, and
 //! neighbouring stations are joined — built exactly from the panel's rulings, as the lowering
 //! table builds a round, never read point by point.

@@ -1,15 +1,16 @@
 // A loft with no guide (#243 L7): three squares in space — 20 at height 0, 12 at 40 moved off
 // the axis, 16 at 60 back on it — and a chain of lines through each corresponding corner. The
-// station is the plane through three rails at `s` (`std.Across`), and each corner stands where
-// its rail meets it; the family runs the four chains in step, link by link.
+// station is the plane through three rails at `s` (`std.stations.Across`), and each corner stands
+// where its rail meets it; the family runs the four chains in step, link by link.
 // Closed form: between level sections each piece is a prismatoid,
 // 40/6 · (400 + 4·256 + 144) + 20/6 · (144 + 4·196 + 256) = 14400 mm³.
 // Edit any corner.
 unit mm
 use std
+use std.stations
 
 component Quad(ra: path, rb: path, rc: path, rd: path, s: Scalar) {
-  st := std.Across(ra, rb, rc, s: s)
+  st := std.stations.Across(ra, rb, rc, s: s)
   a := point in st.n
   b := point in st.n
   c := point in st.n

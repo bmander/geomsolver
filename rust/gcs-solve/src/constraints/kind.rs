@@ -167,8 +167,9 @@ pub enum CKind {
     /// **`CarriedPoint` read in the plane its point is drawn in** (#366): at a stated roll, `X`
     /// drawn in `n` is held where `n` sees the carried point — two rows, `(X − Pose(τ)·x)·n.u` and
     /// `·n.v`, the plane's axes columns too — so a point turned within its own plane
-    /// (`std.Twisted`'s) is held by exactly as many rows as it has numbers.  `program::reading`
-    /// turns a `CarriedPoint` into it, as it turns a relation in space into its kind in a view.
+    /// (`std.stations.Twisted`'s) is held by exactly as many rows as it has numbers.
+    /// `program::reading` turns a `CarriedPoint` into it, as it turns a relation in space into its
+    /// kind in a view.
     CarriedPointIn,
     /// **A development's home ruling as long as its panel's** (#645): `|g − f| = L`, `f` and `g`
     /// the ends of a laid rail's home ruling — the curve's two arguments — and `L` the panel's

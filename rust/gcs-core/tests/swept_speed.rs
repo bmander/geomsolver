@@ -163,7 +163,8 @@ fn a_prism_of_whole_circles_is_the_turn_of_its_section() {
     let src = "\
 unit mm
 use std
-use std (vertical, on_v, raised)
+use std.place (vertical, on_v, raised)
+use std.sets
 in std.front {
   construction spindle := vertical line(std.origin, hint((0, 10)))
   length(10mm) spindle
@@ -183,8 +184,8 @@ top_q := point
 top_q raised(d: 6mm, along: std.z) top_at
 bottom_q := point
 bottom_q raised(d: 6mm, along: std.z) bottom_at
-top_cone := std.ConeThrough(spindle, top_q, lean: -45deg)
-bottom_cone := std.ConeThrough(spindle, bottom_q, lean: 45deg)
+top_cone := std.sets.ConeThrough(spindle, top_q, lean: -45deg)
+bottom_cone := std.sets.ConeThrough(spindle, bottom_q, lean: 45deg)
 bicone := { p | p inside top_cone; p inside bottom_cone }
 construction chamfers := solid(bicone)
 chamfers common disc
@@ -207,7 +208,8 @@ chamfers common disc
 const SPURS: &str = "\
 unit mm
 use std
-use std (vertical, turns, slides, coords, on_v, raised, seats)
+use std.place (vertical, coords, on_v, raised, seats)
+use std.motion (turns, slides)
 component Spur(N: Int, m: Length, z1: Length) {
   R := m * N / 2
   hw := pi * m / 4

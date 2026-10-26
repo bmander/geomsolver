@@ -14,7 +14,8 @@
 
 use engine.dims (D, P, back, bulk, capd, deck, front, hw, kw, rail, rbay, rj, rmb, sump, wall, wmb)
 use engine.parts
-use std (horizontal, offset, right_of)
+use std
+use std.place (horizontal, offset, right_of)
 
 // the oil pan: a casting `pt` thick, hung from a flange `pf` thick under the block's rail, its
 // walls `pw` either side of the axis and its ends `pfe` in from the block's faces

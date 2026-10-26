@@ -1,7 +1,9 @@
 // Reusable cylinder: section geometry, solid and dimension claims.
 // Instantiated by Bank in the assembly; the preview below sets up the part drawing.
 
-use std (on_u)
+use std
+use std.place (on_u)
+use std.shapes
 use components.dims (D, H, L, R, a, boltac, boltaf, dport, head, ph, trapfit, traph, trapz, wall)
 
 // The cylinder stands in its own frame (#542): origin at the pivot, z toward the head.  The part is
@@ -53,7 +55,7 @@ component Cylinder(fw: Length) {
     radius(trapfit / 2) shank
 
     // The bolt head slides in from the left; the slot holds it against the face wall.
-    pkt := std.Hex(std.up.origin, ax, af: boltaf, phase: 90deg)
+    pkt := std.shapes.Hex(std.up.origin, ax, af: boltaf, phase: 90deg)
     t0 := point hint((trapw / 2, hw))
     t1 := point hint((trapw / 2, -trapd))
     t2 := point hint((-trapw / 2, -trapd))

@@ -23,7 +23,9 @@ fn named<'a>(cs: &'a [Classified], name: &str) -> &'a Classified {
 fn over_two_points(components: &str, calls: &str) -> Vec<Classified> {
     classes(&format!("\
 unit mm
-use std (horizontal, spins)
+use std
+use std.place (horizontal)
+use std.motion (spins)
 {components}
 in std.front {{
   a := point
@@ -100,7 +102,8 @@ two := Chosen(std.front, a, b)
 
     let cs = classes("\
 unit mm
-use std (spins)
+use std
+use std.motion (spins)
 component Apex(view: plane, a: point, b: point) {
   in view {
     x := point hint((3, 4))
@@ -194,7 +197,8 @@ turn := Turning(f, c)
 fn an_unbound_formal_is_an_exported_input_and_an_unknown_of_its_own_a_freedom() {
     let cs = classes("\
 unit mm
-use std (spins)
+use std
+use std.motion (spins)
 component Crank(view: plane, o: point, ref: line, theta: Angle) {
   in view {
     tip := point hint(at: o, along: ref, by: 10)

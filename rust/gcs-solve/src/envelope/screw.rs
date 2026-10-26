@@ -10,13 +10,13 @@
 //! length a radian of the roll, every other column held — what the motion's **twist** is at `X`,
 //! read by the one kernel every rate of a contact is (`contact_rate`, `held::carried`).  A motion's
 //! twist has no words of its own: the standard library reads it by rates of carried points
-//! (`std.sv`'s `reciprocal`, a line a force along which does no work on the motion, and `Screw`,
-//! its instantaneous screw axis and its pitch).
+//! (`std.motion`'s `reciprocal`, a line a force along which does no work on the motion, and
+//! `Screw`, its instantaneous screw axis and its pitch).
 //!
 //! **At a stated roll** (#366), `X coincident x at(under: m) τ`: the same rows, `τ` a dimension
 //! the statement states (or a free variable's affine map), so a face family's station may be
 //! carried to a roll written over its running number and read again at every station — the
-//! station words of `std.sv` are motions read so, each at its frame's value (`n := base in
+//! station words of `std.stations` are motions read so, each at its frame's value (`n := base in
 //! screw`, #391 S3).  Drawn in a plane, `X` is held where the plane
 //! sees the carried point: the two rows along the plane's axes.
 //!

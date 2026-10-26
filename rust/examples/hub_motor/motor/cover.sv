@@ -15,7 +15,8 @@
 // `motor.dims` (the assembly claims they meet).  The disc side (`disc: 1`) is also tapped for the
 // brake disc's six M5 bolts.
 
-use std (horizontal)
+use std
+use std.place (horizontal)
 use motor.dims (brg_in, brg_od, brg_w, clear4, disc_bcd, disc_bolts, disc_depth, flange_r, flange_t,
                 half, lip, lip_r, pocket_in, Ro, Rr, screw_r, screws, spigot, spigot_r, spoke_d,
                 spoke_r, tap5, web)

@@ -1,4 +1,4 @@
-//! **A frame's joint as relation words** (Solvent §6.14 [0.154]; issue #464): `std.sv` states a
+//! **A frame's joint as relation words** (Solvent §6.14 [0.154]; issue #464): `std.motion` states a
 //! joint as a word with the frame the subject and what it moves about or along the object —
 //! `f turns(r) l`, `f screws(a) l`, `f spins(r) o`, `f slides(a) l` — each its one number bare.
 //! The components they replaced (`std.Turn`, `std.Spin`, `std.Slide`) are gone (#562): each stated
@@ -17,7 +17,8 @@ use crate::every_example::sources;
 fn drawing(joint: &str) -> String {
     format!("\
 unit mm
-use std (turns, screws, spins, slides)
+use std
+use std.motion (turns, screws, spins, slides)
 in std.front {{
   o := point
   fix((5, 2)) o
@@ -73,7 +74,7 @@ fn each_joint_word_says_what_it_moves() {
 #[test]
 fn a_spin_about_a_point_in_space_is_refused() {
     refused(
-        "unit mm\nuse std (spins, screws, slides, turns)\np := point hint((1, 2, 7))\nm := frame\nm spins(1) p\n",
+        "unit mm\nuse std\nuse std.motion (spins, screws, slides, turns)\np := point hint((1, 2, 7))\nm := frame\nm spins(1) p\n",
         "E040",
         "drawn in no plane",
         "m spins(1) p",
@@ -112,7 +113,7 @@ fn no_document_calls_a_joint_component() {
             let text = std::fs::read_to_string(p).unwrap();
             text.lines().enumerate()
                 .filter(|(_, l)| {
-                    // `std.Turn(` in a document, `Turn(` bare in `std.sv`, and not `Turned(`
+                    // `std.Turn(` in a document, `Turn(` bare in `rust/lib`, and not `Turned(`
                     let code = l.split("//").next().unwrap_or("");
                     !code.trim_start().starts_with("component ")
                         && ["Turn(", "Spin(", "Slide("].iter().any(|c| {

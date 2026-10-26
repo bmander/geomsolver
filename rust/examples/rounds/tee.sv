@@ -8,7 +8,8 @@
 // surfaces meet again below the main pipe's axis, where the body has no edge, and the round makes
 // nothing there. Orbit (right-drag) to see the crotch. Edit `r` or a pipe's radius and apply (⌘↵).
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 2mm   // the crotch's radius
 

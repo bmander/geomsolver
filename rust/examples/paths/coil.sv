@@ -1,19 +1,21 @@
 // A coil of square wire wound on a helix drawn in space (#363 S1). The helix is a curve traced in
 // space: a point placed by its three ordinates as `u` runs from 0 to 1, `turns` turns of radius
 // `r` about `z` rising `pitch` a turn. Handed to a `path` formal it is a guide like a line or a
-// spline: `std.On` stands a plane square to it where `u` is the family's `s`
+// spline: `std.stations.On` stands a plane square to it where `u` is the family's `s`
 // (`m coincident(t == s) g`, the trace's own formal), steps along it to read its tangent
 // (`hint(at: m, along: g)`), and turns the plane only as the guide makes it: the frame is
 // integrated from where the family stands drawn, its `u` square to `up` there and nowhere held
 // to it after, so along a twisted guide the plane stays square to the wire.
 //
 // The same coil is `lofts/spring.sv` with the helix written into the station's body
-// (`std.OnHelix`); here the helix is a curve of the drawing, and could be any.
+// (`std.stations.OnHelix`); here the helix is a curve of the drawing, and could be any.
 // Closed form: a section square to its path with its centroid on it sweeps its area times the
 // path's length: V = wire² · turns·√((2π·r)² + pitch²), 1.5² · 3·√((20π)² + 5²) mm³ as drawn.
 // Edit `r`, `pitch`, `turns` or `wire`.
 unit mm
-use std (coords)
+use std
+use std.place (coords)
+use std.stations
 
 r := 10mm
 pitch := 5mm
@@ -43,7 +45,7 @@ component Helix(o: point, x: line, y: line, z: line, r: Length, pitch: Length, t
 
 // a square of side `w` centred on the guide, square to it
 component Wire(g: path, up: axis, w: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     a := point
     b := point

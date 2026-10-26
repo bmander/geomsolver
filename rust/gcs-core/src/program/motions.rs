@@ -126,7 +126,8 @@ pub(super) fn motions(sk: &mut Sketch, res: &mut Resolver, map: &SourceMap, body
             res.guides.insert(stmt);
             if held.ratio.is_none() || held.advance.is_none() || advance != 0.0 {
                 say(diags, format!("`{name}` rides along a path, which says where it stands: its \
-                    joint states its ratio, 0 or 1, and no advance — `std.Along(f, g, up: u)`"));
+                    joint states its ratio, 0 or 1, and no advance — \
+                    `std.stations.Along(f, g, up: u)`"));
                 continue;
             }
             if ratio != 0.0 && ratio != 1.0 {

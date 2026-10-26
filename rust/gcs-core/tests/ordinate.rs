@@ -24,7 +24,8 @@ fn forms(e: &Elaborated) -> Vec<(CKind, OrdinateForm)> {
 
 const VIEWS: &str = "\
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 in std.front {
   a := point hint((10, 20))
   a2 := point hint((30, 5))
@@ -299,7 +300,7 @@ fn a_zero_written_so_is_a_number() {
     assert_eq!(forms(&e), vec![(CKind::Ordinate, OrdinateForm::CoordV)]);
     let e = read(&format!("{VIEWS}a distance(0, along: std.x) b\n"));
     assert_eq!(forms(&e), vec![(CKind::Ordinate, OrdinateForm::Space)]);
-    let e = read(&format!("{VIEWS}use std (coords)\nb coords(du: 0mm, dv: 5mm) std.top\n"));
+    let e = read(&format!("{VIEWS}use std\nuse std.place (coords)\nb coords(du: 0mm, dv: 5mm) std.top\n"));
     let sk = solved(&e);
     let b = at(&e, &sk, "b");
     assert!(b[0].abs() < 1e-9 && (b[1] - 5.0).abs() < 1e-9, "{b:?}");

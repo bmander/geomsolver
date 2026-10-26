@@ -16,7 +16,8 @@ use gcs_core::model::Sketch;
 /// ring of three pegs, cylinders turned about a point.
 const DRAWING: &str = "
 unit mm
-use std (offset, right_of)
+use std
+use std.place (offset, right_of)
 component Plate(w: Length, d: Length, h: Length) {
   in std.front {
     a := point hint((1, 1))

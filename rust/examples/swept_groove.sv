@@ -5,7 +5,10 @@
 // so the part is built exactly. ⌘B shows it in the glass box. Keep `arc_r + ball_r` inside the
 // block's half width.
 unit mm
-use std (below, right_of, turns)
+use std
+use std.place (below, right_of)
+use std.shapes
+use std.motion (turns)
 
 block_w := 40mm      // the block's width and depth
 block_h := 12mm      // its height
@@ -31,7 +34,7 @@ component Sphere(center: point, r: Length) {
 in std.front {
   private mid := point hint((0, -block_h / 2))
   mid below(d: block_h / 2) std.origin
-  private outline := std.CenteredRectangle(mid, w: block_w, h: block_h)
+  private outline := std.shapes.CenteredRectangle(mid, w: block_w, h: block_h)
   construction block := solid(outline.loop, from: -block_w / 2, to: block_w / 2)
 
   // The cutter: a ball with its centre on the top face, swung about the upright axis.

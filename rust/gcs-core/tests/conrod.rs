@@ -1,5 +1,5 @@
 //! **The forged connecting rod** (`rust/examples/conrod/rod.sv`, #197, #66's rung 4, #183's L8):
-//! the closing case, every round and chamfer a statement of `std.sv`'s words over the faces the
+//! the closing case, every round and chamfer a statement of `std.rounds`' words over the faces the
 //! rod's solids gave it, its eyes and shank drafted from the parting plane (#245). It elaborates,
 //! solves and has material where its comments say; it is built exactly, the bores' chamfers and
 //! the eyes' rims (on the drafted eyes' cones) Pappus's to 1e-9 of the rod; the field's reading of

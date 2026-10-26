@@ -13,7 +13,9 @@
 // along that generator, and the pinion, cut at a roll `roll` times the mesh's, is conjugate to the
 // gear at that ratio: the gear lags `(roll − 1)` times the phase, exactly (`tests/meshing.rs`).
 unit mm
-use std (turns)
+use std
+use std.sets
+use std.motion (turns)
 
 param pinion_teeth := 24
 param gear_teeth := 48
@@ -63,7 +65,7 @@ mill_ax angle(tilt) std.y
 apex := point hint((35, -96, -35))
 apex coincident mill_ax
 spine := line(apex, C)
-flank := std.Cone(spine, half: pressure - tilt)
+flank := std.sets.Cone(spine, half: pressure - tilt)
 M coincident flank
 
 // -- the pinion: cut by a larger cutter at a modified roll ---------------------------------------
@@ -74,7 +76,7 @@ cut_top := point hint((44, -122, -44))
 cut_spine := line(cut_apex, cut_top)
 cut_spine parallel spine
 cut_apex distance(10mm) cut_top
-cutter := std.Cone(cut_spine, half: pressure - tilt)
+cutter := std.sets.Cone(cut_spine, half: pressure - tilt)
 cutting_turn := frame
 cutting_turn turns(-roll * pinion_teeth / gear_teeth) gear_ax
 pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn,

@@ -6,7 +6,8 @@
 use engine.dims (back, front, rcp)
 use engine.end_view (bh, bt, idl_dy, pld, ridl, wf, xp0, xp1)
 use engine.parts
-use std (vertical)
+use std
+use std.place (vertical)
 
 // The timing drive on the front face, edge on, sized as the end view makes it
 // (`engine.end_view`): the crank pulley its teeth between two guide flanges, the cam pulleys (one

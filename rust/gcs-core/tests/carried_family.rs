@@ -1,11 +1,11 @@
 //! **A face family its statements say a motion carries is that motion's sweep** (#366 S3): every
 //! row of the station reading its running number a point carried by one motion to a roll affine
-//! in it (`std.Helix`, `std.OnHelix`, a frame `at(under: m) a·s + b`), so its walls are
-//! the section's first rim carried by the motion's own screw — the carry the statement gives, not
-//! one read off the stations.  The two springs meet at one export: `lofts/spring.sv`'s wire drawn
-//! square to its helix and `swept_spring.sv`'s ball swept along it are one tube, carried by one
-//! screw, the canal's two half balls the only difference; and the family exports as the canal
-//! does.  A station something else reads the running number of is no motion's sweep.
+//! in it (`std.stations.Helix`, `std.stations.OnHelix`, a frame `at(under: m) a·s + b`), so its
+//! walls are the section's first rim carried by the motion's own screw — the carry the statement
+//! gives, not one read off the stations.  The two springs meet at one export: `lofts/spring.sv`'s
+//! wire drawn square to its helix and `swept_spring.sv`'s ball swept along it are one tube, carried
+//! by one screw, the canal's two half balls the only difference; and the family exports as the
+//! canal does.  A station something else reads the running number of is no motion's sweep.
 use crate::common::{close, ent, parsed::determined};
 use gcs_core::brep::geom::{Carry, Surface};
 use gcs_core::brep::topo::Brep;
@@ -75,9 +75,9 @@ fn the_two_springs_meet_at_one_export() {
     is_screw(cc[0], 2.0, 8.0, "the ball's");
 }
 
-/// **The thread and the flight are their screw's**: `std.Helix` carries `base` by the screw about
-/// its normal, so every wall of the thread (drawn in `axial`) and of the flight (drawn in `n`) is
-/// its first rim carried by that screw — three turns at 4 and two and a half at 12.
+/// **The thread and the flight are their screw's**: `std.stations.Helix` carries `base` by the
+/// screw about its normal, so every wall of the thread (drawn in `axial`) and of the flight (drawn
+/// in `n`) is its first rim carried by that screw — three turns at 4 and two and a half at 12.
 #[test]
 fn a_helix_family_is_carried_by_its_screw() {
     let e = determined(include_str!("../../examples/lofts/thread.sv"));
@@ -104,8 +104,8 @@ fn a_helix_family_is_carried_by_its_screw() {
 #[test]
 fn a_station_read_otherwise_is_built_wall_by_wall() {
     let src = include_str!("../../examples/lofts/thread.sv")
-        .replace("sq := std.CenteredRectangle(c, w: size, h: size) in std.front",
-                 "sq := std.CenteredRectangle(c, w: size + s * 1mm, h: size + s * 1mm) \
+        .replace("sq := std.shapes.CenteredRectangle(c, w: size, h: size) in std.front",
+                 "sq := std.shapes.CenteredRectangle(c, w: size + s * 1mm, h: size + s * 1mm) \
                   in std.front");
     assert!(src.contains("size + s * 1mm"));
     let e = determined(&src);
@@ -128,7 +128,7 @@ fn a_station_read_otherwise_is_built_wall_by_wall() {
 #[test]
 fn a_law_reparametrises_its_screws_sweep() {
     let src = include_str!("../../examples/lofts/thread.sv").replace(
-        "  st := std.Helix(std.top, pitch: pitch, turns: turns, s: s)\n  in st.n {",
+        "  st := std.stations.Helix(std.top, pitch: pitch, turns: turns, s: s)\n  in st.n {",
         "  private screw := frame\n  \
          screw screws(pitch) std.top.normal\n  \
          fix(value == 360deg * turns * s + 30deg * sin(360deg * s)) screw\n  \

@@ -78,7 +78,7 @@ fn meets_is_between_two_faces() {
 
 /// The disc of #625: its web opened between r 8 and r 15 but for spokes, every edge among the
 /// opening's faces rounded.  `SPOKES` stands for how the spokes are drawn.
-const DISC: &str = "unit mm\nuse std\nuse std (vertical, coords, turns, round)\n\
+const DISC: &str = "unit mm\nuse std\nuse std.place (vertical, coords)\nuse std.rounds (round)\nuse std.motion (turns)\n\
     in std.front {\n  spindle := vertical line(std.origin, hint((0, 10)))\n  length(10mm) spindle\n}\n\
     in std.top {\n\
       edge := circle(center: std.top.origin) hint(r: 20)\n  radius(20mm) edge\n\
@@ -132,7 +132,7 @@ fn a_round_over_four_turned_spokes_builds() {
 /// where it stands, the same document builds.
 #[test]
 fn faces_read_apart_that_the_solve_brings_together_are_said() {
-    let doc = |at: &str| format!("unit mm\nuse std\nuse std (coords, round)\nin std.top {{\n\
+    let doc = |at: &str| format!("unit mm\nuse std\nuse std.place (coords)\nuse std.rounds (round)\nin std.top {{\n\
         a := point hint((0, 0))\nb := point hint((20, 0))\nc := point hint((20, 20))\n\
         d := point hint((0, 20))\n\
         a coords(du: 0.5mm, dv: 0.5mm) std.top\nb coords(du: 20mm, dv: 0.5mm) std.top\n\

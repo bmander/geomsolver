@@ -16,7 +16,8 @@ use crate::common::{apart, bits, build, ent, with_blocks};
 /// part), a point on nothing (under-determined columns) and a point on a circle about the last
 /// corner (an under-determined row).
 const PARTS: &str = "\
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
 a := point
 b := point hint((10, 1))
@@ -119,7 +120,8 @@ fn a_document_the_whole_solve_settles_is_not_touched() {
 /// A chain of `n` triangles off a grounded, levelled base: `2n + 1` two-row blocks in a line.
 fn chain(n: usize) -> String {
     let mut s = String::from("\
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
 p0 := point
 p1 := point hint((10, 0))

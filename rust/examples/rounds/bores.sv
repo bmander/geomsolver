@@ -8,7 +8,8 @@
 // Drawn on the front plane, standing 10 deep in front of it. Orbit (right-drag) to see where the
 // cusps meet the faces. Edit a radius and apply (⌘↵).
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 1mm   // every edge's radius
 

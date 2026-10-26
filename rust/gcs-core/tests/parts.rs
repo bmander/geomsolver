@@ -222,7 +222,8 @@ in std.front {{
 fn part_is_refused_and_stays_a_name() {
     let e = read("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 a above(d) b := a distance(d, along: up) b
 in std.front {
   part := point hint((0, 5))
@@ -254,7 +255,8 @@ fn reading(src: &str) -> gcs_core::parts::Reading {
 /// its pin, so the parent's statement is the one that cannot hold.
 const HELD_FROM_OUTSIDE: &str = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 component Arm(o: point) {
   in o.plane {
     tip := point hint((30, 0))
@@ -560,7 +562,8 @@ fn a_body_placing_the_frame_it_stands_in_is_refused_at_the_row() {
 fn a_point_drawn_in_two_plane_formals_is_placed_by_its_own_rows() {
     let twin = |placed: &str| format!("\
 unit mm
-use std (right_of)
+use std
+use std.place (right_of)
 component Twin(s: plane, t: plane) {{
   q := point in s, t
   in s {{

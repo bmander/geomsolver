@@ -1,8 +1,8 @@
-//! Cones and cylinders, the library's (`std.Cone`, `std.Cylinder`): a line and a number each, sets
-//! of points (§6.21, `tests/sets.rs`), and what stands on them — a point on a cylinder its radius
-//! from the axis, one on a cone at its half-angle at the apex, a line its radius from a cylinder's
-//! axis by the common perpendicular, two cones' tangent planes made one (`k1 tangent(at: m) k2`) —
-//! against closed forms; the hypoid's pitch cones named and stated to
+//! Cones and cylinders, the library's (`std.sets.Cone`, `std.sets.Cylinder`): a line and a number
+//! each, sets of points (§6.21, `tests/sets.rs`), and what stands on them — a point on a cylinder
+//! its radius from the axis, one on a cone at its half-angle at the apex, a line its radius from a
+//! cylinder's axis by the common perpendicular, two cones' tangent planes made one (`k1 tangent(at:
+//! m) k2`) — against closed forms; the hypoid's pitch cones named and stated to
 //! touch, against the fold construction of them (`spatial_lang.rs`); and a stated plane's origin
 //! through a lifted program.
 use gcs_core::constraints::CKind;
@@ -40,6 +40,7 @@ fn angle(a: [f64; 3], b: [f64; 3]) -> f64 {
 const VIEWS: &str = "\
 unit mm
 use std
+use std.sets
 side := plane(u: std.z, v: std.y)
 fix(origin == (0, 0, 0)) side
 in std.front {
@@ -56,8 +57,8 @@ l := line(hint((5, 3)), hint((30, 20))) in side
 
 /// `VIEWS` with a cylinder about each axis and a cone about the first, and `more` after them.
 fn with(c: &str, k: &str, more: &str) -> String {
-    format!("{VIEWS}c := std.Cylinder(ax, r: {c})\ncb := std.Cylinder(bx, r: {c})\n\
-             k := std.Cone(ax, half: {k})\n{more}\n")
+    format!("{VIEWS}c := std.sets.Cylinder(ax, r: {c})\ncb := std.sets.Cylinder(bx, r: {c})\n\
+             k := std.sets.Cone(ax, half: {k})\n{more}\n")
 }
 
 /// The kind the one statement over the surfaces settles to.

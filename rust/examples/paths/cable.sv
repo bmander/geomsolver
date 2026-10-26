@@ -14,6 +14,7 @@
 // Edit the corners, the connectors or `r`.
 unit mm
 use std
+use std.stations
 
 r := 2mm
 
@@ -41,7 +42,7 @@ cable := spline(through: route, start: plug, end: socket)
 hose := spline(p0, p1, p2, p3)
 
 component Tube(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k

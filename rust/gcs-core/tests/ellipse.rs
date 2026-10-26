@@ -14,11 +14,12 @@ use crate::common::{fd_jacobian, read as build};
 /// An ellipse of semi-axes 8 and 3 about (10, 5), its major axis along the front's x.
 const ELLIPSE: &str = "\
 use std
+use std.shapes
 in std.front {
 o := point
 fix((10, 5)) o
 }
-e := trace(std.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360))
+e := trace(std.shapes.Ellipse(o, a: 8, b: 3, tilt: 0deg).p over u in (0, 360))
 ";
 
 /// The contact's parameter — the one curve contact's.
@@ -158,14 +159,15 @@ fn an_axis_left_out_is_refused_by_name() {
     let (prog, errs, _) = gcs_core::library::parse_linked(
         "\
 use std
+use std.shapes
 in std.front {
 o := point hint((10, 5))
 }
-e := trace(std.Ellipse(o, a: 8, tilt: 0deg).p over u in (0, 360))
+e := trace(std.shapes.Ellipse(o, a: 8, tilt: 0deg).p over u in (0, 360))
 ",
     );
     assert!(errs.is_empty());
     let e = elaborate(&prog);
     let m: Vec<String> = e.errors().map(|d| d.message.clone()).collect();
-    assert!(m.iter().any(|m| m.contains("`std.Ellipse` was not given `b`")), "{m:?}");
+    assert!(m.iter().any(|m| m.contains("`std.shapes.Ellipse` was not given `b`")), "{m:?}");
 }

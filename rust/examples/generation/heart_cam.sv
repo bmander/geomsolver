@@ -20,7 +20,9 @@
 // is how tightly the profile bends there (it must stay larger than a grinding wheel's).  Edit
 // `lift`, `base` or the roller's radius, or the law, and the cam is cut again.
 
-use std (right_of, spins, slides)
+use std
+use std.place (right_of)
+use std.motion (spins, slides)
 
 base := 25    // the roller centre's nearest approach to the cam's centre
 lift := 15    // how far the follower rises

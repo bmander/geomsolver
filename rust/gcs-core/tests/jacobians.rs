@@ -654,7 +654,9 @@ fn a_sized_frames_interior_agrees_with_finite_differences() {
 fn a_frames_deflection_agrees_with_finite_differences() {
     let l_frame = "\
 unit mm
-use std (horizontal, slides, spins, turns)
+use std
+use std.place (horizontal)
+use std.motion (slides, spins, turns)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 param h: Length hint(30mm)
 param reach: Length hint(400mm)
@@ -800,7 +802,8 @@ fn a_cut_and_a_turned_bodys_deflection_agree_with_finite_differences() {
 fn a_measure_agrees_with_finite_differences_as_the_drawing_states_it() {
     let frame = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 param d: Length hint(30mm)
 param reach: Length hint(400mm)
@@ -821,7 +824,8 @@ volume(200 * 1cm^3) arm
 ";
     let plate = "\
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 param r: Length hint(9mm)
 in std.front {
@@ -942,7 +946,9 @@ fn interior_agrees(
 fn envelope_contacts_agree_with_finite_differences() {
     const SRC: &str = "\
 unit mm
-use std (slides, spins, turns)
+use std
+use std.sets
+use std.motion (slides, spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((0, 0, 10))
 fix((0, 0, 0)) o
@@ -953,7 +959,7 @@ b := point hint((10, 30, 2))
 fix((0, 30, 0)) a
 fix((10, 30, 2)) b
 gear_ax := line(a, b)
-cone := std.Cone(ax, half: hint(20deg))
+cone := std.sets.Cone(ax, half: hint(20deg))
 spin := frame
 spin turns(1) ax
 gear_turn := frame
@@ -962,7 +968,7 @@ flank := envelope(cone over t in (-30deg, 30deg), under: spin, seen_from: gear_t
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
-cyl := std.Cylinder(cax, r: hint(5mm))
+cyl := std.sets.Cylinder(cax, r: hint(5mm))
 f2 := envelope(cyl over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
 in std.front {
   e1 := point hint((6, 2))
@@ -1049,7 +1055,9 @@ f4 curvature(at: w) k
 fn meshing_contacts_agree_with_finite_differences() {
     const SRC: &str = "\
 unit mm
-use std (slides, spins, turns)
+use std
+use std.sets
+use std.motion (slides, spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((0, 0, 10))
 fix((0, 0, 0)) o
@@ -1060,7 +1068,7 @@ b := point hint((10, 30, 2))
 fix((0, 30, 0)) a
 fix((10, 30, 2)) b
 gear_ax := line(a, b)
-cone := std.Cone(ax, half: hint(20deg))
+cone := std.sets.Cone(ax, half: hint(20deg))
 spin := frame
 spin turns(1) ax
 gear_turn := frame
@@ -1068,7 +1076,7 @@ gear_ax coincident(sense: same) gear_turn.axis; fix(ratio == -0.5, advance == 2m
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
-cyl := std.Cylinder(cax, r: hint(5mm))
+cyl := std.sets.Cylinder(cax, r: hint(5mm))
 pinion_flank := envelope(cyl over t in (-30deg, 30deg), under: spin, seen_from: gear_turn)
 gear_flank := envelope(cone over t in (-30deg, 30deg), under: gear_turn, seen_from: spin)
 in std.front {
@@ -1143,16 +1151,17 @@ rate(w over t) perpendicular t
 }
 
 /// A motion read (#326, #365, `envelope::screw`): a point it carries, and that point's rate — held
-/// square to a line (`std.sv`'s `reciprocal`), along an axis and measured along it, its distance
-/// free (`std.Screw`) and stated — under the mesh of two turns about skew shafts (the gear's a
-/// screw), a slide seen from a turn, a turn alone, and a turn about a point of a view seen from a
-/// turn about a line — every axis free, so the motion's columns are differentiated too.
+/// square to a line (`std.motion`'s `reciprocal`), along an axis and measured along it, its
+/// distance free (`std.motion.Screw`) and stated — under the mesh of two turns about skew shafts
+/// (the gear's a screw), a slide seen from a turn, a turn alone, and a turn about a point of a view
+/// seen from a turn about a line — every axis free, so the motion's columns are differentiated too.
 /// Checked at the seeds and at points knocked off them.
 #[test]
 fn twist_relations_agree_with_finite_differences() {
     const SRC: &str = "\
 unit mm
-use std (reciprocal, slides, spins, turns)
+use std
+use std.motion (reciprocal, slides, spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((1, 0.5, 10))
 ax := line(o, z)
@@ -1180,13 +1189,13 @@ K := line(k1, k2)
 K reciprocal(seen_from: rest) gear_turn
 isa := axis
 fix(dir == (0.3, -0.2, 0.9)) isa
-sa := std.Screw(isa, gear_turn, seen_from: spin)
+sa := std.motion.Screw(isa, gear_turn, seen_from: spin)
 jsa := axis
 fix(dir == (0.1, 0.9, 0.2)) jsa
-sb := std.Screw(jsa, slide, seen_from: spin)
+sb := std.motion.Screw(jsa, slide, seen_from: spin)
 ksa := axis
 fix(dir == (0.8, 0.1, -0.5)) ksa
-sc := std.Screw(ksa, gear_turn)
+sc := std.motion.Screw(ksa, gear_turn)
 kc := point hint((1, -2, 3))
 mc := point hint((1, -2, 3))
 mc coincident(under: gear_turn, t == 0deg) kc
@@ -1239,7 +1248,8 @@ Z coincident(under: twirl, seen_from: spin, t == -35) q2
 fn carried_at_rows_agree_with_finite_differences() {
     const SRC: &str = "\
 unit mm
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((1, 0.5, 10))
 ax := line(o, z)
@@ -1333,7 +1343,8 @@ fn regularity_agrees_with_finite_differences() {
 fn a_point_carried_by_a_chain_agrees_with_finite_differences() {
     const SRC: &str = "\
 unit mm
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((1, 0.5, 10))
 shaft := line(o, z)
@@ -1385,14 +1396,16 @@ X := point hint((1, 1, 1))
 fn a_joints_free_numbers_agree_with_finite_differences() {
     const SRC: &str = "\
 unit mm
-use std (reciprocal, slides, spins, turns)
+use std
+use std.sets
+use std.motion (reciprocal, slides, spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((1, 0.5, 10))
 ax := line(o, z)
 a := point hint((0, 30, 0))
 b := point hint((10, 30, 2))
 gear_ax := line(a, b)
-cone := std.Cone(ax, half: 20deg)
+cone := std.sets.Cone(ax, half: 20deg)
 spin := frame
 ax coincident(sense: same) spin.axis
 fix(advance == 0mm) spin
@@ -1405,7 +1418,7 @@ p coincident flank
 c1 := point hint((30, 0, -5))
 c2 := point hint((31, 1, 5))
 cax := line(c1, c2)
-mated := std.Cone(cax, half: 15deg)
+mated := std.sets.Cone(cax, half: 15deg)
 both := meshing(flank, mated over t in (-20deg, 20deg), under: gear_turn, seen_from: spin)
 q := point hint((20, 3, 4))
 q coincident both
@@ -1534,7 +1547,9 @@ fn every_row_read_by_direction_is_declared() {
 fn a_regions_deflection_agrees_with_finite_differences() {
     let holed = "\
 unit mm
-use std (horizontal, vertical, slides, spins, turns)
+use std
+use std.place (horizontal, vertical)
+use std.motion (slides, spins, turns)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 param r: Length hint(9mm)
 in std.front {
@@ -1610,7 +1625,9 @@ scenario s {
 fn a_solids_deflection_agrees_with_finite_differences() {
     let holed = "\
 unit mm
-use std (horizontal, vertical, slides, spins, turns)
+use std
+use std.place (horizontal, vertical)
+use std.motion (slides, spins, turns)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3)
 param r: Length hint(9mm)
 in std.front {

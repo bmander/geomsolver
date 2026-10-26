@@ -2,20 +2,22 @@
 // straight, a quarter turn left, a straight, another quarter turn left, a straight — is one path.
 // The station runs over it link by link (`s` from 0 to 5, link k while s is in (k, k + 1)), its
 // frame square to whichever link it stands on, so the joints need no gluing and each wall keeps
-// one name round the whole run. One word, `std.On`, stands on a line, an arc, a spline or a
-// traced curve alike.
+// one name round the whole run. One word, `std.stations.On`, stands on a line, an arc, a spline or
+// a traced curve alike.
 // Closed form: a section square to its path with its centroid on it sweeps its area times the
 // path's length (Pappus): V = π·r² · (3·straight + 2·bend·π/2), 16π(60 + 25π) mm³ as drawn.
 // Edit `straight`, `bend` or `r`.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
+use std.stations
 
 straight := 20mm
 bend := 25mm
 r := 4mm
 
 component Tube(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k

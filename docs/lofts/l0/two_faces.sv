@@ -2,12 +2,13 @@
 // and a diamond outlet sketched in their own planes and joined corner to corner in written order
 // (`solid_twist.sv`'s pair). The reducer and the duct draw one section that runs; this program is
 // the case where the writer has two sketches and wants the word to pair them. Since L8 the word
-// is `std.Ruled`: a straight rail from each corner of the inlet to the outlet's corner in the same
-// place of its walk, the section where the plane through three of them at `s` cuts every rail.
-// Closed form: the ruled pair's area is quadratic in s; prismatoid V = 40/6 · (400 + 4·A½ + 288),
-// A½ the area of the mid section (the square and the diamond averaged corner by corner).
+// is `std.stations.Ruled`: a straight rail from each corner of the inlet to the outlet's corner in
+// the same place of its walk, the section where the plane through three of them at `s` cuts every
+// rail. Closed form: the ruled pair's area is quadratic in s; prismatoid V = 40/6 · (400 + 4·A½ +
+// 288), A½ the area of the mid section (the square and the diamond averaged corner by corner).
 unit mm
 use std
+use std.stations
 length := 40mm
 
 end_plane := plane
@@ -37,4 +38,4 @@ in end_plane {
 inlet := face(a0, a1, a2, a3, -> close)
 outlet := face(b0, b1, b2, b3, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.Ruled(inlet, outlet).f over s)
+body := sweep(std.stations.Ruled(inlet, outlet).f over s)

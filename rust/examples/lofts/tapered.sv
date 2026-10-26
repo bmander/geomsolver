@@ -1,6 +1,6 @@
 // Laws of scale (#243 L5): a section's size is a dimension reading `s`. Each section is drawn
 // once, off to the side, and carried whole onto its station by the similarity taking its frame
-// `o`, `x` to the station's origin and `std.Twisted`'s point (`sec := prof mapped(o ->
+// `o`, `x` to the station's origin and `std.stations.Twisted`'s point (`sec := prof mapped(o ->
 // st.n.origin, x -> tw.t) in st.n`, #357), which stands `reach` scaled `1 + (scale − 1)·s` from
 // the origin, turned `twist · s`: the section is scaled and turned about its centre, a round's
 // radius with it.
@@ -12,7 +12,9 @@
 //   swell: the disc swelling as 1 + 0.3·sin(180°·s): 4000π · (1 + 1.2/π + 0.045) mm³.
 // Edit `length`, `half`, `r`, `apart`, a scale or a twist, or a section.
 unit mm
-use std (vertical)
+use std
+use std.place (vertical)
+use std.stations
 
 length := 40mm
 half := 10mm
@@ -24,16 +26,17 @@ reach := 10mm
 // `g`, scaled `1 + (scale − 1)·s` and turned `twist · s`.
 component Section(g: line, up: axis, prof: face, o: point, x: point, reach: Length, twist: Angle,
                   scale: Scalar, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
-  tw := std.Twisted(st.n, twist: twist, reach: reach * (1 + (scale - 1) * s), s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
+  tw := std.stations.Twisted(st.n, twist: twist, reach: reach * (1 + (scale - 1) * s), s: s)
   sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n
 }
 
 // The same, its scale's law a sine: `1 + (scale − 1)·sin(180°·s)`.
 component Swell(g: line, up: axis, prof: face, o: point, x: point, reach: Length, scale: Scalar,
                 s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
-  tw := std.Twisted(st.n, twist: 0deg, reach: reach * (1 + (scale - 1) * sin(180 * s)), s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
+  tw := std.stations.Twisted(st.n, twist: 0deg, reach: reach * (1 + (scale - 1) * sin(180 * s)),
+                             s: s)
   sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n
 }
 

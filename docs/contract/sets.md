@@ -1,23 +1,23 @@
 # Sets and regions
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
-`flatten/sets.rs`, `solid/region.rs`, `solid/faces.rs`, or a set in `std.sv`. An issue number (#n)
+`flatten/sets.rs`, `solid/region.rs`, `solid/faces.rs`, or a set in `std.sets`. An issue number (#n)
 or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule
 came from.
 
-**Spheres, cones and cylinders are library sets** (`rust/lib/std.sv`, 2026-10-06; sets #101): a
-centre or a line and one number (`std.Sphere(c, r)`, `std.Cylinder(about, r)`, `std.Cone(about,
-half)`, apex at the line's start; the line is `.about`, since `axis` is an element's word a body
-cannot name bare), nothing drawn, no entity kind, kernel or `CKind` of their own.  A point on one
-is `p coincident S`, a line touching one `l tangent S` (below); two touching at a point with one
-tangent plane is `k1 tangent(at: m) k2` (below, #104; `std.TangentCones` is retired, #265),
-`std.Offset(S, d)` is the set `d` outside one (F4, below) and `k on_sphere(view: v) s` is a
-relation word (a component until #562, which held a circle it was given).  An unbound number is
-the instance's unknown (`pc.half`, an angle in degrees); `edit::unknown_seeds` writes it back
-into the call's `hint(…)` (`InstVal::Hint` carries the span).  A lifted program declares it under a name it can write
-(`lift::declarable`: `pc_half`, apart from every other unknown's) and every dimension reading
-it says so (`flatten::substitute_with`).  `tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the
-gates.
+**Spheres, cones and cylinders are library sets** (`rust/lib/std/sets.sv`, 2026-10-06; sets #101): a
+centre or a line and one number (`std.sets.Sphere(c, r)`, `std.sets.Cylinder(about, r)`,
+`std.sets.Cone(about, half)`, apex at the line's start; the line is `.about`, since `axis` is an
+element's word a body cannot name bare), nothing drawn, no entity kind, kernel or `CKind` of their
+own.  A point on one is `p coincident S`, a line touching one `l tangent S` (below); two touching at
+a point with one tangent plane is `k1 tangent(at: m) k2` (below, #104; `std.TangentCones` is
+retired, #265), `std.sets.Offset(S, d)` is the set `d` outside one (F4, below) and `k
+on_sphere(view: v) s` is a relation word (a component until #562, which held a circle it was given).
+An unbound number is the instance's unknown (`pc.half`, an angle in degrees); `edit::unknown_seeds`
+writes it back into the call's `hint(…)` (`InstVal::Hint` carries the span).  A lifted program
+declares it under a name it can write (`lift::declarable`: `pc_half`, apart from every other
+unknown's) and every dimension reading it says so (`flatten::substitute_with`).
+`tests/spatial_surfaces.rs` and `tests/spatial_lang.rs` are the gates.
 
 **A set is an envelope's operand** (#283, [0.90]): `flank := envelope(S, under: m, …)` over a set
 is applied to a hidden point keyed `{flank}#probe` (`Walk::envelope_of`, beside `region_of`, both
@@ -28,25 +28,26 @@ never a row (`analytic.md`).
 **Crown regions (#209, 0.76):** a family's body is split by its point at the instance
 (`flatten::sets::instance_part`, called where `comp.set` makes the set): declarations and written
 relations reading nothing of the bound point, directly or through a declaration that does, are
-walked once as the instance's body, the rest is the set — so `std.ConeThrough(about, q, lean)`
+walked once as the instance's body, the rest is the set — so `std.sets.ConeThrough(about, q, lean)`
 owns `.apex`/`.spine` (the apex held by the angle between `about` and the generator through `q`,
 `lean` or its supplement by which way it opens, and the spine from it to `q`'s foot on `about`, so
 the cone is held at any size, #214; half `abs(lean)`), one per instance, and a region reading it
 shares the `Cone` term's line.
-`std.HalfSpace(o, along, d)` (`std.Level` through 0.84, #270) is an ordinate along a line:
+`std.sets.HalfSpace(o, along, d)` (`std.Level` through 0.84, #270) is an ordinate along a line:
 `RegionShape::Plane { along: EntRef }` takes a plane (its `n`), a line or an axis
 (`RegionShape::normal`). A reach to `{ q | q outside S }`
-measures from `S`, sides turned (`Walk::side_of_set`, in `expand_reach`), so `std.Rounded(beyond,
-tip, r)` lowers. A region tool's faces are its meridian's steps (`RevolvedSurface::meridian_loops`,
-`SweepContacts::read`'s `Region` arm); the cutter reads its `revolve` recipe as any. A region's tip
-land is a bound between its land's ends drawn on the tip, the flanks through them.
-`tests/crown_regions.rs` is the gate (a crown tooth region cutting a region blank within 10 µm).
+measures from `S`, sides turned (`Walk::side_of_set`, in `expand_reach`), so
+`std.rounds.Rounded(beyond, tip, r)` lowers. A region tool's faces are its meridian's steps
+(`RevolvedSurface::meridian_loops`, `SweepContacts::read`'s `Region` arm); the cutter reads its
+`revolve` recipe as any. A region's tip land is a bound between its land's ends drawn on the tip,
+the flanks through them. `tests/crown_regions.rs` is the gate (a crown tooth region cutting a region
+blank within 10 µm).
 
 **The hypoid's crown is regions** (#214, 0.77): `hypoid.sv`'s cutter (the axis up through C
 parallel to the crown's, the flank cones through the pitch points, the four levels), its
 `Tooth` and its `Space` (beyond one cone grown, within the other, between two levels,
-rounded by `std.Rounded`; the space's outer mate to the reach's cylinder, its inner one turned a
-crown pitch), the relief's toppings the same over cones through kinks on the grown flanks
+rounded by `std.rounds.Rounded`; the space's outer mate to the reach's cylinder, its inner one
+turned a crown pitch), the relief's toppings the same over cones through kinks on the grown flanks
 (`kink coincident tooth.inner.surface`). What it needed: `S.surface` as any set use's operand
 (`set_use`, `surface_of`), a distance a number comes to nothing is the side or `coincident`
 (`expand_reach`), an offset's grow added as numbers so an unknown keeps its dimension, a bound on
@@ -115,7 +116,7 @@ written by `inside` and refused by `outside` (a union) but for one side of anoth
 round, as are an interval `outside`, several numbers and none (E040). **A side is a bound**
 (#192): `Written::lower_side` says `p inside X` as `p coincident(<=) X`, `p outside X` as `(>=)`,
 beside a side grown, `p distance(<= d, side: outside|inside) X` (`inside(d)`/`outside(d)` are
-refused by the parser naming it and `std.Offset`, #266: one spelling, `op_args`); every
+refused by the parser naming it and `std.sets.Offset`, #266: one spelling, `op_args`); every
 set's body is held so (`sets::lowered`, at `Site::new`) and each use read so, and the
 elaborator's readers (`relations::shape`, `side_of_plane`, `face_term`, `ends_term`) take either spelling
 through `Written::side` (the bound on the signed distance from the surface, and its level). A tangency to a region is E040, once, in
@@ -133,8 +134,8 @@ relation a set's application makes `Relation::space` (`Application::of_set`, eve
 every operand in one plane where the plane's kind says which way (`Angle`, directed, becomes
 `Angle3`; a `side:`/`sense:` refused as across views), the plane's kind kept where it says the same
 (drags and `cgraph` keep their edges) — or `Reader::Moved`, a derivative along a chart, always in
-space (`Constraint::differentiable` refuses only a row with no kind there). So `std.Cone(ax)` about
-a line drawn in a view is both generators; a region term's cone apex is compared by
+space (`Constraint::differentiable` refuses only a row with no kind there). So `std.sets.Cone(ax)`
+about a line drawn in a view is both generators; a region term's cone apex is compared by
 `Sketch::twinned`; `lift::in_plane_angle` writes such an `Angle3` as the plane's `angle` with the
 pose's `sense:`, so a lifted program keeps the root.
 
@@ -261,7 +262,7 @@ a run is carried past its edge's end and cut off by the face it ends on (#195). 
 
 **Distance from a set, offsets (§6.21, 0.64, #145 F4):** `p distance(d, side: outside|inside) S`
 (`distance` is a set use, `may_use`), its bound `p distance(<= d, side: outside) S` and
-`std.Offset(S, d)` (the set, where one is passed or used) are one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
+`std.sets.Offset(S, d)` (the set, where one is passed or used) are one bound on the signed distance from `S`'s surface (`Reach`: cmp toward the outside, whether
 the offset grows it, `reach_of` over `Written::lower_side`'s form; only a `distance` with `side:
 outside|inside` is a set use, `sets::reaches`), applied by `sets::expand_reach` in three representations: a body whose
 one relation is a `distance` gets its number moved (`(r) + #grow`, the grow settled in the use's
@@ -277,57 +278,58 @@ the body walked `Itself` then along
 sphere about `p`'s), `p outside S` (the side) and `foot inside S` (so the seed crossing puts the
 foot across the surface from `p`) appended to the body under synthetic ids (`FOOT_STATEMENTS`
 down, so `PredWalk::written` keeps their uses apart). `region_body` counts no bounded side of
-another set among a body's numbers (a distance from one is `std.Offset`'s). `tests/offsets.rs` is the gate.
+another set among a body's numbers (a distance from one is `std.sets.Offset`'s). `tests/offsets.rs` is the gate.
 
-**A body grown, built exactly** (`std.Grown`, [0.194]): `B` grown by `d` is a set of the language's
-own words, `near := { p | distance(p, within) <= d }` over `within := { c | c inside B }` (B
-shrunk, `{ p | p inside B; distance(p, beyond) >= -d }` over `beyond := { c | c outside B }`), and
-its field reads it as any distance from a set.  **Within a body in pieces** the set is read shell
-by shell (`SetDistance::Nearest`, `BodyFaces::shells`): within the faces of a body's several shells
-at once is within none — each face's surface's side taken in common (`Reading::convex_pieces`)
-held nowhere for two blocks apart — so each shell's conditions stand apart and the nearest is
-read (`conditions(…, shell)`, each reading of a term's faces kept to the shell), and
-`convex_pieces` refuses faces on several shells.  `solid/grown.rs` builds the grown region exactly, a route of its
-own (`region::Route::Grown`, after the lowering table, before `bounded`): one term, the distance
-at most a stated number from a set whose one term is the inside of every face of a body none of
-whose terms reads its faces (`faces::stratum_is_whole`); the recipe walk asks the route which node
-it is built on (`Route::built_on`).  Outside `B` a point's nearest point is inside a face, an edge or a
-corner, so that partitions what `B` gains: each face's prism `d` out along its normal (a plane
-face's loops; a cylinder's band between two circles about its axis, its radius out of a shaft or
-into a bore, `band`), each convex edge's (`BodyFaces::convex`; a tangent one none) wedge of radius
-`d` between its faces' normals (along a line a prism; about a circle a torus's stretch, turned), and
-each convex corner's sector of the ball (a prism's corner — three faces, one square to the other two
-— the quarter disc turned about that one).  **A concave edge** (two planes along a line) has no
-wedge: its faces' prisms overlap in a `d × d` column there, so each is cut back to the edge's
-bisector, the plane through it halfway between them (`beside_concave`: a face beside one a convex
-polygon, its section's concave sides pushed out past it so the bisector crosses the prism clear of
-its edges, along the face's own side at its foot; refused where the sides' lines moved in by their
-cuts bound no polygon of as many sides, a face narrower than the reach).  At a corner where one
-concave edge meets a face square to both its faces (a step's end, a pocket's rim) the ball has no
-sector and the two wedges along that face are cut back to the same bisector (each begun `d` past
-the corner, so the cut crosses it clear; its cylinder's trace there one ellipse, the other wedge's
-the same), meeting in it; where three concave edges meet (a pocket's floor) the three prisms meet
-in their bisectors, and nothing else stands there.  A piece cut back is a `region` in the recipe:
-its sweep in common with a block standing on each bisector (`square`, past every piece).  Each
-piece shares its faces exactly with the next, so the recipe's `grown` node (`body`, the body's own
-node, a dependency of the region's in `cad::recipe_with`; `pieces`, each a `prism`, a `revolve` or
-such a `region`) glues them to the body in turn (`boolean::glued`), nothing intersected, and drops
-the edges and vertices the glued faces took with them (`Brep::compacted`); the native host fuses
-them.  Unioned, a ball tangent to a cylinder along a circle is refused by the Booleans; glued, a
-block grown is Steiner's volume to 1e-15.  Gated by the region's field (`agreement::gate`, built
-about the body's boundary), which reads within (or beyond) every face of a body, and nothing
-more, by the body's own signed distance (`SetDistance::Body`, `BodyFaces::signed_distance`, where
-`distance_slack` says it is exact) — no one surface's side bounds a body with a concave edge, and
-the projection onto the nearest face's side runs on past its patch at a convex corner.  Refused by name, the field's: a concave
-edge on a curved face (a post's foot, its bisector a cone), a corner where a convex edge stands
-between two concave ones (a boss's foot), a concave corner of more than three faces, a face beside
-a concave edge that is no convex polygon or narrower than the reach, an edge shorter than the
-reach between its concave corners, a face on a cone, a sphere or a torus, an edge no line or circle
-carries, a convex corner no prism's, a bore no wider than the reach, a body a term of which reads
-its faces (a round).  `tests/grown.rs` is the gate (a block, a post, a hex bar and a bored plate to
-their closed forms to 1e-9; a body in two pieces; an L-block's step and a pocketed tray to
-Steiner's with its concave edges' terms negative, `−d² L` each, a step's end `−2d³/3` and a pocket's
-floor corner `+d³`; the field of a body with a concave edge, grown and shrunk).
+**A body grown, built exactly** (`std.rounds.Grown`, [0.194]): `B` grown by `d` is a set of the
+language's own words, `near := { p | distance(p, within) <= d }` over `within := { c | c inside B }`
+(B shrunk, `{ p | p inside B; distance(p, beyond) >= -d }` over `beyond := { c | c outside B }`),
+and its field reads it as any distance from a set.  **Within a body in pieces** the set is read
+shell by shell (`SetDistance::Nearest`, `BodyFaces::shells`): within the faces of a body's several
+shells at once is within none — each face's surface's side taken in common
+(`Reading::convex_pieces`) held nowhere for two blocks apart — so each shell's conditions stand
+apart and the nearest is read (`conditions(…, shell)`, each reading of a term's faces kept to the
+shell), and `convex_pieces` refuses faces on several shells.  `solid/grown.rs` builds the grown
+region exactly, a route of its own (`region::Route::Grown`, after the lowering table, before
+`bounded`): one term, the distance at most a stated number from a set whose one term is the inside
+of every face of a body none of whose terms reads its faces (`faces::stratum_is_whole`); the recipe
+walk asks the route which node it is built on (`Route::built_on`).  Outside `B` a point's nearest
+point is inside a face, an edge or a corner, so that partitions what `B` gains: each face's prism
+`d` out along its normal (a plane face's loops; a cylinder's band between two circles about its
+axis, its radius out of a shaft or into a bore, `band`), each convex edge's (`BodyFaces::convex`; a
+tangent one none) wedge of radius `d` between its faces' normals (along a line a prism; about a
+circle a torus's stretch, turned), and each convex corner's sector of the ball (a prism's corner —
+three faces, one square to the other two — the quarter disc turned about that one).  **A concave
+edge** (two planes along a line) has no wedge: its faces' prisms overlap in a `d × d` column there,
+so each is cut back to the edge's bisector, the plane through it halfway between them
+(`beside_concave`: a face beside one a convex polygon, its section's concave sides pushed out past
+it so the bisector crosses the prism clear of its edges, along the face's own side at its foot;
+refused where the sides' lines moved in by their cuts bound no polygon of as many sides, a face
+narrower than the reach).  At a corner where one concave edge meets a face square to both its faces
+(a step's end, a pocket's rim) the ball has no sector and the two wedges along that face are cut
+back to the same bisector (each begun `d` past the corner, so the cut crosses it clear; its
+cylinder's trace there one ellipse, the other wedge's the same), meeting in it; where three concave
+edges meet (a pocket's floor) the three prisms meet in their bisectors, and nothing else stands
+there.  A piece cut back is a `region` in the recipe: its sweep in common with a block standing on
+each bisector (`square`, past every piece).  Each piece shares its faces exactly with the next, so
+the recipe's `grown` node (`body`, the body's own node, a dependency of the region's in
+`cad::recipe_with`; `pieces`, each a `prism`, a `revolve` or such a `region`) glues them to the body
+in turn (`boolean::glued`), nothing intersected, and drops the edges and vertices the glued faces
+took with them (`Brep::compacted`); the native host fuses them.  Unioned, a ball tangent to a
+cylinder along a circle is refused by the Booleans; glued, a block grown is Steiner's volume to
+1e-15.  Gated by the region's field (`agreement::gate`, built about the body's boundary), which
+reads within (or beyond) every face of a body, and nothing more, by the body's own signed distance
+(`SetDistance::Body`, `BodyFaces::signed_distance`, where `distance_slack` says it is exact) — no
+one surface's side bounds a body with a concave edge, and the projection onto the nearest face's
+side runs on past its patch at a convex corner.  Refused by name, the field's: a concave edge on a
+curved face (a post's foot, its bisector a cone), a corner where a convex edge stands between two
+concave ones (a boss's foot), a concave corner of more than three faces, a face beside a concave
+edge that is no convex polygon or narrower than the reach, an edge shorter than the reach between
+its concave corners, a face on a cone, a sphere or a torus, an edge no line or circle carries, a
+convex corner no prism's, a bore no wider than the reach, a body a term of which reads its faces (a
+round).  `tests/grown.rs` is the gate (a block, a post, a hex bar and a bored plate to their closed
+forms to 1e-9; a body in two pieces; an L-block's step and a pocketed tray to Steiner's with its
+concave edges' terms negative, `−d² L` each, a step's end `−2d³/3` and a pocket's floor corner
+`+d³`; the field of a body with a concave edge, grown and shrunk).
 
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
@@ -361,12 +363,13 @@ painted. A non-plane or no `at:`, E040; a labelled reference fills its slot
   and `tests/edit_datums.rs` are the gates.
 
 **Sheets, their sides and the square band** (#645, [0.192], [developables.md](developables.md)).
-A set whose body says what `std.Developable`'s does is a sheet (`flatten::developable::sheet_body`),
-and a contact over an interval in a set's body makes no region of it: under a set's derivative
-the flattener keeps the incidence and emits no bound (`Walk::within`), and a sheet's body is read
-whole by the recogniser. At a region solid's probe `q distance(<= d, side: outside|inside) S` of a sheet is
-intercepted in `expand_reach` (`reach_sheet`): the side said, `<=`, `d` a stated length more than
-nothing, else E040; its term is `RegionShape::Sheet`, the band along the normal from a foot on the
-panel, so square at its edges. A sheet used as a set any other way — a distance off a probe, an
-equality — is E040 naming the band's spelling. Every set the document makes that is a sheet is
-recorded for the report (`Expansion::panels`, `Sketch::panels`).
+A set whose body says what `std.panels.Developable`'s does is a sheet
+(`flatten::developable::sheet_body`), and a contact over an interval in a set's body makes no region
+of it: under a set's derivative the flattener keeps the incidence and emits no bound
+(`Walk::within`), and a sheet's body is read whole by the recogniser. At a region solid's probe `q
+distance(<= d, side: outside|inside) S` of a sheet is intercepted in `expand_reach` (`reach_sheet`):
+the side said, `<=`, `d` a stated length more than nothing, else E040; its term is
+`RegionShape::Sheet`, the band along the normal from a foot on the panel, so square at its edges. A
+sheet used as a set any other way — a distance off a probe, an equality — is E040 naming the band's
+spelling. Every set the document makes that is a sheet is recorded for the report
+(`Expansion::panels`, `Sketch::panels`).

@@ -16,7 +16,7 @@ use crate::common::rounds::{beside_cylinder, root_ring, square_run};
 use crate::common::rounds::meridian::{knob_neck, knob_rounded};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
-const BLOCK: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -77,7 +77,7 @@ fn the_blocks_rims_are_built_exactly() {
 }
 
 /// **Recognised by the set, not the word**: `by_hand.sv`'s own `Rolled`, written in the file, is
-/// the same set as `std.Run`, so the same entry builds it.
+/// the same set as `std.rounds.Run`, so the same entry builds it.
 #[test]
 fn a_round_written_by_hand_is_built_by_the_same_entry() {
     let e = solved(include_str!("../../examples/rounds/by_hand.sv"));
@@ -122,12 +122,12 @@ fn a_pocket_rounded_inside_is_filled_exactly() {
     close(props::volume(&b), 60.0 * 40.0 * 10.0 - 30.0 * 20.0 * 6.0 + fill);
 }
 
-/// A flat with unequal legs (`std.Flat` named directly): `la` along the near face from the south
-/// face's surface, `lb` along the south face from the near face's.
+/// A flat with unequal legs (`std.rounds.Flat` named directly): `la` along the near face from the
+/// south face's surface, `lb` along the south face from the near face's.
 #[test]
 fn a_flat_with_unequal_legs() {
-    let src = BLOCK.replace("use std (round, chamfer)", "use std");
-    let e = solved(&format!("{src}flat := std.Flat(block.near, block.south, la: 1mm, lb: 3mm)\n\
+    let src = BLOCK.replace("use std\nuse std.rounds (round, chamfer)", "use std\nuse std.rounds");
+    let e = solved(&format!("{src}flat := std.rounds.Flat(block.near, block.south, la: 1mm, lb: 3mm)\n\
         taken := solid(flat)\ntaken cut block\n"));
     let b = exported(&e, "block");
     close(props::volume(&b), 40.0 * 24.0 * 12.0 - 0.5 * 1.0 * 3.0 * 40.0);
@@ -294,7 +294,7 @@ fn a_seam_between_two_rods_is_filled_exactly() {
 /// bores.
 #[test]
 fn a_cusp_between_two_bores_is_rounded_away() {
-    let e = solved("unit mm\nuse std (round)\nin std.front {\n\
+    let e = solved("unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n\
         a := point\nb := point\nc := point\nd := point\n\
         fix((-20, -20)) a\nfix((30, -20)) b\nfix((30, 20)) c\nfix((-20, 20)) d\n\
         (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n\
@@ -320,7 +320,7 @@ fn a_cusp_between_two_bores_is_rounded_away() {
 /// theorem over the three, each in closed form.
 #[test]
 fn a_chamfer_between_two_rods_is_an_ellipse() {
-    let src = include_str!("../../examples/rounds/twin.sv").replace("use std (round)", "use std (chamfer)")
+    let src = include_str!("../../examples/rounds/twin.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (chamfer)")
         .replace("bar.right.small round(r: r) bar.left.big", "bar.right.small chamfer(d: 1mm) bar.left.big");
     let e = solved(&src);
     assert_eq!(lowered(&e).0, 1);
@@ -345,15 +345,15 @@ fn a_chamfer_between_two_rods_is_an_ellipse() {
 }
 
 /// The same flat in a region's meridian: a lens, two balls of radius 10 about (0, 0, ±6), its rim
-/// chamfered by `std.Chamfered` with equal legs. The flat is `|q − c₁| + |q − c₂| ≤ 19`, a spheroid
-/// with the balls' centres its foci (semi-axes 9.5 and √54.25), a conic in the meridian: the lens
-/// is the spheroid out to where it meets each ball (`z₀ = 19/24`), the balls beyond.
+/// chamfered by `std.rounds.Chamfered` with equal legs. The flat is `|q − c₁| + |q − c₂| ≤ 19`, a
+/// spheroid with the balls' centres its foci (semi-axes 9.5 and √54.25), a conic in the meridian:
+/// the lens is the spheroid out to where it meets each ball (`z₀ = 19/24`), the balls beyond.
 #[test]
 fn a_lenss_rim_chamfered_is_a_spheroid() {
-    let e = solved("unit mm\nuse std\nc1 := point hint((0, 0, -6))\nfix((0, 0, -6)) c1\n\
+    let e = solved("unit mm\nuse std\nuse std.sets\nuse std.rounds\nc1 := point hint((0, 0, -6))\nfix((0, 0, -6)) c1\n\
         c2 := point hint((0, 0, 6))\nfix((0, 0, 6)) c2\n\
-        a := std.Sphere(c1, r: 10mm)\nb := std.Sphere(c2, r: 10mm)\n\
-        both := { p |\n  p inside a\n  p inside b\n  p inside std.Chamfered(a, b, la: 1mm, lb: 1mm)\n}\n\
+        a := std.sets.Sphere(c1, r: 10mm)\nb := std.sets.Sphere(c2, r: 10mm)\n\
+        both := { p |\n  p inside a\n  p inside b\n  p inside std.rounds.Chamfered(a, b, la: 1mm, lb: 1mm)\n}\n\
         lens := solid(both)\n");
     let b = exported(&e, "lens");
     let z0: f64 = 19.0 / 24.0;
@@ -369,7 +369,7 @@ fn a_lenss_rim_chamfered_is_a_spheroid() {
 /// one, their centroids `10 ± ρ̄`, so both together are the section turned at 10 twice (Pappus).
 #[test]
 fn a_torus_on_a_slab_is_filled_by_rings() {
-    let e = solved("unit mm\nuse std (round)\nin std.top {\n\
+    let e = solved("unit mm\nuse std\nuse std.rounds (round)\nin std.top {\n\
         a := point\nb := point\nc := point\nd := point\n\
         fix((-20, -20)) a\nfix((20, -20)) b\nfix((20, 20)) c\nfix((-20, 20)) d\n\
         (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\
@@ -392,10 +392,10 @@ fn a_torus_on_a_slab_is_filled_by_rings() {
 /// field still reads it.
 #[test]
 fn a_flat_no_rational_curve_holds_is_refused_by_name() {
-    let src = include_str!("../../examples/rounds/twin.sv").replace("use std (round)", "use std")
+    let src = include_str!("../../examples/rounds/twin.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds")
         .replace("bar.right.small round(r: r) bar.left.big", "A bevel(la, lb) B := {\n\
             \x20 repeat a in A {\n    repeat b in B {\n      when b != a {\n\
-            \x20       fill := std.FlatFill(a, b, la: la, lb: lb)\n        filled := solid(fill)\n        filled union A.body\n\
+            \x20       fill := std.rounds.FlatFill(a, b, la: la, lb: lb)\n        filled := solid(fill)\n        filled union A.body\n\
             \x20     }\n    }\n  }\n}\nbar.right.small bevel(la: 1mm, lb: 2mm) bar.left.big");
     let e = solved(&src);
     let body = ent(&e, "bar").i();
@@ -414,7 +414,7 @@ fn a_flat_no_rational_curve_holds_is_refused_by_name() {
 /// Built as a prism over a rational quadratic, an extrusion face.
 #[test]
 fn a_chamfer_beside_a_rod_is_a_conic_prism() {
-    let src = include_str!("../../examples/rounds/rail.sv").replace("use std (round)", "use std (round, chamfer)")
+    let src = include_str!("../../examples/rounds/rail.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (round, chamfer)")
         .replace("rail.rod round(r: r) rail.plate", "rail.rod chamfer(d: 2mm) rail.plate");
     let e = solved(&src);
     assert_eq!(lowered(&e).0, 1);
@@ -553,7 +553,7 @@ fn a_rings_stretch_cut_off_by_a_cylinder_at_its_ends() {
 /// is `[b√(A² − b²) + A² asin(b/A)]` from 0, `A² = 100 − a²`.
 #[test]
 fn a_run_cut_off_by_the_ball_it_lies_within() {
-    let e = solved("unit mm\nuse std (round)\nin std.front {\n\
+    let e = solved("unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n\
         a0 := point\na1 := point\nfix((0, -10)) a0\nfix((0, 10)) a1\nspindle := line(a0, a1)\n\
         c0 := point\nfix((0, 0)) c0\nshell := arc(center: c0, start: a0, end: a1) hint(r: 10)\n\
         shut := line(a1, a0)\n}\n\
@@ -578,7 +578,7 @@ fn a_run_cut_off_by_the_ball_it_lies_within() {
 /// `∫∫ x ρ dρ dφ`.
 #[test]
 fn a_knobs_neck_chamfered_is_a_conic_turned() {
-    let src = include_str!("../../examples/rounds/knob.sv").replace("use std (round)", "use std (chamfer)")
+    let src = include_str!("../../examples/rounds/knob.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (chamfer)")
         .replace("knob.rod round(r: 2mm) knob.disc", "knob.rod chamfer(d: 2mm) knob.disc")
         .replace("knob.rod round(r: 1.5mm) knob.ball", "knob.rod chamfer(d: 1.5mm) knob.ball");
     let e = solved(&src);
@@ -609,7 +609,7 @@ fn a_wide_turned_rim_is_chamfered_and_rounded_exactly() {
     for big in [32.0, 64.0] {
         for (word, cut) in [("chamfer(d: 0.5mm)", 2.0 * PI * (big - 0.5 / 3.0) * 0.125),
                             ("round(r: 0.5mm)", 2.0 * PI * (big - spandrel(0.5).1) * spandrel(0.5).0)] {
-            let e = solved(&format!("unit mm\nuse std (round, chamfer)\nin std.front {{\n\
+            let e = solved(&format!("unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {{\n\
                 a0 := point\na1 := point\nfix((0, 0)) a0\nfix((0, 20)) a1\nspindle := line(a0, a1)\n\
                 p0 := point\np1 := point\np2 := point\np3 := point\n\
                 fix((8, 0)) p0\nfix(({big}, 0)) p1\nfix(({big}, 6)) p2\nfix((8, 6)) p3\n\
@@ -1056,7 +1056,7 @@ fn a_frustums_generators_are_rolled() {
 /// sections square to the edge (`common::rounds::{tee_flat, bore_flat}`) to 1e-6.
 #[test]
 fn chamfers_along_traced_edges_are_flats_fitted() {
-    let ex = |s: &str| s.replace("use std (round)", "use std (chamfer)").replace("round(r: r)", "chamfer(d: 1mm)");
+    let ex = |s: &str| s.replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (chamfer)").replace("round(r: r)", "chamfer(d: 1mm)");
     let e = solved(include_str!("../../examples/rounds/crotch.sv"));
     assert_eq!(lowered(&e).0, 1);
     let want = PI * 100.0 * 60.0 + PI * 36.0 * 25.0 - inside_crossing(10.0, 6.0)
@@ -1075,7 +1075,7 @@ fn chamfers_along_traced_edges_are_flats_fitted() {
 #[test]
 fn chamfers_that_run_out_onto_a_face_are_cut_off() {
     use crate::common::rounds::{sloped_flat, RIM, ROOT};
-    let src = include_str!("../../examples/rounds/runout.sv").replace("use std (round)", "use std (chamfer)")
+    let src = include_str!("../../examples/rounds/runout.sv").replace("use std\nuse std.rounds (round)", "use std\nuse std.rounds (chamfer)")
         .replace("round(r: 2mm)", "chamfer(d: 1mm)").replace("round(r: 1mm)", "chamfer(d: 1mm)");
     let e = solved(&src);
     assert_eq!(lowered(&e).0, 2);
@@ -1228,7 +1228,7 @@ fn a_rolled_rim_is_cut_only_near_its_corners() {
 /// ρ)` or the top — less the rim, #85's quadrature (`cone_bore_rim`), to 1e-6.
 #[test]
 fn a_rim_winding_round_both_faces_is_rolled() {
-    let src = "unit mm\nuse std (round)\nin std.front {\n\
+    let src = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n\
         a := point\nb := point\nc := point\nd := point\n\
         fix((0, 0)) a\nfix((10, 0)) b\nfix((2, 16)) c\nfix((0, 16)) d\n\
         (ab := line(a, b)) -> (bc := line(b, c)) -> (cd := line(c, d)) -> (da := line(d, a)) -> close\n}\n\

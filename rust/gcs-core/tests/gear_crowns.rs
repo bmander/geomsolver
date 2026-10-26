@@ -52,9 +52,9 @@ fn the_generating_crowns_mate_flank_on_flank_with_a_pressure_shift() {
     let shared = |text: String| {
         let space = "construction gear_space := Space(mill.outer_flank, mill.inner_flank,";
         assert!(text.contains(space));
-        text.replace(space,"shared_outer := std.ConeThrough(mill.ax, mill.outer_pitch, \
+        text.replace(space,"shared_outer := std.sets.ConeThrough(mill.ax, mill.outer_pitch, \
             lean: -pressure - pressure_shift)\n  \
-            shared_inner := std.ConeThrough(mill.ax, mill.inner_pitch, \
+            shared_inner := std.sets.ConeThrough(mill.ax, mill.inner_pitch, \
             lean: pressure - pressure_shift)\n  \
             construction gear_space := Space(shared_outer, shared_inner,") };
     let (tooth,space) = crowns(10.,&shared);
@@ -212,9 +212,9 @@ fn a_tip_relief_of_zero_cuts_nothing() {
 
 /// End relief, proved on the blanks (`Blank`, as configured): at each member's toe and
 /// heel the corner where the tip cone meets the sphere is chamfered in the blank's region
-/// (`std.Chamfered`), lowered into its meridian as a conic's arc: on it the distances from the tip
-/// cone and from the sphere, each over the end relief, sum to one; its end on the tip cone is the
-/// end relief inside the sphere and its end on the sphere the end relief below the tip cone.
+/// (`std.rounds.Chamfered`), lowered into its meridian as a conic's arc: on it the distances from
+/// the tip cone and from the sphere, each over the end relief, sum to one; its end on the tip cone
+/// is the end relief inside the sphere and its end on the sphere the end relief below the tip cone.
 #[test]
 fn the_end_relief_chamfers_each_tip_corner() {
     use gcs_core::brep::planar::Seg;

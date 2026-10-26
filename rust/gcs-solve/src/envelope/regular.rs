@@ -21,9 +21,9 @@
 //! and folds there, inside the blank, whatever the design.  So the region is two regions'
 //! terms (`model::RegionTerm`, read in closed form as `solid::field::RegionField` reads them):
 //! the tool's, at the source's own point `S(u, v)` as drawn — every term but the one the source
-//! lies on, and a round (`std.Rounded`: within `r` of a core of two terms, one of which the source
-//! runs along `r` off) at its tangent line, the core's other term at the source point's foot on
-//! the one it runs along — and the blank's, at the generated point `X`, both as drawn; and the
+//! lies on, and a round (`std.rounds.Rounded`: within `r` of a core of two terms, one of which the
+//! source runs along `r` off) at its tangent line, the core's other term at the source point's foot
+//! on the one it runs along — and the blank's, at the generated point `X`, both as drawn; and the
 //! envelope's roll.
 //!
 //! **The worst point** is found by search, as `extremal.rs` finds a curve: a coarse grid over the

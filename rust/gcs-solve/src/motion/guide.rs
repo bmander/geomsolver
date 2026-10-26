@@ -1,14 +1,16 @@
 //! **A frame along a path** (#398 C): a jointed frame whose joint is held along a path (`g
-//! coincident f.axis`, `std.Along`) stands where the path's parameter puts it, its pose at `u` read
-//! off the path after the solve — the frame square to the path's tangent there, turned as the path
-//! makes it from where the frame is drawn, its **home**.  Two frames, by how much of the path's
-//! torsion the frame turns with (the joint's ratio):
-//! - **0, the rotation-minimising frame** (`std.On`'s and `std.Minimal`'s): its axes square to the
+//! coincident f.axis`, `std.stations.Along`) stands where the path's parameter puts it, its pose at
+//! `u` read off the path after the solve — the frame square to the path's tangent there, turned as
+//! the path makes it from where the frame is drawn, its **home**.  Two frames, by how much of the
+//! path's torsion the frame turns with (the joint's ratio):
+//! - **0, the rotation-minimising frame** (`std.stations.On`'s and `std.stations.Minimal`'s): its
+//! axes square to the
 //!   tangent turn only as the tangent does, `ω = T × T′`.  Integrated by double reflection (Wang,
 //!   Jüttler, Zheng and Liu, 2008) over a grid laid from the home, each node one step from the
 //!   last and any other parameter one step from its nearest node: fourth order, its error at the
 //!   grid's step a part in 10¹¹ of a turn along a drawing's paths.
-//! - **1, the path's own frame** (`std.Frenet`'s): the tangent, the principal normal toward the
+//! - **1, the path's own frame** (`std.stations.Frenet`'s): the tangent, the principal normal
+//! toward the
 //!   centre of curvature and the binormal, read off the derivatives at `u` directly; it turns with
 //!   the torsion besides, `ω = T × T′ + τ T` (`τ` a unit of the parameter).
 //!
@@ -121,7 +123,7 @@ impl Guide {
         let gap = norm(sub(at[0], o));
         if gap > 1e-6 * (1.0 + norm(o)) {
             return Err(format!("`{name}` is not drawn on its path: its origin stands {} from it \
-                                — draw it at its home there, `std.Along(f, g, up: …)`",
+                                — draw it at its home there, `std.stations.Along(f, g, up: …)`",
                                crate::vocab::num(gap)));
         }
         let home_frame = if frenet {

@@ -1,11 +1,11 @@
 # Rounds, chamfers and draft
 
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch
-`solid/lowering.rs`, `brep/fillet.rs`, `brep/corners.rs`, or `std.Rounded`. An issue number (#n) or
-a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says where a rule came
-from.
+`solid/lowering.rs`, `brep/fillet.rs`, `brep/corners.rs`, or `std.rounds.Rounded`. An issue number
+(#n) or a spec version ([0.n], see the [language changelog](../solvent-changelog.md)) says where a
+rule came from.
 
-**Rounds and chamfers are words of `std.sv`** (#183 steps 4–7). `repeat a in X` over a solid (a
+**Rounds and chamfers are words of `std.rounds`** (#183 steps 4–7). `repeat a in X` over a solid (a
 face path) runs over its faces (F4): set aside, and where the faces are not given the elaborator
 names them once the solids are built (`solid::faces::face_paths`, structural: each primitive's
 own faces under its route, `FacePath`) and elaborates again (`program::Again::Faces`,
@@ -16,15 +16,15 @@ stratum** (F6): a body's terms that read its faces (`faces::readers_of`) are lef
 boundary they read and applied last by the field (`document.rs`: fills, then cuts). A face path
 is matched against `solid::exact`'s names (`BodyFaces` is built from `exact::build`, shifted to its
 origin; cached in `Caches::faces`); one naming nothing holds nowhere, and a region over it is
-`RegionField::empty`, no term of a body. `std.sv`: `Run`, `Fill`, `Corner`, `CornerFill`, `Flat`,
-`FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d: …) B`,
-`chamfer(d: …) X`; in a region's body `std.Rounded(a, b, r)` and `std.Chamfered(a, b, la, lb)`
-over two of its own sets (`set` formals, #191; `p inside S(…)` may be written in place).
-**Each edge and corner once** (#415, [0.148]): the six sets are `symmetric` in their faces
-(`Flat`'s each with its leg, `symmetric((a, la), (b, lb))`), so the words — which reach an edge
-as `(a, b)` and `(b, a)` and a corner in six orders — make one set, one solid and one cut or fill
-of each (`flatten::same`, [language.md](language.md)): `rounds/bores.sv` is 18 regions, not 52
-(240, not 1152, before the words paired only faces that meet).
+`RegionField::empty`, no term of a body. `std.rounds`: `Run`, `Fill`, `Corner`, `CornerFill`,
+`Flat`, `FlatFill` (sets over faces) and the words `A round(r: …) B`, `round(r: …) X`, `A chamfer(d:
+…) B`, `chamfer(d: …) X`; in a region's body `std.rounds.Rounded(a, b, r)` and
+`std.rounds.Chamfered(a, b, la, lb)` over two of its own sets (`set` formals, #191; `p inside S(…)`
+may be written in place). **Each edge and corner once** (#415, [0.148]): the six sets are
+`symmetric` in their faces (`Flat`'s each with its leg, `symmetric((a, la), (b, lb))`), so the words
+— which reach an edge as `(a, b)` and `(b, a)` and a corner in six orders — make one set, one solid
+and one cut or fill of each (`flatten::same`, [language.md](language.md)): `rounds/bores.sv` is 18
+regions, not 52 (240, not 1152, before the words paired only faces that meet).
 `tests/symmetric.rs` holds the count and the block rounded and chamfered all over to the words
 written without `symmetric`.
 **Only faces that meet** (#625, [0.187]): the words pair `a` and `b` only where `b meets a`, and
@@ -48,8 +48,8 @@ c| = α + β d_L` (`corners::sum`), a **`Seg::Conic`** — the rational quadrati
 and where their tangents meet — carried by every meridian reader: planar Booleans (`meets_steps`'
 roots, `contains` in closed form), the field's `Edge::Conic` (`Wall::conic`: pieces'
 control-triangle discs, split while wide), `Meridian::Conic`, and the recipe's rational B-spline
-(`region_profile`, read back by `meridian_region`). `std.Chamfered` is multiplied through by its
-legs, so a leg of nothing cuts nothing (a bound weighing every measurement by nothing holds
+(`region_profile`, read back by `meridian_region`). `std.rounds.Chamfered` is multiplied through by
+its legs, so a leg of nothing cuts nothing (a bound weighing every measurement by nothing holds
 everywhere, else E040, `measured_term`). `tests/rounds.rs` is the gate (X2's closed forms in the
 slow tier), `tests/offset_corners.rs` (Pappus, `rounds/blank.sv`) the offset cone's.
 
@@ -182,7 +182,7 @@ three-face chains to 1e-9; the traced flat to 1e-8 and the traced round to 1e-6;
 through one slope, each chamfered over its round, to 1e-8), `tests/brep.rs` the strip across a
 tangent seam unioned into its body (the kernel's touch across a tangent edge, before the lowering
 relied on it). `fillet_oracle` holds none of these yet: whether OCCT's fillet
-overflowing onto a tangent face reads them as `std.sv` does is open. A region of a body's faces the planes do not close is
+overflowing onto a tangent face reads them as `std.rounds` does is open. A region of a body's faces the planes do not close is
 supported by the bodies it reads grown by `SUPPORT_REACH` of its longest length
 (`region::general`), so a fill the table refused is meshed. The field's composition of an operand
 rounded by a cut would read a sheet of nothing where the cut's face lies on the face it rounds,
@@ -259,7 +259,7 @@ the boundary built sees nothing of a piece never built), before anything reads t
 and the stratum's `Arc` (`Caches::lowering`; a key over `solid::reads` walks every round of
 the body), asked once a recipe. The gate's construction — the pieces' B-rep and its mesh — is
 remembered against the recipe node up to the order it lists things in (`lowering::gated`,
-`canonical`; a rolled one's stratum by identity; `Caches::gated`, the latest few): `std`'s words
+`canonical`; a rolled one's stratum by identity; `Caches::gated`, the latest few): `std.rounds`' words
 state each edge and corner once (#415), but a word that does not — a document's own written
 without `symmetric`, a round over faces drawn `in` a plane or riding a frame — makes a region for
 each order of the faces it names, and `Corner(a, b, c)` and `Corner(b, a, c)` lower to one
@@ -285,12 +285,12 @@ statements touching along a line (no manifold file describes it). **The oracle**
 example's body less its lowered regions, rounds the same edges by OCCT (`How`: its fillet or
 chamfer, `solvent_cad_round`, `Session::round`, each edge the one through a point the pieces give;
 a convex body rounded all over by its offsets, `solvent_cad_opened`; a chamfer beside a curved face,
-where OCCT's chamfer is ruled between legs along the faces, by a loft through `std.Flat`'s sections
-in closed form, `solvent_cad_loft`) and holds ours to it (volume 1e-9 where both are analytic, 2e-5
-where either fits a B-spline; face kinds alike, OCCT's B-spline standing only for an analytic face
-of ours it fits). OCCT's fillet and offsets misread an edge along or ending on a periodic surface's
-seam (`rail`, `post`, `frustum`): asked of the same solid with its seams turned (`seams_turned`).
-`tests/round_lowering.rs` is the gate (every volume the closed form's to
+where OCCT's chamfer is ruled between legs along the faces, by a loft through `std.rounds.Flat`'s
+sections in closed form, `solvent_cad_loft`) and holds ours to it (volume 1e-9 where both are
+analytic, 2e-5 where either fits a B-spline; face kinds alike, OCCT's B-spline standing only for an
+analytic face of ours it fits). OCCT's fillet and offsets misread an edge along or ending on a
+periodic surface's seam (`rail`, `post`, `frustum`): asked of the same solid with its seams turned
+(`seams_turned`). `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
 `frustum.sv`, `crotch.sv`, `bullnose.sv`).

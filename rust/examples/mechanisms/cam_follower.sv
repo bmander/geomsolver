@@ -17,7 +17,9 @@
 // Diagnosed: DOF 0; `solventc` says the drawing is followed from 0deg to 360deg.
 
 unit mm
-use std (right_of, spins, slides)
+use std
+use std.place (right_of)
+use std.motion (spins, slides)
 
 base := 25    // the roller centre's nearest approach to the cam's centre
 h := 10       // the follower's lift

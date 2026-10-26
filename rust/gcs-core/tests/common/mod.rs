@@ -466,7 +466,7 @@ pub fn front(src: &str) -> String {
             body.push('\n');
         }
     }
-    // `std`'s two words between points, where the source writes them (§9.9)
+    // `std.place`'s two words between points, where the source writes them (§9.9)
     let infix = |w: &str| src.lines().any(|l| {
         let t: Vec<&str> = l.split_whitespace().collect();
         (1..t.len().saturating_sub(1)).any(|i| t[i] == w && !["->", ":=", "claim"].contains(&t[i - 1]))
@@ -475,7 +475,7 @@ pub fn front(src: &str) -> String {
     let std = match (head.lines().any(says_std), words.is_empty()) {
         (true, _) => String::new(),
         (false, true) => "use std\n".to_string(),
-        (false, false) => format!("use std ({})\n", words.join(", ")),
+        (false, false) => format!("use std\nuse std.place ({})\n", words.join(", ")),
     };
     format!("{head}{std}{defs}in std.front {{\n{body}}}\n")
 }

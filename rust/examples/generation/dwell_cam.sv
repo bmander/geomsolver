@@ -21,7 +21,9 @@
 // cam's centre, of `base` and `base + h`; on the rise and the return the cycloidal curve.  Edit
 // `h`, `base`, the roller or the law, and the cam is cut again.
 
-use std (right_of, spins, slides)
+use std
+use std.place (right_of)
+use std.motion (spins, slides)
 
 base := 30    // the roller centre's nearest approach to the cam's centre
 h := 12       // the follower's lift

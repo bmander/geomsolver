@@ -110,13 +110,13 @@ fn lags_stated_at_two_phases_solve_the_ease() {
     let t = m.trace(&m.anchor.unwrap(), &[-15.0, 15.0]);
     let ends = [t[0].unwrap(), t[1].unwrap()];
     let lags = ends.map(|s| s.place.lag);
-    let unknowns = "use std (turns)\nparam kp: Scalar hint(0.001)\nparam kl: Scalar hint(0.001)\n";
+    let unknowns = "use std.motion (turns)\nparam kp: Scalar hint(0.001)\nparam kl: Scalar hint(0.001)\n";
     let held = |name: &str, s: &Sample| {
         let [x, y, z] = s.position;
         format!("{name} := point hint(({x}, {y}, {z}))\n\
                  {name} coincident(t == {}deg, lag == {}) contact\n", s.place.phase, s.place.lag)
     };
-    let src = format!("{}{}{}", eased("kp / 1mm", "kl / 1mm").replacen("use std (turns)\n", unknowns, 1),
+    let src = format!("{}{}{}", eased("kp / 1mm", "kl / 1mm").replacen("use std.motion (turns)\n", unknowns, 1),
                       held("R", &ends[0]), held("S", &ends[1]));
     let e = solved(&src);
     let read = |name: &str| e.sketch.params[e.sketch.free_vars[name] as usize].value;

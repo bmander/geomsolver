@@ -22,6 +22,7 @@ use crate::common::{ends, ent, fd_jacobian, off_line, read, refused, solved, tex
 const VIEWS: &str = "\
 unit mm
 use std
+use std.sets
 side := plane(u: std.z, v: std.y)
 fix(origin == (0, 0, 0)) side
 in std.front {
@@ -45,9 +46,9 @@ fix((5, 3)) l.p1
 /// `VIEWS` with a sphere, a cylinder about each axis and a cone, and `more` after them.
 fn with(more: &str) -> String {
     format!(
-        "{VIEWS}ball := std.Sphere(c, r: 12)\nshaft := std.Cylinder(ax, r: 10)\n\
-         rod := std.Cylinder(bx, r: 12)\nk := std.Cone(ax, half: 30deg)\n\
-         kc := std.Cone(cx, half: 20deg)\n{more}\n"
+        "{VIEWS}ball := std.sets.Sphere(c, r: 12)\nshaft := std.sets.Cylinder(ax, r: 10)\n\
+         rod := std.sets.Cylinder(bx, r: 12)\nk := std.sets.Cone(ax, half: 30deg)\n\
+         kc := std.sets.Cone(cx, half: 20deg)\n{more}\n"
     )
 }
 
@@ -126,7 +127,7 @@ fn a_plane_in_a_body_holds_of_a_point_drawn_in_it() {
     assert_eq!(dof(&with(m)) - dof(&src), 1);
     // and a family whose body says so, the instance's point drawn in its plane
     let ring = "component Ring(on: plane, center: point, r: Length) := { p |
-                  p coincident std.Sphere(center, r: r)
+                  p coincident std.sets.Sphere(center, r: r)
   p coincident on
 }
 ";
@@ -218,7 +219,7 @@ fn what_an_owned_point_formal_refuses() {
     refused(&format!("{CIRCLE}k := Circle(std.front, center: hint(5), r: 5)
 "), "E103",
             "a point's seed is its place in its plane", "center: hint(5)");
-    let on_a_line = "unit mm\nuse std\ncomponent B(on: line, c: point in on) := { p |\n  \
+    let on_a_line = "unit mm\nuse std\nuse std.sets\ncomponent B(on: line, c: point in on) := { p |\n  \
                      p distance(3) c\n}\nk := B(std.x)\n";
     refused(on_a_line, "E103", "`c` is drawn in `on`, which is no `plane` formal of `B`",
             "k := B(std.x)");
@@ -263,7 +264,7 @@ fn a_point_on_a_cylinder_and_on_a_cone() {
     assert!(described(&e).contains(&"a coincident k".to_string()), "{:?}", described(&e));
     // and a half-angle left unbound is found by the point
     let e = read(&format!(
-        "{VIEWS}k := std.Cone(ax, half: hint(30deg))\nfix((130, 20)) a\na coincident k\n"
+        "{VIEWS}k := std.sets.Cone(ax, half: hint(30deg))\nfix((130, 20)) a\na coincident k\n"
     ));
     let sk = solved(&e);
     let (apex, q) = ends(&sk, ent(&e, "ax"));
@@ -310,7 +311,7 @@ fn a_set_is_read_in_space_in_the_view_its_point_is_drawn_in() {
 fn a_set_through_a_word_is_read_in_space() {
     let point = "b := point hint((20, 40)) in std.front\nfix(y == 40) b\n";
     for more in [
-        format!("a opens(h) l := a coincident std.Cone(l, half: h)\n{point}b opens(h: 30deg) ax"),
+        format!("a opens(h) l := a coincident std.sets.Cone(l, half: h)\n{point}b opens(h: 30deg) ax"),
         format!("a sees(h) l := {{\n  private construction g := line(l.p1, a)\n  l angle(h) g\n}}\n\
                  wedge := {{ p | p sees(h: 30deg) ax }}\n{point}b coincident wedge"),
     ] {
@@ -331,9 +332,9 @@ fn a_set_through_a_word_is_read_in_space() {
 /// plane, so it is read in space.
 #[test]
 fn a_derivative_at_a_point_drawn_in_a_view_is_read_in_space() {
-    let src = "unit mm\nuse std\nin std.front {\n  c1 := point\n  fix((0, 0)) c1\n  \
+    let src = "unit mm\nuse std\nuse std.sets\nin std.front {\n  c1 := point\n  fix((0, 0)) c1\n  \
                c2 := point\n  fix((10, 0)) c2\n  m := point hint((3, 1))\n}\n\
-               s1 := std.Sphere(c1, r: 4)\ns2 := std.Sphere(c2, r: hint(5))\n\
+               s1 := std.sets.Sphere(c1, r: 4)\ns2 := std.sets.Sphere(c2, r: hint(5))\n\
                m coincident s1\nm coincident s2\ns1 tangent(at: m) s2\n";
     let e = read(src);
     use gcs_core::constraints::CKind;
@@ -352,12 +353,12 @@ fn a_derivative_at_a_point_drawn_in_a_view_is_read_in_space() {
 /// with the one use's statement.
 #[test]
 fn two_tangencies_in_one_body_take_directions_apart() {
-    let head = "unit mm\nuse std\nin std.front {\n  c1 := point\n  fix((0, 0)) c1\n  \
+    let head = "unit mm\nuse std\nuse std.sets\nin std.front {\n  c1 := point\n  fix((0, 0)) c1\n  \
                 c2 := point\n  fix((10, 0)) c2\n  c3 := point\n  fix((0, 40)) c3\n  \
                 c4 := point\n  fix((10, 40)) c4\n  m := point hint((3, 1))\n  \
                 n := point hint((3, 41))\n  z := point hint((50, 50))\n}\n\
-                s1 := std.Sphere(c1, r: 4)\ns2 := std.Sphere(c2, r: hint(5))\n\
-                s3 := std.Sphere(c3, r: 4)\ns4 := std.Sphere(c4, r: hint(5))\n\
+                s1 := std.sets.Sphere(c1, r: 4)\ns2 := std.sets.Sphere(c2, r: hint(5))\n\
+                s3 := std.sets.Sphere(c3, r: 4)\ns4 := std.sets.Sphere(c4, r: hint(5))\n\
                 m coincident s1\nm coincident s2\nn coincident s3\nn coincident s4\n";
     let pairs = "s1 tangent(at: m) s2\n  s3 tangent(at: n) s4\n";
     for src in [
@@ -378,10 +379,10 @@ fn two_tangencies_in_one_body_take_directions_apart() {
 /// And a plane tangent to two sets in one body: each tangency's directions are its own.
 #[test]
 fn two_plane_tangencies_in_one_body_take_directions_apart() {
-    let head = "unit mm\nuse std\nM := point in std.top\nfix((40, 0)) M\n\
-                C := point hint((35, 5, 18))\nb1 := std.Sphere(C, r: 20)\nM coincident b1\n\
+    let head = "unit mm\nuse std\nuse std.sets\nM := point in std.top\nfix((40, 0)) M\n\
+                C := point hint((35, 5, 18))\nb1 := std.sets.Sphere(C, r: 20)\nM coincident b1\n\
                 N := point in std.top\nfix((-40, 0)) N\nD := point hint((-35, 5, 18))\n\
-                b2 := std.Sphere(D, r: 20)\nN coincident b2\nz := point hint((50, 50, 50))\n";
+                b2 := std.sets.Sphere(D, r: 20)\nN coincident b2\nz := point hint((50, 50, 50))\n";
     let pairs = "std.top tangent(at: M) b1\n  std.top tangent(at: N) b2\n";
     for src in [
         format!("{head}{pairs}"),
@@ -479,7 +480,7 @@ fn a_line_tangent_to_a_cone_touches_without_crossing() {
 #[test]
 fn a_tangency_finds_an_unbound_half_angle() {
     let src = format!(
-        "{VIEWS}kd := std.Cone(cx, half: hint(25deg))\nfix((5, 30)) l.p2\nl tangent kd\n"
+        "{VIEWS}kd := std.sets.Cone(cx, half: hint(25deg))\nfix((5, 30)) l.p2\nl tangent kd\n"
     );
     let e = read(&src);
     assert!(e.sketch.constraints.iter().any(|c| c.along.is_some() && c.free.is_some()));

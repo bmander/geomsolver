@@ -8,16 +8,16 @@
 //! * **a face of a block's copies** — `face(side)` — as many edges as the block made, the count
 //!   never written.
 //!
-//! Over them, `std.Ruled(a, b, s:)` joins two faces corner to corner by straight rails and
-//! `std.Apex(a, tip, s:)` a face to a point, each standing its section where the plane through
-//! three rails at `s` cuts every rail; `std.Similar` and `std.Affine` carry a profile drawn once
-//! onto two or three rails, each corner at its own place in the frame they make, read off the
-//! drawing (a station's number reading the geometry it was given, any expression of it).
-//! Correspondence is the walks' written order: a connector is where a walk starts, and faces of
-//! different corner counts are made alike by naming a point on an edge — a statement, never
-//! inferred.  Gated off the exact B-rep to a part in 10⁹: a ruled loft between parallel planes is
-//! its prismatoid, a loft to a point a pyramid, and a profile on rails ∫A ds with A the profile's
-//! area times the square of its scale, or its frame's area ratio.
+//! Over them, `std.stations.Ruled(a, b, s:)` joins two faces corner to corner by straight rails and
+//! `std.stations.Apex(a, tip, s:)` a face to a point, each standing its section where the plane
+//! through three rails at `s` cuts every rail; `std.stations.Similar` and `std.stations.Affine`
+//! carry a profile drawn once onto two or three rails, each corner at its own place in the frame
+//! they make, read off the drawing (a station's number reading the geometry it was given, any
+//! expression of it). Correspondence is the walks' written order: a connector is where a walk
+//! starts, and faces of different corner counts are made alike by naming a point on an edge — a
+//! statement, never inferred.  Gated off the exact B-rep to a part in 10⁹: a ruled loft between
+//! parallel planes is its prismatoid, a loft to a point a pyramid, and a profile on rails ∫A ds
+//! with A the profile's area times the square of its scale, or its frame's area ratio.
 use gcs_core::program::Elaborated;
 
 use crate::common::parsed::determined;
@@ -29,6 +29,7 @@ const TWO_FACES: &str = include_str!("../../../docs/lofts/l0/two_faces.sv");
 /// on, square to `y`: `OUTLET` a diamond, `SQUARE` a square, `TRIANGLE` a triangle.
 const FRONT: &str = "unit mm
 use std
+use std.stations
 
 end_plane := plane
 fix(origin == (0mm, 40mm, 0mm)) end_plane
@@ -75,21 +76,22 @@ const TRIANGLE: &str = "in end_plane {
 ";
 
 /// A blade 50 mm long between two rails, its section a 20 × 3 rectangle drawn once in
-/// `std.front` and carried onto the rails by `std.Similar` from the middles of its short sides:
-/// the rails' places in the station are where the profile's `p0` and `p1` go.  `RAILS_IN_PLAN`
-/// close in from 20 apart to 8 in plan; `RAILS_TURNING` the same, one rising 3 and the other
-/// falling 3, so the section turns as it narrows.
+/// `std.front` and carried onto the rails by `std.stations.Similar` from the middles of its short
+/// sides: the rails' places in the station are where the profile's `p0` and `p1` go.
+/// `RAILS_IN_PLAN` close in from 20 apart to 8 in plan; `RAILS_TURNING` the same, one rising 3 and
+/// the other falling 3, so the section turns as it narrows.
 const BLADE: &str = "unit mm
 use std
+use std.stations
 
 component Blade(g: line, up: axis, port: line, starboard: line, prof: face, from: point,
                 to: point, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   l := point in st.n
   r := point in st.n
   l coincident port
   r coincident starboard
-  sec := std.Similar(prof, from, to, st.n, l, r)
+  sec := std.stations.Similar(prof, from, to, st.n, l, r)
 }
 
 in std.top {
@@ -137,22 +139,23 @@ fix((10mm, 0mm, 0mm)) r0
 fix((4mm, 50mm, -3mm)) r1
 ";
 
-/// A square 6 mm across, a named chain, carried by `std.Affine` onto three rails in space from
-/// the frame `o`, `x`, `y` it is drawn in: the rails run 40 mm up from the triangle (0, 0), (20,
-/// 0), (0, 20) to (5, 5), (15, 0), (0, 25), and the station is the plane through them.
+/// A square 6 mm across, a named chain, carried by `std.stations.Affine` onto three rails in space
+/// from the frame `o`, `x`, `y` it is drawn in: the rails run 40 mm up from the triangle (0, 0),
+/// (20, 0), (0, 20) to (5, 5), (15, 0), (0, 25), and the station is the plane through them.
 const AFFINE: &str = "unit mm
 use std
+use std.stations
 
 component Tri(ra: path, rb: path, rc: path, prof: face, from: point, to: point, third: point,
               s: Scalar) {
-  st := std.Across(ra, rb, rc, s: s)
+  st := std.stations.Across(ra, rb, rc, s: s)
   pa := point in st.n
   pb := point in st.n
   pc := point in st.n
   pa coincident ra
   pb coincident rb
   pc coincident rc
-  sec := std.Affine(prof, from, to, third, st.n, pa, pb, pc)
+  sec := std.stations.Affine(prof, from, to, third, st.n, pa, pb, pc)
 }
 
 a0 := point
@@ -254,7 +257,7 @@ fn two_faces_drawn_apart_are_lofted_corner_to_corner() {
 fn a_connector_is_where_a_walk_starts() {
     let src = format!("{FRONT}{OUTLET}outlet := face(b1, b2, b3, b0, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.Ruled(inlet, outlet).f over s)
+body := sweep(std.stations.Ruled(inlet, outlet).f over s)
 ");
     let e = determined(&src);
     let turned = [DIAMOND[1], DIAMOND[2], DIAMOND[3], DIAMOND[0]];
@@ -270,27 +273,27 @@ body := sweep(std.Ruled(inlet, outlet).f over s)
 fn an_edge_split_in_the_walk_pairs_faces_of_different_counts() {
     let src = format!("{FRONT}{TRIANGLE}tri := face(t0, t1, t2, m, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.Ruled(inlet, tri).f over s)
+body := sweep(std.stations.Ruled(inlet, tri).f over s)
 ");
     let e = determined(&src);
     let tri = [(-10.0, -10.0), (10.0, -10.0), (0.0, 10.0), (-5.0, 0.0)];
     near(volume(&e, "body"), prismatoid(40.0, &SQUARE, &tri), 1e-9, "triangle split");
     let src = format!("{FRONT}{TRIANGLE}tri := face(t0, t1, t2, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.Ruled(inlet, tri).f over s)
+body := sweep(std.stations.Ruled(inlet, tri).f over s)
 ");
-    refused(&src, "E080", "`inlet` walks 4 links and `tri` 3", "use std");
+    refused(&src, "E080", "`inlet` walks 4 links and `tri` 3", "use std.stations");
 }
 
-/// **A loft to a point** (`std.Apex`): the square's corners joined to a tip 30 mm off its plane
-/// and off its centre is a pyramid, a third of base by height whatever it leans, with no cap at
-/// the tip.
+/// **A loft to a point** (`std.stations.Apex`): the square's corners joined to a tip 30 mm off its
+/// plane and off its centre is a pyramid, a third of base by height whatever it leans, with no cap
+/// at the tip.
 #[test]
 fn a_loft_to_a_point_is_a_pyramid() {
     let src = format!("{FRONT}tip := point
 fix((3mm, 30mm, 2mm)) tip
 param s: Scalar over (0, 1)
-body := sweep(std.Apex(inlet, tip).f over s)
+body := sweep(std.stations.Apex(inlet, tip).f over s)
 ");
     let e = determined(&src);
     near(volume(&e, "body"), 400.0 * 30.0 / 3.0, 1e-9, "pyramid");
@@ -298,9 +301,9 @@ body := sweep(std.Apex(inlet, tip).f over s)
     assert!(f.contains("body.start") && !f.contains("body.end"), "{f:?}");
 }
 
-/// **Two rails hold a section by a similarity** (`std.Similar`): a 20 × 3 profile carried onto
-/// rails closing from 20 apart to 8 is scaled by their spread, `k = (20 − 12s)/20`, thickness and
-/// all — ∫60k² · 50 ds = 1560 — and on rails that rise and fall as they close it turns as well,
+/// **Two rails hold a section by a similarity** (`std.stations.Similar`): a 20 × 3 profile carried
+/// onto rails closing from 20 apart to 8 is scaled by their spread, `k = (20 − 12s)/20`, thickness
+/// and all — ∫60k² · 50 ds = 1560 — and on rails that rise and fall as they close it turns as well,
 /// its spread `√((20 − 12s)² + (6s)²)` — 1650.
 #[test]
 fn two_rails_hold_a_section_by_a_similarity() {
@@ -311,10 +314,10 @@ fn two_rails_hold_a_section_by_a_similarity() {
     near(volume(&e, "blade"), 60.0 * 50.0 / 400.0 * spread2, 1e-9, "rails turning");
 }
 
-/// **Three rails hold it by an affine map** (`std.Affine`): a 6 mm square drawn in the frame `o`,
-/// `x`, `y` (its area 36 to the frame's 50) is carried onto three rails whose triangle runs from
-/// area 200 to 87.5 between parallel planes, so its area is 36/50 of the triangle's, quadratic in
-/// `s`: the prismatoid over the triangle's 200, 146.875 and 87.5.
+/// **Three rails hold it by an affine map** (`std.stations.Affine`): a 6 mm square drawn in the
+/// frame `o`, `x`, `y` (its area 36 to the frame's 50) is carried onto three rails whose triangle
+/// runs from area 200 to 87.5 between parallel planes, so its area is 36/50 of the triangle's,
+/// quadratic in `s`: the prismatoid over the triangle's 200, 146.875 and 87.5.
 #[test]
 fn three_rails_hold_a_section_by_an_affine_map() {
     let e = determined(AFFINE);
@@ -362,7 +365,8 @@ in std.front {
 #[test]
 fn a_face_of_a_blocks_copies() {
     let e = determined("unit mm
-use std (coords)
+use std
+use std.place (coords)
 in std.front {
   c := point
   fix((0mm, 0mm)) c

@@ -13,7 +13,8 @@
 // at (20, 0)) and the face cuts its root in half; move the hole in (fix `hc` at (90, -12)) and its
 // rim runs all the way round.
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 in std.front {
   // the first wedge, its top sloping from 20 high to 10

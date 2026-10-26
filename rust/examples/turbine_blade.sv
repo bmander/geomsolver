@@ -35,7 +35,11 @@
 // Edit the design table (`hub`, `mean`, `tip`), `span`, `r_hub`, `blades`, the root's numbers
 // or the holes.
 unit mm
-use std (coords, round, turns)
+use std
+use std.place (coords)
+use std.rounds (round)
+use std.stations
+use std.motion (turns)
 
 // ---- the stage ----
 r_hub := 280mm               // the hub's flowpath at the stacking axis, from the engine's axis
@@ -163,7 +167,7 @@ component Section(n: plane, chord: Length, stagger: Angle, inlet: Angle, exit: A
 // The section at span fraction `s` along the stacking axis `g`, square to it, every number of
 // the design table blended through the hub's, the mean's and the tip's.
 component Station(g: line, up: axis, hub: group, mean: group, tip: group, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   wh := (1 - s) * (1 - 2 * s)
   wm := 4 * s * (1 - s)
   wt := s * (2 * s - 1)

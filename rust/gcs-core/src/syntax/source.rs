@@ -74,7 +74,7 @@ pub struct Program {
 }
 
 /// `use engine.crank` — a module the document reads its components from — and, in brackets,
-/// the names it reads bare: `use std (horizontal, vertical)` (§14.4 [0.48]).
+/// the names it reads bare: `use std.place (horizontal, vertical)` (§14.4 [0.48]).
 #[derive(Clone, Debug)]
 pub struct Use {
     /// The dotted name as written, `engine.crank`.
@@ -305,7 +305,12 @@ impl Program {
                 return Err(Some(format!("no module `{path}` is used here: write `use {path}`")));
             }
             let m = self.module_named(path);
-            return find(m, base).ok_or_else(|| Some(format!("`{path}` defines no {noun} `{base}`")));
+            return find(m, base).ok_or_else(|| Some(match crate::library::std_home(base) {
+                // `std.Sphere`, from before the library's names moved into its modules
+                Some(home) if path == "std" => format!("`{path}` defines no {noun} `{base}`: \
+                                                        it is `{home}.{base}`, under `use {home}`"),
+                _ => format!("`{path}` defines no {noun} `{base}`"),
+            }));
         }
         if let Some(i) = find(from, name) {
             return Ok(i);

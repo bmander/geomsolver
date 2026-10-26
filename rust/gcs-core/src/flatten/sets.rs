@@ -69,7 +69,7 @@ impl BodyShape {
         let indices =
             |f: &dyn Fn(&Stmt) -> bool| (0..body.len()).filter(|&i| f(&body[i])).collect();
         // a side of another set, grown or not (a bounded distance from it), is a use of it, not a
-        // number of this one's; a distance from one is (`std.Offset`'s body)
+        // number of this one's; a distance from one is (`std.sets.Offset`'s body)
         let side_of_another = |w: &Written| reaches(w) && w.bound().is_some();
         BodyShape {
             region: body.iter().filter_map(written_of).any(|w| w.states_bound())
@@ -899,9 +899,9 @@ impl<'a> Walk<'a> {
             }
             Err(e) => return self.once(Code::E103, at, format!("`{text}`: {e}")),
         };
-        // a distance a number comes to nothing (`std.Offset(S, d: 0mm)`, an allowance of none):
-        // a bound on it is the set's own side, and a point at it is on the set, as `coincident`
-        // says; a zero written so, not by a set's application, is said so
+        // a distance a number comes to nothing (`std.sets.Offset(S, d: 0mm)`, an allowance of
+        // none): a bound on it is the set's own side, and a point at it is on the set, as
+        // `coincident` says; a zero written so, not by a set's application, is said so
         let written = !rel.space && w.args.iter().any(|a| matches!(a, OpArg::Dim(t, _) if expr::is_literal(t)));
         if d.number() == Some(0.0) && word == "distance" && cmp.is_none() {
             if surface.is_none() && !written {
@@ -1182,8 +1182,8 @@ fn side_of(lit: &SetLit) -> Option<(Ref, bool)> {
 
 /// **A family's body, split by its point** (§6.21, F3): what reads the bound point — through
 /// the declarations that read it — is the set, and what reads none of it is the instance's,
-/// made once where the instance is rather than at each use (`std.ConeThrough`'s apex, placed by
-/// the point it is given).  Only declarations and written relations are judged; anything else
+/// made once where the instance is rather than at each use (`std.sets.ConeThrough`'s apex, placed
+/// by the point it is given).  Only declarations and written relations are judged; anything else
 /// stays with the set.  Each part keeps the order written.
 pub(super) fn instance_part(lit: &SetLit) -> (Vec<Stmt>, SetLit) {
     use crate::syntax::{Arg, OpArg};
@@ -1290,8 +1290,8 @@ fn region_body(
         return Ok(());
     }
     // the outside of a set of one side of another is that side turned round: outside `{ q | q
-    // outside toe }` is inside `toe` (#183, a region's own side as `std.Chamfered` takes it),
-    // outside `{ q | q distance(<= 1mm, side: outside) S }` beyond `S` grown (#192)
+    // outside toe }` is inside `toe` (#183, a region's own side as `std.rounds.Chamfered` takes
+    // it), outside `{ q | q distance(<= 1mm, side: outside) S }` beyond `S` grown (#192)
     if dims.is_empty() && side == Cmp::Ge {
         if let ([i], 1) = (shape.uses.as_slice(), shape.relations.len()) {
             if let StmtKind::Relation(r) = &mut body[*i].kind {

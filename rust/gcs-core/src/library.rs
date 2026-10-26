@@ -2,12 +2,20 @@
 //!
 //! The core takes text and has no filesystem, so in the browser a `use` can only resolve against
 //! what is compiled in — and that is this table: the modules the shipped examples are written
-//! over, named as `use` names them (`engine.crank` is `rust/examples/engine/crank.sv`).  The CLI
-//! looks beside the document first and comes here second, so a file of the same name wins there.
+//! over, named as `use` names them (`engine.crank` is `rust/examples/engine/crank.sv`, `std.sets`
+//! is `rust/lib/std/sets.sv`).  The CLI looks beside the document first and comes here second, so
+//! a file of the same name wins there.
 
 /// The library, `(name, text)`.
 pub const MODULES: &[(&str, &str)] = &[
     ("std", include_str!("../../lib/std.sv")),
+    ("std.place", include_str!("../../lib/std/place.sv")),
+    ("std.shapes", include_str!("../../lib/std/shapes.sv")),
+    ("std.sets", include_str!("../../lib/std/sets.sv")),
+    ("std.rounds", include_str!("../../lib/std/rounds.sv")),
+    ("std.panels", include_str!("../../lib/std/panels.sv")),
+    ("std.stations", include_str!("../../lib/std/stations.sv")),
+    ("std.motion", include_str!("../../lib/std/motion.sv")),
     ("hardware", include_str!("../../lib/hardware.sv")),
     ("engine.dims", include_str!("../../examples/engine/dims.sv")),
     ("engine.parts", include_str!("../../examples/engine/parts.sv")),
@@ -46,4 +54,19 @@ pub fn parse_linked(src: &str) -> (crate::syntax::Program, Vec<crate::syntax::Sy
     let (mut prog, errs) = crate::syntax::parse(src);
     let diags = crate::modules::link(&mut prog, &mut resolve);
     (prog, errs, diags)
+}
+
+/// **Where under `std` a name is defined** — a component, an interface or a relation word of one
+/// of the standard library's modules (`Sphere` is `std.sets`'s, `horizontal` `std.place`'s) — for
+/// a message that says which `use` reaches a name the file has not brought in.  Read only on that
+/// path, so the library's texts are parsed only when a name is missing.
+pub fn std_home(name: &str) -> Option<&'static str> {
+    MODULES.iter().filter(|(n, _)| n.starts_with("std.")).find_map(|&(n, text)| {
+        let (prog, _) = crate::syntax::parse(text);
+        let named = |t: &str| t == name;
+        (prog.components.iter().any(|c| c.name.as_ref().is_some_and(|c| named(&c.text)))
+            || prog.interfaces.iter().any(|f| named(&f.name.text))
+            || prog.words.iter().any(|d| named(&d.word.text)))
+        .then_some(n)
+    })
 }

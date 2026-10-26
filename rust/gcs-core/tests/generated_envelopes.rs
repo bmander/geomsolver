@@ -4,7 +4,8 @@ use crate::common::parsed::{build, solved};
 
 const MODEL: &str = "\
 unit mm
-use std (turns)
+use std
+use std.motion (turns)
 in std.front {
 o := point
 q := point

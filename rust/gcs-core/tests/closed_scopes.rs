@@ -5,7 +5,8 @@ use crate::common::linked::{build, solved};
 fn groups_pass_units_and_geometry_without_copying_it() {
     let mut e = solved("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 component Bar(d: group) {
 tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
@@ -95,7 +96,8 @@ fn components_cannot_capture_global_unknowns_or_geometry() {
 fn a_definition_reads_the_constants_of_its_file() {
     let e = solved("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 w := 7mm
 half := w / 2
 dims := {r: 3mm}
@@ -125,7 +127,8 @@ arm := Arm(o) in std.front
 fn a_formal_hides_a_constant() {
     let e = solved("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 w := 7mm
 component Arm(o: point, w: Length) {
   tip := point hint((5, 0))
@@ -224,7 +227,8 @@ fn groups_reject_missing_duplicate_and_wrong_kind_members() {
 fn a_group_may_be_written_across_lines() {
     let e = solved("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 component Bar(d: group) {
 tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
@@ -347,7 +351,8 @@ two := Part()
 fn numeric_groups_preserve_derived_dimensions() {
     let e = solved(r#"
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 dims := {area: 400mm * 1mm, root: sqrt(16mm)}
 component Part(d: group) {
   length := sqrt(d.area) + d.root * d.root
@@ -367,7 +372,7 @@ p := Part(dims)
 
 #[test]
 fn standard_centered_rectangle_has_dimensioned_sides_and_a_private_diagonal() {
-    let mut e = build("unit mm\nuse std\nin std.front {\nc := point\nfix((7mm, -3mm)) c\nr := std.CenteredRectangle(c, w: 20mm, h: 12mm)\n}\n");
+    let mut e = build("unit mm\nuse std\nuse std.shapes\nin std.front {\nc := point\nfix((7mm, -3mm)) c\nr := std.shapes.CenteredRectangle(c, w: 20mm, h: 12mm)\n}\n");
     assert!(e.ok(), "{:?}", e.diags);
     for i in 0..e.sketch.points.len() {
         for (axis, param) in e.sketch.point_params(i).into_iter().enumerate() {
@@ -395,7 +400,8 @@ fn standard_centered_rectangle_has_dimensioned_sides_and_a_private_diagonal() {
 fn a_group_member_may_be_a_group_written_in_place() {
     let e = solved("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 component Bar(d: group) {
 tip := point hint((d.at.x + d.size.length, d.at.y))
 d.at distance(d.size.length) tip
@@ -432,7 +438,8 @@ pin := Pin(design.pin)
 #[test]
 fn a_group_in_place_reads_as_one_referred_to() {
     let tail = "\
-use std (horizontal)
+use std
+use std.place (horizontal)
 component Bar(d: group) {
 tip := point hint((d.at.x + d.size.length, d.at.y))
 d.at distance(d.size.length) tip

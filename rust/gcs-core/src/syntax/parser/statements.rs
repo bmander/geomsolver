@@ -1734,13 +1734,13 @@ impl<'a> P<'a> {
             name.push('.');
             name.push_str(&self.ident()?.text);
         }
-        // `use std (horizontal, vertical)`: the names this file reads bare (§14.4 [0.48])
+        // `use std.place (horizontal, vertical)`: the names this file reads bare (§14.4 [0.48])
         let mut names = Vec::new();
         if self.eat_p('(') {
             names = self.ident_list()?;
             if names.is_empty() {
-                self.fail("an import names what it reads bare: `use std (horizontal)`, or no \
-                           brackets at all");
+                self.fail("an import names what it reads bare: `use std.place (horizontal)`, or \
+                           no brackets at all");
                 return None;
             }
         }
@@ -1897,7 +1897,7 @@ impl<'a> P<'a> {
 
     /// Whether the statement from here uses a set written in place (#103): a reference, `coincident`
     /// or `tangent`, then a set literal or a call — `q coincident { p | … }`, `l tangent
-    /// std.Cylinder(ax, r: 8mm)`.
+    /// std.sets.Cylinder(ax, r: 8mm)`.
     fn inline_set_ahead(&self) -> bool {
         // an element's word opens a declaration, never an operand
         if self.word_at(self.i).is_none_or(|w| crate::model::EntKind::parse(w).is_some()) {
@@ -1914,9 +1914,9 @@ impl<'a> P<'a> {
         self.set_at(j + 1) || call
     }
 
-    /// `q coincident { p | … }` or `l tangent std.Cylinder(ax, r: 8mm)`: the set written in place
-    /// is its own statement, a set or an instance under a key the source cannot write, read by
-    /// the relation as a name (#103).  The set is a link of the statement's text: deleting it
+    /// `q coincident { p | … }` or `l tangent std.sets.Cylinder(ax, r: 8mm)`: the set written in
+    /// place is its own statement, a set or an instance under a key the source cannot write, read
+    /// by the relation as a name (#103).  The set is a link of the statement's text: deleting it
     /// alone is refused, as a chain's link is.
     fn inline_set_use(&mut self, next_id: &mut u32, out: &mut Vec<Stmt>) -> Option<()> {
         let lo = self.here().lo as usize;

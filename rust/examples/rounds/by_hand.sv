@@ -1,4 +1,4 @@
-// A round written in the drawing itself, not taken from the library: what `std.sv` says, said
+// A round written in the drawing itself, not taken from the library: what `std.rounds` says, said
 // again here in a few lines, to show it is only the language.
 //
 // `Rolled(a, b, r)` is the material a ball of radius `r` rolled along the convex edge where faces

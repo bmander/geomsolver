@@ -4,7 +4,8 @@ use gcs_core::{interval::minimum::{Options,Status,Stop},motion::Family,
 
 pub(super) fn rotation() -> Family {
     let (source,errors) = crate::common::parse("\
-use std (turns)
+use std
+use std.motion (turns)
 in std.front {
 a := point
 b := point

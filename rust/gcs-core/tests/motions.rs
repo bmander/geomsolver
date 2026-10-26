@@ -7,7 +7,8 @@ mod contact;
 
 const AXES: &str = "\
 unit mm
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 in std.front {
 a := point
 b := point
@@ -205,7 +206,8 @@ fn motions_reject_wrong_units_missing_references_and_retired_spellings() {
 #[test]
 fn motion_axes_use_world_geometry_and_follow_solved_point_edits() {
     let mut e = solved("unit mm
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 in std.front {
   a := point
   b := point
@@ -399,7 +401,8 @@ fn two_turns_about_parallel_axes_are_the_wankel_rotors_planetary_motion() {
     let (r,e) = (105.,15.);
     let src = format!("\
 unit mm
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 in std.front {{
 shaft := line(std.origin, hint((0, 1)))
 fix((0, 1)) shaft.p2

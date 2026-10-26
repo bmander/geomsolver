@@ -37,7 +37,8 @@ component Plate(w: Length, d: Length, h: Length) {
 fn two(first: &str, second: &str) -> String {
     format!("
 unit mm
-use std (offset)
+use std
+use std.place (offset)
 {PLATE}
 in (f := frame) {{ one := {first} }}
 fix(dir == (0, 1, 0)) f.u
@@ -165,7 +166,8 @@ fn unequal_arguments_are_two_builds_and_an_open_instance_is_built_as_its_own() {
     // given an entity, an instance reads beside its frame: no binding, evaluated as today
     let (e, sk) = solved("
 unit mm
-use std (offset)
+use std
+use std.place (offset)
 component Lug(o: point, h: Length) {
   in std.front {
     a := point hint((1, 1))
@@ -202,7 +204,8 @@ two := Lug(q, h: 2mm)
 /// beside it.
 const RING: &str = "
 unit mm
-use std (offset, right_of)
+use std
+use std.place (offset, right_of)
 component Peg(r: Length) {
   in std.front {
     c := point hint((20, 0))
@@ -280,7 +283,8 @@ fn reaching_outside_the_ring_is_still_refused() {
     // and an argument read from outside it
     refused("
 unit mm
-use std (offset)
+use std
+use std.place (offset)
 component Lug(o: point) {
   in std.front {
     a := point hint((1, 1))
@@ -300,7 +304,8 @@ in std.front {
     // and the ring's own body reading a datum, outside any instance
     refused("
 unit mm
-use std (right_of)
+use std
+use std.place (right_of)
 in std.front {
   o := point hint((50, 0))
   fix((50, 0)) o

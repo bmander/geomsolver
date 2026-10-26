@@ -408,16 +408,16 @@ fn holds_ball(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usiz
 }
 
 /// **A chamfer's flat cut along a traced run** (#218's 6): where two analytic faces meet on a loop
-/// no line or circle carries, the flat a chamfer leaves — `std.Flat`'s, the points whose distances
-/// from the two surfaces, each over the other's leg, sum to one — between the leg on each face:
-/// on face `k`, where it stands `legs[k]` from the other face's surface (its meeting with that
-/// surface offset by the leg). Sectioned square to the faces' meeting, each section's flat is the
-/// curve between the two legs where that sum is one, pulled onto it by Newton's steps across the
-/// chord; the flat face is those fitted as a net within `tol`, and the piece is bounded by it and
-/// the two strips of the faces between the loop and the legs (`build`). `on_a` is a point beside
-/// the face whose leg is `legs[0]`, nearer its surface than the other's (none where the legs are
-/// alike). A run that ends is cut on past each end and cut off by the plane of the faces there, as
-/// a rolled one is.
+/// no line or circle carries, the flat a chamfer leaves — `std.rounds.Flat`'s, the points whose
+/// distances from the two surfaces, each over the other's leg, sum to one — between the leg on each
+/// face: on face `k`, where it stands `legs[k]` from the other face's surface (its meeting with
+/// that surface offset by the leg). Sectioned square to the faces' meeting, each section's flat is
+/// the curve between the two legs where that sum is one, pulled onto it by Newton's steps across
+/// the chord; the flat face is those fitted as a net within `tol`, and the piece is bounded by it
+/// and the two strips of the faces between the loop and the legs (`build`). `on_a` is a point
+/// beside the face whose leg is `legs[0]`, nearer its surface than the other's (none where the legs
+/// are alike). A run that ends is cut on past each end and cut off by the plane of the faces there,
+/// as a rolled one is.
 pub fn flat_along(b: &Brep,at: V,legs: [f64;2],on_a: Option<V>,tol: f64) -> Result<Brep,String> {
     let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,sides,surfaces,concave,names,..} = meeting(b,at,tol)?;
     // which face is `a`

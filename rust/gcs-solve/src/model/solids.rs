@@ -554,12 +554,12 @@ impl SetShape {
 /// Which surface a set is, as an envelope reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SetKind {
-    /// The angle `number` from the line `axis`, seen from its start (`std.Cone`,
-    /// `std.ConeThrough` about its spine).
+    /// The angle `number` from the line `axis`, seen from its start (`std.sets.Cone`,
+    /// `std.sets.ConeThrough` about its spine).
     Cone,
-    /// The distance `number` from the line `axis` (`std.Cylinder`).
+    /// The distance `number` from the line `axis` (`std.sets.Cylinder`).
     Cylinder,
-    /// The distance `number` along the line `axis` from the point `origin` (`std.HalfSpace`'s
+    /// The distance `number` along the line `axis` from the point `origin` (`std.sets.HalfSpace`'s
     /// face, #326): a plane square to the line.
     Plane,
 }
@@ -607,13 +607,14 @@ pub enum MotionDef {
     /// refused (`envelope::held`).
     Driven { of: u32, law: String, over: String },
     /// **A frame along a path** (#398 C): the jointed frame `frame` whose joint is held along the
-    /// path `guide` (`g coincident f.axis`, `std.Along`), standing where the path's parameter puts
-    /// it — its pose at `u` read off the guide after the solve, the frame square to the path's
-    /// tangent there and turned as the path makes it from where the frame is drawn, its home.
-    /// `frenet` says how much of the path's torsion it turns with: none, the rotation-minimising
-    /// frame (`std.On`'s, `std.Minimal`'s: the joint's ratio 0), or all, the path's own
-    /// (`std.Frenet`'s: ratio 1).  Read after the solve (`motion::Family`) by what rides on the
-    /// frame and is swept as a parameter runs; a row reads no guide (`envelope::held`).
+    /// path `guide` (`g coincident f.axis`, `std.stations.Along`), standing where the path's
+    /// parameter puts it — its pose at `u` read off the guide after the solve, the frame square to
+    /// the path's tangent there and turned as the path makes it from where the frame is drawn, its
+    /// home. `frenet` says how much of the path's torsion it turns with: none, the
+    /// rotation-minimising frame (`std.stations.On`'s, `std.stations.Minimal`'s: the joint's ratio
+    /// 0), or all, the path's own (`std.stations.Frenet`'s: ratio 1).  Read after the solve
+    /// (`motion::Family`) by what rides on the frame and is swept as a parameter runs; a row reads
+    /// no guide (`envelope::held`).
     Guided { guide: EntRef, frame: u32, frenet: bool },
     /// **A frame the drawing moves** (#398 F): the frame `frame`, with no joint of its own, placed
     /// by relations on geometry the drawing moves as the declared parameter `over` runs — a

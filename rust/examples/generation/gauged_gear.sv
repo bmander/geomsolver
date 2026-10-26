@@ -22,7 +22,9 @@
 // envelope extruded (`brep::sweep::extruded`), not a traced sheet.
 
 unit mm
-use std (coords, offset, right_of, spins, slides)
+use std
+use std.place (coords, offset, right_of)
+use std.motion (spins, slides)
 
 N := 20                     // teeth
 m := 2mm                    // module

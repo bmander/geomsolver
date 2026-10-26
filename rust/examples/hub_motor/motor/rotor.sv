@@ -7,7 +7,8 @@
 // marked on the part).  The ring's ends are tapped for the covers' screws, twelve a side on its
 // mid-wall circle.
 
-use std (horizontal)
+use std
+use std.place (horizontal)
 use motor.dims (half, L, magnet_arc, poles, Rm, Ro, Rr, screw_r, screws, tap4, tap_depth)
 use motor.parts (Datums)
 

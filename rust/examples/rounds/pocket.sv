@@ -8,7 +8,8 @@
 // to round the pocket's rim, where its walls meet the face it was cut into: those edges are
 // convex, so that round cuts.
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 1.5mm   // the pocket's inside radius
 

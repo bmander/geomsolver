@@ -76,7 +76,13 @@ pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
             for n in &u.names {
                 let name = n.text.as_str();
                 let Some(word) = defines(p, k, name) else {
-                    say(Code::E101, n.span, format!("`{}` defines no `{name}`", u.name));
+                    let home = crate::library::std_home(name).filter(|_| u.name == "std");
+                    say(Code::E101, n.span, match home {
+                        // `use std (horizontal)`, from before the library's modules
+                        Some(home) => format!("`std` defines no `{name}`: `{home}` does, \
+                                               `use {home} ({name})`"),
+                        None => format!("`{}` defines no `{name}`", u.name),
+                    });
                     continue;
                 };
                 // a relation word's collisions are its definition's to say (`word_faults`, of

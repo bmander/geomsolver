@@ -5,7 +5,8 @@
 // Closed form: area(s) = 400(1−s)² + 800s(1−s) + 100πs², so V = 30 · (800 + 100π)/3
 // = 8000 + 1000π mm³.
 unit mm
-use std (coords)
+use std
+use std.place (coords)
 use lofts
 
 component Transition(g: line, up: axis, half: Length, s: Scalar) {

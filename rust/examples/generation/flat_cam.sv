@@ -18,7 +18,9 @@
 // solve works its radius out (base + s + s'' = 29.09).  Edit `base`, `h` or the law, and the cam
 // is cut again.
 
-use std (right_of, spins, slides)
+use std
+use std.place (right_of)
+use std.motion (spins, slides)
 
 base := 25    // the face's nearest approach to the cam's centre
 h := 15       // the follower's lift

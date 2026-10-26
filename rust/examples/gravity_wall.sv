@@ -5,7 +5,8 @@
 // trapezoid's; that its crest leans downstream less than a tenth of a millimetre; and that its
 // first mode in its plane is above 50Hz.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 
 H := 6000mm
 crest := 1500mm

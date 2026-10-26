@@ -13,6 +13,7 @@
 // Orbit (right-drag) to see them. Move a focus, change a radius or move a centre and apply (⌘↵).
 unit mm
 use std
+use std.sets
 
 // the egg's foci, along x about the origin
 f1 := point hint((-3, 0, 0))
@@ -31,8 +32,8 @@ oz := point hint((20, 0, 1))
 fix((20, 0, 1)) oz
 along_x := line(o, ox)
 along_z := line(o, oz)
-a := std.Cylinder(along_x, r: 3)
-b := std.Cylinder(along_z, r: 3)
+a := std.sets.Cylinder(along_x, r: 3)
+b := std.sets.Cylinder(along_z, r: 3)
 crossing := { p | p inside a; p inside b }
 bicylinder := solid(crossing)
 
@@ -43,6 +44,6 @@ near := point hint((38, 0, 0))
 fix((38, 0, 0)) near
 far := point hint((42, 0, 0))
 fix((42, 0, 0)) far
-ball := std.Sphere(m, r: 5)
+ball := std.sets.Sphere(m, r: 5)
 nearer := { p | p inside ball; distance(p, near) <= distance(p, far) }
 cell := solid(nearer)

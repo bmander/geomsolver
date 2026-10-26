@@ -19,7 +19,8 @@ await initCore();
 /** A block that slides along `reach`, an unknown the solver answers for, and a wall it must
  *  clear: one claim over the travel (37 poses) and one at the pose. */
 const SLIDING = `unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 in std.front {
 o := point
 fix((0, 0)) o

@@ -196,7 +196,7 @@ const IMPLIED: &str = "  p := point\n  fix((0, -80)) p\n  q := point hint((10, -
 fn four_bar_by(n: usize, extra: &str) -> String {
     let (g, r, l, k) = (40.0, 10.0, 35.0, 25.0);
     four_bar(g, r, l, k, "(0deg, 360deg)", &format!("{}{extra}", standing_by(n, g)))
-        .replace("use std\n", "use std\nuse std (horizontal)\n")
+        .replace("use std\n", "use std\nuse std.place (horizontal)\n")
 }
 
 /// **A statement the others imply is left out of the march** (#591): carried, it left the
@@ -372,7 +372,7 @@ fn the_ledger_counts_the_freedom_each_parameter_drives() {
 
     // a five-bar, both cranks driven by the one parameter: two freedoms over it, beside a
     // triangle that reads none
-    let five = "unit mm\nuse std\nparam t: Angle over (0deg, 90deg)\nin std.front {\n  \
+    let five = "unit mm\nuse std\nuse std.place\nparam t: Angle over (0deg, 90deg)\nin std.front {\n  \
         a := point\n  e := point\n  b := point hint((10, 0))\n  d := point hint((50, 10))\n  \
         c := point hint((25, 30))\n  fix((0, 0)) a\n  fix((40, 0)) e\n  ground := line(a, e)\n  \
         a distance(10) b\n  e distance(10) d\n  b distance(30) c\n  c distance(30) d\n  \
@@ -401,13 +401,13 @@ fn the_ledger_counts_the_freedom_each_parameter_drives() {
 /// **A parameter passed down through parts** (the engine's cams, `engine/head.sv`): a part's
 /// formal bound to `t`, a value of the part over it that is not affine in it (a cam's reach,
 /// `max(…)` of a cosine), and that value given on to another part whose hint and whose relation
-/// word (`std.offset`) read it.  The hint is a seed, read where the drawing stands (the
+/// word (`std.place.offset`) read it.  The hint is a seed, read where the drawing stands (the
 /// interval's start), and the word's body reads `t` as the use's statement would: so the drawing
 /// is driven by `t`, followed over the whole of it, and the follower stands at the reach's closed
 /// form at every instant.
 #[test]
 fn a_parameter_passed_down_through_parts_drives_what_they_draw() {
-    let src = "unit mm\nuse std (offset)\n\
+    let src = "unit mm\nuse std\nuse std.place (offset)\n\
         component Follower(o: point, lift: Length) {\n  f := point hint((o.x + 5mm, o.y + lift))\n  \
         f offset(dx: 5mm, dy: lift) o\n}\n\
         component Cam(o: point, phase: Angle) {\n  reach := max(17mm, 20mm * cos(phase / 2) + 7mm)\n  \

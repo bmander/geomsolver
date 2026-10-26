@@ -4,7 +4,9 @@
 // glass box. Keep `wire_r` below half the pitch, or neighbouring turns run into each other (and
 // the spring is read by its field instead).
 unit mm
-use std (right_of, screws)
+use std
+use std.place (right_of)
+use std.motion (screws)
 
 coil_r := 12mm     // from the axis to the wire's centre
 wire_r := 2mm      // the wire's radius

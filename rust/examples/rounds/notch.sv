@@ -14,7 +14,8 @@
 // The plate stands 5 deep on the top plane, its far face 5 below. Orbit (right-drag) to see the
 // far rim. Edit the draft or the round's radius and apply (⌘↵).
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 in std.top {
   e_east := point

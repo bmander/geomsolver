@@ -9,7 +9,7 @@
 //!
 //! What a module contributes is exactly its component definitions and relation words, plus the
 //! top-level parameters and groups available to the importing root (§6.3, §9.9) — each by its
-//! full path, or bare where the importing `use` names it (`use std (horizontal)`).  Its own
+//! full path, or bare where the importing `use` names it (`use std.place (horizontal)`).  Its own
 //! drawing — whatever loose statements it holds, its `preview` and the parameters that run over
 //! an interval for it (#593) — is its own and is not drawn here, so `gear.sv` is a module as it
 //! stands.  Two definitions of one component name, wherever they come from, are refused: there is
@@ -154,7 +154,9 @@ pub fn localize(p: &Program, diags: &mut [Diag]) {
 }
 
 /// Link `prog` exactly as `like` was linked — from the module texts `like` already holds — for
-/// a re-parse of the same document that must not ask the host again.
+/// a re-parse of the same document that must not ask the host again.  A module `like` had not
+/// linked, a `use` the edit itself wrote (`use std.rounds (round)`, the Fillet tool's), comes from
+/// the library compiled into the core, which asks no host either.
 pub fn relink(prog: &mut Program, like: &Program) -> Vec<Diag> {
-    link(prog, &mut |name| like.module_text(name))
+    link(prog, &mut |name| like.module_text(name).or_else(|| crate::library::resolve(name)))
 }

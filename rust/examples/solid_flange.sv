@@ -1,6 +1,7 @@
 // A bored mounting flange: one stepped radial section turned about its axis, then a bolt pattern.
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 use hardware
 outer_radius := 32mm
 bore_radius := 8mm

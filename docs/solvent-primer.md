@@ -240,7 +240,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `tangent` | infix | line–circle/arc (`at: p1`/`p2` for tangency at that end; `side:` the centre's side); circle/arc–circle/arc (`external: true/false`); arc–line (`at: start`/`end`); spline or curve–line; any path–line `at:` a point a relation holds on the path (below); a line or set to a set (1.13); a plane to a line, circle, arc or curve traced in space `at:` a point held on it — the plane through the point holding the tangent, `T tangent(at: m) k` (1.14, *Developable panels*) |
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
-| `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s words (1.9): `use std (horizontal)`, then `a horizontal b` |
+| `horizontal`, `vertical` | prefix | a line. Between two points they are `std.place`'s words (1.9): `use std.place (horizontal)`, then `a horizontal b` |
 | `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. `distance(0, along: …)` is the same row with a number of zero, a dimension |
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
@@ -263,7 +263,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `l1 distance(6, side: left) l2` | `l2`'s `p1` lies left of `l1` |
 | `a distance(60, along: u) b` | `b.x − a.x = 60`, the run along the view's `u`; `along: v` is the rise, along its `v` (world z in `std.front`); `right`, `up`, … say it as a word |
 | `a distance(60, along: t) b` | `(b − a)·t̂ = 60` along axis or line `t` |
-| `a level(t) b` | level along `t`; `std`'s `a horizontal b` is `a level(up) b` |
+| `a level(t) b` | level along `t`; `std.place`'s `a horizontal b` is `a level(up) b` |
 | `l1 angle(30) l2` | 30° **counter-clockwise** from `l1`'s direction to `l2`'s, about the plane's normal |
 | `d1 angle(30deg, about: a) d2` | 30° about axis `a`, right handed, from `d1`'s shadow on the plane square to `a` to `d2`'s: lines or axes, in space; in a plane `a` may only be `P.normal` (E040) |
 | `l1 angle(30, sense: cw) l2` | 30° clockwise: `angle(-30)` said openly |
@@ -540,7 +540,7 @@ in std.front {
 
 Refused: a round beside a line and an arc (lines only, for now), its corner named differently by
 the two sides, a corner named while a side is declared elsewhere (its end is its own point, the
-arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std`'s
+arc's), another word at the round's joint. A bare `A round(r) B`, no marker, is still `std.rounds`'
 round of the edges where two solids' faces meet (1.14).
 
 **A step says where a line's end stands, one number per run.** `step(…)` before a line, or before
@@ -611,11 +611,12 @@ in std.front {
 (the *representative*) turned `k · 360°/N` about `C`: a point (counter-clockwise in its view, the
 body drawn in that view) or an axis whose direction is held (the body in space). Only the
 representative is solved for — the copies own no unknowns and their relations are not stated
-again — so a regular polygon is one vertex, one radius, one edge (`std.Polygon`), a gear one tooth
-(`gear.sv`), and no `cos`/`sin` places a copy. The ring's own turn is gauged from outside:
+again — so a regular polygon is one vertex, one radius, one edge (`std.shapes.Polygon`), a gear one
+tooth (`gear.sv`), and no `cos`/`sin` places a copy. The ring's own turn is gauged from outside:
 
 ```
-use std (horizontal)
+use std
+use std.place (horizontal)
 
 in std.front {
   hub := point
@@ -707,7 +708,8 @@ a definition's body as the file's constants are. An Uno's four mounting holes:
 
 ```
 unit mm
-use std (coords)
+use std
+use std.place (coords)
 
 top_y := 48.26mm
 uno_holes := [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]
@@ -734,7 +736,8 @@ must be as long. And a face may be made of a block's copies, `face(side)` for `s
 
 ```
 unit mm
-use std (coords)
+use std
+use std.place (coords)
 in std.front {
   cycle 6 as i {
     p := point
@@ -822,7 +825,7 @@ A reusable pattern hiding its layout (`use hardware` provides this; see `solid_f
 ```solvent
 component BoltPattern(body: solid, center: point, ref: line,
                       n: Int, pitch_r: Length, hole_r: Length, phase: Angle) {
-  private construction layout := std.Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+  private construction layout := std.shapes.Polygon(center, ref, n: n, r: pitch_r, phase: phase)
   repeat n as i {
     hole := radius(hole_r) circle(center: layout.v[i])
     private drill := solid(face(hole), through: body)
@@ -980,11 +983,30 @@ true)` (1.5) still mirrors one profile within a drawing, a loft's handed section
 
 ```
 use engine.dims          // engine/dims.sv beside the document or an ancestor, else the library
-use std                  // datums (1.12), std.Turned, std.CenteredRectangle, std.Polygon,
-                         // std.Hex, std.Ellipse, std.Sphere/Cylinder/Cone, rounds (1.14)
+use std                  // the datums (1.12) and std.Turned
+use std.sets             // std.sets.Sphere, std.sets.Cylinder, std.sets.Cone, … (1.13)
 use hardware             // fasteners and fittings, in mm
-use std (horizontal, vertical)        // and import those two words bare
+use std.place (horizontal, vertical)   // and import those two words bare
 ```
+
+**The standard library** is `std` and seven modules under it, each asked for by its own `use` (a
+`use std.sets` brings neither `std`'s datums nor any other module; a file naming `std.front` says
+`use std` as well):
+
+| module | holds |
+|---|---|
+| `std` | the datums `std.front`, `std.top`, `std.side`, `std.up`, `std.x`/`y`/`z`/`back`, `std.origin` (1.12), and `std.Turned` |
+| `std.place` | words: `horizontal`, `vertical`, `offset`, `right_of`, `left_of`, `above`, `below`, `coords`, `on_u`, `on_v`, `skew`, `turned`, `square`, `seats`, `raised` |
+| `std.shapes` | `CenteredRectangle`, `Ellipse`, `Polygon`, `Hex`; the word `hangs` (1.10) |
+| `std.sets` | `Sphere`, `Cylinder`, `Cone`, `ConeThrough`, `HalfSpace`, `Offset` (1.13); the word `on_sphere` |
+| `std.rounds` | the words `round`, `chamfer`; `Rounded`, `Chamfered`, `Grown` and the sets the words make (1.14) |
+| `std.panels` | `Developable`, `Development` (1.14) |
+| `std.stations` | `OnLine`, `OnArc`, `OnSpline`, `On`, `Helix`, `OnHelix`, `Minimal`, `Frenet`, `Along`, `AlongFrenet`, `Across`, `Ruled`, `Apex`, `Affine`, `Similar`, `Twisted`; the words `scaled`, `scaled_radius` (1.14) |
+| `std.motion` | the words `turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`; `Screw` (1.15) |
+
+A component is called by its path, `std.sets.Sphere(c, r: 5)`; a word is only ever bare, `use
+std.motion (turns)`. Through spec 0.194 all of it was `std`'s (`std.Sphere`, `use std (round)`);
+the old spelling is refused naming the new.
 
 A module is a Solvent document read for its components, relation words and top-level values and
 groups; its own drawing is not drawn, and neither is a parameter that runs (`param spin: Angle over
@@ -1002,7 +1024,7 @@ worked case: a dimension module, a parts module and one module per part.
 `:=`, and one relation or several in braces with the geometry they need:
 
 ```
-a horizontal b := a level(up) b                  // std.sv
+a horizontal b := a level(up) b                  // std.place
 a above(d) b := b distance(d, along: up) a       // r above(7) q: r stands 7 above q
 l1 flush(d) l2 := {                              // parallel, and d apart
   l1 parallel l2
@@ -1027,7 +1049,7 @@ use sets. An unknown word is E102; culprits and errors read as the word (`p hori
 dimension passed as a parameter draws and edits at the argument. An infix word relates its operands
 to each other; that both stand on a third thing is said of each (`a coincident P`).
 
-`std`'s words, each a pair of dimensions said as one (import by name):
+`std.place`'s words, each a pair of dimensions said as one (import by name):
 
 ```
 b offset(dx: 30, dy: 12) a       // b 30 right of a and 12 above it
@@ -1201,9 +1223,9 @@ Read only there, and only as `p coincident(t == …) k`. A fold — a node's are
 to a hundredth of its home's — is refused where it happens, which is a roller's undercut when the
 front is a cam's pitch curve marched from its profile (`rates/pitch.sv`, `rates/bore.sv`).
 
-**The ellipse** is `std.Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle)`: `e :=
-trace(std.Ellipse(c, a: 40, b: 25, tilt: 0deg).p over u in (0deg, 360deg))` is the rim. There is no
-`ellipse` element.
+**The ellipse** is `std.shapes.Ellipse(c: point, a: Length, b: Length, tilt: Angle, u: Angle)`: `e
+:= trace(std.shapes.Ellipse(c, a: 40, b: 25, tilt: 0deg).p over u in (0deg, 360deg))` is the rim.
+There is no `ellipse` element.
 
 #### Free curves and energies
 
@@ -1554,7 +1576,7 @@ operands, `std` included (E101).
 **A mate said once is a relation word over the instance**: a word's body may read the datums of
 an instance it is given, as an operand or a parameter (`g.std.origin`), and that use reads them
 from outside as a statement writing `d.std.origin` would, so the instance stands in its own
-frame. `std` says the common one (`use std (seats, raised)`):
+frame. `std` says the common one (`use std.place (seats, raised)`):
 
 ```sv
 in std.top {
@@ -1625,48 +1647,48 @@ to the drawing; it means what its uses say:
 **The library's sets** draw nothing; each is a centre or a line and one number, which may be left
 unbound as an unknown (`r: hint(10mm)`; the solve writes it back):
 
-- `ball := std.Sphere(c, r: 12mm)`; `k on_sphere(view: v) ball` puts circle `k` drawn in `v` on
-  it (a relation word, `use std (on_sphere)`).
-- `shaft := std.Cylinder(ax, r: 8mm)`; `shaft.about distance(shaft.r) l` states a touch directly
-  (the line is `.about`, since `axis` is an element's word).
-- `gc := std.Cone(gax, half: 60deg)`: apex at the line's start, opening toward its end; a point on
-  it lies on that nappe (either generator within the axis's own view, the seed picking).
+- `ball := std.sets.Sphere(c, r: 12mm)`; `k on_sphere(view: v) ball` puts circle `k` drawn in `v` on
+  it (a relation word, `use std.sets (on_sphere)`).
+- `shaft := std.sets.Cylinder(ax, r: 8mm)`; `shaft.about distance(shaft.r) l` states a touch
+  directly (the line is `.about`, since `axis` is an element's word).
+- `gc := std.sets.Cone(gax, half: 60deg)`: apex at the line's start, opening toward its end; a point
+  on it lies on that nappe (either generator within the axis's own view, the seed picking).
 - Two cones touching at `M` with one tangent plane there: `gc tangent(at: M) pc` (§6.21), `M`
   on each beside it. The library has no component for it.
-- `inner := std.ConeThrough(ax, q, lean: 20deg)`: the cone about `ax` through `q`, its radius
+- `inner := std.sets.ConeThrough(ax, q, lean: 20deg)`: the cone about `ax` through `q`, its radius
   growing `tan(lean)` along `ax` (negative narrows it); its inside is always nearer `ax`. Its apex
   is the instance's (`inner.apex`), made once: a family's body makes once whatever reads nothing
   of its point.
-- `top := std.HalfSpace(o, ax, d: 2mm)`: the half-space behind the plane `d` along `ax` from `o`
-  (its surface that plane); inside is behind it, so `p inside top` is at most `d` along `ax`.
+- `top := std.sets.HalfSpace(o, ax, d: 2mm)`: the half-space behind the plane `d` along `ax` from
+  `o` (its surface that plane); inside is behind it, so `p inside top` is at most `d` along `ax`.
 
 `p coincident ball` puts a point on any of them and `l tangent shaft` makes a line touch one.
 `sphere_cone_cylinder.sv` shows one of each; 2.14 lays out pitch cones.
 
 **Regions.** A body that bounds a number is a region: `ball := { p | p distance(<= 5) c }`.
 `q inside S` / `q outside S` put a point in or out of any set, reading its one number as at most /
-at least: `q inside std.Sphere(c, r: 5)`, `q inside std.Cone(l, half: 30deg)`. Regions meet by
-conjunction, and `outside` makes a difference: `{ p | p inside heel; p outside toe }`. Refused:
-`outside` a conjunction or interval, a set of several numbers, a tangency to a region. A point in a
-region is a bound, so a choice of root.
+at least: `q inside std.sets.Sphere(c, r: 5)`, `q inside std.sets.Cone(l, half: 30deg)`. Regions
+meet by conjunction, and `outside` makes a difference: `{ p | p inside heel; p outside toe }`.
+Refused: `outside` a conjunction or interval, a set of several numbers, a tangency to a region. A
+point in a region is a bound, so a choice of root.
 
 **Offsets.** `p distance(4mm, side: outside) k` puts `p` 4mm off `k`'s surface (`side:` required);
 a bound on it, `p distance(<= 2mm, side: outside) pitch`, is within 2mm outside it (`side: inside`,
-at most 2mm in); `tip := std.Offset(pitch, d: 2mm)` is the set 2mm out, for where a set is passed
-or used (`p inside tip`, `std.Rounded(tip, …)`). `inside`/`outside` take no number: `p inside(2mm)
-pitch` is refused, naming these two. `S.surface` is `S` with each bound made an equality: of
-`{ q | q distance(<= 2mm, side: outside) pitch }`, the offset surface — a set like any, so
-`k coincident S.surface` puts a drawn point on it. A distance that comes to nothing
-(`std.Offset(S, d: 0mm)`) is `S` itself. A drawn point measured from a set gets a foot on it, found
-by the solve. A distance from `{ q | q outside S }` is from `S`'s surface, sides turned: so `std.Rounded(beyond,
-tip, r: 0.3mm)` rounds the corner where a region is outside `inner` (`beyond := { q | q outside
-inner }`).
+at most 2mm in); `tip := std.sets.Offset(pitch, d: 2mm)` is the set 2mm out, for where a set is
+passed or used (`p inside tip`, `std.rounds.Rounded(tip, …)`). `inside`/`outside` take no number: `p
+inside(2mm) pitch` is refused, naming these two. `S.surface` is `S` with each bound made an
+equality: of `{ q | q distance(<= 2mm, side: outside) pitch }`, the offset surface — a set like any,
+so `k coincident S.surface` puts a drawn point on it. A distance that comes to nothing
+(`std.sets.Offset(S, d: 0mm)`) is `S` itself. A drawn point measured from a set gets a foot on it,
+found by the solve. A distance from `{ q | q outside S }` is from `S`'s surface, sides turned: so
+`std.rounds.Rounded(beyond, tip, r: 0.3mm)` rounds the corner where a region is outside `inner`
+(`beyond := { q | q outside inner }`).
 
 **A crown tooth as a region**, and its land: two `ConeThrough` flanks, two `Level`s, the tip's
 corners rounded — `tooth := { p | p outside inner; p inside outer; p inside back; p outside tip;
-p inside std.Rounded(beyond, above, r: …); p inside std.Rounded(outer, above, r: …) }` — is a
-revolution, and `solid(tooth)` swept under a generating motion cuts a member exactly. A region
-has no tip line for `length(>= d) tip`: draw the land's ends on the tip, the flanks through
+p inside std.rounds.Rounded(beyond, above, r: …); p inside std.rounds.Rounded(outer, above, r: …) }`
+— is a revolution, and `solid(tooth)` swept under a generating motion cuts a member exactly. A
+region has no tip line for `length(>= d) tip`: draw the land's ends on the tip, the flanks through
 them, and bound the land between them (`eb distance(>= 0.01mm, along: left) ea`), which picks the
 root as the drawn section's bound did. Where the flanks go through points the drawing already
 places (the hypoid's pitch points, `spiral_bevel/hypoid.sv`), the land has no root to choose and
@@ -1778,7 +1800,8 @@ k := trace(Par(o).p over u in (-2mm, 2mm))
 
 ```
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 
 in std.front {
   p0 := point hint((10, 0))
@@ -1837,32 +1860,33 @@ of the geometry it was given (`rim.r`).
   needs no formal for it; an `axis` formal is for an `up` the call chooses.
 
 **Where the section stands, and what it is**, are constraints in the component: a station word of
-`std` for the plane square to the guide at `s` — `std.OnLine(g, up: up, s: s)` on a line,
-`std.OnArc` an arc, `std.OnSpline` a spline, `std.On` any of a line, an arc, a spline or a traced
-curve — then the section drawn `in st.n`, its sizes and turns reading `s`. `On`'s `v` leans toward
-`up` where the family is drawn (the middle of its interval) and from there its frame turns only as
-the guide makes it: with `up` the normal of the guide's plane its `v` stays along `up`, and along a
-guide in space its plane stays square to the guide.
+`std` for the plane square to the guide at `s` — `std.stations.OnLine(g, up: up, s: s)` on a line,
+`std.stations.OnArc` an arc, `std.stations.OnSpline` a spline, `std.stations.On` any of a line, an
+arc, a spline or a traced curve — then the section drawn `in st.n`, its sizes and turns reading `s`.
+`On`'s `v` leans toward `up` where the family is drawn (the middle of its interval) and from there
+its frame turns only as the guide makes it: with `up` the normal of the guide's plane its `v` stays
+along `up`, and along a guide in space its plane stays square to the guide.
 
 **A law is any expression in `s`.** Draw the section once and carry it whole: `tw :=
-std.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` is the point `tw.t` turned `twist · s`, then
-`sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n` carries every corner and edge of `prof`
-into `st.n` by the similarity taking `o` and `x` (the section's frame, `reach` apart) to the
+std.stations.Twisted(st.n, twist: 90deg, reach: 10mm, s: s)` is the point `tw.t` turned `twist · s`,
+then `sec := prof mapped(o -> st.n.origin, x -> tw.t) in st.n` carries every corner and edge of
+`prof` into `st.n` by the similarity taking `o` and `x` (the section's frame, `reach` apart) to the
 origin and `tw.t`. A `reach` that runs with `s` scales it; the edges keep their names (`sec.ab`), an
 arc or a circle its radius scaled (two pairs only), and `mirror: true` gives a handed pair's other
 hand, wound as its source (`lofts/tapered.sv`, `hub_motor/motor/cover.sv`). For a section written
 as coordinates, `p scaled(du: 10, dv: 5, scale: 0.5, s: s) st.n` places a corner shrinking to half
-and `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius (`use std (scaled, scaled_radius)`); each
-runs its total linearly, and the word given another fraction runs another law (`s: 3 * s^2 - 2 *
-s^3` eases it). A `when` cannot read `s` (it is made once); write a law in pieces with `min`, `max`
+and `scaled_radius(r: 8mm, scale: 2, s: s) k` a radius (`use std.stations (scaled, scaled_radius)`);
+each runs its total linearly, and the word given another fraction runs another law (`s: 3 * s^2 - 2
+* s^3` eases it). A `when` cannot read `s` (it is made once); write a law in pieces with `min`,
+  `max`
 or `abs`.
 
-**A screw.** `std.Helix(std.top, pitch: 4mm, turns: 3, s: s)` is `std.top` carried by the screw
-about its normal to `360deg · turns · s` — turned that much and lifted `pitch · turns · s`
+**A screw.** `std.stations.Helix(std.top, pitch: 4mm, turns: 3, s: s)` is `std.top` carried by the
+screw about its normal to `360deg · turns · s` — turned that much and lifted `pitch · turns · s`
 (`std.top` drawn in a screw whose value is that roll, 1.15). Draw a thread's section in its
 `axial` plane (through the axis, `u` out from it, `v` up it) and an auger's flight in its `n` (the
-base carried); `std.OnHelix(std.top, r: 10mm, pitch: 5mm, turns: 4, s: s)`'s `n` stands square to
-the helix of radius `r`, for a coil's wire. A negative pitch winds left-handed
+base carried); `std.stations.OnHelix(std.top, r: 10mm, pitch: 5mm, turns: 4, s: s)`'s `n` stands
+square to the helix of radius `r`, for a coil's wire. A negative pitch winds left-handed
 (`rust/gcs-core/tests/helix.rs`). A family whose station a motion carries this way is exported as
 that motion's sweep, exactly (`lofts/spring.sv` and `swept_spring.sv` are one tube).
 
@@ -1878,25 +1902,26 @@ given runs **in step**, link by link (of as many links), so a guide cut at the s
 line(base, shoulder) -> line(shoulder, top)`) and a chain of lines through each corner (`rims :=
 line(r0, r1) -> line(r1, r2)`) is a **ruled** loft, an edge at each section; `spline(through:
 rims, start: axis_line, end: axis_line)` is the **smooth** one's rail, square to its end sections
-(or tangent to a neighbouring face's edge). With no guide, `std.Across(ra, rb, rc, s: s)` is the
-plane through three rails at `s` (`docs/lofts/l0/bottle.sv`, `rust/gcs-core/tests/sections.rs`).
-A profile drawn once is **held to its rails** by `sec := std.Similar(prof, from, to, st.n, l, r)`
-— `from` and `to` carried to the station's points `l` and `r` where two rails cross it, the
-profile turned and scaled with them — or by `std.Affine(prof, from, to, third, st.n, a, b, c)` on
-three (`docs/lofts/l0/two_faces.sv`, `rust/gcs-core/tests/correspondence.rs`).
+(or tangent to a neighbouring face's edge). With no guide, `std.stations.Across(ra, rb, rc, s: s)`
+is the plane through three rails at `s` (`docs/lofts/l0/bottle.sv`,
+`rust/gcs-core/tests/sections.rs`). A profile drawn once is **held to its rails** by `sec :=
+std.stations.Similar(prof, from, to, st.n, l, r)` — `from` and `to` carried to the station's points
+`l` and `r` where two rails cross it, the profile turned and scaled with them — or by
+`std.stations.Affine(prof, from, to, third, st.n, a, b, c)` on three (`docs/lofts/l0/two_faces.sv`,
+`rust/gcs-core/tests/correspondence.rs`).
 
-**Two faces drawn apart** are lofted by `sweep(std.Ruled(inlet, outlet).f over s)`: corner `k` of
-each walk joined to corner `k` of the other by a straight rail, the ends the faces themselves. The
-pairing is the written order — start a walk at another corner to connect it differently, and name a
-point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, -> close)`) to give a
-triangle a fourth corner for a square; keep the first three corners out of line.
-`std.Apex(base, tip).f` lofts a face to a point.
+**Two faces drawn apart** are lofted by `sweep(std.stations.Ruled(inlet, outlet).f over s)`: corner
+`k` of each walk joined to corner `k` of the other by a straight rail, the ends the faces
+themselves. The pairing is the written order — start a walk at another corner to connect it
+differently, and name a point on an edge (`m coincident(t == 0.5) half`, `face(t0, t1, t2, m, ->
+close)`) to give a triangle a fourth corner for a square; keep the first three corners out of line.
+`std.stations.Apex(base, tip).f` lofts a face to a point.
 
 **A frame that does not twist.** Along a path that leaves its plane (a helix), `st :=
-std.OnHelix(…)` turns with the path's Frenet frame; `rm := std.Minimal(st.n, up: base.normal, s:
-s)` is the plane through the same place square to the path whose axes turn only as the path makes
-them, so draw the section `in rm.f`. It states its turn as a **rate**, `rate(f.u over s)
-perpendicular f.v`, and what holds where the family is drawn (the middle of the interval) in
+std.stations.OnHelix(…)` turns with the path's Frenet frame; `rm := std.stations.Minimal(st.n, up:
+base.normal, s: s)` is the plane through the same place square to the path whose axes turn only as
+the path makes them, so draw the section `in rm.f`. It states its turn as a **rate**, `rate(f.u over
+s) perpendicular f.v`, and what holds where the family is drawn (the middle of the interval) in
 `initially { f.u perpendicular up }`; the family integrates it from there both ways
 (`rust/gcs-core/tests/rates.rs`). A rate is of an axis or a point, against an axis, a line or a
 plane, by `perpendicular` or `parallel`, and names the formal it runs over; give a word that states
@@ -1904,9 +1929,9 @@ one the family's running number as that formal.
 
 **A guide drawn in space** is a curve traced in space handed to a `path` formal: `m coincident(t ==
 s) g` stands the station at the body's own formal `s` and `hint(at: m, along: g)` steps along it;
-`std.On(g, up: std.z, s: s)` stands on it as on any path, its frame the rotation-minimising one
-(`rust/gcs-core/tests/space_paths.rs`). A surface traced over two formals is no path. **Frenet's
-frame**: `std.Frenet(g, s: s)` turns with the curve, `u` toward its centre of curvature (`g
+`std.stations.On(g, up: std.z, s: s)` stands on it as on any path, its frame the rotation-minimising
+one (`rust/gcs-core/tests/space_paths.rs`). A surface traced over two formals is no path. **Frenet's
+frame**: `std.stations.Frenet(g, s: s)` turns with the curve, `u` toward its centre of curvature (`g
 curvature(at: m) c`, a point) and `v` the binormal; it is refused where the curve runs straight.
 
 **Writing a part.** Where a part's axis lies relative to its section decides the statement: the
@@ -1980,11 +2005,11 @@ bore cut body
 **A region is a solid**: `solid(R)`, `R` a set, is the points inside it.
 
 ```sv
-big := std.Sphere(c, r: 5)
-small := std.Sphere(c, r: 3)
+big := std.sets.Sphere(c, r: 5)
+small := std.sets.Sphere(c, r: 3)
 skin := { p | p inside big; p outside small }        // a shell
 shell := solid(skin)
-tube := std.Cylinder(up, r: 2)
+tube := std.sets.Cylinder(up, r: 2)
 can := { p | p inside tube; p outside std.top; p inside lid }   // capped by two planes
 tin := solid(can)
 ```
@@ -1996,8 +2021,8 @@ share none it is read point by point: it shows and meshes like any solid, but an
 `std` along straight edges between planes, round circles where a plane meets a cylinder or a
 cone, and at corners of three square faces are built exactly (recognised by what their sets say,
 so a round written by hand is built too). Its numbers may be the drawing's: leave a radius unbound and say where
-the set's surface is (`heel := std.Sphere(apex)`, `M distance(w / 2, side: inside) heel`), and the
-solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
+the set's surface is (`heel := std.sets.Sphere(apex)`, `M distance(w / 2, side: inside) heel`), and
+the solid reads the solved radius — how the hypoid's blank is sized (`spiral_bevel/hypoid.sv`'s
 `Blank`).
 
 #### Developable panels
@@ -2008,10 +2033,11 @@ pattern, a figure — and the core recognises them and builds both exactly:
 
 ```
 use std
-panel := std.Developable(lower, upper)                     // the set: what the panel is
+use std.panels
+panel := std.panels.Developable(lower, upper)                     // the set: what the panel is
 skin := { q | q distance(<= 2mm, side: outside) panel }    // the sheet, 2 thick: its band
 reducer := solid(skin)
-flat := std.Development(panel, s, d: 1mm) in blank         // its neutral layer, laid flat
+flat := std.panels.Development(panel, s, d: 1mm) in blank         // its neutral layer, laid flat
 flat.f coincident corner                                   // a figure with three freedoms,
 line(flat.f, flat.g) parallel edge                         // placed by relations
 ```
@@ -2019,8 +2045,8 @@ line(flat.f, flat.g) parallel edge                         // placed by relation
 - **The rulings are solved, not paired.** `Developable(a, b)`'s body puts its point on the ruling
   between `m` on `a` and `n` on `b` where one plane touches both (`T tangent(at: m) a`, `T
   tangent(at: n, sense: same) b`, `p coincident(t in (0, 1)) line(m, n)`). Rails may be lines,
-  arcs, circles, splines (in space too), curves — `std.Ellipse` drawn in a tilted plane — or named
-  chains, closed or open.
+  arcs, circles, splines (in space too), curves — `std.shapes.Ellipse` drawn in a tilted plane — or
+  named chains, closed or open.
 - **Why `sense: same`.** Through a tangent of `a` two planes touch `b`: the one `b` runs through the
   way `a` does, and the crossing one, a bow-tie that cuts through itself. The body excludes it; no
   seed decides.
@@ -2033,12 +2059,12 @@ line(flat.f, flat.g) parallel edge                         // placed by relation
 - **The sheet is the band** `distance(<= t, side: outside)` from the panel, measured along its
   normal, so square at its edges; `solid(…)` of it reports volume, faces (`inside`, `outside`, `a`,
   `b`, `start`, `end`) and bounds; STEP refuses it, once.
-- **The pattern.** `std.Development(S, s, d: d) in P` lays the layer `d` out (the sheet's middle:
-  half its thickness) in plane `P`, outside up, from the ruling through `s` on `S.a` — a band's
-  seam. It draws `flat.a`, `flat.b` (curves of `P`), `flat.f`, `flat.g` (the home ruling's ends) and
-  the end rulings `flat.start`, `flat.end` (a band's `flat.seam`, `flat.seam_end`). It has **three
-  freedoms** until relations place it; `--where flat` prints each rail's laid length, the pattern's
-  area and its box, and `--where panel` its rulings, fans and whether it closes.
+- **The pattern.** `std.panels.Development(S, s, d: d) in P` lays the layer `d` out (the sheet's
+  middle: half its thickness) in plane `P`, outside up, from the ruling through `s` on `S.a` — a
+  band's seam. It draws `flat.a`, `flat.b` (curves of `P`), `flat.f`, `flat.g` (the home ruling's
+  ends) and the end rulings `flat.start`, `flat.end` (a band's `flat.seam`, `flat.seam_end`). It has
+  **three freedoms** until relations place it; `--where flat` prints each rail's laid length, the
+  pattern's area and its box, and `--where panel` its rulings, fans and whether it closes.
 - **Refused, once (E080), where `a` is**: rulings that fold (one rail would run back — a rail with an
   S in it seen along the rulings, where the panel turns flat), a ruling along a rail, no root of
   `sense: same`, a band that does not come round, one rail closed and one open. Choose rails that
@@ -2096,7 +2122,7 @@ an edge with no name, the faces of a revolution, loft or sweep.
 
 #### Rounds and chamfers
 
-`use std (round, chamfer)`:
+`use std.rounds (round, chamfer)`:
 
 ```sv
 block := solid(outline, depth: 12mm)
@@ -2132,7 +2158,7 @@ pad.boss round(r: 3mm) pad.plate     // where the boss stands on the plate
   (`F.smooth`, a face's surface carried across its tangent seams). Where the leg or the ball
   reaches such a seam beside its edge the round is read point by point, not built exactly.
 
-They are written in Solvent (`rust/lib/std.sv`), from region bodies you can write yourself
+They are written in Solvent (`rust/lib/std/rounds.sv`), from region bodies you can write yourself
 (`rust/examples/rounds/by_hand.sv` rounds one edge in about twenty lines):
 
 | written | means |
@@ -2154,20 +2180,20 @@ They are written in Solvent (`rust/lib/std.sv`), from region bodies you can writ
 `.ends`, `.surface` and `.body` are members only past a set or a solid where nothing declared
 takes the name. A drawn point may not read a bare face (draw on `.surface`), and a bound on
 measurements stands only in a region's body. In a region's own body,
-`p inside std.Rounded(wall, top, r: 1.5mm)` and `std.Chamfered(wall, bottom, la: 1mm, lb: 1mm)`
-round or chamfer between two of its bounds, built exactly where the region is a revolution.
-`rust/examples/rounds/` and its README walk them.
+`p inside std.rounds.Rounded(wall, top, r: 1.5mm)` and `std.rounds.Chamfered(wall, bottom, la: 1mm,
+lb: 1mm)` round or chamfer between two of its bounds, built exactly where the region is a
+revolution. `rust/examples/rounds/` and its README walk them.
 
-**A solid grown** (0.194). `window := std.Grown(uno.usb_plug, d: gap)` is the plug's room grown by
-the print's gap all round, a solid of its own (`window.body cut frame_part`), so a clearance is the
-part's own body grown, never its sizes written again with `± gap`. Its edges and corners are
-rounded by `d`; a negative `d` shrinks the body, and `d: 0mm` is the body. It is the language's own
-words: `{ p | distance(p, within) <= d }` over `within := { c | c inside B }`. Grown, it is built
-exactly where the body's faces are planes and cylinders meeting in convex edges at a prism's
-corners — a box, a post, a hex bar, a plate with a bore, a body of several such pieces — or planes
-meeting in concave edges — an L, a step, a slot, a pocket.  A boss's foot (a convex edge standing
-between two concave ones, or a post's round foot), a cone or a sphere, or a shrink is read point by
-point, and an exact export (`--step`, `--stl`) says so by name.
+**A solid grown** (0.194). `window := std.rounds.Grown(uno.usb_plug, d: gap)` is the plug's room
+grown by the print's gap all round, a solid of its own (`window.body cut frame_part`), so a
+clearance is the part's own body grown, never its sizes written again with `± gap`. Its edges and
+corners are rounded by `d`; a negative `d` shrinks the body, and `d: 0mm` is the body. It is the
+language's own words: `{ p | distance(p, within) <= d }` over `within := { c | c inside B }`. Grown,
+it is built exactly where the body's faces are planes and cylinders meeting in convex edges at a
+prism's corners — a box, a post, a hex bar, a plate with a bore, a body of several such pieces — or
+planes meeting in concave edges — an L, a step, a slot, a pocket.  A boss's foot (a convex edge
+standing between two concave ones, or a post's round foot), a cone or a sphere, or a shrink is read
+point by point, and an exact export (`--step`, `--stl`) says so by name.
 
 #### Reports and refusals
 
@@ -2431,7 +2457,7 @@ scenario press {
 space; its joint is an axis `f.axis`, a ratio `f.ratio` (radians a radian of the one shared roll)
 and an advance `f.advance` (along the axis a turn of the roll), held by relations like anything
 else. The standard library states them as relation words, the frame the subject and what it
-moves about or along the object (`use std (turns, screws, spins, slides)`):
+moves about or along the object (`use std.motion (turns, screws, spins, slides)`):
 
 ```sv
 crown := frame
@@ -2566,15 +2592,15 @@ the planar envelope extruded, and `p coincident flank` from any view is one equa
 prism's face `in` a view and name the edge in it.
 
 **An envelope in space is held to by the solve** where its source is a cone, a cylinder or a
-plane set (`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`, `std.HalfSpace`) or
-a revolution's side turned
+plane set (`std.sets.Cone`, `std.sets.ConeThrough` with its lean stated, `std.sets.Cylinder`,
+`std.sets.HalfSpace`) or a revolution's side turned
 from a line, an arc or a circle, under turns about lines (or about a point of a view, the line
 through it square to the view), screws and slides — driven by a law or not — seen from the world
 or another frame
 (`spiral_bevel/mean_point.sv`):
 
 ```
-flank := std.Cone(spine, half: hint(20deg))           // the half an unknown
+flank := std.sets.Cone(spine, half: hint(20deg))           // the half an unknown
 pinion_flank := envelope(flank over t in (-30deg, 30deg), under: gear_turn, seen_from: pinion_turn)
 M coincident pinion_flank                             // owns the place [u, v, roll]
 pinion_flank perpendicular(at: M) normal              // along its normal at M
@@ -2584,7 +2610,7 @@ pinion_flank curvature(at: M) profile                 // its section by profile'
 
 The source's geometry, its number and the motion's axes are columns, so the cone's half solves from
 what is stated at `M`. A plane sliding along its own normal relative to a turn sweeps an involute
-helicoid: `spiral_bevel/phillips.sv`'s rack, `std.HalfSpace(P, L, d: 0mm)` under
+helicoid: `spiral_bevel/phillips.sv`'s rack, `std.sets.HalfSpace(P, L, d: 0mm)` under
 `slide, seen_from: pinion_turn`. The `at:` relations read the place of the `coincident` holding `M`, which must
 be stated: each is that contact's frame at `M` — its normal, a plane or a line square to it, a
 section's second order — read by the one kernel a rate of a contact is. A set's envelope is only held to: it has no chart
@@ -2613,12 +2639,12 @@ face family's running number (read again at every station) or name an unknown th
 screw := frame
 screw screws(pitch) base.normal
 fix(value == 360deg * turns * s) screw
-n := base in screw                       // `std.Helix`'s station: base where the screw stands
+n := base in screw                       // `Helix`'s station: base where the screw stands
 ```
 
-`std.Helix`, `std.OnHelix` and `std.Twisted` are written so. A frame with a value rides on none,
-and no frame rides on it. A value over a declared `param t: … over (a, b)` holds for every `t`
-(1.6): what is drawn in the frame is a trajectory.
+`std.stations.Helix`, `std.stations.OnHelix` and `std.stations.Twisted` are written so. A frame with
+a value rides on none, and no frame rides on it. A value over a declared `param t: … over (a, b)`
+holds for every `t` (1.6): what is drawn in the frame is a trajectory.
 
 **Drawn in a frame with a value**: what its `in` block draws stands where the
 value puts it. Each plane the block draws in is read as that plane drawn in the frame (`P in f`),
@@ -2636,7 +2662,7 @@ in screw {
     c := point
     c on_u(d: r) std.front                // the front plane as the screw carries it
   }
-  sq := std.CenteredRectangle(c, w: size, h: size) in std.front
+  sq := std.shapes.CenteredRectangle(c, w: size, h: size) in std.front
   sec := face(sq.loop)
 }
 thread := sweep(sec over s)
@@ -2649,10 +2675,10 @@ in the block still rides on the frame with the value (E080).
 coincident f.axis` with `fix(ratio == 0, advance == 0mm) f`, stands where the path's parameter puts
 it — square to the tangent, turned as the path makes it from its home (where it is drawn), the
 rotation-minimising frame for ratio 0 and the path's own (toward its centre of curvature) for
-ratio 1. `al := std.Along(g, up: std.z, home: 0)` and `std.AlongFrenet(g)` make the frame, `al.f`,
-and draw it at its home; a face drawn in `al.f` and swept over a declared `s` stands at every station where the frame
-does, `s` the path's own parameter. Its pose is read off the path after the solve, so a relation the
-solve holds reads none (E080).
+ratio 1. `al := std.stations.Along(g, up: std.z, home: 0)` and `std.stations.AlongFrenet(g)` make
+the frame, `al.f`, and draw it at its home; a face drawn in `al.f` and swept over a declared `s`
+stands at every station where the frame does, `s` the path's own parameter. Its pose is read off the
+path after the solve, so a relation the solve holds reads none (E080).
 
 **A value over a parameter is a drive**: any expression of it, a cam's law, and the frame
 stands at the law's value for every `t`. A reading of its motion over the roll reads the roll as
@@ -2716,14 +2742,15 @@ rate(X over t) perpendicular l                        // … or square to it
 rate(X over t) distance(v, along: l)                  // its speed along l, a length a radian
 ```
 
-The standard library says the two things a gear designer reads of a twist this way (`use std
-(reciprocal)`): `L reciprocal(seen_from: pinion_turn) gear_turn` — a force along `L` does no work
-on the motion, for a mesh the meshing law of a line of action (the members move as fast along `L`)
-— and `screw := std.Screw(toward, gear_turn, seen_from: pinion_turn)`, the instantaneous screw axis
-`screw.isa`, running the way the held direction `toward` does (`fix(dir == (-1, 0, 0)) toward`),
-and `screw.pitch`, its advance along it a radian of the roll (give `pitch:` to pin it). Any motion the solve reads, seen from any frame (`spiral_bevel/phillips.sv`); seen from the
-world, `seen_from:` names a frame at rest. A `claim L reciprocal(seen_from: g) m` carries its point all the same
-and judges the rate.
+The standard library says the two things a gear designer reads of a twist this way
+(`use std.motion (reciprocal)`): `L reciprocal(seen_from: pinion_turn) gear_turn` — a force along
+`L` does no work on the motion, for a mesh the meshing law of a line of action (the members move as
+fast along `L`) — and `screw := std.motion.Screw(toward, gear_turn, seen_from: pinion_turn)`, the
+instantaneous screw axis `screw.isa`, running the way the held direction `toward` does (`fix(dir ==
+(-1, 0, 0)) toward`), and `screw.pitch`, its advance along it a radian of the roll (give `pitch:` to
+pin it). Any motion the solve reads, seen from any frame (`spiral_bevel/phillips.sv`); seen from the
+world, `seen_from:` names a frame at rest. A `claim L reciprocal(seen_from: g) m` carries its point
+all the same and judges the rate.
 
 **Two flanks meshing are a locus** (`spiral_bevel/contact.sv`): tooth contact analysis. The first
 flank turns with the pinion and the second with the gear — the reading's observer and source — each an
@@ -3144,7 +3171,8 @@ angle `t` of a declared parameter and traced over it (1.10).
 ### 2.11 A profile generated by a motion: DOF 0, well
 
 ```
-use std (spins, slides)
+use std
+use std.motion (spins, slides)
 
 in std.front {
   o := point
@@ -3218,7 +3246,8 @@ incline's own direction.
 
 ```
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 shaft_angle := 90deg
 offset := 17.5mm
 
@@ -3255,6 +3284,7 @@ plane tilts 30°. `skew_axes.sv` adds a shaft about each axis.
 ```
 unit mm
 use std
+use std.sets
 Ng := 48          // gear teeth
 Np := 24          // pinion teeth
 module := 4mm
@@ -3285,8 +3315,8 @@ pax.p1 distance(80) pax.p2
 horizontal pax
 
 // the pitch cones: the gear's pitch angle, M on both, and the two touching there
-gc := std.Cone(gax, half: 60deg)
-pc := std.Cone(pax, half: hint(30deg))
+gc := std.sets.Cone(gax, half: 60deg)
+pc := std.sets.Cone(pax, half: hint(30deg))
 M coincident gc
 M coincident pc
 gc tangent(at: M) pc
@@ -3308,7 +3338,8 @@ builds the same pair without naming the cones, and the tests find the two agree 
 ### 2.15 An arc placed by its length: DOF 0, well
 
 ```
-use std (horizontal)
+use std
+use std.place (horizontal)
 
 in std.front {
   o := point
@@ -3420,8 +3451,9 @@ land against the shore is an arc of a circle, `R sin α = 50`, `2Rα = 130`, to 
 8. In space, draw each thing in the plane that shows it true, relate across planes with ordinary
    words, build a plane the solve turns on axes, and check with `--where PLANE`.
 9. Add `claim`s for the consequences the figure was drawn to show.
-   A sheet cut flat and bent is `std.Developable(a, b)`, its band `distance(<= t, side: outside)`
-   and its pattern `std.Development(panel, s, d: t / 2) in plane`, placed by two relations.
+   A sheet cut flat and bent is `std.panels.Developable(a, b)`, its band `distance(<= t, side:
+   outside)` and its pattern `std.panels.Development(panel, s, d: t / 2) in plane`, placed by two
+   relations.
 10. Build solids from the solved profiles, then write their presentation in a `.svd`.
 
 The worked corpus is `rust/examples/`, each file headed with its purpose. Read `rect_fillets.sv`

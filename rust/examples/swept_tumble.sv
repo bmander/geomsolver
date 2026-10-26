@@ -3,7 +3,9 @@
 // between -`roll` and +`roll`. Change a number and apply (⌘↵) to watch it refine again; ⌘B shows
 // it in the glass box. Keep `tube` below `ring`, so the torus has a hole.
 unit mm
-use std (above, coords, on_u, on_v, turns)
+use std
+use std.place (above, coords, on_u, on_v)
+use std.motion (turns)
 
 ring := 1mm        // the torus's centre circle
 tube := 0.5mm      // the torus's tube

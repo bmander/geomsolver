@@ -928,7 +928,8 @@ impl<'a> P<'a> {
             "along" => {
                 self.fail("`along:` is retired: a loft is a section drawn at a station of its guide, \
                            swept as the station runs — `sweep(I(g, …).f over s)`, `I` \
-                           standing `std.OnLine(g, up: …, s: s)` or `std.OnArc` (spec §6.9)");
+                           standing `std.stations.OnLine(g, up: …, s: s)` or \
+                           `std.stations.OnArc` (spec §6.9)");
                 return None;
             }
             "through" => {

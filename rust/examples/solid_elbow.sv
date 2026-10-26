@@ -1,21 +1,24 @@
 // A hollow duct elbow: one hollow square section carried round a constrained arc, the station's
 // plane through the bend's axis at every fraction of its turn.
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
+use std.shapes
+use std.stations
 bend_radius := 30mm
 half_size := 9mm
 wall := 2mm
 bend_angle := 90deg
 
 component Section(c: point, size: Length, wall: Length) {
-  private outer := std.CenteredRectangle(c, w: size, h: size)
-  private inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  private outer := std.shapes.CenteredRectangle(c, w: size, h: size)
+  private inner := std.shapes.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
   profile := face(outer.loop, holes: inner.loop)
 }
 
 // The section at station `s`: square to the guide there, its `v` along the bend's axis.
 component Elbow(g: arc, up: axis, size: Length, wall: Length, s: Scalar) {
-  st := std.OnArc(g, up: up, s: s)
+  st := std.stations.OnArc(g, up: up, s: s)
   sec := Section(st.n.origin, size: size, wall: wall) in st.n
 }
 

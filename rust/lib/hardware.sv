@@ -9,6 +9,7 @@
 // face on is `std`'s `Hex`; a washer, a bearing and a pin's head are the circles below.
 
 use std
+use std.shapes
 
 // -- bolts, nuts and washers, 1/4"-20 ----------------------------------------------------------
 
@@ -78,7 +79,7 @@ component Ring(c: point, id: Length, od: Length) {
 
 // A nut or a bolt's head face on: the hex, with the bore through it.
 component Nut(c: point, ref: line, af: Length, bore: Length, phase: Angle) {
-  hex := std.Hex(c, ref, af: af, phase: phase)
+  hex := std.shapes.Hex(c, ref, af: af, phase: phase)
   hole := circle(center: c) hint(r: bore / 2)
   radius(bore / 2) hole
 }
@@ -94,6 +95,7 @@ component Nut(c: point, ref: line, af: Length, bore: Length, phase: Angle) {
 // #014* and the arithmetic is the library's.
 //
 //   use std
+//   use std.shapes
 //   use hardware
 //   g: Groove(body: pis, f: axis_datum, r: D / 2,
 //             z: -groove, cs: oring014_cs, seal: seal_dims) in swing
@@ -139,7 +141,7 @@ seal_dims := {squeeze: oring_squeeze, width_factor: oring_groove_w}
 // its edges private to this component. n >= 3, as for Polygon.
 component BoltPattern(body: solid, center: point, ref: line,
                       n: Int, pitch_r: Length, hole_r: Length, phase: Angle) {
-  private construction layout := std.Polygon(center, ref, n: n, r: pitch_r, phase: phase)
+  private construction layout := std.shapes.Polygon(center, ref, n: n, r: pitch_r, phase: phase)
   repeat n as i {
     hole := radius(hole_r) circle(center: layout.v[i])
     private drill := solid(face(hole), through: body)

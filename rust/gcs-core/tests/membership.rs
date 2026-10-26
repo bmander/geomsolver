@@ -15,6 +15,7 @@ use crate::common::{ent, kinds, plane_of, read, solved};
 const SIDE: &str = "\
 unit mm
 use std
+use std.sets
 side := plane(u: std.z, v: std.y)
 fix(origin == (0, 0, 0)) side
 a := point hint((10, 20)) in side
@@ -137,7 +138,7 @@ fn a_written_pose_keeps_the_point_in_its_plane() {
 /// on it and a disc swept from it.
 fn disc(circle: &str) -> String {
     format!(
-        "unit mm\nuse std\no := point in std.front\nfix((0, 0)) o\n{circle}\n\
+        "unit mm\nuse std\nuse std.sets\no := point in std.front\nfix((0, 0)) o\n{circle}\n\
          q := point hint((20, 10)) in std.front\nq coincident k\n\
          f := face(k)\ndisc := solid(f, depth: 4mm)\n"
     )
@@ -247,7 +248,7 @@ fn a_set_that_is_no_circle_here_stays_a_set() {
 fn a_line_tangent_to_a_set_circle_touches_it() {
     let e = read(&format!(
         "{}l := line(hint((-40, 30)), hint((40, 28))) in std.front\nhorizontal l\nl tangent k\n",
-        disc(AS_SET).replace("use std\n", "use std (horizontal)\nuse std\n")));
+        disc(AS_SET).replace("use std\nuse std.sets\n", "use std\nuse std.sets\nuse std.place (horizontal)\n")));
     let sk = solved(&e);
     let l = &sk.lines[ent(&e, "l").i()];
     assert!((sk.point_xy(l.p1 as usize).1.abs() - 25.0).abs() < 1e-6);
@@ -321,7 +322,7 @@ fn a_set_circles_text_stands_through_a_solve_and_a_gesture() {
 /// nothing (#142).
 #[test]
 fn a_gesture_naming_an_in_place_set_circle_is_refused() {
-    let mut e = read("unit mm\nuse std\no := point in std.front\nfix((0, 0)) o\n\
+    let mut e = read("unit mm\nuse std\nuse std.sets\no := point in std.front\nfix((0, 0)) o\n\
         q := point hint((20, 10)) in std.front\n\
         q coincident { p | p coincident std.front; p distance(25) o }\n");
     let mut sk = solved(&e);
@@ -340,7 +341,7 @@ fn a_gesture_naming_an_in_place_set_circle_is_refused() {
 /// block, each under its own name.
 #[test]
 fn a_set_circle_is_made_per_instance_and_per_copy() {
-    let e = read("unit mm\nuse std\n\
+    let e = read("unit mm\nuse std\nuse std.sets\n\
         component Hub(o: point, on: plane) {\n  k := { p | p coincident on; p distance(5) o }\n}\n\
         a := point hint((0, 0)) in std.front\nb := point hint((20, 0)) in std.front\n\
         h1 := Hub(a, std.front)\nh2 := Hub(b, std.front)\n\
@@ -356,7 +357,7 @@ fn a_set_circle_is_made_per_instance_and_per_copy() {
 #[test]
 fn a_set_on_a_set_is_no_circle() {
     let e = read(&format!(
-        "{SIDE}ball := std.Sphere(a, r: 20)\nk := {{ p | p coincident ball; p distance(5) a }}\n\
+        "{SIDE}ball := std.sets.Sphere(a, r: 20)\nk := {{ p | p coincident ball; p distance(5) a }}\n\
          q := point\nq coincident k\n"));
     assert!(e.sketch.circles.is_empty());
     assert_eq!(kinds(&e).len(), 2);
@@ -368,7 +369,7 @@ fn a_set_on_a_set_is_no_circle() {
 #[test]
 fn a_centre_another_sets_use_draws_is_a_circle() {
     let doc = |o: &str| format!(
-        "unit mm\nuse std\non := {{ p | p coincident std.front }}\no := point\n{o}\n\
+        "unit mm\nuse std\nuse std.sets\non := {{ p | p coincident std.front }}\no := point\n{o}\n\
          k := {{ p | p coincident std.front; p distance(25) o }}\n\
          q := point hint((20, 10)) in std.front\nq coincident k\n");
     let by_set = read(&doc("o coincident on"));
@@ -389,7 +390,7 @@ fn a_centre_another_sets_use_draws_is_a_circle() {
 /// as a set too, though `k1`'s body then draws `q` in front.  Either way is one drawing: it solves.
 #[test]
 fn a_refusal_is_final() {
-    let e = read("unit mm\nuse std\na := point\nfix((0, 3, 0)) a\n\
+    let e = read("unit mm\nuse std\nuse std.sets\na := point\nfix((0, 3, 0)) a\n\
         k1 := { p | p coincident std.front; p distance(5) a }\n\
         q := point\nq coincident k1\n\
         k2 := { p | p coincident std.front; p distance(3) q }\n\

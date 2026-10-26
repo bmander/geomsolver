@@ -12,6 +12,7 @@
 // Edit `straight`, `bend` or `r`.
 unit mm
 use std
+use std.stations
 
 straight := 20mm
 bend := 20mm
@@ -46,7 +47,7 @@ l4 parallel std.z
 l6 parallel std.x
 
 component Tube(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k

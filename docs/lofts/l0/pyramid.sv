@@ -3,10 +3,12 @@
 // Closed form: V = 20² · 30 / 3 = 4000 mm³.
 unit mm
 use std
+use std.shapes
+use std.stations
 
 component Shrinking(g: line, up: axis, size: Length, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
-  sq := std.CenteredRectangle(st.n.origin, w: size * (1 - s), h: size * (1 - s)) in st.n
+  st := std.stations.OnLine(g, up: up, s: s)
+  sq := std.shapes.CenteredRectangle(st.n.origin, w: size * (1 - s), h: size * (1 - s)) in st.n
   f := face(sq.loop)
 }
 

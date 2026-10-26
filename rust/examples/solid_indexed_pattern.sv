@@ -1,6 +1,8 @@
 // One source cutter, placed by a frame's turn at each index.
 unit mm
-use std (on_u, turns)
+use std
+use std.place (on_u)
+use std.motion (turns)
 
 component IndexedCuts(tool: solid, target: solid, indexing: frame, count: Int) {
   repeat count as i {

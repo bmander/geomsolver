@@ -21,6 +21,7 @@
 // overhanging it to the very edge.
 unit mm
 use std
+use std.panels
 
 side := 240mm
 r := 80mm
@@ -55,7 +56,7 @@ in duct {
   radius(r) round
 }
 
-panel := std.Developable(mouth, round)            // a set: the transition
+panel := std.panels.Developable(mouth, round)            // a set: the transition
 skin := { q | q distance(<= thick, side: outside) panel }
 transition := solid(skin)                         // the sheet, 1 thick
 
@@ -77,7 +78,7 @@ in blank {
   top := line(k2, k3)
   left := line(k3, k0)
 }
-flat := std.Development(panel, s, d: thick / 2) in blank   // its pattern, laid on the blank
+flat := std.panels.Development(panel, s, d: thick / 2) in blank   // its pattern, laid on the blank
 // the seam's foot 130 along the blank's bottom edge and 60 up, the seam square to that edge
 k0 distance(130mm, along: std.x) flat.f
 k0 distance(60mm, along: std.y) flat.f

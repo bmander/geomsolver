@@ -1,7 +1,7 @@
 //! **Rounds and chamfers written in Solvent** (#183, step 6): `round` and `chamfer` are words of
-//! `rust/lib/std.sv` over the language's own features — faces as sets, the distance from a set,
-//! a bound on measurements, where an edge ends, the material's angle, repetition over faces and
-//! words that make solids — evaluated by the field, and held to X2's closed forms.
+//! `rust/lib/std/rounds.sv` over the language's own features — faces as sets, the distance from a
+//! set, a bound on measurements, where an edge ends, the material's angle, repetition over faces
+//! and words that make solids — evaluated by the field, and held to X2's closed forms.
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
@@ -11,7 +11,7 @@ use crate::common::rounds::{mitred, root_ring, rounded_box};
 use crate::region_general::field_volume;
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
-const BLOCK: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -52,7 +52,7 @@ fn a_block_rounded_all_over_is_steiners() {
 
 /// A tray 60 × 40 × 10 with a pocket 30 × 20 cut 6 into its near face, and a plate the same with
 /// a boss of radius 8 standing 20 on it — each a body over its operands' faces.
-const PARTS: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n\
+const PARTS: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n\
     t0 := point\nt1 := point\nt2 := point\nt3 := point\n\
     fix((0, 0)) t0\nfix((60, 0)) t1\nfix((60, 40)) t2\nfix((0, 40)) t3\n\
     (ts := line(t0, t1)) -> (te := line(t1, t2)) -> (tn := line(t2, t3)) -> (tw := line(t3, t0)) -> close\n\
@@ -111,13 +111,13 @@ fn a_block_chamfered_all_over() {
 
 /// A disc of radius 10 and 4 thick about z, as a region: within a cylinder, and within 2 of the
 /// plane through its middle each way.
-const DISC: &str = "unit mm\nuse std\n\
+const DISC: &str = "unit mm\nuse std\nuse std.sets\nuse std.rounds\n\
     c := point hint((0, 0, 0))\nfix((0, 0, 0)) c\nze := point hint((0, 0, 1))\nfix((0, 0, 1)) ze\n\
     zl := line(c, ze)\n\
     tx := axis hint(dir: (1, 0, 0))\nty := axis hint(dir: (0, 1, 0))\n\
     fix(dir == (1, 0, 0), origin == (0, 0, 2)) tx\nfix(dir == (0, 1, 0), origin == (0, 0, 2)) ty\n\
     mid := plane(u: tx, v: ty)\n\
-    wall := std.Cylinder(zl, r: 10)\n\
+    wall := std.sets.Cylinder(zl, r: 10)\n\
     top := { q | q distance(<= 2mm, along: n) mid }\nbottom := { q | q distance(>= -2mm, along: n) mid }\n";
 
 /// **In a region's body** (#183 X3): a round or a chamfer at the disc's top rim is one more bound
@@ -128,9 +128,9 @@ const DISC: &str = "unit mm\nuse std\n\
 fn a_regions_rim_rounded_and_chamfered_in_its_body() {
     let e = solved(&format!("{DISC}\
         disc := {{ p | p inside wall; p inside top; p inside bottom }}\n\
-        rounded := {{ p | p inside wall; p inside top; p inside bottom; p inside std.Rounded(wall, top, r: 2mm) }}\n\
+        rounded := {{ p | p inside wall; p inside top; p inside bottom; p inside std.rounds.Rounded(wall, top, r: 2mm) }}\n\
         chamfered := {{ p | p inside wall; p inside top; p inside bottom; \
-                          p inside std.Chamfered(wall, top, la: 1mm, lb: 1mm) }}\n\
+                          p inside std.rounds.Chamfered(wall, top, la: 1mm, lb: 1mm) }}\n\
         sd := solid(disc)\nsr := solid(rounded)\nsc := solid(chamfered)\n"));
     let volume = |name: &str| {
         let f = MaterialField::read(&e.sketch, ent(&e, name).i(), 1e-10).unwrap();
@@ -154,9 +154,9 @@ fn a_regions_rim_rounded_and_chamfered_in_its_body() {
 #[test]
 fn a_regions_round_and_chamfer_lower_into_its_meridian() {
     let e = solved(&format!("{DISC}\
-        rounded := {{ p | p inside wall; p inside top; p inside bottom; p inside std.Rounded(wall, top, r: 2mm) }}\n\
+        rounded := {{ p | p inside wall; p inside top; p inside bottom; p inside std.rounds.Rounded(wall, top, r: 2mm) }}\n\
         chamfered := {{ p | p inside wall; p inside top; p inside bottom; \
-                          p inside std.Chamfered(wall, top, la: 1mm, lb: 1mm) }}\n\
+                          p inside std.rounds.Chamfered(wall, top, la: 1mm, lb: 1mm) }}\n\
         sr := solid(rounded)\nsc := solid(chamfered)\n"));
     let (big, r, d) = (10.0, 2.0, 1.0);
     let disc = PI * big * big * 4.0;

@@ -4,7 +4,8 @@
 // clamped square plate does, 0.00126 q a⁴ / D with D = E t³ / (12 (1 − ν²)); at forty times
 // thinner than it is wide its shear adds a little to that, and the panel claims its sag within 3%.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 
 a := 400mm
 t := 10mm

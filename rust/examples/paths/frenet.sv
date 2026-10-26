@@ -1,12 +1,12 @@
 // A ribbon wound on a helix in Frenet's frame, beside one in the frame that does not twist
 // (#363 S5). A curve traced in space has a centre of curvature where it bends: `g curvature(at:
 // m) c` holds the point `c` there, the centre of the circle osculating the curve at `m`.
-// `std.Frenet(g, s:)` turns its plane's `u` toward it — the principal normal, its sense the
-// centre's and no seed's — and its `v` along the binormal, so the ribbon `facing` keeps its width
-// pointed at the helix's axis all the way round, as a strip wound flat on a drum would.
-// `std.On`'s frame is the rotation-minimising one: it turns only as the guide makes it, so the
-// ribbon `minimal`, starting the same way, falls behind Frenet's at the helix's torsion, a turn of
-// 2π·pitch/√((2π·r)² + pitch²) about the tangent for every turn of the helix.
+// `std.stations.Frenet(g, s:)` turns its plane's `u` toward it — the principal normal, its sense
+// the centre's and no seed's — and its `v` along the binormal, so the ribbon `facing` keeps its
+// width pointed at the helix's axis all the way round, as a strip wound flat on a drum would.
+// `std.stations.On`'s frame is the rotation-minimising one: it turns only as the guide makes it, so
+// the ribbon `minimal`, starting the same way, falls behind Frenet's at the helix's torsion, a turn
+// of 2π·pitch/√((2π·r)² + pitch²) about the tangent for every turn of the helix.
 //
 // Frenet's frame has no centre to point at where the curve does not bend — a straight run, an
 // inflection — and a station there is refused, never followed.
@@ -15,7 +15,9 @@
 // edges are helices of radius r ± w/2, its end cap's corners where the closed form puts them.
 // Edit `r`, `pitch`, `turns`, `w` or `h`.
 unit mm
-use std (coords)
+use std
+use std.place (coords)
+use std.stations
 
 r := 12mm
 pitch := 6mm
@@ -58,13 +60,13 @@ component Strip(n: plane, w: Length, h: Length) {
 }
 
 component Facing(g: path, w: Length, h: Length, s: Scalar) {
-  st := std.Frenet(g, s: s)
+  st := std.stations.Frenet(g, s: s)
   sec := Strip(st.n, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Minimal(g: path, up: axis, w: Length, h: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   sec := Strip(st.n, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
@@ -76,4 +78,4 @@ minimal := sweep(Minimal(helix, std.z, w: w, h: h).f over s)
 
 // Frenet's frame where the helix is a third of the way up: its centre of curvature stands
 // (r² + (pitch/2π)²)/r in from the curve, toward the axis
-here := std.Frenet(helix, s: 0.3)
+here := std.stations.Frenet(helix, s: 0.3)

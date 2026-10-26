@@ -385,6 +385,51 @@ fn the_library_resolves_the_shipped_engine() {
     assert!(elaborate(&prog).ok());
 }
 
+/// **The standard library is modules under `std`** (§14.4 [0.195]): each links on its own and
+/// clean, no name is defined in two of them, `use std.sets` reaches `std.sets.Sphere` and brings
+/// no datum the file may name, and a name written as it was when `std` was one flat namespace is
+/// refused saying where it is now.
+#[test]
+fn the_standard_library_is_modules_under_std() {
+    let under: Vec<&str> = gcs_core::library::MODULES.iter().map(|(n, _)| *n)
+        .filter(|n| n.starts_with("std.")).collect();
+    assert_eq!(under, ["std.place", "std.shapes", "std.sets", "std.rounds", "std.panels",
+                       "std.stations", "std.motion"]);
+    let mut named: BTreeMap<String, &str> = BTreeMap::new();
+    for m in &under {
+        let (prog, errs, linked) = gcs_core::library::parse_linked(&format!("use {m}\n"));
+        assert!(errs.is_empty() && linked.is_empty(), "{m}: {errs:?} {linked:?}");
+        assert!(elaborate(&prog).ok(), "{m}");
+        let k = prog.module_named(m).unwrap();
+        let comps = prog.components.iter().filter(|c| c.module == Some(k))
+            .filter_map(|c| c.name.as_ref().map(|n| n.text.clone()));
+        let words = prog.words.iter().filter(|d| d.module == Some(k)).map(|d| d.word.text.clone());
+        for n in comps.chain(words).collect::<std::collections::BTreeSet<_>>() {
+            assert_eq!(gcs_core::library::std_home(&n), Some(*m), "`{n}`");
+            assert!(named.insert(n.clone(), m).is_none(), "`{n}` in {m} and {}", named[&n]);
+        }
+    }
+    let sphere = "in std.front {\n  c := point\n}\nball := std.sets.Sphere(c, r: 5)\n";
+    let (prog, _, linked) = gcs_core::library::parse_linked(&format!("use std\nuse std.sets\n{sphere}"));
+    assert!(linked.is_empty() && elaborate(&prog).ok(), "{linked:?}");
+    // a module under `std` is not `std`: the file names no datum through it
+    let (prog, _, _) = gcs_core::library::parse_linked(&format!("use std.sets\n{sphere}"));
+    assert!(!elaborate(&prog).ok());
+    // the old spellings, each refused naming the new
+    let errs = |src: &str| {
+        let (prog, _, _) = gcs_core::library::parse_linked(src);
+        elaborate(&prog).errors().map(|d| d.message.clone()).collect::<Vec<_>>()
+    };
+    let said = errs("use std\nin std.front {\n  c := point\n}\nball := std.Sphere(c, r: 5)\n");
+    assert!(said.iter().any(|m| m.contains("it is `std.sets.Sphere`, under `use std.sets`")),
+            "{said:?}");
+    let said = errs("use std (horizontal)\n");
+    assert!(said.iter().any(|m| m.contains("`std.place` does, `use std.place (horizontal)`")),
+            "{said:?}");
+    let said = errs("use std\nin std.front {\n  a := point\n  b := point\n  a horizontal b\n}\n");
+    assert!(said.iter().any(|m| m.contains("import it, `use std.place (horizontal)`")), "{said:?}");
+}
+
 /// **A definition reads the constants of its file** (#461 PC1): a module's component reads its
 /// own file's values and those of the modules its file `use`s, by the names the file reads them
 /// by (`lib.table.L`, `half` where the `use` lists it) — with nothing handed in at the call, and

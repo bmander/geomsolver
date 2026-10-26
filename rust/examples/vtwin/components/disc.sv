@@ -13,7 +13,8 @@
 // its shank with a washer against the disc and one under the hairpin cotter, so the pin is
 // captured between its head and the cotter and nothing is threaded into plastic.
 
-use std (vertical, on_u)
+use std
+use std.place (vertical, on_u)
 use components.dims (R, dhub, pinclr, pinhead, pinpocket, rdisc, tdisc)
 use components.parts
 

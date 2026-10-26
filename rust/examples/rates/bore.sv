@@ -21,7 +21,9 @@
 // march's tolerance; `past` runs on to 20 and is refused at the waist (u = 90°) short of its
 // radius of curvature, (R − 3e)²/(9e − R) = 15, where `housing.sv`'s `past` is refused.
 unit mm
-use std (right_of, spins)
+use std
+use std.place (right_of)
+use std.motion (spins)
 
 R := 75mm                 // the generating radius, the rotor's centre to an apex
 e := 15mm                 // the eccentricity, the shaft's crank

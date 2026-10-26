@@ -19,24 +19,24 @@ in walk order — a chain it is made of, the edges it names, or for a face of co
 run from each corner to the next, a hidden line the face owns. **Walks run in step**: `cycle (ea,
 eb) in (a, b)` names link `k` of each in copy `k`, and walks of different lengths are refused
 naming both. **A face of a block's copies**: `face(side)` is `side[0]`, `side[1]`, …, the count
-the block's. Over them `std.Ruled(a, b, s:)` is CAD's loft of two sketches — corner `k` of each
-walk joined by a straight rail, the section where the plane through three rails at `s` cuts every
-rail (`Across`), so its ends are the faces whatever their planes — and `std.Apex(a, tip, s:)` the
-loft to a point. A section **held to its rails** is `std.Similar` (two rails: moved, turned and
-scaled) or `std.Affine` (three: sheared too), each corner of a profile drawn once at its own place
-in the frame the rail points make, read off the drawing. Solvent 0.113;
-[`l0/two_faces.sv`](l0/two_faces.sv) is written over `std.Ruled` (and `pending.sv` is gone);
-`rust/gcs-core/tests/correspondence.rs`, off the exact B-rep to 1e-9:
+the block's. Over them `std.stations.Ruled(a, b, s:)` is CAD's loft of two sketches — corner `k` of
+each walk joined by a straight rail, the section where the plane through three rails at `s` cuts
+every rail (`Across`), so its ends are the faces whatever their planes — and `std.stations.Apex(a,
+tip, s:)` the loft to a point. A section **held to its rails** is `std.stations.Similar` (two rails:
+moved, turned and scaled) or `std.stations.Affine` (three: sheared too), each corner of a profile
+drawn once at its own place in the frame the rail points make, read off the drawing. Solvent 0.113;
+[`l0/two_faces.sv`](l0/two_faces.sv) is written over `std.stations.Ruled` (and `pending.sv` is
+gone); `rust/gcs-core/tests/correspondence.rs`, off the exact B-rep to 1e-9:
 
 | solid | what it is | closed form (mm³) |
 |---|---|---|
 | `two_faces.sv`: the square to the diamond, corner to corner | ruled, parallel ends 40 apart | 40/6 · 1856 = 12373.33 (relative error 7e-14) |
 | the same with the diamond walked from its second corner | a connector: a quarter turn on | 40/6 · (400 + 4 · 52 + 288) = 5973.33 |
 | the square to a triangle walked with its top edge's middle named | unequal counts made alike by a statement | the prismatoid, 8750 |
-| the square to a tip at (3, 30, 2) (`std.Apex`) | a pyramid leaning off its base | 400 · 30 / 3 = 4000 |
-| a 20 × 3 profile on two rails closing 20 → 8 over 50 (`std.Similar`) | scaled by the rails' spread | ∫60k² · 50 ds = 1560 |
+| the square to a tip at (3, 30, 2) (`std.stations.Apex`) | a pyramid leaning off its base | 400 · 30 / 3 = 4000 |
+| a 20 × 3 profile on two rails closing 20 → 8 over 50 (`std.stations.Similar`) | scaled by the rails' spread | ∫60k² · 50 ds = 1560 |
 | the same, one rail rising 3 and the other falling 3 | turned as it narrows | 60 · 50 / 400 · ∫(20 − 12s)² + 36s² ds = 1650 |
-| a 6 mm square on three rails in space (`std.Affine`) | its area 36/50 of the rails' triangle | 40/6 · 0.72 · (200 + 4 · 146.875 + 87.5) = 4200 |
+| a 6 mm square on three rails in space (`std.stations.Affine`) | its area 36/50 of the rails' triangle | 40/6 · 0.72 · (200 + 4 · 146.875 + 87.5) = 4200 |
 
 **Correspondence is a statement, never inferred.** The pairing is the walks' written order: a
 **connector** is where a walk starts (`face(b1, b2, b3, b0, -> close)` pairs the inlet's first
@@ -99,10 +99,10 @@ them link by link together, so a guide cut at each section and a chain of lines 
 corner is the **ruled** loft, piecewise in `s`, section `k` at `s = k`. **A spline through a
 chain's corners**, `spline(through: rims, start: l, end: m)`, is the **smooth** loft's rail: the
 cubic through them, a span a link, its ends along the tangents written (normal to an end section,
-or along a neighbouring face's edge) or else running straight. With **no guide**, `std.Across(a,
-b, c, s:)` stands the station on its rails, the plane through three of them at `s`. Solvent
-0.111; [`l0/bottle.sv`](l0/bottle.sv) is written over the spline through its rims, its shoulder
-back at L0's 28; `rust/gcs-core/tests/sections.rs`, off the exact B-rep to 1e-9:
+or along a neighbouring face's edge) or else running straight. With **no guide**,
+`std.stations.Across(a, b, c, s:)` stands the station on its rails, the plane through three of them
+at `s`. Solvent 0.111; [`l0/bottle.sv`](l0/bottle.sv) is written over the spline through its rims,
+its shoulder back at L0's 28; `rust/gcs-core/tests/sections.rs`, off the exact B-rep to 1e-9:
 
 | solid | what it is | closed form (mm³) |
 |---|---|---|
@@ -167,14 +167,14 @@ point drawn in another plane on a spline's contact.
 ## L6: helical sweeps (2026-10-15)
 
 **Verdict: a screw is a station word of ordinates, and a section the screw carries rigidly is
-built exact throughout.** `rust/lib/std.sv`'s `std.Helix(base, pitch:, turns:, s:)` is `base`'s
-frame turned `360deg · turns · s` about its normal and risen `pitch · turns · s` along it: `n`, the
-base so carried (a section drawn in it sweeps a twisted prism: an auger's flight, a helical gear's
-tooth), and `axial`, the plane through the axis, `u` out along `n.u` and `v` up the axis (a
-thread's). `std.OnHelix(base, r:, pitch:, turns:, s:)` is the plane square to the helix of radius
-`r`, its `v` up the axis leaned by the lead angle (a coil's wire). No motion is involved (#64's
-motions stay for swept solids). Solvent 0.110; `rust/gcs-core/tests/helix.rs`, off the exact
-B-rep to 1e-9:
+built exact throughout.** `rust/lib/std/stations.sv`'s `std.stations.Helix(base, pitch:, turns:,
+s:)` is `base`'s frame turned `360deg · turns · s` about its normal and risen `pitch · turns · s`
+along it: `n`, the base so carried (a section drawn in it sweeps a twisted prism: an auger's flight,
+a helical gear's tooth), and `axial`, the plane through the axis, `u` out along `n.u` and `v` up the
+axis (a thread's). `std.stations.OnHelix(base, r:, pitch:, turns:, s:)` is the plane square to the
+helix of radius `r`, its `v` up the axis leaned by the lead angle (a coil's wire). No motion is
+involved (#64's motions stay for swept solids). Solvent 0.110; `rust/gcs-core/tests/helix.rs`, off
+the exact B-rep to 1e-9:
 
 | solid | what it is | closed form (mm³) |
 |---|---|---|
@@ -238,16 +238,17 @@ station's fast path (L2).
 ## L5: twist and scale laws (2026-10-14)
 
 **Verdict: a law is any expression in `s`, and the library's words run a total linearly.**
-`rust/lib/std.sv` gains `std.Twisted(n, twist:, s:)`, axes in the station's plane turned `twist ·
-s`; `p scaled(du:, dv:, scale:, s:) P`, a corner of a section scaled `1 + (scale − 1) · s` about the
-plane's origin; and `scaled_radius(r:, scale:, s:) k`. Any other law is the same word given
-another fraction (`s: 3 * s^2 - 2 * s^3`, `s: sin(180 * s)`), or the section's own dimension. No
-word takes a `law:` (finding 10). `l0/twisted_duct.sv` is written over `std.Twisted` now. Solvent
-0.103; `rust/gcs-core/tests/laws.rs`, off the exact B-rep to 1e-9:
+`rust/lib/std/stations.sv` gains `std.stations.Twisted(n, twist:, s:)`, axes in the station's plane
+turned `twist · s`; `p scaled(du:, dv:, scale:, s:) P`, a corner of a section scaled `1 + (scale −
+1) · s` about the plane's origin; and `scaled_radius(r:, scale:, s:) k`. Any other law is the same
+word given another fraction (`s: 3 * s^2 - 2 * s^3`, `s: sin(180 * s)`), or the section's own
+dimension. No word takes a `law:` (finding 10). `l0/twisted_duct.sv` is written over
+`std.stations.Twisted` now. Solvent 0.103; `rust/gcs-core/tests/laws.rs`, off the exact B-rep to
+1e-9:
 
 | solid | what runs | closed form (mm³) |
 |---|---|---|
-| a 20 mm square along 40 | `std.Twisted` 0°, 90°, −450°, and 90° eased (`3s² − 2s³`) | 16000 (Cavalieri) |
+| a 20 mm square along 40 | `std.stations.Twisted` 0°, 90°, −450°, and 90° eased (`3s² − 2s³`) | 16000 (Cavalieri) |
 | a 10 mm square round a quarter of R30 | untwisted, and a half turn | 1500π (Pappus) |
 | the square scaled to half | untwisted, and −270° | 40/3 · (400 + 100 + 200) |
 | a disc of radius 10 scaled to half | `scaled_radius`, linear | π · 40/3 · 175, a cone |
@@ -259,7 +260,7 @@ word takes a `law:` (finding 10). `l0/twisted_duct.sv` is written over `std.Twis
 it: given to a component's formal, a nonlinear one was kept as text for its dimensions (L1) but
 also minted the formal as an unknown of the drawing, so the station stood at "not held: 1 degree
 of freedom"; given to a relation word's, it was E103. Both now keep the text and bind the formal
-with it, so `std.Twisted(st.n, twist: 90deg, s: 3 * s^2 - 2 * s^3)` eases the turn.
+with it, so `std.stations.Twisted(st.n, twist: 90deg, s: 3 * s^2 - 2 * s^3)` eases the turn.
 
 **A `when` cannot say a law.** It is made once, for the whole run, and the station is one shape
 all along it. A `when` over `s` was already refused, as reading "an unknown of the drawing" by
@@ -284,16 +285,16 @@ Handed on: a Frenet word and arc-length laws on a spline stay where L4 left them
 
 **Verdict: a station word stands on every guide drawn in a plane, and a chain of lines and arcs
 is one path.** [`l0/pipe.sv`](l0/pipe.sv), the program L0 could not write, is a 4 mm pipe along a
-U of three straights and two quarter turns, one `std.On` over all five links, at the sum of its
-pieces' Pappus to a part in 10⁹ (Solvent 0.102, `rust/gcs-core/tests/paths.rs`):
+U of three straights and two quarter turns, one `std.stations.On` over all five links, at the sum of
+its pieces' Pappus to a part in 10⁹ (Solvent 0.102, `rust/gcs-core/tests/paths.rs`):
 
 | solid | what it exercises | closed form (mm³) |
 |---|---|---|
 | `pipe.sv`'s `pipe` | a chain as one path, `s` from 0 to 5 | 16π(60 + 25π) |
 | the same, `radius(r + 0.5mm * s)` | a law in `s` along the chain | Σₖ π Lₖ ∫ₖ^{k+1} r(s)² ds |
 | the same, `over s in (1.5, 3.5)` | part of a chain | 16π(20 + 25π/2) |
-| a tube, `std.On` round an arc | E062 until now | π·3²·30·π/2 |
-| a tube, `std.On` and `std.OnSpline` along a Bézier | A·L | 9π × its length by quadrature |
+| a tube, `std.stations.On` round an arc | E062 until now | π·3²·30·π/2 |
+| a tube, `std.stations.On` and `std.stations.OnSpline` along a Bézier | A·L | 9π × its length by quadrature |
 
 **A chain is legs.**  A `path` formal given a named open chain draws the station once per link the
 interval reaches, each its own hidden instance (`#f12_k`) with the formal given link `k` and its
@@ -304,20 +305,20 @@ first station, its part started where the last leg ended** (`carry_over`, entiti
 their names under the leg): the branch the drawing chose on the first link is carried round every
 joint, as one link's stations carry it along that link.  The walls are each one sheet over all
 the links, one name (`pipe.k`).  Nothing reads the chain in Rust beyond this split: the joints are
-tangent because the chain says so, and the station is `std.On`'s.
+tangent because the chain says so, and the station is `std.stations.On`'s.
 
-**The frame is the one written.**  `std.On`'s tangent line and plane were sign-free (`parallel`,
-`perpendicular`): which way the plane faced was wherever the solve started, harmless for the
-round sections L3 swept and a mirror image for any other.  A seed's step now runs along any path
-(`hint(at: m, along: g, by: 0.1)`: the path's rate along its own run where `m` meets it), so `On`
-and `OnSpline` start their tangent ahead along the guide and their plane off it as `OnLine` does:
-a section drawn 5 above the station rides 5 above every guide.
+**The frame is the one written.**  `std.stations.On`'s tangent line and plane were sign-free
+(`parallel`, `perpendicular`): which way the plane faced was wherever the solve started, harmless
+for the round sections L3 swept and a mirror image for any other.  A seed's step now runs along any
+path (`hint(at: m, along: g, by: 0.1)`: the path's rate along its own run where `m` meets it), so
+`On` and `OnSpline` start their tangent ahead along the guide and their plane off it as `OnLine`
+does: a section drawn 5 above the station rides 5 above every guide.
 
-**Orientation.**  Along a guide in one plane with `up` its normal, `std.On`'s frame (`v` held
-along `up`) is the rotation-minimising frame and the fixed binormal both.  Frenet's frame differs
-from it only by a half turn where the guide bends the other way, and has no normal on a straight
-run, so it is no new frame for a planar guide; its own word waits for guides in space (L9), where
-it is one, and for a way to state which side the centre of curvature is on — `parallel` to the
+**Orientation.**  Along a guide in one plane with `up` its normal, `std.stations.On`'s frame (`v`
+held along `up`) is the rotation-minimising frame and the fixed binormal both.  Frenet's frame
+differs from it only by a half turn where the guide bends the other way, and has no normal on a
+straight run, so it is no new frame for a planar guide; its own word waits for guides in space (L9),
+where it is one, and for a way to state which side the centre of curvature is on — `parallel` to the
 radius of curvature says the line, not its sense, and a seed cannot read the curvature's sign.
 
 **Laws by parameter and by length.**  A law reads `s`: on a line and an arc `s` is the fraction of
@@ -344,9 +345,10 @@ is written in one plane's block); an arc walked end to start in a chain; Frenet'
 
 **Verdict: `along:` is retired, and every loft of the case library is a running section at the
 volume `solid(a[, b], along: g)` gave it.** What is lost until L8 is pairing two sketches drawn
-apart. The station words are `std`'s (`rust/lib/std.sv`): `OnLine`, `OnArc`, `OnSpline`, `On`,
-`Screwed` and `OnHelix`, moved from `l0/lofts.sv` (removed) and `l0/pending.sv`; the L0 programs
-read them from `std` now. The four lofts, off the B-rep (`rust/gcs-core/tests/loft.rs`):
+apart. The station words are `std.stations`' (`rust/lib/std/stations.sv`): `OnLine`, `OnArc`,
+`OnSpline`, `On`, `Screwed` and `OnHelix`, moved from `l0/lofts.sv` (removed) and `l0/pending.sv`;
+the L0 programs read them from `std` now. The four lofts, off the B-rep
+(`rust/gcs-core/tests/loft.rs`):
 
 | example | what runs | closed form (mm³) | walls |
 |---|---|---|---|
@@ -368,11 +370,11 @@ solid's brackets parses to a refusal at the key that says how a loft is written 
 
 What L3 found on the way:
 
-- **`std.On` stands on a line, a spline and a traced curve, not yet an arc.** Its
+- **`std.stations.On` stands on a line, a spline and a traced curve, not yet an arc.** Its
   `g tangent(at: m) tl` of an arc, `m` in space, is E062: an arc's contact is read in space
   (`PointAlongArc3`) and its tangency is a planar relation, where a spline's point is drawn in the
-  spline's plane (#249). `std.OnArc` serves; one word over every guide drawn in a plane is L4's
-  first item.
+  spline's plane (#249). `std.stations.OnArc` serves; one word over every guide drawn in a plane is
+  L4's first item.
 - **A section's `up` is an argument.** A component is closed over what it is given, so a section
   component standing a station word passes `std.z` in as an `axis` formal — the L0 programs'
   spelling, now every example's.
@@ -536,7 +538,7 @@ fixtures.
 | [`blade.sv`](l0/blade.sv) | — | two rails in plan holding the width | 2100 | DOF 0, rails at ±7 |
 | [`square_to_circle.sv`](l0/square_to_circle.sv) | — | a square to a circle, one section | 8000 + 1000π | DOF 0, corners ±5, R5 |
 | [`pyramid.sv`](l0/pyramid.sv) | — | a loft to a point | 4000 | DOF 0, half 5 |
-| [`two_faces.sv`](l0/two_faces.sv) | `solid_twist.sv` | two faces drawn apart, paired by the word | 40/6 · 1856 (prismatoid; today's `solid_twist` measures it) | *pending: finding 8* (since L8 `std.Ruled`) |
+| [`two_faces.sv`](l0/two_faces.sv) | `solid_twist.sv` | two faces drawn apart, paired by the word | 40/6 · 1856 (prismatoid; today's `solid_twist` measures it) | *pending: finding 8* (since L8 `std.stations.Ruled`) |
 
 ### The vocabulary the programs assume
 
@@ -644,7 +646,7 @@ fixtures.
        placed them, else where the solve leaves them.
 
 8. **The generic two-face loft is not writable** (`two_faces.sv`, `pending.Ruled`). *Done at L8
-   (`std.Ruled`, over a face's walk and walks in step).* CAD's
+   (`std.stations.Ruled`, over a face's walk and walks in step).* CAD's
    "loft these two sketches" needs, in a word's body:
    - repeating over a face's walk (`repeat e in a`: "`a` is not a named chain"; a face is no
      chain, and there is no chain formal);

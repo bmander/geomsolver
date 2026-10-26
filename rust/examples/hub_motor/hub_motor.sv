@@ -35,7 +35,8 @@
 // copper clear of the covers, the stator clear of everything that turns — judged on the solids.
 
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 use motor.dims (brg_id, brg_in, brg_od, brg_w, d_end, d_seat, disc_face, disc_r, fw_r, fw_to, old,
                 spokes, step_end)
 use motor.parts

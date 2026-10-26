@@ -7,10 +7,13 @@
 //   thread: a 2 mm square at radius 9–11, pitch 4, 3 turns; an axial section under a screw sweeps
 //     its area times its centroid's circle per turn (Pappus): V = 4 · 2π·10 · 3 = 240π mm³.
 unit mm
-use std (on_u)
+use std
+use std.place (on_u)
+use std.shapes
+use std.stations
 
 component Coil(base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  st := std.stations.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
   in st.n {
     w := circle(center: st.n.origin)
     radius(wire) w
@@ -19,12 +22,12 @@ component Coil(base: plane, r: Length, wire: Length, pitch: Length, turns: Scala
 }
 
 component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
+  st := std.stations.Helix(base, pitch: pitch, turns: turns, s: s)
   in st.axial {
     c := point
     c on_u(d: r) st.axial
   }
-  sq := std.CenteredRectangle(c, w: size, h: size) in st.axial
+  sq := std.shapes.CenteredRectangle(c, w: size, h: size) in st.axial
   f := face(sq.loop)
 }
 

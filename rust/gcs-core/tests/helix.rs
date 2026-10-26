@@ -1,8 +1,9 @@
 //! **Helical sweeps** (#243 L6): a section carried along a screw is a face family whose station is
-//! `std.Helix` — `base` turned `360deg · turns · s` about its normal and risen `pitch · turns · s`
-//! along it, every direction an ordinate, so all constraints and no motion — or `std.OnHelix`,
-//! the plane square to the helix of radius `r`.  A section drawn in `Helix`'s `axial` plane sweeps
-//! a thread, one drawn in its `n` a twisted prism, one drawn in `OnHelix`'s `n` a coil.
+//! `std.stations.Helix` — `base` turned `360deg · turns · s` about its normal and risen `pitch ·
+//! turns · s` along it, every direction an ordinate, so all constraints and no motion — or
+//! `std.stations.OnHelix`, the plane square to the helix of radius `r`.  A section drawn in
+//! `Helix`'s `axial` plane sweeps a thread, one drawn in its `n` a twisted prism, one drawn in
+//! `OnHelix`'s `n` a coil.
 //!
 //! Gated by closed forms off the exact B-rep: an axial section under a screw sweeps its area times
 //! its centroid's circle a turn (Pappus, A · 2πr̄ · turns: the rise lies in the section's plane
@@ -19,25 +20,28 @@ use std::f64::consts::PI;
 
 use crate::common::parsed::determined;
 
-/// A thread's square and a V thread's triangle drawn in `std.Helix`'s axial plane, a flight's
-/// rectangle drawn in its plane square to the axis, and a coil's wire square to `std.OnHelix`'s
-/// helix — each about `std.top`'s normal, `std.z`.
+/// A thread's square and a V thread's triangle drawn in `std.stations.Helix`'s axial plane, a
+/// flight's rectangle drawn in its plane square to the axis, and a coil's wire square to
+/// `std.stations.OnHelix`'s helix — each about `std.top`'s normal, `std.z`.
 const HELIX: &str = "unit mm
-use std (coords, on_u)
+use std
+use std.place (coords, on_u)
+use std.shapes
+use std.stations
 
 component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
+  st := std.stations.Helix(base, pitch: pitch, turns: turns, s: s)
   in st.axial {
     c := point
     c on_u(d: r) st.axial
   }
-  sq := std.CenteredRectangle(c, w: size, h: size) in st.axial
+  sq := std.shapes.CenteredRectangle(c, w: size, h: size) in st.axial
   f := face(sq.loop)
 }
 
 component VThread(base: plane, root: Length, crest: Length, half: Length, pitch: Length,
                   turns: Scalar, s: Scalar) {
-  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
+  st := std.stations.Helix(base, pitch: pitch, turns: turns, s: s)
   in st.axial {
     a := point
     b := point
@@ -51,7 +55,7 @@ component VThread(base: plane, root: Length, crest: Length, half: Length, pitch:
 
 component Flight(base: plane, off: Length, w: Length, h: Length, pitch: Length, turns: Scalar,
                  s: Scalar) {
-  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
+  st := std.stations.Helix(base, pitch: pitch, turns: turns, s: s)
   in st.n {
     a := point
     b := point
@@ -66,7 +70,7 @@ component Flight(base: plane, off: Length, w: Length, h: Length, pitch: Length, 
 }
 
 component Coil(base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  st := std.stations.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
   in st.n {
     w := circle(center: st.n.origin)
     radius(wire) w
@@ -197,12 +201,12 @@ thread := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over
 auger := sweep(Flight(std.top, off: 6mm, w: 4mm, h: 2mm, pitch: 12mm, turns: 2.5).f over s)
 spring := sweep(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s)
 component Swelling(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
+  st := std.stations.Helix(base, pitch: pitch, turns: turns, s: s)
   in st.axial {
     c := point
     c on_u(d: r) st.axial
   }
-  sq := std.CenteredRectangle(c, w: size * (1 + 0.5 * s), h: size * (1 + 0.5 * s)) in st.axial
+  sq := std.shapes.CenteredRectangle(c, w: size * (1 + 0.5 * s), h: size * (1 + 0.5 * s)) in st.axial
   f := face(sq.loop)
 }
 swelling := sweep(Swelling(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s)");
@@ -230,7 +234,7 @@ param s: Scalar over (0, 1)
 thread := sweep(Thread(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f over s)
 spring := sweep(Coil(std.top, r: 10mm, wire: 1.5mm, pitch: 5mm, turns: 4).f over s)
 component Swelling(base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  st := std.stations.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
   in st.n {
     w := circle(center: st.n.origin)
     radius(wire * (1 + 0.5 * s)) w

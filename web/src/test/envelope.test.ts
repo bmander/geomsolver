@@ -10,7 +10,8 @@ await initCore();
 
 test('a named envelope exposes its defining residual and enforces the declared roll domain', () => {
   const doc = Document.read(`unit mm
-use std (turns)
+use std
+use std.motion (turns)
 in std.front {
 o := point
 q := point

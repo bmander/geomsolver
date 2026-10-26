@@ -6,7 +6,8 @@ use crate::common::parsed::determined as solved;
 
 const SOURCE: &str = "\
 unit mm
-use std (turns)
+use std
+use std.motion (turns)
 in std.front {
 o := point
 q := point

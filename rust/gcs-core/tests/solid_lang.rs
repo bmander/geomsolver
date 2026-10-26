@@ -368,7 +368,8 @@ fn a_boss_is_united_with_its_body() {
 fn a_revolution_turns_about_a_line_in_its_own_plane() {
     let src = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
 p0 := point hint((10, 0))
 p1 := point hint((14, 0))

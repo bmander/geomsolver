@@ -11,7 +11,7 @@ use gcs_core::solve::{solve, SolveOpts};
 /// A segment halved `depth` times toward its start, one level per instance.
 fn halving(depth: usize) -> String {
     format!(
-        "use std (horizontal)\n\
+        "use std\nuse std.place (horizontal)\n\
          component Half(a: point, b: point, len: Length, n: Int) {{\n\
            m := point hint((a.x + (b.x - a.x) / 2, a.y + (b.y - a.y) / 2))\n\
            a horizontal m\n\
@@ -52,7 +52,7 @@ fn a_component_recurses_until_its_when_ends_it() {
 /// `v[…]` by the rest.
 fn penrose_from(depth: usize, sun: &str, v: &str) -> String {
     format!(
-        "use std (horizontal)\n\
+        "use std\nuse std.place (horizontal)\nuse std.shapes\n\
          param depth := {depth}\n\
          param l := 100\n\
          component Acute(a: point, b: point, c: point, l: Length, n: Int) {{\n\
@@ -145,16 +145,16 @@ fn mutually_recursive_components_subdivide_a_penrose_sun() {
     tiles(include_str!("../../examples/penrose.sv"), 3, 0);
 }
 
-/// **The same with the sun a `ring`** (#225): `std.Polygon`'s ten corners, nine of them turned
-/// copies of the first, each subdivided triangle seeding its points from them — so each seed must
-/// read a copy where its turn puts it, or the deepest levels start on the wrong branch.
+/// **The same with the sun a `ring`** (#225): `std.shapes.Polygon`'s ten corners, nine of them
+/// turned copies of the first, each subdivided triangle seeding its points from them — so each seed
+/// must read a copy where its turn puts it, or the deepest levels start on the wrong branch.
 #[test]
 fn a_penrose_sun_drawn_as_a_ring_subdivides_alike() {
     let sun = "q := point hint((l, 0))\n\
                ref := line(o, q)\n\
                horizontal ref\n\
                o distance(l) q\n\
-               sun := std.Polygon(o, ref, n: 10, r: l, phase: 0deg)";
+               sun := std.shapes.Polygon(o, ref, n: 10, r: l, phase: 0deg)";
     // `ref` and the polygon's ten sides
     tiles(&penrose_from(3, sun, "sun.v"), 3, 11);
 }

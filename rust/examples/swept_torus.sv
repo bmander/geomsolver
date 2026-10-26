@@ -3,7 +3,9 @@
 // The part's boundary is the material field's, meshed by Delaunay refinement.
 
 unit mm
-use std (coords, on_u, on_v, turns)
+use std
+use std.place (coords, on_u, on_v)
+use std.motion (turns)
 in std.front {
   construction centerline spindle := line(std.origin, hint((0, 1)))
   fix((0, 1)) spindle.p2

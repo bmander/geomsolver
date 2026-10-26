@@ -6,7 +6,9 @@
 // it refining).
 
 unit mm
-use std (coords, on_u, turns, rolls)
+use std
+use std.place (coords, on_u)
+use std.motion (turns, rolls)
 wheel_pitch := 16mm
 pinion_pitch := 8mm
 pin_throw := 6mm

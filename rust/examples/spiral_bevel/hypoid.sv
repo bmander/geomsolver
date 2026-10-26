@@ -7,7 +7,11 @@
 // (§9.6, #217). The face mill's pressure shift and radius are found, not stated: where the pinion
 // and the gear stand equally far from undercut (`Balanced`, #283). See README.md.
 unit mm
-use std (skew, turns)
+use std
+use std.place (skew)
+use std.sets
+use std.rounds
+use std.motion (turns)
 
 // -- the pair as a designer states it ----------------------------------------------------------
 param pinion_teeth := 24
@@ -129,14 +133,14 @@ component HypoidPair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, sh
       half: inner_half, opens: 1)
     pinion_outer := Topping(tooth.outer, mill.ax, N, mill.to_outer, height: -depth,
       half: outer_half, opens: -1)
-    pinion_top := std.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
+    pinion_top := std.sets.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
     construction pinion_topping := Tooth(pinion_inner.cone, pinion_outer.cone, mill.tooth_base,
       pinion_top, grow: 0mm, r: rounding)
     gear_outer := Topping(gear_space.inner, mill.ax, N, mill.to_outer, height: depth,
       half: outer_half, opens: -1)
     gear_inner := Topping(gear_space.outer, mill.ax, N, mill.to_inner, height: depth,
       half: inner_half, opens: 1)
-    gear_top := std.HalfSpace(trace.C, mill.ax, d: addendum / 2)
+    gear_top := std.sets.HalfSpace(trace.C, mill.ax, d: addendum / 2)
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
       mill.mate_base, mill.reach, crown_roll, pitch: crown_pitch, grow: 0mm, r: rounding)
     pinion_relief := Generated(pinion.body, pinion_topping.crown, crown_roll, pinion_roll,
@@ -236,18 +240,19 @@ component PinionCone(P: plane, up: axis, gear: Gear, trace: Trace, shaft_angle: 
 // tip's toe and heel corners. Its faces are named by their sets: `material.tip`, `.heel`, `.toe`
 // and `.back`.
 component Blank(rim: line, ax: line, design: BlankDesign) {
-  toe := std.Sphere(rim.p1)
-  heel := std.Sphere(rim.p1)
+  toe := std.sets.Sphere(rim.p1)
+  heel := std.sets.Sphere(rim.p1)
   rim.p2 distance(design.width / 2, side: outside) toe
   rim.p2 distance(design.width / 2, side: inside) heel
-  pitch := std.Cone(ax)
+  pitch := std.sets.Cone(ax)
   rim.p2 coincident pitch
-  tip := std.Offset(pitch, d: design.addendum)
+  tip := std.sets.Offset(pitch, d: design.addendum)
   back := { q | q distance(<= design.back, side: inside) pitch }
   beyond_toe := { q | q outside toe }
   region := { p | p inside tip; p inside heel; p outside toe; p inside back
-                  p inside std.Chamfered(tip, beyond_toe, la: design.relief, lb: design.relief)
-                  p inside std.Chamfered(tip, heel, la: design.relief, lb: design.relief) }
+                  p inside std.rounds.Chamfered(tip, beyond_toe, la: design.relief,
+                                                lb: design.relief)
+                  p inside std.rounds.Chamfered(tip, heel, la: design.relief, lb: design.relief) }
   material := solid(region)
 }
 
@@ -279,15 +284,15 @@ component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: L
   trace.C distance(cutter_radius, along: gear.crown_ax) ax.p2
   inner_flank := Blade(ax, inner_pitch, half: pressure + pressure_shift, opens: 1)
   outer_flank := Blade(ax, outer_pitch, half: pressure - pressure_shift, opens: -1)
-  tooth_tip := std.HalfSpace(trace.C, ax, d: dedendum)
-  tooth_base := std.HalfSpace(trace.C, ax, d: -base)
-  mate_tip := std.HalfSpace(trace.C, ax, d: -dedendum)
-  mate_base := std.HalfSpace(trace.C, ax, d: base)
+  tooth_tip := std.sets.HalfSpace(trace.C, ax, d: dedendum)
+  tooth_base := std.sets.HalfSpace(trace.C, ax, d: -base)
+  mate_tip := std.sets.HalfSpace(trace.C, ax, d: -dedendum)
+  mate_base := std.sets.HalfSpace(trace.C, ax, d: base)
   cap := point in P
   to_cap := line(trace.C, gear.O)
   cap coincident to_cap
   gear.O distance(1.1 * R + mean_module, along: to_cap) cap
-  reach := std.Cylinder(ax)
+  reach := std.sets.Cylinder(ax)
   cap coincident reach
 }
 
@@ -296,11 +301,11 @@ component FaceMill(P: plane, gear: Gear, trace: Trace, R: Length, mean_module: L
 // above `lo` and below `hi`, its tip's edges rounded by `r`. Each set names the face it bounds.
 component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
   inner := { q | q distance(<= grow, side: inside) a }
-  outer := std.Offset(b, d: grow)
+  outer := std.sets.Offset(b, d: grow)
   base := { q | q outside lo }
   tip := { q | q inside hi }
-  inner_round := std.Rounded(inner, tip, r: r)
-  outer_round := std.Rounded(outer, tip, r: r)
+  inner_round := std.rounds.Rounded(inner, tip, r: r)
+  outer_round := std.rounds.Rounded(outer, tip, r: r)
   region := { p | p inside inner; p inside outer; p inside base; p inside tip
                   p inside inner_round; p inside outer_round }
   construction crown := solid(region)
@@ -312,11 +317,11 @@ component Tooth(a: set, b: set, lo: set, hi: set, grow: Length, r: Length) {
 component Space(a: set, b: set, lo: set, hi: set, cap: set, step: frame, pitch: Angle,
     grow: Length, r: Length) {
   inner := { q | q distance(<= grow, side: inside) a }
-  outer := std.Offset(b, d: grow)
+  outer := std.sets.Offset(b, d: grow)
   tip := { q | q outside lo }
   base := { q | q inside hi }
-  inner_round := std.Rounded(inner, tip, r: r)
-  outer_round := std.Rounded(outer, tip, r: r)
+  inner_round := std.rounds.Rounded(inner, tip, r: r)
+  outer_round := std.rounds.Rounded(outer, tip, r: r)
   near := { p | p inside inner; p inside cap; p inside tip; p inside base; p inside inner_round }
   far := { p | p inside outer; p inside tip; p inside base; p inside outer_round }
   private construction outer_crown := solid(near)
@@ -359,9 +364,9 @@ component Topping(flank: set, ax: line, n: plane, toward: line, height: Length, 
   cone := Blade(ax, kink, half: half, opens: opens)
 }
 
-// A blade's cone about the cutter's axis `about`, through `q`: `std.Cone`'s about `.spine` (from
-// the apex to `q`'s foot on `about`), `half` the angle between the axis and every generator,
-// opening along `about` (`opens: 1`) or against it (`opens: -1`). It is `std.ConeThrough` with
+// A blade's cone about the cutter's axis `about`, through `q`: `std.sets.Cone`'s about `.spine`
+// (from the apex to `q`'s foot on `about`), `half` the angle between the axis and every generator,
+// opening along `about` (`opens: 1`) or against it (`opens: -1`). It is `std.sets.ConeThrough` with
 // that side said rather than read off the sign of a lean, so a half that reads an unknown
 // (`pressure + pressure_shift`) stays a number times it plus a number. The apex is seeded on the
 // side away from the opening.

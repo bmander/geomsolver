@@ -12,9 +12,10 @@
 // through the rims, least bent between them, rises the whole way at 28 (L7).
 unit mm
 use std
+use std.stations
 
 component Body(g: line, up: axis, front: plane, rail: path, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   rim := point in st.n, front
   rim coincident rail
   in st.n {

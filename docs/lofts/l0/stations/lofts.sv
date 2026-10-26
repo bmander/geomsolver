@@ -9,7 +9,8 @@
 // The words here only say where a station stands on its path. What the section is at that station
 // (its shape, its twist, its scale, the rails it follows) is the writer's component, drawn in the
 // station's plane.
-use std (on_u, square)
+use std
+use std.place (on_u, square)
 
 // The plane square to the line `g` at the fraction `s` of the way from its start to its end: its
 // origin there, its normal along `g`, and its `v` held along `up` (any direction square to `g`).

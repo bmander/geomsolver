@@ -486,9 +486,9 @@ pub(crate) fn face_polys(m: &Meridian, unit: f64) -> Vec<crate::solid::profile::
 }
 
 /// **A corner built in the meridian** (#183 step 7): a term a region's body states that the
-/// meridian builds exactly — `std.Rounded(a, b, r)`, within reach of a ball of `r` lying `r` within
-/// both of two of the region's own bounds, and `std.Chamfered(a, b, la, lb)`, short of the flat
-/// between their surfaces — at the bounds `a` and `b` (their indices among the terms).
+/// meridian builds exactly — `std.rounds.Rounded(a, b, r)`, within reach of a ball of `r` lying `r`
+/// within both of two of the region's own bounds, and `std.rounds.Chamfered(a, b, la, lb)`, short
+/// of the flat between their surfaces — at the bounds `a` and `b` (their indices among the terms).
 struct MeridianCorner {
     a: usize,
     b: usize,

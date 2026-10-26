@@ -24,7 +24,9 @@ pub(super) fn solved(src: &str) -> gcs_core::program::Elaborated {
 /// cone about the face mill's axis through M, its blades leaning 15°.
 pub(super) const MESH: &str = "\
 unit mm
-use std (turns)
+use std
+use std.sets
+use std.motion (turns)
 g0 := point hint((0, 0, 0))
 g1 := point hint((0, 0, 10))
 fix((0, 0, 0)) g0
@@ -49,7 +51,7 @@ mill_ax := line(C, top)
 apex := point hint((35, -60, -35))
 apex coincident mill_ax
 spine := line(apex, C)
-flank := std.Cone(spine, half: 15deg)
+flank := std.sets.Cone(spine, half: 15deg)
 M coincident flank
 ";
 
@@ -159,7 +161,7 @@ top2 := point hint((44, -77, -44))
 spine2 := line(apex2, top2)
 spine2 parallel spine
 apex2 distance(10mm) top2
-cutter := std.Cone(spine2, half: 15deg)
+cutter := std.sets.Cone(spine2, half: 15deg)
 cutting_turn := frame
 cutting_turn turns(-0.5 * {q}) gear_ax
 pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
@@ -337,7 +339,7 @@ fix({}) cut_apex
 cut_c := point hint(({}, {}, {}))
 fix({}) cut_c
 cut_spine := line(cut_apex, cut_c)
-cutter := std.Cone(cut_spine, half: 15deg)
+cutter := std.sets.Cone(cut_spine, half: 15deg)
 pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: gear_turn, seen_from: pinion_turn)
 contact := meshing(pinion_flank, flank over t in (-15deg, 15deg), under: gear_turn, seen_from: pinion_turn)
 Q := point hint((0, 48, 0))
@@ -393,7 +395,7 @@ top2 := point hint((44, -77, -44))
 spine2 := line(apex2, top2)
 spine2 parallel spine
 apex2 distance(10mm) top2
-cutter := std.Cone(spine2, half: 15deg)
+cutter := std.sets.Cone(spine2, half: 15deg)
 cutting_turn := frame
 cutting_turn turns(-0.5 * {q}) gear_ax
 pinion_flank := envelope(cutter over t in (-40deg, 40deg), under: cutting_turn, seen_from: pinion_turn)
@@ -421,7 +423,8 @@ R coincident(lag == {lag}) contact
 /// writes them, so the flat form prints it.
 pub(super) const SIDE_MESHING: &str = "\
 unit mm
-use std (turns)
+use std
+use std.motion (turns)
 in std.front {
   o := point
   q := point

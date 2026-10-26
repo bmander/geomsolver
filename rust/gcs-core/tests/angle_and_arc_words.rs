@@ -29,7 +29,8 @@ fn near(a: (f64, f64), b: (f64, f64)) -> bool {
 /* -- arc length ---------------------------------------------------------------------------- */
 
 const QUARTER: &str = "\
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
 o := point
 s := point hint((10, 0))
@@ -84,7 +85,8 @@ fix((0, 0)) o
 #[test]
 fn two_arc_lengths_tied_by_a_free_variable() {
     let src = "\
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
 o1 := point
 s1 := point hint((10, 0))
@@ -244,7 +246,7 @@ fn both_words_print_back_as_written() {
 
 /// A horizontal line and a second from its start, the second's end seeded `d` (#497).
 fn square(seed: (f64, f64), stated: &str) -> String {
-    format!("use std (horizontal)\nin std.front {{\na := point\nb := point hint((40, 0))\n\
+    format!("use std\nuse std.place (horizontal)\nin std.front {{\na := point\nb := point hint((40, 0))\n\
         d := point hint(({}, {}))\nab := line(a, b)\nad := line(a, d)\nhorizontal ab\n\
         a distance(40) b\na distance(20) d\nfix((0, 0)) a\n{stated}\n}}\n", seed.0, seed.1)
 }

@@ -363,7 +363,7 @@ pub fn infix_op(word: &str, a: EntKind, b: EntKind, sel: &dyn Fn(&str) -> Option
             _ => return None,
         },
         // the ordinate's zero; `horizontal` and `vertical` between points are the standard
-        // library's words for `level(up)` and `level(right)` (`std.sv`, §9.9)
+        // library's words for `level(up)` and `level(right)` (`std.place`, §9.9)
         "level" => match (a, b) {
             (Point, Point | Plane) => CKind::Level,
             _ => return None,

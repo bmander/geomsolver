@@ -2,7 +2,7 @@
 // straight, a quarter turn left about R25, 20 mm, another quarter turn left about R25, 20 mm.
 // A chain is one path: the station runs over it link by link (`s` from 0 to 5, link k at
 // s ∈ [k, k + 1]), the frame square to whichever link it is on, so the joints need no gluing.
-// One word, `std.On`, stands on any path (since L4, an arc's too).
+// One word, `std.stations.On`, stands on any path (since L4, an arc's too).
 // Closed form: a section square to its path with its centroid on it sweeps its area times the
 // path's length: V = π·4² · (3·20 + 2·25π/2) = 16π(60 + 25π) mm³.
 //
@@ -10,10 +10,12 @@
 // the S-bend L0 first drew, a right turn after a left, is not a chain until an arc can be walked
 // end to start.)
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
+use std.stations
 
 component Tube(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k

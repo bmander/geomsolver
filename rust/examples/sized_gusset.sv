@@ -5,7 +5,8 @@
 // claimed beside it, judged on the solved drawing.  A volume is written as its number of a unit
 // cubed: `30cm^3` would be the cube of 30 centimetres.
 unit mm
-use std (vertical)
+use std
+use std.place (vertical)
 
 a := 100mm
 t := 5mm

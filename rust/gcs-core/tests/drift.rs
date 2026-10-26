@@ -57,7 +57,10 @@ component Pair(a: point, b: point, d: Length, along: line) {
 #[test]
 fn a_component_call_standing_as_a_statement_is_said() {
     let src = "\
-use std (horizontal, spins)
+use std
+use std.place (horizontal)
+use std.sets
+use std.motion (spins)
 component Level(a: point, b: point) {
   a horizontal b
 }
@@ -69,7 +72,7 @@ in std.front {
 }
 ax := axis
 q := point
-q inside std.Cylinder(ax, r: 8mm)
+q inside std.sets.Cylinder(ax, r: 8mm)
 ";
     assert_eq!(of("W202", src), ["W202: Level"], "{:?}", lint(src));
 }
@@ -77,7 +80,9 @@ q inside std.Cylinder(ax, r: 8mm)
 #[test]
 fn a_component_that_makes_nothing_a_parent_reads_is_a_verb() {
     let src = "\
-use std (horizontal, spins)
+use std
+use std.place (horizontal)
+use std.motion (spins)
 component Level(a: point, b: point) {
   a horizontal b
 }
@@ -200,7 +205,7 @@ component Plate(c: point, m: group) {
 /// it would without the lint; and a module the document reads is not the document's text.
 #[test]
 fn the_lint_is_asked_for_and_reads_only_the_documents_own_text() {
-    let src = format!("{GEAR}use std (horizontal, spins)
+    let src = format!("{GEAR}use std\nuse std.place (horizontal)\nuse std.motion (spins)
 teeth := 12
 in std.front {{
   o := point
@@ -264,8 +269,8 @@ fn corpus() -> BTreeMap<String, BTreeMap<&'static str, usize>> {
 /// reads is not handed on.  The others are said and not held.  A pun (W201): a defined word's
 /// measure is labelled until #463.  A bare call (W202): the motion components are words since #464,
 /// and `std.Rolls` and `Standoff` are not yet.  An asserting component (W203): a word's every parameter is given, so a verb that leaves
-/// a number to the solve (`std.Screw`'s pitch, a joint's ratio) is a component until one may be
-/// left out.  A flag read by `when` (W205): a model's choice as often as a picture's.
+/// a number to the solve (`std.motion.Screw`'s pitch, a joint's ratio) is a component until one may
+/// be left out.  A flag read by `when` (W205): a model's choice as often as a picture's.
 const GATED: [&str; 2] = ["W204", "W206"];
 
 /// The findings standing of the gated patterns, as (file under `rust/`, code, how many).  A

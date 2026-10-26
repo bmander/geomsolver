@@ -1,9 +1,9 @@
 //! **A developable panel** (#645): the ruled set one plane touches along each ruling, between two
 //! paths, built exactly — and its **development**, the panel laid flat in a plane.
 //!
-//! `std.Developable(a, b)` says what a panel is: a point `m` on `a`, a point `n` on `b`, a plane
-//! `T` touching `a` at `m` and `b` at `n`, `b` running through it the way `a` does, and the set's
-//! point on the ruling between them.  The language reads that body as any set's; the core
+//! `std.panels.Developable(a, b)` says what a panel is: a point `m` on `a`, a point `n` on `b`, a
+//! plane `T` touching `a` at `m` and `b` at `n`, `b` running through it the way `a` does, and the
+//! set's point on the ruling between them.  The language reads that body as any set's; the core
 //! recognises it (`gcs-core`'s recogniser, by what the body says) and builds the panel here.
 //!
 //! **The correspondence.**  A ruling joins `A = a(u)` to `B = b(w)` where one plane holds `a′(u)`,

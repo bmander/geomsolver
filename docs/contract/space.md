@@ -37,8 +37,8 @@ rows; no plane–plane angle yet); `fix(origin == (x, y, z)) P`. A plane's child
 `hint(dir: up)` an axis, a line `p1`→`p2` in space, `P.n`; `turn: θ, about: g` turns it
 (`KidSeed::dir`, `syntax::DirRef`; `Deferred::Dir`, `entities::direction_of`, read again after
 `views::place` where it reads what that places, `crosses_views`); never written back. The loft
-station `std.OnLine` seeds `n` so (drafted in `docs/lofts/l0/stations/lofts.sv`); `tests/seeds.rs`
-is the gate.
+station `std.stations.OnLine` seeds `n` so (drafted in `docs/lofts/l0/stations/lofts.sv`);
+`tests/seeds.rs` is the gate.
 An origin already on one axis is placed in fewer rows than three (`P.origin coincident
 std.front`), or the structural count sees a redundancy. W113 warns of two planes lying on one
 another. `views::place`
@@ -77,7 +77,7 @@ rides on (or of the frame `under: m` names) carries it, origin, axes and normal
 points, each seeded where the motion carries it before the planes are placed
 (`Sketch::seed_carried`), so its axes run with their lines.  `std.Turned(o, t)`
 is a frame turned within a plane (`.axes` the plane, `.u` the line o→t). No coordinate-placement
-helper: model contours with alignments, incidences, symmetry and dimensions — `std`'s words
+helper: model contours with alignments, incidences, symmetry and dimensions — `std.place`'s words
 `offset`, `right_of`/`left_of`/`above`/`below`, `coords`, `on_u`/`on_v` are pairs of those
 dimensions (an ordinate and an ordinate or a level) said as one statement, still dimensions;
 `skew` and `turned` are the same for two lines (#103's corpus pass), `P square(up: d) l` the three
@@ -178,12 +178,12 @@ a point with a `Deferred::Height` seed, held by a `fix`, a dual's point (`along.
 ring's, or claimed. **A point on a curve drawn in a plane is in it** (#249): `m coincident g` (pins
 allowed), `g` a spline or a traced curve (`planes::drawn_plane`, not an extrusion) drawn in `P`, draws a
 point in space in `P`, and `g tangent l` (either way round, `at:` too, #251) a line's free ends —
-as does a line touching an arc or a circle at a point of it (`TangentCircleAt`, #243 L4: `std.On`
-over an arc) — and where the line's ends are drawn elsewhere already (a chain's straight between
-bends in two planes), the tangency is the one in space, `TangentCircleAt3` (#363 S4, [0.124];
-`reading::in_space`, from `TangentCircleAt`, a joint's `TangentArcLine` or `TangentLineCircleAt`):
-two rows, `r̂·(B − A)` and `n̂·(B − A)`, the line square to the radius at the point and in the
-round's plane —
+as does a line touching an arc or a circle at a point of it (`TangentCircleAt`, #243 L4:
+`std.stations.On` over an arc) — and where the line's ends are drawn elsewhere already (a chain's
+straight between bends in two planes), the tangency is the one in space, `TangentCircleAt3` (#363
+S4, [0.124]; `reading::in_space`, from `TangentCircleAt`, a joint's `TangentArcLine` or
+`TangentLineCircleAt`): two rows, `r̂·(B − A)` and `n̂·(B − A)`, the line square to the radius at
+the point and in the round's plane —
 read off the kind `relations::settle` gives, so a word the operands do not take draws nothing; the
 statement stays the 2D contact. A
 kept point is E062 naming what keeps it (`kept`'s cause), its statement returned apart from the

@@ -16,7 +16,8 @@
 // again.
 
 unit mm
-use std (spins, slides)
+use std
+use std.motion (spins, slides)
 
 base := 25    // the face's nearest approach to the cam's centre
 h := 15       // the follower's lift

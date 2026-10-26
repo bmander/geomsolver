@@ -5,7 +5,8 @@
 // length is the unknown that dimension and that row share.  Euler–Bernoulli's `P L³ / (3 E I)`
 // says the reach is `(3 E I sag / P)^(1/3)`, 855.0mm.
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 
 b := 25mm
 h := 50mm

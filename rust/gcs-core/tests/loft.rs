@@ -1,9 +1,9 @@
 //! **Today's loft is library words** (#243 L3): the reducer, the elbow, the narrowing bend and the
-//! square-to-diamond duct, each one section drawn at a station of its guide (`std.OnLine`,
-//! `std.OnArc`) and swept as the station runs — `sweep(I(…).f over s)` — at the volume
+//! square-to-diamond duct, each one section drawn at a station of its guide (`std.stations.OnLine`,
+//! `std.stations.OnArc`) and swept as the station runs — `sweep(I(…).f over s)` — at the volume
 //! `solid(a[, b], along: g)` gave them, read off the exact B-rep to a part in 10⁹, and with its
 //! caps and its walls by name.  `along:` is retired, refused saying what to write; the station
-//! words stand on any path the family runs over (`std.On`, `std.OnSpline`).
+//! words stand on any path the family runs over (`std.stations.On`, `std.stations.OnSpline`).
 use gcs_core::program::Elaborated;
 use gcs_core::solid::ApproximationPolicy::Report;
 use std::collections::BTreeMap;
@@ -144,7 +144,7 @@ fn along_is_retired_saying_what_to_write() {
     for src in ["body := solid(section, along: guide)\n", "body := solid(a, b, along: guide)\n"] {
         let (_, errs) = crate::common::parse(src);
         assert!(errs.iter().any(|e| e.message.contains("`along:` is retired")
-                && e.message.contains("over s)") && e.message.contains("std.OnLine")),
+                && e.message.contains("over s)") && e.message.contains("std.stations.OnLine")),
                 "{src}: {errs:?}");
     }
 }
@@ -154,9 +154,10 @@ fn along_is_retired_saying_what_to_write() {
 fn tube(word: &str, kind: &str, guide: &str) -> String {
     format!("unit mm
 use std
+use std.stations
 
 component Tube(g: {kind}, up: axis, s: Scalar) {{
-  st := std.{word}(g, up: up, s: s)
+  st := std.stations.{word}(g, up: up, s: s)
   in st.n {{
     k := circle(center: st.n.origin)
     radius(3mm) k
@@ -192,9 +193,10 @@ tube := sweep(Tube({guide}, std.z).f over s)
 ")
 }
 
-/// **One word over any path**: `std.On` stands where `std.OnLine` and `std.OnSpline` do, so a tube
-/// along a line is the same solid by either, π·3²·40, and along a spline too; `std.OnArc`'s tube
-/// round a quarter of radius 30 is Pappus, π·3²·30·π/2.
+/// **One word over any path**: `std.stations.On` stands where `std.stations.OnLine` and
+/// `std.stations.OnSpline` do, so a tube along a line is the same solid by either, π·3²·40, and
+/// along a spline too; `std.stations.OnArc`'s tube round a quarter of radius 30 is Pappus,
+/// π·3²·30·π/2.
 #[test]
 fn on_stands_where_each_kind_s_word_does() {
     let vol = |word: &str, kind: &str, guide: &str| {

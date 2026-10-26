@@ -136,9 +136,9 @@ const projects: Example[] = [{
     + 'a rectangle to a round (four planar triangles and four fans about the corners), an offset '
     + 'square-to-round whose four triangles all differ, and a whole dory, its bottom and both '
     + 'sides, the sides fanning at the stem and the transom, laid out on two sheets of plywood. '
-    + 'Each panel is `std.Developable(a, b)`, its sheet a band of it (`distance(<= t, side: '
-    + 'outside)`), and its pattern `std.Development`, laid in a plane and placed by relations; '
-    + 'each is a closed form its file gives. dory.svd and offset_transition.svd are cut files; '
+    + 'Each panel is `std.panels.Developable(a, b)`, its sheet a band of it (`distance(<= t, '
+    + 'side: outside)`), and its pattern `std.panels.Development`, laid in a plane and placed by '
+    + 'relations; each is a closed form its file gives. dory.svd and offset_transition.svd are cut files; '
     + 'the README says what each shows.',
   target: { kind: 'directory', path: 'developable', entry: 'frustum.sv' },
 }, {

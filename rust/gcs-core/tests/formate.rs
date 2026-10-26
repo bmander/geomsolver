@@ -77,7 +77,7 @@ fn a_formed_gear_with_two_floors_a_space_builds() {
     let text = fixtures::gear::formate_source();
     let far = "far := { p | p inside concave; p inside cap; p outside below; p inside above }";
     assert!(text.contains(far),"the space bounds the tooth ahead by its flank alone");
-    let e = fixtures::gear::read(&text.replace(far,"concave_round := std.Rounded(concave, tip, r: r)\n  \
+    let e = fixtures::gear::read(&text.replace(far,"concave_round := std.rounds.Rounded(concave, tip, r: r)\n  \
         far := { p | p inside concave; p inside tip; p inside base; p inside concave_round }"));
     let say = Say {stage:&|l: &str| eprintln!("{l}"),mark:&|_| {}};
     let exact = export::exact(&e.sketch,fixtures::solid(&e,"pair.gear.body"),None,None,&say);

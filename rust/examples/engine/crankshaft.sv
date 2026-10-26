@@ -20,7 +20,9 @@
 
 use engine.dims (P, R, back, front, pinlen, rflange, rfw, rj, rp, rseal, wflange, wfw)
 use engine.parts
-use std (horizontal, offset, slides, spins)
+use std
+use std.place (horizontal, offset)
+use std.motion (slides, spins)
 
 // -- the starter's ring gear --------------------------------------------------------------
 // Its tip is the flywheel's outside, the table's `rfw`, and its count the starter's gearing (a
