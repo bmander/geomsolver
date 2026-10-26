@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.188] A refuted claim says where.** A claim about two solids that is refuted or undecided says,
+**[0.189] A refuted claim says where.** A claim about two solids that is refuted or undecided says,
 under its measurement, the face of each by its path through the operands and where in the world
 they meet: `deepest at (…), between a.f and b.g` where their material is common (the centre of the
 largest ball both hold, which the thickness is read from), `nearest at (…), between …` where their
@@ -13,6 +13,15 @@ boundaries touch or cross, and `nearest between a.f at (…) and b.g at (…)` w
 (`a`, `b`, `atA`, `atB`, `deepest`) on the claim and on every valid pose, for a claim that holds
 too. Nothing is measured differently. (A request from radiatorbot: `claim uno.tails clear(0.5mm)
 frame_part` refuted at −0.71 named no tail and no post.)
+
+**[0.188] A zero ordinate is a number.** `p distance(0mm, along: u) P`, and `p coords(du: 0mm,
+dv: 5mm) P` through it, is an ordinate of zero — a dimension, drawn and edited as any other
+(§6.7). Through 0.187 a zero written as a literal was **E040**, naming `level`, while a zero a
+name or an expression came to (`cx := (x0 + x1) / 2`) was accepted: a component placing a point
+by its ordinates read either way, and one written in fear of the refusal branched on each
+ordinate being zero. `a level(t) b` is unchanged, the same row with no number, and a step's
+literal zero (`step(v: 0mm)`, back onto the axis) is still its level (§6.6). A document that
+elaborated still does, and every solved position is unchanged.
 
 **[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
 `a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner

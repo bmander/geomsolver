@@ -239,7 +239,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
 | `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s words (1.9): `use std (horizontal)`, then `a horizontal b` |
-| `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. Write it rather than `distance(0, along: …)`, which is refused |
+| `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. `distance(0, along: …)` is the same row with a number of zero, a dimension |
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
 | `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
