@@ -117,6 +117,14 @@ impl Route {
         matches!(self, Route::Field(_) | Route::Lowered(Err(_)) | Route::Bounded(Err(_)) | Route::Grown(Err(_)))
     }
 
+    /// The solid whose recipe node its own reads, where it reads one: a body grown's body.
+    pub fn built_on(&self) -> Option<u32> {
+        match self {
+            Route::Grown(Ok(g)) => Some(g.body()),
+            _ => None,
+        }
+    }
+
     /// The lowering table's pieces, where it is that entry's and built.
     pub fn pieces(&self) -> Option<&Rc<Vec<super::lowering::Piece>>> {
         match self {

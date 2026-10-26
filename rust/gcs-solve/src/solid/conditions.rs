@@ -107,31 +107,23 @@ impl SetDistance {
         }).collect();
         // within the faces of a body in pieces: the conditions of each shell apart, the nearest
         // read
-        let mut shells: Vec<(Arc<BodyFaces>, Vec<usize>)> = Vec::new();
+        let mut pieces: Vec<Arc<BodyFaces>> = Vec::new();
         for f in &within {
             let r = super::faces::reading(sk, f, read)?;
-            let of = r.body.shells();
-            let mut on: Vec<usize> = r.faces.iter().map(|&fi| of[fi]).collect();
-            on.sort_unstable();
-            on.dedup();
-            if on.len() > 1 && !shells.iter().any(|(b, _)| Arc::ptr_eq(b, &r.body)) {
-                shells.push((r.body.clone(), of));
+            let (of, _) = r.body.shells();
+            let apart = r.faces.first().is_some_and(|&f0| r.faces.iter().any(|&fi| of[fi] != of[f0]));
+            if apart && !pieces.iter().any(|b| Arc::ptr_eq(b, &r.body)) {
+                pieces.push(r.body.clone());
             }
         }
-        if let [(body, of)] = &shells[..] {
-            let count = of.iter().copied().max().map_or(0, |m| m + 1);
+        if let [body] = &pieces[..] {
             let mut each = Vec::new();
-            for k in 0..count {
-                let mut conds = Vec::new();
-                let mut holds = true;
-                for t in terms {
-                    match conditions(sk, t, read, &within, Some((body, of, k)))? {
-                        Some(c) => conds.extend(c),
-                        None => holds = false,
-                    }
-                }
-                if holds {
-                    each.push(SetDistance::Conditions(conds));
+            for k in 0..body.shells().1 {
+                // a shell none of a term's faces is on holds none of the set
+                let terms = terms.iter().map(|t| conditions(sk, t, read, &within, Some((body, k))))
+                    .collect::<Result<Vec<_>, String>>()?;
+                if let Some(conds) = terms.into_iter().collect::<Option<Vec<_>>>() {
+                    each.push(SetDistance::Conditions(conds.into_iter().flatten().collect()));
                 }
             }
             return Ok(SetDistance::Nearest(each));
@@ -171,25 +163,22 @@ fn shift(m: Fv, k: f64, sign: f64) -> Fv {
 }
 
 /// A term of a set measured from, as conditions on its point, `within` the faces the set says
-/// its point is within — of `shell` alone where one is named (a body's faces, each face's shell,
-/// and which): `None` where the term's faces have none on it.
+/// its point is within — the faces of `shell` alone where one is named (a body, and which of its
+/// shells): `None` where the term's faces have none on it.
 fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::model::FaceRef],
-    shell: Option<(&Arc<BodyFaces>, &[usize], usize)>) -> Result<Option<Vec<Cond>>, String> {
-    let on_shell = |r: Reading| -> Option<Reading> {
-        match shell {
-            Some((body, of, k)) if Arc::ptr_eq(body, &r.body) => {
+    shell: Option<(&Arc<BodyFaces>, usize)>) -> Result<Option<Vec<Cond>>, String> {
+    // the faces a face reference names, kept to the shell
+    let mut reading = |f: &crate::model::FaceRef| -> Result<Option<Reading>, String> {
+        let r = super::faces::reading(sk, f, read)?;
+        Ok(match shell {
+            Some((body, k)) if Arc::ptr_eq(body, &r.body) => {
+                let (of, _) = body.shells();
                 let faces: Vec<usize> = r.faces.iter().copied().filter(|&fi| of[fi] == k).collect();
                 (!faces.is_empty()).then_some(Reading { faces, ..r })
             }
             _ => Some(r),
-        }
+        })
     };
-    conditions_of(sk, t, read, within, &on_shell)
-}
-
-/// `conditions`, each reading of a term's faces kept to a shell by `on_shell`.
-fn conditions_of(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::model::FaceRef],
-    on_shell: &dyn Fn(Reading) -> Option<Reading>) -> Result<Option<Vec<Cond>>, String> {
     let (lo, grow) = t.value(sk)?;
     let hi = t.hi.unwrap_or(lo);
     // a measure `m` held by the term: `m ≤ lo`, `m ≥ lo`, `lo ≤ m ≤ hi` (`m = lo` where they meet)
@@ -205,7 +194,7 @@ fn conditions_of(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::
     match &t.shape {
         // within faces on several surfaces meeting convex: within each surface's side
         RegionShape::FaceSide { face } => {
-            let Some(r) = on_shell(super::faces::reading(sk, face, read)?) else { return Ok(None) };
+            let Some(r) = reading(face)? else { return Ok(None) };
             Ok(Some(sides(r, t.cmp == Cmp::Le).into_iter().flat_map(held).collect()))
         }
         RegionShape::Measured { of } => {
@@ -215,7 +204,7 @@ fn conditions_of(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::
             let c = *c;
             let m: Fv = match target {
                 Target::Face(f) if f.surface => {
-                    let r = super::faces::reading(sk, f, read)?;
+                    let Some(r) = reading(f)? else { return Ok(None) };
                     // on the surface: its side is nothing, a smooth condition
                     if t.cmp == Cmp::Le && lo == 0.0 && grow == 0.0 {
                         let r = Arc::new(r);

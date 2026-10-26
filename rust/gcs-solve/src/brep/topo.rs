@@ -283,16 +283,19 @@ impl Brep {
     /// numbered again in order: what faces glued away inside a solid leave (`boolean::glued`
     /// keeps every edge, and one whose faces all went bounds nothing).
     pub fn compacted(mut self) -> Brep {
+        // the items `used` marks, and where each old one went
+        fn kept<T>(items: Vec<T>,used: &[bool]) -> (Vec<T>,Vec<u32>) {
+            let mut at = vec![u32::MAX;items.len()];
+            let kept = items.into_iter().enumerate().filter(|(i,_)| used[*i]).enumerate()
+                .map(|(k,(i,x))| { at[i] = k as u32; x }).collect();
+            (kept,at)
+        }
         let mut used = vec![false;self.edges.len()];
         for c in self.faces.iter().flat_map(|f| f.loops.iter().flatten()) { used[c.edge as usize] = true; }
-        let mut edge_at = vec![u32::MAX;self.edges.len()];
-        let edges: Vec<Edge> = self.edges.drain(..).enumerate().filter(|(i,_)| used[*i]).enumerate()
-            .map(|(k,(i,e))| { edge_at[i] = k as u32; e }).collect();
+        let (edges,edge_at) = kept(std::mem::take(&mut self.edges),&used);
         let mut held = vec![false;self.vertices.len()];
         for e in &edges { for v in e.v { held[v as usize] = true; } }
-        let mut vertex_at = vec![u32::MAX;self.vertices.len()];
-        let vertices: Vec<Vertex> = self.vertices.drain(..).enumerate().filter(|(i,_)| held[*i]).enumerate()
-            .map(|(k,(i,v))| { vertex_at[i] = k as u32; v }).collect();
+        let (vertices,vertex_at) = kept(std::mem::take(&mut self.vertices),&held);
         let edges = edges.into_iter().map(|e| Edge {v:e.v.map(|v| vertex_at[v as usize]),..e}).collect();
         for c in self.faces.iter_mut().flat_map(|f| f.loops.iter_mut().flatten()) { c.edge = edge_at[c.edge as usize]; }
         Brep {vertices,edges,faces:self.faces}

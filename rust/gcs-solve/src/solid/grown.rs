@@ -21,7 +21,7 @@ use crate::brep::recipe::Writer;
 use crate::brep::topo::EdgeCurve;
 use crate::json::{object, Json};
 use crate::model::{FaceRef, RegionShape, RegionTerm, Sketch, SolidDef, Target};
-use crate::space::{add, cross, dot, norm, scale, sub};
+use crate::space::{add, cross, dot, norm, scale, sub, unit};
 use crate::vocab::Cmp;
 use std::f64::consts::TAU;
 use std::rc::Rc;
@@ -49,8 +49,8 @@ struct Piece {
 
 #[derive(Clone, Copy, Debug)]
 enum Sweep {
-    /// Along the section's normal, from `from` to `to`.
-    Along { from: f64, to: f64 },
+    /// Along the section's normal, from its plane this far.
+    Along(f64),
     /// About the line through `origin` along the unit `axis`, right-handed by `angle`.
     About { origin: V, axis: V, angle: f64 },
 }
@@ -64,8 +64,8 @@ impl Grown {
             let names = piece.section.loops.iter().map(|l| vec![self.name.clone(); l.len()]).collect();
             let profile = Profile { names, ..piece.section.clone() }.to_json(w)?;
             Ok(match piece.sweep {
-                Sweep::Along { from, to } => object([("kind", "prism".into()), ("profile", profile),
-                    ("from", (from * s).into()), ("to", (to * s).into())]),
+                Sweep::Along(to) => object([("kind", "prism".into()), ("profile", profile),
+                    ("from", 0.0.into()), ("to", (to * s).into())]),
                 Sweep::About { origin, axis, angle } => object([("kind", "revolve".into()),
                     ("profile", profile), ("origin", w.line_origin(origin.map(|x| x * s), axis)),
                     ("axis", Writer::triple(axis)), ("angle", angle.into())]),
@@ -73,6 +73,9 @@ impl Grown {
         }).collect::<Result<Vec<_>, String>>()?;
         Ok(object([("kind", "grown".into()), ("body", (self.body as usize).into()), ("pieces", Json::Arr(pieces))]))
     }
+
+    /// The solid it is glued to, whose recipe node its own reads.
+    pub fn body(&self) -> u32 { self.body }
 }
 
 /// The body region solid `solid` is within reach of, and the reach, where it is that region: one
@@ -93,44 +96,29 @@ fn recognised(sk: &Sketch, solid: usize) -> Option<(&FaceRef, &RegionTerm)> {
         .then_some((face, t))
 }
 
-/// The body region solid `solid` grows, where this construction builds it: the solid its recipe
-/// node reads.
-pub fn body_of(sk: &Sketch, solid: usize) -> Option<u32> {
-    let (face, _) = recognised(sk, solid)?;
-    matches!(built(sk, solid), Some(Ok(_))).then_some(face.solid)
-}
-
 /// Region solid `solid` built as its body and what lies within reach of each face, edge and corner
 /// glued to it, where it is that region (`None` otherwise): the construction, or why it stands not.
 /// Remembered against `solid::reads` (`Caches::grown`).
 pub fn built(sk: &Sketch, solid: usize) -> Option<Result<Rc<Grown>, String>> {
-    recognised(sk, solid)?;
+    let (face, t) = recognised(sk, solid)?;
     sk.caches.grown.get_or(solid, super::MemoKey::of(sk, solid), || {
-        Some(construction(sk, solid).and_then(|(g, body)| {
+        Some(construction(sk, face, t).and_then(|(g, body)| {
             gate(sk, solid, &g, &body)?;
             Ok(Rc::new(g))
         }))
     })
 }
 
-/// The pieces of region solid `solid`, and the faces of the body they are glued to.
-fn construction(sk: &Sketch, solid: usize) -> Result<(Grown, std::sync::Arc<super::faces::BodyFaces>), String> {
-    let (face, t) = recognised(sk, solid).expect("a body grown, asked by `built`");
+/// The pieces of the region within `t`'s reach of the body `face` names, and the faces of the body
+/// they are glued to.
+fn construction(sk: &Sketch, face: &FaceRef, t: &RegionTerm)
+    -> Result<(Grown, std::sync::Arc<super::faces::BodyFaces>), String> {
     let d = t.lo.read(sk).ok_or("its reach reads an unknown nothing determines")?;
     if !(d > 0.0) {
         return Err("a body grown by nothing is the body itself".to_string());
     }
-    // the faces its glued pieces meet are the body's own, as its recipe node builds it: none of
-    // its terms reads them (a round, which the faces are read without)
-    let readers = super::faces::readers_of(sk, face.solid as usize);
-    let mut terms = vec![face.solid];
-    let mut k = 0;
-    while k < terms.len() {
-        let more = sk.solids[terms[k] as usize].operands();
-        terms.extend(more.into_iter().filter(|o| !terms.contains(o)).collect::<Vec<_>>());
-        k += 1;
-    }
-    if terms.iter().any(|&o| readers.contains(&(o as usize))) {
+    // the faces its glued pieces meet are the body's own, as its recipe node builds it
+    if !super::faces::stratum_is_whole(sk, face.solid as usize) {
         return Err("a body grown whose faces a term of it reads (a round) is read by the field".to_string());
     }
     let mut read = Vec::new();
@@ -141,7 +129,6 @@ fn construction(sk: &Sketch, solid: usize) -> Result<(Grown, std::sync::Arc<supe
         return Err("within reach of only some of a body's faces is read by the field".to_string());
     }
     let refused = |why: &str| format!("{why}: read by the field");
-    let back = |q: V| body.back(q);
     let mut pieces = Vec::new();
     // each face's prism (a cylinder's band) out along its normal
     for fi in 0..b.faces.len() {
@@ -149,13 +136,14 @@ fn construction(sk: &Sketch, solid: usize) -> Result<(Grown, std::sync::Arc<supe
         pieces.push(match f.surface {
             Surface::Plane(_) => {
                 let (n, o) = body.plane(fi).expect("a plane face");
-                let section = section_of(b, fi, n, o, &back, mm).ok_or_else(|| refused("a plane face bounded by an edge no line or circle carries"))?;
-                Piece { section, sweep: Sweep::Along { from: 0.0, to: d } }
+                let section = section_of(&body, fi, n, o)
+                    .ok_or_else(|| refused("a plane face bounded by an edge no line or circle carries"))?;
+                Piece { section, sweep: Sweep::Along(d) }
             }
             Surface::Cylinder(frame, r) => band(&body, fi, frame, r, mm, d)
                 .ok_or_else(|| refused("a cylinder's face that is no band between two circles about its axis, \
                                         or a bore no wider than the reach"))?,
-            _ => return Err(refused(&format!("a face on a {}", surface_word(&f.surface)))),
+            _ => return Err(refused(&format!("a face on a {}", f.surface.kind()))),
         });
     }
     // each convex edge's wedge between its faces' normals: along a line, or turned about a circle
@@ -170,29 +158,29 @@ fn construction(sk: &Sketch, solid: usize) -> Result<(Grown, std::sync::Arc<supe
             Some(false) => return Err(refused("a concave edge")),
         }
         let [t0, t1] = edge.t;
-        let at = curve.point(t0);
-        let (na, nb) = (body.outward(fa, at), body.outward(fb, at));
-        let wedge = |o: V, along: V| wedge(back(o), along, na, nb, d);
+        let at = body.along(e, 0.0);
+        let (na, nb) = (body.normal(fa, at), body.normal(fb, at));
+        let tangent = unit(curve.tangent(t0));
         pieces.push(match curve {
-            Curve::Line { d: along, .. } => {
+            Curve::Line { .. } => {
                 // the faces' normals the same all along it
-                let end = curve.point(t1);
-                if norm(sub(body.outward(fa, end), na)) > 1e-9 || norm(sub(body.outward(fb, end), nb)) > 1e-9 {
+                let end = body.along(e, 1.0);
+                if norm(sub(body.normal(fa, end), na)) > 1e-9 || norm(sub(body.normal(fb, end), nb)) > 1e-9 {
                     return Err(refused("an edge along which a face turns"));
                 }
-                Piece { section: wedge(at, *along), sweep: Sweep::Along { from: 0.0, to: (t1 - t0) / mm } }
+                Piece { section: wedge(at, tangent, na, nb, d), sweep: Sweep::Along((t1 - t0) / mm) }
             }
-            Curve::Circle(frame, r) => {
-                let tangent = add(scale(frame.x, -t0.dsin()), scale(frame.y, t0.dcos()));
+            Curve::Circle(..) => {
+                let (centre, axis, r, _) = body.circle(e).expect("a circle");
                 if dot(na, tangent).abs() > 1e-9 || dot(nb, tangent).abs() > 1e-9 {
                     return Err(refused("a circle whose faces turn about no axis of its own"));
                 }
                 // turned about its axis, the wedge stays clear of it
-                if !(r / mm > d) {
+                if !(r > d) {
                     return Err(refused("a circle no larger than the reach"));
                 }
-                Piece { section: wedge(at, tangent),
-                        sweep: Sweep::About { origin: back(frame.o), axis: frame.z, angle: (t1 - t0).min(TAU) } }
+                Piece { section: wedge(at, tangent, na, nb, d),
+                        sweep: Sweep::About { origin: centre, axis, angle: (t1 - t0).min(TAU) } }
             }
             _ => return Err(refused("an edge no line or circle carries")),
         });
@@ -200,17 +188,12 @@ fn construction(sk: &Sketch, solid: usize) -> Result<(Grown, std::sync::Arc<supe
     // each corner's sector of the ball: where three faces meet, one square to the other two (a
     // prism's corner), the quarter disc between the square one and another turned about it
     for v in 0..b.vertices.len() as u32 {
-        let at = b.vertices[v as usize].p;
+        let c = body.back(b.vertices[v as usize].p);
         let mut normals: Vec<V> = Vec::new();
-        for e in 0..b.edges.len() as u32 {
-            if !body.ends(e).contains(&v) {
-                continue;
-            }
-            for &fi in body.faces_of(e) {
-                let n = body.outward(fi, at);
-                if !normals.iter().any(|&m| norm(sub(m, n)) < 1e-9) {
-                    normals.push(n);
-                }
+        for fi in body.faces_at(v, &[]) {
+            let n = body.normal(fi, c);
+            if !normals.iter().any(|&m| norm(sub(m, n)) < 1e-9) {
+                normals.push(n);
             }
         }
         if normals.len() < 3 {
@@ -221,7 +204,6 @@ fn construction(sk: &Sketch, solid: usize) -> Result<(Grown, std::sync::Arc<supe
         })).flatten().ok_or_else(|| refused("a corner that is no prism's: three faces, one square to the other two"))?;
         let nc = normals[corner];
         let [na, nb] = [normals[(corner + 1) % 3], normals[(corner + 2) % 3]];
-        let c = back(at);
         let section = wedge(c, cross(na, nc), na, nc, d);
         let angle = dot(cross(na, nb), nc).atan2(dot(na, nb));
         pieces.push(Piece { section, sweep: Sweep::About { origin: c, axis: nc, angle } });
@@ -244,19 +226,11 @@ fn wedge(o: V, along: V, na: V, nb: V, d: f64) -> Profile {
     Profile { origin: o, normal: along, loops: vec![edges], names: Vec::new() }
 }
 
-/// What a surface is called where this construction refuses it.
-fn surface_word(s: &Surface) -> &'static str {
-    match s {
-        Surface::Cone(..) => "cone",
-        Surface::Sphere(..) => "sphere",
-        Surface::Torus(..) => "torus",
-        _ => "surface no line or circle sweeps",
-    }
-}
-
 /// Plane face `fi`'s loops (lines and circles) as a section in its plane, through `o` (model units)
 /// square to its outward normal `n`; `None` where an edge is no line or circle.
-fn section_of(b: &crate::brep::topo::Brep, fi: usize, n: V, o: V, back: &dyn Fn(V) -> V, mm: f64) -> Option<Profile> {
+fn section_of(body: &super::faces::BodyFaces, fi: usize, n: V, o: V) -> Option<Profile> {
+    let (b, mm, _) = body.brep();
+    let back = |q: V| body.back(q);
     let mut loops = Vec::new();
     for l in &b.faces[fi].loops {
         let mut out = Vec::new();
@@ -336,7 +310,7 @@ fn band(body: &super::faces::BodyFaces, fi: usize, frame: Frame, r: f64, mm: f64
     // out of a shaft, or into a bore: whichever way the face's material is
     let at = on?;
     let radial = { let l = frame.local(at); add(scale(frame.x, l[0]), scale(frame.y, l[1])) };
-    let out = dot(body.outward(fi, at), radial) > 0.0;
+    let out = dot(body.normal(fi, body.back(at)), radial) > 0.0;
     let r = r / mm;
     let (inner, outer) = if out { (r, r + d) } else { (r - d, r) };
     if !(inner > 0.0) {

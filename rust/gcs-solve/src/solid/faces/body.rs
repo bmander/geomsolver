@@ -36,6 +36,9 @@ pub struct BodyFaces {
     bounding: Vec<Vec<usize>>,
     /// A box holding every face (millimetres, about `origin`): its low corner and its high.
     reach: (V, V),
+    /// Each face's shell, and how many: the faces reached from it across their edges numbered
+    /// alike, from 0 in the order the faces come — a body in several pieces is several shells.
+    shells: (Vec<usize>, usize),
 }
 
 impl BodyFaces {
@@ -106,7 +109,14 @@ impl BodyFaces {
                 reach.1[k] = reach.1[k].max(hi[k]);
             }
         }
-        let mut faces = BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding, reach };
+        let mut joined = crate::graph::UnionFind::new(edges.len());
+        for by in &bounding {
+            for w in by.windows(2) {
+                joined.union(w[0], w[1]);
+            }
+        }
+        let shells = joined.labels();
+        let mut faces = BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding, reach, shells };
         faces.convex = (0..faces.loc.b.edges.len()).map(|e| faces.edge_convex(e as u32)).collect();
         faces
     }
@@ -316,7 +326,7 @@ impl BodyFaces {
     }
 
     /// Face `fi`'s outward unit normal at `q` (millimetres), pointing away from the material.
-    pub fn outward(&self, fi: usize, q: V) -> V {
+    fn outward(&self, fi: usize, q: V) -> V {
         let f = &self.loc.b.faces[fi];
         let g = f.surface.gradient(q);
         if f.reversed { scale(g, -1.0) } else { g }
@@ -387,31 +397,8 @@ impl BodyFaces {
     /// The edges bounding face `fi`, once each.
     pub fn edges_of(&self, fi: usize) -> &[u32] { &self.edges[fi] }
 
-    /// Each face's shell: the faces reached from it across their edges numbered alike, from 0 in
-    /// the order the faces come — a body in several pieces is several shells.
-    pub fn shells(&self) -> Vec<usize> {
-        let mut shell = vec![usize::MAX; self.edges.len()];
-        let mut next = 0;
-        for start in 0..self.edges.len() {
-            if shell[start] != usize::MAX {
-                continue;
-            }
-            let mut stack = vec![start];
-            shell[start] = next;
-            while let Some(fi) = stack.pop() {
-                for &e in &self.edges[fi] {
-                    for &g in self.faces_of(e) {
-                        if shell[g] == usize::MAX {
-                            shell[g] = next;
-                            stack.push(g);
-                        }
-                    }
-                }
-            }
-            next += 1;
-        }
-        shell
-    }
+    /// Each face's shell, and how many there are (`shells`).
+    pub fn shells(&self) -> (&[usize], usize) { (&self.shells.0, self.shells.1) }
 
     /// Edge `e`'s vertices, first to last.
     pub fn ends(&self, e: u32) -> [u32; 2] { self.loc.b.edges[e as usize].v }
@@ -731,9 +718,13 @@ impl Reading {
     /// Within such faces the material is within every surface's side, and a point within them at
     /// least `d` off them is at least `d` off each surface, so either condition holds surface by
     /// surface — where the nearest piece's surface would turn from one to the other across the
-    /// crease, and a projection onto it with it. `None` where the faces are one surface's, or
-    /// meet otherwise.
+    /// crease, and a projection onto it with it. `None` where the faces are one surface's, meet
+    /// otherwise, or lie on several shells (within pieces apart is within any one, never all).
     pub fn convex_pieces(&self) -> Option<Vec<usize>> {
+        let (shell, _) = self.body.shells();
+        if self.faces.first().is_some_and(|&f0| self.faces.iter().any(|&fi| shell[fi] != shell[f0])) {
+            return None;
+        }
         let b = &self.body.loc.b;
         // each face's surface, by the first face on it
         let mut pieces: Vec<usize> = Vec::new();

@@ -52,7 +52,7 @@ fn max(a: I,b: I) -> I {
     I::new(a.bounds()[0].max(b.bounds()[0]),a.bounds()[1].max(b.bounds()[1])).unwrap()
 }
 
-fn union_support(a: Option<V>,b: Option<V>) -> Option<V> {
+fn union_support<const N: usize>(a: Option<[I;N]>,b: Option<[I;N]>) -> Option<[I;N]> {
     let (a,b) = (a?,b?);
     Some(std::array::from_fn(|k| {
         let a = a[k].bounds(); let b = b[k].bounds();
@@ -60,24 +60,11 @@ fn union_support(a: Option<V>,b: Option<V>) -> Option<V> {
     }))
 }
 
-/// The least interval holding both.
-fn hull(a: I,b: I) -> Result<I,Error> {
-    let (a,b) = (a.bounds(),b.bounds());
-    I::new(a[0].min(b[0]),a[1].max(b[1]))
-}
-
-/// What two intervals share, or the first where they share nothing: an enclosure either way.
-fn common(a: I,b: I) -> Result<I,Error> {
-    let (x,y) = (a.bounds(),b.bounds());
-    let (lo,hi) = (x[0].max(y[0]),x[1].min(y[1]));
-    if lo > hi { Ok(a) } else { I::new(lo,hi) }
-}
-
-fn intersection_support(a: Option<V>,b: Option<V>) -> Option<V> {
+fn intersection_support<const N: usize>(a: Option<[I;N]>,b: Option<[I;N]>) -> Option<[I;N]> {
     match (a,b) {
         (Some(a),Some(b)) => {
             let mut result = a;
-            for k in 0..3 {
+            for k in 0..N {
                 let lo = a[k].bounds()[0].max(b[k].bounds()[0]);
                 let hi = a[k].bounds()[1].min(b[k].bounds()[1]);
                 // Disjoint supports imply empty material. Any existing finite
@@ -175,17 +162,11 @@ impl PlanarField {
                 let about = |c: I| { let [lo,hi] = c.bounds(); I::new(lo-r,hi+r) };
                 Some([about(center[0])?,about(center[1])?])
             }
-            Node::Union(a,b) => match (a.box_bound()?,b.box_bound()?) {
-                (Some(a),Some(b)) => Some([hull(a[0],b[0])?,hull(a[1],b[1])?]), _ => None,
-            },
-            Node::Intersection(a,b) => match (a.box_bound()?,b.box_bound()?) {
-                (Some(a),Some(b)) => Some([common(a[0],b[0])?,common(a[1],b[1])?]), (a,b) => a.or(b),
-            },
+            Node::Union(a,b) => union_support(a.box_bound()?,b.box_bound()?),
+            Node::Intersection(a,b) => intersection_support(a.box_bound()?,b.box_bound()?),
             Node::Difference(a,_) => a.box_bound()?,
-            Node::Profile(profile) => {
-                let [lo,hi] = profile.boxed();
-                Some([I::new(lo[0],hi[0])?,I::new(lo[1],hi[1])?])
-            }
+            // a loop's own box is its `hull`
+            Node::Profile(_) => None,
         })
     }
     /// Material is on the negative side of the supplied outward normal.
@@ -454,10 +435,10 @@ impl ExtrudedField {
         // |a u_k + b v_k| <= sqrt(a^2 + b^2) for orthonormal u, v.
         for k in 0..3 { result[k] = result[k].add(disk)?.add(self.range.mul(self.frame[2][k])?)?; }
         // and within the profile's own box carried by the frame, where every section is within
-        // the profile (no draft, or one leaning in): a profile drawn far from its plane's origin is
-        // in a box its own size, where the disk about the origin reaching it is twice that far across
-        let within = self.sections.is_none() && self.draft[0] >= 0.;
-        if let (true,Some([a,b])) = (within,self.profile.box_bound()?) {
+        // the profile (no draft past this, or one leaning in): a profile drawn far from its plane's
+        // origin is in a box its own size, where the disk about the origin reaching it is twice that
+        // far across
+        if let Some([a,b]) = self.sections.is_none().then(|| self.profile.box_bound()).transpose()?.flatten() {
             let mut boxed = self.origin;
             for k in 0..3 {
                 boxed[k] = boxed[k].add(a.mul(self.frame[0][k])?)?.add(b.mul(self.frame[1][k])?)?

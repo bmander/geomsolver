@@ -144,7 +144,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
             _ => {
                 let mut on: Vec<u32> = super::evaluation_operands(sk,i)?.into_iter().filter(|o| !walk.nowhere(o)).collect();
                 // a body grown is built on the body's own boundary
-                on.extend(super::grown::body_of(sk,i));
+                on.extend(walk.route(i).and_then(|r| r.built_on()));
                 on
             }
         };

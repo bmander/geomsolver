@@ -286,10 +286,12 @@ its field reads it as any distance from a set.  **Within a body in pieces** the 
 by shell (`SetDistance::Nearest`, `BodyFaces::shells`): within the faces of a body's several shells
 at once is within none — each face's surface's side taken in common (`Reading::convex_pieces`)
 held nowhere for two blocks apart — so each shell's conditions stand apart and the nearest is
-read (`conditions(…, shell)`).  `solid/grown.rs` builds the grown region exactly, a route of its
+read (`conditions(…, shell)`, each reading of a term's faces kept to the shell), and
+`convex_pieces` refuses faces on several shells.  `solid/grown.rs` builds the grown region exactly, a route of its
 own (`region::Route::Grown`, after the lowering table, before `bounded`): one term, the distance
 at most a stated number from a set whose one term is the inside of every face of a body none of
-whose terms reads its faces.  Outside `B` a point's nearest point is inside a face, an edge or a
+whose terms reads its faces (`faces::stratum_is_whole`); the recipe walk asks the route which node
+it is built on (`Route::built_on`).  Outside `B` a point's nearest point is inside a face, an edge or a
 corner, so where every edge is convex (`BodyFaces::convex`; a tangent one none) that partitions
 what `B` gains: each face's prism `d` out along its normal (a plane face's loops; a cylinder's
 band between two circles about its axis, its radius out of a shaft or into a bore, `band`), each

@@ -3,7 +3,10 @@
 //! lies within reach of each face, edge and corner glued to it, where every edge of the body is
 //! convex and every corner a prism's; shrunk, or a body with a concave edge, read by the field and
 //! refused by name.  Held to closed forms: Steiner's for a polytope, Pappus's for a band's rims.
+use gcs_core::brep::geom::Surface;
+use gcs_core::brep::props::volume;
 use gcs_core::program::Elaborated;
+use gcs_core::solid::Exact;
 use gcs_core::solid::region::{route, Route};
 use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
@@ -50,13 +53,12 @@ const TURNED: &str = "unit mm\nuse std\nin std.top {\n\
     construction slab := solid(plate, from: 0mm, to: 5mm)\n\
     drill := solid(hole, from: -1mm, to: 6mm)\ndrill cut slab\n";
 
-/// `name`'s route, and its exact volume.
-fn exact(e: &Elaborated, name: &str) -> f64 {
+/// `name` built as a body grown, exactly.
+fn exact(e: &Elaborated, name: &str) -> std::rc::Rc<Exact> {
     let s = ent(e, name).i();
     let r = route(&e.sketch, s).unwrap_or_else(|m| panic!("`{name}`: {m}"));
     assert!(matches!(r, Route::Grown(Ok(_))), "`{name}` is not built as a body grown");
-    let x = e.sketch.exact_solid(s).unwrap_or_else(|m| panic!("`{name}`: {m}"));
-    gcs_core::brep::props::volume(&x.brep)
+    e.sketch.exact_solid(s).unwrap_or_else(|m| panic!("`{name}`: {m}"))
 }
 
 /// Steiner's for a box `a × b × c` grown by `r`.
@@ -69,12 +71,10 @@ fn steiner(a: f64, b: f64, c: f64, r: f64) -> f64 {
 #[test]
 fn a_block_grown_is_built_exactly() {
     let e = solved(&format!("{BLOCKS}g := std.Grown(block, d: 2mm)\n"));
-    let got = exact(&e, "g.body");
-    let want = steiner(40.0, 24.0, 12.0, 2.0);
+    let x = exact(&e, "g.body");
+    let (got, want) = (volume(&x.brep), steiner(40.0, 24.0, 12.0, 2.0));
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
-    let x = e.sketch.exact_solid(ent(&e, "g.body").i()).unwrap();
-    let count = |k: fn(&gcs_core::brep::geom::Surface) -> bool| x.brep.faces.iter().filter(|f| k(&f.surface)).count();
-    use gcs_core::brep::geom::Surface;
+    let count = |k: fn(&Surface) -> bool| x.brep.faces.iter().filter(|f| k(&f.surface)).count();
     assert_eq!(count(|s| matches!(s, Surface::Plane(_))), 6);
     assert_eq!(count(|s| matches!(s, Surface::Cylinder(..))), 12);
     assert_eq!(count(|s| matches!(s, Surface::Sphere(..))), 8);
@@ -102,7 +102,7 @@ fn curved_and_slanted_faces_grown_are_built_exactly() {
     let slab = steiner(w, w, t, d) - PI * b * b * t - 2.0 * PI * b * b * d + PI * (b * b - (b - d) * (b - d)) * t
         + 2.0 * quarter * 2.0 * PI * (b - 4.0 * d / (3.0 * PI));
     for (name, want) in [("gp.body", post), ("gb.body", bar), ("gs.body", slab)] {
-        let got = exact(&e, name);
+        let got = volume(&exact(&e, name).brep);
         assert!((got - want).abs() <= 1e-9 * want, "{name}: {got} against {want}");
     }
 }
@@ -113,7 +113,7 @@ fn curved_and_slanted_faces_grown_are_built_exactly() {
 fn a_body_in_pieces_is_grown_piece_by_piece() {
     let e = solved(&format!("{BLOCKS}g := std.Grown(pair, d: 2mm)\n"));
     let want = 2.0 * steiner(40.0, 24.0, 12.0, 2.0);
-    let got = exact(&e, "g.body");
+    let got = volume(&exact(&e, "g.body").brep);
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
     let field = MaterialField::read(&e.sketch, ent(&e, "g.body").i(), 1e-10).unwrap();
     // under each block's south face, within and beyond the reach
@@ -129,11 +129,10 @@ fn a_body_in_pieces_is_grown_piece_by_piece() {
 fn what_is_not_built_is_said() {
     let e = solved(&format!("{BLOCKS}gl := std.Grown(step, d: 1mm)\nz := std.Grown(block, d: 0mm)\n"));
     let r = route(&e.sketch, ent(&e, "gl.body").i()).unwrap();
-    assert!(r.field_only());
     let Route::Grown(Err(why)) = r else { panic!("`gl.body` is built") };
     assert!(why.contains("a concave edge"), "{why}");
     let z = e.sketch.exact_solid(ent(&e, "z.body").i()).unwrap();
-    let (got, want) = (gcs_core::brep::props::volume(&z.brep), 40.0 * 24.0 * 12.0);
+    let (got, want) = (volume(&z.brep), 40.0 * 24.0 * 12.0);
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");
     let e = solved(&format!("{TURNED}sp := std.Grown(post, d: -1mm)\n"));
     assert!(route(&e.sketch, ent(&e, "sp.body").i()).unwrap().field_only());
