@@ -5,18 +5,13 @@
 // (`use std.sets`, `std.sets.Sphere(c, r: 12mm)`), or imported bare where the `use` lists it
 // (`use std.place (horizontal, vertical)`):
 //
-//   std.place     where points, lines and planes stand: `horizontal`, `vertical`, `offset`,
-//                 `right_of`, `coords`, `on_u`, `skew`, `turned`, `square`, `seats`, `raised`
-//   std.shapes    figures drawn in a plane: `CenteredRectangle`, `Ellipse`, `Polygon`, `Hex`,
-//                 and a rope that `hangs`
-//   std.sets      surfaces as sets of points: `Sphere`, `Cylinder`, `Cone`, `ConeThrough`,
-//                 `HalfSpace`, `Offset`, and a circle `on_sphere`
-//   std.rounds    rounds and chamfers: `round`, `chamfer`, `Rounded`, `Chamfered`, `Grown`
-//   std.panels    developable panels: `Developable`, `Development`
-//   std.stations  where a section stands along a sweep or a loft: `On`, `OnLine`, `Helix`,
-//                 `Along`, `Ruled`, `Twisted`, `scaled`, …
-//   std.motion    a frame's joint and its twist: `turns`, `screws`, `spins`, `slides`, `rolls`,
-//                 `reciprocal`, `Screw`
+//   std.place     where points, lines and planes stand from one another
+//   std.shapes    figures drawn in a plane
+//   std.sets      surfaces as sets of points
+//   std.rounds    rounds and chamfers, and a solid grown
+//   std.panels    developable panels
+//   std.stations  where a section stands along a sweep or a loft
+//   std.motion    a frame's joint and its twist
 //
 // Each comes from the library compiled into the core, so it is there in the browser as in the
 // terminal; a `std.sv`, or a `std/sets.sv`, beside a document would win over it, as any module

@@ -9,12 +9,12 @@
 // panel's rulings by the correspondence along its rails, its band as a solid, and its development
 // laid in a plane.
 //
-//   panel := std.panels.Developable(chine, sheer)                    // a set: what the panel is
-//   skin := { q | q distance(<= 6mm, side: outside) panel }   // the sheet, 6 thick
+//   panel := std.panels.Developable(chine, sheer)              // a set: what the panel is
+//   skin := { q | q distance(<= 6mm, side: outside) panel }    // the sheet, 6 thick
 //   side_panel := solid(skin)
-//   flat := std.panels.Development(panel, s, d: 3mm) in sheet        // its neutral layer laid flat
-//   flat.f coincident corner                                  // a figure with three freedoms,
-//   line(flat.f, flat.g) parallel edge                        // placed by relations
+//   flat := std.panels.Development(panel, s, d: 3mm) in sheet  // its neutral layer laid flat
+//   flat.f coincident corner                                   // a figure with three freedoms,
+//   line(flat.f, flat.g) parallel edge                         // placed by relations
 
 // A developable panel between the paths `a` and `b`: the points on the ruling between a point
 // `m` of `a` and a point `n` of `b` where one plane `T` touches both — `b` running through it the

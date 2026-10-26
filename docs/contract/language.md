@@ -738,15 +738,15 @@ components.dims.zB)`.
   and **the rest of it is modules under `std`** ([0.195]), `rust/lib/std/*.sv`, each linked by its
   own `use` and nothing more: `std.place` (the placement words), `std.shapes`, `std.sets`,
   `std.rounds`, `std.panels`, `std.stations` and `std.motion`.  No name is defined in two of
-  them, and `library::std_home` says which defines one — read only to word a refusal: `std.Sphere`
-  (`resolve_named`), `use std (horizontal)` (`program/words.rs`, E101) and a word no used module
-  defines (`no_word`, E102) each name the module under `std` that has it.  `program::reparse`
-  relinks from the texts in hand (`modules::relink`), so an edit never asks the host; a module
-  the program had not linked — a `use` the edit wrote, the Fillet tool's `use std.rounds (round)`
-  — comes from `library::resolve`, and what its body refuses is said at that `use`, which is the
-  edit's own (`tests/edit_rounds.rs`).  E070 no
-  module, E071 defined twice in one file.  `tests/modules.rs` is the gate
-  (`the_standard_library_is_modules_under_std`).
+  them, and `library::home(under, name)` says which module under a path defines a name, by what a
+  `use` may import (`program::defines`), over the library linked once and kept — read only to
+  word a refusal: `std.Sphere` (`resolve_named`), `use std (horizontal)` (`program/words.rs`,
+  E101) and a word no used module defines (`no_word`, E102) each name the module that has it.
+  `program::reparse` relinks from the texts in hand (`modules::relink`), so an edit never asks the
+  host; a module the program had not linked — a `use` the edit wrote, the Fillet tool's `use
+  std.rounds (round)` — comes from `library::resolve`, and what its body refuses is said at that
+  `use`, which is the edit's own (`tests/edit_rounds.rs`).  E070 no module, E071 defined twice in
+  one file.  `tests/modules.rs` is the gate (`the_standard_library_is_modules_under_std`).
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted
   name (`five.s[0].p1`).  The **computed point** is `p := point(x: xexpr, y: yexpr)`
   (`Decl::computed`), refused on the sheet by the flattener and compiled to two tapes when traced.

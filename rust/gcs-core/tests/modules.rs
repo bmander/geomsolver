@@ -405,7 +405,7 @@ fn the_standard_library_is_modules_under_std() {
             .filter_map(|c| c.name.as_ref().map(|n| n.text.clone()));
         let words = prog.words.iter().filter(|d| d.module == Some(k)).map(|d| d.word.text.clone());
         for n in comps.chain(words).collect::<std::collections::BTreeSet<_>>() {
-            assert_eq!(gcs_core::library::std_home(&n), Some(*m), "`{n}`");
+            assert_eq!(gcs_core::library::home("std", &n), Some(*m), "`{n}`");
             assert!(named.insert(n.clone(), m).is_none(), "`{n}` in {m} and {}", named[&n]);
         }
     }

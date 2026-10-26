@@ -56,17 +56,19 @@ pub fn parse_linked(src: &str) -> (crate::syntax::Program, Vec<crate::syntax::Sy
     (prog, errs, diags)
 }
 
-/// **Where under `std` a name is defined** — a component, an interface or a relation word of one
-/// of the standard library's modules (`Sphere` is `std.sets`'s, `horizontal` `std.place`'s) — for
-/// a message that says which `use` reaches a name the file has not brought in.  Read only on that
-/// path, so the library's texts are parsed only when a name is missing.
-pub fn std_home(name: &str) -> Option<&'static str> {
-    MODULES.iter().filter(|(n, _)| n.starts_with("std.")).find_map(|&(n, text)| {
-        let (prog, _) = crate::syntax::parse(text);
-        let named = |t: &str| t == name;
-        (prog.components.iter().any(|c| c.name.as_ref().is_some_and(|c| named(&c.text)))
-            || prog.interfaces.iter().any(|f| named(&f.name.text))
-            || prog.words.iter().any(|d| named(&d.word.text)))
-        .then_some(n)
+/// **The module of the library under `under` that defines `name`** — a component, an interface,
+/// a relation word, a value or a group, what a `use` may import (`program::defines`) — for a
+/// message that says which `use` reaches a name the file has not brought in: `Sphere` under `std`
+/// is `std.sets`'s, `horizontal` `std.place`'s.  The library is linked once, the first time a
+/// document misses a name, and kept.
+pub fn home(under: &str, name: &str) -> Option<&'static str> {
+    static LIBRARY: std::sync::OnceLock<crate::syntax::Program> = std::sync::OnceLock::new();
+    let p = LIBRARY.get_or_init(|| {
+        let uses: String = MODULES.iter().map(|(n, _)| format!("use {n}\n")).collect();
+        parse_linked(&uses).0
+    });
+    let prefix = format!("{under}.");
+    MODULES.iter().map(|(n, _)| *n).filter(|n| n.starts_with(&prefix)).find(|n| {
+        p.module_named(n).is_some_and(|k| crate::program::defines(p, k, name).is_some())
     })
 }

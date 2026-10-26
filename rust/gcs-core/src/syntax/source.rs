@@ -305,11 +305,11 @@ impl Program {
                 return Err(Some(format!("no module `{path}` is used here: write `use {path}`")));
             }
             let m = self.module_named(path);
-            return find(m, base).ok_or_else(|| Some(match crate::library::std_home(base) {
+            return find(m, base).ok_or_else(|| Some(match crate::library::home(path, base) {
                 // `std.Sphere`, from before the library's names moved into its modules
-                Some(home) if path == "std" => format!("`{path}` defines no {noun} `{base}`: \
-                                                        it is `{home}.{base}`, under `use {home}`"),
-                _ => format!("`{path}` defines no {noun} `{base}`"),
+                Some(home) => format!("`{path}` defines no {noun} `{base}`: it is \
+                                       `{home}.{base}`, under `use {home}`"),
+                None => format!("`{path}` defines no {noun} `{base}`"),
             }));
         }
         if let Some(i) = find(from, name) {

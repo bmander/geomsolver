@@ -16,7 +16,7 @@ use crate::common::{ent, text::solved};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y; a second one
 /// 20 along x from it; an L of two steps whose inner edge is concave.
-const BLOCKS: &str = "unit mm\nuse std\nuse std.shapes\nuse std.rounds\nin std.front {\n\
+const BLOCKS: &str = "unit mm\nuse std\nuse std.rounds\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -57,7 +57,7 @@ const TURNED: &str = "unit mm\nuse std\nuse std.rounds\nuse std.shapes\nin std.t
 /// On the top plane, a slab 40 square and 10 thick three times over: a tray, a pocket 20 × 16 and
 /// 4 deep cut into its top; a plinth, a boss 10 square standing 5 on it; a base, a post of radius
 /// 5 standing 5 on it.
-const STANDING: &str = "unit mm\nuse std\nuse std.shapes\nuse std.rounds\nin std.top {\n\
+const STANDING: &str = "unit mm\nuse std\nuse std.rounds\nin std.top {\n\
     q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
     fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
     (qs := line(q0, q1)) -> (qe := line(q1, q2)) -> (qn := line(q2, q3)) -> (qw := line(q3, q0)) -> close\n\
@@ -223,7 +223,7 @@ fn what_is_not_built_is_said() {
 /// box carried by its frame), not within the disc about the origin reaching it.
 #[test]
 fn a_prism_far_from_its_planes_origin_has_its_own_box() {
-    let e = solved("unit mm\nuse std\nuse std.shapes\nuse std.rounds\nin std.front {\n\
+    let e = solved("unit mm\nuse std\nuse std.rounds\nin std.front {\n\
         b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
         fix((1000, 1000)) b0\nfix((1040, 1000)) b1\nfix((1040, 1024)) b2\nfix((1000, 1024)) b3\n\
         (s := line(b0, b1)) -> (e := line(b1, b2)) -> (n := line(b2, b3)) -> (w := line(b3, b0)) -> close\n\

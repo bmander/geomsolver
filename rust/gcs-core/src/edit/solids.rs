@@ -327,6 +327,11 @@ impl EdgeWord {
         }
     }
 
+    /// The library module that defines the word, which the document `use`s to write it bare.
+    fn module(self) -> &'static str {
+        "std.rounds"
+    }
+
     /// The word's one number, by its label: `round(r: 2mm)`, `chamfer(d: 1mm)`.
     fn key(self) -> &'static str {
         match self {
@@ -458,7 +463,7 @@ fn rounds_edit(
     // what the word's own body refuses is said at the `use` that brought `std.rounds` in: the
     // statements and the `use` — grown, or a line of its own — are both what this edit wrote,
     // where they landed
-    let import = imports(prog, word.as_str());
+    let import = imports(prog, word);
     let (text, landed) = splice_landing(prog.text(), vec![appending(prog, &stmts)?, import]);
     let regions: Vec<Span> = landed.into_iter()
         .map(|l| l.ok_or("the edit is no place in the source"))
@@ -480,12 +485,12 @@ pub fn round_size(sk: &Sketch, solid: usize) -> Option<f64> {
 /// `use std.rounds` the document writes, its list grown, one written (`use std.rounds` becomes
 /// `use std.rounds (round)`) or as it stands where it already does; else a line of its own where
 /// `add_use` would put one.
-fn imports(prog: &Program, word: &str) -> Splice {
-    const ROUNDS: &str = "std.rounds";
+fn imports(prog: &Program, word: EdgeWord) -> Splice {
+    let (module, word) = (word.module(), word.as_str());
     let text = prog.text();
-    let Some(u) = prog.uses.iter().find(|u| u.name == ROUNDS && (u.span.hi as usize) <= text.len())
+    let Some(u) = prog.uses.iter().find(|u| u.name == module && (u.span.hi as usize) <= text.len())
     else {
-        return use_line(prog, &format!("use {ROUNDS} ({word})"));
+        return use_line(prog, &format!("use {module} ({word})"));
     };
     let (lo, hi) = (u.span.lo as usize, u.span.hi as usize);
     let (at, with) = if u.names.iter().any(|n| n.text == word) {

@@ -1,6 +1,5 @@
 // `std.place`: where points, lines and planes stand from one another, as relation words over
-// the language's own dimensions — a file says `use std.place (horizontal, right_of)` to write
-// them.
+// the language's own dimensions.
 
 // Two points at one height, and one above the other, in the view they are drawn in: the
 // ordinate's zero along the view's up and along its right (§9.9).  A file says `use std.place

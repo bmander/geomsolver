@@ -573,10 +573,9 @@ impl<'a> Walk<'a> {
             .filter(|d| d.word.text == *word && d.fixity == w.fixity)
             .filter_map(|d| d.module.map(|k| self.prog.modules[k].name.as_str()))
             .collect();
-        // one the library's `std` defines, where nothing linked does: a word of `std`'s modules
-        let library = crate::library::std_home(word);
-        let found = defining.iter().find(|p| used.contains(p)).or(defining.first());
-        if let Some(path) = found.or(library.as_ref()) {
+        // where nothing linked defines it, a module under `std` that does
+        let found = defining.iter().find(|p| used.contains(p)).or(defining.first()).copied();
+        if let Some(path) = found.or_else(|| crate::library::home("std", word)) {
             return format!("`{path}` defines `{word}`: import it, `use {path} ({word})`");
         }
         let other = match w.fixity {
