@@ -312,6 +312,10 @@ impl<'a> Walk<'a> {
                 // construction makes (#238)
                 super::region::Route::Bounded(b) => b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(w)?,
                 super::region::Route::Field(why) => return Err(format!("`{}`: {why}",sk.solid_name(i))),
+                // a panel's band (#645): its ruled walls are not yet written exactly
+                super::region::Route::Sheet(_) => return Err(format!("`{}`: a developable panel's \
+                    band is faceted from its rulings; its exact ruled walls are not yet written to \
+                    STEP",sk.solid_name(i))),
                 // on one axis: its meridian turned once about it (§6.21)
                 super::region::Route::Meridian(m) => {
                     let name = |t: u32| m.name(t);

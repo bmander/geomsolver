@@ -111,6 +111,30 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A developable panel's band (#645) exports as STL whatever the kernel — its faceting, exact to
+/// its rulings — and its STEP is refused once, in the core's words, with no file written.
+#[test]
+fn a_developable_band_writes_its_stl_and_refuses_its_step() {
+    let dir = std::env::temp_dir().join(format!("solventc-band-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (stl, step) = (dir.join("transition.stl"), dir.join("transition.step"));
+    let source = doc("developable/offset_transition.sv");
+    let wrote = run(&[&source, "--solid", "transition", "--stl", stl.to_str().unwrap(),
+                      "--no-diagnose"]);
+    assert_eq!(wrote.status.code(), Some(0), "{}", String::from_utf8_lossy(&wrote.stderr));
+    let bytes = std::fs::read(&stl).unwrap();
+    assert!(bytes.len() > 84 && bytes.len() == 84 + 50 * u32::from_le_bytes(
+        bytes[80..84].try_into().unwrap()) as usize, "a binary STL");
+    let refused = run(&[&source, "--solid", "transition", "--step", step.to_str().unwrap(),
+                        "--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(refused.status.code(), Some(1), "{stderr}");
+    assert_eq!(stderr.matches("not yet written to STEP").count(), 1, "{stderr}");
+    assert!(!step.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// A refined mesh the field-agreement probe refuses is never written: the swept torus meshed
 /// so coarsely its facets leave the field, and the earlier output is left as it was.
 #[cfg(feature="occt")]

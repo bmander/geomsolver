@@ -84,6 +84,9 @@ struct P<'a> {
     in_preview: bool,
     /// How many of the braced bodies being read are `in` blocks (#383): one nests in another.
     in_in: u32,
+    /// The rates read in a relation's parentheses (#645), `angle(rate(m over u), l)`: handed to
+    /// the relation as its operands' are.
+    arg_rates: Vec<crate::syntax::RateOf>,
 }
 
 /// `relative_to:` where a reading is written, retired (#383) for the reading's own observer.
@@ -132,6 +135,7 @@ pub(crate) fn reference_at(text: &str, at: usize) -> Option<Ref> {
         in_comp: false,
         in_preview: false,
         in_in: 0,
+        arg_rates: Vec::new(),
     };
     let mut r = st.refr()?;
     if !st.done() || !st.errs.is_empty() {
@@ -221,6 +225,7 @@ fn parse_at(src: &str, base: usize, first_id: u32, limits: ParseLimits) -> (Prog
         in_comp: false,
         in_preview: false,
         in_in: 0,
+        arg_rates: Vec::new(),
     };
     let mut body: Vec<Stmt> = Vec::new();
     let mut comps: Vec<Component> = Vec::new();

@@ -102,6 +102,10 @@ pub enum CurveBody {
     /// drawing's moving part is lowered to (`followed::lower`), `None` until it is lowered or
     /// where it cannot be, which nothing is held to.
     Followed(Option<crate::locus::Locus>),
+    /// A rail of a developable panel laid flat (`flat.a`, #645): the panel built between its
+    /// rails and laid in the curve's plane from its home ruling, its ends the curve's arguments
+    /// (`developable.rs`).
+    Developed(super::Developed),
 }
 
 impl CurveBody {
@@ -277,6 +281,9 @@ impl Sketch {
             CurveBody::Extremal(_) => self
                 .curve_shape(i)
                 .and_then(|(lag, sh)| crate::extremal::shoot::position(&lag, &sh, u))
+                .map_or((f64::NAN, f64::NAN), |p| (p[0], p[1])),
+            CurveBody::Developed(_) => self.developed_consts(i)
+                .and_then(|k| crate::developable::point(&k, u, &x[1..]))
                 .map_or((f64::NAN, f64::NAN), |p| (p[0], p[1])),
         }
     }
@@ -542,6 +549,8 @@ impl Sketch {
         if !followed {
             key.extend(self.curve_pose(i).unwrap_or_default());
         }
+        // a laid rail is a function of its panel's rails besides (#645)
+        key.extend(self.developed_consts(i).unwrap_or_default());
         if let Some((k, poly)) = self.caches.polyline.borrow().get(&i) {
             if *k == key {
                 return poly.clone();
@@ -623,6 +632,13 @@ impl Sketch {
             CurveBody::Followed(_) => {
                 let at: Vec<f64> = (0..=n).map(|k| a + (b - a) * k as f64 / n as f64).collect();
                 self.followed_points(i, &at)
+            }
+            CurveBody::Developed(_) => {
+                let Some(k) = self.developed_consts(i) else { return Vec::new() };
+                let theta = &self.curve_vars(i, a)[1..];
+                (0..=n).filter_map(|j| {
+                    crate::developable::point(&k, a + (b - a) * j as f64 / n as f64, theta)
+                }).map(|p| (p[0], p[1])).collect()
             }
         }
     }

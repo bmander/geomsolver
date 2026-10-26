@@ -107,8 +107,13 @@ pub(super) fn elaborate_in(
     let skip = names(&mut cx, &body);
     let flat = Flat { expansion: &expansion, body, stating, skip };
     let deferred = geometry(&mut cx, &flat);
+    // a development's laid rails, curves over what the geometry built (#645)
+    super::developed::developments(&mut cx, &expansion.developed, &flat.body);
+    super::developed::panels(&mut cx, &expansion.panels);
     station_reads(&mut cx, &flat);
     let (drawn, kept_off) = memberships(&mut cx, &flat, &deferred)?;
+    // and each band's term at its probe (#645)
+    super::developed::sheets(&mut cx, &expansion.sheets);
     let held = holds(&mut cx, &flat, &deferred, crossed);
     let planar = motions(&mut cx, &flat);
     let settled = seeds(&mut cx, &deferred, &held);

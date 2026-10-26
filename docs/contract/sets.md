@@ -309,3 +309,14 @@ painted. A non-plane or no `at:`, E040; a labelled reference fills its slot
   extrusion is (`LiveExtent` kind `offset`, `workspace::offset_handle`/`offset_at`; previewed by
   the constraint's number and a solve, written once by `set_dimension`).  `tests/face_sets.rs`
   and `tests/edit_datums.rs` are the gates.
+
+**Sheets, their sides and the square band** (#645, [0.192], [developables.md](developables.md)).
+A set whose body says what `std.Developable`'s does is a sheet (`flatten::developable::sheet_body`),
+and a contact over an interval in a set's body makes no region of it: under a set's derivative
+the flattener keeps the incidence and emits no bound (`Walk::within`), and a sheet's body is read
+whole by the recogniser. At a region solid's probe `q distance(<= d, side: outside|inside) S` of a sheet is
+intercepted in `expand_reach` (`reach_sheet`): the side said, `<=`, `d` a stated length more than
+nothing, else E040; its term is `RegionShape::Sheet`, the band along the normal from a foot on the
+panel, so square at its edges. A sheet used as a set any other way — a distance off a probe, an
+equality — is E040 naming the band's spelling. Every set the document makes that is a sheet is
+recorded for the report (`Expansion::panels`, `Sketch::panels`).

@@ -365,6 +365,7 @@ impl<'a> Walk<'a> {
         if scope.stamps.anonymous {
             chain.name = crate::syntax::DeclName::Key(chain.name.key().clone());
         }
+        self.rails_seen.chains.insert(chain.name.key().text.clone(), (chain.clone(), scope.clone()));
         self.emit(StmtKind::Chain(chain), st, scope, path);
     }
 
@@ -381,6 +382,10 @@ impl<'a> Walk<'a> {
     ) {
         let abs = format!("{prefix}{}", d.name.key().text);
         self.names.insert(abs.clone());
+        // a path that comes round, which a panel's rail may name (#645)
+        if d.kind == crate::model::EntKind::Circle || d.close.is_some() {
+            self.rails_seen.closed.insert(abs.clone());
+        }
         // a frame, whose own standard datums an instance standing in it reads (#542)
         if d.bare {
             self.declare_frame(abs.clone(), None, path);
@@ -1030,7 +1035,12 @@ impl<'a> Walk<'a> {
             at_call.stamps.plane = None;
             self.body(&owned, &at_call, &mut sub_vals, path, depth + 1);
         }
-        self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1);
+        // a development (#645): laid by the core, its body read and not walked
+        match super::developable::development_body(comp) {
+            Some(dev) => self.walk_development(&dev, comp, inst, st, scope, &sc, &mut sub_vals,
+                                               &instance_path, depth + 1),
+            None => self.body(&comp.body, &sc, &mut sub_vals, &instance_path, depth + 1),
+        }
         if !own.is_empty() {
             self.body(&own, &sc, &mut sub_vals, &instance_path, depth + 1);
         }
@@ -1153,6 +1163,24 @@ impl<'a> Walk<'a> {
             return;
         }
         let Some(mut r2) = self.settle_relation(rel, vals, scope) else { return };
+        // a contact over an interval (#645): the incidence, and — no set's body, where it would
+        // make a region of what bounds where on the ruling — where on the line, a bound
+        if let Some(within) = self.within(&mut r2) {
+            if scope.twin().is_none() {
+                let mut fraction = r2.clone();
+                if let Some(w) = fraction.form.written_mut() {
+                    let (key, lo, hi) = within;
+                    let marker = Name { text: crate::syntax::WITHIN.into(), span: key.span };
+                    w.args = vec![crate::syntax::OpArg::Dim(lo.0, lo.1),
+                                  crate::syntax::OpArg::Bound { cmp: crate::syntax::Cmp::In,
+                                                                span: key.span, hi: Some(hi),
+                                                                grow: None },
+                                  crate::syntax::OpArg::Named(marker,
+                                                              crate::syntax::Arg::Word(key.text))];
+                }
+                self.emit(StmtKind::Relation(fraction), st, scope, path);
+            }
+        }
         if let Some(twin) = scope.twin() {
             // a claim, a gauge and a bound state no row, so they have no
             // derivative
@@ -1168,6 +1196,22 @@ impl<'a> Walk<'a> {
             r2.along = Some(twin.clone());
         }
         self.emit(StmtKind::Relation(r2), st, scope, path);
+    }
+
+    /// A contact over an interval's interval taken out of the relation (#645), leaving its
+    /// incidence: the slot, its low end and its high end — `None` where it states none, or
+    /// (said) one over a slot other than a contact's `t`.
+    fn within(&mut self, r2: &mut crate::syntax::Relation)
+        -> Option<(crate::syntax::Name, (String, Span), (String, Span))> {
+        let w = r2.form.written_mut()?;
+        let k = w.args.iter().position(|a| matches!(a, crate::syntax::OpArg::Within { .. }))?;
+        let crate::syntax::OpArg::Within { key, lo, hi } = w.args.remove(k) else { return None };
+        if key.text != "t" || w.word.text != "coincident" {
+            let m = format!("an interval is of a contact's place, `p coincident(t in (0, 1))                 line(m, n)`: `{}` is no contact's `t`", key.text);
+            self.err(Code::E040, key.span, m);
+            return None;
+        }
+        Some((key, lo, hi))
     }
 
     /// An energy: each integrand with the scope's numbers written in (#121).
@@ -1276,6 +1320,11 @@ impl<'a> Walk<'a> {
                     }
                     crate::syntax::OpArg::Bound { hi, grow, .. } => {
                         for (text, span) in hi.iter_mut().chain(grow.iter_mut()) {
+                            self.settle_dim(text, *span, vals, scope)
+                        }
+                    }
+                    crate::syntax::OpArg::Within { lo, hi, .. } => {
+                        for (text, span) in [lo, hi] {
                             self.settle_dim(text, *span, vals, scope)
                         }
                     }
