@@ -278,18 +278,18 @@ pub(super) fn rate_operand(
             rate(y over s)`, `rate(x over s) angle(rate(y over s), l) k`: any other two along the \
             running formal would leave a root to choose at every step".to_string()));
     }
+    // the formal's number is degrees, and a rate per degree is no rate a person states: which
+    // unit one along a turn is in is D3's to settle
+    if let (true, Some(rate)) = (angle, w.rates.first()) {
+        return Err((rate.over.span, format!("`{swept}` is an angle, and a rate along an angle is \
+            not yet read: run the body over a `Scalar` or a `Length`")));
+    }
     let mut refs = Vec::with_capacity(w.rates.len());
     for rate in &w.rates {
         if rate.over.text != swept {
             return Err((rate.over.span, format!("`rate(… over {})` is read along `{}`, and the \
                 curve runs over `{swept}`: a rate is along the formal a trace runs over",
                 rate.over.text, rate.over.text)));
-        }
-        // the formal's number is degrees, and a rate per degree is no rate a person states:
-        // which unit one along a turn is in is D3's to settle
-        if angle {
-            return Err((rate.over.span, format!("`{swept}` is an angle, and a rate along an angle \
-                is not yet read: run the body over a `Scalar` or a `Length`")));
         }
         let rf = rated_ref(w, rate.op)
             .ok_or((st.span, "a rate is of an operand of its relation".to_string()))?;
@@ -299,16 +299,16 @@ pub(super) fn rate_operand(
     Ok((r.clone(), refs, unary))
 }
 
-/// The operand a rate is of: one of the relation's (`op` below their count), or — a rate in the
-/// parentheses, `angle(rate(m over u), l)` (#645) — the line there, numbered on past them.
+/// The operand a rate is of: one of the relation's, or — a rate in the parentheses,
+/// `angle(rate(m over u), l)` (#645) — the line there (`Written::rated_at`).
 pub(super) fn rated_ref(w: &crate::syntax::Written, op: usize) -> Option<&crate::syntax::Ref> {
-    if op < w.ops.len() {
-        return w.ops.get(op);
+    match w.rated_at(op)? {
+        Ok(i) => w.ops.get(i),
+        Err(i) => match &w.args[i] {
+            crate::syntax::OpArg::Ent(r) => Some(r),
+            _ => None,
+        },
     }
-    w.args.iter().filter_map(|a| match a {
-        crate::syntax::OpArg::Ent(r) => Some(r),
-        _ => None,
-    }).nth(op.checked_sub(2)?)
 }
 
 /// A relation that reads a rate, rewritten over the scratch line `line` from an origin to the
@@ -324,13 +324,12 @@ pub(super) fn rate_rewritten(
         for (k, line, span) in lines {
             if unary {
                 w.ops = vec![at(format!("{line}.o"), *span), at(format!("{line}.t"), *span)];
-            } else if *k < w.ops.len() {
-                w.ops[*k] = at(line.clone(), *span);
-            } else if let Some(slot) = w.args.iter_mut().filter_map(|a| match a {
-                crate::syntax::OpArg::Ent(r) => Some(r),
-                _ => None,
-            }).nth(k - 2) {
-                *slot = at(line.clone(), *span);
+            } else {
+                match w.rated_at(*k) {
+                    Some(Ok(i)) => w.ops[i] = at(line.clone(), *span),
+                    Some(Err(i)) => w.args[i] = crate::syntax::OpArg::Ent(at(line.clone(), *span)),
+                    None => {}
+                }
             }
         }
         w.rates.clear();

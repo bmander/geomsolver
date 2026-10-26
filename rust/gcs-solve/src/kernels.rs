@@ -3424,9 +3424,8 @@ fn plane_supports_corner_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
 fn line_fraction_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     let (p, a, b) = (vec3(v, 0), vec3(v, 3), vec3(v, 6));
     let d = vsub(b, a);
-    let l2 = vdot(d, d);
-    let l2 = if l2.val() > MIN_LINE_LEN * MIN_LINE_LEN { l2 } else { T::cst(MIN_LINE_LEN * MIN_LINE_LEN) };
-    [vdot(vsub(p, a), d) / l2 - T::cst(k[0])]
+    let l = vlen(d, MIN_LINE_LEN);
+    [vdot(vsub(p, a), d) / (l * l) - T::cst(k[0])]
 }
 
 /// Columns of `line_fraction_free`: (P, A, B, a), K = (m, c): `line_fraction` against `m·a + c`.

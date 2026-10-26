@@ -262,7 +262,7 @@ impl<'a> P<'a> {
                         return None;
                     }
                     r.span = Span::new(lo, self.prev_hi());
-                    let op = 2 + out.iter().filter(|a| matches!(a, OpArg::Ent(_))).count()
+                    let op = crate::syntax::ARG_RATES + out.iter().filter(|a| matches!(a, OpArg::Ent(_))).count()
                         + texts.len();
                     self.arg_rates.push(crate::syntax::RateOf { op, over, slot: false });
                     out.push(OpArg::Ent(r));

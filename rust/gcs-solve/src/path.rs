@@ -17,14 +17,13 @@
 //! has two tangents, one each side: `jet_side` reads either, and `kinks` says where they are.  A
 //! path has no kink anywhere else: a plane that touches it there lies along its tangent, and at a
 //! kink it *supports* it, lying between the two (`developable`).
-use crate::interval::Interval as I;
 use crate::model::{CurveBody, EntKind, EntRef, Sketch};
 use crate::space::{add, cross, dot, norm, scale, sub};
 
 pub type V = [f64; 3];
 
 /// Two tangents closer than this, by the sine of the angle between them, are one: no kink.
-pub const KINK: f64 = 1e-9;
+const KINK: f64 = 1e-9;
 
 /// The side of a place a one-sided derivative is read from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -184,8 +183,9 @@ impl Path {
         Ok(Path::Chain { links: read, closed })
     }
 
-    /// The same path run the other way: a line's or an arc's (a chain's link entered by its end).
-    fn reversed(&self) -> Path {
+    /// The same path run the other way round: a line's or an arc's its own kind (a chain's link
+    /// entered by its end), any other turned.
+    pub fn reversed(&self) -> Path {
         match self {
             Path::Line { a, d } => Path::Line { a: add(*a, *d), d: scale(*d, -1.0) },
             Path::Arc { c, u, v, r, a0, sweep } => {
@@ -194,11 +194,6 @@ impl Path {
             Path::Reversed(p) => (**p).clone(),
             p => Path::Reversed(Box::new(p.clone())),
         }
-    }
-
-    /// The same path run the other way round.
-    pub fn backwards(&self) -> Path {
-        self.reversed()
     }
 
     /// The interval its parameter runs over.
@@ -381,24 +376,8 @@ impl Path {
     /// the seam of a closed path that comes round at one (at the start of its interval).
     pub fn kinks(&self) -> Vec<f64> {
         let (lo, hi) = self.domain();
-        let mut at: Vec<f64> = match self {
-            Path::Chain { links, .. } => (1..links.len()).map(|k| k as f64).collect(),
-            Path::Reversed(p) => {
-                let (lo, hi) = p.domain();
-                let mut k: Vec<f64> = p.kinks().into_iter().filter(|&q| q > lo && q < hi)
-                    .map(|q| lo + hi - q).collect();
-                k.reverse();
-                k
-            }
-            Path::Spline { ctrl, knots, .. } => {
-                // a repeated interior knot can break a cubic's tangent
-                let d = crate::curve::DEGREE;
-                let mut out: Vec<f64> = knots[d + 1..ctrl.len()].to_vec();
-                out.dedup();
-                out
-            }
-            _ => Vec::new(),
-        };
+        // where its pieces meet, a spline's knot a kink only where it repeats to break a tangent
+        let mut at = self.joins();
         if self.closed() {
             at.insert(0, lo);
         }
@@ -437,15 +416,12 @@ impl Path {
     /// each span of a spline), each cut in halves until two readings agree.
     pub fn length(&self, a: f64, b: f64) -> f64 {
         let (lo, hi) = (a.min(b), a.max(b));
+        if let Path::Reversed(p) = self {
+            let (plo, phi) = p.domain();
+            return p.length(plo + phi - hi, plo + phi - lo);
+        }
         let mut cuts = vec![lo];
-        let breaks: Vec<f64> = match self {
-            Path::Chain { links, .. } => (1..links.len()).map(|k| k as f64).collect(),
-            Path::Spline { ctrl, knots, .. } => knots[crate::curve::DEGREE + 1..ctrl.len()].to_vec(),
-            Path::Reversed(p) => return p.length(p.domain().0 + p.domain().1 - hi,
-                                                 p.domain().0 + p.domain().1 - lo),
-            _ => Vec::new(),
-        };
-        cuts.extend(breaks.into_iter().filter(|&u| u > lo && u < hi));
+        cuts.extend(self.joins().into_iter().filter(|&u| u > lo && u < hi));
         cuts.push(hi);
         cuts.dedup();
         let speed = |u: f64| self.jet(u, false).map_or(0.0, |j| norm(j[1]));
@@ -520,28 +496,6 @@ impl Path {
             _ => None,
         }
     }
-
-    /// The box its points lie in over `(a, b)`, read from `n` samples and grown by how far the
-    /// path can run between two (`|C′|` bounded, where it is): enclosed where it has a bound.
-    pub fn enclosure(&self, a: f64, b: f64, n: usize) -> Option<[I; 3]> {
-        let [d1, _] = self.derivative_bounds()?;
-        let w = (b - a).abs() / n.max(1) as f64;
-        let mut lo = [f64::INFINITY; 3];
-        let mut hi = [f64::NEG_INFINITY; 3];
-        for j in 0..=n {
-            let p = self.point(a + (b - a) * j as f64 / n.max(1) as f64);
-            for k in 0..3 {
-                lo[k] = lo[k].min(p[k]);
-                hi[k] = hi[k].max(p[k]);
-            }
-        }
-        let by = d1 * w / 2.0;
-        let mut out = [I::ZERO; 3];
-        for k in 0..3 {
-            out[k] = I::new(lo[k] - by, hi[k] + by).ok()?;
-        }
-        Some(out)
-    }
 }
 
 /// A round's point and derivatives at the fraction `u` of its sweep.
@@ -584,14 +538,26 @@ fn spline(sk: &Sketch, i: usize) -> Path {
 }
 
 /// Five-point Gauss–Legendre of `f` over `(a, b)`.
-fn gauss(f: &dyn Fn(f64) -> f64, a: f64, b: f64) -> f64 {
+pub(crate) fn gauss(f: &dyn Fn(f64) -> f64, a: f64, b: f64) -> f64 {
+    gauss_n(&|x| [f(x)], a, b)[0]
+}
+
+/// Five-point Gauss–Legendre of each of `f`'s `N` components over `(a, b)`, `f` read once a node.
+pub(crate) fn gauss_n<const N: usize>(f: &dyn Fn(f64) -> [f64; N], a: f64, b: f64) -> [f64; N] {
     const X: [f64; 5] = [0.0, 0.538_469_310_105_683_1, -0.538_469_310_105_683_1,
                          0.906_179_845_938_664, -0.906_179_845_938_664];
     const W: [f64; 5] = [0.568_888_888_888_888_9, 0.478_628_670_499_366_5,
                          0.478_628_670_499_366_5, 0.236_926_885_056_189_1,
                          0.236_926_885_056_189_1];
     let (m, h) = (0.5 * (a + b), 0.5 * (b - a));
-    h * X.iter().zip(W).map(|(&x, w)| w * f(m + h * x)).sum::<f64>()
+    let mut out = [0.0; N];
+    for (&x, w) in X.iter().zip(W) {
+        let v = f(m + h * x);
+        for k in 0..N {
+            out[k] += h * w * v[k];
+        }
+    }
+    out
 }
 
 /// `gauss` cut in halves until the halves agree with the whole to a part in 10¹⁴.

@@ -401,6 +401,7 @@ the word `holds` beside a `PointOnPlane` made by the same statement (`program::r
 `sense:` (`Written::assemble` says why: it is read between two paths in a sheet's body). `p
 coincident(t in (a, b)) l` is parsed as `OpArg::Within` and split by the flattener
 (`Walk::within`) into the incidence and a `coincident` carrying the low end and an `in:` bound,
-which `settle` reads as `LineFraction` (`sel("fraction")`): a bound, so a branch choice outside a
+marked with `syntax::WITHIN` (a selector no source can spell, so a bound written
+`coincident(in: (a, b))` is never read as one), which `settle` reads as `LineFraction`: a bound, so a branch choice outside a
 set's body and never a row; inside one the interval is dropped from the row and read by the
 recogniser. Both kinds are undrawn (`callout::undrawn!`); `LineFraction` has its free twin.

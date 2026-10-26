@@ -99,7 +99,7 @@ rows that say so. On the four smooth panels the two agree to 1e-7
 (`the_exact_development_agrees_with_the_bodys_rows`). **The isometry is the property**: each laid
 ruling as long as its ruling, each laid rail as long as its rail to a relative 1e-9 (`Path::length`
 cut at a spline's knots against the pattern's `∫ |f′|` cut where the march crosses them,
-`Developable::joins`), the pattern's area the panel's and an independent shoelace's
+`Developable::joins`; `Development::measures` reads both laid lengths and the area in one pass), the pattern's area the panel's and an independent shoelace's
 (`every_pattern_is_an_isometry_of_its_panel`). Closed forms: the frustum's sector and its layer
 `5d` out (`a_frustum_lays_flat_on_its_annular_sector`), the offset adapter's equal angles through
 its apex, the cut cylinder's cosine; the panel follows its rims (`a_panel_follows_its_rims`); two
@@ -107,9 +107,10 @@ builds agree to the bit (`a_panel_and_its_pattern_are_built_the_same_twice`).
 
 **The laid rails are curves of the drawing** (`CurveBody::Developed`, `kernels::DEVELOPED`). Each
 of `flat.a`, `flat.b` carries the rails encoded in its constants (`developable::consts`, `HEAD`),
-built once and remembered by content (`developed`, eight); its columns `[f.x, f.y, g.x, g.y]` place
+built once and remembered by content (`developed`, thirty-two); its columns `[f.x, f.y, g.x, g.y]` place
 the canonical laying rigidly, turned to the bearing from `f` to `g` and moved to `f`, over `t ∈ [0,
-1]` evenly in `σ`. Until the panel builds the curve is the point `f` or `g`. The intrinsic
+1]` evenly in `σ`; a contact reads only the orders it asks (`canonical`: `C″` and `C‴` each two
+more readings of the exact rate), and a frame is one placing. Until the panel builds the curve is the point `f` or `g`. The intrinsic
 `DevelopedLength` row holds `|g − f|` to the home ruling's length (the current `|g − f|` until the
 panel builds; `reads_pose`, re-read where the solve ends): the instance is a figure of three
 freedoms, placed by relations, and a relation reads `flat.a` as any curve of its plane

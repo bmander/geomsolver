@@ -413,58 +413,46 @@ impl<'a> Body<'a> {
                    damped: bool) -> Option<Solved> {
         let n = self.n_q;
         let n_alg = b.len();
-        let (mut rr, mut jr) = (Vec::new(), Vec::new());
+        let mut jr = Vec::new();
         let mut solved = None;
-        // the rows' residual at `q1`: the algebraic rows' first order, then the rate rows
-        let merit = |z0: &mut [f64], q1: &[f64], rr: &mut Vec<f64>| -> f64 {
+        // the rows' residual at `q1`, negated: the algebraic rows' first order, then the rate rows
+        let rows = |z0: &mut [f64], q1: &[f64]| -> Vec<f64> {
             z0[self.r0()..].copy_from_slice(q1);
-            residual(&self.rate, z0, rr);
-            let alg: f64 = (0..n_alg).map(|i| {
-                let v = b[i] + (0..n).map(|j| jq[i * n + j] * q1[j]).sum::<f64>();
-                v * v
-            }).sum();
-            alg + rr.iter().map(|x| x * x).sum::<f64>()
-        };
-        for _ in 0..if damped { 8 * RATE_NEWTON } else { RATE_NEWTON } {
-            z0[self.r0()..].copy_from_slice(&q1);
+            let mut rr = Vec::new();
             residual(&self.rate, z0, &mut rr);
+            (0..n_alg).map(|i| -(b[i] + (0..n).map(|j| jq[i * n + j] * q1[j]).sum::<f64>()))
+                .chain(rr.iter().map(|x| -x)).collect()
+        };
+        let merit = |g: &[f64]| g.iter().map(|x| x * x).sum::<f64>();
+        let mut g = rows(z0, &q1);
+        for _ in 0..if damped { 8 * RATE_NEWTON } else { RATE_NEWTON } {
             Self::jacobian(&self.rate, z0, self.r0(), n, &mut jr);
-            let mut g = Vec::with_capacity(n);
-            for i in 0..n_alg {
-                g.push(-(b[i] + (0..n).map(|j| jq[i * n + j] * q1[j]).sum::<f64>()));
-            }
-            g.extend(rr.iter().map(|x| -x));
-            let before = g.iter().map(|x| x * x).sum::<f64>();
+            let before = merit(&g);
             let mut m = jq.to_vec();
             m.extend_from_slice(&jr);
-            let m = factor(n_alg + rr.len(), n, m)?;
+            let m = factor(g.len(), n, m)?;
             m.solve(&mut g);
             let big = q1.iter().fold(1.0f64, |a, x| a.max(x.abs()));
+            // the step, halved where damped until the rows' residual falls; the residual at the
+            // rates taken is the next iteration's
             let mut lambda = 1.0;
-            if damped {
-                let mut trial = vec![0.0; n];
-                let mut scratch = Vec::new();
-                for _ in 0..30 {
-                    for k in 0..n {
-                        trial[k] = q1[k] + lambda * g[k];
-                    }
-                    if merit(z0, &trial, &mut scratch) < before {
-                        break;
-                    }
-                    lambda *= 0.5;
-                }
+            let mut trial: Vec<f64> = q1.iter().zip(&g[..n]).map(|(x, d)| x + d).collect();
+            let mut next = rows(z0, &trial);
+            while damped && merit(&next) >= before && lambda > 1e-9 {
+                lambda *= 0.5;
+                trial = q1.iter().zip(&g[..n]).map(|(x, d)| x + lambda * d).collect();
+                next = rows(z0, &trial);
             }
             let step = lambda * g[..n].iter().fold(0.0f64, |a, x| a.max(x.abs()));
-            for (x, d) in q1.iter_mut().zip(&g[..n]) {
-                *x += lambda * d;
-            }
+            q1 = trial;
+            let left = std::mem::replace(&mut g, next);
             if !step.is_finite() {
                 return None;
             }
             if step <= 1e-14 * big {
                 // more rows than rates: what the least squares leaves over is how far they
                 // disagree, which rows that hold leave at rounding
-                let off = g[n..].iter().fold(0.0f64, |a, x| a.max(x.abs()));
+                let off = left[n..].iter().fold(0.0f64, |a, x| a.max(x.abs()));
                 if strict && off > 1e-8 * big {
                     return None;
                 }

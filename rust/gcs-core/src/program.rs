@@ -100,7 +100,8 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
         if dev.which != 0 { continue; }
         let refusal = match dev.consts(sk) {
             Err(m) => Some(m),
-            Ok(_) => sk.development_of(i).and_then(|d| d.as_ref().as_ref().err().map(|r| r.to_string())),
+            Ok(k) => crate::developable::developed(&k)
+                .and_then(|d| d.as_ref().as_ref().err().map(|r| r.to_string())),
         };
         if let Some(why) = refusal {
             diags.push(refuse(EntRef::new(crate::model::EntKind::Curve, i),

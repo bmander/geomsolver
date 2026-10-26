@@ -859,16 +859,16 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
         let Some(built) = sk.development_of(i) else { continue };
         let Ok(dev) = built.as_ref() else { continue };
         // the canonical laying turned to the bearing from `f` to `g` and moved to `f`
-        let place = |e: EntRef| { let q = sk.entity_params(e); [sk.params[q[0] as usize].value,
-                                                                sk.params[q[1] as usize].value] };
+        let place = |e: &EntRef| { let (x, y) = sk.point_xy(e.i()); [x, y] };
         let (f, g) = match sk.curves[i].args.as_slice() {
-            [f, g] => (place(*f), place(*g)),
+            [f, g] => (place(f), place(g)),
             _ => continue,
         };
         let (s, c) = (g[1] - f[1]).atan2(g[0] - f[0]).sin_cos();
         let pts: Vec<[f64; 2]> = dev.outline(64).into_iter()
             .map(|p| [f[0] + c * p[0] - s * p[1], f[1] + s * p[0] + c * p[1]]).collect();
-        let (lengths, area) = ([dev.length(0), dev.length(1)], dev.area());
+        let [la, lb, area] = dev.measures();
+        let lengths = [la, lb];
         for n in flats {
             out.insert(format!("{n}.a.length"), lengths[0]);
             out.insert(format!("{n}.b.length"), lengths[1]);

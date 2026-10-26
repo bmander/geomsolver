@@ -21,7 +21,7 @@ impl Rail {
             (false, [g]) => crate::path::Path::read(sk, *g)?,
             (_, links) => crate::path::Path::chain(sk, links, self.closed)?,
         };
-        Ok(if self.reversed { p.backwards() } else { p })
+        Ok(if self.reversed { p.reversed() } else { p })
     }
 
     /// The same rail over the entities `map` renumbers its links to, or `None` where one went.
@@ -39,20 +39,20 @@ pub struct Panel {
 }
 
 impl Panel {
-    /// The panel built as the drawing stands, from its home: the middle of `a`, or where a band's
-    /// `a` starts (`developable::Developable::build`).
+    /// The panel built as the drawing stands (`built`).
     pub fn built(&self, sk: &Sketch) -> Result<crate::developable::Developable, String> {
-        let (a, b) = (self.rails[0].path(sk)?, self.rails[1].path(sk)?);
-        let home = middle(&a);
-        crate::developable::Developable::build(a, b, home).map_err(|r| r.to_string())
+        built(sk, &self.rails)
     }
 }
 
-/// Where a panel with no seam of its own is built from: the middle of an open `a`, or where a
-/// closed one starts.
-pub fn middle(a: &crate::path::Path) -> [f64; 3] {
+/// The panel between `rails` built as the drawing stands, from a home of its own — the middle of
+/// an open `a`, or where a closed one starts — as a panel with no seam stated is: a band's, a
+/// panel the report reads.
+pub fn built(sk: &Sketch, rails: &[Rail; 2]) -> Result<crate::developable::Developable, String> {
+    let (a, b) = (rails[0].path(sk)?, rails[1].path(sk)?);
     let (lo, hi) = a.domain();
-    a.point(lo + 0.5 * (hi - lo) * f64::from(!a.closed()))
+    let home = a.point(lo + 0.5 * (hi - lo) * f64::from(!a.closed()));
+    crate::developable::Developable::build(a, b, home).map_err(|r| r.to_string())
 }
 
 /// **A panel's rail laid flat** (`flat.a`, `flat.b`): the image of rail `which` (0 `a`, 1 `b`) of

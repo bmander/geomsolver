@@ -340,27 +340,25 @@ impl Walk<'_> {
         for p in std::mem::take(&mut self.developing) {
             let at = p.st.span;
             let found = self.look(&alias).raw(&p.set, &p.caller)
-                .filter(|(_, rest)| rest.is_empty())
-                .and_then(|(abs, _)| self.sets.made.get(&abs).cloned().map(|s| (abs, s)));
-            let Some((abs, site)) = found else {
+                .filter(|(abs, rest)| rest.is_empty() && self.sets.made.contains_key(abs))
+                .map(|(abs, _)| abs);
+            let Some(abs) = found else {
                 let m = format!("`{}` is not a set: a development lays a panel a plane touches \
                     along each ruling (`std.Developable`)", crate::syntax::ref_text(&p.set));
                 self.once(Code::E040, at, m);
                 continue;
             };
-            let Some(rails) = self.sheet_rails(&site, &alias) else {
+            let Some(rails) = self.sheet_rails(&self.sets.made[&abs], &alias) else {
                 let m = format!("`{}` is no panel a plane touches along each ruling, so nothing \
                     lays it flat: a development lays `std.Developable`'s set, or a set whose body \
                     says what that one's does", crate::program::public_path(&abs));
                 self.once(Code::E040, at, m);
                 continue;
             };
-            let Some((home, rest)) = self.look(&alias).find(&p.home, &p.caller) else { continue };
-            let home = std::iter::once(home).chain(rest).collect::<Vec<_>>().join(".");
+            let Some(home) = self.stands_for(&p.home, &p.caller, &alias) else { continue };
             if rails[0].closed && rails[1].closed {
                 // a band cut at its seam: the home ruling, and where the march comes round to it
-                let at_name = p.st.span;
-                let name = |n: &str| crate::syntax::DeclName::Written(Name { text: n.to_string(), span: at_name });
+                let name = |n: &str| crate::syntax::DeclName::Written(Name { text: n.to_string(), span: at });
                 let kinds = [("seam", "a0", "b0"), ("seam_end", "a1", "b1")].map(|(n, a, b)| {
                     StmtKind::Decl(crate::syntax::Decl::line(name(n), Ref::new(a), Ref::new(b),
                                                              Default::default()))
@@ -374,13 +372,10 @@ impl Walk<'_> {
             self.developed.push(DevelopedInfo { prefix: p.prefix, rails, home, d: p.d, span: at });
         }
         // every set the document makes that is a panel, for the report
-        let made: Vec<(String, super::sets::Site)> = self.sets.made.iter()
-            .map(|(n, s)| (n.clone(), s.clone())).collect();
-        for (name, site) in made {
-            if let Some(rails) = self.sheet_rails(&site, &alias) {
-                self.panels.push((name, rails));
-            }
-        }
+        let panels: Vec<(String, [RailInfo; 2])> = self.sets.made.iter()
+            .filter_map(|(n, site)| Some((n.clone(), self.sheet_rails(site, &alias)?)))
+            .collect();
+        self.panels.extend(panels);
     }
 
     /// A recognised sheet's rails, resolved from where its body is read, or `None` for any other
@@ -389,15 +384,12 @@ impl Walk<'_> {
         -> Option<[RailInfo; 2]> {
         let body = sheet_body(site.lit())?;
         let rail = |r: &Ref, reversed: bool| -> Option<RailInfo> {
-            let (abs, rest) = self.look(alias).find(r, site.scope())?;
-            let abs = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
+            let abs = self.stands_for(r, site.scope(), alias)?;
             // a named chain: its links by absolute name, in order
             let chain = self.rails_seen.chains.get(&abs).cloned();
             if let Some((c, sc)) = chain {
-                let links = c.links.iter().map(|l| {
-                    let (t, rest) = self.look(alias).find(l, &sc)?;
-                    Some(std::iter::once(t).chain(rest).collect::<Vec<_>>().join("."))
-                }).collect::<Option<Vec<_>>>()?;
+                let links = c.links.iter().map(|l| self.stands_for(l, &sc, alias))
+                    .collect::<Option<Vec<_>>>()?;
                 return Some(RailInfo { links, chain: true, closed: c.closed, reversed });
             }
             // one path: closed where it is a circle, or a spline written closed

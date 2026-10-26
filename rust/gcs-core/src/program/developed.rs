@@ -19,14 +19,19 @@ fn rail(cx: &Elab<'_>, r: &RailInfo) -> Result<Rail, String> {
     Ok(Rail { links, chain: r.chain, closed: r.closed, reversed: r.reversed })
 }
 
+/// A panel's two rails, or why one names no path.
+fn rails(cx: &Elab<'_>, r: &[RailInfo; 2]) -> Result<[Rail; 2], String> {
+    Ok([rail(cx, &r[0])?, rail(cx, &r[1])?])
+}
+
 /// **Each band's term at its probe** (#645): the panel's rails and the band's side and thickness,
 /// once the probes are known — its region solid takes it as it takes every term of its probe.
 pub(super) fn sheets(cx: &mut Elab<'_>, sheets: &[SheetInfo]) {
     for s in sheets {
         let Some(p) = cx.res.of.get(&s.probe).copied() else { continue };
-        let rails = match (rail(cx, &s.rails[0]), rail(cx, &s.rails[1])) {
-            (Ok(a), Ok(b)) => [a, b],
-            (Err(m), _) | (_, Err(m)) => {
+        let rails = match rails(cx, &s.rails) {
+            Ok(r) => r,
+            Err(m) => {
                 cx.diags.push(Diag::new(Code::E040, s.span, None, m));
                 continue;
             }
@@ -46,10 +51,9 @@ pub(super) fn sheets(cx: &mut Elab<'_>, sheets: &[SheetInfo]) {
 /// **Each panel the document names** (#645), by its name and its rails, for the report: a rail
 /// that names no path is said where the panel is used, so it is passed by here.
 pub(super) fn panels(cx: &mut Elab<'_>, panels: &[(String, [RailInfo; 2])]) {
-    for (name, rails) in panels {
-        if let (Ok(a), Ok(b)) = (rail(cx, &rails[0]), rail(cx, &rails[1])) {
-            cx.sk.panels.push(crate::model::Panel { name: crate::program::public_path(name),
-                                                    rails: [a, b] });
+    for (name, info) in panels {
+        if let Ok(rails) = rails(cx, info) {
+            cx.sk.panels.push(crate::model::Panel { name: crate::program::public_path(name), rails });
         }
     }
 }
@@ -71,9 +75,19 @@ pub(super) fn developments(cx: &mut Elab<'_>, developed: &[DevelopedInfo],
             at(cx, format!("`{}` is no point to lay a panel from", crate::program::public_path(&dv.home)));
             continue;
         };
-        let rails = match (rail(cx, &dv.rails[0]), rail(cx, &dv.rails[1])) {
-            (Ok(a), Ok(b)) => [a, b],
-            (Err(m), _) | (_, Err(m)) => {
+        let rails = match rails(cx, &dv.rails) {
+            Ok(r) => r,
+            Err(m) => {
+                at(cx, m);
+                continue;
+            }
+        };
+        // the constants' width, the same for either rail's image
+        let probe = crate::model::Developed { rails: rails.clone(), s: s.idx, d: dv.d, which: 0,
+                                              n_const: 0 };
+        let n_const = match probe.consts(&cx.sk) {
+            Ok(k) => k.len(),
+            Err(m) => {
                 at(cx, m);
                 continue;
             }
@@ -81,15 +95,7 @@ pub(super) fn developments(cx: &mut Elab<'_>, developed: &[DevelopedInfo],
         // the statement the instance was written as: what the curves are recorded against
         let st = stmts.iter().find(|st| st.span == dv.span).copied();
         for (which, name) in ["a", "b"].into_iter().enumerate() {
-            let mut dev = crate::model::Developed { rails: rails.clone(), s: s.idx, d: dv.d,
-                                                    which: which as u8, n_const: 0 };
-            dev.n_const = match dev.consts(&cx.sk) {
-                Ok(k) => k.len(),
-                Err(m) => {
-                    at(cx, m);
-                    break;
-                }
-            };
+            let dev = crate::model::Developed { which: which as u8, n_const, ..probe.clone() };
             let key = format!("{}{name}", dv.prefix);
             cx.sk.curve_defs.push(crate::model::developed_def(format!("developed:{key}"), dev));
             cx.sk.curves.push(crate::model::CurveE {

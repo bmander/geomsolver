@@ -62,15 +62,13 @@ fn built(sk: &Sketch, si: usize, unit: f64) -> Result<Band, String> {
     let SolidDef::Region { terms, .. } = &s.def else { return Err("no region".into()) };
     let t = sheet_term(terms).ok_or("no band")?;
     let RegionShape::Sheet { rails, side } = &t.shape else { return Err("no band".into()) };
-    let (a, b) = (rails[0].path(sk)?, rails[1].path(sk)?);
     let d = t.lo.value(sk)?;
     if !(d > 0.0) {
         return Err("a band is a distance more than nothing from its sheet".into());
     }
     // the band from the panel to `d` the way the bound reads it
     let (lo, hi) = if *side >= 0.0 { (0.0, d) } else { (-d, 0.0) };
-    let home = crate::model::developed::middle(&a);
-    let panel = Developable::build(a, b, home).map_err(|r| r.to_string())?;
+    let panel = crate::model::developed::built(sk, rails)?;
     let tol = crate::curve::flatness(unit);
     let mut stations = panel.stations(tol);
     if stations.len() < 2 {
@@ -151,10 +149,5 @@ impl Band {
         }
         let faces = FACES.iter().map(|s| s.to_string()).collect();
         super::primitive::finish(facets, faces, name)
-    }
-
-    /// The panel's area, exact to its quadrature (`Developable::area`).
-    pub fn area(&self) -> f64 {
-        self.panel.area()
     }
 }

@@ -1170,10 +1170,13 @@ impl<'a> Walk<'a> {
                 let mut fraction = r2.clone();
                 if let Some(w) = fraction.form.written_mut() {
                     let (key, lo, hi) = within;
+                    let marker = Name { text: crate::syntax::WITHIN.into(), span: key.span };
                     w.args = vec![crate::syntax::OpArg::Dim(lo.0, lo.1),
                                   crate::syntax::OpArg::Bound { cmp: crate::syntax::Cmp::In,
                                                                 span: key.span, hi: Some(hi),
-                                                                grow: None }];
+                                                                grow: None },
+                                  crate::syntax::OpArg::Named(marker,
+                                                              crate::syntax::Arg::Word(key.text))];
                 }
                 self.emit(StmtKind::Relation(fraction), st, scope, path);
             }

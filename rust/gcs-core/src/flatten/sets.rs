@@ -845,7 +845,7 @@ impl<'a> Walk<'a> {
             return self.reach_across(su, lowered, other, outside, alias);
         }
         // a recognised sheet (#645): built exactly as a band, never applied as a body
-        if let Some(rails) = self.sheet_rails(&self.sets.made[abs].clone(), alias) {
+        if let Some(rails) = self.sheet_rails(&self.sets.made[abs], alias) {
             return self.reach_sheet(su, &lowered, rails, abs, alias);
         }
         let Reach { cmp, text, grows, args } = match reach_of(&lowered, &set) {

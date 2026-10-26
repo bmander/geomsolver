@@ -88,9 +88,7 @@ pub(crate) fn settle(
                     .or_else(|| (n == "t" && place.is_some()).then(String::new))
                     .or_else(|| (n == "pairs").then(|| pairs.to_string()))
                     // an interval of a contact's place, its incidence stated apart (#645)
-                    .or_else(|| (n == "fraction" && word == "coincident" && w.dim().is_some()
-                        && w.bound().is_some_and(|(c, _)| c == crate::syntax::Cmp::In))
-                        .then(String::new))
+                    .or_else(|| (n == "fraction").then(|| w.sel(crate::syntax::WITHIN)).flatten())
             };
             let circle = matches!((a, b), (EntKind::Point, EntKind::Circle) | (EntKind::Circle, EntKind::Point));
             if let (true, Some(at)) = (word == "coincident" && circle, place) {
@@ -183,6 +181,13 @@ pub(crate) fn settle(
         args[4] = Some(Arg::Word(if traced { "u" } else { "t" }.to_string()));
         args[5] = Some(Arg::Word(said.to_string()));
         return Ok((kind, args));
+    }
+    // the interval's marker is the flattener's, no selector of the kind's
+    if kind == CKind::LineFraction {
+        let mut bare = w.clone();
+        bare.args.retain(|a| !matches!(a, crate::syntax::OpArg::Named(n, _)
+            if n.text == crate::syntax::WITHIN));
+        return Ok((kind, bare.assemble(kind)?));
     }
     Ok((kind, w.assemble(kind)?))
 }

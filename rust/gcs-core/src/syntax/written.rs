@@ -51,6 +51,27 @@ pub struct Written {
     pub rates: Vec<RateOf>,
 }
 
+/// Where a rate in a relation's parentheses (`angle(rate(m over u), l)`, #645) is numbered from:
+/// past the two operands, the `k`th entity there `RateOf::op` `ARG_RATES + k`.
+pub const ARG_RATES: usize = 2;
+
+/// The selector the flattener marks a contact's interval with (#645), beside its low end and its
+/// `in:` bound: `p coincident(t in (a, b)) l`'s place bounded, which no source can spell (`#`), so
+/// a bound written `coincident(in: (a, b))` is never read as one.
+pub const WITHIN: &str = "#within";
+
+impl Written {
+    /// Where the operand `RateOf::op` names is: `Ok` an operand's index, `Err` the index in
+    /// `args` of an entity in the parentheses.
+    pub fn rated_at(&self, op: usize) -> Option<Result<usize, usize>> {
+        if op < ARG_RATES {
+            return (op < self.ops.len()).then_some(Ok(op));
+        }
+        self.args.iter().enumerate().filter(|(_, a)| matches!(a, OpArg::Ent(_)))
+            .nth(op - ARG_RATES).map(|(i, _)| Err(i))
+    }
+}
+
 /// One operand of a relation written as its rate along a formal, `rate(x over s)` (#339 D2):
 /// the operand's index and the formal.  Of a point, its velocity; of a line, its direction's.
 #[derive(Clone, Debug, PartialEq)]
