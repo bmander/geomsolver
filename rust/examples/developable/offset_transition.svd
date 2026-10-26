@@ -1,0 +1,15 @@
+// The offset transition on one sheet: the part in an isometric and from above, where the round
+// stands off the square's centre, and its cut pattern laid on an 800 × 800 blank of 1 mm
+// galvanised steel, the neutral layer, seamed at the middle of the front side.
+model m from "offset_transition.sv"
+
+sheet transition {
+  size (420mm, 297mm)
+  label "OFFSET SQUARE-TO-ROUND  240 square to Ø160, the round 40 over and 30 back, 220 up" at (14mm, 16mm)
+  view part(m.transition) from isometric at (105mm, 150mm) scale 0.4
+  view plan(m.transition) from top at (105mm, 245mm) scale 0.3
+  sketch pattern(m) from m.blank at (215mm, 270mm) scale 0.25
+  label "The pattern, outside up, on its blank: square edge 960, round edge 160π" at (215mm, 284mm)
+  style m.flat.a { color: #b22222 }
+  style m.flat.b { color: #1f4e9c }
+}

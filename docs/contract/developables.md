@@ -98,8 +98,11 @@ Newton for `(f′, g′)` at every evaluation, the foot standing still on a fan 
 rows that say so. On the four smooth panels the two agree to 1e-7
 (`the_exact_development_agrees_with_the_bodys_rows`). **The isometry is the property**: each laid
 ruling as long as its ruling, each laid rail as long as its rail to a relative 1e-9 (`Path::length`
-cut at a spline's knots against the pattern's `∫ |f′|` cut where the march crosses them,
-`Developable::joins`; `Development::measures` reads both laid lengths and the area in one pass), the pattern's area the panel's and an independent shoelace's
+cut at a spline's knots against the pattern's `∫ |f′|`; `Development::measures` reads both laid
+lengths and the area in one pass). **No step crosses a knot**: a rail's spline knots break its
+pieces as its kinks do (`Rail::joins`, fanning only at a kink), since there the flow turns a
+corner in a higher order and the two marches — the panel's and the laid one — would each take an
+error of their own across it, a dory's mirrored sides coming out 2e-8 apart., the pattern's area the panel's and an independent shoelace's
 (`every_pattern_is_an_isometry_of_its_panel`). Closed forms: the frustum's sector and its layer
 `5d` out (`a_frustum_lays_flat_on_its_annular_sector`), the offset adapter's equal angles through
 its apex, the cut cylinder's cosine; the panel follows its rims (`a_panel_follows_its_rims`); two

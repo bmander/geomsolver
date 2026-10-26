@@ -125,23 +125,28 @@ pub struct Ruling {
     pub piece: Piece,
 }
 
-/// A rail as the march reads it: a path, its interval, its kinks, and — closed — its period, read
-/// at places past its interval round again.
+/// A rail as the march reads it: a path, its interval, where its pieces meet, and — closed — its
+/// period, read at places past its interval round again.
 #[derive(Clone, Debug)]
 struct Rail {
     path: Path,
     lo: f64,
     hi: f64,
     closed: bool,
-    kinks: Vec<f64>,
+    /// Its kinks and its spline's knots, in order: no step of a march crosses one, where the flow
+    /// turns a corner in some order (a fan stands only at a kink, `needs_fan`).
+    joins: Vec<f64>,
 }
 
 impl Rail {
     fn new(path: Path) -> Rail {
         let (lo, hi) = path.domain();
         let closed = path.closed();
-        let kinks = path.kinks();
-        Rail { path, lo, hi, closed, kinks }
+        let mut joins = path.kinks();
+        joins.extend(path.joins());
+        joins.sort_by(f64::total_cmp);
+        joins.dedup_by(|x, y| (*x - *y).abs() <= 1e-12 * (1.0 + x.abs()));
+        Rail { path, lo, hi, closed, joins }
     }
 
     fn period(&self) -> f64 {
@@ -165,11 +170,11 @@ impl Rail {
         Ok([j[0], j[1], j[2]])
     }
 
-    /// Its breaks in order — kinks, and an open rail's ends — over the unwrapped places `from` to
-    /// `to` (either way round), each period's kinks again.
+    /// Its breaks in order — kinks and knots, and an open rail's ends — over the unwrapped places
+    /// `from` to `to` (either way round), each period's again.
     fn breaks(&self, from: f64, to: f64) -> Vec<f64> {
         let (lo, hi) = (from.min(to), from.max(to));
-        let kinks = &self.kinks;
+        let kinks = &self.joins;
         let mut out = Vec::new();
         if self.closed {
             let p = self.period();
@@ -748,48 +753,6 @@ impl Developable {
         out
     }
 
-    /// Where on piece `k` a rail's spline crosses a knot (`Path::joins`), in the running number:
-    /// found between the piece's nodes by bisection on the ruling's feet.
-    fn joins(&self, k: usize) -> Vec<f64> {
-        let p = &self.pieces[k];
-        let mut out = Vec::new();
-        for (rail, which) in [(&self.a, 0usize), (&self.b, 1)] {
-            let joins = rail.path.joins();
-            if joins.is_empty() {
-                continue;
-            }
-            let at = |s: f64| self.ruling(s).ok().map(|r| if which == 0 { r.u } else { r.w });
-            for w in p.nodes.windows(2) {
-                let (x0, x1) = if which == 0 { (w[0].1, w[1].1) } else { (w[0].2, w[1].2) };
-                for &q in &joins {
-                    // a closed rail's places run on past its interval, each period's knots again
-                    let shift = if rail.closed {
-                        ((x0.min(x1) - rail.lo) / rail.period()).floor() * rail.period()
-                    } else {
-                        0.0
-                    };
-                    for q in [q + shift, q + shift + rail.period()] {
-                        if !((x0 - q) * (x1 - q) < 0.0) {
-                            continue;
-                        }
-                        let (mut lo, mut hi) = (w[0].0, w[1].0);
-                        let up = x1 > x0;
-                        for _ in 0..80 {
-                            let mid = 0.5 * (lo + hi);
-                            let Some(x) = at(mid) else { break };
-                            if (x < q) == up { lo = mid } else { hi = mid }
-                            if (hi - lo).abs() <= 1e-15 * (1.0 + mid.abs()) {
-                                break;
-                            }
-                        }
-                        out.push(0.5 * (lo + hi));
-                    }
-                }
-            }
-        }
-        out
-    }
-
     /// The panel's area, by Gauss–Legendre over each piece in the running number of the
     /// rulings' strips: `(|m′ × r| + |n′ × r|) / 2` along it.
     pub fn area(&self) -> f64 {
@@ -991,27 +954,18 @@ impl Development {
         self.len
     }
 
-    /// `∫` of each of `g`'s components over each laid piece, by Gauss–Legendre on `k` cuts of
-    /// each stretch between the places a rail's spline crosses a knot — there the rates turn a
-    /// corner in their second order, which no fixed cut knows the place of — each node read once.
+    /// `∫` of each of `g`'s components over each laid piece — no piece crosses a rail's knot, so
+    /// its rates are smooth over it — by Gauss–Legendre on `k` cuts of it, each node read once.
     fn integral<const N: usize>(&self, g: &dyn Fn(&Laid) -> [f64; N]) -> [f64; N] {
         let read = |s: f64| self.at(s).map_or([0.0; N], |l| g(&l));
-        let k = 16;
+        let k = 32;
         let mut total = [0.0; N];
         for l in self.laid.iter().filter(|l| l.hi > l.lo) {
-            let mut cuts = vec![l.lo];
-            cuts.extend(self.panel.joins(l.piece));
-            cuts.push(l.hi);
-            cuts.retain(|&s| s >= l.lo && s <= l.hi);
-            cuts.sort_by(f64::total_cmp);
-            cuts.dedup();
-            for w in cuts.windows(2) {
-                for j in 0..k {
-                    let part = crate::path::gauss_n(&read, w[0] + (w[1] - w[0]) * j as f64 / k as f64,
-                                                    w[0] + (w[1] - w[0]) * (j + 1) as f64 / k as f64);
-                    for q in 0..N {
-                        total[q] += part[q];
-                    }
+            for j in 0..k {
+                let part = crate::path::gauss_n(&read, l.lo + (l.hi - l.lo) * j as f64 / k as f64,
+                                                l.lo + (l.hi - l.lo) * (j + 1) as f64 / k as f64);
+                for q in 0..N {
+                    total[q] += part[q];
                 }
             }
         }

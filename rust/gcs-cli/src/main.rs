@@ -947,13 +947,17 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
     let Writes::Export { stl, step } = &o.writes else { return true };
     let (mut stl, mut step, solid) = (stl.clone(), step.clone(), opts.solid(&o.own));
     let mut ok = true;
+    // a developable panel's band has no exact walls to write (#645): its STL is its faceting,
+    // exact to its rulings, whatever kernel would write a solid's; its STEP is refused once below
+    let faceted = pick_solid(sk, solid).is_ok_and(|i| gcs_core::solid::sheet::is_band(sk, i));
+    let native_stl = opts.native_stl && !faceted;
     // A body with swept cuts is built only when every sweep is in the generating class
     // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
     // nothing is written, so an earlier output stays as it was. The class is what the native
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
     // A native export admits the body itself, beside the first of its construction.
-    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
+    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && native_stl && !opts.refine));
     let mut body = None;
     if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
         if let Ok(i) = pick_solid(sk,solid) {
@@ -981,7 +985,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
         { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); ok = false; }
         stl = None;
     }
-    if step.is_some() || (stl.is_some() && opts.native_stl) {
+    if step.is_some() || (stl.is_some() && native_stl) {
         match (solved,pick_solid(sk,solid)) {
             (false,_) => {
                 let message = "native STEP/STL export requires a solved model".to_string();
@@ -1000,7 +1004,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
                 let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(sk,i));
                 match tolerance(sk,opts) {
                     Err(message) => { eprintln!("solventc: {message}"); ok = false; }
-                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t,seen) {
+                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| native_stl),t,seen) {
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(e,i,refusal);
@@ -1010,7 +1014,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
             }
         }
     }
-    if let Some(path) = stl.as_ref().filter(|_| !opts.native_stl) {
+    if let Some(path) = stl.as_ref().filter(|_| !native_stl) {
         // the mesh is `gcs_core::mesh`'s for `svg`'s reason: a printer's file and a drawing are
         // two readings of one boundary, and a second walk would be a second object
         match pick_solid(sk, solid) {

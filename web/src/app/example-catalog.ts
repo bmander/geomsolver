@@ -133,11 +133,13 @@ const projects: Example[] = [{
   label: 'Developable panels · sheets cut flat and bent', key: 'developable',
   description: 'Panels a plane touches along each straight ruling, so they come off a flat sheet '
     + 'without stretching: a conical reducer, an offset and a tilted duct adapter, a mitred duct, '
-    + 'a rectangle to a round (four planar triangles and four fans about the corners) and a dory\'s '
-    + 'side strake between chine and sheer, fanning at the stem and the transom. Each panel is '
-    + '`std.Developable(a, b)`, its sheet a band of it (`distance(<= t, side: outside)`), and its '
-    + 'pattern `std.Development`, laid in a plane and placed by relations; each is a closed form '
-    + 'its file gives. dory_panel.svd is the cut file; the README says what each shows.',
+    + 'a rectangle to a round (four planar triangles and four fans about the corners), an offset '
+    + 'square-to-round whose four triangles all differ, and a whole dory, its bottom and both '
+    + 'sides, the sides fanning at the stem and the transom, laid out on two sheets of plywood. '
+    + 'Each panel is `std.Developable(a, b)`, its sheet a band of it (`distance(<= t, side: '
+    + 'outside)`), and its pattern `std.Development`, laid in a plane and placed by relations; '
+    + 'each is a closed form its file gives. dory.svd and offset_transition.svd are cut files; '
+    + 'the README says what each shows.',
   target: { kind: 'directory', path: 'developable', entry: 'frustum.sv' },
 }, {
   label: 'Paths in space · guides that leave the plane', key: 'paths',

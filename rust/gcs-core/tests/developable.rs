@@ -23,10 +23,13 @@ const TILTED: &str = include_str!("../../examples/developable/tilted_adapter.sv"
 const CUT: &str = include_str!("../../examples/developable/cut_cylinder.sv");
 const SQUARE: &str = include_str!("../../examples/developable/square_to_round.sv");
 const DORY: &str = include_str!("../../examples/developable/dory_panel.sv");
+const OFFSET_TRANSITION: &str = include_str!("../../examples/developable/offset_transition.sv");
+const HULL: &str = include_str!("../../examples/developable/dory.sv");
 
-/// The six, by name.
-const ALL: [(&str, &str); 6] = [("frustum", FRUSTUM), ("offset", OFFSET), ("tilted", TILTED),
-                                ("cut", CUT), ("square", SQUARE), ("dory", DORY)];
+/// The first six, and the offset transition: one laid panel a document.
+const ALL: [(&str, &str); 7] = [("frustum", FRUSTUM), ("offset", OFFSET), ("tilted", TILTED),
+                                ("cut", CUT), ("square", SQUARE), ("dory", DORY),
+                                ("offset transition", OFFSET_TRANSITION)];
 
 /// The curve the document calls `name`.
 fn curve(e: &Elaborated, name: &str) -> usize {
@@ -248,6 +251,89 @@ fn a_dory_panel_fans_at_its_ends_and_lies_on_its_sheet() {
             assert!((0.0..=2440.0).contains(&x) && (0.0..=1220.0).contains(&y), "{name} {k}: {x} {y}");
         }
     }
+}
+
+/// The development `flat` lays (its laid `a` named `{flat}.a`).
+fn development_of(e: &Elaborated, flat: &str) -> Development {
+    let built = e.sketch.development_of(curve(e, &format!("{flat}.a"))).expect("a laid rail");
+    built.as_ref().clone().unwrap_or_else(|r| panic!("{flat} not laid: {r}"))
+}
+
+/// Every point of `flat`'s laid rails, sampled, inside the box `[x0, x1] × [y0, y1]` of its plane.
+fn lies_within(e: &Elaborated, flat: &str, [x0, x1, y0, y1]: [f64; 4]) {
+    for rail in ["a", "b"] {
+        let i = curve(e, &format!("{flat}.{rail}"));
+        for k in 0..=200 {
+            let (x, y) = e.sketch.curve_point(i, k as f64 / 200.0);
+            assert!(x >= x0 && x <= x1 && y >= y0 && y <= y1, "{flat}.{rail} {k}: {x} {y}");
+        }
+    }
+}
+
+/// **`offset_transition.sv`**: the round off the square's centre, so four different triangles —
+/// each planar, its rulings meeting at the round's point its side's plane touches, `(40, −50,
+/// 220)`, `(−40, 30, 220)`, `(40, 110, 220)`, `(120, 30, 220)` — and four different corner cones;
+/// the pattern's edges 960 and 160π long, laid on its blank.
+#[test]
+fn an_offset_transition_has_four_triangles_of_its_own() {
+    let e = determined(OFFSET_TRANSITION);
+    let dev = development_of(&e, "flat");
+    let p = dev.panel().clone();
+    let pieces = p.pieces();
+    assert_eq!(pieces.iter().filter(|q| q.0 == Piece::FanA).count(), 4, "{pieces:?}");
+    let mut apexes: Vec<[f64; 3]> = Vec::new();
+    for &(_, lo, hi) in pieces.iter().filter(|q| q.0 == Piece::Smooth) {
+        let first = p.ruling(lo).unwrap();
+        for k in 0..=10 {
+            let r = p.ruling(lo + (hi - lo) * k as f64 / 10.0).unwrap();
+            assert!(norm(sub(r.n, first.n)) < 1e-6, "{lo}: {:?} {:?}", r.n, first.n);
+        }
+        if !apexes.iter().any(|q| norm(sub(*q, first.n)) < 1e-6) {
+            apexes.push(first.n);
+        }
+    }
+    for want in [[40.0, -50.0, 220.0], [-40.0, 30.0, 220.0], [40.0, 110.0, 220.0],
+                 [120.0, 30.0, 220.0]] {
+        assert!(apexes.iter().any(|q| norm(sub(*q, want)) < 1e-6), "{want:?} not in {apexes:?}");
+    }
+    let flat = p.develop(0.0).unwrap();
+    assert!(rel(flat.length(0), 960.0) < 1e-9 && rel(flat.length(1), 160.0 * PI) < 1e-9);
+    lies_within(&e, "flat", [0.0, 800.0, 0.0, 800.0]);
+}
+
+/// **`dory.sv`**: a whole hull of three panels, each solved with its rails — the bottom's rulings
+/// straight across, each foot the mirror image of the other; the two sides mirror images, their
+/// patterns' rails and areas one; every pattern on its sheet of plywood.
+#[test]
+fn a_dory_is_three_panels_cut_from_two_sheets() {
+    let e = determined(HULL);
+    let names: Vec<&str> = e.sketch.panels.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names.len(), 3, "{names:?}");
+    let bottom = development_of(&e, "bottom_flat");
+    let p = bottom.panel();
+    assert!(p.pieces().iter().all(|q| q.0 == Piece::Smooth));
+    for s in places(p, 30) {
+        let r = p.ruling(s).unwrap();
+        assert!((r.m[0] - r.n[0]).abs() < 1e-7 && (r.m[1] + r.n[1]).abs() < 1e-7
+                && (r.m[2] - r.n[2]).abs() < 1e-7, "{s}: {:?} {:?}", r.m, r.n);
+    }
+    assert!(rel(bottom.length(0), bottom.length(1)) < 1e-9);
+    let (port, starboard) = (development_of(&e, "port_flat"), development_of(&e, "starboard_flat"));
+    // port runs chine to sheer, starboard sheer to chine: each one's `a` the other's `b`
+    assert!(rel(port.length(0), starboard.length(1)) < 1e-9);
+    assert!(rel(port.length(1), starboard.length(0)) < 1e-9);
+    assert!(rel(port.area(), starboard.area()) < 1e-9);
+    // and each laid exactly: its rails' lengths the panel's
+    for d in [&port, &starboard, &bottom] {
+        let flat = d.panel().develop(0.0).unwrap();
+        for which in 0..2 {
+            assert!(rel(flat.length(which), d.panel().rail_length(which)) < 1e-9);
+        }
+    }
+    for side in ["port_flat", "starboard_flat"] {
+        lies_within(&e, side, [0.0, 2440.0, 0.0, 1220.0]);
+    }
+    lies_within(&e, "bottom_flat", [0.0, 2440.0, 1400.0, 2620.0]);
 }
 
 /* -- the rules, on every example ------------------------------------------------------------- */
