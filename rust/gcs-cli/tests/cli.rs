@@ -1398,6 +1398,15 @@ fn a_png_is_refused_what_it_cannot_draw() {
     let out = run(&[&doc("solid_pulley.sv"), "--png", "x.png", "--section", "top@deep"]);
     assert_eq!(out.status.code(), Some(64));
     assert!(String::from_utf8_lossy(&out.stderr).contains("--section moves a plane by a length"));
+    for (plane, why) in [("w=5mm", "--section puts a plane across x, y or z, not `w`"),
+                         ("y=deep", "--section puts a plane across an axis at a length"),
+                         ("y=0±0mm", "--section keeps a slab a length either side of its plane"),
+                         ("top+-", "--section keeps a slab a length either side of its plane")] {
+        let out = run(&[&doc("solid_pulley.sv"), "--png", "x.png", "--section", plane]);
+        assert_eq!(out.status.code(), Some(64), "{plane}");
+        assert!(String::from_utf8_lossy(&out.stderr).contains(why), "{plane}: {}",
+                String::from_utf8_lossy(&out.stderr));
+    }
     let dir = std::env::temp_dir().join(format!("solventc-png-refused-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let png = dir.join("p.png");
@@ -1456,6 +1465,67 @@ fn a_section_takes_away_what_is_in_front_of_its_plane() {
     assert!(past.contains("the section takes away everything there is to draw"), "{past}");
     let none = draw("none", &["--section", "nowhere"]).unwrap_err();
     assert!(none.contains("`nowhere` is not a model plane"), "{none}");
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// `--section AXIS=LENGTH` (#657) is the plane square to a world axis at that length, facing the
+/// eye: what is nearer the eye taken away, so the cut is seen.  From above, `z=0` is `top`; from
+/// below it is `-top`, byte for byte; a length in another unit is the same length (`z=0.5cm` is
+/// `top@5mm`).
+#[test]
+fn a_section_across_an_axis_faces_the_eye() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-across-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("nested.sv");
+    std::fs::write(&source, NESTED).unwrap();
+    let draw = |name: &str, view: &str, section: &str| {
+        let png = dir.join(format!("{name}.png"));
+        let out = run(&[source.to_str().unwrap(), "--no-diagnose", "--size", "300", "--view", view,
+                        "--png", png.to_str().unwrap(), "--section", section]);
+        assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+        read_png(&std::fs::read(png).unwrap())
+    };
+    assert_eq!(draw("z-above", "top", "z=0"), draw("top", "top", "top"));
+    assert_eq!(draw("z-below", "bottom", "z=0"), draw("-top", "bottom", "-top"));
+    assert_ne!(draw("z-below", "bottom", "z=0"), draw("top-below", "bottom", "top"),
+               "from below, the side taken away is the one below");
+    assert_eq!(draw("z-cm", "top", "z=0.5cm"), draw("top-5", "top", "top@5mm"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// `--section PLANE±LENGTH` (#657) keeps a slab that thick either side of the plane: the nested
+/// prisms kept 2 mm either side of the plane through their axis are, from above, a strip 4 mm
+/// across their 60 mm, and from the front the face the slab's near side cuts, hatched.
+#[test]
+fn a_slab_keeps_a_thickness_either_side() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-slab-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("nested.sv");
+    std::fs::write(&source, NESTED).unwrap();
+    let draw = |name: &str, view: &str, section: &str| {
+        let png = dir.join(format!("{name}.png"));
+        let out = run(&[source.to_str().unwrap(), "--no-diagnose", "--size", "300", "--view", view,
+                        "--png", png.to_str().unwrap(), "--section", section]);
+        assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+        read_png(&std::fs::read(png).unwrap())
+    };
+    let inked_rows = |(w, h, rgb): &(usize, usize, Vec<u8>)| (0..*h).filter(|y| {
+        rgb[3 * w * y..3 * w * (y + 1)].as_chunks::<3>().0.iter().any(|p| *p != [250, 250, 250])
+    }).count();
+    let strip = draw("strip", "top", "y=0±2mm");
+    assert_eq!((strip.0, strip.1), (300, 150), "fitted to what is kept, its aspect clamped");
+    // 4 mm at the scale 60 mm takes across 276 pixels, and an edge's width either side
+    let rows = inked_rows(&strip);
+    assert!((14..=26).contains(&rows), "a strip 4 mm wide: {rows} rows inked");
+    assert_eq!(strip, draw("ascii", "top", "y=0+-2mm"), "`+-` is `±`");
+    let half = draw("half", "top", "y=0");
+    assert!(inked_rows(&half) > 2 * rows, "a half-space keeps half the disc");
+    let front = draw("front", "front", "y=0±2mm");
+    let (w, h, rgb) = &front;
+    let row = &rgb[3 * w * (h / 2)..3 * w * (h / 2 + 1)];
+    let colours: std::collections::BTreeSet<[u8; 3]> =
+        row.as_chunks::<3>().0[w / 2 - 20..w / 2 + 20].iter().copied().collect();
+    assert!(colours.len() > 1, "the slab's near face is cut, and hatched");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

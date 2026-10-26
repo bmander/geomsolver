@@ -135,12 +135,17 @@ build/solventc bot.sv --stl wheel.stl --solid wheel --stl frame.stl --solid fram
 
 `--section PLANE` cuts a picture by a plane, the side its normal points to taken away and the cut
 face hatched: a view's word through the origin (`front` takes away what is nearer a front view's
-eye; `top`, `right`, …) or a model plane by its path (`std.top`, `bracket.mid`). `-PLANE` keeps the
-other side, and `PLANE@LENGTH` moves it along its normal:
+eye; `top`, `right`, …), a model plane by its path (`std.top`, `bracket.mid`), or `AXIS=LENGTH`,
+the plane square to a world axis at that length (`y=-12.47mm`, `z=0`) with what is nearer the
+picture's eye taken away, so the cut faces it. `-PLANE` keeps the other side, `PLANE@LENGTH` moves
+it along its normal, and `PLANE±LENGTH` (or `+-`) keeps a slab that thick either side of it, often
+easier to read than a half-space in a dense assembly — a shaft in the gear stack below it, a rod
+in its blind hole:
 
 ```sh
 build/solventc rust/examples/solid_flange.sv --png half.png --section front \
     --png plate.png --section top@2mm --view isometric
+build/solventc bot.sv --png cut.png --view front --section "y=-12.47mm±5mm" --hide frame
 ```
 
 In the app, View ▸ Section (`⇧X`) cuts the workspace by the plane being drawn on; its bar chooses

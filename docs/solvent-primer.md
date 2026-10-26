@@ -2820,8 +2820,9 @@ silhouettes inked.  A part file draws its `preview`, about the world's origin.  
 `bottom`, `isometric`) or `az,el` in degrees; `--size` the longer side in pixels (1200); `--solid NAME` one solid, or every object of one instance; `--hide
 a,b` leaves those out, each a name and everything under it, for a cutaway
 (`--hide block.casting,head`); `--section PLANE` cuts every object by a plane and hatches the cut
-— `front`, `top`, … through the origin or a model plane's path, `-PLANE` the other side,
-`PLANE@5mm` moved along its normal — to see a bore, a wall's thickness or a part inside another.  An open box, a belt off its pulleys, a piston not at its stroke —
+— `front`, `top`, … through the origin, a model plane's path, or `y=-12.5mm` square to an axis
+and facing the eye; `-PLANE` the other side, `PLANE@5mm` moved along its normal, `PLANE±5mm` a
+slab that thick either side — to see a bore, a wall's thickness or a part inside another.  An open box, a belt off its pulleys, a piston not at its stroke —
 a picture shows what no number in the report does.
 
 Exit codes: 0 solved, 1 did not parse or elaborate, 2 did not solve, 64 a wrong command line. A successful solve does not

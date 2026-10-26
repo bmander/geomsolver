@@ -81,6 +81,18 @@ pub fn plane_named(sk: &Sketch, names: &SourceMap, name: &str) -> Result<Basis, 
         .ok_or_else(|| format!("`{name}` is not a model plane, nor a view's word (front, back, \
             right, left, top, bottom, isometric)"))
 }
+/// **A plane square to a world axis** (`solventc --section y=-12.5mm`): `x`, `y` or `z` (0, 1,
+/// 2) at `at` along it, its normal the axis's way that points toward `toward` (the eye), so a
+/// cut by it takes away what is nearer the eye and its face is seen.  An eye looking along the
+/// plane sees no side nearer: the normal is then the axis's own.
+pub fn plane_across(axis: usize, at: f64, toward: [f64; 3]) -> Basis {
+    let e = |k: usize| std::array::from_fn(|j| if j == k % 3 { 1.0 } else { 0.0 });
+    // u × v is the axis: y × z = x, z × x = y, x × y = z
+    let (u, v) = (e(axis + 1), e(axis + 2));
+    let o = std::array::from_fn(|k| if k == axis { at } else { 0.0 });
+    let plane = Basis { u, v, o };
+    plane.moved_along(0.0, toward[axis] < -1e-9)
+}
 fn basis(name: &str, models: &BTreeMap<String, Model<'_>>, span: Span) -> Result<Basis, Error> {
     if let Some(b) = named_view(name) { return Ok(b); }
     let (_, path, model) = split(name, models, span)?;
