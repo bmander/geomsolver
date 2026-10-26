@@ -183,7 +183,7 @@ fn holds(
                         return Err((Code::E040, format!(
                             "{} an unknown of the drawing, and a `when` is decided before the \
                              solve: compare numbers the document states",
-                            reads_unknown(&name, u)
+                            expr::reads_unknown(&name, u)
                         )));
                     }
                     Some(None) => {}
@@ -195,12 +195,6 @@ fn holds(
             })?
         }
     })
-}
-
-/// How a name that is, or is written over, the unknown `u` is said to be one: `` `beta` is `` or
-/// `` `k` reads `beta`, ``, ahead of what an unknown cannot be read by.
-fn reads_unknown(name: &str, u: &str) -> String {
-    if u == name { format!("`{name}` is") } else { format!("`{name}` reads `{u}`,") }
 }
 
 /// Whether a claim over values holds (#596), and each name it reads with its value; or the code
@@ -215,15 +209,7 @@ fn claimed(
 ) -> Result<(bool, Vec<(String, super::Valued)>), (Code, String)> {
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
-    fn membership(c: &Cond) -> bool {
-        match c {
-            Cond::In(..) | Cond::Meets(..) => true,
-            Cond::And(a, b) | Cond::Or(a, b) => membership(a) || membership(b),
-            Cond::Not(a) => membership(a),
-            Cond::Cmp(..) => false,
-        }
-    }
-    if membership(&c) {
+    if c.names_geometry() {
         return Err(said(Code::E103, "a claim over values compares numbers; `in` and `meets` \
             ask of faces, and are a `when`'s".into()));
     }
@@ -240,7 +226,7 @@ fn claimed(
                 return Err(said(Code::E040, format!(
                     "{} an unknown of the drawing, and a claim over values is judged before the \
                      solve: a relation claims what the solve gives",
-                    reads_unknown(&name, u)
+                    expr::reads_unknown(&name, u)
                 )));
             }
             Some(a) => reads.push((name, super::Valued { value: a.c, dim: a.dim })),

@@ -251,7 +251,8 @@ the enclosing body's names — at the top of a document alone, whose body is lin
 requirements) and no statements; it adds nothing to the drawing.  Its rules are
 [analysis.md](analysis.md)'s.
 
-**`when` is the one conditional (0.91, #267).** Two names that are not numbers compare by
+**`when` is the one conditional of statements (0.91, #267)**; a number chosen is `if(c, a, b)`
+([0.191], [numbers.md](numbers.md)). Two names that are not numbers compare by
 **identity**: `a == b`/`a != b` (`Cond::Cmp` over two `Ast::Var`, a side not in `vals`) holds as
 `Walk::stands_for` resolves them — the absolute name through every alias, so a formal is what
 its call gave and a face repeat's binder its face — and `c in B` (`Cond::In`, made by

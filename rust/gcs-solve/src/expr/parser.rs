@@ -448,6 +448,9 @@ impl Parser {
                     }
                     return Ok(Ast::Measure(m, args));
                 }
+                if name == "if" {
+                    return self.choice();
+                }
                 let mut args = Vec::new();
                 if *self.peek() != Tok::RParen {
                     loop {
@@ -486,6 +489,36 @@ impl Parser {
             Tok::End => Err("expected a value at the end".to_string()),
             _ => Err(format!("expected a value at {at}")),
         }
+    }
+
+    /// `if(c, a, b)` past its `(`: a condition, then the number where it holds and the number
+    /// where it does not.  A comparison of names for what they stand for (`in`, `meets`) is a
+    /// `when`'s, since what a name is is the elaborator's to say and no number's.
+    fn choice(&mut self) -> Result<Ast, String> {
+        let at = self.here();
+        let c = self.cond()?;
+        if c.names_geometry() {
+            return Err(format!(
+                "`if` chooses by comparing numbers, at {at}: what a name stands for (`in`, \
+                 `meets`) is decided by a `when`"
+            ));
+        }
+        let expect = |p: &mut Parser, t: Tok| {
+            if *p.peek() != t {
+                return Err(format!(
+                    "`if` takes a condition and two numbers: `if(c, a, b)`, at {}",
+                    p.here()
+                ));
+            }
+            p.next();
+            Ok(())
+        };
+        expect(self, Tok::Comma)?;
+        let a = self.expr()?;
+        expect(self, Tok::Comma)?;
+        let b = self.expr()?;
+        expect(self, Tok::RParen)?;
+        Ok(Ast::If(Box::new(c), Box::new(a), Box::new(b)))
     }
 }
 

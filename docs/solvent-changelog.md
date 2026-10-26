@@ -4,6 +4,19 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.191] A chosen number.** `if(COND, A, B)` is `A` where `COND` holds and `B` where it does
+not (§3.3), a value where `when` is a block of statements (§12.9): a number that differs between a
+block's copies is one statement, `a distance(if(k == 0, 5mm, 7mm * k)) q`, where it took a `when`
+per case or arithmetic over the index (`j * near_dx`). `COND` is a `when`'s, decided at elaboration
+from numbers alone: one reading an unknown of the drawing is **E103** where a value is defined and
+**W110** in a dimension, as `sin(beta)` is; `in` and `meets` in it are **E103**. Both sides are
+worked out and agree in dimension as `+`'s operands do (`if(c, w, 10)`, `w` a length, is **E103**).
+In a traced curve's formula the condition reads only the document's numbers; one over a formal is
+refused, and chosen where the component is called. `if` is a built-in name, as `sqrt` is: a
+definition named `if` is warned as one shadowing a function. `c ? a : b` is not adopted: `:` is
+a named argument's in every call, and `?` is no token of the language. Every solved position is
+unchanged.
+
 **[0.190] A refuted claim says where.** A claim about two solids that is refuted or undecided says,
 under its measurement, the face of each by its path through the operands and where in the world
 they meet: `deepest at (…), between a.f and b.g` where their material is common (the centre of the

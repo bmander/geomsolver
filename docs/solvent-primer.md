@@ -336,6 +336,13 @@ about. Radii mean the same in every view.
 **Expressions**: `+ - * / ^`, parentheses, `pi`, `tau`, and `sqrt abs sin cos tan asin acos atan
 atan2 exp ln log floor ceil round min max hypot`. **Trigonometry is in degrees.**
 
+**A chosen number**: `if(COND, A, B)` is `A` where `COND` holds and `B` where not, `COND` a
+`when`'s comparisons (1.7) — `pitch := if(n > 12, 2mm, 3mm)`, or a copy's own number in one
+statement, `a distance(if(k == 0, 5mm, 7mm * k)) q` in `repeat 3 as k`. It is decided before the
+solve: a condition reading an unknown is E103. Both sides agree in dimension (`if(c, w, 10)`,
+`w` a length, is E103: write `10mm`). In a traced curve's formula it may read only the
+document's numbers, not the component's formals — choose at the call, `Lobe(c, a: if(…))`.
+
 **Values.** `w := 60` is worked out while elaborating. A value may read others written anywhere in
 its body or an enclosing one; one defined in terms of itself is E041. A dimension reads names and
 defines none: write `w := 60`, then `a distance(w) b`; its callout reads `w`, and typing over it
@@ -579,8 +586,9 @@ edge or a corner, read where the drawing is seeded (a pair it reads apart that t
 together is E080). There is no copy: what the body declares keeps
 its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
 an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
-index, a trailing joint. `when` is the one conditional: write a switch as `when flag == 1 { … }`,
-never `repeat flag { … }`, and two as `when a == 1 and b == 1`.
+index, a trailing joint. `when` is the one conditional of statements: write a switch as `when
+flag == 1 { … }`, never `repeat flag { … }`, and two as `when a == 1 and b == 1`; a number that
+differs by case is one statement, `if(flag == 1, 3mm, 5mm)` (1.6).
 
 ```
 unit mm

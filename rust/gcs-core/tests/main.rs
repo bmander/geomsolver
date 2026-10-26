@@ -45,6 +45,7 @@ mod carried_frame;
 mod catenary;
 mod chain;
 mod chain_edges;
+mod choice;
 mod claim;
 mod claim_witness;
 mod clockwise_arc;
