@@ -1252,12 +1252,16 @@ where it is false the claim is not made at all.
 
 Three claim words apply only to solids: `claim bore inside stock`, `claim disc clear(2mm) cyl`,
 `claim head fits(0.15mm) trap`. The report gives the measurement, and one within the faceting of a
-round face is **undecided**:
+round face is **undecided**. One that does not hold says where to look: the face of each solid by
+its path, and the point where they come nearest — or, overlapping, the deepest of their common
+material:
 
 ```
   claim bore inside stock — undecided, measured 0 (interval [-0.0006000000000000001, 0.0006000000000000001])
+    nearest at (24.9993, 10, 14.9182), between bore.k and stock.far
     unresolved: containment is within curved-faceting uncertainty
   claim bore clear(2mm) stock — refuted, measured -9.999665339174008 (interval [-10.00026533917401, -9.999065339174006])
+    deepest at (20, 0, 15), between bore.k and stock.far
 ```
 
 **A bound** is a dimension's number that adds no row: it says which of the drawing's solutions is

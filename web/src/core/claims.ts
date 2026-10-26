@@ -35,6 +35,19 @@ export interface ClaimVerdict {
   verdict: 'holds' | 'sampled-success' | 'refuted' | 'undecided';
   measured: number | null;
   tolerance: number | null;
+  /** Where it was measured (`clear::Nearest`): the face of each solid by path, and a world point
+   *  on each — one point where they touch, and the deepest of their common material where they
+   *  overlap (`deepest`). */
+  nearest: ClaimNearest | null;
+}
+
+/** The faces of a claim's two solids and the points of each where it was measured. */
+export interface ClaimNearest {
+  a: string;
+  b: string;
+  atA: [number, number, number];
+  atB: [number, number, number];
+  deepest: boolean;
 }
 
 /** The claims about solids this sketch states, judged or not. */
