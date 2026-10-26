@@ -505,6 +505,34 @@ A chamfer(d) B := {
 }
 chamfer(d) X := X chamfer(d: d) X
 
+// -- a solid grown ------------------------------------------------------------------------------
+//
+// `B` grown by `d` all round, as a solid of its own (`.body`): the points within `d` of it, so a
+// clearance or a print's gap about a part is the part's own body grown, not its sizes said again.
+// Its edges and corners are rounded by `d`, a ball rolled over `B`.  Where `d` is below nothing,
+// `B` shrunk by it: the points of `B` at least `-d` from everything outside it.  At nothing, `B`
+// itself.  `B` is left as it is.  Grown, it is built exactly where `B`'s faces are planes and
+// cylinders meeting in convex edges and prisms' corners (a box, a post, a hex bar); shrunk, or any
+// other body, it is read point by point, and an exact export says so.
+//
+//   window := std.Grown(uno.usb_plug, d: gap)
+//   window.body cut frame_part
+component Grown(B: solid, d: Length) {
+  when d > 0mm {
+    within := { c | c inside B }
+    near := { p | distance(p, within) <= d }
+    body := solid(near)
+  }
+  when d < 0mm {
+    beyond := { c | c outside B }
+    kept := { p | p inside B; distance(p, beyond) >= -d }
+    body := solid(kept)
+  }
+  when d == 0mm {
+    body := solid(B)
+  }
+}
+
 // -- in a region's body ---------------------------------------------------------------------------
 //
 // A region is a conjunction, so every edge where two of its bounds meet is convex, and a round or

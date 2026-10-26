@@ -279,6 +279,28 @@ impl Brep {
     /// what it says); one used more often one way, or never, is `Kind::Open` (`OPEN`).
     pub fn check(&self,tol: f64) -> Result<(),super::KernelError> { self.check_settled(tol,&[]) }
 
+    /// The same boundary less every edge no face uses and every vertex no edge does, the rest
+    /// numbered again in order: what faces glued away inside a solid leave (`boolean::glued`
+    /// keeps every edge, and one whose faces all went bounds nothing).
+    pub fn compacted(mut self) -> Brep {
+        // the items `used` marks, and where each old one went
+        fn kept<T>(items: Vec<T>,used: &[bool]) -> (Vec<T>,Vec<u32>) {
+            let mut at = vec![u32::MAX;items.len()];
+            let kept = items.into_iter().enumerate().filter(|(i,_)| used[*i]).enumerate()
+                .map(|(k,(i,x))| { at[i] = k as u32; x }).collect();
+            (kept,at)
+        }
+        let mut used = vec![false;self.edges.len()];
+        for c in self.faces.iter().flat_map(|f| f.loops.iter().flatten()) { used[c.edge as usize] = true; }
+        let (edges,edge_at) = kept(std::mem::take(&mut self.edges),&used);
+        let mut held = vec![false;self.vertices.len()];
+        for e in &edges { for v in e.v { held[v as usize] = true; } }
+        let (vertices,vertex_at) = kept(std::mem::take(&mut self.vertices),&held);
+        let edges = edges.into_iter().map(|e| Edge {v:e.v.map(|v| vertex_at[v as usize]),..e}).collect();
+        for c in self.faces.iter_mut().flat_map(|f| f.loops.iter_mut().flatten()) { c.edge = edge_at[c.edge as usize]; }
+        Brep {vertices,edges,faces:self.faces}
+    }
+
     /// `check`, each face `settled` marks (one carried whole from a solid checked before, #589)
     /// read for its loops' ends and its edges' uses alone: its geometry is what was checked.
     pub fn check_settled(&self,tol: f64,settled: &[bool]) -> Result<(),super::KernelError> {

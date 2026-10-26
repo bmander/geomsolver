@@ -61,6 +61,9 @@ pub enum Node {
     /// A region in general position (`solid::bounded`, #238): the common of the pieces kept within,
     /// less those kept outside.
     Region(Vec<Kept>),
+    /// A region within reach of a body (`solid::grown`): the node `body`, and each piece glued to
+    /// it where they share a face.
+    Grown { body: i64,pieces: Vec<Node> },
     /// A region set's pieces (`solid::lowering`, #194).
     Lowered(Lowered),
     /// A face family's walls (`solid::family`, #243 L2).
@@ -172,6 +175,7 @@ impl Node {
             "region" => Node::Region(each(field(n,"pieces")?.arr(),|p| Ok(Kept {node:Node::read(p)?,
                 keep:matches!(field(p,"keep")?,Json::Bool(true))}))?),
             "lowered" => Node::Lowered(Lowered::read(n)?),
+            "grown" => Node::Grown {body:field(n,"body")?.as_i64(),pieces:each(field(n,"pieces")?.arr(),Node::read)?},
             "family" => Node::Family(Family::read(n)?),
             k => return Err(unread(format!("recipe: a node of kind `{k}`"))),
         })
@@ -182,7 +186,7 @@ impl Node {
         match self {
             Node::Prism {..} => "prism",Node::Revolve {..} => "revolve",
             Node::Placed {..} => "placed",Node::Through {..} => "through",Node::Body(_) => "body",
-            Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Lowered(_) => "lowered",
+            Node::Canal {..} => "canal",Node::Region(_) => "region",Node::Grown {..} => "grown",Node::Lowered(_) => "lowered",
             Node::Family(_) => "family",
         }
     }

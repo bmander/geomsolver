@@ -23,6 +23,12 @@ pub use path::{face_paths, face_source, FacePath, FaceSource};
 pub use path::same_step;
 pub(crate) use path::face_primitive;
 
+/// Whether `body`'s faces as its readers read them (`BodyFaces::read`) are the faces of the whole
+/// body: none of its terms reads them, so its stratum leaves nothing out (`without`).
+pub fn stratum_is_whole(sk: &Sketch, body: usize) -> bool {
+    readers_of(sk, body).iter().all(|&r| r != body && !crate::solid::document::reaches(sk, body as u32, r as u32))
+}
+
 /// The region solids whose terms read the faces of `body`.
 pub fn readers_of(sk: &Sketch, body: usize) -> BTreeSet<usize> {
     (0..sk.solids.len()).filter(|&i| reads_faces_of(sk, i, body)).collect()

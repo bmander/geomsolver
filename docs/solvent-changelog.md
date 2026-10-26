@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.194] A body grown.** `std.Grown(B, d)` makes `.body`, the points within `d` of the solid `B`,
+its edges and corners rounded by `d` (§6.9): a clearance about a part, or a print's gap, is the
+part's body grown rather than its sizes written again — radiatorbot's end-wall windows are
+`std.Grown(uno.usb_plug, d: gap)` and `std.Grown(uno.jack_plug, d: gap)`. A negative `d` shrinks
+`B`, and nothing is `B`. It is a set of the language's own words, `{ p | distance(p, within) <= d }`
+over `within := { c | c inside B }`, built exactly where every edge of `B` is convex and its faces
+are planes and cylinders meeting at a prism's corners (each face's prism, each edge's wedge and
+each corner's sector of the ball glued to the body, nothing intersected); elsewhere it is read
+point by point and an exact export says so by name. **The distance from within a body in pieces**
+is the distance from the nearest piece (§6.21): within all of its faces at once had held nowhere,
+so such a set read no material. A prism drawn far from its plane's origin is read point by point
+within a box its own size, where it had been within the disc about that origin. Every solved
+position is unchanged.
+
 **[0.193] Lists, and a block over one.** A list is values in order, in brackets — `holes :=
 [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]` — each item a number, a
 vector or a group in braces, and `repeat h in holes { … }` makes a copy per item, `h` that copy's
@@ -82,6 +96,7 @@ by its ordinates read either way, and one written in fear of the refusal branche
 ordinate being zero. `a level(t) b` is unchanged, the same row with no number, and a step's
 literal zero (`step(v: 0mm)`, back onto the axis) is still its level (§6.6). A document that
 elaborated still does, and every solved position is unchanged.
+
 
 **[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
 `a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner

@@ -109,6 +109,9 @@ pub enum Route {
     /// In general position: the common of its terms' primitives, or why that construction
     /// refuses it.
     Bounded(Result<Rc<super::bounded::Bounded>, String>),
+    /// Within reach of a body: the body and what lies within reach of each face, edge and corner
+    /// glued to it, or why that construction refuses it.
+    Grown(Result<Rc<super::grown::Grown>, String>),
     /// In general position, read by the field alone: why no exact construction is made of it.
     Field(String),
     /// A developable panel's band (#645): faceted from the panel's rulings, its exact ruled walls
@@ -119,7 +122,15 @@ pub enum Route {
 impl Route {
     /// Whether its boundary is the field's alone: no exact construction builds it.
     pub fn field_only(&self) -> bool {
-        matches!(self, Route::Field(_) | Route::Lowered(Err(_)) | Route::Bounded(Err(_)))
+        matches!(self, Route::Field(_) | Route::Lowered(Err(_)) | Route::Bounded(Err(_)) | Route::Grown(Err(_)))
+    }
+
+    /// The solid whose recipe node its own reads, where it reads one: a body grown's body.
+    pub fn built_on(&self) -> Option<u32> {
+        match self {
+            Route::Grown(Ok(g)) => Some(g.body()),
+            _ => None,
+        }
     }
 
     /// The lowering table's pieces, where it is that entry's and built.
@@ -145,6 +156,9 @@ pub fn route(sk: &Sketch, solid: usize) -> Result<Route, String> {
         Form::General(_) => {
             if let Some(l) = super::lowering::lowered(sk, solid) {
                 return Ok(Route::Lowered(l));
+            }
+            if let Some(g) = super::grown::built(sk, solid) {
+                return Ok(Route::Grown(g));
             }
             if let Some(b) = super::bounded::built(sk, solid) {
                 return Ok(Route::Bounded(b));
