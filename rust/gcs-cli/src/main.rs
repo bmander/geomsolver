@@ -50,6 +50,9 @@ views and dimensions over the models it imports).  Each is parsed, elaborated, s
 diagnosed, and the report says where it stands.
 
     --json              structured output instead of the text report
+    --set NAME=VALUE    read VALUE for the document's top-level `NAME := …` this run, the file
+                        left as it is: an expression in the document's units (--set checks=1,
+                        --set travel=3mm); repeatable, one document, and said in the report
     --where NAME        where a name landed: its own numbers and everything under it, and a
                         value the document names, in its unit (repeatable; the whole table in
                         --json when none is given)
@@ -133,6 +136,7 @@ Examples:
     solventc part.sv                          check a document: solved, and how constrained
     solventc --json part.sv                   the same report, structured
     solventc part.sv --where hinge            the numbers under one name
+    solventc --set checks=1 bot.sv            one run with a switch the document leaves off
     solventc drive.sv --where torque          a value, in its unit: torque = 0.0864 N·m
     solventc bot.sv --no-check                the layout, solved, its solids' claims unjudged
     solventc part.sv --png part.png           look at it, as the workspace shows it
@@ -176,6 +180,9 @@ fn misuse(why: impl std::fmt::Display) -> ExitCode {
 struct Source {
     name: String,
     text: String,
+    /// The values `--set` gave over the ones the text wrote (#656): `text` is the file with them
+    /// spliced in, `name` still the file's.
+    rebound: Vec<gcs_core::edit::Rebound>,
 }
 
 struct Opts {
@@ -184,6 +191,8 @@ struct Opts {
     /// report and about everything in `--json`, which is the difference between a terminal and
     /// a file something else reads.
     wanted: Vec<String>,
+    /// `--set NAME=VALUE` — top-level values read other than the document writes them (#656).
+    set: Vec<(String, String)>,
     no_diagnose: bool,
     /// `--no-check`: the claims about solids left unjudged, said by how many.
     no_check: bool,
@@ -222,6 +231,7 @@ impl Default for Opts {
         Opts {
             json: false,
             wanted: Vec::new(),
+            set: Vec::new(),
             no_diagnose: false,
             no_check: false,
             lint: false,
@@ -468,6 +478,11 @@ fn main() -> ExitCode {
                 Some(n) => opts.wanted.push(n),
                 None => return misuse("--where needs a name"),
             },
+            "--set" => match args.next().as_deref().and_then(|v| v.split_once('=')) {
+                Some((n, v)) if !n.trim().is_empty() =>
+                    opts.set.push((n.trim().to_string(), v.to_string())),
+                _ => return misuse("--set needs NAME=VALUE"),
+            },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
             "--no-check" => opts.no_check = true,
@@ -511,6 +526,9 @@ fn main() -> ExitCode {
         return misuse("--tolerance holds a native export (or a measurement) to it; give --step, \
             --step-assembly, --stl by the kernel's export, or --measure");
     }
+    if !opts.set.is_empty() && paths.len() != 1 {
+        return misuse("--set gives a value of one document, so it takes one");
+    }
     if opts.output.is_some() && paths.len() != 1 {
         return misuse("--output writes one file, so it takes one document");
     }
@@ -542,7 +560,14 @@ fn main() -> ExitCode {
     let mut sources: Vec<Source> = Vec::new();
     for p in &paths {
         match std::fs::read_to_string(p) {
-            Ok(text) => sources.push(Source { name: p.clone(), text }),
+            Ok(text) if opts.set.is_empty() =>
+                sources.push(Source { name: p.clone(), text, rebound: Vec::new() }),
+            Ok(_) if std::path::Path::new(p).extension().is_some_and(|e| e == "svd") =>
+                return misuse(format!("--set gives a model's value, and `{p}` is a drawing")),
+            Ok(text) => match gcs_core::edit::rebind(&text, &opts.set) {
+                Ok((text, rebound)) => sources.push(Source { name: p.clone(), text, rebound }),
+                Err(m) => return misuse(format!("--set: {p}: {m}")),
+            },
             Err(e) => {
                 eprintln!("solventc: {p}: {e}");
                 return ExitCode::from(1);
@@ -679,6 +704,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     if !errs.is_empty() || !e.ok() {
         if !opts.json {
             println!("{}: did not elaborate", s.name);
+            for b in &s.rebound {
+                println!("  {}", report::rebound_text(b));
+            }
         }
         return (1, opts.json.then(|| {
             doc_json(s, &errs, None, None, &e, &[], Json::Null, Json::Null, &opts.wanted)
@@ -721,6 +749,11 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
 
     if !opts.json {
         println!("{}: {}", s.name, r.outcome());
+        // what the run read over what the document writes, first, so a pasted report says how
+        // it was run (#656)
+        for b in &s.rebound {
+            println!("  {}", report::rebound_text(b));
+        }
         if !solved {
             println!("  {} (max residual {:.3e})", r.message, r.max_residual);
         }
@@ -1379,6 +1412,9 @@ fn doc_json(
         ("meshings", d.map(|(sk, _)| report::meshings_json(sk)).unwrap_or(Json::Null)),
         ("components", components),
     ]);
+    if !s.rebound.is_empty() {
+        doc.set("set", report::rebound_json(&s.rebound));
+    }
     if !unbuilt.is_empty() {
         let notes = unbuilt.iter().map(|x| said(x.span.lo, x.code.as_str(), "note", &x.message,
             x.cause.map(|c| c.lo)));

@@ -669,6 +669,24 @@ pub fn measures_json(sk: &Sketch, measures: &[crate::program::MeasureStated]) ->
     ])).collect())
 }
 
+/// **A value given for a run over the one the document writes** (#656): `set checks := 1 (the
+/// document writes 0)`, said before anything else of the document, so a report pasted elsewhere
+/// says how it was run.
+pub fn rebound_text(r: &crate::edit::Rebound) -> String {
+    format!("set {} := {} (the document writes {})", r.name, r.value, r.written)
+}
+
+/// **`rebound_text` as JSON** (#656): per value given, in the order given, its name, what the
+/// run read and what the document writes.
+pub fn rebound_json(rebound: &[crate::edit::Rebound]) -> Json {
+    Json::Arr(rebound.iter().map(|r| object([
+        ("name", r.name.as_str().into()),
+        ("value", r.value.as_str().into()),
+        ("written", r.written.as_str().into()),
+        ("text", rebound_text(r).into()),
+    ])).collect())
+}
+
 /// **A number the document names, as a reader is told it** (#596): `torque = 0.0864 N·m`, to
 /// `READING_SIG` figures in the unit it reads in (`Dim::reading`).
 pub fn value_text(units: crate::units::Units, name: &str, v: &crate::flatten::Valued) -> String {

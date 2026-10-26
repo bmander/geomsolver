@@ -29,6 +29,7 @@ mod dimension;
 mod reconcile;
 mod component;
 mod requests;
+mod rebind;
 
 pub use seeds::*;
 pub use append::*;
@@ -40,6 +41,7 @@ pub use dimension::*;
 pub use reconcile::*;
 pub use component::make_component;
 pub use requests::*;
+pub use rebind::{rebind, Rebound};
 
 /// What an edit did to the document, and what it costs to take up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
