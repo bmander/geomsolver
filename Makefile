@@ -91,10 +91,10 @@ test-changed:
 	CARGO="$(CARGO)" scripts/test-changed.sh
 
 # Every test of the core's suite timed, into rust/test-times.tsv, which CI deals its shards by;
-# the slowest are printed.  `TIMES_ARGS` times another binary or the slow tier
-# (`TIMES_ARGS="-p gcs-core --test core --features gcs-core/slow"`).
+# the slowest are printed.  The slow tier, or another binary, is the script's own arguments
+# (`scripts/test-times.sh -p gcs-core --test core --features gcs-core/slow`).
 test-times:
-	CARGO="$(CARGO)" scripts/test-times.sh $(TIMES_ARGS)
+	CARGO="$(CARGO)" scripts/test-times.sh
 
 # The slow tier as well (tests of twenty seconds to a few minutes, `feature = "slow"`): the gear
 # pair's whole-member verifications and, with `OCCT=1`, a native tooth space. CI runs it every

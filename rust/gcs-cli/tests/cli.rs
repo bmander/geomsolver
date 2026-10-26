@@ -481,29 +481,22 @@ fn the_whole_library_reports() {
         .filter(|p| p.ends_with(".sv"))
         .filter(|p| !p.contains("/vtwin/components/")
             || std::fs::read_to_string(p).unwrap().contains("\npreview {"))
-        // the cases whose solve takes minutes are the slow tier's (`examples::SLOW`): the sized
-        // conrod alone was 200 of this test's 250 seconds
-        .filter(|p| cfg!(feature = "slow")
-            || !gcs_core::examples::SLOW.iter().any(|k| p.ends_with(&format!("/{k}.sv"))))
+        // the cases whose solve takes minutes are the slow tier's: the sized conrod alone was 200
+        // of this test's 250 seconds
+        .filter(|p| {
+            let key = std::path::Path::new(p).file_stem().unwrap().to_str().unwrap();
+            !gcs_core::examples::left_to_slow_tier(key)
+        })
         .collect();
     all.sort();
     // the library dealt to one `solventc` per core, so the longest part and not the sum sets the
     // time.  A run exits with its worst document's code, so the library's is the worst of the
     // parts', and its solved lines are theirs summed
-    let parts = std::thread::available_parallelism().map_or(1, |n| n.get()).min(all.len());
-    let outs: Vec<Output> = std::thread::scope(|s| {
-        let runs: Vec<_> = (0..parts)
-            .map(|k| {
-                let share: Vec<&str> =
-                    all.iter().skip(k).step_by(parts).map(String::as_str).collect();
-                s.spawn(move || run(&share))
-            })
-            .collect();
-        runs.into_iter().map(|r| r.join().expect("a part of the library ran")).collect()
+    let parts = gcs_core::par::threads().min(all.len());
+    let outs = gcs_core::par::indices(parts, |k| {
+        run(&all.iter().skip(k).step_by(parts).map(String::as_str).collect::<Vec<_>>())
     });
-    let codes: Vec<Option<i32>> = outs.iter().map(|o| o.status.code()).collect();
-    assert!(codes.iter().all(Option::is_some), "every part exits: {codes:?}");
-    let worst = codes.iter().max().copied().flatten();
+    let worst = outs.iter().map(|o| o.status.code().expect("every part exits")).max();
     assert_eq!(worst, Some(2), "the unsatisfiable ones are a failure");
     let solved: usize = outs.iter()
         .map(|o| {

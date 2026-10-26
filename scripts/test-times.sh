@@ -39,8 +39,7 @@ awk -F'\t' 'FNR == NR { new[$2] = 1; print; next } !($2 in new)' "$work/new" "$o
 mv "$work/merged" "$out"
 
 awk -F'\t' '{ s += $1 } END { printf "%d tests timed, %.0f s of test time\n", NR, s }' "$work/new"
-# into a file first: `head` closing the pipe would fail the script under pipefail
-sort -t'	' -k1,1gr "$work/new" > "$work/sorted"
-echo "slowest:"; head -n 25 "$work/sorted"
+# awk and not `head`, which would close the pipe early and fail the script under pipefail
+echo "slowest:"; sort -t'	' -k1,1gr "$work/new" | awk 'NR <= 25'
 grep '"event": "failed"' "$work/json" | sed 's/.*"name": "\([^"]*\)".*/failed: \1/' || true
 exit $status

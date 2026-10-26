@@ -12,9 +12,8 @@
 # build them on every machine it reached.  A test that takes 30 s or more is dealt on its own, so
 # the slow tier's few long tests spread out.  The weights are rust/test-times.tsv (seconds, a
 # tab, the test's name), which `scripts/test-times.sh` writes; a test not listed weighs
-# DEFAULT_SECONDS (0.2, or 60 when cargo is asked for the slow tier, since a test missing from
-# the file is most likely one of its long ones; a binary's tier is not known, so give it).  The
-# parts are filled longest first, each unit into the lightest part so far, so every machine
+# DEFAULT_SECONDS (0.2; slow.yml gives 60, since a test missing from the file is most likely one
+# of the slow tier's long ones).  The parts are filled longest first, each unit into the lightest part so far, so every machine
 # computes the same split.  A test the build ignores weighs nothing.  `LIST=1` prints the part's
 # tests and their total instead of running them.
 set -euo pipefail
@@ -22,7 +21,6 @@ set -euo pipefail
 k=$1 n=$2; shift 2
 root="$(cd "$(dirname "$0")/.." && pwd)"
 CARGO=${CARGO:-cargo}
-default=0.2
 if [ "${1:-}" = "--binary" ]; then
     [ $# -eq 3 ] || { echo "--binary takes a test binary and its package's directory" >&2; exit 2; }
     [ -x "$2" ] || { echo "no test binary at $2" >&2; exit 2; }
@@ -32,23 +30,22 @@ if [ "${1:-}" = "--binary" ]; then
 else
     [ $# -gt 0 ] || { echo "say what to build: <cargo test arguments> or --binary" >&2; exit 2; }
     cd "$root"
-    case " $* " in *slow*) default=60 ;; esac
     # built first and aloud: a build that failed would otherwise list no tests and pass
     $CARGO test --manifest-path rust/Cargo.toml "$@" --no-run
     built=("$@")
     libtest() { $CARGO test --manifest-path rust/Cargo.toml "${built[@]}" -- "$@"; }
 fi
-default=${DEFAULT_SECONDS:-$default}
 
-names=$(mktemp); ignored=$(mktemp); part=$(mktemp); tests=$(mktemp)
-trap 'rm -f "$names" "$ignored" "$part" "$tests"' EXIT
-libtest --list --format terse 2>/dev/null | sed -n 's/: test$//p' | sort -u > "$names"
-[ -s "$names" ] || { echo "no tests listed" >&2; exit 1; }
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+libtest --list --format terse 2>/dev/null | sed -n 's/: test$//p' | sort -u > "$work/names"
+[ -s "$work/names" ] || { echo "no tests listed" >&2; exit 1; }
 # an ignored test is dealt with its module but weighs nothing: it will not run in this build
-libtest --list --ignored --format terse 2>/dev/null | sed -n 's/: test$//p' > "$ignored"
+libtest --list --ignored --format terse 2>/dev/null | sed -n 's/: test$//p' > "$work/ignored"
 
-awk -F'\t' -v k="$k" -v n="$n" -v d="$default" -v times=rust/test-times.tsv \
-    -v ignored="$ignored" '
+# the part's names into a file, its time and count on stdout
+: > "$work/tests"
+summary=$(awk -F'\t' -v k="$k" -v n="$n" -v d="${DEFAULT_SECONDS:-0.2}" \
+    -v times=rust/test-times.tsv -v ignored="$work/ignored" -v out="$work/tests" '
     BEGIN {
         while ((getline line < times) > 0) if (split(line, f, "\t") == 2) t[f[2]] = f[1]
         while ((getline line < ignored) > 0) t[line] = 0
@@ -57,7 +54,7 @@ awk -F'\t' -v k="$k" -v n="$n" -v d="$default" -v times=rust/test-times.tsv \
         w = ($0 in t) ? t[$0] : d
         u = (w >= 30 || index($0, "::") == 0) ? $0 : substr($0, 1, index($0, "::") - 1)
         if (!(u in weight)) units[++m] = u
-        weight[u] += w; members[u] = members[u] "\n" $0
+        weight[u] += w; size[u]++; members[u] = size[u] > 1 ? members[u] "\n" $0 : $0
     }
     END {
         # longest first, ties by name, so the order does not depend on awk
@@ -71,18 +68,14 @@ awk -F'\t' -v k="$k" -v n="$n" -v d="$default" -v times=rust/test-times.tsv \
             best = 1
             for (p = 2; p <= n; p++) if (load[p] < load[best]) best = p
             load[best] += weight[units[i]]
-            if (best == k) out = out members[units[i]]
+            if (best == k) { print members[units[i]] > out; count += size[units[i]] }
         }
-        printf "%.0f%s\n", load[k], out
-    }' "$names" > "$part"
-
-# files and not pipes: `head` closing a pipe early fails the script under pipefail
-total=$(sed -n 1p "$part")
-sed -e 1d -e '/^$/d' "$part" > "$tests"
-count=$(grep -c . "$tests" || true)
+        printf "%.0f %d\n", load[k], count
+    }' "$work/names")
+read -r total count <<< "$summary"
 echo "shard $k of $n: $count tests, about ${total} s by rust/test-times.tsv"
-if [ -n "${LIST:-}" ]; then cat "$tests"; exit 0; fi
+if [ -n "${LIST:-}" ]; then cat "$work/tests"; exit 0; fi
 # with no names libtest would run everything
 [ "$count" -eq 0 ] && exit 0
 # shellcheck disable=SC2086  # the names are words
-libtest --exact $(cat "$tests")
+libtest --exact $(cat "$work/tests")

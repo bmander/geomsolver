@@ -38,12 +38,14 @@ this tier is fast and usually right, and the next tier is CI, which is always wh
 
 ## CI: shards dealt by time
 
-`scripts/test-shard.sh K N <cargo test arguments>` runs the K-th of N parts of a test binary;
+`scripts/test-shard.sh K N --binary <test binary> <its package's directory>` (or `K N <cargo test
+arguments>`, which builds the binary first) runs the K-th of N parts of a test binary;
 CI deals the core's suite into four on push and eight at night.  It deals by module, because a
 module's tests share fixtures built once per process (`OnceLock`s in `twist_drill`,
 `envelope::paired`) that a split would build again on every machine, and it deals a test of 30 s
 or more on its own.  Each unit goes to the lightest part so far, longest first, by the times in
-`rust/test-times.tsv`; a test missing from that file weighs 0.2 s, or a minute in a slow build.
+`rust/test-times.tsv`; a test missing from that file weighs `DEFAULT_SECONDS`, 0.2 s, or the
+minute slow.yml gives it.
 Every machine computes the same split, and the parts cover the binary exactly once (`LIST=1`
 prints a part).  The libtest runner is used and not one that runs each test in a process of its
 own, for the same fixtures.
@@ -56,12 +58,14 @@ the binary was built in (`CARGO_MANIFEST_DIR` is compiled in, and every hosted r
 to the same place).  The wall clock is the same, about six and a half minutes from push to
 answer, since the shards wait for the build; the core's runner-minutes halved, 22 to 11.
 
-**A cache holds the third-party crates, and only they count.**  Cargo judges the workspace's own
-crates by their sources' times, and a fresh checkout's are newer than anything a cache holds, so
-`gcs-solve`, `gcs-core` and the suite compile in every run, about four minutes, whatever is
-restored; what a restore saves is nalgebra and the rest, some twenty seconds.  The caches are
-keyed by the lockfile for that reason: a key per commit would save a new copy every push and
-buy nothing.
+**Nothing is cached.**  Cargo judges the workspace's own crates by their sources' times, and a
+fresh checkout's are newer than anything a cache could hold, so `gcs-solve`, `gcs-core` and the
+suite compile in every run, about four minutes, whatever is restored.  The only other crates are
+nalgebra's, the tests' one dependency, which compile beside `gcs-solve` and off the path that
+matters.  Incremental compilation, which a build from nothing cannot use, is off
+(`CARGO_INCREMENTAL=0`).  The other crates' suites and the doc tests run in the `build` job
+after its upload, on the libraries it has just compiled, rather than in a job that would compile
+them again.
 
 `rust/test-times.tsv` is `make test-times`: every test of the binary timed by libtest itself
 (`--report-time`, which stable libtest gives when `RUSTC_BOOTSTRAP` is set where the binary runs;
