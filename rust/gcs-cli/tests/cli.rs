@@ -111,6 +111,30 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A developable panel's band (#645) exports as STL whatever the kernel — its faceting, exact to
+/// its rulings — and its STEP is refused once, in the core's words, with no file written.
+#[test]
+fn a_developable_band_writes_its_stl_and_refuses_its_step() {
+    let dir = std::env::temp_dir().join(format!("solventc-band-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (stl, step) = (dir.join("transition.stl"), dir.join("transition.step"));
+    let source = doc("developable/offset_transition.sv");
+    let wrote = run(&[&source, "--solid", "transition", "--stl", stl.to_str().unwrap(),
+                      "--no-diagnose"]);
+    assert_eq!(wrote.status.code(), Some(0), "{}", String::from_utf8_lossy(&wrote.stderr));
+    let bytes = std::fs::read(&stl).unwrap();
+    assert!(bytes.len() > 84 && bytes.len() == 84 + 50 * u32::from_le_bytes(
+        bytes[80..84].try_into().unwrap()) as usize, "a binary STL");
+    let refused = run(&[&source, "--solid", "transition", "--step", step.to_str().unwrap(),
+                        "--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(refused.status.code(), Some(1), "{stderr}");
+    assert_eq!(stderr.matches("not yet written to STEP").count(), 1, "{stderr}");
+    assert!(!step.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// A refined mesh the field-agreement probe refuses is never written: the swept torus meshed
 /// so coarsely its facets leave the field, and the earlier output is left as it was.
 #[cfg(feature="occt")]
@@ -579,6 +603,30 @@ fn no_diagnose_solves_only() {
     assert!(!text.contains("DOF"), "{text}");
 }
 
+/// `--no-check` judges no claim about solids and says how many it left, in the text and in the
+/// JSON, so a run that judged none is never read as one where each held; the claim over a sweep
+/// that would be 37 poses is none.
+#[test]
+fn no_check_leaves_the_claims_about_solids_unjudged_and_says_so() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/fixtures/solid_issue51/sampling_disclosure.sv");
+    let path = path.to_str().unwrap();
+    let out = run(&[path, "--no-check"]);
+    assert_eq!(out.status.code(), Some(0));
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("  1 claim about solids not judged\n"), "{text}");
+    assert!(!text.contains("sampling 37 poses") && !text.contains("claim over"), "{text}");
+    let out = run(&[path, "--no-check", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let json = gcs_core::json::parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+    let doc = &json.get("documents").unwrap().arr()[0];
+    assert_eq!(doc.get("solidClaimsUnjudged").map(|n| n.as_i64()), Some(1));
+    assert!(doc.get("diagnosis").unwrap().get("solidClaims").unwrap().arr().is_empty());
+    // judged, it is said with its verdict, and nothing is said unjudged
+    let text = String::from_utf8(run(&[path]).stdout).unwrap();
+    assert!(text.contains("sampling 37 poses") && !text.contains("not judged"), "{text}");
+}
+
 /// `--output` writes an SVG, and the writer is the **core's** — an "export SVG" button in the
 /// web app must not be a second implementation.
 #[test]
@@ -839,6 +887,8 @@ fn a_repeated_option_or_output_is_refused() {
         (&["x.sv","--stl","a.stl","--solid","p","--solid","q"][..],"`--solid` given twice for `a.stl`"),
         (&["x.sv","--solid","p","--solid","q","--stl","a.stl"][..],"`--solid` given twice before every output"),
         (&["x.sv","--stl","a.stl","--view","top"][..],"`--view` qualifies a --png, and none is given"),
+        (&["x.sv","--png","a.png","--section","top","--section","-top"][..],"`--section` given twice for `a.png`"),
+        (&["x.sv","--stl","a.stl","--section","top"][..],"`--section` qualifies a --png, and none is given"),
         (&["x.sv","--solid","p"][..],"`--solid` says which solid an output writes, and none is given"),
     ] {
         let output = run(args);
@@ -1338,13 +1388,16 @@ fn a_part_file_draws_its_preview() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
-/// What `--png` refuses: an eye it cannot read, a name to hide that names nothing, and a drawing
-/// rather than a model.
+/// What `--png` refuses: an eye it cannot read, a section moved by no length, a name to hide that
+/// names nothing, and a drawing rather than a model.
 #[test]
 fn a_png_is_refused_what_it_cannot_draw() {
     let out = run(&[&doc("solid_pulley.sv"), "--png", "x.png", "--view", "askew"]);
     assert_eq!(out.status.code(), Some(64));
     assert!(String::from_utf8_lossy(&out.stderr).contains("--view needs front, back, right, left, top, bottom, isometric"));
+    let out = run(&[&doc("solid_pulley.sv"), "--png", "x.png", "--section", "top@deep"]);
+    assert_eq!(out.status.code(), Some(64));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--section moves a plane by a length"));
     let dir = std::env::temp_dir().join(format!("solventc-png-refused-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let png = dir.join("p.png");
@@ -1356,6 +1409,53 @@ fn a_png_is_refused_what_it_cannot_draw() {
     let out = run(&[&doc("solid_pulley.svd"), "--png", png.to_str().unwrap()]);
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("PNG export selects geometry from a .sv model"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+/// `--section` cuts what a picture draws, the side its plane's normal points to taken away: from
+/// above, the nested prisms cut by the top plane through the world's origin leave the wide prism's
+/// cut face, hatched, and nothing of the narrow one, which stands all in front of the plane — so
+/// the picture is the wide prism's alone, cut the same, byte for byte, as if the narrow one were
+/// hidden.  Kept the other way (`-top`), the narrow prism stands whole in the middle.  A plane
+/// moved past everything leaves nothing: the run fails and writes nothing, as it does for a plane
+/// the document does not have.
+#[test]
+fn a_section_takes_away_what_is_in_front_of_its_plane() {
+    let dir = std::env::temp_dir().join(format!("solventc-png-section-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("nested.sv");
+    std::fs::write(&source, NESTED).unwrap();
+    let draw = |name: &str, extra: &[&str]| -> Result<(usize, usize, Vec<u8>), String> {
+        let png = dir.join(format!("{name}.png"));
+        let mut args = vec![source.to_str().unwrap(), "--no-diagnose", "--size", "300", "--view",
+                            "top", "--png", png.to_str().unwrap()];
+        args.extend_from_slice(extra);
+        let out = run(&args);
+        let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+        if out.status.code() != Some(0) {
+            assert!(!png.exists(), "a refused picture is not written");
+            return Err(stderr);
+        }
+        Ok(read_png(&std::fs::read(png).unwrap()))
+    };
+    let cut = draw("cut", &["--section", "top"]).unwrap();
+    assert_eq!(cut, draw("alone", &["--section", "top", "--hide", "narrow"]).unwrap(),
+               "what a section takes away whole is drawn as if hidden");
+    let whole = draw("whole", &["--solid", "wide"]).unwrap();
+    // a stretch of the row through the middle: the wide prism's top flat and one colour, its cut
+    // face hatched and more than one
+    let stretch = |(w, h, rgb): &(usize, usize, Vec<u8>)| -> std::collections::BTreeSet<[u8; 3]> {
+        let row = &rgb[3 * w * (h / 2)..3 * w * (h / 2 + 1)];
+        row.as_chunks::<3>().0[w / 2 - 20..w / 2 + 20].iter().copied().collect()
+    };
+    assert_eq!(stretch(&whole).len(), 1, "a flat face seen square on is one colour");
+    assert!(stretch(&cut).len() > 1, "a cut face is hatched");
+    assert_ne!(middle(&draw("kept", &["--section", "-top"]).unwrap()), middle(&cut),
+               "kept the other way, the narrow prism stands whole in the middle");
+    let past = draw("past", &["--section", "top@-30mm"]).unwrap_err();
+    assert!(past.contains("the section takes away everything there is to draw"), "{past}");
+    let none = draw("none", &["--section", "nowhere"]).unwrap_err();
+    assert!(none.contains("`nowhere` is not a model plane"), "{none}");
     std::fs::remove_dir_all(dir).unwrap();
 }
 

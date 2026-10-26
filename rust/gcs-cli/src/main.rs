@@ -54,6 +54,9 @@ diagnosed, and the report says where it stands.
                         value the document names, in its unit (repeatable; the whole table in
                         --json when none is given)
     --no-diagnose       solve only; skip the diagnosis
+    --no-check          judge no claim about solids (clear, fits, inside), so no solid is built
+                        for one: the report says how many were left unjudged.  The claims over
+                        values and over the geometry, which build nothing, are judged still
     --lint              also say where the document's own text drifts from the language's style
                         (W201-W206: a pun, a bare component statement, an asserting component, a
                         deep path, a presentation flag, a group threaded unread), and (W207) a
@@ -101,6 +104,11 @@ diagnosed, and the report says where it stands.
     --size PX           the PNG's longer side in pixels (default 1200)
     --hide NAMES        objects --png leaves out, each a name and everything under it, comma
                         separated (repeatable): a cutaway
+    --section PLANE     cut what --png draws by a plane, the side its normal points to taken
+                        away and each cut face hatched: a view's word through the origin (front
+                        takes away what is nearer a front view's eye; top, right, …) or a model
+                        plane by its path (std.top, bracket.mid); -PLANE keeps the other side,
+                        PLANE@LENGTH moves it along its normal (top@5mm, -std.front@-2)
     --solid NAME        which solid to export; defaults to the only Boolean root
     --tolerance [LENGTH] export for fabrication: the native STEP/STL within LENGTH of the exact
                         surface (default 0.01mm; a bare number is in the document's unit, and
@@ -116,16 +124,17 @@ diagnosed, and the report says where it stands.
     -h, --help          this
     -V, --version       the version of this build (a release says its tag)
 
---solid, --view, --size and --hide qualify an output: given after one, the last before them that
-they qualify (--solid any output, the rest a --png); given before every output, each output told
-none of its own.  An option that takes one value is refused given twice, and so is an output
-given twice to one path.
+--solid, --view, --size, --hide and --section qualify an output: given after one, the last before
+them that they qualify (--solid any output, the rest a --png); given before every output, each
+output told none of its own.  An option that takes one value is refused given twice, and so is an
+output given twice to one path.
 
 Examples:
     solventc part.sv                          check a document: solved, and how constrained
     solventc --json part.sv                   the same report, structured
     solventc part.sv --where hinge            the numbers under one name
     solventc drive.sv --where torque          a value, in its unit: torque = 0.0864 N·m
+    solventc bot.sv --no-check                the layout, solved, its solids' claims unjudged
     solventc part.sv --png part.png           look at it, as the workspace shows it
     solventc part.sv --stl part.stl --solid body
                                               a solid, for a printer
@@ -135,6 +144,8 @@ Examples:
                                               every part, as one assembly for a CAD system
     solventc part.sv --png top.png --view top --png iso.png --view isometric
                                               two pictures, the solids built once
+    solventc part.sv --png cut.png --section front
+                                              the front half taken away, the cut hatched
     solventc drawing.svd --sheet front -o front.svg
                                               one sheet of a drawing, as SVG
 
@@ -174,6 +185,8 @@ struct Opts {
     /// a file something else reads.
     wanted: Vec<String>,
     no_diagnose: bool,
+    /// `--no-check`: the claims about solids left unjudged, said by how many.
+    no_check: bool,
     /// `--lint`: the drift lint's warnings (`program::drift`) beside elaboration's.
     lint: bool,
     allow_unsolved: bool,
@@ -210,6 +223,7 @@ impl Default for Opts {
             json: false,
             wanted: Vec::new(),
             no_diagnose: false,
+            no_check: false,
             lint: false,
             allow_unsolved: false,
             output: None,
@@ -237,6 +251,8 @@ struct Qualifiers {
     view: Option<picture::Eye>,
     size: Option<usize>,
     hide: Option<Vec<String>>,
+    /// `--section`: the plane as written, read against the document it cuts.
+    section: Option<String>,
 }
 
 /// What one output writes.
@@ -413,6 +429,16 @@ fn main() -> ExitCode {
                 }
                 None => return misuse("--hide needs a name"),
             },
+            "--section" => match args.next() {
+                Some(n) => {
+                    if let Err(m) = cut_written(&n) { return misuse(m); }
+                    let (q, at) = opts.qualified(true);
+                    if let Err(m) = qualify(&mut q.section, n, "--section", &at) {
+                        return misuse(m);
+                    }
+                }
+                None => return misuse("--section needs a plane"),
+            },
             "--stl" => match args.next() {
                 Some(p) => opts.add_export(Some(p), None),
                 None => return misuse("--stl needs a path"),
@@ -444,6 +470,7 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
+            "--no-check" => opts.no_check = true,
             "--lint" => opts.lint = true,
             "--progress" => said = Some(watch::Say::Everything),
             "--no-progress" => said = Some(watch::Say::Nothing),
@@ -501,7 +528,7 @@ fn main() -> ExitCode {
         return misuse("`--solid` says which solid an output writes, and none is given");
     }
     let qualified = [("--view", run.view.is_some()), ("--size", run.size.is_some()),
-                     ("--hide", run.hide.is_some())];
+                     ("--hide", run.hide.is_some()), ("--section", run.section.is_some())];
     for (flag, given) in qualified {
         if given && !opts.pictured() {
             return misuse(format!("`{flag}` qualifies a --png, and none is given"));
@@ -685,7 +712,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
         .then(|| progress::during(diagnosing, || {
-            diagnose(&mut sk, DiagnoseOptions { settled: solved, ..DiagnoseOptions::default() })
+            diagnose(&mut sk, DiagnoseOptions {
+                settled: solved, solid_claims: !opts.no_check, ..DiagnoseOptions::default()
+            })
         }));
     // read at the solved pose, before anything below builds or exports
     let components = opts.components.then(|| gcs_core::boundary::classify(&e, &sk));
@@ -770,6 +799,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             // measured, and — for one the faceting cannot decide — that it could not
             for v in &d.solid_claims {
                 println!("  {}", gcs_core::report::solid_claim_text(v));
+            }
+            if opts.no_check && !sk.solid_claims.is_empty() {
+                println!("  {}", gcs_core::report::solid_claims_unjudged_text(sk.solid_claims.len()));
             }
             // each meshing's contact over its phase, in the core's words (#283)
             for i in 0..sk.meshings.len() {
@@ -883,11 +915,17 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 // solve is still looked at, as its SVG is still written
                 let (own, run) = (&o.own, &opts.run);
                 let hide = own.hide.as_ref().or(run.hide.as_ref()).map_or(&[][..], Vec::as_slice);
+                let section = match own.section.as_ref().or(run.section.as_ref())
+                    .map(|n| cut_plane(&sk, &e.map, n)).transpose() {
+                    Ok(c) => c,
+                    Err(m) => { eprintln!("solventc: {path}: {m}"); code = 1; continue; }
+                };
                 let ask = picture::Ask {
                     eye: own.view.or(run.view).unwrap_or(picture::HOME),
                     size: own.size.or(run.size).unwrap_or(1200),
                     solid,
                     hide,
+                    section,
                 };
                 match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
                     Ok((bytes, unbuilt)) => {
@@ -931,9 +969,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         opts.json.then(|| {
             let components = components.as_ref()
                 .map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json).collect()));
-            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
-                     positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null),
-                     &opts.wanted)
+            let mut doc = doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
+                                   positions.unwrap_or(Json::Null),
+                                   components.unwrap_or(Json::Null), &opts.wanted);
+            // the claims `solidClaims` leaves out, so an empty list is not read as none stated
+            if opts.no_check && d.is_some() && !sk.solid_claims.is_empty() {
+                doc.set("solidClaimsUnjudged", Json::Int(sk.solid_claims.len() as i64));
+            }
+            doc
         }),
     )
 }
@@ -947,13 +990,17 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
     let Writes::Export { stl, step } = &o.writes else { return true };
     let (mut stl, mut step, solid) = (stl.clone(), step.clone(), opts.solid(&o.own));
     let mut ok = true;
+    // a developable panel's band has no exact walls to write (#645): its STL is its faceting,
+    // exact to its rulings, whatever kernel would write a solid's; its STEP is refused once below
+    let faceted = pick_solid(sk, solid).is_ok_and(|i| gcs_core::solid::sheet::is_band(sk, i));
+    let native_stl = opts.native_stl && !faceted;
     // A body with swept cuts is built only when every sweep is in the generating class
     // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
     // nothing is written, so an earlier output stays as it was. The class is what the native
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
     // A native export admits the body itself, beside the first of its construction.
-    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
+    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && native_stl && !opts.refine));
     let mut body = None;
     if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
         if let Ok(i) = pick_solid(sk,solid) {
@@ -981,7 +1028,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
         { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); ok = false; }
         stl = None;
     }
-    if step.is_some() || (stl.is_some() && opts.native_stl) {
+    if step.is_some() || (stl.is_some() && native_stl) {
         match (solved,pick_solid(sk,solid)) {
             (false,_) => {
                 let message = "native STEP/STL export requires a solved model".to_string();
@@ -1000,7 +1047,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
                 let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(sk,i));
                 match tolerance(sk,opts) {
                     Err(message) => { eprintln!("solventc: {message}"); ok = false; }
-                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t,seen) {
+                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| native_stl),t,seen) {
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(e,i,refusal);
@@ -1010,7 +1057,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
             }
         }
     }
-    if let Some(path) = stl.as_ref().filter(|_| !opts.native_stl) {
+    if let Some(path) = stl.as_ref().filter(|_| !native_stl) {
         // the mesh is `gcs_core::mesh`'s for `svg`'s reason: a printer's file and a drawing are
         // two readings of one boundary, and a second walk would be a second object
         match pick_solid(sk, solid) {
@@ -1170,6 +1217,45 @@ fn length(text: &str) -> Option<Result<(f64,Option<f64>),String>> {
         },
     };
     Some(if value > 0. && value.is_finite() { Ok((value,per)) } else { Err("a tolerance is a positive length".into()) })
+}
+
+/// `--section`'s plane as written, read apart from any document: whether it keeps the other side
+/// (a leading `-`), the plane's name, and how far it is moved along its normal (after `@`: a
+/// signed number, and the millimetres its unit is worth, `None` for the document's own).
+fn cut_written(text: &str) -> Result<(bool, &str, Option<(f64, Option<f64>)>), String> {
+    let (flip, rest) = text.strip_prefix('-').map_or((false, text), |r| (true, r));
+    let (name, by) = rest.split_once('@').map_or((rest, None), |(n, b)| (n, Some(b)));
+    if name.is_empty() {
+        return Err(format!("--section needs a plane's name, not `{text}`"));
+    }
+    let by = match by {
+        None => None,
+        Some(b) => {
+            let (sign, magnitude) = match b.strip_prefix('-') {
+                Some(m) => (-1.0, m),
+                None => (1.0, b.strip_prefix('+').unwrap_or(b)),
+            };
+            match length(magnitude) {
+                Some(Ok((v, per))) => Some((sign * v, per)),
+                _ => return Err(format!("--section moves a plane by a length, `{name}@5mm`, \
+                    not `@{b}`")),
+            }
+        }
+    };
+    Ok((flip, name, by))
+}
+
+/// `--section`'s plane in the world, read against the solved document: the plane it names
+/// (`drawing::plane_named`), moved and turned as written.
+fn cut_plane(sk: &Sketch, map: &gcs_core::program::SourceMap, text: &str)
+    -> Result<gcs_core::plane::Basis, String> {
+    let (flip, name, by) = cut_written(text)?;
+    let plane = gcs_core::drawing::plane_named(sk, map, name)?;
+    let by = by.map_or(0.0, |(v, per)| match per {
+        Some(per) => v * per / gcs_core::solid::cad::millimetres(sk),
+        None => v,
+    });
+    Ok(plane.moved_along(by, flip))
 }
 
 /// The export tolerance `--tolerance` asked for, in native millimetres: a bare number is in the

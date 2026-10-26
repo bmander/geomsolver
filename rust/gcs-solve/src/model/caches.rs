@@ -142,6 +142,9 @@ pub struct Caches {
     /// unit it was stepped at: validation and the evaluation each ask it, and it is a solve a
     /// station.
     pub(crate) family: Memo<Result<Rc<crate::solid::family::Family>, String>>,
+    /// Each developable panel's band faceted (`solid::sheet::band`, #645), against `solid::reads`
+    /// at the unit it was faceted at.
+    pub(crate) sheet: Memo<Result<Rc<crate::solid::sheet::Band>, String>>,
     /// Each declared parameter's march (`follow::followed`, #391 S4), by its name, against every
     /// number of the drawing: a trace over it and the report each read it, and it is a solve a
     /// station.
@@ -190,6 +193,7 @@ impl Caches {
         self.whole.clear();
         self.built.clear();
         self.family.clear();
+        self.sheet.clear();
         self.followed.borrow_mut().clear();
         self.tracks.borrow_mut().clear();
         self.traced3.borrow_mut().clear();

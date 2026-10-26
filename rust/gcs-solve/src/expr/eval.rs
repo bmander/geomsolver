@@ -169,9 +169,19 @@ pub fn judge_in(c: &Cond, env: &dyn Env) -> Result<bool, ExprError> {
 fn decide_by(c: &Cond, env: &dyn Env, holds: fn(Cmp, f64, f64) -> bool)
     -> Result<bool, ExprError>
 {
+    decide_with(c, env, None, holds)
+}
+
+/// `decide_by` where a measurement may be read (an `if` in a statement read after the solve).
+fn decide_with(
+    c: &Cond,
+    env: &dyn Env,
+    ms: Option<Measurer>,
+    holds: fn(Cmp, f64, f64) -> bool,
+) -> Result<bool, ExprError> {
     Ok(match c {
         Cond::Cmp(op, a, b) => {
-            let (x, y) = (ev(a, env, None)?, ev(b, env, None)?);
+            let (x, y) = (ev(a, env, ms)?, ev(b, env, ms)?);
             x.dim.agree(y.dim).ok_or_else(|| {
                 ExprError::dimension(format!(
                     "{} cannot be compared with {}: `{}` needs one dimension, not two",
@@ -191,14 +201,14 @@ fn decide_by(c: &Cond, env: &dyn Env, holds: fn(Cmp, f64, f64) -> bool)
             holds(*op, number(&x)?, number(&y)?)
         }
         Cond::And(a, b) => {
-            let (p, q) = (decide_by(a, env, holds)?, decide_by(b, env, holds)?);
+            let (p, q) = (decide_with(a, env, ms, holds)?, decide_with(b, env, ms, holds)?);
             p && q
         }
         Cond::Or(a, b) => {
-            let (p, q) = (decide_by(a, env, holds)?, decide_by(b, env, holds)?);
+            let (p, q) = (decide_with(a, env, ms, holds)?, decide_with(b, env, ms, holds)?);
             p || q
         }
-        Cond::Not(a) => !decide_by(a, env, holds)?,
+        Cond::Not(a) => !decide_with(a, env, ms, holds)?,
         Cond::In(a, b) => {
             return Err(ExprError::from(format!(
                 "`{a} in {b}` asks what `{a}` stands for, which is no number"
@@ -315,6 +325,34 @@ fn ev(
             Some(f) => f(*m, args)?,
             None => return Err(ExprError::measure(&m.text(args))),
         },
+        // both sides are worked out, as both sides of an `or` are, so a mistake on the one not
+        // taken is still said; the choice is of the dimension the two agree in
+        Ast::If(c, a, b) => {
+            // which side is taken is known before the solve, as a `when`'s block is
+            for name in c.deps() {
+                let free = match env.value(&name) {
+                    Some(v) => v.free,
+                    None => Some(name.clone()),
+                };
+                if let Some(u) = free {
+                    return Err(ExprError::from(format!(
+                        "{} an unknown of the drawing, and an `if` chooses before the solve: its \
+                         condition compares numbers the document states",
+                        super::reads_unknown(&name, &u)
+                    )));
+                }
+            }
+            let holds = decide_with(c, env, ms, Cmp::holds)?;
+            let (x, y) = (ev(a, env, ms)?, ev(b, env, ms)?);
+            let dim = x.dim.agree(y.dim).ok_or_else(|| {
+                ExprError::dimension(format!(
+                    "`if` chooses between {} and {}: its two numbers need one dimension, not two",
+                    x.dim.name(),
+                    y.dim.name()
+                ))
+            })?;
+            Aff { dim, ..if holds { x } else { y } }
+        }
     })
 }
 

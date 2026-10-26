@@ -87,7 +87,10 @@ came from.
   `K::OrdinateU`/`V`); `Constraint::reads_space` asks it where `CKind::spatial` would.
   The plane forms (`q distance(d, along: u) P`) are rewritten from `P.origin` along `P.u` in
   `program::relations::ordinate_operands`, which also refuses a plane as a direction, `n` with no
-  plane operand, a word that also names a direction in scope, and a literal zero (E040, naming the level); `a horizontal b`
+  plane operand, and a word that also names a direction in scope; its number is a dimension
+  whatever it comes to, a literal zero as much as a name for one or `(x0 + x1) / 2` (Solvent
+  [0.188]: through 0.187 the literal was E040, naming the level, so a component placing a point
+  by its ordinates had to branch on each being zero); `a horizontal b`
   is `std`'s word for `level(up)` (`use std (horizontal)`, §9.9), and the printer
   (`print::ordinate_text`) spells each case back.  `tests/ordinate.rs` is the gate.
 
@@ -391,3 +394,17 @@ came from.
   `distance(45deg)` is an error, never a coercion), `ClaimFree` (E040, §9.7) or `Uncomputable`
   (W110, the last number stands).  A point-to-point distance and a radius are
   `CKind::magnitude`; a negative literal in one is E040 where written.
+
+**A plane touching a path, and a contact over an interval** (#645, [0.192],
+[developables.md](developables.md)). `T tangent(at: m) k` with `T` a plane settles by `k`'s kind
+in `constraints::infix_op`: a line `PlaneTangentLine`, a circle or an arc `PlaneTangentRound` (two
+rows each, `m` in the plane and the tangent), a curve traced in space a `Rate` of its contact with
+the word `holds` beside a `PointOnPlane` made by the same statement (`program::relations`, after
+`traced_contact` turns a curve's `plane` into `holds`); a curve drawn in a view is E040, and so is
+`sense:` (`Written::assemble` says why: it is read between two paths in a sheet's body). `p
+coincident(t in (a, b)) l` is parsed as `OpArg::Within` and split by the flattener
+(`Walk::within`) into the incidence and a `coincident` carrying the low end and an `in:` bound,
+marked with `syntax::WITHIN` (a selector no source can spell, so a bound written
+`coincident(in: (a, b))` is never read as one), which `settle` reads as `LineFraction`: a bound, so a branch choice outside a
+set's body and never a row; inside one the interval is dropped from the row and read by the
+recogniser. Both kinds are undrawn (`callout::undrawn!`); `LineFraction` has its free twin.

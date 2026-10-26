@@ -8,7 +8,8 @@ use crate::syntax::words;
 use crate::syntax::{seed_arg, Arg, Cmp, Name, OpArg, Ref, Relation, Span, Written};
 
 /// The words a rate is read by (#339 D2): each reads a direction, which a rate is.
-const RATE_WORDS: [&str; 4] = ["parallel", "perpendicular", "angle", "distance"];
+/// `equal` reads two rates' speeds (#645), as it reads two lines' lengths.
+const RATE_WORDS: [&str; 5] = ["parallel", "perpendicular", "angle", "distance", "equal"];
 
 impl<'a> P<'a> {
     /// Parse an operator relation (§9.1), preserving its written operands and arguments
@@ -64,6 +65,8 @@ impl<'a> P<'a> {
                 }
             }
         };
+        // and a rate in the parentheses, `angle(rate(m over u), l)` (#645)
+        rates.append(&mut self.arg_rates);
         // a rate is a direction (a tangent, scaled): it is read by the words that read one
         if !rates.is_empty() && !RATE_WORDS.contains(&word.text.as_str()) {
             self.fail(&format!("a rate stands where a direction is read: `rate(x over s) \
@@ -239,8 +242,32 @@ impl<'a> P<'a> {
         let mut out = Vec::new();
         // where each unlabelled item was read as text: `angle`'s may turn out to be two lines
         let mut texts: Vec<(usize, usize, usize)> = Vec::new();
+        // the rates read among them (#645), `angle(rate(m over u), l)`
+        let mut rated = 0usize;
+        self.arg_rates.clear();
         while !self.eat_p(')') {
             match (self.peek().cloned(), self.t.get(self.i + 1).map(|(t, _)| t.clone())) {
+                // an angle equal to one a rate makes (#645): the rate is the first of its lines,
+                // operand 2 onward as the parentheses' lines are the relation's third and fourth
+                _ if word == "angle" && self.rate_ahead() => {
+                    let lo = self.here().lo as usize;
+                    self.i += 2;
+                    let mut r = self.refr()?;
+                    if !self.eat_word("over") {
+                        self.fail("a rate names the formal it runs over: `rate(x over s)`");
+                        return None;
+                    }
+                    let over = self.ident()?;
+                    if !self.want_p(')') {
+                        return None;
+                    }
+                    r.span = Span::new(lo, self.prev_hi());
+                    let op = crate::syntax::ARG_RATES + out.iter().filter(|a| matches!(a, OpArg::Ent(_))).count()
+                        + texts.len();
+                    self.arg_rates.push(crate::syntax::RateOf { op, over, slot: false });
+                    out.push(OpArg::Ent(r));
+                    rated += 1;
+                }
                 _ if self.tuple_ahead() || self.member_end(&Tok::EqEq).is_some() => {
                     out.push(self.pin()?)
                 }
@@ -253,6 +280,13 @@ impl<'a> P<'a> {
                     let [(a, a_span), hi] = self.pair()?;
                     out.push(OpArg::Bound { cmp: Cmp::In, span, hi: Some(hi), grow: None });
                     out.push(OpArg::Dim(a, a_span));
+                }
+                // a contact over an interval, `t in (0, 1)` (#645): where on the curve, bounded
+                (Some(Tok::Ident(n)), Some(Tok::Ident(w))) if word == "coincident" && w == "in" => {
+                    let key = Name { text: n, span: self.here() };
+                    self.i += 2;
+                    let [lo, hi] = self.pair()?;
+                    out.push(OpArg::Within { key, lo, hi });
                 }
                 // `coincident(at: τ)` is retired (#391 S2): the instant is the operand's
                 (Some(Tok::Ident(n)), Some(Tok::P(':'))) if word == "coincident" && n == "at" => {
@@ -328,7 +362,7 @@ impl<'a> P<'a> {
         // are the pair of lines whose angle this one equals, read again as the references they
         // are.  Anything else in two is a mistake, and said so here rather than one of the two
         // being dropped where the arguments are assembled
-        if word == "angle" && texts.len() == 2 {
+        if word == "angle" && texts.len() + rated == 2 && !texts.is_empty() {
             let end = self.i;
             if !texts.iter().all(|&(_, from, to)| self.past_ref(from) == Some(to)) {
                 self.i = texts[0].1;

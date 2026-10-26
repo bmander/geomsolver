@@ -295,6 +295,12 @@ fn build(
         prims.push(family.primitive(origin, &name));
         return Term::Prim(prims.len()-1);
     }
+    // a developable panel's band (#645): faceted from its rulings
+    if let Some(band) = super::sheet::band(sk, si as usize, unit) {
+        let Ok(band) = band else { return Term::Empty };
+        prims.push(band.primitive(origin, &name));
+        return Term::Prim(prims.len() - 1);
+    }
     // a region: its meridian's loops turned once about its axis, the holes taken out
     if let SolidDef::Region { .. } = sol.def {
         let Ok(super::region::Form::Meridian(m)) = super::region::form(sk, si as usize) else {

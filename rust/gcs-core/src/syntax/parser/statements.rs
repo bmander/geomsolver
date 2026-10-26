@@ -900,17 +900,15 @@ impl<'a> P<'a> {
                 self.end_of_stmt();
                 StmtKind::Group(crate::syntax::GroupDecl { name, fields, material: None })
             }
+            // `holes := [(0mm, 0mm), (4mm, 2mm)]` — a list, a group of its items by place
+            None if self.peek() == Some(&Tok::P('[')) => {
+                let fields = self.list_items()?;
+                self.end_of_stmt();
+                StmtKind::Group(crate::syntax::GroupDecl { name, fields, material: None })
+            }
             // `o := (10mm, 20mm)` — a vector, a group of its components: `o.x`, `o.y`
             None if self.tuple_ahead() => {
-                let fields = self
-                    .vector("")?
-                    .into_iter()
-                    .map(|(key, (_, text, span))| crate::syntax::InstArg {
-                        label: Some(Name { text: key, span }),
-                        value: crate::syntax::InstVal::Expr(text),
-                        span,
-                    })
-                    .collect();
+                let fields = self.vector_members()?;
                 self.end_of_stmt();
                 StmtKind::Group(crate::syntax::GroupDecl { name, fields, material: None })
             }
@@ -1056,6 +1054,7 @@ impl<'a> P<'a> {
             count: String::new(),
             head: word.span,
             over: Some(EdgesOf { var, chain: prof, zip: Vec::new() }),
+            items: None,
             binder: None,
             body: Vec::new(),
             joint: None,
@@ -1624,6 +1623,52 @@ impl<'a> P<'a> {
         Some(fields)
     }
 
+    /// A vector, `(a, b)` or `(a, b, c)`, as the group of its components it is: `x`, `y`, `z`.
+    fn vector_members(&mut self) -> Option<Vec<InstArg>> {
+        Some(self.vector("")?.into_iter().map(|(key, (_, text, span))| InstArg {
+            label: Some(Name { text: key, span }),
+            value: InstVal::Expr(text),
+            span,
+        }).collect())
+    }
+
+    /// A list's items in `[ … ]`, the `[` not yet eaten (§12.10): each a number, a vector
+    /// `(a, b)` or a group in braces, unlabelled, and labelled here by its place (`0`, `1`, …)
+    /// as a group's members are by name — so a list is a group whose members are in order.
+    pub(super) fn list_items(&mut self) -> Option<Vec<InstArg>> {
+        if !self.want_p('[') {
+            return None;
+        }
+        let mut items = Vec::new();
+        while !self.eat_p(']') {
+            let lo = self.here().lo as usize;
+            let value = if self.tuple_ahead() {
+                InstVal::Group(self.vector_members()?)
+            } else {
+                let item = self.inst_arg()?;
+                if let Some(l) = item.label {
+                    self.fail_at(l.span, "a list's items are in order and unnamed: `[(0mm, 0mm), \
+                                          (4mm, 2mm)]` — a group names its members, `{a: 1mm}`");
+                    return None;
+                }
+                if matches!(item.value, InstVal::Hint(..)) {
+                    self.fail_at(item.span, "a list's items are values, and a `hint` seeds an \
+                                             unknown a call leaves free");
+                    return None;
+                }
+                item.value
+            };
+            let span = Span::new(lo, self.prev_hi());
+            let label = Name { text: items.len().to_string(), span };
+            items.push(InstArg { label: Some(label), value, span });
+            if !self.eat_p(',') && self.peek() != Some(&Tok::P(']')) {
+                self.fail("expected `,` or `]`");
+                return None;
+            }
+        }
+        Some(items)
+    }
+
     /// `beam(span, post, A: b * h, Iy: …, Iz: …, J: …) of steel` past `name :=`: the lines
     /// first, unlabelled, then the section's numbers, each labelled, then its material.
     fn beam(&mut self, name: Name) -> Option<crate::syntax::BeamDecl> {
@@ -2000,16 +2045,25 @@ impl<'a> P<'a> {
         }
         // `when c in B` is a condition, not a chain to run over (#267)
         if kind != BlockKind::When && over_chain(&self.t, self.i) {
-            let (var, chain, zip) = if over_walks(&self.t, self.i) {
-                let Some(walks) = self.walks() else {
+            let (over, items) = if over_walks(&self.t, self.i) {
+                let Some((var, chain, zip)) = self.walks() else {
                     self.skip_block();
                     return None;
                 };
-                walks
+                (Some(EdgesOf { var, chain, zip }), None)
             } else {
                 let var = self.ident()?;
                 self.i += 1;
-                (var, self.refr()?, Vec::new())
+                // `repeat h in [(0mm, 0mm), (4mm, 2mm)]` — a list written in place (§12.10)
+                if self.peek() == Some(&Tok::P('[')) {
+                    let Some(list) = self.list_items() else {
+                        self.skip_block();
+                        return None;
+                    };
+                    (None, Some(crate::syntax::Items { var, list }))
+                } else {
+                    (Some(EdgesOf { var, chain: self.refr()?, zip: Vec::new() }), None)
+                }
             };
             // a filter on the copies is a `when` in the body (#267): `when b != a { … }`
             if matches!(self.peek(), Some(Tok::Ident(w)) if w == "if") {
@@ -2024,7 +2078,8 @@ impl<'a> P<'a> {
                 kind,
                 count: String::new(),
                 head: Span::at(lo),
-                over: Some(EdgesOf { var, chain, zip }),
+                over,
+                items,
                 binder,
                 body,
                 joint,
@@ -2092,8 +2147,8 @@ impl<'a> P<'a> {
         }
         let span = Span::new(lo, self.prev_hi());
         Some(Block {
-            kind, count, head, over: None, binder, body, joint, about, index_reads, span,
-            image: None,
+            kind, count, head, over: None, items: None, binder, body, joint, about, index_reads,
+            span, image: None,
         })
     }
 
@@ -2200,9 +2255,14 @@ impl<'a> P<'a> {
             }
             _ => None,
         };
-        // a group written in place, `cyl: {bore: 16mm}`; refused in a call by the flattener
-        if self.peek() == Some(&Tok::P('{')) {
-            let fields = self.group_members()?;
+        // a group written in place, `cyl: {bore: 16mm}`, refused in a call by the flattener; and
+        // a member that is a list, `holes: [(0mm, 0mm), (4mm, 2mm)]`, a group of its items by place
+        let fields = match self.peek() {
+            Some(Tok::P('{')) => Some(self.group_members()?),
+            Some(Tok::P('[')) if label.is_some() => Some(self.list_items()?),
+            _ => None,
+        };
+        if let Some(fields) = fields {
             return Some(InstArg { label, value: InstVal::Group(fields), span: Span::new(lo, self.prev_hi()) });
         }
         // `beta: hint(15deg)` — an argument that leaves the formal unbound and seeds its unknown

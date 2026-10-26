@@ -115,6 +115,40 @@ pub unsafe extern "C" fn gcs_solid_own(
     })
 }
 
+/// **A solid cut by the workspace's section** (`Sketch::cut`, `EvaluatedSolid::section`), in its
+/// own coordinates as `gcs_solid_own` gives it, so the host places it by the same matrix: how many
+/// doubles of the face the cut leaves follow (nine a triangle, turned to the side taken away),
+/// then those, then where the cut meets the surface (six doubles a segment) to the end.  Returns
+/// how many doubles there are, the count included, writing them only where `cap` holds them all;
+/// 0 where the workspace is not sectioned, -1 where the solid does not evaluate (the reason in
+/// `gcs_last_error`).
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_section(
+    h: *mut Sketch,
+    idx: i32,
+    unit: f64,
+    out: *mut f64,
+    cap: i32,
+) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        let Some(cut) = s.cut else { return 0 };
+        let solid = match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
+            Ok(s) => s,
+            Err(message) => { set_error(message); return -1; }
+        };
+        let section = solid.section(&cut);
+        let mut values = vec![section.triangles.len() as f64];
+        values.extend(&section.triangles);
+        values.extend(section.segments().into_iter().flat_map(|[a, b]| a.into_iter().chain(b)));
+        if values.len() <= cap.max(0) as usize {
+            std::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len());
+        }
+        values.len() as i32
+    })
+}
+
 /// **Where a solid stands** (#412), seventeen doubles: its shape's serial (the same exactly while
 /// the solid is the same evaluation, however it has moved, so a host keeps its geometry against
 /// it), then its placement as a 4×4 matrix, column-major, from its own coordinates

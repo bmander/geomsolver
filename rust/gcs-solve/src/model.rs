@@ -36,6 +36,7 @@ mod scenario;
 mod measured;
 mod beam;
 mod rounds;
+pub mod developed;
 
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
@@ -43,6 +44,7 @@ pub use entities::{
     LiftE, article, entity_name, kind_initial,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
+pub use developed::{developed_def, Developed, Panel, Rail};
 pub use solids::{
     FaceLoop, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,
     DerivedE, Extent, Roll, Sense, SolidDef, SolidE, EnvelopeE,
@@ -298,6 +300,11 @@ pub struct Sketch {
     /// driven (`CKind::Mass`, `CKind::Volume`) reads by index, and the claims judged after the
     /// solve.  Set by elaboration and carried by the Solvent source alone: never written to JSON.
     pub measured: Vec<Measured>,
+    /// **The developable panels the document names** (#645): each set recognised as a panel a
+    /// plane touches along each ruling, by its name and its rails, which the report reads
+    /// (`{panel}.rulings`, `{panel}.closed`).  Set by elaboration and carried by the Solvent
+    /// source alone, as a beam is: never written to JSON.
+    pub panels: Vec<Panel>,
     /// **The regions a driving row over a plane reads** (#510 S2), and the prisms one over a solid
     /// reads (#510 S3, its face's mesh stacked): each meshed once, where the drawing stood when its
     /// row was compiled (`prisms::Row`), by what the row names (`MeshedKey`) — so every compile
@@ -322,6 +329,12 @@ pub struct Sketch {
     /// still solves and still holds its constraints, is never saved, exported or undone, and
     /// the front end sets it whole (`set_hidden`) on every drawing it is handed.
     pub hidden: std::collections::BTreeSet<EntRef>,
+    /// **The plane the workspace is sectioned by**, the side its normal points to taken away: its
+    /// objects are drawn and picked as `EvaluatedSolid::section` leaves them — a face the cut took
+    /// away is not met, and the face it leaves is the object's.  View state, as `hidden` is:
+    /// never saved, exported, solved or undone, set by the front end on every drawing it is
+    /// handed.
+    pub cut: Option<crate::plane::Basis>,
     /// What the sketch remembers and could work out again — polylines, evaluated and exact
     /// solids, regions' readings, bodies' faces — and what a clone keeps of it (`Caches`).
     pub caches: Caches,

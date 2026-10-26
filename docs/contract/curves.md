@@ -678,3 +678,16 @@ curve has its Jacobian in the profile's columns against central differences; and
   initial value, the march by the method of lines over the other) is one more column of the same
   table and one more order of the same series.  Over two formals such a body is `lines.rs`'s
   (above), read through the same `traced::read`, its contacts the same kernels.
+
+**Rates against rates** (#645, [0.192], [developables.md](developables.md)). A rate row may
+compare two rates — `rate(x over s) equal rate(y over s)`, `rate(x over s) angle(rate(y over s), l)
+k` — or a rate with a line's length: the rates are scratch lines from one origin (`rate_line`),
+so the rows are `EqualLength` and `EqualAngle` over them (`admissible`). A rate in an `angle`'s
+parentheses is numbered past the operands (`RateOf::op` from 2, `rated_ref`). Neither row is
+linear in the rate: `rates::Body::rates` solves by Newton from the rate before and, where that
+fails and a row compares, damped (halving until the rows' residual falls) from a rate in every
+coordinate — at the home, where a rate standing still has no gradient — and the root reached is
+the branch carried on. A rate along another formal, or a relation reading two rates any other
+way, stays E103; a rate compared outside a body (a contact's slot) is refused in `settle_rate`. A
+body reading more than `tape::MAX_VARS` coordinates is refused where it is lowered, before a
+number of it is compiled.

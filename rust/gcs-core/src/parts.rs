@@ -69,8 +69,11 @@ struct Read<'e> {
 /// share — or `None` where the document draws none.
 fn instances<'e>(e: &'e Elaborated, sk: &Sketch) -> Option<(World, Vec<Read<'e>>)> {
     let prog = &e.program;
-    let mut drawn =
-        e.map.instances.iter().filter(|i| i.drawn && prog.components[i.comp].braced()).peekable();
+    // a development (#645) is a figure the core lays, its three freedoms the parent's to place
+    let mut drawn = e.map.instances.iter()
+        .filter(|i| i.drawn && prog.components[i.comp].braced()
+            && crate::flatten::developable::development_body(&prog.components[i.comp]).is_none())
+        .peekable();
     drawn.peek()?;
     let world = World::of(sk, &e.map);
     let by_id: BTreeMap<u32, &Constraint> = sk.constraints.iter().map(|c| (c.id, c)).collect();

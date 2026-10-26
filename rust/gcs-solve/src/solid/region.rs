@@ -78,10 +78,15 @@ pub fn readable(sk: &Sketch, solid: usize) -> Result<(), String> {
 pub enum Form {
     Meridian(Rc<Meridian>),
     General(crate::solid::field::RegionField),
+    /// A developable panel's band (#645), built from the panel's rulings (`solid::sheet`).
+    Sheet(Rc<super::sheet::Band>),
 }
 
 /// Region solid `solid`'s `Form`.
 pub fn form(sk: &Sketch, solid: usize) -> Result<Form, String> {
+    if let Some(band) = super::sheet::band(sk, solid, super::REPORT_UNIT) {
+        return band.map(Form::Sheet);
+    }
     match in_general_position(sk, solid) {
         Some(g) => g.map(Form::General),
         None => meridian(sk, solid).map(Form::Meridian),
@@ -109,6 +114,9 @@ pub enum Route {
     Grown(Result<Rc<super::grown::Grown>, String>),
     /// In general position, read by the field alone: why no exact construction is made of it.
     Field(String),
+    /// A developable panel's band (#645): faceted from the panel's rulings, its exact ruled walls
+    /// not yet written to STEP.
+    Sheet(Rc<super::sheet::Band>),
 }
 
 impl Route {
@@ -144,6 +152,7 @@ pub fn route(sk: &Sketch, solid: usize) -> Result<Route, String> {
     };
     match form(sk, solid)? {
         Form::Meridian(m) => Ok(Route::Meridian(m)),
+        Form::Sheet(b) => Ok(Route::Sheet(b)),
         Form::General(_) => {
             if let Some(l) = super::lowering::lowered(sk, solid) {
                 return Ok(Route::Lowered(l));

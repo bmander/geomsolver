@@ -316,11 +316,34 @@ fn labels_children(k: EntKind) -> bool {
     !matches!(k, EntKind::Line | EntKind::Spline)
 }
 
-/// `{bore: 16mm, cyl: {axis: datum}}` — a group's members, nested groups in their braces.
+/// `{bore: 16mm, cyl: {axis: datum}}` — a group's members, nested groups in their braces, and a
+/// list's items in its brackets, unlabelled (`[2mm, 3mm]`).
 fn write_members(out: &mut String, fields: &[InstArg]) {
-    out.push('{');
-    write_fields(out, fields);
-    out.push('}');
+    if !super::is_list(fields) {
+        out.push('{');
+        write_fields(out, fields);
+        out.push('}');
+        return;
+    }
+    out.push('[');
+    for (i, f) in fields.iter().enumerate() {
+        if i > 0 { out.push_str(", "); }
+        // a vector item as it is written, `(a, b)`
+        let parts: Option<Vec<&str>> = match &f.value {
+            InstVal::Group(v) if (2..=3).contains(&v.len()) => v.iter().zip(["x", "y", "z"])
+                .map(|(c, key)| match (&c.label, &c.value) {
+                    (Some(l), InstVal::Expr(t)) if l.text == key => Some(t.as_str()),
+                    _ => None,
+                })
+                .collect(),
+            _ => None,
+        };
+        match parts {
+            Some(parts) => out.push_str(&format!("({})", parts.join(", "))),
+            None => write_inst_val(out, &f.value),
+        }
+    }
+    out.push(']');
 }
 
 /// `bore: 16mm, cyl: {axis: datum}` — a group's members, or a material's properties, between
@@ -932,6 +955,9 @@ pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<St
                 }
             }
             OpArg::Dim(t, _) => parts.insert(0, t.clone()),
+            OpArg::Within { key, lo, hi } => {
+                parts.push(format!("{} in ({}, {})", key.text, lo.0, hi.0))
+            }
             // the slot's own name, as it was written — never guessed from the kind.  The
             // same `slot_text` `operator_text` reads it off the spec with, so the two printers
             // cannot come to spell one slot differently.

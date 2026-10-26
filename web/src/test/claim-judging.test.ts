@@ -140,7 +140,7 @@ test('a drawing\'s claims are one job, asked again only when the drawing or its 
   stub.send({ id: job.id, progress });
   assert.deepEqual(cj.judging?.progress, progress);
   const verdicts = [{ stmt: job.claims[1].stmt, line: 'claim arm clear(40mm) wall — refuted',
-    statement: '', verdict: 'refuted' as const, measured: 3, tolerance: 0 }];
+    statement: '', verdict: 'refuted' as const, measured: 3, tolerance: 0, nearest: null }];
   stub.send({ id: job.id, verdicts });
   assert.deepEqual(cj.judging?.verdicts, verdicts);
   cj.start(doc);

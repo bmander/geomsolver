@@ -159,6 +159,17 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
                     let lo = t.lo.read(sk).unwrap_or(UNREAD);
                     let grow = t.grow_read(sk);
                     v.extend([t.cmp as u8 as f64, lo, hi[0], hi[1], grow.unwrap_or(UNREAD)]);
+                    // a panel's band (#645): its rails as paths, read whole
+                    if let crate::model::RegionShape::Sheet { rails, side } = &t.shape {
+                        v.push(*side);
+                        for r in rails.iter() {
+                            match r.path(sk) {
+                                Ok(p) => p.encode(&mut v),
+                                Err(_) => v.push(UNREAD),
+                            }
+                        }
+                        continue;
+                    }
                     for e in t.shape.entities() {
                         match e.kind {
                             crate::model::EntKind::Point => v.extend(sk.world_point(e.i())),

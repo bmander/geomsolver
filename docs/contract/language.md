@@ -251,7 +251,8 @@ the enclosing body's names — at the top of a document alone, whose body is lin
 requirements) and no statements; it adds nothing to the drawing.  Its rules are
 [analysis.md](analysis.md)'s.
 
-**`when` is the one conditional (0.91, #267).** Two names that are not numbers compare by
+**`when` is the one conditional of statements (0.91, #267)**; a number chosen is `if(c, a, b)`
+([0.191], [numbers.md](numbers.md)). Two names that are not numbers compare by
 **identity**: `a == b`/`a != b` (`Cond::Cmp` over two `Ast::Var`, a side not in `vals`) holds as
 `Walk::stands_for` resolves them — the absolute name through every alias, so a formal is what
 its call gave and a face repeat's binder its face — and `c in B` (`Cond::In`, made by
@@ -539,10 +540,33 @@ would be: a frame with no joint, the world, so `seen_from:` left out of a call r
 an interface's name). `tests/frames.rs` is the gate
 (`a_left_out_advance_is_none_and_a_left_out_observer_is_the_world`). **An
 instance's numbers are read by its name**: `Walk::instance_numbers` puts every numeric formal
-of every instance a body writes into its `vals` as `inst.formal` (the number bound, else the
-unknown `bind` names), before the statements, so `p distance(ball.r) ball.center` reads it and a
-group argument carries it (`bind`'s group arm copies `{actual}.…`); body values are not. No
-solver state; member units survive substitution; missing members are errors.
+of every instance a body writes into its `vals` as `inst.formal` (`Walk::call_numbers`: the
+number bound, else its default, else the unknown `bind` names), before the statements, so
+`p distance(ball.r) ball.center` reads it and a group argument carries it (`bind`'s group arm
+copies `{actual}.…`). No solver state; member units survive substitution; missing members are
+errors. **And so are the numbers its body defines** ([0.189]): `shield.top`, `uno.jack_y`,
+`b.dims.inner`, and through an instance the body writes, `st.base.top`.  `Walk::params` reads
+each statement's text (`syntax::name_uses`) for a path whose head is an instance the body
+writes, and the longest prefix past it that names a number of its component (`members::offers`:
+a numeric formal, a `name :=` or `param` with a value, a group's number — a `when`'s are its
+own — or one of a nested instance's) becomes a definition of the body (`Def::call`,
+`instance_reads`), worked out with the others in dependency order: it waits for what its call
+reads and, for a component of the file being worked out from its open root, for the file's
+constants its body reads (`call_reads`, less the names the body binds itself), so a definition
+above the call reads it and one its call reads that reads it back is E041.  It is worked out
+without walking the body (`flatten/members.rs`): over the call's numbers and its groups' (by
+`bind`'s rules, interfaces through `interfaces::shaped_numbers`, a group written in place
+included, an argument that does not work out refused here and said by `bind`), the constants of
+the component's file (the root's worked out so far, where the call is the root's and its
+component the root's), and the body's own numbers it reads in turn, which hide those
+constants.  A number that does not work out — one over an unknown not affine, one reading what
+the body cannot reach — is E103 where it is read, naming the component and why; the body says
+its own fault where it is walked.  It is recorded in `Expansion::values` by the instance's walk,
+not the reader's.  `tests/instance_numbers.rs` is the gate
+(`a_number_a_body_defines_is_read_from_outside_it`,
+`what_a_call_reads_is_worked_out_before_its_numbers_are_read`,
+`a_path_reads_through_instances_nested_in_one`,
+`a_modules_component_is_read_from_the_document_that_calls_it`).
 **A family the same set in any order** (#415, [0.148]): `component Run(a: face, b: face, r:
 Length) symmetric(a, b) := { p | … }` (`Component::symmetric`, items of one or more formals,
 `parser::statements::symmetric`; on no family, one item, a formal twice, items of unequal length
@@ -830,3 +854,14 @@ components.dims.zB)`.
   point's arguments) and the flattener writes out where it walks the body (`flatten::carried`), so
   the source keeps and prints the one statement (`print::write_decl`); see
   [frames.md](frames.md).
+  **A block runs over a list** ([0.193]): `holes := [(a, b), (c, d)]` is parsed
+  (`statements::list_items`) into the `GroupDecl` a group is, its items labelled by place, `0`,
+  `1`, … (`syntax::is_list`), a vector item a group of `x`, `y`[, `z`] — so a list is worked out,
+  imported, nested in a group and read in a definition's body by the group machinery, its numbers
+  in the value table as `holes.0.x`, and the printer writes it back in brackets.  `repeat h in
+  holes` is parsed as a walk is; `flatten::lists::list_of` tells it from one where the block is
+  walked, by whether the name's members in the numbers in force are a list's, and a list written
+  in place (`Block::items`) is worked out there.  Either is expanded where it stands, never set
+  aside: copy `k` binds the item's numbers under the copy's name for it (`h`, `h.x`) as it binds
+  its index, and an item with members is a group by that name (`#<id>.<k>.h`), handed on whole.
+  `tests/lists.rs` is the gate.

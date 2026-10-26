@@ -25,6 +25,9 @@ use crate::plane;
 use crate::solid::Box3;
 use std::collections::BTreeMap;
 
+mod section;
+pub use section::{plane as section_plane, section, Loop, Section};
+
 /// The boundary as triangles, nine doubles each, in the pieces' own order — deterministic, since
 /// the boundary walk is.
 ///

@@ -835,6 +835,54 @@ pub fn positions_where(sk: &Sketch, map: &crate::program::SourceMap, asked: &dyn
             out.insert(name.clone(), sk.params[p as usize].value);
         }
     }
+    // **and each developable panel and each pattern laid from one** (#645): how many rulings the
+    // panel is read by at the report's tolerance, whether it closes, its area; each laid rail's
+    // length, the pattern's area and the box it stands in, in its plane
+    for p in sk.panels.iter().filter(|p| asked(&p.name)) {
+        let Ok(panel) = p.built(sk) else { continue };
+        let fans = panel.pieces().iter().filter(|q| q.0 != crate::developable::Piece::Smooth).count();
+        out.insert(format!("{}.rulings", p.name),
+                   panel.stations(crate::curve::flatness(crate::solid::REPORT_UNIT)).len() as f64);
+        out.insert(format!("{}.closed", p.name), f64::from(u8::from(panel.closed())));
+        out.insert(format!("{}.fans", p.name), fans as f64);
+        out.insert(format!("{}.area", p.name), panel.area());
+    }
+    for i in 0..sk.curves.len() {
+        let crate::model::CurveBody::Developed(dev) = &sk.curve_defs[sk.curves[i].def as usize].body
+        else { continue };
+        if dev.which != 0 { continue; }
+        let r = EntRef::new(crate::model::EntKind::Curve, i);
+        let Some(names) = map.names.get(&r) else { continue };
+        let flats: Vec<&str> = names.iter().filter_map(|n| n.strip_suffix(".a"))
+            .filter(|n| asked(n)).collect();
+        if flats.is_empty() { continue; }
+        let Some(built) = sk.development_of(i) else { continue };
+        let Ok(dev) = built.as_ref() else { continue };
+        // the canonical laying turned to the bearing from `f` to `g` and moved to `f`
+        let place = |e: &EntRef| { let (x, y) = sk.point_xy(e.i()); [x, y] };
+        let (f, g) = match sk.curves[i].args.as_slice() {
+            [f, g] => (place(f), place(g)),
+            _ => continue,
+        };
+        let (s, c) = (g[1] - f[1]).atan2(g[0] - f[0]).sin_cos();
+        let pts: Vec<[f64; 2]> = dev.outline(64).into_iter()
+            .map(|p| [f[0] + c * p[0] - s * p[1], f[1] + s * p[0] + c * p[1]]).collect();
+        let [la, lb, area] = dev.measures();
+        let lengths = [la, lb];
+        for n in flats {
+            out.insert(format!("{n}.a.length"), lengths[0]);
+            out.insert(format!("{n}.b.length"), lengths[1]);
+            out.insert(format!("{n}.area"), area);
+            if !pts.is_empty() {
+                for (k, axis) in ["x", "y"].iter().enumerate() {
+                    out.insert(format!("{n}.bounds.{axis}0"),
+                               pts.iter().map(|p| p[k]).fold(f64::INFINITY, f64::min));
+                    out.insert(format!("{n}.bounds.{axis}1"),
+                               pts.iter().map(|p| p[k]).fold(f64::NEG_INFINITY, f64::max));
+                }
+            }
+        }
+    }
     // **and what a solid came to.**  The report is the reader's only picture of an object no
     // view of the sheet shows whole, so it carries what a person would measure off it: how much
     // material there is, the box it stands in, and where each of its faces is and how much of
@@ -1726,6 +1774,14 @@ pub fn meshings_json(sk: &Sketch) -> Json {
     Json::Arr((0..sk.meshings.len()).map(one).collect())
 }
 
+/// **The claims about solids a report was asked to leave unjudged** (`solventc --no-check`): how
+/// many there are, said where their verdicts would be, so a run that judged none is never read as
+/// one where every one held.
+pub fn solid_claims_unjudged_text(n: usize) -> String {
+    let s = if n == 1 { "" } else { "s" };
+    format!("{n} claim{s} about solids not judged")
+}
+
 /// The same immutable claim result supplies terminal and JSON reports.
 pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
     use crate::diagnose::SolidOutcome;
@@ -1788,6 +1844,11 @@ pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
             );
         }
     }
+    // a claim refuted or undecided says where to look: the face of each solid, and where in the
+    // world they meet deepest or come nearest
+    if let (Some(n), false) = (v.nearest(), v.holds() == Some(true)) {
+        text += &format!("\n    {}", nearest_text(n));
+    }
     // Every unresolved pose is disclosed, including failed solves and uncertain geometry; a lone
     // claim's failure is said once, above.
     for p in v.poses().iter().filter(|p| failed_here.is_none() && p.holds().is_none()) {
@@ -1805,6 +1866,35 @@ pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
         text += &format!("\n    unresolved{at}: {reason}");
     }
     text
+}
+
+/// A point of the world as a report says it: `(12.7, -3.2, 18)`.
+fn point_text(x: [f64; 3]) -> String {
+    let n = |v: f64| crate::expr::reading(crate::constraints::SpecKind::Length, v);
+    format!("({}, {}, {})", n(x[0]), n(x[1]), n(x[2]))
+}
+
+/// Where a claim about two solids was measured, in words: `deepest at (…), between a.f and b.g`
+/// where their material is common, `nearest at (…), between a.f and b.g` where their boundaries
+/// touch or cross, and `nearest between a.f at (…) and b.g at (…)` where they come no nearer.
+fn nearest_text(n: &crate::clear::Nearest) -> String {
+    let (at_a, at_b) = (point_text(n.at_a), point_text(n.at_b));
+    if n.deepest || n.at_a == n.at_b {
+        let word = if n.deepest { "deepest" } else { "nearest" };
+        format!("{word} at {at_a}, between {} and {}", n.a, n.b)
+    } else {
+        format!("nearest between {} at {at_a} and {} at {at_b}", n.a, n.b)
+    }
+}
+
+fn nearest_json(n: &crate::clear::Nearest) -> Json {
+    object([
+        ("a", n.a.as_str().into()),
+        ("b", n.b.as_str().into()),
+        ("atA", floats(&n.at_a)),
+        ("atB", floats(&n.at_b)),
+        ("deepest", n.deepest.into()),
+    ])
 }
 
 fn solid_measurement_json(m: Option<&crate::clear::Measurement>) -> Json {
@@ -1859,6 +1949,7 @@ fn solid_pose_json(p: &crate::diagnose::SolidPose) -> Json {
                 required.set("reason", reason.clone().into());
             }
             o.set("requiredPredicate", required);
+            o.set("nearest", e.nearest().map_or(Json::Null, nearest_json));
         }
     }
     o
@@ -1877,6 +1968,7 @@ pub fn solid_claim_json(v: &crate::diagnose::SolidVerdict) -> Json {
             v.tolerance().map(Json::Num).unwrap_or(Json::Null),
         ),
         ("measurement", solid_measurement_json(v.measurement())),
+        ("nearest", v.nearest().map_or(Json::Null, nearest_json)),
         ("verdict", v.outcome().as_str().into()),
         (
             "method",

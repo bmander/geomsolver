@@ -1,0 +1,34 @@
+// dory.sv on two sheets: `hull` — its three panels bent to shape, from the side, from above
+// and in an isometric — and `cutting`, the cut file: the three patterns laid outside up on two sheets of
+// 2440 × 1220 plywood, the sides nested on one and the bottom on the other.
+model m from "dory.sv"
+
+sheet hull {
+  size (420mm, 297mm)
+  label "DORY  three developable panels of 6 mm plywood: the bottom and a side each side" at (14mm, 16mm)
+  view profile(m.port_side) from front at (30mm, 92mm) scale 0.085
+  view plan_port(m.port_side) from top at (30mm, 190mm) scale 0.085
+  view plan_starboard(m.starboard_side) from top at (30mm, 190mm) scale 0.085
+  view plan_bottom(m.bottom_panel) from top at (30mm, 190mm) scale 0.085
+  view pictorial_bottom(m.bottom_panel) from isometric at (255mm, 165mm) scale 0.075
+  view pictorial_port(m.port_side) from isometric at (255mm, 165mm) scale 0.075
+  view pictorial_starboard(m.starboard_side) from isometric at (255mm, 165mm) scale 0.075
+  label "From the side" at (30mm, 30mm)
+  label "From above" at (30mm, 132mm)
+  label "Isometric: the port side nearest" at (240mm, 30mm)
+  style .hidden { display: none }
+}
+
+sheet cutting {
+  size (420mm, 297mm)
+  label "DORY  the cut file: each panel's neutral layer, outside up, on 2440 × 1220 sheets" at (14mm, 16mm)
+  sketch sheets(m) from m.floor at (40mm, 270mm) scale 0.09
+  label "Sheet 1: the port side (below) and the starboard side, bows at the left" at (40mm, 282mm)
+  label "Sheet 2: the bottom" at (40mm, 151mm)
+  style m.port_flat.a { color: #b22222 }
+  style m.port_flat.b { color: #1f4e9c }
+  style m.starboard_flat.a { color: #1f4e9c }
+  style m.starboard_flat.b { color: #b22222 }
+  style m.bottom_flat.a { color: #b22222 }
+  style m.bottom_flat.b { color: #b22222 }
+}

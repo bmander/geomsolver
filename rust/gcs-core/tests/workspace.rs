@@ -381,6 +381,44 @@ const BLOCKS: &str = "unit mm\nuse std (spins)\n\
     stock := solid(holed.sec, depth: 5)\nbody := solid(stock)\n\
     bore := solid(face(hole), through: body)\nbore cut body\n";
 
+/// **A pick passes by what a section took away** (`Sketch::cut`): the top block cut halfway down
+/// its depth, the half above taken away, is met by a ray down onto the cut at the face the cut
+/// leaves — the block whole, a face of `""`, which `under` lists as the object and not as a face.
+/// Kept the other way, the block's upper face is met again; and from below, the lower block,
+/// all of it taken away, lets the ray through to the top block's cut face.
+#[test]
+fn a_pick_passes_by_what_a_section_took_away() {
+    use gcs_core::overview::workspace::{pick_solid, under, Under};
+    use gcs_core::plane::Basis;
+    let mut e = build(BLOCKS);
+    let top = e.map.ent_named("top").unwrap().i();
+    let (x, y) = ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let (az, el) = (0.6, 0.5);
+    let middle = [10.0, 5.0, -2.5];
+    e.sketch.cut = Some(Basis { u: x, v: y, o: [0.0, 0.0, -2.5] });
+    let sk = &e.sketch;
+    let proj = Projection::new(sk, az, el);
+    let hit = pick_solid(sk, &proj, seen(middle, az, el)).expect("the cut face");
+    assert_eq!((hit.solid, hit.face.as_str()), (top, ""));
+    assert!(hit.at.iter().zip(middle).all(|(a, b)| (a - b).abs() < 1e-9), "{:?}", hit.at);
+    let all = under(sk, &proj, seen(middle, az, el), 0.1, 0.01);
+    assert!(!all.iter().any(|u| matches!(u, Under::Face(h) if h.face.is_empty())), "{all:?}");
+    assert!(all.contains(&Under::Object(top)), "{all:?}");
+    // the other side kept
+    e.sketch.cut = Some(Basis { u: y, v: x, o: [0.0, 0.0, -2.5] });
+    let sk = &e.sketch;
+    let hit = pick_solid(sk, &proj, seen([10.0, 5.0, 0.0], az, el)).expect("the upper face");
+    assert_eq!(hit.solid, top);
+    assert!(hit.face.starts_with("top."), "{}", hit.face);
+    // looking up all but square, the ray through the cut passes through the lower block first
+    let below = Projection::new(sk, az, -1.5);
+    let hit = pick_solid(sk, &below, seen(middle, az, -1.5)).expect("the cut face");
+    assert_eq!((hit.solid, hit.face.as_str()), (top, ""), "the lower block is taken away");
+    e.sketch.cut = None;
+    let hit = pick_solid(&e.sketch, &below, seen(middle, az, -1.5)).expect("the lower block");
+    assert_eq!(hit.solid, e.map.ent_named("bottom").unwrap().i(), "uncut, it is met first");
+}
+
 #[test]
 fn a_click_on_a_solid_picks_the_face_nearest_the_eye() {
     use gcs_core::overview::workspace::pick_solid;

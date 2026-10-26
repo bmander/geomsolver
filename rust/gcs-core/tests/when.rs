@@ -5,8 +5,9 @@
 //! unknown of the drawing (E040), since the block is made or not before there is a solve.
 //!
 //! **Identity** (#267): two names that are not numbers compare by what they stand for (`a != b`),
-//! and `c in B` asks whether `c` is one of the faces `B` names — so `when` is the one conditional,
-//! and a block over a solid's faces keeps the copies it wants by a `when` in its body.
+//! and `c in B` asks whether `c` is one of the faces `B` names — so `when` is the one conditional
+//! of statements (a number is chosen by `if(c, a, b)`, `choice.rs`), and a block over a solid's
+//! faces keeps the copies it wants by a `when` in its body.
 
 use std::collections::BTreeMap;
 

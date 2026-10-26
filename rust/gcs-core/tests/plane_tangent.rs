@@ -155,6 +155,7 @@ fn a_plane_touches_a_set_at_a_point() {
     refused(&src("gax tangent(at: M) gc"), "E040", "touched at a point by a plane",
             "tangent(at: M)");
     refused(&src("std.top tangent gc"), "E040", "which the word names", "tangent");
-    refused(&src("std.top tangent(at: M) gax"), "E040", "does not relate a plane to a line",
+    // a plane touches a line at a point now (#645): it holds the line; a point it cannot
+    refused(&src("std.top tangent(at: M) O"), "E040", "does not relate a plane to a point",
             "tangent(at: M)");
 }

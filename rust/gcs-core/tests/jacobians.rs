@@ -145,6 +145,36 @@ fn all_constraints(seed: u32) -> Sketch {
         c
     };
     let _ = fr;
+    // a rail of the panel between `kb` and `kc` laid flat in `pa` from `cpb`'s place (#645): its
+    // home ruling's ends two points of `pa`
+    let developed = {
+        let (f, g) = (pt(&mut sk, &mut rng), pt(&mut sk, &mut rng));
+        sk.set_plane(f, Some(pa));
+        sk.set_plane(g, Some(pa));
+        let rail = |e: EntRef| gcs_core::model::Rail { links: vec![e], chain: false, closed: true,
+                                                        reversed: false };
+        let mut dev = gcs_core::model::Developed {
+            rails: [rail(EntRef::circle(kb)), rail(EntRef::circle(kc))], s: cpb as u32, d: 0.5,
+            which: 0, n_const: 0 };
+        dev.n_const = dev.consts(&sk).expect("its rails read").len();
+        sk.curve_defs.push(gcs_core::model::developed_def("developed:f".into(), dev));
+        sk.curves.push(gcs_core::model::CurveE {
+            def: (sk.curve_defs.len() - 1) as u32,
+            args: vec![EntRef::point(f), EntRef::point(g)],
+            unknowns: Vec::new(),
+            values: Vec::new(),
+            over: gcs_core::model::Running::new("t", gcs_core::units::Dim::SCALAR, 0.0, 1.0),
+            home: gcs_core::model::Home::At(0.0),
+            pose: Vec::new(),
+            class: Default::default(),
+            trim: None,
+            extrusion: false,
+            length: None,
+            pegs: Vec::new(),
+            slides: Vec::new(),
+        });
+        EntRef::new(gcs_core::model::EntKind::Curve, sk.curves.len() - 1)
+    };
     let cs = vec![
         // an ordinate in every form its operands give it: along its view's own axes (the run
         // and the rise), along a line drawn there, along an axis and a line in space, and along a
@@ -362,6 +392,23 @@ fn all_constraints(seed: u32) -> Sketch {
         // two planes facing alike, over free planes and a held one
         Constraint::new(CKind::PlaneParallel, vec![e(pbe), e(pce)]),
         Constraint::new(CKind::PlaneParallel, vec![e(pae), e(pce)]),
+        // a plane touching a path at a point (#645): a line at a point of it and at its end, a
+        // circle and an arc's end — over a free plane and a held one — and a corner of two
+        // lines, the plane between their tangents
+        Constraint::new(CKind::PlaneTangentLine, vec![e(pce), e(me2), e(qe)]),
+        Constraint::new(CKind::PlaneTangentLine, vec![e(pae), e(me1), e(pe)]),
+        Constraint::new(CKind::PlaneTangentRound, vec![e(pce), e(EntRef::circle(kb)), e(qe)]),
+        Constraint::new(CKind::PlaneTangentRound, vec![e(pae), e(ka), e(EntRef::point(kas))]),
+        Constraint::new(CKind::PlaneSupportsCorner, vec![e(pce), e(me1), e(fold_line),
+            e(EntRef::point(lc)), Arg::Seed { value: 0.3, pinned: false }]),
+        Constraint::new(CKind::PlaneSupportsCorner, vec![e(pae), e(me1), e(fold_line),
+            e(EntRef::point(lc)), Arg::Seed { value: 0.8, pinned: false }]),
+        // where a point stands along a line, a fraction of its run: a contact's interval (#645)
+        Constraint::new(CKind::LineFraction, vec![e(qe), e(me1), Arg::Num(0.4)]),
+        Constraint::new(CKind::LineFraction, vec![e(s3), e(me2), Arg::Num(0.7)]),
+        // a development's home ruling as long as its panel's (#645), over a laid rail of the
+        // panel between two circles from a point of the first
+        Constraint::new(CKind::DevelopedLength, vec![e(developed)]),
         // a projection over a free plane
         Constraint::project(&sk, pe, qe).expect("two images on two planes that fold"),
         Constraint::new(CKind::ProjectSolved, vec![e(EntRef::point(dp)), e(EntRef::point(lc)), e(EntRef::frame(pd)), e(pce)]),
@@ -411,6 +458,8 @@ fn all_constraints(seed: u32) -> Sketch {
         worded(fx(CKind::Ordinate, vec![e(pc_o), e(s3), e(pc_v)], "2 * fv", 1.0), "v"),
         fx(CKind::PlaneDistance, vec![e(pae), e(pce)], "3 * pd3", 0.5),
         fx(CKind::ArcLength, vec![e(ae)], "3 * al + 1", 7.5),
+        // where on a line a point stands, written free (#645)
+        fx(CKind::LineFraction, vec![e(qe), e(me1)], "2 * lf - 0.1", 0.4),
         fx(CKind::SplineLength, vec![e(spwe)], "2 * sl + 3", 30.0),
     ];
     // the two intrinsic PointOnCircle constraints the arc brought with it stay in the sketch

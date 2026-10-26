@@ -4,6 +4,7 @@
 //! Evaluate expressions once after all declarations and constraints are built.
 
 mod curves;
+mod developed;
 mod diagnostics;
 mod drift;
 mod elaborate;
@@ -92,6 +93,21 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
             diags.push(refuse(EntRef::new(crate::model::EntKind::Curve, i), message));
         }
     }
+    // a development whose panel cannot be built (#645): said once, at its laid `a`
+    for i in 0..sk.curves.len() {
+        let crate::model::CurveBody::Developed(dev) = &sk.curve_defs[sk.curves[i].def as usize].body
+        else { continue };
+        if dev.which != 0 { continue; }
+        let refusal = match dev.consts(sk) {
+            Err(m) => Some(m),
+            Ok(k) => crate::developable::developed(&k)
+                .and_then(|d| d.as_ref().as_ref().err().map(|r| r.to_string())),
+        };
+        if let Some(why) = refusal {
+            diags.push(refuse(EntRef::new(crate::model::EntKind::Curve, i),
+                              format!("the panel is not laid flat: {why}")));
+        }
+    }
     diags.extend(views::degenerate(sk, map));
     diags.extend(views::coplanar(sk, map));
     for i in 0..sk.envelopes.len() {
@@ -151,6 +167,9 @@ fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
                     }
                     for (var, _) in b.over.iter().flat_map(|o| o.walks()) {
                         say(var, "a block's edge", Some(st.id), diags);
+                    }
+                    if let Some(items) = &b.items {
+                        say(&items.var, "a block's item", Some(st.id), diags);
                     }
                     body(&b.body, diags);
                 }

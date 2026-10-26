@@ -123,6 +123,18 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   written: a picture missing a part is never taken for the whole
   (`a_picture_missing_a_solid_fails_naming_it`).  The PNG writer is the CLI's (`png.rs`, fixed-code
   deflate); it computes no geometry, and `tests/cli.rs` reads its pictures back.
+  **`--section PLANE` cuts what a picture draws** (`EvaluatedSolid::section`, solids.md): a view's
+  word through the world origin, its normal toward that view's eye (`front` takes away what is
+  nearer a front view's eye), or a model plane by its path, both read by the core
+  (`drawing::plane_named`); `-PLANE` keeps the other side and `PLANE@LENGTH` moves it along its
+  normal (`Basis::moved_along`; a bare number in the document's unit), the text checked as a
+  command line (64) before any document is read.  Each sample of a triangle the cut takes away
+  is left out (its height is linear across it, so the triangle is clipped exactly), each edge
+  clipped by `Section::clip`, the cut face filled hatched in the picture's own pixels, winning a
+  tie with a face lying in the plane, and its loops inked; the picture is fitted to what is kept.
+  A plane that takes away everything fails the picture (1, nothing written), as a plane the
+  document lacks does.  What a section takes away whole is drawn as if hidden, byte for byte
+  (`a_section_takes_away_what_is_in_front_of_its_plane`).
   **A long run says what it is doing** (#320): the core tells whoever listens on its thread
   (`progress::listen`) when work begins and ends — the elaboration, the solve and the diagnosis,
   which the CLI wraps in `progress::during`, and inside them each solid built
@@ -139,6 +151,13 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   unasked, the stages of a second or more are said (`--no-progress` silences it).  `--timings`
   lists the solids and claims by their own time after the report, each at its statement — a
   module's solid at the document's instance of it (`Program::document_stmt`).
+  **`--no-check` judges no claim about solids** (`DiagnoseOptions::solid_claims` false, as the
+  page's diagnosis leaves them to its worker): no solid is built for one, and where their
+  verdicts would be the report says how many were left, in the core's words
+  (`report::solid_claims_unjudged_text`; `solidClaimsUnjudged` in `--json`), so a run that judged
+  none is not read as one where each held.  The claims over values and the geometry's are judged
+  still: they build nothing
+  (`no_check_leaves_the_claims_about_solids_unjudged_and_says_so`).
   **`--components` classifies each component against the boundary contract** (#452,
   `boundary::classify`, worded by `boundary::text`/`json`): read through its first instance at the
   solved pose (`SourceMap::instances`, each with its path and definition; `holds`/`chosen`, whose

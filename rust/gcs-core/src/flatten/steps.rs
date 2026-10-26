@@ -151,8 +151,9 @@ impl Walk<'_> {
                 None => relation("level", p1.clone(), vec![dir]),
                 Some(o) => {
                     let from = if o.absolute { origin.clone() } else { p1.clone() };
-                    // back onto the frame's axis, or none along it: a level — a relation, which
-                    // states no number, as `distance(0, along: …)` would (`written_zero`)
+                    // back onto the frame's axis, or none along it: a level — the step's own
+                    // reading of a zero written so (`written_zero`), where `distance(0, along: …)`
+                    // written out is a dimension like any other
                     match crate::program::written_zero(&o.text, self.units) {
                         true => relation("level", from, vec![dir]),
                         false => relation("distance", from, vec![

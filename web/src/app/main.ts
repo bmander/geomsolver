@@ -83,6 +83,7 @@ import { bindScenarioCard, refreshScenarioCard } from './scenario-card.js';
 import { Tool } from './view.js';
 import { meshing } from './loading.js';
 import { Timeline } from './timeline.js';
+import { SectionBar } from './section-bar.js';
 
 /* -- toolbars ---------------------------------------------------------------- */
 
@@ -532,6 +533,10 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       title: 'Show everything the model outline hid' },
     { label: 'Show solid', key: '⇧⌘b', onClick: () => view.setShowSolid(!view.showSolid),
       title: 'Fill each object\u2019s surfaces, not only its edges — off, a solid is a wireframe' },
+    { label: 'Section', key: '⇧x', onClick: () => view.toggleSection(),
+      title: 'Cut every object by the plane being drawn on, the side its normal points to taken '
+           + 'away and the cut face hatched — move it, flip it or choose another plane in the '
+           + 'bar it opens' },
     { label: 'Program', key: '⌘p', onClick: () => toggleProgramPanel(),
       title: 'The program this drawing is written as — edit it and the drawing follows' },
     { label: 'Re-place dimensions', onClick: () => {
@@ -707,7 +712,13 @@ view.onExtent = onExtent;
 view.onRound = onRound;
 view.onChoose = onChoose;
 view.onContextMenu = onContextMenu;
-view.onChanged = () => { refresh(); refreshProgram(); refreshPlanes(); outline.refresh(); };
+// the section's plane, offset and side, while the workspace is cut
+const sectionBar = new SectionBar(document.getElementById('section-bar') as HTMLElement, view);
+view.onSection = () => sectionBar.refresh();
+sectionBar.refresh();
+view.onChanged = () => {
+  refresh(); refreshProgram(); refreshPlanes(); outline.refresh(); sectionBar.refresh();
+};
 view.onPicked = refreshPanel;
 // the source changed without the drawing's structure doing so — a drag wrote its seeds back, or a
 // number was spliced.  Never per frame: `onDragFrame` is the frame seam and this is not wired to it

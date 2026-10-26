@@ -98,7 +98,7 @@ domain, witness, enclosure and status. Budgets apply per sweep query; exhausted 
 omitted; memo includes the input box; indexed clones share a capped pose cache; cached visits
 repeat no evidence. An interval containing zero stays unresolved.
 `MaterialField::support_bounds` is a conservative box or explicit unknown. **A prism's is its
-profile's own** ([0.188]): `ExtrudedField::support_bounds` takes the disk about its plane's origin
+profile's own** ([0.194]): `ExtrudedField::support_bounds` takes the disk about its plane's origin
 in common with the profile's box carried by its frame (`PlanarField::box_bound`: a convex loop's
 `hull`, a loop's edges' boxes, recorded where `profile::convex` builds it beside its bounding
 disk and where `from_loop` builds any other loop's), wherever every section is within the profile (no draft, or one leaning in) — a plug drawn

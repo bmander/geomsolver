@@ -248,8 +248,11 @@ build (`sweep::Built::moved`) before the body rule takes it as the operand it st
 `admit_body` admits the body placed. Its volume is the body's to rounding, and a body made from it
 (`copy := solid(shown)`) is composed over it. A report asked of a swept solid supplies its exact
 B-rep whether or not it is an object (`supply_exact_where`; a drawing's `supply_exact` keeps to
-objects), so the body and its placements read one B-rep and no field. `tests/planar_subtraction.rs`
-(`a_wheel_a_frame_stands_is_the_wheel_moved`).
+objects), so the body and its placements read one B-rep and no field: a placement's is the body's
+own supplied B-rep moved (`brep::export::supply_one`), never a build of its own, so a claim that
+places a wheel at thirteen poses builds it once (the radiator bot's full check, 156 s to 55 s).
+`tests/planar_subtraction.rs` (`a_wheel_a_frame_stands_is_the_wheel_moved`,
+`a_placed_wheel_is_supplied_as_the_wheel_moved`).
 
 **The Wankel, the planar class (#65):** a point's planar envelope is its path (`bore :=
 envelope(apex, under: rotor_turn, …)`); `generate::chosen` skips a stationary root. A generated

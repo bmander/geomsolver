@@ -155,6 +155,21 @@ pub unsafe extern "C" fn gcs_workspace_pick_solid_json(h: *mut Sketch, az: f64, 
     })
 }
 
+/// **How far the objects shown reach along a plane's normal**, from the plane
+/// (`workspace::reach_along`): the plane's frame as `gcs_sketch_set_cut` takes it, nine doubles,
+/// and the least and the most into `out`.  Returns 2, or 0 where no object evaluates.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_workspace_reach_along(h: *mut Sketch, frame: *const f64,
+                                                   out: *mut f64) -> i32 {
+    guard(-1, move || {
+        let Some(b) = frame_of(frame) else { return 0 };
+        match gcs_core::overview::workspace::reach_along(sk(h), &b) {
+            Some((lo, hi)) => { write(out, &[lo, hi]); 2 }
+            None => 0,
+        }
+    })
+}
+
 /// Where two faces of object `solid` meet, in space: `[{faces: [a, b], segs: [[ax, ay, az, bx,
 /// by, bz]…]}…]` — `workspace::solid_edges`.
 #[no_mangle]

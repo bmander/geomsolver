@@ -12,6 +12,11 @@
  * takes no pointer events; three.js's camera is set from `view.orbit` and the eye's camera
  * (`view.cam`), which is what the core projects every plane for, so the two agree about where a
  * thing is on screen.
+ *
+ * **A section** (`v.section`, `core/section.ts`) is a clipping plane on every object's material,
+ * the one the core says it cuts by, and each object's cut face and outline from the core, hung in
+ * the object's own group so its matrix places them as it places the object.  The face is hatched
+ * in the picture's own pixels, as a draughtsman marks a cut.
  */
 import * as THREE from 'three';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
@@ -21,6 +26,8 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 import { own, placement, preview, shownObjects } from '../core/mesh.js';
 import type { Face, Mesh, Placement } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
+import { clipPlane, sectioned } from '../core/section.js';
+import type { Sectioned } from '../core/section.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
@@ -43,7 +50,13 @@ const INK = {
   union: 0x2ca02c,
   cut: 0xd62728,
   common: 0x1f77b4,
+  /** A section's cut face, and its hatching. */
+  section: 0x9aa1aa,
+  hatch: 0x5d636b,
 };
+
+/** A cut face's hatching, in device pixels: a line every `pitch`, `ink` of it dark. */
+const HATCH = { pitch: 9, ink: 2 };
 
 /** How much of a Boolean's tool shows through as a ghost. */
 const GHOST = 0.4;
@@ -82,6 +95,8 @@ interface Built {
   /** What the outline hid, as of `SketchView.hiddenEpoch`: a pane, an axis or an object hidden
    *  or shown is taken out or put back, nothing cut again. */
   hidden: number;
+  /** The section, as of `SketchView.sectionEpoch`: the caps are cut again, the objects not. */
+  section: number;
 }
 
 /** One object in the box: the evaluation its geometry was built from (`Placement.shape`), and
@@ -96,6 +111,8 @@ interface Placed {
 export interface BoxStats {
   cut: number;
   moved: number;
+  /** How many objects the last section was hung on: each a cut face from the core. */
+  capped: number;
 }
 
 /** A fingerprint of where everything is: FNV-1a over the parameters' bits.  A drag frame changes
@@ -117,7 +134,7 @@ export class Box3D {
   private readonly objects = new THREE.Group();
   /** Each object as the box holds it, by its index among the sketch's solids. */
   private readonly placed = new Map<number, Placed>();
-  readonly stats: BoxStats = { cut: 0, moved: 0 };
+  readonly stats: BoxStats = { cut: 0, moved: 0, capped: 0 };
   private built: Built | null = null;
   /** The panes' outlines and the views' geometry, kept by what they are *of* — because the two
    *  things the app says about them change with the pointer and not with the drawing: which pane
@@ -144,10 +161,17 @@ export class Box3D {
   private readonly edgesOf = new Map<number, SolidEdge[]>();
   /** **The load scenario drawn** (#510): its marks and the drawing deformed under it. */
   readonly scenario = new ScenarioScene();
+  /** **The section**: the plane every object's material is clipped by — the one array all of
+   *  them share, holding it while the workspace is sectioned and empty while it is not — and the
+   *  faces the cut leaves, a group an object, placed as the object is. */
+  private readonly clip = new THREE.Plane();
+  private readonly clipping: THREE.Plane[] = [];
+  private readonly caps = new THREE.Group();
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
-    this.scene.add(this.datums, this.objects, this.previewed, this.litEdges, this.scenario.group);
+    this.scene.add(this.datums, this.objects, this.previewed, this.litEdges, this.caps,
+                   this.scenario.group);
     // a headlight and a soft fill: the object is read for its shape, so the light follows the
     // eye rather than standing somewhere in the world and leaving half of it dark
     this.scene.add(new THREE.AmbientLight(0xffffff, 1.6));
@@ -193,7 +217,13 @@ export class Box3D {
     const shown = fresh || this.built!.hidden !== v.hiddenEpoch;
     const datums = shown || this.built!.datums !== pose;
     const objects = shown || this.built!.shape !== shape || this.built!.objects !== pose;
-    if (!datums && !objects) return;
+    const cut = fresh || this.built!.section !== v.sectionEpoch;
+    if (!datums && !objects && !cut) return;
+    // the section's plane stands where the pose puts it: told the core before anything is cut
+    if (datums || cut) {
+      v.applySection();
+      this.clipTo(v);
+    }
     if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
     let placedAt = this.built?.objects ?? NaN;
     if (objects) {
@@ -205,13 +235,56 @@ export class Box3D {
       this.preview.key = null;          // a preview is of the objects as they stood
       this.forgetLit();                 // and so are the edges lit on them
     }
+    // the faces a section leaves, cut where every object now stands; a gesture that left one
+    // waiting leaves the caps as they were too
+    if ((objects || cut) && placedAt === pose) this.buildCaps(v);
     this.built = {
       sketch: v.sketch, solid: v.showSolid,
       datums: datums ? pose : this.built!.datums,
       objects: placedAt,
       shape,
       hidden: v.hiddenEpoch,
+      section: v.sectionEpoch,
     };
+  }
+
+  /** The plane the core cuts by, as every object's material clips: written into the one shared
+   *  plane, and the array holding it filled or emptied. */
+  private clipTo(v: SketchView): void {
+    const p = clipPlane(v.sketch);
+    this.clipping.length = 0;
+    if (!p) return;
+    this.clip.normal.set(p[0], p[1], p[2]);
+    this.clip.constant = p[3];
+    this.clipping.push(this.clip);
+  }
+
+  /** **The faces the section leaves**: each object shown cut by the core, its face hatched and
+   *  its outline inked, in a group its matrix places.  Nothing while the workspace is not
+   *  sectioned. */
+  private buildCaps(v: SketchView): void {
+    release(this.caps);
+    this.stats.capped = 0;
+    if (!this.clipping.length) return;
+    for (const [index, held] of this.placed) {
+      let cut: Sectioned | null;
+      try {
+        cut = sectioned(v.sketch, index, 0);
+      } catch {
+        continue;
+      }
+      if (!cut || (!cut.face.length && !cut.outline.length)) continue;
+      const group = new THREE.Group();
+      group.matrixAutoUpdate = false;
+      group.matrix.copy(held.group.matrix);
+      if (cut.face.length && v.showSolid) group.add(new THREE.Mesh(at(cut.face), hatched()));
+      if (cut.outline.length) {
+        group.add(new THREE.LineSegments(at(cut.outline),
+                                         new THREE.LineBasicMaterial({ color: INK.edge })));
+      }
+      this.caps.add(group);
+      this.stats.capped++;
+    }
   }
 
   /** The drawing is the same object but what it shows changed (a swept solid's surface arrived):
@@ -241,6 +314,8 @@ export class Box3D {
         antialias: true,
         powerPreference: 'high-performance',
       });
+      // a section clips each object's own materials, never the panes or the axes
+      this.renderer.localClippingEnabled = true;
       return this.renderer;
     } catch {
       // no WebGL: the box simply does not draw, and the status line has already said what the
@@ -366,14 +441,14 @@ export class Box3D {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(Float32Array.from(m.creases), 3));
       group.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({
-        color: INK.edge, transparent: true, opacity: 1,
+        color: INK.edge, transparent: true, opacity: 1, clippingPlanes: this.clipping,
       })));
     }
     if (!v.showSolid) return group;
     // **the object itself, as a mesh** — every face of it a named child, so a later selection has
     // something to name
     for (const f of m.faces) {
-      const face = faceMesh(m, f);
+      const face = faceMesh(m, f, this.clipping);
       group.add(face);
       this.faces.push({ solid, path: f.path, mesh: face });
     }
@@ -411,7 +486,7 @@ export class Box3D {
       return;
     }
     for (const f of m.faces) {
-      const face = faceMesh(m, f);
+      const face = faceMesh(m, f, this.clipping);
       // lit as its target is, being what the selected body will be
       const mat = face.material as THREE.MeshStandardMaterial;
       mat.emissive.set(COL.sel);
@@ -436,7 +511,8 @@ export class Box3D {
       if (!pts.length) return;
       const g = new LineSegmentsGeometry();
       g.setPositions(pts);
-      const m = new LineMaterial({ color, linewidth: px, depthTest: false, transparent: true });
+      const m = new LineMaterial({ color, linewidth: px, depthTest: false, transparent: true,
+                                   clippingPlanes: this.clipping });
       m.resolution.set(v.width, v.height);
       const line = new LineSegments2(g, m);
       line.renderOrder = 10;
@@ -576,6 +652,7 @@ export class Box3D {
     release(this.previewed);
     this.preview = { key: null, shown: false };
     this.forgetLit();
+    release(this.caps);
   }
 }
 
@@ -599,7 +676,7 @@ function release(g: THREE.Group): void {
 /** One face of an object's mesh as a three.js mesh, named by its path.  The normals are the
  *  core's: averaged across a round face and flat across a corner, so a bore's wall shades round
  *  with no smoothing pass here. */
-function faceMesh(m: Mesh, f: Face): THREE.Mesh {
+function faceMesh(m: Mesh, f: Face, clippingPlanes: THREE.Plane[]): THREE.Mesh {
   const from = f.start * 9;
   const to = from + f.count * 9;
   const g = new THREE.BufferGeometry();
@@ -612,10 +689,49 @@ function faceMesh(m: Mesh, f: Face): THREE.Mesh {
     metalness: 0.1,
     roughness: 0.65,
     flatShading: !f.smooth,
+    clippingPlanes,
   }));
   face.name = f.path;
   face.userData.face = f.path;
   return face;
+}
+
+/** A geometry of nothing but the core's points, three doubles each. */
+function at(points: Float64Array): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(Float32Array.from(points), 3));
+  return g;
+}
+
+/** **A cut face's material**: its ink, crossed by hatching laid in the picture's own pixels —
+ *  a draughtsman's section lines, the same pitch however near the eye is — drawn a hair toward
+ *  the eye, so a face of the object lying in the plane does not show through it.  Both sides, as
+ *  a mirrored object's face turns the other way. */
+function hatched(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      ink: { value: new THREE.Color(INK.section) },
+      hatch: { value: new THREE.Color(INK.hatch) },
+      pitch: { value: HATCH.pitch },
+      width: { value: HATCH.ink },
+    },
+    vertexShader: `void main() {
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+    fragmentShader: `uniform vec3 ink;
+    uniform vec3 hatch;
+    uniform float pitch;
+    uniform float width;
+    void main() {
+      float k = mod(gl_FragCoord.x + gl_FragCoord.y, pitch);
+      gl_FragColor = vec4(k < width ? hatch : ink, 1.0);
+      #include <colorspace_fragment>
+    }`,
+    side: THREE.DoubleSide,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
 }
 
 /** A face drawn as a ghost — see-through, and hiding nothing behind it — or solid again.  A

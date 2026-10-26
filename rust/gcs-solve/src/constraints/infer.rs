@@ -453,7 +453,7 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
     // what the source has for the word
     let has = match src {
         RateSource::Spline | RateSource::Curve | RateSource::Carried => rated,
-        RateSource::Traced => rated || (surface != (word == Word::Centre)),
+        RateSource::Traced => rated || (surface != matches!(word, Word::Centre | Word::Holds)),
         RateSource::Meshing => rated || word == Word::Normal,
         RateSource::Envelope => !rated,
     };
@@ -483,14 +483,14 @@ fn validate_rate(sk: &Sketch, kind: CKind, args: &[Arg], name: &dyn Fn(EntRef) -
         }
     }
     let against = match word {
-        Word::Plane => to.kind == EntKind::Frame,
+        Word::Plane | Word::Holds => to.kind == EntKind::Frame,
         Word::Curvature => matches!(to.kind, EntKind::Circle | EntKind::Arc),
         Word::Centre => to.kind == EntKind::Point,
         _ => matches!(to.kind, EntKind::Line | EntKind::Axis),
     };
     if !against {
         return Err(format!("{} is not what this reads at {}: {}", name(to), name(at), match word {
-            Word::Plane => "a plane",
+            Word::Plane | Word::Holds => "a plane",
             Word::Curvature => "a circle",
             Word::Centre => "a point",
             _ => "a line or an axis",

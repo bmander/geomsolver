@@ -603,6 +603,7 @@ pub fn build_kernel(sk: &Sketch, key: KernelKey) -> Kernel {
                     (2 + d.values.len() + g.flat.len(), kernels::ENVELOPE, true)
                 }
                 crate::model::CurveBody::Extremal(x) => (x.n_const(), kernels::EXTREMAL, true),
+                crate::model::CurveBody::Developed(x) => (x.n_const, kernels::DEVELOPED, true),
                 crate::model::CurveBody::Followed(None) => {
                     unreachable!("nothing is held to a followed curve not lowered \
                                   (`constraints::validate`)")

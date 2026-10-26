@@ -263,6 +263,14 @@ fn index(i: i32) -> Option<usize> {
 /// The solid `idx` names in `s`, or `None` with the reason in `gcs_last_error()`.  Every entry
 /// point taking a solid of a sketch reads its index here, so a negative one and one past the
 /// drawing's solids are refused alike, each by its entry point's neutral return.
+/// A plane's frame in the world as a host hands it, nine doubles `u`, `v`, `o`
+/// (`gcs_plane_frame3`'s): `None` where `u` and `v` span no plane.
+unsafe fn frame_of(frame: *const f64) -> Option<gcs_core::plane::Basis> {
+    let f = std::slice::from_raw_parts(frame, 9);
+    let b = gcs_core::plane::Basis::explicit([f[0], f[1], f[2]], [f[3], f[4], f[5]])?;
+    Some(gcs_core::plane::Basis { o: [f[6], f[7], f[8]], ..b })
+}
+
 fn solid_at(s: &Sketch, idx: i32) -> Option<usize> {
     let i = index(idx).filter(|&i| i < s.solids.len());
     if i.is_none() {
