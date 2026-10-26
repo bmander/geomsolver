@@ -82,11 +82,26 @@ impl Predicate {
     }
 }
 
+/// **Where a measurement was read**: the face of each solid, by its path through the operands as
+/// a reader writes it (`uno.low.tails.body.near`, `near_screw[1].post.rim`), and a point of each
+/// in the world, between which the two come nearest — one point where their boundaries touch or
+/// cross.  Two solids whose material is common are read at the `deepest` of it instead: the centre
+/// of the largest ball both hold, both points, and the faces of each nearest it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Nearest {
+    pub a: String,
+    pub b: String,
+    pub at_a: [f64; 3],
+    pub at_b: [f64; 3],
+    pub deepest: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct GeometricEvidence {
     pub(super) requirement: SolidRequirement,
     pub(super) predicate: Predicate,
     pub(super) measurement: Measurement,
+    pub(super) nearest: Option<Nearest>,
 }
 impl GeometricEvidence {
     pub fn predicate_name(&self) -> &'static str {
@@ -103,6 +118,19 @@ impl GeometricEvidence {
     }
     pub fn measured(&self) -> Option<f64> {
         self.measurement.interval().map(Interval::midpoint)
+    }
+    /// Where it was measured, and between which faces.
+    pub fn nearest(&self) -> Option<&Nearest> {
+        self.nearest.as_ref()
+    }
+    /// The evidence read with the world moved by `pose`: a claim that held the moving solid still
+    /// and moved the other back says its points where the drawing's motion stands them.
+    pub(crate) fn moved(mut self, pose: crate::envelope::Motion) -> Self {
+        if let Some(n) = &mut self.nearest {
+            n.at_a = pose.point(n.at_a);
+            n.at_b = pose.point(n.at_b);
+        }
+        self
     }
     /// The sole geometric verdict rule: conjunction with counterexamples dominating uncertainty.
     pub fn holds(&self) -> Option<bool> {

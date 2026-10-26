@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.188] Lists, and a block over one.** A list is values in order, in brackets — `holes :=
+**[0.191] Lists, and a block over one.** A list is values in order, in brackets — `holes :=
 [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]` — each item a number, a
 vector or a group in braces, and `repeat h in holes { … }` makes a copy per item, `h` that copy's
 item: a number, or a group of numbers read by member (`h.x`) and handed on whole (§12.10). A list
@@ -12,8 +12,39 @@ may be written in place, `repeat d in [2mm, 3mm] { … }`; `cycle h in L` closes
 index as before. A list is a group whose members are its items by place, so it is a member of a
 group, imported from a module and read in a definition's body as any group of numbers is. A
 pattern off a grid — a board's four mounting holes — was written as copies of its statements or as
-a count's arithmetic (`j * (b - a)`) hiding the places; through 0.187 `[` began no value. Every
+a count's arithmetic (`j * (b - a)`) hiding the places; through 0.190 `[` began no value. Every
 solved position is unchanged.
+
+**[0.190] A refuted claim says where.** A claim about two solids that is refuted or undecided says,
+under its measurement, the face of each by its path through the operands and where in the world
+they meet: `deepest at (…), between a.f and b.g` where their material is common (the centre of the
+largest ball both hold, which the thickness is read from), `nearest at (…), between …` where their
+boundaries touch or cross, and `nearest between a.f at (…) and b.g at (…)` where they are apart
+(§9.8). A claim over a sweep says it at the pose it reports. The JSON carries it as `nearest`
+(`a`, `b`, `atA`, `atB`, `deepest`) on the claim and on every valid pose, for a claim that holds
+too. Nothing is measured differently. (A request from radiatorbot: `claim uno.tails clear(0.5mm)
+frame_part` refuted at −0.71 named no tail and no post.)
+
+**[0.189] An instance's numbers, read from outside it.** `b.n` names a number the body of the
+instance `b` defines — a value, an input with a value, a group's member — worked out from what the
+call gave it, as `ball.r` names a formal (§8): `shield_z := uno_z + shield.top` reads `Shield`'s
+`top` rather than a second copy of its formula. A path reaches through an instance the body writes
+(`st.base.top`). Either is read in a definition as well as by a statement, the body writing the call
+worked out in dependency order with it: through 0.188 a definition reading even a formal,
+`y := b.w + 1mm`, was **E103**, and a body's own number was not read at all (`` `shield.top` is not
+a number here — nothing in scope gives it one ``). A definition the call reads that reads the
+number back is **E041**; a number the call leaves unable to work out is **E103** where it is read.
+A formal a call leaves to its default reads as that default from outside, where it read as an
+unknown. Every solved position is unchanged.
+
+**[0.188] A zero ordinate is a number.** `p distance(0mm, along: u) P`, and `p coords(du: 0mm,
+dv: 5mm) P` through it, is an ordinate of zero — a dimension, drawn and edited as any other
+(§6.7). Through 0.187 a zero written as a literal was **E040**, naming `level`, while a zero a
+name or an expression came to (`cx := (x0 + x1) / 2`) was accepted: a component placing a point
+by its ordinates read either way, and one written in fear of the refusal branched on each
+ordinate being zero. `a level(t) b` is unchanged, the same row with no number, and a step's
+literal zero (`step(v: 0mm)`, back onto the axis) is still its level (§6.6). A document that
+elaborated still does, and every solved position is unchanged.
 
 **[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
 `a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner

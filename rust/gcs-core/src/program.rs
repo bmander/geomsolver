@@ -152,7 +152,7 @@ fn shadowing(p: &Program, diags: &mut Vec<Diag>) {
                     for (var, _) in b.over.iter().flat_map(|o| o.walks()) {
                         say(var, "a block's edge", Some(st.id), diags);
                     }
-                    for items in &b.items {
+                    if let Some(items) = &b.items {
                         say(&items.var, "a block's item", Some(st.id), diags);
                     }
                     body(&b.body, diags);
