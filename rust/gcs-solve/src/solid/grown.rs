@@ -2,20 +2,29 @@
 //! term bounds the distance from a body's material, `{ p | distance(p, within) <= d }` with
 //! `within := { c | c inside B }`, is every point within `d` of `B` — `B` and the points nearer
 //! than `d` outside it.  Outside, a point's nearest point of `B` is inside a face, inside an edge or
-//! a corner, so where every edge of `B` is convex what it adds is a partition into those points:
-//! each face's prism `d` out along its normal (a cylinder's band, its radius grown or a bore's
-//! shrunk by `d`), each edge's wedge of radius `d` between its two faces' normals (a torus's where
-//! the edge is a circle), and each corner's sector of the ball where three faces meet.  Each piece
-//! shares its faces exactly with the next — a prism its foot with the face, its sides with the
-//! wedges, a wedge its ends with the sectors — so they are glued to `B` there and nothing is
-//! intersected (`boolean::glued`): the boundary of `B` grown, planes, cylinders, tori and spheres
-//! meeting tangent.  Held to the region read point by point before it stands (`gate`), as the
-//! other exact constructions are.  A concave edge, a face no plane or cylinder carries, an edge no
-//! line or circle, a corner that is no prism's (three faces, one square to the other two), a bore
-//! no wider than the reach, or a body whose faces another solid reads leave it the field's, said by
-//! name.  The recipe's `grown` node: the body's own node, and its pieces each a `prism` or a
-//! `revolve`.
-use crate::brep::build::{Profile, ProfileEdge};
+//! a corner, so what it adds is a partition into those points: each face's prism `d` out along its
+//! normal (a cylinder's band, its radius grown or a bore's shrunk by `d`), each convex edge's wedge
+//! of radius `d` between its two faces' normals (a torus's where the edge is a circle), and each
+//! convex corner's sector of the ball where three faces meet.  A concave edge has no wedge: its two
+//! faces' prisms overlap there, and each is cut back to the edge's bisector (the plane through it
+//! halfway between them), where they meet face to face.  At a corner where one concave edge meets
+//! a face square to both its faces (a step's end, a pocket's rim) the ball has no sector, and the
+//! two wedges along that face are cut back to the same bisector, meeting in it; where three concave
+//! edges meet (a pocket's floor) the three prisms meet in their bisectors.  Each piece shares its
+//! faces exactly with the next — a prism its foot with the face, its sides with the wedges or the
+//! prism across a bisector, a wedge its ends with the sectors or the wedge across a bisector — so
+//! they are glued to `B` there and nothing is intersected (`boolean::glued`): the boundary of `B`
+//! grown, planes, cylinders, tori and spheres meeting tangent, the cuts transversal.  Held to the
+//! region read point by point before it stands (`gate`), as the other exact constructions are.  A
+//! concave edge on a curved face (a post's foot, its bisector a cone), a corner where a convex edge
+//! stands between two concave ones (a boss's foot), a face beside a concave edge that is no convex
+//! polygon or is narrower than the reach (a pocket narrower than twice it), a face no plane or
+//! cylinder carries, an edge no line or circle, a convex corner that is no prism's (three faces,
+//! one square to the other two), a bore no wider than the reach, or a body whose faces another
+//! solid reads leave it the field's, said by name.  The recipe's `grown` node: the body's own node,
+//! and its pieces each a `prism` or a `revolve` — one cut back a `region`, in common with a block
+//! standing on each bisector.
+use crate::brep::build::{square, Profile, ProfileEdge};
 use crate::brep::geom::{Curve, Frame, Surface};
 use crate::brep::recipe::Writer;
 use crate::brep::topo::EdgeCurve;
@@ -38,13 +47,18 @@ pub struct Grown {
     pieces: Vec<Piece>,
     /// What the pieces' faces are called: the term's set.
     name: String,
+    /// How far the block a piece is cut back by reaches past its plane, and either way along it:
+    /// past every piece.
+    reach: f64,
 }
 
-/// One piece: a section, and how it is swept.
+/// One piece: a section, how it is swept, and the planes it is cut back to where it meets a
+/// concave edge's bisector (each through a point, kept on the side its unit normal points to).
 #[derive(Clone, Debug)]
 struct Piece {
     section: Profile,
     sweep: Sweep,
+    cuts: Vec<(V, V)>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -57,19 +71,34 @@ enum Sweep {
 
 impl Grown {
     /// The recipe's node, written by `w`: `grown`, the body's node and its `pieces` each a `prism`
-    /// or a `revolve`.
+    /// or a `revolve`, or one cut back a `region` keeping it and a block on each of its planes.
     pub fn node(&self, w: &Writer) -> Result<Json, String> {
         let s = w.scale;
+        let named = |section: &Profile| {
+            let names = section.loops.iter().map(|l| vec![self.name.clone(); l.len()]).collect();
+            Profile { names, ..section.clone() }.to_json(w)
+        };
         let pieces = self.pieces.iter().map(|piece| {
-            let names = piece.section.loops.iter().map(|l| vec![self.name.clone(); l.len()]).collect();
-            let profile = Profile { names, ..piece.section.clone() }.to_json(w)?;
-            Ok(match piece.sweep {
+            let profile = named(&piece.section)?;
+            let mut swept = match piece.sweep {
                 Sweep::Along(to) => object([("kind", "prism".into()), ("profile", profile),
                     ("from", 0.0.into()), ("to", (to * s).into())]),
                 Sweep::About { origin, axis, angle } => object([("kind", "revolve".into()),
                     ("profile", profile), ("origin", w.line_origin(origin.map(|x| x * s), axis)),
                     ("axis", Writer::triple(axis)), ("angle", angle.into())]),
-            })
+            };
+            if piece.cuts.is_empty() {
+                return Ok(swept);
+            }
+            // cut back to each bisector: in common with a block standing on its plane
+            swept.set("keep", Json::Bool(true));
+            let mut kept = vec![swept];
+            for &(o, keep) in &piece.cuts {
+                let block = named(&square(o, keep, self.reach))?;
+                kept.push(object([("kind", "prism".into()), ("profile", block), ("from", 0.0.into()),
+                    ("to", (self.reach * s).into()), ("keep", Json::Bool(true))]));
+            }
+            Ok(object([("kind", "region".into()), ("pieces", Json::Arr(kept))]))
         }).collect::<Result<Vec<_>, String>>()?;
         Ok(object([("kind", "grown".into()), ("body", (self.body as usize).into()), ("pieces", Json::Arr(pieces))]))
     }
@@ -129,66 +158,72 @@ fn construction(sk: &Sketch, face: &FaceRef, t: &RegionTerm)
         return Err("within reach of only some of a body's faces is read by the field".to_string());
     }
     let refused = |why: &str| format!("{why}: read by the field");
-    let mut pieces = Vec::new();
-    // each face's prism (a cylinder's band) out along its normal
-    for fi in 0..b.faces.len() {
-        let f = &b.faces[fi];
-        pieces.push(match f.surface {
-            Surface::Plane(_) => {
-                let (n, o) = body.plane(fi).expect("a plane face");
-                let section = section_of(&body, fi, n, o)
-                    .ok_or_else(|| refused("a plane face bounded by an edge no line or circle carries"))?;
-                Piece { section, sweep: Sweep::Along(d) }
-            }
-            Surface::Cylinder(frame, r) => band(&body, fi, frame, r, mm, d)
-                .ok_or_else(|| refused("a cylinder's face that is no band between two circles about its axis, \
-                                        or a bore no wider than the reach"))?,
-            _ => return Err(refused(&format!("a face on a {}", f.surface.kind()))),
-        });
-    }
-    // each convex edge's wedge between its faces' normals: along a line, or turned about a circle
+    // the concave edges: two planes meeting along a line, each one's prism cut back to their bisector
+    let mut concave = vec![false; b.edges.len()];
+    let mut at_vertex = vec![Vec::new(); b.vertices.len()];
     for e in 0..b.edges.len() as u32 {
         let &[fa, fb] = body.faces_of(e) else { continue };
-        let edge = &b.edges[e as usize];
-        let EdgeCurve::Curve(curve) = &edge.curve else { continue };
-        match body.convex(e) {
-            Some(true) => {}
-            // the faces go on tangent: their prisms meet there
-            None => continue,
-            Some(false) => return Err(refused("a concave edge")),
+        let EdgeCurve::Curve(curve) = &b.edges[e as usize].curve else { continue };
+        for v in body.ends(e) {
+            at_vertex[v as usize].push(e);
         }
-        let [t0, t1] = edge.t;
-        let at = body.along(e, 0.0);
-        let (na, nb) = (body.normal(fa, at), body.normal(fb, at));
-        let tangent = unit(curve.tangent(t0));
-        pieces.push(match curve {
-            Curve::Line { .. } => {
-                // the faces' normals the same all along it
-                let end = body.along(e, 1.0);
-                if norm(sub(body.normal(fa, end), na)) > 1e-9 || norm(sub(body.normal(fb, end), nb)) > 1e-9 {
-                    return Err(refused("an edge along which a face turns"));
-                }
-                Piece { section: wedge(at, tangent, na, nb, d), sweep: Sweep::Along((t1 - t0) / mm) }
+        if body.convex(e) == Some(false) {
+            let planes = body.plane(fa).is_some() && body.plane(fb).is_some();
+            if !planes || !matches!(curve, Curve::Line { .. }) {
+                return Err(refused("a concave edge on a curved face (its bisector a cone: a post's foot)"));
             }
-            Curve::Circle(..) => {
-                let (centre, axis, r, _) = body.circle(e).expect("a circle");
-                if dot(na, tangent).abs() > 1e-9 || dot(nb, tangent).abs() > 1e-9 {
-                    return Err(refused("a circle whose faces turn about no axis of its own"));
-                }
-                // turned about its axis, the wedge stays clear of it
-                if !(r > d) {
-                    return Err(refused("a circle no larger than the reach"));
-                }
-                Piece { section: wedge(at, tangent, na, nb, d),
-                        sweep: Sweep::About { origin: centre, axis, angle: (t1 - t0).min(TAU) } }
-            }
-            _ => return Err(refused("an edge no line or circle carries")),
-        });
+            concave[e as usize] = true;
+        }
     }
+    let mut pieces = Vec::new();
     // each corner's sector of the ball: where three faces meet, one square to the other two (a
-    // prism's corner), the quarter disc between the square one and another turned about it
+    // prism's corner), the quarter disc between the square one and another turned about it.  At
+    // a concave corner the ball has no sector: where one concave edge meets the square face, the
+    // wedges along that face are cut back to its bisector (`trims`, by edge and end: the corner,
+    // what is kept, how far along the edge the cut reaches); where three meet, nothing
+    let mut sectors = Vec::new();
+    let mut trims = std::collections::BTreeMap::<u32, [Option<(V, V, f64)>; 2]>::new();
     for v in 0..b.vertices.len() as u32 {
         let c = body.back(b.vertices[v as usize].p);
+        let edges = &at_vertex[v as usize];
+        let hollow: Vec<u32> = edges.iter().copied().filter(|&e| concave[e as usize]).collect();
+        if let Some(&e) = hollow.first() {
+            let faces = body.faces_at(v, &[]);
+            if faces.len() != 3 || edges.len() != 3 {
+                return Err(refused("a concave corner of more than three faces"));
+            }
+            match hollow.len() {
+                1 => {
+                    let &[f, g] = body.faces_of(e) else { unreachable!("a concave edge between two faces") };
+                    let h = faces.iter().copied().find(|&x| x != f && x != g).expect("a third face");
+                    let [nf, ng] = [f, g].map(|x| body.plane(x).expect("a concave edge's plane").0);
+                    let Some((nh, _)) = body.plane(h) else {
+                        return Err(refused("a concave corner on a curved face"));
+                    };
+                    if dot(nh, nf).abs() > 1e-9 || dot(nh, ng).abs() > 1e-9 {
+                        return Err(refused("a corner that is no prism's: three faces, one square to the \
+                                            other two"));
+                    }
+                    for &x in edges.iter().filter(|&&x| x != e) {
+                        // the wedge along the face `h` shares with `f` keeps `f`'s side of the bisector
+                        let (ns, no) = if body.faces_of(x).contains(&f) { (nf, ng) } else { (ng, nf) };
+                        let ends = body.ends(x);
+                        let end = usize::from(ends[0] != v);
+                        let along = unit(sub(body.back(b.vertices[ends[1 - end] as usize].p), c));
+                        let toward = dot(along, no);
+                        if !(toward > 1e-9) {
+                            return Err(refused("a concave corner whose wedges run along its bisector"));
+                        }
+                        let reach = d * (1.0 - dot(ns, no)) / toward;
+                        trims.entry(x).or_default()[end] = Some((c, unit(sub(no, ns)), reach));
+                    }
+                }
+                3 => {}
+                _ => return Err(refused("a corner where a convex edge stands between two concave ones \
+                                         (a boss's foot)")),
+            }
+            continue;
+        }
         let mut normals: Vec<V> = Vec::new();
         for fi in body.faces_at(v, &[]) {
             let n = body.normal(fi, c);
@@ -206,9 +241,156 @@ fn construction(sk: &Sketch, face: &FaceRef, t: &RegionTerm)
         let [na, nb] = [normals[(corner + 1) % 3], normals[(corner + 2) % 3]];
         let section = wedge(c, cross(na, nc), na, nc, d);
         let angle = dot(cross(na, nb), nc).atan2(dot(na, nb));
-        pieces.push(Piece { section, sweep: Sweep::About { origin: c, axis: nc, angle } });
+        sectors.push(Piece { section, sweep: Sweep::About { origin: c, axis: nc, angle }, cuts: Vec::new() });
     }
-    Ok((Grown { body: face.solid, pieces, name: t.name.clone() }, body))
+    // each face's prism (a cylinder's band) out along its normal, a face beside a concave edge cut
+    // back to its bisector
+    for fi in 0..b.faces.len() {
+        let f = &b.faces[fi];
+        pieces.push(match f.surface {
+            Surface::Plane(_) => {
+                let (n, o) = body.plane(fi).expect("a plane face");
+                if body.edges_of(fi).iter().any(|&e| concave[e as usize]) {
+                    beside_concave(&body, fi, n, &concave, d).map_err(refused)?
+                } else {
+                    let section = section_of(&body, fi, n, o)
+                        .ok_or_else(|| refused("a plane face bounded by an edge no line or circle carries"))?;
+                    Piece { section, sweep: Sweep::Along(d), cuts: Vec::new() }
+                }
+            }
+            Surface::Cylinder(frame, r) => band(&body, fi, frame, r, mm, d)
+                .ok_or_else(|| refused("a cylinder's face that is no band between two circles about its axis, \
+                                        or a bore no wider than the reach"))?,
+            _ => return Err(refused(&format!("a face on a {}", f.surface.kind()))),
+        });
+    }
+    // each convex edge's wedge between its faces' normals: along a line, or turned about a circle
+    for e in 0..b.edges.len() as u32 {
+        let &[fa, fb] = body.faces_of(e) else { continue };
+        let edge = &b.edges[e as usize];
+        let EdgeCurve::Curve(curve) = &edge.curve else { continue };
+        // the faces go on tangent, or meet concave: their prisms meet there
+        if body.convex(e) != Some(true) {
+            continue;
+        }
+        let [t0, t1] = edge.t;
+        let at = body.along(e, 0.0);
+        let (na, nb) = (body.normal(fa, at), body.normal(fb, at));
+        let tangent = unit(curve.tangent(t0));
+        let trim = trims.get(&e).copied().unwrap_or_default();
+        pieces.push(match curve {
+            Curve::Line { .. } => {
+                // the faces' normals the same all along it
+                let end = body.along(e, 1.0);
+                if norm(sub(body.normal(fa, end), na)) > 1e-9 || norm(sub(body.normal(fb, end), nb)) > 1e-9 {
+                    return Err(refused("an edge along which a face turns"));
+                }
+                let length = (t1 - t0) / mm;
+                if trim.iter().flatten().map(|t| t.2).sum::<f64>() >= length * (1.0 - 1e-9) {
+                    return Err(refused("an edge shorter than the reach between its concave corners"));
+                }
+                // cut back at a concave corner: begun past it, so the bisector crosses it clear
+                let [before, after] = trim.map(|t| if t.is_some() { d } else { 0.0 });
+                Piece { section: wedge(sub(at, scale(tangent, before)), tangent, na, nb, d),
+                        sweep: Sweep::Along(length + before + after),
+                        cuts: trim.iter().flatten().map(|&(o, keep, _)| (o, keep)).collect() }
+            }
+            Curve::Circle(..) => {
+                if trim.iter().any(Option::is_some) {
+                    return Err(refused("a circle at a concave corner"));
+                }
+                let (centre, axis, r, _) = body.circle(e).expect("a circle");
+                if dot(na, tangent).abs() > 1e-9 || dot(nb, tangent).abs() > 1e-9 {
+                    return Err(refused("a circle whose faces turn about no axis of its own"));
+                }
+                // turned about its axis, the wedge stays clear of it
+                if !(r > d) {
+                    return Err(refused("a circle no larger than the reach"));
+                }
+                Piece { section: wedge(at, tangent, na, nb, d),
+                        sweep: Sweep::About { origin: centre, axis, angle: (t1 - t0).min(TAU) },
+                        cuts: Vec::new() }
+            }
+            _ => return Err(refused("an edge no line or circle carries")),
+        });
+    }
+    pieces.extend(sectors);
+    let (lo, hi) = body.bounds();
+    let reach = 2.0 * (norm(sub(hi, lo)) + 4.0 * d);
+    Ok((Grown { body: face.solid, pieces, name: t.name.clone(), reach }, body))
+}
+
+/// Plane face `fi` (its outward normal `n`) beside a concave edge, where it is a convex polygon:
+/// its prism `d` out along `n`, cut back to each concave side's bisector — the plane through the
+/// side halfway between the face and the one beyond it, kept on the face's side.  The section's
+/// concave sides are pushed out past the face so that each bisector crosses the prism clear of its
+/// edges, along the face's own side at its foot; at its top, where every side's line moved in by
+/// its cut still bounds a polygon of as many sides, the face is no narrower than the reach.
+fn beside_concave(body: &super::faces::BodyFaces, fi: usize, n: V, concave: &[bool], d: f64)
+    -> Result<Piece, &'static str> {
+    const NO_POLYGON: &str = "a face beside a concave edge that is no convex polygon";
+    let (b, _, _) = body.brep();
+    let [l] = &b.faces[fi].loops[..] else { return Err(NO_POLYGON) };
+    // each side in turn: its start, its direction, and the normal of the face beyond it if concave
+    let mut sides: Vec<(V, V, Option<V>)> = Vec::new();
+    for c in l {
+        let edge = &b.edges[c.edge as usize];
+        let EdgeCurve::Curve(Curve::Line { .. }) = &edge.curve else { return Err(NO_POLYGON) };
+        let [p, q] = edge.v.map(|v| body.back(b.vertices[v as usize].p));
+        let (p, q) = if c.reversed { (q, p) } else { (p, q) };
+        let beyond = body.faces_of(c.edge).iter().copied().find(|&g| g != fi)
+            .filter(|_| concave[c.edge as usize]).map(|g| body.normal(g, p));
+        sides.push((p, unit(sub(q, p)), beyond));
+    }
+    let m = sides.len();
+    // turning one way at every corner
+    let turns: Vec<f64> = (0..m).map(|k| dot(cross(sides[k].1, sides[(k + 1) % m].1), n)).collect();
+    let sign = turns.first().map_or(0.0, |t| t.signum());
+    if m < 3 || turns.iter().any(|&t| !(t * sign > 1e-9)) {
+        return Err(NO_POLYGON);
+    }
+    let inward = |k: usize| scale(cross(n, sides[k].1), sign);
+    let size = (0..m).map(|k| norm(sub(sides[(k + 1) % m].0, sides[k].0))).fold(0.0, f64::max);
+    // the corners where each side's line moved in by `by(k)` meets the next, where every side
+    // still runs its own way
+    let corners = |by: &dyn Fn(usize) -> f64| -> Option<Vec<V>> {
+        let line = |k: usize| (add(sides[k].0, scale(inward(k), by(k))), sides[k].1);
+        let at: Vec<V> = (0..m).map(|k| {
+            let ((p, u), (q, w)) = (line((k + m - 1) % m), line(k));
+            add(p, scale(u, dot(cross(sub(q, p), w), n) / dot(cross(u, w), n)))
+        }).collect();
+        (0..m).all(|k| dot(sub(at[(k + 1) % m], at[k]), sides[k].1) > 1e-9 * size).then_some(at)
+    };
+    // how far in the bisector meets the prism's top: `d (1 - cos)` over the beyond face's normal
+    // across the face
+    let mut cut_in = Vec::with_capacity(m);
+    for k in 0..m {
+        cut_in.push(match sides[k].2 {
+            None => 0.0,
+            Some(beyond) => {
+                let across = dot(beyond, inward(k));
+                if !(across > 1e-9) {
+                    return Err(NO_POLYGON);
+                }
+                d * (1.0 - dot(beyond, n)) / across
+            }
+        });
+    }
+    corners(&|k| cut_in[k]).ok_or("a face narrower than the reach beside a concave edge")?;
+    let mut push = 0.5 * d;
+    let foot = loop {
+        if let Some(at) = corners(&|k| if sides[k].2.is_some() { -push } else { 0.0 }) {
+            break at;
+        }
+        push *= 0.5;
+        if push < 1e-6 * d {
+            return Err(NO_POLYGON);
+        }
+    };
+    let edges = (0..m).map(|k| ProfileEdge::Line { a: foot[k], b: foot[(k + 1) % m] }).collect();
+    let cuts = sides.iter().filter_map(|&(p, _, beyond)| beyond.map(|g| (p, unit(sub(g, n))))).collect();
+    let section = Profile { origin: foot[0], normal: n, loops: vec![edges], names: Vec::new() };
+    Ok(Piece { section, sweep: Sweep::Along(d), cuts })
 }
 
 /// The sector of the disc of radius `d` about `o` from the unit `na` to the unit `nb` (both square
@@ -323,7 +505,7 @@ fn band(body: &super::faces::BodyFaces, fi: usize, frame: Frame, r: f64, mm: f64
     let corners = [point(inner, v0), point(outer, v0), point(outer, v1), point(inner, v1)];
     let edges = (0..4).map(|k| ProfileEdge::Line { a: corners[k], b: corners[(k + 1) % 4] }).collect();
     Some(Piece { section: Profile { origin: point(r, v0), normal: cross(frame.z, e), loops: vec![edges], names: Vec::new() },
-                 sweep: Sweep::About { origin: o, axis: frame.z, angle: u1 - u0 } })
+                 sweep: Sweep::About { origin: o, axis: frame.z, angle: u1 - u0 }, cuts: Vec::new() })
 }
 
 /// **The gate**, as the other constructions': the body grown stands only where the region's own

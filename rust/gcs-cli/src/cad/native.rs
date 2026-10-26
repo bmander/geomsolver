@@ -301,10 +301,21 @@ impl Session {
                     }
                     Node::Grown {body,pieces} => {
                         // a region within reach of a body (`solid::grown`): the body and its pieces'
-                        // union, where the core's kernel glues them
+                        // union, where the core's kernel glues them; a piece beside a concave edge
+                        // the common of its sweep and the blocks on its bisectors
                         let mut id = shapes[body];
                         for piece in pieces {
-                            let p = self.primitive(piece,&shapes)?;
+                            let p = match piece {
+                                Node::Region(kept) => {
+                                    let mut p = None;
+                                    for k in kept {
+                                        let q = self.primitive(&k.node,&shapes)?;
+                                        p = Some(match p { None => q,Some(s) => self.boolean(s,q,"bound")? });
+                                    }
+                                    p.ok_or("a grown body's piece of no pieces")?
+                                }
+                                piece => self.primitive(piece,&shapes)?,
+                            };
                             id = self.boolean(id,p,"on")?;
                         }
                         id

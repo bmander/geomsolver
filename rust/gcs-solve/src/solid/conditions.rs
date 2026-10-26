@@ -7,7 +7,9 @@
 //! - any other conjunction of a face's side or surface, or a distance from a point, is the
 //!   nearest point satisfying every condition, found by sequential projection onto the
 //!   conditions linearised where the last step stood (each step a small quadratic program,
-//!   solved exactly by its active set): a local nearest point, from the point measured.
+//!   solved exactly by its active set): a local nearest point, from the point measured;
+//! - within every face of a body with a concave edge, nothing within the material and else the
+//!   nearest of its faces' patches (`Reading::material`), where no one surface's side bounds it.
 use super::faces::{along_run, BodyFaces, Reading};
 use crate::model::{RegionShape, RegionTerm, Sketch, Target};
 use crate::space::{dot, norm, scale, sub};
@@ -39,6 +41,8 @@ pub enum SetDistance {
     /// The nearest of several: a set within a body's faces where the body is in pieces, each
     /// shell's conditions apart (within all of them at once is within none).
     Nearest(Vec<SetDistance>),
+    /// The material within every face of a body with a concave edge (`Reading::material`).
+    Material(Arc<Reading>),
 }
 
 pub use super::faces::Read;
@@ -99,6 +103,17 @@ impl SetDistance {
                 }
             });
         }
+        // within every face of a body with a concave edge, and nothing more: its material
+        if let [t] = terms {
+            if let RegionShape::FaceSide { face } = &t.shape {
+                if t.cmp == Cmp::Le && t.hi.is_none() && t.value(sk)? == (0.0, 0.0) {
+                    let r = super::faces::reading(sk, &patch(face), read)?;
+                    if r.material() {
+                        return Ok(SetDistance::Material(Arc::new(r)));
+                    }
+                }
+            }
+        }
         // the faces the set's point is within: a distance off one of those in pieces is read
         // piece by piece (`Reading::convex_pieces`)
         let within: Vec<crate::model::FaceRef> = terms.iter().filter_map(|t| match &t.shape {
@@ -143,6 +158,7 @@ impl SetDistance {
             SetDistance::Patch(r) => r.distance(p, false),
             SetDistance::Conditions(cs) => nearest(cs, p).map_or(f64::INFINITY, |q| norm(sub(p, q))),
             SetDistance::Nearest(each) => each.iter().map(|s| s.distance(p)).fold(f64::INFINITY, f64::min),
+            SetDistance::Material(r) => r.material_distance(p),
         }
     }
 
