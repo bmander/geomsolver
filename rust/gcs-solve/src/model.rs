@@ -40,8 +40,9 @@ mod rounds;
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
     FrameE, Chart, Joint,
-    LiftE, article, entity_name, kind_initial, Remap, renumbered, renumbered_opt, renumbered_all,
+    LiftE, article, entity_name, kind_initial, Remap,
 };
+pub(crate) use entities::{renumbered, renumbered_opt, renumbered_all};
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use solids::{
     FaceLoop, FaceE, Length, SolidRequirement, SolidClaim, SolidBearing, Sweep,

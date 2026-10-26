@@ -53,9 +53,6 @@ pub struct Mirror {
     pub datum: bool,
 }
 
-/// What mirrored bodies' preimages are drawn as (`Sketch::images`, #578): each entity a body made
-/// as its image, and each datum point bodies draw over as its images, one in each body's image of
-/// the plane it is drawn in.
 impl Turn {
     /// A ring's turn, where its copy, its representative and its centre all came along; a copy
     /// whose representative or centre did not stands free where it is.
@@ -73,6 +70,9 @@ impl Mirror {
     }
 }
 
+/// What mirrored bodies' preimages are drawn as (`Sketch::images`, #578): each entity a body made
+/// as its image, and each datum point bodies draw over as its images, one in each body's image of
+/// the plane it is drawn in.
 #[derive(Clone, Debug, Default)]
 pub struct Images {
     pub of: std::collections::BTreeMap<EntRef, EntRef>,

@@ -943,27 +943,20 @@ impl Held {
     /// with it: a part left behind leaves the copy with nothing it can read (`Held::Not`), said
     /// where a relation names it.
     pub fn remapped(&self, map: &Remap) -> Held {
-        let gone = || Held::Not("its source was left behind when it was copied".into());
-        match self {
+        let read = || Some(match self {
             Held::Not(why) => Held::Not(why.clone()),
-            Held::Revolution { axis, edge } => match (map(*axis), map(*edge)) {
-                (Some(axis), Some(edge)) => Held::Revolution { axis, edge },
-                _ => gone(),
-            },
-            Held::Set { probe, shape } => {
-                let shape = match shape {
-                    Some(s) => match s.remapped(map) {
-                        Some(s) => Some(s),
-                        None => return gone(),
-                    },
-                    None => None,
-                };
-                match renumbered(map, EntKind::Point, *probe) {
-                    Some(probe) => Held::Set { probe, shape },
-                    None => gone(),
-                }
+            Held::Revolution { axis, edge } => {
+                Held::Revolution { axis: map(*axis)?, edge: map(*edge)? }
             }
-        }
+            Held::Set { probe, shape } => Held::Set {
+                probe: renumbered(map, EntKind::Point, *probe)?,
+                shape: match shape {
+                    Some(s) => Some(s.remapped(map)?),
+                    None => None,
+                },
+            },
+        });
+        read().unwrap_or_else(|| Held::Not("its source was left behind when it was copied".into()))
     }
 }
 

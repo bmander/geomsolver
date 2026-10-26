@@ -12,7 +12,7 @@
 use crate::constraints::{Arg, CKind, Constraint};
 use crate::decompose;
 use crate::expr;
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{EntKind, EntRef, Remap, Sketch};
 use std::collections::{BTreeMap, BTreeSet};
 
 const KINDS: usize = EntKind::ALL.len();
@@ -76,40 +76,116 @@ impl Renumbering {
         self.constraints.get(&id).copied()
     }
 
-    /// (source, destination) for every entity the walk made, in the order it made them.
+    /// (source, destination) for every entity the walk made, in the order it made them: points,
+    /// lines, circles, arcs, splines, axes, planes, curves, faces, motions, solids, surfaces,
+    /// envelopes, traced bodies and meshings, each kind in source order.
     pub fn pairs(&self) -> &[(EntRef, EntRef)] {
         &self.made
     }
 
-    /// Every entity the walk made, in the order it made them: points, lines, circles, arcs,
-    /// splines, axes, planes, curves, faces, motions, solids, surfaces, envelopes, traced bodies
-    /// and meshings, each kind in source order.
-    pub fn made_ents(&self) -> Vec<EntRef> {
-        self.made.iter().map(|&(_, d)| d).collect()
-    }
-
-    /// Number the members of `kind` that `whole` holds of, as the greatest such set: a kind whose
-    /// members name each other, forward too — a motion relative to two others, a cutter naming
-    /// the body that subtracts it — has its table settled before any member is made, each kept
-    /// one numbered from `base` in source order, and a member naming one that did not come goes
-    /// too, until nothing more goes.
-    fn allocate(&mut self, kind: EntKind, n: usize, base: usize, candidate: impl Fn(usize) -> bool,
-                whole: impl Fn(usize, &Renumbering) -> bool) {
+    /// Number the members of `kind` that `whole` makes whole, as the greatest such set: each
+    /// candidate numbered from `base` in source order, a member naming one that did not come going
+    /// too, until nothing more goes — and what `whole` made of each over the settled table.
+    fn allocate<T>(&mut self, kind: EntKind, base: usize, candidate: impl Fn(usize) -> bool,
+                   n: usize, whole: impl Fn(usize, &Renumbering) -> Option<T>) -> Vec<Option<T>> {
         let mut kept: Vec<bool> = (0..n).map(candidate).collect();
         loop {
             let mut next = base as u32;
             self.ents[kind as usize] = Some(kept.iter().map(|&k| {
                 k.then(|| { next += 1; next - 1 })
             }).collect());
-            let gone: Vec<usize> = (0..n).filter(|&i| kept[i] && !whole(i, self)).collect();
-            if gone.is_empty() {
-                break;
+            let made: Vec<Option<T>> =
+                (0..n).map(|i| if kept[i] { whole(i, self) } else { None }).collect();
+            let mut settled = true;
+            for (k, m) in kept.iter_mut().zip(&made) {
+                if *k && m.is_none() {
+                    *k = false;
+                    settled = false;
+                }
             }
-            for i in gone {
-                kept[i] = false;
+            if settled {
+                return made;
             }
         }
     }
+}
+
+/// **Every field of a sketch, and what the walk does with it**, named with no `..`: a field
+/// added to `Sketch` stops the build here until it is decided — carried by a step of the
+/// walk, minted again by the destination, or left behind and said so.  It reads nothing; the
+/// steps it names do the work.  (`next_cid` is the crate's to see for this.)
+fn ledger(sk: &Sketch) {
+    let Sketch {
+        // carried, each by the step of the walk named
+        roles: _,                     // `roles`
+        points: _,                    // `points`, and every kind after it by its own step
+        lines: _,
+        circles: _,
+        arcs: _,
+        splines: _,
+        axes: _,                      // `axes_and_planes`
+        frames: _,
+        curves: _,                    // `curves`, with the definitions they name
+        curve_defs: _,
+        faces: _,
+        solids: _,
+        surfaces: _,
+        motions: _,
+        envelopes: _,
+        meshings: _,
+        traced: _,
+        reversed: _,                  // `arcs`
+        duals: _,                     // `duals`
+        twins: _,                     // `twins`
+        constraints: _,               // `constraints`, `axes_along`; intrinsic rows minted
+        placements: _,                // `constraints`
+        rates: _,                     // `rates`
+        held: _,                      // `document`, `held_reads`
+        materials: _,                 // `document`
+        units: _,                     // `document`, a rebuild's alone
+        presentation: _,
+        branches: _,                  // `choices`
+        orientations: _,
+        turns: _,                     // `turns_and_mirrors`
+        mirrors: _,
+        derived: _,                   // `pictures`
+        // minted again by the destination as what reads them comes
+        params: _,                    // by each constructor, valued from the source's
+        zero: _,                      // `Sketch::origin_param`, for the first axis
+        lifts: _,                     // `memberships` (`lift_point`)
+        shared: _,                    // `add_quiet`, from the names `owned_arg` gives
+        free_vars: _,                 // `expr::evaluate`
+        free_dimensions: _,
+        variational: _,               // `settle_variational`
+        next_cid: _,                  // `add_quiet`: a copy's constraints are its own
+        // left behind on purpose
+        carried: _,                   // as `Constraint::carried`, the walk has never carried
+                                      // it (`solid::family::part_of` frees both itself)
+        declared: _,                  // the source's alone (parameters.md)
+        parameters: _,
+        beams: _,                     // the source's alone (analysis.md, S1)
+        scenarios: _,
+        measured: _,
+        meshed: _,                    // compiled with the rows the source alone carries
+        meshed_at: _,
+        rounds: _,                    // the elaborator's, derived and never saved
+        standing: _,                  // presentation of an instant, never written
+        hidden: _,                    // view state the front end sets on every drawing
+        caches: _,                    // compiled artefacts, worked out again
+        field_surfaces: _,            // a host's, supplied against the drawing it read
+        field_meshing: _,
+        style_epoch: _,               // a binding's cache keys, counted afresh
+        shape_epoch: _,
+        // not carried, though each names entities: gaps, not choices — a copy goes without them
+        rides: _,
+        solid_claims: _,
+        solid_bearings: _,
+        plane_names: _,
+        spline_traced: _,
+        stands_for: _,
+        round_gauges: _,
+        walked_back: _,
+    } = sk;
 }
 
 /// **Where a walk lands.**  A sketch of its own, which the rebuild makes whole — the source's
@@ -164,6 +240,7 @@ impl<'a> Walk<'a> {
     }
 
     fn run(mut self) -> Renumbering {
+        ledger(self.src);
         self.document();
         self.reuse_planes();
         self.points();
@@ -201,85 +278,6 @@ impl<'a> Walk<'a> {
         // each free curve's energy, its pegs and its definition, read again from what came (#144)
         self.dst.settle_variational();
         self.r
-    }
-
-    /// **Every field of a sketch, and what the walk does with it**, named with no `..`: a field
-    /// added to `Sketch` stops the build here until it is decided — carried by a step of the
-    /// walk, minted again by the destination, or left behind and said so.  It reads nothing; the
-    /// steps it names do the work.
-    #[allow(dead_code)]
-    fn ledger(sk: &Sketch) {
-        let Sketch {
-            // carried, each by the step of the walk named
-            roles: _,                     // `roles`
-            points: _,                    // `points`, and every kind after it by its own step
-            lines: _,
-            circles: _,
-            arcs: _,
-            splines: _,
-            axes: _,                      // `axes_and_planes`
-            frames: _,
-            curves: _,                    // `curves`, with the definitions they name
-            curve_defs: _,
-            faces: _,
-            solids: _,
-            surfaces: _,
-            motions: _,
-            envelopes: _,
-            meshings: _,
-            traced: _,
-            reversed: _,                  // `arcs`
-            duals: _,                     // `duals`
-            twins: _,                     // `twins`
-            constraints: _,               // `constraints`, `axes_along`; intrinsic rows minted
-            placements: _,                // `constraints`
-            rates: _,                     // `rates`
-            held: _,                      // `document`, `held_reads`
-            materials: _,                 // `document`
-            units: _,                     // `document`, a rebuild's alone
-            presentation: _,
-            branches: _,                  // `choices`
-            orientations: _,
-            turns: _,                     // `turns_and_mirrors`
-            mirrors: _,
-            derived: _,                   // `pictures`
-            // minted again by the destination as what reads them comes
-            params: _,                    // by each constructor, valued from the source's
-            zero: _,                      // `Sketch::origin_param`, for the first axis
-            lifts: _,                     // `memberships` (`lift_point`)
-            shared: _,                    // `add_quiet`, from the names `owned_arg` gives
-            free_vars: _,                 // `expr::evaluate`
-            free_dimensions: _,
-            variational: _,               // `settle_variational`
-            next_cid: _,                  // `add_quiet`: a copy's constraints are its own
-            // left behind on purpose
-            carried: _,                   // a carried row is freed by its family's part, which
-                                          // this walk makes (`solid::family::part_of`)
-            declared: _,                  // the source's alone (parameters.md)
-            parameters: _,
-            beams: _,                     // the source's alone (analysis.md, S1)
-            scenarios: _,
-            measured: _,
-            meshed: _,                    // compiled with the rows the source alone carries
-            meshed_at: _,
-            rounds: _,                    // the elaborator's, derived and never saved
-            standing: _,                  // presentation of an instant, never written
-            hidden: _,                    // view state the front end sets on every drawing
-            caches: _,                    // compiled artefacts, worked out again
-            field_surfaces: _,            // a host's, supplied against the drawing it read
-            field_meshing: _,
-            style_epoch: _,               // a binding's cache keys, counted afresh
-            shape_epoch: _,
-            // not carried, though each names entities: a copy goes without them
-            rides: _,
-            solid_claims: _,
-            solid_bearings: _,
-            plane_names: _,
-            spline_traced: _,
-            stands_for: _,
-            round_gauges: _,
-            walked_back: _,
-        } = sk;
     }
 
     /// What the document is as a whole: a rebuild keeps the document it came from — which is
@@ -548,11 +546,11 @@ impl<'a> Walk<'a> {
         let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
         r.open(EntKind::Curve, src.curves.len());
         for (i, cv) in src.curves.iter().enumerate() {
-            // a trim is minted after the curve it trims, so that curve's place is already known
-            let Some(moved) = cv.remapped(&|e| r.ent(e)) else { continue };
             if !(self.keep)(EntRef::new(EntKind::Curve, i)) {
                 continue;
             }
+            // a trim is minted after the curve it trims, so that curve's place is already known
+            let Some(moved) = cv.remapped(&|e| r.ent(e)) else { continue };
             let def = &src.curve_defs[cv.def as usize];
             // a followed point's lowering is the whole drawing's (#398 A): it travels unlowered,
             // as drawn, until the document it lands in is elaborated again
@@ -584,43 +582,23 @@ impl<'a> Walk<'a> {
                 let p = &src.params[l as usize];
                 dst.param(p.value, p.fixed, &p.name) as u32
             });
-            // its pegs are the energy's to settle again
-            dst.curves.push(crate::model::CurveE {
-                def: at as u32, unknowns, values, pose, length, pegs: Vec::new(),
-                slides: Vec::new(), ..moved
-            });
+            dst.curves.push(crate::model::CurveE { def: at as u32, unknowns, values, pose, length,
+                                                   ..moved });
             r.made(EntRef::new(EntKind::Curve, i), dst.curves.len() - 1);
         }
     }
 
     fn faces(&mut self) {
-        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
-        r.open(EntKind::Face, src.faces.len());
-        for (i, f) in src.faces.iter().enumerate() {
-            if !(self.keep)(EntRef::face(i)) {
-                continue;
-            }
-            let Some(f) = f.remapped(&|e| r.ent(e)) else { continue };
-            dst.faces.push(f);
-            r.made(EntRef::face(i), dst.faces.len() - 1);
-        }
+        let src = self.src;
+        self.carry(EntKind::Face, &src.faces, |sk| &mut sk.faces, crate::model::FaceE::remapped);
     }
 
     /// A motion goes with what it is written over, as a constraint goes with its entities — and a
     /// motion written over motions with them, so the table is settled before any is made.
     fn motions(&mut self) {
-        let (src, dst, keep) = (self.src, &mut *self.dst, self.keep);
-        let motion = |i: usize| EntRef::new(EntKind::Motion, i);
-        self.r.allocate(EntKind::Motion, src.motions.len(), dst.motions.len(), |i| keep(motion(i)),
-                        |i, r| src.motions[i].def.remapped(&|e| r.ent(e)).is_some());
-        let r = &mut self.r;
-        for (i, m) in src.motions.iter().enumerate() {
-            let Some(next) = r.ent(motion(i)) else { continue };
-            let m = m.remapped(&|e| r.ent(e)).expect("allocation kept what it names");
-            dst.motions.push(m);
-            debug_assert_eq!(next.i(), dst.motions.len() - 1);
-            r.made(motion(i), next.i());
-        }
+        let src = self.src;
+        self.carry_allocated(EntKind::Motion, &src.motions, |sk| &mut sk.motions,
+                             crate::model::MotionE::remapped);
     }
 
     /// Each frame's joint (#383): its axis, its two numbers, and the node it was lowered to.
@@ -638,8 +616,8 @@ impl<'a> Walk<'a> {
                 dst.param(p.value, p.fixed, &p.name) as u32
             };
             let (ratio, advance) = (number(dst, j.ratio), number(dst, j.advance));
-            let motion = j.motion.and_then(|m| r.ent(EntRef::new(EntKind::Motion, m as usize)))
-                .map(|m| m.idx);
+            let motion =
+                j.motion.and_then(|m| crate::model::renumbered(&|e| r.ent(e), EntKind::Motion, m));
             dst.frames[ni].joint =
                 Some(crate::model::Joint { axis: axis.idx, ratio, advance, motion });
             // a joint's numbers the solve finds are the frame's, renumbered with its joint
@@ -652,76 +630,68 @@ impl<'a> Walk<'a> {
     /// Extent targets and Boolean operands may be forward references, including a cutter naming
     /// the body that subtracts it, so the table is settled before any solid is made.
     fn solids(&mut self) {
-        let (src, dst, keep) = (self.src, &mut *self.dst, self.keep);
-        self.r.allocate(EntKind::Solid, src.solids.len(), dst.solids.len(),
-                        |i| keep(EntRef::solid(i)),
-                        |i, r| src.solids[i].def.remapped(&|e| r.ent(e)).is_some());
-        let r = &mut self.r;
-        for (i, so) in src.solids.iter().enumerate() {
-            let Some(next) = r.ent(EntRef::solid(i)) else { continue };
-            // allocation kept exactly the solids whose every reference exists: dropping an
-            // operand here would change the solid and the numbering
-            let so = so.remapped(&|e| r.ent(e)).expect("allocation kept what it names");
-            dst.solids.push(so);
-            debug_assert_eq!(next.i(), dst.solids.len() - 1);
-            r.made(EntRef::solid(i), next.i());
-        }
+        let src = self.src;
+        self.carry_allocated(EntKind::Solid, &src.solids, |sk| &mut sk.solids,
+                             crate::model::SolidE::remapped);
     }
 
     fn surfaces(&mut self) {
-        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
-        r.open(EntKind::Surface, src.surfaces.len());
-        for (i, s) in src.surfaces.iter().enumerate() {
-            let e = EntRef::new(EntKind::Surface, i);
-            if !(self.keep)(e) {
-                continue;
-            }
-            let Some(s) = s.remapped(&|e| r.ent(e)) else { continue };
-            dst.surfaces.push(s);
-            r.made(e, dst.surfaces.len() - 1);
-        }
+        let src = self.src;
+        self.carry(EntKind::Surface, &src.surfaces, |sk| &mut sk.surfaces,
+                   crate::model::SurfaceE::remapped);
     }
 
     fn envelopes(&mut self) {
-        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
-        r.open(EntKind::Envelope, src.envelopes.len());
-        for (i, v) in src.envelopes.iter().enumerate() {
-            let e = EntRef::new(EntKind::Envelope, i);
-            if !(self.keep)(e) {
-                continue;
-            }
-            let Some(v) = v.remapped(&|e| r.ent(e)) else { continue };
-            dst.envelopes.push(v);
-            r.made(e, dst.envelopes.len() - 1);
-        }
+        let src = self.src;
+        self.carry(EntKind::Envelope, &src.envelopes, |sk| &mut sk.envelopes,
+                   crate::model::EnvelopeE::remapped);
     }
 
     /// A traced body may be traced over one before it, so the table fills as it goes.
     fn traced(&mut self) {
-        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
-        r.open(EntKind::Traced, src.traced.len());
-        for (i, t) in src.traced.iter().enumerate() {
-            let e = EntRef::new(EntKind::Traced, i);
-            if !(self.keep)(e) {
-                continue;
-            }
-            let Some(t) = t.remapped(&|e| r.ent(e)) else { continue };
-            dst.traced.push(t);
-            r.made(e, dst.traced.len() - 1);
-        }
+        let src = self.src;
+        self.carry(EntKind::Traced, &src.traced, |sk| &mut sk.traced,
+                   crate::model::TracedE::remapped);
     }
 
     fn meshings(&mut self) {
-        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
-        r.open(EntKind::Meshing, src.meshings.len());
-        for (i, m) in src.meshings.iter().enumerate() {
-            let e = EntRef::new(EntKind::Meshing, i);
+        let src = self.src;
+        self.carry(EntKind::Meshing, &src.meshings, |sk| &mut sk.meshings,
+                   crate::model::MeshingE::remapped);
+    }
+
+    /// A kind made whole by its own `remapped`, each kept member in source order, the table
+    /// filling as it goes: a member may name the kinds made before it and members before it.
+    fn carry<T>(&mut self, kind: EntKind, items: &[T], into: fn(&mut Sketch) -> &mut Vec<T>,
+                remapped: impl Fn(&T, &Remap) -> Option<T>) {
+        self.r.open(kind, items.len());
+        for (i, item) in items.iter().enumerate() {
+            let e = EntRef::new(kind, i);
             if !(self.keep)(e) {
                 continue;
             }
-            let Some(m) = m.remapped(&|e| r.ent(e)) else { continue };
-            dst.meshings.push(m);
-            r.made(e, dst.meshings.len() - 1);
+            let Some(item) = remapped(item, &|e| self.r.ent(e)) else { continue };
+            let to = into(self.dst);
+            to.push(item);
+            self.r.made(e, to.len() - 1);
+        }
+    }
+
+    /// A kind whose members may name each other forward too — a motion relative to a later
+    /// motion, a cutter naming the body that subtracts it — so its table is settled before any
+    /// member is made (`Renumbering::allocate`), and what settling it gave is what is made.
+    fn carry_allocated<T>(&mut self, kind: EntKind, items: &[T],
+                          into: fn(&mut Sketch) -> &mut Vec<T>,
+                          remapped: impl Fn(&T, &Remap) -> Option<T>) {
+        let keep = self.keep;
+        let made = self.r.allocate(kind, into(self.dst).len(), |i| keep(EntRef::new(kind, i)),
+                                   items.len(), |i, r| remapped(&items[i], &|e| r.ent(e)));
+        for (i, item) in made.into_iter().enumerate() {
+            let Some(item) = item else { continue };
+            let to = into(self.dst);
+            to.push(item);
+            debug_assert_eq!(self.r.ent(EntRef::new(kind, i)).map(EntRef::i), Some(to.len() - 1));
+            self.r.made(EntRef::new(kind, i), to.len() - 1);
         }
     }
 
@@ -973,14 +943,17 @@ pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
 /// each.  A document that says nothing about its unit is in millimetres, and is converted as
 /// one; two in the same unit are not scaled.
 pub fn paste(sk: &mut Sketch, clip: &Sketch, dx: f64, dy: f64) -> Vec<EntRef> {
-    match (clip.units.mm_per(), sk.units.mm_per()) {
+    let scaled;
+    let clip = match (clip.units.mm_per(), sk.units.mm_per()) {
         (from, to) if from != to => {
-            let mut scaled = clip.clone();
-            scaled.rescale(from / to);
-            graft_onto(sk, &scaled, (dx, dy)).made_ents()
+            let mut s = clip.clone();
+            s.rescale(from / to);
+            scaled = s;
+            &scaled
         }
-        _ => graft_onto(sk, clip, (dx, dy)).made_ents(),
-    }
+        _ => clip,
+    };
+    graft_onto(sk, clip, (dx, dy)).pairs().iter().map(|&(_, made)| made).collect()
 }
 
 /// The part of a sketch one gesture can move, as a sketch of its own.
@@ -1000,12 +973,10 @@ pub struct Part {
     pub sketch: Sketch,
     /// part point index → document point index
     to_doc: Vec<usize>,
-    /// document point index → part point index, where it came along
-    to_part: Vec<Option<usize>>,
     /// (part param, document param) for every parameter of the part
     params: Vec<(usize, usize)>,
-    /// document entity → part entity, for every entity that came along
-    ents: BTreeMap<EntRef, EntRef>,
+    /// document → part, for every entity and constraint that came along
+    r: Renumbering,
 }
 
 impl Part {
@@ -1148,14 +1119,12 @@ impl Part {
             }
         }
         let (sketch, r) = rebuild(sk, &|e| keep.contains(&e), &[]);
-        let to_part: Vec<Option<usize>> = (0..sk.points.len()).map(|i| r.point(i)).collect();
         let mut to_doc = vec![0; sketch.points.len()];
-        for (doc, part) in to_part.iter().enumerate() {
-            if let Some(p) = part {
-                to_doc[*p] = doc;
+        for doc in 0..sk.points.len() {
+            if let Some(p) = r.point(doc) {
+                to_doc[p] = doc;
             }
         }
-        let ents: BTreeMap<EntRef, EntRef> = r.pairs().iter().copied().collect();
         let mut params = Vec::new();
         for &(doc, part) in r.pairs() {
             match doc.kind {
@@ -1186,7 +1155,7 @@ impl Part {
         }
         // and a hidden point moves with the view point it lifts
         for l in &sk.lifts {
-            if let Some(k) = to_part[l.point as usize].and_then(|p| sketch.lift_of(p)) {
+            if let Some(k) = r.point(l.point as usize).and_then(|p| sketch.lift_of(p)) {
                 for (x, y) in sketch.lifts[k].x.iter().zip(&l.x) {
                     params.push((*x as usize, *y as usize));
                 }
@@ -1199,17 +1168,17 @@ impl Part {
                 params.push((mine as usize, doc as usize));
             }
         }
-        Part { sketch, to_doc, to_part, params, ents }
+        Part { sketch, to_doc, params, r }
     }
 
     /// A document entity as the part's, if it came along.
     pub fn entity_in(&self, doc: EntRef) -> Option<EntRef> {
-        self.ents.get(&doc).copied()
+        self.r.ent(doc)
     }
 
     /// A document point's index in the part, if it came along.
     pub fn point_in(&self, doc: usize) -> Option<usize> {
-        self.to_part.get(doc).copied().flatten()
+        self.r.point(doc)
     }
 
     /// A part point's index in the document.

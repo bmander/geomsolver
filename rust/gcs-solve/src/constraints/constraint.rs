@@ -99,9 +99,6 @@ pub struct WordUse {
     pub sets: Vec<(usize, String)>,
 }
 
-/// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
-/// the constructor that infers a tangency's side from the geometry and by the document reader
-/// that finds a number where a word now stands (issue #48, item 4).
 impl WordUse {
     /// The word it was written with, while every operand it named came along (§9.9).
     pub fn remapped(&self, map: &crate::model::Remap) -> Option<WordUse> {
@@ -120,7 +117,7 @@ impl Constraint {
     /// for it to give: its id (`Sketch::add_quiet`), its free variable (`expr::evaluate`).
     pub fn remapped(&self, map: &crate::model::Remap, param: &dyn Fn(u32) -> Arg,
                     dual: &dyn Fn(usize) -> Option<usize>) -> Option<Constraint> {
-        let Constraint { id: _, kind, args, soft: _, intrinsic, claim, free: _, class, written,
+        let Constraint { id: _, kind, args, soft, intrinsic, claim, free: _, class, written,
                          repeated, elsewhere, word, along, bound, initially, carried: _,
                          witness } = self;
         let args = args.iter().map(|a| match a {
@@ -132,8 +129,7 @@ impl Constraint {
             id: 0,
             kind: *kind,
             args,
-            // a drag's target is the gesture's, never the document's
-            soft: false,
+            soft: *soft,
             intrinsic: *intrinsic,
             claim: *claim,
             free: None,
@@ -148,14 +144,17 @@ impl Constraint {
             },
             bound: bound.clone(),
             initially: *initially,
-            // a row a chain's later leg carries is held until its family's part frees it, and
-            // the rebuild is that part (`solid::family::part_of`)
+            // as the walk has never carried `Sketch::carried`, the parameters such a row holds
+            // (`solid::family::part_of` frees both on its own copy)
             carried: false,
             witness: *witness,
         })
     }
 }
 
+/// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
+/// the constructor that infers a tangency's side from the geometry and by the document reader
+/// that finds a number where a word now stands (issue #48, item 4).
 pub fn side_word(sign: i64) -> &'static str {
     if sign < 0 {
         "right"

@@ -241,12 +241,12 @@ impl Trim {
 impl CurveE {
     /// A curve's references through `map` (`graft`): every argument and its trim, or none of it.
     /// Its home pose follows the entities it is read from and is whole or nothing (`whole`): a
-    /// pose with a hole in it is no pose, and the seeds stand in.  What it holds of its sketch —
-    /// its definition, its length, its pegs and slides — is the sketch's own numbering, and left
-    /// for the caller to give it.
+    /// pose with a hole in it is no pose, and the seeds stand in.  Its pegs and slides are its
+    /// energy's, settled again where it lands (`settle_variational`); its definition and its
+    /// length are its sketch's own numbering, and left for the caller to give it.
     pub fn remapped(&self, map: &Remap) -> Option<CurveE> {
         let CurveE { def, args, unknowns, values, over, home, pose, class, trim, extrusion, length,
-                     pegs, slides } = self;
+                     pegs: _, slides: _ } = self;
         let kept: Vec<_> = pose.iter().filter_map(|&(e, j)| map(e).map(|r| (r, j))).collect();
         Some(CurveE {
             def: *def,
@@ -263,8 +263,8 @@ impl CurveE {
             },
             extrusion: *extrusion,
             length: *length,
-            pegs: pegs.clone(),
-            slides: slides.clone(),
+            pegs: Vec::new(),
+            slides: Vec::new(),
         })
     }
 }

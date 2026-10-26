@@ -5,36 +5,16 @@
 //! everything where it was, what a removal takes with it is what `Sketch::children` says depends
 //! on what was removed, and the things the walk says as a whole — the unit a paste lands in, the
 //! pictures, the numbers a drag writes back — come out as the document has them.
-use std::path::{Path, PathBuf};
-
 use gcs_core::constraints::CKind;
 use gcs_core::graft::{self, Part};
 use gcs_core::model::{DerivedE, EntKind, EntRef, RegionShape, SolidDef, Sketch, Target};
 use gcs_core::units::Units;
-use gcs_core::{library, modules, par, program, syntax};
+use gcs_core::par;
 
-fn examples_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples")
-}
-
-/// The example at `rel` under `rust/examples/`, elaborated and not solved, its modules read as
-/// `solventc` reads them — `None` for one that does not elaborate.
+/// The example at `rel` under `rust/examples/`, elaborated and not solved — `None` for one that
+/// does not elaborate.
 fn example(rel: &str) -> Option<Sketch> {
-    let path = examples_root().join(rel);
-    let text = std::fs::read_to_string(&path).unwrap();
-    let dir = path.parent().unwrap().to_path_buf();
-    let mut beside = |m: &str| -> Option<String> {
-        modules::search_paths(m, rel).iter()
-            .find_map(|r| std::fs::read_to_string(dir.join(r)).ok())
-            .or_else(|| library::resolve(m))
-    };
-    let (mut prog, errs) = syntax::parse(&text);
-    if !errs.is_empty() {
-        return None;
-    }
-    modules::link(&mut prog, &mut beside);
-    let e = program::elaborate(&prog);
-    e.ok().then_some(e.sketch)
+    fixtures::example(rel).filter(|e| e.ok()).map(|e| e.sketch)
 }
 
 /// Every entity of `sk`, kind by kind.
@@ -49,12 +29,7 @@ fn entities(sk: &Sketch) -> Vec<EntRef> {
 /// curve written over another curve was left behind (`wankel.sv`).
 #[test]
 fn a_rebuild_that_removes_nothing_keeps_everything() {
-    let mut files = Vec::new();
-    crate::every_example::sources(&examples_root(), &mut files);
-    let root = examples_root();
-    let names: Vec<String> = files.iter()
-        .map(|p| p.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/"))
-        .collect();
+    let names = fixtures::example_names();
     let wrong: Vec<String> = par::map(&names, |name| {
         let Some(sk) = example(name) else { return Vec::new() };
         let (copy, r) = graft::rebuild(&sk, &|_| true, &[]);

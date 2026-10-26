@@ -71,19 +71,19 @@ impl RegionShape {
     }
 
     /// The same measure over the entities `map` renumbers them to, or `None` where one went.
-    pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<RegionShape> {
-        let i = |e: EntRef| map(e).map(|e| e.i() as u32);
+    pub fn remapped(&self, map: &Remap) -> Option<RegionShape> {
+        let i = |kind: EntKind, at: u32| renumbered(map, kind, at);
         Some(match *self {
             RegionShape::Ball { center } => {
-                RegionShape::Ball { center: i(EntRef::point(center as usize))? }
+                RegionShape::Ball { center: i(EntKind::Point, center)? }
             }
             RegionShape::Cylinder { line } => {
-                RegionShape::Cylinder { line: i(EntRef::line(line as usize))? }
+                RegionShape::Cylinder { line: i(EntKind::Line, line)? }
             }
-            RegionShape::Cone { axis } => RegionShape::Cone { axis: i(EntRef::line(axis as usize))? },
+            RegionShape::Cone { axis } => RegionShape::Cone { axis: i(EntKind::Line, axis)? },
             RegionShape::Plane { along, from, sign } => RegionShape::Plane {
                 along: map(along)?,
-                from: i(EntRef::point(from as usize))?,
+                from: i(EntKind::Point, from)?,
                 sign,
             },
             RegionShape::Measured { ref of } => RegionShape::Measured {
@@ -140,12 +140,12 @@ impl Target {
         }
     }
 
-    pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<Target> {
+    pub fn remapped(&self, map: &Remap) -> Option<Target> {
         Some(match self {
             Target::Ent(e) => Target::Ent(map(*e)?),
             Target::Face(f) => Target::Face(f.remapped(map)?),
             Target::Set { probe, terms } => Target::Set {
-                probe: map(EntRef::point(*probe as usize))?.i() as u32,
+                probe: renumbered(map, EntKind::Point, *probe)?,
                 terms: terms.iter().map(|t| t.remapped(map)).collect::<Option<_>>()?,
             },
         })
@@ -153,8 +153,8 @@ impl Target {
 }
 
 impl FaceRef {
-    pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<FaceRef> {
-        let solid = map(EntRef::solid(self.solid as usize))?.i() as u32;
+    pub fn remapped(&self, map: &Remap) -> Option<FaceRef> {
+        let solid = renumbered(map, EntKind::Solid, self.solid)?;
         Some(FaceRef { solid, ..self.clone() })
     }
 }
@@ -166,7 +166,7 @@ impl RegionTerm {
     }
 
     /// The same term over the entities `map` renumbers them to, or `None` where one went.
-    pub fn remapped(&self, map: &dyn Fn(EntRef) -> Option<EntRef>) -> Option<RegionTerm> {
+    pub fn remapped(&self, map: &Remap) -> Option<RegionTerm> {
         Some(RegionTerm { shape: self.shape.remapped(map)?, ..self.clone() })
     }
 

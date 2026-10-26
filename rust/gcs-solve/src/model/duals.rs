@@ -30,8 +30,6 @@ pub enum Toward {
     Chart { k: u8, axis: Option<u8> },
 }
 
-/// One use's derivative: the point that moves, what moves it, and the geometry the use made, whose
-/// motion is unknown.
 impl Toward {
     /// What moves a derivative's point, through `map`: a line or an axis that came along, or a
     /// chart's own direction, which is no entity's.
@@ -44,6 +42,8 @@ impl Toward {
     }
 }
 
+/// One use's derivative: the point that moves, what moves it, and the geometry the use made, whose
+/// motion is unknown.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dual {
     pub point: usize,
