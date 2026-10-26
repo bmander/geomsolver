@@ -201,15 +201,7 @@ fn claimed(
 ) -> Result<(bool, Vec<(String, super::Valued)>), (Code, String)> {
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
-    fn membership(c: &Cond) -> bool {
-        match c {
-            Cond::In(..) | Cond::Meets(..) => true,
-            Cond::And(a, b) | Cond::Or(a, b) => membership(a) || membership(b),
-            Cond::Not(a) => membership(a),
-            Cond::Cmp(..) => false,
-        }
-    }
-    if membership(&c) {
+    if c.names_geometry() {
         return Err(said(Code::E103, "a claim over values compares numbers; `in` and `meets` \
             ask of faces, and are a `when`'s".into()));
     }

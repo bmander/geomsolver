@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.187 — October 2026**
+**Specification, Draft 0.188 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -135,7 +135,8 @@ Implementations **MUST** check dimensions in expressions and constraints, and MU
 
 - `*` and `/` **derive**: the exponents add and subtract.
 - `+` and `-` **demand agreement**, and so do `min`, `max`, `hypot` and `atan2`'s two arguments.
-- **[0.72]** So do a comparison's two sides — `<`, `<=`, `>`, `>=`, `==`, `!=` — which make no number but a condition, read only by `when` (§12.9): `relief > 0mm`, never `relief > 0`.
+- **[0.72]** So do a comparison's two sides — `<`, `<=`, `>`, `>=`, `==`, `!=` — which make no number but a condition, read by `when` (§12.9) and **[0.188]** by `if` (below): `relief > 0mm`, never `relief > 0`.
+- **[0.188]** So do `if`'s two numbers.
 - `^` takes a plain number, and a **dimensioned base takes a whole power**: `x ^ 2.5` where `x` is a length is not a dimension anybody meant, and `sqrt` is how a half is written.
 - The dimension an expression comes to is checked against the **slot** it is written in.
 
@@ -156,6 +157,8 @@ A **name** is worth a number, and where that number is *used* decides what it is
 | `floor`, `ceil`, `round` | `Scalar → Scalar` |
 
 `floor`, `ceil` and `round` are `Scalar`-only **deliberately**: rounding a dimensioned quantity depends on which unit you round in, and a language that silently picked one would be wrong half the time.
+
+**[0.188] A chosen number.** `if(COND, A, B)` is `A` where `COND` holds and `B` where it does not: `pitch := if(n > 12, 2mm, 3mm)`. `COND` is a `when`'s comparisons of numbers joined by `and`, `or` and `not` (§12.9), decided as a `when`'s is — exactly, at elaboration, over the numbers in scope — so which side is taken is a fact about the program and never about the solve, and a condition reading an unknown of the drawing, or a value written over one, is refused (**E103** where a value is defined, as any value that cannot be worked out; a dimension keeps its last number, **W110**). `in` and `meets` ask what a name stands for, and are a `when`'s alone (**E103** here). A side MAY read an unknown, scaled and offset (§3.4). `A` and `B` are both worked out, so a mistake on the side not taken is still reported, and they MUST agree in dimension, as `+`'s operands do: the result is that dimension. It is what a number that differs between the copies of a block is written as (`a distance(if(k == 0, 5mm, 7mm * k)) q`), where a `when` makes statements. A traced curve's formula (§1.10) is compiled once and runs no branch: there a condition MAY read only the document's numbers, not what the curve is evaluated over — its formals and the geometry it reads — and a choice over a formal is made where the component is called.
 
 #### 3.3.1 The literal
 
@@ -2993,7 +2996,7 @@ The body is made **once** where `COND` holds and **not at all** where it does no
 
 `COND` is comparisons of two numbers, `<`, `<=`, `>`, `>=`, `==` and `!=`, joined by `and`, `or` and `not` (`or` binds loosest, then `and`, then `not`); a parenthesis holds a number or a condition. A number alone is no condition, and a comparison is no number. Each comparison is between two numbers of one dimension, as `+` is (§3.3): `relief > 0mm`, not `relief > 0`; two dimensions are **E103**. The comparison is exact, with no tolerance, so `<` and `==` are never both true. Every comparison is worked out, so a mistake on a side `and` or `or` could skip is still said.
 
-**[0.91] Identity.** Two names of which one is no number compare by what they stand for: `a == b` holds where both name the same thing — an entity, or a face (§6.21) — reached through every formal and binder (a formal is what its call gave it, a face repeat's binder its face), and `a != b` where they do not. `c in B` holds where what `c` names is one of the faces the face path `B` names (§6.9). These join numbers' comparisons under `and`, `or` and `not` alike, and are decided where the block is elaborated — inside a block over a solid's faces, once the faces are named (§12.8). A number on one side and something drawn on the other is **E103**, as is something drawn under `<`, `<=`, `>` or `>=`, and `in` over what names no faces; a name that stands for nothing is **E101**. `when` is thereby the language's one conditional: a switch is `when flag == 1 { … }`, never a `repeat` over a count of zero or one, which named what it made as copies.
+**[0.91] Identity.** Two names of which one is no number compare by what they stand for: `a == b` holds where both name the same thing — an entity, or a face (§6.21) — reached through every formal and binder (a formal is what its call gave it, a face repeat's binder its face), and `a != b` where they do not. `c in B` holds where what `c` names is one of the faces the face path `B` names (§6.9). These join numbers' comparisons under `and`, `or` and `not` alike, and are decided where the block is elaborated — inside a block over a solid's faces, once the faces are named (§12.8). A number on one side and something drawn on the other is **E103**, as is something drawn under `<`, `<=`, `>` or `>=`, and `in` over what names no faces; a name that stands for nothing is **E101**. `when` is thereby the language's one conditional of statements: a switch is `when flag == 1 { … }`, never a `repeat` over a count of zero or one, which named what it made as copies. **[0.188]** A number that differs by case is one statement, `if(flag == 1, 3mm, 5mm)` (§3.3).
 
 **[0.187] Faces that meet.** `a meets b` holds where `a` and `b` name faces of one solid (a face repeat's binders, §12.8) that share a point of its boundary — an edge or a corner — as the solid is made by the terms that do not read its faces (§6.21), so a face a Boolean ate meets none. Like every condition it is decided where the block is elaborated, and so **where the drawing is seeded** (§4.3), as the way a corner round turns is (§6.6): a pair the condition reads apart that meets where the drawing solves left out a copy that would have made something, and is **E080** at the document's statement that made the block, naming the two faces. Two faces of different solids, and a face a round of the solid made that the faces it reads do not have, are taken to meet. A name that is no face is **E103**. It is what lets a word over a body's faces in pairs and threes — `std`'s `round` and `chamfer` (§6.9) — make copies only for faces that touch: a body lists every face of every operand, eaten or not, and its threes are as many as the cube of them.
 
