@@ -26,7 +26,8 @@ build/solventc rust/examples/truss.sv      # parse, solve, diagnose
 make wasm && cd web && npm install && npm run build && npm run serve   # http://localhost:8123/
 ```
 
-`make test` runs the Rust and web suites.
+`make test` runs the Rust and web suites; `make test-changed` the part of them a change can reach.
+CI runs the whole on every push and the slow tier every night ([docs/testing.md](docs/testing.md)).
 
 ## Examples
 

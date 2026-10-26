@@ -33,8 +33,9 @@ make            # build/libgcs.{so,dylib}: the native C ABI
 make solventc   # build/solventc: the command-line compiler
 make wasm       # web/src/wasm/gcs.wasm: the browser core (adds the wasm32 target if needed)
 cd web && npm install
-make test       # cargo and the web suite
-make test-slow  # the slow tier as well
+make test          # cargo and the web suite
+make test-changed  # the tests a change can reach, and a smoke set (docs/testing.md)
+make test-slow     # the slow tier as well
 ```
 
 ## `solventc`

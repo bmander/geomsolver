@@ -1,0 +1,73 @@
+# The slow tier every night, on main: `make test-slow` (tests of ten seconds to minutes, behind
+# `feature = "slow"`), dealt across machines so the whole of it finishes in one night.  Nobody
+# waits on it, so it may take hours; what matters is that it runs, and that a failure is seen —
+# GitHub mails a failed scheduled run to whoever last changed this schedule, and the run's page
+# names the test.  Run by hand (Actions -> slow -> Run workflow) on any branch before a change
+# to the gear example or the native export lands.
+#
+# The core's suite is built with the slow feature, so its fast tests run again here beside the
+# slow ones: the slow build is a different build (`examples.rs` itself reads the feature).  The
+# slow tests are not in rust/test-times.tsv until someone times them (`scripts/test-times.sh
+# -p gcs-core --test core --features gcs-core/slow`), so scripts/test-shard.sh weighs each at a
+# minute and deals them one by one.  OCCT's native tooth space stays a local run (`OCCT=1`).
+name: slow
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: slow-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  core:
+    name: core ${{ matrix.shard }}/8
+    runs-on: ubuntu-latest
+    # GitHub's ceiling for a hosted job is six hours
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache the Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: >-
+            slow-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
+          restore-keys: slow-core-${{ runner.os }}-
+      - name: Shard ${{ matrix.shard }} of the core suite with the slow tier
+        run: scripts/test-shard.sh ${{ matrix.shard }} 8 -p gcs-core --test core
+          --features gcs-core/slow
+
+  cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache the Rust build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: >-
+            slow-cli-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
+          restore-keys: slow-cli-${{ runner.os }}-
+      - name: The CLI's suite with the slow tier
+        run: cargo test --manifest-path rust/Cargo.toml -p gcs-cli
+          --features gcs-core/slow,gcs-cli/slow

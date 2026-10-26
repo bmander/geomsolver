@@ -32,6 +32,8 @@ The full map, and what each layer may and may not hold, is
 `make` (native `build/libgcs.dylib`), `make solventc` (`build/solventc`),
 `make wasm` (`web/src/wasm/gcs.wasm`),
 `make test` (both released artefacts, cargo and the web suite),
+`make test-changed` (the modules a change can reach, and a smoke set: before a push; `LIST=1`
+prints the selection), `make test-times` (every test timed into `rust/test-times.tsv`),
 `cargo test --manifest-path rust/Cargo.toml` (**never `--release`**: the suite runs under
 `[profile.test]` — optimised, no LTO, no debuginfo; `rust/Cargo.toml` says why; one file of the
 core suite is filtered as `cargo test chain::`),
@@ -114,10 +116,16 @@ one), and add a row here only for a new topic. Language changes are also recorde
   random graphs for property tests; they stay in the core, in their own module, off the case
   library and the app's menu.  A case belongs in Solvent when its numbers are things a person
   would state, and stays a generator when a program measured them.
-- Slow tests are gated by `#[ignore]` (cargo). The **slow tier** — ten seconds to minutes, still
-  passing on every landing (gear whole-member verifications, a native tooth space) — is
+- **Which tests run when** is [docs/testing.md](docs/testing.md).  CI is the gate: the fast
+  suite, every crate, both release artefacts and the web suite on every push
+  (`.github/workflows/test.yml`, the core's suite in four shards).  Before a push run
+  `make test-changed`, not the whole of `make test`; while editing, the module in hand.
+- Slow tests are gated by `#[ignore]` (cargo). The **slow tier** — a test of ten seconds or more
+  timed alone, up to minutes (gear whole-member verifications, a native tooth space) — is
   `#[cfg_attr(not(feature = "slow"), ignore = "slow tier, …")]`, run by `make test-slow`
-  (`OCCT=1` for the native one); `make test` leaves it out.
+  (`OCCT=1` for the native one) and by CI every night (`.github/workflows/slow.yml`); `make
+  test` leaves it out.  A fast test that grows past ten seconds is made smaller or moves there,
+  unless a contract file names it as its gate: that one is made smaller or stays.
 - **Measure compile time and test time separately**
   ([`docs/build-performance.md`](docs/build-performance.md)). `make test` builds both release
   artefacts and runs every integration suite and doc test. Release: incremental ThinLTO, 16
