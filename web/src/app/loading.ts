@@ -41,6 +41,7 @@ export function loading(what: string, fraction?: number): void {
 
 /** The page is worth touching: put the modal away. */
 export function loaded(): void {
+  if (!el.hidden) performance.mark('gcs:loaded');
   surfaces = false;
   left = 0;
   building = false;

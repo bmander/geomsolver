@@ -1269,8 +1269,10 @@ export class SketchView {
         await painted();
         // another document, another opening, or let go
         if (this.doc !== doc || gen !== this.holdGen || !this.holding) return;
+        const t0 = performance.now();
         try { mesh(this.sketch, o.index, 0); }
         catch { /* it does not evaluate: the banner says why, once let go */ }
+        performance.mark('gcs:built', { detail: { name: o.name, ms: performance.now() - t0 } });
       }
     } finally {
       if (gen === this.holdGen) this.release();

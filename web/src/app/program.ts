@@ -169,6 +169,8 @@ export async function held<T>(open: () => T): Promise<T> {
   view.hold();
   try { return open(); }
   finally {
+    // the reading is done: elaboration, solve and diagnosis (`tools/open-bench.mjs` reads it)
+    performance.mark('gcs:read');
     await view.buildObjects(loading, painted);
     opened();
   }
