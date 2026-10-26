@@ -4,6 +4,20 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.188] A body grown.** `std.Grown(B, d)` makes `.body`, the points within `d` of the solid `B`,
+its edges and corners rounded by `d` (§6.9): a clearance about a part, or a print's gap, is the
+part's body grown rather than its sizes written again — radiatorbot's end-wall windows are
+`std.Grown(uno.usb_plug, d: gap)` and `std.Grown(uno.jack_plug, d: gap)`. A negative `d` shrinks
+`B`, and nothing is `B`. It is a set of the language's own words, `{ p | distance(p, within) <= d }`
+over `within := { c | c inside B }`, built exactly where every edge of `B` is convex and its faces
+are planes and cylinders meeting at a prism's corners (each face's prism, each edge's wedge and
+each corner's sector of the ball glued to the body, nothing intersected); elsewhere it is read
+point by point and an exact export says so by name. **The distance from within a body in pieces**
+is the distance from the nearest piece (§6.21): within all of its faces at once had held nowhere,
+so such a set read no material. A prism drawn far from its plane's origin is read point by point
+within a box its own size, where it had been within the disc about that origin. Every solved
+position is unchanged.
+
 **[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
 `a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner
 of its boundary as made by the terms that do not read its faces (§12.9). It is decided where the

@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.187 — October 2026**
+**Specification, Draft 0.188 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -948,6 +948,17 @@ straight line between its legs' ends. *Non-normative:* both readings are one
 meaning: a round lowered into the revolution is the region the point-by-point reading reads. So
 is a round over a body's faces an implementation recognises by its set and builds exactly (a
 prism, a ring, a ball's corner), held to that reading.
+
+**A body grown** **[0.188]** is a component of the standard library over §6.21's sets, not a
+feature of the kernel: `std.Grown(B, d: 0.3mm)` makes `.body`, the points within `d` of the solid
+`B` — `{ p | distance(p, within) <= d }` over `within := { c | c inside B }` — its edges and corners
+rounded by `d`; for `d` below nothing, `B` shrunk, the points of `B` at least `-d` from everything
+outside it; at nothing, `B`. `B` is left as it is. Within the faces of a body in several pieces
+is within the faces of any one of them (§6.21), so a body in pieces grows piece by piece.
+*Non-normative:* an implementation builds the body grown exactly where every edge of `B` is convex
+and its faces are planes and cylinders meeting at a prism's corners — each face's prism, each
+edge's wedge and each corner's sector of the ball glued to `B` — held to the point-by-point
+reading; elsewhere it is read point by point, and an exact export refuses it in those words.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, **[0.80]** `draft:`, `through:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints (**[0.100]** `along:` is retired: below). A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 

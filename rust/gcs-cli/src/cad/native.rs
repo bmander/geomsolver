@@ -299,6 +299,16 @@ impl Session {
                         }
                         id.ok_or("a region of no pieces")?
                     }
+                    Node::Grown {body,pieces} => {
+                        // a region within reach of a body (`solid::grown`): the body and its pieces'
+                        // union, where the core's kernel glues them
+                        let mut id = shapes[body];
+                        for piece in pieces {
+                            let p = self.primitive(piece,&shapes)?;
+                            id = self.boolean(id,p,"on")?;
+                        }
+                        id
+                    }
                     Node::Placed {source,matrix} => {
                         self.result(unsafe { solvent_cad_transform(self.0,shapes[source],matrix.as_ptr()) })?
                     }

@@ -141,7 +141,12 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
             SolidDef::Body {..} => Vec::new(),
             // a tool through a body reads its material, and a region lowered to nothing is none of
             // it: a convex edge's fill beside a flat cut `through:` the body it rounds
-            _ => super::evaluation_operands(sk,i)?.into_iter().filter(|o| !walk.nowhere(o)).collect(),
+            _ => {
+                let mut on: Vec<u32> = super::evaluation_operands(sk,i)?.into_iter().filter(|o| !walk.nowhere(o)).collect();
+                // a body grown is built on the body's own boundary
+                on.extend(super::grown::body_of(sk,i));
+                on
+            }
         };
         if !ready {
             pending.push((i,true));
@@ -311,6 +316,9 @@ impl<'a> Walk<'a> {
                 // in general position: the common of its terms' primitives, where they are ones that
                 // construction makes (#238)
                 super::region::Route::Bounded(b) => b.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(w)?,
+                // within reach of a body: the body and what lies within reach of each face, edge
+                // and corner, glued to it
+                super::region::Route::Grown(g) => g.map_err(|e| format!("`{}`: {e}",sk.solid_name(i)))?.node(w)?,
                 super::region::Route::Field(why) => return Err(format!("`{}`: {why}",sk.solid_name(i))),
                 // on one axis: its meridian turned once about it (§6.21)
                 super::region::Route::Meridian(m) => {

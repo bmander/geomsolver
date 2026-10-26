@@ -97,7 +97,13 @@ them; do not revive them without a new plan.
 domain, witness, enclosure and status. Budgets apply per sweep query; exhausted operands are never
 omitted; memo includes the input box; indexed clones share a capped pose cache; cached visits
 repeat no evidence. An interval containing zero stays unresolved.
-`MaterialField::support_bounds` is a conservative box or explicit unknown.
+`MaterialField::support_bounds` is a conservative box or explicit unknown. **A prism's is its
+profile's own** ([0.188]): `ExtrudedField::support_bounds` takes the disk about its plane's origin
+in common with the profile's box carried by its frame (`PlanarField::box_bound`: a convex loop's
+`hull`, recorded where `profile::convex` builds it beside its bounding disk; a loop's edges'
+boxes), wherever every section is within the profile (no draft, or one leaning in) — a plug drawn
+in a placed instance's plane 140mm from its origin was sized to that disk, and the mesher's facets
+with it, and found no boundary (`tests/grown.rs::a_prism_far_from_its_planes_origin_has_its_own_box`).
 `MaterialEvaluator::boundary` needs that support, complete cells, strict corner signs and two-sided
 distance evidence for `FieldBoundary`. `BoundaryOptions::domain` takes a caller's box instead, but
 it **is** an arbitrary crop: its signs prove nothing beyond it, and closure is the caller's

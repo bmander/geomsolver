@@ -316,7 +316,7 @@ impl BodyFaces {
     }
 
     /// Face `fi`'s outward unit normal at `q` (millimetres), pointing away from the material.
-    fn outward(&self, fi: usize, q: V) -> V {
+    pub fn outward(&self, fi: usize, q: V) -> V {
         let f = &self.loc.b.faces[fi];
         let g = f.surface.gradient(q);
         if f.reversed { scale(g, -1.0) } else { g }
@@ -386,6 +386,32 @@ impl BodyFaces {
 
     /// The edges bounding face `fi`, once each.
     pub fn edges_of(&self, fi: usize) -> &[u32] { &self.edges[fi] }
+
+    /// Each face's shell: the faces reached from it across their edges numbered alike, from 0 in
+    /// the order the faces come — a body in several pieces is several shells.
+    pub fn shells(&self) -> Vec<usize> {
+        let mut shell = vec![usize::MAX; self.edges.len()];
+        let mut next = 0;
+        for start in 0..self.edges.len() {
+            if shell[start] != usize::MAX {
+                continue;
+            }
+            let mut stack = vec![start];
+            shell[start] = next;
+            while let Some(fi) = stack.pop() {
+                for &e in &self.edges[fi] {
+                    for &g in self.faces_of(e) {
+                        if shell[g] == usize::MAX {
+                            shell[g] = next;
+                            stack.push(g);
+                        }
+                    }
+                }
+            }
+            next += 1;
+        }
+        shell
+    }
 
     /// Edge `e`'s vertices, first to last.
     pub fn ends(&self, e: u32) -> [u32; 2] { self.loc.b.edges[e as usize].v }

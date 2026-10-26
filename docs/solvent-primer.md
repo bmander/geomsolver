@@ -2064,6 +2064,16 @@ measurements stands only in a region's body. In a region's own body,
 round or chamfer between two of its bounds, built exactly where the region is a revolution.
 `rust/examples/rounds/` and its README walk them.
 
+**A solid grown** (0.188). `window := std.Grown(uno.usb_plug, d: gap)` is the plug's room grown by
+the print's gap all round, a solid of its own (`window.body cut frame_part`), so a clearance is the
+part's own body grown, never its sizes written again with `± gap`. Its edges and corners are
+rounded by `d`; a negative `d` shrinks the body, and `d: 0mm` is the body. It is the language's own
+words: `{ p | distance(p, within) <= d }` over `within := { c | c inside B }`. Grown, it is built
+exactly where the body's faces are planes and cylinders meeting in convex edges at a prism's
+corners — a box, a post, a hex bar, a plate with a bore, a body of several such pieces; a concave
+edge (an L), a cone or a sphere, or a shrink is read point by point, and an exact export (`--step`,
+`--stl`) says so by name.
+
 #### Reports and refusals
 
 `--where body` lists volume, area, bounding box and each face's area under its document name,

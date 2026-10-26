@@ -279,6 +279,34 @@ foot across the surface from `p`) appended to the body under synthetic ids (`FOO
 down, so `PredWalk::written` keeps their uses apart). `region_body` counts no bounded side of
 another set among a body's numbers (a distance from one is `std.Offset`'s). `tests/offsets.rs` is the gate.
 
+**A body grown, built exactly** (`std.Grown`, [0.188]): `B` grown by `d` is a set of the language's
+own words, `near := { p | distance(p, within) <= d }` over `within := { c | c inside B }` (B
+shrunk, `{ p | p inside B; distance(p, beyond) >= -d }` over `beyond := { c | c outside B }`), and
+its field reads it as any distance from a set.  **Within a body in pieces** the set is read shell
+by shell (`SetDistance::Nearest`, `BodyFaces::shells`): within the faces of a body's several shells
+at once is within none — each face's surface's side taken in common (`Reading::convex_pieces`)
+held nowhere for two blocks apart — so each shell's conditions stand apart and the nearest is
+read (`conditions(…, shell)`).  `solid/grown.rs` builds the grown region exactly, a route of its
+own (`region::Route::Grown`, after the lowering table, before `bounded`): one term, the distance
+at most a stated number from a set whose one term is the inside of every face of a body none of
+whose terms reads its faces.  Outside `B` a point's nearest point is inside a face, an edge or a
+corner, so where every edge is convex (`BodyFaces::convex`; a tangent one none) that partitions
+what `B` gains: each face's prism `d` out along its normal (a plane face's loops; a cylinder's
+band between two circles about its axis, its radius out of a shaft or into a bore, `band`), each
+edge's wedge of radius `d` between its faces' normals (along a line a prism; about a circle a
+torus's stretch, turned), and each corner's sector of the ball (a prism's corner — three faces,
+one square to the other two — the quarter disc turned about that one).  Each piece shares its
+faces exactly with the next, so the recipe's `grown` node (`body`, the body's own node, a
+dependency of the region's in `cad::recipe_with`; `pieces`, each a `prism` or a `revolve`) glues
+them to the body in turn (`boolean::glued`), nothing intersected, and drops the edges and vertices
+the glued faces took with them (`Brep::compacted`); the native host fuses them.  Unioned, a ball
+tangent to a cylinder along a circle is refused by the Booleans; glued, a block grown is
+Steiner's volume to 1e-15.  Gated by the region's field (`agreement::gate`, built about the body's
+boundary).  Refused by name, the field's: a concave edge, a face on a cone, a sphere or a torus,
+an edge no line or circle carries, a corner no prism's, a bore no wider than the reach, a body a
+term of which reads its faces (a round).  `tests/grown.rs` is the gate (a block, a post, a hex bar
+and a bored plate to their closed forms to 1e-9; a body in two pieces).
+
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`

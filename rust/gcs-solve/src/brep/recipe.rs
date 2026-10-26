@@ -59,6 +59,7 @@ impl Node {
             Node::Canal {centre,radius,origin,axis,angle,advance,face} =>
                 Ok(super::build::canal(*centre,*radius,*origin,*axis,*angle,*advance,face)?),
             Node::Region(pieces) => region_node(pieces,built,built_names,floor),
+            Node::Grown {body,pieces} => grown_node(*body,pieces,built,built_names,floor),
             Node::Lowered(l) => lowered_node(l,built,built_names,floor),
             Node::Family(f) => family_node(f),
         }
@@ -108,6 +109,30 @@ fn region_node(pieces: &[Kept],built: &BTreeMap<i64,Brep>,built_names: &BTreeMap
         });
     }
     solid.ok_or_else(|| "recipe: a region of no pieces".into())
+}
+
+/// A `grown` node (`solid::grown`): the node `body`, each piece glued to it where they share a
+/// face (`boolean::glued`, nothing intersected) — a face's prism on the face, an edge's wedge
+/// between two prisms, a corner's sector between wedges — in turn until every piece is, and the
+/// edges and vertices the glued faces took with them dropped.
+fn grown_node(body: i64,pieces: &[Node],built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
+    let mut solid = built.get(&body).ok_or("recipe: a grown node's `body` not built before it")?.clone();
+    let mut left = pieces.iter().map(|p| p.built(built,built_names,floor)).collect::<Result<Vec<_>,_>>()?;
+    let tol = 8.*tolerance_over(solid.size(),floor);
+    while !left.is_empty() {
+        let before = left.len();
+        let mut k = 0;
+        while k < left.len() {
+            match super::boolean::glued(&solid,&left[k],tol) {
+                Some(b) => { solid = b; left.remove(k); }
+                None => k += 1,
+            }
+        }
+        if left.len() == before { return Err("recipe: a grown body's piece shares no face with the rest".into()) }
+    }
+    let solid = solid.compacted();
+    solid.check(tol)?;
+    Ok(solid)
 }
 
 /// A `lowered` node, a region set's pieces (`solid::lowering`, #194): each run a prism or a

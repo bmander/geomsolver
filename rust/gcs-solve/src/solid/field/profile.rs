@@ -73,6 +73,17 @@ impl Edge {
             Self::Conic {a,m,b,..} => a[0].dhypot(a[1]).max(m[0].dhypot(m[1])).max(b[0].dhypot(b[1])),
         }
     }
+    // A box holding the edge: its ends, an arc's whole circle, a conic's control triangle.
+    pub(crate) fn boxed(&self) -> [P;2] {
+        let hull = |ps: &[P]| ps.iter().fold([[f64::INFINITY;2],[f64::NEG_INFINITY;2]],|[lo,hi],p| {
+            [[lo[0].min(p[0]),lo[1].min(p[1])],[hi[0].max(p[0]),hi[1].max(p[1])]]
+        });
+        match *self {
+            Self::Line {a,b,..} => hull(&[a,b]),
+            Self::Arc {center,radius,..} => [[center[0]-radius,center[1]-radius],[center[0]+radius,center[1]+radius]],
+            Self::Conic {a,m,b,..} => hull(&[a,m,b]),
+        }
+    }
 }
 
 /// Boundary order and individual edge direction need not match a face's written
@@ -209,7 +220,13 @@ fn convex(edges: &[Edge],direction: f64,join: f64) -> Result<PlanarField,String>
         }
         level = next;
     }
-    Ok(level.pop().expect("a convex field has its bounding disk"))
+    // and within the loop's own box, which the disk about planar zero holds far wider where the
+    // loop is drawn far from it
+    let mut field = level.pop().expect("a convex field has its bounding disk");
+    field.hull = Some(edges.iter().map(Edge::boxed).fold([[f64::INFINITY;2],[f64::NEG_INFINITY;2]],|[lo,hi],[a,b]| {
+        [[lo[0].min(a[0]),lo[1].min(a[1])],[hi[0].max(b[0]),hi[1].max(b[1])]]
+    }));
+    Ok(field)
 }
 
 // One wall's distance, enclosed over a box by interval arithmetic. A segment is
@@ -450,6 +467,14 @@ impl Profile {
     }
     pub(super) fn reach(&self) -> f64 { self.reach }
 
+    /// A box holding the loop's material, which lies within the convex hull of its boundary: its
+    /// low corner and its high.
+    pub(super) fn boxed(&self) -> [P;2] {
+        self.edges.iter().map(Edge::boxed).fold([[f64::INFINITY;2],[f64::NEG_INFINITY;2]],|[lo,hi],[a,b]| {
+            [[lo[0].min(a[0]),lo[1].min(a[1])],[hi[0].max(b[0]),hi[1].max(b[1])]]
+        })
+    }
+
     pub(super) fn edge_count(&self) -> usize { self.edges.len() }
 
     /// `value`, and the edge nearest the point, which decides it.
@@ -519,7 +544,7 @@ impl PlanarField {
         let (direction,is_convex) = turning(&edges)?;
         if is_convex { return convex(&edges,direction,join); }
         let profile = Profile::new(edges)?;
-        Ok(Self {node:Node::Profile(profile),depth:1,uses:[true;2]})
+        Ok(Self {node:Node::Profile(profile),depth:1,uses:[true;2],hull:None})
     }
 
     /// Whether moving this profile's field by a number moves each side as a draft does (#245):

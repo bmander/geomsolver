@@ -37,6 +37,7 @@ pub use field_mesh::{first_pass as field_first_pass, creases as field_creases};
 pub mod cad;
 pub mod region;
 pub mod bounded;
+pub mod grown;
 pub mod canal;
 pub mod roll;
 pub mod lowering;

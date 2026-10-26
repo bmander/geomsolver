@@ -60,6 +60,19 @@ fn union_support(a: Option<V>,b: Option<V>) -> Option<V> {
     }))
 }
 
+/// The least interval holding both.
+fn hull(a: I,b: I) -> Result<I,Error> {
+    let (a,b) = (a.bounds(),b.bounds());
+    I::new(a[0].min(b[0]),a[1].max(b[1]))
+}
+
+/// What two intervals share, or the first where they share nothing: an enclosure either way.
+fn common(a: I,b: I) -> Result<I,Error> {
+    let (x,y) = (a.bounds(),b.bounds());
+    let (lo,hi) = (x[0].max(y[0]),x[1].min(y[1]));
+    if lo > hi { Ok(a) } else { I::new(lo,hi) }
+}
+
 fn intersection_support(a: Option<V>,b: Option<V>) -> Option<V> {
     match (a,b) {
         (Some(a),Some(b)) => {
@@ -127,7 +140,10 @@ enum Node {
 /// preserve the Lipschitz bound but need not preserve exact signed distance.
 /// The coefficients enclose exact normalization of the supplied binary64 data.
 #[derive(Clone,Debug)]
-pub struct PlanarField { node:Node,depth:u8,uses:[bool;2] }
+pub struct PlanarField { node:Node,depth:u8,uses:[bool;2],
+    /// A box holding its material where its construction knows one (a loop's own, its low corner
+    /// and its high), which a disk about planar zero may hold only far wider.
+    hull:Option<[[f64;2];2]> }
 
 impl PlanarField {
     // A disk about planar zero enclosing closure({f<0}), if derivable from the
@@ -147,6 +163,31 @@ impl PlanarField {
             Node::Profile(profile) => Some(profile.reach()),
         })
     }
+    // A box in planar coordinates enclosing closure({f<0}), where the construction gives one, as
+    // `radius_bound`'s disk: a profile far from planar zero lies in a box of its own size, where
+    // the disk about zero reaching it is that far across.
+    fn box_bound(&self) -> Result<Option<[I;2]>,Error> {
+        if let Some([lo,hi]) = self.hull { return Ok(Some([I::new(lo[0],hi[0])?,I::new(lo[1],hi[1])?])) }
+        Ok(match &self.node {
+            Node::HalfPlane {..} => None,
+            Node::Disk {center,radius,..} => {
+                let r = radius.bounds()[1];
+                let about = |c: I| { let [lo,hi] = c.bounds(); I::new(lo-r,hi+r) };
+                Some([about(center[0])?,about(center[1])?])
+            }
+            Node::Union(a,b) => match (a.box_bound()?,b.box_bound()?) {
+                (Some(a),Some(b)) => Some([hull(a[0],b[0])?,hull(a[1],b[1])?]), _ => None,
+            },
+            Node::Intersection(a,b) => match (a.box_bound()?,b.box_bound()?) {
+                (Some(a),Some(b)) => Some([common(a[0],b[0])?,common(a[1],b[1])?]), (a,b) => a.or(b),
+            },
+            Node::Difference(a,_) => a.box_bound()?,
+            Node::Profile(profile) => {
+                let [lo,hi] = profile.boxed();
+                Some([I::new(lo[0],hi[0])?,I::new(lo[1],hi[1])?])
+            }
+        })
+    }
     /// Material is on the negative side of the supplied outward normal.
     pub fn half_plane(through: [f64;2],normal: [f64;2]) -> Result<Self,Error> {
         // Record exact source dependencies before interval normalization widens
@@ -156,21 +197,21 @@ impl PlanarField {
         for n in &mut normal { *n = n.div(length)?; }
         let through = point(through)?;
         let plain = [mid(through[0]),mid(through[1]),mid(normal[0]),mid(normal[1])];
-        Ok(Self {node:Node::HalfPlane {through,normal,plain},depth:1,uses})
+        Ok(Self {node:Node::HalfPlane {through,normal,plain},depth:1,uses,hull:None})
     }
 
     pub fn disk(center: [f64;2],radius: f64) -> Result<Self,Error> {
         if radius <= 0. { return Err(Error::OutsideDomain); }
         let (center,radius) = (point(center)?,I::point(radius)?);
         let plain = [mid(center[0]),mid(center[1]),mid(radius)];
-        Ok(Self {node:Node::Disk {center,radius,plain},depth:1,uses:[true;2]})
+        Ok(Self {node:Node::Disk {center,radius,plain},depth:1,uses:[true;2],hull:None})
     }
 
     fn combine(self,other: Self,make: impl FnOnce(Box<Self>,Box<Self>)->Node) -> Result<Self,Error> {
         let depth = self.depth.max(other.depth)+1;
         if depth > 64 { return Err(Error::OutsideDomain); }
         let uses = std::array::from_fn(|i| self.uses[i] || other.uses[i]);
-        Ok(Self {node:make(Box::new(self),Box::new(other)),depth,uses})
+        Ok(Self {node:make(Box::new(self),Box::new(other)),depth,uses,hull:None})
     }
     pub fn union(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Union) }
     pub fn intersection(self,other: Self) -> Result<Self,Error> { self.combine(other,Node::Intersection) }
@@ -412,6 +453,18 @@ impl ExtrudedField {
         let mut result = self.origin;
         // |a u_k + b v_k| <= sqrt(a^2 + b^2) for orthonormal u, v.
         for k in 0..3 { result[k] = result[k].add(disk)?.add(self.range.mul(self.frame[2][k])?)?; }
+        // and within the profile's own box carried by the frame, where every section is within
+        // the profile (no draft, or one leaning in): a profile drawn far from its plane's origin is
+        // in a box its own size, where the disk about the origin reaching it is twice that far across
+        let within = self.sections.is_none() && self.draft[0] >= 0.;
+        if let (true,Some([a,b])) = (within,self.profile.box_bound()?) {
+            let mut boxed = self.origin;
+            for k in 0..3 {
+                boxed[k] = boxed[k].add(a.mul(self.frame[0][k])?)?.add(b.mul(self.frame[1][k])?)?
+                    .add(self.range.mul(self.frame[2][k])?)?;
+            }
+            return Ok(intersection_support(Some(result),Some(boxed)));
+        }
         Ok(Some(result))
     }
 
