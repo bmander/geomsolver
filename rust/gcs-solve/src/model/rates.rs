@@ -34,3 +34,12 @@ pub struct RateRow {
     /// The statement as it was written, for what a refusal says.
     pub text: String,
 }
+
+impl RateRow {
+    /// A rate row comes along with both the entities it names (#339 D3).
+    pub fn remapped(&self, map: &Remap) -> Option<RateRow> {
+        let RateRow { of, word, to, over, text } = self;
+        Some(RateRow { of: map(*of)?, word: *word, to: map(*to)?, over: over.clone(),
+                       text: text.clone() })
+    }
+}

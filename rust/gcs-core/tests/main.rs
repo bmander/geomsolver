@@ -208,6 +208,7 @@ mod rate_of_contact;
 mod rates;
 mod rate_examples;
 mod rational;
+mod rebuild;
 mod recursion;
 mod refine;
 mod refusals;

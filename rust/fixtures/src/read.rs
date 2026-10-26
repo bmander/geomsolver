@@ -63,11 +63,8 @@ pub fn read_beside(source: &str,base: &Path,rewrite: &mut dyn FnMut(&str,String)
 /// The index of the named solid.
 pub fn solid(e: &program::Elaborated,name: &str) -> usize { e.map.ent_named(name).unwrap().i() }
 
-/// Every `.sv` in `rust/examples`, by its path there, elaborated and not solved, its modules
-/// read as solventc reads them (beside the document, then in its ancestors up to the examples,
-/// then the library) — `None` for one that does not parse.  Nothing is asserted: a document
-/// that does not elaborate is returned with its diagnostics.
-pub fn examples() -> Vec<(String,Option<program::Elaborated>)> {
+/// The `.sv` files under `rust/examples`, each by its path there, in order.
+pub fn example_names() -> Vec<String> {
     fn sources(dir: &Path,out: &mut Vec<PathBuf>) {
         let mut entries: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).collect();
         entries.sort();
@@ -76,22 +73,34 @@ pub fn examples() -> Vec<(String,Option<program::Elaborated>)> {
             else if p.extension().is_some_and(|e| e == "sv") { out.push(p) }
         }
     }
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
+    let root = examples_root();
     let mut files = Vec::new();
     sources(&root,&mut files);
-    files.into_iter().map(|path| {
-        let name = path.strip_prefix(&root).unwrap().to_string_lossy().to_string();
-        let text = std::fs::read_to_string(&path).unwrap();
-        let (mut prog,errs) = syntax::parse(&text);
-        if !errs.is_empty() { return (name,None); }
-        let dir = path.parent().unwrap().to_path_buf();
-        let mut resolve = |m: &str| -> Option<String> {
-            gcs_core::modules::search_paths(m,&name).iter()
-                .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
-                .or_else(|| gcs_core::library::resolve(m))
-        };
-        let _ = gcs_core::modules::link(&mut prog,&mut resolve);
-        let e = program::elaborate(&prog);
-        (name,Some(e))
-    }).collect()
+    files.iter().map(|p| p.strip_prefix(&root).unwrap().to_string_lossy().to_string()).collect()
+}
+
+fn examples_root() -> PathBuf { Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples") }
+
+/// The example at `name` under `rust/examples`, elaborated and not solved, its modules read as
+/// solventc reads them (beside the document, then in its ancestors up to the examples, then the
+/// library) — `None` for one that does not parse.  Nothing is asserted: a document that does not
+/// elaborate is returned with its diagnostics.
+pub fn example(name: &str) -> Option<program::Elaborated> {
+    let path = examples_root().join(name);
+    let text = std::fs::read_to_string(&path).unwrap();
+    let (mut prog,errs) = syntax::parse(&text);
+    if !errs.is_empty() { return None; }
+    let dir = path.parent().unwrap().to_path_buf();
+    let mut resolve = |m: &str| -> Option<String> {
+        gcs_core::modules::search_paths(m,name).iter()
+            .find_map(|rel| std::fs::read_to_string(dir.join(rel)).ok())
+            .or_else(|| gcs_core::library::resolve(m))
+    };
+    let _ = gcs_core::modules::link(&mut prog,&mut resolve);
+    Some(program::elaborate(&prog))
+}
+
+/// Every example (`example_names`), elaborated (`example`).
+pub fn examples() -> Vec<(String,Option<program::Elaborated>)> {
+    example_names().into_iter().map(|name| { let e = example(&name); (name,e) }).collect()
 }

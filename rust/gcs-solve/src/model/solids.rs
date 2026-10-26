@@ -782,3 +782,263 @@ pub fn objects(sk: &Sketch) -> Vec<usize> {
         .filter(|&i| !used[i] && !sk.roles_of(EntRef::solid(i)).construction)
         .collect()
 }
+
+// **What a rebuild renumbers** (`graft`): each value's references through a renumbering, every
+// field named, so a field added to one of these is decided here — and `None` where something the
+// value cannot be without did not come along, as a constraint goes with its entities.
+
+impl FaceLoop {
+    pub fn remapped(&self, map: &Remap) -> Option<FaceLoop> {
+        let FaceLoop { edges, edge_names } = self;
+        Some(FaceLoop { edges: renumbered_all(map, edges)?, edge_names: edge_names.clone() })
+    }
+}
+
+impl FaceE {
+    /// A face goes whole or not at all: lose an edge, a hole's or its plane and it is no loop.
+    pub fn remapped(&self, map: &Remap) -> Option<FaceE> {
+        let FaceE { edges, edge_names, holes, plane, name, class } = self;
+        Some(FaceE {
+            edges: renumbered_all(map, edges)?,
+            edge_names: edge_names.clone(),
+            holes: holes.iter().map(|h| h.remapped(map)).collect::<Option<_>>()?,
+            plane: renumbered_opt(map, EntKind::Frame, *plane)?,
+            name: name.clone(),
+            class: class.clone(),
+        })
+    }
+}
+
+impl MotionDef {
+    /// A motion goes with what it is written over.  A frame along a path and one the drawing
+    /// moves are read off the whole drawing — its path, its march — so a rebuild carries neither.
+    pub fn remapped(&self, map: &Remap) -> Option<MotionDef> {
+        let motion = |m: u32| renumbered(map, EntKind::Motion, m);
+        let line = |l: u32| renumbered(map, EntKind::Line, l);
+        Some(match self {
+            &MotionDef::Rotation { axis, ratio, advance } => {
+                MotionDef::Rotation { axis: line(axis)?, ratio, advance }
+            }
+            &MotionDef::Turn { centre, ratio } => {
+                MotionDef::Turn { centre: renumbered(map, EntKind::Point, centre)?, ratio }
+            }
+            &MotionDef::Translation { axis, advance } => {
+                MotionDef::Translation { axis: line(axis)?, advance }
+            }
+            &MotionDef::Relative { source, observer } => {
+                MotionDef::Relative { source: motion(source)?, observer: motion(observer)? }
+            }
+            &MotionDef::Inverse { of } => MotionDef::Inverse { of: motion(of)? },
+            &MotionDef::Joint { axis, ratio, advance } => {
+                MotionDef::Joint { axis: renumbered(map, EntKind::Axis, axis)?, ratio, advance }
+            }
+            // its law reads the numbers it was written over by name, as a dimension's text does
+            MotionDef::Driven { of, law, over } => {
+                MotionDef::Driven { of: motion(*of)?, law: law.clone(), over: over.clone() }
+            }
+            MotionDef::Guided { .. } | MotionDef::Followed { .. } => return None,
+        })
+    }
+}
+
+impl MotionE {
+    /// A joint's numbers the solve finds are its frame's, and are renumbered with the frame's
+    /// joint (`graft`), so they are not this value's to carry.
+    pub fn remapped(&self, map: &Remap) -> Option<MotionE> {
+        let MotionE { def, name, class, numbers: _ } = self;
+        Some(MotionE { def: def.remapped(map)?, name: name.clone(), class: class.clone(),
+                       numbers: None })
+    }
+}
+
+impl FamilyLeg {
+    pub fn remapped(&self, map: &Remap) -> Option<FamilyLeg> {
+        let FamilyLeg { face, held, at, ents } = self;
+        Some(FamilyLeg { face: renumbered(map, EntKind::Face, *face)?, held: held.clone(), at: *at,
+                         ents: renumbered_all(map, ents)? })
+    }
+}
+
+impl SolidDef {
+    /// A solid is its term, and a term missing anything it is written over — a face, an
+    /// operand, an extent's target, a family's whole station, a region's probe or a term's
+    /// geometry — is not that solid.
+    pub fn remapped(&self, map: &Remap) -> Option<SolidDef> {
+        let face = |f: u32| renumbered(map, EntKind::Face, f);
+        let solid = |s: u32| renumbered(map, EntKind::Solid, s);
+        let motion = |m: u32| renumbered(map, EntKind::Motion, m);
+        let solids = |v: &[u32]| v.iter().map(|&s| solid(s)).collect::<Option<Vec<_>>>();
+        Some(match self {
+            SolidDef::Placed { source, motion: m, at } => {
+                SolidDef::Placed { source: solid(*source)?, motion: motion(*m)?, at: at.clone() }
+            }
+            SolidDef::Swept { source, motion: m, roll } => SolidDef::Swept {
+                source: solid(*source)?,
+                motion: motion(*m)?,
+                roll: match roll {
+                    Roll::Through { body } => Roll::Through { body: solid(*body)? },
+                    Roll::Stated(r) => Roll::Stated(r.clone()),
+                },
+            },
+            SolidDef::Prism { face: f, from, to, draft } => SolidDef::Prism {
+                face: face(*f)?, from: from.clone(), to: to.clone(), draft: draft.clone(),
+            },
+            SolidDef::Through { face: f, body } => {
+                SolidDef::Through { face: face(*f)?, body: solid(*body)? }
+            }
+            SolidDef::Revolve { face: f, axis, sweep, sense } => SolidDef::Revolve {
+                face: face(*f)?, axis: map(*axis)?, sweep: sweep.clone(), sense: *sense,
+            },
+            SolidDef::Body { stock, on, through, bound } => SolidDef::Body {
+                stock: solid(*stock)?, on: solids(on)?, through: solids(through)?,
+                bound: solids(bound)?,
+            },
+            SolidDef::Region { probe, terms } => SolidDef::Region {
+                probe: renumbered(map, EntKind::Point, *probe)?,
+                terms: terms.iter().map(|t| t.remapped(map)).collect::<Option<_>>()?,
+            },
+            SolidDef::Family { face: f, station, over, legs } => SolidDef::Family {
+                face: face(*f)?,
+                station: renumbered_all(map, station)?,
+                over: over.clone(),
+                legs: legs.iter().map(|l| l.remapped(map)).collect::<Option<_>>()?,
+            },
+        })
+    }
+}
+
+impl SolidE {
+    /// Its frames and turns are the source's binding: copied, it is evaluated as its own.
+    pub fn remapped(&self, map: &Remap) -> Option<SolidE> {
+        let SolidE { def, name, class, copy, material, binding: _ } = self;
+        Some(SolidE { def: def.remapped(map)?, name: name.clone(), class: class.clone(),
+                      copy: *copy, material: material.clone(), binding: None })
+    }
+}
+
+impl SurfaceE {
+    pub fn remapped(&self, map: &Remap) -> Option<SurfaceE> {
+        let SurfaceE { solid, edge, span, name, class } = self;
+        Some(SurfaceE { solid: renumbered(map, EntKind::Solid, *solid)?, edge: map(*edge)?,
+                        span: *span, name: name.clone(), class: class.clone() })
+    }
+}
+
+impl SetShape {
+    pub fn remapped(&self, map: &Remap) -> Option<SetShape> {
+        let SetShape { kind, axis, origin, number, stood, reference } = self;
+        Some(SetShape {
+            kind: *kind,
+            axis: renumbered(map, EntKind::Line, *axis)?,
+            origin: renumbered_opt(map, EntKind::Point, *origin)?,
+            number: number.clone(),
+            stood: *stood,
+            reference: *reference,
+        })
+    }
+}
+
+impl Held {
+    /// What the solve reads of a source, in the copy's own geometry.  It never takes its reader
+    /// with it: a part left behind leaves the copy with nothing it can read (`Held::Not`), said
+    /// where a relation names it.
+    pub fn remapped(&self, map: &Remap) -> Held {
+        let read = || Some(match self {
+            Held::Not(why) => Held::Not(why.clone()),
+            Held::Revolution { axis, edge } => {
+                Held::Revolution { axis: map(*axis)?, edge: map(*edge)? }
+            }
+            Held::Set { probe, shape } => Held::Set {
+                probe: renumbered(map, EntKind::Point, *probe)?,
+                shape: match shape {
+                    Some(s) => Some(s.remapped(map)?),
+                    None => None,
+                },
+            },
+        });
+        read().unwrap_or_else(|| Held::Not("its source was left behind when it was copied".into()))
+    }
+}
+
+impl Flank {
+    /// An envelope or a traced body goes with its flank; a source read as an envelope's is
+    /// (`Held::remapped`) reads nothing where it was left behind.
+    pub fn remapped(&self, map: &Remap) -> Option<Flank> {
+        Some(match self {
+            Flank::Envelope(v) => Flank::Envelope(renumbered(map, EntKind::Envelope, *v)?),
+            Flank::Formed(h) => Flank::Formed(h.remapped(map)),
+            Flank::Traced(t) => Flank::Traced(renumbered(map, EntKind::Traced, *t)?),
+        })
+    }
+}
+
+impl EnvelopeE {
+    pub fn remapped(&self, map: &Remap) -> Option<EnvelopeE> {
+        let EnvelopeE { surface, motion, roll, name, class, held } = self;
+        Some(EnvelopeE {
+            surface: renumbered_opt(map, EntKind::Surface, *surface)?,
+            motion: renumbered(map, EntKind::Motion, *motion)?,
+            roll: roll.clone(),
+            name: name.clone(),
+            class: class.clone(),
+            held: held.remapped(map),
+        })
+    }
+}
+
+impl Ease {
+    pub fn remapped(&self, map: &Remap) -> Option<Ease> {
+        let Ease { about, along, numbers } = self;
+        Some(Ease { about: renumbered(map, EntKind::Point, *about)?,
+                    along: renumbered(map, EntKind::Line, *along)?, numbers: numbers.clone() })
+    }
+}
+
+impl MeshingE {
+    /// Its flanks and its motion, and an ease's point and line, each copied with it (#283).
+    pub fn remapped(&self, map: &Remap) -> Option<MeshingE> {
+        let MeshingE { flanks, motion, roll, name, class, ease } = self;
+        Some(MeshingE {
+            flanks: [flanks[0].remapped(map)?, flanks[1].remapped(map)?],
+            motion: renumbered(map, EntKind::Motion, *motion)?,
+            roll: roll.clone(),
+            name: name.clone(),
+            class: class.clone(),
+            ease: match ease {
+                Some(x) => Some(x.remapped(map)?),
+                None => None,
+            },
+        })
+    }
+}
+
+impl TracedE {
+    /// A traced body goes where everything its component was given came along (#326).
+    pub fn remapped(&self, map: &Remap) -> Option<TracedE> {
+        let TracedE { body, args, values, over, home, name, class } = self;
+        Some(TracedE {
+            body: body.clone(),
+            args: renumbered_all(map, args)?,
+            values: values.clone(),
+            over: over.clone(),
+            home: *home,
+            name: name.clone(),
+            class: class.clone(),
+        })
+    }
+}
+
+impl DerivedE {
+    /// A picture goes with its body and the planes it is drawn in and cut at.
+    pub fn remapped(&self, map: &Remap) -> Option<DerivedE> {
+        let DerivedE { solid, plane, at, dims, name, class } = self;
+        Some(DerivedE {
+            solid: renumbered(map, EntKind::Solid, *solid)?,
+            plane: renumbered_opt(map, EntKind::Frame, *plane)?,
+            at: renumbered_opt(map, EntKind::Frame, *at)?,
+            dims: *dims,
+            name: name.clone(),
+            class: class.clone(),
+        })
+    }
+}

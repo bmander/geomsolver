@@ -230,6 +230,49 @@ pub fn whole<T>(v: Vec<T>, n: usize) -> Vec<T> {
     if v.len() == n { v } else { Vec::new() }
 }
 
+impl Trim {
+    /// A trim follows its curve and both its points, or goes with them.
+    pub fn remapped(&self, map: &Remap) -> Option<Trim> {
+        let Trim { of, from, to } = *self;
+        Some(Trim {
+            of: renumbered(map, EntKind::Curve, of)?,
+            from: renumbered(map, EntKind::Point, from)?,
+            to: renumbered(map, EntKind::Point, to)?,
+        })
+    }
+}
+
+impl CurveE {
+    /// A curve's references through `map` (`graft`): every argument and its trim, or none of it.
+    /// Its home pose follows the entities it is read from and is whole or nothing (`whole`): a
+    /// pose with a hole in it is no pose, and the seeds stand in.  Its pegs and slides are its
+    /// energy's, settled again where it lands (`settle_variational`); its definition and its
+    /// length are its sketch's own numbering, and left for the caller to give it.
+    pub fn remapped(&self, map: &Remap) -> Option<CurveE> {
+        let CurveE { def, args, unknowns, values, over, home, pose, class, trim, extrusion, length,
+                     pegs: _, slides: _ } = self;
+        let kept: Vec<_> = pose.iter().filter_map(|&(e, j)| map(e).map(|r| (r, j))).collect();
+        Some(CurveE {
+            def: *def,
+            args: renumbered_all(map, args)?,
+            unknowns: unknowns.clone(),
+            values: values.clone(),
+            over: over.clone(),
+            home: home.clone(),
+            pose: whole(kept, pose.len()),
+            class: class.clone(),
+            trim: match trim {
+                Some(t) => Some(t.remapped(map)?),
+                None => None,
+            },
+            extrusion: *extrusion,
+            length: *length,
+            pegs: Vec::new(),
+            slides: Vec::new(),
+        })
+    }
+}
+
 impl Sketch {
     /// The variable vector a curve's tapes are evaluated at: the parameter, then every scalar
     /// its arguments contribute in `entity_params` order, then the numbers it was given.

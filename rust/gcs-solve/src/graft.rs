@@ -2,50 +2,319 @@
 //! every reference to it following.  Deletion (`without`), copying (`copy`), pasting (`paste`)
 //! and the part of a document one gesture can move (`Part`) are all this one walk, so they cannot
 //! disagree about what a constraint belongs to.
+//!
+//! The walk's answer is a `Renumbering`: where each entity and each constraint of the source
+//! went.  What a value of the model refers to, and what it cannot be without, is the value's own
+//! to say (`FaceE::remapped`, `SolidDef::remapped`, `Constraint::remapped`, …), each naming every
+//! field it holds; the walk decides only the order the kinds are made in and what the
+//! destination's own constructors mint.
 
 use crate::constraints::{Arg, CKind, Constraint};
 use crate::decompose;
 use crate::expr;
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{EntKind, EntRef, Remap, Sketch};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Graft the entities of `src` that `keep` accepts onto `dst`, moved by `offset`, and return
-/// what that made, in `src` order.
-///
-/// This is the one rebuild walk in the project: every surviving entity is renumbered into `dst`
-/// and every reference to it follows — which is what deletion, copying and pasting all are,
-/// differing only in what they keep, where they land and what they land on.  A constraint comes
-/// along exactly when every entity it names came along, so the three operations cannot disagree
-/// about what a constraint belongs to.
-fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: &[u32],
-         offset: (f64, f64)) -> Vec<EntRef> {
-    let base = dst.points.len();
-    let fresh = base == 0;   // a rebuild owns the whole document; a paste only adds to it
-    if fresh {
-        // a rebuild, a deletion and a copy all keep the document they came from — which is what
-        // makes a clipboard say what its numbers are in, and `paste` able to convert them
-        dst.units = src.units;
-        dst.presentation = src.presentation.clone();
+const KINDS: usize = EntKind::ALL.len();
+
+/// **Where a rebuild put everything** (`rebuild`, `graft_onto`): each entity of the source to the
+/// one it became, kind by kind, each constraint the document states to its copy, and what the
+/// walk made, in the order it made it.  It is the walk's whole answer, so a caller pairing the
+/// two sketches (`Part`) reads it rather than working it out again.
+#[derive(Clone, Debug)]
+pub struct Renumbering {
+    /// Per kind (`EntKind as usize`): source index → destination index, from the moment the walk
+    /// reaches the kind.  `None` before then, so a value read against a kind not yet made is
+    /// caught rather than silently left behind.
+    ents: [Option<Vec<Option<u32>>>; KINDS],
+    /// Source constraint id → destination id.
+    constraints: BTreeMap<u32, u32>,
+    /// (source, destination) for every entity the walk made, in the order it made them: a plane
+    /// it stood the source's on (`graft_onto`), and that plane's origin, are mapped but not made.
+    made: Vec<(EntRef, EntRef)>,
+}
+
+impl Renumbering {
+    fn new() -> Renumbering {
+        Renumbering { ents: std::array::from_fn(|_| None), constraints: BTreeMap::new(),
+                      made: Vec::new() }
     }
-    // the materials the solids name (#510 P3), by name: a paste brings those the document lacks
-    for (name, m) in &src.materials {
-        dst.materials.entry(name.clone()).or_insert_with(|| m.clone());
+
+    /// The walk has reached `kind`, of which the source has `n`: nothing of it has come yet.
+    fn open(&mut self, kind: EntKind, n: usize) {
+        self.ents[kind as usize] = Some(vec![None; n]);
     }
-    let mut made = Vec::new();
-    // a face family's running numbers, before any contact pinned to one is added (#243 L1)
-    for (name, h) in &src.held {
-        if !dst.held.contains_key(name) {
-            dst.hold(name, src.params[h.param as usize].value, h.dim);
+
+    /// `src` is `dst` in the destination, which the walk did not make (a plane stood on).
+    fn set(&mut self, src: EntRef, dst: usize) {
+        let table = self.ents[src.kind as usize].as_mut().expect("the walk has reached the kind");
+        table[src.i()] = Some(dst as u32);
+    }
+
+    /// `src` came along as `dst`, which the walk made.
+    fn made(&mut self, src: EntRef, dst: usize) {
+        self.set(src, dst);
+        self.made.push((src, EntRef::new(src.kind, dst)));
+    }
+
+    /// A source entity as the destination's, if it came along.
+    pub fn ent(&self, e: EntRef) -> Option<EntRef> {
+        let Some(table) = &self.ents[e.kind as usize] else {
+            debug_assert!(false, "{} read before the walk made any", e.kind.a());
+            return None;
+        };
+        table.get(e.i()).copied().flatten().map(|i| EntRef::new(e.kind, i as usize))
+    }
+
+    /// A source point's index in the destination, if it came along.
+    pub fn point(&self, i: usize) -> Option<usize> {
+        self.ent(EntRef::point(i)).map(EntRef::i)
+    }
+
+    /// A source constraint's id in the destination, if it came along.
+    pub fn constraint(&self, id: u32) -> Option<u32> {
+        self.constraints.get(&id).copied()
+    }
+
+    /// (source, destination) for every entity the walk made, in the order it made them: points,
+    /// lines, circles, arcs, splines, axes, planes, curves, faces, motions, solids, surfaces,
+    /// envelopes, traced bodies and meshings, each kind in source order.
+    pub fn pairs(&self) -> &[(EntRef, EntRef)] {
+        &self.made
+    }
+
+    /// Number the members of `kind` that `whole` makes whole, as the greatest such set: each
+    /// candidate numbered from `base` in source order, a member naming one that did not come going
+    /// too, until nothing more goes — and what `whole` made of each over the settled table.
+    fn allocate<T>(&mut self, kind: EntKind, base: usize, candidate: impl Fn(usize) -> bool,
+                   n: usize, whole: impl Fn(usize, &Renumbering) -> Option<T>) -> Vec<Option<T>> {
+        let mut kept: Vec<bool> = (0..n).map(candidate).collect();
+        loop {
+            let mut next = base as u32;
+            self.ents[kind as usize] = Some(kept.iter().map(|&k| {
+                k.then(|| { next += 1; next - 1 })
+            }).collect());
+            let made: Vec<Option<T>> =
+                (0..n).map(|i| if kept[i] { whole(i, self) } else { None }).collect();
+            let mut settled = true;
+            for (k, m) in kept.iter_mut().zip(&made) {
+                if *k && m.is_none() {
+                    *k = false;
+                    settled = false;
+                }
+            }
+            if settled {
+                return made;
+            }
         }
     }
-    // a paste onto a plane the document already has: one held where the clipboard's is held and
-    // facing the same way *is* that plane, so what was drawn in it is drawn in it again and no
-    // second plane stands on the first; its axes and its origin are the document's
-    let mut reuse: Vec<Option<usize>> = vec![None; src.frames.len()];
-    if !fresh {
+}
+
+/// **Every field of a sketch, and what the walk does with it**, named with no `..`: a field
+/// added to `Sketch` stops the build here until it is decided — carried by a step of the
+/// walk, minted again by the destination, or left behind and said so.  It reads nothing; the
+/// steps it names do the work.  (`next_cid` is the crate's to see for this.)
+fn ledger(sk: &Sketch) {
+    let Sketch {
+        // carried, each by the step of the walk named
+        roles: _,                     // `roles`
+        points: _,                    // `points`, and every kind after it by its own step
+        lines: _,
+        circles: _,
+        arcs: _,
+        splines: _,
+        axes: _,                      // `axes_and_planes`
+        frames: _,
+        curves: _,                    // `curves`, with the definitions they name
+        curve_defs: _,
+        faces: _,
+        solids: _,
+        surfaces: _,
+        motions: _,
+        envelopes: _,
+        meshings: _,
+        traced: _,
+        reversed: _,                  // `arcs`
+        duals: _,                     // `duals`
+        twins: _,                     // `twins`
+        constraints: _,               // `constraints`, `axes_along`; intrinsic rows minted
+        placements: _,                // `constraints`
+        rates: _,                     // `rates`
+        held: _,                      // `document`, `held_reads`
+        materials: _,                 // `document`
+        units: _,                     // `document`, a rebuild's alone
+        presentation: _,
+        branches: _,                  // `choices`
+        orientations: _,
+        turns: _,                     // `turns_and_mirrors`
+        mirrors: _,
+        derived: _,                   // `pictures`
+        // minted again by the destination as what reads them comes
+        params: _,                    // by each constructor, valued from the source's
+        zero: _,                      // `Sketch::origin_param`, for the first axis
+        lifts: _,                     // `memberships` (`lift_point`)
+        shared: _,                    // `add_quiet`, from the names `owned_arg` gives
+        free_vars: _,                 // `expr::evaluate`
+        free_dimensions: _,
+        variational: _,               // `settle_variational`
+        next_cid: _,                  // `add_quiet`: a copy's constraints are its own
+        // left behind on purpose
+        carried: _,                   // as `Constraint::carried`, the walk has never carried
+                                      // it (`solid::family::part_of` frees both itself)
+        declared: _,                  // the source's alone (parameters.md)
+        parameters: _,
+        beams: _,                     // the source's alone (analysis.md, S1)
+        scenarios: _,
+        measured: _,
+        meshed: _,                    // compiled with the rows the source alone carries
+        meshed_at: _,
+        rounds: _,                    // the elaborator's, derived and never saved
+        standing: _,                  // presentation of an instant, never written
+        hidden: _,                    // view state the front end sets on every drawing
+        caches: _,                    // compiled artefacts, worked out again
+        field_surfaces: _,            // a host's, supplied against the drawing it read
+        field_meshing: _,
+        style_epoch: _,               // a binding's cache keys, counted afresh
+        shape_epoch: _,
+        // not carried, though each names entities: gaps, not choices — a copy goes without them
+        rides: _,
+        solid_claims: _,
+        solid_bearings: _,
+        plane_names: _,
+        spline_traced: _,
+        stands_for: _,
+        round_gauges: _,
+        walked_back: _,
+    } = sk;
+}
+
+/// **Where a walk lands.**  A sketch of its own, which the rebuild makes whole — the source's
+/// unit, its presentation, its root choices — or a document it is added to, moved by an offset,
+/// onto the planes that document already has.  Said by the caller, never guessed from what the
+/// destination holds: a paste into an empty document is still a paste, in that document's unit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Landing {
+    Fresh,
+    Onto { offset: (f64, f64) },
+}
+
+/// The entities of `src` that `keep` accepts, and every constraint over them but those `drop`
+/// names, as a sketch of their own — and where each went.
+///
+/// `keep` is the caller's word on each entity; what an entity cannot be without is the walk's
+/// (a line goes with its points, a face with its edges and plane, a solid with its term), so a
+/// caller says only what it removes or keeps itself, and the rest follows.
+pub fn rebuild(src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop: &[u32])
+    -> (Sketch, Renumbering) {
+    let mut dst = Sketch::new();
+    let r = Walk::new(&mut dst, src, keep, drop, Landing::Fresh).run();
+    (dst, r)
+}
+
+/// Everything in `src` added to `dst`, moved by `offset`, and where each went.  A plane `dst`
+/// already has, held where `src`'s is held and facing the same way, *is* that plane: what was
+/// drawn in it is drawn in it again.  Nothing is converted — `paste` is what converts units.
+pub fn graft_onto(dst: &mut Sketch, src: &Sketch, offset: (f64, f64)) -> Renumbering {
+    Walk::new(dst, src, &|_| true, &[], Landing::Onto { offset }).run()
+}
+
+/// The walk: one pass per kind, in the order each kind's references need — a kind is made after
+/// every kind it may name — and then everything that names entities: roles, duals, the
+/// constraints, rates, held numbers, twins, root choices, turns, mirrors and pictures.
+struct Walk<'a> {
+    dst: &'a mut Sketch,
+    src: &'a Sketch,
+    keep: &'a dyn Fn(EntRef) -> bool,
+    drop: &'a [u32],
+    landing: Landing,
+    r: Renumbering,
+    /// Each source plane that is one of the destination's (`graft_onto`).
+    reuse: Vec<Option<usize>>,
+}
+
+impl<'a> Walk<'a> {
+    fn new(dst: &'a mut Sketch, src: &'a Sketch, keep: &'a dyn Fn(EntRef) -> bool,
+           drop: &'a [u32], landing: Landing) -> Walk<'a> {
+        let reuse = vec![None; src.frames.len()];
+        Walk { dst, src, keep, drop, landing, r: Renumbering::new(), reuse }
+    }
+
+    fn run(mut self) -> Renumbering {
+        ledger(self.src);
+        self.document();
+        self.reuse_planes();
+        self.points();
+        self.lines();
+        self.circles();
+        self.arcs();
+        self.splines();
+        self.axes_and_planes();
+        self.memberships();
+        // curves last of what a curve may name: a curve's arguments may be of any kind above
+        self.curves();
+        self.faces();
+        self.motions();
+        self.joints();
+        self.solids();
+        self.surfaces();
+        self.envelopes();
+        self.traced();
+        self.meshings();
+        // every entity is renumbered: what names one reads the whole table from here
+        self.roles();
+        let duals = self.duals();
+        let expr = self.constraints(&duals);
+        self.axes_along();
+        self.rates();
+        self.held_reads();
+        self.twins();
+        if expr {
+            expr::evaluate(self.dst);
+        }
+        self.choices();
+        self.turns_and_mirrors();
+        self.pictures();
+        self.dst.settle_turns();
+        // each free curve's energy, its pegs and its definition, read again from what came (#144)
+        self.dst.settle_variational();
+        self.r
+    }
+
+    /// What the document is as a whole: a rebuild keeps the document it came from — which is
+    /// what makes a clipboard say what its numbers are in, and `paste` able to convert them —
+    /// and both bring the materials and the running numbers the destination lacks.
+    fn document(&mut self) {
+        let (src, dst) = (self.src, &mut *self.dst);
+        if self.landing == Landing::Fresh {
+            dst.units = src.units;
+            dst.presentation = src.presentation.clone();
+        }
+        // the materials the solids name (#510 P3), by name: a paste brings those the document
+        // lacks
+        for (name, m) in &src.materials {
+            dst.materials.entry(name.clone()).or_insert_with(|| m.clone());
+        }
+        // a face family's running numbers, before any contact pinned to one is added (#243 L1)
+        for (name, h) in &src.held {
+            if !dst.held.contains_key(name) {
+                dst.hold(name, src.params[h.param as usize].value, h.dim);
+            }
+        }
+    }
+
+    /// A paste onto a plane the document already has: one held where the clipboard's is held and
+    /// facing the same way *is* that plane, so what was drawn in it is drawn in it again and no
+    /// second plane stands on the first; its axes and its origin are the document's.
+    fn reuse_planes(&mut self) {
+        let (src, dst) = (self.src, &*self.dst);
+        if self.landing == Landing::Fresh {
+            return;
+        }
         let same = |a: [f64; 3], b: [f64; 3]| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-9);
-        for (i, r) in reuse.iter_mut().enumerate() {
-            if !keep(EntRef::frame(i)) || !src.plane_fixed(i) || src.frames[i].chart.is_none() {
+        for (i, r) in self.reuse.iter_mut().enumerate() {
+            if !(self.keep)(EntRef::frame(i)) || !src.plane_fixed(i)
+                || src.frames[i].chart.is_none()
+            {
                 continue;
             }
             let b = src.basis(i);
@@ -57,791 +326,427 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             });
         }
     }
-    let reused_origin: BTreeMap<usize, usize> = reuse.iter().enumerate()
-        .filter_map(|(i, r)| r.map(|j| (src.frames[i].origin as usize, dst.frames[j].origin as usize)))
-        .collect();
-    let mut keep_pts = Vec::new();
-    let mut pt_map: Vec<Option<usize>> = vec![None; src.points.len()];
-    for i in 0..src.points.len() {
-        if let Some(&o) = reused_origin.get(&i) {
-            pt_map[i] = Some(o);
-        } else if keep(EntRef::point(i)) {
-            pt_map[i] = Some(base + keep_pts.len());
-            keep_pts.push(i);
-        }
-    }
-    let pt_index = |i: usize| pt_map[i];
-    for &i in &keep_pts {
-        let (x, y) = src.point_xy(i);
-        let n = dst.point(x + offset.0, y + offset.1, src.point_fixed(i),
-                          &format!("p{}", dst.points.len()));
-        if let Some(z) = src.points[i].z {
-            dst.give_place(n, src.params[z as usize].value);
-        }
-        made.push(EntRef::point(n));
-    }
-    let mut line_map: Vec<Option<usize>> = vec![None; src.lines.len()];
-    for i in 0..src.lines.len() {
-        if !keep(EntRef::line(i)) {
-            continue;
-        }
-        let l = &src.lines[i];
-        let (Some(p1), Some(p2)) = (pt_index(l.p1 as usize), pt_index(l.p2 as usize)) else {
-            continue;
+
+    fn points(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
+        let offset = match self.landing {
+            Landing::Fresh => (0.0, 0.0),
+            Landing::Onto { offset } => offset,
         };
-        let ni = dst.line(p1, p2);
-        dst.lines[ni].class = l.class.clone();
-        line_map[i] = Some(ni);
-        made.push(EntRef::line(ni));
-    }
-    let mut circle_map: Vec<Option<usize>> = vec![None; src.circles.len()];
-    for i in 0..src.circles.len() {
-        if !keep(EntRef::circle(i)) {
-            continue;
-        }
-        let c = &src.circles[i];
-        let Some(centre) = pt_index(c.center as usize) else { continue };
-        let ni = dst.circle(centre, src.params[c.radius as usize].value, "");
-        let rp = dst.circles[ni].radius as usize;
-        dst.params[rp].fixed = src.params[c.radius as usize].fixed;
-        dst.circles[ni].class = c.class.clone();
-        circle_map[i] = Some(ni);
-        made.push(EntRef::circle(ni));
-    }
-    let mut arc_map: Vec<Option<usize>> = vec![None; src.arcs.len()];
-    for i in 0..src.arcs.len() {
-        if !keep(EntRef::arc(i)) {
-            continue;
-        }
-        let a = &src.arcs[i];
-        let (Some(c), Some(st), Some(e)) = (
-            pt_index(a.center as usize),
-            pt_index(a.start as usize),
-            pt_index(a.end as usize),
-        ) else {
-            continue;
-        };
-        let ni = dst.arc(c, st, e, "");
-        let rp = dst.arcs[ni].radius as usize;
-        dst.params[rp].value = src.params[a.radius as usize].value;
-        dst.params[rp].fixed = src.params[a.radius as usize].fixed;
-        dst.arcs[ni].class = a.class.clone();
-        // drawn from its end for its sense, it still reads its ends as written (#573)
-        if src.arc_reversed(i) {
-            dst.reversed.insert(ni as u32);
-        }
-        arc_map[i] = Some(ni);
-        made.push(EntRef::arc(ni));
-    }
-    let mut spline_map: Vec<Option<usize>> = vec![None; src.splines.len()];
-    for i in 0..src.splines.len() {
-        if !keep(EntRef::spline(i)) {
-            continue;
-        }
-        let sp = &src.splines[i];
-        // the control points that came along, and the ones that did not: a curve that has lost
-        // some is shortened, one interior knot going with each, and only dies when too few are
-        // left to draw with
-        let (mut ctrl, mut gone) = (Vec::new(), Vec::new());
-        for (k, &c) in sp.ctrl.iter().enumerate() {
-            match pt_index(c as usize) {
-                Some(n) => ctrl.push(n),
-                None => gone.push(k),
-            }
-        }
-        // with nothing gone this gives back the knots unchanged, so there is no case to split;
-        // a weight goes with its control point
-        let knots = crate::curve::knots_without(&sp.knots, &gone, ctrl.len());
-        let weights = sp.weights.as_ref().map(|w| {
-            w.iter().enumerate().filter(|(k, _)| !gone.contains(k)).map(|(_, &x)| x).collect()
-        });
-        let class = sp.class.clone();
-        let Some(ni) = dst.spline_weighted(&ctrl, Some(knots), weights) else { continue };
-        dst.splines[ni].class = class;
-        spline_map[i] = Some(ni);
-        made.push(EntRef::spline(ni));
-    }
-    // the axes, each its own: a direction, its fixed flags and its place — but a reused plane's,
-    // which are the document's plane's
-    let mut axis_map: Vec<Option<usize>> = vec![None; src.axes.len()];
-    for (i, r) in reuse.iter().enumerate() {
-        if let Some(j) = r {
-            axis_map[src.frames[i].u as usize] = Some(dst.frames[*j].u as usize);
-            axis_map[src.frames[i].v as usize] = Some(dst.frames[*j].v as usize);
-        }
-    }
-    let mut places = Vec::new();
-    for i in 0..src.axes.len() {
-        if !keep(EntRef::new(EntKind::Axis, i)) || axis_map[i].is_some() {
-            continue;
-        }
-        let r = &src.axes[i];
-        let value = |q: u32| src.params[q as usize].value;
-        let ni = dst.axis_restored(r.d.map(value), r.d.map(|q| src.params[q as usize].fixed),
-                                  r.class.clone());
-        // a place held while nothing reads it is no `fix`'s (`Sketch::place_axis`)
-        places.push((ni, r.a.map(value), r.a.map(|q| r.placed && src.params[q as usize].fixed)));
-        axis_map[i] = Some(ni);
-        made.push(EntRef::new(EntKind::Axis, ni));
-    }
-    let mut plane_map: Vec<Option<usize>> = vec![None; src.frames.len()];
-    for i in 0..src.frames.len() {
-        if let Some(j) = reuse[i] {
-            plane_map[i] = Some(j);
-            continue;
-        }
-        if !keep(EntRef::frame(i)) {
-            continue;
-        }
-        // a frame declared bare comes as it is, owning nothing (#383)
-        let Some(p) = src.frames[i].chart.as_ref() else {
-            dst.frames.push(crate::model::FrameE { class: src.frames[i].class.clone(),
-                                                   ..crate::model::FrameE::bare() });
-            plane_map[i] = Some(dst.frames.len() - 1);
-            made.push(EntRef::frame(dst.frames.len() - 1));
-            continue;
-        };
-        let (Some(u), Some(v), Some(origin)) =
-            (axis_map[p.u as usize], axis_map[p.v as usize], pt_index(p.origin as usize))
-        else {
-            continue;
-        };
-        let ni = dst.plane_restored(u, v, p.o.map(|k| src.params[k as usize].value),
-                                    p.o.map(|k| src.params[k as usize].fixed), origin,
-                                    src.frames[i].class.clone());
-        if !p.planar {
-            dst.spatial_chart(ni);
-        }
-        plane_map[i] = Some(ni);
-        made.push(EntRef::frame(ni));
-        // its normal, where it came along too
-        if let Some(n) = p.normal.and_then(|n| axis_map[n as usize]) {
-            dst.stand_normal(ni, n);
-        }
-    }
-    for (ni, a, held) in places {
-        dst.place_restored(ni, a, held);
-    }
-    // a membership follows its plane across, and a plane that did not come — deleted, or
-    // missing a point — takes the memberships that named it with it
-    for i in 0..src.points.len() {
-        if let (Some(ni), Some(p)) = (pt_index(i), src.plane_of(i)) {
-            dst.set_plane(ni, plane_map[p]);
-        }
-        // and a point drawn in a spatial frame's chart, its three numbers kept (#383)
-        if let (Some(ni), Some(f)) = (pt_index(i), src.points[i].chart) {
-            if let Some(g) = plane_map[f as usize].filter(|&g| !dst.frames[g].planar()
-                && dst.frames[g].chart.is_some() && dst.frames[g].origin as usize != ni)
-            {
-                dst.draw_in_chart(ni, g);
-            }
-        }
-    }
-    // a hidden point comes with the point it lifts, seeded where that point lifts to now
-    for l in &src.lifts {
-        if let Some(ni) = pt_index(l.point as usize) {
-            dst.lift_point(ni);
-        }
-    }
-    // curves last: a curve's arguments may be of any other kind, so every map it reads has to
-    // be filled before this one is built.  The *definition* travels with it — a document that
-    // came apart from the curve family it is written in would be a document that cannot be drawn.
-    let mut curve_map: Vec<Option<usize>> = vec![None; src.curves.len()];
-    for (i, cv) in src.curves.iter().enumerate() {
-        let mut args = Vec::with_capacity(cv.args.len());
-        let mut whole = true;
-        for &a in &cv.args {
-            match remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                              &plane_map, a) {
-                Some(r) => args.push(r),
-                None => whole = false,
-            }
-        }
-        // a trim follows its curve and both its points, or goes with them (it is minted after
-        // the curve it trims, so that curve's place is already known)
-        let trim = match cv.trim {
-            None => None,
-            Some(t) => match (curve_map.get(t.of as usize).copied().flatten(), pt_index(t.from as usize), pt_index(t.to as usize)) {
-                (Some(of), Some(from), Some(to)) => Some(crate::model::Trim { of: of as u32, from: from as u32, to: to as u32 }),
-                _ => { whole = false; None }
-            },
-        };
-        if !whole || !keep(EntRef::new(EntKind::Curve, i)) {
-            continue;
-        }
-        let def = &src.curve_defs[cv.def as usize];
-        // a followed point's lowering is the whole drawing's (#398 A): it travels unlowered, as
-        // drawn, until the document it lands in is elaborated again
-        let lowered = matches!(def.body, crate::model::CurveBody::Followed(Some(_)));
-        let def = match lowered {
-            true => crate::model::CurveDef {
-                name: format!("followed:{}", def.param),
-                columns: Vec::new(),
-                values: Vec::new(),
-                vars: Vec::new(),
-                body: crate::model::CurveBody::Followed(None),
-                ..def.clone()
-            },
-            false => def.clone(),
-        };
-        let at = match dst.curve_defs.iter().position(|d| d.name == def.name) {
-            Some(k) => k,
-            None => {
-                dst.curve_defs.push(def);
-                dst.curve_defs.len() - 1
-            }
-        };
-        // the home pose follows the entities it is read from, and is whole or nothing: a
-        // pose with a hole in it is no pose, and the seeds stand in
-        let pose: Vec<_> = cv
-            .pose
-            .iter()
-            .filter_map(|&(e, j)| {
-                remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                            &plane_map, e)
-                    .map(|r| (r, j))
-            })
+        // a reused plane's origin is the document's plane's
+        let reused_origin: BTreeMap<usize, usize> = self.reuse.iter().enumerate()
+            .filter_map(|(i, r)| r.map(|j| (src.frames[i].origin as usize,
+                                            dst.frames[j].origin as usize)))
             .collect();
-        // a lowered followed point carries none of what it was lowered to
-        let (unknowns, values, pose) = match lowered {
-            true => Default::default(),
-            false => {
-                (cv.unknowns.clone(), cv.values.clone(), crate::model::whole(pose, cv.pose.len()))
-            }
-        };
-        // a free curve's length is its own number, and comes as a circle's radius does; its
-        // pegs are the energy's to settle again
-        let length = cv.length.map(|l| {
-            let p = &src.params[l as usize];
-            dst.param(p.value, p.fixed, &p.name) as u32
-        });
-        dst.curves.push(crate::model::CurveE {
-            def: at as u32,
-            args,
-            unknowns,
-            values,
-            over: cv.over.clone(),
-            home: cv.home.clone(),
-            pose,
-            class: cv.class.clone(),
-            trim,
-            extrusion: cv.extrusion,
-            length,
-            pegs: Vec::new(),
-            slides: Vec::new(),
-        });
-        curve_map[i] = Some(dst.curves.len() - 1);
-        made.push(EntRef::new(EntKind::Curve, dst.curves.len() - 1));
-    }
-    // Faces must retain every edge. Solids must retain their geometry and every referenced
-    // solid; allocate the surviving graph before remapping its possibly forward references.
-    let mut face_map: Vec<Option<usize>> = vec![None; src.faces.len()];
-    for (i, f) in src.faces.iter().enumerate() {
-        let profile_plane = f.plane;
-        if !keep(EntRef::face(i)) {
-            continue;
-        }
-        let mut edges = Vec::with_capacity(f.edges.len());
-        let mut whole = true;
-        for &e in &f.edges {
-            match remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map,
-                              &plane_map, e) {
-                Some(r) => edges.push(r),
-                None => whole = false,
+        r.open(EntKind::Point, src.points.len());
+        let base = dst.points.len();
+        let mut keep_pts = Vec::new();
+        for i in 0..src.points.len() {
+            if let Some(&o) = reused_origin.get(&i) {
+                r.set(EntRef::point(i), o);
+            } else if (self.keep)(EntRef::point(i)) {
+                r.set(EntRef::point(i), base + keep_pts.len());
+                keep_pts.push(i);
             }
         }
-        let holes = f.holes.iter().map(|h| {
-            let edges = h.edges.iter().filter_map(|&e| {
-                let r = remap_early(&pt_index, &line_map, &circle_map, &arc_map, &spline_map, &plane_map, e);
-                if r.is_none() { whole = false; }
-                r
-            }).collect();
-            crate::model::FaceLoop { edges, edge_names: h.edge_names.clone() }
-        }).collect();
-        let plane = match profile_plane {
-            Some(p) => match plane_map[p as usize] {
-                Some(n) => Some(n as u32),
-                None => {
-                    whole = false;
-                    None
-                }
-            },
-            None => None,
-        };
-        if !whole {
-            continue;
+        for i in keep_pts {
+            let (x, y) = src.point_xy(i);
+            let n = dst.point(x + offset.0, y + offset.1, src.point_fixed(i),
+                              &format!("p{}", dst.points.len()));
+            if let Some(z) = src.points[i].z {
+                dst.give_place(n, src.params[z as usize].value);
+            }
+            debug_assert_eq!(r.point(i), Some(n));
+            r.made(EntRef::point(i), n);
         }
-        dst.faces.push(crate::model::FaceE {
-            edges,
-            edge_names: f.edge_names.clone(),
-            holes,
-            plane,
-            name: f.name.clone(),
-            class: f.class.clone(),
-        });
-        face_map[i] = Some(dst.faces.len() - 1);
-        made.push(EntRef::face(dst.faces.len() - 1));
     }
-    let mut retained: Vec<bool> = src.motions.iter().enumerate().map(|(i,m)| {
-        // a motion goes with what it is written over, as a constraint goes with its entities
-        keep(EntRef::new(EntKind::Motion,i)) && match m.def {
-            crate::model::MotionDef::Rotation {axis,..} | crate::model::MotionDef::Translation {axis,..} =>
-                line_map[axis as usize].is_some(),
-            crate::model::MotionDef::Turn {centre,..} => pt_index(centre as usize).is_some(),
-            crate::model::MotionDef::Relative {..} | crate::model::MotionDef::Inverse {..}
-                | crate::model::MotionDef::Driven {..} => true,
-            crate::model::MotionDef::Joint {axis,..} => axis_map[axis as usize].is_some(),
-            // a frame along a path is read off the whole drawing's path: a graft carries none
-            crate::model::MotionDef::Guided {..} => false,
-            // a frame the drawing moves is read off the whole drawing's march: a graft carries
-            // none
-            crate::model::MotionDef::Followed {..} => false,
-        }
-    }).collect();
-    loop {
-        let mut changed = false;
-        for (i,m) in src.motions.iter().enumerate() {
-            let needs: &[u32] = match m.def {
-                crate::model::MotionDef::Relative {ref source,ref observer} => &[*source,*observer],
-                crate::model::MotionDef::Inverse {ref of} | crate::model::MotionDef::Driven {ref of,..} =>
-                    std::slice::from_ref(of),
-                _ => &[],
+
+    fn lines(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
+        r.open(EntKind::Line, src.lines.len());
+        for (i, l) in src.lines.iter().enumerate() {
+            if !(self.keep)(EntRef::line(i)) {
+                continue;
+            }
+            let (Some(p1), Some(p2)) = (r.point(l.p1 as usize), r.point(l.p2 as usize)) else {
+                continue;
             };
-            if retained[i] && needs.iter().any(|&k| !retained[k as usize]) {
-                retained[i] = false; changed = true;
+            let ni = dst.line(p1, p2);
+            dst.lines[ni].class = l.class.clone();
+            r.made(EntRef::line(i), ni);
+        }
+    }
+
+    fn circles(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
+        r.open(EntKind::Circle, src.circles.len());
+        for (i, c) in src.circles.iter().enumerate() {
+            if !(self.keep)(EntRef::circle(i)) {
+                continue;
             }
-        }
-        if !changed { break; }
-    }
-    let mut next_motion = dst.motions.len();
-    let motion_map: Vec<_> = retained.iter().map(|&keep| {
-        if keep { let i = next_motion; next_motion += 1; Some(i) } else { None }
-    }).collect();
-    for (i,m) in src.motions.iter().enumerate() {
-        let Some(next) = motion_map[i] else { continue; };
-        let def = match m.def {
-            crate::model::MotionDef::Rotation {axis,ratio,advance} =>
-                crate::model::MotionDef::Rotation {
-                    axis:line_map[axis as usize].unwrap() as u32,ratio,advance,
-                },
-            crate::model::MotionDef::Translation {axis,advance} =>
-                crate::model::MotionDef::Translation {
-                    axis:line_map[axis as usize].unwrap() as u32,advance,
-                },
-            crate::model::MotionDef::Turn {centre,ratio} =>
-                crate::model::MotionDef::Turn {
-                    centre:pt_index(centre as usize).unwrap() as u32,ratio,
-                },
-            crate::model::MotionDef::Relative {source,observer} =>
-                crate::model::MotionDef::Relative {
-                    source:motion_map[source as usize].unwrap() as u32,
-                    observer:motion_map[observer as usize].unwrap() as u32,
-                },
-            crate::model::MotionDef::Inverse {of} =>
-                crate::model::MotionDef::Inverse {of:motion_map[of as usize].unwrap() as u32},
-            crate::model::MotionDef::Joint {axis,ratio,advance} =>
-                crate::model::MotionDef::Joint {axis:axis_map[axis as usize].unwrap() as u32,
-                    ratio,advance},
-            // its law reads the numbers it was written over by name, as a dimension's text does
-            crate::model::MotionDef::Driven {of,ref law,ref over} =>
-                crate::model::MotionDef::Driven {of:motion_map[of as usize].unwrap() as u32,
-                    law:law.clone(),over:over.clone()},
-            crate::model::MotionDef::Guided {..} => unreachable!("a graft carries no guided frame"),
-            crate::model::MotionDef::Followed {..} => unreachable!("a graft carries no followed frame"),
-        };
-        // a joint's numbers the solve finds are the frame's, renumbered with its joint below
-        dst.motions.push(crate::model::MotionE {def,name:m.name.clone(),class:m.class.clone(),
-                                                numbers:None});
-        made.push(EntRef::new(EntKind::Motion,next));
-    }
-    // each frame's joint (#383): its axis, its two numbers, and the node it was lowered to
-    for (i, f) in src.frames.iter().enumerate() {
-        let (Some(j), Some(ni)) = (f.joint.as_ref(), plane_map[i]) else { continue };
-        if reuse[i].is_some() || dst.frames[ni].joint.is_some() {
-            continue;
-        }
-        let Some(axis) = axis_map[j.axis as usize] else { continue };
-        let number = |dst: &mut Sketch, q: u32| {
-            let p = &src.params[q as usize];
-            dst.param(p.value, p.fixed, &p.name) as u32
-        };
-        let (ratio, advance) = (number(dst, j.ratio), number(dst, j.advance));
-        let motion = j.motion.and_then(|m| motion_map[m as usize]).map(|m| m as u32);
-        dst.frames[ni].joint =
-            Some(crate::model::Joint { axis: axis as u32, ratio, advance, motion });
-        if let (Some(m), Some(n)) = (motion, j.motion.map(|m| &src.motions[m as usize])) {
-            dst.motions[m as usize].numbers = n.numbers.map(|_| [ratio, advance]);
+            let Some(centre) = r.point(c.center as usize) else { continue };
+            let ni = dst.circle(centre, src.params[c.radius as usize].value, "");
+            let rp = dst.circles[ni].radius as usize;
+            dst.params[rp].fixed = src.params[c.radius as usize].fixed;
+            dst.circles[ni].class = c.class.clone();
+            r.made(EntRef::circle(i), ni);
         }
     }
-    // a face family's station as copied: its drawn geometry, `None` where some was left behind
-    let station_ent = |e: EntRef| -> Option<EntRef> {
-        let i = match e.kind {
-            EntKind::Point => pt_map[e.i()],
-            EntKind::Line => line_map[e.i()],
-            EntKind::Circle => circle_map[e.i()],
-            EntKind::Arc => arc_map[e.i()],
-            EntKind::Spline => spline_map[e.i()],
-            EntKind::Axis => axis_map[e.i()],
-            EntKind::Frame => plane_map[e.i()],
-            EntKind::Curve => curve_map[e.i()],
-            EntKind::Face => face_map[e.i()],
-            _ => None,
-        };
-        i.map(|i| EntRef::new(e.kind, i))
-    };
-    // Allocate the retained graph before remapping it: extent targets and Boolean operands
-    // may be forward references, including a cutter referring to the body that subtracts it.
-    let mut retained: Vec<bool> = src.solids.iter().enumerate().map(|(i, s)| {
-        keep(EntRef::solid(i)) && s.face().is_none_or(|f| face_map[f as usize].is_some())
-            && match s.def {
-                crate::model::SolidDef::Placed { motion, .. } | crate::model::SolidDef::Swept { motion, .. } =>
-                    motion_map[motion as usize].is_some(),
-                crate::model::SolidDef::Revolve { axis, .. } => match axis.kind {
-                    EntKind::Line => line_map[axis.i()].is_some(),
-                    EntKind::Axis => axis_map[axis.i()].is_some(),
-                    _ => false,
-                },
-                // a family comes with its whole station or not at all
-                crate::model::SolidDef::Family { face, ref station, ref legs, .. } =>
-                    face_map[face as usize].is_some()
-                        && legs.iter().all(|l| face_map[l.face as usize].is_some())
-                        && station.iter().all(|&e| station_ent(e).is_some()),
-                _ => true,
+
+    fn arcs(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
+        r.open(EntKind::Arc, src.arcs.len());
+        for (i, a) in src.arcs.iter().enumerate() {
+            if !(self.keep)(EntRef::arc(i)) {
+                continue;
             }
-    }).collect();
-    loop {
-        let mut changed = false;
-        for (i, s) in src.solids.iter().enumerate() {
-            let required = match s.def {
-                crate::model::SolidDef::Through { body, .. } => vec![body],
-                crate::model::SolidDef::Swept { source, roll: crate::model::Roll::Through { body }, .. } =>
-                    vec![source, body],
-                _ => s.operands(),
+            let point = |p: u32| r.point(p as usize);
+            let (Some(c), Some(st), Some(e)) = (point(a.center), point(a.start), point(a.end))
+            else {
+                continue;
             };
-            if retained[i] && required.iter().any(|&r| !retained[r as usize]) {
-                retained[i] = false; changed = true;
+            let ni = dst.arc(c, st, e, "");
+            let rp = dst.arcs[ni].radius as usize;
+            dst.params[rp].value = src.params[a.radius as usize].value;
+            dst.params[rp].fixed = src.params[a.radius as usize].fixed;
+            dst.arcs[ni].class = a.class.clone();
+            // drawn from its end for its sense, it still reads its ends as written (#573)
+            if src.arc_reversed(i) {
+                dst.reversed.insert(ni as u32);
             }
+            r.made(EntRef::arc(i), ni);
         }
-        if !changed { break; }
     }
-    let mut next_solid = dst.solids.len();
-    let solid_map: Vec<Option<usize>> = retained.iter().map(|&keep| {
-        if keep { let i = next_solid; next_solid += 1; Some(i) } else { None }
-    }).collect();
-    for (i, so) in src.solids.iter().enumerate() {
-        if solid_map[i].is_none() {
-            continue;
-        }
-        // Retention above guarantees every reference exists. Do not silently discard an
-        // operand here: that would change the solid and invalidate the preallocated indices.
-        let face = |f: u32| face_map[f as usize].unwrap() as u32;
-        let sol = |s: &u32| solid_map[*s as usize].unwrap() as u32;
-        let def = match &so.def {
-            crate::model::SolidDef::Swept { source, motion, roll } => {
-                crate::model::SolidDef::Swept {source:sol(source),
-                    motion:motion_map[*motion as usize].unwrap() as u32,roll:match roll {
-                        crate::model::Roll::Through { body } => crate::model::Roll::Through { body: sol(body) },
-                        stated => stated.clone(),
-                    }}
+
+    fn splines(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
+        r.open(EntKind::Spline, src.splines.len());
+        for (i, sp) in src.splines.iter().enumerate() {
+            if !(self.keep)(EntRef::spline(i)) {
+                continue;
             }
-            crate::model::SolidDef::Placed { source, motion, at } => {
-                crate::model::SolidDef::Placed { source:sol(source),
-                    motion:motion_map[*motion as usize].unwrap() as u32,at:at.clone() }
-            }
-            crate::model::SolidDef::Prism { face: f, from, to, draft } => {
-                crate::model::SolidDef::Prism { face: face(*f), from: from.clone(), to: to.clone(), draft: draft.clone() }
-            }
-            crate::model::SolidDef::Family { face: f, station, over, legs } => {
-                let station = station.iter()
-                    .map(|&e| station_ent(e).expect("retention kept the whole station"))
-                    .collect();
-                let legs = legs.iter().map(|l| crate::model::FamilyLeg {
-                    face: face(l.face),
-                    ents: l.ents.iter()
-                        .map(|&e| station_ent(e).expect("retention kept the whole station"))
-                        .collect(),
-                    ..l.clone()
-                }).collect();
-                crate::model::SolidDef::Family { face: face(*f), station, over: over.clone(), legs }
-            }
-            crate::model::SolidDef::Through { face: f, body } => {
-                crate::model::SolidDef::Through { face: face(*f), body: sol(body) }
-            }
-            crate::model::SolidDef::Revolve { face: f, axis, sweep, sense } => {
-                crate::model::SolidDef::Revolve {
-                    face: face(*f), axis: match axis.kind {
-                        EntKind::Line => EntRef::line(line_map[axis.i()].unwrap()),
-                        _ => EntRef::new(EntKind::Axis, axis_map[axis.i()].unwrap()),
-                    },
-                    sweep: sweep.clone(), sense: *sense,
+            // the control points that came along, and the ones that did not: a curve that has
+            // lost some is shortened, one interior knot going with each, and only dies when too
+            // few are left to draw with
+            let (mut ctrl, mut gone) = (Vec::new(), Vec::new());
+            for (k, &c) in sp.ctrl.iter().enumerate() {
+                match r.point(c as usize) {
+                    Some(n) => ctrl.push(n),
+                    None => gone.push(k),
                 }
             }
-            crate::model::SolidDef::Body { stock, on, through, bound } => {
-                crate::model::SolidDef::Body {
-                    stock: sol(stock), on: on.iter().map(sol).collect(),
-                    through: through.iter().map(sol).collect(),
-                    bound: bound.iter().map(sol).collect(),
-                }
-            }
-            // a region's probe and the entities its terms read, which retention kept with it
-            crate::model::SolidDef::Region { probe, terms } => {
-                let ent = |e: EntRef| match e.kind {
-                    EntKind::Point => pt_index(e.i()).map(EntRef::point),
-                    EntKind::Line => line_map[e.i()].map(EntRef::line),
-                    EntKind::Frame => plane_map[e.i()].map(EntRef::frame),
-                    _ => None,
-                };
-                crate::model::SolidDef::Region {
-                    probe: pt_index(*probe as usize).expect("a region's probe comes with it")
-                        as u32,
-                    terms: terms.iter().map(|t| crate::model::RegionTerm {
-                        shape: t.shape.remapped(&ent).expect("a region's terms come with it"),
-                        ..t.clone()
-                    }).collect(),
-                }
-            }
-        };
-        dst.solids.push(crate::model::SolidE {
-            def,
-            name: so.name.clone(),
-            class: so.class.clone(),
-            copy: so.copy,
-            material: so.material.clone(),
-            // its frames and turns are the source's: grafted, it is evaluated as its own
-            binding: None,
-        });
-        debug_assert_eq!(solid_map[i], Some(dst.solids.len() - 1));
-        made.push(EntRef::solid(dst.solids.len() - 1));
-    }
-    let mut surface_map = vec![None;src.surfaces.len()];
-    for (i,s) in src.surfaces.iter().enumerate() {
-        if !keep(EntRef::new(EntKind::Surface,i)) { continue; }
-        let Some(solid) = solid_map[s.solid as usize] else { continue };
-        let edge = match s.edge.kind {
-            EntKind::Line => line_map[s.edge.i()].map(EntRef::line),
-            EntKind::Arc => arc_map[s.edge.i()].map(EntRef::arc),
-            EntKind::Circle => circle_map[s.edge.i()].map(EntRef::circle),
-            _ => None,
-        };
-        let Some(edge) = edge else { continue };
-        let next = dst.surfaces.len();
-        dst.surfaces.push(crate::model::SurfaceE {
-            solid:solid as u32,edge,span:s.span,name:s.name.clone(),class:s.class.clone(),
-        });
-        surface_map[i] = Some(next);
-        made.push(EntRef::new(EntKind::Surface,next));
-    }
-    // a drawn entity, renumbered: a point, a line, a circle or an arc
-    let drawn_ent = |e: EntRef| -> Option<EntRef> {
-        match e.kind {
-            EntKind::Point => pt_index(e.i()).map(EntRef::point),
-            EntKind::Line => line_map[e.i()].map(EntRef::line),
-            EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
-            EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
-            _ => None,
-        }
-    };
-    // what the solve reads of a source, in the copy's own geometry; a part left behind leaves
-    // the copy with nothing it can read, said where a relation names it
-    let remap_held = |h: &crate::model::Held| -> crate::model::Held {
-        let line = |l: u32| line_map[l as usize].map(|x| x as u32);
-        let gone = || crate::model::Held::Not("its source was left behind when it was copied".into());
-        match h {
-            crate::model::Held::Not(why) => crate::model::Held::Not(why.clone()),
-            crate::model::Held::Revolution {axis,edge} => {
-                let edge = drawn_ent(*edge);
-                let axis = match axis.kind {
-                    EntKind::Line => line_map[axis.i()].map(EntRef::line),
-                    EntKind::Axis => axis_map[axis.i()].map(EntRef::axis),
-                    _ => None,
-                };
-                match (axis,edge) {
-                    (Some(axis),Some(edge)) => crate::model::Held::Revolution {axis,edge},
-                    _ => gone(),
-                }
-            }
-            crate::model::Held::Set {probe,shape} => {
-                use crate::model::SetShape;
-                let shape = shape.as_ref()
-                    .map(|s| {
-                        let origin = match s.origin {
-                            Some(o) => Some(pt_map[o as usize].ok_or(())? as u32),
-                            None => None,
-                        };
-                        line(s.axis).map(|axis| SetShape {axis,origin,..s.clone()}).ok_or(())
-                    })
-                    .transpose();
-                match (pt_map[*probe as usize],shape) {
-                    (Some(probe),Ok(shape)) => crate::model::Held::Set {probe:probe as u32,shape},
-                    _ => gone(),
-                }
-            }
-        }
-    };
-    let mut envelope_map = vec![None;src.envelopes.len()];
-    for (i,e) in src.envelopes.iter().enumerate() {
-        if !keep(EntRef::new(EntKind::Envelope,i)) { continue; }
-        let surface = match e.surface {
-            Some(s) => match surface_map[s as usize] { Some(s) => Some(s as u32), None => continue },
-            None => None,
-        };
-        let Some(motion) = motion_map[e.motion as usize] else { continue; };
-        let held = remap_held(&e.held);
-        let next = dst.envelopes.len();
-        dst.envelopes.push(crate::model::EnvelopeE {
-            surface,motion:motion as u32,roll:e.roll.clone(),
-            name:e.name.clone(),class:e.class.clone(),held,
-        });
-        envelope_map[i] = Some(next);
-        made.push(EntRef::new(EntKind::Envelope,next));
-    }
-    // a traced body, where everything its component was given came along (#326)
-    let mut traced_map = vec![None;src.traced.len()];
-    for (i,t) in src.traced.iter().enumerate() {
-        if !keep(EntRef::new(EntKind::Traced,i)) { continue; }
-        let args: Option<Vec<EntRef>> = t.args.iter().map(|&e| match e.kind {
-            EntKind::Point => pt_index(e.i()).map(EntRef::point),
-            EntKind::Line => line_map[e.i()].map(EntRef::line),
-            EntKind::Motion => motion_map[e.i()].map(|m| EntRef::new(EntKind::Motion,m)),
-            // the curves a marched body's Cauchy data is read off (#376)
-            EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
-            EntKind::Curve => curve_map[e.i()].map(|c| EntRef::new(EntKind::Curve,c)),
-            EntKind::Traced => traced_map[e.i()].map(|t| EntRef::new(EntKind::Traced,t)),
-            _ => None,
-        }).collect();
-        let Some(args) = args else { continue; };
-        let next = dst.traced.len();
-        dst.traced.push(crate::model::TracedE {args,..t.clone()});
-        traced_map[i] = Some(next);
-        made.push(EntRef::new(EntKind::Traced,next));
-    }
-    // a meshing's flanks, each an envelope copied with it or a source read in the copy's own
-    // geometry (#283)
-    let mut meshing_map = vec![None;src.meshings.len()];
-    for (i,e) in src.meshings.iter().enumerate() {
-        if !keep(EntRef::new(EntKind::Meshing,i)) { continue; }
-        let Some(motion) = motion_map[e.motion as usize] else { continue; };
-        let flank = |f: &crate::model::Flank| match f {
-            crate::model::Flank::Envelope(v) => envelope_map[*v as usize].map(|v| crate::model::Flank::Envelope(v as u32)),
-            crate::model::Flank::Formed(h) => Some(crate::model::Flank::Formed(remap_held(h))),
-            crate::model::Flank::Traced(t) => traced_map[*t as usize].map(|t| crate::model::Flank::Traced(t as u32)),
-        };
-        let (Some(a),Some(b)) = (flank(&e.flanks[0]),flank(&e.flanks[1])) else { continue; };
-        // an ease's point and line, copied with it
-        let ease = match &e.ease {
-            Some(x) => match (pt_map[x.about as usize],line_map[x.along as usize]) {
-                (Some(about),Some(along)) => {
-                    Some(crate::model::Ease {about:about as u32,along:along as u32,..x.clone()})
-                }
-                _ => continue,
-            },
-            None => None,
-        };
-        let next = dst.meshings.len();
-        dst.meshings.push(crate::model::MeshingE {flanks:[a,b],motion:motion as u32,
-            roll:e.roll.clone(),name:e.name.clone(),class:e.class.clone(),ease});
-        meshing_map[i] = Some(next);
-        made.push(EntRef::new(EntKind::Meshing,next));
-    }
-    let remap = |e: EntRef| -> Option<EntRef> {
-        match e.kind {
-            EntKind::Point => pt_index(e.i()).map(EntRef::point),
-            EntKind::Line => line_map[e.i()].map(EntRef::line),
-            EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
-            EntKind::Axis => axis_map[e.i()].map(|i| EntRef::new(EntKind::Axis, i)),
-            EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
-            EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
-            EntKind::Frame => plane_map[e.i()].map(EntRef::frame),
-            EntKind::Curve => curve_map[e.i()].map(|i| EntRef::new(EntKind::Curve, i)),
-            EntKind::Face => face_map[e.i()].map(EntRef::face),
-            EntKind::Solid => solid_map[e.i()].map(EntRef::solid),
-            EntKind::Surface => surface_map[e.i()].map(|i| EntRef::new(EntKind::Surface,i)),
-            EntKind::Motion => motion_map[e.i()].map(|i| EntRef::new(EntKind::Motion,i)),
-            EntKind::Envelope => envelope_map[e.i()].map(|i| EntRef::new(EntKind::Envelope,i)),
-            EntKind::Meshing => meshing_map[e.i()].map(|i| EntRef::new(EntKind::Meshing,i)),
-            EntKind::Traced => traced_map[e.i()].map(|i| EntRef::new(EntKind::Traced,i)),
-        }
-    };
-    for (&e, &roles) in &src.roles {
-        if let Some(target) = remap(e) { dst.roles.insert(target, roles); }
-    }
-    // each tangency's derivative, while its point and its line came along, with the geometry
-    // the use made that did (§6.21)
-    let mut dual_map: Vec<Option<usize>> = vec![None; src.duals.len()];
-    for (i, d) in src.duals.iter().enumerate() {
-        let Some(point) = remap(EntRef::point(d.point)) else { continue };
-        let toward = match d.toward {
-            crate::model::Toward::Line(l) => match remap(EntRef::line(l)) {
-                Some(l) => crate::model::Toward::Line(l.i()),
-                None => continue,
-            },
-            crate::model::Toward::Axis(a) => match remap(EntRef::new(EntKind::Axis, a)) {
-                Some(a) => crate::model::Toward::Axis(a.i()),
-                None => continue,
-            },
-            chart => chart,
-        };
-        let owned = d.owned.iter().filter_map(|&e| remap(e)).collect();
-        dual_map[i] = Some(dst.add_dual(point.i(), toward, owned));
-    }
-    let mut expr = false;
-    for c in src.user_constraints() {
-        // a row the source alone carries reads what the walk does not copy (#510 S1)
-        if drop_c.contains(&c.id) || c.kind.of_source() {
-            continue;
-        }
-        let mut args = Vec::with_capacity(c.args.len());
-        let mut ok = true;
-        for a in &c.args {
-            match a {
-                Arg::Ent(e) => match remap(*e) {
-                    Some(n) => args.push(Arg::Ent(n)),
-                    None => {
-                        ok = false;
-                        break;
-                    }
-                },
-                // the destination allocates its own: a Param index is this sketch's name for
-                // it, and the pin rides along in the seed — or the name, where the unknown is
-                // shared, so the contacts that owned one own one again
-                Arg::Param(p) => args.push(src.owned_arg(*p)),
-                other => args.push(other.clone()),
-            }
-        }
-        if ok {
-            expr |= crate::expr::has_expr(&args);
-            // `add_quiet`: the walk evaluates once at the end, not once per constraint
-            let mut nc = Constraint::new(c.kind, args);
-            nc.claim = c.claim;
-            nc.witness = c.witness;
-            nc.bound = c.bound;
-            nc.initially = c.initially;
-            nc.class = c.class.clone();
-            nc.written = c.written.clone();
-            nc.repeated = c.repeated;
-            nc.elsewhere = c.elsewhere;
-            // the word it was written with, while every operand it named came along (§9.9)
-            nc.word = c.word.as_ref().and_then(|w| {
-                let ops = w.ops.iter().map(|&e| remap(e)).collect::<Option<Vec<_>>>()?;
-                Some(crate::constraints::WordUse { ops, ..w.clone() })
+            // with nothing gone this gives back the knots unchanged, so there is no case to
+            // split; a weight goes with its control point
+            let knots = crate::curve::knots_without(&sp.knots, &gone, ctrl.len());
+            let weights = sp.weights.as_ref().map(|w| {
+                w.iter().enumerate().filter(|(k, _)| !gone.contains(k)).map(|(_, &x)| x).collect()
             });
-            // a derivative comes with its dual, or not at all (§6.21)
-            if let Some(d) = c.along {
-                let Some(d) = dual_map[d] else { continue };
-                nc.along = Some(d);
+            let Some(ni) = dst.spline_weighted(&ctrl, Some(knots), weights) else { continue };
+            dst.splines[ni].class = sp.class.clone();
+            r.made(EntRef::spline(i), ni);
+        }
+    }
+
+    /// The axes, each its own: a direction, its fixed flags and its place — but a reused plane's,
+    /// which are the document's plane's — and the planes over them.  A place is given once every
+    /// plane stands, as the document's own construction gives it.
+    fn axes_and_planes(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
+        r.open(EntKind::Axis, src.axes.len());
+        for (i, reused) in self.reuse.iter().enumerate() {
+            if let Some(j) = reused {
+                r.set(EntRef::axis(src.frames[i].u as usize), dst.frames[*j].u as usize);
+                r.set(EntRef::axis(src.frames[i].v as usize), dst.frames[*j].v as usize);
             }
+        }
+        let mut places = Vec::new();
+        for (i, a) in src.axes.iter().enumerate() {
+            if !(self.keep)(EntRef::axis(i)) || r.ent(EntRef::axis(i)).is_some() {
+                continue;
+            }
+            let value = |q: u32| src.params[q as usize].value;
+            let ni = dst.axis_restored(a.d.map(value), a.d.map(|q| src.params[q as usize].fixed),
+                                       a.class.clone());
+            // a place held while nothing reads it is no `fix`'s (`Sketch::place_axis`)
+            let held = a.a.map(|q| a.placed && src.params[q as usize].fixed);
+            places.push((ni, a.a.map(value), held));
+            r.made(EntRef::axis(i), ni);
+        }
+        r.open(EntKind::Frame, src.frames.len());
+        for (i, f) in src.frames.iter().enumerate() {
+            if let Some(j) = self.reuse[i] {
+                r.set(EntRef::frame(i), j);
+                continue;
+            }
+            if !(self.keep)(EntRef::frame(i)) {
+                continue;
+            }
+            // a frame declared bare comes as it is, owning nothing (#383)
+            let Some(p) = f.chart.as_ref() else {
+                dst.frames.push(crate::model::FrameE { class: f.class.clone(),
+                                                       ..crate::model::FrameE::bare() });
+                r.made(EntRef::frame(i), dst.frames.len() - 1);
+                continue;
+            };
+            let axis = |a: u32| r.ent(EntRef::axis(a as usize)).map(EntRef::i);
+            let (Some(u), Some(v), Some(origin)) =
+                (axis(p.u), axis(p.v), r.point(p.origin as usize))
+            else {
+                continue;
+            };
+            let ni = dst.plane_restored(u, v, p.o.map(|k| src.params[k as usize].value),
+                                        p.o.map(|k| src.params[k as usize].fixed), origin,
+                                        f.class.clone());
+            if !p.planar {
+                dst.spatial_chart(ni);
+            }
+            let normal = p.normal.and_then(axis);
+            r.made(EntRef::frame(i), ni);
+            // its normal, where it came along too
+            if let Some(n) = normal {
+                dst.stand_normal(ni, n);
+            }
+        }
+        for (ni, a, held) in places {
+            dst.place_restored(ni, a, held);
+        }
+    }
+
+    /// A membership follows its plane across, and a plane that did not come — deleted, or
+    /// missing a point — takes the memberships that named it with it.  A hidden point comes with
+    /// the point it lifts, seeded where that point lifts to now.
+    fn memberships(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &self.r);
+        for i in 0..src.points.len() {
+            let Some(ni) = r.point(i) else { continue };
+            if let Some(p) = src.plane_of(i) {
+                dst.set_plane(ni, r.ent(EntRef::frame(p)).map(EntRef::i));
+            }
+            // and a point drawn in a spatial frame's chart, its three numbers kept (#383)
+            if let Some(f) = src.points[i].chart {
+                if let Some(g) = r.ent(EntRef::frame(f as usize)).map(EntRef::i).filter(|&g| {
+                    !dst.frames[g].planar() && dst.frames[g].chart.is_some()
+                        && dst.frames[g].origin as usize != ni
+                }) {
+                    dst.draw_in_chart(ni, g);
+                }
+            }
+        }
+        for l in &src.lifts {
+            if let Some(ni) = r.point(l.point as usize) {
+                dst.lift_point(ni);
+            }
+        }
+    }
+
+    /// The *definition* travels with a curve — a document that came apart from the curve family
+    /// it is written in would be a document that cannot be drawn — and a free curve's length is
+    /// its own number, which comes as a circle's radius does.
+    fn curves(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
+        r.open(EntKind::Curve, src.curves.len());
+        for (i, cv) in src.curves.iter().enumerate() {
+            if !(self.keep)(EntRef::new(EntKind::Curve, i)) {
+                continue;
+            }
+            // a trim is minted after the curve it trims, so that curve's place is already known
+            let Some(moved) = cv.remapped(&|e| r.ent(e)) else { continue };
+            let def = &src.curve_defs[cv.def as usize];
+            // a followed point's lowering is the whole drawing's (#398 A): it travels unlowered,
+            // as drawn, until the document it lands in is elaborated again
+            let lowered = matches!(def.body, crate::model::CurveBody::Followed(Some(_)));
+            let def = match lowered {
+                true => crate::model::CurveDef {
+                    name: format!("followed:{}", def.param),
+                    columns: Vec::new(),
+                    values: Vec::new(),
+                    vars: Vec::new(),
+                    body: crate::model::CurveBody::Followed(None),
+                    ..def.clone()
+                },
+                false => def.clone(),
+            };
+            let at = match dst.curve_defs.iter().position(|d| d.name == def.name) {
+                Some(k) => k,
+                None => {
+                    dst.curve_defs.push(def);
+                    dst.curve_defs.len() - 1
+                }
+            };
+            // a lowered followed point carries none of what it was lowered to
+            let (unknowns, values, pose) = match lowered {
+                true => Default::default(),
+                false => (moved.unknowns, moved.values, moved.pose),
+            };
+            let length = cv.length.map(|l| {
+                let p = &src.params[l as usize];
+                dst.param(p.value, p.fixed, &p.name) as u32
+            });
+            dst.curves.push(crate::model::CurveE { def: at as u32, unknowns, values, pose, length,
+                                                   ..moved });
+            r.made(EntRef::new(EntKind::Curve, i), dst.curves.len() - 1);
+        }
+    }
+
+    fn faces(&mut self) {
+        let src = self.src;
+        self.carry(EntKind::Face, &src.faces, |sk| &mut sk.faces, crate::model::FaceE::remapped);
+    }
+
+    /// A motion goes with what it is written over, as a constraint goes with its entities — and a
+    /// motion written over motions with them, so the table is settled before any is made.
+    fn motions(&mut self) {
+        let src = self.src;
+        self.carry_allocated(EntKind::Motion, &src.motions, |sk| &mut sk.motions,
+                             crate::model::MotionE::remapped);
+    }
+
+    /// Each frame's joint (#383): its axis, its two numbers, and the node it was lowered to.
+    fn joints(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &self.r);
+        for (i, f) in src.frames.iter().enumerate() {
+            let (Some(j), Some(ni)) = (f.joint.as_ref(), r.ent(EntRef::frame(i))) else { continue };
+            let ni = ni.i();
+            if self.reuse[i].is_some() || dst.frames[ni].joint.is_some() {
+                continue;
+            }
+            let Some(axis) = r.ent(EntRef::axis(j.axis as usize)) else { continue };
+            let number = |dst: &mut Sketch, q: u32| {
+                let p = &src.params[q as usize];
+                dst.param(p.value, p.fixed, &p.name) as u32
+            };
+            let (ratio, advance) = (number(dst, j.ratio), number(dst, j.advance));
+            let motion =
+                j.motion.and_then(|m| crate::model::renumbered(&|e| r.ent(e), EntKind::Motion, m));
+            dst.frames[ni].joint =
+                Some(crate::model::Joint { axis: axis.idx, ratio, advance, motion });
+            // a joint's numbers the solve finds are the frame's, renumbered with its joint
+            if let (Some(m), Some(n)) = (motion, j.motion.map(|m| &src.motions[m as usize])) {
+                dst.motions[m as usize].numbers = n.numbers.map(|_| [ratio, advance]);
+            }
+        }
+    }
+
+    /// Extent targets and Boolean operands may be forward references, including a cutter naming
+    /// the body that subtracts it, so the table is settled before any solid is made.
+    fn solids(&mut self) {
+        let src = self.src;
+        self.carry_allocated(EntKind::Solid, &src.solids, |sk| &mut sk.solids,
+                             crate::model::SolidE::remapped);
+    }
+
+    fn surfaces(&mut self) {
+        let src = self.src;
+        self.carry(EntKind::Surface, &src.surfaces, |sk| &mut sk.surfaces,
+                   crate::model::SurfaceE::remapped);
+    }
+
+    fn envelopes(&mut self) {
+        let src = self.src;
+        self.carry(EntKind::Envelope, &src.envelopes, |sk| &mut sk.envelopes,
+                   crate::model::EnvelopeE::remapped);
+    }
+
+    /// A traced body may be traced over one before it, so the table fills as it goes.
+    fn traced(&mut self) {
+        let src = self.src;
+        self.carry(EntKind::Traced, &src.traced, |sk| &mut sk.traced,
+                   crate::model::TracedE::remapped);
+    }
+
+    fn meshings(&mut self) {
+        let src = self.src;
+        self.carry(EntKind::Meshing, &src.meshings, |sk| &mut sk.meshings,
+                   crate::model::MeshingE::remapped);
+    }
+
+    /// A kind made whole by its own `remapped`, each kept member in source order, the table
+    /// filling as it goes: a member may name the kinds made before it and members before it.
+    fn carry<T>(&mut self, kind: EntKind, items: &[T], into: fn(&mut Sketch) -> &mut Vec<T>,
+                remapped: impl Fn(&T, &Remap) -> Option<T>) {
+        self.r.open(kind, items.len());
+        for (i, item) in items.iter().enumerate() {
+            let e = EntRef::new(kind, i);
+            if !(self.keep)(e) {
+                continue;
+            }
+            let Some(item) = remapped(item, &|e| self.r.ent(e)) else { continue };
+            let to = into(self.dst);
+            to.push(item);
+            self.r.made(e, to.len() - 1);
+        }
+    }
+
+    /// A kind whose members may name each other forward too — a motion relative to a later
+    /// motion, a cutter naming the body that subtracts it — so its table is settled before any
+    /// member is made (`Renumbering::allocate`), and what settling it gave is what is made.
+    fn carry_allocated<T>(&mut self, kind: EntKind, items: &[T],
+                          into: fn(&mut Sketch) -> &mut Vec<T>,
+                          remapped: impl Fn(&T, &Remap) -> Option<T>) {
+        let keep = self.keep;
+        let made = self.r.allocate(kind, into(self.dst).len(), |i| keep(EntRef::new(kind, i)),
+                                   items.len(), |i, r| remapped(&items[i], &|e| r.ent(e)));
+        for (i, item) in made.into_iter().enumerate() {
+            let Some(item) = item else { continue };
+            let to = into(self.dst);
+            to.push(item);
+            debug_assert_eq!(self.r.ent(EntRef::new(kind, i)).map(EntRef::i), Some(to.len() - 1));
+            self.r.made(EntRef::new(kind, i), to.len() - 1);
+        }
+    }
+
+    fn roles(&mut self) {
+        for (&e, &roles) in &self.src.roles {
+            if let Some(target) = self.r.ent(e) {
+                self.dst.roles.insert(target, roles);
+            }
+        }
+    }
+
+    /// Each tangency's derivative, while its point and what moves it came along, with the
+    /// geometry the use made that did (§6.21): source dual → destination dual.
+    fn duals(&mut self) -> Vec<Option<usize>> {
+        let (src, dst, r) = (self.src, &mut *self.dst, &self.r);
+        src.duals.iter().map(|d| {
+            let point = r.point(d.point)?;
+            let toward = d.toward.remapped(&|e| r.ent(e))?;
+            let owned = d.owned.iter().filter_map(|&e| r.ent(e)).collect();
+            Some(dst.add_dual(point, toward, owned))
+        }).collect()
+    }
+
+    /// The constraints the document states, each where every entity it names came along, and
+    /// whether any is written as an expression (evaluated once, at the end: `add_quiet`).
+    fn constraints(&mut self, duals: &[Option<usize>]) -> bool {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
+        let mut expr = false;
+        for c in src.user_constraints() {
+            // a row the source alone carries reads what the walk does not copy (#510 S1)
+            if self.drop.contains(&c.id) || c.kind.of_source() {
+                continue;
+            }
+            // the destination allocates its own parameters: a Param index is this sketch's name
+            // for one, and the pin rides along in the seed — or the name, where the unknown is
+            // shared, so the contacts that owned one own one again
+            let Some(nc) = c.remapped(&|e| r.ent(e), &|p| src.owned_arg(p), &|d| duals[d]) else {
+                continue;
+            };
+            expr |= crate::expr::has_expr(&nc.args);
             let id = dst.add_quiet(nc);
+            r.constraints.insert(c.id, id);
             if let Some(&place) = src.placements.get(&c.id) {
                 dst.placements.insert(id, place);   // a dimension keeps where it was dragged to
             }
         }
+        expr
     }
-    // a plane held along drawn lines (`program::entities::axes_along`) came over as a plane of its
-    // own: its axes' rows to the lines, and the point its origin stands at in place of its own
-    // `PlaneAxis` rows, are the elaborator's and not a plane's build, so they are carried across
-    // as they stand, or the copy would turn free of the lines it was drawn along
-    {
-        use crate::constraints::CKind;
+
+    /// A plane held along drawn lines (`program::entities::axes_along`) came over as a plane of
+    /// its own: its axes' rows to the lines, and the point its origin stands at in place of its
+    /// own `PlaneAxis` rows, are the elaborator's and not a plane's build, so they are carried
+    /// across as they stand, or the copy would turn free of the lines it was drawn along.
+    fn axes_along(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &mut self.r);
         let along: BTreeSet<usize> = src.constraints.iter()
             .filter(|c| c.intrinsic && c.kind == CKind::Parallel3)
             .filter(|c| c.args[0].ent().kind == EntKind::Axis)
@@ -860,11 +765,11 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
         let rows: Vec<&Constraint> =
             src.constraints.iter().filter(|c| c.intrinsic).filter(carried).collect();
         for c in rows {
-            // every slot as it states them, its entities the copies: which way an axis runs along
-            // its line among them (#535)
+            // every slot as it states them, its entities the copies: which way an axis runs
+            // along its line among them (#535)
             let Some(args) = c.args.iter()
                 .map(|a| match a {
-                    Arg::Ent(e) => remap(*e).map(Arg::Ent),
+                    Arg::Ent(e) => r.ent(*e).map(Arg::Ent),
                     a => Some(a.clone()),
                 })
                 .collect::<Option<Vec<_>>>()
@@ -889,77 +794,95 @@ fn graft(dst: &mut Sketch, src: &Sketch, keep: &dyn Fn(EntRef) -> bool, drop_c: 
             }
             let mut nc = Constraint::new(c.kind, args);
             nc.intrinsic = true;
-            dst.add_quiet(nc);
+            let id = dst.add_quiet(nc);
+            r.constraints.insert(c.id, id);
         }
     }
-    // a rate row comes along with both the entities it names (#339 D3)
-    for r in &src.rates {
-        if let (Some(of), Some(to)) = (remap(r.of), remap(r.to)) {
-            dst.rates.push(crate::model::RateRow { of, to, ..r.clone() });
-        }
-    }
-    // a held number that reads the geometry reads the copy of it, where that came along
-    for (name, h) in &src.held {
-        let reads = h.reads.and_then(|(e, f)| Some((remap(e)?, f)));
-        if let Some(d) = dst.held.get_mut(name) {
-            d.reads = reads;
-        }
-    }
-    // each twin that came along with its point, tied again after the relations (§6.7)
-    for (&p, ts) in &src.twins {
-        let Some(p) = remap(EntRef::point(p)) else { continue };
-        for &t in ts {
-            if let Some(t) = remap(EntRef::point(t)) {
-                dst.tie_twin(p.i(), t.i());
+
+    fn rates(&mut self) {
+        for row in &self.src.rates {
+            if let Some(row) = row.remapped(&|e| self.r.ent(e)) {
+                self.dst.rates.push(row);
             }
         }
     }
-    dst.hold_twins();
-    if expr {
-        expr::evaluate(dst);
+
+    /// A held number that reads the geometry reads the copy of it, where that came along.
+    fn held_reads(&mut self) {
+        for (name, h) in &self.src.held {
+            let reads = h.reads.and_then(|(e, f)| Some((self.r.ent(e)?, f)));
+            if let Some(d) = self.dst.held.get_mut(name) {
+                d.reads = reads;
+            }
+        }
     }
-    // recorded root choices are keyed by sketch point index; grafting renumbers points, so the
-    // keys travel with them.  One naming a point that did not come is dropped — replaying it
-    // would apply a chirality to whatever triangle inherited those indices.  The choices the
-    // document states travel alike (#157)
-    let choices = [(&src.branches, &mut dst.branches), (&src.orientations, &mut dst.orientations)];
-    for (from, to) in choices {
-        for (k, &v) in from {
-            match decompose::branch_key_points(k) {
-                None => {
-                    if fresh {
-                        to.insert(k.clone(), v);   // not a triangle: nothing to renumber
-                    }
+
+    /// Each twin that came along with its point, tied again after the relations (§6.7).
+    fn twins(&mut self) {
+        for (&p, ts) in &self.src.twins {
+            let Some(p) = self.r.point(p) else { continue };
+            for &t in ts {
+                if let Some(t) = self.r.point(t) {
+                    self.dst.tie_twin(p, t);
                 }
-                Some(pts) => {
-                    let mapped: Option<Vec<usize>> = pts.iter().map(|&p| pt_index(p)).collect();
-                    if let Some(m) = mapped {
-                        // renumbering can reorder the three, and the sign is read against the
-                        // key's own order — so it is re-recorded rather than carried across
-                        let (k, v) = decompose::branch_record([m[0], m[1], m[2]], v >= 0);
-                        to.insert(k, v);
+            }
+        }
+        self.dst.hold_twins();
+    }
+
+    /// Recorded root choices are keyed by sketch point index; grafting renumbers points, so the
+    /// keys travel with them.  One naming a point that did not come is dropped — replaying it
+    /// would apply a chirality to whatever triangle inherited those indices.  The choices the
+    /// document states travel alike (#157).
+    fn choices(&mut self) {
+        let (src, dst, r) = (self.src, &mut *self.dst, &self.r);
+        let choices =
+            [(&src.branches, &mut dst.branches), (&src.orientations, &mut dst.orientations)];
+        for (from, to) in choices {
+            for (k, &v) in from {
+                match decompose::branch_key_points(k) {
+                    None => {
+                        if self.landing == Landing::Fresh {
+                            to.insert(k.clone(), v);   // not a triangle: nothing to renumber
+                        }
+                    }
+                    Some(pts) => {
+                        let mapped: Option<Vec<usize>> = pts.iter().map(|&p| r.point(p)).collect();
+                        if let Some(m) = mapped {
+                            // renumbering can reorder the three, and the sign is read against
+                            // the key's own order — so it is re-recorded rather than carried
+                            let (k, v) = decompose::branch_record([m[0], m[1], m[2]], v >= 0);
+                            to.insert(k, v);
+                        }
                     }
                 }
             }
         }
     }
-    // a ring's turns, where every entity of one came along; a copy whose representative or
-    // centre did not stands free where it is
-    for tn in &src.turns {
-        if let (Some(copy), Some(rep), Some(about)) = (remap(tn.copy), remap(tn.rep), remap(tn.about)) {
-            dst.turn(crate::model::Turn { copy, rep, about, ..*tn });
+
+    /// A ring's turns and a mirrored instance's images, each where everything it names came.
+    fn turns_and_mirrors(&mut self) {
+        let map = |e| self.r.ent(e);
+        for t in &self.src.turns {
+            if let Some(t) = t.remapped(&map) {
+                self.dst.turn(t);
+            }
+        }
+        for m in &self.src.mirrors {
+            if let Some(m) = m.remapped(&map) {
+                self.dst.mirror(m);
+            }
         }
     }
-    // and a mirrored instance's images, where the image and its representative both came (#578)
-    for m in &src.mirrors {
-        if let (Some(copy), Some(rep)) = (remap(m.copy), remap(m.rep)) {
-            dst.mirror(crate::model::Mirror { copy, rep, ..*m });
+
+    /// The pictures the document asks for (§6.11), each with its body and its planes.
+    fn pictures(&mut self) {
+        for d in &self.src.derived {
+            if let Some(d) = d.remapped(&|e| self.r.ent(e)) {
+                self.dst.derived.push(d);
+            }
         }
     }
-    dst.settle_turns();
-    // each free curve's energy, its pegs and its definition, read again from what came (#144)
-    dst.settle_variational();
-    made
 }
 
 /// Copy of the sketch with the given entities/constraints removed, plus everything that depends on
@@ -984,9 +907,7 @@ pub fn without(sk: &Sketch, entities: &[EntRef], constraints: &[u32]) -> Sketch 
         let kids = sk.children(e);
         kids.iter().filter(|c| !dead.contains(c)).count() >= sk.min_children(e, &kids)
     };
-    let mut tmp = Sketch::new();
-    graft(&mut tmp, sk, &alive, constraints, (0.0, 0.0));
-    tmp
+    rebuild(sk, &alive, constraints).0
 }
 
 /// The selection as a sketch of its own: every entity picked, the points that define it, and
@@ -1022,14 +943,17 @@ pub fn copy(sk: &Sketch, entities: &[EntRef]) -> Sketch {
 /// each.  A document that says nothing about its unit is in millimetres, and is converted as
 /// one; two in the same unit are not scaled.
 pub fn paste(sk: &mut Sketch, clip: &Sketch, dx: f64, dy: f64) -> Vec<EntRef> {
-    match (clip.units.mm_per(), sk.units.mm_per()) {
+    let scaled;
+    let clip = match (clip.units.mm_per(), sk.units.mm_per()) {
         (from, to) if from != to => {
-            let mut scaled = clip.clone();
-            scaled.rescale(from / to);
-            graft(sk, &scaled, &|_| true, &[], (dx, dy))
+            let mut s = clip.clone();
+            s.rescale(from / to);
+            scaled = s;
+            &scaled
         }
-        _ => graft(sk, clip, &|_| true, &[], (dx, dy)),
-    }
+        _ => clip,
+    };
+    graft_onto(sk, clip, (dx, dy)).pairs().iter().map(|&(_, made)| made).collect()
 }
 
 /// The part of a sketch one gesture can move, as a sketch of its own.
@@ -1049,12 +973,10 @@ pub struct Part {
     pub sketch: Sketch,
     /// part point index → document point index
     to_doc: Vec<usize>,
-    /// document point index → part point index, where it came along
-    to_part: Vec<Option<usize>>,
     /// (part param, document param) for every parameter of the part
     params: Vec<(usize, usize)>,
-    /// document entity → part entity, for every primitive, curve and face that came along
-    ents: BTreeMap<EntRef, EntRef>,
+    /// document → part, for every entity and constraint that came along
+    r: Renumbering,
 }
 
 impl Part {
@@ -1196,58 +1118,44 @@ impl Part {
                 keep.extend(sk.children(EntRef::frame(i)));
             }
         }
-        let mut sketch = Sketch::new();
-        let mut made = graft(&mut sketch, sk, &|e| keep.contains(&e), &[], (0.0, 0.0));
-        // `graft` makes entities kind by kind in document order, which is `primitives` order,
-        // then the curves, paired below
-        let srcs: Vec<EntRef> = prims.into_iter().filter(|e| keep.contains(e)).collect();
-        made.truncate(srcs.len());
-        debug_assert!(srcs.iter().zip(&made).all(|(s, m)| s.kind == m.kind));
-        let mut to_doc = Vec::new();
-        let mut to_part = vec![None; sk.points.len()];
+        let (sketch, r) = rebuild(sk, &|e| keep.contains(&e), &[]);
+        let mut to_doc = vec![0; sketch.points.len()];
+        for doc in 0..sk.points.len() {
+            if let Some(p) = r.point(doc) {
+                to_doc[p] = doc;
+            }
+        }
         let mut params = Vec::new();
-        for (&s, &m) in srcs.iter().zip(&made) {
-            if s.kind == EntKind::Point {
-                to_part[s.i()] = Some(m.i());
-                to_doc.push(s.i());
-            }
-            for (a, b) in sketch.entity_params(m).into_iter().zip(sk.entity_params(s)) {
-                params.push((a as usize, b as usize));
+        for &(doc, part) in r.pairs() {
+            match doc.kind {
+                // a primitive's own numbers, in the order both sketches list them
+                EntKind::Point | EntKind::Line | EntKind::Circle | EntKind::Arc | EntKind::Spline
+                | EntKind::Axis | EntKind::Frame => {
+                    let pairs = sketch.entity_params(part).into_iter().zip(sk.entity_params(doc));
+                    params.extend(pairs.map(|(a, b)| (a as usize, b as usize)));
+                }
+                // a free curve's length is its own number (#144)
+                EntKind::Curve => {
+                    if let (Some(a), Some(b)) = (sketch.curves[part.i()].length,
+                                                 sk.curves[doc.i()].length) {
+                        params.push((a as usize, b as usize));
+                    }
+                }
+                _ => {}
             }
         }
-        // a free curve's length is its own number (#144): the curves come after the primitives,
-        // the ones kept in document order
-        let mut ent: BTreeMap<EntRef, EntRef> = srcs.iter().copied().zip(made.iter().copied()).collect();
-        let kept = (0..sk.curves.len()).filter(|&i| keep.contains(&EntRef::new(EntKind::Curve, i)));
-        for (doc, part) in kept.zip(0..sketch.curves.len()) {
-            ent.insert(EntRef::new(EntKind::Curve, doc), EntRef::new(EntKind::Curve, part));
-            if let (Some(a), Some(b)) = (sketch.curves[part].length, sk.curves[doc].length) {
-                params.push((a as usize, b as usize));
-            }
-        }
-        // and a constraint's own unknowns (a contact's place along its curve) with its copy's:
-        // the constraint of the same kind over the same entities, each copy paired once
-        let mut copies: Vec<Option<(CKind, Vec<EntRef>, Vec<u32>)>> = sketch
-            .constraints
-            .iter()
-            .map(|c| Some((c.kind, c.entities(), c.aux_params())).filter(|(_, _, own)| !own.is_empty()))
-            .collect();
+        // and a constraint's own unknowns (a contact's place along its curve) with its copy's
+        let copies: BTreeMap<u32, &Constraint> =
+            sketch.constraints.iter().map(|c| (c.id, c)).collect();
         for c in &sk.constraints {
-            let own = c.aux_params();
-            if own.is_empty() {
-                continue;
-            }
-            let Some(over) = c.entities().iter().map(|e| ent.get(e).copied()).collect::<Option<Vec<_>>>() else {
-                continue;
-            };
-            let found = copies.iter_mut().find(|k| k.as_ref().is_some_and(|(kind, ents, _)| *kind == c.kind && *ents == over));
-            if let Some((_, _, theirs)) = found.and_then(Option::take) {
-                params.extend(theirs.into_iter().zip(own).map(|(a, b)| (a as usize, b as usize)));
+            let Some(copy) = r.constraint(c.id).and_then(|id| copies.get(&id)) else { continue };
+            for (a, b) in copy.aux_params().into_iter().zip(c.aux_params()) {
+                params.push((a as usize, b as usize));
             }
         }
         // and a hidden point moves with the view point it lifts
         for l in &sk.lifts {
-            if let Some(k) = to_part[l.point as usize].and_then(|p| sketch.lift_of(p)) {
+            if let Some(k) = r.point(l.point as usize).and_then(|p| sketch.lift_of(p)) {
                 for (x, y) in sketch.lifts[k].x.iter().zip(&l.x) {
                     params.push((*x as usize, *y as usize));
                 }
@@ -1260,22 +1168,17 @@ impl Part {
                 params.push((mine as usize, doc as usize));
             }
         }
-        // and the faces among the seeds, which come after the curves, in document order
-        let faces = (0..sk.faces.len()).filter(|&i| keep.contains(&EntRef::face(i)));
-        for (doc, part) in faces.zip(0..sketch.faces.len()) {
-            ent.insert(EntRef::face(doc), EntRef::face(part));
-        }
-        Part { sketch, to_doc, to_part, params, ents: ent }
+        Part { sketch, to_doc, params, r }
     }
 
     /// A document entity as the part's, if it came along.
     pub fn entity_in(&self, doc: EntRef) -> Option<EntRef> {
-        self.ents.get(&doc).copied()
+        self.r.ent(doc)
     }
 
     /// A document point's index in the part, if it came along.
     pub fn point_in(&self, doc: usize) -> Option<usize> {
-        self.to_part.get(doc).copied().flatten()
+        self.r.point(doc)
     }
 
     /// A part point's index in the document.
@@ -1320,32 +1223,5 @@ impl Part {
         // dimensions written in terms of a free variable are brought up to date here too, or a
         // plan drag would leave the constraint list reading the number from before the gesture
         expr::sync_free(sk);
-    }
-}
-
-/// The same lookup `graft`'s `remap` makes, for the one pass that has to run before it exists:
-/// a curve's arguments, which may be of any other kind and so must be resolved once every other
-/// kind has been grafted.
-#[allow(clippy::too_many_arguments)]
-fn remap_early(
-    pt_index: &dyn Fn(usize) -> Option<usize>,
-    line_map: &[Option<usize>],
-    circle_map: &[Option<usize>],
-    arc_map: &[Option<usize>],
-    spline_map: &[Option<usize>],
-    plane_map: &[Option<usize>],
-    e: EntRef,
-) -> Option<EntRef> {
-    match e.kind {
-        EntKind::Point => pt_index(e.i()).map(EntRef::point),
-        EntKind::Line => line_map[e.i()].map(EntRef::line),
-        EntKind::Circle => circle_map[e.i()].map(EntRef::circle),
-        EntKind::Arc => arc_map[e.i()].map(EntRef::arc),
-        EntKind::Spline => spline_map[e.i()].map(EntRef::spline),
-        EntKind::Frame => plane_map[e.i()].map(EntRef::frame),
-        // a curve is never another curve's argument: nothing in the language says so, and a
-        // face and a solid are built after every curve, so neither is one either
-        EntKind::Curve | EntKind::Face | EntKind::Solid | EntKind::Surface | EntKind::Motion | EntKind::Envelope | EntKind::Meshing
-        | EntKind::Traced | EntKind::Axis => None,
     }
 }

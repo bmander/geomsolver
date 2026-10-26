@@ -53,6 +53,23 @@ pub struct Mirror {
     pub datum: bool,
 }
 
+impl Turn {
+    /// A ring's turn, where its copy, its representative and its centre all came along; a copy
+    /// whose representative or centre did not stands free where it is.
+    pub fn remapped(&self, map: &Remap) -> Option<Turn> {
+        let Turn { copy, rep, about, k, n } = *self;
+        Some(Turn { copy: map(copy)?, rep: map(rep)?, about: map(about)?, k, n })
+    }
+}
+
+impl Mirror {
+    /// A mirrored instance's image, where the image and its representative both came (#578).
+    pub fn remapped(&self, map: &Remap) -> Option<Mirror> {
+        let Mirror { copy, rep, negated, datum } = *self;
+        Some(Mirror { copy: map(copy)?, rep: map(rep)?, negated, datum })
+    }
+}
+
 /// What mirrored bodies' preimages are drawn as (`Sketch::images`, #578): each entity a body made
 /// as its image, and each datum point bodies draw over as its images, one in each body's image of
 /// the plane it is drawn in.
