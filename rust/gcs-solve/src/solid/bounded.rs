@@ -85,18 +85,23 @@ impl Bounded {
                     object([("kind", "revolve".into()), ("profile", profile(section)?),
                         ("origin", w.line_origin(mm(a), d)), ("axis", Writer::triple(d)), ("angle", TAU.into())])
                 }
-                Shape::Half { o, n, reach } => {
-                    // a square on the plane, swept away from `n` into the half-space
-                    let keep = scale(n, -1.0);
-                    object([("kind", "prism".into()), ("profile", profile(square(o, keep, reach))?),
-                        ("from", 0.0.into()), ("to", (reach * scale_by).into())])
-                }
+                Shape::Half { o, n, reach } => half_space(w, o, scale(n, -1.0), reach, &piece.name)?,
             };
             node.set("keep", Json::Bool(piece.keep));
             Ok(node)
         }).collect::<Result<Vec<_>, String>>()?;
         Ok(object([("kind", "region".into()), ("pieces", Json::Arr(pieces))]))
     }
+}
+
+/// The block a half-space is kept within, written by `w`: the square on the plane through `o`,
+/// `reach` from it either way along the plane, swept `reach` along the unit `keep` into the
+/// half-space (model units), its sides named `name`.
+pub(super) fn half_space(w: &Writer, o: V, keep: V, reach: f64, name: &str) -> Result<Json, String> {
+    let p = square(o, keep, reach);
+    let profile = Profile { names: vec![vec![name.to_string(); p.loops[0].len()]], ..p }.to_json(w)?;
+    Ok(object([("kind", "prism".into()), ("profile", profile), ("from", 0.0.into()),
+        ("to", (reach * w.scale).into())]))
 }
 
 /// Region solid `solid` built as the common of its terms, where it is read in general position

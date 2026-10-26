@@ -7,7 +7,11 @@
 //! - any other conjunction of a face's side or surface, or a distance from a point, is the
 //!   nearest point satisfying every condition, found by sequential projection onto the
 //!   conditions linearised where the last step stood (each step a small quadratic program,
-//!   solved exactly by its active set): a local nearest point, from the point measured.
+//!   solved exactly by its active set): a local nearest point, from the point measured;
+//! - within (or beyond) every face of a body and nothing more, the body's own signed distance
+//!   (`BodyFaces::signed_distance`), where each face's foot is its nearest point: no one surface's
+//!   side bounds a body with a concave edge, and the projection onto the nearest face's side runs
+//!   on past its patch at a convex corner.
 use super::faces::{along_run, BodyFaces, Reading};
 use crate::model::{RegionShape, RegionTerm, Sketch, Target};
 use crate::space::{dot, norm, scale, sub};
@@ -39,6 +43,8 @@ pub enum SetDistance {
     /// The nearest of several: a set within a body's faces where the body is in pieces, each
     /// shell's conditions apart (within all of them at once is within none).
     Nearest(Vec<SetDistance>),
+    /// The material within every face of a body, or (`beyond`) what is outside it.
+    Body { body: Arc<BodyFaces>, beyond: bool },
 }
 
 pub use super::faces::Read;
@@ -99,6 +105,16 @@ impl SetDistance {
                 }
             });
         }
+        // within (or beyond) every face of a body, and nothing more: its material, read by its
+        // signed distance where that is exact
+        if let [t @ RegionTerm { shape: RegionShape::FaceSide { face }, hi: None, .. }] = terms {
+            if t.cmp != Cmp::In && t.value(sk)? == (0.0, 0.0) {
+                let r = super::faces::reading(sk, &patch(face), read)?;
+                if r.faces.len() == r.body.brep().0.faces.len() && r.body.distance_slack().is_some() {
+                    return Ok(SetDistance::Body { body: r.body.clone(), beyond: t.cmp == Cmp::Ge });
+                }
+            }
+        }
         // the faces the set's point is within: a distance off one of those in pieces is read
         // piece by piece (`Reading::convex_pieces`)
         let within: Vec<crate::model::FaceRef> = terms.iter().filter_map(|t| match &t.shape {
@@ -143,6 +159,10 @@ impl SetDistance {
             SetDistance::Patch(r) => r.distance(p, false),
             SetDistance::Conditions(cs) => nearest(cs, p).map_or(f64::INFINITY, |q| norm(sub(p, q))),
             SetDistance::Nearest(each) => each.iter().map(|s| s.distance(p)).fold(f64::INFINITY, f64::min),
+            SetDistance::Body { body, beyond } => {
+                let v = body.signed_distance(p).0;
+                (if *beyond { -v } else { v }).max(0.0)
+            }
         }
     }
 

@@ -1,8 +1,9 @@
 //! **A body grown** (`std.Grown`): the points within `d` of a body, `{ p | distance(p, within) <=
 //! d }` over `within := { c | c inside B }`, built exactly (`solid::grown`) as the body and what
-//! lies within reach of each face, edge and corner glued to it, where every edge of the body is
-//! convex and every corner a prism's; shrunk, or a body with a concave edge, read by the field and
-//! refused by name.  Held to closed forms: Steiner's for a polytope, Pappus's for a band's rims.
+//! lies within reach of each face, edge and corner glued to it, every corner a prism's or a
+//! concave one, the prisms beside a concave edge cut back to its bisector; shrunk, or a boss's
+//! foot, read by the field and refused by name.  Held to closed forms: Steiner's for a polytope,
+//! its concave edges' terms negative, Pappus's for a band's rims.
 use gcs_core::brep::geom::Surface;
 use gcs_core::brep::props::volume;
 use gcs_core::program::Elaborated;
@@ -53,11 +54,39 @@ const TURNED: &str = "unit mm\nuse std\nin std.top {\n\
     construction slab := solid(plate, from: 0mm, to: 5mm)\n\
     drill := solid(hole, from: -1mm, to: 6mm)\ndrill cut slab\n";
 
+/// On the top plane, a slab 40 square and 10 thick three times over: a tray, a pocket 20 × 16 and
+/// 4 deep cut into its top; a plinth, a boss 10 square standing 5 on it; a base, a post of radius
+/// 5 standing 5 on it.
+const STANDING: &str = "unit mm\nuse std\nin std.top {\n\
+    q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
+    fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
+    (qs := line(q0, q1)) -> (qe := line(q1, q2)) -> (qn := line(q2, q3)) -> (qw := line(q3, q0)) -> close\n\
+    slab := face(qs, qe, qn, qw)\n\
+    k0 := point\nk1 := point\nk2 := point\nk3 := point\n\
+    fix((10, 12)) k0\nfix((30, 12)) k1\nfix((30, 28)) k2\nfix((10, 28)) k3\n\
+    (ks := line(k0, k1)) -> (ke := line(k1, k2)) -> (kn := line(k2, k3)) -> (kw := line(k3, k0)) -> close\n\
+    pocket := face(ks, ke, kn, kw)\n\
+    m0 := point\nm1 := point\nm2 := point\nm3 := point\n\
+    fix((15, 15)) m0\nfix((25, 15)) m1\nfix((25, 25)) m2\nfix((15, 25)) m3\n\
+    (ms := line(m0, m1)) -> (me := line(m1, m2)) -> (mn := line(m2, m3)) -> (mw := line(m3, m0)) -> close\n\
+    stud := face(ms, me, mn, mw)\n\
+    o := point\nfix((20, 20)) o\nrim := radius(5mm) circle(center: o)\n}\n\
+    construction tray := solid(slab, from: 0mm, to: 10mm)\n\
+    cavity := solid(pocket, from: 6mm, to: 11mm)\ncavity cut tray\n\
+    construction plinth := solid(slab, from: 0mm, to: 10mm)\n\
+    boss := solid(stud, from: 9mm, to: 15mm)\nboss union plinth\n\
+    construction base := solid(slab, from: 0mm, to: 10mm)\n\
+    post := solid(face(rim), from: 9mm, to: 15mm)\npost union base\n";
+
 /// `name` built as a body grown, exactly.
 fn exact(e: &Elaborated, name: &str) -> std::rc::Rc<Exact> {
     let s = ent(e, name).i();
     let r = route(&e.sketch, s).unwrap_or_else(|m| panic!("`{name}`: {m}"));
-    assert!(matches!(r, Route::Grown(Ok(_))), "`{name}` is not built as a body grown");
+    match r {
+        Route::Grown(Ok(_)) => {}
+        Route::Grown(Err(why)) => panic!("`{name}`: {why}"),
+        _ => panic!("`{name}` is not built as a body grown"),
+    }
     e.sketch.exact_solid(s).unwrap_or_else(|m| panic!("`{name}`: {m}"))
 }
 
@@ -123,14 +152,66 @@ fn a_body_in_pieces_is_grown_piece_by_piece() {
     }
 }
 
-/// A concave edge leaves the body grown to the field, said by name; so does a body shrunk.  At
-/// nothing it is the body.
+/// Beside a concave edge the two faces' prisms are cut back to its bisector, so each concave edge
+/// of length `L` takes `d² L` (a square's): Steiner's edge term negative.  An L-block's step: at
+/// each end of its inner edge the two wedges along the end face are cut back to the bisector too
+/// (each losing `d³/3`), and no sector of the ball stands there.  A tray's pocket: its rim's corners
+/// are the step's, its floor's three prisms meeting in a cube counted three times less three (`+d³`).
+#[test]
+fn concave_edges_grown_are_built_exactly() {
+    let d = 1.0;
+    let e = solved(&format!("{BLOCKS}gl := std.Grown(step, d: 1mm)\n"));
+    // the L 80 round and 300 square, 12 deep: five convex edges along its depth and one
+    // concave, five prism's corners and one concave at each end
+    let step = 3600.0 + (2.0 * 300.0 + 80.0 * 12.0) * d + PI / 4.0 * (2.0 * 80.0 + 5.0 * 12.0) * d * d
+        - 12.0 * d * d + (10.0 * PI / 6.0 - 4.0 / 3.0) * d.powi(3);
+    let got = volume(&exact(&e, "gl.body").brep);
+    assert!((got - step).abs() <= 1e-9 * step, "the step: {got} against {step}");
+    let e = solved(&format!("{STANDING}gt := std.Grown(tray, d: 1mm)\n"));
+    let (w, t, a, b, h) = (40.0, 10.0, 20.0, 16.0, 4.0);
+    let rim = 2.0 * (a + b);
+    let tray = w * w * t - a * b * h + (2.0 * (w * w + 2.0 * w * t) + rim * h) * d
+        + PI / 4.0 * (4.0 * (2.0 * w + t) + rim) * d * d - (rim + 4.0 * h) * d * d
+        + (8.0 * PI / 6.0 - 4.0 * 2.0 / 3.0 + 4.0) * d.powi(3);
+    let got = volume(&exact(&e, "gt.body").brep);
+    assert!((got - tray).abs() <= 1e-9 * tray, "the tray: {got} against {tray}");
+}
+
+/// Within a body with a concave edge no one face's side bounds the material, so its field reads
+/// the body's own signed distance: at a convex corner of the step the edge's, never the plane's of
+/// a face beside it; shrunk, at its inner corner the corner's.
+#[test]
+fn a_concave_bodys_field_reads_its_signed_distance() {
+    let e = solved(&format!("{BLOCKS}gl := std.Grown(step, d: 1mm)\n"));
+    let field = MaterialField::read(&e.sketch, ent(&e, "gl.body").i(), 1e-10).unwrap();
+    // about the edge along y through (0, 100), beside a face, and in the step's inner corner
+    for (p, want) in [([-0.8, 8.0, 99.2], 0.8f64.hypot(0.8)), ([-0.6, 8.0, 99.2], 1.0),
+                      ([5.0, 8.0, 98.9], 1.1), ([10.8, 8.0, 111.5], 0.8), ([10.5, 8.0, 110.8], 0.5)] {
+        let got = field.side(p);
+        assert!((got - (want - 1.0)).abs() <= 1e-9, "{p:?}: {got} against {}", want - 1.0);
+    }
+    // shrunk, beyond it alike: within the step's inner corner, the corner's distance
+    let e = solved(&format!("{BLOCKS}gs := std.Grown(step, d: -1mm)\n"));
+    let field = MaterialField::read(&e.sketch, ent(&e, "gs.body").i(), 1e-10).unwrap();
+    let (got, want) = (field.side([9.4, 8.0, 109.4]), 1.0 - 0.6 * 2f64.sqrt());
+    assert!((got - want).abs() <= 1e-9, "{got} against {want}");
+}
+
+/// A boss's foot, a convex edge standing between two concave ones, leaves the body grown to the
+/// field, said by name; so does a post's, its bisector a cone, and a pocket narrower than twice the
+/// reach, and a body shrunk.  At nothing it is the body.
 #[test]
 fn what_is_not_built_is_said() {
-    let e = solved(&format!("{BLOCKS}gl := std.Grown(step, d: 1mm)\nz := std.Grown(block, d: 0mm)\n"));
-    let r = route(&e.sketch, ent(&e, "gl.body").i()).unwrap();
-    let Route::Grown(Err(why)) = r else { panic!("`gl.body` is built") };
-    assert!(why.contains("a concave edge"), "{why}");
+    let e = solved(&format!("{STANDING}gp := std.Grown(plinth, d: 1mm)\ngb := std.Grown(base, d: 1mm)\n\
+                             gn := std.Grown(tray, d: 9mm)\n"));
+    for (name, says) in [("gp.body", "a convex edge stands between two concave ones"),
+                         ("gb.body", "a concave edge on a curved face"),
+                         ("gn.body", "a face narrower than the reach beside a concave edge")] {
+        let r = route(&e.sketch, ent(&e, name).i()).unwrap();
+        let Route::Grown(Err(why)) = r else { panic!("`{name}` is built") };
+        assert!(why.contains(says), "`{name}`: {why}");
+    }
+    let e = solved(&format!("{BLOCKS}z := std.Grown(block, d: 0mm)\n"));
     let z = e.sketch.exact_solid(ent(&e, "z.body").i()).unwrap();
     let (got, want) = (volume(&z.brep), 40.0 * 24.0 * 12.0);
     assert!((got - want).abs() <= 1e-9 * want, "{got} against {want}");

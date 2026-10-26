@@ -2164,9 +2164,10 @@ part's own body grown, never its sizes written again with `± gap`. Its edges an
 rounded by `d`; a negative `d` shrinks the body, and `d: 0mm` is the body. It is the language's own
 words: `{ p | distance(p, within) <= d }` over `within := { c | c inside B }`. Grown, it is built
 exactly where the body's faces are planes and cylinders meeting in convex edges at a prism's
-corners — a box, a post, a hex bar, a plate with a bore, a body of several such pieces; a concave
-edge (an L), a cone or a sphere, or a shrink is read point by point, and an exact export (`--step`,
-`--stl`) says so by name.
+corners — a box, a post, a hex bar, a plate with a bore, a body of several such pieces — or planes
+meeting in concave edges — an L, a step, a slot, a pocket.  A boss's foot (a convex edge standing
+between two concave ones, or a post's round foot), a cone or a sphere, or a shrink is read point by
+point, and an exact export (`--step`, `--stl`) says so by name.
 
 #### Reports and refusals
 
