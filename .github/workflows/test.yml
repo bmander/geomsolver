@@ -2,13 +2,16 @@
 # split across machines so it is back in minutes.  A push no longer waits on a full `make test`
 # run by hand; the inner loop is `make test-changed` and this is the gate (docs/testing.md).
 #
+#   build     the core's test binary, built once and handed to the shards as an artefact
 #   core      the core's suite, one binary, dealt into shards by scripts/test-shard.sh from the
-#             times in rust/test-times.tsv
+#             times in rust/test-times.tsv: run, not built, so a shard spends its minutes testing
 #   crates    every other crate's suite (the CLI over the case library, the ABI's panic
 #             boundary) and the documentation tests
 #   web       both release artefacts, as `make release` builds them, then the web suite against
 #             the wasm
 #
+# Each job that builds keeps its target directory under a key of its own commit, falling back
+# to the newest before it, so the cache moves with the code and a build is only what changed.
 # The slow tier is not here: slow.yml runs it every night.
 name: test
 
@@ -29,16 +32,11 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  core:
+  build:
     # a pull request from this repository has already been tested by its push
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
-    name: core ${{ matrix.shard }}/4
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
       - name: Cache the Rust build
@@ -48,11 +46,42 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: >-
-            test-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
-          restore-keys: test-core-${{ runner.os }}-
+          key: test-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            test-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-
+            test-core-${{ runner.os }}-
+      - name: Build the core's suite
+        run: |
+          cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core --no-run \
+              --message-format=json-render-diagnostics > build.json
+          mkdir -p suite
+          cp "$(jq -r 'select(.profile.test == true) | .executable // empty' build.json)" suite/core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-suite
+          path: suite/core
+          retention-days: 1
+
+  core:
+    needs: build
+    name: core ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      # the binary reads documents from the checkout, at the path it was built in
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-suite
+          path: suite
       - name: Shard ${{ matrix.shard }} of the core suite
-        run: scripts/test-shard.sh ${{ matrix.shard }} 4 -p gcs-core --test core
+        run: |
+          chmod +x suite/core
+          scripts/test-shard.sh ${{ matrix.shard }} 4 --binary suite/core rust/gcs-core
 
   crates:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
@@ -67,9 +96,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: >-
-            test-crates-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
-          restore-keys: test-crates-${{ runner.os }}-
+          key: test-crates-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            test-crates-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-
+            test-crates-${{ runner.os }}-
       - name: The other crates' suites
         run: cargo test --manifest-path rust/Cargo.toml --workspace --exclude gcs-core
       - name: The documentation tests
@@ -88,9 +118,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: >-
-            test-release-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/**/Cargo.toml') }}
-          restore-keys: test-release-${{ runner.os }}-
+          key: test-release-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            test-release-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-
+            test-release-${{ runner.os }}-
       - uses: actions/setup-node@v4
         with:
           node-version: 22

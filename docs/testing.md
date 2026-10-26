@@ -48,6 +48,19 @@ Every machine computes the same split, and the parts cover the binary exactly on
 prints a part).  The libtest runner is used and not one that runs each test in a process of its
 own, for the same fixtures.
 
+**The suite is built once.**  A shard that compiled the engine for itself spent three of its four
+minutes compiling, four times over.  CI's `build` job compiles the core's test binary and hands
+it to the shards as an artefact; each runs its part with `--binary <path> rust/gcs-core`, in the
+package's directory as cargo would, and reads its documents from its own checkout at the path
+the binary was built in (`CARGO_MANIFEST_DIR` is compiled in, and every hosted runner checks out
+to the same place).  The wall clock is about the same, since the shards wait for the build; the
+runner-minutes are a quarter.
+
+**Caches move with the code.**  A job that builds keeps its target directory under a key of its
+own commit and restores the newest before it, so it compiles what changed since that run.  A
+key fixed by the lockfile alone would be saved once and never again, and every later build would
+recompile everything since that day.
+
 `rust/test-times.tsv` is `make test-times`: every test of the binary timed by libtest itself
 (`--report-time`, which stable libtest gives when `RUSTC_BOOTSTRAP` is set where the binary runs;
 the script sets it there and not for cargo), merged into the file and the slowest printed.  The
