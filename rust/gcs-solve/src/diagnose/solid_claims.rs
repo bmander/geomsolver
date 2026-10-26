@@ -134,6 +134,10 @@ impl SolidVerdict {
     pub fn measured(&self) -> Option<f64> {
         self.measurement()?.interval().map(clear::Interval::midpoint)
     }
+    /// Where the reported pose was measured, and between which faces.
+    pub fn nearest(&self) -> Option<&clear::Nearest> {
+        self.representative()?.evaluation.as_ref().ok()?.nearest()
+    }
     pub fn tolerance(&self) -> Option<f64> {
         self.measurement()?.interval().map(clear::Interval::uncertainty)
     }

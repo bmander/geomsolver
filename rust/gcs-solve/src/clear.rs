@@ -138,14 +138,10 @@ pub fn contained(a: &[Piece], b: &solid::Csg, eps: f64) -> bool {
     crate::csg::contains_boundary(b, a, eps)
 }
 
-/// The least distance between two convex planar pieces: every vertex against the other's plane
-/// and outline, and every pair of edges.  The closed forms rather than an iteration, since a
-/// piece has three or four sides and the whole thing is a handful of dot products.
-fn piece_gap(p: &Piece, q: &Piece) -> f64 {
-    piece_nearest(p, q).0
-}
-
-/// `piece_gap` with where it is found: the nearest point of `p` and the nearest point of `q`.
+/// The least distance between two convex planar pieces, and the nearest point of each: every
+/// vertex against the other's plane and outline, and every pair of edges.  The closed forms rather
+/// than an iteration, since a piece has three or four sides and the whole thing is a handful of
+/// dot products.
 fn piece_nearest(p: &Piece, q: &Piece) -> (f64, [f64; 3], [f64; 3]) {
     let mut best = (f64::INFINITY, p.pts[0], q.pts[0]);
     for (a, b, swap) in [(p, q, false), (q, p, true)] {
@@ -366,9 +362,9 @@ fn measure_pair(
         });
     }
     let (gap, pair) = boundary_gap(pa, &pb);
-    // the face of each nearest a point of A's frame, said in the world
     // a face as a reader writes it: `near_screw[1].post.rim`, not its block's statement
     let named = |p: &Piece| crate::vocab::public_path(&p.path);
+    // the face of each nearest a point of A's frame
     let faces_at = |x: [f64; 3]| {
         let near = |pieces: &[Piece]| {
             let gap = |p: &&Piece| point_to_piece(x, p);
@@ -378,8 +374,7 @@ fn measure_pair(
     };
     let world = |x: [f64; 3]| a.to_world(solid::LocalPoint(x)).0;
     let apart_nearest = || {
-        let (i, j) = pair?;
-        let (_, x, y) = piece_nearest(&pa[i], &pb[j]);
+        let (i, j, x, y) = pair?;
         let (a, b) = (named(&pa[i]), named(&pb[j]));
         Some(Nearest { a, b, at_a: world(x), at_b: world(y), deepest: false })
     };
@@ -435,35 +430,35 @@ fn measure_pair(
 
 /// The least the two boundaries come to each other, ignoring which side of which they are on —
 /// what `fits` measures once containment has answered the sign — and the piece of each it is
-/// read between.
+/// read between, with the nearest point of each.
 ///
 /// `b`'s pieces are boxed in a hierarchy, and a box farther from a piece of `a` than the least gap
 /// found is passed by: a piece's gap is never less than its box's distance, so the answer is the
 /// one every pair would give, read in the logarithm of `b` (a rotor's thousand pieces against a
 /// housing's twelve thousand at every pose of a claim's sweep).
-fn boundary_gap(a: &[Piece], b: &[Piece]) -> (f64, Option<(usize, usize)>) {
+fn boundary_gap(a: &[Piece], b: &[Piece]) -> (f64, Option<(usize, usize, [f64; 3], [f64; 3])>) {
     let bounds = |q: &Piece| { let x = q.bbox_of(); crate::bvh::Bounds { lo: x.lo, hi: x.hi } };
     let tree = crate::bvh::Bvh::new(b.iter().map(bounds));
     let best = std::cell::Cell::new(f64::INFINITY);
     // the pair it is read between, and how squarely they face each other: of pairs as near, a
     // wall facing a wall is where a reader looks, not the cap whose edge is as near
-    let pair = std::cell::Cell::new(None::<(usize, usize, f64)>);
+    let pair = std::cell::Cell::new(None::<(usize, usize, f64, [f64; 3], [f64; 3])>);
     for (i, p) in a.iter().enumerate() {
         let pb = bounds(p);
         tree.query_nearest(|q| q.gap(pb), || best.get(), |k| {
             if plane_apart(p, &b[k]) <= best.get() {
-                let d = piece_gap(p, &b[k]);
+                let (d, x, y) = piece_nearest(p, &b[k]);
                 let facing = plane::dot(p.n, b[k].n);
                 let tie = (d - best.get()).abs() <= 1e-9 * (1.0 + best.get());
-                let squarer = pair.get().is_some_and(|(_, _, f)| facing < f);
+                let squarer = pair.get().is_some_and(|(_, _, f, _, _)| facing < f);
                 if pair.get().is_none() || (d < best.get() && !tie) || (tie && squarer) {
-                    pair.set(Some((i, k, facing)));
+                    pair.set(Some((i, k, facing, x, y)));
                 }
                 best.set(best.get().min(d));
             }
         });
     }
-    (best.get(), pair.get().map(|(i, k, _)| (i, k)))
+    (best.get(), pair.get().map(|(i, k, _, x, y)| (i, k, x, y)))
 }
 
 /// A lower bound on two pieces' gap from their planes: where every corner of one lies on one side

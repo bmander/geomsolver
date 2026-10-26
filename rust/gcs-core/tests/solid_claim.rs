@@ -338,7 +338,7 @@ fn a_refuted_claim_names_the_faces_and_where() {
                       block("B", 13.0, 0.0, 10.0, -5.0, 0.0));
     let [v] = &verdicts(&read(&src))[..] else { panic!("one claim") };
     assert_eq!(v.holds(), Some(false));
-    let n = v.representative().unwrap().evaluation().unwrap().nearest().expect("where").clone();
+    let n = v.nearest().expect("where").clone();
     assert!(!n.deepest);
     assert_eq!((n.a.as_str(), n.b.as_str()), ("sA_.qA", "sB_.sB"), "{n:?}");
     assert!((n.at_a[0] - 10.0).abs() < 1e-9 && (n.at_b[0] - 13.0).abs() < 1e-9, "{n:?}");
@@ -357,7 +357,7 @@ fn a_refuted_claim_names_the_faces_and_where() {
     );
     let v = verdicts(&read(&src));
     assert_eq!(v[0].holds(), Some(false), "C reaches a millimetre into B");
-    let n = v[0].representative().unwrap().evaluation().unwrap().nearest().expect("where").clone();
+    let n = v[0].nearest().expect("where").clone();
     assert!(n.deepest, "{n:?}");
     assert!(n.a.starts_with("sC_."), "the block that hit, not the union's other: {n:?}");
     assert!(n.b.starts_with("sB_."), "{n:?}");
@@ -382,7 +382,7 @@ fn a_refuted_claim_names_the_faces_and_where() {
     );
     let [v] = &verdicts(&read(&src))[..] else { panic!("one claim") };
     assert_eq!(v.holds(), Some(false));
-    let n = v.representative().unwrap().evaluation().unwrap().nearest().expect("where").clone();
+    let n = v.nearest().expect("where").clone();
     assert!(!n.deepest && n.at_a == n.at_b, "{n:?}");
     assert!(n.a.starts_with("sB_.") && n.b.starts_with("sA_."), "{n:?}");
     let text = gcs_core::report::solid_claim_text(v);

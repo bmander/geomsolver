@@ -1790,8 +1790,7 @@ pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
     }
     // a claim refuted or undecided says where to look: the face of each solid, and where in the
     // world they meet deepest or come nearest
-    let nearest = v.representative().and_then(|p| p.evaluation().ok()?.nearest());
-    if let (Some(n), false) = (nearest, v.holds() == Some(true)) {
+    if let (Some(n), false) = (v.nearest(), v.holds() == Some(true)) {
         text += &format!("\n    {}", nearest_text(n));
     }
     // Every unresolved pose is disclosed, including failed solves and uncertain geometry; a lone
@@ -1823,17 +1822,12 @@ fn point_text(x: [f64; 3]) -> String {
 /// where their material is common, `nearest at (…), between a.f and b.g` where their boundaries
 /// touch or cross, and `nearest between a.f at (…) and b.g at (…)` where they come no nearer.
 fn nearest_text(n: &crate::clear::Nearest) -> String {
+    let (at_a, at_b) = (point_text(n.at_a), point_text(n.at_b));
     if n.deepest || n.at_a == n.at_b {
         let word = if n.deepest { "deepest" } else { "nearest" };
-        format!("{word} at {}, between {} and {}", point_text(n.at_a), n.a, n.b)
+        format!("{word} at {at_a}, between {} and {}", n.a, n.b)
     } else {
-        format!(
-            "nearest between {} at {} and {} at {}",
-            n.a,
-            point_text(n.at_a),
-            n.b,
-            point_text(n.at_b)
-        )
+        format!("nearest between {} at {at_a} and {} at {at_b}", n.a, n.b)
     }
 }
 
@@ -1918,12 +1912,7 @@ pub fn solid_claim_json(v: &crate::diagnose::SolidVerdict) -> Json {
             v.tolerance().map(Json::Num).unwrap_or(Json::Null),
         ),
         ("measurement", solid_measurement_json(v.measurement())),
-        (
-            "nearest",
-            v.representative()
-                .and_then(|p| p.evaluation().ok()?.nearest())
-                .map_or(Json::Null, nearest_json),
-        ),
+        ("nearest", v.nearest().map_or(Json::Null, nearest_json)),
         ("verdict", v.outcome().as_str().into()),
         (
             "method",
