@@ -475,12 +475,18 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
 /// pitch line shifted +0.3 m) rolled across the blank on the pitch circle, from clear of the tip to
 /// clear of it; `cuts` cuts `space` (or its copies about the spindle) from `gear`.
 fn pinion(cuts: &str) -> String {
+    rolled_pinion("0.8mm", "tooth over t in (-window, window)", cuts)
+}
+
+/// `pinion`, of module `m`, its `space` swept as
+/// `sweep({tool}, under: rack, seen_from: blank_turn)`.
+fn rolled_pinion(m: &str, tool: &str, cuts: &str) -> String {
     format!("\
 unit mm
 use std
 use std (vertical, turns, slides, coords, on_v)
 
-m := 0.8mm
+m := {m}
 N := 12
 phi := 20deg
 R := m * N / 2
@@ -519,7 +525,7 @@ rack := frame
 rack slides(2 * pi * R) rack_line
 index := frame
 index turns(1) spindle
-space := sweep(tooth over t in (-window, window), under: rack, seen_from: blank_turn)
+space := sweep({tool}, under: rack, seen_from: blank_turn)
 gear := solid(face(tip, holes: hole), from: 0mm, to: 5mm)
 {cuts}
 ")
@@ -542,6 +548,29 @@ fn a_tooth_space_cut_at_a_turned_copy_is_the_space_turned() {
     let whole = blank - cut_body(&pinion(&format!("space cut gear\n{copies}")), "gear", None);
     // the spaces are apart: twelve remove twelve times one
     assert!((whole - 12. * one).abs() < 1e-4 * whole, "twelve spaces remove {whole:.5} mm³, one {one:.5}");
+}
+
+/// **A roll that ends as the flank grazes its held edge closes** (the radiator bot's pinion): at
+/// the end pose the flank's contact lies on the flank held there, tangent to it, so the keeping
+/// test finds where the held flank starts to be kept only to `√(2 tol ρ)`, `ρ` the involute's
+/// radius there.  At module 1.5 a roll of 56° (a copy turned 30°, its box reaching past the end
+/// pose) left it 16 µm off the contact, past the joins' reach, and the boundary did not close.
+/// The contact is the held flank's end however far the test finds it: a cut over 56°, and over the
+/// roll found `through:` the blank, remove what the generous stated window does.
+#[test]
+fn a_roll_ending_where_the_flank_grazes_its_held_edge_closes() {
+    let turned = "turned := space at(under: index) 30deg\nturned cut gear";
+    // the tip circle's radius is 9 + 0.45 + 1.5 mm, the hole's 1 mm, the blank 5 mm thick
+    let blank = PI * (10.95 * 10.95 - 1.) * 5.;
+    let removed =
+        |tool: &str| blank - cut_body(&rolled_pinion("1.5mm", tool, turned), "gear", None);
+    let generous = removed("tooth over t in (-window, window)");
+    assert!(generous > 10., "the space removes {generous:.5} mm³");
+    for tool in ["tooth over t in (-56deg, 56deg)", "tooth, through: gear"] {
+        let r = removed(tool);
+        assert!((r - generous).abs() < 1e-4 * generous,
+                "`{tool}` removes {r:.6} mm³, the stated window {generous:.6}");
+    }
 }
 
 /// The wheel stood by a frame turning with it at `degrees` of its value (`x in f`), and a body made
