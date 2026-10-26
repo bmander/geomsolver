@@ -474,19 +474,36 @@ fn issue_50_reductions_report_or_diagnose_instead_of_exporting_invalid_solids() 
 /// The under-constrained cases exit 0: they solve, they just have freedoms left.
 #[test]
 fn the_whole_library_reports() {
-    let all: Vec<String> = [examples(), examples().join("vtwin"), examples().join("vtwin/components")].into_iter()
+    let mut all: Vec<String> = [examples(), examples().join("vtwin"), examples().join("vtwin/components")].into_iter()
         .flat_map(|dir| std::fs::read_dir(dir).expect("the example documents"))
         .filter_map(|e| e.ok())
         .map(|e| e.path().to_string_lossy().into_owned())
         .filter(|p| p.ends_with(".sv"))
         .filter(|p| !p.contains("/vtwin/components/")
             || std::fs::read_to_string(p).unwrap().contains("\npreview {"))
+        // the cases whose solve takes minutes are the slow tier's: the sized conrod alone was 200
+        // of this test's 250 seconds
+        .filter(|p| {
+            let key = std::path::Path::new(p).file_stem().unwrap().to_str().unwrap();
+            !gcs_core::examples::left_to_slow_tier(key)
+        })
         .collect();
-    let args: Vec<&str> = all.iter().map(String::as_str).collect();
-    let out = run(&args);
-    let text = String::from_utf8_lossy(&out.stdout);
-    assert_eq!(out.status.code(), Some(2), "the unsatisfiable ones are a failure");
-    assert_eq!(text.lines().filter(|l| l.contains(": solved")).count(), all.len() - 3);
+    all.sort();
+    // the library dealt to one `solventc` per core, so the longest part and not the sum sets the
+    // time.  A run exits with its worst document's code, so the library's is the worst of the
+    // parts', and its solved lines are theirs summed
+    let parts = gcs_core::par::threads().min(all.len());
+    let outs = gcs_core::par::indices(parts, |k| {
+        run(&all.iter().skip(k).step_by(parts).map(String::as_str).collect::<Vec<_>>())
+    });
+    let worst = outs.iter().map(|o| o.status.code().expect("every part exits")).max();
+    assert_eq!(worst, Some(2), "the unsatisfiable ones are a failure");
+    let solved: usize = outs.iter()
+        .map(|o| {
+            String::from_utf8_lossy(&o.stdout).lines().filter(|l| l.contains(": solved")).count()
+        })
+        .sum();
+    assert_eq!(solved, all.len() - 3);
 
     // told not to be, they are not — asked over the three that fail rather than the whole
     // library again, which is the same assertion for a second parse, solve and diagnosis of

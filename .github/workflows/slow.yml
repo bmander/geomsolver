@@ -1,0 +1,78 @@
+# The slow tier every night, on main: `make test-slow` (tests of ten seconds to minutes, behind
+# `feature = "slow"`), dealt across machines so the whole of it finishes in one night.  Nobody
+# waits on it, so it may take hours; what matters is that it runs, and that a failure is seen —
+# GitHub mails a failed scheduled run to whoever last changed this schedule, and the run's page
+# names the test.  Run by hand (Actions -> slow -> Run workflow) on any branch before a change
+# to the gear example or the native export lands.
+#
+# As test.yml does with the fast tier: the core's suite is built once, with the slow feature, and
+# handed to the shards, and the CLI's suite then runs on the libraries that build compiled.  The
+# core's fast tests run again here beside the slow ones, since the slow build is a different
+# build (`examples.rs` itself reads the feature).  Most slow tests are not in rust/test-times.tsv
+# until someone times them (`scripts/test-times.sh -p gcs-core --test core --features
+# gcs-core/slow`), so each missing one weighs a minute and is dealt on its own.  OCCT's native
+# tooth space stays a local run (`OCCT=1`).
+name: slow
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: slow-${{ github.ref }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # GitHub's ceiling for a hosted job is six hours
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the core's suite with the slow tier
+        run: |
+          cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
+              --features gcs-core/slow --no-run --message-format=json-render-diagnostics \
+              > build.json
+          mkdir -p suite
+          cp "$(jq -r 'select(.profile.test == true) | .executable // empty' build.json)" suite/core
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-suite-slow
+          path: suite/core
+          retention-days: 1
+      # the CLI's `slow` turns on the core's, so this is the build above with the CLI's tests on it
+      - name: The CLI's suite with the slow tier
+        run: cargo test --manifest-path rust/Cargo.toml -p gcs-cli --features gcs-cli/slow
+
+  core:
+    needs: build
+    name: core ${{ matrix.shard }}/${{ strategy.job-total }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    env:
+      # a test missing from rust/test-times.tsv is most likely one of the slow tier's long ones
+      DEFAULT_SECONDS: 60
+    steps:
+      # the binary reads documents from the checkout, at the path it was built in
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-suite-slow
+          path: suite
+      - name: Shard ${{ matrix.shard }} of the core suite with the slow tier
+        run: |
+          chmod +x suite/core
+          scripts/test-shard.sh ${{ matrix.shard }} ${{ strategy.job-total }} \
+              --binary suite/core rust/gcs-core

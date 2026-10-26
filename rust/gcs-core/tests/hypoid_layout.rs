@@ -633,6 +633,7 @@ fn a_start_on_the_wrong_side_lands_on_the_recorded_pair() {
 /// same solve.  The whole-system solve alone (`Off`, DogLeg then LM) is reported, not held: from
 /// the words alone it reaches the pair from no design.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 36 s: the hypoid layout solved")]
 fn the_layout_solves_from_its_words_alone_in_block_order() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     let (_,rows) = recorded();
@@ -765,6 +766,7 @@ fn first_start(scenario: &str, jitters: &[f64], mut attempt: impl FnMut(f64,u32)
 /// along its lines by its rows (#535) so does the bevel from every jitter of a fifth of the first
 /// 64, so the walk goes on to a tenth.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 16 s: the hypoid layout rescued")]
 fn a_stop_on_the_iteration_limit_is_rescued() {
     use gcs_core::solve::{self,BlockMode,SolveOpts};
     // half the default hundred, both solves alike: the block pass works to the same limit

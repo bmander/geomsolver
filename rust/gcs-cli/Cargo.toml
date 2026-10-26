@@ -11,8 +11,9 @@ description = "solventc: check a Solvent document from the command line."
 gcs-core = { path = "../gcs-core" }
 
 [features]
-# The slow tier: tests of ten seconds or more, run by `make test-slow`.
-slow = []
+# The slow tier: tests of ten seconds or more, run by `make test-slow`.  The core's with it, so
+# the cases the core leaves to that tier (`examples::left_to_slow_tier`) are left by one switch.
+slow = ["gcs-core/slow"]
 occt = []
 
 [dev-dependencies]

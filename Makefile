@@ -4,6 +4,7 @@
 #   make solventc   build/solventc — check a Solvent document from a terminal
 #   make wasm       web/src/wasm/gcs.wasm (what the web app instantiates)
 #   make test       everything: both released artefacts, cargo and the web suite
+#   make test-changed  the tests a change can reach, and a smoke set (before a push; CI runs all)
 #   make bench      the native benchmark and the wasm one, meant to be read side by side
 
 UNAME := $(shell uname -s)
@@ -27,7 +28,8 @@ WASM_TARGET := wasm32-unknown-unknown
 HOST := $(shell rustc -vV | sed -n 's/^host: //p')
 RELEASE := $(CARGO) build --manifest-path rust/Cargo.toml --release -p gcs-ffi
 
-.PHONY: all wasm solventc release test test-rust test-web test-slow test-ccx bench fmt clippy clean
+.PHONY: all wasm solventc release test test-rust test-web test-changed test-times test-slow test-ccx \
+        bench fmt clippy clean
 
 all: build/libgcs$(EXT)
 
@@ -81,9 +83,23 @@ test-rust: all
 test-web: wasm
 	cd web && npm test
 
+# The inner loop's selection: the modules of the core's suite a change since the merge base with
+# origin/main can reach, the CLI's, the ABI's or the web suite when those changed, and a smoke set
+# (scripts/test-changed.sh says how it maps a file).  `LIST=1` prints the selection only.  It is
+# not the gate: CI runs the whole fast suite on every push (.github/workflows/test.yml).
+test-changed:
+	CARGO="$(CARGO)" scripts/test-changed.sh
+
+# Every test of the core's suite timed, into rust/test-times.tsv, which CI deals its shards by;
+# the slowest are printed.  The slow tier, or another binary, is the script's own arguments
+# (`scripts/test-times.sh -p gcs-core --test core --features gcs-core/slow`).
+test-times:
+	CARGO="$(CARGO)" scripts/test-times.sh
+
 # The slow tier as well (tests of twenty seconds to a few minutes, `feature = "slow"`): the gear
-# pair's whole-member verifications and, with `OCCT=1`, a native tooth space. Run it before a
-# change to the gear example or the native export lands, not on every edit.
+# pair's whole-member verifications and, with `OCCT=1`, a native tooth space. CI runs it every
+# night (.github/workflows/slow.yml); run it, or that workflow by hand, before a change to the
+# gear example or the native export lands, not on every edit.
 test-slow: all
 	$(CARGO) test --manifest-path rust/Cargo.toml --features gcs-core/slow,gcs-cli/slow$(if $(filter 1,$(OCCT)),$(comma)gcs-cli/occt,)
 

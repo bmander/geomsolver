@@ -224,6 +224,7 @@ swelling := sweep(Swelling(std.top, r: 10mm, size: 2mm, pitch: 4mm, turns: 3).f 
 /// tangents alike, and was sampled as one chord: the wall's mesh fanned across the coil from a
 /// seam of two points, 800 000 triangles off it by 17 mm.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 11 s: a screwed wall meshed")]
 fn a_screwed_wall_is_written_and_meshed() {
     let e = with("
 param s: Scalar over (0, 1)

@@ -13,6 +13,7 @@ fn example(name: &str) -> Sketch {
 }
 
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 19 s: a placed sweep exported")]
 fn a_sweep_placed_once_is_built_whole_and_exported() {
     let sk = example("swept_torus.sv");
     let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "part").unwrap();
@@ -40,6 +41,7 @@ fn a_sweep_placed_once_is_built_whole_and_exported() {
 /// stage saying what the next does, as a worker shows it — and supplied to a sketch in place of
 /// the field's surface: its volume the B-rep's, its faces meeting at creases.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 17 s: a sweep built by stages")]
 fn a_swept_bodys_exact_surface_is_built_by_stages_and_supplied() {
     let sk = example("swept_torus.sv");
     let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "part").unwrap();

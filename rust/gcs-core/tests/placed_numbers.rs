@@ -186,6 +186,7 @@ fn short_front() -> String {
 /// its place, the centre the index reads and an axis — each a march of its own — against
 /// central differences.
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 18 s: a front marched")]
 fn a_front_holds_a_point_through_its_speed() {
     let e = build(&short_front());
     let mut sk = solved(&e);

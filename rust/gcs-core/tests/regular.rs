@@ -81,6 +81,7 @@ fn the_least_area_factor_is_the_one_the_admission_samples() {
 /// admission admits the pinion; a tenth below, the solve says the bound is broken and the
 /// admission refuses the pinion for a fold (E3).
 #[test]
+#[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 12 s: the flank's fold found")]
 fn the_bound_breaks_where_the_exported_flank_first_folds() {
     let at = shift(&fixtures::gear::read(&pair(12.5, &regular("0"), true)));
     eprintln!("the flank folds below {at:.6}°");

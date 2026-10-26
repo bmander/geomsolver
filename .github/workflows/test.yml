@@ -1,0 +1,102 @@
+# The fast suite on every push and on every pull request from a fork: what `make test` runs,
+# split across machines so it is back in minutes.  A push no longer waits on a full `make test`
+# run by hand; the inner loop is `make test-changed` and this is the gate (docs/testing.md).
+#
+#   build     the core's test binary, built once and handed to the shards as an artefact; then,
+#             on the libraries that build just compiled, every other crate's suite (the CLI over
+#             the case library, the ABI's panic boundary) and the documentation tests
+#   core      the core's suite dealt into shards by scripts/test-shard.sh from the times in
+#             rust/test-times.tsv: run, not built, so a shard spends its minutes testing
+#   web       both release artefacts, as `make release` builds them, then the web suite against
+#             the wasm
+#
+# No job caches its Rust build.  A fresh checkout's sources are newer than anything a cache could
+# hold, and cargo judges the workspace's crates by those times, so they compile in every run; the
+# only crates a cache could keep are nalgebra's, the tests' one dependency, which compile beside
+# gcs-solve and off the path that matters.  Incremental compilation, which a build from nothing
+# cannot use, is off.  The slow tier is not here: slow.yml runs it every night.
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch supersedes the run in progress; on main every run finishes.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  build:
+    # a pull request from this repository has already been tested by its push
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the core's suite
+        run: |
+          cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core --no-run \
+              --message-format=json-render-diagnostics > build.json
+          mkdir -p suite
+          cp "$(jq -r 'select(.profile.test == true) | .executable // empty' build.json)" suite/core
+      # the shards start as soon as this is up, and the crates' suites run beside them
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-suite
+          path: suite/core
+          retention-days: 1
+      - name: The other crates' suites
+        run: cargo test --manifest-path rust/Cargo.toml --workspace --exclude gcs-core
+      - name: The documentation tests
+        run: cargo test --manifest-path rust/Cargo.toml --workspace --doc
+
+  core:
+    needs: build
+    name: core ${{ matrix.shard }}/${{ strategy.job-total }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      # the binary reads documents from the checkout, at the path it was built in
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: core-suite
+          path: suite
+      - name: Shard ${{ matrix.shard }} of the core suite
+        run: |
+          chmod +x suite/core
+          scripts/test-shard.sh ${{ matrix.shard }} ${{ strategy.job-total }} \
+              --binary suite/core rust/gcs-core
+
+  web:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # the native library and the wasm in one Cargo job graph; the native one has to link too
+      - name: Both release artefacts
+        run: make release
+      - name: The web suite
+        run: |
+          npm ci
+          npm test
+        working-directory: web
