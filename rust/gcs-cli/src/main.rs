@@ -128,8 +128,8 @@ Examples:
     solventc part.sv                          check a document: solved, and how constrained
     solventc --json part.sv                   the same report, structured
     solventc part.sv --where hinge            the numbers under one name
-    solventc bot.sv --no-check                the layout, solved, its solids' claims unjudged
     solventc drive.sv --where torque          a value, in its unit: torque = 0.0864 N·m
+    solventc bot.sv --no-check                the layout, solved, its solids' claims unjudged
     solventc part.sv --png part.png           look at it, as the workspace shows it
     solventc part.sv --stl part.stl --solid body
                                               a solid, for a printer
@@ -948,7 +948,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                                    positions.unwrap_or(Json::Null),
                                    components.unwrap_or(Json::Null), &opts.wanted);
             // the claims `solidClaims` leaves out, so an empty list is not read as none stated
-            if opts.no_check && d.is_some() {
+            if opts.no_check && d.is_some() && !sk.solid_claims.is_empty() {
                 doc.set("solidClaimsUnjudged", Json::Int(sk.solid_claims.len() as i64));
             }
             doc

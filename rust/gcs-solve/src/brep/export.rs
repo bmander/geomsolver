@@ -601,13 +601,13 @@ fn supply_one(sk: &Sketch,i: usize) {
     if sk.supplied_exact_solid(i).is_some() { return }
     let mm = cad::millimetres(sk);
     // a body placed by a rigid motion is the body it places, supplied once and moved (#619): a
-    // claim along a roll places a wheel at each pose, and each is that one build, not its own
+    // claim along a roll places a wheel at each pose, and each is that one build, not its own.
+    // A supplied B-rep stands where it was built, about no origin, so the pose moves it whole
     if let Ok(Some((inner,pose))) = cad::placed_swept(sk,i) {
         if sk.is_swept(inner) { supply_one(sk,inner) }
         if let Some(x) = sk.supplied_exact_solid(inner) {
-            let m = super::sweep::sector::placed(pose,mm);
-            sk.supply_exact_solid(i,crate::solid::Exact {brep:x.brep.moved(&m),mm:x.mm,origin:x.origin,
-                leading:x.leading.clone(),named:x.named.clone()});
+            let brep = x.brep.moved(&super::sweep::sector::placed(pose,mm));
+            sk.supply_exact_solid(i,crate::solid::Exact {brep,mm,origin:[0.;3],leading:x.leading.clone(),named:x.named.clone()});
             return
         }
     }
