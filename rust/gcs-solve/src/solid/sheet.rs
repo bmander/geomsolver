@@ -65,16 +65,16 @@ fn built(sk: &Sketch, si: usize, unit: f64) -> Result<Band, String> {
     let (a, b) = (rails[0].path(sk)?, rails[1].path(sk)?);
     let d = t.lo.value(sk)?;
     if !(d > 0.0) {
-        return Err(format!("`{}`: a band is a distance more than nothing from its sheet", s.name));
+        return Err("a band is a distance more than nothing from its sheet".into());
     }
     // the band from the panel to `d` the way the bound reads it
     let (lo, hi) = if *side >= 0.0 { (0.0, d) } else { (-d, 0.0) };
-    let home = a.point(a.domain().0 + 0.5 * (a.domain().1 - a.domain().0) * f64::from(!a.closed()));
-    let panel = Developable::build(a, b, home).map_err(|r| format!("`{}`: {r}", s.name))?;
-    let tol = unit.max(1e-9);
+    let home = crate::model::developed::middle(&a);
+    let panel = Developable::build(a, b, home).map_err(|r| r.to_string())?;
+    let tol = crate::curve::flatness(unit);
     let mut stations = panel.stations(tol);
     if stations.len() < 2 {
-        return Err(format!("`{}`: the panel has too few rulings to make a band", s.name));
+        return Err("the panel has too few rulings to make a band".into());
     }
     if stations.len() > MAX_STATIONS {
         let step = stations.len().div_ceil(MAX_STATIONS);

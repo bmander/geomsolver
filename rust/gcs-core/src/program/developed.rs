@@ -43,6 +43,17 @@ pub(super) fn sheets(cx: &mut Elab<'_>, sheets: &[SheetInfo]) {
     }
 }
 
+/// **Each panel the document names** (#645), by its name and its rails, for the report: a rail
+/// that names no path is said where the panel is used, so it is passed by here.
+pub(super) fn panels(cx: &mut Elab<'_>, panels: &[(String, [RailInfo; 2])]) {
+    for (name, rails) in panels {
+        if let (Ok(a), Ok(b)) = (rail(cx, &rails[0]), rail(cx, &rails[1])) {
+            cx.sk.panels.push(crate::model::Panel { name: crate::program::public_path(name),
+                                                    rails: [a, b] });
+        }
+    }
+}
+
 /// **Each development's laid rails** (#645), once the geometry is built and before a relation
 /// reads them: `{flat}.a` and `{flat}.b`, curves over its home ruling's ends `f` and `g`, the
 /// panel built between the rails and laid from the home point (`model::Developed`).

@@ -1,0 +1,13 @@
+// The cut file for dory_panel.sv: the strake's neutral layer laid on its 2440 × 1220 sheet of
+// plywood, in the sheet's own plane, at 1:10: the pattern, its rails and its end rulings, and the
+// board it is cut from.
+model m from "dory_panel.sv"
+
+sheet flat {
+  size (420mm, 297mm)
+  label "DORY SIDE PANEL  laid flat on a 2440 × 1220 sheet, 6 mm ply, the neutral layer" at (14mm, 16mm)
+  sketch pattern(m) from m.plywood at (60mm, 220mm) scale 0.12
+  label "The pattern: the chine below, the sheer above, cut along the end rulings" at (60mm, 236mm)
+  style m.flat.a { color: #b22222 }
+  style m.flat.b { color: #b22222 }
+}

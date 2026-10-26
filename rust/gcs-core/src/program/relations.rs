@@ -87,6 +87,10 @@ pub(crate) fn settle(
                 w.sel(n)
                     .or_else(|| (n == "t" && place.is_some()).then(String::new))
                     .or_else(|| (n == "pairs").then(|| pairs.to_string()))
+                    // an interval of a contact's place, its incidence stated apart (#645)
+                    .or_else(|| (n == "fraction" && word == "coincident" && w.dim().is_some()
+                        && w.bound().is_some_and(|(c, _)| c == crate::syntax::Cmp::In))
+                        .then(String::new))
             };
             let circle = matches!((a, b), (EntKind::Point, EntKind::Circle) | (EntKind::Circle, EntKind::Point));
             if let (true, Some(at)) = (word == "coincident" && circle, place) {
@@ -106,6 +110,13 @@ pub(crate) fn settle(
                 let mut swapped = w.clone();
                 swapped.ops.swap(0, 1);
                 return settle(&swapped, kind_of);
+            }
+            // a plane touching a curve of a view (#645): what it holds is a tangent in space
+            if word == "tangent" && at_point && a == EntKind::Frame && curved {
+                return Err((w.word.span, "a plane in space touches a curve whose tangent is in \
+                    space: a curve traced in space (a spline over points in space), a line, a \
+                    circle or an arc — a curve drawn in a view is a panel's rail \
+                    (`std.Developable`) and no plane's here".to_string()));
             }
             // and an envelope in space is named first by whatever touches it (#283), as a body
             // traced in space is (#326)
@@ -185,8 +196,13 @@ fn settle_rate(
     kind_of: &dyn Fn(&Ref) -> Option<EntKind>,
 ) -> Result<(CKind, Vec<Option<Arg>>), (Span, String)> {
     let [rate] = &w.rates[..] else {
-        return Err((w.word.span, "a relation reads one rate".to_string()));
+        return Err((w.word.span, "a relation reads one rate of a contact: two compared are read \
+            in a body that runs over the formal they are along".to_string()));
     };
+    if rate.op >= w.ops.len() || w.word.text == "equal" {
+        return Err((w.word.span, "a rate compared with a rate or a length is read in a body that \
+            runs over the formal it is along, never of a contact's slot".to_string()));
+    }
     let held = "a rate of a contact is held along a direction or square to one, `rate(p over t) \
                 parallel l` or `perpendicular l`, or measured along one, `rate(p over t) \
                 distance(d, along: l)`";
@@ -458,6 +474,18 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
         // said once at the use, however many of the body's rows find it
         derivative(cx, st, &mut c, found, used.unwrap_or(st.span))?;
     }
+    // a plane touching a curve in space passes through the point it touches at (#645): the
+    // tangent it holds is a rate's row, and the incidence a row beside it, of one statement
+    if c.kind == CKind::Rate && c.rate_word() == crate::contact_rate::Word::Holds {
+        if let (Some(&CArg::Ent(plane)), Some(&CArg::Ent(at))) = (c.args.get(1), c.args.get(2)) {
+            let mut on = Constraint::new(CKind::PointOnPlane, vec![CArg::Ent(at), CArg::Ent(plane)]);
+            on.claim = c.claim;
+            on.class = c.class.clone();
+            on.word = c.word.clone();
+            let id = cx.sk.add_quiet(on);
+            cx.map.record(st, super::source_map::Made::Con(id));
+        }
+    }
     region_or_row(cx, &r, st, c, term_name)
 }
 
@@ -693,7 +721,9 @@ fn traced_contact(cx: &Elab<'_>, kind: CKind, args: &mut Vec<CArg>, left_out: &m
         };
         match word.as_str() {
             "tangent" if surface => args[5] = CArg::Str("in_plane".to_string()),
-            "normal" | "plane" | "curvature" if !surface => {
+            // a plane touching a curve in space holds its tangent (#645)
+            "plane" if !surface => args[5] = CArg::Str("holds".to_string()),
+            "normal" | "curvature" if !surface => {
                 return Err(format!("`{}` is a curve in space, which has a tangent at a point and \
                     no normal or section this relation reads: a surface has them; its curvature is \
                     a centre, `{} curvature(at: m) c` of a point `c`", t.name, t.name));
@@ -1289,6 +1319,7 @@ pub(super) fn tangents_at(sk: &Sketch, map: &SourceMap, diags: &mut Vec<Diag>) {
                     Word::Normal => "normal",
                     Word::Curvature | Word::Centre => "curvature",
                     Word::Plane | Word::InPlane => "tangent plane",
+                    Word::Holds => "tangent",
                     Word::Parallel if meshing => "path of contact",
                     _ if matches!(&c.args[5], CArg::Str(w) if w == "tangent") => "tangent",
                     _ => "rate",

@@ -93,6 +93,20 @@ pub fn solid_diagnostics(sk: &crate::model::Sketch, map: &SourceMap, p: &Program
             diags.push(refuse(EntRef::new(crate::model::EntKind::Curve, i), message));
         }
     }
+    // a development whose panel cannot be built (#645): said once, at its laid `a`
+    for i in 0..sk.curves.len() {
+        let crate::model::CurveBody::Developed(dev) = &sk.curve_defs[sk.curves[i].def as usize].body
+        else { continue };
+        if dev.which != 0 { continue; }
+        let refusal = match dev.consts(sk) {
+            Err(m) => Some(m),
+            Ok(_) => sk.development_of(i).and_then(|d| d.as_ref().as_ref().err().map(|r| r.to_string())),
+        };
+        if let Some(why) = refusal {
+            diags.push(refuse(EntRef::new(crate::model::EntKind::Curve, i),
+                              format!("the panel is not laid flat: {why}")));
+        }
+    }
     diags.extend(views::degenerate(sk, map));
     diags.extend(views::coplanar(sk, map));
     for i in 0..sk.envelopes.len() {

@@ -31,6 +31,30 @@ impl Rail {
     }
 }
 
+/// **A developable panel the document names** (#645): the set's name and its rails, `a` then `b`.
+#[derive(Clone, Debug)]
+pub struct Panel {
+    pub name: String,
+    pub rails: [Rail; 2],
+}
+
+impl Panel {
+    /// The panel built as the drawing stands, from its home: the middle of `a`, or where a band's
+    /// `a` starts (`developable::Developable::build`).
+    pub fn built(&self, sk: &Sketch) -> Result<crate::developable::Developable, String> {
+        let (a, b) = (self.rails[0].path(sk)?, self.rails[1].path(sk)?);
+        let home = middle(&a);
+        crate::developable::Developable::build(a, b, home).map_err(|r| r.to_string())
+    }
+}
+
+/// Where a panel with no seam of its own is built from: the middle of an open `a`, or where a
+/// closed one starts.
+pub fn middle(a: &crate::path::Path) -> [f64; 3] {
+    let (lo, hi) = a.domain();
+    a.point(lo + 0.5 * (hi - lo) * f64::from(!a.closed()))
+}
+
 /// **A panel's rail laid flat** (`flat.a`, `flat.b`): the image of rail `which` (0 `a`, 1 `b`) of
 /// the panel between `rails`, its layer `d` along the panel's normal, laid from the home ruling
 /// through `s` on `a`; the curve's two arguments are the home ruling's ends where it is laid, its

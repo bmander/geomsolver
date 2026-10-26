@@ -549,6 +549,8 @@ impl Sketch {
         if !followed {
             key.extend(self.curve_pose(i).unwrap_or_default());
         }
+        // a laid rail is a function of its panel's rails besides (#645)
+        key.extend(self.developed_consts(i).unwrap_or_default());
         if let Some((k, poly)) = self.caches.polyline.borrow().get(&i) {
             if *k == key {
                 return poly.clone();

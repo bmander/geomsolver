@@ -508,12 +508,14 @@ impl<'v> Lowering<'v> {
     fn rate_relation(&mut self, st: &Stmt, r: &crate::ir::Relation)
         -> Result<(crate::ir::Relation, bool), Fail> {
         let Some(second) = self.second.clone() else {
-            let (r, rf, unary) = super::curves::rate_operand(st, r, &self.swept, self.angle)
+            let (r, refs, unary) = super::curves::rate_operand(st, r, &self.swept, self.angle)
                 .map_err(|(s, m)| (Code::E103, s, m))?;
-            let p = self.rated_point(&rf)?;
-            let line = self.rate_line(p, rf.span, false)?;
-            let k = r.form.written().map_or(0, |w| w.rates[0].op);
-            return Ok((super::curves::rate_rewritten(r, &[(k, line, rf.span)], unary), true));
+            let mut lines = Vec::with_capacity(refs.len());
+            for (k, rf) in refs {
+                let p = self.rated_point(&rf)?;
+                lines.push((k, self.rate_line(p, rf.span, false)?, rf.span));
+            }
+            return Ok((super::curves::rate_rewritten(r, &lines, unary), true));
         };
         let w = r.form.written()
             .ok_or((Code::E103, st.span, "a rate is written in a relation".to_string()))?;
@@ -541,7 +543,8 @@ impl<'v> Lowering<'v> {
         let unary = w.fixity == crate::constraints::Fixity::Infix && w.ops.len() == 1;
         let mut lines = Vec::new();
         for rate in &w.rates {
-            let rf = &w.ops[rate.op];
+            let rf = super::curves::rated_ref(w, rate.op)
+                .ok_or((Code::E103, st.span, "a rate is of an operand of its relation".into()))?;
             let p = self.rated_point(rf)?;
             lines.push((rate.op, self.rate_line(p, rf.span, rate.over.text != self.swept)?,
                         rf.span));

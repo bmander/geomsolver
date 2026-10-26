@@ -220,6 +220,15 @@ pub struct DevelopedInfo {
     pub span: Span,
 }
 
+/// The paths the walk made a panel's rail may name (#645), recorded as they are walked — a use
+/// is applied while the walk's statements are set aside: each named chain with the scope it was
+/// written in, and each path that comes round (a circle, a spline written closed).
+#[derive(Default)]
+pub(super) struct RailsSeen {
+    pub chains: BTreeMap<String, (crate::syntax::NamedChain, Scope)>,
+    pub closed: BTreeSet<String>,
+}
+
 /// A development met in the walk, its set resolved once every set is known (`Walk::developments`).
 #[derive(Clone)]
 pub(super) struct Pending {
@@ -300,7 +309,9 @@ impl Walk<'_> {
         };
         let kinds = vec![
             point(&dev.f, [0.0, 0.0], false, None),
-            point(&dev.g, [100.0, 0.0], false, None),
+            // at a bearing no relation a parent places it by stands still at: not along or
+            // across the plane's axes
+            point(&dev.g, [80.0, 60.0], false, None),
             point("a0", [0.0; 2], true, Some(&dev.f)),
             point("b0", [0.0; 2], true, Some(&dev.g)),
             point("a1", [0.0; 2], true, Some(&dev.f)),
@@ -362,6 +373,14 @@ impl Walk<'_> {
             }
             self.developed.push(DevelopedInfo { prefix: p.prefix, rails, home, d: p.d, span: at });
         }
+        // every set the document makes that is a panel, for the report
+        let made: Vec<(String, super::sets::Site)> = self.sets.made.iter()
+            .map(|(n, s)| (n.clone(), s.clone())).collect();
+        for (name, site) in made {
+            if let Some(rails) = self.sheet_rails(&site, &alias) {
+                self.panels.push((name, rails));
+            }
+        }
     }
 
     /// A recognised sheet's rails, resolved from where its body is read, or `None` for any other
@@ -373,10 +392,7 @@ impl Walk<'_> {
             let (abs, rest) = self.look(alias).find(r, site.scope())?;
             let abs = std::iter::once(abs).chain(rest).collect::<Vec<_>>().join(".");
             // a named chain: its links by absolute name, in order
-            let chain = self.out.iter().find_map(|(st, _, sc)| match &st.kind {
-                StmtKind::Chain(c) if c.name.key().text == abs => Some((c.clone(), sc.clone())),
-                _ => None,
-            });
+            let chain = self.rails_seen.chains.get(&abs).cloned();
             if let Some((c, sc)) = chain {
                 let links = c.links.iter().map(|l| {
                     let (t, rest) = self.look(alias).find(l, &sc)?;
@@ -385,9 +401,7 @@ impl Walk<'_> {
                 return Some(RailInfo { links, chain: true, closed: c.closed, reversed });
             }
             // one path: closed where it is a circle, or a spline written closed
-            let closed = self.out.iter().any(|(st, _, _)| matches!(&st.kind,
-                StmtKind::Decl(d) if d.name.key().text == abs
-                    && (d.kind == crate::model::EntKind::Circle || d.close.is_some())));
+            let closed = self.rails_seen.closed.contains(&abs);
             Some(RailInfo { links: vec![abs], chain: false, closed, reversed })
         };
         Some([rail(&body.a, false)?, rail(&body.b, body.opposite)?])

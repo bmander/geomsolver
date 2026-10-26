@@ -55,6 +55,11 @@ use crate::space::{add, cross, dot, norm, scale, sub};
 /// none.
 const TANGENT: f64 = 1e-9;
 
+/// Below this sine the home ruling runs along a rail's tangent: its root is found to a part in a
+/// hundred million, and a double root of the correspondence — the ruling along the rail — only to
+/// its square root.
+const ALONG: f64 = 1e-6;
+
 /// A fraction of the gauge either rail may run backward and still be read as standing.
 const FOLD: f64 = 1e-7;
 
@@ -382,22 +387,29 @@ impl Flow<'_> {
         let dr = sub(dno, dmo);
         let lhs4 = dot(r, dr);
         let speed_n = dot(dno, dno);
+        let still = sm <= 1e-12 * norm(dno).max(1e-300);
         let mut x = self.rates;
         for _ in 0..30 {
             let (fx, fy, gx, gy) = (x[0], x[1], x[2], x[3]);
             let sf = (fx * fx + fy * fy).sqrt().max(1e-300);
-            let res = [
+            let mut res = [
                 fx * fx + fy * fy - sm * sm,
                 gx * gx + gy * gy - speed_n,
                 (fx * eh[0] + fy * eh[1]) * sm - cm * sf,
                 e[0] * (gx - fx) + e[1] * (gy - fy) - lhs4,
             ];
-            let j = [
+            let mut j = [
                 [2.0 * fx, 2.0 * fy, 0.0, 0.0],
                 [0.0, 0.0, 2.0 * gx, 2.0 * gy],
                 [eh[0] * sm - cm * fx / sf, eh[1] * sm - cm * fy / sf, 0.0, 0.0],
                 [-e[0], -e[1], e[0], e[1]],
             ];
+            if still {
+                // the foot stands (a fan about a corner of `a`, the layer at the panel): its
+                // image stands too, and the angle row says nothing
+                (res[0], res[2]) = (fx, fy);
+                (j[0], j[2]) = ([1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0]);
+            }
             let dx = solve4(j, res)?;
             let mut big = 0.0f64;
             for k in 0..4 {
@@ -500,6 +512,19 @@ impl Developable {
                 is {} from it", crate::vocab::num(gap)), s));
         }
         let w0 = home_root(&a, &b, u0)?;
+        // a ruling along a rail's tangent has no plane through the two: refused, not marched
+        {
+            let back = if !a.closed && u0 <= a.lo { 1.0 } else { -1.0 };
+            let [pa, a1, _] = a.jet(u0, a.anchor(u0, back)).map_err(Refusal::whole)?;
+            let pb = b.path.point(b.wrapped(w0, w0).0);
+            let b1 = b.jet(w0, b.anchor(w0, 1.0)).map_err(Refusal::whole)?[1];
+            let r = sub(pb, pa);
+            let along = |t: V| norm(cross(t, r)) <= ALONG * norm(t) * norm(r);
+            if along(a1) || along(b1) {
+                return Err(Refusal::at("a ruling is tangent to a rail: no plane holds the rail's \
+                    tangent and the ruling as two directions", pa));
+            }
+        }
         let mut dev = Developable { a, b, pieces: Vec::new(), closed: false, span: (0.0, 0.0),
                                     home: (u0, w0) };
         dev.closed = dev.a.closed;
@@ -727,7 +752,8 @@ impl Developable {
     }
 
     /// Rulings enough to draw the panel to `tol`: each piece's ends, and between them halved
-    /// where the middle ruling's feet stand off the chord between its neighbours' by more.
+    /// where the middle ruling's feet, or its middle, stand off the chord between its neighbours'
+    /// by more.
     pub fn stations(&self, tol: f64) -> Vec<Ruling> {
         let mut out: Vec<Ruling> = Vec::new();
         for p in &self.pieces {
@@ -749,8 +775,9 @@ impl Developable {
                 let (Some(rx), Some(ry), Some(rm)) = (read(x), read(y), read(0.5 * (x + y)))
                     else { continue };
                 let off = |p: V, q: V, m: V| norm(sub(m, scale(add(p, q), 0.5)));
+                let mid = |r: &Ruling| scale(add(r.m, r.n), 0.5);
                 let bad = off(rx.m, ry.m, rm.m).max(off(rx.n, ry.n, rm.n))
-                    .max(norm(sub(rx.normal, ry.normal)) * norm(sub(rm.n, rm.m)));
+                    .max(off(mid(&rx), mid(&ry), mid(&rm)));
                 if bad > tol && depth < 16 {
                     stack.push((0.5 * (x + y), y, depth + 1));
                     stack.push((x, 0.5 * (x + y), depth + 1));
@@ -764,6 +791,48 @@ impl Developable {
                 }
             }
             out.extend(seq);
+        }
+        out
+    }
+
+    /// Where on piece `k` a rail's spline crosses a knot (`Path::joins`), in the running number:
+    /// found between the piece's nodes by bisection on the ruling's feet.
+    fn joins(&self, k: usize) -> Vec<f64> {
+        let p = &self.pieces[k];
+        let mut out = Vec::new();
+        for (rail, which) in [(&self.a, 0usize), (&self.b, 1)] {
+            let joins = rail.path.joins();
+            if joins.is_empty() {
+                continue;
+            }
+            let at = |s: f64| self.ruling(s).ok().map(|r| if which == 0 { r.u } else { r.w });
+            for w in p.nodes.windows(2) {
+                let (x0, x1) = if which == 0 { (w[0].1, w[1].1) } else { (w[0].2, w[1].2) };
+                for &q in &joins {
+                    // a closed rail's places run on past its interval, each period's knots again
+                    let shift = if rail.closed {
+                        ((x0.min(x1) - rail.lo) / rail.period()).floor() * rail.period()
+                    } else {
+                        0.0
+                    };
+                    for q in [q + shift, q + shift + rail.period()] {
+                        if !((x0 - q) * (x1 - q) < 0.0) {
+                            continue;
+                        }
+                        let (mut lo, mut hi) = (w[0].0, w[1].0);
+                        let up = x1 > x0;
+                        for _ in 0..80 {
+                            let mid = 0.5 * (lo + hi);
+                            let Some(x) = at(mid) else { break };
+                            if (x < q) == up { lo = mid } else { hi = mid }
+                            if (hi - lo).abs() <= 1e-15 * (1.0 + mid.abs()) {
+                                break;
+                            }
+                        }
+                        out.push(0.5 * (lo + hi));
+                    }
+                }
+            }
         }
         out
     }
@@ -872,8 +941,12 @@ impl Developable {
     }
 }
 
-/// A rail's length between two unwrapped places on one smooth piece.
+/// A rail's length between two unwrapped places on one smooth piece: an open rail's by the path's
+/// own reading, cut at its spline's knots.
 fn unwrapped_length(r: &Rail, x0: f64, x1: f64, at: f64) -> f64 {
+    if !r.closed {
+        return r.path.length(x0, x1);
+    }
     let speed = |x: f64| r.jet(x, at).map_or(0.0, |j| norm(j[1]));
     let (lo, hi) = (x0.min(x1), x0.max(x1));
     let k = 16;
@@ -977,6 +1050,64 @@ impl Development {
     /// The ruling's length at the home.
     pub fn home_length(&self) -> f64 {
         self.len
+    }
+
+    /// `∫ g(σ)` over each laid piece, by Gauss–Legendre on `k` cuts of each stretch between the
+    /// places a rail's spline crosses a knot: there the rates turn a corner in their second
+    /// order, which no fixed cut knows the place of.
+    fn integral(&self, g: &dyn Fn(&Laid) -> f64) -> f64 {
+        let read = |s: f64| self.at(s).map_or(0.0, |l| g(&l));
+        let k = 16;
+        self.laid.iter().filter(|l| l.hi > l.lo).map(|l| {
+            let mut cuts = vec![l.lo];
+            cuts.extend(self.panel.joins(l.piece));
+            cuts.push(l.hi);
+            cuts.retain(|&s| s >= l.lo && s <= l.hi);
+            cuts.sort_by(f64::total_cmp);
+            cuts.dedup();
+            cuts.windows(2).map(|w| (0..k).map(|j| {
+                gauss(&read, w[0] + (w[1] - w[0]) * j as f64 / k as f64,
+                      w[0] + (w[1] - w[0]) * (j + 1) as f64 / k as f64)
+            }).sum::<f64>()).sum::<f64>()
+        }).sum()
+    }
+
+    /// The length of the laid rail `which` (0 `a`, 1 `b`): `∫ |f′|` or `∫ |g′|`.
+    pub fn length(&self, which: usize) -> f64 {
+        self.integral(&|l| {
+            let d = if which == 0 { l.df } else { l.dg };
+            d[0].hypot(d[1])
+        })
+    }
+
+    /// The pattern's area: what its boundary — `a` from start to finish, the end ruling, `b`
+    /// back, the start ruling — encloses, `½ ∮ (x dy − y dx)`.
+    pub fn area(&self) -> f64 {
+        let (lo, hi) = self.panel.span;
+        let rails = self.integral(&|l| {
+            0.5 * ((l.f[0] * l.df[1] - l.f[1] * l.df[0]) - (l.g[0] * l.dg[1] - l.g[1] * l.dg[0]))
+        });
+        let chord = |p: [f64; 2], q: [f64; 2]| 0.5 * (p[0] * q[1] - q[0] * p[1]);
+        let ends = match (self.at(lo), self.at(hi)) {
+            (Ok(s), Ok(e)) => chord(e.f, e.g) + chord(s.g, s.f),
+            _ => 0.0,
+        };
+        (rails + ends).abs()
+    }
+
+    /// The pattern's points, in the canonical laying, as finely as `per` points a laid piece: its
+    /// rails' images and the end rulings' ends.  What a box around it is read off.
+    pub fn outline(&self, per: usize) -> Vec<[f64; 2]> {
+        let mut out = Vec::new();
+        for l in self.laid.iter().filter(|l| l.hi > l.lo) {
+            for j in 0..=per {
+                if let Ok(x) = self.at(l.lo + (l.hi - l.lo) * j as f64 / per as f64) {
+                    out.push(x.f);
+                    out.push(x.g);
+                }
+            }
+        }
+        out
     }
 }
 

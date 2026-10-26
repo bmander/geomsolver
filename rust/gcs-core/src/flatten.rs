@@ -375,6 +375,9 @@ pub struct Expansion {
     /// Every recognised development (#645): its laid rails made by the elaborator
     /// (`model::Developed`).
     pub developed: Vec<developable::DevelopedInfo>,
+    /// Every set recognised as a developable panel (#645), by its absolute name and its rails:
+    /// what the report reads it by.
+    pub panels: Vec<(String, [developable::RailInfo; 2])>,
     /// Every point drawn in further planes and each of its twins, by absolute key (§6.7).
     pub twins: Vec<(String, String)>,
     /// What every reference reading a member `normal` reads it of, absolute (`P.normal` gives
@@ -593,6 +596,10 @@ struct Walk<'a> {
     developing: Vec<developable::Pending>,
     /// The developments resolved — see `Expansion::developed`.
     developed: Vec<developable::DevelopedInfo>,
+    /// The sets recognised as panels — see `Expansion::panels`.
+    panels: Vec<(String, [developable::RailInfo; 2])>,
+    /// The chains and closed paths a panel's rail may name (#645).
+    rails_seen: developable::RailsSeen,
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
     sym: Option<Sym>,
     /// Root values, used to diagnose accidental capture by a closed component.
@@ -935,6 +942,8 @@ impl<'a> Walk<'a> {
             },
             developing: Vec::new(),
             developed: Vec::new(),
+            panels: Vec::new(),
+            rails_seen: Default::default(),
             twins: Vec::new(),
             normals: BTreeSet::new(),
             charts: BTreeSet::new(),
@@ -1060,6 +1069,7 @@ impl<'a> Walk<'a> {
             probes: self.sets.probes,
             sheets: self.sets.sheets,
             developed: self.developed,
+            panels: self.panels,
             face_repeats: self.faces.repeats,
             face_planes: self.faces.planes,
             face_axes: self.faces.axes,

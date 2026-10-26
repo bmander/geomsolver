@@ -385,29 +385,78 @@ impl<'a> Body<'a> {
         }
         let b: Vec<f64> = rj.iter().map(|j| j.0[1]).collect();
         let mut z0: Vec<f64> = z.iter().map(|j| j.0[0]).collect();
-        let n_alg = b.len();
         let mut jq = Vec::new();
         Self::jacobian(&self.alg, &z0, self.n_outer, n, &mut jq);
-        let mut q1 = start[..n].to_vec();
+        let solved = self.rate_newton(&mut z0, &jq, &b, start[..n].to_vec(), strict, false);
+        // rates compared with rates (#645) say nothing of a rate that stands still, where a
+        // speed and a bearing have no gradient: where the rate before does not reach them — at
+        // the home, from none at all — they are sought from a rate in every coordinate, and the
+        // root reached is the branch the march carries on
+        if solved.is_none() && self.compares() {
+            return self.rate_newton(&mut z0, &jq, &b, vec![1.0; n], strict, true);
+        }
+        solved
+    }
+
+    /// Whether a rate row compares rates or reads a speed — a row the rate is not linear in.
+    fn compares(&self) -> bool {
+        self.rate.iter().any(|r| matches!(r.kind, RowKind::Kernel(k)
+            if k == crate::kernels::K::EqualLength as usize
+                || k == crate::kernels::K::EqualAngle as usize))
+    }
+
+    /// Newton on the rate rows from `q1`, the algebraic rows' first order `jq q′ + b = 0` beside
+    /// them: the rates and the system's factor, or `None` where it loses rank or does not settle.
+    /// `damped` — from far, as the first rates of rows that compare rates are sought — each step
+    /// is halved until the rows' residual falls.
+    fn rate_newton(&self, z0: &mut [f64], jq: &[f64], b: &[f64], mut q1: Vec<f64>, strict: bool,
+                   damped: bool) -> Option<Solved> {
+        let n = self.n_q;
+        let n_alg = b.len();
         let (mut rr, mut jr) = (Vec::new(), Vec::new());
         let mut solved = None;
-        for _ in 0..RATE_NEWTON {
+        // the rows' residual at `q1`: the algebraic rows' first order, then the rate rows
+        let merit = |z0: &mut [f64], q1: &[f64], rr: &mut Vec<f64>| -> f64 {
+            z0[self.r0()..].copy_from_slice(q1);
+            residual(&self.rate, z0, rr);
+            let alg: f64 = (0..n_alg).map(|i| {
+                let v = b[i] + (0..n).map(|j| jq[i * n + j] * q1[j]).sum::<f64>();
+                v * v
+            }).sum();
+            alg + rr.iter().map(|x| x * x).sum::<f64>()
+        };
+        for _ in 0..if damped { 8 * RATE_NEWTON } else { RATE_NEWTON } {
             z0[self.r0()..].copy_from_slice(&q1);
-            residual(&self.rate, &z0, &mut rr);
-            Self::jacobian(&self.rate, &z0, self.r0(), n, &mut jr);
+            residual(&self.rate, z0, &mut rr);
+            Self::jacobian(&self.rate, z0, self.r0(), n, &mut jr);
             let mut g = Vec::with_capacity(n);
             for i in 0..n_alg {
                 g.push(-(b[i] + (0..n).map(|j| jq[i * n + j] * q1[j]).sum::<f64>()));
             }
             g.extend(rr.iter().map(|x| -x));
-            let mut m = jq.clone();
+            let before = g.iter().map(|x| x * x).sum::<f64>();
+            let mut m = jq.to_vec();
             m.extend_from_slice(&jr);
             let m = factor(n_alg + rr.len(), n, m)?;
             m.solve(&mut g);
             let big = q1.iter().fold(1.0f64, |a, x| a.max(x.abs()));
-            let step = g[..n].iter().fold(0.0f64, |a, x| a.max(x.abs()));
+            let mut lambda = 1.0;
+            if damped {
+                let mut trial = vec![0.0; n];
+                let mut scratch = Vec::new();
+                for _ in 0..30 {
+                    for k in 0..n {
+                        trial[k] = q1[k] + lambda * g[k];
+                    }
+                    if merit(z0, &trial, &mut scratch) < before {
+                        break;
+                    }
+                    lambda *= 0.5;
+                }
+            }
+            let step = lambda * g[..n].iter().fold(0.0f64, |a, x| a.max(x.abs()));
             for (x, d) in q1.iter_mut().zip(&g[..n]) {
-                *x += d;
+                *x += lambda * d;
             }
             if !step.is_finite() {
                 return None;

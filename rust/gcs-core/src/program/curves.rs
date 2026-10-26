@@ -265,36 +265,57 @@ pub(super) const SAMPLED_BASE: usize = 1 << 21;
 /// alone before its word (`rate(p over s) distance(1, along: tl)`).
 pub(super) fn rate_operand(
     st: &Stmt, r: &crate::ir::Relation, swept: &str, angle: bool,
-) -> Result<(crate::ir::Relation, crate::syntax::Ref, bool), (Span, String)> {
+) -> Result<(crate::ir::Relation, Vec<(usize, crate::syntax::Ref)>, bool), (Span, String)> {
     let w = r.form.written().ok_or((st.span, "a rate is written in a relation".to_string()))?;
     if r.initially {
         return Err((st.span, "a rate is no row at the home: `initially { … }` says what holds \
             there of the instance itself".to_string()));
     }
-    if w.rates.len() > 1 {
-        return Err((st.span, "a relation reads one rate: two along the running formal would \
-            make the rates' system quadratic, leaving a root to choose at every step".to_string()));
+    // a rate against a rate (#645): equal speeds, `equal`, and equal angles, `angle(…)`
+    let against = matches!(w.word.text.as_str(), "equal" | "angle");
+    if w.rates.len() > 2 || (w.rates.len() == 2 && !against) {
+        return Err((st.span, "a relation reads one rate, or two compared — `rate(x over s) equal \
+            rate(y over s)`, `rate(x over s) angle(rate(y over s), l) k`: any other two along the \
+            running formal would leave a root to choose at every step".to_string()));
     }
-    let rate = &w.rates[0];
-    if rate.over.text != swept {
-        return Err((rate.over.span, format!("`rate(… over {})` is read along `{}`, and the curve \
-            runs over `{swept}`: a rate is along the formal a trace runs over", rate.over.text,
-            rate.over.text)));
-    }
-    // the formal's number is degrees, and a rate per degree is no rate a person states: which
-    // unit one along a turn is in is D3's to settle
-    if angle {
-        return Err((rate.over.span, format!("`{swept}` is an angle, and a rate along an angle is \
-            not yet read: run the body over a `Scalar` or a `Length`")));
+    let mut refs = Vec::with_capacity(w.rates.len());
+    for rate in &w.rates {
+        if rate.over.text != swept {
+            return Err((rate.over.span, format!("`rate(… over {})` is read along `{}`, and the \
+                curve runs over `{swept}`: a rate is along the formal a trace runs over",
+                rate.over.text, rate.over.text)));
+        }
+        // the formal's number is degrees, and a rate per degree is no rate a person states:
+        // which unit one along a turn is in is D3's to settle
+        if angle {
+            return Err((rate.over.span, format!("`{swept}` is an angle, and a rate along an angle \
+                is not yet read: run the body over a `Scalar` or a `Length`")));
+        }
+        let rf = rated_ref(w, rate.op)
+            .ok_or((st.span, "a rate is of an operand of its relation".to_string()))?;
+        refs.push((rate.op, rf.clone()));
     }
     let unary = w.fixity == crate::constraints::Fixity::Infix && w.ops.len() == 1;
-    Ok((r.clone(), w.ops[rate.op].clone(), unary))
+    Ok((r.clone(), refs, unary))
+}
+
+/// The operand a rate is of: one of the relation's (`op` below their count), or — a rate in the
+/// parentheses, `angle(rate(m over u), l)` (#645) — the line there, numbered on past them.
+pub(super) fn rated_ref(w: &crate::syntax::Written, op: usize) -> Option<&crate::syntax::Ref> {
+    if op < w.ops.len() {
+        return w.ops.get(op);
+    }
+    w.args.iter().filter_map(|a| match a {
+        crate::syntax::OpArg::Ent(r) => Some(r),
+        _ => None,
+    }).nth(op.checked_sub(2)?)
 }
 
 /// A relation that reads a rate, rewritten over the scratch line `line` from an origin to the
 /// rate (`{line}.o`, `{line}.t`): the line where a direction is read, its two points where the
 /// rate stands alone before `distance(k, along: l)`.  Each of `lines` is the operand a rate is
-/// of, its scratch line and its span (over two formals a relation may read two, #339 D4).
+/// of, its scratch line and its span (over two formals a relation may read two, #339 D4; two
+/// compared, #645).
 pub(super) fn rate_rewritten(
     mut r: crate::ir::Relation, lines: &[(usize, String, Span)], unary: bool,
 ) -> crate::ir::Relation {
@@ -303,8 +324,13 @@ pub(super) fn rate_rewritten(
         for (k, line, span) in lines {
             if unary {
                 w.ops = vec![at(format!("{line}.o"), *span), at(format!("{line}.t"), *span)];
-            } else {
+            } else if *k < w.ops.len() {
                 w.ops[*k] = at(line.clone(), *span);
+            } else if let Some(slot) = w.args.iter_mut().filter_map(|a| match a {
+                crate::syntax::OpArg::Ent(r) => Some(r),
+                _ => None,
+            }).nth(k - 2) {
+                *slot = at(line.clone(), *span);
             }
         }
         w.rates.clear();
@@ -319,12 +345,16 @@ pub(super) fn admissible(r: &crate::ir::ResolvedRelation<'_>) -> Result<(), Stri
     if matches!(r.kind, CKind::Parallel | CKind::Perpendicular | CKind::Angle | CKind::Ordinate) {
         return Ok(());
     }
+    // a speed stated against a speed or a length, and an angle against an angle (#645): rows
+    // the rate is not linear in, solved by Newton from the rate before as every rate row is
+    if matches!(r.kind, CKind::EqualLength | CKind::EqualAngle) {
+        return Ok(());
+    }
     let word =
         r.written.map_or_else(|| crate::syntax::snake(r.kind.name()), |w| w.word.text.clone());
     Err(format!("a rate stands where a direction is read — `parallel`, `perpendicular`, a \
-        directed `angle`, or its component `distance(k, along: l)` — and `{word}` reads it \
-        otherwise: a rate is never a place, and never a magnitude, whose row would be quadratic \
-        in it"))
+        directed `angle`, or its component `distance(k, along: l)` — or is compared, `equal` or \
+        `angle(rate(…), l)`, and `{word}` reads it otherwise: a rate is never a place"))
 }
 
 /// Each residual row of `rows` (its count and its columns) and which of the body's `n_q` numbers
@@ -431,6 +461,13 @@ impl<'v> Lowering<'v> {
         formals: &[(String, EntKind)],
         units: crate::units::Units,
     ) -> Result<Lowering<'v>, (Span, String)> {
+        // every number of the body is a tape over its variables, so a body reading more than a
+        // tape can is refused here, before one is compiled
+        if vars.len() > crate::tape::MAX_VARS {
+            return Err((span, format!("a curve may read at most {} coordinates, and this one \
+                reads {}: its formals' and its numbers' together", crate::tape::MAX_VARS,
+                vars.len())));
+        }
         let mut sk = Sketch::new();
         // the scratch sketch the block is lowered through reads numbers, so it is in the
         // document's units too — `at_seed` asks it what a bearing's literal is written in
@@ -523,20 +560,22 @@ impl<'v> Lowering<'v> {
     fn rate_relation(
         &mut self, st: &Stmt, r: &crate::ir::Relation,
     ) -> Result<crate::ir::Relation, (Span, String)> {
-        let (r, rf, unary) = rate_operand(st, r, &self.swept, self.angle)?;
-        let e = self
-            .scope
-            .get(&rf.root.text)
-            .copied()
-            .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
-        let e = follow(&self.sk, e, &rf.path).map_err(|m| (rf.span, m))?;
-        if e.kind != EntKind::Point {
-            return Err((rf.span, format!("`rate(… over {})` is of a point: {} has no rate the \
-                body integrates", self.swept, e.kind.a())));
+        let (r, refs, unary) = rate_operand(st, r, &self.swept, self.angle)?;
+        let mut lines = Vec::with_capacity(refs.len());
+        for (k, rf) in refs {
+            let e = self
+                .scope
+                .get(&rf.root.text)
+                .copied()
+                .ok_or((rf.span, format!("no such entity: `{}`", rf.root.text)))?;
+            let e = follow(&self.sk, e, &rf.path).map_err(|m| (rf.span, m))?;
+            if e.kind != EntKind::Point {
+                return Err((rf.span, format!("`rate(… over {})` is of a point: {} has no rate \
+                    the body integrates", self.swept, e.kind.a())));
+            }
+            lines.push((k, self.rate_line(e.i(), rf.span)?, rf.span));
         }
-        let line = self.rate_line(e.i(), rf.span)?;
-        let k = r.form.written().map_or(0, |w| w.rates[0].op);
-        Ok(rate_rewritten(r, &[(k, line, rf.span)], unary))
+        Ok(rate_rewritten(r, &lines, unary))
     }
 
     /// The scratch line from the origin to point `p`'s rate, made once a point, by name.

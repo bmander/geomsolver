@@ -148,11 +148,15 @@ pub enum Word {
     /// `k curvature(at: p) c`, `k` a curve in space and `c` a point: the centre of its osculating
     /// circle (#363 S5).
     Centre = 7,
+    /// `T tangent(at: p) k`, `k` a curve in space and `T` a plane (#645): the plane holds the
+    /// curve's tangent, square to its normal.
+    Holds = 8,
 }
 
 impl Word {
-    pub const ALL: [Word; 8] = [Word::Parallel, Word::Square, Word::Along, Word::Normal,
-                                Word::Plane, Word::InPlane, Word::Curvature, Word::Centre];
+    pub const ALL: [Word; 9] = [Word::Parallel, Word::Square, Word::Along, Word::Normal,
+                                Word::Plane, Word::InPlane, Word::Curvature, Word::Centre,
+                                Word::Holds];
 
     /// The word a `Rate` holds in its `word` slot, and a distance's.
     pub fn of(written: &str) -> Option<Word> {
@@ -165,6 +169,7 @@ impl Word {
             "in_plane" => Word::InPlane,
             "curvature" => Word::Curvature,
             "centre" => Word::Centre,
+            "holds" => Word::Holds,
             _ => return None,
         })
     }
@@ -173,7 +178,7 @@ impl Word {
         match self {
             Word::Parallel if planar => 1,
             Word::Parallel | Word::Normal | Word::Plane => 2,
-            Word::Square | Word::Along | Word::InPlane => 1,
+            Word::Square | Word::Along | Word::InPlane | Word::Holds => 1,
             Word::Curvature | Word::Centre => 3,
         }
     }
@@ -192,7 +197,7 @@ impl Word {
     /// direction against the normal or the unit rate is cosines.
     pub fn degree(self, form: Form) -> u32 {
         match self {
-            Word::Normal | Word::Plane | Word::InPlane => 0,
+            Word::Normal | Word::Plane | Word::InPlane | Word::Holds => 0,
             Word::Parallel | Word::Square if matches!(form, Form::Direction | Form::Path) => 0,
             _ => 1,
         }
@@ -213,6 +218,7 @@ impl Word {
             Word::InPlane => "rate_in_plane",
             Word::Curvature => "rate_curvature",
             Word::Centre => "rate_centre",
+            Word::Holds => "rate_held",
         }
     }
 }
@@ -465,6 +471,7 @@ fn rows<T: Num>(w: Word, form: Form, lead: &[T], f: &Frame<T>, stated: T, out: &
         }
         Word::Along => out[0] = dot(f.rate, dir()) - stated,
         Word::InPlane => out[0] = dot(dir(), f.n),
+        Word::Holds => out[0] = dot(unit(cross(col3(lead, 0), col3(lead, 3))), unit(f.rate)),
         Word::Normal | Word::Plane => {
             let d = match w {
                 Word::Plane => unit(cross(col3(lead, 0), col3(lead, 3))),

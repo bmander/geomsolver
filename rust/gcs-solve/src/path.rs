@@ -351,7 +351,22 @@ impl Path {
                 links[k].jet(u - k as f64, third)
             }
             Path::Spline { ctrl, knots, weights } => {
-                let span = crate::curve::span_index(knots, ctrl.len(), at);
+                // the piece between the kinks `at` stands on — a spline's knots are no kinks
+                // unless one repeats to break its tangent — read at `u` on its own span there,
+                // and past the piece's ends on the end span carried on
+                let d = crate::curve::DEGREE;
+                let (mut lo, mut hi) = self.domain();
+                let inner = &knots[(d + 1).min(knots.len())..ctrl.len().min(knots.len())];
+                if inner.windows(d).any(|w| w[0] == w[d - 1]) {
+                    for q in self.kinks() {
+                        if q <= at { lo = lo.max(q) } else { hi = hi.min(q) }
+                    }
+                }
+                let x = u.clamp(lo, hi);
+                let mut span = crate::curve::span_index(knots, ctrl.len(), x);
+                if x >= hi && span > d && knots[span] == x {
+                    span -= 1;
+                }
                 Ok(spline_jet(ctrl, knots, weights.as_deref(), span, u))
             }
             Path::Reversed(p) => {
@@ -397,6 +412,25 @@ impl Path {
             }
         });
         at
+    }
+
+    /// Where its pieces meet, in order: a chain's joints and a spline's interior knots — where a
+    /// derivative of some order turns a corner, kinked or not.
+    pub fn joins(&self) -> Vec<f64> {
+        match self {
+            Path::Chain { links, .. } => (1..links.len()).map(|k| k as f64).collect(),
+            Path::Spline { ctrl, knots, .. } => {
+                let mut out = knots[(crate::curve::DEGREE + 1).min(knots.len())
+                    ..ctrl.len().min(knots.len())].to_vec();
+                out.dedup();
+                out
+            }
+            Path::Reversed(p) => {
+                let (lo, hi) = p.domain();
+                p.joins().into_iter().rev().map(|q| lo + hi - q).collect()
+            }
+            _ => Vec::new(),
+        }
     }
 
     /// Its length over `(a, b)`: Gauss–Legendre over each smooth piece (each link of a chain,

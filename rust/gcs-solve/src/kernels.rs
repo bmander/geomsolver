@@ -151,11 +151,13 @@ pub enum K {
     PlaneTangentLine,
     PlaneTangentRound,
     PlaneSupportsCorner,
-    // where a point on a line stands along it, a fraction of its run: a contact's interval (#645)
+    // where a point on a line stands along it, a fraction of its run: a contact's interval (#645),
+    // and free
     LineFraction,
+    LineFractionFree,
 }
 
-pub const N_KERNELS: usize = 104;
+pub const N_KERNELS: usize = 105;
 
 #[derive(Clone, Copy)]
 pub struct Kernel {
@@ -3408,7 +3410,7 @@ fn plane_tangent_round_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
 /// there.  Degree 1.
 fn plane_supports_corner_rows<T: Num>(v: &[T], _k: &[f64]) -> [T; 2] {
     let (_, _, n) = frame(vec3(v, 12), vec3(v, 15));
-    let (j, a, b, o, lam) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9), v[21]);
+    let (j, a, b, o, lam) = (vec3(v, 0), vec3(v, 3), vec3(v, 6), vec3(v, 9), v[18]);
     let (into, out) = (vsub(j, a), vsub(b, j));
     let len = (vdot(into, into).sqrt() + vdot(out, out).sqrt()) * T::cst(0.5);
     let (ai, bo) = (vunit(into), vunit(out));
@@ -3425,6 +3427,12 @@ fn line_fraction_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
     let l2 = vdot(d, d);
     let l2 = if l2.val() > MIN_LINE_LEN * MIN_LINE_LEN { l2 } else { T::cst(MIN_LINE_LEN * MIN_LINE_LEN) };
     [vdot(vsub(p, a), d) / l2 - T::cst(k[0])]
+}
+
+/// Columns of `line_fraction_free`: (P, A, B, a), K = (m, c): `line_fraction` against `m·a + c`.
+fn line_fraction_free_rows<T: Num>(v: &[T], k: &[f64]) -> [T; 1] {
+    let [r] = line_fraction_rows(&v[..9], &[0.0]);
+    [r - free_num(v[9], k)]
 }
 
 /// Columns of `axis_parallel_plane`: (d, du, dv).  `d̂·n̂`: square to the plane's normal.  Degree 0.
@@ -3914,8 +3922,9 @@ pub static KERNELS: [Kernel; N_KERNELS] = [
     num_kernel!("developed_length", developed_length_rows, n_res: 1, n_par: 4, degree: 1, n_const: 1),
     num_kernel!("plane_tangent_line", plane_tangent_line_rows, n_res: 2, n_par: 18, degree: 1, n_const: 0),
     num_kernel!("plane_tangent_round", plane_tangent_round_rows, n_res: 2, n_par: 21, degree: 1, n_const: 0),
-    num_kernel!("plane_supports_corner", plane_supports_corner_rows, n_res: 2, n_par: 22, degree: 1, n_const: 0),
+    num_kernel!("plane_supports_corner", plane_supports_corner_rows, n_res: 2, n_par: 19, degree: 1, n_const: 0),
     num_kernel!("line_fraction", line_fraction_rows, n_res: 1, n_par: 9, degree: 0, n_const: 1),
+    num_kernel!("line_fraction_free", line_fraction_free_rows, n_res: 1, n_par: 10, degree: 0, n_const: 2),
 ];
 
 /// One row of a kernel: residual and Jacobian for a single constraint's local values.  The

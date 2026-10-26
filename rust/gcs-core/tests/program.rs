@@ -125,6 +125,11 @@ fn every_constraint_type_is_printable() {
             // `tests/driven.rs` elaborates it from a scenario's driving requirement
             continue;
         }
+        if kind == CKind::DevelopedLength {
+            // a development's length is its laid rail's own row, minted with it and never
+            // printed; `tests/developable.rs` elaborates it from a document
+            continue;
+        }
         if kind == CKind::RegularWithin {
             // a flank's regularity reads an envelope and two region solids, declared in a
             // document; `tests/regular.rs` prints it from the Formate pair

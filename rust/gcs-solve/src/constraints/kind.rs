@@ -387,9 +387,10 @@ pub enum CKind {
 /// The words a rate of a contact is held by (#365): `tangent` is `parallel` written as the
 /// tangent at the point (`g tangent(at: m) l`), and printed back so; `normal`, `plane`,
 /// `in_plane` and `curvature` are a surface's, written `perpendicular(at:)`, `tangent(at:)` and
-/// `curvature(at:)`; `centre` a curve's centre of curvature, written `curvature(at:)` of a point.
-pub const RATE_WORDS: [&str; 8] =
-    ["tangent", "parallel", "perpendicular", "normal", "plane", "in_plane", "curvature", "centre"];
+/// `curvature(at:)`; `centre` a curve's centre of curvature, written `curvature(at:)` of a point;
+/// `holds` a plane holding a curve's tangent, written `T tangent(at: m) k` (#645).
+pub const RATE_WORDS: [&str; 9] = ["tangent", "parallel", "perpendicular", "normal", "plane",
+                                   "in_plane", "curvature", "centre", "holds"];
 
 /// What a rate of a contact reads its rate off (#365): what the contact holding its point is on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -2082,6 +2083,7 @@ impl CKind {
             // its free twin is built beside it, at the spline's count (`KernelKey::SplineLength`)
             CKind::SplineLength => return None,
             CKind::CurveLength => K::RadiusFree,
+            CKind::LineFraction => K::LineFractionFree,
             CKind::Stationary | CKind::CurveTouchesLine => return None,
             CKind::ParallelDistance => K::ParallelDistanceFree,
             CKind::PointLineDistance => K::PointLineDistanceFree,
@@ -2129,13 +2131,11 @@ impl CKind {
             | CKind::Rate
             | CKind::RateDistance
             | CKind::RegularWithin
-            // nor a development's length, read off its panel, nor a plane touching a path, nor a
-            // line's fraction, a bound's number stated (#645)
+            // nor a development's length, read off its panel, nor a plane touching a path (#645)
             | CKind::DevelopedLength
             | CKind::PlaneTangentLine
             | CKind::PlaneTangentRound
             | CKind::PlaneSupportsCorner
-            | CKind::LineFraction
             // nor a frame's deflection (#510 S1), mass or volume: a scenario's number, stated,
             // never an unknown
             | CKind::Deflection

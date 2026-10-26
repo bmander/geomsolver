@@ -74,6 +74,7 @@ mod definitions;
 mod delaunay;
 mod derived;
 mod describe;
+mod developable;
 mod diagnose;
 mod draft;
 mod drag;
