@@ -543,7 +543,7 @@ of every instance a body writes into its `vals` as `inst.formal` (`Walk::call_nu
 number bound, else its default, else the unknown `bind` names), before the statements, so
 `p distance(ball.r) ball.center` reads it and a group argument carries it (`bind`'s group arm
 copies `{actual}.…`). No solver state; member units survive substitution; missing members are
-errors. **And so are the numbers its body defines** ([0.188]): `shield.top`, `uno.jack_y`,
+errors. **And so are the numbers its body defines** ([0.189]): `shield.top`, `uno.jack_y`,
 `b.dims.inner`, and through an instance the body writes, `st.base.top`.  `Walk::params` reads
 each statement's text (`syntax::name_uses`) for a path whose head is an instance the body
 writes, and the longest prefix past it that names a number of its component (`members::offers`:

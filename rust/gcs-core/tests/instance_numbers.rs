@@ -1,4 +1,4 @@
-//! **An instance's numbers, read from outside it** ([0.188]): `shield.top` names the number
+//! **An instance's numbers, read from outside it** ([0.189]): `shield.top` names the number
 //! `Shield`'s body defines as `top`, worked out from what the call gave it, as `ball.r` names the
 //! number a call gave the formal `r` — in a definition, a dimension or another call's argument,
 //! in whatever order they are written, through instances nested in it (`st.base.top`) and in a
