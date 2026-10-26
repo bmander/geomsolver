@@ -15,7 +15,7 @@
 use crate::syntax::{self, StmtKind};
 
 /// One value given over the one the document writes.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct Rebound {
     pub name: String,
     /// What the document writes after `:=`.
@@ -31,10 +31,14 @@ pub struct Rebound {
 /// the author wrote it on.
 pub fn rebind(src: &str, values: &[(String, String)]) -> Result<(String, Vec<Rebound>), String> {
     let (prog, _) = syntax::parse(src);
-    let mut splices: Vec<(syntax::Span, Rebound)> = Vec::new();
+    let mut splices: Vec<super::Splice> = Vec::new();
+    let mut rebound: Vec<Rebound> = Vec::new();
     for (name, value) in values {
-        let value = value.trim();
-        if values.iter().filter(|(n, _)| n == name).count() > 1 {
+        let (name, value) = (name.trim(), value.trim());
+        if name.is_empty() {
+            return Err(format!("a value `{value}` is given no name"));
+        }
+        if rebound.iter().any(|r| r.name == name) {
             return Err(format!("`{name}` is given a value twice"));
         }
         if value.is_empty() {
@@ -48,15 +52,10 @@ pub fn rebind(src: &str, values: &[(String, String)]) -> Result<(String, Vec<Reb
         }
         let at = top_level(&prog, name)?;
         let written = src[at.lo as usize..at.hi as usize].to_string();
-        splices.push((at, Rebound { name: name.clone(), written, value: value.to_string() }));
+        splices.push(super::Splice { at, with: value.to_string() });
+        rebound.push(Rebound { name: name.to_string(), written, value: value.to_string() });
     }
-    let mut out = src.to_string();
-    let mut back: Vec<&(syntax::Span, Rebound)> = splices.iter().collect();
-    back.sort_by_key(|(at, _)| std::cmp::Reverse(at.lo));
-    for (at, r) in back {
-        out.replace_range(at.lo as usize..at.hi as usize, &r.value);
-    }
-    Ok((out, splices.into_iter().map(|(_, r)| r).collect()))
+    Ok((super::splice(src, splices), rebound))
 }
 
 /// Where the value of the document's top-level `name := …` is written, or why there is none to

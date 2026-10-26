@@ -479,9 +479,8 @@ fn main() -> ExitCode {
                 None => return misuse("--where needs a name"),
             },
             "--set" => match args.next().as_deref().and_then(|v| v.split_once('=')) {
-                Some((n, v)) if !n.trim().is_empty() =>
-                    opts.set.push((n.trim().to_string(), v.to_string())),
-                _ => return misuse("--set needs NAME=VALUE"),
+                Some((n, v)) => opts.set.push((n.to_string(), v.to_string())),
+                None => return misuse("--set needs NAME=VALUE"),
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
@@ -529,6 +528,9 @@ fn main() -> ExitCode {
     if !opts.set.is_empty() && paths.len() != 1 {
         return misuse("--set gives a value of one document, so it takes one");
     }
+    if let Some(p) = paths.iter().find(|p| !opts.set.is_empty() && drawing(p)) {
+        return misuse(format!("--set gives a model's value, and `{p}` is a drawing"));
+    }
     if opts.output.is_some() && paths.len() != 1 {
         return misuse("--output writes one file, so it takes one document");
     }
@@ -560,10 +562,6 @@ fn main() -> ExitCode {
     let mut sources: Vec<Source> = Vec::new();
     for p in &paths {
         match std::fs::read_to_string(p) {
-            Ok(text) if opts.set.is_empty() =>
-                sources.push(Source { name: p.clone(), text, rebound: Vec::new() }),
-            Ok(_) if std::path::Path::new(p).extension().is_some_and(|e| e == "svd") =>
-                return misuse(format!("--set gives a model's value, and `{p}` is a drawing")),
             Ok(text) => match gcs_core::edit::rebind(&text, &opts.set) {
                 Ok((text, rebound)) => sources.push(Source { name: p.clone(), text, rebound }),
                 Err(m) => return misuse(format!("--set: {p}: {m}")),
@@ -590,9 +588,14 @@ fn main() -> ExitCode {
     ExitCode::from(worst)
 }
 
+/// Whether `path` names a drawing (`.svd`) rather than a model.
+fn drawing(path: &str) -> bool {
+    std::path::Path::new(path).extension().is_some_and(|e| e == "svd")
+}
+
 /// One document: its exit code, and its JSON report when one was asked for.
 fn check(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
-    if std::path::Path::new(&s.name).extension().is_some_and(|e| e == "svd") {
+    if drawing(&s.name) {
         return check_drawing(s, opts);
     }
     if opts.say == watch::Say::Nothing && !opts.timings {
@@ -673,6 +676,15 @@ fn read_model(s: &Source) -> (Program, Vec<SynErr>, Elaborated) {
     (prog, errs, e)
 }
 
+/// A document's first line, what came of it, then each value the run read over the one it
+/// writes, so a pasted report says how it was run (#656).
+fn headline(s: &Source, outcome: &str) {
+    println!("{}: {outcome}", s.name);
+    for b in &s.rebound {
+        println!("  {}", report::rebound_text(b));
+    }
+}
+
 fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json>) {
     let elaborating = || progress::Work::elaborate(&s.name);
     let (prog, errs, mut e) = progress::during(elaborating, || read_model(s));
@@ -703,10 +715,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     }
     if !errs.is_empty() || !e.ok() {
         if !opts.json {
-            println!("{}: did not elaborate", s.name);
-            for b in &s.rebound {
-                println!("  {}", report::rebound_text(b));
-            }
+            headline(s, "did not elaborate");
         }
         return (1, opts.json.then(|| {
             doc_json(s, &errs, None, None, &e, &[], Json::Null, Json::Null, &opts.wanted)
@@ -748,12 +757,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let components = opts.components.then(|| gcs_core::boundary::classify(&e, &sk));
 
     if !opts.json {
-        println!("{}: {}", s.name, r.outcome());
-        // what the run read over what the document writes, first, so a pasted report says how
-        // it was run (#656)
-        for b in &s.rebound {
-            println!("  {}", report::rebound_text(b));
-        }
+        headline(s, r.outcome());
         if !solved {
             println!("  {} (max residual {:.3e})", r.message, r.max_residual);
         }

@@ -395,30 +395,12 @@ fn document(src: &str, name: &str) -> Sketch {
 /// (`param w := 100`), so a caller asking for another width is asking for that line to read
 /// differently.  Rewriting it is a splice on the source, which is what every other edit in this
 /// project is; building a second copy of the rectangle in Rust to take the argument is what it
-/// is not.  Only a `param` is an input: a name the document does not declare as one is a
-/// caller's mistake and says so in debug.
+/// is not.  It is the splice `solventc --set` makes (`edit::rebind`, #656): a name the document
+/// binds no value to at its top level is a caller's mistake, and says so.
 fn with_params(src: &str, kv: &[(&str, f64)]) -> String {
-    let (prog, _) = crate::syntax::parse(src);
-    let mut values: Vec<(crate::syntax::Span, String)> = kv
-        .iter()
-        .filter_map(|&(name, v)| {
-            prog.root().body.iter().find_map(|st| match &st.kind {
-                crate::syntax::StmtKind::Param(p)
-                    if p.input.is_some() && p.bound() && p.name.text == name =>
-                {
-                    Some((p.span, crate::json::fmt_g(v, 12)))
-                }
-                _ => None,
-            })
-        })
-        .collect();
-    debug_assert_eq!(values.len(), kv.len(), "a case was given a number that is no input");
-    values.sort_by_key(|(at, _)| std::cmp::Reverse(at.lo));
-    let mut out = src.to_string();
-    for (at, v) in values {
-        out.replace_range(at.lo as usize..at.hi as usize, &v);
-    }
-    out
+    let values: Vec<(String, String)> =
+        kv.iter().map(|&(name, v)| (name.to_string(), crate::json::fmt_g(v, 12))).collect();
+    crate::edit::rebind(src, &values).expect("a case is given only values it binds").0
 }
 
 /// Every point moved a little, so a case starts somewhere its constraints do not already hold.

@@ -1063,6 +1063,7 @@ in std.front {
         (&[("beta", "1deg")][..], "`beta` is an input nothing binds"),
         (&[("checks", "1 +")][..], "`checks` is given `1 +`, which is no expression"),
         (&[("checks", " ")][..], "`checks` is given no value"),
+        (&[(" ", "1")][..], "a value `1` is given no name"),
         (&[("checks", "1\n2")][..], "`checks` is given a value of more than one line"),
         (&[("checks", "1"), ("checks", "2")][..], "`checks` is given a value twice"),
     ] {

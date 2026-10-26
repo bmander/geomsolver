@@ -1188,8 +1188,6 @@ in std.front {
     std::fs::write(&other,text).unwrap();
     for (args,why) in [
         (vec!["--set","nope=1",path],"the document binds no value `nope` at its top level"),
-        (vec!["--set","inner=1",path],"`inner` is bound inside component `Box`"),
-        (vec!["--set","checks=1 +",path],"`checks` is given `1 +`, which is no expression"),
         (vec!["--set","checks",path],"--set needs NAME=VALUE"),
         (vec!["--set","checks=1",path,other.to_str().unwrap()],"--set gives a value of one document"),
     ] {
