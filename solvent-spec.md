@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.187 — October 2026**
+**Specification, Draft 0.190 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -585,7 +585,7 @@ in std.front {
 }
 ```
 
-The **frame** is `from: P`, a plane — its origin and its axes, `P.u` and `P.v` — or, where no `from:` is written, the view the line is drawn in, which an `in` block gives; a step with neither is **E040**. A step is sugar for the relations it names, each its own row: an ordinate per ordinate named, `p1 distance(d, along: u) p2` from the start and `P.origin distance(s, along: u) p2` from the frame's origin, and a level per ordinate kept, `p1 level(v) p2`. An ordinate written as a literal zero is that level, a relation which states no number, as a zero `distance(…, along:)` would be (§9.2). Every number is a dimension of the statement: the step keeps one statement identity, is described as written (`step(u: 32mm) ab`), and each number keeps the place it is written at, where its callout reads it and an edit rewrites it. A number may read an unknown.
+The **frame** is `from: P`, a plane — its origin and its axes, `P.u` and `P.v` — or, where no `from:` is written, the view the line is drawn in, which an `in` block gives; a step with neither is **E040**. A step is sugar for the relations it names, each its own row: an ordinate per ordinate named, `p1 distance(d, along: u) p2` from the start and `P.origin distance(s, along: u) p2` from the frame's origin, and a level per ordinate kept, `p1 level(v) p2`. An ordinate written as a literal zero is that level, a relation which states no number — the step's own reading of its zero, back onto the axis; **[0.188]** a zero `distance(…, along:)` written out is a dimension like any other (§6.7). Every number is a dimension of the statement: the step keeps one statement identity, is described as written (`step(u: 32mm) ab`), and each number keeps the place it is written at, where its callout reads it and an edit rewrites it. A number may read an unknown.
 
 A closed walk of steps leaves its last edge to close it, as SVG's `z` does: a link with no step, whatever the others leave. Stating every relative step round a loop states the closure twice — two rows of no rank, which the diagnosis names. **The corners start where the walk puts them**: a corner a step places, and the source wrote no seed for, is seeded from its line's start, or from the frame's origin, by the step's numbers, in statement order and twice round, so a closed walk whose first corner its last step places starts there. Nothing is restated in a `hint`, and the seeds follow the numbers. A step measured in a frame other than its line's view, or over an unknown, leaves its corner where it was minted.
 
@@ -772,7 +772,10 @@ space over its lift, `(X_p − o_f)·û_f − d = 0`. `along: v` is the same alo
 `along: n` the signed distance along `n̂_f`, in space, of a point not drawn in `f` (one drawn in
 it is **E061**: every point of a plane is on it). Each contributes one
 length-valued residual, owns no unknown, and accepts a signed length expression, including a free
-dimension. **[0.46]** Zero written as a literal is **E040**: it is `p level(u) f`. Either ordinate may be stated independently; `claim` has its ordinary
+dimension. **[0.188]** Zero is a number like any other, written as a literal, named, or what an
+expression comes to: `p distance(0mm, along: u) f` is a dimension of zero, drawn and edited as
+any other is, and `p level(u) f` the same row with no number (0.46–0.187 refused the literal,
+**E040**, while a zero a name or an expression came to was accepted). Either ordinate may be stated independently; `claim` has its ordinary
 assertion meaning. The operands MUST be a point followed by a plane, and `along: u`, `v` or `n` is
 required for this pair. **[0.92]** Between two points of one view the same `u` and `v` are that
 view's own, the run and the rise (§9.2): one direction, whichever plane is at hand. An ordinate
@@ -2233,6 +2236,19 @@ cyl.std.x perpendicular rod
 
 *Non-normative:* this is `in (f := frame) { b := … }` with `b.std.*` read as `f`'s datums and `f.u perpendicular f.v` written by the instance — the mate, without the frame's name. A mate that leaves an axis either way round takes the nearer root, as a bare frame's does.
 
+**[0.189] An instance's numbers.** From outside, `b.n` names a number of the instance `b`: a numeric formal — the number the call gave it, else its default, else the unknown it is left as (§5) — or **a number its body defines**, a value (`top := …`), an input with a value, or a group's member (`b.dims.inner`), worked out from what that call gave it. A path reaches through an instance the body writes, `st.base.top`; a `when`'s numbers are its own, and a body's geometry is named by its path as before. It is read as the body's own values are, in a definition, a dimension, a condition or another call's argument, and the body that writes the call is a set (§6.3): a definition above the call reads it, and one the call's arguments read that reads it back is **E041**. A number its call leaves it unable to work out — over an unknown other than by scaling and offsetting it, or reading what its body cannot reach — is **E103** where it is read. So a number about an instance is written once, in its component, and read where it is wanted:
+
+```solvent
+component Shield(s: ShieldSizes, u: UnoSizes, h: HeaderSizes) {
+  top := u.pcb_t + u.socket_h + h.body_h + s.pcb_t   // its top face, up from the Uno's underside
+  …
+}
+shield := Shield(shield_dims, u: uno_dims, h: header_dims)
+shield_z := uno_z + shield.top
+```
+
+*Through 0.188 only a formal was read so (`ball.r`), and only by statements: a definition reading `ball.r` was **E103**, and a number the body defined had to be worked out again outside it.*
+
 ### 8.1 Groups of arguments
 
 ```solvent
@@ -2581,7 +2597,7 @@ p outside P                       // in front of it
 
 - **What takes one:** a measure a solve can be steered along — an ordinate (so `inside` and `outside` a plane, the point's ordinate along the plane's normal from its origin), a distance between points, and a point's or a parallel line's distance from a line. A bound on any other kind is **E040**.
 - **Closed:** `>=`, `<=` and `in:` include their edge, where a solution may stand. `>` and `<` are refused.
-- **Its number:** zero may be written, unlike an ordinate's equality, which zero makes a `level` (§9.2). A bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is. It may read an unknown only where a row of the drawing reads it too (**[0.64]**, a cone's half its side is chosen against), read as it stands: on the seeds its seed, on the solution its solution; one nothing else reads is **E040**, since a bound adds no freedom.
+- **Its number:** zero may be written, as it may in an ordinate's equality **[0.188]** (§6.7). A bound may not be a `claim` (**E040**): a bound chooses which solution is meant, and a claim asks about the one there is. It may read an unknown only where a row of the drawing reads it too (**[0.64]**, a cone's half its side is chosen against), read as it stands: on the seeds its seed, on the solution its solution; one nothing else reads is **E040**, since a bound adds no freedom.
 - **Meaning:** outside a set body, a bound **chooses the root**. It adds no row and no freedom, and is drawn as no callout. It does the work a seed did when the seed only picked a side, so it is read on the seeds first: a point whose seed breaks a bound is carried across its edge, to the mirror of its reading, as if it had been seeded there, and everything seeded from it or placed through it follows. The solver then checks it on the solution. Where it still does not hold, the solver looks for the root where it does, from the seeds and from the solution, and fails the solve where none is found (`a bound does not hold`). **[0.78]** A solver that constructs the drawing a block at a time (§15) holds each block to the bounds it decides — every quantity they read is the block's or placed before it — and looks for a block's root there, so the words choose the roots of a drawing with no seed at all. The diagnosis tells which bounds are violated, and which hold with the solution on their edge (*active*).
 - **A region's land** **[0.76]**. A region draws no tip line for `length(>= d) tip` to stand on: its rounds and faces are worked out, not solved. A tooth whose flanks are drawn through the ends of its tip — a face mill's blade, given by its point width — says its land on those ends, `eb distance(>= d, along: left) ea` in the tooth's section: on the seeds and on the solution it is the same root choice as the drawn section's, so a start on the root where the flanks cross above the tip (the tooth an edge, its tip no face) is carried to the tooth with its land.
 - **Inside a set body** a bound makes the set a region, and `inside`/`outside` put a point in one (§6.21) **[0.61]**. `solid(R)` is a region's solid (§6.9) **[0.62]**. `distance(<= d, side: outside|inside)` grows a side by `d` (§6.21) **[0.64]**, its one spelling **[0.86]**.
@@ -2694,6 +2710,8 @@ Three words relate two solids.  Each is an operator like any other (§9.2), and 
 Both operands MUST name solids (**E040** naming the kind that arrived).  `clear` and `fits` take a `Length` in their parentheses and one written without it is **E040**; `inside` asks about containment and takes none.
 
 **A verdict is a measurement, not a yes or no**, and it carries its own uncertainty.  An implementation MUST report, for each such claim: what was measured — a distance, negative where the two overlap — and how far the answer could be wrong.  A claim decided within that margin is reported **undecided**, which is a third answer and not a failure.  Where an implementation evaluates a solid by reducing its round surfaces to flats (§6.9), the margin is the sagitta of that reduction, and a faceted solid lies inside the true one; an implementation that computes exactly reports a margin of zero.  Two claims that fail, one by a hair and one by a hand's breadth, are different drawings, and a reader is owed the difference.
+
+**[0.190] And where.**  A claim that does not hold SHOULD also say where it was measured: a face of each solid, named by its path through the operands as it is written (§6.8: `uno.high.tails.body.da`, `near_screw[1].post.rim`), and where in the world the two come nearest, or where they overlap, the deepest point of their common material.  A solid built of many is refuted by one of them against one feature of the other, and the measurement alone leaves a reader to find which.
 
 *Implementation note:* the kernel measures interference as **common-material thickness**: the diameter of the largest ball contained in the intersection, reported with a negative sign. Thus two 10 mm cubes overlapping by 5 mm report −5 mm, and identical 10 mm cubes report −10 mm. A bounded spatial search includes its remaining measurement error in the reported uncertainty. This convention applies to disconnected and nonconvex intersections too; disjointness and containment remain required predicates, whatever sign is written for a gap.
 

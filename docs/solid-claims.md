@@ -56,6 +56,11 @@ The structured evidence includes:
   either its geometric evidence and derived verdict or its failure reason.
 - `requiredPredicate`: containment/disjointness status and unresolved reason,
   inside each valid pose.
+- `nearest`: where the measurement was read, on the claim (its representative
+  pose) and on each valid pose — the face of each solid by public path (`a`,
+  `b`), a world point on each (`atA`, `atB`), and `deepest`, true where the two
+  overlap and both points are the centre of the deepest ball in their common
+  material.  The text says it under a claim refuted or undecided.
 - `coverage`: sweep parameter, dimension, user units, endpoints, uniform inclusive
   sampling method and attempted count.
 - `validSamples`, `counterexample` (a complete pose or `null`), and

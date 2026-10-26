@@ -63,6 +63,9 @@ Proposed here, and taken as written:
   this plan removes: as a dimension it gets a callout and asks to be edited. A zero that comes
   out of a parameter (`e := 0`) is still a dimension and is accepted, as with a negative
   magnitude, which is refused only where it is written.
+  *Reversed in Solvent [0.188]:* the two zeros read differently, so a component placing a point
+  by its ordinates branched on each being zero for fear of the refusal; a zero is now a number
+  however it is written.
 * **No plane–plane form.** `P distance(d) Q` stays `PlaneDistance`: it relates two planes, not
   two points.
 
