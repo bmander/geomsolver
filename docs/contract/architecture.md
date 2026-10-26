@@ -139,6 +139,13 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   unasked, the stages of a second or more are said (`--no-progress` silences it).  `--timings`
   lists the solids and claims by their own time after the report, each at its statement — a
   module's solid at the document's instance of it (`Program::document_stmt`).
+  **`--no-check` judges no claim about solids** (`DiagnoseOptions::solid_claims` false, as the
+  page's diagnosis leaves them to its worker): no solid is built for one, and where their
+  verdicts would be the report says how many were left, in the core's words
+  (`report::solid_claims_unjudged_text`; `solidClaimsUnjudged` in `--json`), so a run that judged
+  none is not read as one where each held.  The claims over values and the geometry's are judged
+  still: they build nothing
+  (`no_check_leaves_the_claims_about_solids_unjudged_and_says_so`).
   **`--components` classifies each component against the boundary contract** (#452,
   `boundary::classify`, worded by `boundary::text`/`json`): read through its first instance at the
   solved pose (`SourceMap::instances`, each with its path and definition; `holds`/`chosen`, whose

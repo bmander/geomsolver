@@ -41,7 +41,8 @@ fn reads_faces_of(sk: &Sketch, i: usize, body: usize) -> bool {
 fn reads_body(shape: &RegionShape, body: usize) -> bool {
     let solid = |e: &crate::model::EntRef| e.kind == crate::model::EntKind::Solid && e.i() == body;
     match shape {
-        RegionShape::Ball { .. } | RegionShape::Cylinder { .. } | RegionShape::Cone { .. } => false,
+        RegionShape::Ball { .. } | RegionShape::Cylinder { .. } | RegionShape::Cone { .. }
+        | RegionShape::Sheet { .. } => false,
         RegionShape::Plane { along, .. } => solid(along),
         RegionShape::Measured { of } => of.iter().any(|(t, _)| target_reads_body(t, body)),
         RegionShape::FaceSide { face } => face.solid as usize == body,

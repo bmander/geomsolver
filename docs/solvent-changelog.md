@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.191] Lists, and a block over one.** A list is values in order, in brackets — `holes :=
+**[0.193] Lists, and a block over one.** A list is values in order, in brackets — `holes :=
 [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]` — each item a number, a
 vector or a group in braces, and `repeat h in holes { … }` makes a copy per item, `h` that copy's
 item: a number, or a group of numbers read by member (`h.x`) and handed on whole (§12.10). A list
@@ -12,8 +12,45 @@ may be written in place, `repeat d in [2mm, 3mm] { … }`; `cycle h in L` closes
 index as before. A list is a group whose members are its items by place, so it is a member of a
 group, imported from a module and read in a definition's body as any group of numbers is. A
 pattern off a grid — a board's four mounting holes — was written as copies of its statements or as
-a count's arithmetic (`j * (b - a)`) hiding the places; through 0.190 `[` began no value. Every
+a count's arithmetic (`j * (b - a)`) hiding the places; through 0.192 `[` began no value. Every
 solved position is unchanged.
+
+**[0.192] Developable panels.** A sheet cut flat and bent to shape — a plywood boat's strake, a
+duct adapter, a rectangle to a round — is written as two definitions in `std.sv`: `std.Developable(a,
+b)`, the set of points on the ruling between a point of `a` and a point of `b` where one plane
+touches both, `b` running through it the way `a` does, and `std.Development(S, s, d)`, the panel's
+layer `d` out laid in a plane from the ruling through `s`, an isometry along rulings stated and
+nothing else (§6.21). The core recognises the bodies by what they say, a hand-written copy too, and
+builds them exactly: the rulings where `det(a′, b′, b − a) = 0`, fans at corners and at ends, a band
+come round, and the pattern by integrating the isometry; refusals (rulings that fold, a ruling along
+a rail, no ruling of `sense: same`, a band that does not come round, one rail closed and one open)
+are **E080**, once at each use. The definitions needed four additions, each general. **A plane
+touching a path**, `T tangent(at: m) k`, `k` a line, a circle, an arc or a curve traced in space:
+`m` in the plane and the path's tangent there in it (§9.2); `sense:`, how a second path runs
+through it, is read between two in a sheet's body. **A contact over an interval**, `p coincident(t
+in (0, 1)) line(m, n)`: the incidence and its place bounded, which in a set's body does not make
+the set a region (§6.21). **Rates against rates** in a body that states a rate: `rate(x over s)
+equal rate(y over s)` and `rate(x over s) angle(rate(y over s), l) k`, through 0.191 refused as
+reading two rates or a magnitude (§6.5). **The sides of a sheet**: `q distance(<= d, side:
+outside) S` of a sheet is its band along the normal, square at its edges, and `solid(…)` of it is
+the sheet, faceted from its rulings (its STEP refused until the ruled walls are written exactly);
+`std.Offset(S, d:)` is its layer. `--where` reads a panel's `rulings`, `fans`, `closed` and `area`,
+and a pattern's laid rails' lengths, its area and its box. A plane touching a line at a point,
+through 0.191 **E040**, now holds it; every other solved position is unchanged. Examples in
+`rust/examples/developable/`. (Issue #645.)
+
+**[0.191] A chosen number.** `if(COND, A, B)` is `A` where `COND` holds and `B` where it does
+not (§3.3), a value where `when` is a block of statements (§12.9): a number that differs between a
+block's copies is one statement, `a distance(if(k == 0, 5mm, 7mm * k)) q`, where it took a `when`
+per case or arithmetic over the index (`j * near_dx`). `COND` is a `when`'s, decided at elaboration
+from numbers alone: one reading an unknown of the drawing is **E103** where a value is defined and
+**W110** in a dimension, as `sin(beta)` is; `in` and `meets` in it are **E103**. Both sides are
+worked out and agree in dimension as `+`'s operands do (`if(c, w, 10)`, `w` a length, is **E103**).
+In a traced curve's formula the condition reads only the document's numbers; one over a formal is
+refused, and chosen where the component is called. `if` is a built-in name, as `sqrt` is: a
+definition named `if` is warned as one shadowing a function. `c ? a : b` is not adopted: `:` is
+a named argument's in every call, and `?` is no token of the language. Every solved position is
+unchanged.
 
 **[0.190] A refuted claim says where.** A claim about two solids that is refuted or undecided says,
 under its measurement, the face of each by its path through the operands and where in the world

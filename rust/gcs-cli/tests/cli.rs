@@ -111,6 +111,30 @@ fn a_sweep_outside_the_generating_class_is_refused_with_its_row() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// A developable panel's band (#645) exports as STL whatever the kernel — its faceting, exact to
+/// its rulings — and its STEP is refused once, in the core's words, with no file written.
+#[test]
+fn a_developable_band_writes_its_stl_and_refuses_its_step() {
+    let dir = std::env::temp_dir().join(format!("solventc-band-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let (stl, step) = (dir.join("transition.stl"), dir.join("transition.step"));
+    let source = doc("developable/offset_transition.sv");
+    let wrote = run(&[&source, "--solid", "transition", "--stl", stl.to_str().unwrap(),
+                      "--no-diagnose"]);
+    assert_eq!(wrote.status.code(), Some(0), "{}", String::from_utf8_lossy(&wrote.stderr));
+    let bytes = std::fs::read(&stl).unwrap();
+    assert!(bytes.len() > 84 && bytes.len() == 84 + 50 * u32::from_le_bytes(
+        bytes[80..84].try_into().unwrap()) as usize, "a binary STL");
+    let refused = run(&[&source, "--solid", "transition", "--step", step.to_str().unwrap(),
+                        "--no-diagnose"]);
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert_eq!(refused.status.code(), Some(1), "{stderr}");
+    assert_eq!(stderr.matches("not yet written to STEP").count(), 1, "{stderr}");
+    assert!(!step.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 /// A refined mesh the field-agreement probe refuses is never written: the swept torus meshed
 /// so coarsely its facets leave the field, and the earlier output is left as it was.
 #[cfg(feature="occt")]
@@ -577,6 +601,30 @@ fn no_diagnose_solves_only() {
         .into_owned();
     assert!(text.contains(": solved"));
     assert!(!text.contains("DOF"), "{text}");
+}
+
+/// `--no-check` judges no claim about solids and says how many it left, in the text and in the
+/// JSON, so a run that judged none is never read as one where each held; the claim over a sweep
+/// that would be 37 poses is none.
+#[test]
+fn no_check_leaves_the_claims_about_solids_unjudged_and_says_so() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../gcs-core/tests/fixtures/solid_issue51/sampling_disclosure.sv");
+    let path = path.to_str().unwrap();
+    let out = run(&[path, "--no-check"]);
+    assert_eq!(out.status.code(), Some(0));
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("  1 claim about solids not judged\n"), "{text}");
+    assert!(!text.contains("sampling 37 poses") && !text.contains("claim over"), "{text}");
+    let out = run(&[path, "--no-check", "--json"]);
+    assert_eq!(out.status.code(), Some(0));
+    let json = gcs_core::json::parse(&String::from_utf8(out.stdout).unwrap()).unwrap();
+    let doc = &json.get("documents").unwrap().arr()[0];
+    assert_eq!(doc.get("solidClaimsUnjudged").map(|n| n.as_i64()), Some(1));
+    assert!(doc.get("diagnosis").unwrap().get("solidClaims").unwrap().arr().is_empty());
+    // judged, it is said with its verdict, and nothing is said unjudged
+    let text = String::from_utf8(run(&[path]).stdout).unwrap();
+    assert!(text.contains("sampling 37 poses") && !text.contains("not judged"), "{text}");
 }
 
 /// `--output` writes an SVG, and the writer is the **core's** — an "export SVG" button in the

@@ -600,6 +600,27 @@ fn a_wheel_a_frame_stands_is_the_wheel_moved() {
     }
 }
 
+/// **A wheel placed is supplied as the wheel moved** (#619): asked for the placement alone, the
+/// wheel is built as itself and its placement given that B-rep moved, never a build of its own —
+/// a claim along a roll places the wheel at each pose, and the radiator bot's thirteen poses were
+/// thirteen builds of it.
+#[test]
+fn a_placed_wheel_is_supplied_as_the_wheel_moved() {
+    let (e, w) = solved(&stood(30.));
+    let shown = e.map.ent_named("shown").unwrap().i();
+    gcs_core::brep::export::supply_exact_where(&e.sketch, &|i| i == shown);
+    let wheel = e.sketch.supplied_exact_solid(w).expect("the wheel, supplied as itself");
+    let placed = e.sketch.supplied_exact_solid(shown).expect("its placement");
+    assert_eq!(wheel.brep.vertices.len(), placed.brep.vertices.len());
+    // the handle's 30° is the wheel's −20°, about the spindle through (−50, 0) along z
+    let (s, c) = (-20f64.to_radians()).sin_cos();
+    for (a, b) in wheel.brep.vertices.iter().zip(&placed.brep.vertices) {
+        let (x, y) = (a.p[0] + 50., a.p[1]);
+        let want = [c * x - s * y - 50., s * x + c * y, a.p[2]];
+        assert!((0..3).all(|k| (b.p[k] - want[k]).abs() < 1e-9), "{:?} against {want:?}", b.p);
+    }
+}
+
 /// What `solventc --where` reads of solid `name`: its exact B-rep supplied where a sweep builds
 /// one, then the report's positions under the name.
 fn read(e: &Elaborated, name: &str) -> Vec<(String, f64)> {

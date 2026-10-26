@@ -54,6 +54,9 @@ diagnosed, and the report says where it stands.
                         value the document names, in its unit (repeatable; the whole table in
                         --json when none is given)
     --no-diagnose       solve only; skip the diagnosis
+    --no-check          judge no claim about solids (clear, fits, inside), so no solid is built
+                        for one: the report says how many were left unjudged.  The claims over
+                        values and over the geometry, which build nothing, are judged still
     --lint              also say where the document's own text drifts from the language's style
                         (W201-W206: a pun, a bare component statement, an asserting component, a
                         deep path, a presentation flag, a group threaded unread), and (W207) a
@@ -126,6 +129,7 @@ Examples:
     solventc --json part.sv                   the same report, structured
     solventc part.sv --where hinge            the numbers under one name
     solventc drive.sv --where torque          a value, in its unit: torque = 0.0864 N·m
+    solventc bot.sv --no-check                the layout, solved, its solids' claims unjudged
     solventc part.sv --png part.png           look at it, as the workspace shows it
     solventc part.sv --stl part.stl --solid body
                                               a solid, for a printer
@@ -174,6 +178,8 @@ struct Opts {
     /// a file something else reads.
     wanted: Vec<String>,
     no_diagnose: bool,
+    /// `--no-check`: the claims about solids left unjudged, said by how many.
+    no_check: bool,
     /// `--lint`: the drift lint's warnings (`program::drift`) beside elaboration's.
     lint: bool,
     allow_unsolved: bool,
@@ -210,6 +216,7 @@ impl Default for Opts {
             json: false,
             wanted: Vec::new(),
             no_diagnose: false,
+            no_check: false,
             lint: false,
             allow_unsolved: false,
             output: None,
@@ -444,6 +451,7 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
+            "--no-check" => opts.no_check = true,
             "--lint" => opts.lint = true,
             "--progress" => said = Some(watch::Say::Everything),
             "--no-progress" => said = Some(watch::Say::Nothing),
@@ -685,7 +693,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
         .then(|| progress::during(diagnosing, || {
-            diagnose(&mut sk, DiagnoseOptions { settled: solved, ..DiagnoseOptions::default() })
+            diagnose(&mut sk, DiagnoseOptions {
+                settled: solved, solid_claims: !opts.no_check, ..DiagnoseOptions::default()
+            })
         }));
     // read at the solved pose, before anything below builds or exports
     let components = opts.components.then(|| gcs_core::boundary::classify(&e, &sk));
@@ -770,6 +780,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             // measured, and — for one the faceting cannot decide — that it could not
             for v in &d.solid_claims {
                 println!("  {}", gcs_core::report::solid_claim_text(v));
+            }
+            if opts.no_check && !sk.solid_claims.is_empty() {
+                println!("  {}", gcs_core::report::solid_claims_unjudged_text(sk.solid_claims.len()));
             }
             // each meshing's contact over its phase, in the core's words (#283)
             for i in 0..sk.meshings.len() {
@@ -931,9 +944,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         opts.json.then(|| {
             let components = components.as_ref()
                 .map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json).collect()));
-            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
-                     positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null),
-                     &opts.wanted)
+            let mut doc = doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
+                                   positions.unwrap_or(Json::Null),
+                                   components.unwrap_or(Json::Null), &opts.wanted);
+            // the claims `solidClaims` leaves out, so an empty list is not read as none stated
+            if opts.no_check && d.is_some() && !sk.solid_claims.is_empty() {
+                doc.set("solidClaimsUnjudged", Json::Int(sk.solid_claims.len() as i64));
+            }
+            doc
         }),
     )
 }
@@ -947,13 +965,17 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
     let Writes::Export { stl, step } = &o.writes else { return true };
     let (mut stl, mut step, solid) = (stl.clone(), step.clone(), opts.solid(&o.own));
     let mut ok = true;
+    // a developable panel's band has no exact walls to write (#645): its STL is its faceting,
+    // exact to its rulings, whatever kernel would write a solid's; its STEP is refused once below
+    let faceted = pick_solid(sk, solid).is_ok_and(|i| gcs_core::solid::sheet::is_band(sk, i));
+    let native_stl = opts.native_stl && !faceted;
     // A body with swept cuts is built only when every sweep is in the generating class
     // (docs/generating-sweeps.md): a refusal names the row it fails and a point where, and
     // nothing is written, so an earlier output stays as it was. The class is what the native
     // boundary construction needs; the core's field refinement (`--stl-backend refine`) needs
     // only the field, and is gated by the field-agreement probe instead.
     // A native export admits the body itself, beside the first of its construction.
-    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && opts.native_stl && !opts.refine));
+    let native = cfg!(feature="occt") && !cad::rust_kernel() && (step.is_some() || (stl.is_some() && native_stl && !opts.refine));
     let mut body = None;
     if (step.is_some() || (stl.is_some() && !opts.refine)) && solved {
         if let Ok(i) = pick_solid(sk,solid) {
@@ -981,7 +1003,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
         { let _ = path; eprintln!("solventc: --stl-backend refine needs a build with the `occt` feature"); ok = false; }
         stl = None;
     }
-    if step.is_some() || (stl.is_some() && opts.native_stl) {
+    if step.is_some() || (stl.is_some() && native_stl) {
         match (solved,pick_solid(sk,solid)) {
             (false,_) => {
                 let message = "native STEP/STL export requires a solved model".to_string();
@@ -1000,7 +1022,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
                 let body = body.take().filter(|b| b.index == i).unwrap_or_else(|| cad::Body::read(sk,i));
                 match tolerance(sk,opts) {
                     Err(message) => { eprintln!("solventc: {message}"); ok = false; }
-                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| opts.native_stl),t,seen) {
+                    Ok(t) => if let Err(refusal) = cad::export(sk,&body,step.as_deref(),stl.as_deref().filter(|_| native_stl),t,seen) {
                         // refused admission, nothing is written (the mesh backend's STL included)
                         if refusal.stage == cad::Stage::Admission { stl = None; }
                         refused(e,i,refusal);
@@ -1010,7 +1032,7 @@ fn export(sk: &Sketch, e: &mut Elaborated, opts: &Opts, o: &Output, seen: Option
             }
         }
     }
-    if let Some(path) = stl.as_ref().filter(|_| !opts.native_stl) {
+    if let Some(path) = stl.as_ref().filter(|_| !native_stl) {
         // the mesh is `gcs_core::mesh`'s for `svg`'s reason: a printer's file and a drawing are
         // two readings of one boundary, and a second walk would be a second object
         match pick_solid(sk, solid) {

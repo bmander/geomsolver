@@ -32,6 +32,7 @@ mod resolve;
 mod words;
 mod apply;
 mod sets;
+pub mod developable;
 mod faces;
 mod interfaces;
 mod keys;
@@ -370,6 +371,15 @@ pub struct Expansion {
     pub rings: Vec<RingInfo>,
     /// Every set drawn as an element, for the elaborator to judge (`lowering`, #105).
     pub lowered: Vec<Lowered>,
+    /// Every band of a recognised sheet at a region solid's probe (#645): its term is the band,
+    /// built exactly (`model::RegionShape::Sheet`).
+    pub sheets: Vec<developable::SheetInfo>,
+    /// Every recognised development (#645): its laid rails made by the elaborator
+    /// (`model::Developed`).
+    pub developed: Vec<developable::DevelopedInfo>,
+    /// Every set recognised as a developable panel (#645), by its absolute name and its rails:
+    /// what the report reads it by.
+    pub panels: Vec<(String, [developable::RailInfo; 2])>,
     /// Every point drawn in further planes and each of its twins, by absolute key (§6.7).
     pub twins: Vec<(String, String)>,
     /// What every reference reading a member `normal` reads it of, absolute (`P.normal` gives
@@ -584,6 +594,14 @@ struct Walk<'a> {
     /// `resolve::Lazy` last read (only ever added to, so brought up to date from there).
     alias_keys: std::cell::RefCell<(usize, BTreeMap<String, Vec<usize>>)>,
     instances: Vec<InstanceInfo>,
+    /// The developments met, their sets resolved once every set is known (#645).
+    developing: Vec<developable::Pending>,
+    /// The developments resolved — see `Expansion::developed`.
+    developed: Vec<developable::DevelopedInfo>,
+    /// The sets recognised as panels — see `Expansion::panels`.
+    panels: Vec<(String, [developable::RailInfo; 2])>,
+    /// The chains and closed paths a panel's rail may name (#645).
+    rails_seen: developable::RailsSeen,
     /// `Some` while a component is expanded over its formals as variables — see `Sym`.
     sym: Option<Sym>,
     /// Root values, used to diagnose accidental capture by a closed component.
@@ -757,6 +775,8 @@ struct SetState<'a> {
     applying: bool,
     /// Every region solid's probe — see `Expansion::probes`.
     probes: Vec<String>,
+    /// Each band of a recognised sheet at a probe (#645) — see `Expansion::sheets`.
+    sheets: Vec<developable::SheetInfo>,
 }
 
 /// **A solid's faces as the elaborator names them** (#183 F4): each by the path it is named by
@@ -920,7 +940,12 @@ impl<'a> Walk<'a> {
                 unlowered: &NONE,
                 applying: false,
                 probes: Vec::new(),
+                sheets: Vec::new(),
             },
+            developing: Vec::new(),
+            developed: Vec::new(),
+            panels: Vec::new(),
+            rails_seen: Default::default(),
             twins: Vec::new(),
             normals: BTreeSet::new(),
             charts: BTreeSet::new(),
@@ -1005,6 +1030,8 @@ impl<'a> Walk<'a> {
         // may hold a block over a chain
         self.face_sets();
         self.expand_sets();
+        // each development, its set known (#645)
+        self.developments();
         self.expand_pending();
         self.expand_fits();
         let (mut flat, mut aliases) = self.resolve();
@@ -1042,6 +1069,9 @@ impl<'a> Walk<'a> {
             joints: self.joints,
             quiet: self.quiet,
             probes: self.sets.probes,
+            sheets: self.sets.sheets,
+            developed: self.developed,
+            panels: self.panels,
             face_repeats: self.faces.repeats,
             face_planes: self.faces.planes,
             face_axes: self.faces.axes,

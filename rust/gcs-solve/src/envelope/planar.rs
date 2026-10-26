@@ -104,6 +104,8 @@ impl Source {
                 generated profile, not of a free curve",None)),
             CurveBody::Followed(_) => Err(refuse(Condition::Envelope,"the inner envelope is read of a curve of a computed point or a \
                 generated profile, not of a point traced over a parameter",None)),
+            CurveBody::Developed(_) => Err(refuse(Condition::Envelope,"the inner envelope is read of a curve of a computed point or a \
+                generated profile, not of a panel's rail laid flat",None)),
         }
     }
 

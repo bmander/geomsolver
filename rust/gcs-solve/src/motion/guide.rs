@@ -18,12 +18,13 @@
 //! to the tangent) moves nothing.  A path is read four ways — its point and its first three
 //! derivatives in its own parameter (the third only for the path's own frame's rate): a line's
 //! fraction of its run, an arc's of its turn, a spline's knot parameter (in a plane, or over
-//! points in space), a traced curve's formal.  Its
+//! points in space), a traced curve's formal (`crate::path`, the one reader, #645).  Its
 //! enclosures over a stretch (for `MotionBounds` and the speed bound) are rigorous where its
 //! derivatives have a bound — a line, an arc, a polynomial spline's hodographs — and fail closed
 //! for any other path, as a law does for a function it carries no enclosure of.
 use crate::interval::Interval as I;
-use crate::model::{EntKind, EntRef, Sketch};
+use crate::model::{EntRef, Sketch};
+use crate::path::Path;
 use crate::space::{add, cross, dot, norm, scale, sub};
 
 type V = [f64; 3];
@@ -34,158 +35,6 @@ const GRID: usize = 4096;
 
 /// How many samples a stretch is enclosed from (`Guide::stretch`).
 const SAMPLES: usize = 64;
-
-/// A path, as it is read: its point and its first three derivatives in its own parameter.
-#[derive(Clone, Debug)]
-enum Path {
-    /// `a + u·d`.
-    Line { a: V, d: V },
-    /// About `c` in the plane of `u` and `v` (unit, square), radius `r`, from the bearing `a0` a
-    /// `sweep` (radians) as `u` runs from 0 to 1.
-    Arc { c: V, u: V, v: V, r: f64, a0: f64, sweep: f64 },
-    /// A cubic spline over control points in space (a plane's lifted), rational where weighted.
-    Spline { ctrl: Vec<V>, knots: Vec<f64>, weights: Option<Vec<f64>> },
-    /// A curve traced in space: its contact's constants and its columns' values.
-    Traced { k: Vec<f64>, theta: Vec<f64>, domain: (f64, f64) },
-}
-
-impl Path {
-    /// The path `g` names, as the drawing stands.
-    fn read(sk: &Sketch, g: EntRef) -> Result<Path, String> {
-        match g.kind {
-            EntKind::Line => {
-                let l = sk.lines.get(g.i()).ok_or("no such line")?;
-                let (a, b) = (sk.lifted(l.p1 as usize), sk.lifted(l.p2 as usize));
-                Ok(Path::Line { a, d: sub(b, a) })
-            }
-            EntKind::Arc => {
-                let arc = sk.arcs.get(g.i()).ok_or("no such arc")?;
-                let basis = sk.plane_of(arc.center as usize).map(|i| sk.basis(i))
-                    .unwrap_or_else(crate::plane::Basis::page);
-                let (a0, a1) = sk.arc_angles(g.i());
-                let c = sk.lifted(arc.center as usize);
-                let axis = |a: V| crate::space::normalised(a).ok_or("an arc's plane has no axes");
-                let (u, v) = (axis(basis.u)?, axis(basis.v)?);
-                // one said to turn clockwise is drawn from its end, and runs from its start (#573)
-                let (a0, sweep) = if sk.arc_reversed(g.i()) {
-                    (a1, a0 - a1)
-                } else {
-                    (a0, a1 - a0)
-                };
-                Ok(Path::Arc { c, u, v, r: sk.radius_value(g).abs(), a0, sweep })
-            }
-            EntKind::Spline => Ok(spline(sk, g.i())),
-            EntKind::Traced => {
-                // a spline drawn over points in space is a traced body of its own (#376), read
-                // as the spline it is
-                if let Some((&s, _)) = sk.spline_traced.iter().find(|(_, &t)| t as usize == g.i()) {
-                    return Ok(spline(sk, s as usize));
-                }
-                let t = sk.traced.get(g.i()).ok_or("no such traced curve")?;
-                if t.over.len() != 1 {
-                    return Err("a surface is no path: a frame runs along a curve".into());
-                }
-                Ok(Path::Traced { k: crate::traced::consts_of(t),
-                                  theta: crate::traced::theta(sk, t), domain: t.over[0].pair() })
-            }
-            _ => Err(format!("a frame runs along a line, an arc, a spline or a curve traced in \
-                              space, and this is {}", g.kind.a())),
-        }
-    }
-
-    /// The interval its parameter runs over.
-    fn domain(&self) -> (f64, f64) {
-        match self {
-            Path::Line { .. } | Path::Arc { .. } => (0.0, 1.0),
-            Path::Spline { ctrl, knots, .. } => (knots[crate::curve::DEGREE], knots[ctrl.len()]),
-            Path::Traced { domain, .. } => *domain,
-        }
-    }
-
-    /// The point and its first three derivatives at `u`, the third only where `third` asks for it
-    /// (zero otherwise): a traced curve's is the difference of its second, read exactly either
-    /// side, and the path's own frame's rate alone reads it.
-    fn jet(&self, u: f64, third: bool) -> Result<[V; 4], String> {
-        match self {
-            Path::Line { a, d } => Ok([add(*a, scale(*d, u)), *d, [0.0; 3], [0.0; 3]]),
-            Path::Arc { c, u: x, v: y, r, a0, sweep } => {
-                let (s, k) = (a0 + sweep * u).sin_cos();
-                let at = |cs: f64, sn: f64, m: f64| add(scale(*x, m * cs), scale(*y, m * sn));
-                Ok([add(*c, at(k, s, *r)), at(-s, k, r * sweep), at(-k, -s, r * sweep * sweep),
-                    at(s, -k, r * sweep.powi(3))])
-            }
-            Path::Spline { ctrl, knots, weights } => {
-                use crate::curve::{basis, local_knots, local_weights, span_index, weigh, DEGREE,
-                                   SPAN_N};
-                let span = span_index(knots, ctrl.len(), u);
-                let lk = local_knots(knots, span);
-                let (mut b, mut d, mut dd, mut d3) =
-                    ([0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N], [0.0; SPAN_N]);
-                basis(u, &lk, &mut b, &mut d, &mut dd, &mut d3);
-                weigh(&local_weights(weights.as_deref(), span), &mut b, &mut d, &mut dd, &mut d3);
-                let mut out = [[0.0; 3]; 4];
-                for a in 0..SPAN_N {
-                    let p = ctrl[span - DEGREE + a];
-                    for (o, w) in out.iter_mut().zip([b[a], d[a], dd[a], d3[a]]) {
-                        *o = add(*o, scale(p, w));
-                    }
-                }
-                Ok(out)
-            }
-            Path::Traced { k, theta, domain } => {
-                let need = crate::traced::Need::Curvature;
-                let read = |u: f64| crate::traced::at(k, theta, [u, 0.0], need)
-                    .ok_or_else(|| format!("the traced curve has no point at {u}"));
-                let x = read(u)?;
-                if !third {
-                    return Ok([x.position, x.d[0], x.dd[0][0], [0.0; 3]]);
-                }
-                let h = 1e-4 * (domain.1 - domain.0);
-                let (lo, hi) = ((u - h).max(domain.0), (u + h).min(domain.1));
-                let (a, b) = (read(lo)?, read(hi)?);
-                let d3 = scale(sub(b.dd[0][0], a.dd[0][0]), 1.0 / (hi - lo));
-                Ok([x.position, x.d[0], x.dd[0][0], d3])
-            }
-        }
-    }
-
-    /// Bounds on `|C′|` and `|C″|` over the whole path, where they are known for certain — a
-    /// line's and an arc's exactly, a polynomial spline's off its hodographs' control points (each
-    /// derivative inside their hull) — and `None` for a path with none.
-    fn derivative_bounds(&self) -> Option<[f64; 2]> {
-        match self {
-            Path::Line { d, .. } => Some([norm(*d), 0.0]),
-            Path::Arc { r, sweep, .. } => {
-                let w = sweep.abs();
-                Some([r * w, r * w * w])
-            }
-            Path::Spline { ctrl, knots, weights: None } => {
-                let mut pts = ctrl.clone();
-                let mut out = [0.0; 2];
-                let p = crate::curve::DEGREE;
-                for (order, slot) in out.iter_mut().enumerate() {
-                    let deg = p - order;
-                    let next: Vec<V> = (0..pts.len().saturating_sub(1)).map(|i| {
-                        let dt = knots[i + order + deg + 1] - knots[i + order + 1];
-                        if dt > 0.0 { scale(sub(pts[i + 1], pts[i]), deg as f64 / dt) }
-                        else { [0.0; 3] }
-                    }).collect();
-                    *slot = next.iter().map(|&q| norm(q)).fold(0.0, f64::max);
-                    pts = next;
-                }
-                Some(out)
-            }
-            _ => None,
-        }
-    }
-}
-
-/// A spline of the sketch over its control points in space.
-fn spline(sk: &Sketch, i: usize) -> Path {
-    let s = &sk.splines[i];
-    Path::Spline { ctrl: s.ctrl.iter().map(|&p| sk.lifted(p as usize)).collect(),
-                   knots: s.knots.clone(), weights: s.weights.clone() }
-}
 
 /// A frame as three unit columns: the tangent and two directions square to it.
 type Frame = [V; 3];
@@ -267,7 +116,7 @@ impl Guide {
         let chart = sk.frames.get(frame as usize).and_then(|f| f.chart.as_ref())
             .ok_or_else(|| format!("`{name}` has no origin to stand on its path"))?;
         let o: V = chart.o.map(|q| sk.params[q as usize].value);
-        let home = nearest(&path, domain, o)?;
+        let home = path.nearest(o)?;
         let at = path.jet(home, false)?;
         let gap = norm(sub(at[0], o));
         if gap > 1e-6 * (1.0 + norm(o)) {
@@ -487,34 +336,4 @@ fn frenet_at(name: &str, u: f64, x: [V; 4]) -> Result<Frame, String> {
     frenet(x).ok_or_else(|| format!("`{name}`'s path has no curvature at {}, so no frame of its \
         own there: a frame along a straight run turns with none of its torsion (ratio 0)",
         crate::vocab::num(u)))
-}
-
-/// The parameter where the path comes nearest `o`: the nearest of samples along it, then
-/// Newton's on `(C − o) · C′ = 0` from there, held within the interval.
-fn nearest(path: &Path, (lo, hi): (f64, f64), o: V) -> Result<f64, String> {
-    let n = 512;
-    let mut best = (f64::INFINITY, lo);
-    for k in 0..=n {
-        let u = lo + (hi - lo) * k as f64 / n as f64;
-        let d = norm(sub(path.jet(u, false)?[0], o));
-        if d < best.0 {
-            best = (d, u);
-        }
-    }
-    let mut u = best.1;
-    for _ in 0..50 {
-        let [c, d1, d2, _] = path.jet(u, false)?;
-        let e = sub(c, o);
-        let (f, df) = (dot(e, d1), dot(d1, d1) + dot(e, d2));
-        if df.abs() < 1e-300 {
-            break;
-        }
-        let next = (u - f / df).clamp(lo, hi);
-        let done = (next - u).abs() <= 1e-15 * (hi - lo);
-        u = next;
-        if done {
-            break;
-        }
-    }
-    Ok(u)
 }

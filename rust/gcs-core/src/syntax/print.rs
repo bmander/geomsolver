@@ -955,6 +955,9 @@ pub(crate) fn written_parts(args: &[OpArg], pairs: bool) -> (Vec<String>, Vec<St
                 }
             }
             OpArg::Dim(t, _) => parts.insert(0, t.clone()),
+            OpArg::Within { key, lo, hi } => {
+                parts.push(format!("{} in ({}, {})", key.text, lo.0, hi.0))
+            }
             // the slot's own name, as it was written — never guessed from the kind.  The
             // same `slot_text` `operator_text` reads it off the spec with, so the two printers
             // cannot come to spell one slot differently.

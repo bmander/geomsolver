@@ -394,3 +394,17 @@ came from.
   `distance(45deg)` is an error, never a coercion), `ClaimFree` (E040, §9.7) or `Uncomputable`
   (W110, the last number stands).  A point-to-point distance and a radius are
   `CKind::magnitude`; a negative literal in one is E040 where written.
+
+**A plane touching a path, and a contact over an interval** (#645, [0.192],
+[developables.md](developables.md)). `T tangent(at: m) k` with `T` a plane settles by `k`'s kind
+in `constraints::infix_op`: a line `PlaneTangentLine`, a circle or an arc `PlaneTangentRound` (two
+rows each, `m` in the plane and the tangent), a curve traced in space a `Rate` of its contact with
+the word `holds` beside a `PointOnPlane` made by the same statement (`program::relations`, after
+`traced_contact` turns a curve's `plane` into `holds`); a curve drawn in a view is E040, and so is
+`sense:` (`Written::assemble` says why: it is read between two paths in a sheet's body). `p
+coincident(t in (a, b)) l` is parsed as `OpArg::Within` and split by the flattener
+(`Walk::within`) into the incidence and a `coincident` carrying the low end and an `in:` bound,
+marked with `syntax::WITHIN` (a selector no source can spell, so a bound written
+`coincident(in: (a, b))` is never read as one), which `settle` reads as `LineFraction`: a bound, so a branch choice outside a
+set's body and never a row; inside one the interval is dropped from the row and read by the
+recogniser. Both kinds are undrawn (`callout::undrawn!`); `LineFraction` has its free twin.

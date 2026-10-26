@@ -31,6 +31,8 @@ fn tool_of(sk: &Sketch, e: EntRef) -> Result<Tool, String> {
                                                   generated; a free curve cannot cut".into()),
             CurveBody::Followed(_) => return Err("a tool curve is one written as a computed point or \
                 generated; a point traced over a parameter cannot cut".into()),
+            CurveBody::Developed(_) => return Err("a tool curve is one written as a computed point or \
+                generated; a panel's rail laid flat cannot cut".into()),
         },
         k => return Err(format!("{} cannot cut a profile in the plane", k.a())),
     })
@@ -210,7 +212,8 @@ fn profile(sk: &mut Sketch, d: &Decl, tool: EntRef, motion: usize) -> Result<Cur
                 CurveBody::Envelope(g) => ToolBody::Envelope {
                     n_theta, flat: &g.flat, values: &cv.values, anchor: sk.curve_home(tool.i()), domain,
                 },
-                CurveBody::Trace(_) | CurveBody::Extremal(_) | CurveBody::Followed(_) => {
+                CurveBody::Trace(_) | CurveBody::Extremal(_) | CurveBody::Followed(_)
+                | CurveBody::Developed(_) => {
                     unreachable!("refused by tool_of")
                 }
             }

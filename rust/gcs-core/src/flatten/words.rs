@@ -64,6 +64,7 @@ pub(super) fn texts_mut(w: &mut Written) -> Vec<(&mut String, &mut Span)> {
             OpArg::Bound { hi, grow, .. } => {
                 out.extend(hi.iter_mut().chain(grow.iter_mut()).map(|(t, s)| (t, s)))
             }
+            OpArg::Within { lo, hi, .. } => out.extend([lo, hi].map(|(t, s)| (t, s))),
             OpArg::Named(_, v) | OpArg::Slot { arg: v, .. } => out.extend(arg(v)),
             OpArg::Vector { parts, .. } => out.extend(parts.iter_mut().filter_map(arg)),
             OpArg::Ent(_) => {}

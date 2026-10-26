@@ -31,6 +31,12 @@ pub enum RegionShape {
     /// Where an edge ends (#183 F7): on the side the edge runs on of each face it ends on.  The
     /// edge is a set, the points on two faces (`Target::Set`), resolved when the solid is built.
     Ends { edge: Box<Target> },
+    /// **A developable panel's band** (#645): the signed distance along the panel's normal from a
+    /// foot on it, `side` the way it is read (1 its outside, −1 its inside) — `p distance(<= d,
+    /// side: outside) panel` the band from the panel to `d` out, square at its edges, for there is
+    /// no foot past them.  The panel is the one a plane touches along each ruling between `rails`
+    /// (`developable`), recognised by what its set says.
+    Sheet { rails: Box<[super::Rail; 2]>, side: f64 },
 }
 
 impl RegionShape {
@@ -67,6 +73,9 @@ impl RegionShape {
                 vec![EntRef::solid(a.solid as usize), EntRef::solid(b.solid as usize)]
             }
             RegionShape::Ends { ref edge } => edge.entities(),
+            RegionShape::Sheet { ref rails, .. } => {
+                rails.iter().flat_map(|r| r.links.iter().copied()).collect()
+            }
         }
     }
 
@@ -96,6 +105,10 @@ impl RegionShape {
             RegionShape::Ends { ref edge } => {
                 RegionShape::Ends { edge: Box::new(edge.remapped(map)?) }
             }
+            RegionShape::Sheet { ref rails, side } => RegionShape::Sheet {
+                rails: Box::new([rails[0].remapped(map)?, rails[1].remapped(map)?]),
+                side,
+            },
         })
     }
 }
