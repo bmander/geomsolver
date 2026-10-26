@@ -166,11 +166,13 @@ fn ledger(sk: &Sketch) {
         beams: _,                     // the source's alone (analysis.md, S1)
         scenarios: _,
         measured: _,
+        panels: _,                    // the source's alone, as a beam is (developables.md)
         meshed: _,                    // compiled with the rows the source alone carries
         meshed_at: _,
         rounds: _,                    // the elaborator's, derived and never saved
         standing: _,                  // presentation of an instant, never written
         hidden: _,                    // view state the front end sets on every drawing
+        cut: _,
         caches: _,                    // compiled artefacts, worked out again
         field_surfaces: _,            // a host's, supplied against the drawing it read
         field_meshing: _,
