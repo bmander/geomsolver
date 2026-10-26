@@ -66,6 +66,12 @@ const FOLD: f64 = 1e-7;
 /// How far, relatively, a closed panel may miss its home coming round and still close.
 const CLOSE: f64 = 1e-7;
 
+/// A ruling this short, relative to the panel's size, is a point: where the rails' ends meet the
+/// panel comes to one, and the march stops there.  The correspondence's level set crosses itself
+/// at the meeting (a saddle of `F`), and nearer it a march's drift off the level set is no longer
+/// small against the ruling — the laid march, which carries the feet again, would leave it.
+const MEET: f64 = 1e-5;
+
 /// Samples a rail's interval is searched at for the home's roots.
 const ROOT_SAMPLES: usize = 720;
 
@@ -330,6 +336,24 @@ impl<'r> Flow<'r> {
         let dnormal = scale(sub(draw, scale(normal, dot(normal, draw))), 1.0 / len);
         Ok(Local { m: pa, n: pb, dm, dn, normal, dnormal, du, dw })
     }
+
+    /// A march's node set back on the level set `F = 0` by a Newton step along `∇F`: a step's
+    /// drift off it, small elsewhere, is not small against the ruling where the rails meet, the
+    /// level set crossing itself there.  A fan has no level set: it runs along one rail.
+    fn settle(&self, y: &mut [f64]) {
+        if self.piece != Piece::Smooth {
+            return;
+        }
+        let (Ok([pa, a1, a2]), Ok([pb, b1, b2])) = (self.a.jet(y[0], self.at_a),
+                                                    self.b.jet(y[1], self.at_b)) else { return };
+        let r = sub(pb, pa);
+        let (f, fu, fw) = (det(a1, b1, r), det(a2, b1, r), det(a1, b2, r));
+        let g2 = fu * fu + fw * fw;
+        if g2 > 0.0 {
+            y[0] -= f * fu / g2;
+            y[1] -= f * fw / g2;
+        }
+    }
 }
 
 /// The layer `d` along the normal: its feet's rates, its ruling's direction and rate, and its
@@ -533,10 +557,9 @@ impl Developable {
             let ahead = dev.march(u0, w0, 1.0)?;
             let lo = back.last().and_then(|p| p.nodes.last()).map_or(0.0, |n| n.0);
             let hi = ahead.last().and_then(|p| p.nodes.last()).map_or(0.0, |n| n.0);
+            // the pieces in order of the running number, each its nodes as marched: a ruling is
+            // read one step on from the node the march came by, never back from where it stopped
             back.reverse();
-            for p in &mut back {
-                p.nodes.reverse();
-            }
             back.extend(ahead);
             dev.pieces = back;
             dev.span = (lo, hi);
@@ -559,11 +582,27 @@ impl Developable {
         let at_end = |r: &Rail, x: f64| !r.closed && ((dir > 0.0 && x >= r.hi - 1e-12 * size)
             || (dir < 0.0 && x <= r.lo + 1e-12 * size));
         let round = |u: f64| stop_u.is_some_and(|s| dir * (u - s) >= -1e-12 * a.period());
+        // where the rails' ends meet, the ruling shrinks to a point: the panel's end
+        let ends_meet = !a.closed && !b.closed && {
+            let end = |r: &Rail| r.path.point(if dir > 0.0 { r.hi } else { r.lo });
+            norm(sub(end(b), end(a))) <= MEET * size
+        };
+        let met = |u: f64, w: f64| -> Result<bool, Refusal> {
+            let (pa, pb) = (a.path.point(a.wrapped(u, u).0), b.path.point(b.wrapped(w, w).0));
+            if norm(sub(pb, pa)) > 1.5 * MEET * size {
+                Ok(false)
+            } else if ends_meet {
+                Ok(true)
+            } else {
+                Err(Refusal::at("the rails meet short of their ends: the panel pinches to a point \
+                    there", pa))
+            }
+        };
         // a fan already taken at the corner the march stands on
         let (mut skip_a, mut skip_b) = (false, false);
         while out.len() < MAX_PIECES {
             let (ea, eb) = (at_end(a, u), at_end(b, w));
-            if (ea && eb) || round(u) {
+            if (ea && eb) || round(u) || met(u, w)? {
                 break;
             }
             // which piece stands here: an end's fan, a corner's fan, or the regular rulings
@@ -638,9 +677,15 @@ impl Developable {
         let corner_a = a.path.point(a.wrapped(u, u).0);
         let corner_b = b.path.point(b.wrapped(w, w).0);
         let event = |y: &[f64]| -> Vec<f64> {
-            let mut e = Vec::with_capacity(3);
+            let mut e = Vec::with_capacity(4);
             e.push(ua.map_or(1.0, |q| dir * (q - y[0])));
             e.push(wb.map_or(1.0, |q| dir * (q - y[1])));
+            // the rails meeting: the ruling shrunk to a point
+            let (pa, pb) = (a.jet(y[0], at_a), b.jet(y[1], at_b));
+            e.push(match (pa, pb) {
+                (Ok([pa, ..]), Ok([pb, ..])) => norm(sub(pb, pa)) - MEET * size,
+                _ => f64::NAN,
+            });
             if let Some(t) = leave {
                 let v = match piece {
                     Piece::FanA => b.jet(y[1], at_b).ok().map(|[pb, b1, _]| {
@@ -817,7 +862,7 @@ impl Developable {
                 let p = &self.pieces[k];
                 let (s0, s1) = p.span();
                 let (from, to) = if dir > 0.0 { (s0, s1) } else { (s1, s0) };
-                let &(_, u, w) = if dir > 0.0 { &p.nodes[0] } else { &p.nodes[p.nodes.len() - 1] };
+                let &(_, u, w) = &p.nodes[0];
                 let mut flow = Flow { carry, d, rates, ..Flow::on(&self.a, &self.b, p) };
                 if carry == Carry::Generic && rates == [0.0; 4] {
                     // the check's first rates read off the rows from the outside-up guess
@@ -1051,6 +1096,13 @@ fn run(flow: &mut Flow, s0: f64, y0: &[f64], dir: f64, size: f64, scale: &[f64],
         if steps > ode::STEPS_MAX {
             return Err(("the rulings cannot be followed in so many steps".into(), y[0]));
         }
+        // no step longer than a quarter of the ruling, which shrinks no faster than the running
+        // number runs: rails meeting are met, never stepped past
+        let reach = match (flow.a.jet(y[0], flow.at_a), flow.b.jet(y[1], flow.at_b)) {
+            (Ok([pa, ..]), Ok([pb, ..])) => 0.25 * norm(sub(pb, pa)),
+            _ => h,
+        };
+        h = h.min(reach.max(floor));
         let err = ode::step(flow, &mut w, s, &y, dir * h, &scale, &mut out);
         let Some(err) = err else {
             if h <= floor {
@@ -1072,36 +1124,46 @@ fn run(flow: &mut Flow, s0: f64, y0: &[f64], dir: f64, size: f64, scale: &[f64],
             h = st.next_h(h, err).min(h * 0.5);
             continue;
         }
+        flow.settle(&mut out);
         let ev = event(&out);
         if ev.iter().any(|e| e.is_nan()) {
             return Err(("the panel cannot be read past here".into(), y[0]));
         }
-        if let Some(k) = ev.iter().position(|&e| e <= 0.0) {
-            // the event lies inside this step: find it on the step by the secant of its value
-            let (mut lo, mut hi) = (0.0, h);
-            let (mut flo, mut fhi) = (event(&y)[k], ev[k]);
-            let mut best = out.clone();
+        if ev.iter().any(|&e| e <= 0.0) {
+            // an event lies inside this step: find each on the step by the secant of its value,
+            // within what is left before the ones found, and stop at the first
+            let e_here = event(&y);
+            let (mut hi, mut best) = (h, out.clone());
             let mut tmp = vec![0.0; n];
-            for _ in 0..80 {
-                let t = if (fhi - flo).abs() > 0.0 { lo + (hi - lo) * flo / (flo - fhi) } else { 0.5 * (lo + hi) };
-                let t = t.clamp(lo + 0.05 * (hi - lo), hi - 0.05 * (hi - lo));
-                if ode::step(flow, &mut w, s, &y, dir * t, &scale, &mut tmp).is_none() {
-                    hi = t;
+            for k in 0..ev.len() {
+                let mut fhi = event(&best)[k];
+                if !(fhi <= 0.0) {
                     continue;
                 }
-                let ft = event(&tmp)[k];
-                if ft <= 0.0 {
-                    hi = t;
-                    fhi = ft;
-                    best.copy_from_slice(&tmp);
-                } else {
-                    lo = t;
-                    flo = ft;
-                }
-                if (hi - lo) <= 1e-15 * size.max(h) || fhi.abs() <= 1e-15 {
-                    break;
+                let (mut lo, mut flo) = (0.0, e_here[k]);
+                for _ in 0..80 {
+                    let t = if (fhi - flo).abs() > 0.0 { lo + (hi - lo) * flo / (flo - fhi) }
+                            else { 0.5 * (lo + hi) };
+                    let t = t.clamp(lo + 0.05 * (hi - lo), hi - 0.05 * (hi - lo));
+                    if ode::step(flow, &mut w, s, &y, dir * t, &scale, &mut tmp).is_none() {
+                        hi = t;
+                        continue;
+                    }
+                    let ft = event(&tmp)[k];
+                    if ft <= 0.0 {
+                        hi = t;
+                        fhi = ft;
+                        best.copy_from_slice(&tmp);
+                    } else {
+                        lo = t;
+                        flo = ft;
+                    }
+                    if (hi - lo) <= 1e-15 * size.max(h) || fhi.abs() <= 1e-15 {
+                        break;
+                    }
                 }
             }
+            flow.settle(&mut best);
             nodes.push((s + dir * hi, best));
             return Ok(nodes);
         }

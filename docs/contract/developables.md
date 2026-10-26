@@ -43,7 +43,11 @@ one-sided: `the_path_reader_differentiates_what_it_reads`; the guide's gates did
 w′) = (F_w, −F_u)/(|a′|F_w − |b′|F_u)`, in the panel's running number `σ` — the two rails' arc
 lengths together — by the core's integrator (`ode::step`), events located by secant on a step. The
 home is the root of `F(u₀, ·)` of `sense: same` (`(a′ × r)·(b′ × r) > 0`) nearest `a(u₀)`, roots
-found by sign changes on samples refined by bisection; the march carries that branch. The tilted
+found by sign changes on samples refined by bisection; the march carries that branch. Each node
+the march lands on is set back on `F = 0` by a Newton step along `∇F` (`Flow::settle`); no step
+is longer than a quarter of the ruling; where several events fall in one step, the march stops at
+the first; and a ruling is read one step on from the node the march came by, never back from where
+it stopped. The tilted
 adapter's home ruling is the outer root an independent root-find agrees with, and every ruling
 keeps the sense (`a_tilted_adapter_takes_the_outer_root`).
 
@@ -54,7 +58,13 @@ rail's end is a corner whose other side is open: where the regular rulings reach
 first, that end fans over the rest of the other. The square-to-round is four planar triangles —
 each piece's rulings one plane, meeting at one point of the round — and four fans standing at the
 corners (`a_square_to_round_is_triangles_and_corner_fans`); the dory's chine fans at both ends
-(`a_dory_panel_fans_at_its_ends_and_lies_on_its_sheet`). `PlaneSupportsCorner` is the corner's row
+(`a_dory_panel_fans_at_its_ends_and_lies_on_its_sheet`). **Where the rails' ends meet** the
+ruling shrinks to nothing and the panel comes to a point: `F` has a saddle there, its level set
+crossing itself, and a march's drift off it is no longer small against the ruling, so the march
+stops where the ruling is `MEET` (a hundred-thousandth) of the panel's size — that ruling its end,
+laid like any other. The dory's bottom is pointed at its forefoot, and its two sides share the
+stem line (`a_dory_is_three_panels_cut_from_two_sheets`); rails meeting short of either's end are
+refused below (`rails_meeting_at_their_ends_come_to_a_point_and_elsewhere_are_refused`). `PlaneSupportsCorner` is the corner's row
 in kernel form, held by `tests/jacobians.rs`; the recogniser builds a fan exactly.
 
 **Closure.** Two closed rails march once round `a` from the home; the march must end on the home
@@ -67,7 +77,8 @@ its laid `a`): rulings that fold (one rail would run backward past `FOLD`, as wh
 flat along a ruling and the two families of planes touching both rails cross, so the march would
 switch family), a ruling along a rail's tangent (checked at the home to `ALONG`, the root of a
 double zero of `F` being found only to its square root, and on the march), no root of `sense:
-same`, a band that does not come round, one rail closed and one open. A rail that is no path is
+same`, a band that does not come round, one rail closed and one open, rails that meet short of
+their ends (the panel would pinch to a point and go on). A rail that is no path is
 **E040** at the use. Gates: `folding_rulings_are_refused` (two, the band's and the flat's),
 `a_ruling_tangent_to_a_rail_is_refused`, `no_root_of_the_same_sense_is_refused`,
 `one_rail_closed_and_one_open_is_refused_once`, `a_rail_that_is_no_path_is_refused`.
@@ -102,7 +113,8 @@ cut at a spline's knots against the pattern's `∫ |f′|`; `Development::measur
 lengths and the area in one pass). **No step crosses a knot**: a rail's spline knots break its
 pieces as its kinks do (`Rail::joins`, fanning only at a kink), since there the flow turns a
 corner in a higher order and the two marches — the panel's and the laid one — would each take an
-error of their own across it, a dory's mirrored sides coming out 2e-8 apart., the pattern's area the panel's and an independent shoelace's
+error of their own across it, a dory's mirrored sides coming out 2e-8 apart. The pattern's area
+is the panel's and an independent shoelace's
 (`every_pattern_is_an_isometry_of_its_panel`). Closed forms: the frustum's sector and its layer
 `5d` out (`a_frustum_lays_flat_on_its_annular_sector`), the offset adapter's equal angles through
 its apex, the cut cylinder's cosine; the panel follows its rims (`a_panel_follows_its_rims`); two

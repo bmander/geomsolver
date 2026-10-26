@@ -3,12 +3,15 @@
 // flat sheets and bends together over a few frames. (`dory_panel.sv` is the port side alone, its
 // gates.)
 //
-// The rails: each chine is a spline over five points in the plane `z = 120 + |y|/4`, each sheer in
-// `z = 600 + |y|/4`, mirror images port and starboard, each turning one way in its plane, so no
-// panel folds. The sheers run past the chines at the stem and the transom, so each side fans from
-// its chine's end points; the bottom's rulings run straight across, port chine to starboard, the
-// chines' mirror images pairing (a plane holds a tangent and its mirror image along the line
-// between them), and it is no wider than 80 at its bow, where it meets the stem.
+// The rails: each chine is a spline over five points in the plane `z = 120 − |y|/4`, each sheer in
+// `z = 600 − |y|/4`, mirror images port and starboard, each turning one way in its plane, so no
+// panel folds. The prow is pointed: the two chines start at one point on the centreline, the
+// forefoot, and the two sheers at another, the stem's head. The sheers run past the chines at the
+// stem and the transom, so each side fans from its chine's end points — at the bow over the stem,
+// the line from the forefoot up to the head, which the two sides share. The bottom's rulings run
+// straight across, port chine to starboard, the chines' mirror images pairing (a plane holds a
+// tangent and its mirror image along the line between them), and shrink to nothing at the
+// forefoot: where its rails meet, the panel comes to a point.
 //
 // Which way each faces is the order of its rails: a panel's outside is `a′ × (b − a)`, so the
 // bottom is `Developable(starboard chine, port chine)` — outside down — and each side runs from
@@ -21,38 +24,39 @@
 // bottom alone on the second. `dory.svd` draws the hull and the cut file.
 //
 // What it holds to: each panel solves at DOF 0 with its rails; laid flat, each rail keeps its
-// length (the bottom's chine edges, port and starboard, are one length); the two sides' patterns
-// are mirror images, their rails' lengths equal; every pattern lies on its sheet.
+// length (the bottom's chine edges, port and starboard, are one length); the bottom's pattern is
+// pointed at its bow; the two sides start on the stem, and their patterns are mirror images, their
+// rails' lengths equal; every pattern lies on its sheet.
 unit mm
 use std
 
 thick := 6mm
 
-// the chines, in the planes z = 120 + |y|/4, bow (x = 60) to stern (x = 1960)
-pc0 := point hint((60, -40, 110))
+// the chines, in the planes z = 120 − |y|/4, from the forefoot (x = 60) to the transom (x = 1960)
+pc0 := point hint((60, 0, 120))
 pc1 := point hint((470, -300, 45))
 pc2 := point hint((980, -420, 15))
 pc3 := point hint((1490, -390, 22.5))
 pc4 := point hint((1960, -320, 40))
-fix((60mm, -40mm, 110mm)) pc0
+fix((60mm, 0mm, 120mm)) pc0
 fix((470mm, -300mm, 45mm)) pc1
 fix((980mm, -420mm, 15mm)) pc2
 fix((1490mm, -390mm, 22.5mm)) pc3
 fix((1960mm, -320mm, 40mm)) pc4
 port_chine := spline(pc0, pc1, pc2, pc3, pc4)
-sc0 := point hint((60, 40, 110))
+sc0 := point hint((60, 0, 120))
 sc1 := point hint((470, 300, 45))
 sc2 := point hint((980, 420, 15))
 sc3 := point hint((1490, 390, 22.5))
 sc4 := point hint((1960, 320, 40))
-fix((60mm, 40mm, 110mm)) sc0
+fix((60mm, 0mm, 120mm)) sc0
 fix((470mm, 300mm, 45mm)) sc1
 fix((980mm, 420mm, 15mm)) sc2
 fix((1490mm, 390mm, 22.5mm)) sc3
 fix((1960mm, 320mm, 40mm)) sc4
 starboard_chine := spline(sc0, sc1, sc2, sc3, sc4)
 
-// the sheers, in the planes z = 600 + |y|/4, from the stem's head (x = −85) to the transom's top
+// the sheers, in the planes z = 600 − |y|/4, from the stem's head (x = −85) to the transom's top
 ps0 := point hint((-85, 0, 600))
 ps1 := point hint((410, -420, 495))
 ps2 := point hint((980, -560, 460))
@@ -143,6 +147,6 @@ a0 distance(1130mm, along: std.y) starboard_flat.g       // its seam's chine end
 // its seam square to the long edge, sheer to chine up
 sides_edge angle(90deg) line(starboard_flat.f, starboard_flat.g)
 bottom_flat := std.Development(bottom, bottom_seam, d: thick / 2) in floor
-b0 distance(60mm, along: std.x) bottom_flat.start.p1     // the bow 60 in from the sheet's end
+b0 distance(60mm, along: std.x) bottom_flat.start.p1     // the bow's point 60 in from the end
 b0 distance(160mm, along: std.y) bottom_flat.f           // the starboard chine 160 up
 bottom_edge angle(90deg) line(bottom_flat.f, bottom_flat.g)  // its seam square across the sheet

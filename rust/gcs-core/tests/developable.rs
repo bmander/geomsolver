@@ -302,8 +302,10 @@ fn an_offset_transition_has_four_triangles_of_its_own() {
 }
 
 /// **`dory.sv`**: a whole hull of three panels, each solved with its rails — the bottom's rulings
-/// straight across, each foot the mirror image of the other; the two sides mirror images, their
-/// patterns' rails and areas one; every pattern on its sheet of plywood.
+/// straight across, each foot the mirror image of the other, coming to a point at the forefoot
+/// where the chines meet; the two sides mirror images, each starting on the one stem line from the
+/// forefoot to the stem's head, their patterns' rails and areas one; every pattern on its sheet of
+/// plywood, the bottom's pointed at its bow.
 #[test]
 fn a_dory_is_three_panels_cut_from_two_sheets() {
     let e = determined(HULL);
@@ -318,7 +320,24 @@ fn a_dory_is_three_panels_cut_from_two_sheets() {
                 && (r.m[2] - r.n[2]).abs() < 1e-7, "{s}: {:?} {:?}", r.m, r.n);
     }
     assert!(rel(bottom.length(0), bottom.length(1)) < 1e-9);
+    // the bow a point: the last ruling a hundred-thousandth of the hull long, at the forefoot,
+    // and laid a point too
+    let forefoot = [60.0, 0.0, 120.0];
+    let (lo, _) = p.span();
+    let bow = p.ruling(lo).unwrap();
+    assert!(norm(sub(bow.n, bow.m)) < 0.05 && norm(sub(bow.m, forefoot)) < 0.05, "{bow:?}");
+    let tip = at(&bottom, lo);
+    assert!(apart(tip.f, tip.g) < 0.05);
     let (port, starboard) = (development_of(&e, "port_flat"), development_of(&e, "starboard_flat"));
+    // each side starts on the stem, forefoot to head: port from its chine, starboard from its sheer
+    let head = [-85.0, 0.0, 600.0];
+    let stem = |d: &Development| {
+        let q = d.panel();
+        q.ruling(q.span().0).unwrap()
+    };
+    let (ps, ss) = (stem(&port), stem(&starboard));
+    assert!(norm(sub(ps.m, forefoot)) < 1e-9 && norm(sub(ps.n, head)) < 1e-9, "{ps:?}");
+    assert!(norm(sub(ss.m, head)) < 1e-9 && norm(sub(ss.n, forefoot)) < 1e-9, "{ss:?}");
     // port runs chine to sheer, starboard sheer to chine: each one's `a` the other's `b`
     assert!(rel(port.length(0), starboard.length(1)) < 1e-9);
     assert!(rel(port.length(1), starboard.length(0)) < 1e-9);
@@ -661,6 +680,34 @@ fn a_ruling_tangent_to_a_rail_is_refused() {
                         a0: -1.0, sweep: 2.0 };
     let refusal = Developable::build(a, b, [50.0, 0.0, 0.0]).unwrap_err();
     assert!(refusal.why.contains("tangent to a rail"), "{refusal}");
+}
+
+/// **Rails meeting**: two arcs of radius 100 rising to one point, square to each other there —
+/// where both end, the panel comes to that point, its last ruling a hundred-thousandth of its size
+/// and laid exactly; where either runs on past it, the panel would pinch to the point and go on,
+/// and is refused there.
+#[test]
+fn rails_meeting_at_their_ends_come_to_a_point_and_elsewhere_are_refused() {
+    let rise = |u: [f64; 3], sweep: f64| Path::Arc { c: [0.0, 0.0, -90.0], u, v: [0.0, 0.0, 1.0],
+                                                     r: 100.0, a0: PI / 2.0 - 1.0, sweep };
+    let top = [0.0, 0.0, 10.0];
+    let a = rise([1.0, 0.0, 0.0], 1.0);
+    let s = a.point(0.3);
+    let p = Developable::build(a.clone(), rise([0.0, 1.0, 0.0], 1.0), s).unwrap();
+    let last = p.ruling(p.span().1).unwrap();
+    assert!(norm(sub(last.n, last.m)) < 1e-5 * 100.0 * 1.5 && norm(sub(last.m, top)) < 1e-3,
+            "{last:?}");
+    let flat = p.develop(0.0).unwrap();
+    for which in 0..2 {
+        assert!(rel(flat.length(which), p.rail_length(which)) < 1e-9);
+        assert!((p.rail_length(which) - 100.0).abs() < 1e-3);
+    }
+    for (sa, sb) in [(1.0, 1.5), (1.5, 1.5)] {
+        let refusal = Developable::build(rise([1.0, 0.0, 0.0], sa), rise([0.0, 1.0, 0.0], sb), s)
+            .unwrap_err();
+        assert!(refusal.why.contains("pinches to a point"), "{sa} {sb}: {refusal}");
+        assert!(refusal.place.is_some_and(|q| norm(sub(q, top)) < 1e-3), "{refusal:?}");
+    }
 }
 
 /* -- the report ------------------------------------------------------------------------------ */

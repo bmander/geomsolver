@@ -29,7 +29,7 @@ Read them in this order:
 | `square_to_round.sv` | **Corners fan.** A 200 × 120 rectangle (a closed chain) to a Ø100 round 150 above: four planar triangles, and four fans about the corners, where the plane turns between the corner's two sides, supporting it. The band is seamed at the middle of a long side, and its pattern is the sheet-metal transition's. |
 | `offset_transition.sv` | **The real duct fitting.** A 240 square to a Ø160 round whose centre stands 40 over and 30 back: four triangles of four heights, each with its apex where its side's plane touches the round, and four different corner cones. Its pattern is laid on an 800 × 800 blank of 1 mm galvanised steel; `offset_transition.svd` draws the part and its cut pattern. |
 | `dory_panel.sv` | **Ends fan, and the flat placed by relations.** A dory's side strake between two splines in space, chine and sheer. The sheer runs past the chine at the stem and the transom, so the chine's end points fan. The neutral layer is laid on a 2440 × 1220 sheet of plywood drawn in its own plane, placed by two distances and a perpendicular; `dory_panel.svd` is the cut file. |
-| `dory.sv` | **A whole hull.** The dory's three panels — the bottom between the two chines, its rulings straight across, and a side each side — each `std.Developable` with its rails in the order that turns its outside out: the bottom's down, each side's outboard. The two sides are laid as mirror images and nested on one 2440 × 1220 sheet, the bottom on a second; `dory.svd` draws the hull from three sides and the cut file. |
+| `dory.sv` | **A whole hull, and a panel that comes to a point.** The dory's three panels — the bottom between the two chines, its rulings straight across, and a side each side — each `std.Developable` with its rails in the order that turns its outside out: the bottom's down, each side's outboard. The prow is pointed: the chines meet at the forefoot, so the bottom's rulings shrink to nothing there, and the two sides start on one stem line. The two sides are laid as mirror images and nested on one 2440 × 1220 sheet, the bottom on a second; `dory.svd` draws the hull from three sides and the cut file. |
 
 What the words are:
 
@@ -37,7 +37,8 @@ What the words are:
   where one plane `T` touches `a` at `m` and `b` at `n`, `b` running through `T` the way `a` does
   (`sense: same`). At a corner, or a rail's end, `T` *supports* the rail: it lies between the two
   one-sided tangents, so the rulings fan there. Two closed rails make a band, which must come
-  round; one closed and one open is refused.
+  round; one closed and one open is refused. Where the two rails' ends meet, the rulings shrink
+  to nothing: the panel comes to a point.
 - **Sides** — the panel's `outside` is the side `T`'s normal points to, `a′ × (n − m)`: the order
   of the rails. Given the other way round, the sides swap, and so does which face of the pattern
   is up.
@@ -53,7 +54,7 @@ What the words are:
 - **Refused, said once at the use (E080)** — rulings that fold (one rail would run backward, as
   where the panel turns flat along a ruling and two families of touching planes cross), a ruling
   tangent to a rail, no root with `sense: same`, a band that does not come round, one rail closed
-  and one open.
+  and one open, rails that meet short of their ends (the panel would pinch to a point and go on).
 
 `solventc` prints, for a panel's band, its volume, faces and bounds; for a flat, each curve's
 length, the pattern's area and its bounds; and a refusal in the core's words where the panel
