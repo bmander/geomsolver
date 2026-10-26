@@ -175,6 +175,32 @@ fn a_blocks_binder_is_its_own_and_its_declarations_the_documents() {
 }
 
 #[test]
+fn a_lists_item_is_its_blocks_binder() {
+    let src = "w := 2\nholes := [(1, w), (3, 4)]\nrepeat h in holes {\n  p := point hint((h.x, h.y))\n}\n\
+               repeat d in [w, 2 * w] {\n  q := point hint((d, 0))\n}\n";
+    assert_eq!(
+        lit(src, "h", 0),
+        "w := 2\nholes := [(1, w), (3, 4)]\nrepeat «h» in holes {\n  p := point hint((‹h›.x, ‹h›.y))\n}\n\
+         repeat d in [w, 2 * w] {\n  q := point hint((d, 0))\n}\n"
+    );
+    assert_eq!(
+        lit(src, "holes", 0),
+        "w := 2\n«holes» := [(1, w), (3, 4)]\nrepeat h in ‹holes› {\n  p := point hint((h.x, h.y))\n}\n\
+         repeat d in [w, 2 * w] {\n  q := point hint((d, 0))\n}\n"
+    );
+    assert_eq!(
+        lit(src, "d", 0),
+        "w := 2\nholes := [(1, w), (3, 4)]\nrepeat h in holes {\n  p := point hint((h.x, h.y))\n}\n\
+         repeat «d» in [w, 2 * w] {\n  q := point hint((‹d›, 0))\n}\n"
+    );
+    assert_eq!(
+        lit(src, "w", 0),
+        "«w» := 2\nholes := [(1, ‹w›), (3, 4)]\nrepeat h in holes {\n  p := point hint((h.x, h.y))\n}\n\
+         repeat d in [‹w›, 2 * ‹w›] {\n  q := point hint((d, 0))\n}\n"
+    );
+}
+
+#[test]
 fn next_and_prev_read_the_blocks_own_names() {
     let src = "cycle 4 as i {\n  v := point\n  (e := line(v, next.v))\n}\n";
     assert_eq!(

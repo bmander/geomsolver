@@ -830,3 +830,14 @@ components.dims.zB)`.
   point's arguments) and the flattener writes out where it walks the body (`flatten::carried`), so
   the source keeps and prints the one statement (`print::write_decl`); see
   [frames.md](frames.md).
+  **A block runs over a list** ([0.188]): `holes := [(a, b), (c, d)]` is parsed
+  (`statements::list_items`) into the `GroupDecl` a group is, its items labelled by place, `0`,
+  `1`, … (`syntax::is_list`), a vector item a group of `x`, `y`[, `z`] — so a list is worked out,
+  imported, nested in a group and read in a definition's body by the group machinery, its numbers
+  in the value table as `holes.0.x`, and the printer writes it back in brackets.  `repeat h in
+  holes` is parsed as a walk is; `flatten::lists::list_of` tells it from one where the block is
+  walked, by whether the name's members in the numbers in force are a list's, and a list written
+  in place (`Block::items`) is worked out there.  Either is expanded where it stands, never set
+  aside: copy `k` binds the item's numbers under the copy's name for it (`h`, `h.x`) as it binds
+  its index, and an item with members is a group by that name (`#<id>.<k>.h`), handed on whole.
+  `tests/lists.rs` is the gate.

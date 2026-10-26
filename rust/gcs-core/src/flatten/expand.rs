@@ -1080,6 +1080,28 @@ impl<'a> Walk<'a> {
             }
             return;
         }
+        // a copy per item of a list, named or written in place (§12.10): the items are numbers
+        // in force here, so the block is expanded where it stands
+        if let Some(found) = self.list_of(b, vals) {
+            let (var, items) = match found {
+                Ok(found) => found,
+                Err((span, m)) => {
+                    self.err(Code::E103, span, m);
+                    return;
+                }
+            };
+            // a declaration of the body called what each copy calls its item would hide it
+            if b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| n.text == var.text)) {
+                self.err(Code::E001, var.span, format!("`{}` is declared twice", var.text));
+                return;
+            }
+            if let Some(j) = b.joint.as_ref().filter(|j| j.round && !b.kind.wraps()) {
+                self.err(Code::E040, j.span, ROUNDED_REPEAT);
+                return;
+            }
+            self.copies(b, st, scope, path, depth, items.len(), &[], Some((var, &items)));
+            return;
+        }
         if b.over.is_some() {
             // how many is the chain's, and the chain may be a name no walk has
             // reached yet (a forward reference, or one inside an instance written
@@ -1116,12 +1138,10 @@ impl<'a> Walk<'a> {
         // a round at the body's end gives up the first link's entry in every copy, and a
         // `repeat`'s first copy is entered by nothing (#576)
         if let Some(j) = b.joint.as_ref().filter(|j| j.round && !b.kind.wraps()) {
-            self.err(Code::E040, j.span, "a round at the end of a `repeat`'s body would round \
-                a corner its first copy does not have: round the corners inside the body, or \
-                close the copies in a `cycle` or a `ring`");
+            self.err(Code::E040, j.span, ROUNDED_REPEAT);
             return;
         }
-        self.copies(b, st, scope, path, depth, n, &[]);
+        self.copies(b, st, scope, path, depth, n, &[], None);
     }
 
     /// A relation: a defined word's body applied, or its numbers worked out in the scope and
@@ -1492,6 +1512,8 @@ impl<'a> Walk<'a> {
     /// holds each copy's edge — the link as the chain wrote it and the scope it was written in —
     /// and copy `k` gets an alias `<block>#<id>.<k>.<var>` for it, which is how `e` is found
     /// through the copy's prefix like any name, and passed on to an instance as any alias is.
+    /// Where it runs over a list, `items` holds each copy's item, whose numbers copy `k` reads
+    /// under the name it calls it by (`h`, `h.x`), as it reads its index.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn copies(
         &mut self,
@@ -1502,10 +1524,13 @@ impl<'a> Walk<'a> {
         depth: usize,
         n: usize,
         edges: &[(&Name, &[Link])],
+        items: Option<(&Name, &[super::lists::Item])>,
     ) {
-        // a block's index and its edge binder are names of each copy, and one over a name the
-        // enclosing scope already has would read two ways in one body (E002): said once per block
-        let binders = b.binder.iter().chain(edges.iter().map(|(v, _)| *v));
+        // a block's index and its edge or item binder are names of each copy, and one over a name
+        // the enclosing scope already has would read two ways in one body (E002): said once per
+        // block
+        let binders = b.binder.iter().chain(edges.iter().map(|(v, _)| *v))
+            .chain(items.map(|(v, _)| v));
         for name in binders {
             let taken = scope.vals.contains_key(&name.text)
                 || scope.groups.contains(&name.text)
@@ -1556,6 +1581,21 @@ impl<'a> Walk<'a> {
             if let Some(i) = &b.binder {
                 sub.insert(i.text.clone(), Aff::num(k as f64));
             }
+            // an item that is a group of numbers is a group by the copy's name for it, handed on
+            // as one (`Hole(h)`)
+            let mut groups = scope.groups.clone();
+            if let Some((var, items)) = items {
+                for (member, a) in &items[k] {
+                    sub.insert(format!("{}{member}", var.text), a.clone());
+                }
+                if items[k].iter().any(|(member, _)| !member.is_empty()) {
+                    groups = std::rc::Rc::new(
+                        scope.groups.iter().cloned().chain([var.text.clone()]).collect());
+                    let key = format!("{block_prefix}{k}.{}", var.text);
+                    self.names.insert(key.clone());
+                    self.group_names.insert(key);
+                }
+            }
             for (var, links) in edges {
                 let key = format!("{block_prefix}{k}.{}", var.text);
                 match &links[k] {
@@ -1587,7 +1627,7 @@ impl<'a> Walk<'a> {
                 // `next` and `prev` mean something only where the copies close
                 closed: scope.closed,
                 forbidden: scope.forbidden.clone(),
-                groups: scope.groups.clone(),
+                groups,
                 vals: std::rc::Rc::new(sub.clone()),
                 sides: scope.sides.clone(),
                 module: scope.module,
@@ -2061,3 +2101,9 @@ impl Table for Seeded<'_> {
         out
     }
 }
+
+/// A round at the end of a `repeat`'s body, which no copy but a `cycle`'s or a `ring`'s is
+/// entered by (#576).
+const ROUNDED_REPEAT: &str = "a round at the end of a `repeat`'s body would round a corner its \
+    first copy does not have: round the corners inside the body, or close the copies in a `cycle` \
+    or a `ring`";
