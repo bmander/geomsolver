@@ -335,14 +335,10 @@ fn ev(
                     None => Some(name.clone()),
                 };
                 if let Some(u) = free {
-                    let what = if u == name {
-                        format!("`{name}` is")
-                    } else {
-                        format!("`{name}` reads `{u}`,")
-                    };
                     return Err(ExprError::from(format!(
-                        "{what} an unknown of the drawing, and an `if` chooses before the solve: \
-                         its condition compares numbers the document states"
+                        "{} an unknown of the drawing, and an `if` chooses before the solve: its \
+                         condition compares numbers the document states",
+                        super::reads_unknown(&name, &u)
                     )));
                 }
             }

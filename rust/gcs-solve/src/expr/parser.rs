@@ -503,25 +503,21 @@ impl Parser {
                  `meets`) is decided by a `when`"
             ));
         }
-        let side = |p: &mut Parser, close: Tok| -> Result<Ast, String> {
-            if p.next() != Tok::Comma {
+        let expect = |p: &mut Parser, t: Tok| {
+            if *p.peek() != t {
                 return Err(format!(
                     "`if` takes a condition and two numbers: `if(c, a, b)`, at {}",
                     p.here()
                 ));
             }
-            let e = p.expr()?;
-            if *p.peek() != close {
-                return Err(format!(
-                    "`if` takes a condition and two numbers: `if(c, a, b)`, at {}",
-                    p.here()
-                ));
-            }
-            Ok(e)
+            p.next();
+            Ok(())
         };
-        let a = side(self, Tok::Comma)?;
-        let b = side(self, Tok::RParen)?;
-        self.next();
+        expect(self, Tok::Comma)?;
+        let a = self.expr()?;
+        expect(self, Tok::Comma)?;
+        let b = self.expr()?;
+        expect(self, Tok::RParen)?;
         Ok(Ast::If(Box::new(c), Box::new(a), Box::new(b)))
     }
 }

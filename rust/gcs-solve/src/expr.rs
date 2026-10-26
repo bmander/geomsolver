@@ -149,6 +149,13 @@ pub fn measured_names(text: &str) -> Vec<String> {
     })
 }
 
+/// How a name that is, or is written over, the unknown `u` is said to be one: `` `beta` is `` or
+/// `` `k` reads `beta`, ``, ahead of what an unknown cannot be read by — a `when`'s, a claim's
+/// and an `if`'s refusal alike.
+pub fn reads_unknown(name: &str, u: &str) -> String {
+    if u == name { format!("`{name}` is") } else { format!("`{name}` reads `{u}`,") }
+}
+
 /// What a name is built in *as*, for the two callers that have to say so — the refusal here and
 /// the shadowing warning in `program` — or `None` where the document is free to use it.  One
 /// table, since "is this built in" and "what is it" are the same question asked twice.
