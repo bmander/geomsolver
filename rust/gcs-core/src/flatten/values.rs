@@ -983,6 +983,7 @@ impl<'a> Walk<'a> {
         }
         let mut comps: BTreeMap<&str, Option<&Component>> = BTreeMap::new();
         let mut out: Vec<Def> = Vec::new();
+        let mut defined: BTreeSet<String> = pending.iter().map(|d| d.name.clone()).collect();
         for st in body {
             let Some(text) = self.prog.span_text(st.span) else { continue };
             if !calls.keys().any(|n| text.contains(n)) {
@@ -1004,7 +1005,7 @@ impl<'a> Walk<'a> {
                 };
                 let member = parts[..n].join(".");
                 let name = format!("{head}.{member}");
-                if vals.contains_key(&name) || pending.iter().chain(&out).any(|d| d.name == name) {
+                if vals.contains_key(&name) || !defined.insert(name.clone()) {
                     continue;
                 }
                 let last = rest[n - 1].1;

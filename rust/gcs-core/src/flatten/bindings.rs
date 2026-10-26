@@ -630,8 +630,9 @@ impl<'a> Walk<'a> {
     /// is walked): each numeric formal what it is given, else its default, else the drawing's
     /// unknown it becomes (`{prefix}{instance}.{formal}`); and, with `groups`, the numbers a group
     /// or a set formal carries under its name (`s.pcb_t`), only what its interface declares where
-    /// one types it.  `instance_numbers` reads the first; a body read from outside both
-    /// (`members`), which is refused a number the call gives that does not work out (beside).
+    /// one types it.  Beside them, why each number the call gives does not work out, which `bind`
+    /// says at the call: `instance_numbers` reads the numbers alone, and a body read from outside
+    /// (`members`) both, refused where one did not work out.
     pub(super) fn call_numbers(
         &self,
         comp: &Component,
@@ -656,16 +657,20 @@ impl<'a> Walk<'a> {
                             super::values::members_of(&f.name.text, fields, &mut members);
                             let mut numbers: BTreeMap<String, Aff> = BTreeMap::new();
                             for (name, _, field) in members {
-                                let t = match &field.value {
-                                    InstVal::Expr(t) => t.clone(),
-                                    InstVal::Ref(r) => ref_text(r),
+                                let (t, named) = match &field.value {
+                                    InstVal::Expr(t) => (t.clone(), false),
+                                    InstVal::Ref(r) => (ref_text(r), true),
                                     _ => continue,
                                 };
                                 match value_aff(&t, vals, self.units) {
                                     Ok(v) => {
                                         numbers.insert(name, v);
                                     }
-                                    Err(_) => super::copy_members(vals, &t, &name, &mut numbers),
+                                    // a group the member names, whose numbers it carries
+                                    Err(_) if named => {
+                                        super::copy_members(vals, &t, &name, &mut numbers)
+                                    }
+                                    Err(_) => {}
                                 }
                             }
                             (f.name.text.clone(), Some(Vals::of(numbers)))

@@ -15,7 +15,8 @@ use super::values::{is_reference, members_of, value_aff};
 use crate::syntax::{InstVal, Instance};
 use std::rc::Rc;
 
-/// The constants of the file a body is written in, and which file that is.
+/// The constants of the file a body is written in, and which file that is: the one its calls
+/// name their components in.
 #[derive(Clone)]
 pub(super) struct Constants {
     pub module: Option<usize>,
@@ -24,7 +25,6 @@ pub(super) struct Constants {
 
 /// One body read from outside: its numbers worked out on demand, over its call's.
 struct Read<'c> {
-    comp: &'c Component,
     /// The instance's key (`shield.`), under which an unknown its call leaves is named.
     key: String,
     table: Vals,
@@ -74,10 +74,10 @@ pub(super) fn offers(prog: &Program, comp: &Component, parts: &[&str], depth: us
     -> Option<(usize, bool)> {
     let defs = defined(comp);
     let formal = |m: &str| comp.formals.iter().any(|f| f.ty.number() && f.name.text == m);
-    if let Some(k) = (1..=parts.len()).rev()
-        .find(|&k| defs.contains_key(&parts[..k].join(".")) || formal(&parts[..k].join(".")))
-    {
-        let named = defs.get(&parts[..k].join(".")).is_some_and(|(t, _)| is_reference(t));
+    let number = (1..=parts.len()).rev().map(|k| (k, parts[..k].join(".")))
+        .find(|(_, m)| defs.contains_key(m) || formal(m));
+    if let Some((k, m)) = number {
+        let named = defs.get(&m).is_some_and(|(t, _)| is_reference(t));
         return (k == parts.len()).then_some((k, named));
     }
     let (head, rest) = parts.split_first()?;
@@ -129,26 +129,24 @@ impl Walk<'_> {
             Rc::new(Vals::of(own))
         };
         let constants = Constants { module: scope.module, table };
-        self.member_of(inst, member, vals, &constants, scope.module, scope.prefix(), 0)
+        self.member_of(inst, member, vals, &constants, scope.prefix(), 0)
     }
 
-    /// `instance_value`, for a call written in a file (`module`) under `prefix`: one level of
-    /// what may be a body read from inside another read so.
-    #[allow(clippy::too_many_arguments)]
+    /// `instance_value`, for a call written under `prefix` in the file whose constants are
+    /// `constants`: one level of what may be a body read from inside another read so.
     fn member_of(
         &mut self,
         inst: &Instance,
         member: &str,
         vals: &Vals,
         constants: &Constants,
-        module: Option<usize>,
         prefix: &str,
         depth: usize,
     ) -> Result<Aff, String> {
         if depth >= MAX_DEPTH {
             return Err(format!("`{member}` is read through instances nested too deep"));
         }
-        let k = self.prog.resolve_component(&inst.component.text, module)?;
+        let k = self.prog.resolve_component(&inst.component.text, constants.module)?;
         let comp = &self.prog.components[k];
         let (given, failed) = self.call_numbers(comp, inst, vals, prefix, true);
         if let Some(e) = failed.into_iter().next() {
@@ -163,7 +161,6 @@ impl Walk<'_> {
             false => Constants { module: comp.module, table: self.file_numbers(comp.module).0 },
         };
         let mut read = Read {
-            comp,
             key: format!("{prefix}{}.", inst.name.text),
             table: Vals::over_with(constants.table.clone(), given),
             defs: defined(comp),
@@ -180,39 +177,36 @@ impl Walk<'_> {
         if let Some(a) = read.table.own().get(name) {
             return Ok(a.clone());
         }
-        let Some((text, ty)) = read.defs.get(name).cloned() else {
-            // a number of an instance the body writes, read through it in turn
-            let inner = name.split_once('.')
-                .and_then(|(head, rest)| Some((*read.calls.get(head)?, rest)));
-            let Some((inst, rest)) = inner else {
-                return Err(format!("`{name}` is not a number here — nothing in scope gives it \
-                                    one"));
-            };
-            if !read.busy.insert(name.to_string()) {
-                return Err(format!("`{name}` is defined in terms of itself"));
-            }
-            // what its call reads of the body first
-            let mut given = Vec::new();
-            texts(&inst.args, &mut given);
-            for text in given {
-                self.ready(read, &text, depth)?;
-            }
-            let (module, key) = (read.comp.module, read.key.clone());
-            let a = self.member_of(inst, rest, &read.table, &read.constants, module, &key,
-                depth + 1)?;
-            read.busy.remove(name);
-            read.table.insert(name.to_string(), a.clone());
-            return Ok(a);
-        };
         if !read.busy.insert(name.to_string()) {
             return Err(format!("`{name}` is defined in terms of itself"));
         }
-        self.ready(read, &text, depth)?;
-        let a = value_aff(&text, &read.table, self.units)
-            .and_then(|a| match ty {
-                Some(ty) => typed(a, ty, name),
-                None => Ok(a),
-            })?;
+        let a = match read.defs.get(name).cloned() {
+            Some((text, ty)) => {
+                self.ready(read, &text, depth)?;
+                let a = value_aff(&text, &read.table, self.units)?;
+                match ty {
+                    Some(ty) => typed(a, ty, name)?,
+                    None => a,
+                }
+            }
+            // a number of an instance the body writes, read through it in turn, once what its
+            // call reads of the body is
+            None => {
+                let inner = name.split_once('.')
+                    .and_then(|(head, rest)| Some((*read.calls.get(head)?, rest)));
+                let Some((inst, rest)) = inner else {
+                    return Err(format!("`{name}` is not a number here — nothing in scope gives \
+                                        it one"));
+                };
+                let mut given = Vec::new();
+                texts(&inst.args, &mut given);
+                for text in given {
+                    self.ready(read, &text, depth)?;
+                }
+                let key = read.key.clone();
+                self.member_of(inst, rest, &read.table, &read.constants, &key, depth + 1)?
+            }
+        };
         read.busy.remove(name);
         read.table.insert(name.to_string(), a.clone());
         Ok(a)
@@ -240,12 +234,16 @@ impl Walk<'_> {
                 self.worked(read, m, depth)?;
             }
             let Some((head, rest)) = dep.split_once('.') else { continue };
-            if let Some((to, _)) = read.defs.get(head).filter(|(t, _)| is_reference(t)) {
-                let through = format!("{}.{rest}", to.trim());
-                if let Some(a) = read.table.get(&through).cloned() {
-                    read.table.insert(dep, a);
-                }
-            }
+            let Some((to, _)) = read.defs.get(head).filter(|(t, _)| is_reference(t)) else {
+                continue;
+            };
+            let through = format!("{}.{rest}", to.trim());
+            let a = match read.table.get(&through) {
+                Some(a) => a.clone(),
+                None if read.defs.contains_key(&through) => self.worked(read, &through, depth)?,
+                None => continue,
+            };
+            read.table.insert(dep, a);
         }
         Ok(())
     }

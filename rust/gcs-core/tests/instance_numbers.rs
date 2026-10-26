@@ -130,6 +130,22 @@ z := p.top
     assert_eq!(value(&e, "z"), (13.0, Dim::LENGTH));
 }
 
+/// **Through a name the body gives a group**: `top` reads `d.w`, `d` the body's own `dims`, and
+/// is worked out from outside as where the body is walked.
+#[test]
+fn a_number_read_through_a_name_for_the_bodys_group_is_worked_out() {
+    let e = ok("\
+component P(w: Length) {
+  dims := { w: w * 2 }
+  d := dims
+  top := d.w + 1mm
+}
+p := P(w: 3mm)
+z := p.top
+");
+    assert_eq!(value(&e, "z"), (7.0, Dim::LENGTH));
+}
+
 /// **Inside a body**, an instance it writes is read so too: a definition and a call's argument
 /// read `inner.top`, and the document reads `o.tall` and `o.again.top` through it.
 #[test]
