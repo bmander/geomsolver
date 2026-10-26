@@ -46,14 +46,9 @@ fn named(name: &str, vals: &Vals) -> Option<Vec<Item>> {
     let mut by_place: BTreeMap<usize, Item> = BTreeMap::new();
     for (key, v) in vals.under(&prefix) {
         let rest = &key[prefix.len()..];
-        let (place, member) = match rest.find('.') {
-            Some(at) => rest.split_at(at),
-            None => (rest, ""),
-        };
-        if place.is_empty() || !place.bytes().all(|c| c.is_ascii_digit()) {
-            return None;
-        }
-        by_place.entry(place.parse().ok()?).or_default().push((member.to_string(), v));
+        let (place, member) = rest.find('.').map_or((rest, ""), |at| rest.split_at(at));
+        let place: usize = place.parse().ok()?;
+        by_place.entry(place).or_default().push((member.to_string(), v));
     }
     if by_place.is_empty() {
         return None;
@@ -91,7 +86,8 @@ fn value(
             if vals.has(&t) || under.is_empty() {
                 out.push((member.to_string(), number(&t)?));
             } else {
-                out.extend(under.into_iter().map(|(k, a)| (format!("{member}{}", &k[t.len()..]), a)));
+                let rename = |(k, a): (String, Aff)| (format!("{member}{}", &k[t.len()..]), a);
+                out.extend(under.into_iter().map(rename));
             }
         }
         InstVal::Group(fields) => {

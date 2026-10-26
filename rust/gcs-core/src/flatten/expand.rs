@@ -1082,27 +1082,20 @@ impl<'a> Walk<'a> {
         }
         // a copy per item of a list, named or written in place (§12.10): the items are numbers
         // in force here, so the block is expanded where it stands
-        if let Some(found) = self.list_of(b, vals) {
-            let (var, items) = match found {
-                Ok(found) => found,
-                Err((span, m)) => {
-                    self.err(Code::E103, span, m);
+        let list = match self.list_of(b, vals) {
+            Some(Ok((var, items))) => {
+                if self.declares(b, var) {
                     return;
                 }
-            };
-            // a declaration of the body called what each copy calls its item would hide it
-            if b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| n.text == var.text)) {
-                self.err(Code::E001, var.span, format!("`{}` is declared twice", var.text));
+                Some((var, items))
+            }
+            Some(Err((span, m))) => {
+                self.err(Code::E103, span, m);
                 return;
             }
-            if let Some(j) = b.joint.as_ref().filter(|j| j.round && !b.kind.wraps()) {
-                self.err(Code::E040, j.span, ROUNDED_REPEAT);
-                return;
-            }
-            self.copies(b, st, scope, path, depth, items.len(), &[], Some((var, &items)));
-            return;
-        }
-        if b.over.is_some() {
+            None => None,
+        };
+        if list.is_none() && b.over.is_some() {
             // how many is the chain's, and the chain may be a name no walk has
             // reached yet (a forward reference, or one inside an instance written
             // further down): expanded once every name is known, where the block
@@ -1117,31 +1110,48 @@ impl<'a> Walk<'a> {
             self.out.push((st.clone(), path.to_vec(), scope.clone()));
             return;
         }
-        // a count is a whole number: a computed one (`360deg / 15deg`) may carry
-        // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
-        let n = match value_of(&b.count, vals, self.units) {
-            Ok(v) if v.is_finite() && v >= 0.0
-                && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
-            Ok(v) => {
-                self.err(
-                    Code::E103,
-                    b.span,
-                    format!("`{}` is {v}, which is not a count", b.count),
-                );
-                return;
-            }
-            Err(e) => {
-                self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
-                return;
-            }
+        let n = match &list {
+            Some((_, items)) => items.len(),
+            // a count is a whole number: a computed one (`360deg / 15deg`) may carry
+            // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
+            None => match value_of(&b.count, vals, self.units) {
+                Ok(v) if v.is_finite() && v >= 0.0
+                    && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
+                Ok(v) => {
+                    self.err(
+                        Code::E103,
+                        b.span,
+                        format!("`{}` is {v}, which is not a count", b.count),
+                    );
+                    return;
+                }
+                Err(e) => {
+                    self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
+                    return;
+                }
+            },
         };
         // a round at the body's end gives up the first link's entry in every copy, and a
         // `repeat`'s first copy is entered by nothing (#576)
         if let Some(j) = b.joint.as_ref().filter(|j| j.round && !b.kind.wraps()) {
-            self.err(Code::E040, j.span, ROUNDED_REPEAT);
+            self.err(Code::E040, j.span, "a round at the end of a `repeat`'s body would round \
+                a corner its first copy does not have: round the corners inside the body, or \
+                close the copies in a `cycle` or a `ring`");
             return;
         }
-        self.copies(b, st, scope, path, depth, n, &[], None);
+        let items = list.as_ref().map(|(var, items)| (*var, items.as_slice()));
+        self.copies(b, st, scope, path, depth, n, &[], items);
+    }
+
+    /// Whether the body declares what each copy calls its edge or its item, which would hide it:
+    /// said, E001.
+    pub(super) fn declares(&mut self, b: &Block, var: &Name) -> bool {
+        let hidden =
+            b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| n.text == var.text));
+        if hidden {
+            self.err(Code::E001, var.span, format!("`{}` is declared twice", var.text));
+        }
+        hidden
     }
 
     /// A relation: a defined word's body applied, or its numbers worked out in the scope and
@@ -2102,8 +2112,3 @@ impl Table for Seeded<'_> {
     }
 }
 
-/// A round at the end of a `repeat`'s body, which no copy but a `cycle`'s or a `ring`'s is
-/// entered by (#576).
-const ROUNDED_REPEAT: &str = "a round at the end of a `repeat`'s body would round a corner its \
-    first copy does not have: round the corners inside the body, or close the copies in a `cycle` \
-    or a `ring`";

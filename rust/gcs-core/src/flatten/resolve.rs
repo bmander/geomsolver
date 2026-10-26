@@ -1392,11 +1392,8 @@ impl<'a> Walk<'a> {
             return;
         }
         // a declaration of the body called what each copy calls its edge would hide it
-        for (var, _) in &named {
-            if b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| n.text == var.text)) {
-                self.err(Code::E001, var.span, format!("`{}` is declared twice", var.text));
-                return;
-            }
+        if named.iter().any(|(var, _)| self.declares(b, var)) {
+            return;
         }
         let outer = std::mem::take(&mut self.out);
         self.aside.held = outer.len();
