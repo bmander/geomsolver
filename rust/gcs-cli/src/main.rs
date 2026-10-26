@@ -54,6 +54,9 @@ diagnosed, and the report says where it stands.
                         value the document names, in its unit (repeatable; the whole table in
                         --json when none is given)
     --no-diagnose       solve only; skip the diagnosis
+    --no-check          judge no claim about solids (clear, fits, inside), so no solid is built
+                        for one: the report says how many were left unjudged.  The claims over
+                        values and over the geometry, which build nothing, are judged still
     --lint              also say where the document's own text drifts from the language's style
                         (W201-W206: a pun, a bare component statement, an asserting component, a
                         deep path, a presentation flag, a group threaded unread), and (W207) a
@@ -126,6 +129,7 @@ Examples:
     solventc --json part.sv                   the same report, structured
     solventc part.sv --where hinge            the numbers under one name
     solventc drive.sv --where torque          a value, in its unit: torque = 0.0864 N·m
+    solventc bot.sv --no-check                the layout, solved, its solids' claims unjudged
     solventc part.sv --png part.png           look at it, as the workspace shows it
     solventc part.sv --stl part.stl --solid body
                                               a solid, for a printer
@@ -174,6 +178,8 @@ struct Opts {
     /// a file something else reads.
     wanted: Vec<String>,
     no_diagnose: bool,
+    /// `--no-check`: the claims about solids left unjudged, said by how many.
+    no_check: bool,
     /// `--lint`: the drift lint's warnings (`program::drift`) beside elaboration's.
     lint: bool,
     allow_unsolved: bool,
@@ -210,6 +216,7 @@ impl Default for Opts {
             json: false,
             wanted: Vec::new(),
             no_diagnose: false,
+            no_check: false,
             lint: false,
             allow_unsolved: false,
             output: None,
@@ -444,6 +451,7 @@ fn main() -> ExitCode {
             },
             "--json" => opts.json = true,
             "--no-diagnose" => opts.no_diagnose = true,
+            "--no-check" => opts.no_check = true,
             "--lint" => opts.lint = true,
             "--progress" => said = Some(watch::Say::Everything),
             "--no-progress" => said = Some(watch::Say::Nothing),
@@ -685,7 +693,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let diagnosing = || progress::Work::diagnose(&s.name);
     let d = (!opts.no_diagnose)
         .then(|| progress::during(diagnosing, || {
-            diagnose(&mut sk, DiagnoseOptions { settled: solved, ..DiagnoseOptions::default() })
+            diagnose(&mut sk, DiagnoseOptions {
+                settled: solved, solid_claims: !opts.no_check, ..DiagnoseOptions::default()
+            })
         }));
     // read at the solved pose, before anything below builds or exports
     let components = opts.components.then(|| gcs_core::boundary::classify(&e, &sk));
@@ -770,6 +780,9 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
             // measured, and — for one the faceting cannot decide — that it could not
             for v in &d.solid_claims {
                 println!("  {}", gcs_core::report::solid_claim_text(v));
+            }
+            if opts.no_check && !sk.solid_claims.is_empty() {
+                println!("  {}", gcs_core::report::solid_claims_unjudged_text(sk.solid_claims.len()));
             }
             // each meshing's contact over its phase, in the core's words (#283)
             for i in 0..sk.meshings.len() {
@@ -931,9 +944,14 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
         opts.json.then(|| {
             let components = components.as_ref()
                 .map(|cs| Json::Arr(cs.iter().map(gcs_core::boundary::json).collect()));
-            doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
-                     positions.unwrap_or(Json::Null), components.unwrap_or(Json::Null),
-                     &opts.wanted)
+            let mut doc = doc_json(s, &[], Some(&r), d.as_ref().map(|d| (&sk, d)), &e, &unbuilt,
+                                   positions.unwrap_or(Json::Null),
+                                   components.unwrap_or(Json::Null), &opts.wanted);
+            // the claims `solidClaims` leaves out, so an empty list is not read as none stated
+            if opts.no_check && d.is_some() && !sk.solid_claims.is_empty() {
+                doc.set("solidClaimsUnjudged", Json::Int(sk.solid_claims.len() as i64));
+            }
+            doc
         }),
     )
 }
