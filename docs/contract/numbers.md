@@ -59,7 +59,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **turn**, so `tau == 2 * pi * 1rad`; radians are written `* 1rad`, not `* 180 / pi`.  Storing
   the unit costs the solve nothing, and `graft::paste` converts between documents' units
   (`Sketch::rescale`, written out by kind: a `Param` cannot say it is a length).
-- **A number may be chosen** ([0.188]): `if(c, a, b)` (`Ast::If`) is `a` where the condition
+- **A number may be chosen** ([0.191]): `if(c, a, b)` (`Ast::If`) is `a` where the condition
   holds and `b` where not — a value, where `when` is a block of statements, so a number that
   differs between a block's copies is one statement.  `c` is a `when`'s `Cond`, read by
   `Parser::choice` after `if(` (in `FUNCTIONS` at arity 3, so `builtin`, the highlighter and

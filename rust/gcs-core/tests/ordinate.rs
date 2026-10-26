@@ -279,14 +279,32 @@ fn x_and_y_are_no_longer_direction_words() {
     assert_eq!(said(&e), vec!["a distance(5, along: x) a2".to_string()]);
 }
 
+/// A zero is a number like any other: written so, a name for it, or what an expression comes to,
+/// it is the ordinate's dimension — so a box centred on an axis needs no case of its own.
 #[test]
-fn a_zero_written_so_is_a_level() {
-    refused(&format!("{VIEWS}a distance(0mm, along: v) a2\n"), "E040", "`a level(v) a2`", "0mm");
-    refused(&format!("{VIEWS}b distance(0, along: v) std.top\n"), "E040", "`b level(v) std.top`", "0");
-    refused(&format!("{VIEWS}a distance(0, along: std.x) b\n"), "E040", "`a level(std.x) b`", "0");
-    // a zero a name stands for is a dimension like any other
-    let e = read(&format!("{VIEWS}w := 0mm\na distance(w, along: u) a2\n"));
-    assert_eq!(forms(&e), vec![(CKind::Ordinate, OrdinateForm::PageU)]);
+fn a_zero_written_so_is_a_number() {
+    for src in [
+        "a distance(0mm, along: v) a2\n",
+        "w := 0mm\na distance(w, along: v) a2\n",
+        "w := 2mm\na distance(w - 2mm, along: v) a2\n",
+    ] {
+        let e = read(&format!("{VIEWS}{src}"));
+        assert_eq!(forms(&e), vec![(CKind::Ordinate, OrdinateForm::PageV)], "{src}");
+        let sk = solved(&e);
+        let (a, a2) = (at(&e, &sk, "a"), at(&e, &sk, "a2"));
+        assert!((a2[2] - a[2]).abs() < 1e-9, "{src}: {a:?} {a2:?}");
+    }
+    // against a plane, along a reference, and through `std`'s `coords`, where it was refused
+    let e = read(&format!("{VIEWS}b distance(0, along: v) std.top\n"));
+    assert_eq!(forms(&e), vec![(CKind::Ordinate, OrdinateForm::CoordV)]);
+    let e = read(&format!("{VIEWS}a distance(0, along: std.x) b\n"));
+    assert_eq!(forms(&e), vec![(CKind::Ordinate, OrdinateForm::Space)]);
+    let e = read(&format!("{VIEWS}use std (coords)\nb coords(du: 0mm, dv: 5mm) std.top\n"));
+    let sk = solved(&e);
+    let b = at(&e, &sk, "b");
+    assert!(b[0].abs() < 1e-9 && (b[1] - 5.0).abs() < 1e-9, "{b:?}");
+    let ordinates = (CKind::Ordinate, OrdinateForm::CoordU);
+    assert_eq!(forms(&e), vec![ordinates, (CKind::Ordinate, OrdinateForm::CoordV)]);
 }
 
 #[test]

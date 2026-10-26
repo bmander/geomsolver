@@ -87,7 +87,10 @@ came from.
   `K::OrdinateU`/`V`); `Constraint::reads_space` asks it where `CKind::spatial` would.
   The plane forms (`q distance(d, along: u) P`) are rewritten from `P.origin` along `P.u` in
   `program::relations::ordinate_operands`, which also refuses a plane as a direction, `n` with no
-  plane operand, a word that also names a direction in scope, and a literal zero (E040, naming the level); `a horizontal b`
+  plane operand, and a word that also names a direction in scope; its number is a dimension
+  whatever it comes to, a literal zero as much as a name for one or `(x0 + x1) / 2` (Solvent
+  [0.188]: through 0.187 the literal was E040, naming the level, so a component placing a point
+  by its ordinates had to branch on each being zero); `a horizontal b`
   is `std`'s word for `level(up)` (`use std (horizontal)`, §9.9), and the printer
   (`print::ordinate_text`) spells each case back.  `tests/ordinate.rs` is the gate.
 
