@@ -4,6 +4,18 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.189] An instance's numbers, read from outside it.** `b.n` names a number the body of the
+instance `b` defines — a value, an input with a value, a group's member — worked out from what the
+call gave it, as `ball.r` names a formal (§8): `shield_z := uno_z + shield.top` reads `Shield`'s
+`top` rather than a second copy of its formula. A path reaches through an instance the body writes
+(`st.base.top`). Either is read in a definition as well as by a statement, the body writing the call
+worked out in dependency order with it: through 0.188 a definition reading even a formal,
+`y := b.w + 1mm`, was **E103**, and a body's own number was not read at all (`` `shield.top` is not
+a number here — nothing in scope gives it one ``). A definition the call reads that reads the
+number back is **E041**; a number the call leaves unable to work out is **E103** where it is read.
+A formal a call leaves to its default reads as that default from outside, where it read as an
+unknown. Every solved position is unchanged.
+
 **[0.188] A zero ordinate is a number.** `p distance(0mm, along: u) P`, and `p coords(du: 0mm,
 dv: 5mm) P` through it, is an ordinate of zero — a dimension, drawn and edited as any other
 (§6.7). Through 0.187 a zero written as a literal was **E040**, naming `level`, while a zero a

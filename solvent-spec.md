@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.188 — October 2026**
+**Specification, Draft 0.189 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2235,6 +2235,19 @@ cyl.std.x perpendicular rod
 - **Refused where it would place nothing.** An instance whose body reads no standard datum — nor the body of any definition it calls — is placed by its arguments (`ConRod(crank.pin1, end.bore)`), so reading its `b.std` is **E111**. Read by a relation word's body, it is **E111** where the word is used. A path past `std` that names no datum is refused as any member nothing made is.
 
 *Non-normative:* this is `in (f := frame) { b := … }` with `b.std.*` read as `f`'s datums and `f.u perpendicular f.v` written by the instance — the mate, without the frame's name. A mate that leaves an axis either way round takes the nearer root, as a bare frame's does.
+
+**[0.189] An instance's numbers.** From outside, `b.n` names a number of the instance `b`: a numeric formal — the number the call gave it, else its default, else the unknown it is left as (§5) — or **a number its body defines**, a value (`top := …`), an input with a value, or a group's member (`b.dims.inner`), worked out from what that call gave it. A path reaches through an instance the body writes, `st.base.top`; a `when`'s numbers are its own, and a body's geometry is named by its path as before. It is read as the body's own values are, in a definition, a dimension, a condition or another call's argument, and the body that writes the call is a set (§6.3): a definition above the call reads it, and one the call's arguments read that reads it back is **E041**. A number its call leaves it unable to work out — over an unknown other than by scaling and offsetting it, or reading what its body cannot reach — is **E103** where it is read. So a number about an instance is written once, in its component, and read where it is wanted:
+
+```solvent
+component Shield(s: ShieldSizes, u: UnoSizes, h: HeaderSizes) {
+  top := u.pcb_t + u.socket_h + h.body_h + s.pcb_t   // its top face, up from the Uno's underside
+  …
+}
+shield := Shield(shield_dims, u: uno_dims, h: header_dims)
+shield_z := uno_z + shield.top
+```
+
+*Through 0.188 only a formal was read so (`ball.r`), and only by statements: a definition reading `ball.r` was **E103**, and a number the body defined had to be worked out again outside it.*
 
 ### 8.1 Groups of arguments
 

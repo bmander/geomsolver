@@ -735,7 +735,11 @@ t0 := Rung(l0, r0, len: 50)
   drawn with its crank free so (2.10). Seed one in its place: `Crank(o, datum, theta: hint(30deg))`.
 - **An instance's numbers are read by its name**: every numeric formal, bound or not, is
   `inst.formal` — `p distance(ball.r) ball.center` — and travels with an instance passed as a
-  `group`. Values a body declares are not read this way.
+  `group`. So is every number its body defines: `shield.top` is `Shield`'s
+  `top := u.pcb_t + …` worked out from what that call gave it, in a definition
+  (`shield_z := uno_z + shield.top`), a dimension or another call, written anywhere in the body;
+  a path reaches through an instance the body writes (`st.base.top`). Write the formula once, in
+  the component, and read it: a copy outside is a second formula to drift.
 - **Scope is closed.** A body sees only its formals and its own declarations: geometry and the
   document's unknowns must be passed in. Component definitions and built-in functions remain
   callable. Repetition blocks share the enclosing scope.
