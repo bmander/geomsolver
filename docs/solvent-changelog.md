@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.188] A refuted claim says where.** A claim about two solids that is refuted or undecided says,
+under its measurement, the face of each by its path through the operands and where in the world
+they meet: `deepest at (…), between a.f and b.g` where their material is common (the centre of the
+largest ball both hold, which the thickness is read from), `nearest at (…), between …` where their
+boundaries touch or cross, and `nearest between a.f at (…) and b.g at (…)` where they are apart
+(§9.8). A claim over a sweep says it at the pose it reports. The JSON carries it as `nearest`
+(`a`, `b`, `atA`, `atB`, `deepest`) on the claim and on every valid pose, for a claim that holds
+too. Nothing is measured differently. (A request from radiatorbot: `claim uno.tails clear(0.5mm)
+frame_part` refuted at −0.71 named no tail and no post.)
+
 **[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
 `a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner
 of its boundary as made by the terms that do not read its faces (§12.9). It is decided where the

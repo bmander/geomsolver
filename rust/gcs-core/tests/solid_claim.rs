@@ -326,3 +326,87 @@ fn a_diagnosis_asked_not_to_judge_solids_says_the_rest_unchanged() {
     assert_eq!(left.status, judged.status);
     assert_eq!((left.dof, left.n_redundant), (judged.dof, judged.n_redundant));
 }
+
+/// **A claim refuted says where to look** — the face of each solid, by its path through the
+/// operands, and where in the world they meet deepest or come nearest.  A measurement alone left a
+/// reader to find which of a union's bodies hit which feature of the other.
+#[test]
+fn a_refuted_claim_names_the_faces_and_where() {
+    // apart: the right face of A, at x = 10, nearest the left face of B, at x = 13
+    let src = format!("unit mm\nuse std (turns)\n{}{}claim sA_ clear(4mm) sB_\n",
+                      block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
+                      block("B", 13.0, 0.0, 10.0, -5.0, 0.0));
+    let [v] = &verdicts(&read(&src))[..] else { panic!("one claim") };
+    assert_eq!(v.holds(), Some(false));
+    let n = v.representative().unwrap().evaluation().unwrap().nearest().expect("where").clone();
+    assert!(!n.deepest);
+    assert_eq!((n.a.as_str(), n.b.as_str()), ("sA_.qA", "sB_.sB"), "{n:?}");
+    assert!((n.at_a[0] - 10.0).abs() < 1e-9 && (n.at_b[0] - 13.0).abs() < 1e-9, "{n:?}");
+    let text = gcs_core::report::solid_claim_text(v);
+    assert!(text.contains("\n    nearest between sA_.qA at (10, "), "{text}");
+    assert!(text.contains(" and sB_.sB at (13, "), "{text}");
+
+    // meeting: of a union's two blocks the one that reaches into B, its face nearest the deepest
+    // of the common material, at a point inside both
+    let src = format!(
+        "unit mm\nuse std (turns)\n{}{}{}u := solid(sA_)\nsC_ union u\nclaim u clear(1mm) sB_\n\
+         claim sA_ clear(1mm) sB_\n",
+        block("A", -40.0, 0.0, 10.0, -5.0, 0.0),
+        block("B", 13.0, 0.0, 10.0, -5.0, 0.0),
+        block("C", 4.0, 0.0, 10.0, -5.0, 0.0)
+    );
+    let v = verdicts(&read(&src));
+    assert_eq!(v[0].holds(), Some(false), "C reaches a millimetre into B");
+    let n = v[0].representative().unwrap().evaluation().unwrap().nearest().expect("where").clone();
+    assert!(n.deepest, "{n:?}");
+    assert!(n.a.starts_with("sC_."), "the block that hit, not the union's other: {n:?}");
+    assert!(n.b.starts_with("sB_."), "{n:?}");
+    let x = n.at_a;
+    assert!(x[0] > 13.0 && x[0] < 14.0 && x[1] > 0.0 && x[1] < 10.0, "in both: {x:?}");
+    let text = gcs_core::report::solid_claim_text(&v[0]);
+    assert!(text.contains("\n    deepest at ("), "{text}");
+    assert!(text.contains(&format!(", between {} and {}", n.a, n.b)), "{text}");
+    // a claim that holds is said as it was, with where only in its JSON
+    assert_eq!(v[1].holds(), Some(true), "{}", gcs_core::report::solid_claim_text(&v[1]));
+    assert!(!gcs_core::report::solid_claim_text(&v[1]).contains('\n'));
+    let json = gcs_core::report::solid_claim_json(&v[1]);
+    let a = json.get("nearest").and_then(|n| n.get("a")).map(|a| a.as_str().to_string());
+    assert!(a.as_deref().is_some_and(|a| a.starts_with("sA_.")), "{}", json.dump(None));
+
+    // crossing: a block that sticks out of another is not inside it, and is said where its
+    // boundary crosses the other's — a point of both, and not the deepest of anything
+    let src = format!(
+        "unit mm\nuse std (turns)\n{}{}claim sB_ inside sA_\n",
+        block("A", 0.0, 0.0, 20.0, -10.0, 0.0),
+        block("B", 15.0, 5.0, 10.0, -7.0, -3.0)
+    );
+    let [v] = &verdicts(&read(&src))[..] else { panic!("one claim") };
+    assert_eq!(v.holds(), Some(false));
+    let n = v.representative().unwrap().evaluation().unwrap().nearest().expect("where").clone();
+    assert!(!n.deepest && n.at_a == n.at_b, "{n:?}");
+    assert!(n.a.starts_with("sB_.") && n.b.starts_with("sA_."), "{n:?}");
+    let text = gcs_core::report::solid_claim_text(v);
+    assert!(text.contains("\n    nearest at ("), "{text}");
+}
+
+/// Where a claim over a motion was refuted is said where the motion stands the solids at the
+/// counterexample, also when the solid that moves is the one named first and the judge held it
+/// still to move the other back.
+#[test]
+fn a_refuted_sweep_says_where_at_its_counterexample() {
+    let v = verdicts(&read(SWUNG));
+    let post = [0.0, -15.5, 0.0];
+    let dist = |p: [f64; 3], q: [f64; 3]| (0..3).map(|k| (p[k] - q[k]).powi(2)).sum::<f64>().sqrt();
+    for swept in &v[..2] {
+        let pose = swept.counterexample().expect("refuted");
+        let n = pose.evaluation().unwrap().nearest().expect("where").clone();
+        assert!(!n.deepest && n.at_a != n.at_b, "near, not touching: {n:?}");
+        // the ball by the post, not where it stands at rest at (10, 0, 0)
+        assert!(n.at_a[1] < -7.0, "{:?} at {:?}", n, pose.parameter());
+        let r = n.at_a[0].hypot(n.at_a[1]);
+        assert!(r > 7.9 && r < 12.1, "on the ball's path: {n:?}");
+        assert!((dist(n.at_b, post) - 3.0).abs() < 0.1, "on the post: {n:?}");
+        let measured = pose.evaluation().unwrap().measured().unwrap();
+        assert!((dist(n.at_a, n.at_b) - measured).abs() < 1e-6, "{n:?}, {measured}");
+    }
+}

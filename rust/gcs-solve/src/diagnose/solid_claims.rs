@@ -301,8 +301,12 @@ impl ClaimJudge {
                 let t = sample(k).expect("a roll is a sweep");
                 let evaluation = family.at(*at + t.to_radians()).map(|now| home.then(now))
                     .and_then(|pose| {
-                        let pose = if *a_moves { pose.inverse() } else { pose };
-                        clear::evaluate_moved(&c.requirement, a, b, pose)
+                        if !*a_moves {
+                            return clear::evaluate_moved(&c.requirement, a, b, pose);
+                        }
+                        // `a` held still and `b` moved back, then the points where `a` stands
+                        clear::evaluate_moved(&c.requirement, a, b, pose.inverse())
+                            .map(|e| e.moved(pose))
                     });
                 SolidPose { parameter: Some(t), evaluation }
             }

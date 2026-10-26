@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.187 — October 2026**
+**Specification, Draft 0.188 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2694,6 +2694,8 @@ Three words relate two solids.  Each is an operator like any other (§9.2), and 
 Both operands MUST name solids (**E040** naming the kind that arrived).  `clear` and `fits` take a `Length` in their parentheses and one written without it is **E040**; `inside` asks about containment and takes none.
 
 **A verdict is a measurement, not a yes or no**, and it carries its own uncertainty.  An implementation MUST report, for each such claim: what was measured — a distance, negative where the two overlap — and how far the answer could be wrong.  A claim decided within that margin is reported **undecided**, which is a third answer and not a failure.  Where an implementation evaluates a solid by reducing its round surfaces to flats (§6.9), the margin is the sagitta of that reduction, and a faceted solid lies inside the true one; an implementation that computes exactly reports a margin of zero.  Two claims that fail, one by a hair and one by a hand's breadth, are different drawings, and a reader is owed the difference.
+
+**[0.188] And where.**  A claim that does not hold SHOULD also say where it was measured: a face of each solid, named by its path through the operands as it is written (§6.8: `uno.high.tails.body.da`, `near_screw[1].post.rim`), and where in the world the two come nearest, or where they overlap, the deepest point of their common material.  A solid built of many is refuted by one of them against one feature of the other, and the measurement alone leaves a reader to find which.
 
 *Implementation note:* the kernel measures interference as **common-material thickness**: the diameter of the largest ball contained in the intersection, reported with a negative sign. Thus two 10 mm cubes overlapping by 5 mm report −5 mm, and identical 10 mm cubes report −10 mm. A bounded spatial search includes its remaining measurement error in the reported uncertainty. This convention applies to disconnected and nonconvex intersections too; disjointness and containment remain required predicates, whatever sign is written for a gap.
 
