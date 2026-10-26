@@ -110,6 +110,7 @@ param NAME[: TYPE] [:= EXPR] [hint(E)]  an input; with no value, an unknown     
 param NAME: TYPE over (E, E)            a parameter that runs over an interval       (1.6)
 NAME := {LABEL: VALUE, ...}             a group: values and geometry as one argument (1.8)
 NAME := (E, E[, E])                     a vector, read as NAME.x, NAME.y             (1.4)
+NAME := [ITEM, ...]                     a list: numbers, vectors or groups, in order (1.7)
 [private] [construction] [NAME :=] KIND[(CHILD | hint(...), ...)] [hint(MEMBER: E, ...)]
      [knots [...]] [weights [E, ...]] [in REF[, REF]]   an entity; every part optional (1.4)
 NAME := point(x: XEXPR, y: YEXPR)       a computed point, drawn only as a curve      (1.10)
@@ -146,6 +147,7 @@ repeat e in CHAIN [as i] { ... }        a copy per link of a named chain (`cycle
 repeat e in FACE [as i] { ... }         a copy per edge of a face's walk          (1.7)
 cycle (a, b) in (W1, W2) { ... }        walks in step: link k of each in copy k   (1.7)
 repeat a in SOLID { ... }               a copy per face of a solid                   (1.14)
+repeat h in LIST [as i] { ... }         a copy per item of a list, `h` the item      (1.7)
 when COND { ... }                       made once where COND holds, else not at all  (1.7)
 LHS <= RHS | LHS >= RHS                 in a set's body: a bound on measurements     (1.14)
 NAME := trace(INSTANCE.POINT over FORMAL in (A, B))   a curve                         (1.10)
@@ -693,6 +695,35 @@ holes.sv: solved
   #22.2.hole.center.y = 40
   #22.2.hole.r = 4
 ```
+
+**Repetition over a list.** A pattern that stands on no grid is said as the places it is at. A
+list is values in order, in brackets — each item a number, a vector or a group in braces — and
+`repeat h in LIST { … }` makes a copy per item, `h` that copy's item: a number read as `h`, or a
+group of numbers read by member (`h.x`, `h.y`) and handed on whole (`Hole(h)`). The list may be
+written in place (`repeat d in [2mm, 3mm] { … }`); `as i` is the index as before, and `cycle h in
+LIST` closes. A list is a group whose members are its items by place, so it may be a group's member
+(`board := {holes: [...]}`, read as `board.holes`), imported (`use boards (uno_holes)`) and read in
+a definition's body as the file's constants are. An Uno's four mounting holes:
+
+```
+unit mm
+use std (coords)
+
+top_y := 48.26mm
+uno_holes := [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]
+
+in std.top {
+  repeat h in uno_holes {
+    c := point
+    c coords(du: h.x, dv: h.y) std.top
+    hole := radius(1.6mm) circle(center: c)
+  }
+}
+```
+
+Refused: an item that is no value (E103, at the item), a group of labelled members run over as a
+list (E103), a body declaration named as the item (E001), a labelled item or a `hint` in a list (a
+syntax error). A `ring` runs over no list.
 
 **A face's walk, and walks in step.** `repeat e in f` runs over a face's edges in walk
 order — a chain it is made of, the edges it names, or for a face of corners (`face(a, b, c, ->

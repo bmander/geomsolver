@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.193] Lists, and a block over one.** A list is values in order, in brackets — `holes :=
+[(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]` — each item a number, a
+vector or a group in braces, and `repeat h in holes { … }` makes a copy per item, `h` that copy's
+item: a number, or a group of numbers read by member (`h.x`) and handed on whole (§12.10). A list
+may be written in place, `repeat d in [2mm, 3mm] { … }`; `cycle h in L` closes; `as i` is the
+index as before. A list is a group whose members are its items by place, so it is a member of a
+group, imported from a module and read in a definition's body as any group of numbers is. A
+pattern off a grid — a board's four mounting holes — was written as copies of its statements or as
+a count's arithmetic (`j * (b - a)`) hiding the places; through 0.192 `[` began no value. Every
+solved position is unchanged.
+
 **[0.192] Developable panels.** A sheet cut flat and bent to shape — a plywood boat's strake, a
 duct adapter, a rectangle to a round — is written as two definitions in `std.sv`: `std.Developable(a,
 b)`, the set of points on the ruling between a point of `a` and a point of `b` where one plane

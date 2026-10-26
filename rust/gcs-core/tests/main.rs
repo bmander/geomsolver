@@ -149,6 +149,7 @@ mod laws;
 mod limit_measure;
 mod linalg;
 mod lines;
+mod lists;
 mod drawn_cauchy;
 mod loft;
 mod loft_examples;

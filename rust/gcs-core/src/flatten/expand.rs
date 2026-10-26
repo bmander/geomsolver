@@ -1090,7 +1090,22 @@ impl<'a> Walk<'a> {
             }
             return;
         }
-        if b.over.is_some() {
+        // a copy per item of a list, named or written in place (§12.10): the items are numbers
+        // in force here, so the block is expanded where it stands
+        let list = match self.list_of(b, vals) {
+            Some(Ok((var, items))) => {
+                if self.declares(b, var) {
+                    return;
+                }
+                Some((var, items))
+            }
+            Some(Err((span, m))) => {
+                self.err(Code::E103, span, m);
+                return;
+            }
+            None => None,
+        };
+        if list.is_none() && b.over.is_some() {
             // how many is the chain's, and the chain may be a name no walk has
             // reached yet (a forward reference, or one inside an instance written
             // further down): expanded once every name is known, where the block
@@ -1105,23 +1120,26 @@ impl<'a> Walk<'a> {
             self.out.push((st.clone(), path.to_vec(), scope.clone()));
             return;
         }
-        // a count is a whole number: a computed one (`360deg / 15deg`) may carry
-        // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
-        let n = match value_of(&b.count, vals, self.units) {
-            Ok(v) if v.is_finite() && v >= 0.0
-                && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
-            Ok(v) => {
-                self.err(
-                    Code::E103,
-                    b.span,
-                    format!("`{}` is {v}, which is not a count", b.count),
-                );
-                return;
-            }
-            Err(e) => {
-                self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
-                return;
-            }
+        let n = match &list {
+            Some((_, items)) => items.len(),
+            // a count is a whole number: a computed one (`360deg / 15deg`) may carry
+            // the arithmetic's last bit, but 2.5 is not rounded to anything (#115)
+            None => match value_of(&b.count, vals, self.units) {
+                Ok(v) if v.is_finite() && v >= 0.0
+                    && (v - v.round()).abs() <= 1e-9 * v.max(1.0) => v.round() as usize,
+                Ok(v) => {
+                    self.err(
+                        Code::E103,
+                        b.span,
+                        format!("`{}` is {v}, which is not a count", b.count),
+                    );
+                    return;
+                }
+                Err(e) => {
+                    self.err(Code::E103, b.span, format!("`{}`: {e}", b.count));
+                    return;
+                }
+            },
         };
         // a round at the body's end gives up the first link's entry in every copy, and a
         // `repeat`'s first copy is entered by nothing (#576)
@@ -1131,7 +1149,19 @@ impl<'a> Walk<'a> {
                 close the copies in a `cycle` or a `ring`");
             return;
         }
-        self.copies(b, st, scope, path, depth, n, &[]);
+        let items = list.as_ref().map(|(var, items)| (*var, items.as_slice()));
+        self.copies(b, st, scope, path, depth, n, &[], items);
+    }
+
+    /// Whether the body declares what each copy calls its edge or its item, which would hide it:
+    /// said, E001.
+    pub(super) fn declares(&mut self, b: &Block, var: &Name) -> bool {
+        let hidden =
+            b.body.iter().any(|st| st.kind.bound_name().is_some_and(|n| n.text == var.text));
+        if hidden {
+            self.err(Code::E001, var.span, format!("`{}` is declared twice", var.text));
+        }
+        hidden
     }
 
     /// A relation: a defined word's body applied, or its numbers worked out in the scope and
@@ -1541,6 +1571,8 @@ impl<'a> Walk<'a> {
     /// holds each copy's edge — the link as the chain wrote it and the scope it was written in —
     /// and copy `k` gets an alias `<block>#<id>.<k>.<var>` for it, which is how `e` is found
     /// through the copy's prefix like any name, and passed on to an instance as any alias is.
+    /// Where it runs over a list, `items` holds each copy's item, whose numbers copy `k` reads
+    /// under the name it calls it by (`h`, `h.x`), as it reads its index.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn copies(
         &mut self,
@@ -1551,10 +1583,13 @@ impl<'a> Walk<'a> {
         depth: usize,
         n: usize,
         edges: &[(&Name, &[Link])],
+        items: Option<(&Name, &[super::lists::Item])>,
     ) {
-        // a block's index and its edge binder are names of each copy, and one over a name the
-        // enclosing scope already has would read two ways in one body (E002): said once per block
-        let binders = b.binder.iter().chain(edges.iter().map(|(v, _)| *v));
+        // a block's index and its edge or item binder are names of each copy, and one over a name
+        // the enclosing scope already has would read two ways in one body (E002): said once per
+        // block
+        let binders = b.binder.iter().chain(edges.iter().map(|(v, _)| *v))
+            .chain(items.map(|(v, _)| v));
         for name in binders {
             let taken = scope.vals.contains_key(&name.text)
                 || scope.groups.contains(&name.text)
@@ -1605,6 +1640,21 @@ impl<'a> Walk<'a> {
             if let Some(i) = &b.binder {
                 sub.insert(i.text.clone(), Aff::num(k as f64));
             }
+            // an item that is a group of numbers is a group by the copy's name for it, handed on
+            // as one (`Hole(h)`)
+            let mut groups = scope.groups.clone();
+            if let Some((var, items)) = items {
+                for (member, a) in &items[k] {
+                    sub.insert(format!("{}{member}", var.text), a.clone());
+                }
+                if items[k].iter().any(|(member, _)| !member.is_empty()) {
+                    groups = std::rc::Rc::new(
+                        scope.groups.iter().cloned().chain([var.text.clone()]).collect());
+                    let key = format!("{block_prefix}{k}.{}", var.text);
+                    self.names.insert(key.clone());
+                    self.group_names.insert(key);
+                }
+            }
             for (var, links) in edges {
                 let key = format!("{block_prefix}{k}.{}", var.text);
                 match &links[k] {
@@ -1636,7 +1686,7 @@ impl<'a> Walk<'a> {
                 // `next` and `prev` mean something only where the copies close
                 closed: scope.closed,
                 forbidden: scope.forbidden.clone(),
-                groups: scope.groups.clone(),
+                groups,
                 vals: std::rc::Rc::new(sub.clone()),
                 sides: scope.sides.clone(),
                 module: scope.module,
@@ -2110,3 +2160,4 @@ impl Table for Seeded<'_> {
         out
     }
 }
+

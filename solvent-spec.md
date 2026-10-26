@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.192 — October 2026**
+**Specification, Draft 0.193 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -3094,6 +3094,21 @@ pinion_relief := Generated(pinion.body, …, reference.pinion_topping.crown, …
 
 *Non-normative:* a switch used to be written as a `repeat` over a computed 0 or 1 — `repeat min(ceil(relief / 1mm), 1) { … }` — which depended on the unit it divided by, said nothing of its intent, and named what it made as a copy (`tooth_relief[0]`).
 
+### 12.10 Repetition over a list **[0.193]**
+
+```
+holes := [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]
+repeat h in holes as i { ... }
+cycle h in holes as i { ... }
+repeat d in [2mm, 3mm, 5mm] { ... }
+```
+
+A **list** is values in order, in brackets: each item a number, a vector (§6.4) or a group in braces (§8.1). It is a group whose members are its items by place — `holes.0`, `holes.1`, …, labels no source can write — so it is defined, named again, made a member of a group (`board := {holes: [...]}`), read from a module (`use board (holes)`), read by a definition's body among its file's constants and handed to a `group` formal as any group of numbers is (§8.1 [0.184]). Its items are worked out where it is defined, over the numbers in scope there, and read nothing of the drawing's unknowns.
+
+`repeat h in L`, where `L` names a list or is one written in place, makes one copy per item, in order, with `h` that copy's item: a number, read as `h`, or a group of numbers, read by member (`h.x`, `h.y`, `h.d`) and handed on whole (`Hole(h)`). The count is the list's. `as i` is optional, as before; `cycle h in L` closes, `next` and `prev` in scope. The copies are §12.1's (or §12.2's) in every other respect, §12.7 holds, and a copy is reached from outside by index (`hole[2]`). What a list says is the places a pattern is at: four mounting holes that stand on no grid are four items, never an index's arithmetic (`j * (b - a)`) that hides what the four are.
+
+An item that is not a value is **E103** at the item, and so is a list named past what the name's members are (`repeat h in dims`, a group of labelled members, is iteration over what is not a chain, a face, a solid or a list, §12.8). A labelled item and a `hint` are syntax errors. A body declaration named as the item is **E001**, and an item's name already in scope is **E002**, as an index's is. A `ring` is counted and turned (§12.3), and runs over no list. *Through 0.192 `[` began nothing a value could be, and a pattern off a grid was written as copies of its statements or as a count's arithmetic.*
+
 ---
 
 ## 13. Gauge fixing
@@ -3595,9 +3610,9 @@ unit_decl      = "unit" IDENT ;                                           (* §3
 (* §5 [0.29]: a name is defined by `NAME := VALUE` and in no other way, and what stands after
    `:=` says what the name is.  An element or an instance may also be written with no name. *)
 definition     = { role } [ IDENT ":=" ] ( chain | instance )
-               | IDENT ":=" ( expr | group | vector | curve | set_lit | material | beam ) ;
-                 (* a value, a group, a vector, a curve, a set (§6.21 [0.49]), a material, a
-                    frame's members *)
+               | IDENT ":=" ( expr | group | vector | list | curve | set_lit | material | beam ) ;
+                 (* a value, a group, a vector, a list (§12.10 [0.193]), a curve, a set (§6.21
+                    [0.49]), a material, a frame's members *)
 material       = "material" "(" [ member { "," member } ] ")" ;   (* §6.9 [0.165]: members
                                                      `E`, `nu`, `rho`, `yield`; none is E103 *)
 beam           = "beam" "(" ref { "," ref } { "," IDENT ":" expr } ")" [ "of" ref ] ;
@@ -3607,8 +3622,10 @@ input          = "param" IDENT [ ":" num_type ] [ ":=" expr ] [ hint_clause ] ;
                  (* §6.3 [0.41]: with no value an unknown, its type stated, seeded by `hint(E)` *)
 num_type       = "Int" | "Scalar" | "Length" | "Angle" ;
 group          = "{" member { "," member } "}" ;                  (* §8.1 [0.35] [0.36] *)
-member         = IDENT ":" ( expr | group ) ;
+member         = IDENT ":" ( expr | group | list ) ;
 vector         = "(" expr "," expr [ "," expr ] ")" ;      (* [0.45]: members x, y, z *)
+list           = "[" [ item { "," item } ] "]" ;           (* §12.10 [0.193]: members 0, 1, … *)
+item           = expr | vector | group ;
 member_key     = IDENT { "." IDENT } ;                     (* `x`, `dir`, `dir.x` [0.45] *)
 chain          = link { joint link } [ "->" { infix } "close" ] ;
 (* link, joint and infix follow §6.6: a link is an `element` with any prefix words before it, or
@@ -3734,8 +3751,9 @@ seg            = "->" | "~" ref [ "rev" ] "~" ;           (* `~` is `hint` since
 
 hint           = "hint" ref hint_clause ;                  (* §11; unimplemented *)
 
-block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ref ) [ "as" IDENT ]
-                 "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27] *)
+block          = ( "repeat" | "cycle" ) ( expr | IDENT "in" ( ref | list ) ) [ "as" IDENT ]
+                 "{" { statement } "}"                (* IDENT "in" ref: §12.8 [0.27];
+                                                         a list's items, §12.10 [0.193] *)
                | "ring"   expr "about" ref [ "as" IDENT ] "{" { statement } "}"
                | "when"   truth "{" { statement } "}"      (* §12.9 [0.72] *)
                | "initially" "{" { relation } "}" ;      (* §6.9 [0.116] *)
@@ -3758,7 +3776,7 @@ addop          = "+" | "-" ;
 mulop          = "*" | "/" ;
 ```
 
-Parsing note: a statement is told by its first tokens. `NAME :=` is a definition, and the token after `:=` settles which: `{` a group, `over` in the statement a curve, a call an instance, an element keyword or a prefix word a chain, anything else a value (§6.3). `param` opens an input and `in REF {` a block of membership. A constraint word opens a prefix relation, or a call for `ccw`/`cw` (**[0.186]** where `(` follows; otherwise either is a name the document defined), which also appear as orientation keywords after `:` in `path`, where context disambiguates. Otherwise a `ref` comes first, and the word after it, read by a lookahead past the dotted path, is a constraint word, `@`, or `cut`, `common` [0.85] (`bound` [0.22]) or `union` [0.32], which relate no geometry and have no residual for the operator machinery to settle them into. **[0.182]** `repeat`, `cycle`, `ring` and `when` open a block unless the next token is `.` or a constraint word with no `{` on the line, when they are a name the document defined (§1.3). **[0.18]** `view`, `section` and `dimensions` open a statement and are therefore not names; **[0.20]** model source refuses them as presentation (§13.2). **[0.69]** A statement opening on a measurement, or comparing two sides by `<=` or `>=` outside every bracket, is a bound on measurements (`measured`).
+Parsing note: a statement is told by its first tokens. `NAME :=` is a definition, and the token after `:=` settles which: `{` a group, **[0.193]** `[` a list, `over` in the statement a curve, a call an instance, an element keyword or a prefix word a chain, anything else a value (§6.3). `param` opens an input and `in REF {` a block of membership. A constraint word opens a prefix relation, or a call for `ccw`/`cw` (**[0.186]** where `(` follows; otherwise either is a name the document defined), which also appear as orientation keywords after `:` in `path`, where context disambiguates. Otherwise a `ref` comes first, and the word after it, read by a lookahead past the dotted path, is a constraint word, `@`, or `cut`, `common` [0.85] (`bound` [0.22]) or `union` [0.32], which relate no geometry and have no residual for the operator machinery to settle them into. **[0.182]** `repeat`, `cycle`, `ring` and `when` open a block unless the next token is `.` or a constraint word with no `{` on the line, when they are a name the document defined (§1.3). **[0.18]** `view`, `section` and `dimensions` open a statement and are therefore not names; **[0.20]** model source refuses them as presentation (§13.2). **[0.69]** A statement opening on a measurement, or comparing two sides by `<=` or `>=` outside every bracket, is a bound on measurements (`measured`).
 
 **[0.2] Note on a number read verbatim.** After the `:=` of a value (0.2–0.6: the `==` after a predicate's closing parenthesis, which §9.2 retired), an implementation MAY take the rest of the logical line verbatim rather than tokenizing it, and hand that text to whatever evaluates dimension expressions. This is not laziness: `3 1/2` is three and a half and `31/2` is a division, and that rule belongs to one tokenizer. Two copies of it are two rules the moment one is edited. An `==` *inside* an argument list is the pin of §4.3 and is lexed normally; the two never meet. **[0.7]** A trailing `hint(…)` ends the verbatim region, since it is a clause of the statement and not part of the number.
 
