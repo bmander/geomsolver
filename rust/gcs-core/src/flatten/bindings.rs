@@ -602,48 +602,112 @@ impl<'a> Walk<'a> {
 
     /// **An instance's numbers are read by its name** (`ball.r`): each numeric formal of every
     /// instance a body writes goes into the body's `vals` as `{instance}.{formal}` — the number
-    /// it was given, or the drawing's unknown it became where it was left unbound or seeded
-    /// (`bind`'s name) — so a dimension reads it as it reads a group's member, and an instance
-    /// handed on as a group carries it (`bind`'s group arm copies `{actual}.…`).  Read before
-    /// the body's statements are walked, as its `param`s are (P2: a dimension above the call
-    /// reads it too).  Nothing is reported here: `bind` works the same arguments out again, by
-    /// the same rules (`formals_of`, `typed`), and says what is wrong with them where the call is
-    /// walked.
+    /// it was given, or its default, or the drawing's unknown it became where it was left unbound
+    /// or seeded (`bind`'s name) — so a dimension reads it as it reads a group's member, and an
+    /// instance handed on as a group carries it (`bind`'s group arm copies `{actual}.…`).  Read
+    /// before the body's statements are walked, as its `param`s are (P2: a dimension above the
+    /// call reads it too); one a definition reads is worked out among them (`members`), and kept.
     pub(super) fn instance_numbers(
         &self,
         body: &[Stmt],
         vals: &mut Vals,
         scope: &Scope,
     ) {
-        use crate::syntax::InstVal;
         for st in body {
             let StmtKind::Instance(inst) = &st.kind else { continue };
             let Ok(index) = self.prog.resolve_component(&inst.component.text, scope.module) else {
                 continue;
             };
             let comp = &self.prog.components[index];
-            let mut given: BTreeMap<&str, Aff> = BTreeMap::new();
-            for (f, a) in formals_of(comp, inst) {
-                let Some(f) = f.filter(|f| f.ty.number()) else { continue };
-                let text = match &a.value {
-                    InstVal::Expr(t) => t.clone(),
-                    InstVal::Ref(r) => ref_text(r),
-                    InstVal::Hint(..) | InstVal::Group(_) => continue,
-                };
-                if let Some(v) = value_aff(&text, vals, self.units)
-                    .and_then(|v| typed(v, f.ty, &f.name.text))
-                    .ok()
-                {
-                    given.insert(&f.name.text, v);
-                }
-            }
-            for f in comp.formals.iter().filter(|f| f.ty.number()) {
-                let v = given.remove(f.name.text.as_str()).unwrap_or_else(|| {
-                    free(formal_name(scope.prefix(), &inst.name.text, &f.name.text), f.ty)
-                });
-                vals.or_insert(format!("{}.{}", inst.name.text, f.name.text), v);
+            for (f, v) in self.call_numbers(comp, inst, vals, scope.prefix(), false).0 {
+                vals.or_insert(format!("{}.{f}", inst.name.text), v);
             }
         }
+    }
+
+    /// **The numbers a call gives its formals** (`bind`'s, by its rules — `formals_of`, `typed`,
+    /// a default where the call leaves one out — saying nothing, as `bind` says it where the call
+    /// is walked): each numeric formal what it is given, else its default, else the drawing's
+    /// unknown it becomes (`{prefix}{instance}.{formal}`); and, with `groups`, the numbers a group
+    /// or a set formal carries under its name (`s.pcb_t`), only what its interface declares where
+    /// one types it.  `instance_numbers` reads the first; a body read from outside both
+    /// (`members`), which is refused a number the call gives that does not work out (beside).
+    pub(super) fn call_numbers(
+        &self,
+        comp: &Component,
+        inst: &crate::syntax::Instance,
+        vals: &Vals,
+        prefix: &str,
+        groups: bool,
+    ) -> (BTreeMap<String, Aff>, Vec<String>) {
+        use crate::syntax::InstVal;
+        let mut sub: BTreeMap<String, Aff> = BTreeMap::new();
+        let mut failed = Vec::new();
+        for (f, a) in formals_of(comp, inst) {
+            let Some(f) = f else { continue };
+            let text = match (&f.ty, &a.value) {
+                (Ty::Group | Ty::Set, value) if groups => {
+                    // a group written where it is taken is read by the formal's name, as `bind`
+                    // reads `group_literal`'s numbers
+                    let (actual, literal) = match value {
+                        InstVal::Ref(r) => (ref_text(r), None),
+                        InstVal::Group(fields) => {
+                            let mut members = Vec::new();
+                            super::values::members_of(&f.name.text, fields, &mut members);
+                            let mut numbers: BTreeMap<String, Aff> = BTreeMap::new();
+                            for (name, _, field) in members {
+                                let t = match &field.value {
+                                    InstVal::Expr(t) => t.clone(),
+                                    InstVal::Ref(r) => ref_text(r),
+                                    _ => continue,
+                                };
+                                match value_aff(&t, vals, self.units) {
+                                    Ok(v) => {
+                                        numbers.insert(name, v);
+                                    }
+                                    Err(_) => super::copy_members(vals, &t, &name, &mut numbers),
+                                }
+                            }
+                            (f.name.text.clone(), Some(Vals::of(numbers)))
+                        }
+                        _ => continue,
+                    };
+                    let from = literal.as_ref().unwrap_or(vals);
+                    match self.formal_shape(comp, f) {
+                        Some(shape) => {
+                            super::interfaces::shaped_numbers(&shape, &actual, &f.name.text, from,
+                                &mut sub);
+                        }
+                        None => super::copy_members(from, &actual, &f.name.text, &mut sub),
+                    }
+                    continue;
+                }
+                (ty, _) if !ty.number() => continue,
+                (_, InstVal::Expr(t)) => t.clone(),
+                (_, InstVal::Ref(r)) => ref_text(r),
+                (_, InstVal::Hint(..) | InstVal::Group(_)) => continue,
+            };
+            match value_aff(&text, vals, self.units).and_then(|v| typed(v, f.ty, &f.name.text)) {
+                Ok(v) => {
+                    sub.insert(f.name.text.clone(), v);
+                }
+                Err(e) => failed.push(format!("`{}`: {e}", f.name.text)),
+            }
+        }
+        for f in comp.formals.iter().filter(|f| f.ty.number()) {
+            if sub.contains_key(&f.name.text) {
+                continue;
+            }
+            let default = f.default.as_ref().and_then(|(text, _)| {
+                value_aff(text, &Vals::default(), self.units)
+                    .and_then(|v| typed(v, f.ty, &f.name.text)).ok()
+            });
+            let v = default.unwrap_or_else(|| {
+                free(formal_name(prefix, &inst.name.text, &f.name.text), f.ty)
+            });
+            sub.insert(f.name.text.clone(), v);
+        }
+        (sub, failed)
     }
 
     /// One value argument, worked out and bound under the formal's *declared* dimension.
