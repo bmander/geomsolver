@@ -10,8 +10,10 @@
 #   web       both release artefacts, as `make release` builds them, then the web suite against
 #             the wasm
 #
-# Each job that builds keeps its target directory under a key of its own commit, falling back
-# to the newest before it, so the cache moves with the code and a build is only what changed.
+# A cache keeps the third-party crates and nothing else that counts: a fresh checkout's sources
+# are newer than anything in it, and cargo judges the workspace's own crates by those times, so
+# they compile in every run whatever the cache holds.  It is keyed by the lockfile, which is all
+# that changes what it can save.
 # The slow tier is not here: slow.yml runs it every night.
 name: test
 
@@ -46,10 +48,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: test-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            test-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-
-            test-core-${{ runner.os }}-
+          key: test-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: test-core-${{ runner.os }}-
       - name: Build the core's suite
         run: |
           cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core --no-run \
@@ -96,10 +96,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: test-crates-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            test-crates-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-
-            test-crates-${{ runner.os }}-
+          key: test-crates-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: test-crates-${{ runner.os }}-
       - name: The other crates' suites
         run: cargo test --manifest-path rust/Cargo.toml --workspace --exclude gcs-core
       - name: The documentation tests
@@ -118,10 +116,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: test-release-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            test-release-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-
-            test-release-${{ runner.os }}-
+          key: test-release-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: test-release-${{ runner.os }}-
       - uses: actions/setup-node@v4
         with:
           node-version: 22

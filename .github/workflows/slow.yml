@@ -41,10 +41,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: slow-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            slow-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-
-            slow-core-${{ runner.os }}-
+          key: slow-core-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: slow-core-${{ runner.os }}-
       - name: Build the core's suite with the slow tier
         run: |
           cargo test --manifest-path rust/Cargo.toml -p gcs-core --test core \
@@ -95,10 +93,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: slow-cli-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            slow-cli-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}-
-            slow-cli-${{ runner.os }}-
+          key: slow-cli-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: slow-cli-${{ runner.os }}-
       - name: The CLI's suite with the slow tier
         run: cargo test --manifest-path rust/Cargo.toml -p gcs-cli
           --features gcs-core/slow,gcs-cli/slow

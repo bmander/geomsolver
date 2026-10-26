@@ -48,18 +48,20 @@ Every machine computes the same split, and the parts cover the binary exactly on
 prints a part).  The libtest runner is used and not one that runs each test in a process of its
 own, for the same fixtures.
 
-**The suite is built once.**  A shard that compiled the engine for itself spent three of its four
+**The suite is built once.**  A shard that compiled the engine for itself spent most of its six
 minutes compiling, four times over.  CI's `build` job compiles the core's test binary and hands
 it to the shards as an artefact; each runs its part with `--binary <path> rust/gcs-core`, in the
 package's directory as cargo would, and reads its documents from its own checkout at the path
 the binary was built in (`CARGO_MANIFEST_DIR` is compiled in, and every hosted runner checks out
-to the same place).  The wall clock is about the same, since the shards wait for the build; the
-runner-minutes are a quarter.
+to the same place).  The wall clock is the same, about six and a half minutes from push to
+answer, since the shards wait for the build; the core's runner-minutes halved, 22 to 11.
 
-**Caches move with the code.**  A job that builds keeps its target directory under a key of its
-own commit and restores the newest before it, so it compiles what changed since that run.  A
-key fixed by the lockfile alone would be saved once and never again, and every later build would
-recompile everything since that day.
+**A cache holds the third-party crates, and only they count.**  Cargo judges the workspace's own
+crates by their sources' times, and a fresh checkout's are newer than anything a cache holds, so
+`gcs-solve`, `gcs-core` and the suite compile in every run, about four minutes, whatever is
+restored; what a restore saves is nalgebra and the rest, some twenty seconds.  The caches are
+keyed by the lockfile for that reason: a key per commit would save a new copy every push and
+buy nothing.
 
 `rust/test-times.tsv` is `make test-times`: every test of the binary timed by libtest itself
 (`--report-time`, which stable libtest gives when `RUSTC_BOOTSTRAP` is set where the binary runs;
