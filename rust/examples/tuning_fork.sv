@@ -4,7 +4,8 @@
 // a tine's; the second is the tines swinging against each other, which rings a little below the
 // 764Hz of a tine built in at its root, since the base the tines stand on gives with them.
 unit mm
-use std (vertical)
+use std
+use std.place (vertical)
 
 L := 80mm
 w := 6mm

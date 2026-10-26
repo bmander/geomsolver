@@ -35,7 +35,8 @@
 // Closed forms: on the sphere x(d, u) = R (sin θ cos u, sin θ sin u, cos θ), θ = θ₀ + d/R; on the
 // cone x(d, u) = ρ (sin α cos u, sin α sin u, cos α), ρ = 30 + d.
 unit mm
-use std (turns)
+use std
+use std.motion (turns)
 
 R := 30mm
 r1 := 15mm

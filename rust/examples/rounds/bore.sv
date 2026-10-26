@@ -9,7 +9,8 @@
 // (⌘↵), or round the bore's floor into its wall too: `round(r: 1mm) pipe.bore`, concave, so
 // filled.
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 1mm   // the rim's radius
 

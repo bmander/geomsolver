@@ -303,7 +303,7 @@ pub fn add_body_word(prog: &Program, word: syntax::BodyWord, what: &[&str], body
     Edit::refused_or(prog, append_checked(prog, &stmts, Vec::new()))
 }
 
-/// The library's two words a gesture writes along a solid's edges (`std.sv`): `round`, rounded
+/// The library's two words a gesture writes along a solid's edges (`std.rounds`): `round`, rounded
 /// by a ball of radius `r`, and `chamfer`, cut by a flat `d` along each face.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EdgeWord {
@@ -327,6 +327,11 @@ impl EdgeWord {
         }
     }
 
+    /// The library module that defines the word, which the document `use`s to write it bare.
+    fn module(self) -> &'static str {
+        "std.rounds"
+    }
+
     /// The word's one number, by its label: `round(r: 2mm)`, `chamfer(d: 1mm)`.
     fn key(self) -> &'static str {
         match self {
@@ -342,7 +347,7 @@ impl EdgeWord {
 /// radius or the leg as typed:
 ///
 /// ```text
-/// use std (round)
+/// use std.rounds (round)
 /// block.near round(r: 2) block       // a face: every edge of it
 /// block.far round(r: 2) block.west   // an edge: where the two faces meet
 /// round(r: 2) block                  // every face: every edge, its corners a ball's
@@ -353,7 +358,7 @@ impl EdgeWord {
 ///
 /// Each face once and each edge no face already gives once, so a chain of edges is a statement a
 /// link; which way each turns (a convex edge cut, a concave one filled) is the word's to read.
-/// `use std` is brought in naming the word, or made to name it.  One splice, held to the
+/// `use std.rounds` is brought in naming the word, or made to name it.  One splice, held to the
 /// elaborator: a face with no name the source can write, faces that do not meet, two objects, or
 /// a size the language refuses is refused in its words.
 #[allow(clippy::too_many_arguments)]
@@ -455,11 +460,12 @@ fn rounds_edit(
             }
         }
     }
-    // what the word's own body refuses is said at the `use` that brought the library in: the
-    // statements and a `use` the document wrote are both what this edit wrote, where they landed
-    let (import, written_use) = imports(prog, word.as_str());
+    // what the word's own body refuses is said at the `use` that brought `std.rounds` in: the
+    // statements and the `use` — grown, or a line of its own — are both what this edit wrote,
+    // where they landed
+    let import = imports(prog, word);
     let (text, landed) = splice_landing(prog.text(), vec![appending(prog, &stmts)?, import]);
-    let regions: Vec<Span> = landed.into_iter().take(if written_use { 2 } else { 1 })
+    let regions: Vec<Span> = landed.into_iter()
         .map(|l| l.ok_or("the edit is no place in the source"))
         .collect::<Result<_, _>>()?;
     checked_in(prog, text, &regions, Vec::new())
@@ -475,15 +481,16 @@ pub fn round_size(sk: &Sketch, solid: usize) -> Option<f64> {
     least.is_finite().then(|| round_sig(least / 10.0, 1))
 }
 
-/// The splice that has the document's `use std` name `word` bare (§14.4) — the whole `use std`
-/// the document writes, its list grown, one written (`use std` becomes `use std (round)`) or as
-/// it stands where it already does; else a line of its own where `add_use` would put one — and
-/// whether the document wrote that `use`.
-fn imports(prog: &Program, word: &str) -> (Splice, bool) {
+/// The splice that has the document's `use std.rounds` name `word` bare (§14.4) — the whole
+/// `use std.rounds` the document writes, its list grown, one written (`use std.rounds` becomes
+/// `use std.rounds (round)`) or as it stands where it already does; else a line of its own where
+/// `add_use` would put one.
+fn imports(prog: &Program, word: EdgeWord) -> Splice {
+    let (module, word) = (word.module(), word.as_str());
     let text = prog.text();
-    let Some(u) = prog.uses.iter().find(|u| u.name == "std" && (u.span.hi as usize) <= text.len())
+    let Some(u) = prog.uses.iter().find(|u| u.name == module && (u.span.hi as usize) <= text.len())
     else {
-        return (use_line(prog, &format!("use std ({word})")), false);
+        return use_line(prog, &format!("use {module} ({word})"));
     };
     let (lo, hi) = (u.span.lo as usize, u.span.hi as usize);
     let (at, with) = if u.names.iter().any(|n| n.text == word) {
@@ -494,5 +501,5 @@ fn imports(prog: &Program, word: &str) -> (Splice, bool) {
             None => (lo + text[lo..hi].trim_end().len(), format!(" ({word})")),
         }
     };
-    (Splice::within(text, u.span, Span::new(at, at), &with), true)
+    Splice::within(text, u.span, Span::new(at, at), &with)
 }

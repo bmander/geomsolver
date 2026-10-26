@@ -128,8 +128,8 @@ where a rule came from.
     `under_riding` refusal), and what it makes rides on nothing, as a reading's product rides on its
     observer.  `p := point in P` stays a membership: the parser takes `in` after a reference that is
     no kind word.
-  - **The station words are frames whose value is written over `s`** (`std.sv`): `Helix`'s screw
-    `fix(value == 360deg * turns * s)`, `n := base in screw`, `axial := n in stand` (a quarter
+  - **The station words are frames whose value is written over `s`** (`std.stations`): `Helix`'s
+    screw `fix(value == 360deg * turns * s)`, `n := base in screw`, `axial := n in stand` (a quarter
     turn's value); `OnHelix`'s `start := base in tilt` and `n := start in screw`; `Twisted`'s
     `t := x in turn`, the turn's value `twist * s`.  Their readings at an instant are retired, and
     their rows are the readings' row for row, so `tests/carried_frame.rs` (the stations against
@@ -388,14 +388,14 @@ where a rule came from.
     `affinity_is_read_off_how_a_number_is_written`.
   - **Not built in stage 5** (the first two built by #398 B and C, below): the guide-following
     station words as frames driven along a path —
-    a guide's frame (`std.On`, `std.Minimal`, `std.Frenet`) is no joint at any value, its pose read
-    off the guide's geometry and its derivatives (and for `On`/`Minimal`, integrated), so it
-    needs a motion of its own kind in `Family` (the guide enclosed over a stretch for its bounds)
-    and a sweep over a declared parameter that is no angle (`sweep(sec over s)`, left unbuilt by
-    stage 4); a relation the solve holds reading a drive (a law in a kernel's constants), built
-    for a profile in the plane by #398 G (below) and for nothing else; a slide's value written as a length (it is an
-    instant of the roll: `advance: 360mm` makes its degrees millimetres); and the app's timeline
-    (stage 6, built by #398 L, below).
+    a guide's frame (`std.stations.On`, `std.stations.Minimal`, `std.stations.Frenet`) is no joint
+    at any value, its pose read off the guide's geometry and its derivatives (and for
+    `On`/`Minimal`, integrated), so it needs a motion of its own kind in `Family` (the guide
+    enclosed over a stretch for its bounds) and a sweep over a declared parameter that is no angle
+    (`sweep(sec over s)`, left unbuilt by stage 4); a relation the solve holds reading a drive (a
+    law in a kernel's constants), built for a profile in the plane by #398 G (below) and for nothing
+    else; a slide's value written as a length (it is an instant of the roll: `advance: 360mm` makes
+    its degrees millimetres); and the app's timeline (stage 6, built by #398 L, below).
 - **Faces swept over a declared parameter** (#398 B, [0.145]): one parameter axis for the face
   families as for the drawing.
   - **A face family reads its parameter as declared**: `sweep(Station(…).f over s)`, `s` a `param
@@ -431,14 +431,15 @@ where a rule came from.
     keeps the blocks around a relation).  The twin's rows are `x in f`'s, row for row: its value
     read again at every station.  Refused: a declaration in two valued frames, one drawn in the
     valued frame and no plane of it (E080).  A frame declared in the block is left to
-    `motions::values`'s refusal.  `std.Twisted` stays a point drawn in `n` (`t := x in turn`):
-    drawn in the block it would stand in the twin, and `mapped` reads its targets in one plane.
+    `motions::values`'s refusal.  `std.stations.Twisted` stays a point drawn in `n` (`t := x in
+    turn`): drawn in the block it would stand in the twin, and `mapped` reads its targets in one
+    plane.
   - **Gate**: `tests/swept_over_parameters.rs` — the epic's helix as written (its value in the
     `fix` stage 3 settled on) against the screw's closed form at stations of the march along `s`
     to `EXACT`, against Pappus off its exact B-rep, every wall the surface its first rim sweeps,
-    and corner for corner the thread `std.Helix`'s station sweeps; the block's relations holding
-    the drawing at rest at every station; the refusals.  `tests/face_family.rs`: a station drawn
-    in the document and given the parameter sweeps the reducer's 5120 mm³, and a family's
+    and corner for corner the thread `std.stations.Helix`'s station sweeps; the block's relations
+    holding the drawing at rest at every station; the refusals.  `tests/face_family.rs`: a station
+    drawn in the document and given the parameter sweeps the reducer's 5120 mm³, and a family's
     refusals.  The corpus is written over declared parameters (`lofts/`, `paths/`, the loose
     families, `turbine_blade.sv`; `lofts/thread.sv`'s thread is the epic's helix;
     `twist_drill/drill.sv`'s roll is a declared `t`) and every test of it passes unchanged in its
@@ -450,8 +451,8 @@ where a rule came from.
     `fix(ratio == ρ, advance == 0mm) f`, `ρ` 0 or 1 (E080 otherwise, and for an advance), makes
     `MotionDef::Guided { guide, frame, frenet: ρ == 1 }`; the statement states no row
     (`Resolver::guides`, skipped by `elaborate::constraints`) and the joint's axis is held where it
-    stands.  `std.Along(g, up: u, home: h)` (ρ 0) and `std.AlongFrenet(g, home: h)` (ρ 1) make the
-    frame `f`, draw it at its home square to the path and state the joint.
+    stands.  `std.stations.Along(g, up: u, home: h)` (ρ 0) and `std.stations.AlongFrenet(g, home:
+    h)` (ρ 1) make the frame `f`, draw it at its home square to the path and state the joint.
   - **Read after the solve** (`motion::Guide`, `Step::Guided`): the path read four ways (`Path`: a
     line's and an arc's fraction of the run exactly; a spline, in a plane lifted or over points in
     space through `Sketch::spline_traced`, by its basis with three derivatives; a traced curve by
@@ -475,15 +476,15 @@ where a rule came from.
     the part stands there — so a frame the station moves and one it does not are read alike.
     Refused: a relation the solve holds reading it (`envelope::held::motion`, E080), a profile in
     the plane generated under it; a graft carries none (`graft`).  Today's station words
-    (`std.On`, `std.Minimal`, `std.Frenet`) still solve a plane at every station; the corpus is
-    not moved onto the frames.
-  - **Gate**: `tests/guided_frames.rs` — a rectangle in `std.Along`'s frame swept over `s`
-    against the same rectangle in `std.On`'s plane, corner for corner and by volume to 1e-9, along
-    the planar spline (home-free) and the cubic in space (homed where `On`'s family is); the
-    ribbon in `std.AlongFrenet`'s frame against `std.Frenet`'s the same way; the frame along a
-    traced helix against the helix's rotation-minimising frame in closed form to 1e-9 and its rate
-    against a difference of its pose; `MotionBounds` holding every sampled pose of sixteen
-    stretches forward and back and the speed bound every sampled speed; the refusals.
+    (`std.stations.On`, `std.stations.Minimal`, `std.stations.Frenet`) still solve a plane at every
+    station; the corpus is not moved onto the frames.
+  - **Gate**: `tests/guided_frames.rs` — a rectangle in `std.stations.Along`'s frame swept over `s`
+    against the same rectangle in `std.stations.On`'s plane, corner for corner and by volume to
+    1e-9, along the planar spline (home-free) and the cubic in space (homed where `On`'s family is);
+    the ribbon in `std.stations.AlongFrenet`'s frame against `std.stations.Frenet`'s the same way;
+    the frame along a traced helix against the helix's rotation-minimising frame in closed form to
+    1e-9 and its rate against a difference of its pose; `MotionBounds` holding every sampled pose of
+    sixteen stretches forward and back and the speed bound every sampled speed; the refusals.
 - **A drawing shown at an instant** (#398 L, [0.146]): the app's timeline and a drawing's
   `at t = 90deg`, one mechanism in the core.
   - **Standing** (`follow::stand`, `follow::home`, `Sketch::standing`): the drawing stood at `t`

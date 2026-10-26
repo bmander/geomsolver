@@ -19,7 +19,8 @@
 
 unit mm
 use engine.parts
-use std (right_of)
+use std
+use std.place (right_of)
 use engine.dims
 use engine.block
 use engine.head

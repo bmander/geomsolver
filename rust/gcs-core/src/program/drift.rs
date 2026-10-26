@@ -169,7 +169,7 @@ fn calls(st: &Stmt) -> Vec<&Instance> {
 
 /// **W202: a component call standing as a statement** for what it states (`std.Spin(f, …)`): a
 /// relation written as a procedure call (direction R3).  A set written in place as an operand
-/// (`q inside std.Cylinder(ax, r: 8mm)`) is an instance under the same key, but a link of its
+/// (`q inside std.sets.Cylinder(ax, r: 8mm)`) is an instance under the same key, but a link of its
 /// relation's statement and not one of its own.
 fn bare(body: &[Stmt], out: &mut Vec<Diag>) {
     each(body, &mut |st| {

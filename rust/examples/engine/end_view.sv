@@ -6,7 +6,9 @@
 
 use engine.dims (deck, front, rcamj, rcp)
 use engine.parts
-use std (coords, slides, turns)
+use std
+use std.place (coords)
+use std.motion (slides, turns)
 use std
 
 // -- the timing belt --------------------------------------------------------------------------

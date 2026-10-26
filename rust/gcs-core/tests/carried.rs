@@ -18,7 +18,8 @@ use gcs_core::space::{add, cross, dot, norm, scale, sub, unit};
 /// point where the two touch at the start; `path`, its envelope under the roll, is its path there.
 const ROLLING: &str = "\
 unit mm
-use std (spins, turns)
+use std
+use std.motion (spins, turns)
 in std.top {
   o := point
   fix((0, 0)) o
@@ -123,7 +124,8 @@ b1 := point hint((-5, 9, 0))
 fix((-5, 0, 2)) b0
 fix((-5, 9, 0)) b1
 bx := line(b0, b1)
-use std (spins, turns)
+use std
+use std.motion (spins, turns)
 screw := frame
 ax coincident(sense: same) screw.axis; fix(ratio == 1.5, advance == 7mm) screw
 turn := frame

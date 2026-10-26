@@ -20,7 +20,8 @@
 // Try instead: delete the second tangency and state `fix(y == -95) g0`, and the rod solves so the
 // stride's lowest point just reaches that ground.
 
-use std (offset)
+use std
+use std.place (offset)
 
 param t: Angle over (0deg, 360deg)
 

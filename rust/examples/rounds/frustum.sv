@@ -11,7 +11,8 @@
 // plane. Orbit (right-drag) to see the corners. Edit `r` and apply (⌘↵), or round the generators
 // alone (`half.cutter round(r: r) half.cone.bc`).
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 1mm   // every edge's radius
 

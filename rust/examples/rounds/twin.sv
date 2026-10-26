@@ -7,7 +7,8 @@
 // The section is drawn on the front plane and stands 40 deep in front of it. Orbit (right-drag)
 // to see the seams filled. Edit `r` or a rod's radius and apply (⌘↵).
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 2mm   // the seams' radius
 

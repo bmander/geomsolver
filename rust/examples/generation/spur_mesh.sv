@@ -11,7 +11,9 @@
 // involute, and Euler–Savary's centre of curvature on the common normal.  The diagnosis judges
 // it a theorem: true at every pose the freedom reaches, and implied rather than stated.
 
-use std (right_of, spins, slides)
+use std
+use std.place (right_of)
+use std.motion (spins, slides)
 
 r1 := 20                    // the pinion's pitch radius
 r2 := 30                    // the gear's

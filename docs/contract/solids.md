@@ -20,11 +20,11 @@ it — `GearCone`, `ToothTrace`, `PinionCone` (each cone's axis `.ax`; `fixtures
 `Blank`, `FaceMill` (`mill.ax`, the flank cones, levels and reach), `Tooth`, `Space`, `Member`,
 `Topping` — so every name is under `pair.` (`pair.pinion.body`, `pair.gear_cone.M`); a test reads
 the recorded rows under their old labels. Each
-member's blank is a region (`Blank`: the pitch cone, a `std.Cone` about the member's axis, its
-half left unknown so it settles from the pose, grown by the addendum (`std.Offset`) and its
-outside by the back depth (`distance(<= d, side: inside)`), `std.Sphere`s about the apex the half face width either
+member's blank is a region (`Blank`: the pitch cone, a `std.sets.Cone` about the member's axis, its
+half left unknown so it settles from the pose, grown by the addendum (`std.sets.Offset`) and its
+outside by the back depth (`distance(<= d, side: inside)`), `std.sets.Sphere`s about the apex the half face width either
 side of M (`rim.p2 distance(w / 2, side: outside) toe`), sized by the solved layout — a region term
-reads an unknown, `model::TermNumber`; the end relief two `std.Chamfered` bounds in the same
+reads an unknown, `model::TermNumber`; the end relief two `std.rounds.Chamfered` bounds in the same
 region, lowered as conics); its faces are `tip`, `heel`, `toe`, `back` (the sets its body uses),
 and `tests/region_blank.rs` holds the region to their closed forms read off the layout's points
 (faces, volume, material). The depths are values of the unknown normal module (`dedendum := 1.25 *
@@ -44,8 +44,8 @@ curvature in a section square to the trace, a module inside and outside the pitc
 equal at the mean point, which sets the shift, and at the toe, which sets the cutter; a cutter no
 smaller than R (`gear.M distance(>= R) trace.C`), the root nearest the seeds (11.2527°, 75.6122
 mm; seeds far off reach another, 260 mm from 14°, 60 mm).  Each blade (`Blade`) is
-`std.ConeThrough` with the side its cone opens to said, so its half reads the unknown shift as a
-number times it plus a number.  At the found cutter the pinion's swept cut is built and agrees
+`std.sets.ConeThrough` with the side its cone opens to said, so its half reads the unknown shift as
+a number times it plus a number.  At the found cutter the pinion's swept cut is built and agrees
 with its field, but its sheet is fitted as one face, not named by the cutter's (a follow-up);
 `brep_export.rs` holds the sectors at the recorded mill.  `fixtures::gear::configure`
 given a `pressure_shift` states it with the recorded cutter, 0.8 R, and drops the balance
@@ -371,7 +371,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   first root's span (`cause` under `solventc --json`).  So a round is one line however many
   `taken`s and `filled`s it made, and no piece of a region is a diagnostic.  Each is said where
   the document holds it (`refused::Placing`): a site in a module at the deepest instance on its
-  path the document holds (the round that used `std.round`), else at the `use`
+  path the document holds (the round that used `std.rounds.round`), else at the `use`
   (`modules::localize`).  `tests/refused_once.rs` is the gate.
   A continuous sweep is drawn by its material field alone, so one whose field cannot be read is
   refused too (`solid::refusal`, what `refused` asks of every solid), at its statement and in a solved document as in any other (#588: "`space` sweeps
@@ -443,42 +443,43 @@ placement carries inside the blank; CLI test readers zero the offset.
   native OCCT host refuses the node (its lofts are the oracle at L10).  `tests/face_family.rs` is
   the gate: the L0 programs (`docs/lofts/l0/`) against their closed forms, every one to 1e-9 off
   the B-rep (`props::volume`, `Brep::check`), a slab cut by the twisted duct, STEP read back.
-- **A loft is library words over the family** (§6.9 [0.100], `rust/lib/std.sv`; #243 L3).  The
-  station words say only where a station stands: `std.OnLine` (a fraction of a line's run),
-  `std.OnArc` (of an arc's turn), `std.OnSpline` (a spline's parameter), `std.On` (any `path`: a
-  line, an arc, a spline, a traced curve — L4, a line touching a round at a point of it drawn in
-  its plane, `planes::incidences`), `std.Helix` and `std.OnHelix` (L6, below) — each a component
-  holding a plane `n` square to its path, its `v` along `up` (`On`'s at its home: [0.123], its
-  frame integrated, below).  `On` and `OnSpline` seed their tangent ahead
-  along the guide (`hint(at: m, along: g)`, `entities::rate_along`) and their plane off it as
-  `OnLine` does, so the drawn station starts on the branch whose `v` is `up`'s and whose normal
-  runs the way the guide does — never the mirror, which a sign-free `parallel` would otherwise
-  leave to wherever the solve started (`tests/paths.rs`, `the_frame_keeps_up_up_on_every_guide`).  The section is the writer's component drawn `in st.n`, reading `s`; two
-  sections correspond by being one.  **No Rust reads a word's name**, and there is no loft
-  constructor: `SolidDef::Loft`, `Sweep::Along` and `solid/loft.rs` are gone, and `along:` in a
-  solid's brackets is refused at the key saying what to write (`parser::declarations::sweep_arg`).
-  `brep::build::ruled` joins a section only to its own image (a drafted prism's offset, a canal's
-  screwed disc), edge for edge; the recipe has no `loft` node.  The two-face word (pairing two
-  sketches drawn apart) returns at L8 (finding 8).  `tests/loft.rs` is the gate: `solid_loft`,
-  `solid_elbow`, `solid_bend` and `solid_twist` at their closed forms off the B-rep to 1e-9, their
-  walls by name and kind, `std.On` agreeing with each kind's word.
+- **A loft is library words over the family** (§6.9 [0.100], `rust/lib/std/stations.sv`; #243 L3).
+  The station words say only where a station stands: `std.stations.OnLine` (a fraction of a line's
+  run), `std.stations.OnArc` (of an arc's turn), `std.stations.OnSpline` (a spline's parameter),
+  `std.stations.On` (any `path`: a line, an arc, a spline, a traced curve — L4, a line touching a
+  round at a point of it drawn in its plane, `planes::incidences`), `std.stations.Helix` and
+  `std.stations.OnHelix` (L6, below) — each a component holding a plane `n` square to its path, its
+  `v` along `up` (`On`'s at its home: [0.123], its frame integrated, below).  `On` and `OnSpline`
+  seed their tangent ahead along the guide (`hint(at: m, along: g)`, `entities::rate_along`) and
+  their plane off it as `OnLine` does, so the drawn station starts on the branch whose `v` is `up`'s
+  and whose normal runs the way the guide does — never the mirror, which a sign-free `parallel`
+  would otherwise leave to wherever the solve started (`tests/paths.rs`,
+  `the_frame_keeps_up_up_on_every_guide`).  The section is the writer's component drawn `in st.n`,
+  reading `s`; two sections correspond by being one.  **No Rust reads a word's name**, and there is
+  no loft constructor: `SolidDef::Loft`, `Sweep::Along` and `solid/loft.rs` are gone, and `along:`
+  in a solid's brackets is refused at the key saying what to write
+  (`parser::declarations::sweep_arg`). `brep::build::ruled` joins a section only to its own image (a
+  drafted prism's offset, a canal's screwed disc), edge for edge; the recipe has no `loft` node.
+  The two-face word (pairing two sketches drawn apart) returns at L8 (finding 8).  `tests/loft.rs`
+  is the gate: `solid_loft`, `solid_elbow`, `solid_bend` and `solid_twist` at their closed forms off
+  the B-rep to 1e-9, their walls by name and kind, `std.stations.On` agreeing with each kind's word.
 - **A guide in space** (#363 S1, [0.122]): a curve traced in space is a `path`, so a station
   stands on it by `m coincident(t == s) g`, `g tangent(at: m) tl` and a plane square to `tl`
   turned by `Minimal`'s rate from a home square to `up` — the frame integrated, as along
-  `std.OnHelix` — which is `std.On` itself since [0.123] (S2: a frame holding `v` along `up` at
-  every station leaned its plane off square to a twisted tangent, silently).  `On` over a planar
-  guide is `OnSpline`'s algebraic frame, corner for corner (`tests/rates.rs`).
+  `std.stations.OnHelix` — which is `std.stations.On` itself since [0.123] (S2: a frame holding `v`
+  along `up` at every station leaned its plane off square to a twisted tangent, silently).  `On`
+  over a planar guide is `OnSpline`'s algebraic frame, corner for corner (`tests/rates.rs`).
   `tests/space_paths.rs` is the gate: a 2 × 2 square along two turns of a traced helix (r 10, rise 10) at 4·√((40π)² + 10²)
-  off the exact B-rep to 1e-9 and corner for corner `std.OnHelix`'s under `Minimal`; the frame
-  turning −28.5576° a turn against Frenet's (r 10, pitch 5), to 1e-9; a traced surface refused;
-  `std.On` on the traced helix `OnHelix`'s solid corner for corner; an off-centre square round
-  `pipe.sv`'s U at 4·(60 + 23π), its frame carried across the joints.
-- **Frenet's frame** (#363 S5, [0.125]): `std.Frenet(g, s:)` holds its plane square to the
+  off the exact B-rep to 1e-9 and corner for corner `std.stations.OnHelix`'s under `Minimal`; the
+  frame turning −28.5576° a turn against Frenet's (r 10, pitch 5), to 1e-9; a traced surface
+  refused; `std.stations.On` on the traced helix `OnHelix`'s solid corner for corner; an off-centre
+  square round `pipe.sv`'s U at 4·(60 + 23π), its frame carried across the joints.
+- **Frenet's frame** (#363 S5, [0.125]): `std.stations.Frenet(g, s:)` holds its plane square to the
   guide, `u` along `line(m, c)` to the centre of curvature (`g curvature(at: m) c`, `curves.md`)
   and `v` the binormal (seeded `tl` turned −90° about it, the one sign a seed picks, and kept by
   warm starts), an algebraic station — no rate.  Where the curve has no curvature the centre's
   rows lose their rank and the station is refused there ("not held"), never followed.
-  `tests/space_paths.rs`: along `ribbon.sv`'s helix as a traced curve it is `std.OnHelix`'s
+  `tests/space_paths.rs`: along `ribbon.sv`'s helix as a traced curve it is `std.stations.OnHelix`'s
   `facing` solid corner for corner; a curve straight for a third of its run is refused at a
   station; a surface's centre is E040.
 - **A chain is one path** (§6.9 [0.102], #243 L4, finding 6).  A `path` formal of a family's
@@ -549,7 +550,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   the bent pipe's second bend written clockwise from `f`, both tubes; the S-bend in space.
 - **A law is an expression in `s`** (§6.9 [0.103], #243 L5, finding 10).  A twist or a scale is a
   dimension of the section reading the running number; no word takes a `law:` (no function values).
-  `std.sv`'s `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],
+  `std.stations`' `Twisted` (the point `reach` along the station's `u` turned `twist · s` — [0.118],
   the second point a section drawn once is carried to, `f := prof mapped(o -> n.origin, x ->
   tw.t) in n`; through 0.117 a plane of axes a section was drawn on corner by corner; since
   [0.138] a turn of `n` about its origin read at that roll, and since [0.141] `x` drawn in that
@@ -573,17 +574,17 @@ placement carries inside the blank; CLI test readers zero the offset.
   sine swell (closed form) and an eased scale (a quadrature exact for its degree), each given its
   word as a fraction, a law in pieces (`max`), the `when` refusal and two faces of one station, each
   off the exact B-rep to 1e-9.
-- **A screw is a motion read at a roll** (§6.9 [0.110], [0.138]; #243 L6, #366). `std.Helix(base,
-  pitch:, turns:, s:)` is `base` carried by the screw about its normal through its origin (a frame's
-  `screws(pitch)` about `base.normal`) to `360deg · turns · s`: `n` the base so
-  carried (a section in it sweeps a twisted prism), `axial` `n` turned a quarter about its `u` — `u`
-  out along `n.u`, `v` up the axis (a thread's).  `std.OnHelix(base, r:, …)`'s `n` stands square to
-  the helix of radius `r`, `v` up the axis leaned by the lead angle (a coil's wire): `base` tilted
-  about `base.u` by `90deg + atan2(pitch, 2πr)` and slid `r` out (one screw about that axis,
-  read at its turn), then carried by the helix's screw.  Every frame is a carried one — since
-  [0.141] drawn in a frame whose value is the roll, `n := base in screw` with `fix(value ==
-  360deg * turns * s) screw` ([parameters.md](parameters.md)), through 0.140 `n := base
-  at(under: m) τ` ([frames.md](frames.md)) — about its frames' own axes, so **no direction
+- **A screw is a motion read at a roll** (§6.9 [0.110], [0.138]; #243 L6, #366).
+  `std.stations.Helix(base, pitch:, turns:, s:)` is `base` carried by the screw about its normal
+  through its origin (a frame's `screws(pitch)` about `base.normal`) to `360deg · turns · s`: `n`
+  the base so carried (a section in it sweeps a twisted prism), `axial` `n` turned a quarter about
+  its `u` — `u` out along `n.u`, `v` up the axis (a thread's).  `std.stations.OnHelix(base, r:,
+  …)`'s `n` stands square to the helix of radius `r`, `v` up the axis leaned by the lead angle (a
+  coil's wire): `base` tilted about `base.u` by `90deg + atan2(pitch, 2πr)` and slid `r` out (one
+  screw about that axis, read at its turn), then carried by the helix's screw.  Every frame is a
+  carried one — since [0.141] drawn in a frame whose value is the roll, `n := base in screw` with
+  `fix(value == 360deg * turns * s) screw` ([parameters.md](parameters.md)), through 0.140 `n :=
+  base at(under: m) τ` ([frames.md](frames.md)) — about its frames' own axes, so **no direction
   is held by a seed** and no plane stands against its lines — which the ordinates of 0.110–0.137 did
   not ensure: where the solve started decided whether a station's axes ran with their lines, and
   `lofts/spring.sv`'s, `ribbon.sv`'s and `l0/spring.sv`'s thread's drawn stations stood turned (the
@@ -604,8 +605,8 @@ placement carries inside the blank; CLI test readers zero the offset.
   chain of lines through each corner is the **ruled** loft, piecewise in `s`; its walls meet at an
   angle at each section, which the exact build makes an edge (`brep.md`, creases).  The **smooth**
   loft's rail is `spline(through: …)` (`curves.md`), one span a link, so with the guide cut the
-  same way its sections still stand at `s = k`.  **No guide**: `std.Across(a, b, c, s:)` is the
-  plane over the lines from the place at `s` on rail `a` to those on `b` and `c` (Helix's way, a
+  same way its sections still stand at `s = k`.  **No guide**: `std.stations.Across(a, b, c, s:)` is
+  the plane over the lines from the place at `s` on rail `a` to those on `b` and `c` (Helix's way, a
   plane over two lines sharing an end).  A rail drawn in a plane is reached by a corner drawn in the
   station's plane and that one (`point in st.n, front`): a point another plane already draws is not
   drawn in a spline's plane by its contact (#249's rule is for a point in space).
@@ -616,22 +617,23 @@ placement carries inside the blank; CLI test readers zero the offset.
   and the refusals; `face_family`'s bottle is `docs/lofts/l0/bottle.sv` over the spline through
   its rims.
 - **Two faces drawn apart, and a section held to its rails, are library words** (#243 L8,
-  [0.113]): no Rust names them.  `std.Ruled(a, b, s:)` walks the two faces in step (`cycle (ea,
-  eb) in (a, b)`, `language.md`), joins corner `k` of each by a straight rail, stands each
+  [0.113]): no Rust names them.  `std.stations.Ruled(a, b, s:)` walks the two faces in step (`cycle
+  (ea, eb) in (a, b)`, `language.md`), joins corner `k` of each by a straight rail, stands each
   corner `point in st.n` on its rail with `st := Across(rail[0], rail[1], rail[2], s:)`, and is
   `face(side)` of its copies, so its walls are `body.side[k]` from corner `k` and its ends the
-  faces themselves; `std.Apex(a, tip, s:)` the same to a point (no `end` cap).  Correspondence is
-  the written walks: a connector is where a walk starts, unequal counts a point named on an edge;
-  the first three corners must not stand in a line (`Across`).  `std.Similar` and `std.Affine`
-  are each one statement, the face carried whole ([0.118], below): `f := prof mapped(from -> a,
-  to -> b, third -> c) in n`, the profile's corners and frame columns of each corner's `mapped`,
-  held where the profile is (`Framed` and `Spans`, two `offset`s over hidden spans of the frame,
-  are retired, [0.117]); `lofts/blade.sv` and `three_rails.sv` write the word itself.  `tests/correspondence.rs` is the gate: `two_faces.sv` at
-  40/6 · 1856, a connector and a split triangle at their prismatoids, a pyramid to an oblique tip,
-  a blade on two rails (1560; turning, 1650), a square on three rails at its area ratio's
-  prismatoid, a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted
-  with a line edge is not said: it wants a rational edge whose weight reads the arc's sweep and a
-  word choosing by an edge's kind.
+  faces themselves; `std.stations.Apex(a, tip, s:)` the same to a point (no `end` cap).
+  Correspondence is the written walks: a connector is where a walk starts, unequal counts a point
+  named on an edge; the first three corners must not stand in a line (`Across`).
+  `std.stations.Similar` and `std.stations.Affine` are each one statement, the face carried whole
+  ([0.118], below): `f := prof mapped(from -> a, to -> b, third -> c) in n`, the profile's corners
+  and frame columns of each corner's `mapped`, held where the profile is (`Framed` and `Spans`, two
+  `offset`s over hidden spans of the frame, are retired, [0.117]); `lofts/blade.sv` and
+  `three_rails.sv` write the word itself.  `tests/correspondence.rs` is the gate: `two_faces.sv` at
+  40/6 · 1856, a connector and a split triangle at their prismatoids, a pyramid to an oblique tip, a
+  blade on two rails (1560; turning, 1650), a square on three rails at its area ratio's prismatoid,
+  a face walked, a face of a cycle's copies, and the refusals.  An arc edge lofted with a line edge
+  is not said: it wants a rational edge whose weight reads the arc's sweep and a word choosing by an
+  edge's kind.
 - **A station that states a rate is integrated from its home** (§6.9 [0.116], #339 D3,
   `solid/rated.rs`).  `rate(x over s) perpendicular y` (or `parallel`) is no constraint: the
   elaborator keeps it in `Sketch::rates` (`model::RateRow`: whose rate — an axis's direction or a
@@ -669,11 +671,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   read off its own flow.  A station with `initially` rows and no rate is refused.  A
   station's part holds **no plane's normal of its own** (`part_of`): a normal is minted where read
   (`Sketch::plane_normal`), under no name of the station's, and moves with its plane.
-  `std.Minimal(n, up:, s:)` (#243 L9) is the word.  `tests/rates.rs` is the gate: the minimal
-  frame along a helix of radius 10 and pitch 5 turning −28.558° a turn against `std.OnHelix`'s
-  (Frenet's) to 1e-9, read off the caps (and three quarters of a turn, and the home square to the
-  axis); a tube on four turns at A·L to 1e-9 in either frame; along a planar spline the word and
-  `std.On` the same solid, corner for corner; the refusals.
+  `std.stations.Minimal(n, up:, s:)` (#243 L9) is the word.  `tests/rates.rs` is the gate: the
+  minimal frame along a helix of radius 10 and pitch 5 turning −28.558° a turn against
+  `std.stations.OnHelix`'s (Frenet's) to 1e-9, read off the caps (and three quarters of a turn, and
+  the home square to the axis); a tube on four turns at A·L to 1e-9 in either frame; along a planar
+  spline the word and `std.stations.On` the same solid, corner for corner; the refusals.
 - **A face carried whole** (#357, [0.118]): `sec := prof mapped(from -> a, to -> b) in n` parses
   to a `Block` (`Block::image`, a `FaceImage`) — a `cycle` over `prof`'s loop under a binder no
   source writes, set aside and resolved as every block over a walk is — which makes no copies:

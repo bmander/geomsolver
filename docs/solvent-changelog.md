@@ -4,6 +4,24 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.195] The standard library in modules.** `std` had grown to seventy-odd names in one flat
+namespace — datums, placement words, figures, sets, rounds, panels, station words and joints side
+by side — so it is now a root and seven modules under it (§14.4), each a module of its own by its
+dotted path, in `rust/lib/std/`: `std.place` (`horizontal`, `vertical`, `offset`, `right_of`,
+`coords`, `skew`, `turned`, `square`, `seats`, `raised`, …), `std.shapes` (`CenteredRectangle`,
+`Ellipse`, `Polygon`, `Hex`, `hangs`), `std.sets` (`Sphere`, `Cylinder`, `Cone`, `ConeThrough`,
+`HalfSpace`, `Offset`, `on_sphere`), `std.rounds` (`round`, `chamfer`, `Rounded`, `Chamfered`,
+`Grown` and the sets they are made of), `std.panels` (`Developable`, `Development`),
+`std.stations` (`On`, `OnLine`, `Helix`, `Along`, `Ruled`, `Twisted`, `scaled`, …) and
+`std.motion` (`turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`, `Screw`).  `std`
+keeps the standard datums and `std.Turned`.  A file says `use std.sets` and writes
+`std.sets.Sphere(c, r: 12mm)`, or `use std.rounds (round)` and writes `round(r: 2mm) block`; `use
+std` is still what names `std.front`.  `std.Sphere` is refused (E101) saying it is
+`std.sets.Sphere` under `use std.sets`, `use std (horizontal)` (E101) that `use std.place
+(horizontal)` imports it, and a word written with nothing imported (E102) names the module under
+`std` that defines it.  The Fillet and Chamfer tools write `use std.rounds (round)`.  Every example
+and test document says its `use`s so; every solved position is unchanged.
+
 **[0.194] A body grown.** `std.Grown(B, d)` makes `.body`, the points within `d` of the solid `B`,
 its edges and corners rounded by `d` (§6.9): a clearance about a part, or a print's gap, is the
 part's body grown rather than its sizes written again — radiatorbot's end-wall windows are

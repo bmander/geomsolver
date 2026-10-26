@@ -7,7 +7,8 @@
 // A strip's twist, Saint-Venant's (1 / 4L) √(G J / (ρ Ip)) with J = b t³ / 3 and Ip = b³ t / 12,
 // is less than the plate's, whose root holds its section from warping.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 
 L := 300mm
 b := 150mm

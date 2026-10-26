@@ -7,7 +7,9 @@
 //   thread: a 2 mm square at radius 9–11, pitch 4, 3 turns; an axial section under a screw sweeps
 //     its area times its centroid's circle per turn (Pappus): V = 4 · 2π·10 · 3 = 240π mm³.
 unit mm
-use std (on_u)
+use std
+use std.place (on_u)
+use std.shapes
 use lofts
 
 component Coil(ax: axis, base: plane, r: Length, wire: Length, pitch: Length, turns: Scalar,
@@ -27,7 +29,7 @@ component Thread(ax: axis, base: plane, r: Length, size: Length, pitch: Length, 
     c := point
     c on_u(d: r) st.n
   }
-  sq := std.CenteredRectangle(c, w: size, h: size) in st.n
+  sq := std.shapes.CenteredRectangle(c, w: size, h: size) in st.n
   f := face(sq.loop)
 }
 

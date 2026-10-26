@@ -239,7 +239,7 @@ in (arm := frame) {{
 {}arm spins(1) o
 X := point hint((0, 3, 40))
 X coincident(t == 90deg) p.b
-", Pose::WORLD.place("arm")).replace("use std\n", "use std (spins)\n");
+", Pose::WORLD.place("arm")).replace("use std\n", "use std\nuse std.motion (spins)\n");
     let e = solved(&src);
     // at rest the post stands as drawn, and at a quarter turn it has turned about z
     let b = at(&e, "p.b");
@@ -265,7 +265,7 @@ in (g := frame) {{
 {}{}g spins(1) o
 X := point hint((0, 20, 40))
 X coincident(t == 90deg) p.b
-", Pose::WORLD.place("g"), inner.place("h")).replace("use std\n", "use std (spins)\n");
+", Pose::WORLD.place("g"), inner.place("h")).replace("use std\n", "use std\nuse std.motion (spins)\n");
     let e = solved(&src);
     assert!(e.diags.iter().all(|d| d.code != Code::W115), "{:?}", e.diags);
     // the post reads the inner frame's datums
@@ -384,7 +384,7 @@ component Outer() {{
 in (f := frame) {{
   o := Outer()
 }}
-{}", HANDED.replace("use std\n", "use std (on_u)\n"), Pose::MOVED.place("f"));
+{}", HANDED.replace("use std\n", "use std\nuse std.place (on_u)\n"), Pose::MOVED.place("f"));
     let e = solved(&src);
     let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
     for name in ["a", "b"] {
@@ -564,7 +564,7 @@ in (arm := frame) {{
 {}X := point hint((-20, 10, 70))
 X coincident(t == 90deg) p.b
 ", Pose::WORLD.place("arm"), mated("p.std.x", "p.std.y", "p.std.origin"))
-        .replace("use std\n", "use std (spins)\n");
+        .replace("use std\n", "use std\nuse std.motion (spins)\n");
     let e = solved(&src);
     let b = at(&e, "p.b");
     let root = solved(&format!("{READS}p := Post(len: 40mm)\n"));
@@ -686,7 +686,7 @@ st := point
 st raised(d: 25mm, along: std.z) base
 p := Post(len: 40mm)
 p seats(turn: 30deg, up: std.z, east: std.x) st
-").replace("use std\n", "use std (seats, raised)\n");
+").replace("use std\n", "use std\nuse std.place (seats, raised)\n");
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
     assert!(near(at(&e, "st"), [10.0, 20.0, 25.0]), "{:?}", at(&e, "st"));
@@ -702,7 +702,7 @@ tilt := axis
 fix(dir == (0.6, 0, 0.8), origin == (0, 0, 0)) tilt
 st := point hint((0, 0, 0))
 st raised(d: -10mm, along: tilt) base
-").replace("use std\n", "use std (raised)\n");
+").replace("use std\n", "use std\nuse std.place (raised)\n");
     let mut e = solved(&src);
     assert_eq!(diagnose(&mut e.sketch, DiagnoseOptions::default()).dof, 0);
     assert!(near(at(&e, "st"), [4.0, 20.0, -8.0]), "{:?}", at(&e, "st"));
@@ -713,7 +713,7 @@ st raised(d: -10mm, along: tilt) base
 const DISC: &str = "\
 unit mm
 use std
-use std (seats, raised, coords)
+use std.place (seats, raised, coords)
 component Part() {
   in std.top {
     c := point hint((3, 1))
@@ -768,8 +768,11 @@ fn a_relation_word_over_an_instance_whose_body_reads_no_datum_is_refused_at_the_
 /// A peg whose cone about its spindle passes through a point drawn in its front (#624).
 const PEG: &str = "\
 unit mm
-use std (vertical, coords, raised, seats, spins)
 use std
+use std.place (vertical, coords, raised, seats)
+use std.motion (spins)
+use std
+use std.sets
 component Peg() {
   in std.front {
     spindle := vertical line(std.origin, hint((0, 10)))
@@ -777,7 +780,7 @@ component Peg() {
     q := point hint((5, 3))
     q coords(du: 5mm, dv: 3mm) std.front
   }
-  cone := std.ConeThrough(spindle, q, lean: -45deg)
+  cone := std.sets.ConeThrough(spindle, q, lean: -45deg)
 }
 ";
 

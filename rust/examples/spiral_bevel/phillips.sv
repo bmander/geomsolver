@@ -14,7 +14,9 @@
 // turn — it moves along L as the member does — which the claims check (`tests/phillips.rs` reads
 // the pair against the closed form).
 unit mm
-use std (reciprocal, turns, slides)
+use std
+use std.sets
+use std.motion (reciprocal, turns, slides)
 
 param pinion_teeth := 24
 param gear_teeth := 48
@@ -55,15 +57,15 @@ P distance(10mm * sin(pressure), along: std.y) ahead
 L reciprocal(seen_from: pinion_turn) gear_turn
 // the mesh's instantaneous screw axis, on the common perpendicular, and its pitch: `screw.isa`,
 // running the way `toward` does, and `screw.pitch`, the advance a radian of the mesh's roll — both
-// read by rates of points the mesh carries (std.sv)
+// read by rates of points the mesh carries (std.motion)
 toward := axis                               // the way it runs: back along x, as the mesh turns
 fix(dir == (-1, 0, 0)) toward
-screw := std.Screw(toward, gear_turn, seen_from: pinion_turn)
+screw := std.motion.Screw(toward, gear_turn, seen_from: pinion_turn)
 
 // -- the rack and the flanks ---------------------------------------------------------------------
 // The plane square to L through P, sliding along L at the speed both members have along it; each
 // member's flank is what it sweeps, seen from that member.
-rack := std.HalfSpace(P, L, d: 0mm)
+rack := std.sets.HalfSpace(P, L, d: 0mm)
 slide := frame
 slide slides(2 * pi * sigma) L
 pinion_flank := envelope(rack over t in (-40deg, 40deg), under: slide, seen_from: pinion_turn)

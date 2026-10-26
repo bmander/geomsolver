@@ -13,7 +13,9 @@
 // Edit the lobe's semi-axes `a` and `b`, or how far its centre `off` sits from the shaft, and
 // the partner is cut again.
 
-use std (right_of, spins)
+use std
+use std.place (right_of)
+use std.motion (spins)
 
 a := 14
 b := 9

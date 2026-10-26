@@ -48,7 +48,7 @@ pub struct Constraint {
     /// reached through an instance written in one — `components.cylinder`'s bore, in the
     /// assembly that uses it.  The number is the part's, edited where the part is open, and a
     /// document drawing every dimension of every part it imports is a thicket that says nothing
-    /// about the document.  A module with no drawing of its own is vocabulary (`std.Hex`,
+    /// about the document.  A module with no drawing of its own is vocabulary (`std.shapes.Hex`,
     /// `hardware.BoltPattern`), whose dimensions are drawn where the document uses it.  Set by the
     /// elaborator (`program::elaborate`'s `finish`); the full callout layout leaves it out, as it
     /// does a repeated copy, and asking for it by id still draws it.  Presentation, like `class`.

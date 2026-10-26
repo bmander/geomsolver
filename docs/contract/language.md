@@ -25,8 +25,8 @@ Hosts look for modules beside the model, then its ancestors, then the library.
 **Nothing is imported bare unless the `use` names it (Solvent §14.4, [0.30], [0.48], #94):** a
 used module's component, relation word, param or group is written by full path —
 `engine.parts.Rod(…)`, `hardware.nut14_af`, `components.dims.D` — only through the
-file's own `use`, or bare where it lists the name: `use std (horizontal, vertical)` (`Use::names`;
-`Module::uses` keeps each module's `Use`s). `Program::imported` is the one lookup;
+file's own `use`, or bare where it lists the name: `use std.place (horizontal, vertical)`
+(`Use::names`; `Module::uses` keeps each module's `Use`s). `Program::imported` is the one lookup;
 `resolve_component`/`resolve_word` consult it after the file's own; `Walk::imported_params` puts
 values and groups under their bare names at a root (a group as an alias of the module's). Per
 file, not transitive, no prelude. `program/words.rs` checks every import as written: undefined
@@ -68,20 +68,23 @@ through the words it uses in turn, a cycle ending it), so the instance stands in
 `d.std.D` written would make it, and the application reads the alias as an instance's datum
 (`Lookup::instance_datum`); E111 for an instance whose body reads none is said at the use's word
 (`Walk::resolve`), and `WordUse` names the instance as written beside the sets (`sets`), so the
-culprit reads `d seats(…) b`. `std.seats` and `std.raised` are the words; `tests/frame_datums.rs`
-(`a_relation_word_over_an_instance_reads_its_frame_and_places_it`) is the gate. A point standing in space is E040 at the operand, or at the use where the
-operand is a word's body's — a relation that cannot settle says first why an operand whose name is
-found names nothing past it (`relations::constrain`), rather than that it has no kind; before the
-memberships (a declaration's child) it is refused as not yet known. `Relation::word` (`Worded`) rides to
+culprit reads `d seats(…) b`. `std.place.seats` and `std.place.raised` are the words;
+`tests/frame_datums.rs` (`a_relation_word_over_an_instance_reads_its_frame_and_places_it`) is the
+gate. A point standing in space is E040 at the operand, or at the use where the operand is a word's
+body's — a relation that cannot settle says first why an operand whose name is found names nothing
+past it (`relations::constrain`), rather than that it has no kind; before the memberships (a
+declaration's child) it is refused as not yet known. `Relation::word` (`Worded`) rides to
 `Constraint::word` (`WordUse`, entities; `graft` keeps it while its operands survive) and
-`io::describe_with` reads it (`p horizontal q`). `flatten::word_faults` (closure E101, a
-reserved word or a builtin of the fixity E071 — `constraints::builtin_word` — names twice E001)
-is asked of every definition (`program/words.rs`) and blocks its expansion. A body is one relation
-or several with their declarations (#103); none is defined in a body. `horizontal`/`vertical` between points live in `rust/lib/std.sv`; the printer
-writes `level(up)` (`print::ordinate_text`). `tests/relation_words.rs` is the gate. E071 is a
-component defined twice in one file, the document's own included (a value twice is E001). `std.front` needs the document's own `use std` — a definition's body, its file's ([0.167]). A drawn callout drops a
-module path (`relations::unqualified`), and a module with a `preview` draws its own dimensions
-there and not in a document using it (`Constraint::elsewhere`, [app.md](app.md)).
+`io::describe_with` reads it (`p horizontal q`). `flatten::word_faults` (closure E101, a reserved
+word or a builtin of the fixity E071 — `constraints::builtin_word` — names twice E001) is asked of
+every definition (`program/words.rs`) and blocks its expansion. A body is one relation or several
+with their declarations (#103); none is defined in a body. `horizontal`/`vertical` between points
+live in `rust/lib/std/place.sv`; the printer writes `level(up)` (`print::ordinate_text`).
+`tests/relation_words.rs` is the gate. E071 is a component defined twice in one file, the document's
+own included (a value twice is E001). `std.front` needs the document's own `use std` — a
+definition's body, its file's ([0.167]). A drawn callout drops a module path
+(`relations::unqualified`), and a module with a `preview` draws its own dimensions there and not in
+a document using it (`Constraint::elsewhere`, [app.md](app.md)).
 
 **A use named (§9.9, [0.149]):** `rim := A round(r) B` (and `rim := round(r) X`) parses as the
 relation with `Relation::name` (`parser/definitions.rs`' `named_relation_ahead`, asked in
@@ -137,8 +140,8 @@ by index (`judge_rings`; an instance's entity argument or a use's operand is jud
 written, `next.u` a turn, and a body reading the formal is not judged again: `WordState::arguments`,
 #226), E022 a ring in a ring, E023
 what a ring cannot turn (`rings.rs`). The ring's own turn is gauged outside (`hub horizontal
-tip[0]`). `std.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are rings;
-`tests/ring.rs` and `tests/turns.rs` are the gates.
+tip[0]`). `std.shapes.Polygon`, `gear.sv`, `gear_trace.sv`, `ngon.sv` and the Wankel rotor are
+rings; `tests/ring.rs` and `tests/turns.rs` are the gates.
 **A block's word may be a name** ([0.182], #598): `ring := Disc(…)` is a definition like any
 (`defines` reads it before any keyword), and a statement opening with the word reads it as that
 name where `words::opens_block` says no block opens — the next token `.`, `:=`, or a constraint
@@ -262,7 +265,7 @@ as the whole table would resolve them, and held to it under debug assertions on 
 against something drawn is E103, something drawn compared as a number E103, `in` over what
 names no faces E103, a name standing for nothing E101; `expr::decide` refuses `Cond::In`. So a
 block over faces has no filter of its own: `repeat b in B if …` is a syntax error naming
-`repeat b in B { when b != a { … } }` (`std.sv`'s `round`, `chamfer`), and a switch is `when
+`repeat b in B { when b != a { … } }` (`std.rounds`' `round`, `chamfer`), and a switch is `when
 flag == 1`, never `repeat flag` — the count of zero or one named its copies (`sm[0]`), a `when`
 keeps the name (`sm`).
 
@@ -276,7 +279,7 @@ the stratum has not, and a body with a swept cut (no `Meets`) meet. A pair read 
 left a block out (the condition asked again with every pair meeting) is an `flatten::Apart` at the
 document's statement (`FaceState::at`, carried in `Pending::at`), kept in `SourceMap::apart`, and
 `program::meets::apart` reads it again in `solid_diagnostics` where the drawing is solved: a pair
-that meets there is E080, once per statement and solid. `std.sv`'s `round` and `chamfer` pair
+that meets there is E080, once per statement and solid. `std.rounds`' `round` and `chamfer` pair
 only faces that meet and round only threes that meet pairwise; `tests/meets.rs` is the gate (the
 block's 24 pairs and 48 corners, #625's four turned spokes against two crossed bars, the pin
 seeded off its plate).
@@ -711,7 +714,7 @@ components.dims.zB)`.
   (`inlet.tbore.center`, a set's `flank.apex`).  The list is empty.  The rest are said, not held:
   W201 waits on a word's unlabelled measure (#463), W202 on `Standoff` (the motion components are
   words since #464, `rolls` since #562), W203 on a word that may leave a number to the solve
-  (`std.Screw`'s pitch, a joint's ratio: a word's parameter left out is E040); W205 is a
+  (`std.motion.Screw`'s pitch, a joint's ratio: a word's parameter left out is E040); W205 is a
   heuristic, since a flag chooses a model as often as a picture.
 - **A call is the entities by position and the numbers by label** (Solvent §4.1,
   `flatten::check_call`).  `Cylinder(swing, side, top, piv, rod, across, dir: dir, fw: fw, o_s: o_s,
@@ -731,9 +734,19 @@ components.dims.zB)`.
   drawn.  **The core has no filesystem**: the resolver is the host's — `solventc` reads
   `engine/parts.sv` beside the document, then `library::resolve`; the FFI and `examples::document`
   use `library::parse_linked`, over `library::MODULES`.  **`rust/lib/` is the standard library**
-  (`std`: `std.StandardDatums`, `std.FrameDatums`, `std.Turned`), in the Makefile's `RUST_SRC`.  `program::reparse` relinks from the
-  texts in hand (`modules::relink`), so an edit never asks the host.  E070 no module, E071 defined
-  twice in one file.  `tests/modules.rs` is the gate.
+  (`std`: `std.StandardDatums`, `std.FrameDatums`, `std.Turned`), in the Makefile's `RUST_SRC`,
+  and **the rest of it is modules under `std`** ([0.195]), `rust/lib/std/*.sv`, each linked by its
+  own `use` and nothing more: `std.place` (the placement words), `std.shapes`, `std.sets`,
+  `std.rounds`, `std.panels`, `std.stations` and `std.motion`.  No name is defined in two of
+  them, and `library::home(under, name)` says which module under a path defines a name, by what a
+  `use` may import (`program::defines`), over the library linked once and kept — read only to
+  word a refusal: `std.Sphere` (`resolve_named`), `use std (horizontal)` (`program/words.rs`,
+  E101) and a word no used module defines (`no_word`, E102) each name the module that has it.
+  `program::reparse` relinks from the texts in hand (`modules::relink`), so an edit never asks the
+  host; a module the program had not linked — a `use` the edit wrote, the Fillet tool's `use
+  std.rounds (round)` — comes from `library::resolve`, and what its body refuses is said at that
+  `use`, which is the edit's own (`tests/edit_rounds.rs`).  E070 no module, E071 defined twice in
+  one file.  `tests/modules.rs` is the gate (`the_standard_library_is_modules_under_std`).
 - **`port` is retired** (issue #47, item 1).  Everything an instance makes is reached by its dotted
   name (`five.s[0].p1`).  The **computed point** is `p := point(x: xexpr, y: yexpr)`
   (`Decl::computed`), refused on the sheet by the flattener and compiled to two tapes when traced.

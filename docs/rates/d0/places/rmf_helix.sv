@@ -12,7 +12,7 @@
 //     space is) with a bound for the side: `f.u` rises. DOF 0, at the frame the rate rows
 //     integrate to (`experiments.py`, E4).
 // The helix and its tangent are written out (`fix` reading `phi`) rather than through
-// `std.OnHelix`, which drawn by itself stands square to the mirror helix (see README.md).
+// `std.stations.OnHelix`, which drawn by itself stands square to the mirror helix (see README.md).
 // Closed form: per turn the frame falls behind Frenet's by 2πb/√(a² + b²) (b the rise a radian).
 unit mm
 use std

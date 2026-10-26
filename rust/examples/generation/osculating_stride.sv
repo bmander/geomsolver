@@ -16,7 +16,8 @@
 // The drawing is followed round the turn of `t` (`1 DOF over t`).  Change `radius(150)` and the
 // rod solves again; the circle's centre stays straight above the stride's bottom.
 
-use std (offset)
+use std
+use std.place (offset)
 
 param t: Angle over (0deg, 360deg)
 

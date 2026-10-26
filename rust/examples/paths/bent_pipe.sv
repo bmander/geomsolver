@@ -16,7 +16,9 @@
 // end cap stands at g − du·x − dv·y.
 // Edit `straight`, `bend` or `r`.
 unit mm
-use std (coords)
+use std
+use std.place (coords)
+use std.stations
 
 straight := 20mm
 bend := 20mm
@@ -48,7 +50,7 @@ radius(bend) k3
 l4 parallel std.z
 
 component Tube(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k
@@ -58,7 +60,7 @@ component Tube(g: path, up: axis, r: Length, s: Scalar) {
 
 // a bar from `lo` to `hi` along the frame's `u`, 2 along its `v`
 component Bar(g: path, up: axis, lo: Length, hi: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     a := point
     b := point

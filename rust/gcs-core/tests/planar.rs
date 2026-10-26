@@ -162,8 +162,8 @@ fn a_conics_arc_is_exact() {
     assert!(half.loops.iter().flatten().any(|s| matches!(s.seg,Seg::Conic {..})));
 }
 
-/// `corners::sum`, `std.Chamfered`'s flat: between two lines the chamfer from the other face;
-/// between a line and a circle the conic its sum of distances bounds, through the same ends.
+/// `corners::sum`, `std.rounds.Chamfered`'s flat: between two lines the chamfer from the other
+/// face; between a line and a circle the conic its sum of distances bounds, through the same ends.
 #[test]
 fn a_chamfers_sum_of_distances_is_a_line_or_a_conic() {
     use gcs_core::brep::corners::{chamfer,summed,Leg};

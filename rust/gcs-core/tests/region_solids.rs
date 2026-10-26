@@ -33,7 +33,7 @@ fn holds(e: &Elaborated, name: &str, want: f64, inside: &[[f64; 3]], outside: &[
 }
 
 /// A point held at the origin, the axis up from it, and a plane at height 10 square to it.
-const FRAME: &str = "unit mm\nuse std\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
+const FRAME: &str = "unit mm\nuse std\nuse std.sets\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
                      t := point hint((0, 0, 1))\nfix((0, 0, 1)) t\nup := line(c, t)\n\
                      lu := axis hint(dir: (1, 0, 0))\nlv := axis hint(dir: (0, 1, 0))\n\
                      fix(dir == (1, 0, 0), origin == (0, 0, 10)) lu\n\
@@ -41,7 +41,7 @@ const FRAME: &str = "unit mm\nuse std\nc := point hint((0, 0, 0))\nfix((0, 0, 0)
 
 #[test]
 fn a_ball_and_a_shell() {
-    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 5)\nsmall := std.Sphere(c, r: 3)\n\
+    let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: 5)\nsmall := std.sets.Sphere(c, r: 3)\n\
                              ball := solid(big)\nskin := {{ p | p inside big; p outside small }}\n\
                              shell := solid(skin)\n"));
     let ball = 4.0 / 3.0 * PI * 125.0;
@@ -53,8 +53,8 @@ fn a_ball_and_a_shell() {
 /// A cylinder between two planes, and a cone under one: their closed forms.
 #[test]
 fn a_capped_cylinder_and_a_cone() {
-    let e = solved(&format!("{FRAME}tube := std.Cylinder(up, r: 2)\n\
-                             funnel := std.Cone(up, half: 30deg)\n\
+    let e = solved(&format!("{FRAME}tube := std.sets.Cylinder(up, r: 2)\n\
+                             funnel := std.sets.Cone(up, half: 30deg)\n\
                              can := {{ p | p inside tube; p outside std.top; p inside lid }}\n\
                              cup := {{ p | p inside funnel; p inside lid }}\n\
                              tin := solid(can)\ncone := solid(cup)\n"));
@@ -68,8 +68,8 @@ fn a_capped_cylinder_and_a_cone() {
 /// A cone met with a ball about its apex: a spherical sector, `2/3 π r³ (1 - cos h)`.
 #[test]
 fn a_spherical_sector() {
-    let e = solved(&format!("{FRAME}funnel := std.Cone(up, half: 30deg)\n\
-                             big := std.Sphere(c, r: 5)\n\
+    let e = solved(&format!("{FRAME}funnel := std.sets.Cone(up, half: 30deg)\n\
+                             big := std.sets.Sphere(c, r: 5)\n\
                              sector := {{ p | p inside funnel; p inside big }}\n\
                              piece := solid(sector)\n"));
     let want = 2.0 / 3.0 * PI * 125.0 * (1.0 - (30f64).to_radians().cos());
@@ -79,7 +79,7 @@ fn a_spherical_sector() {
 /// A region solid is a solid like any: a body over it takes cuts.
 #[test]
 fn a_region_solid_is_material() {
-    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 5)\nsmall := std.Sphere(c, r: 3)\n\
+    let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: 5)\nsmall := std.sets.Sphere(c, r: 3)\n\
                              ball := solid(big)\ncore := solid(small)\nbody := solid(ball)\n\
                              core cut body\n"));
     holds(&e, "body", 4.0 / 3.0 * PI * (125.0 - 27.0), &[[4.0, 0.0, 0.0]], &[[0.0, 0.0, 0.0]]);
@@ -95,10 +95,10 @@ fn a_region_solid_is_bounded_on_one_axis() {
         let m = gcs_core::solid::validate(&e.sketch, ent(&e, name).i()).expect_err(name);
         assert!(m.contains(why), "{m}");
     };
-    let rod = format!("{FRAME}tube := std.Cylinder(up, r: 2)\nrod := solid(tube)\n");
+    let rod = format!("{FRAME}tube := std.sets.Cylinder(up, r: 2)\nrod := solid(tube)\n");
     refused_as(rod, "rod", "no end");
     let e = solved(&format!("{FRAME}d := point hint((1, 0, 0))\nfix((1, 0, 0)) d\n\
-                             tube := std.Cylinder(up, r: 2)\naway := std.Sphere(d, r: 1)\n\
+                             tube := std.sets.Cylinder(up, r: 2)\naway := std.sets.Sphere(d, r: 1)\n\
                              odd := {{ p | p inside tube; p inside away }}\nbad := solid(odd)\n"));
     let bad = ent(&e, "bad").i();
     assert!(gcs_core::solid::region::meridian(&e.sketch, bad).is_err_and(|m| m.contains("off the region's axis")));
@@ -114,8 +114,8 @@ fn a_region_solid_is_bounded_on_one_axis() {
 /// is named as the first's and never built.
 #[test]
 fn two_cones_in_one_region() {
-    let e = solved(&format!("{FRAME}wide := std.Cone(up, half: 30deg)\n\
-                             narrow := std.Cone(up, half: 15deg)\n\
+    let e = solved(&format!("{FRAME}wide := std.sets.Cone(up, half: 30deg)\n\
+                             narrow := std.sets.Cone(up, half: 15deg)\n\
                              shade := {{ p | p inside wide; p outside narrow; p inside lid }}\n\
                              lamp := solid(shade)\n"));
     let (t30, t15) = ((30f64).to_radians().tan(), (15f64).to_radians().tan());
@@ -128,10 +128,10 @@ fn two_cones_in_one_region() {
 #[test]
 fn a_region_reads_an_unknown_the_drawing_solves() {
     let e = solved(&format!("{FRAME}q := point hint((4, 0, 3))\nfix((4, 0, 3)) q\n\
-                             big := std.Sphere(c, r: hint(2mm))\nq coincident big\n\
+                             big := std.sets.Sphere(c, r: hint(2mm))\nq coincident big\n\
                              ball := solid(big)\n"));
     holds(&e, "ball", 4.0 / 3.0 * PI * 125.0, &[[4.5, 0.0, 0.0]], &[[5.5, 0.0, 0.0]]);
-    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: hint(2mm))\nball := solid(big)\n"));
+    let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: hint(2mm))\nball := solid(big)\n"));
     let m = gcs_core::solid::validate(&e.sketch, ent(&e, "ball").i()).expect_err("ball");
     assert!(m.contains("nothing determines"), "{m}");
 }
@@ -143,7 +143,7 @@ fn a_region_reads_an_unknown_the_drawing_solves() {
 fn a_cones_unknown_half_reads_within_a_half_turn() {
     let x = 10.0 * (30f64).to_radians().tan();
     let e = solved(&format!("{FRAME}q := point hint(({x:.17}, 0, 10))\nfix(({x:.17}, 0, 10)) q\n\
-                             funnel := std.Cone(up, half: hint(400deg))\nq coincident funnel\n\
+                             funnel := std.sets.Cone(up, half: hint(400deg))\nq coincident funnel\n\
                              cup := {{ p | p inside funnel; p inside lid }}\ncone := solid(cup)\n"));
     let half = e.sketch.params[e.sketch.free_vars["funnel.half"] as usize].value;
     assert!((half - 30.0).abs() < 1e-9, "{half}");

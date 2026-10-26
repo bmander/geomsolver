@@ -12,7 +12,9 @@
 // the frame's third direction. Every part is placed by the pair's own lines; no point is seeded
 // and no coordinate is written. See README.md.
 unit mm
-use std (turns)
+use std
+use std.sets
+use std.motion (turns)
 use spiral_bevel.hypoid (HypoidPair)
 
 // -- the pair, as `hypoid.sv` states it --------------------------------------------------------
@@ -133,10 +135,10 @@ component Crossing(a: line, b: line) {
 // behind. The part is the member and its hub, bored for the shaft's spline.
 component Mount(ax: line, foot: point, inner: point, seat: set, member: solid, toward: line,
     across: line, m: group) {
-  journal := { q | q inside std.Cylinder(ax, r: m.journal)
+  journal := { q | q inside std.sets.Cylinder(ax, r: m.journal)
                    inner distance(>= -m.post - m.play, along: ax) q
                    foot distance(<= m.front, along: ax) q }
-  head := { q | q inside std.Cylinder(ax, r: m.head_r)
+  head := { q | q inside std.sets.Cylinder(ax, r: m.head_r)
                 inner distance(in: (-m.post - m.play - m.head_t, -m.post - m.play), along: ax) q }
   private construction journal_solid := solid(journal)
   private construction head_solid := solid(head)
@@ -151,7 +153,7 @@ component Mount(ax: line, foot: point, inner: point, seat: set, member: solid, t
                 foot distance(in: (m.front, m.web), along: ax) q }
   rim := { q | q outside seat; q distance(<= m.rim, side: outside) seat
                foot distance(in: (m.front, m.web), along: ax) q }
-  boss := { q | q inside std.Cylinder(ax, r: m.hub_r)
+  boss := { q | q inside std.sets.Cylinder(ax, r: m.hub_r)
                 foot distance(in: (m.front, m.hub), along: ax) q }
   private construction core_solid := solid(core)
   private construction rim_solid := solid(rim)
@@ -184,8 +186,8 @@ component Splined(ax: line, o: point, across: line, lo: Length, hi: Length, root
     tip: Length, width: Length, keys: Int) {
   turn := frame
   turn turns(1) ax
-  core := { q | q inside std.Cylinder(ax, r: root); o distance(in: (lo, hi), along: ax) q }
-  bar := { q | q inside std.Cylinder(ax, r: tip); o distance(in: (lo, hi), along: ax) q
+  core := { q | q inside std.sets.Cylinder(ax, r: root); o distance(in: (lo, hi), along: ax) q }
+  bar := { q | q inside std.sets.Cylinder(ax, r: tip); o distance(in: (lo, hi), along: ax) q
                o distance(in: (-width / 2, width / 2), along: across) q }
   private construction core_solid := solid(core)
   private construction bar_solid := solid(bar)
@@ -204,7 +206,7 @@ component Spokes(ax: line, o: point, across: line, lo: Length, hi: Length, width
     reach: Length, bars: Int) {
   turn := frame
   turn turns(1) ax
-  bar := { q | q inside std.Cylinder(ax, r: reach); o distance(in: (lo, hi), along: ax) q
+  bar := { q | q inside std.sets.Cylinder(ax, r: reach); o distance(in: (lo, hi), along: ax) q
                o distance(in: (-width / 2, width / 2), along: across) q }
   private construction bar_solid := solid(bar)
   construction body := solid()
@@ -312,19 +314,19 @@ component Crank(ax: line, foot: point, toward: line, across: line, m: group) {
   center distance(<= 0mm, along: side) edge_r
 
   slab := { q | center distance(in: (-t / 2, t / 2), along: ax) q }
-  boss := { q | q inside slab; q inside std.Cylinder(ax, r: b) }
-  eye := { q | q inside slab; q inside std.Cylinder(grip_ax, r: a) }
+  boss := { q | q inside slab; q inside std.sets.Cylinder(ax, r: b) }
+  eye := { q | q inside slab; q inside std.sets.Cylinder(grip_ax, r: a) }
   taper := { q | q inside slab; center distance(in: (u0, u1), along: arm) q
                  center distance(<= b, along: to_normal_l) q
                  center distance(<= b, along: to_normal_r) q }
-  weight := { q | q inside slab; q inside std.Cylinder(ax, r: reach)
+  weight := { q | q inside slab; q inside std.sets.Cylinder(ax, r: reach)
                   center distance(<= 0mm, along: to_edge_l) q
                   center distance(<= 0mm, along: to_edge_r) q }
   padding := { q | center distance(in: (t / 2 - 1mm, t / 2 + pad), along: ax) q
-                   q inside std.Cylinder(ax, r: reach); q outside std.Cylinder(ax, r: b)
+                   q inside std.sets.Cylinder(ax, r: reach); q outside std.sets.Cylinder(ax, r: b)
                    center distance(<= 0mm, along: to_edge_l) q
                    center distance(<= 0mm, along: to_edge_r) q }
-  hole := { q | q inside std.Cylinder(grip_ax, r: m.pin_r - m.press)
+  hole := { q | q inside std.sets.Cylinder(grip_ax, r: m.pin_r - m.press)
                 center distance(in: (-t, t), along: ax) q }
   private construction boss_solid := solid(boss)
   private construction eye_solid := solid(eye)
@@ -343,12 +345,12 @@ component Crank(ax: line, foot: point, toward: line, across: line, m: group) {
   hole_solid cut body
   bore.body cut body
 
-  shank := { q | q inside std.Cylinder(grip_ax, r: m.pin_r)
+  shank := { q | q inside std.sets.Cylinder(grip_ax, r: m.pin_r)
                  center distance(in: (-t / 2, m.grip), along: ax) q }
-  cap := { q | q inside std.Cylinder(grip_ax, r: m.handle_r)
+  cap := { q | q inside std.sets.Cylinder(grip_ax, r: m.handle_r)
                center distance(in: (m.grip, m.grip + m.head_w), along: ax) q }
-  sleeve := { q | q inside std.Cylinder(grip_ax, r: m.handle_r)
-                  q outside std.Cylinder(grip_ax, r: bore_r)
+  sleeve := { q | q inside std.sets.Cylinder(grip_ax, r: m.handle_r)
+                  q outside std.sets.Cylinder(grip_ax, r: bore_r)
                   center distance(in: (t / 2 + m.loose, m.grip - m.loose), along: ax) q }
   private construction shank_solid := solid(shank)
   private construction cap_solid := solid(cap)
@@ -375,23 +377,23 @@ component Frame(g: line, gf: point, p: line, pf: point, cross: Perpendicular, m:
                 cross.on_a distance(>= -f.below, along: cross.span) q
                 cross.on_b distance(<= 0mm, along: cross.span) q }
   floor_at := f.plate - f.below
-  hub := { q | q inside std.Cylinder(cross.span, r: f.hub_r)
+  hub := { q | q inside std.sets.Cylinder(cross.span, r: f.hub_r)
                cross.on_a distance(in: (-f.below, floor_at), along: cross.span) q }
-  rim := { q | q inside std.Cylinder(cross.span, r: f.floor_r)
-               q outside std.Cylinder(cross.span, r: f.floor_r - f.rim)
+  rim := { q | q inside std.sets.Cylinder(cross.span, r: f.floor_r)
+               q outside std.sets.Cylinder(cross.span, r: f.floor_r - f.rim)
                cross.on_a distance(in: (-f.below, floor_at), along: cross.span) q }
   private spoked := Spokes(cross.span, cross.on_a, g, lo: -f.below, hi: floor_at,
     width: f.spoke_w, reach: f.floor_r - 1mm, bars: f.spokes)
-  gear_sleeve := { q | q inside std.Cylinder(g, r: m.sleeve_r)
+  gear_sleeve := { q | q inside std.sets.Cylinder(g, r: m.sleeve_r)
                        cross.on_a distance(>= -m.post, along: g) q
                        gf distance(<= m.front - m.play, along: g) q }
-  pinion_sleeve := { q | q inside std.Cylinder(p, r: m.sleeve_r)
+  pinion_sleeve := { q | q inside std.sets.Cylinder(p, r: m.sleeve_r)
                          cross.on_b distance(>= -m.post, along: p) q
                          pf distance(<= m.front - m.play, along: p) q }
-  gear_bore := { q | q inside std.Cylinder(g, r: m.journal + m.clearance)
+  gear_bore := { q | q inside std.sets.Cylinder(g, r: m.journal + m.clearance)
                      cross.on_a distance(>= -m.post - 1mm, along: g) q
                      gf distance(<= m.front, along: g) q }
-  pinion_bore := { q | q inside std.Cylinder(p, r: m.journal + m.clearance)
+  pinion_bore := { q | q inside std.sets.Cylinder(p, r: m.journal + m.clearance)
                        cross.on_b distance(>= -m.post - 1mm, along: p) q
                        pf distance(<= m.front, along: p) q }
   private construction post_solid := solid(post)

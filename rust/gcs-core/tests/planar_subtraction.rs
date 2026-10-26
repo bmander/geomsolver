@@ -23,7 +23,8 @@ fn wheel(tool: &str, space: &str) -> String {
     format!("\
 unit mm
 use std
-use std (vertical, turns, coords)
+use std.place (vertical, coords)
+use std.motion (turns)
 
 in std.front {{
   construction stem := vertical line(std.origin, hint((0, 10)))
@@ -280,7 +281,8 @@ fn handle(tool: &str) -> String {
     format!("\
 unit mm
 use std
-use std (vertical, turns)
+use std.place (vertical)
+use std.motion (turns)
 
 interface StarSizes {{
   span: Length, waist: Length, tip_r: Length, fillet_r: Length
@@ -442,7 +444,9 @@ fn a_sweep_the_field_cannot_read_is_said_at_its_statement() {
     let mut e = crate::common::build("\
 unit mm
 use std
-use std (vertical, turns)
+use std.place (vertical)
+use std.stations
+use std.motion (turns)
 in std.front {
   a0 := point
   a1 := point
@@ -459,7 +463,7 @@ tip := point
 fix((0, 30, 2)) tip
 base := face(a0, a1, a2, a3, -> close)
 param s: Scalar over (0, 1)
-pyramid := sweep(std.Apex(base, tip).f over s)
+pyramid := sweep(std.stations.Apex(base, tip).f over s)
 turn := frame
 turn turns(1) stem
 space := sweep(pyramid over t in (0deg, 90deg), under: turn)
@@ -468,7 +472,7 @@ space := sweep(pyramid over t in (0deg, 90deg), under: turn)
     assert!(r.success, "{}", r.message);
     let diags = program::solid_diagnostics(&e.sketch, &e.map, &e.program);
     let [d] = &diags[..] else { panic!("{diags:#?}") };
-    assert_eq!((d.code, d.at(e.text()).0), (Code::E080, 23), "{d:?}");
+    assert_eq!((d.code, d.at(e.text()).0), (Code::E080, 25), "{d:?}");
     assert!(d.message.starts_with("`space` sweeps `pyramid`, whose material the field does not read"), "{d:?}");
 }
 
@@ -485,7 +489,8 @@ fn rolled_pinion(m: &str, tool: &str, cuts: &str) -> String {
     format!("\
 unit mm
 use std
-use std (vertical, turns, slides, coords, on_v)
+use std.place (vertical, coords, on_v)
+use std.motion (turns, slides)
 
 m := {m}
 N := 12
@@ -705,7 +710,9 @@ fn chamfered() -> String {
     "\
 unit mm
 use std
-use std (vertical, turns, slides, coords, on_v, raised)
+use std.place (vertical, coords, on_v, raised)
+use std.sets
+use std.motion (turns, slides)
 
 m := 0.8mm
 N := 16
@@ -753,8 +760,8 @@ top_q := point
 top_q raised(d: 5.75mm, along: std.z) top_at
 bottom_q := point
 bottom_q raised(d: 5.75mm, along: std.z) bottom_at
-top_cone := std.ConeThrough(spindle, top_q, lean: -45deg)
-bottom_cone := std.ConeThrough(spindle, bottom_q, lean: 45deg)
+top_cone := std.sets.ConeThrough(spindle, top_q, lean: -45deg)
+bottom_cone := std.sets.ConeThrough(spindle, bottom_q, lean: 45deg)
 bicone := { p | p inside top_cone; p inside bottom_cone }
 chamfers := solid(bicone)
 chamfers common gear

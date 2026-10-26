@@ -8,7 +8,8 @@
 // Drawn on the top plane and standing 20 up from it. Orbit (right-drag) to see the corners. Edit
 // `r` and apply (⌘↵), or round the flat's top edge alone (`shaft.near round(r: r) shaft.flat`).
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 2mm   // the radius of every edge
 

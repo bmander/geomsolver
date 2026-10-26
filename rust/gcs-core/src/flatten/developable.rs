@@ -1,6 +1,6 @@
-//! **Developable panels, recognised** (#645): what `std.Developable` and `std.Development` say,
-//! read off a body by what it says — `std`'s, or one written by hand — and never by its name, as
-//! the lowering table recognises a round (`solid/lowering`).
+//! **Developable panels, recognised** (#645): what `std.panels.Developable` and
+//! `std.panels.Development` say, read off a body by what it says — the library's, or one written by
+//! hand — and never by its name, as the lowering table recognises a round (`solid/lowering`).
 //!
 //! * **A sheet** is a set whose body puts its point on the ruling between two points of its own
 //!   (`p coincident(t in (0, 1)) line(m, n)`), each on a path (`m coincident a`, `n coincident b`),
@@ -44,8 +44,8 @@ fn bare(r: &Ref) -> Option<&str> {
     r.path.is_empty().then_some(r.root.text.as_str())
 }
 
-/// **What a body says, if it says a sheet** (`std.Developable`'s body, or one like it): `None`
-/// where it says anything else, or more.
+/// **What a body says, if it says a sheet** (`std.panels.Developable`'s body, or one like it):
+/// `None` where it says anything else, or more.
 pub(super) fn sheet_body(lit: &SetLit) -> Option<SheetBody> {
     use crate::model::EntKind;
     let p = lit.bound.text.as_str();
@@ -157,9 +157,9 @@ pub struct DevelopmentBody {
     pub g: String,
 }
 
-/// **What a component says, if it says a development** (`std.Development`'s body, or one like
-/// it): a `set`, a `point` and a `Length` among its formals, and an isometry along rulings in its
-/// body — two rate rows equal to two others' and an angle row reading the first's rate.
+/// **What a component says, if it says a development** (`std.panels.Development`'s body, or one
+/// like it): a `set`, a `point` and a `Length` among its formals, and an isometry along rulings in
+/// its body — two rate rows equal to two others' and an angle row reading the first's rate.
 pub fn development_body(comp: &crate::syntax::Component) -> Option<DevelopmentBody> {
     if comp.set.is_some() {
         return None;
@@ -344,14 +344,14 @@ impl Walk<'_> {
                 .map(|(abs, _)| abs);
             let Some(abs) = found else {
                 let m = format!("`{}` is not a set: a development lays a panel a plane touches \
-                    along each ruling (`std.Developable`)", crate::syntax::ref_text(&p.set));
+                    along each ruling (`std.panels.Developable`)", crate::syntax::ref_text(&p.set));
                 self.once(Code::E040, at, m);
                 continue;
             };
             let Some(rails) = self.sheet_rails(&self.sets.made[&abs], &alias) else {
                 let m = format!("`{}` is no panel a plane touches along each ruling, so nothing \
-                    lays it flat: a development lays `std.Developable`'s set, or a set whose body \
-                    says what that one's does", crate::program::public_path(&abs));
+                    lays it flat: a development lays `std.panels.Developable`'s set, or a set whose \
+                    body says what that one's does", crate::program::public_path(&abs));
                 self.once(Code::E040, at, m);
                 continue;
             };

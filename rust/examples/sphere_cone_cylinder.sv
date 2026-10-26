@@ -1,8 +1,9 @@
 // A sphere, a cone and a cylinder: three surfaces a relation can reach in space, each the
-// library's (`std.Sphere`, `std.Cone`, `std.Cylinder`), built about geometry drawn in a view and
-// each owning one number — a radius, a half-angle, a radius.  None is drawn: each is a set, the
-// points its body holds (§6.21), so a point on one is `p coincident ball` and a line touching one
-// `l tangent shaft` — the body at a contact on the line, and its linearisation along it.
+// library's (`std.sets.Sphere`, `std.sets.Cone`, `std.sets.Cylinder`), built about geometry drawn
+// in a view and each owning one number — a radius, a half-angle, a radius.  None is drawn: each is
+// a set, the points its body holds (§6.21), so a point on one is `p coincident ball` and a line
+// touching one `l tangent shaft` — the body at a contact on the line, and its linearisation along
+// it.
 //
 // Two planes: the front and the side, square to it at the origin, so the side plane is the one
 // the front sees edge-on along its vertical axis.  Everything in the front plane is grounded;
@@ -25,6 +26,7 @@
 
 unit mm
 use std
+use std.sets
 
 // a shaft square to the side plane, and a line in that plane touching it
 in std.front {
@@ -32,7 +34,7 @@ in std.front {
   fix((-60, 15)) ax.p1
   fix((20, 15)) ax.p2
 }
-shaft := std.Cylinder(ax, r: 8)
+shaft := std.sets.Cylinder(ax, r: 8)
 in std.side {
   l := line(p2: hint((0, 35)))
   fix((30, -10)) l.p1
@@ -45,7 +47,7 @@ in std.front {
   bc := point
   fix((-8, 38)) bc
 }
-ball := std.Sphere(bc, r: 12)
+ball := std.sets.Sphere(bc, r: 12)
 pb := point hint((5, 45)) in std.side
 pb coincident ball
 
@@ -58,8 +60,8 @@ in std.front {
   fix((18, 82)) jax.p2
   horizontal jax
 }
-k1 := std.Cone(kax, half: 30deg)       // its apex is the axis's start; it opens toward the end
-k2 := std.Cone(jax, half: hint(38deg))
+k1 := std.sets.Cone(kax, half: 30deg)       // its apex is the axis's start; it opens toward the end
+k2 := std.sets.Cone(jax, half: hint(38deg))
 M := point hint((-25, 61)) in std.side
 M coincident k1
 M coincident k2

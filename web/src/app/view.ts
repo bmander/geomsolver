@@ -226,7 +226,7 @@ export function roundsEdges(tool: Tool): EdgeWord | null {
   return tool === 'fillet' ? 'round' : tool === 'chamfer' ? 'chamfer' : null;
 }
 
-/** `std.sv`'s two words over a solid's edges: rounded by a ball, or cut by a flat. */
+/** `std.rounds`' two words over a solid's edges: rounded by a ball, or cut by a flat. */
 export type EdgeWord = 'round' | 'chamfer';
 
 /** What the Fillet or Chamfer tool has picked of one object: whole faces (every edge of each) and

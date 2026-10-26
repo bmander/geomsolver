@@ -34,7 +34,7 @@ fn lift(t: f64) -> f64 {
 /// `R` that centre drawn in the follower, and `cut` the ball swept over `t` as the cam sees it:
 /// what the cam must not hold.  `extra` adds statements.
 fn cam(extra: &str) -> String {
-    format!("unit mm\nuse std (slides, spins)\nparam t: Angle over (0deg, 360deg)\n\
+    format!("unit mm\nuse std\nuse std.motion (slides, spins)\nparam t: Angle over (0deg, 360deg)\n\
         in std.front {{\n\
         \x20 construction stem := line(std.origin, hint((0, 1)))\n\
         \x20 fix((0, 1)) stem.p2\n\
@@ -269,7 +269,7 @@ fn a_drive_refuses_what_it_cannot_mean() {
 /// function the interval walker carries — and failing closed for one it does not.
 #[test]
 fn a_laws_jet_and_enclosure_agree_with_its_value() {
-    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std (slides, spins)\nin std.front {\n  \
+    let e = solved("unit mm\nparam t: Angle over (-90deg, 400deg)\nuse std\nuse std.motion (slides, spins)\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
     let laws = ["5deg * (1 - cos(t))", "t + 20deg * sin(2 * t) - 3deg", "(t / 90deg) ^ 3 * 10deg",
                 "3 * sqrt(t * t + 1deg * 1deg)", "abs(t - 100deg) / 2",
@@ -304,7 +304,7 @@ fn a_laws_jet_and_enclosure_agree_with_its_value() {
     let law = Law::read(&e.sketch, "tan(t / 8)", "t").unwrap();
     assert!(law.enclose(I::new(0.0, 0.1).unwrap()).is_err());
     // a drive over the roll runs over an angle
-    let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std (slides, spins)\nin std.front {\n  \
+    let scalar = solved("unit mm\nparam s: Scalar over (0, 1)\nuse std\nuse std.motion (slides, spins)\nin std.front {\n  \
         o := point\n  fix((0, 0)) o\n}\n");
     assert!(Law::read(&scalar.sketch, "90deg * s", "s").unwrap_err().contains("an angle"));
 }

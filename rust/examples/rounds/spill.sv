@@ -15,7 +15,8 @@
 // centre's foot crosses the seam: a ring's stretch, and between its ends the ball rolled against the
 // round, glued to it there.
 unit mm
-use std (round, chamfer)
+use std
+use std.rounds (round, chamfer)
 
 rim := circle(center: std.front.origin) hint(r: 33.54) in std.front
 plate := solid(face(rim), depth: 20mm)

@@ -10,7 +10,8 @@ use crate::common::linked::{build, solved};
 /// A part drawing its tip `d.length` along `u` from `d.origin`: what each test hands a group to.
 const BAR: &str = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 component Bar(d: group) {
 tip := point hint((d.origin.x + d.length, d.origin.y))
 d.origin distance(d.length) tip
@@ -21,7 +22,8 @@ d.origin horizontal tip
 /// A module with a number, a group, a name for that group, and parts reading them.
 const DIMS: &str = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 gap := 3mm
 handle := {length: 40mm}
 grip := handle
@@ -99,7 +101,8 @@ o horizontal q
     // and a module's group, named by its path, or by a name the module gives it
     let e = solved_linked("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 use lib.dims
 in std.front {
 o := point
@@ -147,7 +150,8 @@ n := Nested({{bar: {{length: 2cm, origin: o}}}})
     // an interface judges it at the argument, naming the formal
     let typed = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 interface Size { length: Length }
 interface Layout {
   origin: point
@@ -203,7 +207,8 @@ p := Pair(o)
     // file uses, by their paths
     let e = solved_linked("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 use lib.dims
 component Mine(o: point) {
 a := lib.dims.Bar(lib.dims.handle, o)

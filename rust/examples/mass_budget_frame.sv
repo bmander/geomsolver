@@ -5,7 +5,8 @@
 // (m / (ρ (H + R)) + 16mm²) / 8mm, 25.88mm.  The scenario beside it loads the shelf and claims how
 // far the arm's end sinks, judged at the section the budget gave.
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 
 H := 600mm
 R := 400mm

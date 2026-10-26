@@ -6,7 +6,8 @@
 // which the corner sinks `sag`.  Euler–Bernoulli's `(4 P L³ / (E t sag))^(1/3)` would say 75.6mm;
 // the plate's shear and its built-in root, which a beam's line does not have, make it deeper.
 unit mm
-use std (vertical)
+use std
+use std.place (vertical)
 
 L := 300mm
 t := 10mm

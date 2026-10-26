@@ -3,10 +3,12 @@
 // the station's plane meets them, each reaching point drawn in the station's plane and in plan.
 // Closed form: the width runs linearly, so V = 3 · 50 · (20 + 8)/2 = 2100 mm³.
 unit mm
-use std (horizontal, vertical, above, below)
+use std
+use std.place (horizontal, vertical, above, below)
+use std.stations
 
 component Blade(g: line, up: axis, plan: plane, port: line, starboard: line, t: Length, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   l := point in st.n, plan
   r := point in st.n, plan
   l coincident port

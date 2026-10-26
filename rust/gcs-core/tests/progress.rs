@@ -29,7 +29,8 @@ impl Listener for Heard {
 /// pose the drawing stands in.
 const SLIDE: &str = "\
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 in std.front {
 o := point
 fix((0, 0)) o

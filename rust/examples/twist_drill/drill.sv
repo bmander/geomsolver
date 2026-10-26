@@ -10,7 +10,8 @@
 // stock); the shank is added after, square to the axis. A real flute runs out into the shank
 // as the wheel lifts away, which is no rigid motion.
 unit mm
-use std (screws, turns)
+use std
+use std.motion (screws, turns)
 use configuration
 use wheel
 use point

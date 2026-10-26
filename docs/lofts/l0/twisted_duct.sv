@@ -5,17 +5,19 @@
 // Closed form (Cavalieri): every section is the 20 mm square, so V = 20² · 40 = 16000 mm³ at any
 // turn and under any law.
 unit mm
-use std (vertical)
+use std
+use std.place (vertical)
+use std.stations
 length := 40mm
 
 // The square at station `s`, drawn once below and carried whole onto the station by the
-// similarity taking its centre `o` and `x` to the station's origin and `std.Twisted`'s point,
-// turned `twist · s` (#243 L5, #357). An eased turn is the word given another fraction:
+// similarity taking its centre `o` and `x` to the station's origin and `std.stations.Twisted`'s
+// point, turned `twist · s` (#243 L5, #357). An eased turn is the word given another fraction:
 // `s: 3 * s^2 - 2 * s^3`.
 component TwistedSquare(g: line, up: axis, prof: face, o: point, x: point, twist: Angle,
                         s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
-  tw := std.Twisted(st.n, twist: twist, reach: 10mm, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
+  tw := std.stations.Twisted(st.n, twist: twist, reach: 10mm, s: s)
   f := prof mapped(o -> st.n.origin, x -> tw.t) in st.n
 }
 

@@ -238,7 +238,8 @@ fn williams_exponent_is_the_wedges_least_root() {
 fn ell(rounded: bool) -> String {
     format!("\
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 in std.front {{
   b0 := point
   b1 := point

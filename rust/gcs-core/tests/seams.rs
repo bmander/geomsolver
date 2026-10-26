@@ -12,7 +12,9 @@ mod vertices;
 
 const MODEL: &str = "\
 unit mm
-use std (vertical, turns)
+use std
+use std.place (vertical)
+use std.motion (turns)
 in std.front {
 o := point
 q := point

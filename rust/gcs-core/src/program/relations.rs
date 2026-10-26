@@ -114,7 +114,7 @@ pub(crate) fn settle(
                 return Err((w.word.span, "a plane in space touches a curve whose tangent is in \
                     space: a curve traced in space (a spline over points in space), a line, a \
                     circle or an arc — a curve drawn in a view is a panel's rail \
-                    (`std.Developable`) and no plane's here".to_string()));
+                    (`std.panels.Developable`) and no plane's here".to_string()));
             }
             // and an envelope in space is named first by whatever touches it (#283), as a body
             // traced in space is (#326)
@@ -1419,7 +1419,7 @@ fn bound_of(
         // wedge, which a set's body says (read in space, §6.21)
         CKind::Angle => {
             return Err((at, "an angle in a view is signed, and bounded would be a half-plane: a \
-                             region within an angle of a line is a cone's, `std.Cone`, whose \
+                             region within an angle of a line is a cone's, `std.sets.Cone`, whose \
                              angle is read in space, unsigned"
                 .to_string()))
         }

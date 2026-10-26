@@ -7,7 +7,8 @@
 // shoulder was 28 at 60 in L0, which a cubic square to both ends reaches only by running past the
 // neck and back (its last control point solved 464 mm up); at 20 the rail rises the whole way.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 use lofts
 
 component Body(g: line, up: axis, front: plane, rail: spline, s: Scalar) {

@@ -7,7 +7,10 @@
 // at any offset, and nothing but the two members and their shafts enters it. The layout, the
 // blanks and the face mill are `hypoid.sv`'s own steps, imported. Step 1 of #283; see README.md.
 unit mm
-use std (turns)
+use std
+use std.sets
+use std.rounds
+use std.motion (turns)
 use hypoid (GearCone, ToothTrace, PinionCone, Blank, FaceMill, Tooth, Topping, Member, Generated)
 
 // -- the pair as a designer states it ----------------------------------------------------------
@@ -89,8 +92,8 @@ component FormatePair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, s
   // inner flank, that tooth a gear pitch round (`gear_index` read at a pitch), above the cutter's
   // tip at the gear's root; the gear is its blank less the space copied at every tooth, with no
   // roll.
-  clear_below := std.HalfSpace(trace.C, mill.ax, d: -4 * base)
-  clear_above := std.HalfSpace(trace.C, mill.ax, d: 4 * base)
+  clear_below := std.sets.HalfSpace(trace.C, mill.ax, d: -4 * base)
+  clear_above := std.sets.HalfSpace(trace.C, mill.ax, d: 4 * base)
   construction gear_space := Space(mill.outer_flank, mill.inner_flank, mill.mate_tip,
     mill.mate_base, clear_below, clear_above, mill.reach, gear_index, pitch: 360deg / gear_teeth,
     grow: backlash / 4, r: rounding)
@@ -114,14 +117,14 @@ component FormatePair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, s
       half: inner_half, opens: 1)
     pinion_outer := Topping(gear_tooth.outer, mill.ax, N, mill.to_outer, height: -depth,
       half: outer_half, opens: -1)
-    pinion_top := std.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
+    pinion_top := std.sets.HalfSpace(trace.C, mill.ax, d: -addendum / 2)
     construction pinion_topping := Tooth(pinion_inner.cone, pinion_outer.cone,
       mill.tooth_base, pinion_top, grow: 0mm, r: rounding)
     gear_outer := Topping(gear_space.convex, mill.ax, N, mill.to_outer, height: depth,
       half: outer_half, opens: -1)
     gear_inner := Topping(gear_space.concave, mill.ax, N, mill.to_inner, height: depth,
       half: inner_half, opens: 1)
-    gear_top := std.HalfSpace(trace.C, mill.ax, d: addendum / 2)
+    gear_top := std.sets.HalfSpace(trace.C, mill.ax, d: addendum / 2)
     construction gear_topping := Space(gear_outer.cone, gear_inner.cone, gear_top,
       mill.mate_base, clear_below, clear_above, mill.reach, gear_index, pitch: 360deg / gear_teeth,
       grow: 0mm, r: rounding)
@@ -143,10 +146,10 @@ component FormatePair(pinion_teeth: Int, gear_teeth: Int, mean_module: Length, s
 component Space(a: set, b: set, lo: set, hi: set, below: set, above: set, cap: set, step: frame,
     pitch: Angle, grow: Length, r: Length) {
   convex := { q | q distance(<= grow, side: inside) a }
-  concave := std.Offset(b, d: grow)
+  concave := std.sets.Offset(b, d: grow)
   tip := { q | q outside lo }
   base := { q | q inside hi }
-  convex_round := std.Rounded(convex, tip, r: r)
+  convex_round := std.rounds.Rounded(convex, tip, r: r)
   near := { p | p inside convex; p inside cap; p inside tip; p inside base; p inside convex_round }
   far := { p | p inside concave; p inside cap; p outside below; p inside above }
   private construction behind := solid(near)

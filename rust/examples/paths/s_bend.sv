@@ -13,7 +13,9 @@
 // ends at (2·straight + 2·bend, 2·bend + straight).
 // Edit `straight`, `bend` or `r`.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
+use std.stations
 
 straight := 20mm
 bend := 20mm
@@ -43,7 +45,7 @@ claim k3.start coincident f
 claim k3.end coincident e
 
 component Tube(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k

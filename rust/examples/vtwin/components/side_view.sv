@@ -11,7 +11,8 @@
 // Every height the front view designs is projected, never restated: the part is given the points
 // whose heights it shows, and ties each of its own to one, so nothing outside places it.
 
-use std (vertical)
+use std
+use std.place (vertical)
 use components.dims (D, H, R, alphaR, boltH, boltaf, boss, brgpocket, fwA, fwB, nutH, pingrip,
                      pinhead, pinheadH, pinpocket, rbrg, rdisc, reye, rfw, rpin, rshaft, rstud, rw,
                      spring, tdisc, tp, trapz, wall, wbrg, wfw, wsh, zA, zB, zdisc, zfw)

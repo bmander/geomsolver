@@ -93,6 +93,7 @@ fn a_words_body_is_closed_and_said_at_the_use() {
 const SPACE: &str = "\
 unit mm
 use std
+use std.sets
 side := plane(u: std.z, v: std.y)
 fix(origin == (0, 0, 0)) side
 a near(d) b := a distance(d) b
@@ -111,7 +112,7 @@ fix((5, 3)) l.p1
 /// **A set written where it is used** — a literal, or a family's call — reads as written.
 #[test]
 fn a_set_is_written_where_it_is_used() {
-    for (set, r) in [("{ p | p distance(9) c }", 9.0), ("std.Sphere(c, r: 12)", 12.0)] {
+    for (set, r) in [("{ p | p distance(9) c }", 9.0), ("std.sets.Sphere(c, r: 12)", 12.0)] {
         let e = read(&format!("{SPACE}q coincident {set}\n"));
         let sk = solved(&e);
         let got = norm(sub(at(&sk, &e, "q"), at(&sk, &e, "c")));
@@ -120,7 +121,7 @@ fn a_set_is_written_where_it_is_used() {
         assert!(s.contains(&format!("q coincident {set}")), "{s:?}");
     }
     // and a tangency to a family written in place
-    let e = read(&format!("{SPACE}l tangent std.Cylinder(bx, r: 12)\n"));
+    let e = read(&format!("{SPACE}l tangent std.sets.Cylinder(bx, r: 12)\n"));
     let sk = solved(&e);
     let (p, d) = ends(&sk, ent(&e, "bx"));
     let (a, b) = ends(&sk, ent(&e, "l"));
@@ -138,7 +139,7 @@ fn words_and_sets_apply_inside_each_other() {
     assert!((norm(sub(at(&sk, &e, "q"), at(&sk, &e, "c"))) - 11.0).abs() < 1e-9);
     assert!(said(&e).contains(&"q coincident shell".to_string()), "{:?}", said(&e));
     let e = read(&format!(
-        "a orbits(r) o := a coincident std.Sphere(o, r: r)\n{SPACE}q orbits(r: 13) c\n"
+        "a orbits(r) o := a coincident std.sets.Sphere(o, r: r)\n{SPACE}q orbits(r: 13) c\n"
     ));
     let sk = solved(&e);
     assert!((norm(sub(at(&sk, &e, "q"), at(&sk, &e, "c"))) - 13.0).abs() < 1e-9);

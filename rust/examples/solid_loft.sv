@@ -3,21 +3,23 @@
 // every other, so the two ends correspond by being one section.
 unit mm
 use std
+use std.shapes
+use std.stations
 length := 40mm
 inlet_size := 24mm
 outlet_size := 12mm
 wall := 2mm
 
 component Section(c: point, size: Length, wall: Length) {
-  private outer := std.CenteredRectangle(c, w: size, h: size)
-  private inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  private outer := std.shapes.CenteredRectangle(c, w: size, h: size)
+  private inner := std.shapes.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
   profile := face(outer.loop, holes: inner.loop)
 }
 
 // The section at station `s`: drawn in the plane square to the guide there, its size running
 // from the inlet's to the outlet's.
 component Reducer(g: line, up: axis, inlet: Length, outlet: Length, wall: Length, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   sec := Section(st.n.origin, size: inlet + (outlet - inlet) * s, wall: wall) in st.n
 }
 

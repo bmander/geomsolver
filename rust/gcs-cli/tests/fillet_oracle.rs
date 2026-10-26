@@ -12,8 +12,8 @@
 //! on a periodic surface's seam; a convex body rounded all over by its offsets (its fillet fills a
 //! corner of three rounds beside a rolled one by a surface of its own, its offsets by the ball); and
 //! a chamfer beside a curved face — where OCCT's is ruled between legs along the faces and
-//! `std.Flat`'s is where the faces' distances, each over the other's leg, sum to one — by a loft
-//! through std's flat's own sections, worked out in closed form, ours also read by OCCT's own
+//! `std.rounds.Flat`'s is where the faces' distances, each over the other's leg, sum to one — by a
+//! loft through std's flat's own sections, worked out in closed form, ours also read by OCCT's own
 //! distances (`flats_by_occt`).
 #[path="../src/cad/native.rs"]
 #[allow(dead_code)]
@@ -47,8 +47,8 @@ fn source(file: &str) -> String {
 /// What a lowered piece says of the edge it rounds or chamfers: a point on the edge, the size
 /// (a round's radius, a chamfer's leg), whether it is a chamfer, and whether a chamfer's flat
 /// stands beside a curved face (#218's 5, 6): there
-/// `std.Flat`'s flat is where the two faces' distances, each over the other's leg, sum to one —
-/// its legs measured from the other face's surface — and OCCT's chamfer is ruled between legs
+/// `std.rounds.Flat`'s flat is where the two faces' distances, each over the other's leg, sum to
+/// one — its legs measured from the other face's surface — and OCCT's chamfer is ruled between legs
 /// measured along the faces from the edge: two definitions, which only between planes agree.
 fn edge_and_kind(p: &Piece) -> Option<(V,f64,bool,bool)> {
     let curved = |r: &Run| r.strokes.iter().any(|(s,_)| !matches!(s,Stroke::Line {..}));

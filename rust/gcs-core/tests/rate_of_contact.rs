@@ -37,7 +37,8 @@ fn refused(src: &str, want: &str) {
 fn rolling(tau: f64) -> String {
     format!("\
 unit mm
-use std (spins)
+use std
+use std.motion (spins)
 in std.top {{
   o := point
   fix((0, 0)) o
@@ -100,7 +101,8 @@ fn a_carried_points_rate_is_the_epicycloids_derivative() {
 /// The spline the tangent tests draw on, and a point held on it.
 const SPLINE: &str = "\
 unit mm
-use std (spins)
+use std
+use std.motion (spins)
 in std.top {
   k0 := point
   k1 := point

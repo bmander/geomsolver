@@ -7,7 +7,9 @@
 // does not fold within its blank — and the ease is found: the profile radius of the gear's
 // concave blade and the radius it is cut at. See README.md.
 unit mm
-use std (reciprocal, turns)
+use std
+use std.rounds
+use std.motion (reciprocal, turns)
 use hypoid (GearCone, ToothTrace, PinionCone, Blank, FaceMill, Tooth, Member, Gear)
 use formate (Formed)
 
@@ -243,7 +245,7 @@ component Space(a: set, flank: solid, lo: set, hi: set, cap: set, step: frame, p
   convex := { q | q distance(<= grow, side: inside) a }
   tip := { q | q outside lo }
   base := { q | q inside hi }
-  convex_round := std.Rounded(convex, tip, r: r)
+  convex_round := std.rounds.Rounded(convex, tip, r: r)
   near := { p | p inside convex; p inside cap; p inside tip; p inside base; p inside convex_round }
   private construction behind := solid(near)
   private construction ahead := flank at(under: step) pitch

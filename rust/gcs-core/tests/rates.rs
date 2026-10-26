@@ -1,13 +1,15 @@
 //! **Rates in a face family** (#339 D3): a station that states a rate along its running number —
-//! `rate(f.u over s) perpendicular f.v`, `std.Minimal`'s rotation-minimising frame — integrated
-//! from its drawn station, its home, to each end of the interval, instead of solved again.
+//! `rate(f.u over s) perpendicular f.v`, `std.stations.Minimal`'s rotation-minimising frame —
+//! integrated from its drawn station, its home, to each end of the interval, instead of solved
+//! again.
 //!
 //! Gated by closed forms off the exact B-rep: the minimal frame along a helix turns against the
-//! helix's Frenet frame (`std.OnHelix`'s, which turns with it) at the torsion, `−2πb/√(a² + b²)` a
-//! turn; a tube whose section's centroid stays on the helix is its section's area along the
-//! helix's length, whatever the frame does; and along a guide in one plane the word is `std.On`'s
-//! frame, the same solid.  And the refusals: a station short of rates, with the freedom it leaves;
-//! rows of the home in a station that states no rate; a rate read where no direction is.
+//! helix's Frenet frame (`std.stations.OnHelix`'s, which turns with it) at the torsion, `−2πb/√(a²
+//! + b²)` a turn; a tube whose section's centroid stays on the helix is its section's area along
+//! the helix's length, whatever the frame does; and along a guide in one plane the word is
+//! `std.stations.On`'s frame, the same solid.  And the refusals: a station short of rates, with the
+//! freedom it leaves; rows of the home in a station that states no rate; a rate read where no
+//! direction is.
 use gcs_core::brep::geom::V;
 use gcs_core::program::Elaborated;
 use std::f64::consts::PI;
@@ -15,41 +17,43 @@ use std::f64::consts::PI;
 use crate::common::parse;
 use crate::common::parsed::{build, determined};
 
-/// A coil whose 2 × 1 rectangle is drawn in `frame`'s plane (`n` for `std.OnHelix`, `rm.f` for
-/// `std.Minimal` over it), centred on the helix of radius `r` about `std.top`'s normal; and a
-/// tube along a guide `g` drawn in `std.top`, its section the same rectangle off the guide, in
-/// `std.On`'s plane or `std.Minimal`'s over it.
+/// A coil whose 2 × 1 rectangle is drawn in `frame`'s plane (`n` for `std.stations.OnHelix`, `rm.f`
+/// for `std.stations.Minimal` over it), centred on the helix of radius `r` about `std.top`'s
+/// normal; and a tube along a guide `g` drawn in `std.top`, its section the same rectangle off the
+/// guide, in `std.stations.On`'s plane or `std.stations.Minimal`'s over it.
 const RATES: &str = "unit mm
-use std (coords)
+use std
+use std.place (coords)
+use std.stations
 
 component Coil(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
-  rm := std.Minimal(st.n, up: base.normal, s: s)
+  st := std.stations.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  rm := std.stations.Minimal(st.n, up: base.normal, s: s)
   sec := Rect(rm.f, off: 0mm, w: 2mm, h: 1mm)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Frenet(base: plane, r: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  st := std.stations.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
   sec := Rect(st.n, off: 0mm, w: 2mm, h: 1mm)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Tube(g: path, up: axis, s: Scalar) {
-  st := std.On(g, up: up, s: s)
-  rm := std.Minimal(st.n, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
+  rm := std.stations.Minimal(st.n, up: up, s: s)
   sec := Rect(rm.f, off: 2mm, w: 3mm, h: 1mm)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Held(g: path, up: axis, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   sec := Rect(st.n, off: 2mm, w: 3mm, h: 1mm)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Algebraic(g: spline, up: axis, s: Scalar) {
-  st := std.OnSpline(g, up: up, s: s)
+  st := std.stations.OnSpline(g, up: up, s: s)
   sec := Rect(st.n, off: 2mm, w: 3mm, h: 1mm)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
@@ -156,8 +160,9 @@ fn wrapped(a: f64) -> f64 {
 /// **The rotation-minimising frame turns against Frenet's at the torsion** (#243 L9): along a
 /// helix of radius `a` rising `b` a radian, `τ = b/(a² + b²)`, so over a turn the minimal frame
 /// falls behind the Frenet frame by `2πb/√(a² + b²)` — 28.558° for a radius of 10 and a pitch of
-/// 5 — while `std.OnHelix`'s frame, which is Frenet's, does not turn against it at all.  Read off
-/// the two caps of a coil drawn in each, the home at the middle and the frame integrated to both.
+/// 5 — while `std.stations.OnHelix`'s frame, which is Frenet's, does not turn against it at all.
+/// Read off the two caps of a coil drawn in each, the home at the middle and the frame integrated
+/// to both.
 #[test]
 fn a_minimal_frame_turns_against_frenet_at_the_torsion() {
     let e = with("
@@ -189,7 +194,7 @@ three_quarters := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 0.75).f over s
 /// **A tube is its section along its path** whatever its frame does: a section square to the path
 /// with its centroid on it sweeps its area times the path's length (Pappus–Guldin's first moment
 /// is zero) — a 2 × 1 rectangle along four turns of a helix of radius 10 and pitch 5, in the
-/// minimal frame, is 2 · 4√((20π)² + 5²) mm³, as in `std.OnHelix`'s.
+/// minimal frame, is 2 · 4√((20π)² + 5²) mm³, as in `std.stations.OnHelix`'s.
 #[test]
 #[cfg_attr(not(feature = "slow"), ignore = "slow tier, about 10 s: a tube along a helix")]
 fn a_tube_on_a_helix_is_its_section_along_its_length() {
@@ -202,9 +207,9 @@ frenet := sweep(Frenet(std.top, r: 10mm, pitch: 5mm, turns: 4).f over s)");
     near(exact(&e, "frenet"), 2.0 * helix, 1e-9, "the Frenet coil");
 }
 
-/// **Along a guide in one plane the word is `std.On`'s frame**: with `up` the plane's normal, the
-/// frame that holds its `v` along `up` turns only as the guide does, so it is the minimal one, and
-/// the solid swept in either is the same — every corner of it, and its volume.
+/// **Along a guide in one plane the word is `std.stations.On`'s frame**: with `up` the plane's
+/// normal, the frame that holds its `v` along `up` turns only as the guide does, so it is the
+/// minimal one, and the solid swept in either is the same — every corner of it, and its volume.
 #[test]
 fn on_a_planar_guide_the_word_is_ons_frame() {
     let e = with("
@@ -213,9 +218,9 @@ minimal := sweep(Tube(curvy, std.z).f over s)
 held := sweep(Held(curvy, std.z).f over s)
 algebraic := sweep(Algebraic(curvy, std.z).f over s)");
     let corners = |name: &str| -> Vec<V> { brep(&e, name).vertices.iter().map(|v| v.p).collect() };
-    // `std.On`'s frame is integrated too (#363 S2): over a planar guide it is the frame that
-    // holds `v` along `up` at every station, `OnSpline`'s.  Corners paired by nearness: two may
-    // share a coordinate to the last bits, which an order would not pair
+    // `std.stations.On`'s frame is integrated too (#363 S2): over a planar guide it is the frame
+    // that holds `v` along `up` at every station, `OnSpline`'s.  Corners paired by nearness: two
+    // may share a coordinate to the last bits, which an order would not pair
     let a = corners("minimal");
     for other in ["held", "algebraic"] {
         near(exact(&e, "minimal"), exact(&e, other), 1e-9, other);
@@ -250,7 +255,7 @@ fn refused(src: &str, name: &str) -> String {
 fn what_is_refused() {
     let short = format!("{RATES}
 component Loose(g: path, up: axis, s: Scalar) {{
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   f := plane(u: hint(dir: up, turn: -90deg, about: st.n.normal), v: hint(dir: up))
   f.origin coincident st.n.origin
   f.u perpendicular f.v
@@ -296,7 +301,7 @@ homely := sweep(Homely(curvy, std.z).k over s)
     assert!(said.contains("`Homely` leaves 1 of its own unknowns free"), "{said}");
     let circle = format!("{RATES}
 component Round(g: path, up: axis, s: Scalar) {{
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {{
     c := circle(center: st.n.origin)
     radius(1mm) c

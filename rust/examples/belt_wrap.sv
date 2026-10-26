@@ -15,7 +15,8 @@
 // is why the chain goes round counter-clockwise: the big wrap runs from the bottom run to the
 // top one round the far side.
 
-use std (horizontal)
+use std
+use std.place (horizontal)
 
 r := 10        // the small pulley
 R := 25        // the big one

@@ -21,7 +21,8 @@
 // equator the style lies on the plate and every line folds onto noon: `polar.sv` is the dial for
 // it. Open the glass box (⌘B) and orbit to see the sun's ring standing square to the style.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 use sun
 param latitude := 47.6deg
 param hours := 7     // hours either side of noon the dial reads, five in the morning to seven

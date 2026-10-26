@@ -2,7 +2,8 @@
 // clearance claim between the cut wheel and the star at the drawing's pose.
 unit mm
 use std
-use std (vertical, turns)
+use std.place (vertical)
+use std.motion (turns)
 
 interface StarSizes {
   span: Length, waist: Length, h: Length

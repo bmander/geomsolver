@@ -10,14 +10,15 @@
 // closed, so a rate names a formal of the body it is written in, and `rate(x over s)` with `s`
 // bound to an expression in `phi` is the rate along `phi` over ds/dphi.
 //
-// The helix and its tangent are written out here (`std.OnHelix`, drawn by itself at a phase,
-// stands square to the mirror helix: README.md). A tube whose section's centroid stays on the
-// helix has volume A·L, whatever the frame does (D3's second gate).
+// The helix and its tangent are written out here (`std.stations.OnHelix`, drawn by itself at a
+// phase, stands square to the mirror helix: README.md). A tube whose section's centroid stays on
+// the helix has volume A·L, whatever the frame does (D3's second gate).
 //
 // Closed form: the frame turns against Frenet's at −τ an arc length, τ = b/(a² + b²): per turn
 // −2πb/√(a² + b²), −28.558° here.
 unit mm
-use std (on_u)
+use std
+use std.place (on_u)
 
 component Helix(a: Length, b: Length, phi: Angle) {
   m := point

@@ -19,7 +19,8 @@ use crate::common::{ends, ent, off_line, read, refused, unit};
 /// document solves for, square to `y`.
 const AXES: &str = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
   gax := line
   fix((0, 0)) gax.p1
@@ -466,7 +467,9 @@ fn the_gate_in_words_solves_the_axis() {
 /// each, and a point in space.
 const TWO_VIEWS: &str = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
+use std.sets
 in std.front {
   a := point hint((10, 20))
   la := line(hint((0, 0)), hint((30, 10)))
@@ -598,15 +601,15 @@ fn a_word_with_no_meaning_in_space_is_refused_across_planes() {
     refused_as("b coincident std.side", "E061", "every point of a view is on it", "b coincident std.side");
 }
 
-/// A sphere is the library's (`std.Sphere`): a centre and a radius read by the instance's name,
-/// and what stands on it is said by distances from the centre — a point of another plane on it,
-/// a line touching it and two spheres touching, each read in space.
+/// A sphere is the library's (`std.sets.Sphere`): a centre and a radius read by the instance's
+/// name, and what stands on it is said by distances from the centre — a point of another plane on
+/// it, a line touching it and two spheres touching, each read in space.
 #[test]
 fn a_sphere_is_said_by_distances_from_its_centre() {
     let with = |stmt: &str| format!(
         "{TWO_VIEWS}in std.side {{\n  sc := point hint((20, 10))\n}}\n\
          in std.front {{\n  sc2 := point hint((10, 40))\n}}\n\
-         sp := std.Sphere(sc, r: 12)\ns2 := std.Sphere(sc2, r: 5)\n{stmt}\n");
+         sp := std.sets.Sphere(sc, r: 12)\ns2 := std.sets.Sphere(sc2, r: 5)\n{stmt}\n");
     // the one statement's kind and number: an instance of the sphere states nothing itself
     let kind = |stmt: &str| {
         let e = read(&with(stmt));
@@ -654,8 +657,8 @@ fn a_spheres_unbound_radius_is_shared() {
     let src = |n: usize| {
         let on: String = ["a", "b", "q"][..n].iter()
             .map(|p| format!("{p} distance(ball.r) ball.center\n")).collect();
-        format!("unit mm\nuse std\nin std.front {{\n  c := point\n  fix((-8, 38)) c\n}}\n\
-                 ball := std.Sphere(c, r: hint(10mm))\n\
+        format!("unit mm\nuse std\nuse std.sets\nin std.front {{\n  c := point\n  fix((-8, 38)) c\n}}\n\
+                 ball := std.sets.Sphere(c, r: hint(10mm))\n\
                  in std.side {{\n  a := point hint((5, 45))\n  b := point hint((5, 30))\n\
                  q := point hint((-5, 30))\n}}\n{on}")
     };
@@ -679,8 +682,8 @@ fn a_spheres_unbound_radius_is_shared() {
 /// A sphere's centre may stand in space: nothing of the sphere is drawn in a view.
 #[test]
 fn a_sphere_may_be_centred_in_space() {
-    let e = read("unit mm\nuse std\nc := point hint((1, 2, 3))\nfix((1, 2, 3)) c\n\
-                  ball := std.Sphere(c, r: 12)\np := point hint((5, 45)) in std.side\n\
+    let e = read("unit mm\nuse std\nuse std.sets\nc := point hint((1, 2, 3))\nfix((1, 2, 3)) c\n\
+                  ball := std.sets.Sphere(c, r: 12)\np := point hint((5, 45)) in std.side\n\
                   p distance(ball.r) ball.center\n");
     let mut sk = e.sketch.clone();
     assert!(solve(&mut sk, SolveOpts::default()).success);
@@ -692,11 +695,11 @@ fn a_sphere_may_be_centred_in_space() {
 /// sphere it was given reads the radius the call bound.
 #[test]
 fn an_instance_passed_as_a_group_carries_its_numbers() {
-    let doc = "unit mm\nuse std\n\
+    let doc = "unit mm\nuse std\nuse std.sets\n\
 component OnSphere(s: group) {\n  p := point hint((5, 45)) in std.side\n  fix(y == 45) p\n  \
 p distance(s.r) s.center\n}\n\
 in std.front {\n  c := point\n  fix((-8, 38)) c\n}\n\
-ball := std.Sphere(c, r: 12)\n\
+ball := std.sets.Sphere(c, r: 12)\n\
 on := OnSphere(ball)\n";
     let e = read(doc);
     let mut sk = e.sketch.clone();
@@ -859,12 +862,13 @@ fn a_circle_on_a_sphere_is_on_it_all_the_way_round() {
         let side_name = if free { "side" } else { "std.side" };
         let doc = |tie: &str| format!("\
 unit mm
-use std (on_sphere)
+use std
+use std.sets (on_sphere)
 {side}
 in std.front {{
   c := point hint((10, 20))
 }}
-s := std.Sphere(c, r: 30)
+s := std.sets.Sphere(c, r: 30)
 k := circle(hint((15, 12))) hint(r: 15) in {side_name}
 radius(18) k
 {tie}

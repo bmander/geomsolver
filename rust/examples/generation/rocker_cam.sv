@@ -12,7 +12,9 @@
 // At rest the arm stands square to the line of centres, so the roller starts moving straight
 // out from the cam.  Edit the pivot, the arm, the swing or the roller, and the cam is cut again.
 
-use std (right_of, spins)
+use std
+use std.place (right_of)
+use std.motion (spins)
 
 base := 30      // the roller centre's nearest approach to the cam's centre
 arm_length := 40

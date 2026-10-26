@@ -12,7 +12,7 @@ stands on its frame's `std.top`, which it reads itself (#524). The component
 `HypoidPair` reads as the steps a designer takes, each a component of its own below it, so every
 name the pair makes is under `pair` (`pair.pinion.body`, `pair.gear_cone.M`, `pair.mill.ax`).
 **No point is seeded** but each blade's apex and foot, started on the side its cone opens to as
-`std.ConeThrough`'s are. Every root the layout could take is chosen by a word — a bound (`foot
+`std.sets.ConeThrough`'s are. Every root the layout could take is chosen by a word — a bound (`foot
 inside P` in the gear's cone, `foot outside P` in the pinion's, `A distance(>= 0, along: v) P`),
 a sense (`sense: cw`), an ordinate's sign — and the layout solves from those words alone: the
 block-triangular order constructs it a block at a time, searching each block's roots for the one
@@ -40,9 +40,9 @@ the instance and may read nothing else of it.
 | 2 | `GearCone` (`pair.gear_cone`): O, M, `foot` | the gear's pitch cone: the right triangle O–M–F, standing square to P on O → M; the crown's axis up at O |
 | 2 | `ToothTrace` (`pair.trace`): C, H | the tooth trace about the cutter centre C, and the normal module, O's distance from MC over R / m |
 | 2 | `PinionCone` (`pair.pinion_cone`): A, V | the pinion's cone, solved against the gear's by the shafts and the equal normal pitch |
-| 3 | `Blank` (`pair.gear_blank`, `pair.pinion_blank`) | each member's blank, one region: within its pitch cone grown by the addendum (`std.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth; the end relief its tip's toe and heel corners chamfered in the same region (`std.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
+| 3 | `Blank` (`pair.gear_blank`, `pair.pinion_blank`) | each member's blank, one region: within its pitch cone grown by the addendum (`std.sets.Offset`) and its heel sphere, outside its toe sphere and its pitch cone shrunk by the back depth; the end relief its tip's toe and heel corners chamfered in the same region (`std.rounds.Chamfered`); its faces `tip`, `heel`, `toe` and `back` |
 | 4 | `FaceMill` (`pair.mill`) | the crown tooth's pitch points a quarter pitch either side of M; the face mill, its axis `ax` through C, the cutter's radius long, the two blades (`Blade`: each a cone about the axis through a pitch point, its half the pressure angle split by the shift), and the levels the crowns' tips and bases stand at; the space cutter's reach |
-| 4 | `Tooth`, `Space` (`pair.tooth`, `pair.gear_space`) | the pinion's generator, the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.Rounded`), each flank grown a quarter of the backlash; the gear's, its space cutter, the tooth's mate on the same cones |
+| 4 | `Tooth`, `Space` (`pair.tooth`, `pair.gear_space`) | the pinion's generator, the crown tooth, a region between the flank cones and two levels, its tip's edges rounded (`std.rounds.Rounded`), each flank grown a quarter of the backlash; the gear's, its space cutter, the tooth's mate on the same cones |
 | 4 | `Balanced`, `Margins` (`pair.balance`) | the face mill's pressure shift and cutter radius, found: the members' undercut margins equal at M and at the toe (below) |
 | 5 | the motions, `Generated`, `Member` (`pair.pinion`, `pair.gear`) | the rolls (each member at the crown's tooth count over its own) and the generating motions; each member its blank less its crown swept through it (`through: body`: the whole roll during which the crown meets the blank, found after the solve, so no roll limit is stated) and indexed at every tooth |
 | — | `Topping`, `when tip_relief > 0mm` | the tip relief: a topping beside each crown flank (a kink on the flank in N, the cone through it turned by the relief angle), cut the same way |
@@ -182,13 +182,13 @@ generating-system evidence and the outstanding engagement checks.
 ## The lean at the mean point: an envelope the solve sees
 
 Step 2 of #283 brings envelopes in space into the solve. The envelope of a cone or a cylinder set
-(`std.Cone`, `std.ConeThrough` with its lean stated, `std.Cylinder`), or of a revolution's side,
-under a frame's turn about a line, a screw, or one frame seen from another (`seen_from:`), is no
-longer only read after the solve: a point is held to it (`M coincident flank`), and at that point a
-line along its normal (`perpendicular(at: M)`), a line or a plane touching it (`tangent(at: M)`) and
-the circle osculating its section by a plane (`curvature(at: M)`). The source's geometry, its number
-where that is unknown and the motion's axes are columns of each, so a cutter's numbers solve from a
-contact a designer states (the specification's §6.15.3).
+(`std.sets.Cone`, `std.sets.ConeThrough` with its lean stated, `std.sets.Cylinder`), or of a
+revolution's side, under a frame's turn about a line, a screw, or one frame seen from another
+(`seen_from:`), is no longer only read after the solve: a point is held to it (`M coincident
+flank`), and at that point a line along its normal (`perpendicular(at: M)`), a line or a plane
+touching it (`tangent(at: M)`) and the circle osculating its section by a plane (`curvature(at:
+M)`). The source's geometry, its number where that is unknown and the motion's axes are columns of
+each, so a cutter's numbers solve from a contact a designer states (the specification's §6.15.3).
 
 **`mean_point.sv`** states that contact for a face mill. The mesh is the hypoid's at its mean point
 reduced to its kinematics — crossed helical gears on square shafts, the pitch surfaces touching
@@ -333,14 +333,14 @@ area factor against the sweep's admission.
 crown. The design is one line of action `L` through the pitch point. A force along `L` does no work
 on the members' relative motion when the two move as fast along it:
 `L reciprocal(seen_from: pinion_turn) gear_turn`, which fixes its helix angle once its pressure
-angle is stated. `screw := std.Screw(toward, gear_turn, seen_from: pinion_turn)` draws the mesh's
-instantaneous screw axis, `screw.isa`, on the shafts' common perpendicular and running the way the
-held direction `toward` does, and `screw.pitch` is its advance a radian of the mesh's roll. Both are the standard library's, rates of points the mesh carries (#365):
-a motion's twist has no words of its own. Each member's flank is then the involute helicoid a plane
-square to `L` sweeps sliding along it at that speed, seen from the member: its rack,
-`std.HalfSpace(P, L, d: 0mm)` under `slide` seen from the member
-(`under: slide, seen_from: pinion_turn`). The two flanks touch where the rack meets `L`, with `L`
-for their normal, at the ratio's roll:
+angle is stated. `screw := std.motion.Screw(toward, gear_turn, seen_from: pinion_turn)` draws the
+mesh's instantaneous screw axis, `screw.isa`, on the shafts' common perpendicular and running the
+way the held direction `toward` does, and `screw.pitch` is its advance a radian of the mesh's roll.
+Both are the standard library's, rates of points the mesh carries (#365): a motion's twist has no
+words of its own. Each member's flank is then the involute helicoid a plane square to `L` sweeps
+sliding along it at that speed, seen from the member: its rack, `std.sets.HalfSpace(P, L, d: 0mm)`
+under `slide` seen from the member (`under: slide, seen_from: pinion_turn`). The two flanks touch
+where the rack meets `L`, with `L` for their normal, at the ratio's roll:
 
 ```sh
 build/solventc rust/examples/spiral_bevel/phillips.sv --where screw.pitch --where screw.isa

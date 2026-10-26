@@ -54,7 +54,7 @@ flank := envelope(side over t in (-30deg, 30deg), under: rack, seen_from: turn)
 
 /// The tooth space drawn in `std.front`.
 fn rack() -> String {
-    format!("unit mm\nuse std (slides, spins)\nin std.front {{\n{DRAWN}}}\n{MADE}")
+    format!("unit mm\nuse std\nuse std.motion (slides, spins)\nin std.front {{\n{DRAWN}}}\n{MADE}")
 }
 
 /// A plane square to the front, through its horizontal 1.9 above `o` (its `u` the front's `x`,
@@ -122,7 +122,7 @@ fn a_side_generated_under_a_drive_reads_its_law() {
         assert!(solve(&mut e.sketch, SolveOpts::default()).success);
         e.sketch.lifted(ent(&e, "p").i())
     };
-    let src = across(3.).replacen("use std (slides, spins)\n", "use std (slides, spins)\nparam t: Angle over (-60deg, 60deg)\n", 1)
+    let src = across(3.).replacen("use std\nuse std.motion (slides, spins)\n", "use std\nuse std.motion (slides, spins)\nparam t: Angle over (-60deg, 60deg)\n", 1)
         + "fix(value == 2 * (t / 2)) rack\n";
     let mut e = build(&src);
     assert!(e.ok(), "{:?}", e.diags);

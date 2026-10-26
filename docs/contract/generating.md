@@ -28,7 +28,7 @@ The analytic snapshots are made of parts too (`GeneratedEnvelope::new`, `Trimmed
 `axis`, `ratio` and `advance` are minted where a reference names them (`Expansion::joints`, read in
 `program::entities` by `Sketch::mint_joint`: an `AxisE`, its direction seeded along z then by
 `seed_joints` from what holds it, and two parameters, ratio 1 and advance 0) and held by
-ordinary relations: `std.sv`'s relation words `turns`, `screws`, `spins` (about the axis through
+ordinary relations: `std.motion`'s relation words `turns`, `screws`, `spins` (about the axis through
 `o` square to `o.plane`) and `slides` ([0.154], #464).  The components `std.Turn`, `std.Spin` and
 `std.Slide` they replaced are retired ([0.176], #562): each stated a fact about the frame it was
 given, which no definition may (`tests/joint_words.rs`).  A `fix` of a joint holds its numbers to
@@ -202,7 +202,7 @@ construction needs `admission::Admission` (only `admit_body` makes one). Contrac
 `tests/generating_harness.rs` (ignored) locates refusals by stage.
 The pair carries **backlash** (`Tooth`, `Space`: each flank cone grown a quarter of it), **tip
 relief** (`Topping`s and the crown's regions over their cones, cut by `Generated`, under `when`)
-and **end relief** (`Blank`'s `std.Chamfered`); `fixtures::gear::design` pins all to zero,
+and **end relief** (`Blank`'s `std.rounds.Chamfered`); `fixtures::gear::design` pins all to zero,
 `fixtures::gear::fabricated` sets them. Files:
 `build/exports/hypoid-{pinion,gear}.{step,stl}`; `gcs-cli/tests/pair_check.rs` (ignored) checks
 the pair from the STLs.

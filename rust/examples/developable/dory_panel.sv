@@ -22,6 +22,7 @@
 // the pattern lies inside the sheet (`tests/developable.rs`).
 unit mm
 use std
+use std.panels
 
 thick := 6mm
 
@@ -54,7 +55,7 @@ seam := point hint((980, -420, 15))
 seam coincident chine
 c0 distance(980mm, along: std.x) seam
 
-panel := std.Developable(chine, sheer)
+panel := std.panels.Developable(chine, sheer)
 skin := { q | q distance(<= thick, side: outside) panel }
 strake := solid(skin)
 
@@ -77,7 +78,7 @@ in plywood {
   top_edge := line(k2, k3)
   bow_edge := line(k3, k0)
 }
-flat := std.Development(panel, seam, d: thick / 2) in plywood
+flat := std.panels.Development(panel, seam, d: thick / 2) in plywood
 // the stem's top 40 in from the sheet's end, the seam's foot 120 above its long edge
 k0 distance(40mm, along: std.x) flat.start.p2
 k0 distance(120mm, along: std.y) flat.f

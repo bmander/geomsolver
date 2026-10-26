@@ -3,16 +3,17 @@
 Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you touch `path.rs`,
 `developable.rs`, `model/developed.rs`, `solid/sheet.rs`, `flatten/developable.rs`,
 `program/developed.rs`, a `RegionShape::Sheet`, a `CurveBody::Developed`, the plane–path
-tangency kernels, `line_fraction`, the rate rows that compare rates, or `std.Developable` and
-`std.Development`. An issue number (#n) or a spec version ([0.n], see the
+tangency kernels, `line_fraction`, the rate rows that compare rates, or `std.panels.Developable` and
+`std.panels.Development`. An issue number (#n) or a spec version ([0.n], see the
 [language changelog](../solvent-changelog.md)) says where a rule came from. The gates are in
 `rust/gcs-core/tests/developable.rs` unless named otherwise.
 
-**The panel and its pattern are definitions** (#645, [0.192]). `std.Developable(a, b)` is a set
-whose body says what a developable panel is — its point on the ruling between `m` on `a` and `n`
+**The panel and its pattern are definitions** (#645, [0.192]). `std.panels.Developable(a, b)` is a
+set whose body says what a developable panel is — its point on the ruling between `m` on `a` and `n`
 on `b` where one plane touches both, `b` running through it the way `a` does — and
-`std.Development(S, s, d)` a component whose body states an isometry along rulings. Neither word
-carries behaviour the core adds by name: every rule a reader needs is a statement in `std.sv`.
+`std.panels.Development(S, s, d)` a component whose body states an isometry along rulings. Neither
+word carries behaviour the core adds by name: every rule a reader needs is a statement in
+`std.panels`.
 
 **Recognised by what the body says** (`flatten::developable::sheet_body`, `development_body`).
 A set's body is a sheet where it states two contacts `m` on a path `a`, `n` on a path `b`, two
@@ -21,7 +22,7 @@ over an interval of `line(m, n)`, whatever the set or its formals are called; a 
 development where its body reads a set's `a` and `b` and states the four rows. The rails are
 resolved where the set is used: a named chain (recorded as it is walked, `RailsSeen`), a path that
 comes round (`closed`), a line, an arc, a circle, a spline (in space a traced curve), a curve
-(`std.Ellipse` drawn in a plane, read in space through its plane). A hand-written copy builds
+(`std.shapes.Ellipse` drawn in a plane, read in space through its plane). A hand-written copy builds
 the same panel to the bit (`a_hand_written_panel_is_recognised`). An instance of a development is
 walked by `walk_development`, not by its body: it draws `f` and `g` in the instance's plane, the
 private ends `a0`, `b0`, `a1`, `b1` on the laid rails at `t == 0` and `t == 1`, the end rulings
@@ -151,4 +152,5 @@ linear in the rate, they are solved by Newton from the rate before and, where th
 from a rate in every coordinate (`rates::Body::rate_newton`) — the root reached the branch the
 march carries (`a_rate_equal_to_a_rate_keeps_pace`); a rate of another formal is refused
 (`a_rate_against_a_rate_of_another_formal_is_refused`). A body mixing points in a plane with points
-in space is read where the core recognises it (`std.Development`), not yet by the generic march.
+in space is read where the core recognises it (`std.panels.Development`), not yet by the generic
+march.

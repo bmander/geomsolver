@@ -338,7 +338,8 @@ fn bench_analysis() {
 const BITES: &str = "\
 unit mm
 use std
-use std (vertical, turns, coords)
+use std.place (vertical, coords)
+use std.motion (turns)
 in std.front {
   construction stem := vertical line(std.origin, hint((0, 10)))
   length(10mm) stem

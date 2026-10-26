@@ -7,7 +7,8 @@
 // Drawn on the top plane, standing 10 (the plate) and 30 (the post) up from it. Orbit
 // (right-drag) to see the rounds meet the post. Edit `r` and apply (⌘↵).
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 2mm   // the edge's radius
 

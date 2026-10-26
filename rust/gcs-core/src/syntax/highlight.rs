@@ -581,7 +581,8 @@ fn after_from(toks: &[(Tok, Span)], i: usize) -> bool {
 }
 
 /// The relation words a file may use bare: those it defines (`b right_of(d) a := …`) and those
-/// its `use` lines name (`use std (right_of)`).  A text question, as the rest of the colouring is.
+/// its `use` lines name (`use std.place (right_of)`).  A text question, as the rest of the
+/// colouring is.
 fn relation_words(toks: &[(Tok, Span)]) -> BTreeSet<&str> {
     let mut out = BTreeSet::new();
     let mut start = true;

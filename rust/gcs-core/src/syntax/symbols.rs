@@ -55,7 +55,7 @@ pub enum SymbolKind {
     Word,
     /// `use std` — the first name of a module's path
     Module,
-    /// `use std (offset)` — a name a module's list brings in
+    /// `use std.place (offset)` — a name a module's list brings in
     Import,
     /// `l.p1`, `std.front`, `dims.width` — a member, where nothing in the text declares it
     Member,

@@ -66,7 +66,7 @@ fn an_axis_runs_the_way_its_parallel_says_from_any_seed() {
 fn two_lines_in_a_plane_run_the_way_their_parallel_says() {
     for (seed, word, want) in [((-8.0, 1.0), "same", (10.0, 0.0)), ((8.0, 1.0), "opposite", (-10.0, 0.0)),
                                ((0.0, 9.0), "same", (10.0, 0.0)), ((0.0, -9.0), "opposite", (-10.0, 0.0))] {
-        let e = read(&format!("unit mm\nuse std (horizontal)\nin std.front {{\n\
+        let e = read(&format!("unit mm\nuse std\nuse std.place (horizontal)\nin std.front {{\n\
             a := point\nb := point hint((10, 0))\nc := point hint((0, 5))\n\
             d := point hint(({}, {}))\nfix((0, 0)) a\nfix((10, 0)) b\nfix((0, 5)) c\n\
             ab := line(a, b)\ncd := line(c, d)\nc distance(10) d\n\
@@ -134,7 +134,7 @@ fn a_plane_on_two_lines_runs_along_them_whatever_its_start() {
 fn a_joints_axis_runs_the_way_its_line_does_whatever_its_start() {
     for word in ["turns(1)", "screws(2mm)", "slides(3mm)"] {
         let name = word.split('(').next().unwrap();
-        let e = read(&format!("unit mm\nuse std ({name})\np := point hint((1, 2, 3))\n\
+        let e = read(&format!("unit mm\nuse std\nuse std.motion ({name})\np := point hint((1, 2, 3))\n\
             q := point hint((1, 2, 13))\nfix((1, 2, 3)) p\nfix((1, 2, 13)) q\nl := line(p, q)\n\
             f := frame\nf {word} l\n"));
         let mut sk = e.sketch.clone();
@@ -144,7 +144,7 @@ fn a_joints_axis_runs_the_way_its_line_does_whatever_its_start() {
         assert!(norm(sub(unit(dir(&sk, axis)), [0.0, 0.0, 1.0])) < 1e-9,
                 "{word}: the joint's axis runs {:?}", dir(&sk, axis));
     }
-    let e = read("unit mm\nuse std (spins)\nin std.front {\n  o := point\n  fix((5, 5)) o\n}\n\
+    let e = read("unit mm\nuse std\nuse std.motion (spins)\nin std.front {\n  o := point\n  fix((5, 5)) o\n}\n\
                   f := frame\nf spins(1) o\n");
     let mut sk = e.sketch.clone();
     let axis = sk.frames[ent(&e, "f").i()].joint.as_ref().expect("a joint").axis as usize;

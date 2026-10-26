@@ -13,7 +13,8 @@
 // Closed form: the line translates along the line of action at rb1 a radian of the pinion; the
 // pinion sees it sweep the involute helicoid of its base cylinder, lead angle 90° − βb.
 unit mm
-use std (on_u, on_v)
+use std
+use std.place (on_u, on_v)
 
 rb1 := 20mm
 rb2 := 40mm

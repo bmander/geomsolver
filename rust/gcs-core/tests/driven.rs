@@ -17,7 +17,8 @@ const RHO: f64 = 7850.0;
 fn cantilever(extra: &str, end: &str, section: &str, scenario: &str) -> String {
     format!("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
 {extra}
 in std.front {{

@@ -19,7 +19,8 @@ const RHO: f64 = 7850.0;
 fn beam(extra: &str, end: &str, section: &str, lines: &str) -> String {
     format!("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 steel := material(E: 200GPa, nu: 0.3, rho: 7850kg / 1m^3, yield: 250MPa)
 {extra}
 in std.front {{
@@ -241,7 +242,8 @@ fn a_volume_sizes_a_hole() {
 /// A stepped shaft turned about its axis, its shoulder rounded, its barrel's radius `R` an
 /// unknown: no prism, so its exact boundary is refined and filled (#567).
 pub const TURNED: &str = "unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 r := 12mm
 rho := 4mm
 shoulder := 60mm

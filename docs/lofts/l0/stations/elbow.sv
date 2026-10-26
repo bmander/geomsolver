@@ -4,13 +4,14 @@
 // V = 128 · 30 · π/2 = 1920π mm³.
 unit mm
 use std
+use std.shapes
 use lofts
 bend_radius := 30mm
 bend_angle := 90deg
 
 component Section(c: point, size: Length, wall: Length) {
-  private outer := std.CenteredRectangle(c, w: size, h: size)
-  private inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  private outer := std.shapes.CenteredRectangle(c, w: size, h: size)
+  private inner := std.shapes.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
   profile := face(outer.loop, holes: inner.loop)
 }
 

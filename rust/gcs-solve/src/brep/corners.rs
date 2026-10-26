@@ -5,12 +5,12 @@
 //! where the two faces' carriers, each offset `r` toward the ball, cross, the corner replaced by
 //! the arc between the two feet.  The ball lies inside the material at a convex corner and outside
 //! it at a concave one, read off the turn of the boundary, never said.  A chamfer is the segment
-//! between a point on each face, each leg measured one of two ways (`Leg`); `std.Chamfered`'s flat
-//! is the curve its sum of distances makes (`sum`): that segment between lines, a conic's arc
-//! between a line and a circle.
+//! between a point on each face, each leg measured one of two ways (`Leg`);
+//! `std.rounds.Chamfered`'s flat is the curve its sum of distances makes (`sum`): that segment
+//! between lines, a conic's arc between a line and a circle.
 //!
-//! What a round or a chamfer *is* is said in `rust/lib/std.sv`; this builds exactly what such a
-//! set says at a meridian's corner, which `solid::region` checks before it calls it.
+//! What a round or a chamfer *is* is said in `rust/lib/std/rounds.sv`; this builds exactly what
+//! such a set says at a meridian's corner, which `solid::region` checks before it calls it.
 use super::planar::{Region, Seg, Step};
 use crate::fmath::Det;
 use std::f64::consts::TAU;
@@ -119,7 +119,7 @@ pub fn flat(s: &Seg, n: &Seg, side: f64, legs: [Leg; 2]) -> Result<Cut, String> 
     Ok((t_s, t_n, Seg::Line { a: s.point(t_s), b: n.point(t_n) }))
 }
 
-/// The curve `std.Chamfered` bounds at the corner where `s` arrives and `n`
+/// The curve `std.rounds.Chamfered` bounds at the corner where `s` arrives and `n`
 /// leaves: the points whose distances from the two carriers, each toward side `side`, make
 /// `d_s / legs[1] + d_n / legs[0]` one — through the ends `flat` finds with both legs measured from
 /// the other face (`sum_between`).
@@ -164,9 +164,9 @@ impl Signed {
 }
 
 /// The curve from `p0` to `p2` (both on it) where `a`'s distance over `over[0]` and `b`'s over
-/// `over[1]` make one — `std.Chamfered`'s flat, each face's distance divided by the leg on the
-/// other.  Between lines the segment.  Between a line and a circle about `c` the conic `|q − c| =
-/// α + β d_L(q)` (`d_L` affine), focus `c`, eccentricity the legs' ratio; between circles divided
+/// `over[1]` make one — `std.rounds.Chamfered`'s flat, each face's distance divided by the leg on
+/// the other.  Between lines the segment.  Between a line and a circle about `c` the conic `|q − c|
+/// = α + β d_L(q)` (`d_L` affine), focus `c`, eccentricity the legs' ratio; between circles divided
 /// alike (equal legs) a conic too, the centres its foci — an ellipse where the distances add, a
 /// hyperbola's branch where they differ: either the rational quadratic Bézier `conic_between`
 /// makes.  Between circles divided unlike it is a Cartesian oval, a quartic of genus one, which no
@@ -273,9 +273,9 @@ pub fn round(region: &Region, a: &[u32], b: &[u32], r: f64, tag: u32) -> Result<
     corners(region, a, b, tag, &|s, n, side| ball(&s.seg, &n.seg, side, r))
 }
 
-/// `std.Chamfered`'s flat at every corner between faces `a` and `b`: the curve its sum of distances
-/// bounds (`sum`), the leg on the face of `a` `legs[0]` from the face of `b`, and on `b`'s
-/// `legs[1]`.
+/// `std.rounds.Chamfered`'s flat at every corner between faces `a` and `b`: the curve its sum of
+/// distances bounds (`sum`), the leg on the face of `a` `legs[0]` from the face of `b`, and on
+/// `b`'s `legs[1]`.
 pub fn summed(region: &Region, a: &[u32], b: &[u32], legs: [f64; 2], tag: u32)
     -> Result<Region, String> {
     corners(region, a, b, tag, &|s, n, side| {

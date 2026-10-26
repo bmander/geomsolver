@@ -13,6 +13,7 @@
 // Edit `length`, `r`, `rf`, `thick` or `lean`.
 unit mm
 use std
+use std.stations
 
 length := 40mm
 r := 6mm
@@ -30,7 +31,7 @@ base distance(length * cos(lean), along: std.z) top
 ax := line(base, top)
 
 component Tube(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k

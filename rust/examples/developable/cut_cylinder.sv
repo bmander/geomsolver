@@ -1,6 +1,6 @@
 // A cylinder cut by a tilted plane: a round duct r 40 mitred at 20°, its cut edge the ellipse the
-// plane makes of the cylinder — `std.Ellipse` drawn in the tilted plane, a curve written as a
-// formula and read as a path in space. The panel between the base circle and the ellipse is the
+// plane makes of the cylinder — `std.shapes.Ellipse` drawn in the tilted plane, a curve written as
+// a formula and read as a path in space. The panel between the base circle and the ellipse is the
 // cylinder itself: every ruling is vertical, the plane touching both rails along a generator.
 //
 // Laid flat from the generator through x = 40, the outside up, the pattern is the classic mitre
@@ -14,6 +14,8 @@
 // 2π·40·h = 20106.2: the cosine's part integrates to nothing.
 unit mm
 use std
+use std.shapes
+use std.panels
 
 r := 40mm
 h := 80mm
@@ -36,9 +38,9 @@ in cut {
   o := point
   fix((0mm, 0mm)) o
 }
-mitre := trace(std.Ellipse(o, a: r / cos(beta), b: r, tilt: 0deg).p over u in (0deg, 360deg))
+mitre := trace(std.shapes.Ellipse(o, a: r / cos(beta), b: r, tilt: 0deg).p over u in (0deg, 360deg))
 
-panel := std.Developable(base, mitre)
+panel := std.panels.Developable(base, mitre)
 skin := { q | q distance(<= 1mm, side: outside) panel }
 duct := solid(skin)
 
@@ -46,7 +48,7 @@ blank := plane
 fix(origin == (0mm, 0mm, -150mm)) blank
 fix(dir == (1, 0, 0)) blank.u
 fix(dir == (0, 1, 0)) blank.v
-flat := std.Development(panel, s, d: 0mm) in blank
+flat := std.panels.Development(panel, s, d: 0mm) in blank
 in blank {
   corner := point
   fix((0mm, 0mm)) corner

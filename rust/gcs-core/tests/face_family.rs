@@ -8,12 +8,12 @@
 //! sweeps where the whole section moves rigidly (L6).
 //!
 //! The fixtures are the L0 target programs (`docs/lofts/l0/`), over the station words they were
-//! written with (`std.OnLine` and its kin since L3, drafted in L0's `lofts.sv`), and the gates are
-//! their closed forms: a reduced section is its prismatoid, a twisted prism A·L at any twist and
-//! under any law (Cavalieri), a scaled one a frustum and a pyramid, a bend and a thread Pappus, a
-//! wire square to its helix A × the helix's length, a smooth loft π∫r² by a quadrature exact for
-//! its rail's degree — each read off the exact B-rep (`props::volume`, its boundary checked by
-//! `Brep::check`) to a part in 10⁹.
+//! written with (`std.stations.OnLine` and its kin since L3, drafted in L0's `lofts.sv`), and the
+//! gates are their closed forms: a reduced section is its prismatoid, a twisted prism A·L at any
+//! twist and under any law (Cavalieri), a scaled one a frustum and a pyramid, a bend and a thread
+//! Pappus, a wire square to its helix A × the helix's length, a smooth loft π∫r² by a quadrature
+//! exact for its rail's degree — each read off the exact B-rep (`props::volume`, its boundary
+//! checked by `Brep::check`) to a part in 10⁹.
 
 
 use gcs_core::model::{EntKind, SolidDef};
@@ -118,14 +118,14 @@ fn a_twisted_prism_is_cavalieri_at_any_twist() {
     near(volume(&e, "auger").unwrap(), 16000.0, 1e-9, "three and a half turns");
 }
 
-/// **And under any law**: the turn eased in and out, `twist · (3s² − 2s³)` — `std.Twisted` given
-/// that fraction for `s` — is an expression no unknown of the drawing could be (one free name,
-/// affine), and a station holds `s` at a number, so the law is its body's to say.  The sections
-/// are the same squares: 16000 again.
+/// **And under any law**: the turn eased in and out, `twist · (3s² − 2s³)` — `std.stations.Twisted`
+/// given that fraction for `s` — is an expression no unknown of the drawing could be (one free
+/// name, affine), and a station holds `s` at a number, so the law is its body's to say.  The
+/// sections are the same squares: 16000 again.
 #[test]
 fn an_eased_twist_is_cavalieri_too() {
-    let law = "std.Twisted(st.n, twist: twist, reach: 10mm, s: 3 * s^2 - 2 * s^3)";
-    let eased = TWISTED.replace("std.Twisted(st.n, twist: twist, reach: 10mm, s: s)", law);
+    let law = "std.stations.Twisted(st.n, twist: twist, reach: 10mm, s: 3 * s^2 - 2 * s^3)";
+    let eased = TWISTED.replace("std.stations.Twisted(st.n, twist: twist, reach: 10mm, s: s)", law);
     assert_ne!(eased, TWISTED, "the law is written in");
     let e = family(&eased);
     near(volume(&e, "duct").unwrap(), 16000.0, 1e-9, "an eased quarter turn");
@@ -326,9 +326,11 @@ fn a_station_drawn_in_the_document_sweeps_as_its_parameter_runs() {
 const CONE: &str = "\
 unit mm
 use std
+use std.shapes
+use std.stations
 
 component Disc(g: line, up: axis, rim: circle, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(rim.r * (1 - s / 2)) k
@@ -403,8 +405,8 @@ fn walls_lie_on_the_surfaces_their_numbers_say() {
 fn a_family_cuts_like_any_solid() {
     // the duct alone: the auger, written last, left off
     let auger = TWISTED.find("// Three and a half turns").expect("the auger");
-    let src = TWISTED[..auger].to_string() + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
-        r := std.CenteredRectangle(m, w: 60mm, h: 20mm) in std.top\nslab := face(r.loop)\n\
+    let src = TWISTED[..auger].replacen("use std\n", "use std\nuse std.shapes\n", 1) + "in std.top {\n  m := point\n  fix((0mm, 20mm)) m\n}\n\
+        r := std.shapes.CenteredRectangle(m, w: 60mm, h: 20mm) in std.top\nslab := face(r.loop)\n\
         block := solid(slab, from: -30mm, to: 30mm)\nduct cut block\n";
     let e = family(&src);
     near(volume(&e, "block").unwrap(), 64000.0, 1e-9, "the slab less the duct");

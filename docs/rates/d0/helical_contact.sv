@@ -21,7 +21,9 @@
 // Closed form: the line translates along the line of action at rb1 a radian; the pinion's flank
 // is the involute helicoid of its base cylinder, base helix angle 15°.
 unit mm
-use std (on_v, reciprocal)
+use std
+use std.place (on_v)
+use std.motion (reciprocal)
 
 rb1 := 20mm
 rb2 := 40mm

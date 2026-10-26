@@ -4,7 +4,8 @@
 // cannot tell. Open the glass box (⌘B) to see it. Raise `sunk` to deepen the dimple; at 0mm the
 // ball only rests on the ring, and that touch is refused, not built.
 unit mm
-use std (offset, right_of)
+use std
+use std.place (offset, right_of)
 
 ring_r := 30mm     // from the spindle to the middle of the tube
 tube_r := 10mm     // the tube's radius

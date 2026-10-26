@@ -23,7 +23,8 @@
 
 use engine.dims (L, back, front, pinlen, rp, rpin)
 use engine.parts
-use std (offset, vertical)
+use std
+use std.place (offset, vertical)
 
 // What a rod needs of the pin it rides: the pin in the end view, and in the side view.
 interface CrankPin { end: point, side: point }

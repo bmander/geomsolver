@@ -1,10 +1,11 @@
 //! **Rounds and chamfers at an offset cone's corner** (#207, #145): a region about one axis whose
-//! bound is a cone grown or shrunk (`std.Offset`, `distance(<= d, side: inside)`) is still lowered
-//! into its meridian where `std.Rounded` or `std.Chamfered` meets that bound — the grown cone's
-//! generator and its rounded apex are steps of the meridian like any other — so its exact solid is
-//! built.  Each is held to the closed form (Pappus over the corner worked out by hand) to 1e-9, and
-//! to the region read point by point beside its boundary.  A flat beside a sphere bows off the
-//! straight flat, the sum of distances a parabola's arc there, and is lowered so (#196).
+//! bound is a cone grown or shrunk (`std.sets.Offset`, `distance(<= d, side: inside)`) is still
+//! lowered into its meridian where `std.rounds.Rounded` or `std.rounds.Chamfered` meets that bound
+//! — the grown cone's generator and its rounded apex are steps of the meridian like any other — so
+//! its exact solid is built.  Each is held to the closed form (Pappus over the corner worked out by
+//! hand) to 1e-9, and to the region read point by point beside its boundary.  A flat beside a
+//! sphere bows off the straight flat, the sum of distances a parabola's arc there, and is lowered
+//! so (#196).
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
@@ -14,10 +15,10 @@ use crate::common::{ent, text::solved};
 /// A point held at the origin, the axis up from it, a cone of half 30° opening up from the
 /// origin, the cone grown by 1 (`tip`), a sphere of radius 9 about the origin, a cylinder of
 /// radius 3 about the axis and the half-spaces below 10 (`lid`) and above -0.8 (`floor`).
-const FRAME: &str = "unit mm\nuse std\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
+const FRAME: &str = "unit mm\nuse std\nuse std.sets\nuse std.rounds\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
                      t := point hint((0, 0, 1))\nfix((0, 0, 1)) t\nup := line(c, t)\n\
-                     funnel := std.Cone(up, half: 30deg)\ntip := std.Offset(funnel, d: 1mm)\n\
-                     big := std.Sphere(c, r: 9)\ntube := std.Cylinder(up, r: 3)\n\
+                     funnel := std.sets.Cone(up, half: 30deg)\ntip := std.sets.Offset(funnel, d: 1mm)\n\
+                     big := std.sets.Sphere(c, r: 9)\ntube := std.sets.Cylinder(up, r: 3)\n\
                      lid := { q | q distance(<= 10mm, along: n) std.top }\n\
                      floor := { q | q distance(>= -0.8mm, along: n) std.top }\n";
 
@@ -108,7 +109,7 @@ fn sc() -> (f64, f64, f64) {
 #[test]
 fn a_round_where_a_grown_cone_meets_a_plane() {
     let e = solved(&format!("{FRAME}cup := {{ p | p inside tip; p outside std.top; p inside lid; \
-                             p inside std.Rounded(tip, lid, r: 0.5mm) }}\nglass := solid(cup)\n"));
+                             p inside std.rounds.Rounded(tip, lid, r: 0.5mm) }}\nglass := solid(cup)\n"));
     let ((s, co, ta), g, rho) = (sc(), 1.0, 0.5);
     // the generator grown by g: r = z tan + g / cos; its outward normal (cos, -sin)
     let centre = [(10.0 - rho) * ta + (g - rho) / co, 10.0 - rho];
@@ -129,7 +130,7 @@ fn a_round_where_a_grown_cone_meets_a_plane() {
 #[test]
 fn a_round_where_a_grown_cone_meets_a_sphere() {
     let e = solved(&format!("{FRAME}bead := {{ p | p inside tip; p outside std.top; p inside big; \
-                             p inside std.Rounded(tip, big, r: 0.5mm) }}\nb := solid(bead)\n"));
+                             p inside std.rounds.Rounded(tip, big, r: 0.5mm) }}\nb := solid(bead)\n"));
     let ((s, co, ta), g, rho, big) = (sc(), 1.0, 0.5, 9.0);
     // the line r = z tan + k against the circle r² + z² = R²
     let (k, rr) = ((g - rho) / co, big - rho);
@@ -154,7 +155,7 @@ fn a_round_where_a_grown_cone_meets_a_sphere() {
 fn a_round_where_a_shrunk_cone_meets_a_cylinder() {
     let e = solved(&format!("{FRAME}cleared := {{ q | q distance(<= 1mm, side: inside) funnel }}\n\
                              plug := {{ p | p inside tube; p outside std.top; p inside lid; \
-                             p inside cleared; p inside std.Rounded(cleared, tube, r: 0.5mm) }}\n\
+                             p inside cleared; p inside std.rounds.Rounded(cleared, tube, r: 0.5mm) }}\n\
                              s := solid(plug)\n"));
     let ((s, co, _), rho, wall) = (sc(), 0.5, 3.0);
     // the generator from (0, 2), material to its right: the signed distance r cos - (z - 2) sin
@@ -177,7 +178,7 @@ fn a_round_where_a_shrunk_cone_meets_a_cylinder() {
 #[test]
 fn a_round_where_a_grown_cones_apex_meets_a_plane() {
     let e = solved(&format!("{FRAME}nib := {{ p | p inside tip; p inside floor; p inside lid; \
-                             p inside std.Rounded(tip, floor, r: 0.2mm) }}\nn := solid(nib)\n"));
+                             p inside std.rounds.Rounded(tip, floor, r: 0.2mm) }}\nn := solid(nib)\n"));
     let ((s, co, ta), g, rho, low) = (sc(), 1.0f64, 0.2, -0.8);
     let zc = low + rho;
     let centre = [((g - rho).powi(2) - zc * zc).sqrt(), zc];
@@ -201,7 +202,7 @@ fn a_round_where_a_grown_cones_apex_meets_a_plane() {
 #[test]
 fn a_flat_where_a_grown_cone_meets_a_plane() {
     let e = solved(&format!("{FRAME}cup := {{ p | p inside tip; p outside std.top; p inside lid; \
-                             p inside std.Chamfered(tip, lid, la: 0.5mm, lb: 0.5mm) }}\n\
+                             p inside std.rounds.Chamfered(tip, lid, la: 0.5mm, lb: 0.5mm) }}\n\
                              glass := solid(cup)\n"));
     let ((_, co, ta), g, d) = (sc(), 1.0, 0.5);
     let on_cone = [(10.0 - d) * ta + g / co, 10.0 - d];
@@ -224,7 +225,7 @@ fn a_flat_where_a_grown_cone_meets_a_plane() {
 #[test]
 fn a_flat_beside_a_sphere_is_a_parabola_turned() {
     let e = solved(&format!("{FRAME}bead := {{ p | p inside tip; p outside std.top; p inside big; \
-                             p inside std.Chamfered(tip, big, la: 0.5mm, lb: 0.5mm) }}\n\
+                             p inside std.rounds.Chamfered(tip, big, la: 0.5mm, lb: 0.5mm) }}\n\
                              b := solid(bead)\n"));
     let (_, co, _) = sc();
     let k = 1.0 / co;

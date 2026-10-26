@@ -10,7 +10,9 @@
 // action rolls on the base cone); the pinion's flank is the cone over the spherical involute of
 // its base cone.
 unit mm
-use std (on_u, reciprocal)
+use std
+use std.place (on_u)
+use std.motion (reciprocal)
 
 z1 := 20
 z2 := 40

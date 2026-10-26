@@ -57,7 +57,8 @@ fn near(got: &[(f64, f64)], want: &[(f64, f64)]) {
 fn a_copy_per_item_reads_its_own() {
     let e = solved("\
 unit mm
-use std (coords)
+use std
+use std.place (coords)
 top_y := 48.26mm
 holes := [(-13.97mm, 0mm), (-12.7mm, top_y), (38.1mm, 5.08mm), (38.1mm, 33.02mm)]
 in std.top {
@@ -83,7 +84,8 @@ in std.top {
 fn a_list_written_in_place_and_its_copies_by_index() {
     let e = solved("\
 unit mm
-use std (coords)
+use std
+use std.place (coords)
 in std.top {
   repeat d in [2mm, 3mm, 2mm + 3mm] {
     q := point
@@ -113,7 +115,8 @@ pins := [1mm, 2mm, 3mm]
 ";
     let src = "\
 unit mm
-use std (coords)
+use std
+use std.place (coords)
 use lib.board (board_dims, pins)
 component Pins(at: Length) {
   in std.top {

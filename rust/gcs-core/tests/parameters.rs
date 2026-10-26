@@ -24,7 +24,8 @@ const CLAIM: &str = include_str!("fixtures/solid_issue51/sweep_possible.sv");
 /// An envelope in space over a stated roll (`tests/generated_envelopes.rs`'s).
 const ENVELOPE: &str = "\
 unit mm
-use std (spins, turns)
+use std
+use std.motion (spins, turns)
 in std.front {
 o := point
 q := point
@@ -66,7 +67,7 @@ fn built(src: &str) -> Elaborated {
 }
 
 /// A point, so a document is a drawing.
-const POINT: &str = "use std (spins, turns)\nin std.front {\n  o := point\n  fix((0, 0)) o\n}\n";
+const POINT: &str = "use std\nuse std.motion (spins, turns)\nin std.front {\n  o := point\n  fix((0, 0)) o\n}\n";
 
 #[test]
 fn a_declared_parameter_is_one_running_number() {
@@ -199,7 +200,8 @@ fn the_rolls_a_reading_states_are_intervals_of_the_shared_roll() {
 /// A screw about a line in space and a point at rest, for the readings at an instant (#391 S2).
 const SCREW: &str = "\
 unit mm
-use std (spins, turns)
+use std
+use std.motion (spins, turns)
 a0 := point hint((1, 2, 3))
 a1 := point hint((4, 3, 11))
 fix((1, 2, 3)) a0
@@ -414,7 +416,8 @@ fn what_is_drawn_in_a_jointed_frame_stands_where_its_value_puts_it() {
 fn a_joints_value_may_be_an_unknown_the_drawing_solves_for() {
     let e = solved("\
 unit mm
-use std (spins, turns)
+use std
+use std.motion (spins, turns)
 param theta: Angle hint(10deg)
 x := point hint((10, 0, 0))
 fix((10, 0, 0)) x

@@ -1,8 +1,8 @@
 //! **What a region over a body's faces is built as** (#194, #183's L7): the rounds and chamfers of
-//! `rust/lib/std.sv` say what they mean as sets, and the field reads them point by point; where a
-//! set is one this table recognises, the same points are built exactly — a section swept along the
-//! edge it rounds, a ball's patch where three meet — so a body taking it is exported by the kernel
-//! and evaluated as a B-rep.
+//! `rust/lib/std/rounds.sv` say what they mean as sets, and the field reads them point by point;
+//! where a set is one this table recognises, the same points are built exactly — a section swept
+//! along the edge it rounds, a ball's patch where three meet — so a body taking it is exported by
+//! the kernel and evaluated as a B-rep.
 //!
 //! **Lowering is a representation, never a meaning** (`lowering.rs`'s rule, here for solids): an
 //! entry is recognised from the region's terms — what each bounds, of which faces, by which
@@ -642,7 +642,7 @@ fn canonical(node: &Json) -> String {
 }
 
 /// How many constructions `Caches::gated` keeps, the latest asked: enough for the orders of a
-/// corner of nine faces, met among nine distinct constructions.  `std`'s words state each edge
+/// corner of nine faces, met among nine distinct constructions.  `std.rounds`' words state each edge
 /// and corner once (#415); this is for the words that do not — a document's own written without
 /// `symmetric`, a round over faces drawn `in` a plane or riding a frame.
 const GATED: usize = 16;

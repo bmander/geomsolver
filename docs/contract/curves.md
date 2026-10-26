@@ -56,7 +56,7 @@ bracketing above the chord) and contacts left at 0. The verdict (`extremal::verd
 conjugate points as sign changes of `det ∂p/∂λ₀`, the Hessian in pegs' places and a free length)
 is `Diagnosis::extrema` (`unsolved` where no shape is found), reported by the CLI, the JSON
 (`[id, verdict, asked]`) and the app's marks. `length(L) s` on a spline stays `SplineLength`
-(`integral.rs`). `std.hangs(L) k` is a word. `tests/{extremal,catenary,slide,minimize,spline_length}.rs`
+(`integral.rs`). `std.shapes.hangs(L) k` is a word. `tests/{extremal,catenary,slide,minimize,spline_length}.rs`
 are the gates. **A free curve is an edge** [0.96]: it runs between the two points it is written
 with, so `Sketch::curve_ends` (a stretch's trim, else a free curve's `args`) is its ends for
 `edge_ends`, the face walk, the profile, material fields and the CAD fit, and it stands in a face
@@ -156,16 +156,16 @@ at the closed form its comments give and each claim a theorem, held by `tests/ra
 the app lists the folder as one project (`example-catalog.ts`, *Rates*).
 
 **A frame that moves is a frame read at a roll** (#366, [0.138]; the rule is
-[frames.md](frames.md)'s): a station word's frame (`std.Helix`, `std.OnHelix`, `std.Twisted`) is a
-motion's pose at a roll written over the running number, `X coincident x at(under: m) τ` and `n :=
-base at(under: m) τ` — never `cos`/`sin` ordinates of the running number.  The roll,
-stated, is read as a dimension is: a station reads it again at every place (`expr::evaluate` over
-the held number), and one that states a rate leans on it as on any number written over its running
-number (`solid::rated`'s `Levers`: its free twin over the running number's column, the built
-kernel's last column), so a carried frame moves along the flow exactly.  `t == τ` is the contact
-form, its roll the relation's own unknown, which a rate runs over (below); a stated roll owns no
-unknown, and a rate of a point carried to one runs along the formal its roll is written over.  A
-family whose station is carried so is its motion's sweep (`generating.md`).
+[frames.md](frames.md)'s): a station word's frame (`std.stations.Helix`, `std.stations.OnHelix`,
+`std.stations.Twisted`) is a motion's pose at a roll written over the running number, `X coincident
+x at(under: m) τ` and `n := base at(under: m) τ` — never `cos`/`sin` ordinates of the running
+number.  The roll, stated, is read as a dimension is: a station reads it again at every place
+(`expr::evaluate` over the held number), and one that states a rate leans on it as on any number
+written over its running number (`solid::rated`'s `Levers`: its free twin over the running number's
+column, the built kernel's last column), so a carried frame moves along the flow exactly.  `t == τ`
+is the contact form, its roll the relation's own unknown, which a rate runs over (below); a stated
+roll owns no unknown, and a rate of a point carried to one runs along the formal its roll is written
+over.  A family whose station is carried so is its motion's sweep (`generating.md`).
 
 **The rate of a contact (#365, [0.130], `contact_rate.rs`, `CKind::Rate`,
 `CKind::RateDistance`):** a contact holds a point at its place, and every statement at that point
@@ -220,15 +220,15 @@ The five questions the issue left open are settled so:
    centre, so its sense is the path's (a meshing's frame reads its path a degree of the phase, as
    its kernel did, a distance along it turned a radian's in the row).  **"No document changes
    its solved values" means agreement to rounding**, what `tests/examples_sv.rs` holds a document
-   to — not bit for bit, which a word of `std.sv` standing for a retired kind cannot promise: its
+   to — not bit for bit, which a word of `std` standing for a retired kind cannot promise: its
    rows read the same unknowns in a different order of arithmetic.  Held so against the base,
    the 170 documents of `examples/` (#365): 167 solve bit for bit as they did; `rates/tractrix.sv`
    differs by 4e-22 on values that are zero; `phillips.sv` in the last bit of its screw axis
-   `isa` (`isa.py` 57.6 against 57.600000000000001), which `std.Screw`'s rates now place where
-   `ScrewAxis` did; and `meshing_problem.sv` by 8e-9 mm.  That last is `reciprocal`'s, not the
+   `isa` (`isa.py` 57.6 against 57.600000000000001), which `std.motion.Screw`'s rates now place
+   where `ScrewAxis` did; and `meshing_problem.sv` by 8e-9 mm.  That last is `reciprocal`'s, not the
    rate's: with `normal reciprocal mesh` read as the distance it solves to, the document solves
    bit for bit as it did, through the 100 iterations its solve stops at (residual 8e-13);
-   `reciprocal` as `std.sv`'s word is a carried point and its rate, four rows and three unknowns
+   `reciprocal` as `std.motion`'s word is a carried point and its rate, four rows and three unknowns
    where the old kind was one row, so the stalled solve stops elsewhere — within its own reach,
    the base's own answer moving 3e-7 mm between 100 iterations and 160.  A circle's or an arc's
    tangent at a point (`TangentCircleAt`, `TangentLineCircleAt`, `TangentCircleAt3` in space, the
@@ -260,7 +260,7 @@ The retired kinds, fifteen: `SplineTangentAt`, `CurveTangentAt`, `TracedTangentA
 `EnvelopeTangentAt` (`in_plane`), `TracedNormalAt`, `EnvelopeNormalAt`, `MeshingNormalAt`
 (`normal`), `TracedPlaneAt`, `EnvelopePlaneAt` (`plane`), `TracedCurvatureAt`,
 `EnvelopeCurvatureAt` (`curvature`), with #363's `TracedCentreAt` (`centre`, folded as it
-landed), and `Reciprocal` and `ScrewAxis` (now `std.sv`'s `reciprocal`
+landed), and `Reciprocal` and `ScrewAxis` (now `std.motion`'s `reciprocal`
 and `Screw`, rates of carried points).  `tests/rate_of_contact.rs` is the gate — a carried point's
 rate against the epicycloid's derivative, a spline's tangent written three ways one kind over the
 contact's place, a spline's rate held square and measured, a meshing's path written two ways one
@@ -503,9 +503,9 @@ curve has its Jacobian in the profile's columns against central differences; and
   `consts_on`, and remembers it — so `refresh_consts` skips curve contacts outright (their knots
   are document data no solve moves) rather than re-deriving a span that may since have walked.
 
-- **The ellipse is a library component** (issue #47, item 4): `std.Ellipse(c: point, a, b,
-  tilt, u)` in `rust/lib/std.sv`, a computed point at eccentric angle `u` about `c`, its major axis
-  turned `tilt`, traced as a curve — so
+- **The ellipse is a library component** (issue #47, item 4): `std.shapes.Ellipse(c: point, a, b,
+  tilt, u)` in `rust/lib/std/shapes.sv`, a computed point at eccentric angle `u` about `c`, its
+  major axis turned `tilt`, traced as a curve — so
   `p coincident e`, `e tangent l` and `e curvature k` are the curve contacts, exact to third order;
   the entity kind, its kernels and `CKind`s are gone from every arm, the FFI, the binding and the
   app (an ellipse *tool* is a follow-up).  The parser keeps the word only to refuse it, naming the
@@ -668,8 +668,8 @@ curve has its Jacobian in the profile's columns against central differences; and
   `contact_rate::FLATTEST²`, so where the curve has no curvature the rows stay finite and lose
   their rank.  Of a surface it is E040
   (`relations::traced_contact`), as a surface's normal, plane or section of a curve is.
-  `std.Frenet(g, s:)` is the word over it (`solids.md`); `tests/traced.rs` holds the contact to
-  finite differences, `tests/space_paths.rs` to the helix's closed form.
+  `std.stations.Frenet(g, s:)` is the word over it (`solids.md`); `tests/traced.rs` holds the
+  contact to finite differences, `tests/space_paths.rs` to the helix's closed form.
   **Two design constraints it is built to** (#326): a traced surface is held to and read, not a
   face of a solid — exporting one is making it a wall of #243 L2's `Surface::Family` (whose
   `d1`/`newton` it would answer through `traced::read` and `traced::nearest`), not a second

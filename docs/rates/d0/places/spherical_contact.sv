@@ -12,7 +12,8 @@
 // Closed form: the line turns about the apex at sin δb1 a radian of the pinion; the pinion sees
 // it sweep the cone over the spherical involute of its base cone.
 unit mm
-use std (on_u)
+use std
+use std.place (on_u)
 
 z1 := 20
 z2 := 40

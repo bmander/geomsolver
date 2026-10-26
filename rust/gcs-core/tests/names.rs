@@ -14,7 +14,8 @@ use gcs_core::solve::{solve, SolveOpts};
 use crate::common::{lenient::read, parse};
 
 const BASE: &str = "\
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
 in std.front {
 a := point
 b := point hint((60, 0))

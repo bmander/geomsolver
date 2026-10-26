@@ -1,11 +1,12 @@
-//! **What a crown written as regions needs of the core** (#209, #145 step 4b): `std.ConeThrough`,
-//! the cone about a line through a point, its radius growing `tan(lean)` along the line, against
-//! its closed form, its apex the instance's (a family's body split by its point, §6.21, F3);
-//! `std.HalfSpace`, a half-space along a line; a round at a corner where the region is outside a
-//! set (`{ q | q outside inner }`, a distance from it is from `inner`'s surface); the tip land said
-//! as a bound between the land's ends, choosing the root as the drawn section's tip bound does; and
-//! a crown tooth region — two cones, two levels, its tip rounded — admitted to the generating
-//! class and swept through a region blank, built exactly and written within 10 µm.
+//! **What a crown written as regions needs of the core** (#209, #145 step 4b):
+//! `std.sets.ConeThrough`, the cone about a line through a point, its radius growing `tan(lean)`
+//! along the line, against its closed form, its apex the instance's (a family's body split by its
+//! point, §6.21, F3); `std.sets.HalfSpace`, a half-space along a line; a round at a corner where
+//! the region is outside a set (`{ q | q outside inner }`, a distance from it is from `inner`'s
+//! surface); the tip land said as a bound between the land's ends, choosing the root as the drawn
+//! section's tip bound does; and a crown tooth region — two cones, two levels, its tip rounded —
+//! admitted to the generating class and swept through a region blank, built exactly and written
+//! within 10 µm.
 use gcs_core::brep::geom::Surface;
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::program::Elaborated;
@@ -20,7 +21,10 @@ use crate::common::{at, ends, ent, off_line, read, text::solved, unit};
 /// An axis up the front plane's `z` through the origin, and a point 20 from it at height 10.
 const AXIS: &str = "\
 unit mm
-use std (turns)
+use std
+use std.sets
+use std.rounds
+use std.motion (turns)
 in std.front {
   ax := line
   fix((0, 0)) ax.p1
@@ -32,7 +36,7 @@ in std.front {
 
 /// A cone through `q` leaning `lean`, and a point on it held at `x = 30`, `y = 5`.
 fn cone_through(lean: &str, more: &str) -> String {
-    format!("{AXIS}k := std.ConeThrough(ax, q, lean: {lean})\n\
+    format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: {lean})\n\
              a := point hint((30, 5, 10))\nfix(x == 30) a\nfix(y == 5) a\na coincident k\n{more}")
 }
 
@@ -88,10 +92,10 @@ qi := point
 qo := point
 fix((20, 0.7853981633974483, 0)) qi
 fix((20, -0.7853981633974483, 0)) qo
-inner := std.ConeThrough(cut_ax, qi, lean: -20deg)
-outer := std.ConeThrough(cut_ax, qo, lean: 20deg)
-back := std.HalfSpace(c, cut_ax, d: 1.5mm)
-point_ := std.HalfSpace(c, cut_ax, d: -1.25mm)
+inner := std.sets.ConeThrough(cut_ax, qi, lean: -20deg)
+outer := std.sets.ConeThrough(cut_ax, qo, lean: 20deg)
+back := std.sets.HalfSpace(c, cut_ax, d: 1.5mm)
+point_ := std.sets.HalfSpace(c, cut_ax, d: -1.25mm)
 beyond := { x | x outside inner }
 above := { x | x outside point_ }
 ";
@@ -103,8 +107,8 @@ sharp_tool := solid(sharp)
 
 const ROUNDED: &str = "\
 tooth := { p | p outside inner; p inside outer; p inside back; p outside point_
-               p inside std.Rounded(beyond, above, r: 0.3mm)
-               p inside std.Rounded(outer, above, r: 0.3mm) }
+               p inside std.rounds.Rounded(beyond, above, r: 0.3mm)
+               p inside std.rounds.Rounded(outer, above, r: 0.3mm) }
 construction tool := solid(tooth)
 ";
 
@@ -150,7 +154,7 @@ fn round_takes(outer: bool, rho: f64) -> f64 {
 /// planes and two tori, to 1e-9.
 #[test]
 fn the_crown_tooth_region_is_its_closed_form() {
-    let e = solved(&format!("unit mm\nuse std (turns)\n{TOOTH}{SHARP}{ROUNDED}"));
+    let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{TOOTH}{SHARP}{ROUNDED}"));
     let volume = |name: &str| {
         let ex = e.sketch.exact_solid(ent(&e, name).i()).unwrap();
         (props::volume(&ex.brep) / ex.mm.powi(3), ex)
@@ -176,7 +180,10 @@ fn the_crown_tooth_region_is_its_closed_form() {
 /// no land.  `LAND` is what says it has one.
 const SECTION: &str = "\
 unit mm
-use std (turns)
+use std
+use std.rounds
+use std.sets
+use std.motion (turns)
 in std.front {
   ax := line
   fix((0, 0)) ax.p1
@@ -185,12 +192,12 @@ in std.front {
   fix((16.4, -1.25)) eb
   ea := point hint((16.9, -1.25))
 }
-tip := std.HalfSpace(ax.p1, ax, d: -1.25mm)
-back := std.HalfSpace(ax.p1, ax, d: 1.5mm)
+tip := std.sets.HalfSpace(ax.p1, ax, d: -1.25mm)
+back := std.sets.HalfSpace(ax.p1, ax, d: 1.5mm)
 ea coincident tip
 ea distance(0.6mm) eb
-inner := std.ConeThrough(ax, ea, lean: -20deg)
-outer := std.ConeThrough(ax, eb, lean: 20deg)
+inner := std.sets.ConeThrough(ax, ea, lean: -20deg)
+outer := std.sets.ConeThrough(ax, eb, lean: 20deg)
 tooth := { p | p outside inner; p inside outer; p inside back; p outside tip }
 blade := solid(tooth)
 ";
@@ -228,7 +235,10 @@ fn the_land_bound_keeps_a_rough_start_off_the_collapsed_tip() {
 /// about the apex.  The crown turns about `z` and the member at the crown's `1 / sin 45°`.
 const BEVEL: &str = "\
 unit mm
-use std (turns)
+use std
+use std.rounds
+use std.sets
+use std.motion (turns)
 in std.front {
   o := point
   fix((0, 0)) o
@@ -239,10 +249,10 @@ in std.front {
   fix((0, 1)) ze
   construction crown_ax := line(o, ze)
 }
-pitch := std.Cone(gear_ax, half: 45deg)
-tip := std.Offset(pitch, d: 1mm)
-toe := std.Sphere(o, r: 17mm)
-heel := std.Sphere(o, r: 23mm)
+pitch := std.sets.Cone(gear_ax, half: 45deg)
+tip := std.sets.Offset(pitch, d: 1mm)
+toe := std.sets.Sphere(o, r: 17mm)
+heel := std.sets.Sphere(o, r: 23mm)
 blank_region := { p | p inside tip; p inside heel; p outside toe
   p distance(<= 3mm, side: inside) pitch }
 blank := solid(blank_region)
@@ -311,7 +321,7 @@ fn radius_at(z: f64) -> f64 { 20.0 + 20f64.to_radians().tan() * (z - 10.0) }
 /// `.surface` is the same.
 #[test]
 fn a_point_is_put_on_a_sides_surface() {
-    let e = solved(&format!("{AXIS}k := std.ConeThrough(ax, q, lean: 20deg)\n\
+    let e = solved(&format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: 20deg)\n\
         side := {{ x | x distance(<= 0.5mm, side: inside) k }}\n\
         in std.front {{\n  m := point hint((15, -2))\n}}\nm coincident side.surface\n\
         ax.p1 distance(-2mm, along: ax) m\n\
@@ -324,15 +334,15 @@ fn a_point_is_put_on_a_sides_surface() {
     assert!((n[0] - want(-4.0)).abs() < 1e-9, "{n:?} against {}", want(-4.0));
 }
 
-/// **A distance that comes to nothing** (#214): a set `std.Offset(S, d: 0mm)` is `S` — a point put
-/// on it is on `S` (`coincident`, where a drawn point's distance would have nowhere to put its
+/// **A distance that comes to nothing** (#214): a set `std.sets.Offset(S, d: 0mm)` is `S` — a point
+/// put on it is on `S` (`coincident`, where a drawn point's distance would have nowhere to put its
 /// foot), and a region within it is the region within `S`, as an allowance of none is; a zero
 /// written as the distance is still refused, naming `coincident`.
 #[test]
 fn an_offset_of_nothing_is_the_set() {
-    let src = format!("{AXIS}k := std.ConeThrough(ax, q, lean: 20deg)\nnone := std.Offset(k, d: 0mm)\n\
+    let src = format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: 20deg)\nnone := std.sets.Offset(k, d: 0mm)\n\
         in std.front {{\n  m := point hint((18, 4))\n}}\nm coincident none\nax.p1 distance(4mm, along: ax) m\n\
-        lid := std.HalfSpace(ax.p1, ax, d: 6mm)\nfloor := {{ x | x outside std.HalfSpace(ax.p1, ax, d: -6mm) }}\n\
+        lid := std.sets.HalfSpace(ax.p1, ax, d: 6mm)\nfloor := {{ x | x outside std.sets.HalfSpace(ax.p1, ax, d: -6mm) }}\n\
         grown := {{ p | p inside none; p inside lid; p inside floor }}\n\
         plain := {{ p | p inside k; p inside lid; p inside floor }}\n\
         a := solid(grown)\nb := solid(plain)\n");
@@ -344,7 +354,7 @@ fn an_offset_of_nothing_is_the_set() {
         props::volume(&ex.brep) / ex.mm.powi(3)
     };
     assert!((volume("a") - volume("b")).abs() <= 1e-12 * volume("b"), "{} against {}", volume("a"), volume("b"));
-    let written = format!("{AXIS}k := std.ConeThrough(ax, q, lean: 20deg)\n\
+    let written = format!("{AXIS}k := std.sets.ConeThrough(ax, q, lean: 20deg)\n\
         in std.front {{\n  m := point hint((18, 4))\n}}\nm distance(0mm, side: outside) k\n");
     let (p, _, _) = gcs_core::library::parse_linked(&written);
     let refused = gcs_core::program::elaborate(&p);
@@ -368,18 +378,18 @@ fn a_rounds_radius_reads_an_unknown() {
     let mut volume = 0.0;
     for r in ["0.3 * m", "0.25 * m + 0.05mm"] {
         let rounded = ROUNDED.replace("r: 0.3mm", &format!("r: {r}"));
-        let e = solved(&format!("unit mm\nuse std (turns)\n{unknown}{TOOTH}{rounded}"));
+        let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{unknown}{TOOTH}{rounded}"));
         let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
         volume = props::volume(&ex.brep) / ex.mm.powi(3);
         assert!((volume - want).abs() <= 1e-9 * want, "{r}: {volume} against {want}");
     }
     let grown = |g: &str| {
         let tooth = format!("beyond_g := {{ x | x distance(<= {g}, side: inside) inner }}\n\
-            outer_g := std.Offset(outer, d: {g})\n\
+            outer_g := std.sets.Offset(outer, d: {g})\n\
             tooth := {{ p | p inside beyond_g; p inside outer_g; p inside back; p outside point_\n\
-            p inside std.Rounded(beyond_g, above, r: 0.3 * m)\n\
-            p inside std.Rounded(outer_g, above, r: 0.3 * m) }}\nconstruction tool := solid(tooth)\n");
-        let e = solved(&format!("unit mm\nuse std (turns)\n{unknown}{TOOTH}{tooth}"));
+            p inside std.rounds.Rounded(beyond_g, above, r: 0.3 * m)\n\
+            p inside std.rounds.Rounded(outer_g, above, r: 0.3 * m) }}\nconstruction tool := solid(tooth)\n");
+        let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{unknown}{TOOTH}{tooth}"));
         let ex = e.sketch.exact_solid(ent(&e, "tool").i()).unwrap();
         props::volume(&ex.brep) / ex.mm.powi(3)
     };
@@ -393,7 +403,7 @@ fn a_rounds_radius_reads_an_unknown() {
 /// plane, the step would go nowhere and the cutter's axis would start with no length.
 #[test]
 fn a_seeds_step_is_taken_in_space() {
-    let e = read("unit mm\nuse std (turns)\nin std.top {\n  c := point\n  fix((3, 4)) c\n}\n\
+    let e = read("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\nin std.top {\n  c := point\n  fix((3, 4)) c\n}\n\
         in std.front {\n  up := line\n  fix((0, 0)) up.p1\n  fix((0, 10)) up.p2\n}\n\
         p := point hint(at: c, along: up, by: 0.5)\n");
     let p = at(&e, "p");
@@ -407,8 +417,8 @@ fn a_seeds_step_is_taken_in_space() {
 /// the closed form, solved as an editor solves it.
 #[test]
 fn a_cone_through_is_held_at_any_size() {
-    let big = "unit mm\nuse std (turns)\nin std.front {\n  ax := line\n  fix((0, 0)) ax.p1\n  fix((0, 1000)) ax.p2\n  \
-        q := point\n  fix((20000, 10000)) q\n}\nk := std.ConeThrough(ax, q, lean: -7.5deg)\n";
+    let big = "unit mm\nuse std\nuse std.rounds\nuse std.sets\nuse std.motion (turns)\nin std.front {\n  ax := line\n  fix((0, 0)) ax.p1\n  fix((0, 1000)) ax.p2\n  \
+        q := point\n  fix((20000, 10000)) q\n}\nk := std.sets.ConeThrough(ax, q, lean: -7.5deg)\n";
     let e = solved(big);
     let want = 10000.0 + 20000.0 / 7.5f64.to_radians().tan();
     assert!((at(&e, "k.apex")[2] - want).abs() < 1e-9 * want, "{:?} against {want}", at(&e, "k.apex"));
@@ -425,7 +435,7 @@ fn a_cone_through_is_held_at_any_size() {
 #[test]
 fn a_reversed_surface_is_the_surface_run_the_other_way() {
     use gcs_core::solid::RevolvedSurface;
-    let e = solved(&format!("unit mm\nuse std (turns)\n{TOOTH}{ROUNDED}"));
+    let e = solved(&format!("unit mm\nuse std\nuse std.sets\nuse std.rounds\nuse std.motion (turns)\n{TOOTH}{ROUNDED}"));
     let m = gcs_core::solid::region::meridian(&e.sketch, ent(&e, "tool").i()).unwrap();
     let faces: Vec<RevolvedSurface> = RevolvedSurface::meridian_loops(&m, "tool").into_iter().flatten().flatten().collect();
     assert_eq!(faces.len(), 6);

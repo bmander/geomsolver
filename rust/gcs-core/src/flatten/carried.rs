@@ -20,7 +20,7 @@
 //! A rigid motion keeps lengths and angles, so the image is a frame as its source is, turned the
 //! same way: its `u`, `v` and normal are the source's carried.  The roll is a dimension, so it may
 //! be written over a face family's running number (`at 360deg * turns * s`) and is read again at
-//! every station; `std.sv`'s station words are motions read so.  The statements share the
+//! every station; `std.stations`' station words are motions read so.  The statements share the
 //! declaration's id, so whatever is said of one is said where it was written, and the source
 //! keeps the one statement (`syntax::Decl::carried`).
 //!

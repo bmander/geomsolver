@@ -34,7 +34,7 @@ in std.front {
 
 #[test]
 fn std_horizontal_and_vertical_are_imported_words() {
-    let e = read(&format!("use std (horizontal, vertical)\n{POINTS}  p horizontal q\n  q vertical r\n  p distance(14) r\n}}\n"));
+    let e = read(&format!("use std\nuse std.place (horizontal, vertical)\n{POINTS}  p horizontal q\n  q vertical r\n  p distance(14) r\n}}\n"));
     let at = solved_at(&e, &["q", "r"]);
     assert!((at[0][2]).abs() < 1e-9 && (at[0][0] - 10.0).abs() < 1e-9, "{at:?}");
     assert!((at[1][0] - 10.0).abs() < 1e-9, "{at:?}");
@@ -54,7 +54,7 @@ fn a_word_not_imported_is_refused_naming_the_import() {
     refused(
         &format!("use std\n{POINTS}  p horizontal q\n}}\n"),
         "E102",
-        "use std (horizontal)",
+        "use std.place (horizontal)",
         "horizontal",
     );
     // `horizontal` of a line is the language's own and needs nothing
@@ -67,7 +67,8 @@ fn a_word_not_imported_is_refused_naming_the_import() {
 #[test]
 fn a_defined_word_with_a_number_reads_its_argument() {
     let src = format!("\
-use std (horizontal)
+use std
+use std.place (horizontal)
 a above(d) b := b distance(d, along: up) a
 h := 7
 {POINTS}  p horizontal q
@@ -129,7 +130,7 @@ in std.front {
 
 #[test]
 fn a_claim_keeps_its_word() {
-    let e = read(&format!("use std (horizontal)\n{POINTS}  p distance(0, along: v) q\n}}\n")
+    let e = read(&format!("use std\nuse std.place (horizontal)\n{POINTS}  p distance(0, along: v) q\n}}\n")
         .replace("p distance(0, along: v) q", "p level(up) q\n  claim p horizontal q"));
     assert!(said(&e).contains(&"claim p horizontal q".to_string()), "{:?}", said(&e));
 }
@@ -155,7 +156,8 @@ fn the_arguments_are_given_by_label() {
 #[test]
 fn a_word_of_one_parameter_takes_it_bare() {
     let src = |stmt: &str| format!("\
-use std (horizontal)
+use std
+use std.place (horizontal)
 a above(d) b := b distance(d, along: up) a
 a twice(d) b := a above(d * 2) b
 {POINTS}  p horizontal q
@@ -271,7 +273,8 @@ fn a_point_in_space_has_no_plane() {
 /// is.  The instance is written before the pin, so the plane is read once the pin is drawn.
 const ARM: &str = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 component Arm(pin: point) {
   in pin.plane {
     tip := point hint((40, 3))
@@ -370,7 +373,7 @@ fn an_error_inside_the_expansion_is_said_at_the_word() {
 
 #[test]
 fn an_operand_that_names_nothing_is_said_once() {
-    let (prog, _, _) = gcs_core::library::parse_linked(&format!("use std (horizontal)\n{POINTS}  p horizontal nobody\n}}\n"));
+    let (prog, _, _) = gcs_core::library::parse_linked(&format!("use std\nuse std.place (horizontal)\n{POINTS}  p horizontal nobody\n}}\n"));
     let e = elaborate(&prog);
     let said: Vec<&str> = e.errors().filter(|d| d.code.as_str() == "E101").map(|d| d.span.slice(prog.text())).collect();
     assert_eq!(said, ["nobody"], "{:?}", e.diags);
@@ -506,7 +509,8 @@ p raised(e) q := p up_by(d: e) q
 /// A guide `g` along the front plane's right, held, and a plane through its start.
 fn square_src(stated: &str) -> String {
     format!("\
-use std (square)
+use std
+use std.place (square)
 in std.front {{
   a := point hint((0, 0))
   b := point hint((10, 0))
@@ -595,7 +599,7 @@ component Rung(a: point, b: point, w: Length) {
 ");
     m.insert("lib.other", "gap := 9\ncomponent Rung(a: point) { }\n");
     // a module importing a word for itself: its importer has not
-    m.insert("lib.uses", "use std (horizontal)\ncomponent Flat(a: point, b: point) {\n  a horizontal b\n}\n");
+    m.insert("lib.uses", "use std\nuse std.place (horizontal)\ncomponent Flat(a: point, b: point) {\n  a horizontal b\n}\n");
     m
 }
 
@@ -665,10 +669,10 @@ w := gap + dims.w + lib.words.dims.h
 fn an_import_is_per_file_and_there_is_no_prelude() {
     // `lib.uses` imports `horizontal` for its own body; the document has not
     ok(&format!("use std\nuse lib.uses\n{BODY}  f := lib.uses.Flat(p, q)\n}}\n"));
-    has(&format!("use std\nuse lib.uses\n{BODY}  p horizontal q\n}}\n"), "E102", "use std (horizontal)", "horizontal");
-    // a word is only ever bare: imported, or not written (`std` defines an `above` too, and the
-    // file uses it first)
-    has(&format!("use std\nuse lib.words\n{BODY}  q above(d: 1) p\n}}\n"), "E102", "use std (above)", "above");
+    has(&format!("use std\nuse lib.uses\n{BODY}  p horizontal q\n}}\n"), "E102", "use std.place (horizontal)", "horizontal");
+    // a word is only ever bare: imported, or not written (`std.place` defines an `above` too,
+    // and the file uses it first)
+    has(&format!("use std\nuse std.place\nuse lib.words\n{BODY}  q above(d: 1) p\n}}\n"), "E102", "use std.place (above)", "above");
 }
 
 #[test]
@@ -678,7 +682,7 @@ fn an_import_is_refused_where_it_is_written() {
     has(&format!("use std\nuse lib.words (gap, gap)\n{BODY}}}\n"), "E071", "imported twice", "gap");
     has(&format!("use std\nuse lib.words (gap)\ngap := 3\n{BODY}}}\n"), "E071", "defined in this file", "gap");
     has(&format!("use std\nuse lib.words (Rung)\ncomponent Rung(a: point) {{ }}\n{BODY}}}\n"), "E071", "defined in this file", "Rung");
-    has(&format!("use std (horizontal)\na horizontal b := a coincident b\n{BODY}}}\n"), "E071", "defined in this file", "horizontal");
+    has(&format!("use std\nuse std.place (horizontal)\na horizontal b := a coincident b\n{BODY}}}\n"), "E071", "defined in this file", "horizontal");
 }
 
 #[test]
@@ -697,10 +701,14 @@ fn a_built_in_word_is_imported_by_no_one() {
 
 #[test]
 fn a_module_reads_its_own_words_bare() {
-    // `std` writes `horizontal` in its own components with no import of its own
-    let std = gcs_core::library::module("std").unwrap();
-    assert!(std.contains("a horizontal b := a level(up) b"));
-    assert!(std.contains("k.center horizontal q"));
+    // `std.rounds` writes `round` in its own words with no import of its own, and `std.sets`
+    // imports `std.place`'s `horizontal` for its own
+    let rounds = gcs_core::library::module("std.rounds").unwrap();
+    assert!(rounds.contains("A round(r) B := {"));
+    assert!(rounds.contains("round(r) X := X round(r: r) X"));
+    assert!(!rounds.lines().any(|l| l.starts_with("use ")), "std.rounds imports nothing");
+    let sets = gcs_core::library::module("std.sets").unwrap();
+    assert!(sets.contains("use std.place (horizontal)") && sets.contains("k.center horizontal q"));
     // `lib.words`' `Rung` writes `above` bare, and a file importing only `Rung` draws it
     ok(&format!("use std\nuse lib.words (Rung)\n{BODY}  r := Rung(q, p, w: 2)\n}}\n"));
 }

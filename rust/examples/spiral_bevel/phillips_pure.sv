@@ -7,7 +7,8 @@
 // surface traced in space, and it is the member's involute helicoid — the very flank the rack
 // sweeps (`tests/phillips.rs`), with no rack in its definition.
 unit mm
-use std (reciprocal, turns)
+use std
+use std.motion (reciprocal, turns)
 
 param pinion_teeth := 24
 param gear_teeth := 48

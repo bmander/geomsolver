@@ -1,5 +1,5 @@
-//! **Developable panels** (#645): `std.Developable`, the ruled set one plane touches along each
-//! ruling, and `std.Development`, its layer laid flat in a plane — the six documents of
+//! **Developable panels** (#645): `std.panels.Developable`, the ruled set one plane touches along
+//! each ruling, and `std.panels.Development`, its layer laid flat in a plane — the six documents of
 //! `rust/examples/developable/` each held to the closed form its comments give, and the rules of
 //! `docs/contract/developables.md` each as the property it states: the pattern an isometry of the
 //! panel, the panel developable, the exact development and the body's own rows agreeing, the
@@ -461,7 +461,7 @@ fn a_panel_follows_its_rims() {
 /// recognised, and its band is the same solid as `std`'s.
 #[test]
 fn a_hand_written_panel_is_recognised() {
-    let own = FRUSTUM.replace("panel := std.Developable(lower, upper)", "\
+    let own = FRUSTUM.replace("panel := std.panels.Developable(lower, upper)", "\
 component Panel(a: path, b: path) := { p |
   m := point
   n := point
@@ -473,7 +473,7 @@ component Panel(a: path, b: path) := { p |
   p coincident(t in (0, 1)) line(m, n)
 }
 panel := Panel(lower, upper)");
-    assert_ne!(own, FRUSTUM, "the frustum's panel is `std.Developable(lower, upper)`");
+    assert_ne!(own, FRUSTUM, "the frustum's panel is `std.panels.Developable(lower, upper)`");
     let (a, b) = (determined(FRUSTUM), determined(&own));
     let volume = |e: &Elaborated| {
         let i = e.map.ent_named("reducer").unwrap().i();
@@ -590,6 +590,7 @@ fn after(src: &str) -> Vec<String> {
 fn pair(b: &str) -> String {
     format!("unit mm
 use std
+use std.panels
 in std.top {{
   c := point
   fix((0mm, 0mm)) c
@@ -611,7 +612,7 @@ in up {{
   ring := circle(center: d)
   radius(30mm) ring
 }}
-panel := std.Developable(rim, {b})
+panel := std.panels.Developable(rim, {b})
 skin := {{ q | q distance(<= 1mm, side: outside) panel }}
 band := solid(skin)
 ")
@@ -637,6 +638,7 @@ fn a_rail_that_is_no_path_is_refused() {
 fn no_root_of_the_same_sense_is_refused() {
     let src = "unit mm
 use std
+use std.panels
 a0 := point hint((0, 0, 0))
 a1 := point hint((100, 0, 0))
 b0 := point hint((150, 0, 0))
@@ -647,7 +649,7 @@ fix((150mm, 0mm, 0mm)) b0
 fix((250mm, 0mm, 20mm)) b1
 la := line(a0, a1)
 lb := line(b0, b1)
-panel := std.Developable(la, lb)
+panel := std.panels.Developable(la, lb)
 skin := { q | q distance(<= 1mm, side: outside) panel }
 band := solid(skin)
 ";

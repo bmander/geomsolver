@@ -25,7 +25,7 @@ fn own_names(p: &Program, file: Option<usize>) -> BTreeSet<&str> {
 /// What module `k` defines as `name` for a file to import: `Some(true)` a relation word,
 /// `Some(false)` a component, an interface or a top-level value or group (a module's own drawing is not
 /// exported, §14.4), `None` nothing.
-fn defines(p: &Program, k: usize, name: &str) -> Option<bool> {
+pub(crate) fn defines(p: &Program, k: usize, name: &str) -> Option<bool> {
     if p.words.iter().any(|d| d.module == Some(k) && d.word.text == name) {
         return Some(true);
     }
@@ -76,7 +76,12 @@ pub(super) fn check(p: &Program, diags: &mut Vec<Diag>) {
             for n in &u.names {
                 let name = n.text.as_str();
                 let Some(word) = defines(p, k, name) else {
-                    say(Code::E101, n.span, format!("`{}` defines no `{name}`", u.name));
+                    say(Code::E101, n.span, match crate::library::home(&u.name, name) {
+                        // `use std (horizontal)`, from before the library's modules
+                        Some(home) => format!("`{}` defines no `{name}`: `{home}` does, \
+                                               `use {home} ({name})`", u.name),
+                        None => format!("`{}` defines no `{name}`", u.name),
+                    });
                     continue;
                 };
                 // a relation word's collisions are its definition's to say (`word_faults`, of

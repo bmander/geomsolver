@@ -5,10 +5,12 @@
 // Closed form: area(s) = 400(1−s)² + 800s(1−s) + 100πs², so V = 30 · (800 + 100π)/3
 // = 8000 + 1000π mm³.
 unit mm
-use std (coords)
+use std
+use std.place (coords)
+use std.stations
 
 component Transition(g: line, up: axis, half: Length, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   in st.n {
     h := half * (1 - s)
     r := half * s

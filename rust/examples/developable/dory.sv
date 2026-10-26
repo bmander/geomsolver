@@ -29,6 +29,7 @@
 // rails' lengths equal; every pattern lies on its sheet.
 unit mm
 use std
+use std.panels
 
 thick := 6mm
 
@@ -81,9 +82,9 @@ fix((2025mm, 440mm, 490mm)) ss4
 starboard_sheer := spline(ss0, ss1, ss2, ss3, ss4)
 
 // the three panels, each a set, each sheet its band 6 thick on its outside
-bottom := std.Developable(starboard_chine, port_chine)
-port := std.Developable(port_chine, port_sheer)
-starboard := std.Developable(starboard_sheer, starboard_chine)
+bottom := std.panels.Developable(starboard_chine, port_chine)
+port := std.panels.Developable(port_chine, port_sheer)
+starboard := std.panels.Developable(starboard_sheer, starboard_chine)
 bottom_skin := { q | q distance(<= thick, side: outside) bottom }
 port_skin := { q | q distance(<= thick, side: outside) port }
 starboard_skin := { q | q distance(<= thick, side: outside) starboard }
@@ -137,16 +138,16 @@ in floor {
 }
 
 // each panel's neutral layer, 3 out, laid on its sheet by two distances and a bearing
-port_flat := std.Development(port, port_seam, d: thick / 2) in floor
+port_flat := std.panels.Development(port, port_seam, d: thick / 2) in floor
 a0 distance(40mm, along: std.x) port_flat.start.p2      // the stem's head 40 in from the end
 a0 distance(90mm, along: std.y) port_flat.f              // the seam's chine end 90 up
 sides_edge angle(90deg) line(port_flat.f, port_flat.g)  // the seam square to the long edge, up
-starboard_flat := std.Development(starboard, starboard_seam, d: thick / 2) in floor
+starboard_flat := std.panels.Development(starboard, starboard_seam, d: thick / 2) in floor
 a0 distance(40mm, along: std.x) starboard_flat.start.p1  // its stem's head 40 in from the end
 a0 distance(1130mm, along: std.y) starboard_flat.g       // its seam's chine end 90 from the top
 // its seam square to the long edge, sheer to chine up
 sides_edge angle(90deg) line(starboard_flat.f, starboard_flat.g)
-bottom_flat := std.Development(bottom, bottom_seam, d: thick / 2) in floor
+bottom_flat := std.panels.Development(bottom, bottom_seam, d: thick / 2) in floor
 b0 distance(60mm, along: std.x) bottom_flat.start.p1     // the bow's point 60 in from the end
 b0 distance(160mm, along: std.y) bottom_flat.f           // the starboard chine 160 up
 bottom_edge angle(90deg) line(bottom_flat.f, bottom_flat.g)  // its seam square across the sheet

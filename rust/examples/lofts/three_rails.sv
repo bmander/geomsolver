@@ -1,18 +1,19 @@
 // A section on three rails (#243 L8): `sec := prof mapped(from -> pa, to -> pb, third -> pc) in
 // st.n` (#357) carries the face `prof` whole into the station's plane by the affine map taking
 // `from`, `to` and `third` to `pa`, `pb` and `pc` — moved, turned, scaled and sheared — each
-// corner keeping its place in the frame those three make (`std.Affine` says the same). With no guide, the station is the plane through the
-// three rails at `s` (`std.Across`), and `pa`, `pb` and `pc` are where it crosses them.
+// corner keeping its place in the frame those three make (`std.stations.Affine` says the same). With no guide, the station is the plane through the
+// three rails at `s` (`std.stations.Across`), and `pa`, `pb` and `pc` are where it crosses them.
 // Closed form: an affine map scales every area alike, so the section is the profile's area times
 // the rails' triangle's over the frame's (36/50), quadratic in `s` between level ends:
 // 40/6 · 0.72 · (200 + 4·146.875 + 87.5) = 4200 mm³ as drawn.
 // Edit any rail's end, or the profile.
 unit mm
 use std
+use std.stations
 
 component Tri(ra: path, rb: path, rc: path, prof: face, from: point, to: point, third: point,
               s: Scalar) {
-  st := std.Across(ra, rb, rc, s: s)
+  st := std.stations.Across(ra, rb, rc, s: s)
   pa := point in st.n
   pb := point in st.n
   pc := point in st.n

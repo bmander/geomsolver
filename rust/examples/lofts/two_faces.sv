@@ -1,7 +1,7 @@
 // Two faces drawn apart, lofted (#243 L8): CAD's "loft these two sketches". A square inlet and a
 // diamond outlet, each sketched in its own plane, are joined corner to corner by
-// `std.Ruled(a, b, s:)`: a straight rail from each corner of one walk to the corner in the same
-// place of the other, and the section where the plane through three rails at `s` cuts every
+// `std.stations.Ruled(a, b, s:)`: a straight rail from each corner of one walk to the corner in the
+// same place of the other, and the section where the plane through three rails at `s` cuts every
 // rail, so the ends are the faces themselves.
 // Correspondence is the walks' written order and nothing else. A connector is where a walk
 // starts: `turned` walks the diamond from its second corner, pairing the square's first corner
@@ -13,6 +13,7 @@
 // Edit `length`, `side`, `reach` or `apart`, or start a walk at another corner.
 unit mm
 use std
+use std.stations
 
 length := 40mm
 side := 20mm
@@ -74,5 +75,5 @@ inlet2 := face(c0, c1, c2, c3, -> close)
 // the same diamond walked from its second corner: a connector
 outlet_turned := face(d1, d2, d3, d0, -> close)
 param s: Scalar over (0, 1)
-body := sweep(std.Ruled(inlet, outlet).f over s)
-turned := sweep(std.Ruled(inlet2, outlet_turned).f over s)
+body := sweep(std.stations.Ruled(inlet, outlet).f over s)
+turned := sweep(std.stations.Ruled(inlet2, outlet_turned).f over s)

@@ -11,10 +11,10 @@
 //!   the **smooth** loft's rail.
 //!
 //! A loft with **no guide** stands its station on its rails, the plane through three of them at
-//! `s` (`std.Across`).  Gated off the exact B-rep to a part in 10⁹: a ruled loft is the sum of its
-//! frusta and prismatoids, a smooth one its area's integral by a quadrature exact for its rails'
-//! degree on every span, guided or not, and its ends meet the face beside them square (the cap) or
-//! tangent (a neck).
+//! `s` (`std.stations.Across`).  Gated off the exact B-rep to a part in 10⁹: a ruled loft is the
+//! sum of its frusta and prismatoids, a smooth one its area's integral by a quadrature exact for
+//! its rails' degree on every span, guided or not, and its ends meet the face beside them square
+//! (the cap) or tangent (a neck).
 use gcs_core::brep::geom::Surface;
 use gcs_core::program::Elaborated;
 use std::f64::consts::PI;
@@ -27,9 +27,10 @@ use crate::common::parsed::determined;
 /// whose rim reaches any rail.
 const BOTTLE: &str = "unit mm
 use std
+use std.stations
 
 component Ring(g: path, up: axis, front: plane, rail: path, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   rim := point in st.n, front
   rim coincident rail
   in st.n {
@@ -61,12 +62,13 @@ in std.front {
 
 /// A square loft with no guide: three squares in space — 20 at height 0, 12 at 40 moved off the
 /// axis by (10, 5), 16 at 60 back on it — and a chain of lines through each corner, the station
-/// the plane through three of them (`std.Across`).
+/// the plane through three of them (`std.stations.Across`).
 const SQUARES: &str = "unit mm
 use std
+use std.stations
 
 component Quad(ra: path, rb: path, rc: path, rd: path, s: Scalar) {
-  st := std.Across(ra, rb, rc, s: s)
+  st := std.stations.Across(ra, rb, rc, s: s)
   a := point in st.n
   b := point in st.n
   c := point in st.n
@@ -302,6 +304,7 @@ fn a_spline_through_a_chain_is_the_cubic_through_its_corners() {
     // natural ends, over four corners and over two; the chain written after the spline
     let e = determined("unit mm
 use std
+use std.stations
 in std.front {
   a := point
   b := point
@@ -424,9 +427,9 @@ fn a_smooth_loft_meets_the_faces_at_its_ends() {
 
 /// **A smooth loft with no guide is its quadrature**: a triangle whose corners ride three splines
 /// through their places at 0, 30 and 60, each in the plane through the axis it stands in, its
-/// stations the planes through the three at `s` (`std.Across`) — level, the three heights alike at
-/// every `t` — and the triangle `r²` wherever the rails stand `r` out, so V = ∫ r² dz over the
-/// rail, five Gauss–Legendre points a span.
+/// stations the planes through the three at `s` (`std.stations.Across`) — level, the three heights
+/// alike at every `t` — and the triangle `r²` wherever the rails stand `r` out, so V = ∫ r² dz over
+/// the rail, five Gauss–Legendre points a span.
 #[test]
 fn a_smooth_loft_with_no_guide_is_its_quadrature() {
     let rail = |name: &str, plane: &str, x: f64| format!("in std.{plane} {{
@@ -442,9 +445,10 @@ fn a_smooth_loft_with_no_guide_is_its_quadrature() {
 ", 10.0 * x, 14.0 * x, 8.0 * x);
     let src = format!("unit mm
 use std
+use std.stations
 
 component Tri(ra: path, rb: path, rc: path, side: plane, front: plane, s: Scalar) {{
-  st := std.Across(ra, rb, rc, s: s)
+  st := std.stations.Across(ra, rb, rc, s: s)
   a := point in st.n, side
   b := point in st.n, front
   c := point in st.n, front

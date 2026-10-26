@@ -14,7 +14,8 @@ use gcs_core::traced::{self, Need};
 /// Three axes through the origin, drawn in space as lines, for a body to measure along.
 const AXES: &str = "\
 unit mm
-use std (screws)
+use std
+use std.motion (screws)
 o := point hint((0, 0, 0))
 fix((0, 0, 0)) o
 X1 := point hint((10, 0, 0))

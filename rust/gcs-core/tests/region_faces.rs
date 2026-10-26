@@ -11,7 +11,7 @@ use crate::region_general::field_volume;
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y, and an L of
 /// two such steps whose inner edge is concave.
-const BLOCK: &str = "unit mm\nuse std\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.sets\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -54,7 +54,7 @@ fn the_points_near_a_face_are_its_patch_grown() {
 /// plane, though the ball reaches past the patch.
 #[test]
 fn a_face_has_a_side_and_a_surface() {
-    let e = solved(&format!("{BLOCK}c := point hint((20, 0, 12))\nball := std.Sphere(c, r: 5)\n\
+    let e = solved(&format!("{BLOCK}c := point hint((20, 0, 12))\nball := std.sets.Sphere(c, r: 5)\n\
                              half := {{ p | p inside ball; p inside block.near }}\n\
                              slice := {{ p | p inside ball; p distance(<= 2mm) block.near.surface }}\n\
                              sh := solid(half)\nss := solid(slice)\n"));
@@ -74,7 +74,7 @@ fn a_face_has_a_side_and_a_surface() {
 /// L's inner edge concave (three quarters), read at the point of the edge nearest.
 #[test]
 fn the_material_angle_at_an_edge_says_which_way_it_turns() {
-    let e = solved(&format!("{BLOCK}c := point hint((0, 0, 0))\nball := std.Sphere(c, r: 300)\n\
+    let e = solved(&format!("{BLOCK}c := point hint((0, 0, 0))\nball := std.sets.Sphere(c, r: 300)\n\
         convex := {{ p | p inside ball; angle(block.near, block.south, at: p) <= 180deg }}\n\
         concave := {{ p | p inside ball; angle(block.near, block.south, at: p) >= 180deg }}\n\
         square := {{ p | p inside ball; angle(block.east, block.south, at: p) <= 91deg; \
@@ -142,7 +142,7 @@ fn a_clearance_is_a_set_grown() {
 /// the side of each face the edge ends on it runs on (#183 F7).
 #[test]
 fn the_reach_of_an_edge_and_where_it_ends_are_one_slab() {
-    let e = solved(&format!("{BLOCK}{EDGE}c := point hint((20, 6, 0))\nball := std.Sphere(c, r: 30)\n\
+    let e = solved(&format!("{BLOCK}{EDGE}c := point hint((20, 6, 0))\nball := std.sets.Sphere(c, r: 30)\n\
                              reach := {{ p | p inside ball; distance(p, crease) <= distance(p, meeting) }}\n\
                              ended := {{ p | p inside ball; p inside crease.ends }}\n\
                              sr := solid(reach)\nse := solid(ended)\n"));
@@ -165,7 +165,7 @@ fn the_reach_of_an_edge_and_where_it_ends_are_one_slab() {
 fn a_meeting_cut_where_its_edge_ends_is_the_edge() {
     let e = solved(&format!("{BLOCK}{EDGE}short := {{ q | q coincident block.near.surface; \
                              q coincident block.south.surface; q inside crease.ends }}\n\
-                             c := point hint((20, 6, 0))\nball := std.Sphere(c, r: 30)\n\
+                             c := point hint((20, 6, 0))\nball := std.sets.Sphere(c, r: 30)\n\
                              reach := {{ p | p inside ball; \
                              distance(p, crease) <= distance(p, short) }}\n\
                              sr := solid(reach)\n"));
@@ -259,7 +259,7 @@ fn a_word_makes_a_relief() {
 /// as it was: the pillow round the near face is no thicker past the face's edge for it.
 #[test]
 fn a_sketch_on_a_face_leaves_a_regions_reading_of_it() {
-    let region = "c := point hint((20, 0, 12))\nfix((20, 0, 12)) c\nball := std.Sphere(c, r: 30)\n\
+    let region = "c := point hint((20, 0, 12))\nfix((20, 0, 12)) c\nball := std.sets.Sphere(c, r: 30)\n\
                   pillow := { p | p inside ball; p distance(<= 1mm) block.near }\n\
                   s := solid(pillow)\n";
     let sketch = "v1 := plane\nv1.origin coincident block.near.surface\n\

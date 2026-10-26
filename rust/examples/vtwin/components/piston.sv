@@ -17,7 +17,8 @@
 // through the cylinder's pivot; the part sheet instances it once, upright.  The O-ring is a
 // #014, selected in `sv`; its groove is derived below. Print it crown down.
 
-use std (vertical, on_u)
+use std
+use std.place (vertical, on_u)
 use hardware (oring_squeeze, oring_groove_w)
 use components.dims (D, L, clr, groove, oring, ph, pinclr, reye, rt, rw)
 use components.parts

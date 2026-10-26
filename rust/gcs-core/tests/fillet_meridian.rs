@@ -250,7 +250,7 @@ fn tip_toe_heel(e: &Elaborated, solid: usize) -> [u32; 3] {
     [tag(false, Cmp::Le), tag(true, Cmp::Ge), tag(true, Cmp::Le)]
 }
 
-/// #145's end relief, `std.Chamfered` in the blank's own region (`fixtures/member_blank.sv`), **lowered**
+/// #145's end relief, `std.rounds.Chamfered` in the blank's own region (`fixtures/member_blank.sv`), **lowered**
 /// (#196): the meridian's toe and heel corners where the tip cone meets each sphere are cut by a
 /// conic's arc whose ends are the prototype's chamfer's, each leg measured from the other face —
 /// on the tip `size` inside the sphere, on the sphere `size` below the tip cone — and the exact
@@ -401,7 +401,7 @@ fn the_end_relief_lowered_is_the_region_read_point_by_point() {
 /// radius either side of an arc is on that side.
 #[test]
 fn the_crown_tip_rounding_is_the_words() {
-    let text = include_str!("fixtures/tip_rounding.sv").replacen("use std\n", "use std (round)\n", 1);
+    let text = include_str!("fixtures/tip_rounding.sv").replacen("use std\n", "use std\nuse std.rounds (round)\n", 1);
     let close = text.rfind('}').unwrap();
     let more = "  in std.front {\n\
                     c1 := point hint((6.5, 2.5))\n    c2 := point hint((-0.5, 2.5))\n\

@@ -12,7 +12,8 @@
 // (DOF 0, `1 DOF over t` — the crank, which is how a mechanism is counted).  The stride is the
 // drawing's own toe as `t` runs.
 
-use std (offset)
+use std
+use std.place (offset)
 
 param t: Angle over (0deg, 360deg)
 

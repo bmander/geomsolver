@@ -11,13 +11,15 @@ use gcs_core::{program, solid, solve, syntax};
 fn balls(at: &str, sweep: &str) -> String {
     format!("\
 unit mm
-use std (turns)
+use std
+use std.sets
+use std.motion (turns)
 tool_c := point
 fix((3, 0, 0)) tool_c
 blank_c := point
 fix({at}) blank_c
-lump := std.Sphere(tool_c, r: 1mm)
-stock := std.Sphere(blank_c, r: 1mm)
+lump := std.sets.Sphere(tool_c, r: 1mm)
+stock := std.sets.Sphere(blank_c, r: 1mm)
 construction tool := solid(lump)
 blank := solid(stock)
 o := point
@@ -110,7 +112,7 @@ fn a_roll_with_no_engagement_about_0_is_refused() {
     assert!(why.contains("`removal` rolls through `part`") && why.contains("does not meet it at 0"), "{why}");
     // a ball on the axis is never clear of a body it starts in
     let e = read(&balls("(3, 0, 0)", "under: turn, through: part").replace("fix((3, 0, 0)) tool_c",
-        "fix((0, 0, 0)) tool_c").replace("stock := std.Sphere(blank_c, r: 1mm)", "stock := std.Sphere(blank_c, r: 4mm)"));
+        "fix((0, 0, 0)) tool_c").replace("stock := std.sets.Sphere(blank_c, r: 1mm)", "stock := std.sets.Sphere(blank_c, r: 4mm)"));
     let why = solid::roll::interval(&e.sketch, crate::common::ent(&e, "removal").i()).unwrap_err();
     assert!(why.contains("not clear of it within two turns"), "{why}");
 }

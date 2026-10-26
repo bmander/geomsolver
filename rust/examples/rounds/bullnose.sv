@@ -12,7 +12,8 @@
 // different section than its edge crosses it, so no one section joins the two pieces: the export
 // is refused, and the refusal says why.
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 in std.side {
   a := point

@@ -30,7 +30,9 @@
 // turned clockwise, normalised): a point of the bore stands `s` from the curve the seal's centre
 // runs on, square to it. The fold at the waist, at d = (R − 3e)²/(9e − R) = 15.
 unit mm
-use std (right_of, spins)
+use std
+use std.place (right_of)
+use std.motion (spins)
 
 R := 75mm                 // the generating radius, the rotor's centre to an apex
 e := 15mm                 // the eccentricity, the shaft's crank

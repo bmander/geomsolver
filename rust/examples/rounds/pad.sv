@@ -10,7 +10,9 @@
 // top faces it ends on. Edit a radius and apply (⌘↵), or round the top edge too:
 // `pad.plate.near round(r: edge_radius) pad.plate.cd`, mitred where it meets the side's.
 unit mm
-use std (round)
+use std
+use std.shapes
+use std.rounds (round)
 
 width := 60mm
 depth := 40mm
@@ -21,7 +23,7 @@ bore_radius := 4mm
 root_radius := 3mm   // the boss's root, filled
 edge_radius := 2mm   // the plate's two side edges, cut
 
-outline := std.CenteredRectangle(std.origin, w: width, h: depth) in std.front
+outline := std.shapes.CenteredRectangle(std.origin, w: width, h: depth) in std.front
 in std.front {
   rim := circle(center: std.origin) hint(r: 8)
   radius(boss_radius) rim

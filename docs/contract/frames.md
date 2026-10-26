@@ -44,8 +44,8 @@ is drawn where it stands: `Sketch::world_point` reads no joint, so no relation n
 riding at all.  A point already riding keeps its path: drawn again on another is E060.  A line
 (or anything drawn) declared in a spatial frame reads a part already drawn where it was declared
 — in a plane, or along a frame's axes — where it is, as a line in space does, and leaves its path
-alone (#624, `planes::member`): `std.ConeThrough` in a seated part, its lines through a point the
-part draws in its front (`a_seated_parts_cone_reads_a_point_drawn_in_its_front`); the parts'
+alone (#624, `planes::member`): `std.sets.ConeThrough` in a seated part, its lines through a point
+the part draws in its front (`a_seated_parts_cone_reads_a_point_drawn_in_its_front`); the parts'
 carriers must still agree.
 
 **A reading at a roll infers its carrier** (stage 4): where a reading leaves `under:` out, the
@@ -75,7 +75,7 @@ the same readings written `under:` (`a_rack_riding_its_frame_cuts_what_the_readi
 `a_tool_riding_its_frame_is_placed_and_swept_as_under_it`) and the refusals
 (`riding_refuses_what_it_cannot_mean`).
 
-**A joint's axis runs the way it is held** ([0.173], #535): `std`'s `turns`, `screws` and
+**A joint's axis runs the way it is held** ([0.173], #535): `std.motion`'s `turns`, `screws` and
 `slides` write `l coincident(sense: same) f.axis` and `spins` `f.axis parallel(sense: same)
 o.plane.normal`, so the joint's axis runs along its line from `p1` toward `p2`, along an axis its
 own way, or out of the view — rows with that root alone (`K::LineOnAxisSensed`,
@@ -133,7 +133,7 @@ a plane drawn over carried points stands along its lines however far round the r
 `f.axis` coincident with an axis no drawn line is — `Joint { axis }` — which the held steps read as
 a turn (a slide, its ratio stated 0) about the joint's axis as the solve places it, its point and
 its direction (`held::Step::Rotation { dir: true }`, codes 5 and 6), seeded where the axis it is
-held to stands.  **The station words are frames whose value is written over `s`** (`std.sv`,
+held to stands.  **The station words are frames whose value is written over `s`** (`std.stations`,
 #391 S3 — a joint's value and `n := x in f`, drawn in a jointed frame, are
 [parameters.md](parameters.md)'s): `Helix`'s screw about `base.normal` (`advance: pitch`) stands
 at `360deg · turns · s`, `n` is `base` drawn in it, and `axial` is `n` drawn in a quarter turn
@@ -161,11 +161,11 @@ are [parameters.md](parameters.md)'s.  A frame declared in such a block still ri
 refused (`motions::values`).
 
 **A frame along a path** (#398 C, [0.145]): a joint held along a path, `g coincident f.axis`
-(`std.Along`, `std.AlongFrenet`, each making the frame `f` it holds), is no turn about a line
-but `MotionDef::Guided`, its pose read off the path after the solve (`motion::Guide`) — the
-rotation-minimising frame for ratio 0, the path's own for ratio 1, from where the frame is drawn.
-What is drawn in it rides on it, and a face so drawn is swept as a declared parameter runs; a row reads no such motion.  The rules are
-[parameters.md](parameters.md)'s.
+(`std.stations.Along`, `std.stations.AlongFrenet`, each making the frame `f` it holds), is no turn
+about a line but `MotionDef::Guided`, its pose read off the path after the solve (`motion::Guide`) —
+the rotation-minimising frame for ratio 0, the path's own for ratio 1, from where the frame is
+drawn. What is drawn in it rides on it, and a face so drawn is swept as a declared parameter runs; a
+row reads no such motion.  The rules are [parameters.md](parameters.md)'s.
 
 **Not built in stage 4**: the app offers only planar frames as places to draw (a spatial chart is
 drawn in text), and the printer writes no `in` blocks of its own, so the plan's "jointed frame

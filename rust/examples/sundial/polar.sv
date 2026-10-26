@@ -15,7 +15,9 @@
 // to the earth's axis, and its hour lines do not change. Edit `height` and they spread or close
 // up together; open the glass box (⌘B) to see the sun's ring standing square to the style.
 unit mm
-use std (horizontal, vertical)
+use std
+use std.place (horizontal, vertical)
+use std.shapes
 use sun
 height := 25mm    // the style above the plate
 length := 120mm   // the plate, south to north
@@ -27,7 +29,7 @@ N := point in std.top, std.side hint((0, 120))
 fix(y == 0) O
 in std.top {
   C := point hint((0, 60))
-  plate := std.CenteredRectangle(C, w: width, h: length)
+  plate := std.shapes.CenteredRectangle(C, w: width, h: length)
   O midpoint plate.ab
   N coincident plate.cd
 }

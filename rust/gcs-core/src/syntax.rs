@@ -242,9 +242,9 @@ pub enum Ty {
     Side,
     /// A named bundle of values and geometry aliases, or a component's layout instance.
     Group,
-    /// A set (§6.21): one named (`S := { p | … }`), an instance of a set family (`std.Cone(…)`)
-    /// or one written in place.  Not a group: a group formal refuses a set and this a group, so a
-    /// set handed where members are read is said at the call (#191).
+    /// A set (§6.21): one named (`S := { p | … }`), an instance of a set family
+    /// (`std.sets.Cone(…)`) or one written in place.  Not a group: a group formal refuses a set and
+    /// this a group, so a set handed where members are read is said at the call (#191).
     Set,
     /// **Any path** (#251): a line, an arc, a circle, a spline or a curve, or a curve traced in
     /// space (#363 S1) — what a point runs along and a tangent is taken at. An entity formal whose

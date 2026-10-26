@@ -8,8 +8,8 @@
 //!   …, -> close)`, whose closing runs name its walls as the source's do (`close0`, …);
 //! * an **edge** keeps its name, `sec.ab`, between corners keyed under the image (`sec#q0`, the
 //!   image of the edge's start, `p1` of a line and `start` of an arc — the walk's own reading,
-//!   `std.Affine`'s): a line a line, and under the similarity of two pairs an arc an arc about
-//!   its centre's image and a circle a circle (`CKind::MappedCircle`), its radius scaled;
+//!   `std.stations.Affine`'s): a line a line, and under the similarity of two pairs an arc an arc
+//about !   its centre's image and a circle a circle (`CKind::MappedCircle`), its radius scaled;
 //! * **the mirror** (`mirror: true`) reverses the turn, so the image is walked the other way and
 //!   an arc runs from its end's image to its start's: the image winds as the source does.
 //!

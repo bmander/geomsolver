@@ -17,7 +17,8 @@
 // `distance` line and the report says DOF 1: the pinion may slide.
 
 unit mm
-use std (horizontal, skew)
+use std
+use std.place (horizontal, skew)
 shaft_angle := 90deg
 offset := 17.5mm
 

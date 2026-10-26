@@ -11,7 +11,8 @@
 // Built exactly: 55100.165 mm³ — the disc, less the chamfer's ring (Pappus), less the two slivers
 // a 1 mm ball cannot reach at the chamfer's 135° edges. Edit a number and apply (⌘↵).
 unit mm
-use std (round, chamfer)
+use std
+use std.rounds (round, chamfer)
 
 R := 30mm    // the disc's radius
 d := 4mm     // the chamfer's legs

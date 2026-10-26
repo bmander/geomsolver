@@ -1,29 +1,29 @@
-//! **A body grown, built exactly** (`std.Grown`): a region solid read in general position whose one
-//! term bounds the distance from a body's material, `{ p | distance(p, within) <= d }` with
-//! `within := { c | c inside B }`, is every point within `d` of `B` — `B` and the points nearer
-//! than `d` outside it.  Outside, a point's nearest point of `B` is inside a face, inside an edge or
-//! a corner, so what it adds is a partition into those points: each face's prism `d` out along its
-//! normal (a cylinder's band, its radius grown or a bore's shrunk by `d`), each convex edge's wedge
-//! of radius `d` between its two faces' normals (a torus's where the edge is a circle), and each
-//! convex corner's sector of the ball where three faces meet.  A concave edge has no wedge: its two
-//! faces' prisms overlap there, and each is cut back to the edge's bisector (the plane through it
-//! halfway between them), where they meet face to face.  At a corner where one concave edge meets
-//! a face square to both its faces (a step's end, a pocket's rim) the ball has no sector, and the
-//! two wedges along that face are cut back to the same bisector, meeting in it; where three concave
-//! edges meet (a pocket's floor) the three prisms meet in their bisectors.  Each piece shares its
-//! faces exactly with the next — a prism its foot with the face, its sides with the wedges or the
-//! prism across a bisector, a wedge its ends with the sectors or the wedge across a bisector — so
-//! they are glued to `B` there and nothing is intersected (`boolean::glued`): the boundary of `B`
-//! grown, planes, cylinders, tori and spheres meeting tangent, the cuts transversal.  Held to the
-//! region read point by point before it stands (`gate`), as the other exact constructions are.  A
-//! concave edge on a curved face (a post's foot, its bisector a cone), a corner where a convex edge
-//! stands between two concave ones (a boss's foot), a face beside a concave edge that is no convex
-//! polygon or is narrower than the reach (a pocket narrower than twice it), a face no plane or
-//! cylinder carries, an edge no line or circle, a convex corner that is no prism's (three faces,
-//! one square to the other two), a bore no wider than the reach, or a body whose faces another
-//! solid reads leave it the field's, said by name.  The recipe's `grown` node: the body's own node,
-//! and its pieces each a `prism` or a `revolve` — one cut back a `region`, in common with a block
-//! standing on each bisector.
+//! **A body grown, built exactly** (`std.rounds.Grown`): a region solid read in general position
+//! whose one term bounds the distance from a body's material, `{ p | distance(p, within) <= d }`
+//! with `within := { c | c inside B }`, is every point within `d` of `B` — `B` and the points
+//! nearer than `d` outside it.  Outside, a point's nearest point of `B` is inside a face, inside an
+//! edge or a corner, so what it adds is a partition into those points: each face's prism `d` out
+//! along its normal (a cylinder's band, its radius grown or a bore's shrunk by `d`), each convex
+//! edge's wedge of radius `d` between its two faces' normals (a torus's where the edge is a
+//! circle), and each convex corner's sector of the ball where three faces meet.  A concave edge has
+//! no wedge: its two faces' prisms overlap there, and each is cut back to the edge's bisector (the
+//! plane through it halfway between them), where they meet face to face.  At a corner where one
+//! concave edge meets a face square to both its faces (a step's end, a pocket's rim) the ball has
+//! no sector, and the two wedges along that face are cut back to the same bisector, meeting in it;
+//! where three concave edges meet (a pocket's floor) the three prisms meet in their bisectors.
+//! Each piece shares its faces exactly with the next — a prism its foot with the face, its sides
+//! with the wedges or the prism across a bisector, a wedge its ends with the sectors or the wedge
+//! across a bisector — so they are glued to `B` there and nothing is intersected
+//! (`boolean::glued`): the boundary of `B` grown, planes, cylinders, tori and spheres meeting
+//! tangent, the cuts transversal.  Held to the region read point by point before it stands
+//! (`gate`), as the other exact constructions are.  A concave edge on a curved face (a post's foot,
+//! its bisector a cone), a corner where a convex edge stands between two concave ones (a boss's
+//! foot), a face beside a concave edge that is no convex polygon or is narrower than the reach (a
+//! pocket narrower than twice it), a face no plane or cylinder carries, an edge no line or circle,
+//! a convex corner that is no prism's (three faces, one square to the other two), a bore no wider
+//! than the reach, or a body whose faces another solid reads leave it the field's, said by name.
+//! The recipe's `grown` node: the body's own node, and its pieces each a `prism` or a `revolve` —
+//! one cut back a `region`, in common with a block standing on each bisector.
 use crate::brep::build::{Profile, ProfileEdge};
 use crate::brep::geom::{Curve, Frame, Surface};
 use crate::brep::recipe::Writer;

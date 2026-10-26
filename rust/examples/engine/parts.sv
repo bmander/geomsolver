@@ -4,7 +4,8 @@
 // its definition: the `use` below lists them, so a piston is `D` wide in every view.
 
 use engine.dims (D, ch, ph, rpin)
-use std (above, below, left_of, offset, right_of)
+use std
+use std.place (above, below, left_of, offset, right_of)
 
 // A line tangent to two circles at both ends — a belt run, a crank web's flank, a cam's flank.
 // `side` says which side of the centre line: 1 the left of `k1` to `k2`, -1 the right.  That is

@@ -5,7 +5,8 @@
 // Closed form (Cavalieri): every section is the 20 mm square, so V = 20² · 40 = 16000 mm³ at any
 // turn and under any law.
 unit mm
-use std (on_u, coords)
+use std
+use std.place (on_u, coords)
 use lofts
 length := 40mm
 

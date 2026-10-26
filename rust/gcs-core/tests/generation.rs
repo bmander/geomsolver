@@ -28,7 +28,8 @@ use crate::common::build;
 /// cut point, the foot of the normal from `P` on the flank.  The normal is a line of its own
 /// length (`P` to `N`) so the block stays regular where the flank passes through `P`.
 pub const RACK: &str = "\
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 component RackFlank(pitch: circle, datum: line, alpha: Angle, s0: Length, u: Angle) {
   P := point hint((pitch.center.x + pitch.r * cos(u), pitch.center.y + pitch.r * sin(u)))
   Q := point hint((pitch.center.x + pitch.r * cos(u) - 10 * sin(u), pitch.center.y + pitch.r * sin(u) + 10 * cos(u)))
@@ -304,7 +305,8 @@ g coincident cut hint(t: 5)
 #[test]
 fn a_roller_cuts_its_cam() {
     let src = "\
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 in std.front {
 o := point
 fix((0, 0)) o
@@ -356,7 +358,8 @@ profile := envelope(roller over t in (0deg, 270deg), under: follower, seen_from:
 fn a_tooth_cuts_its_conjugate() {
     // pitch radii 20 and 40, 20° pressure angle: base radii 20 cos 20° and 40 cos 20°
     let src = "\
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 component Involute(c: circle, phase: Angle, u: Angle) {
   p := point(x: c.center.x + c.r * (cos(u + phase) + u * pi / 180 * sin(u + phase)), y: c.center.y + c.r * (sin(u + phase) - u * pi / 180 * cos(u + phase)))
 }
@@ -466,7 +469,8 @@ fn a_line_is_tangent_to_an_envelope() {
 /// turns the other way at 2/3 the pinion's rate.  `tooth` is the pinion's flank, generated; `mate`
 /// is the gear's, generated *by the tooth* — the tooth is the tool.
 const SPUR: &str = "\
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 in std.front {
 o1 := point
 o2 := point hint((50, 0))
@@ -559,7 +563,8 @@ fn a_rack_cut_tooth_cuts_its_mate() {
 #[test]
 fn a_cam_cuts_its_conjugate_cam() {
     let src = "\
-use std (slides, spins, turns)
+use std
+use std.motion (slides, spins, turns)
 component Lobe(c: point, a: Length, b: Length, u: Angle) {
   p := point(x: c.x + a * cos(u), y: c.y + b * sin(u))
 }

@@ -3,7 +3,8 @@
 // on z: its apex `height` above the lip's corner and `offset` along the lip, its axis tilted
 // `tilt` from the drill's (towards y, behind the lip as the drill turns), and its half-angle
 // `cone`. It reaches `reach` down the drill's axis from the corner, past everything it keeps.
-use std (coords, on_u)
+use std
+use std.place (coords, on_u)
 
 component PointCone(side: plane, top: Length, cone: Angle, tilt: Angle, height: Length,
                     offset: Length, reach: Length) {

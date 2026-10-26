@@ -1,17 +1,17 @@
-//! **Frames along a path** (#398 C): a jointed frame whose joint is held along a path (`std.Along`,
-//! `std.AlongFrenet`, each the frame `f` it makes: `g coincident f.axis`) stands where the path's parameter puts it, its pose
-//! read off the path after the solve — a motion of its own kind (`MotionDef::Guided`), the
-//! rotation-minimising frame integrated by double reflection from its home or the path's own
-//! frame read off its derivatives.  What is drawn in it is drawn at the home, and a face drawn
-//! there is swept as a declared parameter runs, `sweep(sec over s)`, standing at every station
-//! where the frame does.
+//! **Frames along a path** (#398 C): a jointed frame whose joint is held along a path
+//! (`std.stations.Along`, `std.stations.AlongFrenet`, each the frame `f` it makes: `g coincident
+//! f.axis`) stands where the path's parameter puts it, its pose read off the path after the solve —
+//! a motion of its own kind (`MotionDef::Guided`), the rotation-minimising frame integrated by
+//! double reflection from its home or the path's own frame read off its derivatives.  What is drawn
+//! in it is drawn at the home, and a face drawn there is swept as a declared parameter runs,
+//! `sweep(sec over s)`, standing at every station where the frame does.
 //!
 //! Gated by stations along a spline against today's (stage 5's unbuilt gate): the tube and the
-//! ribbon swept in such frames against `std.On`'s and `std.Frenet`'s families corner for corner,
-//! along a spline in a plane and one in space; by the frame along a traced helix against the
-//! helix's rotation-minimising frame in closed form, its rate against a difference of its pose;
-//! by `MotionBounds` holding every sampled pose of every stretch and the speed bound every
-//! sampled speed; and by the refusals.
+//! ribbon swept in such frames against `std.stations.On`'s and `std.stations.Frenet`'s families
+//! corner for corner, along a spline in a plane and one in space; by the frame along a traced helix
+//! against the helix's rotation-minimising frame in closed form, its rate against a difference of
+//! its pose; by `MotionBounds` holding every sampled pose of every stretch and the speed bound
+//! every sampled speed; and by the refusals.
 use gcs_core::brep::geom::V;
 use gcs_core::interval::Interval as I;
 use gcs_core::motion::Family;
@@ -22,10 +22,12 @@ use std::f64::consts::PI;
 use crate::common::parsed::determined;
 
 /// A rectangle drawn in the plane `n` about its origin, and today's stations on a path: a
-/// rectangle in `std.On`'s plane and in `std.Frenet`'s; the planar spline and the cubic in space
-/// the frames run along; and the traced helix.
+/// rectangle in `std.stations.On`'s plane and in `std.stations.Frenet`'s; the planar spline and the
+/// cubic in space the frames run along; and the traced helix.
 const PATHS: &str = "unit mm
-use std (coords)
+use std
+use std.place (coords)
+use std.stations
 
 component Rect(n: plane, w: Length, h: Length) {
   in n {
@@ -41,13 +43,13 @@ component Rect(n: plane, w: Length, h: Length) {
 }
 
 component Rider(g: path, up: axis, w: Length, h: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   sec := Rect(st.n, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Ribbon(g: path, w: Length, h: Length, s: Scalar) {
-  st := std.Frenet(g, s: s)
+  st := std.stations.Frenet(g, s: s)
   sec := Rect(st.n, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
@@ -78,7 +80,7 @@ param s: Scalar over (0, 1)
 /// A frame `n` along `guide` by `word` (its arguments `args`), a `w` × `h` rectangle drawn in it,
 /// and the rectangle swept as `s` runs: `along`.
 fn along(word: &str, guide: &str, args: &str) -> String {
-    format!("al := std.{word}({guide}{args})
+    format!("al := std.stations.{word}({guide}{args})
 sec := Rect(al.f, w: 2mm, h: 1mm)
 f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 along := sweep(f over s)
@@ -117,11 +119,11 @@ fn motion(e: &Elaborated, name: &str) -> Family {
     Family::read(&e.sketch, i).unwrap()
 }
 
-/// **A tube in a frame along a spline is today's station's**: a rectangle drawn in `std.Along`'s
-/// frame at its home and swept as `s` runs stands, corner for corner, where the same rectangle in
-/// `std.On`'s plane does — along a spline in a plane, `up` its normal (where the frame is the one
-/// holding `v` along `up`, wherever its home), and along a cubic in space, homed where `On`'s
-/// family is, the middle of its interval.  Their volumes agree.
+/// **A tube in a frame along a spline is today's station's**: a rectangle drawn in
+/// `std.stations.Along`'s frame at its home and swept as `s` runs stands, corner for corner, where
+/// the same rectangle in `std.stations.On`'s plane does — along a spline in a plane, `up` its
+/// normal (where the frame is the one holding `v` along `up`, wherever its home), and along a cubic
+/// in space, homed where `On`'s family is, the middle of its interval.  Their volumes agree.
 #[test]
 fn a_tube_in_a_frame_along_a_spline_is_todays_stations() {
     for (guide, home) in [("curvy", "0"), ("cubic", "0.5")] {
@@ -131,8 +133,9 @@ fn a_tube_in_a_frame_along_a_spline_is_todays_stations() {
     }
 }
 
-/// **A ribbon in the frame of a spline in space is `std.Frenet`'s**: the path's own frame, read off
-/// its derivatives at every station, wherever it is homed — corner for corner and by volume.
+/// **A ribbon in the frame of a spline in space is `std.stations.Frenet`'s**: the path's own frame,
+/// read off its derivatives at every station, wherever it is homed — corner for corner and by
+/// volume.
 #[test]
 fn a_ribbon_in_a_frenet_frame_along_a_spline_is_todays_stations() {
     let src = format!("{PATHS}{}today := sweep(Ribbon(cubic, w: 2mm, h: 1mm).f over s)\n",
@@ -148,6 +151,7 @@ fn a_ribbon_in_a_frenet_frame_along_a_spline_is_todays_stations() {
 fn the_frame_along_a_traced_helix_is_its_closed_form() {
     let src = "unit mm
 use std
+use std.stations
 
 o := point hint((0, 0, 0))
 fix((0, 0, 0)) o
@@ -168,7 +172,7 @@ component Helix(o: point, x: line, y: line, z: line, r: Length, pitch: Length, t
   o distance(pitch * turns * u, along: z) p
 }
 guide := trace(Helix(o, xl, yl, zl, r: 10mm, pitch: 5mm, turns: 2).p over u in (0, 1))
-al := std.Along(guide, up: std.z, home: 0.3)
+al := std.stations.Along(guide, up: std.z, home: 0.3)
 ";
     let e = determined(src);
     let f = motion(&e, "al.f");

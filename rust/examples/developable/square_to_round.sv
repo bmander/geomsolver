@@ -3,8 +3,8 @@
 // triangles — along each straight side the rulings all meet at the one point of the round the
 // plane through that side touches — and four fans, cones about the corners, where the plane turns
 // about a corner between its two sides' directions, supporting it there. Nothing is a special
-// case: the rulings are what `std.Developable`'s body says, and the corners fan because a plane
-// touches a corner wherever it lies between its two one-sided tangents.
+// case: the rulings are what `std.panels.Developable`'s body says, and the corners fan because a
+// plane touches a corner wherever it lies between its two one-sided tangents.
 //
 // The band is seamed at the middle of a long side, `s`, and laid flat from there, outside up: the
 // development is the sheet-metal pattern of the transition, its long sides cut straight (each
@@ -18,6 +18,7 @@
 // (100, 0, 0) to (50, 0, 150), height √(50² + 150²) = 158.114, area 120 · 158.114 / 2 = 9486.8.
 unit mm
 use std
+use std.panels
 
 w := 200mm
 h := 120mm
@@ -50,7 +51,7 @@ in duct {
   radius(r) round
 }
 
-panel := std.Developable(mouth, round)            // a set: the transition
+panel := std.panels.Developable(mouth, round)            // a set: the transition
 skin := { q | q distance(<= 1.5mm, side: outside) panel }
 transition := solid(skin)                         // the sheet, 1.5 thick
 
@@ -58,7 +59,7 @@ sheet := plane
 fix(origin == (0mm, 0mm, -100mm)) sheet
 fix(dir == (1, 0, 0)) sheet.u
 fix(dir == (0, 1, 0)) sheet.v
-flat := std.Development(panel, s, d: 0mm) in sheet   // its pattern, laid in the sheet
+flat := std.panels.Development(panel, s, d: 0mm) in sheet   // its pattern, laid in the sheet
 in sheet {
   corner := point
   fix((0mm, 0mm)) corner

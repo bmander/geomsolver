@@ -2,12 +2,20 @@
 //!
 //! The core takes text and has no filesystem, so in the browser a `use` can only resolve against
 //! what is compiled in — and that is this table: the modules the shipped examples are written
-//! over, named as `use` names them (`engine.crank` is `rust/examples/engine/crank.sv`).  The CLI
-//! looks beside the document first and comes here second, so a file of the same name wins there.
+//! over, named as `use` names them (`engine.crank` is `rust/examples/engine/crank.sv`, `std.sets`
+//! is `rust/lib/std/sets.sv`).  The CLI looks beside the document first and comes here second, so
+//! a file of the same name wins there.
 
 /// The library, `(name, text)`.
 pub const MODULES: &[(&str, &str)] = &[
     ("std", include_str!("../../lib/std.sv")),
+    ("std.place", include_str!("../../lib/std/place.sv")),
+    ("std.shapes", include_str!("../../lib/std/shapes.sv")),
+    ("std.sets", include_str!("../../lib/std/sets.sv")),
+    ("std.rounds", include_str!("../../lib/std/rounds.sv")),
+    ("std.panels", include_str!("../../lib/std/panels.sv")),
+    ("std.stations", include_str!("../../lib/std/stations.sv")),
+    ("std.motion", include_str!("../../lib/std/motion.sv")),
     ("hardware", include_str!("../../lib/hardware.sv")),
     ("engine.dims", include_str!("../../examples/engine/dims.sv")),
     ("engine.parts", include_str!("../../examples/engine/parts.sv")),
@@ -46,4 +54,21 @@ pub fn parse_linked(src: &str) -> (crate::syntax::Program, Vec<crate::syntax::Sy
     let (mut prog, errs) = crate::syntax::parse(src);
     let diags = crate::modules::link(&mut prog, &mut resolve);
     (prog, errs, diags)
+}
+
+/// **The module of the library under `under` that defines `name`** — a component, an interface,
+/// a relation word, a value or a group, what a `use` may import (`program::defines`) — for a
+/// message that says which `use` reaches a name the file has not brought in: `Sphere` under `std`
+/// is `std.sets`'s, `horizontal` `std.place`'s.  The library is linked once, the first time a
+/// document misses a name, and kept.
+pub fn home(under: &str, name: &str) -> Option<&'static str> {
+    static LIBRARY: std::sync::OnceLock<crate::syntax::Program> = std::sync::OnceLock::new();
+    let p = LIBRARY.get_or_init(|| {
+        let uses: String = MODULES.iter().map(|(n, _)| format!("use {n}\n")).collect();
+        parse_linked(&uses).0
+    });
+    let prefix = format!("{under}.");
+    MODULES.iter().map(|(n, _)| *n).filter(|n| n.starts_with(&prefix)).find(|n| {
+        p.module_named(n).is_some_and(|k| crate::program::defines(p, k, name).is_some())
+    })
 }

@@ -165,7 +165,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   lets them go too.  Enter writes `edit::add_rounds`: the mesh's paths mapped to the document's
   through the operand routes (`EvaluatedSolid::face_route`, the report's too; `plate.near` on `pad` is `pad.plate.near`, checked against `face_paths`; a
   round's own faces have no name to write), `F round(r: d) body` per face, `a round(r: d) b` per
-  edge no face covers, `round(r: d) body` for every face, `use std` made to name the word — one
+  edge no face covers, `round(r: d) body` for every face, `use std.rounds` made to name the word — one
   splice, held to the elaborator over both places (the library's errors are said at the `use`).
   Corners where three rounded edges meet are a ball's only in that last form.  The offered size
   is the last written, else `edit::round_size`.  `tests/edit_rounds.rs` and `app.test.ts` are the
@@ -380,7 +380,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   leaves it out as it does a `repeated` copy — asked for by id (focused) it is still drawn, and a
   sheet's annotations and `dimensions` draw what they name.  The V-twin's assembly draws its own
   two numbers, not the ~290 of the parts it imports; opening `components/cylinder.sv` draws the
-  cylinder's.  A module with no drawing of its own is vocabulary (`std.Hex`,
+  cylinder's.  A module with no drawing of its own is vocabulary (`std.shapes.Hex`,
   `hardware.BoltPattern`), drawn where the document calls it.  `tests/callout.rs`'s
   `a_part_is_dimensioned_in_its_own_file` is the gate.
 - One straight dimension figure, `Pen::linear`, draws them all: it measures along a *given*

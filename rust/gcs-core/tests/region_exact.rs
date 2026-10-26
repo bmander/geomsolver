@@ -11,7 +11,7 @@ use std::f64::consts::PI;
 use crate::common::{ent, text::solved};
 
 /// The origin, and lines from it along x and z.
-const AXES: &str = "unit mm\nuse std\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
+const AXES: &str = "unit mm\nuse std\nuse std.sets\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
                     xe := point hint((1, 0, 0))\nfix((1, 0, 0)) xe\nze := point hint((0, 0, 1))\n\
                     fix((0, 0, 1)) ze\nxl := line(c, xe)\nzl := line(c, ze)\n";
 
@@ -50,7 +50,7 @@ fn an_ellipsoid_by_its_foci_is_an_ellipse_turned() {
     // the bound turned round, the ellipsoid taken out of a ball about it
     let e = solved(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
                              f2 := point hint((-3, 0, 0))\nfix((-3, 0, 0)) f2\n\
-                             ball := std.Sphere(c, r: 8)\n\
+                             ball := std.sets.Sphere(c, r: 8)\n\
                              shell := {{ p | p inside ball; distance(p, f1) + distance(p, f2) >= 10mm }}\n\
                              s := solid(shell)\n"));
     let b = exported(&e, "s");
@@ -63,7 +63,7 @@ fn an_ellipsoid_by_its_foci_is_an_ellipse_turned() {
 fn a_voronoi_cell_is_a_ball_halved_by_a_plane() {
     let e = solved(&format!("{AXES}a := point hint((2, 0, 0))\nfix((2, 0, 0)) a\n\
                              b := point hint((-2, 0, 0))\nfix((-2, 0, 0)) b\n\
-                             ball := std.Sphere(c, r: 5)\n\
+                             ball := std.sets.Sphere(c, r: 5)\n\
                              near_a := {{ p | p inside ball; distance(p, a) <= distance(p, b) }}\n\
                              near_b := {{ p | p inside ball; distance(p, a) >= distance(p, b) }}\n\
                              sa := solid(near_a)\nsb := solid(near_b)\n"));
@@ -92,7 +92,7 @@ fn a_voronoi_cell_is_a_ball_halved_by_a_plane() {
 fn a_hyperboloids_lobe_is_a_hyperbola_turned() {
     let e = solved(&format!("{AXES}f1 := point hint((3, 0, 0))\nfix((3, 0, 0)) f1\n\
                              f2 := point hint((-3, 0, 0))\nfix((-3, 0, 0)) f2\n\
-                             ball := std.Sphere(c, r: 6)\n\
+                             ball := std.sets.Sphere(c, r: 6)\n\
                              lobe := {{ p | p inside ball; distance(p, f2) - distance(p, f1) >= 2mm }}\n\
                              s := solid(lobe)\n"));
     let s = ent(&e, "s").i();
@@ -127,10 +127,10 @@ fn a_sum_no_conic_folds_stays_the_fields() {
 /// the ball less the cylinder.
 #[test]
 fn two_crossing_cylinders_are_their_common() {
-    let e = solved(&format!("{AXES}a := std.Cylinder(xl, r: 2)\nb := std.Cylinder(zl, r: 2)\n\
+    let e = solved(&format!("{AXES}a := std.sets.Cylinder(xl, r: 2)\nb := std.sets.Cylinder(zl, r: 2)\n\
                              both := {{ p | p inside a; p inside b }}\nbi := solid(both)\n\
                              o := point hint((2, 0, 0))\nfix((2, 0, 0)) o\n\
-                             ball := std.Sphere(o, r: 5)\nbore := std.Cylinder(zl, r: 1)\n\
+                             ball := std.sets.Sphere(o, r: 5)\nbore := std.sets.Cylinder(zl, r: 1)\n\
                              bored := {{ p | p inside ball; p outside bore }}\ncored := solid(bored)\n"));
     let bi = ent(&e, "bi").i();
     assert!(gcs_core::solid::region::in_general(&e.sketch, bi));

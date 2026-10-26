@@ -2,14 +2,14 @@
 //! formal as it stands on a spline — `m coincident(t == s) g` pins the contact's place, the trace's
 //! own formal, to the family's running number, `hint(at: m, along: g)` steps along its `d[0]`, and
 //! a `path` formal takes it — so a family is swept along a guide drawn in space, its frame the
-//! rotation-minimising one `std.Minimal` states as a rate.
+//! rotation-minimising one `std.stations.Minimal` states as a rate.
 //!
 //! Gated by closed forms off the exact B-rep: a square tube along two turns of a helix traced by
-//! its ordinates is its area along the helix's length; the same family over `std.OnHelix`'s
-//! station, whose helix is written into its body, is the same solid corner for corner; and the
-//! frame integrated along a traced helix falls behind the helix's Frenet frame at its torsion.
-//! And the refusals: a surface traced over two formals is no path, and a curve's place is said
-//! once, `t` and `u` being one number.
+//! its ordinates is its area along the helix's length; the same family over
+//! `std.stations.OnHelix`'s station, whose helix is written into its body, is the same solid corner
+//! for corner; and the frame integrated along a traced helix falls behind the helix's Frenet frame
+//! at its torsion. And the refusals: a surface traced over two formals is no path, and a curve's
+//! place is said once, `t` and `u` being one number.
 use gcs_core::brep::geom::V;
 use gcs_core::program::Elaborated;
 use std::f64::consts::PI;
@@ -18,11 +18,14 @@ use crate::common::parsed::{build, determined, read, solved};
 
 /// Three axes through the origin drawn in space; a helix of radius `r` rising `pitch` a turn over
 /// `turns` of them about `z` from `x`, traced by its point's ordinates as `u` runs over `(0, 1)`;
-/// a station on any path whose plane stands square to it and turns by `std.Minimal`'s rate, a
-/// `w` × `h` rectangle centred in it; the same rectangle in `std.Minimal`'s plane over
-/// `std.OnHelix`'s station; and a round section of radius `r` in `std.On`'s plane on any path.
+/// a station on any path whose plane stands square to it and turns by `std.stations.Minimal`'s
+/// rate, a `w` × `h` rectangle centred in it; the same rectangle in `std.stations.Minimal`'s plane
+/// over `std.stations.OnHelix`'s station; and a round section of radius `r` in `std.stations.On`'s
+/// plane on any path.
 const PATHS: &str = "unit mm
-use std (coords, horizontal, vertical)
+use std
+use std.place (coords, horizontal, vertical)
+use std.stations
 
 o := point hint((0, 0, 0))
 fix((0, 0, 0)) o
@@ -66,33 +69,33 @@ component Station(g: path, up: axis, w: Length, h: Length, s: Scalar) {
 
 component Coil(base: plane, r: Length, pitch: Length, turns: Scalar, w: Length, h: Length,
                s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
-  rm := std.Minimal(st.n, up: base.normal, s: s)
+  st := std.stations.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  rm := std.stations.Minimal(st.n, up: base.normal, s: s)
   sec := Rect(rm.f, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Facing(base: plane, r: Length, pitch: Length, turns: Scalar, w: Length, h: Length,
                  s: Scalar) {
-  st := std.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
+  st := std.stations.OnHelix(base, r: r, pitch: pitch, turns: turns, s: s)
   sec := Rect(st.n, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Frenet(g: path, w: Length, h: Length, s: Scalar) {
-  st := std.Frenet(g, s: s)
+  st := std.stations.Frenet(g, s: s)
   sec := Rect(st.n, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Rider(g: path, up: axis, w: Length, h: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   sec := Rect(st.n, w: w, h: h)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
 
 component Round(g: path, up: axis, r: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(r) k
@@ -194,9 +197,10 @@ q := point hint(at: m, along: guide, by: 0.01)
 
 /// **A square tube along a traced helix is its section along its length**: a 2 × 2 square square
 /// to two turns of a helix of radius 10 rising 10, its centroid on it, sweeps 4·√((40π)² + 10²) =
-/// 504.2439 mm³ — and the station the traced guide is handed to is `std.OnHelix`'s, under
-/// `std.Minimal`'s frame, corner for corner: the guide drawn in space and the one written into the
-/// station's body are one helix, and both frames are integrated from a home square to the axis.
+/// 504.2439 mm³ — and the station the traced guide is handed to is `std.stations.OnHelix`'s, under
+/// `std.stations.Minimal`'s frame, corner for corner: the guide drawn in space and the one written
+/// into the station's body are one helix, and both frames are integrated from a home square to the
+/// axis.
 #[test]
 fn a_tube_along_a_traced_helix_is_its_section_along_its_length() {
     let e = with("
@@ -208,14 +212,15 @@ written := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 2, w: 2mm, h: 2mm).f
     let want = 4.0 * (40.0 * PI).hypot(10.0);
     assert!((want - 504.2439).abs() < 1e-4, "{want}");
     near(exact(&e, "traced"), want, 1e-9, "the tube along the traced helix");
-    near(exact(&e, "written"), want, 1e-9, "the tube along `std.OnHelix`");
+    near(exact(&e, "written"), want, 1e-9, "the tube along `std.stations.OnHelix`");
     same_corners(&e, "traced", "written");
 }
 
-/// **`std.On` stands square to a twisted guide** (#363 S2): its frame is integrated from its
-/// home, `up` read there alone, so along a traced helix it is the station above — the same solid as
-/// `std.OnHelix`'s under `std.Minimal`, corner for corner, at its area along the helix's length —
-/// where a frame holding `v` along `up` everywhere would lean the section off square to it.
+/// **`std.stations.On` stands square to a twisted guide** (#363 S2): its frame is integrated from
+/// its home, `up` read there alone, so along a traced helix it is the station above — the same
+/// solid as `std.stations.OnHelix`'s under `std.stations.Minimal`, corner for corner, at its area
+/// along the helix's length — where a frame holding `v` along `up` everywhere would lean the
+/// section off square to it.
 #[test]
 fn on_stands_square_to_a_twisted_guide() {
     let e = with("
@@ -224,7 +229,7 @@ param s: Scalar over (0, 1)
 on := sweep(Rider(guide, std.z, w: 2mm, h: 2mm).f over s)
 written := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 2, w: 2mm, h: 2mm).f
                  over s)");
-    near(exact(&e, "on"), 4.0 * (40.0 * PI).hypot(10.0), 1e-9, "the tube in `std.On`'s frame");
+    near(exact(&e, "on"), 4.0 * (40.0 * PI).hypot(10.0), 1e-9, "the tube in `std.stations.On`'s frame");
     same_corners(&e, "on", "written");
 }
 
@@ -236,7 +241,7 @@ written := sweep(Coil(std.top, r: 10mm, pitch: 5mm, turns: 2, w: 2mm, h: 2mm).f
 fn the_frame_is_carried_across_a_chains_joints() {
     let e = with("
 component Box(g: path, up: axis, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     a := point
     b := point
@@ -273,13 +278,13 @@ box := sweep(Box(route, std.z).f over s)");
     near(exact(&e, "box"), 4.0 * (60.0 + 23.0 * PI), 1e-9, "the box round the U");
 }
 
-/// **Frenet's frame along a traced helix is `std.OnHelix`'s** (#363 S5): `std.Frenet` stands its
-/// plane square to the curve with `u` toward the centre of curvature (`g curvature(at: m) c`, no
-/// seed saying which way) and `v` the binormal, so along the helix of `lofts/ribbon.sv` — radius
-/// 12, pitch 6, three turns — a 4 × 0.5 ribbon in it is that example's `facing` solid, corner for
-/// corner (`OnHelix`'s `u` runs out from the axis, the ribbon centred on it either way), at its
-/// area along the helix's length.  And the centre where it stands is the closed form's, the
-/// radius of curvature (r² + b²)/r in from the curve toward the axis.
+/// **Frenet's frame along a traced helix is `std.stations.OnHelix`'s** (#363 S5):
+/// `std.stations.Frenet` stands its plane square to the curve with `u` toward the centre of
+/// curvature (`g curvature(at: m) c`, no seed saying which way) and `v` the binormal, so along the
+/// helix of `lofts/ribbon.sv` — radius 12, pitch 6, three turns — a 4 × 0.5 ribbon in it is that
+/// example's `facing` solid, corner for corner (`OnHelix`'s `u` runs out from the axis, the ribbon
+/// centred on it either way), at its area along the helix's length.  And the centre where it stands
+/// is the closed form's, the radius of curvature (r² + b²)/r in from the curve toward the axis.
 #[test]
 fn frenets_frame_along_a_traced_helix_is_on_helixs() {
     let e = with("
@@ -288,7 +293,7 @@ param s: Scalar over (0, 1)
 frenet := sweep(Frenet(guide, w: 4mm, h: 0.5mm).f over s)
 facing := sweep(Facing(std.top, r: 12mm, pitch: 6mm, turns: 3, w: 4mm, h: 0.5mm).f
                 over s)
-st := std.Frenet(guide, s: 0.3)");
+st := std.stations.Frenet(guide, s: 0.3)");
     near(exact(&e, "frenet"), 2.0 * 3.0 * (24.0 * PI).hypot(6.0), 1e-9, "the ribbon");
     same_corners(&e, "frenet", "facing");
     let at = |n: &str| e.sketch.world_point(e.map.ent_named(n).unwrap().i());
@@ -472,7 +477,7 @@ fn a_spline_in_space_is_drawn_in_the_box() {
 }
 
 /// **A tube along a spline in space is its area along its length**: a round section of radius
-/// 3 square to the Bézier above, in `std.On`'s frame, sweeps 9π times the curve's length
+/// 3 square to the Bézier above, in `std.stations.On`'s frame, sweeps 9π times the curve's length
 /// (Gauss–Legendre on Bernstein's derivative).
 #[test]
 fn a_tube_along_a_spline_in_space_is_its_area_along_its_length() {
@@ -728,7 +733,7 @@ length(20mm) l4
 radius(20mm) k3
 l4 parallel std.z
 component Bar(g: path, up: axis, lo: Length, hi: Length, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   sec := Span(st.n, lo: lo, hi: hi)
   f := face(sec.a, sec.b, sec.c, sec.d, -> close)
 }
@@ -749,10 +754,10 @@ component Span(n: plane, lo: Length, hi: Length) {
 /// **A pipe bent in two planes** (#363 S4): the straight between the bends touches each in its own
 /// plane (`TangentCircleAt3`), so the five are one chain and a family runs it.  A 4 mm round tube
 /// along it is its area along its length, 16π·(60 + 20π) = 6174.20 mm³; a 2 × 2 square under
-/// `std.On`'s frame is 4·(60 + 20π) = 491.33 mm³.  And the frame has a closed form: it starts
-/// with `u` square to `z` on the first straight (+y, `v` +z), turns a quarter about `z` round the
-/// first bend and a quarter about `x` round the second, and ends with the tangent +z, `u` −x and
-/// `v` −y — read off the end cap of a bar 3 wide along `u` and 2 along `v`.
+/// `std.stations.On`'s frame is 4·(60 + 20π) = 491.33 mm³.  And the frame has a closed form: it
+/// starts with `u` square to `z` on the first straight (+y, `v` +z), turns a quarter about `z`
+/// round the first bend and a quarter about `x` round the second, and ends with the tangent +z, `u`
+/// −x and `v` −y — read off the end cap of a bar 3 wide along `u` and 2 along `v`.
 #[test]
 fn a_pipe_bent_in_two_planes_is_one_chain() {
     let e = with(&format!("{PIPE}
@@ -1123,7 +1128,7 @@ fn wrapped(a: f64) -> f64 {
 /// **The frame along a traced helix falls behind Frenet's at the torsion**: over a turn of a
 /// helix of radius 10 and pitch 5 the rotation-minimising frame turns 2πb/√(r² + b²) = 28.5576°
 /// against the helix's Frenet frame, b = pitch/2π — read off the caps of a 2 × 1 rectangle swept
-/// along the guide traced in space, as `tests/rates.rs` reads it off `std.OnHelix`'s.
+/// along the guide traced in space, as `tests/rates.rs` reads it off `std.stations.OnHelix`'s.
 #[test]
 fn the_frame_along_a_traced_helix_turns_against_frenet_at_the_torsion() {
     let e = with("

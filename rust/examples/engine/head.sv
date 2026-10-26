@@ -23,7 +23,8 @@ use engine.dims (D, P, back, camcap, camh, camx, deck, dev, div, dn_e, dn_i, ece
                  gasket, head, hw, icenter, rb, rcamj, rn, roof, stem, va, vs, wcamb)
 use engine.parts
 use engine.valvetrain
-use std (horizontal, offset, right_of)
+use std
+use std.place (horizontal, offset, right_of)
 
 // the camshafts' own sizes: the shaft between its journals, and each lobe's width along the axis,
 // one lobe over each of a cylinder's four valves, which stand `vx` either side of its bore's axis

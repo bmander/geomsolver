@@ -17,7 +17,9 @@ use gcs_core::space::{cross, dot, norm, sub};
 /// torus) — under the mesh of two skew shafts, one of them a screw.
 const SIDES: &str = "\
 unit mm
-use std (spins, turns)
+use std
+use std.sets
+use std.motion (spins, turns)
 in std.front {
   o := point
   q := point
@@ -159,7 +161,7 @@ r coincident f2
     }
 }
 
-/// A cone set's envelope (`std.ConeThrough`, the face mill's flank), held to a point under the
+/// A cone set's envelope (`std.sets.ConeThrough`, the face mill's flank), held to a point under the
 /// mesh of two skew shafts: the point is where `motion::Family` carries the cone's point at the
 /// contact's place, and the cone's normal there is square to its velocity.
 #[test]
@@ -210,7 +212,9 @@ fn a_point_held_to_a_cone_sets_envelope_is_on_it() {
 /// `(10, 0, 0)` leaning 20°, generating under a mesh of shafts square to one another and offset.
 const CONE: &str = "\
 unit mm
-use std (spins, turns)
+use std
+use std.sets
+use std.motion (spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((0, 0, 10))
 fix((0, 0, 0)) o
@@ -223,7 +227,7 @@ b := point hint((10, 30, 0))
 fix((0, 30, 0)) a
 fix((10, 30, 0)) b
 gear_ax := line(a, b)
-cone := std.ConeThrough(ax, q, lean: 20deg)
+cone := std.sets.ConeThrough(ax, q, lean: 20deg)
 spin := frame
 spin turns(1) ax
 gear_turn := frame
@@ -241,7 +245,9 @@ p coincident flank
 /// that plane is the outer cylinder's own: centred on the axis, 35 in radius.
 const ANNULUS: &str = "\
 unit mm
-use std (spins, turns)
+use std
+use std.sets
+use std.motion (spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((0, 0, 10))
 fix((0, 0, 0)) o
@@ -252,7 +258,7 @@ c2 := point hint((30, 0, 5))
 fix((30, 0, -5)) c1
 fix((30, 0, 5)) c2
 cax := line(c1, c2)
-cyl := std.Cylinder(cax, r: 5mm)
+cyl := std.sets.Cylinder(cax, r: 5mm)
 turn := frame
 turn turns(1) ax
 flank := envelope(cyl over t in (-30deg, 30deg), under: turn)
@@ -520,7 +526,7 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
     };
     refused(&ANNULUS.replace("p coincident flank\n", ""), "the curvature at `p` is taken where a contact holds");
     refused(&ANNULUS.replace("p coincident flank\n", ""), "the normal at `p` is taken where a contact holds");
-    refused(&ANNULUS.replace("cyl := std.Cylinder(cax, r: 5mm)", "cyl := std.Sphere(c1, r: 5mm)"),
+    refused(&ANNULUS.replace("cyl := std.sets.Cylinder(cax, r: 5mm)", "cyl := std.sets.Sphere(c1, r: 5mm)"),
             "the solve reads the envelope of a cone's or a cylinder's surface");
     let planar = ANNULUS.replace("turn turns(1) ax",
         "in std.top {\n  tc := point hint((0, 0))\n}\nfix((0, 0)) tc\n\
@@ -536,7 +542,9 @@ fn envelope_contacts_read_either_way_round_and_refuse_what_they_cannot_hold() {
 /// place along a rail, and hinted elsewhere (`HINT`, #304).
 const ANNULUS_PLACED: &str = "\
 unit mm
-use std (spins, turns)
+use std
+use std.sets
+use std.motion (spins, turns)
 o := point hint((0, 0, 0))
 z := point hint((0, 0, 10))
 fix((0, 0, 0)) o
@@ -557,7 +565,7 @@ c2 := point hint((HINT, 5))
 c1 coincident(t == 0.5) low
 c2 coincident(t == 0.5) high
 cax := line(c1, c2)
-cyl := std.Cylinder(cax, r: 5mm)
+cyl := std.sets.Cylinder(cax, r: 5mm)
 turn := frame
 turn turns(1) ax
 flank := envelope(cyl over t in (-30deg, 30deg), under: turn)

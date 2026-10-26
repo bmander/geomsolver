@@ -13,7 +13,9 @@
 // flank's profile at M is the circle osculating its section by the normal plane through `across`:
 // the curvature an envelope's contact reads off its source and the mesh, with no second solve.
 unit mm
-use std (turns)
+use std
+use std.sets
+use std.motion (turns)
 
 param pinion_teeth := 24
 param gear_teeth := 48
@@ -72,7 +74,7 @@ mill_ax angle(tilt) std.y
 apex := point hint((35, -60, -35))
 apex coincident mill_ax
 spine := line(apex, C)
-flank := std.Cone(spine, half: hint(20deg))
+flank := std.sets.Cone(spine, half: hint(20deg))
 
 // -- the contact ---------------------------------------------------------------------------------
 // The pinion's flank: the gear's generated under the mesh. M is on it, and its normal there leans

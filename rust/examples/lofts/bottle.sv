@@ -14,6 +14,7 @@
 // Edit any radius or height, or `apart`.
 unit mm
 use std
+use std.stations
 
 foot := 30mm
 shoulder := 28mm
@@ -23,7 +24,7 @@ height := 90mm
 apart := 80mm
 
 component Ring(g: path, rail: path, s: Scalar) {
-  st := std.On(g, up: std.y, s: s)
+  st := std.stations.On(g, up: std.y, s: s)
   rim := point in st.n, std.front
   rim coincident rail
   in st.n {

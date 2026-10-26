@@ -81,7 +81,7 @@ fn a_continuous_boundary_exports_through_the_field_mesh() {
     let turned = include_str!("../../examples/solid_generating_sweep.sv");
     let (turn,slide) = ("generating turns(1) spindle","generating slides(6mm) spindle");
     assert!(turned.contains(turn),"the sweep's turn moved");
-    let slid = turned.replace("use std (on_u, turns)","use std (on_u, slides)").replace(turn,slide);
+    let slid = turned.replace("use std.motion (turns)","use std.motion (slides)").replace(turn,slide);
     std::fs::write(&source,slid).unwrap();
     let result = run(&[source.to_str().unwrap(),"--stl",output.to_str().unwrap(),
         "--solid","removal.body","--stl-backend","mesh","--no-diagnose"]);
@@ -794,7 +794,8 @@ fn the_objects_are_written_as_one_step_assembly() {
 /// A plate drawn about its frame's origin, two of one size in turned frames and one of another.
 const PLATES: &str = "\
 unit mm
-use std (offset)
+use std
+use std.place (offset)
 component Plate(w: Length, d: Length, h: Length) {
   in std.front {
     a := point hint((1, 1))
@@ -1229,7 +1230,8 @@ fn a_swept_bodys_empty_common_reads_volume_zero() {
     std::fs::write(&source,"\
 unit mm
 use std
-use std (vertical, turns, coords)
+use std.place (vertical, coords)
+use std.motion (turns)
 in std.front {
   construction stem := vertical line(std.origin, hint((0, 10)))
   length(10mm) stem
@@ -1608,7 +1610,9 @@ fn a_slab_keeps_a_thickness_either_side() {
 const STAR_WHEEL: &str = "\
 unit mm
 use std
-use std (vertical, turns)
+use std.place (vertical)
+use std.shapes
+use std.motion (turns)
 
 interface StarSizes {
   span: Length, waist: Length, tip_r: Length, fillet_r: Length
@@ -1677,7 +1681,7 @@ space := sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: whe
 in std.top {
   bc := point hint((-60, 70))
   fix((-60mm, 70mm)) bc
-  bsq := std.CenteredRectangle(bc, w: 10mm, h: 10mm)
+  bsq := std.shapes.CenteredRectangle(bc, w: 10mm, h: 10mm)
 }
 block := solid(face(bsq.loop), from: 0mm, to: 10mm)
 ";

@@ -50,12 +50,14 @@ fn a_pierced_spheres_two_rims_are_found_and_followed() {
 
 const BLOCK: &str = "\
 unit mm
-use std (vertical)
+use std
+use std.place (vertical)
+use std.shapes
 in std.front {
 private mid := point hint((0, -6))
 std.origin vertical mid
 std.origin distance(6mm, along: down) mid
-private outline := std.CenteredRectangle(mid, w: 40mm, h: 12mm)
+private outline := std.shapes.CenteredRectangle(mid, w: 40mm, h: 12mm)
 }
 block := solid(outline.loop, from: -20mm, to: 20mm)
 ";

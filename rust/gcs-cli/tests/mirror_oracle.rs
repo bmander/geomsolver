@@ -18,7 +18,8 @@ extern "C" {
 /// A turned part off the mid-plane — planes, a cylinder, cones and a torus — and a plate drawn in
 /// the front, each a closed definition standing in the world.
 const PARTS: &str = "unit mm
-use std (offset, horizontal)
+use std
+use std.place (offset, horizontal)
 component Turned(s0: Length) {
   in std.side {
     construction ax := line(std.side.origin, hint((10, 0)))

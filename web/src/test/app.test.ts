@@ -2634,7 +2634,7 @@ test('the Fillet tool picks edges a click at a time, and Enter writes them as st
   const statement = (e: SolidEdge) =>
     `${face(e.faces[0])} round(r: ${io.fmt(size!, 6)}) ${face(e.faces[1])}`;
   assert.ok(view.source.includes(`\n${statement(e1)}\n${statement(e2)}\n`), view.source);
-  assert.ok(view.source.includes('use std (round)\n'), view.source);
+  assert.ok(view.source.includes('use std\nuse std.rounds (round)\n'), view.source);
   assert.ok(view.doc.ok, JSON.stringify(view.doc.diagnostics));
   assert.equal(view.rounding, null);
   assert.equal(asked.at(-1), null, 'the number\'s box is closed');

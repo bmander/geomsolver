@@ -11,7 +11,7 @@ use gcs_core::program::Elaborated;
 use crate::common::{close, ent, parse, read, text::solved};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), its near face at y = 0, standing 12 deep.
-const BLOCK: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n\
+const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round, chamfer)\nin std.front {\n\
     b0 := point\nb1 := point\nb2 := point\nb3 := point\n\
     fix((0, 0)) b0\nfix((40, 0)) b1\nfix((40, 24)) b2\nfix((0, 24)) b3\n\
     (south := line(b0, b1)) -> (east := line(b1, b2)) -> (north := line(b2, b3)) -> \
@@ -19,11 +19,11 @@ const BLOCK: &str = "unit mm\nuse std (round, chamfer)\nin std.front {\n\
     outline := face(south, east, north, west)\n}\n\
     block := solid(outline, depth: 12mm)\n";
 
-/// `std.sv`'s rounds and chamfers — the sets and the four words — said again with no `symmetric`
+/// `std.rounds`' rounds and chamfers — the sets and the four words — said again with no `symmetric`
 /// and under names of their own (`ordered_round`, `ORun`, …): the words as they were before #415,
 /// stating each edge once for each order of its faces.
 fn ordered_words() -> String {
-    let std = include_str!("../../lib/std.sv");
+    let std = include_str!("../../lib/std/rounds.sv");
     let from = std.find("component Run(").expect("std's Run");
     let to = std.find("chamfer(d) X := X chamfer(d: d) X").expect("std's chamfer") + 33;
     let mut words = std[from..to].to_string();
@@ -58,7 +58,7 @@ fn ordered_words() -> String {
 fn ordered(src: &str) -> String {
     let uses = src.lines().find(|l| l.starts_with("use std")).expect("a `use std`");
     let src = src.replace("round(r: ", "ordered_round(r: ").replace("chamfer(d: ", "ordered_chamfer(d: ");
-    src.replacen(uses, &format!("use std\n{}\n", ordered_words()), 1)
+    src.replacen(uses, &format!("use std\nuse std.rounds\n{}\n", ordered_words()), 1)
 }
 
 /// Solid `name` of `e` built exactly, and its volume.
@@ -96,12 +96,13 @@ fn stating_each_edge_once_makes_the_same_body() {
     }
 }
 
-/// A word over the block's faces making `std.Flat(a, b, la: d, lb: e)` for every two of them.
+/// A word over the block's faces making `std.rounds.Flat(a, b, la: d, lb: e)` for every two of
+/// them.
 fn flats(d: &str, e: &str, other: bool) -> String {
-    let both = if other { "other := std.Flat(b, a, la: e, lb: d)\n        made := solid(other)\n        made cut A.body\n" } else { "" };
-    let src = BLOCK.replace("use std (round, chamfer)", "use std");
+    let both = if other { "other := std.rounds.Flat(b, a, la: e, lb: d)\n        made := solid(other)\n        made cut A.body\n" } else { "" };
+    let src = BLOCK.replace("use std\nuse std.rounds (round, chamfer)", "use std\nuse std.rounds");
     format!("{src}A flats(d, e) B := {{\n  repeat a in A {{\n    repeat b in B {{\n      when b != a {{\n        \
-        one := std.Flat(a, b, la: d, lb: e)\n        taken := solid(one)\n        taken cut A.body\n        \
+        one := std.rounds.Flat(a, b, la: d, lb: e)\n        taken := solid(one)\n        taken cut A.body\n        \
         {both}      }}\n    }}\n  }}\n}}\nblock flats(d: {d}, e: {e}) block\n")
 }
 
@@ -145,8 +146,8 @@ fn cut_terms(e: &Elaborated, name: &str) -> Vec<String> {
 /// block.
 #[test]
 fn a_documents_solid_is_never_a_copys() {
-    let block = BLOCK.replace("use std (round, chamfer)", "use std\nuse std (round)");
-    let src = format!("{block}x := std.Run(block.near, block.east, r: 2mm)\nsx := solid(x)\n\
+    let block = BLOCK.replace("use std\nuse std.rounds (round, chamfer)", "use std\nuse std.rounds (round)");
+    let src = format!("{block}x := std.rounds.Run(block.near, block.east, r: 2mm)\nsx := solid(x)\n\
         round(r: 2mm) block\n");
     let cut = cut_terms(&read(&src), "block");
     assert!(!cut.is_empty() && !cut.iter().any(|t| t == "sx"), "{cut:?}");
@@ -170,7 +171,7 @@ fn an_edge_rounded_twice_is_cut_once() {
 /// The block's regions, past the block, of a word `body` written over every two of its faces
 /// `a` and `b` and stated over the block, under `head` (a family or nothing).
 fn over_pairs(head: &str, body: &str) -> usize {
-    let src = BLOCK.replace("use std (round, chamfer)", "use std");
+    let src = BLOCK.replace("use std\nuse std.rounds (round, chamfer)", "use std\nuse std.rounds");
     let src = format!("{src}{head}A pairs() B := {{\n  repeat a in A {{\n    repeat b in B {{\n      \
         when b != a {{\n{body}      }}\n    }}\n  }}\n}}\nblock pairs() block\n");
     read(&src).sketch.solids.iter().filter(|s| s.name != "block").count()
@@ -181,8 +182,8 @@ fn over_pairs(head: &str, body: &str) -> usize {
 /// one each way one, and the phantom one each way one.
 #[test]
 fn instances_stamped_otherwise_are_their_own() {
-    let body = "        one := std.Flat(a, b, la: 1mm, lb: 1mm)\n        taken := solid(one)\n        \
-        taken cut A.body\n        other := std.Flat(b, a, la: 1mm, lb: 1mm) class phantom\n        \
+    let body = "        one := std.rounds.Flat(a, b, la: 1mm, lb: 1mm)\n        taken := solid(one)\n        \
+        taken cut A.body\n        other := std.rounds.Flat(b, a, la: 1mm, lb: 1mm) class phantom\n        \
         made := solid(other)\n        made cut A.body\n";
     assert_eq!(over_pairs("", body), 30);
 }

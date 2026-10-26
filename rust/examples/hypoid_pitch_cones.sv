@@ -5,7 +5,7 @@
 // The pitch plane P, the front plane, holds M.  The gear's axial plane G stands square to P on
 // the vertical line the gear's generator lies on; the pinion's axial plane Q stands on two axes
 // the solve turns, square to each other, with its origin at M — its own turn held by drawing the
-// pinion's axis level in it.  Each pitch cone is the library's (`std.Cone`), a set about its
+// pinion's axis level in it.  Each pitch cone is the library's (`std.sets.Cone`), a set about its
 // axis: M is on both (`M coincident gc`), and `gc tangent(at: M) pc` says they touch there with
 // one tangent plane.
 // The gear's apex is on P, which makes P the gear cone's tangent plane at M, and so the pinion's
@@ -22,7 +22,9 @@
 // same pair to 2e-11.
 
 unit mm
-use std (skew)
+use std
+use std.place (skew)
+use std.sets
 Ng := 48          // gear teeth
 Np := 24          // pinion teeth
 module := 4mm
@@ -53,8 +55,8 @@ pax.p1 distance(80) pax.p2
 horizontal pax
 
 // the pitch cones: the gear's pitch angle, M on both, and the two touching there
-gc := std.Cone(gax, half: 60deg)
-pc := std.Cone(pax, half: hint(30deg))
+gc := std.sets.Cone(gax, half: 60deg)
+pc := std.sets.Cone(pax, half: hint(30deg))
 M coincident gc
 M coincident pc
 gc tangent(at: M) pc

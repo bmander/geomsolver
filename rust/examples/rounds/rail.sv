@@ -9,7 +9,8 @@
 // (`rail.rod round(r: r) rail.plate.cd`): the same two runs, since the rod meets no other face of
 // the plate's.
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 2mm   // the fillets' radius
 

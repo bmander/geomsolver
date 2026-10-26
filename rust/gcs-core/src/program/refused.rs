@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Where a diagnostic of what a statement made is said: at its statement where the document holds
 /// it, else at the deepest instance on its path the document holds (the round that used
-/// `std.round`), else as it stands, for `modules::localize` to show at the `use`.
+/// `std.rounds.round`), else as it stands, for `modules::localize` to show at the `use`.
 pub(super) struct Placing<'a> {
     p: &'a Program,
     spans: std::cell::OnceCell<BTreeMap<StmtId, Span>>,

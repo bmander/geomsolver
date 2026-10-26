@@ -326,8 +326,8 @@ pub(super) fn set_shape(sk: &mut Sketch, c: &Constraint, e: Reader) -> Result<()
             (SetKind::Cone,super::regions::cone_axis(sk,c,probe as usize)?,SpecKind::Angle)
         }
         CKind::PointLine3 => (SetKind::Cylinder,ent(1),SpecKind::Length),
-        // a distance along a line from a point (`std.HalfSpace`, #326): the plane square to the
-        // line that far along it, the probe on either side of the statement
+        // a distance along a line from a point (`std.sets.HalfSpace`, #326): the plane square to
+        // the line that far along it, the probe on either side of the statement
         CKind::Ordinate if matches!(c.args[2],CArg::Ent(t) if t.kind == EntKind::Line)
             && ent(0).kind == EntKind::Point && ent(1).kind == EntKind::Point => {
             (SetKind::Plane,ent(2),SpecKind::Length)

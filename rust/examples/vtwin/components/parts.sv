@@ -1,6 +1,7 @@
 // What every view draws with.
 
-use std (horizontal, vertical, above, offset)
+use std
+use std.place (horizontal, vertical, above, offset)
 use components.dims (grub, nutT, nutaf, nutin)
 
 // A point placed from `o` by two ordinates.

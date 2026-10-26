@@ -306,8 +306,9 @@ impl Written {
                     // how a path runs through a plane another touches (#645)
                     (CKind::PlaneTangentLine | CKind::PlaneTangentRound | CKind::Rate, "sense") => {
                         "`sense:` is how a second path runs through a plane the first touches, read \
-                         between the two where a panel's body states both (`std.Developable`): of \
-                         one plane and one path it says nothing".to_string()
+                         between the two where a panel's body states both \
+                         (`std.panels.Developable`): of one plane and one path it says nothing"
+                            .to_string()
                     }
                     _ => format!("`{word}` takes no `{}`", key.text),
                 };

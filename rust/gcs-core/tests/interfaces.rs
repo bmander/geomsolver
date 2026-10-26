@@ -72,7 +72,8 @@ in std.front {{
 fn a_group_with_the_members_is_one_too() {
     let e = solved("\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 interface Layout { origin: point, length: Length }
 component Bar(d: Layout) {
   tip := point hint((d.origin.x + d.length, d.origin.y))
@@ -193,6 +194,7 @@ fn sets_and_solids_are_members() {
     let doc = |given: &str| format!("\
 unit mm
 use std
+use std.sets
 interface Ball {{ about: point, bulk: set }}
 component Touch(b: Ball) {{
   q := point hint((3, 4))
@@ -205,7 +207,7 @@ in std.front {{
   ball := {{about: o, bulk: {given}}}
   t := Touch(ball)
 }}
-s := std.Sphere(o, r: 5mm)
+s := std.sets.Sphere(o, r: 5mm)
 ");
     let e = solved(&doc("s"));
     let q = e.sketch.point_xy(e.map.ent_named("t.q").unwrap().i());

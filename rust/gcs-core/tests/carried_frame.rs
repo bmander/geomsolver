@@ -6,8 +6,8 @@
 //! closed form, `motion::Family::at`, to `EXACT`: a frame's origin and axes, a point drawn in it, a
 //! frame carried twice and by a frame seen from another, a point drawn in a view held there in two
 //! rows, a screw up a plane's normal, a roll the drawing solves for, and the stations of
-//! `std.Helix`, `std.OnHelix` and `std.Twisted` at places of their running numbers, against their
-//! closed forms (#366 S2).
+//! `std.stations.Helix`, `std.stations.OnHelix` and `std.stations.Twisted` at places of their
+//! running numbers, against their closed forms (#366 S2).
 use crate::common::{build, ent};
 use gcs_core::constraints::CKind;
 use gcs_core::motion::Family;
@@ -24,7 +24,8 @@ const EXACT: f64 = 1e-10;
 /// the second as `under: screw, seen_from: turn`).
 const MOTIONS: &str = "\
 unit mm
-use std (screws, spins, turns)
+use std
+use std.motion (screws, spins, turns)
 a0 := point hint((1, 2, 3))
 a1 := point hint((4, 3, 11))
 fix((1, 2, 3)) a0
@@ -182,7 +183,8 @@ S coincident x at(under: lift) 290deg
 fn a_frame_carried_reads_what_its_source_rides_on() {
     let src = "\
 unit mm
-use std (screws, spins, turns)
+use std
+use std.motion (screws, spins, turns)
 a0 := point hint((1, 2, 3))
 a1 := point hint((4, 3, 11))
 fix((1, 2, 3)) a0
@@ -235,7 +237,8 @@ X coincident q at 40deg
 fn a_roll_owned_and_a_roll_stated_are_one_reading() {
     let src = "\
 unit mm
-use std (screws, spins, turns)
+use std
+use std.motion (screws, spins, turns)
 a0 := point hint((1, 2, 3))
 a1 := point hint((4, 3, 11))
 fix((1, 2, 3)) a0
@@ -275,7 +278,9 @@ Q coincident x at(under: screw) 40deg
 fn a_roll_may_be_an_unknown_the_drawing_solves_for() {
     let src = "\
 unit mm
-use std (screws, spins, turns)
+use std
+use std.stations
+use std.motion (screws, spins, turns)
 param theta: Angle hint(10deg)
 x := point hint((10, 0, 0))
 fix((10, 0, 0)) x
@@ -295,13 +300,13 @@ std.origin distance(5mm, along: std.y) X
          at(&family(&e, "spin"), 30.0, [10.0, 0.0, 0.0]), "at the roll solved");
 }
 
-/// **`std.Helix`'s station is `base` carried by its screw**, read at three places of its running
-/// number: its `n` the screw's pose of `base` at `360deg · turns · s`, and its `axial` `n` turned a
-/// quarter about its `u`, so its `v` runs up the axis.
+/// **`std.stations.Helix`'s station is `base` carried by its screw**, read at three places of its
+/// running number: its `n` the screw's pose of `base` at `360deg · turns · s`, and its `axial` `n`
+/// turned a quarter about its `u`, so its `v` runs up the axis.
 #[test]
 fn a_helix_station_is_its_base_carried_by_its_screw() {
     for s in [0.0, 0.3, 0.85] {
-        let src = format!("unit mm\nuse std (screws, spins, turns)\nst := std.Helix(std.top, pitch: 4mm, turns: 3, \
+        let src = format!("unit mm\nuse std\nuse std.stations\nuse std.motion (screws, spins, turns)\nst := std.stations.Helix(std.top, pitch: 4mm, turns: 3, \
                            s: {s})\n");
         let e = solved(&src);
         let screw = family(&e, "st.screw");
@@ -319,17 +324,17 @@ fn a_helix_station_is_its_base_carried_by_its_screw() {
     }
 }
 
-/// **`std.OnHelix`'s station is square to its helix**, as its closed form says, at three places
-/// of its running number: its origin on the helix of radius `r` at `θ = 360° · turns · s`, its `u`
-/// out from the axis there and its `v` up the axis leaned back by the lead angle — `(p/L · sin θ,
-/// −p/L · cos θ, 2πr/L)`, `L` a turn's length — its start `base` tilted about its `u` and slid out
-/// by one screw, the helix's screw carrying it from there.
+/// **`std.stations.OnHelix`'s station is square to its helix**, as its closed form says, at three
+/// places of its running number: its origin on the helix of radius `r` at `θ = 360° · turns · s`,
+/// its `u` out from the axis there and its `v` up the axis leaned back by the lead angle — `(p/L ·
+/// sin θ, −p/L · cos θ, 2πr/L)`, `L` a turn's length — its start `base` tilted about its `u` and
+/// slid out by one screw, the helix's screw carrying it from there.
 #[test]
 fn an_on_helix_station_is_square_to_its_helix() {
     let (r, p, turns) = (10.0, 5.0, 4.0);
     let lead = (TAU * r).hypot(p);
     for s in [0.0, 0.13, 0.6] {
-        let src = format!("unit mm\nuse std (screws, spins, turns)\nst := std.OnHelix(std.top, r: 10mm, pitch: 5mm, \
+        let src = format!("unit mm\nuse std\nuse std.stations\nuse std.motion (screws, spins, turns)\nst := std.stations.OnHelix(std.top, r: 10mm, pitch: 5mm, \
                            turns: 4, s: {s})\n");
         let e = solved(&src);
         let t = TAU * turns * s;
@@ -341,12 +346,12 @@ fn an_on_helix_station_is_square_to_its_helix() {
     }
 }
 
-/// **`std.Twisted`'s point is its plane's `u` turned within it**: `reach` out along `n.u` turned
-/// `twist · s` about `n`'s origin, past a half turn as written.
+/// **`std.stations.Twisted`'s point is its plane's `u` turned within it**: `reach` out along `n.u`
+/// turned `twist · s` about `n`'s origin, past a half turn as written.
 #[test]
 fn a_twisted_point_turns_within_its_plane() {
     for (twist, s) in [(250.0, 0.4), (1260.0, 0.75), (-90.0, 0.5)] {
-        let src = format!("unit mm\nuse std (screws, spins, turns)\ntw := std.Twisted(std.top, twist: {twist}deg, \
+        let src = format!("unit mm\nuse std\nuse std.stations\nuse std.motion (screws, spins, turns)\ntw := std.stations.Twisted(std.top, twist: {twist}deg, \
                            reach: 7mm, s: {s})\n");
         let e = solved(&src);
         let a = f64::to_radians(twist * s);

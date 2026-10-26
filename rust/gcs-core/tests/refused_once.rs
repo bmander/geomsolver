@@ -11,7 +11,7 @@ fn slot(rounds: usize) -> String {
     let mut src = String::from("\
 unit mm
 use std
-use std (round)
+use std.rounds (round)
 in std.top {
   c0 := point
   c1 := point

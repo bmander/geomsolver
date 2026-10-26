@@ -134,7 +134,8 @@ m[0] distance(1mm) m[1]
 fn a_surface_per_edge_of_a_revolved_profile() {
     let src = "\
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
 o := point
 q := point

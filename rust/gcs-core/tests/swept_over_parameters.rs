@@ -6,7 +6,7 @@
 //!
 //! Gated by the helix against its closed form to `EXACT` (every corner of the section where the
 //! screw carries it, at stations of the march along `s`), against Pappus off its exact B-rep, and
-//! against the thread `std.Helix`'s station sweeps; and by the refusals.
+//! against the thread `std.stations.Helix`'s station sweeps; and by the refusals.
 use gcs_core::program::Elaborated;
 use gcs_core::space::{norm, sub};
 use std::f64::consts::PI;
@@ -22,7 +22,11 @@ const EXACT: f64 = 1e-10;
 /// `360deg · turns · s`, and a 2 mm square drawn in its block on the front plane, centred 10 from
 /// the axis.
 const EPIC: &str = "unit mm
-use std (on_u, screws)
+use std
+use std.place (on_u)
+use std.shapes
+use std.stations
+use std.motion (screws)
 
 param s: Scalar over (0, 1)
 r := 10mm
@@ -37,24 +41,28 @@ in screw {
     c := point
     c on_u(d: r) std.front
   }
-  sq := std.CenteredRectangle(c, w: size, h: size) in std.front
+  sq := std.shapes.CenteredRectangle(c, w: size, h: size) in std.front
   sec := face(sq.loop)
 }
 thread := sweep(sec over s)
 ";
 
-/// The same thread as `lofts/thread.sv` sweeps it: the square drawn in `std.Helix`'s axial plane,
-/// a face family over the instance written in place.
+/// The same thread as `lofts/thread.sv` sweeps it: the square drawn in `std.stations.Helix`'s axial
+/// plane, a face family over the instance written in place.
 const STATION: &str = "unit mm
-use std (on_u, screws)
+use std
+use std.place (on_u)
+use std.shapes
+use std.stations
+use std.motion (screws)
 
 component Thread(base: plane, r: Length, size: Length, pitch: Length, turns: Scalar, s: Scalar) {
-  st := std.Helix(base, pitch: pitch, turns: turns, s: s)
+  st := std.stations.Helix(base, pitch: pitch, turns: turns, s: s)
   in st.axial {
     c := point
     c on_u(d: r) st.axial
   }
-  sq := std.CenteredRectangle(c, w: size, h: size) in st.axial
+  sq := std.shapes.CenteredRectangle(c, w: size, h: size) in st.axial
   f := face(sq.loop)
 }
 param s: Scalar over (0, 1)
@@ -87,7 +95,7 @@ fn screwed(p: [f64; 3], s: f64) -> [f64; 3] {
 /// **The epic's helix stands where its value puts it**: drawn where `s` stands, its start, the
 /// square on the front plane 10 from the axis; followed along `s`, each corner where the screw
 /// carries it there, to `EXACT`; swept, Pappus's 4 · 2π·10 · 3 = 240π mm³, every wall the surface
-/// its first rim sweeps, and corner for corner the thread `std.Helix`'s station sweeps.
+/// its first rim sweeps, and corner for corner the thread `std.stations.Helix`'s station sweeps.
 #[test]
 fn the_epics_helix_stands_where_its_value_puts_it() {
     let e = determined(EPIC);

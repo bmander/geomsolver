@@ -17,7 +17,8 @@ fn xy(sk: &Sketch, e: gcs_core::model::EntRef) -> (f64, f64) {
 
 const RING: &str = "
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
   hub := point
   fix((1, 2)) hub
@@ -33,7 +34,8 @@ in std.front {
 /// The same triangle as a `cycle`, every turn written out: the oracle.
 const CYCLE: &str = "
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 in std.front {
   hub := point
   fix((1, 2)) hub
@@ -260,7 +262,9 @@ ring 3 about hub {
 }
 
 const SUN: &str = "
-use std (horizontal)
+use std
+use std.place (horizontal)
+use std.shapes
 in std.front {
   o := point hint((0, 0))
   fix((0, 0)) o
@@ -268,7 +272,7 @@ in std.front {
   ref := line(o, q)
   horizontal ref
   o distance(100) q
-  sun := std.Polygon(o, ref, n: 10, r: 100, phase: 0deg)
+  sun := std.shapes.Polygon(o, ref, n: 10, r: 100, phase: 0deg)
   z := point hint(at: sun.v[3])
 }
 ";
@@ -304,7 +308,8 @@ fn a_seed_reads_a_turned_copy_where_the_turn_puts_it() {
 fn a_neighbour_passed_down_is_read_as_written() {
     let doc = |body: &str| format!("
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 component Edge(a: point, b: point) {{
   line(a, b)
 }}

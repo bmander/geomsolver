@@ -230,7 +230,9 @@ fn pair(sigmas: [f64; 2], moved: impl Fn([f64; 3]) -> [f64; 3]) -> String {
     let h = |x: [f64; 3]| format!("({:.6}, {:.6}, {:.6})", x[0], x[1], x[2]);
     format!("\
 unit mm
-use std (slides, turns)
+use std
+use std.sets
+use std.motion (slides, turns)
 g0 := point hint({hg0})
 g1 := point hint({hg1})
 fix({g0}) g0
@@ -255,8 +257,8 @@ fix({gp}) GP
 gahead := point hint({hga})
 fix({ga}) gahead
 GL := line(GP, gahead)
-rack := std.HalfSpace(P, L, d: 0mm)
-gear_rack := std.HalfSpace(GP, GL, d: 0mm)
+rack := std.sets.HalfSpace(P, L, d: 0mm)
+gear_rack := std.sets.HalfSpace(GP, GL, d: 0mm)
 slide := frame
 slide slides({s1}mm) L
 gear_slide := frame
@@ -349,7 +351,7 @@ fn phillips_pair_keeps_its_ratio_when_the_offset_or_the_shaft_angle_is_moved() {
 
 /* -- the screw and the meshing law (R2), read by rates (#365) -------------------------------- */
 
-/// The axis `std.Screw(toward, mesh)` solves to and its pitch: the axis's point nearest the origin, its
+/// The axis `std.motion.Screw(toward, mesh)` solves to and its pitch: the axis's point nearest the origin, its
 /// direction, and the component's pitch — the rate's distance along the axis, an unknown read as a
 /// free column.
 fn screw_of(e: &gcs_core::program::Elaborated) -> ([f64; 3], [f64; 3], f64) {
@@ -364,8 +366,8 @@ fn screw_of(e: &gcs_core::program::Elaborated) -> ([f64; 3], [f64; 3], f64) {
 
 /// **The screw of two turns is Ball's.**  Two members turning about skew shafts at a ratio — the
 /// pinion about `a₁` through `c₁` at 1, the gear about `a₂` through `c₂` at `w` — and the gear seen
-/// from the pinion: the screw `std.Screw(isa, gear_turn, seen_from: pinion_turn)` solves to crosses
-/// the shafts' common perpendicular square, where a point of the perpendicular `s` from the
+/// from the pinion: the screw `std.motion.Screw(isa, gear_turn, seen_from: pinion_turn)` solves to
+/// crosses the shafts' common perpendicular square, where a point of the perpendicular `s` from the
 /// pinion's shaft moves along `ω = ω₂ − ω₁` (`s = E ω₂·ω / |ω|²`, `E` the offset), and its pitch is
 /// that point's speed along the axis a radian of the mesh's roll — Ball's pitch (its speed a radian
 /// of turn about it) times `ω` along the axis.  Worked out on the perpendicular itself, apart from
@@ -383,7 +385,8 @@ fn the_screw_of_two_turns_is_on_the_common_perpendicular_with_balls_pitch() {
         let v = |x: [f64; 3]| format!("({:.15}mm, {:.15}mm, {:.15}mm)", x[0], x[1], x[2]);
         let src = format!("\
 unit mm
-use std (slides, turns)
+use std
+use std.motion (slides, turns)
 g0 := point hint((0, 0, 0))
 g1 := point hint((0, 0, 10))
 fix({g0}) g0
@@ -400,7 +403,7 @@ pinion_turn := frame
 pinion_turn turns(1) pinion_ax
 isa := axis
 fix(dir == (-0.9, 0.1, -0.4)) isa
-screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)
+screw := std.motion.Screw(isa, gear_turn, seen_from: pinion_turn)
 ", g0 = v(c2), g1 = v(add(c2, scale(a2, 10.0))), p0 = v(c1), p1 = v(add(c1, scale(a1, 10.0))));
         let e = solved(&src);
         let (point, dir, pitch) = screw_of(&e);
@@ -438,7 +441,7 @@ screw := std.Screw(isa, gear_turn, seen_from: pinion_turn)
 
 /// **`L reciprocal(seen_from: pinion_turn) gear_turn` is the meshing law.**  `phillips.sv` states
 /// `L`'s pressure angle and that it is reciprocal to the mesh, the gear's turn seen from the
-/// pinion's — `std.sv`'s word, a point of `L` carried by the mesh whose rate is
+/// pinion's — `std.motion`'s word, a point of `L` carried by the mesh whose rate is
 /// square to `L` (#365): the helix angle it solves to is the closed form's, and along it the two
 /// members move as fast at every point — checked from the members' turns alone.  The rack's slide
 /// is reciprocal to each member's cutting in turn (the document's claims hold), and the mesh's
@@ -479,7 +482,8 @@ fn reciprocal_and_screw_print_back_as_words_of_the_standard_library() {
     use gcs_core::constraints::CKind;
     let src = "\
 unit mm
-use std (reciprocal, slides, turns)
+use std
+use std.motion (reciprocal, slides, turns)
 g0 := point hint((0, 0, 0))
 g1 := point hint((0, 0, 10))
 fix((0, 0, 0)) g0
@@ -534,8 +538,8 @@ claim L reciprocal(seen_from: rest) gear_turn
     // the screw, its pitch the motion's to say, two carried points, their rates along the axis
     // and the first's distance along it; and of the mesh read the other way, read as any motion
     // is
-    for screw in ["std.Screw(isa, gear_turn, seen_from: pinion_turn)",
-                  "std.Screw(isa, pinion_turn, seen_from: gear_turn)"] {
+    for screw in ["std.motion.Screw(isa, gear_turn, seen_from: pinion_turn)",
+                  "std.motion.Screw(isa, pinion_turn, seen_from: gear_turn)"] {
         let text = format!("{src}isa := axis\nfix(dir == (-0.9, 0, -0.45)) isa\nscrew := {screw}\n");
         let (prog, errs) = crate::common::parse(&text);
         assert!(errs.is_empty(), "{errs:?}");

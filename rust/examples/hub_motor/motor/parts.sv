@@ -12,7 +12,8 @@
 // viewer, toward −y: a prism `from: h0, to: h1` spans y from −h1 to −h0.  The parts that stand
 // either side of the mid-plane say so where they sweep.
 
-use std (offset, horizontal)
+use std
+use std.place (offset, horizontal)
 use motor.dims
 
 // What the motor is drawn about: in the end view, the axle's centre and a datum from it along

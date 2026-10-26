@@ -8,7 +8,8 @@
 // rope has no length it is stationary in (it only lowers its energy as it lengthens), which is
 // why the catenary example states its own.
 unit mm
-use std (horizontal)
+use std
+use std.place (horizontal)
 
 in std.front {
   a := point

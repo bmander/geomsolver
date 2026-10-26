@@ -242,10 +242,10 @@ Front(c, a: 40mm, b: 25mm).p over (d in (0mm, 15mm), u in (0deg, 360deg))   // t
    far end on `b` settles them by shooting, to 2e-12 in E3 (its Jacobian is differenced there;
    D2's comes from the variational equations). That is §9.10's free curve stated as a flow, and
    D2's contact gradients are what make it solvable.
-8. **Side finding: `std.OnHelix`, drawn by itself, stands square to the mirror helix.**
+8. **Side finding: `std.stations.OnHelix`, drawn by itself, stands square to the mirror helix.**
    - Its lean is an unsigned angle in space (`n.v angle(lead) sc.n.v`), so the seed picks the
-     hand. `std.OnHelix(std.z, std.top, r: 10mm, pitch: 5mm, turns: 4, s: 0.5)` gives normal
-     (0, −0.9968, 0.0793) at (10, 0, 10), where the helix's tangent is ±(0, 0.9968, 0.0793):
+     hand. `std.stations.OnHelix(std.z, std.top, r: 10mm, pitch: 5mm, turns: 4, s: 0.5)` gives
+     normal (0, −0.9968, 0.0793) at (10, 0, 10), where the helix's tangent is ±(0, 0.9968, 0.0793):
      9.1° off.
    - The face family's spring carries the right root: `solventc` builds 1782.144915 mm³, the
      closed form A·L, where the mirror lean would give A·L·cos 2λ = 1759.716 (checked by

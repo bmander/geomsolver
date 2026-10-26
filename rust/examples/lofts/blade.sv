@@ -2,9 +2,9 @@
 // `sec := prof mapped(from -> l, to -> r) in st.n` (#357) carries the face `prof` whole into the
 // station's plane by the similarity that takes its point `from` to `l` and `to` to `r` — moved,
 // turned and scaled alike both ways, never stretched — each corner keeping its place in the
-// frame `from`, `to` make (`std.Similar` says the same). The station stands square to the spine
-// (`std.OnLine`), and `l` and `r` are where the port and starboard rails cross it, so the
-// profile follows the rails: they close from 20 apart to 8, and the port rail rises 3 as the
+// frame `from`, `to` make (`std.stations.Similar` says the same). The station stands square to the
+// spine (`std.stations.OnLine`), and `l` and `r` are where the port and starboard rails cross it,
+// so the profile follows the rails: they close from 20 apart to 8, and the port rail rises 3 as the
 // starboard falls 3, so the section narrows and turns.
 // Closed form: the profile's area times its scale squared, the rails' spread over the profile's,
 // along the spine: 60 · 50 / 20² · ∫((20 − 12s)² + (6s)²) ds = 1650 mm³ as drawn (1560 with the
@@ -12,6 +12,7 @@
 // Edit `length`, `root`, `tip`, `rise` or the profile.
 unit mm
 use std
+use std.stations
 
 length := 50mm
 root := 20mm
@@ -20,7 +21,7 @@ rise := 3mm
 
 component Blade(g: line, up: axis, port: line, starboard: line, prof: face, from: point,
                 to: point, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   l := point in st.n
   r := point in st.n
   l coincident port

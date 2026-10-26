@@ -414,10 +414,11 @@ fn a_flush_boss_tangent_to_a_blocks_side_builds_as_the_block() {
     let e = crate::common::text::solved("\
 unit mm
 use std
+use std.shapes
 in std.top {
   c := point hint((0, 0))
   fix((0mm, 0mm)) c
-  sq := std.CenteredRectangle(c, w: 40mm, h: 40mm)
+  sq := std.shapes.CenteredRectangle(c, w: 40mm, h: 40mm)
   o := point hint((-16, 0))
   c distance(-16mm, along: u) o
   c level(v) o

@@ -7,7 +7,8 @@
 // Edit `r` or the boss's radius and apply (⌘↵). Write `round(r: 1mm) pad.boss` beside it to
 // round the boss's top rim too: an edge among the boss's own faces, convex, so cut.
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 3mm   // the fillet's radius
 

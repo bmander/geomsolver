@@ -8,7 +8,8 @@
 // The plate is drawn on the front plane and stands 40 deep in front of it. Orbit (right-drag) to
 // see the corners. Edit `r` or the groove's radius and apply (⌘↵).
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 r := 2mm   // the rims' radius
 

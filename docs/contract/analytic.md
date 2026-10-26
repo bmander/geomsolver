@@ -264,10 +264,10 @@ twist's two words with them: `l reciprocal m` (a point of `l` carried at roll 0,
 `l`: `d · v(p)`, the same at every point of `l`) and `Screw(isa, m, pitch)` (two points of `isa`
 carried, their rates along it, the first's speed along it the pitch — Ball's pitch times `ω` along
 `isa`, the advance a radian of the roll).  `motion::Family::instantaneous` reads Ball's screw off a
-snapshot (`Isa`: point, direction, pitch, twist).  `tests/phillips.rs` holds `std.Screw` to Ball's
-closed form on the common perpendicular — the foot `E ω₂·ω/|ω|²` from the pinion's shaft, the pitch
-that point's speed along the axis — at three shaft angles, no offset giving zero pitch through the
-apex, and `L reciprocal mesh` to the members' equal speeds along `L` at every point of it;
+snapshot (`Isa`: point, direction, pitch, twist).  `tests/phillips.rs` holds `std.motion.Screw` to
+Ball's closed form on the common perpendicular — the foot `E ω₂·ω/|ω|²` from the pinion's shaft, the
+pitch that point's speed along the axis — at three shaft angles, no offset giving zero pitch through
+the apex, and `L reciprocal mesh` to the members' equal speeds along `L` at every point of it;
 `tests/rate_of_contact.rs` a rolling circle's carried point's rate to the epicycloid's derivative.
 
 **The post-solve B-rep is Rust API, not Solvent** (#364). Patches, seams, corners, edges and face

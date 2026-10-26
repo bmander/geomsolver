@@ -8,7 +8,8 @@
 // the knob. Edit a radius and apply (⌘↵). Write `round(r: 1mm) knob.disc` to round the disc's own
 // outer rims too, convex, so cut.
 unit mm
-use std (round)
+use std
+use std.rounds (round)
 
 in std.front {
   a0 := point

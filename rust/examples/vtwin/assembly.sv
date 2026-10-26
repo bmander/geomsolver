@@ -33,7 +33,8 @@
 // and the drawing cannot say otherwise.
 
 unit mm
-use std (above, left_of)
+use std
+use std.place (above, left_of)
 use components.dims
 use components.parts
 use components.frame

@@ -8,7 +8,8 @@
 // `(1 − ν²)` of it: three times as wide as it is thick, and held at its root from narrowing, the
 // plank is a little stiffer than a beam, and narrower.
 unit mm
-use std (vertical)
+use std
+use std.place (vertical)
 
 L := 300mm
 t := 10mm

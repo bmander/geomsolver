@@ -92,9 +92,9 @@ fn the_pitch_plane_touches_the_gear_cone_with_no_view() {
 /// A cone over the top plane with its apex `O`, touched at `M` — `apex` how the apex is said.
 fn over_top(apex: &str) -> String {
     format!(
-        "unit mm\nuse std\n{apex}\nM := point in std.top\nfix((40, 0)) M\n\
+        "unit mm\nuse std\nuse std.sets\n{apex}\nM := point in std.top\nfix((40, 0)) M\n\
          T := point hint((20, 0, -30))\ngax := line(O, T)\nlength(60) gax\n\
-         gc := std.Cone(gax, half: 30deg)\nM coincident gc\nstd.top tangent(at: M) gc\n"
+         gc := std.sets.Cone(gax, half: 30deg)\nM coincident gc\nstd.top tangent(at: M) gc\n"
     )
 }
 
@@ -121,8 +121,8 @@ fn what_the_drawing_says_along_the_plane_is_found_by_the_rank() {
 /// conditions, independent — the centre straight off the plane from the point.
 #[test]
 fn a_plane_touches_a_sphere() {
-    let mut e = solved("unit mm\nuse std\nM := point in std.top\nfix((40, 0)) M\n\
-        C := point hint((35, 5, 18))\nball := std.Sphere(C, r: 20)\nM coincident ball\n\
+    let mut e = solved("unit mm\nuse std\nuse std.sets\nM := point in std.top\nfix((40, 0)) M\n\
+        C := point hint((35, 5, 18))\nball := std.sets.Sphere(C, r: 20)\nM coincident ball\n\
         std.top tangent(at: M) ball\n");
     let c = e.sketch.world_point(ent(&e, "C").i());
     assert!((c[0] - 40.0).abs() < 1e-9 && c[1].abs() < 1e-9 && (c[2] - 20.0).abs() < 1e-9, "{c:?}");
@@ -133,12 +133,12 @@ fn a_plane_touches_a_sphere() {
 /// one of the two derivatives what the other says — found by the rank, as for the cone.
 #[test]
 fn a_plane_touches_a_cylinder_lying_along_it() {
-    let mut e = solved("unit mm\nuse std\nux := axis\n\
+    let mut e = solved("unit mm\nuse std\nuse std.sets\nux := axis\n\
         fix(dir == (1, 0, 0), origin == (0, 0, 20)) ux\nvy := axis\n\
         fix(dir == (0, 1, 0), origin == (0, 0, 20)) vy\nup := plane(u: ux, v: vy)\n\
         A := point in up\nfix((0, 0)) A\n\
         B := point hint((50, 10)) in up\nax := line(A, B)\nlength(60) ax\n\
-        M := point in std.top\nfix((40, 0)) M\nshaft := std.Cylinder(ax, r: hint(15))\n\
+        M := point in std.top\nfix((40, 0)) M\nshaft := std.sets.Cylinder(ax, r: hint(15))\n\
         M coincident shaft\nstd.top tangent(at: M) shaft\n");
     let b = e.sketch.world_point(ent(&e, "B").i());
     assert!(b[1].abs() < 1e-9 && (b[0] - 60.0).abs() < 1e-9, "the axis right above M: {b:?}");
@@ -148,9 +148,9 @@ fn a_plane_touches_a_cylinder_lying_along_it() {
 /// What touches a set at a point is a plane, at a point the word names.
 #[test]
 fn a_plane_touches_a_set_at_a_point() {
-    let base = "unit mm\nuse std\nO := point in std.top\nfix((0, 0)) O\n\
+    let base = "unit mm\nuse std\nuse std.sets\nO := point in std.top\nfix((0, 0)) O\n\
                 M := point in std.top\nfix((40, 0)) M\nT := point hint((20, 0, -30))\n\
-                gax := line(O, T)\ngc := std.Cone(gax, half: 30deg)\n";
+                gax := line(O, T)\ngc := std.sets.Cone(gax, half: 30deg)\n";
     let src = |s: &str| format!("{base}{s}\n");
     refused(&src("gax tangent(at: M) gc"), "E040", "touched at a point by a plane",
             "tangent(at: M)");

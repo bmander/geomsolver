@@ -275,10 +275,10 @@ fn a_sheet_ending_in_the_blank_is_carried_out_of_it() {
 /// is refused for its stock.
 #[test]
 fn an_empty_body_is_refused_naming_the_statement_that_emptied_it() {
-    let src = "unit mm\nuse std\nuse std (coords)\nin std.top {\n  ca := point hint((0, 0))\n  \
-               fix((0mm, 0mm)) ca\n  sa := std.CenteredRectangle(ca, w: 10mm, h: 10mm)\n  \
+    let src = "unit mm\nuse std\nuse std.place (coords)\nuse std.shapes\nin std.top {\n  ca := point hint((0, 0))\n  \
+               fix((0mm, 0mm)) ca\n  sa := std.shapes.CenteredRectangle(ca, w: 10mm, h: 10mm)\n  \
                cb := point hint((20, 0))\n  ca distance(20mm, along: u) cb\n  ca level(v) cb\n  \
-               sb := std.CenteredRectangle(cb, w: 10mm, h: 10mm)\n}\n\
+               sb := std.shapes.CenteredRectangle(cb, w: 10mm, h: 10mm)\n}\n\
                a := solid(face(sa.loop), from: 0mm, to: 10mm)\n\
                b := solid(face(sb.loop), from: 0mm, to: 10mm)\n\
                shared := solid(a)\nb common shared\nover := solid(shared)\n";

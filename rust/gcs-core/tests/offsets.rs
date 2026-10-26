@@ -1,6 +1,6 @@
 //! **A point's distance from a set, and offsets** (§6.21, #145 F4): `p distance(d, side:
-//! outside) S` is the signed distance from `S`'s surface, `std.Offset(S, d)` the set `d` outside
-//! it, `p distance(<= d, side: outside) S` that side of it grown by `d` (`inside(d)` is
+//! outside) S` is the signed distance from `S`'s surface, `std.sets.Offset(S, d)` the set `d`
+//! outside it, `p distance(<= d, side: outside) S` that side of it grown by `d` (`inside(d)` is
 //! retired, #266).  A distance's set moves
 //! its number, a region solid's cone is its exact offset — a cone, its apex rounded by a ball
 //! where it grows — and a drawn point stands at its foot on the set.  Held to closed forms.
@@ -12,12 +12,12 @@ use crate::common::{ent, refused, text::solved};
 
 /// A point held at the origin, the axis up from it, a plane at height 10 square to it, a cone
 /// of half 30° opening up from the origin and a cylinder of radius 6 about the axis.
-const FRAME: &str = "unit mm\nuse std\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
+const FRAME: &str = "unit mm\nuse std\nuse std.sets\nc := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
                      t := point hint((0, 0, 1))\nfix((0, 0, 1)) t\nup := line(c, t)\n\
                      lu := axis hint(dir: (1, 0, 0))\nlv := axis hint(dir: (0, 1, 0))\n\
                      fix(dir == (1, 0, 0), origin == (0, 0, 10)) lu\n\
                      fix(dir == (0, 1, 0), origin == (0, 0, 10)) lv\nlid := plane(u: lu, v: lv)\n\
-                     funnel := std.Cone(up, half: 30deg)\ntube := std.Cylinder(up, r: 6)\n";
+                     funnel := std.sets.Cone(up, half: 30deg)\ntube := std.sets.Cylinder(up, r: 6)\n";
 
 /// `name`'s exact volume against `want`, and its field's sign at `inside` and `outside`.
 fn holds(e: &Elaborated, name: &str, want: f64, inside: &[[f64; 3]], outside: &[[f64; 3]]) {
@@ -57,7 +57,7 @@ fn a_cone_grown_is_the_cone_further_back() {
 /// grown cone is that ball's.
 #[test]
 fn a_grown_cone_is_rounded_at_its_apex() {
-    let e = solved(&format!("{FRAME}small := std.Sphere(c, r: 1)\n\
+    let e = solved(&format!("{FRAME}small := std.sets.Sphere(c, r: 1)\n\
                              bead := {{ p | p distance(<= 1, side: outside) funnel; \
                              p inside small }}\n\
                              glow := {{ p | p distance(<= 1, side: outside) funnel; \
@@ -87,8 +87,8 @@ fn a_cone_shrunk_is_the_cone_further_along() {
 /// A cone wider than square is all but the cone the other way: grown, that one shrinks.
 #[test]
 fn a_wide_cone_grown() {
-    let e = solved(&format!("{FRAME}wide := std.Cone(up, half: 120deg)\n\
-                             big := std.Sphere(c, r: 5)\n\
+    let e = solved(&format!("{FRAME}wide := std.sets.Cone(up, half: 120deg)\n\
+                             big := std.sets.Sphere(c, r: 5)\n\
                              cap := {{ p | p distance(<= 1, side: outside) wide; p inside big }}\n\
                              w := solid(cap)\n"));
     let field = MaterialField::read(&e.sketch, ent(&e, "w").i(), 1e-10).unwrap();
@@ -100,11 +100,11 @@ fn a_wide_cone_grown() {
     }
 }
 
-/// The set offset is a set (`std.Offset`): inside it is at most `d` outside, and its number may
-/// be an unknown the drawing solves.
+/// The set offset is a set (`std.sets.Offset`): inside it is at most `d` outside, and its number
+/// may be an unknown the drawing solves.
 #[test]
 fn an_offset_is_a_set() {
-    let e = solved(&format!("{FRAME}tip := std.Offset(funnel, d: 1)\n\
+    let e = solved(&format!("{FRAME}tip := std.sets.Offset(funnel, d: 1)\n\
                              cup := {{ p | p inside tip; p outside std.top; p inside lid }}\n\
                              glass := solid(cup)\n"));
     let want = PI * tan30() * tan30() / 3.0 * (12f64.powi(3) - 2f64.powi(3));
@@ -122,7 +122,7 @@ fn an_offset_is_a_set() {
 /// A distance's set moves its number: a ball and a cylinder grown, a plane's side moved.
 #[test]
 fn a_distance_set_moves_its_number() {
-    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 3)\nsmall := std.Sphere(c, r: 2)\n\
+    let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: 3)\nsmall := std.sets.Sphere(c, r: 2)\n\
                              grown := {{ p | p distance(<= 2, side: outside) big }}\n\
                              skin := {{ p | p inside big; p distance(<= 1, side: inside) small }}\n\
                              can := {{ p | p distance(<= 1, side: outside) tube; \
@@ -139,7 +139,7 @@ fn a_distance_set_moves_its_number() {
 /// surface on its inside is outside the ball 1 smaller — and in a region, a shell.
 #[test]
 fn a_bound_inside_turns_round() {
-    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 3)\n\
+    let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: 3)\n\
                              rind := {{ p | p inside big; p distance(<= 1, side: inside) big }}\n\
                              r := solid(rind)\n"));
     holds(&e, "r", 4.0 / 3.0 * PI * (27.0 - 8.0), &[[2.5, 0.0, 0.0]], &[[1.5, 0.0, 0.0]]);
@@ -156,7 +156,7 @@ fn a_planes_side_grown_chooses_a_root() {
         ("p inside std.top", 0.8, -1.0),
         ("p outside std.top", -0.8, 1.0),
     ] {
-        let e = solved(&format!("{FRAME}ball := std.Sphere(c, r: 1)\n\
+        let e = solved(&format!("{FRAME}ball := std.sets.Sphere(c, r: 1)\n\
                                  p := point hint((0, 0, {seed}))\nfix(x == 0, y == 0) p\n\
                                  p coincident ball\n{said}\n"));
         let z = e.sketch.world_point(ent(&e, "p").i())[2];
@@ -168,7 +168,7 @@ fn a_planes_side_grown_chooses_a_root() {
 #[test]
 fn a_point_at_a_distance_from_a_ball() {
     for (side, want) in [("outside", 15.0), ("inside", 5.0)] {
-        let e = solved(&format!("{FRAME}ball := std.Sphere(c, r: 10)\np := point hint((12, 0, 0))\n\
+        let e = solved(&format!("{FRAME}ball := std.sets.Sphere(c, r: 10)\np := point hint((12, 0, 0))\n\
                                  fix(y == 0, z == 0) p\np distance(5, side: {side}) ball\n"));
         let x = e.sketch.world_point(ent(&e, "p").i())[0];
         assert!((x - want).abs() <= 1e-9, "{side}: {x}");
@@ -190,7 +190,7 @@ fn a_point_at_a_distance_from_a_cone() {
         for (said, want) in [
             ("p distance(1, side: outside) funnel", surface + off),
             ("p distance(1, side: inside) funnel", surface - off),
-            ("p coincident std.Offset(funnel, d: 1)", surface + off),
+            ("p coincident std.sets.Offset(funnel, d: 1)", surface + off),
         ] {
             let src = format!("{FRAME}{p}{said}\n");
             let mut e = solved(&src);
@@ -209,7 +209,7 @@ fn a_point_at_a_distance_from_a_cone() {
 fn a_point_at_a_distance_from_a_cone_its_point_sizes() {
     let q = format!("q := point hint((5, 0, 10))\nfix(({}, 0, 10)) q\n", 10.0 * tan30());
     for (side, want) in [("outside", 1.0), ("inside", -1.0)] {
-        let src = format!("{FRAME}{q}k := std.Cone(up)\nq coincident k\n\
+        let src = format!("{FRAME}{q}k := std.sets.Cone(up)\nq coincident k\n\
                            p := point hint((4, 0, 5))\nfix(y == 0, z == 5) p\n\
                            p distance(1, side: {side}) k\n");
         let e = solved(&src);
@@ -236,7 +236,7 @@ fn what_a_distance_from_a_set_refuses() {
          "is a region", "distance(1, side: outside)"),
         ("ring := { q | q coincident lid; q distance(3) c }\np distance(1, side: outside) ring",
          "says 2 things", "distance(1, side: outside)"),
-        ("q := point hint((1, 0, 1))\nl := line(q, p)\nl tangent std.Offset(funnel, d: 1)",
+        ("q := point hint((1, 0, 1))\nl := line(q, p)\nl tangent std.sets.Offset(funnel, d: 1)",
          "derivative cannot move", "tangent"),
     ] {
         refused(&format!("{FRAME}{point}{said}\n"), "E040", why, at);
@@ -253,7 +253,7 @@ fn what_a_distance_from_a_set_refuses() {
 /// inside it.
 #[test]
 fn the_outside_of_a_grown_set_is_its_side_turned_round() {
-    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 2)\nhuge := std.Sphere(c, r: 5)\n\
+    let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: 2)\nhuge := std.sets.Sphere(c, r: 5)\n\
                              fat := {{ q | q distance(<= 1, side: outside) big }}\n\
                              thin := {{ q | q distance(<= 1, side: inside) big }}\n\
                              peel := {{ p | p inside huge; p outside fat }}\n\
@@ -273,7 +273,7 @@ fn a_side_grown_is_a_distance() {
         let (_, errs) = crate::common::parse(&src);
         let e = errs.iter().find(|e| e.message.contains(&format!("p distance(<= d, {kept}) S")))
             .unwrap_or_else(|| panic!("{said}(1) not refused: {errs:?}"));
-        assert!(e.message.contains("std.Offset(S, d: d)"), "{}", e.message);
+        assert!(e.message.contains("std.sets.Offset(S, d: d)"), "{}", e.message);
     }
 }
 
@@ -297,7 +297,7 @@ fn the_outside_of_an_interval_is_refused() {
 /// of 3, as a measurement from a set reads it (#183 F2).
 #[test]
 fn a_grown_sets_surface_is_the_offset_surface() {
-    let e = solved(&format!("{FRAME}big := std.Sphere(c, r: 2)\nthree := std.Sphere(c, r: 3)\n\
+    let e = solved(&format!("{FRAME}big := std.sets.Sphere(c, r: 2)\nthree := std.sets.Sphere(c, r: 3)\n\
                              fat := {{ q | q distance(<= 1, side: outside) big }}\n\
                              skin := {{ p | distance(p, fat.surface) <= 0.5mm }}\n\
                              same := {{ p | distance(p, three.surface) <= 0.5mm }}\n\

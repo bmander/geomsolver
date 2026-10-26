@@ -6,7 +6,8 @@
 // cut through the hub's whole length; the axle's cable port, handed in, is cut through the hub
 // where it passes, so the wires leave the axle into the left-hand bay.
 
-use std (horizontal)
+use std
+use std.place (horizontal)
 use motor.dims (d_core, hub_half, key_t2, key_w, L, Rb, web_half, window_d, window_r)
 use motor.parts (Datums)
 use motor.axle

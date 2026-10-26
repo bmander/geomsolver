@@ -12,7 +12,8 @@ use gcs_core::{graft,model::MotionDef,motion,program,
 /// `small_len` (10), and `slope` 30° off `big`.
 const DRAWING: &str = "\
 unit mm
-use std (screws, slides, turns)
+use std
+use std.motion (screws, slides, turns)
 big_len := 30mm
 small_len := 10mm
 in std.front {
@@ -241,7 +242,8 @@ fn the_flat_print_keeps_a_joints_number_as_written() {
 fn a_ratio_inside_a_component_is_stated_from_the_instances_numbers() {
     let pair = |ratio: &str| format!("\
 unit mm
-use std (screws, slides, turns)
+use std
+use std.motion (screws, slides, turns)
 component Pair(ax: line, big: Length, small: Length) {{
   r0 := point
   r1 := point hint((30, -4))

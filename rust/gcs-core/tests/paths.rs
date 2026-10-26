@@ -54,10 +54,12 @@ fn tube(word: &str, kind: &str, guide: &str, above: f64) -> String {
         format!("c := point\n    c on_v(d: {above}mm) st.n\n    k := circle(center: c)")
     };
     format!("unit mm
-use std (on_v)
+use std
+use std.place (on_v)
+use std.stations
 
 component Tube(g: {kind}, up: axis, s: Scalar) {{
-  st := std.{word}(g, up: up, s: s)
+  st := std.stations.{word}(g, up: up, s: s)
   in st.n {{
     {centre}
     radius(3mm) k
@@ -116,9 +118,9 @@ fn bezier_length(ctrl: [(f64, f64); 4]) -> f64 {
     }).sum()
 }
 
-/// **One word over every guide drawn in a plane**: `std.On` round an arc — E062 until L4, its
-/// tangency at a point of an arc read in space — is Pappus, π·3²·30·π/2, and the same solid
-/// `std.OnArc` sweeps; along a spline a tube is its area times the spline's length.
+/// **One word over every guide drawn in a plane**: `std.stations.On` round an arc — E062 until L4,
+/// its tangency at a point of an arc read in space — is Pappus, π·3²·30·π/2, and the same solid
+/// `std.stations.OnArc` sweeps; along a spline a tube is its area times the spline's length.
 #[test]
 fn on_stands_on_an_arc_and_a_spline_at_pappus() {
     let vol = |word: &str, kind: &str, guide: &str| {
@@ -196,9 +198,10 @@ fn a_chain_family_refuses_what_it_cannot_run() {
             "{said:?}");
     let closed = "unit mm
 use std
+use std.stations
 
 component Tube(g: path, up: axis, s: Scalar) {
-  st := std.On(g, up: up, s: s)
+  st := std.stations.On(g, up: up, s: s)
   in st.n {
     k := circle(center: st.n.origin)
     radius(1mm) k

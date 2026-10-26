@@ -263,13 +263,13 @@ cycle 4 as i { s := Spoke(o, i * 90deg) }
 /// a set, and an instance carrying its numbers (`spatial_lang`'s `s.r`).
 #[test]
 fn a_set_and_a_group_fill_only_their_own_formals() {
-    let base = "unit mm\nuse std\n\
+    let base = "unit mm\nuse std\nuse std.sets\n\
         component Reads(p: point, dims: group) {\n  p distance(dims.r) dims.at\n}\n\
         component On(p: point, s: set) {\n  p coincident s\n}\n\
         c := point hint((0, 0, 0))\nfix((0, 0, 0)) c\n\
         p := point hint((3, 4, 1))\n\
         ball := { q | q distance(5) c }\n\
-        sphere := std.Sphere(c, r: 5)\n\
+        sphere := std.sets.Sphere(c, r: 5)\n\
         dims := {r: 5mm, at: c}\n";
     crate::common::refused(&format!("{base}Reads(p, ball)\n"), "E103", "wants a group", "ball");
     crate::common::refused(&format!("{base}On(p, dims)\n"), "E103", "wants a set", "dims");
@@ -282,8 +282,8 @@ fn a_set_and_a_group_fill_only_their_own_formals() {
     // as it was for a set family's instance nothing uses: only a number is left an unknown
     crate::common::refused(&format!("{base}On(s: ball)\n"), "E103", "missing point argument `p`",
                            "On(s: ball)");
-    crate::common::refused(&format!("{base}lone := std.Sphere(r: 5)\n"), "E103",
-                           "missing point argument `center`", "lone := std.Sphere(r: 5)");
+    crate::common::refused(&format!("{base}lone := std.sets.Sphere(r: 5)\n"), "E103",
+                           "missing point argument `center`", "lone := std.sets.Sphere(r: 5)");
     // each takes its own — the set named, or a family's instance — and an instance of a family
     // a group as well
     for call in ["Reads(p, dims)", "On(p, ball)", "On(p, sphere)"] {

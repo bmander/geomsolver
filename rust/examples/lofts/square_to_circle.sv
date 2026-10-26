@@ -9,13 +9,15 @@
 // V = length · (8·half² + π·half²)/3, 8000 + 1000π mm³ as drawn.
 // Edit `length` or `half`.
 unit mm
-use std (coords)
+use std
+use std.place (coords)
+use std.stations
 
 length := 30mm
 half := 10mm
 
 component Transition(g: line, up: axis, half: Length, s: Scalar) {
-  st := std.OnLine(g, up: up, s: s)
+  st := std.stations.OnLine(g, up: up, s: s)
   in st.n {
     h := half * (1 - s)
     r := half * s

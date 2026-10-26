@@ -19,7 +19,9 @@
 // an unknown, is what the solve answers: 15 + 0.5332·h = 21.398.  Edit `least`, `h` or the
 // law's stations (and the instant with them), and the base is solved again.
 
-use std (offset, spins, slides)
+use std
+use std.place (offset)
+use std.motion (spins, slides)
 
 h := 12           // the follower's lift
 least := 15       // the least radius the cam may bend at

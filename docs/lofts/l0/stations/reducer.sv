@@ -5,12 +5,13 @@
 // V = 40 · (8 · 18 − 16) = 5120 mm³, today's `solid_loft` volume.
 unit mm
 use std
+use std.shapes
 use lofts
 length := 40mm
 
 component Section(c: point, size: Length, wall: Length) {
-  private outer := std.CenteredRectangle(c, w: size, h: size)
-  private inner := std.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
+  private outer := std.shapes.CenteredRectangle(c, w: size, h: size)
+  private inner := std.shapes.CenteredRectangle(c, w: size - 2 * wall, h: size - 2 * wall)
   profile := face(outer.loop, holes: inner.loop)
 }
 

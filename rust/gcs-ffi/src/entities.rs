@@ -193,10 +193,10 @@ pub(crate) fn kind_id(k: EntKind) -> i32 {
         // the binding decodes an id through its own table (`model.ts`'s `KIND_ID`), so an id
         // keeps its number for good: the ellipse's (5) and the frame's (7) were taken up when
         // those kinds went (#47), and the sphere's, the cone's and the cylinder's when they
-        // became library components (`std.Sphere`, `std.Cone`, `std.Cylinder`), 12–15 when
-        // the patch, the seam, the vertex and the edge left the language for the Rust API (#364),
-        // and the motion's (10) when a motion became a frame's joint (#383): a motion node is no
-        // entity a document declares, and the binding decodes it to nothing
+        // became library components (`std.sets.Sphere`, `std.sets.Cone`, `std.sets.Cylinder`),
+        // 12–15 when the patch, the seam, the vertex and the edge left the language for the Rust
+        // API (#364), and the motion's (10) when a motion became a frame's joint (#383): a motion
+        // node is no entity a document declares, and the binding decodes it to nothing
         EntKind::Curve => 5,
         EntKind::Frame => 6,
         EntKind::Face => 7,

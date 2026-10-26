@@ -210,7 +210,7 @@ fn a_free_length_is_where_the_energy_is_stationary_in_it() {
     let (pa, pb) = ((-2.0f64).atan2(-1.0), (-2.0f64).atan2(-1.0) + 40f64.to_radians());
     let (a, b) = (on(pa), on(pb));
     let src = format!(
-        "use std\nin std.front {{\n  a := point\n  b := point\n  fix(({}, {})) a\n  fix(({}, {})) b\n  k := curve(a, b)\n}}\n\
+        "use std\nuse std.shapes\nin std.front {{\n  a := point\n  b := point\n  fix(({}, {})) a\n  fix(({}, {})) b\n  k := curve(a, b)\n}}\n\
          k minimizes integral(2 / (1mm^2 + p.x^2 + p.y^2) over p)\n",
         a.0, a.1, b.0, b.1
     );
@@ -240,13 +240,13 @@ fn the_rows_on_a_free_curve_differentiate_exactly() {
     crate::common::fd_jacobian(&e.sketch, 1e-6);
 }
 
-/// `std.hangs(L) rope` is the longhand in one word: the same rope, the same verdict, and a rope
-/// deleted takes the word's use with it.
+/// `std.shapes.hangs(L) rope` is the longhand in one word: the same rope, the same verdict, and a
+/// rope deleted takes the word's use with it.
 #[test]
 fn the_library_word_hangs_the_same_rope() {
     let longhand = solved(ROPE);
     let src = ROPE
-        .replace("use std\n", "use std (hangs)\n")
+        .replace("use std\n", "use std\nuse std.shapes (hangs)\n")
         .replace("  length(150) rope\n", "  hangs(L: 150) rope\n")
         .replace("rope minimizes integral(p.y over p)\n", "");
     let mut e = solved(&src);
