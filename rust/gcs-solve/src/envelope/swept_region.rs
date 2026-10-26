@@ -509,9 +509,13 @@ impl SweptRegion {
         let mut used = vec![false;runs.len()];
         // a spur, a hair of a stretch joined at neither end or only to itself (the edge beside an end
         // pose's corner, kept as far as the keeping test's tolerance reaches past the corner's
-        // path), bounds nothing
-        let hair = |r: &Run,p: P| (1..=8).all(|k| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*k as f64/8.)
-            .is_some_and(|h| dist(h.at,p) <= loose));
+        // path), bounds nothing; an edge held at an end pose is kept so as far as `grazing` where
+        // its contact left it at the corner just before the roll ended, tangent to it there
+        let hair = |r: &Run,p: P| {
+            let reach = if let Kind::Fixed {..} = candidates[r.candidate] { grazing } else { loose };
+            (1..=8).all(|k| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*k as f64/8.)
+                .is_some_and(|h| dist(h.at,p) <= reach))
+        };
         for k in 0..runs.len() {
             let alone = next[k].is_none() && !taken[k] || next[k] == Some(k);
             if alone && hair(&runs[k],at[k][0]) {

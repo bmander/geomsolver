@@ -294,7 +294,9 @@ reach) or leave the box, which carries the loop round to the next stretch enteri
 several meet at one point (an end pose's corner: the held edge, the corner's path, and a hair of the
 next edge the keeping test's tolerance keeps), the union's boundary takes the rightmost turn, and a
 hair joined at neither end, or only to itself, is dropped (#613: a placement turned 30° boxes the
-blank past a rack tooth's tip, which no quarter turn does). A
+blank past a rack tooth's tip, which no quarter turn does), an edge held at an end pose as long as
+the join's reach there (a flank whose contact left it at its corner just before the roll ended, kept
+from the corner as far as the tangency lets the keeping test). A
 whole period is where the motion takes the section onto itself (`Setting::alike`: the tool's
 symmetry counted, the star's 540° at 4:6), and a roll that is neither one nor clear of the blank at
 both ends is refused naming the period. `brep::sweep::subtraction` builds each
@@ -317,7 +319,7 @@ tool the motion does not move) and said in one form (`roll::advice`). `tests/pla
 one arm through, Q3, the drafted wheel at 10 µm, the measured drafted handle above six bands
 stepped down it and the square arms, a drafted disc whose islands change refused at their depth,
 #613's pinion cut at a copy turned 30° and whole, and at module 1.5 over a roll ending as its flank
-grazes the held one, stated and `through:`).
+grazes the held one or its contact leaves it at its corner just before, stated and `through:`).
 
 **Export tolerance ([plan](../native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets

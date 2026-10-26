@@ -555,8 +555,11 @@ fn a_tooth_space_cut_at_a_turned_copy_is_the_space_turned() {
 /// test finds where the held flank starts to be kept only to `√(2 tol ρ)`, `ρ` the involute's
 /// radius there.  At module 1.5 a roll of 56° (a copy turned 30°, its box reaching past the end
 /// pose) left it 16 µm off the contact, past the joins' reach, and the boundary did not close.
-/// The contact is the held flank's end however far the test finds it: a cut over 56°, and over the
-/// roll found `through:` the blank, remove what the generous stated window does.
+/// The contact is the held flank's end however far the test finds it.  Over 60° the contact reaches
+/// the tooth's back corner 0.06° before the roll ends, and the held flank is kept from that corner
+/// a hair as long, 13.6 µm, joined to nothing: a spur, however far the test keeps it.  A cut over
+/// 56°, over 60°, and over the roll found `through:` the blank remove what the generous stated
+/// window does.
 #[test]
 fn a_roll_ending_where_the_flank_grazes_its_held_edge_closes() {
     let turned = "turned := space at(under: index) 30deg\nturned cut gear";
@@ -566,7 +569,8 @@ fn a_roll_ending_where_the_flank_grazes_its_held_edge_closes() {
         |tool: &str| blank - cut_body(&rolled_pinion("1.5mm", tool, turned), "gear", None);
     let generous = removed("tooth over t in (-window, window)");
     assert!(generous > 10., "the space removes {generous:.5} mm³");
-    for tool in ["tooth over t in (-56deg, 56deg)", "tooth, through: gear"] {
+    for tool in ["tooth over t in (-56deg, 56deg)", "tooth over t in (-60deg, 60deg)",
+                 "tooth, through: gear"] {
         let r = removed(tool);
         assert!((r - generous).abs() < 1e-4 * generous,
                 "`{tool}` removes {r:.6} mm³, the stated window {generous:.6}");
