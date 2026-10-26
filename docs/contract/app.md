@@ -34,10 +34,31 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   renumbered into the destination and every reference follows, and a constraint comes along
   exactly when all its entities did.  `without` keeps what is not deleted, `copy` keeps the
   selection (so a clipboard is an ordinary sketch document), `paste` grafts one sketch onto
-  another at an offset.  A new thing that travels with a constraint or an entity — a flag, a
-  placement — belongs in `graft`, or the three will disagree.  JSON is now the *export* format,
+  another at an offset, and a drag's `Part` is the same walk.  JSON is now the *export* format,
   derived rather than canonical; `io::dumps` is still what the Rust tests and the benchmarks
   compare against.
+  - **The walk's answer is a `Renumbering`**: each source entity to the one it became, each
+    stated constraint to its copy, and what was made in the order it was made.  `rebuild` (a
+    sketch of its own: the source's unit, presentation and root choices) and `graft_onto` (added
+    to a document, in that document's unit, onto the planes it already has) say which they
+    are; the destination's being empty says nothing, so a paste into a new document stays a
+    paste (`a_paste_into_an_empty_document_lands_in_its_unit`).  `Part` pairs the two sketches'
+    points, entities and numbers from it — a constraint's own unknowns by the constraint table,
+    whatever kinds it names (`a_part_pairs_a_contacts_place_on_a_traced_body`).
+  - **What a value refers to is the value's own to say**: each kind the walk copies whole has a
+    `remapped` beside it (`FaceE`, `SolidDef`, `MotionDef`, `Held`, `CurveE`, `Constraint`, …),
+    naming every field, `None` where something it cannot be without did not come along (`Held`
+    degrades to `Held::Not` instead).  A new field stops the build there until it is decided;
+    a new flag on a constraint travels unless `Constraint::remapped` says otherwise.  Every
+    field of `Sketch` is named in `graft`'s ledger — carried by a step, minted again by the
+    destination, or left behind and said so — so a new one stops the build there too.
+  - A rebuild that removes nothing keeps every entity where it was, every stated constraint
+    and every picture, in every document of the corpus
+    (`a_rebuild_that_removes_nothing_keeps_everything`).  What a removal takes with it reaches
+    the removed entity through `Sketch::children`, or through one of the three things the walk
+    reads that `children` does not list — a face's plane, a curve's trim, a region term's set
+    probe (`what_a_removal_takes_is_what_depends_on_it`); `copy` and `Part` walk `children`
+    alone, so closing one of those is a change to `children`.
 - **Delete takes everything selected** that has a statement of its own (`edit::remove`): what a
   component or a block made stays, counted in `Edit::kept`, and the rest goes — so a band swept
   over the drawing that also caught `std`'s datums deletes the drawing, and the status line says
