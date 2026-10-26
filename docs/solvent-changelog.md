@@ -4,7 +4,7 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
-**[0.188] Developable panels.** A sheet cut flat and bent to shape — a plywood boat's strake, a
+**[0.192] Developable panels.** A sheet cut flat and bent to shape — a plywood boat's strake, a
 duct adapter, a rectangle to a round — is written as two definitions in `std.sv`: `std.Developable(a,
 b)`, the set of points on the ruling between a point of `a` and a point of `b` where one plane
 touches both, `b` running through it the way `a` does, and `std.Development(S, s, d)`, the panel's
@@ -19,14 +19,58 @@ touching a path**, `T tangent(at: m) k`, `k` a line, a circle, an arc or a curve
 through it, is read between two in a sheet's body. **A contact over an interval**, `p coincident(t
 in (0, 1)) line(m, n)`: the incidence and its place bounded, which in a set's body does not make
 the set a region (§6.21). **Rates against rates** in a body that states a rate: `rate(x over s)
-equal rate(y over s)` and `rate(x over s) angle(rate(y over s), l) k`, through 0.187 refused as
+equal rate(y over s)` and `rate(x over s) angle(rate(y over s), l) k`, through 0.191 refused as
 reading two rates or a magnitude (§6.5). **The sides of a sheet**: `q distance(<= d, side:
 outside) S` of a sheet is its band along the normal, square at its edges, and `solid(…)` of it is
 the sheet, faceted from its rulings (its STEP refused until the ruled walls are written exactly);
 `std.Offset(S, d:)` is its layer. `--where` reads a panel's `rulings`, `fans`, `closed` and `area`,
 and a pattern's laid rails' lengths, its area and its box. A plane touching a line at a point,
-through 0.187 **E040**, now holds it; every other solved position is unchanged. Examples in
+through 0.191 **E040**, now holds it; every other solved position is unchanged. Examples in
 `rust/examples/developable/`. (Issue #645.)
+
+**[0.191] A chosen number.** `if(COND, A, B)` is `A` where `COND` holds and `B` where it does
+not (§3.3), a value where `when` is a block of statements (§12.9): a number that differs between a
+block's copies is one statement, `a distance(if(k == 0, 5mm, 7mm * k)) q`, where it took a `when`
+per case or arithmetic over the index (`j * near_dx`). `COND` is a `when`'s, decided at elaboration
+from numbers alone: one reading an unknown of the drawing is **E103** where a value is defined and
+**W110** in a dimension, as `sin(beta)` is; `in` and `meets` in it are **E103**. Both sides are
+worked out and agree in dimension as `+`'s operands do (`if(c, w, 10)`, `w` a length, is **E103**).
+In a traced curve's formula the condition reads only the document's numbers; one over a formal is
+refused, and chosen where the component is called. `if` is a built-in name, as `sqrt` is: a
+definition named `if` is warned as one shadowing a function. `c ? a : b` is not adopted: `:` is
+a named argument's in every call, and `?` is no token of the language. Every solved position is
+unchanged.
+
+**[0.190] A refuted claim says where.** A claim about two solids that is refuted or undecided says,
+under its measurement, the face of each by its path through the operands and where in the world
+they meet: `deepest at (…), between a.f and b.g` where their material is common (the centre of the
+largest ball both hold, which the thickness is read from), `nearest at (…), between …` where their
+boundaries touch or cross, and `nearest between a.f at (…) and b.g at (…)` where they are apart
+(§9.8). A claim over a sweep says it at the pose it reports. The JSON carries it as `nearest`
+(`a`, `b`, `atA`, `atB`, `deepest`) on the claim and on every valid pose, for a claim that holds
+too. Nothing is measured differently. (A request from radiatorbot: `claim uno.tails clear(0.5mm)
+frame_part` refuted at −0.71 named no tail and no post.)
+
+**[0.189] An instance's numbers, read from outside it.** `b.n` names a number the body of the
+instance `b` defines — a value, an input with a value, a group's member — worked out from what the
+call gave it, as `ball.r` names a formal (§8): `shield_z := uno_z + shield.top` reads `Shield`'s
+`top` rather than a second copy of its formula. A path reaches through an instance the body writes
+(`st.base.top`). Either is read in a definition as well as by a statement, the body writing the call
+worked out in dependency order with it: through 0.188 a definition reading even a formal,
+`y := b.w + 1mm`, was **E103**, and a body's own number was not read at all (`` `shield.top` is not
+a number here — nothing in scope gives it one ``). A definition the call reads that reads the
+number back is **E041**; a number the call leaves unable to work out is **E103** where it is read.
+A formal a call leaves to its default reads as that default from outside, where it read as an
+unknown. Every solved position is unchanged.
+
+**[0.188] A zero ordinate is a number.** `p distance(0mm, along: u) P`, and `p coords(du: 0mm,
+dv: 5mm) P` through it, is an ordinate of zero — a dimension, drawn and edited as any other
+(§6.7). Through 0.187 a zero written as a literal was **E040**, naming `level`, while a zero a
+name or an expression came to (`cx := (x0 + x1) / 2`) was accepted: a component placing a point
+by its ordinates read either way, and one written in fear of the refusal branched on each
+ordinate being zero. `a level(t) b` is unchanged, the same row with no number, and a step's
+literal zero (`step(v: 0mm)`, back onto the axis) is still its level (§6.6). A document that
+elaborated still does, and every solved position is unchanged.
 
 **[0.187] Faces that meet.** A `when` may ask whether two faces share a point: `a meets b`,
 `a` and `b` faces of one solid a face repeat runs over, holds where they share an edge or a corner

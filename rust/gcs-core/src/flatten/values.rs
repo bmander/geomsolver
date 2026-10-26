@@ -25,6 +25,20 @@ struct Def {
     group_ref: bool,
     /// The type a `param` declared, which its value is worked out under.
     ty: Option<Ty>,
+    /// A number of an instance the body writes, read from outside it (`shield.top`): worked out
+    /// from its call (`members`), not from `text`.
+    call: Option<Box<Call>>,
+}
+
+/// What a definition read from an instance is worked out from: the call, the number of it read,
+/// and the names its call reads, which it waits for.
+struct Call {
+    inst: crate::syntax::Instance,
+    member: String,
+    reads: BTreeSet<String>,
+    /// Whether the body writes it as a name and nothing else (`alias := sizes`): one that is no
+    /// number is the group or the geometry it names, read as such, and nothing is said here.
+    named: bool,
 }
 
 /// Why a name a text reads is out of this component's reach — a document name it must be
@@ -169,7 +183,7 @@ fn holds(
                         return Err((Code::E040, format!(
                             "{} an unknown of the drawing, and a `when` is decided before the \
                              solve: compare numbers the document states",
-                            reads_unknown(&name, u)
+                            expr::reads_unknown(&name, u)
                         )));
                     }
                     Some(None) => {}
@@ -181,12 +195,6 @@ fn holds(
             })?
         }
     })
-}
-
-/// How a name that is, or is written over, the unknown `u` is said to be one: `` `beta` is `` or
-/// `` `k` reads `beta`, ``, ahead of what an unknown cannot be read by.
-fn reads_unknown(name: &str, u: &str) -> String {
-    if u == name { format!("`{name}` is") } else { format!("`{name}` reads `{u}`,") }
 }
 
 /// Whether a claim over values holds (#596), and each name it reads with its value; or the code
@@ -201,15 +209,7 @@ fn claimed(
 ) -> Result<(bool, Vec<(String, super::Valued)>), (Code, String)> {
     let said = |code, e: String| (code, format!("`{text}`: {e}"));
     let c = expr::parse_condition_in(text, units).map_err(|e| said(Code::E103, e))?;
-    fn membership(c: &Cond) -> bool {
-        match c {
-            Cond::In(..) | Cond::Meets(..) => true,
-            Cond::And(a, b) | Cond::Or(a, b) => membership(a) || membership(b),
-            Cond::Not(a) => membership(a),
-            Cond::Cmp(..) => false,
-        }
-    }
-    if membership(&c) {
+    if c.names_geometry() {
         return Err(said(Code::E103, "a claim over values compares numbers; `in` and `meets` \
             ask of faces, and are a `when`'s".into()));
     }
@@ -226,7 +226,7 @@ fn claimed(
                 return Err(said(Code::E040, format!(
                     "{} an unknown of the drawing, and a claim over values is judged before the \
                      solve: a relation claims what the solve gives",
-                    reads_unknown(&name, u)
+                    expr::reads_unknown(&name, u)
                 )));
             }
             Some(a) => reads.push((name, super::Valued { value: a.c, dim: a.dim })),
@@ -348,7 +348,7 @@ fn head(name: &str) -> &str {
 }
 
 /// Whether a definition's text is a name and nothing else (`sizes`, `dims.handle_dims`).
-fn is_reference(text: &str) -> bool {
+pub(super) fn is_reference(text: &str) -> bool {
     text.trim().split('.').all(|seg| {
         let mut chars = seg.chars();
         chars.next().is_some_and(|c| c.is_alphabetic() || c == '_')
@@ -902,6 +902,8 @@ impl<'a> Walk<'a> {
         if !self.nested_members(&mut pending, vals, &mut here) {
             return;
         }
+        let read = self.instance_reads(body, &pending, &here, vals, scope);
+        pending.extend(read);
         // the parameters the body declares, which no value reads (#391 S4)
         let running: BTreeSet<String> = body.iter().filter_map(|st| match &st.kind {
             StmtKind::Param(pd) if pd.over().is_some() => Some(pd.name.text.clone()),
@@ -939,6 +941,114 @@ impl<'a> Walk<'a> {
             let read = if absolute { &root } else { &at };
             self.aliases.push((abs, reference, read.clone()));
         }
+    }
+
+    /// **An instance's numbers read from outside it** (`shield.top`, `ball.r`): each one a
+    /// statement of the body reads, of an instance the body writes — a formal of its component or
+    /// a number its body defines, or one of an instance it writes in turn (`members::offers`) —
+    /// a definition of the body, worked out with the rest from the call (`members`).  It waits for
+    /// what its call reads (`call_reads`), so `z := uno_z + shield.top` is worked out after the
+    /// numbers `shield` is given, and a definition read by the call may not read it back (E041).
+    fn instance_reads(
+        &mut self,
+        body: &[Stmt],
+        pending: &[Def],
+        here: &BTreeSet<String>,
+        vals: &Vals,
+        scope: &Scope,
+    ) -> Vec<Def> {
+        let calls: BTreeMap<&str, &crate::syntax::Instance> = body.iter()
+            .filter_map(|st| match &st.kind {
+                StmtKind::Instance(i) if !i.name.text.starts_with('#')
+                    && !here.contains(&i.name.text) => Some((i.name.text.as_str(), i)),
+                _ => None,
+            })
+            .collect();
+        if calls.is_empty() {
+            return Vec::new();
+        }
+        let mut comps: BTreeMap<&str, Option<&Component>> = BTreeMap::new();
+        let mut out: Vec<Def> = Vec::new();
+        let mut defined: BTreeSet<String> = pending.iter().map(|d| d.name.clone()).collect();
+        for st in body {
+            let Some(text) = self.prog.span_text(st.span) else { continue };
+            if !calls.keys().any(|n| text.contains(n)) {
+                continue;
+            }
+            for u in crate::syntax::name_uses(text) {
+                let Some(((head, at), rest)) = u.parts.split_first() else { continue };
+                let Some((&key, &inst)) = calls.get_key_value(head.as_str()) else { continue };
+                let prog = self.prog;
+                let Some(comp) = *comps.entry(key).or_insert_with(|| {
+                    let k = prog.resolve_component(&inst.component.text, scope.module).ok()?;
+                    Some(&prog.components[k])
+                }) else {
+                    continue;
+                };
+                let parts: Vec<&str> = rest.iter().map(|(p, _)| p.as_str()).collect();
+                let Some((n, named)) = super::members::offers(prog, comp, &parts, 0) else {
+                    continue;
+                };
+                let member = parts[..n].join(".");
+                let name = format!("{head}.{member}");
+                if vals.contains_key(&name) || !defined.insert(name.clone()) {
+                    continue;
+                }
+                let last = rest[n - 1].1;
+                let span = Span { lo: st.span.lo + at.lo, hi: st.span.lo + last.hi };
+                let reads = self.call_reads(inst, comp, pending, scope);
+                out.push(Def {
+                    name,
+                    text: String::new(),
+                    span,
+                    group_ref: false,
+                    ty: None,
+                    call: Some(Box::new(Call { inst: inst.clone(), member, reads, named })),
+                });
+            }
+        }
+        out
+    }
+
+    /// The definitions of a body an instance's number read from outside waits for: those its
+    /// call reads, a group's members with the group's name; and for a component of the file
+    /// being worked out, read from where nothing closes it, those its body reads, the file's
+    /// constants among them.
+    fn call_reads(
+        &self,
+        inst: &crate::syntax::Instance,
+        comp: &Component,
+        pending: &[Def],
+        scope: &Scope,
+    ) -> BTreeSet<String> {
+        use super::members::texts;
+        let deps = |text: &str| {
+            expr::parse_in(text.trim(), self.units).map(|p| p.body.deps()).unwrap_or_default()
+        };
+        let mut given = Vec::new();
+        texts(&inst.args, &mut given);
+        let mut reads: BTreeSet<String> = given.iter().flat_map(|t| deps(t)).collect();
+        if !scope.closed && comp.module == scope.module {
+            let defined = super::members::defined(comp);
+            let mut body = Vec::new();
+            for st in &comp.body {
+                if let StmtKind::Instance(i) = &st.kind {
+                    texts(&i.args, &mut body);
+                }
+            }
+            body.extend(defined.values().map(|(t, _)| t.clone()));
+            // what the body names itself is no constant of its file
+            let own: BTreeSet<&str> = comp.formals.iter().map(|f| f.name.text.as_str())
+                .chain(defined.keys().map(|k| head(k)))
+                .chain(comp.body.iter().filter_map(|st| st.kind.bound_name())
+                    .map(|n| n.text.as_str()))
+                .collect();
+            reads.extend(body.iter().flat_map(|t| deps(t)).filter(|n| !own.contains(head(n))));
+        }
+        let groups: Vec<String> = reads.iter().map(|n| format!("{n}.")).collect();
+        reads.extend(pending.iter().map(|d| &d.name)
+            .filter(|n| groups.iter().any(|g| n.starts_with(g.as_str()))).cloned());
+        reads
     }
 
     /// A body's references ordered so a name for a group comes after the name it is for, where
@@ -1142,7 +1252,8 @@ impl<'a> Walk<'a> {
                         }
                     };
                     let group_ref = matches!(field.value, crate::syntax::InstVal::Ref(_));
-                    pending.push(Def { name, text, span: field.span, group_ref, ty: None });
+                    pending.push(Def { name, text, span: field.span, group_ref, ty: None,
+                        call: None });
                 }
                 continue;
             }
@@ -1168,6 +1279,7 @@ impl<'a> Walk<'a> {
                     span: pd.span,
                     group_ref: true,
                     ty: None,
+                    call: None,
                 });
                 continue;
             }
@@ -1187,6 +1299,7 @@ impl<'a> Walk<'a> {
                 span: pd.span,
                 group_ref: false,
                 ty,
+                call: None,
             });
         }
         (pending, references, here)
@@ -1225,7 +1338,7 @@ impl<'a> Walk<'a> {
                             return false;
                         }
                         extra.push(Def { name, text: key.clone(), span: d.span, group_ref: true,
-                            ty: None });
+                            ty: None, call: None });
                     }
                 }
             }
@@ -1249,8 +1362,10 @@ impl<'a> Walk<'a> {
         // worked out at once so the parse error is the one reported
         let reads: Vec<BTreeSet<String>> = pending
             .iter()
-            .map(|d| {
-                expr::parse_in(d.text.trim(), self.units).map(|p| p.body.deps()).unwrap_or_default()
+            .map(|d| match &d.call {
+                Some(c) => c.reads.clone(),
+                None => expr::parse_in(d.text.trim(), self.units).map(|p| p.body.deps())
+                    .unwrap_or_default(),
             })
             .collect();
         let mut waiting: Vec<usize> = (0..pending.len()).collect();
@@ -1282,6 +1397,22 @@ impl<'a> Walk<'a> {
                 if reads[i].iter().any(|n| failed.contains(n)) {
                     failed.insert(d.name.clone());
                     continue; // the cause is already reported, at the definition it reads
+                }
+                if let Some(c) = &d.call {
+                    match self.instance_value(&c.inst, &c.member, vals, scope) {
+                        Ok(a) => vals.insert(d.name.clone(), a),
+                        // a curve's compile reads what it can, and its readers say the rest
+                        Err(_) if self.sym.is_some() || c.named => {}
+                        Err(e) => {
+                            let (inst, comp) = (&c.inst.name.text, &c.inst.component.text);
+                            self.err(Code::E103, d.span, format!(
+                                "`{}` is read from outside `{inst}`, and `{comp}`'s `{}` is not \
+                                 worked out from what the call gives it: {e}",
+                                d.name, c.member));
+                            failed.insert(d.name.clone());
+                        }
+                    }
+                    continue;
                 }
                 // a declared type is what the value is, as a formal's is: `param w: Length := 60`
                 // is a length however the 60 was written, and `param w: Length := 60deg` is wrong
@@ -1325,7 +1456,8 @@ impl<'a> Walk<'a> {
         if self.sym.is_some() {
             return;
         }
-        for d in pending {
+        // an instance's number read from outside it is recorded where its body is walked
+        for d in pending.iter().filter(|d| d.call.is_none()) {
             let abs = format!("{prefix}{}", d.name);
             let Some(a) = vals.get(&d.name) else { continue };
             let Some(value) = a.number().filter(|v| v.is_finite() && !abs.contains('#')) else {

@@ -45,6 +45,7 @@ mod same;
 mod table;
 mod framed;
 mod bound;
+mod members;
 
 pub use faces::{FaceAxis, FacePlane};
 pub use bound::Bound;

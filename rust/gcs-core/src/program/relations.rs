@@ -430,7 +430,7 @@ pub(super) fn constrain(cx: &mut Elab<'_>, r: &Relation, st: &Stmt) -> Option<u3
     };
     if ckind.word_slot().is_some() {
         if let Err((span, message)) =
-            ordinate_operands(&cx.sk, &cx.res, &r, st, cx.doc, &mut args, &mut left_out)
+            ordinate_operands(&cx.sk, &cx.res, &r, st, &mut args, &mut left_out)
         {
             cx.diags.push(Diag::within(Code::E040, span, st.id, message));
             return None;
@@ -1453,14 +1453,13 @@ fn bound_of(
 /// `q` along `P.u` (`P`'s normal for `n`) and the arguments are rewritten so — between two points
 /// `u` and `v` are the view's they are both drawn in, the plane at hand (#268); a direction written
 /// as a reference is an axis or a line, never a plane; a word of the table that is also the name
-/// of a direction in scope is refused as the two readings it has; and a number written as zero is
-/// a level, not a dimension.
+/// of a direction in scope is refused as the two readings it has.  Its number is a dimension
+/// whatever it comes to, zero written so as much as one a name or an expression comes to.
 fn ordinate_operands(
     sk: &Sketch,
     res: &Resolver,
     r: &ResolvedRelation<'_>,
     st: &Stmt,
-    doc: &crate::syntax::Program,
     args: &mut [CArg],
     left_out: &mut [bool],
 ) -> Result<(), (Span, String)> {
@@ -1540,42 +1539,7 @@ fn ordinate_operands(
         }
         _ => {}
     }
-    // zero, written so: the two are level, which is a relation and draws no number — but for
-    // a bound, whose edge zero may be (§9.6)
-    if !level && r.bound.is_none() {
-        if let Some(Arg::Dim { span, .. }) = r.args.get(3).and_then(|a| a.as_ref()) {
-            let text = doc.span_text(*span).unwrap_or_default();
-            if written_zero(text, sk.units) {
-                let say = level_spelling(r.written, &word);
-                return Err((*span, format!(
-                    "an ordinate of zero says the two are level, which is a relation and states no \
-                     number: `{say}`"
-                )));
-            }
-        }
-    }
     Ok(())
-}
-
-/// What an ordinate of zero says, in the words its statement wrote: `a level(v) b` for the
-/// view's own axis, `p level(u) P` for a plane's own word, `a level(t) b` for a reference.
-fn level_spelling(w: Option<&crate::syntax::Written>, word: &str) -> String {
-    use crate::constraints::Toward;
-    let ops: Vec<String> =
-        w.map(|w| w.ops.iter().map(crate::syntax::ref_text).collect()).unwrap_or_default();
-    let op = |i: usize, or: &str| ops.get(i).cloned().unwrap_or_else(|| or.to_string());
-    let (a, b) = (op(0, "a"), op(1, "b"));
-    let reference = w.and_then(|w| w.args.iter().find_map(|a| match a {
-        crate::syntax::OpArg::Named(n, Arg::Ref(t)) if n.text == "along" => {
-            Some(crate::syntax::ref_text(t))
-        }
-        _ => None,
-    }));
-    match Toward::of(word) {
-        Some(Toward::PlaneN) => format!("{a} coincident {b}"),
-        Some(_) => format!("{a} level({word}) {b}"),
-        None => format!("{a} level({}) {b}", reference.unwrap_or_else(|| "t".to_string())),
-    }
 }
 
 /// Whether a dimension's text is a zero written as one: `0`, `0mm`, `-0.0` — not a name or an

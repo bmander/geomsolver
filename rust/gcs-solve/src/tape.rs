@@ -266,6 +266,23 @@ impl Tape {
                 }
             }
             Ast::Measure(m, args) => return Err(crate::expr::measure_refusal(&m.text(args))),
+            // a choice is made once, here, from the numbers the text was written with: a tape
+            // runs no branch, and one over what it runs over would be a jump in the curve
+            Ast::If(c, a, b) => {
+                if let Some(v) = c.deps().into_iter().next() {
+                    if !index.contains_key(v.as_str()) {
+                        return Err(format!("`{v}` is not something this curve can read"));
+                    }
+                    return Err(format!(
+                        "an `if` in a curve is decided once, as the curve is compiled, and `{v}` \
+                         is a number the curve is evaluated over (its running formal, another \
+                         formal, or the geometry it reads): choose where the component is \
+                         called, and pass the number in"
+                    ));
+                }
+                let holds = crate::expr::decide(c, &BTreeMap::new()).map_err(|e| e.to_string())?;
+                self.walk(if holds { a } else { b }, index)?
+            }
         })
     }
 

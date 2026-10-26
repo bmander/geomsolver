@@ -8,7 +8,7 @@ tangency kernels, `line_fraction`, the rate rows that compare rates, or `std.Dev
 [language changelog](../solvent-changelog.md)) says where a rule came from. The gates are in
 `rust/gcs-core/tests/developable.rs` unless named otherwise.
 
-**The panel and its pattern are definitions** (#645, [0.188]). `std.Developable(a, b)` is a set
+**The panel and its pattern are definitions** (#645, [0.192]). `std.Developable(a, b)` is a set
 whose body says what a developable panel is — its point on the ruling between `m` on `a` and `n`
 on `b` where one plane touches both, `b` running through it the way `a` does — and
 `std.Development(S, s, d)` a component whose body states an isometry along rulings. Neither word
@@ -136,7 +136,7 @@ carried by the source alone): `{panel}.rulings` (its stations at the report's fl
 `.fans`, `.closed` and `.area`; of each development: `{flat}.a.length`, `.b.length`, `.area` and
 `.bounds.{x,y}{0,1}` in its plane (`the_report_reads_the_panel_and_its_pattern`).
 
-**The four relations** ([0.188]). `T tangent(at: m) k`, `T` a plane: `PlaneTangentLine` of a line,
+**The four relations** ([0.192]). `T tangent(at: m) k`, `T` a plane: `PlaneTangentLine` of a line,
 `PlaneTangentRound` of a circle or an arc, and of a curve traced in space a rate of its contact held
 by the plane (`contact_rate::Word::Holds`) beside `m` in the plane (`PointOnPlane`, one statement
 two rows); a curve drawn in a view, and `sense:` outside a sheet's body, are **E040**

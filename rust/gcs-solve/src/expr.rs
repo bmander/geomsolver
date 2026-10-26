@@ -76,6 +76,8 @@ pub const FUNCTIONS: &[(&str, usize, usize)] = &[
     ("min", 2, usize::MAX),
     ("max", 2, usize::MAX),
     ("hypot", 2, 2),
+    // `if(c, a, b)`, read by its own rule (`Ast::If`): its first argument is a condition
+    ("if", 3, 3),
 ];
 
 /// **A measurement of the solved drawing**: `length(l)`, `radius(c)`, `distance(a, b)`,
@@ -147,6 +149,13 @@ pub fn measured_names(text: &str) -> Vec<String> {
     })
 }
 
+/// How a name that is, or is written over, the unknown `u` is said to be one: `` `beta` is `` or
+/// `` `k` reads `beta`, ``, ahead of what an unknown cannot be read by — a `when`'s, a claim's
+/// and an `if`'s refusal alike.
+pub fn reads_unknown(name: &str, u: &str) -> String {
+    if u == name { format!("`{name}` is") } else { format!("`{name}` reads `{u}`,") }
+}
+
 /// What a name is built in *as*, for the two callers that have to say so — the refusal here and
 /// the shadowing warning in `program` — or `None` where the document is free to use it.  One
 /// table, since "is this built in" and "what is it" are the same question asked twice.
@@ -172,6 +181,11 @@ pub enum Ast {
     Call(String, Vec<Ast>),
     /// A measurement of the solved drawing, over the names of the geometry it reads.
     Measure(Measure, Vec<String>),
+    /// **A choice of number**: `if(c, a, b)` is `a` where `c` holds and `b` where it does not —
+    /// a value, where `when` is a block of statements.  The condition is decided as `when`'s is,
+    /// from numbers alone, so it never reads an unknown; both sides are worked out and agree in
+    /// dimension, so the choice is no way past a mistake on the side not taken.
+    If(Box<Cond>, Box<Ast>, Box<Ast>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -280,6 +294,44 @@ impl Cond {
             }
         }
     }
+
+    /// The condition with each name its numbers read written as `f` answers (`Ast::map_vars`);
+    /// a name compared for what it stands for (`in`, `meets`) is left as it is.
+    pub fn map_vars(&self, f: &impl Fn(&str) -> Option<Ast>) -> Cond {
+        match self {
+            Cond::Cmp(op, a, b) => Cond::Cmp(*op, a.map_vars(f), b.map_vars(f)),
+            Cond::And(a, b) => Cond::And(Box::new(a.map_vars(f)), Box::new(b.map_vars(f))),
+            Cond::Or(a, b) => Cond::Or(Box::new(a.map_vars(f)), Box::new(b.map_vars(f))),
+            Cond::Not(a) => Cond::Not(Box::new(a.map_vars(f))),
+            Cond::In(..) | Cond::Meets(..) => self.clone(),
+        }
+    }
+
+    fn collect_measures(&self, out: &mut Vec<(Measure, Vec<String>)>) {
+        match self {
+            Cond::Cmp(_, a, b) => {
+                a.collect_measures(out);
+                b.collect_measures(out);
+            }
+            Cond::And(a, b) | Cond::Or(a, b) => {
+                a.collect_measures(out);
+                b.collect_measures(out);
+            }
+            Cond::Not(a) => a.collect_measures(out),
+            Cond::In(..) | Cond::Meets(..) => {}
+        }
+    }
+
+    /// Whether the condition compares names for what they stand for (`in`, `meets`) anywhere —
+    /// which only a `when` decides, the elaborator knowing what a name is.
+    pub fn names_geometry(&self) -> bool {
+        match self {
+            Cond::Cmp(..) => false,
+            Cond::And(a, b) | Cond::Or(a, b) => a.names_geometry() || b.names_geometry(),
+            Cond::Not(a) => a.names_geometry(),
+            Cond::In(..) | Cond::Meets(..) => true,
+        }
+    }
 }
 
 /// A parsed expression.
@@ -299,6 +351,11 @@ impl Ast {
             Ast::Call(n, args) => {
                 Ast::Call(n.clone(), args.iter().map(|a| a.map_vars(f)).collect())
             }
+            Ast::If(c, a, b) => Ast::If(
+                Box::new(c.map_vars(f)),
+                Box::new(a.map_vars(f)),
+                Box::new(b.map_vars(f)),
+            ),
             Ast::Num(..) | Ast::Measure(..) => self.clone(),
         }
     }
@@ -319,6 +376,10 @@ impl Ast {
             }
             Ast::Bin(Op::Div, a, b) => a.affine_in(name) && !reads(b),
             Ast::Bin(Op::Pow, ..) | Ast::Call(..) => !reads(self),
+            // a choice is affine where what decides it does not read the name
+            Ast::If(c, a, b) => {
+                !c.deps().contains(name) && a.affine_in(name) && b.affine_in(name)
+            }
         }
     }
 
@@ -349,6 +410,11 @@ impl Ast {
             }
             // a measurement reads geometry, not a number: its names are not dependencies
             Ast::Measure(..) => {}
+            Ast::If(c, a, b) => {
+                c.collect_deps(out);
+                a.collect_deps(out);
+                b.collect_deps(out);
+            }
         }
     }
 
@@ -373,6 +439,11 @@ impl Ast {
                 }
             }
             Ast::Measure(m, args) => out.push((*m, args.clone())),
+            Ast::If(c, a, b) => {
+                c.collect_measures(out);
+                a.collect_measures(out);
+                b.collect_measures(out);
+            }
         }
     }
 }

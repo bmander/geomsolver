@@ -219,6 +219,14 @@ placement carries inside the blank; CLI test readers zero the offset.
   claim decided within the faceting is **undecided**, a third answer.  The implicit min/max
   reading of a term is only a lower bound for a difference, so it culls; the answer is piece
   against piece.
+  **And where** (`clear::Nearest`): the face of each solid by its public path
+  (`vocab::public_path`: `near_screw[1].post.rim`) and a world point on each — where two apart
+  come nearest, of pairs as near the two facing most squarely; one point where boundaries touch or
+  cross; and where material is common, the centre of the deepest ball `overlap` found
+  (`deepest`), with the face of each nearest it.  A sweep that held the moving operand still says
+  its points where the motion stands them (`GeometricEvidence::moved`).  The text says it under a
+  claim refuted or undecided, the JSON (`nearest`) always.  `solid_claim.rs`'s
+  `a_refuted_claim_names_the_faces_and_where`, `a_refuted_sweep_says_where_at_its_counterexample`.
   **A swept operand is measured from its exact B-rep** where this kernel builds one and the
   claim reads the drawing's pose (one pose, or a roll moving an operand rigidly): the judge
   supplies it (`brep::export::supply_exact_of`) before reading, as a drawing reads an object's,

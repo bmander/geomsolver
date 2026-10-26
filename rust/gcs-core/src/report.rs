@@ -1836,6 +1836,11 @@ pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
             );
         }
     }
+    // a claim refuted or undecided says where to look: the face of each solid, and where in the
+    // world they meet deepest or come nearest
+    if let (Some(n), false) = (v.nearest(), v.holds() == Some(true)) {
+        text += &format!("\n    {}", nearest_text(n));
+    }
     // Every unresolved pose is disclosed, including failed solves and uncertain geometry; a lone
     // claim's failure is said once, above.
     for p in v.poses().iter().filter(|p| failed_here.is_none() && p.holds().is_none()) {
@@ -1853,6 +1858,35 @@ pub fn solid_claim_text(v: &crate::diagnose::SolidVerdict) -> String {
         text += &format!("\n    unresolved{at}: {reason}");
     }
     text
+}
+
+/// A point of the world as a report says it: `(12.7, -3.2, 18)`.
+fn point_text(x: [f64; 3]) -> String {
+    let n = |v: f64| crate::expr::reading(crate::constraints::SpecKind::Length, v);
+    format!("({}, {}, {})", n(x[0]), n(x[1]), n(x[2]))
+}
+
+/// Where a claim about two solids was measured, in words: `deepest at (…), between a.f and b.g`
+/// where their material is common, `nearest at (…), between a.f and b.g` where their boundaries
+/// touch or cross, and `nearest between a.f at (…) and b.g at (…)` where they come no nearer.
+fn nearest_text(n: &crate::clear::Nearest) -> String {
+    let (at_a, at_b) = (point_text(n.at_a), point_text(n.at_b));
+    if n.deepest || n.at_a == n.at_b {
+        let word = if n.deepest { "deepest" } else { "nearest" };
+        format!("{word} at {at_a}, between {} and {}", n.a, n.b)
+    } else {
+        format!("nearest between {} at {at_a} and {} at {at_b}", n.a, n.b)
+    }
+}
+
+fn nearest_json(n: &crate::clear::Nearest) -> Json {
+    object([
+        ("a", n.a.as_str().into()),
+        ("b", n.b.as_str().into()),
+        ("atA", floats(&n.at_a)),
+        ("atB", floats(&n.at_b)),
+        ("deepest", n.deepest.into()),
+    ])
 }
 
 fn solid_measurement_json(m: Option<&crate::clear::Measurement>) -> Json {
@@ -1907,6 +1941,7 @@ fn solid_pose_json(p: &crate::diagnose::SolidPose) -> Json {
                 required.set("reason", reason.clone().into());
             }
             o.set("requiredPredicate", required);
+            o.set("nearest", e.nearest().map_or(Json::Null, nearest_json));
         }
     }
     o
@@ -1925,6 +1960,7 @@ pub fn solid_claim_json(v: &crate::diagnose::SolidVerdict) -> Json {
             v.tolerance().map(Json::Num).unwrap_or(Json::Null),
         ),
         ("measurement", solid_measurement_json(v.measurement())),
+        ("nearest", v.nearest().map_or(Json::Null, nearest_json)),
         ("verdict", v.outcome().as_str().into()),
         (
             "method",

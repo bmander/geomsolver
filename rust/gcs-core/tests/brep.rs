@@ -196,6 +196,79 @@ fn surfaces_meet_in_curves_on_both() {
     assert_eq!(intersect(&Surface::Plane(f([1.,2.,3.],z,x)),&Surface::Plane(f([5.,-2.,3.],scale3(z,-1.),y)),1e-9),Ssi::Same);
 }
 
+/// **A spline extruded and a surface the same all along it meet in closed form** (#644): a plane
+/// along the extrusion and a cylinder about a line along it in lines along it through where the
+/// spline crosses them, a cone about such a line in the spline carried onto it — a quintic over
+/// the spline's own parameter, refined only where it must be — each on both surfaces; a plane or a
+/// cylinder across the extrusion is traced as before.
+#[test]
+fn an_extruded_spline_meets_surfaces_along_it_in_closed_form() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::nurbs::BSpline;
+    use gcs_core::brep::ssi::{intersect,Ssi};
+    use std::sync::Arc;
+    let f = |o: V,z: V,x: V| Frame::new(o,z,x);
+    let (x,y,z) = ([1.,0.,0.],[0.,1.,0.],[0.,0.,1.]);
+    // a cubic of two spans in z = 0, from (-3, 0.5) to (3, 0.5), bowing up then down
+    let spline = BSpline::new(3,vec![0.,0.,0.,0.,0.5,1.,1.,1.,1.],
+        vec![[-3.,0.5,0.],[-1.5,1.,0.],[0.,0.6,0.],[1.5,0.,0.],[3.,0.5,0.]]).unwrap();
+    let swept = Surface::Extrusion(f([0.,0.,0.],z,x),Arc::new(Curve::BSpline(Arc::new(spline.clone()))));
+    let lines = [
+        // the radius 2 about the axis, crossed once each side
+        (Surface::Cylinder(f([0.,0.,-4.],z,x),2.),2),
+        // about a parallel axis, its axis written the other way
+        (Surface::Cylinder(f([1.,0.,7.],scale3(z,-1.),y),1.),2),
+        // y = 0.6 along the extrusion: the bow crosses it twice
+        (Surface::Plane(f([0.,0.6,0.],y,x)),2),
+        (Surface::Plane(f([0.,0.,0.],[0.6,0.8,0.],z)),1),
+    ];
+    for (other,n) in lines {
+        for (a,b) in [(&swept,&other),(&other,&swept)] {
+            let Ssi::Curves(cs) = intersect(a,b,1e-9) else { panic!("{other:?}: traced") };
+            assert_eq!(cs.len(),n,"{other:?}: {cs:?}");
+            for c in cs {
+                let Curve::Line {d,..} = c else { panic!("{other:?}: {c:?}") };
+                assert_eq!(d,z);
+                for t in (-5..=5).map(|i| i as f64) {
+                    let p = c.point(t);
+                    assert!(a.implicit(p).abs() < 1e-9 && b.implicit(p).abs() < 1e-9,"{other:?} at {t}: {} {}",a.implicit(p),b.implicit(p));
+                }
+            }
+        }
+    }
+    // a cone about the axis either way up, and about a parallel axis: the spline, standing off the
+    // axis as a gear's flank does, carried onto it
+    let spline = BSpline::new(3,spline.knots.clone(),spline.poles.iter().map(|p| [p[0],p[1]+5.,p[2]]).collect()).unwrap();
+    let swept = Surface::Extrusion(f([0.,0.,0.],z,x),Arc::new(Curve::BSpline(Arc::new(spline.clone()))));
+    let cones = [Surface::Cone(f([0.,0.,1.],z,x),1.,0.4),Surface::Cone(f([0.,0.,1.],scale3(z,-1.),x),2.5,-0.7),
+        Surface::Cone(f([0.5,-0.5,0.],z,y),0.5,0.9)];
+    for cone in cones {
+        let Ssi::Curves(cs) = intersect(&cone,&swept,1e-9) else { panic!("{cone:?}: traced") };
+        let [Curve::BSpline(b)] = &cs[..] else { panic!("{cone:?}: {cs:?}") };
+        // (a cubic took 250 to 330, a trace thousands)
+        assert!(b.degree == 5 && b.poles.len() < 80,"{cone:?}: {} poles",b.poles.len());
+        let [t0,t1] = spline.domain();
+        for k in 0..=200 {
+            let t = t0+(t1-t0)*k as f64/200.;
+            let p = b.point(t);
+            assert!(cone.implicit(p).abs() < 1e-9 && swept.implicit(p).abs() < 1e-9,"{cone:?} at {t}: {} {}",cone.implicit(p),swept.implicit(p));
+            // over the spline's own parameter: the spline's point carried along the extrusion
+            let q = spline.point(t);
+            assert!((p[0]-q[0]).abs() < 1e-9 && (p[1]-q[1]).abs() < 1e-9,"{cone:?} at {t}: {p:?} over {q:?}");
+        }
+    }
+    // across the extrusion: traced
+    let tilted = [0.3,-0.2,0.93];
+    assert_eq!(intersect(&swept,&Surface::Cylinder(f([0.,0.,0.],tilted,x),2.),1e-9),Ssi::Traced);
+    assert_eq!(intersect(&swept,&Surface::Plane(f([0.,0.,0.],[0.,0.6,0.8],x)),1e-9),Ssi::Traced);
+    // along it but touching the bow at its top (a tool's side in the pocket it cut), or crossing it
+    // twice between two of the samples crossings are read at: traced, where a touch is read
+    let top = (0..=100_000).map(|k| spline.point(k as f64/1e5)[1]).fold(f64::MIN,f64::max);
+    for below in [0.,1e-4] {
+        assert_eq!(intersect(&swept,&Surface::Plane(f([0.,top-below,0.],y,x)),1e-9),Ssi::Traced,"{below}");
+    }
+}
+
 fn scale3(a: V,s: f64) -> V { [a[0]*s,a[1]*s,a[2]*s] }
 
 fn block(lo: V,hi: V) -> gcs_core::brep::topo::Brep {

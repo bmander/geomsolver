@@ -239,7 +239,7 @@ whichever is written first (`l tangent g` is `g tangent l`).
 | `equal` | infix | two lines (length) or two circles/arcs (radius) |
 | `curvature` | infix | spline or curve and a circle/arc: the osculating circle there |
 | `horizontal`, `vertical` | prefix | a line. Between two points they are `std`'s words (1.9): `use std (horizontal)`, then `a horizontal b` |
-| `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. Write it rather than `distance(0, along: …)`, which is refused |
+| `level(dir)` | infix | two points with the same ordinate along `dir` (an axis, a line, or `up`/`right`); a point and a plane with `u`/`v`. `distance(0, along: …)` is the same row with a number of zero, a dimension |
 | `angle` | infix | two lines, directed (below); in space, an axis and a line or axis, unsigned — or, with `about: a`, directed about axis `a` (below). `l1 angle(l3, l4) l2` equates two angles |
 | `radius` | prefix | a circle or arc |
 | `mass`, `volume` | prefix | a beam, a line a beam is drawn on, or a solid: what it is made of (`mass(10kg) arm`, `volume(42 * 1cm^3) web`, `claim mass(<= 1kg) plank`) — the drawing's, never a scenario's (see *Frames* below) |
@@ -335,6 +335,13 @@ about. Radii mean the same in every view.
 
 **Expressions**: `+ - * / ^`, parentheses, `pi`, `tau`, and `sqrt abs sin cos tan asin acos atan
 atan2 exp ln log floor ceil round min max hypot`. **Trigonometry is in degrees.**
+
+**A chosen number**: `if(COND, A, B)` is `A` where `COND` holds and `B` where not, `COND` a
+`when`'s comparisons (1.7) — `pitch := if(n > 12, 2mm, 3mm)`, or a copy's own number in one
+statement, `a distance(if(k == 0, 5mm, 7mm * k)) q` in `repeat 3 as k`. It is decided before the
+solve: a condition reading an unknown is E103. Both sides agree in dimension (`if(c, w, 10)`,
+`w` a length, is E103: write `10mm`). In a traced curve's formula it may read only the
+document's numbers, not the component's formals — choose at the call, `Lobe(c, a: if(…))`.
 
 **Values.** `w := 60` is worked out while elaborating. A value may read others written anywhere in
 its body or an enclosing one; one defined in terms of itself is E041. A dimension reads names and
@@ -579,8 +586,9 @@ edge or a corner, read where the drawing is seeded (a pair it reads apart that t
 together is E080). There is no copy: what the body declares keeps
 its own name (`q`, `t.tip`, never `q[0]`), and is undefined where the block is not made. Refused:
 an unknown of the drawing in the condition (E040), a number against something drawn (E103), an
-index, a trailing joint. `when` is the one conditional: write a switch as `when flag == 1 { … }`,
-never `repeat flag { … }`, and two as `when a == 1 and b == 1`.
+index, a trailing joint. `when` is the one conditional of statements: write a switch as `when
+flag == 1 { … }`, never `repeat flag { … }`, and two as `when a == 1 and b == 1`; a number that
+differs by case is one statement, `if(flag == 1, 3mm, 5mm)` (1.6).
 
 ```
 unit mm
@@ -735,7 +743,11 @@ t0 := Rung(l0, r0, len: 50)
   drawn with its crank free so (2.10). Seed one in its place: `Crank(o, datum, theta: hint(30deg))`.
 - **An instance's numbers are read by its name**: every numeric formal, bound or not, is
   `inst.formal` — `p distance(ball.r) ball.center` — and travels with an instance passed as a
-  `group`. Values a body declares are not read this way.
+  `group`. So is every number its body defines: `shield.top` is `Shield`'s
+  `top := u.pcb_t + …` worked out from what that call gave it, in a definition
+  (`shield_z := uno_z + shield.top`), a dimension or another call, written anywhere in the body;
+  a path reaches through an instance the body writes (`st.base.top`). Write the formula once, in
+  the component, and read it: a copy outside is a second formula to drift.
 - **Scope is closed.** A body sees only its formals and its own declarations: geometry and the
   document's unknowns must be passed in. Component definitions and built-in functions remain
   callable. Repetition blocks share the enclosing scope.
@@ -1248,12 +1260,16 @@ where it is false the claim is not made at all.
 
 Three claim words apply only to solids: `claim bore inside stock`, `claim disc clear(2mm) cyl`,
 `claim head fits(0.15mm) trap`. The report gives the measurement, and one within the faceting of a
-round face is **undecided**:
+round face is **undecided**. One that does not hold says where to look: the face of each solid by
+its path, and the point where they come nearest — or, overlapping, the deepest of their common
+material:
 
 ```
   claim bore inside stock — undecided, measured 0 (interval [-0.0006000000000000001, 0.0006000000000000001])
+    nearest at (24.9993, 10, 14.9182), between bore.k and stock.far
     unresolved: containment is within curved-faceting uncertainty
   claim bore clear(2mm) stock — refuted, measured -9.999665339174008 (interval [-10.00026533917401, -9.999065339174006])
+    deepest at (20, 0, 15), between bore.k and stock.far
 ```
 
 **A bound** is a dimension's number that adds no row: it says which of the drawing's solutions is

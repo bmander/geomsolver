@@ -310,7 +310,7 @@ painted. A non-plane or no `at:`, E040; a labelled reference fills its slot
   the constraint's number and a solve, written once by `set_dimension`).  `tests/face_sets.rs`
   and `tests/edit_datums.rs` are the gates.
 
-**Sheets, their sides and the square band** (#645, [0.188], [developables.md](developables.md)).
+**Sheets, their sides and the square band** (#645, [0.192], [developables.md](developables.md)).
 A set whose body says what `std.Developable`'s does is a sheet (`flatten::developable::sheet_body`),
 and a contact over an interval in a set's body makes no region of it: under a set's derivative
 the flattener keeps the incidence and emits no bound (`Walk::within`), and a sheet's body is read

@@ -640,3 +640,120 @@ fn a_claim_about_a_cut_wheel_reads_its_exact_build() {
     assert!(text.starts_with("claim wheel clear(0.1mm) star — refuted, measured "), "{text}");
     assert!(!text.contains("poses") && !text.contains("unresolved"), "{text}");
 }
+
+/// #644's pinion, the radiator bot's `ShapedSpur` written out: 16 teeth of module 0.8, its rack
+/// shifted +0.3 m and drawn 0.15 mm thick, the blank's edges at its faces chamfered 0.4 mm at 45°
+/// by two cones about the spindle, and one tooth space cut.  The rack tooth's corner loops back
+/// across its flank's cut there (the generating rows' fold), so the space is the planar subtraction
+/// class's: a prism of the swept region, its flanks splines extruded along the spindle.
+fn chamfered() -> String {
+    "\
+unit mm
+use std
+use std (vertical, turns, slides, coords, on_v, raised)
+
+m := 0.8mm
+N := 16
+phi := 20deg
+R := m * N / 2
+Rp := R + 0.3 * m
+Rt := Rp + m
+hw := pi * m / 4 + 0.075mm
+reach := sqrt(Rt ^ 2 - (Rp - 1.25 * m) ^ 2) + hw + 1.5 * m * tan(phi)
+window := reach / R * 1rad
+
+in std.front {
+  construction spindle := vertical line(std.origin, hint((0, 10)))
+  length(10mm) spindle
+}
+in std.top {
+  construction rack_line := line(hint((10, Rp)), hint((0, Rp)))
+  rack_line.p1 coords(du: 10mm, dv: Rp) std.top
+  rack_line.p2 on_v(d: Rp) std.top
+  a := point hint((-hw - 1.5 * m * tan(phi), Rp + 1.5 * m))
+  b := point hint((-hw + 1.25 * m * tan(phi), Rp - 1.25 * m))
+  c := point hint((hw - 1.25 * m * tan(phi), Rp - 1.25 * m))
+  d := point hint((hw + 1.5 * m * tan(phi), Rp + 1.5 * m))
+  a coords(du: -hw - 1.5 * m * tan(phi), dv: Rp + 1.5 * m) std.top
+  b coords(du: -hw + 1.25 * m * tan(phi), dv: Rp - 1.25 * m) std.top
+  c coords(du: hw - 1.25 * m * tan(phi), dv: Rp - 1.25 * m) std.top
+  d coords(du: hw + 1.5 * m * tan(phi), dv: Rp + 1.5 * m) std.top
+  rack_tooth := face(a, b, c, d, -> close)
+  tip := circle(center: std.top.origin) hint(r: Rt)
+  radius(Rt) tip
+  hole := circle(center: std.top.origin) hint(r: 4)
+  radius(4.125mm) hole
+  top_at := point hint((0, Rt - 0.4mm))
+  top_at on_v(d: Rt - 0.4mm) std.top
+  bottom_at := point hint((0, Rt + 5.35mm))
+  bottom_at on_v(d: Rt + 5.35mm) std.top
+}
+tooth := solid(rack_tooth, from: -1mm, to: 6.75mm)
+blank_turn := frame
+blank_turn turns(1) spindle
+rack := frame
+rack slides(2 * pi * R) rack_line
+gear := solid(face(tip, holes: hole), from: 0mm, to: 5.75mm)
+top_q := point
+top_q raised(d: 5.75mm, along: std.z) top_at
+bottom_q := point
+bottom_q raised(d: 5.75mm, along: std.z) bottom_at
+top_cone := std.ConeThrough(spindle, top_q, lean: -45deg)
+bottom_cone := std.ConeThrough(spindle, bottom_q, lean: 45deg)
+bicone := { p | p inside top_cone; p inside bottom_cone }
+chamfers := solid(bicone)
+chamfers common gear
+space := sweep(tooth over t in (-window, window), under: rack, seen_from: blank_turn)
+space cut gear
+".into()
+}
+
+/// **A flank's prism meets the tip and the chamfers in closed form** (#644): where the space's
+/// extruded flanks meet the tip cylinder are lines along the spindle, and where they meet the
+/// chamfers' cones each flank's spline carried onto the cone, a quintic of a few dozen poles.
+/// Traced, each line took the flank's sharpest turn anywhere for its step — eight thousand steps,
+/// fitted through a thousand — and the whole pinion's STEP grew sixfold.  The cut builds, checks,
+/// and its mesh agrees with the field; no curve the file writes has more than 40 poles.
+#[test]
+fn a_flanks_prism_meets_the_tip_and_the_chamfers_in_closed_form() {
+    use gcs_core::brep::geom::{Curve, Surface};
+    use gcs_core::brep::topo::EdgeCurve;
+    let (e, gear) = solved_body(&chamfered(), "gear");
+    let admitted = admit_body(&e.sketch, gear, &Options::default()).unwrap_or_else(|f| panic!("{f}"));
+    assert!(matches!(admitted.sweeps()[0].class, Class::Subtraction(_)), "{:?}", admitted.sweeps()[0].class);
+    let exact = export::exact(&e.sketch, gear, None, None, &say())
+        .unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
+    let solid = &exact.solid;
+    solid.check(1e-6).unwrap();
+    // each edge's two faces' surfaces
+    let faces = |ei: usize| -> Vec<&Surface> {
+        solid.faces.iter().filter(|f| f.loops.iter().flatten().any(|c| c.edge as usize == ei)).map(|f| &f.surface).collect()
+    };
+    let (mut lines, mut lifted) = (0, 0);
+    for (ei, edge) in solid.edges.iter().enumerate() {
+        let EdgeCurve::Curve(curve) = &edge.curve else { continue };
+        let [a, b] = faces(ei)[..] else { continue };
+        let mut kinds = [a.kind(), b.kind()];
+        kinds.sort();
+        if kinds == ["cylinder", "extrusion"] {
+            assert!(matches!(curve, Curve::Line { .. }), "a flank meets the tip in {curve:?}");
+            lines += 1;
+        }
+        if kinds == ["cone", "extrusion"] {
+            let Curve::BSpline(s) = curve else { panic!("a flank meets a chamfer in {curve:?}") };
+            assert!(s.poles.len() <= 40, "{} poles", s.poles.len());
+            for k in 0..=16 {
+                let p = curve.point(edge.t[0] + (edge.t[1] - edge.t[0]) * k as f64 / 16.);
+                assert!(a.implicit(p).abs() < 1e-7 && b.implicit(p).abs() < 1e-7, "{p:?}: {} {}", a.implicit(p), b.implicit(p));
+            }
+            lifted += 1;
+        }
+    }
+    // a flank either side of the space, under the tip and under each chamfer
+    assert_eq!((lines, lifted), (2, 4));
+    let step = export::step(&exact, "gear", None, &say()).unwrap_or_else(|r| panic!("{}", r.message));
+    let most = step.split("B_SPLINE_CURVE_WITH_KNOTS('',").skip(1)
+        .map(|s| s.split_once(",(").unwrap().1.split_once(')').unwrap().0.split(',').count()).max().unwrap();
+    assert!(most <= 40, "a curve of {most} poles");
+    export::stl(&e.sketch, gear, &exact, None, &say()).unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));
+}
