@@ -14,6 +14,13 @@
 //! where nothing stands nearer than they do, and the whole is averaged down.  A centroid sort
 //! draws a small face behind a big one through it; this cannot.
 //!
+//! **A section** (`--section`) is the core's too: each solid cut by the plane where it stands
+//! (`EvaluatedSolid::section`), the side the plane's normal points to taken away, by the core's
+//! rule of what a cut keeps (`Section::height`, `clip`).  What is left is drawn as before, every
+//! sample of a triangle the cut takes away left out (its height above the plane is linear across
+//! it, so this is the triangle clipped exactly), each edge cut where it crosses; the face the cut
+//! leaves is filled hatched, as a draughtsman marks a cut face, and its loops inked as corners.
+//!
 //! **Nothing here is geometry the core has not already given.**  The eye is the core's
 //! (`workspace::eye_frame`, the box's camera; a named view is a sheet's, `drawing::named_view`),
 //! the triangles and normals are the evaluated solid's, the edges are the ones its views draw
@@ -22,6 +29,7 @@
 
 use gcs_core::model::Sketch;
 use gcs_core::overview::workspace::{eye_frame, look_at};
+use gcs_core::plane::Basis;
 use gcs_core::solid::ApproximationPolicy;
 use gcs_core::space::{dot, normalised};
 
@@ -61,6 +69,9 @@ pub struct Ask<'a> {
     pub solid: Option<&'a str>,
     /// `--hide`: the objects to leave out, each by a name and everything under it (a cutaway).
     pub hide: &'a [String],
+    /// `--section`: the plane in the world each solid is cut by, the side its normal points to
+    /// taken away.
+    pub section: Option<Basis>,
 }
 
 /// The solids a picture draws: the one `--solid` names (else the objects under that name), or
@@ -126,6 +137,12 @@ fn pigment(instances: &[&str], name: &str) -> [f64; 3] {
     PIGMENTS[k % PIGMENTS.len()]
 }
 
+/// A cut face's hatching: a line every `HATCH` samples across the picture, `HATCH_INK` of them
+/// wide, darker by `HATCH_SHADE`.
+const HATCH: usize = 14;
+const HATCH_INK: usize = 3;
+const HATCH_SHADE: f64 = 0.62;
+
 /// How many samples a side each pixel is averaged from.
 const SAMPLES: usize = 2;
 /// The margin round the drawing, as a fraction of the picture's longer side.
@@ -152,29 +169,45 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
     // replaces its field's preview with it, and from its field only where the build is refused
     // (#614): a field the mesher cannot close leaves out a solid the export builds
     gcs_core::brep::export::supply_exact_where(sk, &|i| chosen.contains(&i));
-    // each solid evaluated once, its frame, its colour and its edges in the eye's coordinates;
-    // its triangles are read from its own mesh when they are filled, not copied out
+    // each solid evaluated once, its frame, its colour, its cut and its edges in the eye's
+    // coordinates; its triangles are read from its own mesh when they are filled, not copied out
     let (mut solids, mut unbuilt) = (Vec::new(), Vec::new());
     let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+    let mut any = false;
     for i in chosen {
         let solid = match sk.evaluated_solid(i, ApproximationPolicy::Mesh) {
             Ok(s) => s,
             Err(why) => { unbuilt.push(why); continue; }
         };
+        any = true;
         let o = solid.origin().0;
         let frame: Frame = axes.map(|e| (solid.vector_to_local(e), dot(e, o)));
-        for p in solid.mesh().positions.as_chunks::<3>().0 {
-            let q = seen(&frame, *p);
+        let cut = ask.section.map(|c| solid.section(&c));
+        let kept = |p: [f64; 3]| cut.as_ref().is_none_or(|c| c.keeps(p));
+        let mut fit = |p: [f64; 3]| {
+            let q = seen(&frame, p);
             for k in 0..3 {
                 lo[k] = lo[k].min(q[k]);
                 hi[k] = hi[k].max(q[k]);
             }
+        };
+        for p in solid.mesh().positions.as_chunks::<3>().0 {
+            if kept(*p) { fit(*p); }
         }
-        let edges: Vec<[[f64; 3]; 2]> = solid.drawn_edges(frame[2].0, &[]).iter()
-            .map(|e| [seen(&frame, e.a), seen(&frame, e.b)]).collect();
-        solids.push((solid, frame, pigment(&instances, &sk.solids[i].name), edges));
+        let mut edges: Vec<[[f64; 3]; 2]> = solid.drawn_edges(frame[2].0, &[]).iter()
+            .filter_map(|e| match &cut { Some(c) => c.clip(e.a, e.b), None => Some((e.a, e.b)) })
+            .map(|(a, b)| [seen(&frame, a), seen(&frame, b)]).collect();
+        if let Some(c) = &cut {
+            for p in c.triangles.as_chunks::<3>().0 { fit(*p); }
+            let outline = c.segments();
+            edges.extend(outline.iter().map(|[a, b]| [seen(&frame, *a), seen(&frame, *b)]));
+        }
+        solids.push((solid, frame, pigment(&instances, &sk.solids[i].name), edges, cut));
     }
     if !lo[0].is_finite() {
+        if any {
+            return Err("the section takes away everything there is to draw".into());
+        }
         return Err(unbuilt.first().cloned().unwrap_or_else(|| "this document has no solid to draw".into()));
     }
     // the picture fitted to what it draws, its longer side `size` and its shorter at least half
@@ -191,25 +224,46 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
     let (half_w, half_h) = (canvas.w as f64 / 2.0, canvas.h as f64 / 2.0);
     let place = |p: [f64; 3]| [(p[0] - cx) * scale + half_w, half_h - (p[1] - cy) * scale, p[2]];
     let light = normalised(LIGHT).expect("the light has a direction");
-    for (solid, frame, pigment, _) in &solids {
+    // a cut face wins a tie with a face of the solid lying in the plane it is cut in
+    let tie = ((hi[2] - lo[2]) * 1e-6) as f32;
+    for (solid, frame, pigment, _, cut) in &solids {
         let m = solid.mesh();
         let normal = |n: [f64; 3]| frame.map(|(row, _)| dot(row, n));
         for (t, n) in m.positions.as_chunks::<9>().0.iter().zip(m.normals.as_chunks::<9>().0) {
             let corner = |k: usize| [t[3 * k], t[3 * k + 1], t[3 * k + 2]];
             let normal_at = |k: usize| normal([n[3 * k], n[3 * k + 1], n[3 * k + 2]]);
+            let heights = cut.as_ref().map(|c| [0, 1, 2].map(|k| c.height(corner(k))));
+            if heights.is_some_and(|h| h.iter().all(|&x| x >= 0.0)) { continue; }
             canvas.triangle([0, 1, 2].map(|k| place(seen(frame, corner(k)))),
-                            [0, 1, 2].map(normal_at), *pigment, light);
+                            [0, 1, 2].map(normal_at), *pigment, light, Fill::Shaded(heights));
+        }
+        if let Some(c) = cut {
+            let facing = normal(c.normal);
+            for t in c.triangles.as_chunks::<9>().0 {
+                let corner = |k: usize| [t[3 * k], t[3 * k + 1], t[3 * k + 2]];
+                canvas.triangle([0, 1, 2].map(|k| place(seen(frame, corner(k)))), [facing; 3],
+                                *pigment, light, Fill::Hatched(tie));
+            }
         }
     }
     // an edge is drawn where it is no farther than the surface it bounds, give or take what a
     // sample's width of a steep face spans in depth
     let slack = (hi[2] - lo[2]) * 2e-3 + 2.5 / scale;
-    for (_, _, _, edges) in &solids {
+    for (_, _, _, edges, _) in &solids {
         for e in edges {
             canvas.line(place(e[0]), place(e[1]), slack);
         }
     }
     Ok((crate::png::encode(w, h, &canvas.down()), unbuilt))
+}
+
+/// How a triangle is filled: shaded, where it is the solid's own surface — each sample a cut
+/// takes away (its corners' heights over the plane given, `Section::height`) left out — or
+/// hatched, where it is a face a cut left, winning a tie in depth by the slack given.
+#[derive(Clone, Copy)]
+enum Fill {
+    Shaded(Option<[f64; 3]>),
+    Hatched(f32),
 }
 
 /// The samples being drawn: a colour and a depth each, the depth `-∞` where nothing is.
@@ -229,7 +283,8 @@ impl Canvas {
     /// sample it covers kept where it is the nearest yet: shaded by the normal it interpolates,
     /// so a round face reads round and a flat one (whose three normals agree) flat.  Either side
     /// is lit alike, a sheet's back as its front.
-    fn triangle(&mut self, p: [[f64; 3]; 3], n: [[f64; 3]; 3], pigment: [f64; 3], light: [f64; 3]) {
+    fn triangle(&mut self, p: [[f64; 3]; 3], n: [[f64; 3]; 3], pigment: [f64; 3], light: [f64; 3],
+                fill: Fill) {
         let area = (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1]);
         if !area.is_finite() || area.abs() < 1e-12 { return; }
         let per = 1.0 / area;
@@ -250,13 +305,20 @@ impl Canvas {
                 let w1 = edge(p[2], p[0], sx, sy) * per;
                 let w2 = 1.0 - w0 - w1;
                 if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 { continue; }
+                if let Fill::Shaded(Some(h)) = fill {
+                    if w0 * h[0] + w1 * h[1] + w2 * h[2] >= 0.0 { continue; }
+                }
                 let z = (w0 * p[0][2] + w1 * p[1][2] + w2 * p[2][2]) as f32;
                 let k = y * self.w + x;
-                if z <= self.depth[k] { continue; }
-                self.depth[k] = z;
+                let tie = if let Fill::Hatched(t) = fill { t } else { 0.0 };
+                if z + tie <= self.depth[k] { continue; }
+                self.depth[k] = z.max(self.depth[k]);
                 let m: [f64; 3] = std::array::from_fn(|c| w0 * n[0][c] + w1 * n[1][c] + w2 * n[2][c]);
                 let lit = normalised(m).map_or(1.0, |m| dot(m, light).abs());
-                let shade = AMBIENT + (1.0 - AMBIENT) * lit;
+                let mut shade = AMBIENT + (1.0 - AMBIENT) * lit;
+                if matches!(fill, Fill::Hatched(_)) && (x + y) % HATCH < HATCH_INK {
+                    shade *= HATCH_SHADE;
+                }
                 self.colour[k] = pigment.map(|c| (c * shade).round().clamp(0.0, 255.0) as u8);
             }
         }

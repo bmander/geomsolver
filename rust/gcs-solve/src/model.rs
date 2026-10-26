@@ -329,6 +329,12 @@ pub struct Sketch {
     /// still solves and still holds its constraints, is never saved, exported or undone, and
     /// the front end sets it whole (`set_hidden`) on every drawing it is handed.
     pub hidden: std::collections::BTreeSet<EntRef>,
+    /// **The plane the workspace is sectioned by**, the side its normal points to taken away: its
+    /// objects are drawn and picked as `EvaluatedSolid::section` leaves them — a face the cut took
+    /// away is not met, and the face it leaves is the object's.  View state, as `hidden` is:
+    /// never saved, exported, solved or undone, set by the front end on every drawing it is
+    /// handed.
+    pub cut: Option<crate::plane::Basis>,
     /// What the sketch remembers and could work out again — polylines, evaluated and exact
     /// solids, regions' readings, bodies' faces — and what a clone keeps of it (`Caches`).
     pub caches: Caches,

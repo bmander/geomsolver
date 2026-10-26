@@ -70,6 +70,7 @@ mod curve_contact;
 mod curve_membership;
 mod curve_of;
 mod curvedef;
+mod cut_planes;
 mod decompose;
 mod definitions;
 mod delaunay;

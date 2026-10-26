@@ -133,7 +133,20 @@ build/solventc bot.sv --stl wheel.stl --solid wheel --stl frame.stl --solid fram
     --png cut.png --hide frame --png iso.png --view isometric
 ```
 
-`--solid`, `--view`, `--size` and `--hide` qualify the output before them: `--solid` the last
+`--section PLANE` cuts a picture by a plane, the side its normal points to taken away and the cut
+face hatched: a view's word through the origin (`front` takes away what is nearer a front view's
+eye; `top`, `right`, …) or a model plane by its path (`std.top`, `bracket.mid`). `-PLANE` keeps the
+other side, and `PLANE@LENGTH` moves it along its normal:
+
+```sh
+build/solventc rust/examples/solid_flange.sv --png half.png --section front \
+    --png plate.png --section top@2mm --view isometric
+```
+
+In the app, View ▸ Section (`⇧X`) cuts the workspace by the plane being drawn on; its bar chooses
+another plane, slides the cut along the plane's normal and flips the side kept.
+
+`--solid`, `--view`, `--size`, `--hide` and `--section` qualify the output before them: `--solid` the last
 output, the rest the last `--png`. Given before every output, they apply to each output that is
 not told its own. An `--stl` and a `--step` with no `--solid` between them are one solid's. An
 option that takes one value is refused when it is given twice, and so are two outputs to one file.

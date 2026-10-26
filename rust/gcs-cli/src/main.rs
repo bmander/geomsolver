@@ -104,6 +104,11 @@ diagnosed, and the report says where it stands.
     --size PX           the PNG's longer side in pixels (default 1200)
     --hide NAMES        objects --png leaves out, each a name and everything under it, comma
                         separated (repeatable): a cutaway
+    --section PLANE     cut what --png draws by a plane, the side its normal points to taken
+                        away and each cut face hatched: a view's word through the origin (front
+                        takes away what is nearer a front view's eye; top, right, …) or a model
+                        plane by its path (std.top, bracket.mid); -PLANE keeps the other side,
+                        PLANE@LENGTH moves it along its normal (top@5mm, -std.front@-2)
     --solid NAME        which solid to export; defaults to the only Boolean root
     --tolerance [LENGTH] export for fabrication: the native STEP/STL within LENGTH of the exact
                         surface (default 0.01mm; a bare number is in the document's unit, and
@@ -119,10 +124,10 @@ diagnosed, and the report says where it stands.
     -h, --help          this
     -V, --version       the version of this build (a release says its tag)
 
---solid, --view, --size and --hide qualify an output: given after one, the last before them that
-they qualify (--solid any output, the rest a --png); given before every output, each output told
-none of its own.  An option that takes one value is refused given twice, and so is an output
-given twice to one path.
+--solid, --view, --size, --hide and --section qualify an output: given after one, the last before
+them that they qualify (--solid any output, the rest a --png); given before every output, each
+output told none of its own.  An option that takes one value is refused given twice, and so is an
+output given twice to one path.
 
 Examples:
     solventc part.sv                          check a document: solved, and how constrained
@@ -139,6 +144,8 @@ Examples:
                                               every part, as one assembly for a CAD system
     solventc part.sv --png top.png --view top --png iso.png --view isometric
                                               two pictures, the solids built once
+    solventc part.sv --png cut.png --section front
+                                              the front half taken away, the cut hatched
     solventc drawing.svd --sheet front -o front.svg
                                               one sheet of a drawing, as SVG
 
@@ -244,6 +251,8 @@ struct Qualifiers {
     view: Option<picture::Eye>,
     size: Option<usize>,
     hide: Option<Vec<String>>,
+    /// `--section`: the plane as written, read against the document it cuts.
+    section: Option<String>,
 }
 
 /// What one output writes.
@@ -420,6 +429,16 @@ fn main() -> ExitCode {
                 }
                 None => return misuse("--hide needs a name"),
             },
+            "--section" => match args.next() {
+                Some(n) => {
+                    if let Err(m) = cut_written(&n) { return misuse(m); }
+                    let (q, at) = opts.qualified(true);
+                    if let Err(m) = qualify(&mut q.section, n, "--section", &at) {
+                        return misuse(m);
+                    }
+                }
+                None => return misuse("--section needs a plane"),
+            },
             "--stl" => match args.next() {
                 Some(p) => opts.add_export(Some(p), None),
                 None => return misuse("--stl needs a path"),
@@ -509,7 +528,7 @@ fn main() -> ExitCode {
         return misuse("`--solid` says which solid an output writes, and none is given");
     }
     let qualified = [("--view", run.view.is_some()), ("--size", run.size.is_some()),
-                     ("--hide", run.hide.is_some())];
+                     ("--hide", run.hide.is_some()), ("--section", run.section.is_some())];
     for (flag, given) in qualified {
         if given && !opts.pictured() {
             return misuse(format!("`{flag}` qualifies a --png, and none is given"));
@@ -896,11 +915,17 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                 // solve is still looked at, as its SVG is still written
                 let (own, run) = (&o.own, &opts.run);
                 let hide = own.hide.as_ref().or(run.hide.as_ref()).map_or(&[][..], Vec::as_slice);
+                let section = match own.section.as_ref().or(run.section.as_ref())
+                    .map(|n| cut_plane(&sk, &e.map, n)).transpose() {
+                    Ok(c) => c,
+                    Err(m) => { eprintln!("solventc: {path}: {m}"); code = 1; continue; }
+                };
                 let ask = picture::Ask {
                     eye: own.view.or(run.view).unwrap_or(picture::HOME),
                     size: own.size.or(run.size).unwrap_or(1200),
                     solid,
                     hide,
+                    section,
                 };
                 match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
                     Ok((bytes, unbuilt)) => {
@@ -1192,6 +1217,45 @@ fn length(text: &str) -> Option<Result<(f64,Option<f64>),String>> {
         },
     };
     Some(if value > 0. && value.is_finite() { Ok((value,per)) } else { Err("a tolerance is a positive length".into()) })
+}
+
+/// `--section`'s plane as written, read apart from any document: whether it keeps the other side
+/// (a leading `-`), the plane's name, and how far it is moved along its normal (after `@`: a
+/// signed number, and the millimetres its unit is worth, `None` for the document's own).
+fn cut_written(text: &str) -> Result<(bool, &str, Option<(f64, Option<f64>)>), String> {
+    let (flip, rest) = text.strip_prefix('-').map_or((false, text), |r| (true, r));
+    let (name, by) = rest.split_once('@').map_or((rest, None), |(n, b)| (n, Some(b)));
+    if name.is_empty() {
+        return Err(format!("--section needs a plane's name, not `{text}`"));
+    }
+    let by = match by {
+        None => None,
+        Some(b) => {
+            let (sign, magnitude) = match b.strip_prefix('-') {
+                Some(m) => (-1.0, m),
+                None => (1.0, b.strip_prefix('+').unwrap_or(b)),
+            };
+            match length(magnitude) {
+                Some(Ok((v, per))) => Some((sign * v, per)),
+                _ => return Err(format!("--section moves a plane by a length, `{name}@5mm`, \
+                    not `@{b}`")),
+            }
+        }
+    };
+    Ok((flip, name, by))
+}
+
+/// `--section`'s plane in the world, read against the solved document: the plane it names
+/// (`drawing::plane_named`), moved and turned as written.
+fn cut_plane(sk: &Sketch, map: &gcs_core::program::SourceMap, text: &str)
+    -> Result<gcs_core::plane::Basis, String> {
+    let (flip, name, by) = cut_written(text)?;
+    let plane = gcs_core::drawing::plane_named(sk, map, name)?;
+    let by = by.map_or(0.0, |(v, per)| match per {
+        Some(per) => v * per / gcs_core::solid::cad::millimetres(sk),
+        None => v,
+    });
+    Ok(plane.moved_along(by, flip))
 }
 
 /// The export tolerance `--tolerance` asked for, in native millimetres: a bare number is in the
