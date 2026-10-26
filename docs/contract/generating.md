@@ -288,11 +288,15 @@ end pose; a point is a candidate only where it lies on the section's boundary at
 their ends bisected, and one of no length (a sample kept where its candidate's domain ends, its
 ends and middle one point) dropped (#612); walked with `R` on the left they join where they cross (solved together,
 `meet`), run on into each other at the same roll, meet at an end pose (the contact on the held
-edge, exactly) or leave the box, which carries the loop round to the next stretch entering. Where
+edge, exactly: tangent there, so the keeping test finds the edge's end up to `√(2 tol ρ)` off it,
+`ρ` the envelope's radius, and the two join within that for `ρ` up to eight times the section's
+reach) or leave the box, which carries the loop round to the next stretch entering. Where
 several meet at one point (an end pose's corner: the held edge, the corner's path, and a hair of the
 next edge the keeping test's tolerance keeps), the union's boundary takes the rightmost turn, and a
 hair joined at neither end, or only to itself, is dropped (#613: a placement turned 30° boxes the
-blank past a rack tooth's tip, which no quarter turn does). A
+blank past a rack tooth's tip, which no quarter turn does), an edge held at an end pose as long as
+the join's reach there (a flank whose contact left it at its corner just before the roll ended, kept
+from the corner as far as the tangency lets the keeping test). A
 whole period is where the motion takes the section onto itself (`Setting::alike`: the tool's
 symmetry counted, the star's 540° at 4:6), and a roll that is neither one nor clear of the blank at
 both ends is refused naming the period. `brep::sweep::subtraction` builds each
@@ -314,7 +318,8 @@ tool the motion does not move) and said in one form (`roll::advice`). `tests/pla
 (the #585 wheel against arithmetic made apart, the long form, two bands as one, a stepped tool,
 one arm through, Q3, the drafted wheel at 10 µm, the measured drafted handle above six bands
 stepped down it and the square arms, a drafted disc whose islands change refused at their depth,
-#613's pinion cut at a copy turned 30° and whole).
+#613's pinion cut at a copy turned 30° and whole, and at module 1.5 over a roll ending as its flank
+grazes the held one or its contact leaves it at its corner just before, stated and `through:`).
 
 **Export tolerance ([plan](../native-hypoid-plan.md)):** `solventc --tolerance [LENGTH]` (default
 0.01 mm; bare number in document units); `solid::export::Tolerance` states every bar once. Sheets

@@ -429,6 +429,22 @@ impl SweptRegion {
             let d = if e == 0 { sub(q,p) } else { sub(p,q) };
             (length(d) > 0.).then(|| unit(d))
         };
+        // an edge held at an end pose joined to the contact the roll ends at: tangent there, so the
+        // keeping test finds its end only roughly; the contact is on the edge, and is that end
+        let tangent = |fixed: &Run,other: &Run,end: usize,p: P| -> Option<f64> {
+            let Kind::Fixed {edge,at,..} = &candidates[fixed.candidate] else { return None };
+            if other.why[1-end] != End::Domain || matches!(candidates[other.candidate],Kind::Fixed {..}) { return None }
+            let x = s.back(*at)?.point(p);
+            (edge.distance(x) <= join).then(|| parameter(edge,x))
+        };
+        // how far off that end the keeping test may find it: a curve of radius `ρ` stands `g²/2ρ`
+        // off its tangent `g` along it, within the test's tolerance for `g` up to `√(2 tol ρ)`,
+        // here for an envelope bending no wider than eight times the section's reach (the radiator
+        // bot's pinion, module 1.5, its flank's involute 13 mm in radius where a roll of 55° ends:
+        // its held flank's end found 16 µm off the contact, past `loose`)
+        let grazing = (16.*s.tolerance()*(1.+s.scale)).sqrt();
+        let handed = |i: usize,j: usize| tangent(&runs[j],&runs[i],0,at[i][1]).is_some()
+            || tangent(&runs[i],&runs[j],1,at[j][0]).is_some();
         // where several stretches meet at one point (an end pose's corner, where a held edge, the
         // corner's path and a hair of the next edge the keeping test's tolerance keeps all start),
         // the boundary of a union turns the most to the right: those pairs go first, by that turn
@@ -438,7 +454,7 @@ impl SweptRegion {
             for j in 0..runs.len() {
                 if runs[j].why[0] == End::Box { continue }
                 let d = dist(at[i][1],at[j][0]);
-                if d > loose { continue }
+                if d > loose && !(d <= grazing && handed(i,j)) { continue }
                 let turn = if d > join { f64::INFINITY } else {
                     heading(&runs[i],at[i][1],1).zip(heading(&runs[j],at[j][0],0)).map_or(f64::INFINITY,|(x,y)| cross(x,y).datan2(dot(x,y)))
                 };
@@ -447,14 +463,6 @@ impl SweptRegion {
         }
         let rank = |d: f64| if d <= join { 0. } else { d };
         pairs.sort_by(|x,y| rank(x.0).total_cmp(&rank(y.0)).then(x.1.total_cmp(&y.1)).then(x.2.cmp(&y.2)).then(x.3.cmp(&y.3)));
-        // an edge held at an end pose joined to the contact the roll ends at: tangent there, so the
-        // keeping test finds its end only roughly; the contact is on the edge, and is that end
-        let tangent = |fixed: &Run,other: &Run,end: usize,p: P| -> Option<f64> {
-            let Kind::Fixed {edge,at,..} = &candidates[fixed.candidate] else { return None };
-            if other.why[1-end] != End::Domain || matches!(candidates[other.candidate],Kind::Fixed {..}) { return None }
-            let x = s.back(*at)?.point(p);
-            (edge.distance(x) <= join).then(|| parameter(edge,x))
-        };
         for (d,_,i,j) in pairs {
             if next[i].is_some() || taken[j] { continue }
             if let Some(u) = tangent(&runs[j],&runs[i],0,at[i][1]) {
@@ -501,9 +509,14 @@ impl SweptRegion {
         let mut used = vec![false;runs.len()];
         // a spur, a hair of a stretch joined at neither end or only to itself (the edge beside an end
         // pose's corner, kept as far as the keeping test's tolerance reaches past the corner's
-        // path), bounds nothing
-        let hair = |r: &Run,p: P| (1..=8).all(|k| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*k as f64/8.)
-            .is_some_and(|h| dist(h.at,p) <= loose));
+        // path), bounds nothing; an edge held at an end pose is kept so as far as `grazing` where
+        // its contact left it at the corner just before the roll ended, tangent to it there
+        let hair = |r: &Run,p: P| {
+            let held = matches!(candidates[r.candidate],Kind::Fixed {..});
+            let reach = if held { grazing } else { loose };
+            (1..=8).all(|k| point(r.candidate,r.ends[0]+(r.ends[1]-r.ends[0])*k as f64/8.)
+                .is_some_and(|h| dist(h.at,p) <= reach))
+        };
         for k in 0..runs.len() {
             let alone = next[k].is_none() && !taken[k] || next[k] == Some(k);
             if alone && hair(&runs[k],at[k][0]) {
