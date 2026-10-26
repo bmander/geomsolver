@@ -32,6 +32,18 @@ pub enum Toward {
 
 /// One use's derivative: the point that moves, what moves it, and the geometry the use made, whose
 /// motion is unknown.
+impl Toward {
+    /// What moves a derivative's point, through `map`: a line or an axis that came along, or a
+    /// chart's own direction, which is no entity's.
+    pub fn remapped(self, map: &Remap) -> Option<Toward> {
+        Some(match self {
+            Toward::Line(l) => Toward::Line(map(EntRef::line(l))?.i()),
+            Toward::Axis(a) => Toward::Axis(map(EntRef::axis(a))?.i()),
+            chart @ Toward::Chart { .. } => chart,
+        })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Dual {
     pub point: usize,

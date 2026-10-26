@@ -102,6 +102,60 @@ pub struct WordUse {
 /// `+1` and `−1` as the words a statement writes them with — the one place the two meet, read by
 /// the constructor that infers a tangency's side from the geometry and by the document reader
 /// that finds a number where a word now stands (issue #48, item 4).
+impl WordUse {
+    /// The word it was written with, while every operand it named came along (§9.9).
+    pub fn remapped(&self, map: &crate::model::Remap) -> Option<WordUse> {
+        let WordUse { word, ops, args, sets } = self;
+        Some(WordUse { word: word.clone(), ops: crate::model::renumbered_all(map, ops)?,
+                       args: args.clone(), sets: sets.clone() })
+    }
+}
+
+impl Constraint {
+    /// **The constraint over a renumbering** (`graft`): every entity it names through `map`, and
+    /// `None` where one did not come along — a constraint comes along exactly when all its
+    /// entities did, and a derivative with its dual (§6.21, `dual`).  A parameter it holds is
+    /// the source's name for one, so `param` says what the copy holds instead (`owned_arg`).
+    /// Every flag that is document state travels; what the copy's own sketch decides is left
+    /// for it to give: its id (`Sketch::add_quiet`), its free variable (`expr::evaluate`).
+    pub fn remapped(&self, map: &crate::model::Remap, param: &dyn Fn(u32) -> Arg,
+                    dual: &dyn Fn(usize) -> Option<usize>) -> Option<Constraint> {
+        let Constraint { id: _, kind, args, soft: _, intrinsic, claim, free: _, class, written,
+                         repeated, elsewhere, word, along, bound, initially, carried: _,
+                         witness } = self;
+        let args = args.iter().map(|a| match a {
+            Arg::Ent(e) => map(*e).map(Arg::Ent),
+            Arg::Param(p) => Some(param(*p)),
+            other => Some(other.clone()),
+        }).collect::<Option<Vec<_>>>()?;
+        Some(Constraint {
+            id: 0,
+            kind: *kind,
+            args,
+            // a drag's target is the gesture's, never the document's
+            soft: false,
+            intrinsic: *intrinsic,
+            claim: *claim,
+            free: None,
+            class: class.clone(),
+            written: written.clone(),
+            repeated: *repeated,
+            elsewhere: *elsewhere,
+            word: word.as_ref().and_then(|w| w.remapped(map)),
+            along: match along {
+                Some(d) => Some(dual(*d)?),
+                None => None,
+            },
+            bound: bound.clone(),
+            initially: *initially,
+            // a row a chain's later leg carries is held until its family's part frees it, and
+            // the rebuild is that part (`solid::family::part_of`)
+            carried: false,
+            witness: *witness,
+        })
+    }
+}
+
 pub fn side_word(sign: i64) -> &'static str {
     if sign < 0 {
         "right"

@@ -40,7 +40,7 @@ mod rounds;
 pub use entities::{
     Param, EntKind, Ends, Run, Field, EntRef, PointE, LineE, CircleE, AxisE, ArcE, SplineE,
     FrameE, Chart, Joint,
-    LiftE, article, entity_name, kind_initial,
+    LiftE, article, entity_name, kind_initial, Remap, renumbered, renumbered_opt, renumbered_all,
 };
 pub use curves::{CURVE_STEPS, CurveDef, CurveBody, CurveE, Extremal, Home, Trim, extremal_def, whole};
 pub use solids::{
@@ -351,7 +351,7 @@ pub struct Sketch {
     /// (`set_prism`) — which neither re-elaborates nor moves a parameter, so a binding caching a
     /// mesh keys on it too.
     pub shape_epoch: u32,
-    next_cid: u32,
+    pub(crate) next_cid: u32,
 }
 
 /// What a layer above the model keeps on a sketch and the model only carries: cloned with it,

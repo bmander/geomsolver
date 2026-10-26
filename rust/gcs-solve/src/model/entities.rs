@@ -420,6 +420,30 @@ impl EntRef {
     }
 }
 
+/// **A renumbering, as every `remapped` reads one** (`graft::Renumbering`): each entity of the
+/// source to the one it became, `None` where it did not come along.
+pub type Remap<'a> = dyn Fn(EntRef) -> Option<EntRef> + 'a;
+
+/// Index `i` of a `kind` through `map`: the typed half of a `remapped`, for a field that holds an
+/// index whose kind the field itself says (a motion's `axis`, a face's `plane`).
+pub fn renumbered(map: &Remap, kind: EntKind, i: u32) -> Option<u32> {
+    map(EntRef::new(kind, i as usize)).map(|e| e.idx)
+}
+
+/// An optional reference through `map`: `None` stays `None`, and `Some` is `Some` only where what
+/// it names came along — the outer `None` is a value that cannot be without it.
+pub fn renumbered_opt(map: &Remap, kind: EntKind, i: Option<u32>) -> Option<Option<u32>> {
+    match i {
+        Some(i) => renumbered(map, kind, i).map(Some),
+        None => Some(None),
+    }
+}
+
+/// Every entity of `ents` through `map`, or `None` if any did not come along.
+pub fn renumbered_all(map: &Remap, ents: &[EntRef]) -> Option<Vec<EntRef>> {
+    ents.iter().map(|&e| map(e)).collect()
+}
+
 #[derive(Clone, Debug)]
 pub struct PointE {
     pub x: u32,
