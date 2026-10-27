@@ -38,7 +38,7 @@ impl Condition {
             Condition::Tool => "the tool is a full revolution, or a prism with its caps clear of the blank, of lines and arcs, \
                 or an intersection of such",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
-            Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw",
+            Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide",
             Condition::Stationary => "the contact condition depends on the motion",
             Condition::Reach => "the sweep's contacts reach the blank",
             Condition::Clearance => "the tool is clear of the blank at both ends of the roll",
@@ -48,7 +48,7 @@ impl Condition {
             Condition::Regular => "the screw's characteristic is a regular curve through the blank",
             Condition::Once => "the characteristic reaches the blank in one stretch, one point a ring",
             Condition::Edgewise => "the characteristic never runs along the screw's path",
-            Condition::Lead => "the screw's sweep does not cross itself within a lead",
+            Condition::Lead => "the sweep does not cross itself within a lead, or a turn",
             Condition::Plane => "the motion turns a plane in itself about axes square to it",
             Condition::Prisms => "the tool is a stock cut by one pocket, prisms square to that plane through the blank, the \
                 pocket's profile one closed curve",
@@ -441,7 +441,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let names: BTreeMap<usize,String> = order.iter().map(|&s| (s,sk.solids[s].name.clone())).collect();
     let asked: BTreeMap<usize,Asked> = order.iter().map(|&s| (s,if super::planar_class::asks(sk,s) { Asked::Planar }
         else { match &sk.solids[s].def {
-            SolidDef::Swept {motion,..} if crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.screw().is_some()) => Asked::ConstantTwist,
+            SolidDef::Swept {motion,..} if crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.twist().is_some()) => Asked::ConstantTwist,
             _ => Asked::Generating,
         } })).collect();
     let refuse = |swept: usize,condition,message: String,witness|
@@ -471,7 +471,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     }
     order.retain(|s| asked[s] != Asked::Planar);
     // a placement's check by the class its motion is in
-    let check = |contacts: &SweepContacts,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().screw() {
+    let check = |contacts: &SweepContacts,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().twist() {
         Some(screw) => check_screw(contacts,inside,bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse())),
             options),
         None => check(contacts,inside,options),
@@ -482,7 +482,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         let SolidDef::Swept {source,..} = &sk.solids[swept].def else { unreachable!("a swept cut is a sweep") };
         tool(sk,*source as usize).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
         let contacts = SweepContacts::read(sk,swept,options.axis_tolerance).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
-        if contacts.motion().screw().is_none() {
+        if contacts.motion().twist().is_none() {
             let probe = SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
             contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
         }
@@ -902,13 +902,23 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         basis:Basis::Sampled {rows:options.rows,columns:options.columns},equivalence:Equivalence::Sampled,class:Class::Generating},reads))
 }
 
-/// T2 and E1, then S1–S4 (`constant_twist`), for one placement of a sweep under a screw, `inside`
-/// being the blank read in the sweep's frame, `heights` how far along the screw's axis it reaches
-/// there. A screw's twist is constant, so M2 does not apply: a tool point is on the boundary at
-/// every time or at none, and the boundary is the characteristic carried along.
+/// T2 and E1, then S1–S4 (`constant_twist`), for one placement of a sweep under a screw, a turn or
+/// a slide, `inside` being the blank read in the sweep's frame, `heights` how far along the
+/// motion's axis it reaches there. Their twist is constant, so M2 does not apply: a tool point is
+/// on the boundary at every time or at none, and the boundary is the characteristic carried along.
 fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Options)
     -> Result<(SweepEvidence,Reads),Failure> {
     let (reads,_) = ends(c,inside,options)?;
+    // a turn carried round a whole turn or more lays its sheet over itself: what it sweeps then is
+    // a solid of revolution, which the class does not build
+    if let Some(turn) = c.motion().twist().filter(|s| s.is_turn()) {
+        let [a,b] = c.domain();
+        if (b-a)*turn.ratio.abs() >= std::f64::consts::TAU*(1.-1e-12) {
+            return Err((Condition::Lead,format!("the roll turns the tool {:.1} degrees about the axis, a whole turn or more, \
+                which carries its sheet onto itself: a turn's sweep is built over less than a whole turn",
+                ((b-a)*turn.ratio.abs()).to_degrees()),None))
+        }
+    }
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side
     let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };

@@ -4,6 +4,9 @@
 //! a pose of the screw is a formula. Nothing is traced. Rows run along the characteristic by
 //! length in space, and columns along the roll over the stretch that carries it past the blank.
 //! The grid is fitted, judged and refined where it misses (`sheet::settle`), as a traced sheet is.
+//! A turn's and a slide's sheets are built the same way (#684): a turn's section is a half-plane
+//! through its axis, so its sheet is that section revolved, and a slide's lies square to it, so
+//! its sheet is that section extruded, its columns spread across the blank's heights.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::sheet::{Fitted,SweptCut,settle};
@@ -22,30 +25,44 @@ const FIRST_ROWS: usize = 24;
 /// How many first columns' widths the roll's stretch is widened past where the characteristic
 /// leaves the blank's heights.
 const COLUMN_MARGIN: f64 = 2.;
+/// How many columns a slide's first grid lays across the blank's heights: its sheet is straight
+/// along them, so the fit needs few.
+const SLIDE_COLUMNS: f64 = 8.;
 
 /// The sheet of a screw cut whose characteristic `found` walked (in model units, as `cut.scale`
 /// says millimetres a unit), the blank between `heights` along the screw's axis where known.
 pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;2]>,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
     tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,ExportRefusal> {
     let (scale,name,screw,family) = (cut.scale,&cut.name,found.screw,&cut.family);
-    // rows along the sheet's section square to the axis at the reach's first point's height: the
-    // characteristic's points each carried along its path there, `on_section`. A column is that
-    // section carried by the motion: S(s, t) = M(t)·σ(s), the same surface as M(t)·c(s).
+    // rows along the sheet's section at the reach's first point's station (`Screw::station`: its
+    // height, or a turn's angle): the characteristic's points each carried along its path there,
+    // `on_section`. A column is that section carried by the motion: S(s, t) = M(t)·σ(s), the same
+    // surface as M(t)·c(s).
     let [first,last] = found.reach;
-    let height = screw.height(found.nodes[first].position);
-    let section: Vec<V> = (0..found.nodes.len()).map(|w| found.on_section(w as f64,height).map(|(p,_)| p))
+    let station = screw.station(found.nodes[first].position);
+    let section: Vec<V> = (0..found.nodes.len()).map(|w| found.on_section(w as f64,station).map(|(p,_)| p))
         .collect::<Result<_,_>>().at(Stage::Reach)?;
     // σ(s) is carried for M(t) at roll time t+τ(s): the columns run over the stretch that carries
-    // the section past the blank's heights, widened, within what the roll carries every row to
+    // the section past the blank's heights (a turn's, over the roll: a turn keeps every height),
+    // widened, within what the roll carries every row to. A turn's delays are read along the walk,
+    // each within half a turn of the one before, as the section is one curve
     let roll = cut.limits;
-    let delay: Vec<f64> = (0..found.nodes.len()).map(|w| screw.time_to(found.nodes[w].position,height)).collect();
+    let mut delay: Vec<f64> = Vec::with_capacity(found.nodes.len());
+    for node in &found.nodes {
+        let mut d = screw.time_to_station(node.position,station);
+        if let (true,Some(&before)) = (screw.is_turn(),delay.last()) {
+            let period = std::f64::consts::TAU/screw.ratio.abs();
+            d += ((before-d)/period).round()*period;
+        }
+        delay.push(d);
+    }
     let (least,most) = delay.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&d| (a.min(d),b.max(d)));
     let base = family.pose_at(0.).at(Stage::Reach)?.point(section[first]);
     let window = match heights {
-        Some([lo,hi]) => { let (x,y) = (screw.time_to(base,lo),screw.time_to(base,hi)); [x.min(y),x.max(y)] }
-        None => [roll[0]-least,roll[1]-most],
+        Some([lo,hi]) if !screw.is_turn() => { let (x,y) = (screw.time_to(base,lo),screw.time_to(base,hi)); [x.min(y),x.max(y)] }
+        _ => [roll[0]-least,roll[1]-most],
     };
-    let step = COLUMN_TURN/screw.ratio.abs();
+    let step = if screw.ratio == 0. { (window[1]-window[0]).abs()/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
     let window = [(window[0]-COLUMN_MARGIN*step).max(roll[0]-least),(window[1]+COLUMN_MARGIN*step).min(roll[1]-most)];
     if !(window[0] < window[1]) {
         return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the roll does not carry the characteristic past the blank")))
@@ -70,8 +87,8 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // a point of the sheet, in millimetres: the section's point carried, and its normal turned
     let carried = |(p,n): (V,V),pose: &crate::motion::Pose| -> (V,V) { (pose.point(p).map(|x| x*scale),pose.vector(n)) };
     let lay = |grid: &Grid,withheld: Withheld| -> Result<Sheet,String> {
-        let rows: Vec<(V,V)> = crate::par::map(&grid.rows,|&s| found.on_section(s,height)).into_iter().collect::<Result<_,_>>()?;
-        let row_mids: Vec<(V,V)> = crate::par::map(&grid.row_mids,|&s| found.on_section(s,height)).into_iter().collect::<Result<_,_>>()?;
+        let rows: Vec<(V,V)> = crate::par::map(&grid.rows,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
+        let row_mids: Vec<(V,V)> = crate::par::map(&grid.row_mids,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
         // one pose a column
         let poses = |times: &[f64]| times.iter().map(|&t| family.pose_at(t)).collect::<Result<Vec<_>,_>>();
         let (columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);

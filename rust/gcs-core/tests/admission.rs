@@ -92,10 +92,12 @@ fn a_prism_whose_cap_passes_through_the_blank_is_refused() {
     assert!(r.message.contains("a cap of the prism"),"{}",r.message);
 }
 
+/// A slide is asked the constant-twist class's rows (#684), as a screw is: this one leaves its
+/// ball in the post at both ends of its roll, refused at E1.
 #[test]
-fn a_translation_is_refused() {
+fn a_slide_that_ends_in_the_blank_is_refused() {
     let r = refused(admit(&document(&sphere(0.),&motions::slide_x(8.),"under: feed",-60.,60.)));
-    assert_eq!(r.condition,Condition::Motion);
+    assert_eq!((r.condition,r.class()),(Condition::Clearance,"constant-twist class"));
 }
 
 #[test]

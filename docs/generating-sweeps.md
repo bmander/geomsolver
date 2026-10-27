@@ -81,9 +81,42 @@ the stretch that carries the section past the blank. It is fitted, judged and re
 the traced sheet shares (`sheet::settle`). The split, cells, agreement and files are the generating
 class's. `rust/examples/twist_drill/` is the worked case (`tests/twist_drill.rs`).
 
-Translations and single rotations on their own also have constant twist. They are still refused (M1/M2): their
-section is not a screw's (a translation's is square to its direction, a rotation's a half-plane),
-which is the one piece the construction would need.
+### Turns and slides: the constant twist's two limits (issue #684)
+
+A turn about one axis (a screw of no advance) and a slide along one line (a screw of no turn) have
+constant twist too, so their contact set is fixed on the tool as a screw's is, and the boundary
+is the characteristic carried. `Family::twist` reads all three, a slide as a screw turning at no
+ratio about the line along its direction through the origin; `admit_body` asks each the rows above,
+T1, T2, E0, E1 and S1–S4. What differs is the section the sheet is read along (`Screw::station`):
+
+- a **slide's** is the plane square to it, a station a height along it, as a screw's is; its sheet
+  is the section extruded, its columns spread across the blank's heights (eight to start, the fit
+  refining them), and each point's path through the blank is read in 360 steps across them;
+- a **turn's** is a half-plane through its axis, a station an angle about it: each characteristic
+  point is carried round to it at its own height and radius, so the sheet is the section revolved,
+  its columns over the roll (a turn keeps every height). Each node's delay to the section is read
+  along the walk, within half a turn of the one before, as the section is one curve. S4 reads the
+  section in its half-plane, by radius and height.
+
+Two refusals are the limits' own:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet; a slide along the tool's axis has one wherever the normals are square to it. The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought by golden section. The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
+| S4 | A turn's roll is less than a whole turn. | A turn carried round a whole turn or more lays its sheet over itself; its sweep is then a solid of revolution, which is not built yet. | The turn, in degrees. |
+
+E1 holds as for a screw, so a slide passes the tool right through the blank and a turn swings it
+across from clear to clear. Still refused: a flat face the motion keeps in its own plane (a cap
+square to the turn, a face along the slide) where it reaches the blank, a ring in contact all
+round at a sampled station (S1); a prism tool, whose side has no rings (T1); a characteristic that
+closes on itself within the blank's reach, a tool passed wholly through it (S1); and a whole turn
+(S4). A turn of one ball is still its tube (`solid::canal`), never asked these rows.
+`tests/turns_and_slides.rs` is the gate: a torus slid up a rod, square (its tube's lens) and tilted,
+and turned across a ring sector, upright (Pappus) and leaning across the turn, each removed
+volume computed apart from the core — a tilted torus's from its centre circle alone — and held
+to the exact solid, whose STL agrees with the field; the straight-fluted drill
+(`rust/examples/twist_drill/straight_flute.sv`, the twist drill's wheel slid square to the axis,
+its flute the wheel's own profile) and the swung groove (`rust/examples/swung_groove.sv`).
 
 ### A rack (issue #61)
 
@@ -198,10 +231,11 @@ the checks read are checked once: the gear's 24 indexed cuts are one check.
 ## Refused, and how
 
 Everything outside the class is refused at elaboration or export, never meshed on a
-best-effort basis. The refusal names the condition row and the witness. The tumbling, slid
-and tilted cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its
-caps clear, a pocketed prism's under a planar motion and a prism tool's under a motion that keeps
-its plane are outside the classes. Their fixtures stay
+best-effort basis. The refusal names the condition row and the witness. The tumbling and tilted
+cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its caps clear, a
+pocketed prism's under a planar motion and a prism tool's under a motion that keeps its plane are
+outside the classes; a slid cylinder is in the constant-twist class where its flat caps, which the
+slide keeps in their own planes, stay clear of the blank. Their fixtures stay
 in the tree as **negative controls**: each must
 produce its refusal.
 

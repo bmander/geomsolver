@@ -950,10 +950,10 @@ impl Sweep {
             } }
             let count = |speed: f64,most: usize| ((2.*speed/options.cell).ceil() as usize).clamp(8,most);
             let (nu,nv) = (count(speed[0],256),count(speed[1],4096));
-            // under a screw a ring's contacts are its characteristic points at every time: each
-            // carried along its path (`Screw::carry`) a cell's width a step, over the stretch of
-            // the roll that brings it near the blank's sphere
-            if let Some(screw) = self.contacts.motion().screw() {
+            // under a screw, a turn or a slide a ring's contacts are its characteristic points at
+            // every time: each carried along its path (`Screw::carry`) a cell's width a step, over
+            // the stretch of the roll that brings it near the blank's sphere (a turn's, the roll)
+            if let Some(screw) = self.contacts.motion().twist() {
                 let Some(patch) = patch.revolved() else {
                     return Err(format!("`{}`: the meter reads the cuts of revolved tools only, not a prism's sides",patch.name()))
                 };
@@ -966,12 +966,12 @@ impl Sweep {
                     let here: Vec<V> = roots.iter().filter_map(|r| patch.at(u,r.v).ok().map(|s| start.point(s.position))).collect();
                     for &p0 in &here {
                         let [a,b] = match sphere {
-                            Some((c,d)) => {
+                            Some((c,d)) if !screw.is_turn() => {
                                 let reach = 0.5*d+options.reach+self.cell;
                                 let (x,y) = (screw.time_to(p0,screw.height(c)-reach),screw.time_to(p0,screw.height(c)+reach));
                                 [x.min(y).max(0.),x.max(y).min(roll[1]-roll[0])]
                             }
-                            None => [0.,roll[1]-roll[0]],
+                            _ => [0.,roll[1]-roll[0]],
                         };
                         if !(a <= b) { continue }
                         let steps = (((b-a)*norm(screw.velocity(p0))/options.cell).ceil() as usize).clamp(1,1<<16);

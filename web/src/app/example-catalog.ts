@@ -35,6 +35,21 @@ const projects: Example[] = [{
     + 'Edit the helix, the wheels or the point in configuration.sv; drill.svd is the drawing.',
   target: { kind: 'directory', path: 'twist_drill', entry: 'drill.sv' },
 }, {
+  label: 'Straight-fluted drill · flutes ground under a slide', key: 'straight_flute',
+  description: 'The twist drill\'s flute wheel set square to the axis and slid up it rather than '
+    + 'screwed: a slide moves every point of the wheel alike at every time, as a screw does, so '
+    + 'each flute\'s wall is the wheel\'s characteristic extruded up the drill, here the wheel\'s '
+    + 'own profile. Edit the wheel or the flute count in configuration.sv.',
+  target: { kind: 'directory', path: 'twist_drill', entry: 'straight_flute.sv' },
+}, {
+  label: 'Swung groove · a cutter turned partway', key: 'swung_groove',
+  description: 'A torus-tipped cutter leaning off upright, turned about a curved block\'s axis from '
+    + 'clear of one end to clear of the other. Its groove\'s wall is the cutter\'s characteristic '
+    + 'laid in a half-plane through the axis and revolved, built exactly. Edit `lean`, the cutter '
+    + 'or the roll; a cutter whose axis meets the block\'s is refused, naming the ring it touches '
+    + 'all round.',
+  target: { kind: 'file', path: 'swung_groove.sv' },
+}, {
   label: 'Wankel rotor and housing · one planetary motion', key: 'wankel',
   description: 'A rotary engine from one motion and three numbers: the rotor\'s centre rides the '
     + 'eccentric while it turns a third as fast. The housing\'s bore is an apex\'s envelope, its '
