@@ -48,12 +48,13 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
 
 /// An assembly's STEP by the core's kernel (`brep::export::assembly`): `objects` each a part, the
 /// objects of one binding one part built once, written and parsed back against the assembly, and
-/// staged, so a refusal leaves the file as it was. A refusal says which solid's build refused.
-pub fn export_assembly(sk: &Sketch,objects: &[usize],name: &str,path: &str,tolerance: Option<Tolerance>,seen: Option<&Sketch>)
-    -> Result<(),(Option<usize>,ExportRefusal)> {
+/// staged, so a refusal leaves the file as it was; each part coloured `colour` of its object (by
+/// the object's solid index), where it has one. A refusal says which solid's build refused.
+pub fn export_assembly(sk: &Sketch,objects: &[usize],name: &str,path: &str,tolerance: Option<Tolerance>,
+    colour: &dyn Fn(usize) -> Option<[f64;3]>,seen: Option<&Sketch>) -> Result<(),(Option<usize>,ExportRefusal)> {
     super::progress::start();
     let say = brep::sweep::Say {stage:&|line: &str| stage(line),mark:&|m| super::mark(m)};
-    let assembly = brep::export::assembly(sk,objects,name,tolerance,&say,&mut |i,built| {
+    let assembly = brep::export::assembly(sk,objects,name,tolerance,colour,&say,&mut |i,built| {
         // the run's pictures read this build of the part (#592)
         if let Some(seen) = seen { brep::export::supply(seen,i,built); }
     }).map_err(|(i,e)| (Some(i),e))?;

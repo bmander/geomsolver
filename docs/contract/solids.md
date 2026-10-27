@@ -292,7 +292,16 @@ placement carries inside the blank; CLI test readers zero the offset.
   the objects under a name); OCCT, which writes one solid, is refused it.  `tests/step_assembly.rs`
   is the gate (`every_object_is_its_part_carried_where_it_stands`: each object's part, carried
   down the tree, has the object's own build's volume and bounds, and each one's every vertex lies
-  on the other's boundary).
+  on the other's boundary).  **A part is written in its colour** (#677): `step::Product::colour`,
+  sRGB in 0..=1, the first object's it is built for (`export::assembly`'s `colour`, by solid
+  index), written as AP214's presentation on its solid — `STYLED_ITEM` → presentation style
+  assignment → surface style usage (`.BOTH.`) → side style → fill area → fill colour →
+  `COLOUR_RGB`, one colour's chain written once and shared — the styled items listed by one
+  `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` in the shapes' context; only a part is
+  coloured (`Assembly::check`).  `verify_assembly` reads them back: a coloured part's every solid
+  styled once, in its colour within `NEAR`, an uncoloured one's by nothing, every styled item a
+  part's solid's and presented; `step_check::colours` reads each part's colour from a file
+  (`each_part_is_written_in_its_colour_and_read_back_so`, `a_colour_not_the_parts_is_refused`).
 - **A mesh is welded, and grouped by face** (`mesh.rs`).
   **Welding** is a T-junction fix and not a vertex merge: `weld` puts the vertices lying on an
   edge's interior into it.  A hash **cell** is sized to the object (`scale / 128`) while the

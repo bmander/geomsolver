@@ -470,9 +470,9 @@ fn walk(file: &File,breps: &[&Entity],solid: &Solid,whole: bool,lap: &dyn Fn(&st
 }
 
 /// The product structure an assembly's STEP file must say (`crate::brep::step::write_assembly`):
-/// each product's name and, for a part, the solid it is; and each use of a product in an
-/// assembly.
-pub struct Structure { pub products: Vec<(String,Option<Solid>)>,pub uses: Vec<Use> }
+/// each product's name and, for a part, the solid it is and its colour if it has one (sRGB in
+/// 0..=1); and each use of a product in an assembly.
+pub struct Structure { pub products: Vec<(String,Option<Solid>,Option<[f64;3]>)>,pub uses: Vec<Use> }
 
 /// A use of product `child` in product `parent`, its axes standing at `placement` among the
 /// parent's: its origin, its z and its x.
@@ -482,7 +482,7 @@ impl Structure {
     /// The structure a STEP file of the assembly `a` must say.
     pub fn of(a: &crate::brep::step::Assembly) -> Structure {
         Structure {
-            products: a.products.iter().map(|p| (p.name.clone(),p.solid.as_ref().map(Solid::of))).collect(),
+            products: a.products.iter().map(|p| (p.name.clone(),p.solid.as_ref().map(Solid::of),p.colour)).collect(),
             uses: a.uses.iter().map(|u| {
                 let f = &u.placement;
                 Use {parent:u.parent,child:u.child,placement:[f.o[0],f.o[1],f.o[2],f.z[0],f.z[1],f.z[2],f.x[0],f.x[1],f.x[2]]}
@@ -498,39 +498,39 @@ impl Structure {
 /// every next assembly usage occurrence one of the structure's uses, each once: its parent's and
 /// its child's definitions, its shape the child's representation carried into the parent's by a
 /// transformation from the child's own axes to the use's placement, each an item of its
-/// representation.  What was counted is summed over the parts.
+/// representation; every coloured part's every solid the item of one styled item whose style
+/// resolves to the part's colour, an uncoloured part's solids styled by nothing, and every styled
+/// item a part's solid's, listed once by a presentation representation in that part's context.
+/// What was counted is summed over the parts.
 pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
     let file = File::read(text,&|_| {})?;
     let products = file.all("PRODUCT");
     if products.len() != s.products.len() {
         return Err(format!("the file has {} products, the assembly {}",products.len(),s.products.len()))
     }
-    let (formations,definitions) = (file.referring("PRODUCT_DEFINITION_FORMATION",2),file.referring("PRODUCT_DEFINITION",2));
-    let (shapes,represented) = (file.referring("PRODUCT_DEFINITION_SHAPE",2),file.referring("SHAPE_DEFINITION_REPRESENTATION",0));
+    let defs = Definitions::of(&file);
     let n = s.products.len();
-    let (mut defined,mut reps) = (vec![0u32;n],vec![0u32;n]);
+    let (mut defined,mut reps,mut contexts) = (vec![0u32;n],vec![0u32;n],vec![None;n]);
     let mut items: Vec<BTreeSet<u32>> = vec![BTreeSet::new();n];
-    // each part's solids, walked
+    // each part's solids, walked, and the part each is
     let (mut walked,mut solids): (Vec<Walked>,usize) = (Vec::new(),0);
-    for (p,(k,(name,solid))) in products.iter().zip(s.products.iter().enumerate().rev()) {
+    let mut owner: BTreeMap<u32,usize> = BTreeMap::new();
+    for (p,(k,(name,solid,_))) in products.iter().zip(s.products.iter().enumerate().rev()) {
         let what = format!("the product `{name}`");
         let written = p.simple().and_then(|(_,v)| v.get(1)).and_then(Value::text);
         if written != Some(name.replace('\'',"''").as_str()) { return Err(format!("{what}: the file's is named {written:?}")) }
-        let definition = one(&definitions,one(&formations,p.id,&format!("{what}'s formation"))?,&format!("{what}'s definition"))?;
-        let shape = one(&shapes,definition,&format!("{what}'s shape"))?;
-        let rep = one(&represented,shape,&format!("{what}'s representation"))?;
-        let rep = file.get(rep).simple().and_then(|(_,v)| v.get(1)).and_then(Value::reference)
-            .ok_or_else(|| format!("{what}: its shape's representation is not a reference"))?;
+        let (definition,rep) = defs.represented(&file,p.id,&what)?;
         let kind = if solid.is_some() { "ADVANCED_BREP_SHAPE_REPRESENTATION" } else { "SHAPE_REPRESENTATION" };
         let (_,values) = file.of(Some(rep),&[kind],&format!("{what}'s representation"))?;
         items[k] = values.get(1).and_then(Value::list).ok_or_else(|| format!("{what}: a representation without items"))?
             .iter().filter_map(Value::reference).collect();
-        (defined[k],reps[k]) = (definition,rep);
+        (defined[k],reps[k],contexts[k]) = (definition,rep,values.get(2).and_then(Value::reference));
         let Some(solid) = solid else { continue };
         let breps: Vec<&Entity> = items[k].iter().map(|&r| file.get(r)).filter(|e| e.simple().is_some_and(|(n,_)| n == "MANIFOLD_SOLID_BREP")).collect();
         if breps.len() != solid.solids { return Err(format!("{what}: its representation has {} solids, the part {}",breps.len(),solid.solids)) }
         walked.push(walk(&file,&breps,solid,false,&|_| {}).map_err(|e| format!("{what}: {e}"))?);
         solids += breps.len();
+        owner.extend(breps.iter().map(|b| (b.id,k)));
     }
     // every face, edge and vertex is one part's
     let sum = |f: &dyn Fn(&Walked) -> usize| walked.iter().map(f).sum::<usize>();
@@ -556,7 +556,7 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
         let product = |at: usize| values.get(at).and_then(Value::reference).and_then(|r| defined.iter().position(|&d| d == r))
             .ok_or_else(|| format!("{what}: its {} is no product's definition",if at == 3 { "assembly" } else { "product" }));
         let (parent,child) = (product(3)?,product(4)?);
-        let shape = one(&shapes,nauo.id,&format!("{what}'s shape"))?;
+        let shape = one(&defs.shapes,nauo.id,&format!("{what}'s shape"))?;
         let cdsr = one(&shown,shape,&format!("{what}'s representation"))?;
         let relation = file.get(cdsr).simple().and_then(|(_,v)| v.first()).and_then(Value::reference)
             .ok_or_else(|| format!("{what}: its representation is not a relationship"))?;
@@ -583,7 +583,134 @@ pub fn verify_assembly(text: &str,s: &Structure) -> Result<Verified,String> {
         };
         placed[u] = true;
     }
+    // the colours: a coloured part's every solid styled once, in its colour, and no other solid
+    let styled = styled(&file)?;
+    if let Some((item,on)) = styled.iter().find(|(item,_)| !owner.contains_key(item)) {
+        return Err(format!("the styled item #{} styles #{item}, which is no part's solid",on[0].0))
+    }
+    for (&b,&k) in &owner {
+        let (name,_,colour) = &s.products[k];
+        let what = format!("the part `{name}`'s solid #{b}");
+        match (styled.get(&b).map_or(&[][..],|v| &v[..]),colour) {
+            ([],None) => {}
+            ([],Some(_)) => return Err(format!("{what} is styled by nothing, the part is coloured")),
+            ([(si,_)],None) => return Err(format!("{what} is styled (#{si}), the part has no colour")),
+            ([(si,c)],Some(e)) => if !c.iter().zip(e).all(|(&a,&b)| near(a,b)) {
+                return Err(format!("{what} is styled (#{si}) in the colour {c:?}, the part's {e:?}"))
+            },
+            (many,_) => return Err(format!("{what} is styled {} times, not once",many.len())),
+        }
+    }
+    // each styled item listed once, by a presentation representation in its part's context
+    let mut listed: BTreeMap<u32,Option<u32>> = BTreeMap::new();
+    let presentations = file.all("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION");
+    if presentations.len() != file.count("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION") {
+        return Err("a presentation representation is a complex entity".into())
+    }
+    for r in presentations {
+        let v = r.simple().unwrap().1;
+        let what = format!("the presentation representation #{}",r.id);
+        for i in v.get(1).and_then(Value::list).ok_or_else(|| format!("{what}: no items"))? {
+            let i = i.reference().ok_or_else(|| format!("{what}: an item is not a reference"))?;
+            if !file.get(i).simple().is_some_and(|(n,_)| n == "STYLED_ITEM") { return Err(format!("{what} lists #{i}, which is not a styled item")) }
+            if listed.insert(i,v.get(2).and_then(Value::reference)).is_some() {
+                return Err(format!("the styled item #{i} is listed by two presentation representations"))
+            }
+        }
+    }
+    for (b,on) in &styled {
+        let (si,_) = on[0];
+        let context = contexts[owner[b]];
+        match listed.get(&si) {
+            None => return Err(format!("the styled item #{si} is listed by no presentation representation")),
+            Some(&c) if c != context => return Err(format!("the styled item #{si} is presented in {}, its part's shapes in {}",
+                c.map_or("no context".into(),|c| format!("#{c}")),context.map_or("no context".into(),|c| format!("#{c}")))),
+            _ => {}
+        }
+    }
     Ok(Verified {entities:file.entities.len(),faces,edges:edges.len(),vertices:vertices.len(),splines})
+}
+
+/// A file's products' definitions, read as a product is found represented.
+struct Definitions { formations: BTreeMap<u32,Vec<u32>>,definitions: BTreeMap<u32,Vec<u32>>,shapes: BTreeMap<u32,Vec<u32>>,
+    represented: BTreeMap<u32,Vec<u32>> }
+
+impl Definitions {
+    fn of(file: &File) -> Definitions {
+        Definitions {formations:file.referring("PRODUCT_DEFINITION_FORMATION",2),definitions:file.referring("PRODUCT_DEFINITION",2),
+            shapes:file.referring("PRODUCT_DEFINITION_SHAPE",2),represented:file.referring("SHAPE_DEFINITION_REPRESENTATION",0)}
+    }
+    /// The product `p`'s one definition, and the representation of that definition's one shape.
+    fn represented(&self,file: &File,p: u32,what: &str) -> Result<(u32,u32),String> {
+        let definition = one(&self.definitions,one(&self.formations,p,&format!("{what}'s formation"))?,&format!("{what}'s definition"))?;
+        let shape = one(&self.shapes,definition,&format!("{what}'s shape"))?;
+        let rep = one(&self.represented,shape,&format!("{what}'s representation"))?;
+        let rep = file.get(rep).simple().and_then(|(_,v)| v.get(1)).and_then(Value::reference)
+            .ok_or_else(|| format!("{what}: its shape's representation is not a reference"))?;
+        Ok((definition,rep))
+    }
+}
+
+/// Every styled item's colour, by the item it styles: the styled item, and the colour its style
+/// resolves to through a chain of one each (`crate::brep::step::write_assembly`'s) — a
+/// presentation style assignment of one surface style usage, its side style of one fill area, that
+/// area's style of one fill colour, an RGB in 0..=1.
+fn styled(file: &File) -> Result<BTreeMap<u32,Vec<(u32,[f64;3])>>,String> {
+    let items = file.all("STYLED_ITEM");
+    if items.len() != file.count("STYLED_ITEM") { return Err("a styled item is a complex entity".into()) }
+    fn single(v: Option<&Value>,what: &str,of: &str) -> Result<Option<u32>,String> {
+        match v.and_then(Value::list) { Some([r]) => Ok(r.reference()),_ => Err(format!("{what}: its {of} are not one")) }
+    }
+    let mut out: BTreeMap<u32,Vec<(u32,[f64;3])>> = BTreeMap::new();
+    for si in items {
+        let what = format!("the styled item #{}",si.id);
+        let v = si.simple().unwrap().1;
+        let (_,assignment) = file.of(single(v.get(1),&what,"styles")?,&["PRESENTATION_STYLE_ASSIGNMENT"],&what)?;
+        let (_,usage) = file.of(single(assignment.first(),&what,"assignment's styles")?,&["SURFACE_STYLE_USAGE"],&what)?;
+        if !usage.first().and_then(Value::word).is_some_and(|w| matches!(w,"BOTH" | "POSITIVE" | "NEGATIVE")) {
+            return Err(format!("{what}: a surface style usage without a side"))
+        }
+        let (_,side) = file.of(usage.get(1).and_then(Value::reference),&["SURFACE_SIDE_STYLE"],&what)?;
+        let (_,fill) = file.of(single(side.get(1),&what,"side's styles")?,&["SURFACE_STYLE_FILL_AREA"],&what)?;
+        let (_,area) = file.of(fill.first().and_then(Value::reference),&["FILL_AREA_STYLE"],&what)?;
+        let (_,colour) = file.of(single(area.get(1),&what,"fill area's styles")?,&["FILL_AREA_STYLE_COLOUR"],&what)?;
+        let (_,rgb) = file.of(colour.get(1).and_then(Value::reference),&["COLOUR_RGB"],&what)?;
+        let c: Vec<f64> = rgb.get(1..).unwrap_or(&[]).iter().filter_map(Value::number).collect();
+        let c: [f64;3] = c.try_into().ok().filter(|c: &[f64;3]| rgb.len() == 4 && c.iter().all(|x| (0. ..=1.).contains(x)))
+            .ok_or_else(|| format!("{what}: its colour is not three numbers in 0..=1"))?;
+        let item = v.get(2).and_then(Value::reference).ok_or_else(|| format!("{what}: its item is not a reference"))?;
+        out.entry(item).or_default().push((si.id,c));
+    }
+    Ok(out)
+}
+
+/// The colours of an assembly's STEP file's parts (`crate::brep::step::write_assembly`): each
+/// product represented by an advanced B-rep whose solids are styled, its name and their colour, in
+/// the file's order (the last product first). A part whose solids are styled by nothing is left
+/// out; one whose solids are styled apart, or one twice, is refused.
+pub fn colours(text: &str) -> Result<Vec<(String,[f64;3])>,String> {
+    let file = File::read(text,&|_| {})?;
+    let (styled,defs) = (styled(&file)?,Definitions::of(&file));
+    let mut out = Vec::new();
+    for p in file.all("PRODUCT") {
+        let name = p.simple().and_then(|(_,v)| v.get(1)).and_then(Value::text).ok_or_else(|| format!("the product #{} has no name",p.id))?
+            .replace("''","'");
+        let what = format!("the product `{name}`");
+        let (_,rep) = defs.represented(&file,p.id,&what)?;
+        let Some(("ADVANCED_BREP_SHAPE_REPRESENTATION",values)) = file.get(rep).simple() else { continue };
+        let mut colour: Option<[f64;3]> = None;
+        for r in values.get(1).and_then(Value::list).unwrap_or(&[]).iter().filter_map(Value::reference) {
+            if !file.get(r).is("MANIFOLD_SOLID_BREP") { continue }
+            match styled.get(&r).map_or(&[][..],|v| &v[..]) {
+                [] => {}
+                [(_,c)] if colour.is_none_or(|k| k == *c) => colour = Some(*c),
+                [_] => return Err(format!("{what}: its solids are styled in different colours")),
+                many => return Err(format!("{what}: its solid #{r} is styled {} times, not once",many.len())),
+            }
+        }
+        if let Some(c) = colour { out.push((name,c)); }
+    }
+    Ok(out)
 }
 
 /// The axis placement `r`'s numbers: its origin, z and x.

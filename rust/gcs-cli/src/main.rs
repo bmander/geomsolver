@@ -1398,7 +1398,7 @@ fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str
         Ok(t) => t,
         Err(message) => { eprintln!("solventc: {message}"); return false }
     };
-    match cad::brep::export_assembly(sk, &objects, &name, path, t, seen) {
+    match cad::brep::export_assembly(sk, &objects, &name, path, t, &|_| None, seen) {
         Ok(()) => true,
         Err((Some(i), refusal)) => { refused(e, i, refusal); false }
         Err((None, refusal)) => {
