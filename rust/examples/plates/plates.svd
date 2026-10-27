@@ -1,0 +1,13 @@
+// The plates' presentation.  Model geometry is independent of this drawing.
+model m from "plates.sv"
+
+// a part's colour, in the workspace and in the STEP assembly (#677): `one` names the part `two`
+// is another placement of, so both are orange; the third plate is blue
+style m.one { fill: #e8a33d }
+style m.three.body { fill: #4f7cac }
+
+sheet plates {
+  size A4
+  view top(m.three.body) from top at (60mm, 120mm)
+  dimensions in top
+}

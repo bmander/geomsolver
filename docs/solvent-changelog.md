@@ -4,6 +4,17 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.196] A part's colour.** A drawing's style rule takes `fill: #RGB` or `#RRGGBB` (§13.2):
+the colour of the parts its model path names — an object, a scope holding objects, or a solid an
+object is made of — and of every other placement of each, since the instances of one part
+(one binding, #566) are one colour, as they are in a CAD assembly. It is a part's and not a
+sheet's ink, so it stands only in a rule outside every sheet and never on a class; a `fill`
+naming no object is an error. The workspace shades each part in its drawing's colour, read from
+the `.svd` beside the model with its stem, and `solventc --step-assembly` writes it into the STEP
+file (AP214's styled items), from that drawing or the one `--drawing` names; a part no rule
+colours takes a palette colour drawn from what the part is, not its numbers, so it holds across an
+edit and a reload. No model changes, and every solved position is unchanged.
+
 **[0.195] The standard library in modules.** `std` had grown to seventy-odd names in one flat
 namespace — datums, placement words, figures, sets, rounds, panels, station words and joints side
 by side — so it is now a root and seven modules under it (§14.4), each a module of its own by its

@@ -10,8 +10,8 @@ mod highlight;
 use crate::style::Style;
 use crate::syntax::Span;
 pub use parser::parse;
-pub use render::{named_view, plane_across, plane_named, render, Model};
-pub use compile::compile;
+pub use render::{fills, named_view, plane_across, plane_named, render, Model};
+pub use compile::{colours, compile};
 pub use highlight::highlight;
 
 #[derive(Clone, Debug)]
@@ -101,6 +101,9 @@ pub struct Rule {
     /// The one view of its sheet it styles (`style m.rod2 in end { … }`, #461), or every view.
     pub view: Option<String>,
     pub style: Style,
+    /// `fill`: the colour of the parts it names, in the workspace and in the STEP export (#677)
+    /// — not a sheet's ink, so only a rule outside every sheet states it.
+    pub fill: Option<[u8; 3]>,
     pub span: Span,
 }
 

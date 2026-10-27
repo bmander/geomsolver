@@ -292,7 +292,27 @@ placement carries inside the blank; CLI test readers zero the offset.
   the objects under a name); OCCT, which writes one solid, is refused it.  `tests/step_assembly.rs`
   is the gate (`every_object_is_its_part_carried_where_it_stands`: each object's part, carried
   down the tree, has the object's own build's volume and bounds, and each one's every vertex lies
-  on the other's boundary).
+  on the other's boundary).  **A part is written in its colour** (#677): `step::Product::colour`,
+  sRGB in 0..=1, the first object's it is built for (`export::assembly`'s `colour`, by solid
+  index), written as AP214's presentation on its solid — `STYLED_ITEM` → presentation style
+  assignment → surface style usage (`.BOTH.`) → side style → fill area → fill colour →
+  `COLOUR_RGB`, one colour's chain written once and shared — the styled items listed by one
+  `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` in the shapes' context; only a part is
+  coloured (`Assembly::check`).  `verify_assembly` reads them back: a coloured part's every solid
+  styled once, in its colour within `NEAR`, an uncoloured one's by nothing, every styled item a
+  part's solid's and presented; `step_check::colours` reads each part's colour from a file
+  (`each_part_is_written_in_its_colour_and_read_back_so`, `a_colour_not_the_parts_is_refused`).
+  **A part's colour is one rule for the page and the file** (`colours.rs`, #676/#677): a part is
+  a solid's binding (`model::Binding`'s key), else the solid; its colour is the drawing's `fill`
+  (`drawing::fills`/`drawing::colours`: a rule outside every sheet naming an object, a scope of
+  objects or a solid one is made of, every object of that part taking it, later rules over
+  earlier) and otherwise the palette's (`colours::palette`: twelve muted colours, indexed by a
+  digest of the part less its numbers — `model::Binding::part` — and moved on to the next one no
+  earlier part, in object order, has taken; so a reload and a numeric edit keep it, and parts
+  differ while there are colours to go round).  `solventc --step-assembly` writes them, the
+  drawing `--drawing PATH` names or the `.svd` beside the model with its stem (`bot.svd` beside
+  `bot.sv`), and `--png` shades in them (`part_colours.rs`; the corpus case
+  `examples/plates/`, `a_step_assembly_is_written_in_the_drawings_colours`).
 - **A mesh is welded, and grouped by face** (`mesh.rs`).
   **Welding** is a T-junction fix and not a vertex merge: `weld` puts the vertices lying on an
   edge's interior into it.  A hash **cell** is sized to the object (`scale / 128`) while the
@@ -303,9 +323,11 @@ placement carries inside the blank; CLI test readers zero the offset.
   **Grouping** is `mesh::grouped`: triangles in face-path order, a normal per vertex — the
   facet's own where flat, averaged where the face is `smooth`.  Across the ABI as **buffers plus a
   small table** (`gcs_solid_mesh`, `gcs_solid_normals`, `gcs_solid_faces_json`), all reading one
-  memoised `Want::Mesh`; the same mesh and its creases in the solid's own coordinates
-  (`gcs_solid_own`, `core/mesh.ts::own`) and where it stands (`gcs_solid_placement`: the shape's
-  serial and a column-major 4×4, `placement`) are what the box builds from (#412).
+  memoised `Want::Mesh`; the same mesh as a renderer draws it, in the solid's own coordinates —
+  over vertices shared within a face, with its sharp and tangent edges (`mesh::drawn`,
+  `gcs_solid_drawn`, `core/mesh.ts::drawn`, #674) — and where it stands (`gcs_solid_placement`:
+  the shape's serial, its geometry's — one for the solids of one binding — and a column-major
+  4×4, `placement`) are what the box builds from (#412; `tests/drawn_mesh.rs`).
   `Document.solids()` names them (a solid has no proxy).  `tests/mesh.rs`
   is the gate and asserts the *before* as well as the after.
 - **A mesh is cut to the object and a volume to the report** (`solid::mesh_unit`, `MESH_SAGITTA`).

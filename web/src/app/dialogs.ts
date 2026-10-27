@@ -163,6 +163,9 @@ export function options(): Promise<void> {
     addCheckbox(box, 'show solid', view.showSolid, (v) => { view.setShowSolid(v); },
                 'Fill each object\u2019s surfaces as well as drawing its edges — off, the solid is '
               + 'a wireframe, which is how you see its far side');
+    addCheckbox(box, 'tangent edges', view.showTangentEdges, (v) => { view.setShowTangentEdges(v); },
+                'Ink, lighter than a sharp edge, where one face of an object runs smoothly into '
+              + 'the next — a round\u2019s run-out into the flat it rounds');
     const fineness = FINENESS.find(([, f]) => f === view.meshFineness)?.[0] ?? 'normal';
     addSelect(box, 'mesh fineness', FINENESS.map(([label]) => label), fineness, (label) => {
       const f = FINENESS.find(([l]) => l === label);

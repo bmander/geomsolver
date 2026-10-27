@@ -334,3 +334,53 @@ pub fn render(doc: &Document, models: &BTreeMap<String, Model<'_>>, sheet: Optio
     out.push_str("</svg>\n");
     Ok(out)
 }
+
+/// **The colours a drawing gives a model's parts** (#677): each rule outside a sheet that states
+/// a `fill` and names a path of one of `aliases` (the drawing's names for the model), in the order
+/// written, a later rule over an earlier.  A path names the objects it is or holds, and the
+/// objects made of a solid it names (a binding's tool, `valve.handle.star`); every object of a
+/// part takes the colour any of it was given, as every placement of a part is one part.  By the
+/// object's solid; refused where a `fill` names no object.
+pub fn fills(doc: &Document, aliases: &[&str], model: Model<'_>)
+    -> Result<BTreeMap<usize, [u8; 3]>, Error>
+{
+    let sk = model.sketch;
+    let objects = crate::overview::objects(sk);
+    // the objects each solid is, or is an operand of, however deep
+    let mut of: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); sk.solids.len()];
+    for &o in &objects {
+        let mut stack = vec![o];
+        while let Some(i) = stack.pop() {
+            if of[i].insert(o) {
+                stack.extend(sk.solids[i].operands().into_iter().map(|j| j as usize)
+                    .filter(|&j| j < sk.solids.len()));
+            }
+        }
+    }
+    // each object's part, read once
+    let parts: BTreeMap<usize, String> =
+        objects.iter().map(|&o| (o, crate::colours::part(sk, o))).collect();
+    let mut out = BTreeMap::new();
+    for r in &doc.styles {
+        let Some(fill) = r.fill else { continue };
+        let (alias, path) = r.selector.split_once('.').unwrap_or((r.selector.as_str(), ""));
+        if !aliases.contains(&alias) { continue }
+        if r.selector.contains('#') {
+            return Err(error(r.span, "drawing references use public names and indices, not internal statement identities"));
+        }
+        let named: BTreeSet<usize> = entities(model, path).into_iter()
+            .filter(|e| e.kind == EntKind::Solid)
+            .flat_map(|e| of.get(e.i()).into_iter().flatten().copied())
+            .collect();
+        if named.is_empty() {
+            return Err(error(r.span, format!("`fill` names no part: `{}` is no object, nor holds \
+                one, nor a solid one is made of", r.selector)));
+        }
+        let named: BTreeSet<&str> =
+            named.iter().filter_map(|o| parts.get(o)).map(String::as_str).collect();
+        for (o, p) in &parts {
+            if named.contains(p.as_str()) { out.insert(*o, fill); }
+        }
+    }
+    Ok(out)
+}
