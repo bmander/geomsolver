@@ -368,6 +368,15 @@ impl ShapeKey {
     }
 }
 
+/// **Whether two readings of what a solid reads are one drawing** (#671): every number the same
+/// within `NEAR` of the larger of each pair, or of the largest number either holds — so a solve
+/// that settled a part again, leaving its numbers where its own step tolerance cannot tell them
+/// apart, has changed nothing a build of it reads.
+pub fn same_reads(a: &[f64], b: &[f64]) -> bool {
+    let reach = a.iter().chain(b).fold(1.0f64, |m, x| m.max(x.abs()));
+    a.len() == b.len() && near(a, b, reach)
+}
+
 /// Whether two lists of numbers are one within `NEAR` of the larger of each pair, or of `reach`.
 fn near(a: &[f64], b: &[f64], reach: f64) -> bool {
     a.iter().zip(b)

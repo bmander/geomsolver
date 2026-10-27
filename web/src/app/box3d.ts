@@ -36,7 +36,7 @@ import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js
 
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-import { drawn, faces, placement, preview, shownObjects } from '../core/mesh.js';
+import { drawn, faces, placement, preview, shownObjects, stale } from '../core/mesh.js';
 import type { Drawn, Face, Mesh, Placement } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import { clipPlane, sectioned } from '../core/section.js';
@@ -166,6 +166,8 @@ interface Placed {
   /** What of it is selected or under the pointer, tinted over its colour (`buildTints`): its
    *  geometry drawn again, in its group, so it moves as the object does. */
   tint: THREE.Mesh | null;
+  /** Drawn from a build of an earlier drawing while its new one is made (#672): a ghost. */
+  stale: boolean;
 }
 
 /** What the renderer drew in its last frame, and the triangles each object holds: what
@@ -417,7 +419,8 @@ export class Box3D {
   }
 
   /** Every object in its part's colour (`SketchView.partColours`), a Boolean's tools as ghosts in
-   *  the ink of what they do, a solid the scenario deforms as a ghost of its own colour.  A
+   *  the ink of what they do, a solid the scenario deforms and one drawn from an earlier drawing's
+   *  build while its new one is made (#672) as a ghost of its own colour.  A
    *  material is chosen, never made, per frame: one a colour is kept. */
   private paintParts(v: SketchView): void {
     const c = v.showSolid ? v.combining : null;
@@ -431,7 +434,7 @@ export class Box3D {
       const colour = tool ? INK[c!.word] : colours.get(index) ?? INK.solid;
       // a part open, the rest of the assembly is dimmed round it (#679)
       const m = this.material(colour,
-        tool || deformed.has(index) ? GHOST : dimmed(v, index) ? DIMMED : 1);
+        tool || deformed.has(index) || held.stale ? GHOST : dimmed(v, index) ? DIMMED : 1);
       if (held.mesh.material !== m) held.mesh.material = m;
     }
     // and an object dimmed is dimmed in its edges too
@@ -755,7 +758,7 @@ export class Box3D {
     const triangles = (s.faces.index?.count ?? 0) / 3;
     if (this.renderer) this.drawnNow.push({ index: solid, name, triangles });
     const held: Placed = { shape: at.shape, geometry: at.geometry, faces: named, group,
-                           mesh: null, edges: null, tint: null };
+                           mesh: null, edges: null, tint: null, stale: stale(v.sketch, solid) };
     if (s.edges) {
       held.edges = new LineSegments2(s.edges, this.edgeInk);
       group.add(held.edges);

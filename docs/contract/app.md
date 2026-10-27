@@ -533,15 +533,29 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   comments and all.  A selection crosses a re-elaboration **by name** (`Document.nameOf` /
   `Document.entity`); a proxy dies with its `Sketch`.  `swap` is the one seam that replaces the
   drawing, and disposes the outgoing document.
-  **An opening says which object it is building** (`SketchView.hold`, `buildObjects`): an
-  object is evaluated the first time anything asks — the banner's `unbuilt`, `fit`'s bounds, the
-  box, all at `ApproximationPolicy::Mesh` — and a rounded part is seconds, so a load held paints
-  nothing and tells the shell nothing, then evaluates each object (not a swept one, the worker's)
-  in turn, the loading modal saying `building NAME (k of n)` with its bar, the page painting
-  between, and lets go: the shell told once, the fit it owed taken.  An example and a project's
-  file are opened so (`openExample`, `chooseFile`); `loading.ts` keeps the modal through the
-  building and then waits on the swept surfaces as before.  The app test beside `buildObjects` is
-  the gate.
+  **Only the reading is modal** (#672): the loading modal covers the core starting and the
+  reading (elaboration, solve, diagnosis — `program.ts`'s `held`), and goes once the drawing can be
+  painted, before any object is built.  **The page's own thread builds no object** (#671): its
+  objects are built by the pool (`SketchView.builds`, `app/object-builds.ts`; fields.md, "The page
+  never does") and drawn as they arrive, an object not yet built drawn as nothing and its outline
+  row marked *building…* (`.outline-row.building`), one refused marked *not built* with the
+  export's words on hover (`.unbuilt`), one an edit changed drawn as its last build was, a ghost
+  (`stale`, `Box3D`'s `Placed.stale` at `GHOST`), till its new one arrives — during a drag too, which asks for
+  nothing till its release (`readBehind`).  **A build bar along the workspace's bottom**
+  (`app/build-bar.ts`, `#build-bar`) shows while any job is left: the fraction done, each job
+  weighted by its builder's stages, `building 12 of 35 · wheel_part — cutting the sector by its
+  sheets` in the core's words, and the time so far; it goes when nothing is left, a refusal leaving
+  a red mark until the list is opened.  Clicked, the list: a row a job — its object, its stage, its
+  time, done (or kept), refused in the export's words, or waiting — and a row clicked selects its
+  object as the outline does.  What it says is `barOf`'s, read from the jobs alone;
+  `object-builds.test.ts`'s `the build bar says how many are left while the page takes input` is
+  the gate.  **Built objects are remembered across openings** (#673, `app/surface-store.ts`): an
+  IndexedDB store of each job's buffer under the core's build identity (`GCS_WASM_HASH`, the
+  module's digest `tools/bundle.js` writes in) and the job's key, so a new core never reads an old
+  core's; asked before a job goes to a worker, a hit supplied at once and a miss's answer stored;
+  bounded at `STORE_LIMIT`, the least recently used out, and cleared by Options ▸ *Forget built
+  objects*.  View state: nothing of it reaches the document, its drawing or an export.  An
+  unbundled page (the test suite) keeps none unless handed a store (`SketchView.usePool`).
   The source catches up at exactly two seams and **never per frame**: `syncSeeds` at the end of a
   drag (`gesture::endGesture`, guaranteed numeric) and `syncSource` at the end of `afterEdit`.
   The panel is wired to `onProgram`, never to `onDragFrame`.

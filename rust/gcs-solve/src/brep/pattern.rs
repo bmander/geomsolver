@@ -39,6 +39,8 @@ pub struct Built {
 impl Built {
     /// The sector the copies are made of: the faces `mesh`'s triangles say they are of.
     pub fn sector(&self) -> &Brep { &self.sector }
+    /// The turn by `angle` (radians) about the pattern's axis: by `step·k`, the sector onto copy `k`.
+    pub fn turn(&self,angle: f64) -> Rigid { Rigid::turn(self.o,self.a,angle) }
     /// The pattern carried by the rigid motion `m`: its solid, its sector and its axis moved, its
     /// copies and their partners as they were (a placed body's, #619).
     pub fn moved(&self,m: &Rigid) -> Built {

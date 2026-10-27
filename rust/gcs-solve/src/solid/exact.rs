@@ -140,9 +140,18 @@ pub(crate) fn named(mut brep: Brep, mm: f64, origin: [f64; 3], leading: BTreeSet
     for f in &mut brep.faces {
         let (of, face) = named_parts(&f.name);
         named.push((of.to_string(), face.to_string()));
-        f.name = if face.is_empty() { of.to_string() } else { format!("{of}.{face}") };
+        f.name = joined(&f.name);
     }
     Exact { brep, mm, origin, leading, named }
+}
+
+/// A face's name as a build named it in two halves (`brep::recipe::NAMED`), the two joined by a
+/// dot: the name every reader of a B-rep's faces knows it by.
+pub(crate) fn joined(name: &str) -> String {
+    match named_parts(name) {
+        (of, "") => of.to_string(),
+        (of, face) => format!("{of}.{face}"),
+    }
 }
 
 /// Static solid `si`'s B-rep as an export built it where it stands (millimetres,

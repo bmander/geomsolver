@@ -24,7 +24,7 @@ import { highlight as drawingHighlight, type DrawingBundle } from '../core/drawi
 import { drawingActive, pickDrawingFolder, renderDrawing, showDrawing } from './drawing.js';
 import { currentConstraint, pdiags, ped, ppanel, ppanelState, psplit, view } from './shell.js';
 import { download, toast } from './ui.js';
-import { awaitSurfaces, buildingObjects, loading, opened, painted } from './loading.js';
+import { loaded, loading, painted } from './loading.js';
 import { ProjectExplorer, projectFile, sourceFile } from './project-explorer.js';
 
 /** The box somebody types in.  `app/editor.ts` owns the two layers and the colouring; this module
@@ -151,8 +151,7 @@ function selectFile(name: string): void {
 }
 
 /** A file a person picks.  A project's source file is elaborated and solved (or its paper
- *  rendered) on this thread, so the loading modal says so first and, as an opening does, stays
- *  until the swept objects of the model it shows have a surface. */
+ *  rendered) on this thread, so the loading modal says so first, as an opening does. */
 async function chooseFile(name: string): Promise<void> {
   if (name === activeFile || !project || !sourceFile(name)) { selectFile(name); return; }
   loading(`${name.endsWith('.svd') ? 'rendering' : 'reading'} ${name}…`);
@@ -160,19 +159,16 @@ async function chooseFile(name: string): Promise<void> {
   await held(() => selectFile(name));
 }
 
-/** An opening run with the view held: afterwards the loading modal names each object as it is
- *  built, and stays until the swept ones have a surface.  The caller has painted the modal
- *  saying what is being read, since the reading holds the thread. */
+/** **An opening under the loading modal, which goes once the reading is done** (#672): the
+ *  objects are built by the pool off this thread, said by the build bar, and the page is usable
+ *  while they arrive.  The caller has painted the modal saying what is being read, since the
+ *  reading holds the thread. */
 export async function held<T>(open: () => T): Promise<T> {
-  awaitSurfaces();
-  buildingObjects();
-  view.hold();
   try { return open(); }
   finally {
     // the reading is done: elaboration, solve and diagnosis (`tools/open-bench.mjs` reads it)
     performance.mark('gcs:read');
-    await view.buildObjects(loading, painted);
-    opened();
+    loaded();
   }
 }
 

@@ -94,20 +94,9 @@ pub(crate) fn open(path: &str) -> Elaborated {
 /// The named solid of `e`, built exactly: its volume and its bounds.
 fn built(e: &Elaborated,name: &str) -> (f64,[f64;6]) {
     let i = fixtures::solid(e,name);
-    let s = match e.sketch.exact_solid(i) {
-        Ok(s) => s,
-        // a body a generating sweep cuts (a toothed pulley) is built by the generating class, as
-        // `solventc --step` and the page build it, in the document's millimetres where it stands
-        Err(why) => {
-            use gcs_core::brep::{export,sweep::Say};
-            let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
-            let x = export::exact(&e.sketch,i,None,None,&say)
-                .unwrap_or_else(|r| panic!("{name}: {why}; generated, refused at {:?}: {}",r.stage,
-                                           r.message));
-            let (lo,hi) = x.solid.bounds();
-            return (props::volume(&x.solid),[lo[0],hi[0],lo[1],hi[1],lo[2],hi[2]]);
-        }
-    };
+    // a body a generating sweep cuts (a toothed pulley) too, built as `solventc --step` and the
+    // page's builder build it (#536)
+    let s = e.sketch.exact_solid(i).unwrap_or_else(|why| panic!("{name}: {why}"));
     // the B-rep is in millimetres about the solid's origin
     let (lo,hi) = s.brep.bounds();
     let w = |k: usize,x: f64| s.origin[k]+x/s.mm;

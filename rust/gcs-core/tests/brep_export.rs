@@ -55,17 +55,17 @@ fn a_swept_bodys_exact_surface_is_built_by_stages_and_supplied() {
     assert!(doing.iter().any(|d| d == "cutting the blank by its sheets"),"{doing:?}");
     assert!(builder.said().is_some());
     let d = builder.display().unwrap().clone();
-    assert_eq!(d.of.len(),d.triangles.len());
-    assert!((d.volume-0.447407).abs() < 2e-5,"{}",d.volume);
+    assert_eq!(d.faces.of.len(),d.triangles.len());
+    assert!((d.faces.volume-0.447407).abs() < 2e-5,"{}",d.faces.volume);
     // supplied in place of the field's surface, the sketch draws it and never meshes the field
     sk.field_meshing.set(gcs_core::solid::FieldMeshing::Deferred);
-    let exact = gcs_core::solid::ExactFaces {of:d.of.clone(),smooth:d.smooth.clone(),volume:d.volume};
-    let surface = gcs_core::solid::FieldSurface {vertices:d.vertices.clone(),triangles:d.triangles.clone(),provisional:false,exact:Some(exact)};
-    sk.supply_field(body,surface).unwrap();
+    sk.supply_field(body,d.surface()).unwrap();
     let solid = sk.evaluated_solid(body,gcs_core::solid::ApproximationPolicy::Mesh).unwrap();
     assert!(!solid.provisional());
-    assert_eq!(solid.volume(),d.volume);
-    assert!(solid.surviving_faces().contains("part.surface"));
+    assert_eq!(solid.volume(),d.faces.volume);
+    // each face by the name its build gave it
+    assert!(!solid.surviving_faces().is_empty() && solid.surviving_faces().iter().all(|f| d.faces.names.contains(f)),
+        "{:?} against {:?}",solid.surviving_faces(),d.faces.names);
     // its faces meet at creases (the cut's rim on the post), and a curved face's seams are smooth
     assert!(solid.edges().iter().any(|e| !e.smooth));
     assert!(solid.edges().iter().any(|e| e.smooth));

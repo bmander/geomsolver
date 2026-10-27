@@ -8,17 +8,39 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
 is the union over the whole interval, not posed meshes; `at:` and intervals exclusive.
 `MaterialField::read` promotes static DAGs when a sweep appears; nested sweeps refused; caches
 read the whole motion graph. The native recipe rejects sweeps; `EvaluatedSolid` meshes the field
-(`from_surface`, `solid::FieldMesher`). Terminal and tests mesh in place (`FieldMeshing::Now`).
-**The page never does**: `field_meshing` is `Deferred`; `Sketch::field_jobs` keys swept objects
-by a digest of `solid::reads`; `app/field-preview.ts` compares keys and runs `app/mesh-worker.ts`
-(own core), posting surfaces (~120 ms, worst facet first) to `supply_field`; a provisional
-surface exports only via the preview choice. Mesh fineness is view state
-(`FieldMesher::with_fineness`, 0.25–4).
-**A swept object of the generating class also gets its exact surface**: worker instances (up to
-four) step `brep::export::Builder` (admitted, blank, sheets, sector, cut, pattern, display mesh at
-`DISPLAY_SAG`/`DISPLAY_ANGULAR`), shown in the footer; the result replaces the preview via
-`supply_field` with `ExactFaces` (`from_exact_surface`), kept across fineness; a refused build
-keeps the field surface.
+(`from_surface`, `solid::FieldMesher`). Terminal and tests mesh in place (`FieldMeshing::Now`); a
+host meshing fields elsewhere supplies them (`Deferred`, `Sketch::field_jobs`, `supply_field`).
+**The page never does** (#671): an object is its exact B-rep, built as the STEP export builds it,
+or it is unbuilt with the kernel's reason.  The page's sketch builds every object elsewhere
+(`FieldMeshing::Supplied`, `Sketch::supply_objects`): `Sketch::object_jobs` names one job a binding
+(`Sketch::job_of`: the placements of one build share it, and the sketch places each from it by its
+evaluation, a closed instance's swept copy too — `Sketch::placing`), keyed by `solid::field_key`.
+A build supplied says whether it is current: what the solid reads is what the build read within a
+solve's own tolerance (`solid::same_reads`, `NEAR`), so an object's last build, offered to the next
+drawing, is filed under its new key where a solve settling the drawing again moved nothing it
+reads, and asked of no worker.  `app/object-builds.ts` hands the jobs, swept first, to a pool of
+`min(hardwareConcurrency − 1, 4)` workers (`app/build-work.ts` in `app/mesh-worker.ts`, a core each,
+keeping its document between jobs and reading again only for a structural edit or other modules),
+each stepping `brep::export::Builder` to the end; the build crosses as one buffer
+(`Display::bytes`) and is supplied (`Sketch::supply_object`, `from_exact_surface`).  Until then the
+object is refused, on its way — `overview::unbuilt` leaves it out — and a build refused is unbuilt in
+the export's words (`refuse_object`), never a field meshed in its place; an earlier drawing's build
+is drawn stale (`EvaluatedSolid::stale`) till the new one arrives; a swept solid that is no object
+is meshed by nothing.  `object-builds.test.ts` is the gate: no `FieldMesher` made, no object cut
+on the page's thread.  Field fineness (`FieldMesher::with_fineness`, 0.25–4) is the core's alone.
+**One builder serves every object** (#670): `brep::export::Builder` builds a static body as the
+export builds it (`export::exact`, a stage, then its mesh) and a swept one by the generating
+class's stages (admitted, blank, sheets, sector, cut, pattern), meshed at
+`DISPLAY_SAG`/`DISPLAY_ANGULAR`; a body whose sweeps are built within their envelopes counts no
+sheet, plan or cut.  Its `Display` names each face as `solid::exact::named` does, carries what the
+solid read, and the B-rep's edges read off the mesh — a polyline through its vertices a pair of
+faces' stretch, the two faces, smooth where their own normals meet within `SMOOTH_EDGE` (a round's
+tangent edge), sharp otherwise; a seam bounds nothing and is none (`solid::ExactEdge`).  A refusal
+is the export's `ExportRefusal`, its stage and its words.  `tests/object_builder.rs`: every object
+the export builds the builder builds — a static one with its face count and volume, a swept one,
+admitted at the display's samples, to its volume within the export's gross bar (`GROSS` deep over
+its surface) — and refuses what it refuses in its words: static documents here, the whole library
+in the slow tier.
 
 **Field meshing** ([docs/field-meshing.md](../field-meshing.md)): resumable Delaunay refinement
 (`delaunay::refine::Progressive`, exact predicates, a `refine::Domain`), sharp edges protected by
@@ -31,8 +53,8 @@ crease flag. Terms compile once (`material/plan.rs`); support, bounds, enclosure
 point query is `MaterialField::query(p, &mut Query)` (`Want::Sign | Reading`, `Source::Exact |
 Cached(Resolution) | Warm {hints,local}`; shorthands `side`, `reading`); `SweptField::query` takes
 box, floor table, cache, search, in order. Readings are branch and bound; crossings by safeguarded
-Newton, memoised. A `construction` solid is never an object. App example `spiral_bevel`
-(`hypoid.sv`). `solventc --stl-backend refine` skips admission, gated by field agreement
+Newton, memoised. A `construction` solid is never an object. `spiral_bevel` (`hypoid.sv`) is built
+exactly, both members, as every object the page draws is. `solventc --stl-backend refine` skips admission, gated by field agreement
 (`SOLVENT_FEATURES=field`).
 
 **A drafted prism of any loop is read by its sections** (#607, #588; `solid/field/sections.rs`): a

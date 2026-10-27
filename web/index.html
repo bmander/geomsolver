@@ -28,6 +28,9 @@
            sketch on its own plane over it. -->
       <canvas id="box"></canvas>
       <canvas id="canvas"></canvas>
+      <!-- the objects being built, off the page's thread, along the workspace's bottom edge while
+           any is (`app/build-bar.ts`); clicked, the list of them -->
+      <div id="build-bar" role="progressbar" aria-label="Objects being built" hidden></div>
       <!-- the viewport's choosers, in its upper right: the plane drawn on, and — where the
            document states one — the load scenario drawn over the workspace, its card unfolding
            beneath it once one is chosen.  Filled by `main` and `scenario-card` -->
@@ -132,11 +135,10 @@
       <ul id="pdiags"></ul>
     </aside>
   </main>
-  <footer><span id="toast"></span><span id="component"></span><span id="stats"></span><span id="refine"></span><span id="claims"></span><span id="scenarios"></span></footer>
+  <footer><span id="toast"></span><span id="component"></span><span id="stats"></span><span id="claims"></span><span id="scenarios"></span></footer>
 </div>
 <!-- while the page has nothing worth touching: the page's script arriving (a sweep, till it runs),
-     the solver arriving and starting, an example arriving, its solve, its swept solids' first
-     surfaces (`app/loading.ts`) -->
+     the solver arriving and starting, an example arriving, its reading (`app/loading.ts`) -->
 <div id="loading" class="sweeping" role="progressbar" aria-busy="true" aria-labelledby="loading-label">
   <div class="loading-card">
     <p id="loading-label">loading the sketcher…</p>

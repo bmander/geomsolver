@@ -183,7 +183,8 @@ export class OutlinePane {
     this.paint();
   }
 
-  /** The eyes, the dimming under a hidden row and the rows marked current, on every row drawn. */
+  /** The eyes, the dimming under a hidden row, the rows marked current, and an object's row marked
+   *  while it is being built (#672) or where its build was refused, on every row drawn. */
   paint(): void {
     const selected = selectedKeys(this.view);
     for (const [i, d] of this.drawn) {
@@ -194,6 +195,12 @@ export class OutlinePane {
       const half = !own && !under && partlyHidden(this.view, row, d.above);
       d.row.classList.toggle('hidden', own);
       d.row.classList.toggle('dimmed', under);
+      const build = row.solid !== undefined ? this.view.builds.rowOf(row.solid) : undefined;
+      d.row.classList.toggle('building', build?.state === 'waiting' || build?.state === 'building');
+      const unbuilt = build?.state === 'refused';
+      d.row.classList.toggle('unbuilt', unbuilt);
+      if (unbuilt) d.row.title = build.why ?? '';
+      else d.row.removeAttribute('title');
       if (d.eye) {
         const state: Eye = own || under ? 'shut' : half ? 'half' : 'open';
         if (d.eye.dataset.state !== state) {

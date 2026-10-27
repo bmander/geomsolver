@@ -18,9 +18,10 @@
  * Every mutation funnels through `afterEdit`, which re-solves (when auto-solve is on),
  * re-diagnoses and notifies the shell exactly once. */
 import { Box3D } from './box3d.js';
-import { mesh, objects } from '../core/mesh.js';
-import { fieldJobs } from '../core/field.js';
-import { FieldPreview, type Refining } from './field-preview.js';
+import { objects } from '../core/mesh.js';
+import { ObjectBuilds, type BuildRow, type PoolWorker } from './object-builds.js';
+import { pageStore, type SurfaceStore } from './surface-store.js';
+import { coreIdentity } from '../core/wasm.js';
 import { ClaimJudging, type Judging } from './claim-judging.js';
 import { ScenarioReading, type Drawn, type Reading } from './scenario-view.js';
 import type { ScenarioMark } from '../core/scenario.js';
@@ -442,8 +443,9 @@ export class SketchView {
    *  only the status line needs updating (a drag's numbers, a band's selection count). */
   onDragFrame: () => void = () => {};
   onStatus: (msg: string) => void = () => {};
-  /** The swept objects refining in the background, as each frame of their meshing arrives. */
-  onRefine: (refining: Refining[]) => void = () => {};
+  /** The objects being built in the background (`ObjectBuilds`), as each job moves: the build
+   *  bar follows (#672). */
+  onBuilds: (rows: BuildRow[]) => void = () => {};
   /** The claims about solids being judged in the background, as the judging moves; null once the
    *  drawing has none. */
   onClaims: (judging: Judging | null) => void = () => {};
@@ -553,18 +555,12 @@ export class SketchView {
   /** A gesture moved geometry, so the null space no longer describes the pose on screen. */
   staleDiagnosis = false;
   private frame = 0;
-  /** An opening is building its objects (`hold`, `buildObjects`): nothing is painted or told
-   *  the shell meanwhile, since either would evaluate every object at once, and whether the
-   *  camera owes a fit when it is let go. */
-  private holding = false;
-  private heldFit = false;
-  /** Which hold is the latest: an opening overtaken by another lets go of nothing of the
-   *  other's. */
-  private holdGen = 0;
   /** The eye swinging square on to a plane: its timer, so a second choice replaces the first. */
   private looking = 0;
-  /** Swept solids' surfaces, refined in a worker and drawn as they arrive. */
-  private readonly fields = new FieldPreview((error) => this.fieldArrived(error), (r) => this.onRefine(r));
+  /** Every object, built exactly by a pool of workers and drawn as it arrives (#671): the page's
+   *  own thread builds none.  Without workers (node, a test's view) the sketch builds its own. */
+  builds = new ObjectBuilds((error) => this.objectsArrived(error), (r) => this.onBuilds(r), undefined,
+                            pageStore(coreIdentity()));
   /** The claims about solids, judged in a worker: the diagnosis here leaves them out. */
   readonly claims = new ClaimJudging((j) => this.onClaims(j));
   /** The load scenarios' answers and the picture of the one drawn, read in a worker. */
@@ -901,7 +897,18 @@ export class SketchView {
     }
     const b = boundsSeen(this.sketch, this.unit, az, el);
     if (b) this.cam.fitTo(b, this.width, this.height);
+    this.fitted = this.eyeNow();
     this.draw();
+  }
+
+  /** The eye as `fit` left it, while an opening's objects are still being built: once they are, the
+   *  frame is taken again if nobody has moved the eye since — the objects were not there to frame. */
+  private fitted: string | null = null;
+
+  /** Where the eye is: its orbit, scale and origin. */
+  private eyeNow(): string {
+    const { az, el } = this.orbit;
+    return [az, el, this.cam.scale, this.cam.originX, this.cam.originY].join(' ');
   }
 
   // -- sketch mutation -----------------------------------------------------
@@ -1079,10 +1086,7 @@ export class SketchView {
     this.afterEdit();
     this.onProgram();
     // after the solve: loading a case can move the geometry a long way
-    if (fit) {
-      if (this.holding) this.heldFit = true;
-      else this.fit();
-    }
+    if (fit) this.fit();
   }
 
   /* -- a selection across a re-elaboration --------------------------------
@@ -1317,76 +1321,42 @@ export class SketchView {
     this.syncSource();        // the drawing changed, so the document has to say what it now says
     this.readBehind();
     this.followLater();
-    if (!this.holding) this.onChanged();
+    this.onChanged();
     this.draw();
     return this.lastResult;
   }
 
-  /** **Read the drawing again where it stands, off the page's thread**: the swept solids'
-   *  meshes, the solid claims' verdicts and the load scenarios' answers with the picture of the
+  /** **Read the drawing again where it stands, off the page's thread**: its objects' exact
+   *  builds, the solid claims' verdicts and the load scenarios' answers with the picture of the
    *  one drawn.  At the end of an edit and at the release of a drag, which moves the drawing
-   *  without one: a job of this very text and pose is left standing, so a second ask is free. */
+   *  without one: a build of what the drawing still reads is asked of no worker again. */
   readBehind(): void {
-    this.fields.start(this.doc);
+    this.builds.start(this.doc);
     this.claims.start(this.doc);
     this.readScenarios();
   }
 
-  /** **An opening says which object it is building.**  An object is evaluated the first time
-   *  anything asks — the banner's `unbuilt`, the frame `fit` takes, the box — and a rounded part
-   *  takes seconds, so the first paint after an opening would hold the thread for all of them
-   *  at once with nothing said.  Held, a load paints nothing and tells the shell nothing; then
-   *  `buildObjects` evaluates each object in turn (the box's approximation, so every later asker
-   *  finds it built), saying which of how many before each and letting the page paint between,
-   *  and lets go.  A swept object is not one: a worker meshes it, and says so itself. */
-  hold(): void {
-    this.holding = true;
-    this.heldFit = false;
-    this.holdGen += 1;
+  /** Build this view's objects in a pool of workers that `spawn` makes, remembering builds in
+   *  `store` (a test's, in place of the page's): the outgoing pool's workers let go. */
+  usePool(spawn: (() => PoolWorker) | null, store: SurfaceStore | null = null, size?: number): ObjectBuilds {
+    this.builds.dispose();
+    this.builds = new ObjectBuilds((error) => this.objectsArrived(error), (r) => this.onBuilds(r), spawn, store, size);
+    return this.builds;
   }
 
-  async buildObjects(say: (what: string, fraction: number) => void,
-                     painted: () => Promise<void>): Promise<void> {
-    const gen = this.holdGen;
-    try {
-      const doc = this.doc;
-      const swept = new Set(fieldJobs(this.sketch).map((j) => j.solid));
-      const objs = objects(this.sketch).filter((o) => !swept.has(o.index));
-      for (const [k, o] of objs.entries()) {
-        say(`building ${o.name} (${k + 1} of ${objs.length})`, k / objs.length);
-        await painted();
-        // another document, another opening, or let go
-        if (this.doc !== doc || gen !== this.holdGen || !this.holding) return;
-        const t0 = performance.now();
-        try { mesh(this.sketch, o.index, 0); }
-        catch { /* it does not evaluate: the banner says why, once let go */ }
-        performance.mark('gcs:built', { detail: { name: o.name, ms: performance.now() - t0 } });
-      }
-    } finally {
-      if (gen === this.holdGen) this.release();
-    }
-  }
-
-  /** Let a held view go: the shell told, and the camera fitted if the load asked for it. */
-  release(): void {
-    if (!this.holding) return;
-    this.holding = false;
-    this.onChanged();
-    if (this.heldFit) this.fit();
-    else this.draw();
-    this.heldFit = false;
-  }
-
-  /** How much finer than the preview's swept solids are refined (Options ▸ mesh fineness): view
-   *  state, never the document's, so it is neither saved nor undone. */
-  get meshFineness(): number { return this.fields.fineness; }
-  set meshFineness(f: number) { this.fields.setFineness(f, this.doc); }
-
-  /** A swept solid's surface arrived from the worker: the same sketch now shows more, so what was
-   *  drawn from it is drawn again. */
-  private fieldArrived(error?: string): void {
+  /** An object's build arrived from the pool: the same sketch now shows more, so what was drawn
+   *  from it is drawn again — and, the last of an opening's, framed where the eye was left as the
+   *  opening framed it. */
+  private objectsArrived(error?: string): void {
     this.box3d.invalidate();
     if (error) this.onStatus(error);
+    this.onChanged();
+    const left = this.builds.rows.some((r) => r.state === 'waiting' || r.state === 'building');
+    if (!left && this.fitted !== null) {
+      const owed = this.fitted === this.eyeNow();
+      this.fitted = null;
+      if (owed) { this.fit(); this.fitted = null; return; }
+    }
     this.draw();
   }
 
@@ -1774,7 +1744,7 @@ export class SketchView {
 
   draw(): void {
     this.camCache = null;     // a plane's own points may have moved, and its map with them
-    if (this.frame || this.holding) return;
+    if (this.frame) return;
     this.frame = requestAnimationFrame(() => { this.frame = 0; paint(this); });
   }
 

@@ -412,15 +412,100 @@ pub fn field_agreement(sk: &Sketch,body: usize,stl: &[u8],tolerance: Option<Tole
         sk.solids[body].name,report.disagreements.len(),report.probes)})
 }
 
-/// A swept body's exact surface as the page draws it: its patterned (or whole) B-rep meshed at the
-/// solid's own mesh unit, in model units and world coordinates, each triangle with the B-rep face
-/// it is of (`of`, the sector's for a pattern, so every copy of a face is one face), whether each
-/// face is curved, and the solid's exact volume (model units cubed).
+/// **An object's exact surface as the page draws it** (#670): its B-rep (a pattern's patterned, a
+/// swept body's whole, a static body's as its recipe builds it) meshed at the solid's own mesh
+/// unit, in model units and world coordinates; what the mesh says of itself (`faces`: each
+/// triangle's B-rep face — the sector's for a pattern, so every copy of a face is one face —
+/// whether each face is curved, each face's name as `solid::exact::named` writes it, the B-rep's
+/// edges as polylines through the vertices and the solid's exact volume, model units cubed); and
+/// what the solid read when it was built (`solid::reads`), which a sketch it is supplied to holds
+/// it current against (`Sketch::supply_object`).
 #[derive(Clone,Debug,Default)]
-pub struct Display { pub vertices: Vec<[f64;3]>,pub triangles: Vec<[u32;3]>,pub of: Vec<u32>,pub smooth: Vec<bool>,pub volume: f64 }
+pub struct Display { pub vertices: Vec<[f64;3]>,pub triangles: Vec<[u32;3]>,pub faces: crate::solid::ExactFaces,pub reads: Vec<f64> }
 
-/// Where a swept body's exact build stands for its display, a stage at a time (`Builder::step`).
+/// What `Display::bytes` writes first: the format's number, which `Display::read` holds a buffer to.
+const DISPLAY_FORMAT: f64 = 2.;
+/// How many doubles head the buffer.
+const DISPLAY_HEAD: usize = 9;
+
+impl Display {
+    /// **The surface as one buffer** (little-endian), the form it crosses between cores and is kept
+    /// in by a host: nine doubles — the format, the vertices, triangles, faces and edges counted,
+    /// the volume, the names' bytes, the edges' words and the numbers read — then three doubles a
+    /// vertex and the numbers read; then 32-bit words: three a triangle, a face a triangle, 0 or 1
+    /// a face (curved), and each edge as its points counted, its two faces, 0 or 1 (smooth) and
+    /// its points; then the faces' names in UTF-8, one a line.
+    pub fn bytes(&self) -> Vec<u8> {
+        let f = &self.faces;
+        let names = f.names.join("\n");
+        let words: usize = f.edges.iter().map(|e| 4+e.points.len()).sum();
+        let mut out = Vec::with_capacity(8*(DISPLAY_HEAD+3*self.vertices.len()+self.reads.len())
+            +4*(4*self.triangles.len()+f.smooth.len()+words)+names.len());
+        let head = [DISPLAY_FORMAT,self.vertices.len() as f64,self.triangles.len() as f64,f.smooth.len() as f64,
+            f.edges.len() as f64,f.volume,names.len() as f64,words as f64,self.reads.len() as f64];
+        for x in head.iter().chain(self.vertices.iter().flatten()).chain(&self.reads) { out.extend(x.to_le_bytes()); }
+        let mut word = |w: u32| out.extend(w.to_le_bytes());
+        for &i in self.triangles.iter().flatten() { word(i) }
+        for &k in &f.of { word(k) }
+        for &m in &f.smooth { word(m as u32) }
+        for e in &f.edges {
+            word(e.points.len() as u32); word(e.faces[0]); word(e.faces[1]); word(e.smooth as u32);
+            for &p in &e.points { word(p) }
+        }
+        out.extend(names.as_bytes());
+        out
+    }
+
+    /// The surface `bytes` wrote, or why `b` is none: a buffer crosses from another core or a
+    /// host's store, so every count and index is held to what is there.
+    pub fn read(b: &[u8]) -> Result<Display,String> {
+        let bad = |what: &str| format!("an exact surface's buffer {what}");
+        let double = |k: usize| -> Option<f64> { Some(f64::from_le_bytes(b.get(8*k..8*k+8)?.try_into().ok()?)) };
+        let count = |k: usize| double(k).filter(|x| *x >= 0. && x.fract() == 0. && *x <= u32::MAX as f64).map(|x| x as usize);
+        if double(0) != Some(DISPLAY_FORMAT) { return Err(bad("is of another format")) }
+        let [nv,nt,nf,ne,nn,nw,nr] = [1,2,3,4,6,7,8].map(count);
+        let (Some(nv),Some(nt),Some(nf),Some(ne),Some(nn),Some(nw),Some(nr)) = (nv,nt,nf,ne,nn,nw,nr) else {
+            return Err(bad("counts what is no count")) };
+        let volume = double(5).filter(|v| v.is_finite()).ok_or_else(|| bad("holds a volume that is no number"))?;
+        let words = 3*nt+nt+nf+nw;
+        let at = 8*(DISPLAY_HEAD+3*nv+nr);
+        if b.len() != at+4*words+nn { return Err(bad("is not as long as it says")) }
+        let vertices: Vec<[f64;3]> = (0..nv).map(|v| std::array::from_fn(|k| double(DISPLAY_HEAD+3*v+k).unwrap_or(f64::NAN))).collect();
+        if vertices.iter().flatten().any(|x| !x.is_finite()) { return Err(bad("places a vertex nowhere")) }
+        let reads: Vec<f64> = (0..nr).map(|k| double(DISPLAY_HEAD+3*nv+k).unwrap_or(f64::NAN)).collect();
+        let w: Vec<u32> = b[at..at+4*words].chunks_exact(4).map(|c| u32::from_le_bytes([c[0],c[1],c[2],c[3]])).collect();
+        let triangles: Vec<[u32;3]> = w[..3*nt].chunks_exact(3).map(|c| [c[0],c[1],c[2]]).collect();
+        let of = w[3*nt..4*nt].to_vec();
+        let smooth = w[4*nt..4*nt+nf].iter().map(|&m| m != 0).collect();
+        let mut edges = Vec::with_capacity(ne);
+        let mut k = 4*nt+nf;
+        for _ in 0..ne {
+            let n = *w.get(k).ok_or_else(|| bad("ends inside an edge"))? as usize;
+            let e = w.get(k+1..k+4+n).ok_or_else(|| bad("ends inside an edge"))?;
+            edges.push(crate::solid::ExactEdge {points:e[3..].to_vec(),faces:[e[0],e[1]],smooth:e[2] != 0});
+            k += 4+n;
+        }
+        if k != words { return Err(bad("holds more edge words than its edges")) }
+        let names = std::str::from_utf8(&b[at+4*words..]).map_err(|_| bad("names a face in what is no text"))?;
+        let names: Vec<String> = if names.is_empty() && nf != 1 { Vec::new() } else { names.split('\n').map(str::to_string).collect() };
+        let faces = crate::solid::ExactFaces {of,smooth,volume,names,edges};
+        crate::solid::field_mesh::exact_checked(&vertices,&triangles,&faces).map_err(|e| bad(&e))?;
+        Ok(Display {vertices,triangles,faces,reads})
+    }
+
+    /// The surface as a sketch is given it (`Sketch::supply_field`): finished, exact.
+    pub fn surface(&self) -> crate::solid::FieldSurface { self.clone().into_surface().0 }
+
+    /// `surface`, and what the solid read, moved out rather than copied.
+    pub fn into_surface(self) -> (crate::solid::FieldSurface,Vec<f64>) {
+        (crate::solid::FieldSurface {vertices:self.vertices,triangles:self.triangles,provisional:false,exact:Some(self.faces)},self.reads)
+    }
+}
+
+/// Where an object's exact build stands for its display, a stage at a time (`Builder::step`).
 enum State {
+    /// A body with no sweep: built from its recipe as the export builds it (`exact`), at once.
+    Static,
     Admit,
     Prepare(admission::Admission),
     Sheets(super::sweep::Prepared,Vec<super::sweep::sheet::Fitted>),
@@ -433,11 +518,15 @@ enum State {
     Failed,
 }
 
-/// **A swept body's exact surface, built a stage at a time** — admitted, its blank, each sweep's
-/// sheet, its sector's premises, the cut, the pattern, the mesh — so a host that cannot hear from
-/// a call while it runs (a page's worker: the core's module has no imports) can say between stages
-/// what it is doing, and stop between them for a newer drawing. The stages are `export::exact`'s,
-/// without a file written or the field's agreement asked: what it builds is for looking at.
+/// **An object's exact surface, built a stage at a time** (#670) — a swept body admitted, its
+/// blank, each sweep's sheet, its sector's premises, the cut, the pattern, the mesh; a static body
+/// built from its recipe and meshed — so a host that cannot hear from a call while it runs (a
+/// page's worker: the core's module has no imports) can say between stages what it is doing, and
+/// stop between them for a newer drawing. Every object is built by it, one builder whatever the
+/// body: the stages are `export::exact`'s, a static body's that one call, without a file written
+/// or the field's agreement asked — what it builds is for looking at — and a refusal is the
+/// export's, its stage and its words, never a field meshed in its place. A placement of a binding
+/// is its representative's build moved: a host asks one build a binding (`Sketch::object_jobs`).
 pub struct Builder { sk: Sketch,body: usize,recipe: cad::StaticRecipe,state: State,lines: std::sync::Mutex<Vec<String>>,done: usize,
     /// The body built from the swept body, when `body` is that (`holds_sweep`): the stages build
     /// the swept body, and a last one combines it with the rest by the body rule.
@@ -446,13 +535,24 @@ pub struct Builder { sk: Sketch,body: usize,recipe: cad::StaticRecipe,state: Sta
     operand: usize,
     /// Where `body` is placed (#619): the motion its build is moved by (mm), and the one the
     /// combined body is moved by after, where a placement places that.
-    moved: [Option<super::geom::Rigid>;2] }
+    moved: [Option<super::geom::Rigid>;2],
+    /// Whether its sweeps were all planar or subtractions, built within their envelopes: no
+    /// sheet, plan or cut stage is run, nor counted.
+    enveloped: bool,
+    /// What the solid asked for read (`solid::reads`), which its display carries.
+    reads: Vec<f64> }
 
 impl Builder {
-    /// The build of swept solid `body` of `sk` (a copy of the sketch is kept), or why it has none:
-    /// a solid with no swept cut is the static path's.
+    /// The build of solid `body` of `sk` (a copy of the sketch is kept), or why it has none.
     pub fn new(sk: &Sketch,body: usize) -> Result<Builder,ExportRefusal> {
         if body >= sk.solids.len() { return Err(ExportRefusal::at(Stage::Blank,"no such solid in this drawing")) }
+        let asked = crate::solid::reads(sk,body,0.);
+        // a body no sweep reaches is built as the export builds it, a stage, then meshed
+        if !cad::contains_sweep(sk,body) {
+            let recipe = cad::StaticRecipe {recipe:crate::json::Json::Null,sweeps:Vec::new()};
+            return Ok(Builder {sk:sk.clone(),body,recipe,state:State::Static,lines:Default::default(),done:0,outer:None,operand:body,
+                moved:[None,None],enveloped:false,reads:asked})
+        }
         // a placement of a swept body (`x in f`): the body it places, built and moved (#619)
         let placed = |i: usize| -> Result<(usize,Option<super::geom::Rigid>),ExportRefusal> {
             Ok(cad::placed_swept(sk,i).at(Stage::Blank)?
@@ -473,7 +573,8 @@ impl Builder {
         if recipe.sweeps.is_empty() {
             return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
         }
-        Ok(Builder {sk:sk.clone(),body,recipe,state:State::Admit,lines:Default::default(),done:0,outer,operand,moved})
+        Ok(Builder {sk:sk.clone(),body,recipe,state:State::Admit,lines:Default::default(),done:0,outer,operand,moved,enveloped:false,
+            reads:asked})
     }
     /// Run the next stage: `Ok(true)` once the surface is built, or the refusal that stopped it.
     pub fn step(&mut self) -> Result<bool,ExportRefusal> {
@@ -481,7 +582,9 @@ impl Builder {
         let say = Say {stage:&|line: &str| lines.lock().unwrap_or_else(|e| e.into_inner()).push(line.to_string()),mark:&|_| {}};
         let (sk,body,recipe) = (&self.sk,self.body,&self.recipe);
         let state = std::mem::replace(&mut self.state,State::Failed);
+        let was_prepare = matches!(state,State::Prepare(_));
         let next = (|| -> Result<State,ExportRefusal> { Ok(match state {
+            State::Static => State::Mesh(super::sweep::Built::Whole(exact(sk,body,None,None,&say)?.solid)),
             State::Admit => State::Prepare(admission::admit_body(sk,body,&DISPLAY_ADMISSION)?),
             State::Prepare(admitted) => {
                 let prepared = super::sweep::prepare(sk,body,recipe,&admitted,&say)?;
@@ -512,12 +615,17 @@ impl Builder {
                 (say.stage)(&format!("`{}` combined from its swept material",sk.solids[outer].name));
                 State::Mesh(super::sweep::Built::Whole(match &self.moved[1] { Some(m) => solid.moved(m),None => solid }))
             }
-            State::Mesh(built) => State::Done(display(sk,&built)?),
+            State::Mesh(built) => State::Done(display(sk,&built,self.reads.clone())?),
             done @ State::Done(_) => done,
             State::Failed => return Err(ExportRefusal::at(Stage::Blank,"the build has failed already")),
         }) })();
         match next {
-            Ok(state) => { self.done += 1; self.state = state; Ok(matches!(self.state,State::Done(_))) }
+            Ok(state) => {
+                self.enveloped |= was_prepare && matches!(state,State::Finish(_));
+                self.done += 1;
+                self.state = state;
+                Ok(matches!(self.state,State::Done(_)))
+            }
             Err(refusal) => Err(refusal),
         }
     }
@@ -525,6 +633,7 @@ impl Builder {
     pub fn doing(&self) -> String {
         let name = |k: usize,p: &super::sweep::Prepared| format!("fitting the sheet of `{}` ({} of {})",p.sweep_name(&self.sk,k),k+1,p.sweeps());
         match &self.state {
+            State::Static => "building the solid from its recipe".into(),
             State::Admit => "admitting its sweeps to the generating class".into(),
             State::Prepare(_) => "building the blank".into(),
             State::Sheets(p,sheets) => name(sheets.len(),p),
@@ -539,8 +648,13 @@ impl Builder {
         }
     }
     /// The stages run, and their number in all: admission, the blank, a sheet a distinct sweep, the
-    /// plan, the cut, the pattern and the mesh.
+    /// plan, the cut, the pattern and the mesh — a body whose sweeps are built within their
+    /// envelopes runs no sheet, plan or cut, and counts none once that is known; a static body's
+    /// build and its mesh.
     pub fn stages(&self) -> (usize,usize) {
+        // (a static body's recipe lists no sweep: a swept one's always does)
+        if self.recipe.sweeps.is_empty() { return (self.done,2) }
+        if self.enveloped { return (self.done,4+usize::from(self.outer.is_some())) }
         let mut sweeps: Vec<usize> = self.recipe.sweeps.iter().map(|s| s.swept).collect();
         sweeps.sort(); sweeps.dedup();
         (self.done,6+sweeps.len()+usize::from(self.outer.is_some()))
@@ -635,8 +749,14 @@ const DISPLAY_ADMISSION: admission::Options = admission::Options {rows:25,column
 const DISPLAY_SAG: f64 = 2e-3;
 const DISPLAY_ANGULAR: f64 = 0.8;
 
-/// A built swept body meshed for display, within `DISPLAY_SAG` of its size.
-fn display(sk: &Sketch,built: &super::sweep::Built) -> Result<Display,ExportRefusal> {
+/// How far two faces' normals may turn across an edge for the edge to be drawn as smooth
+/// (radians): a round's tangent edge meets its faces within a kernel's rounding of each other, and
+/// a crease worth seeing turns a degree and more.
+const SMOOTH_EDGE: f64 = 1e-2;
+
+/// A built body meshed for display, within `DISPLAY_SAG` of its size: its faces named as
+/// `solid::exact::named` names them, and its edges read off the mesh (`display_edges`).
+fn display(sk: &Sketch,built: &super::sweep::Built,reads: Vec<f64>) -> Result<Display,ExportRefusal> {
     let mm = cad::millimetres(sk);
     let size = match built { super::sweep::Built::Sector {pattern,..} => pattern.solid.size(),super::sweep::Built::Whole(solid) => solid.size() };
     let bar = DISPLAY_SAG*size;
@@ -648,11 +768,84 @@ fn display(sk: &Sketch,built: &super::sweep::Built) -> Result<Display,ExportRefu
         super::sweep::Built::Whole(solid) => (super::mesh::mesh(solid,bar,DISPLAY_ANGULAR).at(Stage::Mesh)?,&solid.faces,
             super::props::volume(solid)),
     };
+    // where a face's normal points at `p` (mm) on the copy triangle `t` is of: a pattern's turned
+    // back into its sector, read there, and turned out again
+    let copies = match built { super::sweep::Built::Sector {sector,pattern} => Some((pattern,m.tris.len()/sector.count.max(1))),_ => None };
+    let normal = |f: u32,t: usize,p: [f64;3]| -> Option<[f64;3]> {
+        let face = faces.get(f as usize)?;
+        let angle = copies.map(|(pattern,per)| pattern.step*(t/per.max(1)) as f64);
+        let turn = |by: f64| copies.map(|(pattern,_)| pattern.turn(by));
+        let q = match angle.and_then(|by| turn(-by)) { Some(back) => back.point(p),None => p };
+        let n = face.outward(q)?;
+        Some(match angle.and_then(turn) { Some(out) => out.vector(n),None => n })
+    };
+    let edges = display_edges(&m.pts,&m.tris,&m.of,&normal);
     Ok(Display {
         vertices: m.pts.iter().map(|p| p.map(|x| x/mm)).collect(),
-        triangles: m.tris.clone(),
-        of: m.of.clone(),
-        smooth: faces.iter().map(|f| !matches!(f.surface,super::geom::Surface::Plane(_))).collect(),
-        volume: volume/(mm*mm*mm),
+        faces: crate::solid::ExactFaces {
+            smooth: faces.iter().map(|f| !matches!(f.surface,super::geom::Surface::Plane(_))).collect(),
+            volume: volume/(mm*mm*mm),
+            names: faces.iter().map(|f| crate::solid::exact::joined(&f.name)).collect(),
+            edges,
+            of: m.of,
+        },
+        triangles: m.tris,
+        reads,
     })
+}
+
+/// **The B-rep's edges, read off its mesh** (#670): the mesh shares each edge's samples between
+/// the faces it bounds, so a side of the mesh between triangles of two faces is a stretch of an
+/// edge, and the stretches of one pair of faces chained end to end are its polylines — within the
+/// mesh's bars, as the faces are. Each is smooth where the faces' own normals (`normal`, of a face
+/// as triangle `t` has it, at a point in mm) meet within `SMOOTH_EDGE` at its middle, sharp where
+/// they turn more or either is not read.
+fn display_edges(pts: &[[f64;3]],tris: &[[u32;3]],of: &[u32],normal: &dyn Fn(u32,usize,[f64;3]) -> Option<[f64;3]>)
+    -> Vec<crate::solid::ExactEdge> {
+    use std::collections::{BTreeMap,BTreeSet};
+    let key = |a: u32,b: u32| (a.min(b),a.max(b));
+    // each side of the mesh beside the triangle it is of, sorted so a side's triangles are together
+    let mut sides: Vec<((u32,u32),usize)> = tris.iter().enumerate()
+        .flat_map(|(t,tri)| (0..3).map(move |k| (key(tri[k],tri[(k+1)%3]),t))).collect();
+    sides.sort_unstable();
+    // the stretches between two faces, by the pair of faces, each with a triangle of either face
+    let mut pairs: BTreeMap<(u32,u32),BTreeMap<(u32,u32),[usize;2]>> = BTreeMap::new();
+    for run in sides.chunk_by(|x,y| x.0 == y.0) {
+        let &[(side,s),(_,t)] = run else { continue };
+        if of[s] == of[t] { continue }
+        let (a,b) = if of[s] < of[t] { (s,t) } else { (t,s) };
+        pairs.entry((of[a],of[b])).or_default().insert(side,[a,b]);
+    }
+    let mut out = Vec::new();
+    for ((fa,fb),stretches) in pairs {
+        let mut next: BTreeMap<u32,Vec<u32>> = BTreeMap::new();
+        for &(a,b) in stretches.keys() { next.entry(a).or_default().push(b); next.entry(b).or_default().push(a); }
+        let mut used: BTreeSet<(u32,u32)> = BTreeSet::new();
+        // a chain starts where it ends (a point not two stretches meet at), then what is left is loops
+        let starts: Vec<u32> = next.iter().filter(|(_,n)| n.len() != 2).map(|(&v,_)| v).chain(next.keys().copied()).collect();
+        for start in starts {
+            for &first in &next[&start] {
+                if used.contains(&key(start,first)) { continue }
+                let mut line = vec![start];
+                let (mut at,mut to) = (start,first);
+                loop {
+                    used.insert(key(at,to));
+                    line.push(to);
+                    if next[&to].len() != 2 { break }
+                    let Some(&w) = next[&to].iter().find(|&&w| !used.contains(&key(to,w))) else { break };
+                    (at,to) = (to,w);
+                }
+                // smooth where both faces' normals agree at its middle stretch
+                let k = (line.len()-1)/2;
+                let [ta,tb] = stretches[&key(line[k],line[k+1])];
+                let p = std::array::from_fn(|c| 0.5*(pts[line[k] as usize][c]+pts[line[k+1] as usize][c]));
+                let smooth = match (normal(fa,ta,p),normal(fb,tb,p)) {
+                    (Some(na),Some(nb)) => crate::space::dot(na,nb) >= SMOOTH_EDGE.cos(),
+                    _ => false,
+                };
+                out.push(crate::solid::ExactEdge {points:line,faces:[fa,fb],smooth});
+            }
+        }
+    }
+    out
 }

@@ -10,14 +10,14 @@
  * The page is the built app (`npm run build`), served as `npm run serve` serves it and opened in
  * headless Chromium by Playwright at `?example=…`, as a person opening the example does.  The app
  * marks what it does on the User Timing line (`performance.mark`, `gcs:*`): the reading done
- * (`gcs:read`), each static object built on the page's thread (`gcs:built`), the modal put away
- * (`gcs:loaded`), each object handed to three.js and rendered (`gcs:drawn`), each swept object's
- * surface applied, field or exact (`gcs:surface`), and an exact build refused (`gcs:unbuilt`).
- * Read here are:
+ * (`gcs:read`), the modal put away (`gcs:loaded`), each job's exact build handed back by the pool
+ * (`gcs:built`, with the time it took in its worker), each build supplied to the page's core
+ * (`gcs:surface`), a build refused (`gcs:unbuilt`), and each object handed to three.js and
+ * rendered (`gcs:drawn`).  Read here are:
  *
  *   * the times, from navigation: to the modal put away, to the first object drawn, and to each
- *     object drawn in its final form (a static object's first drawing; a swept one's exact
- *     surface, or its field's finished one where the exact build is refused);
+ *     object drawn — its first drawing is its exact build's, since the page draws nothing else
+ *     (#671);
  *   * the main thread's long tasks (`PerformanceObserver`, `longtask`): the longest, their sum,
  *     and the total blocking time (what each holds past 50 ms);
  *   * `renderer.info` once settled: draw calls, triangles, geometries, programs, and the
@@ -182,8 +182,7 @@ async function page(pw) {
     const url = `http://127.0.0.1:${port}/?example=${encodeURIComponent(opts.example)}`;
     const started = Date.now();
     await p.goto(url, { waitUntil: 'load' });
-    // settled: the modal away, every swept object's exact surface (or its refusal and the
-    // field's finished one) applied, and nothing new drawn for a while
+    // settled: the modal away, every job built or refused, and nothing new drawn for a while
     const QUIET_MS = 3000;
     let settled = false;
     let lastDrawn = -1, quietSince = Date.now();
@@ -191,11 +190,11 @@ async function page(pw) {
       const s = await p.evaluate(() => {
         const marks = performance.getEntriesByType('mark').filter((m) => m.name.startsWith('gcs:'));
         const g = /** @type {any} */ (window).gcsBench;
-        const refining = g ? g.refining() : [];
+        const builds = g ? g.builds() : [];
         return {
           loaded: marks.some((m) => m.name === 'gcs:loaded'),
           drawn: marks.filter((m) => m.name === 'gcs:drawn').length,
-          open: refining.filter((r) => !(r.exact?.built || ((r.exact?.error || !r.exact) && (r.done || r.error)))).length,
+          open: builds.filter((r) => r.state === 'waiting' || r.state === 'building').length,
         };
       });
       if (s.drawn !== lastDrawn) { lastDrawn = s.drawn; quietSince = Date.now(); }
@@ -208,7 +207,7 @@ async function page(pw) {
       const marks = performance.getEntriesByType('mark').filter((m) => m.name.startsWith('gcs:'))
         .map((m) => ({ name: m.name, at: m.startTime, detail: /** @type {any} */ (m).detail ?? null }));
       return { marks, longtasks: w.__longtasks ?? [], counts: w.gcsBench?.counts() ?? null,
-               refining: w.gcsBench?.refining() ?? [] };
+               builds: w.gcsBench?.builds() ?? [] };
     });
     return { ...got, settled, heaps: Object.fromEntries(heaps.peaks), errors };
   } finally {
@@ -221,23 +220,19 @@ async function page(pw) {
 function summarize(r) {
   const at = (name) => r.marks.find((m) => m.name === name)?.at;
   const drawn = r.marks.filter((m) => m.name === 'gcs:drawn');
-  const surfaces = r.marks.filter((m) => m.name === 'gcs:surface');
   const unbuilt = new Map(r.marks.filter((m) => m.name === 'gcs:unbuilt').map((m) => [m.detail.name, m.detail.error]));
-  const swept = new Set(r.refining.map((x) => x.name));
-  // each object: its first drawing, and the first drawing in its final form
+  const swept = new Set(r.builds.filter((x) => x.swept).map((x) => x.name));
+  // each object: its first drawing, which is its exact build's — the page draws nothing else
   const objects = new Map();
   for (const d of drawn) {
     const { name, triangles } = d.detail;
-    let o = objects.get(name);
-    if (!o) { o = { name, first: d.at, final: undefined, triangles, swept: swept.has(name) }; objects.set(name, o); }
-    if (o.final !== undefined) continue;
-    if (!o.swept) { o.final = d.at; o.triangles = triangles; continue; }
-    // a swept object is final once drawn after the surface that is its last word
-    const last = surfaces.filter((s) => s.detail.name === name && s.at <= d.at
-      && (s.detail.exact || (unbuilt.has(name) && !s.detail.provisional)));
-    if (last.length) { o.final = d.at; o.triangles = triangles; o.exact = last.at(-1).detail.exact; }
+    if (objects.has(name)) continue;
+    objects.set(name, { name, first: d.at, final: d.at, triangles, swept: swept.has(name) });
   }
-  for (const o of objects.values()) if (o.swept && unbuilt.has(o.name)) o.refused = unbuilt.get(o.name);
+  // a job refused draws nothing: listed, with its words
+  for (const [name, error] of unbuilt) {
+    if (!objects.has(name)) objects.set(name, { name, first: undefined, final: undefined, swept: swept.has(name), refused: error });
+  }
   const built = r.marks.filter((m) => m.name === 'gcs:built').map((m) => m.detail);
   const tasks = r.longtasks;
   const longest = tasks.reduce((a, t) => Math.max(a, t.duration), 0);
@@ -324,7 +319,7 @@ const builtOf = new Map(s.built.map((b) => [b.name, b.ms]));
 console.log(`  ${'object'.padEnd(40)} ${'first'.padStart(9)} ${'final'.padStart(9)} ${'built'.padStart(9)} ${'triangles'.padStart(10)} ${'meshes'.padStart(7)}`);
 for (const o of s.objects) {
   const m = meshesOf.get(indexOf.get(o.name));
-  const how = o.swept ? (o.refused ? ' (field: exact refused)' : ' (swept)') : '';
+  const how = o.refused ? ' (refused)' : o.swept ? ' (swept)' : '';
   console.log(`  ${(o.name + how).padEnd(40)} ${ms(o.first).padStart(9)} ${ms(o.final).padStart(9)} `
             + `${ms(builtOf.get(o.name)).padStart(9)} ${String(m?.triangles ?? o.triangles).padStart(10)} `
             + `${String(m?.meshes ?? '—').padStart(7)}`);

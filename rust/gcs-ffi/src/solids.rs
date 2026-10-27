@@ -235,47 +235,88 @@ pub unsafe extern "C" fn gcs_solid_supply_field(
     })
 }
 
-/// Give swept solid `idx` its exact surface, built elsewhere (`gcs_exact_builder_*`): `nv` vertices
-/// and `nt` triangles as for `gcs_solid_supply_field`, `of` the face of each triangle, `smooth`
-/// whether each of `nf` faces is curved, and the solid's exact volume. 0, or −1 with the reason.
+/* -- every object built elsewhere, exactly (#671) -------------------------------- */
+
+/// A page that builds every object in its pool of workers says so (`Sketch::supply_objects`):
+/// the objects are then drawn from what is supplied, never built on the thread that draws.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_solid_supply_exact(
-    h: *mut Sketch,
-    idx: i32,
-    vertices: *const f64,
-    nv: i32,
-    triangles: *const u32,
-    nt: i32,
-    of: *const u32,
-    smooth: *const u8,
-    nf: i32,
-    volume: f64,
-) -> i32 {
+pub unsafe extern "C" fn gcs_sketch_supply_objects(h: *mut Sketch, on: i32) {
+    guard((), move || sk(h).supply_objects(on != 0))
+}
+
+/// **Every build the page's pool has to make** (`Sketch::object_jobs`), as JSON:
+/// `[{ "solid", "name", "key", "objects": [..], "swept" }]` — one a binding, `key` in hex as a
+/// field job's, the same for the same build on any core.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_object_jobs(h: *mut Sketch) -> *mut u8 {
+    json_out(move || {
+        Json::Arr(sk(h).object_jobs().into_iter().map(|j| Json::Obj(vec![
+            ("solid".into(), Json::Int(j.solid as i64)),
+            ("name".into(), Json::Str(j.name)),
+            ("key".into(), Json::Str(format!("{:016x}", j.key))),
+            ("objects".into(), Json::Arr(j.objects.into_iter().map(|i| Json::Int(i as i64)).collect())),
+            ("swept".into(), Json::Bool(j.swept)),
+        ])).collect())
+    })
+}
+
+/// Give the solid a job builds its surface (`Sketch::supply_object`): the build's buffer as the
+/// builder wrote it (`gcs_exact_builder_display`, `Display::bytes`). 1 where it is current — what
+/// the solid reads is what the build read — 0 where it is an earlier drawing's, drawn stale, or −1
+/// with the reason.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_supply_object(h: *mut Sketch, idx: i32, ptr: *const u8, len: usize) -> i32 {
     guard(-1, move || {
-        let (nv, nt, nf) = (nv.max(0) as usize, nt.max(0) as usize, nf.max(0) as usize);
-        let v = if nv == 0 { &[][..] } else { std::slice::from_raw_parts(vertices, 3 * nv) };
-        let t = if nt == 0 { &[][..] } else { std::slice::from_raw_parts(triangles, 3 * nt) };
-        let o = if nt == 0 { &[][..] } else { std::slice::from_raw_parts(of, nt) };
-        let m = if nf == 0 { &[][..] } else { std::slice::from_raw_parts(smooth, nf) };
-        let surface = gcs_core::solid::FieldSurface {
-            vertices: v.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
-            triangles: t.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
-            provisional: false,
-            exact: Some(gcs_core::solid::ExactFaces { of: o.to_vec(), smooth: m.iter().map(|&x| x != 0).collect(), volume }),
-        };
+        let bytes = if ptr.is_null() || len == 0 { &[][..] } else { std::slice::from_raw_parts(ptr, len) };
         let s = sk(h);
         let Some(i) = solid_at(s, idx) else { return -1 };
-        match s.supply_field(i, surface) {
+        let supplied = gcs_core::brep::export::Display::read(bytes).and_then(|d| s.supply_object(i, d));
+        match supplied {
+            Ok(current) => current as i32,
+            Err(message) => { set_error(message); -1 }
+        }
+    })
+}
+
+/// The build of the solid a job builds refused, in the build's words (`Sketch::refuse_object`).
+/// 0, or −1 with the reason.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_refuse_object(h: *mut Sketch, idx: i32, ptr: *const u8, len: usize) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        match s.refuse_object(i, as_str(ptr, len)) {
             Ok(()) => 0,
             Err(message) => { set_error(message); -1 }
         }
     })
 }
 
-/// A swept solid's exact surface, built a stage at a time (`brep::export::Builder`).
+/// Where each object stands with the page's pool (`Sketch::object_state`), as JSON:
+/// `[{ "solid", "state": "built" | "building" | "rebuilding" | "refused", "why"? }]`.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_object_states(h: *mut Sketch) -> *mut u8 {
+    json_out(move || {
+        use gcs_core::solid::ObjectState;
+        let s = sk(h);
+        Json::Arr(model::objects(s).into_iter().map(|i| {
+            let (state, why) = match s.object_state(i) {
+                ObjectState::Built => ("built", None),
+                ObjectState::Building => ("building", None),
+                ObjectState::Rebuilding => ("rebuilding", None),
+                ObjectState::Refused(why) => ("refused", Some(why)),
+            };
+            let mut kv = vec![("solid".into(), Json::Int(i as i64)), ("state".into(), Json::Str(state.into()))];
+            if let Some(why) = why { kv.push(("why".into(), Json::Str(why))); }
+            Json::Obj(kv)
+        }).collect())
+    })
+}
+
+/// An object's exact surface, built a stage at a time (`brep::export::Builder`).
 pub struct ExactBuilder(gcs_core::brep::export::Builder);
 
-/// Start building swept solid `idx`'s exact surface: a handle, or null with the reason.
+/// Start building solid `idx`'s exact surface: a handle, or null with the reason.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_exact_builder_new(h: *mut Sketch, idx: i32) -> *mut ExactBuilder {
     guard(std::ptr::null_mut(), move || {
@@ -317,18 +358,13 @@ pub unsafe extern "C" fn gcs_exact_builder_progress(b: *mut ExactBuilder) -> *mu
     })
 }
 
-/// The built surface as doubles: `[nv, nt, nf, volume, vertices (3 nv), triangles (3 nt), of (nt),
-/// smooth (nf, 0 or 1)]`, or null with the reason while it is not built.
+/// The built surface as one buffer (`Display::bytes`: its mesh, faces, names and edges), what
+/// `gcs_sketch_supply_object` takes; or null with the reason while it is not built.
 #[no_mangle]
-pub unsafe extern "C" fn gcs_exact_builder_surface(b: *mut ExactBuilder) -> *mut u8 {
+pub unsafe extern "C" fn gcs_exact_builder_display(b: *mut ExactBuilder) -> *mut u8 {
     guard(std::ptr::null_mut(), move || {
         let Some(d) = (*b).0.display() else { set_error("the exact surface is not built yet"); return std::ptr::null_mut() };
-        let mut out: Vec<f64> = vec![d.vertices.len() as f64, d.triangles.len() as f64, d.smooth.len() as f64, d.volume];
-        out.extend(d.vertices.iter().flatten());
-        out.extend(d.triangles.iter().flatten().map(|&i| i as f64));
-        out.extend(d.of.iter().map(|&f| f as f64));
-        out.extend(d.smooth.iter().map(|&m| if m { 1. } else { 0. }));
-        out_bytes(out.iter().flat_map(|x| x.to_le_bytes()).collect())
+        out_bytes(d.bytes())
     })
 }
 
@@ -596,6 +632,21 @@ pub unsafe extern "C" fn gcs_solid_provisional(h: *mut Sketch, idx: i32) -> i32 
         let Some(i) = solid_at(s, idx) else { return -1 };
         match s.field_provisional(i) {
             Ok(p) => p as i32,
+            Err(message) => { set_error(message); -1 }
+        }
+    })
+}
+
+/// Whether solid `idx` is drawn from a build of an earlier drawing while its new one is made
+/// (`EvaluatedSolid::stale`, #672): 1 or 0, read off the evaluation the box drew; −1 with the
+/// reason where it does not evaluate.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_solid_stale(h: *mut Sketch, idx: i32) -> i32 {
+    guard(-1, move || {
+        let s = sk(h);
+        let Some(i) = solid_at(s, idx) else { return -1 };
+        match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::Mesh) {
+            Ok(solid) => solid.stale() as i32,
             Err(message) => { set_error(message); -1 }
         }
     })

@@ -4,15 +4,18 @@
  *
  * The core's size is written in as `GCS_WASM_BYTES`, so the page can say how much of the module
  * has arrived: a host that compresses it (GitHub Pages) sends the compressed size as the
- * Content-Length, and the body yields the module itself.  The node-only fallback imports in
- * `core/wasm.ts` are left external. */
+ * Content-Length, and the body yields the module itself.  Its digest is written in as
+ * `GCS_WASM_HASH`, the core's build identity, which the page keeps its built objects under
+ * (`surface-store.ts`).  The node-only fallback imports in `core/wasm.ts` are left external. */
 import { build } from 'esbuild';
-import { statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const bytes = statSync(join(root, 'dist/wasm/gcs.wasm')).size;
+const hash = createHash('sha256').update(readFileSync(join(root, 'dist/wasm/gcs.wasm'))).digest('hex').slice(0, 16);
 
 // one build of the three, so the core and three.js they share are read once
 await build({
@@ -28,6 +31,6 @@ await build({
   target: 'es2022',
   sourcemap: true,
   external: ['node:fs/promises', 'node:url'],
-  define: { GCS_WASM_BYTES: String(bytes) },
+  define: { GCS_WASM_BYTES: String(bytes), GCS_WASM_HASH: JSON.stringify(hash) },
   logLevel: 'info',
 });

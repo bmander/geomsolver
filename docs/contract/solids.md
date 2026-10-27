@@ -259,6 +259,15 @@ placement carries inside the blank; CLI test readers zero the offset.
   `.claim-refuted`, `.claim-undecided`; `Document.spanOfStatement`).  Gates:
   `a_judge_stepped_a_pose_at_a_time_comes_to_the_verdicts`,
   `a_diagnosis_asked_not_to_judge_solids_says_the_rest_unchanged`, `claim-judging.test.ts`.
+- **One builder serves every object, and the page draws only what it builds** (#670, #671):
+  `brep::export::Builder` builds any object — a static body as `export::exact` builds it (one stage,
+  then its mesh), a swept one by the generating class's stages — to a `Display`: its mesh, each face
+  named as `solid::exact::named` names it, the B-rep's edges (`solid::ExactEdge`, sharp or smooth),
+  its volume and what the solid read; a refusal is the export's.  That is all a page draws of an
+  object, one build a binding, supplied to its sketch (fields.md, "The page never does"), and
+  `exact_solid` builds a body a generating sweep cuts as the export does (#536, brep.md).
+  `object_builder.rs` holds the builder to the export over the case library (the whole of it in
+  the slow tier), and `object-builds.test.ts` the page to it.
 - **A solid leaves as glTF, and that is the format this kernel's data already is** (`gltf.rs`):
   positions, normals and a named group per face — `mesh::Mesh` — in a header and two chunks, one
   JSON from `json.rs`; no ZIP, no dependency.  STEP is a B-rep, which this kernel is not.

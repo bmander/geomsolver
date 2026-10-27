@@ -153,7 +153,11 @@ own origin (`cad::recipe_about`, every point written through `recipe::Writer`), 
 edges are named alike), meshed no coarser than `BREP_RELATIVE_SAG` or 64 steps a turn, one
 polyhedral `Prim`. The facet term answers what the exact path refuses (touching tori, empty
 solids); `SOLVENT_SOLIDS=facets` throughout. Silhouettes on curved faces are traced on the surfaces
-(`EvaluatedSolid::silhouettes`), never the mesh's seams, which zigzag.
+(`EvaluatedSolid::silhouettes`), never the mesh's seams, which zigzag.  **A body a generating sweep
+cuts is `exact_solid`'s too** (#536): built as the export builds it (`solid::exact::swept`) where
+the sketch builds its own solids; where a host builds them (`FieldMeshing::Deferred`, `Supplied`)
+it is the host's build supplied, and until one is the refusal names `brep::export::Builder`
+(`object_builder.rs`'s `exact_solid_builds_a_generated_body_as_the_export_does`).
 **A face family's walls** (#243 L2, `brep::family`): `Surface::Family` over a `Sheet` — an
 edge's kind (`Run`: line, round, spline), the pieces of the interval with six nodes each
 (`Stations`, the Vandermonde inverses kept), and the edge's numbers at every node — `S(u, s)` the

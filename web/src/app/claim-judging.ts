@@ -13,7 +13,7 @@
 import {
   solidClaims, type ClaimProgress, type ClaimVerdict, type SolidClaim,
 } from '../core/claims.js';
-import { related } from '../core/modules.js';
+import { handed } from '../core/modules.js';
 import type { Document } from '../core/program.js';
 
 /** What the page asks of the worker: to judge the claims of one drawing, or to stop. */
@@ -118,8 +118,7 @@ export class ClaimJudging {
         () => this.fail('the worker judging the claims sent what could not be read');
       this.worker = w;
     }
-    const modules = related(doc.text).filter((f) => f.provided)
-      .map((f): [string, string] => [f.name, f.text]);
+    const modules = handed(doc.text);
     this.worker.postMessage({ kind: 'claims', id: this.job, text: doc.text, modules, x, claims });
     this.told(this.state);
   }
