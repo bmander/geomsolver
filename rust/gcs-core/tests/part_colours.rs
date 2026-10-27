@@ -54,10 +54,9 @@ fix(origin == (0, 0, 40)) k
 ")
 }
 
-fn object(e: &Elaborated, sk: &Sketch, name: &str) -> usize {
+fn object(sk: &Sketch, name: &str) -> usize {
     let i = sk.solids.iter().position(|s| s.name == name).unwrap_or_else(|| panic!("no solid `{name}`"));
     assert!(gcs_core::overview::objects(sk).contains(&i), "`{name}` is an object");
-    let _ = e;
     i
 }
 
@@ -68,10 +67,10 @@ fn by_name(sk: &Sketch, colours: &BTreeMap<usize, [u8; 3]>) -> BTreeMap<String, 
 
 #[test]
 fn every_placement_of_a_part_is_one_colour_and_parts_differ() {
-    let (e, sk) = read_solved(&model("20mm"));
+    let (_, sk) = read_solved(&model("20mm"));
     let p = colours::palette(&sk);
     assert_eq!(p.len(), 4, "a colour for every object: {:?}", by_name(&sk, &p));
-    let [one, two, three, peg] = ["one.body", "two.body", "three.body", "peg.body"].map(|n| object(&e, &sk, n));
+    let [one, two, three, peg] = ["one.body", "two.body", "three.body", "peg.body"].map(|n| object(&sk, n));
     assert_eq!(p[&one], p[&two], "two placements of one part, one colour");
     assert_ne!(p[&one], p[&three], "a plate of other numbers is another part");
     assert_ne!(p[&one], p[&peg]);

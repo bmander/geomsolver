@@ -37,12 +37,11 @@ export interface Mesh {
  *  `REPORT_UNIT` for a file that should not depend on the zoom.  Throws with the core's reason
  *  where the solid does not evaluate (a revolution whose axis crosses its profile). */
 export function mesh(sk: Sketch, idx: number, unit: number): Mesh {
-  const faces = takeJson<Face[] | null>(core().gcs_solid_faces_json(sk.handle, idx, unit));
-  if (!faces) throw new Error(lastError());
-  const n = faces.reduce((a, f) => a + f.count, 0) * 9;
+  const table = faces(sk, idx, unit);
+  const n = table.reduce((a, f) => a + f.count, 0) * 9;
   const positions = readInto(n, (p, cap) => core().gcs_solid_mesh(sk.handle, idx, unit, p, cap));
   const normals = readInto(n, (p, cap) => core().gcs_solid_normals(sk.handle, idx, unit, p, cap));
-  return { positions, normals, faces };
+  return { positions, normals, faces: table };
 }
 
 /** **A solid in its own coordinates, as a renderer draws it** (#412, #674): its mesh over shared
@@ -55,8 +54,8 @@ export interface Drawn {
   /** Three a vertex. */
   positions: Float32Array;
   normals: Float32Array;
-  /** The face each vertex is of: an index into `faces`. */
-  face: Uint32Array;
+  /** The face each vertex is of, an index into `faces` — a float, as a vertex attribute reads it. */
+  face: Float32Array;
   /** Three vertices a triangle, in the order `faces` names: face `f`'s triangles are the run
    *  `f.start` to `f.start + f.count`, so its indices are three times that. */
   index: Uint32Array;
@@ -71,14 +70,13 @@ export interface Drawn {
 /** Solid `idx` in its own coordinates as a renderer draws it, refined to `unit` as `mesh` is.
  *  Throws with the core's reason where it does not evaluate. */
 export function drawn(sk: Sketch, idx: number, unit: number): Drawn {
-  const faces = takeJson<Face[] | null>(core().gcs_solid_faces_json(sk.handle, idx, unit));
-  if (!faces) throw new Error(lastError());
+  const table = faces(sk, idx, unit);
   const handle = core().gcs_solid_drawn(sk.handle, idx, unit);
   if (!handle) throw new Error(lastError());
   // one buffer, every item four bytes: the counts, then each part in turn (`gcs_solid_drawn`)
   const bytes = takeBytes(handle);
-  const [nv, nt, ns, nk] = new Uint32Array(bytes.buffer, bytes.byteOffset, 5);
-  let at = bytes.byteOffset + 20;
+  const [nv, nt, ns, nk] = new Uint32Array(bytes.buffer, bytes.byteOffset, 4);
+  let at = bytes.byteOffset + 16;
   const take = <T>(make: new (b: ArrayBuffer, o: number, n: number) => T, n: number): T => {
     const out = new make(bytes.buffer as ArrayBuffer, at, n);
     at += 4 * n;
@@ -87,11 +85,11 @@ export function drawn(sk: Sketch, idx: number, unit: number): Drawn {
   return {
     positions: take(Float32Array, 3 * nv),
     normals: take(Float32Array, 3 * nv),
-    face: take(Uint32Array, nv),
+    face: take(Float32Array, nv),
     index: take(Uint32Array, 3 * nt),
     sharp: take(Float32Array, 6 * ns),
     tangent: take(Float32Array, 6 * nk),
-    faces,
+    faces: table,
   };
 }
 

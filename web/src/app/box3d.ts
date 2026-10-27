@@ -88,6 +88,9 @@ const EDGE_PX = { ink: 1.25, picked: 3.5, hover: 2.5 };
  *  or under the pointer (itself, or its body). */
 const GLOW = { face: 0.5, body: 0.28, hover: 0.35, hoverBody: 0.2 };
 
+/** How a part's surface takes the light, the same for every part and a Boolean's preview. */
+const SURFACE = { metalness: 0.05, roughness: 0.55 };
+
 /** How much of the soft room an object's faces take: a gradient over a curved face, never
  *  enough to wash a part's colour out. */
 const ROOM = 0.35;
@@ -151,6 +154,9 @@ interface Placed {
   /** Its faces, one draw call; none where the surfaces are not shown (a wireframe). */
   mesh: THREE.Mesh | null;
   edges: LineSegments2 | null;
+  /** What of it is selected or under the pointer, tinted over its colour (`buildTints`): its
+   *  geometry drawn again, in its group, so it moves as the object does. */
+  tint: THREE.Mesh | null;
 }
 
 /** What the renderer drew in its last frame, and the triangles each object holds: what
@@ -229,10 +235,10 @@ export class Box3D {
    *  is picked or hovered changes, or the objects are re-cut. */
   private readonly litEdges = new THREE.Group();
   private litKey: string | null = null;
-  /** **The faces selected**, and what is under the pointer, tinted over their part's colour: an
-   *  overlay an object, drawn from its own geometry, rebuilt when what is picked or hovered
-   *  changes or the objects are re-cut or moved. */
-  private readonly litFaces = new THREE.Group();
+  /** **The faces selected**, and what is under the pointer, tinted over their part's colour
+   *  (`Placed.tint`): rebuilt when what is picked or hovered changes, or an object is re-cut —
+   *  what each face's tint is, by object, and what that was worked out from. */
+  private tinted = new Map<number, (readonly [string, number] | null)[]>();
   private tintKey: string | null = null;
   /** Each object's edges, as the core gave them, kept until the objects are re-cut. */
   private readonly edgesOf = new Map<number, SolidEdge[]>();
@@ -251,10 +257,11 @@ export class Box3D {
   private outline: { target: THREE.WebGLRenderTarget; depth: THREE.ShaderMaterial;
                      ink: THREE.ShaderMaterial; quad: THREE.Mesh } | null = null;
   private silhouetted = false;
+  private readonly bufferSize = new THREE.Vector2();
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
-    this.scene.add(this.datums, this.objects, this.previewed, this.litFaces, this.litEdges,
+    this.scene.add(this.datums, this.objects, this.previewed, this.litEdges,
                    this.caps, this.scenario.group);
     // **light that shows the shape** (#676): a sky over a ground, so every face is lit and an
     // upward one lighter; a key over the eye's left shoulder and a fill from the right, both
@@ -334,7 +341,7 @@ export class Box3D {
   /** **What the box tints**, by object: each face's ink and strength, none for a face left
    *  alone — what a test reads. */
   tints(): Map<number, (readonly [string, number] | null)[]> {
-    return new Map(this.tintKey ? JSON.parse(this.tintKey) : []);
+    return this.tinted;
   }
 
   /** **The scene brought up to the drawing**, nothing drawn: what `paint` does before it renders,
@@ -352,10 +359,15 @@ export class Box3D {
     const datums = shown || this.built!.datums !== pose;
     const objects = shown || this.built!.shape !== shape || this.built!.objects !== pose;
     const cut = fresh || this.built!.section !== v.sectionEpoch;
-    if (!datums && !objects && !cut) {
-      this.paintParts(v);
-      return;
-    }
+    if (datums || objects || cut) this.rebuild(v, { fresh, pose, shape, datums, objects, cut });
+    this.paintParts(v);
+  }
+
+  /** What `sync` found changed, built again: the datums as the pose moved, the objects placed
+   *  or cut, the section's caps. */
+  private rebuild(v: SketchView, at: { fresh: boolean; pose: number; shape: number;
+                                       datums: boolean; objects: boolean; cut: boolean }): void {
+    const { fresh, pose, shape, datums, objects, cut } = at;
     // the section's plane stands where the pose puts it: told the core before anything is cut
     if (datums || cut) {
       v.applySection();
@@ -383,7 +395,6 @@ export class Box3D {
       hidden: v.hiddenEpoch,
       section: v.sectionEpoch,
     };
-    this.paintParts(v);
   }
 
   /** Every object in its part's colour (`SketchView.partColours`), a Boolean's tools as ghosts in
@@ -408,9 +419,10 @@ export class Box3D {
     // what is selected or under the pointer, tinted over it — not over a ghost, nor over a
     // target the preview stands in for
     this.buildTints(v);
-    for (const t of this.litFaces.children as THREE.Mesh[]) {
-      const m = t.userData.of as THREE.Mesh;
-      t.visible = m.visible && !(m.material as THREE.Material).transparent;
+    for (const held of this.placed.values()) {
+      if (held.tint && held.mesh) {
+        held.tint.visible = held.mesh.visible && !(held.mesh.material as THREE.Material).transparent;
+      }
     }
   }
 
@@ -418,13 +430,12 @@ export class Box3D {
    *  faces stand a hair behind their depth, so an edge drawn on them wins its depth test against
    *  them without fighting, and a nearer face still hides it. */
   private material(colour: string | number, ghosted: boolean): THREE.MeshStandardMaterial {
-    const key = `${new THREE.Color(colour).getHexString()} ${ghosted ? 'ghost' : 'solid'}`;
+    const key = `${colour} ${ghosted ? 'ghost' : 'solid'}`;
     let m = this.materials.get(key);
     if (!m) {
       m = new THREE.MeshStandardMaterial({
         color: colour,
-        metalness: 0.05,
-        roughness: 0.55,
+        ...SURFACE,
         clippingPlanes: this.clipping,
         polygonOffset: true,
         polygonOffsetFactor: 1,
@@ -433,7 +444,6 @@ export class Box3D {
         opacity: ghosted ? GHOST : 1,
         depthWrite: !ghosted,
       });
-      m.userData.shared = true;
       this.materials.set(key, m);
     }
     return m;
@@ -528,11 +538,12 @@ export class Box3D {
    *  nothing asked of the core per view.  Skipped, the quad hidden, with no surfaces shown. */
   private silhouettes(gl: THREE.WebGLRenderer, v: SketchView, dpr: number): void {
     const o = this.outline;
-    this.silhouetted = !!o && v.showSolid && [...this.placed.values()].some((p) => p.mesh);
+    this.silhouetted = false;
+    if (o && v.showSolid) for (const p of this.placed.values()) if (p.mesh) this.silhouetted = true;
     if (!o) return;
     o.quad.visible = this.silhouetted;
     if (!this.silhouetted) return;
-    const size = gl.getDrawingBufferSize(new THREE.Vector2());
+    const size = gl.getDrawingBufferSize(this.bufferSize);
     if (o.target.width !== size.x || o.target.height !== size.y) o.target.setSize(size.x, size.y);
     const step = Math.max(1, Math.round(dpr));
     o.ink.uniforms.texel.value.set(step / size.x, step / size.y);
@@ -685,7 +696,7 @@ export class Box3D {
     const triangles = (s.faces.index?.count ?? 0) / 3;
     if (this.renderer) this.drawnNow.push({ index: solid, name, triangles });
     const held: Placed = { shape: at.shape, geometry: at.geometry, faces: named, group,
-                           mesh: null, edges: null };
+                           mesh: null, edges: null, tint: null };
     if (s.edges) {
       held.edges = new LineSegments2(s.edges, this.edgeInk);
       group.add(held.edges);
@@ -705,6 +716,10 @@ export class Box3D {
     if (!held) return;
     this.objects.remove(held.group);
     this.placed.delete(solid);
+    if (held.tint) {
+      untint(held.tint);
+      this.tintKey = null;            // what it was tinted is worked out again
+    }
     const s = this.shared.get(held.geometry);
     if (s && --s.users === 0) {
       s.faces.dispose();
@@ -716,7 +731,6 @@ export class Box3D {
   /** Let every object's geometry go: a different drawing, or its surfaces shown or hidden. */
   private dropObjects(): void {
     for (const index of [...this.placed.keys()]) this.unplace(index);
-    release(this.objects);
   }
 
   /** The result of the Boolean being picked, from the core, standing where its target does. */
@@ -736,7 +750,7 @@ export class Box3D {
     g.setAttribute('normal', new THREE.Float32BufferAttribute(Float32Array.from(m.normals), 3));
     const colour = v.partColours().get(c.target.index) ?? INK.solid;
     this.previewed.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-      color: colour, metalness: 0.05, roughness: 0.55,
+      color: colour, ...SURFACE,
       emissive: new THREE.Color(COL.sel), emissiveIntensity: 0.18, clippingPlanes: this.clipping,
     })));
     this.preview.shown = true;
@@ -776,14 +790,12 @@ export class Box3D {
     }
   }
 
-  /** The lit edges and the tinted faces let go, with the edges they were read from: the objects
-   *  were re-cut or moved. */
+  /** The lit edges let go, with the edges they were read from: the objects were re-cut or
+   *  moved. */
   private forgetLit(): void {
     release(this.litEdges);
     this.litKey = null;
     this.edgesOf.clear();
-    releaseTints(this.litFaces);
-    this.tintKey = null;
   }
 
   /** **What is selected and under the pointer, tinted** over each object's own colour (#676): a
@@ -792,6 +804,13 @@ export class Box3D {
    *  more from its own geometry, every face its tint from a texture its vertices index
    *  (`Drawn.face`); rebuilt only when the tints change. */
   private buildTints(v: SketchView): void {
+    // what is tinted, as small as it is said: the faces and bodies picked, and the hover
+    const h = v.hovered?.kind === 'solid' ? v.hovered.pick : null;
+    const asked = [...v.selectedSolids, ...(h ? [h] : [])]
+      .map((s) => [s.index, s.face, partOf(s) === 'body'] as const);
+    const key = asked.length ? JSON.stringify([asked, !!h]) : null;
+    if (key === this.tintKey) return;
+    this.tintKey = key;
     const tints = new Map<number, (readonly [string, number] | null)[]>();
     const tint = (solid: number, face: string | null, ink: string, glow: number): void => {
       const held = this.placed.get(solid);
@@ -807,21 +826,20 @@ export class Box3D {
       if (s.face) tint(s.index, s.face, COL.sel, GLOW.face);
       else if (partOf(s) === 'body') tint(s.index, null, COL.sel, GLOW.body);
     }
-    const h = v.hovered?.kind === 'solid' ? v.hovered.pick : null;
     if (h?.face) tint(h.index, h.face, COL.highlight, GLOW.hover);
     else if (h && partOf(h) === 'body') tint(h.index, null, COL.highlight, GLOW.hoverBody);
-    const key = tints.size ? JSON.stringify([...tints]) : null;
-    if (key === this.tintKey) return;
-    this.tintKey = key;
-    releaseTints(this.litFaces);
-    for (const [solid, faces] of tints) {
-      const held = this.placed.get(solid)!;
-      const mesh = new THREE.Mesh(held.mesh!.geometry, tinted(faces, this.clipping));
-      mesh.matrixAutoUpdate = false;
-      mesh.matrix.copy(held.group.matrix);
-      mesh.renderOrder = 4;
-      mesh.userData.of = held.mesh;
-      this.litFaces.add(mesh);
+    this.tinted = tints;
+    for (const [solid, held] of this.placed) {
+      if (held.tint) {
+        held.group.remove(held.tint);
+        untint(held.tint);
+        held.tint = null;
+      }
+      const faces = tints.get(solid);
+      if (!faces || !held.mesh) continue;
+      held.tint = new THREE.Mesh(held.mesh.geometry, tinted(faces, this.clipping));
+      held.tint.renderOrder = 4;
+      held.group.add(held.tint);
     }
   }
 
@@ -926,10 +944,9 @@ function share(d: Drawn): Shared {
   const faces = new THREE.BufferGeometry();
   faces.setAttribute('position', new THREE.BufferAttribute(d.positions, 3));
   faces.setAttribute('normal', new THREE.BufferAttribute(d.normals, 3));
-  faces.setAttribute('face', new THREE.BufferAttribute(Float32Array.from(d.face), 1));
+  faces.setAttribute('face', new THREE.BufferAttribute(d.face, 1));
   faces.setIndex(new THREE.BufferAttribute(d.index, 1));
   faces.computeBoundingSphere();
-  faces.userData.shared = true;
   const sharp = d.sharp.length / 6, tangent = d.tangent.length / 6;
   let edges: LineSegmentsGeometry | null = null;
   if (sharp + tangent) {
@@ -940,12 +957,13 @@ function share(d: Drawn): Shared {
     edges.setPositions(pts);
     const ink = new Float32Array(pts.length);
     const [dark, light] = [new THREE.Color(INK.edge), new THREE.Color(INK.tangent)];
-    for (let k = 0; k < sharp + tangent; k++) {
-      const c = k < sharp ? dark : light;
-      ink.set([c.r, c.g, c.b, c.r, c.g, c.b], 6 * k);
+    for (let k = 0; k < 2 * (sharp + tangent); k++) {
+      const c = k < 2 * sharp ? dark : light;
+      ink[3 * k] = c.r;
+      ink[3 * k + 1] = c.g;
+      ink[3 * k + 2] = c.b;
     }
     edges.setColors(ink);
-    edges.userData.shared = true;
   }
   return { faces, edges, sharp, tangent, users: 0 };
 }
@@ -1001,14 +1019,11 @@ function tinted(faces: (readonly [string, number] | null)[],
   });
 }
 
-/** The tints let go: their materials and textures — never the geometry, which is the objects'. */
-function releaseTints(g: THREE.Group): void {
-  for (const o of [...g.children] as THREE.Mesh[]) {
-    g.remove(o);
-    const m = o.material as THREE.ShaderMaterial;
-    (m.uniforms.lit.value as THREE.Texture).dispose();
-    m.dispose();
-  }
+/** A tint let go: its material and texture — never the geometry, which is the object's. */
+function untint(t: THREE.Mesh): void {
+  const m = t.material as THREE.ShaderMaterial;
+  (m.uniforms.lit.value as THREE.Texture).dispose();
+  m.dispose();
 }
 
 /** **The silhouette pass's parts** (#675), or null where the renderer cannot draw into a float
@@ -1086,8 +1101,8 @@ function silhouette(gl: THREE.WebGLRenderer): Box3D['outline'] {
 }
 
 /** Empty a group and free what it held, groups within it too.  A `Group` emptied is not a
- *  `Group` released: WebGL resources outlive the tree that named them.  What is shared — an
- *  object's geometry, a colour's material — is the box's to let go, and is left. */
+ *  `Group` released: WebGL resources outlive the tree that named them.  Never an object's: what
+ *  objects share is the box's own maps' to let go (`unplace`, `dispose`). */
 function release(g: THREE.Group): void {
   for (const o of [...g.children]) {
     g.remove(o);
@@ -1096,11 +1111,10 @@ function release(g: THREE.Group): void {
       continue;
     }
     const any = o as THREE.Mesh;
-    if (!any.geometry?.userData.shared) any.geometry?.dispose?.();
+    any.geometry?.dispose?.();
     const m = any.material;
-    const free = (x: THREE.Material) => { if (!x.userData.shared) x.dispose(); };
-    if (Array.isArray(m)) m.forEach(free);
-    else if (m) free(m);
+    if (Array.isArray(m)) m.forEach((x) => x.dispose());
+    else m?.dispose?.();
   }
 }
 

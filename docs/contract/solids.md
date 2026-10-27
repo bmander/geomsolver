@@ -307,7 +307,7 @@ placement carries inside the blank; CLI test readers zero the offset.
   (`drawing::fills`/`drawing::colours`: a rule outside every sheet naming an object, a scope of
   objects or a solid one is made of, every object of that part taking it, later rules over
   earlier) and otherwise the palette's (`colours::palette`: twelve muted colours, indexed by a
-  digest of the part less its numbers — `program::part_of` — and moved on to the next one no
+  digest of the part less its numbers — `model::Binding::part` — and moved on to the next one no
   earlier part, in object order, has taken; so a reload and a numeric edit keep it, and parts
   differ while there are colours to go round).  `solventc --step-assembly` writes them, the
   drawing `--drawing PATH` names or the `.svd` beside the model with its stem (`bot.svd` beside

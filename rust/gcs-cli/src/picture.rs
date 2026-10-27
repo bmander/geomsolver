@@ -110,13 +110,9 @@ const EDGE: [u8; 3] = [43, 47, 53];
 
 /// A solid's colour: its part's, as the workspace shades it (`Ask::colours`), so every placement
 /// of one part is one colour and a part keeps it in a cutaway or alone.  A solid that is no
-/// object (an operand drawn by `--solid`) takes the palette's colour its name's hash gives.
+/// object (an operand drawn by `--solid`) takes its name's (`colours::of_name`).
 fn pigment(colours: &std::collections::BTreeMap<usize, [u8; 3]>, i: usize, name: &str) -> [f64; 3] {
-    let palette = &gcs_core::colours::PALETTE;
-    let c = colours.get(&i).copied().unwrap_or_else(|| {
-        palette[name.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193)) as usize % palette.len()]
-    });
-    c.map(f64::from)
+    colours.get(&i).copied().unwrap_or_else(|| gcs_core::colours::of_name(name)).map(f64::from)
 }
 
 /// A cut face's hatching: a line every `HATCH` samples across the picture, `HATCH_INK` of them

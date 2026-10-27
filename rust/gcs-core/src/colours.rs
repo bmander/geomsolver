@@ -6,7 +6,7 @@
 //! assembly; an object no closed instance made is a part of its own.  Its colour is the
 //! drawing's where the drawing beside the model names one (`fill`, `drawing::fills`), and
 //! otherwise the palette's: indexed by a digest of what the part is — its definition and its
-//! solid's path in the body, not the numbers it was given (`program::part_of`) — so a part keeps
+//! solid's path in the body, not the numbers it was given (`Binding::part`) — so a part keeps
 //! its colour across a reload and a numeric edit, and moved on to the next colour no earlier
 //! part has taken where one has, so that parts differ while there are colours to go round.
 //!
@@ -50,10 +50,10 @@ pub fn part(sk: &Sketch, i: usize) -> String {
     }
 }
 
-/// What the palette is indexed by: the part less its numbers (`program::part_of`).
+/// What the palette is indexed by: the part less its numbers (`Binding::part`).
 fn steady(sk: &Sketch, i: usize) -> String {
     match &sk.solids[i].binding {
-        Some(b) => crate::program::part_of(&b.key),
+        Some(b) => b.part.clone(),
         None => crate::vocab::public_path(&sk.solids[i].name),
     }
 }
@@ -63,20 +63,27 @@ fn digest(s: &str) -> u64 {
     s.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3))
 }
 
+/// The palette's colour for what `name` names: its digest's, with nothing taken — a solid that is
+/// no object (an operand a picture draws alone), which no other part's colour has to differ from.
+pub fn of_name(name: &str) -> [u8; 3] {
+    PALETTE[(digest(&crate::vocab::public_path(name)) % PALETTE.len() as u64) as usize]
+}
+
 /// **Every object's palette colour**, by solid: each part in the order its first object comes,
 /// at its digest's colour, or the next one round no earlier part has taken.  Every object, the
 /// hidden ones too, so hiding one moves no other's colour.
 pub fn palette(sk: &Sketch) -> BTreeMap<usize, [u8; 3]> {
-    let mut taken = [false; PALETTE.len()];
+    const N: usize = PALETTE.len();
+    let mut taken = [false; N];
     let mut of: BTreeMap<String, [u8; 3]> = BTreeMap::new();
     let mut out = BTreeMap::new();
     for i in crate::overview::objects(sk) {
         let key = part(sk, i);
         let colour = *of.entry(key).or_insert_with(|| {
-            let n = PALETTE.len();
-            if taken.iter().all(|&t| t) { taken = [false; PALETTE.len()]; }
-            let first = (digest(&steady(sk, i)) % n as u64) as usize;
-            let k = (0..n).map(|j| (first + j) % n).find(|&k| !taken[k]).unwrap_or(first);
+            if taken.iter().all(|&t| t) { taken = [false; N]; }
+            let first = (digest(&steady(sk, i)) % N as u64) as usize;
+            let k = (0..N).map(|j| (first + j) % N).find(|&k| !taken[k])
+                .expect("a colour is free: all taken, all were let go");
             taken[k] = true;
             PALETTE[k]
         });

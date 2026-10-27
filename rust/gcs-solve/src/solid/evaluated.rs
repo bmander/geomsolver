@@ -114,10 +114,10 @@ struct Shape {
     /// Which evaluation this is: a number no other shape in this process carries, so a host keeps
     /// what it built from one (a page's geometry) exactly while it is the same shape (#412).
     serial: u64,
-    /// The serial of the evaluation whose triangles these are: its own, or, for a shape renamed
-    /// for another instance of its binding (#566), the one it was renamed from — the same
-    /// triangles under other names, which a host draws from one buffer (#674).
-    geometry: u64,
+    /// For a shape renamed for another instance of its binding (#566), the geometry of the one it
+    /// was renamed from (`geometry_serial`): the same triangles under other names, which a host
+    /// draws from one buffer (#674).  `None` for an evaluation's own.
+    renamed_from: Option<u64>,
     name: String,
     policy: ApproximationPolicy,
     unit: f64,
@@ -142,8 +142,8 @@ struct Shape {
     ray_indices: OnceCell<Vec<RayIndex>>,
     /// Where its faces meet, read off its mesh (`mesh::face_edges`).
     face_edges: OnceCell<Vec<mesh::FaceEdge>>,
-    /// Its mesh as a renderer draws it (`mesh::drawn`).
-    drawn: OnceCell<mesh::Drawn>,
+    /// Its mesh as a renderer draws it (`mesh::drawn`): names nothing, so shared by a rename.
+    drawn: OnceCell<std::rc::Rc<mesh::Drawn>>,
 }
 
 const IDENTITY: [[f64; 3]; 3] = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
@@ -193,7 +193,7 @@ impl Shape {
         }
         Shape {
             serial: next_serial(),
-            geometry: self.geometry,
+            renamed_from: Some(self.renamed_from.unwrap_or(self.serial)),
             name: re.name(&self.name),
             policy: self.policy,
             unit: self.unit,
@@ -319,7 +319,7 @@ impl EvaluatedSolid {
         let round = round_features(sk, operands, &curved, origin)?;
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
-            geometry: 0,
+            renamed_from: None,
             name: sk.solid_name(si),
             policy,
             unit,
@@ -444,7 +444,7 @@ impl EvaluatedSolid {
             if b.faces.is_empty() { 0.0 } else { crate::brep::props::volume(b) / (mm * mm * mm) };
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
-            geometry: 0,
+            renamed_from: None,
             name,
             policy,
             unit,
@@ -505,7 +505,7 @@ impl EvaluatedSolid {
         }
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
-            geometry: 0,
+            renamed_from: None,
             name,
             policy,
             unit,
@@ -584,7 +584,7 @@ impl EvaluatedSolid {
         }).collect();
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
-            geometry: 0,
+            renamed_from: None,
             name,
             policy,
             unit,
@@ -651,10 +651,10 @@ impl EvaluatedSolid {
     pub fn shape_serial(&self) -> u64 {
         self.shape.serial
     }
-    /// Whose triangles these are (`Shape::geometry`): the same number for every solid of one
+    /// Whose triangles these are (`Shape::renamed_from`): the same number for every solid of one
     /// binding evaluated once and renamed (#566), so a host holds their geometry once (#674).
     pub fn geometry_serial(&self) -> u64 {
-        self.shape.geometry
+        self.shape.renamed_from.unwrap_or(self.shape.serial)
     }
     /// Whether two solids are one evaluation, wherever each stands: one moved rigidly since the
     /// other was built shares its shape rather than building it again (#412).
@@ -721,9 +721,7 @@ impl EvaluatedSolid {
         Self { shape: renamed.shape.clone(), ..self.moved(motion) }
     }
     /// A fresh evaluation's placement: at `origin`, turned nowhere.
-    /// A new evaluation: its triangles its own (`Shape::geometry`, 0 until here).
-    fn made(origin: WorldPoint, mut shape: Shape) -> Self {
-        shape.geometry = shape.serial;
+    fn made(origin: WorldPoint, shape: Shape) -> Self {
         Self { origin, rotation: None, world_box: OnceCell::new(), shape: std::rc::Rc::new(shape) }
     }
     pub fn to_page(&self, p: LocalPoint, frame: PageFrame) -> PagePoint {
@@ -886,7 +884,7 @@ impl EvaluatedSolid {
     }
     /// Its mesh as a renderer draws it (`mesh::drawn`), in its own coordinates.
     pub fn drawn(&self) -> &mesh::Drawn {
-        self.shape.drawn.get_or_init(|| mesh::drawn(self.mesh()))
+        self.shape.drawn.get_or_init(|| std::rc::Rc::new(mesh::drawn(self.mesh())))
     }
     pub fn mesh(&self) -> &mesh::Mesh {
         // a field's surface came indexed, its corners shared exactly: nothing for a weld to do

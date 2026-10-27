@@ -1164,12 +1164,7 @@ fn check_drawing(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         Err(gcs_core::drawing::Error { span: Default::default(),
             message: "STL/STEP/glTF/PNG export selects geometry from a .sv model, not a .svd drawing".into() })
     } else {
-        gcs_core::drawing::compile(&s.text, &s.name, opts.sheet.as_deref(), &mut |path, from| {
-            let base = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new("."));
-            let p = base.join(path);
-            let text = std::fs::read_to_string(&p).ok()?;
-            Some((p.canonicalize().ok()?.to_string_lossy().into_owned(), text))
-        })
+        gcs_core::drawing::compile(&s.text, &s.name, opts.sheet.as_deref(), &mut load_beside)
     };
     match result {
         Ok(svg) => {
@@ -1447,17 +1442,28 @@ fn part_colours(sk: &Sketch, e: &Elaborated, s: &Source, opts: &Opts)
         None => return Ok(gcs_core::colours::palette(sk)),
     };
     let text = std::fs::read_to_string(&path).map_err(|err| format!("--drawing {path}: {err}"))?;
-    let identity = |p: &str| std::fs::canonicalize(p).map(|c| c.to_string_lossy().into_owned()).ok();
-    let model = identity(&s.name).unwrap_or_else(|| s.name.clone());
+    let model = canonical(std::path::Path::new(&s.name)).unwrap_or_else(|| s.name.clone());
     let names = gcs_core::drawing::Model { sketch: sk, names: &e.map };
-    let drawn = gcs_core::drawing::colours(&text, &path, &model, names, &mut |p, from| {
-        let p = gcs_core::drawing::relative_path(p, from);
-        Some((identity(&p)?, std::fs::read_to_string(&p).ok()?))
-    }).map_err(|err| {
-        let (line, col) = line_col(&text, err.span.lo);
-        format!("{path}:{line}:{col}: {}", err.message)
-    })?;
-    Ok(gcs_core::colours::parts(sk, &drawn).into_iter().map(|p| (p.solid, p.colour)).collect())
+    let drawn = gcs_core::drawing::colours(&text, &path, &model, names, &mut load_beside)
+        .map_err(|err| {
+            let (line, col) = line_col(&text, err.span.lo);
+            format!("{path}:{line}:{col}: {}", err.message)
+        })?;
+    let mut colours = gcs_core::colours::palette(sk);
+    colours.extend(drawn);
+    Ok(colours)
+}
+
+/// A file a drawing reads (a `model`, a `use`), `path` relative to the file `from` that names it:
+/// its canonical path, which an import cycle and a model's identity are told by, and its text.
+fn load_beside(path: &str, from: &str) -> Option<(String, String)> {
+    let p = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new(".")).join(path);
+    let text = std::fs::read_to_string(&p).ok()?;
+    Some((canonical(&p)?, text))
+}
+
+fn canonical(p: &std::path::Path) -> Option<String> {
+    p.canonicalize().ok().map(|c| c.to_string_lossy().into_owned())
 }
 
 /// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it

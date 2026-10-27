@@ -396,9 +396,7 @@ export class Document {
    *  numeric edit.  A drawing that does not read is said in `error`, every part keeping the
    *  palette's colour. */
   partColours(drawing?: PartDrawing | null): PartColours {
-    const req = drawing ? { text: drawing.text, source: drawing.source, files: drawing.files,
-                            model: drawing.model } : {};
-    return takeJson<PartColours>(withJson(req, (p, n) =>
+    return takeJson<PartColours>(withJson(drawing ?? {}, (p, n) =>
       core().gcs_elab_part_colours_json(this.h, this.sketch.handle, p, n)));
   }
 

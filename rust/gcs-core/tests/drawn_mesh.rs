@@ -90,10 +90,10 @@ fn a_box_is_drawn_over_its_corners_and_inked_round_its_twelve_edges() {
     // corners of the box
     assert!((length(&d.sharp) - 4. * (30. + 20. + 5.)).abs() < 1e-9, "{}", length(&d.sharp));
     assert!(d.tangent.is_empty(), "a box has no tangent edge");
-    let (lo, hi) = (0..3).fold(([f64::MAX; 3], [f64::MIN; 3]), |(mut lo, mut hi), _| {
-        for p in &d.positions { for c in 0..3 { lo[c] = lo[c].min(p[c]); hi[c] = hi[c].max(p[c]); } }
-        (lo, hi)
-    });
+    let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+    for p in &d.positions {
+        for c in 0..3 { (lo[c], hi[c]) = (lo[c].min(p[c]), hi[c].max(p[c])); }
+    }
     for seg in &d.sharp {
         for p in seg {
             let on = (0..3).filter(|&c| (p[c] - lo[c]).abs() < 1e-9 || (p[c] - hi[c]).abs() < 1e-9).count();
@@ -138,6 +138,7 @@ fn the_solids_of_one_binding_draw_from_one_geometry() {
     let src = "
 unit mm
 use std
+use std.place (offset)
 component Plate(w: Length) {
   in std.front {
     a := point hint((0, 0))
@@ -160,8 +161,7 @@ fix(origin == (0, 0, 0)) f
 in (g := frame) { two := Plate(w: 20mm) }
 fix(origin == (50, 0, 0)) g
 ";
-    let src = src.replace("use std\n", "use std\nuse std.place (offset)\n");
-    let (_, sk) = read_solved(&src);
+    let (_, sk) = read_solved(src);
     let objects = gcs_core::overview::objects(&sk);
     assert_eq!(objects.len(), 2);
     let [a, b] = [0, 1].map(|k| sk.evaluated_solid(objects[k], ApproximationPolicy::Mesh).unwrap());

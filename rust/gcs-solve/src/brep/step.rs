@@ -469,18 +469,15 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String>
     let mut styles: std::collections::BTreeMap<[u64;3],usize> = Default::default();
     let mut styled: Vec<String> = Vec::new();
     for (solid,c) in coloured {
-        let style = match styles.get(&c.map(f64::to_bits)) {
-            Some(&s) => s,
-            None => {
-                let rgb = o.add(format!("COLOUR_RGB('',{},{},{})",real(c[0]),real(c[1]),real(c[2])));
-                let fill = o.add(format!("FILL_AREA_STYLE_COLOUR('',#{rgb})"));
-                let area = o.add(format!("FILL_AREA_STYLE('',(#{fill}))"));
-                let surface = o.add(format!("SURFACE_STYLE_FILL_AREA(#{area})"));
-                let side = o.add(format!("SURFACE_SIDE_STYLE('',(#{surface}))"));
-                let usage = o.add(format!("SURFACE_STYLE_USAGE(.BOTH.,#{side})"));
-                *styles.entry(c.map(f64::to_bits)).or_insert(o.add(format!("PRESENTATION_STYLE_ASSIGNMENT((#{usage}))")))
-            }
-        };
+        let style = *styles.entry(c.map(f64::to_bits)).or_insert_with(|| {
+            let rgb = o.add(format!("COLOUR_RGB('',{},{},{})",real(c[0]),real(c[1]),real(c[2])));
+            let fill = o.add(format!("FILL_AREA_STYLE_COLOUR('',#{rgb})"));
+            let area = o.add(format!("FILL_AREA_STYLE('',(#{fill}))"));
+            let surface = o.add(format!("SURFACE_STYLE_FILL_AREA(#{area})"));
+            let side = o.add(format!("SURFACE_SIDE_STYLE('',(#{surface}))"));
+            let usage = o.add(format!("SURFACE_STYLE_USAGE(.BOTH.,#{side})"));
+            o.add(format!("PRESENTATION_STYLE_ASSIGNMENT((#{usage}))"))
+        });
         styled.push(format!("#{}",o.add(format!("STYLED_ITEM('color',(#{style}),#{solid})"))));
     }
     if !styled.is_empty() {

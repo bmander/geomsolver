@@ -4,15 +4,16 @@
 //! else of the language (`model::Binding`): solids of one key are one evaluation placed.
 
 use super::resolve::Resolver;
-use crate::flatten::{InstanceInfo, RingInfo};
+use crate::flatten::{Bound, InstanceInfo, RingInfo};
 use crate::model::{Binding, EntKind, EntRef, Sketch};
 
 /// Stamp every solid made under a closed instance — the innermost one it is made in — once every
 /// solid is built and the body rule has joined its tools.
 pub(super) fn stamp(sk: &mut Sketch, res: &Resolver, instances: &[InstanceInfo], rings: &[RingInfo]) {
-    // each closed instance with its key, its frame's index and its turn, innermost first: the
+    // each closed instance with its binding, its frame's index and its turn, innermost first: the
     // longest prefix a name starts with is the instance that made it
-    let mut closed: Vec<(&InstanceInfo, &str, Option<u32>, Option<(EntRef, u32, u32)>)> =
+    type Closed<'a> = (&'a InstanceInfo, &'a Bound, Option<u32>, Option<(EntRef, u32, u32)>);
+    let mut closed: Vec<Closed> =
         instances.iter().filter_map(|inst| {
             let bound = inst.binding.as_ref()?;
             let frame = match &bound.frame {
@@ -30,7 +31,7 @@ pub(super) fn stamp(sk: &mut Sketch, res: &Resolver, instances: &[InstanceInfo],
                 [(r, k)] => Some((res.entity(sk, &r.about)?, *k, r.n)),
                 _ => return None,
             };
-            Some((inst, bound.key.as_str(), frame, turn))
+            Some((inst, bound, frame, turn))
         }).collect();
     closed.sort_by_key(|(i, ..)| std::cmp::Reverse(i.prefix.len()));
     // which of the solids so named under an instance each is: a body and the stock the body rule
@@ -44,23 +45,15 @@ pub(super) fn stamp(sk: &mut Sketch, res: &Resolver, instances: &[InstanceInfo],
         let found = closed.iter().enumerate().rev()
             .find(|(_, c)| c.0.mirror.is_some() && under(&c.0.prefix))
             .or_else(|| closed.iter().enumerate().find(|(_, c)| under(&c.0.prefix)));
-        let Some((n, &(inst, key, frame, turn))) = found else { continue };
+        let Some((n, &(inst, bound, frame, turn))) = found else { continue };
         let path = name[inst.prefix.len()..].to_string();
         let nth = seen.entry((n, path.clone())).or_default();
-        let key = format!("{key}\u{1e}{path}\u{1e}{nth}");
+        let (key, part) = (format!("{}\u{1e}{path}\u{1e}{nth}", bound.key),
+                           format!("{}\u{1e}{path}\u{1e}{nth}", bound.part));
         *nth += 1;
         let mirror = inst.mirror.as_ref().map(|m| m.axis);
-        sk.solids[si].binding = Some(Binding { key, at: inst.prefix.clone(), frame, turn, mirror });
+        sk.solids[si].binding =
+            Some(Binding { key, part, at: inst.prefix.clone(), frame, turn, mirror });
     }
 }
 
-/// **What a binding's key says of the part, less its numbers** (#676): the definition, what its
-/// body is drawn in, and the solid's path and place in that body — `stamp`'s key with the
-/// instance's arguments left out.  Equal for every instance of one definition whatever it was
-/// given, and unchanged by a numeric edit, so a part's colour is drawn from it.
-pub fn part_of(key: &str) -> String {
-    let (instance, solid) = key.split_once('\u{1e}').unwrap_or((key, ""));
-    let mut fields = instance.split('\u{1f}');
-    let (comp, drawn) = (fields.next().unwrap_or(""), fields.next().unwrap_or(""));
-    format!("{comp}\u{1f}{drawn}\u{1e}{solid}")
-}

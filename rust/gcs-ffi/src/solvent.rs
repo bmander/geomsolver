@@ -288,11 +288,9 @@ pub unsafe extern "C" fn gcs_elab_part_colours_json(h: *mut Elaborated, s: *mut 
                 let source = request.get("source").map(Json::as_str).unwrap_or("drawing.svd");
                 let model_path = request.get("model").map(Json::as_str).unwrap_or("");
                 let model = gcs_core::drawing::Model { sketch: sk, names: &e.map };
-                gcs_core::drawing::colours(text, source, model_path, model, &mut |path, from| {
-                    let name = gcs_core::drawing::relative_path(path, from);
-                    request.get("files")?.get(&name).filter(|v| matches!(v, Json::Str(_)))
-                        .map(|v| (name, v.as_str().to_string()))
-                }).unwrap_or_else(|e| { error = Some(e); Default::default() })
+                gcs_core::drawing::colours(text, source, model_path, model,
+                                           &mut super::sketch::bundled(&request))
+                    .unwrap_or_else(|e| { error = Some(e); Default::default() })
             }
         };
         let parts = gcs_core::colours::parts(sk, &drawn).into_iter().map(|p| json::object([

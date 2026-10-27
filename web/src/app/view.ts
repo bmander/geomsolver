@@ -807,7 +807,7 @@ export class SketchView {
     } catch (e) {
       got = { parts: [], error: (e as Error).message };
     }
-    const by = new Map((got?.parts ?? []).map((p) => [p.solid, p.colour] as [number, string]));
+    const by = new Map(got.parts.map((p) => [p.solid, p.colour] as [number, string]));
     this.coloured = { doc: this.doc, drawing: this.partDrawing, got, by };
     return this.coloured;
   }

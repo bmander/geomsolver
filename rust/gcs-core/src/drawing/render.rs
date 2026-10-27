@@ -357,6 +357,9 @@ pub fn fills(doc: &Document, aliases: &[&str], model: Model<'_>)
             }
         }
     }
+    // each object's part, read once
+    let parts: BTreeMap<usize, String> =
+        objects.iter().map(|&o| (o, crate::colours::part(sk, o))).collect();
     let mut out = BTreeMap::new();
     for r in &doc.styles {
         let Some(fill) = r.fill else { continue };
@@ -373,9 +376,10 @@ pub fn fills(doc: &Document, aliases: &[&str], model: Model<'_>)
             return Err(error(r.span, format!("`fill` names no part: `{}` is no object, nor holds \
                 one, nor a solid one is made of", r.selector)));
         }
-        let parts: BTreeSet<String> = named.iter().map(|&o| crate::colours::part(sk, o)).collect();
-        for &o in &objects {
-            if parts.contains(&crate::colours::part(sk, o)) { out.insert(o, fill); }
+        let named: BTreeSet<&str> =
+            named.iter().filter_map(|o| parts.get(o)).map(String::as_str).collect();
+        for (o, p) in &parts {
+            if named.contains(p.as_str()) { out.insert(*o, fill); }
         }
     }
     Ok(out)

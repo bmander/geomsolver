@@ -78,11 +78,11 @@ pub unsafe extern "C" fn gcs_solid_normals(
 /// vertices and the edges a viewer inks (`mesh::Drawn`), before its placement
 /// (`gcs_solid_placement`) stands it in the world.  A host builds one geometry of it while the
 /// geometry holds, and moves it by the placement alone.  One length-prefixed byte buffer,
-/// little-endian, every item four bytes: five counts — vertices `nv`, triangles `nt`, sharp
-/// edges `ns`, tangent edges `nk`, and 0 (reserved) — then `nv` positions and `nv` normals
-/// (three `f32` each), `nv` faces (`u32`, the group each vertex is of, as
-/// `gcs_solid_faces_json` lists them), `nt` triangles (three `u32`), and the `ns` sharp then
-/// `nk` tangent edges (six `f32` each).  Null where the solid does not evaluate (the reason in
+/// little-endian, every item four bytes: four counts (`u32`) — vertices `nv`, triangles `nt`,
+/// sharp edges `ns`, tangent edges `nk` — then `nv` positions and `nv` normals (three `f32`
+/// each), `nv` faces (`f32`, exact to 2²⁴: the group each vertex is of, as
+/// `gcs_solid_faces_json` lists them, as a vertex attribute reads it), `nt` triangles (three
+/// `u32`), and the `ns` sharp then `nk` tangent edges (six `f32` each).  Null where the solid does not evaluate (the reason in
 /// `gcs_last_error`).
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_drawn(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
@@ -94,21 +94,17 @@ pub unsafe extern "C" fn gcs_solid_drawn(h: *mut Sketch, idx: i32, unit: f64) ->
             Err(message) => { set_error(message); return std::ptr::null_mut(); }
         };
         let d = solid.drawn();
-        let mut out: Vec<u8> = Vec::with_capacity(4 * (5 + 7 * d.positions.len()
+        let mut out: Vec<u8> = Vec::with_capacity(4 * (4 + 7 * d.positions.len()
             + 3 * d.triangles.len() + 6 * (d.sharp.len() + d.tangent.len())));
-        let mut word = |w: u32| out.extend(w.to_le_bytes());
-        for n in [d.positions.len(), d.triangles.len(), d.sharp.len(), d.tangent.len(), 0] {
-            word(n as u32);
+        for n in [d.positions.len(), d.triangles.len(), d.sharp.len(), d.tangent.len()] {
+            out.extend((n as u32).to_le_bytes());
         }
-        let real = |out: &mut Vec<u8>, x: f64| out.extend((x as f32).to_le_bytes());
-        for v in d.positions.iter().chain(&d.normals) {
-            for &x in v { real(&mut out, x); }
-        }
-        out.extend(d.face.iter().flat_map(|f| f.to_le_bytes()));
+        let reals = d.positions.iter().chain(&d.normals).flatten().map(|&x| x as f32)
+            .chain(d.face.iter().map(|&f| f as f32));
+        out.extend(reals.flat_map(f32::to_le_bytes));
         out.extend(d.triangles.iter().flatten().flat_map(|t| t.to_le_bytes()));
-        for seg in d.sharp.iter().chain(&d.tangent) {
-            for &x in seg.iter().flatten() { real(&mut out, x); }
-        }
+        let edges = d.sharp.iter().chain(&d.tangent).flatten().flatten().map(|&x| x as f32);
+        out.extend(edges.flat_map(f32::to_le_bytes));
         out_bytes(out)
     })
 }
