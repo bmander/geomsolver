@@ -282,7 +282,10 @@ export class Box3D {
     this.sync(v);
     const c = v.showSolid ? v.combining : null;
     const key = c && `${c.word} ${c.target.index} ${c.tools.map((t) => t.index).join(' ')}`;
-    if (key !== this.preview.key) this.buildPreview(v, c, key);
+    if (key !== this.preview.key) {
+      this.buildPreview(v, c, key);
+      this.paintParts(v);             // the target hidden where its preview now stands
+    }
     const picked = v.selectedSolids.filter((s) => s.edge).map((s) => [s.index, s.edge]);
     const h = v.hovered?.kind === 'solid' && v.hovered.pick.edge ? v.hovered.pick : null;
     const lit = picked.length || h ? JSON.stringify([picked, h && [h.index, h.edge]]) : null;
