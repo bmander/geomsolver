@@ -106,6 +106,18 @@ interface Placed {
   group: THREE.Group;
 }
 
+/** What the renderer drew in its last frame, and the triangles each object holds: what
+ *  `tools/open-bench.mjs` reads once an opening has settled. */
+export interface DrawCounts {
+  calls: number;
+  triangles: number;
+  lines: number;
+  geometries: number;
+  textures: number;
+  programs: number;
+  objects: { index: number; meshes: number; triangles: number }[];
+}
+
 /** What the box has done since it was made — read by the tests, which have no WebGL to look at:
  *  how many objects it cut (built geometry for) and how many it only moved. */
 export interface BoxStats {
@@ -135,6 +147,8 @@ export class Box3D {
   /** Each object as the box holds it, by its index among the sketch's solids. */
   private readonly placed = new Map<number, Placed>();
   readonly stats: BoxStats = { cut: 0, moved: 0, capped: 0 };
+  /** The objects cut since the last frame was rendered, marked (`gcs:drawn`) once it is. */
+  private readonly drawnNow: { index: number; name: string; triangles: number }[] = [];
   private built: Built | null = null;
   /** The panes' outlines and the views' geometry, kept by what they are *of* — because the two
    *  things the app says about them change with the pointer and not with the drawing: which pane
@@ -201,6 +215,29 @@ export class Box3D {
     if (gl.getPixelRatio() !== dpr) gl.setPixelRatio(dpr);
     gl.setSize(v.width, v.height, false);
     gl.render(this.scene, this.camera);
+    for (const d of this.drawnNow) performance.mark('gcs:drawn', { detail: d });
+    this.drawnNow.length = 0;
+  }
+
+  /** What the renderer drew in its last frame (`renderer.info`), and each object's triangles;
+   *  null with no renderer. */
+  counts(): DrawCounts | null {
+    const gl = this.renderer;
+    if (!gl) return null;
+    const objects = [...this.placed].map(([index, held]) => {
+      let meshes = 0, triangles = 0;
+      held.group.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const g = o.geometry as THREE.BufferGeometry;
+        meshes++;
+        triangles += (g.index?.count ?? g.getAttribute('position').count) / 3;
+      });
+      return { index, meshes, triangles };
+    });
+    const { render, memory } = gl.info;
+    return { calls: render.calls, triangles: render.triangles, lines: render.lines,
+             geometries: memory.geometries, textures: memory.textures,
+             programs: gl.info.programs?.length ?? 0, objects };
   }
 
   /** **The scene brought up to the drawing**, nothing drawn: what `paint` does before it renders,
@@ -421,7 +458,7 @@ export class Box3D {
         this.stats.moved++;
       } else {
         this.unplace(o.index);
-        held = { shape: at.shape, group: this.cut(v, o.index) };
+        held = { shape: at.shape, group: this.cut(v, o.index, o.name) };
         this.placed.set(o.index, held);
         this.objects.add(held.group);
         this.stats.cut++;
@@ -433,10 +470,11 @@ export class Box3D {
   }
 
   /** One object's geometry, in its own coordinates, in a group its matrix places. */
-  private cut(v: SketchView, solid: number): THREE.Group {
+  private cut(v: SketchView, solid: number, name: string): THREE.Group {
     const group = new THREE.Group();
     group.matrixAutoUpdate = false;
     const m = own(v.sketch, solid, 0);
+    if (this.renderer) this.drawnNow.push({ index: solid, name, triangles: m.positions.length / 9 });
     if (m.creases.length) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute(Float32Array.from(m.creases), 3));

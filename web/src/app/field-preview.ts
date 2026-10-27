@@ -292,7 +292,11 @@ export class FieldPreview {
 
   private failExact(error: string): void {
     for (const [key, r] of this.refining) {
-      if (r.exact && !r.exact.built) { r.exact.error = error; this.noExact.add(key); }
+      if (r.exact && !r.exact.built) {
+        r.exact.error = error;
+        this.noExact.add(key);
+        performance.mark('gcs:unbuilt', { detail: { name: r.name, error } });
+      }
     }
     this.progressed([...this.refining.values()]);
     this.exactAsked.clear();
@@ -329,6 +333,7 @@ export class FieldPreview {
       this.exactAsked.delete(f.key);
       this.noExact.add(f.key);
       if (r?.exact) r.exact.error = f.exactError;
+      performance.mark('gcs:unbuilt', { detail: { name: r?.name, error: f.exactError } });
       this.progressed([...this.refining.values()]);
       return;
     }
@@ -363,6 +368,9 @@ export class FieldPreview {
         if (f.surface) {
           // one key is one solid of one drawing: the index the job named is this sketch's too
           supplyField(sk, f.solid, f.surface);
+          performance.mark('gcs:surface', { detail: { name: this.refining.get(f.key)?.name,
+            exact: !!f.surface.exact, provisional: !!f.surface.provisional,
+            triangles: f.surface.triangles.length / 3 } });
           // finished: no longer asked for, so a drawing of it asks nothing and cancels nothing
           if (!f.surface.provisional && !f.surface.exact) { this.finished.set(f.key, f.surface); this.asked.delete(f.key); }
         }

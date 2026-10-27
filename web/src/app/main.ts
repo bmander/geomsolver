@@ -730,7 +730,14 @@ const timeline = new Timeline(document.getElementById('timeline') as HTMLElement
 view.onTimeline = () => { timeline.refresh(); refresh(); };
 timeline.refresh();
 view.onStatus = toast;
-view.onRefine = (list) => { showRefining(list); meshing(list); };
+let refiningNow: Refining[] = [];
+view.onRefine = (list) => { refiningNow = list; showRefining(list); meshing(list); };
+// what `tools/open-bench.mjs` asks of the page once an opening has settled: where the swept
+// objects' builds stand, and what the renderer drew
+(globalThis as { gcsBench?: unknown }).gcsBench = {
+  refining: () => refiningNow,
+  counts: () => view.box3d.counts(),
+};
 view.onClaims = showJudging;
 view.onScenarios = (ss, ms) => { showScenarios(ss, ms); refreshScenarioCard(view); };
 view.onScenarioView = () => refreshScenarioCard(view);
