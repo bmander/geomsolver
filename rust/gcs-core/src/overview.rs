@@ -79,7 +79,8 @@ const PART_DATUM: f64 = 0.5;
 
 /// **How large the panes are drawn** — and the axes, which reach as far: no thinner than `least`
 /// either way and no narrower than `span`, round what stands on each.  `shown_only` counts only
-/// what the outline has not hidden, so a closed part's sketches do not size the assembly's planes.
+/// what is shown (`Sketch::shown`), so a closed part's sketches do not size the assembly's
+/// planes.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Panes {
     least: f64,
@@ -99,24 +100,26 @@ pub(crate) fn panes(sk: &Sketch) -> Panes {
             return Panes { least: span, span, shown_only: true, reach: span / 2.0 };
         }
     }
-    Panes { least: sk.extent() * LEAST_SIDE, span: workspace_span(sk), shown_only: false,
-            reach: sk.extent().max(workspace_span(sk) / 2.0) }
+    let (extent, span) = (sk.extent(), workspace_span(sk));
+    Panes { least: extent * LEAST_SIDE, span, shown_only: false, reach: extent.max(span / 2.0) }
 }
 
 /// The largest side of the box round every object shown and built, or `None` with none —
 /// remembered against the drawing and the objects shown (`Caches::objects_side`).
 fn objects_side(sk: &Sketch) -> Option<f64> {
     let shown = shown_objects(sk);
-    // and against a shape changed in place, and the swept surfaces a host has supplied since
-    let mut x: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
-    x.extend([sk.shape_epoch as f64, sk.field_surfaces.borrow().len() as f64]);
-    if let Some((at, of, side)) = &*sk.caches.objects_side.borrow() {
-        if *at == x && *of == shown {
+    // and against a shape changed in place, and the swept surfaces a host has supplied since —
+    // compared where they stand, a pick asking it on every pointer move
+    let epochs = [sk.shape_epoch as usize, sk.field_surfaces.borrow().len()];
+    if let Some((at, then, of, side)) = &*sk.caches.objects_side.borrow() {
+        let same = at.len() == sk.params.len()
+            && at.iter().zip(&sk.params).all(|(a, p)| *a == p.value);
+        if same && *then == epochs && *of == shown {
             return *side;
         }
     }
     let side = side_of(sk, &shown);
-    *sk.caches.objects_side.borrow_mut() = Some((x, shown, side));
+    *sk.caches.objects_side.borrow_mut() = Some((sk.get_x(), epochs, shown, side));
     side
 }
 
@@ -133,10 +136,7 @@ fn side_of(sk: &Sketch, objects: &[usize]) -> Option<f64> {
             b.add(w.hi);
         }
     }
-    if b.is_empty() {
-        return None;
-    }
-    let side = (0..3).map(|k| b.hi[k] - b.lo[k]).fold(0.0, f64::max);
+    let side = b.side();
     (side > 0.0).then_some(side)
 }
 
@@ -801,7 +801,7 @@ fn places(sk: &Sketch) -> Vec<Option<usize>> {
 fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], places: &[Option<usize>],
         rule: &Panes) -> Box2 {
     let Panes { least, span, shown_only, .. } = *rule;
-    let counted = |e: EntRef| !shown_only || !sk.hidden.contains(&e);
+    let counted = |e: EntRef| !shown_only || sk.shown(e);
     let basis = sk.basis(plane);
     let mut b = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
     for j in (0..places.len())

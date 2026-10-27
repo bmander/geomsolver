@@ -7,18 +7,18 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { callouts } from '../core/callout.js';
-import { KIND, Line, Plane, Point, fromWire } from '../core/model.js';
+import { KIND_BIT, Line, Plane, Point, fromWire } from '../core/model.js';
 import type { Primitive, ShownKind } from '../core/model.js';
 import type { Row } from '../core/outline.js';
 import { overview3 } from '../core/overview.js';
 import {
-  isHidden, partToOpen, partlyHidden, selectRow, setRowHidden, shows, walk,
+  isHidden, partToOpen, partlyHidden, selectRow, setRowHidden, shows,
 } from '../app/hidden.js';
 import { paint } from '../app/paint.js';
 import type { SketchView } from '../app/view.js';
 import { initCore } from '../core/wasm.js';
 import { canvasOf, pointer } from './canvas.js';
-import { dblclickAt, docView, seenAt } from './views.js';
+import { dblclickAt, docView, row, seenAt } from './views.js';
 
 (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame ??=
   (fn: FrameRequestCallback) => { fn(0); return 0; };
@@ -54,12 +54,6 @@ function ent(v: SketchView, name: string): Primitive {
   const e = v.doc.entity(name);
   assert.ok(e, name);
   return e;
-}
-
-/** The row carried by `path`. */
-function row(v: SketchView, path: string): Row {
-  for (const [r] of walk(v.outline())) if (r.path === path) return r;
-  throw new Error(`no row ${path}`);
 }
 
 /** The objects the box holds, and the planes its panes are. */
@@ -116,7 +110,7 @@ test('View ▸ Show: each kind turned off leaves the box and the canvas, and is 
   const off = (kind: ShownKind) => {
     v.setKind(kind, false);
     assert.ok(!v.kindOn(kind) && !shows(v, kind), kind);
-    assert.equal(v.kinds & KIND[kind], 0);
+    assert.equal(v.kinds & KIND_BIT[kind], 0);
   };
   const on = (kind: ShownKind) => v.setKind(kind, true);
 
@@ -281,11 +275,11 @@ test('Open shows a part\'s insides and only its own, dims the rest; Esc closes i
   assert.ok(ids.size > 0);
   for (const id of ids) {
     const c = v.sketch.constraintById(id)!;
-    assert.ok(c.entities().every((e) => v.openedEnts!.has(e)), c.typeName);
+    assert.ok(c.entities().every((e) => v.inside!.ents.has(e)), c.typeName);
   }
   // the rest of the assembly is dimmed: the other part's object and the root's drawing
-  assert.ok(v.openedSolids!.has(leftBody) && !v.openedSolids!.has(rightBody));
-  assert.ok(v.openedEnts!.has(la) && !v.openedEnts!.has(rod));
+  assert.ok(v.inside!.solids.has(leftBody) && !v.inside!.solids.has(rightBody));
+  assert.ok(v.inside!.ents.has(la) && !v.inside!.ents.has(rod));
   assert.equal(partToOpen(v, leftBody), null, 'open already');
   // carried across an edit by its path
   assert.ok(v.apply(v.doc.addPoint(80, 80)));
@@ -295,7 +289,7 @@ test('Open shows a part\'s insides and only its own, dims the rest; Esc closes i
   v.cancelTool();
   assert.equal(v.opened, null);
   assert.ok(v.hiddenEnts.has(ent(v, 'left.a')));
-  assert.equal(v.openedEnts, null);
+  assert.equal(v.inside, null);
 });
 
 test('a part opens by a double-click on its object, and closes by a click on nothing', (t) => {

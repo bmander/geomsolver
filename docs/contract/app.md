@@ -638,43 +638,44 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   first opened.  Gates: `tests/outline.rs` and `web/src/test/outline.test.ts`.
 - **What the workspace shows, by kind** (#678; `model::Kinds`, `Sketch::set_kinds`, FFI
   `gcs_sketch_set_shown_kinds`; `SketchView.kinds`, View ▸ Show in `main.ts`): beside the rows the
-  outline hides, the **kinds** — objects `⇧O` (the whole object, where `⇧⌘B` is only its
-  surfaces), planes `⇧P` (a pane and its frame), axes `⇧A`, sketches `⇧S` (lines, circles, arcs,
-  curves, regions and traces, and their points), points `⇧T`, fixed marks `⇧K` (off, a fixed point
-  is drawn as any other) and dimensions `⇧D` (the callouts; `showDimensions` is this kind) — each
-  turned off everywhere at once.  An entity is shown while every kind it is drawn as is
-  (`Kinds::of`: a point is a sketch's and a point) or it is shown whatever its kind
-  (`Sketch::shown_anyway`), and a kind off is held to hidden's rule — **not drawn, not lit, not
-  picked**: `Sketch::shown` answers for both, so `seen`, `shown_objects`, every pick, `under`,
-  `overlapping`, the panes and the bounds pass it by, `report::selected_callouts_json` lays out no
-  dimension unless asked (the one being edited), a callout goes with the entities it reads, and
-  the painter skips what the core says it passes by (`Sketch::unseen`, `gcs_sketch_unseen_json`,
-  read into `hiddenEnts`).  View state, as hidden is: never written to the source or the `.svd`,
-  saved, solved or undone, carried across an edit and kept across a load.  **A tool shows the
-  kinds it needs while it is down** (`hidden.toolKinds`: a drawing tool the sketches and points it
-  snaps to, Extrude the sketches, Revolve those and the axes, a Boolean or an edge tool the
-  objects); a plane chosen to draw on, or drawn on, and a row chosen from the outline are shown
-  whatever their kind (`SketchView.shownRows`, which a kind turned on or off lets go).  Gates:
+  outline hides, the **kinds** — objects `⇧O` (the whole object, where `⇧⌘B` is only its surfaces),
+  planes `⇧P` (a pane and its frame), axes `⇧A`, sketches `⇧S` (lines, circles, arcs, curves,
+  regions and traces, and their points), points `⇧T`, fixed marks `⇧K` (off, a fixed point is drawn
+  as any other) and dimensions `⇧D` (the callouts; `showDimensions` is this kind) — each turned off
+  everywhere at once.  An entity is shown while every kind it is drawn as is (`Kinds::of`: a point
+  is a sketch's and a point) or it is shown whatever its kind (`Sketch::shown_anyway`), and a kind
+  off is held to hidden's rule — **not drawn, not lit, not picked**: `Sketch::shown` answers for
+  both, so `seen`, `shown_objects`, every pick, `under`, `overlapping`, the panes and the bounds
+  pass it by, `callout::layout_selected` lays out (and so picks) no dimension unless asked (the one
+  being edited), a callout goes with the entities it reads, and the painter skips what the core says
+  it passes by (`Sketch::unseen`, `gcs_sketch_unseen_json`, read into `hiddenEnts`).  View state, as
+  hidden is: never written to the source or the `.svd`, saved, solved or undone, carried across an
+  edit and kept across a load.  **A tool shows the kinds it needs while it is down**
+  (`hidden.toolKinds`: a drawing tool the sketches and points it snaps to, Extrude the sketches,
+  Revolve those and the axes, a Boolean or an edge tool the objects); a plane chosen to draw on, or
+  drawn on, and a row chosen from the outline are shown whatever their kind
+  (`SketchView.shownAnyway`, which a kind turned on or off lets go).  Gates:
   `a_kind_turned_off_is_not_picked_under_or_framed` (`tests/workspace.rs`) and
   `web/src/test/shown.test.ts`.
 - **An assembly opens on its parts** (#679; `hidden.ts`): a *part* is an instance that makes an
-  object, at any depth (`hidden.isPart`), and **what a closed part makes, other than its objects,
-  is not drawn** — its planes, axes, sketches, points, fixed marks and callouts — told the core as
-  hidden is.  The line is *made inside the instance*, not Onshape's *used by an object*: what the
-  root draws is the assembly's own layout and is drawn, a profile the root makes a solid of
-  included, and a document with no part opens as it always did.  **Opening a part** — a
-  double-click on its object (`hidden.partToOpen`; a double-click on the part open, or on an
-  object the root made, draws on its face as before), *Open* on its right-click menu or the
-  `open` on its outline row, or selecting one of its members' rows — draws its insides and only
-  its own (a part inside it stays closed), and **dims the rest of the assembly** rather than
-  hiding it (`DIMMED`: the box's other objects, the canvas's other figures); Esc, a click on
-  nothing, *Close part* or its row's `close` closes it.  The part open is carried by path across
-  an edit and let go by a load.  The outline's eye overrides the rule either way: a member of a
-  closed part reads shut, the part half, and shown by its eye it is drawn (`SketchView.shownRows`);
-  View ▸ Show ▸ Inside parts draws every part's insides.  **Shown on its parts**
+  object, at any depth — the core's outline marks it (`outline::Node::part`, the row's `part`;
+  `an_instance_that_makes_an_object_is_a_part`) — and **what a closed part makes, other than its
+  objects, is not drawn** — its planes, axes, sketches, points, fixed marks and callouts — told the
+  core as hidden is.  The line is *made inside the instance*, not Onshape's *used by an object*:
+  what the root draws is the assembly's own layout and is drawn, a profile the root makes a solid of
+  included, and a document with no part opens as it always did.  **Opening a part** — a double-click
+  on its object (`hidden.partToOpen`; a double-click on the part open, or on an object the root
+  made, draws on its face as before), *Open* on its right-click menu or the `open` on its outline
+  row, or selecting one of its members' rows — draws its insides and only its own (a part inside it
+  stays closed), and **dims the rest of the assembly** rather than hiding it (`DIMMED`: the box's
+  other objects, the canvas's other figures); Esc, a click on nothing, *Close part* or its row's
+  `close` closes it.  The part open is carried by path across an edit and let go by a load.  The
+  outline's eye overrides the rule either way: a member of a closed part reads shut, the part half,
+  and shown by its eye it is drawn (`SketchView.shownRows`, which Inside parts turned on or off lets
+  go); View ▸ Show ▸ Inside parts draws every part's insides.  **Shown on its parts**
   (`Sketch::on_parts`), the datums left are drawn small and quiet: a pane is the box of what is
-  shown on it, no narrower than half the objects' largest side (`overview::panes`,
-  `PART_DATUM`) rather than the workspace, an axis reaches as far, the box draws them faint
-  (`QUIET`) and labels each pane with its plane's name.  Gates:
+  shown on it, no narrower than half the objects' largest side (`overview::panes`, `PART_DATUM`)
+  rather than the workspace, an axis reaches as far, the box draws them faint (`QUIET`) and labels
+  each pane with its plane's name.  Gates:
   `an_assembly_on_its_parts_draws_its_datums_the_size_of_its_objects` (`tests/workspace.rs`) and
   `web/src/test/shown.test.ts`.

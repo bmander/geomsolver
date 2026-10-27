@@ -32,6 +32,8 @@ import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
 import { COL, DIMMED, chromeOf, inkOf } from './paint.js';
+import { dropLabel, scaleLabels, textLabel } from './label.js';
+import type { Label } from './label.js';
 import { ScenarioScene } from './scenario-box.js';
 import { partOf, samePick } from './view.js';
 import type { Combining, SketchView } from './view.js';
@@ -69,8 +71,8 @@ const FRAME_PX = { plain: 1, current: 2.5 };
  *  frame and the axes — so the parts are what is seen. */
 const QUIET = { pane: 0.03, frame: 0.2, axis: 0.3 };
 
-/** A pane's label, in CSS pixels: its type's height, and how far it stands off the corner. */
-const LABEL_PX = { size: 11, off: 4 };
+/** A pane's name, in CSS pixels: its type's height, and the room round it (#679). */
+const LABEL_PX = { size: 11, pad: 3 };
 
 /** An object's edge selected, or under the pointer, in pixels. */
 const EDGE_PX = { picked: 3.5, hover: 2.5 };
@@ -149,6 +151,13 @@ export class Box3D {
   private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1e4, 1e4);
   /** The panes, the axes and what stands in space — rebuilt as the pose moves. */
   private readonly datums = new THREE.Group();
+  /** Each pane's name while an assembly is shown on its parts (#679), by its plane's name: kept
+   *  across the datums' rebuilds, which a drag makes every frame, and only moved by them. */
+  private readonly names = new THREE.Group();
+  private readonly labels = new Map<string, Label>();
+  /** What the creases were last dimmed for (`hiddenEpoch` and objects cut), so a frame that
+   *  changed neither writes nothing. */
+  private dimmedAt = '';
   /** The objects' meshes and creases, a group each (`placed`), moved by their matrices. */
   private readonly objects = new THREE.Group();
   /** Each object as the box holds it, by its index among the sketch's solids. */
@@ -191,7 +200,7 @@ export class Box3D {
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
-    this.scene.add(this.datums, this.objects, this.previewed, this.litEdges, this.caps,
+    this.scene.add(this.datums, this.names, this.objects, this.previewed, this.litEdges, this.caps,
                    this.scenario.group);
     // a headlight and a soft fill: the object is read for its shape, so the light follows the
     // eye rather than standing somewhere in the world and leaving half of it dark
@@ -409,6 +418,7 @@ export class Box3D {
     release(this.datums);
     // an assembly shown on its parts draws its datums quietly, each pane labelled (#679)
     const quiet = v.onParts;
+    const named = new Map<string, [number, number, number]>();
     // the panes, translucent and double-sided: geometry on the far side of one must read through
     for (const it of items.filter((i) => i.part === 'face')) {
       const g = fanned(it.pts);
@@ -425,14 +435,38 @@ export class Box3D {
       this.panes.push({ it, line: this.frame(it) });
       const pl = quiet && this.renderer ? v.planeOf(it) : null;
       const name = pl && v.doc.nameOf(pl);
-      if (name) this.datums.add(label(name, it.pts[3] ?? it.pts[0]));
+      if (name) named.set(name, it.pts[3] ?? it.pts[0]);
     }
+    this.nameAt(named);
     this.lines(this.datums, items.filter((i) => i.part === 'axis'), INK.axis,
                quiet ? QUIET.axis : 0.55);
     // of what is drawn, only what stands in space: a sketch on a plane is stroked on the canvas
     // above, through its plane's camera, with the selection and the state colours it carries
     for (const it of items.filter((i) => i.part === 'drawn' && IN_SPACE.has(i.kind ?? ''))) {
       this.frames.push({ it, line: this.lines(this.datums, [it], INK.drawn, 1)! });
+    }
+  }
+
+  /** Each pane named at its corner (#679): a label already made moved there, one no longer
+   *  wanted let go — its text drawn and uploaded once, not each frame a drag remakes the datums. */
+  private nameAt(named: Map<string, [number, number, number]>): void {
+    for (const [name, label] of this.labels) {
+      if (named.has(name)) continue;
+      dropLabel(label);
+      this.labels.delete(name);
+    }
+    for (const [name, at] of named) {
+      let label = this.labels.get(name) ?? null;
+      if (!label) {
+        label = textLabel(name, at, { font: LABEL_PX.size, pad: LABEL_PX.pad, ink: '#5f8f5f' });
+        if (!label) continue;
+        // drawn from its lower left, at the corner
+        label.sprite.center.set(0, 0);
+        label.sprite.renderOrder = 2;
+        this.labels.set(name, label);
+        this.names.add(label.sprite);
+      }
+      label.sprite.position.set(...at);
     }
   }
 
@@ -620,12 +654,8 @@ export class Box3D {
       m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);
     }
-    // a pane's label keeps its size as the eye zooms: its pixels, in the eye's lengths (#679)
-    for (const o of this.datums.children) {
-      if (!(o instanceof THREE.Sprite)) continue;
-      const [w, h] = o.userData.px as [number, number];
-      o.scale.set(w * v.unit, h * v.unit, 1);
-    }
+    // a pane's name keeps its size as the eye zooms (#679)
+    scaleLabels(this.labels.values(), v.unit);
     // a face selected glows in the selection's ink, a body selected all over a little less; what
     // is under the pointer glows in the highlight's.  A Boolean being picked shows its result in
     // its target's place, and its tools as ghosts in the colour of what they do
@@ -645,8 +675,7 @@ export class Box3D {
       const tool = c?.tools.some((t) => t.index === solid);
       face.visible = !(c && this.preview.shown && c.target.index === solid);
       // a part open, the rest of the assembly is dimmed round it (#679)
-      const dim = !!v.openedSolids && !v.openedSolids.has(solid);
-      fade(m, tool || deformed.has(solid) ? GHOST : dim ? DIMMED : 1);
+      fade(m, tool || deformed.has(solid) ? GHOST : dimmed(v, solid) ? DIMMED : 1);
       m.color.set(tool ? INK[c!.word] : INK.solid);
       const mine = picked.get(solid);
       const [ink, glow]: [string | number, number] = tool ? [INK[c!.word], 0.35]
@@ -661,9 +690,13 @@ export class Box3D {
     for (const line of this.litEdges.children as LineSegments2[]) {
       line.material.resolution.set(v.width, v.height);
     }
-    // and an object dimmed is dimmed in its creases too
+    // and an object dimmed is dimmed in its creases too, written when what is dimmed, or what
+    // was cut, changed
+    const at = `${v.hiddenEpoch}:${this.stats.cut}`;
+    if (at === this.dimmedAt) return;
+    this.dimmedAt = at;
     for (const [index, held] of this.placed) {
-      const alpha = v.openedSolids && !v.openedSolids.has(index) ? DIMMED : 1;
+      const alpha = dimmed(v, index) ? DIMMED : 1;
       for (const o of held.group.children) {
         if (!(o instanceof THREE.LineSegments)) continue;
         (o.material as THREE.LineBasicMaterial).opacity = alpha;
@@ -715,6 +748,7 @@ export class Box3D {
     this.frames.length = 0;
     this.panes.length = 0;
     release(this.datums);
+    this.nameAt(new Map());
     this.dropObjects();
     release(this.previewed);
     this.preview = { key: null, shown: false };
@@ -763,35 +797,6 @@ function faceMesh(m: Mesh, f: Face, clippingPlanes: THREE.Plane[]): THREE.Mesh {
   return face;
 }
 
-/** **A pane's name**, hung at its corner the same size whatever the zoom: a sprite of its text,
- *  drawn once into a canvas of its own (#679).  Only where there is a page to draw it on. */
-function label(text: string, at: [number, number, number]): THREE.Sprite {
-  const ratio = Math.min(2, globalThis.devicePixelRatio ?? 1);
-  const px = LABEL_PX.size * ratio;
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!;
-  const font = `${px}px system-ui, sans-serif`;
-  ctx.font = font;
-  canvas.width = Math.ceil(ctx.measureText(text).width + 2 * LABEL_PX.off * ratio);
-  canvas.height = Math.ceil(px * 1.4);
-  ctx.font = font;
-  ctx.fillStyle = '#5f8f5f';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, LABEL_PX.off * ratio, canvas.height / 2);
-  const map = new THREE.CanvasTexture(canvas);
-  map.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    map, transparent: true, depthTest: false,
-  }));
-  sprite.position.set(...at);
-  // drawn from its lower left, at the corner, the size of its canvas in screen pixels (scaled to
-  // the eye each frame, by `chrome`)
-  sprite.center.set(0, 0);
-  sprite.userData.px = [canvas.width / ratio, canvas.height / ratio];
-  sprite.renderOrder = 2;
-  return sprite;
-}
-
 /** A geometry of nothing but the core's points, three doubles each. */
 function at(points: Float64Array): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -828,6 +833,11 @@ function hatched(): THREE.ShaderMaterial {
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });
+}
+
+/** Whether object `solid` is dimmed: a part is open (#679) that did not make it. */
+function dimmed(v: SketchView, solid: number): boolean {
+  return !!v.inside && !v.inside.solids.has(solid);
 }
 
 /** A face drawn at `alpha` — below one see-through, as a ghost or dimmed, and hiding nothing

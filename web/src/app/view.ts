@@ -29,7 +29,9 @@ import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import * as io from '../core/io.js';
-import { ALL_KINDS, KIND, Param, Plane, Point, Primitive, Sketch, toWire } from '../core/model.js';
+import {
+  ALL_KINDS, KIND_BIT, Param, Plane, Point, Primitive, Sketch, toWire,
+} from '../core/model.js';
 import type { ShownKind } from '../core/model.js';
 import * as params from '../core/parameters.js';
 import type { March, Parameter } from '../core/parameters.js';
@@ -275,9 +277,9 @@ export class SketchView {
    *  Show (#678).  View state, like the colouring: a document change leaves it as it was.  The
    *  model canvas's callouts are the editor's, and separate from what a `.svd` asks to be
    *  annotated on paper. */
-  get showDimensions(): boolean { return (this.kinds & KIND.dimensions) !== 0; }
+  get showDimensions(): boolean { return this.kindOn('dimensions'); }
   set showDimensions(on: boolean) { hidden.setKind(this, 'dimensions', on); }
-  /** **The kinds of thing the workspace draws** (#678; `KIND`'s bits): View ▸ Show's.  View
+  /** **The kinds of thing the workspace draws** (#678; `KIND_BIT`'s bits): View ▸ Show's.  View
    *  state, as hidden is — never saved, solved or undone, and kept across an edit and a load —
    *  told the core on every drawing the view is handed (`hidden.applyHidden`), the kinds the tool
    *  in hand needs shown beside it (`hidden.toolKinds`). */
@@ -323,10 +325,13 @@ export class SketchView {
   hiddenEnts = new Set<Primitive>();
   hiddenSolids = new Set<number>();
   hiddenEpoch = 0;
-  /** **Rows shown whatever closes them or their kind** (#678, #679), by key: a row's eye turned
-   *  on inside a closed part, a row chosen from the outline, a plane chosen to draw on.  Carried
-   *  and let go as `hiddenRows` is; a kind turned on or off lets them all go. */
+  /** **Rows shown past a closed part** (#679), by key: a member's eye turned on.  Carried and let
+   *  go as `hiddenRows` is; Inside parts turned on or off lets them all go. */
   shownRows = new Set<string>();
+  /** **Rows shown whatever their kind** (#678), by key: a row chosen from the outline, a plane
+   *  chosen to draw on.  Carried and let go as `hiddenRows` is; a kind turned on or off lets them
+   *  all go. */
+  shownAnyway = new Set<string>();
   /** **Whether a part is closed** (#679): what an instance that makes an object draws to make it
    *  is out of the way until it is opened.  View ▸ Show ▸ Inside parts turns it off. */
   closeParts = true;
@@ -334,11 +339,10 @@ export class SketchView {
    *  datums drawn small and quiet, sized to its objects, each pane labelled. */
   onParts = false;
   /** **The part opened** (#679), by its row's key: its insides drawn, the rest of the assembly
-   *  dimmed (`openedEnts`, `openedSolids`, what it made).  Carried by path across an edit, let
-   *  go by a load, Esc, or a click on nothing. */
+   *  dimmed round what it made (`inside`).  Carried by path across an edit, let go by a load,
+   *  Esc, or a click on nothing. */
   opened: string | null = null;
-  openedEnts: Set<Primitive> | null = null;
-  openedSolids: Set<number> | null = null;
+  inside: { ents: Set<Primitive>; solids: Set<number> } | null = null;
   /** **The workspace sectioned** (`core/section.ts`, `Sectioning`).  View state, as the orbit
    *  is: never saved, solved or undone, set on every drawing the view is handed
    *  (`applySection`), carried across an edit by the plane's name, let go when the name no longer
@@ -910,10 +914,12 @@ export class SketchView {
   private another(read: () => boolean): boolean {
     const held = this.hiddenRows;
     const shown = this.shownRows;
+    const anyway = this.shownAnyway;
     const opened = this.opened;
     const cut = this.section;
     this.hiddenRows = new Set();
     this.shownRows = new Set();
+    this.shownAnyway = new Set();
     this.opened = null;
     this.section = null;
     if (read()) {
@@ -925,6 +931,7 @@ export class SketchView {
     }
     this.hiddenRows = held;
     this.shownRows = shown;
+    this.shownAnyway = anyway;
     this.opened = opened;
     this.section = cut;
     return false;
@@ -1615,7 +1622,7 @@ export class SketchView {
   /** **Show all** (`⇧I`). */
   showAll(): void { hidden.showAll(this); }
   /** Whether View ▸ Show draws a kind (#678) — the tool in hand may show it besides. */
-  kindOn(kind: ShownKind): boolean { return (this.kinds & KIND[kind]) !== 0; }
+  kindOn(kind: ShownKind): boolean { return (this.kinds & KIND_BIT[kind]) !== 0; }
   /** **View ▸ Show**: a kind drawn or not (#678). */
   setKind(kind: ShownKind, on: boolean): void { hidden.setKind(this, kind, on); }
   /** Whether what a part draws is out of the way until it is opened (#679). */
@@ -1738,7 +1745,6 @@ export class SketchView {
    *  the test against the same layout it drew — including what a point in reach outranks — so
    *  what is picked is what is on screen. */
   pickCallout(sx: number, sy: number): Constraint | null {
-    if (!this.showDimensions) return null;
     const { az, el } = this.orbit;
     const hit = calloutSeen(this.sketch, this.unit, az, el, ...this.eye(sx, sy), this.pickPx);
     const c = hit && (this.sketch.constraintById(hit.id) ?? null);

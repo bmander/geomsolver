@@ -194,3 +194,36 @@ fn a_row_is_framed_alone() {
     }
     assert_eq!(bounds_of(&e.sketch, &proj, &[], &[], 0.05), None);
 }
+
+/// **A part is an instance that makes an object**, at any depth (#679): `left` and `right` make
+/// their blocks and are parts, `pin` makes none and is not, and nothing else is — an object, a
+/// member, an operand nor the module's datums.
+#[test]
+fn an_instance_that_makes_an_object_is_a_part() {
+    let src = format!("{DOC}component Block(x: Length) {{\n  a := point hint((x, 0))\n\
+        b := point hint((x + 20mm, 0))\n  c := point hint((x + 20mm, 10))\n\
+        d := point hint((x, 10))\n  fix((x, 0)) a\n  fix((x + 20mm, 0)) b\n\
+        fix((x + 20mm, 10)) c\n  fix((x, 10)) d\n\
+        ab := line(a, b)\n  bc := line(b, c)\n  cd := line(c, d)\n  da := line(d, a)\n\
+        sec := face(ab, bc, cd, da)\n\
+        body := solid(sec, depth: 5)\n}}\n\
+        in std.top {{\n  left := Block(x: 100mm)\n  right := Block(x: 140mm)\n}}\n");
+    let e = build(&src);
+    let rows = outline(&e);
+    let mut parts = Vec::new();
+    fn walk(rows: &[Node], parts: &mut Vec<String>) {
+        for n in rows {
+            if n.part {
+                parts.push(n.path.clone());
+            }
+            walk(&n.children, parts);
+        }
+    }
+    walk(&rows, &mut parts);
+    assert_eq!(parts, ["left", "right"]);
+    let left = rows.iter().find_map(|n| n.find("left")).unwrap();
+    assert!(left.children.iter().any(|c| c.kind == NodeKind::Solid && !c.operand));
+    // and the JSON says so
+    let json = gcs_core::report::outline_json(&e, &e.sketch).dump(None);
+    assert_eq!(json.matches("\"part\":true").count(), 2, "{json}");
+}

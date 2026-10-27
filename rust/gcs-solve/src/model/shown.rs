@@ -26,23 +26,13 @@ impl Kinds {
     pub const SKETCHES: Kinds = Kinds(1 << 3);
     /// The points.
     pub const POINTS: Kinds = Kinds(1 << 4);
-    /// The mark a fixed point is drawn with: off, it is drawn as any other point.
+    /// The mark a fixed point is drawn with: off, it is drawn as any other point.  Only a front
+    /// end that marks one reads it; no entity is of it.
     pub const FIXED: Kinds = Kinds(1 << 5);
     /// The dimension callouts.
     pub const DIMENSIONS: Kinds = Kinds(1 << 6);
     pub const NONE: Kinds = Kinds(0);
     pub const ALL: Kinds = Kinds((1 << 7) - 1);
-
-    /// Each kind with the word a front end names it by, in the order a menu lists them.
-    pub const NAMED: [(Kinds, &'static str); 7] = [
-        (Kinds::OBJECTS, "objects"),
-        (Kinds::PLANES, "planes"),
-        (Kinds::AXES, "axes"),
-        (Kinds::SKETCHES, "sketches"),
-        (Kinds::POINTS, "points"),
-        (Kinds::FIXED, "fixed"),
-        (Kinds::DIMENSIONS, "dimensions"),
-    ];
 
     pub const fn bits(self) -> u32 {
         self.0
@@ -105,7 +95,7 @@ impl Sketch {
     }
 
     /// Whether an entity's kind is shown (`Kinds::of`), or it is shown whatever its kind.
-    pub fn kind_shown(&self, e: EntRef) -> bool {
+    pub(crate) fn kind_shown(&self, e: EntRef) -> bool {
         self.kinds.contains(Kinds::of(e)) || self.shown_anyway.contains(&e)
     }
 

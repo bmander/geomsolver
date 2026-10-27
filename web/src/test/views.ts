@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { Document } from '../core/program.js';
 import { eyeFrame } from '../core/workspace.js';
 import { SketchView } from '../app/view.js';
+import { walk } from '../app/hidden.js';
+import type { Row } from '../core/outline.js';
 import { canvasOf, fakeCanvas, pointer } from './canvas.js';
 
 /** A view on a Solvent document, its callouts shown and nothing solved behind the test's back.
@@ -50,4 +52,10 @@ export function clickSeen(view: SketchView, x: [number, number, number]): void {
 /** A double-click at a canvas point. */
 export function dblclickAt(view: SketchView, at: [number, number]): void {
   canvasOf(view).fire('dblclick', { clientX: at[0], clientY: at[1] });
+}
+
+/** The outline's row carried by `path`. */
+export function row(v: SketchView, path: string): Row {
+  for (const [r] of walk(v.outline())) if (r.path === path) return r;
+  throw new Error(`no row ${path}`);
 }

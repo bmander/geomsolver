@@ -44,7 +44,7 @@ export const DIMMED = 0.3;
 
 /** The alpha an entity is drawn at: dimmed while a part is open that did not make it. */
 function alphaOf(v: SketchView, ent: Primitive): number {
-  return v.openedEnts && !v.openedEnts.has(ent) ? DIMMED : 1;
+  return v.inside && !v.inside.ents.has(ent) ? DIMMED : 1;
 }
 
 /* entity colouring by constraint state (FreeCAD-style, but from the DM decomposition and the
@@ -227,6 +227,7 @@ function paintSplines(v: SketchView, sel: Set<Primitive>, hl: Set<Primitive>): v
       }
     });
   }
+  ctx.globalAlpha = 1;
 }
 
 /** Every point: one read, since a point's style is the sheet's `.point` rule and nothing else.  A

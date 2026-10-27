@@ -204,9 +204,8 @@ pub unsafe extern "C" fn gcs_sketch_set_shown_kinds(h: *mut Sketch, kinds: u32, 
 pub unsafe extern "C" fn gcs_sketch_unseen_json(h: *mut Sketch) -> *mut u8 {
     json_out(move || {
         let s = sk(h);
-        let shown = gcs_core::overview::shown_objects(s);
-        let solids = gcs_core::overview::objects(s).into_iter().filter(|i| !shown.contains(i))
-            .map(|i| Json::Int(i as i64)).collect();
+        let solids = gcs_core::overview::objects(s).into_iter()
+            .filter(|&i| !s.shown(EntRef::solid(i))).map(|i| Json::Int(i as i64)).collect();
         let ents = s.unseen().into_iter().map(gcs_core::report::ent_json).collect();
         Json::Obj(vec![("ents".into(), Json::Arr(ents)), ("solids".into(), Json::Arr(solids))])
     })

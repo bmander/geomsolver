@@ -191,7 +191,7 @@ export class OutlinePane {
       if (!row) continue;
       const own = this.view.hiddenRows.has(rowKey(row));
       const under = !own && isHidden(this.view, row, d.above);
-      const half = !own && !under && partlyHidden(this.view, row);
+      const half = !own && !under && partlyHidden(this.view, row, d.above);
       d.row.classList.toggle('hidden', own);
       d.row.classList.toggle('dimmed', under);
       if (d.eye) {

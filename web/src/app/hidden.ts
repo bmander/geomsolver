@@ -20,15 +20,15 @@
  * the instance is *opened* (`SketchView.opened`), when the rest of the assembly is dimmed.  The
  * root's own drawing is drawn; a document with no such instance opens as it always did.
  *
- * A row shown by its eye, or chosen from the outline, is shown whatever closes it or its kind
- * (`SketchView.shownRows`). */
+ * A row shown by its eye is shown whatever closes it (`SketchView.shownRows`); a row chosen from
+ * the outline, or a plane to draw on, whatever its kind (`SketchView.shownAnyway`). */
 import type { Row } from '../core/outline.js';
 import { partOf } from '../core/outline.js';
-import { KIND, fromWire } from '../core/model.js';
-import type { Part, Primitive, ShownKind } from '../core/model.js';
+import { ALL_KINDS, KINDS, KIND_BIT, fromWire } from '../core/model.js';
+import type { Kind, Part, Primitive, ShownKind } from '../core/model.js';
 import type { Ref } from '../core/io.js';
 import { boundsOfSeen } from '../core/workspace.js';
-import { toggled } from './view.js';
+import { combines, roundsEdges, sweepsRegion, toggled } from './view.js';
 import type { SketchView, Tool } from './view.js';
 
 /** The key a row is hidden by: its path, or for an anonymous row something that names it within
@@ -72,33 +72,22 @@ export function* walk(rows: readonly Row[], above: Row[] = []): Generator<[Row, 
 /** Whether a row is an object where it was made: not an operand listed under one. */
 const isObject = (r: Row): boolean => r.kind === 'solid' && !r.operand;
 
-/** Whether an instance's row makes an object, at any depth — read once a row (the rows are the
- *  outline's, made again when it changes, so a row is never asked twice for different answers). */
-const makes = new WeakMap<Row, boolean>();
-function makesObject(r: Row): boolean {
-  let m = makes.get(r);
-  if (m === undefined) {
-    m = r.children.some((c) => !c.operand && (isObject(c) || makesObject(c)));
-    makes.set(r, m);
-  }
-  return m;
-}
+/** **Whether a row is a part** (#679): an instance that makes an object, as the core says. */
+export const isPart = (r: Row): boolean => !!r.part;
 
-/** **Whether a row is a part** (#679): an instance that makes an object. */
-export function isPart(r: Row): boolean {
-  return r.kind === 'instance' && makesObject(r);
+/** The innermost part of `rows`, read outermost first, or null. */
+function innermostPart(rows: readonly Row[]): Row | null {
+  for (let k = rows.length - 1; k >= 0; k--) if (isPart(rows[k])) return rows[k];
+  return null;
 }
 
 /** The part a row is inside and closed by, the innermost above it — or null where none is, it is
  *  the opened one, the parts are not closed, or the row is an object (never closed) or was shown
  *  by its eye, or under a row that was. */
 export function closingPart(v: SketchView, row: Row, above: readonly Row[]): Row | null {
-  if (!v.closeParts || isObject(row) || v.shownRows.has(rowKey(row))) return null;
-  let part: Row | null = null;
-  for (const a of above) {
-    if (v.shownRows.has(rowKey(a))) return null;
-    if (isPart(a)) part = a;
-  }
+  if (!v.closeParts || isObject(row)) return null;
+  if (v.shownRows.size && [row, ...above].some((r) => v.shownRows.has(rowKey(r)))) return null;
+  const part = innermostPart(above);
   return part && rowKey(part) !== v.opened ? part : null;
 }
 
@@ -110,11 +99,10 @@ export function isHidden(v: SketchView, row: Row,
 }
 
 /** Whether some row under a shown one is hidden — the half eye: a closed part's insides too. */
-export function partlyHidden(v: SketchView, row: Row): boolean {
-  if (v.closeParts && isPart(row) && rowKey(row) !== v.opened && !v.shownRows.has(rowKey(row))
-      && row.children.some((c) => !c.operand && !isObject(c))) {
-    return true;
-  }
+export function partlyHidden(v: SketchView, row: Row,
+                             above: readonly Row[] = ancestors(v, row)): boolean {
+  const under = [...above, row];
+  if (row.children.some((c) => hideable(c) && closingPart(v, c, under))) return true;
   if (!v.hiddenRows.size) return false;
   for (const [r] of walk(row.children)) if (v.hiddenRows.has(rowKey(r))) return true;
   return false;
@@ -143,86 +131,81 @@ function changed(v: SketchView): void {
  *  them and Revolve a line or an axis to turn it about, and a Boolean or an edge tool takes
  *  objects. */
 export function toolKinds(tool: Tool): number {
-  switch (tool) {
-    case 'select': return 0;
-    case 'extrude': return KIND.sketches;
-    case 'revolve': return KIND.sketches | KIND.axes;
-    case 'union': case 'cut': case 'common': case 'fillet': case 'chamfer': return KIND.objects;
-    default: return KIND.sketches | KIND.points;
-  }
+  if (tool === 'select') return 0;
+  if (combines(tool) || roundsEdges(tool)) return KIND_BIT.objects;
+  if (sweepsRegion(tool)) return KIND_BIT.sketches | (tool === 'revolve' ? KIND_BIT.axes : 0);
+  return KIND_BIT.sketches | KIND_BIT.points;
 }
 
 /** The kinds the workspace draws now: View ▸ Show's, and the tool's. */
-export function shownKinds(v: SketchView): number {
-  return v.kinds | toolKinds(v.tool);
-}
+const shownKinds = (v: SketchView): number => v.kinds | toolKinds(v.tool);
 
 /** Whether a kind is drawn now (`shownKinds`). */
 export function shows(v: SketchView, kind: ShownKind): boolean {
-  return (shownKinds(v) & KIND[kind]) !== 0;
+  return (shownKinds(v) & KIND_BIT[kind]) !== 0;
 }
 
 /** **View ▸ Show**: a kind drawn or not (#678).  What was shown whatever its kind is let go with
  *  the change, so a kind turned off is off. */
 export function setKind(v: SketchView, kind: ShownKind, on: boolean): void {
-  const kinds = on ? v.kinds | KIND[kind] : v.kinds & ~KIND[kind];
+  const kinds = on ? v.kinds | KIND_BIT[kind] : v.kinds & ~KIND_BIT[kind];
   if (kinds === v.kinds) return;
   v.kinds = kinds;
-  v.shownRows.clear();
+  v.shownAnyway.clear();
   changed(v);
 }
 
-/** **What the closed parts draw** (#679): every entity a row inside a part that is not opened
- *  made, its objects aside — into `into`, which the core is told is hidden.  Whether the drawing
- *  has a part at all: an assembly, shown on its parts. */
-function closedPart(v: SketchView, rows: readonly Row[], into: Part): boolean {
-  if (!v.closeParts) return false;
-  let any = false;
-  const down = (rs: readonly Row[], closed: boolean): void => {
-    for (const r of rs) {
-      if (r.operand) continue;
-      any ||= isPart(r);
-      if (v.shownRows.has(rowKey(r))) continue;
-      if (closed && !isObject(r)) into.ents.push(...r.ents);
-      down(r.children, isPart(r) ? rowKey(r) !== v.opened : closed);
+/** The proxy of each entity a row names, each kind's list read once: what a whole drawing's
+ *  entities are mapped by, where `entOf` reads the list again for each. */
+function proxies(v: SketchView): (r: Ref) => Primitive | undefined {
+  const lists = new Map<string, Primitive[]>();
+  return ([wire, index]) => {
+    const kind = fromWire(wire);
+    let list = lists.get(kind);
+    if (!list) {
+      list = (KINDS as readonly string[]).includes(kind) ? v.sketch.entities(kind as Kind) : [];
+      lists.set(kind, list);
     }
+    return list[index];
   };
-  down(rows, false);
-  return any;
 }
 
-/** **Tell the drawing what is hidden**: the entities and solids every hidden row made and what the
- *  closed parts draw, set whole on the core, the kinds shown beside it; what the core then passes
- *  by is kept here for the painter, and what is selected and now hidden is let go. */
+/** **Tell the drawing what is hidden**, in one walk of the outline: the entities and solids every
+ *  hidden row made and what the closed parts draw (#679), set whole on the core, and the kinds
+ *  shown beside it with what is shown whatever its kind; what the core then passes by is kept
+ *  here for the painter, and what is selected and now hidden is let go. */
 export function applyHidden(v: SketchView): void {
   const kinds = shownKinds(v);
-  const rows = v.hiddenRows.size || v.shownRows.size || v.closeParts || v.opened ? v.outline() : [];
   const part: Part = { ents: [], solids: [] };
-  if (v.hiddenRows.size) {
-    for (const [r] of walk(rows)) {
-      if (hideable(r) && v.hiddenRows.has(rowKey(r))) partOf(r, part);
+  const anyway: Part = { ents: [], solids: [] };
+  let onParts = false;
+  let opened: Row | null = null;
+  for (const [r, above] of walk(v.outline())) {
+    if (!hideable(r)) continue;
+    const key = v.hiddenRows.size || v.shownAnyway.size || isPart(r) ? rowKey(r) : '';
+    if (v.hiddenRows.has(key)) partOf(r, part);
+    else if (closingPart(v, r, above)) part.ents.push(...r.ents);
+    if (v.shownAnyway.has(key)) partOf(r, anyway);
+    if (isPart(r)) {
+      onParts ||= v.closeParts;
+      if (key === v.opened) opened = r;
     }
   }
-  const onParts = closedPart(v, rows, part);
   v.sketch.setHidden(part);
-  const anyway: Part = { ents: [], solids: [] };
-  let opened: Row | null = null;
-  for (const [r] of walk(rows)) {
-    if (v.shownRows.has(rowKey(r))) partOf(r, anyway);
-    if (v.opened !== null && rowKey(r) === v.opened && isPart(r)) opened = r;
-  }
   v.sketch.setShownKinds(kinds, anyway, onParts);
   v.onParts = onParts;
+  const of = proxies(v);
   // an opened part is one the outline still lists, and the rest of the assembly dims round it
   if (!opened) v.opened = null;
-  const inside = opened ? partOf(opened) : null;
-  v.openedEnts = inside ? new Set(inside.ents.flatMap((r) => entOf(v, r) ?? [])) : null;
-  v.openedSolids = inside ? new Set(inside.solids) : null;
-  // what the core passes by, hidden or of a kind not shown
-  const unseen = v.sketch.unseen();
+  const inside = opened && partOf(opened);
+  v.inside = inside && { ents: new Set(inside.ents.flatMap((r) => of(r) ?? [])),
+                         solids: new Set(inside.solids) };
+  // what the core passes by, hidden or of a kind not shown — nothing, where nothing can be
+  const none = !part.ents.length && !part.solids.length && kinds === ALL_KINDS;
+  const unseen = none ? { ents: [], solids: [] } : v.sketch.unseen();
   const ents = new Set<Primitive>();
   for (const r of unseen.ents) {
-    const p = entOf(v, r);
+    const p = of(r);
     if (p) ents.add(p);
   }
   v.hiddenEnts = ents;
@@ -242,6 +225,7 @@ export function applyHidden(v: SketchView): void {
 export function carryHidden(v: SketchView): void {
   for (const k of [...v.hiddenRows]) if (anonymous(k)) v.hiddenRows.delete(k);
   for (const k of [...v.shownRows]) if (anonymous(k)) v.shownRows.delete(k);
+  for (const k of [...v.shownAnyway]) if (anonymous(k)) v.shownAnyway.delete(k);
   if (v.opened !== null && anonymous(v.opened)) v.opened = null;
   applyHidden(v);
 }
@@ -249,27 +233,33 @@ export function carryHidden(v: SketchView): void {
 /** Hide a row, or show it.  Showing a row under a hidden one shows that one row: the rows above
  *  it are shown and each one's other children hidden in their stead.  Showing a row a closed part
  *  holds shows it, whatever closes it (#679). */
-export function setRowHidden(v: SketchView, row: Row, hide: boolean): void {
+export function setRowHidden(v: SketchView, row: Row, hide: boolean,
+                             above: readonly Row[] = ancestors(v, row)): void {
   if (!hideable(row)) return;
   if (hide) {
     v.hiddenRows.add(rowKey(row));
     v.shownRows.delete(rowKey(row));
   } else {
-    const above = ancestors(v, row);
-    const top = above.findIndex((a) => v.hiddenRows.has(rowKey(a)));
-    if (top >= 0) {
-      const path = [...above.slice(top), row];
-      for (let k = 0; k + 1 < path.length; k++) {
-        v.hiddenRows.delete(rowKey(path[k]));
-        for (const c of path[k].children) {
-          if (c !== path[k + 1] && hideable(c)) v.hiddenRows.add(rowKey(c));
-        }
-      }
-    }
-    v.hiddenRows.delete(rowKey(row));
+    unhide(v, row, above);
     if (closingPart(v, row, above)) v.shownRows.add(rowKey(row));
   }
   changed(v);
+}
+
+/** The outline's hiding of `row` taken off, nothing told: the rows above it shown and each one's
+ *  other children hidden in their stead. */
+function unhide(v: SketchView, row: Row, above: readonly Row[]): void {
+  const top = above.findIndex((a) => v.hiddenRows.has(rowKey(a)));
+  if (top >= 0) {
+    const path = [...above.slice(top), row];
+    for (let k = 0; k + 1 < path.length; k++) {
+      v.hiddenRows.delete(rowKey(path[k]));
+      for (const c of path[k].children) {
+        if (c !== path[k + 1] && hideable(c)) v.hiddenRows.add(rowKey(c));
+      }
+    }
+  }
+  v.hiddenRows.delete(rowKey(row));
 }
 
 /** The eye on a row: hidden it shows, shown it hides. */
@@ -277,19 +267,19 @@ export function toggleRow(v: SketchView, row: Row): void {
   setRowHidden(v, row, !isHidden(v, row));
 }
 
-/** **Bring a row out** where it is not seen: the part holding it opened, the row shown if the
- *  outline hid it, and — still passed by, its kind not shown — shown whatever its kind. */
+/** **Bring a row out** where it is not seen, told once: the part holding it opened, the row
+ *  shown if the outline hid it, and shown whatever its kind. */
 function bringOut(v: SketchView, row: Row, above: readonly Row[]): void {
-  const part = closingPart(v, row, above);
-  if (part) v.opened = rowKey(part);
-  if (isHidden(v, row, above)) setRowHidden(v, row, false);
-  else if (part) changed(v);
   const ent = row.ents[0] && entOf(v, row.ents[0]);
   const solid = row.solid;
-  if ((ent && v.hiddenEnts.has(ent)) || (solid !== undefined && v.hiddenSolids.has(solid))) {
-    v.shownRows.add(rowKey(row));
-    changed(v);
-  }
+  const passed = (!!ent && v.hiddenEnts.has(ent))
+    || (solid !== undefined && v.hiddenSolids.has(solid));
+  if (!passed && !isHidden(v, row, above)) return;
+  const part = closingPart(v, row, above);
+  if (part) v.opened = rowKey(part);
+  unhide(v, row, above);
+  v.shownAnyway.add(rowKey(row));
+  changed(v);
 }
 
 /** **Hide what a right-click is on** (`p`, an entity, or object `solid`): the row that made it,
@@ -357,7 +347,7 @@ export function openPart(v: SketchView, part: Row | null): boolean {
   if (key === v.opened) return false;
   v.opened = key;
   changed(v);
-  if (part && key) v.onStatus(`opened ${part.label} — Esc closes it`);
+  if (key) v.onStatus(`opened ${part!.label} — Esc closes it`);
   return true;
 }
 
@@ -371,14 +361,8 @@ export function closePart(v: SketchView): boolean {
 export function partToOpen(v: SketchView, p: Primitive | number): Row | null {
   const at = found(v, p);
   if (!at || !v.closeParts) return null;
-  const parts = [...at.above, at.row].filter(isPart);
-  const part = parts.at(-1) ?? null;
+  const part = innermostPart([...at.above, at.row]);
   return part && rowKey(part) !== v.opened ? part : null;
-}
-
-/** The part open, as its row, or null. */
-export function openedRow(v: SketchView): Row | null {
-  return v.opened === null ? null : rowAt(v, (r) => rowKey(r) === v.opened)?.row ?? null;
 }
 
 /** **Whether the parts are closed** (#679): View ▸ Show ▸ Inside parts, turned off, closes them. */

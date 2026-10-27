@@ -4,15 +4,15 @@
 import * as C from '../core/constraints.js';
 import { Line, Point, distanceBetween, onRadius } from '../core/model.js';
 import { bodiesPicked, onePicked } from './solids.js';
-import { applyHidden, closePart, toolKinds } from './hidden.js';
+import { applyHidden, toolKinds } from './hidden.js';
 import { combines, picksAs, roundsEdges } from './view.js';
 import type { Place, SketchView, Tool } from './view.js';
 
 export function setTool(v: SketchView, tool: Tool): void {
-  const needs = toolKinds(v.tool);
+  const shown = v.kinds | toolKinds(v.tool);
   v.tool = tool;
   // **a tool shows the kinds it needs while it is down** (#678), and they go with it
-  if (toolKinds(tool) !== needs) {
+  if ((v.kinds | toolKinds(tool)) !== shown) {
     applyHidden(v);
     v.onHidden();
   }
@@ -158,7 +158,7 @@ export function cancelTool(v: SketchView): void {
   }
   if (v.tool !== 'select') setTool(v, 'select');
   // nothing else to back out of: the part open is closed (#679)
-  else closePart(v);
+  else v.closePart();
 }
 /** Whether a tool can draw with no plane chosen: what it mints stands in space. */
 export function drawsInSpace(tool: Tool): boolean {

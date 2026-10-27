@@ -68,13 +68,16 @@ pub struct Node {
     pub solid: Option<usize>,
     /// A feature or cutter listed under its object: there to be found, not to be hidden.
     pub operand: bool,
+    /// **A part** (#679): an instance that makes an object, at any depth — what a front end
+    /// closes, its insides out of the way until it is opened.
+    pub part: bool,
     pub children: Vec<Node>,
 }
 
 impl Node {
     fn new(label: String, kind: NodeKind, path: String, span: Option<Span>) -> Node {
         Node { label, kind, component: None, path, span, ents: Vec::new(), solid: None,
-               operand: false, children: Vec::new() }
+               operand: false, part: false, children: Vec::new() }
     }
 
     /// Every entity and solid of the row and the rows under it — what hiding it takes out of
@@ -407,7 +410,20 @@ fn with_operands(mut rows: Vec<Node>, sk: &Sketch) -> Vec<Node> {
     let mut taken: BTreeMap<usize, Node> = BTreeMap::new();
     take(&mut rows, &operand, &mut taken);
     place_operands(&mut rows, sk, &taken, 0);
+    mark_parts(&mut rows);
     rows
+}
+
+/// Mark each instance that makes an object, at any depth, a part (#679); whether `rows` make one.
+/// An operand is no object of its own, nor is anything under it.
+fn mark_parts(rows: &mut [Node]) -> bool {
+    let mut makes = false;
+    for n in rows.iter_mut().filter(|n| !n.operand) {
+        let inside = mark_parts(&mut n.children);
+        n.part = n.kind == NodeKind::Instance && inside;
+        makes |= inside || n.kind == NodeKind::Solid;
+    }
+    makes
 }
 
 /// Take every row of an operand solid out of `rows`, wherever it is, into `taken`.

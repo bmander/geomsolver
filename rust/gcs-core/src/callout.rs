@@ -331,8 +331,12 @@ pub fn layout(sk: &Sketch, unit: f64) -> Vec<Callout> {
 }
 
 /// Lay out only requested constraint annotations. `None` explicitly requests the full
-/// inspection overlay; an empty selection draws nothing, including generated dimensions.
+/// inspection overlay — none of it while the workspace's dimensions are turned off (#678); an
+/// empty selection draws nothing, including generated dimensions.
 pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callout> {
+    if ids.is_none() && !sk.kinds.contains(crate::model::Kinds::DIMENSIONS) {
+        return Vec::new();
+    }
     let u = if unit.is_finite() && unit > 0.0 { unit } else { 1.0 };
     let (x0, y0, x1, y1) = sk.drawn_bounds();
     let mut pen = Pen {
