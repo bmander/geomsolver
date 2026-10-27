@@ -109,9 +109,12 @@ test-slow: all
 test-ccx:
 	$(CARGO) test --manifest-path rust/Cargo.toml -p gcs-core --features gcs-core/ccx analysis_corpus::
 
-bench: wasm
+# The solver natively and in wasm, then what opening an assembly costs the page beside what
+# `solventc` takes to export it (#669, docs/build-performance.md; skipped without Playwright).
+bench: wasm build/solventc
 	$(CARGO) run --manifest-path rust/Cargo.toml --release -p gcs-core --bin bench
 	cd web && npm run bench
+	cd web && node tools/open-bench.mjs
 
 fmt:
 	$(CARGO) fmt --manifest-path rust/Cargo.toml

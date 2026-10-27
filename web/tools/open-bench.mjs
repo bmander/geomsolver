@@ -321,7 +321,7 @@ for (const o of s.objects) {
   const m = meshesOf.get(indexOf.get(o.name));
   const how = o.refused ? ' (refused)' : o.swept ? ' (swept)' : '';
   console.log(`  ${(o.name + how).padEnd(40)} ${ms(o.first).padStart(9)} ${ms(o.final).padStart(9)} `
-            + `${ms(builtOf.get(o.name)).padStart(9)} ${String(m?.triangles ?? o.triangles).padStart(10)} `
+            + `${ms(builtOf.get(o.name)).padStart(9)} ${String(m?.triangles ?? o.triangles ?? '—').padStart(10)} `
             + `${String(m?.meshes ?? '—').padStart(7)}`);
 }
 console.log('\nsolventc --no-check --step-assembly (native)');
