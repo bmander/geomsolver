@@ -172,6 +172,7 @@ mod modules;
 mod motions;
 mod names;
 mod numeric_parts;
+mod object_builder;
 mod ode;
 mod offset_corners;
 mod offsets;

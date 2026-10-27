@@ -794,11 +794,14 @@ pub fn shown_objects(sk: &Sketch) -> Vec<usize> {
 /// at the box's approximation (`ApproximationPolicy::Mesh`, the one it is meshed at), with the
 /// reason the evaluation gives — `` `b1`: the revolution axis crosses the profile ``.  A swept
 /// object whose surface a host is still meshing (`FieldMeshing::Deferred`, none supplied yet) is
-/// not one: it is on its way, and the host says so.  Evaluations are the sketch's cached ones,
-/// so asking after the box has drawn costs nothing more.
+/// not one, nor one a host is still building (`FieldMeshing::Supplied`, `Sketch::object_state`):
+/// it is on its way, and the host says so; one whose build the host was refused is, in the
+/// build's words (#671).  Evaluations are the sketch's cached ones, so asking after the box has
+/// drawn costs nothing more.
 pub fn unbuilt(sk: &Sketch) -> Vec<(usize, String)> {
     let meshing = |i: usize| sk.is_swept(i) && sk.supplied_field(i).is_none()
-        && sk.field_meshing.get() == crate::solid::FieldMeshing::Deferred;
+        && sk.field_meshing.get() == crate::solid::FieldMeshing::Deferred
+        || sk.object_state(i) == crate::solid::ObjectState::Building;
     objects(sk).into_iter().filter(|&i| !meshing(i))
         .filter_map(|i| sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh).err()
             .map(|why| (i, why)))

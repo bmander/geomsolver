@@ -339,12 +339,15 @@ pub struct Sketch {
     /// What the sketch remembers and could work out again — polylines, evaluated and exact
     /// solids, regions' readings, bodies' faces — and what a clone keeps of it (`Caches`).
     pub caches: Caches,
-    /// Swept solids' surfaces a host meshed elsewhere (`supply_field`), each against the
-    /// `solid::reads` it was supplied under, so a moved drawing reads none.
-    pub field_surfaces: std::cell::RefCell<BTreeMap<usize, (Vec<f64>, std::rc::Rc<crate::solid::FieldSurface>)>>,
+    /// Solids' surfaces a host built or meshed elsewhere (`supply_field`, `supply_object`), or the
+    /// build's refusal (`refuse_object`), each against the `solid::reads` it was supplied under,
+    /// so a moved drawing reads none as its own; and the solids such a host builds
+    /// (`solid::Supplies`).
+    pub field_surfaces: std::cell::RefCell<crate::solid::Supplies>,
     /// Where a swept solid with no supplied surface is meshed (`solid::FieldMeshing`): here, or —
     /// set by a host that meshes swept solids itself, a page with a worker — elsewhere, the solid
-    /// refused until its surface is supplied rather than meshed on the thread that draws.
+    /// refused until its surface is supplied rather than meshed on the thread that draws; or every
+    /// object built elsewhere, exactly (`FieldMeshing::Supplied`, #671).
     pub field_meshing: std::cell::Cell<crate::solid::FieldMeshing>,
     /// The document's presentation: its style sheet, what each class looks like, which `style`
     /// puts here and reads back (`Sketch::sheet`, `set_sheet`, `style_of`).  Carried, never read:

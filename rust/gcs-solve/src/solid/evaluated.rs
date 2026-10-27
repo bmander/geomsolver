@@ -84,8 +84,9 @@ enum Surface {
     /// A material field's surface (`from_surface`), `provisional` while the refinement that made
     /// it is still going, when it may be open.
     Field { provisional: bool },
-    /// An exact B-rep's mesh (`from_brep`), and the B-rep's own volume.
-    Brep { volume: f64 },
+    /// An exact B-rep's mesh (`from_brep`), and the B-rep's own volume; `stale` where it is a
+    /// host's build of an earlier drawing, drawn until the new one arrives (`Sketch::supplied_object`).
+    Brep { volume: f64, stale: bool },
 }
 
 /// **An evaluated solid where it stands** (#412): its geometry (`Shape`), shared, and the rigid
@@ -237,6 +238,17 @@ impl EvaluatedSolid {
             _ => return Err("solid approximation requires a finite positive pixel length".into()),
         };
         let operands = validate_at(sk, si, unit)?;
+        // an object a host builds is what it supplied, or on its way, or refused (#671)
+        if sk.awaits_supply(si) {
+            return match sk.supplied_object(si) {
+                Some(Ok((surface, current))) => match &surface.exact {
+                    Some(exact) => Self::from_exact_surface(sk, si, policy, unit, &surface, exact, operands, !current),
+                    None => Err(format!("`{}`: its supplied surface is no exact build", sk.solid_name(si))),
+                },
+                Some(Err(why)) => Err(why),
+                None => Err(format!("`{}`: still being built", sk.solid_name(si))),
+            };
+        }
         if sweeps_among(sk, &operands) {
             // a swept solid's exact B-rep where a host supplied one, else its field's surface
             if let Some(exact) = sk.supplied_exact_solid(si) {
@@ -341,6 +353,8 @@ impl EvaluatedSolid {
         let name = sk.solid_name(si);
         match sk.field_meshing.get() {
             FieldMeshing::Deferred => Err(format!("`{name}`: its surface is still being meshed")),
+            // a host building every object exactly meshes no field, and this solid is no object
+            FieldMeshing::Supplied => Err(format!("`{name}`: a swept solid that is no object is built with the object it is of")),
             // the refinement knows no solid, so its refusal is named here, as its setup's is (#614)
             FieldMeshing::Now => {
                 let surface = FieldMesher::new(sk, si)?.finish()
@@ -444,7 +458,7 @@ impl EvaluatedSolid {
             csg,
             paths: operand_paths(sk, si),
             round,
-            surface: Surface::Brep { volume },
+            surface: Surface::Brep { volume, stale: false },
             corner_normals,
             exact: Some((exact.clone(), brep_faces)),
             edges: OnceCell::new(),
@@ -460,7 +474,7 @@ impl EvaluatedSolid {
     fn from_surface(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64,
         surface: &FieldSurface) -> Result<Self, String> {
         if let Some(exact) = &surface.exact {
-            return Self::from_exact_surface(sk, si, policy, unit, surface, exact);
+            return Self::from_exact_surface(sk, si, policy, unit, surface, exact, BTreeSet::new(), false);
         }
         let name = sk.solid_name(si);
         let mut world = Box3::empty();
@@ -513,19 +527,25 @@ impl EvaluatedSolid {
             face_edges: OnceCell::new(),
         }))
     }
-    /// A swept solid from its exact B-rep's mesh, built elsewhere and supplied
+    /// **A solid from its exact B-rep's mesh, built elsewhere and supplied**
     /// (`brep::export::Builder`): `from_brep`'s solid without the B-rep — one polyhedral primitive
     /// whose facets keep their faces, so the faces meet at creases and a curved one's seams are a
     /// tessellation's; its silhouettes traced across corner normals averaged over each face's own
-    /// facets; its volume the B-rep's. Every face is the path `<solid>.surface`: the construction
-    /// names none of them.
+    /// facets; its volume the B-rep's.  Each face is the path its build named it by, the pieces of
+    /// one face one path, as `from_brep` names them, its rounds read from them as there; a surface
+    /// that names none has every face the path `<solid>.surface`.  `stale` where it was built for
+    /// an earlier drawing, drawn until the new one arrives.
+    #[allow(clippy::too_many_arguments)]
     fn from_exact_surface(sk: &Sketch, si: usize, policy: ApproximationPolicy, unit: f64,
-        surface: &FieldSurface, exact: &super::ExactFaces) -> Result<Self, String> {
+        surface: &FieldSurface, exact: &super::ExactFaces, operands: BTreeSet<usize>, stale: bool) -> Result<Self, String> {
         let name = sk.solid_name(si);
         let mut world = Box3::empty();
         for &v in &surface.vertices { world.add(v); }
-        if world.is_empty() { return Err(format!("`{name}`: its exact surface is empty")); }
-        let centre: [f64; 3] = std::array::from_fn(|k| 0.5 * (world.lo[k] + world.hi[k]));
+        if world.is_empty() && surface.triangles.is_empty() && !exact.smooth.is_empty() {
+            return Err(format!("`{name}`: its exact surface is empty"));
+        }
+        let centre: [f64; 3] = if world.is_empty() { [0.0; 3] }
+            else { std::array::from_fn(|k| 0.5 * (world.lo[k] + world.hi[k])) };
         let origin = WorldPoint(centre);
         let local = |v: [f64; 3]| -> [f64; 3] { std::array::from_fn(|k| v[k] - centre[k]) };
         // each vertex's normal on each face it is of: its facets' area-weighted sum
@@ -542,7 +562,17 @@ impl EvaluatedSolid {
             }
             kept.push((*t, face, [a, b, c], n.map(|x| x / l)));
         }
-        if kept.is_empty() { return Err(format!("`{name}`: its exact surface has no area")); }
+        if kept.is_empty() && !surface.triangles.is_empty() { return Err(format!("`{name}`: its exact surface has no area")); }
+        // one face index a path, as `from_brep` keeps them; a surface naming none, one path
+        let whole = format!("{}.surface", sk.solids[si].name);
+        let mut faces: Vec<String> = Vec::new();
+        let index: Vec<usize> = (0..exact.smooth.len()).map(|f| {
+            let path = exact.names.get(f).cloned().unwrap_or_else(|| whole.clone());
+            match faces.iter().position(|n| *n == path) {
+                Some(k) => k,
+                None => { faces.push(path); faces.len() - 1 }
+            }
+        }).collect();
         let mut facets = Vec::with_capacity(kept.len());
         let mut corner_normals = Vec::with_capacity(kept.len());
         let mut bbox = Box3::empty();
@@ -554,10 +584,8 @@ impl EvaluatedSolid {
                 if l > 0.0 { m.map(|x| x / l) } else { n }
             })));
             for p in pts { bbox.add(p); }
-            facets.push(Facet { pts: pts.to_vec(), n, face: face as usize, smooth });
+            facets.push(Facet { pts: pts.to_vec(), n, face: index[face as usize], smooth });
         }
-        let path = format!("{}.surface", sk.solids[si].name);
-        let faces = vec![path.clone(); exact.smooth.len()];
         let prim = Prim { facets, bbox, faces, of: String::new(), exact: true };
         let csg = Csg { prims: vec![prim], term: Term::Prim(0) };
         let epsilon = csg.epsilon();
@@ -566,8 +594,13 @@ impl EvaluatedSolid {
         }
         let prim = &csg.prims[0];
         let boundary: Vec<Piece> = prim.facets.iter().map(|f| Piece {
-            pts: f.pts.clone(), n: f.n, path: path.clone(), prim: 0, smooth: f.smooth,
+            pts: f.pts.clone(), n: f.n, path: prim.faces[f.face].clone(), prim: 0, smooth: f.smooth,
         }).collect();
+        let surviving: BTreeSet<String> = prim.faces.iter().cloned().collect();
+        let round = if exact.names.is_empty() { Vec::new() } else {
+            let curved: BTreeSet<&str> = boundary.iter().filter(|p| p.smooth).map(|p| p.path.as_str()).collect();
+            round_features(sk, operands, &curved, origin)?
+        };
         Ok(Self::made(origin, Shape {
             serial: next_serial(),
             name,
@@ -575,12 +608,12 @@ impl EvaluatedSolid {
             unit,
             epsilon,
             bounds: bbox,
-            surviving: [path].into_iter().collect(),
+            surviving,
             boundary: OnceCell::from(boundary),
             csg,
             paths: operand_paths(sk, si),
-            round: Vec::new(),
-            surface: Surface::Brep { volume: exact.volume },
+            round,
+            surface: Surface::Brep { volume: exact.volume, stale },
             corner_normals,
             exact: None,
             edges: OnceCell::new(),
@@ -588,6 +621,11 @@ impl EvaluatedSolid {
             ray_indices: OnceCell::new(),
             face_edges: OnceCell::new(),
         }))
+    }
+    /// Whether this is a host's build of an earlier drawing, drawn until the new one arrives
+    /// (#671): an object being built again.
+    pub fn stale(&self) -> bool {
+        matches!(self.shape.surface, Surface::Brep { stale: true, .. })
     }
     /// A preview of a surface still being refined, which may be open.
     pub fn provisional(&self) -> bool {
@@ -792,7 +830,7 @@ impl EvaluatedSolid {
     }
     pub fn volume(&self) -> f64 {
         match self.shape.surface {
-            Surface::Brep { volume } => volume,
+            Surface::Brep { volume, .. } => volume,
             _ => mesh::volume(self.boundary()),
         }
     }

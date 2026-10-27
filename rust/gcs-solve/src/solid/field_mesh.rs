@@ -13,6 +13,7 @@ use super::*;
 use crate::delaunay::refine::{Criteria, Domain, Progressive, Readings, Stage};
 use super::{Query, Resolution, Source, Want};
 use crate::space::box_centre_diagonal;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Where a swept solid's surface is meshed when a sketch is asked for the solid and holds no
 /// surface supplied for it (`Sketch::field_meshing`).
@@ -25,6 +26,44 @@ pub enum FieldMeshing {
     /// Elsewhere: the host meshes each swept solid itself (a page's worker) and supplies the
     /// surface, and until it has the solid is refused rather than meshed on the thread that draws.
     Deferred,
+    /// **Elsewhere, every object, exactly** (#671): the host builds each object's exact surface
+    /// itself — a page's pool of workers, one job a binding (`Sketch::object_jobs`) — and supplies
+    /// it (`Sketch::supply_object`).  Until it has, an object is refused, on its way, or unbuilt in
+    /// the words of the build's refusal (`Sketch::refuse_object`); a swept solid's field is never
+    /// meshed.  A solid that is no object (an operand a gesture asks after) is evaluated here as
+    /// `Now` evaluates it.
+    Supplied,
+}
+
+/// Why the exact surface `of` says of `vertices` and `triangles` is not one a sketch can take, or
+/// nothing: a triangle or an edge naming a vertex past those given, a triangle or an edge naming a
+/// face past those given, names for some faces and not all, a volume that is no number.
+pub(crate) fn exact_checked(vertices: &[[f64; 3]], triangles: &[[u32; 3]], x: &ExactFaces) -> Result<(), String> {
+    let (nv, nf) = (vertices.len(), x.smooth.len());
+    if triangles.iter().flatten().any(|&v| v as usize >= nv) {
+        return Err(format!("names a vertex past the {nv} given"));
+    }
+    if x.of.len() != triangles.len() {
+        return Err(format!("names the faces of {} of its {} triangles", x.of.len(), triangles.len()));
+    }
+    if x.of.iter().any(|&f| f as usize >= nf) {
+        return Err(format!("has a triangle naming a face past the {nf} given"));
+    }
+    if !x.names.is_empty() && x.names.len() != nf {
+        return Err(format!("names {} of its {nf} faces", x.names.len()));
+    }
+    for e in &x.edges {
+        if e.points.len() < 2 || e.points.iter().any(|&v| v as usize >= nv) {
+            return Err(format!("has an edge through {} points, or one past the {nv} given", e.points.len()));
+        }
+        if e.faces.iter().any(|&f| f as usize >= nf) {
+            return Err(format!("has an edge bounding a face past the {nf} given"));
+        }
+    }
+    if !x.volume.is_finite() {
+        return Err("has a volume that is not a number".into());
+    }
+    Ok(())
 }
 
 /// A field-meshed solid's facet size and surface distance, as fractions of its support's
@@ -48,12 +87,74 @@ pub struct FieldSurface {
 }
 
 /// What a supplied surface that is an exact B-rep's mesh says of itself (`brep::export::Display`):
-/// the face each triangle is of, whether each face is curved, and the solid's exact volume.
+/// the face each triangle is of, whether each face is curved, and the solid's exact volume; each
+/// face's name as the build names it (`solid::exact::named`'s, none where it was not given), and
+/// the B-rep's edges.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ExactFaces {
     pub of: Vec<u32>,
     pub smooth: Vec<bool>,
     pub volume: f64,
+    pub names: Vec<String>,
+    pub edges: Vec<ExactEdge>,
+}
+
+/// **One of an exact B-rep's edges as its display draws it** (#670): a polyline through the
+/// display's vertices (`points`, indices into them), within the display's bars, the two faces it
+/// bounds (`faces`, as the triangles' `of` numbers them, the lesser first), and whether those meet
+/// tangent along it (`smooth`: a round's tangent edge) or at a crease.  A seam, a face meeting
+/// itself, bounds nothing and is none.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ExactEdge {
+    pub points: Vec<u32>,
+    pub faces: [u32; 2],
+    pub smooth: bool,
+}
+
+/// **What a host has supplied a sketch** (`Sketch::field_surfaces`): each solid's surface, or the
+/// refusal of its build, against what the solid read when it was supplied; and the solids the host
+/// builds every one of (`FieldMeshing::Supplied`): its objects and the solids their jobs build
+/// (`Sketch::object_jobs`), which the sketch then never evaluates itself.
+#[derive(Clone, Debug, Default)]
+pub struct Supplies {
+    pub surfaces: BTreeMap<usize, Supplied>,
+    pub awaited: BTreeSet<usize>,
+}
+
+/// One solid's supply: what it read (`solid::reads`) when its surface was built — or the refusal
+/// of its build, in the build's words, was supplied — which it is current against while what it
+/// reads is that within a solve's tolerance (`solid::same_reads`).
+#[derive(Clone, Debug)]
+pub struct Supplied {
+    pub reads: Vec<f64>,
+    pub surface: Result<std::rc::Rc<FieldSurface>, String>,
+}
+
+/// **One build a host that builds every object elsewhere asks** (`Sketch::object_jobs`, #671):
+/// the solid built (`solid`), the name of the first object it is, `key` as a `FieldJob`'s — the
+/// digest of what the solid built reads, equal on every core exactly when its surface is — the
+/// objects it stands for (`objects`: itself, and every other placement of its binding, each
+/// placed by the sketch where it stands), and whether a sweep is cut in it, which is built first.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ObjectJob {
+    pub solid: usize,
+    pub name: String,
+    pub key: u64,
+    pub objects: Vec<usize>,
+    pub swept: bool,
+}
+
+/// Where an object stands with a host that builds every object elsewhere (`Sketch::object_state`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum ObjectState {
+    /// Its surface supplied against the drawing as it stands, or the sketch builds it itself.
+    Built,
+    /// Nothing supplied yet: on its way.
+    Building,
+    /// A surface supplied against an earlier drawing, drawn until the new one arrives.
+    Rebuilding,
+    /// Its build refused, in the build's words.
+    Refused(String),
 }
 
 /// One surface a host that meshes swept solids elsewhere has to mesh (`Sketch::field_jobs`):
@@ -71,7 +172,12 @@ pub struct FieldJob {
 /// The digest `FieldJob::key` is: FNV-1a over the bits of `solid::reads`, so equal reads give
 /// equal keys on every host (a JSON number could not carry it whole; it crosses as hex).
 pub fn field_key(sk: &Sketch, si: usize) -> u64 {
-    super::reads(sk, si, 0.0).iter().fold(0xcbf2_9ce4_8422_2325u64, |h, x| {
+    reads_key(&super::reads(sk, si, 0.0))
+}
+
+/// `field_key` of what a solid read: FNV-1a over the bits of `reads`.
+pub fn reads_key(reads: &[f64]) -> u64 {
+    reads.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, x| {
         x.to_bits().to_le_bytes().iter().fold(h, |h, &b| (h ^ b as u64).wrapping_mul(0x100_0000_01b3))
     })
 }
