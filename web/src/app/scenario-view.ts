@@ -16,7 +16,7 @@
  *
  * Nothing here is geometry: the picture's arrays are the core's, handed to the box as they came,
  * typed so the worker can transfer them rather than copy. */
-import { related } from '../core/modules.js';
+import { handed } from '../core/modules.js';
 import { samePose } from './claim-judging.js';
 import type { Document, Scenario, ScenarioAnswer } from '../core/program.js';
 import type { PictureBody, ScenarioPicture } from '../core/scenario.js';
@@ -188,8 +188,7 @@ export class ScenarioReading {
         () => this.fail('the worker reading the scenarios sent what could not be read');
       this.worker = w;
     }
-    const modules = related(doc.text).filter((f) => f.provided)
-      .map((f): [string, string] => [f.name, f.text]);
+    const modules = handed(doc.text);
     this.worker.postMessage(
       { kind: 'scenario', id: this.job, text: doc.text, modules, x, meshedAt, drawn });
     this.told(this.state);

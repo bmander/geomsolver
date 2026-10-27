@@ -53,7 +53,7 @@
  * number a dimension is edited in. */
 import * as io from '../core/io.js';
 import * as solids from '../core/mesh.js';
-import { related } from '../core/modules.js';
+import { handed } from '../core/modules.js';
 import type { ExportJob, ExportReply } from './export-worker.js';
 import { drawingActive, exportDrawingSvg } from './drawing.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
@@ -76,7 +76,7 @@ import {
   MenuItem, ToolbarButton, addButton, addMenu, addTopic, closeMenus, download, fitBars,
   judgingLine, openImage, scenarioLine, toast,
 } from './ui.js';
-import { BuildBar } from './build-bar.js';
+import { BuildBar, clock } from './build-bar.js';
 import type { Judging } from './claim-judging.js';
 import type { Scenario, ScenarioAnswer } from '../core/program.js';
 import { bindScenarioCard, refreshScenarioCard } from './scenario-card.js';
@@ -265,7 +265,7 @@ function exactExport(kind: 'step' | 'stl'): void {
     exporter = w;
   }
   const text = view.source;
-  const modules = related(text).filter((f) => f.provided).map((f): [string, string] => [f.name, f.text]);
+  const modules = handed(text);
   for (const o of objs) {
     const id = ++exportJob;
     const name = o.name.replace(/[^\w.-]/g, '_');
@@ -314,13 +314,12 @@ function sayJudging(j: Judging | null): void {
     judgingTimer = window.setTimeout(() => judgingLine(''), 5000);
     return;
   }
-  const s = Math.floor((performance.now() - j.since) / 1000);
-  const clock = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const time = clock(performance.now() - j.since);
   const n = Math.round(Math.max(0, Math.min(1, j.progress?.fraction ?? 0)) * 8);
   const spin = SPIN[Math.floor(performance.now() / 250) % SPIN.length];
   const doing = j.progress?.doing
     ?? `reading the drawing to judge ${j.claims.length} claim${j.claims.length === 1 ? '' : 's'}`;
-  judgingLine(`${spin} ${doing} ${'▰'.repeat(n)}${'▱'.repeat(8 - n)} ${clock}`);
+  judgingLine(`${spin} ${doing} ${'▰'.repeat(n)}${'▱'.repeat(8 - n)} ${time}`);
   judgingTick = window.setInterval(() => sayJudging(view.claims.judging), 250);
 }
 

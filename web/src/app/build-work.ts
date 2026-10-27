@@ -42,8 +42,9 @@ export interface BuildReply {
 }
 
 export class BuildWork {
-  /** The last drawing handed over, elaborated, and the modules it was read with. */
-  private held: { modules: string; doc: Document } | null = null;
+  /** The last drawing handed over, elaborated, the modules it was read with, the values written
+   *  over it, and the jobs its core names at those (asked once a drawing, for every job of it). */
+  private held: { modules: string; doc: Document; x: Float64Array; jobs?: ObjectJob[] } | null = null;
   /** How many elaborations the worker has read: a drawing reused reads none. */
   reads = 0;
   private dropped = new Set<number>();
@@ -60,29 +61,43 @@ export class BuildWork {
   }
 
   /** The drawing a job is of, as this worker's core reads it: the one held where the text is
-   *  its, or a numeric edit of it, else read again; the page's values written over it. */
-  private document(drawing: Drawing): Document {
+   *  its, or a numeric edit of it, else read again (`fresh`); the page's values written over it. */
+  private document(drawing: Drawing): { doc: Document; fresh: boolean } {
     const modules = JSON.stringify(drawing.modules);
     const h = this.held;
-    if (h && h.modules === modules && h.doc.live && (h.doc.text === drawing.text || h.doc.retext(drawing.text))) {
-      // (`retext` takes the caller's word that the statements are the same: values that do not
-      // fit the drawing held say they are not, and it is read again)
-      try { h.doc.sketch.setX(drawing.x); return h.doc; }
-      catch { /* read again, below */ }
+    if (h && h.modules === modules && h.doc.live) {
+      const same = h.doc.text === drawing.text;
+      if (same && sameValues(h.x, drawing.x)) return { doc: h.doc, fresh: false };
+      if (same || h.doc.retext(drawing.text)) {
+        // (`retext` takes the caller's word that the statements are the same: values that do not
+        // fit the drawing held say they are not, and it is read again)
+        try {
+          h.doc.sketch.setX(drawing.x);
+          Object.assign(h, { x: drawing.x, jobs: undefined });
+          return { doc: h.doc, fresh: false };
+        } catch { /* read again, below */ }
+      }
     }
-    h?.doc.dispose();
+    return { doc: this.read(drawing, modules), fresh: true };
+  }
+
+  /** `drawing` read afresh, and held. */
+  private read(drawing: Drawing, modules: string): Document {
+    this.held?.doc.dispose();
     this.held = null;
     install(drawing.modules);
     const doc = Document.read(drawing.text);
-    this.held = { modules, doc };
     this.reads += 1;
     doc.sketch.setX(drawing.x);
+    this.held = { modules, doc, x: drawing.x };
     return doc;
   }
 
-  /** Why this core's drawing does not build `job` as the page's does, or nothing. */
-  private static unpaired(doc: Document, job: ObjectJob): string | undefined {
-    const mine = objectJobs(doc.sketch).find((j) => j.solid === job.solid);
+  /** Why the drawing held does not build `job` as the page's does, or nothing. */
+  private unpaired(job: ObjectJob): string | undefined {
+    const h = this.held!;
+    h.jobs ??= objectJobs(h.doc.sketch);
+    const mine = h.jobs.find((j) => j.solid === job.solid);
     if (mine && mine.name === job.name && mine.key === job.key) return undefined;
     return `the worker's drawing does not build \`${job.name}\` as the page's does`;
   }
@@ -97,15 +112,11 @@ export class BuildWork {
     const started = performance.now();
     let builder: ExactBuilder;
     try {
-      const before = this.reads;
-      let doc = this.document(ask.drawing);
-      // a document kept across a numeric edit that names the job otherwise is read afresh, once
-      if (this.reads === before && BuildWork.unpaired(doc, job)) {
-        this.held?.doc.dispose();
-        this.held = null;
-        doc = this.document(ask.drawing);
-      }
-      const why = BuildWork.unpaired(doc, job);
+      let { doc, fresh } = this.document(ask.drawing);
+      // a document kept across a numeric edit that names the job otherwise is read afresh, once:
+      // what `retext` took is the text, and a number only the elaboration writes (a depth) is not
+      if (!fresh && this.unpaired(job)) doc = this.read(ask.drawing, JSON.stringify(ask.drawing.modules));
+      const why = this.unpaired(job);
       if (why) throw new Error(why);
       builder = ExactBuilder.create(doc.sketch, job.solid);
     } catch (e) {
@@ -132,4 +143,9 @@ export class BuildWork {
       builder.dispose();
     }
   }
+}
+
+/** Whether two lists of parameter values are the same, to the bit. */
+function sameValues(a: Float64Array, b: Float64Array): boolean {
+  return a.length === b.length && a.every((v, k) => Object.is(v, b[k]));
 }

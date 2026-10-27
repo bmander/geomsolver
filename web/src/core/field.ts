@@ -8,21 +8,11 @@
 import { Sketch } from './model.js';
 import { core, lastError, takeJson, withBuf } from './wasm.js';
 
-/** A surface in world coordinates: `provisional` while the refinement is still going, and `exact`
- *  where it is no field's surface but the exact B-rep's mesh. */
+/** A surface in world coordinates, `provisional` while the refinement is still going. */
 export interface FieldSurface {
   vertices: Float64Array;
   triangles: Uint32Array;
   provisional: boolean;
-  exact?: ExactFaces;
-}
-
-/** What an exact surface says of itself: the face each triangle is of, whether each face is
- *  curved (1) or flat (0), and the solid's exact volume. */
-export interface ExactFaces {
-  of: Uint32Array;
-  smooth: Uint8Array;
-  volume: number;
 }
 
 /** One surface for a page's worker to mesh (`Sketch::field_jobs`): a swept object, and the key
@@ -57,23 +47,15 @@ export function deferFields(sk: Sketch, on = true): void {
   core().gcs_sketch_defer_fields(sk.handle, on ? 1 : 0);
 }
 
-/** Give swept solid `idx` a surface meshed elsewhere, against the drawing as it stands now: a
- *  field's, or the exact B-rep's. */
+/** Give swept solid `idx` a field's surface meshed elsewhere, against the drawing as it stands
+ *  now (an object's exact build is `objects.ts`'s `supplyObject`). */
 export function supplyField(sk: Sketch, idx: number, s: FieldSurface): void {
   const nv = s.vertices.length / 3, nt = s.triangles.length / 3;
-  const x = s.exact;
   const ok = withBuf(s.vertices.length, 8, (v) => {
     v.set(s.vertices);
     return withBuf(s.triangles.length, 4, (t) => {
       t.set(s.triangles);
-      if (!x) return core().gcs_solid_supply_field(sk.handle, idx, v.ptr, nv, t.ptr, nt, s.provisional ? 1 : 0);
-      return withBuf(x.of.length, 4, (o) => {
-        o.set(x.of);
-        return withBuf(x.smooth.length, 1, (m) => {
-          m.set(x.smooth);
-          return core().gcs_solid_supply_exact(sk.handle, idx, v.ptr, nv, t.ptr, nt, o.ptr, m.ptr, x.smooth.length, x.volume);
-        });
-      });
+      return core().gcs_solid_supply_field(sk.handle, idx, v.ptr, nv, t.ptr, nt, s.provisional ? 1 : 0);
     });
   });
   if (ok < 0) throw new Error(lastError());

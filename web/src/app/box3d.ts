@@ -147,6 +147,8 @@ export class Box3D {
   /** Each object as the box holds it, by its index among the sketch's solids. */
   private readonly placed = new Map<number, Placed>();
   readonly stats: BoxStats = { cut: 0, moved: 0, capped: 0 };
+  /** The objects drawn from a build of an earlier drawing while their new one is made (#672). */
+  private readonly stale = new Set<number>();
   /** The objects cut since the last frame was rendered, marked (`gcs:drawn`) once it is. */
   private readonly drawnNow: { index: number; name: string; triangles: number }[] = [];
   private built: Built | null = null;
@@ -483,14 +485,14 @@ export class Box3D {
       })));
     }
     if (!v.showSolid) return group;
-    // an object being built again after an edit is drawn as its last build was, dimmed, till the
-    // new one arrives (#672)
-    const dim = stale(v.sketch, solid);
+    // an object being built again after an edit is drawn as its last build was, a ghost, till the
+    // new one arrives (#672: `chrome` ghosts it)
+    if (stale(v.sketch, solid)) this.stale.add(solid);
+    else this.stale.delete(solid);
     // **the object itself, as a mesh** — every face of it a named child, so a later selection has
     // something to name
     for (const f of m.faces) {
       const face = faceMesh(m, f, this.clipping);
-      if (dim) Object.assign(face.material as THREE.MeshStandardMaterial, { transparent: true, opacity: STALE_OPACITY });
       group.add(face);
       this.faces.push({ solid, path: f.path, mesh: face });
     }
@@ -501,6 +503,7 @@ export class Box3D {
   private unplace(solid: number): void {
     const held = this.placed.get(solid);
     if (!held) return;
+    this.stale.delete(solid);
     this.objects.remove(held.group);
     for (let i = this.faces.length - 1; i >= 0; i--) {
       if (this.faces[i].solid === solid) this.faces.splice(i, 1);
@@ -512,6 +515,7 @@ export class Box3D {
   /** Let every object's geometry go: a different drawing, or its surfaces shown or hidden. */
   private dropObjects(): void {
     this.faces.length = 0;
+    this.stale.clear();
     this.placed.clear();
     release(this.objects);
   }
@@ -629,7 +633,7 @@ export class Box3D {
       const m = face.material as THREE.MeshStandardMaterial;
       const tool = c?.tools.some((t) => t.index === solid);
       face.visible = !(c && this.preview.shown && c.target.index === solid);
-      ghost(m, !!tool || deformed.has(solid));
+      ghost(m, !!tool || deformed.has(solid) || this.stale.has(solid));
       m.color.set(tool ? INK[c!.word] : INK.solid);
       const mine = picked.get(solid);
       const [ink, glow]: [string | number, number] = tool ? [INK[c!.word], 0.35]
@@ -737,9 +741,6 @@ function faceMesh(m: Mesh, f: Face, clippingPlanes: THREE.Plane[]): THREE.Mesh {
   face.userData.face = f.path;
   return face;
 }
-
-/** How much of a stale object's surface is drawn (#672): enough to see what it was. */
-const STALE_OPACITY = 0.4;
 
 /** A geometry of nothing but the core's points, three doubles each. */
 function at(points: Float64Array): THREE.BufferGeometry {

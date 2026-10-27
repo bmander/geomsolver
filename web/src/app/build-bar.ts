@@ -41,8 +41,9 @@ export function clock(ms: number): string {
 
 /** **What the bar says of `rows`**: building while any job is waiting or building — `building 12
  *  of 35 · wheel_part — cutting the sector by its sheets`, the job named the one building longest —
- *  then, where a build was refused and `seen` is false, how many were not built; else nothing. */
-export function barOf(rows: BuildRow[], seen = false): BarState {
+ *  then, while a refusal is `unseen`, how many were not built; else nothing.  It is marked while a
+ *  refusal is unseen. */
+export function barOf(rows: BuildRow[], unseen = true): BarState {
   const total = rows.length;
   let weight = 0, done = 0;
   for (const r of rows) {
@@ -58,9 +59,9 @@ export function barOf(rows: BuildRow[], seen = false): BarState {
       .sort((a, b) => (a.since ?? Infinity) - (b.since ?? Infinity))[0];
     const k = Math.min(total - left + 1, total);
     const what = building ? ` · ${objectName(building.name)} — ${building.doing}` : '';
-    return { shown: true, fraction, left, refused, total, text: `building ${k} of ${total}${what}`, marked: refused > 0 };
+    return { shown: true, fraction, left, refused, total, text: `building ${k} of ${total}${what}`, marked: refused > 0 && unseen };
   }
-  if (refused && !seen) {
+  if (refused && unseen) {
     return { shown: true, fraction: 1, left, refused, total, marked: true,
              text: `${refused} of ${total} not built — open to see why` };
   }
@@ -133,11 +134,11 @@ export class BuildBar {
     const keys = new Set(this.rows.map((r) => r.key));
     for (const k of [...this.seen]) if (!keys.has(k)) this.seen.delete(k);
     const unseen = this.rows.some((r) => r.state === 'refused' && !this.seen.has(r.key));
-    const s = barOf(this.rows, !unseen);
+    const s = barOf(this.rows, unseen);
     const shown = s.shown || !this.list.hidden && this.rows.length > 0;
     if (shown && this.root.hidden) this.since = performance.now();
     this.root.hidden = !shown;
-    this.root.classList.toggle('marked', s.marked && unseen);
+    this.root.classList.toggle('marked', s.marked);
     this.fill.style.transform = `scaleX(${s.fraction})`;
     this.text.textContent = s.text || `${s.total} built${s.refused ? `, ${s.refused} refused` : ''}`;
     this.head.setAttribute('aria-valuenow', String(Math.round(s.fraction * 100)));

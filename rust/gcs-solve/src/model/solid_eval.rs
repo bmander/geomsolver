@@ -136,7 +136,7 @@ impl Sketch {
         // one of a binding's solids its representative's evaluation placed (#566); a refusal of
         // the representative's is asked of this one, so it names its own solid — and a mirrored
         // one's own is reflected still (#578)
-        for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
+        for b in self.placing(i).into_iter().flat_map(|b| b.tried(i)) {
             if let Ok(rep) = self.own_solid(b.rep, policy) {
                 return Ok(self.placed_solid(i, &b, &rep, slot));
             }
@@ -170,7 +170,7 @@ impl Sketch {
         let (policy, slot) = self.solid_slot(i, policy);
         // one of a binding's placed copies is built wherever its representative is (#566), a
         // mirrored one wherever its own is (#578)
-        for b in self.bound(i).into_iter().flat_map(|b| b.tried(i)) {
+        for b in self.placing(i).into_iter().flat_map(|b| b.tried(i)) {
             let rep = self.remembered(self.solid_slot(b.rep, policy).1,
                                       &crate::solid::ShapeKey::of(self, b.rep));
             if let Some(Ok(rep)) = rep {
@@ -314,14 +314,11 @@ impl Sketch {
 
     /// **Every build a host that builds every object elsewhere has to make** (#671,
     /// `FieldMeshing::Supplied`): one job a binding (`ObjectJob`) — the objects that are
-    /// placements of one build (`Sketch::bound`, a closed instance's swept solid's too) stand for
-    /// one, which builds their representative and is supplied to it (`supply_object`) — each keyed
-    /// by the digest of what the solid it builds reads (`solid::field_key`), so equal keys are an
-    /// equal surface on any core — but where what is supplied for it is current (`same_reads`: a
-    /// solve settling the drawing again moves its numbers within its own tolerance), the key of
-    /// what that was built from, so a host asks no build of what it holds.  Those cutting a sweep
+    /// placements of one build (`placing`) stand for one, which builds their representative and is
+    /// supplied to it (`supply_object`) — each keyed by the digest of what the solid it builds reads
+    /// (`solid::field_key`), so equal keys are an equal surface on any core.  Those cutting a sweep
     /// first, the long ones; then the order written; an object the outline hides after every shown
-    /// one.
+    /// one.  What they name is what the sketch then awaits (`awaits_supply`).
     pub fn object_jobs(&self) -> Vec<crate::solid::ObjectJob> {
         let objects = super::objects(self);
         let mut jobs: Vec<crate::solid::ObjectJob> = Vec::new();
@@ -330,49 +327,36 @@ impl Sketch {
             match jobs.iter_mut().find(|j| j.solid == rep) {
                 Some(j) => j.objects.push(i),
                 None => jobs.push(crate::solid::ObjectJob {
-                    solid: rep, name: self.solids[i].name.clone(), key: self.job_key(rep),
+                    solid: rep, name: self.solids[i].name.clone(), key: crate::solid::field_key(self, rep),
                     objects: vec![i], swept: crate::solid::cad::contains_sweep(self, rep),
                 }),
             }
         }
-        let hidden = |j: &crate::solid::ObjectJob| !j.objects.iter().any(|&i| self.shown(EntRef::solid(i)));
-        jobs.sort_by_key(|j| (hidden(j), !j.swept));
+        jobs.sort_by_cached_key(|j| (!j.objects.iter().any(|&i| self.shown(EntRef::solid(i))), !j.swept));
         let mut supplies = self.field_surfaces.borrow_mut();
         supplies.awaited = jobs.iter().flat_map(|j| std::iter::once(j.solid).chain(j.objects.iter().copied())).collect();
         jobs
     }
 
     /// **Have a host build every object elsewhere** (`FieldMeshing::Supplied`), or the sketch build
-    /// its own again: the objects and the solids their jobs build are then never evaluated here,
-    /// but drawn from what is supplied (`object_jobs` names them, at once).
+    /// its own again: the solids `object_jobs` names are then never evaluated here, but drawn from
+    /// what is supplied.
     pub fn supply_objects(&self, on: bool) {
-        if on {
-            self.field_meshing.set(crate::solid::FieldMeshing::Supplied);
-            self.object_jobs();
-        } else {
-            self.field_meshing.set(crate::solid::FieldMeshing::Now);
-            self.field_surfaces.borrow_mut().awaited.clear();
-        }
+        self.field_meshing.set(if on { crate::solid::FieldMeshing::Supplied } else { crate::solid::FieldMeshing::Now });
+        if !on { self.field_surfaces.borrow_mut().awaited.clear(); }
     }
 
-    /// The key of the job building solid `rep`: what its current supply was built from, else what
-    /// it reads now.
-    fn job_key(&self, rep: usize) -> u64 {
-        let reads = crate::solid::reads(self, rep, 0.0);
-        let supplies = self.field_surfaces.borrow();
-        match supplies.surfaces.get(&rep) {
-            Some(s) if crate::solid::same_reads(&s.reads, &reads) => crate::solid::reads_key(&s.reads),
-            _ => crate::solid::reads_key(&reads),
-        }
+    /// The binding solid `i` is evaluated through: `bound`'s, and where a host builds every object
+    /// (`FieldMeshing::Supplied`) a closed instance's swept solid's too (`bound_where`) — no field
+    /// is meshed solid by solid there, so its copies are its representative's build placed.
+    fn placing(&self, i: usize) -> Option<super::Bound> {
+        self.bound_where(i, self.field_meshing.get() == crate::solid::FieldMeshing::Supplied)
     }
 
-    /// The solid object `i`'s job builds (`object_jobs`): its binding's representative where a
-    /// placement of it is its representative's build placed — by its evaluation (`bound`), or a
-    /// closed instance's swept solid by its export (`bound_where`) — else itself.
+    /// The solid object `i`'s job builds (`object_jobs`): its binding's representative where it is
+    /// that build placed (`placing`), else itself.
     pub fn job_of(&self, i: usize) -> usize {
-        if let Some(b) = self.bound(i) { return b.rep; }
-        self.bound_where(i, true).filter(|b| b.mirror.is_none() && crate::solid::cad::contains_sweep(self, i))
-            .map_or(i, |b| b.rep)
+        self.placing(i).map_or(i, |b| b.rep)
     }
 
     /// Whether a host builds solid `i` and the sketch never does (`FieldMeshing::Supplied`).
@@ -382,30 +366,17 @@ impl Sketch {
     }
 
     /// **Give the solid job `rep` builds its surface** (`ObjectJob`, #671): the exact build a host
-    /// made of it (`brep::export::Display`), supplied to it and to every object of its job the
-    /// sketch does not place from it itself — a closed instance's swept solid, the build moved where
-    /// the copy stands.  It is current while what the solid reads is what the build read, within a
+    /// made of it (`brep::export::Display`); every other object of its job is it placed
+    /// (`placing`).  It is current while what the solid reads is what the build read, within a
     /// solve's tolerance (`same_reads`); a build of an earlier drawing — which a host holds while
-    /// the new one is made (#672) — is drawn stale till that arrives.  Refused, with the reason, as
-    /// `supply_field` refuses.
-    pub fn supply_object(&self, rep: usize, display: &crate::brep::export::Display) -> Result<(), String> {
+    /// the new one is made (#672) — is drawn stale till that arrives.  Whether it is current, or
+    /// the reason it is refused, as `supply_field` refuses.
+    pub fn supply_object(&self, rep: usize, display: crate::brep::export::Display) -> Result<bool, String> {
         if rep >= self.solids.len() { return Err("a supplied surface names no solid of this drawing".into()); }
-        let surface = display.surface();
-        // what the build read, or — a build that says nothing of it — the drawing as it stands
-        let now = crate::solid::reads(self, rep, 0.0);
-        let current = display.reads.is_empty() || crate::solid::same_reads(&display.reads, &now);
-        let built_from = if display.reads.is_empty() { now } else { display.reads.clone() };
-        for m in super::objects(self).into_iter().filter(|&m| m != rep && self.bound(m).is_none() && self.job_of(m) == rep) {
-            let Some(b) = self.bound_where(m, true) else { continue };
-            let motion = b.motion();
-            let mut moved = surface.clone();
-            for v in &mut moved.vertices { *v = motion.point(*v); }
-            if motion.improper() { for t in &mut moved.triangles { t.swap(1, 2); } }
-            // (a NaN is equal to nothing, so a stale supply reads as no drawing's)
-            let reads = if current { crate::solid::reads(self, m, 0.0) } else { vec![f64::NAN] };
-            self.supply_at(m, moved, reads)?;
-        }
-        self.supply_at(rep, surface, built_from)
+        let current = crate::solid::same_reads(&display.reads, &crate::solid::reads(self, rep, 0.0));
+        let (surface, reads) = display.into_surface();
+        self.supply_at(rep, surface, reads)?;
+        Ok(current)
     }
 
     /// **The build of the solid job `rep` builds refused** (#671), in the build's words (an
@@ -413,35 +384,23 @@ impl Sketch {
     /// changes — never a field meshed in its place.
     pub fn refuse_object(&self, rep: usize, why: &str) -> Result<(), String> {
         if rep >= self.solids.len() { return Err("a refusal names no solid of this drawing".into()); }
-        let mut members: Vec<usize> = super::objects(self).into_iter().filter(|&m| self.job_of(m) == rep).collect();
-        if !members.contains(&rep) { members.push(rep); }
-        for i in members {
-            let reads = crate::solid::reads(self, i, 0.0);
-            self.field_surfaces.borrow_mut().surfaces.insert(i, crate::solid::Supplied { reads, surface: Err(why.to_string()) });
-            self.caches.solid.borrow_mut().retain(|(index, _), _| *index != i);
-        }
+        let reads = crate::solid::reads(self, rep, 0.0);
+        self.field_surfaces.borrow_mut().surfaces.insert(rep, crate::solid::Supplied { reads, surface: Err(why.to_string()) });
+        self.caches.solid.borrow_mut().retain(|(index, _), _| *index != rep);
         Ok(())
     }
 
     /// **Where object `i` stands with a host that builds every object** (#671, #672): built — or
-    /// the sketch's own to build, where no host builds it — on its way, its surface of an earlier
-    /// drawing drawn till its new one arrives, or refused in the build's words.  A placement its
-    /// representative's evaluation places stands where the representative does.
+    /// the sketch's own to build, where no host builds it — on its way, its job's build of an
+    /// earlier drawing drawn till its new one arrives, or refused in the build's words.
     pub fn object_state(&self, i: usize) -> crate::solid::ObjectState {
         use crate::solid::ObjectState;
         if !self.awaits_supply(i) { return ObjectState::Built; }
-        let held = |j: usize| {
-            let supplies = self.field_surfaces.borrow();
-            let s = supplies.surfaces.get(&j)?;
-            Some((crate::solid::same_reads(&s.reads, &crate::solid::reads(self, j, 0.0)), s.surface.clone()))
-        };
-        let placed = self.bound(i).map(|b| b.rep).filter(|&r| r != i);
-        match (held(i), placed.and_then(held)) {
-            (Some((true, Err(why))), _) => ObjectState::Refused(why),
-            (_, Some((true, Ok(_)))) | (Some((true, Ok(_))), _) => ObjectState::Built,
-            (_, Some((true, Err(why)))) => ObjectState::Refused(why),
-            (_, Some((false, Ok(_)))) | (Some((false, Ok(_))), _) => ObjectState::Rebuilding,
-            _ => ObjectState::Building,
+        match self.supplied_object(self.job_of(i)) {
+            Some(Ok((_, true))) => ObjectState::Built,
+            Some(Ok((_, false))) => ObjectState::Rebuilding,
+            Some(Err(why)) => ObjectState::Refused(why),
+            None => ObjectState::Building,
         }
     }
 
@@ -462,7 +421,7 @@ impl Sketch {
                 self.solids[i].name));
         }
         let n = surface.vertices.len();
-        if surface.triangles.iter().flatten().any(|&v| v as usize >= n) {
+        if surface.exact.is_none() && surface.triangles.iter().flatten().any(|&v| v as usize >= n) {
             return Err(format!("`{}`: a supplied triangle names a vertex past the {n} given", self.solids[i].name));
         }
         // an exact surface is a finished one, and says the face of every triangle

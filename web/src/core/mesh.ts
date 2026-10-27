@@ -183,24 +183,8 @@ export function exact(sk: Sketch, idx: number, kind: 'step' | 'stl', tolerance =
   return takeBytes(handle);
 }
 
-/** **A surface still being refined, as it stands**, as binary STL: coarse, maybe open — a look at
- *  the part before the refinement has finished, never a part to print. */
-export function stlPreview(sk: Sketch, idx: number, unit = 0): Uint8Array {
-  const handle = core().gcs_solid_stl_preview(sk.handle, idx, unit);
-  if (!handle) throw new Error(lastError());
-  return takeBytes(handle);
-}
-
-/** Whether a solid's surface is still being refined (a swept solid meshed in the background):
- *  throws where the solid has no surface to ask about yet, with the core's reason. */
 /** Whether solid `idx` is drawn from a build of an earlier drawing while its new one is made
  *  (#672): false for one that does not evaluate. */
 export function stale(sk: Sketch, idx: number): boolean {
   return core().gcs_solid_stale(sk.handle, idx) === 1;
-}
-
-export function provisional(sk: Sketch, idx: number): boolean {
-  const r = core().gcs_solid_provisional(sk.handle, idx);
-  if (r < 0) throw new Error(lastError());
-  return r === 1;
 }

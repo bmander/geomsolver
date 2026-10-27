@@ -246,7 +246,11 @@ impl EvaluatedSolid {
                     None => Err(format!("`{}`: its supplied surface is no exact build", sk.solid_name(si))),
                 },
                 Some(Err(why)) => Err(why),
-                None => Err(format!("`{}`: still being built", sk.solid_name(si))),
+                // a placement its representative's build places refuses as that build was refused
+                None => match sk.supplied_object(sk.job_of(si)) {
+                    Some(Err(why)) => Err(why),
+                    _ => Err(format!("`{}`: still being built", sk.solid_name(si))),
+                },
             };
         }
         if sweeps_among(sk, &operands) {
@@ -416,12 +420,7 @@ impl EvaluatedSolid {
             let smooth = !matches!(face.surface, crate::brep::geom::Surface::Plane(_));
             // the surface's own outward normal at each corner (the facet's own at a pole)
             corner_normals.push(smooth.then(|| t.map(|i| {
-                let p = m.pts[i as usize];
-                match face.surface.normal(face.surface.inverse(p)) {
-                    Some(k) if face.reversed => k.map(|x| -x),
-                    Some(k) => k,
-                    None => n,
-                }
+                face.outward(m.pts[i as usize]).unwrap_or(n)
             })));
             brep_faces.push(fi);
             facets.push(Facet { pts: vec![a, b3, c], n, face: index[fi as usize], smooth });

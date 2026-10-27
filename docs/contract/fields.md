@@ -13,11 +13,12 @@ host meshing fields elsewhere supplies them (`Deferred`, `Sketch::field_jobs`, `
 **The page never does** (#671): an object is its exact B-rep, built as the STEP export builds it,
 or it is unbuilt with the kernel's reason.  The page's sketch builds every object elsewhere
 (`FieldMeshing::Supplied`, `Sketch::supply_objects`): `Sketch::object_jobs` names one job a binding
-(`Sketch::job_of`: the placements of one build share it, and the sketch places each, a closed
-instance's swept copy moved by `supply_object`), keyed by `solid::field_key` — but a job whose
-supply is current keyed by what that was built from, current meaning what the solid reads is what
-the build read within a solve's own tolerance (`solid::same_reads`, `NEAR`), so a solve settling
-the drawing again asks nothing.  `app/object-builds.ts` hands the jobs, swept first, to a pool of
+(`Sketch::job_of`: the placements of one build share it, and the sketch places each from it by its
+evaluation, a closed instance's swept copy too — `Sketch::placing`), keyed by `solid::field_key`.
+A build supplied says whether it is current: what the solid reads is what the build read within a
+solve's own tolerance (`solid::same_reads`, `NEAR`), so an object's last build, offered to the next
+drawing, is filed under its new key where a solve settling the drawing again moved nothing it
+reads, and asked of no worker.  `app/object-builds.ts` hands the jobs, swept first, to a pool of
 `min(hardwareConcurrency − 1, 4)` workers (`app/build-work.ts` in `app/mesh-worker.ts`, a core each,
 keeping its document between jobs and reading again only for a structural edit or other modules),
 each stepping `brep::export::Builder` to the end; the build crosses as one buffer

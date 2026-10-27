@@ -152,6 +152,12 @@ pub fn reverse_loop(l: Vec<Coedge>) -> Vec<Coedge> {
 pub struct Face { pub surface: Surface,pub reversed: bool,pub loops: Vec<Vec<Coedge>>,pub name: String }
 
 impl Face {
+    /// The face's outward normal at `p` (on its surface, or near it): its surface's, turned where
+    /// the face is the reversed side; none at a point where the surface has none (a pole).
+    pub fn outward(&self,p: V) -> Option<V> {
+        let n = self.surface.normal(self.surface.inverse(p))?;
+        Some(if self.reversed { n.map(|x| -x) } else { n })
+    }
     /// The edges this face uses twice, once each side: its seams, which bound nothing.
     pub fn seams(&self) -> std::collections::BTreeSet<u32> {
         let mut seen = std::collections::BTreeSet::new();

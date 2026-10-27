@@ -512,8 +512,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   objects are built by the pool (`SketchView.builds`, `app/object-builds.ts`; fields.md, "The page
   never does") and drawn as they arrive, an object not yet built drawn as nothing and its outline
   row marked *building…* (`.outline-row.building`), one refused marked *not built* with the
-  export's words on hover (`.unbuilt`), one an edit changed drawn as its last build was, dimmed
-  (`stale`, `Box3D`'s `STALE_OPACITY`), till its new one arrives — during a drag too, which asks for
+  export's words on hover (`.unbuilt`), one an edit changed drawn as its last build was, a ghost
+  (`stale`, `Box3D`'s `ghost`), till its new one arrives — during a drag too, which asks for
   nothing till its release (`readBehind`).  **A build bar along the workspace's bottom**
   (`app/build-bar.ts`, `#build-bar`) shows while any job is left: the fraction done, each job
   weighted by its builder's stages, `building 12 of 35 · wheel_part — cutting the sector by its

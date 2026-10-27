@@ -238,44 +238,6 @@ pub unsafe extern "C" fn gcs_solid_supply_field(
     })
 }
 
-/// Give swept solid `idx` its exact surface, built elsewhere (`gcs_exact_builder_*`): `nv` vertices
-/// and `nt` triangles as for `gcs_solid_supply_field`, `of` the face of each triangle, `smooth`
-/// whether each of `nf` faces is curved, and the solid's exact volume. 0, or −1 with the reason.
-#[no_mangle]
-pub unsafe extern "C" fn gcs_solid_supply_exact(
-    h: *mut Sketch,
-    idx: i32,
-    vertices: *const f64,
-    nv: i32,
-    triangles: *const u32,
-    nt: i32,
-    of: *const u32,
-    smooth: *const u8,
-    nf: i32,
-    volume: f64,
-) -> i32 {
-    guard(-1, move || {
-        let (nv, nt, nf) = (nv.max(0) as usize, nt.max(0) as usize, nf.max(0) as usize);
-        let v = if nv == 0 { &[][..] } else { std::slice::from_raw_parts(vertices, 3 * nv) };
-        let t = if nt == 0 { &[][..] } else { std::slice::from_raw_parts(triangles, 3 * nt) };
-        let o = if nt == 0 { &[][..] } else { std::slice::from_raw_parts(of, nt) };
-        let m = if nf == 0 { &[][..] } else { std::slice::from_raw_parts(smooth, nf) };
-        let surface = gcs_core::solid::FieldSurface {
-            vertices: v.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
-            triangles: t.chunks_exact(3).map(|c| [c[0], c[1], c[2]]).collect(),
-            provisional: false,
-            exact: Some(gcs_core::solid::ExactFaces { of: o.to_vec(), smooth: m.iter().map(|&x| x != 0).collect(), volume,
-                ..Default::default() }),
-        };
-        let s = sk(h);
-        let Some(i) = solid_at(s, idx) else { return -1 };
-        match s.supply_field(i, surface) {
-            Ok(()) => 0,
-            Err(message) => { set_error(message); -1 }
-        }
-    })
-}
-
 /* -- every object built elsewhere, exactly (#671) -------------------------------- */
 
 /// A page that builds every object in its pool of workers says so (`Sketch::supply_objects`):
@@ -302,17 +264,18 @@ pub unsafe extern "C" fn gcs_sketch_object_jobs(h: *mut Sketch) -> *mut u8 {
 }
 
 /// Give the solid a job builds its surface (`Sketch::supply_object`): the build's buffer as the
-/// builder wrote it (`gcs_exact_builder_display`, `Display::bytes`) — current where what the solid
-/// reads is what the build read, else an earlier drawing's, drawn stale. 0, or −1 with the reason.
+/// builder wrote it (`gcs_exact_builder_display`, `Display::bytes`). 1 where it is current — what
+/// the solid reads is what the build read — 0 where it is an earlier drawing's, drawn stale, or −1
+/// with the reason.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_sketch_supply_object(h: *mut Sketch, idx: i32, ptr: *const u8, len: usize) -> i32 {
     guard(-1, move || {
         let bytes = if ptr.is_null() || len == 0 { &[][..] } else { std::slice::from_raw_parts(ptr, len) };
         let s = sk(h);
         let Some(i) = solid_at(s, idx) else { return -1 };
-        let supplied = gcs_core::brep::export::Display::read(bytes).and_then(|d| s.supply_object(i, &d));
+        let supplied = gcs_core::brep::export::Display::read(bytes).and_then(|d| s.supply_object(i, d));
         match supplied {
-            Ok(()) => 0,
+            Ok(current) => current as i32,
             Err(message) => { set_error(message); -1 }
         }
     })

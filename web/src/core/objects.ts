@@ -40,15 +40,16 @@ export function objectJobs(sk: Sketch): ObjectJob[] {
 }
 
 /** Give the solid a job builds its surface: the buffer a builder wrote (`ExactBuilder.display`).
- *  The core holds it current while what the solid reads is what the build read, within a solve's
- *  tolerance — else it is an earlier drawing's, drawn stale till the new one arrives — and checks
- *  the buffer, refusing one that is not a surface. */
-export function supplyObject(sk: Sketch, solid: number, display: Uint8Array): void {
+ *  Whether it is current — what the solid reads is what the build read, within a solve's tolerance
+ *  — or an earlier drawing's, drawn stale till the new one arrives.  The core checks the buffer,
+ *  refusing one that is not a surface. */
+export function supplyObject(sk: Sketch, solid: number, display: Uint8Array): boolean {
   const ok = withBuf(display.length, 1, (b) => {
     b.u8.set(display);
     return core().gcs_sketch_supply_object(sk.handle, solid, b.ptr, display.length);
   });
   if (ok < 0) throw new Error(lastError());
+  return ok === 1;
 }
 
 /** The build of the solid a job builds refused, in the build's words. */
@@ -60,13 +61,6 @@ export function refuseObject(sk: Sketch, solid: number, why: string): void {
 /** Where each object stands with the pool. */
 export function objectStates(sk: Sketch): ObjectState[] {
   return takeJson<ObjectState[]>(core().gcs_sketch_object_states(sk.handle)) ?? [];
-}
-
-/** How many triangles a build's buffer holds, read off its head (`Display::bytes`), or 0 for one
- *  that is too short to say. */
-export function displayTriangles(display: Uint8Array): number {
-  if (display.byteLength < 24) return 0;
-  return new DataView(display.buffer, display.byteOffset, display.byteLength).getFloat64(16, true);
 }
 
 /** Where a build stands: what its next stage does, the stages run and in all, and the last thing a

@@ -275,8 +275,9 @@ test('the build bar says how many are left while the page takes input, and goes 
   assert.equal(bar.left, 0);
   assert.ok(bar.shown && bar.marked, 'a refusal leaves a mark till it is seen');
   assert.match(bar.text, /1 of 2 not built/);
-  assert.equal(barOf(view.builds.rows, true).shown, false, 'seen, the bar goes');
-  assert.ok(told.length > 3, 'every move told');
+  assert.equal(barOf(view.builds.rows, false).shown, false, 'seen, the bar goes');
+  await tick(10);
+  assert.equal(told.at(-1)?.filter((r) => r.state === 'refused').length, 1, 'the rows told, once a frame');
   view.builds.dispose();
   view.doc.dispose();
 });

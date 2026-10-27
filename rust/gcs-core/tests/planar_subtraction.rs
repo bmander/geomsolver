@@ -622,7 +622,7 @@ fn a_wheel_a_frame_stands_is_the_wheel_moved() {
         let display = |i: usize| {
             let mut builder = export::Builder::new(&e.sketch, i).unwrap_or_else(|r| panic!("{}", r.message));
             while !builder.step().unwrap_or_else(|r| panic!("{degrees}°: {}", r.message)) {}
-            builder.display().unwrap().volume
+            builder.display().unwrap().faces.volume
         };
         let shown_at = display(solid("shown"));
         for name in ["wheel", "copy"] {

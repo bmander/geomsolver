@@ -50,6 +50,12 @@ export function provided(name: string): boolean {
   return withStr(name, (np, nn) => core().gcs_module_provided(np, nn)) === 1;
 }
 
+/** The modules handed over that `text` reaches, as `[use name, text]`: what a worker is given to
+ *  read the page's drawing as the page reads it (`install`); the library's own it has already. */
+export function handed(text: string): [string, string][] {
+  return related(text).filter((f) => f.provided).map((f): [string, string] => [f.name, f.text]);
+}
+
 /** Replace everything handed over with `list`, as `[use name, text]`: a project opened, or a
  *  worker given the page's modules. */
 export function install(list: [string, string][]): void {

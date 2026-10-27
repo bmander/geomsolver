@@ -38,11 +38,8 @@ fn exported(sk: &Sketch,i: usize) -> Result<(usize,f64),String> {
 
 /// A display's surface area (model units squared).
 fn area(d: &Display) -> f64 {
-    d.triangles.iter().map(|t| {
-        let [a,b,c] = t.map(|k| d.vertices[k as usize]);
-        let (u,v) = ([b[0]-a[0],b[1]-a[1],b[2]-a[2]],[c[0]-a[0],c[1]-a[1],c[2]-a[2]]);
-        0.5*((u[1]*v[2]-u[2]*v[1]).powi(2)+(u[2]*v[0]-u[0]*v[2]).powi(2)+(u[0]*v[1]-u[1]*v[0]).powi(2)).sqrt()
-    }).sum()
+    use gcs_core::space::{cross,norm,sub};
+    d.triangles.iter().map(|t| { let [a,b,c] = t.map(|k| d.vertices[k as usize]); 0.5*norm(cross(sub(b,a),sub(c,a))) }).sum()
 }
 
 /// Every object the documents `names` hold (swept or not, as `swept` says): built by the
@@ -57,16 +54,16 @@ fn corpus(names: &[String],swept: bool) -> usize {
             let solid = &sk.solids[i].name;
             match (exported(&sk,i),stepped(&sk,i)) {
                 (Ok((faces,volume)),Ok((d,doing))) => {
-                    assert_eq!(d.names.len(),d.smooth.len(),"{name}: `{solid}`'s faces named");
+                    assert_eq!(d.faces.names.len(),d.faces.smooth.len(),"{name}: `{solid}`'s faces named");
                     if !swept {
                         assert_eq!(doing[0],"building the solid from its recipe","{name}: `{solid}`");
-                        assert_eq!(d.smooth.len(),faces,"{name}: `{solid}`'s faces");
+                        assert_eq!(d.faces.smooth.len(),faces,"{name}: `{solid}`'s faces");
                     }
                     // a static body is the export's own build; a swept one is admitted at the
                     // display's samples, and comes out within the export's gross bar of it: no
                     // more volume than its surface swept that far
                     let within = if swept { export::GROSS/sk.units.mm_per()*area(&d) } else { 1e-9*volume.abs().max(1.) };
-                    assert!((d.volume-volume).abs() <= within,"{name}: `{solid}`: {} against {volume}, within {within}",d.volume);
+                    assert!((d.faces.volume-volume).abs() <= within,"{name}: `{solid}`: {} against {volume}, within {within}",d.faces.volume);
                     built += 1;
                 }
                 (Err(a),Err(b)) => assert_eq!(a,b,"{name}: `{solid}`"),
@@ -118,16 +115,16 @@ fn a_static_body_is_built_by_stages_with_its_faces_named_and_its_edges_drawn() {
     assert!(b.step().unwrap());
     assert_eq!(b.stages(),(2,2));
     let d = b.display().unwrap();
-    assert!((d.volume-8000.).abs() < 1e-6,"{}",d.volume);
-    assert_eq!(d.smooth,vec![false;6]);
-    assert_eq!(d.names.len(),6);
-    assert!(d.names.iter().all(|n| n.starts_with("block.")),"{:?}",d.names);
-    assert_eq!(d.edges.len(),12,"{:?}",d.edges);
-    assert!(d.edges.iter().all(|e| !e.smooth && e.faces[0] < e.faces[1] && e.points.len() >= 2));
+    assert!((d.faces.volume-8000.).abs() < 1e-6,"{}",d.faces.volume);
+    assert_eq!(d.faces.smooth,vec![false;6]);
+    assert_eq!(d.faces.names.len(),6);
+    assert!(d.faces.names.iter().all(|n| n.starts_with("block.")),"{:?}",d.faces.names);
+    assert_eq!(d.faces.edges.len(),12,"{:?}",d.faces.edges);
+    assert!(d.faces.edges.iter().all(|e| !e.smooth && e.faces[0] < e.faces[1] && e.points.len() >= 2));
     // each edge runs between two corners of the block, 40, 20 or 10 long
-    for e in &d.edges {
+    for e in &d.faces.edges {
         let [p,q] = [e.points[0],*e.points.last().unwrap()].map(|k| d.vertices[k as usize]);
-        let l = ((p[0]-q[0]).powi(2)+(p[1]-q[1]).powi(2)+(p[2]-q[2]).powi(2)).sqrt();
+        let l = gcs_core::space::distance(p,q);
         assert!([40.,20.,10.].iter().any(|w| (l-w).abs() < 1e-9),"{l}");
     }
 }
@@ -139,8 +136,8 @@ fn a_rounds_tangent_edges_are_smooth() {
     let sk = document(&format!("{BLOCK}block.near round(r: 2mm) block\n"));
     let body = objects(&sk)[0];
     let (d,_) = stepped(&sk,body).unwrap();
-    assert!(d.edges.iter().any(|e| e.smooth),"{:?}",d.edges.iter().map(|e| e.smooth).collect::<Vec<_>>());
-    assert!(d.edges.iter().any(|e| !e.smooth));
+    assert!(d.faces.edges.iter().any(|e| e.smooth),"{:?}",d.faces.edges.iter().map(|e| e.smooth).collect::<Vec<_>>());
+    assert!(d.faces.edges.iter().any(|e| !e.smooth));
 }
 
 /// A display crosses between cores as one buffer, read back as it was written; a buffer cut short,
@@ -153,11 +150,11 @@ fn a_display_crosses_as_one_buffer_and_a_bad_one_is_refused() {
     let back = Display::read(&bytes).unwrap();
     assert_eq!(back.vertices,d.vertices);
     assert_eq!(back.triangles,d.triangles);
-    assert_eq!(back.of,d.of);
-    assert_eq!(back.smooth,d.smooth);
-    assert_eq!(back.names,d.names);
-    assert_eq!(back.edges,d.edges);
-    assert_eq!(back.volume,d.volume);
+    assert_eq!(back.faces.of,d.faces.of);
+    assert_eq!(back.faces.smooth,d.faces.smooth);
+    assert_eq!(back.faces.names,d.faces.names);
+    assert_eq!(back.faces.edges,d.faces.edges);
+    assert_eq!(back.faces.volume,d.faces.volume);
     assert!(Display::read(&bytes[..bytes.len()-1]).unwrap_err().contains("not as long as it says"));
     let mut other = bytes.clone();
     other[..8].copy_from_slice(&99f64.to_le_bytes());
@@ -195,7 +192,7 @@ fn a_sketch_supplied_its_objects_builds_none_of_its_own() {
     assert!(gcs_core::overview::unbuilt(&sk).is_empty(),"on its way, not unbuilt");
     // its build supplied, as a worker hands it over
     let (d,_) = stepped(&sk,block).unwrap();
-    sk.supply_object(block,&Display::read(&d.bytes()).unwrap()).unwrap();
+    assert!(sk.supply_object(block,Display::read(&d.bytes()).unwrap()).unwrap());
     assert_eq!(sk.object_state(block),ObjectState::Built);
     let solid = sk.evaluated_solid(block,ApproximationPolicy::Mesh).unwrap();
     assert!((solid.volume()-8000.).abs() < 1e-6);
@@ -229,7 +226,7 @@ fn the_placements_of_one_binding_are_one_job() {
     assert_eq!(jobs.len(),1,"{jobs:?}");
     assert_eq!(jobs[0].objects,objs);
     let (d,_) = stepped(&sk,jobs[0].solid).unwrap();
-    sk.supply_object(jobs[0].solid,&d).unwrap();
+    assert!(sk.supply_object(jobs[0].solid,d).unwrap());
     let boxes: Vec<_> = objs.iter().map(|&i| {
         assert_eq!(sk.object_state(i),ObjectState::Built,"`{}`",sk.solids[i].name);
         let s = sk.evaluated_solid(i,ApproximationPolicy::Mesh).unwrap();
@@ -259,8 +256,8 @@ fn exact_solid_builds_a_generated_body_as_the_export_does() {
 
 /// **A build is current while what its solid reads is what the build read, within a solve's own
 /// tolerance** (#671): a solve settling the drawing again changes nothing a build reads, and the
-/// job's key is then the build's, so a host asks nothing again; an edit leaves the build stale,
-/// drawn till the new one arrives, and asked for again under the drawing's own key.
+/// supply says it is current, so a host files it under the job's key and asks nothing again; an
+/// edit leaves the build stale, drawn till the new one arrives.
 #[test]
 fn a_build_is_current_within_a_solves_tolerance() {
     let sk = document(BLOCK);
@@ -271,13 +268,12 @@ fn a_build_is_current_within_a_solves_tolerance() {
     assert_eq!(gcs_core::solid::reads_key(&d.reads),key,"the build read what the drawing reads");
     // what a solve settling the block again leaves: its numbers a hair from the build's
     let nudged = Display {reads:d.reads.iter().map(|x| x*(1.+1e-14)).collect(),..d.clone()};
-    sk.supply_object(block,&nudged).unwrap();
+    assert!(sk.supply_object(block,nudged.clone()).unwrap());
     assert_eq!(sk.object_state(block),ObjectState::Built);
-    assert_eq!(sk.object_jobs()[0].key,gcs_core::solid::reads_key(&nudged.reads),"the build's key, asked of no one");
+    assert_eq!(sk.object_jobs()[0].key,key,"the drawing's own key");
     // an earlier drawing's build: stale, and the drawing's own key asked
     let earlier = Display {reads:d.reads.iter().map(|x| x*1.01+1.).collect(),..d.clone()};
-    sk.supply_object(block,&earlier).unwrap();
+    assert!(!sk.supply_object(block,earlier).unwrap(),"an earlier drawing's");
     assert_eq!(sk.object_state(block),ObjectState::Rebuilding);
     assert!(sk.evaluated_solid(block,ApproximationPolicy::Mesh).unwrap().stale());
-    assert_eq!(sk.object_jobs()[0].key,key);
 }

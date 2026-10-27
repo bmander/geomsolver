@@ -215,7 +215,6 @@ export interface Abi {
   gcs_sketch_field_jobs(h: number): number;
   gcs_solid_supply_field(h: number, idx: number, vertices: number, nv: number, triangles: number,
     nt: number, provisional: number): number;
-  gcs_solid_provisional(h: number, idx: number): number;
   gcs_solid_stale(h: number, idx: number): number;
   gcs_field_mesher_new(h: number, idx: number, fineness: number): number;
   gcs_field_mesher_step(m: number, budget: number): number;
@@ -225,8 +224,6 @@ export interface Abi {
   gcs_field_mesher_triangles(m: number, out: number, cap: number): number;
   gcs_field_mesher_free(m: number): void;
   gcs_derived_detail_free(h: number): number;
-  gcs_solid_supply_exact(h: number, idx: number, vertices: number, nv: number, triangles: number,
-    nt: number, of: number, smooth: number, nf: number, volume: number): number;
   gcs_exact_builder_new(h: number, idx: number): number;
   gcs_exact_builder_step(b: number): number;
   gcs_exact_builder_progress(b: number): number;
@@ -248,7 +245,6 @@ export interface Abi {
   gcs_solid_unbuilt_json(h: number): number;
   gcs_materials_json(h: number): number;
   gcs_solid_stl(h: number, idx: number, unit: number): number;
-  gcs_solid_stl_preview(h: number, idx: number, unit: number): number;
   gcs_solid_exact(h: number, idx: number, kind: number, tolerance: number): number;
   gcs_workspace_json(h: number): number;
   gcs_workspace_eye(az: number, el: number, out: number): number;

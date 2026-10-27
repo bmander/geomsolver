@@ -14,10 +14,9 @@
  * at once and asked of no worker; a new drawing ends the builds it no longer wants at their next
  * stage, and the ones it still wants carry on.  While its new build is made, an object an edit
  * changed is drawn as its last build was, stale (#672). */
-import { objectJobs, refuseObject, supplyObject, supplyObjects, displayTriangles,
-  type ObjectJob } from '../core/objects.js';
+import { objectJobs, refuseObject, supplyObject, supplyObjects, type ObjectJob } from '../core/objects.js';
 import type { Sketch } from '../core/model.js';
-import { related } from '../core/modules.js';
+import { handed } from '../core/modules.js';
 import type { Document } from '../core/program.js';
 import type { BuildAsk, BuildReply, Drawing } from './build-work.js';
 import type { SurfaceStore } from './surface-store.js';
@@ -68,7 +67,6 @@ export interface BuildRow {
   why?: string;
   /** Built at an earlier opening, and taken from the store. */
   stored?: boolean;
-  triangles?: number;
 }
 
 /** A worker and the build it has in hand. */
@@ -98,10 +96,15 @@ export class ObjectBuilds {
   /** Builds and refusals in hand, by key: this drawing's. */
   private built = new Map<string, Uint8Array>();
   private refused = new Map<string, string>();
-  /** The last build of each object by name, and its key: offered to the next drawing, which holds
-   *  it current where what the object reads is what it read, else draws it stale while the new one
-   *  is made. */
-  private lastByName = new Map<string, { key: string; bytes: Uint8Array }>();
+  /** The last build of each object by name: offered to the next drawing, which holds it current
+   *  where what the object reads is what it read, else draws it stale while the new one is made. */
+  private lastByName = new Map<string, Uint8Array>();
+  /** What the sketch in hand holds, by the solid a job builds: the key of the build or refusal it
+   *  was last given, so nothing it holds is handed it again. */
+  private given = new Map<number, string>();
+  /** Each object's row, by its index. */
+  private byObject = new Map<number, BuildRow>();
+  private telling = false;
   private ids = 0;
   /** Which drawing is the latest (`start`): a store's late answer is supplied only to its own. */
   private generation = 0;
@@ -124,38 +127,26 @@ export class ObjectBuilds {
   /** Every job of the drawing in hand, as the page tells it. */
   get rows(): BuildRow[] { return [...this.rowsBy.values()]; }
 
+  /** The job object `index` stands in, if any. */
+  rowOf(index: number): BuildRow | undefined { return this.byObject.get(index); }
+
   /** **Build this document's objects**: its sketch told to build none itself, each job whose build
    *  is in hand (or the store's) supplied at once, the rest asked of the pool. */
   start(doc: Document): void {
     if (!this.spawn) return;
     const sk = doc.sketch;
-    supplyObjects(sk);
+    // a numeric edit keeps its sketch, and what it was given
+    if (sk !== this.sketch) this.given.clear();
     this.sketch = sk;
-    let jobs = objectJobs(sk);
+    supplyObjects(sk);
+    const jobs = objectJobs(sk);
     this.generation += 1;
     // the outgoing drawing's builds by object, for what this one changed
     for (const j of this.jobs.values()) {
       const b = this.built.get(j.key);
-      if (b) this.lastByName.set(j.name, { key: j.key, bytes: b });
+      if (b) this.lastByName.set(j.name, b);
     }
-    // each object's last build offered to this drawing, where it holds none by key: the core
-    // holds one current that a solve settling the drawing again left within its tolerance — its
-    // job then keyed by the build — and draws any other stale while the new one is made
-    let offered = false;
-    for (const j of jobs) {
-      const last = this.lastByName.get(j.name);
-      if (!last || this.built.has(j.key) || this.refused.has(j.key)) continue;
-      offered = this.give(j, last.bytes, false) || offered;
-    }
-    if (offered) {
-      jobs = objectJobs(sk);
-      for (const j of jobs) {
-        const last = this.lastByName.get(j.name);
-        if (last?.key === j.key && !this.built.has(j.key)) this.built.set(j.key, last.bytes);
-      }
-    }
-    this.drawing = { text: doc.text, x: sk.getX(),
-      modules: related(doc.text).filter((f) => f.provided).map((f): [string, string] => [f.name, f.text]) };
+    this.drawing = { text: doc.text, x: sk.getX(), modules: handed(doc.text) };
     this.jobs = new Map(jobs.map((j) => [j.key, j]));
     const names = new Set(jobs.map((j) => j.name));
     // an earlier drawing's builds are kept, the latest first, up to `EARLIER_BYTES`: an undo
@@ -176,27 +167,37 @@ export class ObjectBuilds {
       }
     }
     const rows = new Map<string, BuildRow>();
+    this.byObject.clear();
     for (const j of jobs) {
       const old = this.rowsBy.get(j.key);
-      rows.set(j.key, old ? { ...old, name: j.name, solid: j.solid, objects: j.objects }
+      const row: BuildRow = old ? { ...old, name: j.name, solid: j.solid, objects: j.objects }
         : { key: j.key, name: j.name, solid: j.solid, objects: j.objects, swept: j.swept, state: 'waiting',
-            doing: 'waiting', done: 0, total: 1 });
+            doing: 'waiting', done: 0, total: 1 };
+      rows.set(j.key, row);
+      for (const o of j.objects) this.byObject.set(o, row);
     }
     this.rowsBy = rows;
     let supplied = false;
     const asked: string[] = [];
     for (const j of jobs) {
+      const row = rows.get(j.key)!;
       const b = this.built.get(j.key);
       const why = this.refused.get(j.key);
-      const row = rows.get(j.key)!;
-      if (b) {
-        supplied = this.give(j, b, true) || supplied;
-        if (row.state !== 'built') Object.assign(row, { state: 'built', doing: 'built', triangles: displayTriangles(b) });
+      if (b || why !== undefined) {
+        if (this.given.get(j.solid) !== j.key) supplied = (b ? !!this.give(j, b, true) : this.refuse(j, why!)) || supplied;
+        if (b && row.state !== 'built') Object.assign(row, { state: 'built', doing: 'built' });
+        continue;
       }
-      else if (why !== undefined) supplied = this.refuse(j, why) || supplied;
-      else if (!this.running(j.key)) asked.push(j.key);
+      // its last build, an earlier drawing's: current where a solve settling the drawing again
+      // left what it reads within its tolerance — then this job's build — else drawn stale
+      const last = this.lastByName.get(j.name);
+      const offered = last ? this.give(j, last, false) : false;
+      supplied ||= !!offered;
+      if (offered === 'current') {
+        this.built.set(j.key, last!);
+        Object.assign(row, { state: 'built', doing: 'built' });
+      } else if (!this.running(j.key)) asked.push(j.key);
     }
-    supplied ||= offered;
     this.queue = asked;
     this.told();
     if (supplied) this.redraw();
@@ -290,11 +291,10 @@ export class ObjectBuilds {
     this.built.set(key, bytes);
     const row = this.rowsBy.get(key);
     if (row) {
-      Object.assign(row, { state: 'built', doing: 'built', ms: how.ms, stored: how.stored,
-        triangles: displayTriangles(bytes) });
+      Object.assign(row, { state: 'built', doing: 'built', ms: how.ms, stored: how.stored });
       row.done = row.total = Math.max(row.total, 1);
     }
-    const given = this.give(job, bytes, true);
+    const given = !!this.give(job, bytes, true);
     this.told();
     return given;
   }
@@ -312,17 +312,16 @@ export class ObjectBuilds {
   }
 
   /** Supply a build to the page's core, which holds it current or stale by what it was built
-   *  from: one built for `job`'s key (`fresh`) said on the User Timing line, and refused as the
-   *  build's refusal where the core will not take it. */
-  private give(job: ObjectJob, bytes: Uint8Array, fresh: boolean): boolean {
+   *  from — which it says — or nothing where it will not take it: one built for `job`'s key
+   *  (`fresh`) said on the User Timing line, and refused as the build's refusal. */
+  private give(job: ObjectJob, bytes: Uint8Array, fresh: boolean): 'current' | 'stale' | false {
     if (!this.sketch) return false;
     try {
-      supplyObject(this.sketch, job.solid, bytes);
-      if (fresh) {
-        performance.mark('gcs:surface', { detail: { name: job.name, exact: true, provisional: false,
-          triangles: displayTriangles(bytes) } });
-      }
-      return true;
+      const current = supplyObject(this.sketch, job.solid, bytes);
+      if (current) this.given.set(job.solid, job.key);
+      else this.given.delete(job.solid);
+      if (fresh) performance.mark('gcs:surface', { detail: { name: job.name, exact: true } });
+      return current ? 'current' : 'stale';
     } catch (e) {
       if (fresh) this.fail(job.key, e instanceof Error ? e.message : String(e));
       return false;
@@ -331,11 +330,16 @@ export class ObjectBuilds {
 
   private refuse(job: ObjectJob, why: string): boolean {
     if (!this.sketch) return false;
-    try { refuseObject(this.sketch, job.solid, why); return true; }
+    try { refuseObject(this.sketch, job.solid, why); this.given.set(job.solid, job.key); return true; }
     catch { return false; }
   }
 
-  private told(): void { this.progressed(this.rows); }
+  /** The rows told, once the frame in hand is painted: a burst of progress, one telling. */
+  private told(): void {
+    if (this.telling) return;
+    this.telling = true;
+    afterPaint(() => { this.telling = false; this.progressed(this.rows); });
+  }
 
   /** The page redrawn once the frame in hand is painted: builds arriving together, one redraw. */
   private redraw(): void {

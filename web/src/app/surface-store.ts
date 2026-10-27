@@ -38,14 +38,14 @@ export class MemoryStore implements SurfaceStore {
       // a Map keeps the order put: used again, put last
       this.held.delete(k);
       this.held.set(k, b);
-      out.set(k, b.slice());
+      out.set(k, b);
     }
     return out;
   }
 
   async put(key: string, display: Uint8Array): Promise<void> {
     this.held.delete(key);
-    this.held.set(key, display.slice());
+    this.held.set(key, display);
     let total = await this.size();
     for (const [k, b] of this.held) {
       if (total <= this.limit) break;
@@ -64,13 +64,14 @@ export class MemoryStore implements SurfaceStore {
 }
 
 const DB = 'gcs-built-objects';
-const STORE = 'builds';
+/** The builds' bytes, by key; and beside them what the bound reads — each build's size and when it
+ *  was last used (`Date.now()`) — so neither a hit nor the bound reads or writes bytes it does not
+ *  hand back. */
+const BYTES = 'bytes';
+const META = 'meta';
 
-/** One build kept: under its core's identity and its job's key, its bytes, and when it was last
- *  used (`Date.now()`). */
-interface Kept {
+interface Meta {
   key: string;
-  bytes: Uint8Array;
   size: number;
   used: number;
 }
@@ -94,10 +95,13 @@ export class IdbStore implements SurfaceStore {
   constructor(private readonly identity: string, private readonly limit = STORE_LIMIT,
               factory: IDBFactory = indexedDB) {
     this.db = new Promise((resolve, reject) => {
-      const open = factory.open(DB, 1);
+      const open = factory.open(DB, 2);
       open.onupgradeneeded = () => {
-        const s = open.result.createObjectStore(STORE, { keyPath: 'key' });
-        s.createIndex('used', 'used');
+        const db = open.result;
+        // (a first version kept bytes and their use together: its builds are let go)
+        for (const name of [...db.objectStoreNames]) db.deleteObjectStore(name);
+        db.createObjectStore(BYTES);
+        db.createObjectStore(META, { keyPath: 'key' }).createIndex('used', 'used');
       };
       open.onsuccess = () => resolve(open.result);
       open.onerror = () => reject(open.error);
@@ -110,14 +114,14 @@ export class IdbStore implements SurfaceStore {
     const out = new Map<string, Uint8Array>();
     if (!keys.length) return out;
     const db = await this.db;
-    const t = db.transaction(STORE, 'readwrite');
-    const s = t.objectStore(STORE);
+    const t = db.transaction([BYTES, META], 'readwrite');
+    const [bytes, meta] = [t.objectStore(BYTES), t.objectStore(META)];
     const now = Date.now();
     await Promise.all(keys.map(async (k) => {
-      const kept = await done(s.get(this.named(k))) as Kept | undefined;
+      const kept = await done(bytes.get(this.named(k))) as Uint8Array | undefined;
       if (!kept) return;
-      out.set(k, kept.bytes);
-      s.put({ ...kept, used: now });
+      out.set(k, kept);
+      meta.put({ key: this.named(k), size: kept.byteLength, used: now } satisfies Meta);
     }));
     await finished(t);
     return out;
@@ -125,32 +129,34 @@ export class IdbStore implements SurfaceStore {
 
   async put(key: string, display: Uint8Array): Promise<void> {
     const db = await this.db;
-    const t = db.transaction(STORE, 'readwrite');
-    const s = t.objectStore(STORE);
-    s.put({ key: this.named(key), bytes: display, size: display.byteLength, used: Date.now() } satisfies Kept);
+    const t = db.transaction([BYTES, META], 'readwrite');
+    const [bytes, meta] = [t.objectStore(BYTES), t.objectStore(META)];
+    bytes.put(display, this.named(key));
+    meta.put({ key: this.named(key), size: display.byteLength, used: Date.now() } satisfies Meta);
     // the least recently used out, past the limit: every build's size, oldest first
-    const all = await done(s.index('used').getAll()) as Kept[];
-    let total = all.reduce((n, k) => n + k.size, 0);
-    for (const k of all) {
+    const all = await done(meta.index('used').getAll()) as Meta[];
+    let total = all.reduce((n, m) => n + m.size, 0);
+    for (const m of all) {
       if (total <= this.limit) break;
-      s.delete(k.key);
-      total -= k.size;
+      bytes.delete(m.key);
+      meta.delete(m.key);
+      total -= m.size;
     }
     await finished(t);
   }
 
   async clear(): Promise<void> {
     const db = await this.db;
-    const t = db.transaction(STORE, 'readwrite');
-    t.objectStore(STORE).clear();
+    const t = db.transaction([BYTES, META], 'readwrite');
+    t.objectStore(BYTES).clear();
+    t.objectStore(META).clear();
     await finished(t);
   }
 
   async size(): Promise<number> {
     const db = await this.db;
-    const t = db.transaction(STORE, 'readonly');
-    const all = await done(t.objectStore(STORE).getAll()) as Kept[];
-    return all.reduce((n, k) => n + k.size, 0);
+    const all = await done(db.transaction(META, 'readonly').objectStore(META).getAll()) as Meta[];
+    return all.reduce((n, m) => n + m.size, 0);
   }
 }
 

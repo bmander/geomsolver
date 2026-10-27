@@ -310,7 +310,7 @@ fn the_page_builds_the_drills_exact_surface_by_stages() {
     assert!(doing.iter().any(|d| d == "adding the rest of the body"),"{doing:?}");
     let shank = PI*25.*30.;
     let fluted = props::volume(&fluted("6mm").0.solid);
-    let volume = builder.display().unwrap().volume;
+    let volume = builder.display().unwrap().faces.volume;
     // (the display's sheets are fitted to the gross bars, the export's within 0.01 mm)
     assert!((volume-(fluted+shank)).abs() < 1e-5*volume,"{volume} against {}",fluted+shank);
 }
@@ -375,6 +375,6 @@ fn the_page_builds_the_whole_drills_exact_surface() {
     let e = fixtures::drill::standard();
     let mut builder = export::Builder::new(&e.sketch,fixtures::solid(&e,"drill")).unwrap();
     while !builder.step().unwrap_or_else(|r| panic!("{r}")) {}
-    let volume = builder.display().unwrap().volume;
+    let volume = builder.display().unwrap().faces.volume;
     assert!((volume-3606.54).abs() < 0.5,"{volume}");
 }
