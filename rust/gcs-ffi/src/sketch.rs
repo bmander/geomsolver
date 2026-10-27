@@ -185,6 +185,38 @@ pub unsafe extern "C" fn gcs_sketch_set_hidden(h: *mut Sketch, ptr: *const u8, l
     })
 }
 
+/// **The kinds of thing the workspace draws** (#678): `kinds` the bits of `model::Kinds`
+/// (objects 1, planes 2, axes 4, sketches 8, points 16, fixed marks 32, dimensions 64), and
+/// `{ents: [[kind, idx]…]}` what is shown whatever its kind (`Sketch::set_kinds`); `on_parts`
+/// nonzero where an assembly is shown on its parts, its datums sized to its objects
+/// (`Sketch::on_parts`, #679).  View state, which the host re-applies to every drawing it is
+/// handed.  Returns 0.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_set_shown_kinds(h: *mut Sketch, kinds: u32, on_parts: i32,
+                                                   ptr: *const u8, len: usize) -> i32 {
+    guard(-1, move || {
+        let (anyway, _) = part_of(ptr, len);
+        let s = sk(h);
+        s.set_kinds(gcs_core::model::Kinds::from_bits(kinds), anyway);
+        s.on_parts = on_parts != 0;
+        0
+    })
+}
+
+/// **What the workspace passes by** (#435, #678): `{ents: [[kind, idx]…], solids: [idx…]}`, every
+/// drawn entity the outline hid or whose kind is off (`Sketch::unseen`) and every object not
+/// shown (`overview::shown_objects`) — what a host that strokes some of the drawing itself skips.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_unseen_json(h: *mut Sketch) -> *mut u8 {
+    json_out(move || {
+        let s = sk(h);
+        let solids = gcs_core::overview::objects(s).into_iter()
+            .filter(|&i| !s.shown(EntRef::solid(i))).map(|i| Json::Int(i as i64)).collect();
+        let ents = s.unseen().into_iter().map(gcs_core::report::ent_json).collect();
+        Json::Obj(vec![("ents".into(), Json::Arr(ents)), ("solids".into(), Json::Arr(solids))])
+    })
+}
+
 /// **The plane the workspace is sectioned by** (`Sketch::cut`): a plane's frame in the world,
 /// nine doubles `u`, `v`, `o` (`gcs_plane_frame3`'s), moved `offset` along its normal and turned
 /// to keep the other side where `flip` is nonzero (`Basis::moved_along`); a null `frame` takes the

@@ -26,6 +26,8 @@ export interface Row {
   solid?: number;
   /** A feature or cutter listed under its object: there to be found, not to be hidden. */
   operand?: boolean;
+  /** A part (#679): an instance that makes an object, at any depth. */
+  part?: boolean;
   children: Row[];
 }
 

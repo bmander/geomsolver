@@ -9,8 +9,8 @@
  * when a row is first opened, so a ring of many copies, or the V-twin, stays cheap. */
 import type { Row } from '../core/outline.js';
 import {
-  ancestors, frameRow, hasEye, hoverRow, isHidden, partlyHidden, rowKey, rowSelected, selectRow,
-  selectedKeys, selectionRow, toggleRow, walk,
+  ancestors, frameRow, hasEye, hoverRow, isHidden, isPart, partlyHidden, rowKey, rowSelected,
+  selectRow, selectedKeys, selectionRow, toggleRow, walk,
 } from './hidden.js';
 import { disclosure } from './project-explorer.js';
 import type { SketchView } from './view.js';
@@ -115,6 +115,8 @@ interface Drawn {
   item: HTMLElement;
   row: HTMLElement;
   eye: HTMLButtonElement | null;
+  /** A part's Open, which reads Close while it is the part open (#679). */
+  open: HTMLButtonElement | null;
   group: HTMLElement | null;
   above: Row[];
 }
@@ -189,7 +191,7 @@ export class OutlinePane {
       if (!row) continue;
       const own = this.view.hiddenRows.has(rowKey(row));
       const under = !own && isHidden(this.view, row, d.above);
-      const half = !own && !under && partlyHidden(this.view, row);
+      const half = !own && !under && partlyHidden(this.view, row, d.above);
       d.row.classList.toggle('hidden', own);
       d.row.classList.toggle('dimmed', under);
       if (d.eye) {
@@ -200,6 +202,13 @@ export class OutlinePane {
         }
         d.eye.setAttribute('aria-pressed', String(own || under));
         d.eye.title = own || under ? 'Show' : 'Hide';
+      }
+      if (d.open) {
+        const opened = this.view.opened === rowKey(row);
+        d.row.classList.toggle('opened', opened);
+        d.open.textContent = opened ? 'close' : 'open';
+        d.open.title = opened ? 'Close the part: the assembly drawn whole again'
+          : 'Open the part: its sketches and datums drawn, the rest of the assembly dimmed';
       }
       if (rowSelected(row, selected)) d.row.setAttribute('aria-current', 'true');
       else d.row.removeAttribute('aria-current');
@@ -302,6 +311,18 @@ export class OutlinePane {
     label.addEventListener('pointerenter', () => hoverRow(this.view, this.flat[i] ?? null));
     label.addEventListener('pointerleave', () => hoverRow(this.view, null));
     line.append(twist, ...(eye ? [eye] : [document.createElement('span')]), label);
+    // a part opens from its row, as a double-click on its object opens it (#679)
+    let open: HTMLButtonElement | null = null;
+    if (isPart(row)) {
+      open = document.createElement('button');
+      open.type = 'button';
+      open.className = 'outline-open';
+      this.on(open, 'click', i, (r, e) => {
+        e.stopPropagation();
+        this.view.openPart(this.view.opened === rowKey(r) ? null : r);
+      });
+      line.append(open);
+    }
     if (row.span) {
       const go = document.createElement('button');
       go.type = 'button';
@@ -314,7 +335,7 @@ export class OutlinePane {
     }
     if (eye) line.classList.add('has-eye');
     item.append(line);
-    const d: Drawn = { item, row: line, eye, group: null, above };
+    const d: Drawn = { item, row: line, eye, open, group: null, above };
     this.drawn.set(i, d);
     if (kids) {
       item.setAttribute('aria-expanded', 'false');

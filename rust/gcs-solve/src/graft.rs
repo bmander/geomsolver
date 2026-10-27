@@ -172,6 +172,9 @@ fn ledger(sk: &Sketch) {
         rounds: _,                    // the elaborator's, derived and never saved
         standing: _,                  // presentation of an instant, never written
         hidden: _,                    // view state the front end sets on every drawing
+        kinds: _,
+        shown_anyway: _,
+        on_parts: _,
         cut: _,
         caches: _,                    // compiled artefacts, worked out again
         field_surfaces: _,            // a host's, supplied against the drawing it read

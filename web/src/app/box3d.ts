@@ -44,7 +44,9 @@ import type { Sectioned } from '../core/section.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
-import { COL, chromeOf, inkOf } from './paint.js';
+import { COL, DIMMED, chromeOf, inkOf } from './paint.js';
+import { dropLabel, scaleLabels, textLabel } from './label.js';
+import type { Label } from './label.js';
 import { ScenarioScene } from './scenario-box.js';
 import { partOf, samePick } from './view.js';
 import type { Combining, SketchView } from './view.js';
@@ -80,6 +82,13 @@ const GHOST = 0.4;
 /** A pane's frame, in screen pixels: the plane being drawn on is bold.  WebGL draws every
  *  `LineBasicMaterial` one pixel wide whatever it is asked, so a frame is a fat line. */
 const FRAME_PX = { plain: 1, current: 2.5 };
+
+/** How an assembly shown on its parts draws its datums (#679): quietly — a pane's wash, its
+ *  frame and the axes — so the parts are what is seen. */
+const QUIET = { pane: 0.03, frame: 0.2, axis: 0.3 };
+
+/** A pane's name, in CSS pixels: its type's height, and the room round it (#679). */
+const LABEL_PX = { size: 11, pad: 3 };
 
 /** An object's edges in pixels: as inked, and selected or under the pointer. */
 const EDGE_PX = { ink: 1.25, picked: 3.5, hover: 2.5 };
@@ -201,17 +210,23 @@ export class Box3D {
   private readonly camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -1e4, 1e4);
   /** The panes, the axes and what stands in space — rebuilt as the pose moves. */
   private readonly datums = new THREE.Group();
+  /** Each pane's name while an assembly is shown on its parts (#679), by its plane's name: kept
+   *  across the datums' rebuilds, which a drag makes every frame, and only moved by them. */
+  private readonly names = new THREE.Group();
+  private readonly labels = new Map<string, Label>();
   /** The objects' meshes and edges, a group each (`placed`), moved by their matrices. */
   private readonly objects = new THREE.Group();
   /** Each object as the box holds it, by its index among the sketch's solids. */
   private readonly placed = new Map<number, Placed>();
   /** The geometries the objects are drawn from, by `Placement.geometry`. */
   private readonly shared = new Map<number, Shared>();
-  /** **One material for each colour and each way of drawing it** — solid, or a ghost — shared by
-   *  every object of that colour, not one a face (#674). */
+  /** **One material for each colour and each way of drawing it** — solid, a ghost, or dimmed
+   *  round a part open (#679) — shared by every object of that colour, not one a face (#674). */
   private readonly materials = new Map<string, THREE.MeshStandardMaterial>();
-  /** The objects' edges' one material: the ink is each segment's own (sharp, tangent). */
+  /** The objects' edges' one material: the ink is each segment's own (sharp, tangent) — and its
+   *  twin, faint, for an object dimmed round a part open (#679). */
   private readonly edgeInk: LineMaterial;
+  private readonly edgeDim: LineMaterial;
   readonly stats: BoxStats = { cut: 0, moved: 0, built: 0, capped: 0 };
   /** The objects cut since the last frame was rendered, marked (`gcs:drawn`) once it is. */
   private readonly drawnNow: { index: number; name: string; triangles: number }[] = [];
@@ -261,7 +276,7 @@ export class Box3D {
 
   constructor(readonly canvas: HTMLCanvasElement | null) {
     this.scene.background = new THREE.Color(INK.bg);
-    this.scene.add(this.datums, this.objects, this.previewed, this.litEdges,
+    this.scene.add(this.datums, this.names, this.objects, this.previewed, this.litEdges,
                    this.caps, this.scenario.group);
     // **light that shows the shape** (#676): a sky over a ground, so every face is lit and an
     // upward one lighter; a key over the eye's left shoulder and a fill from the right, both
@@ -278,6 +293,10 @@ export class Box3D {
     this.scene.add(this.camera);
     this.edgeInk = new LineMaterial({
       color: 0xffffff, vertexColors: true, linewidth: EDGE_PX.ink, clippingPlanes: this.clipping,
+    });
+    this.edgeDim = new LineMaterial({
+      color: 0xffffff, vertexColors: true, linewidth: EDGE_PX.ink, clippingPlanes: this.clipping,
+      transparent: true, opacity: DIMMED,
     });
   }
 
@@ -373,7 +392,7 @@ export class Box3D {
       v.applySection();
       this.clipTo(v);
     }
-    if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
+    if (datums) this.buildDatums(v, overview3(v.sketch, 0, 'datums'));
     let placedAt = this.built?.objects ?? NaN;
     if (objects) {
       // an object is cut again under a gesture only where its shape was changed in place, which
@@ -410,8 +429,15 @@ export class Box3D {
       const tool = c?.tools.some((t) => t.index === index);
       held.mesh.visible = !(c && this.preview.shown && c.target.index === index);
       const colour = tool ? INK[c!.word] : colours.get(index) ?? INK.solid;
-      const m = this.material(colour, !!tool || deformed.has(index));
+      // a part open, the rest of the assembly is dimmed round it (#679)
+      const m = this.material(colour,
+        tool || deformed.has(index) ? GHOST : dimmed(v, index) ? DIMMED : 1);
       if (held.mesh.material !== m) held.mesh.material = m;
+    }
+    // and an object dimmed is dimmed in its edges too
+    for (const [index, held] of this.placed) {
+      const ink = dimmed(v, index) ? this.edgeDim : this.edgeInk;
+      if (held.edges && held.edges.material !== ink) held.edges.material = ink;
     }
     for (const s of this.shared.values()) {
       if (s.edges) s.edges.instanceCount = s.sharp + (v.showTangentEdges ? s.tangent : 0);
@@ -426,11 +452,13 @@ export class Box3D {
     }
   }
 
-  /** The material of `colour`, solid or a ghost: see-through and hiding nothing behind it.  Its
-   *  faces stand a hair behind their depth, so an edge drawn on them wins its depth test against
-   *  them without fighting, and a nearer face still hides it. */
-  private material(colour: string | number, ghosted: boolean): THREE.MeshStandardMaterial {
-    const key = `${colour} ${ghosted ? 'ghost' : 'solid'}`;
+  /** The material of `colour` at `alpha`: solid at one, and below it see-through and hiding
+   *  nothing behind it — a ghost, or dimmed round a part open (#679).  Its faces stand a hair
+   *  behind their depth, so an edge drawn on them wins its depth test against them without
+   *  fighting, and a nearer face still hides it. */
+  private material(colour: string | number, alpha: number): THREE.MeshStandardMaterial {
+    const key = `${colour} ${alpha}`;
+    const ghosted = alpha < 1;
     let m = this.materials.get(key);
     if (!m) {
       m = new THREE.MeshStandardMaterial({
@@ -441,7 +469,7 @@ export class Box3D {
         polygonOffsetFactor: 1,
         polygonOffsetUnits: 1,
         transparent: ghosted,
-        opacity: ghosted ? GHOST : 1,
+        opacity: alpha,
         depthWrite: !ghosted,
       });
       this.materials.set(key, m);
@@ -598,10 +626,13 @@ export class Box3D {
 
   /** The datums, from what the core says is in the box: the panes, their axes, and what is drawn
    *  in space. */
-  private buildDatums(items: Item3[]): void {
+  private buildDatums(v: SketchView, items: Item3[]): void {
     this.frames.length = 0;
     this.panes.length = 0;
     release(this.datums);
+    // an assembly shown on its parts draws its datums quietly, each pane labelled (#679)
+    const quiet = v.onParts;
+    const named = new Map<string, [number, number, number]>();
     // the panes, translucent and double-sided: geometry on the far side of one must read through
     for (const it of items.filter((i) => i.part === 'face')) {
       const g = fanned(it.pts);
@@ -609,19 +640,47 @@ export class Box3D {
       this.datums.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({
         color: INK.pane,
         transparent: true,
-        opacity: 0.07,
+        opacity: quiet ? QUIET.pane : 0.07,
         side: THREE.DoubleSide,
         depthWrite: false,
       })));
       // its frame, separately, because the frame is what is picked and what bolds under the
       // cursor — the rule everything on this canvas is picked by, and the wash is never it
       this.panes.push({ it, line: this.frame(it) });
+      const pl = quiet && this.renderer ? v.planeOf(it) : null;
+      const name = pl && v.doc.nameOf(pl);
+      if (name) named.set(name, it.pts[3] ?? it.pts[0]);
     }
-    this.lines(this.datums, items.filter((i) => i.part === 'axis'), INK.axis, 0.55);
+    this.nameAt(named);
+    this.lines(this.datums, items.filter((i) => i.part === 'axis'), INK.axis,
+               quiet ? QUIET.axis : 0.55);
     // of what is drawn, only what stands in space: a sketch on a plane is stroked on the canvas
     // above, through its plane's camera, with the selection and the state colours it carries
     for (const it of items.filter((i) => i.part === 'drawn' && IN_SPACE.has(i.kind ?? ''))) {
       this.frames.push({ it, line: this.lines(this.datums, [it], INK.drawn, 1)! });
+    }
+  }
+
+  /** Each pane named at its corner (#679): a label already made moved there, one no longer
+   *  wanted let go — its text drawn and uploaded once, not each frame a drag remakes the datums. */
+  private nameAt(named: Map<string, [number, number, number]>): void {
+    for (const [name, label] of this.labels) {
+      if (named.has(name)) continue;
+      dropLabel(label);
+      this.labels.delete(name);
+    }
+    for (const [name, at] of named) {
+      let label = this.labels.get(name) ?? null;
+      if (!label) {
+        label = textLabel(name, at, { font: LABEL_PX.size, pad: LABEL_PX.pad, ink: '#5f8f5f' });
+        if (!label) continue;
+        // drawn from its lower left, at the corner
+        label.sprite.center.set(0, 0);
+        label.sprite.renderOrder = 2;
+        this.labels.set(name, label);
+        this.names.add(label.sprite);
+      }
+      label.sprite.position.set(...at);
     }
   }
 
@@ -704,7 +763,7 @@ export class Box3D {
     if (!v.showSolid) return held;
     // **the object itself, one mesh** — its faces named by the core's face table, so a pick and
     // a tint read them by range and the scene needs no mesh a face
-    held.mesh = new THREE.Mesh(s.faces, this.material(INK.solid, false));
+    held.mesh = new THREE.Mesh(s.faces, this.material(INK.solid, 1));
     held.mesh.layers.enable(FACES);
     group.add(held.mesh);
     return held;
@@ -871,12 +930,15 @@ export class Box3D {
       // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
       const pl = v.planeOf(it);
       const current = here !== null && pl !== null && placeOf(ws, pl.index) === here;
-      m.opacity = current ? 0.8 : 0.35;
+      m.opacity = current ? 0.8 : v.onParts ? QUIET.frame : 0.35;
       m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);
     }
     // (each object's colour and tint is `sync`'s, which has just run)
     this.edgeInk.resolution.set(v.width, v.height);
+    this.edgeDim.resolution.set(v.width, v.height);
+    // a pane's name keeps its size as the eye zooms (#679)
+    scaleLabels(this.labels.values(), v.unit);
     for (const line of this.litEdges.children as LineSegments2[]) {
       line.material.resolution.set(v.width, v.height);
     }
@@ -926,6 +988,7 @@ export class Box3D {
     this.frames.length = 0;
     this.panes.length = 0;
     release(this.datums);
+    this.nameAt(new Map());
     this.dropObjects();
     for (const m of this.materials.values()) m.dispose();
     this.materials.clear();
@@ -1154,6 +1217,11 @@ function hatched(): THREE.ShaderMaterial {
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
   });
+}
+
+/** Whether object `solid` is dimmed: a part is open (#679) that did not make it. */
+function dimmed(v: SketchView, solid: number): boolean {
+  return !!v.inside && !v.inside.solids.has(solid);
 }
 
 /** A convex polygon as a triangle fan, which is what a pane is.  The one place this file makes a

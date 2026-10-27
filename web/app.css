@@ -135,6 +135,12 @@ label.check { display: inline-flex; align-items: center; gap: 4px; cursor: point
   background: none; border: 0; padding: 4px 8px; white-space: nowrap;
 }
 .menu li > button:hover { background: var(--accent-soft); color: var(--accent); }
+.menu li.head { padding: 4px 8px 2px; font-size: 11px; color: var(--muted); }
+/* a check box: its tick in the margin before the label, room kept for it while unticked */
+.menu li > button[role="menuitemcheckbox"] { position: relative; padding-left: 24px; }
+.menu li > button[role="menuitemcheckbox"][aria-checked="true"]::before {
+  content: '\2713'; position: absolute; left: 8px;
+}
 
 #banner { display: none; align-items: center; gap: 10px; padding: 7px 12px; font-weight: 600; flex: none; }
 #banner.conflict { display: flex; background: var(--danger-bg); color: #8a0000; border-bottom: 1px solid #d62728; }
@@ -532,6 +538,10 @@ dialog input[type=search] {
   color: var(--muted); }
 .outline-source { flex: none; visibility: hidden; color: var(--muted); }
 .outline-row:hover .outline-source, .outline-source:focus-visible { visibility: visible; }
+.outline-open { flex: none; visibility: hidden; color: var(--muted); font-size: 11px; }
+.outline-row:hover .outline-open, .outline-open:focus-visible,
+.outline-row.opened .outline-open { visibility: visible; }
+.outline-row.opened .outline-open { color: var(--accent); }
 .outline-row:hover { background: var(--accent-soft); }
 .outline-row[aria-current] { background: var(--accent-soft); color: var(--accent); }
 /* the row a right-click's Show in model viewer went to, lit a moment so the eye finds it */

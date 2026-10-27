@@ -15,7 +15,7 @@ import { iconOf } from '../app/outline.js';
 import type { Hit, SketchView } from '../app/view.js';
 import { initCore } from '../core/wasm.js';
 import { canvasOf, pointer } from './canvas.js';
-import { docView, seenAt } from './views.js';
+import { docView, row, seenAt } from './views.js';
 
 (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame ??=
   (fn: FrameRequestCallback) => { fn(0); return 0; };
@@ -35,12 +35,6 @@ const DOC = 'unit mm\nuse std\n'
   + '  rim := circle(center: o) hint(r: 20)\n  h := circle(center: o) hint(r: 5)\n  line(o, hub)\n'
   + '  seg := line(hint((0, -30)), hint((10, -30)))\n}\n'
   + 'stock := solid(face(rim), depth: 8)\nbore := solid(face(h), depth: 8)\nbore cut stock\n';
-
-/** The row carried by `path`. */
-function row(v: SketchView, path: string): Row {
-  for (const [r] of walk(v.outline())) if (r.path === path) return r;
-  throw new Error(`no row ${path}`);
-}
 
 /** What the row carried by `path` made — by the outline's own name for it, `tip[1]` for a copy
  *  of a ring's, which the source map files as `#9.1.tip`. */

@@ -10,6 +10,8 @@
  * the factor the card's slider sets — or the swing, animated — is a number written per frame,
  * and no coordinate is worked out on this side. */
 import * as THREE from 'three';
+import { scaleLabels, textLabel } from './label.js';
+import type { Label } from './label.js';
 
 import type { ScenarioAnswer } from '../core/program.js';
 import type { ScenarioMark, Vec3 } from '../core/scenario.js';
@@ -89,7 +91,7 @@ export class ScenarioScene {
   /** Each glyph, made in pixels about its anchor: scaled by the pixel's world length a frame. */
   private readonly glyphs: THREE.Object3D[] = [];
   /** Each label, its size in pixels: a sprite scaled the same way. */
-  private readonly labels: { sprite: THREE.Sprite; w: number; h: number }[] = [];
+  private readonly labels: Label[] = [];
   /** Each requirement's probe, by its index, for its verdict's ink. */
   private readonly probes: { index: number; mat: THREE.MeshBasicMaterial }[] = [];
   /** The deformed bodies and their meshes' edges, for the factor written a frame. */
@@ -129,7 +131,7 @@ export class ScenarioScene {
     if (!this.group.visible) return;
     const unit = v.unit;
     for (const g of this.glyphs) g.scale.setScalar(unit);
-    for (const { sprite, w, h } of this.labels) sprite.scale.set(w * unit, h * unit, 1);
+    scaleLabels(this.labels, unit);
     for (const p of this.probes) {
       const held = answerOf(v, p.index)?.holds ?? null;
       p.mat.color.set(held === true ? INK.kept : held === false ? INK.refuted : INK.requirement);
@@ -228,31 +230,13 @@ export class ScenarioScene {
 
   /** Words at `at`, in a box beside it, always over the drawing. */
   private label(text: string, at: Vec3, ink: number): void {
-    if (typeof document === 'undefined' || !text) return;   // node: nothing is drawn
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = 2;
-    const font = `${PX.font * dpr}px ui-sans-serif, system-ui, sans-serif`;
-    ctx.font = font;
-    const w = Math.ceil(ctx.measureText(text).width / dpr) + 2 * PX.pad;
-    const h = PX.font + 2 * PX.pad;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    ctx.font = font;
-    ctx.fillStyle = 'rgba(255,255,255,0.88)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = `#${new THREE.Color(ink).getHexString()}`;
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, PX.pad * dpr, (h / 2) * dpr);
-    const map = new THREE.CanvasTexture(canvas);
-    map.colorSpace = THREE.SRGBColorSpace;
-    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map, depthTest: false }));
-    sprite.center.set(-0.12, -0.35);       // beside the place, up and to the right
-    sprite.position.set(...at);
-    sprite.renderOrder = 4;
-    this.labels.push({ sprite, w, h });
-    this.marks.add(sprite);
+    const label = textLabel(text, at, { font: PX.font, pad: PX.pad,
+      ink: `#${new THREE.Color(ink).getHexString()}`, back: 'rgba(255,255,255,0.88)' });
+    if (!label) return;   // node: nothing is drawn
+    label.sprite.center.set(-0.12, -0.35);       // beside the place, up and to the right
+    label.sprite.renderOrder = 4;
+    this.labels.push(label);
+    this.marks.add(label.sprite);
   }
 
   /** The bodies deformed, a morph target each, coloured by their moves; the mesh's edges. */

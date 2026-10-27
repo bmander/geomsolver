@@ -568,3 +568,172 @@ fn a_plane_is_picked_by_its_panes_frame() {
     let on = seen(top.pts[2], az, el);
     assert_eq!(pick(sk, &proj, on, 0.5, 0.01), named("std.top"));
 }
+
+/// A line and a circle on the front, a fixed point and a free one, a dimension, an axis standing
+/// up beside them and a disc made of the circle (#678).
+const KINDS: &str = "unit mm\nuse std\nuse std.motion (spins)\nin std.front {\n\
+    a := point hint((0, 0))\nfix((0, 0)) a\nb := point hint((40, 0))\nab := line(a, b)\n\
+    horizontal ab\na distance(40) b\n\
+    o := point hint((20, 30))\nfix((20, 30)) o\nrim := circle(center: o) hint(r: 10)\n}\n\
+    t := axis hint(dir: (0, 0, 1))\nfix(dir == (0, 0, 1), origin == (80, 0, 0)) t\n\
+    disc := solid(face(rim), depth: 5)\n";
+
+/// **A kind turned off is not drawn, not lit and not picked** (#678), as a hidden row is not: each
+/// of objects, planes, axes, sketches and points, off on its own, is passed by every pick,
+/// `under`, a band and the bounds, and the scene the box draws; dimensions go from the callouts
+/// unless asked for; and a plane shown whatever its kind is shown with the planes off.
+#[test]
+fn a_kind_turned_off_is_not_picked_under_or_framed() {
+    use gcs_core::model::Kinds;
+    use gcs_core::overview::workspace::{bounds, pick_solid, under, Under};
+    use gcs_core::overview::{scene3d_of, Layer, Part};
+    let mut e = build(KINDS);
+    let named = |n: &str| e.map.ent_named(n).unwrap();
+    let (a, ab, rim, t) = (named("a"), named("ab"), named("rim"), named("t"));
+    let front = named("std.front");
+    let disc = named("disc").i();
+    let (az, el) = (-FRAC_PI_2, 0.0);
+    let (tol, unit) = (0.5, 0.05);
+    // the line's middle, the rim's top, the disc's face, the axis beside it, and empty pane
+    let (on_line, on_rim, on_disc, on_axis, on_pane) =
+        ((20.0, 0.0), (20.0, 40.0), (24.0, 33.0), (80.0, 20.0), (-30.0, -40.0));
+    let sk = &mut e.sketch;
+    let everything = |sk: &Sketch| {
+        let proj = Projection::new(sk, az, el);
+        let under_all: Vec<Under> = [on_line, on_rim, on_disc, on_axis]
+            .into_iter().flat_map(|at| under(sk, &proj, at, tol, unit)).collect();
+        let band = overlapping(sk, &proj, (-60.0, -60.0), (100.0, 60.0), unit);
+        let scene = scene3d_of(sk, 0.0, Layer::All);
+        (proj, under_all, band, scene)
+    };
+    let drawn = |under_all: &[Under], e: EntRef| under_all.contains(&Under::Drawn(e));
+    let object = |under_all: &[Under]| under_all.iter()
+        .any(|u| matches!(u, Under::Object(_) | Under::Face(_) | Under::Edge { .. }));
+
+    // everything shown, all of it found
+    let (proj, under_all, band, scene) = everything(sk);
+    assert_eq!(pick(sk, &proj, (0.0, 0.0), tol, unit), Some(a));
+    assert_eq!(pick(sk, &proj, on_line, tol, unit), Some(ab));
+    assert_eq!(pick(sk, &proj, on_rim, tol, unit), Some(rim));
+    assert_eq!(pick(sk, &proj, on_axis, tol, unit), Some(t));
+    assert_eq!(pick_solid(sk, &proj, on_disc).map(|h| h.solid), Some(disc));
+    assert!(panes_at(sk, &proj, on_pane).contains(&front.i()));
+    assert!(drawn(&under_all, ab) && drawn(&under_all, rim) && drawn(&under_all, t));
+    assert!(object(&under_all));
+    assert!(band.contains(&a) && band.contains(&ab) && band.contains(&rim));
+    assert!(scene.iter().any(|it| it.what == Part::Face && it.of == Some(front)));
+    assert!(scene.iter().any(|it| it.what == Part::Solid));
+    assert!(scene.iter().any(|it| it.of == Some(t)));
+    let whole = bounds(sk, &proj, unit).unwrap();
+    assert!(!callout::layout(sk, unit).is_empty());
+
+    // objects off: the disc is neither met nor drawn, and the box no longer reaches its depth
+    sk.set_kinds(Kinds::ALL.without(Kinds::OBJECTS), []);
+    let (proj, under_all, _, scene) = everything(sk);
+    assert_eq!(pick_solid(sk, &proj, on_disc), None);
+    assert!(!object(&under_all));
+    assert!(!scene.iter().any(|it| it.what == Part::Solid));
+    assert!(gcs_core::overview::shown_objects(sk).is_empty());
+    assert_eq!(pick(sk, &proj, on_rim, tol, unit), Some(rim), "the rest is still picked");
+
+    // planes off: no pane, none landed on, none framed
+    sk.set_kinds(Kinds::ALL.without(Kinds::PLANES), []);
+    let (proj, under_all, band, scene) = everything(sk);
+    assert!(!panes_at(sk, &proj, on_pane).contains(&front.i()));
+    assert!(!scene.iter().any(|it| it.what == Part::Face || it.what == Part::Axis));
+    assert!(!under_all.iter().any(|u| matches!(u, Under::Drawn(r) if r.kind == EntKind::Frame)));
+    assert!(!band.iter().any(|r| r.kind == EntKind::Frame));
+    // a plane shown whatever its kind — the one drawn on — has its pane
+    sk.set_kinds(Kinds::ALL.without(Kinds::PLANES), [front]);
+    let (proj, _, _, scene) = everything(sk);
+    assert!(panes_at(sk, &proj, on_pane).contains(&front.i()));
+    assert!(scene.iter().any(|it| it.what == Part::Face && it.of == Some(front)));
+
+    // axes off
+    sk.set_kinds(Kinds::ALL.without(Kinds::AXES), []);
+    let (proj, under_all, band, scene) = everything(sk);
+    assert_ne!(pick(sk, &proj, on_axis, tol, unit), Some(t));
+    assert!(!drawn(&under_all, t) && !band.contains(&t));
+    assert!(!scene.iter().any(|it| it.of.is_some_and(|r| r.kind == EntKind::Axis)));
+
+    // sketches off: the figures and their points go, the objects and datums stay
+    sk.set_kinds(Kinds::ALL.without(Kinds::SKETCHES), []);
+    let (proj, under_all, band, scene) = everything(sk);
+    let sketched = |r: EntRef| matches!(r.kind, EntKind::Point | EntKind::Line | EntKind::Circle);
+    for at in [(0.0, 0.0), on_line, on_rim] {
+        assert!(!pick(sk, &proj, at, tol, unit).is_some_and(sketched), "{at:?}");
+    }
+    assert!(!drawn(&under_all, ab) && !drawn(&under_all, rim));
+    assert!(!band.iter().any(|&r| sketched(r)));
+    assert!(!scene.iter().any(|it| it.of.is_some_and(sketched)));
+    assert!(object(&under_all) && drawn(&under_all, t));
+    // and the callouts on them with them
+    assert!(callout::layout(sk, unit).is_empty());
+    let b = bounds(sk, &proj, unit).unwrap();
+    assert!(b.1 > whole.1 + 1e-6 || b.0 > whole.0 + 1e-6, "the line not framed: {b:?} {whole:?}");
+
+    // points off: the points go, their line stays
+    sk.set_kinds(Kinds::ALL.without(Kinds::POINTS), []);
+    let (proj, under_all, band, _) = everything(sk);
+    assert_eq!(pick(sk, &proj, (0.0, 0.0), tol, unit), Some(ab));
+    assert_eq!(nearest_point(sk, &proj, (0.0, 0.0)).0, None);
+    assert!(!under_all.iter().any(|u| matches!(u, Under::Drawn(r) if r.kind == EntKind::Point)));
+    assert!(!band.contains(&a) && band.contains(&ab));
+    assert!(sk.unseen().contains(&a) && !sk.unseen().contains(&ab));
+
+    // dimensions off: none laid out for the workspace unless asked for, and nothing else gone
+    sk.set_kinds(Kinds::ALL.without(Kinds::DIMENSIONS), []);
+    let laid = |sk: &Sketch, ids: Option<&[u32]>| {
+        gcs_core::report::selected_callouts_json(sk, unit, ids).get("items").unwrap().arr().len()
+    };
+    assert_eq!(laid(sk, None), 0);
+    let id = sk.constraints.iter().find(|c| c.kind.name() == "Distance").unwrap().id;
+    assert_eq!(laid(sk, Some(&[id])), 1, "the one being edited still is");
+    assert!(sk.unseen().is_empty());
+
+    // and turned on again, everything is back
+    sk.set_kinds(Kinds::ALL, []);
+    let (proj, _, _, _) = everything(sk);
+    assert_eq!(bounds(sk, &proj, unit), Some(whole));
+    assert!(laid(sk, None) > 0);
+    assert_eq!(Kinds::from_bits(Kinds::ALL.bits() | 1 << 20), Kinds::ALL);
+}
+
+/// **An assembly shown on its parts draws its datums the size of its objects** (#679): with
+/// `on_parts`, a pane is the box of what is shown standing on it and no narrower than half the
+/// objects' largest side — not the workspace's 125 mm, nor what a closed part's hidden sketch
+/// reaches — and an axis reaches as far; without it, as it always was.
+#[test]
+fn an_assembly_on_its_parts_draws_its_datums_the_size_of_its_objects() {
+    use gcs_core::overview::{scene3d_of, Layer, Part};
+    let mut e = build(KINDS);
+    let named = |n: &str| e.map.ent_named(n).unwrap();
+    let front = named("std.front");
+    let x = named("std.x");
+    let hidden = ["a", "b", "o", "ab", "rim"].map(named);
+    let sizes = |sk: &Sketch| {
+        let scene = scene3d_of(sk, 0.0, Layer::Datums);
+        let pane = scene.iter().find(|it| it.what == Part::Face && it.of == Some(front)).unwrap();
+        let xs: Vec<f64> = pane.pts.iter().map(|p| p[0]).collect();
+        let width = xs.iter().cloned().fold(f64::MIN, f64::max)
+            - xs.iter().cloned().fold(f64::MAX, f64::min);
+        let axis = scene.iter().find(|it| it.of == Some(x)).unwrap();
+        (width, (axis.pts[1][0] - axis.pts[0][0]).abs())
+    };
+    let sk = &mut e.sketch;
+    let (width, axis) = sizes(sk);
+    assert!(width >= 125.0 - 1e-9 && axis >= 125.0 - 1e-9, "{width} {axis}");
+    // the disc is 20 across: a datum half that, round what is shown on the front
+    sk.on_parts = true;
+    let (width, axis) = sizes(sk);
+    assert!((width - 52.0).abs() < 1e-6, "the drawing on the front, and a margin: {width}");
+    assert!((axis - 10.0).abs() < 1e-9, "{axis}");
+    // what a closed part draws is hidden, and sizes nothing
+    sk.set_hidden(hidden, []);
+    let (width, _) = sizes(sk);
+    assert!((width - 13.0).abs() < 1e-6, "{width}");
+    // with no object built, the workspace again
+    sk.set_kinds(gcs_core::model::Kinds::ALL.without(gcs_core::model::Kinds::OBJECTS), []);
+    let (width, _) = sizes(sk);
+    assert!(width >= 125.0 - 1e-9, "{width}");
+}

@@ -1386,8 +1386,8 @@ pub fn overview3d_json(sk: &Sketch, unit: f64, layer: crate::overview::Layer) ->
 }
 
 /// **The model outline** (#435) over `sk`, the drawing `e` made: `[{label, kind, component?,
-/// path, span?: [lo, hi], ents: [[kind, index]…], solid?, operand?, children}…]`, the span in the
-/// document's bytes (`overview::outline`).
+/// path, span?: [lo, hi], ents: [[kind, index]…], solid?, operand?, part?, children}…]`, the
+/// span in the document's bytes (`overview::outline`).
 pub fn outline_json(e: &crate::program::Elaborated, sk: &Sketch) -> Json {
     fn node(n: &crate::overview::outline::Node) -> Json {
         let ents = n.ents.iter().map(|&e| ent_json(e)).collect();
@@ -1408,6 +1408,9 @@ pub fn outline_json(e: &crate::program::Elaborated, sk: &Sketch) -> Json {
         }
         if n.operand {
             o.set("operand", Json::Bool(true));
+        }
+        if n.part {
+            o.set("part", Json::Bool(true));
         }
         o.set("children", Json::Arr(n.children.iter().map(node).collect()));
         o

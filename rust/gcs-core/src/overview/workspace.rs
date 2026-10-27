@@ -406,12 +406,12 @@ fn nearest_pane(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Opt
 fn frames_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Vec<(f64, usize)> {
     let views = super::views(sk);
     let places = super::places(sk);
-    let least = sk.extent() * super::LEAST_SIDE;
+    let rule = super::panes(sk);
     let mut near = Vec::new();
     for i in (0..sk.frames.len())
         .filter(|&i| places[i] == Some(i) && pane_readable(proj, i) && sk.shown(EntRef::frame(i))) {
         let basis = sk.basis(i);
-        let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
+        let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, &rule);
         let c = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)].map(|(x, y)| proj.seen(basis.lift(x, y)));
         let d = (0..4).map(|k| crate::model::seg_distance(at, c[k], c[(k + 1) % 4]))
             .fold(f64::INFINITY, f64::min);
@@ -428,7 +428,7 @@ fn frames_near(sk: &Sketch, proj: &Projection, at: (f64, f64), tol: f64) -> Vec<
 pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
     let views = super::views(sk);
     let places = super::places(sk);
-    let least = sk.extent() * super::LEAST_SIDE;
+    let rule = super::panes(sk);
     let toward = proj.toward();
     let mut hits: Vec<(f64, usize)> = Vec::new();
     for i in 0..sk.frames.len() {
@@ -441,7 +441,7 @@ pub fn panes_at(sk: &Sketch, proj: &Projection, at: (f64, f64)) -> Vec<usize> {
         // where the eye's ray through `at` meets the plane, in its own coordinates
         let (x, y) = (at.0 - m[2], at.1 - m[5]);
         let (px, py) = ((m[4] * x - m[1] * y) / det, (-m[3] * x + m[0] * y) / det);
-        let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, least);
+        let (x0, y0, x1, y1) = super::pane(sk, i, &views, &places, &rule);
         if px < x0 || px > x1 || py < y0 || py > y1 {
             continue;
         }
@@ -998,10 +998,10 @@ pub fn bounds(sk: &Sketch, proj: &Projection, unit: f64) -> Option<Box2> {
     if !(b.0 < b.2 || b.1 < b.3) {
         let views = super::views(sk);
         let places = super::places(sk);
-        let least = sk.extent() * super::LEAST_SIDE;
+        let rule = super::panes(sk);
         let shown = |i: usize| places[i] == Some(i) && sk.shown(EntRef::frame(i));
         for i in (0..sk.frames.len()).filter(|&i| shown(i)) {
-            grow_by_pane(sk, proj, i, &views, &places, least, &mut b);
+            grow_by_pane(sk, proj, i, &views, &places, &rule, &mut b);
         }
     }
     (b.0 <= b.2).then_some(b)
@@ -1023,12 +1023,12 @@ fn grow_by_solid(sk: &Sketch, proj: &Projection, i: usize, b: &mut Box2) {
 
 /// Grow `b` by plane `i`'s pane as the eye sees it — nothing for a plane with no place.
 fn grow_by_pane(sk: &Sketch, proj: &Projection, i: usize, views: &[Option<usize>],
-                places: &[Option<usize>], least: f64, b: &mut Box2) {
+                places: &[Option<usize>], rule: &super::Panes, b: &mut Box2) {
     if places[i].is_none() {
         return;
     }
     let basis = sk.basis(i);
-    let (x0, y0, x1, y1) = super::pane(sk, i, views, places, least);
+    let (x0, y0, x1, y1) = super::pane(sk, i, views, places, rule);
     for (x, y) in [(x0, y0), (x1, y0), (x1, y1), (x0, y1)] {
         grow(b, proj.seen(basis.lift(x, y)));
     }
@@ -1044,13 +1044,13 @@ pub fn bounds_of(sk: &Sketch, proj: &Projection, ents: &[EntRef], solids: &[usiz
     let mut b: Box2 = (f64::INFINITY, f64::INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY);
     let views = super::views(sk);
     let places = super::places(sk);
-    let least = sk.extent() * super::LEAST_SIDE;
-    let reach = super::axis_reach(sk);
+    let rule = super::panes(sk);
+    let reach = rule.reach;
     let drawn: std::collections::BTreeSet<EntRef> = sk.drawn().into_iter().collect();
     for &e in ents {
         match e.kind {
             EntKind::Frame if e.i() < sk.frames.len() => {
-                grow_by_pane(sk, proj, e.i(), &views, &places, least, &mut b)
+                grow_by_pane(sk, proj, e.i(), &views, &places, &rule, &mut b)
             }
             EntKind::Axis => {
                 if let Some((tail, tip, _)) = super::axis_segment(sk, e.i(), reach) {

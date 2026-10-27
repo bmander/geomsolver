@@ -156,7 +156,7 @@ export function options(): Promise<void> {
     addCheckbox(box, 'colour by state', view.colorByState, (v) => { view.colorByState = v; view.draw(); },
                 'Paint each entity by what diagnosis makes of it');
     addCheckbox(box, 'dimensions', view.showDimensions,
-                (v) => { view.showDimensions = v; view.draw(); },
+                (v) => { view.showDimensions = v; },
                 'Call out every dimensioned constraint on the drawing — click one to select it, '
               + 'drag it where you want it, double-click to change its number.  Off, editing a '
               + 'dimension still shows that one.  A .svd asks for its own annotations on paper');
