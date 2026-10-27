@@ -385,7 +385,10 @@ impl Sketch {
     pub fn refuse_object(&self, rep: usize, why: &str) -> Result<(), String> {
         if rep >= self.solids.len() { return Err("a refusal names no solid of this drawing".into()); }
         let reads = crate::solid::reads(self, rep, 0.0);
-        self.field_surfaces.borrow_mut().surfaces.insert(rep, crate::solid::Supplied { reads, surface: Err(why.to_string()) });
+        let mut supplies = self.field_surfaces.borrow_mut();
+        supplies.surfaces.insert(rep, crate::solid::Supplied { reads, surface: Err(why.to_string()) });
+        supplies.taken += 1;
+        drop(supplies);
         self.caches.solid.borrow_mut().retain(|(index, _), _| *index != rep);
         Ok(())
     }
@@ -432,7 +435,10 @@ impl Sketch {
                 .map_err(|e| format!("`{name}`: an exact surface {e}"))?;
         }
         let supplied = crate::solid::Supplied { reads, surface: Ok(std::rc::Rc::new(surface)) };
-        self.field_surfaces.borrow_mut().surfaces.insert(i, supplied);
+        let mut supplies = self.field_surfaces.borrow_mut();
+        supplies.surfaces.insert(i, supplied);
+        supplies.taken += 1;
+        drop(supplies);
         self.caches.solid.borrow_mut().retain(|(index, _), _| *index != i);
         Ok(())
     }

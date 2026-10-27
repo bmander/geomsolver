@@ -52,6 +52,7 @@ export interface Abi {
   gcs_elab_report(h: number): number;
   gcs_elab_stmt_span(h: number, stmt: number, out: number): number;
   gcs_elab_outline_json(h: number, s: number): number;
+  gcs_elab_part_colours_json(h: number, s: number, p: number, n: number): number;
   gcs_elab_retext(h: number, p: number, n: number): number;
   gcs_elab_commit_seeds(h: number, sk: number): number;
   gcs_elab_describe(h: number, sk: number, id: number): number;
@@ -103,6 +104,9 @@ export interface Abi {
   gcs_sketch_point_seen(h: number, az: number, el: number, x: number, y: number): number;
   gcs_sketch_line(h: number, p1: number, p2: number): number;
   gcs_sketch_set_hidden(h: number, p: number, n: number): number;
+  gcs_sketch_set_shown_kinds(h: number, kinds: number, onParts: number, p: number,
+                             n: number): number;
+  gcs_sketch_unseen_json(h: number): number;
   gcs_sketch_set_cut(h: number, frame: number, flip: number, offset: number): number;
   gcs_sketch_cut(h: number, out: number): number;
   gcs_workspace_reach_along(h: number, frame: number, out: number): number;
@@ -206,8 +210,7 @@ export interface Abi {
   gcs_solid_mesh(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_normals(h: number, idx: number, unit: number, out: number, cap: number): number;
   gcs_solid_faces_json(h: number, idx: number, unit: number): number;
-  gcs_solid_own(h: number, idx: number, unit: number, what: number, out: number,
-                cap: number): number;
+  gcs_solid_drawn(h: number, idx: number, unit: number): number;
   gcs_solid_placement(h: number, idx: number, unit: number, built: number, out: number,
                       cap: number): number;
   gcs_solid_preview_json(h: number, p: number, n: number): number;

@@ -5,11 +5,12 @@
 use super::*;
 
 /// A closed instance's binding: the key every instance of the same definition given the same
-/// numbers and drawn in the same datum of its frame shares, and the frame it stands in
-/// (absolute, `None` for the world).
+/// numbers and drawn in the same datum of its frame shares, the part — that key less the numbers
+/// — and the frame it stands in (absolute, `None` for the world).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bound {
     pub key: String,
+    pub part: String,
     pub frame: Option<String>,
 }
 
@@ -77,11 +78,12 @@ fn bound(look: &Lookup<'_>, info: &InstanceInfo, sc: &Scope) -> Option<Bound> {
     use std::fmt::Write;
     let stands = sc.stands.as_deref()?;
     let frame = look.stood_in(stands, sc);
-    let mut key = format!("{}\u{1f}{}", info.comp, drawn_in(look, stands, sc, frame.as_deref())?);
+    let part = format!("{}\u{1f}{}", info.comp, drawn_in(look, stands, sc, frame.as_deref())?);
+    let mut key = part.clone();
     for (name, v) in &info.values {
         let _ = write!(key, "\u{1f}{name}={:016x}", v.c.to_bits());
     }
-    Some(Bound { key, frame })
+    Some(Bound { key, part, frame })
 }
 
 /// What the body standing at `stands` is drawn in, as a datum of `frame`: `page` where no `in`

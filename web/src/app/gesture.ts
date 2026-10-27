@@ -14,6 +14,7 @@ import { overlappingSeen } from '../core/workspace.js';
 import type { View } from '../core/workspace.js';
 import { moveDimension, placeDimension } from './dimension.js';
 import { COL } from './paint.js';
+import { partToOpen } from './hidden.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
@@ -132,6 +133,13 @@ function onDoubleClick(v: SketchView, e: MouseEvent): void {
   // a pane's frame lies beneath a solid, as a press finds it
   const frame = hit instanceof Plane ? hit : null;
   const face = hit && !frame ? null : v.solidAt(...sp);
+  // on a closed part's object, the part opened (#679): its insides drawn, the rest dimmed — a
+  // face of the part open, or of an object the root made, is drawn on
+  const part = face && partToOpen(v, face.index);
+  if (part) {
+    v.openPart(part);
+    return;
+  }
   if (face) {
     v.sketchOnFace(face);
     return;
@@ -400,7 +408,9 @@ function selectPress(v: SketchView, e: PointerEvent, sp: [number, number]): void
     // nothing under the cursor: start a rubber band.  A press with no drag still just
     // clears the selection, because an empty box selects nothing.
     if (!e.shiftKey) v.selected = [];
-    v.gesture = bandGesture(v, sp);
+    // and a click on nothing at all closes the part open (#679), as Esc does
+    v.gesture = bandGesture(v, sp, v.selected,
+                            at.kind === 'none' && !e.shiftKey ? () => v.closePart() : undefined);
   } else if (e.shiftKey) {
     // a shift-click toggles it in the selection; a shift-drag turns the body
     v.gesture = toggleOrTurn(v, sp, ent);
@@ -830,12 +840,19 @@ export function calloutGesture(v: SketchView, c: Constraint, from: [number, numb
   };
 }
 
+/** A rubber band from `from`, adding what it touches to `base`; let go without having gone
+ *  `MENU_SLOP_PX`, it was a `click`, where one is given. */
 export function bandGesture(v: SketchView, from: [number, number],
-                            base: Primitive[] = v.selected): Gesture {
+                            base: Primitive[] = v.selected, click?: () => void): Gesture {
   base = [...base];
   let to = from;                     // the gesture owns both corners, so paint reads no globals
+  let moved = false;
   return {
+    end: () => {
+      if (!moved) click?.();
+    },
     move: (sp) => {
+      moved ||= Math.hypot(sp[0] - from[0], sp[1] - from[1]) >= MENU_SLOP_PX;
       to = sp;
       // live preview: the canvas shows what would be selected, the status line the count
       v.selected = [...new Set([...base, ...boxContents(v, from, sp)])];

@@ -371,8 +371,10 @@ pub fn write(b: &Brep,name: &str,tol: f64) -> Result<String,String> {
 /// a tree laid out top down, and a part one definition however many times it is used.
 pub struct Assembly { pub products: Vec<Product>,pub uses: Vec<Usage> }
 
-/// A product: a part, its solid in its own coordinates (millimetres), or an assembly (`None`).
-pub struct Product { pub name: String,pub solid: Option<Brep> }
+/// A product: a part, its solid in its own coordinates (millimetres), or an assembly (`None`); a
+/// part's colour, if it has one, its sRGB components in 0..=1 as `COLOUR_RGB` takes them (an
+/// assembly has none).
+pub struct Product { pub name: String,pub solid: Option<Brep>,pub colour: Option<[f64;3]> }
 
 /// A use of product `child` in the assembly `parent`, named, its own axes standing at `placement`
 /// in the parent's (right-handed, orthonormal, millimetres).
@@ -381,10 +383,19 @@ pub struct Usage { pub parent: usize,pub child: usize,pub name: String,pub place
 impl Assembly {
     /// Refused where it is not a tree laid out top down: a use of a product not after its
     /// parent, a part used as an assembly, a product other than the root no assembly uses, or an
-    /// assembly with nothing in it.
+    /// assembly with nothing in it; or where a colour is not a part's three numbers in 0..=1.
     pub fn check(&self) -> Result<(),String> {
         let n = self.products.len();
         if n == 0 { return Err("an assembly has no product".into()) }
+        for p in &self.products {
+            match p.colour {
+                Some(_) if p.solid.is_none() => return Err(format!("the assembly `{}` is coloured, and only a part is",p.name)),
+                Some(c) if !c.iter().all(|x| (0. ..=1.).contains(x)) => {
+                    return Err(format!("the part `{}`'s colour {c:?} is not three numbers in 0..=1",p.name))
+                }
+                _ => {}
+            }
+        }
         let mut used = vec![false;n];
         let mut parent = vec![false;n];
         for u in &self.uses {
@@ -410,7 +421,10 @@ impl Assembly {
 /// its shape the transformation carrying the child's axes onto its placement among the parent's
 /// (a part's representation and an assembly's each list its own axes, and an assembly's the
 /// placement of each product it uses).  The products are written the last first, so each
-/// child's representation is written before its parent's.
+/// child's representation is written before its parent's.  A coloured part's solid is the item
+/// of a styled item, its surfaces filled with the colour on both sides (AP214's presentation, the
+/// chain CAD readers take a part's colour from), the styles of one colour written once and
+/// shared; the styled items are listed by one presentation representation in the shapes' context.
 pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String> {
     a.check()?;
     let mut o = Out {text:String::new(),next:1};
@@ -420,12 +434,15 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String>
     let mut dctx = None;
     // each product's definition, representation and its own axes there, once written
     let mut written: Vec<(usize,usize,usize)> = vec![(0,0,0);a.products.len()];
+    // each coloured part's solid, and its colour
+    let mut coloured: Vec<(usize,[f64;3])> = Vec::new();
     for (k,p) in a.products.iter().enumerate().rev() {
         let (definition,shape) = product(&mut o,&p.name.replace('\'',"''"),context,pctx,&mut dctx);
         let origin = o.placement(&Frame::WORLD);
         let rep = match &p.solid {
             Some(b) => {
                 let solid = solid(&mut o,b,tol)?;
+                if let Some(c) = p.colour { coloured.push((solid,c)); }
                 o.add(format!("ADVANCED_BREP_SHAPE_REPRESENTATION('',(#{origin},#{solid}),#{gctx})"))
             }
             None => {
@@ -447,6 +464,24 @@ pub fn write_assembly(a: &Assembly,name: &str,tol: f64) -> Result<String,String>
         };
         o.add(format!("SHAPE_DEFINITION_REPRESENTATION(#{shape},#{rep})"));
         written[k] = (definition,rep,origin);
+    }
+    // the colours, each one's style assignment written once (by its components' bits)
+    let mut styles: std::collections::BTreeMap<[u64;3],usize> = Default::default();
+    let mut styled: Vec<String> = Vec::new();
+    for (solid,c) in coloured {
+        let style = *styles.entry(c.map(f64::to_bits)).or_insert_with(|| {
+            let rgb = o.add(format!("COLOUR_RGB('',{},{},{})",real(c[0]),real(c[1]),real(c[2])));
+            let fill = o.add(format!("FILL_AREA_STYLE_COLOUR('',#{rgb})"));
+            let area = o.add(format!("FILL_AREA_STYLE('',(#{fill}))"));
+            let surface = o.add(format!("SURFACE_STYLE_FILL_AREA(#{area})"));
+            let side = o.add(format!("SURFACE_SIDE_STYLE('',(#{surface}))"));
+            let usage = o.add(format!("SURFACE_STYLE_USAGE(.BOTH.,#{side})"));
+            o.add(format!("PRESENTATION_STYLE_ASSIGNMENT((#{usage}))"))
+        });
+        styled.push(format!("#{}",o.add(format!("STYLED_ITEM('color',(#{style}),#{solid})"))));
+    }
+    if !styled.is_empty() {
+        o.add(format!("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION('',({}),#{gctx})",styled.join(",")));
     }
     Ok(file(&name.replace('\'',"''"),&o.text))
 }

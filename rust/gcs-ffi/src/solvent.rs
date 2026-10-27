@@ -266,3 +266,43 @@ pub unsafe extern "C" fn gcs_elab_stmt_span(h: *mut Elaborated, stmt: i32, out: 
         }
     })
 }
+
+/// **The colour of each object's part** (#676, #677), as JSON: `{ parts: [{ solid, colour,
+/// drawn }], error?, offset? }`, `colour` as `#rrggbb` and `drawn` where the drawing gave it.  The
+/// request, `{ text?, source?, files?, model? }`, is the drawing beside the model — its text, its
+/// path in the bundle `files` its `use`s and `model` imports resolve in, and the model's own
+/// path there — or nothing, for the palette's alone.  A drawing that does not read is said in
+/// `error` (at `offset` in its text), and every part keeps the palette's colour.  The live sketch
+/// is `s`, the elaboration's names read beside it.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_elab_part_colours_json(h: *mut Elaborated, s: *mut Sketch,
+                                                    ptr: *const u8, len: usize) -> *mut u8 {
+    json_out(move || {
+        let (e, sk) = (&*h, sk(s));
+        let request = as_json(ptr, len);
+        let text = request.get("text").filter(|t| matches!(t, Json::Str(_))).map(Json::as_str);
+        let mut error = None;
+        let drawn = match text {
+            None => Default::default(),
+            Some(text) => {
+                let source = request.get("source").map(Json::as_str).unwrap_or("drawing.svd");
+                let model_path = request.get("model").map(Json::as_str).unwrap_or("");
+                let model = gcs_core::drawing::Model { sketch: sk, names: &e.map };
+                gcs_core::drawing::colours(text, source, model_path, model,
+                                           &mut super::sketch::bundled(&request))
+                    .unwrap_or_else(|e| { error = Some(e); Default::default() })
+            }
+        };
+        let parts = gcs_core::colours::parts(sk, &drawn).into_iter().map(|p| json::object([
+            ("solid", Json::Int(p.solid as i64)),
+            ("colour", Json::Str(gcs_core::colours::hex(p.colour))),
+            ("drawn", Json::Bool(p.drawn)),
+        ])).collect();
+        let mut out = json::object([("parts", Json::Arr(parts))]);
+        if let Some(e) = error {
+            out.set("error", Json::Str(e.message));
+            out.set("offset", Json::Int(e.span.lo as i64));
+        }
+        out
+    })
+}

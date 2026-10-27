@@ -250,9 +250,11 @@ pub fn step(exact: &Exact,name: &str,tolerance: Option<Tolerance>,say: &Say) -> 
 /// solid a closed instance made is written in its instance's frame (`Sketch::binding_pose`) and
 /// used placed by that frame; a mirrored one is its own part, its reflection in its solid and its
 /// placement proper; any other is written where it stands, and used at the root's axes. Each part
-/// built is given to `built`, as the world has it. A refusal says which solid's build refused.
-pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Tolerance>,say: &Say,built: &mut dyn FnMut(usize,&Exact))
-    -> Result<super::step::Assembly,(usize,ExportRefusal)> {
+/// built is given to `built`, as the world has it, and coloured `colour` of the first object it is
+/// built for (by its solid's index; the objects of one part are one colour). A refusal says which
+/// solid's build refused.
+pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Tolerance>,colour: &dyn Fn(usize) -> Option<[f64;3]>,
+    say: &Say,built: &mut dyn FnMut(usize,&Exact)) -> Result<super::step::Assembly,(usize,ExportRefusal)> {
     use super::step::{Assembly,Product,Usage};
     use crate::space::{dot,norm};
     let mm = cad::millimetres(sk);
@@ -274,7 +276,7 @@ pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Toler
     };
     // what the source calls each solid, as a reader writes it (`p[0].body`, a ring's copy)
     let named = |i: usize| crate::vocab::public_path(&sk.solids[i].name);
-    let mut products = vec![Product {name:name.to_string(),solid:None}];
+    let mut products = vec![Product {name:name.to_string(),solid:None,colour:None}];
     let mut uses = Vec::new();
     // the sub-assemblies first, each step of a name after the one it is in
     let mut groups: Vec<String> = Vec::new();
@@ -288,7 +290,7 @@ pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Toler
             let parent = group(&groups,&steps[..k-1].join("."));
             groups.push(path.clone());
             uses.push(Usage {parent,child:products.len(),name:path.clone(),placement:Frame::WORLD});
-            products.push(Product {name:path,solid:None});
+            products.push(Product {name:path,solid:None,colour:None});
         }
     }
     // then the parts, each built once, and each object a use of its part in its group
@@ -303,7 +305,7 @@ pub fn assembly(sk: &Sketch,objects: &[usize],name: &str,tolerance: Option<Toler
                 // about its instance's frame where it has one, and named for the first object it
                 // is, which the file holds where the source may not
                 let solid = match frame(source) { Some(f) => x.solid.moved(&f.unplacing()),None => x.solid };
-                products.push(Product {name:named(i),solid:Some(solid)});
+                products.push(Product {name:named(i),solid:Some(solid),colour:colour(i)});
                 parts.insert(source,products.len()-1);
                 products.len()-1
             }

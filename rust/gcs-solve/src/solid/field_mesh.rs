@@ -119,6 +119,9 @@ pub struct ExactEdge {
 pub struct Supplies {
     pub surfaces: BTreeMap<usize, Supplied>,
     pub awaited: BTreeSet<usize>,
+    /// How many supplies it has taken, ever: what a reader remembering something of the solids
+    /// supplied keys it against (`overview::objects_side`).
+    pub taken: usize,
 }
 
 /// One solid's supply: what it read (`solid::reads`) when its surface was built — or the refusal

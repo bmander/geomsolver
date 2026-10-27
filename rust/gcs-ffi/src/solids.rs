@@ -74,49 +74,43 @@ pub unsafe extern "C" fn gcs_solid_normals(
     })
 }
 
-/// **A solid in its own coordinates** (#412): what `gcs_solid_mesh` and `gcs_solid_normals` give
-/// in the world, before its placement (`gcs_solid_placement`) stands it there — `what` 0 for the
-/// positions, 1 for the normals, and 2 for its creases, the edges that are not a tessellation's
-/// seam, six doubles a segment.  A host keeps what it built from these while the solid's shape
-/// holds, and moves it by the placement alone.  Returns how many doubles there are, writing them
-/// only where `cap` holds them all (so a call with no buffer sizes one), or -1 where the solid
-/// does not evaluate (the reason in `gcs_last_error`).
+/// **A solid in its own coordinates, as a renderer draws it** (#674): its mesh over shared
+/// vertices and the edges a viewer inks (`mesh::Drawn`), before its placement
+/// (`gcs_solid_placement`) stands it in the world.  A host builds one geometry of it while the
+/// geometry holds, and moves it by the placement alone.  One length-prefixed byte buffer,
+/// little-endian, every item four bytes: four counts (`u32`) — vertices `nv`, triangles `nt`,
+/// sharp edges `ns`, tangent edges `nk` — then `nv` positions and `nv` normals (three `f32`
+/// each), `nv` faces (`f32`, exact to 2²⁴: the group each vertex is of, as
+/// `gcs_solid_faces_json` lists them, as a vertex attribute reads it), `nt` triangles (three
+/// `u32`), and the `ns` sharp then `nk` tangent edges (six `f32` each).  Null where the solid does not evaluate (the reason in
+/// `gcs_last_error`).
 #[no_mangle]
-pub unsafe extern "C" fn gcs_solid_own(
-    h: *mut Sketch,
-    idx: i32,
-    unit: f64,
-    what: i32,
-    out: *mut f64,
-    cap: i32,
-) -> i32 {
-    guard(-1, move || {
+pub unsafe extern "C" fn gcs_solid_drawn(h: *mut Sketch, idx: i32, unit: f64) -> *mut u8 {
+    guard(std::ptr::null_mut(), move || {
         let s = sk(h);
-        let Some(i) = solid_at(s, idx) else { return -1 };
+        let Some(i) = solid_at(s, idx) else { return std::ptr::null_mut() };
         let solid = match s.evaluated_solid(i, gcs_core::solid::ApproximationPolicy::from_unit(unit)) {
             Ok(s) => s,
-            Err(message) => { set_error(message); return -1; }
+            Err(message) => { set_error(message); return std::ptr::null_mut(); }
         };
-        let creases: Vec<f64>;
-        let values: &[f64] = match what {
-            0 => &solid.mesh().positions,
-            1 => &solid.mesh().normals,
-            2 => {
-                creases = solid.edges().iter().filter(|e| !e.smooth)
-                    .flat_map(|e| e.a.into_iter().chain(e.b)).collect();
-                &creases
-            }
-            _ => { set_error(format!("no part of a solid is numbered {what}")); return -1; }
-        };
-        if values.len() <= cap.max(0) as usize {
-            std::ptr::copy_nonoverlapping(values.as_ptr(), out, values.len());
+        let d = solid.drawn();
+        let mut out: Vec<u8> = Vec::with_capacity(4 * (4 + 7 * d.positions.len()
+            + 3 * d.triangles.len() + 6 * (d.sharp.len() + d.tangent.len())));
+        for n in [d.positions.len(), d.triangles.len(), d.sharp.len(), d.tangent.len()] {
+            out.extend((n as u32).to_le_bytes());
         }
-        values.len() as i32
+        let reals = d.positions.iter().chain(&d.normals).flatten().map(|&x| x as f32)
+            .chain(d.face.iter().map(|&f| f as f32));
+        out.extend(reals.flat_map(f32::to_le_bytes));
+        out.extend(d.triangles.iter().flatten().flat_map(|t| t.to_le_bytes()));
+        let edges = d.sharp.iter().chain(&d.tangent).flatten().flatten().map(|&x| x as f32);
+        out.extend(edges.flat_map(f32::to_le_bytes));
+        out_bytes(out)
     })
 }
 
 /// **A solid cut by the workspace's section** (`Sketch::cut`, `EvaluatedSolid::section`), in its
-/// own coordinates as `gcs_solid_own` gives it, so the host places it by the same matrix: how many
+/// own coordinates as `gcs_solid_drawn` gives it, so the host places it by the same matrix: how many
 /// doubles of the face the cut leaves follow (nine a triangle, turned to the side taken away),
 /// then those, then where the cut meets the surface (six doubles a segment) to the end.  Returns
 /// how many doubles there are, the count included, writing them only where `cap` holds them all;
@@ -149,12 +143,14 @@ pub unsafe extern "C" fn gcs_solid_section(
     })
 }
 
-/// **Where a solid stands** (#412), seventeen doubles: its shape's serial (the same exactly while
+/// **Where a solid stands** (#412), eighteen doubles: its shape's serial (the same exactly while
 /// the solid is the same evaluation, however it has moved, so a host keeps its geometry against
-/// it), then its placement as a 4×4 matrix, column-major, from its own coordinates
-/// (`gcs_solid_own`) to the world's.  With `built` nonzero, only where the core has the shape
-/// already (`Sketch::built_solid`), returning 0 where it would have to evaluate it — what a
-/// gesture asks.  Returns 17, or -1 where the solid does not evaluate or `cap` is short.
+/// it), its geometry's (`EvaluatedSolid::geometry_serial`: the same for every solid of one
+/// binding, so a host holds their triangles once, #674), then its placement as a 4×4 matrix,
+/// column-major, from its own coordinates (`gcs_solid_drawn`) to the world's.  With `built`
+/// nonzero, only where the core has the shape already (`Sketch::built_solid`), returning 0 where
+/// it would have to evaluate it — what a gesture asks.  Returns 18, or -1 where the solid does
+/// not evaluate or `cap` is short.
 #[no_mangle]
 pub unsafe extern "C" fn gcs_solid_placement(
     h: *mut Sketch,
@@ -176,10 +172,11 @@ pub unsafe extern "C" fn gcs_solid_placement(
             Some(Ok(s)) => s,
             Some(Err(message)) => { set_error(message); return -1; }
         };
-        if cap < 17 { return -1; }
+        if cap < 18 { return -1; }
         out.write(solid.shape_serial() as f64);
-        for (k, value) in solid.matrix().into_iter().enumerate() { out.add(1 + k).write(value); }
-        17
+        out.add(1).write(solid.geometry_serial() as f64);
+        for (k, value) in solid.matrix().into_iter().enumerate() { out.add(2 + k).write(value); }
+        18
     })
 }
 

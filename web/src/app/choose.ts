@@ -8,7 +8,7 @@
 import type { SourceSpan } from '../core/program.js';
 import type { Row } from '../core/outline.js';
 import { view } from './shell.js';
-import { hide, hideableRow, rowOf } from './hidden.js';
+import { hide, hideableRow, partToOpen, rowOf } from './hidden.js';
 import { bodyOf, hitName } from './view.js';
 import type { Hit } from './view.js';
 
@@ -43,8 +43,9 @@ export function onChoose(hits: Hit[], at: [number, number], add: boolean): void 
 
 /** **A right-click's menu** on what it was on, `hit` (an object's face or edge standing for the
  *  object): Show definition, the program editor's caret on the statement that made it; Show in
- *  model viewer, the outline opened to its row; Hide, that row hidden; and Show all while
- *  anything is hidden.  With none to offer nothing opens; on something that cannot be hidden, it
+ *  model viewer, the outline opened to its row; Hide, that row hidden; Open, a closed part's
+ *  object's part opened, and Close part while one is (#679); and Show all while anything is
+ *  hidden.  With none to offer nothing opens; on something that cannot be hidden, it
  *  says so. */
 export function onContextMenu(hit: Hit | null, at: [number, number]): void {
   closeChooser();
@@ -64,6 +65,16 @@ export function onContextMenu(hit: Hit | null, at: [number, number]): void {
   if (row && target !== null) {
     items.push({ cells: [['verb', 'Hide'], ['name', row.label]], hit: whole,
                  take: () => { hide(view, target); } });
+  }
+  // a closed part's object opens the part (#679), as a double-click on it does; one open closes
+  const part = target === null ? null : partToOpen(view, target);
+  if (part) {
+    items.push({ cells: [['verb', 'Open'], ['name', part.label]], hit: whole,
+                 take: () => { view.openPart(part); } });
+  }
+  if (view.opened !== null) {
+    items.push({ cells: [['verb', 'Close part'], ['note', 'Esc']], hit: null,
+                 take: () => { view.closePart(); } });
   }
   if (view.hiddenRows.size) {
     items.push({ cells: [['verb', 'Show all'], ['note', '⇧I']], hit: null,

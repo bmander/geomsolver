@@ -375,20 +375,20 @@ impl Sketch {
         v
     }
 
-    /// What is drawn and not hidden (#435): `drawn`, less what the outline has taken out — what
-    /// the workspace strokes, picks and frames.
+    /// What is drawn and shown (#435, #678): `drawn`, less what the outline has taken out and
+    /// the kinds turned off — what the workspace strokes, picks and frames.
     pub fn seen(&self) -> Vec<EntRef> {
         let mut v = self.drawn();
-        if !self.hidden.is_empty() {
-            v.retain(|e| !self.hidden.contains(e));
+        if self.hides_any() {
+            v.retain(|&e| self.shown(e));
         }
         v
     }
 
-    /// Whether an entity is shown: not hidden by the outline (#435).  A solid is
-    /// `EntRef::solid(i)`.
+    /// Whether an entity is shown: not hidden by the outline (#435), and of a kind shown or shown
+    /// whatever its kind (#678).  A solid is `EntRef::solid(i)`.
     pub fn shown(&self, e: EntRef) -> bool {
-        !self.hidden.contains(&e)
+        !self.hidden.contains(&e) && self.kind_shown(e)
     }
 
     /// Hide exactly these entities and solids, showing everything else (#435) — the whole of

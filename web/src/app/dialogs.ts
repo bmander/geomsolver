@@ -153,13 +153,16 @@ export function options(): Promise<void> {
     addCheckbox(box, 'colour by state', view.colorByState, (v) => { view.colorByState = v; view.draw(); },
                 'Paint each entity by what diagnosis makes of it');
     addCheckbox(box, 'dimensions', view.showDimensions,
-                (v) => { view.showDimensions = v; view.draw(); },
+                (v) => { view.showDimensions = v; },
                 'Call out every dimensioned constraint on the drawing — click one to select it, '
               + 'drag it where you want it, double-click to change its number.  Off, editing a '
               + 'dimension still shows that one.  A .svd asks for its own annotations on paper');
     addCheckbox(box, 'show solid', view.showSolid, (v) => { view.setShowSolid(v); },
                 'Fill each object\u2019s surfaces as well as drawing its edges — off, the solid is '
               + 'a wireframe, which is how you see its far side');
+    addCheckbox(box, 'tangent edges', view.showTangentEdges, (v) => { view.setShowTangentEdges(v); },
+                'Ink, lighter than a sharp edge, where one face of an object runs smoothly into '
+              + 'the next — a round\u2019s run-out into the flat it rounds');
     if (view.builds.remembers) {
       const forget = document.createElement('button');
       forget.textContent = 'Forget built objects';

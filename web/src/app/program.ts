@@ -177,6 +177,7 @@ export async function held<T>(open: () => T): Promise<T> {
 export function resetProgramFiles(): boolean {
   if (switching) return false;
   project = null;
+  view.partDrawing = null;
   directory = undefined; onProjectFile = undefined;
   explorer.show([]); offerProject(false); programName.hidden = true;
   showDrawing(null);
@@ -243,9 +244,15 @@ function activateProjectFile(name: string): boolean {
       showDrawing({ source: name, files: project.files });
     } else {
       modules.provideProject(name, project.files);
+      // the drawing beside the model, by its stem, colours its parts (#677): its colours only
+      const beside = name.replace(/\.sv$/, '.svd');
+      view.partDrawing = beside in project.files
+        ? { text: project.files[beside], source: beside, files: project.files, model: name } : null;
       if (!view.openProjectFile(project.files[name])) return false;
       modelFile = name;
       showDrawing(null);
+      const unread = view.partDrawing && view.colourError();
+      if (unread) toast(`${unread} — the parts keep their palette colours`);
     }
     typed = false;
     return true;

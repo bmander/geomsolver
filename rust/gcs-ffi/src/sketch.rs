@@ -73,17 +73,23 @@ pub unsafe extern "C" fn gcs_drawing_svg(ptr: *const u8, len: usize) -> *mut u8 
         let text = request.get("text").map(Json::as_str).unwrap_or("");
         let source = request.get("source").map(Json::as_str).unwrap_or("drawing.svd");
         let sheet = request.get("sheet").filter(|s| matches!(s, Json::Str(_))).map(Json::as_str);
-        let result = gcs_core::drawing::compile(text, source, sheet, &mut |path, from| {
-            let name = gcs_core::drawing::relative_path(path, from);
-            request.get("files")?.get(&name).filter(|v| matches!(v, Json::Str(_)))
-                .map(|v| (name, v.as_str().to_string()))
-        });
+        let result = gcs_core::drawing::compile(text, source, sheet, &mut bundled(&request));
         let result = match result {
             Ok(svg) => json::object([("svg", Json::Str(svg))]),
             Err(e) => json::object([("error", Json::Str(e.message)), ("offset", Json::Int(e.span.lo as i64))]),
         };
         out_str(result.dump(None))
     })
+}
+
+/// A drawing's loader over a request's bundle (`files`, by path): a path read relative to the file
+/// that names it, its identity that path, its text the bundle's.
+pub(crate) fn bundled(request: &Json) -> impl FnMut(&str, &str) -> Option<(String, String)> + '_ {
+    move |path, from| {
+        let name = gcs_core::drawing::relative_path(path, from);
+        request.get("files")?.get(&name).filter(|v| matches!(v, Json::Str(_)))
+            .map(|v| (name, v.as_str().to_string()))
+    }
 }
 
 /// Inspect .svd imports and sheet names without loading or solving a model.
@@ -176,6 +182,38 @@ pub unsafe extern "C" fn gcs_sketch_set_hidden(h: *mut Sketch, ptr: *const u8, l
         let (ents, solids) = part_of(ptr, len);
         sk(h).set_hidden(ents, solids);
         0
+    })
+}
+
+/// **The kinds of thing the workspace draws** (#678): `kinds` the bits of `model::Kinds`
+/// (objects 1, planes 2, axes 4, sketches 8, points 16, fixed marks 32, dimensions 64), and
+/// `{ents: [[kind, idx]…]}` what is shown whatever its kind (`Sketch::set_kinds`); `on_parts`
+/// nonzero where an assembly is shown on its parts, its datums sized to its objects
+/// (`Sketch::on_parts`, #679).  View state, which the host re-applies to every drawing it is
+/// handed.  Returns 0.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_set_shown_kinds(h: *mut Sketch, kinds: u32, on_parts: i32,
+                                                   ptr: *const u8, len: usize) -> i32 {
+    guard(-1, move || {
+        let (anyway, _) = part_of(ptr, len);
+        let s = sk(h);
+        s.set_kinds(gcs_core::model::Kinds::from_bits(kinds), anyway);
+        s.on_parts = on_parts != 0;
+        0
+    })
+}
+
+/// **What the workspace passes by** (#435, #678): `{ents: [[kind, idx]…], solids: [idx…]}`, every
+/// drawn entity the outline hid or whose kind is off (`Sketch::unseen`) and every object not
+/// shown (`overview::shown_objects`) — what a host that strokes some of the drawing itself skips.
+#[no_mangle]
+pub unsafe extern "C" fn gcs_sketch_unseen_json(h: *mut Sketch) -> *mut u8 {
+    json_out(move || {
+        let s = sk(h);
+        let solids = gcs_core::overview::objects(s).into_iter()
+            .filter(|&i| !s.shown(EntRef::solid(i))).map(|i| Json::Int(i as i64)).collect();
+        let ents = s.unseen().into_iter().map(gcs_core::report::ent_json).collect();
+        Json::Obj(vec![("ents".into(), Json::Arr(ents)), ("solids".into(), Json::Arr(solids))])
     })
 }
 

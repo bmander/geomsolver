@@ -198,8 +198,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `pickSolid`, toggled part by part), exclusive with `selected` and the picture, carried across
   an edit by the object's name; Delete removes the objects it is of (a face or an edge has no
   statement of its own), a Boolean tool takes each object once whole (`bodiesPicked`), and
-  `box3d` lights a face or an edge selected in the selection's ink, a body all over a little
-  less.  **The pointer lights what a click would take, as it moves** (`gesture::hover` →
+  `box3d` tints a face or lights an edge selected in the selection's ink, a body all over a
+  little less.  **The pointer lights what a click would take, as it moves** (`gesture::hover` →
   `SketchView.hovered`, a `Hit`): `whatIsAt` asked on every move, a figure or point lit in the
   highlight's ink (`SketchView.lit`), an object's edge, face or body in the box — an edge tool
   its edge or face, a Boolean its body — and put out when the pointer leaves.  **⌘-click (Ctrl
@@ -317,10 +317,37 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
   when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
   stands in space — panes, axes, the axes and the curves traced in space (`IN_SPACE`: `axis`,
-  `traced`; a spline over points in space is one, #363 S3) — and every object's creases (a
-  `smooth` seam dropped: shading draws the round) and mesh (`mesh::grouped`) in its own
-  coordinates, placed by the matrix the core gives (`core/mesh.ts::own`, `placement`; #412),
-  computing no coordinate; an object that does not evaluate is left out, its
+  `traced`; a spline over points in space is one, #363 S3) — and every object in its own
+  coordinates, placed by the matrix the core gives (`core/mesh.ts::drawn`, `placement`; #412),
+  computing no coordinate.  **An object is drawn as a CAD viewer draws a part** (#674–#676):
+  **one indexed geometry a shape** (`mesh::drawn`, `gcs_solid_drawn`: `grouped`'s triangles over
+  vertices shared within a face — a flat face its corners and one normal, a round one smooth
+  across its facets — each vertex with the face it is of, and one byte buffer of `f32`/`u32`),
+  **shared by every object drawn from it** (`Placement.geometry`, `EvaluatedSolid::
+  geometry_serial`: the solids of one binding are one evaluation renamed, #566, so one geometry),
+  and **one draw call for its faces and one for its edges** — never a mesh or a material a face;
+  `parts.test.ts` holds the counts.  Its faces take **one material a colour** (and a ghost of
+  it), standing a hair behind their depth so an edge wins against its own faces; its **edges**
+  are the mesh's own (`mesh::drawn`'s `sharp` — two faces meeting at more than `EDGE_TURN`, a
+  flat face's facets turning, a surface ending — and `tangent`, two faces meeting smoothly, a
+  round's run-out) as one fat line set (`LineSegments2`, about 1.25 px), sharp dark and tangent
+  lighter, the tangent ones left out by drawing fewer (View ▸ Tangent edges,
+  `SketchView.showTangentEdges`); and **a silhouette pass** draws the faces alone (layer
+  `FACES`) as view normals and depths into a float target, a quad then inking, one pixel in,
+  where a covered pixel meets the ground or its depth steps — one pass however many objects,
+  nothing asked of the core per view (none where the renderer keeps no float target).  **Each
+  object is its part's colour** (`Document.partColours`, `gcs_elab_part_colours_json`,
+  `colours::parts`: by binding, every placement of a part one colour — the drawing's `fill`
+  where the `.svd` beside the model names one, else the palette's, the same across a reload and
+  a numeric edit; see solids.md), lit by a hemisphere, a key and a fill following the eye, and
+  three's `RoomEnvironment` through `PMREMGenerator` (bundled, no network).  **A state is a tint,
+  never a colour**: a face selected, a body selected or what is under the pointer is an overlay
+  drawing the object's own geometry again, each face its tint from a texture its vertices'
+  `face` index (`Box3D.tints`), so the part keeps its colour beneath; a Boolean's tools keep
+  `INK.union`/`cut`/`common` as ghosts and a section's cut face its hatching.  **The drawing
+  beside the model** (a project's `.svd` with the model's stem, `SketchView.partDrawing`) is read
+  for its colours only — its sheets and views are the paper's; one that does not read is said
+  in a toast and the parts keep the palette's.  An object that does not evaluate is left out, its
   `mesh()` throwing the core's reason rather than stopping every paint, and **the banner says
   which and why** in the core's words (`overview::unbuilt`, after a conflict or an over-block;
   a swept object still being meshed is not one —
@@ -344,7 +371,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   cut keeps it, and a ray that meets the plane inside the material (`EvaluatedSolid::contains`)
   meets the object whole — its cut face is no face of the document, so `under` lists the object
   and not a face.  `app.test.ts` ("a section cuts the objects") is the gate.
-  **`⇧⌘B` toggles the solid's surfaces** (on by default; off is a
+  **`⇧⌘B` toggles the solid's surfaces** (View ▸ Show solid; on by default; off is a
   wireframe).  The flat shaded path (`Part::Shell`, `overview::shell`, `Item.shade`) is what
   `overview_json` offers a front end without a depth buffer.
 
@@ -513,7 +540,7 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   never does") and drawn as they arrive, an object not yet built drawn as nothing and its outline
   row marked *building…* (`.outline-row.building`), one refused marked *not built* with the
   export's words on hover (`.unbuilt`), one an edit changed drawn as its last build was, a ghost
-  (`stale`, `Box3D`'s `ghost`), till its new one arrives — during a drag too, which asks for
+  (`stale`, `Box3D`'s `Placed.stale` at `GHOST`), till its new one arrives — during a drag too, which asks for
   nothing till its release (`readBehind`).  **A build bar along the workspace's bottom**
   (`app/build-bar.ts`, `#build-bar`) shows while any job is left: the fraction done, each job
   weighted by its builder's stages, `building 12 of 35 · wheel_part — cutting the sector by its
@@ -624,8 +651,11 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `nearest_pane`, `nearest_point`, `panes_at` and `bounds` pass it by (`Sketch::seen`,
   `overview::shown_objects`; `objects` stays the document's, what is exported), `paint.ts` skips
   it, the box leaves out its objects, and a callout goes once every entity its constraint reads
-  is hidden.  Only objects are hidden of the solids; an operand has no eye.  Hiding what is
-  selected deselects it; selecting a hidden row shows it (and only it: the rows above it shown,
+  is hidden.  Beside the rows, the **kinds** — objects, planes, axes, sketches, points, fixed
+  marks and dimensions — are each taken out everywhere by View ▸ Show, and a closed part's
+  insides by the assembly's rule (both below); the core is told all three together.  Only
+  objects are hidden of the solids; an operand has no eye.  Hiding what is selected deselects
+  it; selecting a hidden row shows it (and only it: the rows above it shown,
   their other children hidden in their stead); choosing a hidden plane, or drawing on it, shows
   it.  **A right-click** that does not turn the workspace (let go within `MENU_SLOP_PX` of its
   press, `gesture::orbitGesture`) opens a menu on what it is on (`SketchView.contextAt`, as a
@@ -647,3 +677,46 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   (`hidden.selectionRow`).  The tree is rebuilt only when the outline's shape changes (spans
   aside, which every splice moves), never on a drag, and a row's children are made when it is
   first opened.  Gates: `tests/outline.rs` and `web/src/test/outline.test.ts`.
+- **What the workspace shows, by kind** (#678; `model::Kinds`, `Sketch::set_kinds`, FFI
+  `gcs_sketch_set_shown_kinds`; `SketchView.kinds`, View ▸ Show in `main.ts`): beside the rows the
+  outline hides, the **kinds** — objects `⇧O` (the whole object, where `⇧⌘B` is only its surfaces),
+  planes `⇧P` (a pane and its frame), axes `⇧A`, sketches `⇧S` (lines, circles, arcs, curves,
+  regions and traces, and their points), points `⇧T`, fixed marks `⇧K` (off, a fixed point is drawn
+  as any other) and dimensions `⇧D` (the callouts; `showDimensions` is this kind) — each turned off
+  everywhere at once.  An entity is shown while every kind it is drawn as is (`Kinds::of`: a point
+  is a sketch's and a point) or it is shown whatever its kind (`Sketch::shown_anyway`), and a kind
+  off is held to hidden's rule — **not drawn, not lit, not picked**: `Sketch::shown` answers for
+  both, so `seen`, `shown_objects`, every pick, `under`, `overlapping`, the panes and the bounds
+  pass it by, `callout::layout_selected` lays out (and so picks) no dimension unless asked (the one
+  being edited), a callout goes with the entities it reads, and the painter skips what the core says
+  it passes by (`Sketch::unseen`, `gcs_sketch_unseen_json`, read into `hiddenEnts`).  View state, as
+  hidden is: never written to the source or the `.svd`, saved, solved or undone, carried across an
+  edit and kept across a load.  **A tool shows the kinds it needs while it is down**
+  (`hidden.toolKinds`: a drawing tool the sketches and points it snaps to, Extrude the sketches,
+  Revolve those and the axes, a Boolean or an edge tool the objects); a plane chosen to draw on, or
+  drawn on, and a row chosen from the outline are shown whatever their kind
+  (`SketchView.shownAnyway`, which a kind turned on or off lets go).  Gates:
+  `a_kind_turned_off_is_not_picked_under_or_framed` (`tests/workspace.rs`) and
+  `web/src/test/shown.test.ts`.
+- **An assembly opens on its parts** (#679; `hidden.ts`): a *part* is an instance that makes an
+  object, at any depth — the core's outline marks it (`outline::Node::part`, the row's `part`;
+  `an_instance_that_makes_an_object_is_a_part`) — and **what a closed part makes, other than its
+  objects, is not drawn** — its planes, axes, sketches, points, fixed marks and callouts — told the
+  core as hidden is.  The line is *made inside the instance*, not Onshape's *used by an object*:
+  what the root draws is the assembly's own layout and is drawn, a profile the root makes a solid of
+  included, and a document with no part opens as it always did.  **Opening a part** — a double-click
+  on its object (`hidden.partToOpen`; a double-click on the part open, or on an object the root
+  made, draws on its face as before), *Open* on its right-click menu or the `open` on its outline
+  row, or selecting one of its members' rows — draws its insides and only its own (a part inside it
+  stays closed), and **dims the rest of the assembly** rather than hiding it (`DIMMED`: the box's
+  other objects, the canvas's other figures); Esc, a click on nothing, *Close part* or its row's
+  `close` closes it.  The part open is carried by path across an edit and let go by a load.  The
+  outline's eye overrides the rule either way: a member of a closed part reads shut, the part half,
+  and shown by its eye it is drawn (`SketchView.shownRows`, which Inside parts turned on or off lets
+  go); View ▸ Show ▸ Inside parts draws every part's insides.  **Shown on its parts**
+  (`Sketch::on_parts`), the datums left are drawn small and quiet: a pane is the box of what is
+  shown on it, no narrower than half the objects' largest side (`overview::panes`, `PART_DATUM`)
+  rather than the workspace, an axis reaches as far, the box draws them faint (`QUIET`) and labels
+  each pane with its plane's name.  Gates:
+  `an_assembly_on_its_parts_draws_its_datums_the_size_of_its_objects` (`tests/workspace.rs`) and
+  `web/src/test/shown.test.ts`.
