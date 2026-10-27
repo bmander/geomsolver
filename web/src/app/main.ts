@@ -570,6 +570,10 @@ const MENUS: [string, (MenuItem | string | null)[]][] = [
     { label: 'Show solid', key: '⇧⌘b', checked: () => view.showSolid,
       onClick: () => view.setShowSolid(!view.showSolid),
       title: 'Fill each object\u2019s surfaces, not only its edges — off, a solid is a wireframe' },
+    { label: 'Tangent edges', checked: () => view.showTangentEdges,
+      onClick: () => view.setShowTangentEdges(!view.showTangentEdges),
+      title: 'Ink, lighter, where one face of an object runs smoothly into the next (a round\u2019s '
+           + 'run-out) — off, only the sharp edges' },
     { label: 'Section', key: '⇧x', checked: () => !!view.section,
       onClick: () => view.toggleSection(),
       title: 'Cut every object by the plane being drawn on, the side its normal points to taken '

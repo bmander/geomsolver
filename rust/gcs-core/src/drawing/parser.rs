@@ -175,7 +175,15 @@ impl P {
                     let text = self.string()?; self.want("at")?;
                     s.labels.push(Label { text, at: self.pair(true)? });
                 }
-                "style" => s.styles.push(self.rule(span)?),
+                "style" => {
+                    let rule = self.rule(span)?;
+                    if rule.fill.is_some() {
+                        return Err(Error { span, message: "`fill` colours a part in the workspace \
+                            and the STEP export, not a sheet's ink: state it in a style outside \
+                            every sheet".into() });
+                    }
+                    s.styles.push(rule)
+                }
                 _ => return self.fail("expected size, scale, view, section, sketch, dimensions, dimension, measure, label, or style"),
             }
             self.eat(";");
@@ -207,11 +215,20 @@ impl P {
         let view = if self.eat("in") { Some(self.name()?) } else { None };
         self.want("{")?;
         let mut style = Style::default();
+        let mut fill = None;
         while !self.eat("}") {
             let prop = self.word()?; self.want(":")?;
             let mut vals = Vec::new();
             let text;
             match prop.as_str() {
+                // a part's colour (#677): `fill: #e8a33d`, opaque
+                "fill" => {
+                    fill = Some(crate::colours::parse(&self.word()?)
+                        .ok_or_else(|| Error { span: self.tokens[self.i - 1].span,
+                            message: "fill must be #RGB or #RRGGBB".into() })?);
+                    if !self.peek("}") { self.want(";")?; }
+                    continue;
+                }
                 "color" | "display" => text = self.word()?,
                 "width" => { vals.push(self.positive(false)?); text = String::new(); }
                 "dash" => {
@@ -229,7 +246,11 @@ impl P {
             if !style.set(&prop, &vals, &text) { return self.fail(&format!("invalid `{prop}`")) }
             if !self.peek("}") { self.want(";")?; }
         }
-        Ok(Rule { selector, view, style, span })
+        if fill.is_some() && (selector.starts_with('.') || view.is_some()) {
+            return Err(Error { span, message: "`fill` colours the parts a model path names: \
+                `style m.handle { fill: #e8a33d }`, for every view".into() });
+        }
+        Ok(Rule { selector, view, style, fill, span })
     }
 }
 

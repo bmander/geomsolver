@@ -791,6 +791,48 @@ fn the_objects_are_written_as_one_step_assembly() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// **A part's colour, the drawing's** (#677): the plates of `examples/plates/` written as one
+/// STEP assembly take the colours `plates.svd` beside the model gives them — the part `one` and
+/// `two` place orange, the third blue — read back from the file part by part; written from a
+/// copy of the model with no drawing beside it, each part takes its palette colour, the two
+/// parts two colours; and a drawing named by `--drawing` that does not read fails the run, said
+/// where it stops.
+#[test]
+fn a_step_assembly_is_written_in_the_drawings_colours() {
+    let dir = std::env::temp_dir().join(format!("solventc-colours-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let model = examples().join("plates/plates.sv");
+    let file = |name: &str| dir.join(name).to_string_lossy().into_owned();
+    let colours = |path: &str| -> std::collections::BTreeMap<String,[f64;3]> {
+        gcs_core::brep::step_check::colours(&std::fs::read_to_string(path).unwrap()).unwrap().into_iter().collect()
+    };
+    let near = |a: [f64;3], hex: [u8;3]| a.iter().zip(hex).all(|(x,h)| (x-h as f64/255.).abs() < 1e-12);
+    let result = run(&[model.to_str().unwrap(),"--no-diagnose","--step-assembly",&file("drawn.step")]);
+    assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));
+    let drawn = colours(&file("drawn.step"));
+    assert_eq!(drawn.len(),2,"two parts, each coloured: {drawn:?}");
+    assert!(near(drawn["one.body"],[0xe8,0xa3,0x3d]),"{drawn:?}");
+    assert!(near(drawn["three.body"],[0x4f,0x7c,0xac]),"{drawn:?}");
+    // the model alone: the palette's colours, two parts two colours
+    let alone = dir.join("plates.sv");
+    std::fs::copy(&model,&alone).unwrap();
+    let result = run(&[alone.to_str().unwrap(),"--no-diagnose","--step-assembly",&file("palette.step")]);
+    assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));
+    let palette = colours(&file("palette.step"));
+    assert_eq!(palette.len(),2);
+    assert_ne!(palette["one.body"],palette["three.body"]);
+    assert!(gcs_core::colours::PALETTE.iter().any(|&c| near(palette["one.body"],c)));
+    // a drawing that does not read
+    let bad = dir.join("bad.svd");
+    std::fs::write(&bad,"model m from \"plates.sv\"\nstyle m.one { fill: orange }\n").unwrap();
+    let result = run(&[alone.to_str().unwrap(),"--no-diagnose","--drawing",bad.to_str().unwrap(),
+        "--step-assembly",&file("bad.step")]);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert_eq!(result.status.code(),Some(1),"{stderr}");
+    assert!(stderr.contains("bad.svd:2:") && stderr.contains("fill must be #RGB or #RRGGBB"),"{stderr}");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A plate drawn about its frame's origin, two of one size in turned frames and one of another.
 const PLATES: &str = "\
 unit mm

@@ -36,7 +36,7 @@ import type { ShownKind } from '../core/model.js';
 import * as params from '../core/parameters.js';
 import type { March, Parameter } from '../core/parameters.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
-import type { BodyWord, Region, Scenario, ScenarioAnswer } from '../core/program.js';
+import type { BodyWord, PartColours, PartDrawing, Region, Scenario, ScenarioAnswer } from '../core/program.js';
 import { Method, SolveResult, System } from '../core/system.js';
 import type { Item } from '../core/overview.js';
 import { Motion, WitnessReport, analyze } from '../core/witness.js';
@@ -793,6 +793,54 @@ export class SketchView {
     if (this.showSolid === on) return;
     this.showSolid = on;
     this.draw();               // the flat scene does not carry it: the box's own build does
+  }
+
+  /** **Ink where one face of an object runs tangent into the next** (#675) — a round's run-out
+   *  into the flat it rounds — lighter than its sharp edges; off, only the sharp ones.  View
+   *  state, as `showSolid` is. */
+  showTangentEdges = true;
+
+  setShowTangentEdges(on: boolean): void {
+    if (this.showTangentEdges === on) return;
+    this.showTangentEdges = on;
+    this.draw();
+  }
+
+  /** **The drawing beside the model** (#677) — a project's `.svd` with the model's stem, its
+   *  bundle and the model's path in it — whose `fill` rules colour the parts; null where there
+   *  is none, and every part takes its palette colour.  Its sheets and views are the paper's: the
+   *  workspace reads its colours only. */
+  partDrawing: PartDrawing | null = null;
+
+  private coloured: { doc: Document; drawing: PartDrawing | null; got: PartColours;
+                      by: Map<number, string> } | null = null;
+
+  /** **Each object's colour**, `#rrggbb` by its solid (`Document.partColours`): its part's, the
+   *  drawing's where it names one and the palette's otherwise.  Asked once a document and a
+   *  drawing: neither a numeric edit nor a drag moves a part's colour. */
+  partColours(): Map<number, string> {
+    return this.partsColoured().by;
+  }
+
+  /** What the drawing beside the model said, where it does not read: the parts then keep the
+   *  palette's colours. */
+  colourError(): string | null {
+    const got = this.partsColoured().got;
+    return got.error ? `${this.partDrawing?.source ?? 'the drawing'}: ${got.error}` : null;
+  }
+
+  private partsColoured(): { got: PartColours; by: Map<number, string> } {
+    const c = this.coloured;
+    if (c && c.doc === this.doc && c.drawing === this.partDrawing) return c;
+    let got: PartColours;
+    try {
+      got = this.doc.partColours(this.partDrawing);
+    } catch (e) {
+      got = { parts: [], error: (e as Error).message };
+    }
+    const by = new Map(got.parts.map((p) => [p.solid, p.colour] as [number, string]));
+    this.coloured = { doc: this.doc, drawing: this.partDrawing, got, by };
+    return this.coloured;
   }
 
   setOrbitMode(on: boolean): void {

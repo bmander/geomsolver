@@ -53,6 +53,13 @@ const projects: Example[] = [{
     + 'drawing and the README says what each part is.',
   target: { kind: 'directory', path: 'hub_motor', entry: 'hub_motor.svd' },
 }, {
+  label: 'Plates · a part\u2019s colour from its drawing', key: 'plates',
+  description: 'Three plates in three frames: two of one size, one part placed twice, and one of '
+    + 'another. plates.svd beside the model names the parts\u2019 colours (`style m.one { fill: '
+    + '#e8a33d }`), which the workspace shades them in and the STEP assembly is written in; a part '
+    + 'it leaves keeps its palette colour.',
+  target: { kind: 'directory', path: 'plates', entry: 'plates.sv' },
+}, {
   label: 'Pin wheel, generated · swept solid', key: 'lantern_generation',
   description: 'A pinion rolls against a wheel blank and its one pin cuts a tooth space. The roll\'s '
     + 'ratio is measured off the drawing after the solve (the wheel\'s pitch radius over the '

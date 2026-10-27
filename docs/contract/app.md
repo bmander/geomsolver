@@ -198,8 +198,8 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   `pickSolid`, toggled part by part), exclusive with `selected` and the picture, carried across
   an edit by the object's name; Delete removes the objects it is of (a face or an edge has no
   statement of its own), a Boolean tool takes each object once whole (`bodiesPicked`), and
-  `box3d` lights a face or an edge selected in the selection's ink, a body all over a little
-  less.  **The pointer lights what a click would take, as it moves** (`gesture::hover` →
+  `box3d` tints a face or lights an edge selected in the selection's ink, a body all over a
+  little less.  **The pointer lights what a click would take, as it moves** (`gesture::hover` →
   `SketchView.hovered`, a `Hit`): `whatIsAt` asked on every move, a figure or point lit in the
   highlight's ink (`SketchView.lit`), an object's edge, face or body in the box — an edge tool
   its edge or face, a Boolean its body — and put out when the pointer leaves.  **⌘-click (Ctrl
@@ -317,10 +317,37 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   **The box shows the objects, not the features they are made of** — a solid is the object exactly
   when nothing else is made of it (`overview::objects`).  `box3d.ts` draws what `scene3d` says
   stands in space — panes, axes, the axes and the curves traced in space (`IN_SPACE`: `axis`,
-  `traced`; a spline over points in space is one, #363 S3) — and every object's creases (a
-  `smooth` seam dropped: shading draws the round) and mesh (`mesh::grouped`) in its own
-  coordinates, placed by the matrix the core gives (`core/mesh.ts::own`, `placement`; #412),
-  computing no coordinate; an object that does not evaluate is left out, its
+  `traced`; a spline over points in space is one, #363 S3) — and every object in its own
+  coordinates, placed by the matrix the core gives (`core/mesh.ts::drawn`, `placement`; #412),
+  computing no coordinate.  **An object is drawn as a CAD viewer draws a part** (#674–#676):
+  **one indexed geometry a shape** (`mesh::drawn`, `gcs_solid_drawn`: `grouped`'s triangles over
+  vertices shared within a face — a flat face its corners and one normal, a round one smooth
+  across its facets — each vertex with the face it is of, and one byte buffer of `f32`/`u32`),
+  **shared by every object drawn from it** (`Placement.geometry`, `EvaluatedSolid::
+  geometry_serial`: the solids of one binding are one evaluation renamed, #566, so one geometry),
+  and **one draw call for its faces and one for its edges** — never a mesh or a material a face;
+  `parts.test.ts` holds the counts.  Its faces take **one material a colour** (and a ghost of
+  it), standing a hair behind their depth so an edge wins against its own faces; its **edges**
+  are the mesh's own (`mesh::drawn`'s `sharp` — two faces meeting at more than `EDGE_TURN`, a
+  flat face's facets turning, a surface ending — and `tangent`, two faces meeting smoothly, a
+  round's run-out) as one fat line set (`LineSegments2`, about 1.25 px), sharp dark and tangent
+  lighter, the tangent ones left out by drawing fewer (View ▸ Tangent edges,
+  `SketchView.showTangentEdges`); and **a silhouette pass** draws the faces alone (layer
+  `FACES`) as view normals and depths into a float target, a quad then inking, one pixel in,
+  where a covered pixel meets the ground or its depth steps — one pass however many objects,
+  nothing asked of the core per view (none where the renderer keeps no float target).  **Each
+  object is its part's colour** (`Document.partColours`, `gcs_elab_part_colours_json`,
+  `colours::parts`: by binding, every placement of a part one colour — the drawing's `fill`
+  where the `.svd` beside the model names one, else the palette's, the same across a reload and
+  a numeric edit; see solids.md), lit by a hemisphere, a key and a fill following the eye, and
+  three's `RoomEnvironment` through `PMREMGenerator` (bundled, no network).  **A state is a tint,
+  never a colour**: a face selected, a body selected or what is under the pointer is an overlay
+  drawing the object's own geometry again, each face its tint from a texture its vertices'
+  `face` index (`Box3D.tints`), so the part keeps its colour beneath; a Boolean's tools keep
+  `INK.union`/`cut`/`common` as ghosts and a section's cut face its hatching.  **The drawing
+  beside the model** (a project's `.svd` with the model's stem, `SketchView.partDrawing`) is read
+  for its colours only — its sheets and views are the paper's; one that does not read is said
+  in a toast and the parts keep the palette's.  An object that does not evaluate is left out, its
   `mesh()` throwing the core's reason rather than stopping every paint, and **the banner says
   which and why** in the core's words (`overview::unbuilt`, after a conflict or an over-block;
   a swept object still being meshed is not one —

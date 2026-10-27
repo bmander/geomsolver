@@ -73,17 +73,23 @@ pub unsafe extern "C" fn gcs_drawing_svg(ptr: *const u8, len: usize) -> *mut u8 
         let text = request.get("text").map(Json::as_str).unwrap_or("");
         let source = request.get("source").map(Json::as_str).unwrap_or("drawing.svd");
         let sheet = request.get("sheet").filter(|s| matches!(s, Json::Str(_))).map(Json::as_str);
-        let result = gcs_core::drawing::compile(text, source, sheet, &mut |path, from| {
-            let name = gcs_core::drawing::relative_path(path, from);
-            request.get("files")?.get(&name).filter(|v| matches!(v, Json::Str(_)))
-                .map(|v| (name, v.as_str().to_string()))
-        });
+        let result = gcs_core::drawing::compile(text, source, sheet, &mut bundled(&request));
         let result = match result {
             Ok(svg) => json::object([("svg", Json::Str(svg))]),
             Err(e) => json::object([("error", Json::Str(e.message)), ("offset", Json::Int(e.span.lo as i64))]),
         };
         out_str(result.dump(None))
     })
+}
+
+/// A drawing's loader over a request's bundle (`files`, by path): a path read relative to the file
+/// that names it, its identity that path, its text the bundle's.
+pub(crate) fn bundled(request: &Json) -> impl FnMut(&str, &str) -> Option<(String, String)> + '_ {
+    move |path, from| {
+        let name = gcs_core::drawing::relative_path(path, from);
+        request.get("files")?.get(&name).filter(|v| matches!(v, Json::Str(_)))
+            .map(|v| (name, v.as_str().to_string()))
+    }
 }
 
 /// Inspect .svd imports and sheet names without loading or solving a model.

@@ -19,6 +19,10 @@ use crate::solid::Rigid;
 pub struct Binding {
     /// Opaque: equal exactly where the solids are one function of one binding.
     pub key: String,
+    /// Which part it is, its numbers left out: the same for every instance of one definition
+    /// drawn alike whatever it is given, and unchanged by a numeric edit — what a part's palette
+    /// colour is drawn from (#676).  Opaque too.
+    pub part: String,
     /// The instance's prefix, as the solid's name and every name it reads start with: what a
     /// shared evaluation's names are rewritten from and to.
     pub at: String,

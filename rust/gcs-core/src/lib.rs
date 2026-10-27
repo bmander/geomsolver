@@ -24,6 +24,7 @@ pub(crate) use gcs_solve::{bvh, intersection};
 
 pub mod boundary;
 pub mod callout;
+pub mod colours;
 pub mod drawing;
 pub mod edge;
 pub mod edit;

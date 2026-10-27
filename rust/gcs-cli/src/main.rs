@@ -115,6 +115,10 @@ diagnosed, and the report says where it stands.
                         other side, PLANE@LENGTH moves it along its normal (top@5mm,
                         -std.front@-2), PLANE±LENGTH (or +-) keeps a slab that thick either side
                         (y=-12.5mm±5mm)
+    --drawing PATH      the drawing whose `fill` rules colour the parts (#677) that
+                        --step-assembly writes and --png draws; unasked, the .svd beside the
+                        document with its stem (bot.svd beside bot.sv) where there is one.  A part
+                        no rule colours keeps its palette colour
     --solid NAME        which solid to export; defaults to the only Boolean root
     --tolerance [LENGTH] export for fabrication: the native STEP/STL within LENGTH of the exact
                         surface (default 0.01mm; a bare number is in the document's unit, and
@@ -223,6 +227,8 @@ struct Opts {
     /// pixel, which every constant size goes through.  A page width fixes it.
     width: f64,
     sheet: Option<String>,
+    /// `--drawing PATH`: the `.svd` whose `fill` rules colour the parts (#677).
+    drawing: Option<String>,
     /// `--progress`/`--no-progress`, or what a terminal is told unasked.
     say: watch::Say,
     /// `--timings`: the slowest solids and claims, said at the end.
@@ -251,6 +257,7 @@ impl Default for Opts {
             tolerance: None,
             width: 800.0,
             sheet: None,
+            drawing: None,
             say: watch::Say::Nothing,
             timings: false,
             components: false,
@@ -360,8 +367,8 @@ fn qualify<T>(slot: &mut Option<T>, value: T, flag: &str, at: &str) -> Result<()
 
 /// The options that take one value a run, whatever its outputs: each said once (#592), a second
 /// refused, never taken over the first.
-const ONCE: [&str; 8] = ["--stl-backend", "--kernel", "--verify-step", "--sheet", "--output",
-                         "--width", "--tolerance", "--measure-samples"];
+const ONCE: [&str; 9] = ["--stl-backend", "--kernel", "--verify-step", "--sheet", "--output",
+                         "--width", "--tolerance", "--measure-samples", "--drawing"];
 
 fn main() -> ExitCode {
     let mut opts = Opts::default();
@@ -396,6 +403,10 @@ fn main() -> ExitCode {
                 Some("light") => {}
                 Some("full") => cad::verify_step_fully(),
                 _ => return misuse("--verify-step needs light or full"),
+            },
+            "--drawing" => match args.next() {
+                Some(p) => opts.drawing = Some(p),
+                None => return misuse("--drawing needs a path"),
             },
             "--sheet" => match args.next() {
                 Some(n) => opts.sheet = Some(n),
@@ -905,10 +916,22 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
     let exports: Vec<&Output> = opts.outputs.iter()
         .filter(|o| matches!(o.writes, Writes::Export { .. } | Writes::Assembly(_))).collect();
     let seen = (opts.pictured() && !exports.is_empty()).then(|| sk.clone());
+    // each part's colour, the drawing's or the palette's, where an output carries it (#677)
+    let coloured = opts.pictured() || exports.iter().any(|o| matches!(o.writes, Writes::Assembly(_)));
+    let colours = if !coloured { Default::default() } else {
+        match part_colours(&sk, &e, s, opts) {
+            Ok(c) => c,
+            Err(message) => {
+                eprintln!("solventc: {message}");
+                code = 1;
+                gcs_core::colours::palette(&sk)
+            }
+        }
+    };
     for o in exports {
         let written = match &o.writes {
-            Writes::Assembly(path) =>
-                assembly(&sk, &mut e, s, opts, path, opts.solid(&o.own), seen.as_ref(), solved),
+            Writes::Assembly(path) => assembly(&sk, &mut e, s, opts, path, opts.solid(&o.own), &colours,
+                                               seen.as_ref(), solved),
             _ => export(&sk, &mut e, opts, o, seen.as_ref(), solved),
         };
         if !written {
@@ -971,6 +994,7 @@ fn check_model(s: &Source, opts: &Opts, places: &mut Places) -> (u8, Option<Json
                     solid,
                     hide,
                     section,
+                    colours: &colours,
                 };
                 match picture::render(seen.as_ref().unwrap_or(&sk), &ask) {
                     Ok((bytes, unbuilt)) => {
@@ -1140,12 +1164,7 @@ fn check_drawing(s: &Source, opts: &Opts) -> (u8, Option<Json>) {
         Err(gcs_core::drawing::Error { span: Default::default(),
             message: "STL/STEP/glTF/PNG export selects geometry from a .sv model, not a .svd drawing".into() })
     } else {
-        gcs_core::drawing::compile(&s.text, &s.name, opts.sheet.as_deref(), &mut |path, from| {
-            let base = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new("."));
-            let p = base.join(path);
-            let text = std::fs::read_to_string(&p).ok()?;
-            Some((p.canonicalize().ok()?.to_string_lossy().into_owned(), text))
-        })
+        gcs_core::drawing::compile(&s.text, &s.name, opts.sheet.as_deref(), &mut load_beside)
     };
     match result {
         Ok(svg) => {
@@ -1369,7 +1388,7 @@ fn tolerance(sk: &Sketch,opts: &Opts) -> Result<Option<gcs_core::solid::export::
 /// object, as one assembly named for the document; whether it was written. A refusal is said in
 /// the core's words and, where one solid's build refused, recorded at its statement.
 fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str, solid: Option<&str>,
-            seen: Option<&Sketch>, solved: bool) -> bool {
+            colours: &std::collections::BTreeMap<usize, [u8; 3]>, seen: Option<&Sketch>, solved: bool) -> bool {
     let fail = |e: &mut Elaborated, message: String| {
         eprintln!("solventc: {message}");
         e.diags.push(gcs_core::program::Diag::new(gcs_core::program::Code::E080,
@@ -1398,7 +1417,8 @@ fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str
         Ok(t) => t,
         Err(message) => { eprintln!("solventc: {message}"); return false }
     };
-    match cad::brep::export_assembly(sk, &objects, &name, path, t, seen) {
+    match cad::brep::export_assembly(sk, &objects, &name, path, t,
+        &|i| colours.get(&i).map(|&c| gcs_core::colours::unit(c)), seen) {
         Ok(()) => true,
         Err((Some(i), refusal)) => { refused(e, i, refusal); false }
         Err((None, refusal)) => {
@@ -1406,6 +1426,44 @@ fn assembly(sk: &Sketch, e: &mut Elaborated, s: &Source, opts: &Opts, path: &str
             fail(e, refusal.to_string())
         }
     }
+}
+
+/// **Each object's colour** (#677): the drawing's `fill` where `--drawing` names a `.svd`, or
+/// unasked one stands beside the document with its stem (`bot.svd` beside `bot.sv`), and the
+/// palette's for every part it leaves (`colours::parts`).  The drawing's `model` imports and
+/// `use`s are read relative to it; it colours the document where one of its models is this file.
+/// Refused, with the palette's colours left to the caller, where the drawing does not read.
+fn part_colours(sk: &Sketch, e: &Elaborated, s: &Source, opts: &Opts)
+    -> Result<std::collections::BTreeMap<usize, [u8; 3]>, String> {
+    let beside = std::path::Path::new(&s.name).with_extension("svd");
+    let path = match &opts.drawing {
+        Some(p) => p.clone(),
+        None if s.name.ends_with(".sv") && beside.is_file() => beside.to_string_lossy().into_owned(),
+        None => return Ok(gcs_core::colours::palette(sk)),
+    };
+    let text = std::fs::read_to_string(&path).map_err(|err| format!("--drawing {path}: {err}"))?;
+    let model = canonical(std::path::Path::new(&s.name)).unwrap_or_else(|| s.name.clone());
+    let names = gcs_core::drawing::Model { sketch: sk, names: &e.map };
+    let drawn = gcs_core::drawing::colours(&text, &path, &model, names, &mut load_beside)
+        .map_err(|err| {
+            let (line, col) = line_col(&text, err.span.lo);
+            format!("{path}:{line}:{col}: {}", err.message)
+        })?;
+    let mut colours = gcs_core::colours::palette(sk);
+    colours.extend(drawn);
+    Ok(colours)
+}
+
+/// A file a drawing reads (a `model`, a `use`), `path` relative to the file `from` that names it:
+/// its canonical path, which an import cycle and a model's identity are told by, and its text.
+fn load_beside(path: &str, from: &str) -> Option<(String, String)> {
+    let p = std::path::Path::new(from).parent().unwrap_or(std::path::Path::new(".")).join(path);
+    let text = std::fs::read_to_string(&p).ok()?;
+    Some((canonical(&p)?, text))
+}
+
+fn canonical(p: &std::path::Path) -> Option<String> {
+    p.canonicalize().ok().map(|c| c.to_string_lossy().into_owned())
 }
 
 /// Which solid `--stl` writes.  Named, or the only one there is — a document with one part in it
