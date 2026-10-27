@@ -45,33 +45,72 @@ export function mesh(sk: Sketch, idx: number, unit: number): Mesh {
   return { positions, normals, faces };
 }
 
-/** **A solid in its own coordinates** (#412): its mesh and its creases before its placement stands
- *  it in the world.  A solid that has only moved since it was evaluated is the same evaluation,
- *  so a host builds its geometry from this once and moves it by `placement` alone. */
-export interface Own extends Mesh {
-  /** The edges that are corners of the part and not a tessellation's seams: six doubles a
-   *  segment. */
-  creases: Float64Array;
+/** **A solid in its own coordinates, as a renderer draws it** (#412, #674): its mesh over shared
+ *  vertices — a vertex once a face, where the triangles of a face meet there, so a flat face keeps
+ *  its corners and a round one shades smooth — and the edges a CAD viewer inks, before its
+ *  placement stands it in the world.  A solid that has only moved since it was evaluated is the
+ *  same evaluation, and the solids of one binding are one geometry (`Placement.geometry`), so a
+ *  host builds one geometry of it and moves it by `placement` alone. */
+export interface Drawn {
+  /** Three a vertex. */
+  positions: Float32Array;
+  normals: Float32Array;
+  /** The face each vertex is of: an index into `faces`. */
+  face: Uint32Array;
+  /** Three vertices a triangle, in the order `faces` names: face `f`'s triangles are the run
+   *  `f.start` to `f.start + f.count`, so its indices are three times that. */
+  index: Uint32Array;
+  /** The edges always inked — where two faces meet at a corner, or the surface ends — six
+   *  numbers a segment. */
+  sharp: Float32Array;
+  /** Where two faces meet tangent (a round's run-out): drawn lighter, or not at all. */
+  tangent: Float32Array;
+  faces: Face[];
 }
 
-/** Solid `idx` in its own coordinates, refined to `unit` as `mesh` is.  Throws with the core's
- *  reason where it does not evaluate. */
-export function own(sk: Sketch, idx: number, unit: number): Own {
+/** Solid `idx` in its own coordinates as a renderer draws it, refined to `unit` as `mesh` is.
+ *  Throws with the core's reason where it does not evaluate. */
+export function drawn(sk: Sketch, idx: number, unit: number): Drawn {
   const faces = takeJson<Face[] | null>(core().gcs_solid_faces_json(sk.handle, idx, unit));
   if (!faces) throw new Error(lastError());
-  const part = (what: number) => {
-    const n = core().gcs_solid_own(sk.handle, idx, unit, what, 0, 0);
-    if (n < 0) throw new Error(lastError());
-    return readInto(n, (p, cap) => core().gcs_solid_own(sk.handle, idx, unit, what, p, cap));
+  const handle = core().gcs_solid_drawn(sk.handle, idx, unit);
+  if (!handle) throw new Error(lastError());
+  // one buffer, every item four bytes: the counts, then each part in turn (`gcs_solid_drawn`)
+  const bytes = takeBytes(handle);
+  const [nv, nt, ns, nk] = new Uint32Array(bytes.buffer, bytes.byteOffset, 5);
+  let at = bytes.byteOffset + 20;
+  const take = <T>(make: new (b: ArrayBuffer, o: number, n: number) => T, n: number): T => {
+    const out = new make(bytes.buffer as ArrayBuffer, at, n);
+    at += 4 * n;
+    return out;
   };
-  return { positions: part(0), normals: part(1), creases: part(2), faces };
+  return {
+    positions: take(Float32Array, 3 * nv),
+    normals: take(Float32Array, 3 * nv),
+    face: take(Uint32Array, nv),
+    index: take(Uint32Array, 3 * nt),
+    sharp: take(Float32Array, 6 * ns),
+    tangent: take(Float32Array, 6 * nk),
+    faces,
+  };
+}
+
+/** Solid `idx`'s faces as its mesh names them, and the run of triangles each is: what an object
+ *  drawn from another's geometry (a peer of its binding) calls its own.  Throws with the core's
+ *  reason where it does not evaluate. */
+export function faces(sk: Sketch, idx: number, unit: number): Face[] {
+  const faces = takeJson<Face[] | null>(core().gcs_solid_faces_json(sk.handle, idx, unit));
+  if (!faces) throw new Error(lastError());
+  return faces;
 }
 
 /** Where a solid stands: which evaluation it is (`shape`, the same number exactly while it is the
- *  same shape, however it has moved) and the 4×4 matrix, column-major, that places its own
- *  coordinates in the world. */
+ *  same shape, however it has moved), whose triangles it has (`geometry`, the same for every
+ *  solid of one binding, #566: one evaluation renamed for each instance), and the 4×4 matrix,
+ *  column-major, that places its own coordinates in the world. */
 export interface Placement {
   shape: number;
+  geometry: number;
   matrix: number[];
 }
 
@@ -79,12 +118,12 @@ export interface Placement {
  *  not — and null where it would have to evaluate it: what a gesture asks, which must not build a
  *  solid every frame.  Throws where the solid does not evaluate. */
 export function placement(sk: Sketch, idx: number, unit: number, built = false): Placement | null {
-  return withBuf(17, 8, (b) => {
-    const got = core().gcs_solid_placement(sk.handle, idx, unit, built ? 1 : 0, b.ptr, 17);
+  return withBuf(18, 8, (b) => {
+    const got = core().gcs_solid_placement(sk.handle, idx, unit, built ? 1 : 0, b.ptr, 18);
     if (got === 0) return null;
     if (got < 0) throw new Error(lastError());
-    const x = Array.from(b.f64.subarray(0, 17));
-    return { shape: x[0], matrix: x.slice(1) };
+    const x = Array.from(b.f64.subarray(0, 18));
+    return { shape: x[0], geometry: x[1], matrix: x.slice(2) };
   });
 }
 

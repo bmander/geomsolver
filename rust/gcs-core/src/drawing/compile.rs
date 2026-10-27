@@ -99,3 +99,27 @@ fn styles(doc: &mut Document, source: &str,
     active.remove(source);
     Ok(())
 }
+
+/// **The colours the drawing `text` gives the parts of a model** (#677), for a host that has the
+/// model solved already (the workspace, `solventc --step-assembly`): its rules after its style
+/// imports (`use`), read as `fills` reads them for every name the drawing imports the model by —
+/// the model whose canonical identity, as `load` gives it, is `model`.  Nothing where the drawing
+/// does not import that model.  The drawing's sheets are not rendered and its other models not
+/// loaded: what the model is drawn in on paper is the paper's.
+pub fn colours(
+    text: &str,
+    source: &str,
+    model_path: &str,
+    model: Model<'_>,
+    load: &mut dyn FnMut(&str, &str) -> Option<(String, String)>,
+) -> Result<BTreeMap<usize, [u8; 3]>, Error> {
+    let mut doc = parse(text)?;
+    let mut active = BTreeSet::new();
+    let mut count = 0;
+    styles(&mut doc, source, load, &mut active, &mut count)?;
+    let aliases: Vec<&str> = doc.models.iter()
+        .filter(|m| load(&m.path, source).is_some_and(|(identity, _)| identity == model_path))
+        .map(|m| m.name.as_str()).collect();
+    if aliases.is_empty() { return Ok(BTreeMap::new()) }
+    fills(&doc, &aliases, model)
+}

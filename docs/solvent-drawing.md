@@ -193,9 +193,32 @@ component/member scope. Explicit geometry selectors must resolve; a misspelling 
 Later rules override properties they state. Geometry-specific rules override implicit roles.
 
 Properties are `color` (#RGB, #RRGGBB, or #RRGGBBAA), `width`, `dash`, and `display`
-(`none`, `inline`, or `geometry`). A semicolon separates properties; an empty `dash:` means a
-solid stroke. Comments start with `//`; strings support escaped quotes, backslashes, and `\n`.
+(`none`, `inline`, or `geometry`), and a part's `fill` (below). A semicolon separates
+properties; an empty `dash:` means a solid stroke. Comments start with `//`; strings support
+escaped quotes, backslashes, and `\n`.
 Unknown statements, properties, invalid values, and duplicate model/sheet/view names are errors.
+
+### A part's colour
+
+```
+style m.handle { fill: #e8a33d }
+style m.valve.body { fill: #b5a642 }
+```
+
+`fill` (#RGB or #RRGGBB) is the colour of a **part**: the browser workspace shades it in that
+colour and `solventc --step-assembly` writes it into the STEP file, so a CAD system opens the
+assembly in the same colours. It is not a sheet's ink, so it is stated only in a rule outside
+every sheet, on a model path — an object, a component or instance scope holding objects, or a
+solid an object is made of — never on a class. Every placement of a part takes the colour: a rule
+naming one instance of a component colours each instance of the same part, as instances of one
+part are one colour in a CAD assembly. Later rules override earlier ones, imported rules
+included. A `fill` naming no object is an error.
+
+The workspace reads the colours of the drawing beside the model with the same stem
+(`radiatorbot.svd` beside `radiatorbot.sv`), and only its colours: its sheets stay on paper.
+`solventc` reads the same file, or the one `--drawing PATH` names. A part no rule colours keeps
+its palette colour, chosen from what the part is and not from its numbers, so it stays the same
+after an edit and a reload. `rust/examples/plates/` is a case.
 
 Construction geometry is hidden by default on sheets and remains visible in the model editor.
 Centerlines use a long/short dash pattern. These roles come from semantic modifiers in `.sv`;

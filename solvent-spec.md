@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.195 — October 2026**
+**Specification, Draft 0.196 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -3183,6 +3183,11 @@ from a model shown at one — the seeds say where the drawing starts.
 ### 13.2 Presentation **[0.20]**
 
 Styles and presentation classes are defined in [Solvent Drawing](docs/solvent-drawing.md).
+**[0.196]** A drawing's `fill` names a part's colour: a rule outside every sheet on a model path
+colours every object it names, holds or is made from, and every other placement of the same
+part (one binding). A viewer of the model and an assembly export MUST show the part in that
+colour, and a part no rule colours in a colour chosen from what the part is and not from its
+numbers. A model MUST NOT state a colour.
 **[0.147]** A drawing's sketch of a plane MUST also show what is drawn in another plane lying in
 it and facing the same way, where it stands: a part drawn in a frame of its own is drawn where
 the frame puts it. Model source MUST reject presentation statements and clauses. A renderer may assign implicit

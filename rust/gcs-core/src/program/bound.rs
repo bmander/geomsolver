@@ -53,3 +53,14 @@ pub(super) fn stamp(sk: &mut Sketch, res: &Resolver, instances: &[InstanceInfo],
         sk.solids[si].binding = Some(Binding { key, at: inst.prefix.clone(), frame, turn, mirror });
     }
 }
+
+/// **What a binding's key says of the part, less its numbers** (#676): the definition, what its
+/// body is drawn in, and the solid's path and place in that body — `stamp`'s key with the
+/// instance's arguments left out.  Equal for every instance of one definition whatever it was
+/// given, and unchanged by a numeric edit, so a part's colour is drawn from it.
+pub fn part_of(key: &str) -> String {
+    let (instance, solid) = key.split_once('\u{1e}').unwrap_or((key, ""));
+    let mut fields = instance.split('\u{1f}');
+    let (comp, drawn) = (fields.next().unwrap_or(""), fields.next().unwrap_or(""));
+    format!("{comp}\u{1f}{drawn}\u{1e}{solid}")
+}

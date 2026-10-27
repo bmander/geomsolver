@@ -533,6 +533,9 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       title: 'Show everything the model outline hid' },
     { label: 'Show solid', key: '⇧⌘b', onClick: () => view.setShowSolid(!view.showSolid),
       title: 'Fill each object\u2019s surfaces, not only its edges — off, a solid is a wireframe' },
+    { label: 'Tangent edges', onClick: () => view.setShowTangentEdges(!view.showTangentEdges),
+      title: 'Ink, lighter, where one face of an object runs smoothly into the next (a round\u2019s '
+           + 'run-out) — off, only the sharp edges' },
     { label: 'Section', key: '⇧x', onClick: () => view.toggleSection(),
       title: 'Cut every object by the plane being drawn on, the side its normal points to taken '
            + 'away and the cut face hatched — move it, flip it or choose another plane in the '

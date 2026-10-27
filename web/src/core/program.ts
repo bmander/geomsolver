@@ -135,6 +135,22 @@ function edit(handle: number): Edit {
   return takeJson<Edit>(handle);
 }
 
+/** The drawing a model's parts are coloured by: its text, its path in `files` (the bundle its
+ *  `use`s and `model` imports are read in) and the model's own path there. */
+export interface PartDrawing {
+  text: string;
+  source: string;
+  files: Record<string, string>;
+  model: string;
+}
+
+/** Each object's colour (`#rrggbb`), by its solid, and whether the drawing gave it. */
+export interface PartColours {
+  parts: { solid: number; colour: string; drawn: boolean }[];
+  error?: string;
+  offset?: number;
+}
+
 export class Document {
   /** The source.  Replaced in place only by `retext`, for an edit the core called `numeric`. */
   text: string;
@@ -372,6 +388,18 @@ export class Document {
                children: children.map(row) };
     };
     return takeJson<Wire[]>(core().gcs_elab_outline_json(this.h, this.sketch.handle)).map(row);
+  }
+
+  /** **Each object's colour** (#676, #677): its part's — the drawing's `fill` where `drawing`
+   *  (the `.svd` beside the model, the bundle it reads in and the model's path there) names one,
+   *  else the palette's, the same for every placement of a part and across a reload and a
+   *  numeric edit.  A drawing that does not read is said in `error`, every part keeping the
+   *  palette's colour. */
+  partColours(drawing?: PartDrawing | null): PartColours {
+    const req = drawing ? { text: drawing.text, source: drawing.source, files: drawing.files,
+                            model: drawing.model } : {};
+    return takeJson<PartColours>(withJson(req, (p, n) =>
+      core().gcs_elab_part_colours_json(this.h, this.sketch.handle, p, n)));
   }
 
   /* -- the edit verbs ------------------------------------------------------------------- */

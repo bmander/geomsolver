@@ -29,6 +29,7 @@ mod measures;
 mod meets;
 mod beams;
 mod bound;
+pub use bound::part_of;
 mod mirrors;
 mod source_map;
 mod refused;

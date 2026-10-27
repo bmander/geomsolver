@@ -81,6 +81,8 @@ mod diagnose;
 mod draft;
 mod drag;
 mod drawing;
+mod drawn_mesh;
+mod part_colours;
 mod drift;
 mod driven;
 mod drives;

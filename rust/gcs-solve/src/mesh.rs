@@ -653,3 +653,108 @@ pub fn face_edges(m: &Mesh) -> Vec<FaceEdge> {
         segs,
     }).collect()
 }
+
+// -- the mesh a renderer draws ------------------------------------------------------------------
+
+/// **The mesh as a renderer draws it** (#674): `grouped`'s triangles over shared vertices, and
+/// the edges a CAD viewer inks round every face (#675).
+///
+/// A vertex is one wherever the triangles of one face meeting there agree on where it is and on
+/// its normal (to a billionth, the first triangle's kept): a flat face keeps its corners and its one normal, a round face shades smooth
+/// across its facets, and a vertex is written twice only where two faces meet.  The triangles
+/// are `grouped`'s in its order, so a group's `start` and `count` are a run of them here too,
+/// and the run of the index buffer a renderer lights a face by.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Drawn {
+    pub positions: Vec<[f64; 3]>,
+    pub normals: Vec<[f64; 3]>,
+    /// The group (face) each vertex is of: an index into the mesh's `groups`.
+    pub face: Vec<u32>,
+    pub triangles: Vec<[u32; 3]>,
+    /// The edges always drawn: where two faces meet turning by more than `EDGE_TURN`, where a
+    /// flat face's facets do, and where the surface ends.
+    pub sharp: Vec<[[f64; 3]; 2]>,
+    /// Where two faces meet tangent — a round's run-out into the flat it rounds, an obround's
+    /// side into its end: an edge of the part, which a viewer draws lighter or leaves out.
+    pub tangent: Vec<[[f64; 3]; 2]>,
+}
+
+/// `m` as a renderer draws it (`Drawn`).
+pub fn drawn(m: &Mesh) -> Drawn {
+    let mut d = Drawn::default();
+    let corner = |at: &[f64], t: usize, k: usize| -> [f64; 3] {
+        std::array::from_fn(|c| at[9 * t + 3 * k + c])
+    };
+    // a vertex by its face, its position to the bit — the weld made shared corners the same
+    // numbers — and its normal to a billionth: a flat face's pieces each carry the plane's normal
+    // as they computed it, which differ in their last bits
+    let same = |n: [f64; 3]| n.map(|x| (x * 1e9).round() as i64);
+    let mut seen: BTreeMap<([u64; 3], [i64; 3]), u32> = BTreeMap::new();
+    for (gi, group) in m.groups.iter().enumerate() {
+        seen.clear();
+        for t in group.start..group.start + group.count {
+            let tri = [0, 1, 2].map(|k| {
+                let (p, n) = (corner(&m.positions, t, k), corner(&m.normals, t, k));
+                *seen.entry((p.map(f64::to_bits), same(n))).or_insert_with(|| {
+                    d.positions.push(p);
+                    d.normals.push(n);
+                    d.face.push(gi as u32);
+                    d.positions.len() as u32 - 1
+                })
+            });
+            d.triangles.push(tri);
+        }
+    }
+    (d.sharp, d.tangent) = inked(m);
+    d
+}
+
+/// The edges a viewer inks, sharp and tangent (`Drawn`): every triangle side found with its
+/// partners as `face_edges` finds them, and judged by its own two facets, so a pair of faces
+/// meeting tangent along one stretch and at a corner along another is drawn as each.
+fn inked(m: &Mesh) -> (Vec<[[f64; 3]; 2]>, Vec<[[f64; 3]; 2]>) {
+    let mut b = Box3::empty();
+    for p in m.positions.chunks_exact(3) {
+        b.add([p[0], p[1], p[2]]);
+    }
+    let key = weld_key(&b);
+    let corner = |t: usize, k: usize| -> [f64; 3] {
+        std::array::from_fn(|c| m.positions[9 * t + 3 * k + c])
+    };
+    // every side, keyed by its corners in order, with its group and its facet's normal — none
+    // for a facet too thin to have one, which is a side's partner and no edge of its own
+    type Side = (([i64; 3], [i64; 3]), usize, Option<[f64; 3]>, [[f64; 3]; 2]);
+    let mut sides: Vec<Side> = Vec::new();
+    for (gi, group) in m.groups.iter().enumerate() {
+        for t in group.start..group.start + group.count {
+            let [a, b, c] = [0, 1, 2].map(|k| corner(t, k));
+            let normal = crate::space::triangle_normal(a, b, c);
+            for (u, v) in [(a, b), (b, c), (c, a)] {
+                let (ku, kv) = (key(u), key(v));
+                if ku != kv {
+                    sides.push(((ku.min(kv), ku.max(kv)), gi, normal, [u, v]));
+                }
+            }
+        }
+    }
+    sides.sort_by_key(|s| (s.0, s.1));
+    let turned = EDGE_TURN.cos();
+    let (mut sharp, mut tangent) = (Vec::new(), Vec::new());
+    for found in sides.chunk_by(|x, y| x.0 == y.0) {
+        let seg = found[0].3;
+        // a side no other facet has: where the surface ends, as a sheet's rim does
+        if found.len() == 1 {
+            if found[0].2.is_some() { sharp.push(seg); }
+            continue;
+        }
+        let real: Vec<&Side> = found.iter().filter(|s| s.2.is_some()).collect();
+        let [first, second, ..] = real[..] else { continue };
+        let agree = plane::dot(first.2.unwrap(), second.2.unwrap());
+        if first.1 != second.1 {
+            if agree < turned { sharp.push(seg) } else { tangent.push(seg) }
+        } else if !m.groups[first.1].smooth && agree < turned {
+            sharp.push(seg);
+        }
+    }
+    (sharp, tangent)
+}

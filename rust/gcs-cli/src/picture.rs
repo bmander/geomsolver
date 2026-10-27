@@ -74,6 +74,8 @@ pub struct Ask<'a> {
     /// `--section`: the planes in the world each solid is cut by, each taking away the side its
     /// normal points to — none, one, or two facing apart that keep a slab between them.
     pub section: Vec<Basis>,
+    /// Each object's colour, its part's (`colours::parts`, #676): the workspace's.
+    pub colours: &'a std::collections::BTreeMap<usize, [u8; 3]>,
 }
 
 /// The solids a picture draws: the one `--solid` names (else the objects under that name), or
@@ -102,41 +104,19 @@ fn chosen(sk: &Sketch, ask: &Ask) -> Result<Vec<usize>, String> {
     Ok(v)
 }
 
-/// The paper behind, the ink of an edge, and the colours an instance is drawn in: the box's
-/// background and edge (`box3d.ts`'s `INK`), and pigments light enough to shade.
+/// The paper behind and the ink of an edge: the box's background and edge (`box3d.ts`'s `INK`).
 const PAPER: [u8; 3] = [250, 250, 250];
-const EDGE: [u8; 3] = [58, 63, 69];
-const PIGMENTS: [[f64; 3]; 10] = [
-    [143.0, 179.0, 217.0], [224.0, 163.0, 112.0], [146.0, 196.0, 143.0], [217.0, 140.0, 140.0],
-    [181.0, 159.0, 214.0], [196.0, 164.0, 132.0], [227.0, 166.0, 207.0], [176.0, 179.0, 184.0],
-    [209.0, 207.0, 122.0], [127.0, 200.0, 207.0],
-];
+const EDGE: [u8; 3] = [43, 47, 53];
 
-/// A solid's instance: the first step of its name.
-fn instance(name: &str) -> &str {
-    name.split('.').next().unwrap_or(name)
-}
-
-/// The document's instances, in the order its objects come in: all of them, so a part keeps its
-/// colour in a cutaway or alone.
-fn instances(sk: &Sketch) -> Vec<&str> {
-    let mut seen = Vec::new();
-    for o in gcs_core::overview::objects(sk) {
-        let name = instance(&sk.solids[o].name);
-        if !seen.contains(&name) { seen.push(name); }
-    }
-    seen
-}
-
-/// A solid's colour: its instance's, so every solid of one part is one colour and the first ten
-/// parts are told apart.  A solid of no object's instance (an operand drawn by `--solid`) is
-/// coloured by its name's hash.
-fn pigment(instances: &[&str], name: &str) -> [f64; 3] {
-    let own = instance(name);
-    let k = instances.iter().position(|n| *n == own).unwrap_or_else(|| {
-        own.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193)) as usize
+/// A solid's colour: its part's, as the workspace shades it (`Ask::colours`), so every placement
+/// of one part is one colour and a part keeps it in a cutaway or alone.  A solid that is no
+/// object (an operand drawn by `--solid`) takes the palette's colour its name's hash gives.
+fn pigment(colours: &std::collections::BTreeMap<usize, [u8; 3]>, i: usize, name: &str) -> [f64; 3] {
+    let palette = &gcs_core::colours::PALETTE;
+    let c = colours.get(&i).copied().unwrap_or_else(|| {
+        palette[name.bytes().fold(0x811c_9dc5u32, |h, b| (h ^ b as u32).wrapping_mul(0x0100_0193)) as usize % palette.len()]
     });
-    PIGMENTS[k % PIGMENTS.len()]
+    c.map(f64::from)
 }
 
 /// A cut face's hatching: a line every `HATCH` samples across the picture, `HATCH_INK` of them
@@ -165,7 +145,6 @@ fn seen(f: &Frame, p: [f64; 3]) -> [f64; 3] {
 /// the core's reason (left out of the picture, as the box leaves it out).
 pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> {
     let axes = eye_frame(ask.eye.az, ask.eye.el);
-    let instances = instances(sk);
     let chosen = chosen(sk, ask)?;
     // a swept object drawn from its exact surface where this kernel builds one, as the workspace
     // replaces its field's preview with it, and from its field only where the build is refused
@@ -210,7 +189,7 @@ pub fn render(sk: &Sketch, ask: &Ask) -> Result<(Vec<u8>, Vec<String>), String> 
             edges.extend(c.segments().iter().filter_map(|[a, b]| clipped(*a, *b, Some(k)))
                 .map(|(a, b)| [seen(&frame, a), seen(&frame, b)]));
         }
-        solids.push((solid, frame, pigment(&instances, &sk.solids[i].name), edges, cuts));
+        solids.push((solid, frame, pigment(ask.colours, i, &sk.solids[i].name), edges, cuts));
     }
     if !lo[0].is_finite() {
         if any {
