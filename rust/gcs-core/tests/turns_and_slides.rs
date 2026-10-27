@@ -151,8 +151,9 @@ fn a_slid_torus_grooves_a_rod_by_its_tubes_section() {
 }
 
 /// A cylinder slid square to its axis, its flat caps (which the slide keeps in their own planes)
-/// clear of the rod, cuts by its section as the square torus does: its axis 5.5 from the rod's and
-/// its radius 2, the same lens, its wall the nearer generator extruded.
+/// clear of the rod: its axis 5.5 from the rod's along y and its radius 2, its shadow along the
+/// slide a band 4 wide, so it cuts the rod's circular segment beyond 3.5 from its axis, its wall
+/// the nearer generator extruded, a plane.
 #[test]
 fn a_slid_cylinder_with_its_caps_clear_grooves_a_rod_by_its_section() {
     let source = slid(0.).replace("  private tc := point\n  tc coords(du: 5.5mm, dv: 0mm) bench\n  private tube := circle(center: tc) hint(r: 2)\n  radius(2mm) tube\n",
@@ -163,7 +164,8 @@ fn a_slid_cylinder_with_its_caps_clear_grooves_a_rod_by_its_section() {
     let slide = admitted_as(&source);
     assert!(slide.ratio == 0.,"read as a slide: {slide:?}");
     let volume = exported(&fixtures::read(&source),"part");
-    let expected = PI*25.*20.-lens(5.,2.,5.5)*20.;
+    let segment = 25.*(0.7f64).acos()-3.5*(25.-3.5*3.5f64).sqrt();
+    let expected = PI*25.*20.-segment*20.;
     eprintln!("volume {volume:.9} against {expected:.9}");
     assert!((volume-expected).abs() <= 1e-6*expected,"{volume} against {expected}");
 }
