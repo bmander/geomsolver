@@ -85,3 +85,97 @@ make bench
 Record Cargo's separate `Finished ... in` lines and the test-suite durations as well as total
 wall time. Compare like cache states, and run runtime benchmarks after compilation has stopped.
 Removing `rust/target` measures a cold build, not normal edit turnaround.
+
+# Opening an assembly in the page (#669)
+
+`node web/tools/open-bench.mjs [EXAMPLE]` (the last step of `make bench`) opens an example in
+headless Chromium as a person opening it does, and reads what the page marks on its User Timing
+line (`gcs:*`) beside `solventc --no-check --step-assembly` run natively on the same file.  Its
+case is `rust/examples/gear_train/train.sv`: three stages of shaped spur gears (the radiator bot's
+`ShapedSpur`) between two plates, 14 objects, the second and third stages one size so two of its
+figures are each placed twice.  Radiator bot itself (`bmander/radiatorbot` at `bb1e8a3`,
+`hardware/`, 36 objects) is the manual check; it was measured from an uncommitted copy under
+`rust/examples/`.
+
+**Headless Chromium draws WebGL in software (SwiftShader).**  Draw calls, triangles, geometries
+and programs are the page's; the time of anything the GPU does is not a GPU's.  On `3071006` the
+page's first frame holds the main thread for about 3.8 s waiting on the GPU process (its first
+paint with #681's renderer, 12 programs against 6), before the reading starts; on `520a8b2` the
+first frame does not.  That is why "reading done" on the gear train went from 3.8 s to 7.3 s: the
+reading itself did not change.
+
+Measured October 27, 2026 on a 4-core Linux VM (Intel Xeon, 2.8 GHz, 15 GB), Chromium 1243
+through Playwright 1.63; the gear train opened twice on each version (their mean shown; the two
+agreed within 0.4 s), radiator bot once:
+
+* **before**: `520a8b2`, `main` at #680's merge — static objects built on the page's thread
+  under the modal, swept ones refined from their material field in mesh workers while up to 4
+  more workers try the exact build;
+* **after**: `3071006`, `main` at #683's merge — every object built exactly in a pool of 3
+  workers, a bar instead of the modal (tracks A, B and C of #668).
+
+| gear train (14 objects) | before | after |
+|---|---:|---:|
+| reading done (elaborate, solve, diagnose) | 3.8 s | 7.3 s (3.8 s of it the first frame, above) |
+| modal put away | 13.8 s | 7.3 s |
+| first object drawn | 4.6 s | 9.2 s |
+| last object drawn final | 138 s | 9.7 s |
+| objects drawn final | 12 of 14 | 10 of 14 |
+| main thread: long tasks, longest, total blocking | 100, 3.3 s, 60.2 s | 9, 3.8 s, 8.7 s |
+| draw calls, triangles, geometries, programs | 194, 110 636, 172, 6 | 211, 5 444, 182, 12 |
+| meshes in objects | 48 | 10 |
+| peak heap: page (V8 + backing stores), largest worker | 43 + 100 MB, 4 MB | 16 + 21 MB, 2 MB |
+
+| radiator bot (36 objects) | before | after |
+|---|---:|---:|
+| reading done | 22.6 s | 24.3 s |
+| modal put away | 63.4 s | 24.3 s |
+| first object drawn | 26.4 s | 33.4 s |
+| last object drawn final | 315 s | 39.0 s |
+| objects drawn final | 31 of 36 | 29 of 36 |
+| main thread: long tasks, longest, total blocking | 135, 22.0 s, 148.5 s | 17, 20.1 s, 32.2 s |
+| draw calls, triangles, geometries, programs | 1 011, 217 822, 971, 6 | 411, 35 324, 371, 12 |
+| meshes in objects | 688 | 29 |
+| peak heap: page, largest worker | 78 + 146 MB, 8 MB | 35 + 22 MB, 6 MB |
+
+Natively, `solventc --no-check --step-assembly` builds every object of both: the gear train in
+7.3 s wall (0.2 s elaborating, 1.4 s to diagnosed, the rest building one object after another,
+the slowest `b_part` at 2.6 s), radiator bot in 45.5 s (5.1 s elaborating, 9.7 s to diagnosed,
+44.2 s to every object built, 33 MB of STEP at 45.4 s).
+
+**Objects the page does not build.**  In both versions the page's stepped exact build refuses
+every object that holds a shaped gear, which the native export builds:
+
+* a body whose stock is a swept-cut body, `solid(g.gear)` (the gear train's `a_part` and
+  `d_part`, radiator bot's `pinion` and `socket`): "`a_pin.gear`: a body's stock may not contain a
+  continuous sweep (at blank)", `solid/cad.rs`;
+* a compound, a gear joined to its pinion (`b_part`, `c_part`; `a_compound`, `compound_b1`,
+  `compound_b2`, `compound_d1`, `compound_d2`): "`b_part` is built from 2 swept bodies; its
+  display is built from one (at blank)", `brep/export.rs`.
+
+Before, these were drawn from their fields: the single gears' finished field surfaces arrived
+after 2 to 5 minutes, and the compounds showed only their first, coarse surface.  After, the page
+meshes no field, so they are drawn as nothing and the build bar says why.  The "drawn final" rows
+count only what was drawn.
+
+**What the rest says.**
+
+* The modal now goes when the reading is done; before, it waited ten seconds (the gear train) to
+  forty (radiator bot) more for the swept objects' first field surfaces.
+* Every object the page builds is final within 15 s of the modal going, against minutes; the
+  main thread blocks a fifth to a seventh as long, and the page holds less than half the memory.
+* The first object is drawn later, 9.1 s after the reading on radiator bot: each pool worker
+  reads the document for itself before its first build.  The builds themselves are 5.1 s for
+  all 29 (the star handle 3.7 s, the rest under 0.4 s).
+* The reading holds the thread as before (one 20 s task on radiator bot, against 9.7 s natively
+  to the end of the diagnosis): #668 leaves it for later.
+* One mesh, one geometry and one draw call per object (#674): radiator bot's objects went from
+  688 meshes to 29.
+
+To repeat a measurement, build the native CLI, the core and the app, then open the case:
+
+```sh
+make solventc wasm && (cd web && npm run build)
+node web/tools/open-bench.mjs                          # the gear train, page and native
+node web/tools/open-bench.mjs hub_motor --json out.json  # another example, as JSON too
+```

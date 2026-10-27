@@ -38,7 +38,8 @@ prints the selection), `make test-times` (every test timed into `rust/test-times
 `[profile.test]` — optimised, no LTO, no debuginfo; `rust/Cargo.toml` says why; one file of the
 core suite is filtered as `cargo test chain::`),
 `cd web && npm test`, `make bench` (the native `bench` binary and `npm run bench`, read side by
-side), `cd web && npm run serve`.
+side, then `web/tools/open-bench.mjs`: opening an assembly in the page beside `solventc`),
+`cd web && npm run serve`.
 
 `npm run build` is `tsc` (module per file, what `node --test` runs against) then esbuild
 (`tools/bundle.js`, which writes the core's size in as `GCS_WASM_BYTES`), which
