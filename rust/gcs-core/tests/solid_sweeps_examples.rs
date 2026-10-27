@@ -1,0 +1,139 @@
+//! **The solid sweeps series** (`rust/examples/solid_sweeps/`, #684): one short document for each
+//! class of continuous sweep this kernel builds exactly. Each is read as the class its README
+//! names — admitted to it, or for a ball read as its tube — built within 0.01 mm, its STL held to
+//! the material field with no disagreement, and its volume held to a figure made apart from the
+//! code under test: a closed form, or arithmetic that reads the tool and the motion and nothing
+//! the construction does.
+use gcs_core::program::Elaborated;
+use gcs_core::solid::admission::{self,Class,Options};
+use std::f64::consts::{PI,TAU};
+
+use crate::turns_and_slides::{exported,lens,measure,turned_away,turned_torus,Lean};
+
+/// The example `name` of the series, elaborated and solved.
+fn example(name: &str) -> Elaborated {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/solid_sweeps").join(name);
+    fixtures::read(&std::fs::read_to_string(path).unwrap())
+}
+
+/// The class `body`'s one sweep is admitted to.
+fn class(e: &Elaborated,body: &str) -> Class {
+    let a = admission::admit_body(&e.sketch,fixtures::solid(e,body),&Options::default()).unwrap_or_else(|r| panic!("{r}"));
+    let [s] = a.sweeps() else { panic!("one sweep") };
+    s.class.clone()
+}
+
+/// `volume` against `expected`, within `bar` of it.
+fn near(volume: f64,expected: f64,bar: f64) {
+    eprintln!("volume {volume:.9} against {expected:.9}");
+    assert!((volume-expected).abs() <= bar*expected,"{volume} against {expected}");
+}
+
+/// `ball.sv`: the ball's sweep is its tube, so the block's sweep is static material and no class
+/// is asked; the groove is half the tube about a quarter turn of radius 12 with half a ball at each
+/// end (Pappus).
+#[test]
+fn the_ball_leaves_half_its_tube() {
+    let e = example("ball.sv");
+    assert!(gcs_core::solid::canal::is_canal(&e.sketch,fixtures::solid(&e,"groove")));
+    let groove = (PI*9.*12.*PI/2.+4./3.*PI*27.)/2.;
+    near(exported(&e,"block"),24.*24.*8.-groove,1e-9);
+}
+
+/// `slide.sv`: a slide, its groove the lens the rod's disc and the tube's share, carried the rod's
+/// 20 mm.
+#[test]
+fn the_slid_wheel_leaves_its_tubes_lens() {
+    let e = example("slide.sv");
+    let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
+    assert!(found.screw.ratio == 0.,"read as a slide");
+    near(exported(&e,"rod"),PI*25.*20.-lens(5.,2.,5.5)*20.,1e-6);
+}
+
+/// `turn.sv`: a turn, its groove the leaning torus's shadow in a half-plane through the axis,
+/// turned through the block's 60 degrees (Pappus, the shadow read from the torus's centre circle).
+#[test]
+fn the_turned_cutter_leaves_its_shadow_turned() {
+    let e = example("turn.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_turn(),"read as a turn");
+    near(exported(&e,"block"),PI/3.*(144.-64.)-turned_away(&turned_torus(Lean::Across(25.))),2e-5);
+}
+
+/// `screw.sv`: a screw, carried past both ends of the rod, so the groove's section square to the
+/// axis is one region at every height, turned. A point of it is cut where its helix back through
+/// the roll passes within the tube's radius of the wheel's centre circle (radius 6 about
+/// (11.5, 0, 0), square to the wheel's axis, which leans from y away from z by the helix's angle at
+/// 5.5 from the rod's axis): its least distance over the turns that bring it to the wheel's
+/// heights, read a quarter degree apart and refined by golden section, in polar rows about the
+/// rod's axis. The groove takes that area from each of the rod's 20 mm.
+#[test]
+fn the_screwed_wheel_leaves_its_section_at_every_height() {
+    let e = example("screw.sv");
+    let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
+    assert!(found.screw.ratio != 0. && !found.screw.is_turn(),"read as a screw");
+    let lead = 30.;
+    let (sh,ch) = (TAU*5.5/lead).atan().sin_cos();
+    // the distance of the point p carried back along the screw by `t` from the wheel's centre circle
+    let back = |p: [f64;3],t: f64| -> f64 {
+        let (s,c) = t.sin_cos();
+        let w = [c*p[0]+s*p[1]-11.5,-s*p[0]+c*p[1],p[2]-lead*t/TAU];
+        let axial = w[1]*ch-w[2]*sh;
+        let radial = [w[0],w[1]-axial*ch,w[2]+axial*sh];
+        ((radial[0]*radial[0]+radial[1]*radial[1]+radial[2]*radial[2]).sqrt()-6.).hypot(axial)
+    };
+    let hit = |a: f64,r: f64| {
+        let p = [r*a.cos(),r*a.sin(),10.];
+        // the turns at which p stands within the wheel's heights, 8 either side of its middle
+        let [t0,t1] = [(p[2]-8.)*TAU/lead,(p[2]+8.)*TAU/lead];
+        let n = (((t1-t0)/(0.25f64.to_radians())).ceil() as usize).max(8);
+        let at = |k: usize| t0+(t1-t0)*k as f64/n as f64;
+        let values: Vec<f64> = (0..=n).map(|k| back(p,at(k))).collect();
+        let g = (5f64.sqrt()-1.)/2.;
+        (0..=n).filter(|&k| (k == 0 || values[k] <= values[k-1]) && (k == n || values[k] <= values[k+1])).map(|k| {
+            let (mut lo,mut hi) = (at(k.saturating_sub(1)),at((k+1).min(n)));
+            for _ in 0..60 { let (x,y) = (hi-g*(hi-lo),lo+g*(hi-lo)); if back(p,x) < back(p,y) { hi = y } else { lo = x } }
+            back(p,0.5*(lo+hi))
+        }).fold(f64::INFINITY,f64::min) <= 2.
+    };
+    let section = measure([-PI,PI],&|_| [0.,5.],&hit,&|a,b| (b*b-a*a)/2.);
+    near(exported(&e,"rod"),PI*25.*20.-section*20.,1e-5);
+}
+
+/// `rack.sv`: the generating class, its tooth space the arithmetic `rack_cut` reads it by (an arc
+/// of each circle about the blank's centre at each roll, joined over the roll), through the
+/// blank's 6 mm.
+#[test]
+fn the_rack_leaves_one_tooth_space() {
+    let e = example("rack.sv");
+    assert!(matches!(class(&e,"gear"),Class::Generating),"the generating class");
+    let removed = PI*22.*22.*6.-exported(&e,"gear");
+    let want = 6.*crate::rack_cut::space_area(400,4000);
+    assert!((removed-want).abs() < 0.03,"removed {removed:.5} mm³, the space being {want:.5}");
+}
+
+/// `conjugate.sv`: the planar subtraction class, its wheel the disc's area kept outside the plus
+/// at every pose of the period (`planar_subtraction`'s own arithmetic), through the 6 mm slab.
+#[test]
+fn the_plus_leaves_its_conjugate_wheel() {
+    let e = example("conjugate.sv");
+    assert!(matches!(class(&e,"wheel"),Class::Subtraction(_)),"the planar subtraction class");
+    near(exported(&e,"wheel"),6.*crate::planar_subtraction::kept_area(90),2e-4);
+}
+
+/// Every document in the folder is held by a test here, and the README names each.
+#[test]
+fn every_example_is_held_and_named() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/solid_sweeps");
+    let readme = std::fs::read_to_string(dir.join("README.md")).unwrap();
+    let held = include_str!("solid_sweeps_examples.rs");
+    let mut names: Vec<String> = std::fs::read_dir(&dir).unwrap().flatten().map(|f| f.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".sv")).collect();
+    names.sort();
+    assert!(!names.is_empty());
+    for name in names {
+        assert!(readme.contains(&format!("`{name}`")),"the README names `{name}`");
+        assert!(held.contains(&format!("example(\"{name}\")")),"a test reads `{name}`");
+    }
+}
+

@@ -42,13 +42,13 @@ const projects: Example[] = [{
     + 'own profile. Edit the wheel or the flute count in configuration.sv.',
   target: { kind: 'directory', path: 'twist_drill', entry: 'straight_flute.sv' },
 }, {
-  label: 'Swung groove · a cutter turned partway', key: 'swung_groove',
-  description: 'A torus-tipped cutter leaning off upright, turned about a curved block\'s axis from '
-    + 'clear of one end to clear of the other. Its groove\'s wall is the cutter\'s characteristic '
-    + 'laid in a half-plane through the axis and revolved, built exactly. Edit `lean`, the cutter '
-    + 'or the roll; a cutter whose axis meets the block\'s is refused, naming the ring it touches '
-    + 'all round.',
-  target: { kind: 'file', path: 'swung_groove.sv' },
+  label: 'Solid sweeps · one of each class built exactly', key: 'solid_sweeps',
+  description: 'The simplest case of each kind of continuous sweep this kernel builds exactly: a '
+    + 'ball swung partway (its tube), a wheel slid along a rod, a cutter turned partway across a '
+    + 'curved block, the wheel screwed up the rod, a rack rolling a gear\'s tooth space, and a plus '
+    + 'always in mesh cutting its conjugate wheel. Each file names its class and gives its volume; '
+    + 'the README says what each shows and where the larger cases are.',
+  target: { kind: 'directory', path: 'solid_sweeps', entry: 'slide.sv' },
 }, {
   label: 'Wankel rotor and housing · one planetary motion', key: 'wankel',
   description: 'A rotary engine from one motion and three numbers: the rotor\'s centre rides the '

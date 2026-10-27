@@ -255,7 +255,15 @@ axis — where the boundary leaves the walked branch with no root moving. A turn
 still its tube. The accuracy meter reads a turn's characteristic over the whole roll.
 `tests/turns_and_slides.rs` is the gate (volumes computed apart: the lens, Pappus, and a tilted
 torus's shadow from its centre circle; the STL held to the field), with
-`rust/examples/twist_drill/straight_flute.sv` and `rust/examples/swung_groove.sv`.
+`rust/examples/twist_drill/straight_flute.sv` and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
+
+**Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
+a class — the canal, a slide, a turn, a screw, the generating class's rack, the planar subtraction
+class's conjugate wheel — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+holding it to its class, to an exact build whose STL agrees with the field and to a volume made
+apart from the code under test. A class admitted later adds its file, its row and its test there;
+`every_example_is_held_and_named` fails a file the README does not name or no test reads. The
+planar generating class's simplest case is the Wankel (`rust/examples/wankel/`).
 
 **A swept body placed is the body moved (#619):** a chain of placements (`shown := wheel in held`,
 `x at(under: f) τ`) ending in a body with swept cuts is that body built once and its boundary carried

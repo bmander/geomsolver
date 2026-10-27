@@ -128,7 +128,7 @@ fn least(p: [f64; 2]) -> f64 {
 /// wheel's centre, every change between kept and cut found (a grid of radii, then bisection),
 /// `∫ r dr` over what is kept, integrated over the ray's angle across a twelfth of the turn (the
 /// wheel is six pockets, each mirrored about its middle).
-fn kept_area(rays: usize) -> f64 {
+pub(crate) fn kept_area(rays: usize) -> f64 {
     let ray = |alpha: f64| {
         let u = [alpha.cos(), alpha.sin()];
         let kept = |r: f64| least([r * u[0], r * u[1]]) >= 0.;

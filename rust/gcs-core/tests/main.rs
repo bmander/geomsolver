@@ -258,6 +258,7 @@ mod solid_lang;
 mod solid_motion;
 mod solid_regressions;
 mod solid_sweep;
+mod solid_sweeps_examples;
 mod space;
 mod space_paths;
 mod spatial;

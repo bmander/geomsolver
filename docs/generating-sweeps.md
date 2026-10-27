@@ -116,7 +116,7 @@ and turned across a ring sector, upright (Pappus) and leaning across the turn, e
 volume computed apart from the core — a tilted torus's from its centre circle alone — and held
 to the exact solid, whose STL agrees with the field; the straight-fluted drill
 (`rust/examples/twist_drill/straight_flute.sv`, the twist drill's wheel slid square to the axis,
-its flute the wheel's own profile) and the swung groove (`rust/examples/swung_groove.sv`).
+its flute the wheel's own profile) and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
 
 ### A rack (issue #61)
 

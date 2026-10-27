@@ -110,7 +110,7 @@ fn a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans() {
 /// the four meet in one), and the space at that radius runs from the least start to the greatest
 /// end over the roll.  Integrated over the radius by midpoints; the rolls' extremes are smooth,
 /// so sampling them errs at second order.
-fn space_area(radii: usize, rolls: usize) -> f64 {
+pub(crate) fn space_area(radii: usize, rolls: usize) -> f64 {
     let tooth = [(18., -0.842856), (18., 0.842856), (24., 3.026666), (24., -3.026666)]; // clockwise
     let (gx, gy) = (21., 0.);
     let wrap = |a: f64| (a + PI).rem_euclid(TAU) - PI;

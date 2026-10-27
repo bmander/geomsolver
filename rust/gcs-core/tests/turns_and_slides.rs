@@ -26,8 +26,9 @@ fn saying<T>(f: impl FnOnce(&Say) -> T) -> (T,String) {
 }
 
 /// The solid `name` built exactly within 0.01 mm by this kernel, its STEP and STL written and the
-/// STL held to the material field with no disagreement; its volume.
-fn exported(e: &Elaborated,name: &str) -> f64 {
+/// STL held to the material field with no disagreement (where it cuts a sweep: a ball's tube is
+/// static material, built as any is); its volume.
+pub(crate) fn exported(e: &Elaborated,name: &str) -> f64 {
     let (sk,body): (&Sketch,usize) = (&e.sketch,fixtures::solid(e,name));
     let tolerance = Some(Tolerance::new(0.01).unwrap());
     let (exact,said) = saying(|say| export::exact(sk,body,None,tolerance,say));
@@ -38,7 +39,7 @@ fn exported(e: &Elaborated,name: &str) -> f64 {
         export::stl(sk,body,&exact,tolerance,say).unwrap()));
     assert!(step.starts_with("ISO-10303-21;"));
     gcs_core::mesh::stl_shells(&stl).unwrap();
-    assert!(said.contains(", 0 disagree"),"{said}");
+    assert!(!exact.swept || said.contains(", 0 disagree"),"{said}");
     props::volume(&exact.solid)
 }
 
@@ -131,7 +132,7 @@ fn slid_torus(tilt: f64) -> Torus {
 }
 
 /// The area two discs of radii `a` and `b`, centres `d` apart, have in common.
-fn lens(a: f64,b: f64,d: f64) -> f64 {
+pub(crate) fn lens(a: f64,b: f64,d: f64) -> f64 {
     let alpha = ((d*d+a*a-b*b)/(2.*d*a)).acos();
     let beta = ((d*d+b*b-a*a)/(2.*d*b)).acos();
     a*a*alpha+b*b*beta-0.5*((-d+a+b)*(d+a-b)*(d-a+b)*(d+a+b)).sqrt()
@@ -229,7 +230,7 @@ fn the_straight_fluted_drill_is_its_wheels_profile_carried_up_the_slide() {
 /// How a torus about (5, 0, 0) leans from upright by `tilt` degrees: across the turn, its axis
 /// skew to z, or toward it in the front plane, its axis meeting z below.
 #[derive(Clone,Copy)]
-enum Lean { Across(f64),Toward(f64) }
+pub(crate) enum Lean { Across(f64),Toward(f64) }
 
 impl Lean {
     /// The torus's axis, and the way out from it its tube's centre is drawn.
@@ -309,12 +310,12 @@ groove cut part
 }
 
 /// The turned wheel's torus as drawn.
-fn turned_torus(lean: Lean) -> Torus { Torus {centre:[5.,0.,0.],axis:lean.axes().0,ring:2.5,tube:2.} }
+pub(crate) fn turned_torus(lean: Lean) -> Torus { Torus {centre:[5.,0.,0.],axis:lean.axes().0,ring:2.5,tube:2.} }
 
 /// What the turn removes from the sector: Pappus over the section of the ring the torus's
 /// shadow in a half-plane through z covers, every circle about z that passes within the tube's
 /// radius of the torus's centre circle.
-fn turned_away(torus: &Torus) -> f64 {
+pub(crate) fn turned_away(torus: &Torus) -> f64 {
     let hit = |z: f64,r: f64| torus.nearest(&|q| (q[0].hypot(q[1])-r).hypot(q[2]-z)) <= torus.tube;
     PI/3.*measure([-1.,1.],&|_| [8.,12.],&hit,&|a,b| (b*b-a*a)/2.)
 }
@@ -352,20 +353,6 @@ fn a_leaning_torus_turned_removes_its_shadow_turned() {
     assert!((volume-expected).abs() <= 2e-5*expected,"{volume} against {expected}");
 }
 
-/// The library's swung groove (`swung_groove.sv`) is the leaning torus's turn as a person writes
-/// it, its numbers named: admitted as a turn, and what it removes the same shadow turned.
-#[test]
-fn the_swung_groove_example_is_the_leaning_torus_turned() {
-    let e = fixtures::read(include_str!("../../examples/swung_groove.sv"));
-    let a = admission::admit_body(&e.sketch,fixtures::solid(&e,"block"),&Options::default()).unwrap();
-    let Class::ConstantTwist(found) = &a.sweeps()[0].class else { panic!("`groove` is a constant twist's sweep") };
-    assert!(found.screw.is_turn(),"read as a turn: {:?}",found.screw);
-    let volume = exported(&e,"block");
-    let expected = PI/3.*(144.-64.)-turned_away(&turned_torus(Lean::Across(25.)));
-    eprintln!("volume {volume:.9} against {expected:.9}");
-    assert!((volume-expected).abs() <= 2e-5*expected,"{volume} against {expected}");
-}
-
 // -- refusals --------------------------------------------------------------------------------
 
 /// Each row a turn or a slide meets refuses by name: a turn carried round a whole turn lays its
@@ -394,7 +381,7 @@ fn the_turn_and_slide_rows_refuse_by_name() {
 
 /// A torus: the points within `tube` of its centre circle, about `centre` square to `axis`, of
 /// radius `ring`.
-struct Torus { centre: V,axis: V,ring: f64,tube: f64 }
+pub(crate) struct Torus { pub(crate) centre: V,pub(crate) axis: V,pub(crate) ring: f64,pub(crate) tube: f64 }
 
 impl Torus {
     /// The point of the centre circle at angle `a`.
@@ -407,7 +394,7 @@ impl Torus {
     }
     /// The least of `d` over the centre circle: read four degrees apart, each local least refined
     /// by golden section.
-    fn nearest(&self,d: &dyn Fn(V) -> f64) -> f64 {
+    pub(crate) fn nearest(&self,d: &dyn Fn(V) -> f64) -> f64 {
         let n = 90;
         let f = |a: f64| d(self.at(a));
         let values: Vec<f64> = (0..n).map(|k| f(TAU*k as f64/n as f64)).collect();
@@ -433,7 +420,7 @@ fn unit(a: V) -> V { let l = (a[0]*a[0]+a[1]*a[1]+a[2]*a[2]).sqrt(); a.map(|x| x
 /// ∫ over `u` of the sum of `along(a, b)` over the runs [a, b] of `v` within `span(u)` where
 /// `hit(u, v)` holds: each row read at 100 points with each run's ends bisected, the rows by
 /// Simpson's rule over 1000 intervals, read on every core.
-fn measure(u: [f64;2],span: &(dyn Fn(f64) -> [f64;2]+Sync),hit: &(dyn Fn(f64,f64) -> bool+Sync),along: &(dyn Fn(f64,f64) -> f64+Sync)) -> f64 {
+pub(crate) fn measure(u: [f64;2],span: &(dyn Fn(f64) -> [f64;2]+Sync),hit: &(dyn Fn(f64,f64) -> bool+Sync),along: &(dyn Fn(f64,f64) -> f64+Sync)) -> f64 {
     let rows = 1000;
     let h = (u[1]-u[0])/rows as f64;
     let row = |x: f64| -> f64 {
