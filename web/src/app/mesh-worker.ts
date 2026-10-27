@@ -1,64 +1,64 @@
-/* The worker that meshes swept solids for the page (`field-preview.ts`).
+/* The page's worker: each instance holds its own copy of the core and does one kind of work.
  *
- * It has its own copy of the core: it elaborates the page's text, writes the page's parameter
- * values over the result, and refines every swept object a step at a time, in turn, posting each
- * surface as it stands at most every `FRAME_MS` and when it is finished. Between steps it lets messages in,
- * so a newer job — the page has been edited — ends this one at its next step.
+ * A pool of them builds the page's objects (`build` jobs, `object-builds.ts`): each object's exact
+ * B-rep a stage at a time (`build-work.ts`), saying after each stage what the next does — a stage
+ * of a gear takes seconds, and the page shows the work going on — and handing the build back once
+ * made; the worker keeps its document between jobs.
  *
- * A second instance builds the exact surfaces (an `exact` job): each swept object's exact B-rep a
- * stage at a time (`ExactBuilder`), saying after each stage what the next does — a stage of a gear
- * takes seconds, and the page shows the work going on — and posting the surface once built.
- *
- * A third instance judges the drawing's claims about solids (a `claims` job, `claim-judging.ts`):
- * a pose at a time (`ClaimJudge`), saying which claim of how many and which pose, and posting the
+ * Another judges the drawing's claims about solids (a `claims` job, `claim-judging.ts`): a pose
+ * at a time (`ClaimJudge`), saying which claim of how many and which pose, and posting the
  * verdicts once every claim is judged.
  *
- * A fourth reads the load scenarios (a `scenario` job, `scenario-view.ts`): every scenario's
+ * Another reads the load scenarios (a `scenario` job, `scenario-view.ts`): every scenario's
  * answers and the picture of the one chosen, a level at a time, coarsest first, each posted as it
  * is read — its arrays' buffers handed over rather than copied — and a newer job ending it
  * between levels. */
 import { ClaimJudge, solidClaims } from '../core/claims.js';
-import { ExactBuilder, FieldMesher, fieldJobs, unpaired, type MeshProgress } from '../core/field.js';
 import { install } from '../core/modules.js';
 import { Document, type ScenarioLevels } from '../core/program.js';
 import { initCore } from '../core/wasm.js';
+import { BuildWork, type BuildAsk, type BuildReply } from './build-work.js';
 import { unpairedClaims, type ClaimFrame, type ClaimJob } from './claim-judging.js';
 import { buffers, drawnIndex, typed, type ScenarioFrame, type ScenarioJob } from './scenario-view.js';
-import type { ExactJob, Frame, Job, MeshJob } from './field-preview.js';
 
-/** Facets refined between looks at the message queue. */
-const BUDGET = 40;
-/** The least time between two surfaces posted while refining. */
+/** The least time between two progress reports while judging. */
 const FRAME_MS = 120;
 
 const scope = globalThis as unknown as {
-  onmessage: ((ev: MessageEvent<Job | ClaimJob | ScenarioJob>) => void) | null;
-  postMessage(message: Frame | ClaimFrame | ScenarioFrame, transfer?: Transferable[]): void;
+  onmessage: ((ev: MessageEvent<BuildAsk | ClaimJob | ScenarioJob>) => void) | null;
+  postMessage(message: BuildReply | ClaimFrame | ScenarioFrame, transfer?: Transferable[]): void;
 };
 const ready = initCore();
 let latest = 0;
 
+/** Let messages in — a newer job, a cancel — before the next step. By a message to itself and not a
+ *  timer: a page out of sight has its timers throttled to one a second or slower, and building
+ *  between them crawled while the tab was in the background. */
+const pause = (): Promise<void> => new Promise((resolve) => {
+  const channel = new MessageChannel();
+  channel.port1.onmessage = () => { channel.port1.close(); resolve(); };
+  channel.port2.postMessage(0);
+});
+
+const builds = new BuildWork((reply, transfer) => scope.postMessage(reply, transfer), pause);
+
 scope.onmessage = (ev) => {
   const job = ev.data;
+  if (job.kind === 'build' || job.kind === 'drop') {
+    // a core that will not start refuses the build aloud rather than leaving the page waiting
+    ready.then(() => builds.receive(job), (e) => {
+      if (job.kind === 'build') scope.postMessage({ id: job.id, key: job.job.key, refused: String(e) });
+    });
+    return;
+  }
   latest = job.id;                    // a cancel is only this: the job in hand ends at its next step
   if (job.kind === 'cancel') return;
   if (job.kind === 'claims') {
     ready.then(() => judge(job)).catch((e) => scope.postMessage({ id: job.id, error: String(e) }));
     return;
   }
-  if (job.kind === 'scenario') {
-    ready.then(() => scenarios(job))
-      .catch((e) => scope.postMessage({ id: job.id, error: String(e) }));
-    return;
-  }
-  // a core that will not start, or a job that throws past its own handling, fails every solid
-  // of it aloud rather than leaving the page waiting
-  const fail = (e: unknown): void => {
-    for (const { solid, key } of job.solids) {
-      post(job.kind === 'exact' ? { id: job.id, solid, key, exactError: String(e) } : { id: job.id, solid, key, error: String(e) });
-    }
-  };
-  ready.then(() => (job.kind === 'exact' ? exact(job) : run(job))).catch(fail);
+  ready.then(() => scenarios(job))
+    .catch((e) => scope.postMessage({ id: job.id, error: String(e) }));
 };
 
 /** **Read the scenarios of the page's drawing, and draw the one chosen**: a level at a time,
@@ -96,135 +96,6 @@ async function scenarios(job: Extract<ScenarioJob, { kind: 'scenario' }>): Promi
     }
   } finally {
     levels.dispose();
-  }
-}
-
-/** Let messages in — a newer job, a cancel — before the next step. By a message to itself and not a
- *  timer: a page out of sight has its timers throttled to one a second or slower, and meshing
- *  between them crawled while the tab was in the background. */
-const pause = (): Promise<void> => new Promise((resolve) => {
-  const channel = new MessageChannel();
-  channel.port1.onmessage = () => { channel.port1.close(); resolve(); };
-  channel.port2.postMessage(0);
-});
-
-function post(frame: Frame): void {
-  const s = frame.surface;
-  const buffers: Transferable[] = s ? [s.vertices.buffer, s.triangles.buffer] : [];
-  if (s?.exact) buffers.push(s.exact.of.buffer, s.exact.smooth.buffer);
-  scope.postMessage(frame, buffers);
-}
-
-/** Build each swept object's exact surface in turn, a stage at a time, saying after each what the
- *  next does; a newer job ends it between stages. */
-async function exact(job: ExactJob): Promise<void> {
-  await pause();
-  // (an empty job is how an idle worker is told a newer drawing: what it held has ended)
-  if (job.id !== latest || !job.solids.length) return;
-  install(job.modules);
-  let doc: Document;
-  try {
-    doc = Document.read(job.text);
-    doc.sketch.setX(job.x);
-    const why = unpaired(job.solids, fieldJobs(doc.sketch));
-    if (why) throw new Error(why);
-  } catch (e) {
-    for (const { solid, key } of job.solids) post({ id: job.id, solid, key, exactError: String(e) });
-    return;
-  }
-  try {
-    for (const { solid, key } of job.solids) {
-      let builder: ExactBuilder;
-      try { builder = ExactBuilder.create(doc.sketch, solid); }
-      catch (e) { post({ id: job.id, solid, key, exactError: String(e) }); continue; }
-      try {
-        post({ id: job.id, solid, key, exact: builder.progress() });
-        for (;;) {
-          await pause();
-          if (job.id !== latest) return;
-          const built = builder.step();
-          const progress = builder.progress();
-          if (built) { post({ id: job.id, solid, key, exact: progress, surface: builder.surface() }); break; }
-          post({ id: job.id, solid, key, exact: progress });
-        }
-      } catch (e) {
-        post({ id: job.id, solid, key, exactError: String(e) });
-      } finally {
-        builder.dispose();
-      }
-    }
-  } finally {
-    doc.dispose();
-  }
-}
-
-async function run(job: MeshJob): Promise<void> {
-  await pause();                      // a burst of edits: only the last job is started
-  if (job.id !== latest) return;
-  install(job.modules);
-  let doc: Document;
-  try {
-    doc = Document.read(job.text);
-    doc.sketch.setX(job.x);
-    // the page's core named what to mesh; this one must name the same, or it would mesh another
-    const why = unpaired(job.solids, fieldJobs(doc.sketch));
-    if (why) throw new Error(why);
-  } catch (e) {
-    for (const { solid, key } of job.solids) post({ id: job.id, solid, key, error: String(e) });
-    return;
-  }
-  // Every swept object refines in turn, a budget at a time, so each shows its rough shape at
-  // once rather than after the ones before it have finished.
-  const running: { solid: number; key: string; mesher: FieldMesher; shown: number; phase: string }[] = [];
-  const started = performance.now();
-  const status = (m: FieldMesher): { progress?: MeshProgress; elapsed: number } => {
-    let progress: MeshProgress | undefined;
-    try { progress = m.progress(); } catch { progress = undefined; }
-    return { progress, elapsed: performance.now()-started };
-  };
-  try {
-    for (const { solid, key } of job.solids) {
-      try {
-        running.push({ solid, key, mesher: FieldMesher.create(doc.sketch, solid, job.fineness), shown: 0, phase: '' });
-      } catch (e) {
-        post({ id: job.id, solid, key, error: String(e) });
-      }
-    }
-    while (running.length) {
-      for (let k = 0; k < running.length;) {
-        if (job.id !== latest) return;
-        const r = running[k];
-        let done: boolean;
-        try {
-          done = r.mesher.step(BUDGET);
-        } catch (e) {
-          // the surface it stopped at, if it can still be read, beside why
-          let surface;
-          try { surface = r.mesher.snapshot(); } catch { surface = undefined; }
-          post({ id: job.id, solid: r.solid, key: r.key, surface, error: String(e), ...status(r.mesher) });
-          r.mesher.dispose();
-          running.splice(k, 1);
-          continue;
-        }
-        // a new phase is said at once: the next step may be a long one (the edges traced whole)
-        const now = performance.now();
-        const s = status(r.mesher);
-        const phase = `${s.progress?.doing}/${s.progress?.stage}`;
-        if (done || now - r.shown > FRAME_MS || phase !== r.phase) {
-          post({ id: job.id, solid: r.solid, key: r.key, surface: r.mesher.snapshot(), ...s });
-          r.shown = now;
-          r.phase = phase;
-        }
-        if (done) {
-          r.mesher.dispose();
-          running.splice(k, 1);
-        } else k++;
-        await pause();
-      }
-    }
-  } finally {
-    for (const r of running) r.mesher.dispose();
-    doc.dispose();
   }
 }
 

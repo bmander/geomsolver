@@ -193,6 +193,12 @@ export function stlPreview(sk: Sketch, idx: number, unit = 0): Uint8Array {
 
 /** Whether a solid's surface is still being refined (a swept solid meshed in the background):
  *  throws where the solid has no surface to ask about yet, with the core's reason. */
+/** Whether solid `idx` is drawn from a build of an earlier drawing while its new one is made
+ *  (#672): false for one that does not evaluate. */
+export function stale(sk: Sketch, idx: number): boolean {
+  return core().gcs_solid_stale(sk.handle, idx) === 1;
+}
+
 export function provisional(sk: Sketch, idx: number): boolean {
   const r = core().gcs_solid_provisional(sk.handle, idx);
   if (r < 0) throw new Error(lastError());

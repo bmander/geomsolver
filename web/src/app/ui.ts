@@ -21,14 +21,6 @@ export function stats(msg: string): void {
   statsEl.textContent = msg;
 }
 
-const refineEl = document.getElementById('refine') as HTMLElement;
-
-/** The background refinement's line in the footer, and how it reads: going, failed or finished. */
-export function refining(msg: string, state: 'going' | 'failed' | 'finished' = 'going'): void {
-  refineEl.textContent = msg;
-  refineEl.className = state === 'going' ? '' : state;
-}
-
 const claimsEl = document.getElementById('claims') as HTMLElement;
 
 /** The claims about solids' line in the footer, and how it reads: going, failed (one refuted, or

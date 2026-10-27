@@ -73,15 +73,14 @@ import {
   planeSelect, view, initialExample,
 } from './shell.js';
 import {
-  MenuItem, ToolbarButton, addButton, addMenu, addTopic, askChoice, closeMenus, download, fitBars,
-  judgingLine, openImage, refining, scenarioLine, toast,
+  MenuItem, ToolbarButton, addButton, addMenu, addTopic, closeMenus, download, fitBars,
+  judgingLine, openImage, scenarioLine, toast,
 } from './ui.js';
-import { objectName, type Refining } from './field-preview.js';
+import { BuildBar } from './build-bar.js';
 import type { Judging } from './claim-judging.js';
 import type { Scenario, ScenarioAnswer } from '../core/program.js';
 import { bindScenarioCard, refreshScenarioCard } from './scenario-card.js';
 import { Tool } from './view.js';
-import { meshing } from './loading.js';
 import { Timeline } from './timeline.js';
 import { SectionBar } from './section-bar.js';
 
@@ -216,8 +215,8 @@ async function exportSolid(kind: 'glb' | 'stl'): Promise<void> {
     return;
   }
   const stem = objs.length === 1 ? objs[0].name.replace(/[^\w.-]/g, '_') : 'solids';
-  // the core refuses a solid it cannot write — a swept one still refining, above all — and says
-  // why; unsaid, a menu item that does nothing reads as broken
+  // the core refuses a solid it cannot write — one still being built, above all — and says why;
+  // unsaid, a menu item that does nothing reads as broken
   try { await exportFile(kind, objs, stem); }
   catch (e) { toast(`cannot export: ${e instanceof Error ? e.message : String(e)}`); }
 }
@@ -229,27 +228,12 @@ async function exportFile(kind: 'glb' | 'stl', objs: { name: string; index: numb
     toast(`exported ${stem}.glb — ${objs.length} object(s), every face named`);
     return;
   }
-  // A swept solid still refining has no final surface; the preview as it stands is offered,
-  // named as one, since it may be coarse or open.
-  const still = new Set(objs.filter((o) => solids.provisional(view.sketch, o.index)).map((o) => o.index));
-  const refining = objs.filter((o) => still.has(o.index));
-  let preview = false;
-  if (refining.length) {
-    const names = refining.map((o) => o.name).join(', ');
-    const choice = await askChoice('Export solid (STL)',
-      `${names} ${refining.length === 1 ? 'is' : 'are'} still being refined.`, [
-        { title: 'Export the preview', description: 'the surface as it stands now: it may be coarse, or open where refinement has not reached' },
-        { title: 'Cancel', description: 'wait for the refinement to finish' },
-      ]);
-    if (choice !== 0) return;
-    preview = true;
-  }
-  // an STL is a triangle soup with no grouping, so several objects go in one file as one soup
-  const parts = objs.map((o) => preview && still.has(o.index)
-    ? solids.stlPreview(view.sketch, o.index) : solids.stl(view.sketch, o.index));
-  const name = `${stem}${preview ? '-preview' : ''}.stl`;
+  // an STL is a triangle soup with no grouping, so several objects go in one file as one soup; an
+  // object still being built is refused, by name, by the core
+  const parts = objs.map((o) => solids.stl(view.sketch, o.index));
+  const name = `${stem}.stl`;
   download(name, parts.length === 1 ? parts[0] : joinStl(parts));
-  toast(preview ? `exported ${name} — a preview, not the finished surface` : `exported ${name}`);
+  toast(`exported ${name}`);
 }
 
 /** **A solid's exact export, made in a worker** (`export-worker.ts`): the core's own kernel builds
@@ -310,6 +294,8 @@ function showJudging(j: Judging | null): void {
   sayJudging(j);
 }
 
+/** A spinner's frames: work going on never looks like work that has stopped. */
+const SPIN = '◐◓◑◒';
 function sayJudging(j: Judging | null): void {
   clearTimeout(judgingTimer);
   clearInterval(judgingTick);
@@ -366,69 +352,14 @@ function showScenarios(ss: Scenario[], measures: ScenarioAnswer[] = []): void {
   if (!fails) scenarioTimer = window.setTimeout(() => scenarioLine(''), 5000);
 }
 
-/** **The background refinement, said in the footer** — one entry an object, while any is going:
- *  its phase (the rough first pass, tracing sharp edges, the final pass, and a repair's rebuilds),
- *  a bar of its estimated progress, its triangles so far and the time taken. The estimate is how
- *  far the worst facet waiting has come toward the criteria, and no count of work left, which no
- *  refinement knows. Finished, the line says so for a few seconds; failed, it stays with why.
- *
- *  **An exact surface's build is said beside its preview**: the stage it is on in the core's
- *  words, a bar of the stages done, a spinner and a clock. A stage of a gear runs for seconds with
- *  nothing said, so the page ticks the spinner and the clock itself while one is building: work
- *  going on never looks like work that has stopped. Built, the entry says so; refused, the preview
- *  is the surface and the entry says it is the field's. */
-let refineTimer = 0;
-let refineTick = 0;
-let refineList: Refining[] = [];
-const SPIN = '◐◓◑◒';
-function showRefining(list: Refining[]): void {
-  refineList = list;
-  clearTimeout(refineTimer);
-  clearInterval(refineTick);
-  refineTick = 0;
-  if (!list.length) { refining(''); return; }
-  const clock = (ms: number): string => {
-    const s = Math.floor(ms / 1000);
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-  };
-  const bar = (f: number): string => {
-    const n = Math.round(Math.max(0, Math.min(1, f)) * 8);
-    return '▰'.repeat(n) + '▱'.repeat(8 - n);
-  };
-  const building = (r: Refining): boolean => !!r.exact && !r.exact.built && !r.exact.error;
-  const spin = SPIN[Math.floor(performance.now() / 250) % SPIN.length];
-  const failed = list.filter((r) => (r.error || r.progress?.failed) && !r.exact?.built);
-  const parts = list.map((r) => {
-    const p = r.progress;
-    const x = r.exact;
-    if (x?.built) return `${objectName(r.name)}: exact solid · ${x.triangles.toLocaleString()} triangles · ${clock(performance.now() - r.since)}`;
-    // the preview, as it stands: refined, or the pass in hand (what it is doing is the core's words)
-    const preview = r.error || p?.failed ? `failed — ${r.error ?? p?.stage}`
-      : r.done ? `refined · ${r.triangles.toLocaleString()} triangles`
-      : `${p?.doing ?? 'starting'} ${bar(p?.within ?? 0)} ${r.triangles.toLocaleString()} triangles`;
-    if (x && building(r)) {
-      const shown = r.done ? `preview ${r.triangles.toLocaleString()} triangles` : `preview ${r.triangles.toLocaleString()} triangles…`;
-      return `${objectName(r.name)}: exact solid ${spin} ${x.doing} ${bar(x.done / Math.max(1, x.total))} ${clock(performance.now() - r.since)}`
-        + ` · ${shown}`;
-    }
-    const field = x?.error ? ' (the field\'s surface: no exact solid for it)' : '';
-    return `${objectName(r.name)}: ${preview}${field} · ${clock(r.elapsed)}`;
-  });
-  const text = parts.join('   |   ');
-  if (list.some(building)) {
-    // the stage in hand says nothing till it ends: the clock and the spinner say it is going
-    refineTick = window.setInterval(() => showRefining(refineList), 250);
-    refining(text);
-    return;
-  }
-  if (failed.length) { refining(text, 'failed'); return; }
-  if (list.every((r) => r.done || r.exact?.built)) {
-    refining(text, 'finished');
-    refineTimer = window.setTimeout(() => refining(''), 5000);
-    return;
-  }
-  refining(text);
-}
+/** **The objects being built, said by the bar along the workspace's bottom** (#672): a row of its
+ *  list clicked selects its object, as the outline's does. */
+const buildBar = new BuildBar(document.getElementById('build-bar') as HTMLElement, (row) => {
+  const pick = view.solidPick(row.objects[0] ?? row.solid);
+  if (pick) view.pickSolid(pick, false);
+  view.onSelect();
+  view.draw();
+});
 
 /** Several binary STLs as one: the header of the first, the summed count, and every record. */
 function joinStl(parts: Uint8Array[]): Uint8Array {
@@ -730,12 +661,11 @@ const timeline = new Timeline(document.getElementById('timeline') as HTMLElement
 view.onTimeline = () => { timeline.refresh(); refresh(); };
 timeline.refresh();
 view.onStatus = toast;
-let refiningNow: Refining[] = [];
-view.onRefine = (list) => { refiningNow = list; showRefining(list); meshing(list); };
-// what `tools/open-bench.mjs` asks of the page once an opening has settled: where the swept
-// objects' builds stand, and what the renderer drew
+view.onBuilds = (rows) => { buildBar.update(rows); outline.paint(); };
+// what `tools/open-bench.mjs` asks of the page once an opening has settled: where the objects'
+// builds stand, and what the renderer drew
 (globalThis as { gcsBench?: unknown }).gcsBench = {
-  refining: () => refiningNow,
+  builds: () => view.builds.rows,
   counts: () => view.box3d.counts(),
 };
 view.onClaims = showJudging;

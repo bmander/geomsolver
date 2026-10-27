@@ -141,9 +141,6 @@ function clearExampleAddress(): void {
 /** Everything that changes how the solve runs, gathered behind one item.  The controls are
  *  built from the view each time the sheet opens, so none of them can go stale, and each
  *  takes effect as it is switched. */
-/** The mesh finenesses offered, as a multiple of the preview's facets (`FieldMesher.create`). */
-const FINENESS: [string, number][] = [['coarse', 0.5], ['normal', 1], ['fine', 2], ['finer', 3]];
-
 export function options(): Promise<void> {
   return showSheet('Options', (body) => {
     const box = document.createElement('div');
@@ -163,13 +160,16 @@ export function options(): Promise<void> {
     addCheckbox(box, 'show solid', view.showSolid, (v) => { view.setShowSolid(v); },
                 'Fill each object\u2019s surfaces as well as drawing its edges — off, the solid is '
               + 'a wireframe, which is how you see its far side');
-    const fineness = FINENESS.find(([, f]) => f === view.meshFineness)?.[0] ?? 'normal';
-    addSelect(box, 'mesh fineness', FINENESS.map(([label]) => label), fineness, (label) => {
-      const f = FINENESS.find(([l]) => l === label);
-      if (f) view.meshFineness = f[1];
-    }, 'How finely a swept solid\u2019s surface is refined from its material field, as a multiple '
-      + 'of the preview\u2019s facets: finer is smoother and takes about the square of it longer. '
-      + 'The preview STL export is the surface this makes');
+    if (view.builds.remembers) {
+      const forget = document.createElement('button');
+      forget.textContent = 'Forget built objects';
+      forget.title = 'Every object built here is kept in this browser, so opening a document again '
+        + 'draws it at once: forget them all, and the next opening builds each again';
+      forget.addEventListener('click', () => {
+        void view.builds.forget().then(() => toast('forgot every built object'), (e) => toast(String(e)));
+      });
+      box.append(forget);
+    }
     addSelect(box, 'method', [...METHODS], view.method, (m) => {
       view.method = m as Method;
       view.solveNow();

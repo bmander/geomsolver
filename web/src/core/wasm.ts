@@ -216,6 +216,7 @@ export interface Abi {
   gcs_solid_supply_field(h: number, idx: number, vertices: number, nv: number, triangles: number,
     nt: number, provisional: number): number;
   gcs_solid_provisional(h: number, idx: number): number;
+  gcs_solid_stale(h: number, idx: number): number;
   gcs_field_mesher_new(h: number, idx: number, fineness: number): number;
   gcs_field_mesher_step(m: number, budget: number): number;
   gcs_field_mesher_progress(m: number): number;
@@ -229,7 +230,12 @@ export interface Abi {
   gcs_exact_builder_new(h: number, idx: number): number;
   gcs_exact_builder_step(b: number): number;
   gcs_exact_builder_progress(b: number): number;
-  gcs_exact_builder_surface(b: number): number;
+  gcs_exact_builder_display(b: number): number;
+  gcs_sketch_supply_objects(h: number, on: number): void;
+  gcs_sketch_object_jobs(h: number): number;
+  gcs_sketch_supply_object(h: number, idx: number, ptr: number, len: number): number;
+  gcs_sketch_refuse_object(h: number, idx: number, ptr: number, len: number): number;
+  gcs_sketch_object_states(h: number): number;
   gcs_exact_builder_free(b: number): void;
   gcs_sketch_solid_claims_json(h: number): number;
   gcs_claim_judge_new(h: number): number;
@@ -419,6 +425,15 @@ export type CoreProgress = (received: number, total: number) => void;
  *  Content-Length, while the body yields the module itself, so the header cannot say how much is
  *  left; unbundled (the test suite) there is no such constant. */
 declare const GCS_WASM_BYTES: number | undefined;
+/** The module's digest (a SHA-256's first sixteen hex digits), written in at bundling as its size
+ *  is: what a build kept between openings is kept under (`surface-store.ts`), so a new core never
+ *  reads an old core's.  Unbundled there is none, and nothing is kept. */
+declare const GCS_WASM_HASH: string | undefined;
+
+/** The core's build identity (`GCS_WASM_HASH`), or nothing where the page was not bundled. */
+export function coreIdentity(): string | undefined {
+  return typeof GCS_WASM_HASH === 'string' ? GCS_WASM_HASH : undefined;
+}
 
 const compile = async (bytes: BufferSource): Promise<WebAssembly.Instance> =>
   (await WebAssembly.instantiate(bytes, {})).instance;

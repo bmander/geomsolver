@@ -338,6 +338,10 @@ provisional surface exports nothing. Measured in Chrome on `swept_torus.sv`: the
 (48 triangles) 0.69 s after navigation, then one every ~130 ms, the final closed 1912 triangles
 at 2.77 s; the page stays responsive throughout (`performance.mark('field-surface')` per
 surface). Next: features from the core, so edges come out sharp.
+*(Superseded, 2026-10 (#671): the page no longer meshes a field.  Every object it draws is built
+exactly by a pool of workers stepping `brep::export::Builder`, and one the exact kernel refuses is
+unbuilt with its reason — `docs/contract/fields.md`, "The page never does".  The refinement above
+remains the CLI's and the tests' (`FieldMeshing::Now`).)*
 
 ## Swept examples, and a regression the F4 record missed (2026-09-24)
 

@@ -13,6 +13,7 @@ import {
   selectedKeys, selectionRow, toggleRow, walk,
 } from './hidden.js';
 import { disclosure } from './project-explorer.js';
+import type { BuildRow } from './object-builds.js';
 import type { SketchView } from './view.js';
 
 /** A row's shape, which decides whether the tree is rebuilt: everything but where it is written. */
@@ -181,9 +182,12 @@ export class OutlinePane {
     this.paint();
   }
 
-  /** The eyes, the dimming under a hidden row and the rows marked current, on every row drawn. */
+  /** The eyes, the dimming under a hidden row, the rows marked current, and an object's row marked
+   *  while it is being built (#672) or where its build was refused, on every row drawn. */
   paint(): void {
     const selected = selectedKeys(this.view);
+    const builds = new Map<number, BuildRow>();
+    for (const r of this.view.builds.rows) for (const o of r.objects) builds.set(o, r);
     for (const [i, d] of this.drawn) {
       const row = this.flat[i];
       if (!row) continue;
@@ -192,6 +196,13 @@ export class OutlinePane {
       const half = !own && !under && partlyHidden(this.view, row);
       d.row.classList.toggle('hidden', own);
       d.row.classList.toggle('dimmed', under);
+      const build = row.solid !== undefined ? builds.get(row.solid) : undefined;
+      const building = build?.state === 'waiting' || build?.state === 'building';
+      d.row.classList.toggle('building', building);
+      d.row.classList.toggle('unbuilt', build?.state === 'refused');
+      if (building) d.row.dataset.build = 'building…';
+      else if (build?.state === 'refused') d.row.dataset.build = build.why ?? 'not built';
+      else delete d.row.dataset.build;
       if (d.eye) {
         const state: Eye = own || under ? 'shut' : half ? 'half' : 'open';
         if (d.eye.dataset.state !== state) {

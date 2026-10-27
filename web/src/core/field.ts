@@ -1,14 +1,15 @@
 /* A swept solid's surface, meshed from its material field a step at a time.
  *
- * The refinement is the core's (`solid::FieldMesher`); this is the handle a worker drives and the
- * two calls a page makes with what the worker hands back: `deferFields`, so the page's own sketch
- * never meshes a field on the thread that draws, and `supplyField`, which gives it each surface as
- * it arrives.  Numbers cross as flat buffers — three doubles a vertex, three indices a triangle. */
+ * The refinement is the core's (`solid::FieldMesher`), and the page never runs it: every object
+ * the page draws is built exactly by its pool (`objects.ts`, #671).  This is the handle the core's
+ * own tests drive, and the calls a host meshing fields elsewhere makes: `deferFields`, so its
+ * sketch never meshes a field on the thread that draws, and `supplyField`, which gives it each
+ * surface.  Numbers cross as flat buffers — three doubles a vertex, three indices a triangle. */
 import { Sketch } from './model.js';
-import { core, lastError, takeBytes, takeJson, withBuf } from './wasm.js';
+import { core, lastError, takeJson, withBuf } from './wasm.js';
 
 /** A surface in world coordinates: `provisional` while the refinement is still going, and `exact`
- *  where it is no field's surface but the exact B-rep's mesh (`ExactBuilder`). */
+ *  where it is no field's surface but the exact B-rep's mesh. */
 export interface FieldSurface {
   vertices: Float64Array;
   triangles: Uint32Array;
@@ -76,61 +77,6 @@ export function supplyField(sk: Sketch, idx: number, s: FieldSurface): void {
     });
   });
   if (ok < 0) throw new Error(lastError());
-}
-
-/** Where an exact build stands: what its next stage does, the stages run and in all, and the last
- *  thing a stage said. */
-export interface ExactProgress {
-  doing: string;
-  done: number;
-  total: number;
-  said: string | null;
-}
-
-/** **A swept solid's exact surface, built a stage at a time** (`brep::export::Builder`): admitted,
- *  its blank, each sweep's sheet, its sector, the cut, the pattern and the mesh — seconds a stage
- *  for a gear, so a worker steps it and says between stages what it is doing. */
-export class ExactBuilder {
-  private constructor(private h: number) {}
-
-  /** The build of swept solid `idx`, or why it has none. */
-  static create(sk: Sketch, idx: number): ExactBuilder {
-    const h = core().gcs_exact_builder_new(sk.handle, idx);
-    if (!h) throw new Error(lastError());
-    return new ExactBuilder(h);
-  }
-
-  /** Run the next stage: true once built; a refusal throws, with the stage it was met at. */
-  step(): boolean {
-    const r = core().gcs_exact_builder_step(this.h);
-    if (r < 0) throw new Error(lastError());
-    return r === 1;
-  }
-
-  progress(): ExactProgress {
-    return takeJson<ExactProgress>(core().gcs_exact_builder_progress(this.h));
-  }
-
-  /** The built surface. */
-  surface(): FieldSurface {
-    const handle = core().gcs_exact_builder_surface(this.h);
-    if (!handle) throw new Error(lastError());
-    const bytes = takeBytes(handle);
-    const d = new Float64Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 8);
-    const [nv, nt, nf, volume] = [d[0], d[1], d[2], d[3]];
-    let at = 4;
-    const take = (n: number): Float64Array => { const s = d.subarray(at, at + n); at += n; return s; };
-    const vertices = Float64Array.from(take(3 * nv));
-    const triangles = Uint32Array.from(take(3 * nt));
-    const of = Uint32Array.from(take(nt));
-    const smooth = Uint8Array.from(take(nf));
-    return { vertices, triangles, provisional: false, exact: { of, smooth, volume } };
-  }
-
-  dispose(): void {
-    if (this.h) core().gcs_exact_builder_free(this.h);
-    this.h = 0;
-  }
 }
 
 /** Where a mesher stands (`FieldProgress` in the core): `doing`, the core's words for what it is

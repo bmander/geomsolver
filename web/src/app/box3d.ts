@@ -23,7 +23,7 @@ import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 
-import { own, placement, preview, shownObjects } from '../core/mesh.js';
+import { own, placement, preview, shownObjects, stale } from '../core/mesh.js';
 import type { Face, Mesh, Placement } from '../core/mesh.js';
 import { overview3 } from '../core/overview.js';
 import { clipPlane, sectioned } from '../core/section.js';
@@ -483,10 +483,14 @@ export class Box3D {
       })));
     }
     if (!v.showSolid) return group;
+    // an object being built again after an edit is drawn as its last build was, dimmed, till the
+    // new one arrives (#672)
+    const dim = stale(v.sketch, solid);
     // **the object itself, as a mesh** — every face of it a named child, so a later selection has
     // something to name
     for (const f of m.faces) {
       const face = faceMesh(m, f, this.clipping);
+      if (dim) Object.assign(face.material as THREE.MeshStandardMaterial, { transparent: true, opacity: STALE_OPACITY });
       group.add(face);
       this.faces.push({ solid, path: f.path, mesh: face });
     }
@@ -733,6 +737,9 @@ function faceMesh(m: Mesh, f: Face, clippingPlanes: THREE.Plane[]): THREE.Mesh {
   face.userData.face = f.path;
   return face;
 }
+
+/** How much of a stale object's surface is drawn (#672): enough to see what it was. */
+const STALE_OPACITY = 0.4;
 
 /** A geometry of nothing but the core's points, three doubles each. */
 function at(points: Float64Array): THREE.BufferGeometry {
