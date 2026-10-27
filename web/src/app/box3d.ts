@@ -31,7 +31,7 @@ import type { Sectioned } from '../core/section.js';
 import { eyeFrame, placeOf, solidEdges } from '../core/workspace.js';
 import type { SolidEdge } from '../core/workspace.js';
 import type { Item3 } from '../core/overview.js';
-import { COL, chromeOf, inkOf } from './paint.js';
+import { COL, DIMMED, chromeOf, inkOf } from './paint.js';
 import { ScenarioScene } from './scenario-box.js';
 import { partOf, samePick } from './view.js';
 import type { Combining, SketchView } from './view.js';
@@ -64,6 +64,13 @@ const GHOST = 0.4;
 /** A pane's frame, in screen pixels: the plane being drawn on is bold.  WebGL draws every
  *  `LineBasicMaterial` one pixel wide whatever it is asked, so a frame is a fat line. */
 const FRAME_PX = { plain: 1, current: 2.5 };
+
+/** How an assembly shown on its parts draws its datums (#679): quietly — a pane's wash, its
+ *  frame and the axes — so the parts are what is seen. */
+const QUIET = { pane: 0.03, frame: 0.2, axis: 0.3 };
+
+/** A pane's label, in CSS pixels: its type's height, and how far it stands off the corner. */
+const LABEL_PX = { size: 11, off: 4 };
 
 /** An object's edge selected, or under the pointer, in pixels. */
 const EDGE_PX = { picked: 3.5, hover: 2.5 };
@@ -261,7 +268,7 @@ export class Box3D {
       v.applySection();
       this.clipTo(v);
     }
-    if (datums) this.buildDatums(overview3(v.sketch, 0, 'datums'));
+    if (datums) this.buildDatums(v, overview3(v.sketch, 0, 'datums'));
     let placedAt = this.built?.objects ?? NaN;
     if (objects) {
       // an object is cut again under a gesture only where its shape was changed in place, which
@@ -396,10 +403,12 @@ export class Box3D {
 
   /** The datums, from what the core says is in the box: the panes, their axes, and what is drawn
    *  in space. */
-  private buildDatums(items: Item3[]): void {
+  private buildDatums(v: SketchView, items: Item3[]): void {
     this.frames.length = 0;
     this.panes.length = 0;
     release(this.datums);
+    // an assembly shown on its parts draws its datums quietly, each pane labelled (#679)
+    const quiet = v.onParts;
     // the panes, translucent and double-sided: geometry on the far side of one must read through
     for (const it of items.filter((i) => i.part === 'face')) {
       const g = fanned(it.pts);
@@ -407,15 +416,19 @@ export class Box3D {
       this.datums.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({
         color: INK.pane,
         transparent: true,
-        opacity: 0.07,
+        opacity: quiet ? QUIET.pane : 0.07,
         side: THREE.DoubleSide,
         depthWrite: false,
       })));
       // its frame, separately, because the frame is what is picked and what bolds under the
       // cursor — the rule everything on this canvas is picked by, and the wash is never it
       this.panes.push({ it, line: this.frame(it) });
+      const pl = quiet && this.renderer ? v.planeOf(it) : null;
+      const name = pl && v.doc.nameOf(pl);
+      if (name) this.datums.add(label(name, it.pts[3] ?? it.pts[0]));
     }
-    this.lines(this.datums, items.filter((i) => i.part === 'axis'), INK.axis, 0.55);
+    this.lines(this.datums, items.filter((i) => i.part === 'axis'), INK.axis,
+               quiet ? QUIET.axis : 0.55);
     // of what is drawn, only what stands in space: a sketch on a plane is stroked on the canvas
     // above, through its plane's camera, with the selection and the state colours it carries
     for (const it of items.filter((i) => i.part === 'drawn' && IN_SPACE.has(i.kind ?? ''))) {
@@ -603,9 +616,15 @@ export class Box3D {
       // the plane being drawn on: its frame bolds, so where the next thing goes is in sight
       const pl = v.planeOf(it);
       const current = here !== null && pl !== null && placeOf(ws, pl.index) === here;
-      m.opacity = current ? 0.8 : 0.35;
+      m.opacity = current ? 0.8 : v.onParts ? QUIET.frame : 0.35;
       m.linewidth = current ? FRAME_PX.current : FRAME_PX.plain;
       m.resolution.set(v.width, v.height);
+    }
+    // a pane's label keeps its size as the eye zooms: its pixels, in the eye's lengths (#679)
+    for (const o of this.datums.children) {
+      if (!(o instanceof THREE.Sprite)) continue;
+      const [w, h] = o.userData.px as [number, number];
+      o.scale.set(w * v.unit, h * v.unit, 1);
     }
     // a face selected glows in the selection's ink, a body selected all over a little less; what
     // is under the pointer glows in the highlight's.  A Boolean being picked shows its result in
@@ -625,7 +644,9 @@ export class Box3D {
       const m = face.material as THREE.MeshStandardMaterial;
       const tool = c?.tools.some((t) => t.index === solid);
       face.visible = !(c && this.preview.shown && c.target.index === solid);
-      ghost(m, !!tool || deformed.has(solid));
+      // a part open, the rest of the assembly is dimmed round it (#679)
+      const dim = !!v.openedSolids && !v.openedSolids.has(solid);
+      fade(m, tool || deformed.has(solid) ? GHOST : dim ? DIMMED : 1);
       m.color.set(tool ? INK[c!.word] : INK.solid);
       const mine = picked.get(solid);
       const [ink, glow]: [string | number, number] = tool ? [INK[c!.word], 0.35]
@@ -639,6 +660,14 @@ export class Box3D {
     }
     for (const line of this.litEdges.children as LineSegments2[]) {
       line.material.resolution.set(v.width, v.height);
+    }
+    // and an object dimmed is dimmed in its creases too
+    for (const [index, held] of this.placed) {
+      const alpha = v.openedSolids && !v.openedSolids.has(index) ? DIMMED : 1;
+      for (const o of held.group.children) {
+        if (!(o instanceof THREE.LineSegments)) continue;
+        (o.material as THREE.LineBasicMaterial).opacity = alpha;
+      }
     }
   }
 
@@ -734,6 +763,35 @@ function faceMesh(m: Mesh, f: Face, clippingPlanes: THREE.Plane[]): THREE.Mesh {
   return face;
 }
 
+/** **A pane's name**, hung at its corner the same size whatever the zoom: a sprite of its text,
+ *  drawn once into a canvas of its own (#679).  Only where there is a page to draw it on. */
+function label(text: string, at: [number, number, number]): THREE.Sprite {
+  const ratio = Math.min(2, globalThis.devicePixelRatio ?? 1);
+  const px = LABEL_PX.size * ratio;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  const font = `${px}px system-ui, sans-serif`;
+  ctx.font = font;
+  canvas.width = Math.ceil(ctx.measureText(text).width + 2 * LABEL_PX.off * ratio);
+  canvas.height = Math.ceil(px * 1.4);
+  ctx.font = font;
+  ctx.fillStyle = '#5f8f5f';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, LABEL_PX.off * ratio, canvas.height / 2);
+  const map = new THREE.CanvasTexture(canvas);
+  map.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map, transparent: true, depthTest: false,
+  }));
+  sprite.position.set(...at);
+  // drawn from its lower left, at the corner, the size of its canvas in screen pixels (scaled to
+  // the eye each frame, by `chrome`)
+  sprite.center.set(0, 0);
+  sprite.userData.px = [canvas.width / ratio, canvas.height / ratio];
+  sprite.renderOrder = 2;
+  return sprite;
+}
+
 /** A geometry of nothing but the core's points, three doubles each. */
 function at(points: Float64Array): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
@@ -772,12 +830,14 @@ function hatched(): THREE.ShaderMaterial {
   });
 }
 
-/** A face drawn as a ghost — see-through, and hiding nothing behind it — or solid again.  A
- *  material compiles anew when it changes whether it is transparent, so only then is it told. */
-function ghost(m: THREE.MeshStandardMaterial, on: boolean): void {
+/** A face drawn at `alpha` — below one see-through, as a ghost or dimmed, and hiding nothing
+ *  behind it — or solid again.  A material compiles anew when it changes whether it is
+ *  transparent, so only then is it told. */
+function fade(m: THREE.MeshStandardMaterial, alpha: number): void {
+  m.opacity = alpha;
+  const on = alpha < 1;
   if (m.transparent === on) return;
   m.transparent = on;
-  m.opacity = on ? GHOST : 1;
   m.depthWrite = !on;
   m.needsUpdate = true;
 }

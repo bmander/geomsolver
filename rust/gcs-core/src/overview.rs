@@ -72,6 +72,74 @@ pub(crate) fn workspace_span(sk: &Sketch) -> f64 {
     WORKSPACE_MM / sk.units.mm_per()
 }
 
+/// How large a datum is drawn beside an assembly shown on its parts (#679), as a fraction of the
+/// largest side of the box round its objects: a small frame about its origin, the size of a part
+/// or so, rather than the workspace or the drawing every part's insides reach.
+const PART_DATUM: f64 = 0.5;
+
+/// **How large the panes are drawn** — and the axes, which reach as far: no thinner than `least`
+/// either way and no narrower than `span`, round what stands on each.  `shown_only` counts only
+/// what the outline has not hidden, so a closed part's sketches do not size the assembly's planes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Panes {
+    least: f64,
+    span: f64,
+    shown_only: bool,
+    /// How far either side of its foot an axis is drawn.
+    pub(crate) reach: f64,
+}
+
+/// The rule the panes and axes are drawn by: off the drawing and the workspace (`WORKSPACE_MM`),
+/// or — an assembly shown on its parts (`Sketch::on_parts`, #679) with an object built — off the
+/// objects alone (`PART_DATUM`), what is hidden left out.
+pub(crate) fn panes(sk: &Sketch) -> Panes {
+    if sk.on_parts {
+        if let Some(side) = objects_side(sk) {
+            let span = side * PART_DATUM;
+            return Panes { least: span, span, shown_only: true, reach: span / 2.0 };
+        }
+    }
+    Panes { least: sk.extent() * LEAST_SIDE, span: workspace_span(sk), shown_only: false,
+            reach: sk.extent().max(workspace_span(sk) / 2.0) }
+}
+
+/// The largest side of the box round every object shown and built, or `None` with none —
+/// remembered against the drawing and the objects shown (`Caches::objects_side`).
+fn objects_side(sk: &Sketch) -> Option<f64> {
+    let shown = shown_objects(sk);
+    // and against a shape changed in place, and the swept surfaces a host has supplied since
+    let mut x: Vec<f64> = sk.params.iter().map(|p| p.value).collect();
+    x.extend([sk.shape_epoch as f64, sk.field_surfaces.borrow().len() as f64]);
+    if let Some((at, of, side)) = &*sk.caches.objects_side.borrow() {
+        if *at == x && *of == shown {
+            return *side;
+        }
+    }
+    let side = side_of(sk, &shown);
+    *sk.caches.objects_side.borrow_mut() = Some((x, shown, side));
+    side
+}
+
+/// The largest side of the box round each of `objects` that builds.
+fn side_of(sk: &Sketch, objects: &[usize]) -> Option<f64> {
+    let mut b = crate::solid::Box3::empty();
+    for &i in objects {
+        let Ok(s) = sk.evaluated_solid(i, crate::solid::ApproximationPolicy::Mesh) else {
+            continue;
+        };
+        let w = s.world_bounds();
+        if !w.is_empty() {
+            b.add(w.lo);
+            b.add(w.hi);
+        }
+    }
+    if b.is_empty() {
+        return None;
+    }
+    let side = (0..3).map(|k| b.hi[k] - b.lo[k]).fold(0.0, f64::max);
+    (side > 0.0).then_some(side)
+}
+
 /// How many of its own widths across the box is refined for, when `scene3d` is asked for the
 /// object's own scale rather than the sheet's zoom.  It is a *drawing* is being cut into
 /// polylines, so the number that matters is how many pixels the box is looked at across, and a
@@ -385,14 +453,14 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
     let (datums, objects_too) = (layer != Layer::Objects, layer != Layer::Datums);
     let views = views(sk);
     let places = places(sk);
-    let least = sk.extent() * LEAST_SIDE;
+    let rule = panes(sk);
     // one pane for each place, its first plane's — none for a plane the outline hid (#435), and
     // none of what follows either
     for i in (0..sk.frames.len())
         .filter(|&i| datums && places[i] == Some(i) && sk.shown(EntRef::frame(i))) {
         let of = Some(EntRef::frame(i));
         let basis = sk.basis(i);
-        let rect = pane(sk, i, &views, &places, least);
+        let rect = pane(sk, i, &views, &places, &rule);
         items.push(Item3 { of, in_plane: of, what: Part::Face, pts: face(&basis, rect) });
         for arm in axes(&basis, rect) {
             items.push(Item3 { of, in_plane: of, what: Part::Axis, pts: arm.to_vec() });
@@ -416,7 +484,7 @@ pub fn scene3d_of(sk: &Sketch, unit: f64, layer: Layer) -> Vec<Item3> {
         // (`workspace::nearest_axis`) anyway
         if e.kind == EntKind::Axis {
             use crate::space::{across, add, cross, norm, scale, sub};
-            let reach = axis_reach(sk);
+            let reach = rule.reach;
             let Some((tail, tip, d)) = axis_segment(sk, e.i(), reach) else { continue };
             let foot = scale(add(tail, tip), 0.5);
             let tol = 1e-9 * reach;
@@ -513,7 +581,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     let flat = |p: [f64; 3]| (dot(p, right), dot(p, up));
     let mut items: Vec<Item> = Vec::new();
     let views = views(sk);
-    let least = sk.extent() * LEAST_SIDE;
+    let rule = panes(sk);
 
     // the panes of the box, under everything — **one per place, drawn in or not** — each with
     // its own axes at its origin
@@ -521,7 +589,7 @@ pub fn scene_with(sk: &Sketch, unit: f64, az: f64, el: f64, shaded: bool) -> Sce
     for i in (0..sk.frames.len()).filter(|&i| places[i] == Some(i)) {
         let of = Some(EntRef::frame(i));
         let basis = sk.basis(i);
-        let rect = pane(sk, i, &views, &places, least);
+        let rect = pane(sk, i, &views, &places, &rule);
         items.push(Item {
             of,
             in_plane: of,
@@ -730,14 +798,17 @@ fn places(sk: &Sketch) -> Vec<Option<usize>> {
 /// One rule for the face and its axes both, so the two cannot come to disagree about how far a
 /// view reaches; and one pane for a place, so drawing on `std.front` does not leave `std.up`'s
 /// behind as a second frame round the same plane (the box draws the place's first plane only).
-fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], places: &[Option<usize>], least: f64)
-    -> Box2 {
+fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], places: &[Option<usize>],
+        rule: &Panes) -> Box2 {
+    let Panes { least, span, shown_only, .. } = *rule;
+    let counted = |e: EntRef| !shown_only || !sk.hidden.contains(&e);
     let basis = sk.basis(plane);
     let mut b = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
-    for j in (0..places.len()).filter(|&j| j != plane && places[j] == places[plane]) {
+    for j in (0..places.len())
+        .filter(|&j| j != plane && places[j] == places[plane] && counted(EntRef::frame(j))) {
         grow(&mut b, basis.view_coords(sk.basis(j).o));
     }
-    for (i, v) in views.iter().enumerate() {
+    for (i, v) in views.iter().enumerate().filter(|&(i, _)| counted(EntRef::point(i))) {
         match *v {
             Some(j) if j == plane => grow(&mut b, sk.point_xy(i)),
             Some(j) if places[j] == places[plane] => {
@@ -752,8 +823,7 @@ fn pane(sk: &Sketch, plane: usize, views: &[Option<usize>], places: &[Option<usi
     };
     let ((x0, x1), (y0, y1)) = (widen(b.0, b.2, least), widen(b.1, b.3, least));
     let m = (x1 - x0).max(y1 - y0) * FACE_MARGIN;
-    // and never narrower than the workspace, either way
-    let span = workspace_span(sk);
+    // and never narrower than the workspace, or a part's datum, either way
     let ((x0, x1), (y0, y1)) = (widen(x0 - m, x1 + m, span), widen(y0 - m, y1 + m, span));
     (x0, y0, x1, y1)
 }
@@ -780,11 +850,12 @@ fn axes(basis: &Basis, (x0, y0, x1, y1): Box2) -> [Vec<[f64; 3]>; 2] {
     ]
 }
 
-/// The objects the outline has not hidden (#435): what the workspace draws, lights, picks and
-/// frames.  `objects` stays the document's — what is exported, reported and built.
+/// The objects the outline has not hidden (#435), while objects are shown (#678): what the
+/// workspace draws, lights, picks and frames.  `objects` stays the document's — what is exported,
+/// reported and built.
 pub fn shown_objects(sk: &Sketch) -> Vec<usize> {
     let mut v = objects(sk);
-    if !sk.hidden.is_empty() {
+    if sk.hides_any() {
         v.retain(|&i| sk.shown(EntRef::solid(i)));
     }
     v
@@ -907,9 +978,10 @@ fn lambert(n: [f64; 3], eye: &([f64; 3], [f64; 3])) -> f64 {
 }
 
 /// How far either side of its foot an axis is drawn: the drawing's reach, and no less than half
-/// the workspace (`WORKSPACE_MM`), so a blank sheet's axes run to its panes' edges.
+/// the workspace (`WORKSPACE_MM`), so a blank sheet's axes run to its panes' edges — or, an
+/// assembly shown on its parts, half its datums' span (`panes`, #679).
 pub(crate) fn axis_reach(sk: &Sketch) -> f64 {
-    sk.extent().max(workspace_span(sk) / 2.0)
+    panes(sk).reach
 }
 
 /// Where axis `i` is drawn: `reach` (`axis_reach`) either side of its foot, tail then tip, and its

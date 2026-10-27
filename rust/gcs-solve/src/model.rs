@@ -36,6 +36,7 @@ mod scenario;
 mod measured;
 mod beam;
 mod rounds;
+mod shown;
 pub mod developed;
 
 pub use entities::{
@@ -62,6 +63,7 @@ pub use rates::{RateRow, RateWord};
 pub use caches::Caches;
 pub use running::Running;
 pub use material::{Material, Property};
+pub use shown::Kinds;
 pub use rounds::{overruns, rounded, Round, Rounded};
 pub use beam::{Beam, Over, Section, SectionProp};
 pub use scenario::{
@@ -330,6 +332,17 @@ pub struct Sketch {
     /// still solves and still holds its constraints, is never saved, exported or undone, and
     /// the front end sets it whole (`set_hidden`) on every drawing it is handed.
     pub hidden: std::collections::BTreeSet<EntRef>,
+    /// **The kinds of thing the workspace draws** (#678): an entity of a kind turned off is
+    /// passed by as a hidden one is (`Sketch::shown`), unless it is in `shown_anyway`.  View
+    /// state, as `hidden` is, set whole by the front end (`set_kinds`).
+    pub kinds: Kinds,
+    /// What is shown whatever its kind (#678): a plane chosen to draw on, a row chosen from the
+    /// outline.
+    pub shown_anyway: std::collections::BTreeSet<EntRef>,
+    /// **An assembly shown on its parts** (#679): what its parts draw to make their objects is
+    /// hidden, and its datums are drawn the size of its objects rather than of the workspace
+    /// (`overview::panes`).  View state, as `kinds` is.
+    pub on_parts: bool,
     /// **The plane the workspace is sectioned by**, the side its normal points to taken away: its
     /// objects are drawn and picked as `EvaluatedSolid::section` leaves them — a face the cut took
     /// away is not met, and the face it leaves is the object's.  View state, as `hidden` is:

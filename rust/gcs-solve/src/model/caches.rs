@@ -169,6 +169,12 @@ pub struct Caches {
     #[allow(clippy::type_complexity)]
     pub(crate) tracks: RefCell<BTreeMap<(String, u32), (Rc<Result<crate::follow::Followed,
         String>>, std::sync::Arc<crate::motion::Track>)>>,
+    /// The largest side of the box round the objects shown (`overview::panes`, #679), against
+    /// every number of the drawing (with its shape epoch and how many surfaces a host supplied)
+    /// and which objects are shown: a pick asks it of every pane and axis on every pointer move,
+    /// and it is a walk of every object's reads.
+    #[allow(clippy::type_complexity)]
+    pub objects_side: RefCell<Option<(Vec<f64>, Vec<usize>, Option<f64>)>>,
 }
 
 impl Caches {
@@ -198,5 +204,6 @@ impl Caches {
         self.tracks.borrow_mut().clear();
         self.traced3.borrow_mut().clear();
         self.generated.borrow_mut().clear();
+        self.objects_side.borrow_mut().take();
     }
 }

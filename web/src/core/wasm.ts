@@ -103,6 +103,9 @@ export interface Abi {
   gcs_sketch_point_seen(h: number, az: number, el: number, x: number, y: number): number;
   gcs_sketch_line(h: number, p1: number, p2: number): number;
   gcs_sketch_set_hidden(h: number, p: number, n: number): number;
+  gcs_sketch_set_shown_kinds(h: number, kinds: number, onParts: number, p: number,
+                             n: number): number;
+  gcs_sketch_unseen_json(h: number): number;
   gcs_sketch_set_cut(h: number, frame: number, flip: number, offset: number): number;
   gcs_sketch_cut(h: number, out: number): number;
   gcs_workspace_reach_along(h: number, frame: number, out: number): number;

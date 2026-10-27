@@ -362,11 +362,11 @@ pub fn layout_selected(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Vec<Callo
             continue;
         }
         // drawn on what it reads as that is drawn — a mirrored body's image (#578) — and gone
-        // with it, once the outline has hidden every entity of it (#435), unless it is the one
-        // asked for
+        // with it, once the outline has hidden every entity of it (#435) or its kinds are off
+        // (#678), unless it is the one asked for
         let drawn = sk.drawn_constraint(c, &images);
         let c = drawn.as_ref().unwrap_or(c);
-        if asked.is_none() && !sk.hidden.is_empty() {
+        if asked.is_none() && sk.hides_any() {
             let read = c.entities();
             if !read.is_empty() && read.iter().all(|e| !sk.shown(*e)) {
                 continue;

@@ -14,6 +14,7 @@ import { overlappingSeen } from '../core/workspace.js';
 import type { View } from '../core/workspace.js';
 import { moveDimension, placeDimension } from './dimension.js';
 import { COL } from './paint.js';
+import { partToOpen } from './hidden.js';
 import { insertControl } from './edit.js';
 import { cancelTool, toolClick } from './tools.js';
 import { bodyAt, grabBody, grabHandle, handleAt } from './underlay.js';
@@ -132,6 +133,13 @@ function onDoubleClick(v: SketchView, e: MouseEvent): void {
   // a pane's frame lies beneath a solid, as a press finds it
   const frame = hit instanceof Plane ? hit : null;
   const face = hit && !frame ? null : v.solidAt(...sp);
+  // on a closed part's object, the part opened (#679): its insides drawn, the rest dimmed — a
+  // face of the part open, or of an object the root made, is drawn on
+  const part = face && partToOpen(v, face.index);
+  if (part) {
+    v.openPart(part);
+    return;
+  }
   if (face) {
     v.sketchOnFace(face);
     return;
@@ -401,6 +409,10 @@ function selectPress(v: SketchView, e: PointerEvent, sp: [number, number]): void
     // clears the selection, because an empty box selects nothing.
     if (!e.shiftKey) v.selected = [];
     v.gesture = bandGesture(v, sp);
+    // and a click on nothing at all closes the part open (#679), as Esc does
+    if (at.kind === 'none' && !e.shiftKey && v.opened !== null) {
+      v.gesture = closesPart(v, sp, v.gesture);
+    }
   } else if (e.shiftKey) {
     // a shift-click toggles it in the selection; a shift-drag turns the body
     v.gesture = toggleOrTurn(v, sp, ent);
@@ -827,6 +839,23 @@ export function calloutGesture(v: SketchView, c: Constraint, from: [number, numb
     // where a callout sits is document state, so the drag is a source edit and has to be
     // written down — once, at the release, the same bargain `syncSeeds` strikes for a point
     end: () => { if (moved) v.syncSource(); },
+  };
+}
+
+/** A band that, let go where it was pressed (within `MENU_SLOP_PX`), closes the part open
+ *  (#679). */
+function closesPart(v: SketchView, from: [number, number], band: Gesture): Gesture {
+  let moved = false;
+  return {
+    ...band,
+    move: (sp, mods) => {
+      moved ||= Math.hypot(sp[0] - from[0], sp[1] - from[1]) > MENU_SLOP_PX;
+      band.move(sp, mods);
+    },
+    end: () => {
+      band.end?.();
+      if (!moved) v.closePart();
+    },
   };
 }
 

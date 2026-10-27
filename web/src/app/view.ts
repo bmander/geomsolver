@@ -29,7 +29,8 @@ import { Constraint } from '../core/constraints.js';
 import { PlanResult, PlanSolver, asSolveResult } from '../core/decompose.js';
 import { Diagnosis, diagnose } from '../core/diagnose.js';
 import * as io from '../core/io.js';
-import { Param, Plane, Point, Primitive, Sketch, toWire } from '../core/model.js';
+import { ALL_KINDS, KIND, Param, Plane, Point, Primitive, Sketch, toWire } from '../core/model.js';
+import type { ShownKind } from '../core/model.js';
 import * as params from '../core/parameters.js';
 import type { March, Parameter } from '../core/parameters.js';
 import { Document, Edit, fromSketch } from '../core/program.js';
@@ -270,10 +271,17 @@ export class SketchView {
   autoSolve = true;
   usePlan = false;
   colorByState = true;
-  /** Paint the dimensioned constraints on the drawing as callouts.  View state, like the
-   *  colouring: a document change leaves it as it was.  The model canvas's callouts are the
-   *  editor's, and separate from what a `.svd` asks to be annotated on paper. */
-  showDimensions = true;
+  /** Paint the dimensioned constraints on the drawing as callouts: the Dimensions kind of View ▸
+   *  Show (#678).  View state, like the colouring: a document change leaves it as it was.  The
+   *  model canvas's callouts are the editor's, and separate from what a `.svd` asks to be
+   *  annotated on paper. */
+  get showDimensions(): boolean { return (this.kinds & KIND.dimensions) !== 0; }
+  set showDimensions(on: boolean) { hidden.setKind(this, 'dimensions', on); }
+  /** **The kinds of thing the workspace draws** (#678; `KIND`'s bits): View ▸ Show's.  View
+   *  state, as hidden is — never saved, solved or undone, and kept across an edit and a load —
+   *  told the core on every drawing the view is handed (`hidden.applyHidden`), the kinds the tool
+   *  in hand needs shown beside it (`hidden.toolKinds`). */
+  kinds: number = ALL_KINDS;
   /** **Where the eye stands**, in radians: a bearing about the vertical and an elevation above
    *  the horizon.  The whole of how the workspace is looked at — the three.js camera is set from
    *  it (`box3d.ts`) and the core projects each plane for it (`core/workspace.ts`).  `az = -π/2,
@@ -311,9 +319,26 @@ export class SketchView {
    *  let go by a load.  What they made is `hiddenEnts` and `hiddenSolids`, set on every drawing
    *  the view is handed (`hidden.applyHidden`), each time bumping `hiddenEpoch`. */
   hiddenRows = new Set<string>();
+  /** What the core passes by, hidden or of a kind not shown (#678): the painter skips it. */
   hiddenEnts = new Set<Primitive>();
   hiddenSolids = new Set<number>();
   hiddenEpoch = 0;
+  /** **Rows shown whatever closes them or their kind** (#678, #679), by key: a row's eye turned
+   *  on inside a closed part, a row chosen from the outline, a plane chosen to draw on.  Carried
+   *  and let go as `hiddenRows` is; a kind turned on or off lets them all go. */
+  shownRows = new Set<string>();
+  /** **Whether a part is closed** (#679): what an instance that makes an object draws to make it
+   *  is out of the way until it is opened.  View ▸ Show ▸ Inside parts turns it off. */
+  closeParts = true;
+  /** Whether the drawing is an assembly shown on its parts (#679): some part, and closed — its
+   *  datums drawn small and quiet, sized to its objects, each pane labelled. */
+  onParts = false;
+  /** **The part opened** (#679), by its row's key: its insides drawn, the rest of the assembly
+   *  dimmed (`openedEnts`, `openedSolids`, what it made).  Carried by path across an edit, let
+   *  go by a load, Esc, or a click on nothing. */
+  opened: string | null = null;
+  openedEnts: Set<Primitive> | null = null;
+  openedSolids: Set<number> | null = null;
   /** **The workspace sectioned** (`core/section.ts`, `Sectioning`).  View state, as the orbit
    *  is: never saved, solved or undone, set on every drawing the view is handed
    *  (`applySection`), carried across an edit by the plane's name, let go when the name no longer
@@ -552,6 +577,8 @@ export class SketchView {
     this.box3d = new Box3D(boxCanvas);
     this.ctx = canvas.getContext('2d')!;
     this.drawOnFront();
+    // the parts closed and the kinds shown, told the drawing it opens on (#678, #679)
+    hidden.applyHidden(this);
     bindEvents(this);
   }
 
@@ -882,8 +909,12 @@ export class SketchView {
    *  they are kept where the read is refused, the drawing staying as it was. */
   private another(read: () => boolean): boolean {
     const held = this.hiddenRows;
+    const shown = this.shownRows;
+    const opened = this.opened;
     const cut = this.section;
     this.hiddenRows = new Set();
+    this.shownRows = new Set();
+    this.opened = null;
     this.section = null;
     if (read()) {
       if (cut) {
@@ -893,6 +924,8 @@ export class SketchView {
       return true;
     }
     this.hiddenRows = held;
+    this.shownRows = shown;
+    this.opened = opened;
     this.section = cut;
     return false;
   }
@@ -1581,6 +1614,16 @@ export class SketchView {
   isolate(): boolean { return hidden.isolate(this); }
   /** **Show all** (`⇧I`). */
   showAll(): void { hidden.showAll(this); }
+  /** Whether View ▸ Show draws a kind (#678) — the tool in hand may show it besides. */
+  kindOn(kind: ShownKind): boolean { return (this.kinds & KIND[kind]) !== 0; }
+  /** **View ▸ Show**: a kind drawn or not (#678). */
+  setKind(kind: ShownKind, on: boolean): void { hidden.setKind(this, kind, on); }
+  /** Whether what a part draws is out of the way until it is opened (#679). */
+  setCloseParts(on: boolean): void { hidden.setCloseParts(this, on); }
+  /** **Open a part** (#679): its insides drawn, the rest dimmed — `null` closes the one open. */
+  openPart(part: Row | null): boolean { return hidden.openPart(this, part); }
+  /** **Close the part open** (Esc, a click on nothing): whether one was. */
+  closePart(): boolean { return hidden.closePart(this); }
 
   /** What is lit under the pointer, of the drawing's own: `highlight` and the hovered entity. */
   get lit(): Primitive[] {

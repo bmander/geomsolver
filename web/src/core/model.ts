@@ -482,6 +482,15 @@ export function threePointArc(ax: number, ay: number, bx: number, by: number,
 
 /** A part of the drawing as the outline names it: entities by the core's kind word (`plane` for
  *  a frame) and index, and solids by index — what `setHidden` hides and `boundsOfSeen` frames. */
+/** **The kinds of thing the workspace draws** (#678), as the core's `model::Kinds` bits — what
+ *  `Sketch.setShownKinds` is handed, in the order View ▸ Show lists them. */
+export const KIND = {
+  objects: 1, planes: 2, axes: 4, sketches: 8, points: 16, fixed: 32, dimensions: 64,
+} as const;
+export type ShownKind = keyof typeof KIND;
+/** Every kind: a drawing opens as it is drawn. */
+export const ALL_KINDS = 127;
+
 export interface Part {
   ents: [string, number][];
   solids: number[];
@@ -893,6 +902,22 @@ export class Sketch {
    *  is handed (`gcs_sketch_set_hidden`). */
   setHidden(part: Part): void {
     withJson(part, (p, n) => core().gcs_sketch_set_hidden(this.handle, p, n));
+  }
+
+  /** **Show these kinds and no others** (#678; `KIND`'s bits), and the entities of `anyway`
+   *  whatever their kind — not drawn, lit or picked by the workspace, still solved; `onParts`
+   *  where an assembly is shown on its parts, its datums drawn the size of its objects (#679).
+   *  View state, set whole on every drawing the view is handed (`gcs_sketch_set_shown_kinds`). */
+  setShownKinds(kinds: number, anyway: Part = { ents: [], solids: [] }, onParts = false): void {
+    withJson(anyway, (p, n) =>
+      core().gcs_sketch_set_shown_kinds(this.handle, kinds, onParts ? 1 : 0, p, n));
+  }
+
+  /** What the workspace passes by (#435, #678): every drawn entity hidden or of a kind turned
+   *  off, and every object not shown — what the painter, stroking some of the drawing itself,
+   *  skips too (`gcs_sketch_unseen_json`). */
+  unseen(): Part {
+    return takeJson<Part>(core().gcs_sketch_unseen_json(this.handle));
   }
 
   /** What a click at (x, y) picks: the nearest entity whose *drawn* figure comes within `tol`,

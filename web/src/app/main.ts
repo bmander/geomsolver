@@ -81,6 +81,7 @@ import type { Judging } from './claim-judging.js';
 import type { Scenario, ScenarioAnswer } from '../core/program.js';
 import { bindScenarioCard, refreshScenarioCard } from './scenario-card.js';
 import { Tool } from './view.js';
+import type { ShownKind } from '../core/model.js';
 import { meshing } from './loading.js';
 import { Timeline } from './timeline.js';
 import { SectionBar } from './section-bar.js';
@@ -468,10 +469,23 @@ const PRIMER = `${REPO}/blob/main/docs/solvent-primer.md`;
 /** Follow an outbound link in its own tab, because following it leaves the sketch behind. */
 const visit = (href: string) => { window.open(href, '_blank', 'noopener'); };
 
+/* **View ▸ Show** (#678): each kind of thing the workspace draws, with its key — the kind, the
+ * item, its accelerator and what it says. */
+const SHOWN: [ShownKind, string, string, string][] = [
+  ['objects', 'Objects', '⇧o', 'The objects, whole — not only their surfaces (⇧⌘B)'],
+  ['planes', 'Planes', '⇧p', 'Each plane\u2019s pane and frame'],
+  ['axes', 'Axes', '⇧a', 'The axes in space'],
+  ['sketches', 'Sketches', '⇧s', 'What is drawn on planes and in space: lines, circles, arcs, '
+     + 'curves and their points'],
+  ['points', 'Points', '⇧t', 'The points'],
+  ['fixed', 'Fixed marks', '⇧k', 'The red mark on a fixed point — off, it is drawn as any other'],
+  ['dimensions', 'Dimensions', '⇧d', 'The dimension callouts — editing one still shows it'],
+];
+
 /* Everything that is neither a tool nor a constraint.  Like the constraints bar these are
  * tables rather than calls, so the accelerator printed beside an item is the same string the
  * keyboard handler matches — see ACTION_KEYS. */
-const MENUS: [string, (MenuItem | null)[]][] = [
+const MENUS: [string, (MenuItem | string | null)[]][] = [
   ['File', [
     { label: 'New', onClick: () => view.newDocument() },
     { label: 'Open…', onClick: () => void doOpen() },
@@ -531,12 +545,6 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       title: 'Hide everything but the selection and what made it — I in the model outline' },
     { label: 'Show all', key: '⇧i', onClick: () => view.showAll(),
       title: 'Show everything the model outline hid' },
-    { label: 'Show solid', key: '⇧⌘b', onClick: () => view.setShowSolid(!view.showSolid),
-      title: 'Fill each object\u2019s surfaces, not only its edges — off, a solid is a wireframe' },
-    { label: 'Section', key: '⇧x', onClick: () => view.toggleSection(),
-      title: 'Cut every object by the plane being drawn on, the side its normal points to taken '
-           + 'away and the cut face hatched — move it, flip it or choose another plane in the '
-           + 'bar it opens' },
     { label: 'Program', key: '⌘p', onClick: () => toggleProgramPanel(),
       title: 'The program this drawing is written as — edit it and the drawing follows' },
     { label: 'Re-place dimensions', onClick: () => {
@@ -544,6 +552,29 @@ const MENUS: [string, (MenuItem | null)[]][] = [
       const n = view.resetCallouts(currentConstraint);
       toast(n ? `${n} dimension(s) put back` : 'no dimension has been moved');
     } },
+  ]],
+  ['View', [
+    'Show',
+    ...SHOWN.map(([kind, label, key, title]): MenuItem => ({
+      label, key, title, checked: () => view.kindOn(kind),
+      onClick: () => view.setKind(kind, !view.kindOn(kind)),
+    })),
+    { label: 'Inside parts', checked: () => !view.closeParts,
+      onClick: () => view.setCloseParts(!view.closeParts),
+      title: 'Draw what every part draws to make its object — its planes, axes, sketches and '
+           + 'dimensions.  Off, an assembly shows its parts, and a double-click opens one' },
+    null,
+    { label: 'Close part', onClick: () => { if (!view.closePart()) toast('no part is open'); },
+      title: 'Close the part a double-click opened: its insides go and the assembly is drawn '
+           + 'whole again — Esc, or a click on nothing' },
+    { label: 'Show solid', key: '⇧⌘b', checked: () => view.showSolid,
+      onClick: () => view.setShowSolid(!view.showSolid),
+      title: 'Fill each object\u2019s surfaces, not only its edges — off, a solid is a wireframe' },
+    { label: 'Section', key: '⇧x', checked: () => !!view.section,
+      onClick: () => view.toggleSection(),
+      title: 'Cut every object by the plane being drawn on, the side its normal points to taken '
+           + 'away and the cut face hatched — move it, flip it or choose another plane in the '
+           + 'bar it opens' },
   ]],
   ['Insert', [
     { label: 'Plane…', onClick: () => void insertPlane(),
@@ -576,7 +607,7 @@ for (const [label, items] of MENUS) {
     'Open examples…',
     'Save', 'Export SVG', 'Program', 'Solvent language primer', 'GitHub project']);
   for (const item of items) {
-    if (!item || shared.has(item.label)) continue;
+    if (!item || typeof item === 'string' || shared.has(item.label)) continue;
     const action = item.onClick;
     item.onClick = () => {
       if (drawingActive()) { toast('Select a .sv file to work on its geometry'); return; }
@@ -609,7 +640,8 @@ const TOOL_KEYS: Record<string, Tool> =
  *  one list and not two.  The token is the chip the control prints, lowercased: '⇧l', '⌘z'. */
 const ACTION_KEYS = new Map<string, () => void>(
   [...TOOL_BUTTONS, ...VIEW_BUTTONS, ...CONSTRAINT_BUTTONS, ...MENUS.flatMap(([, items]) => items)]
-    .flatMap((b) => (b?.key ? [[b.key, b.onClick] as [string, () => void]] : [])));
+    .flatMap((b) => (b && typeof b !== 'string' && b.key
+      ? [[b.key, b.onClick] as [string, () => void]] : [])));
 
 window.addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement | null;

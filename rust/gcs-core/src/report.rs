@@ -1202,6 +1202,12 @@ pub fn selected_callouts_json(sk: &Sketch, unit: f64, ids: Option<&[u32]>) -> Js
     // the view each figure is laid out in (`workspace::Views::constraint_view`): -1 the page, a
     // plane's index, -2 where its points stand in views that are not one place in space
     let views = crate::overview::workspace::Views::new(sk);
+    // the workspace's dimensions turned off (#678): only those asked for, a dimension being edited
+    let none: &[u32] = &[];
+    let ids = match ids {
+        None if !sk.kinds.contains(crate::model::Kinds::DIMENSIONS) => Some(none),
+        ids => ids,
+    };
     let items: Vec<Json> = callout::layout_selected(sk, unit, ids)
         .iter()
         .map(|k| {

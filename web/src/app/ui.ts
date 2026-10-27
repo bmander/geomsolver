@@ -365,7 +365,10 @@ export function fitBars(host: HTMLElement, bars: HTMLElement[]): void {
 
 /** A menu item is a button that happens to live in a list, so it is described the same way —
  *  `toggle` is the one thing a menu has no use for. */
-export type MenuItem = Omit<ToolbarButton, 'toggle'>;
+export type MenuItem = Omit<ToolbarButton, 'toggle'> & {
+  /** A check box's: whether it is ticked, asked each time the menu drops. */
+  checked?: () => boolean;
+};
 
 /** The one menu that is down, if any: its top button, whose `aria-expanded` is what the CSS
  *  drops the list on.  One variable, so nothing can disagree about what is open. */
@@ -402,20 +405,38 @@ function dropsOn(top: HTMLButtonElement, dropped?: () => void): void {
   });
 }
 
-/** One menu on the bar: a name, and the items under it with `null` for a dividing rule.
+/** One menu on the bar: a name, and the items under it with `null` for a dividing rule and a
+ *  string for a heading over the items after it (View ▸ Show).  A check box is ticked as it stands
+ *  each time the menu drops.
  *  Once one menu is open the others take over on hover, the way a desktop menu bar behaves. */
-export function addMenu(bar: HTMLElement, label: string, items: (MenuItem | null)[]): void {
+export function addMenu(bar: HTMLElement, label: string,
+                        items: (MenuItem | string | null)[]): void {
   const wrap = document.createElement('div');
   wrap.className = 'menu';
   const top = document.createElement('button');
   top.textContent = label;
   top.setAttribute('aria-expanded', 'false');
-  dropsOn(top);
+  // a check box is ticked as it stands each time the menu drops
+  const checks: [HTMLButtonElement, () => boolean][] = [];
+  dropsOn(top, () => {
+    for (const [b, on] of checks) b.setAttribute('aria-checked', String(on()));
+  });
   const list = document.createElement('ul');
   for (const item of items) {
     const li = document.createElement('li');
-    if (!item) li.className = 'sep';
-    else addButton(li, { ...item, onClick: () => { closeMenus(); item.onClick(); } });
+    if (!item) {
+      li.className = 'sep';
+    } else if (typeof item === 'string') {
+      // a heading over the items after it: View ▸ Show
+      li.className = 'head';
+      li.textContent = item;
+    } else {
+      const b = addButton(li, { ...item, onClick: () => { closeMenus(); item.onClick(); } });
+      if (item.checked) {
+        b.setAttribute('role', 'menuitemcheckbox');
+        checks.push([b, item.checked]);
+      }
+    }
     list.append(li);
   }
   wrap.append(top, list);
