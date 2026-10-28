@@ -20,17 +20,16 @@ use crate::model::{Sketch, SolidDef};
 
 /// A member of a union: a solid of the drawing that is no union, and the placements of the union
 /// it stands under (`twins := lump at(under: m) 20deg`), the outermost first.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Member {
-    pub solid: u32,
-    pub placed: Vec<u32>,
+struct Member {
+    solid: u32,
+    placed: Vec<u32>,
 }
 
 /// The members of union `id` — a body that only puts solids on its stock, or a placement of one —
 /// in the order the body rule writes them (the stock, then what is put on it), a union among them
 /// its own members; `None` where `id` is no union: a body that cuts or is bounded by anything is
 /// not, nor a solid that is no body.
-pub fn members(sk: &Sketch, id: usize) -> Option<Vec<Member>> {
+fn members(sk: &Sketch, id: usize) -> Option<Vec<Member>> {
     match &sk.solids.get(id)?.def {
         SolidDef::Placed { source, .. } => {
             let mut inner = members(sk, *source as usize)?;
@@ -86,6 +85,10 @@ pub fn lowered(sk: &Sketch, body: usize) -> Option<Sketch> {
     if cuts.is_empty() {
         return None;
     }
+    // each union's roll found on the drawing, so the copy reads it and does not march it again
+    for (_, chain) in &cuts {
+        let _ = super::roll::interval(sk, *chain.last().expect("a chain ends in its sweep") as usize);
+    }
     let mut out = sk.clone();
     let mint = |out: &mut Sketch, like: u32, def: SolidDef| -> u32 {
         let mut s = sk.solids[like as usize].clone();
@@ -108,24 +111,19 @@ pub fn lowered(sk: &Sketch, body: usize) -> Option<Sketch> {
     let mut written: Vec<(usize, Vec<u32>)> = Vec::new();
     for (k, chain) in cuts {
         let p = *chain.last().expect("a chain ends in its sweep");
-        let swept = match sweeps.get(&p) {
-            Some(s) => s.clone(),
-            None => {
-                let SolidDef::Swept { source, motion, roll } = &sk.solids[p as usize].def else {
-                    unreachable!("a union's cut is a sweep")
-                };
-                let members = members(sk, *source as usize).expect("a union's sweep has members");
-                let s: Vec<u32> = members.iter().map(|m| {
-                    let tool = place(&mut out, m.solid, &m.placed);
-                    let def = SolidDef::Swept { source: tool, motion: *motion, roll: roll.clone() };
-                    let i = mint(&mut out, p, def);
-                    out.distributed.insert(i, p);
-                    i
-                }).collect();
-                sweeps.insert(p, s.clone());
-                s
-            }
-        };
+        let swept = sweeps.entry(p).or_insert_with(|| {
+            let SolidDef::Swept { source, motion, roll } = &sk.solids[p as usize].def else {
+                unreachable!("a union's cut is a sweep")
+            };
+            let members = members(sk, *source as usize).expect("a union's sweep has members");
+            members.iter().map(|m| {
+                let tool = place(&mut out, m.solid, &m.placed);
+                let def = SolidDef::Swept { source: tool, motion: *motion, roll: roll.clone() };
+                let i = mint(&mut out, p, def);
+                out.distributed.insert(i, p);
+                i
+            }).collect()
+        }).clone();
         // the placements between the body and the sweep, over each member's
         let between = &chain[..chain.len() - 1];
         written.push((k, swept.into_iter().map(|top| place(&mut out, top, between)).collect()));

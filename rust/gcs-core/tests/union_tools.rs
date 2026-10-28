@@ -8,26 +8,16 @@ use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
 use std::f64::consts::PI;
 
-use crate::turns_and_slides::{exported,measure,near};
+use crate::solid_sweeps_examples::text;
+use crate::turns_and_slides::{exported,measure,near,refused};
 
 fn admit(e: &Elaborated,body: &str) -> Result<admission::Admission,Error> {
     admission::admit_body(&e.sketch,fixtures::solid(e,body),&Options::default())
 }
 
-fn refused(result: Result<admission::Admission,Error>) -> admission::Refusal {
-    match result {
-        Err(Error::Refused(r)) => { eprintln!("{r}"); r }
-        Err(Error::Unreadable(m)) => panic!("unreadable: {m}"),
-        Ok(a) => panic!("admitted: {:?}",a.sweeps().iter().map(|s| &s.name).collect::<Vec<_>>()),
-    }
-}
-
 /// The series' wheel of two beads (`solid_sweeps/union.sv`), its text: the class's simplest case,
 /// held there to its class and its volume (`solid_sweeps_examples.rs`).
-fn beads() -> String {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/solid_sweeps/union.sv");
-    std::fs::read_to_string(path).unwrap()
-}
+fn beads() -> String { text("union.sv") }
 
 /// Whether the point (x, y) square to the slide is in the shadow along z of a torus about the line
 /// x = 11.5, z = −9 along y: its ring `ring` about that line in the plane y = `at`, its tube `tube`.
@@ -60,8 +50,7 @@ fn beads_one_after_another() -> String {
 #[test]
 fn the_union_cuts_what_its_members_cut_in_turn() {
     let (union,long) = (fixtures::read(&beads()),fixtures::read(&beads_one_after_another()));
-    let (a,b) = (exported(&union,"rod"),exported(&long,"rod"));
-    assert!((a-b).abs() <= 1e-9*b,"{a} against {b}");
+    near(exported(&union,"rod"),exported(&long,"rod"),1e-9);
 }
 
 /// The beads' groove placed a second time half a turn round the rod: each bead's sweep is minted
@@ -92,8 +81,7 @@ fn a_union_placed_whole_is_its_members_placed() {
 /// the two half tubes with half a ball at each end (Pappus).
 #[test]
 fn two_balls_swung_are_two_tubes() {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/solid_sweeps/ball.sv");
-    let text = std::fs::read_to_string(path).unwrap().replace("construction groove := sweep(cutter ","\
+    let text = text("ball.sv").replace("construction groove := sweep(cutter ","\
 in std.front {
   private centre2 := point
   centre2 coords(du: 6mm, dv: 0mm) std.front
@@ -189,12 +177,11 @@ fn a_union_of_tori_rolled_is_two_generating_sweeps() {
 #[test]
 fn the_rolled_union_cuts_what_its_members_cut_in_turn() {
     let (union,long) = (fixtures::read(&rolled_tori(false)),fixtures::read(&rolled_tori(true)));
-    let (a,b) = (exported(&union,"part"),exported(&long,"part"));
-    assert!((a-b).abs() <= 1e-7*b,"{a} against {b}");
+    near(exported(&union,"part"),exported(&long,"part"),1e-7);
     let say = gcs_core::brep::sweep::Say {stage:&|_| {},mark:&|_| {}};
     let built = gcs_core::brep::export::exact(&union.sketch,fixtures::solid(&union,"part"),None,None,&say).unwrap();
-    let names: Vec<String> = built.solid.faces.iter().map(|f| f.name.replace('\u{1}',".")).collect();
-    assert!(names.iter().any(|n| n == "removal.tool.ring"),"{names:?}");
+    let names: Vec<(&str,&str)> = built.solid.faces.iter().map(|f| gcs_core::brep::recipe::named_parts(&f.name)).collect();
+    assert!(names.contains(&("removal","tool.ring")),"{names:?}");
     let paths = gcs_core::solid::faces::face_paths(&union.sketch,fixtures::solid(&union,"part"));
     assert!(paths.iter().any(|p| p.text() == "removal.tool.ring" ),"{:?}",paths.iter().map(|p| p.text()).collect::<Vec<_>>());
 }

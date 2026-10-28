@@ -555,11 +555,12 @@ impl Builder {
         if body >= sk.solids.len() { return Err(ExportRefusal::at(Stage::Blank,"no such solid in this drawing")) }
         let asked = crate::solid::reads(sk,body,0.);
         // a body no sweep reaches is built as the export builds it, a stage, then meshed
-        if !cad::contains_sweep(sk,body) {
+        let at_once = |sk: Sketch,body: usize,reads: Vec<f64>| {
             let recipe = cad::StaticRecipe {recipe:crate::json::Json::Null,sweeps:Vec::new()};
-            return Ok(Builder {sk:sk.clone(),body,recipe,state:State::Static,lines:Default::default(),done:0,outer:None,operand:body,
-                moved:[None,None],enveloped:false,reads:asked})
-        }
+            Builder {sk,body,recipe,state:State::Static,lines:Default::default(),done:0,outer:None,operand:body,moved:[None,None],
+                enveloped:false,reads}
+        };
+        if !cad::contains_sweep(sk,body) { return Ok(at_once(sk.clone(),body,asked)) }
         // a placement of a swept body (`x in f`): the body it places, built and moved (#619)
         let placed = |i: usize| -> Result<(usize,Option<super::geom::Rigid>),ExportRefusal> {
             Ok(cad::placed_swept(sk,i).at(Stage::Blank)?
@@ -581,13 +582,12 @@ impl Builder {
         // the drawing that writes it so, and where every member's sweep is a ball's tube the body
         // is static material there, built as the export builds it
         let lowered = crate::solid::distributed::lowered(sk,body);
+        match lowered {
+            Some(l) if !cad::contains_sweep(&l,body) => return Ok(at_once(l,asked_body,asked)),
+            _ => {}
+        }
         let built = lowered.as_ref().unwrap_or(sk);
         let recipe = cad::recipe_static(built,body).at(Stage::Blank)?;
-        if recipe.sweeps.is_empty() && lowered.is_some() {
-            let recipe = cad::StaticRecipe {recipe:crate::json::Json::Null,sweeps:Vec::new()};
-            return Ok(Builder {sk:sk.clone(),body:asked_body,recipe,state:State::Static,lines:Default::default(),done:0,outer:None,
-                operand:asked_body,moved:[None,None],enveloped:false,reads:asked})
-        }
         if recipe.sweeps.is_empty() {
             return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
         }

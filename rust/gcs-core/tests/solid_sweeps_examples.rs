@@ -11,11 +11,14 @@ use std::f64::consts::{PI,TAU};
 use crate::round_lowering::lens;
 use crate::turns_and_slides::{exported,measure,near,reaches,turned_away,turned_torus,Lean};
 
-/// The example `name` of the series, elaborated and solved.
-fn example(name: &str) -> Elaborated {
+/// The text of the example `name` of the series.
+pub(crate) fn text(name: &str) -> String {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/solid_sweeps").join(name);
-    fixtures::read(&std::fs::read_to_string(path).unwrap())
+    std::fs::read_to_string(path).unwrap()
 }
+
+/// The example `name` of the series, elaborated and solved.
+fn example(name: &str) -> Elaborated { fixtures::read(&text(name)) }
 
 /// The class `body`'s one sweep is admitted to.
 fn class(e: &Elaborated,body: &str) -> Class {

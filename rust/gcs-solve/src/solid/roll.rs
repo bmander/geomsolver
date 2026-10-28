@@ -31,8 +31,9 @@ const BOXES: usize = 20_000;
 /// Sweep `swept`'s roll `[from, to]`, radians: as stated, or found through its body (cached).
 pub fn interval(sk: &Sketch, swept: usize) -> Result<[f64; 2], String> {
     // a member of a union tool rolls over the union's roll (`distributed`, #684 C)
-    if let Some(&union) = sk.distributed.get(&(swept as u32)) {
-        return interval(sk, union as usize);
+    let union = super::distributed::union_of(sk, swept);
+    if union != swept {
+        return interval(sk, union);
     }
     let s = sk.solids.get(swept).ok_or_else(|| format!("no solid at index {swept}"))?;
     let SolidDef::Swept { source, motion, roll } = &s.def else {
