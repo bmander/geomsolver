@@ -310,26 +310,51 @@ back to the same bisector (each begun `d` past the corner, so the cut crosses it
 cylinder's trace there one ellipse, the other wedge's the same), meeting in it; where three concave
 edges meet (a pocket's floor) the three prisms meet in their bisectors, and nothing else stands
 there.  A piece cut back is a `region` in the recipe: its sweep in common with a block standing on
-each bisector (`square`, past every piece).  Each piece shares its faces exactly with the next, so
-the recipe's `grown` node (`body`, the body's own node, a dependency of the region's in
-`cad::recipe_with`; `pieces`, each a `prism`, a `revolve` or such a `region`) glues them to the body
-in turn (`boolean::glued`), nothing intersected, and drops the edges and vertices the glued faces
-took with them (`Brep::compacted`); the native host fuses them.  Unioned, a ball tangent to a
+each bisector (`square`, past every piece).  **At a foot the bisector is a cone** (#693).  Where a
+convex edge stands square to a face between two concave ones (a boss's foot), a point over the face
+nearer it than the edge (`z < r`, `r` its distance from the edge) is the face's: the edge's wedge
+is turned about it (a `revolve`) from its section cut back along the cone `z = r`, its apex the
+corner, at half a right angle about the edge, and the face's prism keeps the rest; the cone meets
+each foot edge's bisector plane tangent along the line they share.  Where a whole circle is concave,
+a plane meeting a cylinder square to it about its axis (a post's foot, a bore's floor: `foot`), the
+band's rectangle is cut back along the cone `z = |ρ − R|` about the axis, its apex `R` beyond the
+plane (opening away from the plane about a post, toward it in a bore).  A face about a foot
+(`about_feet`) — a hole whose edges are all concave, a convex polygon each corner of which such an
+edge stands on with each wall square to the face (`about_polygon`) or one circle (`about_circle`),
+or a rim that is one concave circle — is its prism with the loop moved `d` across the face (a
+polygon's sides square to themselves, an arc of radius `d` about each corner; a circle's radius) and
+the pieces between, each its own sweep with nothing cut: along each side the triangle under its
+bisector (`z = h`) swept along it, at each corner that triangle turned about the edge standing there
+from one wall's normal to the next, about a circle the triangle under the cone turned once from
+where the circle starts (where the band's seam and the body's vertex are).  No Boolean meets a cone
+here: at a boss's foot its apex lies on the wedge's axis.  The face's pieces are a `glued` node:
+glued to one another (`boolean::glued`) and their feet, faces on one plane meeting edge to edge,
+made one (`boolean::planes_joined`: the shared edges dropped, the rest walked as one face's loops
+read onto the first's plane, outer first), so they meet the body's face as one face, as glueing
+asks.  Each piece shares its faces exactly with the next, so the recipe's `grown` node (`body`, the
+body's own node, a dependency of the region's in `cad::recipe_with`; `pieces`, each a `prism`, a
+`revolve`, such a `region` or a `glued` node of them) glues them to the body in turn
+(`boolean::glued`), nothing intersected, and drops the edges and vertices the glued faces took with
+them (`Brep::compacted`); the native host fuses them, a `glued` node's piece by piece.  Unioned, a ball tangent to a
 cylinder along a circle is refused by the Booleans; glued, a block grown is Steiner's volume to
 1e-15.  Gated by the region's field (`agreement::gate`, built about the body's boundary), which
 reads within (or beyond) every face of a body, and nothing more, by the body's own signed distance
 (`SetDistance::Body`, `BodyFaces::signed_distance`, where `distance_slack` says it is exact) — no
 one surface's side bounds a body with a concave edge, and the projection onto the nearest face's
 side runs on past its patch at a convex corner.  Refused by name, the field's: a concave edge on a
-curved face (a post's foot, its bisector a cone), a corner where a convex edge stands between two
-concave ones (a boss's foot), a concave corner of more than three faces, a face beside a concave
-edge that is no convex polygon or narrower than the reach, an edge shorter than the reach between
-its concave corners, a face on a cone, a sphere or a torus, an edge no line or circle carries, a
-convex corner no prism's, a bore no wider than the reach, a body a term of which reads its faces (a
-round).  `tests/grown.rs` is the gate (a block, a post, a hex bar and a bored plate to their closed
-forms to 1e-9; a body in two pieces; an L-block's step and a pocketed tray to Steiner's with its
-concave edges' terms negative, `−d² L` each, a step's end `−2d³/3` and a pocket's floor corner
-`+d³`; the field of a body with a concave edge, grown and shrunk).
+curved face but a band's foot, a corner where a convex edge stands between two concave ones not
+square to the face they bound, a concave corner on a curved face or of more than three faces, a
+face beside a concave edge that is no convex polygon or narrower than the reach (a hole's pieces
+reaching another loop), a face about a foot with a concave rim and a hole, an edge or a band
+shorter than the reach between its concave corners or its feet, a face on a cone, a sphere or a
+torus, an edge no line or circle carries, a convex corner no prism's, a bore no wider than the
+reach, a body a term of which reads its faces (a round).  `tests/grown.rs` is the gate (a block, a
+post, a hex bar and a bored plate to their closed forms to 1e-9; a body in two pieces; an L-block's
+step and a pocketed tray to Steiner's with its concave edges' terms negative, `−d² L` each, a step's
+end `−2d³/3` and a pocket's floor corner `+d³`; a plinth's boss to Steiner's, each foot corner
+`−πd³/4`, its wedge losing `πd³/6` and the plate's prism `πd³/12`; a base's post and a cup's blind
+bore to Pappus's, the square `d × d` about the foot once, `2π(R ± d/2) d²` less; the field of a
+body with a concave edge, grown and shrunk).
 
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`

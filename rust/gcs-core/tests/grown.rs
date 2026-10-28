@@ -1,9 +1,10 @@
 //! **A body grown** (`std.rounds.Grown`): the points within `d` of a body, `{ p | distance(p,
 //! within) <= d }` over `within := { c | c inside B }`, built exactly (`solid::grown`) as the body
 //! and what lies within reach of each face, edge and corner glued to it, every corner a prism's or
-//! a concave one, the prisms beside a concave edge cut back to its bisector; shrunk, or a boss's
-//! foot, read by the field and refused by name.  Held to closed forms: Steiner's for a polytope,
-//! its concave edges' terms negative, Pappus's for a band's rims.
+//! a concave one or a boss's foot, the prisms beside a concave edge cut back to its bisector, at a
+//! boss's foot or a post's to a cone; shrunk read by the field and refused by name.  Held to
+//! closed forms: Steiner's for a polytope, its concave edges' and corners' terms negative, Pappus's
+//! for a band's rims and its foot.
 use gcs_core::brep::geom::Surface;
 use gcs_core::brep::props::volume;
 use gcs_core::program::Elaborated;
@@ -54,9 +55,9 @@ const TURNED: &str = "unit mm\nuse std\nuse std.rounds\nuse std.shapes\nin std.t
     construction slab := solid(plate, from: 0mm, to: 5mm)\n\
     drill := solid(hole, from: -1mm, to: 6mm)\ndrill cut slab\n";
 
-/// On the top plane, a slab 40 square and 10 thick three times over: a tray, a pocket 20 × 16 and
+/// On the top plane, a slab 40 square and 10 thick four times over: a tray, a pocket 20 × 16 and
 /// 4 deep cut into its top; a plinth, a boss 10 square standing 5 on it; a base, a post of radius
-/// 5 standing 5 on it.
+/// 5 standing 5 on it; a cup, a bore of radius 6 sunk 5 into it.
 const STANDING: &str = "unit mm\nuse std\nuse std.rounds\nin std.top {\n\
     q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
     fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
@@ -70,13 +71,15 @@ const STANDING: &str = "unit mm\nuse std\nuse std.rounds\nin std.top {\n\
     fix((15, 15)) m0\nfix((25, 15)) m1\nfix((25, 25)) m2\nfix((15, 25)) m3\n\
     (ms := line(m0, m1)) -> (me := line(m1, m2)) -> (mn := line(m2, m3)) -> (mw := line(m3, m0)) -> close\n\
     stud := face(ms, me, mn, mw)\n\
-    o := point\nfix((20, 20)) o\nrim := radius(5mm) circle(center: o)\n}\n\
+    o := point\nfix((20, 20)) o\nrim := radius(5mm) circle(center: o)\nlip := radius(6mm) circle(center: o)\n}\n\
     construction tray := solid(slab, from: 0mm, to: 10mm)\n\
     cavity := solid(pocket, from: 6mm, to: 11mm)\ncavity cut tray\n\
     construction plinth := solid(slab, from: 0mm, to: 10mm)\n\
     boss := solid(stud, from: 9mm, to: 15mm)\nboss union plinth\n\
     construction base := solid(slab, from: 0mm, to: 10mm)\n\
-    post := solid(face(rim), from: 9mm, to: 15mm)\npost union base\n";
+    post := solid(face(rim), from: 9mm, to: 15mm)\npost union base\n\
+    construction cup := solid(slab, from: 0mm, to: 10mm)\n\
+    well := solid(face(lip), from: 5mm, to: 11mm)\nwell cut cup\n";
 
 /// `name` built as a body grown, exactly.
 fn exact(e: &Elaborated, name: &str) -> std::rc::Rc<Exact> {
@@ -197,16 +200,48 @@ fn a_concave_bodys_field_reads_its_signed_distance() {
     assert!((got - want).abs() <= 1e-9, "{got} against {want}");
 }
 
-/// A boss's foot, a convex edge standing between two concave ones, leaves the body grown to the
-/// field, said by name; so does a post's, its bisector a cone, and a pocket narrower than twice the
-/// reach, and a body shrunk.  At nothing it is the body.
+/// A boss's foot: where its vertical edge stands on the plate between two concave ones, the edge's
+/// wedge is cut back to the cone `z = r` about it and the plate's prism keeps the rest, so each
+/// corner gives up the quarter cylinder over `d` the plate's prism and the wedge would both hold
+/// (`−πd³/4`: the wedge loses its triangle `d²/2` turned a quarter about its centroid `2d/3` out,
+/// `πd³/6`, and the plate's prism the quarter disc over `d` less that triangle turned about its
+/// centroid `d/3` out, `πd³/12`), as each foot edge gives up its square: Steiner's, its concave
+/// terms negative.  A post's foot: the band and the plate's prism meet in the cone `z = r − R`,
+/// holding the square `d × d` about the foot once (Pappus: `2π(R + d/2) d²` less); a bore's floor
+/// alike, the cone opening down (`2π(R − d/2) d²`).
+#[test]
+fn feet_grown_are_built_exactly() {
+    let e = solved(&format!("{STANDING}gp := std.rounds.Grown(plinth, d: 1mm)\ngb := std.rounds.Grown(base, d: 1mm)\n\
+                             gc := std.rounds.Grown(cup, d: 1mm)\n"));
+    let (d, a, t) = (1.0, 40.0, 10.0);
+    let quarter = PI * d * d / 4.0;
+    // the boss 10 square and 5 tall: its top's face, edges and corners, its walls, and at its foot
+    // four edges of 10 and four corners
+    let (s, h) = (10.0, 5.0);
+    let plinth = steiner(a, a, t, d) + s * s * h + 4.0 * s * h * d + quarter * (4.0 * s + 4.0 * h)
+        + PI / 6.0 * d.powi(3) * 4.0 - 4.0 * s * d * d - PI / 4.0 * d.powi(3) * 4.0;
+    // the post of radius 5 and 5 tall: its band, its top and its rim's torus
+    let r = 5.0;
+    let base = steiner(a, a, t, d) + PI * r * r * h + PI * ((r + d) * (r + d) - r * r) * h
+        + quarter * 2.0 * PI * (r + 4.0 * d / (3.0 * PI)) - 2.0 * PI * (r + d / 2.0) * d * d;
+    // the bore of radius 6 and 5 deep: its floor's face for the top's disc, its band, its rim
+    let r = 6.0;
+    let cup = steiner(a, a, t, d) - PI * r * r * h + PI * (r * r - (r - d) * (r - d)) * h
+        + quarter * 2.0 * PI * (r - 4.0 * d / (3.0 * PI)) - 2.0 * PI * (r - d / 2.0) * d * d;
+    for (name, want) in [("gp.body", plinth), ("gb.body", base), ("gc.body", cup)] {
+        let got = volume(&exact(&e, name).brep);
+        assert!((got - want).abs() <= 1e-9 * want, "{name}: {got} against {want}");
+    }
+}
+
+/// A body grown past what it is built for leaves it to the field, said by name: a pocket narrower
+/// than twice the reach, a post no taller than it over its foot, and a body shrunk.  At nothing it
+/// is the body.
 #[test]
 fn what_is_not_built_is_said() {
-    let e = solved(&format!("{STANDING}gp := std.rounds.Grown(plinth, d: 1mm)\ngb := std.rounds.Grown(base, d: 1mm)\n\
-                             gn := std.rounds.Grown(tray, d: 9mm)\n"));
-    for (name, says) in [("gp.body", "a convex edge stands between two concave ones"),
-                         ("gb.body", "a concave edge on a curved face"),
-                         ("gn.body", "a face narrower than the reach beside a concave edge")] {
+    let e = solved(&format!("{STANDING}gn := std.rounds.Grown(tray, d: 9mm)\ngs := std.rounds.Grown(base, d: 6mm)\n"));
+    for (name, says) in [("gn.body", "a face narrower than the reach beside a concave edge"),
+                         ("gs.body", "a band shorter than it between its feet")] {
         let r = route(&e.sketch, ent(&e, name).i()).unwrap();
         let Route::Grown(Err(why)) = r else { panic!("`{name}` is built") };
         assert!(why.contains(says), "`{name}`: {why}");

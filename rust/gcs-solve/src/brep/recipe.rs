@@ -64,6 +64,7 @@ impl Node {
             },
             Node::Region(pieces) => region_node(pieces,built,built_names,floor),
             Node::Grown {body,pieces} => grown_node(*body,pieces,built,built_names,floor),
+            Node::Glued(pieces) => glued_node(pieces,built,built_names,floor),
             Node::Lowered(l) => lowered_node(l,built,built_names,floor),
             Node::Family(f) => family_node(f),
         }
@@ -135,6 +136,31 @@ fn grown_node(body: i64,pieces: &[Node],built: &BTreeMap<i64,Brep>,built_names: 
         if left.len() == before { return Err("recipe: a grown body's piece shares no face with the rest".into()) }
     }
     let solid = solid.compacted();
+    solid.check(tol)?;
+    Ok(solid)
+}
+
+/// A `glued` node (`solid::grown`): its first piece, each other glued to it where they share a
+/// face (`boolean::glued`) in turn until every piece is, then the faces they leave on one plane
+/// meeting edge to edge made one (`boolean::planes_joined`) — the feet of a face's pieces, one
+/// face as the body's own is.
+fn glued_node(pieces: &[Node],built: &BTreeMap<i64,Brep>,built_names: &BTreeMap<i64,String>,floor: f64) -> Built {
+    let mut left = pieces.iter().map(|p| p.built(built,built_names,floor)).collect::<Result<Vec<_>,_>>()?;
+    if left.is_empty() { return Err("recipe: a glued node of no pieces".into()) }
+    let mut solid = left.remove(0);
+    let tol = 8.*tolerance_over(solid.size(),floor);
+    while !left.is_empty() {
+        let before = left.len();
+        let mut k = 0;
+        while k < left.len() {
+            match super::boolean::glued(&solid,&left[k],tol) {
+                Some(b) => { solid = b; left.remove(k); }
+                None => k += 1,
+            }
+        }
+        if left.len() == before { return Err("recipe: a glued piece shares no face with the rest".into()) }
+    }
+    let solid = super::boolean::planes_joined(&solid,tol)?.compacted();
     solid.check(tol)?;
     Ok(solid)
 }
