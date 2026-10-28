@@ -168,8 +168,8 @@ Wankel's period are design. `fixtures::gear::roll` restates one member's roll (n
 in the slow tier each member built as its stated roll built it).
 
 **Generating sweeps and the native export** ([docs/generating-sweeps.md](../generating-sweeps.md)):
-`solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class and the
-planar classes (below).
+`solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class, the
+constant-twist class (screws, turns and slides) and the planar classes (below).
 `solid::admission::admit_body` checks rows T1–E4 (revolved line/arc tools, rotation with changing
 contact, clear at both limits, one contact per point, no fold, no self-crossing), sampled, refusing
 with row and witness; it checks a placement once when the blank reads alike at every point
@@ -239,6 +239,33 @@ solid that failed to build, whose name would read nothing (#618,
 vertex cuts the edges it lies inside (`boolean`, after the faces' meetings), a traced fit is laid and
 graded by length and never crowds a vertex it must pass, a cone at its apex writes radius 0.
 `rust/examples/twist_drill/`, `fixtures::drill`, `tests/twist_drill.rs`.
+
+**Turns and slides, the constant twist's two limits (#684):** a sweep under one turn with no
+advance (`f turns(r) l`) or one slide (`f slides(a) l`) is asked the screw's rows, S1–S4
+(`Family::twist`, which reads a slide as a screw of no ratio about the line along it through the
+origin). Its sheet is built by `brep::sweep::helical` along its section (`Screw::station`): a
+slide's square to it, extruded across the blank's heights; a turn's a half-plane through its axis,
+its points carried round at their own heights and radii (`Screw::time_to_station`, each node's
+delay the one nearest the one before), revolved over the roll, its S4 read by radius and height;
+the stretch of the roll each reader asks is `Screw::passing`. A turn of a whole turn or more is
+refused at S4 in the walk (its sheet would lie over itself), and S1 also refuses
+a ring in contact all round between two walked stations whose path enters the blank
+(`constant_twist::stationary`: the amplitude turning right round, its three coefficients' least
+sought by `roots::brent`) — a turn about an axis the tool's meets, or a slide along the tool's
+axis — where the boundary leaves the walked branch with no root moving. A turn of one ball is
+still its tube. The accuracy meter reads a turn's characteristic over the whole roll.
+`tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate (volumes computed
+apart: the lens, a circular segment, Pappus, and a tilted torus's shadow from its centre circle;
+the STL held to the field), with
+`rust/examples/twist_drill/straight_flute.sv` and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
+
+**Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
+a class — the canal, a slide, a turn, a screw, the generating class's rack, the planar subtraction
+class's conjugate wheel — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+holding it to its class, to an exact build whose STL agrees with the field and to a volume made
+apart from the code under test. A class admitted later adds its file, its row and its test there;
+`every_example_is_held_and_named` fails a file the README does not name or no test reads. The
+planar generating class's simplest case is the Wankel (`rust/examples/wankel/`).
 
 **A swept body placed is the body moved (#619):** a chain of placements (`shown := wheel in held`,
 `x at(under: f) τ`) ending in a body with swept cuts is that body built once and its boundary carried

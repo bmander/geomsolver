@@ -114,12 +114,54 @@ pub enum PlanarStep {
     Relative,
 }
 
-/// A screw read off a motion (`Family::screw`): it turns `ratio` radians a radian about the line
+/// A screw read off a motion (`Family::twist`): it turns `ratio` radians a radian about the line
 /// through `origin` along the unit `axis`, and slides `advance` along it a turn of the parameter.
+/// A turn (`advance` zero) and a slide (`ratio` zero) are its two limits.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Screw { pub origin: [f64;3], pub axis: [f64;3], pub ratio: f64, pub advance: f64 }
 
 impl Screw {
+    /// Whether it turns without advancing: a turn, whose sections (`station`) are half-planes
+    /// about its axis, where a screw's and a slide's are planes square to it.
+    pub fn is_turn(&self) -> bool { self.advance == 0. }
+    /// Whether it advances without turning: a slide, whose path has no period.
+    pub fn is_slide(&self) -> bool { self.ratio == 0. }
+    /// Which of the three it is, as a refusal or a report says it.
+    pub fn kind(&self) -> &'static str { if self.is_turn() { "a turn" } else if self.is_slide() { "a slide" } else { "a screw" } }
+    /// How far round its axis `p` stands, from the axis's own frame's `x` (`Frame::about`): a
+    /// turn carries it round at the same height and radius.
+    pub fn angle(&self,p: [f64;3]) -> f64 {
+        let l = crate::brep::geom::Frame::about(self.origin,self.axis).local(p);
+        l[1].datan2(l[0])
+    }
+    /// How far `p` stands from the axis, which none of the motions changes.
+    pub fn radius(&self,p: [f64;3]) -> f64 {
+        let q = crate::space::sub(p,self.origin);
+        crate::space::norm(crate::space::sub(q,crate::space::scale(self.axis,crate::space::dot(q,self.axis))))
+    }
+    /// Where `p` stands across the motion's sections: its height along the axis for a screw or a
+    /// slide, which carry it from one plane square to the axis to the next, or its angle about
+    /// the axis for a turn, which carries it from one half-plane through the axis to the next.
+    pub fn station(&self,p: [f64;3]) -> f64 { if self.is_turn() { self.angle(p) } else { self.height(p) } }
+    /// The time at which the motion carries `p` to `station` (`station`'s kind): for a turn, which
+    /// reaches it once a turn, the one nearest `near`.
+    pub fn time_to_station(&self,p: [f64;3],station: f64,near: f64) -> f64 {
+        if !self.is_turn() { return self.time_to(p,station) }
+        let period = std::f64::consts::TAU/self.ratio.abs();
+        let t = (station-self.angle(p))/self.ratio;
+        t+((near-t)/period).round()*period
+    }
+    /// The times, from now, at which the motion holds `p` between the heights `band` along its
+    /// axis: a screw or a slide carries it through them once, and a turn keeps it at its own
+    /// height, so holds it there always or never (`None`).
+    pub fn passing(&self,p: [f64;3],[lo,hi]: [f64;2]) -> Option<[f64;2]> {
+        if self.is_turn() {
+            let h = self.height(p);
+            return (h >= lo.min(hi) && h <= lo.max(hi)).then_some([f64::NEG_INFINITY,f64::INFINITY])
+        }
+        let (x,y) = (self.time_to(p,lo),self.time_to(p,hi));
+        Some([x.min(y),x.max(y)])
+    }
     /// The velocity per radian of the point at `p` of what the screw carries, in the carried frame
     /// as in the world's: the same at every time, since a screw carries its own axis into itself.
     pub fn velocity(&self,p: [f64;3]) -> [f64;3] {
@@ -136,8 +178,7 @@ impl Screw {
         (0..8).map(|k| back.point(std::array::from_fn(|i| if k>>i & 1 == 0 { lo[i] } else { hi[i] })))
             .fold(([f64::INFINITY,f64::NEG_INFINITY],0_f64),|([a,b],r),p| {
                 let h = self.height(p);
-                let off = crate::space::sub(crate::space::sub(p,self.origin),crate::space::scale(self.axis,h));
-                ([a.min(h),b.max(h)],r.max(crate::space::norm(off)))
+                ([a.min(h),b.max(h)],r.max(self.radius(p)))
             })
     }
     /// `p` carried along its own path for a time `t`: turned `ratio·t` about the axis and slid
@@ -346,6 +387,17 @@ impl Family {
                 Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
             _ => None,
         }
+    }
+
+    /// The **constant twist** this motion is (#684): a screw (`screw`), a turn about one axis with
+    /// no advance, or a slide along one line turning not at all, each at a constant rate. Every
+    /// point it carries then moves the same way relative to what carries it at every time, which
+    /// is what `solid::constant_twist` builds a swept boundary from. A slide is read as a screw
+    /// turning at no ratio about the line along its direction through the world's origin; a
+    /// relative motion, a driven one and one along a path are none.
+    pub fn twist(&self) -> Option<Screw> {
+        self.turning().or_else(|| self.sliding().filter(|&(_,advance)| advance != 0.)
+            .map(|(axis,advance)| Screw {origin:[0.;3],axis,ratio:0.,advance}))
     }
 
     /// The slide this motion is, where it is one translation: its unit direction and its advance a

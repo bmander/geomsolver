@@ -35,6 +35,21 @@ const projects: Example[] = [{
     + 'Edit the helix, the wheels or the point in configuration.sv; drill.svd is the drawing.',
   target: { kind: 'directory', path: 'twist_drill', entry: 'drill.sv' },
 }, {
+  label: 'Straight-fluted drill · flutes ground under a slide', key: 'straight_flute',
+  description: 'The twist drill\'s flute wheel set square to the axis and slid up it rather than '
+    + 'screwed: a slide moves every point of the wheel alike at every time, as a screw does, so '
+    + 'each flute\'s wall is the wheel\'s characteristic extruded up the drill, here the wheel\'s '
+    + 'own profile. Edit the wheel or the flute count in configuration.sv.',
+  target: { kind: 'directory', path: 'twist_drill', entry: 'straight_flute.sv' },
+}, {
+  label: 'Solid sweeps · one of each class built exactly', key: 'solid_sweeps',
+  description: 'The simplest case of each kind of continuous sweep this kernel builds exactly: a '
+    + 'ball swung partway (its tube), a wheel slid along a rod, a cutter turned partway across a '
+    + 'curved block, the wheel screwed up the rod, a rack rolling a gear\'s tooth space, and a plus '
+    + 'always in mesh cutting its conjugate wheel. Each file names its class and gives its volume; '
+    + 'the README says what each shows and where the larger cases are.',
+  target: { kind: 'directory', path: 'solid_sweeps', entry: 'slide.sv' },
+}, {
   label: 'Wankel rotor and housing · one planetary motion', key: 'wankel',
   description: 'A rotary engine from one motion and three numbers: the rotor\'s centre rides the '
     + 'eccentric while it turns a third as fast. The housing\'s bore is an apex\'s envelope, its '

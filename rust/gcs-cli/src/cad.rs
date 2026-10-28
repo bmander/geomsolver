@@ -82,8 +82,9 @@ fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
         } else { String::new() };
         match &s.class {
             admission::Class::Generating => eprintln!("solventc: `{}` is in the generating-sweep class, sampled {rows}x{columns} per face{alike}",s.name),
-            admission::Class::ConstantTwist(_) => eprintln!("solventc: `{}` is in the constant-twist class, its characteristic sampled at \
-                {} rings, {} across its reach, each path through the blank a degree of turn apart{alike}",s.name,s.samples,s.contacts),
+            admission::Class::ConstantTwist(found) => eprintln!("solventc: `{}` is in the constant-twist class ({}), its characteristic \
+                sampled at {} rings, {} across its reach, each path through the blank {}{alike}",s.name,found.screw.kind(),s.samples,
+                s.contacts,found.path_reading()),
             admission::Class::Planar(found) => eprintln!("solventc: `{}` is in the planar generating class, its pocket's inner \
                 envelope {} pieces of {} contacts, the stock's wall read clear of the blank at {} points over {columns} poses{alike}",
                 s.name,found.envelope.pieces.len(),s.contacts,s.samples),

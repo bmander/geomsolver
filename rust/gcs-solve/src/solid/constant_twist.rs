@@ -1,10 +1,15 @@
-//! Sweeps of constant twist (docs/generating-sweeps.md): a tool carried by a screw. A screw moves
-//! every point of the tool the same way, relative to the tool, at every time. So whether a tool
-//! point is on the swept boundary does not depend on the time. The points that are form the
-//! tool's **characteristic**, a curve fixed on the tool, and the boundary is that curve carried by
-//! the screw, S(s, t) = M(t)·c(s), whose normal is the tool's there. On a revolved face, the
+//! Sweeps of constant twist (docs/generating-sweeps.md): a tool carried by a screw, or by either
+//! of its limits, a turn about one axis and a slide along one line (#684). Each moves every point
+//! of the tool the same way, relative to the tool, at every time. So whether a tool point is on the
+//! swept boundary does not depend on the time. The points that are form the tool's
+//! **characteristic**, a curve fixed on the tool, and the boundary is that curve carried by the
+//! motion, S(s, t) = M(t)·c(s), whose normal is the tool's there. On a revolved face, the
 //! characteristic's ring at meridian station u is A cos θ + B sin θ + C = 0
-//! (`RevolvedSurface::contact_coefficients`): two roots, or none. Nothing is traced.
+//! (`RevolvedSurface::contact_coefficients`): two roots, or none. Nothing is traced. The sheet is
+//! read along its **section**: square to the axis for a screw and a slide, which carry one such
+//! plane to the next, and a half-plane through the axis for a turn, which carries one round to
+//! the next (`Screw::station`); a turn's sheet is its section revolved, a slide's its section
+//! extruded.
 //!
 //! `Characteristic::walk` finds the stretch of it that reaches the blank by walking one root
 //! from ring to ring and across the faces of the tool's profile. It asks the class's rows of
@@ -32,7 +37,8 @@ const MARGIN: usize = 3;
 /// The least sine of the half angle between a ring's two roots for a characteristic to be
 /// regular there: below it the roots are about to meet, where the curve turns back on the ring.
 const LEAST_SPREAD: f64 = 1e-3;
-/// How far apart, in turns of the screw, a point's path through the blank is read.
+/// How far apart, in turns of the screw, a point's path through the blank is read: a slide's, in
+/// the same number of steps across the stretch of the roll that passes the blank's heights.
 const PATH_STEP: f64 = 1./360.;
 
 /// One root of one ring: where it is on the tool, its unit normal (the face's, as its parameters
@@ -168,12 +174,19 @@ impl Characteristic {
     /// sliver of a large one.
     pub fn walk(contacts: &SweepContacts,ask: &Ask) -> Result<Characteristic,Failure> {
         let family = contacts.motion();
-        let screw = family.screw().ok_or((Condition::Motion,"the motion is not a screw".to_string(),None))?;
+        let screw = family.twist().ok_or((Condition::Motion,"the motion is no screw, turn or slide".to_string(),None))?;
+        // S4 for a turn: carried round a whole turn or more it lays its sheet over itself, and
+        // what it sweeps is then a solid of revolution, which the class does not build
+        let turned = (ask.roll[1]-ask.roll[0])*screw.ratio.abs();
+        if screw.is_turn() && turned >= std::f64::consts::TAU*(1.-1e-12) {
+            return Err((Condition::Lead,format!("the roll turns the tool {:.1} degrees about the axis, a whole turn or more, \
+                which carries its sheet onto itself: a turn's sweep is built over less than a whole turn",turned.to_degrees()),None))
+        }
         let motion = family.at(ask.roll[0]).map_err(|m| (Condition::Motion,m,None))?;
         let tool = contacts.source_material();
         // a screw's characteristic is read ring by ring of a revolved face; a prism's side has none
         let patches: Vec<RevolvedSurface> = contacts.patches().iter().map(|s| s.revolved().cloned().ok_or_else(|| (Condition::Tool,
-            format!("a screw's tool is a full revolution: `{}` is a prism's side",s.name()),None))).collect::<Result<_,_>>()?;
+            format!("a constant twist's tool is a full revolution: `{}` is a prism's side",s.name()),None))).collect::<Result<_,_>>()?;
         let scale = patches.iter().filter_map(|s| s.at(0.,0.).ok()).map(|s| norm(s.position)).fold(1_f64,f64::max);
         let tolerance = ask.root_tolerance*scale;
         let walker = Walker {contacts,patches:patches.clone(),ask,screw,motion,tool,scale,tolerance};
@@ -210,6 +223,8 @@ impl Characteristic {
             fine
         };
         let Pass {stations,rings,order} = fine;
+        // S1: no ring the walk passes is in contact all round between its stations
+        stationary(&patches,&stations,&order,motion,family,&screw,ask)?;
         let root = |x| root(&rings,x);
         let seed = *order.iter().find(|&&x| root(x).reach.is_some()).expect("a pass reaches");
         // the nodes, a crossing's second point dropped (its station starts the next step)
@@ -278,34 +293,78 @@ impl Characteristic {
             .map(|r| (r.position,r.normal)).ok_or_else(|| format!("the characteristic on `{}` has no point at {u:.6}",self.patches[b.patch].name))
     }
 
-    /// The point at `s` carried along its path to `height`, and its normal turned with it: the
-    /// sheet's section square to the axis there, which is as smooth as the sheet is. (The
+    /// How each point's path through the blank was read, as a report says it.
+    pub fn path_reading(&self) -> &'static str {
+        if self.screw.is_slide() { "read in 360 steps" } else { "a degree of turn apart" }
+    }
+
+    /// The point at `s` carried along its path to `station` (`Screw::station`), and its normal
+    /// turned with it: the sheet's section there, which is as smooth as the sheet is. (The
     /// characteristic itself is not: where the tool's profile changes curvature its direction
-    /// jumps, by a step along the screw's path, which the sweep does not see.)
-    pub fn on_section(&self,s: f64,height: f64) -> Result<(V,V),String> {
+    /// jumps, by a step along the motion's path, which the sweep does not see.)
+    pub fn on_section(&self,s: f64,station: f64) -> Result<(V,V),String> {
         let (p,n) = self.at(s)?;
-        let t = self.screw.time_to(p,height);
+        let t = self.screw.time_to_station(p,station,0.);
         Ok((self.screw.carry(p,t),self.screw.turn(n,t)))
     }
 
-    /// S4: the reach's section square to the axis does not cross itself. The sheet is the same at
-    /// every height but turned and raised, so two of its points meet exactly where two points of
-    /// one section do.
+    /// S4: the reach's section does not cross itself. The sheet is the same at every station but
+    /// turned and raised (a screw's), raised (a slide's) or turned (a turn's), so two of its points
+    /// meet exactly where two points of one section do. A turn's section is read in its half-plane,
+    /// by radius and height.
     fn simple(&self,family: &Family) -> Result<(),Failure> {
         let [first,last] = self.reach;
-        let height = self.screw.height(self.nodes[first].position);
-        let points: Vec<V> = (first..=last).map(|w| self.on_section(w as f64,height).map(|(p,_)| p)).collect::<Result<_,_>>()
+        let station = self.screw.station(self.nodes[first].position);
+        let points: Vec<V> = (first..=last).map(|w| self.on_section(w as f64,station).map(|(p,_)| p)).collect::<Result<_,_>>()
             .map_err(|m| (Condition::Motion,m,None))?;
         let crate::brep::geom::Frame {x:e1,y:e2,..} = crate::brep::geom::Frame::about([0.;3],self.screw.axis);
-        let flat: Vec<[f64;2]> = points.iter().map(|p| [dot(*p,e1),dot(*p,e2)]).collect();
+        let flat: Vec<[f64;2]> = points.iter().map(|&p| if self.screw.is_turn() { [self.screw.radius(p),self.screw.height(p)] }
+            else { [dot(p,e1),dot(p,e2)] }).collect();
         if let Some((i,j)) = crossing(&flat) {
             let p: V = std::array::from_fn(|k| 0.5*(points[i][k]+points[i+1][k]));
             let at = witness(family,self.nodes[i+first].reach,self.nodes[i+first].position);
-            return Err((Condition::Lead,format!("the sweep crosses itself within a lead: its section square to the axis meets \
-                itself between the characteristic's points {i} and {j}"),at.or(Some(p))))
+            let within = if self.screw.is_turn() { "where its section in a half-plane through the axis" }
+                else if self.screw.is_slide() { "where its section square to the slide" } else { "within a lead: its section square to the axis" };
+            return Err((Condition::Lead,format!("the sweep crosses itself {within} meets itself between the characteristic's \
+                points {i} and {j}"),at.or(Some(p))))
         }
         Ok(())
     }
+}
+
+/// S1 between the walk's stations: a ring in contact all round, every point of it on the
+/// boundary, is where a characteristic branches. Under a turn about an axis that the tool's own
+/// axis meets, the ring whose normals all pass through the point where they meet is one; under a
+/// slide along the tool's axis, a ring whose normals are all square to it. Either way the
+/// contact equation's amplitude turns right round as the walk passes it while its constant term
+/// stays nought, and the roots it walks need not move, so a station need not fall on it: where
+/// the amplitude turns more than a quarter turn between two of the walk's stations on a face, the
+/// least of the ring's three coefficients between them is sought (`roots::brent`), and a ring
+/// found in contact all round with a point whose path enters the blank is refused.
+fn stationary(patches: &[RevolvedSurface],stations: &[Vec<f64>],order: &[(usize,usize,usize)],motion: Motion,family: &Family,screw: &Screw,
+    ask: &Ask) -> Result<(),Failure> {
+    let coefficients = |k: usize,u: f64| patches[k].contact_coefficients(u,motion).ok();
+    for w in order.windows(2) {
+        let ((k,i,_),(l,j,_)) = (w[0],w[1]);
+        if k != l || i == j { continue }
+        let (u0,u1) = (stations[k][i],stations[k][j]);
+        let (Some((a0,b0,c0)),Some((a1,b1,c1))) = (coefficients(k,u0),coefficients(k,u1)) else { continue };
+        if a0*a1+b0*b1 >= 0. { continue }
+        let size = |(a,b,c): (f64,f64,f64)| a.dhypot(b).dhypot(c);
+        let scale = size((a0,b0,c0)).max(size((a1,b1,c1)));
+        let at = |u: f64| coefficients(k,u).map_or(f64::INFINITY,size);
+        let (least,u) = crate::roots::brent(&at,u0.min(u1),u0.max(u1),1e-12*(u1-u0).abs(),80,|_,_| false);
+        if !(least <= 1e-6*scale) { continue }
+        let [v0,v1] = patches[k].domain()[1];
+        let entering = (0..64).filter_map(|m| patches[k].at(u,v0+(v1-v0)*m as f64/64.).ok())
+            .find_map(|p| reach(family,screw,p.position,ask).map(|t| (t,p.position)));
+        if let Some((t,p)) = entering {
+            return Err((Condition::Regular,format!("a ring of `{}` is in contact all round, where the characteristic branches: \
+                the tool's normals there all pass through the motion's axis, or all lie square to its slide",patches[k].name),
+                witness(family,Some(t),p)))
+        }
+    }
+    Ok(())
 }
 
 /// The first pair of segments of a polyline that meet without being neighbours, by the index of
@@ -354,21 +413,19 @@ fn outward(tool: &super::SpatialField,p: V,n: V) -> V {
     if tool.value(step(1.)) < tool.value(step(-1.)) { n.map(|x| -x) } else { n }
 }
 
-/// The first time within the roll at which the screw carries `p` into the blank: its path read a
-/// degree of turn apart over the stretch of the roll that passes the blank's heights.
+/// The first time within the roll at which the motion carries `p` into the blank: its path read a
+/// degree of turn apart (a slide's, `1/PATH_STEP` steps along) over the stretch of the roll that
+/// passes the blank's heights (`Screw::passing`). A turn keeps a point at its height and its
+/// radius, so one that stands beyond the blank in either never enters it.
 fn reach(family: &Family,screw: &Screw,p: V,ask: &Ask) -> Option<f64> {
-    let off = sub(sub(p,screw.origin),crate::space::scale(screw.axis,screw.height(p)));
-    if ask.radius.is_some_and(|r| norm(off) > r) { return None }
+    if ask.radius.is_some_and(|r| screw.radius(p) > r) { return None }
     let [lo,hi] = match ask.heights {
-        Some([a,b]) => {
-            let (x,y) = (screw.time_to(p,a),screw.time_to(p,b));
-            [x.min(y).max(ask.roll[0]),x.max(y).min(ask.roll[1])]
-        }
+        Some(band) => { let [x,y] = screw.passing(p,band)?; [x.max(ask.roll[0]),y.min(ask.roll[1])] }
         None => ask.roll,
     };
     if !(lo <= hi) { return None }
-    let step = std::f64::consts::TAU*PATH_STEP/screw.ratio.abs();
-    let count = ((hi-lo)/step).ceil().max(1.) as usize;
+    let count = if screw.is_slide() { (1./PATH_STEP).round() as usize }
+        else { ((hi-lo)*screw.ratio.abs()/(std::f64::consts::TAU*PATH_STEP)).ceil().max(1.) as usize };
     (0..=count).map(|k| lo+(hi-lo)*k as f64/count as f64)
         .find(|&t| family.pose_at(t).is_ok_and(|pose| (ask.inside)(pose.point(p))))
 }
