@@ -271,6 +271,7 @@ mod step_assembly;
 mod style;
 mod sundial;
 mod surfaces;
+mod sweep_census;
 mod swept_faces;
 mod swept_over_parameters;
 mod swept_speed;

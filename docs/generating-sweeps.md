@@ -348,6 +348,10 @@ slide keeps in their own planes, stay clear of the blank. Their fixtures stay
 in the tree as **negative controls**: each must
 produce its refusal.
 
+The general sweep outside every class is #239's. [sweep-literature.md](sweep-literature.md) maps
+the published framework for it (Adsul, Machchhar and Sohoni) onto these rows (E3 and S3 are its
+invariant θ) and records a census of the sweeps in the tree against it (`tests/sweep_census.rs`).
+
 ## Acceptance
 
 An admitted sweep is accepted only by evidence that caught the earlier failure. The
