@@ -19,7 +19,7 @@ use crate::ir::{Operation, Statement};
 use crate::model::{entity_name, EntKind, EntRef, MotionDef, MotionE, Sketch};
 use crate::syntax::{Arg, OpArg, Ref, StmtId};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 /// What the statements say of one joint: the numbers its `fix` states, and what its axis is held
 /// to.
@@ -243,7 +243,7 @@ fn read_in(sk: &Sketch, m: usize, leaf: &dyn Fn(&MotionE) -> Option<(String, Str
 pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
                      skip: &BTreeSet<StmtId>, diags: &mut Vec<Diag>) {
     use crate::constraints::JOINT_VALUE;
-    let held = held_now(sk);
+    let held = sk.held_numbers();
     for st in body.iter().filter(|st| !skip.contains(&st.id)) {
         let Operation::Relation(r) = &st.kind else { continue };
         let Some(w) = r.form.written().filter(|w| w.word.text == "fix") else { continue };
@@ -314,19 +314,10 @@ pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
     }
 }
 
-/// The numbers the drawing holds where it stands — a face family's running numbers and the
-/// declared parameters, at the instant held — as an instant may read them.
-fn held_now(sk: &Sketch) -> BTreeMap<String, crate::expr::Aff> {
-    sk.held.iter()
-        .map(|(n, h)| (n.clone(), crate::expr::Aff::of_dim(sk.params[h.param as usize].value,
-                                                           h.dim)))
-        .collect()
-}
-
-/// A frame's value `text` worked out where the drawing stands (`held_now`), in degrees: the
-/// instant a solid drawn in it is placed at.
+/// A frame's value `text` worked out where the drawing stands (`Sketch::held_numbers`), in
+/// degrees: the instant a solid drawn in it is placed at.
 pub(super) fn value_now(sk: &Sketch, text: &str) -> Result<f64, String> {
-    let a = crate::flatten::value_read(text, &held_now(sk), &sk.declared, sk.units)?;
+    let a = crate::flatten::value_read(text, &sk.held_numbers(), &sk.declared, sk.units)?;
     a.dim.require(crate::units::Dim::ANGLE, crate::constraints::JOINT_VALUE)?;
     a.number().ok_or_else(|| format!("`{text}` reads an unknown, and a solid is placed once"))
 }

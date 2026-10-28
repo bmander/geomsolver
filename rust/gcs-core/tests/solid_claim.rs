@@ -15,6 +15,20 @@ fn verdicts(e: &Elaborated) -> Vec<gcs_core::diagnose::SolidVerdict> {
     gcs_core::diagnose::judge_solids(&sk)
 }
 
+/// `src` parses, and elaborating it says `code` with `needle` in its words.
+fn refused(src: String, code: Code, needle: &str) {
+    let (prog, errs) = parse(&src);
+    assert!(errs.is_empty(), "{errs:?}");
+    let e = elaborate(&prog);
+    let saw: Vec<String> =
+        e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect();
+    assert!(
+        e.diags.iter().any(|d| d.code == code && d.message.contains(needle)),
+        "expected {} `{needle}`\n{src}\n{saw:#?}",
+        code.as_str()
+    );
+}
+
 /// A square `w` on a side with its lower-left corner at `(x, y)` in the front, grounded, standing
 /// between `lo` and `hi` along the front's own normal — face `f{tag}` and solid `s{tag}_`.
 fn block(tag: &str, x: f64, y: f64, w: f64, lo: f64, hi: f64) -> String {
@@ -172,18 +186,6 @@ fn what_is_written_wrong_is_refused() {
         block("A", 0.0, 0.0, 10.0, -5.0, 0.0),
         block("B", 13.0, 0.0, 10.0, -5.0, 0.0)
     );
-    let refused = |src: String, code: Code, needle: &str| {
-        let (prog, errs) = parse(&src);
-        assert!(errs.is_empty(), "{errs:?}");
-        let e = elaborate(&prog);
-        let saw: Vec<String> =
-            e.diags.iter().map(|d| format!("{}: {}", d.code.as_str(), d.message)).collect();
-        assert!(
-            e.diags.iter().any(|d| d.code == code && d.message.contains(needle)),
-            "expected {} `{needle}`\n{src}\n{saw:#?}",
-            code.as_str()
-        );
-    };
     // a clearance of nothing in particular
     refused(format!("{two}claim sA_ clear sB_\n"), Code::E040, "asks for room");
     // a word that relates solids, given something else
@@ -538,17 +540,6 @@ fn a_claim_over_a_declared_parameter_follows_its_march() {
 
 #[test]
 fn a_claim_over_a_declared_parameter_is_refused_outside_it() {
-    let refused = |src: String, code: Code, needle: &str| {
-        let (prog, errs) = parse(&src);
-        assert!(errs.is_empty(), "{errs:?}");
-        let e = elaborate(&prog);
-        assert!(
-            e.diags.iter().any(|d| d.code == code && d.message.contains(needle)),
-            "expected {} `{needle}`\n{:#?}",
-            code.as_str(),
-            e.diags
-        );
-    };
     let base = SWUNG_BY_T.split("claim").next().unwrap();
     refused(format!("{base}claim over t in (0deg, 120deg) {{ shown clear(0.5mm) post }}\n"),
             Code::E103, "stretch of its interval, (0deg, 90deg)");

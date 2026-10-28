@@ -560,29 +560,38 @@ impl<'a> Walk<'a> {
         if !over.declared {
             return;
         }
-        let name = &over.name;
-        let declared = (scope.module.is_none() && scope.prefix().is_empty())
-            .then(|| self.parameters.get(&name.text)).flatten();
-        let Some(running) = declared else {
-            let m = format!("`{}` names no parameter the document declares: a reading over the \
-                             roll states its interval, `over {} in (a, b)`, or runs over a \
-                             `param {}: Angle over (a, b)`", name.text, name.text, name.text);
-            self.err(Code::E103, name.span, m);
-            return;
-        };
+        let name = over.name.clone();
+        let refused = format!("a reading over the roll states its interval, `over {0} in (a, \
+                               b)`, or runs over a `param {0}: Angle over (a, b)`", name.text);
+        let Some((dim, ends)) = self.declared_ends(&name, scope, &refused) else { return };
         // a face of the drawing may be swept over a parameter of any kind (#398 B), a face
         // family: the elaborator, which knows what the tool is, refuses a solid swept so
-        let angle = running.dim == crate::units::Dim::ANGLE;
-        if !angle && !swept {
+        if dim != crate::units::Dim::ANGLE && !swept {
             let m = format!("`{}` is no angle: a reading over the roll runs over an angle",
                             name.text);
             self.err(Code::E103, name.span, m);
             return;
         }
-        let unit = if angle { "deg" } else { "" };
+        (*from, *to) = ends;
+    }
+
+    /// **A declared parameter's interval as written** (#391 S2): its kind and its two ends as a
+    /// dimension's text at `name`, for a reading or a claim that leaves them out — or refused
+    /// (E103, saying `otherwise`) where the document declares no such parameter, or `scope` is a
+    /// component's body, which sees none.
+    fn declared_ends(&mut self, name: &Name, scope: &Scope, otherwise: &str)
+        -> Option<(crate::units::Dim, (crate::syntax::Arg, crate::syntax::Arg))> {
+        let declared = (scope.module.is_none() && scope.prefix().is_empty())
+            .then(|| self.parameters.get(&name.text)).flatten();
+        let Some(running) = declared else {
+            let m = format!("`{}` names no parameter the document declares: {otherwise}",
+                            name.text);
+            self.err(Code::E103, name.span, m);
+            return None;
+        };
         let end = |v: f64| crate::syntax::Arg::Dim {
-            text: format!("{}{unit}", crate::syntax::num(v)), span: name.span };
-        (*from, *to) = (end(running.from), end(running.to));
+            text: running.dim.number_text(v, self.units), span: name.span };
+        Some((running.dim, (end(running.from), end(running.to))))
     }
 
     /// **A face family's station** (#243 L1): the instance written in place, drawn under a key
@@ -1283,20 +1292,12 @@ impl<'a> Walk<'a> {
         // over a declared parameter's whole interval (#633): its ends written in, as a reading
         // over it has them (`declared_interval`)
         if c.declared {
-            let name = crate::syntax::ref_text(&c.formal);
-            let declared = (scope.module.is_none() && scope.prefix().is_empty())
-                .then(|| self.parameters.get(&name)).flatten();
-            let Some(running) = declared else {
-                let m = format!("`{name}` names no parameter the document declares: a swept claim \
-                                 states its interval, `claim over {name} in (a, b) {{ … }}`, or \
-                                 runs over a `param {name}: Angle over (a, b)`");
-                self.err(Code::E103, c.formal.span, m);
-                return;
-            };
-            let unit = if running.dim == crate::units::Dim::ANGLE { "deg" } else { "" };
-            let end = |v: f64| crate::syntax::Arg::Dim {
-                text: format!("{}{unit}", crate::syntax::num(v)), span: c.formal.span };
-            (c2.from, c2.to) = (end(running.from), end(running.to));
+            let name = Name { text: crate::syntax::ref_text(&c.formal), span: c.formal.span };
+            let refused = format!("a swept claim states its interval, `claim over {0} in (a, b) \
+                                   {{ … }}`, or runs over a `param {0}: Angle over (a, b)`",
+                                  name.text);
+            let Some((_, ends)) = self.declared_ends(&name, scope, &refused) else { return };
+            (c2.from, c2.to) = ends;
         }
         for a in [&mut c2.from, &mut c2.to] { self.settle_arg(a, vals, scope); }
         let mut body = Vec::with_capacity(c.body.len());

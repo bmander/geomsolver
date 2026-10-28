@@ -40,6 +40,15 @@ impl Sketch {
         }
     }
 
+    /// The numbers held where the drawing stands — a face family's running numbers and the
+    /// declared parameters, at the instant held — by name, as a text reading one works it out.
+    pub fn held_numbers(&self) -> BTreeMap<String, crate::expr::Aff> {
+        self.held.iter()
+            .map(|(n, h)| (n.clone(),
+                           crate::expr::Aff::of_dim(self.params[h.param as usize].value, h.dim)))
+            .collect()
+    }
+
     /// The name a shared contact parameter is pinned to (`t == s`), where `p` is one.
     pub fn shared_name(&self, p: u32) -> Option<&str> {
         self.shared.iter().find(|(_, s)| s.param == p).map(|(n, _)| n.as_str())

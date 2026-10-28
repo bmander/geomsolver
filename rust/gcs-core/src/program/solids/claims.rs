@@ -263,9 +263,8 @@ fn sweep_of_claim(
     };
     let (from, to) = (num(&c.from, "from")?, num(&c.to, "to")?);
     // a stretch of the parameter's own interval: the drawing is followed nowhere else
-    if let Some(p) = declared.filter(|p| from < p.from || to > p.to || from >= to) {
-        let unit = if p.dim == crate::units::Dim::ANGLE { "deg" } else { "" };
-        let end = |v: f64| format!("{}{unit}", crate::vocab::num(v));
+    if let Some(p) = declared.as_ref().filter(|p| from < p.from || to > p.to || from >= to) {
+        let end = |v: f64| p.dim.number_text(v, sk.units);
         say(
             Code::E103,
             st.span,
@@ -277,6 +276,9 @@ fn sweep_of_claim(
         );
         return None;
     }
-    Some(crate::model::Sweep::new(crate::model::Running::new(name, dimension, from, to),
-        motion.map(|e| e.idx)))
+    let over = crate::model::Running::new(name, dimension, from, to);
+    Some(match declared {
+        Some(_) => crate::model::Sweep::declared(over),
+        None => crate::model::Sweep::new(over, motion.map(|e| e.idx)),
+    })
 }

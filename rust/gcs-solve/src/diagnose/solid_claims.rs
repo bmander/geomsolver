@@ -176,8 +176,9 @@ enum Poses {
     /// Over a declared parameter (#633): a copy of the drawing stood at each sample on the branch
     /// its march carried (`follow::stand`) — where a row reads the parameter (`marched`), since
     /// otherwise it stands still — and every solid drawn in a frame whose value reads the
-    /// parameter placed at the value worked out there, by its index and its value's text.
-    Stood { scratch: Sketch, marched: bool, placed: Vec<(usize, String)> },
+    /// parameter placed at the value worked out there, by its index and its value, as written and
+    /// read.
+    Stood { scratch: Sketch, marched: bool, placed: Vec<(usize, String, crate::expr::Ast)> },
     /// Every pose fails, for this reason: what the roll reads could not be read.
     Failing(String),
 }
@@ -196,9 +197,7 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
         return Poses::Current;
     };
     let Some(m) = sw.motion() else {
-        let name = sw.name();
-        let declared = !sk.free_vars.contains_key(name) && sk.parameters.contains_key(name);
-        return if declared { stood(sk, name) } else { Poses::Solved };
+        return if sw.is_declared() { stood(sk, sw.name()) } else { Poses::Solved };
     };
     let placed: Vec<(usize, f64)> = sk.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
         SolidDef::Placed { motion, at, .. } if *motion == m => Some((i, at.value)),
@@ -246,7 +245,7 @@ fn stood(sk: &Sketch, name: &str) -> Poses {
     let placed = sk.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
         crate::model::SolidDef::Placed { at, .. } => crate::expr::parse_in(&at.text, sk.units).ok()
             .filter(|p| p.body.deps().iter().any(|d| d == name))
-            .map(|_| (i, at.text.clone())),
+            .map(|p| (i, at.text.clone(), p.body)),
         _ => None,
     }).collect();
     Poses::Stood { scratch: sk.clone(), marched, placed }
@@ -254,26 +253,25 @@ fn stood(sk: &Sketch, name: &str) -> Poses {
 
 /// The pose of claim `c` at the instant `t` of a declared parameter: `scratch` stood there, its
 /// solids drawn in a frame whose value reads the parameter placed at their value there.
-fn stood_pose(scratch: &mut Sketch, marched: bool, placed: &[(usize, String)], c: &SolidClaim,
-              sw: &Sweep, t: f64) -> SolidPose {
+fn stood_pose(scratch: &mut Sketch, marched: bool, placed: &[(usize, String, crate::expr::Ast)],
+              c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
     let mut evaluate = || -> Result<clear::GeometricEvidence, String> {
         if marched {
             crate::follow::stand(scratch, sw.name(), t)
                 .map_err(|e| format!("not followed to {}: {e}", crate::vocab::num(t)))?;
         }
-        // the numbers held where it stands, the parameter at `t`
-        let mut held: std::collections::BTreeMap<String, crate::expr::Aff> = scratch.held.iter()
-            .map(|(n, h)| (n.clone(),
-                           crate::expr::Aff::of_dim(scratch.params[h.param as usize].value, h.dim)))
-            .collect();
+        // the numbers held where it stands, the parameter at `t`, as the value was read where
+        // it was placed (`value_now`)
+        let mut held = scratch.held_numbers();
         held.insert(sw.name().to_string(), crate::expr::Aff::of_dim(t, sw.dimension()));
-        for (i, text) in placed {
-            let p = crate::expr::parse_in(text, scratch.units).map_err(|e| e.to_string())?;
-            // a value reading an unknown is refused where it is placed: the held numbers suffice
-            let a = crate::expr::eval(&p.body, &held).map_err(|e| format!("`{text}`: {e}"))?;
-            let v = a.number().filter(|v| v.is_finite() && a.dim == crate::units::Dim::ANGLE)
-                .ok_or_else(|| format!("`{text}` does not come to an angle at {}",
-                                       crate::vocab::num(t)))?;
+        for (i, text, body) in placed {
+            let said = |e: String| format!("`{text}` at {}: {e}", crate::vocab::num(t));
+            let a = crate::expr::eval(body,
+                &crate::expr::with_declared(body, &held, &scratch.declared))
+                .map_err(|e| said(e.to_string()))?;
+            a.dim.require(crate::units::Dim::ANGLE, crate::constraints::JOINT_VALUE).map_err(said)?;
+            let v = a.number().filter(|v| v.is_finite())
+                .ok_or_else(|| said("comes to no number".into()))?;
             if let crate::model::SolidDef::Placed { at, .. } = &mut scratch.solids[*i].def {
                 at.value = v.to_radians();
             }

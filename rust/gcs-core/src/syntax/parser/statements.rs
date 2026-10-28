@@ -339,43 +339,38 @@ impl<'a> P<'a> {
         let formal = self.refr()?;
         // over a motion seen from another frame (#383): `claim over m seen_from g in (a, b)`
         let seen_from = if self.eat_word("seen_from") { Some(self.refr()?) } else { None };
-        if seen_from.is_none() && self.peek() == Some(&Tok::P('{')) {
-            let (body, _) = self.braced_body(next_id)?;
+        // its ends left out, a declared parameter's own, which the flattener writes in
+        let declared = seen_from.is_none() && self.peek() == Some(&Tok::P('{'));
+        let (from, to) = if declared {
             let end = || Arg::Dim { text: String::new(), span: formal.span };
-            return Some(StmtKind::ClaimOver(ClaimOver {
-                from: end(),
-                to: end(),
-                declared: true,
-                formal,
-                seen_from,
-                body,
-                span: Span::new(lo, self.prev_hi()),
-            }));
-        }
-        if !self.peek_word("in") {
-            self.fail("a swept claim runs `over NAME in (from, to)`, or over a declared \
-                       parameter's whole interval, `over t { … }`");
-            return None;
-        }
-        self.i += 1;
-        if !self.want_p('(') {
-            return None;
-        }
-        let (from, fs) = self.expr_until(',')?;
-        if !self.want_p(',') {
-            return None;
-        }
-        let (to, ts) = self.expr_until(')')?;
-        if !self.want_p(')') {
-            return None;
-        }
+            (end(), end())
+        } else {
+            if !self.peek_word("in") {
+                self.fail("a swept claim runs `over NAME in (from, to)`, or over a declared \
+                           parameter's whole interval, `over t { … }`");
+                return None;
+            }
+            self.i += 1;
+            if !self.want_p('(') {
+                return None;
+            }
+            let (from, fs) = self.expr_until(',')?;
+            if !self.want_p(',') {
+                return None;
+            }
+            let (to, ts) = self.expr_until(')')?;
+            if !self.want_p(')') {
+                return None;
+            }
+            (Arg::Dim { text: from, span: fs }, Arg::Dim { text: to, span: ts })
+        };
         let (body, _) = self.braced_body(next_id)?;
         Some(StmtKind::ClaimOver(ClaimOver {
             formal,
             seen_from,
-            from: Arg::Dim { text: from, span: fs },
-            to: Arg::Dim { text: to, span: ts },
-            declared: false,
+            from,
+            to,
+            declared,
             body,
             span: Span::new(lo, self.prev_hi()),
         }))
