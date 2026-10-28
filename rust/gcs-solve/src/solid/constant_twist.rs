@@ -197,7 +197,7 @@ impl Characteristic {
         let tolerance = ask.root_tolerance*scale;
         // the faces, then the convex corners where two of them meet: a corner's fan is walked
         // where the characteristic jumps across it
-        let corners = corners(contacts,&patches,tool);
+        let corners = corners(contacts,&patches,tool,motion);
         let pieces: Vec<Piece> = patches.into_iter().map(Piece::Face).chain(corners.into_iter().map(Piece::Corner)).collect();
         let walker = Walker {contacts,pieces,ask,screw,motion,tool,scale,tolerance};
         let pieces = &walker.pieces;
@@ -306,23 +306,19 @@ impl Characteristic {
 
     /// The convex corners whose fans the characteristic runs round, each as a message names it.
     pub fn fans(&self) -> Vec<String> {
-        let mut out: Vec<String> = Vec::new();
-        for node in &self.nodes {
-            let piece = &self.pieces[node.patch];
-            if matches!(piece,Piece::Corner(_)) && !out.contains(&piece.named()) { out.push(piece.named()) }
-        }
-        out
+        let mut walked: Vec<usize> = self.nodes.iter().map(|m| m.patch).filter(|&k| matches!(self.pieces[k],Piece::Corner(_))).collect();
+        walked.dedup();
+        walked.into_iter().map(|k| self.pieces[k].named()).collect()
     }
+
+    /// Whether the stretch from node `w − 1` to node `w` runs round a convex corner's fan (it lies
+    /// on the later node's piece).
+    pub fn on_fan(&self,w: usize) -> bool { matches!(self.pieces[self.nodes[w].patch],Piece::Corner(_)) }
 
     /// Where along the characteristic (`s`, as `at` reads it) it runs onto or off a convex
     /// corner's fan, in order: a fan is the stretch between a face's last node and its own last.
     pub fn fan_ends(&self) -> Vec<f64> {
-        let fan = |w: usize| matches!(self.pieces[self.nodes[w].patch],Piece::Corner(_));
-        (1..self.nodes.len()).filter_map(|w| match (fan(w-1),fan(w)) {
-            (false,true) => Some((w-1) as f64),
-            (true,false) => Some((w-1) as f64),
-            _ => None,
-        }).collect()
+        (1..self.nodes.len()).filter(|&w| self.on_fan(w-1) != self.on_fan(w)).map(|w| (w-1) as f64).collect()
     }
 
     /// How each point's path through the blank was read, as a report says it.
@@ -375,7 +371,7 @@ impl Characteristic {
 /// found in contact all round with a point whose path enters the blank is refused.
 fn stationary(pieces: &[Piece],stations: &[Vec<f64>],order: &[(usize,usize,usize)],motion: Motion,family: &Family,screw: &Screw,
     ask: &Ask) -> Result<(),Failure> {
-    let coefficients = |k: usize,u: f64| pieces[k].coefficients(u,motion);
+    let coefficients = |k: usize,u: f64| pieces[k].coefficients(u,motion).ok();
     for w in order.windows(2) {
         let ((k,i,_),(l,j,_)) = (w[0],w[1]);
         if k != l || i == j { continue }
@@ -421,16 +417,19 @@ pub fn crossing(points: &[[f64;2]]) -> Option<(usize,usize)> {
 /// The roots of one ring of `piece` at station `u` under the twist `motion` gives, each with
 /// the time its path first enters the blank (`reach`; none for a point not on the tool).
 fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V) -> V,reach: &dyn Fn(V) -> Option<f64>) -> Ring {
-    let surface = match piece { Piece::Face(surface) => surface,Piece::Corner(corner) => return corner.roots(u,motion,tolerance,reach) };
-    let (a,b,c) = match surface.contact_coefficients(u,motion) { Ok(k) => k,Err(e) => return Ring::Degenerate(format!("{e:?}")) };
+    let (a,b,c) = match piece.coefficients(u,motion) { Ok(k) => k,Err(e) => return Ring::Degenerate(format!("{e:?}")) };
     let amplitude = a.dhypot(b);
     let spread = (1.-(c/amplitude).dpowi(2)).max(0.).sqrt();
-    match surface.contacts(u,motion,tolerance) {
-        Ok(found) => Ring::Roots(found.into_iter().filter_map(|r| {
+    // each root's point and outward normal
+    let found: Result<Vec<(V,V)>,envelope::Error> = match piece {
+        Piece::Face(surface) => surface.contacts(u,motion,tolerance).map(|found| found.into_iter().filter_map(|r| {
             let s = surface.at(u,r.v).ok()?;
-            let normal = outward(s.position,envelope::contact(s,Motion::identity()).ok()?.normal);
-            Some(Root {position:s.position,normal,spread,reach:reach(s.position)})
+            Some((s.position,outward(s.position,envelope::contact(s,Motion::identity()).ok()?.normal)))
         }).collect()),
+        Piece::Corner(corner) => corner.ring.roots((a,b,c),tolerance).map(|angles| angles.into_iter().map(|t| corner.at(u,t)).collect()),
+    };
+    match found {
+        Ok(found) => Ring::Roots(found.into_iter().map(|(position,normal)| Root {position,normal,spread,reach:reach(position)}).collect()),
         Err(envelope::Error::Degenerate) => Ring::Degenerate(if amplitude <= tolerance && c.abs() <= tolerance {
             "is in contact all round a ring".into() } else { "has a double point on a ring".into() }),
         Err(e) => Ring::Degenerate(format!("{e:?}")),
@@ -502,39 +501,33 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
     // end of a fan onto its face), where the stations reach the piece's end
     let end = if dir > 0 { 1. } else { 0. };
     if stations[k][i] != end { return Step::End("runs past the stretch the coarse pass sampled".into()) }
-    // the root of `other`'s ring at `their` end at this same point, and the way on along it
-    let onto = |other: usize,their: f64| -> Result<Step,Step> {
+    // the root of `other`'s ring at `their` end at this same point, and the way on along it; none
+    // where the characteristic jumps there
+    let onto = |other: usize,their: f64| -> Option<Step> {
         let at = if their == 0. { 0 } else { stations[other].len().wrapping_sub(1) };
-        if stations[other].get(at) != Some(&their) { return Err(Step::End("crosses onto a face the coarse pass did not reach".into())) }
-        let Ring::Roots(roots) = &rings[other][at] else { return Err(Step::End("meets a degenerate ring where two faces join".into())) };
+        if stations[other].get(at) != Some(&their) { return Some(Step::End("crosses onto a face the coarse pass did not reach".into())) }
+        let Ring::Roots(roots) = &rings[other][at] else { return Some(Step::End("meets a degenerate ring where two faces join".into())) };
         roots.iter().position(|r| distance(r.position,here.position) <= 1e-7*scale)
             .map(|x| Step::Next((other,at,x),if their == 0. { 1 } else { -1 }))
-            .ok_or_else(|| Step::End("jumps at a corner of the profile".into()))
     };
-    let unwrap = |r: Result<Step,Step>| match r { Ok(s) | Err(s) => s };
+    let jumps = || Step::End("jumps at a corner of the profile".into());
     if let Piece::Corner(corner) = &pieces[k] {
-        let side = end as usize;
-        return unwrap(onto(corner.faces[side],corner.ends[side]))
+        let (e,side) = (&contacts.edges()[corner.edge],end as usize);
+        return onto(e.patches[side],e.ends[side]).unwrap_or_else(jumps)
     }
-    let Some((edge,s)) = contacts.edges().iter().enumerate().find_map(|(m,e)| (0..2).find(|&s| e.patches[s] == k && e.ends[s] == end)
-        .map(|s| (m,s))) else { return Step::End("reaches the end of the tool's profile".into()) };
-    let e = &contacts.edges()[edge];
+    let Some((edge,e,s)) = contacts.edges().iter().enumerate().find_map(|(m,e)| (0..2).find(|&s| e.patches[s] == k && e.ends[s] == end)
+        .map(|s| (m,e,s))) else { return Step::End("reaches the end of the tool's profile".into()) };
     let fan = pieces.iter().position(|p| matches!(p,Piece::Corner(c) if c.edge == edge));
-    match onto(e.patches[1-s],e.ends[1-s]) {
+    match (onto(e.patches[1-s],e.ends[1-s]),fan) {
         // both faces' characteristics meet the corner's circle at one point: every normal of its
         // fan is in contact there, and the sweep has a sharp edge along that point's path
-        Ok(_) if fan.is_some() => Step::End("meets a convex corner of the profile at one point from both of its faces, where the \
-            sweep has a sharp edge along that point's path (not built)".into()),
-        Ok(next) => next,
+        (Some(Step::Next(..)),Some(_)) => Step::End("meets a convex corner of the profile at one point from both of its faces, \
+            where the sweep has a sharp edge along that point's path (not built)".into()),
         // the faces' points differ where they meet: the characteristic runs round the corner's fan
-        Err(jump) => match fan {
-            Some(fan) => unwrap(onto(fan,s as f64)),
-            None => match jump {
-                Step::End(why) if why.starts_with("jumps") => Step::End("jumps at a concave corner of the profile, where two sheets \
-                    would be trimmed against each other (not built)".into()),
-                other => other,
-            }
-        }
+        (_,Some(fan)) => onto(fan,s as f64).unwrap_or_else(jumps),
+        (Some(next),None) => next,
+        (None,None) => Step::End("jumps at a concave corner of the profile, where two sheets would be trimmed against each other \
+            (not built)".into()),
     }
 }
 
@@ -552,11 +545,16 @@ impl Piece {
         }
     }
 
-    /// The coefficients of the contact equation of the piece's ring at station `u`.
-    fn coefficients(&self,u: f64,motion: Motion) -> Option<(f64,f64,f64)> {
+    /// The coefficients of the contact equation of the piece's ring at station `u` under `motion`
+    /// (a corner's, under the walk's motion its fan was read at).
+    fn coefficients(&self,u: f64,motion: Motion) -> Result<(f64,f64,f64),envelope::Error> {
         match self {
-            Piece::Face(s) => s.contact_coefficients(u,motion).ok(),
-            Piece::Corner(c) => { let [nr,nz] = c.normal(u); Some(c.ring.coefficients(nr,nz,motion)) }
+            Piece::Face(s) => s.contact_coefficients(u,motion),
+            Piece::Corner(c) => {
+                let [nr,nz] = c.normal(u);
+                let [r,z] = c.parts;
+                Ok((nr*r[0]+nz*z[0],nr*r[1]+nz*z[1],nr*r[2]+nz*z[2]))
+            }
         }
     }
 
@@ -580,17 +578,17 @@ impl Piece {
 /// circle's own sweep, tangent to both faces' sheets.
 #[derive(Clone,Debug)]
 struct Corner {
-    /// The edge of `SweepContacts::edges` it is, its two faces and the ends of their meridians
-    /// that meet there, and the faces' names.
+    /// The edge of `SweepContacts::edges` it is, and its two faces' names.
     edge: usize,
-    faces: [usize;2],
-    ends: [f64;2],
     names: [String;2],
     ring: crate::solid::surface::RingFrame,
     /// The first face's outward normal's angle in the plane through the axis, from the radial
     /// direction toward the axis's, and how far the fan turns from it to the second's.
     from: f64,
     turn: f64,
+    /// The ring's coefficients for a normal straight out from the axis and for one along it: a
+    /// fan normal's are theirs in its two parts, the contact equation being linear in the normal.
+    parts: [[f64;3];2],
 }
 
 impl Corner {
@@ -600,32 +598,20 @@ impl Corner {
         [c,s]
     }
 
-    /// The ring's roots at station `u`, each with the fan's normal there: as `RevolvedSurface::contacts`
-    /// solves a face's ring, a stationary ring or a double root degenerate.
-    fn roots(&self,u: f64,motion: Motion,tolerance: f64,reach: &dyn Fn(V) -> Option<f64>) -> Ring {
+    /// The point of the circle at angle `theta`, and the fan's normal at station `u` there.
+    fn at(&self,u: f64,theta: f64) -> (V,V) {
         let [nr,nz] = self.normal(u);
-        let (a,b,c) = self.ring.coefficients(nr,nz,motion);
-        let amplitude = a.dhypot(b);
-        if ![a,b,c].iter().all(|x| x.is_finite()) { return Ring::Degenerate("has no finite ring".into()) }
-        if amplitude <= tolerance && c.abs() <= tolerance { return Ring::Degenerate("is in contact all round a ring".into()) }
-        if c.abs() > amplitude+tolerance { return Ring::Roots(Vec::new()) }
-        if (c.abs()-amplitude).abs() <= tolerance { return Ring::Degenerate("has a double point on a ring".into()) }
-        let spread = (1.-(c/amplitude).dpowi(2)).max(0.).sqrt();
-        let (phase,half) = (b.datan2(a),(-c/amplitude).clamp(-1.,1.).dacos());
-        Ring::Roots([phase-half,phase+half].into_iter().map(|theta| {
-            let (position,e) = self.ring.at(theta);
-            let normal = std::array::from_fn(|k| nr*e[k]+nz*self.ring.axis[k]);
-            Root {position,normal,spread,reach:reach(position)}
-        }).collect())
+        let (position,e) = self.ring.at(theta);
+        (position,std::array::from_fn(|k| nr*e[k]+nz*self.ring.axis[k]))
     }
 }
 
 /// The convex corners of the tool's profile, where two of its faces meet at an angle with the
-/// tool's material within it: their normals there more than `LEAST_TURN` apart, and the chord
-/// between points just inside each face in the material. A smooth join has no fan, and a concave
+/// tool's material within it: their normals there more than `LEAST_TURN` apart, and the chord of
+/// `SweepContacts::corner`'s probe in the material. A smooth join has no fan, and a concave
 /// corner's sweep is no part of the boundary (T2 refuses one that reaches the blank); a corner on
-/// the axis turns to no circle.
-fn corners(contacts: &SweepContacts,patches: &[RevolvedSurface],tool: &super::SpatialField) -> Vec<Corner> {
+/// the axis turns to no circle. Each corner's ring is read under `motion`, the walk's.
+fn corners(contacts: &SweepContacts,patches: &[RevolvedSurface],tool: &super::SpatialField,motion: Motion) -> Vec<Corner> {
     let normal = |s: &RevolvedSurface,u: f64| -> Option<(V,V)> {
         let p = s.at(u,0.).ok()?;
         Some((p.position,envelope::contact(p,Motion::identity()).ok()?.normal))
@@ -645,11 +631,10 @@ fn corners(contacts: &SweepContacts,patches: &[RevolvedSurface],tool: &super::Sp
         let (from,to) = (out(sa,ua)?,out(sb,ub)?);
         let turn = (to-from+std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)-std::f64::consts::PI;
         if turn.abs() <= LEAST_TURN { return None }
-        let h = 1e-4;
-        let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
-        let (pa,pb) = (sa.at(inward(ua),0.).ok()?.position,sb.at(inward(ub),0.).ok()?.position);
+        let (_,[pa,pb]) = contacts.corner(e)?;
         let chord: V = std::array::from_fn(|k| 0.5*(pa[k]+pb[k]));
         if !(tool.value(chord) < 0.) { return None }
-        Some(Corner {edge,faces:[a,b],ends:[ua,ub],names:[sa.name.clone(),sb.name.clone()],ring,from,turn})
+        let part = |nr: f64,nz: f64| { let (a,b,c) = ring.coefficients(nr,nz,motion); [a,b,c] };
+        Some(Corner {edge,names:[sa.name.clone(),sb.name.clone()],ring,from,turn,parts:[part(1.,0.),part(0.,1.)]})
     }).collect()
 }

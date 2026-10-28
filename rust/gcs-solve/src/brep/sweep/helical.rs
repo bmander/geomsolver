@@ -64,8 +64,10 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     (say.mark)(Stage::Reach);
     // rows by length along the section, each turn of its normal counted as a length of the
     // section's own size (its length over a half turn): a convex corner's fan turns the section
-    // sharply over a stretch far shorter than a row, and is laid as many rows as its turn asks
-    let size = (1..section.len()).map(|w| distance(section[w-1],section[w])).sum::<f64>()/std::f64::consts::PI;
+    // sharply over a stretch far shorter than a row, and is laid as many rows as its turn asks.
+    // (Counted on the fan alone, the thread's flanks are laid too thinly for the split: a pcurve
+    // a micrometre off.)
+    let size = crate::space::polyline_length(&section)/std::f64::consts::PI;
     let turned = |a: V,b: V| crate::space::dot(a,b).clamp(-1.,1.).dacos();
     let mut lengths = vec![0.];
     for w in 1..section.len() { lengths.push(lengths[w-1]+distance(section[w-1],section[w])+size*turned(normals[w-1],normals[w])); }
@@ -83,10 +85,10 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     for &s in &fans {
         let w = rows.partition_point(|&r| r < s);
         if rows.get(w) == Some(&s) { continue }
-        // the nearer row within moved onto it, keeping the rows' order, else one added
+        // the nearer row within moved onto it (the rows stay in order), else one added
         let near = [w.wrapping_sub(1),w].into_iter().filter(|&k| k > 0 && k+1 < rows.len() && !fans.contains(&rows[k]))
             .min_by(|&a,&b| (rows[a]-s).abs().total_cmp(&(rows[b]-s).abs()));
-        match near { Some(k) if rows[k-1] < s && s < rows[k+1] => rows[k] = s,_ => rows.insert(w,s) }
+        match near { Some(k) => rows[k] = s,None => rows.insert(w,s) }
     }
     let columns_n = (((window[1]-window[0])/step).ceil() as usize).max(4)+1;
     let columns: Vec<f64> = (0..columns_n).map(|c| window[0]+(window[1]-window[0])*c as f64/(columns_n-1) as f64).collect();

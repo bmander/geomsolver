@@ -261,11 +261,13 @@ the STL held to the field), with
 
 **A screw with sharp edges: a convex corner's fan (#684 E):** a convex corner of a revolved tool's
 profile — two faces whose outward normals there turn more than `LEAST_TURN` apart, the chord just
-inside them in the material (`constant_twist::corners`) — is a piece of the walk of its own
+inside them in the material (`constant_twist::corners`, by the probe T2 reads too,
+`SweepContacts::corner`) — is a piece of the walk of its own
 (`Piece::Corner`): its one ring the circle the corner turns to (`RevolvedSurface::ring`), its
 stations the fan of normals turned from the first face's to the second's, each station's roots
 those of the same `A cos θ + B sin θ + C = 0` with the fan normal's coefficients
-(`RingFrame::coefficients`, which a face's ring is read by too). Under any constant twist (a screw,
+(`RingFrame::coefficients`, which a face's ring is read by too), solved as a face's ring is
+(`RingFrame::roots`, `sinusoid_roots`). Under any constant twist (a screw,
 a turn or a slide) the walk, at a face's end where the next face's ring has no root at the same
 point, runs onto the fan and round it to the next face (`step`); the rows S1–S4 are asked of the
 fan's nodes as of any. Where both faces' characteristics meet a convex corner at one point, every

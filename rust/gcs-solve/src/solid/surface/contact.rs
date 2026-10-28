@@ -56,8 +56,9 @@ impl RevolvedSurface {
     /// amplitude with zero constant is a stationary ring, every point of which
     /// is in contact.
     pub fn contact_coefficients(&self,u: f64,motion: Motion) -> Result<(f64,f64,f64),Error> {
-        let ring = self.ring(u)?;
-        let normal = envelope::contact(self.full().at(u,0.)?,Motion::identity())?.normal;
+        let s = self.full().at(u,0.)?;
+        let ring = self.ring_at(s.position)?;
+        let normal = envelope::contact(s,Motion::identity())?.normal;
         Ok(ring.coefficients(plane::dot(normal,ring.radial),plane::dot(normal,ring.axis),motion))
     }
 
@@ -65,8 +66,12 @@ impl RevolvedSurface {
     /// radial direction at the chart's start (`v = 0`) the angle of a point on it is read from.
     pub fn ring(&self,u: f64) -> Result<RingFrame,Error> {
         // The ring uses the original meridian even for a restricted span.
-        let s = self.full().at(u,0.)?;
-        let q = sub(s.position,self.origin);
+        self.ring_at(self.full().at(u,0.)?.position)
+    }
+
+    /// The circle the point `p` turns to about the axis.
+    fn ring_at(&self,p: V) -> Result<RingFrame,Error> {
+        let q = sub(p,self.origin);
         let axial = plane::dot(q,self.axis);
         let radial = sub(q,scale(self.axis,axial));
         let radius = radial[0].dhypot(radial[1]).dhypot(radial[2]);
@@ -90,6 +95,13 @@ impl RingFrame {
         let (s,c) = theta.dsin_cos();
         let e = add(scale(self.radial,c),scale(plane::cross(self.axis,self.radial),s));
         (add(self.center,scale(e,self.radius)),e)
+    }
+
+    /// The angles of the roots of `a cos θ + b sin θ + c = 0` about the ring, as a face's ring is
+    /// solved (`RevolvedSurface::contacts`): none, two, or `Degenerate` where the ring is in
+    /// contact all round or the two roots meet.
+    pub fn roots(&self,(a,b,c): (f64,f64,f64),tolerance: f64) -> Result<Vec<f64>,Error> {
+        Ok(sinusoid_roots(a,b,c,TAU,[0.,1.],tolerance)?.into_iter().map(|(_,v)| TAU*v).collect())
     }
 
     /// The coefficients of `a cos θ + b sin θ + c = 0`, the ring's points whose normal — `nr`
