@@ -164,6 +164,62 @@ export class CodeEditor {
     return line;
   }
 
+  /** The string index a point on the page (client pixels) falls nearest, as a click there would
+   *  put the caret — for a press the box does not place itself, a right-click's.  Read off the
+   *  copy, whose every character sits where the box's does (this file's header): the line by
+   *  the whole-pixel line height, the column by where the copy draws the characters on it. */
+  offsetAt(x: number, y: number): number {
+    const text = this.text;
+    const style = getComputedStyle(this.box);
+    const top = this.box.getBoundingClientRect().top + this.box.clientTop
+      + (parseFloat(style.paddingTop) || 0) - this.box.scrollTop;
+    const lines = text.split('\n').length;
+    const line = Math.max(0, Math.min(lines - 1, Math.floor((y - top) / (this.lineHeight || 1))));
+    let lo = 0;
+    for (let l = 0; l < line; l += 1) lo = text.indexOf('\n', lo) + 1;
+    const end = text.indexOf('\n', lo);
+    let hi = end < 0 ? text.length : end;
+    // the first character on the line whose middle is past the point: the caret goes before it
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const r = this.rectOf(mid);
+      if (r && (r.left + r.right) / 2 <= x) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+
+  /** Where on the page (client pixels) the character at string index `off` starts: the left and
+   *  the bottom of its line, where a menu opened at the caret goes. */
+  pointAt(off: number): [number, number] {
+    const box = this.box.getBoundingClientRect();
+    const style = getComputedStyle(this.box);
+    const top = box.top + this.box.clientTop + (parseFloat(style.paddingTop) || 0)
+      - this.box.scrollTop;
+    const y = top + (this.lineOf(off) + 1) * this.lineHeight;
+    const at = this.text[off] === undefined || this.text[off] === '\n' ? off - 1 : off;
+    const r = at < 0 || this.text[at] === '\n' ? null : this.rectOf(at);
+    const x = !r ? box.left + this.box.clientLeft + (parseFloat(style.paddingLeft) || 0)
+      - this.box.scrollLeft : at === off ? r.left : r.right;
+    return [x, y];
+  }
+
+  /** Where the copy draws the character at string index `off`, or null past its text. */
+  private rectOf(off: number): DOMRect | null {
+    const walk = document.createTreeWalker(this.copy, NodeFilter.SHOW_TEXT);
+    let at = 0;
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      const len = (n as Text).length;
+      if (off < at + len) {
+        const range = document.createRange();
+        range.setStart(n, off - at);
+        range.setEnd(n, off - at + 1);
+        return range.getBoundingClientRect();
+      }
+      at += len;
+    }
+    return null;
+  }
+
   private caretMoved(): void {
     const { selectionStart: lo, selectionEnd: hi } = this.box;
     const edited = this.dirty;

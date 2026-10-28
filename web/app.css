@@ -771,3 +771,19 @@ dialog input[type=search] {
 .chooser button:focus .kind { color: inherit; }
 .chooser .name { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; }
 .chooser .note { margin-left: auto; color: var(--muted); font-style: italic; }
+/* The program editor's right-click menu (`code-menu.ts`), drawn as the workspace's: over the
+   whole page, since it opens wherever the editor is */
+.chooser.code-menu {
+  position: fixed; z-index: 50; display: flex; flex-direction: column; min-width: 200px;
+  padding: 4px; font-size: 12px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.18);
+}
+.code-menu .key { margin-left: auto; padding-left: 24px; color: var(--muted); }
+/* the row the arrows are on: the menu never has the focus, which stays in the text */
+.code-menu button.active { background: var(--accent-soft); color: var(--accent); }
+.code-menu button.active .key { color: inherit; }
+.code-menu button.disabled, .code-menu button.disabled:hover {
+  color: var(--muted); background: none; cursor: default;
+}
+.code-menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 6px; }
