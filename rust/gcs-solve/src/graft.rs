@@ -170,6 +170,7 @@ fn ledger(sk: &Sketch) {
         meshed: _,                    // compiled with the rows the source alone carries
         meshed_at: _,
         rounds: _,                    // the elaborator's, derived and never saved
+        distributed: _,               // an export's copy's alone (`solid::distributed`)
         standing: _,                  // presentation of an instant, never written
         hidden: _,                    // view state the front end sets on every drawing
         kinds: _,

@@ -106,6 +106,21 @@ fn the_plus_leaves_its_conjugate_wheel() {
     near(exported(&e,"wheel"),6.*crate::planar_subtraction::kept_area(90),2e-4);
 }
 
+/// `union.sv`: a union's sweep is its members' (#684 C), each bead's a slide's, admitted to the
+/// constant-twist class as the union's sweep; the groove what of the rod's disc either bead's shadow
+/// covers, in rows across the rod (`union_tools::beads_section`), through the rod's 20 mm.
+#[test]
+fn the_beads_leave_what_either_shadow_covers() {
+    let e = example("union.sv");
+    let a = admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default()).unwrap_or_else(|r| panic!("{r}"));
+    assert_eq!(a.sweeps().len(),2,"one sweep a bead");
+    for s in a.sweeps() {
+        let Class::ConstantTwist(found) = &s.class else { panic!("a bead's sweep is a slide's") };
+        assert!(s.name == "groove" && found.screw.is_slide(),"read as the union's slide");
+    }
+    near(exported(&e,"rod"),PI*25.*20.-crate::union_tools::beads_section()*20.,2e-6);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {

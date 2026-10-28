@@ -108,13 +108,16 @@ fn a_roll_that_starts_in_the_blank_is_refused() {
     assert!((p[0]-3.).hypot(p[1]) < 0.4+1e-6 && p[2].abs() <= 2.,"the witness is in the post: {p:?}");
 }
 
+/// A union tool is no longer refused for adding solids (#684 C): its sweep is its members' sweeps,
+/// each asked its own rows, so a sphere and its twin under the roll are refused where the sphere
+/// alone is, at a pole in contact at every time, naming the member (`tests/union_tools.rs`).
 #[test]
-fn a_union_tool_is_refused() {
+fn a_union_tools_members_are_asked_their_own_rows() {
     let tool = format!("{}construction twin := tool at(under: observer) 20deg\nconstruction lump := solid(tool)\ntwin union lump\n",sphere(0.));
     let source = format!("{tool}{}construction removal := sweep(lump over t in (-60deg, 60deg), under: spin, seen_from: observer)\n{}",motions::roll(0.25),centred_post());
     let r = refused(admit(&source));
-    assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("adds solids"),"{}",r.message);
+    assert_eq!((r.condition,r.sweep.as_str()),(Condition::Stationary,"removal"));
+    assert!(r.message.starts_with("its tool's member `tool`: the pole"),"{}",r.message);
 }
 
 /// An L-shaped profile revolved about x = 3: its corner at (3.5, 0) turns inward.

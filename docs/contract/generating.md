@@ -259,9 +259,26 @@ apart: the lens, a circular segment, Pappus, and a tilted torus's shadow from it
 the STL held to the field), with
 `rust/examples/twist_drill/straight_flute.sv` and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
 
+**A union tool is its members (#684 C, #586):** a body cutting the sweep of a union — its tool a
+body that only puts solids on its stock, a union within one, or a placement of one — is admitted
+(`admit_body`), built (`brep::export::own`, the page's `Builder`) and metered (`accuracy::Meter`)
+from a copy of the drawing with that cut written as each member's (`solid::distributed::lowered`):
+one sweep a member, minted once however many placements cut the union's, under its motion, the
+placements between minted again over each, every minted solid keeping the one it copies' name.
+`Sketch::distributed` sends each member's sweep back to the union's, so its roll is the union's
+(`roll::interval`) and its cut faces are named by their routes in the union
+(`sheet::SweptCut::read`); a refusal says the member (``its tool's member `bead2`: …``), and a
+union whose every member is a ball's tube admits nothing and builds as static material, held to
+the union's field as a swept body is. Not distributed: a union within an intersection or a cut
+(T1 refuses it, saying so), and a union of prisms under a motion keeping their plane, which
+`planar_subtraction::asks` reads whole. The native path refuses a distributed cut by name.
+`tests/union_tools.rs` and `solid_sweeps_examples.rs` (`union.sv`) are the gate: the beads' groove
+against rows across the rod computed apart, placed and turned, against the long form, two balls'
+tubes by Pappus, two tori rolled in the generating class, and the refusals.
+
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
 a class — the canal, a slide, a turn, a screw, the generating class's rack, the planar subtraction
-class's conjugate wheel — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;
 `every_example_is_held_and_named` fails a file the README does not name or no test reads. The

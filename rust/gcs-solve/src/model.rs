@@ -349,6 +349,11 @@ pub struct Sketch {
     /// never saved, exported, solved or undone, set by the front end on every drawing it is
     /// handed.
     pub cut: Option<crate::plane::Basis>,
+    /// **The sweeps a union's cut is written as** (#684 C, `solid::distributed`): each sweep of a
+    /// member of a union tool, minted on the copy of the drawing a body cutting the union's sweep is
+    /// built from, to the union's sweep, whose roll it rolls over (`solid::roll::interval`) and whose
+    /// cutter names its faces (`brep::sweep::sheet::SweptCut::read`).  Empty in every document.
+    pub distributed: BTreeMap<u32, u32>,
     /// What the sketch remembers and could work out again — polylines, evaluated and exact
     /// solids, regions' readings, bodies' faces — and what a clone keeps of it (`Caches`).
     pub caches: Caches,

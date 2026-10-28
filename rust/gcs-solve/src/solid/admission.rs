@@ -36,7 +36,7 @@ impl Condition {
     pub fn rule(self) -> &'static str {
         match self {
             Condition::Tool => "the tool is a full revolution, or a prism with its caps clear of the blank, of lines and arcs, \
-                or an intersection of such",
+                or an intersection of such, or a union of tools each in the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -353,7 +353,10 @@ fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
         // a region is a full revolution of its meridian
         SolidDef::Region {..} => super::region::meridian(sk,id).map(|_| ()),
         SolidDef::Body {stock,on,through,bound} => {
-            if !on.is_empty() { return Err(format!("`{}` adds solids together; only intersections are in the class",solid.name)); }
+            // a union that is the whole tool is its members, each swept alone (`distributed`): one
+            // here is within an intersection, which is not distributed
+            if !on.is_empty() { return Err(format!("`{}` adds solids together within an intersection; a union is in the class \
+                only as the whole tool, each member swept alone",solid.name)); }
             if !through.is_empty() { return Err(format!("`{}` cuts solids; only intersections are in the class",solid.name)); }
             std::iter::once(stock).chain(bound).try_for_each(|&o| tool(sk,o as usize))
         }
@@ -431,6 +434,13 @@ struct Fine { reads: Reads,samples: usize,near_double_roots: usize,hits: Vec<(Hi
 pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission,Error> {
     // a body placed by a rigid motion is the body moved: the body it places is admitted (#619)
     let root = cad::placed_swept(sk,root).map_err(Error::Unreadable)?.map_or(root,|(inner,_)| inner);
+    // a cut of a union's sweep is a cut of each member's (#684 C): the body is admitted as the copy
+    // of the drawing that writes it so, each member's sweep by its own class (where every one is a
+    // ball's tube, the body is static material there, and nothing is asked)
+    if let Some(lowered) = super::distributed::lowered(sk,root) {
+        if !cad::contains_sweep(&lowered,root) { return Ok(Admission {body:root,sweeps:Vec::new()}) }
+        return admit_body(&lowered,root,options)
+    }
     let (field,cuts) = static_remainder(sk,root,options.axis_tolerance).map_err(Error::Unreadable)?;
     let mut by_sweep: BTreeMap<usize,Vec<Motion>> = BTreeMap::new();
     let mut order = Vec::new();
@@ -444,8 +454,16 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
             SolidDef::Swept {motion,..} if crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.twist().is_some()) => Asked::ConstantTwist,
             _ => Asked::Generating,
         } })).collect();
+    // a sweep of a member of a union tool is refused as the union's, saying the member (#684 C)
+    let members: BTreeMap<usize,String> = order.iter().filter(|&&s| sk.distributed.contains_key(&(s as u32)))
+        .filter_map(|&s| match &sk.solids[s].def { SolidDef::Swept {source,..} => Some((s,sk.solids[*source as usize].name.clone())),
+            _ => None }).collect();
+    let said = |swept: usize,message: String| match members.get(&swept) {
+        Some(member) => format!("its tool's member `{member}`: {message}"),
+        None => message,
+    };
     let refuse = |swept: usize,condition,message: String,witness|
-        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness,asked:asked[&swept]});
+        Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,asked:asked[&swept]});
     let field = &field;
     let bounds = field.support_bounds().ok().flatten();
     // a pocketed prism under a planar motion: rows P1–P5, every placement checked, the blank boxed
@@ -528,7 +546,8 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
         let inside = |p: V| field.value(p) < -options.margin;
         super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|
-            Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message,witness,asked:Asked::Subtraction}))
+            Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,
+                asked:Asked::Subtraction}))
     };
     for (k,(result,&swept)) in first.into_iter().zip(&order).enumerate() {
         let generating = (|| -> Result<SweepEvidence,Error> {

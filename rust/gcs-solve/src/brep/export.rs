@@ -103,6 +103,13 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
 fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored: bool,tolerance: Option<Tolerance>,say: &Say)
     -> Result<Exact,ExportRefusal> {
     if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
+    // a cut of a union's sweep is a cut of each member's (#684 C): built from the copy of the
+    // drawing that writes it so, and held to the union's field as a swept body (where every
+    // member's sweep is a ball's tube, the copy's body is static material)
+    if let Some(lowered) = crate::solid::distributed::lowered(sk,body) {
+        (say.stage)(&format!("`{}` cuts the sweep of a union: each member's sweep cut",sk.solids[body].name));
+        return Ok(Exact {swept:true,..own(&lowered,body,admitted,mirrored,tolerance,say)?})
+    }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
     if !recipe.sweeps.is_empty() {
         let made;
@@ -558,6 +565,7 @@ impl Builder {
             Ok(cad::placed_swept(sk,i).at(Stage::Blank)?
                 .map_or((i,None),|(inner,pose)| (inner,Some(super::sweep::sector::placed(pose,cad::millimetres(sk))))))
         };
+        let asked_body = body;
         let (body,whole) = placed(body)?;
         // a body built from swept material: its one operand holding sweeps built by the stages
         let swept = cad::swept_operands(sk,body);
@@ -569,12 +577,22 @@ impl Builder {
             let (inner,moved) = placed(operand)?;
             (inner,Some(body),operand,[moved,whole])
         } else { (body,None,body,[whole,None]) };
-        let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
+        // a cut of a union's sweep is a cut of each member's (#684 C): the stages build the copy of
+        // the drawing that writes it so, and where every member's sweep is a ball's tube the body
+        // is static material there, built as the export builds it
+        let lowered = crate::solid::distributed::lowered(sk,body);
+        let built = lowered.as_ref().unwrap_or(sk);
+        let recipe = cad::recipe_static(built,body).at(Stage::Blank)?;
+        if recipe.sweeps.is_empty() && lowered.is_some() {
+            let recipe = cad::StaticRecipe {recipe:crate::json::Json::Null,sweeps:Vec::new()};
+            return Ok(Builder {sk:sk.clone(),body:asked_body,recipe,state:State::Static,lines:Default::default(),done:0,outer:None,
+                operand:asked_body,moved:[None,None],enveloped:false,reads:asked})
+        }
         if recipe.sweeps.is_empty() {
             return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
         }
-        Ok(Builder {sk:sk.clone(),body,recipe,state:State::Admit,lines:Default::default(),done:0,outer,operand,moved,enveloped:false,
-            reads:asked})
+        Ok(Builder {sk:lowered.unwrap_or_else(|| sk.clone()),body,recipe,state:State::Admit,lines:Default::default(),done:0,outer,
+            operand,moved,enveloped:false,reads:asked})
     }
     /// Run the next stage: `Ok(true)` once the surface is built, or the refusal that stopped it.
     pub fn step(&mut self) -> Result<bool,ExportRefusal> {
