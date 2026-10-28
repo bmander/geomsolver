@@ -182,12 +182,9 @@ fn built_static(sk: &Sketch,o: usize) -> Result<Brep,ExportRefusal> {
 /// refuses it where a drawing reads it, its volume 0 (#618).
 fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,ExportRefusal>)
     -> Result<(Brep,Option<String>),ExportRefusal> {
+    no_swept_cut(sk,body)?;
     let solid = &sk.solids[body];
     let crate::model::SolidDef::Body {stock,on,through,bound} = &solid.def else { unreachable!("a composed solid is a body") };
-    if let Some(&c) = through.iter().find(|&&c| cad::contains_sweep(sk,c as usize)) {
-        return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts the sweep `{}` from swept material: name the body the sweep is \
-            cut from, and build `{}` from it",solid.name,sk.solids[c as usize].name,solid.name)))
-    }
     let mut built = part(*stock as usize)?;
     if built.faces.is_empty() {
         return Ok((built,Some(format!("its stock `{}` holds no material",sk.solids[*stock as usize].name))))
@@ -205,6 +202,17 @@ fn combine(sk: &Sketch,body: usize,part: &mut dyn FnMut(usize) -> Result<Brep,Ex
         }
     }
     Ok((built,None))
+}
+
+/// Body `body` of swept material refused where a sweep is cut from it directly (`combine`).
+fn no_swept_cut(sk: &Sketch,body: usize) -> Result<(),ExportRefusal> {
+    let solid = &sk.solids[body];
+    let crate::model::SolidDef::Body {through,..} = &solid.def else { unreachable!("a composed solid is a body") };
+    match through.iter().find(|&&c| cad::contains_sweep(sk,c as usize)) {
+        Some(&c) => Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts the sweep `{}` from swept material: name the body the sweep is \
+            cut from, and build `{}` from it",solid.name,sk.solids[c as usize].name,solid.name))),
+        None => Ok(()),
+    }
 }
 
 /// **An empty body refused as a fact of the document** (#617): a Boolean that leaves no material
@@ -502,7 +510,7 @@ impl Display {
     }
 }
 
-/// Where an object's exact build stands for its display, a stage at a time (`Builder::step`).
+/// Where a body's exact build stands, a stage at a time (`Builder::step`).
 enum State {
     /// A body with no sweep: built from its recipe as the export builds it (`exact`), at once.
     Static,
@@ -512,8 +520,13 @@ enum State {
     Plan(super::sweep::Prepared,Vec<super::sweep::sheet::Fitted>),
     Cut(super::sweep::Prepared,Vec<super::sweep::sheet::Fitted>,super::sweep::Plan),
     Finish(super::sweep::Cut),
-    Compose(super::sweep::Built),
+    /// A body built from swept material: its operands that hold sweeps built in turn, each by a
+    /// build of its own (`Build::parts`), then combined with the rest by the body rule.
+    Parts,
+    Compose,
     Mesh(super::sweep::Built),
+    /// An operand's build finished, its B-rep moved where it stands, for the body built from it.
+    Built(Brep),
     Done(Display),
     Failed,
 }
@@ -527,111 +540,158 @@ enum State {
 /// or the field's agreement asked — what it builds is for looking at — and a refusal is the
 /// export's, its stage and its words, never a field meshed in its place. A placement of a binding
 /// is its representative's build moved: a host asks one build a binding (`Sketch::object_jobs`).
-pub struct Builder { sk: Sketch,body: usize,recipe: cad::StaticRecipe,state: State,lines: std::sync::Mutex<Vec<String>>,done: usize,
-    /// The body built from the swept body, when `body` is that (`holds_sweep`): the stages build
-    /// the swept body, and a last one combines it with the rest by the body rule.
-    outer: Option<usize>,
-    /// The operand of `outer` the swept body stands for: `body`, or a placement of it.
-    operand: usize,
-    /// Where `body` is placed (#619): the motion its build is moved by (mm), and the one the
-    /// combined body is moved by after, where a placement places that.
-    moved: [Option<super::geom::Rigid>;2],
+pub struct Builder { sk: Sketch,build: Build,lines: std::sync::Mutex<Vec<String>> }
+
+/// One body's stages (`Builder`): the object's, or, where a body is built from swept material,
+/// each of its operands that hold sweeps, as `compose` builds them — a compound of two shaped
+/// gears, a body made of one made of a shaped blank — each to its B-rep, to any depth.
+struct Build {
+    /// The solid this build was asked for: the object, or an operand of the body built from it.
+    asked: usize,
+    /// The body its stages build: `asked`, or the swept body it places (`x in f`, #619).
+    body: usize,
+    recipe: cad::StaticRecipe,
+    state: State,
+    /// The stages this build has run itself, its parts' aside.
+    done: usize,
+    /// Where `asked` places the body built (mm), where it is a placement.
+    moved: Option<super::geom::Rigid>,
     /// Whether its sweeps were all planar or subtractions, built within their envelopes: no
     /// sheet, plan or cut stage is run, nor counted.
     enveloped: bool,
+    /// The builds of the operands of `body` that hold swept material, where it is built from it.
+    parts: Vec<Build>,
+    /// Whether the build ends at its B-rep (`State::Built`), for the body built from it, unmeshed.
+    part: bool,
     /// What the solid asked for read (`solid::reads`), which its display carries.
-    reads: Vec<f64> }
+    reads: Vec<f64>,
+}
 
 impl Builder {
     /// The build of solid `body` of `sk` (a copy of the sketch is kept), or why it has none.
     pub fn new(sk: &Sketch,body: usize) -> Result<Builder,ExportRefusal> {
         if body >= sk.solids.len() { return Err(ExportRefusal::at(Stage::Blank,"no such solid in this drawing")) }
-        let asked = crate::solid::reads(sk,body,0.);
-        // a body no sweep reaches is built as the export builds it, a stage, then meshed
-        if !cad::contains_sweep(sk,body) {
-            let recipe = cad::StaticRecipe {recipe:crate::json::Json::Null,sweeps:Vec::new()};
-            return Ok(Builder {sk:sk.clone(),body,recipe,state:State::Static,lines:Default::default(),done:0,outer:None,operand:body,
-                moved:[None,None],enveloped:false,reads:asked})
-        }
-        // a placement of a swept body (`x in f`): the body it places, built and moved (#619)
-        let placed = |i: usize| -> Result<(usize,Option<super::geom::Rigid>),ExportRefusal> {
-            Ok(cad::placed_swept(sk,i).at(Stage::Blank)?
-                .map_or((i,None),|(inner,pose)| (inner,Some(super::sweep::sector::placed(pose,cad::millimetres(sk))))))
-        };
-        let (body,whole) = placed(body)?;
-        // a body built from swept material: its one operand holding sweeps built by the stages
-        let swept = cad::swept_operands(sk,body);
-        let (body,outer,operand,moved) = if !swept.is_empty() {
-            let [operand] = swept[..] else {
-                return Err(ExportRefusal::at(Stage::Blank,format!("`{}` is built from {} swept bodies; its display is built from one",
-                    sk.solids[body].name,swept.len())))
-            };
-            let (inner,moved) = placed(operand)?;
-            (inner,Some(body),operand,[moved,whole])
-        } else { (body,None,body,[whole,None]) };
-        let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
-        if recipe.sweeps.is_empty() {
-            return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
-        }
-        Ok(Builder {sk:sk.clone(),body,recipe,state:State::Admit,lines:Default::default(),done:0,outer,operand,moved,enveloped:false,
-            reads:asked})
+        let mut build = Build::new(sk,body,false)?;
+        build.reads = crate::solid::reads(sk,body,0.);
+        Ok(Builder {sk:sk.clone(),build,lines:Default::default()})
     }
     /// Run the next stage: `Ok(true)` once the surface is built, or the refusal that stopped it.
     pub fn step(&mut self) -> Result<bool,ExportRefusal> {
         let lines = &self.lines;
         let say = Say {stage:&|line: &str| lines.lock().unwrap_or_else(|e| e.into_inner()).push(line.to_string()),mark:&|_| {}};
-        let (sk,body,recipe) = (&self.sk,self.body,&self.recipe);
+        self.build.step(&self.sk,&say)?;
+        Ok(matches!(self.build.state,State::Done(_)))
+    }
+    /// What the next stage does, in a page's words.
+    pub fn doing(&self) -> String { self.build.doing(&self.sk) }
+    /// The stages run, and their number in all: admission, the blank, a sheet a distinct sweep, the
+    /// plan, the cut, the pattern and the mesh — a body whose sweeps are built within their
+    /// envelopes runs no sheet, plan or cut, and counts none once that is known; a static body's
+    /// build and its mesh; a body built from swept material, each of its swept operands' stages
+    /// but the mesh, its combining and its mesh.
+    pub fn stages(&self) -> (usize,usize) { self.build.stages() }
+    /// The last thing a stage said (its own words: what it built, and in what time).
+    pub fn said(&self) -> Option<String> { self.lines.lock().unwrap_or_else(|e| e.into_inner()).last().cloned() }
+    /// The surface, once built.
+    pub fn display(&self) -> Option<&Display> { match &self.build.state { State::Done(d) => Some(d),_ => None } }
+}
+
+impl Build {
+    /// The build of solid `asked`: an object's (meshed), or a `part`'s (its B-rep).
+    fn new(sk: &Sketch,asked: usize,part: bool) -> Result<Build,ExportRefusal> {
+        let build = |body,state,recipe,moved,parts| Build {asked,body,recipe,state,done:0,moved,enveloped:false,parts,part,reads:Vec::new()};
+        let none = || cad::StaticRecipe {recipe:crate::json::Json::Null,sweeps:Vec::new()};
+        // a body no sweep reaches is built as the export builds it, a stage, then meshed
+        if !cad::contains_sweep(sk,asked) { return Ok(build(asked,State::Static,none(),None,Vec::new())) }
+        // a placement of a swept body (`x in f`): the body it places, built and moved (#619)
+        let (body,moved) = cad::placed_swept(sk,asked).at(Stage::Blank)?
+            .map_or((asked,None),|(inner,pose)| (inner,Some(super::sweep::sector::placed(pose,cad::millimetres(sk)))));
+        // a body built from swept material: each of its operands holding sweeps built, then combined
+        let swept = cad::swept_operands(sk,body);
+        if !swept.is_empty() {
+            no_swept_cut(sk,body)?;
+            let parts = swept.into_iter().map(|o| Build::new(sk,o,true)).collect::<Result<Vec<_>,_>>()?;
+            return Ok(build(body,State::Parts,none(),moved,parts))
+        }
+        let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
+        if recipe.sweeps.is_empty() {
+            return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
+        }
+        Ok(build(body,State::Admit,recipe,moved,Vec::new()))
+    }
+    /// Whether the build has come to its end: its display, or a part's B-rep.
+    fn finished(&self) -> bool { matches!(self.state,State::Done(_) | State::Built(_)) }
+    /// Run the next stage: a part's, where its parts are still being built.
+    fn step(&mut self,sk: &Sketch,say: &Say) -> Result<(),ExportRefusal> {
+        if let State::Parts = self.state {
+            let part = self.parts.iter_mut().find(|p| !p.finished()).expect("a part left to build");
+            part.step(sk,say)?;
+            if self.parts.iter().all(Build::finished) { self.state = State::Compose; }
+            return Ok(())
+        }
         let state = std::mem::replace(&mut self.state,State::Failed);
         let was_prepare = matches!(state,State::Prepare(_));
-        let next = (|| -> Result<State,ExportRefusal> { Ok(match state {
-            State::Static => State::Mesh(super::sweep::Built::Whole(exact(sk,body,None,None,&say)?.solid)),
+        let next = self.advance(sk,state,say)?;
+        self.enveloped |= was_prepare && matches!(next,State::Finish(_));
+        self.done += 1;
+        self.state = next;
+        Ok(())
+    }
+    /// The state after `state`'s stage.
+    fn advance(&mut self,sk: &Sketch,state: State,say: &Say) -> Result<State,ExportRefusal> {
+        let (body,recipe) = (self.body,&self.recipe);
+        Ok(match state {
+            State::Static => State::Mesh(super::sweep::Built::Whole(exact(sk,body,None,None,say)?.solid)),
             State::Admit => State::Prepare(admission::admit_body(sk,body,&DISPLAY_ADMISSION)?),
             State::Prepare(admitted) => {
-                let prepared = super::sweep::prepare(sk,body,recipe,&admitted,&say)?;
+                let prepared = super::sweep::prepare(sk,body,recipe,&admitted,say)?;
                 // a planar sweep's body is its blank within its envelope: no sheet, no sector
                 if super::sweep::planar::all(&prepared) {
-                    State::Finish(super::sweep::Cut::Whole(super::sweep::planar::cut(sk,body,recipe,&prepared,None,&say)?))
+                    State::Finish(super::sweep::Cut::Whole(super::sweep::planar::cut(sk,body,recipe,&prepared,None,say)?))
                 } else if super::sweep::subtraction::all(&prepared) {
-                    State::Finish(super::sweep::Cut::Whole(super::sweep::subtraction::cut(sk,body,recipe,&prepared,None,&say)?))
+                    State::Finish(super::sweep::Cut::Whole(super::sweep::subtraction::cut(sk,body,recipe,&prepared,None,say)?))
                 } else { State::Sheets(prepared,Vec::new()) }
             }
             State::Sheets(prepared,mut sheets) => {
-                sheets.push(super::sweep::sheet(&prepared,sheets.len(),None,&say)?);
+                sheets.push(super::sweep::sheet(&prepared,sheets.len(),None,say)?);
                 if sheets.len() == prepared.sweeps() { State::Plan(prepared,sheets) } else { State::Sheets(prepared,sheets) }
             }
-            State::Plan(prepared,sheets) => { let plan = super::sweep::plan(sk,body,recipe,&prepared,&sheets,&say); State::Cut(prepared,sheets,plan) }
-            State::Cut(prepared,sheets,plan) => State::Finish(super::sweep::cut(sk,body,recipe,&prepared,&sheets,plan,&say)?),
+            State::Plan(prepared,sheets) => { let plan = super::sweep::plan(sk,body,recipe,&prepared,&sheets,say); State::Cut(prepared,sheets,plan) }
+            State::Cut(prepared,sheets,plan) => State::Finish(super::sweep::cut(sk,body,recipe,&prepared,&sheets,plan,say)?),
             State::Finish(cut) => {
-                let mut built = super::sweep::finish(cut,&say)?;
-                if let Some(m) = &self.moved[0] { built = built.moved(m); }
-                if self.outer.is_some() { State::Compose(built) } else { State::Mesh(built) }
+                let mut built = super::sweep::finish(cut,say)?;
+                if let Some(m) = &self.moved { built = built.moved(m); }
+                if !self.part { State::Mesh(built) } else {
+                    let solid = built.into_solid();
+                    if solid.faces.is_empty() { return Err(emptied(sk,body)) }
+                    State::Built(solid)
+                }
             }
-            State::Compose(built) => {
-                let outer = self.outer.expect("a composed build has its body");
-                let mut inner = Some(built.into_solid());
-                let (solid,emptied) = combine(sk,outer,&mut |o| if o == self.operand {
-                    inner.take().ok_or_else(|| ExportRefusal::at(Stage::Fuse,"the swept body is used twice")) } else { built_static(sk,o) })?;
-                if let Some(why) = emptied { return Err(empty(&sk.solids[outer].name,&why)) }
-                (say.stage)(&format!("`{}` combined from its swept material",sk.solids[outer].name));
-                State::Mesh(super::sweep::Built::Whole(match &self.moved[1] { Some(m) => solid.moved(m),None => solid }))
+            State::Compose => {
+                let mut parts: Vec<(usize,Option<Brep>)> = self.parts.iter_mut().map(|p| (p.asked,p.take())).collect();
+                let (solid,emptied) = combine(sk,body,&mut |o| match parts.iter_mut().find(|(k,b)| *k == o && b.is_some()) {
+                    Some((_,b)) => Ok(b.take().expect("a part's build")),
+                    None if cad::contains_sweep(sk,o) => Err(ExportRefusal::at(Stage::Fuse,"the swept body is used twice")),
+                    None => built_static(sk,o),
+                })?;
+                if let Some(why) = emptied { return Err(empty(&sk.solids[body].name,&why)) }
+                (say.stage)(&format!("`{}` combined from its swept material",sk.solids[body].name));
+                let solid = match &self.moved { Some(m) => solid.moved(m),None => solid };
+                if self.part { State::Built(solid) } else { State::Mesh(super::sweep::Built::Whole(solid)) }
             }
             State::Mesh(built) => State::Done(display(sk,&built,self.reads.clone())?),
-            done @ State::Done(_) => done,
+            State::Parts => unreachable!("a body's parts are stepped by `step`"),
+            done @ (State::Done(_) | State::Built(_)) => done,
             State::Failed => return Err(ExportRefusal::at(Stage::Blank,"the build has failed already")),
-        }) })();
-        match next {
-            Ok(state) => {
-                self.enveloped |= was_prepare && matches!(state,State::Finish(_));
-                self.done += 1;
-                self.state = state;
-                Ok(matches!(self.state,State::Done(_)))
-            }
-            Err(refusal) => Err(refusal),
-        }
+        })
+    }
+    /// A finished part's B-rep, taken for the body built from it.
+    fn take(&mut self) -> Option<Brep> {
+        match std::mem::replace(&mut self.state,State::Failed) { State::Built(solid) => Some(solid),other => { self.state = other; None } }
     }
     /// What the next stage does, in a page's words.
-    pub fn doing(&self) -> String {
-        let name = |k: usize,p: &super::sweep::Prepared| format!("fitting the sheet of `{}` ({} of {})",p.sweep_name(&self.sk,k),k+1,p.sweeps());
+    fn doing(&self,sk: &Sketch) -> String {
+        let name = |k: usize,p: &super::sweep::Prepared| format!("fitting the sheet of `{}` ({} of {})",p.sweep_name(sk,k),k+1,p.sweeps());
         match &self.state {
             State::Static => "building the solid from its recipe".into(),
             State::Admit => "admitting its sweeps to the generating class".into(),
@@ -641,28 +701,27 @@ impl Builder {
             State::Cut(_,_,super::sweep::Plan::Sector(_)) => "cutting the sector by its sheets".into(),
             State::Cut(_,_,super::sweep::Plan::Whole(_)) => "cutting the blank by its sheets".into(),
             State::Finish(_) => "turning the sector round".into(),
-            State::Compose(_) => "adding the rest of the body".into(),
+            State::Parts => self.parts.iter().find(|p| !p.finished()).map_or_else(|| "adding the rest of the body".into(),|p| p.doing(sk)),
+            State::Compose => "adding the rest of the body".into(),
             State::Mesh(_) => "meshing the exact surface".into(),
-            State::Done(_) => "built".into(),
+            State::Done(_) | State::Built(_) => "built".into(),
             State::Failed => "failed".into(),
         }
     }
-    /// The stages run, and their number in all: admission, the blank, a sheet a distinct sweep, the
-    /// plan, the cut, the pattern and the mesh — a body whose sweeps are built within their
-    /// envelopes runs no sheet, plan or cut, and counts none once that is known; a static body's
-    /// build and its mesh.
-    pub fn stages(&self) -> (usize,usize) {
+    /// The stages run, and their number in all (`Builder::stages`).
+    fn stages(&self) -> (usize,usize) {
+        let mesh = usize::from(!self.part);
+        if !self.parts.is_empty() {
+            let (done,total) = self.parts.iter().map(Build::stages).fold((0,0),|(a,b),(c,d)| (a+c,b+d));
+            return (self.done+done,total+1+mesh)
+        }
         // (a static body's recipe lists no sweep: a swept one's always does)
-        if self.recipe.sweeps.is_empty() { return (self.done,2) }
-        if self.enveloped { return (self.done,4+usize::from(self.outer.is_some())) }
+        if self.recipe.sweeps.is_empty() { return (self.done,1+mesh) }
+        if self.enveloped { return (self.done,3+mesh) }
         let mut sweeps: Vec<usize> = self.recipe.sweeps.iter().map(|s| s.swept).collect();
         sweeps.sort(); sweeps.dedup();
-        (self.done,6+sweeps.len()+usize::from(self.outer.is_some()))
+        (self.done,5+sweeps.len()+mesh)
     }
-    /// The last thing a stage said (its own words: what it built, and in what time).
-    pub fn said(&self) -> Option<String> { self.lines.lock().unwrap_or_else(|e| e.into_inner()).last().cloned() }
-    /// The surface, once built.
-    pub fn display(&self) -> Option<&Display> { match &self.state { State::Done(d) => Some(d),_ => None } }
 }
 
 /// Every swept object of `sk` given its exact B-rep where this kernel builds one (`exact`, at the
