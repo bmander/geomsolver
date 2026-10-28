@@ -453,16 +453,12 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         by_sweep.entry(cut.swept).or_default().push(cut.pose);
     }
     let names: BTreeMap<usize,String> = order.iter().map(|&s| (s,sk.solids[s].name.clone())).collect();
-    let twist = |motion: u32| crate::motion::Family::read(sk,motion as usize).is_ok_and(|f| f.twist().is_some());
-    // a ball's sweep its tube's rows refuse (#684 D), under a motion no other class reads alike
-    let canal: BTreeMap<usize,super::canal::Refusal> = order.iter().filter_map(|&s| match &sk.solids[s].def {
-        SolidDef::Swept {motion,..} if !twist(*motion) => super::canal::refusal(sk,s).map(|r| (s,r)),
-        _ => None,
-    }).collect();
-    let asked: BTreeMap<usize,Asked> = order.iter().map(|&s| (s,if canal.contains_key(&s) { Asked::Canal }
+    // the first ball's sweep its tube's rows refuse (#684 D), along a path no closed form carries
+    let canal = order.iter().find_map(|&s| super::canal::refusal(sk,s).map(|r| (s,r)));
+    let asked: BTreeMap<usize,Asked> = order.iter().map(|&s| (s,if canal.as_ref().is_some_and(|(c,_)| *c == s) { Asked::Canal }
         else if super::planar_class::asks(sk,s) { Asked::Planar }
         else { match &sk.solids[s].def {
-            SolidDef::Swept {motion,..} if twist(*motion) => Asked::ConstantTwist,
+            SolidDef::Swept {motion,..} if crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.twist().is_some()) => Asked::ConstantTwist,
             _ => Asked::Generating,
         } })).collect();
     // a sweep of a member of a union tool is refused as the union's, saying the member (#684 C)
@@ -475,8 +471,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     };
     let refuse = |swept: usize,condition,message: String,witness|
         Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,asked:asked[&swept]});
-    if let Some(&swept) = order.iter().find(|s| canal.contains_key(s)) {
-        let r = canal[&swept].clone();
+    if let Some((swept,r)) = canal {
         return Err(refuse(swept,r.condition,r.message,r.witness.map(|p| by_sweep[&swept][0].point(p))))
     }
     let field = &field;

@@ -1159,10 +1159,10 @@ impl Family {
 
 /// How near the walls' polynomials in `s` must pass a station solved between their nodes, as a
 /// part of the section's size: the exact surface's error, well under the kernel's tolerance.
-const EXACT: f64 = 1e-10;
+pub(super) const EXACT: f64 = 1e-10;
 
 /// The longest piece of the interval the walls' polynomials span, as a fraction of it.
-const LONGEST_PIECE: f64 = 0.25;
+pub(super) const LONGEST_PIECE: f64 = 0.25;
 
 /// Where between a piece's nodes the station is solved again to check its polynomials, as a
 /// fraction of the piece: beyond the fifth node, where interpolation on Gauss–Lobatto points errs

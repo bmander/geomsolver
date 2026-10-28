@@ -60,7 +60,7 @@ impl Node {
             Node::Canal {centre,radius,spine,face} => match spine {
                 Spine::Screw {origin,axis,angle,advance} =>
                     Ok(super::build::canal(*centre,*radius,*origin,*axis,*angle,*advance,face)?),
-                Spine::Tube(f) => Ok(super::build::capped(&family_node(f)?,&f.loops,*radius,face)?),
+                Spine::Tube(f) => Ok(super::build::capped(family_node(f)?,&f.loops,*radius,face)?),
             },
             Node::Region(pieces) => region_node(pieces,built,built_names,floor),
             Node::Grown {body,pieces} => grown_node(*body,pieces,built,built_names,floor),

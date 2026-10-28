@@ -19,8 +19,9 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::admission::Condition;
+use super::family::{EXACT, LONGEST_PIECE};
 use crate::brep::family::{Run, NODES};
-use crate::brep::recipe::{Family as Walls, FamilyWall, Writer};
+use crate::brep::recipe::{Family as Walls, FamilyWall, Spine, Writer};
 use crate::json::{object, Json};
 use crate::model::{Sketch, SolidDef};
 use crate::motion::Family;
@@ -32,23 +33,14 @@ use std::rc::Rc;
 type V = [f64; 3];
 
 /// A ball's sweep (model units): the ball of `radius` about `centre` where the roll starts, carried
-/// along its centre's path (`Path`), and the name of the ball's face, which names every face the
-/// tube has.
+/// along its centre's path (`spine`: a screw's, or the face family its disc makes, `along`), and the
+/// name of the ball's face, which names every face the tube has.
 #[derive(Clone, Debug)]
 pub struct Canal {
     centre: V,
     radius: f64,
-    path: Path,
+    spine: Spine,
     face: String,
-}
-
-/// The path a ball's centre runs: carried by the screw about the line through `origin` along the
-/// unit `axis` — a turn by `angle` and a step of `advance` (no step, a turn; no turn, a slide) — or,
-/// where no closed form carries it, the face family the ball's disc square to it makes (`along`).
-#[derive(Clone, Debug)]
-enum Path {
-    Screw { origin: V, axis: V, angle: f64, advance: f64 },
-    Tube(Walls),
 }
 
 impl Canal {
@@ -56,24 +48,27 @@ impl Canal {
     pub fn node(&self, w: &Writer) -> Json {
         let mut o = object([("kind", "canal".into()), ("centre", w.point(self.centre)),
             ("radius", w.length(self.radius)), ("face", self.face.clone().into())]);
-        match &self.path {
-            &Path::Screw { origin, axis, angle, advance } => {
+        match &self.spine {
+            &Spine::Screw { origin, axis, angle, advance } => {
                 let mm = |p: V| p.map(|x| x * w.scale);
                 o.set("origin", w.line_origin(mm(origin), axis));
                 o.set("axis", Writer::triple(axis));
                 o.set("angle", angle.into());
                 o.set("advance", w.length(advance));
             }
-            Path::Tube(walls) => o.set("tube", super::family::json(walls, w)),
+            Spine::Tube(walls) => o.set("tube", super::family::json(walls, w)),
         }
         o
     }
 
     /// Whether the tube is fitted: its centre's path one no closed form carries (#684 D).
     pub fn fitted(&self) -> bool {
-        matches!(self.path, Path::Tube(_))
+        matches!(self.spine, Spine::Tube(_))
     }
 }
+
+/// The screw that moves the centre nowhere: `build::canal` builds the ball itself.
+const STILL: Spine = Spine::Screw { origin: [0.0; 3], axis: [0.0, 0.0, 1.0], angle: 0.0, advance: 0.0 };
 
 /// A ball's sweep refused by a row of its own (#684 D): the row, what was seen, and a point of the
 /// centre's path where it was (the sweep's coordinates).
@@ -84,13 +79,19 @@ pub struct Refusal {
     pub witness: Option<V>,
 }
 
-/// What a ball's sweep is: its tube, refused by a row, or a tube its gate refused or that could not
-/// be read or built.
+/// Why a ball's sweep is no tube: a row refuses it, or it could not be read, built or gated.
 #[derive(Clone, Debug)]
-pub(crate) enum Outcome {
-    Built(Rc<Canal>),
+pub(crate) enum Why {
     Refused(Refusal),
     Failed(String),
+}
+
+impl From<String> for Why {
+    fn from(m: String) -> Why { Why::Failed(m) }
+}
+
+fn refused(condition: Condition, message: String, witness: V) -> Why {
+    Why::Refused(Refusal { condition, message, witness: Some(witness) })
 }
 
 /// Sweep `swept` built as a ball's tube, where its tool is a ball and the tube meets itself nowhere
@@ -99,31 +100,30 @@ pub(crate) enum Outcome {
 /// (`Caches::canal`).
 pub fn built(sk: &Sketch, swept: usize) -> Option<Result<Rc<Canal>, String>> {
     match outcome(sk, swept)? {
-        Outcome::Built(c) => Some(Ok(c)),
-        Outcome::Failed(m) => Some(Err(m)),
-        Outcome::Refused(_) => None,
+        Ok(c) => Some(Ok(c)),
+        Err(Why::Failed(m)) => Some(Err(m)),
+        Err(Why::Refused(_)) => None,
     }
 }
 
-/// Why sweep `swept`, a ball's, is no tube: the row its centre's path fails (`None` for a tube, and
-/// for a sweep whose tool is no ball).
+/// Why sweep `swept`, a ball's along a path no closed form carries, is no tube: the row its
+/// centre's path fails (`None` for a tube, a sweep whose tool is no ball, and one the constant
+/// twist's rows are asked of).
 pub fn refusal(sk: &Sketch, swept: usize) -> Option<Refusal> {
     match outcome(sk, swept)? {
-        Outcome::Refused(r) => Some(r),
+        Err(Why::Refused(r)) => Some(r),
         _ => None,
     }
 }
 
-fn outcome(sk: &Sketch, swept: usize) -> Option<Outcome> {
+fn outcome(sk: &Sketch, swept: usize) -> Option<Result<Rc<Canal>, Why>> {
     if !matches!(sk.solids.get(swept)?.def, SolidDef::Swept { .. }) {
         return None;
     }
-    sk.caches.canal.get_or(swept, super::MemoKey::of(sk, swept), || read(sk, swept).map(|c| match c {
-        Ok(c) => match gate(sk, swept, &c) {
-            Ok(()) => Outcome::Built(Rc::new(c)),
-            Err(m) => Outcome::Failed(m),
-        },
-        Err(why) => why,
+    sk.caches.canal.get_or(swept, super::MemoKey::of(sk, swept), || read(sk, swept).map(|c| {
+        let c = c?;
+        gate(sk, swept, &c)?;
+        Ok(Rc::new(c))
     }))
 }
 
@@ -134,8 +134,9 @@ pub fn is_canal(sk: &Sketch, i: usize) -> bool {
 }
 
 /// The ball's sweep `swept` is, read off its tool's recipe and its motion where the tool is a ball:
-/// `None` where it is not, an outcome other than a tube where its path is refused or cannot be read.
-fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, Outcome>> {
+/// `None` where it is not, or where it is a screw's whose tube would meet itself (the constant
+/// twist's rows are asked of it instead); why not where its path is refused or cannot be read.
+fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, Why>> {
     let SolidDef::Swept { source, motion, .. } = &sk.solids[swept].def else { return None };
     let family = Family::read(sk, *motion as usize).ok()?;
     let scale_mm = super::cad::millimetres(sk);
@@ -149,26 +150,20 @@ fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, Outcome>> {
     let face = (0..profile.loops.len()).flat_map(|l| (0..profile.loops[l].len()).map(move |k| (l, k)))
         .find(|&(l, k)| matches!(profile.loops[l][k], crate::brep::build::ProfileEdge::Arc { .. }))
         .map_or(String::new(), |(l, k)| profile.name(l, k));
-    let failed = |e: String| Some(Err(Outcome::Failed(e)));
-    let refused = |condition, message, witness| Some(Err(Outcome::Refused(Refusal { condition, message, witness })));
+    tube(sk, swept, &family, c, r, face).transpose()
+}
+
+/// The tube the ball of radius `r` about `c` sweeps under `family` over sweep `swept`'s roll, its
+/// faces named `face`: `None` where it is a screw's that would meet itself.
+fn tube(sk: &Sketch, swept: usize, family: &Family, c: V, r: f64, face: String) -> Result<Option<Canal>, Why> {
     // where the roll starts, and the turn and the step it takes to its end
-    let [from, to] = match super::roll::interval(sk, swept) {
-        Ok(roll) => roll,
-        Err(e) => return failed(e),
-    };
-    let centre = match family.at(from) {
-        Ok(pose) => pose.point(c),
-        Err(e) => return failed(e),
-    };
-    // a path no closed form carries, read off the motion (#684 D)
+    let [from, to] = super::roll::interval(sk, swept)?;
+    let centre = family.at(from)?.point(c);
+    // a path no closed form carries, read off the motion (#684 D); a centre that never moves sweeps
+    // the ball itself
     let Some(turn) = family.twist() else {
-        return Some(match along(&Centre { family: &family, ball: c }, r, &face, [from, to]) {
-            Ok(Some(walls)) => Ok(Canal { centre, radius: r, path: Path::Tube(walls), face }),
-            // a centre that never moves sweeps the ball itself
-            Ok(None) => Ok(Canal { centre, radius: r, face,
-                path: Path::Screw { origin: [0.0; 3], axis: [0.0, 0.0, 1.0], angle: 0.0, advance: 0.0 } }),
-            Err(why) => Err(why),
-        });
+        let spine = along(&Centre { family, ball: c }, r, &face, [from, to])?.map_or(STILL, Spine::Tube);
+        return Ok(Some(Canal { centre, radius: r, spine, face }));
     };
     let tau = to - from;
     let (angle, advance) = (turn.ratio * tau, turn.advance * tau / TAU);
@@ -177,15 +172,11 @@ fn read(sk: &Sketch, swept: usize) -> Option<Result<Canal, Outcome>> {
     let a = turn.axis;
     let radial = sub(centre, add(turn.origin, scale(a, dot(sub(centre, turn.origin), a))));
     let moves = norm(add(scale(cross(a, radial), angle), scale(a, advance))) > 1e-12 * r.max(1.0);
-    if moves && angle != 0.0 && norm(radial) <= r * (1.0 + 1e-9) {
-        return refused(Condition::Curvature, format!("its centre turns {} from the axis, within its radius {}",
-            num(norm(radial)), num(r)), Some(centre));
+    if moves && angle != 0.0 && norm(radial) <= r * (1.0 + 1e-9)
+        || advance != 0.0 && angle.abs() > TAU && turn.advance.abs() / turn.ratio.abs() <= 2.0 * r {
+        return Ok(None);
     }
-    if advance != 0.0 && angle.abs() > TAU && turn.advance.abs() / turn.ratio.abs() <= 2.0 * r {
-        return refused(Condition::Return, format!("its centre's helix climbs {} a turn over more than a turn, within \
-            its diameter {}", num(turn.advance.abs() / turn.ratio.abs()), num(2.0 * r)), Some(centre));
-    }
-    Some(Ok(Canal { centre, radius: r, path: Path::Screw { origin: turn.origin, axis: a, angle, advance }, face }))
+    Ok(Some(Canal { centre, radius: r, spine: Spine::Screw { origin: turn.origin, axis: a, angle, advance }, face }))
 }
 
 /// **The gate**, as the lowering table's (`lowering::gate`): the tube stands only where the sweep's
@@ -210,50 +201,70 @@ impl Centre<'_> {
         let m = self.family.at(s)?;
         Ok((m.point(self.ball), m.velocity(self.ball)))
     }
-
-    /// The frame `f` square to the path at `s0` carried to `s1` by double reflection, in steps of the
-    /// roll no longer than `step`.
-    fn carried(&self, f: &Frame, s0: f64, s1: f64, step: f64) -> Result<Frame, String> {
-        let n = ((s1 - s0).abs() / step).ceil().max(1.0) as usize;
-        let (mut x0, _) = self.at(s0)?;
-        let mut f = *f;
-        for k in 1..=n {
-            let s = s0 + (s1 - s0) * k as f64 / n as f64;
-            let (x1, v1) = self.at(s)?;
-            let t1 = normalised(v1).ok_or_else(|| stops(s))?;
-            f = crate::motion::reflected(&f, x0, x1, t1);
-            x0 = x1;
-        }
-        Ok(f)
-    }
 }
 
 /// A frame square to the path: its tangent, then the two radius vectors' directions.
 type Frame = [V; 3];
+
+/// **The frame square to the centre's path, carried** from where the roll starts by double
+/// reflection (`motion::reflected`) over `GRID` steps of the roll, once: the centre and the frame
+/// at each node, so any other roll is one step from its nearest, wherever the pieces fall.
+struct Carried<'a> {
+    path: &'a Centre<'a>,
+    from: f64,
+    step: f64,
+    nodes: Vec<(V, Frame)>,
+}
+
+impl<'a> Carried<'a> {
+    fn new(path: &'a Centre<'a>, [from, to]: [f64; 2], start: Frame) -> Result<Carried<'a>, String> {
+        let step = (to - from) / GRID as f64;
+        let mut nodes = vec![(path.at(from)?.0, start)];
+        for k in 1..=GRID {
+            let s = from + step * k as f64;
+            let (x, f) = Self::reflected(path, nodes[k - 1], s)?;
+            nodes.push((x, f));
+        }
+        Ok(Carried { path, from, step, nodes })
+    }
+
+    /// The node `(x, f)` carried one step on to the roll `s`.
+    fn reflected(path: &Centre, (x0, f): (V, Frame), s: f64) -> Result<(V, Frame), String> {
+        let (x1, v1) = path.at(s)?;
+        let t1 = normalised(v1).ok_or_else(|| stops(s))?;
+        Ok((x1, crate::motion::reflected(&f, x0, x1, t1)))
+    }
+
+    /// The centre and the frame at the roll `s`.
+    fn at(&self, s: f64) -> Result<(V, Frame), String> {
+        let k = ((s - self.from) / self.step).round().clamp(0.0, GRID as f64) as usize;
+        if s == self.from + self.step * k as f64 {
+            return Ok(self.nodes[k]);
+        }
+        Self::reflected(self.path, self.nodes[k], s)
+    }
+}
 
 /// Why a centre's path that stops at `s` has no disc square to it there.
 fn stops(s: f64) -> String {
     format!("the ball's centre stops at {} of the roll, where its path has no tangent", num(s))
 }
 
-/// How many points of the centre's path its rows are read at, at least, and at most: as many as
-/// keep them an eighth of the radius apart along it, between the two.
+/// How many points of the centre's path its length is first read at, and how many its rows are
+/// read at, at least, and at most: as many as keep them an eighth of the radius apart along it,
+/// between the two.
+const FIRST_SAMPLES: usize = 64;
 const SAMPLES: usize = 1024;
 const MOST_SAMPLES: usize = 1 << 15;
 
-/// How near the wall's polynomials in the roll must pass the disc read between their nodes, as a
-/// part of the disc's diameter: the exact surface's error, well under the kernel's tolerance.
-const EXACT: f64 = 1e-10;
-
-/// The first and the longest pieces of the roll the wall's polynomials span, the shortest, and how
-/// many there may be.
+/// The first piece of the roll the wall's polynomials span, the shortest, and how many there may
+/// be (the longest is a face family's, `LONGEST_PIECE`).
 const COARSEST: f64 = 1.0 / 16.0;
-const LONGEST_PIECE: f64 = 0.25;
 const FINEST: f64 = 1e-9;
 const MOST_PIECES: usize = 4096;
 
 /// How many steps of the roll the frame square to the path is carried over, end to end.
-const GRID: f64 = 4096.0;
+const GRID: usize = 4096;
 
 /// Where between a piece's first two and last two nodes the disc is read again to check its
 /// polynomials, as fractions of the piece: where interpolation on Gauss–Lobatto points errs most.
@@ -261,56 +272,49 @@ const CHECKED_AT: [f64; 2] = [0.06, 0.94];
 
 /// **The tube along a path no closed form carries** (#684 D): the face family of the ball's disc of
 /// radius `r` square to the centre's path over the roll `[from, to]` — its centre the path's point,
-/// its radius vectors along the frame carried from the start by double reflection, the seam turned
-/// off the path's own normal by `build::SEAM`'s angle as `canal`'s is — in pieces whose degree-five
-/// polynomials hold to the disc read between their nodes within `EXACT` of its diameter; `None`
-/// where the centre never moves. Refused where it would meet itself, read at points of the path
-/// (`rows`).
-fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Option<Walls>, Outcome> {
-    let failed = |e: String| Outcome::Failed(e);
+/// its radius vectors along the frame carried from the start (`Carried`), the seam turned off the
+/// path's own normal as `build::canal`'s is (`build::seam`) — in pieces whose degree-five
+/// polynomials hold to the disc read between their nodes within a face family's `EXACT` of its
+/// diameter; `None` where the centre never moves. Refused where it would meet itself, read at
+/// points of the path (`rows`).
+fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Option<Walls>, Why> {
     let span = to - from;
     let Some(start) = rows(path, r, [from, to])? else { return Ok(None) };
-    let step = span / GRID;
-    let numbers = |p: V, f: &Frame| -> Vec<f64> {
+    let carried = Carried::new(path, [from, to], start)?;
+    // the disc's numbers at the roll `s` (`brep::family::Run::Round`), and its points a quarter turn
+    // apart
+    let disc = |s: f64| -> Result<Vec<f64>, String> {
+        let (p, f) = carried.at(s)?;
         let mut n = p.to_vec();
         n.extend(scale(f[1], r));
         n.extend(scale(f[2], r));
         n.push(TAU);
-        n
+        Ok(n)
     };
-    // the disc's points a quarter turn apart, read off its numbers
-    let rim = |n: &[f64]| -> [V; 4] {
-        std::array::from_fn(|k| Run::Round.at(n, k as f64 / 4.0).0)
-    };
+    let rim = |n: &[f64]| -> [V; 4] { std::array::from_fn(|k| Run::Round.at(n, k as f64 / 4.0).0) };
     let tol = EXACT * 2.0 * r;
     let (longest, finest) = (span * LONGEST_PIECE, span * FINEST);
     let mut h = span * COARSEST;
-    let (mut s, mut frame) = (from, start);
-    let mut here = numbers(path.at(from).map_err(failed)?.0, &frame);
+    let mut s = from;
+    let mut here = disc(from)?;
     let (mut spans, mut at, mut nodes) = (Vec::new(), Vec::new(), Vec::new());
     while to - s > span * 1e-12 {
         if spans.len() >= MOST_PIECES {
-            return Err(failed(format!("the ball's tube needs more than {MOST_PIECES} pieces to follow its \
+            return Err(Why::Failed(format!("the ball's tube needs more than {MOST_PIECES} pieces to follow its \
                 centre's path within {}", num(tol))));
         }
-        let left = to - s;
-        let end = if h >= left { to } else { s + h };
+        let end = if h >= to - s { to } else { s + h };
         let ss: [f64; 6] = NODES.map(|t| s + (end - s) * (t + 1.0) / 2.0);
-        let mut frames = vec![frame];
         let mut piece = vec![here.clone()];
-        for i in 1..6 {
-            let f = path.carried(&frames[i - 1], ss[i - 1], ss[i], step).map_err(failed)?;
-            piece.push(numbers(path.at(ss[i]).map_err(failed)?.0, &f));
-            frames.push(f);
+        for &q in &ss[1..] {
+            piece.push(disc(q)?);
         }
         // the disc read near each end of the piece, held to the polynomials
         let mut miss = 0.0f64;
-        for (k, &c) in CHECKED_AT.iter().enumerate() {
+        for c in CHECKED_AT {
             let q = s + (end - s) * c;
-            let near = if k == 0 { 0 } else { 4 };
-            let f = path.carried(&frames[near], ss[near], q, step).map_err(failed)?;
-            let want = numbers(path.at(q).map_err(failed)?.0, &f);
             let w = super::family::weights(&ss, q);
+            let want = disc(q)?;
             let got: Vec<f64> = (0..want.len()).map(|j| (0..6).map(|i| w[i] * piece[i][j]).sum()).collect();
             for (p, q) in rim(&got).into_iter().zip(rim(&want)) {
                 miss = miss.max(norm(sub(p, q)));
@@ -322,13 +326,13 @@ fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Opti
             continue;
         }
         if miss > tol * 1e3 {
-            return Err(failed(format!("the ball's centre's path does not run smoothly between {} and {} of the \
-                roll: the tube's polynomials miss its disc between them by {}", num(s), num(end), num(miss))));
+            return Err(Why::Failed(format!("the ball's centre's path does not run smoothly between {} and {} of \
+                the roll: the tube's polynomials miss its disc between them by {}", num(s), num(end), num(miss))));
         }
         h = ((end - s) * grow.clamp(0.5, 2.0)).clamp(finest, longest);
         spans.push([s, end]);
         at.push(ss);
-        (s, frame, here) = (end, frames[5], piece[5].clone());
+        (s, here) = (end, piece[5].clone());
         nodes.extend(piece);
     }
     let wall = FamilyWall { name: face.to_string(), run: Run::Round, closed: true, nodes };
@@ -338,98 +342,87 @@ fn along(path: &Centre, r: f64, face: &str, [from, to]: [f64; 2]) -> Result<Opti
 /// **The rows of a ball's tube along a path no closed form carries** (#684 D), read at points of
 /// the centre's path over the roll, an eighth of the radius apart along it or as near as
 /// `MOST_SAMPLES` points come: **B1**, the path turns nowhere tighter than the radius `r` (the tube
-/// would fold) and never stops; **B2**, the path comes back within the ball's diameter of itself
-/// nowhere it has run half a turn of a circle of the radius from (the tube would cross itself; read
-/// with the points' spacing to spare). Sampled, so a turn or a return between the points is not
-/// seen: the gate holds what is built to the sweep's field. The frame square to the path where it
-/// starts, or `None` where the centre never moves.
-fn rows(path: &Centre, r: f64, [from, to]: [f64; 2]) -> Result<Option<Frame>, Outcome> {
-    let failed = |e: String| Outcome::Failed(e);
-    let refused = |condition, message, witness| Outcome::Refused(Refusal { condition, message, witness });
+/// would fold) and never stops; **B2** (`returns`), the path comes back within the ball's diameter
+/// of itself nowhere it has run half a turn of a circle of the radius from (the tube would cross
+/// itself). Sampled, so a turn or a return between the points is not seen: the gate holds what is
+/// built to the sweep's field. The frame square to the path where it starts, its seam off the
+/// path's own normal at the first point it turns at (any square to it where it never does), or
+/// `None` where the centre never moves.
+fn rows(path: &Centre, r: f64, [from, to]: [f64; 2]) -> Result<Option<Frame>, Why> {
     let span = to - from;
-    let read = |n: usize| -> Result<Vec<(f64, V, V)>, Outcome> {
+    let read = |n: usize| -> Result<Vec<(f64, V, V)>, String> {
         (0..=n).map(|i| {
             let s = from + span * i as f64 / n as f64;
-            path.at(s).map(|(p, v)| (s, p, v)).map_err(failed)
+            path.at(s).map(|(p, v)| (s, p, v))
         }).collect()
     };
-    // the path's length, from a first reading, then the points an eighth of the radius apart
+    // the path's length along each point, by its speed
     let length = |pts: &[(f64, V, V)]| -> Vec<f64> {
         let mut along = vec![0.0];
         for w in pts.windows(2) {
-            let ds = w[1].0 - w[0].0;
-            along.push(along.last().unwrap() + 0.5 * ds * (norm(w[0].2) + norm(w[1].2)));
+            along.push(along.last().unwrap() + 0.5 * (w[1].0 - w[0].0) * (norm(w[0].2) + norm(w[1].2)));
         }
         along
     };
-    let first = read(SAMPLES)?;
-    let total = *length(&first).last().unwrap();
+    let total = *length(&read(FIRST_SAMPLES)?).last().unwrap();
     if total <= 1e-12 * r.max(1.0) {
         return Ok(None);
     }
-    let n = ((8.0 * total / r).ceil() as usize).clamp(SAMPLES, MOST_SAMPLES);
-    let pts = if n == SAMPLES { first } else { read(n)? };
+    let pts = read(((8.0 * total / r).ceil() as usize).clamp(SAMPLES, MOST_SAMPLES))?;
     let along = length(&pts);
-    let spacing = along.windows(2).map(|w| w[1] - w[0]).fold(0.0, f64::max);
     let said = format!("read at {} points of its path", pts.len());
-    // B1: its radius of curvature at each point, its rate of turning read a sixteenth of a spacing on
-    let dh = span / n as f64 / 16.0;
-    let mut start = None;
+    let t0 = normalised(pts[0].2).ok_or_else(|| refused(Condition::Curvature, format!("{} ({said})", stops(from)), pts[0].1))?;
+    // B1: its radius of curvature at each point, its rate of turning read off its neighbours'
+    let mut normal = None;
     for (i, &(s, p, v)) in pts.iter().enumerate() {
         let speed = norm(v);
         if speed <= 1e-12 * total / span {
-            return Err(refused(Condition::Curvature, format!("{} ({said})", stops(s)), Some(p)));
+            return Err(refused(Condition::Curvature, format!("{} ({said})", stops(s)), p));
         }
-        let (a, b) = if i == 0 { (s, s + dh) } else if i == pts.len() - 1 { (s - dh, s) } else { (s - dh, s + dh) };
-        let (va, vb) = (path.at(a).map_err(failed)?.1, path.at(b).map_err(failed)?.1);
-        let rate = scale(sub(vb, va), 1.0 / (b - a));
+        let (a, b) = (&pts[i.saturating_sub(1)], &pts[(i + 1).min(pts.len() - 1)]);
+        let rate = scale(sub(b.2, a.2), 1.0 / (b.0 - a.0));
         let bend = norm(cross(v, rate));
         if bend > 0.0 && speed.powi(3) / bend <= r * (1.0 + 1e-9) {
             return Err(refused(Condition::Curvature, format!("its centre's path turns on a radius of {} at {} of \
-                the roll, within its radius {} ({said})", num(speed.powi(3) / bend), num(s), num(r)), Some(p)));
+                the roll, within its radius {} ({said})", num(speed.powi(3) / bend), num(s), num(r)), p));
         }
-        // the frame where the path starts: its seam off the path's own normal, read at the first
-        // point it turns at (any square to it where it never does)
-        let t = scale(v, 1.0 / speed);
-        if start.is_none() && bend > 1e-9 * speed * speed {
-            let t0 = normalised(pts[0].2).unwrap();
-            let normal = sub(rate, scale(t, dot(rate, t)));
-            if let Some(n0) = normalised(sub(normal, scale(t0, dot(normal, t0)))) {
-                start = Some((t0, n0));
-            }
+        if normal.is_none() && bend > 1e-9 * speed * speed {
+            let t = scale(v, 1.0 / speed);
+            normal = normalised(sub(rate, scale(t, dot(rate, t)))).and_then(|n| normalised(sub(n, scale(t0, dot(n, t0)))));
         }
     }
-    // B2: two points of the path within the diameter (and the spacing) of each other, half a turn
-    // on a circle of the radius or more apart along it; the points binned in cubes of that reach
-    let reach = 2.0 * r + spacing;
-    let cube = |p: V| p.map(|x| (x / reach).floor() as i64);
-    let mut bins: std::collections::BTreeMap<[i64; 3], Vec<usize>> = Default::default();
-    for (i, &(_, p, _)) in pts.iter().enumerate() {
-        bins.entry(cube(p)).or_default().push(i);
+    if let Some(why) = returns(&pts, &along, r) {
+        return Err(why);
     }
-    for (i, &(s, p, _)) in pts.iter().enumerate() {
-        let k = cube(p);
-        for dk in 0..27 {
-            let key = [k[0] + dk % 3 - 1, k[1] + dk / 3 % 3 - 1, k[2] + dk / 9 - 1];
-            for &j in bins.get(&key).map_or(&[][..], |v| &v[..]) {
-                let (sj, q, _) = pts[j];
-                if j > i && along[j] - along[i] >= PI * r && norm(sub(p, q)) < reach {
-                    return Err(refused(Condition::Return, format!("its centre's path comes back {} from itself \
-                        between {} and {} of the roll, within its diameter {} and the {} its points stand apart \
-                        ({said})", num(norm(sub(p, q))), num(s), num(sj), num(2.0 * r), num(spacing)),
-                        Some(scale(add(p, q), 0.5))));
-                }
-            }
-        }
-    }
-    let t0 = normalised(pts[0].2).unwrap();
-    let (t0, n0) = start.unwrap_or_else(|| (t0, crate::brep::geom::Frame::about([0.0; 3], t0).x));
-    let (sn, cs) = SEAM.dsin_cos();
-    let x = add(scale(n0, cs), scale(cross(t0, n0), sn));
+    let x = crate::brep::build::seam(t0, normal.unwrap_or_else(|| crate::space::across(t0).0));
     Ok(Some([t0, x, cross(t0, x)]))
 }
 
-/// How far round from the path's own normal a fitted tube's seam runs (radians): `brep::build`'s
-/// angle for a turn's tube, the golden angle's fraction of a turn, which no symmetry of a design's
-/// makes.
-const SEAM: f64 = 0.6180339887498949;
+/// **B2**: two of the points `pts` of the path (`along` its length at each) within the diameter
+/// `2 r` of each other, with the points' spacing to spare, half a turn on a circle of the radius or
+/// more apart along it.
+fn returns(pts: &[(f64, V, V)], along: &[f64], r: f64) -> Option<Why> {
+    let spacing = along.windows(2).map(|w| w[1] - w[0]).fold(0.0, f64::max);
+    let reach = 2.0 * r + spacing;
+    let mut grid = crate::space::Grid::new(reach);
+    for (i, &(_, p, _)) in pts.iter().enumerate() {
+        grid.insert(p, i as u32);
+    }
+    for (i, &(s, p, _)) in pts.iter().enumerate() {
+        let mut near = None;
+        grid.around(p, |j| {
+            let j = j as usize;
+            if near.is_none() && j > i && along[j] - along[i] >= PI * r && norm(sub(p, pts[j].1)) < reach {
+                near = Some(j);
+            }
+        });
+        if let Some(j) = near {
+            let (sj, q, _) = pts[j];
+            return Some(refused(Condition::Return, format!("its centre's path comes back {} from itself between {} \
+                and {} of the roll, within its diameter {} and the {} its points stand apart (read at {} points of \
+                its path)", num(norm(sub(p, q))), num(s), num(sj), num(2.0 * r), num(spacing), pts.len()),
+                scale(add(p, q), 0.5)));
+        }
+    }
+    None
+}

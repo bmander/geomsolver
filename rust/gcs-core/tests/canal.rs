@@ -27,7 +27,7 @@ fn exported(e: &Elaborated, name: &str) -> Brep {
 
 /// The tube about an arc or a helix of `length`, of radius `r`, with the ball at each end: the disc
 /// carried along the path (Pappus) and the two half balls beyond its ends.
-fn tube(r: f64, length: f64) -> f64 {
+pub(crate) fn tube(r: f64, length: f64) -> f64 {
     PI * r * r * length + 4.0 / 3.0 * PI * r.powi(3)
 }
 
@@ -67,9 +67,9 @@ fn a_groove_ends_in_the_block_it_cuts() {
 }
 
 /// `solid_sweeps/ball.sv` with a ball of 2.9 swung 50° at 5 from its axis: its start's half ball
-/// has its pole read a rounding past the sphere's chart, whose normal turns over there, and the
-/// mesher once refined into the pole without end — triangles 1e-7 across, which float32 wrote as
-/// none, so the STL was refused. Meshed as any ball now (`brep::mesh`), half the tube taken.
+/// had its pole read a rounding past the sphere's chart, whose normal turns over there, and the
+/// mesher refined into the pole without end — triangles 1e-7 across, which float32 wrote as none,
+/// so the STL was refused. A revolution's sphere holds its `v` to its poles (`build::revolve`).
 #[test]
 fn a_half_balls_pole_is_meshed_as_any_point() {
     let doc = include_str!("../../examples/solid_sweeps/ball.sv").replace("swing_r := 12mm", "swing_r := 5mm")

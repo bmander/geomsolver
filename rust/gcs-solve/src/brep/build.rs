@@ -480,7 +480,9 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
                     let dt = { let l = f.dir_local(s.curve.tangent(s.t[0])); [l[0],l[2]] };
                     let sigma = ((ra-big)*dt[1]-(za-zc)*dt[0]).signum();
                     let t0 = s.t[0];
-                    (surface,[(rq-big)/r,(zq-zc)/r],Box::new(move |t| va+sigma*(t-t0)))
+                    // a sphere's v held to its poles: run a rounding past one, its chart turns over
+                    let pole = if kinds[k] == Swept::Sphere { std::f64::consts::FRAC_PI_2 } else { f64::INFINITY };
+                    (surface,[(rq-big)/r,(zq-zc)/r],Box::new(move |t| (va+sigma*(t-t0)).clamp(-pole,pole)))
                 }
             };
             let reversed = out[0]*normal[0]+out[1]*normal[1] < 0.;
@@ -547,28 +549,23 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
     let radial = sub(c,add(origin,scale(a,dot(sub(c,origin),a))));
     // the centre's velocity at the start, square to the radial line
     let rate = add(scale(cross(a,radial),angle),scale(a,advance));
-    let named = |mut b: Brep| { for f in &mut b.faces { f.name = name.to_string(); } b };
     // a centre that does not move sweeps the ball itself
-    if norm(rate) <= 1e-12*r.max(1.) { return Ok(named(ball(c,a,r)?)) }
+    if norm(rate) <= 1e-12*r.max(1.) { return Ok(named(ball(c,a,r)?,name)) }
     let t = unit(rate);
     // where the disc's circle starts, so where the tube's seams run: turned off the radial line by
     // an angle no design's symmetry gives (on it, the arc the seam's vertex sweeps lies in the plane
     // of the centre's path, which a face often does — a groove's floor's block top)
-    let x0 = if norm(radial) > 0. { unit(radial) } else { Frame::about(c,t).x };
-    let (s,k) = SEAM.dsin_cos();
-    let x = add(scale(x0,k),scale(cross(t,x0),s));
-    // the balls' poles: leaning off the path by the same angle, toward the seam
-    let w = add(scale(t,k),scale(x,s));
+    let x = seam(t,if norm(radial) > 0. { unit(radial) } else { Frame::about(c,t).x });
+    let w = poles(t,x);
     let disc = Profile {origin:c,normal:t,loops:vec![vec![ProfileEdge::Arc {frame:Frame::new(c,t,x),r,span:None}]],names:Vec::new()};
     if advance == 0. && angle.abs() >= TAU-1e-12 {
-        return Ok(named(revolve(&disc,origin,a,TAU*angle.signum())?))
+        return Ok(named(revolve(&disc,origin,a,TAU*angle.signum())?,name))
     }
     let end = screw(origin,a,angle,advance);
     let tube = if advance == 0. { revolve(&disc,origin,a,angle)? }
         else if angle == 0. { ruled(&disc,&disc.moved(&end),Carry::Line {delta:scale(a,advance)})? }
         else { ruled(&disc,&disc.moved(&end),Carry::Screw {center:origin,axis:a,angle,advance})? };
-    let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b),super::boolean::Op::Union,0.);
-    Ok(union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))?)
+    ended(tube,half_ball(c,scale(t,-1.),w,r)?,half_ball(c,t,w,r)?.moved(&end),name)
 }
 
 /// **The tube a ball sweeps along a path no closed form carries** (#684 D): `tube`, the solid a face
@@ -577,25 +574,46 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
 /// disc, as `canal`'s are: each ball's poles leaning off the path toward the wall's seam, which the
 /// disc's first radius vector names. Every face is named `name`. The caller's to know the tube
 /// meets itself nowhere.
-pub fn capped(tube: &Brep,loops: &[Vec<super::recipe::FamilyWall>],r: f64,name: &str) -> Result<Brep,String> {
+pub fn capped(tube: Brep,loops: &[Vec<super::recipe::FamilyWall>],r: f64,name: &str) -> Result<Brep,String> {
     let [walls] = loops else { return Err("a ball's tube is one round wall".into()) };
     let [wall] = &walls[..] else { return Err("a ball's tube is one round wall".into()) };
-    let ([first,..],[..,last]) = (&wall.nodes[..],&wall.nodes[..]) else { return Err("a ball's tube has no stations".into()) };
-    let named = |mut b: Brep| { for f in &mut b.faces { f.name = name.to_string(); } b };
-    // an end disc's centre, the path's tangent there (the disc turns counter-clockwise about it)
-    // and its first radius vector, where the wall's seam runs
-    let end = |n: &[f64]| -> Result<(V,V,V),String> {
-        let v = |k: usize| [n[k],n[k+1],n[k+2]];
-        if n.len() != 10 { return Err("a ball's tube's wall is no round".into()) }
-        Ok((v(0),scale(unit(cross(v(3),v(6))),n[9].signum()),unit(v(3))))
-    };
-    let (s,k) = SEAM.dsin_cos();
+    let [first,..,last] = &wall.nodes[..] else { return Err("a ball's tube has no stations".into()) };
+    // the half ball beyond an end disc, `out` along the path's tangent there (the disc turns
+    // counter-clockwise about it): its centre, its tangent and its first radius vector, where the
+    // wall's seam runs
     let half = |n: &[f64],out: f64| -> Result<Brep,String> {
-        let (c,t,x) = end(n)?;
-        half_ball(c,scale(t,out),add(scale(t,k),scale(x,s)),r)
+        if n.len() != 10 { return Err("a ball's tube's wall is no round".into()) }
+        let v = |k: usize| [n[k],n[k+1],n[k+2]];
+        let t = scale(unit(cross(v(3),v(6))),n[9].signum());
+        half_ball(v(0),scale(t,out),poles(t,unit(v(3))),r)
     };
-    let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b),super::boolean::Op::Union,0.);
-    Ok(union(&union(&named(tube.clone()),half(first,-1.)?)?,half(last,1.)?)?)
+    ended(tube,half(first,-1.)?,half(last,1.)?,name)
+}
+
+/// Every face of `b` named `name`.
+fn named(mut b: Brep,name: &str) -> Brep {
+    for f in &mut b.faces { f.name = name.to_string(); }
+    b
+}
+
+/// A ball's `tube` united with the half balls beyond its two ends, every face named `name`.
+fn ended(tube: Brep,start: Brep,end: Brep,name: &str) -> Result<Brep,String> {
+    let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b,name),super::boolean::Op::Union,0.);
+    Ok(union(&union(&named(tube,name),start)?,end)?)
+}
+
+/// Where a ball's tube's seam runs, square to the path's unit tangent `t`: the unit `x0` square to
+/// it turned about it by `SEAM`.
+pub(crate) fn seam(t: V,x0: V) -> V {
+    let (s,k) = SEAM.dsin_cos();
+    add(scale(x0,k),scale(cross(t,x0),s))
+}
+
+/// The axis through a half ball's poles: leaning off the path's tangent `t` by `SEAM`, toward the
+/// seam `x`.
+fn poles(t: V,x: V) -> V {
+    let (s,k) = SEAM.dsin_cos();
+    add(scale(t,k),scale(x,s))
 }
 
 /// How far round from the radial line a ball's tube's seams run (radians): the golden angle's

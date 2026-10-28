@@ -140,9 +140,10 @@ helix past a turn climbs no more than the diameter a turn. Under any other motio
 roll, a frame along a path or one the drawing moves, a driven joint — the path is read off the
 motion (`canal::along`): the disc a face family's one closed `Run::Round` wall over the roll, its
 stations the centre's point and the radius vectors of the frame square to the path, carried from
-the start by double reflection (`motion::reflected`) in steps of a 4096th of the roll, its pieces
-of the roll (Gauss–Lobatto, `family::weights`) each held to the disc read near both its ends within
-1e-10 of the diameter (`EXACT`), so the wall is fitted, and lies on a cylinder or a torus where its
+the start by double reflection (`motion::reflected`) once, over 4096 steps of the roll, any other
+roll one step from its nearest (`canal::Carried`), its pieces of the roll (Gauss–Lobatto,
+`family::weights`) each held to the disc read near both its ends within a face family's `EXACT` of
+the diameter, so the wall is fitted, and lies on a cylinder or a torus where its
 numbers do (`brep::family`'s `analytic`); built as the family and the end half balls united
 (`build::capped`). Its rows, sampled at points an eighth of the radius apart along the path
 (1024 to 32768) and said so, refuse it by name with a point of the path, in the canal class

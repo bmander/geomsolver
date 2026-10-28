@@ -12,10 +12,11 @@
 //! the path, and its sweep stays the field's.
 use gcs_core::brep::{export, props, sweep::Say};
 use gcs_core::program::Elaborated;
-use gcs_core::solid::admission::{self, Condition, Error, Options};
+use gcs_core::solid::admission::{self, Condition, Options};
 use gcs_core::solid::canal;
 use std::f64::consts::PI;
 
+use crate::canal::tube;
 use crate::solid_sweeps_examples::text;
 use crate::turns_and_slides::near;
 
@@ -33,27 +34,17 @@ pub(crate) fn bezier_length<const N: usize>(p: [[f64; N]; 4]) -> f64 {
 
 /// `f` integrated over `[a, b]` by five-point Gauss–Legendre over 64 stretches.
 fn integral(f: &dyn Fn(f64) -> f64, a: f64, b: f64) -> f64 {
-    let x = [0.0, 0.5384693101056831, -0.5384693101056831, 0.906179845938664, -0.906179845938664];
-    let w = [0.5688888888888889, 0.47862867049936647, 0.47862867049936647, 0.23692688505618908, 0.23692688505618908];
+    let rule = crate::common::rounds::gauss_legendre(5);
     let h = (b - a) / 64.0;
     (0..64).map(|i| {
         let m = a + h * (i as f64 + 0.5);
-        (0..5).map(|k| w[k] * f(m + h / 2.0 * x[k])).sum::<f64>() * h / 2.0
+        rule.iter().map(|&(x, w)| w * f(m + h / 2.0 * x)).sum::<f64>() * h / 2.0
     }).sum()
 }
 
-/// The tube of radius `r` about a path of `length` with the ball at each end.
-fn tube(r: f64, length: f64) -> f64 {
-    PI * r * r * length + 4.0 / 3.0 * PI * r.powi(3)
-}
-
 /// The solid `name` built exactly within 0.01 mm by this kernel, written as STEP and STL, and held
-/// to its own material field with no disagreement; its B-rep's volume and the kinds of its faces.
-pub(crate) fn held(e: &Elaborated, name: &str) -> f64 {
-    held_faces(e, name).0
-}
-
-fn held_faces(e: &Elaborated, name: &str) -> (f64, Vec<&'static str>) {
+/// to its own material field with no disagreement: its B-rep's volume and the kinds of its faces.
+pub(crate) fn held(e: &Elaborated, name: &str) -> (f64, Vec<&'static str>) {
     let (sk, body) = (&e.sketch, fixtures::solid(e, name));
     assert!(!sk.is_swept(body), "`{name}` is read by the field");
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
@@ -67,19 +58,24 @@ fn held_faces(e: &Elaborated, name: &str) -> (f64, Vec<&'static str>) {
     (props::volume(&exact.solid), exact.solid.faces.iter().map(|f| f.surface.kind()).collect())
 }
 
-/// A ball of `ball` drawn about the origin, a half disc turned about its upright diameter.
-const BALL: &str = "
-in std.front {
+/// A ball of `ball` drawn about the point `du` along the front's `u`, a half disc turned about its
+/// upright diameter.
+fn ball(du: &str) -> String {
+    format!("
+in std.front {{
   private bottom := point
   private top := point
-  bottom coords(du: 0mm, dv: -ball) std.front
-  top coords(du: 0mm, dv: ball) std.front
+  private c := point
+  bottom coords(du: {du}, dv: -ball) std.front
+  top coords(du: {du}, dv: ball) std.front
+  c coords(du: {du}, dv: 0mm) std.front
   private diameter := line(bottom, top)
-  private meridian := arc(center: std.origin, start: bottom, end: top) hint(r: 1)
+  private meridian := arc(center: c, start: bottom, end: top) hint(r: 1)
   radius(ball) meridian
-}
+}}
 construction cutter := solid(face(meridian, diameter), about: diameter)
-";
+")
+}
 
 /// A block 40 by 20 by 8 below the top face, from (-10, -10).
 const BLOCK: &str = "
@@ -106,13 +102,13 @@ block := solid(face(s0, s1, s2, s3), from: -8mm, to: 0mm)
 /// along x from the origin: the groove is half the capsule.
 #[test]
 fn a_ball_slid_is_a_capsule_its_ends_in_the_blank() {
-    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.place (coords)\nuse std.motion (slides)\nball := 3mm\n{BALL}\
+    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.place (coords)\nuse std.motion (slides)\nball := 3mm\n{}\
         in std.front {{\n  construction centerline rail := line(std.origin, hint((1, 0)))\n  fix((1, 0)) rail.p2\n}}\n{BLOCK}\
         feed := frame\nfeed slides(40mm) rail\nconstruction groove := sweep(cutter over t in (0deg, 180deg), under: feed)\n\
-        groove cut block\n"));
+        groove cut block\n", ball("0mm")));
     let c = canal::built(&e.sketch, fixtures::solid(&e, "groove")).unwrap().unwrap();
     assert!(!c.fitted(), "a line is a closed form");
-    let (volume, kinds) = held_faces(&e, "block");
+    let (volume, kinds) = held(&e, "block");
     assert!(kinds.contains(&"cylinder"), "{kinds:?}");
     near(volume, 40.0 * 20.0 * 8.0 - tube(3.0, 20.0) / 2.0, 1e-9);
 }
@@ -122,14 +118,14 @@ fn a_ball_slid_is_a_capsule_its_ends_in_the_blank() {
 /// with the cubic's torsion, fitted to it, its length read off the control points.
 #[test]
 fn a_ball_along_a_spline_in_space_is_its_tube() {
-    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{BALL}\
+    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{}\
         ka := point hint((0, 0, 0))\nkb := point hint((10, 20, 5))\nkc := point hint((30, 20, 15))\nkd := point hint((40, 0, 30))\n\
         fix((0mm, 0mm, 0mm)) ka\nfix((10mm, 20mm, 5mm)) kb\nfix((30mm, 20mm, 15mm)) kc\nfix((40mm, 0mm, 30mm)) kd\n\
         cubic := spline(ka, kb, kc, kd)\nalong := std.stations.Along(cubic, up: std.z)\n\
-        wire := sweep(cutter over t in (0rad, 1rad), under: along.f)\n"));
+        wire := sweep(cutter over t in (0rad, 1rad), under: along.f)\n", ball("0mm")));
     assert!(canal::built(&e.sketch, fixtures::solid(&e, "wire")).unwrap().unwrap().fitted());
     let length = bezier_length([[0.0, 0.0, 0.0], [10.0, 20.0, 5.0], [30.0, 20.0, 15.0], [40.0, 0.0, 30.0]]);
-    near(held(&e, "wire"), tube(2.0, length), 1e-9);
+    near(held(&e, "wire").0, tube(2.0, length), 1e-9);
 }
 
 /// **A ball rolled**: spun a quarter as fast as the roll about its own upright axis through
@@ -138,21 +134,17 @@ fn a_ball_along_a_spline_in_space_is_its_tube() {
 /// 2 e^{-3it/4}` over a third of a turn, its length integrated from the closed form.
 #[test]
 fn a_ball_rolled_is_its_tube_along_the_trochoid() {
-    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.place (coords)\nuse std.motion (turns)\nball := 1mm\n\
-        in std.front {{\n  private bottom := point\n  private top := point\n  bottom coords(du: 5mm, dv: -ball) std.front\n\
-          top coords(du: 5mm, dv: ball) std.front\n  private diameter := line(bottom, top)\n  private c := point\n\
-          c coords(du: 5mm, dv: 0mm) std.front\n  private meridian := arc(center: c, start: bottom, end: top) hint(r: 1)\n\
-          radius(ball) meridian\n  construction centerline spindle := line(std.origin, hint((0, 1)))\n  fix((0, 1)) spindle.p2\n\
+    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.place (coords)\nuse std.motion (turns)\nball := 1mm\n{}\
+        in std.front {{\n  construction centerline spindle := line(std.origin, hint((0, 1)))\n  fix((0, 1)) spindle.p2\n\
           private h0 := point\n  private h1 := point\n  h0 coords(du: 3mm, dv: 0mm) std.front\n\
           h1 coords(du: 3mm, dv: 5mm) std.front\n  construction centerline own := line(h0, h1)\n}}\n\
-        construction cutter := solid(face(meridian, diameter), about: diameter)\n\
         spin := frame\nspin turns(0.25) own\nobserver := frame\nobserver turns(1) spindle\n\
-        rolled := sweep(cutter over t in (-60deg, 60deg), under: spin, seen_from: observer)\n"));
+        rolled := sweep(cutter over t in (-60deg, 60deg), under: spin, seen_from: observer)\n", ball("5mm")));
     assert!(canal::built(&e.sketch, fixtures::solid(&e, "rolled")).unwrap().unwrap().fitted());
     // |q'(t)| = |3 e^{-it} + 3/2 e^{-3it/4}|, for q(t) = 3 e^{-it} + 2 e^{-3it/4}
     let speed = |t: f64| (9.0 + 2.25 + 9.0 * (t / 4.0).cos()).sqrt();
     let length = integral(&speed, -PI / 3.0, PI / 3.0);
-    near(held(&e, "rolled"), tube(1.0, length), 1e-9);
+    near(held(&e, "rolled").0, tube(1.0, length), 1e-9);
 }
 
 /// **A ball along an arc**: a frame along an arc of radius 15 carries the centre round a circle,
@@ -160,21 +152,17 @@ fn a_ball_rolled_is_its_tube_along_the_trochoid() {
 /// arc's quarter turn.
 #[test]
 fn a_ball_along_an_arc_lies_on_its_torus() {
-    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{BALL}\
+    let e = fixtures::read(&format!("unit mm\nuse std\nuse std.place (coords)\nuse std.stations\nball := 2mm\n{}\
         in std.top {{\n  private a := point\n  private o := point\n  private e := point\n  fix((0mm, 0mm)) a\n\
           fix((0mm, 15mm)) o\n  fix((15mm, 15mm)) e\n  bend := arc(center: o, start: a, end: e)\n}}\nalong := std.stations.Along(bend, up: std.z)\n\
-        bent := sweep(cutter over t in (0rad, 1rad), under: along.f)\n"));
-    let (volume, kinds) = held_faces(&e, "bent");
+        bent := sweep(cutter over t in (0rad, 1rad), under: along.f)\n", ball("0mm")));
+    let (volume, kinds) = held(&e, "bent");
     assert!(kinds.contains(&"torus"), "{kinds:?}");
     near(volume, tube(2.0, 15.0 * PI / 2.0), 1e-9);
 }
 
 fn refused(e: &Elaborated) -> admission::Refusal {
-    match admission::admit_body(&e.sketch, fixtures::solid(e, "block"), &Options::default()) {
-        Err(Error::Refused(r)) => { eprintln!("{r}"); r }
-        Err(Error::Unreadable(m)) => panic!("unreadable: {m}"),
-        Ok(a) => panic!("admitted: {:?}", a.sweeps().iter().map(|s| &s.name).collect::<Vec<_>>()),
-    }
+    crate::turns_and_slides::refused(admission::admit_body(&e.sketch, fixtures::solid(e, "block"), &Options::default()))
 }
 
 /// **B1**: `solid_sweeps/path.sv`'s spline turns on a radius of 7.5 at its tightest, so a ball of
