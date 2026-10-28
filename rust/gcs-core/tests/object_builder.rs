@@ -97,10 +97,11 @@ fn every_object_of_the_library_builds_as_the_export_builds_it() {
 
 /// **A sharp rim's fan builds at the display's samples** (`?example=solid_sweeps`, `vthread.sv`):
 /// the rod's end planes meet the fan the V wheel's rim sweeps in a curve 0.09 mm long, shorter than
-/// a march's step there (0.22 mm). Its trace ends at the fan's edges keeping the steps it took round
-/// the tip, so it is traced once and fitted on the fan; dropping every point within a quarter of a
-/// full step of an end cut it to a chord across the tip, the meeting was traced again from a seed
-/// that chord missed, and the split refused a cell whose edge ran 3.4e-6 off the fan.
+/// a march's step there (0.22 mm). Dropping every point within a quarter of a step of an end cut it
+/// to a chord across the rim's tip, the meeting was traced again from a seed that chord missed, and
+/// the split took the copy whose fit ran 3.4e-6 off the fan, refusing a cell. Each of the trace's
+/// three rules builds it alone (`docs/contract/brep.md`): the turn's steps kept, the fit held to
+/// both surfaces between its points, and one curve kept of a meeting traced twice.
 #[test]
 fn a_sharp_rims_fan_builds_at_the_displays_samples() {
     let sk = document(&crate::solid_sweeps_examples::text("vthread.sv"));
