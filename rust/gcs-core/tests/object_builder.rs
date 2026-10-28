@@ -95,6 +95,22 @@ fn every_object_of_the_library_builds_as_the_export_builds_it() {
     corpus(&names,true);
 }
 
+/// **A sharp rim's fan builds at the display's samples** (`?example=solid_sweeps`, `vthread.sv`):
+/// the rod's end planes meet the fan the V wheel's rim sweeps in a curve 0.09 mm long, shorter than
+/// a march's step there (0.22 mm). Its trace ends at the fan's edges keeping the steps it took round
+/// the tip, so it is traced once and fitted on the fan; dropping every point within a quarter of a
+/// full step of an end cut it to a chord across the tip, the meeting was traced again from a seed
+/// that chord missed, and the split refused a cell whose edge ran 3.4e-6 off the fan.
+#[test]
+fn a_sharp_rims_fan_builds_at_the_displays_samples() {
+    let sk = document(&crate::solid_sweeps_examples::text("vthread.sv"));
+    let rod = sk.solids.iter().position(|s| s.name == "rod").unwrap();
+    let (d,_) = stepped(&sk,rod).unwrap_or_else(|e| panic!("{e}"));
+    let (_,volume) = exported(&sk,rod).unwrap();
+    let within = export::GROSS/sk.units.mm_per()*area(&d);
+    assert!((d.faces.volume-volume).abs() <= within,"{} against the export's {volume}, within {within}",d.faces.volume);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \

@@ -639,8 +639,12 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                         .min_by(|x,y| distance(*x,end).total_cmp(&distance(*y,end)));
                     if let Some(q) = crossing.or(last) {
                         // the steps that crowd it dropped: a fit through points a step's ten
-                        // thousandth apart turns sharply between them
-                        while pts.len() > 1 && distance(*pts.last().unwrap(),q) < 0.25*h0 { pts.pop(); }
+                        // thousandth apart turns sharply between them. A quarter of the longest
+                        // step this march took, not of the longest it may: a meeting shorter than
+                        // `h0` (a sharp rim's fan, 0.09 mm against 0.22) turned in steps of its own,
+                        // and dropping all within `h0 / 4` left a chord across its turn
+                        let step = pts.windows(2).map(|w| distance(w[0],w[1])).fold(0.,f64::max).min(h0);
+                        while pts.len() > 1 && distance(*pts.last().unwrap(),q) < 0.25*step { pts.pop(); }
                         if distance(q,*pts.last().unwrap()) > tol { pts.push(q) }
                     }
                     break
