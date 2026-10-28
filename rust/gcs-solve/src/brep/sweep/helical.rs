@@ -40,8 +40,8 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // surface as M(t)·c(s).
     let [first,last] = found.reach;
     let station = screw.station(found.nodes[first].position);
-    let section: Vec<V> = (0..found.nodes.len()).map(|w| found.on_section(w as f64,station).map(|(p,_)| p))
-        .collect::<Result<_,_>>().at(Stage::Reach)?;
+    let (section,normals): (Vec<V>,Vec<V>) = (0..found.nodes.len()).map(|w| found.on_section(w as f64,station))
+        .collect::<Result<Vec<_>,_>>().at(Stage::Reach)?.into_iter().unzip();
     // σ(s) is carried for M(t) at roll time t+τ(s): the columns run over the stretch that carries
     // the section past the blank's heights (`Screw::passing`: a turn's, the whole roll, as a turn
     // keeps every height), widened, within what the roll carries every row to. A turn's delays
@@ -62,16 +62,34 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     (say.stage)(&format!("`{name}`: its characteristic reaches the blank over {} of its points, carried over {:.1} degrees of the roll",
         last-first+1,(window[1]-window[0]).to_degrees()));
     (say.mark)(Stage::Reach);
-    // rows by length along the section
+    // rows by length along the section, each turn of its normal counted as a length of the
+    // section's own size (its length over a half turn): a convex corner's fan turns the section
+    // sharply over a stretch far shorter than a row, and is laid as many rows as its turn asks.
+    // (Counted on the fan alone, the thread's flanks are laid too thinly for the split: a pcurve
+    // a micrometre off.)
+    let size = crate::space::polyline_length(&section)/std::f64::consts::PI;
+    let turned = |a: V,b: V| crate::space::dot(a,b).clamp(-1.,1.).dacos();
     let mut lengths = vec![0.];
-    for w in 1..section.len() { lengths.push(lengths[w-1]+distance(section[w-1],section[w])); }
+    for w in 1..section.len() { lengths.push(lengths[w-1]+distance(section[w-1],section[w])+size*turned(normals[w-1],normals[w])); }
     let total = *lengths.last().expect("a walk has nodes");
     let at_length = |l: f64| -> f64 {
         let w = lengths.partition_point(|&x| x < l).clamp(1,lengths.len()-1);
         let span = lengths[w]-lengths[w-1];
         (w-1) as f64+if span > 0. { ((l-lengths[w-1])/span).clamp(0.,1.) } else { 0. }
     };
-    let rows: Vec<f64> = (0..FIRST_ROWS).map(|r| at_length(total*r as f64/(FIRST_ROWS-1) as f64)).collect();
+    let mut rows: Vec<f64> = (0..FIRST_ROWS).map(|r| at_length(total*r as f64/(FIRST_ROWS-1) as f64)).collect();
+    // a row where the characteristic runs onto a convex corner's fan and one where it runs off: the
+    // sheet is cut there into faces (`Fitted::named`), the fan's own a band between its flanks',
+    // so a point of either flank is never read on the other across the fan's sharp turn
+    let fans: Vec<f64> = found.fan_ends().into_iter().filter(|&s| s > 0. && s < (section.len()-1) as f64).collect();
+    for &s in &fans {
+        let w = rows.partition_point(|&r| r < s);
+        if rows.get(w) == Some(&s) { continue }
+        // the nearer row within moved onto it (the rows stay in order), else one added
+        let near = [w.wrapping_sub(1),w].into_iter().filter(|&k| k > 0 && k+1 < rows.len() && !fans.contains(&rows[k]))
+            .min_by(|&a,&b| (rows[a]-s).abs().total_cmp(&(rows[b]-s).abs()));
+        match near { Some(k) => rows[k] = s,None => rows.insert(w,s) }
+    }
     let columns_n = (((window[1]-window[0])/step).ceil() as usize).max(4)+1;
     let columns: Vec<f64> = (0..columns_n).map(|c| window[0]+(window[1]-window[0])*c as f64/(columns_n-1) as f64).collect();
     let mids = |x: &[f64]| x.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<_>>();
@@ -85,7 +103,9 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         let poses = |times: &[f64]| times.iter().map(|&t| family.pose_at(t)).collect::<Result<Vec<_>,_>>();
         let (columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);
         let (nr,nc) = (grid.rows.len(),grid.columns.len());
-        let mut sheet = Sheet {bands:vec![(0,UNNAMED)],points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
+        let bands = std::iter::once(0).chain(fans.iter().filter_map(|s| grid.rows.iter().position(|r| r == s)))
+            .map(|r| (r,UNNAMED)).collect();
+        let mut sheet = Sheet {bands,points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
             rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
         for row in &rows { for (pose,&t) in columns.iter().zip(&grid.columns) {
             let (p,n) = carried(*row,pose);
@@ -115,5 +135,11 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     (say.stage)(&format!("`{name}`: sheet {}x{}, its edges clear of the blank",sheet.rows,sheet.columns));
     (say.mark)(Stage::Sheet);
     let sides = |grid: &Grid| lay(grid,Withheld::Sides);
-    settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.map(|(fitted,_)| fitted)
+    settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
+        if fans.is_empty() { return Ok(fitted) }
+        fitted.faces = fitted.named(kind,&|_| String::new()).at(Stage::Fit)?;
+        (say.stage)(&format!("`{name}`: the sheet cut into {} faces where its characteristic runs round a convex corner's fan",
+            fitted.faces.faces.len()));
+        Ok(fitted)
+    })
 }

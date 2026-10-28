@@ -100,6 +100,42 @@ fn the_screwed_wheel_leaves_its_section_at_every_height() {
     near(exported(&e,"rod"),PI*25.*20.-section*20.,1e-5);
 }
 
+/// `vthread.sv`: a screw whose wheel has a sharp rim (#684 E), so the characteristic runs from one
+/// flank round the rim's fan to the other; the groove's section is one region at every height,
+/// turned, as `screw.sv`'s is. A point of it is cut where its helix back through the roll passes
+/// into the wheel: within the V of its rim, whose tip runs 10 from the wheel's axis (through
+/// (14, 0, 0), leaning from y away from z by the helix's angle at 4.5 from the rod's axis) and
+/// whose flanks lie 30° either side of the wheel's plane — what the wheel's bore would add never
+/// comes within 9 of the rod's points. Read as `screw.sv`'s is, by the signed distance from the
+/// nearer flank, over the turns that bring the point to the wheel's heights.
+#[test]
+fn the_v_wheel_leaves_its_section_round_the_rim() {
+    let e = example("vthread.sv");
+    let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a screw");
+    assert_eq!(found.fans(),["the corner of `vwheel.upper` and `vwheel.lower`"]);
+    let lead = 30.;
+    let (sh,ch) = (TAU*4.5/lead).atan().sin_cos();
+    let (sf,cf) = (PI/6.).sin_cos();
+    // how far the point p carried back along the screw by `t` lies outside the V
+    let back = |p: [f64;3],t: f64| -> f64 {
+        let (s,c) = t.sin_cos();
+        let w = [c*p[0]+s*p[1]-14.,-s*p[0]+c*p[1],p[2]-lead*t/TAU];
+        let axial = w[1]*ch-w[2]*sh;
+        let radial = [w[0],w[1]-axial*ch,w[2]+axial*sh];
+        let rho = (radial[0]*radial[0]+radial[1]*radial[1]+radial[2]*radial[2]).sqrt();
+        axial.abs()*cf+(rho-10.)*sf
+    };
+    // the turns at which a point at height 10 stands within the wheel's heights, 12 either side
+    // of its middle
+    let turns = [-2.*TAU/lead,22.*TAU/lead];
+    let steps = ((turns[1]-turns[0]).to_degrees().ceil()) as usize;
+    let hit = |a: f64,r: f64| { let p = [r*a.cos(),r*a.sin(),10.]; reaches(&|t| back(p,t),turns,steps,0.) };
+    let section = measure([-PI,PI],&|_| [0.,5.],&hit,&|a,b| (b*b-a*a)/2.);
+    assert!(section > 0.5,"the groove's section is {section}");
+    near(exported(&e,"rod"),PI*25.*20.-section*20.,1e-5);
+}
+
 /// `rack.sv`: the generating class, its tooth space the arithmetic `rack_cut` reads it by (an arc
 /// of each circle about the blank's centre at each roll, joined over the roll), through the
 /// blank's 6 mm.

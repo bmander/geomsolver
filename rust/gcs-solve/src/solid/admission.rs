@@ -623,16 +623,14 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) -
     let poses: Vec<Motion> = (0..=steps).map(|k| pose(domain[0]+(domain[1]-domain[0])*k as f64/steps as f64))
         .collect::<Result<_,_>>()?;
     for edge in c.edges() {
-        let ([a,b],[ua,ub]) = (edge.patches,edge.ends);
+        let ([a,b],[ua,_]) = (edge.patches,edge.ends);
         let (Some(pa),Some(pb)) = (c.patches().get(a),c.patches().get(b)) else { continue };
-        let h = 1e-4;
-        let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
-        let (Ok(corner),Ok(sa),Ok(sb)) = (pa.at(ua,0.),pa.at(inward(ua),0.),pb.at(inward(ub),0.)) else { continue };
-        if !on_tool(corner.position) { continue; }
-        let (ta,tb) = (sub(sa.position,corner.position),sub(sb.position,corner.position));
+        let Some((corner,[sa,sb])) = c.corner(edge) else { continue };
+        if !on_tool(corner) { continue; }
+        let (ta,tb) = (sub(sa,corner),sub(sb,corner));
         // Opposite tangents: the profile is smooth there.
         if dot(ta,tb) < -(1.-1e-9)*norm(ta)*norm(tb) { continue; }
-        let chord: V = std::array::from_fn(|k| 0.5*(sa.position[k]+sb.position[k]));
+        let chord: V = std::array::from_fn(|k| 0.5*(sa[k]+sb[k]));
         if tool.value(chord) <= 0. { continue; }
         for j in 0..options.coarse_columns {
             let Ok(point) = pa.at(ua,j as f64/options.coarse_columns as f64) else { continue };

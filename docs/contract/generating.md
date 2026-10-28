@@ -278,6 +278,31 @@ apart: the lens, a circular segment, Pappus, and a tilted torus's shadow from it
 the STL held to the field), with
 `rust/examples/twist_drill/straight_flute.sv` and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
 
+**A screw with sharp edges: a convex corner's fan (#684 E):** a convex corner of a revolved tool's
+profile — two faces whose outward normals there turn more than `LEAST_TURN` apart, the chord just
+inside them in the material (`constant_twist::corners`, by the probe T2 reads too,
+`SweepContacts::corner`) — is a piece of the walk of its own
+(`Piece::Corner`): its one ring the circle the corner turns to (`RevolvedSurface::ring`), its
+stations the fan of normals turned from the first face's to the second's, each station's roots
+those of the same `A cos θ + B sin θ + C = 0` with the fan normal's coefficients
+(`RingFrame::coefficients`, which a face's ring is read by too), solved as a face's ring is
+(`RingFrame::roots`, `sinusoid_roots`). Under any constant twist (a screw,
+a turn or a slide) the walk, at a face's end where the next face's ring has no root at the same
+point, runs onto the fan and round it to the next face (`step`); the rows S1–S4 are asked of the
+fan's nodes as of any. Where both faces' characteristics meet a convex corner at one point, every
+fan normal is in contact there and the sweep has a sharp edge along that point's path: S1 refuses
+it, saying so, as it does a concave corner's jump. The sheet's rows are laid by length along the
+section plus each turn of its normal counted as the section's length over a half turn, so a fan
+(the rim of a 60° V under a thread's screw: 0.06 mm turning 100°) is as many rows as its turn asks;
+the rows where the walk runs onto and off a fan are exact rows of the grid (`Characteristic::fan_ends`,
+kept by refinement), and the fitted sheet is cut there into faces (`Fitted::named`, the bands
+unnamed: a fan is no face of the tool). Kernel rule it found: a near-crease in one fitted net lets
+a point of one flank be inverted onto the other, a pcurve off its edge by a tenth of a millimetre
+and a split with no cell; cut into faces, each inverts on its own. `Characteristic::fans` names the
+corners walked. `solid_sweeps_examples.rs` (`vthread.sv`, a V wheel ground along a helix, its
+section computed apart from the core) and `turns_and_slides.rs` (a V wheel slid tilted, its shadow;
+slid square, refused at S1 for its sharp edge) are the gate, each STL held to the field.
+
 **A union tool is its members (#684 C, #586):** a body cutting the sweep of a union — its tool a
 body that only puts solids on its stock, a union within one, or a placement of one — is admitted
 (`admit_body`), built (`brep::export::own`, the page's `Builder`) and metered (`accuracy::Meter`)
@@ -296,7 +321,7 @@ against rows across the rod computed apart, placed and turned, against the long 
 tubes by Pappus, two tori rolled in the generating class, and the refusals.
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
-a class — the canal (turned, and along a spline), a slide, a turn, a screw, the generating class's rack, the planar subtraction
+a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, the planar subtraction
 class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;

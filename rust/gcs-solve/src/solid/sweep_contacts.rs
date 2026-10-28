@@ -250,6 +250,16 @@ impl SweepContacts {
             roll:super::roll::interval(sk,solid)?})
     }
     pub fn edges(&self) -> &[PatchEdge] { &self.edges }
+    /// Where `edge`'s two faces meet, and a point just inside each face beside it, on their charts'
+    /// start (`v = 0`): the probe a corner is told by — the chord between the two points in the
+    /// tool's material at a convex corner, out of it at a concave one.
+    pub fn corner(&self,edge: &PatchEdge) -> Option<(V,[V;2])> {
+        let ([a,b],[ua,ub]) = (edge.patches,edge.ends);
+        let (pa,pb) = (self.patches.get(a)?,self.patches.get(b)?);
+        let h = 1e-4;
+        let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
+        Some((pa.at(ua,0.).ok()?.position,[pa.at(inward(ua),0.).ok()?.position,pb.at(inward(ub),0.).ok()?.position]))
+    }
     pub fn patches(&self) -> &[ToolSurface] { &self.patches }
     pub fn motion(&self) -> &Family { &self.motion }
     pub fn source_material(&self) -> &SpatialField { &self.source }

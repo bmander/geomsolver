@@ -51,9 +51,13 @@ where a rule came from.
 - **The three uses read it** (#391 S1): every number the language already ran over is a
   `Running`, with the meaning it had:
   - **a face family's running number** — `SolidDef::Family::over`, its name the absolute key the
-    station is held under (`#f12.s`, `Sketch::held`), its dimension the formal's (the
+    station is held under (`#f0.s`, `Sketch::held`), its dimension the formal's (the
     `HeldNumber`'s), its ends `over s in (a, b)`. `SolidDef::legs` reads it; `HeldNumber` stays
-    the fixed parameter the station is solved at.
+    the fixed parameter the station is solved at.  The instance's key is the family's count in
+    its file (`P::family`), never its offset: the family's `solid::reads` read the name, and a
+    write-back above it (`edit::reconcile`) moves the offset and not the drawing, so a worker
+    reading the written text names the job as the page did
+    (`a_face_familys_job_keeps_its_key_through_the_write_back`).
   - **a traced body's formals** — in space, `TracedE::over`, one per formal that runs (one for a
     curve, two for a surface), each its name and dimension in the component (`TracedE::domain`
     packs the ends for a contact's constants; a spline drawn over points in space runs `t`, a

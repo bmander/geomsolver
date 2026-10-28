@@ -89,7 +89,7 @@ impl Fitted {
     /// The sheet cut where the cutter's faces meet (`Sheet::bands`), each band named by `name`
     /// (`UNNAMED`'s empty): segments of the fitted net between the rows' parameters as `kind`
     /// spread them, which are the fit's.
-    fn named(&self,kind: Parametrization,name: &dyn Fn(u32) -> String) -> Result<Brep,String> {
+    pub(super) fn named(&self,kind: Parametrization,name: &dyn Fn(u32) -> String) -> Result<Brep,String> {
         let bands = &self.sheet.bands;
         let Some(Surface::BSpline(_,net)) = self.face.faces.first().map(|f| &f.surface) else { return Ok(self.face.clone()) };
         if bands.len() < 2 {

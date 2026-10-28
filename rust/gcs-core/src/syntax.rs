@@ -1471,7 +1471,8 @@ pub enum Sweep {
 /// family is a family of (#243 L1, §6.5 one dimension up).
 #[derive(Clone, Debug)]
 pub struct FamilySpec {
-    /// The instance, its name a key the source cannot write (`#f12`): the station.
+    /// The instance, its name a key the source cannot write (`#f0`, the families counted in
+    /// the order written): the station.
     pub instance: Instance,
     /// The face's path inside it (`sec.profile`).
     pub face: Ref,

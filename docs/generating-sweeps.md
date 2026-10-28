@@ -63,7 +63,7 @@ sweep is asked T1, T2, M1, E0 and E1 as above, then (`solid::constant_twist`):
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | The characteristic is regular through the reach and a margin past it: no ring is about to lose its two roots (a double point, where the curve turns back on the ring), none is stationary, and the walk never jumps at a profile corner. | The sheet is one regular curve carried along. A convex corner's fan is not built for a screw yet. | The face and the ring. |
+| S1 | The characteristic is regular through the reach and a margin past it: no ring is about to lose its two roots (a double point, where the curve turns back on the ring), none is stationary, the walk never jumps at a concave corner, and it meets no convex corner at one point from both faces. | The sheet is one regular curve carried along; at a convex corner it runs round the corner's fan (below). Met at one point, a convex corner leaves a sharp edge in the sheet, which is not built. | The face or the corner, and the ring. |
 | S2 | At most one characteristic point of a ring reaches the blank, and every point that does lies on one stretch. | One sheet per placement, one point per station. | The second point. |
 | S3 | The characteristic never runs along the screw's velocity: `(c′ × v)·n` keeps one sign and stays above `least_factor`. | A zero is a fold of the sheet. Signed, so a fold passed between two samples is seen by the sign it turned. | The face and the factor. |
 | S4 | The section square to the axis (each characteristic point carried along its path to one height) does not cross itself. | The sheet is the same at every height, turned and raised, so it meets itself exactly where its section does. | The two points. |
@@ -120,6 +120,39 @@ from the core — a tilted torus's from its centre circle alone — and held to 
 STL agrees with the field; and the straight-fluted drill
 (`rust/examples/twist_drill/straight_flute.sv`, the twist drill's wheel slid square to the axis,
 its flute the wheel's own profile).
+
+### Sharp edges: a convex corner's fan (issue #684 E)
+
+A convex corner of the tool's profile turns to a circle of the tool, and every normal between its
+two faces' there is the tool's. A point of the circle is on the boundary wherever one of those
+normals is square to its velocity, which under a constant twist is again `A cos θ + B sin θ + C =
+0` on the circle, its coefficients the fan normal's (`RingFrame::coefficients`). So the corner is
+walked as a piece of its own: its stations are the fan's normals, turned in the plane through the
+axis from the first face's outward normal to the second's, and each station's ring is the circle.
+Where the two faces' characteristics meet the circle at different points (the jump S1 refused
+before), the walk runs from the one round the fan to the other, and the sheet there is the
+circle's own sweep, tangent to both faces' sheets. S1–S4 are asked of the fan's nodes as of any
+face's (`solid::constant_twist`, `Piece::Corner`), under a screw, a turn or a slide alike.
+
+A join is a corner where the faces' normals turn more than a millionth of a radian apart, with the
+tool's material between them; a circle's own ends and a tangent join are not. Where both faces'
+characteristics meet a convex corner at one point, every normal of its fan is in contact there and
+the sweep has a sharp edge along that point's path: S1 refuses it, naming the face. A V wheel slid
+square to its axis is one, its rim moving along its own tangent where it is nearest the rod.
+
+A fan is usually short and turns far: a 60° V wheel set along a thread's helix touches over 0.06 mm
+of its rim while the normal turns 100°, since the rim moves nearly along itself there. The sheet's
+rows are therefore laid by length along the section plus each turn of its normal counted as the
+section's length over a half turn, which gives the fan a third of them, and the rows where the walk
+runs onto and off the fan are rows of the grid exactly. The fitted sheet is cut there into faces
+(`Fitted::named`): one sheet across the fan's sharp turn let the kernel read a point of one flank on
+the other, and its split found no cell.
+
+`rust/examples/solid_sweeps/vthread.sv` is the case: a V wheel screwed up a rod as a thread is
+ground. `tests/solid_sweeps_examples.rs` holds it to a section read apart from the core (each
+point's helix back through the roll tested against the V by the signed distance from its nearer
+flank) to 2e-6, and `tests/turns_and_slides.rs` a V wheel slid tilted 25° to its shadow along the
+slide to 3e-6, each STL agreeing with the field; slid square, it is refused at S1.
 
 ### A rack (issue #61)
 
