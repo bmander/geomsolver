@@ -21,23 +21,22 @@ import type { CodeEditor } from './editor.js';
 
 /** One row of the menu: its words, a key that does the same (`note`), and what taking it does —
  *  null where there is nothing to do here, which shows it greyed. */
-export interface MenuItem {
+export interface CodeMenuRow {
   label: string;
   note?: string;
   run: (() => void) | null;
 }
 
-/** A line between groups of rows. */
-export const SEPARATOR = null;
-
 /** The clipboard's rows, as a text box's own menu has them: Cut and Paste only where the text can
  *  be changed, Cut and Copy only over a selection.  Each goes through the box as typing would
  *  (`execCommand`), so an undo takes it back and the page hears it as an edit. */
-export function clipboardItems(ed: CodeEditor, mod: string): MenuItem[] {
+export function clipboardItems(ed: CodeEditor): CodeMenuRow[] {
   const box = ed.box;
   const { lo, hi } = ed.caret;
   const some = lo < hi;
   const writable = !box.readOnly && !box.disabled;
+  // the key the platform's shortcuts are held with, as a menu writes it
+  const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
   const paste = writable && navigator.clipboard?.readText
     ? () => {
       void navigator.clipboard.readText()
@@ -53,11 +52,6 @@ export function clipboardItems(ed: CodeEditor, mod: string): MenuItem[] {
   ];
 }
 
-/** The key the platform's shortcuts are held with, as a menu writes it. */
-export function modKey(): string {
-  return /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
-}
-
 /** The menu on one editor (module header). */
 export class CodeMenu {
   private open: { el: HTMLElement; away: (e: Event) => void } | null = null;
@@ -66,9 +60,8 @@ export class CodeMenu {
   private active = -1;
 
   /** `items` is asked for the rows each time the menu opens, the caret already where the
-   *  right-click put it; `SEPARATOR` between groups. */
-  constructor(private readonly ed: CodeEditor,
-    private readonly items: () => (MenuItem | typeof SEPARATOR)[]) {
+   *  right-click put it: groups of rows, a line drawn between each. */
+  constructor(private readonly ed: CodeEditor, private readonly items: () => CodeMenuRow[][]) {
     const box = ed.box;
     box.addEventListener('contextmenu', (e) => {
       if (e.shiftKey) return;
@@ -80,7 +73,7 @@ export class CodeMenu {
         this.atCaret();
         return;
       }
-      if (document.activeElement !== box) box.focus();
+      box.focus();
       const at = ed.offsetAt(e.clientX, e.clientY);
       const { lo, hi } = ed.caret;
       if (lo === hi || at < lo || at > hi) ed.select(at);
@@ -116,44 +109,37 @@ export class CodeMenu {
     this.close();
     const el = document.createElement('div');
     el.className = 'chooser code-menu';
+    el.id = 'code-menu';
     el.setAttribute('role', 'menu');
-    this.rows = [];
-    for (const item of this.items()) {
-      if (item === SEPARATOR) {
-        if (el.lastElementChild && el.lastElementChild.tagName !== 'HR') {
-          el.append(document.createElement('hr'));
+    for (const group of this.items()) {
+      if (this.rows.length && group.length) el.append(document.createElement('hr'));
+      for (const item of group) {
+        const k = this.rows.length;
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.tabIndex = -1;
+        row.id = `code-menu-${k}`;
+        row.setAttribute('role', 'menuitem');
+        const verb = document.createElement('span');
+        verb.className = 'verb';
+        verb.textContent = item.label;
+        row.append(verb);
+        if (item.note) {
+          const note = document.createElement('span');
+          note.className = 'note';
+          note.textContent = item.note;
+          row.append(note);
         }
-        continue;
+        if (!item.run) row.setAttribute('aria-disabled', 'true');
+        row.addEventListener('pointerenter', () => this.light(k));
+        row.addEventListener('click', () => this.take(k));
+        el.append(row);
+        this.rows.push({ el: row, run: item.run });
       }
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.tabIndex = -1;
-      row.setAttribute('role', 'menuitem');
-      const verb = document.createElement('span');
-      verb.className = 'verb';
-      verb.textContent = item.label;
-      row.append(verb);
-      if (item.note) {
-        const note = document.createElement('span');
-        note.className = 'key';
-        note.textContent = item.note;
-        row.append(note);
-      }
-      if (!item.run) {
-        row.setAttribute('aria-disabled', 'true');
-        row.classList.add('disabled');
-      }
-      const k = this.rows.length;
-      row.addEventListener('pointerenter', () => this.light(k));
-      row.addEventListener('click', () => this.take(k));
-      el.append(row);
-      this.rows.push({ el: row, run: item.run });
     }
-    if (el.lastElementChild?.tagName === 'HR') el.lastElementChild.remove();
     if (!this.rows.length) return;
     // a press on the menu keeps the focus in the text (module header)
     el.addEventListener('pointerdown', (e) => e.preventDefault());
-    el.addEventListener('mousedown', (e) => e.preventDefault());
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('pointerleave', () => this.light(-1));
     document.body.append(el);
@@ -168,37 +154,37 @@ export class CodeMenu {
     document.addEventListener('pointerdown', away, true);
     document.addEventListener('wheel', away, true);
     this.open = { el, away };
+    // the text keeps the focus, and says which row the arrows are on to whoever reads it aloud
+    this.ed.box.setAttribute('aria-controls', el.id);
     this.light(-1);
   }
 
-  /** Close the menu, if it is open.  Whether one was. */
-  close(): boolean {
-    if (!this.open) return false;
+  /** Close the menu, if it is open. */
+  close(): void {
+    if (!this.open) return;
     const { el, away } = this.open;
     this.open = null;
     this.rows = [];
     document.removeEventListener('pointerdown', away, true);
     document.removeEventListener('wheel', away, true);
     el.remove();
-    return true;
+    this.ed.box.removeAttribute('aria-controls');
+    this.ed.box.removeAttribute('aria-activedescendant');
   }
 
   /** A key pressed in the text while the menu is open: whether it was the menu's. */
   private key(key: string): boolean {
-    const n = this.rows.length;
-    const live = this.rows.map((r, k) => (r.run ? k : -1)).filter((k) => k >= 0);
+    // the arrows walk the rows that can be taken, round the ends
+    const live = this.rows.flatMap((r, k) => (r.run ? [k] : []));
     if (key === 'Escape' || key === 'Tab') {
       this.close();
     } else if (key === 'ArrowDown' || key === 'ArrowUp') {
-      // the arrows walk the rows that can be taken, round the ends
-      if (!live.length) return true;
       const step = key === 'ArrowDown' ? 1 : -1;
-      let k = this.active;
-      do k = (k + step + n) % n; while (!this.rows[k].run);
-      if (this.active < 0 && step < 0) k = live[live.length - 1];
-      this.light(k);
+      const i = live.indexOf(this.active);
+      const j = i < 0 ? (step > 0 ? 0 : live.length - 1) : (i + step + live.length) % live.length;
+      if (live.length) this.light(live[j]);
     } else if (key === 'Home' || key === 'End') {
-      if (live.length) this.light(key === 'Home' ? live[0] : live[live.length - 1]);
+      if (live.length) this.light(live[key === 'Home' ? 0 : live.length - 1]);
     } else if ((key === 'Enter' || key === ' ') && this.active >= 0) {
       this.take(this.active);
     } else if (key !== 'Shift' && key !== 'Control' && key !== 'Alt' && key !== 'Meta') {
@@ -211,6 +197,8 @@ export class CodeMenu {
   private light(k: number): void {
     this.active = k;
     this.rows.forEach((r, i) => r.el.classList.toggle('active', i === k));
+    if (k >= 0) this.ed.box.setAttribute('aria-activedescendant', this.rows[k].el.id);
+    else this.ed.box.removeAttribute('aria-activedescendant');
   }
 
   /** Take row `k`: close the menu and do what it does, where it does something. */

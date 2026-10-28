@@ -170,20 +170,19 @@ export class CodeEditor {
    *  the whole-pixel line height, the column by where the copy draws the characters on it. */
   offsetAt(x: number, y: number): number {
     const text = this.text;
-    const style = getComputedStyle(this.box);
-    const top = this.box.getBoundingClientRect().top + this.box.clientTop
-      + (parseFloat(style.paddingTop) || 0) - this.box.scrollTop;
-    const lines = text.split('\n').length;
-    const line = Math.max(0, Math.min(lines - 1, Math.floor((y - top) / (this.lineHeight || 1))));
+    const top = this.origin()[1];
+    const last = this.lineOf(text.length);
+    const line = Math.max(0, Math.min(last, Math.floor((y - top) / (this.lineHeight || 1))));
     let lo = 0;
     for (let l = 0; l < line; l += 1) lo = text.indexOf('\n', lo) + 1;
     const end = text.indexOf('\n', lo);
     let hi = end < 0 ? text.length : end;
     // the first character on the line whose middle is past the point: the caret goes before it
+    const rect = this.rects(lo, hi);
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      const r = this.rectOf(mid);
-      if (r && (r.left + r.right) / 2 <= x) lo = mid + 1; else hi = mid;
+      const r = rect(mid);
+      if ((r.left + r.right) / 2 <= x) lo = mid + 1; else hi = mid;
     }
     return lo;
   }
@@ -191,33 +190,43 @@ export class CodeEditor {
   /** Where on the page (client pixels) the character at string index `off` starts: the left and
    *  the bottom of its line, where a menu opened at the caret goes. */
   pointAt(off: number): [number, number] {
-    const box = this.box.getBoundingClientRect();
-    const style = getComputedStyle(this.box);
-    const top = box.top + this.box.clientTop + (parseFloat(style.paddingTop) || 0)
-      - this.box.scrollTop;
+    const text = this.text;
+    const [left, top] = this.origin();
     const y = top + (this.lineOf(off) + 1) * this.lineHeight;
-    const at = this.text[off] === undefined || this.text[off] === '\n' ? off - 1 : off;
-    const r = at < 0 || this.text[at] === '\n' ? null : this.rectOf(at);
-    const x = !r ? box.left + this.box.clientLeft + (parseFloat(style.paddingLeft) || 0)
-      - this.box.scrollLeft : at === off ? r.left : r.right;
-    return [x, y];
+    if (off < text.length && text[off] !== '\n') return [this.rects(off, off + 1)(off).left, y];
+    if (off > 0 && text[off - 1] !== '\n') return [this.rects(off - 1, off)(off - 1).right, y];
+    return [left, y];
   }
 
-  /** Where the copy draws the character at string index `off`, or null past its text. */
-  private rectOf(off: number): DOMRect | null {
+  /** Where the text's first character sits on the page (client pixels): inside the box's border
+   *  and padding, less how far it is scrolled. */
+  private origin(): [number, number] {
+    const box = this.box;
+    const r = box.getBoundingClientRect();
+    const style = getComputedStyle(box);
+    return [r.left + box.clientLeft + (parseFloat(style.paddingLeft) || 0) - box.scrollLeft,
+            r.top + box.clientTop + (parseFloat(style.paddingTop) || 0) - box.scrollTop];
+  }
+
+  /** Where the copy draws each character of `lo`..`hi`, as a function of its string index: the
+   *  copy's text nodes over that stretch found once, so a search along a line walks it once. */
+  private rects(lo: number, hi: number): (off: number) => DOMRect {
+    const nodes: [Text, number][] = [];
     const walk = document.createTreeWalker(this.copy, NodeFilter.SHOW_TEXT);
     let at = 0;
-    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-      const len = (n as Text).length;
-      if (off < at + len) {
-        const range = document.createRange();
-        range.setStart(n, off - at);
-        range.setEnd(n, off - at + 1);
-        return range.getBoundingClientRect();
-      }
-      at += len;
+    for (let n = walk.nextNode() as Text | null; n && at < hi; n = walk.nextNode() as Text | null) {
+      if (at + n.length > lo) nodes.push([n, at]);
+      at += n.length;
     }
-    return null;
+    const range = document.createRange();
+    return (off) => {
+      let k = nodes.length - 1;
+      while (k > 0 && nodes[k][1] > off) k -= 1;
+      const [n, start] = nodes[k];
+      range.setStart(n, off - start);
+      range.setEnd(n, off - start + 1);
+      return range.getBoundingClientRect();
+    };
   }
 
   private caretMoved(): void {

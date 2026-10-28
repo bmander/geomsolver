@@ -141,16 +141,13 @@ export class Occurrences {
     return index && definitionOf(index, lo, hi);
   }
 
-  /** Put the caret where the name under it is given, as the caret put there by hand — what it
-   *  names selected in the workspace (`onName`); whether there was a place to go to. */
-  goToDefinition(): boolean {
-    const to = this.definition();
-    if (!to) return false;
-    this.ed.box.focus();
-    this.ed.select(to.lo);
+  /** Put the caret on `o`, as the caret put there by hand — what it names selected in the
+   *  workspace (`onName`). */
+  goTo(o: Occurrence): void {
+    this.ed.select(o.lo);
+    // put, even where the caret already stood there and moving it told nobody
     this.put = true;
     this.update();
-    return true;
   }
 
   private later(): void {

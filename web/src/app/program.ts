@@ -15,7 +15,7 @@
  * every solve would take the line out from under the cursor. */
 import type { Mark } from './editor.js';
 import { Occurrences } from './occurrences.js';
-import { CodeMenu, SEPARATOR, clipboardItems, modKey } from './code-menu.js';
+import { CodeMenu, clipboardItems } from './code-menu.js';
 import { Names, selectRows, selectionMarks } from './names.js';
 import { highlight, symbols, type Diagnostic, type SourceMap, type SourceSpan }
   from '../core/program.js';
@@ -36,12 +36,13 @@ const ptext = ped.box;
 const occurrences = new Occurrences(ped);
 /** The editor's right-click menu: Go to definition, the caret where the name under it is given
  *  (greyed where it names nothing the text gives), then the clipboard's rows. */
-new CodeMenu(ped, () => [
-  { label: 'Go to definition',
-    run: occurrences.definition() ? () => { occurrences.goToDefinition(); } : null },
-  SEPARATOR,
-  ...clipboardItems(ped, modKey()),
-]);
+new CodeMenu(ped, () => {
+  const to = occurrences.definition();
+  return [
+    [{ label: 'Go to definition', run: to && (() => occurrences.goTo(to)) }],
+    clipboardItems(ped),
+  ];
+});
 /** The editor's layer what is selected in the workspace is named in. */
 const SELECTED = 'selected';
 /** The text the drawing came from, joined to the outline of what it made (`names.ts`) — the
