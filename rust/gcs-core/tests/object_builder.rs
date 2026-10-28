@@ -237,6 +237,29 @@ fn the_placements_of_one_binding_are_one_job() {
     assert!((boxes[1].lo[0]-boxes[0].lo[0]-30.).abs() < 1e-6,"{boxes:?}");
 }
 
+/// **A face family's job keeps its key through the page's write-back** (#671): the page solves,
+/// writes the drawing back into its source (`edit::reconcile`, which here drops the seeds the
+/// fixed frame points do not need) and hands a worker that text with its values.  The family's
+/// key reads its running number's name, so that name is the family's count and not where it
+/// stands: the worker names the job as the page did, though the write-back moved the `sweep`.
+#[test]
+fn a_face_familys_job_keeps_its_key_through_the_write_back() {
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"),"/../examples/paths/coil.sv")).unwrap();
+    let mut page = fixtures::read(&text);
+    gcs_core::solve::solve(&mut page.sketch,gcs_core::solve::SolveOpts::default());
+    page.sketch.supply_objects(true);
+    let jobs = page.sketch.object_jobs();
+    assert_eq!(jobs.iter().map(|j| j.name.as_str()).collect::<Vec<_>>(),["coil"]);
+    let sk = std::mem::take(&mut page.sketch);
+    let written = gcs_core::edit::reconcile(&mut page,&sk);
+    assert_eq!(written.refused,None);
+    let sweep = |t: &str| t.find("coil := sweep").unwrap();
+    assert_ne!(sweep(&written.text),sweep(&text),"the write-back moved the family:\n{}",written.text);
+    let mut worker = document(&written.text);
+    assert!(worker.set_x(&sk.get_x()));
+    assert_eq!(worker.object_jobs(),jobs,"the worker's job is the page's");
+}
+
 /// **`exact_solid` and the builder agree** (#536): a body a generating sweep cuts is built by
 /// `exact_solid` as the export builds it, where the sketch builds its own solids; where a host
 /// builds them, the refusal names the builder that does.

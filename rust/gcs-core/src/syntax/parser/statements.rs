@@ -1414,9 +1414,9 @@ impl<'a> P<'a> {
 
     /// What follows a face family's `sweep` (#391 S2, #398 B): `(Component(args).face over IDENT)`,
     /// the instance written in place (#243 L1, finding 11), `IDENT` a declared parameter whose
-    /// interval the family runs over.  The instance's key is one the
-    /// source cannot write, as a curve's is; the face is read under it once the flattener has
-    /// bound it.
+    /// interval the family runs over.  The instance's key is one the source cannot write, as a
+    /// curve's is, numbered in the order the families are written (`#f0`); the face is read
+    /// under it once the flattener has bound it.
     pub(super) fn family(&mut self, name: DeclName) -> Option<crate::syntax::Decl> {
         self.i += 1; // `sweep`
         let open = self.here().lo as usize;
@@ -1456,9 +1456,13 @@ impl<'a> P<'a> {
             return None;
         }
         let list_span = Span::new(open, self.prev_hi());
+        // keyed by its count and not its offset: what it builds reads its running number's name
+        // (`solid::reads`), and a write-back above it moves the offset and not the drawing
+        let key = format!("#f{}", self.families);
+        self.families += 1;
         let instance = Instance {
             annotations: Default::default(),
-            name: Name { text: format!("#f{lo}"), span: Span::at(lo) },
+            name: Name { text: key, span: Span::at(lo) },
             component,
             args,
             span: Span::new(lo, list_span.hi as usize - 1),
