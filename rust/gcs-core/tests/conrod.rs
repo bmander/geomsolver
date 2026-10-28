@@ -10,11 +10,14 @@
 //! round touching only along a line stand beside one another as two shells (`recipe::beside`: a
 //! pocket's rim, its run and its ring's stretch each side of a corner).
 use gcs_core::brep::{export, props, sweep::Say};
+use gcs_core::edit;
 use gcs_core::program::Elaborated;
+use gcs_core::solid::faces::{face_paths, Meets};
 use gcs_core::solid::MaterialField;
+use gcs_core::solve::{solve, SolveOpts};
 use std::f64::consts::PI;
 
-use crate::common::{ent, text::solved};
+use crate::common::{ent, read, text::solved};
 use crate::region_general::field_volume;
 
 const ROD: &str = include_str!("../../examples/conrod/rod.sv");
@@ -57,6 +60,24 @@ fn close(what: &str, got: f64, want: f64) {
 
 /// About the rod's volume, mm³: the scale its builds are held to.
 const ROD_VOLUME: f64 = 6e4;
+
+/// **The rod is built where it is seeded**, so the rounds read which of its faces meet there
+/// (#625) rather than taking every pair to, and the seeds a solve writes back read as the same
+/// drawing: the values the page solved fit the text its workers read again. Seeded off its arcs,
+/// the pocket did not close, every pair was taken to meet, and the text written back read as a
+/// drawing of 1554 parameters to the page's 5502.
+#[test]
+fn the_rod_reads_as_itself_with_its_seeds_written_back() {
+    let e = read(ROD);
+    let rod = ent(&e, "rod").i();
+    assert!(Meets::read(&e.sketch, rod, &face_paths(&e.sketch, rod)).is_some(),
+        "the rod is not built where it is seeded");
+    let mut sk = e.sketch.clone();
+    assert!(solve(&mut sk, SolveOpts::default()).success);
+    let back = read(&edit::commit_seeds(&e, &sk, &e.program).text);
+    assert_eq!(back.sketch.params.len(), e.sketch.params.len());
+    assert_eq!(back.sketch.solids.len(), e.sketch.solids.len());
+}
 
 /// Where the rod has material and where it has none: the web and the pockets' void; a pocket's
 /// floor corner filled; a flange's edge, a bore's rim and an eye's rim taken, each where the draft
