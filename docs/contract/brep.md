@@ -116,7 +116,11 @@ tolerances to a bar itself. `props::fluxes` tables a polynomial B-spline face's 
 rational one's Gauss stretch by stretch) and **closes every
 loop in the face's parameters** across the kernel's gaps (unclosed, the volume moved with the
 origin). The mesher is a neighbour-array CDT, refined for sag **and** for a facet turning from the
-surface's outward normal (signed); slivers get a point off the longest side; points nearer than
+surface's outward normal (signed), never read at a corner whose chart degenerates there, against
+its own derivatives and the face's scales both (a sphere's pole read a rounding past the chart's
+turns its normal over, and was refined into without end until float32 wrote the triangles as
+none: `canal::a_half_balls_pole_is_meshed_as_any_point`, #684 D); slivers get a point off the
+longest side; points nearer than
 1e-9 are welded, and a vertex a face's loops pass through twice at one place (a hole touching the
 outer loop, #597) is one corner of its triangulation. An edge is sampled from first pieces no
 midpoint test can be blind to: a B-spline's knot spans, a family rail's pieces, a screwed rail a

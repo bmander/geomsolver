@@ -440,7 +440,7 @@ fn carry(sk: &mut Sketch, (sa, xa): (f64, &[f64]), (sb, xb): (f64, &[f64]), s: f
 }
 
 /// The Lagrange weights of the stations at `at` read at `s`: the polynomial through them.
-fn weights(at: &[f64], s: f64) -> Vec<f64> {
+pub(super) fn weights(at: &[f64], s: f64) -> Vec<f64> {
     (0..at.len()).map(|i| {
         (0..at.len()).filter(|&j| j != i).map(|j| (s - at[j]) / (at[i] - at[j])).product()
     }).collect()

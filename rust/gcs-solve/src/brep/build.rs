@@ -534,11 +534,11 @@ pub fn revolve(p: &Profile,origin: V,axis: V,angle: f64) -> Result<Brep,String> 
 
 /// **The tube a ball sweeps** (#238): the ball of radius `r` about `c` carried by the screw about the
 /// line through `origin` along `axis` — a turn by `angle` and a step of `advance` along it (none, a
-/// turn) — is the points within `r` of the path its centre runs, and those are the ball's disc
-/// square to the path carried along it (a point's nearest point on the path inside it lies in the
-/// disc there) with the ball where the path starts and where it ends: the disc turned (a torus's
-/// stretch, a whole torus past a whole turn) or carried along the helix to its own image there
-/// (`ruled`, a screw's `Blend`), each end's
+/// turn; no turn, a slide, #684 D) — is the points within `r` of the path its centre runs, and
+/// those are the ball's disc square to the path carried along it (a point's nearest point on the
+/// path inside it lies in the disc there) with the ball where the path starts and where it ends:
+/// the disc turned (a torus's stretch, a whole torus past a whole turn), carried along the helix to
+/// its own image there (`ruled`, a screw's `Blend`) or along the line (a cylinder), each end's
 /// half ball beyond its disc united with it. Every face is named `name`. The caller's to know the
 /// tube meets itself nowhere: the path's centre stands off the axis by more than `r`, and a helix
 /// of more than a turn climbs more than `2 r` a turn.
@@ -565,9 +565,37 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
     }
     let end = screw(origin,a,angle,advance);
     let tube = if advance == 0. { revolve(&disc,origin,a,angle)? }
+        else if angle == 0. { ruled(&disc,&disc.moved(&end),Carry::Line {delta:scale(a,advance)})? }
         else { ruled(&disc,&disc.moved(&end),Carry::Screw {center:origin,axis:a,angle,advance})? };
     let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b),super::boolean::Op::Union,0.);
     Ok(union(&union(&named(tube),half_ball(c,scale(t,-1.),w,r)?)?,half_ball(c,t,w,r)?.moved(&end))?)
+}
+
+/// **The tube a ball sweeps along a path no closed form carries** (#684 D): `tube`, the solid a face
+/// family of the ball's disc square to the path bounds (`family`: its one round wall, `loops`, and
+/// the discs where it starts and ends), united with the half ball of radius `r` beyond each end
+/// disc, as `canal`'s are: each ball's poles leaning off the path toward the wall's seam, which the
+/// disc's first radius vector names. Every face is named `name`. The caller's to know the tube
+/// meets itself nowhere.
+pub fn capped(tube: &Brep,loops: &[Vec<super::recipe::FamilyWall>],r: f64,name: &str) -> Result<Brep,String> {
+    let [walls] = loops else { return Err("a ball's tube is one round wall".into()) };
+    let [wall] = &walls[..] else { return Err("a ball's tube is one round wall".into()) };
+    let ([first,..],[..,last]) = (&wall.nodes[..],&wall.nodes[..]) else { return Err("a ball's tube has no stations".into()) };
+    let named = |mut b: Brep| { for f in &mut b.faces { f.name = name.to_string(); } b };
+    // an end disc's centre, the path's tangent there (the disc turns counter-clockwise about it)
+    // and its first radius vector, where the wall's seam runs
+    let end = |n: &[f64]| -> Result<(V,V,V),String> {
+        let v = |k: usize| [n[k],n[k+1],n[k+2]];
+        if n.len() != 10 { return Err("a ball's tube's wall is no round".into()) }
+        Ok((v(0),scale(unit(cross(v(3),v(6))),n[9].signum()),unit(v(3))))
+    };
+    let (s,k) = SEAM.dsin_cos();
+    let half = |n: &[f64],out: f64| -> Result<Brep,String> {
+        let (c,t,x) = end(n)?;
+        half_ball(c,scale(t,out),add(scale(t,k),scale(x,s)),r)
+    };
+    let union = |s: &Brep,b: Brep| super::boolean::combined(s,&named(b),super::boolean::Op::Union,0.);
+    Ok(union(&union(&named(tube.clone()),half(first,-1.)?)?,half(last,1.)?)?)
 }
 
 /// How far round from the radial line a ball's tube's seams run (radians): the golden angle's

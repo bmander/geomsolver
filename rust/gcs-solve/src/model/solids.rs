@@ -811,8 +811,10 @@ impl FaceE {
 }
 
 impl MotionDef {
-    /// A motion goes with what it is written over.  A frame along a path and one the drawing
-    /// moves are read off the whole drawing — its path, its march — so a rebuild carries neither.
+    /// A motion goes with what it is written over: a frame along a path with its path and its
+    /// frame (#684 D: the walk renumbers a curve traced in space after the motions, so a frame
+    /// along one is left behind).  One the drawing moves is read off the whole drawing, its
+    /// march, so a rebuild carries none.
     pub fn remapped(&self, map: &Remap) -> Option<MotionDef> {
         let motion = |m: u32| renumbered(map, EntKind::Motion, m);
         let line = |l: u32| renumbered(map, EntKind::Line, l);
@@ -837,7 +839,11 @@ impl MotionDef {
             MotionDef::Driven { of, law, over } => {
                 MotionDef::Driven { of: motion(*of)?, law: law.clone(), over: over.clone() }
             }
-            MotionDef::Guided { .. } | MotionDef::Followed { .. } => return None,
+            &MotionDef::Guided { guide, frame, frenet } => {
+                MotionDef::Guided { guide: map(guide)?, frame: renumbered(map, EntKind::Frame, frame)?,
+                                    frenet }
+            }
+            MotionDef::Followed { .. } => return None,
         })
     }
 }

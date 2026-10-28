@@ -110,7 +110,8 @@ across from clear to clear. Still refused: a flat face the motion keeps in its o
 square to the turn, a face along the slide) where it reaches the blank, a ring in contact all
 round at a sampled station (S1); a prism tool, whose side has no rings (T1); a characteristic that
 closes on itself within the blank's reach, a tool passed wholly through it (S1); and a whole turn
-(S4). A turn of one ball is still its tube (`solid::canal`), never asked these rows.
+(S4). A ball under a turn or a slide is still its tube (`solid::canal`, below), never asked these
+rows.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate: a torus slid up a
 rod, square (its tube's lens, `rust/examples/solid_sweeps/slide.sv`) and tilted, a cylinder slid
 with its caps clear (a circular segment), and a torus turned across a ring sector, upright
@@ -225,7 +226,7 @@ of a union is admitted and built from a copy of the drawing with that cut writte
 member (`solid::distributed::lowered`): each member's sweep under the union's motion, over the
 union's roll (a `through:` roll is the union's, found once), placed wherever the union's sweep
 is, and its faces named by their routes in the union (`removal.tool.ring`). Each member's sweep
-is then whatever it is alone, and is asked that class's rows: a ball's under a turn is its tube
+is then whatever it is alone, and is asked that class's rows: a ball's under any motion is its tube
 (`canal`), a revolution's under a screw, a turn or a slide the constant twist's, under a relative
 rotation the generating class's. No row is added. What the union's crease would fail as one tool
 — a concave corner where the members meet, carried through the blank (T2), or two sheets
@@ -249,6 +250,46 @@ cuts written one after another, the same solid to 1e-9; two balls swung on one a
 (Pappus); two tori rolled through the post, each admitted to the generating class and built as
 the long form builds them; and a member refused by its own row, and a union within an
 intersection refused at T1.
+
+### A ball along any path: the canal class (issue #684 D)
+
+A ball looks the same however it is turned, so its sweep depends on its centre's path alone:
+everything it passes through is the points within its radius of that path, the tube about it,
+with the ball where the path starts and where it ends. No contact is solved and no clearance is
+asked (its end poses are the construction's own), so the tube may stop inside what it cuts and a
+sweep may stand alone; it is built for any motion (`solid::canal`), and the body it cuts is
+static material, so no other class is asked.
+
+- **In closed form** where the motion is one turn, screw or slide (`Family::twist`): the disc
+  square to the path revolved (a torus's stretch), carried along the helix (a screw's `Blend`) or
+  along the line (a cylinder, built exactly; a slide's ends in the blank were refused at E1).
+- **Fitted** under any other motion — a roll, a frame along a path (#398 C), one the drawing
+  moves, a joint driven by a law: the centre's path read off the motion, its disc the one round
+  wall of a face family (`brep::family`) whose stations are the path's points and the frame square
+  to it, carried from the start by double reflection, its seam turned off the path's own normal
+  as a turn's is; between the stations, degree-five polynomials held within a part in 10¹⁰ of the
+  disc's diameter of the disc read between their nodes. Where the numbers lie on a cylinder or a
+  torus (a frame along an arc carries the centre round its circle), the wall lies on it.
+
+Each is held to the sweep's own field before it stands (the canal's gate). Two rows refuse the
+tube that would meet itself, read along a path no closed form carries at points an eighth of the
+radius apart along it (at least 1024, at most 32768), so **sampled**, and said so:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| B1 | The centre's path never stops and turns nowhere tighter than the ball's radius. | Tighter, the discs square to the path cross inside the turn and the tube folds; where the centre stops, its path has no tangent and no disc. | The roll and the radius, and the point of the path. |
+| B2 | The centre's path comes back within the ball's diameter of itself nowhere it has run half a turn of a circle of the radius from (read with the points' spacing to spare). | Two discs that far apart along a path that turns no tighter than the radius meet only where the path comes back: the tube crosses itself. | The two rolls and their distance, and the point between them. |
+
+Under a turn or a screw the tube is refused where its centre stands within the radius of the axis
+or a helix of more than a turn climbs no more than the diameter a turn; there, as before, the
+constant-twist class is asked instead. The native path refuses a ball's tube by name.
+`tests/ball_paths.rs` and `tests/solid_sweeps_examples.rs` are the gate: a ball slid with its ends
+in a block (half a capsule, its faces a cylinder and two balls), along a spline in space (its
+torsion), rolled along a trochoid (once refused at M2, a pole in contact at every time), along an
+arc (a torus), and riding a frame along a spline in a block's top face
+(`rust/examples/solid_sweeps/path.sv`), each volume π r² L + 4/3 π r³ with L integrated apart from
+the core and held to 1e-9, the body's STL agreeing with the field; and B1 and B2, each refused by
+name with a point of the path.
 
 ### Undercut is excluded deliberately
 

@@ -21,6 +21,7 @@ mod anonymous;
 mod applied;
 mod axis;
 mod axis_sense;
+mod ball_paths;
 mod bare_plane;
 mod beams;
 mod bindings;

@@ -38,6 +38,19 @@ fn the_ball_leaves_half_its_tube() {
     near(exported(&e,"block"),24.*24.*8.-groove,1e-9);
 }
 
+/// `path.sv`: a ball along a spline (#684 D) is its tube too, fitted to the path; the groove is half
+/// of it, the spline's length read off its control points by Gauss–Legendre quadrature
+/// (`ball_paths::bezier_length`).
+#[test]
+fn the_ball_along_a_spline_leaves_half_its_tube() {
+    let e = example("path.sv");
+    let groove = fixtures::solid(&e,"groove");
+    assert!(gcs_core::solid::canal::built(&e.sketch,groove).unwrap().unwrap().fitted(),"its tube fitted to its path");
+    let length = crate::ball_paths::bezier_length([[0.,0.],[10.,0.],[20.,20.],[30.,20.]]);
+    let half = (PI*9.*length+4./3.*PI*27.)/2.;
+    near(crate::ball_paths::held(&e,"block"),42.*32.*8.-half,1e-9);
+}
+
 /// `slide.sv`: a slide, its groove the lens the rod's disc and the tube's share, carried the rod's
 /// 20 mm.
 #[test]

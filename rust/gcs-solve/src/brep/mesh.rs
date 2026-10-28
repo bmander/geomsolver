@@ -612,6 +612,8 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
         let mid = [(lo[0]+hi[0])/2.,(lo[1]+hi[1])/2.];
         let (_,su,sv) = f.surface.d1(mid);
         let (ku,kv) = (norm(su).max(least),norm(sv).max(least));
+        // the chart's area a unit of both parameters, where the face's range is middled
+        let scales = ku*kv;
         // a surface straight along one parameter sags nothing along it: that parameter's scale
         // shrunk, the triangulation joins neighbouring rulings across the face's whole run of it,
         // where refining it as a plane would cut it as finely along the rulings as across them
@@ -670,9 +672,11 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                     // `angular` at a corner, so a facet says which way the surface faces there: where
                     // the chart's metric changes fast across a triangle, one wound the right way in the
                     // scaled parameters can come out turned over in space, near the surface all the same.
-                    // Not at a corner whose normal is degenerate (a pole's), and for a turn alone only
-                    // while the triangle is longer than twice the bar (a turn finer than the sag is no
-                    // shape), unless it is turned right over
+                    // Not at a corner whose normal is degenerate (a pole's, against the face's own
+                    // scales too: a pole read a rounding past it turns its chart's normal over, and
+                    // a triangle about it was refined into the pole without end, #684 D), and for a
+                    // turn alone only while the triangle is longer than twice the bar (a turn finer
+                    // than the sag is no shape), unless it is turned right over
                     let n = cross(sub(b3.1,a.1),sub(c.1,a.1));
                     let long = [distance(a.1,b3.1),distance(b3.1,c.1),distance(c.1,a.1)].into_iter().fold(0.,f64::max) > 2.*bar;
                     let out = if f.reversed { -1. } else { 1. };
@@ -680,7 +684,7 @@ pub(crate) fn mesh_with(b: &Brep,bar: f64,angular: f64,kept: &(dyn Fn(usize) -> 
                         let (_,su,sv) = f.surface.d1(q);
                         let m = cross(su,sv);
                         let l = norm(n)*norm(m);
-                        (norm(m) > 1e-6*norm(su)*norm(sv) && l > 0.).then(|| out*dot(n,m)/l)
+                        (norm(m) > 1e-6*norm(su)*norm(sv) && norm(m) > 1e-6*scales && l > 0.).then(|| out*dot(n,m)/l)
                     }).collect();
                     let over = cosines.iter().any(|&c| c < 0.);
                     let turns = over || long && cosines.iter().any(|&c| c.min(1.).dacos() > angular);

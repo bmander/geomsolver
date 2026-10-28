@@ -66,6 +66,19 @@ fn a_groove_ends_in_the_block_it_cuts() {
     close(props::volume(&b), 40.0 * 12.0 * 40.0 - groove);
 }
 
+/// `solid_sweeps/ball.sv` with a ball of 2.9 swung 50° at 5 from its axis: its start's half ball
+/// has its pole read a rounding past the sphere's chart, whose normal turns over there, and the
+/// mesher once refined into the pole without end — triangles 1e-7 across, which float32 wrote as
+/// none, so the STL was refused. Meshed as any ball now (`brep::mesh`), half the tube taken.
+#[test]
+fn a_half_balls_pole_is_meshed_as_any_point() {
+    let doc = include_str!("../../examples/solid_sweeps/ball.sv").replace("swing_r := 12mm", "swing_r := 5mm")
+        .replace("ball := 3mm", "ball := 2.9mm").replace("swing := 90deg", "swing := 50deg");
+    let e = solved(&doc);
+    let groove = tube(2.9, 5.0 * 50f64.to_radians()) / 2.0;
+    close(props::volume(&exported(&e, "block")), 24.0 * 24.0 * 8.0 - groove);
+}
+
 /// A ball turned about an axis it stands across (the tube would meet itself there), and a helix
 /// climbing less than the ball's diameter a turn: no tube, still the field's.
 #[test]
