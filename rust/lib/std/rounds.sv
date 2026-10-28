@@ -179,8 +179,9 @@ chamfer(d) X := X chamfer(d: d) X
 // `B` shrunk by it: the points of `B` at least `-d` from everything outside it.  At nothing, `B`
 // itself.  `B` is left as it is.  Grown, it is built exactly where `B`'s faces are planes and
 // cylinders meeting in convex edges and prisms' corners (a box, a post, a hex bar), or planes in
-// concave ones (an L, a step, a slot, a pocket); shrunk, or any other body (a boss's foot), it is
-// read point by point, and an exact export says so.
+// concave ones (an L, a step, a slot, a pocket), or at a foot (a boss or a post standing on a
+// plate, a bore's floor); shrunk, or any other body, it is read point by point, and an exact export
+// says so.
 //
 //   window := std.rounds.Grown(uno.usb_plug, d: gap)
 //   window.body cut frame_part

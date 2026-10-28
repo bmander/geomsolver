@@ -304,14 +304,18 @@ impl Session {
                     Node::Grown {body,pieces} => {
                         // a region within reach of a body (`solid::grown`): the body and its pieces'
                         // union, where the core's kernel glues them; a piece beside a concave edge
-                        // the common of its sweep and the blocks on its bisectors
+                        // the common of its sweep and the blocks on its bisectors, a face's pieces
+                        // about a foot (`glued`) each fused in turn
                         let mut id = shapes[body];
                         for piece in pieces {
-                            let p = match piece {
-                                Node::Region(kept) => self.region(kept,&shapes)?,
-                                piece => self.primitive(piece,&shapes)?,
-                            };
-                            id = self.boolean(id,p,"on")?;
+                            let parts = match piece { Node::Glued(parts) => &parts[..],piece => std::slice::from_ref(piece) };
+                            for part in parts {
+                                let p = match part {
+                                    Node::Region(kept) => self.region(kept,&shapes)?,
+                                    part => self.primitive(part,&shapes)?,
+                                };
+                                id = self.boolean(id,p,"on")?;
+                            }
                         }
                         id
                     }

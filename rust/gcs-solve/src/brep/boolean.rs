@@ -328,6 +328,87 @@ pub fn glued(a: &Brep,b: &Brep,tol: f64) -> Option<Brep> {
     Some(out)
 }
 
+/// **Faces on one plane meeting edge to edge made one** (a `glued` node's feet, `solid::grown`):
+/// where two faces of `b` lie on one plane with their material the same side and share an edge,
+/// the edge goes and their loops are walked as one face's — the first's surface, each other's
+/// uses read onto it, the outer loop first.  Edges and vertices left bounding nothing stay for
+/// `Brep::compacted`.  A vertex the joined loops leave by more than one use is refused: no walk
+/// round the face is one there.
+pub fn planes_joined(b: &Brep,tol: f64) -> Result<Brep,String> {
+    let n = b.faces.len();
+    let outward = |f: &Face| -> Option<V> {
+        let Surface::Plane(fr) = f.surface else { return None };
+        Some(if f.reversed { fr.z.map(|x| -x) } else { fr.z })
+    };
+    let mut users: Vec<Vec<usize>> = vec![Vec::new();b.edges.len()];
+    for (i,f) in b.faces.iter().enumerate() {
+        for c in f.loops.iter().flatten() { users[c.edge as usize].push(i); }
+    }
+    // the faces joined, by the first of each
+    fn root(of: &mut [usize],i: usize) -> usize { let mut r = i; while of[r] != r { r = of[r]; } of[i] = r; r }
+    let mut of: Vec<usize> = (0..n).collect();
+    let joined = |i: usize,j: usize| match (outward(&b.faces[i]),outward(&b.faces[j])) {
+        (Some(p),Some(q)) => crate::space::dot(p,q) > 1.-1e-9 && super::ssi::same(&b.faces[i].surface,&b.faces[j].surface,tol),
+        _ => false,
+    };
+    let mut inside = vec![false;b.edges.len()];
+    for (e,u) in users.iter().enumerate() {
+        let &[i,j] = &u[..] else { continue };
+        if i != j && joined(i,j) {
+            let (ri,rj) = (root(&mut of,i),root(&mut of,j));
+            of[ri.max(rj)] = ri.min(rj);
+            inside[e] = true;
+        }
+    }
+    if !inside.iter().any(|&x| x) { return Ok(b.clone()) }
+    let mut groups: BTreeMap<usize,Vec<usize>> = BTreeMap::new();
+    for i in 0..n { let r = root(&mut of,i); groups.entry(r).or_default().push(i); }
+    let mut out = b.clone();
+    let mut gone = vec![false;n];
+    for (&host,group) in groups.iter().filter(|(_,g)| g.len() > 1) {
+        let surface = b.faces[host].surface.clone();
+        let mut uses: Vec<Coedge> = Vec::new();
+        for &fi in group {
+            for c in b.faces[fi].loops.iter().flatten().filter(|c| !inside[c.edge as usize]) {
+                let mut c = c.clone();
+                if fi != host {
+                    // read onto the first face's plane: its parameters are another frame's
+                    let e = &b.edges[c.edge as usize];
+                    let at = |t: f64| surface.inverse(e.point(t,&b.vertices));
+                    c.pcurve = Pcurve::Inverse {a:at(e.t[0]),b:at(e.t[1])};
+                }
+                uses.push(c);
+            }
+            if fi != host { gone[fi] = true; }
+        }
+        // each use followed by the one leaving the vertex it reaches
+        let mut leaving: BTreeMap<u32,usize> = BTreeMap::new();
+        for (k,c) in uses.iter().enumerate() {
+            if leaving.insert(b.ends(c)[0],k).is_some() {
+                return Err(format!("faces joined on one plane ({}) pass a vertex twice",b.faces[host].name))
+            }
+        }
+        let mut walked = vec![false;uses.len()];
+        let mut loops = Vec::new();
+        for k0 in 0..uses.len() {
+            let mut l = Vec::new();
+            let mut k = k0;
+            while !walked[k] {
+                walked[k] = true;
+                l.push(uses[k].clone());
+                k = *leaving.get(&b.ends(&uses[k])[1]).ok_or("faces joined on one plane leave a loop open")?;
+            }
+            if k != k0 && !l.is_empty() { return Err("faces joined on one plane leave a loop open".into()) }
+            if !l.is_empty() { loops.push(l); }
+        }
+        let face = Face {loops:Vec::new(),..b.faces[host].clone()};
+        loops.sort_by(|p,q| out.loop_area(&face,q).abs().total_cmp(&out.loop_area(&face,p).abs()));
+        out.faces[host].loops = loops;
+    }
+    out.faces = out.faces.into_iter().enumerate().filter(|(i,_)| !gone[*i]).map(|(_,f)| f).collect();
+    Ok(out)
+}
+
 /// `s`'s edges cut at the points listed against each (on its curve, within its stretch; those
 /// within `tol` of one another one): each edge's pieces in order along it, the first keeping its
 /// index, and each use of it a use of each piece, its pcurve cut where the edge is. `None` where an
