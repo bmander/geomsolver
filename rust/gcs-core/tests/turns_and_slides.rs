@@ -7,8 +7,9 @@
 //! the tool stands square, and tilted by its shadow, read from the torus's centre circle alone —
 //! not by the code under test, and held to the exact solid this kernel builds, whose STL is held
 //! to the field. The square torus slid and the leaning one turned are the series' own
-//! (`solid_sweeps/slide.sv`, `turn.sv`, `solid_sweeps_examples.rs`). Each row the two motions add
-//! or meet refuses by name.
+//! (`solid_sweeps/slide.sv`, `turn.sv`, `solid_sweeps_examples.rs`). A V wheel slid tilted joins its
+//! flanks' characteristics round its sharp rim's fan (#684 E), its shadow read here too. Each row
+//! the two motions add or meet refuses by name, a V wheel slid square for the sharp edge it leaves.
 use gcs_core::brep::{export,props,sweep::Say};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
@@ -102,9 +103,11 @@ in std.front {
 ";
 
 /// What a slide grooves the rod with: a torus whose tube of radius 2 is centred `reach` from the
-/// rod's axis, its own axis 6 beyond; or a cylinder of radius 2 and length 20 about that line.
+/// rod's axis, its own axis 6 beyond; a cylinder of radius 2 and length 20 about that line; or a
+/// V wheel, its sharp rim `reach` from the rod's axis and 6 from its own, its flanks 30° either side
+/// of its plane and 2.5 deep to its bore.
 #[derive(Clone,Copy)]
-enum Wheel { Torus,Cylinder }
+enum Wheel { Torus,Cylinder,Vee }
 
 /// The wheel drawn in the plane through (0, 0, -9) along x and along y tilted `tilt` degrees up
 /// toward z, its axis along that y; slid 40 mm up the rod's axis over a turn of the roll, from
@@ -141,6 +144,24 @@ construction wheel := solid(face(tube), about: wheel_axis)
 }}
 construction wheel := solid(face(cb, cw, ct, ca), about: ca)
 ",rim=reach+2.),
+        Wheel::Vee => format!("\
+  private a0 := point
+  private a1 := point
+  a0 coords(du: {axis}mm, dv: -1mm) bench
+  a1 coords(du: {axis}mm, dv: 1mm) bench
+  private wheel_axis := line(a0, a1)
+  private v0 := point
+  private v1 := point
+  private v2 := point
+  v0 coords(du: {reach}mm, dv: 0mm) bench
+  v1 coords(du: {base}mm, dv: -{half}mm) bench
+  v2 coords(du: {base}mm, dv: {half}mm) bench
+  private lower := line(v0, v1)
+  private bore := line(v1, v2)
+  private upper := line(v2, v0)
+}}
+construction wheel := solid(face(lower, bore, upper), about: wheel_axis)
+",axis=reach+6.,base=reach+2.5,half=2.5*(PI/6.).tan()),
     };
     format!("{ROD}\
 private bx := axis
@@ -186,6 +207,36 @@ fn a_tilted_torus_slid_removes_its_shadow_along_the_slide() {
     let shadow = measure([-PI,PI],&|_| [0.,5.],&hit,&|a,b| (b*b-a*a)/2.);
     // the shadow's measure reads to a few parts in a million at these rows (to 2e-7 of the solid
     // at four times as many)
+    near(volume,PI*25.*20.-shadow*20.,1e-5);
+}
+
+/// A V wheel slid up the rod tilted 25 degrees, its sharp rim 4 from the rod's axis (#684 E): the
+/// slide has a part along the wheel's axis, so each flank's characteristic meets the rim at its
+/// own point and the characteristic runs between them round the rim's fan, the rim's own sweep
+/// joining the flanks'. The groove's section is the wheel's shadow along the slide: every line up
+/// the rod that passes into the V of the rim, read on each line by the signed distance from the
+/// nearer flank (convex along it, so its least is found exactly); what the bore would add never
+/// comes within 6 of the rod.
+#[test]
+fn a_tilted_v_wheel_slid_removes_its_shadow_round_its_rim() {
+    let source = slid(25.,4.,Wheel::Vee);
+    let a = admit(&source).unwrap();
+    let [groove] = a.sweeps() else { panic!("one sweep") };
+    let Class::ConstantTwist(found) = &groove.class else { panic!("`groove` is a constant twist's sweep") };
+    assert!(found.screw.is_slide(),"read as a slide");
+    assert_eq!(found.fans(),["the corner of `wheel.upper` and `wheel.lower`"]);
+    let volume = exported(&fixtures::read(&source),"part");
+    let (s,c) = 25f64.to_radians().sin_cos();
+    let (axis,centre) = ([0.,c,s],[10.,0.,-9.]);
+    let (sf,cf) = (PI/6.).sin_cos();
+    let outside = |q: V| {
+        let w: V = std::array::from_fn(|k| q[k]-centre[k]);
+        let along = w[0]*axis[0]+w[1]*axis[1]+w[2]*axis[2];
+        let rho = (0..3).map(|k| (w[k]-along*axis[k]).powi(2)).sum::<f64>().sqrt();
+        along.abs()*cf+(rho-6.)*sf
+    };
+    let hit = |a: f64,r: f64| reaches(&|z| outside([r*a.cos(),r*a.sin(),z]),[-17.,-1.],64,0.);
+    let shadow = measure([-PI,PI],&|_| [0.,5.],&hit,&|a,b| (b*b-a*a)/2.);
     near(volume,PI*25.*20.-shadow*20.,1e-5);
 }
 
@@ -330,7 +381,11 @@ fn a_turned_torus_grooves_a_ring_by_pappus() {
 /// round, every normal of it through where the axes meet, at which its characteristic branches
 /// between two of the walk's stations (S1: the boundary leaves the walked branch there, which
 /// the field gate saw before this row did); and a torus slid through the rod's middle touches
-/// it all round its tube, a characteristic that closes on itself (S1).
+/// it all round its tube, a characteristic that closes on itself (S1). A V wheel slid square to
+/// its axis meets the slide's direction along its rim's tangent where the rim is nearest the
+/// rod, so both flanks' characteristics meet the rim there, at one point, and every normal of the
+/// rim's fan is in contact at it: the groove's wall has a sharp edge along that point's path,
+/// which is not built (S1, #684 E).
 #[test]
 fn the_turn_and_slide_rows_refuse_by_name() {
     let whole = refused(admit(&turned(Lean::Across(0.),-180.,180.)));
@@ -343,6 +398,9 @@ fn the_turn_and_slide_rows_refuse_by_name() {
     assert!(branching.message.contains("in contact all round"),"{}",branching.message);
     let closed = refused(admit(&slid(0.,0.,Wheel::Torus)));
     assert_eq!(closed.condition,Condition::Regular,"{closed}");
+    let creased = refused(admit(&slid(0.,4.,Wheel::Vee)));
+    assert_eq!(creased.condition,Condition::Regular,"{creased}");
+    assert!(creased.message.contains("sharp edge"),"{}",creased.message);
 }
 
 // -- what the shadows are read by ------------------------------------------------------------

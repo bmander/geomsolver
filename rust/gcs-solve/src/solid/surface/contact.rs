@@ -56,18 +56,49 @@ impl RevolvedSurface {
     /// amplitude with zero constant is a stationary ring, every point of which
     /// is in contact.
     pub fn contact_coefficients(&self,u: f64,motion: Motion) -> Result<(f64,f64,f64),Error> {
-        // The coefficients use the original meridian even for a restricted span.
-        let full = Self {v_domain:[0.,1.],..self.clone()};
-        let s = full.at(u,0.)?;
-        let normal = envelope::contact(s,Motion::identity())?.normal;
+        let ring = self.ring(u)?;
+        let normal = envelope::contact(self.full().at(u,0.)?,Motion::identity())?.normal;
+        Ok(ring.coefficients(plane::dot(normal,ring.radial),plane::dot(normal,ring.axis),motion))
+    }
+
+    /// The circle meridian station `u` turns to: its centre on the axis, its radius, and the
+    /// radial direction at the chart's start (`v = 0`) the angle of a point on it is read from.
+    pub fn ring(&self,u: f64) -> Result<RingFrame,Error> {
+        // The ring uses the original meridian even for a restricted span.
+        let s = self.full().at(u,0.)?;
         let q = sub(s.position,self.origin);
         let axial = plane::dot(q,self.axis);
         let radial = sub(q,scale(self.axis,axial));
         let radius = radial[0].dhypot(radial[1]).dhypot(radial[2]);
         if radius == 0. || !radius.is_finite() { return Err(Error::Degenerate); }
-        let e = scale(radial,1./radius);
-        let f = plane::cross(self.axis,e);
-        let nr = plane::dot(normal,e); let nz = plane::dot(normal,self.axis);
+        Ok(RingFrame {center:add(self.origin,scale(self.axis,axial)),radius,radial:scale(radial,1./radius),axis:self.axis})
+    }
+
+    fn full(&self) -> Self { Self {v_domain:[0.,1.],..self.clone()} }
+    /// The revolution's unit axis direction.
+    pub fn axis_direction(&self) -> [f64;3] { self.axis }
+}
+
+/// A circle of a revolution, and the frame its contact equation is written in: `radial` at angle
+/// 0, `axis × radial` at a quarter turn.
+#[derive(Clone,Copy,Debug)]
+pub struct RingFrame { pub center: V,pub radius: f64,pub radial: V,pub axis: V }
+
+impl RingFrame {
+    /// The point at angle `theta` about the axis, and the direction away from the axis there.
+    pub fn at(&self,theta: f64) -> (V,V) {
+        let (s,c) = theta.dsin_cos();
+        let e = add(scale(self.radial,c),scale(plane::cross(self.axis,self.radial),s));
+        (add(self.center,scale(e,self.radius)),e)
+    }
+
+    /// The coefficients of `a cos θ + b sin θ + c = 0`, the ring's points whose normal — `nr`
+    /// away from the axis and `nz` along it, the same at every angle — is square to the velocity
+    /// the motion's instantaneous twist gives them: a face's normal at the ring
+    /// (`RevolvedSurface::contact_coefficients`), or any of the fan a convex corner carries.
+    pub fn coefficients(&self,nr: f64,nz: f64,motion: Motion) -> (f64,f64,f64) {
+        let (e,axis,radius) = (self.radial,self.axis,self.radius);
+        let f = plane::cross(axis,e);
         // Source-frame angular velocity is the axial vector of R^T R'.
         let inverse = motion.inverse();
         let velocity = |p| inverse.vector(motion.velocity(p));
@@ -77,13 +108,10 @@ impl RevolvedSurface {
         });
         let omega = [0.5*(columns[1][2]-columns[2][1]),
             0.5*(columns[2][0]-columns[0][2]),0.5*(columns[0][1]-columns[1][0])];
-        let center_velocity = velocity(add(self.origin,scale(self.axis,axial)));
-        let h = add(scale(center_velocity,nr),scale(plane::cross(self.axis,omega),radius*nz));
-        Ok((plane::dot(h,e),plane::dot(h,f),nz*plane::dot(center_velocity,self.axis)))
+        let center_velocity = velocity(self.center);
+        let h = add(scale(center_velocity,nr),scale(plane::cross(axis,omega),radius*nz));
+        (plane::dot(h,e),plane::dot(h,f),nz*plane::dot(center_velocity,axis))
     }
-
-    /// The revolution's unit axis direction.
-    pub fn axis_direction(&self) -> [f64;3] { self.axis }
 }
 
 /// Isolated roots on a normalized angular span.
