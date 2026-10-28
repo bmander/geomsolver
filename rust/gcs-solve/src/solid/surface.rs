@@ -4,7 +4,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 pub(super) mod contact;
-pub use contact::RevolvedContact;
+pub use contact::{RevolvedContact,RingFrame};
 mod project;
 pub use project::{SurfaceProjection,SurfaceProjector};
 mod region;
