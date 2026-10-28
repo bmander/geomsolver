@@ -752,9 +752,11 @@ dialog input[type=search] {
 /* What a ⌘-click had under it, to choose among (`choose.ts`): a row each, the one the pointer or
    the keyboard is on lit where it is drawn — and a right-click's menu, drawn the same */
 #canvas-wrap .chooser {
-  position: absolute; z-index: 7; display: flex; flex-direction: column;
-  min-width: 200px; max-width: min(420px, calc(100% - 8px)); max-height: 50vh; overflow-y: auto;
-  padding: 4px; font-size: 12px;
+  position: absolute; z-index: 7;
+  max-width: min(420px, calc(100% - 8px)); max-height: 50vh; overflow-y: auto;
+}
+.chooser {
+  display: flex; flex-direction: column; min-width: 200px; padding: 4px; font-size: 12px;
   background: var(--bg); border: 1px solid var(--line); border-radius: 7px;
   box-shadow: 0 4px 16px rgba(0,0,0,.18);
 }
@@ -763,7 +765,7 @@ dialog input[type=search] {
   display: flex; gap: 10px; align-items: baseline; text-align: left;
   border: none; background: none; padding: 4px 8px; border-radius: 4px;
 }
-.chooser button:hover, .chooser button:focus {
+.chooser button:hover, .chooser button:focus, .chooser button.active {
   background: var(--accent-soft); color: var(--accent); outline: none;
 }
 .chooser .kind { color: var(--muted); min-width: 4.5em; }
@@ -771,3 +773,11 @@ dialog input[type=search] {
 .chooser button:focus .kind { color: inherit; }
 .chooser .name { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; }
 .chooser .note { margin-left: auto; color: var(--muted); font-style: italic; }
+/* The program editor's right-click menu (`code-menu.ts`), drawn as the workspace's: over the
+   whole page, since it opens wherever the editor is.  The row the arrows are on is `.active`,
+   since the menu never has the focus, which stays in the text */
+.chooser.code-menu { position: fixed; z-index: 50; }
+.code-menu .note { padding-left: 24px; font-style: normal; }
+.code-menu button.active .note { color: inherit; }
+.code-menu button[aria-disabled="true"] { color: var(--muted); background: none; cursor: default; }
+.code-menu hr { border: none; border-top: 1px solid var(--line); margin: 4px 6px; }

@@ -32,7 +32,10 @@ on the page's thread.  Field fineness (`FieldMesher::with_fineness`, 0.25–4) i
 export builds it (`export::exact`, a stage, then its mesh) and a swept one by the generating
 class's stages (admitted, blank, sheets, sector, cut, pattern), meshed at
 `DISPLAY_SAG`/`DISPLAY_ANGULAR`; a body whose sweeps are built within their envelopes counts no
-sheet, plan or cut.  Its `Display` names each face as `solid::exact::named` does, carries what the
+sheet, plan or cut.  A body built from swept material is built as `export::compose` builds it, to
+any depth: each operand that holds sweeps by stages of its own to its B-rep (moved where a
+placement stands it), then combined by the body rule and meshed — a compound of two shaped gears,
+a gear made of a shaped blank (`a_body_of_swept_bodies_is_built_by_stages_as_the_export_composes_it`).  Its `Display` names each face as `solid::exact::named` does, carries what the
 solid read, and the B-rep's edges read off the mesh — a polyline through its vertices a pair of
 faces' stretch, the two faces, smooth where their own normals meet within `SMOOTH_EDGE` (a round's
 tangent edge), sharp otherwise; a seam bounds nothing and is none (`solid::ExactEdge`).  A refusal

@@ -164,6 +164,71 @@ export class CodeEditor {
     return line;
   }
 
+  /** The string index a point on the page (client pixels) falls nearest, as a click there would
+   *  put the caret — for a press the box does not place itself, a right-click's.  Read off the
+   *  copy, whose every character sits where the box's does (this file's header): the line by
+   *  the whole-pixel line height, the column by where the copy draws the characters on it. */
+  offsetAt(x: number, y: number): number {
+    const text = this.text;
+    const top = this.origin()[1];
+    const last = this.lineOf(text.length);
+    const line = Math.max(0, Math.min(last, Math.floor((y - top) / (this.lineHeight || 1))));
+    let lo = 0;
+    for (let l = 0; l < line; l += 1) lo = text.indexOf('\n', lo) + 1;
+    const end = text.indexOf('\n', lo);
+    let hi = end < 0 ? text.length : end;
+    // the first character on the line whose middle is past the point: the caret goes before it
+    const rect = this.rects(lo, hi);
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      const r = rect(mid);
+      if ((r.left + r.right) / 2 <= x) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+
+  /** Where on the page (client pixels) the character at string index `off` starts: the left and
+   *  the bottom of its line, where a menu opened at the caret goes. */
+  pointAt(off: number): [number, number] {
+    const text = this.text;
+    const [left, top] = this.origin();
+    const y = top + (this.lineOf(off) + 1) * this.lineHeight;
+    if (off < text.length && text[off] !== '\n') return [this.rects(off, off + 1)(off).left, y];
+    if (off > 0 && text[off - 1] !== '\n') return [this.rects(off - 1, off)(off - 1).right, y];
+    return [left, y];
+  }
+
+  /** Where the text's first character sits on the page (client pixels): inside the box's border
+   *  and padding, less how far it is scrolled. */
+  private origin(): [number, number] {
+    const box = this.box;
+    const r = box.getBoundingClientRect();
+    const style = getComputedStyle(box);
+    return [r.left + box.clientLeft + (parseFloat(style.paddingLeft) || 0) - box.scrollLeft,
+            r.top + box.clientTop + (parseFloat(style.paddingTop) || 0) - box.scrollTop];
+  }
+
+  /** Where the copy draws each character of `lo`..`hi`, as a function of its string index: the
+   *  copy's text nodes over that stretch found once, so a search along a line walks it once. */
+  private rects(lo: number, hi: number): (off: number) => DOMRect {
+    const nodes: [Text, number][] = [];
+    const walk = document.createTreeWalker(this.copy, NodeFilter.SHOW_TEXT);
+    let at = 0;
+    for (let n = walk.nextNode() as Text | null; n && at < hi; n = walk.nextNode() as Text | null) {
+      if (at + n.length > lo) nodes.push([n, at]);
+      at += n.length;
+    }
+    const range = document.createRange();
+    return (off) => {
+      let k = nodes.length - 1;
+      while (k > 0 && nodes[k][1] > off) k -= 1;
+      const [n, start] = nodes[k];
+      range.setStart(n, off - start);
+      range.setEnd(n, off - start + 1);
+      return range.getBoundingClientRect();
+    };
+  }
+
   private caretMoved(): void {
     const { selectionStart: lo, selectionEnd: hi } = this.box;
     const edited = this.dirty;
