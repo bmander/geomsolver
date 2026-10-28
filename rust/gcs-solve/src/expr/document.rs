@@ -182,9 +182,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // holds it at (#243 L1): no unknown, and any arithmetic over it is arithmetic — and a number of
     // the geometry a station reads, read where that geometry stands now
     sk.refresh_held();
-    let held: BTreeMap<String, Aff> = sk.held.iter()
-        .map(|(n, h)| (n.clone(), Aff::of_dim(sk.params[h.param as usize].value, h.dim)))
-        .collect();
+    let held = sk.held_numbers();
     for k in rows.into_iter().chain(rest) {
         let nd = &nodes[k];
         let mut value = to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num());

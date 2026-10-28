@@ -530,14 +530,12 @@ impl Sketch {
     /// was seeded.  Whether any point moved; the caller puts the hidden points back and places
     /// the planes again.
     pub fn seed_carried(&mut self) -> bool {
-        use crate::expr::{self, Aff};
+        use crate::expr;
         let mut moved = false;
         // a roll written over a face family's running number is worked out at the station the
         // sketch holds, before the document's expressions are (`expr::evaluate`), as they will be
         self.refresh_held();
-        let held: BTreeMap<String, Aff> = self.held.iter()
-            .map(|(n, h)| (n.clone(), Aff::of_dim(self.params[h.param as usize].value, h.dim)))
-            .collect();
+        let held = self.held_numbers();
         let stated = |a: &Arg| -> f64 {
             let Arg::Expr(e) = a else { return a.num() };
             expr::parse_in(&e.text, self.units).ok()

@@ -107,8 +107,13 @@ impl SolidVerdict {
             SolidOutcome::Indeterminate => None,
         }
     }
+    /// The worst pose refuted: the least room measured, the first of them where it is a tie or
+    /// none is measured — a sweep reports where the claim fails most, not where it starts to.
     pub fn counterexample(&self) -> Option<&SolidPose> {
-        self.poses.iter().find(|p| p.holds() == Some(false))
+        let room = |p: &SolidPose| p.evaluation().ok().and_then(|e| e.measured())
+            .unwrap_or(f64::INFINITY);
+        self.poses.iter().filter(|p| p.holds() == Some(false))
+            .min_by(|a, b| room(a).total_cmp(&room(b)))
     }
     /// Refutations always select an actual counterexample, never an unrelated uncertain pose.
     pub fn representative(&self) -> Option<&SolidPose> {
@@ -168,6 +173,12 @@ enum Poses {
     Replaced { scratch: Sketch, placed: Vec<(usize, f64)> },
     /// Over a free parameter: a copy solved again at each sample.
     Solved,
+    /// Over a declared parameter (#633): a copy of the drawing stood at each sample on the branch
+    /// its march carried (`follow::stand`) — where a row reads the parameter (`marched`), since
+    /// otherwise it stands still — and every solid drawn in a frame whose value reads the
+    /// parameter placed at the value worked out there, by its index and its value, as written and
+    /// read.
+    Stood { scratch: Sketch, marched: bool, placed: Vec<(usize, String, crate::expr::Ast)> },
     /// Every pose fails, for this reason: what the roll reads could not be read.
     Failing(String),
 }
@@ -185,7 +196,9 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
         exact();
         return Poses::Current;
     };
-    let Some(m) = sw.motion() else { return Poses::Solved };
+    let Some(m) = sw.motion() else {
+        return if sw.is_declared() { stood(sk, sw.name()) } else { Poses::Solved };
+    };
     let placed: Vec<(usize, f64)> = sk.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
         SolidDef::Placed { motion, at, .. } if *motion == m => Some((i, at.value)),
         _ => None,
@@ -216,6 +229,56 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
         Ok(Poses::Rigid { family, home, at, a_moves, a, b })
     };
     read().unwrap_or_else(Poses::Failing)
+}
+
+/// What a claim over the declared parameter `name` reads once: the drawing's march along it, and
+/// the solids placed at an instant its value's text reads — `n := x in f`, `f`'s value written
+/// over `name`, placed where the drawing stands when it is elaborated (`value_now`) and not again
+/// when it is stood elsewhere.
+fn stood(sk: &Sketch, name: &str) -> Poses {
+    let marched = !crate::follow::readers(sk, name).is_empty();
+    if marched {
+        if let Err(e) = crate::follow::followed(sk, name).as_ref() {
+            return Poses::Failing(e.clone());
+        }
+    }
+    let placed = sk.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
+        crate::model::SolidDef::Placed { at, .. } => crate::expr::parse_in(&at.text, sk.units).ok()
+            .filter(|p| p.body.deps().iter().any(|d| d == name))
+            .map(|p| (i, at.text.clone(), p.body)),
+        _ => None,
+    }).collect();
+    Poses::Stood { scratch: sk.clone(), marched, placed }
+}
+
+/// The pose of claim `c` at the instant `t` of a declared parameter: `scratch` stood there, its
+/// solids drawn in a frame whose value reads the parameter placed at their value there.
+fn stood_pose(scratch: &mut Sketch, marched: bool, placed: &[(usize, String, crate::expr::Ast)],
+              c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
+    let mut evaluate = || -> Result<clear::GeometricEvidence, String> {
+        if marched {
+            crate::follow::stand(scratch, sw.name(), t)
+                .map_err(|e| format!("not followed to {}: {e}", crate::vocab::num(t)))?;
+        }
+        // the numbers held where it stands, the parameter at `t`, as the value was read where
+        // it was placed (`value_now`)
+        let mut held = scratch.held_numbers();
+        held.insert(sw.name().to_string(), crate::expr::Aff::of_dim(t, sw.dimension()));
+        for (i, text, body) in placed {
+            let said = |e: String| format!("`{text}` at {}: {e}", crate::vocab::num(t));
+            let a = crate::expr::eval(body,
+                &crate::expr::with_declared(body, &held, &scratch.declared))
+                .map_err(|e| said(e.to_string()))?;
+            a.dim.require(crate::units::Dim::ANGLE, crate::constraints::JOINT_VALUE).map_err(said)?;
+            let v = a.number().filter(|v| v.is_finite())
+                .ok_or_else(|| said("comes to no number".into()))?;
+            if let crate::model::SolidDef::Placed { at, .. } = &mut scratch.solids[*i].def {
+                at.value = v.to_radians();
+            }
+        }
+        geometry(scratch, c)
+    };
+    SolidPose { parameter: Some(t), evaluation: evaluate() }
 }
 
 /// The pose of claim `c` at sample `t` of its sweep, solved again on a copy of the drawing.
@@ -323,6 +386,10 @@ impl ClaimJudge {
                     }
                 }
                 SolidPose { parameter: Some(t), evaluation: geometry(scratch, c) }
+            }
+            Poses::Stood { scratch, marched, placed } => {
+                let t = sample(k).expect("a declared parameter's claim is a sweep");
+                stood_pose(scratch, *marched, placed, c, c.over.as_ref().expect("a sweep"), t)
             }
             Poses::Solved => {
                 let t = sample(k).expect("a free parameter's claim is a sweep");

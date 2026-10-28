@@ -159,16 +159,26 @@ pub struct Sweep {
     /// The motion whose roll is swept, where it is one: every solid placed under it is read at
     /// its `at:` advanced by the roll, and nothing is solved again.
     pub(crate) motion: Option<u32>,
+    /// Whether what runs is a declared parameter (#633): the drawing followed along it.
+    pub(crate) declared: bool,
 }
 impl Sweep {
     /// What runs, and the motion whose roll it is, if it is one; checked by the caller, read-only
     /// once made.
     pub fn new(over: super::Running, motion: Option<u32>) -> Self {
-        Self { over, motion }
+        Self { over, motion, declared: false }
+    }
+    /// Along a declared parameter of the drawing (`Sketch::parameters`), checked by the caller.
+    pub fn declared(over: super::Running) -> Self {
+        Self { over, motion: None, declared: true }
     }
     /// The motion whose roll the claim runs along, if it runs along one.
     pub fn motion(&self) -> Option<u32> {
         self.motion
+    }
+    /// Whether the claim runs along a declared parameter.
+    pub fn is_declared(&self) -> bool {
+        self.declared
     }
     /// What runs, and over what.
     pub fn over(&self) -> &super::Running {

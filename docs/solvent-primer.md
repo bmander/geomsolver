@@ -1274,7 +1274,10 @@ solve, count or conflict set; the drawing is identical with it deleted. The diag
 Use claims for what a figure was drawn to show (the altitudes concur; the traced path is straight).
 A claim may not own or read an unknown. `claim over rotor_turn in (0deg, 1080deg) { … }` judges at
 sampled poses of a frame's motion, reading solids placed under it, and reports the worst; over an
-unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value.
+unknown (`claim over reach in (0.1mm, 0.9mm) { … }`) it solves at each sampled value, and over a
+declared `param t: Angle over (…)` (`claim over t { … }`, or a stretch, `claim over t in (0deg,
+90deg) { … }`) it stands the drawing at each sampled `t`, a solid drawn in a frame whose value
+reads `t` placed there. A refuted sweep says the sample where it fails by most.
 
 **A claim over values.** A design table's figures are claimed as a drawing's facts are:
 `claim handle_stall_torque >= 2Nm`, `claim 2 * ratio > 30 and teeth != 12` — a comparison of the
