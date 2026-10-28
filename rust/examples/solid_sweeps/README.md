@@ -19,6 +19,7 @@ Read them in this order:
 | `screw.sv` | constant twist: a screw | **A tool carried along a helix.** The same wheel screwed up the rod: the characteristic is read once on the wheel and carried along the helix, so the groove's section is the same at every height, turned. |
 | `rack.sv` | generating | **A tool rolled on a turning blank.** A rack tooth slid along the pitch line while the blank turns: one tooth space, its flanks involutes nobody draws. The tool's contact moves over it as it rolls, so each point of the wall is a contact at its own instant. |
 | `conjugate.sv` | planar subtraction | **A tool always in mesh.** A plus turning against a wheel over a whole period of the pair: never clear of the blank, so the region its section sweeps in the plane is read exactly and the wheel is the blank less its prism. |
+| `union.sv` | any class, member by member: a union | **A tool that is several tools.** A wheel of two beads that overlap, slid up a rod: where they meet the wheel's profile turns inward, a crease no one tool's sweep is built over, but a sweep of a union is its members' sweeps, so the groove is each bead's slid groove, both cut. Each bead's shadow is its tube's circle; the groove is what of the rod either covers. |
 
 Larger cases of each class: the spiral bevel and hypoid pair (`spiral_bevel/`, generating), the
 rack-cut spur gear (`generation/rack_cut_gear.sv`), the twist drill and the straight-fluted drill

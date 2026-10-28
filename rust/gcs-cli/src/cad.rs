@@ -188,6 +188,11 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
         let _ = seen;
         progress::start();
         let recipe = body.recipe.as_ref().map_err(Clone::clone).at(Stage::Blank)?;
+        // a cut of a union's sweep is built as each member's by the core's kernel alone (#684 C)
+        if gcs_core::solid::distributed::lowers(sk,body.index) {
+            return Err(ExportRefusal::at(Stage::Admission,format!("`{}` cuts the sweep of a union, which only the core's kernel \
+                builds as its members' sweeps: export it with `--kernel rust`",sk.solids[body.index].name)))
+        }
         let session = native::Session::new().at(Stage::Blank)?;
         // `SOLVENT_WRITER=rust` (phases 1 and 2 of docs/rust-kernel-plan.md): the solid the kernel built
         // read into the core's own B-rep and its STEP and STL written from that, by our writer and

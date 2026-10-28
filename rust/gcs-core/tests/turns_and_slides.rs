@@ -56,7 +56,7 @@ fn admit(source: &str) -> Result<admission::Admission,Error> {
     admission::admit_body(&e.sketch,fixtures::solid(&e,"part"),&Options::default())
 }
 
-fn refused(result: Result<admission::Admission,Error>) -> admission::Refusal {
+pub(crate) fn refused(result: Result<admission::Admission,Error>) -> admission::Refusal {
     match result {
         Err(Error::Refused(r)) => { eprintln!("{r}"); r }
         Err(Error::Unreadable(m)) => panic!("unreadable: {m}"),

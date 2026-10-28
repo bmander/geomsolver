@@ -103,6 +103,13 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
 fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored: bool,tolerance: Option<Tolerance>,say: &Say)
     -> Result<Exact,ExportRefusal> {
     if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
+    // a cut of a union's sweep is a cut of each member's (#684 C): built from the copy of the
+    // drawing that writes it so, and held to the union's field as a swept body (where every
+    // member's sweep is a ball's tube, the copy's body is static material)
+    if let Some(lowered) = crate::solid::distributed::lowered(sk,body) {
+        (say.stage)(&format!("`{}` cuts the sweep of a union: each member's sweep cut",sk.solids[body].name));
+        return Ok(Exact {swept:true,..own(&lowered,body,admitted,mirrored,tolerance,say)?})
+    }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
     if !recipe.sweeps.is_empty() {
         let made;
@@ -565,6 +572,9 @@ struct Build {
     part: bool,
     /// What the solid asked for read (`solid::reads`), which its display carries.
     reads: Vec<f64>,
+    /// The copy of the drawing its stages read where `body` cuts a union's sweep, the cut written
+    /// as each member's (`solid::distributed`, #684 C); the builder's own drawing otherwise.
+    lowered: Option<Sketch>,
 }
 
 impl Builder {
@@ -599,7 +609,8 @@ impl Builder {
 impl Build {
     /// The build of solid `asked`: an object's (meshed), or a `part`'s (its B-rep).
     fn new(sk: &Sketch,asked: usize,part: bool) -> Result<Build,ExportRefusal> {
-        let build = |body,state,recipe,moved,parts| Build {asked,body,recipe,state,done:0,moved,enveloped:false,parts,part,reads:Vec::new()};
+        let build = |body,state,recipe,moved,parts| Build {asked,body,recipe,state,done:0,moved,enveloped:false,parts,part,reads:Vec::new(),
+            lowered:None};
         let none = || cad::StaticRecipe {recipe:crate::json::Json::Null,sweeps:Vec::new()};
         // a body no sweep reaches is built as the export builds it, a stage, then meshed
         if !cad::contains_sweep(sk,asked) { return Ok(build(asked,State::Static,none(),None,Vec::new())) }
@@ -613,11 +624,21 @@ impl Build {
             let parts = swept.into_iter().map(|o| Build::new(sk,o,true)).collect::<Result<Vec<_>,_>>()?;
             return Ok(build(body,State::Parts,none(),moved,parts))
         }
-        let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
-        if recipe.sweeps.is_empty() {
+        // a cut of a union's sweep is a cut of each member's (#684 C): the stages read the copy of
+        // the drawing that writes it so, and where every member's sweep is a ball's tube the body
+        // is static material there, built as the export builds it
+        let lowered = crate::solid::distributed::lowered(sk,body);
+        let state = match &lowered { Some(l) if !cad::contains_sweep(l,body) => State::Static,_ => State::Admit };
+        let recipe = match state {
+            State::Static => none(),
+            _ => cad::recipe_static(lowered.as_ref().unwrap_or(sk),body).at(Stage::Blank)?,
+        };
+        if matches!(state,State::Admit) && recipe.sweeps.is_empty() {
             return Err(ExportRefusal::at(Stage::Blank,format!("`{}` cuts no sweep",sk.solids[body].name)))
         }
-        Ok(build(body,State::Admit,recipe,moved,Vec::new()))
+        // a static copy builds the solid asked, its placement as the export reads it
+        let (body,moved) = if matches!(state,State::Static) { (asked,None) } else { (body,moved) };
+        Ok(Build {lowered,..build(body,state,recipe,moved,Vec::new())})
     }
     /// Whether the build has come to its end: its display, or a part's B-rep.
     fn finished(&self) -> bool { matches!(self.state,State::Done(_) | State::Built(_)) }
@@ -631,7 +652,10 @@ impl Build {
         }
         let state = std::mem::replace(&mut self.state,State::Failed);
         let was_prepare = matches!(state,State::Prepare(_));
-        let next = self.advance(sk,state,say)?;
+        let lowered = self.lowered.take();
+        let next = self.advance(lowered.as_ref().unwrap_or(sk),state,say);
+        self.lowered = lowered;
+        let next = next?;
         self.enveloped |= was_prepare && matches!(next,State::Finish(_));
         self.done += 1;
         self.state = next;
@@ -641,7 +665,11 @@ impl Build {
     fn advance(&mut self,sk: &Sketch,state: State,say: &Say) -> Result<State,ExportRefusal> {
         let (body,recipe) = (self.body,&self.recipe);
         Ok(match state {
-            State::Static => State::Mesh(super::sweep::Built::Whole(exact(sk,body,None,None,say)?.solid)),
+            State::Static => {
+                let solid = exact(sk,body,None,None,say)?.solid;
+                // (a part is static only where a union it cuts is distributed into balls' tubes)
+                if self.part { State::Built(solid) } else { State::Mesh(super::sweep::Built::Whole(solid)) }
+            }
             State::Admit => State::Prepare(admission::admit_body(sk,body,&DISPLAY_ADMISSION)?),
             State::Prepare(admitted) => {
                 let prepared = super::sweep::prepare(sk,body,recipe,&admitted,say)?;
@@ -691,7 +719,8 @@ impl Build {
     }
     /// What the next stage does, in a page's words.
     fn doing(&self,sk: &Sketch) -> String {
-        let name = |k: usize,p: &super::sweep::Prepared| format!("fitting the sheet of `{}` ({} of {})",p.sweep_name(sk,k),k+1,p.sweeps());
+        let own = self.lowered.as_ref().unwrap_or(sk);
+        let name = |k: usize,p: &super::sweep::Prepared| format!("fitting the sheet of `{}` ({} of {})",p.sweep_name(own,k),k+1,p.sweeps());
         match &self.state {
             State::Static => "building the solid from its recipe".into(),
             State::Admit => "admitting its sweeps to the generating class".into(),

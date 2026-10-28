@@ -39,6 +39,7 @@ pub mod region;
 pub mod bounded;
 pub mod grown;
 pub mod canal;
+pub mod distributed;
 pub mod roll;
 pub mod lowering;
 pub mod faces;

@@ -42,7 +42,7 @@ failure is reported with its witness.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs whose caps stay clear of the blank over the roll, or an intersection (`common`) of such, under fixed placements. | Every face has closed-form contacts. An intersection creates only convex creases. A prism cuts with its sides only (`ExtrudedSurface`), so a cap in the blank would be a face the class does not build. | The first operand outside the class, a union/cut in the tool, or the prism whose cap passes through the blank. |
+| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs whose caps stay clear of the blank over the roll, or an intersection (`common`) of such, under fixed placements; or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. An intersection creates only convex creases. A prism cuts with its sides only (`ExtrudedSurface`), so a cap in the blank would be a face the class does not build. | The first operand outside the class, a cut in the tool or a union within an intersection, or the prism whose cap passes through the blank. |
 | T2 | Every profile vertex inside the swept region is convex or tangent. | A convex corner sweeps a fan of normals. A concave corner sweeps nothing, but it trims two envelopes against each other, which is not supported. | The vertex and its turning angle. |
 | M1 | The motion is one rotation about a fixed axis, or one rotation (or one translation) relative to another rotation (`motion(about: …)`, `motion(along: …)`, `motion(m, relative_to: n)`), at constant ratios, with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes, and of a rack cutting a spur gear. | The motion node outside the class. |
 | M2 | Each tool point's contact condition changes over the roll. | Where it does not, the point is on the boundary at every time or at none, and a contact time cannot parameterize the surface. A single rotation is like that everywhere (its tool-frame twist is constant), so the generator's motion is a relative one. This is the native path's existing refusal. It is checked at the samples, at a pole (whose normal is the axis), and between samples: the equation is C + a cos + b sin in the roll, and where (a, b) turns right round between two samples, or winds round a sample cell, with roots on every side, a point there has C and the amplitude both zero. That happens where the tool's normal passes through the point where two meeting axes cross. | A tool point whose path reaches the blank. |
@@ -216,6 +216,39 @@ to 1e-4, with the field's at every probe 0.02 mm off the surface, and lies below
 (`tests/planar_subtraction.rs`). A drafted slab's stations are read within a box grown until they
 are alike, since a change only where the box's sides cut the region is none of the blank's; the
 radiator valve's measured handle is one (#612).
+
+### A union tool: every class, member by member (issue #684 C)
+
+A sweep distributes over union: under one motion over one roll, `sweep(A ∪ B) = sweep(A) ∪
+sweep(B)`, so `blank − sweep(A ∪ B)` is `blank − sweep(A) − sweep(B)`. A body cutting the sweep
+of a union is admitted and built from a copy of the drawing with that cut written as one cut a
+member (`solid::distributed::lowered`): each member's sweep under the union's motion, over the
+union's roll (a `through:` roll is the union's, found once), placed wherever the union's sweep
+is, and its faces named by their routes in the union (`removal.tool.ring`). Each member's sweep
+is then whatever it is alone, and is asked that class's rows: a ball's under a turn is its tube
+(`canal`), a revolution's under a screw, a turn or a slide the constant twist's, under a relative
+rotation the generating class's. No row is added. What the union's crease would fail as one tool
+— a concave corner where the members meet, carried through the blank (T2), or two sheets
+crossing (E4) — is no corner and no crossing of either member's sweep, and the body's split and
+its cells, judged by the field of the union's sweep, trim one sheet by the other as they trim
+any two placements'. A member refused is refused by its own row, saying so: `` `groove` is
+outside the constant-twist class (S1: …): its tool's member `bead2`: … ``.
+
+A union is its members where it is the whole tool, a union within a union, or a placement of
+one, each member placed as it is. Still refused: a union within an intersection or a cut
+(`(A ∪ B) ∩ C`, T1, which is not distributed yet); and a body that cuts a ball's tube beside a
+sweep of another class, which the static remainder does not read as either form, written as a
+union or as two cuts. A union of prisms under a motion keeping their plane is not distributed:
+the planar subtraction class reads its swept region whole (below). Only the core's kernel builds
+a distributed cut; the native path refuses it by name. `tests/union_tools.rs` is the gate: two
+overlapping tori on one axis slid up a rod (`rust/examples/solid_sweeps/union.sv`), the groove
+what of the rod's disc either tube's shadow covers, computed in rows across the rod apart from
+the core and held to the exact solid (2e-8 off a chord-by-chord integral), whose STL agrees with
+the field; that union placed half a turn round the rod and turned about its own axis; the two
+cuts written one after another, the same solid to 1e-9; two balls swung on one arm, two tubes
+(Pappus); two tori rolled through the post, each admitted to the generating class and built as
+the long form builds them; and a member refused by its own row, and a union within an
+intersection refused at T1.
 
 ### Undercut is excluded deliberately
 
