@@ -236,8 +236,21 @@ placement carries inside the blank; CLI test readers zero the offset.
   `a_claim_about_a_cut_wheel_reads_its_exact_build`, `solid_claim.rs`'s
   `a_claim_not_measured_at_the_drawing_pose_says_why`.
   **`claim over crank.theta in (0deg, 360deg) { … }`** sweeps one of the drawing's **free
-  variables** (never a `param`), reporting the *worst* pose; it is **sampling** at `SWEEP_STEPS`
-  and says so.  Claims are read **after phase 4** (a free variable is what `expr::evaluate`
+  variables** (never a `param` that is a number), reporting the *worst* pose — of a refuted one
+  the counterexample with the least room (`SolidVerdict::counterexample`), not the first; it is
+  **sampling** at `SWEEP_STEPS` and says so.  **Over a declared parameter** (#633, [0.197]),
+  `claim over t in (a, b) { … }` or `claim over t { … }` (`syntax::ClaimOver::declared`, its ends
+  written in by `walk_claim_over`; a stretch outside the parameter's interval, or `over n { … }`
+  naming none, E103): a copy of the drawing stood at each sample (`Poses::Stood`,
+  `follow::stand`) where a row reads `t`, standing still where none does, and every
+  `SolidDef::Placed` whose value's text reads `t` — a solid drawn in a valued frame, placed once at
+  elaboration (`value_now`) — placed at the value worked out there; a march refused or an instant
+  not reached is a pose failed, saying why.  `solid_claim.rs`'s
+  `a_claim_over_a_declared_parameter_reads_the_drawing_where_it_stands` (the arm into the post at
+  45°, measured -5, and the closed form's room at every sample clear),
+  `a_claim_over_a_declared_parameter_follows_its_march` (a slider-crank against its closed form)
+  and `a_claim_over_a_declared_parameter_is_refused_outside_it`.
+  Claims are read **after phase 4** (a free variable is what `expr::evaluate`
   allocates), and the interval **in the unknown's own units**, never converted as an angle.
   **A swept claim's names resolve as a lone claim's do** (`flatten/resolve.rs`'s `rewrite`): the
   motion it runs along and the solids its body judges are found through instances

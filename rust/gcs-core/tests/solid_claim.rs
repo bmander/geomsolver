@@ -197,7 +197,7 @@ fn what_is_written_wrong_is_refused() {
     refused(
         format!("{two}claim over nope in (0deg, 90deg) {{ sA_ clear(2mm) sB_ }}\n"),
         Code::E040,
-        "not a free variable or a motion of this drawing",
+        "not a free variable, a declared parameter or a motion of this drawing",
     );
 }
 
@@ -412,4 +412,146 @@ fn a_refuted_sweep_says_where_at_its_counterexample() {
         let measured = pose.evaluation().unwrap().measured().unwrap();
         assert!((dist(n.at_a, n.at_b) - measured).abs() < 1e-6, "{n:?}, {measured}");
     }
+}
+
+/// An arm turned by a declared parameter past a post (#633): the frame's value is `t`, so the
+/// arm drawn in it stands at `t` where the drawing stands, and nothing else reads `t`.  The arm
+/// is 40 long and 6 wide from the pivot, the post 4 in radius at `(25, 25)`, so at rest they stand
+/// 18 apart and at 45° the post's centre is on the arm's axis: they overlap, measured -5.
+const SWUNG_BY_T: &str = "\
+unit mm
+use std
+use std.place (vertical, coords, on_u)
+use std.motion (turns)
+use std.shapes
+param t: Angle over (0deg, 90deg)
+in std.front {
+  construction pivot := vertical line(std.origin, hint((0, 10)))
+  length(10mm) pivot
+}
+in std.top {
+  ac := point hint((20, 0))
+  ac on_u(d: 20mm) std.top
+  arm_r := std.shapes.CenteredRectangle(ac, w: 40mm, h: 6mm)
+  pc := point hint((25, 25))
+  pc coords(du: 25mm, dv: 25mm) std.top
+  post_r := radius(4mm) circle(center: pc)
+}
+arm := solid(face(arm_r.loop), from: 0mm, to: 5mm)
+post := solid(face(post_r), from: 0mm, to: 5mm)
+swing := frame
+swing turns(1) pivot
+fix(value == t) swing
+shown := arm in swing
+claim shown clear(0.5mm) post
+claim over t in (0deg, 90deg) { shown clear(0.5mm) post }
+claim over t { shown clear(0.5mm) post }
+";
+
+/// A slider-crank whose crank angle is `t`, and a pin on the slider passing a pin on the rail:
+/// the drawing itself is followed along `t`, the slider at `r cos t + sqrt(l² - r² sin² t)`.
+const CRANKED_BY_T: &str = "\
+unit mm
+use std
+r := 10
+l := 30
+param t: Angle over (0deg, 360deg)
+in std.front {
+  a := point
+  e := point
+  b := point hint((r, 0))
+  s := point hint((r + l, 0))
+  fix((0, 0)) a
+  fix((60, 0)) e
+  rail := line(a, e)
+  crank := line(a, b)
+  rod := line(b, s)
+  length(r) crank
+  length(l) rod
+  s coincident rail
+  rail angle(t) crank
+  w := point
+  fix((48, 0)) w
+  sc := radius(3mm) circle(center: s)
+  wc := radius(3mm) circle(center: w)
+}
+slider := solid(face(sc), from: 0mm, to: 5mm)
+wall := solid(face(wc), from: 0mm, to: 5mm)
+claim over t in (0deg, 180deg) { slider clear(4mm) wall }
+";
+
+#[test]
+fn a_claim_over_a_declared_parameter_reads_the_drawing_where_it_stands() {
+    // **#633**: the drawing follows `t`, and a claim over it is judged at every sample — the arm
+    // drawn in a frame whose value reads `t` placed there — where the claim judged at rest says
+    // only that they stand 18 apart.
+    let e = read(SWUNG_BY_T);
+    assert!(e.diags.is_empty(), "{:#?}", e.diags);
+    let v = verdicts(&e);
+    assert_eq!(v.len(), 3);
+    assert_eq!(v[0].holds(), Some(true), "at rest the arm is clear");
+    assert!((v[0].measured().unwrap() - 18.0).abs() < 0.01, "{:?}", v[0].measured());
+    for swept in &v[1..] {
+        assert_eq!(swept.holds(), Some(false), "the arm runs into the post");
+        assert_eq!(swept.valid_samples().count(), 37, "every sample judged");
+        assert_eq!(swept.worst(), Some(45.0), "the worst of the swing, not where it fails first");
+        assert!((swept.measured().unwrap() + 5.0).abs() < 0.01, "{:?}", swept.measured());
+        let (from, to) = (swept.sweep().unwrap().from(), swept.sweep().unwrap().to());
+        assert_eq!((from, to), (0.0, 90.0), "`over t` alone is the parameter's interval");
+    }
+    // and the room at every sample is the closed form's where the arm passes clear of the post
+    let room = |deg: f64| {
+        // the post's centre in the arm's frame, its distance to the 40 × 6 rectangle less 4
+        let (s, c) = deg.to_radians().sin_cos();
+        let (x, y) = (25.0 * c + 25.0 * s, -25.0 * s + 25.0 * c);
+        let (dx, dy) = ((x - 40.0).max(0.0).max(-x), (y.abs() - 3.0).max(0.0));
+        dx.hypot(dy) - 4.0
+    };
+    for p in v[1].poses().iter().filter(|p| p.holds() == Some(true)) {
+        let t = p.parameter().unwrap();
+        let measured = p.evaluation().unwrap().measured().unwrap();
+        assert!((measured - room(t)).abs() < 0.01, "at {t}: {measured} against {}", room(t));
+    }
+}
+
+#[test]
+fn a_claim_over_a_declared_parameter_follows_its_march() {
+    // a drawing whose rows read `t`: stood at each sample on the branch its march carried
+    let e = read(CRANKED_BY_T);
+    assert!(e.diags.is_empty(), "{:#?}", e.diags);
+    let v = verdicts(&e);
+    assert_eq!(v.len(), 1);
+    let slider = |deg: f64| {
+        let (s, c) = deg.to_radians().sin_cos();
+        10.0 * c + (900.0 - 100.0 * s * s).sqrt()
+    };
+    assert_eq!(v[0].valid_samples().count(), 37, "every sample stood at");
+    for p in v[0].poses() {
+        let t = p.parameter().unwrap();
+        let measured = p.evaluation().unwrap().measured().unwrap();
+        let room = 48.0 - 6.0 - slider(t);
+        assert!((measured - room).abs() < 0.01, "at {t}: {measured} against {room}");
+    }
+    assert_eq!(v[0].holds(), Some(false), "two of room at the outer dead centre");
+    assert_eq!(v[0].worst(), Some(0.0));
+}
+
+#[test]
+fn a_claim_over_a_declared_parameter_is_refused_outside_it() {
+    let refused = |src: String, code: Code, needle: &str| {
+        let (prog, errs) = parse(&src);
+        assert!(errs.is_empty(), "{errs:?}");
+        let e = elaborate(&prog);
+        assert!(
+            e.diags.iter().any(|d| d.code == code && d.message.contains(needle)),
+            "expected {} `{needle}`\n{:#?}",
+            code.as_str(),
+            e.diags
+        );
+    };
+    let base = SWUNG_BY_T.split("claim").next().unwrap();
+    refused(format!("{base}claim over t in (0deg, 120deg) {{ shown clear(0.5mm) post }}\n"),
+            Code::E103, "stretch of its interval, (0deg, 90deg)");
+    refused(format!("{base}claim over nope {{ shown clear(0.5mm) post }}\n"),
+            Code::E103, "names no parameter the document declares");
 }

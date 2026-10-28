@@ -1280,6 +1280,24 @@ impl<'a> Walk<'a> {
         depth: usize,
     ) {
         let mut c2 = c.clone();
+        // over a declared parameter's whole interval (#633): its ends written in, as a reading
+        // over it has them (`declared_interval`)
+        if c.declared {
+            let name = crate::syntax::ref_text(&c.formal);
+            let declared = (scope.module.is_none() && scope.prefix().is_empty())
+                .then(|| self.parameters.get(&name)).flatten();
+            let Some(running) = declared else {
+                let m = format!("`{name}` names no parameter the document declares: a swept claim \
+                                 states its interval, `claim over {name} in (a, b) {{ … }}`, or \
+                                 runs over a `param {name}: Angle over (a, b)`");
+                self.err(Code::E103, c.formal.span, m);
+                return;
+            };
+            let unit = if running.dim == crate::units::Dim::ANGLE { "deg" } else { "" };
+            let end = |v: f64| crate::syntax::Arg::Dim {
+                text: format!("{}{unit}", crate::syntax::num(v)), span: c.formal.span };
+            (c2.from, c2.to) = (end(running.from), end(running.to));
+        }
         for a in [&mut c2.from, &mut c2.to] { self.settle_arg(a, vals, scope); }
         let mut body = Vec::with_capacity(c.body.len());
         for inner in &c.body {

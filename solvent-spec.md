@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.196 — October 2026**
+**Specification, Draft 0.197 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -2797,9 +2797,9 @@ claim over crank.theta in (0deg, 360deg) {
 }
 ```
 
-`claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
+`claim over NAME in (A, B) { … }` judges every claim in its body as the drawing runs along `NAME`, and reports the **worst** pose reached — of a claim refuted, the sample where it fails by most.  It is Structure-class: it says how the claims inside it are judged and asserts nothing itself.
 
-- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a frame with a joint (§6.14), whose roll the claims run along: every solid placed under it (`S at(under: NAME) A`) is read at its angle advanced by the roll, and nothing is solved again.  **[0.135]** `claim over NAME seen_from G in (A, B)` runs the roll of `NAME`'s motion as `G` sees it.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
+- `NAME` MUST be an **unknown** of the drawing (§3.3, §6.3) — an input with no value, or a formal an instance left unbound — or **[0.40]** a frame with a joint (§6.14), whose roll the claims run along: every solid placed under it (`S at(under: NAME) A`) is read at its angle advanced by the roll, and nothing is solved again.  **[0.135]** `claim over NAME seen_from G in (A, B)` runs the roll of `NAME`'s motion as `G` sees it.  **[0.197]** Or `NAME` is a **declared parameter** (`param t: Angle over (a, b)`, §6.3): the drawing is followed along it to each sampled value, as it is shown at an instant, and the claims read the solids there — among them every solid drawn in a frame whose value reads it (`S in f`, §6.14).  `claim over t { … }`, with no interval, runs over the parameter's own; an interval MUST be an increasing stretch of it (**E103** otherwise), and an omitted interval naming no declared parameter is **E103**.  A value or an input with a value is a number the document already fixed and sweeping a constant is not a question; naming one, or naming other geometry, is **E040**.
 - `A` and `B` are read in the units the unknown's readers are written in: an interval of an angle is an angle, and one of a length is a length.
 - An implementation MUST state that its answer is by **sampling**, and how many poses it took. A pose that did not solve or produced invalid solid geometry cannot certify the claim; the report identifies those failed parameter values, and a sweep with unresolved poses cannot be reported as holding.  A claim that holds at every sample is a claim that held at every sample; a swept claim is honest about that in the way a faceted one is honest about its margin.
 

@@ -69,8 +69,9 @@ where a rule came from.
     one — a reading built in Rust, `Running::roll`): an envelope in the plane (`CurveE::over`), an
     envelope in space (`EnvelopeE::roll`), a meshing (`MeshingE::roll`), a swept solid
     (`Roll::Stated`); each kernel reads `radians()`, so the name moves no value. A claim's
-    sweep (`model::Sweep::over`) is a `Running` under the claim's own name, a frame's roll or a
-    number of the drawing.
+    sweep (`model::Sweep::over`) is a `Running` under the claim's own name, a frame's roll, a
+    number of the drawing or a declared parameter (#633: the drawing stood at each sample, see
+    solids.md).
 - **Two operations on what moves** (#391 S2, [0.140]): every reading of a frame's motion is
   evaluation at an instant or a union over an interval, each written once.
   - **`x at τ`** (`P::instant`: `at`, then `(under: m, seen_from: g)` where the frames are named,

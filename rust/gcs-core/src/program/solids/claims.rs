@@ -163,7 +163,8 @@ fn solid_claim(
     map.record(st, Made::Gauge);
 }
 
-/// The interval a swept claim runs over: a free variable of the drawing, and where it goes.
+/// The interval a swept claim runs over: a free variable of the drawing, a declared parameter or
+/// a frame's roll, and where it goes.
 fn sweep_of_claim(
     sk: &mut Sketch,
     res: &Resolver,
@@ -193,9 +194,15 @@ fn sweep_of_claim(
             }
         },
     };
+    // **a declared parameter** (#633), `param t: Angle over (a, b)`: the drawing followed along
+    // it and read at each sample, the solids drawn in a frame whose value reads it placed there
+    let declared = match motion {
+        None if !sk.free_vars.contains_key(&name) => sk.parameters.get(&name).cloned(),
+        _ => None,
+    };
     // **a free variable, and nothing else**: a `param` is a number the document already fixed,
     // and sweeping it would be sweeping a constant
-    if motion.is_none() && !sk.free_vars.contains_key(&name) {
+    if motion.is_none() && declared.is_none() && !sk.free_vars.contains_key(&name) {
         if res.lookup(&c.formal).is_some() {
             say(
                 Code::E040,
@@ -207,14 +214,19 @@ fn sweep_of_claim(
                 Code::E040,
                 c.formal.span,
                 format!(
-                    "`{name}` is not a free variable or a motion of this drawing: a swept claim \
-                         runs along an unknown the solver answers for, or a motion's roll"
+                    "`{name}` is not a free variable, a declared parameter or a motion of this \
+                         drawing: a swept claim runs along an unknown the solver answers for, a \
+                         `param {name}: Angle over (a, b)` the drawing follows, or a motion's roll"
                 ),
             );
         }
         return None;
     }
-    let dimension = if motion.is_some() { crate::units::Dim::ANGLE } else { *sk.free_dimensions.get(&name)? };
+    let dimension = match (&motion, &declared) {
+        (Some(_), _) => crate::units::Dim::ANGLE,
+        (None, Some(p)) => p.dim,
+        (None, None) => *sk.free_dimensions.get(&name)?,
+    };
     // Free parameters are stored in user units. In particular, an angular unknown is in
     // degrees; its readers' affine coefficients own the radians conversion into kernels.
     // Check the inferred variable dimension before assigning either endpoint.
@@ -250,6 +262,21 @@ fn sweep_of_claim(
         }
     };
     let (from, to) = (num(&c.from, "from")?, num(&c.to, "to")?);
+    // a stretch of the parameter's own interval: the drawing is followed nowhere else
+    if let Some(p) = declared.filter(|p| from < p.from || to > p.to || from >= to) {
+        let unit = if p.dim == crate::units::Dim::ANGLE { "deg" } else { "" };
+        let end = |v: f64| format!("{}{unit}", crate::vocab::num(v));
+        say(
+            Code::E103,
+            st.span,
+            format!(
+                "a claim over `{name}` runs over an increasing stretch of its interval, ({}, {})",
+                end(p.from),
+                end(p.to)
+            ),
+        );
+        return None;
+    }
     Some(crate::model::Sweep::new(crate::model::Running::new(name, dimension, from, to),
         motion.map(|e| e.idx)))
 }

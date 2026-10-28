@@ -4,6 +4,16 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.197] A claim over a declared parameter.** `claim over t in (a, b) { … }` runs along a
+`param t: Angle over (…)` the drawing follows, as it runs along an unknown or a frame's roll
+(§9.8, #633): the drawing is stood at each sampled value on the branch its march carried, and
+the claims read the solids there — a solid drawn in a frame whose value reads `t` (`shown := arm
+in swing`, `fix(value == t) swing`) placed at that value — so an arm swinging into a post is
+refuted where it was judged only at rest and held.  `claim over t { … }` runs over the whole of
+the parameter's interval; a stretch outside it is E103.  A refuted sweep now reports the sample
+where the claim fails by most, not the first where it fails.  Before, naming a parameter was
+E040.  No solved position changes.
+
 **[0.196] A part's colour.** A drawing's style rule takes `fill: #RGB` or `#RRGGBB` (§13.2):
 the colour of the parts its model path names — an object, a scope holding objects, or a solid an
 object is made of — and of every other placement of each, since the instances of one part

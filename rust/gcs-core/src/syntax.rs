@@ -503,6 +503,9 @@ pub struct ClaimOver {
     pub seen_from: Option<Ref>,
     pub from: Arg,
     pub to: Arg,
+    /// Written `claim over t { … }`, with no interval: a declared parameter's own, which the
+    /// flattener writes into `from` and `to` (#633).
+    pub declared: bool,
     pub body: Vec<Stmt>,
     pub span: Span,
 }
