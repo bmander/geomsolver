@@ -8,6 +8,7 @@ use gcs_core::brep::export::{self,Builder,Display};
 use gcs_core::brep::sweep::Say;
 use gcs_core::model::{objects,Sketch};
 use gcs_core::solid::{ApproximationPolicy,ObjectState};
+use std::f64::consts::PI;
 
 fn solved(name: &str) -> Option<Sketch> {
     let e = fixtures::example(name)?;
@@ -276,4 +277,37 @@ fn a_build_is_current_within_a_solves_tolerance() {
     assert!(!sk.supply_object(block,earlier).unwrap(),"an earlier drawing's");
     assert_eq!(sk.object_state(block),ObjectState::Rebuilding);
     assert!(sk.evaluated_solid(block,ApproximationPolicy::Mesh).unwrap().stale());
+}
+
+/// **A body built from swept material is built as the export composes it, to any depth** (the
+/// radiator bot's compounds): a shaped gear united with a copy of itself screwed along its axis —
+/// two swept operands, one a placement — and a body made of that compound, whose stock holds the
+/// sweeps a level down; each operand built by its own stages, the compound combined, then meshed.
+#[test]
+fn a_body_of_swept_bodies_is_built_by_stages_as_the_export_composes_it() {
+    let src = crate::rack_cut::SPACE.to_string() + "\
+screw := frame
+use std.motion (screws)
+screw screws(48mm) turn.axis
+construction lifted := gear at(under: screw) 30deg
+construction compound := solid(gear)
+lifted union compound
+nested := solid(compound)
+";
+    let mut e = crate::common::build(&src);
+    let r = gcs_core::solve::solve(&mut e.sketch,gcs_core::solve::SolveOpts::default());
+    assert!(r.success,"{}",r.message);
+    let sk = e.sketch;
+    let nested = e.map.ent_named("nested").unwrap().i();
+    let (faces,volume) = exported(&sk,nested).unwrap();
+    let (d,doing) = stepped(&sk,nested).unwrap();
+    assert!(doing.iter().filter(|d| d.starts_with("admitting its sweeps")).count() == 2,"{doing:?}");
+    assert!(doing.iter().any(|d| d == "adding the rest of the body"),"{doing:?}");
+    let within = export::GROSS/sk.units.mm_per()*area(&d);
+    assert!((d.faces.volume-volume).abs() <= within,"{} against {volume}, within {within}",d.faces.volume);
+    // the two gears overlap 2 mm of their 6, each turned off the other's tooth space
+    let gear = PI*(22.*22.-0.)*6.;
+    assert!(volume > gear && volume < 2.*gear,"{volume} ({faces} faces)");
+    // each gear's tooth space named for the sweep that cut it
+    assert_eq!(d.faces.names.iter().filter(|n| *n == "space").count(),2,"{:?}",d.faces.names);
 }
