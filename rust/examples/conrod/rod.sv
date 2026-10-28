@@ -72,8 +72,10 @@ in std.front {
   q2 distance(ft) right
   q3 distance(ft) left
   q4 distance(ft) left
-  kb := arc(center: pin, start: q1, end: q4) hint(r: 34)
-  kt := arc(center: sm, start: q3, end: q2) hint(r: 20)
+  // no radius seeded: each arc's is read off its ends, so the pocket closes where it is seeded and
+  // the rod is built there, where the rounds read which of its faces meet (#625)
+  kb := arc(center: pin, start: q1, end: q4)
+  kt := arc(center: sm, start: q3, end: q2)
   radius(eB + ft) kb
   radius(eS + ft) kt
   pocket := face(pr, kt, pl, kb)
