@@ -479,7 +479,10 @@ where a rule came from.
     numbers, carried by `M(s) · C_home · C(s)⁻¹` — the frame's chart as the drawing has it and as
     the part stands there — so a frame the station moves and one it does not are read alike.
     Refused: a relation the solve holds reading it (`envelope::held::motion`, E080), a profile in
-    the plane generated under it; a graft carries none (`graft`).  Today's station words
+    the plane generated under it.  A graft carries one with its path and its frame
+    (`MotionDef::remapped`, #684 D: `solid_sweeps/path.sv`'s rebuild keeps it whole,
+    `rebuild::a_rebuild_that_removes_nothing_keeps_everything`), and leaves behind one along a
+    curve traced in space, which its walk renumbers after the motions.  Today's station words
     (`std.stations.On`, `std.stations.Minimal`, `std.stations.Frenet`) still solve a plane at every
     station; the corpus is not moved onto the frames.
   - **Gate**: `tests/guided_frames.rs` — a rectangle in `std.stations.Along`'s frame swept over `s`

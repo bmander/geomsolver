@@ -70,25 +70,31 @@ fn continuous_sweep_source_has_the_full_interval_and_endpoint_caps() {
     assert_eq!(recipe.get("nodes").unwrap().arr().last().unwrap().get("kind").unwrap().as_str(),"canal");
 }
 
-/// The ball of `solid_generating_sweep.sv` slid 2 along the spindle over the roll rather than
-/// turned about it: a capsule, π + 2π + 4π/3 = 10π/3, which no ball's tube builds (`canal` takes a
-/// turn), so its surface is the field's.
+/// The ball of `solid_generating_sweep.sv` made a cylinder of radius 1 and height 2 on the same
+/// diameter, and slid 2 along the spindle, its own axis, over the roll rather than turned about it:
+/// a cylinder twice as tall, 4π. A ball's sweep is its tube under any motion (`canal`, #684 D),
+/// and a slide along a tool's own axis is no constant twist's (S1), so its surface is the field's.
 fn slid() -> String {
     let source = include_str!("../../examples/solid_generating_sweep.sv");
-    assert!(source.contains("generating turns(1) spindle"),"the turn moved");
+    let arc = "  private meridian := arc(center: center, start: bottom, end: top)\n  radius(1mm) meridian\n";
+    assert!(source.contains("generating turns(1) spindle") && source.contains(arc),"the turn moved");
     source.replace("use std.motion (turns)","use std.motion (slides)")
         .replace("generating turns(1) spindle","generating slides(6mm) spindle")
+        .replace(arc,"  private foot := point hint((4, -1))\n  private head := point hint((4, 1))\n\
+            private floor := line(bottom, foot)\n  private wall := line(foot, head)\n  private roof := line(head, top)\n\
+            floor perpendicular diameter\n  roof perpendicular diameter\n  length(1mm) floor\n  length(1mm) roof\n")
+        .replace("face(meridian, diameter)","face(floor, wall, roof, diameter)")
 }
-const CAPSULE: f64 = 10.*std::f64::consts::PI/3.;
+const SLID: f64 = 4.*std::f64::consts::PI;
 
 #[test]
 fn a_continuous_sweep_is_meshed_from_its_field() {
-    // A unit sphere slid 2 along the spindle: a capsule (`slid`).
+    // A unit cylinder slid 2 along its axis (`slid`).
     let e = read(&slid());
     let i = e.map.ent_named("removal.body").unwrap().i();
     assert!(e.sketch.is_swept(i));
     let solid = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
-    let exact = CAPSULE;
+    let exact = SLID;
     assert!((solid.volume()-exact).abs() < 0.03*exact,"volume {} against {exact}",solid.volume());
     assert!(solid.contains_world(solid::WorldPoint([3.,0.,0.])));
     assert!(solid.contains_world(solid::WorldPoint([3.,0.2,1.6])));
@@ -252,7 +258,7 @@ fn a_swept_surface_is_refined_in_steps_and_supplied_to_the_drawing() {
     e.sketch.supply_field(i,surface).unwrap();
     assert!(!e.sketch.field_provisional(i).unwrap());
     let done = e.sketch.evaluated_solid(i,solid::ApproximationPolicy::Mesh).unwrap();
-    let exact = CAPSULE;
+    let exact = SLID;
     assert!(!done.provisional() && (done.volume()-exact).abs() < 0.03*exact,"{}",done.volume());
     assert!(done.stl().is_ok());
 }

@@ -54,10 +54,9 @@ pub enum Node {
     Through { profile: Section,sources: Vec<i64> },
     /// The body rule over nodes built before it.
     Body(Body),
-    /// A ball swept by a turn or a screw (`solid::canal`, #238): the ball of `radius` about `centre`
-    /// carried about the line through `origin` along `axis`, turning by `angle` and stepping
-    /// `advance`; `face` names the tube's faces.
-    Canal { centre: V,radius: f64,origin: V,axis: V,angle: f64,advance: f64,face: String },
+    /// A ball swept (`solid::canal`, #238, #684 D): the ball of `radius` about `centre` carried
+    /// along its centre's path (`Spine`); `face` names the tube's faces.
+    Canal { centre: V,radius: f64,spine: Spine,face: String },
     /// A region in general position (`solid::bounded`, #238): the common of the pieces kept within,
     /// less those kept outside.
     Region(Vec<Kept>),
@@ -69,6 +68,13 @@ pub enum Node {
     /// A face family's walls (`solid::family`, #243 L2).
     Family(Family),
 }
+
+/// The path a ball's centre runs (`Node::Canal`): carried by a screw about the line through
+/// `origin` along `axis`, turning by `angle` and stepping `advance` (a turn with no step, a slide
+/// with no turn), or along a path no closed form carries (#684 D), the ball's disc square to it a
+/// face family's one round wall, its stations read off the motion (`tube`).
+#[derive(Clone,Debug)]
+pub enum Spine { Screw { origin: V,axis: V,angle: f64,advance: f64 },Tube(Family) }
 
 /// A face family as its walls (`brep::family`): the pieces of its interval, the six stations of
 /// each, how short an edge's run at an end is to have vanished there (mm), and per loop of its
@@ -169,8 +175,12 @@ impl Node {
             }
             "through" => Node::Through {profile:profile()?,sources:ids(n,"sources")?},
             "body" => Node::Body(Body::read(n)?),
-            "canal" => Node::Canal {centre:point(n,"centre")?,radius:number(n,"radius")?,origin:point(n,"origin")?,
-                axis:point(n,"axis")?,angle:number(n,"angle")?,advance:number(n,"advance")?,
+            "canal" => Node::Canal {centre:point(n,"centre")?,radius:number(n,"radius")?,
+                spine:match n.get("tube") {
+                    Some(tube) => Spine::Tube(Family::read(tube)?),
+                    None => Spine::Screw {origin:point(n,"origin")?,axis:point(n,"axis")?,angle:number(n,"angle")?,
+                        advance:number(n,"advance")?},
+                },
                 face:field(n,"face")?.as_str().to_string()},
             "region" => Node::Region(each(field(n,"pieces")?.arr(),|p| Ok(Kept {node:Node::read(p)?,
                 keep:matches!(field(p,"keep")?,Json::Bool(true))}))?),

@@ -56,7 +56,7 @@ fn reflect(r: V, v: V, vv: f64) -> V {
 
 /// **One step of the rotation-minimising frame** (double reflection): the frame `f` at the point
 /// `x0` carried to the point `x1` with tangent `t1`.  A step that does not move keeps the frame.
-fn reflected(f: &Frame, x0: V, x1: V, t1: V) -> Frame {
+pub(crate) fn reflected(f: &Frame, x0: V, x1: V, t1: V) -> Frame {
     let v1 = sub(x1, x0);
     let c1 = dot(v1, v1);
     if c1 == 0.0 {

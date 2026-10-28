@@ -127,22 +127,41 @@ prism cutter's sheet the same way: `brep::sweep::extruded` (edges as lines/arcs,
 points over their fans, `generate::cut_at`, Hermite spans, extruded; `Family::in_frame`), else
 traced (`sweep::traced` kept to compare). `tests/extruded_envelope.rs`, `rack_cut.rs`.
 
-**A ball swept is its tube** (#238, `solid::canal`): a sweep whose tool's recipe is one ball
-(`brep::recipe::ball_of`) under one turn about one axis (`Family::turning`: a rotation, or a screw)
-is the points within the radius of its centre's path — the ball's disc square to the path carried
-along it (a partial `revolve`, a whole torus past a whole turn, or the disc carried to its
-screwed image by `build::ruled` along `Carry::Screw`, a `Blend` carried by a turn and a step)
-united with the half ball beyond each end (`brep::build::canal`): exact, its end poses the
-construction's own, so no clearance (E1) is asked and a sweep may stand alone. Refused (left the field's) where the tube would meet itself: the
-centre within the radius of the axis, or a helix past a turn climbing no more than the diameter a
-turn. The recipe's `"canal"` node (`centre`, `radius`, axis `origin`/`axis`, `angle`, `advance`,
-the ball's `face` naming every face; native OCCT refuses it by name); gated by agreement with the
-sweep's field (`Caches::canal`); `cad::contains_sweep`, `swept_cut` and `sweeps_among` read
-such a sweep as static material. Seams run off the path's plane (`build::SEAM`) and each half
-ball is a ball turned about an axis leaning off the path (`half_ball`, kept by `build::kept`): a
-plane through a sphere's parameter pole is a meeting this kernel's Booleans do not split.
-`swept_groove.sv`, `swept_spring.sv`, `solid_generating_sweep.sv`; `tests/canal.rs` (Pappus, to
-1e-9) is the gate. Field-path tests sweep the ball along a line instead (`solid_sweep.rs::slid`).
+**A ball swept is its tube** (#238, #684 D, `solid::canal`): a sweep whose tool's recipe is one
+ball (`brep::recipe::ball_of`), under any motion, is the points within the radius of its centre's
+path — the ball's disc square to the path carried along it, united with the half ball beyond each
+end: exact, its end poses the construction's own, so no clearance (E1) is asked and a sweep may
+stand alone. Under one turn, screw or slide (`Family::twist`) the path is closed form
+(`brep::build::canal`): a partial `revolve`, a whole torus past a whole turn, the disc carried to
+its screwed image by `build::ruled` along `Carry::Screw` (a `Blend` carried by a turn and a step),
+or to its slid image along `Carry::Line` (a cylinder; a slide is a screw of no turn), refused (left
+the constant twist's or the field's) where the centre stands within the radius of the axis or a
+helix past a turn climbs no more than the diameter a turn. Under any other motion — a relative
+roll, a frame along a path or one the drawing moves, a driven joint — the path is read off the
+motion (`canal::along`): the disc a face family's one closed `Run::Round` wall over the roll, its
+stations the centre's point and the radius vectors of the frame square to the path, carried from
+the start by double reflection (`motion::reflected`) once, over 4096 steps of the roll, any other
+roll one step from its nearest (`canal::Carried`), its pieces of the roll (Gauss–Lobatto,
+`family::weights`) each held to the disc read near both its ends within a face family's `EXACT` of
+the diameter, so the wall is fitted, and lies on a cylinder or a torus where its
+numbers do (`brep::family`'s `analytic`); built as the family and the end half balls united
+(`build::capped`). Its rows, sampled at points an eighth of the radius apart along the path
+(1024 to 32768) and said so, refuse it by name with a point of the path, in the canal class
+(`admission::Asked::Canal`, asked first by `admit_body` where no other class reads the motion):
+**B1** the path never stops and turns nowhere tighter than the radius; **B2** it comes back within
+the diameter (and the points' spacing) of itself nowhere half a turn of a circle of the radius
+along it from (`canal::refusal`). The recipe's `"canal"` node (`centre`, `radius`, the ball's
+`face` naming every face, and either the axis `origin`/`axis`, `angle`, `advance` or the face
+family's node as `tube`; native OCCT refuses it by name); gated by agreement with the sweep's
+field (`Caches::canal`, which remembers the refusal too); `cad::contains_sweep`, `swept_cut` and
+`sweeps_among` read such a sweep as static material. Seams run off the path's plane (`build::SEAM`)
+and each half ball is a ball turned about an axis leaning off the path (`half_ball`, kept by
+`build::kept`): a plane through a sphere's parameter pole is a meeting this kernel's Booleans do
+not split. `swept_groove.sv`, `swept_spring.sv`, `solid_generating_sweep.sv`,
+`solid_sweeps/path.sv`; `tests/canal.rs` (Pappus, to 1e-9) and `tests/ball_paths.rs` (a slide's
+capsule, a spline in space, a roll's trochoid, an arc's torus, B1 and B2, each length integrated
+apart) are the gate. Field-path tests sweep a cylinder along its axis instead
+(`solid_sweep.rs::slid`).
 
 **A sweep's roll through what it cuts** (#271, §6.9 [0.88]): `sweep(tool, through: body, under: m)`
 is `SolidDef::Swept { roll: model::Roll::Through { body } }` (`Roll::Stated` is `over t in (a, b)`,
@@ -252,8 +271,8 @@ refused at S4 in the walk (its sheet would lie over itself), and S1 also refuses
 a ring in contact all round between two walked stations whose path enters the blank
 (`constant_twist::stationary`: the amplitude turning right round, its three coefficients' least
 sought by `roots::brent`) — a turn about an axis the tool's meets, or a slide along the tool's
-axis — where the boundary leaves the walked branch with no root moving. A turn of one ball is
-still its tube. The accuracy meter reads a turn's characteristic over the whole roll.
+axis — where the boundary leaves the walked branch with no root moving. A turn or a slide of one
+ball is still its tube. The accuracy meter reads a turn's characteristic over the whole roll.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate (volumes computed
 apart: the lens, a circular segment, Pappus, and a tilted torus's shadow from its centre circle;
 the STL held to the field), with
@@ -302,7 +321,7 @@ against rows across the rod computed apart, placed and turned, against the long 
 tubes by Pappus, two tori rolled in the generating class, and the refusals.
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
-a class — the canal, a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, the planar subtraction
+a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, the planar subtraction
 class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;

@@ -56,11 +56,12 @@ fn a_torus_rolled_about_a_skew_axis_through_a_post_is_admitted() {
     assert_eq!(s.placements.len(),1);
 }
 
-/// With the spin and the observer's axes parallel, a sphere's poles (on its spin axis, normals
-/// along it) are in contact at every time, and one passes through the post.
+/// With the spin and the observer's axes parallel, a lens's poles (on its spin axis, normals
+/// along it) are in contact at every time, and one passes through the post. (A ball's were, until
+/// a ball's sweep under any motion was its tube, #684 D: below.)
 #[test]
 fn a_pole_in_contact_at_every_time_is_refused() {
-    let r = refused(admit(&document(&sphere(0.),&motions::roll(0.25),ROLLED,-60.,60.)));
+    let r = refused(admit(&document(&tools::lens(0.,0.2,false),&motions::roll(0.25),ROLLED,-60.,60.)));
     assert_eq!(r.condition,Condition::Stationary);
     assert!(r.message.contains("pole"),"{}",r.message);
 }
@@ -76,12 +77,17 @@ fn a_sweep_that_reaches_nothing_is_refused() {
 
 /// A ball under a single rotation is no generating sweep but the ball's tube (#238,
 /// `solid::canal`): built exactly, so the body it cuts is static and the class is never asked
-/// (whose contact rows would find it stationary, as a ring's below).
+/// (whose contact rows would find it stationary, as a ring's below). So it is under a roll, a
+/// slide and any motion (#684 D): the pole the roll's contact rows refuse, and the ends a slide's
+/// E1 refuses in the post, are no rows of a tube's (`tests/ball_paths.rs`).
 #[test]
-fn a_single_rotation_of_a_ball_is_its_tube() {
-    let e = fixtures::read(&document(&sphere(0.),motions::TURN_SPINDLE,"under: turn",-60.,60.));
-    assert!(gcs_core::solid::canal::is_canal(&e.sketch,fixtures::solid(&e,"removal")));
-    assert!(!e.sketch.is_swept(fixtures::solid(&e,"part")));
+fn a_ball_under_any_motion_is_its_tube() {
+    for (motion,reading,from) in [(motions::TURN_SPINDLE.to_string(),"under: turn",-60.),
+        (motions::roll(0.25),ROLLED,-60.),(motions::roll(0.25),ROLLED,-10.),(motions::slide_x(8.),"under: feed",-60.)] {
+        let e = fixtures::read(&document(&sphere(0.),&motion,reading,from,60.));
+        assert!(gcs_core::solid::canal::is_canal(&e.sketch,fixtures::solid(&e,"removal")),"{reading} from {from}");
+        assert!(!e.sketch.is_swept(fixtures::solid(&e,"part")),"{reading} from {from}");
+    }
 }
 
 /// A prism with no pocket is not asked the planar class's rows (#65): its cap is refused by T1.
@@ -93,27 +99,28 @@ fn a_prism_whose_cap_passes_through_the_blank_is_refused() {
 }
 
 /// A slide is asked the constant-twist class's rows (#684), as a screw is: this one leaves its
-/// ball in the post at both ends of its roll, refused at E1.
+/// lens in the post at both ends of its roll, refused at E1.
 #[test]
 fn a_slide_that_ends_in_the_blank_is_refused() {
-    let r = refused(admit(&document(&sphere(0.),&motions::slide_x(8.),"under: feed",-60.,60.)));
+    let r = refused(admit(&document(&tools::lens(0.,0.2,false),&motions::slide_x(8.),"under: feed",-60.,60.)));
     assert_eq!((r.condition,r.class()),(Condition::Clearance,"constant-twist class"));
 }
 
 #[test]
 fn a_roll_that_starts_in_the_blank_is_refused() {
-    let r = refused(admit(&document(&sphere(0.),&motions::roll(0.25),ROLLED,-10.,60.)));
+    let r = refused(admit(&document(&tools::lens(0.,0.2,false),&motions::roll(0.25),ROLLED,-10.,60.)));
     assert_eq!(r.condition,Condition::Clearance);
     let p = r.witness.unwrap();
     assert!((p[0]-3.).hypot(p[1]) < 0.4+1e-6 && p[2].abs() <= 2.,"the witness is in the post: {p:?}");
 }
 
 /// A union tool is no longer refused for adding solids (#684 C): its sweep is its members' sweeps,
-/// each asked its own rows, so a sphere and its twin under the roll are refused where the sphere
+/// each asked its own rows, so a lens and its twin under the roll are refused where the lens
 /// alone is, at a pole in contact at every time, naming the member (`tests/union_tools.rs`).
 #[test]
 fn a_union_tools_members_are_asked_their_own_rows() {
-    let tool = format!("{}construction twin := tool at(under: observer) 20deg\nconstruction lump := solid(tool)\ntwin union lump\n",sphere(0.));
+    let tool = format!("{}construction twin := tool at(under: observer) 20deg\nconstruction lump := solid(tool)\ntwin union lump\n",
+        tools::lens(0.,0.2,false));
     let source = format!("{tool}{}construction removal := sweep(lump over t in (-60deg, 60deg), under: spin, seen_from: observer)\n{}",motions::roll(0.25),centred_post());
     let r = refused(admit(&source));
     assert_eq!((r.condition,r.sweep.as_str()),(Condition::Stationary,"removal"));
@@ -198,7 +205,7 @@ fn the_bevel_pinion_is_admitted_once_for_every_index() {
 #[test]
 fn an_indexed_ring_is_alike_by_its_revolution_and_a_boxed_ring_by_sampling() {
     let ring = |extra: &str| format!("{}{}construction removal := sweep(tool over t in (-35deg, 35deg), under: spin, seen_from: observer)\n{}{extra}",
-        sphere(2.),cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
+        tools::lens(2.,0.2,false),cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
     let boxed = "\
 use std
 in std.front {
@@ -424,7 +431,7 @@ fn a_material_side_agrees_with_its_enclosure() {
 fn an_indexed_field_read_a_sector_at_a_time_decides_as_the_whole_field() {
     use gcs_core::interval::{Interval,minimum::{self,Stop}};
     use gcs_core::solid::{agreement,MaterialField};
-    let source = format!("{}{}construction removal := sweep(tool over t in (-35deg, 35deg), under: spin, seen_from: observer)\n{}",sphere(2.),
+    let source = format!("{}{}construction removal := sweep(tool over t in (-35deg, 35deg), under: spin, seen_from: observer)\n{}",tools::lens(2.,0.2,false),
         cradle_roll(2.5,Observer::Parallel),tools::indexed_ring(6,3.5,4.2,1.7,2.3));
     let e = fixtures::read(&source);
     let body = fixtures::solid(&e,"part");

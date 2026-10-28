@@ -14,6 +14,7 @@ Read them in this order:
 | File | Class | What it shows |
 |---|---|---|
 | `ball.sv` | the canal | **A ball's sweep is its tube.** A ball swung a quarter turn about an upright axis, half sunk in a block: the tube about its centre's path with half a ball at each end, whatever the motion turns it by. Pappus. |
+| `path.sv` | the canal, along any path | **A ball carried along any curve.** A ball riding a frame along a spline in a block's top face: the tube about its centre's path, fitted to it, with half a ball at each end. The volume is π r² L + 4/3 π r³ with L the spline's length. |
 | `slide.sv` | constant twist: a slide | **A tool slid along a line.** A torus slid up a rod, clear at both ends: the wall is the wheel's characteristic extruded, here its tube's circle, and the groove the lens the rod and the tube share. Tilt it and the wall is no circle of it. |
 | `turn.sv` | constant twist: a turn | **A tool turned partway about an axis.** A torus leaning across the turn swung over a curved block: the wall is its characteristic laid in a half-plane through the axis and revolved. Pappus over the torus's shadow. |
 | `screw.sv` | constant twist: a screw | **A tool carried along a helix.** The same wheel screwed up the rod: the characteristic is read once on the wheel and carried along the helix, so the groove's section is the same at every height, turned. |

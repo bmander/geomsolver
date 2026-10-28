@@ -123,9 +123,10 @@ pub struct Caches {
     /// each face, edge and corner glued to it (`solid::grown::built`), against `solid::reads`: the
     /// sweep test, the recipe and the exact boundary each ask it, and its gate reads the field.
     pub(crate) grown: Memo<Option<Result<Rc<crate::solid::grown::Grown>, String>>>,
-    /// Each ball's sweep built as its tube (`solid::canal::built`, #238), against `solid::reads`:
-    /// the sweep test, the recipe and the exact boundary each ask it, and its gate reads the field.
-    pub(crate) canal: Memo<Option<Result<Rc<crate::solid::canal::Canal>, String>>>,
+    /// Each ball's sweep built as its tube or refused by its rows (`solid::canal::built`, #238, #684
+    /// D), against `solid::reads`: the sweep test, the recipe, the exact boundary and admission each
+    /// ask it, and its gate reads the field.
+    pub(crate) canal: Memo<Option<Result<Rc<crate::solid::canal::Canal>, crate::solid::canal::Why>>>,
     /// Each sweep's roll through a body (`solid::roll::interval`, #271), against `solid::reads`:
     /// admission, the field and the exact construction each ask it.
     pub(crate) roll: Memo<Result<[f64; 2], String>>,

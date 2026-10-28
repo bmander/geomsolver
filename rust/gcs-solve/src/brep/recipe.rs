@@ -15,7 +15,7 @@ type Built = Result<Brep,KernelError>;
 
 mod node;
 mod writer;
-pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Stroke};
+pub use node::{Body,Corner,Edge,Family,FamilyWall,Kept,Lowered,Named,Node,Recipe,Rolled,Run,Section,Spine,Stroke};
 pub use writer::Writer;
 
 /// Between a face's solid and its own name while a recipe is built (`build`, `meridian`,
@@ -55,9 +55,13 @@ impl Node {
             }
             Node::Through {profile,sources} => through_node(profile,sources,built),
             Node::Body(b) => body(b,built,built_names,floor),
-            // a ball swept by a turn or a screw (`solid::canal`, #238): the tube about its centre's path
-            Node::Canal {centre,radius,origin,axis,angle,advance,face} =>
-                Ok(super::build::canal(*centre,*radius,*origin,*axis,*angle,*advance,face)?),
+            // a ball swept (`solid::canal`, #238): the tube about its centre's path, a screw's or
+            // one no closed form carries (#684 D), its disc a face family's wall
+            Node::Canal {centre,radius,spine,face} => match spine {
+                Spine::Screw {origin,axis,angle,advance} =>
+                    Ok(super::build::canal(*centre,*radius,*origin,*axis,*angle,*advance,face)?),
+                Spine::Tube(f) => Ok(super::build::capped(family_node(f)?,&f.loops,*radius,face)?),
+            },
             Node::Region(pieces) => region_node(pieces,built,built_names,floor),
             Node::Grown {body,pieces} => grown_node(*body,pieces,built,built_names,floor),
             Node::Lowered(l) => lowered_node(l,built,built_names,floor),
