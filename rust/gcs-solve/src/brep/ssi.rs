@@ -10,7 +10,7 @@
 use crate::fmath::Det;
 use super::geom::{Curve,Frame,Surface,V};
 use super::plane2;
-use crate::space::{add,cross,distance,dot,norm,scale,sub,unit};
+use crate::space::{add,cross,distance,dot,norm,scale,segment_distance,sub,unit};
 
 /// What two surfaces share.
 #[derive(Clone,Debug,PartialEq)]
@@ -441,6 +441,9 @@ pub(crate) fn solve3(m: [V;3],rhs: V) -> V {
     [col(0)/det,col(1)/det,col(2)/det]
 }
 
+/// How far `p` stands off two surfaces at once: the larger of their signed distances' sizes.
+fn off_both(a: &Surface,b: &Surface,p: V) -> f64 { a.implicit(p).abs().max(b.implicit(p).abs()) }
+
 /// The sine of the angle two surfaces meet at, below which a trace is ill-conditioned (a point
 /// within `tol` of both may be `tol / sin θ` off their meeting, and where they touch their meeting
 /// has a singular point): refused, not traced (one degree).
@@ -545,7 +548,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
     // the other
     let projected: Vec<V> = seeds.iter().map(|&s| probe.project(s)).collect();
     let edge_seeds: Vec<V> = projected.iter().copied()
-        .filter(|&q| a.implicit(q).abs().max(b.implicit(q).abs()) <= 16.*tol).collect();
+        .filter(|&q| off_both(a,b,q) <= 16.*tol).collect();
     // the curves traced so far, as traced (exact: each point a projection onto both surfaces), so a
     // seed on one is known by its distance to the curve and not to a polyline's chords
     let mut traced_so_far: Vec<Curve> = Vec::new();
@@ -615,7 +618,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                 // the signed one alone, a trace went back and forth at an edge a hundred thousand times
                 let lands = |q: V| {
                     let off = |s: &Surface| s.off_patch(q).unwrap_or(0.);
-                    a.implicit(q).abs().max(b.implicit(q).abs()).max(off(a)).max(off(b)) <= 16.*tol
+                    off_both(a,b,q).max(off(a)).max(off(b)) <= 16.*tol
                 };
                 if !lands(q) {
                     // a step too long for the projection to land: shorter, as a turn too sharp is
@@ -691,7 +694,7 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
     // each fitted through the seeds on it, exactly: they are where the faces' boundaries cross, the
     // vertices its edges will end at (a fit within `tol` of the traced points may pass farther from
     // a vertex between them, where a swept surface's curve runs on into its tangent)
-    for c in traced_so_far {
+    for c in distinct(traced_so_far,tol) {
         let Curve::Traced(t) = &c else { unreachable!() };
         let through: Vec<(f64,V)> = projected.iter().filter_map(|&p| {
             let x = c.inverse(p);
@@ -708,50 +711,42 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
         }).collect();
         curves.push(fitted(t,tol/4.,&through).unwrap_or(c));
     }
-    Ok(distinct(curves,a,b,tol))
+    Ok(curves)
 }
 
-/// **One curve a meeting**: of two curves traced, one lying within `8 tol` of the other all along
+/// **One curve a meeting**: of two traces, one whose points all lie within `8 tol` of the other
 /// is that meeting traced again — a march that left a seed on its meeting unrecognised (its chord
 /// cutting a turn the seed stands on), traced once more from it — and is dropped: the other where
-/// it reaches farther, else whichever lies nearer both surfaces. Two edges along one meeting split
-/// no cell (`vthread.sv`'s fan: the split took the copy 3.4e-6 off it).
-fn distinct(curves: Vec<Curve>,a: &Surface,b: &Surface,tol: f64) -> Vec<Curve> {
-    if curves.len() < 2 { return curves }
-    // each curve's points at 32 steps of its parameter, and the farthest of them from either
-    // surface
-    let read = |c: &Curve| -> Option<(Vec<V>,f64)> {
-        let [t0,t1] = match c {
-            Curve::BSpline(s) => s.domain(),
-            Curve::Traced(t) => [0.,(t.pts.len()-1) as f64],
-            _ => return None,
-        };
-        let pts: Vec<V> = (0..=32).map(|k| c.point(t0+(t1-t0)*k as f64/32.)).collect();
-        let off = pts.iter().map(|&p| a.implicit(p).abs().max(b.implicit(p).abs())).fold(0.,f64::max);
-        Some((pts,off))
+/// it reaches farther, else whichever took the shorter longest step, its chords cutting no turn the
+/// other's do. Read on the traces, before either is fitted, so the one kept is fitted through every
+/// seed on the meeting; two edges along one meeting split no cell (`vthread.sv`'s fan: the split
+/// took the copy whose fit ran 3.4e-6 off it).
+fn distinct(traced: Vec<Curve>,tol: f64) -> Vec<Curve> {
+    // up to 33 of its points, evenly by index and its ends among them (on both surfaces already),
+    // and its longest step
+    let read = |t: &super::geom::Traced| {
+        let (n,m) = (t.pts.len()-1,(t.pts.len()-1).min(32));
+        let pts: Vec<V> = (0..=m).map(|k| t.pts[k*n/m]).collect();
+        (pts,t.pts.windows(2).map(|w| distance(w[0],w[1])).fold(0.,f64::max))
     };
     // (its ends within two marches' slack: each lands within `16 tol` past a patch's edge, which
     // its edge's vertex trims, so one reaching that much farther reaches no farther)
     let along = |pts: &[V],c: &Curve| pts.iter().enumerate().all(|(k,&p)| {
         distance(c.point(c.inverse(p)),p) <= if k == 0 || k+1 == pts.len() { 32. } else { 8. }*tol
     });
-    let mut kept: Vec<(Curve,Option<(Vec<V>,f64)>)> = Vec::new();
-    for c in curves {
-        let r = read(&c);
-        // `Err` where `c` is a kept curve's, `Ok(i)` where kept curve `i` is `c`'s
-        let same = r.as_ref().and_then(|(pc,oc)| kept.iter().enumerate().find_map(|(i,(k,rk))| {
-            let (pk,ok) = rk.as_ref()?;
-            let (c_on_k,k_on_c) = (along(pc,k),along(pk,&c));
-            if c_on_k && (!k_on_c || ok <= oc) { Some(Err(())) }
-            else if k_on_c { Some(Ok(i)) } else { None }
-        }));
-        match same {
-            Some(Err(())) => {}
-            Some(Ok(i)) => kept[i] = (c,r),
-            None => kept.push((c,r)),
+    let mut kept: Vec<(Curve,Vec<V>,f64)> = Vec::new();
+    'next: for c in traced {
+        let Curve::Traced(t) = &c else { unreachable!() };
+        let (pc,hc) = read(t);
+        for k in kept.iter_mut() {
+            let c_on_k = along(&pc,&k.0);
+            if c_on_k && k.2 <= hc { continue 'next }
+            if along(&k.1,&c) { *k = (c,pc,hc); continue 'next }
+            if c_on_k { continue 'next }
         }
+        kept.push((c,pc,hc));
     }
-    kept.into_iter().map(|(c,_)| c).collect()
+    kept.into_iter().map(|(c,..)| c).collect()
 }
 
 /// **The steps crowding a march's end dropped**, `end` about to be pushed: a fit through points a
@@ -764,8 +759,7 @@ fn drop_crowding(pts: &mut Vec<V>,end: V,reach: f64,tol: f64) {
     let mut keep = pts.len();
     for k in (1..pts.len()).rev() {
         if distance(pts[k],end) >= reach { break }
-        let chord = |m: V| crate::space::segment_distance(m,pts[k-1],end);
-        if !pts[k..].iter().all(|&m| chord(m) <= tol) { break }
+        if !pts[k..].iter().all(|&m| segment_distance(m,pts[k-1],end) <= tol) { break }
         keep = k;
     }
     pts.truncate(keep);
@@ -918,7 +912,7 @@ pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &
             if near_known(p,2.*reach+spacing) { continue }
             let q = probe.project(p);
             if beside(q) { continue }
-            if a.implicit(q).abs().max(b.implicit(q).abs()) <= 16.*tol {
+            if off_both(a,b,q) <= 16.*tol {
                 // a meeting beyond the shared box is on neither face; one on a known curve says
                 // nothing of this cell, which is halved
                 if (0..3).any(|k| q[k] < lo[k]-pad || q[k] > hi[k]+pad) { continue }
@@ -998,14 +992,15 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
     // beside an end (a vertex the fit passes through, between two traced points) would crowd it
     let middle = |a: f64,b: f64| { let m = ((a+b)/2.).floor(); if b-a >= 2. && (m-a).min(b-m) >= (b-a)/4. { m } else { (a+b)/2. } };
     let debug = super::debug();
-    // of the fits the trace's check accepted, the one with the fewest gaps off the surfaces
-    let mut best: Option<(Curve,usize)> = None;
+    // of the fits the trace's check accepted, the one with the fewest gaps off the surfaces, and
+    // their count
+    let (mut best,mut fewest) = (None,usize::MAX);
     for round in 0..24 {
         let pts: Vec<V> = at.iter().map(|&x| point(x)).collect();
         let mut s = vec![0.];
         for w in pts.windows(2) { s.push(s.last().unwrap()+crate::space::distance(w[0],w[1])); }
-        if !(*s.last().unwrap() > 0.) || s.windows(2).any(|w| !(w[1] > w[0])) { return best.map(|(c,_)| c) }
-        let Some(spline) = super::nurbs::interpolate(&pts,&s,3) else { return best.map(|(c,_)| c) };
+        if !(*s.last().unwrap() > 0.) || s.windows(2).any(|w| !(w[1] > w[0])) { break }
+        let Some(spline) = super::nurbs::interpolate(&pts,&s,3) else { break };
         let fit = Curve::BSpline(std::sync::Arc::new(spline));
         let mut split = vec![false;at.len()-1];
         for (k,w) in at.windows(2).enumerate() {
@@ -1022,7 +1017,7 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
             // a gap an eighth of a step wide misses by the traced curve's own noise, and is left
             split[k] = b-a > 0.125 && inner.into_iter().any(off);
         }
-        let mut missed = split.iter().filter(|&&x| x).count();
+        let near = !split.contains(&true);
         // and once near every point of the trace, on both surfaces between its points, to the
         // trace's own `4 tol`: what an edge made from it is held to. A fit near every point it
         // was read at may still stray between them (one through a trace that cut a sharp rim's
@@ -1032,27 +1027,22 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
         // crowded closer each split (a chamfer's foot on a sheet, 1.4e-6 off in a gap a
         // twentieth of a step wide, doubled its strays every round), and there the fit with the
         // fewest is the answer — as near both as interpolation through the trace comes
-        let mut strays = 0;
-        if missed == 0 {
-            let on = |u: f64| {
-                let q = super::geom::Curve::point(&fit,u);
-                t.a.implicit(q).abs().max(t.b.implicit(q).abs()) <= 4.*tol
-            };
+        if near {
+            let on = |u: f64| off_both(&t.a,&t.b,super::geom::Curve::point(&fit,u)) <= 4.*tol;
             for k in 0..split.len() {
                 split[k] = !(1..4).all(|j| on(s[k]+(s[k+1]-s[k])*j as f64/4.));
             }
-            strays = split.iter().filter(|&&x| x).count();
-            missed = strays;
-            match &best {
-                Some((_,fewest)) if strays >= *fewest => return best.map(|(c,_)| c),
-                _ => if strays > 0 { best = Some((fit.clone(),strays)) },
-            }
         }
+        let missed = split.iter().filter(|&&x| x).count();
         if debug {
             eprintln!("brep: fit of a {} × {} trace, round {round}: {} of {} points, {missed} gaps \
-                missed ({strays} off the surfaces)",t.a.kind(),t.b.kind(),at.len(),t.pts.len());
+                missed{}",t.a.kind(),t.b.kind(),at.len(),t.pts.len(),if near { " off the surfaces" } else { "" });
         }
         if missed == 0 { return Some(fit) }
+        if near {
+            if missed >= fewest { break }
+            (best,fewest) = (Some(fit),missed);
+        }
         // graded: a gap more than twice a neighbour's length (as that neighbour will be) is split too
         loop {
             let width = |k: usize,split: &[bool]| { let w = s[k+1]-s[k]; if split[k] { w/2. } else { w } };
@@ -1072,7 +1062,7 @@ fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve>
         }
         at = next;
     }
-    best.map(|(c,_)| c)
+    best
 }
 
 /// The parameter of the point of `c` nearest `p`, by Newton from `t`.

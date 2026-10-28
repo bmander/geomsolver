@@ -104,12 +104,7 @@ fn every_object_of_the_library_builds_as_the_export_builds_it() {
 /// both surfaces between its points, and one curve kept of a meeting traced twice.
 #[test]
 fn a_sharp_rims_fan_builds_at_the_displays_samples() {
-    let sk = document(&crate::solid_sweeps_examples::text("vthread.sv"));
-    let rod = sk.solids.iter().position(|s| s.name == "rod").unwrap();
-    let (d,_) = stepped(&sk,rod).unwrap_or_else(|e| panic!("{e}"));
-    let (_,volume) = exported(&sk,rod).unwrap();
-    let within = export::GROSS/sk.units.mm_per()*area(&d);
-    assert!((d.faces.volume-volume).abs() <= within,"{} against the export's {volume}, within {within}",d.faces.volume);
+    assert_eq!(corpus(&["solid_sweeps/vthread.sv".to_string()],true),1);
 }
 
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
