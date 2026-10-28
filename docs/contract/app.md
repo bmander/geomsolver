@@ -480,6 +480,19 @@ Part of the [contract](../../CLAUDE.md) the code is held to. Read it when you to
   layer)`; the default layer is the panel's picked statement and verdicts, `occurrences` this) and
   tells **the caret** (`onCaret(edited)`, once per move or edit however many events report it),
   which is all a feature reading the word under the caret needs.
+- **The editor has a right-click menu, as every code editor does** (`app/code-menu.ts`, wired in
+  `program.ts`): **Go to definition** — the caret where the name under it is given
+  (`occurrences.ts::definitionOf`, the core's index read: the first place given, or standing on
+  one the next round; greyed where the text gives the name nowhere — a type, a line's `p1`, a
+  name half-typed), the caret *put* there as a click puts it, so what it names is selected in
+  the workspace — then Cut, Copy, Paste and Select all, through the box as typing goes so an undo
+  takes them back.  A right-click outside the selection puts the caret where it was pressed
+  (`CodeEditor.offsetAt`, read off the copy), one inside keeps it; ⇧F10 and the menu key open it
+  at the caret (`CodeEditor.pointAt`); ⇧ on the right-click lets the browser's own through.
+  **The menu never takes the focus from the text**: a blur applies a draft, whose reprint moves
+  the offsets the menu was opened on, so its keys are read off the box while it is open and a
+  press on it keeps the focus where it was.  `CodeMenu` knows nothing of Solvent; it is handed
+  its rows when it opens.  `web/src/test/occurrences.test.ts` gates `definitionOf`.
 - **The text and the drawing are one thing, read two ways** (`app/names.ts`): what is selected in
   the workspace — an entity, a body, by a press, a band or the outline — is lit wherever the text
   names it, in the occurrences' inks and a layer of its own (`selected`, which an edit lets go

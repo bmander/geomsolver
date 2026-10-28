@@ -10,7 +10,9 @@
  *   * after a short pause, so arrowing through text does not flicker, and gone at once on an
  *     edit, whose offsets the old answer no longer fits;
  *   * F7 and ⇧F7 step the caret to the next and the previous place (VS Code's keys), round the
- *     end of the file.
+ *     end of the file;
+ *   * Go to definition (the editor's right-click menu, `code-menu.ts`) puts the caret where the
+ *     name is given — standing there already, on the next place it is given, if there is one.
  *
  * And one of this app's, whose text and drawing are one thing: the caret *put* on a name — by a
  * click, an arrow, F7, never by typing — is told to `onName`, which selects what it names in the
@@ -62,6 +64,17 @@ export function stepTo(index: Symbols, lo: number, hi: number, step: 1 | -1): Oc
   const all = index.of(o.symbol);
   const k = all.indexOf(o);
   return all[(k + step + all.length) % all.length];
+}
+
+/** Where Go to definition puts the caret from `lo`..`hi`: the place the name there is given —
+ *  standing on one, the next one round, as F7 steps — or null where the caret means no name, or
+ *  one nothing in the text gives (a member of a line, a name half-typed). */
+export function definitionOf(index: Symbols, lo: number, hi: number): Occurrence | null {
+  const o = meant(index, lo, hi);
+  if (!o) return null;
+  const given = index.of(o.symbol).filter((g) => g.def);
+  if (!given.length) return null;
+  return o.def ? given[(given.indexOf(o) + 1) % given.length] : given[0];
 }
 
 /** The occurrences of the name under an editor's caret, lit (module header). */
@@ -119,6 +132,22 @@ export class Occurrences {
     this.ed.select(to.lo);
     this.update();
     return true;
+  }
+
+  /** Where Go to definition would put the caret now (`definitionOf`), or null. */
+  definition(): Occurrence | null {
+    const index = this.symbols();
+    const { lo, hi } = this.ed.caret;
+    return index && definitionOf(index, lo, hi);
+  }
+
+  /** Put the caret on `o`, as the caret put there by hand — what it names selected in the
+   *  workspace (`onName`). */
+  goTo(o: Occurrence): void {
+    this.ed.select(o.lo);
+    // put, even where the caret already stood there and moving it told nobody
+    this.put = true;
+    this.update();
   }
 
   private later(): void {
