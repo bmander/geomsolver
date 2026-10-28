@@ -533,9 +533,19 @@ fn a_line_meets_a_cylinder_in_closed_form() {
     assert!(matches!(curve_surface(&Curve::Line {p:[2.5,2.,0.],d:[0.,0.,1.]},[-9.,9.],&cyl,1e-9),Meets::Along));
 }
 
+/// A traced curve's parameter span: a fit's domain, or a trace's steps.
+fn span(c: &gcs_core::brep::geom::Curve) -> [f64;2] {
+    use gcs_core::brep::geom::Curve;
+    match c {
+        Curve::BSpline(b) => b.domain(),
+        Curve::Traced(t) => [0.,(t.pts.len()-1) as f64],
+        other => panic!("a {} where a trace was expected",other.kind()),
+    }
+}
+
 #[test]
 fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
-    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::geom::Surface;
     // a curved sheet over [0, 10] × [0, 10], cut by the plane x = 4: the meeting runs from the sheet's
     // edge at v = 0 to its edge at v = 1, each crossing a seed; traced from one, it ends at both
     let f = |u: f64,v: f64| [10.*u,10.*v,(2.*u).sin()+v*v];
@@ -548,7 +558,7 @@ fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
         let curves = gcs_core::brep::ssi::trace(&plane,&sheet,&seeds,[-1.;3],[11.;3],tol).unwrap();
         assert_eq!(curves.len(),1);
         let c = &curves[0];
-        let span = match c { Curve::BSpline(b) => b.domain(),Curve::Traced(t) => [0.,(t.pts.len()-1) as f64],_ => panic!("{}",c.kind()) };
+        let span = span(c);
         let (a,z) = (c.point(span[0]),c.point(span[1]));
         // its ends the crossings, either way round: a seed exactly, else where the last step,
         // halved, still lands on the sheet (within the march's slack)
@@ -563,6 +573,47 @@ fn a_trace_leaving_a_sheet_ends_where_its_edge_crosses() {
         for k in 0..=1000 {
             let p = c.point(span[0]+(span[1]-span[0])*k as f64/1000.);
             assert!(plane.implicit(p).abs() <= 16.*tol && sheet.implicit(p).abs() <= 16.*tol,"{seeds:?}: {k}: {p:?}");
+        }
+    }
+}
+
+/// **A trace keeps a sharp turn at its end** (#684 E): a sheet whose ridge turns at a radius of
+/// 0.009 mm, cut by a plane in a V 3 mm long whose apex (of radius 0.003 mm, turning 143°) stands
+/// 0.03 mm from where it leaves the sheet's edge, while the march's step `h0`, read off the sheet's
+/// size, is 0.2 mm: the steps round the apex crowd that end, and are kept where they carry the
+/// turn. Dropped by their distance alone, a chord was left across the apex. Traced from either
+/// end the curve is one, through the apex, and on both surfaces.
+#[test]
+fn a_trace_keeps_a_sharp_turn_at_its_end() {
+    use gcs_core::brep::geom::Surface;
+    // z = y − y0 + s (√((x − cx)² + ε²) − ε), its x laid out by a sinh so the net's poles crowd
+    // at the ridge: x − cx = ε sinh w
+    let (s,eps,cx,y0): (f64,f64,f64,f64) = (3.,0.009,0.99,39.96);
+    let a = ((1.-cx)/eps).asinh()+(cx/eps).asinh();
+    let uc = (cx/eps).asinh()/a;
+    let f = |u: f64,v: f64| {
+        let (w,y) = (a*(u-uc),30.+10.*v);
+        [cx+eps*w.sinh(),y,y-y0+s*eps*(w.cosh()-1.)]
+    };
+    let (net,_) = gcs_core::brep::nurbs::fit_net(&f,3,3,16,4,1e-10).unwrap();
+    let sheet = Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),std::sync::Arc::new(net.clone()));
+    let plane = Surface::Plane(Frame::about([0.;3],[0.,0.,1.]));
+    let tol = 1e-6;
+    // where it leaves: the edge x = 1 just past the apex, and the edge x = 0 down the far leg
+    let q = |x: f64| s*(((x-cx)*(x-cx)+eps*eps).sqrt()-eps);
+    let ends = [[1.,y0-q(1.),0.],[0.,y0-q(0.),0.]];
+    let apex = [cx,y0,0.];
+    for seeds in [vec![ends[1]],vec![ends[0]],vec![ends[1],ends[0]]] {
+        let curves = gcs_core::brep::ssi::trace(&plane,&sheet,&seeds,[-1.,29.,-5.],[2.,41.,5.],tol).unwrap();
+        assert_eq!(curves.len(),1,"{seeds:?}");
+        let c = &curves[0];
+        let span = span(c);
+        let near = gcs_core::space::distance(c.point(c.inverse(apex)),apex);
+        assert!(near <= 16.*tol,"{seeds:?}: the curve passes {near:e} from the apex");
+        for k in 0..=4000 {
+            let p = c.point(span[0]+(span[1]-span[0])*k as f64/4000.);
+            let off = plane.implicit(p).abs().max(sheet.implicit(p).abs());
+            assert!(off <= tol,"{seeds:?}: {k}: {p:?} off by {off:e}");
         }
     }
 }
@@ -986,11 +1037,7 @@ fn a_trace_off_a_sheets_patch_ends_at_its_edge() {
     assert_eq!(curves.len(),1);
     // the half circle on the patch, its ends at x = 1 (within a step's halving at the edge)
     let c = &curves[0];
-    let [t0,t1] = match c {
-        gcs_core::brep::geom::Curve::BSpline(b) => b.domain(),
-        gcs_core::brep::geom::Curve::Traced(t) => [0.,(t.pts.len()-1) as f64],
-        other => panic!("a {} where a trace was expected",other.kind()),
-    };
+    let [t0,t1] = span(c);
     let ends = [c.point(t0),c.point(t1)];
     for e in ends { assert!((e[0]-1.).abs() < 1e-3 && e[0] <= 1.+1e-6,"{ends:?}"); }
 }

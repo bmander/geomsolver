@@ -298,8 +298,11 @@ the rows where the walk runs onto and off a fan are exact rows of the grid (`Cha
 kept by refinement), and the fitted sheet is cut there into faces (`Fitted::named`, the bands
 unnamed: a fan is no face of the tool). Kernel rule it found: a near-crease in one fitted net lets
 a point of one flank be inverted onto the other, a pcurve off its edge by a tenth of a millimetre
-and a split with no cell; cut into faces, each inverts on its own. `Characteristic::fans` names the
-corners walked. `solid_sweeps_examples.rs` (`vthread.sv`, a V wheel ground along a helix, its
+and a split with no cell; cut into faces, each inverts on its own. And a second: a plane meets the
+fan in a curve shorter than a march's step (0.09 mm against `h0`'s 0.22), which a trace keeps
+round the rim's tip and traces once ([brep.md](brep.md);
+`object_builder::a_sharp_rims_fan_builds_at_the_displays_samples`). `Characteristic::fans` names
+the corners walked. `solid_sweeps_examples.rs` (`vthread.sv`, a V wheel ground along a helix, its
 section computed apart from the core) and `turns_and_slides.rs` (a V wheel slid tilted, its shadow;
 slid square, refused at S1 for its sharp edge) are the gate, each STL held to the field.
 

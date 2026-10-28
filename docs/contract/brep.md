@@ -15,6 +15,20 @@ seam curves), `recipe`. A traced pair is seeded where edges cross faces; between
 surfaces `ssi::unseen` then searches one face for curves no edge reaches (cells proved clear by
 the signed distance's Lipschitz and second-order bounds, else beside a known curve, else seeded),
 refusing what it cannot resolve: an untraced meeting is never read as none (issue #58).
+**A traced meeting is one curve, on both surfaces, keeping its turns** (`ssi::trace_beside`,
+#684 E). A march ending at a patch's edge or a touch drops the points crowding that end (within a
+quarter of its step `h0`) only while the chord from the point kept before them to the end passes
+within `tol` of each, so a turn sharper than `h0` near an end is kept, not cut to a chord
+(`drop_crowding`). Its fit is accepted near every traced point and then on both surfaces between its
+points, to the trace's `tol`, refined where it strays for as long as that leaves fewer gaps off
+them; where it does not (a gap narrower than the trace's noise, whose splitting crowds the cubic's
+points and makes it wiggle the more) the fit with the fewest is kept (`fitted`). Of two traces, one
+lying along the other — its ends within two marches' slack — is that meeting traced again from a
+seed the first left unrecognised, and only one is kept, before either is fitted: the one reaching
+farther, else the one whose longest step is shorter (`distinct`).
+`brep::a_trace_keeps_a_sharp_turn_at_its_end` (a V of apex radius 0.003 mm, 0.03 mm from the sheet's
+edge, against an `h0` of 0.2) and `object_builder::a_sharp_rims_fan_builds_at_the_displays_samples`
+(`vthread.sv` at the page's samples, which each of the three builds alone) are the gate.
 **A point is read against a face by one drawing of its boundary** (`query::Outline`): each edge
 cut in chords until every chord's middle lies within a bar of the edge in space, carrying its
 `sag`, how far a chord strays at most. Its winding says inside only for a point clear of every

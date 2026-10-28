@@ -95,6 +95,18 @@ fn every_object_of_the_library_builds_as_the_export_builds_it() {
     corpus(&names,true);
 }
 
+/// **A sharp rim's fan builds at the display's samples** (`?example=solid_sweeps`, `vthread.sv`):
+/// the rod's end planes meet the fan the V wheel's rim sweeps in a curve 0.09 mm long, shorter than
+/// a march's step there (0.22 mm). Dropping every point within a quarter of a step of an end cut it
+/// to a chord across the rim's tip, the meeting was traced again from a seed that chord missed, and
+/// the split took the copy whose fit ran 3.4e-6 off the fan, refusing a cell. Each of the trace's
+/// three rules builds it alone (`docs/contract/brep.md`): the turn's steps kept, the fit held to
+/// both surfaces between its points, and one curve kept of a meeting traced twice.
+#[test]
+fn a_sharp_rims_fan_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/vthread.sv".to_string()],true),1);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \
