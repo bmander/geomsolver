@@ -185,3 +185,44 @@ fn the_rolled_union_cuts_what_its_members_cut_in_turn() {
     let paths = gcs_core::solid::faces::face_paths(&union.sketch,fixtures::solid(&union,"part"));
     assert!(paths.iter().any(|p| p.text() == "removal.tool.ring" ),"{:?}",paths.iter().map(|p| p.text()).collect::<Vec<_>>());
 }
+
+/// The page's stepped build of `body` (`brep::export::Builder`), each stage counted, and its volume
+/// against the export's.
+fn stepped_as_exported(text: &str,body: &str) {
+    let e = fixtures::read(text);
+    let i = fixtures::solid(&e,body);
+    let mut b = gcs_core::brep::export::Builder::new(&e.sketch,i).unwrap_or_else(|r| panic!("{}",r.message));
+    while !b.step().unwrap_or_else(|r| panic!("{}",r.message)) {}
+    let (done,total) = b.stages();
+    assert_eq!(done,total,"`{body}`'s stages counted");
+    let say = gcs_core::brep::sweep::Say {stage:&|_| {},mark:&|_| {}};
+    let x = gcs_core::brep::export::exact(&e.sketch,i,None,None,&say).unwrap_or_else(|r| panic!("{}",r.message));
+    near(b.display().unwrap().faces.volume,gcs_core::brep::props::volume(&x.solid),1e-3);
+}
+
+/// The page builds a union's cut a stage at a time from the same copy the export does: the beads'
+/// rod, its sweeps sheets of the copy; the two balls' block, static there; and each as the swept
+/// operand of a body built from it.
+#[test]
+fn the_page_builds_a_unions_cut_by_stages() {
+    let balls = text("ball.sv").replace("construction groove := sweep(cutter ","\
+in std.front {
+  private centre2 := point
+  centre2 coords(du: 6mm, dv: 0mm) std.front
+  private bottom2 := point
+  private top2 := point
+  bottom2 coords(du: 6mm, dv: -2mm) std.front
+  top2 coords(du: 6mm, dv: 2mm) std.front
+  private diameter2 := line(bottom2, top2)
+  private meridian2 := arc(center: centre2, start: bottom2, end: top2) hint(r: 2)
+  radius(2mm) meridian2
+}
+construction small := solid(face(meridian2, diameter2), about: diameter2)
+construction pair := solid(cutter)
+small union pair
+construction groove := sweep(pair ");
+    for (text,body) in [(beads(),"rod"),(balls,"block")] {
+        stepped_as_exported(&text,body);
+        stepped_as_exported(&format!("{text}made := solid({body})\n"),"made");
+    }
+}
