@@ -102,7 +102,7 @@ Two refusals are the limits' own:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet; a slide along the tool's axis has one wherever the normals are square to it. The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought by golden section. The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
+| S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet; a slide along the tool's axis has one wherever the normals are square to it. The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought (Brent's method). The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
 | S4 | A turn's roll is less than a whole turn. | A turn carried round a whole turn or more lays its sheet over itself; its sweep is then a solid of revolution, which is not built yet. | The turn, in degrees. |
 
 E1 holds as for a screw, so a slide passes the tool right through the blank and a turn swings it
@@ -111,12 +111,14 @@ square to the turn, a face along the slide) where it reaches the blank, a ring i
 round at a sampled station (S1); a prism tool, whose side has no rings (T1); a characteristic that
 closes on itself within the blank's reach, a tool passed wholly through it (S1); and a whole turn
 (S4). A turn of one ball is still its tube (`solid::canal`), never asked these rows.
-`tests/turns_and_slides.rs` is the gate: a torus slid up a rod, square (its tube's lens) and tilted,
-and turned across a ring sector, upright (Pappus) and leaning across the turn, each removed
-volume computed apart from the core — a tilted torus's from its centre circle alone — and held
-to the exact solid, whose STL agrees with the field; the straight-fluted drill
+`tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate: a torus slid up a
+rod, square (its tube's lens, `rust/examples/solid_sweeps/slide.sv`) and tilted, a cylinder slid
+with its caps clear (a circular segment), and a torus turned across a ring sector, upright
+(Pappus) and leaning across the turn (`solid_sweeps/turn.sv`), each removed volume computed apart
+from the core — a tilted torus's from its centre circle alone — and held to the exact solid, whose
+STL agrees with the field; and the straight-fluted drill
 (`rust/examples/twist_drill/straight_flute.sv`, the twist drill's wheel slid square to the axis,
-its flute the wheel's own profile) and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
+its flute the wheel's own profile).
 
 ### A rack (issue #61)
 

@@ -255,7 +255,7 @@ fn a_leaning_block_rounded_all_over_is_steiners_exactly() {
 }
 
 /// Of two discs of radii `a` and `b`, centres `d` apart, the lens they share.
-fn lens(a: f64, b: f64, d: f64) -> f64 {
+pub(crate) fn lens(a: f64, b: f64, d: f64) -> f64 {
     let half = |a: f64, b: f64| ((d * d + a * a - b * b) / (2.0 * d * a)).acos();
     a * a * half(a, b) + b * b * half(b, a)
         - 0.5 * ((-d + a + b) * (d + a - b) * (d - a + b) * (d + a + b)).sqrt()

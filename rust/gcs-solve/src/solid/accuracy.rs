@@ -965,13 +965,10 @@ impl Sweep {
                     let Ok(roots) = patch.contacts(u,twist,1e-9) else { previous = None; continue };
                     let here: Vec<V> = roots.iter().filter_map(|r| patch.at(u,r.v).ok().map(|s| start.point(s.position))).collect();
                     for &p0 in &here {
-                        let [a,b] = match sphere {
-                            Some((c,d)) if !screw.is_turn() => {
-                                let reach = 0.5*d+options.reach+self.cell;
-                                let (x,y) = (screw.time_to(p0,screw.height(c)-reach),screw.time_to(p0,screw.height(c)+reach));
-                                [x.min(y).max(0.),x.max(y).min(roll[1]-roll[0])]
-                            }
-                            _ => [0.,roll[1]-roll[0]],
+                        let near = sphere.map(|(c,d)| { let reach = 0.5*d+options.reach+self.cell; [screw.height(c)-reach,screw.height(c)+reach] });
+                        let [a,b] = match near {
+                            Some(band) => { let Some([x,y]) = screw.passing(p0,band) else { continue }; [x.max(0.),y.min(roll[1]-roll[0])] }
+                            None => [0.,roll[1]-roll[0]],
                         };
                         if !(a <= b) { continue }
                         let steps = (((b-a)*norm(screw.velocity(p0))/options.cell).ceil() as usize).clamp(1,1<<16);

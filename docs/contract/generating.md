@@ -246,15 +246,17 @@ advance (`f turns(r) l`) or one slide (`f slides(a) l`) is asked the screw's row
 origin). Its sheet is built by `brep::sweep::helical` along its section (`Screw::station`): a
 slide's square to it, extruded across the blank's heights; a turn's a half-plane through its axis,
 its points carried round at their own heights and radii (`Screw::time_to_station`, each node's
-delay unwrapped along the walk), revolved over the roll, its S4 read by radius and height. A turn
-of a whole turn or more is refused at S4 (its sheet would lie over itself), and S1 also refuses
+delay the one nearest the one before), revolved over the roll, its S4 read by radius and height;
+the stretch of the roll each reader asks is `Screw::passing`. A turn of a whole turn or more is
+refused at S4 in the walk (its sheet would lie over itself), and S1 also refuses
 a ring in contact all round between two walked stations whose path enters the blank
 (`constant_twist::stationary`: the amplitude turning right round, its three coefficients' least
-sought by golden section) — a turn about an axis the tool's meets, or a slide along the tool's
+sought by `roots::brent`) — a turn about an axis the tool's meets, or a slide along the tool's
 axis — where the boundary leaves the walked branch with no root moving. A turn of one ball is
 still its tube. The accuracy meter reads a turn's characteristic over the whole roll.
-`tests/turns_and_slides.rs` is the gate (volumes computed apart: the lens, Pappus, and a tilted
-torus's shadow from its centre circle; the STL held to the field), with
+`tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate (volumes computed
+apart: the lens, a circular segment, Pappus, and a tilted torus's shadow from its centre circle;
+the STL held to the field), with
 `rust/examples/twist_drill/straight_flute.sv` and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document

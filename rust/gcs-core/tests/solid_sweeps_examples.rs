@@ -8,7 +8,8 @@ use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Class,Options};
 use std::f64::consts::{PI,TAU};
 
-use crate::turns_and_slides::{exported,lens,measure,turned_away,turned_torus,Lean};
+use crate::round_lowering::lens;
+use crate::turns_and_slides::{exported,measure,near,reaches,turned_away,turned_torus,Lean};
 
 /// The example `name` of the series, elaborated and solved.
 fn example(name: &str) -> Elaborated {
@@ -21,12 +22,6 @@ fn class(e: &Elaborated,body: &str) -> Class {
     let a = admission::admit_body(&e.sketch,fixtures::solid(e,body),&Options::default()).unwrap_or_else(|r| panic!("{r}"));
     let [s] = a.sweeps() else { panic!("one sweep") };
     s.class.clone()
-}
-
-/// `volume` against `expected`, within `bar` of it.
-fn near(volume: f64,expected: f64,bar: f64) {
-    eprintln!("volume {volume:.9} against {expected:.9}");
-    assert!((volume-expected).abs() <= bar*expected,"{volume} against {expected}");
 }
 
 /// `ball.sv`: the ball's sweep is its tube, so the block's sweep is static material and no class
@@ -46,7 +41,7 @@ fn the_ball_leaves_half_its_tube() {
 fn the_slid_wheel_leaves_its_tubes_lens() {
     let e = example("slide.sv");
     let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
-    assert!(found.screw.ratio == 0.,"read as a slide");
+    assert!(found.screw.is_slide(),"read as a slide");
     near(exported(&e,"rod"),PI*25.*20.-lens(5.,2.,5.5)*20.,1e-6);
 }
 
@@ -64,14 +59,13 @@ fn the_turned_cutter_leaves_its_shadow_turned() {
 /// axis is one region at every height, turned. A point of it is cut where its helix back through
 /// the roll passes within the tube's radius of the wheel's centre circle (radius 6 about
 /// (11.5, 0, 0), square to the wheel's axis, which leans from y away from z by the helix's angle at
-/// 5.5 from the rod's axis): its least distance over the turns that bring it to the wheel's
-/// heights, read a quarter degree apart and refined by golden section, in polar rows about the
-/// rod's axis. The groove takes that area from each of the rod's 20 mm.
+/// 5.5 from the rod's axis), read over the turns that bring it to the wheel's heights a degree
+/// apart (`reaches`), in polar rows about the rod's axis. The groove takes that area from each of the rod's 20 mm.
 #[test]
 fn the_screwed_wheel_leaves_its_section_at_every_height() {
     let e = example("screw.sv");
     let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
-    assert!(found.screw.ratio != 0. && !found.screw.is_turn(),"read as a screw");
+    assert_eq!(found.screw.kind(),"a screw");
     let lead = 30.;
     let (sh,ch) = (TAU*5.5/lead).atan().sin_cos();
     // the distance of the point p carried back along the screw by `t` from the wheel's centre circle
@@ -82,20 +76,11 @@ fn the_screwed_wheel_leaves_its_section_at_every_height() {
         let radial = [w[0],w[1]-axial*ch,w[2]+axial*sh];
         ((radial[0]*radial[0]+radial[1]*radial[1]+radial[2]*radial[2]).sqrt()-6.).hypot(axial)
     };
-    let hit = |a: f64,r: f64| {
-        let p = [r*a.cos(),r*a.sin(),10.];
-        // the turns at which p stands within the wheel's heights, 8 either side of its middle
-        let [t0,t1] = [(p[2]-8.)*TAU/lead,(p[2]+8.)*TAU/lead];
-        let n = (((t1-t0)/(0.25f64.to_radians())).ceil() as usize).max(8);
-        let at = |k: usize| t0+(t1-t0)*k as f64/n as f64;
-        let values: Vec<f64> = (0..=n).map(|k| back(p,at(k))).collect();
-        let g = (5f64.sqrt()-1.)/2.;
-        (0..=n).filter(|&k| (k == 0 || values[k] <= values[k-1]) && (k == n || values[k] <= values[k+1])).map(|k| {
-            let (mut lo,mut hi) = (at(k.saturating_sub(1)),at((k+1).min(n)));
-            for _ in 0..60 { let (x,y) = (hi-g*(hi-lo),lo+g*(hi-lo)); if back(p,x) < back(p,y) { hi = y } else { lo = x } }
-            back(p,0.5*(lo+hi))
-        }).fold(f64::INFINITY,f64::min) <= 2.
-    };
+    // the turns at which a point at height 10 stands within the wheel's heights, 8 either side of
+    // its middle
+    let turns = [2.*TAU/lead,18.*TAU/lead];
+    let steps = ((turns[1]-turns[0]).to_degrees().ceil()) as usize;
+    let hit = |a: f64,r: f64| { let p = [r*a.cos(),r*a.sin(),10.]; reaches(&|t| back(p,t),turns,steps,2.) };
     let section = measure([-PI,PI],&|_| [0.,5.],&hit,&|a,b| (b*b-a*a)/2.);
     near(exported(&e,"rod"),PI*25.*20.-section*20.,1e-5);
 }

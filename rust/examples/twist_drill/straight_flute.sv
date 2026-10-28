@@ -59,9 +59,3 @@ repeat configuration.flutes as i {
   construction flute_at := flute at(under: index) i * 360deg / configuration.flutes
   flute_at cut fluted
 }
-
-// square to the axis halfway along the flutes: where its section is the wheel's profile
-section_plane := plane
-fix(origin == (0, 0, configuration.fluted_length / 2)) section_plane
-fix(dir == (1, 0, 0)) section_plane.u
-fix(dir == (0, 1, 0)) section_plane.v

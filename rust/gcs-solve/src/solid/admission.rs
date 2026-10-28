@@ -909,16 +909,6 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
 fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Options)
     -> Result<(SweepEvidence,Reads),Failure> {
     let (reads,_) = ends(c,inside,options)?;
-    // a turn carried round a whole turn or more lays its sheet over itself: what it sweeps then is
-    // a solid of revolution, which the class does not build
-    if let Some(turn) = c.motion().twist().filter(|s| s.is_turn()) {
-        let [a,b] = c.domain();
-        if (b-a)*turn.ratio.abs() >= std::f64::consts::TAU*(1.-1e-12) {
-            return Err((Condition::Lead,format!("the roll turns the tool {:.1} degrees about the axis, a whole turn or more, \
-                which carries its sheet onto itself: a turn's sweep is built over less than a whole turn",
-                ((b-a)*turn.ratio.abs()).to_degrees()),None))
-        }
-    }
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side
     let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };
