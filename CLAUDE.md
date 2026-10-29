@@ -11,10 +11,15 @@ files it lists are the contract, and `gcs-solver-program.md` is the staged progr
 
 ## Layout
 
-* **core**: the whole engine in Rust, no dependencies, as two crates.
+* **core**: the whole engine in Rust, no dependencies, as three crates.
+  * **B-rep kernel** (`rust/gcs-brep/`): the exact B-rep, its Booleans, mesher and STEP, and the
+    numerical ground under everything (`util`: `fmath`, `space`, `linalg`, `json`, …).  Knows no
+    solver; MIT OR Apache-2.0, to be published on its own.  `gcs-solve` re-exports it as `brep`
+    and each `util` module by its old name.
   * **solver** (`rust/gcs-solve/`): model, constraints, kernels, solvers, diagnosis,
-    decomposition, and what they evaluate: curves, solids, motions, the B-rep kernel.  It knows
-    no Solvent, and the compiler holds it: nothing in it can name the crate built on it.
+    decomposition, and what they evaluate: curves, solids, motions, the generating sweeps and
+    the export over the kernel.  It knows no Solvent, and the compiler holds it: nothing in it
+    can name the crate built on it.
   * **language** (`rust/gcs-core/`): the Solvent language and what is built on it, over
     `gcs-solve`, whose modules it re-exports by name (`gcs_core::model` is `gcs_solve::model`).
 * **ABI** (`rust/gcs-ffi/`): one flat C ABI over the core, built as a native `cdylib` and as a

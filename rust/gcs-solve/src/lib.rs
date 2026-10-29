@@ -14,10 +14,15 @@ pub mod amd;
 pub mod beams;
 pub mod bodies;
 pub mod brep;
+// The kernel's numerical ground, the solver's too, by the names it always had (`gcs-brep`).
+pub use gcs_brep::util::{clock,fmath,interval,json,linalg,par,rng,roots,space};
+// Internal to the engine, and public only so the language's renderer, seams and patches (in
+// `gcs-core`) reach the same bounding-volume tree.
+#[doc(hidden)]
+pub use gcs_brep::util::bvh;
 pub mod cgraph;
 pub mod cholesky;
 pub mod clear;
-pub mod clock;
 pub mod complex;
 pub mod constraints;
 pub mod contact_rate;
@@ -32,7 +37,6 @@ pub mod diagnose;
 pub mod envelope;
 pub mod expr;
 pub mod extremal;
-pub mod fmath;
 pub mod follow;
 pub mod generate;
 pub mod graft;
@@ -41,10 +45,7 @@ pub mod homotopy;
 pub mod hulls;
 pub mod integral;
 pub mod interior;
-pub mod interval;
-pub mod json;
 pub mod kernels;
-pub mod linalg;
 pub mod lines;
 pub mod locus;
 pub mod mesh;
@@ -52,19 +53,15 @@ pub mod model;
 pub mod motion;
 pub mod newton;
 pub mod ode;
-pub mod par;
 pub mod path;
 pub mod pcg;
 pub mod plane;
 pub mod prisms;
 pub mod progress;
 pub mod rates;
-pub mod rng;
-pub mod roots;
 pub mod semantics;
 pub mod solid;
 pub mod solve;
-pub mod space;
 pub mod sparse;
 pub mod system;
 pub mod tape;
@@ -77,9 +74,7 @@ pub mod vocab;
 pub mod witness;
 
 // Internal to the engine, and public only so the language's renderer, seams and patches (in
-// `gcs-core`) reach the same bounding-volume tree and intersections.
-#[doc(hidden)]
-pub mod bvh;
+// `gcs-core`) reach the same intersections.
 #[doc(hidden)]
 pub mod intersection;
 pub mod measured;

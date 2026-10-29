@@ -1,0 +1,15 @@
+[package]
+name = "gcs-brep"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "A boundary-representation solid modelling kernel: exact analytic and NURBS faces, Booleans, meshing to a stated sag, STEP."
+
+# No dependencies, as the rest of the core.  Its tests are the core's suite (`gcs-core/tests`),
+# which reaches it through `gcs_solve::brep` and the utilities the solver re-exports.
+[dependencies]
+
+[lib]
+name = "gcs_brep"
+path = "src/lib.rs"
+test = false

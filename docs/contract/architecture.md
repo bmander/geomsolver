@@ -6,7 +6,8 @@ changelog](../solvent-changelog.md)) says where a rule came from.
 
 Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementation —
 
-* **core** (`rust/gcs-solve/`, `rust/gcs-core/`): the whole engine in Rust, no dependencies.
+* **core** (`rust/gcs-brep/`, `rust/gcs-solve/`, `rust/gcs-core/`): the whole engine in Rust, no
+  dependencies.
   Model and constraints
   (`model.rs`, `constraints.rs`), vectorized kernels and the compile-to-plan `System` (`kernels.rs`,
   `system.rs`), our own DogLeg/LM plus dense and sparse linear algebra (`newton.rs`, `linalg.rs`,
@@ -29,7 +30,14 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   `crate::model` in the core and `gcs_core::model` outside it name what they always did, and
   the ABI, the CLI and the suite (`gcs-core/tests`, which tests both) are unchanged.  **The
   compiler holds the line**: nothing in `gcs-solve` can name the crate built on it, so no route
-  from the solver arrives at the language.  The source-scanning gate that held it inside one
+  from the solver arrives at the language.  **The B-rep kernel is a crate below the solver** (`gcs-brep`,
+  `rust/gcs-brep/`, MIT OR Apache-2.0, to be published on its own): the exact B-rep, its
+  geometry, Booleans, mesher, STEP and recipe reader, and the numerical ground both stand on
+  (`util`: `fmath`, `space`, `interval`, `roots`, `linalg`, `json`, `par`, `clock`, `rng`, `bvh`,
+  the exact `expansion`s, a union-find and the Gauss rule).  `gcs-solve` re-exports it as
+  `brep` (beside `brep::sweep` and `brep::export`, which read the model and stay the solver's)
+  and each `util` module under its old name, so `crate::fmath`, `gcs_core::brep::geom` and the
+  rest name what they always did.  Nothing in it can name the solver or the language.  The source-scanning gate that held it inside one
   crate (`tests/layering.rs`, steps 0–6) is gone with the reason for it.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint
   records, solved and diagnosed through the ABI with no document
