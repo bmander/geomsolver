@@ -21,7 +21,7 @@ pub(crate) fn text(name: &str) -> String {
 fn example(name: &str) -> Elaborated { fixtures::read(&text(name)) }
 
 /// The class `body`'s one sweep is admitted to.
-fn class(e: &Elaborated,body: &str) -> Class {
+pub(crate) fn class(e: &Elaborated,body: &str) -> Class {
     let a = admission::admit_body(&e.sketch,fixtures::solid(e,body),&Options::default()).unwrap_or_else(|r| panic!("{r}"));
     let [s] = a.sweeps() else { panic!("one sweep") };
     s.class.clone()
@@ -144,7 +144,7 @@ fn the_rack_leaves_one_tooth_space() {
     let e = example("rack.sv");
     assert!(matches!(class(&e,"gear"),Class::Generating),"the generating class");
     let removed = PI*22.*22.*6.-exported(&e,"gear");
-    let want = 6.*crate::rack_cut::space_area(400,4000);
+    let want = 6.*crate::rack_cut::space_area(&crate::rack_cut::TOOTH,400,4000);
     assert!((removed-want).abs() < 0.03,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 

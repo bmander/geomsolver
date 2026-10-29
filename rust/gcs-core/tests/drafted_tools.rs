@@ -12,11 +12,10 @@
 //! from its plane, and one whose arc meets a side at an angle, are refused at T1 by name.
 use gcs_core::solid::admission::{self,Class,Condition,Options};
 use gcs_core::solid::{ExtrudedSurface,SweepContacts,ToolSurface};
+use gcs_core::space::{cross,dot,unit};
+use crate::rack_cut::{space_area,TOOTH};
 use crate::turns_and_slides::{exported,refused};
-use std::f64::consts::{PI,TAU};
-
-/// The rack's tooth (`rack_cut::SPACE`), in its plane's coordinates, clockwise.
-const TOOTH: [(f64,f64);4] = [(18.,-0.842856),(18.,0.842856),(24.,3.026666),(24.,-3.026666)];
+use std::f64::consts::PI;
 
 /// The rack-cut tooth space (`rack_cut::SPACE`), its tooth drafted `draft` from its own plane, the
 /// front, and run from it to 9 behind; the blank from 1 to 7 behind the front.
@@ -59,53 +58,11 @@ fn section(lean: f64,draft: f64,y: f64) -> Vec<(f64,f64)> {
     corners
 }
 
-/// The space's area in one section cut by `tooth` (clockwise): `rack_cut::space_area`'s arithmetic
-/// — at each radius about the blank's centre the moved tooth holds one arc at each roll (each
-/// side's half-plane an arc, in closed form, the four meeting in one), and the space at that
-/// radius runs from the least start to the greatest end over the roll.
-fn space_area(tooth: &[(f64,f64)],radii: usize,rolls: usize) -> f64 {
-    let (gx,gy) = (21.,0.);
-    let wrap = |a: f64| (a+PI).rem_euclid(TAU)-PI;
-    let arc = |r: f64,t: f64| -> Option<(f64,f64)> {
-        let (cx,cy) = (0.,-20.*t);
-        let reference = (gy-cy).atan2(gx-cx);
-        let (mut lo,mut hi) = (-PI,PI);
-        for i in 0..tooth.len() {
-            let ((ax,ay),(bx,by)) = (tooth[i],tooth[(i+1)%tooth.len()]);
-            let (nx,ny) = (-(by-ay),bx-ax);
-            let k = (nx*(ax-cx)+ny*(ay-cy))/(r*nx.hypot(ny));
-            if k >= 1. { continue }
-            if k <= -1. { return None }
-            let (c,w) = (wrap(ny.atan2(nx)+PI-reference),PI-k.acos());
-            (lo,hi) = (lo.max(c-w),hi.min(c+w));
-            if lo >= hi { return None }
-        }
-        Some((reference+lo-t,reference+hi-t))
-    };
-    let (t0,t1) = (-PI/3.,PI/3.);
-    (0..radii).map(|i| {
-        let r = 18.+4.*(i as f64+0.5)/radii as f64;
-        let (lo,hi) = (0..=rolls).filter_map(|j| arc(r,t0+(t1-t0)*j as f64/rolls as f64))
-            .fold((f64::INFINITY,f64::NEG_INFINITY),|(l,h),(a,b)| (l.min(a),h.max(b)));
-        if hi > lo { (hi-lo)*r*4./radii as f64 } else { 0. }
-    }).sum()
-}
-
 /// The space removed between the sections at `ys`: each section's area, which the tooth's planes
 /// make smooth in `y`, by four-point Gauss–Legendre across them.
 pub(crate) fn space_volume(lean: f64,draft: f64,ys: [f64;2]) -> f64 {
-    let (x,w) = ([-0.8611363115940526,-0.3399810435848563,0.3399810435848563,0.8611363115940526],
-        [0.3478548451374538,0.6521451548625461,0.6521451548625461,0.3478548451374538]);
     let (m,h) = (0.5*(ys[0]+ys[1]),0.5*(ys[1]-ys[0]));
-    (0..4).map(|k| h*w[k]*space_area(&section(lean,draft,m+h*x[k]),400,4000)).sum()
-}
-
-/// The class `gear`'s one sweep is admitted to.
-fn class(e: &gcs_core::program::Elaborated) -> Class {
-    let a = admission::admit_body(&e.sketch,fixtures::solid(e,"gear"),&Options::default()).unwrap_or_else(|r| panic!("{r}"));
-    let [s] = a.sweeps() else { panic!("one sweep") };
-    assert!(s.contacts > 100,"only {} contacts in the blank",s.contacts);
-    s.class.clone()
+    crate::common::rounds::gauss_legendre(4).into_iter().map(|(x,w)| h*w*space_area(&section(lean,draft,m+h*x),400,4000)).sum()
 }
 
 /// **The drafted rack's tooth space** (#684 G): the generating class, where its draft was refused
@@ -116,9 +73,10 @@ fn class(e: &gcs_core::program::Elaborated) -> Class {
 #[test]
 fn a_drafted_rack_tooth_cuts_a_narrowing_space() {
     let e = fixtures::read(&drafted_space("2deg"));
-    assert!(matches!(class(&e),Class::Generating),"the generating class");
+    assert!(matches!(crate::solid_sweeps_examples::class(&e,"gear"),Class::Generating),"the generating class");
     let removed = PI*22.*22.*6.-exported(&e,"gear");
-    let (want,square) = (space_volume(0.,2.,[1.,7.]),space_volume(0.,0.,[1.,7.]));
+    // undrafted, every section is the drawn tooth
+    let (want,square) = (space_volume(0.,2.,[1.,7.]),6.*space_area(&TOOTH,400,4000));
     eprintln!("removed {removed:.5} mm³, the drafted space {want:.5}, the undrafted {square:.5}");
     assert!(square-want > 8.,"the draft narrows the space");
     assert!((removed-want).abs() < 2e-4*want,"removed {removed:.5} mm³, the space being {want:.5}");
@@ -171,7 +129,6 @@ construction space := sweep(slot over t in (-60deg, 60deg), under: rack, seen_fr
     assert_eq!(names,["slot.east","slot.lower","slot.upper","slot.west"]);
     let contacts = SweepContacts::read(&e.sketch,fixtures::solid(&e,"space"),1e-10).unwrap();
     let tool = contacts.source_material();
-    let unit = |a: [f64;3]| { let l = (a[0]*a[0]+a[1]*a[1]+a[2]*a[2]).sqrt(); a.map(|x| x/l) };
     let lean = 2f64.to_radians();
     for surface in contacts.patches() {
         let ToolSurface::Extruded(side) = surface else { panic!("a prism's side") };
@@ -179,7 +136,7 @@ construction space := sweep(slot over t in (-60deg, 60deg), under: rack, seen_fr
         // short of the caps, where the field's gradient is a cap's too
         for i in 0..=8 { for j in 1..8 {
             let p = side.at(i as f64/8.,j as f64/8.).unwrap();
-            let n = unit(gcs_core::space::cross(p.du,p.dv));
+            let n = unit(cross(p.du,p.dv));
             let h = 1e-6;
             let grad = unit(std::array::from_fn(|k| {
                 let (mut a,mut b) = (p.position,p.position);
@@ -187,13 +144,12 @@ construction space := sweep(slot over t in (-60deg, 60deg), under: rack, seen_fr
                 (tool.value(a)-tool.value(b))/(2.*h)
             }));
             assert!(tool.value(p.position).abs() < 1e-9,"{} at ({i}, {j}) is off the tool by {}",side.name,tool.value(p.position));
-            let along = n[0]*grad[0]+n[1]*grad[1]+n[2]*grad[2];
-            assert!(along.abs() > 1.-1e-6,"{} at ({i}, {j}): its normal {n:?} against the field's {grad:?}",side.name);
+            assert!(dot(n,grad).abs() > 1.-1e-6,"{} at ({i}, {j}): its normal {n:?} against the field's {grad:?}",side.name);
             normals.push(n);
         }}
         // the side leans the draft from the page's normal (-y), a cone's all round as a plane's
         assert!(normals.iter().all(|n| (n[1].abs()-lean.sin()).abs() < 1e-9),"{}: {normals:?}",side.name);
-        let turned = normals.iter().any(|n| n[0]*normals[0][0]+n[1]*normals[0][1]+n[2]*normals[0][2] < 1.-1e-6);
+        let turned = normals.iter().any(|&n| dot(n,normals[0]) < 1.-1e-6);
         assert_eq!(turned,side.name.ends_with("east") || side.name.ends_with("west"),"{}",side.name);
     }
 }
