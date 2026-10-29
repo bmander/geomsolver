@@ -4,63 +4,16 @@
 //! built with its sides. The bar of `rust/examples/solid_sweeps/bar_end.sv` is the case: its flat
 //! end cuts the floor of a tooth space as a rack's tip does, each height of the disc losing the
 //! space its own slice of the bar sweeps; its volume is read slice by slice by `rack_cut`'s
-//! arithmetic, apart from the code under test. And what the class still refuses: a cap whose
+//! arithmetic (`rack_space`), apart from the code under test. And what the class still refuses: a cap whose
 //! corners dig past it (E3, at its rim), a band of sections meeting a corner of the profile (T3),
 //! and a cap of a tool that is no prism standing alone (T1).
 use gcs_core::brep::{export,props,sweep::Say};
 use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
 use gcs_core::solid::export::Tolerance;
-use std::f64::consts::{PI,TAU};
+use std::f64::consts::PI;
 
 /// The example's text.
 fn bar_end() -> String { crate::solid_sweeps_examples::text("bar_end.sv") }
-
-/// The area a rack tooth (its corners clockwise in the rack's plane, in millimetres, the blank's
-/// centre on the plane's `x` axis) removes from the annulus `[inner, outer]` about the blank's
-/// centre as it rolls over `roll` on a pitch circle of `pitch`: `rack_cut::space_area`'s
-/// arithmetic — at each radius the circle meets the moved tooth in one arc at each roll, and the
-/// space at that radius runs from the least start to the greatest end — given its tooth and its
-/// numbers, and each extreme read again finely about the roll that gave it, so the roll's
-/// sampling errs at second order.
-pub(crate) fn rack_space(tooth: &[(f64,f64)],pitch: f64,[inner,outer]: [f64;2],[t0,t1]: [f64;2],radii: usize,rolls: usize) -> f64 {
-    let n = tooth.len();
-    let (gx,gy) = (tooth.iter().map(|p| p.0).sum::<f64>()/n as f64,tooth.iter().map(|p| p.1).sum::<f64>()/n as f64);
-    let wrap = |a: f64| (a+PI).rem_euclid(TAU)-PI;
-    // the arc of circle `r` about the blank's centre inside the tooth at roll `t`, in the blank's angles
-    let arc = |r: f64,t: f64| -> Option<(f64,f64)> {
-        let (cx,cy) = (0.,-pitch*t);
-        let reference = (gy-cy).atan2(gx-cx);
-        let (mut lo,mut hi) = (-PI,PI);
-        for i in 0..n {
-            let ((ax,ay),(bx,by)) = (tooth[i],tooth[(i+1)%n]);
-            let (nx,ny) = (-(by-ay),bx-ax);
-            let k = (nx*(ax-cx)+ny*(ay-cy))/(r*nx.hypot(ny));
-            if k >= 1. { continue }
-            if k <= -1. { return None }
-            let (c,w) = (wrap(ny.atan2(nx)+PI-reference),PI-k.acos());
-            (lo,hi) = (lo.max(c-w),hi.min(c+w));
-            if lo >= hi { return None }
-        }
-        Some((reference+lo-t,reference+hi-t))
-    };
-    let step = (t1-t0)/rolls as f64;
-    (0..radii).map(|i| {
-        let r = inner+(outer-inner)*(i as f64+0.5)/radii as f64;
-        let at = |t: f64| arc(r,t.clamp(t0,t1));
-        let coarse: Vec<Option<(f64,f64)>> = (0..=rolls).map(|j| at(t0+step*j as f64)).collect();
-        // the greatest of `key` over the roll: the coarse samples' best, read again finely beside it
-        let best = |key: &dyn Fn((f64,f64)) -> f64| -> Option<f64> {
-            let j = (0..=rolls).filter(|&j| coarse[j].is_some())
-                .max_by(|&a,&b| key(coarse[a].unwrap()).total_cmp(&key(coarse[b].unwrap())))?;
-            let t = t0+step*j as f64;
-            (0..=400).filter_map(|k| at(t-step+2.*step*k as f64/400.)).map(key).max_by(f64::total_cmp)
-        };
-        match (best(&|(a,_)| -a),best(&|(_,b)| b)) {
-            (Some(lo),Some(hi)) if hi > -lo => (hi+lo)*r*(outer-inner)/radii as f64,
-            _ => 0.,
-        }
-    }).sum()
-}
 
 /// What `bar_end.sv`'s bar removes from the disc: at each height `z` of its 6 mm the bar's slice is
 /// the rectangle 18 to 30 mm from the centre and `w(z)` either side of its axis (its profile's sides
@@ -69,15 +22,19 @@ pub(crate) fn rack_space(tooth: &[(f64,f64)],pitch: f64,[inner,outer]: [f64;2],[
 /// floor's edge, where the space's arc at a radius stops short, falls between them), so 400 and
 /// 800 of them are extrapolated (Richardson).
 pub(crate) fn bar_end_space() -> f64 {
-    let w = |z: f64| 1.+(z+9.)/12.;
-    let slices = 12;
-    let h = 6./slices as f64;
-    let volume = |radii: usize| (0..=slices).map(|k| {
-        let z = -6.+h*k as f64;
-        let weight = if k == 0 || k == slices { 1. } else if k%2 == 1 { 4. } else { 2. };
-        weight*rack_space(&[(18.,-w(z)),(18.,w(z)),(30.,w(z)),(30.,-w(z))],16.,[18.,22.],[-PI/3.,PI/3.],radii,1000)
-    }).sum::<f64>()*h/3.;
-    2.*volume(800)-volume(400)
+    // read once for every test that holds the bar to it
+    static SPACE: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *SPACE.get_or_init(|| {
+        let w = |z: f64| 1.+(z+9.)/12.;
+        let slices = 12;
+        let h = 6./slices as f64;
+        let volume = |radii: usize| (0..=slices).map(|k| {
+            let z = -6.+h*k as f64;
+            let weight = if k == 0 || k == slices { 1. } else if k%2 == 1 { 4. } else { 2. };
+            weight*crate::rack_cut::rack_space(&[(18.,-w(z)),(18.,w(z)),(30.,w(z)),(30.,-w(z))],16.,[18.,22.],[-PI/3.,PI/3.],radii,1000)
+        }).sum::<f64>()*h/3.;
+        2.*volume(800)-volume(400)
+    })
 }
 
 fn refused(source: &str,body: &str) -> admission::Refusal {

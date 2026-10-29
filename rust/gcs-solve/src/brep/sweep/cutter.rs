@@ -15,7 +15,7 @@ use crate::brep::recipe::{Node,Recipe};
 use crate::brep::section::Sectioned;
 use crate::json::Json;
 use crate::solid::contact_trace::{Sample,TraceError,Tracer};
-use crate::space::{cross,distance,dot,norm,scale,sub};
+use crate::space::{add,cross,distance,dot,lerp,norm,scale,sub};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 
@@ -144,9 +144,7 @@ impl Extruded {
     fn at(&self,n: V,l: usize,k: usize,h: f64,t: f64) -> (V,V) {
         let seg = &self.walks[l][k];
         let w = seg.t[0]+(seg.t[1]-seg.t[0])*t;
-        let (p,d,_) = seg.curve.d2(w);
-        let d = scale(d,(seg.t[1]-seg.t[0]).signum());
-        let normal = cross(d,n);
+        let (p,normal) = (seg.curve.point(w),cross(tangent(seg,w),n));
         (std::array::from_fn(|i| p[i]+n[i]*h),scale(normal,1./norm(normal).max(1e-300)))
     }
 }
@@ -156,31 +154,31 @@ impl Extruded {
 /// its section the plane square to `across` there: the profile's chord carried along the
 /// extrusion, a ruling of the side at each end of the chord and the chord on each cap, four pieces
 /// whose corners are the caps' rims, each a quarter turn of fan. Its one loop of lines and arcs,
-/// walked counter-clockwise about the extrusion; the extrusion's extent; `across` and `along` (the
-/// extrusion crossed with it, so the section's walk is counter-clockwise about `across`); and the
-/// stations its sections exist at, the profile's least and greatest distance along `across`.
-/// Each chord is walked as `chord` millimetres whatever its length at its station, so that a
-/// station's pieces start at the same walk lengths as its neighbours' where the profile tapers: the
-/// sheet's rows are laid at walk lengths common to every column.
-struct Across { walk: Vec<Seg>,extent: [f64;2],across: V,along: V,range: [f64;2],chord: f64 }
+/// walked counter-clockwise about the extrusion; the extrusion's extent; `across`; and the stations
+/// its sections exist at, the profile's least and greatest distance along `across`. Each chord is
+/// walked as `chord` millimetres whatever its length at its station, so that a station's pieces
+/// start at the same walk lengths as its neighbours' where the profile tapers: the sheet's rows
+/// are laid at walk lengths common to every column (`contact_trace::Station`).
+struct Across { walk: Vec<Seg>,extent: [f64;2],across: V,range: [f64;2],chord: f64 }
 
 /// A cap's tag in a section across (`Across`), the low cap's along the extrusion and the high's:
 /// a side's tag is its edge's, `(loop + 1) << 16 | edge`, so these name no side.
-pub const CAP_LOW: u32 = 1;
-pub const CAP_HIGH: u32 = 2;
+const CAP_LOW: u32 = 1;
+const CAP_HIGH: u32 = 2;
 
 /// A section across `walk`'s plane by the plane `across·(x − origin) = c`: where it meets the
 /// profile, each the edge it is on, its parameter there and the point (a point where two edges
 /// meet counted once).
 fn meets(walk: &[Seg],origin: V,across: V,c: f64) -> Vec<(usize,f64,V)> {
     let size = walk.iter().map(|s| distance(s.start(),origin)).fold(1_f64,f64::max);
+    let close = crate::brep::geom::tolerance(size);
     let mut out: Vec<(usize,f64,V)> = Vec::new();
     for (k,seg) in walk.iter().enumerate() {
         let [lo,hi] = seg.span();
         let tol = 1e-12*(1.+hi.abs()+lo.abs());
         let mut at = |w: f64| {
             let p = seg.curve.point(w);
-            if !out.iter().any(|(_,_,q)| distance(*q,p) <= 1e-9*size) { out.push((k,w,p)); }
+            if !out.iter().any(|(_,_,q)| distance(*q,p) <= close) { out.push((k,w,p)); }
         };
         match &seg.curve {
             crate::brep::geom::Curve::Line {p,d} => {
@@ -197,7 +195,7 @@ fn meets(walk: &[Seg],origin: V,across: V,c: f64) -> Vec<(usize,f64,V)> {
                 if cosine.abs() > 1. { continue }
                 let (phase,turn) = (b.datan2(a),cosine.dacos());
                 for w in [phase+turn,phase-turn] {
-                    let w = lo+(w-lo).rem_euclid(TAU);
+                    let w = crate::brep::geom::around(w,lo,TAU);
                     let w = if w > hi+tol && (w-TAU-lo).abs() <= tol { lo } else { w };
                     if w <= hi+tol { at(w.min(hi)); }
                 }
@@ -214,9 +212,10 @@ fn tangent(seg: &Seg,w: f64) -> V { let (_,d,_) = seg.curve.d2(w); scale(d,(seg.
 /// Where a prism's sections across a direction cannot be one regular family (#684 F): the least and
 /// greatest distance of its profile along the direction (where a section closes to a ruling of a
 /// side), and each corner of its profile — where two edges meet at an angle, so a section through
-/// it leaps from one side's normal to the other's — at its distance and its point (millimetres).
+/// it leaps from one side's normal to the other's — at its distance and its point (millimetres);
+/// and the direction, made square to the extrusion and unit.
 #[derive(Clone,Debug)]
-pub struct Spread { pub range: [f64;2],pub corners: Vec<(f64,V)> }
+pub struct Spread { pub across: V,pub range: [f64;2],pub corners: Vec<(f64,V)> }
 
 /// What the stations section.
 enum Kind { Revolved { side: V,sec: Sectioned },Extruded(Extruded),Across(Across) }
@@ -274,12 +273,7 @@ impl Cutter {
         for seg in walk {
             reach(seg.start());
             if let crate::brep::geom::Curve::Circle(f,_) = &seg.curve {
-                let [lo,hi] = seg.span();
-                let phase = dot(across,f.y).datan2(dot(across,f.x));
-                for w in [phase,phase+std::f64::consts::PI] {
-                    let w = lo+(w-lo).rem_euclid(TAU);
-                    if w <= hi { reach(seg.curve.point(w)); }
-                }
+                for (w,_) in crate::brep::geom::turns(dot(across,f.x),dot(across,f.y),seg.span()) { reach(seg.curve.point(w)); }
             }
         }
         let corners = (0..walk.len()).filter_map(|k| {
@@ -287,24 +281,21 @@ impl Cutter {
             let (ta,tb) = (unit(tangent(a,a.t[1])).ok()?,unit(tangent(b,b.t[0])).ok()?);
             (dot(ta,tb).clamp(-1.,1.).dacos() > 1e-6).then(|| (at(a.end()),a.end()))
         }).collect();
-        Some(Spread {range,corners})
+        Some(Spread {across,range,corners})
     }
     /// This prism sectioned across `across` (`Across`, #684 F): its stations distances along it,
     /// each section its chord carried along the extrusion, every chord walked as long as the one
     /// at the station `reference` (the middle of the band the sheet spans). A prism of one loop
     /// only.
     pub fn across(&self,across: V,reference: f64) -> Result<Cutter,String> {
-        let Kind::Extruded(x) = &self.kind else { return Err("only a prism is sectioned across".into()) };
-        let [walk] = &x.walks[..] else { return Err("a prism sectioned across has a profile of one loop".into()) };
-        let spread = self.spread(across).ok_or("a prism sectioned across has a profile of one loop")?;
-        let across = unit(sub(across,scale(self.axis,dot(across,self.axis))))?;
-        let along = cross(self.axis,across);
-        let ends = meets(walk,self.origin,across,reference);
-        let [(_,_,a),(_,_,b)] = ends[..] else {
+        let Spread {across,range,..} = self.spread(across).ok_or("only a prism of one loop is sectioned across")?;
+        let Kind::Extruded(x) = &self.kind else { unreachable!("a spread is a prism's") };
+        let walk = &x.walks[0];
+        let [(_,_,a),(_,_,b)] = meets(walk,self.origin,across,reference)[..] else {
             return Err(format!("the prism's section {reference:.4} mm across its profile is no one chord"))
         };
-        Ok(Cutter {origin:self.origin,axis:self.axis,kind:Kind::Across(Across {walk:walk.clone(),extent:x.extent,across,along,
-            range:spread.range,chord:distance(a,b)}),sections:Default::default()})
+        Ok(Cutter {origin:self.origin,axis:self.axis,kind:Kind::Across(Across {walk:walk.clone(),extent:x.extent,across,range,
+            chord:distance(a,b)}),sections:Default::default()})
     }
     /// The face a piece's tag (`Loop::starts`) is a stretch of: its recipe node's name and its
     /// own (#212), whichever meeting of it; none for a fan, which is no face of the cutter's, or a
@@ -326,7 +317,7 @@ impl Cutter {
         match (&self.kind,cut,source) {
             (Kind::Revolved {sec,..},Cut::Side(side),Source::Meridian(step)) => sec.at(side,step,t),
             (Kind::Extruded(x),Cut::Offset(h),&Source::Edge(l,k)) => x.at(self.axis,l,k,h,t),
-            (Kind::Across(_),_,&Source::Segment {a,b,normal}) => (std::array::from_fn(|i| a[i]+(b[i]-a[i])*t),normal),
+            (Kind::Across(_),_,&Source::Segment {a,b,normal}) => (lerp(a,b,t),normal),
             _ => unreachable!("a piece is cut as its cutter is"),
         }
     }
@@ -376,24 +367,25 @@ impl Cutter {
     fn across_loops(&self,x: &Across,c: f64) -> Result<Vec<Loop>,String> {
         let mut found = meets(&x.walk,self.origin,x.across,c);
         if found.len() != 2 {
-            return Err(format!("the prism's section {c:.4} mm across its profile meets it at {} points, not at the two ends of                 one chord",found.len()))
+            return Err(format!("the prism's section {c:.4} mm across its profile meets it at {} points, not at the two ends of \
+                one chord",found.len()))
         }
-        found.sort_by(|a,b| dot(x.along,a.2).total_cmp(&dot(x.along,b.2)));
+        // near and far along the extrusion crossed with `across`, so the walk turns counter-clockwise about it
+        let along = cross(self.axis,x.across);
+        found.sort_by(|a,b| dot(along,a.2).total_cmp(&dot(along,b.2)));
         let side = |&(k,w,p): &(usize,f64,V)| -> Result<(u32,V,V),String> {
             Ok((((1u32) << 16) | k as u32,p,unit(cross(tangent(&x.walk[k],w),self.axis))?))
         };
         let ((near_tag,near,near_normal),(far_tag,far,far_normal)) = (side(&found[0])?,side(&found[1])?);
-        let lift = |p: V,h: f64| -> V { std::array::from_fn(|i| p[i]+self.axis[i]*h) };
+        let lift = |p: V,h: f64| add(p,scale(self.axis,h));
         let [low,high] = x.extent;
-        let down = scale(self.axis,-1.);
-        let segments = [(CAP_LOW,lift(near,low),lift(far,low),down),(far_tag,lift(far,low),lift(far,high),far_normal),
-            (CAP_HIGH,lift(far,high),lift(near,high),self.axis),(near_tag,lift(near,high),lift(near,low),near_normal)];
+        let (down,ruling) = (scale(self.axis,-1.),high-low);
+        // each piece, its ends, its normal and its walked length: a chord the reference's, a ruling its own
+        let segments = [(CAP_LOW,lift(near,low),lift(far,low),down,x.chord),(far_tag,lift(far,low),lift(far,high),far_normal,ruling),
+            (CAP_HIGH,lift(far,high),lift(near,high),self.axis,x.chord),(near_tag,lift(near,high),lift(near,low),near_normal,ruling)];
         let cut = Cut::Offset(c);
-        let pieces: Vec<Piece> = segments.iter().map(|&(face,a,b,normal)| {
-            let points: Vec<V> = (0..=SAMPLES_PER_PIECE).map(|j| { let t = j as f64/SAMPLES_PER_PIECE as f64;
-                std::array::from_fn(|i| a[i]+(b[i]-a[i])*t) }).collect();
-            // a chord walked as long as the reference's, a ruling as it is
-            let walked = if face == CAP_LOW || face == CAP_HIGH { x.chord } else { distance(a,b) };
+        let pieces: Vec<Piece> = segments.iter().map(|&(face,a,b,normal,walked)| {
+            let points: Vec<V> = (0..=SAMPLES_PER_PIECE).map(|j| lerp(a,b,j as f64/SAMPLES_PER_PIECE as f64)).collect();
             let lengths = (0..=SAMPLES_PER_PIECE).map(|j| walked*j as f64/SAMPLES_PER_PIECE as f64).collect();
             Piece {face,reversed:false,source:Source::Segment {a,b,normal},points,lengths}
         }).collect();

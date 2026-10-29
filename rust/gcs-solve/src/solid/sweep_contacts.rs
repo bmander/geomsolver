@@ -32,9 +32,10 @@ impl ToolSurface {
     pub fn revolved(&self) -> Option<&RevolvedSurface> {
         match self { ToolSurface::Revolved(s) => Some(s),_ => None }
     }
-    /// Whether this face is a prism's cap: asked by admission only where a cap reaches the blank
+    /// Which of its prism's caps this face is (0 its `start`, at `from`, where its sides' `v` is 0;
+    /// 1 its `end`), none where it is no cap: admission asks a cap only where it reaches the blank
     /// (#684 F).
-    pub fn cap(&self) -> bool { matches!(self,ToolSurface::Cap(_)) }
+    pub fn cap(&self) -> Option<usize> { match self { ToolSurface::Cap(s) => Some(s.end as usize),_ => None } }
 }
 
 /// A prism's cap: the plane of its profile at its `from` (`start`) or its `to` (`end`), read over
@@ -42,7 +43,7 @@ impl ToolSurface {
 /// normal. A point of the box outside the profile is no point of the tool, and a sample there is
 /// passed over as the material field says (`admission`'s `on_tool`), as a revolution's off a trim.
 #[derive(Clone,Debug)]
-pub struct CapSurface { pub name: String,corner: V,du: V,dv: V }
+pub struct CapSurface { pub name: String,end: bool,corner: V,du: V,dv: V }
 
 impl CapSurface {
     /// Prism `solid`'s caps, its `start` then its `end`.
@@ -61,11 +62,12 @@ impl CapSurface {
         let at = |h: f64| add(p.basis.lift(lo[0],lo[1]),scale(normal,h));
         // `u × v` is the profile's normal: outward at the farther cap along it, and at the nearer
         // `v` runs back
-        let cap = |h: f64,other: f64,name: &str| {
-            let corner = if h >= other { at(h) } else { add(at(h),v) };
-            CapSurface {name:format!("{}.{name}",s.name),corner,du:u,dv:if h >= other { v } else { scale(v,-1.) }}
+        let cap = |h: f64,other: f64,end: bool| {
+            let farther = h >= other;
+            CapSurface {name:format!("{}.{}",s.name,if end { "end" } else { "start" }),end,
+                corner:if farther { at(h) } else { add(at(h),v) },du:u,dv:if farther { v } else { scale(v,-1.) }}
         };
-        Ok([cap(from.value,to.value,"start"),cap(to.value,from.value,"end")])
+        Ok([cap(from.value,to.value,false),cap(to.value,from.value,true)])
     }
 
     pub fn at(&self,u: f64,v: f64) -> Result<SurfacePoint,Error> {
@@ -75,7 +77,7 @@ impl CapSurface {
     }
 
     fn placed(&self,pose: Motion) -> Self {
-        CapSurface {name:self.name.clone(),corner:pose.point(self.corner),du:pose.vector(self.du),dv:pose.vector(self.dv)}
+        CapSurface {name:self.name.clone(),end:self.end,corner:pose.point(self.corner),du:pose.vector(self.du),dv:pose.vector(self.dv)}
     }
 }
 

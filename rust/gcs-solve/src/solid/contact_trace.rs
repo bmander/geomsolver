@@ -78,7 +78,10 @@ pub enum Extent { Blank, Span {lo: f64,hi: f64,beside: Option<(f64,f64)>} }
 pub type Inside<'a> = &'a (dyn Fn(&[V]) -> Result<Vec<bool>,String>+Sync);
 
 /// One section of the cutter as the host samples it: its augmented length (the period of its
-/// walk), the window of walk length its contacts are anchored in, and its sampler.
+/// walk), the window of walk length its contacts are anchored in, and its sampler. A walk length
+/// names the same place of the cutter's profile at every station — the sheet's rows are laid at
+/// walk lengths common to every column — so a host whose sections change between stations walks
+/// each piece as long at every one (a prism's chord sectioned across, `cutter::Across`).
 pub struct Station<'a> {
     pub length: f64,
     pub window: [f64;2],
