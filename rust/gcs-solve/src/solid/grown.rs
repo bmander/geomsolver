@@ -191,11 +191,27 @@ fn construction(sk: &Sketch, face: &FaceRef, t: &RegionTerm)
     }
     let mut read = Vec::new();
     let reading = super::faces::reading(sk, face, &mut read)?;
-    let body = reading.body.clone();
-    let (b, mm, _) = body.brep();
-    if reading.faces.len() != b.faces.len() {
+    if reading.faces.len() != reading.body.brep().0.faces.len() {
         return Err("within reach of only some of a body's faces is read by the field".to_string());
     }
+    let body = reading.body.clone();
+    Ok((pieces(&body, face.solid, d, &t.name)?, body))
+}
+
+/// Solid `solid` grown by `d` (model units), its pieces' faces called `name`: the construction a
+/// body grown is (`built`), for a solid no region names — a shell's cavity less each cut from the
+/// body it hollows, grown by the thickness (`solid::shelled`).  Refused as `built` refuses it.
+pub(crate) fn around(sk: &Sketch, solid: usize, d: f64, name: &str) -> Result<Grown, String> {
+    if !super::faces::stratum_is_whole(sk, solid) {
+        return Err("a body grown whose faces a term of it reads (a round) is read by the field".to_string());
+    }
+    let body = super::faces::cached(sk, solid)?;
+    pieces(&body, solid as u32, d, name)
+}
+
+/// What lies within `d` of solid `solid`, whose faces are `body`, glued to it: its pieces.
+fn pieces(body: &BodyFaces, solid: u32, d: f64, name: &str) -> Result<Grown, String> {
+    let (b, mm, _) = body.brep();
     let refused = |why: &str| format!("{why}: read by the field");
     // the concave edges: two planes meeting along a line, each one's prism cut back to their
     // bisector; or a band's foot, a plane square to a cylinder about its axis, their bisector a cone
@@ -393,7 +409,7 @@ fn construction(sk: &Sketch, face: &FaceRef, t: &RegionTerm)
     pieces.extend(sectors.into_iter().map(|s| vec![s]));
     let (lo, hi) = body.bounds();
     let reach = 2.0 * (norm(sub(hi, lo)) + 4.0 * d);
-    Ok((Grown { body: face.solid, pieces, name: t.name.clone(), reach }, body))
+    Ok(Grown { body: solid, pieces, name: name.to_string(), reach })
 }
 
 /// Plane face `fi` (its outward normal `n`) beside a concave edge, where it is a convex polygon:

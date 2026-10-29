@@ -136,7 +136,11 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
     let mut nodes = Vec::new();
     while let Some((i,ready)) = pending.pop() {
         if seen.contains(&i) { continue; }
+        // a shell's cavity built as a prism less each cut grown (`shelled`): its node stands for
+        // the regions it is made of, and reads the cuts' own
+        let shell = super::shelled::built(sk,i).transpose().map_err(|why| format!("`{}`: {why}",sk.solid_name(i)))?;
         let dependencies = match &sk.solids[i].def {
+            _ if let Some(s) = &shell => s.cuts(),
             SolidDef::Body {..} if !ready => walk.sets(i)?,
             SolidDef::Body {..} => Vec::new(),
             // a tool through a body reads its material, and a region lowered to nothing is none of
@@ -153,7 +157,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
             pending.extend(dependencies.iter().rev().map(|&i| (i as usize,false)));
             continue;
         }
-        let mut node = walk.node(i,&dependencies,&w)?;
+        let mut node = match &shell { Some(s) => s.node(&w)?,None => walk.node(i,&dependencies,&w)? };
         node.set("id",i.into());
         node.set("name",sk.solids[i].name.clone().into());
         if sk.solids[i].copy.is_some() { node.set("step",sk.solids[i].step().into()); }

@@ -13,8 +13,11 @@ outside `X`. It is the language's own words — the cavity `{ c | c inside B }` 
 wall `{ p | p distance(<= t) w }` cut from it, cut from the body — and acts on the body after its
 other terms, as a round does. **The stratum** now counts a body standing on a region that reads a
 body's faces among that body's readers (the cavity, its walls cut from it), where it had refused
-it; no body any earlier document wrote changes. It is read point by point, and an exact export
-refuses it by name. Every solved position is unchanged.
+it; no body any earlier document wrote changes. Where the body is a prism of straight edges with
+what is cut from it and nothing put on it, the shell is built exactly — the cavity a prism, its
+section's edges moved in and arcs about its reflex corners, less each cut grown by the thickness —
+and exports to STEP; any other is read point by point, and an exact export refuses it by name.
+Every solved position is unchanged.
 
 **[0.197] A claim over a declared parameter.** `claim over t in (a, b) { … }` runs along a
 `param t: Angle over (…)` the drawing follows, as it runs along an unknown or a frame's roll

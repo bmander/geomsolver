@@ -101,15 +101,37 @@ impl Session {
         }
         self.result(unsafe { solvent_cad_face(self.0,ids.as_ptr(),ids.len() as c_int) })
     }
-    /// A region in general position (`solid::bounded`, #238), or a grown body's piece cut back
-    /// (`solid::grown`): the common of the primitives it keeps within, less those it keeps outside.
+    /// A region in general position (`solid::bounded`, #238), a grown body's piece cut back
+    /// (`solid::grown`), or a shell's cavity (`solid::shelled`): the common of the primitives it
+    /// keeps within, less those it keeps outside — a cavity's cuts each a body grown.
     fn region(&self,pieces: &[Kept],shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
         let mut id = None;
         for piece in pieces {
-            let p = self.primitive(&piece.node,shapes)?;
+            let p = match &piece.node {
+                Node::Grown {body,pieces} => self.grown(*body,pieces,shapes)?,
+                node => self.primitive(node,shapes)?,
+            };
             id = Some(match id { None => p,Some(s) => self.boolean(s,p,if piece.keep { "bound" } else { "cut" })? });
         }
         id.ok_or_else(|| "a region of no pieces".into())
+    }
+
+    /// A region within reach of a body (`solid::grown`): the body and its pieces' union, where the
+    /// core's kernel glues them; a piece beside a concave edge the common of its sweep and the
+    /// blocks on its bisectors, a face's pieces about a foot (`glued`) each fused in turn.
+    fn grown(&self,body: i64,pieces: &[Node],shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
+        let mut id = shapes[&body];
+        for piece in pieces {
+            let parts = match piece { Node::Glued(parts) => &parts[..],piece => std::slice::from_ref(piece) };
+            for part in parts {
+                let p = match part {
+                    Node::Region(kept) => self.region(kept,shapes)?,
+                    part => self.primitive(part,shapes)?,
+                };
+                id = self.boolean(id,p,"on")?;
+            }
+        }
+        Ok(id)
     }
 
     fn primitive(&self,node: &Node,shapes: &BTreeMap<i64,c_int>) -> Result<c_int,String> {
@@ -301,24 +323,7 @@ impl Session {
                         id
                     }
                     Node::Region(pieces) => self.region(pieces,&shapes)?,
-                    Node::Grown {body,pieces} => {
-                        // a region within reach of a body (`solid::grown`): the body and its pieces'
-                        // union, where the core's kernel glues them; a piece beside a concave edge
-                        // the common of its sweep and the blocks on its bisectors, a face's pieces
-                        // about a foot (`glued`) each fused in turn
-                        let mut id = shapes[body];
-                        for piece in pieces {
-                            let parts = match piece { Node::Glued(parts) => &parts[..],piece => std::slice::from_ref(piece) };
-                            for part in parts {
-                                let p = match part {
-                                    Node::Region(kept) => self.region(kept,&shapes)?,
-                                    part => self.primitive(part,&shapes)?,
-                                };
-                                id = self.boolean(id,p,"on")?;
-                            }
-                        }
-                        id
-                    }
+                    Node::Grown {body,pieces} => self.grown(*body,pieces,&shapes)?,
                     Node::Placed {source,matrix} => {
                         self.result(unsafe { solvent_cad_transform(self.0,shapes[source],matrix.as_ptr()) })?
                     }

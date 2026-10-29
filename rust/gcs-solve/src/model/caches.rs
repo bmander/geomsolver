@@ -123,6 +123,10 @@ pub struct Caches {
     /// each face, edge and corner glued to it (`solid::grown::built`), against `solid::reads`: the
     /// sweep test, the recipe and the exact boundary each ask it, and its gate reads the field.
     pub(crate) grown: Memo<Option<Result<Rc<crate::solid::grown::Grown>, String>>>,
+    /// Each shell's cavity built as a prism less each cut grown (`solid::shelled::built`), against
+    /// its sets' numbers and the stratum of the body it hollows: the sweep test and the recipe each
+    /// ask it, and its gate reads the body's field.
+    pub(crate) shelled: Memo<Option<Result<Rc<crate::solid::shelled::Shelled>, String>>>,
     /// Each ball's sweep built as its tube or refused by its rows (`solid::canal::built`, #238, #684
     /// D), against `solid::reads`: the sweep test, the recipe, the exact boundary and admission each
     /// ask it, and its gate reads the field.
@@ -194,6 +198,7 @@ impl Caches {
         self.gated.borrow_mut().clear();
         self.bounded.clear();
         self.grown.clear();
+        self.shelled.clear();
         self.canal.clear();
         self.roll.clear();
         self.faces.clear();

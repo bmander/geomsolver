@@ -2217,8 +2217,12 @@ shell(t: 1.5mm) float            // sealed: a hollow inside, every face closed
   with it, hollow inside. Add something *inside* the hollow by naming the shelled body first, as
   for a pocket (`inner := solid(tray)`, then `rib union inner`).
 - It is the language's own words: the cavity is `{ c | c inside B }`, each kept face's wall `{ p |
-  p distance(<= t) w }` cut from it, and the cavity cut from the body. It is read point by point,
-  and an exact export says so by name.
+  p distance(<= t) w }` cut from it, and the cavity cut from the body.
+- It is built exactly where `B` is a prism of straight edges — any section, an L, a hopper — with
+  what is cut from it (a pocket, a bore: the shell runs round it) and nothing put on it. Its inner
+  faces are named under the cavity for the faces they line (`….cavity.south`), the rounds in
+  reflex corners `round`. A boss put on the body, a turned or drafted body, or a face of a cut left
+  open is read point by point, and an exact export (`--step`, `--stl`) says so by name.
 
 #### Reports and refusals
 

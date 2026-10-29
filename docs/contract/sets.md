@@ -365,11 +365,35 @@ cut from `X.body`.  What it needed is the stratum's: **a body standing on a read
 (`faces::readers_of`, `reads_faces_of`: a region whose terms read the body's faces, or any other
 body whose stock, walked down, is one — never the body itself nor a layer, whose stock is the layer
 beneath), so the cavity is one of `B`'s late terms, and `without` leaves a reader as it is, since
-nothing of it is in the stratum.  Read by the field; an exact export refuses it, the cavity's region
-named (`cad.rs`).  `tests/shell.rs` is the gate: a block sealed and open through a face, an L's
+nothing of it is in the stratum.  **Built exactly where `B` is a prism less what is cut from it**
+(`solid/shelled.rs`): the cavity is recognised by what its sets say (`shelled::recognised`, either
+form) and built as a prism — within a prism the distance from its boundary is the lesser of the
+section's distance from its edges and the distance along the axis from its caps, so the points at
+least `t` from its kept faces are its section eroded by `t` between its kept caps moved in by `t` —
+less each solid cut from `B` grown by `t` (the erosion of `A` less `P` is `A`'s less `P` grown:
+`grown::around`, a body grown's construction for a solid no region names).  The section eroded
+(`shelled::eroded`): each kept edge moved in by `t`, two meeting at a convex corner where their
+lines do and joined by an arc of radius `t` about a reflex one; an open edge, or an open cap, moved
+*out* by `t/2`, so the cavity crosses the body's faces there and lies on none of them; where a kept
+edge meets an open one at more than a right angle the arc about the corner runs on to the open
+edge's line (a wall leaning in keeps a rounded lip).  A body's open faces are matched to the
+stock's faces by their planes.  Its recipe node is the cavity's (`cad.rs` asks `shelled::built`
+before anything else of a solid, and writes it for the cavity in place of the regions it is made
+of, depending on the cuts alone): a `prism`, or a `region` keeping within it and outside each cut's
+`grown` node (the native host builds a grown piece of a region as its own `grown` node).
+`sweeps_among` reads the regions a built cavity stands for as built, `exact::build` names the
+cavity's faces under it as a region's — each wall's inner face for the face it lines (`south`),
+the arc `round`, a cut's grown faces `round` — and a body's stratum is gated: the stratum less the
+cavity, built, against the body's field (`shelled::gate`).  Refused by name and read by the field:
+a stock no prism of lines (drafted, turned, a body), material put on the body or bounding it, a
+body rounded as well, a face left open that is none of the stock's (a cut's) or only part of one,
+walls that meet or cross (`shelled::simple`), a prism no longer than twice the thickness, a cut no
+body grown builds.  `tests/shell.rs` is the gate: a block sealed and open through a face, an L's
 concave edge rounded within by `t`, a boss shelled with its plinth, the same open through the
 slab's top (its walls running on round their foot, a quarter round), a post added to a pan shelled
-and named, each at a lattice of points to its closed form.
+and named, each at a lattice of points to its closed form; built exactly, the block sealed and open,
+the L (`8 (160 − π)` taken), a tray's pocket and a plate's bore grown out of the cavity, a hopper's
+leaning wall's lip, each to its closed form to 1e-9; the refusals said, and the faces' names.
 
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`

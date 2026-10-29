@@ -38,6 +38,7 @@ pub mod cad;
 pub mod region;
 pub mod bounded;
 pub mod grown;
+pub mod shelled;
 pub mod canal;
 pub mod distributed;
 pub mod roll;
@@ -476,12 +477,20 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
 
 /// Whether a continuous motion sweep no ball's tube builds (`canal::is_canal`), or a region no
 /// exact construction builds (`region::Route::field_only`), is among `operands` (`validate_at`'s):
-/// their boundary is the field's.  The one test, asked by `has_sweep` and by an evaluation that
-/// has validated the operands already at its own unit.
+/// their boundary is the field's.  A shell's cavity built exactly (`shelled::built`) stands for the
+/// regions it is made of.  The one test, asked by `has_sweep` and by an evaluation that has
+/// validated the operands already at its own unit.
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
-    operands.iter().any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. }) && !canal::is_canal(sk, i)
-        || matches!(sk.solids[i].def, SolidDef::Region { .. })
-            && region::route(sk, i).is_ok_and(|r| r.field_only()))
+    let mut built = std::collections::BTreeSet::new();
+    for &i in operands {
+        if let Some(Ok(s)) = shelled::built(sk, i) {
+            built.insert(i);
+            built.extend(s.under().iter().map(|&u| u as usize));
+        }
+    }
+    operands.iter().filter(|i| !built.contains(i)).any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. })
+        && !canal::is_canal(sk, i)
+        || matches!(sk.solids[i].def, SolidDef::Region { .. }) && region::route(sk, i).is_ok_and(|r| r.field_only()))
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {

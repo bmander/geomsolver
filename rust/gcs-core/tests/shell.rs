@@ -3,10 +3,13 @@
 //! each kept face's wall `{ p | p distance(<= t) w }` cut from it — and `shell(t: …) X` what lies
 //! within `t` of everything outside `X`.  The cavity stands on a region reading the body's faces,
 //! so it is one of the stratum's readers and acts on the body after its other terms
-//! (`faces::readers_of`).  Read point by point; each case held at a lattice of points to its
-//! closed form, the field's side at each the closed form's.
+//! (`faces::readers_of`).  Read point by point, each case held at a lattice of points to its
+//! closed form, the field's side at each the closed form's; built exactly where the body is a prism
+//! less what is cut from it (`solid::shelled`), each held to its closed form's volume to 1e-9.
+use gcs_core::brep::props::volume;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
+use std::f64::consts::PI;
 
 use crate::common::{ent, text::solved};
 
@@ -39,6 +42,40 @@ const PLINTH: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.top {\n\
     stud := face(ms, me, mn, mw)\n}\n\
     plinth := solid(slab, from: 0mm, to: 10mm)\n\
     boss := solid(stud, from: 9mm, to: 15mm)\nboss union plinth\n";
+
+/// On the top plane a tray: a slab 40 square and 10 thick, a pocket 20 × 16 and 4 deep cut into
+/// its top.
+const STANDING: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.top {\n\
+    q0 := point\nq1 := point\nq2 := point\nq3 := point\n\
+    fix((0, 0)) q0\nfix((40, 0)) q1\nfix((40, 40)) q2\nfix((0, 40)) q3\n\
+    (qs := line(q0, q1)) -> (qe := line(q1, q2)) -> (qn := line(q2, q3)) -> (qw := line(q3, q0)) -> close\n\
+    slab := face(qs, qe, qn, qw)\n\
+    k0 := point\nk1 := point\nk2 := point\nk3 := point\n\
+    fix((10, 12)) k0\nfix((30, 12)) k1\nfix((30, 28)) k2\nfix((10, 28)) k3\n\
+    (ks := line(k0, k1)) -> (ke := line(k1, k2)) -> (kn := line(k2, k3)) -> (kw := line(k3, k0)) -> close\n\
+    pocket := face(ks, ke, kn, kw)\n}\n\
+    tray := solid(slab, from: 0mm, to: 10mm)\n\
+    cavity := solid(pocket, from: 6mm, to: 11mm)\ncavity cut tray\n";
+
+/// On the top plane a plate 40 square and 5 thick with a bore of radius 6 through it.
+const BORED: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.top {\n\
+    p0 := point\np1 := point\np2 := point\np3 := point\n\
+    fix((80, -20)) p0\nfix((120, -20)) p1\nfix((120, 20)) p2\nfix((80, 20)) p3\n\
+    (ps := line(p0, p1)) -> (pe := line(p1, p2)) -> (pn := line(p2, p3)) -> (pw := line(p3, p0)) -> close\n\
+    plate := face(ps, pe, pn, pw)\n\
+    bc := point\nfix((100, 0)) bc\nbore := radius(6mm) circle(center: bc)\nhole := face(bore)\n}\n\
+    slab := solid(plate, from: 0mm, to: 5mm)\n\
+    drill := solid(hole, from: -1mm, to: 6mm)\ndrill cut slab\n";
+
+/// On the front plane a hopper's section, a pentagon whose west wall leans in at 45° under its top,
+/// standing 12 deep.
+const HOPPER: &str = "unit mm\nuse std\nuse std.rounds (shell)\nin std.front {\n\
+    h0 := point\nh1 := point\nh2 := point\nh3 := point\nh4 := point\n\
+    fix((0, 0)) h0\nfix((30, 0)) h1\nfix((30, 20)) h2\nfix((10, 20)) h3\nfix((0, 10)) h4\n\
+    (bottom := line(h0, h1)) -> (east := line(h1, h2)) -> (top := line(h2, h3)) -> (lean := line(h3, h4)) -> \
+    (west := line(h4, h0)) -> close\n\
+    section := face(bottom, east, top, lean, west)\n}\n\
+    hopper := solid(section, depth: 12mm)\n";
 
 /// Solid `name`'s field.
 fn field(e: &Elaborated, name: &str) -> MaterialField {
@@ -139,12 +176,80 @@ fn a_boss_is_shelled_with_its_body() {
     });
 }
 
-/// Shelled, a body is read point by point: an exact export refuses it, saying why.
+/// `name` built exactly, its volume.
+fn exact_volume(e: &Elaborated, name: &str) -> f64 {
+    let x = e.sketch.exact_solid(ent(e, name).i()).unwrap_or_else(|m| panic!("`{name}`: {m}"));
+    volume(&x.brep)
+}
+
+/// Within 1e-9 of a closed form.
+fn agrees(name: &str, got: f64, want: f64) {
+    assert!((got - want).abs() <= 1e-9 * want, "{name}: {got} against {want}");
+}
+
+/// A prism shelled is built exactly: its cavity a prism, the section's edges moved in by the
+/// thickness and its caps, an open face's moved out.  The block sealed loses a box 36 × 8 × 20,
+/// open through its north face one 36 × 8 × 22; the L's cavity has an arc of radius 2 about its
+/// reflex corner, so it takes `8 (160 − π)` of the L's 3600.
 #[test]
-fn a_shelled_body_is_not_built_exactly() {
+fn a_prism_shelled_is_built_exactly() {
+    let e = solved(&format!("{BLOCKS}shell(t: 2mm) block\nshell(t: 2mm) step\n"));
+    agrees("block", exact_volume(&e, "block"), 11520.0 - 36.0 * 8.0 * 20.0);
+    agrees("step", exact_volume(&e, "step"), 3600.0 - 8.0 * (160.0 - PI));
     let e = solved(&format!("{BLOCKS}block.north shell(t: 2mm) block\n"));
-    let Err(why) = e.sketch.exact_solid(ent(&e, "block").i()) else { panic!("built") };
-    assert!(why.contains("read by the field") && why.contains("cavity"), "{why}");
+    agrees("open", exact_volume(&e, "block"), 11520.0 - 36.0 * 8.0 * 22.0);
+}
+
+/// What is cut from the prism takes from the cavity what lies within the thickness of it: the
+/// cavity of `A` less `P` is `A`'s less `P` grown.  A tray, a slab 40 square and 10 thick with a
+/// pocket 20 × 16 and 4 deep in its top, shelled by 1: the box 38 × 38 × 8 less the pocket grown by
+/// 1 below its top, the offset rectangle's prism 3 deep and its rounded floor (Steiner's half
+/// layer); open through its top, 9 deep and the prism 4.  A plate 40 square and 5 thick with a bore
+/// of radius 6: the box 38 × 38 × 3 less a cylinder of radius 7.
+#[test]
+fn what_is_cut_from_a_prism_is_shelled_with_it() {
+    let floor = 320.0 + PI / 4.0 * 72.0 + 4.0 * PI / 6.0;
+    let tray = 16000.0 - 20.0 * 16.0 * 4.0;
+    let e = solved(&format!("{STANDING}shell(t: 1mm) tray\n"));
+    agrees("sealed", exact_volume(&e, "tray"), tray - (38.0 * 38.0 * 8.0 - (392.0 + PI) * 3.0 - floor));
+    let e = solved(&format!("{STANDING}tray.near shell(t: 1mm) tray\n"));
+    agrees("open", exact_volume(&e, "tray"), tray - (38.0 * 38.0 * 9.0 - (392.0 + PI) * 4.0 - floor));
+    let e = solved(&format!("{BORED}shell(t: 1mm) slab\n"));
+    agrees("bored", exact_volume(&e, "slab"), 8000.0 - 180.0 * PI - (38.0 * 38.0 * 3.0 - 147.0 * PI));
+}
+
+/// What is not built is read by the field, and an exact export says why by name: a body that is no
+/// prism less its cuts (the plinth's boss is put on it), a cut's faces left open, a section whose
+/// walls meet, a prism no longer than twice the thickness.
+#[test]
+fn what_is_not_built_is_read_by_the_field_and_said() {
+    let refused = |doc: &str, src: &str, name: &str, says: &str| {
+        let e = solved(&format!("{doc}{src}\n"));
+        let Err(why) = e.sketch.exact_solid(ent(&e, name).i()) else { panic!("`{src}` built") };
+        assert!(why.contains(says), "`{src}`: {why}");
+        field(&e, name);
+    };
+    refused(PLINTH, "shell(t: 1mm) plinth", "plinth", "material put on it");
+    refused(STANDING, "tray.cavity shell(t: 1mm) tray", "tray", "none of the stock's");
+    refused(BLOCKS, "shell(t: 6mm) step", "step", "narrower than twice the thickness");
+    refused(BLOCKS, "shell(t: 7mm) block", "block", "no longer than twice the thickness");
+}
+
+/// The cavity's faces are named under it, as a region's are: each wall's inner face for the face
+/// it is moved in from, the arc about a reflex corner `round`.
+#[test]
+fn a_shells_faces_are_named_for_the_faces_they_line() {
+    let e = solved(&format!("{BLOCKS}block.north shell(t: 2mm) block\nshell(t: 2mm) step\n"));
+    let names = |n: &str| -> Vec<String> {
+        e.sketch.exact_solid(ent(&e, n).i()).unwrap().brep.faces.iter().map(|f| f.name.clone()).collect()
+    };
+    let block = names("block");
+    for face in ["block.north", "block.south", ".cavity.south", ".cavity.far"] {
+        assert!(block.iter().any(|n| n.ends_with(face)), "{face} among {block:?}");
+    }
+    assert!(!block.iter().any(|n| n.ends_with(".cavity.north")), "{block:?}");
+    let step = names("step");
+    assert!(step.iter().any(|n| n.ends_with(".cavity.round")), "{step:?}");
 }
 
 /// The distance from `p` to the rectangle square to axis `k` at `v`, its other two axes (in order)
@@ -194,4 +299,23 @@ fn what_stands_in_the_hollow_is_added_to_the_body_shelled() {
         within(p, [0.0, 0.0, 0.0], [40.0, 40.0, 10.0]) && !within(p, [1.0, 1.0, 1.0], [39.0, 39.0, 11.0])
             || within(p, [15.0, 15.0, 0.5], [25.0, 25.0, 6.0])
     });
+}
+
+/// Where a kept wall meets the open face at more than a right angle, leaning in over the opening,
+/// a point past the wall's rim is nearer its corner than its line: the cavity runs on round the
+/// corner on an arc of radius `t` to the open face, and the wall ends in a rounded lip.  A hopper's
+/// section, a pentagon whose west wall leans in at 45° to its open top: the section's area less
+/// the cavity's — the walls moved in, clipped by the top, and what lies past the leaning wall's
+/// line moved in but outside the arc about its corner, `2 − π/2` below the top — over its depth,
+/// the caps moved in by 2.
+#[test]
+fn a_wall_leaning_in_over_its_opening_keeps_a_rounded_lip() {
+    let e = solved(&format!("{HOPPER}hopper.top shell(t: 2mm) hopper\n"));
+    let area = |p: &[[f64; 2]]| (0..p.len()).map(|k| { let (a, b) = (p[k], p[(k + 1) % p.len()]); a[0] * b[1] - a[1] * b[0] })
+        .sum::<f64>() / 2.0;
+    let section = area(&[[0.0, 0.0], [30.0, 0.0], [30.0, 20.0], [10.0, 20.0], [0.0, 10.0]]);
+    let s = 2f64.sqrt();
+    let moved = area(&[[2.0, 2.0], [28.0, 2.0], [28.0, 20.0], [10.0 + 2.0 * s, 20.0], [2.0, 12.0 - 2.0 * s]]);
+    let lip = 2.0 - PI / 2.0;
+    agrees("hopper", exact_volume(&e, "hopper"), 12.0 * section - 8.0 * (moved + lip));
 }

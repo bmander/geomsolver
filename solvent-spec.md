@@ -976,7 +976,12 @@ distance(<= t) w }` cut from it, cut from the body — so each wall is its face 
 inner faces meeting sharp within a convex edge of `B` and rounded by `t` within a concave one, and
 the walls run on to an open face's rim, and round it by `t` where the hollow reaches past a wall's
 edge (a boss standing on an open top keeps a quarter round about its foot). It acts on the body after its other terms, as a round does
-(the stratum, above). *Non-normative:* it is read point by point, and an exact export refuses it.
+(the stratum, above). *Non-normative:* within a prism the distance from its boundary is the lesser
+of its section's distance from the section's edges and the distance along its axis from its caps, so
+where `B` is a prism less what is cut from it the cavity is a prism — its section with each kept edge
+moved in by `t`, an arc of radius `t` about each reflex corner, between its kept caps moved in by `t`
+— less each cut grown by `t`, and an implementation builds it exactly, held to the point-by-point
+reading; any other body it reads point by point, and an exact export refuses it in those words.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, **[0.80]** `draft:`, `through:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints (**[0.100]** `along:` is retired: below). A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 
