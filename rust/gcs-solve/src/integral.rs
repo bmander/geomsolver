@@ -17,7 +17,7 @@
 use crate::fmath::Det;
 use crate::curve::{self, DEGREE, SPAN_N};
 
-pub use gcs_brep::util::quadrature::GAUSS8;
+pub use cad_kernel::util::quadrature::GAUSS8;
 
 /// Equal pieces each span's rule runs on.  One is not enough where a span bends hard: `|C'|`
 /// is no polynomial, and a single Bézier with a tight turn reads ~1e-4 of its length off by

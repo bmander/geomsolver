@@ -6,7 +6,7 @@ says where a rule came from.
 
 **The Rust B-rep kernel** ([plan](../rust-kernel-plan.md)); clean-room — OCCT is LGPL, this repo
 MIT: its code is never translated, only its behaviour and conventions studied.  It is its own
-crate, `gcs-brep` (`rust/gcs-brep/`, MIT OR Apache-2.0), which names neither the solver nor the
+crate, `cad-kernel` (`rust/cad-kernel/`, MIT OR Apache-2.0), which names neither the solver nor the
 language; `gcs-solve` re-exports it as `brep` and adds what reads the model (`brep::sweep`,
 `brep::export`), so its paths below are `gcs_core::brep`'s as before. `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`

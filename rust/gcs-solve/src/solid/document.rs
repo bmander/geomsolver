@@ -210,7 +210,7 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
     done.remove(&(si as u32)).unwrap_or_default()
 }
 
-pub use gcs_brep::recipe::route_step;
+pub use cad_kernel::recipe::route_step;
 
 /// Whether `route` begins with `operand`'s step (`SolidE::step`), and the rest of it past: a
 /// step written without the copy's index is any copy's (`faces::same_step`).

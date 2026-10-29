@@ -1,5 +1,5 @@
 [package]
-name = "gcs-brep"
+name = "cad-kernel"
 version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -10,6 +10,6 @@ description = "A boundary-representation solid modelling kernel: exact analytic 
 [dependencies]
 
 [lib]
-name = "gcs_brep"
+name = "cad_kernel"
 path = "src/lib.rs"
 test = false

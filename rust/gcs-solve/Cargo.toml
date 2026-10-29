@@ -8,7 +8,7 @@ description = "Geometric constraint solver without the language: model, kernels,
 # (`gcs-core/tests`), which reaches everything here through the core's re-exports.
 [dependencies]
 # The B-rep kernel and the numerical ground both stand on, re-exported as `brep` and by name.
-gcs-brep = { path = "../gcs-brep" }
+cad-kernel = { path = "../cad-kernel" }
 
 [lib]
 name = "gcs_solve"

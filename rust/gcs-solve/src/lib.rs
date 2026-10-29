@@ -14,12 +14,12 @@ pub mod amd;
 pub mod beams;
 pub mod bodies;
 pub mod brep;
-// The kernel's numerical ground, the solver's too, by the names it always had (`gcs-brep`).
-pub use gcs_brep::util::{clock,fmath,interval,json,linalg,par,rng,roots,space};
+// The kernel's numerical ground, the solver's too, by the names it always had (`cad-kernel`).
+pub use cad_kernel::util::{clock,fmath,interval,json,linalg,par,rng,roots,space};
 // Internal to the engine, and public only so the language's renderer, seams and patches (in
 // `gcs-core`) reach the same bounding-volume tree.
 #[doc(hidden)]
-pub use gcs_brep::util::bvh;
+pub use cad_kernel::util::bvh;
 pub mod cgraph;
 pub mod cholesky;
 pub mod clear;

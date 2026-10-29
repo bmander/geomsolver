@@ -12,7 +12,7 @@ files it lists are the contract, and `gcs-solver-program.md` is the staged progr
 ## Layout
 
 * **core**: the whole engine in Rust, no dependencies, as three crates.
-  * **B-rep kernel** (`rust/gcs-brep/`): the exact B-rep, its Booleans, mesher and STEP, and the
+  * **B-rep kernel** (`rust/cad-kernel/`): the exact B-rep, its Booleans, mesher and STEP, and the
     numerical ground under everything (`util`: `fmath`, `space`, `linalg`, `json`, …).  Knows no
     solver; MIT OR Apache-2.0, to be published on its own.  `gcs-solve` re-exports it as `brep`
     and each `util` module by its old name.

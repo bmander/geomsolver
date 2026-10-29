@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-pub use gcs_brep::util::union_find::UnionFind;
+pub use cad_kernel::util::union_find::UnionFind;
 
 /* -- Hopcroft–Karp ---------------------------------------------------------- */
 
