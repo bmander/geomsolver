@@ -114,9 +114,9 @@ pub(crate) fn build(sk: &Sketch, si: usize) -> Result<Exact, String> {
                     f.name = name_under(&placed, face);
                 }
             }
-            // a body's faces are its operands', named as they were — but a shell's cavity, one prism
-            // standing for the regions it is made of (`shelled`)
-            SolidDef::Body { .. } if !matches!(super::shelled::built(sk, id as usize), Some(Ok(_))) => {}
+            // a body's faces are its operands', named as they were — where its node is a body's (a
+            // shell's cavity is one construction standing for the solids it is made of, `shelled`)
+            SolidDef::Body { .. } if matches!(n.node, crate::brep::recipe::Node::Body(_)) => {}
             _ => {
                 // a turn's ends do not lead
                 let caps = if matches!(sol.def, SolidDef::Revolve { .. }) { &[][..] } else { sol.caps() };

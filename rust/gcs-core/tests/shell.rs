@@ -12,7 +12,7 @@ use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
 use std::f64::consts::PI;
 
-use crate::common::{ent, text::solved};
+use crate::common::{close, ent, text::solved};
 
 /// A block 40 × 24 × 12 drawn on the front plane (x, z), standing 12 deep along y; an L of two
 /// steps whose inner edge, along y through (10, 110), is concave.
@@ -183,11 +183,6 @@ fn exact_volume(e: &Elaborated, name: &str) -> f64 {
     volume(&x.brep)
 }
 
-/// Within 1e-9 of a closed form.
-fn agrees(name: &str, got: f64, want: f64) {
-    assert!((got - want).abs() <= 1e-9 * want, "{name}: {got} against {want}");
-}
-
 /// A prism shelled is built exactly: its cavity a prism, the section's edges moved in by the
 /// thickness and its caps, an open face's moved out.  The block sealed loses a box 36 × 8 × 20,
 /// open through its north face one 36 × 8 × 22; the L's cavity has an arc of radius 2 about its
@@ -195,10 +190,10 @@ fn agrees(name: &str, got: f64, want: f64) {
 #[test]
 fn a_prism_shelled_is_built_exactly() {
     let e = solved(&format!("{BLOCKS}shell(t: 2mm) block\nshell(t: 2mm) step\n"));
-    agrees("block", exact_volume(&e, "block"), 11520.0 - 36.0 * 8.0 * 20.0);
-    agrees("step", exact_volume(&e, "step"), 3600.0 - 8.0 * (160.0 - PI));
+    close(exact_volume(&e, "block"), 11520.0 - 36.0 * 8.0 * 20.0);
+    close(exact_volume(&e, "step"), 3600.0 - 8.0 * (160.0 - PI));
     let e = solved(&format!("{BLOCKS}block.north shell(t: 2mm) block\n"));
-    agrees("open", exact_volume(&e, "block"), 11520.0 - 36.0 * 8.0 * 22.0);
+    close(exact_volume(&e, "block"), 11520.0 - 36.0 * 8.0 * 22.0);
 }
 
 /// What is cut from the prism takes from the cavity what lies within the thickness of it: the
@@ -212,11 +207,11 @@ fn what_is_cut_from_a_prism_is_shelled_with_it() {
     let floor = 320.0 + PI / 4.0 * 72.0 + 4.0 * PI / 6.0;
     let tray = 16000.0 - 20.0 * 16.0 * 4.0;
     let e = solved(&format!("{STANDING}shell(t: 1mm) tray\n"));
-    agrees("sealed", exact_volume(&e, "tray"), tray - (38.0 * 38.0 * 8.0 - (392.0 + PI) * 3.0 - floor));
+    close(exact_volume(&e, "tray"), tray - (38.0 * 38.0 * 8.0 - (392.0 + PI) * 3.0 - floor));
     let e = solved(&format!("{STANDING}tray.near shell(t: 1mm) tray\n"));
-    agrees("open", exact_volume(&e, "tray"), tray - (38.0 * 38.0 * 9.0 - (392.0 + PI) * 4.0 - floor));
+    close(exact_volume(&e, "tray"), tray - (38.0 * 38.0 * 9.0 - (392.0 + PI) * 4.0 - floor));
     let e = solved(&format!("{BORED}shell(t: 1mm) slab\n"));
-    agrees("bored", exact_volume(&e, "slab"), 8000.0 - 180.0 * PI - (38.0 * 38.0 * 3.0 - 147.0 * PI));
+    close(exact_volume(&e, "slab"), 8000.0 - 180.0 * PI - (38.0 * 38.0 * 3.0 - 147.0 * PI));
 }
 
 /// A boss put on the body is shelled with it, built exactly: the walls are what lies within the
@@ -230,9 +225,9 @@ fn what_is_cut_from_a_prism_is_shelled_with_it() {
 fn a_body_with_a_boss_is_shelled_exactly() {
     let (plinth, foot) = (16500.0, 100.0 - 10.0 * PI + 8.0 / 3.0);
     let e = solved(&format!("{PLINTH}shell(t: 1mm) plinth\n"));
-    agrees("sealed", exact_volume(&e, "plinth"), plinth - (38.0 * 38.0 * 8.0 + foot + 64.0 * 4.0));
+    close(exact_volume(&e, "plinth"), plinth - (38.0 * 38.0 * 8.0 + foot + 64.0 * 4.0));
     let e = solved(&format!("{PLINTH}plinth.boss.near shell(t: 1mm) plinth\n"));
-    agrees("chimney", exact_volume(&e, "plinth"), plinth - (38.0 * 38.0 * 8.0 + foot + 64.0 * 5.0));
+    close(exact_volume(&e, "plinth"), plinth - (38.0 * 38.0 * 8.0 + foot + 64.0 * 5.0));
     // a pit 8 square and 4 deep sunk beside the boss: the cavity less the pit grown by 1 below the
     // slab's inner top, its offset square's prism 3 deep and its rounded floor
     let pit = "in std.top {\nd0 := point\nd1 := point\nd2 := point\nd3 := point\n\
@@ -241,7 +236,7 @@ fn a_body_with_a_boss_is_shelled_exactly() {
                dimple := face(ds, de, dn, dw)\n}\npit := solid(dimple, from: 6mm, to: 11mm)\npit cut plinth\n";
     let e = solved(&format!("{PLINTH}{pit}shell(t: 1mm) plinth\n"));
     let grown = 3.0 * (96.0 + PI) + 64.0 + 8.0 * PI + 4.0 * PI / 6.0;
-    agrees("pitted", exact_volume(&e, "plinth"), plinth - 256.0 - (38.0 * 38.0 * 8.0 + foot + 64.0 * 4.0 - grown));
+    close(exact_volume(&e, "plinth"), plinth - 256.0 - (38.0 * 38.0 * 8.0 + foot + 64.0 * 4.0 - grown));
 }
 
 /// What is not built is read by the field, and an exact export says why by name: a wall standing
@@ -343,5 +338,5 @@ fn a_wall_leaning_in_over_its_opening_keeps_a_rounded_lip() {
     let s = 2f64.sqrt();
     let moved = area(&[[2.0, 2.0], [28.0, 2.0], [28.0, 20.0], [10.0 + 2.0 * s, 20.0], [2.0, 12.0 - 2.0 * s]]);
     let lip = 2.0 - PI / 2.0;
-    agrees("hopper", exact_volume(&e, "hopper"), 12.0 * section - 8.0 * (moved + lip));
+    close(exact_volume(&e, "hopper"), 12.0 * section - 8.0 * (moved + lip));
 }

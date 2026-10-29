@@ -52,7 +52,9 @@ type V = [f64; 3];
 /// A body grown: the body's solid, and what is glued to it (model units).
 #[derive(Clone, Debug)]
 pub struct Grown {
-    body: u32,
+    /// The solid its pieces are glued to; none where they stand alone, a shell's walls glued to
+    /// what lies outside the body (`solid::shelled`).
+    body: Option<u32>,
     /// Each glued to the body as one: a piece, or a face's pieces about a foot glued to one
     /// another first.
     pieces: Vec<Vec<Piece>>,
@@ -106,7 +108,8 @@ impl Grown {
     /// or a `revolve`, or one cut back a `region` keeping it and a block on each of its planes, or
     /// a face's pieces about a foot `glued` to one another.
     pub fn node(&self, w: &Writer) -> Result<Json, String> {
-        Ok(object([("kind", "grown".into()), ("body", (self.body as usize).into()),
+        let body = self.body.ok_or("a body grown's pieces with no body to glue them to")?;
+        Ok(object([("kind", "grown".into()), ("body", (body as usize).into()),
                    ("pieces", Json::Arr(self.pieces_json(w)?))]))
     }
 
@@ -149,7 +152,7 @@ impl Grown {
     }
 
     /// The solid it is glued to, whose recipe node its own reads.
-    pub fn body(&self) -> u32 { self.body }
+    pub fn body(&self) -> Option<u32> { self.body }
 }
 
 /// The body region solid `solid` is within reach of, and the reach, where it is that region: one
@@ -191,32 +194,29 @@ fn construction(sk: &Sketch, face: &FaceRef, t: &RegionTerm)
     if !(d > 0.0) {
         return Err("a body grown by nothing is the body itself".to_string());
     }
-    // the faces its glued pieces meet are the body's own, as its recipe node builds it
-    if !super::faces::stratum_is_whole(sk, face.solid as usize) {
-        return Err("a body grown whose faces a term of it reads (a round) is read by the field".to_string());
-    }
     let mut read = Vec::new();
     let reading = super::faces::reading(sk, face, &mut read)?;
     if reading.faces.len() != reading.body.brep().0.faces.len() {
         return Err("within reach of only some of a body's faces is read by the field".to_string());
     }
-    let body = reading.body.clone();
-    Ok((pieces(&body, face.solid, d, &t.name)?, body))
+    Ok((around(sk, face.solid as usize, d, &t.name)?, reading.body))
 }
 
 /// Solid `solid` grown by `d` (model units), its pieces' faces called `name`: the construction a
 /// body grown is (`built`), for a solid no region names — a shell's cavity less each cut from the
 /// body it hollows, grown by the thickness (`solid::shelled`).  Refused as `built` refuses it.
 pub(crate) fn around(sk: &Sketch, solid: usize, d: f64, name: &str) -> Result<Grown, String> {
+    // the faces its glued pieces meet are the body's own, as its recipe node builds it
     if !super::faces::stratum_is_whole(sk, solid) {
         return Err("a body grown whose faces a term of it reads (a round) is read by the field".to_string());
     }
     let body = super::faces::cached(sk, solid)?;
-    pieces(&body, solid as u32, d, name)
+    Ok(Grown { body: Some(solid as u32), ..pieces(&body, d, name)? })
 }
 
-/// What lies within `d` of solid `solid`, whose faces are `body`, glued to it: its pieces.
-pub(crate) fn pieces(body: &BodyFaces, solid: u32, d: f64, name: &str) -> Result<Grown, String> {
+/// What lies within `d` of the faces `body`, their pieces' faces called `name`: the pieces alone,
+/// glued to no solid yet.
+pub(crate) fn pieces(body: &BodyFaces, d: f64, name: &str) -> Result<Grown, String> {
     let (b, mm, _) = body.brep();
     let refused = |why: &str| format!("{why}: read by the field");
     // the concave edges: two planes meeting along a line, each one's prism cut back to their
@@ -415,7 +415,7 @@ pub(crate) fn pieces(body: &BodyFaces, solid: u32, d: f64, name: &str) -> Result
     pieces.extend(sectors.into_iter().map(|s| vec![s]));
     let (lo, hi) = body.bounds();
     let reach = 2.0 * (norm(sub(hi, lo)) + 4.0 * d);
-    Ok(Grown { body: solid, pieces, name: name.to_string(), reach })
+    Ok(Grown { body: None, pieces, name: name.to_string(), reach })
 }
 
 /// Plane face `fi` (its outward normal `n`) beside a concave edge, where it is a convex polygon:
@@ -427,12 +427,18 @@ pub(crate) fn pieces(body: &BodyFaces, solid: u32, d: f64, name: &str) -> Result
 fn beside_concave(body: &BodyFaces, fi: usize, n: V, concave: &[bool], d: f64)
     -> Result<Piece, &'static str> {
     let (b, _, _) = body.brep();
-    let [l] = &b.faces[fi].loops[..] else { return Err("a face beside a concave edge that is no convex polygon") };
+    let [l] = &b.faces[fi].loops[..] else { return Err(NO_POLYGON) };
     let (foot, cuts) = cut_back(body, fi, l, n, concave, d)?;
-    let m = foot.len();
-    let edges = (0..m).map(|k| ProfileEdge::Line { a: foot[k], b: foot[(k + 1) % m] }).collect();
-    let section = Profile { origin: foot[0], normal: n, loops: vec![edges], names: Vec::new() };
+    let section = Profile { origin: foot[0], normal: n, loops: vec![polygon(&foot)], names: Vec::new() };
     Ok(Piece { section, sweep: Sweep::Along(d), cuts })
+}
+
+/// What refuses a face beside a concave edge whose loop is no convex polygon.
+const NO_POLYGON: &str = "a face beside a concave edge that is no convex polygon";
+
+/// The closed polygon through corners `c` (model units), as a section's edges.
+pub(crate) fn polygon(c: &[V]) -> Vec<ProfileEdge> {
+    (0..c.len()).map(|k| ProfileEdge::Line { a: c[k], b: c[(k + 1) % c.len()] }).collect()
 }
 
 /// Loop `l` of plane face `fi` (its outward normal `n`), a convex polygon some of whose sides are
@@ -441,7 +447,6 @@ fn beside_concave(body: &BodyFaces, fi: usize, n: V, concave: &[bool], d: f64)
 /// foot, `about_feet`).
 fn cut_back(body: &BodyFaces, fi: usize, l: &[crate::brep::topo::Coedge], n: V, concave: &[bool], d: f64)
     -> Result<(Vec<V>, Vec<Cut>), &'static str> {
-    const NO_POLYGON: &str = "a face beside a concave edge that is no convex polygon";
     /// A side of the face: its start, its unit direction, and the normal of the face beyond it
     /// where it is concave.
     struct Side { start: V, along: V, beyond: Option<V> }
@@ -460,17 +465,9 @@ fn cut_back(body: &BodyFaces, fi: usize, l: &[crate::brep::topo::Coedge], n: V, 
         (Some(x), Some(y)) => norm(sub(x, y)) <= 1e-9,
         _ => false,
     };
-    let mut k = 0;
-    while sides.len() > 3 && k < sides.len() {
-        let next = (k + 1) % sides.len();
-        if same(&sides[k], &sides[next]) {
-            sides.remove(next);
-            if next < k {
-                k -= 1;
-            }
-        } else {
-            k += 1;
-        }
+    sides.dedup_by(|later, kept| same(kept, later));
+    while sides.len() > 1 && same(&sides[sides.len() - 1], &sides[0]) {
+        sides.remove(0);
     }
     let m = sides.len();
     if m < 3 {
@@ -576,8 +573,9 @@ fn foot(body: &BodyFaces, e: u32) -> bool {
 /// Its prism `d` out along `n`, each such loop moved `d` across the face, and glued to it the
 /// pieces between the loop and where it moved, each cut back along the plane or the cone the
 /// face's prism meets the piece beyond in: as one, the face's own (`glued`), its foot one face.
-/// A loop no edge of which is concave stands as it is.  Refused where a loop is both, where the
-/// rim is concave about a hole, or where the pieces about one loop reach another's.
+/// A loop no edge of which is concave stands as it is; a rim all concave is cut back to its
+/// bisectors as beside a concave edge (`cut_back`).  Refused where a loop is both, or where the
+/// pieces about one loop reach another's.
 fn about_feet(body: &BodyFaces, fi: usize, n: V, o: V, concave: &[bool], standing: &BTreeSet<u32>, d: f64)
     -> Result<Vec<Piece>, &'static str> {
     let (b, _, _) = body.brep();
@@ -593,7 +591,7 @@ fn about_feet(body: &BodyFaces, fi: usize, n: V, o: V, concave: &[bool], standin
         let (edges, reach) = if hollow == 0 {
             (loop_section(body, l, n).ok_or("a plane face bounded by an edge no line or circle carries")?, 0.0)
         } else if hollow < l.len() {
-            return Err("a face beside a concave edge that is no convex polygon");
+            return Err(NO_POLYGON);
         } else if let [c] = &l[..] {
             let (edge, piece) = about_circle(body, c.edge, n, li > 0, d)?;
             rest.push(piece);
@@ -607,8 +605,7 @@ fn about_feet(body: &BodyFaces, fi: usize, n: V, o: V, concave: &[bool], standin
             // about a boss's foot seen from within the body (`solid::shelled`)
             let (foot, cut) = cut_back(body, fi, l, n, concave, d)?;
             cuts = cut;
-            let m = foot.len();
-            ((0..m).map(|k| ProfileEdge::Line { a: foot[k], b: foot[(k + 1) % m] }).collect(), d)
+            (polygon(&foot), d)
         };
         zones.push((polyline(body, l), reach));
         loops.push(edges);
@@ -813,7 +810,7 @@ fn gate(sk: &Sketch, solid: usize, g: &Grown, body: &BodyFaces) -> Result<(), St
     let (b, mm, origin) = body.brep();
     let w = Writer::about(mm, origin.map(|x| x * mm));
     let mut built = std::collections::BTreeMap::new();
-    built.insert(g.body as i64, b.clone());
+    built.insert(g.body.ok_or("a body grown glued to no body")? as i64, b.clone());
     let brep = crate::brep::recipe::node(&g.node(&w)?, &built)?;
     let field = super::MaterialField::read(sk, solid, super::cad::AXIS_TOLERANCE)?;
     let back = |p: V| body.back(p);

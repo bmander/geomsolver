@@ -88,6 +88,21 @@ impl BodyFaces {
     /// An exact boundary's faces, each named by its path beside it (none: a boundary read whole,
     /// `field::BuiltField`).
     pub fn of(ex: crate::solid::Exact, paths: Vec<FacePath>) -> BodyFaces {
+        let mut faces = BodyFaces::located(ex, paths);
+        faces.convex = (0..faces.loc.b.edges.len()).map(|e| faces.edge_convex(e as u32)).collect();
+        faces
+    }
+
+    /// A boundary's faces read with no names: what a construction builds from (a shell's body and
+    /// its openings' prisms glued, `solid::shelled`), millimetres about `origin` as `of` reads one.
+    pub fn unnamed(brep: crate::brep::topo::Brep, mm: f64, origin: V) -> BodyFaces {
+        let named = vec![(String::new(), String::new()); brep.faces.len()];
+        let paths = vec![FacePath::new("", ""); brep.faces.len()];
+        BodyFaces::of(crate::solid::Exact { brep, mm, origin, leading: BTreeSet::new(), named }, paths)
+    }
+
+    /// `of` but each edge's convexity, left for the caller to read.
+    fn located(ex: crate::solid::Exact, paths: Vec<FacePath>) -> BodyFaces {
         let tol = 1e-9 * ex.brep.size().max(1.0);
         let (mm, origin) = (ex.mm, ex.origin);
         let loc = Located::owned(ex.brep, tol);
@@ -116,9 +131,7 @@ impl BodyFaces {
             }
         }
         let shells = joined.labels();
-        let mut faces = BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding, reach, shells };
-        faces.convex = (0..faces.loc.b.edges.len()).map(|e| faces.edge_convex(e as u32)).collect();
-        faces
+        BodyFaces { loc, mm, origin, paths, convex: Vec::new(), edges, bounding, reach, shells }
     }
 
     /// The same boundary bounding what lies outside it: every face's outward side turned, so each
@@ -131,7 +144,8 @@ impl BodyFaces {
         }
         let named = vec![(String::new(), String::new()); brep.faces.len()];
         let ex = crate::solid::Exact { brep, mm: self.mm, origin: self.origin, leading: BTreeSet::new(), named };
-        let mut out = BodyFaces::of(ex, self.paths.clone());
+        // each edge's convexity the other way round, never classified again
+        let mut out = BodyFaces::located(ex, self.paths.clone());
         out.convex = self.convex.iter().map(|c| c.map(|x| !x)).collect();
         out
     }

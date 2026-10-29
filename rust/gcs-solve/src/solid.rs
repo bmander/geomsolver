@@ -478,19 +478,18 @@ pub(crate) fn has_sweep(sk: &Sketch, si: usize) -> bool {
 /// Whether a continuous motion sweep no ball's tube builds (`canal::is_canal`), or a region no
 /// exact construction builds (`region::Route::field_only`), is among `operands` (`validate_at`'s):
 /// their boundary is the field's.  A shell's cavity built exactly (`shelled::built`) stands for the
-/// regions it is made of.  The one test, asked by `has_sweep` and by an evaluation that has
-/// validated the operands already at its own unit.
+/// solids it is made of; it is built only where nothing else decides, the dearest question here.
+/// The one test, asked by `has_sweep` and by an evaluation that has validated the operands already
+/// at its own unit.
 fn sweeps_among(sk: &Sketch, operands: &std::collections::BTreeSet<usize>) -> bool {
-    let mut built = std::collections::BTreeSet::new();
-    for &i in operands {
-        if let Some(Ok(s)) = shelled::built(sk, i) {
-            built.insert(i);
-            built.extend(s.under().iter().map(|&u| u as usize));
-        }
-    }
-    operands.iter().filter(|i| !built.contains(i)).any(|&i| matches!(sk.solids[i].def, SolidDef::Swept { .. })
-        && !canal::is_canal(sk, i)
-        || matches!(sk.solids[i].def, SolidDef::Region { .. }) && region::route(sk, i).is_ok_and(|r| r.field_only()))
+    let field_only = |i: usize| matches!(sk.solids[i].def, SolidDef::Swept { .. }) && !canal::is_canal(sk, i)
+        || matches!(sk.solids[i].def, SolidDef::Region { .. }) && region::route(sk, i).is_ok_and(|r| r.field_only());
+    let shells: Vec<(usize, Vec<u32>)> = operands.iter().filter_map(|&i| shelled::stands_for(sk, i).map(|u| (i, u))).collect();
+    let under: std::collections::BTreeSet<usize> = shells.iter()
+        .flat_map(|(i, u)| std::iter::once(*i).chain(u.iter().map(|&x| x as usize))).collect();
+    operands.iter().filter(|i| !under.contains(i)).any(|&i| field_only(i))
+        || shells.iter().any(|(i, u)| !matches!(shelled::built(sk, *i), Some(Ok(_)))
+            && (field_only(*i) || u.iter().any(|&x| field_only(x as usize))))
 }
 
 fn validate_at(sk: &Sketch, si: usize, unit: f64) -> Result<std::collections::BTreeSet<usize>, String> {

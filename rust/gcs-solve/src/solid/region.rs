@@ -128,7 +128,7 @@ impl Route {
     /// The solid whose recipe node its own reads, where it reads one: a body grown's body.
     pub fn built_on(&self) -> Option<u32> {
         match self {
-            Route::Grown(Ok(g)) => Some(g.body()),
+            Route::Grown(Ok(g)) => g.body(),
             _ => None,
         }
     }

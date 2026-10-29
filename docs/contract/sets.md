@@ -378,8 +378,8 @@ lines do and joined by an arc of radius `t` about a reflex one; an open edge, or
 edge meets an open one at more than a right angle the arc about the corner runs on to the open
 edge's line (a wall leaning in keeps a rounded lip).  A body's open faces are matched to the
 stock's faces by their planes.  Its recipe node is the cavity's (`cad.rs` asks `shelled::built`
-before anything else of a solid, and writes it for the cavity in place of the regions it is made
-of, depending on the cuts alone): a `prism`, or a `region` keeping within it and outside each cut's
+once a solid, before anything else of it, and writes it for the cavity in place of the regions it
+is made of, depending on what its construction reads, `Shelled::reads`): a `prism`, or a `region` keeping within it and outside each cut's
 `grown` node.  **Any other body by its walls** (`shelled::walls`, a boss put on it): the walls are
 what lies within `t` of what is outside the body, so they are the body's faces turned inside out
 (`BodyFaces::inverted`: each face's side turned, each edge's convexity the other way, read off the
@@ -396,12 +396,13 @@ the openings' prisms (`glued`) and the walls glued to that (`glued`), so every B
 faces shared exactly or nests a solid inside another; it depends on the body's other terms.  The
 construction reads the body's stratum through a `placed` node of id `STRATUM`, the recipe the same
 node of the body's terms.  The native host builds any node nested so (`Session::solid`).
-`sweeps_among` reads the regions a built cavity stands for as built, `exact::build` names the
-cavity's faces under it as a region's — each wall's inner face for the face it lines (`south`),
+`sweeps_among` reads the solids a built cavity stands for as built (`shelled::stands_for`, by what
+its sets say; the cavity built only where nothing else decides), `exact::build` names the faces of
+a solid whose node is no `body` under it as a region's — so the cavity's — each wall's inner face for the face it lines (`south`),
 the arc `round`, a cut's grown faces `round` — and a body's stratum is gated: the stratum less the
 cavity, built, against the body's field (`shelled::gate`).  Refused by name and read by the field:
 a body rounded as well, a face left open that is none of the stock's (a cut's) or only part of
-one, walls that meet or cross (`shelled::simple`), a prism no longer than twice the thickness, a
+one, walls that meet or cross (`shelled::simple`, by `planar::meets`), a prism no longer than twice the thickness, a
 cut no body grown builds, walls no body grown builds, a wall standing on a face left open.  `tests/shell.rs` is the gate: a block sealed and open through a face, an L's
 concave edge rounded within by `t`, a boss shelled with its plinth, the same open through the
 slab's top (its walls running on round their foot, a quarter round), a post added to a pan shelled
