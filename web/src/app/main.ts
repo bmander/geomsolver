@@ -59,7 +59,7 @@ import { drawingActive, exportDrawingSvg } from './drawing.js';
 import { CONSTRAINT_BUTTONS } from './commands.js';
 import {
   about, alternatives, doOpen, flipBranch, insertComponent, insertPlane, leaveExample, openCase,
-  openExample, openGithub, options, report, reportSolve, showDiagnosis,
+  openExample, openGithub, openGithubAddress, options, report, reportSolve, showDiagnosis,
 } from './dialogs.js';
 import { closeChooser, onChoose, onContextMenu, onWays } from './choose.js';
 import { editValue, onDimension, onExtent, onRound } from './dimbox.js';
@@ -70,7 +70,7 @@ import { OutlinePane } from './outline.js';
 import { closePanel, openPanel, refresh, refreshPanel, refreshStatus } from './lists.js';
 import {
   aboutBadge, barConstraints, barTools, canvas, currentConstraint, focusConstraint, hooks, menubar,
-  planeSelect, view, initialExample,
+  planeSelect, view, initialExample, initialGithub,
 } from './shell.js';
 import {
   MenuItem, ToolbarButton, addButton, addMenu, addTopic, closeMenus, download, fitBars,
@@ -717,11 +717,14 @@ view.fit();
 window.addEventListener('popstate', () => {
   const url = new URL(location.href);
   const example = url.searchParams.get('example');
+  const github = url.searchParams.get('github');
   if (example) void openExample(example, 'none', url.searchParams.get('file') ?? undefined);
+  else if (github) void openGithubAddress(github, 'none');
   else view.newDocument();
 });
 // the bare address is a blank sheet: `newDocument` leaves the example, which puts the modal away
 if (initialExample) {
   await openExample(initialExample, 'replace', new URL(location.href).searchParams.get('file') ?? undefined);
 }
+else if (initialGithub) await openGithubAddress(initialGithub, 'replace');
 else view.newDocument();

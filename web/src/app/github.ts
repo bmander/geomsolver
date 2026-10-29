@@ -14,11 +14,14 @@ export interface GithubAddress {
   owner: string; repo: string; rest?: string; blob: boolean;
 }
 
-/** `https://github.com/o/r`, `…/tree/ref/dir`, `…/blob/ref/file.sv`, or the bare `o/r`. */
+/** `https://github.com/o/r`, `…/tree/ref/dir`, `…/blob/ref/file.sv`, or any of them without
+ *  the host (`o/r`, `o/r/blob/main/file.sv`), the form the page's `?github=` address carries.
+ *  A first segment with a dot is a host, since an owner's name never holds one. */
 export function parseGithub(text: string): GithubAddress | null {
   let path = text.trim();
-  if (/^[\w.-]+\/[\w.-]+\/?$/.test(path)) path = `https://github.com/${path}`;
-  else if (!/^[a-z]+:\/\//i.test(path)) path = `https://${path}`;
+  if (!/^[a-z]+:\/\//i.test(path)) {
+    path = /^[^/]*\./.test(path) ? `https://${path}` : `https://github.com/${path}`;
+  }
   let url: URL;
   try { url = new URL(path); } catch { return null; }
   if (!/^(?:www\.)?github\.com$/i.test(url.hostname)) return null;
@@ -28,6 +31,14 @@ export function parseGithub(text: string): GithubAddress | null {
   if (parts.length === 2) return { owner, repo, blob: false };
   if ((parts[2] !== 'tree' && parts[2] !== 'blob') || parts.length < 4) return null;
   return { owner, repo, rest: parts.slice(3).join('/'), blob: parts[2] === 'blob' };
+}
+
+/** The address as the page's `?github=` carries it: `parseGithub`'s own reading, without the
+ *  host. */
+export function githubPath(address: GithubAddress): string {
+  const { owner, repo, rest, blob } = address;
+  return rest === undefined ? `${owner}/${repo}`
+    : `${owner}/${repo}/${blob ? 'blob' : 'tree'}/${rest}`;
 }
 
 /** The most files one address may fetch, so a large repository is refused rather than read;
