@@ -296,7 +296,7 @@ pub fn drafted(p: &Profile,from: f64,to: f64,draft: f64) -> Result<Brep,String> 
 /// two lines the corner is their crossing; where the sides go on tangent the corner moves square
 /// to both. An arc meeting another side at an angle is refused (its cone and the side's plane meet
 /// along a curve, which `ruled` does not carry), as is a spline, and a side the move takes to nothing.
-fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
+pub(crate) fn offset(p: &Profile,d: f64) -> Result<Profile,String> {
     if d == 0. { return Ok(p.clone()) }
     let n = unit(p.normal);
     let frame = Frame::about(p.origin,n);

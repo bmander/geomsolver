@@ -95,6 +95,16 @@ impl Sections {
         Ok(s)
     }
 
+    /// The loops, each walked with its material on its left (`oriented`).
+    pub(crate) fn loops(&self) -> &[Vec<Edge>] { &self.loops }
+
+    /// Whether every corner moves along a line as the draft deepens — where both its sides are
+    /// lines, or they go on tangent — so that every point of a side, at a fixed fraction of it, is
+    /// affine in the offset: a side between two sections is then the ruled surface joining them,
+    /// a line's a plane and an arc's a cone (#684 G). A corner where an arc meets a side at an angle
+    /// moves along the curve its cone and the side's surface meet in.
+    pub(crate) fn linear(&self) -> bool { self.corners.iter().flatten().all(Option::is_some) }
+
     /// Each loop moved `d` into its material: every side along its own normal, each corner where
     /// its moved sides meet, refused where a side the move takes to nothing or turns round.
     pub(crate) fn section(&self,d: f64) -> Result<Vec<Vec<Edge>>,String> {

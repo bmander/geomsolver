@@ -42,7 +42,7 @@ failure is reported with its witness.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs whose caps stay clear of the blank over the roll, or an intersection (`common`) of such, under fixed placements; or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. An intersection creates only convex creases. A prism cuts with its sides only (`ExtrudedSurface`), so a cap in the blank would be a face the class does not build. | The first operand outside the class, a cut in the tool or a union within an intersection, or the prism whose cap passes through the blank. |
+| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs whose caps stay clear of the blank over the roll, drafted or not (a drafted one on one side of its parting plane, its corners joining lines or going on tangent: below), or an intersection (`common`) of such, under fixed placements; or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. An intersection creates only convex creases. A prism cuts with its sides only (`ExtrudedSurface`), so a cap in the blank would be a face the class does not build. | The first operand outside the class, a cut in the tool or a union within an intersection, the prism whose cap passes through the blank, or the drafted prism and why its sides are not read. |
 | T2 | Every profile vertex inside the swept region is convex or tangent. | A convex corner sweeps a fan of normals. A concave corner sweeps nothing, but it trims two envelopes against each other, which is not supported. | The vertex and its turning angle. |
 | M1 | The motion is one rotation about a fixed axis, or one rotation (or one translation) relative to another rotation (`motion(about: …)`, `motion(along: …)`, `motion(m, relative_to: n)`), at constant ratios, with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes, and of a rack cutting a spur gear. | The motion node outside the class. |
 | M2 | Each tool point's contact condition changes over the roll. | Where it does not, the point is on the boundary at every time or at none, and a contact time cannot parameterize the surface. A single rotation is like that everywhere (its tool-frame twist is constant), so the generator's motion is a relative one. This is the native path's existing refusal. It is checked at the samples, at a pole (whose normal is the axis), and between samples: the equation is C + a cos + b sin in the roll, and where (a, b) turns right round between two samples, or winds round a sample cell, with roots on every side, a point there has C and the amplitude both zero. That happens where the tool's normal passes through the point where two meeting axes cross. | A tool point whose path reaches the blank. |
@@ -177,6 +177,46 @@ would meet in it), so `rust/examples/generation/rack_cut_gear.sv` has a bore.
 roll, unioned over the roll) to 1e-4, the whole 20-tooth gear patterned from one sector, field
 agreement, and the toleranced build. The OCCT oracle (`--kernel occt`) sections revolutions only.
 
+### Drafted prisms (issue #684 G)
+
+A drafted prism's section at ordinate `h` is its profile moved `|h| tan draft` into its material
+(`build::drafted`). Where each corner joins two lines or goes on tangent, a point at a fixed
+fraction of each edge moves along a line as `h` runs, so each side is the ruled surface between its
+edge's sections at the prism's two ends: a plane where the edge is a line, a cone where it is an arc
+(`ExtrudedSurface::drafted`, read through the field's `Sections`). A point of it has a normal of its
+own, the same along each ruling, so its contact condition is read by the motion in closed form as
+an undrafted side's is, and every row is asked of it as of any prism's side: the caps clear of the
+blank (T1), M2, E1–E4. T1 refuses, naming the prism and why its sides are not read:
+
+- a prism running both ways from its profile's plane, where the draft parts: its sides turn there,
+  a crease across each side, which the class does not sweep;
+- an arc meeting a side at an angle, a corner the draft moves along the curve its cone and the
+  side meet in (`Sections::linear`; `build::drafted` does not build it either);
+- a side that is no line, arc or circle, or one the draft takes to nothing within the prism.
+
+The cutter sections a drafted prism at a station as the blend of its two end sections
+(`brep::sweep::cutter`, `Extruded::ends`, each walked step for step as the profile is), and walks
+it by the profile's lengths, not its own: a walk length then names the same fraction of each edge
+at every station, a ruling of each side, as it does along an undrafted prism whose section is the
+same at every station. The sheet's rows are walk lengths read across the stations, and walked by
+its own lengths a section that shrinks with depth moves where its contacts leave the roll's window,
+so a station outside the blank ended the chart inside it. The sheet is traced: a drafted side's
+normal leans out of the profile's plane, so a motion keeping that plane does not reduce it to the
+profile's planar envelope extruded (`Cutter::prism_profile` is the undrafted prism's only).
+
+A drafted tooth under a rack's motion keeps its plane, so before this the planar subtraction class
+read it (below), as it still reads whatever the generating rows refuse; it is now built by its
+sheet. `rust/examples/solid_sweeps/helical.sv` is a case no planar class reads: the rack's tooth
+leaned 15° across the blank, as a helical rack's teeth are, and drafted 2°. `tests/drafted_tools.rs`
+and `tests/solid_sweeps_examples.rs` are the gate: the drafted rack's narrowing space and the
+helical one, each held within 2e-4 to arithmetic made apart from the core — each section of the
+blank square to its axis cut by the tooth's section there, a quadrilateral read from the tooth's
+four drafted planes, swept by `rack_cut`'s arc-per-roll arithmetic and summed across the blank by
+Gauss–Legendre — 72.065 mm³ and 71.836 mm³ (undrafted 80.68 and 83.26), each exact solid within
+7e-5 of it and its STL agreeing with the field; a drafted slot's sides lying on the tool's field
+with its normal, its lines' planes and its arcs' cones; and both T1 refusals above, on the helical
+tooth, where no planar class takes the sweep instead.
+
 ### Pocketed prisms under a planar motion: the planar generating class
 
 A Wankel rotor is the other half of envelope theory (#65): not the union of a tool over a motion
@@ -213,7 +253,7 @@ face, refused before any row is read.
 A conjugate wheel (#590) is what a tool would cut if it were a gear shaper: `space :=
 sweep(star over t in (0deg, 540deg), under: handle_turn, seen_from: wheel_turn)`, `space cut
 wheel`. Its tool is always in mesh (E1), its arms' straight sides touch twice in a passage (E2),
-and a stepped or drafted handle is no single revolution or prism (T1). Each of those rows exists so
+and a stepped handle is no single revolution or prism (T1). Each of those rows exists so
 that no sheet needs trimming; under a motion that keeps the tool's plane the trimming is cheap and
 exact in the plane. Within a slab of the blank that every member spans or misses, the section is
 the same at every height (or, drafted, moves as its draft does), and so is what the sweep removes:

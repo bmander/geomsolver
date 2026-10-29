@@ -148,6 +148,22 @@ fn the_rack_leaves_one_tooth_space() {
     assert!((removed-want).abs() < 0.03,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 
+/// `helical.sv`: the generating class with a drafted prism (#684 G), the rack's tooth leaned 15°
+/// across the blank and drafted 2°, so the motion keeps no plane of it and no planar class asks
+/// it. Its space is each section square to the blank's axis cut by the tooth's section there, a
+/// quadrilateral read from the tooth's four drafted planes and swept by `rack.sv`'s arithmetic
+/// (`drafted_tools::space_volume`), through the blank's 6 mm.
+#[test]
+fn the_drafted_helical_tooth_leaves_its_space() {
+    let e = example("helical.sv");
+    let space = fixtures::solid(&e,"space");
+    assert!(!gcs_core::solid::planar_subtraction::asks(&e.sketch,space) && !gcs_core::solid::planar_class::asks(&e.sketch,space));
+    assert!(matches!(class(&e,"gear"),Class::Generating),"the generating class");
+    let removed = PI*22.*22.*6.-exported(&e,"gear");
+    let want = crate::drafted_tools::space_volume(15.,2.,[2.,8.]);
+    assert!((removed-want).abs() < 2e-4*want,"removed {removed:.5} mm³, the space being {want:.5}");
+}
+
 /// `conjugate.sv`: the planar subtraction class, its wheel the disc's area kept outside the plus
 /// at every pose of the period (`planar_subtraction`'s own arithmetic), through the 6 mm slab.
 #[test]

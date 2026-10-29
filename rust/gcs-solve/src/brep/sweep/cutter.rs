@@ -1,14 +1,15 @@
 //! A swept cut's cutter, sectioned exactly at its stations: a solid of revolutions about lines
 //! parallel to one axis (`brep::section`) by the half-planes of that axis, a station an angle; or
 //! a prism by planes square to its extrusion, a station a distance along it, every section the
-//! profile itself (a rack's tooth). Each section is a loop of pieces, every piece a stretch of one
-//! face (a revolution's meridian, a prism side's edge) walked in augmented arc length — length
-//! along the pieces, and at a convex corner the turning of the normal across its fan — and where
-//! the cutter's contacts within the declared roll enter the blank fixes the band of stations and
-//! the stretch of the walk the sheet spans (`Cutter::reach`).
+//! profile itself (a rack's tooth) or, drafted, the profile moved into its material. Each section
+//! is a loop of pieces, every piece a stretch of one face (a revolution's meridian, a prism side's
+//! edge) walked in augmented arc length — length along the pieces, and at a convex corner the
+//! turning of the normal across its fan — and where the cutter's contacts within the declared roll
+//! enter the blank fixes the band of stations and the stretch of the walk the sheet spans
+//! (`Cutter::reach`).
 #[allow(unused_imports)]
 use crate::fmath::Det;
-use crate::brep::build::{walks,Profile,Seg};
+use crate::brep::build::{offset,walks,Profile,Seg};
 use crate::brep::geom::Frame;
 use crate::brep::planar::Step;
 use crate::brep::recipe::{Node,Recipe};
@@ -129,19 +130,34 @@ pub struct Reach { pub stations: [f64;2],pub start: Anchor,pub end: Anchor,pub f
     pub spent: [f64;3],pub queried: usize }
 
 /// A prism as its stations section it: its profile's loops walked in its plane (outer
-/// counter-clockwise about the extrusion), and the extrusion's extent from that plane.
-struct Extruded { walks: Vec<Vec<Seg>>,extent: [f64;2] }
+/// counter-clockwise about the extrusion), and the extrusion's extent from that plane. A drafted
+/// one's (#684 G) also its sections at either end of the extent, in the profile's plane, each walk
+/// step for step its profile's: between them a side's point at a fraction of its edge moves along
+/// a line, so a section between is the two's blend (`build::offset` builds only such corners).
+struct Extruded { walks: Vec<Vec<Seg>>,extent: [f64;2],ends: Option<[Vec<Vec<Seg>>;2]> }
 
 impl Extruded {
     /// Edge `k` of loop `l` at fraction `t`, lifted `h` along the extrusion `n`: its point, and the
-    /// side face's outward normal (the walk's direction across `n`, since the material lies left).
+    /// side face's outward normal (the walk's direction across `n`, since the material lies left;
+    /// across the side's rise along a drafted one).
     fn at(&self,n: V,l: usize,k: usize,h: f64,t: f64) -> (V,V) {
-        let seg = &self.walks[l][k];
-        let w = seg.t[0]+(seg.t[1]-seg.t[0])*t;
-        let (p,d,_) = seg.curve.d2(w);
-        let d = scale(d,(seg.t[1]-seg.t[0]).signum());
-        let normal = cross(d,n);
-        (std::array::from_fn(|i| p[i]+n[i]*h),scale(normal,1./norm(normal).max(1e-300)))
+        let point = |walks: &[Vec<Seg>]| {
+            let seg = &walks[l][k];
+            let w = seg.t[0]+(seg.t[1]-seg.t[0])*t;
+            let (p,d,_) = seg.curve.d2(w);
+            (p,scale(d,(seg.t[1]-seg.t[0]).signum()))
+        };
+        let Some([near,far]) = &self.ends else {
+            let (p,d) = point(&self.walks);
+            let normal = cross(d,n);
+            return (std::array::from_fn(|i| p[i]+n[i]*h),scale(normal,1./norm(normal).max(1e-300)))
+        };
+        let ((p,d),(q,e)) = (point(near),point(far));
+        let depth = self.extent[1]-self.extent[0];
+        let f = (h-self.extent[0])/depth;
+        let rise: V = std::array::from_fn(|i| (q[i]-p[i])/depth+n[i]);
+        let normal = cross(std::array::from_fn(|i| d[i]+(e[i]-d[i])*f),rise);
+        (std::array::from_fn(|i| p[i]+(q[i]-p[i])*f+n[i]*h),scale(normal,1./norm(normal).max(1e-300)))
     }
 }
 
@@ -171,21 +187,39 @@ impl Cutter {
     /// A recipe whose root is one prism, as its sections: none for any other recipe.
     fn prism(recipe: &Recipe) -> Result<Option<Cutter>,String> {
         let Some(node) = recipe.nodes.iter().find(|n| n.id == recipe.root) else { return Ok(None) };
-        let Node::Prism {profile,from,to,..} = &node.node else { return Ok(None) };
+        let Node::Prism {profile,from,to,draft} = &node.node else { return Ok(None) };
         let (profile,from,to) = (Profile::of(profile)?,*from,*to);
         let axis = unit(profile.normal)?;
         let plane = Frame::about(profile.origin,axis);
-        let walks = walks(&profile,&|q| { let l = plane.local(q); [l[0],l[1]] })?;
+        let coords = |q: V| { let l = plane.local(q); [l[0],l[1]] };
+        let walks = walks(&profile,&coords)?;
         if walks.iter().flatten().any(|s| matches!(s.curve,crate::brep::geom::Curve::BSpline(_))) {
             return Err("the core sections a prism of lines and arcs only".into())
         }
-        Ok(Some(Cutter {origin:profile.origin,axis,kind:Kind::Extruded(Extruded {walks,extent:[from.min(to),from.max(to)]}),
+        let extent = [from.min(to),from.max(to)];
+        let draft = draft.unwrap_or(0.);
+        let ends = if draft == 0. { None } else {
+            if extent[0] < 0. && extent[1] > 0. {
+                return Err("the core sections a drafted prism on one side of its parting plane only".into())
+            }
+            let taper = draft.dtan();
+            // each end's section walked, its steps put in the profile's walks' order
+            let end = |h: f64| -> Result<Vec<Vec<Seg>>,String> {
+                let moved = crate::brep::build::walks(&offset(&profile,h.abs()*taper)?,&coords)?;
+                walks.iter().zip(moved).map(|(walk,moved)| walk.iter().map(|s| moved.iter().find(|m| m.source == s.source)
+                    .filter(|m| m.forward() == s.forward()).cloned()
+                    .ok_or_else(|| "a drafted section's walk is not its profile's".to_string())).collect()).collect()
+            };
+            Some([end(extent[0])?,end(extent[1])?])
+        };
+        Ok(Some(Cutter {origin:profile.origin,axis,kind:Kind::Extruded(Extruded {walks,extent,ends}),
             sections:Default::default()}))
     }
     /// A prism's profile, its loops walked in its plane (outer counter-clockwise about the axis),
-    /// and the extrusion's extent from that plane; none for a cutter of revolutions.
+    /// and the extrusion's extent from that plane, where its section is the same at every station;
+    /// none for a cutter of revolutions or a drafted prism.
     pub fn prism_profile(&self) -> Option<(&[Vec<Seg>],[f64;2])> {
-        match &self.kind { Kind::Extruded(x) => Some((&x.walks,x.extent)),Kind::Revolved {..} => None }
+        match &self.kind { Kind::Extruded(x) if x.ends.is_none() => Some((&x.walks,x.extent)),_ => None }
     }
     /// The face a piece's tag (`Loop::starts`) is a stretch of: its recipe node's name and its
     /// own (#212), whichever meeting of it; none for a fan, which is no face of the cutter's, or a
@@ -224,15 +258,26 @@ impl Cutter {
         self.sections.lock().unwrap_or_else(|e| e.into_inner()).insert(angle.to_bits(),loops.clone());
         Ok(loops)
     }
-    /// A prism's section at `h` along its extrusion: its profile, each edge a face.
+    /// A prism's section at `h` along its extrusion: its profile, each edge a face. A drafted one's
+    /// is walked by its profile's lengths, not its own: a walk length is then the same fraction of
+    /// each edge at every station, a ruling of each side, as it is along a prism whose section is
+    /// the same at every station (the sheet's rows are walk lengths read across the stations).
     fn extruded_loops(&self,x: &Extruded,h: f64) -> Vec<Loop> {
         x.walks.iter().enumerate().map(|(l,walk)| {
             let cut = Cut::Offset(h);
             let pieces: Vec<Piece> = (0..walk.len()).map(|k| {
                 let source = Source::Edge(l,k);
-                let points: Vec<V> = (0..=SAMPLES_PER_PIECE).map(|j| self.at(cut,&source,j as f64/SAMPLES_PER_PIECE as f64).0).collect();
+                let fraction = |j: usize| j as f64/SAMPLES_PER_PIECE as f64;
+                let points: Vec<V> = (0..=SAMPLES_PER_PIECE).map(|j| self.at(cut,&source,fraction(j)).0).collect();
+                let drawn: Vec<V> = match x.ends {
+                    None => points.clone(),
+                    Some(_) => (0..=SAMPLES_PER_PIECE).map(|j| {
+                        let s = &walk[k];
+                        s.curve.point(s.t[0]+(s.t[1]-s.t[0])*fraction(j))
+                    }).collect(),
+                };
                 let mut lengths = vec![0.];
-                for w in points.windows(2) { lengths.push(lengths.last().unwrap()+distance(w[0],w[1])); }
+                for w in drawn.windows(2) { lengths.push(lengths.last().unwrap()+distance(w[0],w[1])); }
                 Piece {face:((l as u32+1) << 16) | k as u32,reversed:false,source,points,lengths}
             }).collect();
             // convex where the walk turns left about the extrusion: the material is on its left
