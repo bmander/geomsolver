@@ -356,6 +356,21 @@ end `−2d³/3` and a pocket's floor corner `+d³`; a plinth's boss to Steiner's
 bore to Pappus's, the square `d × d` about the foot once, `2π(R ± d/2) d²` less; the field of a
 body with a concave edge, grown and shrunk).
 
+**A body shelled** (`std.rounds`' `shell`, [0.198]): `A shell(t) B` is a word of the language's own
+words, nothing in Rust of its own: the cavity `solid({ c | c inside B })` with each face `w` of `B`
+not among `A`'s (`repeat w in B { when not w in A { … } }`) cutting its wall `solid({ p | p
+distance(<= t) w })` from it, and the cavity cut from `B.body`; `shell(t) X` the one region `{ p |
+p inside X; distance(p, beyond) >= t }` over `beyond := { c | c outside X }` (`Grown`'s shrunk),
+cut from `X.body`.  What it needed is the stratum's: **a body standing on a reader reads too**
+(`faces::readers_of`, `reads_faces_of`: a region whose terms read the body's faces, or any other
+body whose stock, walked down, is one — never the body itself nor a layer, whose stock is the layer
+beneath), so the cavity is one of `B`'s late terms, and `without` leaves a reader as it is, since
+nothing of it is in the stratum.  Read by the field; an exact export refuses it, the cavity's region
+named (`cad.rs`).  `tests/shell.rs` is the gate: a block sealed and open through a face, an L's
+concave edge rounded within by `t`, a boss shelled with its plinth, the same open through the
+slab's top (its walls running on round their foot, a quarter round), a post added to a pan shelled
+and named, each at a lattice of points to its closed form.
+
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`

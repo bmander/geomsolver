@@ -1,5 +1,6 @@
 // `std.rounds`: rounds and chamfers along a solid's edges (`use std.rounds (round, chamfer)`),
-// a solid grown, and a round or a chamfer as one more bound of a region.
+// a solid grown, a solid shelled (`use std.rounds (shell)`), and a round or a chamfer as one more
+// bound of a region.
 
 // -- rounds and chamfers (#183) -----------------------------------------------------------------
 //
@@ -199,6 +200,39 @@ component Grown(B: solid, d: Length) {
   when d == 0mm {
     body := solid(B)
   }
+}
+
+// -- a solid shelled ------------------------------------------------------------------------------
+//
+// `A shell(t: 2mm) B`: the body `B`'s faces are of hollowed to walls `t` thick, open through the
+// faces of `A` — of its material only what lies within `t` of one of its faces not among `A`'s is
+// kept.  `shell(t: …) X` leaves every face closed: `X` keeps what lies within `t` of everything
+// outside it, a sealed hollow.  Inside, each wall is its face moved in by `t`: at a convex edge
+// the walls' inner faces meet sharp, at a concave one they are rounded by `t`, a ball rolled within
+// both.  A wall runs on to an open face's rim, and round it by `t` wherever the hollow reaches past
+// the wall's own edge there: a boss standing on an open top keeps a quarter round about its foot, a
+// wall leaning in over the opening a rounded lip.  Like a round it acts on the body after its other
+// terms, so a boss the body carries is shelled with it.
+//
+//   tray.top shell(t: 2mm) tray
+//   shell(t: 1.5mm) float
+A shell(t) B := {
+  within := { c | c inside B }
+  cavity := solid(within)
+  repeat w in B {
+    when not w in A {
+      wall := { p | p distance(<= t) w }
+      walled := solid(wall)
+      walled cut cavity
+    }
+  }
+  cavity cut B.body
+}
+shell(t) X := {
+  beyond := { c | c outside X }
+  kept := { p | p inside X; distance(p, beyond) >= t }
+  cavity := solid(kept)
+  cavity cut X.body
 }
 
 // -- in a region's body ---------------------------------------------------------------------------

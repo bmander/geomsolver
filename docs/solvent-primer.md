@@ -999,7 +999,7 @@ use std.place (horizontal, vertical)   // and import those two words bare
 | `std.place` | words: `horizontal`, `vertical`, `offset`, `right_of`, `left_of`, `above`, `below`, `coords`, `on_u`, `on_v`, `skew`, `turned`, `square`, `seats`, `raised` |
 | `std.shapes` | `CenteredRectangle`, `Ellipse`, `Polygon`, `Hex`; the word `hangs` (1.10) |
 | `std.sets` | `Sphere`, `Cylinder`, `Cone`, `ConeThrough`, `HalfSpace`, `Offset` (1.13); the word `on_sphere` |
-| `std.rounds` | the words `round`, `chamfer`; `Rounded`, `Chamfered`, `Grown` and the sets the words make (1.14) |
+| `std.rounds` | the words `round`, `chamfer`, `shell`; `Rounded`, `Chamfered`, `Grown` and the sets the words make (1.14) |
 | `std.panels` | `Developable`, `Development` (1.14) |
 | `std.stations` | `OnLine`, `OnArc`, `OnSpline`, `On`, `Helix`, `OnHelix`, `Minimal`, `Frenet`, `Along`, `AlongFrenet`, `Across`, `Ruled`, `Apex`, `Affine`, `Similar`, `Twisted`; the words `scaled`, `scaled_radius` (1.14) |
 | `std.motion` | the words `turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`; `Screw` (1.15) |
@@ -2198,6 +2198,27 @@ planes meeting in concave edges — an L, a step, a slot, a pocket — or at a f
 square on a plate, a post standing on it, a bore's floor.  A cone or a sphere, a face narrower than
 the reach, or a shrink is read point by point, and an exact export (`--step`, `--stl`) says so by
 name.
+
+**A body shelled** (0.198). `use std.rounds (shell)`:
+
+```sv
+tray.top shell(t: 2mm) tray      // hollowed to walls 2 thick, open through the top
+shell(t: 1.5mm) float            // sealed: a hollow inside, every face closed
+```
+
+- `A shell(t: …) B` keeps of the body `B`'s faces are of only what lies within `t` of one of its
+  faces not among `A`'s; `shell(t: …) X` only what lies within `t` of everything outside `X`.
+  `A` is one face path: one face, or every face one operand gave (`pan.pocket`).
+- Each wall is its face moved in by `t`: where the outside's edge is convex the inner faces meet
+  sharp, where it is concave they are rounded by `t`. At an open face's rim the walls run on to it,
+  and round it by `t` where the hollow reaches past a wall's edge: a boss standing on an open top
+  keeps a quarter round about its foot.
+- It acts on the body after its other terms, as a round does: a boss the body carries is shelled
+  with it, hollow inside. Add something *inside* the hollow by naming the shelled body first, as
+  for a pocket (`inner := solid(tray)`, then `rib union inner`).
+- It is the language's own words: the cavity is `{ c | c inside B }`, each kept face's wall `{ p |
+  p distance(<= t) w }` cut from it, and the cavity cut from the body. It is read point by point,
+  and an exact export says so by name.
 
 #### Reports and refusals
 
