@@ -88,6 +88,10 @@ fn admitted(sk: &Sketch,index: usize) -> Result<Admission,ExportRefusal> {
             admission::Class::Planar(found) => eprintln!("solventc: `{}` is in the planar generating class, its pocket's inner \
                 envelope {} pieces of {} contacts, the stock's wall read clear of the blank at {} points over {columns} poses{alike}",
                 s.name,found.envelope.pieces.len(),s.contacts,s.samples),
+            admission::Class::Capped(found) => eprintln!("solventc: `{}` is in the generating-sweep class, its prism's cap in the \
+                blank sectioned across ({:.4}, {:.4}, {:.4}), the contacts reaching {:.4} to {:.4} mm of it, {:.4} mm clear of the \
+                profile's corners and ends, sampled {rows}x{columns} per face{alike}",s.name,found.across[0],found.across[1],
+                found.across[2],found.band[0],found.band[1],found.clearance),
             admission::Class::Subtraction(found) => eprintln!("solventc: `{}` is in the planar subtraction class, its swept region read \
                 in {} slabs ({} loops) from {} candidates, {} kept stretches, each a quarter degree of the roll apart{alike}",s.name,
                 found.slabs.len(),found.slabs.iter().flat_map(|x| x.stations.first()).map(|(_,r)| r.loops.len()).sum::<usize>(),

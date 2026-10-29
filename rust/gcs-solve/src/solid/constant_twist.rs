@@ -438,7 +438,7 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
 
 /// `n` turned, if need be, to point out of the tool's material at `p`: the faces' parameters
 /// orient their normals each its own way, and the class's signs read the tool's outside.
-fn outward(tool: &super::SpatialField,p: V,n: V) -> V {
+pub(super) fn outward(tool: &super::SpatialField,p: V,n: V) -> V {
     let h = 1e-6*(1.+norm(p));
     let step = |k: f64| std::array::from_fn(|i| p[i]+k*h*n[i]);
     if tool.value(step(1.)) < tool.value(step(-1.)) { n.map(|x| -x) } else { n }

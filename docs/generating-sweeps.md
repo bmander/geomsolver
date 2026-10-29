@@ -42,10 +42,10 @@ failure is reported with its witness.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs whose caps stay clear of the blank over the roll, drafted or not (a drafted one on one side of its parting plane, its corners joining lines or going on tangent: below), or an intersection (`common`) of such, under fixed placements; or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. An intersection creates only convex creases. A prism cuts with its sides only (`ExtrudedSurface`), so a cap in the blank would be a face the class does not build. | The first operand outside the class, a cut in the tool or a union within an intersection, the prism whose cap passes through the blank, or the drafted prism and why its sides are not read. |
+| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs, drafted or not (a drafted one on one side of its parting plane, its corners joining lines or going on tangent: below), or an intersection (`common`) of such, under fixed placements, its caps clear of the blank over the roll unless it is one undrafted prism standing alone (below, #684 F); or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. An intersection creates only convex creases. A prism within another tool, or drafted, cuts with its sides only (`ExtrudedSurface`); an undrafted prism alone is sectioned across where its cap reaches the blank (T3). | The first operand outside the class, a cut in the tool or a union within an intersection, the prism whose cap passes through the blank where it is not an undrafted prism alone, or the drafted prism and why its sides are not read. |
 | T2 | Every profile vertex inside the swept region is convex or tangent. | A convex corner sweeps a fan of normals. A concave corner sweeps nothing, but it trims two envelopes against each other, which is not supported. | The vertex and its turning angle. |
 | M1 | The motion is one rotation about a fixed axis, or one rotation (or one translation) relative to another rotation (`motion(about: …)`, `motion(along: …)`, `motion(m, relative_to: n)`), at constant ratios, with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes, and of a rack cutting a spur gear. | The motion node outside the class. |
-| M2 | Each tool point's contact condition changes over the roll. | Where it does not, the point is on the boundary at every time or at none, and a contact time cannot parameterize the surface. A single rotation is like that everywhere (its tool-frame twist is constant), so the generator's motion is a relative one. This is the native path's existing refusal. It is checked at the samples, at a pole (whose normal is the axis), and between samples: the equation is C + a cos + b sin in the roll, and where (a, b) turns right round between two samples, or winds round a sample cell, with roots on every side, a point there has C and the amplitude both zero. That happens where the tool's normal passes through the point where two meeting axes cross. | A tool point whose path reaches the blank. |
+| M2 | Each tool point's contact condition changes over the roll, or holds a nonzero value. | Where it is zero throughout, the point is on the boundary at every time, and a contact time cannot parameterize the surface; a nonzero constant touches at no time and bounds nothing (#684 F: a prism's side square to a rack's line of centres). A single rotation is like that everywhere (its tool-frame twist is constant), so the generator's motion is a relative one. This is the native path's existing refusal. It is checked at the samples, at a pole (whose normal is the axis), and between samples: the equation is C + a cos + b sin in the roll, and where (a, b) turns right round between two samples, or winds round a sample cell, with roots on every side, a point there has C and the amplitude both zero. That happens where the tool's normal passes through the point where two meeting axes cross. | A tool point whose path reaches the blank. |
 | E1 | The tool at both roll limits has no common volume with the blank. | Then no end caps are needed inside the blank (the existing refusal). A sweep rolling `through:` its body (#271, `solid::roll`) holds it by construction: its roll is found by marching out from 0 until the tool is proved clear of the body's material, so only a stated `from:`/`to:` can fail it. | The limit and the overlap volume. |
 | E2 | Every source point whose contact reaches the blank has at most one contact time within the roll. | One sheet per placement, as the bevel pinion already satisfies. | The source point and both times. |
 | E3 | The generated area factor J stays away from zero over the region reaching the blank. | A zero is a fold of the envelope: the cusp of undercut. J alone passes through infinity where a point's two contact times merge, which is a fold of the time chart and not of the surface. So the sign is read from J times the rate of the contact condition, which changes sign only at a true fold. | The contact point and the factor. |
@@ -217,6 +217,54 @@ Gauss–Legendre — 72.065 mm³ and 71.836 mm³ (undrafted 80.68 and 83.26), ea
 with its normal, its lines' planes and its arcs' cones; and both T1 refusals above, on the helical
 tooth, where no planar class takes the sweep instead.
 
+### A prism's cap in the blank (issue #684 F)
+
+A prism standing alone as the tool — the swept solid the prism itself, undrafted, its profile one
+loop of lines and arcs (`admission::Lone`) — may pass a cap through the blank. The cap is a plane, and a
+plane's contact at each instant is a line on it; where a side meets it, the rim carries every
+normal between the two, a fan as a revolution's convex corner does. So the caps are faces of the
+tool (`ToolSurface::Cap`, read over the box the profile lies in), asked E1 and M2–E4 with the
+sides where one reaches the blank, and the rims are read too: at each rim point where a face's
+contact in the blank meets the rim, the face's envelope stepped onto the rim and the fan stepped
+off it must run the same way (E3; where they do not, the fan sweeps back over the face's envelope,
+as a flat end swung on an arm does, its corners digging past it), and the fans' contacts join E4's.
+Stations along the extrusion end at the cap, so the prism is sectioned across instead
+(`brep::sweep::cutter`, `Kind::Across`): a station is a distance along a direction in the
+profile's plane, its section the profile's chord there carried along the extrusion — the low cap's
+chord, a ruling of the side at the chord's far end, the high cap's chord and the near end's ruling,
+its four corners the caps' rims, convex, each a quarter turn of fan. The walk runs from a side over
+a rim and across a cap as a revolution's meridian runs from a flank over its tip. A section's side
+leaps from one face's normal to the next's where it crosses a corner of the profile, and the
+section closes to a ruling at the profile's ends along the direction, so one more row asks for a
+band clear of both:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| T3 | Of 36 directions across the profile, the best sections the band the contacts in the blank reach (their tool points, sampled) clear of the profile's corners and its ends by a quarter of the band's width and two of the reach's 96 stations either side. | A corner in the band is a crease the one fitted sheet does not build (a vertex of the prism, its path a sharp edge of the sweep); a section closing at an end has no chord. The margin is what the sheet's widening asks. | The band, the corner or end it comes nearest, and a contact at that end of the band. |
+
+The rows are sampled, as every row is. The sheet (`sheet::capped_sheet`) is traced at the
+admitted direction's sections and is the generating class's from there on: the rims' fans are
+walked a millimetre a radian (`RIM_SCALE`), so the rows step through a rim, from a cap's contact
+time to a side's, a radian of the motion at a time and `charted` keeps them; and each chord is
+walked as long as the band's middle one, so the stations of a tapering profile start each piece at
+the same walk length and the rows lie on the same pieces in every column. Only the core's kernel
+builds it; the native path refuses it by name.
+
+`rust/examples/solid_sweeps/bar_end.sv` is the case: a bar pointing at a disc's centre, rolled
+as a rack's tooth on a circle of 16 mm, its flat end 18 mm from the centre. Seen from the disc the
+end keeps that distance, so its envelope is the floor of the space (the 18 mm cylinder) and its
+rims carry the walls; its sides face along the slide and touch nothing (M2's nonzero constant).
+Its profile tapers through the disc, so the space is no prism of one section. Sectioned across the
+disc's height (T3's choice: the profile's corners are all above or below the disc), it is built
+within 1e-6 of the part's volume at 0.01 mm, and of the space within 2e-6 at 0.002 mm, against
+each height's space read by `rack_cut`'s arithmetic apart from the core and integrated over the
+height, its STL agreeing with the field (`tests/solid_sweeps_examples.rs`, `tests/prism_caps.rs`,
+with the page's stepped build in `tests/object_builder.rs`). The same bar swung on an arm is
+refused at E3, a corner on its profile's side within the disc at T3, and the bar within a `common`
+at T1. Still refused: a corner of the profile within the band, a vertex of the prism whose path
+crosses the blank (T3); a cap of a prism within an intersection, a placed or drafted prism or a
+profile with holes (T1); and a cap under a screw, a turn or a slide, whose classes read revolutions only.
+
 ### Pocketed prisms under a planar motion: the planar generating class
 
 A Wankel rotor is the other half of envelope theory (#65): not the union of a tool over a motion
@@ -382,8 +430,8 @@ the checks read are checked once: the gear's 24 indexed cuts are one check.
 Everything outside the class is refused at elaboration or export, never meshed on a
 best-effort basis. The refusal names the condition row and the witness. The tumbling and tilted
 cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its caps clear, a
-pocketed prism's under a planar motion and a prism tool's under a motion that keeps its plane are
-outside the classes; a slid cylinder is in the constant-twist class where its flat caps, which the
+prism's standing alone whose cap's sections pass T3, a pocketed prism's under a planar motion and
+a prism tool's under a motion that keeps its plane are outside the classes; a slid cylinder is in the constant-twist class where its flat caps, which the
 slide keeps in their own planes, stay clear of the blank. Their fixtures stay
 in the tree as **negative controls**: each must
 produce its refusal.

@@ -21,6 +21,7 @@ Read them in this order:
 | `vthread.sv` | constant twist: a screw with sharp edges | **A tool with a sharp edge carried along a helix.** A ring with a 60° V rim screwed up the rod, as a thread is ground: each flank's characteristic meets the rim at its own point, and the wall runs between them round the rim, where every normal between the flanks is the wheel's. The groove's section, the same at every height, is read point by point from the V. |
 | `rack.sv` | generating | **A tool rolled on a turning blank.** A rack tooth slid along the pitch line while the blank turns: one tooth space, its flanks involutes nobody draws. The tool's contact moves over it as it rolls, so each point of the wall is a contact at its own instant. |
 | `helical.sv` | generating, with a drafted prism | **A drafted tool leaned across the blank.** `rack.sv`'s tooth drawn in a plane leaned 15° across the blank, as a helical rack's teeth are, and its sides drafted 2°, so it thins as it goes deeper. The motion keeps no plane of the tool, and each drafted side is a plane whose contact is a line across it at each instant. Each section of the space square to the blank's axis is the tooth's section there, a quadrilateral, swept as `rack.sv`'s tooth is. |
+| `bar_end.sv` | generating: a prism's cap in the blank | **A tool that cuts with its end.** A tapered bar pointing at a disc's centre, rolled as a rack's tooth: its flat end keeps 18 mm from the centre, so the end face cuts the space's floor and the rims round it carry its walls, while its sides never touch. The bar is sectioned across its length, each section a chord of its profile carried along it, so its walk runs from a side over the end's rim and across the end. Each height of the disc loses the space its own slice of the bar sweeps. |
 | `conjugate.sv` | planar subtraction | **A tool always in mesh.** A plus turning against a wheel over a whole period of the pair: never clear of the blank, so the region its section sweeps in the plane is read exactly and the wheel is the blank less its prism. |
 | `union.sv` | any class, member by member: a union | **A tool that is several tools.** A wheel of two beads that overlap, slid up a rod: where they meet the wheel's profile turns inward, a crease no one tool's sweep is built over, but a sweep of a union is its members' sweeps, so the groove is each bead's slid groove, both cut. Each bead's shadow is its tube's circle; the groove is what of the rod either covers. |
 
@@ -31,8 +32,8 @@ whose pocket's inner envelope has no smaller case) and the swept spring (`swept_
 on a screw).
 
 Outside every class — a tumbling tool (`swept_tumble.sv`), a tool that stops inside the blank,
-undercut — the sweep is read by its field and drawn by the page, and its export is refused, saying
-which row it fails.
+undercut, a flat end whose corners dig past it — the sweep is read by its field and drawn by the
+page, and its export is refused, saying which row it fails.
 
 `rust/gcs-core/tests/solid_sweeps_examples.rs` holds each file to its class, to an exact build
 whose STL agrees with the field, and to its volume; a file added here is named in this README and

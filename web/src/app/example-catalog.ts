@@ -47,7 +47,8 @@ const projects: Example[] = [{
     + 'ball swung partway (its tube), a ball carried along a spline (its tube, fitted to the path), '
     + 'a wheel slid along a rod, a cutter turned partway across a curved block, the wheel screwed '
     + 'up the rod, a V wheel grinding a thread, a rack rolling a gear\'s tooth space, a drafted rack '
-    + 'tooth leaned across the blank as a helical rack\'s, a plus always '
+    + 'tooth leaned across the blank as a helical rack\'s, a bar whose flat end cuts a tooth space\'s '
+    + 'floor, a plus always '
     + 'in mesh cutting its conjugate wheel, and a wheel of two beads, a union, cut bead by bead. '
     + 'Each file names its class and gives its volume; '
     + 'the README says what each shows and where the larger cases are.',
