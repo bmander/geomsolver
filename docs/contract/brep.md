@@ -8,7 +8,11 @@ says where a rule came from.
 MIT: its code is never translated, only its behaviour and conventions studied.  It is its own
 crate, `cad-kernel` (`rust/cad-kernel/`, MIT OR Apache-2.0), which names neither the solver nor the
 language; `gcs-solve` re-exports it as `brep` and adds what reads the model (`brep::sweep`,
-`brep::export`), so its paths below are `gcs_core::brep`'s as before. `gcs_core::brep`:
+`brep::export`), so its paths below are `gcs_core::brep`'s as before.  Its own repository
+(https://github.com/bmander/cad-kernel) is this directory's history, published by
+`scripts/sync-cad-kernel.sh`; there it builds and runs its smoke test (`rust/cad-kernel/tests/`)
+alone, and it is measured beside other kernels on https://github.com/bmander/brep-bench.
+`gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
 intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
 `build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles),

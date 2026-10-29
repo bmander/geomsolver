@@ -75,6 +75,8 @@ impl std::fmt::Display for KernelError {
     fn fmt(&self,f: &mut std::fmt::Formatter) -> std::fmt::Result { f.write_str(&self.msg) }
 }
 
+impl std::error::Error for KernelError {}
+
 impl From<String> for KernelError { fn from(msg: String) -> KernelError { KernelError {kind:Kind::Failed,msg} } }
 impl From<&str> for KernelError { fn from(msg: &str) -> KernelError { KernelError {kind:Kind::Failed,msg:msg.into()} } }
 impl From<KernelError> for String { fn from(e: KernelError) -> String { e.msg } }
