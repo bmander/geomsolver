@@ -204,6 +204,7 @@ mod plane_normal;
 mod plane_tangent;
 mod points_in_space;
 mod predicates;
+mod prism_caps;
 mod prisms;
 mod program;
 mod progress;

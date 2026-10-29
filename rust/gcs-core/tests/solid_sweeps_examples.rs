@@ -148,6 +148,16 @@ fn the_rack_leaves_one_tooth_space() {
     assert!((removed-want).abs() < 0.03,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 
+/// `bar_end.sv`: the generating class with a prism's cap in the blank (#684 F), the bar sectioned
+/// across the disc's height; the space each height's slice of the bar rolled on the circle of 16,
+/// by `rack_cut`'s arithmetic (`prism_caps::bar_end_space`), through the disc's 6 mm.
+#[test]
+fn the_bars_end_leaves_its_space() {
+    let e = example("bar_end.sv");
+    assert!(matches!(class(&e,"part"),Class::Capped(_)),"the generating class, its cap sectioned across");
+    near(exported(&e,"part"),PI*22.*22.*6.-crate::prism_caps::bar_end_space(),1e-6);
+}
+
 /// `conjugate.sv`: the planar subtraction class, its wheel the disc's area kept outside the plus
 /// at every pose of the period (`planar_subtraction`'s own arithmetic), through the 6 mm slab.
 #[test]

@@ -190,10 +190,11 @@ in the slow tier each member built as its stated roll built it).
 `solventc --step/--stl` builds swept cuts only for the bevel/hypoid generating class, the
 constant-twist class (screws, turns and slides) and the planar classes (below).
 `solid::admission::admit_body` checks rows T1–E4 (revolved line/arc tools, rotation with changing
-contact, clear at both limits, one contact per point, no fold, no self-crossing), sampled, refusing
+contact, clear at both limits, one contact per point, no fold, no self-crossing) and T3 where a
+prism's cap reaches the blank, sampled, refusing
 with row and witness; it checks a placement once when the blank reads alike at every point
 checked. A rack is in the class (#61): a prism tool with its caps clear of the blank
-(`ToolSurface::Extruded`, sides only), a translation seen from a rotation (contact affine in the
+(`ToolSurface::Extruded`, sides only; a cap in the blank below, #684 F), a translation seen from a rotation (contact affine in the
 roll, `NormalVelocity::Affine`), sectioned along its extrusion (`brep::sweep::cutter`, a station a
 distance), flat caps joined across sector sides (`brep::pattern`, `Kept::Flat`); a blank reaching
 its axis is built whole. `tests/rack_cut.rs`, `examples/generation/rack_cut_gear.sv`. A fold is
@@ -323,8 +324,36 @@ the union's field as a swept body is. Not distributed: a union within an interse
 against rows across the rod computed apart, placed and turned, against the long form, two balls'
 tubes by Pappus, two tori rolled in the generating class, and the refusals.
 
+**A prism's cap in the blank (#684 F):** a prism standing alone as the tool (its solid the prism
+itself, its profile one loop of lines and arcs: `admission::Lone`) whose cap passes through the
+blank is no longer refused at T1; any other tool's cap is, saying so. Its caps are faces of the
+tool (`ToolSurface::Cap`, read over the box its profile lies in, a point off the profile passed
+over as the field says), asked M2–E4 and E1 with its sides only where one reaches the blank; M2
+refuses only a point in contact at every time (a constant nonzero condition touches nothing — a
+side square to a rack's line of centres). At each point of a reaching cap's rim, where a face's
+contact in the blank meets the rim, the face's envelope stepped onto the rim and the rim's fan
+stepped off it must point the same way, or E3 refuses the fold (a flat end swung so its corners
+dig past it), and the fans' contacts join E4's. **T3** then chooses the direction across the
+profile, of 36, whose sections through the extrusion keep the band the sampled contacts in the
+blank reach farthest from the profile's ends (where a section closes to a ruling) and its corners
+(where a section's side leaps from one face's normal to the next's, a crease of the sheet), and
+refuses where that is less than a quarter of the band and two of the reach's 96 stations either
+side (`Cutter::spread`, `Lone::sections`); the evidence is `Class::Capped` (`Capped`: the
+direction, the band, the clearance). The sheet (`sheet::capped_sheet`) is traced at those
+sections (`Cutter::across`, `Kind::Across`): each the profile's chord carried along the extrusion
+— the low cap's chord, the far ruling, the high cap's chord, the near ruling — its four corners
+the caps' rims, convex, a radian of their fan walked as a millimetre (`RIM_SCALE`, so the rows
+step through a rim a radian of the motion at a time and `charted` keeps them), every chord
+walked as long as the band's middle one so a tapering profile's stations start each piece at the
+same walk length. The rest is the generating class's: fit, split, cells, agreement. The native
+path refuses a capped sweep by name. `tests/prism_caps.rs` and `solid_sweeps_examples.rs`
+(`bar_end.sv`, a tapered bar's flat end cutting a tooth space's floor under a rack's roll, each
+height's space read apart from the core by `rack_cut`'s arithmetic and held to 1e-6 of the part,
+2e-6 of the space at 0.002 mm) are the gate, with E3's, T3's and T1's refusals;
+`object_builder::a_bars_end_builds_at_the_displays_samples` builds it in the page.
+
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
-a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, the planar subtraction
+a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack and a prism's cap (`bar_end.sv`), the planar subtraction
 class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;
