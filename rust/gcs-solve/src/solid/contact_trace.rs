@@ -1,9 +1,9 @@
 //! A cutter's contact curves under a generating sweep, and the candidate sheet they make: the
 //! numerics of the native swept construction (docs/generating-sweeps.md), which a host feeds
 //! with sections of its own cutter. A **station** is one section of the cutter by a meridian
-//! half-plane, walked by augmented length (position length plus turning across convex corners);
-//! the host samples it, a point and its outward normal at a walk length, and nothing here knows
-//! how. What is here: every root of a sampled point's contact equation, a station's contact
+//! half-plane, walked by augmented length (position length plus turning across convex corners;
+//! the host's own measure of position length, a drafted prism's its profile's); the host samples
+//! it, a point and its outward normal at a walk length, and nothing here knows how. What is here: every root of a sampled point's contact equation, a station's contact
 //! curve traced through the plane of walk length and time (turning at a fold of the time chart,
 //! where the envelope carries on though the walk turns back), and the sheet whose columns are
 //! those curves, resampled, with a withheld contact at the centre of every cell (and at the

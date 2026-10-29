@@ -100,41 +100,52 @@ fn a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans() {
     let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let exact = export::exact(&e.sketch, gear, None, None, &say).unwrap_or_else(|r| panic!("{}", r.message));
     let removed = PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid);
-    let want = 5. * space_area(400, 4000);
+    let want = 5. * space_area(&TOOTH, 400, 4000);
     assert!((removed - want).abs() < 0.03, "removed {removed:.5} mm³, the space being {want:.5}");
     export::stl(&e.sketch, gear, &exact, None, &say).unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));
 }
 
-/// The tooth space's area by arithmetic: at each radius the circle meets the moved trapezoid in
-/// one arc at each roll (each edge's half-plane holds an arc of the circle, in closed form, and
-/// the four meet in one), and the space at that radius runs from the least start to the greatest
-/// end over the roll.  Integrated over the radius by midpoints; the rolls' extremes are smooth,
-/// so sampling them errs at second order.
-pub(crate) fn space_area(radii: usize, rolls: usize) -> f64 {
-    let tooth = [(18., -0.842856), (18., 0.842856), (24., 3.026666), (24., -3.026666)]; // clockwise
+/// The rack's tooth, clockwise: its tip a module below the pitch line, its flanks 20° from the radius.
+pub(crate) const TOOTH: [(f64, f64); 4] = [(18., -0.842856), (18., 0.842856), (24., 3.026666), (24., -3.026666)];
+
+/// The tooth space's area by arithmetic, cut by `tooth` (a convex polygon, clockwise): at each
+/// radius the circle meets the moved tooth in one arc at each roll (each edge's half-plane holds an
+/// arc of the circle, in closed form, and they meet in one), and the space at that radius runs from
+/// the least start to the greatest end over the roll.  Integrated over the radius by midpoints; the
+/// rolls' extremes are smooth, so sampling them errs at second order.
+pub(crate) fn space_area(tooth: &[(f64, f64)], radii: usize, rolls: usize) -> f64 {
     let (gx, gy) = (21., 0.);
     let wrap = |a: f64| (a + PI).rem_euclid(TAU) - PI;
-    // the arc of circle `r` about the blank's centre inside the tooth at roll `t`, in the blank's angles
-    let arc = |r: f64, t: f64| -> Option<(f64, f64)> {
+    let (t0, t1) = (-PI / 3., PI / 3.);
+    // at each roll, what of each edge does not depend on the radius: its half-plane's distance from
+    // the blank's centre and its normal's angle, about the tooth's direction from the centre
+    let at: Vec<(f64, f64, Vec<(f64, f64)>)> = (0..=rolls).map(|j| {
+        let t = t0 + (t1 - t0) * j as f64 / rolls as f64;
         let (cx, cy) = (0., -20. * t);
         let reference = (gy - cy).atan2(gx - cx);
-        let (mut lo, mut hi) = (-PI, PI);
-        for i in 0..4 {
-            let ((ax, ay), (bx, by)) = (tooth[i], tooth[(i + 1) % 4]);
+        let edges = (0..tooth.len()).map(|i| {
+            let ((ax, ay), (bx, by)) = (tooth[i], tooth[(i + 1) % tooth.len()]);
             let (nx, ny) = (-(by - ay), bx - ax);
-            let k = (nx * (ax - cx) + ny * (ay - cy)) / (r * nx.hypot(ny));
+            ((nx * (ax - cx) + ny * (ay - cy)) / nx.hypot(ny), wrap(ny.atan2(nx) + PI - reference))
+        }).collect();
+        (t, reference, edges)
+    }).collect();
+    // the arc of circle `r` about the blank's centre inside the tooth at a roll, in the blank's angles
+    let arc = |r: f64, (t, reference, edges): &(f64, f64, Vec<(f64, f64)>)| -> Option<(f64, f64)> {
+        let (mut lo, mut hi) = (-PI, PI);
+        for &(d, c) in edges {
+            let k = d / r;
             if k >= 1. { continue }
             if k <= -1. { return None }
-            let (c, w) = (wrap(ny.atan2(nx) + PI - reference), PI - k.acos());
+            let w = PI - k.acos();
             (lo, hi) = (lo.max(c - w), hi.min(c + w));
             if lo >= hi { return None }
         }
         Some((reference + lo - t, reference + hi - t))
     };
-    let (t0, t1) = (-PI / 3., PI / 3.);
     (0..radii).map(|i| {
         let r = 18. + 4. * (i as f64 + 0.5) / radii as f64;
-        let (lo, hi) = (0..=rolls).filter_map(|j| arc(r, t0 + (t1 - t0) * j as f64 / rolls as f64))
+        let (lo, hi) = at.iter().filter_map(|roll| arc(r, roll))
             .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), (a, b)| (l.min(a), h.max(b)));
         if hi > lo { (hi - lo) * r * 4. / radii as f64 } else { 0. }
     }).sum()
@@ -159,7 +170,7 @@ fn a_racks_tooth_space_is_built() {
     };
     assert!(exact.swept && exact.pattern.is_none());
     let removed = PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid);
-    let want = 6. * space_area(400, 4000);
+    let want = 6. * space_area(&TOOTH, 400, 4000);
     assert!((removed - want).abs() < 0.03, "removed {removed:.5} mm³, the space being {want:.5}");
     if let Err(r) = export::stl(&e.sketch, gear, &exact, None, &say) {
         panic!("the STL refused at {:?}: {}", r.stage, r.message);
@@ -202,7 +213,7 @@ fn a_rack_cut_in_centimetres_is_built() {
         };
         assert_eq!(exact.pattern.is_some(), teeth > 1., "a sector for the gear, whole for one space");
         let removed = blank - gcs_core::brep::props::volume(&exact.solid);
-        let want = teeth * 6. * space_area(400, 4000);
+        let want = teeth * 6. * space_area(&TOOTH, 400, 4000);
         assert!((removed - want).abs() < 0.03 * teeth, "removed {removed:.5} mm³, the spaces being {want:.5}");
     }
 }
@@ -296,7 +307,7 @@ fn a_rack_cuts_a_whole_gear() {
     };
     assert!(exact.pattern.is_some(), "built whole");
     let removed = PI * (22. * 22. - 6. * 6.) * 6. - gcs_core::brep::props::volume(&exact.solid);
-    let want = 20. * 6. * space_area(400, 4000);
+    let want = 20. * 6. * space_area(&TOOTH, 400, 4000);
     eprintln!("removed {removed:.5} mm³, the spaces being {want:.5}");
     assert!((removed - want).abs() < 0.6, "removed {removed:.5} mm³, the spaces being {want:.5}");
     if let Err(r) = export::step(&exact, "gear", None, &say) {
@@ -324,7 +335,7 @@ fn a_rack_cut_gear_is_held_to_a_tolerance() {
         .unwrap_or_else(|r| panic!("refused at {:?}: {}", r.stage, r.message));
     assert!(exact.pattern.is_some(), "built whole");
     let removed = PI * (22. * 22. - 6. * 6.) * 6. - gcs_core::brep::props::volume(&exact.solid);
-    let want = 20. * 6. * space_area(400, 4000);
+    let want = 20. * 6. * space_area(&TOOTH, 400, 4000);
     assert!((removed - want).abs() < 0.6, "removed {removed:.5} mm³, the spaces being {want:.5}");
     export::stl(&e.sketch, gear, &exact, held, &say)
         .unwrap_or_else(|r| panic!("the STL refused at {:?}: {}", r.stage, r.message));

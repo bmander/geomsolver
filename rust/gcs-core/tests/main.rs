@@ -80,6 +80,7 @@ mod describe;
 mod developable;
 mod diagnose;
 mod draft;
+mod drafted_tools;
 mod drag;
 mod drawing;
 mod drawn_mesh;
