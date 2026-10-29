@@ -2,8 +2,8 @@
 //! cavity, the points within the body at least `t` from each of its faces not left open — `{ c |
 //! c inside B }` with each kept face's wall `{ p | p distance(<= t) w }` cut from it, or, every
 //! face closed, the one region `{ p | p inside B; distance(p, beyond) >= t }`.  This module
-//! recognises that cavity by what its sets say and builds it, where the body is a prism with
-//! nothing put on it and solids cut from it.
+//! recognises that cavity by what its sets say and builds it two ways: where the body is a prism
+//! with nothing put on it and solids cut from it, as a prism (below); any other body by its walls.
 //!
 //! Within a prism the distance from its boundary is the lesser of the distance from its section's
 //! edges, square to its axis, and from its caps along it: a point's foot on a side is level with
@@ -20,10 +20,21 @@
 //! `region`: the prism kept within, each cut grown kept outside; it lies on none of the body's
 //! faces, so cutting it from the body meets them only across.  Held to the body's field before it stands (`gate`).
 //!
-//! Refused by name, and read by the field: a body whose stock is no prism of lines (a drafted one,
-//! a revolution, a body of its own), with material put on it or bounding it, rounded as well; a
-//! face left open that is none of the stock's or is only part of one; a section whose walls meet
-//! or cross (a face narrower than twice the thickness); and a cut no body grown builds.
+//! **By its walls**, any other body — a boss put on it, a body of its own for a stock: the walls are
+//! what lies within `t` of what is outside the body, so they are a body grown by `t` — the body's
+//! faces turned inside out (`BodyFaces::inverted`), each convex edge of it concave and each concave
+//! one convex — built in the same pieces (`grown::pieces`): each face's prism in from it, cut back
+//! to the bisector of each convex edge; a wedge about each concave edge (a boss's foot), cut back
+//! at its corners.  An open face first has its prism `2t` out from it glued on, so the walls run
+//! out through it.  In the recipe the walls are glued to a block less the body and those prisms
+//! (each piece's foot one of the body's faces, nothing intersected), and the cavity is a smaller
+//! block, holding the body clear, less all that: no face of either touches another.  Refused there
+//! as a body grown is, and where a wall stands on a face left open (its foot's quarter round
+//! hangs below the opening, which no block outside the body says).
+//!
+//! Refused by name, and read by the field: a body rounded as well; a face left open that is none
+//! of the stock's, or only part of one; a section whose walls meet or cross (a face narrower than
+//! twice the thickness); a cut no body grown builds; walls no body grown builds.
 use crate::brep::build::{Profile, ProfileEdge};
 use crate::brep::geom::Frame;
 use crate::brep::recipe::Writer;
@@ -42,44 +53,113 @@ use crate::fmath::Det;
 type V = [f64; 3];
 type P = [f64; 2];
 
-/// A shell's cavity built: a prism over its section, less each solid cut from the body grown by
-/// the thickness (model units).
+/// A shell's cavity built (model units), and the solids it stands for.
 #[derive(Clone, Debug)]
 pub struct Shelled {
-    /// The section, in the plane the prism starts from, and how far it runs along its normal.
-    section: Profile,
-    length: f64,
-    /// Each solid cut from the body, grown by the thickness.
-    cuts: Vec<super::grown::Grown>,
+    built: Built,
     /// The solids the cavity is made of, which its construction stands for.
     under: Vec<u32>,
 }
 
+/// The two constructions of a cavity.
+#[derive(Clone, Debug)]
+enum Built {
+    /// Within a prism less what is cut from it: a prism over the section eroded, from the plane
+    /// it starts in as far as `length` along its normal, less each cut grown by the thickness.
+    Prism { section: Profile, length: f64, cuts: Vec<super::grown::Grown> },
+    /// Within any other body: its walls, what lies within the thickness of what is outside it.
+    Walls(Walls),
+}
+
+/// The walls of a body, glued to the outside of it (`walls`): the body as its other terms make it
+/// (`stratum`, the solids its body node reads), each open face's prism out from it glued on, all
+/// that within a block (`boxes[1]`) taken from the block, and the pieces of what lies within the
+/// thickness of that glued to it; the cavity is a smaller block (`boxes[0]`) less all of it.
+#[derive(Clone, Debug)]
+struct Walls {
+    stock: u32,
+    on: Vec<u32>,
+    cut: Vec<u32>,
+    bound: Vec<u32>,
+    open: Vec<(Profile, f64)>,
+    walls: super::grown::Grown,
+    boxes: [(V, V); 2],
+}
+
 impl Shelled {
-    /// The recipe's node, written by `w`: the cavity's `prism`, or a `region` keeping within it and
-    /// outside each cut grown.
+    /// The recipe's node, written by `w`.
     pub fn node(&self, w: &Writer) -> Result<Json, String> {
-        let mut prism = object([("kind", "prism".into()), ("profile", self.section.to_json(w)?),
-            ("from", 0.0.into()), ("to", (self.length * w.scale).into())]);
-        if self.cuts.is_empty() {
-            return Ok(prism);
+        match &self.built {
+            Built::Prism { .. } => self.cavity(w, None),
+            Built::Walls(walls) => {
+                let ids = |v: &[u32]| Json::Arr(v.iter().map(|&i| (i as usize).into()).collect());
+                let stratum = object([("kind", "body".into()), ("stock", (walls.stock as usize).into()),
+                    ("on", ids(&walls.on)), ("cut", ids(&walls.cut)), ("bound", ids(&walls.bound))]);
+                self.cavity(w, Some(stratum))
+            }
         }
-        prism.set("keep", Json::Bool(true));
-        let mut pieces = vec![prism];
-        for g in &self.cuts {
-            let mut grown = g.node(w)?;
-            grown.set("keep", Json::Bool(false));
-            pieces.push(grown);
-        }
-        Ok(object([("kind", "region".into()), ("pieces", Json::Arr(pieces))]))
     }
 
-    /// The solids whose recipe nodes its own reads: the cuts its grown pieces are glued to.
-    pub fn cuts(&self) -> Vec<u32> { self.cuts.iter().map(|g| g.body()).collect() }
+    /// The cavity's node, written by `w`: the prism's `prism`, or a `region` keeping within it
+    /// and outside each cut grown; the walls' `region`, the smaller block less the larger one less
+    /// the body `stratum` with each opening's prism (`glued`) and the walls glued to that.
+    fn cavity(&self, w: &Writer, stratum: Option<Json>) -> Result<Json, String> {
+        let kept = |mut n: Json, keep: bool| { n.set("keep", Json::Bool(keep)); n };
+        let region = |pieces: Vec<Json>| object([("kind", "region".into()), ("pieces", Json::Arr(pieces))]);
+        match &self.built {
+            Built::Prism { section, length, cuts } => {
+                let prism = swept(section, *length, w)?;
+                if cuts.is_empty() {
+                    return Ok(prism);
+                }
+                let mut pieces = vec![kept(prism, true)];
+                for g in cuts {
+                    pieces.push(kept(g.node(w)?, false));
+                }
+                Ok(region(pieces))
+            }
+            Built::Walls(walls) => {
+                let stratum = stratum.ok_or("a shell's walls are glued to the body")?;
+                let plus = std::iter::once(Ok(stratum)).chain(walls.open.iter().map(|(p, l)| swept(p, *l, w)))
+                    .collect::<Result<Vec<_>, String>>()?;
+                let plus = object([("kind", "glued".into()), ("pieces", Json::Arr(plus))]);
+                let outside = region(vec![kept(block(walls.boxes[1], w)?, true), kept(plus, false)]);
+                let grown = std::iter::once(Ok(outside)).chain(walls.walls.pieces_json(w)?.into_iter().map(Ok))
+                    .collect::<Result<Vec<_>, String>>()?;
+                let grown = object([("kind", "glued".into()), ("pieces", Json::Arr(grown))]);
+                Ok(region(vec![kept(block(walls.boxes[0], w)?, true), kept(grown, false)]))
+            }
+        }
+    }
+
+    /// The solids whose recipe nodes its own reads: the cuts its grown pieces are glued to, or the
+    /// body's other terms.
+    pub fn cuts(&self) -> Vec<u32> {
+        match &self.built {
+            Built::Prism { cuts, .. } => cuts.iter().map(|g| g.body()).collect(),
+            Built::Walls(w) => std::iter::once(w.stock).chain(w.on.iter().copied()).chain(w.cut.iter().copied())
+                .chain(w.bound.iter().copied()).collect(),
+        }
+    }
 
     /// The solids the cavity is made of — its stock and walls, or nothing but itself — which no
     /// construction of their own builds.
     pub fn under(&self) -> &[u32] { &self.under }
+}
+
+/// Section `p` swept along its normal by `length`, as the recipe's `prism` (written by `w`).
+fn swept(p: &Profile, length: f64, w: &Writer) -> Result<Json, String> {
+    Ok(object([("kind", "prism".into()), ("profile", p.to_json(w)?), ("from", 0.0.into()),
+               ("to", (length * w.scale).into())]))
+}
+
+/// The block between the corners `lo` and `hi` (model units), as the recipe's `prism`.
+fn block((lo, hi): (V, V), w: &Writer) -> Result<Json, String> {
+    let at = |x: f64, y: f64| [x, y, lo[2]];
+    let c = [at(lo[0], lo[1]), at(hi[0], lo[1]), at(hi[0], hi[1]), at(lo[0], hi[1])];
+    let edges = (0..4).map(|k| ProfileEdge::Line { a: c[k], b: c[(k + 1) % 4] }).collect();
+    let p = Profile { origin: c[0], normal: [0.0, 0.0, 1.0], loops: vec![edges], names: vec![vec!["block".to_string(); 4]] };
+    swept(&p, hi[2] - lo[2], w)
 }
 
 /// What a cavity's sets say: the body it is within, its thickness (each wall's, or the region's
@@ -201,20 +281,85 @@ fn construction(sk: &Sketch, solid: usize, r: &Recognised) -> Result<(Shelled, A
     if on.iter().chain(through).any(|o| reads(o) && *o as usize != solid) {
         return Err("a body shelled and rounded as well is read by the field".to_string());
     }
-    if !on.is_empty() || !bound.is_empty() {
-        return Err("a body shelled with material put on it or bounding it is read by the field".to_string());
-    }
     let cut: Vec<u32> = through.iter().copied().filter(|o| !reads(o)).collect();
-    if !matches!(sk.solids[*stock as usize].def, SolidDef::Prism { draft: None, .. }) {
-        return Err("a body shelled whose stock is no prism is read by the field".to_string());
-    }
-    let prism = super::faces::cached(sk, *stock as usize)?;
     let faces = super::faces::cached(sk, body)?;
-    let (section, length) = cavity(&prism, &faces, r.kept.as_deref(), t)?;
-    let cuts = cut.iter().map(|&c| super::grown::around(sk, c as usize, t, "round")
-        .map_err(|why| format!("the cut `{}` grown by the thickness: {why}", sk.solid_name(c as usize))))
+    let under = r.under.clone();
+    // a prism less what is cut from it: the cavity a prism; any other body by its walls
+    if on.is_empty() && bound.is_empty() && matches!(sk.solids[*stock as usize].def, SolidDef::Prism { draft: None, .. }) {
+        let prism = super::faces::cached(sk, *stock as usize)?;
+        let (section, length) = cavity(&prism, &faces, r.kept.as_deref(), t)?;
+        let cuts = cut.iter().map(|&c| super::grown::around(sk, c as usize, t, "round")
+            .map_err(|why| format!("the cut `{}` grown by the thickness: {why}", sk.solid_name(c as usize))))
+            .collect::<Result<Vec<_>, String>>()?;
+        return Ok((Shelled { built: Built::Prism { section, length, cuts }, under }, faces));
+    }
+    let (open, walls, boxes) = walls(&faces, r.kept.as_deref(), t)?;
+    let walls = Walls { stock: *stock, on: on.clone(), cut, bound: bound.clone(), open, walls, boxes };
+    Ok((Shelled { built: Built::Walls(walls), under }, faces))
+}
+
+/// The id the body's own boundary is read under where a shell's construction builds from it.
+const STRATUM: i64 = -1;
+
+/// A recipe node standing for the body's own boundary as `faces` read it (`STRATUM`).
+fn stratum_node() -> Json {
+    let identity = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    object([("kind", "placed".into()), ("source", STRATUM.into()),
+            ("matrix", Json::Arr(identity.into_iter().map(Json::from).collect()))])
+}
+
+/// The body whose faces are `body`, leaving open those `kept` does not name (none where it is
+/// `None`), at thickness `t`: each opening's prism out from it `2t` long, the walls — what lies
+/// within `t` of what is outside the body and those prisms, built as a body grown is about the
+/// faces turned inside out (`BodyFaces::inverted`, `grown::pieces`) — and the two blocks the
+/// cavity is read between, the smaller holding the body and its openings' prisms clear.
+fn walls(body: &BodyFaces, kept: Option<&[FaceRef]>, t: f64)
+    -> Result<(Vec<(Profile, f64)>, super::grown::Grown, [(V, V); 2]), String> {
+    let refused = |why: &str| format!("{why}: read by the field");
+    let (b, mm, origin) = body.brep();
+    let shut: Vec<bool> = match kept {
+        None => vec![true; body.paths().len()],
+        Some(refs) => {
+            let mut k = vec![false; body.paths().len()];
+            for f in refs {
+                for i in body.faces(f) {
+                    k[i] = true;
+                }
+            }
+            k
+        }
+    };
+    // a wall standing on an opening runs on round its foot below it, which no block outside the
+    // body and its openings' prisms says
+    for e in 0..b.edges.len() as u32 {
+        if let &[fa, fb] = body.faces_of(e) {
+            if shut[fa] != shut[fb] && body.convex(e) == Some(false) {
+                return Err(refused("a wall standing on a face left open"));
+            }
+        }
+    }
+    let mut open = Vec::new();
+    for fi in (0..shut.len()).filter(|&i| !shut[i]) {
+        let (n, o) = body.plane(fi).ok_or_else(|| refused("a face left open that is no plane"))?;
+        let mut section = super::grown::section_of(body, fi, n, o)
+            .ok_or_else(|| refused("a face left open bounded by an edge no line or circle carries"))?;
+        section.names = section.loops.iter().map(|l| vec!["open".to_string(); l.len()]).collect();
+        open.push((section, 2.0 * t));
+    }
+    // the body and its openings' prisms, as the recipe builds them, about the body's own origin
+    let w = Writer::about(mm, origin.map(|x| x * mm));
+    let mut built = std::collections::BTreeMap::new();
+    built.insert(STRATUM, b.clone());
+    let plus = std::iter::once(Ok(stratum_node())).chain(open.iter().map(|(p, l)| swept(p, *l, &w)))
         .collect::<Result<Vec<_>, String>>()?;
-    Ok((Shelled { section, length, cuts, under: r.under.clone() }, faces))
+    let plus = crate::brep::recipe::node(&object([("kind", "glued".into()), ("pieces", Json::Arr(plus))]), &built)?;
+    let named = vec![(String::new(), String::new()); plus.faces.len()];
+    let paths = vec![super::faces::FacePath::new("", ""); plus.faces.len()];
+    let plus = BodyFaces::of(super::Exact { brep: plus, mm, origin, leading: Default::default(), named }, paths);
+    let walls = super::grown::pieces(&plus.inverted(), 0, t, "wall").map_err(|why| format!("its walls: {why}"))?;
+    let (lo, hi) = plus.bounds();
+    let pad = |k: f64| (lo.map(|x| x - k * t), hi.map(|x| x + k * t));
+    Ok((open, walls, [pad(2.0), pad(4.0)]))
 }
 
 /// The cavity's prism within the prism whose faces are `prism`, in the body whose faces are
@@ -428,14 +573,16 @@ fn gate(sk: &Sketch, solid: usize, body: usize, s: &Shelled, faces: &BodyFaces) 
     let (stratum, mm, origin) = faces.brep();
     let w = Writer::about(mm, origin.map(|x| x * mm));
     let mut built = std::collections::BTreeMap::new();
-    for c in s.cuts() {
+    built.insert(STRATUM, stratum.clone());
+    let cuts = match &s.built { Built::Prism { .. } => s.cuts(), Built::Walls(_) => Vec::new() };
+    for c in cuts {
         // each cut's boundary moved from its own origin to the body's
         let cut = super::faces::cached(sk, c as usize)?;
         let (b, _, at) = cut.brep();
         let shift = crate::brep::geom::Rigid { t: scale(sub(at, origin), mm), ..crate::brep::geom::Rigid::identity() };
         built.insert(c as i64, b.moved(&shift));
     }
-    let cavity = crate::brep::recipe::node(&s.node(&w)?, &built)?;
+    let cavity = crate::brep::recipe::node(&s.cavity(&w, Some(stratum_node()))?, &built)?;
     let shelled = crate::brep::boolean::combined(stratum, &cavity, crate::brep::boolean::Op::Cut, 0.0)
         .map_err(|e| format!("`{}`: {}", sk.solid_name(solid), String::from(e)))?;
     let field = super::MaterialField::read(sk, body, super::cad::AXIS_TOLERANCE)?;

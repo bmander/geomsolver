@@ -2219,10 +2219,12 @@ shell(t: 1.5mm) float            // sealed: a hollow inside, every face closed
 - It is the language's own words: the cavity is `{ c | c inside B }`, each kept face's wall `{ p |
   p distance(<= t) w }` cut from it, and the cavity cut from the body.
 - It is built exactly where `B` is a prism of straight edges — any section, an L, a hopper — with
-  what is cut from it (a pocket, a bore: the shell runs round it) and nothing put on it. Its inner
-  faces are named under the cavity for the faces they line (`….cavity.south`), the rounds in
-  reflex corners `round`. A boss put on the body, a turned or drafted body, or a face of a cut left
-  open is read point by point, and an exact export (`--step`, `--stl`) says so by name.
+  what is cut from it (a pocket, a bore: the shell runs round it), and where its faces are planes
+  meeting at corners of three faces with bosses put on it and pockets cut from it (a plinth, a
+  chimney: a boss open at its top). The prism's inner faces are named under the cavity for the
+  faces they line (`….cavity.south`), the rounds in reflex corners `round`. A wall standing on a
+  face left open (a boss on an open top), a turned or drafted body with a boss, or a face of a cut
+  left open is read point by point, and an exact export (`--step`, `--stl`) says so by name.
 
 #### Reports and refusals
 

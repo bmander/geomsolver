@@ -981,7 +981,11 @@ of its section's distance from the section's edges and the distance along its ax
 where `B` is a prism less what is cut from it the cavity is a prism — its section with each kept edge
 moved in by `t`, an arc of radius `t` about each reflex corner, between its kept caps moved in by `t`
 — less each cut grown by `t`, and an implementation builds it exactly, held to the point-by-point
-reading; any other body it reads point by point, and an exact export refuses it in those words.
+reading. The walls are what lies within `t` of what is outside `B`, so any other body is built as a
+body grown about its faces turned inside out, where that construction builds (planes meeting at
+corners of three faces: a boss put on a body, a pocket cut from it); elsewhere, and where a wall
+stands on a face left open, it is read point by point, and an exact export refuses it in those
+words.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, **[0.80]** `draft:`, `through:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints (**[0.100]** `along:` is retired: below). A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 

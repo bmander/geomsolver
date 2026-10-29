@@ -121,6 +121,21 @@ impl BodyFaces {
         faces
     }
 
+    /// The same boundary bounding what lies outside it: every face's outward side turned, so each
+    /// convex edge is concave and each concave one convex — what lies within reach of what is
+    /// outside a body, its shell's walls, is what lies within reach of these (`solid::shelled`).
+    pub fn inverted(&self) -> BodyFaces {
+        let mut brep = self.loc.b.clone().into_owned();
+        for f in &mut brep.faces {
+            f.reversed = !f.reversed;
+        }
+        let named = vec![(String::new(), String::new()); brep.faces.len()];
+        let ex = crate::solid::Exact { brep, mm: self.mm, origin: self.origin, leading: BTreeSet::new(), named };
+        let mut out = BodyFaces::of(ex, self.paths.clone());
+        out.convex = self.convex.iter().map(|c| c.map(|x| !x)).collect();
+        out
+    }
+
     /// Each face's name as the body names it, beside its boundary's faces (`brep`).
     pub fn paths(&self) -> &[FacePath] { &self.paths }
 

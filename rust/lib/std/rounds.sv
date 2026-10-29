@@ -212,9 +212,10 @@ component Grown(B: solid, d: Length) {
 // both.  A wall runs on to an open face's rim, and round it by `t` wherever the hollow reaches past
 // the wall's own edge there: a boss standing on an open top keeps a quarter round about its foot, a
 // wall leaning in over the opening a rounded lip.  Like a round it acts on the body after its other
-// terms, so a boss the body carries is shelled with it.  Where `B` is a prism of straight edges,
-// with what is cut from it — a pocket, a bore — and nothing put on it, the shell is built exactly;
-// any other body is read point by point, and an exact export says so.
+// terms, so a boss the body carries is shelled with it.  It is built exactly where `B` is a prism
+// of straight edges with what is cut from it (a pocket, a bore), and where its faces are planes
+// meeting at corners of three faces with bosses put on it and pockets cut from it; a wall standing
+// on a face left open, or any other body, is read point by point, and an exact export says so.
 //
 //   tray.top shell(t: 2mm) tray
 //   shell(t: 1.5mm) float

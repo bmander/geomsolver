@@ -4,8 +4,9 @@
 //! within `t` of everything outside `X`.  The cavity stands on a region reading the body's faces,
 //! so it is one of the stratum's readers and acts on the body after its other terms
 //! (`faces::readers_of`).  Read point by point, each case held at a lattice of points to its
-//! closed form, the field's side at each the closed form's; built exactly where the body is a prism
-//! less what is cut from it (`solid::shelled`), each held to its closed form's volume to 1e-9.
+//! closed form, the field's side at each the closed form's; built exactly (`solid::shelled`) where
+//! the body is a prism less what is cut from it, and by its walls where a boss is put on it, each
+//! held to its closed form's volume to 1e-9.
 use gcs_core::brep::props::volume;
 use gcs_core::program::Elaborated;
 use gcs_core::solid::MaterialField;
@@ -218,9 +219,34 @@ fn what_is_cut_from_a_prism_is_shelled_with_it() {
     agrees("bored", exact_volume(&e, "slab"), 8000.0 - 180.0 * PI - (38.0 * 38.0 * 3.0 - 147.0 * PI));
 }
 
-/// What is not built is read by the field, and an exact export says why by name: a body that is no
-/// prism less its cuts (the plinth's boss is put on it), a cut's faces left open, a section whose
-/// walls meet, a prism no longer than twice the thickness.
+/// A boss put on the body is shelled with it, built exactly: the walls are what lies within the
+/// thickness of what is outside the body, built as a body grown is about its faces turned inside
+/// out, so within the boss's foot the cavity is rounded by the thickness about each foot edge.  The
+/// plinth shelled by 1: the slab's box 38 × 38 × 8, then over the boss's square up from the slab's
+/// inner top, the section shrunk by the foot's quarter circle (`∫ (10 − 2√(1 − s²))² ds = 100 − 10π
+/// + 8/3`), then the boss's inner square 8 × 8 up to 1 below its top — or, its top open, to it; a
+/// pit cut beside the boss takes its own growth from the cavity, as a prism's cut does.
+#[test]
+fn a_body_with_a_boss_is_shelled_exactly() {
+    let (plinth, foot) = (16500.0, 100.0 - 10.0 * PI + 8.0 / 3.0);
+    let e = solved(&format!("{PLINTH}shell(t: 1mm) plinth\n"));
+    agrees("sealed", exact_volume(&e, "plinth"), plinth - (38.0 * 38.0 * 8.0 + foot + 64.0 * 4.0));
+    let e = solved(&format!("{PLINTH}plinth.boss.near shell(t: 1mm) plinth\n"));
+    agrees("chimney", exact_volume(&e, "plinth"), plinth - (38.0 * 38.0 * 8.0 + foot + 64.0 * 5.0));
+    // a pit 8 square and 4 deep sunk beside the boss: the cavity less the pit grown by 1 below the
+    // slab's inner top, its offset square's prism 3 deep and its rounded floor
+    let pit = "in std.top {\nd0 := point\nd1 := point\nd2 := point\nd3 := point\n\
+               fix((4, 4)) d0\nfix((12, 4)) d1\nfix((12, 12)) d2\nfix((4, 12)) d3\n\
+               (ds := line(d0, d1)) -> (de := line(d1, d2)) -> (dn := line(d2, d3)) -> (dw := line(d3, d0)) -> close\n\
+               dimple := face(ds, de, dn, dw)\n}\npit := solid(dimple, from: 6mm, to: 11mm)\npit cut plinth\n";
+    let e = solved(&format!("{PLINTH}{pit}shell(t: 1mm) plinth\n"));
+    let grown = 3.0 * (96.0 + PI) + 64.0 + 8.0 * PI + 4.0 * PI / 6.0;
+    agrees("pitted", exact_volume(&e, "plinth"), plinth - 256.0 - (38.0 * 38.0 * 8.0 + foot + 64.0 * 4.0 - grown));
+}
+
+/// What is not built is read by the field, and an exact export says why by name: a wall standing
+/// on a face left open (the plinth's boss on its open top: its foot's quarter round hangs below),
+/// a cut's faces left open, a section whose walls meet, a prism no longer than twice the thickness.
 #[test]
 fn what_is_not_built_is_read_by_the_field_and_said() {
     let refused = |doc: &str, src: &str, name: &str, says: &str| {
@@ -229,7 +255,7 @@ fn what_is_not_built_is_read_by_the_field_and_said() {
         assert!(why.contains(says), "`{src}`: {why}");
         field(&e, name);
     };
-    refused(PLINTH, "shell(t: 1mm) plinth", "plinth", "material put on it");
+    refused(PLINTH, "plinth.near shell(t: 1mm) plinth", "plinth", "a wall standing on a face left open");
     refused(STANDING, "tray.cavity shell(t: 1mm) tray", "tray", "none of the stock's");
     refused(BLOCKS, "shell(t: 6mm) step", "step", "narrower than twice the thickness");
     refused(BLOCKS, "shell(t: 7mm) block", "block", "no longer than twice the thickness");
