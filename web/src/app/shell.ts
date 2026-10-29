@@ -46,6 +46,9 @@ const url = new URL(location.href);
 export const initialExample: string | null = url.searchParams.get('example')
   ?? /\/example\/([^/]+)\/?$/.exec(url.pathname)?.[1] ?? null;
 if (initialExample) prefetch();
+/** `?github=owner/repo/blob/main/file.sv` (or any address the Open GitHub project dialog takes)
+ *  opens that project, so a repository can link to its drawing in the page. */
+export const initialGithub: string | null = url.searchParams.get('github');
 
 // the loading modal stays up until the first document is open — an example's opening
 // (`openExample`) or the blank sheet's — which puts it away.  Till then its bar is the core

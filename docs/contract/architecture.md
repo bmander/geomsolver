@@ -63,7 +63,9 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   the files from `raw.githubusercontent.com`, or, given a token for a private repository, from
   the API's contents, the token held in the page's memory and sent to `api.github.com` only — and
   opens them as a drawing folder is opened (`program::openProject`), the panel on its tree
-  (`github.test.ts`).
+  (`github.test.ts`).  The page's address carries the project as `?github=owner/repo/…` (the
+  dialog's address without its host, `githubPath`, never the token), so a repository can link
+  to its drawing and a page opened on one opens it.
 * **CLI** (`rust/gcs-cli/`): `solventc` parses, elaborates, solves, diagnoses and reports on a
   document, and resolves modules (`engine/parts.sv` beside the document or an ancestor, then
   `library::MODULES`). It **invents no wording**: a per-document line is `diagnose::summary`, a

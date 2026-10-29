@@ -219,6 +219,11 @@ make wasm && cd web && npm install && npm run build && npm run serve   # http://
 
 `…/example/<slug>` opens a case from the library (`/example/pythagoras`, `/example/truss:50`) by
 redirecting to `?example=<slug>`. The dev server does this itself, and on GitHub Pages (or any host
-that serves `404.html` for a missing path) `web/404.html` does it in the page. The app is static
+that serves `404.html` for a missing path) `web/404.html` does it in the page.
+`?github=<owner>/<repo>` opens a GitHub repository's Solvent files as the project, the way File ▸
+Open GitHub project… does (which puts the same parameter on the address, so it can be copied as
+a link): `…/tree/<ref>/<folder>` a folder in it, `…/blob/<ref>/<file>.sv` a file, selected —
+[`?github=bmander/radiatorbot/blob/main/hardware/radiatorbot.sv`](https://bmander.github.io/geomsolver/?github=bmander/radiatorbot/blob/main/hardware/radiatorbot.sv).
+A public repository needs no token; a private one is opened from the dialog, with one. The app is static
 files with relative paths, so any static host can serve `web/` after `npm run build`, from a
 subdirectory as well as from a domain root.

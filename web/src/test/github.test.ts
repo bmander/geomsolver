@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { githubProject, parseGithub } from '../app/github.js';
+import { githubPath, githubProject, parseGithub } from '../app/github.js';
 
 test('a GitHub address names a repository, and in it a ref and a folder or a file', () => {
   assert.deepEqual(parseGithub('https://github.com/bmander/geomsolver'),
@@ -17,6 +17,17 @@ test('a GitHub address names a repository, and in it a ref and a folder or a fil
   assert.equal(parseGithub('https://github.com/o'), null);
   assert.equal(parseGithub('https://github.com/o/r/issues/3'), null);
   assert.equal(parseGithub('not an address'), null);
+});
+
+test("the page's ?github= address is the same address without its host", () => {
+  for (const text of ['o/r', 'o/r.js', 'o/r/tree/feat/x/rust/examples', 'o/r/blob/main/a/b.svd']) {
+    const address = parseGithub(text)!;
+    assert.deepEqual(address, parseGithub(`https://github.com/${text}`));
+    assert.equal(githubPath(address), text);
+  }
+  assert.equal(githubPath(parseGithub('https://github.com/o/r.git')!), 'o/r');
+  assert.equal(parseGithub('gitlab.com/o/r'), null);
+  assert.equal(parseGithub('o/r/issues/3'), null);
 });
 
 /** A repository with the branch `feat/x`, served as GitHub's API and raw host would. */
