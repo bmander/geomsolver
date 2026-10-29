@@ -178,7 +178,7 @@ fn a_boss_is_shelled_with_its_body() {
 }
 
 /// `name` built exactly, its volume.
-fn exact_volume(e: &Elaborated, name: &str) -> f64 {
+pub(crate) fn exact_volume(e: &Elaborated, name: &str) -> f64 {
     let x = e.sketch.exact_solid(ent(e, name).i()).unwrap_or_else(|m| panic!("`{name}`: {m}"));
     volume(&x.brep)
 }

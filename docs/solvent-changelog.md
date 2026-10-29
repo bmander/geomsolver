@@ -16,7 +16,8 @@ body's faces among that body's readers (the cavity, its walls cut from it), wher
 it; no body any earlier document wrote changes. Where the body is a prism of straight edges with
 what is cut from it and nothing put on it, the shell is built exactly — the cavity a prism, its
 section's edges moved in and arcs about its reflex corners, less each cut grown by the thickness —
-and exports to STEP; where bosses are put on it, by its walls, what lies within the thickness of
+and exports to STEP (its section's arcs moved in about their centres, a cup's whole circle too);
+where bosses are put on it, or it is turned, by its walls, what lies within the thickness of
 what is outside it, built as a body grown is about its faces turned inside out (a boss's foot
 rounded within by the thickness). A wall standing on a face left open, or a body neither builds,
 is read point by point, and an exact export refuses it by name.

@@ -372,11 +372,15 @@ section's distance from its edges and the distance along the axis from its caps,
 least `t` from its kept faces are its section eroded by `t` between its kept caps moved in by `t` —
 less each solid cut from `B` grown by `t` (the erosion of `A` less `P` is `A`'s less `P` grown:
 `grown::around`, a body grown's construction for a solid no region names).  The section eroded
-(`shelled::eroded`): each kept edge moved in by `t`, two meeting at a convex corner where their
-lines do and joined by an arc of radius `t` about a reflex one; an open edge, or an open cap, moved
+(`shelled::eroded`): each kept edge moved in by `t` — a line along its normal, an arc about its
+centre, its radius less or more as the material is inside its circle or out (`Carried`, read off
+the cap's circles by their own normal; a whole circle one edge) — two meeting at a convex corner
+where their carriers do (the meeting nearest the corner moved, `plane2::meet`), going on tangent at
+the point both move to, and joined by an arc of radius `t` about a reflex one; an open edge, or an open cap, moved
 *out* by `t/2`, so the cavity crosses the body's faces there and lies on none of them; where a kept
 edge meets an open one at more than a right angle the arc about the corner runs on to the open
-edge's line (a wall leaning in keeps a rounded lip).  A body's open faces are matched to the
+edge's line (a wall leaning in keeps a rounded lip; over an open arc it is refused).  Where the
+prism's construction refuses, the walls' is asked (below), and a refusal says both.  A body's open faces are matched to the
 stock's faces by their planes.  Its recipe node is the cavity's (`cad.rs` asks `shelled::built`
 once a solid, before anything else of it, and writes it for the cavity in place of the regions it
 is made of, depending on what its construction reads, `Shelled::reads`): a `prism`, or a `region` keeping within it and outside each cut's
@@ -410,7 +414,11 @@ and named, each at a lattice of points to its closed form; built exactly, the bl
 the L (`8 (160 − π)` taken), a tray's pocket and a plate's bore grown out of the cavity, a hopper's
 leaning wall's lip, the plinth sealed, as a chimney and with a pit beside its boss (its foot
 `100 − 10π + 8/3` under the boss), each to its closed form to 1e-9; the refusals said, and the
-faces' names.
+faces' names.  `rust/examples/shells/` is the series (`tests/shell_examples.rs`: every case's
+closed form to 1e-9, a rounded enclosure, a cup, a turned can, two bosses square and round, walls
+leaning in and out, 120° and acute corners; `gcs-cli`'s
+`the_shells_export_and_measure_within_their_tolerance`: each written as STEP and STL within
+10 µm).
 
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`

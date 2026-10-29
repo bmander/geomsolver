@@ -979,8 +979,8 @@ edge (a boss standing on an open top keeps a quarter round about its foot). It a
 (the stratum, above). *Non-normative:* within a prism the distance from its boundary is the lesser
 of its section's distance from the section's edges and the distance along its axis from its caps, so
 where `B` is a prism less what is cut from it the cavity is a prism — its section with each kept edge
-moved in by `t`, an arc of radius `t` about each reflex corner, between its kept caps moved in by `t`
-— less each cut grown by `t`, and an implementation builds it exactly, held to the point-by-point
+moved in by `t` (a line along its normal, an arc about its centre), an arc of radius `t` about each
+reflex corner, between its kept caps moved in by `t` — less each cut grown by `t`, and an implementation builds it exactly, held to the point-by-point
 reading. The walls are what lies within `t` of what is outside `B`, so any other body is built as a
 body grown about its faces turned inside out, where that construction builds (planes meeting at
 corners of three faces: a boss put on a body, a pocket cut from it); elsewhere, and where a wall
