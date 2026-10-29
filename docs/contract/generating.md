@@ -307,6 +307,25 @@ the corners walked. `solid_sweeps_examples.rs` (`vthread.sv`, a V wheel ground a
 section computed apart from the core) and `turns_and_slides.rs` (a V wheel slid tilted, its shadow;
 slid square, refused at S1 for its sharp edge) are the gate, each STL held to the field.
 
+**A drafted prism tool (#684 G):** a drafted prism is in the generating class where it stays on
+one side of its parting plane and each corner joins two lines or goes on tangent: then each side is
+the ruled surface between its edge's two end sections, a plane or a cone (`ExtrudedSurface::drafted`,
+from the field's `Sections`; `Sections::linear`), its points' normals their own, so its contacts are
+read as an undrafted side's and every row is asked of it. T1 refuses the rest by name: a prism
+running both ways from its plane (its sides turn there), an arc meeting a side at an angle, a side
+no line, arc or circle. The cutter sections it at a station as the blend of its two end sections
+(`cutter::Extruded::ends`, from `build::offset`), walked by the profile's lengths so a walk length
+is a ruling at every station (by its own, a shrinking section moved where contacts leave the roll's
+window and ended the chart in the blank); the sheet is traced, never the planar envelope extruded
+(`Cutter::prism_profile` is undrafted only). A drafted tool the generating rows refuse under a
+motion keeping its plane is still the planar subtraction class's; the native path refuses a drafted
+prism by name (`--kernel rust` builds it). `tests/drafted_tools.rs` and
+`solid_sweeps_examples.rs` (`helical.sv`, a rack tooth leaned 15° across the blank and drafted 2°,
+which no planar class reads) are the gate: the drafted rack's and the helical rack's spaces within
+2e-4 of arithmetic made apart (each section of the blank cut by the tooth's quadrilateral there,
+swept by `rack_cut`'s arithmetic), each STL agreeing with the field; a drafted slot's planes and
+cones on the tool's field; both T1 refusals.
+
 **A union tool is its members (#684 C, #586):** a body cutting the sweep of a union — its tool a
 body that only puts solids on its stock, a union within one, or a placement of one — is admitted
 (`admit_body`), built (`brep::export::own`, the page's `Builder`) and metered (`accuracy::Meter`)
@@ -325,7 +344,7 @@ against rows across the rod computed apart, placed and turned, against the long 
 tubes by Pappus, two tori rolled in the generating class, and the refusals.
 
 **A prism's cap in the blank (#684 F):** a prism standing alone as the tool (its solid the prism
-itself, its profile one loop of lines and arcs: `admission::Lone`) whose cap passes through the
+itself, undrafted, its profile one loop of lines and arcs: `admission::Lone`) whose cap passes through the
 blank is no longer refused at T1; any other tool's cap is, saying so. Its caps are faces of the
 tool (`ToolSurface::Cap`, read over the box its profile lies in, a point off the profile passed
 over as the field says), asked M2–E4 and E1 with its sides only where one reaches the blank; M2
@@ -353,8 +372,8 @@ height's space read apart from the core by `rack_cut`'s arithmetic and held to 1
 `object_builder::a_bars_end_builds_at_the_displays_samples` builds it in the page.
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
-a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack and a prism's cap (`bar_end.sv`), the planar subtraction
-class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, its
+drafted helical rack and a prism's cap (`bar_end.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;
 `every_example_is_held_and_named` fails a file the README does not name or no test reads. The
@@ -390,8 +409,9 @@ pcurves. `rust/examples/wankel/`, `fixtures::wankel`, `tests/{bore,planar_envelo
 **Planar subtraction (#606, #607, #590):** a sweep of prisms under a motion that turns their
 plane in itself is the blank less the region its section sweeps, slab by slab
 (`solid::planar_subtraction`, rows P1, Q1–Q4 in [docs/generating-sweeps.md](../generating-sweeps.md)).
-`admit_body` asks it of a prism tool the generating rows refuse at T1, T2, E1 or E2 — a union or a
-draft in the tool, a concave corner, a roll never clear of the blank, a second contact — so a rack
+`admit_body` asks it of a prism tool the generating rows refuse at T1, T2, E1 or E2 — a union, or a
+draft the generating class does not read, in the tool, a concave corner, a roll never clear of the
+blank, a second contact — so a rack
 is still built by its sheet (`extruded`), and a rack tooth with a cap in the blank, or united with
 itself, by its region (`rack_cut::a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans`,
 `the_tooth_united_with_itself_cuts_as_the_tooth_does`: the two classes agree to 1e-5). The slabs are the blank cut at every member's cap within

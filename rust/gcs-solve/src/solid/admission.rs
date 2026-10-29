@@ -1,10 +1,10 @@
 //! The generating-sweep class (docs/generating-sweeps.md): which continuous sweeps a boundary
 //! is constructed for, asked of the solved model before any construction. A tool that is a
-//! revolution of lines and arcs (or an intersection of such), turned by rotations about fixed
-//! axes at constant ratios, clear of the blank at both ends of its roll, touching each blank
-//! point once, never folding and never crossing itself: that is what generates a bevel or a
-//! hypoid, and everything else is refused by the condition it fails, with a point that fails
-//! it. The conditions are **sampled**, never certified, and the evidence says so: a sweep this
+//! revolution of lines and arcs, or a prism of them drafted or not (or an intersection of such),
+//! turned by rotations about fixed axes at constant ratios, clear of the blank at both ends of its
+//! roll, touching each blank point once, never folding and never crossing itself: that is what
+//! generates a bevel or a hypoid, and everything else is refused by the condition it fails, with a
+//! point that fails it. The conditions are **sampled**, never certified, and the evidence says so: a sweep this
 //! admits has shown no failure at the samples it names, which is not a proof that none exists
 //! between them. Material evaluation answers membership for every sweep, admitted or not; only
 //! boundary construction is restricted.
@@ -36,8 +36,9 @@ impl Condition {
     /// What the row asks, in the words the scope document uses.
     pub fn rule(self) -> &'static str {
         match self {
-            Condition::Tool => "the tool is a full revolution, or a prism, of lines and arcs, or an intersection of such, its \
-                caps clear of the blank unless it is a prism standing alone, or a union of tools each in the class",
+            Condition::Tool => "the tool is a full revolution, or a prism (drafted or not), of lines and arcs, or an intersection \
+                of such, its caps clear of the blank unless it is an undrafted prism standing alone, or a union of tools each in \
+                the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -373,8 +374,9 @@ fn tool(sk: &Sketch,id: usize) -> Result<(),String> {
             if !through.is_empty() { return Err(format!("`{}` cuts solids; only intersections are in the class",solid.name)); }
             std::iter::once(stock).chain(bound).try_for_each(|&o| tool(sk,o as usize))
         }
-        SolidDef::Prism {draft:Some(_),..} => Err(format!("`{}` is a drafted prism: its sides lean, and \
-            a tool's are extrusions",solid.name)),
+        // a drafted prism's sides lean (#684 G): each a plane or a cone, ruled between its sections
+        SolidDef::Prism {draft:Some(_),..} => super::ExtrudedSurface::drafted(sk,id).map(|_| ())
+            .map_err(|e| format!("`{}` is a drafted prism whose sides the class does not read: {e}",solid.name)),
         // a prism's sides are extrusions of lines and arcs, its contact set fixed by the motion
         SolidDef::Prism {..} => Ok(()),
         SolidDef::Family {..} => Err(format!("`{}` is a face family, not a revolution",solid.name)),
@@ -565,8 +567,9 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let alike = by;
     // a prism sweep under a motion keeping its plane that the generating rows refuse, at any row and
     // any placement, is asked the planar subtraction class's rows instead (Q1–Q4), every placement
-    // at once: what those rows guard against — a union or a draft in the tool, a concave corner, a
-    // roll never clear, a second contact — its swept region does not need
+    // at once: what those rows guard against — a union within an intersection, a draft running both
+    // ways from its plane, a concave corner, a roll never clear, a second contact — its swept region
+    // does not need
     let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
         let inside = |p: V| field.value(p) < -options.margin;
         super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|

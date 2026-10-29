@@ -21,7 +21,7 @@ pub(crate) fn text(name: &str) -> String {
 fn example(name: &str) -> Elaborated { fixtures::read(&text(name)) }
 
 /// The class `body`'s one sweep is admitted to.
-fn class(e: &Elaborated,body: &str) -> Class {
+pub(crate) fn class(e: &Elaborated,body: &str) -> Class {
     let a = admission::admit_body(&e.sketch,fixtures::solid(e,body),&Options::default()).unwrap_or_else(|r| panic!("{r}"));
     let [s] = a.sweeps() else { panic!("one sweep") };
     s.class.clone()
@@ -144,7 +144,7 @@ fn the_rack_leaves_one_tooth_space() {
     let e = example("rack.sv");
     assert!(matches!(class(&e,"gear"),Class::Generating),"the generating class");
     let removed = PI*22.*22.*6.-exported(&e,"gear");
-    let want = 6.*crate::rack_cut::space_area(400,4000);
+    let want = 6.*crate::rack_cut::space_area(&crate::rack_cut::TOOTH,400,4000);
     assert!((removed-want).abs() < 0.03,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 
@@ -156,6 +156,22 @@ fn the_bars_end_leaves_its_space() {
     let e = example("bar_end.sv");
     assert!(matches!(class(&e,"part"),Class::Capped(_)),"the generating class, its cap sectioned across");
     near(exported(&e,"part"),PI*22.*22.*6.-crate::prism_caps::bar_end_space(),1e-6);
+}
+
+/// `helical.sv`: the generating class with a drafted prism (#684 G), the rack's tooth leaned 15°
+/// across the blank and drafted 2°, so the motion keeps no plane of it and no planar class asks
+/// it. Its space is each section square to the blank's axis cut by the tooth's section there, a
+/// quadrilateral read from the tooth's four drafted planes and swept by `rack.sv`'s arithmetic
+/// (`drafted_tools::space_volume`), through the blank's 6 mm.
+#[test]
+fn the_drafted_helical_tooth_leaves_its_space() {
+    let e = example("helical.sv");
+    let space = fixtures::solid(&e,"space");
+    assert!(!gcs_core::solid::planar_subtraction::asks(&e.sketch,space) && !gcs_core::solid::planar_class::asks(&e.sketch,space));
+    assert!(matches!(class(&e,"gear"),Class::Generating),"the generating class");
+    let removed = PI*22.*22.*6.-exported(&e,"gear");
+    let want = crate::drafted_tools::space_volume(15.,2.,[2.,8.]);
+    assert!((removed-want).abs() < 2e-4*want,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 
 /// `conjugate.sv`: the planar subtraction class, its wheel the disc's area kept outside the plus
