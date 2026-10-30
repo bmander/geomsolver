@@ -256,7 +256,10 @@ pub struct SweepContacts {
     /// Where adjacent patches of a profile loop meet.
     pub(super) edges: Vec<PatchEdge>,
     pub(super) motion: Family,
+    /// The roll it is read over: the sweep's, or a whole turn's once round (`whole`).
     pub(super) roll: [f64;2],
+    /// Whether the motion is a turn the sweep's roll carries round a whole turn or more (#684 N).
+    pub(super) whole: bool,
 }
 
 /// Why a point carrying a normal has no contact times: its normal is no direction, its contact
@@ -389,8 +392,11 @@ impl SweepContacts {
                 edges.push(PatchEdge {patches:[a,b],ends:[ua,ub]});
             }
         }
-        Ok(Self {source:source_field,patches,edges,motion:Family::read(sk,*motion as usize)?,
-            roll:super::roll::interval(sk,solid)?})
+        // a whole turn or more sweeps what one whole turn does, a solid of revolution (#684 N): every
+        // reader of its contacts reads it once round
+        let (motion,roll) = (Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?);
+        let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
+        Ok(Self {source:source_field,patches,edges,motion,roll:once.unwrap_or(roll),whole:once.is_some()})
     }
     pub fn edges(&self) -> &[PatchEdge] { &self.edges }
     /// Where `edge`'s two faces meet, and a point just inside each face beside it, on their charts'
@@ -406,7 +412,11 @@ impl SweepContacts {
     pub fn patches(&self) -> &[ToolSurface] { &self.patches }
     pub fn motion(&self) -> &Family { &self.motion }
     pub fn source_material(&self) -> &SpatialField { &self.source }
+    /// The roll the contacts are read over: the sweep's, or a whole turn's once round from its start.
     pub fn domain(&self) -> [f64;2] { self.roll }
+    /// Whether the sweep is a whole turn or more, read once round (`domain`): it has no ends, the
+    /// tool at either lying within what it sweeps (#684 N).
+    pub fn whole(&self) -> bool { self.whole }
     /// Contact times of a point carrying a given unit normal, over a motion
     /// interval. This is the sharp-edge sweep condition: a convex source edge
     /// carries every normal between its incident faces', and each such normal

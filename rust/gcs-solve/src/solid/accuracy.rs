@@ -954,7 +954,8 @@ impl Sweep {
             let (nu,nv) = (count(speed[0],256),count(speed[1],4096));
             // under a screw, a turn or a slide a ring's contacts are its characteristic points at
             // every time: each carried along its path (`Screw::carry`) a cell's width a step, over
-            // the stretch of the roll that brings it near the blank's sphere (a turn's, the roll)
+            // the stretch of the roll that brings it near the blank's sphere (a turn's, the roll: a
+            // whole turn's once round, `SweepContacts::domain`)
             if let Some(screw) = self.contacts.motion().twist() {
                 let Some(patch) = patch.revolved() else {
                     return Err(format!("`{}`: the meter reads the cuts of revolved tools only, not a prism's sides",patch.name()))

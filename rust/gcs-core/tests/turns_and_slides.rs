@@ -285,8 +285,27 @@ impl Lean {
 /// wedge's in common with the ring), and a torus about the line through (5, 0, 0) leaning so,
 /// its tube of radius 2 centred 2.5 out from it, turned about z over the roll from `from` to `to`
 /// degrees.
-fn turned(lean: Lean,from: f64,to: f64) -> String {
+fn turned(lean: Lean,from: f64,to: f64) -> String { turned_in(lean,from,to,true) }
+
+/// `turned`'s torus and roll over the whole ring (no wedge), or its sector.
+fn turned_in(lean: Lean,from: f64,to: f64,sector: bool) -> String {
     let (a,o) = lean.axes();
+    // the wedge the ring's sector is its common with
+    let wedge = if !sector { String::new() } else { format!("\
+in std.top {{
+  private w0 := point
+  private w1 := point
+  private w2 := point
+  fix((0, 0)) w0
+  fix((20, 0)) w1
+  fix((10, {wy})) w2
+  private wa := line(w0, w1)
+  private wb := line(w1, w2)
+  private wc := line(w2, w0)
+}}
+construction wedge := solid(face(wa, wb, wc), from: -3mm, to: 3mm)
+wedge common ring
+",wy=20.*60f64.to_radians().sin()) };
     format!("\
 unit mm
 use std
@@ -326,26 +345,13 @@ in std.front {{
   private top := line(q2, q3)
 }}
 ring := solid(face(inner, bottom, outer, top), about: ax)
-in std.top {{
-  private w0 := point
-  private w1 := point
-  private w2 := point
-  fix((0, 0)) w0
-  fix((20, 0)) w1
-  fix((10, {wy})) w2
-  private wa := line(w0, w1)
-  private wb := line(w1, w2)
-  private wc := line(w2, w0)
-}}
-construction wedge := solid(face(wa, wb, wc), from: -3mm, to: 3mm)
-wedge common ring
-construction wheel := solid(face(tube), about: taxis)
+{wedge}construction wheel := solid(face(tube), about: taxis)
 swing := frame
 swing turns(1) ax
 construction groove := sweep(wheel over t in ({from}deg, {to}deg), under: swing)
 part := solid(ring)
 groove cut part
-",o0=o[0],o1=o[1],o2=o[2],a0=a[0],a1=a[1],a2=a[2],wy=20.*60f64.to_radians().sin())
+",o0=o[0],o1=o[1],o2=o[2],a0=a[0],a1=a[1],a2=a[2])
 }
 
 /// The turned wheel's torus as drawn.
@@ -375,8 +381,28 @@ fn a_turned_torus_grooves_a_ring_by_pappus() {
 
 // -- refusals --------------------------------------------------------------------------------
 
-/// Each row a turn or a slide meets refuses by name: a turn carried round a whole turn lays its
-/// sheet over itself (S4); a roll that leaves the torus in the ring is not clear at its ends (E1);
+/// A whole turn (#684 N): the leaning torus turned once round the whole ring, from inside it, sweeps
+/// a solid of revolution, its sheet the section revolved all the way round and closing on itself.
+/// No end is clear of the ring, and none need be: the torus at either lies in what the turn
+/// sweeps. What it removes is Pappus over the shadow all the way round, six times the sector's.
+/// A roll of more than a whole turn passes the same path again: it is read once round from its
+/// start, as one whole turn from there is.
+#[test]
+fn a_whole_turn_grooves_the_whole_ring() {
+    let whole = |from: f64,to: f64| -> f64 {
+        let source = turned_in(Lean::Across(25.),from,to,false);
+        let a = admit(&source).unwrap();
+        let [s] = a.sweeps() else { panic!("one sweep") };
+        let Class::ConstantTwist(found) = &s.class else { panic!("`groove` is a constant twist's sweep") };
+        assert!(found.screw.is_turn() && found.whole,"read as a whole turn");
+        found.nodes[found.reach[0]].position[0]
+    };
+    assert_eq!(whole(-200.,520.),whole(-200.,160.),"two turns read as the one from their start");
+    let away = 6.*turned_away(&turned_torus(Lean::Across(25.)));
+    near(exported(&fixtures::read(&turned_in(Lean::Across(25.),0.,360.,false)),"part"),TAU*(144.-64.)-away,2e-5);
+}
+
+/// Each row a turn or a slide meets refuses by name: a roll that leaves the torus in the ring is not clear at its ends (E1);
 /// a torus leaning toward the turn's axis, so that its own meets it, has a ring in contact all
 /// round, every normal of it through where the axes meet, at which its characteristic branches
 /// between two of the walk's stations (S1: the boundary leaves the walked branch there, which
@@ -388,9 +414,6 @@ fn a_turned_torus_grooves_a_ring_by_pappus() {
 /// which is not built (S1, #684 E).
 #[test]
 fn the_turn_and_slide_rows_refuse_by_name() {
-    let whole = refused(admit(&turned(Lean::Across(0.),-180.,180.)));
-    assert_eq!((whole.condition,whole.class()),(Condition::Lead,"constant-twist class"));
-    assert!(whole.message.contains("whole turn"),"{}",whole.message);
     let short = refused(admit(&turned(Lean::Across(0.),-130.,30.)));
     assert_eq!(short.condition,Condition::Clearance);
     let branching = refused(admit(&turned(Lean::Toward(25.),-140.,140.)));

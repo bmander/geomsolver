@@ -6,7 +6,10 @@
 //! The grid is fitted, judged and refined where it misses (`sheet::settle`), as a traced sheet is.
 //! A turn's and a slide's sheets are built the same way (#684): a turn's section is a half-plane
 //! through its axis, so its sheet is that section revolved, and a slide's lies square to it, so
-//! its sheet is that section extruded, its columns spread across the blank's heights.
+//! its sheet is that section extruded, its columns spread across the blank's heights. A turn
+//! carried round a whole turn or more sweeps a solid of revolution (#684 N): its columns run once
+//! round, the last pose the first, and the sheet is cut into faces round the turn that close on
+//! each other, so no face of it has a seam for the split to meet.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::sheet::{Fitted,SweptCut,settle};
@@ -25,6 +28,9 @@ const FIRST_ROWS: usize = 24;
 /// How many first columns' widths the roll's stretch is widened past where the characteristic
 /// leaves the blank's heights.
 const COLUMN_MARGIN: f64 = 2.;
+/// How many faces a whole turn's sheet is cut into round the turn: two at least, so that it
+/// closes on an edge and not a seam, and few enough that no face turns more than a quarter turn.
+const AROUND: usize = 4;
 /// How many columns a slide's first grid lays across the blank's heights: its sheet is straight
 /// along them, so the fit needs few.
 const SLIDE_COLUMNS: f64 = 8.;
@@ -45,17 +51,21 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // σ(s) is carried for M(t) at roll time t+τ(s): the columns run over the stretch that carries
     // the section past the blank's heights (`Screw::passing`: a turn's, the whole roll, as a turn
     // keeps every height), widened, within what the roll carries every row to. A turn's delays
-    // are read along the walk, each the one nearest the one before, as the section is one curve
+    // are read along the walk, each the one nearest the one before, as the section is one curve.
+    // A whole turn's run once round from the roll's start, as its contacts were read
+    // (`SweepContacts::domain`): every pose of it is a pose of that one turn.
     let roll = cut.limits;
-    let mut delay: Vec<f64> = Vec::with_capacity(found.nodes.len());
-    for node in &found.nodes { delay.push(screw.time_to_station(node.position,station,delay.last().copied().unwrap_or(0.))); }
-    let (least,most) = delay.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&d| (a.min(d),b.max(d)));
-    let carried = [roll[0]-least,roll[1]-most];
-    let base = family.pose_at(0.).at(Stage::Reach)?.point(section[first]);
-    let passing = heights.and_then(|band| screw.passing(base,band)).unwrap_or([f64::NEG_INFINITY,f64::INFINITY]);
-    let window = [passing[0].max(carried[0]),passing[1].min(carried[1])];
-    let step = if screw.is_slide() { (window[1]-window[0]).max(0.)/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
-    let window = [(window[0]-COLUMN_MARGIN*step).max(carried[0]),(window[1]+COLUMN_MARGIN*step).min(carried[1])];
+    let (window,step) = if found.whole { ([roll[0],roll[0]+screw.period()],COLUMN_TURN/screw.ratio.abs()) } else {
+        let mut delay: Vec<f64> = Vec::with_capacity(found.nodes.len());
+        for node in &found.nodes { delay.push(screw.time_to_station(node.position,station,delay.last().copied().unwrap_or(0.))); }
+        let (least,most) = delay.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&d| (a.min(d),b.max(d)));
+        let carried = [roll[0]-least,roll[1]-most];
+        let base = family.pose_at(0.).at(Stage::Reach)?.point(section[first]);
+        let passing = heights.and_then(|band| screw.passing(base,band)).unwrap_or([f64::NEG_INFINITY,f64::INFINITY]);
+        let window = [passing[0].max(carried[0]),passing[1].min(carried[1])];
+        let step = if screw.is_slide() { (window[1]-window[0]).max(0.)/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
+        ([(window[0]-COLUMN_MARGIN*step).max(carried[0]),(window[1]+COLUMN_MARGIN*step).min(carried[1])],step)
+    };
     if !(window[0] < window[1]) {
         return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the roll does not carry the characteristic past the blank")))
     }
@@ -101,7 +111,9 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         let row_mids: Vec<(V,V)> = crate::par::map(&grid.row_mids,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
         // one pose a column
         let poses = |times: &[f64]| times.iter().map(|&t| family.pose_at(t)).collect::<Result<Vec<_>,_>>();
-        let (columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);
+        let (mut columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);
+        // a whole turn's last column is its first, to the bit, so the ring closes on one edge
+        if found.whole { let first = columns[0]; *columns.last_mut().expect("columns") = first; }
         let (nr,nc) = (grid.rows.len(),grid.columns.len());
         let bands = std::iter::once(0).chain(fans.iter().filter_map(|s| grid.rows.iter().position(|r| r == s)))
             .map(|r| (r,UNNAMED)).collect();
@@ -125,9 +137,10 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         Ok(sheet)
     };
     let sheet = lay(&grid,Withheld::Centres).at(Stage::Sheet)?;
-    // its edges out of the blank: the reach's ends and the roll's stretch were chosen so
+    // its edges out of the blank: the reach's ends and the roll's stretch were chosen so (a whole
+    // turn's first and last columns are one, closed, and lie where they will)
     let edges: Vec<V> = (0..sheet.rows*sheet.columns).filter(|k| { let (r,c) = (k/sheet.columns,k%sheet.columns);
-        r == 0 || r+1 == sheet.rows || c == 0 || c+1 == sheet.columns }).map(|k| sheet.points[k]).collect();
+        r == 0 || r+1 == sheet.rows || (!found.whole && (c == 0 || c+1 == sheet.columns)) }).map(|k| sheet.points[k]).collect();
     let within = inside(&edges).at(Stage::Sheet)?.iter().filter(|b| **b).count();
     if within > 0 {
         return Err(ExportRefusal::at(Stage::Sheet,format!("`{name}`: {within} points of the sheet's edge lie in the blank")))
@@ -136,10 +149,11 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     (say.mark)(Stage::Sheet);
     let sides = |grid: &Grid| lay(grid,Withheld::Sides);
     settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
-        if fans.is_empty() { return Ok(fitted) }
-        fitted.faces = fitted.named(kind,&|_| String::new()).at(Stage::Fit)?;
-        (say.stage)(&format!("`{name}`: the sheet cut into {} faces where its characteristic runs round a convex corner's fan",
-            fitted.faces.faces.len()));
+        if fans.is_empty() && !found.whole { return Ok(fitted) }
+        fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND)).at(Stage::Fit)?;
+        (say.stage)(&format!("`{name}`: the sheet cut into {} faces{}{}",fitted.faces.faces.len(),
+            if fans.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" },
+            if found.whole { " and round the turn, closing on itself" } else { "" }));
         Ok(fitted)
     })
 }

@@ -268,7 +268,7 @@ slide's square to it, extruded across the blank's heights; a turn's a half-plane
 its points carried round at their own heights and radii (`Screw::time_to_station`, each node's
 delay the one nearest the one before), revolved over the roll, its S4 read by radius and height;
 the stretch of the roll each reader asks is `Screw::passing`. A turn of a whole turn or more is
-refused at S4 in the walk (its sheet would lie over itself), and S1 also refuses
+read as one whole turn (below), and S1 also refuses
 a ring in contact all round between two walked stations whose path enters the blank
 (`constant_twist::stationary`: the amplitude turning right round, its three coefficients' least
 sought by `roots::brent`) — a turn about an axis the tool's meets, or a slide along the tool's
@@ -278,6 +278,28 @@ ball is still its tube. The accuracy meter reads a turn's characteristic over th
 apart: the lens, a circular segment, Pappus, and a tilted torus's shadow from its centre circle;
 the STL held to the field), with
 `rust/examples/twist_drill/straight_flute.sv` and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
+
+**A whole turn (#684 N):** a sweep is its path's, so a turn carried round a whole turn or more
+sweeps what one whole turn does, a solid of revolution. Its contacts are read once round from the
+roll's start where they are read (`SweepContacts::read`, by `constant_twist::once_round`), so every
+reader of them — the walk, admission, the accuracy meter — asks one turn (`domain`), and
+`SweepContacts::whole` and `Characteristic::whole` say so; the declared roll (`roll::interval`, which
+the material field reads) is left as stated. E1 is not asked of it (`admission::ends`): the tool at
+either end lies within what it sweeps, so the roll may start and end inside the blank. Its
+sheet (`brep::sweep::helical`) runs its columns once round, the last column's pose the first's to
+the bit; only its rows' ends must leave the blank. Fitted as any, it is cut into faces both ways
+(`Fitted::named`'s `around`, `AROUND` faces round the turn, and a band each side of a convex
+corner's fan) by `brep::build::grid_sheet`, neighbours sharing edges and the last round closing on
+the first's edges: one closed face would carry a seam across the blank, which a split does not
+finish. The native path refuses it by name (`--kernel rust` builds it). The gate is
+`turns_and_slides::a_whole_turn_grooves_the_whole_ring` (`turn.sv`'s torus round the whole ring,
+Pappus over its shadow; two turns read as the one from their start) and `solid_sweeps_examples::
+the_wheel_turned_once_leaves_its_shadow_all_round` (`solid_sweeps/whole_turn.sv`, a V wheel leaning
+across a rod turned once round it: twelve faces, three bands each four round; Pappus over its
+shadow read by the signed distance from the nearer flank), each STL agreeing with the field,
+`object_builder::a_whole_turn_builds_at_the_displays_samples`, and for the ring alone
+`brep::a_net_closed_round_an_axis_is_a_ring_of_faces` (a cylinder's net cut in two along and four
+round, its edges shared and closed, splitting a block into its core, π r² h).
 
 **A screw with sharp edges: a convex corner's fan (#684 E):** a convex corner of a revolved tool's
 profile — two faces whose outward normals there turn more than `LEAST_TURN` apart, the chord just

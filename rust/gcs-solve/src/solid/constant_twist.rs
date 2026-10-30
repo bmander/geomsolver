@@ -75,6 +75,9 @@ pub struct Characteristic {
     pub least_factor: f64,
     /// How many rings were sampled, over every face.
     pub samples: usize,
+    /// Whether the motion is a turn carried round a whole turn or more, read as one whole turn: its
+    /// sheet is its section revolved all the way round, closing on itself (#684 N).
+    pub whole: bool,
     pieces: Vec<Piece>,
     tool: super::SpatialField,
     motion: Motion,
@@ -181,13 +184,6 @@ impl Characteristic {
     pub fn walk(contacts: &SweepContacts,ask: &Ask) -> Result<Characteristic,Failure> {
         let family = contacts.motion();
         let screw = family.twist().ok_or((Condition::Motion,"the motion is no screw, turn or slide".to_string(),None))?;
-        // S4 for a turn: carried round a whole turn or more it lays its sheet over itself, and
-        // what it sweeps is then a solid of revolution, which the class does not build
-        let turned = (ask.roll[1]-ask.roll[0])*screw.ratio.abs();
-        if screw.is_turn() && turned >= std::f64::consts::TAU*(1.-1e-12) {
-            return Err((Condition::Lead,format!("the roll turns the tool {:.1} degrees about the axis, a whole turn or more, \
-                which carries its sheet onto itself: a turn's sweep is built over less than a whole turn",turned.to_degrees()),None))
-        }
         let motion = family.at(ask.roll[0]).map_err(|m| (Condition::Motion,m,None))?;
         let tool = contacts.source_material();
         // a screw's characteristic is read ring by ring of a revolved face; a prism's side has none
@@ -278,7 +274,8 @@ impl Characteristic {
             sign = factor.signum();
             least = least.min(factor.abs());
         }
-        let found = Characteristic {screw,nodes,reach:[first,last],least_factor:least,samples,pieces:walker.pieces,tool:tool.clone(),motion,tolerance};
+        let found = Characteristic {screw,nodes,reach:[first,last],least_factor:least,samples,whole:contacts.whole(),pieces:walker.pieces,
+            tool:tool.clone(),motion,tolerance};
         // S4: its section square to the axis is simple
         found.simple(family)?;
         Ok(found)
@@ -320,6 +317,9 @@ impl Characteristic {
     pub fn fan_ends(&self) -> Vec<f64> {
         (1..self.nodes.len()).filter(|&w| self.on_fan(w-1) != self.on_fan(w)).map(|w| (w-1) as f64).collect()
     }
+
+    /// Which motion it is, as a report says it: a screw, a slide, a turn or a whole turn.
+    pub fn kind(&self) -> &'static str { if self.whole { "a whole turn" } else { self.screw.kind() } }
 
     /// How each point's path through the blank was read, as a report says it.
     pub fn path_reading(&self) -> &'static str {
@@ -392,6 +392,12 @@ fn stationary(pieces: &[Piece],stations: &[Vec<f64>],order: &[(usize,usize,usize
         }
     }
     Ok(())
+}
+
+/// Where `screw` is a turn the `roll` carries round a whole turn or more, the roll once round from
+/// its start (#684 N): a sweep is its path's, so that is all it sweeps.
+pub(super) fn once_round(screw: &Screw,roll: [f64;2]) -> Option<[f64;2]> {
+    (screw.is_turn() && roll[1]-roll[0] >= screw.period()*(1.-1e-12)).then(|| [roll[0],roll[0]+screw.period()])
 }
 
 /// The first pair of segments of a polyline that meet without being neighbours, by the index of

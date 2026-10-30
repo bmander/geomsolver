@@ -837,10 +837,7 @@ fn trimmed(mut piece: Brep,trims: &[Trim]) -> Result<Brep,String> {
 pub(super) fn column(net: &Net,j: usize) -> Curve { Curve::BSpline(Arc::new(net.column(j))) }
 
 /// The net's iso curve along `v` at its `i`th row of poles.
-fn row(net: &Net,i: usize) -> Curve {
-    Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),poles:net.poles[i].clone(),
-        weights:net.weights.as_ref().map(|w| w[i].clone())}))
-}
+fn row(net: &Net,i: usize) -> Curve { Curve::BSpline(Arc::new(net.row(i))) }
 
 /// The edges `chain` of `b` copied into `out` with their vertices: which of `out`'s each vertex of
 /// `b` became, and the copies.

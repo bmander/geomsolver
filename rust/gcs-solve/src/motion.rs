@@ -144,11 +144,13 @@ impl Screw {
     /// slide, which carry it from one plane square to the axis to the next, or its angle about
     /// the axis for a turn, which carries it from one half-plane through the axis to the next.
     pub fn station(&self,p: [f64;3]) -> f64 { if self.is_turn() { self.angle(p) } else { self.height(p) } }
+    /// How much of the roll carries it once round its axis (infinite for a slide).
+    pub fn period(&self) -> f64 { std::f64::consts::TAU/self.ratio.abs() }
     /// The time at which the motion carries `p` to `station` (`station`'s kind): for a turn, which
     /// reaches it once a turn, the one nearest `near`.
     pub fn time_to_station(&self,p: [f64;3],station: f64,near: f64) -> f64 {
         if !self.is_turn() { return self.time_to(p,station) }
-        let period = std::f64::consts::TAU/self.ratio.abs();
+        let period = self.period();
         let t = (station-self.angle(p))/self.ratio;
         t+((near-t)/period).round()*period
     }

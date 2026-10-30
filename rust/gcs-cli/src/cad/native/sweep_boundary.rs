@@ -403,6 +403,11 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
         // a prism's cap in the blank is sectioned across by the core's kernel alone (#684 F)
         Err(ExportRefusal::at(Stage::Admission,format!("`{}`: the cap of `{}`'s prism reaches the blank, which only the core's \
             kernel builds, sectioning the prism across: export it with `--kernel rust`",sk.solids[body].name,s.name)))
+    } else if let Some(s) = admission.sweeps().iter().find(|s| matches!(&s.class,gcs_core::solid::admission::Class::ConstantTwist(found)
+        if found.whole)) {
+        // a whole turn's sheet closes on itself round the turn, which the core's kernel alone builds (#684 N)
+        Err(ExportRefusal::at(Stage::Admission,format!("`{}`: `{}` is a whole turn, whose sheet only the core's kernel builds, \
+            closed round the turn: export it with `--kernel rust`",sk.solids[body].name,s.name)))
     } else { Ok(()) };
     if let Admitted::Already(admission) = admitted { presented(admission)?; }
     // What the sketch says of the blank and the cuts, read here; where it cannot be read, an

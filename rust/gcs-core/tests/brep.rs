@@ -1008,6 +1008,46 @@ fn a_grid_interpolated_passes_through_it_and_makes_a_sheet() {
     }
 }
 
+/// A net closed round an axis is cut into a ring of faces (`build::grid_sheet`, #684 N): a cylinder of
+/// radius 3 sampled once round, its last column its first, cut in two along it and in four round
+/// it. Neighbours share their edges and corners and the last round closes on the first's, so only
+/// the rims' edges are used once; each use's pcurve lies on its edge; and a block split by it
+/// leaves the cylinder's core, π r² h, and the rest.
+#[test]
+fn a_net_closed_round_an_axis_is_a_ring_of_faces() {
+    use gcs_core::brep::nurbs::{interpolate_net,Parametrization};
+    let (rows,cols) = (7,37);
+    let pts: Vec<V> = (0..rows).flat_map(|i| (0..cols).map(move |j| {
+        let a = TAU*(j%(cols-1)) as f64/(cols-1) as f64;
+        [3.*a.cos(),3.*a.sin(),-5.+10.*i as f64/(rows-1) as f64]
+    })).collect();
+    let net = interpolate_net(&pts,rows,cols,Parametrization::ChordLength).unwrap();
+    let [[a,z],[c,d]] = net.domain();
+    let vs: Vec<f64> = (0..=4).map(|k| c+(d-c)*k as f64/4.).collect();
+    let sheet = gcs_core::brep::build::grid_sheet(&net,&[a,(a+z)/2.,z],&vs,&["low".into(),"high".into()],true).unwrap();
+    assert_eq!((sheet.faces.len(),sheet.edges.len(),sheet.vertices.len()),(8,20,12));
+    assert_eq!(sheet.faces.iter().filter(|f| f.name == "high").count(),4);
+    let mut uses = vec![0;sheet.edges.len()];
+    for f in &sheet.faces {
+        for c in &f.loops[0] {
+            uses[c.edge as usize] += 1;
+            let e = &sheet.edges[c.edge as usize];
+            for t in [0.,0.3,0.7,1.] {
+                let x = e.t[0]+(e.t[1]-e.t[0])*t;
+                let uv = c.pcurve.at(x,e,&f.surface,&sheet.vertices);
+                assert!(gcs_core::space::distance(f.surface.point(uv),e.point(x,&sheet.vertices)) < 1e-9);
+            }
+        }
+    }
+    assert_eq!((uses.iter().filter(|&&n| n == 1).count(),uses.iter().filter(|&&n| n == 2).count()),(8,12));
+    let block = prism(&gcs_core::brep::build::square([0.;3],[0.,0.,1.],4.),-2.,2.).unwrap();
+    let mut cells: Vec<f64> = gcs_core::brep::boolean::split(&block,&sheet,1e-6).unwrap().iter().map(volume).collect();
+    cells.sort_by(f64::total_cmp);
+    let core = PI*9.*4.;
+    assert_eq!(cells.len(),2,"{cells:?}");
+    assert!((cells[0]-core).abs() < 1e-5*core && (cells[1]-(256.-core)).abs() < 1e-5*core,"{cells:?} against {core}");
+}
+
 /// An interpolation of many points (solved in its band, past the dense solve's size) passes through
 /// every one, at its own parameter.
 #[test]

@@ -136,6 +136,35 @@ fn the_v_wheel_leaves_its_section_round_the_rim() {
     near(exported(&e,"rod"),PI*25.*20.-section*20.,1e-5);
 }
 
+/// `whole_turn.sv`: a turn carried round a whole turn (#684 N), its wheel's rim sharp, so the
+/// characteristic runs from one flank round the rim's fan to the other, and its section is revolved
+/// all the way round, closing on itself. The groove is the wheel's shadow in a half-plane through
+/// the rod's axis, turned once round: a circle about the axis is cut where it passes into the V of
+/// the rim, whose tip runs 10 from the wheel's axis (through (14, 0, 10), leaning from z toward y
+/// by 20°) and whose flanks lie 30° either side of the wheel's plane — read by the signed distance
+/// from the nearer flank round the circle; what the wheel's bore would add never comes within 6 of
+/// the rod's axis. Pappus over that shadow.
+#[test]
+fn the_wheel_turned_once_leaves_its_shadow_all_round() {
+    let e = example("whole_turn.sv");
+    let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_turn() && found.whole,"read as a whole turn");
+    assert_eq!(found.fans(),["the corner of `vwheel.upper` and `vwheel.lower`"]);
+    let (sl,cl) = (20f64).to_radians().sin_cos();
+    let (sf,cf) = (PI/6.).sin_cos();
+    // how far q lies outside the V
+    let outside = |q: [f64;3]| -> f64 {
+        let w = [q[0]-14.,q[1],q[2]-10.];
+        let along = w[1]*sl+w[2]*cl;
+        let rho = (w[0]*w[0]+(w[1]-along*sl).powi(2)+(w[2]-along*cl).powi(2)).sqrt();
+        along.abs()*cf+(rho-10.)*sf
+    };
+    let hit = |z: f64,r: f64| reaches(&|a| outside([r*a.cos(),r*a.sin(),z]),[-PI,PI],90,0.);
+    let shadow = measure([6.,14.],&|_| [0.,5.],&hit,&|a,b| (b*b-a*a)/2.);
+    assert!(shadow > 0.5,"the groove's shadow is {shadow}");
+    near(exported(&e,"rod"),PI*25.*20.-TAU*shadow,1e-5);
+}
+
 /// `rack.sv`: the generating class, its tooth space the arithmetic `rack_cut` reads it by (an arc
 /// of each circle about the blank's centre at each roll, joined over the roll), through the
 /// blank's 6 mm.

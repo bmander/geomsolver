@@ -631,14 +631,15 @@ use super::constant_twist::Failure;
 /// T2, E1 and T1 for a prism's caps for one placement, asked of every class before anything that
 /// might be reported in their place: the blank's reads, the poses the roll is sampled at, and
 /// whether each cap of `lone` (the tool, where it is a prism standing alone; its `start`, then its
-/// `end`) reaches the blank.
+/// `end`) reaches the blank. A whole turn has no ends to clear: the tool at either lies within
+/// what the turn sweeps (`SweepContacts::whole`, #684 N).
 fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lone: Option<&Lone>)
     -> Result<(Reads,Vec<Motion>,[bool;2]),Failure> {
     let tool = c.source_material();
     let on_tool = |p: V| tool.value(p).abs() < 1e-6;
     let domain = c.domain();
     let pose = |t: f64| c.motion().at(t).map_err(|m| (Condition::Motion,m,None));
-    let limits = [pose(domain[0])?,pose(domain[1])?];
+    let limits = if c.whole() { Vec::new() } else { vec![pose(domain[0])?,pose(domain[1])?] };
     let mut reads = Reads::new();
     // T2: a concave corner carried through the blank trims two envelopes against each other.
     // Asked first, since the crossing it makes would otherwise be reported in its place.
@@ -666,6 +667,7 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
     // too, where one reaches the blank (below)
     let clear = |asked: &dyn Fn(&super::ToolSurface) -> bool| -> Result<Reads,Failure> {
         let mut reads = Reads::new();
+        if limits.is_empty() { return Ok(reads) }
         let patches: Vec<&super::ToolSurface> = c.patches().iter().filter(|s| asked(s)).collect();
         for own in crate::par::map(&patches,|surface| -> Result<Reads,Failure> {
             let mut own = Reads::new();
