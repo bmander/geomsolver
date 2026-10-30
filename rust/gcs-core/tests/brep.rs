@@ -533,6 +533,44 @@ fn a_line_meets_a_cylinder_in_closed_form() {
     assert!(matches!(curve_surface(&Curve::Line {p:[2.5,2.,0.],d:[0.,0.,1.]},[-9.,9.],&cyl,1e-9),Meets::Along));
 }
 
+/// A line meets a sphere in closed form, as it does a cylinder: a chord's two roots, and one touch
+/// exactly at the foot where it is tangent — sampled, a touch is placed only to the square root of
+/// the rounding, and a cube's edge touching its midsphere (below) lost the circles meeting there.
+#[test]
+fn a_line_meets_a_sphere_in_closed_form() {
+    use gcs_core::brep::geom::{Curve,Surface};
+    use gcs_core::brep::query::{curve_surface,Meets};
+    let ball = Surface::Sphere(Frame::new([1.,2.,3.],[0.,0.,1.],[1.,0.,0.]),2.);
+    // tangent at (1, 4, 3), its middle: sampled, an odd number of times, it is level either side
+    let touch = Curve::Line {p:[-4.,4.,3.],d:[1.,0.,0.]};
+    let Meets::At(roots) = curve_surface(&touch,[0.,10.],&ball,1e-9) else { panic!("along") };
+    assert_eq!(roots,vec![(5.,true)]);
+    // a chord at 1.2 from the centre: ±1.6 either side of its foot, the line's speed 2
+    let chord = Curve::Line {p:[1.,3.2,3.],d:[0.,0.,2.]};
+    let Meets::At(roots) = curve_surface(&chord,[-9.,9.],&ball,1e-9) else { panic!("along") };
+    assert_eq!(roots.len(),2);
+    assert!((roots[0].0+0.8).abs() <= 1e-12 && (roots[1].0-0.8).abs() <= 1e-12 && !roots[0].1,"{roots:?}");
+    assert!(matches!(curve_surface(&Curve::Line {p:[1.,4.1,3.],d:[1.,0.,0.]},[-9.,9.],&ball,1e-9),Meets::At(r) if r.is_empty()));
+}
+
+/// **A cube trimmed by its midsphere** (brep-bench's tangent/midsphere-common): the ball about a
+/// cube's centre through the middles of its edges touches each of the twelve there, and each touch
+/// is a vertex of the common — six discs, each inscribed in a face, and eight three-sided patches
+/// of the sphere, two of each meeting at a point at every edge's middle. With the touches lost,
+/// the sphere's pieces were a hole touching an outer cycle at no vertex, put in no piece.
+#[test]
+fn a_cube_trimmed_by_its_midsphere_is_pinched_at_each_edges_middle() {
+    use gcs_core::brep::boolean::{boolean,Op};
+    use std::f64::consts::SQRT_2;
+    let r = boolean(&block([-5.;3],[5.;3]),&ball([0.;3],5.*SQRT_2),Op::Common,1e-9).unwrap();
+    r.check(1e-8).unwrap();
+    assert_eq!((r.faces.len(),r.edges.len(),r.vertices.len()),(14,24,12));
+    // the ball less six caps of height 5√2 − 5, and its sphere less the caps with the six discs
+    close(volume(&r),PI*(1250.-2000.*SQRT_2/3.));
+    let area: f64 = r.faces.iter().map(|f| gcs_core::brep::props::area(&r,f)).sum();
+    close(area,PI*(300.*SQRT_2-250.));
+}
+
 /// A traced curve's parameter span: a fit's domain, or a trace's steps.
 fn span(c: &gcs_core::brep::geom::Curve) -> [f64;2] {
     use gcs_core::brep::geom::Curve;

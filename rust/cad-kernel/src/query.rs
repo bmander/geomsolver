@@ -180,6 +180,7 @@ fn tangential(carrier: &Curve,other: &Curve,over: [f64;2],mut found: Vec<(f64,V)
 /// `tol` refined to a touching point, and an end on the surface a root there.
 pub fn curve_surface(curve: &Curve,[t0,t1]: [f64;2],surface: &Surface,tol: f64) -> Meets {
     if let (&Curve::Line {p,d},Surface::Cylinder(c,r)) = (curve,surface) { return line_cylinder(p,d,[t0,t1],c,*r,tol) }
+    if let (&Curve::Line {p,d},Surface::Sphere(c,r)) = (curve,surface) { return line_sphere(p,d,[t0,t1],c.o,*r,tol) }
     let f = |t: f64| surface.implicit(curve.point(t));
     let length = (t1-t0)*curve.speed();
     let (lo,hi) = curve.bounds([t0,t1]);
@@ -240,6 +241,24 @@ fn line_cylinder(p: V,d: V,[t0,t1]: [f64;2],c: &super::geom::Frame,r: f64,tol: f
         Chord::Miss => Vec::new(),
         Chord::Touch => vec![(foot,true)],
         Chord::Cross(half) => { let half = half/ee.sqrt(); vec![(foot-half,false),(foot+half,false)] }
+    };
+    Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
+}
+
+/// A line through `p` along `d`, over `[t0, t1]`, against the sphere of radius `r` about `o`, in
+/// closed form: a chord of the great circle in the plane through it and the centre
+/// (`plane2::chord`, one touch at the foot where it is tangent). A touch read off sampled distances
+/// is placed only to the square root of their rounding (a cube's edge touching its midsphere), too
+/// loosely for the circles that meet there to find it.
+fn line_sphere(p: V,d: V,[t0,t1]: [f64;2],o: V,r: f64,tol: f64) -> Meets {
+    use crate::util::space::{dot,sub};
+    let (w,dd) = (sub(p,o),dot(d,d));
+    if dd <= 1e-24 { return Meets::At(Vec::new()) }
+    let foot = -dot(w,d)/dd;
+    let roots = match chord(norm(add(w,scale(d,foot))),r,Touch::Gap(tol)) {
+        Chord::Miss => Vec::new(),
+        Chord::Touch => vec![(foot,true)],
+        Chord::Cross(half) => { let half = half/dd.sqrt(); vec![(foot-half,false),(foot+half,false)] }
     };
     Meets::At(roots.into_iter().filter(|&(t,_)| t >= t0-tol && t <= t1+tol).map(|(t,k)| (t.clamp(t0,t1),k)).collect())
 }

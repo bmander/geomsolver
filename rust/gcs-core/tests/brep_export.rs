@@ -294,3 +294,27 @@ fn an_empty_body_is_refused_naming_the_statement_that_emptied_it() {
     let b = export::exact(&sk,at("b"),None,None,&say).unwrap();
     export::stl(&sk,at("b"),&b,None,&say).unwrap();
 }
+
+/// **A cube trimmed by its midsphere** (`midsphere_common.sv`, brep-bench's
+/// tangent/midsphere-common): the ball's radius is the solve's, through a corner of the cube's
+/// middle section, and the exact common is the closed forms' — six discs and eight patches of the
+/// sphere meeting two and two at the twelve edges' middles — written and meshed closed.
+#[test]
+fn a_cube_trimmed_by_its_midsphere_is_built_exactly() {
+    use std::f64::consts::{PI,SQRT_2};
+    let mut sk = fixtures::example("midsphere_common.sv").unwrap().sketch;
+    assert!(gcs_core::solve::solve(&mut sk,gcs_core::solve::SolveOpts::default()).success);
+    assert_eq!(gcs_core::diagnose::diagnose(&mut sk.clone(),Default::default()).dof,0);
+    let body = (0..sk.solids.len()).find(|&i| sk.solids[i].name == "body").unwrap();
+    let say = Say {stage:&|_| {},mark:&|_| {}};
+    let exact = export::exact(&sk,body,None,None,&say).unwrap();
+    exact.solid.check(1e-6).unwrap();
+    let b = &exact.solid;
+    assert_eq!((b.faces.len(),b.edges.len(),b.vertices.len()),(14,24,12));
+    let volume = props::volume(b);
+    let area: f64 = b.faces.iter().map(|f| props::area(b,f)).sum();
+    assert!((volume-PI*(1250.-2000.*SQRT_2/3.)).abs() < 1e-9,"{volume}");
+    assert!((area-PI*(300.*SQRT_2-250.)).abs() < 1e-9,"{area}");
+    let stl = export::stl(&sk,body,&exact,None,&say).unwrap();
+    gcs_core::mesh::stl_shells(&stl).unwrap();
+}
