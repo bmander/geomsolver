@@ -315,11 +315,10 @@ pub(super) fn values(sk: &Sketch, res: &mut Resolver, body: &[&Statement],
 }
 
 /// A frame's value `text` worked out where the drawing stands (`Sketch::held_numbers`), in
-/// degrees: the instant a solid drawn in it is placed at.
+/// degrees: the instant a solid drawn in it is placed at (`expr::placement_value`, which places it
+/// again wherever the drawing is stood).
 pub(super) fn value_now(sk: &Sketch, text: &str) -> Result<f64, String> {
-    let a = crate::flatten::value_read(text, &sk.held_numbers(), &sk.declared, sk.units)?;
-    a.dim.require(crate::units::Dim::ANGLE, crate::constraints::JOINT_VALUE)?;
-    a.number().ok_or_else(|| format!("`{text}` reads an unknown, and a solid is placed once"))
+    crate::expr::placement_value(text, &sk.held_numbers(), &sk.declared, sk.units)
 }
 
 /// The relation a `fix` states of the numbers it holds (#391 S3): itself, or without a joint's

@@ -136,8 +136,10 @@ pub struct Followed {
     pub singular: Option<Singular>,
     /// The parameter the running number is held in.
     held: u32,
-    /// What the parameter does not reach, left where it stands at every instant.
-    still: Still,
+    /// What the parameter does not reach, left where it stands at every instant — `None` where no
+    /// row reads it, only a placement's value (#697): the stations are the drawing at home, only
+    /// the held number moves and nothing is solved.
+    still: Option<Still>,
 }
 
 impl Followed {
@@ -155,15 +157,20 @@ impl Followed {
         }
         let k = self.stations.partition_point(|s| s.at <= t).max(1) - 1;
         let a = &self.stations[k];
-        if a.at == t || k + 1 == self.stations.len() {
+        let Some(still) = self.still.as_ref().filter(|_| a.at != t && k + 1 < self.stations.len())
+        else {
+            // the station itself, its texts worked out there: what a station's solve read, and
+            // where a placement's value puts what is drawn in its frame
             sk.set_x(&a.x);
+            sk.params[self.held as usize].value = t;
+            let _ = crate::expr::evaluate(sk);
             return Ok(());
-        }
+        };
         let b = &self.stations[k + 1];
         let w = (t - a.at) / (b.at - a.at);
         let x: Vec<f64> = a.x.iter().zip(&b.x).map(|(p, q)| p + w * (q - p)).collect();
         sk.set_x(&x);
-        settle(sk, self.held, t, &[], &self.still).map(|_| ())
+        settle(sk, self.held, t, &[], still).map(|_| ())
     }
 }
 
@@ -445,14 +452,15 @@ pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
 }
 
 /// What the march along `name` is a function of: the drawing at home, wherever it is shown
-/// standing (a march is of the drawing, not of an instant of it), the parameter's interval and
-/// every number the drawing's statements state.
+/// standing (a march is of the drawing, not of an instant of it), the parameter's interval, how
+/// many placements read it, and every number the drawing's statements state.
 pub(crate) fn march_key(sk: &Sketch, name: &str) -> Vec<f64> {
     let (mut key, numbers) = match &sk.standing {
         Some(s) => (s.home.clone(), s.numbers.clone()),
         None => (sk.get_x(), numbers(sk)),
     };
     key.extend(sk.parameters.get(name).map_or([0.0; 2], |p| [p.from, p.to]));
+    key.push(placed(sk, name) as f64);
     key.extend(numbers);
     key
 }
@@ -460,16 +468,26 @@ pub(crate) fn march_key(sk: &Sketch, name: &str) -> Vec<f64> {
 /// **The drawing `sk` followed along its declared parameter `name`**, from the interval's start
 /// to its end or to the singular instant that stops it — or why it cannot be: the parameter is
 /// not declared or nothing reads it, the drawing does not solve at the start, or it is not held
-/// there.
+/// there.  Where no row reads it and a placement's value does (`placed`, #697) the march is the
+/// drawing at home at both ends of the interval: what is drawn in the valued frame moves, and
+/// nothing is solved.
 pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
     let over = sk.parameters.get(name)
         .ok_or_else(|| format!("`{name}` is no parameter the drawing declares"))?.clone();
     let reading = readers(sk, name);
     let held = sk.held.get(name).map(|h| h.param)
-        .filter(|_| !reading.is_empty())
+        .filter(|_| !reading.is_empty() || placed(sk, name) > 0)
         .ok_or_else(|| format!("nothing the drawing states reads `{name}`"))?;
     let mut sk = sk.clone();
     home(&mut sk);
+    if reading.is_empty() {
+        let stations = [over.from, over.to].map(|at| {
+            sk.params[held as usize].value = at;
+            Station { at, x: sk.get_x() }
+        });
+        return Ok(Followed { over, stations: stations.into(), singular: None, held,
+                             still: None });
+    }
     let elsewhere = over.from + (over.to - over.from) * ELSEWHERE;
     let implied = implied(&sk);
     let mut reading = reading;
@@ -510,7 +528,7 @@ fn march(mut sk: Sketch, over: &Running, held: u32, still: &Still) -> Result<Fol
     let stop = |trail: Vec<Station>, kind: Kind| {
         let at = trail.last().map_or(over.from, |s| s.at);
         Ok(Followed { over: over.clone(), stations: trail, singular: Some(Singular { at, kind }),
-                      held, still: still.clone() })
+                      held, still: Some(still.clone()) })
     };
     loop {
         let prev = trail.last().expect("a march starts somewhere").clone();
@@ -576,7 +594,8 @@ fn march(mut sk: Sketch, over: &Running, held: u32, still: &Still) -> Result<Fol
                                           reading(over, over.to, sk.units)));
         trail.push(Station { at: t, x });
     }
-    Ok(Followed { over: over.clone(), stations: trail, singular: None, held, still: still.clone() })
+    Ok(Followed { over: over.clone(), stations: trail, singular: None, held,
+                  still: Some(still.clone()) })
 }
 
 /// The ids of the constraints whose numbers read the declared parameter `name` (#391 S4): the
@@ -585,15 +604,23 @@ pub fn readers(sk: &Sketch, name: &str) -> Vec<u32> {
     sk.constraints.iter().filter(|c| reading_slot(sk, c, name).is_some()).map(|c| c.id).collect()
 }
 
+/// How many solids are placed at a value whose text reads the declared parameter `name` (#697):
+/// `n := x in f`, `fix(value == t) f` — what moves as it runs where no row of the drawing does.
+pub fn placed(sk: &Sketch, name: &str) -> usize {
+    sk.solids.iter().filter(|s| matches!(&s.def,
+        crate::model::SolidDef::Placed { at, .. } if reads(sk, &at.text, name))).count()
+}
+
 /// The slot of `c` whose text reads the declared parameter `name`, where one does.
 pub fn reading_slot(sk: &Sketch, c: &crate::constraints::Constraint, name: &str)
     -> Option<usize> {
     use crate::constraints::Arg;
-    c.args.iter().position(|a| match a {
-        Arg::Expr(e) => crate::expr::parse_in(&e.text, sk.units)
-            .is_ok_and(|p| p.body.deps().iter().any(|d| d == name)),
-        _ => false,
-    })
+    c.args.iter().position(|a| matches!(a, Arg::Expr(e) if reads(sk, &e.text, name)))
+}
+
+/// Whether `text`, read in `sk`'s units, reads the name `name`.
+fn reads(sk: &Sketch, text: &str, name: &str) -> bool {
+    crate::expr::parse_in(text, sk.units).is_ok_and(|p| p.body.deps().contains(name))
 }
 
 /// The parameter's value as a reader reads it: `t = 30deg`.

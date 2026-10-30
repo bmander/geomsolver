@@ -496,7 +496,10 @@ fn a_claim_over_a_declared_parameter_reads_the_drawing_where_it_stands() {
     for swept in &v[1..] {
         assert_eq!(swept.holds(), Some(false), "the arm runs into the post");
         assert_eq!(swept.valid_samples().count(), 37, "every sample judged");
-        assert_eq!(swept.worst(), Some(45.0), "the worst of the swing, not where it fails first");
+        // the worst of the swing, not where it fails first (35deg): the arm is in the post through
+        // its whole depth from 42.5deg to 47.5deg, which tie
+        let worst = swept.worst().unwrap();
+        assert!((42.5..=47.5).contains(&worst), "the worst of the swing, not {worst}");
         assert!((swept.measured().unwrap() + 5.0).abs() < 0.01, "{:?}", swept.measured());
         let (from, to) = (swept.sweep().unwrap().from(), swept.sweep().unwrap().to());
         assert_eq!((from, to), (0.0, 90.0), "`over t` alone is the parameter's interval");

@@ -242,12 +242,12 @@ placement carries inside the blank; CLI test readers zero the offset.
   `claim over t in (a, b) { … }` or `claim over t { … }` (`syntax::ClaimOver::declared`, its ends
   written in by `walk_claim_over`; a stretch outside the parameter's interval, or `over n { … }`
   naming none, E103): a copy of the drawing stood at each sample (`Poses::Stood`,
-  `follow::stand`) where a row reads `t`, standing still where none does, and every
-  `SolidDef::Placed` whose value's text reads `t` — a solid drawn in a valued frame, placed once at
-  elaboration (`value_now`) — placed at the value worked out there; a march refused or an instant
-  not reached is a pose failed, saying why.  `solid_claim.rs`'s
-  `a_claim_over_a_declared_parameter_reads_the_drawing_where_it_stands` (the arm into the post at
-  45°, measured -5, and the closed form's room at every sample clear),
+  `follow::stand`), which places a solid drawn in a frame whose value reads `t` where that value
+  puts it (#697, parameters.md's #398 L); a march refused or an instant not reached is a pose
+  failed, saying why.  `solid_claim.rs`'s
+  `a_claim_over_a_declared_parameter_reads_the_drawing_where_it_stands` (the arm into the post
+  through its depth from 42.5° to 47.5°, measured -5, and the closed form's room at every sample
+  clear),
   `a_claim_over_a_declared_parameter_follows_its_march` (a slider-crank against its closed form)
   and `a_claim_over_a_declared_parameter_is_refused_outside_it`.
   Claims are read **after phase 4** (a free variable is what `expr::evaluate`

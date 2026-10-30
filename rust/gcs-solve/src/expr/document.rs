@@ -183,6 +183,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // the geometry a station reads, read where that geometry stands now
     sk.refresh_held();
     let held = sk.held_numbers();
+    place_held(sk, &held);
     for k in rows.into_iter().chain(rest) {
         let nd = &nodes[k];
         let mut value = to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num());
@@ -276,6 +277,54 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
         .map(|(name, (dim, _))| (name, dim))
         .collect();
     items.into_iter().flatten().collect()
+}
+
+/// **The instant a solid drawn in a valued frame is placed at** (#391 S3): `n := x in f`, `f`'s
+/// value `text` worked out over the numbers `held` where the drawing stands and the unknowns it
+/// `declared`, in degrees — at elaboration (`program::motions::value_now`) and wherever the drawing
+/// is stood again (`place_held`), one reading.
+pub fn placement_value(
+    text: &str,
+    held: &BTreeMap<String, Aff>,
+    declared: &BTreeMap<String, Declared>,
+    units: crate::units::Units,
+) -> Result<f64, String> {
+    placed_at(&parse_in(text.trim(), units)?.body, text, held, declared)
+}
+
+/// `placement_value` of the value `text`, parsed as `body`.
+fn placed_at(
+    body: &Ast,
+    text: &str,
+    held: &BTreeMap<String, Aff>,
+    declared: &BTreeMap<String, Declared>,
+) -> Result<f64, String> {
+    let a = eval(body, &with_declared(body, held, declared))?;
+    a.dim.require(Dim::ANGLE, crate::constraints::JOINT_VALUE)?;
+    match a.number() {
+        Some(v) if v.is_finite() => Ok(v),
+        Some(_) => Err(format!("`{}` comes to no number", text.trim())),
+        None => Err(format!("`{}` reads an unknown, and a solid is placed once", text.trim())),
+    }
+}
+
+/// **Every solid placed at a value that reads a held number placed where it now puts it** (#697):
+/// `n := x in f`, `f`'s value written over a declared parameter or a face family's running number,
+/// placed at `placement_value` over `held`.  So a drawing stood at an instant, sent home or settled
+/// at a station shows what is drawn in a valued frame where its rows stand.  A value that does not
+/// work out there leaves the last one standing, as an expression of a row does.
+fn place_held(sk: &mut Sketch, held: &BTreeMap<String, Aff>) {
+    let (units, declared) = (sk.units, &sk.declared);
+    for s in &mut sk.solids {
+        let crate::model::SolidDef::Placed { at, .. } = &mut s.def else { continue };
+        let Ok(p) = parse_in(&at.text, units) else { continue };
+        if !p.body.deps().iter().any(|d| held.contains_key(d)) {
+            continue;
+        }
+        if let Ok(v) = placed_at(&p.body, &at.text, held, declared) {
+            at.value = v.to_radians();
+        }
+    }
 }
 
 /// Check expression dimensions against the argument slot and infer a consistent
