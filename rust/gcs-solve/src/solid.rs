@@ -41,6 +41,17 @@ pub mod grown;
 pub mod shelled;
 pub mod canal;
 pub mod distributed;
+pub mod paced;
+
+/// **`sk` as the body `body` is built from** (#684 C, L): a copy of the drawing that writes each
+/// sweep it reaches under a driven joint as its joint's over the law's reach (`paced`), then each
+/// cut of a union's sweep as its members' (`distributed`, over the first's copy, so a union under a
+/// drive is its members' sweeps under the joint); `None` where neither rewrites anything. What
+/// admission, the export, the accuracy meter and the page's stepped build read.
+pub fn lowered(sk: &Sketch, body: usize) -> Option<Sketch> {
+    let paced = paced::lowered(sk, body);
+    distributed::lowered(paced.as_ref().unwrap_or(sk), body).or(paced)
+}
 pub mod roll;
 pub mod lowering;
 pub mod faces;

@@ -122,12 +122,28 @@ fn a_placed_bars_end_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/next_tooth.sv".to_string()],true),1);
 }
 
+/// **A prism drafted both ways builds at the display's samples** (`parted.sv`, #684 P): the tooth's
+/// sides folding at its parting plane, the stations crossing the crease's fan between its halves,
+/// built by the page's stepped builder as the export builds it.
+#[test]
+fn a_tooth_drafted_both_ways_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/parted.sv".to_string()],true),1);
+}
+
 /// **A whole turn builds at the display's samples** (`whole_turn.sv`, #684 N): its sheet closed round
 /// the turn, cut into faces both ways (round the turn, and where it runs onto and off the rim's
 /// fan), built by the page's stepped builder as the export builds it.
 #[test]
 fn a_whole_turn_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/whole_turn.sv".to_string()],true),1);
+}
+
+/// **A drive builds at the display's samples** (`rocked.sv`, #684 L): the turn rocked out and back
+/// by a law, read as the turn over the law's reach, built by the page's stepped builder as the
+/// export builds it.
+#[test]
+fn a_rocked_turn_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/rocked.sv".to_string()],true),1);
 }
 
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \

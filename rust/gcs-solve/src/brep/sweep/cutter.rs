@@ -1,7 +1,8 @@
 //! A swept cut's cutter, sectioned exactly at its stations: a solid of revolutions about lines
 //! parallel to one axis (`brep::section`) by the half-planes of that axis, a station an angle; or
 //! a prism by planes square to its extrusion, a station a distance along it, every section the
-//! profile itself (a rack's tooth) or, drafted, the profile moved into its material. Each section
+//! profile itself (a rack's tooth) or, drafted, the profile moved into its material (and, where the
+//! draft parts at the profile's plane, a fan of stations across the crease there). Each section
 //! is a loop of pieces, every piece a stretch of one face (a revolution's meridian, a prism side's
 //! edge) walked in augmented arc length — length along the pieces, and at a convex corner the
 //! turning of the normal across its fan — and where the cutter's contacts within the declared roll
@@ -30,6 +31,15 @@ const TURN_SCALE: f64 = 0.05;
 /// `contact_trace::ROW_SPACING`, must step through it a radian of the motion at a time at most
 /// (`contact_trace::charted`), so a rim's fan is laid as long as an arc of this radius.
 const RIM_SCALE: f64 = 1.;
+/// The same for the crease across a drafted prism's sides at its parting plane (#684 P), whose fan
+/// runs across the stations: a radian of its turning counts as this many millimetres of the
+/// extrusion. A draft's crease turns little, and its fan carries a contact from one half's time to
+/// the other's only a little further along the crease's path, so its stretch of the sheet is about
+/// as long in space as in stations; a fan laid longer leaves columns standing on one curve, a fold
+/// of the fitted sheet. How far the fan carries a contact is the motion's, which the cutter does not
+/// know: a fan laid as long as its contacts' path across it (admission reads that path) would hold
+/// for any motion, where this holds for a draft's few degrees.
+const CREASE_SCALE: f64 = 1.;
 /// How near an end of one piece is to the axis to be on it (mm).
 const ON_AXIS: f64 = 1e-5;
 const SAMPLES_PER_PIECE: usize = 64;
@@ -141,11 +151,29 @@ pub struct Reach { pub stations: [f64;2],pub start: Anchor,pub end: Anchor,pub f
 /// one's (#684 G) also what `Drafted` keeps.
 struct Extruded { walks: Vec<Vec<Seg>>,extent: [f64;2],drafted: Option<Drafted> }
 
-/// A drafted prism's sections at either end of its extent, in the profile's plane, each walk step
-/// for step its profile's: between them a side's point at a fraction of its edge moves along a
-/// line, so a section between is the two's blend (`build::offset` builds only such corners). And
-/// each step's cumulative chord lengths along the profile itself, the same at every station.
-struct Drafted { ends: [Vec<Vec<Seg>>;2],lengths: Vec<Vec<Vec<f64>>> }
+/// A drafted prism's halves, one each side of its parting plane that it runs into (#684 P), or the
+/// one: each from one ordinate to the other, with its sections there in the profile's plane, each
+/// walk step for step its profile's. Between them a side's point at a fraction of its edge moves
+/// along a line, so a section between is the two's blend (`build::offset` builds only such
+/// corners). Where there are two the sides fold between them at the plane, and the stations cross
+/// that crease's fan over `fan` (`CREASE_SCALE` a radian of it): a station is the ordinate below
+/// the plane, and `fan` more than the ordinate above it. And each step's cumulative chord lengths
+/// along the profile itself, the same at every station.
+struct Drafted { halves: Vec<Half>,fan: f64,lengths: Vec<Vec<Vec<f64>>> }
+
+/// One half of a drafted prism: its ordinates and its sections at them.
+struct Half { heights: [f64;2],ends: [Vec<Vec<Seg>>;2] }
+
+/// Where a drafted prism's station is: in a half at an ordinate, or across the crease at the
+/// parting plane, a fraction of the way through its fan.
+enum Ordinate { Half(usize,f64),Fan(f64) }
+
+impl Drafted {
+    fn ordinate(&self,station: f64) -> Ordinate {
+        if self.halves.len() == 1 || station <= 0. { return Ordinate::Half(0,station) }
+        if station >= self.fan { Ordinate::Half(1,station-self.fan) } else { Ordinate::Fan(station/self.fan) }
+    }
+}
 
 /// The cumulative chord lengths along `points`, from 0.
 fn chords(points: &[V]) -> Vec<f64> {
@@ -158,26 +186,40 @@ fn chords(points: &[V]) -> Vec<f64> {
 fn point_at(seg: &Seg,t: f64) -> V { seg.curve.point(seg.t[0]+(seg.t[1]-seg.t[0])*t) }
 
 impl Extruded {
-    /// Edge `k` of loop `l` at fraction `t`, lifted `h` along the extrusion `n`: its point, and the
-    /// side face's outward normal (the walk's direction across `n`, since the material lies left;
-    /// across the side's rise along a drafted one).
+    /// Edge `k` of loop `l` at fraction `t`, at station `h` along the extrusion `n` (an ordinate,
+    /// but past a drafted prism's crease, `Drafted::ordinate`): its point, and the side face's
+    /// outward normal (the walk's direction across `n`, since the material lies left; across the
+    /// side's rise along a drafted one; across the crease, turned from the one half's to the other's).
     fn at(&self,n: V,l: usize,k: usize,h: f64,t: f64) -> (V,V) {
         let point = |walks: &[Vec<Seg>]| {
             let seg = &walks[l][k];
             let w = seg.t[0]+(seg.t[1]-seg.t[0])*t;
             (seg.curve.point(w),tangent(seg,w))
         };
-        let Some(Drafted {ends:[near,far],..}) = &self.drafted else {
+        let Some(drafted) = &self.drafted else {
             let (p,d) = point(&self.walks);
             let normal = cross(d,n);
             return (std::array::from_fn(|i| p[i]+n[i]*h),scale(normal,1./norm(normal).max(1e-300)))
         };
-        let ((p,d),(q,e)) = (point(near),point(far));
-        let depth = self.extent[1]-self.extent[0];
-        let f = (h-self.extent[0])/depth;
-        let normal = cross(lerp(d,e,f),add(scale(sub(q,p),1./depth),n));
-        (add(lerp(p,q,f),scale(n,h)),scale(normal,1./norm(normal).max(1e-300)))
+        let side = |half: &Half,h: f64| {
+            let ([near,far],[h0,h1]) = (&half.ends,half.heights);
+            let ((p,d),(q,e)) = (point(near),point(far));
+            let f = (h-h0)/(h1-h0);
+            let normal = cross(lerp(d,e,f),add(scale(sub(q,p),1./(h1-h0)),n));
+            (add(lerp(p,q,f),scale(n,h)),scale(normal,1./norm(normal).max(1e-300)))
+        };
+        match drafted.ordinate(h) {
+            Ordinate::Half(i,h) => side(&drafted.halves[i],h),
+            Ordinate::Fan(f) => {
+                let ((p,a),(_,b)) = (side(&drafted.halves[0],0.),side(&drafted.halves[1],0.));
+                let normal = lerp(a,b,f);
+                (p,scale(normal,1./norm(normal).max(1e-300)))
+            }
+        }
     }
+
+    /// The stations its sections are read at: its extent, and a drafted prism's crease's fan.
+    fn stations(&self) -> [f64;2] { [self.extent[0],self.extent[1]+self.drafted.as_ref().map_or(0.,|d| d.fan)] }
 }
 
 /// A prism whose cap reaches the blank, sectioned through its extrusion (#684 F): a station is a
@@ -295,9 +337,10 @@ impl Cutter {
         let extent = [from.min(to),from.max(to)];
         let draft = draft.unwrap_or(0.);
         let drafted = if draft == 0. { None } else {
+            let parted = extent[0] < 0. && extent[1] > 0.;
             // admission refuses such a tool at T1 (`ExtrudedSurface::drafted`); the kernel says so too
-            if extent[0] < 0. && extent[1] > 0. {
-                return Err("the core sections a drafted prism on one side of its parting plane only".into())
+            if parted && draft < 0. {
+                return Err("the core sections no drafted prism whose sides meet at its parting plane in a concave crease".into())
             }
             let taper = draft.dtan();
             // the step of a moved walk that is `s`, walked the same way
@@ -311,7 +354,11 @@ impl Cutter {
             let lengths = walks.iter().map(|walk| walk.iter().map(|s| {
                 chords(&(0..=SAMPLES_PER_PIECE).map(|j| point_at(s,j as f64/SAMPLES_PER_PIECE as f64)).collect::<Vec<_>>())
             }).collect()).collect();
-            Some(Drafted {ends:[end(extent[0])?,end(extent[1])?],lengths})
+            // one half, or two meeting at the parting plane, where the profile is their section
+            let heights = if parted { vec![[extent[0],0.],[0.,extent[1]]] } else { vec![extent] };
+            let halves = heights.into_iter().map(|[h0,h1]| Ok(Half {heights:[h0,h1],ends:[end(h0)?,end(h1)?]}))
+                .collect::<Result<_,String>>()?;
+            Some(Drafted {halves,fan:if parted { 2.*draft*CREASE_SCALE } else { 0. },lengths})
         };
         Ok(Some(Cutter {origin:profile.origin,axis,kind:Kind::Extruded(Extruded {walks,extent,drafted}),
             sections:Default::default()}))
@@ -369,7 +416,7 @@ impl Cutter {
     /// How far the band of stations may run before the sheet is said not to leave the blank: a
     /// whole turn about the axis, or a prism's own length (past it a cap would be in the blank).
     pub fn station_limit(&self) -> f64 {
-        match &self.kind { Kind::Revolved {..} => TAU,Kind::Extruded(x) => x.extent[1]-x.extent[0],
+        match &self.kind { Kind::Revolved {..} => TAU,Kind::Extruded(x) => { let [lo,hi] = x.stations(); hi-lo },
             Kind::Across(x) => x.range[1]-x.range[0] }
     }
     /// A piece's point at fraction `t` of its source, and the cutter's outward normal there.
@@ -556,7 +603,7 @@ impl Cutter {
         // half a step in from either end, round the axis or along the prism
         let (cyclic,station) = match &self.kind {
             Kind::Revolved {..} => (true,[0.,TAU]),
-            Kind::Extruded(x) => (false,x.extent),
+            Kind::Extruded(x) => (false,x.stations()),
             Kind::Across(x) => (false,x.range),
         };
         let station = |c: f64| station[0]+(station[1]-station[0])*(c+0.5)/stations as f64;

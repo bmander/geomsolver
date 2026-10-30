@@ -186,6 +186,7 @@ mod orientation;
 mod outline;
 mod ordinate;
 mod overview;
+mod paced_sweeps;
 mod par;
 mod parameters;
 mod parts;

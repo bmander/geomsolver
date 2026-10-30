@@ -134,6 +134,10 @@ pub struct Caches {
     /// Each sweep's roll through a body (`solid::roll::interval`, #271), against `solid::reads`:
     /// admission, the field and the exact construction each ask it.
     pub(crate) roll: Memo<Result<[f64; 2], String>>,
+    /// Each sweep under a driven joint read as its joint's over the law's reach
+    /// (`solid::paced::restated`, #684 L), against `solid::reads`, a law left unread remembered
+    /// too: every entry point asks it.
+    pub(crate) paced: Memo<Option<(u32, [f64; 2])>>,
     /// Each body's faces as regions read them (`solid::faces::BodyFaces`, #183), against
     /// `solid::reads`: every round over one body reads the same stratum.
     pub faces: Memo<Result<std::sync::Arc<crate::solid::faces::BodyFaces>, String>>,
@@ -201,6 +205,7 @@ impl Caches {
         self.shelled.clear();
         self.canal.clear();
         self.roll.clear();
+        self.paced.clear();
         self.faces.clear();
         self.whole.clear();
         self.built.clear();
