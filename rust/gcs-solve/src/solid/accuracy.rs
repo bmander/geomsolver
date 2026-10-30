@@ -803,7 +803,7 @@ impl Meter {
     }
 
     /// Which side of the blank's boundary a direction points: +1 where the blank's field rises.
-    fn rises(field: &SpatialField,at: V,n: V,step: f64) -> f64 {
+    fn rises(field: &dyn super::sweep_contacts::Material,at: V,n: V,step: f64) -> f64 {
         let up = field.value(add(at,scale(n,step)));
         let down = field.value(sub(at,scale(n,step)));
         if up < down { -1. } else { 1. }

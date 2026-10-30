@@ -79,7 +79,7 @@ pub struct Characteristic {
     /// sheet is its section revolved all the way round, closing on itself (#684 N).
     pub whole: bool,
     pieces: Vec<Piece>,
-    tool: super::SpatialField,
+    tool: std::sync::Arc<dyn super::sweep_contacts::Material>,
     motion: Motion,
     tolerance: f64,
 }
@@ -100,7 +100,7 @@ pub struct Ask<'a> {
 /// What every pass of the walk reads: the sweep, the ask, the screw and the twist the rings are
 /// solved under, the tool's material, its size and the roots' tolerance.
 struct Walker<'a> { contacts: &'a SweepContacts,pieces: Vec<Piece>,ask: &'a Ask<'a>,screw: Screw,motion: Motion,
-    tool: &'a super::SpatialField,scale: f64,tolerance: f64 }
+    tool: &'a dyn super::sweep_contacts::Material,scale: f64,tolerance: f64 }
 
 /// One pass of the walk: the stations each face was sampled at, its rings there, and the stretch
 /// walked through the blank (face, ring, root), in order along the characteristic.
@@ -275,7 +275,7 @@ impl Characteristic {
             least = least.min(factor.abs());
         }
         let found = Characteristic {screw,nodes,reach:[first,last],least_factor:least,samples,whole:contacts.whole(),pieces:walker.pieces,
-            tool:tool.clone(),motion,tolerance};
+            tool:contacts.material().clone(),motion,tolerance};
         // S4: its section square to the axis is simple
         found.simple(family)?;
         Ok(found)
@@ -294,7 +294,7 @@ impl Characteristic {
         // the root nearest the chord between the two nodes: labels may change where a ring's
         // amplitude turns, positions do not jump
         let guess = crate::space::lerp(a.position,b.position,f);
-        let Ring::Roots(roots) = ring(&self.pieces[b.patch],u,self.motion,self.tolerance,&|p,n| outward(&self.tool,p,n),&|_| None) else {
+        let Ring::Roots(roots) = ring(&self.pieces[b.patch],u,self.motion,self.tolerance,&|p,n| outward(&*self.tool,p,n),&|_| None) else {
             return Err(format!("the characteristic on {} has no regular ring at {u:.6}",self.pieces[b.patch].named()))
         };
         roots.iter().min_by(|x,y| distance(x.position,guess).total_cmp(&distance(y.position,guess)))
@@ -444,7 +444,7 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
 
 /// `n` turned, if need be, to point out of the tool's material at `p`: the faces' parameters
 /// orient their normals each its own way, and the class's signs read the tool's outside.
-pub(super) fn outward(tool: &super::SpatialField,p: V,n: V) -> V {
+pub(super) fn outward(tool: &dyn super::sweep_contacts::Material,p: V,n: V) -> V {
     let h = 1e-6*(1.+norm(p));
     let step = |k: f64| std::array::from_fn(|i| p[i]+k*h*n[i]);
     if tool.value(step(1.)) < tool.value(step(-1.)) { n.map(|x| -x) } else { n }
@@ -617,7 +617,7 @@ impl Corner {
 /// `SweepContacts::corner`'s probe in the material. A smooth join has no fan, and a concave
 /// corner's sweep is no part of the boundary (T2 refuses one that reaches the blank); a corner on
 /// the axis turns to no circle. Each corner's ring is read under `motion`, the walk's.
-fn corners(contacts: &SweepContacts,patches: &[RevolvedSurface],tool: &super::SpatialField,motion: Motion) -> Vec<Corner> {
+fn corners(contacts: &SweepContacts,patches: &[RevolvedSurface],tool: &dyn super::sweep_contacts::Material,motion: Motion) -> Vec<Corner> {
     let normal = |s: &RevolvedSurface,u: f64| -> Option<(V,V)> {
         let p = s.at(u,0.).ok()?;
         Some((p.position,envelope::contact(p,Motion::identity()).ok()?.normal))
