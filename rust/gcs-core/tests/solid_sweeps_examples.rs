@@ -269,6 +269,25 @@ fn the_beads_leave_what_either_shadow_covers() {
     near(exported(&e,"rod"),PI*25.*20.-crate::union_tools::beads_section()*20.,2e-6);
 }
 
+/// `square_thread.sv`: a prism under a screw (#684 M), a bar standing across the rod, its tip at
+/// radius 4. The characteristic runs along the tip's middle and out along the two corners where it
+/// meets the flanks, round their fans. A point of the bar at radius r turns `acos(4 / r)` at most
+/// from the tip's plane, so the groove at radius r is the bar's width and the lead's share of
+/// twice that turn, `2 + 6 acos(4 / r) / π`, along the axis; over the rod's 20 mm, the rod at
+/// radius r loses that width over each 6 mm lead, all round. In closed form, with
+/// `∫ r acos(a / r) dr = r² acos(a / r) / 2 − a √(r² − a²) / 2`.
+#[test]
+fn the_square_tool_leaves_a_groove_widening_outward() {
+    let e = example("square_thread.sv");
+    let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a screw");
+    assert_eq!(found.fans(),["the corner of `bar.upper` and `bar.nose`","the corner of `bar.nose` and `bar.lower`"]);
+    let (r0,r,w,lead,l) = (4_f64,5_f64,2.,6.,20.);
+    let turned = r*r/2.*(r0/r).acos()-r0/2.*(r*r-r0*r0).sqrt();
+    let groove = TAU*l/lead*(w*(r*r-r0*r0)/2.+lead/PI*turned);
+    near(exported(&e,"rod"),PI*r*r*l-groove,1e-5);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {

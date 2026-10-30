@@ -37,8 +37,8 @@ impl Condition {
     pub fn rule(self) -> &'static str {
         match self {
             Condition::Tool => "the tool is a full revolution, or a prism (drafted or not), of lines and arcs, or an intersection \
-                of such, its caps clear of the blank unless it is an undrafted prism standing alone or placed, or a union of tools \
-                each in the class",
+                of such, its caps clear of the blank unless it is an undrafted prism standing alone or placed under a relative \
+                rotation, or a union of tools each in the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide (a joint driven by a law alone read as its joint over the values the law reaches)",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -470,7 +470,10 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let asked: BTreeMap<usize,Asked> = order.iter().map(|&s| (s,if canal.as_ref().is_some_and(|(c,_)| *c == s) { Asked::Canal }
         else if super::planar_class::asks(sk,s) { Asked::Planar }
         else { match &sk.solids[s].def {
-            SolidDef::Swept {motion,..} if crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.twist().is_some()) => Asked::ConstantTwist,
+            // prisms under a turn or a slide that keeps their plane: the planar subtraction class
+            // reads their swept region whole (#684 M)
+            SolidDef::Swept {motion,..} if crate::motion::Family::read(sk,*motion as usize).is_ok_and(|f| f.twist().is_some()) =>
+                if super::planar_subtraction::asks(sk,s) { Asked::Subtraction } else { Asked::ConstantTwist },
             _ => Asked::Generating,
         } })).collect();
     // a sweep of a member of a union tool is refused as the union's, saying the member (#684 C)
@@ -509,7 +512,19 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         found.placements = by_sweep[&swept].iter().map(|&pose| Placement {pose,equivalent_to:None}).collect();
         planar.push(found);
     }
-    order.retain(|s| asked[s] != Asked::Planar);
+    // a prism sweep under a motion keeping its plane that the generating rows refuse, at any row and
+    // any placement, is asked the planar subtraction class's rows instead (Q1–Q4), every placement
+    // at once: what those rows guard against — a union within an intersection, a draft running both
+    // ways from its plane, a concave corner, a roll never clear, a second contact — its swept region
+    // does not need. One under a turn or a slide keeping its plane is asked them outright (#684 M).
+    let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
+        let inside = |p: V| field.value(p) < -options.margin;
+        super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|
+            Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,
+                asked:Asked::Subtraction}))
+    };
+    for &swept in order.iter().filter(|s| asked[s] == Asked::Subtraction) { planar.push(subtract(swept)?) }
+    order.retain(|s| !matches!(asked[s],Asked::Planar | Asked::Subtraction));
     // a placement's check by the class its motion is in
     let check = |contacts: &SweepContacts,lone: Option<&Lone>,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().twist() {
         Some(screw) => check_screw(contacts,inside,bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse())),
@@ -566,17 +581,6 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let mut by: Vec<Vec<bool>> = vec![Vec::new();order.len()];
     for (&(k,_),a) in later.iter().zip(alike) { by[k].push(a) }
     let alike = by;
-    // a prism sweep under a motion keeping its plane that the generating rows refuse, at any row and
-    // any placement, is asked the planar subtraction class's rows instead (Q1–Q4), every placement
-    // at once: what those rows guard against — a union within an intersection, a draft running both
-    // ways from its plane, a concave corner, a roll never clear, a second contact — its swept region
-    // does not need
-    let subtract = |swept: usize| -> Result<SweepEvidence,Error> {
-        let inside = |p: V| field.value(p) < -options.margin;
-        super::planar_subtraction::admit(sk,swept,&by_sweep[&swept],&inside,blank_box()).map_err(|(condition,message,witness)|
-            Error::Refused(Refusal {condition,sweep:names[&swept].clone(),message:said(swept,message),witness,
-                asked:Asked::Subtraction}))
-    };
     for (k,(result,&swept)) in first.into_iter().zip(&order).enumerate() {
         let generating = (|| -> Result<SweepEvidence,Error> {
             let (contacts,found,reads) = result?;
@@ -707,8 +711,8 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
         let Some((name,p)) = rim else { continue };
         if lone.is_none() {
             return Err((Condition::Tool,format!("a cap of the prism `{name}` bounds passes through the blank, and the class cuts \
-                with a cap only of a prism standing alone as the tool or placed, its profile one loop: make the prism longer \
-                than the blank is thick"),Some(p)));
+                with a cap only of a prism standing alone as the tool or placed, its profile one loop, under a relative rotation: \
+                make the prism longer than the blank is thick"),Some(p)));
         }
         capped[end] = true;
     }

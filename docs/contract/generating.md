@@ -354,6 +354,38 @@ the corners walked. `solid_sweeps_examples.rs` (`vthread.sv`, a V wheel ground a
 section computed apart from the core) and `turns_and_slides.rs` (a V wheel slid tilted, its shadow;
 slid square, refused at S1 for its sharp edge) are the gate, each STL held to the field.
 
+**Prisms under a constant twist (#684 M):** a prism tool (drafted too) under a screw, a turn or a
+slide is walked along its rulings (`constant_twist::prism`). A screw moves a ruling's points as one
+affine field and its normal is one, so its contact is linear along it: a side is a piece whose
+stations run along its edge, its ring the ruling and its one root read from the contact at the
+ruling's two ends, none where that lies past a cap (`Piece::Ruled`, `Ruling::Side`); a convex
+corner — normals more than `LEAST_TURN` apart, the chord of `SweepContacts::corner`'s probe in the
+material — is a piece whose stations are its fan's normals and whose ring is the ruling the sides
+share (`Ruling::Rib`), crossed onto and off as a revolution's corner is (`step`, by the piece's
+`patch` and `fan`, never by its index). A piece's stations are spread by the characteristic's length
+(`Ruled::lengths`), so a root running out along the rulings toward a cap is sampled as finely as
+anywhere; a contact within `NOUGHT` of the tool's speed reads nought, one bar for every reading.
+Where the motion moves each ruling's points alike (a slide, a screw along the extrusion) the
+rulings in contact are whole: each root of `n·v` across a side or a fan is a piece of its own,
+its stations along the ruling (`Piece::Line`). S1 also refuses a ruling in contact all along it
+whose path enters the blank (`constant_twist::rulings`, both ends' contacts changing sign between
+two coarse stations and their least sought by `roots::brent`; under a slide, a piece in contact at
+every parameter read) — a side the motion keeps in its own plane, square to a turn or along a slide.
+A cap reaching the blank under a constant twist is refused at T1 (`admission::ends`), as is a
+drafted prism running both ways from its parting plane (#684 P), whose crease the walk does not
+cross (`SweepContacts::creases`); a twist
+that keeps the plane of the tool's prisms is dispatched to the planar subtraction class
+(`planar_subtraction::asks`, `Asked::Subtraction`), which reads it as it did. The corner's probe
+(`SweepContacts::corner`, which T2 reads too) stands halfway along a prism's sides: at a cap its
+chord lies on the tool's boundary, where the material reads nought, and a convex corner read
+concave. `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`
+(`solid_sweeps/square_thread.sv`, a bar screwed across a rod, the groove in closed form) and
+`tests/prism_twists.rs` (a bar leaning across a turn and the same drafted, each groove its corner's
+line turned; a bar slid aslant, its silhouette's plane; each STL agreeing with the field; the
+refusals and the upright bar still planar subtraction's) are the gate, with
+`object_builder::a_square_thread_builds_at_the_displays_samples`. The accuracy meter reads no
+prism tool's cut, in any class.
+
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting
 plane, where the prism runs both ways from it: below) is

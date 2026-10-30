@@ -52,7 +52,7 @@ pub(crate) fn near(volume: f64,expected: f64,bar: f64) {
     assert!((volume-expected).abs() <= bar*expected,"{volume} against {expected}");
 }
 
-fn admit(source: &str) -> Result<admission::Admission,Error> {
+pub(crate) fn admit(source: &str) -> Result<admission::Admission,Error> {
     let e = fixtures::read(source);
     admission::admit_body(&e.sketch,fixtures::solid(&e,"part"),&Options::default())
 }

@@ -382,7 +382,7 @@ pub fn round_beyond(b: &Beyond, tol: f64) -> Result<Brep, String> {
             return Err(format!("the ball beyond the seam misses the seam at its end ({:.2e} off)", distance(touch, end)));
         }
     }
-    let canal = |u: f64, v: f64| { let (c, e) = frame_at(u); add(c, scale(super::fillet::slerp(e[0], e[1], v), r)) };
+    let canal = |u: f64, v: f64| { let (c, e) = frame_at(u); add(c, scale(crate::util::space::slerp(e[0], e[1], v), r)) };
     let bar = tol.max(1e-7 * (size + norm(q[0])));
     let (net, net_err) = fit_net(&canal, 3, 3, 64, 4, tol).ok_or("the canal beyond the seam could not be fitted")?;
     if net_err > bar {

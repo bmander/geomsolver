@@ -37,6 +37,13 @@ pub fn across(a: V3) -> (V3, V3) {
     let e1 = normalised(cross(ah,axis)).unwrap_or([1.,0.,0.]);
     (e1,cross(ah,e1))
 }
+/// Along the arc of the unit sphere from `a` to `b` (the short way), a fraction `v`.
+pub fn slerp(a: V3,b: V3,v: f64) -> V3 {
+    let w = dot(a,b).clamp(-1.,1.).dacos();
+    let s = w.dsin();
+    if s < 1e-12 { return a }
+    add(scale(a,((1.-v)*w).dsin()/s),scale(b,(v*w).dsin()/s))
+}
 /// The point a fraction `t` of the way from `a` to `b`, as `a + t (b − a)`.
 pub fn lerp(a: V3,b: V3,t: f64) -> V3 { [a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1]),a[2]+t*(b[2]-a[2])] }
 

@@ -138,6 +138,14 @@ fn a_whole_turn_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/whole_turn.sv".to_string()],true),1);
 }
 
+/// **A prism under a screw builds at the display's samples** (`square_thread.sv`, #684 M): the bar's
+/// characteristic walked along its rulings and round its corners' fans, carried along the helix,
+/// built by the page's stepped builder as the export builds it.
+#[test]
+fn a_square_thread_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/square_thread.sv".to_string()],true),1);
+}
+
 /// **A drive builds at the display's samples** (`rocked.sv`, #684 L): the turn rocked out and back
 /// by a law, read as the turn over the law's reach, built by the page's stepped builder as the
 /// export builds it.
