@@ -101,6 +101,18 @@ fn a_part_written_once_reports_itself() {
     assert!(has("block.bounds.z1"), "and the box it stands in");
 }
 
+/// A reported area is the exact solid's too, its faces' areas summed: a cylinder's is 2πrh + 2πr²
+/// to rounding, where its facets' would fall short by their sag.
+#[test]
+fn a_reported_area_is_the_exact_solids() {
+    let e = read(&format!("{RECT}{HOLE}pin := solid(hole_f, depth: 30mm)\n"));
+    let area = gcs_core::report::positions(&e.sketch, &e.map).into_iter()
+        .find(|(n, _)| n == "pin.area").expect("no `pin.area` in the report").1;
+    let pi = std::f64::consts::PI;
+    assert_volume(volume(&e, "pin"), 750.0 * pi);
+    assert_volume(area, 2.0 * pi * 5.0 * 30.0 + 2.0 * pi * 25.0);
+}
+
 #[test]
 fn an_extent_is_an_expression_and_never_an_unknown() {
     let e = read(&format!("t := 30mm\n{RECT}block := solid(sec, depth: t)\n"));
