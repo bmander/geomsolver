@@ -37,8 +37,8 @@ impl Condition {
     pub fn rule(self) -> &'static str {
         match self {
             Condition::Tool => "the tool is a full revolution, or a prism (drafted or not), of lines and arcs, or an intersection \
-                of such, its caps clear of the blank unless it is an undrafted prism standing alone, or a union of tools each in \
-                the class",
+                of such, its caps clear of the blank unless it is an undrafted prism standing alone under a relative rotation, or a \
+                union of tools each in the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -526,6 +526,12 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
         let SolidDef::Swept {source,..} = &sk.solids[swept].def else { unreachable!("a swept cut is a sweep") };
         tool(sk,*source as usize).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
         let contacts = SweepContacts::read(sk,swept,options.axis_tolerance).map_err(|m| refuse(swept,Condition::Tool,m,None))?;
+        // prisms under a turn or a slide that keeps their plane: the planar subtraction class reads
+        // their swept region whole, as it read them before the constant twist read prisms (#684 M)
+        if contacts.motion().twist().is_some() && super::planar_subtraction::asks(sk,swept) {
+            return Err(refuse(swept,Condition::Tool,"the motion keeps the plane of the tool's prisms, whose swept region the planar \
+                subtraction class reads".into(),None))
+        }
         if contacts.motion().twist().is_none() {
             let probe = SurfacePoint {position:[1.,2.,3.],du:[1.,0.,0.],dv:[0.,1.,0.]};
             contacts.motion().normal_velocity(probe).map_err(|m| refuse(swept,Condition::Motion,m,None))?;
@@ -695,6 +701,10 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
             .find_map(|i| { let s = surface.at(i as f64/options.coarse_rows as f64,v).ok()?;
                 poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) }).map(|p| (surface.name(),p)));
         let Some((name,p)) = rim else { continue };
+        if c.motion().twist().is_some() {
+            return Err((Condition::Tool,format!("a cap of the prism `{name}` bounds passes through the blank, and under a screw, a \
+                turn or a slide the class cuts with a prism's sides only: make the prism longer than the blank is thick"),Some(p)));
+        }
         if lone.is_none() {
             return Err((Condition::Tool,format!("a cap of the prism `{name}` bounds passes through the blank, and the class cuts \
                 with a cap only of a prism standing alone as the tool, its profile one loop: make the prism longer than the blank \

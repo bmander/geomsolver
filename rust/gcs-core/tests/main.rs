@@ -206,6 +206,7 @@ mod plane_tangent;
 mod points_in_space;
 mod predicates;
 mod prism_caps;
+mod prism_twists;
 mod prisms;
 mod program;
 mod progress;

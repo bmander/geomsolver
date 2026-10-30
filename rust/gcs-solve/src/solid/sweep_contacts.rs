@@ -399,15 +399,18 @@ impl SweepContacts {
         Ok(Self {source:source_field,patches,edges,motion,roll:once.unwrap_or(roll),whole:once.is_some()})
     }
     pub fn edges(&self) -> &[PatchEdge] { &self.edges }
-    /// Where `edge`'s two faces meet, and a point just inside each face beside it, on their charts'
-    /// start (`v = 0`): the probe a corner is told by — the chord between the two points in the
-    /// tool's material at a convex corner, out of it at a concave one.
+    /// Where `edge`'s two faces meet, and a point just inside each face beside it, on a
+    /// revolution's charts' start (`v = 0`) and halfway along a prism's sides, clear of its caps:
+    /// the probe a corner is told by — the chord between the two points in the tool's material at a
+    /// convex corner, out of it at a concave one. (At a cap the chord lies on the tool's boundary,
+    /// where the material reads nought either way.)
     pub fn corner(&self,edge: &PatchEdge) -> Option<(V,[V;2])> {
         let ([a,b],[ua,ub]) = (edge.patches,edge.ends);
         let (pa,pb) = (self.patches.get(a)?,self.patches.get(b)?);
         let h = 1e-4;
         let inward = |u: f64| if u < 0.5 { u+h } else { u-h };
-        Some((pa.at(ua,0.).ok()?.position,[pa.at(inward(ua),0.).ok()?.position,pb.at(inward(ub),0.).ok()?.position]))
+        let v = if pa.periodic() { 0. } else { 0.5 };
+        Some((pa.at(ua,v).ok()?.position,[pa.at(inward(ua),v).ok()?.position,pb.at(inward(ub),v).ok()?.position]))
     }
     pub fn patches(&self) -> &[ToolSurface] { &self.patches }
     pub fn motion(&self) -> &Family { &self.motion }
