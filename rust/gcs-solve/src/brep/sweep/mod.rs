@@ -5,6 +5,9 @@
 //! with its kernel's shapes is done here with this kernel's, so the export needs no native kernel,
 //! and runs where the core does — in the browser's worker too.
 pub use cad_kernel::sweep::{cutter,helical};
+/// The kernel's swept cut without a document (`cut`), and the pieces it shares with this pipeline:
+/// the class rows (`admit`), the cut by the sheets (`cells`), a tool's and a blank's material.
+pub use cad_kernel::sweep::{admit,cells,cut,material};
 pub mod extruded;
 pub mod planar;
 pub mod sector;

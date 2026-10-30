@@ -293,7 +293,7 @@ pub fn construct(recipe: &Recipe,sweeps: usize,premises: Premises,probe: Probe,s
     (say.stage)(&format!("split the blank by the sides into the sector of {share:.6} mm³, and it by {} sheets into {} cells ({:?})",
         count,cells.len(),clock.elapsed()));
     (say.mark)(Stage::Split);
-    let piece = kept(cells,&vec![1;sweeps],"sector",probe,say)?;
+    let piece = kept(cells,&vec![1;sweeps],"sector",true,probe,say)?;
     Ok(Sector {piece,origin:frame.origin,axis:frame.axis,count:n,pitch})
 }
 
@@ -353,6 +353,17 @@ pub fn turned_away(blank: &Brep,tools: &[(Brep,Box3)]) -> Result<Brep,String> {
 /// judged by `probe` and the one material cell kept, `placements` holding each distinct sweep's
 /// count of placements.
 pub fn whole(blank: &Brep,tools: Vec<(Brep,Box3)>,placements: &[usize],probe: Probe,say: &Say) -> Result<Brep,String> {
+    split_whole(blank,tools,placements,true,probe,say)
+}
+
+/// What the sweeps take from `blank` (`whole`'s removed cell, where there is one): the solid a
+/// sweep passes through, its blank a box holding all of it.
+pub fn removed(blank: &Brep,tools: Vec<(Brep,Box3)>,placements: &[usize],probe: Probe,say: &Say) -> Result<Brep,String> {
+    split_whole(blank,tools,placements,false,probe,say)
+}
+
+/// `whole`, keeping the material cell or (not `material`) the removed one.
+fn split_whole(blank: &Brep,tools: Vec<(Brep,Box3)>,placements: &[usize],material: bool,probe: Probe,say: &Say) -> Result<Brep,String> {
     let clock = crate::util::clock::Instant::now();
     let tools = reaching(blank,tools);
     let (cells,widest) = split_by(vec![blank.clone()],&tools,1e-3*blank.size())?;
@@ -360,13 +371,13 @@ pub fn whole(blank: &Brep,tools: Vec<(Brep,Box3)>,placements: &[usize],probe: Pr
     (say.stage)(&format!("split the blank of {:.6} mm³ by {} placed sheets, {} at once at most, into {} cells ({:?})",volume(blank),
         tools.len(),widest,cells.len(),clock.elapsed()));
     (say.mark)(Stage::Split);
-    kept(cells,placements,"body",probe,say)
+    kept(cells,placements,"body",material,probe,say)
 }
 
-/// The material cell of a split's `cells`, judged by `probe` and held to the cell contract
-/// (`placements` each distinct sweep's count), its tolerances measured; refused where the
-/// contract fails or more than one cell of the `what` is material.
-fn kept(mut cells: Vec<Brep>,placements: &[usize],what: &str,probe: Probe,say: &Say) -> Result<Brep,String> {
+/// The material cell of a split's `cells` (or, not `material`, the removed one), judged by `probe`
+/// and held to the cell contract (`placements` each distinct sweep's count), its tolerances
+/// measured; refused where the contract fails or more than one cell of the `what` is the one asked.
+fn kept(mut cells: Vec<Brep>,placements: &[usize],what: &str,material: bool,probe: Probe,say: &Say) -> Result<Brep,String> {
     let volumes: Vec<f64> = cells.iter().map(volume).collect();
     let clock = crate::util::clock::Instant::now();
     let sampled = crate::util::par::map(&cells,|c| interior(c,4)).into_iter().collect::<Result<Vec<_>,_>>()?;
@@ -375,7 +386,8 @@ fn kept(mut cells: Vec<Brep>,placements: &[usize],what: &str,probe: Probe,say: &
     let measured = |cells: &[Cell]| cells.iter().map(|c| CellVolume {volume:c.volume,point:c.point}).collect::<Vec<_>>();
     self::cells(&measured(&kept),&measured(&removed),placements)?;
     (say.mark)(Stage::Classify);
-    let [kept] = &kept[..] else { return Err(format!("{} cells of the {what} are material: this kernel does not unite them",kept.len())) };
+    let (asked,said) = if material { (&kept,"material") } else { (&removed,"removed") };
+    let [kept] = &asked[..] else { return Err(format!("{} cells of the {what} are {said}: this kernel does not unite them",asked.len())) };
     let mut piece = cells.swap_remove(kept.index);
     piece.measure_tolerances();
     Ok(piece)

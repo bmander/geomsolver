@@ -129,7 +129,7 @@ impl Seg {
         }
     }
     /// The nearest distance from `p` to the step.
-    fn distance(&self,p: P) -> f64 {
+    pub fn distance(&self,p: P) -> f64 {
         let t = match self { Seg::Conic {..} => self.nearest(p),_ => self.param(p).clamp(0.,1.) };
         dist(self.point(t),p).min(dist(self.start(),p)).min(dist(self.end(),p))
     }

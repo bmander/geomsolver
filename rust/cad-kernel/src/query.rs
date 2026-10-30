@@ -729,7 +729,7 @@ pub fn interior(b: &Brep,capacity: usize) -> Result<Vec<(V,f64)>,String> {
 }
 
 /// The square of the distance from `p` to the triangle `t`.
-fn triangle_distance2(p: V,t: &[V;3]) -> f64 {
+pub(crate) fn triangle_distance2(p: V,t: &[V;3]) -> f64 {
     let sub = |a: V,b: V| [a[0]-b[0],a[1]-b[1],a[2]-b[2]];
     let dot = |a: V,b: V| a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
     let (a,b,c) = (t[0],t[1],t[2]);

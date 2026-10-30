@@ -17,7 +17,9 @@ pub mod cutter;
 pub mod sheet;
 pub mod helical;
 pub mod admit;
+pub mod material;
 pub mod cells;
+pub mod cut;
 
 use refusal::Stage;
 
