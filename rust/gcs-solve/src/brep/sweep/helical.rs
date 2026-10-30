@@ -51,21 +51,21 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // σ(s) is carried for M(t) at roll time t+τ(s): the columns run over the stretch that carries
     // the section past the blank's heights (`Screw::passing`: a turn's, the whole roll, as a turn
     // keeps every height), widened, within what the roll carries every row to. A turn's delays
-    // are read along the walk, each the one nearest the one before, as the section is one curve
+    // are read along the walk, each the one nearest the one before, as the section is one curve.
+    // A whole turn's run once round from the roll's start, as its contacts were read
+    // (`SweepContacts::domain`): every pose of it is a pose of that one turn.
     let roll = cut.limits;
-    let period = std::f64::consts::TAU/screw.ratio.abs();
-    let mut delay: Vec<f64> = Vec::with_capacity(found.nodes.len());
-    for node in &found.nodes { delay.push(screw.time_to_station(node.position,station,delay.last().copied().unwrap_or(0.))); }
-    let (least,most) = delay.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&d| (a.min(d),b.max(d)));
-    let carried = [roll[0]-least,roll[1]-most];
-    let base = family.pose_at(0.).at(Stage::Reach)?.point(section[first]);
-    let passing = heights.and_then(|band| screw.passing(base,band)).unwrap_or([f64::NEG_INFINITY,f64::INFINITY]);
-    let window = [passing[0].max(carried[0]),passing[1].min(carried[1])];
-    let step = if screw.is_slide() { (window[1]-window[0]).max(0.)/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
-    // a whole turn's columns run once round from the roll's start: every pose of it is a pose of
-    // that one turn
-    let window = if found.whole { [roll[0],roll[0]+period] }
-        else { [(window[0]-COLUMN_MARGIN*step).max(carried[0]),(window[1]+COLUMN_MARGIN*step).min(carried[1])] };
+    let (window,step) = if found.whole { ([roll[0],roll[0]+screw.period()],COLUMN_TURN/screw.ratio.abs()) } else {
+        let mut delay: Vec<f64> = Vec::with_capacity(found.nodes.len());
+        for node in &found.nodes { delay.push(screw.time_to_station(node.position,station,delay.last().copied().unwrap_or(0.))); }
+        let (least,most) = delay.iter().fold((f64::INFINITY,f64::NEG_INFINITY),|(a,b),&d| (a.min(d),b.max(d)));
+        let carried = [roll[0]-least,roll[1]-most];
+        let base = family.pose_at(0.).at(Stage::Reach)?.point(section[first]);
+        let passing = heights.and_then(|band| screw.passing(base,band)).unwrap_or([f64::NEG_INFINITY,f64::INFINITY]);
+        let window = [passing[0].max(carried[0]),passing[1].min(carried[1])];
+        let step = if screw.is_slide() { (window[1]-window[0]).max(0.)/SLIDE_COLUMNS } else { COLUMN_TURN/screw.ratio.abs() };
+        ([(window[0]-COLUMN_MARGIN*step).max(carried[0]),(window[1]+COLUMN_MARGIN*step).min(carried[1])],step)
+    };
     if !(window[0] < window[1]) {
         return Err(ExportRefusal::at(Stage::Reach,format!("`{name}`: the roll does not carry the characteristic past the blank")))
     }

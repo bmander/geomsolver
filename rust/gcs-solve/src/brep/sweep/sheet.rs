@@ -94,29 +94,23 @@ impl Fitted {
     pub(super) fn named(&self,kind: Parametrization,name: &dyn Fn(u32) -> String,around: Option<usize>) -> Result<Brep,String> {
         let bands = &self.sheet.bands;
         let Some(Surface::BSpline(_,net)) = self.face.faces.first().map(|f| &f.surface) else { return Ok(self.face.clone()) };
-        if let Some(around) = around {
-            let (tu,_) = crate::brep::nurbs::net_parameters(&self.sheet.points,self.sheet.rows,self.sheet.columns,kind)
-                .ok_or("the sheet's rows have no parameters")?;
-            let [[a,z],[c,d]] = net.domain();
-            let us: Vec<f64> = std::iter::once(a).chain(bands.iter().skip(1).map(|b| a+(z-a)*tu[b.0])).chain(std::iter::once(z)).collect();
-            let vs: Vec<f64> = (0..=around).map(|k| c+(d-c)*k as f64/around as f64).collect();
-            let names: Vec<String> = bands.iter().map(|b| name(b.1)).collect();
-            return crate::brep::build::grid_sheet(net,&us,&vs,&names,true)
-        }
-        if bands.len() < 2 {
+        if bands.len() < 2 && around.is_none() {
             let mut faces = self.face.clone();
             faces.faces[0].name = bands.first().map_or(String::new(),|b| name(b.1));
             return Ok(faces)
         }
-        let (tu,_) = crate::brep::nurbs::net_parameters(&self.sheet.points,self.sheet.rows,self.sheet.columns,kind)
-            .ok_or("the sheet's rows have no parameters")?;
-        let [[a,z],v] = net.domain();
-        let at = |r: usize| a+(z-a)*tu[r];
-        let nets = bands.iter().enumerate().map(|(i,&(start,tag))| {
-            let (lo,hi) = (if i == 0 { a } else { at(start) },bands.get(i+1).map_or(z,|b| at(b.0)));
-            (net.segment([lo,hi],v),name(tag))
-        }).collect();
-        crate::brep::build::sheets(nets)
+        let [[a,z],[c,d]] = net.domain();
+        let mut us = vec![a];
+        if bands.len() > 1 {
+            let (tu,_) = crate::brep::nurbs::net_parameters(&self.sheet.points,self.sheet.rows,self.sheet.columns,kind)
+                .ok_or("the sheet's rows have no parameters")?;
+            us.extend(bands[1..].iter().map(|b| a+(z-a)*tu[b.0]));
+        }
+        us.push(z);
+        let pieces = around.unwrap_or(1);
+        let vs: Vec<f64> = (0..=pieces).map(|k| c+(d-c)*k as f64/pieces as f64).collect();
+        let names: Vec<String> = bands.iter().map(|b| name(b.1)).collect();
+        crate::brep::build::grid_sheet(net,&us,&vs,&names,around.is_some())
     }
 }
 

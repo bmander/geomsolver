@@ -124,9 +124,9 @@ its flute the wheel's own profile).
 A sweep depends only on the path its motion takes, not on how fast or how often it is taken. A
 turn carried round a whole turn or more therefore sweeps what one whole turn sweeps: a solid of
 revolution, its boundary the characteristic's section in a half-plane through the axis revolved
-all the way round (`constant_twist::whole_turn`, `Characteristic::whole`). The walk, its rows and
-the accuracy meter read such a roll as one whole turn from its start (`constant_twist::once`), so
-a roll of two turns asks and builds what a roll of one does. The rows are a turn's, S1–S3 and S4's
+all the way round (`Characteristic::whole`). Its contacts are read once round from the roll's
+start where they are read (`SweepContacts::read`, `whole`, `domain`), so the walk, its rows, the
+sheet and the accuracy meter all ask and build of a roll of two turns what they do of one. The rows are a turn's, S1–S3 and S4's
 section read by radius and height, but for one:
 
 - **E1 is not asked.** The tool at either end of a whole turn lies within what the turn sweeps,

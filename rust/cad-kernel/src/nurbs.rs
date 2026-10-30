@@ -555,6 +555,11 @@ impl Net {
         BSpline {degree:self.du,knots:self.uknots.clone(),poles:self.poles.iter().map(|row| row[j]).collect(),
             weights:self.weights.as_ref().map(|w| w.iter().map(|row| row[j]).collect())}
     }
+    /// The curve along `v` through the `i`th row of poles: the iso line at the `u` that row stands
+    /// for where it is an end of a clamped net.
+    pub fn row(&self,i: usize) -> BSpline {
+        BSpline {degree:self.dv,knots:self.vknots.clone(),poles:self.poles[i].clone(),weights:self.weights.as_ref().map(|w| w[i].clone())}
+    }
     /// `S`, `S_u`, `S_v`, `S_uu`, `S_uv`, `S_vv` at `(u, v)`, clamped into the domain.
     pub fn d2(&self,u: f64,v: f64) -> [V;6] {
         let [[u0,u1],[v0,v1]] = self.domain();

@@ -280,10 +280,12 @@ the STL held to the field), with
 `rust/examples/twist_drill/straight_flute.sv` and `rust/examples/solid_sweeps/`'s `slide.sv` and `turn.sv`.
 
 **A whole turn (#684 N):** a sweep is its path's, so a turn carried round a whole turn or more
-(`constant_twist::whole_turn`) sweeps what one whole turn does, a solid of revolution, and every
-reader asks it over one turn from the roll's start (`constant_twist::once`: the walk, the accuracy
-meter), `Characteristic::whole` saying so. E1 is not asked of it (`admission::ends`' `whole`): the
-tool at either end lies within what it sweeps, so the roll may start and end inside the blank. Its
+sweeps what one whole turn does, a solid of revolution. Its contacts are read once round from the
+roll's start where they are read (`SweepContacts::read`, by `constant_twist::once_round`), so every
+reader of them — the walk, admission, the accuracy meter — asks one turn (`domain`), and
+`SweepContacts::whole` and `Characteristic::whole` say so; the declared roll (`roll::interval`, which
+the material field reads) is left as stated. E1 is not asked of it (`admission::ends`): the tool at
+either end lies within what it sweeps, so the roll may start and end inside the blank. Its
 sheet (`brep::sweep::helical`) runs its columns once round, the last column's pose the first's to
 the bit; only its rows' ends must leave the blank. Fitted as any, it is cut into faces both ways
 (`Fitted::named`'s `around`, `AROUND` faces round the turn, and a band each side of a convex
@@ -291,7 +293,7 @@ corner's fan) by `brep::build::grid_sheet`, neighbours sharing edges and the las
 the first's edges: one closed face would carry a seam across the blank, which a split does not
 finish. The native path refuses it by name (`--kernel rust` builds it). The gate is
 `turns_and_slides::a_whole_turn_grooves_the_whole_ring` (`turn.sv`'s torus round the whole ring,
-over one turn and over two; Pappus over its shadow) and `solid_sweeps_examples::
+Pappus over its shadow; two turns read as the one from their start) and `solid_sweeps_examples::
 the_wheel_turned_once_leaves_its_shadow_all_round` (`solid_sweeps/whole_turn.sv`, a V wheel leaning
 across a rod turned once round it: twelve faces, three bands each four round; Pappus over its
 shadow read by the signed distance from the nearer flank), each STL agreeing with the field,

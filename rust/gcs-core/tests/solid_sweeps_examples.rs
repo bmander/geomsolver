@@ -159,7 +159,7 @@ fn the_wheel_turned_once_leaves_its_shadow_all_round() {
         let rho = (w[0]*w[0]+(w[1]-along*sl).powi(2)+(w[2]-along*cl).powi(2)).sqrt();
         along.abs()*cf+(rho-10.)*sf
     };
-    let hit = |z: f64,r: f64| reaches(&|a| outside([r*a.cos(),r*a.sin(),z]),[-PI,PI],360,0.);
+    let hit = |z: f64,r: f64| reaches(&|a| outside([r*a.cos(),r*a.sin(),z]),[-PI,PI],90,0.);
     let shadow = measure([6.,14.],&|_| [0.,5.],&hit,&|a,b| (b*b-a*a)/2.);
     assert!(shadow > 0.5,"the groove's shadow is {shadow}");
     near(exported(&e,"rod"),PI*25.*20.-TAU*shadow,1e-5);
