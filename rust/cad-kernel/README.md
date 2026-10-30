@@ -24,6 +24,11 @@ the home and geomsolver depends on it.
 - **Booleans:** union, cut and common. Intersections between analytic surfaces are closed forms
   wherever one exists, and traced otherwise. A meeting the kernel cannot resolve is refused, never
   read as none.
+- **Sweeps** (`sweep`, being carved out of geomsolver): families of rigid motions (turns, screws,
+  slides, one seen from another) with their poses, rates and interval enclosures; a tool's faces
+  and their contacts under a motion; the contact tracer and sheet fitter that build a generating
+  sweep's cut, and the characteristic of a screw's, a turn's or a slide's. A model-free entry
+  point (a tool swept under a motion over a roll, cut from a blank) is to come.
 - **Measures:** exact volume (by Green's theorem over each face) and area.
 - **Meshing:** a constrained Delaunay mesh refined until it is within a measured sag of the surface.
 - **Output:** STEP AP214 with p-curves and seam curves, and STL.

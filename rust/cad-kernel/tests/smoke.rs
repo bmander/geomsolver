@@ -49,3 +49,29 @@ fn a_mesh_is_closed_and_bounds_the_solid() -> Result {
     assert!((v / volume(&drilled) - 1.).abs() < 1e-3);
     Ok(())
 }
+
+#[test]
+fn a_cylinder_turned_about_another_axis_touches_its_envelope_where_closed_forms_say() -> Result {
+    use cad_kernel::sweep::envelope::contact;
+    use cad_kernel::sweep::motion::{Family, Step};
+    use cad_kernel::sweep::surface::{Meridian, RevolvedSurface};
+    use std::f64::consts::TAU;
+    // a cylinder of radius 2 about the line x = 10 along z, turned about the z axis
+    let turn = Family::new("turn".into(), vec![Step::Rotation {
+        origin: [0.; 3], axis: [0., 0., 1.], ratio: 1., advance: 0., law: None }])?;
+    let screw = turn.twist().ok_or("a turn is a constant twist")?;
+    assert!(screw.is_turn() && screw.ratio == 1.);
+    let wall = RevolvedSurface::new("wall".into(), Meridian::Line { start: [12., 0., 0.], delta: [0., 0., 1.] },
+        [10., 0., 0.], [0., 0., 1.], TAU);
+    for (i, t) in [0., 0.3, 1.7, -2.5].into_iter().enumerate() {
+        let pose = turn.at(t)?;
+        // the pose turns a point by the roll
+        let p = pose.point([1., 0., 0.]);
+        assert!((p[0] - t.cos()).abs() < 1e-14 && (p[1] - t.sin()).abs() < 1e-14);
+        // the wall's normal is inward, so n · v = −10 sin φ at the wall's angle φ, whatever the roll
+        let v = i as f64 / 7.;
+        let c = contact(wall.at(0.5, v).map_err(|e| format!("{e:?}"))?, pose).map_err(|e| format!("{e:?}"))?;
+        assert!((c.normal_velocity + 10. * (TAU * v).sin()).abs() < 1e-12, "{}", c.normal_velocity);
+    }
+    Ok(())
+}

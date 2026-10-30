@@ -36,8 +36,21 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   published on its own): the exact B-rep, its geometry, Booleans, mesher, STEP and recipe
   reader, and the numerical ground both stand on (`util`: `fmath`, `space`, `interval`, `roots`,
   `linalg`, `json`, `par`, `clock`, `rng`, `bvh`, the exact `expansion`s, a union-find and the
-  Gauss rule).  `gcs-solve` re-exports it as `brep` (beside `brep::sweep` and `brep::export`,
-  which read the model and stay the solver's) and each `util` module under its old name, so
+  Gauss rule).  **The solid sweeps' geometry is the kernel's too** (`cad_kernel::sweep`): the
+  plane (`plane`), a pose and its rate and a surface's contact (`envelope`), the rigid-motion
+  families with their screws, enclosures and temporal contacts (`motion`), a revolved face and
+  its contacts, projection and material (`surface`), a tool's faces and a sweep's contacts
+  (`tool`), the contact tracer (`trace`), the constant twist's characteristic
+  (`characteristic`), the cutter, the sheet fitter and the helical sheet (`cutter`, `sheet`,
+  `helical`), an indexed body's sector (`sector`), the class rows (`condition`) and an export's
+  refusal (`refusal`).  What the kernel cannot read it is handed: a document through a `Source`
+  trait per reader (`motion`, `surface`, `tool`, `sheet`), which `Sketch` implements in
+  `gcs-solve`, so `Family::read(sk, m)`, `SweepContacts::read(sk, s, tol)` and the rest are
+  called as before; a joint's law and a frame carried along a path or by the drawing's march as
+  `motion::Drive` and `motion::Carrier`; a tool's material as `tool::Material`.  `gcs-solve`
+  re-exports it as `brep` (beside `brep::sweep`, the body pipeline that reads the model, and
+  `brep::export`, both the solver's), each `util` module and each sweep module under its old
+  name (`envelope`, `motion`, `plane`, `solid::contact_trace`, `solid::constant_twist`, …), so
   `crate::fmath`, `gcs_core::brep::geom` and the rest name what they always did.  Nothing in it
   can name the solver or the language.  The solver is usable
   without the language at run time as well: a sketch is built from entities and constraint
