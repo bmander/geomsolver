@@ -301,6 +301,13 @@ impl MemoKey {
     pub fn except(sk: &Sketch, si: usize, skip: &dyn Fn(usize) -> bool) -> MemoKey {
         MemoKey { reads: reads_where(sk, si, 0.0, skip), strata: Vec::new() }
     }
+
+    /// This key and `more`'s as one: what a construction made of several solids reads.
+    pub fn and(mut self, more: MemoKey) -> MemoKey {
+        self.reads.extend(more.reads);
+        self.strata.extend(more.strata);
+        self
+    }
 }
 
 /// How near two keys' numbers must be to be one shape (#412, #498): the solve's own step

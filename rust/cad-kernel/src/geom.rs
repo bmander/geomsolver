@@ -57,7 +57,7 @@ fn screwed(c: V,a: V,advance: f64,b: Box3) -> Box3 {
 
 /// Where in `[t0, t1]` `p cos t + q sin t` turns, and whether to its greatest (`φ + 2nπ`, `φ` the
 /// angle of `(p, q)`) or its least (`φ + (2n + 1)π`): none where it does not turn at all.
-fn turns(p: f64,q: f64,[t0,t1]: [f64;2]) -> impl Iterator<Item=(f64,bool)> {
+pub fn turns(p: f64,q: f64,[t0,t1]: [f64;2]) -> impl Iterator<Item=(f64,bool)> {
     let phi = q.datan2(p);
     let first = ((t0-phi)/PI).ceil();
     [first,first+1.].into_iter().filter(move |&m| p.dhypot(q) > 0. && phi+m*PI <= t1).map(move |m| (phi+m*PI,m.rem_euclid(2.) == 0.))

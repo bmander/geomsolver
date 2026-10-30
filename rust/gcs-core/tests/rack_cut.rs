@@ -108,20 +108,29 @@ fn a_rack_with_a_cap_in_the_blank_cuts_the_slab_it_spans() {
 /// The rack's tooth, clockwise: its tip a module below the pitch line, its flanks 20° from the radius.
 pub(crate) const TOOTH: [(f64, f64); 4] = [(18., -0.842856), (18., 0.842856), (24., 3.026666), (24., -3.026666)];
 
-/// The tooth space's area by arithmetic, cut by `tooth` (a convex polygon, clockwise): at each
-/// radius the circle meets the moved tooth in one arc at each roll (each edge's half-plane holds an
-/// arc of the circle, in closed form, and they meet in one), and the space at that radius runs from
-/// the least start to the greatest end over the roll.  Integrated over the radius by midpoints; the
-/// rolls' extremes are smooth, so sampling them errs at second order.
+/// The tooth space's area by arithmetic (`rack_space`), cut by `tooth` rolled over ±60° on the
+/// pitch circle of 20, between the root and addendum circles.
 pub(crate) fn space_area(tooth: &[(f64, f64)], radii: usize, rolls: usize) -> f64 {
-    let (gx, gy) = (21., 0.);
+    rack_space(tooth, 20., [18., 22.], [-PI / 3., PI / 3.], radii, rolls)
+}
+
+/// The area a rack tooth (a convex polygon, clockwise in the rack's plane, the blank's centre on the
+/// plane's `x` axis) removes from the annulus `[inner, outer]` about the blank's centre as it rolls
+/// over `roll` on a pitch circle of `pitch`, by arithmetic: at each radius the circle meets the
+/// moved tooth in one arc at each roll (each edge's half-plane holds an arc of the circle, in closed
+/// form, and they meet in one), and the space at that radius runs from the least start to the
+/// greatest end over the roll, each extreme read again finely about the roll that gave it, so the
+/// roll's sampling errs at second order. Integrated over the radius by midpoints.
+pub(crate) fn rack_space(tooth: &[(f64, f64)], pitch: f64, [inner, outer]: [f64; 2], [t0, t1]: [f64; 2], radii: usize,
+    rolls: usize) -> f64 {
+    let n = tooth.len() as f64;
+    let (gx, gy) = (tooth.iter().map(|p| p.0).sum::<f64>() / n, tooth.iter().map(|p| p.1).sum::<f64>() / n);
     let wrap = |a: f64| (a + PI).rem_euclid(TAU) - PI;
-    let (t0, t1) = (-PI / 3., PI / 3.);
-    // at each roll, what of each edge does not depend on the radius: its half-plane's distance from
-    // the blank's centre and its normal's angle, about the tooth's direction from the centre
-    let at: Vec<(f64, f64, Vec<(f64, f64)>)> = (0..=rolls).map(|j| {
-        let t = t0 + (t1 - t0) * j as f64 / rolls as f64;
-        let (cx, cy) = (0., -20. * t);
+    // at a roll, what of each edge does not depend on the radius: its half-plane's distance from the
+    // blank's centre and its normal's angle, about the tooth's direction from the centre
+    let roll = |t: f64| -> (f64, f64, Vec<(f64, f64)>) {
+        let t = t.clamp(t0, t1);
+        let (cx, cy) = (0., -pitch * t);
         let reference = (gy - cy).atan2(gx - cx);
         let edges = (0..tooth.len()).map(|i| {
             let ((ax, ay), (bx, by)) = (tooth[i], tooth[(i + 1) % tooth.len()]);
@@ -129,7 +138,7 @@ pub(crate) fn space_area(tooth: &[(f64, f64)], radii: usize, rolls: usize) -> f6
             ((nx * (ax - cx) + ny * (ay - cy)) / nx.hypot(ny), wrap(ny.atan2(nx) + PI - reference))
         }).collect();
         (t, reference, edges)
-    }).collect();
+    };
     // the arc of circle `r` about the blank's centre inside the tooth at a roll, in the blank's angles
     let arc = |r: f64, (t, reference, edges): &(f64, f64, Vec<(f64, f64)>)| -> Option<(f64, f64)> {
         let (mut lo, mut hi) = (-PI, PI);
@@ -143,11 +152,22 @@ pub(crate) fn space_area(tooth: &[(f64, f64)], radii: usize, rolls: usize) -> f6
         }
         Some((reference + lo - t, reference + hi - t))
     };
+    let step = (t1 - t0) / rolls as f64;
+    let at: Vec<(f64, f64, Vec<(f64, f64)>)> = (0..=rolls).map(|j| roll(t0 + step * j as f64)).collect();
     (0..radii).map(|i| {
-        let r = 18. + 4. * (i as f64 + 0.5) / radii as f64;
-        let (lo, hi) = at.iter().filter_map(|roll| arc(r, roll))
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(l, h), (a, b)| (l.min(a), h.max(b)));
-        if hi > lo { (hi - lo) * r * 4. / radii as f64 } else { 0. }
+        let r = inner + (outer - inner) * (i as f64 + 0.5) / radii as f64;
+        let coarse: Vec<Option<(f64, f64)>> = at.iter().map(|x| arc(r, x)).collect();
+        // the greatest of `key` over the roll: the coarse samples' best, read again finely beside it
+        let best = |key: &dyn Fn((f64, f64)) -> f64| -> Option<f64> {
+            let j = (0..=rolls).filter(|&j| coarse[j].is_some())
+                .max_by(|&a, &b| key(coarse[a].unwrap()).total_cmp(&key(coarse[b].unwrap())))?;
+            let t = t0 + step * j as f64;
+            (0..=400).filter_map(|k| arc(r, &roll(t - step + 2. * step * k as f64 / 400.))).map(key).max_by(f64::total_cmp)
+        };
+        match (best(&|(a, _)| -a), best(&|(_, b)| b)) {
+            (Some(lo), Some(hi)) if hi > -lo => (hi + lo) * r * (outer - inner) / radii as f64,
+            _ => 0.,
+        }
     }).sum()
 }
 

@@ -9,28 +9,76 @@ use std::{collections::BTreeSet,f64::consts::TAU};
 type V = [f64;3];
 
 /// One face of a sweep's tool: a revolution of a profile edge (`u` along the edge, `v` round the
-/// turn, periodic), or a side of a prism, drafted or not (`u` along the edge, `v` along the
-/// extrusion, from one cap to the other).
+/// turn, periodic), a side of a prism, drafted or not (`u` along the edge, `v` along the
+/// extrusion, from one cap to the other), or a prism's cap (`u` and `v` across the box its profile
+/// lies in).
 #[derive(Clone,Debug)]
-pub enum ToolSurface { Revolved(RevolvedSurface),Extruded(ExtrudedSurface) }
+pub enum ToolSurface { Revolved(RevolvedSurface),Extruded(ExtrudedSurface),Cap(CapSurface) }
 
 impl ToolSurface {
     pub fn at(&self,u: f64,v: f64) -> Result<SurfacePoint,Error> {
-        match self { ToolSurface::Revolved(s) => s.at(u,v),ToolSurface::Extruded(s) => s.at(u,v) }
+        match self { ToolSurface::Revolved(s) => s.at(u,v),ToolSurface::Extruded(s) => s.at(u,v),ToolSurface::Cap(s) => s.at(u,v) }
     }
     pub fn name(&self) -> &str {
-        match self { ToolSurface::Revolved(s) => &s.name,ToolSurface::Extruded(s) => &s.name }
+        match self { ToolSurface::Revolved(s) => &s.name,ToolSurface::Extruded(s) => &s.name,ToolSurface::Cap(s) => &s.name }
     }
     /// The source parameters' domain.
     pub fn domain(&self) -> [[f64;2];2] {
-        match self { ToolSurface::Revolved(s) => s.domain(),ToolSurface::Extruded(_) => [[0.,1.],[0.,1.]] }
+        match self { ToolSurface::Revolved(s) => s.domain(),ToolSurface::Extruded(_) | ToolSurface::Cap(_) => [[0.,1.],[0.,1.]] }
     }
     /// Whether `v` runs round a turn and comes back (a full revolution) rather than from one cap
     /// to another.
     pub fn periodic(&self) -> bool { matches!(self,ToolSurface::Revolved(_)) }
     /// The revolution, where this face is one — what a revolution's closed forms are asked of.
     pub fn revolved(&self) -> Option<&RevolvedSurface> {
-        match self { ToolSurface::Revolved(s) => Some(s),ToolSurface::Extruded(_) => None }
+        match self { ToolSurface::Revolved(s) => Some(s),_ => None }
+    }
+    /// Which of its prism's caps this face is (0 its `start`, at `from`, where its sides' `v` is 0;
+    /// 1 its `end`), none where it is no cap: admission asks a cap only where it reaches the blank
+    /// (#684 F).
+    pub fn cap(&self) -> Option<usize> { match self { ToolSurface::Cap(s) => Some(s.end as usize),_ => None } }
+}
+
+/// A prism's cap: the plane of its profile at its `from` (`start`) or its `to` (`end`), read over
+/// the box the profile lies in, `u` and `v` along the box's sides, so `du × dv` is the cap's outward
+/// normal. A point of the box outside the profile is no point of the tool, and a sample there is
+/// passed over as the material field says (`admission`'s `on_tool`), as a revolution's off a trim.
+#[derive(Clone,Debug)]
+pub struct CapSurface { pub name: String,end: bool,corner: V,du: V,dv: V }
+
+impl CapSurface {
+    /// Prism `solid`'s caps, its `start` then its `end`.
+    pub fn read(sk: &Sketch,solid: usize) -> Result<[Self;2],String> {
+        let s = sk.solids.get(solid).ok_or("no such solid")?;
+        let SolidDef::Prism {face,from,to,draft:None} = &s.def else { return Err("a cap is read of a prism with square sides".into()) };
+        let p = super::face_poly(sk,*face as usize,super::REPORT_UNIT).ok_or("invalid prism profile")?;
+        let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+        for &(x,y) in &p.pts { lo = [lo[0].min(x),lo[1].min(y)]; hi = [hi[0].max(x),hi[1].max(y)]; }
+        if !(hi[0] > lo[0] && hi[1] > lo[1]) { return Err("a prism's profile of no area".into()) }
+        // a little past the profile's points, which its arcs bulge beyond
+        let pad = 0.02*(hi[0]-lo[0]).max(hi[1]-lo[1]);
+        let (lo,hi) = (lo.map(|x| x-pad),hi.map(|x| x+pad));
+        let normal = p.basis.normal();
+        let (u,v) = (scale(p.basis.u,hi[0]-lo[0]),scale(p.basis.v,hi[1]-lo[1]));
+        let at = |h: f64| add(p.basis.lift(lo[0],lo[1]),scale(normal,h));
+        // `u × v` is the profile's normal: outward at the farther cap along it, and at the nearer
+        // `v` runs back
+        let cap = |h: f64,other: f64,end: bool| {
+            let farther = h >= other;
+            CapSurface {name:format!("{}.{}",s.name,if end { "end" } else { "start" }),end,
+                corner:if farther { at(h) } else { add(at(h),v) },du:u,dv:if farther { v } else { scale(v,-1.) }}
+        };
+        Ok([cap(from.value,to.value,false),cap(to.value,from.value,true)])
+    }
+
+    pub fn at(&self,u: f64,v: f64) -> Result<SurfacePoint,Error> {
+        if !u.is_finite() || !v.is_finite() { return Err(Error::NonFinite); }
+        if !(0. ..=1.).contains(&u) || !(0. ..=1.).contains(&v) { return Err(Error::OutsideDomain); }
+        Ok(SurfacePoint {position:add(self.corner,add(scale(self.du,u),scale(self.dv,v))),du:self.du,dv:self.dv})
+    }
+
+    fn placed(&self,pose: Motion) -> Self {
+        CapSurface {name:self.name.clone(),end:self.end,corner:pose.point(self.corner),du:pose.vector(self.du),dv:pose.vector(self.dv)}
     }
 }
 
@@ -297,15 +345,16 @@ impl SweepContacts {
                         })).collect());
                     }
                 }
-                // a prism's sides, one an edge of its profile; its caps, square to the extrusion,
-                // are admission's to keep out of the blank (`admission::check`); a drafted one's
-                // each a plane or a cone between its two sections (#684 G)
+                // a drafted prism's sides, each a plane or a cone between its two sections (#684 G);
+                // its caps are admission's to keep out of the blank (`admission::ends`)
                 SolidDef::Prism {draft:Some(_),..} => for sides in ExtrudedSurface::drafted(sk,id)? {
                     loops.push(sides.into_iter().map(|side| {
                         patches.push(ToolSurface::Extruded(side.placed(pose)));
                         Some(patches.len()-1)
                     }).collect());
                 },
+                // a prism's sides, one an edge of its profile, then its caps, square to the
+                // extrusion, which admission asks only where one reaches the blank (#684 F)
                 SolidDef::Prism {face,..} => {
                     for (edges,_) in sk.faces[*face as usize].boundaries() {
                         let mut order = Vec::with_capacity(edges.len());
@@ -315,6 +364,7 @@ impl SweepContacts {
                         }
                         loops.push(order);
                     }
+                    patches.extend(CapSurface::read(sk,id)?.map(|c| ToolSurface::Cap(c.placed(pose))));
                 }
                 SolidDef::Placed {source,motion,at} => pending.push((*source as usize,
                     Family::read(sk,*motion as usize)?.at(at.value)?.then(pose))),

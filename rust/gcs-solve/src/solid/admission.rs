@@ -14,20 +14,20 @@ use super::{SpatialField,SweepContacts,TimedContact,cad};
 use crate::{envelope::{Motion,SurfacePoint},model::{EntKind,Sketch,SolidDef}};
 use std::{collections::BTreeMap,f64::consts::{PI,TAU},fmt};
 
-use crate::space::{sub,dot,cross,norm};
+use crate::space::{add,sub,dot,cross,norm,scale};
 
 type V = [f64;3];
 
 /// The rows of the class, in the order they are asked.
 #[derive(Clone,Copy,Debug,PartialEq,Eq,PartialOrd,Ord)]
-pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing, Regular, Once, Edgewise, Lead,
+pub enum Condition { Tool, Corner, Motion, Stationary, Reach, Clearance, Single, Fold, Crossing, Sections, Regular, Once, Edgewise, Lead,
     Plane, Prisms, Period, Envelope, Wall, Members, Slabs, Closes, Kept, Curvature, Return }
 
 impl Condition {
     pub fn code(self) -> &'static str {
         match self { Condition::Tool => "T1", Condition::Corner => "T2", Condition::Motion => "M1",
             Condition::Stationary => "M2", Condition::Reach => "E0", Condition::Clearance => "E1", Condition::Single => "E2",
-            Condition::Fold => "E3", Condition::Crossing => "E4", Condition::Regular => "S1", Condition::Once => "S2",
+            Condition::Fold => "E3", Condition::Crossing => "E4", Condition::Sections => "T3", Condition::Regular => "S1", Condition::Once => "S2",
             Condition::Edgewise => "S3", Condition::Lead => "S4", Condition::Plane => "P1", Condition::Prisms => "P2",
             Condition::Period => "P3", Condition::Envelope => "P4", Condition::Wall => "P5", Condition::Members => "Q1",
             Condition::Slabs => "Q2", Condition::Closes => "Q3", Condition::Kept => "Q4", Condition::Curvature => "B1",
@@ -36,8 +36,9 @@ impl Condition {
     /// What the row asks, in the words the scope document uses.
     pub fn rule(self) -> &'static str {
         match self {
-            Condition::Tool => "the tool is a full revolution, or a prism (drafted or not) with its caps clear of the blank, of \
-                lines and arcs, or an intersection of such, or a union of tools each in the class",
+            Condition::Tool => "the tool is a full revolution, or a prism (drafted or not), of lines and arcs, or an intersection \
+                of such, its caps clear of the blank unless it is an undrafted prism standing alone, or a union of tools each in \
+                the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -46,6 +47,8 @@ impl Condition {
             Condition::Single => "each tool point touches the blank at most once in the roll",
             Condition::Fold => "the generated surface does not fold",
             Condition::Crossing => "the generated surface does not cross itself",
+            Condition::Sections => "a prism whose cap reaches the blank is sectioned through its extrusion in a band clear of its \
+                profile's corners and its ends",
             Condition::Regular => "the screw's characteristic is a regular curve through the blank",
             Condition::Once => "the characteristic reaches the blank in one stretch, one point a ring",
             Condition::Edgewise => "the characteristic never runs along the screw's path",
@@ -197,7 +200,14 @@ pub struct SweepEvidence {
 /// pocket's inner envelope.
 #[derive(Clone,Debug)]
 pub enum Class { Generating,ConstantTwist(Box<super::constant_twist::Characteristic>),Planar(Box<super::planar_class::Found>),
-    Subtraction(Box<super::planar_subtraction::Found>) }
+    Subtraction(Box<super::planar_subtraction::Found>),Capped(Box<Capped>) }
+
+/// A generating sweep of a prism whose cap reaches the blank (#684 F, row T3), sectioned across:
+/// the direction in the profile's plane a station is a distance along (the tool's frame, unit),
+/// the stations the sampled contacts in the blank reach, and how far that band keeps from the
+/// profile's corners and its ends (millimetres from the profile's origin).
+#[derive(Clone,Debug)]
+pub struct Capped { pub across: V,pub band: [f64;2],pub clearance: f64 }
 
 /// A body admitted to the class, and the only way to have one: `admit_body` makes it, so a
 /// construction that takes one cannot be reached without the gate.
@@ -500,11 +510,16 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     }
     order.retain(|s| asked[s] != Asked::Planar);
     // a placement's check by the class its motion is in
-    let check = |contacts: &SweepContacts,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().twist() {
+    let check = |contacts: &SweepContacts,lone: Option<&Lone>,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().twist() {
         Some(screw) => check_screw(contacts,inside,bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse())),
             options),
-        None => check(contacts,inside,options),
+        None => check(contacts,inside,options,lone),
     };
+    // a tool that is one prism, whose cap the class may section across (#684 F)
+    let lones: Vec<Option<Lone>> = order.iter().map(|&swept| match &sk.solids[swept].def {
+        SolidDef::Swept {source,..} => Lone::read(sk,*source as usize),
+        _ => None,
+    }).collect();
     let inside_at = |pose: Motion| move |p: V| field.below(pose.point(p),-options.margin);
     // Each sweep's tool read, then its first placement checked.
     let tools: Vec<Result<SweepContacts,Error>> = order.iter().map(|&swept| {
@@ -521,7 +536,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     let checks = crate::par::indices(order.len(),|k| -> Option<Result<(SweepEvidence,Reads),Error>> {
         let contacts = tools[k].as_ref().ok()?;
         let (swept,pose) = (order[k],by_sweep[&order[k]][0]);
-        Some(check(contacts,pose,&inside_at(pose)).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
+        Some(check(contacts,lones[k].as_ref(),pose,&inside_at(pose)).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p)))))
     });
     let first: Vec<Result<(SweepContacts,SweepEvidence,Reads),Error>> = tools.into_iter().zip(checks).map(|(tool,check)| {
         let contacts = tool?;
@@ -579,7 +594,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
                 let inside = inside_at(*pose);
                 let same = checked.iter().skip(1).find(|(_,reads)| reads.points.iter().zip(&reads.inside).all(|(p,&i)| inside(*p) == i));
                 if let Some((i,_)) = same { placements.push(Placement {pose:*pose,equivalent_to:Some(*i)}); continue; }
-                let (_,reads) = check(&contacts,*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
+                let (_,reads) = check(&contacts,lones[k].as_ref(),*pose,&inside).map_err(|(c,m,w)| refuse(swept,c,m,w.map(|p| pose.point(p))))?;
                 checked.push((j,reads));
                 placements.push(Placement {pose:*pose,equivalent_to:None});
             }
@@ -604,15 +619,21 @@ pub fn blank_box(sk: &Sketch,root: usize) -> Option<(V,V)> {
     Some((lo.map(|x| x/mm),hi.map(|x| x/mm)))
 }
 
+/// How many normals of a cap's rim's fan E4 reads at each of its points, ends excluded.
+const FAN_READS: usize = 16;
+
 /// One in-blank contact of the fine pass.
 #[derive(Clone,Copy)]
 struct Hit { source: V,position: V,normal: V }
 
 use super::constant_twist::Failure;
 
-/// T2 and E1 for one placement, asked of every class before anything that might be reported in
-/// their place: the blank's reads, and the poses the roll is sampled at.
-fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) -> Result<(Reads,Vec<Motion>),Failure> {
+/// T2, E1 and T1 for a prism's caps for one placement, asked of every class before anything that
+/// might be reported in their place: the blank's reads, the poses the roll is sampled at, and
+/// whether each cap of `lone` (the tool, where it is a prism standing alone; its `start`, then its
+/// `end`) reaches the blank.
+fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lone: Option<&Lone>)
+    -> Result<(Reads,Vec<Motion>,[bool;2]),Failure> {
     let tool = c.source_material();
     let on_tool = |p: V| tool.value(p).abs() < 1e-6;
     let domain = c.domain();
@@ -641,39 +662,113 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) -
             }
         }
     }
-    // E1, over the whole tool, before anything that might be reported in its place.
-    let clear = crate::par::map(c.patches(),|surface| -> Result<Reads,Failure> {
-        let mut own = Reads::new();
-        for i in 0..=options.coarse_rows { for j in 0..options.coarse_columns {
-            let Ok(s) = surface.at(i as f64/options.coarse_rows as f64,coarse_v(surface,j,options.coarse_columns)) else { continue };
-            if !on_tool(s.position) { continue; }
-            for limit in &limits {
-                let p = limit.point(s.position);
-                if own.read(inside,p) { return Err((Condition::Clearance,
-                    "the tool at a limit of its roll lies in the blank".into(),Some(p))); }
-            }
-        }}
-        Ok(own)
-    });
-    for own in clear { reads.extend(own?); }
-    // T1 for a prism: the class cuts with its sides, so neither cap may pass through the blank
-    // (under a planar sweep a cap, square to the turn, is in contact at every time or none)
-    for surface in c.patches().iter().filter(|s| !s.periodic()) {
-        for v in [0.,1.] { for i in 0..=options.coarse_rows {
-            let Ok(s) = surface.at(i as f64/options.coarse_rows as f64,v) else { continue };
-            if let Some(p) = poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) {
-                return Err((Condition::Tool,format!("a cap of the prism `{}` bounds passes through the blank, and the class cuts \
-                    with a prism's sides only: make the prism longer than the blank is thick",surface.name()),Some(p)));
-            }
-        } }
+    // E1, over the whole tool, before anything that might be reported in its place: its caps
+    // too, where one reaches the blank (below)
+    let clear = |asked: &dyn Fn(&super::ToolSurface) -> bool| -> Result<Reads,Failure> {
+        let mut reads = Reads::new();
+        let patches: Vec<&super::ToolSurface> = c.patches().iter().filter(|s| asked(s)).collect();
+        for own in crate::par::map(&patches,|surface| -> Result<Reads,Failure> {
+            let mut own = Reads::new();
+            for i in 0..=options.coarse_rows { for j in 0..options.coarse_columns {
+                let Ok(s) = surface.at(i as f64/options.coarse_rows as f64,coarse_v(surface,j,options.coarse_columns)) else { continue };
+                if !on_tool(s.position) { continue; }
+                for limit in &limits {
+                    let p = limit.point(s.position);
+                    if own.read(inside,p) { return Err((Condition::Clearance,
+                        "the tool at a limit of its roll lies in the blank".into(),Some(p))); }
+                }
+            }}
+            Ok(own)
+        }) { reads.extend(own?); }
+        Ok(reads)
+    };
+    reads.extend(clear(&|s| s.cap().is_none())?);
+    // T1 for a prism: a cap passing through the blank is cut only by a prism standing alone as the
+    // tool, its profile one loop, sectioned across (T3, #684 F); otherwise the class cuts with a
+    // prism's sides only (under a planar sweep a cap, square to the turn, is in contact at every
+    // time or none, and M2 refuses it). Each cap is asked by its rim, its sides' ends at `v`.
+    let mut capped = [false;2];
+    for (end,v) in [(0,0.),(1,1.)] {
+        let rim = c.patches().iter().filter(|s| !s.periodic() && s.cap().is_none()).find_map(|surface| (0..=options.coarse_rows)
+            .find_map(|i| { let s = surface.at(i as f64/options.coarse_rows as f64,v).ok()?;
+                poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) }).map(|p| (surface.name(),p)));
+        let Some((name,p)) = rim else { continue };
+        if lone.is_none() {
+            return Err((Condition::Tool,format!("a cap of the prism `{name}` bounds passes through the blank, and the class cuts \
+                with a cap only of a prism standing alone as the tool, its profile one loop: make the prism longer than the blank \
+                is thick"),Some(p)));
+        }
+        capped[end] = true;
     }
-    Ok((reads,poses))
+    reads.extend(clear(&|s| s.cap().is_some_and(|end| capped[end]))?);
+    Ok((reads,poses,capped))
 }
 
-/// M2, E1–E4 and T2 for one placement, `inside` being the blank read in the sweep's frame. The
-/// tool's faces are sampled side by side, each on its own core, and their findings taken in the
-/// faces' order: the first failure in that order is the one reported, as one pass over them would.
-fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) -> Result<(SweepEvidence,Reads),Failure> {
+/// A tool that is one prism standing alone, its profile one loop: what the class sections across
+/// where its cap reaches the blank (T3, #684 F) — its cutter (millimetres) and the model's
+/// millimetres a unit.
+struct Lone { cutter: crate::brep::sweep::cutter::Cutter,scale: f64 }
+
+impl Lone {
+    /// Tool `source` as a lone prism, or none where it is not one.
+    fn read(sk: &Sketch,source: usize) -> Option<Lone> {
+        let SolidDef::Prism {face,draft:None,..} = &sk.solids[source].def else { return None };
+        if sk.faces.get(*face as usize)?.boundaries().count() != 1 { return None }
+        let cutter = crate::brep::sweep::cutter::Cutter::read(&cad::recipe(sk,source).ok()?).ok()?;
+        cutter.prism_profile()?;
+        Some(Lone {cutter,scale:cad::millimetres(sk)})
+    }
+
+    /// T3: the direction across the profile whose sections the contacts in the blank (`hits`, at
+    /// their tool points) keep farthest from the profile's corners and its ends — a band that
+    /// meets none, with room for the sheet's margins: a quarter of its width and two of the
+    /// reach's 96 stations either side. Directions are tried every 5 degrees, and the best taken; the
+    /// sampled hits stand for the contacts, so the row is sampled too.
+    fn sections(&self,hits: &[(Hit,usize,usize)]) -> Result<Capped,Failure> {
+        let (cutter,mm) = (&self.cutter,self.scale);
+        let (e1,e2) = crate::space::across(cutter.axis);
+        // each direction's band, how far it keeps from what it comes nearest (an end, or the corner
+        // at a point), which of the band's hits comes nearest it, and what the margins need
+        let mut best: Option<(Capped,Option<V>,usize,f64)> = None;
+        for k in 0..36 {
+            let (sn,cs) = (PI*k as f64/36.).dsin_cos();
+            let Some(spread) = cutter.spread(add(scale(e1,cs),scale(e2,sn))) else { continue };
+            let at: Vec<f64> = hits.iter().map(|(h,..)| dot(spread.across,sub(scale(h.source,mm),cutter.origin))).collect();
+            let (lo,hi) = (0..at.len()).fold((0,0),|(l,h),i| (if at[i] < at[l] { i } else { l },if at[i] > at[h] { i } else { h }));
+            let band = [at[lo],at[hi]];
+            let need = 0.25*(band[1]-band[0])+2.*(spread.range[1]-spread.range[0])/96.;
+            let mut near = (band[0]-spread.range[0],None,lo);
+            if spread.range[1]-band[1] < near.0 { near = (spread.range[1]-band[1],None,hi); }
+            for &(c,p) in &spread.corners {
+                let (gap,end) = if c < band[0] { (band[0]-c,lo) } else if c > band[1] { (c-band[1],hi) } else { (0.,lo) };
+                if gap < near.0 { near = (gap,Some(p),end); }
+            }
+            if best.as_ref().is_none_or(|b| near.0-need > b.0.clearance-b.3) {
+                best = Some((Capped {across:spread.across,band,clearance:near.0},near.1,near.2,need));
+            }
+        }
+        let (capped,corner,at,need) = best.expect("a lone prism's profile is one loop of lines and arcs, sectioned every way");
+        if capped.clearance < need {
+            let what = match corner {
+                Some(p) => format!("a corner of the profile, where a section's side leaps from one face's normal to the next's, at \
+                    ({:.4}, {:.4}, {:.4}) on the tool",p[0]/mm,p[1]/mm,p[2]/mm),
+                None => "the profile's end, where a section closes to a ruling of a side".into(),
+            };
+            return Err((Condition::Sections,format!("the prism's cap reaches the blank, and no direction across its profile \
+                sections it clear of its corners and its ends: across the best, the contacts in the blank reach {:.4} to {:.4} mm, \
+                {:.4} mm from {what}, against the {need:.4} mm the sheet's margins need",capped.band[0],capped.band[1],
+                capped.clearance),Some(hits[at].0.position)))
+        }
+        Ok(capped)
+    }
+}
+
+/// M2, E1–E4 and T2 for one placement, `inside` being the blank read in the sweep's frame, and T3
+/// where a cap of `lone` reaches the blank. The tool's faces are sampled side by side, each on its
+/// own core, and their findings taken in the faces' order: the first failure in that order is the
+/// one reported, as one pass over them would.
+fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lone: Option<&Lone>)
+    -> Result<(SweepEvidence,Reads),Failure> {
     let tool = c.source_material();
     let on_tool = |p: V| tool.value(p).abs() < 1e-6;
     let domain = c.domain();
@@ -681,7 +776,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
     let pose = |t: f64| c.motion().at(t).map_err(|m| (Condition::Motion,m,None));
     let times = [pose(domain[0])?,pose(middle)?,pose(domain[1])?];
     let roots = |patch: usize,u: f64,v: f64| c.at_source_over(patch,u,v,domain,options.root_tolerance);
-    let (mut reads,poses) = ends(c,inside,options)?;
+    let (mut reads,poses,capped) = ends(c,inside,options,lone)?;
     // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
     // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
     // along the profile; a pole whose contact condition is zero at every time and whose path
@@ -724,6 +819,10 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
         let mut least = f64::INFINITY;
         let mut signs: BTreeMap<(usize,usize),([usize;2],[Option<V>;2])> = BTreeMap::new();
         let surface = &c.patches()[patch];
+        // a cap is asked only where it reaches the blank (T1)
+        if surface.cap().is_some_and(|end| !capped[end]) {
+            return Ok(Fine {reads:own,samples,near_double_roots,hits,gaps,least,signs})
+        }
         let (cu,cv) = (options.coarse_rows,options.coarse_columns);
         let mut reach = vec![false;cv];
         // the coarse rows on every core, each its reads and which angles reach
@@ -836,13 +935,16 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
                         }
                     }
                 }
+                // (one that holds the same nonzero value is in contact at no time, and bounds nothing:
+                // a prism's side square to a rack's line of centres, whose cap cuts, #684 F)
                 if let Some(g) = &rate {
                     let scale = 1.+norm(s.position);
                     let at = [domain[0],middle,domain[1]].map(|t| g.at(t).unwrap_or(f64::NAN));
-                    if at.iter().all(|x| (x-at[1]).abs() <= options.root_tolerance*scale) {
+                    if at.iter().all(|x| (x-at[1]).abs() <= options.root_tolerance*scale) && at[1].abs() <= options.root_tolerance*scale {
                         if let Some(p) = times.iter().map(|m| m.point(s.position)).find(|&p| read(p)) {
                             return Err((Condition::Stationary,
-                                "a tool point's contact condition does not change over the roll".into(),Some(p)));
+                                "a tool point's contact condition does not change over the roll: it is in contact at every time".into(),
+                                Some(p)));
                         }
                     }
                 }
@@ -905,6 +1007,56 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
     if hits.is_empty() {
         return Err((Condition::Reach,"no contact of the tool within the roll lies in the blank".into(),None));
     }
+    // a cap's rim, where a side meets it, carries every normal between the two (#684 F). Where a
+    // face's contact reaches the rim in the blank, the generated surface carries on over the rim's
+    // fan: E3 asks that it carry on, not turn back — a face's image stepped toward the rim and the
+    // fan's stepped off it point the same way (a flat end swung so its corners dig past it fails
+    // here, its envelope under the corners' paths) — and the fans' contacts are asked E4 with the
+    // faces' (a rim point's own fan is one tool point, never distant from itself)
+    if capped.contains(&true) {
+        let rims = crate::par::indices(c.patches().len(),|patch| -> Result<(Vec<(Hit,usize,usize)>,Reads),Failure> {
+            let surface = &c.patches()[patch];
+            let (mut found,mut own) = (Vec::new(),Reads::new());
+            if surface.periodic() || surface.cap().is_some() { return Ok((found,own)) }
+            // a reaching cap's rim, its sides' end at `v`
+            for v in [0.,1.].into_iter().filter(|&v| capped[v as usize]) { for i in 0..=options.rows {
+                let Ok(s) = surface.at(i as f64/options.rows as f64,v) else { continue };
+                if !on_tool(s.position) { continue }
+                let side = super::constant_twist::outward(tool,s.position,crate::space::unit(cross(s.du,s.dv)));
+                let along = scale(crate::space::unit(s.dv),if v > 0.5 { 1. } else { -1. });
+                let p = s.position;
+                let h = 1e-5*(1.+norm(p));
+                let near = |q: V,n: V,t: f64| c.at_point_normal_over(q,n,domain,options.root_tolerance).ok()?.into_iter()
+                    .min_by(|a,b| (a.root.time-t).abs().total_cmp(&(b.root.time-t).abs())).map(|x| x.contact.position);
+                // each face meeting the rim, its normal, the way into it, and the fan's other end
+                for (face,into,other,which) in [(along,side.map(|x| -x),side,"the cap's"),(side,along.map(|x| -x),along,"the side's")] {
+                    let Ok(list) = c.at_point_normal_over(p,face,domain,options.root_tolerance) else { continue };
+                    for t in list.iter().filter(|t| own.read(inside,t.contact.position)) {
+                        let x0 = t.contact.position;
+                        let stepped: V = std::array::from_fn(|k| p[k]+h*into[k]);
+                        let turned: V = std::array::from_fn(|k| face[k]+1e-4*other[k]);
+                        let (Some(xf),Some(xn)) = (near(stepped,face,t.root.time),near(p,turned,t.root.time)) else { continue };
+                        let (onto,off) = (sub(x0,xf),sub(xn,x0));
+                        if dot(onto,off) < -1e-3*norm(onto)*norm(off) {
+                            return Err((Condition::Fold,format!("the generated surface turns back at the rim where `{}` meets its \
+                                prism's cap: the rim's fan sweeps back over {which} envelope",surface.name()),Some(x0)))
+                        }
+                    }
+                }
+                // the fan's normals as a section's walk reads them (`cutter::Cutter::sample`)
+                for f in 1..FAN_READS {
+                    let f = f as f64/FAN_READS as f64;
+                    let n = crate::space::unit(add(scale(side,1.-f),scale(along,f)));
+                    let Ok(list) = c.at_point_normal_over(p,n,domain,options.root_tolerance) else { continue };
+                    for t in list.iter().filter(|t| own.read(inside,t.contact.position)) {
+                        found.push((Hit {source:p,position:t.contact.position,normal:t.contact.normal},patch,usize::MAX));
+                    }
+                }
+            } }
+            Ok((found,own))
+        });
+        for found in rims { let (found,own) = found?; hits.extend(found); reads.extend(own); }
+    }
     // E4: contacts closer than the sample spacing whose tool points lie far apart.
     gaps.sort_by(f64::total_cmp);
     let spacing = gaps.get(gaps.len()*95/100).copied().unwrap_or(0.);
@@ -926,9 +1078,14 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
             }}}
         }
     }
+    // T3: a cap in the blank, sectioned across its profile clear of its corners and its ends
+    let class = match lone.filter(|_| capped.contains(&true)) {
+        Some(lone) => Class::Capped(Box::new(lone.sections(&hits)?)),
+        None => Class::Generating,
+    };
     Ok((SweepEvidence {sweep:0,name:String::new(),placements:Vec::new(),samples,contacts:hits.len(),spacing,
         least_area_factor:least,near_double_roots,near_tangent_pairs,
-        basis:Basis::Sampled {rows:options.rows,columns:options.columns},equivalence:Equivalence::Sampled,class:Class::Generating},reads))
+        basis:Basis::Sampled {rows:options.rows,columns:options.columns},equivalence:Equivalence::Sampled,class},reads))
 }
 
 /// T2 and E1, then S1–S4 (`constant_twist`), for one placement of a sweep under a screw, a turn or
@@ -937,7 +1094,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options) 
 /// on the boundary at every time or at none, and the boundary is the characteristic carried along.
 fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Options)
     -> Result<(SweepEvidence,Reads),Failure> {
-    let (reads,_) = ends(c,inside,options)?;
+    let (reads,..) = ends(c,inside,options,None)?;
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side
     let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };

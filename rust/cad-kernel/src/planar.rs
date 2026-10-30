@@ -274,7 +274,7 @@ fn meets_steps(s: &Step,q: &Step,tol: f64) -> (Vec<f64>,Vec<f64>) {
 
 /// Fractions along `s` and `q` where they meet: crossings and touches, and the ends of a stretch
 /// they share.
-fn meets(s: &Seg,q: &Seg,tol: f64) -> (Vec<f64>,Vec<f64>) {
+pub fn meets(s: &Seg,q: &Seg,tol: f64) -> (Vec<f64>,Vec<f64>) {
     let (mut on_s,mut on_q) = (Vec::new(),Vec::new());
     let within = |t: f64,seg: &Seg| { let l = seg.length().max(1e-300); t > -tol/l && t < 1.+tol/l };
     let keep = |p: P,on_s: &mut Vec<f64>,on_q: &mut Vec<f64>| {

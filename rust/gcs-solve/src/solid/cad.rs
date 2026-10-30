@@ -134,9 +134,21 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
     let mut pending = vec![(root,false)];
     let mut seen = BTreeSet::new();
     let mut nodes = Vec::new();
+    // each shell's cavity built (`shelled`), asked once a solid: its node stands for the solids it
+    // is made of, and reads those its construction does (the cuts, or the body's other terms)
+    let mut shells: BTreeMap<usize,Option<std::rc::Rc<super::shelled::Shelled>>> = BTreeMap::new();
     while let Some((i,ready)) = pending.pop() {
         if seen.contains(&i) { continue; }
+        let shell = match shells.get(&i) {
+            Some(s) => s.clone(),
+            None => {
+                let s = super::shelled::built(sk,i).transpose().map_err(|why| format!("`{}`: {why}",sk.solid_name(i)))?;
+                shells.insert(i,s.clone());
+                s
+            }
+        };
         let dependencies = match &sk.solids[i].def {
+            _ if let Some(s) = &shell => s.reads(),
             SolidDef::Body {..} if !ready => walk.sets(i)?,
             SolidDef::Body {..} => Vec::new(),
             // a tool through a body reads its material, and a region lowered to nothing is none of
@@ -153,7 +165,7 @@ fn recipe_with(sk: &Sketch,root: usize,static_only: bool,about: Option<[f64;3]>)
             pending.extend(dependencies.iter().rev().map(|&i| (i as usize,false)));
             continue;
         }
-        let mut node = walk.node(i,&dependencies,&w)?;
+        let mut node = match &shell { Some(s) => s.node(&w)?,None => walk.node(i,&dependencies,&w)? };
         node.set("id",i.into());
         node.set("name",sk.solids[i].name.clone().into());
         if sk.solids[i].copy.is_some() { node.set("step",sk.solids[i].step().into()); }
@@ -376,7 +388,7 @@ impl<'a> Walk<'a> {
 
 /// A body's terms but the late ones — its stock, what is on it, what cuts it, what bounds it — as
 /// the recipe's `body` reads them: the body node's, and the stratum a rolled round is rolled against.
-fn body_terms(stock: u32,on: &[u32],cut: &[u32],bound: &[u32]) -> Json {
+pub(super) fn body_terms(stock: u32,on: &[u32],cut: &[u32],bound: &[u32]) -> Json {
     object([("stock",stock.into()),("on",ids(on)),("cut",ids(cut)),("bound",ids(bound))])
 }
 

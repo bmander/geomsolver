@@ -148,6 +148,16 @@ fn the_rack_leaves_one_tooth_space() {
     assert!((removed-want).abs() < 0.03,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 
+/// `bar_end.sv`: the generating class with a prism's cap in the blank (#684 F), the bar sectioned
+/// across the disc's height; the space each height's slice of the bar rolled on the circle of 16,
+/// by `rack_cut`'s arithmetic (`prism_caps::bar_end_space`), through the disc's 6 mm.
+#[test]
+fn the_bars_end_leaves_its_space() {
+    let e = example("bar_end.sv");
+    assert!(matches!(class(&e,"part"),Class::Capped(_)),"the generating class, its cap sectioned across");
+    near(exported(&e,"part"),PI*22.*22.*6.-crate::prism_caps::bar_end_space(),1e-6);
+}
+
 /// `helical.sv`: the generating class with a drafted prism (#684 G), the rack's tooth leaned 15°
 /// across the blank and drafted 2°, so the motion keeps no plane of it and no planar class asks
 /// it. Its space is each section square to the blank's axis cut by the tooth's section there, a

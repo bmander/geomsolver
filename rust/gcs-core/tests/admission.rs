@@ -90,12 +90,16 @@ fn a_ball_under_any_motion_is_its_tube() {
     }
 }
 
-/// A prism with no pocket is not asked the planar class's rows (#65): its cap is refused by T1.
+/// A prism with no pocket is not asked the planar class's rows (#65). Its cap passes through the
+/// post, which a prism standing alone may now do (#684 F, `tests/prism_caps.rs`), but its top side
+/// lies square to the roll's two axes, so every point of it is in contact at every time: refused
+/// at M2, at a point of that side (z = 0). Before #684 F the cap was refused first, at T1.
 #[test]
 fn a_prism_whose_cap_passes_through_the_blank_is_refused() {
     let r = refused(admit(&document(tools::BOX,&motions::roll(0.25),ROLLED,-60.,60.)));
-    assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("a cap of the prism"),"{}",r.message);
+    assert_eq!(r.condition,Condition::Stationary);
+    assert!(r.message.contains("in contact at every time"),"{}",r.message);
+    assert!(r.witness.is_some_and(|p| p[2].abs() < 1e-9),"a point of the top side, at z = 0: {:?}",r.witness);
 }
 
 /// A slide is asked the constant-twist class's rows (#684), as a screw is: this one leaves its

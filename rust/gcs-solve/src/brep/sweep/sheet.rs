@@ -385,8 +385,25 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
 /// (The roll's clearance of the blank at both limits is admission's row E1, asked before this.)
 pub fn swept_sheet(cut: &SweptCut,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,say: &Say)
     -> Result<Fitted,ExportRefusal> {
-    let (scale,name) = (cut.scale,&cut.name);
     let cutter = Cutter::read(&cut.recipe).at(Stage::Reach)?;
+    traced_sheet(cut,&cutter,inside,near,tolerance,say)
+}
+
+/// The sheet of a prism whose cap reaches the blank (#684 F): `swept_sheet`'s, its stations the
+/// prism's sections through its extrusion at distances along the direction admission's row T3
+/// chose, each its chord carried along the extrusion, so the walk runs from a side over a cap's
+/// rim and across the cap.
+pub fn capped_sheet(cut: &SweptCut,capped: &crate::solid::admission::Capped,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
+    tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,ExportRefusal> {
+    let middle = 0.5*(capped.band[0]+capped.band[1]);
+    let cutter = Cutter::read(&cut.recipe).and_then(|c| c.across(capped.across,middle)).at(Stage::Reach)?;
+    traced_sheet(cut,&cutter,inside,near,tolerance,say)
+}
+
+/// `swept_sheet` of the cutter's stations.
+fn traced_sheet(cut: &SweptCut,cutter: &Cutter,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),tolerance: Option<Tolerance>,say: &Say)
+    -> Result<Fitted,ExportRefusal> {
+    let (scale,name) = (cut.scale,&cut.name);
     let sweep = cut.contacts.as_ref().map_err(Clone::clone).at(Stage::Reach)?;
     let tracer = Tracer {sweep,scale,inside,debug:false};
     let started = crate::clock::Instant::now();

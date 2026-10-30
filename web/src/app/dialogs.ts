@@ -3,7 +3,7 @@
 import * as C from '../core/constraints.js';
 import { exampleCases } from './example-catalog.js';
 import * as remote from './remote.js';
-import { githubProject, parseGithub } from './github.js';
+import { githubPath, githubProject, parseGithub } from './github.js';
 import { loaded, loading, painted } from './loading.js';
 import { held, openProject, openSide } from './program.js';
 import * as io from '../core/io.js';
@@ -71,6 +71,7 @@ export async function openExample(key: string, navigation: 'push' | 'replace' | 
     const updateUrl = (selected: string | undefined, method: 'push' | 'replace') => {
       const url = new URL(location.href);
       url.searchParams.set('example', bundle.key);
+      url.searchParams.delete('github');
       if (selected) url.searchParams.set('file', selected);
       else url.searchParams.delete('file');
       if (url.href !== location.href) history[method === 'push' ? 'pushState' : 'replaceState'](null, '', url);
@@ -99,8 +100,17 @@ export async function openGithub(): Promise<void> {
     token.type = 'password'; token.autocomplete = 'off';
     token.placeholder = 'optional, for a private repository';
   })) return;
-  const address = parseGithub(githubAddress);
-  if (!address) { toast('That is not a GitHub repository address'); return; }
+  await openGithubAddress(githubAddress, 'push');
+}
+
+/** Open the GitHub project at an address — the dialog's, or the page's own `?github=` — and put
+ *  it on the page's address, so that address is a link to the project (`navigation` says how:
+ *  `'none'` for one read off it already, which is only tidied in place).  The address keeps
+ *  nothing of the token. */
+export async function openGithubAddress(text: string,
+  navigation: 'push' | 'replace' | 'none'): Promise<void> {
+  const address = parseGithub(text);
+  if (!address) { loaded(); toast('That is not a GitHub repository address'); return; }
   const request = ++openingRequest;
   try {
     loading(`fetching ${address.owner}/${address.repo}…`);
@@ -109,8 +119,17 @@ export async function openGithub(): Promise<void> {
     loading(`reading ${bundle.label}…`);
     await painted();
     if (!await held(() => openProject(bundle, { directory: bundle.directory }))) return;
-    // what was asked for is the repository's files, so the panel turns to them
-    clearExampleAddress();
+    // the address names the project now, an example no longer; what was asked for is the
+    // repository's files, so the panel turns to them
+    const url = new URL(location.href);
+    url.searchParams.delete('example');
+    url.searchParams.delete('file');
+    url.searchParams.set('github', githubPath(address));
+    // a slash is as good in a query as in a path, and the address reads as the repository's
+    url.search = url.search.replace(/%2F/gi, '/');
+    if (url.href !== location.href) {
+      history[navigation === 'push' ? 'pushState' : 'replaceState'](null, '', url);
+    }
     openSide('project');
     toast(`opened ${bundle.label}`);
   } catch (e) {
@@ -120,21 +139,20 @@ export async function openGithub(): Promise<void> {
   }
 }
 
-/** The address names an example only while that example is the document: another one (File ▸
- *  New, Open, a drawing folder, a GitHub project) takes `example` and `file` off it, in place —
- *  a step back to the bare address would open a blank sheet — and an example still on its way
- *  is dropped. */
+/** The address names an example or a GitHub project only while it is the document: another one
+ *  (File ▸ New, Open, a drawing folder, another project) takes `example`, `file` and `github` off
+ *  it, in place — a step back to the bare address would open a blank sheet — and an example
+ *  still on its way is dropped. */
 export function leaveExample(): void {
   ++openingRequest;
   loaded();
   clearExampleAddress();
 }
-/** The address's example taken off, leaving the modal as it is: a GitHub project's own meshing
+/** The address's example or project taken off, leaving the modal as it is: a project's meshing
  *  may be what it is showing. */
 function clearExampleAddress(): void {
   const url = new URL(location.href);
-  url.searchParams.delete('example');
-  url.searchParams.delete('file');
+  for (const key of ['example', 'file', 'github']) url.searchParams.delete(key);
   if (url.href !== location.href) history.replaceState(null, '', url);
 }
 

@@ -29,15 +29,26 @@ pub fn stratum_is_whole(sk: &Sketch, body: usize) -> bool {
     readers_of(sk, body).iter().all(|&r| r != body && !crate::solid::document::reaches(sk, body as u32, r as u32))
 }
 
-/// The region solids whose terms read the faces of `body`.
+/// The solids that read the faces of `body`: the regions whose terms read them, and the bodies
+/// standing on one (a shell's cavity, the body within its faces less each wall cut from it).
 pub fn readers_of(sk: &Sketch, body: usize) -> BTreeSet<usize> {
     (0..sk.solids.len()).filter(|&i| reads_faces_of(sk, i, body)).collect()
 }
 
-/// Whether solid `i` is a region whose terms read the faces of `body` (`readers_of`'s test).
+/// Whether solid `i` reads the faces of `body` (`readers_of`'s test): a region whose terms read
+/// them, or a body other than `body` whose stock does, so every term it has acts on what they
+/// read.  A body's layer stands on the layer beneath, whose faces are its own, so reads nothing.
 fn reads_faces_of(sk: &Sketch, i: usize, body: usize) -> bool {
-    matches!(&sk.solids[i].def,
-        SolidDef::Region { terms, .. } if terms.iter().any(|t| reads_body(&t.shape, body)))
+    let mut at = i;
+    // a stock is made before what stands on it, so the walk ends; the bound is a guard alone
+    for _ in 0..=sk.solids.len() {
+        match &sk.solids[at].def {
+            SolidDef::Region { terms, .. } => return terms.iter().any(|t| reads_body(&t.shape, body)),
+            SolidDef::Body { stock, .. } if at != body && *stock as usize != body => at = *stock as usize,
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// Whether a term's shape reads the faces of `body`: `body` among the solids of
@@ -82,7 +93,11 @@ pub fn stratum(sk: &Sketch, body: usize, on: impl IntoIterator<Item = u32>, cut:
 /// The drawing with `readers` taken out of every body's terms: the stratum they read.
 fn without(sk: &Sketch, readers: &BTreeSet<usize>) -> Result<Sketch, String> {
     let mut out = sk.clone();
-    for s in &mut out.solids {
+    for (i, s) in out.solids.iter_mut().enumerate() {
+        // a reader is none of the stratum: what it stands on is its own
+        if readers.contains(&i) {
+            continue;
+        }
         if let SolidDef::Body { stock, on, through, bound } = &mut s.def {
             if readers.contains(&(*stock as usize)) {
                 return Err(format!("`{}` stands on a solid that reads its own faces", s.name));

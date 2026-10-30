@@ -90,8 +90,8 @@ pub fn prepare(sk: &Sketch,body: usize,recipe: &StaticRecipe,admission: &Admissi
 
 /// Sweep `k`'s sheet fitted against the blank: a prism's under a motion keeping its profile's
 /// plane, its profile's planar envelope extruded (`extruded::planar_sheet`); traced, under any other
-/// relative rotation (`sheet::swept_sheet`); or its characteristic carried, under a screw
-/// (`helical::helical_sheet`).
+/// relative rotation (`sheet::swept_sheet`), at sections across a prism whose cap reaches the blank
+/// (`sheet::capped_sheet`); or its characteristic carried, under a screw (`helical::helical_sheet`).
 pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say) -> Result<sheet::Fitted,ExportRefusal> {
     let (inside,near) = (|p: &[[f64;3]]| prepared.inside(p),|p: [f64;3]| prepared.field.value(p));
     match &prepared.classes[k] {
@@ -99,6 +99,8 @@ pub fn sheet(prepared: &Prepared,k: usize,tolerance: Option<Tolerance>,say: &Say
             Some(fitted) => fitted,
             None => sheet::swept_sheet(&prepared.cuts[k],&inside,&near,tolerance,say),
         },
+        // a prism's cap in the blank: its sections across its profile traced (#684 F)
+        crate::solid::admission::Class::Capped(capped) => sheet::capped_sheet(&prepared.cuts[k],capped,&inside,&near,tolerance,say),
         crate::solid::admission::Class::ConstantTwist(found) => {
             let heights = prepared.bounds.map(|(lo,hi)| found.screw.extent(lo,hi,crate::envelope::Motion::identity()).0);
             helical::helical_sheet(&prepared.cuts[k],found,heights,&inside,&near,tolerance,say)

@@ -4,6 +4,25 @@ What each draft of the [specification](../solvent-spec.md) changed, newest first
 mark in the specification points at the entry here that introduced or amended the rule. Entries
 keep the spellings of their day.
 
+**[0.198] A body shelled.** `A shell(t: 2mm) B`, a word of `std.rounds` (§6.9), hollows the
+body `B`'s faces are of to walls `t` thick, open through the faces of `A`: of its material only what
+lies within `t` of one of its faces not among `A`'s is kept, so each wall is its face moved in by
+`t`, its inner faces meeting sharp within a convex edge and rounded by `t` within a concave one.
+`shell(t: 2mm) X` leaves every face closed, a sealed hollow: what lies within `t` of everything
+outside `X`. It is the language's own words — the cavity `{ c | c inside B }` with each kept face's
+wall `{ p | p distance(<= t) w }` cut from it, cut from the body — and acts on the body after its
+other terms, as a round does. **The stratum** now counts a body standing on a region that reads a
+body's faces among that body's readers (the cavity, its walls cut from it), where it had refused
+it; no body any earlier document wrote changes. Where the body is a prism of straight edges with
+what is cut from it and nothing put on it, the shell is built exactly — the cavity a prism, its
+section's edges moved in and arcs about its reflex corners, less each cut grown by the thickness —
+and exports to STEP (its section's arcs moved in about their centres, a cup's whole circle too);
+where bosses are put on it, or it is turned, by its walls, what lies within the thickness of
+what is outside it, built as a body grown is about its faces turned inside out (a boss's foot
+rounded within by the thickness). A wall standing on a face left open, or a body neither builds,
+is read point by point, and an exact export refuses it by name.
+Every solved position is unchanged.
+
 **[0.197] A claim over a declared parameter.** `claim over t in (a, b) { … }` runs along a
 `param t: Angle over (…)` the drawing follows, as it runs along an unknown or a frame's roll
 (§9.8, #633): the drawing is stood at each sampled value on the branch its march carried, and
