@@ -114,6 +114,14 @@ fn a_bars_end_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/bar_end.sv".to_string()],true),1);
 }
 
+/// **A placed prism's cap builds at the display's samples** (`next_tooth.sv`, #684 AC): the bar
+/// placed along the rack, its sections carried by the placement, built by the page's stepped
+/// builder as the export builds it.
+#[test]
+fn a_placed_bars_end_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/next_tooth.sv".to_string()],true),1);
+}
+
 /// **A whole turn builds at the display's samples** (`whole_turn.sv`, #684 N): its sheet closed round
 /// the turn, cut into faces both ways (round the turn, and where it runs onto and off the rim's
 /// fan), built by the page's stepped builder as the export builds it.

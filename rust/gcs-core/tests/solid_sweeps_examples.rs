@@ -187,6 +187,18 @@ fn the_bars_end_leaves_its_space() {
     near(exported(&e,"part"),PI*22.*22.*6.-crate::prism_caps::bar_end_space(),1e-6);
 }
 
+/// `next_tooth.sv`: a placed prism's cap in the blank (#684 AC), `bar_end.sv`'s bar placed a quarter
+/// turn of the roll along the rack and rolled a quarter turn earlier: it cuts the bar's space
+/// turned a quarter turn round the disc, so the same volume, and the field, which reads the placed
+/// tool apart from its sections, agrees with where the cut is.
+#[test]
+fn the_next_tooth_leaves_the_bars_space_turned() {
+    let e = example("next_tooth.sv");
+    let Class::Capped(capped) = class(&e,"part") else { panic!("the generating class, its cap sectioned across") };
+    assert!(capped.across[2].abs() > 0.99,"sectioned across the disc's height, as the bar is: {:?}",capped.across);
+    near(exported(&e,"part"),PI*22.*22.*6.-crate::prism_caps::bar_end_space(),1e-6);
+}
+
 /// `helical.sv`: the generating class with a drafted prism (#684 G), the rack's tooth leaned 15°
 /// across the blank and drafted 2°, so the motion keeps no plane of it and no planar class asks
 /// it. Its space is each section square to the blank's axis cut by the tooth's section there, a

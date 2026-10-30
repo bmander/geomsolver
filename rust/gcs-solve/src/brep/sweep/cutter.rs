@@ -10,7 +10,7 @@
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use crate::brep::build::{offset,walks as walks_of,Profile,Seg};
-use crate::brep::geom::Frame;
+use crate::brep::geom::{Frame,Rigid};
 use crate::brep::planar::Step;
 use crate::brep::recipe::{Node,Recipe};
 use crate::brep::section::Sectioned;
@@ -271,11 +271,20 @@ impl Cutter {
         let side = unit(cross(cross(axis,seed),axis))?;
         Ok(Cutter {origin,axis,kind:Kind::Revolved {side,sec},sections:Default::default()})
     }
-    /// A recipe whose root is one prism, as its sections: none for any other recipe.
+    /// A recipe whose root is one prism, or one prism placed (#684 AC), as its sections, its
+    /// profile carried by its placements: none for any other recipe.
     fn prism(recipe: &Recipe) -> Result<Option<Cutter>,String> {
-        let Some(node) = recipe.nodes.iter().find(|n| n.id == recipe.root) else { return Ok(None) };
-        let Node::Prism {profile,from,to,draft} = &node.node else { return Ok(None) };
-        let (profile,from,to) = (Profile::of(profile)?,*from,*to);
+        // the placements from the root down, the first met applied last
+        let (mut id,mut placed) = (recipe.root,Rigid::identity());
+        let (profile,from,to,draft) = loop {
+            let Some(node) = recipe.nodes.iter().find(|n| n.id == id) else { return Ok(None) };
+            match &node.node {
+                Node::Prism {profile,from,to,draft} => break (profile,*from,*to,draft),
+                Node::Placed {source,matrix} => { placed = Rigid::from_rows(matrix).then(&placed); id = *source; }
+                _ => return Ok(None),
+            }
+        };
+        let profile = Profile::of(profile)?.moved(&placed);
         let axis = unit(profile.normal)?;
         let plane = Frame::about(profile.origin,axis);
         let coords = |q: V| { let l = plane.local(q); [l[0],l[1]] };
