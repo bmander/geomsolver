@@ -90,23 +90,37 @@ pub fn resolve(sk: &Sketch, si: usize, unit: f64) -> Csg {
 // Choose a reachable source point before sweeping; never add a large world placement to
 // local triangles only to subtract it again. Page input precision is still bounded by f64.
 pub(super) fn frame_origin(sk: &Sketch, si: usize, unit: f64) -> [f64; 3] {
+    first_placed(sk,si,|f,by| face_poly(sk,f as usize,unit).map(|p| by.point(p.lift(0))))
+        .unwrap_or([0.0; 3])
+}
+
+/// Where the motion `motion` puts what a placement at `at` (radians) carries.
+pub(super) fn placement(sk: &Sketch, motion: u32, at: f64) -> Result<crate::envelope::Motion,String> {
+    crate::motion::Family::read(sk,motion as usize).and_then(|m| m.at(at))
+}
+
+/// What `pick` makes of the first face of solid `si` it takes, under where the placements above
+/// that face put it (#697): its operands walked in order, a placement's source under the
+/// placement's pose and a placement whose pose does not read passed over — the one walk of what
+/// a solid's frame is (`frame_origin`) and what its shape key is read relative to (`reads`).
+pub(super) fn first_placed<T>(sk: &Sketch, si: usize,
+                              mut pick: impl FnMut(u32,crate::envelope::Motion) -> Option<T>)
+    -> Option<T> {
     let mut pending = vec![(si,crate::envelope::Motion::identity())];
     let mut seen = std::collections::BTreeSet::new();
     while let Some((i,pose)) = pending.pop() {
         if !seen.insert(i) { continue; }
         let Some(s) = sk.solids.get(i) else { continue };
         if let SolidDef::Placed {source,motion,at} = &s.def {
-            if let Ok(local) = crate::motion::Family::read(sk,*motion as usize).and_then(|m| m.at(at.value)) {
+            if let Ok(local) = placement(sk,*motion,at.value) {
                 pending.push((*source as usize,local.then(pose)));
             }
             continue;
         }
-        if let Some(f) = s.face() {
-            if let Some(p) = face_poly(sk, f as usize, unit) { return pose.point(p.lift(0)); }
-        }
+        if let Some(found) = s.face().and_then(|f| pick(f,pose)) { return Some(found); }
         pending.extend(s.operands().into_iter().rev().map(|o| (o as usize,pose)));
     }
-    [0.0; 3]
+    None
 }
 
 pub(super) fn resolve_at(sk: &Sketch, si: usize, unit: f64, origin: [f64; 3]) -> Csg {
@@ -236,8 +250,7 @@ fn build(
     let Some(sol) = sk.solids.get(si as usize) else { return Term::Empty };
     let name = sol.name.clone();
     if let SolidDef::Placed {source,motion,at} = &sol.def {
-        let Ok(pose) = crate::motion::Family::read(sk,*motion as usize).and_then(|m| m.at(at.value))
-            else { return Term::Empty };
+        let Ok(pose) = placement(sk,*motion,at.value) else { return Term::Empty };
         let paths = operand_paths(sk,*source as usize);
         let Some(source) = names.get(source) else { return Term::Empty };
         let mut term = source.clone();

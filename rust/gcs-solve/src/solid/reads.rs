@@ -63,38 +63,24 @@ impl Poses {
                 v.extend(b.v);
                 v.extend(b.o);
             }
-            Poses::Relative { by, .. } => {
-                let (u, w, o) = (by.vector(b.u), by.vector(b.v), by.point(b.o));
-                self.local(&[u, w], o, v);
+            Poses::Relative { to, reach, by, .. } => {
+                let b = moved(b, *by);
+                local(to, reach, &[b.u, b.v], b.o, v);
             }
         }
     }
 
-    /// A placement's pose `pose` into `v`, under the placement `by` it is itself placed by: in
-    /// the world as it was stated, or relative to the reference as the two put it, which is the
-    /// same wherever a solid moved with its reference is placed.
+    /// A placement's pose `pose` into `v`, under the placement it is itself placed by: in the
+    /// world as it was stated, or relative to the reference as the two put it, which is the same
+    /// wherever a solid moved with its reference is placed.
     fn placed(&mut self, pose: Motion, v: &mut Vec<f64>) {
-        let axes = [[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]];
         match self {
-            Poses::World => {
-                v.extend(pose.point([0.; 3]));
-                for a in axes { v.extend(pose.vector(a)); }
-            }
-            Poses::Relative { by, .. } => {
-                let pose = pose.then(*by);
-                self.local(&axes.map(|a| pose.vector(a)), pose.point([0.; 3]), v);
+            Poses::World => v.extend(frame_of(pose).into_iter().flatten()),
+            Poses::Relative { to, reach, by, .. } => {
+                let [o, x, y, z] = frame_of(pose.then(*by));
+                local(to, reach, &[x, y, z], o, v);
             }
         }
-    }
-
-    /// Directions `axes` and the point `o` in the world into `v`, relative to the reference.
-    fn local(&mut self, axes: &[[f64; 3]], o: [f64; 3], v: &mut Vec<f64>) {
-        let Poses::Relative { to, reach, .. } = self else { unreachable!() };
-        *reach = o.iter().fold(*reach, |m, x| m.max(x.abs()));
-        let frame = [to.u, to.v, to.normal()];
-        let local = |x: [f64; 3]| frame.map(|a| crate::plane::dot(a, x));
-        for &a in axes { v.extend(local(a)); }
-        v.extend(local(crate::space::sub(o, to.o)));
     }
 
     /// Read what follows under the placement `pose`.
@@ -105,11 +91,24 @@ impl Poses {
     }
 }
 
-/// Where a placement puts the world: its origin and axes, which tell two apart.
-fn frame_of(m: Motion) -> [f64; 12] {
-    let (o, x, y, z) = (m.point([0.; 3]), m.vector([1., 0., 0.]), m.vector([0., 1., 0.]),
-                        m.vector([0., 0., 1.]));
-    std::array::from_fn(|k| [o, x, y, z][k / 3][k % 3])
+/// Directions `axes` and the point `o` in the world into `v`, relative to the reference `to`,
+/// `reach` the largest number a pose was worked from.
+fn local(to: &Basis, reach: &mut f64, axes: &[[f64; 3]], o: [f64; 3], v: &mut Vec<f64>) {
+    *reach = o.iter().fold(*reach, |m, x| m.max(x.abs()));
+    let frame = [to.u, to.v, to.normal()];
+    let local = |x: [f64; 3]| frame.map(|a| crate::plane::dot(a, x));
+    for &a in axes { v.extend(local(a)); }
+    v.extend(local(crate::space::sub(o, to.o)));
+}
+
+/// Where a placement puts the world: its origin, then its axes.
+fn frame_of(m: Motion) -> [[f64; 3]; 4] {
+    [m.point([0.; 3]), m.vector([1., 0., 0.]), m.vector([0., 1., 0.]), m.vector([0., 0., 1.])]
+}
+
+/// Plane `b` where the placement `m` puts it.
+fn moved(b: &Basis, m: Motion) -> Basis {
+    Basis { u: m.vector(b.u), v: m.vector(b.v), o: m.point(b.o) }
 }
 
 /// The plane face `f` is drawn in, in space: the page for a face of none.
@@ -125,23 +124,9 @@ fn face_basis(sk: &Sketch, f: &crate::model::FaceE) -> Basis {
 /// other plane relative to, and what a rigid move of it is measured by.  The page for a solid
 /// with no face.
 fn reference(sk: &Sketch, si: usize) -> Basis {
-    let mut pending = vec![(si, Motion::identity())];
-    let mut seen = std::collections::BTreeSet::new();
-    while let Some((i, by)) = pending.pop() {
-        if !seen.insert(i) { continue; }
-        let Some(s) = sk.solids.get(i) else { continue };
-        if let SolidDef::Placed { source, motion, at } = &s.def {
-            let pose = crate::motion::Family::read(sk, *motion as usize).and_then(|m| m.at(at.value));
-            pending.push((*source as usize, pose.map_or(by, |p| p.then(by))));
-            continue;
-        }
-        if let Some(f) = s.face().and_then(|f| sk.faces.get(f as usize)) {
-            let b = face_basis(sk, f);
-            return Basis { u: by.vector(b.u), v: by.vector(b.v), o: by.point(b.o) };
-        }
-        pending.extend(s.operands().into_iter().rev().map(|o| (o as usize, by)));
-    }
-    Basis::page()
+    super::document::first_placed(sk, si, |f, by| {
+        sk.faces.get(f as usize).map(|f| moved(&face_basis(sk, f), by))
+    }).unwrap_or_else(Basis::page)
 }
 
 /// Whether point `p` is drawn in `plane` (the page for none), its numbers that plane's own.
@@ -153,20 +138,24 @@ fn drawn_in(sk: &Sketch, p: usize, plane: Option<u32>) -> bool {
 fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, poses: &mut Poses)
     -> Vec<f64> {
     let mut v = vec![unit];
-    // a flag per solid, the placement it was first read under: a body rounded all over has a term
-    // per edge and corner; and each solid with the placement it is read under
-    let mut seen: Vec<Option<[f64; 12]>> = vec![None; sk.solids.len()];
+    // a flag per solid: a body rounded all over has a term per edge and corner
+    let mut seen = vec![false; sk.solids.len()];
+    // and, for a shape key, where the placements above each put it (#697): read under two, it is
+    // not one that moves with either
+    let mut placed_by = match poses {
+        Poses::World => Vec::new(),
+        Poses::Relative { .. } => vec![None; sk.solids.len()],
+    };
+    // each solid with the placement it is read under
     let mut stack = vec![(si as u32, Motion::identity())];
     while let Some((s, by)) = stack.pop() {
         let Some(sol) = sk.solids.get(s as usize) else { continue };
-        // read under two placements, it is not one that moves with either (#697)
-        match std::mem::replace(&mut seen[s as usize], Some(frame_of(by))) {
-            Some(was) => {
-                if was != frame_of(by) { poses.world(); }
-                continue;
-            }
-            None if s as usize != si && skip(s as usize) => continue,
-            None => {}
+        if let Some(was) = placed_by.get_mut(s as usize) {
+            let f = frame_of(by);
+            if *was.get_or_insert(f) != f { poses.world(); }
+        }
+        if std::mem::replace(&mut seen[s as usize], true) || (s as usize != si && skip(s as usize)) {
+            continue;
         }
         poses.under(by);
         // what its operands are read under: a placement's, its own pose after the one above
@@ -196,7 +185,7 @@ fn reads_with(sk: &Sketch, si: usize, unit: f64, skip: &dyn Fn(usize) -> bool, p
             SolidDef::Placed { source, motion, at } => {
                 v.extend([5.,*source as f64,*motion as f64]);
                 if matches!(poses, Poses::World) { v.push(at.value); }
-                match crate::motion::Family::read(sk,*motion as usize).and_then(|m| m.at(at.value)) {
+                match super::document::placement(sk,*motion,at.value) {
                     Ok(pose) => {
                         poses.placed(pose, &mut v);
                         under = pose.then(by);

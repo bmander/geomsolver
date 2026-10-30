@@ -510,13 +510,13 @@ where a rule came from.
   - **What is drawn in a valued frame stands where its value puts it** (#697): `n := x in f`,
     `fix(value == t) f`, is a `SolidDef::Placed` whose `at` is the value's text, worked out at
     elaboration (`value_now`) and **again wherever the texts that read held numbers are**
-    (`expr::evaluate`'s `place_held`, over `Sketch::held_numbers`) — so `settle`, `home`, `stand`
+    (`expr::evaluate`'s `place_held`, over `Sketch::held_numbers`), one reading
+    (`expr::placement_value`) — so `settle`, `home`, `stand`
     and a put at a station itself (`Followed::put`, which works the texts out there) all place it,
     and `home` puts it back; a value that does not work out at an instant leaves the last one
     standing.  A placement whose value reads `t` **reads `t`** (`follow::placed`): a drawing whose
     only reader is one is followed, a march of two stations, the drawing at home at either end of
-    the interval, along which only the held number moves and nothing is solved (`Followed`'s
-    `solved` false); a drawing where nothing reads `t` is refused as before, and a trace's lowering
+    the interval, along which only the held number moves and nothing is solved (no `Followed::still`); a drawing where nothing reads `t` is refused as before, and a trace's lowering
     (`followed.rs`) and the ledger count rows alone.  A placement **moves its solid, never builds
     it again**: its shape key (`solid::ShapeKey`) reads each plane under it where the placements
     above put it, relative to a reference they put there too, and the placement's pose relative to
