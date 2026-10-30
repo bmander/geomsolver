@@ -266,7 +266,7 @@ prism's own:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | No ruling of a side or a corner is in contact all along it where its path enters the blank. | There the characteristic runs along the ruling, off the stretch the walk follows, which crosses each ruling once; a side every ruling of which is in contact is a face the motion keeps in its own plane (a side square to a turn's axis, or along a slide). A ruling's contact is nought at both its ends there, so between two of the coarse stations where both ends' contacts change sign (or are nought), the least of the two together is sought (Brent's method). Under a slide, a side in contact at every parameter read is that face. | The side or the corner, and a point of the ruling in the blank. |
+| S1 | No ruling of a side or a corner is in contact all along it where its path enters the blank, but a lined side's (below, #684 AF). | There the characteristic runs along the ruling, off the stretch the walk follows, which crosses each ruling once; a side every ruling of which is in contact is a face the motion keeps in its own plane (a side square to a turn's axis, or along a slide). A ruling's contact is nought at both its ends there, so between two of the coarse stations where both ends' contacts change sign (or are nought), the least of the two together is sought (Brent's method). Under a slide, a side in contact at every parameter read is that face. | The side or the corner, and a point of the ruling in the blank. |
 
 `rust/examples/solid_sweeps/square_thread.sv` is the case: a rectangular bar standing across a rod,
 screwed along it as a lathe cuts a square thread. The tip touches along its middle and the
@@ -360,6 +360,55 @@ agreeing with the field; the bar of square section stood on a corner and drafted
 refused at S1, its characteristic, the corner's line, reaching the plane at the vertex where the
 corner meets the crease. `tests/object_builder.rs` builds `creased.sv` at the page's samples, where
 the display's fewer samples first showed the thin band's split failing.
+
+### A ruling in contact all along it under a constant twist (issue #684 AF)
+
+A side's contact is linear along each ruling, so read ruling by ruling the walk crosses each
+ruling once. Where a plane side's normal lies in the plane of the screw's axis and the side's
+rulings, `n·(ω × e)` is nought for its direction `e`, and the screw moves each ruling square to
+the normal alike: the contact is the same all along each ruling, a side facing a turn's axis
+squarely. No ruling has one root then; the side touches along the whole rulings where that
+contact is nought, and nowhere else. Such a side is **lined** (`Ruled::lined`, its rulings read
+at 256 parameters, each one's two ends' contacts within `NOUGHT` of the tool's speed of each
+other): each ruling where its contact is nought (read as a silhouette's are, refined between two
+parameters that differ in sign) is a piece of its own, a line from cap to cap whose stations run
+along it (`Piece::Line`, its `side`), the section reading a slide's silhouette gets. Off either
+end the walk steps onto the fan of the rim its side meets at that cap, at the fan's first
+station, whose normal is the side's and whose root is the ruling's end, and off a rim's first end
+onto the lined side's ruling there (`step`); where the line's ends stand past the blank's margin
+the walk starts and ends on it. A side in contact all over is no lined side (box O). S1–S4 are
+asked of every node as of any; the sheet is the characteristic carried (`brep::sweep::helical`):
+under a turn, the line in a plane through the axis revolved, a cone.
+
+Under a turn a lined side's ruling lies in a plane through the axis, and the side's edge at a cap
+runs square to that plane, along the turn's velocity at the ruling's end: every normal of that
+rim's fan is in contact at the one point, and the floor and the wall meet in a sharp edge along
+its path. Under a screw the advance moves the rim's root along its line as the fan turns, and the
+walk runs from the cap's line round the fan onto the ruling. Elsewhere a ruling in contact all
+along it is still refused: at a corner whose fan holds a normal along a turn's axis, or a rim's,
+the rulings of the fan either side have their roots, and the walk crosses the ruling where it
+stands nearest the axis, so the characteristic branches there, the cut's flat top or floor
+running off the walk. The rows:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S1 | No ruling of a corner, a rim or a side but a lined side's is in contact all along it where its path enters the blank. | The rulings either side crossed, the walk crosses it at one point and the characteristic branches; not crossed, the characteristic runs along a ruling no lined side's, which the class does not walk. Read as #684 M's row is, and the rulings `1e-4` of a station either side read for a root on the tool. | The corner, rim or side, whether it branches, and a point of the ruling in the blank. |
+| S1 | No fan the walk runs round stands at one point, from the node it runs onto the fan at to its last, within 1e-7 of the tool's size. | There the fan's edge runs along that point's velocity, every normal between its faces is in contact at it, and the sweep has a sharp edge along its path, which one sheet does not build. | The fan, and a point of it in the blank. |
+
+The rows are sampled, as every row is. `rust/examples/solid_sweeps/facing.sv` is the case: a bar
+leaning 20° out from upright in a plane through the axis, its inner side facing the axis
+squarely, standing past `turn.sv`'s ring sector above and below, turned across it. The side
+touches along its ruling in the plane through the axis, and the wall is that line turned, a cone
+`10 + z tan 20°` from the axis at height z, the bar's outer side beyond the block at every
+height. `tests/solid_sweeps_examples.rs` holds it to the closed form `π/3 · 80 − π/6 (88 −
+2/3 tan² 20°)` within 1e-5 (-7.2e-6, alike at 0.01 and 0.001 mm), and `tests/prism_twists.rs`
+holds `flat_end.sv`'s bar leaning 45° with its section square, screwed 8 mm a turn, to the
+arithmetic over `z − kθ` within 2e-5 at 0.002 mm (1.3e-5), the walk running from the end's line
+round the rim onto the ruling `y = −k tan 45°`, each STL agreeing with the field. Both were
+refused at S1 before. Refused: the same bar turned, leaning 20° (the rim's fan at one point, S1),
+and a bar of square section lying across the turn with a corner up in the block (its fan holding
+the axis's direction, the characteristic branching, S1). `tests/object_builder.rs` builds
+`facing.sv` at the page's samples.
 
 ### A rack (issue #61)
 
@@ -695,7 +744,7 @@ Everything outside the class is refused at elaboration or export, never meshed o
 best-effort basis. The refusal names the condition row and the witness. The tumbling and tilted
 cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its caps clear, a
 prism's standing alone or placed whose cap's sections pass T3, a prism's under a screw, a turn or
-a slide with its caps clear (#684 M) or crossed over their rims (AE), a pocketed prism's under a planar motion and a prism tool's
+a slide with its caps clear (#684 M) or crossed over their rims (AE), walked along a lined side's ruling too (AF), a pocketed prism's under a planar motion and a prism tool's
 under a motion that keeps its plane are outside the classes; a slid cylinder is in the constant-twist class where its flat caps, which the
 slide keeps in their own planes, stay clear of the blank. Their fixtures stay
 in the tree as **negative controls**: each must

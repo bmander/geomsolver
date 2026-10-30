@@ -371,7 +371,8 @@ rulings in contact are whole: each root of `n·v` across a side or a fan is a pi
 its stations along the ruling (`Piece::Line`). S1 also refuses a ruling in contact all along it
 whose path enters the blank (`constant_twist::rulings`, both ends' contacts changing sign between
 two coarse stations and their least sought by `roots::brent`; under a slide, a piece in contact at
-every parameter read) — a side the motion keeps in its own plane, square to a turn or along a slide.
+every parameter read) — a side the motion keeps in its own plane, square to a turn or along a slide
+— but a lined side's, which is walked (#684 AF, below).
 A cap reaching the blank under a constant twist is walked where the tool is a prism standing alone
 (#684 AE, below), any other tool's refused at T1 (`admission::ends`), and a drafted prism running
 both ways from its parting plane is walked across its crease (#684 AG, below); a twist
@@ -436,6 +437,32 @@ its shadow from its ten half-spaces within 2e-5 at 0.001 mm) and
 within 2e-5 at 0.001 mm), each STL agreeing with the field, with the refusal
 `prism_twists::a_corner_meeting_its_crease_turned_is_refused` (S1) and
 `object_builder::a_creased_bar_turned_builds_at_the_displays_samples`.
+
+**A ruling in contact all along it under a constant twist (#684 AF):** a plane side each of whose
+rulings the motion moves square to its normal alike (`n·(ω × e)` nought: each ruling's two ends'
+contacts within `NOUGHT` of the tool's speed of each other at all 256 parameters read, and not
+nought all over, which is box O's) is lined (`Ruled::lined`): no ruling of it has one root
+(`Ruled::root` gives none), and each ruling where its contact is nought (`noughts`) is a
+`Piece::Line` from cap to cap with its `side`, the section reading a silhouette gets.
+`constant_twist::prism` builds them; `step` steps off a line's end onto the fan of the rim its side
+meets there (`Piece::rim_of`, the fan's first station, the side's normal) and off a rim's first end
+onto the lined side's line (`lined`), and a walk whose reach lies within a line starts and ends
+on it. S1 `rulings` skips a lined side and still refuses any other ruling in contact all along it
+whose path enters the blank, saying whether the characteristic branches there (a ruling `BESIDE`
+either side with a root on the tool, as at a corner whose fan holds a turn's axis) or runs along
+it; and refuses a fan the walk runs round whose nodes, from the one it runs onto it at, all stand
+within 1e-7 of the tool's size of one point (a sharp edge along that point's path: under a turn a
+lined side's ruling lies in a plane through the axis, and its rim at a cap runs along the turn's
+velocity there). `Characteristic::lined` names the lined sides walked. The gate is
+`solid_sweeps_examples::the_facing_side_cuts_a_cone` (`solid_sweeps/facing.sv`, a bar leaning
+out in a plane through the axis, its inner side facing it squarely, turned: the wall that side's
+ruling turned, a cone, in closed form within 1e-5) and
+`prism_twists::a_side_facing_the_axis_screwed_runs_along_its_ruling` (`flat_end.sv`'s bar at 45°
+with its section square, screwed 8 mm a turn, from the end's line round the rim onto the ruling;
+by `z − kθ` within 2e-5 at 0.002 mm), each STL agreeing with the field, both refused at S1 before;
+with the refusals `prism_twists::a_side_facing_the_axis_turned_onto_its_rim_is_refused` (S1, the
+rim's fan at one point) and `a_corner_holding_the_turns_axis_is_refused` (S1, a branch), and
+`object_builder::a_ruling_in_contact_all_along_it_turned_builds_at_the_displays_samples`.
 
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting

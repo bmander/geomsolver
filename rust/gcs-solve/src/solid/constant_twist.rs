@@ -7,7 +7,8 @@
 //! characteristic's ring at meridian station u is A cos θ + B sin θ + C = 0
 //! (`RevolvedSurface::contact_coefficients`): two roots, or none. On a prism's side, the
 //! characteristic's point on each ruling is the one root of a contact linear along it (#684 M,
-//! `Ruled`), or under a slide the whole ruling at each point of its silhouette (`Line`); on a
+//! `Ruled`), or under a slide the whole ruling at each point of its silhouette (`Line`), as on a
+//! side each of whose rulings the motion moves alike, where its contact is nought (#684 AF); on a
 //! prism's cap, a line, the contact being linear across its plane (#684 AE). Nothing is traced.
 //! The sheet is read along its **section**: square to the axis for a screw and a slide, which
 //! carry one such plane to the next, and a half-plane through the axis for a turn, which carries
@@ -262,6 +263,24 @@ impl Characteristic {
         }
         let first = nodes.iter().position(|m| m.reach.is_some()).expect("the seed reaches");
         let last = nodes.iter().rposition(|m| m.reach.is_some()).expect("the seed reaches");
+        // S1: no fan the walk runs round stands at one point, from the node it runs onto it at to
+        // its last: there the fan's edge runs along that point's velocity, every normal between its
+        // faces is in contact at it, and the sweep has a sharp edge along its path (as where a lined
+        // side's ruling under a turn, in a plane through the axis, meets a rim square to that plane)
+        let mut w = 0;
+        while w < nodes.len() {
+            let k = nodes[w].patch;
+            if !pieces[k].fan() { w += 1; continue }
+            let start = w.saturating_sub(1);
+            while w+1 < nodes.len() && nodes[w+1].patch == k { w += 1 }
+            let run = &nodes[start..=w];
+            if run.len() > 1 && run.iter().all(|m| distance(m.position,run[0].position) <= 1e-7*scale) {
+                let at = run.iter().find_map(|m| witness(family,m.reach,m.position)).or_else(|| witness(family,root(seed).reach,root(seed).position));
+                return Err((Condition::Regular,format!("the characteristic on {} stands at one point all round its fan, every normal \
+                    between its faces in contact there: the sweep has a sharp edge along that point's path (not built)",pieces[k].named()),at))
+            }
+            w += 1;
+        }
         // S1: no ring within the reach and its margin is about to lose its two roots
         for x in &order {
             let r = root(*x);
@@ -317,6 +336,14 @@ impl Characteristic {
     /// The convex corners whose fans the characteristic runs round, each as a message names it.
     pub fn fans(&self) -> Vec<String> {
         let mut walked: Vec<usize> = self.nodes.iter().map(|m| m.patch).filter(|&k| self.pieces[k].fan()).collect();
+        walked.dedup();
+        walked.into_iter().map(|k| self.pieces[k].named()).collect()
+    }
+
+    /// The lined sides whose ruling in contact all along it the characteristic runs along (#684 AF),
+    /// each as a message names it.
+    pub fn lined(&self) -> Vec<String> {
+        let mut walked: Vec<usize> = self.nodes.iter().map(|m| m.patch).filter(|&k| self.pieces[k].lined().is_some()).collect();
         walked.dedup();
         walked.into_iter().map(|k| self.pieces[k].named()).collect()
     }
@@ -588,6 +615,14 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
             _ => Step::End(format!("meets {} at one point of it, where the class does not cross it",pieces[s].named())),
         })
     };
+    // the side `patch` where the walk runs off a rim's or a crease's fan onto it: at the station
+    // whose root is this point, or where it is lined, onto its ruling in contact all along it whose
+    // end this point is (#684 AF)
+    let onto_side = |patch: usize| -> Option<Step> {
+        let lined = pieces.iter().any(|p| matches!(p,Piece::Ruled(Ruled {ruling:Ruling::Side {patch:q,..},lined:true,..}) if *q == patch));
+        if !lined { return side_at(patch) }
+        first(&mut pieces.iter().enumerate().filter(|(_,p)| p.lined() == Some(patch)).flat_map(|(l,_)| [(l,0.),(l,1.)]))
+    };
     // a side's root running off its rulings: over a cap, or across a crease where its halves meet
     let off = || -> String {
         if let Piece::Ruled(ruled @ Ruled {ruling:Ruling::Side {patch,..},..}) = &pieces[k] {
@@ -623,11 +658,16 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
     if stations[k][i] != end { return Step::End("runs past the stretch the coarse pass sampled".into()) }
     match &pieces[k] {
         // a rim's or a crease's fan: off its first end onto its side, off its last onto the cap's
-        // contact line or the other half's side
-        Piece::Ruled(Ruled {ruling:Ruling::Rim {side,across,..},..}) => return if end == 0. { side_at(*side) } else { match *across {
-            Across::Cap(c) => first(&mut pieces.iter().enumerate().filter(|(_,p)| p.cap() == Some(c)).flat_map(|(l,_)| [(l,0.),(l,1.)])),
-            Across::Half(other) => side_at(other),
-        } }.unwrap_or_else(|| Step::End("runs off its fan where no root of the face beyond takes it on".into())),
+        // contact line or the other half's side (onto a lined side's ruling, where it is one)
+        Piece::Ruled(Ruled {ruling:Ruling::Rim {side,across,..},..}) => return if end == 0. { onto_side(*side) }
+            else { match *across {
+                Across::Cap(c) => first(&mut pieces.iter().enumerate().filter(|(_,p)| p.cap() == Some(c)).flat_map(|(l,_)| [(l,0.),(l,1.)])),
+                Across::Half(other) => onto_side(other),
+            } }.unwrap_or_else(|| Step::End("runs off its fan where no root of the face beyond takes it on".into())),
+        // a lined side's ruling: off either end, at a cap or a crease, onto the fan of the rim or
+        // the crease its side meets there (#684 AF)
+        Piece::Line(Line {side:Some(patch),..}) => return first(&mut pieces.iter().enumerate().filter_map(|(r,p)| p.rim_of(*patch)
+            .map(|end| (r,end)))).unwrap_or_else(|| Step::End(OVER_CAP.into())),
         // a cap's contact line: off either end onto the fan of the rim it meets there
         Piece::Line(Line {cap:Some(c),..}) => return first(&mut pieces.iter().enumerate()
             .filter(|(_,p)| matches!(p,Piece::Ruled(Ruled {ruling:Ruling::Rim {across:Across::Cap(d),..},..}) if d == c)).map(|(r,_)| (r,1.)))
@@ -713,6 +753,9 @@ impl Piece {
     /// Which cap's contact line it is (0 the prism's `start`, 1 its `end`), where it is one.
     fn cap(&self) -> Option<usize> { match self { Piece::Line(Line {cap,..}) => *cap,_ => None } }
 
+    /// The lined side (`Ruled::lined`) whose ruling in contact all along it it is, where it is one.
+    fn lined(&self) -> Option<usize> { match self { Piece::Line(Line {side,..}) => *side,_ => None } }
+
     /// Whether it is a fan: a convex corner's, a cap's rim's or a crease's, every normal between
     /// two faces' carried at its points.
     fn fan(&self) -> bool { matches!(self,Piece::Corner(_) | Piece::Ruled(Ruled {ruling:Ruling::Rib {..} | Ruling::Rim {..},..})) }
@@ -785,8 +828,11 @@ impl Piece {
 /// square to the motion, is sampled as finely there as anywhere. `speed` is how fast the tool's
 /// points move, what a contact is nought against (`NOUGHT`). `crossings` are the stations where a
 /// side's root reaches a ruling's end at a cap's rim or a crease the walk crosses (#684 AE, AG).
+/// A side is `lined` where the motion moves each of its rulings square to its normal alike: its
+/// contact is the same all along each ruling, so no ruling has one root, and it touches along the
+/// whole rulings where that is nought, each walked as a `Line` (#684 AF).
 #[derive(Clone,Debug)]
-struct Ruled { ruling: Ruling,speed: f64,lengths: Vec<f64>,crossings: Vec<f64> }
+struct Ruled { ruling: Ruling,speed: f64,lengths: Vec<f64>,crossings: Vec<f64>,lined: bool }
 
 #[derive(Clone,Debug)]
 enum Ruling {
@@ -808,6 +854,9 @@ enum Ruling {
 #[derive(Clone,Copy,Debug,PartialEq)]
 enum Across { Cap(usize),Half(usize) }
 
+/// How far either side of a ruling in contact all along it S1 reads the rulings beside it, in
+/// stations (`rulings`): far enough that their contacts stand clear of `NOUGHT`.
+const BESIDE: f64 = 1e-4;
 /// How many parameters along a ruled piece its stations' lengths are read at.
 const RULED_READS: usize = 256;
 /// How small a ruling's contact is, against how fast the tool's points move, to read as nought.
@@ -868,7 +917,7 @@ impl Ruled {
             lengths.push(lengths.last().expect("a length")+step+1e-3*size/RULED_READS as f64);
         }
         let total = *lengths.last().expect("a length");
-        Ruled {ruling,speed,lengths:lengths.into_iter().map(|l| l/total).collect(),crossings:Vec::new()}
+        Ruled {ruling,speed,lengths:lengths.into_iter().map(|l| l/total).collect(),crossings:Vec::new(),lined:false}
     }
 
     /// The station at parameter `x` along the piece, as `parameter` reads it back.
@@ -910,9 +959,11 @@ impl Ruled {
         self.line(u).map(|line| contact(motion,line).map(|c| if c.abs() <= NOUGHT*self.speed { 0. } else { c }))
     }
 
-    /// The root of the ruling at station `u`, and its normal: none where it lies past a cap, and
-    /// refused where the whole ruling is in contact (S1 says where that is in the blank).
+    /// The root of the ruling at station `u`, and its normal: none where it lies past a cap, nor on
+    /// a lined side (its contact is walked along its `Line`s), and refused where the whole ruling is
+    /// in contact (S1 says where that is in the blank).
     fn root(&self,u: f64,motion: Motion) -> Result<Option<(V,V)>,String> {
+        if self.lined { return Ok(None) }
         let (a,b,n) = self.line(u).ok_or("is read off its side")?;
         let c = self.contact(u,motion).ok_or("is read off its side")?;
         if c == [0.,0.] { return Err("is in contact all along a ruling".into()) }
@@ -924,10 +975,12 @@ impl Ruled {
 /// points alike (a slide; a screw along the prism's own extrusion), a side or a corner's fan is in
 /// contact along the whole ruling at each root of `n·v` across it, the silhouette, and nowhere else
 /// (#684 M); and on a cap, whose contact is linear across its plane, the stretch of the line where
-/// that is nought within the profile, from one rim to another (`cap`, which cap it is on, #684 AE).
-/// A station on it is the fraction of the way from its first end to its second.
+/// that is nought within the profile, from one rim to another (`cap`, which cap it is on, #684 AE);
+/// and on a lined side (`Ruled::lined`), a ruling in contact all along it, from cap to cap (`side`,
+/// the side's patch, #684 AF). A station on it is the fraction of the way from its first end to its
+/// second.
 #[derive(Clone,Debug)]
-struct Line { named: String,ends: [V;2],normal: V,cap: Option<usize> }
+struct Line { named: String,ends: [V;2],normal: V,cap: Option<usize>,side: Option<usize> }
 
 /// The parameters of `[0, 1]` where `at` is nought: read at `RULED_READS` parameters, each a nought
 /// read there or one refined between two that differ in sign, and none twice.
@@ -1031,7 +1084,11 @@ fn corners(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion) -
 /// `n·v` being linear across the cap's plane, within the profile from rim to rim (#684 AE). A
 /// side's stations take in those where its root reaches a ruling's end at such a fold
 /// (`Ruled::crossing`), so the walk steps onto it there. Otherwise a cap is not walked: T1 asks
-/// that it stay clear of the blank (`admission::ends`).
+/// that it stay clear of the blank (`admission::ends`). A plane side whose normal lies in the plane
+/// of the axis and its rulings is lined (`Ruled::lined`): the motion moves each ruling square to its
+/// normal alike, so each ruling's contact is the same all along it, and the side touches along the
+/// whole rulings where that is nought, each a `Line` from cap to cap, walked onto off a rim's fan
+/// and off onto one (#684 AF).
 ///
 /// Where the motion moves every point of each ruling alike — a slide, or a screw along the
 /// extrusion — the contact is the same all along each ruling, so the rulings in contact are whole:
@@ -1068,6 +1125,22 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
         _ => false,
     }));
     if alike { return silhouette(contacts,&rulings,motion,speed,enters) }
+    // a lined side (#684 AF): a plane side each of whose rulings the motion moves square to its
+    // normal alike, `n·(ω × e)` nought, so its contact is the same all along each ruling and nought
+    // along whole rulings, each a `Line` from cap to cap; a side in contact all over is left to S1
+    let mut lines: Vec<Line> = Vec::new();
+    let mut lined: Vec<usize> = Vec::new();
+    for ruling in &rulings {
+        let Ruling::Side {patch,..} = *ruling else { continue };
+        let at = |x: f64| ruling.line(x).map(|line| contact(motion,line));
+        let read: Vec<[f64;2]> = (0..=RULED_READS).filter_map(|i| at(i as f64/RULED_READS as f64)).collect();
+        if !read.iter().all(|c| (c[0]-c[1]).abs() <= NOUGHT*speed) || read.iter().all(|c| c[0].abs() <= NOUGHT*speed) { continue }
+        lined.push(patch);
+        for x in noughts(&|x| at(x).map(|c| c[0])) {
+            let Some((a,b,n)) = ruling.line(x) else { continue };
+            lines.push(Line {named:ruling.named(),ends:[a,b],normal:n,cap:None,side:Some(patch)});
+        }
+    }
     // a plane side's outward normal, the same all along it
     let normal = |patch: usize| rulings.iter().find(|r| matches!(r,Ruling::Side {patch:p,..} if *p == patch)).and_then(|r| r.line(0.5))
         .map(|(_,_,n)| n);
@@ -1084,7 +1157,6 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
     }
     // a lone prism's caps (#684 AE): each plane side's rim on each, the side's edge at its `v` 0 or
     // 1, its fan turned from the side's normal to the cap's; and each cap's contact line
-    let mut lines: Vec<Line> = Vec::new();
     if caps { for surface in contacts.patches() {
         let (super::ToolSurface::Cap(cap),Some(c)) = (surface,surface.cap()) else { continue };
         let Ok(p) = surface.at(0.5,0.5) else { continue };
@@ -1104,9 +1176,10 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
         Ruling::Rim {across:Across::Half(other),..} if other == patch => Some(0),
         _ => None,
     }).collect() };
-    let mut pieces: Vec<Piece> = rulings.into_iter().map(|r| {
-        let ends = match &r { Ruling::Side {patch,..} => ends(*patch),_ => Vec::new() };
-        Piece::Ruled(Ruled::new(r,motion,speed).crossing(motion,&ends))
+    let mut pieces: Vec<Piece> = rulings.into_iter().map(|r| match r {
+        Ruling::Side {patch,..} if lined.contains(&patch) => Piece::Ruled(Ruled {lined:true,..Ruled::new(r,motion,speed)}),
+        Ruling::Side {patch,..} => { let ends = ends(patch); Piece::Ruled(Ruled::new(r,motion,speed).crossing(motion,&ends)) }
+        r => Piece::Ruled(Ruled::new(r,motion,speed)),
     }).collect();
     pieces.extend(rims.into_iter().map(|r| Piece::Ruled(Ruled::new(r,motion,speed))));
     pieces.extend(lines.into_iter().map(Piece::Line));
@@ -1141,7 +1214,7 @@ fn silhouette(contacts: &SweepContacts,rulings: &[Ruling],motion: Motion,speed: 
             let Some((a,b,n)) = ruling.line(x) else { continue };
             let size = distance(a,b);
             if lines.iter().any(|l| distance(l.ends[0],a) <= 1e-9*size && distance(l.ends[1],b) <= 1e-9*size) { continue }
-            lines.push(Line {named:ruling.named(),ends:[a,b],normal:n,cap:None});
+            lines.push(Line {named:ruling.named(),ends:[a,b],normal:n,cap:None,side:None});
         }
     }
     Ok(lines.into_iter().map(Piece::Line).collect())
@@ -1174,21 +1247,25 @@ fn cap_lines(tool: &super::SpatialField,surface: &super::ToolSurface,c: usize,n:
     crossed.windows(2).filter(|w| {
         let middle = crate::space::lerp(w[0],w[1],0.5);
         tool.value(sub(middle,scale(n,1e-6*(1.+norm(middle))))) < 0.
-    }).map(|w| Line {named:format!("`{}`",surface.name()),ends:[w[0],w[1]],normal:n,cap:Some(c)}).collect()
+    }).map(|w| Line {named:format!("`{}`",surface.name()),ends:[w[0],w[1]],normal:n,cap:Some(c),side:None}).collect()
 }
 
 /// S1 of a prism read ruling by ruling (#684 M): no ruling in contact all along it where its path
-/// enters the blank. There the characteristic runs along the ruling, off the walked stretch, which
-/// crosses each ruling once; a side every ruling of which is in contact is a face the motion keeps
-/// in its own plane (a side square to a turn). A ruling's contact is nought at both its ends there
-/// (`Ruled::contact`), so between two of `rows` stations across each piece where both ends'
-/// contacts change sign (or are nought), the least of the two together is sought
+/// enters the blank, but a lined side's (`Ruled::lined`), which the walk runs along (#684 AF).
+/// Elsewhere the characteristic would run along the ruling off the walked stretch, which crosses
+/// each ruling once: where the rulings either side have roots on the tool, as at a corner whose
+/// fan holds a normal along a turn's axis, the walk crosses the ruling at one point and the
+/// characteristic branches there; and a side every ruling of which is in contact is a face the
+/// motion keeps in its own plane (a side square to a turn). A ruling's contact is nought at both
+/// its ends there (`Ruled::contact`), so between two of `rows` stations across each piece where
+/// both ends' contacts change sign (or are nought), the least of the two together is sought
 /// (`roots::brent`), and a ruling found in contact all along with a point whose path enters the
 /// blank is refused. Asked before the walk, whose ring there is degenerate, so the row is named.
 fn rulings(pieces: &[Piece],rows: usize,motion: Motion,enters: &dyn Fn(V) -> Option<f64>,family: &Family) -> Result<(),Failure> {
     let station = |i: usize| i as f64/rows as f64;
     for piece in pieces {
         let Piece::Ruled(ruled) = piece else { continue };
+        if ruled.lined { continue }
         let read: Vec<Option<[f64;2]>> = (0..=rows).map(|i| ruled.contact(station(i),motion)).collect();
         let size = |u: f64| ruled.contact(u,motion).map_or(f64::INFINITY,|[c0,c1]| c0.dhypot(c1));
         let whole = read.iter().all(|c| *c == Some([0.,0.]));
@@ -1201,12 +1278,18 @@ fn rulings(pieces: &[Piece],rows: usize,motion: Motion,enters: &dyn Fn(V) -> Opt
             let mut candidates = Vec::new();
             for k in [i,i+1] { if read[k] == Some([0.,0.]) && !std::mem::replace(&mut asked[k],true) { candidates.push(station(k)) } }
             if least == 0. && !candidates.contains(&u) { candidates.push(u) }
-            let entering = candidates.into_iter().filter_map(|u| ruled.line(u))
-                .flat_map(|(a,b,_)| (0..=64).map(move |j| crate::space::lerp(a,b,j as f64/64.))).find_map(|p| enters(p).map(|t| (t,p)));
-            let Some((t,p)) = entering else { continue };
+            let entering = candidates.into_iter().filter_map(|u| ruled.line(u).map(|line| (u,line)))
+                .flat_map(|(u,(a,b,_))| (0..=64).map(move |j| (u,crate::space::lerp(a,b,j as f64/64.))))
+                .find_map(|(u,p)| enters(p).map(|t| (u,t,p)));
+            let Some((u,t,p)) = entering else { continue };
+            // the rulings just either side of it: a root on the tool on either is the walk crossing it
+            let crossed = [u-BESIDE,u+BESIDE].iter().any(|&w| (0. ..=1.).contains(&w) && matches!(ruled.root(w,motion),Ok(Some(_))));
             let why = if whole { format!("{} is in contact all over: the motion keeps it in its own plane, which the class does not \
-                sweep",piece.named()) } else { format!("a ruling of {} is in contact all along it, where the characteristic runs along \
-                the ruling, which the class does not sweep",piece.named()) };
+                sweep",piece.named()) } else if crossed { format!("a ruling of {} is in contact all along it, where the characteristic \
+                branches: the walk crosses the ruling at one point, and the ruling's own sweep runs off it there, which the class does \
+                not sweep",piece.named()) } else { format!("a ruling of {} is in contact all along it, where the characteristic runs \
+                along the ruling, which the class walks only on a plane side whose every ruling's contact is the same at both its \
+                ends",piece.named()) };
             return Err((Condition::Regular,why,witness(family,Some(t),p)))
         }
     }

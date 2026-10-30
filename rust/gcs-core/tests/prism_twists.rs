@@ -4,12 +4,14 @@
 //! of contact a ruling, fixed on the tool, or under a slide the whole ruling at each of the
 //! silhouette's points. The characteristic is walked over the sides and round the convex corners'
 //! fans where they meet, and carried as a revolution's is (`solid::constant_twist`); across a cap,
-//! where the contact is a line, from a side round the rim's fan (#684 AE), and across the crease of
-//! a prism drafted both ways from its plane (#684 AG). Each case's volume is computed apart from
+//! where the contact is a line, from a side round the rim's fan (#684 AE), across the crease of a
+//! prism drafted both ways from its plane (#684 AG), and along a side's ruling in contact all along
+//! it, where the side faces the axis squarely (#684 AF). Each case's volume is computed apart from
 //! the core — in closed form, or from the bar's half-spaces (`Bar`) — and each exact solid's STL
 //! agrees with the field; the square thread (`rust/examples/solid_sweeps/square_thread.sv`) is
-//! `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`, and the flat end
-//! and the creased bar turned (`flat_end.sv`, `creased.sv`) are held there too.
+//! `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`, and the flat end,
+//! the creased bar and the facing side turned (`flat_end.sv`, `creased.sv`, `facing.sv`) are held
+//! there too.
 use gcs_core::solid::admission::{self,Class,Condition,Options};
 use std::f64::consts::{PI,TAU};
 
@@ -548,3 +550,53 @@ fn a_bar_drafted_both_ways_screwed_crosses_its_crease() {
 }
 
 
+
+// -- a ruling in contact all along it (#684 AF) -------------------------------------------------
+
+/// The flat end leaning 45° and screwed 8 mm a turn as above, its section square in its plane, so
+/// its inner side faces the axis squarely (#684 AF): its normal lies in the plane of the axis and
+/// its rulings, so the screw moves each ruling square to it alike, and each ruling's contact is the
+/// same all along it, `c·y + k·s` for a lean whose sine is s and cosine c. The side touches along
+/// the one ruling where that is nought, `y = −k tan 45°`, all along it, and the walk runs from the
+/// end's line round the rim's fan onto that ruling at its foot and up it out of the block. The
+/// block loses what `z − kθ` says the bar covers at each radius (`Bar::screwed_removed`), within
+/// 2e-5 at 0.002 mm. (At 0.001 mm the STL leaves triangles facing against the rim's fan, as the
+/// twisted section's does.) Before #684 AF it was refused at S1.
+#[test]
+fn a_side_facing_the_axis_screwed_runs_along_its_ruling() {
+    let bar = Bar {lead:8.,..flat_end(45.,0.)};
+    let e = fixtures::read(&bar.text());
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a screw");
+    assert_eq!(found.fans(),["the rim where `bar.inner` meets `bar.start`"]);
+    assert_eq!(found.lined(),["`bar.inner`"]);
+    near(exported_at(&e,"part",0.002),PI/3.*(144.-64.)-bar.screwed_removed(),2e-5);
+}
+
+/// The same bar turned, leaning 20° (`flat_end.sv` with its section square): under a turn a side's
+/// ruling in contact all along it lies in a plane through the axis, and the rim at its foot runs
+/// square to that plane, along the turn's velocity there, so every normal of the rim's fan is in
+/// contact at that one point. The floor and the wall meet in a sharp edge along its path, which
+/// the class does not build (S1). (`facing.sv`'s bar stands past the block, its ruling's ends
+/// clear.)
+#[test]
+fn a_side_facing_the_axis_turned_onto_its_rim_is_refused() {
+    let r = refused(admit(&flat_end(20.,0.).text()));
+    assert_eq!(r.condition,Condition::Regular);
+    assert!(r.message.contains("the rim where `bar.inner` meets `bar.start` stands at one point all round its fan"),"{}",r.message);
+}
+
+/// A bar of square section stood on a corner, lying along y across the turn with that corner up
+/// in the block: its fan holds a normal along the turn's axis, so its ruling is in contact all
+/// along it, the top of the cut. But the rulings of its fan either side of that normal have their
+/// roots, and the walk crosses the top ruling where it stands nearest the axis: the characteristic
+/// branches there, the cut's flat top running off the walk, which the class does not sweep (S1).
+#[test]
+fn a_corner_holding_the_turns_axis_is_refused() {
+    let bar = Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,0.,-1.],corners:vec![[10.,1.],[11.5,-0.5],[13.,1.],[11.5,2.5]],
+        names:vec!["inner","outer","under","back"],from:-4.,to:4.,draft:0.,lead:0.};
+    let r = refused(admit(&bar.text()));
+    assert_eq!(r.condition,Condition::Regular);
+    assert!(r.message.contains("a ruling of the corner of `bar.inner` and `bar.outer` is in contact all along it, where the \
+        characteristic branches"),"{}",r.message);
+}

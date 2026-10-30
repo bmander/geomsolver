@@ -315,6 +315,22 @@ fn the_creased_bar_crosses_its_crease() {
     near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::parted(20.,2.).removed(),2e-5);
 }
 
+/// `facing.sv` (#684 AF): the bar's inner side faces the axis squarely, so each of its rulings'
+/// contact is the same all along it, and it touches along the one ruling in the plane through the
+/// axis, all along it; the turn carries that line round into the wall, a cone `reach + z tan(tilt)`
+/// from the axis at height z, and the block loses, within its 60°, `π/6 ∫ (12² − r²) dz` over its
+/// heights, in closed form.
+#[test]
+fn the_facing_side_cuts_a_cone() {
+    let e = example("facing.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert_eq!(found.lined(),["`bar.inner_side`"]);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    let t = 20f64.to_radians().tan();
+    near(exported(&e,"block"),PI/3.*80.-PI/6.*(88.-2./3.*t*t),1e-5);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {
