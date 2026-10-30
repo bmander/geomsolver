@@ -371,9 +371,10 @@ its stations along the ruling (`Piece::Line`). S1 also refuses a ruling in conta
 whose path enters the blank (`constant_twist::rulings`, both ends' contacts changing sign between
 two coarse stations and their least sought by `roots::brent`; under a slide, a piece in contact at
 every parameter read) — a side the motion keeps in its own plane, square to a turn or along a slide.
-A cap reaching the blank under a constant twist is refused at T1 (`admission::ends`), as is a
-drafted prism running both ways from its parting plane (#684 P), whose crease the walk does not
-cross (`SweepContacts::creases`); a twist
+A cap reaching the blank under a constant twist is walked where the tool is a prism standing alone
+(#684 AE, below), any other tool's refused at T1 (`admission::ends`), and a drafted prism running
+both ways from its parting plane (#684 P) is refused at T1, whose crease the walk does not cross
+(`SweepContacts::creases`); a twist
 that keeps the plane of the tool's prisms is dispatched to the planar subtraction class
 (`planar_subtraction::asks`, `Asked::Subtraction`), which reads it as it did. The corner's probe
 (`SweepContacts::corner`, which T2 reads too) stands halfway along a prism's sides: at a cap its
@@ -385,6 +386,36 @@ line turned; a bar slid aslant, its silhouette's plane; each STL agreeing with t
 refusals and the upright bar still planar subtraction's) are the gate, with
 `object_builder::a_square_thread_builds_at_the_displays_samples`. The accuracy meter reads no
 prism tool's cut, in any class.
+
+**A prism's cap under a constant twist (#684 AE):** where the tool is a prism standing alone or
+placed, undrafted, its profile one loop (`admission::Lone`, which `check_screw` hands `ends`, so
+T1 lets its caps reach the blank, and the walk as `Ask::caps`), `constant_twist::prism` adds a
+piece for each plane side's rim on each cap (`Ruling::Rim`, `Across::Cap`: the side's edge at its
+`v` 0 or 1, its stations the fan's normals turned from the side's to the cap's, one root a station
+as a corner's) and each cap's contact line (`cap_lines`: `n·v` is linear across the cap, nought
+along a line; each stretch of it within the profile, between its crossings of the sides' edges
+there, in order along it and paired where the middle lies on the tool, a `Piece::Line` with its
+`cap`). A side's stations take in those where the contact at a ruling's capped end is nought
+(`Ruled::crossing`, `crossed`), so the walk steps from a side's root onto its rim's fan partway
+along the side (`step`, `Piece::rim_of`), off the fan's far end onto the cap's line and off the
+line's end onto the next rim, and off a rim's first end onto its side at the station whose root
+it is (`side_at`). S1 refuses where a corner's or a rim's root runs off its line
+(`VERTEX`: the walk reaches a vertex of the prism, a sharp edge of the sweep), where a side's root
+runs over a cap with no rim to cross (`OVER_CAP`: a round side's), where a cap's line leaves it
+onto none (`OFF_CAP`), and where a silhouette's ruling runs over a cap under a slide or a screw
+along the extrusion (`SILHOUETTE_OVER_CAP`), each within the walk's margin of the blank. The sheet
+is `brep::sweep::helical`'s, cut into faces at each fan's ends. The gate is
+`solid_sweeps_examples::the_flat_end_cuts_a_floor` (`solid_sweeps/flat_end.sv`, a bar's flat end
+facing down toward the axis turned across `turn.sv`'s block: the end's line turned is the floor, the
+inner side's the wall, the rim's fan between; held to the bar's shadow read apart, each height's
+slice of its half-spaces bounding what the turn removes there, within 2e-5 at 0.001 mm, 9e-5 at
+0.01 by the fit's bias) and `prism_twists::a_bars_flat_end_screwed_cuts_a_floor` (the bar screwed
+8 mm a turn, held to arithmetic over `z − kθ`, which the screw keeps, within 2e-5 at 0.002 mm), each
+STL agreeing with the field; with the refusals
+`prism_twists::a_corner_reaching_a_cap_under_a_screw_is_refused` (S1, `VERTEX`),
+`a_cap_in_the_blank_under_a_slide_is_refused` (S1) and
+`a_cap_of_a_tool_no_lone_prism_turned_is_refused` (T1), and
+`object_builder::a_flat_end_turned_builds_at_the_displays_samples`.
 
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting
@@ -489,7 +520,7 @@ the bar's space turned round the disc, within 1e-6 of its volume, its STL agreei
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
 a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, its
-drafted helical rack, a tooth drafted both ways (`parted.sv`) a prism's cap (`bar_end.sv`) and a placed one's (`next_tooth.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+drafted helical rack, a tooth drafted both ways (`parted.sv`) a prism's cap (`bar_end.sv`) and a placed one's (`next_tooth.sv`), a prism's cap under a turn (`flat_end.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;
 `every_example_is_held_and_named` fails a file the README does not name or no test reads. The

@@ -9,7 +9,7 @@ use gcs_core::solid::admission::{self,Class,Options};
 use std::f64::consts::{PI,TAU};
 
 use crate::round_lowering::lens;
-use crate::turns_and_slides::{exported,measure,near,reaches,turned_away,turned_torus,Lean};
+use crate::turns_and_slides::{exported,exported_at,measure,near,reaches,turned_away,turned_torus,Lean};
 
 /// The text of the example `name` of the series.
 pub(crate) fn text(name: &str) -> String {
@@ -286,6 +286,20 @@ fn the_square_tool_leaves_a_groove_widening_outward() {
     let turned = r*r/2.*(r0/r).acos()-r0/2.*(r*r-r0*r0).sqrt();
     let groove = TAU*l/lead*(w*(r*r-r0*r0)/2.+lead/PI*turned);
     near(exported(&e,"rod"),PI*r*r*l-groove,1e-5);
+}
+
+/// `flat_end.sv` (#684 AE): the bar's flat end faces down toward the axis, so the turn carries its
+/// contact line round into the floor, its inner side's into the wall, and the rim between them
+/// joins the two round its fan. The block loses what the bar's shadow covers, read slice by slice
+/// from the bar's half-spaces (`prism_twists::Bar::removed`, the same bar as `flat_end(20, 5)`),
+/// within 2e-5 at 0.001 mm (at 0.01 the fitted sheet's bias over the floor is 9e-5 of the part).
+#[test]
+fn the_flat_end_cuts_a_floor() {
+    let e = example("flat_end.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert_eq!(found.fans(),["the rim where `bar.inner_side` meets `bar.start`"]);
+    near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::flat_end(20.,5.).removed(),2e-5);
 }
 
 /// Every document in the folder is held by a test here, and the README names each.

@@ -31,9 +31,12 @@ fn saying<T>(f: impl FnOnce(&Say) -> T) -> (T,String) {
 /// The solid `name` built exactly within 0.01 mm by this kernel, its STEP and STL written and the
 /// STL held to the material field with no disagreement (where it cuts a sweep: a ball's tube is
 /// static material, built as any is); its volume.
-pub(crate) fn exported(e: &Elaborated,name: &str) -> f64 {
+pub(crate) fn exported(e: &Elaborated,name: &str) -> f64 { exported_at(e,name,0.01) }
+
+/// The same, built within `tolerance` millimetres.
+pub(crate) fn exported_at(e: &Elaborated,name: &str,tolerance: f64) -> f64 {
     let (sk,body) = (&e.sketch,fixtures::solid(e,name));
-    let tolerance = Some(Tolerance::new(0.01).unwrap());
+    let tolerance = Some(Tolerance::new(tolerance).unwrap());
     let (exact,said) = saying(|say| export::exact(sk,body,None,tolerance,say));
     let exact = exact.unwrap_or_else(|r| panic!("{r}\n{said}"));
     eprintln!("{said}");

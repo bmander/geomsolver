@@ -37,8 +37,8 @@ impl Condition {
     pub fn rule(self) -> &'static str {
         match self {
             Condition::Tool => "the tool is a full revolution, or a prism (drafted or not), of lines and arcs, or an intersection \
-                of such, its caps clear of the blank unless it is an undrafted prism standing alone or placed under a relative \
-                rotation, or a union of tools each in the class",
+                of such, its caps clear of the blank unless it is an undrafted prism standing alone or placed, or a union of tools \
+                each in the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide (a joint driven by a law alone read as its joint over the values the law reaches)",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -528,7 +528,7 @@ pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission
     // a placement's check by the class its motion is in
     let check = |contacts: &SweepContacts,lone: Option<&Lone>,pose: Motion,inside: &(dyn Fn(V) -> bool+Sync)| match contacts.motion().twist() {
         Some(screw) => check_screw(contacts,inside,bounds.map(|b| screw.extent(b.map(|x| x.bounds()[0]),b.map(|x| x.bounds()[1]),pose.inverse())),
-            options),
+            options,lone),
         None => check(contacts,inside,options,lone),
     };
     // a tool that is one prism, whose cap the class may section across (#684 F)
@@ -697,9 +697,10 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
     };
     reads.extend(clear(&|s| s.cap().is_none())?);
     // T1 for a prism: a cap passing through the blank is cut only by a prism standing alone as the
-    // tool or placed, its profile one loop, sectioned across (T3, #684 F, AC); otherwise the
-    // class cuts with a prism's sides only (under a planar sweep a cap, square to the turn, is in
-    // contact at every time or none, and M2 refuses it). Each cap is asked by its rim, its sides'
+    // tool or placed, its profile one loop, sectioned across (T3, #684 F, AC) or, under a constant
+    // twist, its characteristic walked over the cap (#684 AE); otherwise the class cuts with a
+    // prism's sides only (under a planar sweep a cap, square to the turn, is in contact at every
+    // time or none, and M2 refuses it). Each cap is asked by its rim, its sides'
     // ends at `v` (a drafted side's end at its parting plane is no rim, but the crease its halves
     // meet in, #684 P).
     let mut capped = [false;2];
@@ -711,8 +712,8 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
         let Some((name,p)) = rim else { continue };
         if lone.is_none() {
             return Err((Condition::Tool,format!("a cap of the prism `{name}` bounds passes through the blank, and the class cuts \
-                with a cap only of a prism standing alone as the tool or placed, its profile one loop, under a relative rotation: \
-                make the prism longer than the blank is thick"),Some(p)));
+                with a cap only of a prism standing alone as the tool or placed, undrafted, its profile one loop: make the prism \
+                longer than the blank is thick"),Some(p)));
         }
         capped[end] = true;
     }
@@ -1128,14 +1129,16 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,l
 /// a slide, `inside` being the blank read in the sweep's frame, `heights` how far along the
 /// motion's axis it reaches there. Their twist is constant, so M2 does not apply: a tool point is
 /// on the boundary at every time or at none, and the boundary is the characteristic carried along.
-fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Options)
+/// A cap of `lone`, the tool where it is a prism standing alone or placed, its profile one loop,
+/// may reach the blank, and the walk crosses it (#684 AE).
+fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Options,lone: Option<&Lone>)
     -> Result<(SweepEvidence,Reads),Failure> {
-    let (reads,..) = ends(c,inside,options,None)?;
+    let (reads,..) = ends(c,inside,options,lone)?;
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side
     let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };
     let ask = super::constant_twist::Ask {rows:options.rows,root_tolerance:options.root_tolerance,least_factor:options.least_factor,
-        roll:c.domain(),heights:extent.map(|e| e.0),radius:extent.map(|e| e.1),inside:&read};
+        roll:c.domain(),heights:extent.map(|e| e.0),radius:extent.map(|e| e.1),inside:&read,caps:lone.is_some()};
     let found = super::constant_twist::Characteristic::walk(c,&ask)?;
     let [first,last] = found.reach;
     let mut gaps: Vec<f64> = (first..last).map(|w| crate::space::distance(found.nodes[w].position,found.nodes[w+1].position)).collect();

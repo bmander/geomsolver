@@ -247,6 +247,12 @@ impl ExtrudedSurface {
         })
     }
 
+    /// Whether its edge is a line at both its ends (a plane side), so its ends at the caps are
+    /// lines too: what the constant twist walks across (#684 AE).
+    pub fn straight(&self) -> bool {
+        matches!((self.edge,self.side),(Edge::Line {..},Side::Straight(_) | Side::Leaning(Edge::Line {..})))
+    }
+
     fn placed(&self,pose: Motion) -> Self {
         let side = match self.side {
             Side::Straight(depth) => Side::Straight(pose.vector(depth)),
