@@ -450,8 +450,14 @@ against rows across the rod computed apart, placed and turned, against the long 
 tubes by Pappus, two tori rolled in the generating class, and the refusals.
 
 **A prism's cap in the blank (#684 F):** a prism standing alone as the tool (its solid the prism
-itself, undrafted, its profile one loop of lines and arcs: `admission::Lone`) whose cap passes through the
-blank is no longer refused at T1; any other tool's cap is, saying so. Its caps are faces of the
+itself, or the prism placed, #684 AC; undrafted, its profile one loop of lines and arcs:
+`admission::Lone`) whose cap passes through the blank is no longer refused at T1; any other tool's
+cap is, saying so. A placed prism is read through its placements: its faces carried by their pose
+(`SweepContacts::read`), its cutter the prism's with its profile moved by them (`Cutter::prism`
+follows the recipe's `placed` nodes to the prism). The same reading builds a placed prism whose
+caps are clear, which was admitted but whose cutter went unread, so its export was refused
+(`rack_cut::a_placed_tooth_cuts_as_the_tooth_does`: the rack's tooth placed along the rack cuts as
+the tooth does, to 1e-5). Its caps are faces of the
 tool (`ToolSurface::Cap`, read over the box its profile lies in, a point off the profile passed
 over as the field says), asked M2–E4 and E1 with its sides only where one reaches the blank; M2
 refuses only a point in contact at every time (a constant nonzero condition touches nothing — a
@@ -475,11 +481,15 @@ path refuses a capped sweep by name. `tests/prism_caps.rs` and `solid_sweeps_exa
 (`bar_end.sv`, a tapered bar's flat end cutting a tooth space's floor under a rack's roll, each
 height's space read apart from the core by `rack_cut`'s arithmetic and held to 1e-6 of the part,
 2e-6 of the space at 0.002 mm) are the gate, with E3's, T3's and T1's refusals;
-`object_builder::a_bars_end_builds_at_the_displays_samples` builds it in the page.
+`object_builder::a_bars_end_builds_at_the_displays_samples` builds it in the page. A placed prism's
+gate is `next_tooth.sv` (`solid_sweeps_examples::the_next_tooth_leaves_the_bars_space_turned`): the
+bar placed a quarter turn of the roll along the rack and rolled a quarter turn earlier, cutting
+the bar's space turned round the disc, within 1e-6 of its volume, its STL agreeing with the field;
+`object_builder::a_placed_bars_end_builds_at_the_displays_samples` builds it in the page.
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
 a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, its
-drafted helical rack, a tooth drafted both ways (`parted.sv`) and a prism's cap (`bar_end.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+drafted helical rack, a tooth drafted both ways (`parted.sv`) a prism's cap (`bar_end.sv`) and a placed one's (`next_tooth.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;
 `every_example_is_held_and_named` fails a file the README does not name or no test reads. The

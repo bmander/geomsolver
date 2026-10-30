@@ -241,6 +241,6 @@ fn a_cap_in_the_blank_under_a_screw_is_refused() {
     let e = fixtures::read(&text);
     let r = refused(admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default()));
     assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("a cap only of a prism standing alone as the tool, its profile one loop, under a relative rotation"),
+    assert!(r.message.contains("its profile one loop, under a relative rotation"),
         "{}",r.message);
 }
