@@ -17,17 +17,7 @@
 use crate::fmath::Det;
 use crate::curve::{self, DEGREE, SPAN_N};
 
-/// Eight-point Gauss–Legendre nodes and weights on [−1, 1].
-pub const GAUSS8: [(f64, f64); 8] = [
-    (-0.9602898564975363, 0.1012285362903763),
-    (-0.7966664774136267, 0.2223810344533745),
-    (-0.5255324099163290, 0.3137066458778873),
-    (-0.1834346424956498, 0.3626837833783620),
-    (0.1834346424956498, 0.3626837833783620),
-    (0.5255324099163290, 0.3137066458778873),
-    (0.7966664774136267, 0.2223810344533745),
-    (0.9602898564975363, 0.1012285362903763),
-];
+pub use cad_kernel::util::quadrature::GAUSS8;
 
 /// Equal pieces each span's rule runs on.  One is not enough where a span bends hard: `|C'|`
 /// is no polynomial, and a single Bézier with a tight turn reads ~1e-4 of its length off by

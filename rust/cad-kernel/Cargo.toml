@@ -1,0 +1,20 @@
+[package]
+name = "cad-kernel"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "A boundary-representation solid modelling kernel: exact analytic and NURBS faces, Booleans, meshing to a stated sag, STEP."
+repository = "https://github.com/bmander/cad-kernel"
+readme = "README.md"
+keywords = ["brep", "cad", "nurbs", "step", "solid-modeling"]
+categories = ["graphics", "mathematics", "science"]
+
+# No dependencies, as the rest of the core.  Its tests are the core's suite (`gcs-core/tests`),
+# which reaches it through `gcs_solve::brep` and the utilities the solver re-exports; `tests/` here
+# is the crate's own smoke test, what its README promises, run where it stands alone.
+[dependencies]
+
+[lib]
+name = "cad_kernel"
+path = "src/lib.rs"
+test = false

@@ -1,0 +1,1081 @@
+//! Where two surfaces meet, in closed form where it has one: two planes in a line; surfaces of
+//! revolution about one axis (a plane square to it, a cylinder, a cone, a sphere centred on it, a
+//! torus) in circles, found where their meridians cross in one half-plane; a plane and a cylinder
+//! in lines or an ellipse; a plane and a sphere in a circle; parallel cylinders in lines; a
+//! spline extruded and a plane or a cylinder running its way in lines, and a cone about a line its
+//! way in the spline carried onto the cone (`extruded`). The rest is left to be traced
+//! (`Ssi::Traced`) from seeds, and between analytic surfaces a curve no seed reaches is searched
+//! for (`unseen`).
+#[allow(unused_imports)]
+use crate::util::fmath::Det;
+use super::geom::{Curve,Frame,Surface,V};
+use super::plane2;
+use crate::util::space::{add,cross,distance,dot,norm,scale,segment_distance,sub,unit};
+
+/// What two surfaces share.
+#[derive(Clone,Debug,PartialEq)]
+pub enum Ssi {
+    /// Whole curves (a line unbounded, a circle or an ellipse closed), possibly none.
+    Curves(Vec<Curve>),
+    /// The two are one surface.
+    Same,
+    /// No closed form here: the curve must be traced.
+    Traced,
+}
+
+/// A meridian: a surface of revolution's section in the half-plane `ρ ≥ 0` of its axis, in
+/// `(ρ, z)` with `z` measured along the shared axis from a shared origin.
+#[derive(Clone,Debug)]
+enum Meridian {
+    /// `z := h`: a plane square to the axis.
+    Level(f64),
+    /// The ray from `p` along the unit `d` (`d[1] > 0` or a vertical line `ρ = r`), both ways.
+    Line { p: [f64;2],d: [f64;2] },
+    /// A circle about `c` of radius `r`.
+    Circle { c: [f64;2],r: f64 },
+    /// A B-spline turned about the axis, and the point and direction that axis runs through.
+    Spline(std::sync::Arc<super::nurbs::BSpline>,V,V),
+}
+
+impl Meridian {
+    /// A signed distance in `(ρ, z)` whose zero set is this meridian (not a spline's).
+    fn implicit(&self,[r,z]: [f64;2]) -> f64 {
+        match *self {
+            Meridian::Level(h) => z-h,
+            Meridian::Line {p,d} => (r-p[0])*d[1]-(z-p[1])*d[0],
+            Meridian::Circle {c,r: rad} => (r-c[0]).dhypot(z-c[1])-rad,
+            Meridian::Spline(..) => unreachable!("a spline meridian has no closed-form distance"),
+        }
+    }
+}
+
+/// Where a spline meridian crosses or touches another (not a spline), in `(ρ, z)`: every sign
+/// change of the other's distance along it, refined, and every sampled minimum of its size that
+/// comes within `tol`.
+fn spline_cross(s: &super::nurbs::BSpline,o: V,z: V,other: &Meridian,tol: f64) -> Vec<[f64;2]> {
+    let rz = |t: f64| { let q = sub(s.point(t),o); let h = dot(q,z); [norm(sub(q,scale(z,h))),h] };
+    let at = |t: f64| { let [r,h] = rz(t); [r,h,0.] };
+    spline_roots(s,&|t| other.implicit(rz(t)),&at,tol).into_iter().map(rz).collect()
+}
+
+/// The parameters at which `g` along the spline `s` changes sign, refined, and at which a sampled
+/// minimum of its size comes within `tol` (a touch): one each where `at` puts them within `tol` of
+/// each other.
+fn spline_roots(s: &super::nurbs::BSpline,g: &dyn Fn(f64) -> f64,at: &dyn Fn(f64) -> V,tol: f64) -> Vec<f64> {
+    let [a,b] = s.domain();
+    let ts = spline_samples(s);
+    let gs: Vec<f64> = ts.iter().map(|&t| g(t)).collect();
+    let mut out: Vec<f64> = Vec::new();
+    let push = |t: f64,out: &mut Vec<f64>| if !out.iter().any(|&u| distance(at(u),at(t)) <= tol) { out.push(t) };
+    for i in 0..ts.len()-1 {
+        let (x,y) = (gs[i],gs[i+1]);
+        if x.abs() <= tol { push(ts[i],&mut out); }
+        if x.abs() > tol && y.abs() > tol && (x < 0.) != (y < 0.) {
+            let t = crate::util::roots::bracketed_root(|t| Some(g(t)),ts[i],x,ts[i+1],y,1e-15*(b-a));
+            push(t,&mut out);
+        } else if i+2 < ts.len() && y.abs() < x.abs() && y.abs() < gs[i+2].abs() && (x < 0.) == (y < 0.) && y.abs() > tol {
+            let (t,v) = crate::util::roots::brent(&|t| g(t).abs(),ts[i],ts[i+2],1e-15*(b-a),200,|_,_| false);
+            if v <= tol { push(t,&mut out); }
+        }
+    }
+    if gs[ts.len()-1].abs() <= tol { push(b,&mut out); }
+    out
+}
+
+/// Where a spline's crossings are looked for: 32 steps a knot span, both ends included.
+fn spline_samples(s: &super::nurbs::BSpline) -> Vec<f64> {
+    let [a,b] = s.domain();
+    let mut cuts = vec![a];
+    cuts.extend(s.breaks([a,b]));
+    cuts.push(b);
+    let mut ts: Vec<f64> = Vec::new();
+    for w in cuts.windows(2) { for j in 0..32 { ts.push(w[0]+(w[1]-w[0])*j as f64/32.); } }
+    ts.push(b);
+    ts
+}
+
+/// **A spline extruded along `f.z` and a surface the same all along that way** (#644: a tooth
+/// space's prism cut from a turned blank): a plane along it or a cylinder about a line along it
+/// meets the spline's face in the lines along it through where the spline crosses that surface,
+/// exactly; a cone about a line along it, in the spline carried along it onto the cone (`lifted`).
+/// Traced instead — None — for any other surface, a cone's curve that will not be written so, and
+/// wherever the two may touch, which the trace and the Boolean read (a tool's side in the pocket
+/// it cut, along the pocket's wall): a meeting at under `SHALLOW`, or the distance along the
+/// spline turning between two samples within `tol` of zero or past it (two crossings the samples
+/// alone would read as none). (Traced, a straight meeting took a step as short as the
+/// spline's sharpest turn anywhere allows, thousands of them, and was fitted through a thousand.)
+fn extruded(f: &Frame,c: &Curve,s: &Surface,tol: f64) -> Option<Vec<Curve>> {
+    let Curve::BSpline(sp) = c else { return None };
+    let g = s.frame();
+    let along = norm(cross(f.z,g.z)) <= 1e-12;
+    // the sine of the angle the two meet at, at the spline's `t` carried to `p`
+    let steep = |t: f64,p: V| norm(cross(unit(cross(sp.d1(t).1,f.z)),unit(s.gradient(p)))) >= SHALLOW;
+    match *s {
+        Surface::Plane(_) if dot(f.z,g.z).abs() <= 1e-12 => {}
+        Surface::Cylinder(..) if along => {}
+        Surface::Cone(_,r,a) if along => return lifted(sp,g,r,a,tol,&steep).map(|q| vec![q]),
+        _ => return None,
+    }
+    // (a plane's and a cylinder's signed distance is the same all along the extrusion), and where
+    // it turns between two samples
+    let gap = |t: f64| s.implicit(sp.point(t));
+    let rate = |t: f64| { let (p,d) = sp.d1(t); dot(s.gradient(p),d) };
+    let [t0,t1] = sp.domain();
+    for w in spline_samples(sp).windows(2) {
+        let (r0,r1) = (rate(w[0]),rate(w[1]));
+        if (r0 < 0.) == (r1 < 0.) { continue }
+        let x = crate::util::roots::bracketed_root(|t| Some(rate(t)),w[0],r0,w[1],r1,1e-15*(t1-t0));
+        let g = gap(x);
+        if g.abs() <= tol || g*gap(w[0]) <= 0. && g*gap(w[1]) <= 0. { return None }
+    }
+    let roots = spline_roots(sp,&gap,&|t| sp.point(t),tol);
+    roots.iter().all(|&t| steep(t,sp.point(t)))
+        .then(|| roots.into_iter().map(|t| Curve::Line {p:sp.point(t),d:f.z}).collect())
+}
+
+/// A cubic spline carried along the axis of the cone `g`, `r`, `α` onto it: each of its points to
+/// the cone's height at its radius, read in `ρ ≥ 0` as a meridian's crossings are. Written as a
+/// quintic over the spline's own parameter on its own knots, each twice more — which hold the
+/// spline itself exactly, so only the height is fitted, and as the sixth power of a span (a cubic
+/// took five times the poles) — a span halved wherever the carried curve strays from it farther
+/// than a quarter of `tol` at a quarter point (as a traced curve is fitted, `fitted`). None for a
+/// spline not polynomial cubic, a cone nearly a cylinder, a spline coming near the axis, the two
+/// meeting anywhere at an angle not `steep`, or past 4096 spans.
+fn lifted(sp: &super::nurbs::BSpline,g: &Frame,r: f64,a: f64,tol: f64,steep: &dyn Fn(f64,V) -> bool)
+    -> Option<Curve> {
+    let (sa,ca) = a.dsin_cos();
+    if sp.degree != 3 || sp.weights.is_some() || !(sa.abs() > 1e-9) { return None }
+    let radius = |t: f64| { let w = sub(sp.point(t),g.o); norm(sub(w,scale(g.z,dot(w,g.z)))) };
+    let q = |t: f64| {
+        let (x,rho) = (sp.point(t),radius(t));
+        add(x,scale(g.z,(rho-r)*ca/sa-dot(sub(x,g.o),g.z)))
+    };
+    // the spline's knots each twice more, so a quintic on them holds the cubic as it joins
+    let mut knots: Vec<f64> = super::nurbs::distinct(&sp.knots).into_iter()
+        .flat_map(|(k,n)| std::iter::repeat_n(k,n+2)).collect();
+    for _ in 0..24 {
+        let fit = super::nurbs::interpolate_on(&q,5,knots.clone())?;
+        let breaks = super::nurbs::distinct(&knots);
+        let spans: Vec<[f64;2]> = breaks.windows(2).map(|w| [w[0].0,w[1].0]).collect();
+        let mut halves = Vec::new();
+        for &[t0,t1] in &spans {
+            let quarters = [0.25,0.5,0.75].map(|s| t0+(t1-t0)*s);
+            // near the axis the carried curve turns as sharply as the spline is near it
+            if quarters.iter().any(|&t| radius(t) <= 1e-3*sp.hull_length() || !steep(t,q(t))) {
+                return None
+            }
+            if quarters.iter().any(|&t| distance(fit.point(t),q(t)) > tol/4.) { halves.push((t0+t1)/2.); }
+        }
+        if halves.is_empty() { return Some(Curve::BSpline(std::sync::Arc::new(fit))) }
+        if spans.len()+halves.len() > 4096 { return None }
+        knots.extend(halves);
+        knots.sort_by(f64::total_cmp);
+    }
+    None
+}
+
+/// A surface's meridian about the axis through `o` along the unit `z`, where it is a surface of
+/// revolution about that axis (to `tol`).
+fn meridian(s: &Surface,o: V,z: V,tol: f64) -> Option<Meridian> {
+    let f = s.frame();
+    let height = |p: V| dot(sub(p,o),z);
+    let on_axis = |p: V| norm(cross(sub(p,o),z)) <= tol;
+    let aligned = norm(cross(f.z,z)) <= 1e-12;
+    let sign = dot(f.z,z).signum();
+    match *s {
+        Surface::Plane(_) => aligned.then(|| Meridian::Level(height(f.o))),
+        Surface::Sphere(_,r) => on_axis(f.o).then(|| Meridian::Circle {c:[0.,height(f.o)],r}),
+        _ if !(aligned && on_axis(f.o)) => None,
+        Surface::Cylinder(_,r) => Some(Meridian::Line {p:[r,height(f.o)],d:[0.,1.]}),
+        Surface::Cone(_,r,a) => {
+            // (r + v sin α, v cos α) in the cone's own (ρ, z); its z may run against the axis
+            Some(Meridian::Line {p:[r,height(f.o)],d:[a.dsin(),a.dcos()*sign]})
+        }
+        Surface::Torus(_,big,r) => Some(Meridian::Circle {c:[big,height(f.o)],r}),
+        Surface::Revolution(_,ref c) => match &**c { Curve::BSpline(b) => Some(Meridian::Spline(b.clone(),o,z)),_ => None },
+        Surface::Extrusion(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+    }
+}
+
+/// Where two meridians cross in `ρ ≥ −tol`, as `(ρ, z)`; `None` where they coincide.
+fn cross2(a: Meridian,b: Meridian,tol: f64) -> Option<Vec<[f64;2]>> {
+    use Meridian::*;
+    let carrier = |m: Meridian| match m {
+        Level(h) => plane2::Carrier::Line {p:[0.,h],d:[1.,0.]},
+        Line {p,d} => plane2::Carrier::Line {p,d},
+        Circle {c,r} => plane2::Carrier::Circle {c,r},
+        Spline(..) => unreachable!("a spline meridian is crossed by `spline_cross`"),
+    };
+    // a level is the line the crossing is read along
+    let (a,b) = if matches!(b,Level(_)) && !matches!(a,Level(_)) { (b,a) } else { (a,b) };
+    let pts = plane2::meet(carrier(a),carrier(b),plane2::Touch::Gap(tol));
+    pts.map(|pts| pts.into_iter().filter(|q| q[0] >= -tol).collect())
+}
+
+/// Whether two swept curves are one curve once `seen` takes out the motion that sweeps them: the
+/// same degree and knots and poles within `tol`, or else equal outright.
+fn same_curve(c: &Curve,d: &Curve,tol: f64,seen: &dyn Fn(V) -> V) -> bool {
+    match (c,d) {
+        (Curve::BSpline(a),Curve::BSpline(b)) => a.degree == b.degree && a.knots == b.knots
+            && a.poles.len() == b.poles.len() && a.poles.iter().zip(&b.poles).all(|(&p,&q)| norm(sub(seen(p),seen(q))) <= tol),
+        _ => c == d,
+    }
+}
+
+/// Whether two surfaces are the same surface, to `tol`.
+pub fn same(a: &Surface,b: &Surface,tol: f64) -> bool {
+    let (f,g) = (a.frame(),b.frame());
+    let parallel = norm(cross(f.z,g.z)) <= 1e-12;
+    let on_axis = norm(cross(sub(g.o,f.o),f.z)) <= tol;
+    match (a.clone(),b.clone()) {
+        (Surface::Plane(_),Surface::Plane(_)) => parallel && dot(sub(g.o,f.o),f.z).abs() <= tol,
+        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) => parallel && on_axis && (r-s).abs() <= tol,
+        (Surface::Sphere(_,r),Surface::Sphere(_,s)) => norm(sub(g.o,f.o)) <= tol && (r-s).abs() <= tol,
+        (Surface::Torus(_,big,r),Surface::Torus(_,bog,s)) =>
+            parallel && norm(sub(g.o,f.o)) <= tol && (big-bog).abs() <= tol && (r-s).abs() <= tol,
+        (Surface::Cone(_,r,a1),Surface::Cone(_,s,a2)) => {
+            if !(parallel && on_axis) { return false }
+            // the same apex, half-angle and opening (a cone opens along z where its α is positive)
+            let apex = |f: &Frame,r: f64,a: f64| sub(f.o,scale(f.z,r*a.dcos()/a.dsin()));
+            let opens = |f: &Frame,a: f64| scale(f.z,a.signum());
+            norm(sub(apex(f,r,a1),apex(g,s,a2))) <= tol && (a1.abs()-a2.abs()).abs() <= 1e-12
+                && dot(opens(f,a1),opens(g,a2)) > 0.
+        }
+        // a curve swept along one direction, or turned about one axis, as the other is (a face
+        // of the same profile, copied or cut): the same curve and the same line
+        // (moved along the sweep, or turned about the axis, a B-spline's poles are where they were
+        // with that motion taken out: along the direction, or to their meridian (ρ, z))
+        (Surface::Extrusion(_,c),Surface::Extrusion(_,d)) => parallel
+            && same_curve(&c,&d,tol,&|p| sub(p,scale(f.z,dot(p,f.z)))),
+        (Surface::Revolution(_,c),Surface::Revolution(_,d)) => parallel && on_axis
+            && same_curve(&c,&d,tol,&|p| { let q = sub(p,f.o); let h = dot(q,f.z); [norm(sub(q,scale(f.z,h))),h,0.] }),
+        _ => false,
+    }
+}
+
+/// Where two surfaces meet (`tol` a length).
+pub fn intersect(a: &Surface,b: &Surface,tol: f64) -> Ssi {
+    if same(a,b,tol) { return Ssi::Same }
+    let (f,g) = (*a.frame(),*b.frame());
+    // two planes
+    if let (Surface::Plane(_),Surface::Plane(_)) = (a,b) {
+        let d = cross(f.z,g.z);
+        if norm(d) <= 1e-12 { return Ssi::Curves(vec![]) }
+        let d = unit(d);
+        // the point of both nearest f's origin: solve n1·x = h1, n2·x = h2, d·x = d·o
+        let (h1,h2) = (dot(f.z,f.o),dot(g.z,g.o));
+        let m = [f.z,g.z,d];
+        let rhs = [h1,h2,dot(d,f.o)];
+        let p = solve3(m,rhs);
+        return Ssi::Curves(vec![Curve::Line {p,d}])
+    }
+    // one axis for both: a surface of revolution's, or a plane's normal through the other's
+    for (s,t) in [(a,b),(b,a)] {
+        let Some((o,z)) = axis_of(s,t) else { continue };
+        let (Some(ma),Some(mb)) = (meridian(s,o,z,tol),meridian(t,o,z,tol)) else { continue };
+        let points = match (&ma,&mb) {
+            // two spline meridians have no closed-form crossing: traced
+            (Meridian::Spline(..),Meridian::Spline(..)) => continue,
+            (Meridian::Spline(sp,o,z),m) | (m,Meridian::Spline(sp,o,z)) => spline_cross(sp,*o,*z,m,tol),
+            _ => {
+                let Some(points) = cross2(ma,mb,tol) else { return Ssi::Same };
+                points
+            }
+        };
+        let mut out = Vec::new();
+        for [rho,h] in points {
+            // a circle of no radius is a point on the axis: a touch, not a curve
+            if rho <= tol { continue }
+            out.push(Curve::Circle(Frame::about(add(o,scale(z,h)),z),rho));
+        }
+        return Ssi::Curves(out)
+    }
+    match (a.clone(),b.clone()) {
+        (Surface::Plane(_),Surface::Cylinder(..)) | (Surface::Cylinder(..),Surface::Plane(_)) => {
+            let (pl,cy) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
+            let Surface::Cylinder(c,r) = cy else { unreachable!() };
+            Ssi::Curves(plane_cylinder(pl.z,dot(pl.z,pl.o),&c,r,tol))
+        }
+        (Surface::Plane(_),Surface::Sphere(..)) | (Surface::Sphere(..),Surface::Plane(_)) => {
+            let (pl,sp) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
+            let Surface::Sphere(c,r) = sp else { unreachable!() };
+            let dist = dot(pl.z,sub(c.o,pl.o));
+            // touching at a point, by the gap (the circle's radius is its square root)
+            let plane2::Chord::Cross(rho) = plane2::chord(dist,r,plane2::Touch::Gap(tol)) else {
+                return Ssi::Curves(vec![])
+            };
+            Ssi::Curves(vec![Curve::Circle(Frame::new(sub(c.o,scale(pl.z,dist)),pl.z,pl.x),rho)])
+        }
+        (Surface::Plane(_),Surface::Cone(..)) | (Surface::Cone(..),Surface::Plane(_)) => {
+            // a plane through the axis: the two lines through the apex, its meridian either side
+            let (pl,co) = if matches!(a,Surface::Plane(_)) { (f,b.clone()) } else { (g,a.clone()) };
+            let Surface::Cone(c,r,half) = co else { unreachable!() };
+            if dot(pl.z,c.z).abs() > 1e-12 || dot(pl.z,sub(c.o,pl.o)).abs() > tol { return Ssi::Traced }
+            let w = unit(cross(pl.z,c.z));
+            let (sa,ca) = half.dsin_cos();
+            Ssi::Curves([w,scale(w,-1.)].into_iter()
+                .map(|w| Curve::Line {p:add(c.o,scale(w,r)),d:unit(add(scale(w,sa),scale(c.z,ca)))}).collect())
+        }
+        (Surface::Plane(_),Surface::Extrusion(..)) | (Surface::Extrusion(..),Surface::Plane(_))
+            if norm(cross(f.z,g.z)) <= 1e-12 => {
+            // a plane square to the sweep: the swept curve itself, moved along the sweep onto it
+            let (pl,ex) = if matches!(a,Surface::Plane(_)) { (f,b) } else { (g,a) };
+            let Surface::Extrusion(e,c) = ex else { unreachable!() };
+            let lift = |p: V| add(p,scale(e.z,dot(pl.z,sub(pl.o,p))/dot(pl.z,e.z)));
+            match &**c {
+                Curve::BSpline(sp) => match super::nurbs::BSpline::new(sp.degree,sp.knots.clone(),sp.poles.iter().map(|&p| lift(p)).collect()) {
+                    Ok(moved) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(moved))]),
+                    Err(_) => Ssi::Traced,
+                },
+                Curve::Line {p,d} => Ssi::Curves(vec![Curve::Line {p:lift(*p),d:*d}]),
+                Curve::Circle(fr,r) => Ssi::Curves(vec![Curve::Circle(Frame::new(lift(fr.o),fr.z,fr.x),*r)]),
+                _ => Ssi::Traced,
+            }
+        }
+        (Surface::Extrusion(e,c),ref s) | (ref s,Surface::Extrusion(e,c))
+            if let Some(curves) = extruded(&e,&c,s,tol) => Ssi::Curves(curves),
+        (Surface::Plane(pl),Surface::BSpline(_,net)) | (Surface::BSpline(_,net),Surface::Plane(pl)) => {
+            // a sheet one linear span across, its second row its first moved by one step `d` (a
+            // curve swept along a line, as a generating sweep's sheet is), and a plane the step
+            // crosses: the first row's curve carried along the step onto the plane, exactly (the
+            // carrying is affine, so its poles carried are the curve's) — where every pole lands
+            // within the sheet's span, nothing where none does, and traced where they part
+            if net.dv != 1 || net.poles[0].len() != 2 || net.weights.is_some() { return Ssi::Traced }
+            let d = sub(net.poles[0][1],net.poles[0][0]);
+            let along = dot(pl.z,d);
+            if net.poles.iter().any(|r| norm(sub(sub(r[1],r[0]),d)) > tol) || !(along.abs() > 1e-9*norm(d)) { return Ssi::Traced }
+            let steps: Vec<f64> = net.poles.iter().map(|r| dot(pl.z,sub(pl.o,r[0]))/along).collect();
+            let slack = tol/norm(d);
+            if steps.iter().all(|&s| s < -slack) || steps.iter().all(|&s| s > 1.+slack) { return Ssi::Curves(vec![]) }
+            if steps.iter().any(|&s| !(-slack..=1.+slack).contains(&s)) { return Ssi::Traced }
+            match super::nurbs::BSpline::new(net.du,net.uknots.clone(),net.poles.iter().zip(&steps).map(|(r,&s)| add(r[0],scale(d,s))).collect()) {
+                Ok(c) => Ssi::Curves(vec![Curve::BSpline(std::sync::Arc::new(c))]),
+                Err(_) => Ssi::Traced,
+            }
+        }
+        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if norm(cross(f.z,g.z)) <= 1e-12 => {
+            // parallel axes: the sections' circles meet in the lines' feet
+            let w = sub(g.o,f.o);
+            let w = sub(w,scale(f.z,dot(w,f.z)));
+            // touching (a fillet's face on the face it rolls against): one line, judged by how far
+            // apart the surfaces stand (`Touch::Gap`)
+            let (a,h) = match plane2::circles(norm(w),r,s,plane2::Touch::Gap(tol)) {
+                plane2::Circles::Same | plane2::Circles::Miss => return Ssi::Curves(vec![]),
+                plane2::Circles::Touch(a) => (a,None),
+                plane2::Circles::Cross(a,h) => (a,Some(h)),
+            };
+            let u = unit(w);
+            let v = cross(f.z,u);
+            let m = add(f.o,scale(u,a));
+            let Some(h) = h else { return Ssi::Curves(vec![Curve::Line {p:m,d:f.z}]) };
+            Ssi::Curves(vec![Curve::Line {p:add(m,scale(v,h)),d:f.z},Curve::Line {p:sub(m,scale(v,h)),d:f.z}])
+        }
+        (Surface::Cylinder(_,r),Surface::Cylinder(_,s)) if (r-s).abs() <= tol => {
+            // one radius, axes crossing at O: a point as far from both axes has
+            // ((p−O)·a₁)² = ((p−O)·a₂)², so the meeting is the first cylinder cut by the two planes
+            // through O square to a₁ − a₂ and a₁ + a₂: two ellipses, crossing where both touch
+            let axis = |c: &Frame| Curve::Line {p:c.o,d:c.z};
+            let all = [f64::NEG_INFINITY,f64::INFINITY];
+            let Some(&[(_,o)]) = super::query::curve_curve(&axis(&f),all,&axis(&g),all,tol).as_deref() else { return Ssi::Traced };
+            let mut out = Vec::new();
+            for m in [sub(f.z,g.z),add(f.z,g.z)] {
+                let m = unit(m);
+                out.extend(plane_cylinder(m,dot(m,o),&f,r,tol));
+            }
+            Ssi::Curves(out)
+        }
+        _ => Ssi::Traced,
+    }
+}
+
+/// A plane `n·x = h` and a cylinder: lines where the plane runs along the axis (one where it
+/// touches), else an ellipse about where the axis pierces it, its minor axis the radius square to
+/// both.
+fn plane_cylinder(n: V,h: f64,c: &Frame,r: f64,tol: f64) -> Vec<Curve> {
+    let cos = dot(n,c.z);
+    if cos.abs() <= 1e-12 {
+        let dist = h-dot(n,c.o);
+        let foot = add(c.o,scale(n,dist));
+        let w = unit(cross(c.z,n));
+        // (touching: by the gap, as for two cylinders)
+        return match plane2::chord(dist,r,plane2::Touch::Gap(tol)) {
+            plane2::Chord::Miss => vec![],
+            plane2::Chord::Touch => vec![Curve::Line {p:foot,d:c.z}],
+            plane2::Chord::Cross(half) =>
+                vec![Curve::Line {p:add(foot,scale(w,half)),d:c.z},Curve::Line {p:sub(foot,scale(w,half)),d:c.z}],
+        }
+    }
+    let centre = add(c.o,scale(c.z,(h-dot(n,c.o))/cos));
+    let minor = cross(c.z,n);
+    if norm(minor) <= 1e-12 { return vec![Curve::Circle(Frame::new(centre,c.z,c.x),r)] }
+    let minor = unit(minor);
+    let major = cross(minor,n);
+    vec![Curve::Ellipse(Frame::new(centre,cross(major,minor),major),r/cos.abs(),r)]
+}
+
+/// An axis both surfaces may turn about: a surface of revolution's own (a sphere lends the other's),
+/// or a plane's normal through the other's centre.
+fn axis_of(s: &Surface,t: &Surface) -> Option<(V,V)> {
+    match (s,t) {
+        (Surface::Plane(_),_) | (Surface::Sphere(..),_) => None,
+        _ => { let f = s.frame(); Some((f.o,f.z)) }
+    }.or_else(|| match (s,t) {
+        (Surface::Plane(p),Surface::Sphere(c,_)) => Some((c.o,p.z)),
+        (Surface::Sphere(c,_),Surface::Sphere(d,_)) => {
+            let w = sub(d.o,c.o);
+            (norm(w) > 0.).then(|| (c.o,unit(w)))
+        }
+        (Surface::Sphere(c,_),Surface::Plane(p)) => Some((c.o,p.z)),
+        _ => None,
+    })
+}
+
+/// `m x = rhs` for a 3×3 system by Cramer's rule.
+pub fn solve3(m: [V;3],rhs: V) -> V {
+    let det = dot(m[0],cross(m[1],m[2]));
+    let col = |k: usize| -> f64 {
+        let mut a = m;
+        for i in 0..3 { a[i][k] = rhs[i]; }
+        dot(a[0],cross(a[1],a[2]))
+    };
+    [col(0)/det,col(1)/det,col(2)/det]
+}
+
+/// How far `p` stands off two surfaces at once: the larger of their signed distances' sizes.
+fn off_both(a: &Surface,b: &Surface,p: V) -> f64 { a.implicit(p).abs().max(b.implicit(p).abs()) }
+
+/// The sine of the angle two surfaces meet at, below which a trace is ill-conditioned (a point
+/// within `tol` of both may be `tol / sin θ` off their meeting, and where they touch their meeting
+/// has a singular point): refused, not traced (one degree).
+pub(crate) const SHALLOW: f64 = 0.0175;
+
+/// **Where two surfaces touch at a point**: their meeting there, to second order. Over the plane
+/// they share at `p`, `b`'s signed distance along `a` grows as `½ tᵀ Q t`, `Q` the difference of
+/// their second fundamental forms (`a`'s turned by the sign of their normals' agreement): a
+/// definite `Q` touches at `p` alone, an indefinite one meets in two branches crossing there along
+/// its null directions. A touch: those directions (each either way; none for a definite `Q`), and
+/// the radius within which the two stand nearer parallel than a trace can follow (`SHALLOW`).
+/// `None` where `Q` is too near singular to say (the two touch along a curve, or closer than
+/// second order).
+#[derive(Clone,Debug)]
+pub(crate) struct Touch { pub at: V,pub branches: Vec<V>,pub radius: f64 }
+
+/// The step two surfaces' derivatives are differenced over, near their finer feature.
+fn difference_step(a: &Surface,b: &Surface) -> f64 { 1e-4*a.feature().min(b.feature()).min(1e6).max(1e-9) }
+
+pub(crate) fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
+    let (na,nb) = (unit(a.gradient(p)),unit(b.gradient(p)));
+    let agree = if dot(na,nb) < 0. { -1. } else { 1. };
+    let f = Frame::about(p,na);
+    let (e1,e2) = (f.x,f.y);
+    // each surface's second derivatives along the shared plane, by its exact gradient either side
+    let h = difference_step(a,b);
+    let hessian = |s: &Surface,t: V| scale(sub(s.gradient(add(p,scale(t,h))),s.gradient(sub(p,scale(t,h)))),0.5/h);
+    let (ha1,ha2,hb1,hb2) = (hessian(a,e1),hessian(a,e2),hessian(b,e1),hessian(b,e2));
+    let q11 = dot(e1,hb1)-agree*dot(e1,ha1);
+    let q22 = dot(e2,hb2)-agree*dot(e2,ha2);
+    let q12 = 0.5*(dot(e1,hb2)-agree*dot(e1,ha2)+dot(e2,hb1)-agree*dot(e2,ha1));
+    let (mean,dev) = (0.5*(q11+q22),(0.25*(q11-q22)*(q11-q22)+q12*q12).sqrt());
+    let (big,least) = (mean.abs()+dev,(mean.abs()-dev).abs());
+    if !(least > 1e-6*big && big > 0.) { return None }
+    let radius = 2.*SHALLOW/least;
+    // Q(ψ) = mean + B cos 2ψ + C sin 2ψ (B, C its deviation's parts), zero where they cancel
+    let branches = if q11*q22-q12*q12 > 0. { Vec::new() } else {
+        let phase = (2.*q12).datan2(q11-q22);
+        let off = (-mean/dev).clamp(-1.,1.).dacos();
+        [phase+off,phase-off].into_iter().flat_map(|w| {
+            let (sn,cs) = (0.5*w).dsin_cos();
+            let t = add(scale(e1,cs),scale(e2,sn));
+            [t,scale(t,-1.)]
+        }).collect()
+    };
+    Some(Touch {at:p,branches,radius})
+}
+
+/// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s signed distance along it is
+/// stationary — their normals parallel there — by Newton over `a`'s tangent plane, its
+/// derivatives by differences; `None` where that does not settle, or settles off `b` (the two pass
+/// apart or cross there, and do not touch).
+pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
+    let on_a = |q: V| a.point(a.inverse(q));
+    let h = difference_step(a,b);
+    let mut x = on_a(p);
+    for _ in 0..32 {
+        let f = Frame::about(x,a.gradient(x));
+        let g = |s: f64,t: f64| b.implicit(on_a(add(x,add(scale(f.x,s),scale(f.y,t)))));
+        let (g0,[sp,sm,tp,tm]) = (g(0.,0.),[g(h,0.),g(-h,0.),g(0.,h),g(0.,-h)]);
+        let (gs,gt) = ((sp-sm)/(2.*h),(tp-tm)/(2.*h));
+        let (gss,gtt) = ((sp-2.*g0+sm)/(h*h),(tp-2.*g0+tm)/(h*h));
+        let gst = (g(h,h)-g(h,-h)-g(-h,h)+g(-h,-h))/(4.*h*h);
+        let det = gss*gtt-gst*gst;
+        if !(det.abs() > 0.) { return None }
+        let (ds,dt) = ((-gs*gtt+gt*gst)/det,(-gt*gss+gs*gst)/det);
+        x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
+        if ds.hypot(dt) <= 1e-3*tol { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
+    }
+    None
+}
+
+/// The curves two surfaces meet in, traced through `seeds` (points on both) within the box
+/// `[lo, hi]`: from each seed not already on a traced curve, a march along `∇a × ∇b` both ways
+/// — each step predicted along the tangent and pulled onto both surfaces, shortened while the
+/// tangent turns more than a few degrees — until it leaves the box or comes back to where it
+/// began. A seed where the two are tangent (their normals parallel) is refused, but for one
+/// `beside` a meeting already known — about a point where the two touch and meet in nothing on
+/// the faces asked of, or along an edge they touch along (`boolean`): there a seed traces nothing
+/// and a march ends.
+pub fn trace(a: &Surface,b: &Surface,seeds: &[V],lo: V,hi: V,tol: f64) -> Result<Vec<Curve>,String> {
+    trace_beside(a,b,seeds,&mut |_| false,lo,hi,tol)
+}
+
+/// `trace`, ending where it comes `beside` a known meeting.
+pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64)
+    -> Result<Vec<Curve>,String> {
+    use super::geom::Traced;
+    let tangent = |p: V| -> Option<V> {
+        let t = cross(a.gradient(p),b.gradient(p));
+        let n = norm(t);
+        (n > SHALLOW).then(|| scale(t,1./n))
+    };
+    let shallow = |p: V| format!("a {} and a {} meet at {:.2}° at [{:.4}, {:.4}, {:.4}], nearly touching: their meeting is \
+        ill-conditioned there, not built yet",a.kind(),b.kind(),norm(cross(a.gradient(p),b.gradient(p))).dasin().to_degrees(),p[0],p[1],p[2]);
+    let probe = Traced {a:a.clone(),b:b.clone(),pts:vec![],closed:false};
+    let diag = norm(sub(hi,lo)).max(tol);
+    let h0 = (a.feature_within(lo,hi).min(b.feature_within(lo,hi))/12.).min(diag/24.).max(diag*1e-4);
+    let inside = |p: V,pad: f64| (0..3).all(|k| p[k] >= lo[k]-pad && p[k] <= hi[k]+pad);
+    let mut curves: Vec<Curve> = Vec::new();
+    // the seeds projected onto both, once; those landing on both are where a patch's edge crosses
+    // the other
+    let projected: Vec<V> = seeds.iter().map(|&s| probe.project(s)).collect();
+    let edge_seeds: Vec<V> = projected.iter().copied()
+        .filter(|&q| off_both(a,b,q) <= 16.*tol).collect();
+    // the curves traced so far, as traced (exact: each point a projection onto both surfaces), so a
+    // seed on one is known by its distance to the curve and not to a polyline's chords
+    let mut traced_so_far: Vec<Curve> = Vec::new();
+    // **a meeting through a point where the two touch** (#218's 1, #58): two rounds tangent to
+    // one face meet in a curve that ends where both touch it — a point where the two surfaces
+    // touch and their meeting has two branches crossing (`touch`). A march arriving there ends
+    // there; a seed standing there is traced from once the rest are, along each half of each
+    // branch no curve has arrived along
+    // (found walking over either: a fitted sheet's foot is read numerically, an analytic one's not)
+    let touch_at = |q: V| -> Option<Touch> {
+        let at = touch_near(a,b,q,tol).or_else(|| touch_near(b,a,q,tol))?;
+        let t = touch(a,b,at)?;
+        (distance(at,q) <= 2.*t.radius.max(h0)).then_some(t)
+    };
+    let mut touches: Vec<Touch> = Vec::new();
+    // the seeds, then each touch's half-branches: a start, and the sense its march leaves in (none:
+    // both ways from a seed)
+    let mut starts: Vec<(V,Option<V>)> = projected.iter().map(|&p| (p,None)).collect();
+    let mut k = 0;
+    loop {
+        // every seed traced: each touch's half-branches no curve arrived along, once
+        if k == projected.len() { queue_branches(&mut starts,&touches,&traced_so_far,tol) }
+        let Some(&(p0,leaving)) = starts.get(k) else { break };
+        k += 1;
+        if leaving.is_none() && traced_so_far.iter().any(|c| crate::util::space::distance(c.point(c.inverse(p0)),p0) <= 8.*tol) { continue }
+        if leaving.is_none() && tangent(p0).is_none() {
+            if beside(p0) { continue }
+            match touch_at(p0) {
+                // where the two touch at that point alone (their meeting there no curve, `touch`'s
+                // `Q` definite): nothing to trace from it
+                Some(t) if t.branches.is_empty() => continue,
+                Some(t) => {
+                    if !touches.iter().any(|u| distance(u.at,t.at) <= 8.*tol) { touches.push(t); }
+                    continue
+                }
+                None => return Err(shallow(p0)),
+            }
+        }
+        let mut halves: Vec<Vec<V>> = Vec::new();
+        let mut closed = false;
+        for sense in [1.,-1.] {
+            // from a touch, one way only: out along its half-branch
+            if leaving.is_some() && sense < 0. { halves.push(vec![p0]); continue }
+            let mut pts = vec![p0];
+            let mut p = p0;
+            let mut t = match leaving { Some(d) => d,None => scale(tangent(p0).unwrap(),sense) };
+            let mut h = h0;
+            // a march from a touch steps out along its branch before it reads the meeting's tangent
+            if leaving.is_some() {
+                let mut r = h0;
+                let first = loop {
+                    let q = probe.project(add(p0,scale(t,r)));
+                    if tangent(q).is_some() || r > 64.*h0 { break q }
+                    r *= 2.;
+                };
+                let Some(tq) = tangent(first) else { return Err(shallow(first)) };
+                pts.push(first);
+                p = first;
+                t = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
+            }
+            for _ in 0..100_000 {
+                let q = probe.project(add(p,scale(t,h)));
+                // a projection that does not reach both surfaces: a step too long (shortened), or past a
+                // sheet's domain, where its foot is held at the edge (still so at the least step): the
+                // end of this direction. Past the edge a sheet's signed distance runs on along its
+                // tangent extension, so it is the distance to the patch itself that says so — read by
+                // the signed one alone, a trace went back and forth at an edge a hundred thousand times
+                let lands = |q: V| {
+                    let off = |s: &Surface| s.off_patch(q).unwrap_or(0.);
+                    off_both(a,b,q).max(off(a)).max(off(b)) <= 16.*tol
+                };
+                if !lands(q) {
+                    // a step too long for the projection to land: shorter, as a turn too sharp is
+                    if h > h0*1e-4 { h /= 2.; continue }
+                    if super::debug() {
+                        eprintln!("brep:   a step left the surfaces after {} points: {:.1e} and {:.1e} off, h {h:.1e}",pts.len(),a.implicit(q),b.implicit(q));
+                    }
+                    // **a trace leaving a patch ends on its edge**: a march standing on an edge
+                    // crossing already (seeded there) ends there; else the last step's length is
+                    // halved between where it lands on the patch and where it does not, so the end is
+                    // the edge's crossing (a vertex the curve's edge ends at), not up to a step short
+                    // of it — and where an edge crossing it was seeded from lies within that step
+                    // ahead, that vertex, which a sheet's numerical foot finds only to its slack
+                    if edge_seeds.iter().any(|&s| distance(s,p) <= tol) { break }
+                    let along = |m: f64| probe.project(add(p,scale(t,m)));
+                    let (inside_h,_) = crate::util::roots::bisect(0.,h,|x,y| 0.5*(x+y),|x,y| y-x > tol,|m| lands(along(m)));
+                    let last = (inside_h > 0.).then(|| along(inside_h));
+                    let end = last.unwrap_or(p);
+                    let crossing = edge_seeds.iter().copied()
+                        .filter(|&s| dot(sub(s,p),t) > 0. && distance(s,end) <= (h+16.*tol).min(distance(s,p)+tol))
+                        .min_by(|x,y| distance(*x,end).total_cmp(&distance(*y,end)));
+                    if let Some(q) = crossing.or(last) {
+                        drop_crowding(&mut pts,q,0.25*h0,tol);
+                        if distance(q,*pts.last().unwrap()) > tol { pts.push(q) }
+                    }
+                    break
+                }
+                let Some(tq) = tangent(q) else {
+                    // into a known meeting: what runs on from there is known, or off the faces
+                    if beside(q) { pts.push(q); break }
+                    // into a point where the two touch, along one of its branches: ending there
+                    let Some(touched) = touch_at(q).filter(|t| !t.branches.is_empty()) else { return Err(shallow(q)) };
+                    if !touched.branches.iter().any(|&d| dot(d,t) > 0.9) { return Err(shallow(q)) }
+                    drop_crowding(&mut pts,touched.at,0.25*h0,tol);
+                    pts.push(touched.at);
+                    if !touches.iter().any(|u| distance(u.at,touched.at) <= 8.*tol) { touches.push(touched); }
+                    break
+                };
+                let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
+                if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
+                // back where it began: this step's chord passes the start, a closed curve
+                if pts.len() > 3 {
+                    let d = sub(q,p);
+                    let s = dot(sub(p0,p),d)/dot(d,d);
+                    if (0. ..=1.).contains(&s) && crate::util::space::distance(p0,crate::util::space::lerp(p,q,s)) < 0.25*h {
+                        closed = true;
+                        pts.push(p0);
+                        break
+                    }
+                }
+                pts.push(q);
+                if !inside(q,h) { break }
+                p = q;
+                t = tq;
+                if dot(tq,t) > 0.9995 { h = (h*1.5).min(h0); }
+            }
+            halves.push(pts);
+            if closed { break }
+        }
+        let pts = if closed { halves.swap_remove(0) } else {
+            let mut back = halves.pop().unwrap();
+            back.reverse();
+            back.pop();
+            back.extend(halves.pop().unwrap());
+            back
+        };
+        if pts.len() >= 2 {
+            if super::debug() { eprintln!("brep:   a curve of {} points, closed {closed}, from {:?} to {:?}",pts.len(),pts[0],pts[pts.len()-1]); }
+            let traced = Traced {a:a.clone(),b:b.clone(),pts,closed};
+            traced_so_far.push(Curve::Traced(std::sync::Arc::new(traced)));
+        }
+    }
+    // each fitted through the seeds on it, exactly: they are where the faces' boundaries cross, the
+    // vertices its edges will end at (a fit within `tol` of the traced points may pass farther from
+    // a vertex between them, where a swept surface's curve runs on into its tangent)
+    for c in distinct(traced_so_far,tol) {
+        let Curve::Traced(t) = &c else { unreachable!() };
+        let through: Vec<(f64,V)> = projected.iter().filter_map(|&p| {
+            let x = c.inverse(p);
+            if crate::util::space::distance(c.point(x),p) > 8.*tol { return None }
+            // where along the trace, closely: a seed placed a little past its neighbour in the
+            // trace's order doubles the fit back on itself there
+            let (mut a,mut b) = ((x-1.).max(0.),(x+1.).min((t.pts.len()-1) as f64));
+            let d = |x: f64| crate::util::space::distance(t.at(x),p);
+            for _ in 0..40 {
+                let (m1,m2) = (a+(b-a)*0.382,a+(b-a)*0.618);
+                if d(m1) < d(m2) { b = m2 } else { a = m1 }
+            }
+            Some(((a+b)/2.,p))
+        }).collect();
+        curves.push(fitted(t,tol/4.,&through).unwrap_or(c));
+    }
+    Ok(curves)
+}
+
+/// **One curve a meeting**: of two traces, one whose points all lie within `8 tol` of the other
+/// is that meeting traced again — a march that left a seed on its meeting unrecognised (its chord
+/// cutting a turn the seed stands on), traced once more from it — and is dropped: the other where
+/// it reaches farther, else whichever took the shorter longest step, its chords cutting no turn the
+/// other's do. Read on the traces, before either is fitted, so the one kept is fitted through every
+/// seed on the meeting; two edges along one meeting split no cell (`vthread.sv`'s fan: the split
+/// took the copy whose fit ran 3.4e-6 off it).
+fn distinct(traced: Vec<Curve>,tol: f64) -> Vec<Curve> {
+    // up to 33 of its points, evenly by index and its ends among them (on both surfaces already),
+    // and its longest step
+    let read = |t: &super::geom::Traced| {
+        let (n,m) = (t.pts.len()-1,(t.pts.len()-1).min(32));
+        let pts: Vec<V> = (0..=m).map(|k| t.pts[k*n/m]).collect();
+        (pts,t.pts.windows(2).map(|w| distance(w[0],w[1])).fold(0.,f64::max))
+    };
+    // (its ends within two marches' slack: each lands within `16 tol` past a patch's edge, which
+    // its edge's vertex trims, so one reaching that much farther reaches no farther)
+    let along = |pts: &[V],c: &Curve| pts.iter().enumerate().all(|(k,&p)| {
+        distance(c.point(c.inverse(p)),p) <= if k == 0 || k+1 == pts.len() { 32. } else { 8. }*tol
+    });
+    let mut kept: Vec<(Curve,Vec<V>,f64)> = Vec::new();
+    'next: for c in traced {
+        let Curve::Traced(t) = &c else { unreachable!() };
+        let (pc,hc) = read(t);
+        for k in kept.iter_mut() {
+            let c_on_k = along(&pc,&k.0);
+            if c_on_k && k.2 <= hc { continue 'next }
+            if along(&k.1,&c) { *k = (c,pc,hc); continue 'next }
+            if c_on_k { continue 'next }
+        }
+        kept.push((c,pc,hc));
+    }
+    kept.into_iter().map(|(c,..)| c).collect()
+}
+
+/// **The steps crowding a march's end dropped**, `end` about to be pushed: a fit through points a
+/// step's ten-thousandth apart turns sharply between them, so the last points within `reach` of
+/// `end` go, but only while the chord from the point kept before them to `end` passes within
+/// `tol` of each: a point that carries the curve's turn stays, however near the end. By distance
+/// alone a turn sharper than `reach` was cut to a chord across it (a sharp rim's fan: a meeting
+/// 0.09 mm long, `reach` 0.05), and its fit and the edge made from it ran off the surfaces there.
+fn drop_crowding(pts: &mut Vec<V>,end: V,reach: f64,tol: f64) {
+    let mut keep = pts.len();
+    for k in (1..pts.len()).rev() {
+        if distance(pts[k],end) >= reach { break }
+        if !pts[k..].iter().all(|&m| segment_distance(m,pts[k-1],end) <= tol) { break }
+        keep = k;
+    }
+    pts.truncate(keep);
+}
+
+/// Once every seed is traced: from each touch where two surfaces' meeting has branches crossing,
+/// each half-branch no traced curve arrives along, queued as a start leaving that way.
+fn queue_branches(starts: &mut Vec<(V,Option<V>)>,touches: &[Touch],traced: &[Curve],tol: f64) {
+    for t in touches {
+        for &d in &t.branches {
+            // a curve arrives along it where a point of the curve stands out that way from the touch
+            let probe = add(t.at,scale(d,t.radius.max(64.*tol)));
+            let arrived = traced.iter().any(|c| {
+                let q = c.point(c.inverse(probe));
+                distance(q,t.at) <= 2.*t.radius.max(64.*tol)+8.*tol && dot(sub(q,t.at),d) > 0.7*distance(q,t.at)
+            });
+            if !arrived { starts.push((t.at,Some(d))); }
+        }
+    }
+}
+
+/// Whether the search for unseen meetings (`unseen`) can answer for a surface, as either side:
+/// one with closed-form bounds on its derivatives and a signed distance for its implicit.
+pub fn searchable(s: &Surface) -> bool { derivative_bounds(s,[0.,0.]).is_some() }
+
+/// Bounds over the parameter strip `v` of an analytic surface's derivatives: the largest sizes of
+/// `S_u`, `S_v`, `S_uu`, `S_uv`, `S_vv`. None for a surface swept from a curve, a loft or a sheet.
+fn derivative_bounds(s: &Surface,[v0,v1]: [f64;2]) -> Option<[f64;5]> {
+    match *s {
+        Surface::Plane(_) => Some([1.,1.,0.,0.,0.]),
+        Surface::Cylinder(_,r) => Some([r,1.,r,0.,0.]),
+        Surface::Cone(_,r,a) => {
+            let sa = a.dsin();
+            let q = (r+v0*sa).abs().max((r+v1*sa).abs());
+            Some([q,1.,q,sa.abs(),0.])
+        }
+        Surface::Sphere(_,r) => Some([r;5]),
+        Surface::Torus(_,big,r) => Some([big.abs()+r,r,big.abs()+r,r,r]),
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+    }
+}
+
+/// A bound on the size of an analytic surface's `implicit`'s Hessian over the ball about `p` of
+/// radius `r` — the curvature of its level sets, the inverse of the distance to where they focus —
+/// or none where the ball reaches that focus (an axis, a centre, a torus's core circle).
+fn curvature_bound(s: &Surface,p: V,r: f64) -> Option<f64> {
+    let [x,y,z] = s.frame().local(p);
+    let rho = x.dhypot(y);
+    let over = |d: f64| (d > 0.).then(|| 1./d);
+    match *s {
+        Surface::Plane(_) => Some(0.),
+        Surface::Sphere(..) => over(rho.dhypot(z)-r),
+        // a cone's implicit is cos α times ρ less a linear part: ρ's curvature at most
+        Surface::Cylinder(..) | Surface::Cone(..) => over(rho-r),
+        // the distance to the core circle in the meridian half-plane, which turns with ρ
+        Surface::Torus(_,big,_) => Some(over((rho-big).dhypot(z)-r)?+over(rho-r)?),
+        Surface::Extrusion(..) | Surface::Revolution(..) | Surface::Blend(..) | Surface::BSpline(..) | Surface::Family(..) => None,
+    }
+}
+
+/// Points along a traced curve, or a fitted one, no farther apart than `spacing` (a traced curve's
+/// chords: they pass within a sagitta of it far smaller than the spacing).
+fn samples_along(c: &Curve,spacing: f64) -> Vec<V> {
+    // even in the parameter, twice as many as its sampled speed asks
+    let even = |t0: f64,t1: f64,length: f64| -> Vec<V> {
+        let n = (2.*length/spacing).ceil().clamp(1.,1e6) as usize;
+        (0..=n).map(|j| c.point(t0+(t1-t0)*j as f64/n as f64)).collect()
+    };
+    match c {
+        Curve::Traced(t) => t.pts.windows(2).flat_map(|w| {
+            let n = (crate::util::space::distance(w[0],w[1])/spacing).ceil().clamp(1.,1e6) as usize;
+            (0..n).map(move |j| crate::util::space::lerp(w[0],w[1],j as f64/n as f64))
+        }).chain(t.pts.last().copied()).collect(),
+        Curve::BSpline(b) => { let [t0,t1] = b.domain(); even(t0,t1,c.speed()*(t1-t0)) }
+        _ => match c.period() { Some(p) => even(0.,p,c.speed()*p),None => Vec::new() },
+    }
+}
+
+/// A point where `b` meets a face of `a` that no curve of `known` passes near: what an edge's
+/// crossing cannot seed — a closed curve lying inside both faces. `domain` is a box of `a`'s
+/// parameters holding the face, and the search keeps to the faces' shared box `[lo, hi]`.
+///
+/// The box is halved, the longer side in space first, and each cell answered three ways: clear of
+/// `b` (shown, not sampled: `b`'s implicit is a signed distance, so it changes by no more than the
+/// distance moved — the cell's reach from its middle — and, where the cell keeps clear of where
+/// `b`'s level sets focus, by no more than its first-order change and a bound on its second);
+/// beside a known curve, once no wider than `leaf`; or holding a point pulled onto both surfaces
+/// from its middle, new and returned. A cell answering none of these is halved again, down to a
+/// few tolerances — below that its meeting with `b` is not resolved, and that is refused, never
+/// guessed. Two curves nearer than `leaf` are not told apart. `Ok(None)`: every part of the face is
+/// clear of `b` or beside a known curve. Both surfaces must be `searchable`.
+pub fn unseen(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
+    unseen_beside(a,domain,b,known,&[],&mut |_| false,lo,hi,tol)
+}
+
+/// `unseen`, known also the curves `stretches` over their stretches (edges the two touch along),
+/// and a cell whose meeting (its middle pulled onto both) is `beside` a known meeting (a point
+/// where the two touch alone, its branches traced up to it) answered as beside a known curve.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn unseen_beside(a: &Surface,domain: [[f64;2];2],b: &Surface,known: &[Curve],stretches: &[(&Curve,[f64;2])],
+    beside: &mut dyn FnMut(V) -> bool,lo: V,hi: V,tol: f64) -> Result<Option<V>,String> {
+    // a cap on the cells asked, far past any face this kernel builds, that a pathology ends at
+    const CELLS: usize = 4_000_000;
+    let pad = 4.*tol;
+    if (0..3).any(|k| !(hi[k]+pad >= lo[k]-pad)) { return Ok(None) }
+    let diag = norm(sub(hi,lo));
+    let leaf = (a.feature_within(lo,hi).min(b.feature_within(lo,hi)).min(diag)/64.).max(diag*1e-4).max(16.*tol);
+    let floor = (leaf*1e-6).max(4.*tol);
+    // the known curves' points, filed by place, read within a cell's reach of its middle
+    let spacing = leaf/2.;
+    let mut grid = crate::util::space::Grid::new(2.*leaf+spacing);
+    let mut along: Vec<V> = Vec::new();
+    for c in known { for p in samples_along(c,spacing) { grid.insert(p,along.len() as u32); along.push(p); } }
+    for &(c,[t0,t1]) in stretches {
+        let n = (2.*c.speed()*(t1-t0).abs()/spacing).ceil().clamp(1.,1e6) as usize;
+        for j in 0..=n { let p = c.point(t0+(t1-t0)*j as f64/n as f64); grid.insert(p,along.len() as u32); along.push(p); }
+    }
+    let near_known = |p: V,within: f64| {
+        let mut hit = false;
+        grid.around(p,|i| if !hit && crate::util::space::distance(along[i as usize],p) <= within { hit = true });
+        hit
+    };
+    let probe = super::geom::Traced {a:a.clone(),b:b.clone(),pts:vec![],closed:false};
+    let mut cells = vec![domain];
+    let mut asked = 0;
+    while let Some([[u0,u1],[v0,v1]]) = cells.pop() {
+        asked += 1;
+        if asked > CELLS {
+            return Err(format!("a {} and a {}: the search for where they meet asked {CELLS} cells without settling, not built yet",
+                a.kind(),b.kind()))
+        }
+        let Some([mu,mv,muu,muv,mvv]) = derivative_bounds(a,[v0,v1]) else {
+            return Err(format!("a {} cannot be searched for where it meets a {}",a.kind(),b.kind()))
+        };
+        let (hu,hv) = ((u1-u0)/2.,(v1-v0)/2.);
+        let mid = [(u0+u1)/2.,(v0+v1)/2.];
+        let (p,su,sv) = a.d1(mid);
+        // every point of the cell is within `reach` of its middle
+        let reach = mu*hu+mv*hv;
+        if (0..3).any(|k| p[k]+reach < lo[k]-pad || p[k]-reach > hi[k]+pad) { continue }
+        let g = b.implicit(p);
+        if g.abs() > reach { continue }
+        if let Some(k) = curvature_bound(b,p,reach) {
+            let n = b.gradient(p);
+            let slope = dot(n,su).abs()*hu+dot(n,sv).abs()*hv;
+            let bend = k*reach*reach+muu*hu*hu+2.*muv*hu*hv+mvv*hv*hv;
+            if g.abs()-slope-bend/2. > 0. { continue }
+        }
+        if reach <= leaf {
+            if near_known(p,2.*reach+spacing) { continue }
+            let q = probe.project(p);
+            if beside(q) { continue }
+            if off_both(a,b,q) <= 16.*tol {
+                // a meeting beyond the shared box is on neither face; one on a known curve says
+                // nothing of this cell, which is halved
+                if (0..3).any(|k| q[k] < lo[k]-pad || q[k] > hi[k]+pad) { continue }
+                if !near_known(q,spacing) { return Ok(Some(q)) }
+            }
+            if reach <= floor {
+                return Err(format!("a {} and a {} come within {:.1e} of each other at [{:.4}, {:.4}, {:.4}] and no meeting was \
+                    found there: whether they touch is not resolved, not built yet",a.kind(),b.kind(),g.abs(),p[0],p[1],p[2]))
+            }
+        }
+        if mu*hu >= mv*hv { cells.push([[mid[0],u1],[v0,v1]]); cells.push([[u0,mid[0]],[v0,v1]]); }
+        else { cells.push([[u0,u1],[mid[1],v1]]); cells.push([[u0,u1],[v0,mid[1]]]); }
+    }
+    if super::debug() {
+        eprintln!("brep:   a {} over {domain:?} is clear of a {} but for {} known curve(s), in {asked} cells (leaf {leaf:.1e})",
+            a.kind(),b.kind(),known.len());
+    }
+    Ok(None)
+}
+
+/// An open traced curve as a cubic B-spline through its points (on both surfaces already) by chord
+/// length — its own parameter has a kink at every point, which its derivative, a difference of two
+/// projections, reads through the surfaces' noise — each gap's middle projected and the curve
+/// refined where it passes further than `tol` from it, and then where it passes further than
+/// `4 tol` (the trace's own) from either surface between its points; `None` where no refinement
+/// comes within both. Its derivative is then its own exactly: what an integral along it and a
+/// face's curve in its parameters need. Each refinement projects one point a gap, never the whole
+/// curve again.
+fn fitted(t: &super::geom::Traced,tol: f64,through: &[(f64,V)]) -> Option<Curve> {
+    if t.closed || t.pts.len() < 2 { return None }
+    // Interpolated from every eighth traced point to begin with, a gap between two interpolated
+    // points split at its middle where the fit misses the traced curve there by more than `tol`:
+    // a traced point in it, or the traced curve's middle of a step, farther from the fit (the fit's
+    // own points projected onto both surfaces read a sheet's numerical foot, whose noise is near
+    // `tol`, and never settle; for that noise a gap is split to an eighth of a step and no
+    // further).  A curve with a knot at every traced
+    // point is as many knots as the trace took steps, and a mesh puts several points in every span.
+    // Neighbouring gaps are kept within twice each other's steps: an interpolating cubic through
+    // points crowded beside sparse ones loops away from the curve between them, and passes near
+    // every point it was checked at while doing so.
+    const STRIDE: usize = 8;
+    let last = t.pts.len()-1;
+    // (a point it must pass through takes the place of a regular one within half a stride of it,
+    // which beside it would leave a gap the grading spreads)
+    let must: Vec<f64> = through.iter().map(|w| w.0).filter(|&x| x > 0. && x < last as f64).collect();
+    // every eighth step's length apart, by length along the trace and not by count: a trace takes
+    // small steps where it starts from a seed, and points crowded there beside a stride of full
+    // steps make the interpolation hook back at the curve's end
+    let lengths: Vec<f64> = t.pts.windows(2).map(|w| crate::util::space::distance(w[0],w[1])).collect();
+    let mut sorted = lengths.clone();
+    let median = *sorted.select_nth_unstable_by(lengths.len()/2,f64::total_cmp).1;
+    let stride = STRIDE as f64*median;
+    let mut regular = vec![0.];
+    let mut since = 0.;
+    for (i,l) in lengths.iter().enumerate().take(last.saturating_sub(1)) {
+        since += l;
+        if since >= stride { regular.push((i+1) as f64); since = 0.; }
+    }
+    // the last point, the regular one before it given up where it would leave a gap under half a stride
+    if regular.len() > 1 && lengths[*regular.last().unwrap() as usize..].iter().sum::<f64>() < stride/2. { regular.pop(); }
+    regular.push(last as f64);
+    // how far along the trace a (fractional) index is
+    let mut along = vec![0.];
+    for l in &lengths { along.push(along.last().unwrap()+l); }
+    let length_at = |x: f64| { let i = (x.floor() as usize).min(last.saturating_sub(1)); along[i]+(x-i as f64)*lengths.get(i).copied().unwrap_or(0.) };
+    let mut at: Vec<f64> = regular.into_iter()
+        .filter(|&x| must.iter().all(|&m| if x == 0. || x == last as f64 { (m-x).abs() >= 0.25 } else {
+            (m-x).abs() >= STRIDE as f64/2. && (length_at(m)-length_at(x)).abs() >= stride/2. }))
+        .chain(must.iter().copied()).collect();
+    at.sort_by(f64::total_cmp);
+    at.dedup_by(|x,y| (*x-*y).abs() < 1e-9);
+    let between = std::cell::RefCell::new(through.iter().map(|&(x,p)| (x.to_bits(),p)).collect::<std::collections::BTreeMap<u64,V>>());
+    let point = |x: f64| if x.fract() == 0. { t.pts[x as usize] } else {
+        *between.borrow_mut().entry(x.to_bits()).or_insert_with(|| t.at(x))
+    };
+    // a traced point where one stands near the middle, else the middle itself: a traced point
+    // beside an end (a vertex the fit passes through, between two traced points) would crowd it
+    let middle = |a: f64,b: f64| { let m = ((a+b)/2.).floor(); if b-a >= 2. && (m-a).min(b-m) >= (b-a)/4. { m } else { (a+b)/2. } };
+    let debug = super::debug();
+    // of the fits the trace's check accepted, the one with the fewest gaps off the surfaces, and
+    // their count
+    let (mut best,mut fewest) = (None,usize::MAX);
+    for round in 0..24 {
+        let pts: Vec<V> = at.iter().map(|&x| point(x)).collect();
+        let mut s = vec![0.];
+        for w in pts.windows(2) { s.push(s.last().unwrap()+crate::util::space::distance(w[0],w[1])); }
+        if !(*s.last().unwrap() > 0.) || s.windows(2).any(|w| !(w[1] > w[0])) { break }
+        let Some(spline) = super::nurbs::interpolate(&pts,&s,3) else { break };
+        let fit = Curve::BSpline(std::sync::Arc::new(spline));
+        let mut split = vec![false;at.len()-1];
+        for (k,w) in at.windows(2).enumerate() {
+            let (a,b) = (w[0],w[1]);
+            // the traced points inside, and the traced curve's middle of every step between them
+            let inner: Vec<f64> = if b-a >= 1. {
+                (a as usize..=b as usize).flat_map(|i| [i as f64,i as f64+0.5]).filter(|&x| x > a+0.125 && x < b-0.125).collect()
+            } else { vec![(a+b)/2.] };
+            let off = |x: f64| {
+                let m = point(x);
+                let guess = s[k]+(s[k+1]-s[k])*(x-a)/(b-a);
+                crate::util::space::distance(super::geom::Curve::point(&fit,fit_near(&fit,m,guess)),m) > tol
+            };
+            // a gap an eighth of a step wide misses by the traced curve's own noise, and is left
+            split[k] = b-a > 0.125 && inner.into_iter().any(off);
+        }
+        let near = !split.contains(&true);
+        // and once near every point of the trace, on both surfaces between its points, to the
+        // trace's own `4 tol`: what an edge made from it is held to. A fit near every point it
+        // was read at may still stray between them (one through a trace that cut a sharp rim's
+        // turn ran 3.4e-6 off its fan), and a gap off the surfaces is split as one that misses
+        // (its width no bar: the trace's noise is a quarter of this). Only while that brings
+        // fewer off: a gap narrower than the trace's noise lets the cubic wiggle between points
+        // crowded closer each split (a chamfer's foot on a sheet, 1.4e-6 off in a gap a
+        // twentieth of a step wide, doubled its strays every round), and there the fit with the
+        // fewest is the answer — as near both as interpolation through the trace comes
+        if near {
+            let on = |u: f64| off_both(&t.a,&t.b,super::geom::Curve::point(&fit,u)) <= 4.*tol;
+            for k in 0..split.len() {
+                split[k] = !(1..4).all(|j| on(s[k]+(s[k+1]-s[k])*j as f64/4.));
+            }
+        }
+        let missed = split.iter().filter(|&&x| x).count();
+        if debug {
+            eprintln!("brep: fit of a {} × {} trace, round {round}: {} of {} points, {missed} gaps \
+                missed{}",t.a.kind(),t.b.kind(),at.len(),t.pts.len(),if near { " off the surfaces" } else { "" });
+        }
+        if missed == 0 { return Some(fit) }
+        if near {
+            if missed >= fewest { break }
+            (best,fewest) = (Some(fit),missed);
+        }
+        // graded: a gap more than twice a neighbour's length (as that neighbour will be) is split too
+        loop {
+            let width = |k: usize,split: &[bool]| { let w = s[k+1]-s[k]; if split[k] { w/2. } else { w } };
+            let mut more = false;
+            for k in 0..split.len() {
+                // (a gap an eighth of a step wide is the traced curve's own noise, and never split)
+                if split[k] || at[k+1]-at[k] <= 0.125 { continue }
+                let w = width(k,&split);
+                if (k > 0 && w > 2.*width(k-1,&split)) || (k+1 < split.len() && w > 2.*width(k+1,&split)) { split[k] = true; more = true; }
+            }
+            if !more { break }
+        }
+        let mut next = vec![at[0]];
+        for (k,w) in at.windows(2).enumerate() {
+            if split[k] { next.push(middle(w[0],w[1])); }
+            next.push(w[1]);
+        }
+        at = next;
+    }
+    best
+}
+
+/// The parameter of the point of `c` nearest `p`, by Newton from `t`.
+fn fit_near(c: &Curve,p: V,mut t: f64) -> f64 {
+    for _ in 0..12 {
+        let (x,d,dd) = c.d2(t);
+        let e = sub(x,p);
+        let f = dot(e,d);
+        let df = dot(d,d)+dot(e,dd);
+        if !(df.abs() > 0.) { break }
+        let step = f/df;
+        t -= step;
+        if step.abs() <= 1e-15*(1.+t.abs()) { break }
+    }
+    t
+}

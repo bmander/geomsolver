@@ -24,6 +24,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95832e849adfb21180ccb6826a99da14e5d266ae5c2e668e1602cf234f153797"
 
 [[package]]
+name = "cad-kernel"
+version = "0.1.0"
+
+[[package]]
 name = "fixtures"
 version = "0.1.0"
 dependencies = [
@@ -57,6 +61,9 @@ dependencies = [
 [[package]]
 name = "gcs-solve"
 version = "0.1.0"
+dependencies = [
+ "cad-kernel",
+]
 
 [[package]]
 name = "glam"

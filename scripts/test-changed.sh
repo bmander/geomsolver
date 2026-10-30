@@ -8,7 +8,9 @@
 #
 #   rust/gcs-core/tests/<m>.rs, tests/<m>/…   that module
 #   a source file, src/<a>/<b>.rs             the modules naming `a::b` (or the top module of a
-#                                             top-level file), and those called `b` or `b_…`
+#                                             top-level file), and those called `b` or `b_…`;
+#                                             the kernel's, cad-kernel/src/<b>.rs, as `brep::b`,
+#                                             and its util/<b>.rs as the top module `b`
 #   a document, rust/examples/<d>.sv          the modules naming `<d>.sv` or `"<d>"`
 #   any other file (a fixture, a doc)         the modules naming the file, if any
 #   rust/gcs-cli/, rust/gcs-ffi/              that crate's own suite
@@ -48,7 +50,8 @@ naming() {
 while IFS= read -r f; do
     case "$f" in
         rust/Cargo.toml|rust/Cargo.lock|rust/rust-toolchain.toml|rust/*/Cargo.toml|rust/lib/*|\
-        rust/fixtures/*|rust/gcs-solve/src/lib.rs|rust/gcs-core/src/lib.rs|$TESTS/main.rs|\
+        rust/fixtures/*|rust/cad-kernel/src/lib.rs|rust/gcs-solve/src/lib.rs|\
+        rust/gcs-core/src/lib.rs|$TESTS/main.rs|\
         $TESTS/common/*)
             whole="$f" ;;
         $TESTS/*)
@@ -58,6 +61,15 @@ while IFS= read -r f; do
         rust/gcs-cli/*) cli=1 ;;
         rust/gcs-ffi/*) ffi=1 ;;
         rust/gcs-solve/src/bin/*|rust/gcs-core/src/bin/*|.github/*|.claude/*|scripts/*) ;;
+        rust/cad-kernel/src/*.rs)
+            # the kernel, which the suite names as `brep::…`, and its `util`, by the old names
+            core=1; p=${f#rust/cad-kernel/src/}; p=${p%.rs}; p=${p%/mod}
+            case "$p" in util/*) p=${p#util/} ;; *) p=brep/$p ;; esac
+            path=$(echo "$p" | sed 's|/|::|g'); stem=${p##*/}
+            if [ "$path" = "$stem" ]; then pattern="$w$stem::|gcs_core::$stem$e"
+            else pattern="$w$path$e"; fi
+            naming -E "$pattern" >> "$work/selected"
+            grep -xE "${stem}(_.*)?" "$work/modules" >> "$work/selected" || true ;;
         rust/gcs-solve/src/*.rs|rust/gcs-core/src/*.rs)
             core=1; p=${f#rust/gcs-*/src/}; p=${p%.rs}; p=${p%/mod}
             path=$(echo "$p" | sed 's|/|::|g'); stem=${p##*/}

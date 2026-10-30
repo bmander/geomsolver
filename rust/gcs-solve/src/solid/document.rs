@@ -210,21 +210,7 @@ pub(crate) fn operand_primitives(sk: &Sketch, si: usize) -> BTreeMap<String, (St
     done.remove(&(si as u32)).unwrap_or_default()
 }
 
-/// **The step a body's operand adds to a face's route** (#188, [0.149]): its own name, the last
-/// segment of its absolute name, under the label of each named use of a word it was made in
-/// (`rim#17`, `flatten::keys::labelled`) — `rim.taken` for the `taken` a round named `rim` made,
-/// so two named rounds' faces stay apart.  The one reading of a route's steps: the faces are
-/// named by it (`operand_primitives`, `brep::recipe`) and reached by it (`faces::face_source`,
-/// `carrier`), a copy the document wrote with its index past it (`SolidE::step`, [0.157]).
-pub fn route_step(name: &str) -> String {
-    let segs: Vec<&str> = name.split('.').collect();
-    let Some((leaf, before)) = segs.split_last() else { return name.to_string() };
-    fn label<'s>(s: &&'s str) -> Option<&'s str> {
-        let (l, id) = s.split_once('#')?;
-        (!l.is_empty() && !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())).then_some(l)
-    }
-    before.iter().filter_map(label).chain(std::iter::once(*leaf)).collect::<Vec<_>>().join(".")
-}
+pub use cad_kernel::recipe::route_step;
 
 /// Whether `route` begins with `operand`'s step (`SolidE::step`), and the rest of it past: a
 /// step written without the copy's index is any copy's (`faces::same_step`).
