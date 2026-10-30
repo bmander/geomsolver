@@ -40,7 +40,7 @@ impl Condition {
                 of such, its caps clear of the blank unless it is an undrafted prism standing alone under a relative rotation, or a \
                 union of tools each in the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
-            Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide",
+            Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide (a joint driven by a law alone read as its joint over the values the law reaches)",
             Condition::Stationary => "the contact condition depends on the motion",
             Condition::Reach => "the sweep's contacts reach the blank",
             Condition::Clearance => "the tool is clear of the blank at both ends of the roll",
@@ -449,10 +449,11 @@ struct Fine { reads: Reads,samples: usize,near_double_roots: usize,hits: Vec<(Hi
 pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission,Error> {
     // a body placed by a rigid motion is the body moved: the body it places is admitted (#619)
     let root = cad::placed_swept(sk,root).map_err(Error::Unreadable)?.map_or(root,|(inner,_)| inner);
-    // a cut of a union's sweep is a cut of each member's (#684 C): the body is admitted as the copy
-    // of the drawing that writes it so, each member's sweep by its own class (where every one is a
-    // ball's tube, the body is static material there, and nothing is asked)
-    if let Some(lowered) = super::distributed::lowered(sk,root) {
+    // a sweep under a driven joint is its joint's over the law's reach (#684 L), and a cut of a
+    // union's sweep a cut of each member's (#684 C): the body is admitted as the copy of the drawing
+    // that writes it so, each sweep by its own class (where every one is a ball's tube, the body is
+    // static material there, and nothing is asked)
+    if let Some(lowered) = super::lowered(sk,root) {
         if !cad::contains_sweep(&lowered,root) { return Ok(Admission {body:root,sweeps:Vec::new()}) }
         return admit_body(&lowered,root,options)
     }

@@ -70,6 +70,17 @@ fn the_turned_cutter_leaves_its_shadow_turned() {
     near(exported(&e,"block"),PI/3.*(144.-64.)-turned_away(&turned_torus(Lean::Across(25.))),2e-5);
 }
 
+/// `rocked.sv`: `turn.sv`'s cutter rocked out and back by a law (#684 L): a sweep is its path's, so
+/// the drive is read as its turn over the law's reach, from `from` to `to`, and the groove is
+/// `turn.sv`'s, held to the same figure.
+#[test]
+fn the_rocked_cutter_leaves_the_turns_groove() {
+    let e = example("rocked.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_turn(),"read as a turn");
+    near(exported(&e,"block"),PI/3.*(144.-64.)-turned_away(&turned_torus(Lean::Across(25.))),2e-5);
+}
+
 /// `screw.sv`: a screw, carried past both ends of the rod, so the groove's section square to the
 /// axis is one region at every height, turned. A point of it is cut where its helix back through
 /// the roll passes within the tube's radius of the wheel's centre circle (radius 6 about

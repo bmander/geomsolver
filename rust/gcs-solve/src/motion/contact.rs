@@ -48,7 +48,9 @@ impl Family {
         // a rack: a translation seen from a rotating blank
         if self.steps.iter().any(Step::is_driven) {
             return Err("temporal contacts are read of constant rates, and a drive's law runs \
-                        at its own (#391)".into());
+                        at its own (#391): a joint driven alone is swept as the joint over the \
+                        values its law reaches (#684 L), and one seen from another motion is no \
+                        constant twist".into());
         }
         if let (&Step::Translation {axis,advance,..},Some(observer)) = (source,observer) {
             return rack(surface,axis,advance,observer);
