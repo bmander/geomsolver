@@ -214,6 +214,25 @@ fn the_drafted_helical_tooth_leaves_its_space() {
     assert!((removed-want).abs() < 2e-4*want,"removed {removed:.5} mm³, the space being {want:.5}");
 }
 
+/// `parted.sv`: the generating class with a prism drafted both ways from its plane (#684 P), the
+/// blank's middle moved to the helical tooth's plane and the tooth drafted 2° either side of it, each side
+/// folding there in a convex crease. Its space is each section square to the blank's axis cut by
+/// the tooth's section there, its eight half-planes meeting in it, swept by `rack.sv`'s arithmetic
+/// (`drafted_tools::parted_volume`), through the blank's 6 mm: more than the tooth drafted one way
+/// from the front cuts, less than the undrafted tooth.
+#[test]
+fn the_tooth_drafted_both_ways_leaves_its_space() {
+    let e = example("parted.sv");
+    let space = fixtures::solid(&e,"space");
+    assert!(!gcs_core::solid::planar_subtraction::asks(&e.sketch,space) && !gcs_core::solid::planar_class::asks(&e.sketch,space));
+    assert!(matches!(class(&e,"gear"),Class::Generating),"the generating class");
+    let removed = PI*22.*22.*6.-exported(&e,"gear");
+    let want = crate::drafted_tools::parted_volume(15.,2.,0.,[-3.,3.]);
+    eprintln!("removed {removed:.5} mm³, the space being {want:.5}");
+    assert!(want > crate::drafted_tools::space_volume(15.,2.,[2.,8.])+5. && want < crate::drafted_tools::space_volume(15.,0.,[2.,8.]));
+    assert!((removed-want).abs() < 2e-4*want,"removed {removed:.5} mm³, the space being {want:.5}");
+}
+
 /// `conjugate.sv`: the planar subtraction class, its wheel the disc's area kept outside the plus
 /// at every pose of the period (`planar_subtraction`'s own arithmetic), through the 6 mm slab.
 #[test]

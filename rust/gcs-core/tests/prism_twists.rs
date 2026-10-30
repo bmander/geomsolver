@@ -222,6 +222,17 @@ fn a_side_along_the_slide_is_refused() {
     assert!(r.message.contains("`bar.under` moves along itself"),"{}",r.message);
 }
 
+/// The leaning bar drafted both ways from its parting plane (#684 P): each side folds there, a crease
+/// the walk does not cross under a turn (T1).
+#[test]
+fn a_bar_drafted_both_ways_turned_is_refused() {
+    let text = turned_bar(20.,diamond(10.),4.,2.).replace("from: 0mm, to: 2 * 4mm","from: -4mm, to: 4mm")
+        .replace("fix(origin == (0, -4 * sin(20deg), -4 * cos(20deg))) holder","fix(origin == (0, 0, 0)) holder");
+    let r = refused(admit(&text));
+    assert_eq!(r.condition,Condition::Tool);
+    assert!(r.message.contains("runs both ways from its parting plane"),"{}",r.message);
+}
+
 /// The square thread's bar made too short to stand past the rod either side: its caps pass through
 /// the rod, and the class cuts with a cap only under a relative rotation (T1).
 #[test]

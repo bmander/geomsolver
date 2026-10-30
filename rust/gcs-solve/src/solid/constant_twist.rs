@@ -844,6 +844,12 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
     let sides: Vec<(usize,&super::ExtrudedSurface)> = contacts.patches().iter().enumerate()
         .filter_map(|(k,s)| match s { super::ToolSurface::Extruded(e) => Some((k,e)),_ => None }).collect();
     if sides.is_empty() { return Ok(Vec::new()) }
+    // a drafted prism running both ways from its parting plane folds there, a crease across each
+    // side (#684 P) the walk does not cross
+    if let Some(&[below,_]) = contacts.creases().first() {
+        return Err((Condition::Tool,format!("`{}` runs both ways from its parting plane, where a crease crosses each side, \
+            which the class does not walk under a screw, a turn or a slide",contacts.patches()[below].name()),None))
+    }
     // each side's normal turned out of the tool as it is in the side's middle, where nothing else
     // is near: the chart orients it the same way all along the side
     let mut rulings: Vec<Ruling> = sides.iter().map(|&(patch,surface)| {
