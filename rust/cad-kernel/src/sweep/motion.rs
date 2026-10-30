@@ -467,7 +467,7 @@ impl Family {
 
     /// The screw this motion is, when it is one: a single rotation that slides along its axis as
     /// it turns. Every point's velocity in the moving frame is then the same at every time — the
-    /// twist is constant — which is what `solid::constant_twist` builds a swept boundary from.
+    /// twist is constant — which is what `characteristic` builds a swept boundary from.
     /// A rotation without advance, a translation and a relative motion are none.
     pub fn screw(&self) -> Option<Screw> {
         match *self.root() {
@@ -480,7 +480,7 @@ impl Family {
     /// The **constant twist** this motion is (#684): a screw (`screw`), a turn about one axis with
     /// no advance, or a slide along one line turning not at all, each at a constant rate. Every
     /// point it carries then moves the same way relative to what carries it at every time, which
-    /// is what `solid::constant_twist` builds a swept boundary from. A slide is read as a screw
+    /// is what `characteristic` builds a swept boundary from. A slide is read as a screw
     /// turning at no ratio about the line along its direction through the world's origin; a
     /// relative motion, a driven one and one along a path are none.
     pub fn twist(&self) -> Option<Screw> {
@@ -499,7 +499,7 @@ impl Family {
 
     /// The turn this motion is, where it is one rotation about one axis: a screw (`screw`), or a
     /// rotation with no advance (`advance` nothing) — what a ball under it sweeps is the tube about
-    /// a helix or an arc of a circle (`solid::canal`, #238).
+    /// a helix or an arc of a circle (a ball's tube, #238 in the solver).
     pub fn turning(&self) -> Option<Screw> {
         match *self.root() {
             Step::Rotation {origin,axis,ratio,advance,law:None} if ratio != 0. => Some(Screw {origin,axis:unit(axis)?,ratio,advance}),
@@ -586,7 +586,7 @@ impl Family {
     /// This motion as a program in the plane of `frame`, when every step carries that plane within
     /// itself (`Step::keeps`): each turn about a point of it, each slide along it, in postfix order
     /// (a relative's source, its observer, then the relative), coordinates in the frame's and
-    /// lengths times `scale` (`generate::planar`'s steps). None where any step leaves the plane.
+    /// lengths times `scale` (a planar envelope's steps). None where any step leaves the plane.
     pub fn in_frame(&self,frame: &crate::geom::Frame,scale: f64) -> Option<Vec<PlanarStep>> {
         fn emit(family: &Family,i: usize,frame: &crate::geom::Frame,scale: f64,out: &mut Vec<PlanarStep>) -> Option<()> {
             let step = &family.steps[i];

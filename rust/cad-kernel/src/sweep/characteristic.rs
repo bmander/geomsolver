@@ -17,7 +17,7 @@
 //! the normals between its faces'. It asks the class's rows of
 //! that stretch as it goes: regular (S1), one stretch and one root a ring (S2), no fold (S3),
 //! and no crossing within a lead (S4). The sheet is built from the same walk
-//! (`brep::sweep::helical`). Like the generating class's checks, these are **sampled**: rings
+//! (`helical`). Like the generating class's checks, these are **sampled**: rings
 //! `rows` apart along each face, and each point's path through the blank at a degree's turn.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;

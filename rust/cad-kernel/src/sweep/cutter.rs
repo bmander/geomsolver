@@ -1,5 +1,5 @@
 //! A swept cut's cutter, sectioned exactly at its stations: a solid of revolutions about lines
-//! parallel to one axis (`brep::section`) by the half-planes of that axis, a station an angle; or
+//! parallel to one axis (`crate::section`) by the half-planes of that axis, a station an angle; or
 //! a prism by planes square to its extrusion, a station a distance along it, every section the
 //! profile itself (a rack's tooth) or, drafted, the profile moved into its material (and, where the
 //! draft parts at the profile's plane, a fan of stations across the crease there). Each section

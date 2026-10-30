@@ -1,4 +1,4 @@
-//! A screw cut's sheet: the tool's characteristic (`solid::constant_twist`) carried along the
+//! A screw cut's sheet: the tool's characteristic (`characteristic`) carried along the
 //! screw, S(s, t) = M(t)·c(s), its normal the tool's there carried with it. Every node and every
 //! withheld point is exact: a point of the characteristic is a root of its ring in closed form, and
 //! a pose of the screw is a formula. Nothing is traced. Rows run along the characteristic by

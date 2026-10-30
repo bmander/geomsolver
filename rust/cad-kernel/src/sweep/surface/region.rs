@@ -13,7 +13,7 @@ fn distance(a: P,b: P) -> f64 { (a[0]-b[0]).dhypot(a[1]-b[1]) }
 /// (radius, height), or a prism section's plane view coordinates. An arc's
 /// `ends` are the exact source vertices, `ends[0]` at `start`; a full circle
 /// has `sweep` of one turn and no seam. A conic's arc is the rational quadratic
-/// Bézier over `a`, `m`, `b`, its middle weighed `w` (`brep::planar::Seg::Conic`).
+/// Bézier over `a`, `m`, `b`, its middle weighed `w` (`crate::planar::Seg::Conic`).
 #[derive(Clone,Debug)]
 pub enum Edge {
     Line {a:P,b:P,axis:bool},

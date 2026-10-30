@@ -1,5 +1,5 @@
 //! A swept cut's sheet: its contacts traced at the cutter's stations over the band its declared
-//! roll reaches the blank in (`solid::contact_trace`), laid out on a grid widened until its edges
+//! roll reaches the blank in (`trace`), laid out on a grid widened until its edges
 //! leave the blank, interpolated as a B-spline surface (`nurbs::interpolate_net`), and judged at the
 //! contacts withheld from the fit — held to a tolerance, refined where it misses until it fits.
 #[allow(unused_imports)]

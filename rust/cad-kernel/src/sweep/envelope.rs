@@ -77,7 +77,7 @@ impl Motion {
     }
 
     /// A pose `x ↦ r·x + p` and its rate, `dr` and `dp`, given outright: a frame read off a path
-    /// (`motion::guide`, #398 C), whose turn is no rotation about one axis.
+    /// (a frame along a path, #398 C in the solver), whose turn is no rotation about one axis.
     pub fn of_parts(r: M3, dr: M3, p: V3, dp: V3) -> Self {
         Self { r, dr, p, dp }
     }
