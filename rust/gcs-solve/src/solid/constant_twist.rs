@@ -60,6 +60,10 @@ const LEAST_TURN: f64 = 1e-6;
 #[derive(Clone,Copy,Debug)]
 struct Root { position: V,normal: V,spread: f64,reach: Option<f64> }
 
+/// Why a revolution's ring has no roots where every point of it is in contact: a smooth join to a
+/// flat the motion keeps in its plane reads it by this (#684 O).
+const ALL_ROUND: &str = "is in contact all round a ring";
+
 /// A face's ring at one station: its roots, or why it has none to give.
 #[derive(Clone,Debug)]
 enum Ring { Roots(Vec<Root>),Degenerate(String) }
@@ -146,7 +150,7 @@ impl Walker<'_> {
             let (Some(k),Some(l)) = (face(e.patches[s]),face(e.patches[1-s])) else { continue };
             let (Piece::Face(..),Piece::Flat(Flat {line:Ok(ends),normal,..})) = (&pieces[k],&pieces[l]) else { continue };
             let at = if e.ends[s] == 0. { 0 } else { stations[k].len().wrapping_sub(1) };
-            if stations[k].get(at) != Some(&e.ends[s]) || !matches!(&rings[k][at],Ring::Degenerate(why) if why.contains("all round")) { continue }
+            if stations[k].get(at) != Some(&e.ends[s]) || !matches!(&rings[k][at],Ring::Degenerate(why) if why == ALL_ROUND) { continue }
             rings[k][at] = Ring::Roots(ends.iter().map(|&p| Root {position:p,normal:*normal,spread:1.,
                 reach:entering(self.tool,family,screw,ask,p)}).collect());
         } }
@@ -572,7 +576,7 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
         match found((a,b,c)) {
             Ok(found) => Ring::Roots(found.into_iter().map(|(position,normal)| root(position,normal,spread)).collect()),
             Err(envelope::Error::Degenerate) => Ring::Degenerate(if amplitude <= tolerance && c.abs() <= tolerance {
-                "is in contact all round a ring".into() } else { "has a double point on a ring".into() }),
+                ALL_ROUND.into() } else { "has a double point on a ring".into() }),
             Err(e) => Ring::Degenerate(format!("{e:?}")),
         }
     };
