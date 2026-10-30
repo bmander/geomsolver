@@ -339,15 +339,15 @@ material — is a piece whose stations are its fan's normals and whose ring is t
 share (`Ruling::Rib`), crossed onto and off as a revolution's corner is (`step`, by the piece's
 `patch` and `fan`, never by its index). A piece's stations are spread by the characteristic's length
 (`Ruled::lengths`), so a root running out along the rulings toward a cap is sampled as finely as
-anywhere. Where the motion moves each ruling's points alike (a slide, a screw along the extrusion)
+anywhere; a contact within `NOUGHT` of the tool's speed reads nought, one bar for every reading. Where the motion moves each ruling's points alike (a slide, a screw along the extrusion)
 the rulings in contact are whole: each root of `n·v` across a side or a fan is a piece of its own,
 its stations along the ruling (`Piece::Line`). S1 also refuses a ruling in contact all along it
 whose path enters the blank (`constant_twist::rulings`, both ends' contacts changing sign between
 two coarse stations and their least sought by `roots::brent`; under a slide, a piece in contact at
 every parameter read) — a side the motion keeps in its own plane, square to a turn or along a slide.
 A cap reaching the blank under a constant twist is refused at T1 (`admission::ends`), and a twist
-that keeps the plane of the tool's prisms is refused at T1 before the walk
-(`planar_subtraction::asks`), so the planar subtraction class reads it as it did. The corner's probe
+that keeps the plane of the tool's prisms is dispatched to the planar subtraction class
+(`planar_subtraction::asks`, `Asked::Subtraction`), which reads it as it did. The corner's probe
 (`SweepContacts::corner`, which T2 reads too) stands halfway along a prism's sides: at a cap its
 chord lies on the tool's boundary, where the material reads nought, and a convex corner read
 concave. `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`

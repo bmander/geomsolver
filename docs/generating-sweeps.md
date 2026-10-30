@@ -217,11 +217,10 @@ silhouette ruling is a piece of its own whose stations run along it (`Piece::Lin
 in the blank are two stretches (S2); the sheet is one of them carried.
 
 A motion that keeps the plane of the tool's prisms (a turn about an axis along the extrusion, a
-slide square to it) is still the planar subtraction class's (below): the constant twist refuses it
-at T1 and the planar rows are asked, as they were before it read prisms. The caps are not walked:
-T1 asks them clear of the blank over the roll (`admission::ends`), and under a constant twist a cap
-that reaches the blank is refused there by name, whether or not the prism stands alone. One row
-more is the prism's own:
+slide square to it) is still the planar subtraction class's (below): `admit_body` asks it the
+planar rows outright, as it did before the constant twist read prisms. The caps are not walked:
+T1 asks them clear of the blank over the roll (`admission::ends`), and a cap reaches the blank only
+under a relative rotation, of a prism standing alone. One row more is the prism's own:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |

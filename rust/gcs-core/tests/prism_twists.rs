@@ -11,7 +11,7 @@ use gcs_core::solid::admission::{self,Class,Condition,Options};
 use std::f64::consts::PI;
 
 use crate::solid_sweeps_examples::class;
-use crate::turns_and_slides::{exported,near,refused};
+use crate::turns_and_slides::{admit,exported,near,refused};
 
 /// A bar turned about z across `turn.sv`'s block, a ring sector (radii 8 and 12, heights ±1, 60°
 /// round): its section the quadrilateral `corners`, drawn in the plane through x leaning `lean`
@@ -123,7 +123,7 @@ fn a_drafted_bar_turned_leaves_its_corners_line_turned() {
     let (sl,cl) = 20f64.to_radians().sin_cos();
     let shift = 2f64.sqrt()*2f64.to_radians().tan();
     let r2 = |z: f64| { let s = z/cl; (10.+shift*(s+4.)).powi(2)+(s*sl).powi(2) };
-    let removed = PI/6.*(2./6.)*((144.-r2(-1.))+4.*(144.-r2(0.))+(144.-r2(1.)));
+    let removed = PI/6.*crate::brep::simpson(-1.,1.,2,|z| 144.-r2(z));
     near(exported(&e,"part"),PI/3.*(144.-64.)-removed,1e-5);
 }
 
@@ -208,8 +208,7 @@ fn a_bar_slid_aslant_leaves_a_plane() {
 /// sweep (S1, box O of #684). Its ends stand clear of the block.
 #[test]
 fn a_side_square_to_the_turn_is_refused() {
-    let e = fixtures::read(&turned_bar(90.,[[10.,0.],[13.,0.],[13.,-3.],[10.,-3.]],9.,0.));
-    let r = refused(admission::admit_body(&e.sketch,fixtures::solid(&e,"part"),&Options::default()));
+    let r = refused(admit(&turned_bar(90.,[[10.,0.],[13.,0.],[13.,-3.],[10.,-3.]],9.,0.)));
     assert_eq!(r.condition,Condition::Regular);
     assert!(r.message.contains("is in contact all over: the motion keeps it in its own plane"),"{}",r.message);
 }
@@ -218,19 +217,19 @@ fn a_side_square_to_the_turn_is_refused() {
 /// along it, the face kept in its own plane (S1).
 #[test]
 fn a_side_along_the_slide_is_refused() {
-    let e = fixtures::read(&slid_bar(false,0.));
-    let r = refused(admission::admit_body(&e.sketch,fixtures::solid(&e,"part"),&Options::default()));
+    let r = refused(admit(&slid_bar(false,0.)));
     assert_eq!(r.condition,Condition::Regular);
     assert!(r.message.contains("`bar.under` moves along itself"),"{}",r.message);
 }
 
 /// The square thread's bar made too short to stand past the rod either side: its caps pass through
-/// the rod, and under a screw the class cuts with a prism's sides only (T1).
+/// the rod, and the class cuts with a cap only under a relative rotation (T1).
 #[test]
 fn a_cap_in_the_blank_under_a_screw_is_refused() {
     let text = crate::solid_sweeps_examples::text("square_thread.sv").replace("reach := 8mm","reach := 2.5mm");
     let e = fixtures::read(&text);
     let r = refused(admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default()));
     assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("under a screw, a turn or a slide the class cuts with a prism's sides only"),"{}",r.message);
+    assert!(r.message.contains("a cap only of a prism standing alone as the tool, its profile one loop, under a relative rotation"),
+        "{}",r.message);
 }

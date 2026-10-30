@@ -12,7 +12,7 @@ use super::geom::{around,tolerance,Curve,Frame,Surface,Uv,V};
 use super::nurbs::{fit_curve,fit_net,BSpline,Net};
 use super::query::Located;
 use super::topo::{reverse_loop,unwrap,Brep,Coedge,EdgeCurve,Face,Pcurve};
-use crate::util::space::{add,cross,distance,dot,norm,scale,sub,unit};
+use crate::util::space::{add,cross,distance,dot,norm,scale,slerp,sub,unit};
 use std::sync::Arc;
 
 const TAU: f64 = std::f64::consts::TAU;
@@ -37,14 +37,6 @@ pub struct Rolled {
     pub trims: Vec<Trim>,
 }
 
-
-/// Along the arc of the unit sphere from `a` to `b` (the short way), a fraction `v`.
-pub(super) fn slerp(a: V,b: V,v: f64) -> V {
-    let w = dot(a,b).clamp(-1.,1.).dacos();
-    let s = w.dsin();
-    if s < 1e-12 { return a }
-    add(scale(a,((1.-v)*w).dsin()/s),scale(b,(v*w).dsin()/s))
-}
 
 /// The run of `b`'s edges nearest `at` between two faces, as a ball rolled along it or a flat cut
 /// along it reads it: the faces either side (each with every face on its surface the same way
