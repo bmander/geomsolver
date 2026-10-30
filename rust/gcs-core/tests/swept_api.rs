@@ -3,9 +3,11 @@
 //! (`rust/examples/solid_sweeps/`) built by the export `solventc` writes from, and again through the
 //! kernel's API alone from the same numbers — the blank and the tool built from plain data, the
 //! motion a slide, a turn, a screw, or a slide seen from a turn — each within 0.01 mm, their
-//! volumes and areas agreeing. The two read the blank apart (the pipeline its analytic field, the
-//! API its boundary), and a rack's sheet apart (its planar envelope extruded, and traced), so they
-//! agree to the fit, not to the bit.
+//! volumes and areas agreeing. The API is asked for the pipeline's own sheets (`carried` off: a
+//! constant twist's grid fitted, not its section carried exactly, which its own suite holds to
+//! closed forms). The two read the blank apart (the pipeline its analytic field, the API its
+//! boundary), and a rack's sheet apart (its planar envelope extruded, and traced), so they agree to
+//! the fit, not to the bit.
 use gcs_core::brep::build::{disc,prism,revolve,Profile,ProfileEdge};
 use gcs_core::brep::boolean::{combined,Op};
 use gcs_core::brep::props::{area,volume};
@@ -30,10 +32,12 @@ fn by_the_pipeline(name: &str,body: &str) -> (f64,f64) {
     measured(&exact.solid)
 }
 
-/// The blank cut by the tool under the motion over the roll, through the kernel's API alone.
+/// The blank cut by the tool under the motion over the roll, through the kernel's API alone, its
+/// sheets the pipeline's.
 fn by_the_api(blank: &Brep,tool: &Tool,motion: &Motion,roll: [f64;2]) -> (f64,f64) {
     let say = Say {stage:&|_| {},mark:&|_| {}};
-    let cut = swept_cut_with(blank,tool,motion,roll,&Ask {tolerance:Some(TOLERANCE),..Ask::default()},&say).unwrap_or_else(|r| panic!("{r}"));
+    let ask = Ask {tolerance:Some(TOLERANCE),carried:false,..Ask::default()};
+    let cut = swept_cut_with(blank,tool,motion,roll,&ask,&say).unwrap_or_else(|r| panic!("{r}"));
     cut.check(1e-6).unwrap();
     measured(&cut)
 }

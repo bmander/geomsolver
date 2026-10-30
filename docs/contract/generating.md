@@ -613,7 +613,18 @@ give the blank cut (`swept_cut`), or the same `ExportRefusal` the export says �
 row, the class (`` `name` is outside the … class (row: rule): … at (x, y, z) ``) and a witness.
 It is the pipeline read from plain data, never a second one: the same walk, rows, sheets
 (`helical_sheet` under a constant twist, `swept_sheet`/`capped_sheet` under a relative rotation)
-and cells. What differs is read where no document hands it a field: the tool's material in closed
+and cells — but that a constant twist's sheet is, where asked (`Ask::carried`, by default), its
+section carried exactly (`helical::carried_sheet`): the layout `helical_sheet` lays, its section
+fitted along its length alone (a curve a band between a fan's ends, through its exact points
+until those between lie within 1e-10 of its size), and carried by the motion itself — a slide's an
+`Extrusion`, a turn's a `Revolution`, a screw's a screwed `Blend`, a whole turn's cut round into
+quarters — so nothing is fitted across the motion, where the grid's columns stand ten degrees
+apart. It reads the walk's curve between its nodes, so through `Characteristic::seamless` (a
+crossing round a face's own seam dropped as one onto the next face is; the fitted grid reads the
+walk's own nodes, at its rows only, and its numbers stand). Where the carried sheet cannot be laid
+or the blank not split by it, the fitted grid is built, and said. A slid torus comes within 1e-11 of
+its closed form so, against 2e-8 fitted at the default tolerance (an upright torus turned, 9e-9
+against 4e-6). What differs is read where no document hands it a field: the tool's material in closed
 form (`material`: a revolution's exact signed distance by its meridian, a square prism's by its
 profile and caps, a drafted prism's and a Boolean's a bound never past the distance, its sign
 right), the blank's inside off its boundary (`query::Located`, `margin` in) and its distance off a
@@ -631,4 +642,4 @@ material field, and are the solver's: the API asks them as a relative rotation, 
 never leaves its blank is refused at E1. `cad-kernel/tests/sweep.rs` (a slid torus to its lens,
 two beads to the figure three kernels agree on, an upright torus turned by Pappus, the refusals)
 and `tests/swept_api.rs` (the series' slide, union, screw, V thread, turn and rack built both ways,
-agreeing) are the gates.
+agreeing, the API asked for the pipeline's own fitted sheets) are the gates.

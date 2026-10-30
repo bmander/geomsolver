@@ -281,6 +281,27 @@ impl Characteristic {
         Ok(found)
     }
 
+    /// The same characteristic with a crossing round a face's own seam dropped as a crossing onto
+    /// the next face is: the walk keeps a whole circle's two ends (one point, its stations 1 and 0)
+    /// as two nodes, and between them `at` would read the face's every other ring, round the circle
+    /// from 1 back to 0. A reader of the curve between its nodes (`helical::carried_sheet`) reads
+    /// this one; the solver's fitted sheet reads the walk's own, which it reads only at its rows,
+    /// never between such a pair, so its numbers stand.
+    pub fn seamless(&self) -> Characteristic {
+        let scale = self.nodes.iter().map(|m| norm(m.position)).fold(1_f64,f64::max);
+        let mut nodes: Vec<Node> = Vec::with_capacity(self.nodes.len());
+        let mut kept: Vec<usize> = Vec::with_capacity(self.nodes.len());
+        let mut from = None;
+        for (w,node) in self.nodes.iter().enumerate() {
+            let same = nodes.last().is_some_and(|m: &Node| m.patch == node.patch && distance(m.position,node.position) <= 1e-7*scale);
+            if same && from.is_none() { from = Some(node.u); continue }
+            nodes.push(Node {from:from.take().unwrap_or(node.from),..*node});
+            kept.push(w);
+        }
+        let index = |w: usize| kept.iter().position(|&k| k >= w).unwrap_or(kept.len()-1);
+        Characteristic {nodes,reach:[index(self.reach[0]),index(self.reach[1])],..self.clone()}
+    }
+
     /// The point of the characteristic at `s` (0 to `nodes.len() - 1`) on the tool, and its normal.
     pub fn at(&self,s: f64) -> Result<(V,V),String> {
         let last = self.nodes.len()-1;

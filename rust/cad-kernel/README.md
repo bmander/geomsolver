@@ -31,7 +31,8 @@ the home and geomsolver depends on it.
   faces and their contacts; the sampled rows a sweep must pass to be built (`sweep::admit`), each
   refusal naming its row and a point; the contact tracer and sheet fitter of a generating sweep,
   and the characteristic of a screw's, a turn's or a slide's; the blank split by the sheets and
-  each piece judged (`sweep::cells`).
+  each piece judged (`sweep::cells`). A screw's, a turn's or a slide's sheet is its section carried
+  exactly (an extrusion, a revolution, a screwed curve), only the section fitted.
 - **Measures:** exact volume (by Green's theorem over each face) and area.
 - **Meshing:** a constrained Delaunay mesh refined until it is within a measured sag of the surface.
 - **Output:** STEP AP214 with p-curves and seam curves, and STL.

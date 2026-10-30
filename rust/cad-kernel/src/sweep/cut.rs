@@ -6,10 +6,11 @@
 //!
 //! It is the solver's pipeline, read from plain data: the tool's faces and contacts
 //! (`SweepContacts::of_tool`), its material in closed form (`Tool::material`) and the blank's off
-//! its boundary (`material::Blank`); the class's rows (`admit`); the sheet — the characteristic
-//! carried, under a screw, a turn or a slide (`helical`), or the contacts traced, under a relative
-//! rotation (`sheet`); and the blank split by it, each cell judged by whether the tool passes
-//! through it (`cells`). A union is swept member by member, as its sweep is theirs.
+//! its boundary (`material::Blank`); the class's rows (`admit`); the sheet — the characteristic's
+//! section carried by the motion exactly, under a screw, a turn or a slide
+//! (`helical::carried_sheet`), or the contacts traced, under a relative rotation (`sheet`); and the
+//! blank split by it, each cell judged by whether the tool passes through it (`cells`). A union is
+//! swept member by member, as its sweep is theirs.
 //!
 //! Lengths are millimetres, as the bars and tolerances of the sheet fitter are. The roll is in
 //! radians of the motion's parameter: a turn of ratio 1 turns a radian a radian of roll, a slide
@@ -80,11 +81,16 @@ impl Motion {
 /// tolerance the sheet is held to (millimetres; `None` the fabrication tolerance, 0.01 mm), and
 /// the class's sampling and bars (`admit::Options`, its `margin` how far inside the blank's
 /// boundary a point must be to count as in it).
+///
+/// `carried`: a screw's, a turn's or a slide's sheet is its section carried by the motion exactly
+/// (`helical::carried_sheet`: an extrusion, a revolution, a screwed curve), only its section
+/// fitted, where the split takes it; the grid the solver's export fits (`helical_sheet`) where not,
+/// or where `carried` is off. By default it is on.
 #[derive(Clone,Debug)]
-pub struct Ask { pub name: String,pub tolerance: Option<f64>,pub options: Options }
+pub struct Ask { pub name: String,pub tolerance: Option<f64>,pub options: Options,pub carried: bool }
 
 impl Default for Ask {
-    fn default() -> Ask { Ask {name:"sweep".into(),tolerance:None,options:Options::default()} }
+    fn default() -> Ask { Ask {name:"sweep".into(),tolerance:None,options:Options::default(),carried:true} }
 }
 
 /// The blank `blank` with everything `tool` passes through under `motion` over `roll` cut away,
@@ -322,32 +328,54 @@ fn build(blank: &Brep,tool: &Tool,motion: &Motion,roll: [f64;2],ask: &Ask,say: &
         cuts.push((cut,evidence.class));
     }
     (say.mark)(Stage::Admission);
-    // each member's sheet, side by side
+    // each member's sheet, side by side: a constant twist's carried exactly where asked
     let inside_all = |points: &[V]| -> Result<Vec<bool>,String> { Ok(points.iter().map(|&p| read.inside(p)).collect()) };
     let near = |p: V| read.distance(p);
-    let sheets: Vec<Fitted> = crate::util::par::indices(cuts.len(),|k| {
-        let (cut,class) = &cuts[k];
-        match class {
-            Found::Generating => super::sheet::swept_sheet(cut,&inside_all,&near,tolerance,say),
-            Found::Capped(capped) => super::sheet::capped_sheet(cut,capped,&inside_all,&near,tolerance,say),
-            Found::ConstantTwist(found) => {
-                let heights = found.screw.extent(lo,hi,Pose::identity()).0;
-                super::helical::helical_sheet(cut,found,Some(heights),&inside_all,&near,tolerance,say)
+    let sheets = |carried: bool| -> Result<(Vec<Fitted>,bool),ExportRefusal> {
+        let built: Vec<(Fitted,bool)> = crate::util::par::indices(cuts.len(),|k| {
+            let (cut,class) = &cuts[k];
+            match class {
+                Found::Generating => super::sheet::swept_sheet(cut,&inside_all,&near,tolerance,say).map(|f| (f,false)),
+                Found::Capped(capped) => super::sheet::capped_sheet(cut,capped,&inside_all,&near,tolerance,say).map(|f| (f,false)),
+                Found::ConstantTwist(found) => {
+                    let heights = found.screw.extent(lo,hi,Pose::identity()).0;
+                    let exact = if carried { super::helical::carried_sheet(cut,found,Some(heights),&inside_all,say) }
+                        else { Err(ExportRefusal::at(Stage::Fit,"not asked")) };
+                    match exact {
+                        Ok(fitted) => Ok((fitted,true)),
+                        Err(why) => {
+                            if carried { (say.stage)(&format!("`{name}`: the sheet not carried exactly ({why}); fitted")); }
+                            super::helical::helical_sheet(cut,found,Some(heights),&inside_all,&near,tolerance,say).map(|f| (f,false))
+                        }
+                    }
+                }
             }
-        }
-    }).into_iter().collect::<Result<_,_>>()?;
-    // the blank split by every sheet, each cell judged by whether the tool passes through it
-    let tools: Vec<(Brep,crate::geom::Box3)> = sheets.iter().enumerate().map(|(k,s)| {
-        let key = if distributed { format!("{name}.{k}") } else { name.clone() };
-        let faces = cells::keyed(s.faces.clone(),&key);
-        let bounds = faces.bounds();
-        (faces,bounds)
-    }).collect();
-    let tools = cells::reaching(blank,tools);
-    let turned = cells::turned_away(blank,&tools).at(Stage::Split)?;
+        }).into_iter().collect::<Result<_,_>>()?;
+        let exact = built.iter().any(|(_,e)| *e);
+        Ok((built.into_iter().map(|(f,_)| f).collect(),exact))
+    };
     let whole = tool.material().at(Stage::Classify)?;
     let probe = |asked: &[(V,f64)]| crate::util::par::map(asked,|&(p,r)| swept_ball(&*whole,&family,roll,p,r));
     let placements = vec![1;cuts.len()];
-    if material { cells::whole(&turned,tools,&placements,&probe,say) } else { cells::removed(&turned,tools,&placements,&probe,say) }
-        .at(Stage::Split)
+    let cut = |sheets: &[Fitted]| -> Result<Brep,String> {
+        // the blank split by every sheet, each cell judged by whether the tool passes through it
+        let tools: Vec<(Brep,crate::geom::Box3)> = sheets.iter().enumerate().map(|(k,s)| {
+            let key = if distributed { format!("{name}.{k}") } else { name.clone() };
+            let faces = cells::keyed(s.faces.clone(),&key);
+            let bounds = faces.bounds();
+            (faces,bounds)
+        }).collect();
+        let tools = cells::reaching(blank,tools);
+        let turned = cells::turned_away(blank,&tools)?;
+        if material { cells::whole(&turned,tools,&placements,&probe,say) } else { cells::removed(&turned,tools,&placements,&probe,say) }
+    };
+    let (built,exact) = sheets(ask.carried)?;
+    match cut(&built) {
+        Ok(b) => Ok(b),
+        Err(why) if exact => {
+            (say.stage)(&format!("`{name}`: the blank not split by the sheets carried exactly ({why}); fitting them"));
+            cut(&sheets(false)?.0).at(Stage::Split)
+        }
+        Err(why) => Err(ExportRefusal::at(Stage::Split,why)),
+    }
 }

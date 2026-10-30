@@ -39,6 +39,27 @@ const SLIDE_COLUMNS: f64 = 8.;
 /// says millimetres a unit), the blank between `heights` along the screw's axis where known.
 pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;2]>,inside: Inside,near: &(dyn Fn(V) -> f64+Sync),
     tolerance: Option<Tolerance>,say: &Say) -> Result<Fitted,ExportRefusal> {
+    let Laid {station,fans,grid,sheet} = laid(cut,found,heights,inside,say)?;
+    let (scale,name,family) = (cut.scale,&cut.name,&cut.family);
+    let sides = |grid: &Grid| lay(found,family,scale,station,&fans,grid,Withheld::Sides);
+    settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
+        if fans.is_empty() && !found.whole { return Ok(fitted) }
+        fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND)).at(Stage::Fit)?;
+        (say.stage)(&format!("`{name}`: the sheet cut into {} faces{}{}",fitted.faces.faces.len(),
+            if fans.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" },
+            if found.whole { " and round the turn, closing on itself" } else { "" }));
+        Ok(fitted)
+    })
+}
+
+/// A screw cut's sheet laid out: the station its section stands at, where the section runs onto
+/// and off a convex corner's fan, its first grid (rows along the section, columns along the roll
+/// over the stretch that carries it past the blank), and that grid's sheet, its edges clear of the
+/// blank.
+struct Laid { station: f64,fans: Vec<f64>,grid: Grid,sheet: Sheet }
+
+/// The layout `helical_sheet` fits and `carried_sheet` carries.
+fn laid(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;2]>,inside: Inside,say: &Say) -> Result<Laid,ExportRefusal> {
     let (scale,name,screw,family) = (cut.scale,&cut.name,found.screw,&cut.family);
     // rows along the sheet's section at the reach's first point's station (`Screw::station`: its
     // height, or a turn's angle): the characteristic's points each carried along its path there,
@@ -104,39 +125,7 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     let columns: Vec<f64> = (0..columns_n).map(|c| window[0]+(window[1]-window[0])*c as f64/(columns_n-1) as f64).collect();
     let mids = |x: &[f64]| x.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<_>>();
     let grid = Grid {row_mids:mids(&rows),rows,column_mids:mids(&columns),columns};
-    // a point of the sheet, in millimetres: the section's point carried, and its normal turned
-    let carried = |(p,n): (V,V),pose: &crate::sweep::motion::Pose| -> (V,V) { (pose.point(p).map(|x| x*scale),pose.vector(n)) };
-    let lay = |grid: &Grid,withheld: Withheld| -> Result<Sheet,String> {
-        let rows: Vec<(V,V)> = crate::util::par::map(&grid.rows,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
-        let row_mids: Vec<(V,V)> = crate::util::par::map(&grid.row_mids,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
-        // one pose a column
-        let poses = |times: &[f64]| times.iter().map(|&t| family.pose_at(t)).collect::<Result<Vec<_>,_>>();
-        let (mut columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);
-        // a whole turn's last column is its first, to the bit, so the ring closes on one edge
-        if found.whole { let first = columns[0]; *columns.last_mut().expect("columns") = first; }
-        let (nr,nc) = (grid.rows.len(),grid.columns.len());
-        let bands = std::iter::once(0).chain(fans.iter().filter_map(|s| grid.rows.iter().position(|r| r == s)))
-            .map(|r| (r,UNNAMED)).collect();
-        let mut sheet = Sheet {bands,points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
-            rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
-        for row in &rows { for (pose,&t) in columns.iter().zip(&grid.columns) {
-            let (p,n) = carried(*row,pose);
-            sheet.points.push(p); sheet.normals.push(n); sheet.times.push(t);
-        } }
-        let mut hold = |pn: (V,V),site: [usize;2]| { sheet.withheld.push(pn.0); sheet.withheld_normals.push(pn.1); sheet.sites.push(site) };
-        // the cells' centres, and with sides the middles of the cells' sides each way
-        for (c,pose) in column_mids.iter().enumerate() {
-            for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,pose),[2*r+1,2*c+1]); }
-            if withheld == Withheld::Sides { for (r,row) in rows.iter().enumerate() { hold(carried(*row,pose),[2*r,2*c+1]); } }
-        }
-        if withheld == Withheld::Sides {
-            for (c,pose) in columns.iter().enumerate() {
-                for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,pose),[2*r+1,2*c]); }
-            }
-        }
-        Ok(sheet)
-    };
-    let sheet = lay(&grid,Withheld::Centres).at(Stage::Sheet)?;
+    let sheet = lay(found,family,scale,station,&fans,&grid,Withheld::Centres).at(Stage::Sheet)?;
     // its edges out of the blank: the reach's ends and the roll's stretch were chosen so (a whole
     // turn's first and last columns are one, closed, and lie where they will)
     let edges: Vec<V> = (0..sheet.rows*sheet.columns).filter(|k| { let (r,c) = (k/sheet.columns,k%sheet.columns);
@@ -147,13 +136,191 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     }
     (say.stage)(&format!("`{name}`: sheet {}x{}, its edges clear of the blank",sheet.rows,sheet.columns));
     (say.mark)(Stage::Sheet);
-    let sides = |grid: &Grid| lay(grid,Withheld::Sides);
-    settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
-        if fans.is_empty() && !found.whole { return Ok(fitted) }
-        fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND)).at(Stage::Fit)?;
-        (say.stage)(&format!("`{name}`: the sheet cut into {} faces{}{}",fitted.faces.faces.len(),
-            if fans.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" },
-            if found.whole { " and round the turn, closing on itself" } else { "" }));
-        Ok(fitted)
-    })
+    Ok(Laid {station,fans,grid,sheet})
+}
+
+/// A screw cut's sheet laid on `grid` (millimetres): the section's points at the grid's rows (at
+/// `station`) carried by the motion's pose at each column, their normals turned, the contacts at
+/// the cells' centres withheld, and with `Sides` the middles of their sides too.
+fn lay(found: &Characteristic,family: &crate::sweep::motion::Family,scale: f64,station: f64,fans: &[f64],grid: &Grid,withheld: Withheld)
+    -> Result<Sheet,String> {
+    // a point of the sheet, in millimetres: the section's point carried, and its normal turned
+    let carried = |(p,n): (V,V),pose: &crate::sweep::motion::Pose| -> (V,V) { (pose.point(p).map(|x| x*scale),pose.vector(n)) };
+    let rows: Vec<(V,V)> = crate::util::par::map(&grid.rows,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
+    let row_mids: Vec<(V,V)> = crate::util::par::map(&grid.row_mids,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
+    // one pose a column
+    let poses = |times: &[f64]| times.iter().map(|&t| family.pose_at(t)).collect::<Result<Vec<_>,_>>();
+    let (mut columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);
+    // a whole turn's last column is its first, to the bit, so the ring closes on one edge
+    if found.whole { let first = columns[0]; *columns.last_mut().expect("columns") = first; }
+    let (nr,nc) = (grid.rows.len(),grid.columns.len());
+    let bands = std::iter::once(0).chain(fans.iter().filter_map(|s| grid.rows.iter().position(|r| r == s)))
+        .map(|r| (r,UNNAMED)).collect();
+    let mut sheet = Sheet {bands,points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
+        rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
+    for row in &rows { for (pose,&t) in columns.iter().zip(&grid.columns) {
+        let (p,n) = carried(*row,pose);
+        sheet.points.push(p); sheet.normals.push(n); sheet.times.push(t);
+    } }
+    let mut hold = |pn: (V,V),site: [usize;2]| { sheet.withheld.push(pn.0); sheet.withheld_normals.push(pn.1); sheet.sites.push(site) };
+    // the cells' centres, and with sides the middles of the cells' sides each way
+    for (c,pose) in column_mids.iter().enumerate() {
+        for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,pose),[2*r+1,2*c+1]); }
+        if withheld == Withheld::Sides { for (r,row) in rows.iter().enumerate() { hold(carried(*row,pose),[2*r,2*c+1]); } }
+    }
+    if withheld == Withheld::Sides {
+        for (c,pose) in columns.iter().enumerate() {
+            for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,pose),[2*r+1,2*c]); }
+        }
+    }
+    Ok(sheet)
+}
+
+
+/// How near the section's fit keeps to its exact points (a share of its size), and the most points
+/// it reads along one band.
+const SECTION_FIT: f64 = 1e-10;
+const SECTION_MOST: usize = 4096;
+
+/// The sheet of a screw cut whose characteristic `found` walked, as `helical_sheet` lays it but
+/// carried exactly: its section (at the layout's station, each band between a convex corner's fan
+/// ends its own curve) fitted along its length to its exact points, a curve of one parameter, and
+/// that curve carried by the motion itself — a slide's an extrusion, a turn's a revolution, a
+/// screw's the curve screwed (`Blend`) — so nothing is fitted across the motion, where the grid's
+/// columns stand ten degrees apart. A whole turn's sheet is cut round into faces closing on each
+/// other, as `helical_sheet`'s is. Its error is the section's fit, measured at the points between
+/// those it passes through.
+pub fn carried_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;2]>,inside: Inside,say: &Say)
+    -> Result<Fitted,ExportRefusal> {
+    use crate::geom::{Carry,Curve,Frame,Rigid,Surface};
+    use crate::topo::{reverse_loop,Brep,Coedge,EdgeCurve,Face,Pcurve};
+    use crate::util::space::{add,dot,norm,scale as times,sub,unit};
+    use std::sync::Arc;
+    let found = &found.seamless();
+    let Laid {station,fans,grid,sheet} = laid(cut,found,heights,inside,say)?;
+    let (mm,name,screw,family) = (cut.scale,&cut.name,found.screw,&cut.family);
+    let (t0,t1) = (grid.columns[0],grid.columns[grid.columns.len()-1]);
+    let pose = family.pose_at(t0).at(Stage::Fit)?;
+    let at = |s: f64| -> Result<V,String> { Ok(pose.point(found.on_section(s,station)?.0).map(|x| x*mm)) };
+    // the bands between the fans' ends, each its section fitted through more of its exact points
+    // until the points between them lie on it
+    let mut ends = vec![grid.rows[0]];
+    ends.extend(fans.iter().copied());
+    ends.push(grid.rows[grid.rows.len()-1]);
+    let size = crate::util::space::polyline_length(&sheet.points.iter().step_by(sheet.columns).copied().collect::<Vec<_>>());
+    let bar = SECTION_FIT*size.max(1.);
+    let mut error: f64 = 0.;
+    let mut curves: Vec<crate::nurbs::BSpline> = Vec::new();
+    for w in ends.windows(2) {
+        let mut s: Vec<f64> = grid.rows.iter().copied().filter(|&r| r >= w[0] && r <= w[1]).collect();
+        let mut points: Vec<V> = crate::util::par::map(&s,|&s| at(s)).into_iter().collect::<Result<_,_>>().at(Stage::Fit)?;
+        let curve = loop {
+            let mut t = vec![0.];
+            for k in 1..points.len() { t.push(t[k-1]+distance(points[k-1],points[k])); }
+            let curve = crate::nurbs::interpolate(&points,&t,3).ok_or("the section could not be interpolated").at(Stage::Fit)?;
+            // (a point between two that the walk cannot read — its ring without the root, where
+            // the curve turns between rings — is left unread beyond the reach, where the sheet
+            // only carries its edge out of the blank, and refuses within it)
+            let mids: Vec<f64> = s.windows(2).map(|x| 0.5*(x[0]+x[1])).collect();
+            let between: Vec<Result<V,String>> = crate::util::par::map(&mids,|&m| at(m));
+            let mut off: Vec<f64> = Vec::with_capacity(mids.len());
+            for (&m,q) in mids.iter().zip(&between) {
+                match q {
+                    Ok(q) => off.push(distance(curve.point(curve.nearest(*q)),*q)),
+                    Err(e) if m > found.reach[0] as f64 && m < found.reach[1] as f64 => return Err(e.clone()).at(Stage::Fit),
+                    Err(_) => off.push(0.),
+                }
+            }
+            let worst = off.iter().copied().fold(0.,f64::max);
+            if worst <= bar || points.len() > SECTION_MOST { error = error.max(worst); break curve }
+            let (mut s2,mut p2) = (vec![s[0]],vec![points[0]]);
+            for k in 0..mids.len() {
+                if off[k] > bar { s2.push(mids[k]); p2.push(*between[k].as_ref().expect("a point read")); }
+                s2.push(s[k+1]); p2.push(points[k+1]);
+            }
+            (s,points) = (s2,p2);
+        };
+        curves.push(curve);
+    }
+    (say.stage)(&format!("`{name}`: its section fitted in {} curves of {} poles, within {error:.1e} mm of its exact points; carried {}",
+        curves.len(),curves.iter().map(|c| c.poles.len()).sum::<usize>(),if screw.is_slide() { "along the slide" }
+        else if screw.is_turn() { "round the turn" } else { "along the screw" }));
+    (say.mark)(Stage::Fit);
+    // the carry, in millimetres, over the columns' stretch of the roll: a whole turn's round once,
+    // in quarters
+    let span = t1-t0;
+    let (angle,advance) = (screw.ratio*span,screw.advance*span/std::f64::consts::TAU*mm);
+    let (centre,axis) = (screw.origin.map(|x| x*mm),unit(screw.axis));
+    let pieces = if found.whole { AROUND } else { 1 };
+    let stations: Vec<f64> = (0..=pieces).map(|j| j as f64/pieces as f64).collect();
+    // each band's surface, its (along, carry) parameters' map to its own, a section carried to a
+    // fraction of the carry, and a rail (where band `k` begins, or the last ends) over a stretch
+    let carried = |c: f64| -> Rigid {
+        Rigid::turn(centre,axis,angle*c).then(&Rigid {r:Rigid::identity().r,t:times(axis,advance*c)})
+    };
+    let moved = |b: &crate::nurbs::BSpline,m: &Rigid| -> crate::nurbs::BSpline {
+        let mut b = b.clone(); b.poles = b.poles.iter().map(|&p| m.point(p)).collect(); b
+    };
+    let kind = if screw.is_slide() { 0 } else if screw.is_turn() { 1 } else { 2 };
+    let surfaces: Vec<Surface> = curves.iter().map(|c| {
+        let curve = Arc::new(Curve::BSpline(Arc::new(c.clone())));
+        match kind {
+            0 => Surface::Extrusion(Frame::about(c.point(c.domain()[0]),times(axis,advance.signum())),curve),
+            1 => {
+                let p = c.point(c.domain()[0]);
+                let foot = add(centre,times(axis,dot(sub(p,centre),axis)));
+                Surface::Revolution(Frame::new(foot,times(axis,angle.signum()),sub(p,foot)),curve)
+            }
+            _ => Surface::Blend(Frame::about(centre,axis),Arc::new(crate::geom::Blend {a:(*curve).clone(),ta:c.domain(),b:(*curve).clone(),
+                tb:c.domain(),carry:Carry::Screw {center:centre,axis,angle,advance},closed:false})),
+        }
+    }).collect();
+    let uv = |i: usize,a: f64,c: f64| -> [f64;2] {
+        let [d0,d1] = curves[i].domain();
+        match kind { 0 => [a,c*advance.abs()],1 => [c*angle.abs(),a],_ => [(a-d0)/(d1-d0),c] }
+    };
+    let rail = |k: usize,c: [f64;2]| -> (Curve,[f64;2]) {
+        let (i,a) = if k < curves.len() { (k,curves[k].domain()[0]) } else { (k-1,curves[k-1].domain()[1]) };
+        let p = curves[i].point(a);
+        match (&surfaces[i],kind) {
+            (_,0) => (Curve::Line {p,d:times(axis,advance.signum())},[c[0]*advance.abs(),c[1]*advance.abs()]),
+            (_,1) => {
+                let foot = add(centre,times(axis,dot(sub(p,centre),axis)));
+                (Curve::Circle(Frame::new(foot,times(axis,angle.signum()),sub(p,foot)),norm(sub(p,foot))),
+                    [c[0]*angle.abs(),c[1]*angle.abs()])
+            }
+            (Surface::Blend(_,b),_) => (Curve::Iso(b.clone(),if k < curves.len() { 0. } else { 1. }),c),
+            _ => unreachable!("a screw's band is a blend"),
+        }
+    };
+    let corner = |k: usize,c: f64| -> V {
+        let (i,a) = if k < curves.len() { (k,curves[k].domain()[0]) } else { (k-1,curves[k-1].domain()[1]) };
+        carried(c).point(curves[i].point(a))
+    };
+    let mut b = Brep::default();
+    let m = if found.whole { pieces } else { pieces+1 };
+    let vertices: Vec<Vec<u32>> = (0..=curves.len()).map(|k| (0..m).map(|j| b.vertex(corner(k,stations[j]))).collect()).collect();
+    let sections: Vec<Vec<u32>> = (0..curves.len()).map(|i| (0..m).map(|j| {
+        let c = moved(&curves[i],&carried(stations[j]));
+        b.edge(EdgeCurve::Curve(Curve::BSpline(Arc::new(c))),curves[i].domain(),[vertices[i][j],vertices[i+1][j]])
+    }).collect()).collect();
+    let rails: Vec<Vec<u32>> = (0..=curves.len()).map(|k| (0..pieces).map(|j| {
+        let (curve,t) = rail(k,[stations[j],stations[j+1]]);
+        b.edge(EdgeCurve::Curve(curve),t,[vertices[k][j],vertices[k][(j+1)%m]])
+    }).collect()).collect();
+    for i in 0..curves.len() { for j in 0..pieces {
+        let ([a0,a1],[c0,c1]) = (curves[i].domain(),[stations[j],stations[j+1]]);
+        let line = |x: [f64;2],y: [f64;2]| Pcurve::Line {a:x,b:y};
+        let lp = vec![
+            Coedge {edge:sections[i][j],reversed:false,pcurve:line(uv(i,a0,c0),uv(i,a1,c0))},
+            Coedge {edge:rails[i+1][j],reversed:false,pcurve:line(uv(i,a1,c0),uv(i,a1,c1))},
+            Coedge {edge:sections[i][(j+1)%m],reversed:true,pcurve:line(uv(i,a0,c1),uv(i,a1,c1))},
+            Coedge {edge:rails[i][j],reversed:true,pcurve:line(uv(i,a0,c0),uv(i,a0,c1))},
+        ];
+        // counter-clockwise in the surface's own parameters: a revolution's run (carry, along)
+        let lp = if kind == 1 { reverse_loop(lp) } else { lp };
+        b.faces.push(Face {surface:surfaces[i].clone(),reversed:false,loops:vec![lp],name:String::new()});
+    } }
+    (say.stage)(&format!("`{name}`: the sheet carried exactly, {} faces",b.faces.len()));
+    Ok(Fitted {face:b.clone(),sheet,error,faces:b})
 }

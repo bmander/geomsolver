@@ -51,9 +51,10 @@ fn refused<T>(built: Result<T, ExportRefusal>) -> ExportRefusal {
 
 /// A torus slid along a rod (brep-bench's `swept/torus-slid-through-rod`): square to the slide its
 /// characteristic is its tube's circle, so the groove is the lens the rod's disc and the tube's
-/// share, the rod's length. Its sheet is a fit to the characteristic's exact points, so the
-/// tolerance it is held to is how near the closed form it comes: within 0.01 mm (the default), and
-/// held to a micrometre.
+/// share, the rod's length. Its sheet is its section carried exactly — an extrusion of a curve
+/// fitted along the section to its exact points — so it comes within rounding of the closed form at
+/// any tolerance; the grid the solver's export fits (`carried` off) comes as near as the tolerance
+/// it is held to: within 0.01 mm (the default), and held to a micrometre.
 #[test]
 fn a_torus_slid_along_a_rod_takes_its_lens_the_rods_length() {
     let wheel = torus("wheel", [11.5, 0., -9.], [0., 1., 0.], [-1., 0., 0.], 6., 2.);
@@ -63,13 +64,13 @@ fn a_torus_slid_along_a_rod_takes_its_lens_the_rods_length() {
     let alpha = ((d * d + big * big - small * small) / (2. * d * big)).acos();
     let beta = ((d * d + small * small - big * big) / (2. * d * small)).acos();
     let surface = 2. * (PI * 25. - lens(5., 2., 5.5)) + 20. * (TAU * big - 2. * alpha * big) + 20. * 2. * beta * small;
-    for (tolerance, bars) in [(None, [3e-8, 3e-7]), (Some(1e-6), [3e-9, 1e-8])] {
-        let cut = swept_cut_with(&rod(), &wheel, &up(), [0., TAU], &Ask { tolerance, ..Ask::default() }, &said())
+    for (tolerance, carried, bars) in [(None, true, [1e-10, 1e-10]), (None, false, [3e-8, 3e-7]), (Some(1e-6), false, [3e-9, 1e-8])] {
+        let cut = swept_cut_with(&rod(), &wheel, &up(), [0., TAU], &Ask { tolerance, carried, ..Ask::default() }, &said())
             .unwrap_or_else(|r| panic!("{r}"));
         cut.check(1e-6).unwrap();
         let (v, a) = measured(&cut);
-        near(&format!("volume within {tolerance:?}"), v, volume, bars[0]);
-        near(&format!("area within {tolerance:?}"), a, surface, bars[1]);
+        near(&format!("volume within {tolerance:?}, carried {carried}"), v, volume, bars[0]);
+        near(&format!("area within {tolerance:?}, carried {carried}"), a, surface, bars[1]);
     }
 }
 
@@ -81,24 +82,25 @@ fn two_beads_slid_take_what_either_covers() {
         torus("bead2", [11.5, 1.5, -9.], [0., 1., 0.], [-1., 0., 0.], 6., 1.5)]);
     let cut = swept_cut(&rod(), &beads, &up(), [0., TAU], None).unwrap_or_else(|r| panic!("{r}"));
     let (v, a) = measured(&cut);
-    near("volume", v, 1486.4498667518676, 3e-8);
-    near("area", a, 787.2349038041657, 3e-7);
+    near("volume", v, 1486.4498667518676, 1e-10);
+    near("area", a, 787.2349038041657, 1e-10);
 }
 
 /// An upright torus turned about z across the ring sector: its shadow in a half-plane through z
 /// is everything within 7.5 + √(4 − z²) of the axis, so the groove is that less the sector's inner
-/// 8, from z = −1 to 1, turned through the sector's 60° (Pappus). A turn's sheet is a fit across
-/// the turn too, its columns ten degrees apart where no tolerance asks for more.
+/// 8, from z = −1 to 1, turned through the sector's 60° (Pappus). Its sheet is its section
+/// revolved exactly; the grid the solver's export fits stands its columns ten degrees apart
+/// across the turn where no tolerance asks for more, and comes as near as that lets it.
 #[test]
 fn an_upright_torus_turned_takes_its_shadow_turned() {
     let upright = torus("torus", [5., 0., 0.], [0., 0., 1.], [1., 0., 0.], 2.5, 2.);
     // ∫ ((7.5 + w)² − 8²)/2 dz over z from −1 to 1, w = √(4 − z²): ∫ w = √3 + 2π/3, ∫ w² = 22/3
     let removed = PI / 3. * (112.5 + 15. * (3f64.sqrt() + TAU / 3.) + 22. / 3. - 128.) / 2.;
     let left = PI / 3. * (144. - 64.) - removed;
-    for (tolerance, bar) in [(None, 1e-5), (Some(1e-6), 1e-7)] {
+    for (tolerance, carried, bar) in [(None, true, 3e-8), (None, false, 1e-5), (Some(1e-6), false, 1e-7)] {
         let cut = swept_cut_with(&sector(), &upright, &about_z(), [-140f64.to_radians(), 140f64.to_radians()],
-            &Ask { tolerance, ..Ask::default() }, &said()).unwrap_or_else(|r| panic!("{r}"));
-        near(&format!("volume within {tolerance:?}"), volume(&cut), left, bar);
+            &Ask { tolerance, carried, ..Ask::default() }, &said()).unwrap_or_else(|r| panic!("{r}"));
+        near(&format!("volume within {tolerance:?}, carried {carried}"), volume(&cut), left, bar);
     }
 }
 
@@ -281,3 +283,4 @@ fn the_readmes_sweep() -> Result<(), Box<dyn std::error::Error>> {
     assert!((volume(&grooved) - (PI * 25. * 20. - 20. * lens(5., 2., 5.5))).abs() < 1e-5);
     Ok(())
 }
+
