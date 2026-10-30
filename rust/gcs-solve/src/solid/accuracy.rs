@@ -482,8 +482,7 @@ impl Meter {
         super::validate(sk,body)?;
         // a sweep under a driven joint is read as its joint's over the law's range (#684 L), and a
         // cut of a union's sweep as each member's (#684 C), as each is built
-        if let Some(lowered) = super::paced::lowered(sk,body) { return Self::read(&lowered,body,options) }
-        if let Some(lowered) = super::distributed::lowered(sk,body) { return Self::read(&lowered,body,options) }
+        if let Some(lowered) = super::lowered(sk,body) { return Self::read(&lowered,body,options) }
         let tol = cad::AXIS_TOLERANCE;
         // a body built from swept material: its operands each read, the body rule over them
         if let SolidDef::Body {stock,on,through,bound} = &sk.solids[body].def {

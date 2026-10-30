@@ -164,17 +164,19 @@ slide or a screw at a constant rate, admitted and built as one. A cam's rise, dw
 rocker swung out and back, a slide that overshoots and settles: each sweeps what its joint does
 over its reach.
 
-- **The reach** (`Law::range`) is found by branch and bound over the law's enclosure: a stretch of
-  the roll is dropped where its enclosure, or its value at its middle and its rate's enclosure
-  across half of it (the mean value), keeps it within `RANGE` (1e-12 radians) of the greatest value
-  read so far, and where its rate keeps one sign, by its ends. Its least and greatest are values the
-  law takes at a roll read. A law no enclosure is carried of (`tan`, `exp`, the roundings, …) is not
+- **The reach** (`Law::range`) is the global minimum search the swept field uses
+  (`interval::minimum`), run each way over the law's enclosure narrowed by the mean value form (its
+  value at a stretch's middle and its rate's enclosure across the rest), to `RANGE` (1e-12
+  radians, or that fraction of the law's values at the roll's ends where they pass a radian). Its
+  least and greatest are values the law takes at the search's witnesses; a law the search leaves
+  unsettled is not ranged. A law no enclosure is carried of (`tan`, `exp`, the roundings, …) is not
   ranged, and its sweep is refused as before.
 - **The restatement** (`solid::paced`): a body reaching a sweep under a driven joint is built from a
   copy of the drawing in which that sweep, in its place and under its name, is the joint's sweep
   (`MotionDef::Driven`'s `of`) over a roll stated as the law's reach (`paced::lowered`). Admission,
-  the exact construction, the accuracy meter and the page's stepped build read the copy, before a
-  union is distributed (#684 C), so a union under a drive is its members' sweeps under the joint.
+  the exact construction, the accuracy meter and the page's stepped build read the copy
+  (`solid::lowered`), before a union is distributed (#684 C), so a union under a drive is its
+  members' sweeps under the joint.
   The export holds what it builds to the drawing's own field, the driven sweep's, so the gate
   compares the restatement with the law it restates. A ball under a drive becomes the canal's
   closed form; read along its path, it would stop where the law turns back (B1).

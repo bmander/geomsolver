@@ -449,13 +449,11 @@ struct Fine { reads: Reads,samples: usize,near_double_roots: usize,hits: Vec<(Hi
 pub fn admit_body(sk: &Sketch,root: usize,options: &Options) -> Result<Admission,Error> {
     // a body placed by a rigid motion is the body moved: the body it places is admitted (#619)
     let root = cad::placed_swept(sk,root).map_err(Error::Unreadable)?.map_or(root,|(inner,_)| inner);
-    // a sweep under a joint driven by a law is its joint's over the law's range (#684 L): the body
-    // is admitted as the copy of the drawing that writes it so
-    if let Some(lowered) = super::paced::lowered(sk,root) { return admit_body(&lowered,root,options) }
-    // a cut of a union's sweep is a cut of each member's (#684 C): the body is admitted as the copy
-    // of the drawing that writes it so, each member's sweep by its own class (where every one is a
-    // ball's tube, the body is static material there, and nothing is asked)
-    if let Some(lowered) = super::distributed::lowered(sk,root) {
+    // a sweep under a driven joint is its joint's over the law's reach (#684 L), and a cut of a
+    // union's sweep a cut of each member's (#684 C): the body is admitted as the copy of the drawing
+    // that writes it so, each sweep by its own class (where every one is a ball's tube, the body is
+    // static material there, and nothing is asked)
+    if let Some(lowered) = super::lowered(sk,root) {
         if !cad::contains_sweep(&lowered,root) { return Ok(Admission {body:root,sweeps:Vec::new()}) }
         return admit_body(&lowered,root,options)
     }

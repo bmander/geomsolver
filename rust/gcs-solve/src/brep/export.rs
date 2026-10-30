@@ -103,18 +103,13 @@ fn build(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,toleran
 fn own(sk: &Sketch,body: usize,admitted: Option<&admission::Admission>,mirrored: bool,tolerance: Option<Tolerance>,say: &Say)
     -> Result<Exact,ExportRefusal> {
     if !cad::swept_operands(sk,body).is_empty() { return compose(sk,body,tolerance,say) }
-    // a sweep under a joint driven by a law is its joint's over the law's range (#684 L): built from
-    // the copy of the drawing that writes it so, and held to the driven sweep's field
-    if let Some(lowered) = crate::solid::paced::lowered(sk,body) {
-        (say.stage)(&format!("`{}` cuts a sweep under a joint driven by a law: the joint's sweep over the law's range cut",
-            sk.solids[body].name));
-        return Ok(Exact {swept:true,..own(&lowered,body,admitted,mirrored,tolerance,say)?})
-    }
-    // a cut of a union's sweep is a cut of each member's (#684 C): built from the copy of the
-    // drawing that writes it so, and held to the union's field as a swept body (where every
-    // member's sweep is a ball's tube, the copy's body is static material)
-    if let Some(lowered) = crate::solid::distributed::lowered(sk,body) {
-        (say.stage)(&format!("`{}` cuts the sweep of a union: each member's sweep cut",sk.solids[body].name));
+    // a sweep under a driven joint is its joint's over the law's reach (#684 L), and a cut of a
+    // union's sweep a cut of each member's (#684 C): built from the copy of the drawing that writes
+    // it so, and held to the drawing's own field as a swept body (where every member's sweep is a
+    // ball's tube, the copy's body is static material)
+    if let Some(lowered) = crate::solid::lowered(sk,body) {
+        (say.stage)(&format!("`{}` cuts a sweep read as the sweeps it is: under a driven joint the joint's over the law's \
+            reach, of a union each member's",sk.solids[body].name));
         return Ok(Exact {swept:true,..own(&lowered,body,admitted,mirrored,tolerance,say)?})
     }
     let recipe = cad::recipe_static(sk,body).at(Stage::Blank)?;
@@ -635,8 +630,7 @@ impl Build {
         // union's sweep a cut of each member's (#684 C): the stages read the copy of the drawing
         // that writes it so, and where every member's sweep is a ball's tube the body is static
         // material there, built as the export builds it
-        let paced = crate::solid::paced::lowered(sk,body);
-        let lowered = crate::solid::distributed::lowered(paced.as_ref().unwrap_or(sk),body).or(paced);
+        let lowered = crate::solid::lowered(sk,body);
         let state = match &lowered { Some(l) if !cad::contains_sweep(l,body) => State::Static,_ => State::Admit };
         let recipe = match state {
             State::Static => none(),

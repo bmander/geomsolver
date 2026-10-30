@@ -25,31 +25,34 @@ const STILL: f64 = 1e-9;
 /// The joint sweep `swept`'s motion drives, and the least and greatest values the law takes over
 /// the sweep's roll (radians): `None` where its motion is no joint driven by a law, where the law
 /// is not read or ranged (an enclosure it carries none of), and where it takes one value only,
-/// which stands the tool still.
+/// which stands the tool still. Remembered against what the sweep reads (`Caches::paced`).
 pub fn restated(sk: &Sketch, swept: usize) -> Option<(u32, [f64; 2])> {
     let SolidDef::Swept { motion, .. } = &sk.solids.get(swept)?.def else { return None };
     let MotionDef::Driven { of, law, over } = &sk.motions.get(*motion as usize)?.def else {
         return None;
     };
-    let law = crate::motion::Law::read(sk, law, over).ok()?;
-    let [lo, hi] = law.range(super::roll::interval(sk, swept).ok()?).ok()?;
-    (hi - lo > STILL).then_some((*of, [lo, hi]))
+    sk.caches.paced.get_or(swept, super::MemoKey::of(sk, swept), || {
+        let law = crate::motion::Law::read(sk, law, over).ok()?;
+        let [lo, hi] = law.range(super::roll::interval(sk, swept).ok()?).ok()?;
+        (hi - lo > STILL).then_some((*of, [lo, hi]))
+    })
 }
 
 /// The sweeps body `body` reaches whose motion is one driven joint `restated` reads, each with its
-/// joint and its range, in the order the body's operands are walked.
+/// joint and its range.
 fn driven(sk: &Sketch, body: usize) -> Vec<(usize, u32, [f64; 2])> {
     let mut seen = std::collections::BTreeSet::new();
     let mut stack = vec![body];
     let mut found = Vec::new();
     while let Some(s) = stack.pop() {
-        if s >= sk.solids.len() || !seen.insert(s) {
+        let Some(solid) = sk.solids.get(s) else { continue };
+        if !seen.insert(s) {
             continue;
         }
         if let Some((of, range)) = restated(sk, s) {
             found.push((s, of, range));
         }
-        stack.extend(sk.solids[s].operands().into_iter().rev().map(|o| o as usize));
+        stack.extend(solid.operands().into_iter().map(|o| o as usize));
     }
     found
 }
@@ -69,14 +72,10 @@ pub fn lowered(sk: &Sketch, body: usize) -> Option<Sketch> {
     }
     let mut out = sk.clone();
     for (s, of, range) in found {
-        let SolidDef::Swept { source, .. } = sk.solids[s].def else {
-            unreachable!("a driven sweep is a sweep")
-        };
-        out.solids[s].def = SolidDef::Swept {
-            source,
-            motion: of,
-            roll: Roll::Stated(Running::roll_radians(range)),
-        };
+        if let SolidDef::Swept { motion, roll, .. } = &mut out.solids[s].def {
+            *motion = of;
+            *roll = Roll::Stated(Running::roll_radians(range));
+        }
     }
     Some(out)
 }

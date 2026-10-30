@@ -7,17 +7,18 @@
 //! driven sweep's own field; a ball rocked out and back, Pappus; and a drive seen from another
 //! motion, still refused. `solid_sweeps/rocked.sv` is held in `solid_sweeps_examples.rs`.
 use gcs_core::motion::Law;
-use gcs_core::solid::admission::{self,Asked,Class,Condition,Error,Options};
+use gcs_core::program::Elaborated;
+use gcs_core::solid::admission::{self,Asked,Class,Condition,Options};
 use std::f64::consts::{PI,TAU};
 
 use crate::common::text::solved;
 use crate::round_lowering::lens;
-use crate::solid_sweeps_examples::text;
-use crate::turns_and_slides::{exported,near};
+use crate::solid_sweeps_examples::{class,text};
+use crate::turns_and_slides::{exported,near,refused};
 
 /// A law's reach over a roll is its closed form's: monotone, kinked, dwelling and turning back in
-/// the middle of the roll, each least and greatest within 1e-12 radians; a law no enclosure is
-/// carried of is refused, never guessed.
+/// the middle of the roll, each least and greatest within 1e-12 of the reach's magnitude (of a
+/// radian, where it is less); a law no enclosure is carried of is refused, never guessed.
 #[test]
 fn a_laws_reach_is_the_least_and_greatest_it_takes() {
     let e = solved("unit mm\nparam t: Angle over (0deg, 360deg)\nuse std\nin std.front {\n  \
@@ -42,12 +43,27 @@ fn a_laws_reach_is_the_least_and_greatest_it_takes() {
         let law = Law::read(&e.sketch,text,"t").expect(text);
         let [a,b] = law.range(roll.map(rad)).unwrap_or_else(|m| panic!("{text}: {m}"));
         eprintln!("{text} over {roll:?}: [{a}, {b}] against [{lo}, {hi}]");
-        assert!((a-lo).abs() < 1e-12 && (b-hi).abs() < 1e-12,
+        // `RANGE` of a radian, or of the reach's magnitude where it is more
+        let bar = 1e-12*lo.abs().max(hi.abs()).max(1.);
+        assert!((a-lo).abs() <= bar && (b-hi).abs() <= bar,
             "{text} over {roll:?}: [{a}, {b}] against [{lo}, {hi}]");
     }
     let tangent = Law::read(&e.sketch,"tan(t / 8)","t").unwrap();
     let refused = tangent.range([0.,1.]).unwrap_err();
     assert!(refused.contains("no enclosure"),"{refused}");
+}
+
+/// The line of `slide.sv` that sweeps its wheel, which the cases here write under a drive.
+const SLID: &str = "construction groove := sweep(wheel over t in (0deg, 360deg), under: feed)";
+
+/// The example `name` with each `(from, to)` written in, every `from` found in it first.
+fn edited(name: &str,edits: &[(&str,&str)]) -> Elaborated {
+    let mut src = text(name);
+    for (from,to) in edits {
+        assert!(src.contains(from),"`{name}` writes `{from}`");
+        src = src.replacen(from,to,1);
+    }
+    fixtures::read(&src)
 }
 
 /// `slide.sv`'s wheel driven up the rod and back: it rises a quarter of the roll, dwells at the
@@ -56,21 +72,14 @@ fn a_laws_reach_is_the_least_and_greatest_it_takes() {
 /// the rod's 20 mm — built as a slide's and held to the driven sweep's own field.
 #[test]
 fn a_slide_that_rises_dwells_and_returns_cuts_what_its_rise_does() {
-    let src = text("slide.sv").replace(
-        "construction groove := sweep(wheel over t in (0deg, 360deg), under: feed)",
-        "param t: Angle over (0deg, 360deg)\n\
-         fix(value == 360deg * min(max(min(t / 90deg, (360deg - t) / 90deg), 0), 1)) feed\n\
-         construction groove := sweep(wheel over t, under: feed)");
-    assert!(src.contains("fix(value"));
-    let e = fixtures::read(&src);
+    let e = edited("slide.sv",&[(SLID,"param t: Angle over (0deg, 360deg)\n\
+        fix(value == 360deg * min(max(min(t / 90deg, (360deg - t) / 90deg), 0), 1)) feed\n\
+        construction groove := sweep(wheel over t, under: feed)")]);
     let groove = fixtures::solid(&e,"groove");
     let (_,[lo,hi]) = gcs_core::solid::paced::restated(&e.sketch,groove)
         .expect("read as its joint's slide");
     assert!(lo.abs() < 1e-12 && (hi-TAU).abs() < 1e-12,"[{lo}, {hi}]");
-    let a = admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default())
-        .unwrap_or_else(|r| panic!("{r}"));
-    let [s] = a.sweeps() else { panic!("one sweep") };
-    let Class::ConstantTwist(found) = &s.class else { panic!("the constant-twist class") };
+    let Class::ConstantTwist(found) = class(&e,"rod") else { panic!("the constant-twist class") };
     assert!(found.screw.is_slide(),"read as a slide");
     near(exported(&e,"rod"),PI*25.*20.-lens(5.,2.,5.5)*20.,1e-6);
 }
@@ -80,13 +89,11 @@ fn a_slide_that_rises_dwells_and_returns_cuts_what_its_rise_does() {
 /// so the groove is the quarter turn's tube with half a ball at each end, as `ball.sv`'s (Pappus).
 #[test]
 fn a_ball_rocked_out_and_back_leaves_its_tube_once() {
-    let src = text("ball.sv").replace(
+    let e = edited("ball.sv",&[(
         "construction groove := sweep(cutter over t in (0deg, swing), under: swinging)",
         "param t: Angle over (0deg, 360deg)\n\
          fix(value == swing * (1 - cos(t)) / 2) swinging\n\
-         construction groove := sweep(cutter over t, under: swinging)");
-    assert!(src.contains("fix(value"));
-    let e = fixtures::read(&src);
+         construction groove := sweep(cutter over t, under: swinging)")]);
     let groove = (PI*9.*12.*PI/2.+4./3.*PI*27.)/2.;
     near(exported(&e,"block"),24.*24.*8.-groove,1e-9);
 }
@@ -96,21 +103,13 @@ fn a_ball_rocked_out_and_back_leaves_its_tube_once() {
 /// the sweep is refused by the motion's row, saying so.
 #[test]
 fn a_drive_seen_from_another_motion_is_still_refused() {
-    let src = text("slide.sv").replace(
-        "construction groove := sweep(wheel over t in (0deg, 360deg), under: feed)",
-        "param t: Angle over (0deg, 360deg)\n\
+    let e = edited("slide.sv",&[("use std.motion (slides)","use std.motion (slides, turns)"),
+        (SLID,"param t: Angle over (0deg, 360deg)\n\
          fix(value == 180deg * (1 - cos(t))) feed\n\
          spin := frame\nspin turns(1) ax\n\
-         construction groove := sweep(wheel over t, under: feed, seen_from: spin)")
-        .replace("use std.motion (slides)","use std.motion (slides, turns)");
-    let e = fixtures::read(&src);
+         construction groove := sweep(wheel over t, under: feed, seen_from: spin)")]);
     assert!(gcs_core::solid::paced::restated(&e.sketch,fixtures::solid(&e,"groove")).is_none());
-    let r = match admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default()) {
-        Err(Error::Refused(r)) => r,
-        Err(Error::Unreadable(m)) => panic!("unreadable: {m}"),
-        Ok(_) => panic!("admitted"),
-    };
-    eprintln!("{r}");
+    let r = refused(admission::admit_body(&e.sketch,fixtures::solid(&e,"rod"),&Options::default()));
     assert!(r.condition == Condition::Motion && r.asked == Asked::Generating,"{r}");
     assert!(r.message.contains("seen from another motion"),"{r}");
 }
