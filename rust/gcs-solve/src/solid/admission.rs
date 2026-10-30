@@ -627,6 +627,12 @@ const FAN_READS: usize = 16;
 #[derive(Clone,Copy)]
 struct Hit { source: V,position: V,normal: V }
 
+/// A point of a convex edge between two of the tool's faces, which carries every normal between
+/// theirs: each face's outward normal and the way into it from the edge, the patch the edge is
+/// named by, and whether it is a crease where a drafted prism's sides fold (else a cap's rim).
+#[derive(Clone,Copy)]
+struct Fan { point: V,faces: [(V,V);2],patch: usize,crease: bool }
+
 use super::constant_twist::Failure;
 
 /// T2, E1 and T1 for a prism's caps for one placement, asked of every class before anything that
@@ -689,11 +695,13 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
     // T1 for a prism: a cap passing through the blank is cut only by a prism standing alone as the
     // tool, its profile one loop, sectioned across (T3, #684 F); otherwise the class cuts with a
     // prism's sides only (under a planar sweep a cap, square to the turn, is in contact at every
-    // time or none, and M2 refuses it). Each cap is asked by its rim, its sides' ends at `v`.
+    // time or none, and M2 refuses it). Each cap is asked by its rim, its sides' ends at `v` (a
+    // drafted side's end at its parting plane is no rim, but the crease its halves meet in, #684 P).
     let mut capped = [false;2];
     for (end,v) in [(0,0.),(1,1.)] {
-        let rim = c.patches().iter().filter(|s| !s.periodic() && s.cap().is_none()).find_map(|surface| (0..=options.coarse_rows)
-            .find_map(|i| { let s = surface.at(i as f64/options.coarse_rows as f64,v).ok()?;
+        let rim = c.patches().iter().enumerate()
+            .filter(|&(k,s)| !s.periodic() && s.cap().is_none() && !c.creases().iter().any(|crease| crease[1-end] == k))
+            .find_map(|(_,surface)| (0..=options.coarse_rows).find_map(|i| { let s = surface.at(i as f64/options.coarse_rows as f64,v).ok()?;
                 poses.iter().map(|m| m.point(s.position)).find(|&p| reads.read(inside,p)) }).map(|p| (surface.name(),p)));
         let Some((name,p)) = rim else { continue };
         if lone.is_none() {
@@ -1010,56 +1018,76 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,l
     if hits.is_empty() {
         return Err((Condition::Reach,"no contact of the tool within the roll lies in the blank".into(),None));
     }
-    // a cap's rim, where a side meets it, carries every normal between the two (#684 F). Where a
-    // face's contact reaches the rim in the blank, the generated surface carries on over the rim's
-    // fan: E3 asks that it carry on, not turn back — a face's image stepped toward the rim and the
-    // fan's stepped off it point the same way (a flat end swung so its corners dig past it fails
-    // here, its envelope under the corners' paths) — and the fans' contacts are asked E4 with the
-    // faces' (a rim point's own fan is one tool point, never distant from itself)
-    if capped.contains(&true) {
-        let rims = crate::par::indices(c.patches().len(),|patch| -> Result<(Vec<(Hit,usize,usize)>,Reads),Failure> {
-            let surface = &c.patches()[patch];
-            let (mut found,mut own) = (Vec::new(),Reads::new());
-            if surface.periodic() || surface.cap().is_some() { return Ok((found,own)) }
-            // a reaching cap's rim, its sides' end at `v`
-            for v in [0.,1.].into_iter().filter(|&v| capped[v as usize]) { for i in 0..=options.rows {
-                let Ok(s) = surface.at(i as f64/options.rows as f64,v) else { continue };
-                if !on_tool(s.position) { continue }
-                let side = super::constant_twist::outward(tool,s.position,crate::space::unit(cross(s.du,s.dv)));
-                let along = scale(crate::space::unit(s.dv),if v > 0.5 { 1. } else { -1. });
-                let p = s.position;
-                let h = 1e-5*(1.+norm(p));
-                let near = |q: V,n: V,t: f64| c.at_point_normal_over(q,n,domain,options.root_tolerance).ok()?.into_iter()
-                    .min_by(|a,b| (a.root.time-t).abs().total_cmp(&(b.root.time-t).abs())).map(|x| x.contact.position);
-                // each face meeting the rim, its normal, the way into it, and the fan's other end
-                for (face,into,other,which) in [(along,side.map(|x| -x),side,"the cap's"),(side,along.map(|x| -x),along,"the side's")] {
-                    let Ok(list) = c.at_point_normal_over(p,face,domain,options.root_tolerance) else { continue };
-                    for t in list.iter().filter(|t| own.read(inside,t.contact.position)) {
-                        let x0 = t.contact.position;
-                        let stepped: V = std::array::from_fn(|k| p[k]+h*into[k]);
-                        let turned: V = std::array::from_fn(|k| face[k]+1e-4*other[k]);
-                        let (Some(xf),Some(xn)) = (near(stepped,face,t.root.time),near(p,turned,t.root.time)) else { continue };
-                        let (onto,off) = (sub(x0,xf),sub(xn,x0));
-                        if dot(onto,off) < -1e-3*norm(onto)*norm(off) {
-                            return Err((Condition::Fold,format!("the generated surface turns back at the rim where `{}` meets its \
-                                prism's cap: the rim's fan sweeps back over {which} envelope",surface.name()),Some(x0)))
-                        }
-                    }
+    // where two faces of the tool meet at a convex edge, the edge carries every normal between theirs,
+    // a fan: a cap's rim, where a side meets it (#684 F), and a drafted prism's crease at its parting
+    // plane, where its sides' halves meet (#684 P). Where a face's contact reaches the edge in the
+    // blank, the generated surface carries on over the fan: E3 asks that it carry on, not turn back —
+    // a face's image stepped toward the edge and the fan's stepped off it point the same way (a flat
+    // end swung so its corners dig past it fails here, its envelope under the corners' paths); a fan
+    // whose normals all touch at the face's instant, as a crease's under a motion keeping the
+    // profile's plane, carries the contact nowhere, its step off the roots' rounding and no way at
+    // all. E2 asks that each fan normal touch the blank once, and the fans' contacts are asked E4
+    // with the faces' (an edge point's own fan is one tool point, never distant from itself)
+    let mut fans: Vec<Fan> = Vec::new();
+    if capped.contains(&true) { for (patch,surface) in c.patches().iter().enumerate() {
+        if surface.periodic() || surface.cap().is_some() { continue }
+        // a reaching cap's rim, its sides' end at `v`: the cap's normal along the side, and the side's
+        for v in [0.,1.].into_iter().filter(|&v| capped[v as usize]) { for i in 0..=options.rows {
+            let Ok(s) = surface.at(i as f64/options.rows as f64,v) else { continue };
+            if !on_tool(s.position) { continue }
+            let side = super::constant_twist::outward(tool,s.position,crate::space::unit(cross(s.du,s.dv)));
+            let along = scale(crate::space::unit(s.dv),if v > 0.5 { 1. } else { -1. });
+            fans.push(Fan {point:s.position,faces:[(along,side.map(|x| -x)),(side,along.map(|x| -x))],patch,crease:false});
+        } }
+    } }
+    // each crease, the half toward the prism's `from` and the half toward its `to`
+    for &[below,above] in c.creases() { for i in 0..=options.rows {
+        let u = i as f64/options.rows as f64;
+        let (Ok(a),Ok(b)) = (c.patches()[below].at(u,1.),c.patches()[above].at(u,0.)) else { continue };
+        if !on_tool(a.position) { continue }
+        let normal = |s: &SurfacePoint| super::constant_twist::outward(tool,a.position,crate::space::unit(cross(s.du,s.dv)));
+        fans.push(Fan {point:a.position,faces:[(normal(&a),scale(crate::space::unit(a.dv),-1.)),(normal(&b),crate::space::unit(b.dv))],
+            patch:below,crease:true});
+    } }
+    let read = crate::par::map(&fans,|&Fan {point:p,faces,patch,crease}| -> Result<(Vec<(Hit,usize,usize)>,Reads),Failure> {
+        let (mut found,mut own) = (Vec::new(),Reads::new());
+        let name = c.patches()[patch].name();
+        let (edge,whose) = if crease { (format!("where `{name}` folds at its prism's parting plane"),["its `from` half's","its `to` half's"]) }
+            else { (format!("at the rim where `{name}` meets its prism's cap"),["the cap's","the side's"]) };
+        let h = 1e-5*(1.+norm(p));
+        let near = |q: V,n: V,t: f64| c.at_point_normal_over(q,n,domain,options.root_tolerance).ok()?.into_iter()
+            .min_by(|a,b| (a.root.time-t).abs().total_cmp(&(b.root.time-t).abs())).map(|x| x.contact.position);
+        // each face meeting the edge, its normal, the way into it, and the fan's other end
+        for k in 0..2 {
+            let ((face,into),other) = (faces[k],faces[1-k].0);
+            let Ok(list) = c.at_point_normal_over(p,face,domain,options.root_tolerance) else { continue };
+            for t in list.iter().filter(|t| own.read(inside,t.contact.position)) {
+                let x0 = t.contact.position;
+                let stepped: V = std::array::from_fn(|k| p[k]+h*into[k]);
+                let turned: V = std::array::from_fn(|k| face[k]+1e-4*other[k]);
+                let (Some(xf),Some(xn)) = (near(stepped,face,t.root.time),near(p,turned,t.root.time)) else { continue };
+                let (onto,off) = (sub(x0,xf),sub(xn,x0));
+                if dot(onto,off) < -1e-3*norm(onto)*norm(off) && norm(off) > 1e-3*norm(onto) {
+                    return Err((Condition::Fold,format!("the generated surface turns back {edge}: the {}'s fan sweeps back over {} \
+                        envelope",if crease { "crease" } else { "rim" },whose[k]),Some(x0)))
                 }
-                // the fan's normals as a section's walk reads them (`cutter::Cutter::sample`)
-                for f in 1..FAN_READS {
-                    let f = f as f64/FAN_READS as f64;
-                    let n = crate::space::unit(add(scale(side,1.-f),scale(along,f)));
-                    let Ok(list) = c.at_point_normal_over(p,n,domain,options.root_tolerance) else { continue };
-                    for t in list.iter().filter(|t| own.read(inside,t.contact.position)) {
-                        found.push((Hit {source:p,position:t.contact.position,normal:t.contact.normal},patch,usize::MAX));
-                    }
-                }
-            } }
-            Ok((found,own))
-        });
-        for found in rims { let (found,own) = found?; hits.extend(found); reads.extend(own); }
-    }
+            }
+        }
+        // the fan's normals as a station reads them (`cutter::Cutter::sample`)
+        for f in 1..FAN_READS {
+            let f = f as f64/FAN_READS as f64;
+            let n = crate::space::unit(add(scale(faces[0].0,1.-f),scale(faces[1].0,f)));
+            let Ok(list) = c.at_point_normal_over(p,n,domain,options.root_tolerance) else { continue };
+            let within: Vec<&TimedContact> = list.iter().filter(|t| own.read(inside,t.contact.position)).collect();
+            if within.len() > 1 {
+                return Err((Condition::Single,format!("a point of the tool {edge} touches the blank at roll {:.4} and again at {:.4}",
+                    within[0].root.time,within[1].root.time),Some(within[1].contact.position)))
+            }
+            found.extend(within.into_iter().map(|t| (Hit {source:p,position:t.contact.position,normal:t.contact.normal},patch,usize::MAX)));
+        }
+        Ok((found,own))
+    });
+    for found in read { let (found,own) = found?; hits.extend(found); reads.extend(own); }
     // E4: contacts closer than the sample spacing whose tool points lie far apart.
     gaps.sort_by(f64::total_cmp);
     let spacing = gaps.get(gaps.len()*95/100).copied().unwrap_or(0.);

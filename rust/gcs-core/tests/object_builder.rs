@@ -114,6 +114,14 @@ fn a_bars_end_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/bar_end.sv".to_string()],true),1);
 }
 
+/// **A prism drafted both ways builds at the display's samples** (`parted.sv`, #684 P): the tooth's
+/// sides folding at its parting plane, the stations crossing the crease's fan between its halves,
+/// built by the page's stepped builder as the export builds it.
+#[test]
+fn a_tooth_drafted_both_ways_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/parted.sv".to_string()],true),1);
+}
+
 /// **A whole turn builds at the display's samples** (`whole_turn.sv`, #684 N): its sheet closed round
 /// the turn, cut into faces both ways (round the turn, and where it runs onto and off the rim's
 /// fan), built by the page's stepped builder as the export builds it.
