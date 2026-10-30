@@ -42,12 +42,23 @@ Currently: **Stage 5 done, and Stage 7a/7b — solids**, in **one** implementati
   its contacts, projection and material (`surface`), a tool's faces and a sweep's contacts
   (`tool`), the contact tracer (`trace`), the constant twist's characteristic
   (`characteristic`), the cutter, the sheet fitter and the helical sheet (`cutter`, `sheet`,
-  `helical`), an indexed body's sector (`sector`), the class rows (`condition`) and an export's
-  refusal (`refusal`).  What the kernel cannot read it is handed: a document through a `Source`
-  trait per reader (`motion`, `surface`, `tool`, `sheet`), which `Sketch` implements in
-  `gcs-solve`, so `Family::read(sk, m)`, `SweepContacts::read(sk, s, tol)` and the rest are
-  called as before; a joint's law and a frame carried along a path or by the drawing's march as
-  `motion::Drive` and `motion::Carrier`; a tool's material as `tool::Material`.  `gcs-solve`
+  `helical`), an indexed body's sector (`sector`), the class rows (`condition`) and their sampled
+  checks of one placement (`admit`), the blank split by the placed sheets and its cells judged,
+  whole or as one sector (`cells`), a tool's material in closed form and a blank's read off its
+  boundary (`material`), and an export's refusal (`refusal`).  **A solid sweep needs no document**
+  (`cut`): a tool as plain data (`tool::Tool`, of `build::Profile`s), a motion (`cut::Motion`), a
+  roll and a blank `Brep` give the blank cut (`swept_cut`) or a refusal naming its row — the
+  pipeline below read from plain data, not a copy of it (`a_torus_slid_along_a_rod_…` in
+  `cad-kernel/tests/sweep.rs`; `tests/swept_api.rs` holds it to the model's pipeline).  What the
+  kernel cannot read it is handed: a document through a `Source` trait per reader (`motion`,
+  `surface`, `tool`, `sheet`), which `Sketch` implements in `gcs-solve`, so `Family::read(sk, m)`,
+  `SweepContacts::read(sk, s, tol)` and the rest are called as before — the sketch's tool reader
+  building a `Tool` of the faces it reads (`Tool::Read`) for the kernel's walk
+  (`SweepContacts::of_tool`); a joint's law and a frame carried along a path or by the drawing's
+  march as `motion::Drive` and `motion::Carrier`; a tool's material as `tool::Material` (the
+  model's `SpatialField`, never the closed forms the API reads, so the model's numbers stand); a
+  body's material as the probe its cells are judged by (`cells::Probe`, the `MaterialField`).
+  Admission asks the kernel's rows (`admit::admit`) and words the refusal by the model's names.  `gcs-solve`
   re-exports it as `brep` (beside `brep::sweep`, the body pipeline that reads the model, and
   `brep::export`, both the solver's), each `util` module and each sweep module under its old
   name (`envelope`, `motion`, `plane`, `solid::contact_trace`, `solid::constant_twist`, …), so

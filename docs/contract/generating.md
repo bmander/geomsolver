@@ -193,7 +193,16 @@ constant-twist class (screws, turns and slides) and the planar classes (below).
 contact, clear at both limits, one contact per point, no fold, no self-crossing) and T3 where a
 prism's cap reaches the blank, sampled, refusing
 with row and witness; it checks a placement once when the blank reads alike at every point
-checked. A rack is in the class (#61): a prism tool with its caps clear of the blank
+checked. A placement's sampled rows are the kernel's (`cad_kernel::sweep::admit::admit`: T2, M2,
+E0–E4 and T3, or under a constant twist T2, E1 and S1–S4), reading the sweep's contacts and the
+blank as a closure and nothing else; `admit_body` reads the body, says which sweep and which
+member, and words the refusal. A sweep's contacts are read through the kernel's walk of its tool
+(`tool::Tool`, `SweepContacts::of_tool`: every primitive's faces placed as its Booleans and
+placements put them, a solid met twice under one placement read once), which the sketch's reader
+builds of the faces it reads; and a body is cut from its blank by the kernel (`sweep::cells`: the
+split by the placed sheets, each cell judged by a probe — here the body's `MaterialField` — the
+cell contract, whole or as one sector), so the pipeline and the model-free entry point below share
+one implementation of each. A rack is in the class (#61): a prism tool with its caps clear of the blank
 (`ToolSurface::Extruded`, sides only; a cap in the blank below, #684 F), a translation seen from a rotation (contact affine in the
 roll, `NormalVelocity::Affine`), sectioned along its extrusion (`brep::sweep::cutter`, a station a
 distance), flat caps joined across sector sides (`brep::pattern`, `Kept::Flat`); a blank reaching
@@ -284,7 +293,7 @@ sweeps what one whole turn does, a solid of revolution. Its contacts are read on
 roll's start where they are read (`SweepContacts::read`, by `constant_twist::once_round`), so every
 reader of them — the walk, admission, the accuracy meter — asks one turn (`domain`), and
 `SweepContacts::whole` and `Characteristic::whole` say so; the declared roll (`roll::interval`, which
-the material field reads) is left as stated. E1 is not asked of it (`admission::ends`): the tool at
+the material field reads) is left as stated. E1 is not asked of it (`admit::ends`): the tool at
 either end lies within what it sweeps, so the roll may start and end inside the blank. Its
 sheet (`brep::sweep::helical`) runs its columns once round, the last column's pose the first's to
 the bit; only its rows' ends must leave the blank. Fitted as any, it is cut into faces both ways
@@ -381,7 +390,7 @@ section. `ExtrudedSurface::drafted` reads it half by half (each half its section
 at its own end), and `SweepContacts::creases`
 pairs each side's halves. Admission asks each half as a side; a half's end at the plane is no rim
 (T1 asks caps by their rims, and a half's end in `creases` is none); and the crease is asked as a rim is, by one
-pass over both (`admission::Fan`): each
+pass over both (`admit::Fan`): each
 half's envelope stepped onto it and its fan stepped off running the same way (E3; a fan whose
 normals all touch at the half's instant, as under a motion keeping the profile's plane, carries
 the contact nowhere and steps no way), every fan normal touching the blank once (E2), the fans'
@@ -418,7 +427,7 @@ against rows across the rod computed apart, placed and turned, against the long 
 tubes by Pappus, two tori rolled in the generating class, and the refusals.
 
 **A prism's cap in the blank (#684 F):** a prism standing alone as the tool (its solid the prism
-itself, undrafted, its profile one loop of lines and arcs: `admission::Lone`) whose cap passes through the
+itself, undrafted, its profile one loop of lines and arcs: `admit::Lone`) whose cap passes through the
 blank is no longer refused at T1; any other tool's cap is, saying so. Its caps are faces of the
 tool (`ToolSurface::Cap`, read over the box its profile lies in, a point off the profile passed
 over as the field says), asked M2–E4 and E1 with its sides only where one reaches the blank; M2
@@ -595,3 +604,31 @@ again about the axis and built as one sector; a side running in to its bore is c
 by its gap's angle times its radius, or by how far nearer the axis than every contact of its slice
 it runs where that is more (`Boundary::clearance_of`). `tests/swept_speed.rs` and
 `sector::a_side_reaching_its_bore_is_clear_by_its_radial_gap` are the gates.
+
+**A solid sweep without a document** (`cad_kernel::sweep::cut`): a tool as plain data
+(`tool::Tool`: a full revolution or a prism, drafted or not, of a `build::Profile` of lines and
+arcs, their unions and intersections, placed), a rigid motion (`cut::Motion`: a slide, a turn, a
+screw, or one seen from another, lowered to `motion::Family`), a roll in radians and a blank `Brep`
+give the blank cut (`swept_cut`), or the same `ExportRefusal` the export says — at admission its
+row, the class (`` `name` is outside the … class (row: rule): … at (x, y, z) ``) and a witness.
+It is the pipeline read from plain data, never a second one: the same walk, rows, sheets
+(`helical_sheet` under a constant twist, `swept_sheet`/`capped_sheet` under a relative rotation)
+and cells. What differs is read where no document hands it a field: the tool's material in closed
+form (`material`: a revolution's exact signed distance by its meridian, a square prism's by its
+profile and caps, a drafted prism's and a Boolean's a bound never past the distance, its sign
+right), the blank's inside off its boundary (`query::Located`, `margin` in) and its distance off a
+mesh within its sag; and a cell is judged by whether some time of the roll carries a ball about its
+deepest sample wholly into the tool (removed) or none comes within it (material) — the tool's
+material read back along the motion, the roll halved where `Family::inverse_point_speed_bound`
+leaves it undecided, least reading first. A union is swept member by member (its members' sweeps
+are its sweep), the blank split by every member's sheet; a union within an intersection is T1.
+`None` for the tolerance is the fabrication tolerance (0.01 mm), never the fitter's gross bars,
+which leave a traced sheet up to 0.25 mm off. `swept_solid` asks the same of a sweep from nothing,
+as what it takes from a box holding it: one with ends holds its tool at them, so it is refused at
+E1; a whole turn, whose tool's characteristic is a closed curve wholly within the box, by the walk
+(S1 or S2). The planar classes (a prism's planar envelope, the planar subtraction class) read the
+material field, and are the solver's: the API asks them as a relative rotation, so a meshing that
+never leaves its blank is refused at E1. `cad-kernel/tests/sweep.rs` (a slid torus to its lens,
+two beads to the figure three kernels agree on, an upright torus turned by Pappus, the refusals)
+and `tests/swept_api.rs` (the series' slide, union, screw, V thread, turn and rack built both ways,
+agreeing) are the gates.

@@ -79,6 +79,8 @@ impl fmt::Display for ExportRefusal {
     fn fmt(&self,f: &mut fmt::Formatter) -> fmt::Result { f.write_str(&self.message) }
 }
 
+impl std::error::Error for ExportRefusal {}
+
 /// A fallible step of an export, told its stage: `construct(..).at(Stage::Blank)?`.
 pub trait AtStage<T> {
     fn at(self,stage: Stage) -> Result<T,ExportRefusal>;

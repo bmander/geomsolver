@@ -269,3 +269,15 @@ fn scenarios() {
         report("clear", swept_cut_with(&rod(), &far, &Motion::Slide { direction: [0., 0., 1.], advance: 40. }, [0., TAU], &ask, &said()), t);
     }
 }
+
+/// The README's sweep, as written there.
+#[test]
+fn the_readmes_sweep() -> Result<(), Box<dyn std::error::Error>> {
+    let rod = prism(&disc([0., 0., 0.], [0., 0., 1.], 5.), 0., 20.)?;
+    let wheel = Tool::Revolved { name: "wheel".into(), profile: disc([5.5, 0., -9.], [0., 0., 1.], 2.),
+        origin: [11.5, 0., -9.], axis: [0., 1., 0.] };
+    let slide = Motion::Slide { direction: [0., 0., 1.], advance: 40. };
+    let grooved = swept_cut(&rod, &wheel, &slide, [0., TAU], Some(1e-6))?;
+    assert!((volume(&grooved) - (PI * 25. * 20. - 20. * lens(5., 2., 5.5))).abs() < 1e-5);
+    Ok(())
+}

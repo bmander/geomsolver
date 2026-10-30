@@ -24,11 +24,14 @@ the home and geomsolver depends on it.
 - **Booleans:** union, cut and common. Intersections between analytic surfaces are closed forms
   wherever one exists, and traced otherwise. A meeting the kernel cannot resolve is refused, never
   read as none.
-- **Sweeps** (`sweep`, being carved out of geomsolver): families of rigid motions (turns, screws,
-  slides, one seen from another) with their poses, rates and interval enclosures; a tool's faces
-  and their contacts under a motion; the contact tracer and sheet fitter that build a generating
-  sweep's cut, and the characteristic of a screw's, a turn's or a slide's. A model-free entry
-  point (a tool swept under a motion over a roll, cut from a blank) is to come.
+- **Solid sweeps** (`sweep`): a tool — revolutions and prisms of lines and arcs, their unions and
+  intersections, placed — swept under a rigid motion (a slide, a turn, a screw, or one seen from
+  another: a rack seen from its blank) over a roll and cut from a blank, exactly (`sweep::cut`).
+  Underneath: families of rigid motions with their poses, rates and interval enclosures; a tool's
+  faces and their contacts; the sampled rows a sweep must pass to be built (`sweep::admit`), each
+  refusal naming its row and a point; the contact tracer and sheet fitter of a generating sweep,
+  and the characteristic of a screw's, a turn's or a slide's; the blank split by the sheets and
+  each piece judged (`sweep::cells`).
 - **Measures:** exact volume (by Green's theorem over each face) and area.
 - **Meshing:** a constrained Delaunay mesh refined until it is within a measured sag of the surface.
 - **Output:** STEP AP214 with p-curves and seam curves, and STL.
@@ -64,10 +67,28 @@ let drilled = combined(&block, &pin, Op::Cut, 0.)?;
 assert!((volume(&drilled) - (1000. - 90. * std::f64::consts::PI)).abs() < 1e-6);
 ```
 
+A solid sweep: a rod grooved by a torus slid along it. Lengths are millimetres (the sheet
+fitter's bars are), the roll radians of the motion's parameter (a slide moves `advance` a whole
+turn of it), and the tolerance the sheet is held to millimetres (`None`: 0.01 mm).
+
+```rust
+use cad_kernel::build::{disc, prism};
+use cad_kernel::sweep::cut::{swept_cut, Motion, Tool};
+
+let rod = prism(&disc([0., 0., 0.], [0., 0., 1.], 5.), 0., 20.)?;
+// a torus about the line through (11.5, 0, -9) along y: its tube's circle, radius 2, turned once
+let wheel = Tool::Revolved { name: "wheel".into(), profile: disc([5.5, 0., -9.], [0., 0., 1.], 2.),
+    origin: [11.5, 0., -9.], axis: [0., 1., 0.] };
+let slide = Motion::Slide { direction: [0., 0., 1.], advance: 40. };
+let grooved = swept_cut(&rod, &wheel, &slide, [0., std::f64::consts::TAU], Some(1e-6))?;
+// a sweep outside the classes is refused: `refusal.condition` its row, `refusal.witness` a point
+```
+
 ## What comes next
 
 - A public API designed for strangers: builders, and the recipe JSON kept as one front end among
-  several.
+  several. The planar sweeps (a prism under a motion keeping its plane, cut over a whole period)
+  through `sweep::cut` too.
 - Edge fillets and chamfers, shelling and offsets, and a sweep of any section along any path.
 - STEP import.
 - The kernel's own test suite moved here from geomsolver.

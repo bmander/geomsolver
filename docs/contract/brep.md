@@ -164,7 +164,7 @@ edge still in the blank between its nodes — a cutter's corner grazing it at st
 elsewhere a fan the rows stop before, `contact_trace::charted` — is carried on past it by its own
 surface, `Net::extended`, only where what that puts in the blank is within the fit's bar, else left
 as it is: an edge in the blank divides nothing; `brep_export.rs`'s 20-tooth gear), blank split
-(`boolean::split`), cells judged by the field (`sweep::sector`; else `sector::whole`), sector
+(`boolean::split`), cells judged by the field (`cad_kernel::sweep::cells`, `construct` for a sector, else `whole`), sector
 patterned. `brep::export::{exact,step,stl}` is shared by `solventc` and `app/export-worker.ts`
 (`gcs_solid_exact`), so native and wasm files are byte-identical: the core's trigonometry, `exp`,
 `ln`, `pow`, `hypot` are its own (`fmath`, `x.dsin()` via `Det`; no platform libm). With OCCT and

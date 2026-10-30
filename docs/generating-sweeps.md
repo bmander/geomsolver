@@ -333,7 +333,7 @@ in the page (`tests/object_builder.rs`). Drafted outward, the tooth is refused a
 ### A prism's cap in the blank (issue #684 F)
 
 A prism standing alone as the tool — the swept solid the prism itself, undrafted, its profile one
-loop of lines and arcs (`admission::Lone`) — may pass a cap through the blank. The cap is a plane, and a
+loop of lines and arcs (`admit::Lone`) — may pass a cap through the blank. The cap is a plane, and a
 plane's contact at each instant is a line on it; where a side meets it, the rim carries every
 normal between the two, a fan as a revolution's convex corner does. So the caps are faces of the
 tool (`ToolSurface::Cap`, read over the box the profile lies in), asked E1 and M2–E4 with the
@@ -535,8 +535,9 @@ version refuses undercut and requires the design to avoid it. Supporting it mean
 `EnvelopeSeam` already perform that operation. Supporting it is a later, separately gated
 extension. An undeclared crossing stays refused.
 
-The classes are implemented as `solid::admission::admit_body`. `solventc --step/--stl` runs it
-before building a body with swept cuts. Placements whose blank reads the same at every point
+The classes are implemented as `solid::admission::admit_body`, its rows of one placement as
+cad-kernel's `sweep::admit` (which `sweep::cut`, the kernel's entry point without a document, asks
+too). `solventc --step/--stl` runs it before building a body with swept cuts. Placements whose blank reads the same at every point
 the checks read are checked once: the gear's 24 indexed cuts are one check.
 
 ## Refused, and how
