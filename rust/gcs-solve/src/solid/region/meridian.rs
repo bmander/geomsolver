@@ -14,28 +14,9 @@ use std::f64::consts::{FRAC_PI_2, PI};
 
 type V = [f64; 3];
 
-/// A region solid's meridian: the half-plane through `origin` along `axis` (a unit vector),
-/// towards `seam` (a unit vector square to it), and the region in its (along `seam`, along
-/// `axis`) coordinates, each step tagged by the term it came from (1 + its index; 0 none).
-#[derive(Clone, Debug)]
-pub struct Meridian {
-    pub origin: V,
-    pub axis: V,
-    pub seam: V,
-    pub region: Region,
-    /// Each term's name, by its tag less one: what the faces it bounds are called.
-    pub names: Vec<String>,
-}
-
-impl Meridian {
-    /// The name of the face a step's tag makes.
-    pub fn name(&self, tag: u32) -> String {
-        match tag {
-            0 => String::new(),
-            t => self.names.get(t as usize - 1).cloned().unwrap_or_default(),
-        }
-    }
-}
+/// A region solid's meridian: the kernel's (`RegionMeridian`), the region in the half-plane
+/// through its axis, each step tagged by the term it came from.
+pub use crate::solid::surface::RegionMeridian as Meridian;
 
 /// Why a meridian refused: its words, and whether no reading in general position answers either
 /// — a region with no material or none bounded, which is the same region however it is read.

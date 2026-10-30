@@ -236,13 +236,13 @@ fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Snapshot,String>
                         Snapshot::Static(f.into())
                     }
                     crate::solid::region::Form::Meridian(_) =>
-                        Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
+                        Snapshot::Static(super::profile::region_field(&RevolvedRegion::read(sk,i,axis_tolerance)?)?.into()),
                     crate::solid::region::Form::Sheet(_) => return Err(format!("`{}`: a developable \
                         panel's band is built from its rulings, not read as a material field",
                         sk.solid_name(i))),
                 },
                 SolidDef::Revolve {..} =>
-                    Snapshot::Static(RevolvedRegion::read(sk,i,axis_tolerance)?.field()?.into()),
+                    Snapshot::Static(super::profile::region_field(&RevolvedRegion::read(sk,i,axis_tolerance)?)?.into()),
                 SolidDef::Prism {face,from,to,draft} => Snapshot::Static(extruded(sk,*face as usize,
                     [from.value,to.value],draft.as_ref().map_or(0.,|d| d.value))?.into()),
                 SolidDef::Through {face,..} => {

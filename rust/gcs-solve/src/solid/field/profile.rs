@@ -19,71 +19,6 @@ fn delta(a: P,b: P) -> P { [a[0]-b[0],a[1]-b[1]] }
 fn distance(a: P,b: P) -> f64 { let (x,y) = (a[0]-b[0],a[1]-b[1]); (x*x+y*y).sqrt() }
 fn failure(e: Error) -> String { format!("profile field: {e:?}") }
 
-impl Edge {
-    // Connectivity comes from the source vertices. Reconstructing a constrained
-    // arc endpoint with radius and trigonometry adds source-solve and rounding
-    // residuals; those must not turn one shared vertex into two separate ones.
-    pub(crate) fn endpoints(&self) -> [P;2] {
-        match *self {
-            Self::Line {a,b,..} => [a,b],
-            Self::Arc {sweep,ends,..} if sweep.abs() < TAU => ends,
-            Self::Arc {..} => [self.at(0.),self.at(1.)],
-            Self::Conic {a,b,..} => [a,b],
-        }
-    }
-    pub(crate) fn reversed(mut self) -> Self {
-        match &mut self {
-            Self::Line {a,b,..} => std::mem::swap(a,b),
-            Self::Arc {start,sweep,ends,..} => {
-                *start += *sweep; *sweep = -*sweep; ends.swap(0,1);
-            }
-            Self::Conic {a,b,..} => std::mem::swap(a,b),
-        }
-        self
-    }
-    pub(crate) fn tangent(&self,t: f64) -> P {
-        match *self {
-            Self::Line {a,b,..} => delta(b,a),
-            Self::Arc {start,sweep,..} => {
-                let (s,c) = (start+t*sweep).dsin_cos();
-                [-s*sweep.signum(),c*sweep.signum()]
-            }
-            Self::Conic {..} => self.conic().tangent(t),
-        }
-    }
-    pub(crate) fn area_twice(&self) -> f64 {
-        match *self {
-            Self::Line {a,b,..} => cross(a,b),
-            Self::Arc {center,radius,sweep,..} =>
-                cross(center,delta(self.at(1.),self.at(0.)))+radius*radius*sweep,
-            // ∫ x dy − y dx by Gauss–Legendre: a sign for the winding
-            Self::Conic {..} => crate::integral::GAUSS8.iter().map(|&(x,w)| {
-                let t = 0.5+0.5*x;
-                w*cross(self.at(t),self.tangent(t))
-            }).sum::<f64>()/2.,
-        }
-    }
-    // The farthest boundary point from planar zero; material lies within the
-    // convex hull of its boundary, hence inside this disk.
-    pub(crate) fn reach(&self) -> f64 {
-        match *self {
-            Self::Line {a,b,..} => a[0].dhypot(a[1]).max(b[0].dhypot(b[1])),
-            Self::Arc {center,radius,..} => center[0].dhypot(center[1])+radius,
-            // within its control triangle
-            Self::Conic {a,m,b,..} => a[0].dhypot(a[1]).max(m[0].dhypot(m[1])).max(b[0].dhypot(b[1])),
-        }
-    }
-    // A box holding the edge: its ends, an arc's whole circle, a conic's control triangle.
-    pub(crate) fn boxed(&self) -> [P;2] {
-        match *self {
-            Self::Line {a,b,..} => [[a[0].min(b[0]),a[1].min(b[1])],[a[0].max(b[0]),a[1].max(b[1])]],
-            Self::Arc {center,radius,..} => [[center[0]-radius,center[1]-radius],[center[0]+radius,center[1]+radius]],
-            Self::Conic {a,m,b,..} => [[a[0].min(m[0]).min(b[0]),a[1].min(m[1]).min(b[1])],
-                [a[0].max(m[0]).max(b[0]),a[1].max(m[1]).max(b[1])]],
-        }
-    }
-}
-
 /// A box holding a loop's material, which lies within the convex hull of its boundary: its edges'
 /// boxes', low corner and high.
 fn boxed(edges: &[Edge]) -> [P;2] {
@@ -566,14 +501,12 @@ impl PlanarField {
     }
 }
 
-impl RevolvedRegion {
-    /// Convert the solved profile to an interval-evaluable material field. Each
-    /// outer/hole loop is made of lines and circular arcs; hole loops are
-    /// subtracted, regardless of winding. Axis edges are no wall.
-    /// The field represents this snapshot; source-solve and axis-snapping error
-    /// are separate from interval evaluation and are not certified by this conversion.
-    pub fn field(&self) -> Result<RevolvedField,String> {
-        RevolvedField::new(PlanarField::from_loops(&self.loops,self.axis_tolerance)?,self.origin,self.axis)
-            .map_err(failure)
-    }
+/// Convert a revolution's solved profile to an interval-evaluable material field. Each
+/// outer/hole loop is made of lines and circular arcs; hole loops are
+/// subtracted, regardless of winding. Axis edges are no wall.
+/// The field represents this snapshot; source-solve and axis-snapping error
+/// are separate from interval evaluation and are not certified by this conversion.
+pub fn region_field(region: &RevolvedRegion) -> Result<RevolvedField,String> {
+    RevolvedField::new(PlanarField::from_loops(region.loops(),region.axis_tolerance())?,region.origin(),region.axis())
+        .map_err(failure)
 }

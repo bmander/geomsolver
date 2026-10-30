@@ -1,17 +1,17 @@
 //! Exact support equations and finite-patch incidence for line/circle revolutions.
 #[allow(unused_imports)]
-use crate::fmath::Det;
+use crate::util::fmath::Det;
 use super::*;
 use std::f64::consts::TAU;
 
-use crate::space::{dot,length};
+use crate::util::space::{dot,length};
 
 #[derive(Clone,Debug)]
 enum Section {
     Line {start:[f64;2],delta:[f64;2],length:f64},
     Circle {center:[f64;2],a:[f64;2],b:[f64;2],radius:f64,sweep:f64,orientation:f64},
     /// A conic's arc in (radius, height), read by its nearest point (`Seg::nearest`).
-    Conic {seg:crate::brep::planar::Seg},
+    Conic {seg:crate::planar::Seg},
 }
 
 /// A support-surface projection and an actual point on the finite source patch.
@@ -100,7 +100,7 @@ impl RevolvedSurface {
                 if a[0].min(m[0]).min(b[0]) < -1e-12*a[0].abs().max(b[0].abs()) {
                     return Err("a boundary meridian must stay on one side of its axis".into());
                 }
-                Section::Conic {seg:crate::brep::planar::Seg::Conic {a,m,b,w}}
+                Section::Conic {seg:crate::planar::Seg::Conic {a,m,b,w}}
             }
         };
         Ok(SurfaceProjector {source:self.clone(),radial,section})
@@ -110,8 +110,8 @@ impl RevolvedSurface {
 impl SurfaceProjector {
     pub fn surface(&self) -> &RevolvedSurface { &self.source }
 
-    pub fn named(sk: &Sketch, index: usize) -> Result<Self,String> {
-        RevolvedSurface::named(sk,index)?.projector()
+    pub fn named<S: Source+?Sized>(source: &S, index: usize) -> Result<Self,String> {
+        RevolvedSurface::named(source,index)?.projector()
     }
 
     pub fn project(&self, p: V) -> Result<SurfaceProjection,Error> {

@@ -6,7 +6,7 @@ use std::collections::{BTreeMap,BTreeSet};
 
 /// How far from a revolution's axis an endpoint is read as on it, whenever an export reads the
 /// solved model into fields, contacts or its admission (the tolerance a revolved snapshot takes).
-pub const AXIS_TOLERANCE: f64 = 1e-10;
+pub const AXIS_TOLERANCE: f64 = cad_kernel::sweep::AXIS_TOLERANCE;
 /// Poses a material evaluator caches per sweep while an export judges its cells and its mesh.
 pub const POSE_CACHE: usize = 4096;
 

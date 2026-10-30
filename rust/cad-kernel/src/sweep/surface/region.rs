@@ -2,7 +2,7 @@
 //! This is separate from the faceted CSG kernel: callers must choose which geometry
 //! they mean. It does not silently substitute an analytic surface for a mesh face.
 #[allow(unused_imports)]
-use crate::fmath::Det;
+use crate::util::fmath::Det;
 use super::*;
 use std::f64::consts::{FRAC_PI_2,PI,TAU};
 
@@ -15,14 +15,14 @@ fn distance(a: P,b: P) -> f64 { (a[0]-b[0]).dhypot(a[1]-b[1]) }
 /// has `sweep` of one turn and no seam. A conic's arc is the rational quadratic
 /// Bézier over `a`, `m`, `b`, its middle weighed `w` (`brep::planar::Seg::Conic`).
 #[derive(Clone,Debug)]
-pub(crate) enum Edge {
+pub enum Edge {
     Line {a:P,b:P,axis:bool},
     Arc {center:P,radius:f64,start:f64,sweep:f64,ends:[P;2]},
     Conic {a:P,m:P,b:P,w:f64},
 }
 
 impl Edge {
-    pub(crate) fn at(&self,t: f64) -> P {
+    pub fn at(&self,t: f64) -> P {
         match *self {
             Self::Line {a,b,..} => std::array::from_fn(|i| a[i]+t*(b[i]-a[i])),
             Self::Arc {center,radius,start,sweep,..} => {
@@ -34,9 +34,9 @@ impl Edge {
     }
 
     /// A conic's arc as the planar kernel's step, which evaluates it.
-    pub(crate) fn conic(&self) -> crate::brep::planar::Seg {
+    pub fn conic(&self) -> crate::planar::Seg {
         let Self::Conic {a,m,b,w} = *self else { unreachable!("a conic's step of a conic") };
-        crate::brep::planar::Seg::Conic {a,m,b,w}
+        crate::planar::Seg::Conic {a,m,b,w}
     }
 
     fn radial_bounds(&self) -> [f64;2] {
@@ -70,7 +70,7 @@ impl Edge {
 
     // The closest point on an analytic finite meridian. Rotation is unrestricted,
     // so this is also the distance to its revolved surface in cylindrical space.
-    pub(crate) fn distance(&self,p: P) -> f64 {
+    pub fn distance(&self,p: P) -> f64 {
         match *self {
             Self::Line {a,b,axis} => {
                 // An axis edge disappears in a full revolution; it is not a wall.
@@ -97,7 +97,7 @@ impl Edge {
 
     // Half-open horizontal ray crossings. Split arcs at their vertical extrema
     // analytically, so tangent rays and shared endpoints do not get counted twice.
-    pub(crate) fn crossings(&self,p: P) -> usize {
+    pub fn crossings(&self,p: P) -> usize {
         match *self {
             Self::Line {a,b,..} => usize::from((a[1] > p[1]) != (b[1] > p[1])
                 && p[0] < a[0]+(p[1]-a[1])*(b[0]-a[0])/(b[1]-a[1])),
@@ -141,7 +141,7 @@ impl Edge {
                 let powers = |e0: f64,e1: f64,e2: f64| (e0,e1-2.*e0,e0-e1+e2);
                 let (c0,c1,c2) = powers(w*(m[1]-a[1]),b[1]-a[1],w*(b[1]-m[1]));
                 let mut cuts = vec![0.];
-                cuts.extend(crate::roots::quadratic(c2,c1,c0).into_iter().filter(|&t| t > 0. && t < 1.));
+                cuts.extend(crate::util::roots::quadratic(c2,c1,c0).into_iter().filter(|&t| t > 0. && t < 1.));
                 cuts.push(1.);
                 let (h0,h1,h2) = powers(a[1]-p[1],2.*w*(m[1]-p[1]),b[1]-p[1]);
                 let seg = self.conic();
@@ -149,7 +149,7 @@ impl Edge {
                     if (seg.point(t[0])[1] > p[1]) == (seg.point(t[1])[1] > p[1]) { return false; }
                     // where the stretch meets the ray's height: the root within it (to roundoff)
                     let off = |x: f64| (x.clamp(t[0],t[1])-x).abs();
-                    let at = crate::roots::quadratic(h2,h1,h0).into_iter()
+                    let at = crate::util::roots::quadratic(h2,h1,h0).into_iter()
                         .min_by(|x,y| off(*x).total_cmp(&off(*y)))
                         .map_or(0.5*(t[0]+t[1]),|x| x.clamp(t[0],t[1]));
                     p[0] < seg.point(at)[0]
@@ -158,6 +158,75 @@ impl Edge {
         }
     }
 }
+
+fn turn(a: P,b: P) -> f64 { a[0]*b[1]-a[1]*b[0] }
+fn gap(a: P,b: P) -> P { [a[0]-b[0],a[1]-b[1]] }
+
+impl Edge {
+    // Connectivity comes from the source vertices. Reconstructing a constrained
+    // arc endpoint with radius and trigonometry adds source-solve and rounding
+    // residuals; those must not turn one shared vertex into two separate ones.
+    pub fn endpoints(&self) -> [P;2] {
+        match *self {
+            Self::Line {a,b,..} => [a,b],
+            Self::Arc {sweep,ends,..} if sweep.abs() < TAU => ends,
+            Self::Arc {..} => [self.at(0.),self.at(1.)],
+            Self::Conic {a,b,..} => [a,b],
+        }
+    }
+    pub fn reversed(mut self) -> Self {
+        match &mut self {
+            Self::Line {a,b,..} => std::mem::swap(a,b),
+            Self::Arc {start,sweep,ends,..} => {
+                *start += *sweep; *sweep = -*sweep; ends.swap(0,1);
+            }
+            Self::Conic {a,b,..} => std::mem::swap(a,b),
+        }
+        self
+    }
+    pub fn tangent(&self,t: f64) -> P {
+        match *self {
+            Self::Line {a,b,..} => gap(b,a),
+            Self::Arc {start,sweep,..} => {
+                let (s,c) = (start+t*sweep).dsin_cos();
+                [-s*sweep.signum(),c*sweep.signum()]
+            }
+            Self::Conic {..} => self.conic().tangent(t),
+        }
+    }
+    pub fn area_twice(&self) -> f64 {
+        match *self {
+            Self::Line {a,b,..} => turn(a,b),
+            Self::Arc {center,radius,sweep,..} =>
+                turn(center,gap(self.at(1.),self.at(0.)))+radius*radius*sweep,
+            // ∫ x dy − y dx by Gauss–Legendre: a sign for the winding
+            Self::Conic {..} => crate::util::quadrature::GAUSS8.iter().map(|&(x,w)| {
+                let t = 0.5+0.5*x;
+                w*turn(self.at(t),self.tangent(t))
+            }).sum::<f64>()/2.,
+        }
+    }
+    // The farthest boundary point from planar zero; material lies within the
+    // convex hull of its boundary, hence inside this disk.
+    pub fn reach(&self) -> f64 {
+        match *self {
+            Self::Line {a,b,..} => a[0].dhypot(a[1]).max(b[0].dhypot(b[1])),
+            Self::Arc {center,radius,..} => center[0].dhypot(center[1])+radius,
+            // within its control triangle
+            Self::Conic {a,m,b,..} => a[0].dhypot(a[1]).max(m[0].dhypot(m[1])).max(b[0].dhypot(b[1])),
+        }
+    }
+    // A box holding the edge: its ends, an arc's whole circle, a conic's control triangle.
+    pub fn boxed(&self) -> [P;2] {
+        match *self {
+            Self::Line {a,b,..} => [[a[0].min(b[0]),a[1].min(b[1])],[a[0].max(b[0]),a[1].max(b[1])]],
+            Self::Arc {center,radius,..} => [[center[0]-radius,center[1]-radius],[center[0]+radius,center[1]+radius]],
+            Self::Conic {a,m,b,..} => [[a[0].min(m[0]).min(b[0]),a[1].min(m[1]).min(b[1])],
+                [a[0].max(m[0]).max(b[0]),a[1].max(m[1]).max(b[1])]],
+        }
+    }
+}
+
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum RegionLocation { Inside, Boundary, Outside }
@@ -184,34 +253,31 @@ pub struct RevolvedRegion {
 }
 
 impl RevolvedRegion {
+    /// A point of the axis.
+    pub fn origin(&self) -> V { self.origin }
+    /// The axis's unit direction.
+    pub fn axis(&self) -> V { self.axis }
+    /// The profile's loops in (radius, height), the loop enclosing most first.
+    pub fn loops(&self) -> &[Vec<Edge>] { &self.loops }
+    /// The axis tolerance the snapshot was read with.
+    pub fn axis_tolerance(&self) -> f64 { self.axis_tolerance }
+}
+
+impl RevolvedRegion {
     /// `axis_tolerance` is an absolute length used to recognize solved axis edges.
     /// Their endpoints within this tolerance are put on the axis. Other edges retain
     /// their solved geometry. Read again after modifying or resolving the sketch.
-    pub fn read(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
-        if !axis_tolerance.is_finite() || axis_tolerance < 0. {
-            return Err("an axis tolerance must be finite and nonnegative".into());
-        }
-        let s = sk.solids.get(solid).ok_or("no such solid")?;
-        // a region is a revolution of its meridian (§6.21)
-        if let SolidDef::Region {..} = s.def {
-            return Ok(Self::of_meridian(&*crate::solid::region::meridian(sk,solid)?,axis_tolerance));
-        }
-        let SolidDef::Revolve {face,ref sweep,..} = s.def else {
-            return Err("analytic material membership requires an unmodified revolution".into());
-        };
-        if sweep.value < TAU || !sweep.value.is_finite() {
-            return Err("analytic material membership requires a full revolution".into());
-        }
-        super::super::validate(sk,solid)?;
-        let face = &sk.faces[face as usize];
-        let patches = face.boundaries().map(|(edges,_)| edges.iter()
-            .map(|&e| RevolvedSurface::read(sk,solid,e).map(|p| (p,e)))
-            .collect::<Result<Vec<_>,_>>())
-            .collect::<Result<Vec<_>,_>>()?;
+    pub fn read<S: Source+?Sized>(source: &S,solid: usize,axis_tolerance: f64) -> Result<Self,String> {
+        source.revolved_region(solid,axis_tolerance)
+    }
+
+    /// A full revolution's material from its profile's faces, loop by loop, the outer first:
+    /// each face with the ends of the arc it was turned from, where it is an arc short of a
+    /// circle (world points, its start then its end), and `normal` the profile plane's.
+    pub fn of_profile(patches: Vec<Vec<(RevolvedSurface,Option<[V;2]>)>>,normal: V,axis_tolerance: f64)
+        -> Result<Self,String> {
         let first = &patches.first().and_then(|p| p.first()).ok_or("empty profile")?.0;
         let origin = first.origin; let axis = first.axis;
-        let basis = face.plane.map(|p| sk.basis(p as usize)).unwrap_or(Basis::page());
-        let normal = plane::cross(basis.u,basis.v);
         let radial = plane::cross(axis,normal);
         let coords = |p| [plane::dot(p,radial),plane::dot(p,axis)];
         let mut loops = patches.iter().map(|patches| patches.iter().map(|(p,e)| {
@@ -224,10 +290,10 @@ impl RevolvedRegion {
                 }
                 Meridian::Round {center,a,b,sweep} => {
                     let a = coords(a); let b = coords(b);
-                    let ends = if e.kind == EntKind::Arc {
-                        let arc = &sk.arcs[e.i()];
-                        [arc.start,arc.end].map(|i| coords(sub(sk.world_point(i as usize),origin)))
-                    } else { [[0.;2];2] }; // Full circles have no ray seam.
+                    let ends = match e {
+                        Some(ends) => ends.map(|p| coords(sub(p,origin))),
+                        None => [[0.;2];2], // Full circles have no ray seam.
+                    };
                     Edge::Arc {center:coords(sub(center,origin)),radius:a[0].dhypot(a[1]),
                         start:a[1].datan2(a[0]),sweep:sweep*(a[0]*b[1]-a[1]*b[0]).signum(),ends}
                 }
@@ -256,8 +322,8 @@ impl RevolvedRegion {
 
     /// A region solid's meridian as analytic membership: its loops' lines and arcs in (radius,
     /// height), the loop enclosing most first, its sides on the axis marked as such.
-    pub(crate) fn of_meridian(m: &crate::solid::region::Meridian,axis_tolerance: f64) -> Self {
-        use crate::brep::planar::Seg;
+    pub fn of_meridian(m: &RegionMeridian,axis_tolerance: f64) -> Self {
+        use crate::planar::Seg;
         let loops = m.region.outer_first().into_iter().map(|l| l.iter().map(|step| match step.seg {
             Seg::Line {a,b} => Edge::Line {a,b,axis:a[0].abs() <= axis_tolerance && b[0].abs() <= axis_tolerance},
             Seg::Arc {c,r,a0,sweep} => Edge::Arc {center:c,radius:r,start:a0,sweep,ends:[step.start(),step.end()]},

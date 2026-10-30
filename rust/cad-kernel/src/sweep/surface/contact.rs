@@ -1,8 +1,8 @@
 //! Contact curves of a revolved surface under an instantaneous rigid motion.
 #[allow(unused_imports)]
-use crate::fmath::Det;
+use crate::util::fmath::Det;
 use super::*;
-use crate::envelope::{self,Contact};
+use crate::sweep::envelope::{self,Contact};
 use std::f64::consts::TAU;
 
 /// One isolated root of the contact equation. Branch labels are the two analytic
