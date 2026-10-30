@@ -50,27 +50,7 @@ fn frenet([_, d1, d2, _]: [V; 4]) -> Option<Frame> {
     Some([t, cross(b, t), b])
 }
 
-/// `r` reflected in the plane square to `v`.
-fn reflect(r: V, v: V, vv: f64) -> V {
-    sub(r, scale(v, 2.0 * dot(v, r) / vv))
-}
-
-/// **One step of the rotation-minimising frame** (double reflection): the frame `f` at the point
-/// `x0` carried to the point `x1` with tangent `t1`.  A step that does not move keeps the frame.
-pub(crate) fn reflected(f: &Frame, x0: V, x1: V, t1: V) -> Frame {
-    let v1 = sub(x1, x0);
-    let c1 = dot(v1, v1);
-    if c1 == 0.0 {
-        return *f;
-    }
-    let (rl, tl) = (reflect(f[1], v1, c1), reflect(f[0], v1, c1));
-    let v2 = sub(t1, tl);
-    let c2 = dot(v2, v2);
-    let u = if c2 == 0.0 { rl } else { reflect(rl, v2, c2) };
-    // held square to the tangent and unit, the rounding of every step not carried on
-    let u = crate::space::normalised(sub(u, scale(t1, dot(u, t1)))).unwrap_or(u);
-    [t1, u, cross(t1, u)]
-}
+use super::reflected;
 
 /// `a · bᵀ` summed over the columns: the turn taking frame `b` to frame `a`.
 fn turn(a: &Frame, b: &Frame) -> M {

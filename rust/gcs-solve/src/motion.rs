@@ -10,7 +10,6 @@ mod law;
 pub use law::{Law, unread_drive};
 mod guide;
 use guide::Guide;
-pub(crate) use guide::reflected;
 mod track;
 pub use track::Track;
 pub(crate) use track::{window, Ride};
