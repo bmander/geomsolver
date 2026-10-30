@@ -236,6 +236,7 @@ mod revolve;
 mod revolved_regions;
 mod rigid_solids;
 mod ring;
+mod rings_all_round;
 mod roll_through;
 mod roots;
 mod round_lowering;

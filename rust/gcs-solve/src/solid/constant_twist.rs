@@ -27,7 +27,10 @@
 //! contact there: it steps straight across, and the sheet is creased along that point's path
 //! (`Characteristic::sharp`, #684 V). Where it comes round to where it began without leaving the
 //! blank, the characteristic closes on itself, a tool's passed wholly through the blank: the
-//! stretch is the whole loop, begun again at a crease (`Characteristic::closed`, #684 W). It asks
+//! stretch is the whole loop, begun again at a crease (`Characteristic::closed`, #684 W). Under a
+//! slide along the tool's own axis every ring touches nowhere or all round, and the characteristic
+//! is the ring of greatest radius alone, closed, its sheet the cylinder it sweeps
+//! (`along_axis`, #684 X). It asks
 //! the class's rows of that stretch as it goes: regular (S1), one stretch and one root a ring (S2),
 //! no fold (S3), and no crossing within a lead (S4). The sheet is built from the same walk
 //! (`brep::sweep::helical`). Like the generating class's checks, these are **sampled**: rings
@@ -324,6 +327,9 @@ impl Characteristic {
         let walker = Walker {contacts,pieces,ask,screw,motion,tool,scale,tolerance};
         let pieces = &walker.pieces;
         let n = ask.rows;
+        // a slide along the tool's own axis: its ring of greatest radius in contact all round, the
+        // characteristic that ring alone, closed on itself (#684 X)
+        if let Some(found) = along_axis(contacts,pieces,&screw,motion,ask,scale,tolerance) { return found }
         // S1 of a prism: no ruling in contact all along it where its path enters the blank
         rulings(pieces,n,motion,&enters,family)?;
         let coarse = walker.pass((0..pieces.len()).map(|k| crossed(&pieces[k],(0..=n).map(|i| i as f64/n as f64).collect()))
@@ -544,6 +550,25 @@ impl Characteristic {
 
     fn on_flat_piece(&self,k: usize) -> bool { matches!(self.pieces[k],Piece::Flat(_)) }
 
+    /// Where the characteristic is one ring all round under a slide (or a screw) along the tool's own
+    /// axis (`along_axis`, #684 X): the ring's centre, the axis and its radius. Its sheet is the cylinder
+    /// of that radius about the axis, written exactly.
+    pub fn cylinder(&self) -> Option<(V,V,f64)> {
+        if !(self.closed && !self.screw.is_turn()) { return None }
+        let k = self.nodes.first()?.patch;
+        let Piece::Round(round) = &self.pieces[k] else { return None };
+        (self.nodes.iter().all(|m| m.patch == k) && round.turn == std::f64::consts::TAU && round.normal == [1.,0.])
+            .then_some((round.centre,round.axis,round.radius))
+    }
+
+    /// The rings in contact all round that the characteristic runs round (#684 X), each as a message
+    /// names it.
+    pub fn rounds(&self) -> Vec<String> {
+        let mut walked: Vec<usize> = self.walked().iter().map(|m| m.patch).filter(|&k| matches!(self.pieces[k],Piece::Round(_))).collect();
+        walked.dedup();
+        walked.into_iter().map(|k| self.pieces[k].named()).collect()
+    }
+
     /// The nodes each of which ends a stretch of the walk on its piece: all of them, but a closed
     /// characteristic's first, which is its last (#684 W).
     fn walked(&self) -> &[Node] { if self.closed { &self.nodes[1..] } else { &self.nodes } }
@@ -644,7 +669,9 @@ fn creases(nodes: &[Node],pieces: &[Piece],sharp: &[(usize,usize)]) -> Vec<usize
 /// S1 between the walk's stations: a ring in contact all round, every point of it on the
 /// boundary, is where a characteristic branches. Under a turn about an axis that the tool's own
 /// axis meets, the ring whose normals all pass through the point where they meet is one; under a
-/// slide along the tool's axis, a ring whose normals are all square to it. Either way the
+/// slide square to the tool's axis, a ring whose normals all lie along it, in a plane holding the
+/// slide (a slide along the tool's axis touches only on such rings, read whole by `along_axis`,
+/// #684 X). Either way the
 /// contact equation's amplitude turns right round as the walk passes it while its constant term
 /// stays nought, and the roots it walks need not move, so a station need not fall on it: where
 /// the amplitude turns more than a quarter turn between two of the walk's stations on a face, the
@@ -674,6 +701,118 @@ fn stationary(pieces: &[Piece],stations: &[Vec<f64>],order: &[(usize,usize,usize
     }
     Ok(())
 }
+
+/// Under a slide along the tool's own axis (#684 X), the tool's characteristic, where every face of it
+/// is a revolution about one line along the slide; else none. A screw about that line is read so too:
+/// the turn carries each ring into itself, and each point's normal turns with it, so its contact is
+/// the slide's alone. Each ring's normal makes the same
+/// angle with the slide all round it, so a ring touches nowhere or, where its normal lies square to
+/// the slide, all round: the walk finds no roots. The ring of greatest radius `R` is one, and it
+/// sweeps the cylinder of that radius about the axis, every point of which is on the boundary where
+/// the blank is swept within it. The characteristic is that ring alone, closed on itself (a
+/// `Round`), and its sheet that cylinder, a tube, where two rows hold (each read from the faces'
+/// points on the tool at `ROUND_READS` stations along each, as its samples):
+///
+/// - **S2.** The tool's shadow along the slide is its whole disc: the radii of its faces' points,
+///   each stretch between two stations on one face covering at least what its ends' do, run from
+///   its axis to `R` with no gap. The sweep is then every point within `R` the tool passes, and the
+///   rings of lesser radius in contact all round (a cylinder's every ring, a torus's inner ring)
+///   sweep cylinders within it. Where it is a ring, its least radius's ring sweeps a second wall.
+/// - **E1.** The tool passes wholly through the blank's heights along the slide: every point of it
+///   comes to them after the roll's start and leaves them before its end. Then every point of the
+///   blank within `R` is passed by the tool point at its radius and angle, and none beyond `R` is.
+///
+/// What is removed is the blank within the cylinder, exactly.
+fn along_axis(contacts: &SweepContacts,pieces: &[Piece],screw: &Screw,motion: Motion,ask: &Ask,size: f64,tolerance: f64)
+    -> Option<Result<Characteristic,Failure>> {
+    if screw.is_turn() { return None }
+    let faces: Vec<&RevolvedSurface> = contacts.patches().iter().map(|s| s.revolved()).collect::<Option<_>>()?;
+    let axis = faces.first()?.axis_direction();
+    if norm(cross(axis,screw.axis)) > 1e-9 { return None }
+    // a point of the tool's axis, the centre of a ring of its first face, and how far a point stands from it
+    let centre = (0..=8).find_map(|i| faces[0].ring(i as f64/8.).ok())?.center;
+    let off = |p: V| { let q = sub(p,centre); norm(sub(q,scale(axis,dot(q,axis)))) };
+    if faces.iter().any(|s| norm(cross(s.axis_direction(),axis)) > 1e-9
+        || (0..=8).filter_map(|i| s.ring(i as f64/8.).ok()).any(|r| off(r.center) > 1e-9*size)) { return None }
+    // a screw turns the tool about its own axis as it slides, which moves no ring off itself: the
+    // same sweep as the slide's (a drill fed as it turns)
+    if !screw.is_slide() && off(screw.origin) > 1e-9*size { return None }
+    let (family,tool) = (contacts.motion(),contacts.source_material());
+    // each face's points at its stations, where they are on the tool (a face of an intersection may
+    // run past it), with their radii
+    let point = |s: &RevolvedSurface,u: f64| s.at(u,s.domain()[1][0]).ok().map(|p| p.position).filter(|&p| tool.value(p).abs() < 1e-6);
+    let read: Vec<Vec<Option<(f64,V)>>> = faces.iter().map(|s| (0..=ROUND_READS).map(|i| point(s,i as f64/ROUND_READS as f64)
+        .map(|p| (off(p),p))).collect()).collect();
+    let samples = read.iter().map(Vec::len).sum();
+    // the greatest radius, refined between the stations either side of where it is read greatest
+    let (mut most,mut at,mut best) = (f64::NEG_INFINITY,[0.;3],None);
+    for (k,face) in read.iter().enumerate() { for (i,x) in face.iter().enumerate() {
+        if let Some((r,p)) = *x { if r > most { (most,at,best) = (r,p,Some((k,i))) } }
+    } }
+    if let Some((k,i)) = best {
+        let step = 1./ROUND_READS as f64;
+        let u = i as f64*step;
+        let (least,v) = crate::roots::brent(&|v| point(faces[k],v).map_or(f64::INFINITY,|p| -off(p)),(u-step).max(0.),(u+step).min(1.),
+            1e-14,100,|_,_| false);
+        if -least > most { (most,at) = (-least,point(faces[k],v).expect("read on the tool")) }
+    }
+    if !(most > 0.) { return None }
+    // S2: the faces' radii run from the axis to the greatest with no gap
+    let mut spans: Vec<[f64;2]> = read.iter().flat_map(|face| face.windows(2).filter_map(|w| match (w[0],w[1]) {
+        (Some((a,_)),Some((b,_))) => Some([a.min(b),a.max(b)]),_ => None })).collect();
+    spans.sort_by(|a,b| a[0].total_cmp(&b[0]));
+    let gap = 1e-9*size;
+    let mut covered = 0.;
+    let mut hole = (spans.first().map_or(most,|s| s[0]) > gap).then_some([0.,spans.first().map_or(most,|s| s[0])]);
+    for s in &spans { if hole.is_none() && s[0] > covered+gap { hole = Some([covered,s[0]]) } covered = f64::max(covered,s[1]) }
+    if let Some([lo,hi]) = hole {
+        let p = read.iter().flatten().flatten().min_by(|a,b| (a.0-hi).abs().total_cmp(&(b.0-hi).abs())).map_or(at,|x| x.1);
+        return Some(Err((Condition::Once,format!("under a slide along its own axis, the tool's shadow along the slide is no whole \
+            disc: none of it stands between {lo:.4} and {hi:.4} from its axis, where a ring of it in contact all round sweeps a \
+            second wall within the cylinder its greatest radius's sweeps (not built)"),witness(family,reach(family,screw,p,ask),p))))
+    }
+    // E1: every point of the tool passes the blank's heights within the roll
+    let Some(band) = ask.heights else {
+        return Some(Err((Condition::Clearance,"under a slide along its own axis, how far along the slide the blank reaches is not \
+            known, so the tool is not read as passing wholly through it".into(),None)))
+    };
+    let roll = ask.roll;
+    if let Some(&(_,p)) = read.iter().flatten().flatten().find(|(_,p)| screw.passing(*p,band).is_none_or(|[a,b]| !(a > roll[0] && b < roll[1]))) {
+        let end = family.pose_at(roll[1]).ok().map(|pose| pose.point(p));
+        return Some(Err((Condition::Clearance,"under a slide along its own axis, the tool does not pass wholly through the blank's \
+            heights along the slide over the roll, which the class reads the sweep by: there its ring of greatest radius, in contact \
+            all round, sweeps its cylinder through every point of the blank within it".into(),end)))
+    }
+    // the ring of greatest radius, from where it was read, round the axis
+    let foot: V = { let q = sub(at,centre); std::array::from_fn(|k| centre[k]+axis[k]*dot(q,axis)) };
+    let round = Round {named:"the ring of the tool's greatest radius".into(),centre:foot,axis,radial:crate::space::unit(sub(at,foot)),
+        radius:most,normal:[1.,0.],turn:std::f64::consts::TAU};
+    let n = ask.rows.max(8);
+    let patch = pieces.len();
+    let mut nodes: Vec<Node> = (0..=n).map(|i| {
+        let u = i as f64/n as f64;
+        let (position,normal) = round.at(u);
+        Node {patch,u,from:if i == 0 { 0. } else { (i-1) as f64/n as f64 },position,normal,reach:reach(family,screw,position,ask)}
+    }).collect();
+    nodes[n].position = nodes[0].position;
+    nodes[n].normal = nodes[0].normal;
+    if nodes.iter().all(|m| m.reach.is_none()) {
+        return Some(Err((Condition::Reach,"no point of the tool's characteristic passes through the blank in the roll".into(),None)))
+    }
+    // S3, of every node (the ring's tangent goes round the axis, square to the slide and to its normal)
+    let least = (1..n).map(|w| {
+        let (tangent,velocity) = (sub(nodes[w+1].position,nodes[w-1].position),screw.velocity(nodes[w].position));
+        (dot(cross(tangent,velocity),nodes[w].normal)/(norm(tangent)*norm(velocity))).abs()
+    }).fold(f64::INFINITY,f64::min);
+    let mut pieces = pieces.to_vec();
+    pieces.push(Piece::Round(round));
+    let found = Characteristic {screw:*screw,nodes,reach:[0,n],least_factor:least,samples,whole:false,closed:true,sharp:Vec::new(),
+        pieces,tool:tool.clone(),motion,tolerance};
+    Some(found.simple(family).map(|()| found))
+}
+
+/// How many stations along each face a slide along the tool's own axis reads it at (`along_axis`).
+const ROUND_READS: usize = 400;
 
 /// A piece's stations with those where its root crosses onto a cap's rim or a crease's fan
 /// (`Ruled::crossings`) put among them, within the stretch they span: the walk steps onto the fan
@@ -761,6 +900,8 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
             Ok([a,b]) => Ring::Roots(vec![root(crate::space::lerp(*a,*b,u),flat.normal,1.)]),
             Err(why) => Ring::Degenerate(why.clone()),
         },
+        // a ring in contact all round, read round it (#684 X)
+        Piece::Round(round) => { let (p,n) = round.at(u); Ring::Roots(vec![root(p,n,1.)]) }
     }
 }
 
@@ -977,7 +1118,23 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
 /// a cap's rim or a crease read along its line (#684 AE, AG); or a line all of which is in
 /// contact: a slide's silhouette ruling, or a cap's contact line (#684 AE).
 #[derive(Clone,Debug)]
-enum Piece { Face(usize,RevolvedSurface),Corner(Corner),Ruled(Ruled),Line(Line),Flat(Flat) }
+enum Piece { Face(usize,RevolvedSurface),Corner(Corner),Ruled(Ruled),Line(Line),Flat(Flat),Round(Round) }
+
+/// A ring of a revolution in contact all round, every point of it on the boundary (#684 X): under a
+/// slide along the tool's own axis, the ring of its greatest radius, whose normals all lie square
+/// to the slide. A station on it is the fraction of `turn` round it from `radial`, about `axis`;
+/// its normal there is `normal`'s parts away from the axis and along it, the same all round.
+#[derive(Clone,Debug)]
+struct Round { named: String,centre: V,axis: V,radial: V,radius: f64,normal: [f64;2],turn: f64 }
+
+impl Round {
+    /// The ring's point at station `u`, and its normal there.
+    fn at(&self,u: f64) -> (V,V) {
+        let (s,c) = (self.turn*u).dsin_cos();
+        let e: V = std::array::from_fn(|k| c*self.radial[k]+s*cross(self.axis,self.radial)[k]);
+        (std::array::from_fn(|k| self.centre[k]+self.radius*e[k]),std::array::from_fn(|k| self.normal[0]*e[k]+self.normal[1]*self.axis[k]))
+    }
+}
 
 /// A flat face the motion keeps in its own plane (#684 O): a revolution's disc square to its axis
 /// under a turn about a line along that axis or a slide square to it, or a prism's plane side
@@ -1030,6 +1187,7 @@ impl Piece {
             Piece::Ruled(r) => r.ruling.named(),
             Piece::Line(line) => line.named.clone(),
             Piece::Flat(flat) => flat.named.clone(),
+            Piece::Round(round) => round.named.clone(),
         }
     }
 
@@ -1093,7 +1251,7 @@ impl Piece {
                 let [r,z] = c.parts;
                 Ok((nr*r[0]+nz*z[0],nr*r[1]+nz*z[1],nr*r[2]+nz*z[2]))
             }
-            Piece::Ruled(_) | Piece::Line(_) | Piece::Flat(_) => Err(envelope::Error::Degenerate),
+            Piece::Ruled(_) | Piece::Line(_) | Piece::Flat(_) | Piece::Round(_) => Err(envelope::Error::Degenerate),
         }
     }
 
@@ -1102,7 +1260,7 @@ impl Piece {
         match self {
             Piece::Face(_,s) => { let [v0,v1] = s.domain()[1]; s.at(u,v0+(v1-v0)*turn).ok().map(|p| p.position) }
             Piece::Corner(c) => Some(c.ring.at(std::f64::consts::TAU*turn).0),
-            Piece::Ruled(_) | Piece::Line(_) | Piece::Flat(_) => None,
+            Piece::Ruled(_) | Piece::Line(_) | Piece::Flat(_) | Piece::Round(_) => None,
         }
     }
 }

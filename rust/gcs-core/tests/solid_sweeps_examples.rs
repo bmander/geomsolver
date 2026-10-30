@@ -380,6 +380,23 @@ fn the_drum_punches_its_shadow_through_a_plate() {
     near(exported(&e,"plate"),20.*10.*4.-8.*4.*4.,1e-6);
 }
 
+/// `drill.sv` (#684 X): a drill pushed down along its own axis wholly through a plate. Every ring of
+/// it meets the slide at one angle all round, so it touches nowhere or all round, and its ring of
+/// greatest radius sweeps the cylinder of that radius; its shadow along the slide is its whole disc,
+/// so the sweep within the plate is that cylinder's, written exactly: the plate loses `π 2² 4`,
+/// whatever the drill's point.
+#[test]
+fn the_drill_bores_its_radius_through_a_plate() {
+    let e = example("drill.sv");
+    let Class::ConstantTwist(found) = class(&e,"plate") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide() && found.closed,"a slide, its characteristic closed on itself");
+    assert_eq!(found.rounds(),["the ring of the tool's greatest radius"]);
+    assert!(found.creases().is_empty() && found.fans().is_empty() && found.flats().is_empty());
+    let (_,_,radius) = found.cylinder().expect("its sheet the cylinder its ring sweeps");
+    assert_eq!(radius,2.);
+    near(exported(&e,"plate"),20.*10.*4.-PI*4.*4.,1e-12);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {

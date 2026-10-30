@@ -102,14 +102,15 @@ One refusal is the limits' own:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet; a slide along the tool's axis has one wherever the normals are square to it. The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought (Brent's method). The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
+| S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet; a slide square to the tool's axis has one wherever the normal lies along that axis, in a plane holding the slide (a slide along the tool's axis is read whole, below, #684 X). The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought (Brent's method). The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
 
 E1 holds as for a screw, so a slide passes the tool right through the blank and a turn swings it
 across from clear to clear, unless the turn is a whole one (below). A flat face the motion keeps
 in its own plane (a disc square to the turn, a face along the slide) is walked across its line
 where it reaches the blank (below, #684 O), and a characteristic that closes on itself within the
-blank's reach, a tool passed wholly through it, is built as a tube (below, #684 W). Still refused:
-a ring in contact all round at a sampled station (S1). A prism tool is read along its rulings
+blank's reach, a tool passed wholly through it, is built as a tube (below, #684 W); a tool slid
+along its own axis, whose rings touch nowhere or all round, bores the cylinder of its greatest
+radius (below, #684 X). Still refused: a ring in contact all round at a sampled station (S1). A prism tool is read along its rulings
 (below, #684 M). A ball under
 a turn or a slide is still its tube (`solid::canal`, below), never asked these rows.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate: a torus slid up a
@@ -586,6 +587,56 @@ a ruling of its outer rim in contact all along it (S1, #684 AF's row) — a pris
 within stands farthest from the axis at a vertex, where three faces meet. (Pushed square to its length the bar
 keeps its section's plane and is the planar subtraction class's.) The row for a loop with no
 crease has met no case. `tests/object_builder.rs` builds `punch.sv` at the page's samples.
+
+### A ring in contact all round (issue #684 X)
+
+Where every point of a ring of a revolved tool is in contact, the characteristic branches there:
+the ring is all characteristic, and the boundary may leave the walked branch along it. A ring's
+normals all make one angle with the tool's axis and all meet it at one point (or, where they lie
+along it, none), so three motions have such rings:
+
+- **a slide along the tool's own axis**, or a screw about it: every ring's normal makes one angle
+  with the slide all round it, so a ring touches nowhere or, where its normal lies square to the
+  slide, all round. The walk finds no root at all, and the ring of greatest radius sweeps the
+  cylinder of that radius;
+- **a turn about an axis the tool's own axis meets** at a point P: the ring whose normals all pass
+  through P lies on a sphere about P, which the turn keeps, and sweeps a zone of it. Every other
+  ring touches at its two points in the plane of the two axes, so the walked branch is the tool's
+  profile in that plane, and it passes through the ring at its highest and lowest points;
+- **a slide square to the tool's axis**, or a turn about an axis parallel to it: the ring whose
+  normal lies along the tool's axis, in a plane the motion keeps (the tube's top and bottom of a
+  torus slid square to its axis), which sweeps a strip of that plane.
+
+The first is built; the other two are refused at S1 (`stationary`, above), saying a ring of which
+face is in contact all round.
+
+**A slide along the tool's own axis** (`constant_twist::along_axis`): where every face of the tool
+is a revolution about one line along the slide (a screw about that line is read the same, its turn
+carrying each ring into itself), the characteristic is the ring of greatest radius R alone, closed
+on itself (#684 W's `closed`, a `Round` piece read round it). R is read from each face's points on
+the tool at 400 stations along it, the greatest refined between the stations either side
+(`roots::brent`), and two rows are asked of the same points:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S2 | The tool's shadow along the slide is its whole disc: the radii of its faces' points, each stretch between two stations on one face covering at least what its ends' do, run from its axis to R with no gap. | The sweep is then every point within R the tool passes, and the rings of lesser radius in contact all round (a cylinder's every ring, a lemon's below its widest) sweep cylinders within it. Where the shadow is a ring (a torus), its least radius's ring sweeps a second wall and leaves the blank's core standing, a second sheet. | The gap's radii, and a point of the tool beside it in the blank. |
+| E1 | The tool passes wholly through the blank's heights along the slide: every point of it comes to them after the roll's start and leaves them before its end. | Then each point of the blank within R is passed by the tool's point at its radius and angle, and none beyond R is: the sweep within the blank is the blank within the cylinder, exactly. Clear of the blank at both ends alone, the tool could start beside a part of the blank taller than its travel. | The tool's point at the roll's end. |
+
+The rows are sampled, as every row is. S3 and S4 are asked of the ring as of any loop. The sheet
+(`brep::sweep::helical`) is the cylinder itself, not fitted: four faces of the one cylinder of
+radius R about the axis (`build::tube`, a prism of the disc's quarter arcs, its caps left off),
+from the first column's height to the last, its ends clear of the blank. Nothing is approximated,
+so the solid's volume is the closed form to rounding. The native path refuses it by name, as any
+closed characteristic. `rust/examples/solid_sweeps/drill.sv` is the case: a drill of radius 2 with
+a 118° point pushed down through a plate 4 thick, which loses `π 2² 4` to the last digit
+(`tests/solid_sweeps_examples.rs`, within 1e-12). `tests/rings_all_round.rs` holds the drill fed
+as it turns about its axis, a screw, to the same hole, and a lemon, whose greatest radius 2 is a
+ring within its one arc, read and refined there, to the same (each within 1e-9); each STL agrees
+with the field. Refused there: a torus slid along its axis, its shadow a ring (S2), and the drill
+beside a post taller than its travel (E1, a conservative refusal: the hole is the cylinder's
+there too). `tests/object_builder.rs` builds `drill.sv` at the page's samples. The torus slid square
+to its axis through the rod's middle (`turns_and_slides::the_turn_and_slide_rows_refuse_by_name`)
+is the third motion's, and is still refused.
 
 ### A rack (issue #61)
 

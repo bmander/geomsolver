@@ -979,6 +979,21 @@ pub fn square(o: V,n: V,half: f64) -> Profile {
     Profile {origin:o,normal:n,loops:vec![edges],names:Vec::new()}
 }
 
+/// The cylinder of radius `r` about the line through `o` along the unit `n`, from `o` to `depth`
+/// along `n`, open at both ends: a sheet of `pieces` faces round it, each a stretch of the one
+/// cylinder between two lines along it, its edges at the ends arcs (a prism of the disc's arcs, its
+/// caps left off). A tool slid along its own axis sweeps one (#684 X).
+pub fn tube(o: V,n: V,r: f64,depth: f64,pieces: usize) -> Result<Brep,String> {
+    if pieces < 2 { return Err("a tube must have two faces round".into()) }
+    let frame = Frame::about(o,unit(n));
+    let step = std::f64::consts::TAU/pieces as f64;
+    let arcs = (0..pieces).map(|k| ProfileEdge::Arc {frame,r,span:Some([k as f64*step,(k+1) as f64*step])}).collect();
+    let mut b = prism(&Profile {origin:o,normal:unit(n),loops:vec![arcs],names:Vec::new()},0.,depth)?;
+    // the prism's two caps are its last faces
+    b.faces.truncate(pieces);
+    Ok(b)
+}
+
 /// The disc of radius `r` about `o` square to `n`: a cylinder's or a frustum's section.
 pub fn disc(o: V,n: V,r: f64) -> Profile {
     Profile {origin:o,normal:n,loops:vec![vec![ProfileEdge::Arc {frame:Frame::about(o,n),r,span:None}]],names:Vec::new()}

@@ -204,6 +204,14 @@ fn a_closed_characteristic_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/punch.sv".to_string()],true),1);
 }
 
+/// **A ring in contact all round builds at the display's samples** (`drill.sv`, #684 X): the drill
+/// slid along its own axis, its characteristic its ring of greatest radius, its sheet the cylinder
+/// that ring sweeps, written exactly, built by the page's stepped builder as the export builds it.
+#[test]
+fn a_ring_in_contact_all_round_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/drill.sv".to_string()],true),1);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \

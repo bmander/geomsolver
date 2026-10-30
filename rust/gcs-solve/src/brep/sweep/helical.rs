@@ -19,7 +19,10 @@
 //! A characteristic that closes on itself within the blank, a tool's passed wholly through it
 //! (#684 W), is begun and ended at a crease (`Characteristic::closed`): its last row is its first,
 //! to the bit, and the sheet, a tube, is cut into faces at its creases that close on each other
-//! along the characteristic, so only its columns' ends must leave the blank.
+//! along the characteristic, so only its columns' ends must leave the blank. A tool slid along its
+//! own axis wholly through the blank touches along its ring of greatest radius all round (#684 X):
+//! the characteristic is that ring, closed with no crease, and the sheet the cylinder it sweeps,
+//! written exactly (`build::tube`), not fitted, in faces round it.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::sheet::{Fitted,SweptCut,settle};
@@ -205,6 +208,17 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     }
     (say.stage)(&format!("`{name}`: sheet {}x{}, its edges clear of the blank",sheet.rows,sheet.columns));
     (say.mark)(Stage::Sheet);
+    // a ring all round slid along the tool's own axis (#684 X): the sheet is the cylinder it sweeps,
+    // written exactly from the first column's height to the last's, cut into faces at its quarters
+    if let Some((centre,axis,radius)) = found.cylinder() {
+        let [a,b] = window.map(|t| family.pose_at(t).map(|pose| pose.point(centre).map(|x| x*scale)));
+        let (a,b) = (a.at(Stage::Fit)?,b.at(Stage::Fit)?);
+        let tube = crate::brep::build::tube(a,axis,radius*scale,crate::space::dot(crate::space::sub(b,a),axis),AROUND).at(Stage::Fit)?;
+        (say.stage)(&format!("`{name}`: the sheet is the cylinder of radius {:.4} mm the ring of greatest radius sweeps, written exactly, \
+            in {AROUND} faces round it",radius*scale));
+        (say.mark)(Stage::Fit);
+        return Ok(Fitted {face:tube.clone(),sheet,error:0.,faces:tube})
+    }
     let sides = |grid: &Grid| lay(grid,Withheld::Sides);
     settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
         if cut.is_empty() && !found.whole && !found.closed { return Ok(fitted) }

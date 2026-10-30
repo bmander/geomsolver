@@ -1123,6 +1123,37 @@ fn a_net_closed_along_its_rows_is_a_tube_of_faces() {
     assert!((cells[0]-core).abs() < 1e-5*core && (cells[1]-(256.-core)).abs() < 1e-5*core,"{cells:?} against {core}");
 }
 
+/// **A tube is one cylinder's faces round it, open at its ends** (`build::tube`, #684 X): four faces
+/// of the one cylinder, each a quarter of it between two lines along it, so only the eight arcs at
+/// its ends are used once; each use's pcurve lies on its edge; and the block it splits leaves the
+/// core, π r² h, to rounding, and the rest. Two faces round at least.
+#[test]
+fn a_tube_is_one_cylinders_faces_open_at_its_ends() {
+    let tube = gcs_core::brep::build::tube([1.,0.5,-5.],[0.,0.,1.],3.,10.,4).unwrap();
+    assert_eq!((tube.faces.len(),tube.edges.len(),tube.vertices.len()),(4,12,8));
+    assert!(tube.faces.iter().all(|f| matches!(f.surface,gcs_core::brep::geom::Surface::Cylinder(_,r) if r == 3.)));
+    assert!(gcs_core::brep::build::tube([0.;3],[0.,0.,1.],3.,10.,1).is_err(),"one face round is refused");
+    let mut uses = vec![0;tube.edges.len()];
+    for f in &tube.faces {
+        for c in &f.loops[0] {
+            uses[c.edge as usize] += 1;
+            let e = &tube.edges[c.edge as usize];
+            for t in [0.,0.3,0.7,1.] {
+                let x = e.t[0]+(e.t[1]-e.t[0])*t;
+                let uv = c.pcurve.at(x,e,&f.surface,&tube.vertices);
+                assert!(gcs_core::space::distance(f.surface.point(uv),e.point(x,&tube.vertices)) < 1e-9);
+            }
+        }
+    }
+    assert_eq!((uses.iter().filter(|&&n| n == 1).count(),uses.iter().filter(|&&n| n == 2).count()),(8,4));
+    let block = prism(&gcs_core::brep::build::square([0.;3],[0.,0.,1.],4.5),-2.,2.).unwrap();
+    let mut cells: Vec<f64> = gcs_core::brep::boolean::split(&block,&tube,1e-6).unwrap().iter().map(volume).collect();
+    cells.sort_by(f64::total_cmp);
+    let core = PI*9.*4.;
+    assert_eq!(cells.len(),2,"{cells:?}");
+    assert!((cells[0]-core).abs() < 1e-12*core && (cells[1]-(324.-core)).abs() < 1e-12*core,"{cells:?} against {core}");
+}
+
 /// An interpolation of many points (solved in its band, past the dense solve's size) passes through
 /// every one, at its own parameter.
 #[test]

@@ -271,8 +271,9 @@ the stretch of the roll each reader asks is `Screw::passing`. A turn of a whole 
 read as one whole turn (below), and S1 also refuses
 a ring in contact all round between two walked stations whose path enters the blank
 (`constant_twist::stationary`: the amplitude turning right round, its three coefficients' least
-sought by `roots::brent`) — a turn about an axis the tool's meets, or a slide along the tool's
-axis — where the boundary leaves the walked branch with no root moving. A turn or a slide of one
+sought by `roots::brent`) — a turn about an axis the tool's meets, or a slide square to the tool's
+axis, its ring along it — where the boundary leaves the walked branch with no root moving (a slide
+along the tool's axis is read whole, #684 X below). A turn or a slide of one
 ball is still its tube. The accuracy meter reads a turn's characteristic over the whole roll.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate (volumes computed
 apart: the lens, a circular segment, Pappus, and a tilted torus's shadow from its centre circle;
@@ -560,6 +561,27 @@ a prism aslant wholly through, S1 over a cap; a prism turned wholly within, S1 a
 `turns_and_slides::the_turn_and_slide_rows_refuse_by_name` (a torus slid through the rod's middle,
 its rings at the tube's top and bottom in contact all round, S1); and
 `object_builder::a_closed_characteristic_builds_at_the_displays_samples`.
+
+**A ring in contact all round (#684 X):** under a slide along the tool's own axis, or a screw about
+it, where every face of the tool is a revolution about that one line (`constant_twist::along_axis`,
+asked before the walk, which would find no root: each ring touches nowhere or all round), the
+characteristic is the ring of greatest radius R alone, a `Piece::Round` read round it, closed
+(`closed`, `reach` every node, no crease, `Characteristic::rounds` names it). R is the greatest of
+each face's points on the tool at `ROUND_READS` stations, refined by `roots::brent` between the
+stations either side. S2 refuses a shadow along the slide that is no whole disc (the radii of
+consecutive points on one face, each stretch covering at least its ends', leaving a gap between the
+axis and R: a torus's inner wall); E1 refuses a tool not passing wholly through the blank's heights
+(`Screw::passing` of every point within the roll). S3 and S4 are asked of the ring. Then the sweep
+within the blank is the blank within the cylinder, and `helical_sheet` writes it exactly
+(`Characteristic::cylinder`; `brep::build::tube`, four faces of one `Surface::Cylinder` from the
+first column's height to the last), no fit. The native path refuses it as any closed
+characteristic. The gate is `solid_sweeps_examples::the_drill_bores_its_radius_through_a_plate`
+(`solid_sweeps/drill.sv`, `π 2² 4` within 1e-12) and `tests/rings_all_round.rs` (a drill fed as it
+turns, a screw; a lemon whose greatest radius lies within its arc; each within 1e-9), each STL
+agreeing with the field; the refusals `rings_all_round::what_a_slide_along_the_tools_axis_still_refuses`
+(a torus, S2; beside a taller post, E1); and
+`object_builder::a_ring_in_contact_all_round_builds_at_the_displays_samples`. A turn about an axis
+the tool's meets and a slide square to it stay refused at S1 (`stationary`).
 
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting
