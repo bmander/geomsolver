@@ -362,6 +362,24 @@ fn the_v_wheel_slid_square_cuts_a_v_groove() {
     near(exported(&e,"block"),2000.-4.*(PI/6.).tan()*20.,1e-6);
 }
 
+/// `punch.sv` (#684 W): a drum pushed edge first wholly through a plate, its characteristic closed
+/// on itself: along its side's line one side of the push, across a flat end, which the push keeps in
+/// its own plane, back along the other side's line and across the other end, a rectangle carried up
+/// as a tube, creased at its four corners and begun at one. The plate loses the drum's shadow along
+/// the push, `drum × 2 radius`, through its thickness, in closed form.
+#[test]
+fn the_drum_punches_its_shadow_through_a_plate() {
+    let e = example("punch.sv");
+    let Class::ConstantTwist(found) = class(&e,"plate") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide() && found.closed,"a slide, its characteristic closed on itself");
+    let mut flats = found.flats();
+    flats.sort();
+    assert_eq!(flats,["`tool.far_face`","`tool.near_face`"]);
+    assert_eq!(found.creases().len(),4);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    near(exported(&e,"plate"),20.*10.*4.-8.*4.*4.,1e-6);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {

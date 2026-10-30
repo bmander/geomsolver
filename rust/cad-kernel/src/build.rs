@@ -843,39 +843,41 @@ pub fn sheets(nets: Vec<(crate::nurbs::Net,String)>) -> Result<Brep,String> {
 /// A sheet of one net cut into a grid of faces (#684 N): at the parameters `us` along `u` and `vs`
 /// along `v`, each from its domain's start to its end, the faces of a band between two of `us`
 /// named by `names`. Each face is the net's segment there (`Net::segment`); neighbours share their
-/// edges and corners, so a split by it never meets a seam. `closed`: the net's last iso-`v` curve
-/// is its first, as a sheet revolved a whole turn is, and the last faces along `v` close on the
-/// first's edges, a ring.
-pub fn grid_sheet(net: &crate::nurbs::Net,us: &[f64],vs: &[f64],names: &[String],closed: bool) -> Result<Brep,String> {
+/// edges and corners, so a split by it never meets a seam. `closed`, each way: along `u`, the net's
+/// last iso-`u` curve is its first, as a sheet along a characteristic that closes on itself is
+/// (#684 W), and the last band closes on the first's edges, a tube; along `v`, its last iso-`v`
+/// curve is its first, as a sheet revolved a whole turn is, and the last faces along `v` close on
+/// the first's edges, a ring.
+pub fn grid_sheet(net: &crate::nurbs::Net,us: &[f64],vs: &[f64],names: &[String],closed: [bool;2]) -> Result<Brep,String> {
     let (nu,nv) = (us.len().saturating_sub(1),vs.len().saturating_sub(1));
     if nu == 0 || nv == 0 || names.len() != nu { return Err("a sheet's grid of faces must have a face each way, and a name a band".into()) }
-    if closed && nv < 2 { return Err("a closed sheet must have two faces round".into()) }
+    if (closed[0] && nu < 2) || (closed[1] && nv < 2) { return Err("a closed sheet must have two faces round".into()) }
     // each band cut along u once, then round along v
     let nets: Vec<Vec<crate::nurbs::Net>> = (0..nu).map(|i| {
         let band = net.segment([us[i],us[i+1]],[vs[0],vs[nv]]);
         (0..nv).map(|j| band.segment([us[i],us[i+1]],[vs[j],vs[j+1]])).collect()
     }).collect();
     let curve = |b: BSpline| EdgeCurve::Curve(Curve::BSpline(Arc::new(b)));
-    // the corners, and the edges along u at each of the `m` distinct v (a closed sheet's last its
-    // first) and along v at each u
-    let m = if closed { nv } else { nv+1 };
+    // the corners, and the edges along u at each of the `mv` distinct v and along v at each of the
+    // `mu` distinct u (a closed way's last its first)
+    let (mu,mv) = (if closed[0] { nu } else { nu+1 },if closed[1] { nv } else { nv+1 });
     let mut b = Brep::default();
-    let corners: Vec<Vec<u32>> = (0..=nu).map(|i| (0..m).map(|j| b.vertex(net.point(us[i],vs[j]))).collect()).collect();
-    let along_u: Vec<Vec<u32>> = (0..nu).map(|i| (0..m).map(|j| {
+    let corners: Vec<Vec<u32>> = (0..mu).map(|i| (0..mv).map(|j| b.vertex(net.point(us[i],vs[j]))).collect()).collect();
+    let along_u: Vec<Vec<u32>> = (0..nu).map(|i| (0..mv).map(|j| {
         let iso = if j < nv { nets[i][j].column(0) } else { let n = &nets[i][nv-1]; n.column(n.poles[0].len()-1) };
-        b.edge(curve(iso),[us[i],us[i+1]],[corners[i][j],corners[i+1][j]])
+        b.edge(curve(iso),[us[i],us[i+1]],[corners[i][j],corners[(i+1)%mu][j]])
     }).collect()).collect();
-    let along_v: Vec<Vec<u32>> = (0..=nu).map(|i| (0..nv).map(|j| {
+    let along_v: Vec<Vec<u32>> = (0..mu).map(|i| (0..nv).map(|j| {
         let iso = if i < nu { nets[i][j].row(0) } else { let n = &nets[nu-1][j]; n.row(n.poles.len()-1) };
-        b.edge(curve(iso),[vs[j],vs[j+1]],[corners[i][j],corners[i][(j+1)%m]])
+        b.edge(curve(iso),[vs[j],vs[j+1]],[corners[i][j],corners[i][(j+1)%mv]])
     }).collect()).collect();
     let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
     for (i,band) in nets.into_iter().enumerate() { for (j,net) in band.into_iter().enumerate() {
         let ([u0,u1],[v0,v1]) = ([us[i],us[i+1]],[vs[j],vs[j+1]]);
         let lp = vec![
             Coedge {edge:along_u[i][j],reversed:false,pcurve:line([u0,v0],[u1,v0])},
-            Coedge {edge:along_v[i+1][j],reversed:false,pcurve:line([u1,v0],[u1,v1])},
-            Coedge {edge:along_u[i][(j+1)%m],reversed:true,pcurve:line([u0,v1],[u1,v1])},
+            Coedge {edge:along_v[(i+1)%mu][j],reversed:false,pcurve:line([u1,v0],[u1,v1])},
+            Coedge {edge:along_u[i][(j+1)%mv],reversed:true,pcurve:line([u0,v1],[u1,v1])},
             Coedge {edge:along_v[i][j],reversed:true,pcurve:line([u0,v0],[u0,v1])},
         ];
         b.faces.push(Face {surface:Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),reversed:false,loops:vec![lp],

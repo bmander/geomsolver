@@ -25,9 +25,11 @@
 //! its line, stepped onto partway along a side, #684 AE, AG). Where both faces' roots meet the
 //! corner at one point, or a fan it runs round stands at one point, every normal of the fan is in
 //! contact there: it steps straight across, and the sheet is creased along that point's path
-//! (`Characteristic::sharp`, #684 V). It asks the class's rows of
-//! that stretch as it goes: regular (S1), one stretch and one root a ring (S2), no fold (S3),
-//! and no crossing within a lead (S4). The sheet is built from the same walk
+//! (`Characteristic::sharp`, #684 V). Where it comes round to where it began without leaving the
+//! blank, the characteristic closes on itself, a tool's passed wholly through the blank: the
+//! stretch is the whole loop, begun again at a crease (`Characteristic::closed`, #684 W). It asks
+//! the class's rows of that stretch as it goes: regular (S1), one stretch and one root a ring (S2),
+//! no fold (S3), and no crossing within a lead (S4). The sheet is built from the same walk
 //! (`brep::sweep::helical`). Like the generating class's checks, these are **sampled**: rings
 //! `rows` apart along each face, and each point's path through the blank at a degree's turn.
 #[allow(unused_imports)]
@@ -67,6 +69,13 @@ struct Root { position: V,normal: V,spread: f64,reach: Option<f64> }
 /// flat the motion keeps in its plane reads it by this (#684 O).
 const ALL_ROUND: &str = "is in contact all round a ring";
 
+/// Why a characteristic closed on itself with no crease is refused (#684 W): its sheet's first and
+/// last rows, one curve, would meet where the sheet is smooth, and the class closes a sheet along
+/// the characteristic only where it is creased, its fit joined there by a knot standing three times.
+const SMOOTH_LOOP: &str = "where its sheet would close on itself smoothly, which the class closes only at a sharp edge (not built)";
+/// Why one under a whole turn is refused (#684 W): its sheet would close round the turn as well.
+const WHOLE_LOOP: &str = "which the class does not split a blank by (not built)";
+
 /// Why the walk ends where a revolution's face meets the tool's axis at an angle: there every
 /// normal of the cone round the apex is the tool's, and the sweep has a sharp edge along the
 /// apex's path, which the class builds only at a corner that turns to a circle (#684 V).
@@ -100,7 +109,7 @@ pub struct Node { pub patch: usize,pub u: f64,pub from: f64,pub position: V,pub 
 pub struct Characteristic {
     pub screw: Screw,
     pub nodes: Vec<Node>,
-    /// The first and last nodes that reach the blank.
+    /// The first and last nodes that reach the blank (of a closed characteristic, its first and last).
     pub reach: [usize;2],
     /// The least sine between the characteristic's tangent and the screw's velocity in the reach.
     pub least_factor: f64,
@@ -109,6 +118,10 @@ pub struct Characteristic {
     /// Whether the motion is a turn carried round a whole turn or more, read as one whole turn: its
     /// sheet is its section revolved all the way round, closing on itself (#684 N).
     pub whole: bool,
+    /// Whether the characteristic closes on itself within the blank's reach, as a tool's does that is
+    /// passed wholly through the blank (#684 W): its last node is its first, at a crease, and `reach`
+    /// is all of them. Its sheet is a tube, closing on itself along the characteristic.
+    pub closed: bool,
     /// The nodes at which the characteristic passes a convex corner, a rim or a crease whose fan
     /// stands at one point, the node itself (#684 V), each with that fan's piece, in order.
     sharp: Vec<(usize,usize)>,
@@ -143,7 +156,10 @@ struct Walker<'a> { contacts: &'a SweepContacts,pieces: Vec<Piece>,ask: &'a Ask<
 /// walked through the blank (face, ring, root), in order along the characteristic, and the steps
 /// it took straight across a convex corner whose fan stands at one point (`Step::Sharp`): the two
 /// roots either side and the fan.
-struct Pass { stations: Vec<Vec<f64>>,rings: Vec<Vec<Ring>>,order: Vec<(usize,usize,usize)>,sharp: Vec<([(usize,usize,usize);2],usize)> }
+/// Where the characteristic closes on itself (`closed`, #684 W), `order` is the loop, its last root
+/// its first.
+struct Pass { stations: Vec<Vec<f64>>,rings: Vec<Vec<Ring>>,order: Vec<(usize,usize,usize)>,sharp: Vec<([(usize,usize,usize);2],usize)>,
+    closed: bool }
 
 impl Pass {
     fn root(&self,x: (usize,usize,usize)) -> &Root { root(&self.rings,x) }
@@ -198,8 +214,12 @@ impl Walker<'_> {
             return Err((Condition::Reach,"no point of the tool's characteristic passes through the blank in the roll".into(),None))
         };
         let root = |x| root(&rings,x);
-        // the walk each way from the seed, to MARGIN rings past the last that reaches
-        let walk = |dir: isize| -> Result<(Vec<(usize,usize,usize)>,Vec<([(usize,usize,usize);2],usize)>),Failure> {
+        // the walk each way from the seed, to MARGIN rings past the last that reaches; or round to
+        // where it began, the seed or a root the walk the other way took (`met`), where the
+        // characteristic closes on itself (#684 W): the step onto it is the walk's last, and how many
+        // of `met` the loop keeps is given
+        type Walked = (Vec<(usize,usize,usize)>,Vec<([(usize,usize,usize);2],usize)>,Option<usize>);
+        let walk = |dir: isize,met: &[(usize,usize,usize)]| -> Result<Walked,Failure> {
             let (mut out,mut sharp) = (Vec::new(),Vec::new());
             let (mut at,mut dir) = (seed,dir);
             let mut since = 0;
@@ -208,14 +228,14 @@ impl Walker<'_> {
                 if let Step::Sharp(next,_,fan) = taken { sharp.push(([at,next],fan)) }
                 match taken {
                     Step::Next(next,d) | Step::Sharp(next,d,_) => {
-                        if next == seed { return Err((Condition::Regular,format!("the characteristic closes on itself through \
-                            {} within the blank's reach",pieces[seed.0].named()),witness(family,root(seed).reach,root(seed).position))) }
+                        if next == seed { return Ok((out,sharp,Some(0))) }
+                        if let Some(m) = met.iter().position(|&x| x == next) { return Ok((out,sharp,Some(m+1))) }
                         let duplicate = next.0 != at.0;
                         out.push(next);
                         at = next; dir = d;
                         if duplicate { continue }
                         if root(at).reach.is_some() { since = 0 } else { since += 1 }
-                        if since == MARGIN { return Ok((out,sharp)) }
+                        if since == MARGIN { return Ok((out,sharp,None)) }
                     }
                     Step::End(why) => {
                         let last = out.iter().rev().chain(std::iter::once(&seed)).find(|&&x| root(x).reach.is_some()).copied().unwrap_or(seed);
@@ -225,9 +245,23 @@ impl Walker<'_> {
                 }
             }
         };
-        let ((back,mut sharp),(ahead,sharp_ahead)) = (walk(-1)?,walk(1)?);
-        sharp.extend(sharp_ahead);
-        let order: Vec<(usize,usize,usize)> = back.into_iter().rev().chain(std::iter::once(seed)).chain(ahead).collect();
+        // back first: where it comes round to the seed, the loop is the seed, what it took the other
+        // way round, and the seed again, closing it; else ahead, which comes round onto the roots
+        // back took where the loop leaves the blank for fewer rings than the two margins together,
+        // and the loop is the seed, ahead's, those of back's it reached the other way round, and the
+        // seed again
+        let (back,mut sharp,closed) = walk(-1,&[])?;
+        let (order,closed) = if closed.is_some() {
+            (std::iter::once(seed).chain(back.into_iter().rev()).chain(std::iter::once(seed)).collect::<Vec<_>>(),true)
+        } else {
+            let (ahead,sharp_ahead,met) = walk(1,&back)?;
+            sharp.extend(sharp_ahead);
+            match met {
+                Some(m) => (std::iter::once(seed).chain(ahead).chain(back[..m].iter().rev().copied())
+                    .chain(std::iter::once(seed)).collect(),true),
+                None => (back.into_iter().rev().chain(std::iter::once(seed)).chain(ahead).collect(),false),
+            }
+        };
         // S2: a ring's two roots in the blank both on the walk, a flat face's line between them
         for &(k,i,[a,b]) in &doubled {
             let (x,y) = (order.iter().position(|&w| w == (k,i,a)),order.iter().position(|&w| w == (k,i,b)));
@@ -247,7 +281,7 @@ impl Walker<'_> {
             return Err((Condition::Once,format!("the characteristic reaches the blank in more than one stretch (again on {})",
                 pieces[other.0].named()),witness(family,root(other).reach,root(other).position)))
         }
-        Ok(Pass {stations,rings,order,sharp})
+        Ok(Pass {stations,rings,order,sharp,closed})
     }
 }
 
@@ -324,11 +358,20 @@ impl Characteristic {
             samples += fine.samples();
             fine
         };
-        let Pass {stations,rings,order,sharp: stepped} = fine;
+        let Pass {stations,rings,mut order,sharp: stepped,closed} = fine;
         // S1: no ring the walk passes is in contact all round between its stations
         stationary(pieces,&stations,&order,motion,family,&screw,ask)?;
         let root = |x| root(&rings,x);
         let seed = *order.iter().find(|&&x| root(x).reach.is_some()).expect("a pass reaches");
+        // a loop begun at a root within one piece's stretch (the root before it on the same piece),
+        // on no fan, so that it neither starts on a crossing nor at a fan the nodes below drop
+        if closed {
+            let cycle = &order[..order.len()-1];
+            let within = |r: usize| !pieces[cycle[r].0].fan() && cycle[(r+cycle.len()-1)%cycle.len()].0 == cycle[r].0;
+            if let Some(r) = (0..cycle.len()).find(|&r| within(r)) {
+                order = cycle[r..].iter().chain(&cycle[..=r]).copied().collect();
+            }
+        }
         // the nodes, a crossing's second point dropped (its station starts the next step); a step
         // straight across a convex corner whose fan stands at one point a crease at the node before
         // it, with the fan (#684 V)
@@ -396,8 +439,29 @@ impl Characteristic {
             return Err((Condition::Regular,format!("the characteristic stands at one point, on {}: the sweep is that point's \
                 path, no sheet",pieces[nodes[0].patch].named()),witness(family,root(seed).reach,root(seed).position)))
         }
-        let first = nodes.iter().position(|m| m.reach.is_some()).expect("the seed reaches");
-        let last = nodes.iter().rposition(|m| m.reach.is_some()).expect("the seed reaches");
+        // a characteristic closed on itself (#684 W), its last node its first: begun again at a crease,
+        // so that the sheet's first and last rows, one curve, meet where it has a sharp edge and is
+        // cut and its fit creased anyway. One with no crease would close smoothly on itself, and one
+        // turned a whole turn would close round the turn too, a sheet with no edge: refused by name
+        if closed {
+            let at = witness(family,root(seed).reach,root(seed).position);
+            if contacts.whole() {
+                return Err((Condition::Regular,format!("the characteristic closes on itself through {} under a whole turn: \
+                    the sheet would close both ways, a ring with no edge, {WHOLE_LOOP}",pieces[seed.0].named()),at))
+            }
+            let n = nodes.len()-1;
+            let Some(&w) = creases(&nodes,pieces,&sharp).first() else {
+                return Err((Condition::Regular,format!("the characteristic closes on itself through {} with no crease, {SMOOTH_LOOP}",
+                    pieces[seed.0].named()),at))
+            };
+            nodes = nodes[w..=n].iter().chain(&nodes[1..=w]).copied().collect();
+            for c in &mut sharp { c.0 = if c.0 >= w { (c.0-w).min(n-w) } else if c.0 >= 1 { c.0+n-w } else { n-w } }
+            sharp.sort_by_key(|c| c.0);
+        }
+        let (first,last) = if closed { (0,nodes.len()-1) } else {
+            (nodes.iter().position(|m| m.reach.is_some()).expect("the seed reaches"),
+             nodes.iter().rposition(|m| m.reach.is_some()).expect("the seed reaches"))
+        };
         // S1: no ring within the reach and its margin is about to lose its two roots
         for x in &order {
             let r = root(*x);
@@ -428,7 +492,7 @@ impl Characteristic {
             sign = factor.signum();
             least = least.min(factor.abs());
         }
-        let found = Characteristic {screw,nodes,reach:[first,last],least_factor:least,samples,whole:contacts.whole(),sharp,
+        let found = Characteristic {screw,nodes,reach:[first,last],least_factor:least,samples,whole:contacts.whole(),closed,sharp,
             pieces:walker.pieces,tool:tool.clone(),motion,tolerance};
         // S4: its section square to the axis is simple
         found.simple(family)?;
@@ -457,7 +521,7 @@ impl Characteristic {
 
     /// The convex corners whose fans the characteristic runs round, each as a message names it.
     pub fn fans(&self) -> Vec<String> {
-        let mut walked: Vec<usize> = self.nodes.iter().map(|m| m.patch).filter(|&k| self.pieces[k].fan()).collect();
+        let mut walked: Vec<usize> = self.walked().iter().map(|m| m.patch).filter(|&k| self.pieces[k].fan()).collect();
         walked.dedup();
         walked.into_iter().map(|k| self.pieces[k].named()).collect()
     }
@@ -465,7 +529,7 @@ impl Characteristic {
     /// The lined sides whose ruling in contact all along it the characteristic runs along (#684 AF),
     /// each as a message names it.
     pub fn lined(&self) -> Vec<String> {
-        let mut walked: Vec<usize> = self.nodes.iter().map(|m| m.patch).filter(|&k| self.pieces[k].lined().is_some()).collect();
+        let mut walked: Vec<usize> = self.walked().iter().map(|m| m.patch).filter(|&k| self.pieces[k].lined().is_some()).collect();
         walked.dedup();
         walked.into_iter().map(|k| self.pieces[k].named()).collect()
     }
@@ -473,12 +537,16 @@ impl Characteristic {
     /// The flat faces the motion keeps in their own planes that the characteristic runs across
     /// (#684 O), each as a message names it.
     pub fn flats(&self) -> Vec<String> {
-        let mut walked: Vec<usize> = self.nodes.iter().map(|m| m.patch).filter(|&k| self.on_flat_piece(k)).collect();
+        let mut walked: Vec<usize> = self.walked().iter().map(|m| m.patch).filter(|&k| self.on_flat_piece(k)).collect();
         walked.dedup();
         walked.into_iter().map(|k| self.pieces[k].named()).collect()
     }
 
     fn on_flat_piece(&self,k: usize) -> bool { matches!(self.pieces[k],Piece::Flat(_)) }
+
+    /// The nodes each of which ends a stretch of the walk on its piece: all of them, but a closed
+    /// characteristic's first, which is its last (#684 W).
+    fn walked(&self) -> &[Node] { if self.closed { &self.nodes[1..] } else { &self.nodes } }
 
     /// Where along the characteristic (`s`, a node's) it runs onto or off a flat face the motion
     /// keeps in its own plane (#684 O), or from one face to the next across a convex corner whose
@@ -536,10 +604,10 @@ impl Characteristic {
         Ok((self.screw.carry(p,t),self.screw.turn(n,t)))
     }
 
-    /// S4: the reach's section does not cross itself. The sheet is the same at every station but
-    /// turned and raised (a screw's), raised (a slide's) or turned (a turn's), so two of its points
-    /// meet exactly where two points of one section do. A turn's section is read in its half-plane,
-    /// by radius and height.
+    /// S4: the reach's section does not cross itself (a closed characteristic's read as a closed
+    /// polygon, #684 W). The sheet is the same at every station but turned and raised (a screw's),
+    /// raised (a slide's) or turned (a turn's), so two of its points meet exactly where two points
+    /// of one section do. A turn's section is read in its half-plane, by radius and height.
     fn simple(&self,family: &Family) -> Result<(),Failure> {
         let [first,last] = self.reach;
         let station = self.screw.station(self.nodes[first].position);
@@ -548,7 +616,9 @@ impl Characteristic {
         let crate::brep::geom::Frame {x:e1,y:e2,..} = crate::brep::geom::Frame::about([0.;3],self.screw.axis);
         let flat: Vec<[f64;2]> = points.iter().map(|&p| if self.screw.is_turn() { [self.screw.radius(p),self.screw.height(p)] }
             else { [dot(p,e1),dot(p,e2)] }).collect();
-        if let Some((i,j)) = crossing(&flat) {
+        // (a closed characteristic's section a closed polygon, its last point its first: its first
+        // and last segments neighbours, #684 W)
+        if let Some((i,j)) = crossing_of(&flat,self.closed) {
             let p: V = std::array::from_fn(|k| 0.5*(points[i][k]+points[i+1][k]));
             let at = witness(family,self.nodes[i+first].reach,self.nodes[i+first].position);
             let within = if self.screw.is_turn() { "where its section in a half-plane through the axis" }
@@ -631,7 +701,11 @@ pub(super) fn once_round(screw: &Screw,roll: [f64;2]) -> Option<[f64;2]> {
 
 /// The first pair of segments of a polyline that meet without being neighbours, by the index of
 /// each one's first point: crossing, touching at a point, or overlapping along a line.
-pub fn crossing(points: &[[f64;2]]) -> Option<(usize,usize)> {
+pub fn crossing(points: &[[f64;2]]) -> Option<(usize,usize)> { crossing_of(points,false) }
+
+/// `crossing`, of a closed polygon where `closed` says so, its last point its first: there its
+/// first and last segments are neighbours too, meeting at that point.
+fn crossing_of(points: &[[f64;2]],closed: bool) -> Option<(usize,usize)> {
     let side = |a: [f64;2],b: [f64;2],c: [f64;2]| (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0]);
     // whether c, on the line through a and b, lies within the segment's box
     let within = |a: [f64;2],b: [f64;2],c: [f64;2]| c[0] >= a[0].min(b[0]) && c[0] <= a[0].max(b[0]) && c[1] >= a[1].min(b[1]) && c[1] <= a[1].max(b[1]);
@@ -643,6 +717,7 @@ pub fn crossing(points: &[[f64;2]]) -> Option<(usize,usize)> {
     let n = points.len();
     for i in 0..n.saturating_sub(1) {
         for j in i+2..n.saturating_sub(1) {
+            if closed && i == 0 && j+2 == n { continue }
             if meet(points[i],points[i+1],points[j],points[j+1]) { return Some((i,j)) }
         }
     }

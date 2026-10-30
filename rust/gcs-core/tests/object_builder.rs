@@ -195,6 +195,15 @@ fn a_sharp_edge_along_one_points_path_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/vgroove.sv".to_string()],true),1);
 }
 
+/// **A characteristic closed on itself builds at the display's samples** (`punch.sv`, #684 W): the
+/// walk round the drum, along each side's line and across each flat end, closing where it began,
+/// its sheet a tube cut at its four creases, built by the page's stepped builder as the export
+/// builds it.
+#[test]
+fn a_closed_characteristic_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/punch.sv".to_string()],true),1);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \

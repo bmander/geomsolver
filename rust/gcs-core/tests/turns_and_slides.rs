@@ -469,8 +469,10 @@ fn a_whole_turn_grooves_the_whole_ring() {
 /// a torus leaning toward the turn's axis, so that its own meets it, has a ring in contact all
 /// round, every normal of it through where the axes meet, at which its characteristic branches
 /// between two of the walk's stations (S1: the boundary leaves the walked branch there, which
-/// the field gate saw before this row did); and a torus slid through the rod's middle touches
-/// it all round its tube, a characteristic that closes on itself (S1). An engraving bit slid square
+/// the field gate saw before this row did); and a torus slid through the rod's middle touches it
+/// all round its tube, a characteristic that closes on itself (refused so until #684 W), but at the
+/// tube's top and bottom its rings are in contact all round, square to the slide, where the
+/// characteristic branches into the groove's flat sides (S1). An engraving bit slid square
 /// to its axis touches along the two lines of its cone square to the slide, which meet at its
 /// point, on its axis: every normal of the cone round the point is in contact there, and the
 /// groove's wall has a sharp edge along its path, which the class builds where the corner turns
@@ -484,6 +486,7 @@ fn the_turn_and_slide_rows_refuse_by_name() {
     assert!(branching.message.contains("in contact all round"),"{}",branching.message);
     let closed = refused(admit(&slid(0.,0.,Wheel::Torus)));
     assert_eq!(closed.condition,Condition::Regular,"{closed}");
+    assert!(closed.message.contains("`wheel.tube` is in contact all round a ring"),"{}",closed.message);
     let pointed = refused(admit(&slid(0.,4.,Wheel::Bit)));
     assert_eq!(pointed.condition,Condition::Regular,"{pointed}");
     assert!(pointed.message.contains("`wheel.flank` meets the tool's axis at an apex of its profile"),"{}",pointed.message);

@@ -532,6 +532,35 @@ mm; S1 before, #684 AF), each STL agreeing with the field; the refusal in
 `turns_and_slides::the_turn_and_slide_rows_refuse_by_name` (an engraving bit slid square, S1,
 apex); and `object_builder::a_sharp_edge_along_one_points_path_builds_at_the_displays_samples`.
 
+**A characteristic that closes on itself (#684 W):** where the walk comes round to the root it
+began at (`next == seed`, the walk back taken first as before), or the walk ahead comes round onto
+a root the walk back took (`met`, the loop leaving the blank for fewer rings than two `MARGIN`s),
+the characteristic closes on itself within the blank's reach, a tool passed wholly through it:
+`Pass::order` is the loop, its last root its first, and `Characteristic::closed` says so. The loop
+is begun at a root within one piece's stretch on no fan, so the nodes neither start on a crossing
+nor at a fan they drop, and the nodes are then begun again at their first crease (`creases`), the
+last node that node again, `sharp`'s indices moved with them; `reach` is every node. S1 refuses a
+loop with no crease (`SMOOTH_LOOP`: its sheet would close where it is smooth; no case reaches it)
+and one under a whole turn (`WHOLE_LOOP`: a sheet closed both ways, no edge). S2's ring rule and
+every-root rule, S1's spread and S3 are asked as of any stretch (S3 not at the crease node 0);
+S4's section is read as a closed polygon (`crossing_of`, its first and last segments neighbours);
+`fans`, `lined` and `flats` read the nodes after the first (`walked`). `helical_sheet` lays twice
+`FIRST_ROWS`, forces its last row to its first, withholds no side contact on either, asks only the
+columns' ends clear of the blank, adds a cut at its middle row where the loop has no crease but
+the first, and cuts the sheet by `Fitted::named`'s `closed` into bands that close on each other
+(`brep::build::grid_sheet` with `closed: [true, _]`; N's ring is `[_, true]`). The native path
+refuses it by name. The gate is `solid_sweeps_examples::the_drum_punches_its_shadow_through_a_plate`
+(`solid_sweeps/punch.sv`, a drum pushed edge first through a plate, `8 × 4 × 4` exactly) and
+`tests/closed_characteristics.rs` (`a_drum_turned_through_a_ring_sector_bores_a_tunnel`, Pappus within
+1e-5; `a_bull_nosed_drum_punches_its_shadow_rounded`, within 2e-6 at 0.001 mm), each STL agreeing
+with the field; `brep::a_net_closed_along_its_rows_is_a_tube_of_faces` (a cylinder's net closed along
+its rows cut four round and two along, its core π r² h); the refusals
+`closed_characteristics::what_a_closed_characteristic_still_refuses` (a whole turn, S1; screwed, S2;
+a prism aslant wholly through, S1 over a cap; a prism turned wholly within, S1 a rim's ruling) and
+`turns_and_slides::the_turn_and_slide_rows_refuse_by_name` (a torus slid through the rod's middle,
+its rings at the tube's top and bottom in contact all round, S1); and
+`object_builder::a_closed_characteristic_builds_at_the_displays_samples`.
+
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting
 plane, where the prism runs both ways from it: below) is

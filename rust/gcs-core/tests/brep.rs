@@ -1037,7 +1037,7 @@ fn a_grid_creased_along_a_row_is_its_stretches_fits_joined_there() {
     }).fold(0_f64,f64::max);
     assert!(off(&net) < 1e-12,"{}",off(&net));
     assert!(off(&interpolate_net(&pts,rows,cols,kind).unwrap()) > 1e-2);
-    let sheet = gcs_core::brep::build::grid_sheet(&net,&[0.,tu[crease],1.],&[0.,1.],&["floor".into(),"wall".into()],false).unwrap();
+    let sheet = gcs_core::brep::build::grid_sheet(&net,&[0.,tu[crease],1.],&[0.,1.],&["floor".into(),"wall".into()],[false,false]).unwrap();
     assert_eq!((sheet.faces.len(),sheet.edges.len(),sheet.vertices.len()),(2,7,6));
 }
 
@@ -1057,9 +1057,51 @@ fn a_net_closed_round_an_axis_is_a_ring_of_faces() {
     let net = interpolate_net(&pts,rows,cols,Parametrization::ChordLength).unwrap();
     let [[a,z],[c,d]] = net.domain();
     let vs: Vec<f64> = (0..=4).map(|k| c+(d-c)*k as f64/4.).collect();
-    let sheet = gcs_core::brep::build::grid_sheet(&net,&[a,(a+z)/2.,z],&vs,&["low".into(),"high".into()],true).unwrap();
+    let sheet = gcs_core::brep::build::grid_sheet(&net,&[a,(a+z)/2.,z],&vs,&["low".into(),"high".into()],[false,true]).unwrap();
     assert_eq!((sheet.faces.len(),sheet.edges.len(),sheet.vertices.len()),(8,20,12));
     assert_eq!(sheet.faces.iter().filter(|f| f.name == "high").count(),4);
+    let mut uses = vec![0;sheet.edges.len()];
+    for f in &sheet.faces {
+        for c in &f.loops[0] {
+            uses[c.edge as usize] += 1;
+            let e = &sheet.edges[c.edge as usize];
+            for t in [0.,0.3,0.7,1.] {
+                let x = e.t[0]+(e.t[1]-e.t[0])*t;
+                let uv = c.pcurve.at(x,e,&f.surface,&sheet.vertices);
+                assert!(gcs_core::space::distance(f.surface.point(uv),e.point(x,&sheet.vertices)) < 1e-9);
+            }
+        }
+    }
+    assert_eq!((uses.iter().filter(|&&n| n == 1).count(),uses.iter().filter(|&&n| n == 2).count()),(8,12));
+    let block = prism(&gcs_core::brep::build::square([0.;3],[0.,0.,1.],4.),-2.,2.).unwrap();
+    let mut cells: Vec<f64> = gcs_core::brep::boolean::split(&block,&sheet,1e-6).unwrap().iter().map(volume).collect();
+    cells.sort_by(f64::total_cmp);
+    let core = PI*9.*4.;
+    assert_eq!(cells.len(),2,"{cells:?}");
+    assert!((cells[0]-core).abs() < 1e-5*core && (cells[1]-(256.-core)).abs() < 1e-5*core,"{cells:?} against {core}");
+}
+
+/// A net closed the other way, along its rows, is cut into a tube of faces (`build::grid_sheet`,
+/// #684 W): the same cylinder, its rows now once round, the last its first, as a sheet along a
+/// characteristic that closes on itself is, and its columns up it; cut four round and in two up it.
+/// Each face's edges are its neighbours' and the last round closes on the first's, so only the
+/// rims' edges are used once; each use's pcurve lies on its edge; and the block it splits leaves
+/// the core, π r² h, and the rest.
+#[test]
+fn a_net_closed_along_its_rows_is_a_tube_of_faces() {
+    use gcs_core::brep::nurbs::{interpolate_net,Parametrization};
+    let (rows,cols) = (37,7);
+    let pts: Vec<V> = (0..rows).flat_map(|i| (0..cols).map(move |j| {
+        let a = TAU*(i%(rows-1)) as f64/(rows-1) as f64;
+        [3.*a.cos(),3.*a.sin(),-5.+10.*j as f64/(cols-1) as f64]
+    })).collect();
+    let net = interpolate_net(&pts,rows,cols,Parametrization::ChordLength).unwrap();
+    let [[a,z],[c,d]] = net.domain();
+    let us: Vec<f64> = (0..=4).map(|k| a+(z-a)*k as f64/4.).collect();
+    let names: Vec<String> = (0..4).map(|k| format!("quarter {k}")).collect();
+    let sheet = gcs_core::brep::build::grid_sheet(&net,&us,&[c,(c+d)/2.,d],&names,[true,false]).unwrap();
+    assert_eq!((sheet.faces.len(),sheet.edges.len(),sheet.vertices.len()),(8,20,12));
+    assert!(gcs_core::brep::build::grid_sheet(&net,&[a,z],&[c,d],&names[..1],[true,false]).is_err(),"one face round is refused");
     let mut uses = vec![0;sheet.edges.len()];
     for f in &sheet.faces {
         for c in &f.loops[0] {

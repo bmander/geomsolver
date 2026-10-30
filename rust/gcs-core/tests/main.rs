@@ -50,6 +50,7 @@ mod choice;
 mod claim;
 mod claim_witness;
 mod clockwise_arc;
+mod closed_characteristics;
 mod closed_scopes;
 mod collapsed_side;
 mod collapsed_space;

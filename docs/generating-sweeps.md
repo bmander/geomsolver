@@ -107,9 +107,10 @@ One refusal is the limits' own:
 E1 holds as for a screw, so a slide passes the tool right through the blank and a turn swings it
 across from clear to clear, unless the turn is a whole one (below). A flat face the motion keeps
 in its own plane (a disc square to the turn, a face along the slide) is walked across its line
-where it reaches the blank (below, #684 O). Still refused: a ring in contact all round at a
-sampled station (S1); and a characteristic that closes on itself within the blank's reach, a tool
-passed wholly through it (S1). A prism tool is read along its rulings (below, #684 M). A ball under
+where it reaches the blank (below, #684 O), and a characteristic that closes on itself within the
+blank's reach, a tool passed wholly through it, is built as a tube (below, #684 W). Still refused:
+a ring in contact all round at a sampled station (S1). A prism tool is read along its rulings
+(below, #684 M). A ball under
 a turn or a slide is still its tube (`solid::canal`, below), never asked these rows.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate: a torus slid up a
 rod, square (its tube's lens, `rust/examples/solid_sweeps/slide.sv`) and tilted, a cylinder slid
@@ -530,6 +531,61 @@ refused now: an engraving bit slid square to its axis, its point on its axis (S1
 `turns_and_slides.rs`), and as before a corner's or a rim's root running into a vertex of a prism,
 where three faces meet (S1, `VERTEX`, `prism_twists.rs`). `tests/object_builder.rs` builds
 `vgroove.sv` at the page's samples.
+
+### A characteristic that closes on itself (issue #684 W)
+
+A tool passed wholly through the blank — a drum pushed edge first through a plate, a drum turned
+through a ring with its axis along the turn's — touches it along a curve that closes on itself:
+the walk, going round the tool's profile from face to face, comes back to the root it began at
+without ever leaving the blank for `MARGIN` rings. The stretch the class sweeps is then the whole
+loop (`Characteristic::closed`), and its sweep is a tube whose ends, its first and last columns,
+lie past the blank while it has no ends along the characteristic at all. The walk goes back from
+the seed first, as before; where it comes round to the seed the loop is closed there, and where
+instead the walk ahead comes round onto a root the walk back took (the loop leaving the blank for
+fewer rings than the two margins together), the loop is the seed, what ahead took and what back
+took up to there. The rows are asked of the loop as of any stretch: S1 and S2 of every root on it
+(two roots of a ring on the loop, a drum's side's two lines, lie either side of a flat's line, as
+a slot's walls do), S3 of every node, and S4 of its section as a **closed polygon**, its last point
+its first, so its first and last segments are neighbours and not a crossing.
+
+The loop's nodes are begun again at a crease (`Characteristic::creases`, #684 O and V), so the
+characteristic's first and last node, one point, stand where the sweep has a sharp edge anyway:
+its first is the node at the crease, its last the same node again (`reach` is all of them). The
+sheet (`brep::sweep::helical`) is laid as any constant twist's, its last row its first's to the bit,
+twice the first rows a stretch's (the loop passes the tool out one side and back the other), no
+withheld contact on that row, and only its columns' ends must leave the blank. Fitted as any (its
+first and last rows each one stretch's end of the creased fit), it is cut into faces at its
+creases (and at its middle row besides where it has but the one), every face's edges its
+neighbours', the last band closing on the first's (`Fitted::named`'s `closed`,
+`brep::build::grid_sheet` closed along `u`, as #684 N's ring is closed along `v`). The split, the
+cells and agreement are the class's, the sheet an annulus as a whole turn's is. The rows:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S1 | A characteristic that closes on itself passes a crease. | Its sheet is closed where its first and last rows meet, which the fit leaves continuous but not smooth; at a crease it is creased there anyway. No case of the class has closed smoothly: the loops met on revolutions without a crease turn back on a ring, or meet one in contact all round, each refused at S1 first. | The face the walk began on, and a point of it in the blank. |
+| S1 | A characteristic that closes on itself is not carried round a whole turn. | The sheet would close round the turn too, a ring with no edge, which the split does not cut a blank by. | The same. |
+
+The rows are sampled, as every row is. `rust/examples/solid_sweeps/punch.sv` is the case: a drum of
+radius 2 and length 8 lying on its side, pushed up through a plate 4 thick from clear below to
+clear above. Its side touches along its two lines square to the push and its flat ends, kept in
+their planes, along their diameters square to it, so the loop is a rectangle, creased at its four
+corners; the plate loses `8 × 4 × 4` exactly (`tests/solid_sweeps_examples.rs`). `tests/
+closed_characteristics.rs` holds the drum turned through `turn.sv`'s ring sector, its axis along the
+turn's, a tunnel of its section by Pappus, `π/3 (11² − 9²)/2` (8.7e-7), and a bull-nosed drum pushed
+through the plate, the slot its shadow with the corners rounded to 0.5, within 2e-6 at 0.001 mm
+(the fit over the four rounds, 1.9e-5 at 0.01 mm as the bull-nose mill's slot reads there); each STL
+agrees with the field. `tests/brep.rs` cuts a cylinder's net closed along its rows into a tube of
+faces that splits a block into its core. `turns_and_slides::the_turn_and_slide_rows_refuse_by_name`'s
+torus slid through the rod's middle, refused before as a closed characteristic, is refused now
+where its rings at the tube's top and bottom are in contact all round, the characteristic
+branching (S1). Refused (`closed_characteristics::what_a_closed_characteristic_still_refuses`): the
+drum turned a whole turn (S1, above); screwed, its flat ends kept in no plane, so both of each
+ring's points on its side reach the blank with no flat between them (S2); a bar pushed aslant wholly through, its silhouette turning at a vertex of
+the prism to run over a cap (S1, #684 AE's row); and a small bar turned wholly within the sector,
+a ruling of its outer rim in contact all along it (S1, #684 AF's row) — a prism turned wholly
+within stands farthest from the axis at a vertex, where three faces meet. (Pushed square to its length the bar
+keeps its section's plane and is the planar subtraction class's.) The row for a loop with no
+crease has met no case. `tests/object_builder.rs` builds `punch.sv` at the page's samples.
 
 ### A rack (issue #61)
 

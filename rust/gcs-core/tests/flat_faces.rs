@@ -21,7 +21,7 @@ use crate::turns_and_slides::{admit,exported,exported_at,near,refused};
 /// A block 20 × 10 × 10 (x 0 to 20, y −5 to 5, z 0 to 10) and an end mill of radius `r`, its axis
 /// upright through (−5, `y`), its flat bottom at `z` and its top 8 above, slid 30 along x over the
 /// roll, from clear before the block to clear past it (`solid_sweeps/slot.sv`'s, its axis set across).
-fn slid_mill(r: f64,y: f64,z: f64) -> String {
+pub(crate) fn slid_mill(r: f64,y: f64,z: f64) -> String {
     format!("unit mm
 use std
 use std.place (coords)
@@ -78,7 +78,7 @@ slot cut part
 /// standing upright `d` from z, its flat bottom of radius `r` at height `z` and its side running
 /// to radius `top` 4 above (a cone, or where `top` is `r` a cylinder), turned about z over the roll
 /// from −140° to 140°, clear of the block at both ends.
-fn turned_mill(r: f64,top: f64,d: f64,z: f64) -> String {
+pub(crate) fn turned_mill(r: f64,top: f64,d: f64,z: f64) -> String {
     format!("unit mm
 use std
 use std.place (coords)
