@@ -353,7 +353,9 @@ placement carries inside the blank; CLI test readers zero the offset.
   `Document.solids()` names them (a solid has no proxy).  `tests/mesh.rs`
   is the gate and asserts the *before* as well as the after.
 - **A mesh is cut to the object and a volume to the report** (`solid::mesh_unit`, `MESH_SAGITTA`).
-  `REPORT_UNIT` makes a *volume* good to 1e-4; a mesh is cut to a sagitta that fraction of the
+  An exact solid reports its B-rep's own volume and area, its faces' fluxes and areas summed
+  (`EvaluatedSolid::volume`, `area`; `solid_lang::a_reported_area_is_the_exact_solids`); for any
+  other, `REPORT_UNIT` makes a *volume* good to 1e-4; a mesh is cut to a sagitta that fraction of the
   *solid's own diagonal* (scale-free), asked of the primitives' boxes.  `gcs_solid_mesh_unit`
   publishes it, and **a unit at or below zero *is* that choice**, resolved at the one seam
   (`Sketch::cut_unit`, read by `solid_boundary`, `solid_edges`, `solid_mesh`) — never per entry

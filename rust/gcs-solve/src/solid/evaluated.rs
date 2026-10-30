@@ -854,8 +854,16 @@ impl EvaluatedSolid {
             _ => mesh::volume(self.boundary()),
         }
     }
+    /// The area of the solid's boundary: its exact B-rep's faces where it has one (as `volume`
+    /// reads its exact volume), else its facets'.
     pub fn area(&self) -> f64 {
-        mesh::area(self.boundary())
+        match &self.shape.exact {
+            Some((x, _)) => {
+                let b = &x.brep;
+                b.faces.iter().map(|f| crate::brep::props::area(b, f)).sum::<f64>() / (x.mm * x.mm)
+            }
+            None => mesh::area(self.boundary()),
+        }
     }
     /// **The edges a view draws, looking along `-eye`** (the solid's own coordinates): every
     /// corner, and a smooth seam only where the surface turns away from the eye across it — or,
