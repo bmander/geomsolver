@@ -59,53 +59,6 @@ impl TinyTriangles {
     }
 }
 
-/// A cell of a blank's partition as the cell contract reads it: its volume (mm³) and a point
-/// inside it (mm).
-#[derive(Clone,Copy,Debug)]
-pub struct CellVolume { pub volume: f64,pub point: V }
-
-/// No cell of a partition may be smaller than this (mm³): a sliver of near-tangent surfaces.
-pub const LEAST_CELL: f64 = 1e-3;
-
-/// The cell contract after classification: one removed cell per placement of each sweep, the
-/// cells of one sweep congruent (its placements are rigid copies, so a cell that differs was
-/// cut by something else: a neighbour, a tangent face), and no cell below a size floor (a
-/// sliver the kernel made of near-tangent surfaces). The removed volumes are compared as a
-/// set, since a cell does not say which placement cut it; a body whose placements cut unequal
-/// amounts from an asymmetric blank would need them told apart first.
-///
-/// `placements` holds each sweep's count. Several sweeps placed at the same indices (a crown
-/// and a relief beside it) cut each other's cells: their removed cells then fall into
-/// congruence classes of one cell per index each, however many classes the sheets' crossings
-/// make. Sweeps placed different numbers of times are not told apart and are refused.
-pub fn cells(kept: &[CellVolume],removed: &[CellVolume],placements: &[usize]) -> Result<(),String> {
-    if let Some(cell) = kept.iter().chain(removed).find(|c| c.volume < LEAST_CELL) {
-        return Err(format!("the split left a cell of {:.3e} mm³, under the {LEAST_CELL} mm³ floor, near {:?}",
-            cell.volume,cell.point.map(|x| (x*1e3).round()/1e3)));
-    }
-    let [each,..] = placements else { return Err("a split with no sweep".into()) };
-    if placements.iter().any(|n| n != each) {
-        return Err(format!("the sweeps are placed {placements:?} times: a cell contract needs one count"));
-    }
-    if placements.len() == 1 && removed.len() != *each {
-        return Err(format!("the split removed {} cells for {} placements",removed.len(),each));
-    }
-    let mut volumes: Vec<f64> = removed.iter().map(|c| c.volume).collect();
-    volumes.sort_by(f64::total_cmp);
-    let mut classes: Vec<Vec<f64>> = Vec::new();
-    for v in volumes {
-        match classes.last_mut() {
-            Some(class) if v <= class[0]*(1.+1e-4) => class.push(v),
-            _ => classes.push(vec![v]),
-        }
-    }
-    if placements.len() == 1 && classes.len() > 1 {
-        return Err(format!("the removed cells are not congruent: {:.6} to {:.6} mm³",classes[0][0],
-            classes.last().unwrap().last().unwrap()));
-    }
-    if let Some(class) = classes.iter().find(|c| c.len() != *each) {
-        return Err(format!("the split removed {} cells in {} classes for {} placements of {} sweeps: {} of {:.6} mm³",
-            removed.len(),classes.len(),each,placements.len(),class.len(),class[0]));
-    }
-    Ok(())
-}
+/// The cell contract after classification, and what it reads of a cell: the kernel's
+/// (`cad_kernel::sweep::cells`), where the split it judges is made.
+pub use cad_kernel::sweep::cells::{CellVolume,LEAST_CELL,cells};

@@ -3,7 +3,8 @@
 use crate::util::fmath::Det;
 use super::surface::RevolvedSurface;
 use crate::sweep::{envelope::{self,Contact,Error,Motion,SurfacePoint},motion::Family};
-use crate::util::space::{add,lerp,scale,sub};
+use crate::util::space::{add,dot,lerp,norm,scale,sub};
+use std::f64::consts::TAU;
 use std::sync::Arc;
 
 /// **A tool's material**: its signed distance at a point, negative inside — what tells a tool
@@ -335,5 +336,216 @@ impl SweepContacts {
             }
             Ok(TimedContact {root,contact})
         }).collect()
+    }
+}
+
+/// One primitive of a tool as a reader made its faces: a full revolution's, loop by loop in its
+/// profile's order, a line on its axis (which turns to no face) `None`; a prism's sides loop by
+/// loop, and its caps (its `start`, then its `end`); or a drafted prism's sides, half by half and
+/// loop by loop — the faces a sweep's contacts are read over, before any placement.
+#[derive(Clone,Debug)]
+pub enum Faces {
+    Revolved(Vec<Vec<Option<RevolvedSurface>>>),
+    Prism { sides: Vec<Vec<ExtrudedSurface>>,caps: [CapSurface;2] },
+    Drafted(Vec<Vec<Vec<ExtrudedSurface>>>),
+}
+
+/// **A sweep's tool**, as plain data: a profile of lines and arcs (`build::Profile`) turned once
+/// about a line in its plane, through `origin` along `axis`; a profile swept along its normal from
+/// `from` to `to` (ordinates along it from the profile's plane), its sides leaning `draft` radians
+/// into its material away from that plane where there is one (`build::drafted`'s); a union or an
+/// intersection of tools; a tool carried by a fixed placement (`placed`); or faces a caller's own
+/// reader made (`Read`), the same faces met twice under one placement read once. `name` names its
+/// faces (`name.edge`, by the profile's edge names, `edge{k}` where it has none), as a refusal or
+/// a cut face says them.
+#[derive(Clone,Debug)]
+pub enum Tool {
+    Revolved { name: String,profile: crate::build::Profile,origin: V,axis: V },
+    Prism { name: String,profile: crate::build::Profile,from: f64,to: f64,draft: Option<f64> },
+    Union(Vec<Tool>),
+    Intersection(Vec<Tool>),
+    Placed(Motion,Box<Tool>),
+    Read(Arc<Faces>),
+}
+
+/// What a tool's walk gathers: its faces placed, each profile loop's faces in order (a line on an
+/// axis `None`), and a drafted prism's creases.
+#[derive(Default)]
+struct Gathered { patches: Vec<ToolSurface>,loops: Vec<Vec<Option<usize>>>,creases: Vec<[usize;2]> }
+
+impl Tool {
+    /// `tool` carried by the rigid placement `m`.
+    pub fn placed(m: &crate::geom::Rigid,tool: Tool) -> Tool {
+        Tool::Placed(Motion::of_parts(m.r,[[0.;3];3],m.t,[0.;3]),Box::new(tool))
+    }
+
+    /// A primitive's faces, before any placement: a revolution's, a prism's, or what a reader made.
+    pub fn faces(&self) -> Result<Arc<Faces>,String> {
+        use crate::build::{walks,offset};
+        use crate::geom::{Curve,Frame};
+        // each step of a walk as a revolution's generating edge or a prism's profile edge
+        let profile_edge = |s: &crate::build::Seg| -> Result<ProfileEdge,String> {
+            match &s.curve {
+                Curve::Line {..} => Ok(ProfileEdge::Line {start:s.start(),delta:sub(s.end(),s.start())}),
+                Curve::Circle(f,r) => {
+                    let (t0,t1) = (s.t[0],s.t[1]);
+                    let turn = (t1-t0).signum();
+                    let (sn,cs) = t0.dsin_cos();
+                    let a = add(scale(f.x,r*cs),scale(f.y,r*sn));
+                    let b = scale(add(scale(f.x,-r*sn),scale(f.y,r*cs)),turn);
+                    Ok(ProfileEdge::Round {center:f.o,a,b,sweep:(t1-t0).abs()})
+                }
+                _ => Err("a tool's profile is lines and arcs: a spline's sweep is not read".into()),
+            }
+        };
+        let named = |name: &str,p: &crate::build::Profile,l: usize,k: usize| {
+            let edge = p.name(l,k);
+            let edge = if !edge.is_empty() { edge } else if l == 0 { format!("edge{k}") } else { format!("loop{l}.edge{k}") };
+            if name.is_empty() { edge } else { format!("{name}.{edge}") }
+        };
+        match self {
+            Tool::Read(faces) => Ok(faces.clone()),
+            Tool::Revolved {name,profile,origin,axis} => {
+                let a = crate::util::space::unit(*axis);
+                let normal = crate::util::space::unit(profile.normal);
+                if !(norm(a) > 0.) || dot(a,normal).abs() > 1e-9 { return Err(format!("`{name}`: a revolution's axis lies in its profile's plane")) }
+                let plane = Frame::about(profile.origin,normal);
+                let coords = |q: V| { let l = plane.local(q); [l[0],l[1]] };
+                let off_axis = |q: V| { let d = sub(q,*origin); norm(sub(d,scale(a,dot(d,a)))) };
+                let loops = walks(profile,&coords)?.iter().enumerate().map(|(l,walk)| walk.iter().map(|s| {
+                    if matches!(s.curve,Curve::Line {..}) && off_axis(s.start()) <= super::AXIS_TOLERANCE
+                        && off_axis(s.end()) <= super::AXIS_TOLERANCE { return Ok(None) }
+                    let meridian = match profile_edge(s)? {
+                        ProfileEdge::Line {start,delta} => super::surface::Meridian::Line {start,delta},
+                        ProfileEdge::Round {center,a,b,sweep} => super::surface::Meridian::Round {center,a,b,sweep},
+                    };
+                    Ok(Some(RevolvedSurface::new(named(name,profile,l,s.source),meridian,*origin,a,TAU)))
+                }).collect::<Result<Vec<_>,String>>()).collect::<Result<Vec<_>,_>>()?;
+                Ok(Arc::new(Faces::Revolved(loops)))
+            }
+            Tool::Prism {name,profile,from,to,draft} => {
+                let n = crate::util::space::unit(profile.normal);
+                let plane = Frame::about(profile.origin,n);
+                let coords = |q: V| { let l = plane.local(q); [l[0],l[1]] };
+                let depth = scale(n,to-from);
+                if !(norm(depth) > 0.) { return Err(format!("`{name}`: a prism of no depth")) }
+                let lifted = |e: ProfileEdge,h: f64| e.placed(Motion::of_parts([[1.,0.,0.],[0.,1.,0.],[0.,0.,1.]],[[0.;3];3],
+                    scale(n,h),[0.;3]));
+                let walked = walks(profile,&coords)?;
+                if let Some(draft) = draft.filter(|d| *d != 0.) {
+                    // each half from one ordinate to the other, its sides between the profile moved
+                    // `|h| tan draft` into its material at each (`build::offset`), side for side
+                    let (lo,hi) = (from.min(*to),from.max(*to));
+                    let halves = if lo < 0. && hi > 0. { vec![[lo,0.],[0.,hi]] } else { vec![[lo,hi]] };
+                    let section = |h: f64| -> Result<Vec<Vec<crate::build::Seg>>,String> {
+                        walks(&offset(profile,-h.abs()*draft.dtan())?,&coords)
+                    };
+                    let halves = halves.into_iter().map(|[h0,h1]| {
+                        let (near,far) = (section(h0)?,section(h1)?);
+                        if near.len() != walked.len() || far.len() != walked.len()
+                            || (0..walked.len()).any(|l| near[l].len() != walked[l].len() || far[l].len() != walked[l].len()) {
+                            return Err(format!("`{name}`: its draft takes a side of its profile to nothing"))
+                        }
+                        (0..walked.len()).map(|l| (0..walked[l].len()).map(|k| Ok(ExtrudedSurface::new(named(name,profile,l,walked[l][k].source),
+                            lifted(profile_edge(&near[l][k])?,h0),Side::Leaning(lifted(profile_edge(&far[l][k])?,h1))))).collect()).collect()
+                    }).collect::<Result<Vec<_>,String>>()?;
+                    return Ok(Arc::new(Faces::Drafted(halves)))
+                }
+                let sides = walked.iter().enumerate().map(|(l,walk)| walk.iter().map(|s| Ok(ExtrudedSurface::new(named(name,profile,l,s.source),
+                    lifted(profile_edge(s)?,*from),Side::Straight(depth)))).collect()).collect::<Result<Vec<_>,String>>()?;
+                // the caps over the box the profile lies in, a little past its points, `u × v` the
+                // profile's normal: outward at the farther cap along it, and at the nearer `v` runs back
+                let (mut lo,mut hi) = ([f64::INFINITY;2],[f64::NEG_INFINITY;2]);
+                for s in walked.iter().flatten() { for j in 0..=64 {
+                    let q = coords(s.curve.point(s.t[0]+(s.t[1]-s.t[0])*j as f64/64.));
+                    lo = [lo[0].min(q[0]),lo[1].min(q[1])]; hi = [hi[0].max(q[0]),hi[1].max(q[1])];
+                } }
+                let pad = 0.02*(hi[0]-lo[0]).max(hi[1]-lo[1]);
+                let (lo,hi) = (lo.map(|x| x-pad),hi.map(|x| x+pad));
+                let (u,v) = (scale(plane.x,hi[0]-lo[0]),scale(plane.y,hi[1]-lo[1]));
+                let at = |h: f64| plane.at([lo[0],lo[1],h]);
+                let cap = |h: f64,other: f64,end: bool| {
+                    let farther = h >= other;
+                    let edge = if end { "end" } else { "start" };
+                    CapSurface::new(if name.is_empty() { edge.to_string() } else { format!("{name}.{edge}") },end,
+                        if farther { at(h) } else { add(at(h),v) },u,if farther { v } else { scale(v,-1.) })
+                };
+                Ok(Arc::new(Faces::Prism {sides,caps:[cap(*from,*to,false),cap(*to,*from,true)]}))
+            }
+            Tool::Union(_) | Tool::Intersection(_) | Tool::Placed(..) => Err("a Boolean or a placement is no primitive".into()),
+        }
+    }
+
+    /// Every primitive's faces, placed as the tool's placements put them, depth first in the
+    /// order written: a reader's faces met again under the same placement are not read twice.
+    fn gather(&self,pose: Motion,seen: &mut Vec<(*const Faces,[[u64;3];4])>,out: &mut Gathered) -> Result<(),String> {
+        match self {
+            Tool::Union(tools) | Tool::Intersection(tools) => tools.iter().try_for_each(|t| t.gather(pose,seen,out)),
+            Tool::Placed(m,tool) => tool.gather(m.then(pose),seen,out),
+            _ => {
+                let faces = self.faces()?;
+                if let Tool::Read(_) = self {
+                    let columns: [[u64;3];4] = std::array::from_fn(|i| {
+                        let p = if i == 3 { pose.point([0.;3]) } else { let mut p = [0.;3]; p[i] = 1.; pose.vector(p) };
+                        p.map(f64::to_bits)
+                    });
+                    let key = (Arc::as_ptr(&faces),columns);
+                    if seen.contains(&key) { return Ok(()) }
+                    seen.push(key);
+                }
+                match &*faces {
+                    Faces::Revolved(loops) => for lp in loops {
+                        out.loops.push(lp.iter().map(|s| s.as_ref().map(|s| {
+                            out.patches.push(ToolSurface::Revolved(s.placed(pose)));
+                            out.patches.len()-1
+                        })).collect());
+                    },
+                    // a prism's sides, one an edge of its profile, then its caps, square to the
+                    // extrusion, which admission asks only where one reaches the blank (#684 F)
+                    Faces::Prism {sides,caps} => {
+                        for lp in sides {
+                            out.loops.push(lp.iter().map(|s| {
+                                out.patches.push(ToolSurface::Extruded(s.placed(pose)));
+                                Some(out.patches.len()-1)
+                            }).collect());
+                        }
+                        out.patches.extend(caps.iter().map(|c| ToolSurface::Cap(c.placed(pose))));
+                    }
+                    // a drafted prism's sides, each a plane or a cone between its two sections
+                    // (#684 G), and where it runs both ways from its parting plane each side's
+                    // halves' crease there (#684 P); its caps are admission's to keep out of the blank
+                    Faces::Drafted(halves) => {
+                        let start = out.patches.len();
+                        for sides in halves.iter().flatten() {
+                            out.loops.push(sides.iter().map(|side| {
+                                out.patches.push(ToolSurface::Extruded(side.placed(pose)));
+                                Some(out.patches.len()-1)
+                            }).collect());
+                        }
+                        // the halves side for side alike, the second's sides the first's as many on
+                        if halves.len() == 2 {
+                            let n = (out.patches.len()-start)/2;
+                            out.creases.extend((start..start+n).map(|a| [a,a+n]));
+                        }
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl SweepContacts {
+    /// The contacts of `tool` (`material` its material, `Tool::material` where the tool is plain
+    /// data) under `motion` over `roll`: every primitive's faces placed, the edges where adjacent
+    /// faces of a profile loop meet, a drafted prism's creases — and a turn carried round a whole
+    /// turn or more read once round (#684 N), as it sweeps what one whole turn does.
+    pub fn of_tool(tool: &Tool,material: Arc<dyn Material>,motion: Family,roll: [f64;2]) -> Result<Self,String> {
+        let mut gathered = Gathered::default();
+        tool.gather(Motion::identity(),&mut Vec::new(),&mut gathered)?;
+        let Gathered {patches,loops,creases} = gathered;
+        let edges = PatchEdge::of_loops(&patches,&loops)?;
+        let once = motion.twist().and_then(|screw| super::characteristic::once_round(&screw,roll));
+        Ok(SweepContacts::new(material,patches,edges,creases,motion,once.unwrap_or(roll),once.is_some()))
     }
 }

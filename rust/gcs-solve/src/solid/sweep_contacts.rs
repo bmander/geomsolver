@@ -7,9 +7,9 @@
 use crate::fmath::Det;
 use super::{SpatialField,RevolvedSurface};
 pub use cad_kernel::sweep::tool::*;
-use crate::{envelope::Motion,model::{EntRef,Sketch,SolidDef,EntKind},motion::Family};
+use crate::{model::{EntRef,Sketch,SolidDef,EntKind},motion::Family};
 use crate::space::{add,scale,sub};
-use std::{collections::BTreeSet,f64::consts::TAU,sync::Arc};
+use std::{collections::BTreeMap,f64::consts::TAU,sync::Arc};
 
 impl Material for SpatialField {
     fn value(&self,p: [f64;3]) -> f64 { SpatialField::value(self,p) }
@@ -159,90 +159,54 @@ fn contacts(sk: &Sketch,solid: usize,axis_tolerance: f64) -> Result<SweepContact
         return Err("contact construction requires a continuous swept solid".into());
     };
     let source_field = SpatialField::read(sk,*source as usize,axis_tolerance)?;
-    let mut pending = vec![(*source as usize,Motion::identity())];
-    let mut seen = BTreeSet::new();
-    let mut patches = Vec::new();
-    let mut loops = Vec::new();
-    let mut creases: Vec<[usize;2]> = Vec::new();
-    while let Some((id,pose)) = pending.pop() {
-        let columns: [[u64;3];4] = std::array::from_fn(|i| {
-            let p = if i == 3 { pose.point([0.;3]) } else {
-                let mut p = [0.;3]; p[i] = 1.; pose.vector(p)
-            }; p.map(f64::to_bits)
-        });
-        if !seen.insert((id,columns)) { continue; }
-        match &sk.solids[id].def {
-            SolidDef::Revolve {face,..} => {
-                for (edges,_) in sk.faces[*face as usize].boundaries() {
-                    let mut order = Vec::with_capacity(edges.len());
-                    for &edge in edges {
-                        let surface = RevolvedSurface::read(sk,id,edge)?.placed(pose);
-                        let surface = ToolSurface::Revolved(surface);
-                        if edge.kind == EntKind::Line {
-                            let radius = |u| surface.at(u,0.).map(|p|
-                                p.dv[0].dhypot(p.dv[1]).dhypot(p.dv[2])/TAU);
-                            // A diameter on the axis disappears in a full revolution.
-                            if radius(0.).map_err(|e| format!("{e:?}"))? <= axis_tolerance
-                                && radius(1.).map_err(|e| format!("{e:?}"))? <= axis_tolerance { order.push(None); continue; }
-                        }
-                        order.push(Some(patches.len()));
-                        patches.push(surface);
+    let tool = tool(sk,*source as usize,axis_tolerance,&mut BTreeMap::new())?;
+    SweepContacts::of_tool(&tool,Arc::new(source_field),Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?)
+}
+
+/// Solid `id` as the kernel's tool: its revolutions' and prisms' faces read off the sketch, each
+/// solid's once (`read`, so the kernel reads a solid met twice under one placement once), under
+/// its Booleans — every operand's faces kept, a Boolean's hidden ones too, the tool's material
+/// rejecting those — and its placements.
+fn tool(sk: &Sketch,id: usize,axis_tolerance: f64,read: &mut BTreeMap<usize,Arc<Faces>>) -> Result<Tool,String> {
+    let faces = |faces: Faces,read: &mut BTreeMap<usize,Arc<Faces>>| Ok(Tool::Read(read.entry(id).or_insert_with(|| Arc::new(faces)).clone()));
+    if let Some(known) = read.get(&id) { return Ok(Tool::Read(known.clone())) }
+    match &sk.solids[id].def {
+        SolidDef::Revolve {face,..} => {
+            let mut loops = Vec::new();
+            for (edges,_) in sk.faces[*face as usize].boundaries() {
+                let mut order = Vec::with_capacity(edges.len());
+                for &edge in edges {
+                    let surface = RevolvedSurface::read(sk,id,edge)?;
+                    if edge.kind == EntKind::Line {
+                        let radius = |u| surface.at(u,0.).map(|p| p.dv[0].dhypot(p.dv[1]).dhypot(p.dv[2])/TAU);
+                        // A diameter on the axis disappears in a full revolution.
+                        if radius(0.).map_err(|e| format!("{e:?}"))? <= axis_tolerance
+                            && radius(1.).map_err(|e| format!("{e:?}"))? <= axis_tolerance { order.push(None); continue; }
                     }
-                    loops.push(order);
+                    order.push(Some(surface));
                 }
+                loops.push(order);
             }
-            // a region's faces, each step of its meridian turned (§6.21): its profile is the
-            // meridian, read as a revolution's
-            SolidDef::Region {..} => {
-                let m = super::region::meridian(sk,id)?;
-                for lp in RevolvedSurface::meridian_loops(&m,&sk.solids[id].name) {
-                    loops.push(lp.into_iter().map(|s| s.map(|s| {
-                        patches.push(ToolSurface::Revolved(s.placed(pose)));
-                        patches.len()-1
-                    })).collect());
-                }
-            }
-            // a drafted prism's sides, each a plane or a cone between its two sections (#684 G),
-            // and where it runs both ways from its parting plane each side's halves' crease there
-            // (#684 P); its caps are admission's to keep out of the blank (`admission::ends`)
-            SolidDef::Prism {draft:Some(_),..} => {
-                let (halves,start) = (drafted(sk,id)?,patches.len());
-                for sides in halves.iter().flatten() {
-                    loops.push(sides.iter().map(|side| {
-                        patches.push(ToolSurface::Extruded(side.placed(pose)));
-                        Some(patches.len()-1)
-                    }).collect());
-                }
-                // the halves side for side alike, the second's sides the first's as many on
-                if halves.len() == 2 {
-                    let n = (patches.len()-start)/2;
-                    creases.extend((start..start+n).map(|a| [a,a+n]));
-                }
-            }
-            // a prism's sides, one an edge of its profile, then its caps, square to the
-            // extrusion, which admission asks only where one reaches the blank (#684 F)
-            SolidDef::Prism {face,..} => {
-                for (edges,_) in sk.faces[*face as usize].boundaries() {
-                    let mut order = Vec::with_capacity(edges.len());
-                    for &edge in edges {
-                        order.push(Some(patches.len()));
-                        patches.push(ToolSurface::Extruded(extruded(sk,id,edge)?.placed(pose)));
-                    }
-                    loops.push(order);
-                }
-                patches.extend(caps(sk,id)?.map(|c| ToolSurface::Cap(c.placed(pose))));
-            }
-            SolidDef::Placed {source,motion,at} => pending.push((*source as usize,
-                Family::read(sk,*motion as usize)?.at(at.value)?.then(pose))),
-            SolidDef::Body {..} => pending.extend(sk.solids[id].operands().into_iter()
-                .rev().map(|id| (id as usize,pose))),
-            _ => return Err("contact construction requires static revolutions, prisms and Boolean operands".into()),
+            faces(Faces::Revolved(loops),read)
         }
+        // a region's faces, each step of its meridian turned (§6.21): its profile is the
+        // meridian, read as a revolution's
+        SolidDef::Region {..} => {
+            let m = super::region::meridian(sk,id)?;
+            faces(Faces::Revolved(RevolvedSurface::meridian_loops(&m,&sk.solids[id].name)),read)
+        }
+        SolidDef::Prism {draft:Some(_),..} => faces(Faces::Drafted(drafted(sk,id)?),read),
+        SolidDef::Prism {face,..} => {
+            let sides = sk.faces[*face as usize].boundaries().map(|(edges,_)| edges.iter().map(|&edge| extruded(sk,id,edge))
+                .collect::<Result<Vec<_>,_>>()).collect::<Result<Vec<_>,_>>()?;
+            faces(Faces::Prism {sides,caps:caps(sk,id)?},read)
+        }
+        SolidDef::Placed {source,motion,at} => {
+            let pose = Family::read(sk,*motion as usize)?.at(at.value)?;
+            Ok(Tool::Placed(pose,Box::new(tool(sk,*source as usize,axis_tolerance,read)?)))
+        }
+        SolidDef::Body {..} => Ok(Tool::Union(sk.solids[id].operands().into_iter()
+            .map(|o| tool(sk,o as usize,axis_tolerance,read)).collect::<Result<_,_>>()?)),
+        _ => Err("contact construction requires static revolutions, prisms and Boolean operands".into()),
     }
-    let edges = PatchEdge::of_loops(&patches,&loops)?;
-    // a whole turn or more sweeps what one whole turn does, a solid of revolution (#684 N): every
-    // reader of its contacts reads it once round
-    let (motion,roll) = (Family::read(sk,*motion as usize)?,super::roll::interval(sk,solid)?);
-    let once = motion.twist().and_then(|screw| super::constant_twist::once_round(&screw,roll));
-    Ok(SweepContacts::new(Arc::new(source_field),patches,edges,creases,motion,once.unwrap_or(roll),once.is_some()))
 }

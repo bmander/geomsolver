@@ -136,7 +136,7 @@ pub fn plan(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,sh
 pub fn cut(sk: &Sketch,body: usize,recipe: &StaticRecipe,prepared: &Prepared,sheets: &[sheet::Fitted],plan: Plan,say: &Say)
     -> Result<Cut,ExportRefusal> {
     Ok(match plan {
-        Plan::Sector(premises) => Cut::Sector(sector::construct(recipe,&prepared.distinct,premises,say).at(Stage::Split)?),
+        Plan::Sector(premises) => Cut::Sector(sector::construct(sk,body,recipe,&prepared.distinct,premises,say).at(Stage::Split)?),
         Plan::Whole(_) => Cut::Whole(sector::whole(sk,body,recipe,&prepared.blank,&prepared.distinct,sheets,prepared.field.scale(),say)
             .at(Stage::Split)?),
     })
