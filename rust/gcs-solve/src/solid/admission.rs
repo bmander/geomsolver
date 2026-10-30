@@ -37,8 +37,8 @@ impl Condition {
     pub fn rule(self) -> &'static str {
         match self {
             Condition::Tool => "the tool is a full revolution, or a prism (drafted or not), of lines and arcs, or an intersection \
-                of such, its caps clear of the blank unless it is an undrafted prism standing alone, or a union of tools each in \
-                the class",
+                of such, its caps clear of the blank unless it is an undrafted prism standing alone or placed, or a union of tools \
+                each in the class",
             Condition::Corner => "every profile corner the sweep carries into the blank is convex or tangent",
             Condition::Motion => "the motion is rotations about fixed axes at constant ratios, or one screw, turn or slide (a joint driven by a law alone read as its joint over the values the law reaches)",
             Condition::Stationary => "the contact condition depends on the motion",
@@ -693,10 +693,11 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
     };
     reads.extend(clear(&|s| s.cap().is_none())?);
     // T1 for a prism: a cap passing through the blank is cut only by a prism standing alone as the
-    // tool, its profile one loop, sectioned across (T3, #684 F); otherwise the class cuts with a
-    // prism's sides only (under a planar sweep a cap, square to the turn, is in contact at every
-    // time or none, and M2 refuses it). Each cap is asked by its rim, its sides' ends at `v` (a
-    // drafted side's end at its parting plane is no rim, but the crease its halves meet in, #684 P).
+    // tool or placed, its profile one loop, sectioned across (T3, #684 F, AC); otherwise the
+    // class cuts with a prism's sides only (under a planar sweep a cap, square to the turn, is in
+    // contact at every time or none, and M2 refuses it). Each cap is asked by its rim, its sides'
+    // ends at `v` (a drafted side's end at its parting plane is no rim, but the crease its halves
+    // meet in, #684 P).
     let mut capped = [false;2];
     for (end,v) in [(0,0.),(1,1.)] {
         let rim = c.patches().iter().enumerate()
@@ -706,8 +707,8 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
         let Some((name,p)) = rim else { continue };
         if lone.is_none() {
             return Err((Condition::Tool,format!("a cap of the prism `{name}` bounds passes through the blank, and the class cuts \
-                with a cap only of a prism standing alone as the tool, its profile one loop: make the prism longer than the blank \
-                is thick"),Some(p)));
+                with a cap only of a prism standing alone as the tool or placed, its profile one loop: make the prism longer \
+                than the blank is thick"),Some(p)));
         }
         capped[end] = true;
     }
@@ -715,18 +716,18 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
     Ok((reads,poses,capped))
 }
 
-/// A tool that is one prism standing alone, its profile one loop: what the class sections across
-/// where its cap reaches the blank (T3, #684 F) — its cutter (millimetres) and the model's
-/// millimetres a unit.
+/// A tool that is one prism standing alone or placed, its profile one loop: what the class
+/// sections across where its cap reaches the blank (T3, #684 F, AC) — its cutter (millimetres,
+/// carried by the placements) and the model's millimetres a unit.
 struct Lone { cutter: crate::brep::sweep::cutter::Cutter,scale: f64 }
 
 impl Lone {
-    /// Tool `source` as a lone prism, or none where it is not one.
+    /// Tool `source` as a lone prism, or none where it is not one: its cutter is the one reading
+    /// of it, undrafted (`prism_profile`) and its profile's walks its loops. A prism placed (`p in
+    /// f`, `p at(under: m) τ`) is one too, its cutter carried by its placements (#684 AC).
     fn read(sk: &Sketch,source: usize) -> Option<Lone> {
-        let SolidDef::Prism {face,draft:None,..} = &sk.solids[source].def else { return None };
-        if sk.faces.get(*face as usize)?.boundaries().count() != 1 { return None }
         let cutter = crate::brep::sweep::cutter::Cutter::read(&cad::recipe(sk,source).ok()?).ok()?;
-        cutter.prism_profile()?;
+        let ([_],_) = cutter.prism_profile()? else { return None };
         Some(Lone {cutter,scale:cad::millimetres(sk)})
     }
 

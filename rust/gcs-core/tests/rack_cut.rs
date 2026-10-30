@@ -67,6 +67,17 @@ fn admit(src: &str) -> Result<gcs_core::solid::admission::Admission, Error> {
     admit_body(&e.sketch, gear, &Options::default())
 }
 
+/// What the document `src`'s `gear` loses to its cut: the blank's disc less the exact solid's volume.
+fn removed(src: &str) -> f64 {
+    use gcs_core::brep::{export, sweep::Say};
+    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
+    let mut e = build(src);
+    gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
+    let gear = e.map.ent_named("gear").unwrap().i();
+    let exact = export::exact(&e.sketch, gear, None, None, &say).unwrap_or_else(|r| panic!("{}", r.message));
+    PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid)
+}
+
 /// **The rack's sweep is in the class.**  A prism tool (its sides extruded lines), a translation
 /// seen from a rotation, clear of the blank at both ends of the roll, each tool point touching
 /// once, no fold, no crossing: admitted, with contacts in the blank.
@@ -402,17 +413,24 @@ fn the_rack_cut_gear_example_is_admitted() {
 /// alone the generating class cuts, by its sheet.  What the two remove agrees to the fits'.
 #[test]
 fn the_tooth_united_with_itself_cuts_as_the_tooth_does() {
-    use gcs_core::brep::{export, sweep::Say};
-    let say = Say { stage: &|_: &str| {}, mark: &|_| {} };
     let twin = SPACE.replace("construction space := sweep(rack_tooth",
         "construction twin := solid(rack_tooth)\nconstruction both := solid(rack_tooth)\ntwin union both\nconstruction space := sweep(both");
-    let removed = |src: &str| {
-        let mut e = build(src);
-        gcs_core::solve::solve(&mut e.sketch, gcs_core::solve::SolveOpts::default());
-        let gear = e.map.ent_named("gear").unwrap().i();
-        let exact = export::exact(&e.sketch, gear, None, None, &say).unwrap_or_else(|r| panic!("{}", r.message));
-        PI * 22. * 22. * 6. - gcs_core::brep::props::volume(&exact.solid)
-    };
     let (sheet, region) = (removed(SPACE), removed(&twin));
     assert!((sheet - region).abs() < 1e-5 * sheet, "the sheet removes {sheet:.6} mm³, the region {region:.6}");
+}
+
+/// **A placed tooth is cut as the tooth is** (#684 AC): the tooth placed a quarter turn of the roll
+/// along the rack and rolled a quarter turn earlier cuts the same space turned a quarter turn round
+/// the blank. Its cutter is the tooth's profile carried by the placement (`Cutter::prism` follows
+/// the recipe's `placed` node to the prism), so the generating class's sheet is its planar envelope
+/// extruded as the tooth's is, and what the two remove agrees to the fits'.
+#[test]
+fn a_placed_tooth_cuts_as_the_tooth_does() {
+    let placed = SPACE.replace("construction space := sweep(rack_tooth over t in (-60deg, 60deg)",
+        "construction next := rack_tooth at(under: rack) 90deg\nconstruction space := sweep(next over t in (-150deg, -30deg)");
+    assert!(placed.contains("sweep(next"), "the placed tooth is swept");
+    let a = admit(&placed).unwrap_or_else(|r| panic!("{r}"));
+    assert!(matches!(a.sweeps()[0].class, gcs_core::solid::admission::Class::Generating), "the generating class");
+    let (tooth, next) = (removed(SPACE), removed(&placed));
+    assert!((tooth - next).abs() < 1e-5 * tooth, "the tooth removes {tooth:.6} mm³, the placed tooth {next:.6}");
 }
