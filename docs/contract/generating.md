@@ -329,14 +329,15 @@ the corners walked. `solid_sweeps_examples.rs` (`vthread.sv`, a V wheel ground a
 section computed apart from the core) and `turns_and_slides.rs` (a V wheel slid tilted, its shadow;
 slid square, refused at S1 for its sharp edge) are the gate, each STL held to the field.
 
-**A drafted prism tool (#684 G):** a drafted prism is in the generating class where it stays on
-one side of its parting plane and each corner joins two lines or goes on tangent: then each side is
+**A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
+joins two lines or goes on tangent: then each side (each half of it, either side of the parting
+plane, where the prism runs both ways from it: below) is
 the ruled surface between its edge's two end sections, a plane or a cone (`ExtrudedSurface::drafted`,
 from the field's `Sections`; `Sections::linear`), its points' normals their own, so its contacts are
 read as an undrafted side's and every row is asked of it. T1 refuses the rest by name: a prism
-running both ways from its plane (its sides turn there), an arc meeting a side at an angle, a side
-no line, arc or circle. The cutter sections it at a station as the blend of its two end sections
-(`cutter::Extruded::ends`, from `build::offset`), walked by the profile's lengths so a walk length
+drafted outward both ways from its plane (its sides meet there in a concave crease), an arc meeting
+a side at an angle, a side no line, arc or circle. The cutter sections it at a station as the blend of its two end sections
+(`cutter::Half::ends`, from `build::offset`), walked by the profile's lengths so a walk length
 is a ruling at every station (by its own, a shrinking section moved where contacts leave the roll's
 window and ended the chart in the blank); the sheet is traced, never the planar envelope extruded
 (`Cutter::prism_profile` is undrafted only). A drafted tool the generating rows refuse under a
@@ -347,6 +348,31 @@ which no planar class reads) are the gate: the drafted rack's and the helical ra
 2e-4 of arithmetic made apart (each section of the blank cut by the tooth's quadrilateral there,
 swept by `rack_cut`'s arithmetic), each STL agreeing with the field; a drafted slot's planes and
 cones on the tool's field; both T1 refusals.
+
+**A drafted prism running both ways from its parting plane (#684 P):** its sides fold at the plane,
+each side's two halves meeting in a convex crease across it at the profile itself, where every
+normal between theirs is the tool's: a fan, as a convex corner's is, that runs along the parting
+section. `ExtrudedSurface::drafted` reads it half by half (each half its section at the plane and
+at its own end, `caps` saying which of a side's ends lie on a cap), and `SweepContacts::creases`
+pairs each side's halves. Admission asks each half as a side; a half's end at the plane is no rim
+(T1 asks caps by their rims, `ToolSurface::meets_cap`); and the crease is asked as a rim is: each
+half's envelope stepped onto it and its fan stepped off running the same way (E3; a fan whose
+normals all touch at the half's instant, as under a motion keeping the profile's plane, carries
+the contact nowhere and steps no way), every fan normal touching the blank once (E2), the fans'
+contacts joining E4's. The cutter's stations cross the crease between the halves
+(`cutter::Drafted`, `Ordinate`): a station is the ordinate below the plane, its fan's turning laid
+as `CREASE_SCALE` (a millimetre a radian) of stations, and the ordinate above it that much
+further, so the sheet's columns are laid through the fan as through the extrusion; a fan laid much
+longer than the contacts it carries move in space (20 mm a radian) left columns on one curve and
+folded the fit. Drafted outward both ways, the crease is concave and T1 refuses it, as does the
+cutter. `drafted_tools.rs` and `solid_sweeps_examples.rs` (`parted.sv`, the helical tooth drafted
+2° both ways from the blank's mid-plane) are the gate: each space within 2e-4 of arithmetic made
+apart (each section of the blank cut by the tooth's eight half-planes, the material below the plane
+and above it of each side, swept by `rack_cut`'s arithmetic over pieces of the blank split where the
+crease passes the profile's corners), the rack's unleaned tooth too (a motion keeping its plane,
+the fan sweeping nothing, the halves' envelopes meeting in a ridge), each STL agreeing with the
+field; `object_builder::a_tooth_drafted_both_ways_builds_at_the_displays_samples` builds it in the
+page.
 
 **A union tool is its members (#684 C, #586):** a body cutting the sweep of a union — its tool a
 body that only puts solids on its stock, a union within one, or a placement of one — is admitted
@@ -395,7 +421,7 @@ height's space read apart from the core by `rack_cut`'s arithmetic and held to 1
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
 a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, its
-drafted helical rack and a prism's cap (`bar_end.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+drafted helical rack, a tooth drafted both ways (`parted.sv`) and a prism's cap (`bar_end.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;
 `every_example_is_held_and_named` fails a file the README does not name or no test reads. The

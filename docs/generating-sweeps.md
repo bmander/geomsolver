@@ -42,7 +42,7 @@ failure is reported with its witness.
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs, drafted or not (a drafted one on one side of its parting plane, its corners joining lines or going on tangent: below), or an intersection (`common`) of such, under fixed placements, its caps clear of the blank over the roll unless it is one undrafted prism standing alone (below, #684 F); or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. An intersection creates only convex creases. A prism within another tool, or drafted, cuts with its sides only (`ExtrudedSurface`); an undrafted prism alone is sectioned across where its cap reaches the blank (T3). | The first operand outside the class, a cut in the tool or a union within an intersection, the prism whose cap passes through the blank where it is not an undrafted prism alone, or the drafted prism and why its sides are not read. |
+| T1 | The tool is a full revolution with a line/arc/circle profile — a region solid among them, its profile its meridian (`solid::region::meridian`, its faces `RevolvedSurface::meridian_loops`, #209) — a prism of lines and arcs, drafted or not (a drafted one's corners joining lines or going on tangent, drafted inward where it runs both ways from its parting plane: below), or an intersection (`common`) of such, under fixed placements, its caps clear of the blank over the roll unless it is one undrafted prism standing alone (below, #684 F); or a union of such tools, each member swept alone (below). | Every face has closed-form contacts. An intersection creates only convex creases. A prism within another tool, or drafted, cuts with its sides only (`ExtrudedSurface`); an undrafted prism alone is sectioned across where its cap reaches the blank (T3). | The first operand outside the class, a cut in the tool or a union within an intersection, the prism whose cap passes through the blank where it is not an undrafted prism alone, or the drafted prism and why its sides are not read. |
 | T2 | Every profile vertex inside the swept region is convex or tangent. | A convex corner sweeps a fan of normals. A concave corner sweeps nothing, but it trims two envelopes against each other, which is not supported. | The vertex and its turning angle. |
 | M1 | The motion is one rotation about a fixed axis, or one rotation (or one translation) relative to another rotation (`motion(about: …)`, `motion(along: …)`, `motion(m, relative_to: n)`), at constant ratios, with a finite increasing roll. | This is the generating motion of a face-milled bevel or hypoid, including skew axes, and of a rack cutting a spur gear. | The motion node outside the class. |
 | M2 | Each tool point's contact condition changes over the roll, or holds a nonzero value. | Where it is zero throughout, the point is on the boundary at every time, and a contact time cannot parameterize the surface; a nonzero constant touches at no time and bounds nothing (#684 F: a prism's side square to a rack's line of centres). A single rotation is like that everywhere (its tool-frame twist is constant), so the generator's motion is a relative one. This is the native path's existing refusal. It is checked at the samples, at a pole (whose normal is the axis), and between samples: the equation is C + a cos + b sin in the roll, and where (a, b) turns right round between two samples, or winds round a sample cell, with roots on every side, a point there has C and the amplitude both zero. That happens where the tool's normal passes through the point where two meeting axes cross. | A tool point whose path reaches the blank. |
@@ -217,16 +217,18 @@ edge's sections at the prism's two ends: a plane where the edge is a line, a con
 (`ExtrudedSurface::drafted`, read through the field's `Sections`). A point of it has a normal of its
 own, the same along each ruling, so its contact condition is read by the motion in closed form as
 an undrafted side's is, and every row is asked of it as of any prism's side: the caps clear of the
-blank (T1), M2, E1–E4. T1 refuses, naming the prism and why its sides are not read:
+blank (T1), M2, E1–E4. A prism running both ways from its profile's plane is two such halves,
+folding where the draft parts (below, #684 P). T1 refuses, naming the prism and why its sides are
+not read:
 
-- a prism running both ways from its profile's plane, where the draft parts: its sides turn there,
-  a crease across each side, which the class does not sweep;
+- a prism drafted outward both ways from its profile's plane: its sides meet there in a concave
+  crease, which trims the two halves' envelopes against each other;
 - an arc meeting a side at an angle, a corner the draft moves along the curve its cone and the
   side meet in (`Sections::linear`; `build::drafted` does not build it either);
 - a side that is no line, arc or circle, or one the draft takes to nothing within the prism.
 
-The cutter sections a drafted prism at a station as the blend of its two end sections
-(`brep::sweep::cutter`, `Extruded::ends`, each walked step for step as the profile is), and walks
+The cutter sections a drafted prism at a station as the blend of its half's two end sections
+(`brep::sweep::cutter`, `Half::ends`, each walked step for step as the profile is), and walks
 it by the profile's lengths, not its own: a walk length then names the same fraction of each edge
 at every station, a ruling of each side, as it does along an undrafted prism whose section is the
 same at every station. The sheet's rows are walk lengths read across the stations, and walked by
@@ -247,6 +249,46 @@ Gauss–Legendre — 72.065 mm³ and 71.836 mm³ (undrafted 80.68 and 83.26), ea
 7e-5 of it and its STL agreeing with the field; a drafted slot's sides lying on the tool's field
 with its normal, its lines' planes and its arcs' cones; and both T1 refusals above, on the helical
 tooth, where no planar class takes the sweep instead.
+
+### A drafted prism running both ways from its plane (issue #684 P)
+
+A prism drafted from a parting plane it runs both ways from, as a tool forged or cast from a
+parting line is, is thickest at the plane: its section there is the profile, and each side's
+section moves `|h| tan draft` into the material either side. So each side is two halves, each the
+ruled surface between the profile and its own end's section, and they meet at the plane in a crease
+across the side. Drafted inward the crease is convex, and every normal between the two halves' is
+the tool's there: a fan, as a convex corner's is, but running along the parting section rather than
+along a profile corner. A point of the crease is on the boundary wherever one of those normals is
+square to its velocity, so the fan carries the contact from the one half's envelope, along the
+crease point's path, to the other's (`ExtrudedSurface::drafted` reads the halves,
+`SweepContacts::creases` pairs them). The halves are asked every row as sides are; a half's end at
+the plane is no cap's rim (T1). The crease is asked as a cap's rim is (#684 F): where a half's
+contact in the blank meets it, the half's envelope stepped onto the crease and the fan stepped off
+it must run the same way, or E3 refuses the fold; each fan normal touches the blank once (E2); and
+the fans' contacts join E4's. Under a motion keeping the profile's plane every normal of the fan is
+in contact at the instant both halves are, so the fan carries the contact nowhere, and the halves'
+envelopes meet in a ridge. Drafted outward, the crease is concave and trims the halves' envelopes
+against each other, which T1 refuses.
+
+The cutter's stations run along the extrusion and cross the crease's fan between the halves
+(`brep::sweep::cutter`, `Drafted`): a station below the plane is its ordinate, the fan's turning is
+laid as a millimetre of stations a radian (`CREASE_SCALE`), and a station above the plane is its
+ordinate that much further on, its section the blend of that half's two end sections. A fan's
+stations are the profile at the plane, each point's normal turned from the lower half's to the
+upper's. A draft's crease turns a few degrees, and its fan carries a contact only a little further
+along its point's path (a fraction of a degree of the roll on the case below), so its stretch of the
+sheet is about as long in space as in stations; laid at 20 mm a radian, it left columns standing on
+one curve, a fold of the fitted sheet.
+
+`rust/examples/solid_sweeps/parted.sv` is the case: `helical.sv`'s tooth, leaned 15° across the
+blank, drafted 2° both ways from a plane through the blank's middle. `tests/solid_sweeps_examples.rs`
+and `tests/drafted_tools.rs` are the gate: its space, 79.70 mm³ (the tooth drafted one way from the
+front cuts 71.84, the undrafted 83.26), and the unleaned rack tooth's drafted the same way, 77.40 mm³
+(undrafted 80.68), each within 2e-4 of arithmetic made apart from the core — each section of the
+blank square to its axis is what of a square the tooth's eight half-planes keep, each side's
+material below the plane and above it, swept by `rack_cut`'s arithmetic, over pieces of the blank
+split where the crease passes a corner of the profile — each STL agreeing with the field, and built
+in the page (`tests/object_builder.rs`). Drafted outward, the tooth is refused at T1.
 
 ### A prism's cap in the blank (issue #684 F)
 
