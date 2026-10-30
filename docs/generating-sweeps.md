@@ -300,7 +300,8 @@ tool (`ToolSurface::Cap`, read over the box the profile lies in), asked E1 and M
 sides where one reaches the blank, and the rims are read too: at each rim point where a face's
 contact in the blank meets the rim, the face's envelope stepped onto the rim and the fan stepped
 off it must run the same way (E3; where they do not, the fan sweeps back over the face's envelope,
-as a flat end swung on an arm does, its corners digging past it), and the fans' contacts join E4's.
+as a flat end swung on an arm does, its corners digging past it), each fan normal touches the blank
+once (E2), and the fans' contacts join E4's.
 Stations along the extrusion end at the cap, so the prism is sectioned across instead
 (`brep::sweep::cutter`, `Kind::Across`): a station is a distance along a direction in the
 profile's plane, its section the profile's chord there carried along the extrusion — the low cap's

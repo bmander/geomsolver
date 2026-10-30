@@ -353,9 +353,10 @@ cones on the tool's field; both T1 refusals.
 each side's two halves meeting in a convex crease across it at the profile itself, where every
 normal between theirs is the tool's: a fan, as a convex corner's is, that runs along the parting
 section. `ExtrudedSurface::drafted` reads it half by half (each half its section at the plane and
-at its own end, `caps` saying which of a side's ends lie on a cap), and `SweepContacts::creases`
+at its own end), and `SweepContacts::creases`
 pairs each side's halves. Admission asks each half as a side; a half's end at the plane is no rim
-(T1 asks caps by their rims, `ToolSurface::meets_cap`); and the crease is asked as a rim is: each
+(T1 asks caps by their rims, and a half's end in `creases` is none); and the crease is asked as a rim is, by one
+pass over both (`admission::Fan`): each
 half's envelope stepped onto it and its fan stepped off running the same way (E3; a fan whose
 normals all touch at the half's instant, as under a motion keeping the profile's plane, carries
 the contact nowhere and steps no way), every fan normal touching the blank once (E2), the fans'
@@ -400,7 +401,7 @@ refuses only a point in contact at every time (a constant nonzero condition touc
 side square to a rack's line of centres). At each point of a reaching cap's rim, where a face's
 contact in the blank meets the rim, the face's envelope stepped onto the rim and the rim's fan
 stepped off it must point the same way, or E3 refuses the fold (a flat end swung so its corners
-dig past it), and the fans' contacts join E4's. **T3** then chooses the direction across the
+dig past it), each fan normal touches the blank once (E2), and the fans' contacts join E4's. **T3** then chooses the direction across the
 profile, of 36, whose sections through the extrusion keep the band the sampled contacts in the
 blank reach farthest from the profile's ends (where a section closes to a ruling) and its corners
 (where a section's side leaps from one face's normal to the next's, a crease of the sheet), and

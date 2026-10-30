@@ -48,27 +48,36 @@ fn helical() -> String { crate::solid_sweeps_examples::text("helical.sv") }
 /// material — where the drawn side's line moved in by the depth times the draft's tangent holds it —
 /// is a half-space, and the plane cuts it in a half-plane; the four meet in the section.
 fn section(lean: f64,draft: f64,y: f64) -> Vec<(f64,f64)> {
-    let (s,c) = lean.to_radians().sin_cos();
-    let t = draft.to_radians().tan();
-    let n = TOOTH.len();
-    let (cu,cv) = (TOOTH.iter().map(|p| p.0).sum::<f64>()/n as f64,TOOTH.iter().map(|p| p.1).sum::<f64>()/n as f64);
-    // each side's material as α x + γ z + κ >= 0: m·(place − a) − tan·depth >= 0, m its inward normal
-    let sides: Vec<[f64;3]> = (0..n).map(|i| {
-        let ((au,av),(bu,bv)) = (TOOTH[i],TOOTH[(i+1)%n]);
-        let l = (bu-au).hypot(bv-av);
-        let (mut mu,mut mv) = (-(bv-av)/l,(bu-au)/l);
-        if mu*(cu-au)+mv*(cv-av) < 0. { (mu,mv) = (-mu,-mv); }
-        [mu,mv*c-t*s,-mu*au+mv*(-y*s-av)-t*y*c]
-    }).collect();
+    let (sides,n) = (half_planes(lean,draft,y,-1.),TOOTH.len());
     let mut corners: Vec<(f64,f64)> = (0..n).map(|i| {
         let ([a1,b1,c1],[a2,b2,c2]) = (sides[(i+n-1)%n],sides[i]);
         let w = a1*b2-a2*b1;
         ((b1*c2-b2*c1)/w,(a2*c1-a1*c2)/w)
     }).collect();
-    let area: f64 = (0..n).map(|i| corners[i].0*corners[(i+1)%n].1-corners[(i+1)%n].0*corners[i].1).sum();
-    if area > 0. { corners.reverse(); }
+    if twice_area(&corners) > 0. { corners.reverse(); }
     corners
 }
+
+/// Each side's material, in the plane at `y` from the tooth's own (whose point at its origin's
+/// depth is `y` along the front's normal), as α x + γ z + κ >= 0: m·(place − a) − way·tan·depth >= 0,
+/// m the side's inward normal — the side moved in by the depth (`way` 1) or by the depth's opposite
+/// (`way` −1, the material on the normal's negative side, where the depth is negative).
+fn half_planes(lean: f64,draft: f64,y: f64,way: f64) -> Vec<[f64;3]> {
+    let (s,c) = lean.to_radians().sin_cos();
+    let t = draft.to_radians().tan();
+    let n = TOOTH.len();
+    let (cu,cv) = (TOOTH.iter().map(|p| p.0).sum::<f64>()/n as f64,TOOTH.iter().map(|p| p.1).sum::<f64>()/n as f64);
+    (0..n).map(|i| {
+        let ((au,av),(bu,bv)) = (TOOTH[i],TOOTH[(i+1)%n]);
+        let l = (bu-au).hypot(bv-av);
+        let (mut mu,mut mv) = (-(bv-av)/l,(bu-au)/l);
+        if mu*(cu-au)+mv*(cv-av) < 0. { (mu,mv) = (-mu,-mv); }
+        [mu,mv*c+way*t*s,-mu*au+mv*(-y*s-av)+way*t*y*c]
+    }).collect()
+}
+
+/// Twice a polygon's signed area, counter-clockwise positive.
+fn twice_area(p: &[(f64,f64)]) -> f64 { (0..p.len()).map(|i| p[i].0*p[(i+1)%p.len()].1-p[(i+1)%p.len()].0*p[i].1).sum() }
 
 /// The space removed between the sections at `ys`: each section's area, which the tooth's planes
 /// make smooth in `y`, by four-point Gauss–Legendre across them.
@@ -84,18 +93,8 @@ pub(crate) fn space_volume(lean: f64,draft: f64,ys: [f64;2]) -> f64 {
 /// it: both half-spaces, the one moved in by `h` and the one by `-h`. The eight cut the plane in
 /// half-planes, and the section is what of a large square all eight keep.
 fn parted_section(lean: f64,draft: f64,parting: f64,y: f64) -> Vec<(f64,f64)> {
-    let (s,c) = lean.to_radians().sin_cos();
-    let (t,y) = (draft.to_radians().tan(),y-parting);
-    let n = TOOTH.len();
-    let (cu,cv) = (TOOTH.iter().map(|p| p.0).sum::<f64>()/n as f64,TOOTH.iter().map(|p| p.1).sum::<f64>()/n as f64);
     let mut kept = vec![(-100.,-100.),(100.,-100.),(100.,100.),(-100.,100.)];
-    for i in 0..n { for way in [1.,-1.] {
-        // m·(place − a) − way·tan·h >= 0, m the side's inward normal, as α x + γ z + κ >= 0
-        let ((au,av),(bu,bv)) = (TOOTH[i],TOOTH[(i+1)%n]);
-        let l = (bu-au).hypot(bv-av);
-        let (mut mu,mut mv) = (-(bv-av)/l,(bu-au)/l);
-        if mu*(cu-au)+mv*(cv-av) < 0. { (mu,mv) = (-mu,-mv); }
-        let [a,g,k] = [mu,mv*c+way*t*s,-mu*au+mv*(-y*s-av)+way*t*y*c];
+    for [a,g,k] in [1.,-1.].into_iter().flat_map(|way| half_planes(lean,draft,y-parting,way)) {
         let f = |p: (f64,f64)| a*p.0+g*p.1+k;
         // Sutherland–Hodgman: what of the polygon the half-plane keeps
         let mut next = Vec::new();
@@ -109,9 +108,8 @@ fn parted_section(lean: f64,draft: f64,parting: f64,y: f64) -> Vec<(f64,f64)> {
             }
         }
         kept = next;
-    }}
-    let area: f64 = (0..kept.len()).map(|i| kept[i].0*kept[(i+1)%kept.len()].1-kept[(i+1)%kept.len()].0*kept[i].1).sum();
-    if area > 0. { kept.reverse(); }
+    }
+    if twice_area(&kept) > 0. { kept.reverse(); }
     kept
 }
 
@@ -122,21 +120,19 @@ fn parted_section(lean: f64,draft: f64,parting: f64,y: f64) -> Vec<(f64,f64)> {
 /// change and its area is smooth in `y`. Each area is read at four times `space_volume`'s radii: the
 /// draft lifts the tooth's tip off the root circle, a step in what each radius loses that the
 /// radii's midpoints read at first order (at 400 a both-ways section's space errs by 5e-4, at 1600
-/// by 1e-4); and the sections side by side, one a thread.
+/// by 1e-4); and the sections side by side, on every core. Unleaned, the crease passes every corner
+/// at once, at the plane, and the pieces are its two sides.
 pub(crate) fn parted_volume(lean: f64,draft: f64,parting: f64,ys: [f64;2]) -> f64 {
     let s = lean.to_radians().sin();
     let mut breaks: Vec<f64> = TOOTH.iter().map(|p| parting-p.1*s).filter(|&y| y > ys[0] && y < ys[1]).collect();
     breaks.extend(ys);
     breaks.sort_by(f64::total_cmp);
+    breaks.dedup();
     let nodes: Vec<(f64,f64)> = breaks.windows(2).flat_map(|w| {
         let (m,h) = (0.5*(w[0]+w[1]),0.5*(w[1]-w[0]));
         crate::common::rounds::gauss_legendre(4).into_iter().map(move |(x,w)| (m+h*x,h*w))
     }).collect();
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = nodes.iter().map(|&(y,w)| scope.spawn(move || w*space_area(&parted_section(lean,draft,parting,y),1600,4000)))
-            .collect();
-        handles.into_iter().map(|h| h.join().unwrap()).sum()
-    })
+    gcs_core::par::map(&nodes,|&(y,w)| w*space_area(&parted_section(lean,draft,parting,y),1600,4000)).into_iter().sum()
 }
 
 /// **A section drafted both ways is the one-way section mirrored in depth**: with the tooth
@@ -144,7 +140,7 @@ pub(crate) fn parted_volume(lean: f64,draft: f64,parting: f64,ys: [f64;2]) -> f6
 /// at depth `|d|` (its own arithmetic, four half-planes meeting at its corners), either side.
 #[test]
 fn a_section_drafted_both_ways_mirrors_the_one_way_section() {
-    let area = |p: &[(f64,f64)]| -(0..p.len()).map(|i| p[i].0*p[(i+1)%p.len()].1-p[(i+1)%p.len()].0*p[i].1).sum::<f64>()/2.;
+    let area = |p: &[(f64,f64)]| -twice_area(p)/2.;
     for d in [0.5,2.,4.] {
         let one = area(&section(0.,2.,d));
         for y in [5.-d,5.+d] {
@@ -296,5 +292,3 @@ fn a_drafted_tool_the_class_does_not_read_is_refused_at_t1() {
     assert_eq!((r.condition,r.class()),(Condition::Tool,"generating-sweep class"));
     assert!(r.message.contains("an arc meets a side at an angle"),"{}",r.message);
 }
-
-

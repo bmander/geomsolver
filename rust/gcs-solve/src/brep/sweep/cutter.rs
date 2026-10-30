@@ -36,7 +36,9 @@ const RIM_SCALE: f64 = 1.;
 /// extrusion. A draft's crease turns little, and its fan carries a contact from one half's time to
 /// the other's only a little further along the crease's path, so its stretch of the sheet is about
 /// as long in space as in stations; a fan laid longer leaves columns standing on one curve, a fold
-/// of the fitted sheet.
+/// of the fitted sheet. How far the fan carries a contact is the motion's, which the cutter does not
+/// know: a fan laid as long as its contacts' path across it (admission reads that path) would hold
+/// for any motion, where this holds for a draft's few degrees.
 const CREASE_SCALE: f64 = 1.;
 /// How near an end of one piece is to the axis to be on it (mm).
 const ON_AXIS: f64 = 1e-5;
@@ -405,7 +407,7 @@ impl Cutter {
     /// How far the band of stations may run before the sheet is said not to leave the blank: a
     /// whole turn about the axis, or a prism's own length (past it a cap would be in the blank).
     pub fn station_limit(&self) -> f64 {
-        match &self.kind { Kind::Revolved {..} => TAU,Kind::Extruded(x) => x.stations()[1]-x.stations()[0],
+        match &self.kind { Kind::Revolved {..} => TAU,Kind::Extruded(x) => { let [lo,hi] = x.stations(); hi-lo },
             Kind::Across(x) => x.range[1]-x.range[0] }
     }
     /// A piece's point at fraction `t` of its source, and the cutter's outward normal there.

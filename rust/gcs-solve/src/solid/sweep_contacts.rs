@@ -37,9 +37,6 @@ impl ToolSurface {
     /// 1 its `end`), none where it is no cap: admission asks a cap only where it reaches the blank
     /// (#684 F).
     pub fn cap(&self) -> Option<usize> { match self { ToolSurface::Cap(s) => Some(s.end as usize),_ => None } }
-    /// Whether a prism's side ends on its cap `end` (0 at `v = 0`, 1 at `v = 1`), not at the crease
-    /// across it where a draft parts (#684 P); true of every other face.
-    pub fn meets_cap(&self,end: usize) -> bool { match self { ToolSurface::Extruded(s) => s.caps[end],_ => true } }
 }
 
 /// A prism's cap: the plane of its profile at its `from` (`start`) or its `to` (`end`), read over
@@ -90,10 +87,10 @@ impl CapSurface {
 /// or round the arc) moved `v` of the way along. A drafted prism's side (#684 G) leans: `at(u, v)`
 /// is the point `v` of the way from the edge at `u` to its edge in the section at `to` at `u` — a
 /// plane where the edge is a line, a cone where it is an arc. Running both ways from its parting
-/// plane (#684 P), it is two such sides, one each side of the plane, which meet there in a crease:
-/// `caps` says which of its ends, at `v = 0` and `v = 1`, lie on the prism's caps.
+/// plane (#684 P), it is two such sides, one each side of the plane, which meet there in a crease
+/// (`SweepContacts::creases`).
 #[derive(Clone,Debug)]
-pub struct ExtrudedSurface { pub name: String,edge: Edge,side: Side,caps: [bool;2] }
+pub struct ExtrudedSurface { pub name: String,edge: Edge,side: Side }
 
 #[derive(Clone,Copy,Debug)]
 enum Edge { Line { start: V,delta: V },Round { center: V,a: V,b: V,sweep: f64 } }
@@ -169,7 +166,7 @@ impl ExtrudedSurface {
         };
         let depth = scale(normal,to.value-from.value);
         if !(depth[0].dhypot(depth[1]).dhypot(depth[2]) > 0.) { return Err("a prism of no depth".into()) }
-        Ok(ExtrudedSurface {name:format!("{}.{}",solid.name,name),edge,side:Side::Straight(depth),caps:[true;2]})
+        Ok(ExtrudedSurface {name:format!("{}.{}",solid.name,name),edge,side:Side::Straight(depth)})
     }
 
     /// The sides of drafted prism `solid` (#684 G), half by half and loop by loop, each loop walked
@@ -225,14 +222,14 @@ impl ExtrudedSurface {
                 _ => false,
             }
         }).map(|(_,n)| n.as_str());
-        // each half from one height to the other, and which of its ends are the prism's caps
-        let halves = if parted { vec![([from,0.],[true,false]),([0.,to],[false,true])] } else { vec![([from,to],[true;2])] };
-        halves.into_iter().map(|([h0,h1],caps)| {
+        // each half from one height to the other
+        let halves = if parted { vec![[from,0.],[0.,to]] } else { vec![[from,to]] };
+        halves.into_iter().map(|[h0,h1]| {
             let (near,far) = (sections.section_at(h0)?,sections.section_at(h1)?);
             sections.loops().iter().enumerate().map(|(l,lp)| lp.iter().enumerate().map(|(k,e)| {
                 let name = name(e).ok_or("a drafted side is no drawn edge of its profile")?;
                 Ok(ExtrudedSurface {name:format!("{}.{}",solid.name,name),edge:edge(&near[l][k],h0),
-                    side:Side::Leaning(edge(&far[l][k],h1)),caps})
+                    side:Side::Leaning(edge(&far[l][k],h1))})
             }).collect()).collect()
         }).collect()
     }
@@ -255,7 +252,7 @@ impl ExtrudedSurface {
             Side::Straight(depth) => Side::Straight(pose.vector(depth)),
             Side::Leaning(far) => Side::Leaning(far.placed(pose)),
         };
-        ExtrudedSurface {name:self.name.clone(),edge:self.edge.placed(pose),side,caps:self.caps}
+        ExtrudedSurface {name:self.name.clone(),edge:self.edge.placed(pose),side}
     }
 }
 
@@ -369,19 +366,17 @@ impl SweepContacts {
                 // and where it runs both ways from its parting plane each side's halves' crease there
                 // (#684 P); its caps are admission's to keep out of the blank (`admission::ends`)
                 SolidDef::Prism {draft:Some(_),..} => {
-                    let mut halves: Vec<Vec<Vec<usize>>> = Vec::new();
-                    for half in ExtrudedSurface::drafted(sk,id)? {
-                        halves.push(half.into_iter().map(|sides| {
-                            let order: Vec<usize> = sides.into_iter().map(|side| {
-                                patches.push(ToolSurface::Extruded(side.placed(pose)));
-                                patches.len()-1
-                            }).collect();
-                            loops.push(order.iter().map(|&p| Some(p)).collect());
-                            order
+                    let (halves,start) = (ExtrudedSurface::drafted(sk,id)?,patches.len());
+                    for sides in halves.iter().flatten() {
+                        loops.push(sides.iter().map(|side| {
+                            patches.push(ToolSurface::Extruded(side.placed(pose)));
+                            Some(patches.len()-1)
                         }).collect());
                     }
-                    if let [below,above] = &halves[..] {
-                        creases.extend(below.iter().flatten().zip(above.iter().flatten()).map(|(&a,&b)| [a,b]));
+                    // the halves side for side alike, the second's sides the first's as many on
+                    if halves.len() == 2 {
+                        let n = (patches.len()-start)/2;
+                        creases.extend((start..start+n).map(|a| [a,a+n]));
                     }
                 }
                 // a prism's sides, one an edge of its profile, then its caps, square to the
