@@ -122,6 +122,14 @@ fn a_whole_turn_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/whole_turn.sv".to_string()],true),1);
 }
 
+/// **A drive builds at the display's samples** (`rocked.sv`, #684 L): the turn rocked out and back
+/// by a law, read as the turn over the law's reach, built by the page's stepped builder as the
+/// export builds it.
+#[test]
+fn a_rocked_turn_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/rocked.sv".to_string()],true),1);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \

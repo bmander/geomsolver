@@ -301,6 +301,31 @@ shadow read by the signed distance from the nearer flank), each STL agreeing wit
 `brep::a_net_closed_round_an_axis_is_a_ring_of_faces` (a cylinder's net cut in two along and four
 round, its edges shared and closed, splitting a block into its core, π r² h).
 
+**A joint driven by a law is its joint's sweep over the law's reach (#684 L, `solid::paced`):** a
+sweep is its path's, not its pace's, so a sweep whose motion is one joint driven by a law
+(`MotionDef::Driven`, read where the drive is the sweep's own motion and not one seen from another)
+is the sweep of the joint it drives (`of`) over the least to the greatest value the law takes over
+the sweep's roll (`roll::interval`): the law is continuous where its enclosure is carried, so it
+takes every value between. The reach is `motion::Law::range`, `interval::minimum::enclose` each way
+over the law's enclosure (`Law::enclose`) narrowed by the mean value form, each end a value the law
+takes at the search's witness, within `law::RANGE` (1e-12 rad, or of the values at the roll's ends
+past a radian) of the true one; a law with no enclosure or left unsettled, or a reach under
+`paced::STILL`, is not read so. `paced::restated` is remembered against the sweep's reads
+(`Caches::paced`), a law left unread too. A body reaching such a sweep is built from
+`paced::lowered`, a copy of the drawing with each such sweep's motion and roll rewritten in place,
+keeping its name, as the joint's over a roll stated; `solid::lowered` applies it before
+`distributed::lowered` (over its copy, so a union under a drive is its members' sweeps under the
+joint), and is what `admission::admit_body`, `accuracy::Meter::read`, `brep::export`'s `own` and
+the page's stepped `Build` read; the build is held to the drawing's own field of the driven
+sweep. A ball's tube
+under a drive is the canal's closed form so. M1's refusal of a drive seen from another motion says
+so (`NormalVelocity`). The native path refuses it by name (`--kernel rust` builds it).
+`tests/paced_sweeps.rs` (`Law::range` against closed forms, 1e-12; a slide risen, dwelt and
+returned, the lens; a ball rocked out and back, Pappus; a drive seen from a turn refused at M1),
+`solid_sweeps_examples::the_rocked_cutter_leaves_the_turns_groove` (`solid_sweeps/rocked.sv`, held
+to `turn.sv`'s figure) and `object_builder::a_rocked_turn_builds_at_the_displays_samples` are the
+gate, each STL agreeing with the driven sweep's field.
+
 **A screw with sharp edges: a convex corner's fan (#684 E):** a convex corner of a revolved tool's
 profile — two faces whose outward normals there turn more than `LEAST_TURN` apart, the chord just
 inside them in the material (`constant_twist::corners`, by the probe T2 reads too,

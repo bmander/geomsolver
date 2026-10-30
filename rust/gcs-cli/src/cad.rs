@@ -197,6 +197,11 @@ pub fn export(sk: &Sketch,body: &Body,step: Option<&str>,stl: Option<&str>,toler
             return Err(ExportRefusal::at(Stage::Admission,format!("`{}` cuts the sweep of a union, which only the core's kernel \
                 builds as its members' sweeps: export it with `--kernel rust`",sk.solids[body.index].name)))
         }
+        // a sweep under a driven joint is built as its joint's by the core's kernel alone (#684 L)
+        if gcs_core::solid::paced::lowers(sk,body.index) {
+            return Err(ExportRefusal::at(Stage::Admission,format!("`{}` cuts a sweep under a joint driven by a law, which only the \
+                core's kernel builds as its joint's sweep over the law's range: export it with `--kernel rust`",sk.solids[body.index].name)))
+        }
         let session = native::Session::new().at(Stage::Blank)?;
         // `SOLVENT_WRITER=rust` (phases 1 and 2 of docs/rust-kernel-plan.md): the solid the kernel built
         // read into the core's own B-rep and its STEP and STL written from that, by our writer and

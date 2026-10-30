@@ -3,7 +3,8 @@
 //! a reading runs over it (one clock), so the frame stands at its joint turned `ratio · value(θ)`
 //! and risen `advance · value(θ) / 360°` at the roll `θ`: a cam's law, or any other.  A drive is
 //! read as no constant twist even where its value is linear (`Family::screw` and its kin refuse
-//! it), so what is built under one is the field's.
+//! it); a sweep under one alone is its joint's over the law's reach (`range`, `solid::paced`, #684
+//! L), and one seen from another motion is the field's.
 //!
 //! The text is compiled once over the drawing's held numbers (`tape::Tape`), the parameter among
 //! them, and read three ways: its value at a roll (`eval_num` over `f64`), its value and its rate
@@ -38,6 +39,12 @@ pub fn unread_drive(f: &str, over: &str) -> String {
              it reads no drive (#391): draw in it, `n := x in {f}`, which stands where its value \
              puts it, or read it over the roll — a sweep, a placement")
 }
+
+/// How near the least and the greatest value `Law::range` finds are to the law's own: radians, or
+/// that fraction of the law's values at the roll's ends where they are larger than a radian.
+pub const RANGE: f64 = 1e-12;
+/// How many enclosures `Law::range` may ask each way before it stands unsettled.
+const EVALUATIONS: usize = 1 << 16;
 
 /// Degrees a radian, enclosed.
 fn degrees() -> Result<I, Error> {
@@ -132,5 +139,53 @@ impl Law {
         x[self.at] = theta.mul(d)?;
         let [v, r] = crate::tape::eval_interval(&self.flat, &x, self.at)?;
         Ok([v.div(d)?, r])
+    }
+
+    /// **The values the law takes over the roll `[a, b]`** (#684 L): its least and its greatest
+    /// (radians), each a value it takes at a roll read, and within `RANGE` of the least and the
+    /// greatest it takes anywhere in the roll — proved by `interval::minimum`'s refinement over
+    /// the law's enclosure (`enclose`), narrowed by the mean value form: its value at a stretch's
+    /// middle and its rate's reach across the rest.  The enclosure carries only functions
+    /// continuous where it carries them, so the law takes every value between the two.  Refused
+    /// where it carries none (`enclose`'s failures), and where `EVALUATIONS` enclosures leave it
+    /// unsettled.
+    pub fn range(&self, [a, b]: [f64; 2]) -> Result<[f64; 2], String> {
+        if !(a < b) {
+            return Err(format!("the roll ({}°, {}°) runs nowhere", a.to_degrees(),
+                               b.to_degrees()));
+        }
+        Ok([self.extreme([a, b], 1.0)?, -self.extreme([a, b], -1.0)?])
+    }
+
+    /// The least of `sign` times the value over `[a, b]`: `range`'s search, each way.
+    fn extreme(&self, [a, b]: [f64; 2], sign: f64) -> Result<f64, String> {
+        use crate::interval::minimum;
+        let unproved = |e: Error| format!("`{}` carries no enclosure over {} in ({}°, {}°) \
+            ({e:?}), so what it reaches is not proved", self.text, self.over, a.to_degrees(),
+            b.to_degrees());
+        let signed = |x: I| if sign < 0.0 { x.neg() } else { x };
+        // the enclosure, narrowed to the middle's value and the rate's reach across the rest
+        let bound = |t: I| -> Result<I, Error> {
+            let [v, r] = self.enclose(t)?;
+            let mid = t.mid();
+            let [middle, _] = self.enclose(I::point(mid)?)?;
+            let mean = middle.add(r.mul(t.sub(I::point(mid)?)?)?)?;
+            let [vl, vh] = v.bounds();
+            let [ml, mh] = mean.bounds();
+            Ok(signed(I::new(vl.max(ml), vh.min(mh)).unwrap_or(v)))
+        };
+        let scale = self.value(a)?.abs().max(self.value(b)?.abs()).max(1.0);
+        let options = minimum::Options { value_tolerance: RANGE * scale,
+                                         max_evaluations: EVALUATIONS };
+        let found = minimum::enclose(I::new(a, b).map_err(unproved)?, bound, options)
+            .map_err(|e| match e {
+                minimum::Error::Oracle(e) => unproved(e),
+                e => format!("`{}` over {}: {e:?}", self.text, self.over),
+            })?;
+        if found.status != minimum::Status::Converged {
+            return Err(format!("`{}` over {} is not settled within {EVALUATIONS} enclosures of \
+                                the roll ({:?})", self.text, self.over, found.status));
+        }
+        Ok(sign * self.value(found.witness)?)
     }
 }
