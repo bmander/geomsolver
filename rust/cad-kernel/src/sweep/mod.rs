@@ -11,6 +11,8 @@ pub mod refusal;
 pub mod sector;
 pub mod surface;
 pub mod tool;
+pub mod trace;
+pub mod characteristic;
 
 /// How far from a revolution's axis an endpoint is read as on it, wherever a revolved tool's
 /// faces, fields or contacts are read (the tolerance a revolved snapshot takes).
