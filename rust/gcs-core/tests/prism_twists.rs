@@ -3,13 +3,13 @@
 //! affine field, and a ruling's normal is one, so the contact `n·v` is linear along it: one point
 //! of contact a ruling, fixed on the tool, or under a slide the whole ruling at each of the
 //! silhouette's points. The characteristic is walked over the sides and round the convex corners'
-//! fans where they meet, and carried as a revolution's is (`solid::constant_twist`); and across a
-//! cap, where the contact is a line, from a side round the rim's fan (#684 AE). Each case's volume
-//! is computed apart from the core — in closed form, or from the bar's half-spaces (`Bar`) — and
-//! each exact solid's STL agrees with the field; the square thread
-//! (`rust/examples/solid_sweeps/square_thread.sv`) is
+//! fans where they meet, and carried as a revolution's is (`solid::constant_twist`); across a cap,
+//! where the contact is a line, from a side round the rim's fan (#684 AE), and across the crease of
+//! a prism drafted both ways from its plane (#684 AG). Each case's volume is computed apart from
+//! the core — in closed form, or from the bar's half-spaces (`Bar`) — and each exact solid's STL
+//! agrees with the field; the square thread (`rust/examples/solid_sweeps/square_thread.sv`) is
 //! `solid_sweeps_examples::the_square_tool_leaves_a_groove_widening_outward`, and the flat end
-//! turned (`flat_end.sv`) is held there too.
+//! and the creased bar turned (`flat_end.sv`, `creased.sv`) are held there too.
 use gcs_core::solid::admission::{self,Class,Condition,Options};
 use std::f64::consts::{PI,TAU};
 
@@ -226,15 +226,18 @@ fn a_side_along_the_slide_is_refused() {
     assert!(r.message.contains("`bar.under` moves along itself"),"{}",r.message);
 }
 
-/// The leaning bar drafted both ways from its parting plane (#684 P): each side folds there, a crease
-/// the walk does not cross under a turn (T1).
+/// The leaning bar of square section drafted both ways from its parting plane (#684 P, AG): its
+/// characteristic is its inner corner's line, which reaches the plane partway round the corner's
+/// fan, at the vertex where the corner meets the crease. Every normal between the four faces
+/// meeting there is the tool's, and the sweep has a sharp edge along that point's path, which the
+/// class does not build (S1). (Its flat-sided neighbour crosses the crease mid-side, below.)
 #[test]
-fn a_bar_drafted_both_ways_turned_is_refused() {
+fn a_corner_meeting_its_crease_turned_is_refused() {
     let text = turned_bar(20.,diamond(10.),4.,2.).replace("from: 0mm, to: 2 * 4mm","from: -4mm, to: 4mm")
         .replace("fix(origin == (0, -4 * sin(20deg), -4 * cos(20deg))) holder","fix(origin == (0, 0, 0)) holder");
     let r = refused(admit(&text));
-    assert_eq!(r.condition,Condition::Tool);
-    assert!(r.message.contains("runs both ways from its parting plane"),"{}",r.message);
+    assert_eq!(r.condition,Condition::Regular);
+    assert!(r.message.contains("the corner of `bar.lower` and `bar.under` runs into a vertex of the prism"),"{}",r.message);
 }
 
 /// The square thread's bar made too short to stand past the rod either side: its caps pass through
@@ -488,6 +491,16 @@ pub(crate) fn flat_end(gamma: f64,beta: f64) -> Bar {
         names:vec!["lower","outer","upper","inner"],from:0.,to:3.,draft:0.,lead:0.}
 }
 
+/// A bar leaning `lean` across the turn as `turned_bar`'s does, its section the rectangle 10 to 13
+/// from the axis and ±2 across, standing ±4 either side of the plane through x its section is
+/// drawn in, drafted `draft` degrees both ways from that plane. Turned, 20° and 2°, it is
+/// `solid_sweeps/creased.sv` (`solid_sweeps_examples::the_creased_bar_crosses_its_crease`).
+pub(crate) fn parted(lean: f64,draft: f64) -> Bar {
+    let (s,c) = lean.to_radians().sin_cos();
+    Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,c,-s],corners:vec![[10.,-2.],[13.,-2.],[13.,2.],[10.,2.]],
+        names:vec!["lower","outer","upper","inner"],from:-4.,to:4.,draft,lead:0.}
+}
+
 /// The flat end's bar shared with a block (a `common`) is no prism standing alone: its cap in the
 /// block is refused at T1, under a turn as under a relative rotation (#684 F).
 #[test]
@@ -518,3 +531,20 @@ fn a_bars_flat_end_screwed_cuts_a_floor() {
     assert_eq!(found.fans(),["the rim where `bar.inner` meets `bar.start`"]);
     near(exported_at(&e,"part",0.002),PI/3.*(144.-64.)-bar.screwed_removed(),2e-5);
 }
+
+/// The bar drafted 2° both ways from its plane and screwed 6 mm a turn across the block (#684 AG):
+/// its inner side faces the axis, and each half of it leans 2° from it, so each touches along its
+/// own line crossing its rulings, and the crease where the halves meet carries the contact from
+/// the one to the other round its fan; the three carried along the helix are the groove's wall.
+/// The block loses what `z − kθ` says the bar covers at each radius (`Bar::screwed_removed`).
+#[test]
+fn a_bar_drafted_both_ways_screwed_crosses_its_crease() {
+    let bar = Bar {lead:6.,..parted(20.,2.)};
+    let e = fixtures::read(&bar.text());
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a screw");
+    assert_eq!(found.fans(),["the crease across `bar.inner`"]);
+    near(exported_at(&e,"part",0.001),PI/3.*(144.-64.)-bar.screwed_removed(),2e-5);
+}
+
+

@@ -34,6 +34,10 @@ const AROUND: usize = 4;
 /// How many columns a slide's first grid lays across the blank's heights: its sheet is straight
 /// along them, so the fit needs few.
 const SLIDE_COLUMNS: f64 = 8.;
+/// How far a fan's normal turns (radians) at most for its stretch of the sheet to stay in the faces
+/// either side of it rather than be cut out as its own: a tenth of a radian, past a drafted
+/// crease's few degrees and short of any sharp corner the class has built.
+const SHALLOW_FAN: f64 = 0.1;
 
 /// The sheet of a screw cut whose characteristic `found` walked (in model units, as `cut.scale`
 /// says millimetres a unit), the blank between `heights` along the screw's axis where known.
@@ -100,6 +104,11 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
             .min_by(|&a,&b| (rows[a]-s).abs().total_cmp(&(rows[b]-s).abs()));
         match near { Some(k) => rows[k] = s,None => rows.insert(w,s) }
     }
+    // the fans cut out of the sheet as faces of their own: those turning a sharp corner's worth.
+    // A shallow one, a drafted crease's few degrees, is a band of the sheet too narrow for the split
+    // to meet a plane in (a pcurve 3e-5 off where it crossed a block's side), and the flanks either
+    // side of it are near enough alike that neither is read on the other (#684 AG)
+    let cut: Vec<f64> = fans.iter().copied().filter(|&s| found.fan_turn(s) > SHALLOW_FAN).collect();
     let columns_n = (((window[1]-window[0])/step).ceil() as usize).max(4)+1;
     let columns: Vec<f64> = (0..columns_n).map(|c| window[0]+(window[1]-window[0])*c as f64/(columns_n-1) as f64).collect();
     let mids = |x: &[f64]| x.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<_>>();
@@ -115,7 +124,7 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         // a whole turn's last column is its first, to the bit, so the ring closes on one edge
         if found.whole { let first = columns[0]; *columns.last_mut().expect("columns") = first; }
         let (nr,nc) = (grid.rows.len(),grid.columns.len());
-        let bands = std::iter::once(0).chain(fans.iter().filter_map(|s| grid.rows.iter().position(|r| r == s)))
+        let bands = std::iter::once(0).chain(cut.iter().filter_map(|s| grid.rows.iter().position(|r| r == s)))
             .map(|r| (r,UNNAMED)).collect();
         let mut sheet = Sheet {bands,points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
             rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
@@ -149,10 +158,10 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     (say.mark)(Stage::Sheet);
     let sides = |grid: &Grid| lay(grid,Withheld::Sides);
     settle(name,scale,sheet,&grid,&sides,inside,near,tolerance,"rows along the characteristic",say)?.and_then(|(mut fitted,kind)| {
-        if fans.is_empty() && !found.whole { return Ok(fitted) }
+        if cut.is_empty() && !found.whole { return Ok(fitted) }
         fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND)).at(Stage::Fit)?;
         (say.stage)(&format!("`{name}`: the sheet cut into {} faces{}{}",fitted.faces.faces.len(),
-            if fans.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" },
+            if cut.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" },
             if found.whole { " and round the turn, closing on itself" } else { "" }));
         Ok(fitted)
     })

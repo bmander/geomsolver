@@ -162,6 +162,14 @@ fn a_flat_end_turned_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/flat_end.sv".to_string()],true),1);
 }
 
+/// **A prism drafted both ways turned builds at the display's samples** (`creased.sv`, #684 AG):
+/// the walk from one half of the bar's inner side round the crease to the other, built by the
+/// page's stepped builder as the export builds it.
+#[test]
+fn a_creased_bar_turned_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/creased.sv".to_string()],true),1);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \

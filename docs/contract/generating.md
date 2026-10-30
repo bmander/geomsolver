@@ -344,7 +344,8 @@ section plus each turn of its normal counted as the section's length over a half
 (the rim of a 60° V under a thread's screw: 0.06 mm turning 100°) is as many rows as its turn asks;
 the rows where the walk runs onto and off a fan are exact rows of the grid (`Characteristic::fan_ends`,
 kept by refinement), and the fitted sheet is cut there into faces (`Fitted::named`, the bands
-unnamed: a fan is no face of the tool). Kernel rule it found: a near-crease in one fitted net lets
+unnamed: a fan is no face of the tool) where the fan turns more than a tenth of a radian (a
+drafted crease's few degrees stay in their neighbours' faces, #684 AG). Kernel rule it found: a near-crease in one fitted net lets
 a point of one flank be inverted onto the other, a pcurve off its edge by a tenth of a millimetre
 and a split with no cell; cut into faces, each inverts on its own. And a second: a plane meets the
 fan in a curve shorter than a march's step (0.09 mm against `h0`'s 0.22), which a trace keeps
@@ -373,8 +374,7 @@ two coarse stations and their least sought by `roots::brent`; under a slide, a p
 every parameter read) — a side the motion keeps in its own plane, square to a turn or along a slide.
 A cap reaching the blank under a constant twist is walked where the tool is a prism standing alone
 (#684 AE, below), any other tool's refused at T1 (`admission::ends`), and a drafted prism running
-both ways from its parting plane (#684 P) is refused at T1, whose crease the walk does not cross
-(`SweepContacts::creases`); a twist
+both ways from its parting plane is walked across its crease (#684 AG, below); a twist
 that keeps the plane of the tool's prisms is dispatched to the planar subtraction class
 (`planar_subtraction::asks`, `Asked::Subtraction`), which reads it as it did. The corner's probe
 (`SweepContacts::corner`, which T2 reads too) stands halfway along a prism's sides: at a cap its
@@ -399,7 +399,7 @@ there, in order along it and paired where the middle lies on the tool, a `Piece:
 (`Ruled::crossing`, `crossed`), so the walk steps from a side's root onto its rim's fan partway
 along the side (`step`, `Piece::rim_of`), off the fan's far end onto the cap's line and off the
 line's end onto the next rim, and off a rim's first end onto its side at the station whose root
-it is (`side_at`). S1 refuses where a corner's or a rim's root runs off its line
+it is (`side_at`). S1 refuses where a corner's, a rim's or a crease's root runs off its line
 (`VERTEX`: the walk reaches a vertex of the prism, a sharp edge of the sweep), where a side's root
 runs over a cap with no rim to cross (`OVER_CAP`: a round side's), where a cap's line leaves it
 onto none (`OFF_CAP`), and where a silhouette's ruling runs over a cap under a slide or a screw
@@ -416,6 +416,26 @@ STL agreeing with the field; with the refusals
 `a_cap_in_the_blank_under_a_slide_is_refused` (S1) and
 `a_cap_of_a_tool_no_lone_prism_turned_is_refused` (T1), and
 `object_builder::a_flat_end_turned_builds_at_the_displays_samples`.
+
+**A drafted prism running both ways under a constant twist (#684 AG):** each plane side's crease
+at the parting plane (`SweepContacts::creases`) is a piece read as a rim is (`Ruling::Rim`,
+`Across::Half`: the half below's edge at its `v = 1`, its fan turned from that half's normal to the
+half above's), stepped onto from the half below where its root reaches the plane and onto the half
+above at the station whose root leaves it, both by `Ruled::crossing`; `constant_twist::prism` no
+longer refuses it. Its few degrees' fan stays in the faces of the halves either side
+(`helical::SHALLOW_FAN`, a tenth of a radian, `Characteristic::fan_turn`; its ends still exact
+rows): cut out, a band 0.08 mm wide met the block's side plane in the split with a pcurve 3e-5 off
+its edge (first seen at the display's samples, then at a 15° lean in the export). Under a slide, or
+a screw along the extrusion (`silhouette`), it is still
+refused at T1, the silhouette turning at the crease; a corner of a half meeting the plane is a
+vertex (S1), a round side's crease is not walked (S1, `OVER_CREASE`). The gate is
+`solid_sweeps_examples::the_creased_bar_crosses_its_crease` (`solid_sweeps/creased.sv`, a bar
+leaning across the turn drafted 2° both ways, its inner side's halves joined round the crease;
+its shadow from its ten half-spaces within 2e-5 at 0.001 mm) and
+`prism_twists::a_bar_drafted_both_ways_screwed_crosses_its_crease` (screwed 6 mm a turn, by `z − kθ`,
+within 2e-5 at 0.001 mm), each STL agreeing with the field, with the refusal
+`prism_twists::a_corner_meeting_its_crease_turned_is_refused` (S1) and
+`object_builder::a_creased_bar_turned_builds_at_the_displays_samples`.
 
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting
@@ -520,7 +540,7 @@ the bar's space turned round the disc, within 1e-6 of its volume, its STL agreei
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
 a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, its
-drafted helical rack, a tooth drafted both ways (`parted.sv`) a prism's cap (`bar_end.sv`) and a placed one's (`next_tooth.sv`), a prism's cap under a turn (`flat_end.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+drafted helical rack, a tooth drafted both ways (`parted.sv`) a prism's cap (`bar_end.sv`) and a placed one's (`next_tooth.sv`), a prism's cap under a turn (`flat_end.sv`) and a prism drafted both ways under one (`creased.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;
 `every_example_is_held_and_named` fails a file the README does not name or no test reads. The

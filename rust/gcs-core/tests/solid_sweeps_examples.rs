@@ -302,6 +302,19 @@ fn the_flat_end_cuts_a_floor() {
     near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::flat_end(20.,5.).removed(),2e-5);
 }
 
+/// `creased.sv` (#684 AG): the bar's inner side's halves each touch along a line crossing its
+/// rulings, and the crease where they meet joins the two round its fan. The block loses what the
+/// bar's shadow covers, read slice by slice from its ten half-planes (`prism_twists::Bar::removed`,
+/// the same bar as `parted(20, 2)`), within 2e-5 at 0.001 mm.
+#[test]
+fn the_creased_bar_crosses_its_crease() {
+    let e = example("creased.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert_eq!(found.fans(),["the crease across `bar.inner_side`"]);
+    near(exported_at(&e,"block",0.001),PI/3.*80.-crate::prism_twists::parted(20.,2.).removed(),2e-5);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {

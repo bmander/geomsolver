@@ -247,8 +247,9 @@ impl ExtrudedSurface {
         })
     }
 
-    /// Whether its edge is a line at both its ends (a plane side), so its ends at the caps are
-    /// lines too: what the constant twist walks across (#684 AE).
+    /// Whether its edge is a line at both its ends (a plane side), so its ends at the caps, and a
+    /// drafted half's at its parting plane, are lines too: what the constant twist walks across
+    /// (#684 AE, AG).
     pub fn straight(&self) -> bool {
         matches!((self.edge,self.side),(Edge::Line {..},Side::Straight(_) | Side::Leaning(Edge::Line {..})))
     }

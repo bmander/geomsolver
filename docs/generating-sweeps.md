@@ -259,10 +259,10 @@ in the blank are two stretches (S2); the sheet is one of them carried.
 A motion that keeps the plane of the tool's prisms (a turn about an axis along the extrusion, a
 slide square to it) is still the planar subtraction class's (below): `admit_body` asks it the
 planar rows outright, as it did before the constant twist read prisms. A cap of a prism standing
-alone or placed is walked where the characteristic runs over it (below, #684 AE); any other
-prism's caps T1 asks clear of the blank over the roll (`admission::ends`). A drafted prism running
-both ways from its parting plane (#684 P) is refused at T1: its sides fold there, a crease the walk
-does not cross. One row more is the prism's own:
+alone or placed is walked where the characteristic runs over it (below, #684 AE), and the crease
+where a drafted prism running both ways from its parting plane folds (below, #684 AG); any other
+prism's caps T1 asks clear of the blank over the roll (`admission::ends`). One row more is the
+prism's own:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
@@ -307,7 +307,7 @@ as the generating class's caps ask), and only its plane sides' rims are walked. 
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | No corner's or rim's root runs off its line within the walk's margin of the blank. | There it reaches a vertex of the prism, where three faces meet and every normal of the cone between them is the tool's: the sweep has a sharp edge along the vertex's path, which one sheet does not build. | The corner or rim, and a point of the walk in the blank. |
+| S1 | No corner's, rim's or crease's root runs off its line within the walk's margin of the blank. | There it reaches a vertex of the prism, where three faces meet and every normal of the cone between them is the tool's: the sweep has a sharp edge along the vertex's path, which one sheet does not build. | The corner, rim or crease, and a point of the walk in the blank. |
 | S1 | A side's root reaches a cap only over a rim that is a line, and the cap's contact line leaves the cap only onto one. | A round side's rim is its arc turned to a fan of its own, which is not walked. | The side or the cap, and a point of the walk in the blank. |
 | S1 | Under a slide, or a screw along the extrusion, the walk runs over no cap. | A cap is in contact there all over or nowhere, and the silhouette, whole rulings, turns at a vertex of the prism to run along a rim. | The silhouette's piece, and a point of it in the blank. |
 
@@ -329,6 +329,37 @@ bar slid aslant short enough for its caps to stand in the cube (a silhouette ove
 flat end's bar within a `common` (T1). Leaning 40° and screwed 6 mm a turn, the bar is admitted
 but the screw's sheet across the rim's fan misses its normals' bars, and the export refuses it.
 `tests/object_builder.rs` builds `flat_end.sv` at the page's samples.
+
+### A drafted prism running both ways under a constant twist (issue #684 AG)
+
+Drafted inward both ways from its parting plane, a prism's side folds there in a convex crease
+across it whose fan turns from the lower half's normal to the upper's (#684 P). The crease of a
+plane side is a line, the halves' edge at the plane, so it is walked as a cap's rim is
+(`Ruling::Rim`, `Across::Half`): its stations the fan's normals from the half below's to the half
+above's, its ring the crease's line, stepped onto partway along a half's stations where that
+half's root reaches the plane (`Ruled::crossing`, as a rim is) and off its other end onto the
+other half at the station where its root leaves the plane. A crease turns a few degrees, so its
+stretch of the sheet is not cut out as a face of its own (`helical::SHALLOW_FAN`: a fan turning a
+tenth of a radian or less stays in the faces either side, its ends still rows of the grid): cut
+out, the band was 0.08 mm wide, and the split met the block's side plane in a pcurve 3e-5 off its
+edge; the flanks either side are near enough alike that neither is read on the other, which is
+what cutting a sharp fan out is for (#684 E). The rows are those above: a corner
+of a half whose root reaches the plane does so at a vertex of the prism (S1), a round side's
+crease is not walked (S1), and under a slide, or a screw along the extrusion, the silhouette turns
+at the crease, which T1 refuses. Drafted outward, the crease is concave, and T1 refuses it as
+before.
+
+`rust/examples/solid_sweeps/creased.sv` is the case: a bar of oblong section leaning 20° across
+the turn, its inner side facing the axis, drafted 2° both ways from the plane its section is
+drawn in. Each half of the inner side touches along its own line, a little either side of the
+plane through the axis, and the crease carries the contact between them, nearest the axis where
+it crosses the block's middle. `tests/solid_sweeps_examples.rs` holds it to its shadow read as
+`flat_end.sv`'s is, from its ten half-spaces, within 2e-5 at 0.001 mm, and `tests/prism_twists.rs`
+the same bar screwed 6 mm a turn by `z − kθ` within 2e-5 at 0.001 mm (1.7e-5 at 0.01), each STL
+agreeing with the field; the bar of square section stood on a corner and drafted both ways is
+refused at S1, its characteristic, the corner's line, reaching the plane at the vertex where the
+corner meets the crease. `tests/object_builder.rs` builds `creased.sv` at the page's samples, where
+the display's fewer samples first showed the thin band's split failing.
 
 ### A rack (issue #61)
 
