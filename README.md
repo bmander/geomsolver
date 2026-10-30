@@ -1,4 +1,4 @@
-# geomsolver
+# Solvent
 
 A geometric constraint solver and **Solvent**, the declarative language its drawings are written
 in. You declare points, lines, arcs, planes and solids, state what must be true of them, and the
