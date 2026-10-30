@@ -12,7 +12,8 @@ own faces under its route, `FacePath`) and elaborates again (`program::Again::Fa
 `flatten::expand_faces`, `Walk::face_links`); a `when` in the body keeps a copy — `when f in X
 and f != g` (F8; 0.91, #267: `Walk::faces_named`, `Walk::stands_for`, the `if` retired). A relation word's body may hold blocks, instances, sets and body statements (F5,
 `parser/definitions.rs`); `A.body` in a body statement is the solid a face path is of. **The
-stratum** (F6): a body's terms that read its faces (`faces::readers_of`) are left out of the
+stratum** (F6): a body's terms that read its faces (`faces::readers_of`: a region over them, or a
+body standing on one, [0.198], [sets.md](sets.md)'s shell) are left out of the
 boundary they read and applied last by the field (`document.rs`: fills, then cuts). A face path
 is matched against `solid::exact`'s names (`BodyFaces` is built from `exact::build`, shifted to its
 origin; cached in `Caches::faces`); one naming nothing holds nowhere, and a region over it is

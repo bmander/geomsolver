@@ -290,6 +290,39 @@ fn the_rounds_export_and_measure_within_their_tolerance() {
     std::fs::remove_dir_all(dir).unwrap();
 }
 
+/// The shells series (`shells/`): each body `std.rounds`' `shell` builds exactly — a prism's cavity
+/// eroded in its section, arcs and a whole circle among it, a cut grown out of it; or the walls of
+/// a body with bosses, a turned one — is written by the Rust kernel as STEP and STL within 10 µm and
+/// measured so against its exact faces; each `refused.sv` says it is not built, and why.
+#[test]
+fn the_shells_export_and_measure_within_their_tolerance() {
+    let dir = std::env::temp_dir().join(format!("solventc-shells-{}",std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let bodies = [("tray","tray"),("float","float"),("drawer","drawer"),("enclosure","case"),("cup","cup"),
+        ("can","can"),("step","step"),("polygons","box"),("polygons","wedge"),("hopper","hopper"),
+        ("hopper","flared"),("pocketed","tray"),("pocketed","plate"),("plinth","plinth"),("chimney","plinth"),
+        ("bosses","plate")];
+    for (file,name) in bodies {
+        let source = doc(&format!("shells/{file}.sv"));
+        let (stl,step) = (dir.join(format!("{file}-{name}.stl")),dir.join(format!("{file}-{name}.step")));
+        let (stl,step) = (stl.to_str().unwrap(),step.to_str().unwrap());
+        let measured = run(&[source.as_str(),"--solid",name,"--stl",stl,"--step",step,"--measure",stl,
+            "--tolerance","0.01mm","--no-diagnose"]);
+        let stdout = String::from_utf8_lossy(&measured.stdout);
+        assert_eq!(measured.status.code(),Some(0),"{file} {name}: {stdout}{}",String::from_utf8_lossy(&measured.stderr));
+        assert!(stdout.contains("tolerance 10.000 µm: every exact face within it"),"{file} {name}: {stdout}");
+    }
+    for (name,says) in [("plinth","a wall standing on a face left open"),("step","narrower than twice the thickness"),
+        ("tray","none of the stock's")] {
+        let step = dir.join(format!("refused-{name}.step"));
+        let refused = run(&[&doc("shells/refused.sv"),"--solid",name,"--step",step.to_str().unwrap(),"--no-diagnose"]);
+        let stderr = String::from_utf8_lossy(&refused.stderr);
+        assert_ne!(refused.status.code(),Some(0),"{name}: {stderr}");
+        assert!(stderr.contains(says),"{name}: {stderr}");
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
 #[test]
 fn a_tolerance_is_a_positive_length_for_a_native_export() {
     let output = run(&[&doc("swept_torus.sv"),"--tolerance","3furlongs","--step","x.step"]);

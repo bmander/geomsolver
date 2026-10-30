@@ -356,6 +356,70 @@ end `−2d³/3` and a pocket's floor corner `+d³`; a plinth's boss to Steiner's
 bore to Pappus's, the square `d × d` about the foot once, `2π(R ± d/2) d²` less; the field of a
 body with a concave edge, grown and shrunk).
 
+**A body shelled** (`std.rounds`' `shell`, [0.198]): `A shell(t) B` is a word of the language's own
+words, nothing in Rust of its own: the cavity `solid({ c | c inside B })` with each face `w` of `B`
+not among `A`'s (`repeat w in B { when not w in A { … } }`) cutting its wall `solid({ p | p
+distance(<= t) w })` from it, and the cavity cut from `B.body`; `shell(t) X` the one region `{ p |
+p inside X; distance(p, beyond) >= t }` over `beyond := { c | c outside X }` (`Grown`'s shrunk),
+cut from `X.body`.  What it needed is the stratum's: **a body standing on a reader reads too**
+(`faces::readers_of`, `reads_faces_of`: a region whose terms read the body's faces, or any other
+body whose stock, walked down, is one — never the body itself nor a layer, whose stock is the layer
+beneath), so the cavity is one of `B`'s late terms, and `without` leaves a reader as it is, since
+nothing of it is in the stratum.  **Built exactly where `B` is a prism less what is cut from it**
+(`solid/shelled.rs`): the cavity is recognised by what its sets say (`shelled::recognised`, either
+form) and built as a prism — within a prism the distance from its boundary is the lesser of the
+section's distance from its edges and the distance along the axis from its caps, so the points at
+least `t` from its kept faces are its section eroded by `t` between its kept caps moved in by `t` —
+less each solid cut from `B` grown by `t` (the erosion of `A` less `P` is `A`'s less `P` grown:
+`grown::around`, a body grown's construction for a solid no region names).  The section eroded
+(`shelled::eroded`): each kept edge moved in by `t` — a line along its normal, an arc about its
+centre, its radius less or more as the material is inside its circle or out (`Carried`, read off
+the cap's circles by their own normal; a whole circle one edge) — two meeting at a convex corner
+where their carriers do (the meeting nearest the corner moved, `plane2::meet`), going on tangent at
+the point both move to, and joined by an arc of radius `t` about a reflex one; an open edge, or an open cap, moved
+*out* by `t/2`, so the cavity crosses the body's faces there and lies on none of them; where a kept
+edge meets an open one at more than a right angle the arc about the corner runs on to the open
+edge's line (a wall leaning in keeps a rounded lip; over an open arc it is refused).  Where the
+prism's construction refuses, the walls' is asked (below), and a refusal says both.  A body's open faces are matched to the
+stock's faces by their planes.  Its recipe node is the cavity's (`cad.rs` asks `shelled::built`
+once a solid, before anything else of it, and writes it for the cavity in place of the regions it
+is made of, depending on what its construction reads, `Shelled::reads`): a `prism`, or a `region` keeping within it and outside each cut's
+`grown` node.  **Any other body by its walls** (`shelled::walls`, a boss put on it): the walls are
+what lies within `t` of what is outside the body, so they are the body's faces turned inside out
+(`BodyFaces::inverted`: each face's side turned, each edge's convexity the other way, read off the
+body's own and not classified again) grown by `t` in `Grown`'s pieces (`grown::pieces`) — each
+face's prism cut back to a convex edge's bisector, a wedge about each concave edge (a boss's foot),
+cut back at its corners as a step's end; a face whose rim is all such bisectors may now hold holes
+(`grown::about_feet` cutting its rim back by `cut_back`, `beside_concave`'s, a plate's top about a
+boss's foot), and a side running on in one line past a vertex is one side (`cut_back`: two faces
+glued and made one leave the vertex).  An open face's prism `2t` out from it is glued on first
+(`section_of`), so the walls run out through it, and a wall standing on an open face in a concave
+edge is refused (its foot's quarter round hangs below the opening).  The cavity's node: a block
+holding the body clear less one past it less the body (an inline `body` of its other terms) with
+the openings' prisms (`glued`) and the walls glued to that (`glued`), so every Boolean either glues
+faces shared exactly or nests a solid inside another; it depends on the body's other terms.  The
+construction reads the body's stratum through a `placed` node of id `STRATUM`, the recipe the same
+node of the body's terms.  The native host builds any node nested so (`Session::solid`).
+`sweeps_among` reads the solids a built cavity stands for as built (`shelled::stands_for`, by what
+its sets say; the cavity built only where nothing else decides), `exact::build` names the faces of
+a solid whose node is no `body` under it as a region's — so the cavity's — each wall's inner face for the face it lines (`south`),
+the arc `round`, a cut's grown faces `round` — and a body's stratum is gated: the stratum less the
+cavity, built, against the body's field (`shelled::gate`).  Refused by name and read by the field:
+a body rounded as well, a face left open that is none of the stock's (a cut's) or only part of
+one, walls that meet or cross (`shelled::simple`, by `planar::meets`), a prism no longer than twice the thickness, a
+cut no body grown builds, walls no body grown builds, a wall standing on a face left open.  `tests/shell.rs` is the gate: a block sealed and open through a face, an L's
+concave edge rounded within by `t`, a boss shelled with its plinth, the same open through the
+slab's top (its walls running on round their foot, a quarter round), a post added to a pan shelled
+and named, each at a lattice of points to its closed form; built exactly, the block sealed and open,
+the L (`8 (160 − π)` taken), a tray's pocket and a plate's bore grown out of the cavity, a hopper's
+leaning wall's lip, the plinth sealed, as a chimney and with a pit beside its boss (its foot
+`100 − 10π + 8/3` under the boss), each to its closed form to 1e-9; the refusals said, and the
+faces' names.  `rust/examples/shells/` is the series (`tests/shell_examples.rs`: every case's
+closed form to 1e-9, a rounded enclosure, a cup, a turned can, two bosses square and round, walls
+leaning in and out, 120° and acute corners; `gcs-cli`'s
+`the_shells_export_and_measure_within_their_tolerance`: each written as STEP and STL within
+10 µm).
+
 **`P tangent(at: m) S`, a plane tangent to a set (#145, #148, 0.56):** `sets::expand_touch`
 applies the body at `m` and walks it `Pass::Made` then `Pass::Along` toward `P.u` and `P.v`
 (`model::Toward::Axis`: the axis's `d` columns fed where a line's ends go, `dual_kernel`

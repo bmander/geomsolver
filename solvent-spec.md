@@ -1,6 +1,6 @@
 # Solvent: A Declarative Language for Constrained Geometry
 
-**Specification, Draft 0.197 — October 2026**
+**Specification, Draft 0.198 — October 2026**
 
 What changed in each draft, newest first, is the
 [language changelog](docs/solvent-changelog.md); a **[0.n]** mark in the text below points at
@@ -928,7 +928,8 @@ of `B` and again the other way round, states it once, and a corner once for its 
 stratum**: a term of a body that reads that body's faces reads the body as its other terms make it —
 a round reads the faces as the cut it rounds left them, never its own or another round's — and acts
 on the body after them, what it adds and then what it takes; a body whose stock reads its own faces
-is refused where it is evaluated. **[0.149]** **The stratum in layers**: a round's statement may be
+is refused where it is evaluated. **[0.198]** A solid standing on one that reads a body's faces
+reads them too (a shell's cavity, below), so as that body's term it acts in the stratum. **[0.149]** **The stratum in layers**: a round's statement may be
 named (`bevel := plate.rim chamfer(d: 4mm) plate.far`, §9.9), its faces then past the body under the
 name (`plate.bevel.taken.flat`; the name alone, `plate.bevel`, every face it made). A round that
 names another's faces by that name (`plate.bevel round(r: 1mm) plate`) reads the body as that one
@@ -965,6 +966,26 @@ pieces is within the faces of any one of them (§6.21), so a body in pieces grow
 and its faces are planes and cylinders meeting at a prism's corners — each face's prism, each
 edge's wedge and each corner's sector of the ball glued to `B` — held to the point-by-point
 reading; elsewhere it is read point by point, and an exact export refuses it in those words.
+
+**A body shelled** **[0.198]** is a word of the standard library over §6.21's sets, not a feature
+of the kernel: `A shell(t: 2mm) B` keeps of the body `B`'s faces are of only what lies within `t` of
+one of its faces not among `A`'s, the body hollowed to walls `t` thick and open through `A`'s faces;
+`shell(t: 2mm) X` keeps what lies within `t` of everything outside `X`, every face closed. `A` is
+one face path. Its body is the cavity `{ c | c inside B }` with each kept face's wall `{ p | p
+distance(<= t) w }` cut from it, cut from the body — so each wall is its face moved in by `t`, the
+inner faces meeting sharp within a convex edge of `B` and rounded by `t` within a concave one, and
+the walls run on to an open face's rim, and round it by `t` where the hollow reaches past a wall's
+edge (a boss standing on an open top keeps a quarter round about its foot). It acts on the body after its other terms, as a round does
+(the stratum, above). *Non-normative:* within a prism the distance from its boundary is the lesser
+of its section's distance from the section's edges and the distance along its axis from its caps, so
+where `B` is a prism less what is cut from it the cavity is a prism — its section with each kept edge
+moved in by `t` (a line along its normal, an arc about its centre), an arc of radius `t` about each
+reflex corner, between its kept caps moved in by `t` — less each cut grown by `t`, and an implementation builds it exactly, held to the point-by-point
+reading. The walls are what lies within `t` of what is outside `B`, so any other body is built as a
+body grown about its faces turned inside out, where that construction builds (planes meeting at
+corners of three faces: a boss put on a body, a pocket cut from it); elsewhere, and where a wall
+stands on a face left open, it is read point by point, and an exact export refuses it in those
+words.
 
 **The brackets are what the thing is made of** (§4.3, §6.2), so the sweep stands in them beside the face: `from:`, `to:`, `depth:`, **[0.80]** `draft:`, `through:`, `about:`, `sweep:` and `sense:` are labels of the constructor and are neither seeds nor constraints (**[0.100]** `along:` is retired: below). A mixture of sweep forms, a half-written prism (`from:` with no `to:`), `from:`/`to:` beside `depth:`, and `sweep:` or `sense:` with no `about:` are each refused where they are written, with the shapes a solid has.
 
@@ -3317,7 +3338,7 @@ by its dotted path, asked for by its own `use` and named by that path (`use std.
 | `std.place` | where points, lines and planes stand: `horizontal`, `vertical`, `offset`, `right_of`, `left_of`, `above`, `below`, `coords`, `on_u`, `on_v`, `skew`, `turned`, `square`, `seats`, `raised` |
 | `std.shapes` | figures drawn in a plane: `CenteredRectangle`, `Ellipse`, `Polygon`, `Hex`; and `hangs` |
 | `std.sets` | surfaces as sets (§6.21): `Sphere`, `Cylinder`, `Cone`, `ConeThrough`, `HalfSpace`, `Offset`; and `on_sphere` |
-| `std.rounds` | rounds and chamfers (§6.9): `round`, `chamfer`, `Run`, `Fill`, `Corner`, `CornerFill`, `Flat`, `FlatFill`, `Rounded`, `Chamfered`, `Grown` |
+| `std.rounds` | rounds and chamfers (§6.9): `round`, `chamfer`, `Run`, `Fill`, `Corner`, `CornerFill`, `Flat`, `FlatFill`, `Rounded`, `Chamfered`, `Grown`, `shell` |
 | `std.panels` | developable panels: `Developable`, `Development` |
 | `std.stations` | stations of a face family and frames along a path: `OnLine`, `OnArc`, `OnSpline`, `On`, `Helix`, `OnHelix`, `Minimal`, `Frenet`, `Along`, `AlongFrenet`, `Across`, `Ruled`, `Apex`, `Affine`, `Similar`, `Twisted`, `scaled`, `scaled_radius` |
 | `std.motion` | a frame's joint and its twist (§6.14): `turns`, `screws`, `spins`, `slides`, `rolls`, `reciprocal`, `Screw` |

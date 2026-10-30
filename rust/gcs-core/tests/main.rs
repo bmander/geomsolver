@@ -248,6 +248,8 @@ mod set_regions;
 mod sets;
 mod shared_contact;
 mod sheet;
+mod shell;
+mod shell_examples;
 mod shorthand;
 mod size_measure;
 mod slide;
