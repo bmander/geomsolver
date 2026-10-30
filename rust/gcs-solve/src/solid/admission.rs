@@ -712,15 +712,12 @@ fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lo
 struct Lone { cutter: crate::brep::sweep::cutter::Cutter,scale: f64 }
 
 impl Lone {
-    /// Tool `source` as a lone prism, or none where it is not one. A prism placed (`p in f`,
-    /// `p at(under: m) τ`) is one too, its cutter carried by its placements (#684 AC).
+    /// Tool `source` as a lone prism, or none where it is not one: its cutter is the one reading
+    /// of it, undrafted (`prism_profile`) and its profile's walks its loops. A prism placed (`p in
+    /// f`, `p at(under: m) τ`) is one too, its cutter carried by its placements (#684 AC).
     fn read(sk: &Sketch,source: usize) -> Option<Lone> {
-        let mut prism = source;
-        while let SolidDef::Placed {source,..} = &sk.solids[prism].def { prism = *source as usize; }
-        let SolidDef::Prism {face,draft:None,..} = &sk.solids[prism].def else { return None };
-        if sk.faces.get(*face as usize)?.boundaries().count() != 1 { return None }
         let cutter = crate::brep::sweep::cutter::Cutter::read(&cad::recipe(sk,source).ok()?).ok()?;
-        cutter.prism_profile()?;
+        let ([_],_) = cutter.prism_profile()? else { return None };
         Some(Lone {cutter,scale:cad::millimetres(sk)})
     }
 
