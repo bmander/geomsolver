@@ -22,7 +22,10 @@
 //! from ring to ring and across the faces of the tool's profile, and round a convex corner's fan
 //! where the faces' roots part at it (`Piece::Corner`, #684 E): the corner's circle, its stations
 //! the normals between its faces' (a prism's corner, its ruling; a cap's rim or a drafted crease,
-//! its line, stepped onto partway along a side, #684 AE, AG). It asks the class's rows of
+//! its line, stepped onto partway along a side, #684 AE, AG). Where both faces' roots meet the
+//! corner at one point, or a fan it runs round stands at one point, every normal of the fan is in
+//! contact there: it steps straight across, and the sheet is creased along that point's path
+//! (`Characteristic::sharp`, #684 V). It asks the class's rows of
 //! that stretch as it goes: regular (S1), one stretch and one root a ring (S2), no fold (S3),
 //! and no crossing within a lead (S4). The sheet is built from the same walk
 //! (`brep::sweep::helical`). Like the generating class's checks, these are **sampled**: rings
@@ -64,6 +67,22 @@ struct Root { position: V,normal: V,spread: f64,reach: Option<f64> }
 /// flat the motion keeps in its plane reads it by this (#684 O).
 const ALL_ROUND: &str = "is in contact all round a ring";
 
+/// Why the walk ends where a revolution's face meets the tool's axis at an angle: there every
+/// normal of the cone round the apex is the tool's, and the sweep has a sharp edge along the
+/// apex's path, which the class builds only at a corner that turns to a circle (#684 V).
+const APEX: &str = "meets the tool's axis at an apex of its profile, where every normal of the cone round it is in \
+    contact and the sweep has a sharp edge along the apex's path (not built)";
+
+/// Whether revolved face `s` meets its axis at station `u` at an apex: its ring there no circle, and
+/// its normal beside it (a millionth of the meridian in) not along the axis (where it is, at a
+/// smooth pole, no normal but the axis's is the tool's).
+fn apex(s: &RevolvedSurface,u: f64) -> bool {
+    if s.ring(u).is_ok() { return false }
+    let beside = if u > 0.5 { u-1e-6 } else { u+1e-6 };
+    let Some(n) = s.at(beside,0.).ok().and_then(|p| envelope::contact(p,Motion::identity()).ok()).map(|c| c.normal) else { return false };
+    dot(n,s.axis_direction()).abs() < 1.-1e-9
+}
+
 /// A face's ring at one station: its roots, or why it has none to give.
 #[derive(Clone,Debug)]
 enum Ring { Roots(Vec<Root>),Degenerate(String) }
@@ -90,6 +109,9 @@ pub struct Characteristic {
     /// Whether the motion is a turn carried round a whole turn or more, read as one whole turn: its
     /// sheet is its section revolved all the way round, closing on itself (#684 N).
     pub whole: bool,
+    /// The nodes at which the characteristic passes a convex corner, a rim or a crease whose fan
+    /// stands at one point, the node itself (#684 V), each with that fan's piece, in order.
+    sharp: Vec<(usize,usize)>,
     pieces: Vec<Piece>,
     tool: super::SpatialField,
     motion: Motion,
@@ -117,9 +139,11 @@ pub struct Ask<'a> {
 struct Walker<'a> { contacts: &'a SweepContacts,pieces: Vec<Piece>,ask: &'a Ask<'a>,screw: Screw,motion: Motion,
     tool: &'a super::SpatialField,scale: f64,tolerance: f64 }
 
-/// One pass of the walk: the stations each face was sampled at, its rings there, and the stretch
-/// walked through the blank (face, ring, root), in order along the characteristic.
-struct Pass { stations: Vec<Vec<f64>>,rings: Vec<Vec<Ring>>,order: Vec<(usize,usize,usize)> }
+/// One pass of the walk: the stations each face was sampled at, its rings there, the stretch
+/// walked through the blank (face, ring, root), in order along the characteristic, and the steps
+/// it took straight across a convex corner whose fan stands at one point (`Step::Sharp`): the two
+/// roots either side and the fan.
+struct Pass { stations: Vec<Vec<f64>>,rings: Vec<Vec<Ring>>,order: Vec<(usize,usize,usize)>,sharp: Vec<([(usize,usize,usize);2],usize)> }
 
 impl Pass {
     fn root(&self,x: (usize,usize,usize)) -> &Root { root(&self.rings,x) }
@@ -175,13 +199,15 @@ impl Walker<'_> {
         };
         let root = |x| root(&rings,x);
         // the walk each way from the seed, to MARGIN rings past the last that reaches
-        let walk = |dir: isize| -> Result<Vec<(usize,usize,usize)>,Failure> {
-            let mut out = Vec::new();
+        let walk = |dir: isize| -> Result<(Vec<(usize,usize,usize)>,Vec<([(usize,usize,usize);2],usize)>),Failure> {
+            let (mut out,mut sharp) = (Vec::new(),Vec::new());
             let (mut at,mut dir) = (seed,dir);
             let mut since = 0;
             loop {
-                match step(contacts,pieces,&stations,&rings,at,dir,self.scale) {
-                    Step::Next(next,d) => {
+                let taken = step(contacts,pieces,&stations,&rings,at,dir,self.scale);
+                if let Step::Sharp(next,_,fan) = taken { sharp.push(([at,next],fan)) }
+                match taken {
+                    Step::Next(next,d) | Step::Sharp(next,d,_) => {
                         if next == seed { return Err((Condition::Regular,format!("the characteristic closes on itself through \
                             {} within the blank's reach",pieces[seed.0].named()),witness(family,root(seed).reach,root(seed).position))) }
                         let duplicate = next.0 != at.0;
@@ -189,7 +215,7 @@ impl Walker<'_> {
                         at = next; dir = d;
                         if duplicate { continue }
                         if root(at).reach.is_some() { since = 0 } else { since += 1 }
-                        if since == MARGIN { return Ok(out) }
+                        if since == MARGIN { return Ok((out,sharp)) }
                     }
                     Step::End(why) => {
                         let last = out.iter().rev().chain(std::iter::once(&seed)).find(|&&x| root(x).reach.is_some()).copied().unwrap_or(seed);
@@ -199,7 +225,8 @@ impl Walker<'_> {
                 }
             }
         };
-        let (back,ahead) = (walk(-1)?,walk(1)?);
+        let ((back,mut sharp),(ahead,sharp_ahead)) = (walk(-1)?,walk(1)?);
+        sharp.extend(sharp_ahead);
         let order: Vec<(usize,usize,usize)> = back.into_iter().rev().chain(std::iter::once(seed)).chain(ahead).collect();
         // S2: a ring's two roots in the blank both on the walk, a flat face's line between them
         for &(k,i,[a,b]) in &doubled {
@@ -212,12 +239,15 @@ impl Walker<'_> {
                     witness(family,r.reach,r.position)))
             }
         }
-        // S2: every ring point that reaches the blank is on this one stretch
-        if let Some(&other) = reaching.iter().find(|x| !order.contains(x)) {
+        // S2: every ring point that reaches the blank is on this one stretch, but a root of a fan
+        // the walk stepped straight across where it stands at one point, that point (#684 V)
+        let stood = |x: &(usize,usize,usize)| sharp.iter().any(|&([a,_],fan)| x.0 == fan
+            && distance(root(*x).position,root(a).position) <= 1e-7*self.scale);
+        if let Some(&other) = reaching.iter().find(|x| !order.contains(x) && !stood(x)) {
             return Err((Condition::Once,format!("the characteristic reaches the blank in more than one stretch (again on {})",
                 pieces[other.0].named()),witness(family,root(other).reach,root(other).position)))
         }
-        Ok(Pass {stations,rings,order})
+        Ok(Pass {stations,rings,order,sharp})
     }
 }
 
@@ -294,44 +324,80 @@ impl Characteristic {
             samples += fine.samples();
             fine
         };
-        let Pass {stations,rings,order} = fine;
+        let Pass {stations,rings,order,sharp: stepped} = fine;
         // S1: no ring the walk passes is in contact all round between its stations
         stationary(pieces,&stations,&order,motion,family,&screw,ask)?;
         let root = |x| root(&rings,x);
         let seed = *order.iter().find(|&&x| root(x).reach.is_some()).expect("a pass reaches");
-        // the nodes, a crossing's second point dropped (its station starts the next step)
+        // the nodes, a crossing's second point dropped (its station starts the next step); a step
+        // straight across a convex corner whose fan stands at one point a crease at the node before
+        // it, with the fan (#684 V)
         let mut nodes: Vec<Node> = Vec::new();
+        let mut sharp: Vec<(usize,usize)> = Vec::new();
         let mut from = None;
         for (w,&x) in order.iter().enumerate() {
             let (k,i,_) = x;
             let u = stations[k][i];
             let r = root(x);
+            if let Some(&(_,fan)) = stepped.iter().find(|(pair,_)| w > 0 && (*pair == [order[w-1],x] || *pair == [x,order[w-1]])) {
+                if let Some(at) = nodes.len().checked_sub(1) { sharp.push((at,fan)) }
+            }
             if w > 0 && order[w-1].0 != k && from.is_none() && nodes.last().is_some_and(|m: &Node| distance(m.position,r.position) <= 1e-7*scale) {
                 from = Some(u); continue
             }
             let start = from.take().unwrap_or_else(|| nodes.last().map_or(u,|m| m.u));
             nodes.push(Node {patch:k,u,from:start,position:r.position,normal:r.normal,reach:r.reach});
         }
-        let first = nodes.iter().position(|m| m.reach.is_some()).expect("the seed reaches");
-        let last = nodes.iter().rposition(|m| m.reach.is_some()).expect("the seed reaches");
-        // S1: no fan the walk runs round stands at one point, from the node it runs onto it at to
+        // a fan the walk runs round that stands at one point, from the node it runs onto it at to
         // its last: there the fan's edge runs along that point's velocity, every normal between its
         // faces is in contact at it, and the sweep has a sharp edge along its path (as where a lined
-        // side's ruling under a turn, in a plane through the axis, meets a rim square to that plane)
+        // side's ruling under a turn, in a plane through the axis, meets a rim square to that plane).
+        // Between two faces' nodes it is that point, a crease, as where the walk steps straight
+        // across a corner (#684 V): its nodes are dropped, the crease the node it runs onto it at. At
+        // the walk's end, among its last `MARGIN` rings past the blank, it is where the walk ends:
+        // its nodes are that point once, the face's beside it. (S1: one at the end that reaches the
+        // blank, which the margin leaves none, is refused.)
         let mut w = 0;
         while w < nodes.len() {
             let k = nodes[w].patch;
             if !pieces[k].fan() { w += 1; continue }
-            let start = w.saturating_sub(1);
+            let onto = w;
             while w+1 < nodes.len() && nodes[w+1].patch == k { w += 1 }
+            let start = onto.saturating_sub(1);
             let run = &nodes[start..=w];
-            if run.len() > 1 && run.iter().all(|m| distance(m.position,run[0].position) <= 1e-7*scale) {
-                let at = run.iter().find_map(|m| witness(family,m.reach,m.position)).or_else(|| witness(family,root(seed).reach,root(seed).position));
-                return Err((Condition::Regular,format!("the characteristic on {} stands at one point all round its fan, every normal \
-                    between its faces in contact there: the sweep has a sharp edge along that point's path (not built)",pieces[k].named()),at))
+            if !(run.len() > 1 && run.iter().all(|m| distance(m.position,run[0].position) <= 1e-7*scale)) { w += 1; continue }
+            let shift = |sharp: &mut Vec<(usize,usize)>,from: usize,by: usize| for c in sharp.iter_mut().filter(|c| c.0 >= from) { c.0 -= by };
+            let between = onto > 0 && w+1 < nodes.len();
+            if let (false,Some(at)) = (between,run.iter().find_map(|m| witness(family,m.reach,m.position))) {
+                return Err((Condition::Regular,format!("the characteristic on {} stands at one point all round its fan at the end \
+                    of the walk, in the blank: the sweep has a sharp edge along that point's path, which the class builds only \
+                    between two faces",pieces[k].named()),Some(at)))
             }
-            w += 1;
+            if between {
+                nodes.drain(onto..=w);
+                shift(&mut sharp,onto,w+1-onto);
+                sharp.push((start,k));
+                w = onto;
+            } else if onto > 0 {
+                nodes.truncate(onto);
+            } else {
+                // the walk starts on the fan: one node at its point, the face's after it as the
+                // crossing's dropped point would have been, its station where that face's step starts
+                let mut first = nodes[w];
+                let next = nodes.get(w+1).copied();
+                if let Some(next) = next { first = Node {patch:next.patch,u:next.from,from:next.from,..first} }
+                nodes.splice(0..=w,std::iter::once(first));
+                shift(&mut sharp,1,w);
+                w = 1;
+            }
         }
+        sharp.sort_by_key(|c| c.0);
+        if nodes.len() < 2 {
+            return Err((Condition::Regular,format!("the characteristic stands at one point, on {}: the sweep is that point's \
+                path, no sheet",pieces[nodes[0].patch].named()),witness(family,root(seed).reach,root(seed).position)))
+        }
+        let first = nodes.iter().position(|m| m.reach.is_some()).expect("the seed reaches");
+        let last = nodes.iter().rposition(|m| m.reach.is_some()).expect("the seed reaches");
         // S1: no ring within the reach and its margin is about to lose its two roots
         for x in &order {
             let r = root(*x);
@@ -345,11 +411,12 @@ impl Characteristic {
         // sign it turns: the factor's size alone would pass through zero unseen.
         let mut least = f64::INFINITY;
         let mut sign = 0.;
-        let flat = |w: usize| matches!(walker.pieces[nodes[w].patch],Piece::Flat(_));
+        let creased = creases(&nodes,pieces,&sharp);
         for w in first.max(1)..=last.min(nodes.len()-2) {
-            // where the walk runs onto or off a flat face the sweep has a sharp edge, its normal turned
-            // there from the one face's to the other's, whose sides are read either side (#684 O)
-            if flat(w) != flat(w+1) { continue }
+            // where the walk runs onto or off a flat face, or straight across a convex corner, the
+            // sweep has a sharp edge, its normal turned there from the one face's to the other's,
+            // whose sides are read either side (#684 O, V)
+            if creased.contains(&w) { continue }
             let tangent = sub(nodes[w+1].position,nodes[w-1].position);
             let velocity = screw.velocity(nodes[w].position);
             let factor = dot(cross(tangent,velocity),nodes[w].normal)/(norm(tangent)*norm(velocity));
@@ -361,8 +428,8 @@ impl Characteristic {
             sign = factor.signum();
             least = least.min(factor.abs());
         }
-        let found = Characteristic {screw,nodes,reach:[first,last],least_factor:least,samples,whole:contacts.whole(),pieces:walker.pieces,
-            tool:tool.clone(),motion,tolerance};
+        let found = Characteristic {screw,nodes,reach:[first,last],least_factor:least,samples,whole:contacts.whole(),sharp,
+            pieces:walker.pieces,tool:tool.clone(),motion,tolerance};
         // S4: its section square to the axis is simple
         found.simple(family)?;
         Ok(found)
@@ -414,12 +481,19 @@ impl Characteristic {
     fn on_flat_piece(&self,k: usize) -> bool { matches!(self.pieces[k],Piece::Flat(_)) }
 
     /// Where along the characteristic (`s`, a node's) it runs onto or off a flat face the motion
-    /// keeps in its own plane (#684 O): the sweep has a sharp edge along that point's path, between
-    /// the strip the flat sweeps in its plane and the face beside it, so the sheet is creased there
-    /// and cut into faces.
-    pub fn creases(&self) -> Vec<f64> {
-        let flat = |w: usize| self.on_flat_piece(self.nodes[w].patch);
-        (0..self.nodes.len()-1).filter(|&w| flat(w) != flat(w+1)).map(|w| w as f64).collect()
+    /// keeps in its own plane (#684 O), or from one face to the next across a convex corner whose
+    /// fan stands at one point (#684 V): the sweep has a sharp edge along that point's path, between
+    /// the strip the flat sweeps in its plane and the face beside it, or between the two faces'
+    /// sheets, so the sheet is creased there and cut into faces.
+    pub fn creases(&self) -> Vec<f64> { creases(&self.nodes,&self.pieces,&self.sharp).into_iter().map(|w| w as f64).collect() }
+
+    /// The convex corners, rims and creases of the tool whose fans stand at one point where the
+    /// characteristic passes them, the sheet creased along that point's path (#684 V), each as a
+    /// message names it.
+    pub fn sharp(&self) -> Vec<String> {
+        let mut walked: Vec<usize> = self.sharp.iter().map(|&(_,k)| k).collect();
+        walked.dedup();
+        walked.into_iter().map(|k| self.pieces[k].named()).collect()
     }
 
     /// Whether the stretch from node `w − 1` to node `w` runs round a convex corner's fan (it lies
@@ -484,6 +558,17 @@ impl Characteristic {
         }
         Ok(())
     }
+}
+
+/// The nodes at which the sweep is creased, in order: where the walk runs onto or off a flat face
+/// the motion keeps in its own plane (#684 O), and the nodes of `sharp`, where it passes a fan that
+/// stands at one point (#684 V).
+fn creases(nodes: &[Node],pieces: &[Piece],sharp: &[(usize,usize)]) -> Vec<usize> {
+    let flat = |w: usize| matches!(pieces[nodes[w].patch],Piece::Flat(_));
+    let mut found: Vec<usize> = (0..nodes.len()-1).filter(|&w| flat(w) != flat(w+1)).chain(sharp.iter().map(|&(w,_)| w)).collect();
+    found.sort_unstable();
+    found.dedup();
+    found
 }
 
 /// S1 between the walk's stations: a ring in contact all round, every point of it on the
@@ -570,7 +655,10 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
     let root = |position: V,normal: V,spread: f64| Root {position,normal,spread,reach:reach(position)};
     // a revolution's ring, `a cos + b sin + c`: its roots, each with its point and outward normal
     let round = |found: &dyn Fn((f64,f64,f64)) -> Result<Vec<(V,V)>,envelope::Error>| -> Ring {
-        let (a,b,c) = match piece.coefficients(u,motion) { Ok(k) => k,Err(e) => return Ring::Degenerate(format!("{e:?}")) };
+        let (a,b,c) = match piece.coefficients(u,motion) { Ok(k) => k,Err(e) => return Ring::Degenerate(match piece {
+            Piece::Face(_,surface) if apex(surface,u) => APEX.into(),
+            _ => format!("{e:?}"),
+        }) };
         let amplitude = a.dhypot(b);
         let spread = (1.-(c/amplitude).dpowi(2)).max(0.).sqrt();
         match found((a,b,c)) {
@@ -644,7 +732,9 @@ fn witness(family: &Family,reach: Option<f64>,p: V) -> Option<V> {
 }
 
 /// One step of the walk: the next ring's root and the direction to go on in, or why there is none.
-enum Step { Next((usize,usize,usize),isize),End(String) }
+/// A step across a convex corner where both faces' characteristics meet its circle at one point
+/// (`Sharp`) also names the corner's fan, which stands at that point (#684 V).
+enum Step { Next((usize,usize,usize),isize),Sharp((usize,usize,usize),isize,usize),End(String) }
 
 /// The root after `(piece, ring, root)` going `dir` along the piece's stations, or across the edge
 /// a face shares with the next one in its profile, onto the root at the same point there — or,
@@ -795,9 +885,9 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
     if matches!(pieces[next],Piece::Flat(_)) { return onto_flat(next) }
     match (onto(next,e.ends[1-s]),fan) {
         // both faces' characteristics meet the corner's circle at one point: every normal of its
-        // fan is in contact there, and the sweep has a sharp edge along that point's path
-        (Some(Step::Next(..)),Some(_)) => Step::End("meets a convex corner of the profile at one point from both of its faces, \
-            where the sweep has a sharp edge along that point's path (not built)".into()),
+        // fan is in contact there, and the sweep has a sharp edge along that point's path, the
+        // sheet creased there (#684 V)
+        (Some(Step::Next(next,d)),Some(fan)) => Step::Sharp(next,d,fan),
         // the faces' points differ where they meet: the characteristic runs round the corner's fan
         (_,Some(fan)) => onto(fan,s as f64).unwrap_or_else(jumps),
         (Some(next),None) => next,

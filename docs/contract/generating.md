@@ -338,8 +338,9 @@ those of the same `A cos θ + B sin θ + C = 0` with the fan normal's coefficien
 a turn or a slide) the walk, at a face's end where the next face's ring has no root at the same
 point, runs onto the fan and round it to the next face (`step`); the rows S1–S4 are asked of the
 fan's nodes as of any. Where both faces' characteristics meet a convex corner at one point, every
-fan normal is in contact there and the sweep has a sharp edge along that point's path: S1 refuses
-it, saying so, as it does a concave corner's jump. The sheet's rows are laid by length along the
+fan normal is in contact there and the sweep has a sharp edge along that point's path: the walk
+steps straight across and the sheet is creased there (#684 V, below); S1 refuses a concave
+corner's jump. The sheet's rows are laid by length along the
 section plus each turn of its normal counted as the section's length over a half turn, so a fan
 (the rim of a 60° V under a thread's screw: 0.06 mm turning 100°) is as many rows as its turn asks;
 the rows where the walk runs onto and off a fan are exact rows of the grid (`Characteristic::fan_ends`,
@@ -352,8 +353,8 @@ fan in a curve shorter than a march's step (0.09 mm against `h0`'s 0.22), which 
 round the rim's tip and traces once ([brep.md](brep.md);
 `object_builder::a_sharp_rims_fan_builds_at_the_displays_samples`). `Characteristic::fans` names
 the corners walked. `solid_sweeps_examples.rs` (`vthread.sv`, a V wheel ground along a helix, its
-section computed apart from the core) and `turns_and_slides.rs` (a V wheel slid tilted, its shadow;
-slid square, refused at S1 for its sharp edge) are the gate, each STL held to the field.
+section computed apart from the core) and `turns_and_slides.rs` (a V wheel slid tilted, its shadow)
+are the gate, each STL held to the field.
 
 **Prisms under a constant twist (#684 M):** a prism tool (drafted too) under a screw, a turn or a
 slide is walked along its rulings (`constant_twist::prism`). A screw moves a ruling's points as one
@@ -451,18 +452,17 @@ onto the lined side's line (`lined`), and a walk whose reach lies within a line 
 on it. S1 `rulings` skips a lined side and still refuses any other ruling in contact all along it
 whose path enters the blank, saying whether the characteristic branches there (a ruling `BESIDE`
 either side with a root on the tool, as at a corner whose fan holds a turn's axis) or runs along
-it; and refuses a fan the walk runs round whose nodes, from the one it runs onto it at, all stand
-within 1e-7 of the tool's size of one point (a sharp edge along that point's path: under a turn a
-lined side's ruling lies in a plane through the axis, and its rim at a cap runs along the turn's
-velocity there). `Characteristic::lined` names the lined sides walked. The gate is
+it. A fan the walk runs round whose nodes, from the one it runs onto it at, all stand within 1e-7
+of the tool's size of one point (under a turn a lined side's ruling lies in a plane through the
+axis, and its rim at a cap runs along the turn's velocity there) was refused at S1; it is a crease
+since #684 V (below). `Characteristic::lined` names the lined sides walked. The gate is
 `solid_sweeps_examples::the_facing_side_cuts_a_cone` (`solid_sweeps/facing.sv`, a bar leaning
 out in a plane through the axis, its inner side facing it squarely, turned: the wall that side's
 ruling turned, a cone, in closed form within 1e-5) and
 `prism_twists::a_side_facing_the_axis_screwed_runs_along_its_ruling` (`flat_end.sv`'s bar at 45°
 with its section square, screwed 8 mm a turn, from the end's line round the rim onto the ruling;
 by `z − kθ` within 2e-5 at 0.002 mm), each STL agreeing with the field, both refused at S1 before;
-with the refusals `prism_twists::a_side_facing_the_axis_turned_onto_its_rim_is_refused` (S1, the
-rim's fan at one point) and `a_corner_holding_the_turns_axis_is_refused` (S1, a branch), and
+with the refusal `prism_twists::a_corner_holding_the_turns_axis_is_refused` (S1, a branch), and
 `object_builder::a_ruling_in_contact_all_along_it_turned_builds_at_the_displays_samples`.
 
 **Flat faces a turn or a slide keeps in their own planes (#684 O):** a face whose contact `n·v`
@@ -503,6 +503,34 @@ the floor, within 1e-5, an S1 refusal before), each STL agreeing with the field;
 `prism_twists::a_side_along_the_slide_is_refused` (S1); the creased fit's
 `brep::a_grid_creased_along_a_row_is_its_stretches_fits_joined_there` (through every point, each
 side its plane to 1e-12); and `object_builder::a_flat_face_kept_in_its_plane_builds_at_the_displays_samples`.
+
+**A sharp edge along one point's path in a constant-twist sheet (#684 V):** where both faces'
+characteristics meet a convex corner at one point (a face's root at its end within 1e-7 of the
+tool's size of the next face's there, the corner's fan a piece: `corners`, `prism`'s ribs), every
+fan normal, a positive mix of the faces', is in contact there, and `step` steps straight onto the
+next face (`Step::Sharp`, naming the fan) rather than round the fan; a fan the walk runs round whose
+nodes all stand within 1e-7 of the tool's size of the point it runs onto it at (a rim's, a
+crease's, a corner's) is dropped between the faces' nodes either side. Each is a crease at the node
+at that point (`Characteristic::sharp`, which names the fans; `Characteristic::creases`, with #684
+O's), built as O's is: `helical_sheet`'s exact row, no turn counted, no withheld side contact, the
+creased fit (`nurbs::interpolate_creased`), no fold read across its knot, the sheet cut into faces
+there. S2 counts a reaching root of a fan stepped across at the crease's point as on the walk; S3
+is not read at the crease's node. A standing fan among the walk's last `MARGIN` rings is where the
+walk ends, one node at its point (S1 refuses one there that reaches the blank, which the margin
+leaves none). S1 refuses, naming the face, a revolved face reaching the tool's axis with its
+normal off the axis (`APEX`, `constant_twist::apex`: a cone to a point, whose corner turns to no
+circle; a smooth pole is none); a vertex of a prism stays refused (`VERTEX`). The gate is
+`solid_sweeps_examples::the_v_wheel_slid_square_cuts_a_v_groove` (`solid_sweeps/vgroove.sv`, a V
+wheel slid across a block square to its axis, the groove `2² tan 30° × 20` exactly) and
+`turns_and_slides::a_v_wheel_slid_square_leaves_its_profile_creased_at_the_rim` (up the rod, the
+wedge its profile cuts from the rod's circle in closed form, within 1e-6),
+`an_upright_v_wheel_turned_once_leaves_its_v_turned` (`whole_turn.sv` upright, Pappus, within
+1e-6), `prism_twists::a_bar_lying_across_the_turn_creases_at_its_corner` (its section turned in
+closed form, which `Bar::removed` matches to 1e-9, within 1e-5) and
+`a_side_facing_the_axis_turned_onto_its_rim_creases_there` (`Bar::removed`, within 2e-5 at 0.001
+mm; S1 before, #684 AF), each STL agreeing with the field; the refusal in
+`turns_and_slides::the_turn_and_slide_rows_refuse_by_name` (an engraving bit slid square, S1,
+apex); and `object_builder::a_sharp_edge_along_one_points_path_builds_at_the_displays_samples`.
 
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting
@@ -607,7 +635,7 @@ the bar's space turned round the disc, within 1e-6 of its volume, its STL agreei
 
 **Every class has its simplest case in `rust/examples/solid_sweeps/`** (#684): one short document
 a class — the canal (turned, and along a spline), a slide, a turn, a screw, a screw with sharp edges, the generating class's rack, its
-drafted helical rack, a tooth drafted both ways (`parted.sv`) a prism's cap (`bar_end.sv`) and a placed one's (`next_tooth.sv`), a prism's cap under a turn (`flat_end.sv`) and a prism drafted both ways under one (`creased.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
+drafted helical rack, a tooth drafted both ways (`parted.sv`) a prism's cap (`bar_end.sv`) and a placed one's (`next_tooth.sv`), a prism's cap under a turn (`flat_end.sv`) and a prism drafted both ways under one (`creased.sv`), a sharp edge along one point's path slid (`vgroove.sv`), the planar subtraction class's conjugate wheel, a union's members — its README row naming the class, and `tests/solid_sweeps_examples.rs`
 holding it to its class, to an exact build whose STL agrees with the field and to a volume made
 apart from the code under test. A class admitted later adds its file, its row and its test there;
 `every_example_is_held_and_named` fails a file the README does not name or no test reads. The

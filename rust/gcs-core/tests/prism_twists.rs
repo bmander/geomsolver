@@ -584,14 +584,46 @@ fn a_side_facing_the_axis_screwed_runs_along_its_ruling() {
 /// The same bar turned, leaning 20° (`flat_end.sv` with its section square): under a turn a side's
 /// ruling in contact all along it lies in a plane through the axis, and the rim at its foot runs
 /// square to that plane, along the turn's velocity there, so every normal of the rim's fan is in
-/// contact at that one point. The floor and the wall meet in a sharp edge along its path, which
-/// the class does not build (S1). (`facing.sv`'s bar stands past the block, its ruling's ends
-/// clear.)
+/// contact at that one point. The floor and the wall meet in a sharp edge along its path (#684 V):
+/// the fan's nodes are that point, the sheet creased there between the end's line turned and the
+/// ruling turned. The block loses what the bar's shadow covers, read slice by slice from its
+/// half-spaces (`Bar::removed`), within 2e-5 at 0.001 mm. Refused at S1 before (#684 AF).
+/// (`facing.sv`'s bar stands past the block, its ruling's ends clear.)
 #[test]
-fn a_side_facing_the_axis_turned_onto_its_rim_is_refused() {
-    let r = refused(admit(&flat_end(20.,0.).text()));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("the rim where `bar.inner` meets `bar.start` stands at one point all round its fan"),"{}",r.message);
+fn a_side_facing_the_axis_turned_onto_its_rim_creases_there() {
+    let bar = flat_end(20.,0.);
+    let e = fixtures::read(&bar.text());
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    assert_eq!(found.sharp(),["the rim where `bar.inner` meets `bar.start`"]);
+    assert_eq!(found.lined(),["`bar.inner`"]);
+    assert_eq!(found.creases().len(),1);
+    near(exported_at(&e,"part",0.001),PI/3.*(144.-64.)-bar.removed(),2e-5);
+}
+
+/// A bar of square section lying along y across the turn, stood on a corner toward the axis 10 from
+/// it, its corners above and below standing past the block's heights (#684 V): the turn moves each
+/// ruling along itself where it crosses the plane through x, so every side's ruling, and every
+/// normal of the inner corner's fan, is in contact at its point in that plane. The two inner
+/// sides' characteristics are their lines in that plane, and they meet the corner's ruling at one
+/// point: the walk steps from the one side straight onto the other, the sheet creased along that
+/// point's circle. The groove is the section turned, `r ≥ 10 + |z|` within the block, so it loses
+/// `π/3 ∫ (144 − (10 + |z|)²) dz = π/3 · 101/3`, which the bar's half-spaces read slice by slice
+/// (`Bar::removed`) give too: within 1e-5 (-6.2e-6, alike at 0.001 mm, the bias the leaning bar's
+/// hyperboloid above shows).
+#[test]
+fn a_bar_lying_across_the_turn_creases_at_its_corner() {
+    let bar = Bar {origin:[0.;3],across:[1.,0.,0.],along:[0.,0.,-1.],corners:diamond(10.).to_vec(),
+        names:vec!["inner","outer","under","back"],from:-4.,to:4.,draft:0.,lead:0.};
+    let e = fixtures::read(&bar.text());
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert_eq!(found.screw.kind(),"a turn");
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    assert_eq!(found.sharp(),["the corner of `bar.back` and `bar.inner`"]);
+    let removed = PI/3.*101./3.;
+    assert!((bar.removed()-removed).abs() <= 1e-9*removed,"the half-spaces' {} against {removed}",bar.removed());
+    near(exported(&e,"part"),PI/3.*(144.-64.)-removed,1e-5);
 }
 
 /// A bar of square section stood on a corner, lying along y across the turn with that corner up

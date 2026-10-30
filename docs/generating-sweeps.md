@@ -63,7 +63,7 @@ sweep is asked T1, T2, M1, E0 and E1 as above, then (`solid::constant_twist`):
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | The characteristic is regular through the reach and a margin past it: no ring is about to lose its two roots (a double point, where the curve turns back on the ring), none is stationary, the walk never jumps at a concave corner, and it meets no convex corner at one point from both faces. | The sheet is one regular curve carried along; at a convex corner it runs round the corner's fan (below). Met at one point, a convex corner leaves a sharp edge in the sheet, which is not built. | The face or the corner, and the ring. |
+| S1 | The characteristic is regular through the reach and a margin past it: no ring is about to lose its two roots (a double point, where the curve turns back on the ring), none is stationary, and the walk never jumps at a concave corner. | The sheet is one regular curve carried along; at a convex corner it runs round the corner's fan (below), and where both faces meet the corner at one point it is creased there (#684 V, below). | The face or the corner, and the ring. |
 | S2 | At most one characteristic point of a ring reaches the blank, and every point that does lies on one stretch. | One sheet per placement, one point per station. | The second point. |
 | S3 | The characteristic never runs along the screw's velocity: `(c′ × v)·n` keeps one sign and stays above `least_factor`. | A zero is a fold of the sheet. Signed, so a fold passed between two samples is seen by the sign it turned. | The face and the factor. |
 | S4 | The section square to the axis (each characteristic point carried along its path to one height) does not cross itself. | The sheet is the same at every height, turned and raised, so it meets itself exactly where its section does. | The two points. |
@@ -209,8 +209,9 @@ face's (`solid::constant_twist`, `Piece::Corner`), under a screw, a turn or a sl
 A join is a corner where the faces' normals turn more than a millionth of a radian apart, with the
 tool's material between them; a circle's own ends and a tangent join are not. Where both faces'
 characteristics meet a convex corner at one point, every normal of its fan is in contact there and
-the sweep has a sharp edge along that point's path: S1 refuses it, naming the face. A V wheel slid
-square to its axis is one, its rim moving along its own tangent where it is nearest the rod.
+the sweep has a sharp edge along that point's path: the walk steps straight across it and the
+sheet is creased there (#684 V, below). A V wheel slid square to its axis is one, its rim moving
+along its own tangent where it is nearest the rod.
 
 A fan is usually short and turns far: a 60° V wheel set along a thread's helix touches over 0.06 mm
 of its rim while the normal turns 100°, since the rim moves nearly along itself there. The sheet's
@@ -224,7 +225,7 @@ the other, and its split found no cell.
 ground. `tests/solid_sweeps_examples.rs` holds it to a section read apart from the core (each
 point's helix back through the roll tested against the V by the signed distance from its nearer
 flank) to 2e-6, and `tests/turns_and_slides.rs` a V wheel slid tilted 25° to its shadow along the
-slide to 3e-6, each STL agreeing with the field; slid square, it is refused at S1.
+slide to 3e-6, each STL agreeing with the field; slid square, it was refused at S1 before #684 V.
 
 ### Prisms under a constant twist (issue #684 M)
 
@@ -396,7 +397,6 @@ running off the walk. The rows:
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
 | S1 | No ruling of a corner, a rim or a side but a lined side's is in contact all along it where its path enters the blank. | The rulings either side crossed, the walk crosses it at one point and the characteristic branches; not crossed, the characteristic runs along a ruling no lined side's, which the class does not walk. Read as #684 M's row is, and the rulings `1e-4` of a station either side read for a root on the tool. | The corner, rim or side, whether it branches, and a point of the ruling in the blank. |
-| S1 | No fan the walk runs round stands at one point, from the node it runs onto the fan at to its last, within 1e-7 of the tool's size. | There the fan's edge runs along that point's velocity, every normal between its faces is in contact at it, and the sweep has a sharp edge along its path, which one sheet does not build. | The fan, and a point of it in the blank. |
 
 The rows are sampled, as every row is. `rust/examples/solid_sweeps/facing.sv` is the case: a bar
 leaning 20° out from upright in a plane through the axis, its inner side facing the axis
@@ -408,10 +408,11 @@ height. `tests/solid_sweeps_examples.rs` holds it to the closed form `π/3 · 80
 holds `flat_end.sv`'s bar leaning 45° with its section square, screwed 8 mm a turn, to the
 arithmetic over `z − kθ` within 2e-5 at 0.002 mm (1.3e-5), the walk running from the end's line
 round the rim onto the ruling `y = −k tan 45°`, each STL agreeing with the field. Both were
-refused at S1 before. Refused: the same bar turned, leaning 20° (the rim's fan at one point, S1),
-and a bar of square section lying across the turn with a corner up in the block (its fan holding
-the axis's direction, the characteristic branching, S1). `tests/object_builder.rs` builds
-`facing.sv` at the page's samples.
+refused at S1 before. The same bar turned, leaning 20°, its rim's fan standing at one point, was
+refused at S1 until #684 V, which creases the sheet there (below). Refused: a bar of square
+section lying across the turn with a corner up in the block (its fan holding the axis's
+direction, the characteristic branching, S1). `tests/object_builder.rs` builds `facing.sv` at the
+page's samples.
 
 ### Flat faces a turn or a slide keeps in their own planes (issue #684 O)
 
@@ -477,6 +478,58 @@ cylinder of radius 10 (`π/6 (12² − 10²)`, -2.0e-6), refused at S1 before. E
 field. Refused: a hollow mill's ring of a bottom slid and a mill turned a whole turn about an axis
 through its bottom (S1, `tests/flat_faces.rs`), and a bar's side along a slide (S1,
 `tests/prism_twists.rs`). `tests/object_builder.rs` builds `slot.sv` at the page's samples.
+
+### A sharp edge along one point's path (issue #684 V)
+
+Where both faces' characteristics meet a convex corner of the tool at one point, every normal of
+the corner's fan is in contact there: the fan's normals lie between the faces', each a positive
+mix of theirs, so each is square to the point's velocity where both are. The corner's edge runs
+along that velocity, and the sweep has a sharp edge along the point's path, between the two faces'
+sheets. That is a V wheel slid square to its axis, where its rim runs along the slide nearest the
+blank; a V wheel stood upright and turned about a parallel axis; a prism lying across a turn,
+whose rulings the turn moves along themselves where they cross the plane through the axis; and a
+prism's side facing a turn's axis squarely, whose ruling meets the rim at its cap where the rim
+runs along the turn (#684 AF, refused before).
+
+The walk does not go round such a fan: at the first face's end, where the next face's root is the
+same point (within 1e-7 of the tool's size), it steps straight onto it (`step`, `Step::Sharp`),
+and a fan it runs round whose nodes all stand at the point it runs onto it at is dropped, the walk
+going from the face before to the face after. Either way the node at the point is a crease
+(`Characteristic::sharp`, `Characteristic::creases`), and the sheet is built over it as over #684
+O's: an exact row there at every refinement, fitted along the rows stretch by stretch and joined
+by a knot three times over (`nurbs::interpolate_creased`), each side its own face's fit; no turn of
+the normal counted across it, no withheld contact on it, no fold read across it, and the sheet cut
+into faces there. The fan's own roots at that point are the crease's, on the walk (S2), and S3 is
+not read at the crease's node. A standing fan among the walk's last rings past the blank is where
+the walk ends, one node at its point.
+
+A face that meets the tool's own axis at an angle, a cone to a point (an engraving bit), is the
+same sharp edge at an apex, but the corner turns to no circle there and the walk has no ring to
+step across: it is refused by name. The rows:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S1 | The walk meets no apex within its margin of the blank: a revolved face reaching the tool's axis with its normal there off the axis. | Every normal of the cone round the apex is the tool's, and the sweep has a sharp edge along the apex's path, but the face's ring there is a point, which the walk does not step across. (A face meeting the axis square to it, a smooth pole, is not an apex.) | The face, and a point of the walk in the blank. |
+| S1 | A fan standing at one point that reaches the blank lies between two faces' nodes. | There it is a crease; at the walk's end it would leave the sheet's edge on that point's path in the blank. The margin leaves none there. | The fan, and its point in the blank. |
+| S2 | Every root that reaches the blank is on the walk, or is a root at a crease's point of the fan the walk stepped across there. | The fan stands at that point, so every station's root there is the crease's point, one point of the sheet. | The second stretch's point. |
+
+The rows are sampled, as every row is. `rust/examples/solid_sweeps/vgroove.sv` is the case: a V
+wheel with a 60° rim lying across a block, dipping 2 into it, slid along it square to its axis; the
+walls are the flanks' meridians slid, two planes, and the block loses `2² tan 30°` along its 20,
+exactly (`tests/solid_sweeps_examples.rs`, to the last digit printed). `tests/turns_and_slides.rs`
+holds the V wheel slid square up the rod to the wedge its profile cuts from the rod's circle, two
+triangles and a segment in closed form (exactly), and `whole_turn.sv`'s wheel stood upright and
+turned once round, the V turned, `4π tan 30° · 7/3` by Pappus (-5.1e-8); `tests/prism_twists.rs`
+holds a bar of square section lying across the turn on a corner toward the axis, its section
+turned, `π/3 · 101/3` (-6.2e-6, alike at 0.001 mm: the class's other bars turned across this
+block read -2e-6 to -7e-6), and `flat_end.sv`'s bar with its section square turned leaning 20°, its end's
+line and its inner side's ruling meeting at the rim, to the bar's half-spaces read slice by slice
+(-4.8e-6 at 0.001 mm). Each STL agrees with the field. The V wheel slid square was refused at S1
+before (`turns_and_slides.rs`'s negative control), and the bar facing the axis turned (#684 AF);
+refused now: an engraving bit slid square to its axis, its point on its axis (S1, apex,
+`turns_and_slides.rs`), and as before a corner's or a rim's root running into a vertex of a prism,
+where three faces meet (S1, `VERTEX`, `prism_twists.rs`). `tests/object_builder.rs` builds
+`vgroove.sv` at the page's samples.
 
 ### A rack (issue #61)
 
@@ -812,7 +865,7 @@ Everything outside the class is refused at elaboration or export, never meshed o
 best-effort basis. The refusal names the condition row and the witness. The tumbling and tilted
 cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its caps clear, a
 prism's standing alone or placed whose cap's sections pass T3, a prism's under a screw, a turn or
-a slide with its caps clear (#684 M) or crossed over their rims (AE), walked along a lined side's ruling too (AF) or across a side a turn keeps in its own plane (O), a pocketed prism's under a planar motion and a prism tool's
+a slide with its caps clear (#684 M) or crossed over their rims (AE), walked along a lined side's ruling too (AF) or across a side a turn keeps in its own plane (O), or creased where a corner's or a rim's fan stands at one point (V), a pocketed prism's under a planar motion and a prism tool's
 under a motion that keeps its plane are outside the classes; a slid cylinder is in the constant-twist class, its flat caps, which the
 slide keeps in their own planes, walked across their diameters where they reach the blank (#684 O). Their fixtures stay
 in the tree as **negative controls**: each must

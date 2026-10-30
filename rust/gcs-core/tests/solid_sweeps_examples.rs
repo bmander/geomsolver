@@ -346,6 +346,22 @@ fn the_end_mill_cuts_a_slot() {
     near(exported(&e,"block"),2000.-4.*3.*20.,1e-6);
 }
 
+/// `vgroove.sv` (#684 V): the V wheel slid square to its axis, each flank touching along its
+/// meridian square to the slide, the two meeting the rim at one point where every normal of the
+/// rim's fan is in contact: the walk steps from the one flank straight onto the other and the
+/// sheet is creased along that point's path, the groove's root. The walls are planes, and the
+/// block loses the V's section, `depth² tan(flank)`, along its 20, in closed form.
+#[test]
+fn the_v_wheel_slid_square_cuts_a_v_groove() {
+    let e = example("vgroove.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide(),"read as a slide");
+    assert_eq!(found.sharp(),["the corner of `vwheel.upper` and `vwheel.lower`"]);
+    assert_eq!(found.creases().len(),1);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    near(exported(&e,"block"),2000.-4.*(PI/6.).tan()*20.,1e-6);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {

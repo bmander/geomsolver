@@ -13,6 +13,9 @@
 //! onto or off a flat face the motion keeps in its own plane (#684 O), the sheet has a sharp edge
 //! along that point's path: a crease, fitted continuous across and smooth either side
 //! (`nurbs::interpolate_creased`), the sheet cut into faces there, the flat's strip its plane.
+//! So too where it passes a convex corner, a rim or a crease whose fan stands at one point, every
+//! normal between its faces in contact there (#684 V): the sweep has a sharp edge along that
+//! point's path, between the two faces' sheets, and the sheet is creased there the same way.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::sheet::{Fitted,SweptCut,settle};
@@ -86,8 +89,9 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // a micrometre off.)
     let size = crate::space::polyline_length(&section)/std::f64::consts::PI;
     let turned = |a: V,b: V| crate::space::dot(a,b).clamp(-1.,1.).dacos();
-    // (where the walk runs onto or off a flat face the motion keeps in its own plane, the normal
-    // turns at a sharp edge, the crease, and the step past it counts no turn, #684 O)
+    // (where the walk runs onto or off a flat face the motion keeps in its own plane, or passes a
+    // fan standing at one point, the normal turns at a sharp edge, the crease, and the step past it
+    // counts no turn, #684 O, V)
     let creased: Vec<f64> = found.creases();
     let mut lengths = vec![0.];
     for w in 1..section.len() {
@@ -105,7 +109,8 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // sheet is cut there into faces (`Fitted::named`), the fan's own a band between its flanks',
     // so a point of either flank is never read on the other across the fan's sharp turn
     let fans: Vec<f64> = found.fan_ends().into_iter().filter(|&s| s > 0. && s < (section.len()-1) as f64).collect();
-    // and a row at each crease, where it runs onto or off a flat face (#684 O)
+    // and a row at each crease, where it runs onto or off a flat face (#684 O) or passes a fan
+    // standing at one point (#684 V)
     let creases: Vec<f64> = creased.iter().copied().filter(|&s| s > 0. && s < (section.len()-1) as f64).collect();
     let fans: Vec<f64> = { let mut marks = [fans,creases.clone()].concat(); marks.sort_by(f64::total_cmp); marks.dedup(); marks };
     for &s in &fans {
@@ -190,7 +195,9 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND)).at(Stage::Fit)?;
         (say.stage)(&format!("`{name}`: the sheet cut into {} faces{}{}",fitted.faces.faces.len(),
             if creases.is_empty() { if cut.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" } }
-                else { " where its characteristic runs onto or off a flat face, creased there" },
+                else if found.sharp().is_empty() { " where its characteristic runs onto or off a flat face, creased there" }
+                else if found.flats().is_empty() { " where its characteristic passes a fan standing at one point, creased there" }
+                else { " where its characteristic runs onto or off a flat face or passes a fan standing at one point, creased there" },
             if found.whole { " and round the turn, closing on itself" } else { "" }));
         Ok(fitted)
     })
