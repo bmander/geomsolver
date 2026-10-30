@@ -716,6 +716,41 @@ pub fn interpolate_net(points: &[V],rows: usize,columns: usize,kind: Parametriza
     Some(Net {du:cols_fit[0].degree,dv:rows_fit[0].degree,uknots:cols_fit[0].knots.clone(),vknots:rows_fit[0].knots.clone(),poles,weights:None})
 }
 
+/// `interpolate_net`'s surface creased along the rows `creases` (each strictly between the first
+/// and the last): the rows interpolated along `v` as there, and each stretch of their poles between
+/// two creases (or an end) along `u` at its own rows' parameters, cubic, the stretches joined at
+/// their shared row by a knot `degree` times over. The surface passes through every row at its
+/// `net_parameters` `u` as `interpolate_net`'s does, and is only continuous across a crease, where
+/// each side is the smooth fit of its own stretch. None where a stretch has fewer than four rows.
+pub fn interpolate_creased(points: &[V],rows: usize,columns: usize,kind: Parametrization,creases: &[usize]) -> Option<Net> {
+    if creases.is_empty() { return interpolate_net(points,rows,columns,kind) }
+    let (tu,tv) = net_parameters(points,rows,columns,kind)?;
+    let at = |i: usize,j: usize| points[i*columns+j];
+    let rows_fit: Vec<BSpline> = (0..rows).map(|i| interpolate(&(0..columns).map(|j| at(i,j)).collect::<Vec<_>>(),&tv,3)).collect::<Option<_>>()?;
+    let nv = rows_fit[0].poles.len();
+    let mut ends: Vec<usize> = std::iter::once(0).chain(creases.iter().copied()).chain(std::iter::once(rows-1)).collect();
+    ends.dedup();
+    if ends.windows(2).any(|w| w[1] < w[0]+3) { return None }
+    // each stretch's columns of poles, cubic over its own rows' parameters
+    let (mut uknots,mut poles): (Vec<f64>,Vec<Vec<V>>) = (Vec::new(),Vec::new());
+    for (k,w) in ends.windows(2).enumerate() {
+        let t = &tu[w[0]..=w[1]];
+        let cols: Vec<BSpline> = (0..nv).map(|j| interpolate(&rows_fit[w[0]..=w[1]].iter().map(|r| r.poles[j]).collect::<Vec<_>>(),t,3))
+            .collect::<Option<_>>()?;
+        let count = cols[0].poles.len();
+        // each stretch's knots but the last of its last end's four and all of its first end's after
+        // the first stretch, so a joint stands three times over; its first pole is the last one's
+        // before it
+        let knots = &cols[0].knots;
+        let (from,to) = (if k == 0 { 0 } else { 4 },knots.len()-if k+2 == ends.len() { 0 } else { 1 });
+        uknots.extend_from_slice(&knots[from..to]);
+        poles.extend((if k == 0 { 0 } else { 1 }..count).map(|i| cols.iter().map(|c| c.poles[i]).collect()));
+    }
+    let net = Net {du:3,dv:rows_fit[0].degree,uknots,vknots:rows_fit[0].knots.clone(),poles,weights:None};
+    net.check().ok()?;
+    Some(net)
+}
+
 /// The parameters `interpolate_net` interpolates a grid at: each row's `u` and each column's `v`,
 /// so a row of the grid is the net's iso-curve at its `u` (#212).
 pub fn net_parameters(points: &[V],rows: usize,columns: usize,kind: Parametrization) -> Option<(Vec<f64>,Vec<f64>)> {

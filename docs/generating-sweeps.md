@@ -105,10 +105,11 @@ One refusal is the limits' own:
 | S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet; a slide along the tool's axis has one wherever the normals are square to it. The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought (Brent's method). The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
 
 E1 holds as for a screw, so a slide passes the tool right through the blank and a turn swings it
-across from clear to clear, unless the turn is a whole one (below). Still refused: a flat face the motion keeps in its own plane (a cap
-square to the turn, a face along the slide) where it reaches the blank, a ring in contact all
-round at a sampled station (S1); and a characteristic that closes on itself within the blank's
-reach, a tool passed wholly through it (S1). A prism tool is read along its rulings (below, #684 M). A ball under
+across from clear to clear, unless the turn is a whole one (below). A flat face the motion keeps
+in its own plane (a disc square to the turn, a face along the slide) is walked across its line
+where it reaches the blank (below, #684 O). Still refused: a ring in contact all round at a
+sampled station (S1); and a characteristic that closes on itself within the blank's reach, a tool
+passed wholly through it (S1). A prism tool is read along its rulings (below, #684 M). A ball under
 a turn or a slide is still its tube (`solid::canal`, below), never asked these rows.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate: a torus slid up a
 rod, square (its tube's lens, `rust/examples/solid_sweeps/slide.sv`) and tilted, a cylinder slid
@@ -266,7 +267,7 @@ prism's own:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
-| S1 | No ruling of a side or a corner is in contact all along it where its path enters the blank, but a lined side's (below, #684 AF). | There the characteristic runs along the ruling, off the stretch the walk follows, which crosses each ruling once; a side every ruling of which is in contact is a face the motion keeps in its own plane (a side square to a turn's axis, or along a slide). A ruling's contact is nought at both its ends there, so between two of the coarse stations where both ends' contacts change sign (or are nought), the least of the two together is sought (Brent's method). Under a slide, a side in contact at every parameter read is that face. | The side or the corner, and a point of the ruling in the blank. |
+| S1 | No ruling of a side or a corner is in contact all along it where its path enters the blank, but a lined side's (below, #684 AF), and none of a plane side the motion keeps in its own plane, square to a turn's axis, which is walked across its line (below, #684 O). | There the characteristic runs along the ruling, off the stretch the walk follows, which crosses each ruling once. A ruling's contact is nought at both its ends there, so between two of the coarse stations where both ends' contacts change sign (or are nought), the least of the two together is sought (Brent's method). Under a slide, a side in contact at every parameter read is a face kept in its own plane, which the class reads of a prism only under a turn. | The side or the corner, and a point of the ruling in the blank. |
 
 `rust/examples/solid_sweeps/square_thread.sv` is the case: a rectangular bar standing across a rod,
 screwed along it as a lathe cuts a square thread. The tip touches along its middle and the
@@ -279,7 +280,8 @@ turn (the groove its corner's line turned, a hyperboloid of one sheet, in closed
 drafted 2° (its corner still a line, its square distance from the axis quadratic in the height),
 and the bar slid aslant across a cube's top (its lowest corner's silhouette ruling slid, a plane),
 each STL agreeing with the field and each volume within 7e-6; with an upright bar turned still the
-planar subtraction class's, and refused: a side square to a turn and a side along a slide (S1), and
+planar subtraction class's, and refused: a side along a slide (S1; a side square to a turn is
+walked since #684 O, below), and
 the thread's bar too short to stand past the rod (S1: its corners reach the caps at the prism's
 vertices, below). `tests/object_builder.rs` builds the thread at the page's samples.
 
@@ -376,7 +378,8 @@ along it (`Piece::Line`, its `side`), the section reading a slide's silhouette g
 end the walk steps onto the fan of the rim its side meets at that cap, at the fan's first
 station, whose normal is the side's and whose root is the ruling's end, and off a rim's first end
 onto the lined side's ruling there (`step`); where the line's ends stand past the blank's margin
-the walk starts and ends on it. A side in contact all over is no lined side (box O). S1–S4 are
+the walk starts and ends on it. A side in contact all over is no lined side but a flat face kept
+in its own plane (below, #684 O). S1–S4 are
 asked of every node as of any; the sheet is the characteristic carried (`brep::sweep::helical`):
 under a turn, the line in a plane through the axis revolved, a cone.
 
@@ -409,6 +412,71 @@ refused at S1 before. Refused: the same bar turned, leaning 20° (the rim's fan 
 and a bar of square section lying across the turn with a corner up in the block (its fan holding
 the axis's direction, the characteristic branching, S1). `tests/object_builder.rs` builds
 `facing.sv` at the page's samples.
+
+### Flat faces a turn or a slide keeps in their own planes (issue #684 O)
+
+A flat face square to a turn's axis, or along a slide, is kept in its own plane: its contact
+`n·v` is nought all over it, so every point of it is on the boundary, and what it sweeps is a
+region of its own plane. That is an end mill's flat bottom under a slide, or under a turn about a
+line along its axis, and a prism's side square to a turn's axis. Each of its points is carried
+onto the motion's section where it stands across the sections — its distance from a turn's axis,
+its offset along the face square to a slide — so the section reads the face as the stretch of a
+line between where it stands least and where it stands most, and any line on the face between
+those two points is a characteristic of it. The walk takes the straight one
+(`constant_twist::Flat`): a disc's diameter square to the slide, or along the line from the turn's
+axis through its centre; a prism's side from its point nearest the turn's axis (on one of its
+edges) to its corner farthest, which stays on the side, the side being convex, and only moves
+away from the axis along it. Its stations run along that line, and its sweep is a strip of the
+face's plane: the region planar subtraction would read of the face, within the blank, as E1
+leaves the tool clear of the blank at both ends.
+
+A face beside the flat meets it where its own characteristic meets the flat's edge, and there
+`n·v` of the face's normal is nought, so the in-plane part of its normal is square to the
+velocity: the point stands least or most across the sections, an end of the flat's line. Every
+normal of the fan between the two faces is in contact at that one point, so the fan is not walked
+(`corners` and `prism` leave out a fan beside a flat): the sweep has a sharp edge along the
+point's path, between the strip and the face's sheet. The walk steps from the face's root at its
+end straight onto the flat's line at the end that is this point, along it, and off its other end
+onto the face beside it whose characteristic meets the edge there (`step`). Where a face joins the
+flat smoothly (a bull-nose's round), its ring at the join is in contact all round, its normals the
+flat's; the walk runs on from the flat's line across that ring at the line's two ends, which lie
+on the join. A slot's two walls are both in the blank, two roots of one of the side's rings: S2
+lets them be where the walk runs from the one across the flat's line to the other.
+
+The sheet (`brep::sweep::helical`) is the characteristic carried, as every constant twist's is,
+and creased where the walk runs onto or off a flat (`Characteristic::creases`). One smooth fit
+through a right-angled turn rings out of both faces, so the fit is creased there
+(`nurbs::interpolate_creased`): the rows are interpolated along the columns as before, and each
+stretch of rows between two creases along the rows at its own rows' parameters, the stretches
+joined at their shared row by a knot standing three times over. Each side is then its own
+stretch's fit, and a flat strip is its plane to rounding, since an interpolation reproduces the
+plane its points lie in. The crease is a row of the grid at every refinement, each stretch at
+least four rows; the sheet is cut into faces there (`Fitted::named`), no turn of the normal across
+it is counted in the rows' lengths, no withheld contact sits on it, the fold check does not
+compare readings across it, and S3 is not read at its node, whose normal is one face's. The rows:
+
+| # | Condition | Why | Refusal names |
+| --- | --- | --- | --- |
+| S1 | A flat face kept in its own plane that reaches the blank is a disc turned all the way round, or a prism's plane side, and a turn's axis passes outside it. | The line across a ring would cross its hole, a partial revolution's would leave it, and a face the axis passes through sweeps across the axis, the section's line reaching it. Read across a 17 × 17 net of the face. | The face, and a point of it in the blank. |
+| S1 | The walk meets a flat face only at an end of its line, and runs off its other end onto a face whose characteristic meets the flat there. | Elsewhere the face beside it does not meet it where it stands least or most across the sections; off the end, a vertex of the prism (where the line runs to a corner of a side) is a sharp edge the class does not build. | The flat, and a point of the walk in the blank. |
+| S1 | Under a slide, a prism's side kept in its own plane does not enter the blank. | A prism is read there by its silhouette, and the line across the side runs between vertices of the prism, where a cap meets it. | The side, and a point of it in the blank. |
+| S2 | Two roots of one ring in the blank both lie on the walk, a flat face's line between them. | One sheet: the walk runs from the one down a wall, across the floor and up the other. | The second root. |
+
+The rows are sampled, as every row is. `rust/examples/solid_sweeps/slot.sv` is the case: an end
+mill of radius 2 slid across a block, its flat bottom 3 below the top, cutting a slot whose
+section, 4 × 3, the block loses along its 20 mm, exactly (`tests/solid_sweeps_examples.rs`: the
+walls and the floor are all planes). `tests/flat_faces.rs` holds the mill set along the block's
+edge (a step, the walk ending on the bottom's line, exactly); a bull-nose mill (its quarter round
+of radius 0.5 rounding the slot's corners, `(1 − π/4) 0.25` each, within 7e-8 at 0.001 mm, 1.9e-5
+at 0.01 by the fit over the round); the mill turned about z across `turn.sv`'s block, 10 from the
+axis (the annulus from 9 to 11 over the block's top millimetre, 8.7e-7), and turned a whole turn
+(the same, -6.6e-7); and a tapered mill turned (its walls cones `10 ∓ (1 + z/4)` from the axis,
+`2π/3 · 10 · 9/8`, 1.0e-6). `tests/prism_twists.rs` holds a bar of oblong section lying along the
+turn, its underside square to the axis cutting the floor and its inner side's line the wall, a
+cylinder of radius 10 (`π/6 (12² − 10²)`, -2.0e-6), refused at S1 before. Each STL agrees with the
+field. Refused: a hollow mill's ring of a bottom slid and a mill turned a whole turn about an axis
+through its bottom (S1, `tests/flat_faces.rs`), and a bar's side along a slide (S1,
+`tests/prism_twists.rs`). `tests/object_builder.rs` builds `slot.sv` at the page's samples.
 
 ### A rack (issue #61)
 
@@ -744,9 +812,9 @@ Everything outside the class is refused at elaboration or export, never meshed o
 best-effort basis. The refusal names the condition row and the witness. The tumbling and tilted
 cylinders, the thin plate, the dumbbell and every prism sweep but a rack's with its caps clear, a
 prism's standing alone or placed whose cap's sections pass T3, a prism's under a screw, a turn or
-a slide with its caps clear (#684 M) or crossed over their rims (AE), walked along a lined side's ruling too (AF), a pocketed prism's under a planar motion and a prism tool's
-under a motion that keeps its plane are outside the classes; a slid cylinder is in the constant-twist class where its flat caps, which the
-slide keeps in their own planes, stay clear of the blank. Their fixtures stay
+a slide with its caps clear (#684 M) or crossed over their rims (AE), walked along a lined side's ruling too (AF) or across a side a turn keeps in its own plane (O), a pocketed prism's under a planar motion and a prism tool's
+under a motion that keeps its plane are outside the classes; a slid cylinder is in the constant-twist class, its flat caps, which the
+slide keeps in their own planes, walked across their diameters where they reach the blank (#684 O). Their fixtures stay
 in the tree as **negative controls**: each must
 produce its refusal.
 

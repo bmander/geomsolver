@@ -9,7 +9,10 @@
 //! characteristic's point on each ruling is the one root of a contact linear along it (#684 M,
 //! `Ruled`), or under a slide the whole ruling at each point of its silhouette (`Line`), as on a
 //! side each of whose rulings the motion moves alike, where its contact is nought (#684 AF); on a
-//! prism's cap, a line, the contact being linear across its plane (#684 AE). Nothing is traced.
+//! prism's cap, a line, the contact being linear across its plane (#684 AE); and on a flat face
+//! the motion keeps in its own plane, the whole face, read as the line across it from where it
+//! stands least across the motion's sections to where it stands most (`Flat`, #684 O). Nothing is
+//! traced.
 //! The sheet is read along its **section**: square to the axis for a screw and a slide, which
 //! carry one such plane to the next, and a half-plane through the axis for a turn, which carries
 //! one round to the next (`Screw::station`); a turn's sheet is its section revolved, a slide's its
@@ -120,6 +123,9 @@ impl Pass {
 }
 
 impl Walker<'_> {
+    /// Whether the tool has a flat face the motion keeps in its own plane, read across (#684 O).
+    fn flats(&self) -> bool { self.pieces.iter().any(|p| matches!(p,Piece::Flat(Flat {line:Ok(_),..}))) }
+
     /// Sample each face's rings at its stations, and walk the stretch that reaches the blank from
     /// its first point to `MARGIN` rings past its last each way: S2 asked of every ring and of the
     /// stretch, and the walk's own end (a double point, a jump at a corner) refused as S1.
@@ -130,13 +136,31 @@ impl Walker<'_> {
         // where each ring's roots are, and whether each one's path enters the blank: on every core
         let rings: Vec<Vec<Ring>> = crate::par::indices(pieces.len(),|k| stations[k].iter().map(|&u|
             ring(&pieces[k],u,self.motion,self.tolerance,&outward,&|p| entering(self.tool,family,screw,ask,p))).collect());
-        // S2, ring by ring: two roots of one ring in the blank are two sheets over one station
-        for (k,face) in rings.iter().enumerate() { for ring in face {
+        // a revolution's face joined smoothly to a flat disc the motion keeps in its own plane (a
+        // bull-nose's round to its flat end): its ring at the join is in contact all round, its
+        // normals the flat's, and the characteristic runs on from the flat's line across it at the
+        // line's two ends, which lie on the disc's rim, the join (#684 O)
+        let mut rings = rings;
+        let face = |patch: usize| pieces.iter().position(|p| p.patch() == Some(patch));
+        for e in contacts.edges() { for s in 0..2 {
+            let (Some(k),Some(l)) = (face(e.patches[s]),face(e.patches[1-s])) else { continue };
+            let (Piece::Face(..),Piece::Flat(Flat {line:Ok(ends),normal,..})) = (&pieces[k],&pieces[l]) else { continue };
+            let at = if e.ends[s] == 0. { 0 } else { stations[k].len().wrapping_sub(1) };
+            if stations[k].get(at) != Some(&e.ends[s]) || !matches!(&rings[k][at],Ring::Degenerate(why) if why.contains("all round")) { continue }
+            rings[k][at] = Ring::Roots(ends.iter().map(|&p| Root {position:p,normal:*normal,spread:1.,
+                reach:entering(self.tool,family,screw,ask,p)}).collect());
+        } }
+        // S2, ring by ring: two roots of one ring in the blank are two sheets over one station, but
+        // where the walk runs from the one across a flat face to the other (asked once it is walked)
+        let mut doubled: Vec<(usize,usize,[usize;2])> = Vec::new();
+        for (k,face) in rings.iter().enumerate() { for (i,ring) in face.iter().enumerate() {
             let Ring::Roots(roots) = ring else { continue };
-            let reaching: Vec<&Root> = roots.iter().filter(|r| r.reach.is_some()).collect();
+            let reaching: Vec<usize> = (0..roots.len()).filter(|&j| roots[j].reach.is_some()).collect();
             if reaching.len() > 1 {
-                return Err((Condition::Once,format!("both of a ring's characteristic points on {} reach the blank",pieces[k].named()),
-                    witness(family,reaching[1].reach,reaching[1].position)))
+                let r = &roots[reaching[1]];
+                if !self.flats() { return Err((Condition::Once,format!("both of a ring's characteristic points on {} reach the blank",
+                    pieces[k].named()),witness(family,r.reach,r.position))) }
+                doubled.push((k,i,[reaching[0],reaching[1]]));
             }
         } }
         let reaching: Vec<(usize,usize,usize)> = rings.iter().enumerate().flat_map(|(k,face)| face.iter().enumerate()
@@ -173,6 +197,17 @@ impl Walker<'_> {
         };
         let (back,ahead) = (walk(-1)?,walk(1)?);
         let order: Vec<(usize,usize,usize)> = back.into_iter().rev().chain(std::iter::once(seed)).chain(ahead).collect();
+        // S2: a ring's two roots in the blank both on the walk, a flat face's line between them
+        for &(k,i,[a,b]) in &doubled {
+            let (x,y) = (order.iter().position(|&w| w == (k,i,a)),order.iter().position(|&w| w == (k,i,b)));
+            let across = match (x,y) { (Some(x),Some(y)) => order[x.min(y)..x.max(y)].iter().any(|w| matches!(pieces[w.0],Piece::Flat(_))),
+                _ => false };
+            if !across {
+                let r = root((k,i,b));
+                return Err((Condition::Once,format!("both of a ring's characteristic points on {} reach the blank",pieces[k].named()),
+                    witness(family,r.reach,r.position)))
+            }
+        }
         // S2: every ring point that reaches the blank is on this one stretch
         if let Some(&other) = reaching.iter().find(|x| !order.contains(x)) {
             return Err((Condition::Once,format!("the characteristic reaches the blank in more than one stretch (again on {})",
@@ -202,9 +237,21 @@ impl Characteristic {
         // a revolution's faces, then the convex corners where two of them meet: a corner's fan is
         // walked where the characteristic jumps across it; then a prism's sides and corners, read
         // along their rulings (#684 M)
-        let mut pieces: Vec<Piece> = contacts.patches().iter().enumerate()
-            .filter_map(|(k,s)| s.revolved().map(|s| Piece::Face(k,s.clone()))).collect();
-        pieces.extend(corners(contacts,tool,motion).into_iter().map(Piece::Corner));
+        // (a flat face the motion keeps in its own plane walked across its line, #684 O)
+        let mut pieces: Vec<Piece> = Vec::new();
+        for (k,s) in contacts.patches().iter().enumerate() {
+            let Some(s) = s.revolved() else { continue };
+            match revolved_flat(k,s,tool,motion,&screw,speed) {
+                Some(flat) => {
+                    let [v0,v1] = s.domain()[1];
+                    unread_clear(&flat,&|u,v| s.at(u,v0+(v1-v0)*v).ok().map(|p| p.position),&enters,family)?;
+                    pieces.push(Piece::Flat(flat));
+                }
+                None => pieces.push(Piece::Face(k,s.clone())),
+            }
+        }
+        let flats: Vec<usize> = pieces.iter().filter_map(|p| match p { Piece::Flat(f) => Some(f.patch),_ => None }).collect();
+        pieces.extend(corners(contacts,tool,motion,&flats).into_iter().map(Piece::Corner));
         pieces.extend(prism(contacts,tool,motion,&screw,speed,ask.caps,&enters)?);
         let walker = Walker {contacts,pieces,ask,screw,motion,tool,scale,tolerance};
         let pieces = &walker.pieces;
@@ -294,7 +341,11 @@ impl Characteristic {
         // sign it turns: the factor's size alone would pass through zero unseen.
         let mut least = f64::INFINITY;
         let mut sign = 0.;
+        let flat = |w: usize| matches!(walker.pieces[nodes[w].patch],Piece::Flat(_));
         for w in first.max(1)..=last.min(nodes.len()-2) {
+            // where the walk runs onto or off a flat face the sweep has a sharp edge, its normal turned
+            // there from the one face's to the other's, whose sides are read either side (#684 O)
+            if flat(w) != flat(w+1) { continue }
             let tangent = sub(nodes[w+1].position,nodes[w-1].position);
             let velocity = screw.velocity(nodes[w].position);
             let factor = dot(cross(tangent,velocity),nodes[w].normal)/(norm(tangent)*norm(velocity));
@@ -346,6 +397,25 @@ impl Characteristic {
         let mut walked: Vec<usize> = self.nodes.iter().map(|m| m.patch).filter(|&k| self.pieces[k].lined().is_some()).collect();
         walked.dedup();
         walked.into_iter().map(|k| self.pieces[k].named()).collect()
+    }
+
+    /// The flat faces the motion keeps in their own planes that the characteristic runs across
+    /// (#684 O), each as a message names it.
+    pub fn flats(&self) -> Vec<String> {
+        let mut walked: Vec<usize> = self.nodes.iter().map(|m| m.patch).filter(|&k| self.on_flat_piece(k)).collect();
+        walked.dedup();
+        walked.into_iter().map(|k| self.pieces[k].named()).collect()
+    }
+
+    fn on_flat_piece(&self,k: usize) -> bool { matches!(self.pieces[k],Piece::Flat(_)) }
+
+    /// Where along the characteristic (`s`, a node's) it runs onto or off a flat face the motion
+    /// keeps in its own plane (#684 O): the sweep has a sharp edge along that point's path, between
+    /// the strip the flat sweeps in its plane and the face beside it, so the sheet is creased there
+    /// and cut into faces.
+    pub fn creases(&self) -> Vec<f64> {
+        let flat = |w: usize| self.on_flat_piece(self.nodes[w].patch);
+        (0..self.nodes.len()-1).filter(|&w| flat(w) != flat(w+1)).map(|w| w as f64).collect()
     }
 
     /// Whether the stretch from node `w − 1` to node `w` runs round a convex corner's fan (it lies
@@ -519,6 +589,11 @@ fn ring(piece: &Piece,u: f64,motion: Motion,tolerance: f64,outward: &dyn Fn(V,V)
             Err(why) => Ring::Degenerate(why),
         },
         Piece::Line(line) => Ring::Roots(vec![root(crate::space::lerp(line.ends[0],line.ends[1],u),line.normal,1.)]),
+        // a flat face's line across it, all in contact (#684 O)
+        Piece::Flat(flat) => match &flat.line {
+            Ok([a,b]) => Ring::Roots(vec![root(crate::space::lerp(*a,*b,u),flat.normal,1.)]),
+            Err(why) => Ring::Degenerate(why.clone()),
+        },
     }
 }
 
@@ -598,6 +673,20 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
         }
         ended
     };
+    // flat face `l`'s line from whichever of its ends is this point (#684 O): a face's
+    // characteristic meets the flat's edge where the flat stands least or most across the motion's
+    // sections, so elsewhere the class does not cross it
+    let onto_flat = |l: usize| -> Step {
+        let Piece::Flat(Flat {line,..}) = &pieces[l] else { unreachable!("a flat face's piece") };
+        let ends = match line { Ok(ends) => ends,Err(why) => return Step::End(why.clone()) };
+        let Some(end) = ends.iter().position(|&p| distance(p,here.position) <= 1e-7*scale) else {
+            return Step::End(format!("meets {} away from where it stands least or most across the motion's sections, where \
+                the class does not cross it",pieces[l].named()))
+        };
+        let at = if end == 0 { 0 } else { stations[l].len().wrapping_sub(1) };
+        if stations[l].get(at) != Some(&(end as f64)) { return Step::End("crosses onto a face the coarse pass did not reach".into()) }
+        Step::Next((l,at,0),if end == 0 { 1 } else { -1 })
+    };
     // the side `patch` at the station whose root is this point, going on the way its root does:
     // where the walk crosses onto it off a cap's rim or a crease, partway along it
     let side_at = |patch: usize| -> Option<Step> {
@@ -632,6 +721,8 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
         }
         pieces[k].off().into()
     };
+    // the piece that is a face of the tool (`SweepContacts::patches`)
+    let face = |patch: usize| pieces.iter().position(|p| p.patch() == Some(patch));
     let n = rings[k].len()-1;
     let next = i as isize+dir;
     if (0..=n as isize).contains(&next) {
@@ -672,11 +763,19 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
         Piece::Line(Line {cap:Some(c),..}) => return first(&mut pieces.iter().enumerate()
             .filter(|(_,p)| matches!(p,Piece::Ruled(Ruled {ruling:Ruling::Rim {across:Across::Cap(d),..},..}) if d == c)).map(|(r,_)| (r,1.)))
             .unwrap_or_else(|| Step::End(OFF_CAP.into())),
+        // a flat face's line: off either end onto a face beside it whose characteristic meets the
+        // flat's edge there, at that face's end (#684 O)
+        Piece::Flat(Flat {patch,..}) => {
+            let beside: Vec<(usize,f64)> = contacts.edges().iter().filter_map(|e| (0..2).find(|&s| e.patches[s] == *patch)
+                .and_then(|s| face(e.patches[1-s]).map(|other| (other,e.ends[1-s])))).collect();
+            if let Some(&(other,_)) = beside.iter().find(|&&(other,_)| matches!(&pieces[other],Piece::Flat(Flat {line:Ok(ends),..})
+                if ends.iter().any(|&p| distance(p,here.position) <= 1e-7*scale))) { return onto_flat(other) }
+            return first(&mut beside.into_iter().filter(|&(other,_)| !matches!(pieces[other],Piece::Flat(_))))
+                .unwrap_or_else(|| Step::End(OFF_FLAT.into()))
+        }
         _ => {}
     }
     let jumps = || Step::End("jumps at a corner of the profile".into());
-    // the piece that is a face of the tool (`SweepContacts::patches`)
-    let face = |patch: usize| pieces.iter().position(|p| p.patch() == Some(patch));
     if let Some(edge) = pieces[k].edge() {
         let (e,side) = (&contacts.edges()[edge],end as usize);
         let Some(other) = face(e.patches[side]) else { return jumps() };
@@ -688,6 +787,8 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
         .map(|s| (m,e,s))) else { return Step::End("reaches the end of the tool's profile".into()) };
     let fan = pieces.iter().position(|p| p.edge() == Some(edge));
     let Some(next) = face(e.patches[1-s]) else { return jumps() };
+    // onto a flat face the motion keeps in its own plane: a sharp edge along this point's path (#684 O)
+    if matches!(pieces[next],Piece::Flat(_)) { return onto_flat(next) }
     match (onto(next,e.ends[1-s]),fan) {
         // both faces' characteristics meet the corner's circle at one point: every normal of its
         // fan is in contact there, and the sweep has a sharp edge along that point's path
@@ -707,7 +808,24 @@ fn step(contacts: &SweepContacts,pieces: &[Piece],stations: &[Vec<f64>],rings: &
 /// a cap's rim or a crease read along its line (#684 AE, AG); or a line all of which is in
 /// contact: a slide's silhouette ruling, or a cap's contact line (#684 AE).
 #[derive(Clone,Debug)]
-enum Piece { Face(usize,RevolvedSurface),Corner(Corner),Ruled(Ruled),Line(Line) }
+enum Piece { Face(usize,RevolvedSurface),Corner(Corner),Ruled(Ruled),Line(Line),Flat(Flat) }
+
+/// A flat face the motion keeps in its own plane (#684 O): a revolution's disc square to its axis
+/// under a turn about a line along that axis or a slide square to it, or a prism's plane side
+/// square to a turn's axis. Its contact `n·v` is nought all over it, so every point of it is in
+/// contact and what it sweeps is a region of its own plane. Each of its points is carried onto
+/// the motion's section where it stands across the sections (`across`: its distance from a turn's
+/// axis, its offset along the face square to a slide), so the section reads the face as the
+/// stretch of a line between where it stands least and most across them, and any line on the
+/// face between those two points is a characteristic of it: the straight `line` the walk takes,
+/// its stations the fraction of the way from its first end to its second, its sweep a strip of the
+/// face's plane. A face beside it meets it in a sharp edge along the path of the point where the
+/// face's own characteristic meets the flat's edge, which is an end of `line` (the fan between
+/// them is in contact at that one point all round it, so no piece: `corners`, `prism`). Where
+/// there is no such line, `line` says why: a ring, its hole across it; a revolution only partway
+/// round; a face a turn's axis passes through.
+#[derive(Clone,Debug)]
+struct Flat { patch: usize,named: String,line: Result<[V;2],String>,normal: V }
 
 /// Why the walk ends where a prism's characteristic runs off its side over a cap it does not walk.
 const OVER_CAP: &str = "runs over a cap of the prism, which the class walks only across a rim that is a line, of a prism \
@@ -724,6 +842,9 @@ const SILHOUETTE_OVER_CAP: &str = "runs over a cap of the prism, which the class
 /// Why it ends where a corner's, a rim's or a crease's root runs off its line.
 const VERTEX: &str = "runs into a vertex of the prism, where a corner meets a cap or a crease, along whose path the sweep has \
     a sharp edge (not built)";
+/// Why it ends where a flat face's line runs off it onto no face whose characteristic meets it there.
+const OFF_FLAT: &str = "runs off the flat face's line where no face beyond it takes the characteristic on (a vertex of \
+    the prism, or a face that does not touch there), which the class does not walk";
 /// Why it ends where a cap's contact line meets the cap's edge but no rim the walk reads.
 const OFF_CAP: &str = "leaves the cap's contact line at a vertex of the profile, or over the rim of a side that is no line, \
     which the class does not walk";
@@ -739,13 +860,14 @@ impl Piece {
             Piece::Corner(c) => corner_named(&c.names),
             Piece::Ruled(r) => r.ruling.named(),
             Piece::Line(line) => line.named.clone(),
+            Piece::Flat(flat) => flat.named.clone(),
         }
     }
 
     /// The face of the tool it is (`SweepContacts::patches`), where it is one.
     fn patch(&self) -> Option<usize> {
         match self {
-            Piece::Face(k,_) | Piece::Ruled(Ruled {ruling:Ruling::Side {patch:k,..},..}) => Some(*k),
+            Piece::Face(k,_) | Piece::Ruled(Ruled {ruling:Ruling::Side {patch:k,..},..}) | Piece::Flat(Flat {patch:k,..}) => Some(*k),
             _ => None,
         }
     }
@@ -786,6 +908,7 @@ impl Piece {
             Piece::Ruled(Ruled {ruling:Ruling::Side {..},..}) => OVER_CAP,
             Piece::Ruled(_) => VERTEX,
             Piece::Line(_) => SILHOUETTE_OVER_CAP,
+            Piece::Flat(_) => OFF_FLAT,
             _ => "leaves its face's rings",
         }
     }
@@ -801,7 +924,7 @@ impl Piece {
                 let [r,z] = c.parts;
                 Ok((nr*r[0]+nz*z[0],nr*r[1]+nz*z[1],nr*r[2]+nz*z[2]))
             }
-            Piece::Ruled(_) | Piece::Line(_) => Err(envelope::Error::Degenerate),
+            Piece::Ruled(_) | Piece::Line(_) | Piece::Flat(_) => Err(envelope::Error::Degenerate),
         }
     }
 
@@ -810,7 +933,7 @@ impl Piece {
         match self {
             Piece::Face(_,s) => { let [v0,v1] = s.domain()[1]; s.at(u,v0+(v1-v0)*turn).ok().map(|p| p.position) }
             Piece::Corner(c) => Some(c.ring.at(std::f64::consts::TAU*turn).0),
-            Piece::Ruled(_) | Piece::Line(_) => None,
+            Piece::Ruled(_) | Piece::Line(_) | Piece::Flat(_) => None,
         }
     }
 }
@@ -1041,14 +1164,19 @@ impl Corner {
 /// tool's material within it: their normals there more than `LEAST_TURN` apart, and the chord of
 /// `SweepContacts::corner`'s probe in the material. A smooth join has no fan, and a concave
 /// corner's sweep is no part of the boundary (T2 refuses one that reaches the blank); a corner on
-/// the axis turns to no circle. Each corner's ring is read under `motion`, the walk's.
-fn corners(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion) -> Vec<Corner> {
+/// the axis turns to no circle; and a corner beside one of `flats`, faces the motion keeps in their
+/// own planes, is in contact at one point all round its fan or nowhere, a sharp edge of the sweep
+/// the walk steps across (#684 O). Each corner's ring is read under `motion`, the walk's.
+fn corners(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,flats: &[usize]) -> Vec<Corner> {
     let normal = |s: &RevolvedSurface,u: f64| -> Option<(V,V)> {
         let p = s.at(u,0.).ok()?;
         Some((p.position,envelope::contact(p,Motion::identity()).ok()?.normal))
     };
     contacts.edges().iter().enumerate().filter_map(|(edge,e)| {
         let ([a,b],[ua,ub]) = (e.patches,e.ends);
+        // beside a flat face the motion keeps in its own plane, the fan is in contact at one point
+        // all round it, or nowhere (`Flat`): the sharp edge between the flat's sweep and the face's
+        if flats.contains(&a) || flats.contains(&b) { return None }
         let (sa,sb) = (contacts.patches().get(a)?.revolved()?,contacts.patches().get(b)?.revolved()?);
         let ring = sa.ring(ua).ok()?;
         // each face's normal at the corner, turned out of the tool as it is in the face's middle,
@@ -1068,6 +1196,84 @@ fn corners(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion) -
         let part = |nr: f64,nz: f64| { let (a,b,c) = ring.coefficients(nr,nz,motion); [a,b,c] };
         Some(Corner {edge,names:[sa.name.clone(),sb.name.clone()],ring,from,turn,parts:[part(1.,0.),part(0.,1.)]})
     }).collect()
+}
+
+/// Whether the plane face through `points` (three not on one line say it of the whole plane),
+/// whose normal is `n`, is kept in its own plane by `motion`: its contact `n·v` nought at each,
+/// against how fast the tool's points move.
+fn kept(motion: Motion,points: &[V],n: V,speed: f64) -> bool {
+    points.len() >= 3 && points.iter().all(|&p| contact(motion,(p,p,n))[0].abs() <= NOUGHT*speed)
+}
+
+/// How far across the motion's sections the point `p` of a flat face whose normal is `n` stands:
+/// its distance from a turn's axis, or its offset along the face square to a slide.
+fn across(screw: &Screw,n: V,p: V) -> f64 {
+    if screw.is_turn() { screw.radius(p) } else { dot(p,crate::space::unit(cross(screw.axis,n))) }
+}
+
+/// Why a flat face a turn's axis passes through has no line across it.
+const THROUGH: &str = "is kept in its own plane with the turn's axis through it, so it sweeps across the axis, which the \
+    class does not read across";
+
+/// Revolution `k`'s face `s` as a flat one `motion` keeps in its own plane (`Flat`), where it is
+/// one: a disc, its line the diameter from where it stands least across the motion's sections to
+/// where it stands most — square to a slide, or along the line from a turn's axis through its
+/// centre. A ring, a revolution only partway round and a disc a turn's axis passes through have
+/// no line (`Flat::line`).
+fn revolved_flat(k: usize,s: &RevolvedSurface,tool: &super::SpatialField,motion: Motion,screw: &Screw,speed: f64) -> Option<Flat> {
+    let (centre,axis,radii,whole) = s.flat()?;
+    let [v0,v1] = s.domain()[1];
+    let rim = if radii[1] >= radii[0] { 1. } else { 0. };
+    let points: Vec<V> = [0.,1./3.,2./3.].iter().filter_map(|&v| s.at(rim,v0+(v1-v0)*v).ok().map(|p| p.position)).collect();
+    if !kept(motion,&points,axis,speed) { return None }
+    let middle = s.at(0.5,v0+(v1-v0)*0.5).ok()?.position;
+    let normal = outward(tool,middle,axis);
+    let radius = radii[0].max(radii[1]);
+    let line = if !whole { Err("is kept in its own plane but turned only partway round, which the class does not read across".into()) }
+        else if radii[0].min(radii[1]) > 1e-9*radius { Err("is a ring kept in its own plane, the line across it crossing its hole, \
+            which the class does not read across".into()) }
+        else {
+            let w = if screw.is_turn() { let q = sub(centre,screw.origin); sub(q,scale(screw.axis,dot(q,screw.axis))) }
+                else { cross(screw.axis,normal) };
+            if screw.is_turn() && !(norm(w) > radius*(1.+1e-9)) { Err(THROUGH.into()) } else {
+                let w = scale(crate::space::unit(w),radius);
+                Ok([sub(centre,w),crate::space::add(centre,w)])
+            }
+        };
+    Some(Flat {patch:k,named:format!("`{}`",s.name),line,normal})
+}
+
+/// A prism's plane side, its corners `q` in order round it and its outward normal `n`, as a flat
+/// face the motion keeps in its own plane (`Flat`): its line from its point nearest a turn's axis
+/// (on one of its edges, the axis passing outside it) to its corner farthest, or from its corner
+/// least across a slide to its corner most. Every point between is on the side (it is convex),
+/// and the line's distance from the axis only grows along it.
+fn side_line(screw: &Screw,n: V,q: [V;4]) -> Result<[V;2],String> {
+    let at = |p: V| across(screw,n,p);
+    let far = q.iter().copied().fold(q[0],|a,b| if at(b) > at(a) { b } else { a });
+    if !screw.is_turn() { return Ok([q.iter().copied().fold(q[0],|a,b| if at(b) < at(a) { b } else { a }),far]) }
+    // the axis's foot in the side's plane, outside the side
+    let foot = crate::space::add(screw.origin,scale(screw.axis,screw.height(q[0])));
+    let sides: Vec<f64> = (0..4).map(|k| dot(cross(sub(q[(k+1)%4],q[k]),sub(foot,q[k])),n)).collect();
+    if sides.iter().all(|&x| x >= 0.) || sides.iter().all(|&x| x <= 0.) { return Err(THROUGH.into()) }
+    let nearest = (0..4).map(|k| {
+        let (a,d) = (q[k],sub(q[(k+1)%4],q[k]));
+        crate::space::add(a,scale(d,(dot(sub(foot,a),d)/dot(d,d)).clamp(0.,1.)))
+    }).fold(q[0],|a,b| if distance(b,foot) < distance(a,foot) { b } else { a });
+    Ok([nearest,far])
+}
+
+/// S1 of a flat face the motion keeps in its own plane that the walk cannot read across
+/// (`Flat::line`): refused where a point of it (`at`, read across a 17 × 17 net of its parameters)
+/// enters the blank; one clear of it is no part of the boundary there.
+fn unread_clear(flat: &Flat,at: &dyn Fn(f64,f64) -> Option<V>,enters: &dyn Fn(V) -> Option<f64>,family: &Family) -> Result<(),Failure> {
+    let Err(why) = &flat.line else { return Ok(()) };
+    let entering = (0..=16).flat_map(|i| (0..=16).map(move |j| (i as f64/16.,j as f64/16.))).filter_map(|(u,v)| at(u,v))
+        .find_map(|p| enters(p).map(|t| (t,p)));
+    match entering {
+        Some((t,p)) => Err((Condition::Regular,format!("{} {why}",flat.named),witness(family,Some(t),p))),
+        None => Ok(()),
+    }
 }
 
 /// A prism's pieces (#684 M): its sides (`ToolSurface::Extruded`, a drafted prism's too) and the
@@ -1090,13 +1296,17 @@ fn corners(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion) -
 /// whole rulings where that is nought, each a `Line` from cap to cap, walked onto off a rim's fan
 /// and off onto one (#684 AF).
 ///
+/// A plane side a turn keeps in its own plane, square to its axis, is a `Flat` walked across its
+/// line (`side_line`), and no rib, rim or crease beside it is a piece: its fan is in contact at one
+/// point all round, or nowhere (#684 O).
+///
 /// Where the motion moves every point of each ruling alike — a slide, or a screw along the
 /// extrusion — the contact is the same all along each ruling, so the rulings in contact are whole:
 /// the silhouette, a ruling at each root of `n·v` across each side and each corner's fan (`Line`),
 /// read at `RULED_READS` parameters and refined between two that differ in sign. A piece in
 /// contact all over there (a side along the slide, a corner moving along itself) is refused where
 /// its path enters the blank (S1): every point of it is on the boundary, the face kept in its own
-/// plane.
+/// plane, whose line across the slide runs between vertices of the prism.
 fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,screw: &Screw,speed: f64,caps: bool,
     enters: &dyn Fn(V) -> Option<f64>) -> Result<Vec<Piece>,Failure> {
     let sides: Vec<(usize,&super::ExtrudedSurface)> = contacts.patches().iter().enumerate()
@@ -1109,8 +1319,23 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
             .map(|c| dot(outward(tool,p.position,c.normal),c.normal) < 0.)).unwrap_or(false);
         Ruling::Side {patch,surface:surface.clone(),flip}
     }).collect();
+    // the motion moves a ruling's points alike where it turns nothing about any line across it:
+    // `v(b) − v(a) = ω × (b − a)`, nought under a slide or for a ruling along the screw's axis
+    let alike = screw.is_slide() || sides.iter().all(|(_,s)| [0.,0.5,1.].iter().all(|&x| match (s.at(x,0.),s.at(x,1.)) {
+        (Ok(a),Ok(b)) => { let d = sub(b.position,a.position); norm(cross(screw.axis,d)) <= NOUGHT*norm(d) }
+        _ => false,
+    }));
+    // the plane sides the motion keeps in their own planes, a turn's axis square to them (#684 O):
+    // walked across their lines, and no fan beside one walked (under a slide, `silhouette` refuses
+    // one in the blank)
+    let flat: Vec<usize> = if alike { Vec::new() } else { rulings.iter().filter_map(|r| {
+        let Ruling::Side {patch,surface,..} = r else { return None };
+        let (Some((a,b,n)),Some((c,_,_))) = (r.line(0.),r.line(1.)) else { return None };
+        (surface.straight() && kept(motion,&[a,b,c],n,speed)).then_some(*patch)
+    }).collect() };
     for (edge,e) in contacts.edges().iter().enumerate() {
         let ([a,b],[ua,ub]) = (e.patches,e.ends);
+        if flat.contains(&a) || flat.contains(&b) { continue }
         let (Some(ia),Some(ib)) = (sides.iter().position(|(k,_)| *k == a),sides.iter().position(|(k,_)| *k == b)) else { continue };
         let (Some((p0,p1,na)),Some((_,_,nb))) = (rulings[ia].line(ua),rulings[ib].line(ub)) else { continue };
         if dot(na,nb).clamp(-1.,1.).dacos() <= LEAST_TURN { continue }
@@ -1118,12 +1343,6 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
         if !(tool.value(crate::space::lerp(pa,pb,0.5)) < 0.) { continue }
         rulings.push(Ruling::Rib {edge,names:[sides[ia].1.name.clone(),sides[ib].1.name.clone()],ends:[p0,p1],normals:[na,nb]});
     }
-    // the motion moves a ruling's points alike where it turns nothing about any line across it:
-    // `v(b) − v(a) = ω × (b − a)`, nought under a slide or for a ruling along the screw's axis
-    let alike = screw.is_slide() || sides.iter().all(|(_,s)| [0.,0.5,1.].iter().all(|&x| match (s.at(x,0.),s.at(x,1.)) {
-        (Ok(a),Ok(b)) => { let d = sub(b.position,a.position); norm(cross(screw.axis,d)) <= NOUGHT*norm(d) }
-        _ => false,
-    }));
     if alike { return silhouette(contacts,&rulings,motion,speed,enters) }
     // a lined side (#684 AF): a plane side each of whose rulings the motion moves square to its
     // normal alike, `n·(ω × e)` nought, so its contact is the same all along each ruling and nought
@@ -1148,7 +1367,7 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
     // each crease where a drafted prism's halves meet at its parting plane, the half below's edge
     // at its `v = 1`, its fan turned from that half's normal to the half above's (#684 AG)
     for &[below,above] in contacts.creases() {
-        let Some(&(_,s)) = sides.iter().find(|(k,_)| *k == below) else { continue };
+        let Some(&(_,s)) = sides.iter().find(|(k,_)| *k == below).filter(|_| !flat.contains(&below) && !flat.contains(&above)) else { continue };
         let (Some(na),Some(nb)) = (normal(below),normal(above)) else { continue };
         if !s.straight() || dot(na,nb).clamp(-1.,1.).dacos() <= LEAST_TURN { continue }
         let (Ok(a),Ok(b)) = (s.at(0.,1.),s.at(1.,1.)) else { continue };
@@ -1162,7 +1381,7 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
         let Ok(p) = surface.at(0.5,0.5) else { continue };
         // `du × dv` is a cap's outward normal (`CapSurface`)
         let n = crate::space::unit(cross(p.du,p.dv));
-        for &(patch,s) in &sides {
+        for &(patch,s) in sides.iter().filter(|(k,_)| !flat.contains(k)) {
             let Some(ns) = normal(patch).filter(|_| s.straight()) else { continue };
             let (Ok(a),Ok(b)) = (s.at(0.,c as f64),s.at(1.,c as f64)) else { continue };
             rims.push(Ruling::Rim {side:patch,end:c,across:Across::Cap(c),names:[s.name.clone(),cap.name.clone()],
@@ -1176,11 +1395,21 @@ fn prism(contacts: &SweepContacts,tool: &super::SpatialField,motion: Motion,scre
         Ruling::Rim {across:Across::Half(other),..} if other == patch => Some(0),
         _ => None,
     }).collect() };
-    let mut pieces: Vec<Piece> = rulings.into_iter().map(|r| match r {
+    let mut pieces: Vec<Piece> = Vec::with_capacity(rulings.len());
+    for r in rulings { pieces.push(match r {
+        // a flat side: its line from its point nearest the turn's axis to its corner farthest
+        Ruling::Side {patch,ref surface,..} if flat.contains(&patch) => {
+            let Some((_,_,n)) = r.line(0.5) else { continue };
+            let corners = [(0.,0.),(1.,0.),(1.,1.),(0.,1.)].map(|(x,y)| surface.at(x,y).map(|p| p.position));
+            let line = match corners { [Ok(a),Ok(b),Ok(c),Ok(d)] => side_line(screw,n,[a,b,c,d]),_ => Err("is read off its side".into()) };
+            let flat = Flat {patch,named:r.named(),line,normal:n};
+            unread_clear(&flat,&|x,y| surface.at(x,y).ok().map(|p| p.position),enters,contacts.motion())?;
+            Piece::Flat(flat)
+        }
         Ruling::Side {patch,..} if lined.contains(&patch) => Piece::Ruled(Ruled {lined:true,..Ruled::new(r,motion,speed)}),
         Ruling::Side {patch,..} => { let ends = ends(patch); Piece::Ruled(Ruled::new(r,motion,speed).crossing(motion,&ends)) }
         r => Piece::Ruled(Ruled::new(r,motion,speed)),
-    }).collect();
+    }) }
     pieces.extend(rims.into_iter().map(|r| Piece::Ruled(Ruled::new(r,motion,speed))));
     pieces.extend(lines.into_iter().map(Piece::Line));
     Ok(pieces)
@@ -1206,7 +1435,9 @@ fn silhouette(contacts: &SweepContacts,rulings: &[Ruling],motion: Motion,speed: 
                 .flat_map(|(a,b,_)| (0..=16).map(move |j| crate::space::lerp(a,b,j as f64/16.))).find_map(|p| enters(p).map(|t| (t,p)));
             if let Some((t,p)) = entering {
                 return Err((Condition::Regular,format!("{} moves along itself, every point of it in contact: the motion keeps \
-                    it in its own plane, which the class does not sweep",ruling.named()),witness(contacts.motion(),Some(t),p)))
+                    it in its own plane, which the class reads of a prism's side only under a turn (under a slide its line across \
+                    the slide runs between vertices of the prism, where a cap meets it)",ruling.named()),
+                    witness(contacts.motion(),Some(t),p)))
             }
             continue
         }
@@ -1255,9 +1486,10 @@ fn cap_lines(tool: &super::SpatialField,surface: &super::ToolSurface,c: usize,n:
 /// Elsewhere the characteristic would run along the ruling off the walked stretch, which crosses
 /// each ruling once: where the rulings either side have roots on the tool, as at a corner whose
 /// fan holds a normal along a turn's axis, the walk crosses the ruling at one point and the
-/// characteristic branches there; and a side every ruling of which is in contact is a face the
-/// motion keeps in its own plane (a side square to a turn). A ruling's contact is nought at both
-/// its ends there (`Ruled::contact`), so between two of `rows` stations across each piece where
+/// characteristic branches there (a plane side every ruling of which is in contact is a face the
+/// motion keeps in its own plane, a `Flat`, #684 O, and no `Ruled` piece). A ruling's contact is
+/// nought at both its ends there (`Ruled::contact`), so between two of `rows` stations across each
+/// piece where
 /// both ends' contacts change sign (or are nought), the least of the two together is sought
 /// (`roots::brent`), and a ruling found in contact all along with a point whose path enters the
 /// blank is refused. Asked before the walk, whose ring there is degenerate, so the row is named.

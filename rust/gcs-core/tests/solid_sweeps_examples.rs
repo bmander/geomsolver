@@ -331,6 +331,21 @@ fn the_facing_side_cuts_a_cone() {
     near(exported(&e,"block"),PI/3.*80.-PI/6.*(88.-2./3.*t*t),1e-5);
 }
 
+/// `slot.sv` (#684 O): the end mill's flat bottom, which the slide keeps in its own plane, touches
+/// all over and sweeps the slot's floor, the strip its diameter square to the slide carries; its
+/// side's two lines square to the slide are the walls, each meeting the floor in a sharp edge where
+/// the walk runs onto and off the bottom's line. The block loses `4 × 3` along its 20, in closed form.
+#[test]
+fn the_end_mill_cuts_a_slot() {
+    let e = example("slot.sv");
+    let Class::ConstantTwist(found) = class(&e,"block") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_slide(),"read as a slide");
+    assert_eq!(found.flats(),["`mill.bottom`"]);
+    assert_eq!(found.creases().len(),2);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    near(exported(&e,"block"),2000.-4.*3.*20.,1e-6);
+}
+
 /// Every document in the folder is held by a test here, and the README names each.
 #[test]
 fn every_example_is_held_and_named() {

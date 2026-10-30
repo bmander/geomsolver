@@ -1008,6 +1008,39 @@ fn a_grid_interpolated_passes_through_it_and_makes_a_sheet() {
     }
 }
 
+/// A grid creased along a row (`nurbs::interpolate_creased`, #684 O): a floor 6 wide (z = 0) bent
+/// up a right angle into a wall (x = 6), rows across the bend and columns along y, creased at the
+/// bend's row. The net passes through every point at its `net_parameters`, its knot at the crease
+/// stands three times over, and each side is its own stretch's fit: the floor lies in its plane and
+/// the wall in its own to rounding, where one smooth fit through the bend rings out of both. Cut at
+/// the crease (`build::grid_sheet`), the two faces share its row as an edge.
+#[test]
+fn a_grid_creased_along_a_row_is_its_stretches_fits_joined_there() {
+    use gcs_core::brep::nurbs::{interpolate_creased,interpolate_net,net_parameters,Parametrization};
+    let (rows,cols,crease) = (11,5,6);
+    let pts: Vec<V> = (0..rows).flat_map(|i| (0..cols).map(move |j| {
+        let y = j as f64*2.;
+        if i <= crease { [i as f64,y,0.] } else { [6.,y,(i-crease) as f64] }
+    })).collect();
+    let kind = Parametrization::ChordLength;
+    let net = interpolate_creased(&pts,rows,cols,kind,&[crease]).unwrap();
+    let (tu,tv) = net_parameters(&pts,rows,cols,kind).unwrap();
+    assert_eq!(net.uknots.iter().filter(|&&k| k == tu[crease]).count(),3);
+    for i in 0..rows { for j in 0..cols {
+        assert!(gcs_core::space::distance(net.point(tu[i],tv[j]),pts[i*cols+j]) < 1e-12,"row {i}, column {j}");
+    } }
+    // each side in its own plane, read between the rows and the columns
+    let off = |net: &gcs_core::brep::nurbs::Net| (0..=200).flat_map(|a| (0..=20).map(move |b| (a,b))).map(|(a,b)| {
+        let (u,v) = (a as f64/200.,b as f64/20.);
+        let p = net.point(u,v);
+        if u <= tu[crease] { p[2].abs() } else { (p[0]-6.).abs() }
+    }).fold(0_f64,f64::max);
+    assert!(off(&net) < 1e-12,"{}",off(&net));
+    assert!(off(&interpolate_net(&pts,rows,cols,kind).unwrap()) > 1e-2);
+    let sheet = gcs_core::brep::build::grid_sheet(&net,&[0.,tu[crease],1.],&[0.,1.],&["floor".into(),"wall".into()],false).unwrap();
+    assert_eq!((sheet.faces.len(),sheet.edges.len(),sheet.vertices.len()),(2,7,6));
+}
+
 /// A net closed round an axis is cut into a ring of faces (`build::grid_sheet`, #684 N): a cylinder of
 /// radius 3 sampled once round, its last column its first, cut in two along it and in four round
 /// it. Neighbours share their edges and corners and the last round closes on the first's, so only

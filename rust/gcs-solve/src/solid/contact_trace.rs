@@ -186,6 +186,10 @@ pub struct Sheet {
     /// of the cell after node `(r, c)`, `[2r+1, 2c]` the middle of column `c`'s step from row `r`,
     /// `[2r, 2c+1]` the middle of row `r`'s step from column `c`.
     pub sites: Vec<[usize;2]>,
+    /// The rows along which the sheet is creased, between two bands (`bands`): a sharp edge of the
+    /// sweep, where a flat face the motion keeps in its own plane meets the face beside it (#684 O).
+    /// The fit is continuous across one, smooth either side (`nurbs::interpolate_creased`).
+    pub creases: Vec<usize>,
 }
 
 impl Sheet {
@@ -923,7 +927,7 @@ impl<'s> Layout<'_,'s> {
             data.push(self.at(angle,&entry,&grid.rows)?);
         }
         let mut sheet = Sheet {bands:self.bands(grid),points:Vec::new(),normals:Vec::new(),times:Vec::new(),rows,columns,
-            withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
+            withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new(),creases:Vec::new()};
         let mut hold = |f: Found,site: [usize;2]| {
             sheet.withheld.push(f.position); sheet.withheld_normals.push(f.normal); sheet.sites.push(site);
         };

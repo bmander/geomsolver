@@ -178,6 +178,15 @@ fn a_ruling_in_contact_all_along_it_turned_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/facing.sv".to_string()],true),1);
 }
 
+/// **A flat face kept in its own plane slid builds at the display's samples** (`slot.sv`, #684 O):
+/// the walk down one wall, across the end mill's flat bottom and up the other, its sheet creased
+/// where it runs onto and off the bottom, built by the page's stepped builder as the export builds
+/// it.
+#[test]
+fn a_flat_face_kept_in_its_plane_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/slot.sv".to_string()],true),1);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \

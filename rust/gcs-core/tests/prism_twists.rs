@@ -24,7 +24,7 @@ use gcs_core::space::cross;
 /// from upright across the turn (`du` along x, `dv` across the turn, falling as it leans), and the
 /// bar standing `half` either side of that plane along its length: drawn in the plane through
 /// x set `half` back along the length, and extruded from it twice that, drafted `draft` degrees.
-fn turned_bar(lean: f64,corners: [[f64;2];4],half: f64,draft: f64) -> String {
+pub(crate) fn turned_bar(lean: f64,corners: [[f64;2];4],half: f64,draft: f64) -> String {
     let [c0,c1,c2,c3] = corners.map(|[u,v]| format!("du: {u}mm, dv: {v}mm"));
     let drafted = if draft == 0. { String::new() } else { format!(", draft: {draft}deg") };
     format!("unit mm
@@ -209,23 +209,31 @@ fn a_bar_slid_aslant_leaves_a_plane() {
 
 // -- refusals --------------------------------------------------------------------------------
 
-/// Lying along the turn, a bar of oblong section's underside (`lower`) is square to the turn's axis: the turn
-/// keeps it in its own plane, and every point of it is on the boundary, which the class does not
-/// sweep (S1, box O of #684). Its ends stand clear of the block.
+/// Lying along the turn, a bar of oblong section (x 10 to 13, z 0 to 3, y ±9) has its underside
+/// (`lower`) square to the turn's axis: the turn keeps it in its own plane, every point of it in
+/// contact, and it sweeps a region of that plane from its point nearest the axis, where its inner
+/// side's line up the bar (`under`, its rulings' roots at y = 0) meets it, out past the block (box O
+/// of #684, refused at S1 before). The floor is z = 0 and the wall the turn's cylinder of radius 10,
+/// so within its 60° the block loses `π/6 (12² − 10²)` over its top millimetre.
 #[test]
-fn a_side_square_to_the_turn_is_refused() {
-    let r = refused(admit(&turned_bar(90.,[[10.,0.],[13.,0.],[13.,-3.],[10.,-3.]],9.,0.)));
-    assert_eq!(r.condition,Condition::Regular);
-    assert!(r.message.contains("is in contact all over: the motion keeps it in its own plane"),"{}",r.message);
+fn a_side_square_to_the_turn_cuts_a_floor() {
+    let e = fixtures::read(&turned_bar(90.,[[10.,0.],[13.,0.],[13.,-3.],[10.,-3.]],9.,0.));
+    let Class::ConstantTwist(found) = class(&e,"part") else { panic!("the constant-twist class") };
+    assert_eq!(found.flats(),["`bar.lower`"]);
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    near(exported(&e,"part"),PI/3.*80.-PI/6.*44.,1e-5);
 }
 
 /// Flat side down and slid level, the bar's underside runs along the slide: every point of it moves
-/// along it, the face kept in its own plane (S1).
+/// along it, the face kept in its own plane. Under a slide a prism is read by its silhouette, and
+/// the line across such a side runs between vertices of the prism, where a cap meets it, so the
+/// class reads a prism's flat side only under a turn (S1, #684 O).
 #[test]
 fn a_side_along_the_slide_is_refused() {
     let r = refused(admit(&slid_bar(false,0.)));
     assert_eq!(r.condition,Condition::Regular);
     assert!(r.message.contains("`bar.under` moves along itself"),"{}",r.message);
+    assert!(r.message.contains("only under a turn"),"{}",r.message);
 }
 
 /// The leaning bar of square section drafted both ways from its parting plane (#684 P, AG): its

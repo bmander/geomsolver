@@ -9,7 +9,10 @@
 //! its sheet is that section extruded, its columns spread across the blank's heights. A turn
 //! carried round a whole turn or more sweeps a solid of revolution (#684 N): its columns run once
 //! round, the last pose the first, and the sheet is cut into faces round the turn that close on
-//! each other, so no face of it has a seam for the split to meet.
+//! each other, so no face of it has a seam for the split to meet. Where the characteristic runs
+//! onto or off a flat face the motion keeps in its own plane (#684 O), the sheet has a sharp edge
+//! along that point's path: a crease, fitted continuous across and smooth either side
+//! (`nurbs::interpolate_creased`), the sheet cut into faces there, the flat's strip its plane.
 #[allow(unused_imports)]
 use crate::fmath::Det;
 use super::sheet::{Fitted,SweptCut,settle};
@@ -83,8 +86,14 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // a micrometre off.)
     let size = crate::space::polyline_length(&section)/std::f64::consts::PI;
     let turned = |a: V,b: V| crate::space::dot(a,b).clamp(-1.,1.).dacos();
+    // (where the walk runs onto or off a flat face the motion keeps in its own plane, the normal
+    // turns at a sharp edge, the crease, and the step past it counts no turn, #684 O)
+    let creased: Vec<f64> = found.creases();
     let mut lengths = vec![0.];
-    for w in 1..section.len() { lengths.push(lengths[w-1]+distance(section[w-1],section[w])+size*turned(normals[w-1],normals[w])); }
+    for w in 1..section.len() {
+        let turn = if creased.contains(&((w-1) as f64)) { 0. } else { size*turned(normals[w-1],normals[w]) };
+        lengths.push(lengths[w-1]+distance(section[w-1],section[w])+turn);
+    }
     let total = *lengths.last().expect("a walk has nodes");
     let at_length = |l: f64| -> f64 {
         let w = lengths.partition_point(|&x| x < l).clamp(1,lengths.len()-1);
@@ -96,6 +105,9 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // sheet is cut there into faces (`Fitted::named`), the fan's own a band between its flanks',
     // so a point of either flank is never read on the other across the fan's sharp turn
     let fans: Vec<f64> = found.fan_ends().into_iter().filter(|&s| s > 0. && s < (section.len()-1) as f64).collect();
+    // and a row at each crease, where it runs onto or off a flat face (#684 O)
+    let creases: Vec<f64> = creased.iter().copied().filter(|&s| s > 0. && s < (section.len()-1) as f64).collect();
+    let fans: Vec<f64> = { let mut marks = [fans,creases.clone()].concat(); marks.sort_by(f64::total_cmp); marks.dedup(); marks };
     for &s in &fans {
         let w = rows.partition_point(|&r| r < s);
         if rows.get(w) == Some(&s) { continue }
@@ -108,7 +120,19 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // A shallow one, a drafted crease's few degrees, is a band of the sheet too narrow for the split
     // to meet a plane in (a pcurve 3e-5 off where it crossed a block's side), and the flanks either
     // side of it are near enough alike that neither is read on the other (#684 AG)
-    let cut: Vec<f64> = fans.iter().copied().filter(|&s| found.fan_turn(s) > SHALLOW_FAN).collect();
+    let cut: Vec<f64> = fans.iter().copied().filter(|&s| creases.contains(&s) || found.fan_turn(s) > SHALLOW_FAN).collect();
+    // each stretch between two creases (or an end) at least four rows, as the creased fit asks
+    // (`nurbs::interpolate_creased`): the widest step by length halved until it is
+    let breaks: Vec<f64> = std::iter::once(rows[0]).chain(creases.iter().copied()).chain(std::iter::once(rows[rows.len()-1])).collect();
+    for b in breaks.windows(2) {
+        let length = |s: f64| { let w = (s.floor() as usize).min(lengths.len()-2); lengths[w]+(lengths[w+1]-lengths[w])*(s-w as f64) };
+        while rows.iter().filter(|&&r| r >= b[0] && r <= b[1]).count() < 4 {
+            let within: Vec<usize> = (0..rows.len()-1).filter(|&k| rows[k] >= b[0] && rows[k+1] <= b[1]).collect();
+            let Some(&k) = within.iter().max_by(|&&x,&&y| (length(rows[x+1])-length(rows[x])).total_cmp(&(length(rows[y+1])-length(rows[y]))))
+                else { break };
+            rows.insert(k+1,at_length(0.5*(length(rows[k])+length(rows[k+1]))));
+        }
+    }
     let columns_n = (((window[1]-window[0])/step).ceil() as usize).max(4)+1;
     let columns: Vec<f64> = (0..columns_n).map(|c| window[0]+(window[1]-window[0])*c as f64/(columns_n-1) as f64).collect();
     let mids = |x: &[f64]| x.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<_>>();
@@ -126,8 +150,9 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         let (nr,nc) = (grid.rows.len(),grid.columns.len());
         let bands = std::iter::once(0).chain(cut.iter().filter_map(|s| grid.rows.iter().position(|r| r == s)))
             .map(|r| (r,UNNAMED)).collect();
+        let crease_rows: Vec<usize> = creases.iter().filter_map(|s| grid.rows.iter().position(|r| r == s)).collect();
         let mut sheet = Sheet {bands,points:Vec::with_capacity(nr*nc),normals:Vec::with_capacity(nr*nc),times:Vec::with_capacity(nr*nc),
-            rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new()};
+            rows:nr,columns:nc,withheld:Vec::new(),withheld_normals:Vec::new(),sites:Vec::new(),creases:crease_rows.clone()};
         for row in &rows { for (pose,&t) in columns.iter().zip(&grid.columns) {
             let (p,n) = carried(*row,pose);
             sheet.points.push(p); sheet.normals.push(n); sheet.times.push(t);
@@ -136,7 +161,10 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         // the cells' centres, and with sides the middles of the cells' sides each way
         for (c,pose) in column_mids.iter().enumerate() {
             for (r,row) in row_mids.iter().enumerate() { hold(carried(*row,pose),[2*r+1,2*c+1]); }
-            if withheld == Withheld::Sides { for (r,row) in rows.iter().enumerate() { hold(carried(*row,pose),[2*r,2*c+1]); } }
+            // (none on a crease, where the sheet's normal is either side's)
+            if withheld == Withheld::Sides { for (r,row) in rows.iter().enumerate().filter(|(r,_)| !crease_rows.contains(r)) {
+                hold(carried(*row,pose),[2*r,2*c+1]);
+            } }
         }
         if withheld == Withheld::Sides {
             for (c,pose) in columns.iter().enumerate() {
@@ -161,7 +189,8 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
         if cut.is_empty() && !found.whole { return Ok(fitted) }
         fitted.faces = fitted.named(kind,&|_| String::new(),found.whole.then_some(AROUND)).at(Stage::Fit)?;
         (say.stage)(&format!("`{name}`: the sheet cut into {} faces{}{}",fitted.faces.faces.len(),
-            if cut.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" },
+            if creases.is_empty() { if cut.is_empty() { "" } else { " where its characteristic runs round a convex corner's fan" } }
+                else { " where its characteristic runs onto or off a flat face, creased there" },
             if found.whole { " and round the turn, closing on itself" } else { "" }));
         Ok(fitted)
     })

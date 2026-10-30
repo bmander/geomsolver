@@ -371,8 +371,9 @@ rulings in contact are whole: each root of `n·v` across a side or a fan is a pi
 its stations along the ruling (`Piece::Line`). S1 also refuses a ruling in contact all along it
 whose path enters the blank (`constant_twist::rulings`, both ends' contacts changing sign between
 two coarse stations and their least sought by `roots::brent`; under a slide, a piece in contact at
-every parameter read) — a side the motion keeps in its own plane, square to a turn or along a slide
-— but a lined side's, which is walked (#684 AF, below).
+every parameter read) — under a slide, a side the motion keeps in its own plane, along the slide
+— but a lined side's, which is walked (#684 AF, below), and a plane side a turn keeps in its own
+plane, walked across its line (#684 O, below).
 A cap reaching the blank under a constant twist is walked where the tool is a prism standing alone
 (#684 AE, below), any other tool's refused at T1 (`admission::ends`), and a drafted prism running
 both ways from its parting plane is walked across its crease (#684 AG, below); a twist
@@ -441,7 +442,7 @@ within 2e-5 at 0.001 mm), each STL agreeing with the field, with the refusal
 **A ruling in contact all along it under a constant twist (#684 AF):** a plane side each of whose
 rulings the motion moves square to its normal alike (`n·(ω × e)` nought: each ruling's two ends'
 contacts within `NOUGHT` of the tool's speed of each other at all 256 parameters read, and not
-nought all over, which is box O's) is lined (`Ruled::lined`): no ruling of it has one root
+nought all over, which is a flat face, #684 O) is lined (`Ruled::lined`): no ruling of it has one root
 (`Ruled::root` gives none), and each ruling where its contact is nought (`noughts`) is a
 `Piece::Line` from cap to cap with its `side`, the section reading a silhouette gets.
 `constant_twist::prism` builds them; `step` steps off a line's end onto the fan of the rim its side
@@ -463,6 +464,45 @@ by `z − kθ` within 2e-5 at 0.002 mm), each STL agreeing with the field, both 
 with the refusals `prism_twists::a_side_facing_the_axis_turned_onto_its_rim_is_refused` (S1, the
 rim's fan at one point) and `a_corner_holding_the_turns_axis_is_refused` (S1, a branch), and
 `object_builder::a_ruling_in_contact_all_along_it_turned_builds_at_the_displays_samples`.
+
+**Flat faces a turn or a slide keeps in their own planes (#684 O):** a face whose contact `n·v`
+is nought at three of its points against `NOUGHT` of the tool's speed (`constant_twist::kept`) — a
+revolution's face whose meridian is a line square to its axis (`RevolvedSurface::flat`), or under a
+turn or a screw about any line but the extrusion a prism's plane side (`prism`) — is a
+`Piece::Flat`, every point of it in contact. Its stations run along the straight line `Flat::line`
+from where it stands least across the motion's sections to where it stands most (`across`: its
+distance from a turn's axis, its offset square to a slide): a disc's diameter square to the slide
+or along the line from the turn's axis through its centre (`revolved_flat`), a side from its
+point nearest the turn's axis to its corner farthest (`side_line`). No fan beside a flat is a
+piece (`corners`, `prism`'s ribs, rims and creases): it is in contact at one point all round or
+nowhere. `step` steps from a face's root at its end onto the flat's line where the root is one of
+its ends (`onto_flat`; elsewhere, or onto a flat with no line, it ends), and off the line's other
+end onto a face beside it whose root there is the point, or another flat's line (`OFF_FLAT`
+otherwise). A revolution's face joined smoothly to a flat disc has its ring at the join, in contact
+all round, replaced by the flat's line's two ends with the flat's normal (`Walker::pass`). S1
+refuses a kept face with no line — a ring, a partial revolution, a face a turn's axis passes
+through (`THROUGH`) — where any of a 17 × 17 net of its points enters the blank (`unread_clear`),
+and under a slide (`silhouette`) a prism's side kept in its plane, saying the class reads one only
+under a turn; S2 lets two roots of one ring reach the blank only where both are on the walk with a
+flat's line between them; S3 is not read at a crease's node. `Characteristic::creases` gives each
+node where the walk runs onto or off a flat, and `Characteristic::flats` names the flats walked.
+`helical_sheet` lays a row at each crease (each stretch between creases at least four rows), counts
+no turn of the normal across one, withholds no side contact on one, and cuts the sheet into faces
+there; `Sheet::creases` carries the rows, and `sheet::fit` interpolates by
+`nurbs::interpolate_creased` (the rows along the columns, then each stretch along the rows at its
+own `net_parameters`, joined by a knot three times over: continuous across a crease, each side its
+stretch's fit, a flat strip its plane to rounding), and `judged`'s fold check compares no readings
+across a knot standing that often. The gate is `solid_sweeps_examples::the_end_mill_cuts_a_slot`
+(`solid_sweeps/slot.sv`, an end mill slid across a block, the slot `4 × 3 × 20` exactly) and
+`tests/flat_faces.rs` (the mill along the block's edge, a step, exactly; a bull-nose mill, within
+1e-6 at 0.001 mm; the mill turned across `turn.sv`'s block, Pappus over the annulus, and turned a
+whole turn, each within 1e-5; a tapered mill turned, its walls cones, within 1e-5), with
+`prism_twists::a_side_square_to_the_turn_cuts_a_floor` (a bar lying along the turn, its underside
+the floor, within 1e-5, an S1 refusal before), each STL agreeing with the field; the refusals
+`flat_faces::a_ring_or_a_disc_across_the_axis_kept_in_its_plane_is_refused` (S1) and
+`prism_twists::a_side_along_the_slide_is_refused` (S1); the creased fit's
+`brep::a_grid_creased_along_a_row_is_its_stretches_fits_joined_there` (through every point, each
+side its plane to 1e-12); and `object_builder::a_flat_face_kept_in_its_plane_builds_at_the_displays_samples`.
 
 **A drafted prism tool (#684 G):** a drafted prism is in the generating class where each corner
 joins two lines or goes on tangent: then each side (each half of it, either side of the parting
