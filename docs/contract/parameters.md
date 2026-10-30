@@ -516,8 +516,9 @@ where a rule came from.
     and `home` puts it back; a value that does not work out at an instant leaves the last one
     standing.  A placement whose value reads `t` **reads `t`** (`follow::placed`): a drawing whose
     only reader is one is followed, a march of two stations, the drawing at home at either end of
-    the interval, along which only the held number moves and nothing is solved (no `Followed::still`); a drawing where nothing reads `t` is refused as before, and a trace's lowering
-    (`followed.rs`) and the ledger count rows alone.  A placement **moves its solid, never builds
+    the interval, along which only the held number moves and nothing is solved (no
+    `Followed::still`); a drawing where nothing reads `t` is refused as before, and a trace's
+    lowering (`followed.rs`) and the ledger count rows alone.  A placement **moves its solid, never builds
     it again**: its shape key (`solid::ShapeKey`) reads each plane under it where the placements
     above put it, relative to a reference they put there too, and the placement's pose relative to
     that reference — the same at every instant — so a scrub moves the evaluation built at home
