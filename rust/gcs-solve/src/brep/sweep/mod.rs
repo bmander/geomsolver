@@ -4,9 +4,8 @@
 //! (`sector`), and that sector patterned round its axis (`brep::pattern`). What a native host did
 //! with its kernel's shapes is done here with this kernel's, so the export needs no native kernel,
 //! and runs where the core does — in the browser's worker too.
-pub mod cutter;
+pub use cad_kernel::sweep::{cutter,helical};
 pub mod extruded;
-pub mod helical;
 pub mod planar;
 pub mod sector;
 pub mod sheet;
@@ -19,8 +18,8 @@ use crate::solid::cad::{self,StaticRecipe};
 use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
 use crate::solid::{Millimetres,SpatialField};
 
-/// How the pipeline speaks: a line of progress, and the stage just passed.
-pub struct Say<'a> { pub stage: &'a (dyn Fn(&str)+Sync),pub mark: &'a (dyn Fn(Stage)+Sync) }
+/// How the pipeline speaks: a line of progress, and the stage just passed (the kernel's).
+pub use cad_kernel::sweep::Say;
 
 /// A swept body built: as one sector, and the sector patterned into the whole (its B-rep, its mesh),
 /// or whole where a sector's premises do not hold.

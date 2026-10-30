@@ -152,11 +152,8 @@ pub enum Class { Generating,ConstantTwist(Box<super::constant_twist::Characteris
     Subtraction(Box<super::planar_subtraction::Found>),Capped(Box<Capped>) }
 
 /// A generating sweep of a prism whose cap reaches the blank (#684 F, row T3), sectioned across:
-/// the direction in the profile's plane a station is a distance along (the tool's frame, unit),
-/// the stations the sampled contacts in the blank reach, and how far that band keeps from the
-/// profile's corners and its ends (millimetres from the profile's origin).
-#[derive(Clone,Debug)]
-pub struct Capped { pub across: V,pub band: [f64;2],pub clearance: f64 }
+/// the kernel's (`cad_kernel::sweep::sheet::Capped`).
+pub use cad_kernel::sweep::sheet::Capped;
 
 /// A body admitted to the class, and the only way to have one: `admit_body` makes it, so a
 /// construction that takes one cannot be reached without the gate.

@@ -9,15 +9,15 @@
 //! enter the blank fixes the band of stations and the stretch of the walk the sheet spans
 //! (`Cutter::reach`).
 #[allow(unused_imports)]
-use crate::fmath::Det;
-use crate::brep::build::{offset,walks as walks_of,Profile,Seg};
-use crate::brep::geom::Frame;
-use crate::brep::planar::Step;
-use crate::brep::recipe::{Node,Recipe};
-use crate::brep::section::Sectioned;
-use crate::json::Json;
-use crate::solid::contact_trace::{Sample,TraceError,Tracer};
-use crate::space::{add,cross,distance,dot,lerp,norm,scale,sub};
+use crate::util::fmath::Det;
+use crate::build::{offset,walks as walks_of,Profile,Seg};
+use crate::geom::Frame;
+use crate::planar::Step;
+use crate::recipe::{Node,Recipe};
+use crate::section::Sectioned;
+use crate::util::json::Json;
+use crate::sweep::trace::{Sample,TraceError,Tracer};
+use crate::util::space::{add,cross,distance,dot,lerp,norm,scale,sub};
 use std::collections::BTreeMap;
 use std::f64::consts::TAU;
 
@@ -244,7 +244,7 @@ const CAP_HIGH: u32 = 2;
 /// meet counted once).
 fn meets(walk: &[Seg],origin: V,across: V,c: f64) -> Vec<(usize,f64,V)> {
     let size = walk.iter().map(|s| distance(s.start(),origin)).fold(1_f64,f64::max);
-    let close = crate::brep::geom::tolerance(size);
+    let close = crate::geom::tolerance(size);
     let mut out: Vec<(usize,f64,V)> = Vec::new();
     for (k,seg) in walk.iter().enumerate() {
         let [lo,hi] = seg.span();
@@ -254,13 +254,13 @@ fn meets(walk: &[Seg],origin: V,across: V,c: f64) -> Vec<(usize,f64,V)> {
             if !out.iter().any(|(_,_,q)| distance(*q,p) <= close) { out.push((k,w,p)); }
         };
         match &seg.curve {
-            crate::brep::geom::Curve::Line {p,d} => {
+            crate::geom::Curve::Line {p,d} => {
                 let rate = dot(across,*d);
                 if rate.abs() <= 1e-12 { continue }
                 let w = (c-dot(across,sub(*p,origin)))/rate;
                 if w >= lo-tol && w <= hi+tol { at(w.clamp(lo,hi)); }
             }
-            crate::brep::geom::Curve::Circle(f,r) => {
+            crate::geom::Curve::Circle(f,r) => {
                 let (a,b) = (r*dot(across,f.x),r*dot(across,f.y));
                 let amplitude = a.dhypot(b);
                 if !(amplitude > 0.) { continue }
@@ -268,7 +268,7 @@ fn meets(walk: &[Seg],origin: V,across: V,c: f64) -> Vec<(usize,f64,V)> {
                 if cosine.abs() > 1. { continue }
                 let (phase,turn) = (b.datan2(a),cosine.dacos());
                 for w in [phase+turn,phase-turn] {
-                    let w = crate::brep::geom::around(w,lo,TAU);
+                    let w = crate::geom::around(w,lo,TAU);
                     let w = if w > hi+tol && (w-TAU-lo).abs() <= tol { lo } else { w };
                     if w <= hi+tol { at(w.min(hi)); }
                 }
@@ -304,7 +304,7 @@ impl Cutter {
         if let Some(cutter) = Cutter::prism(&recipe)? { return Ok(cutter) }
         let sec = match Sectioned::of(&recipe) {
             Ok(sec) => sec,
-            Err(e) if e.kind == crate::brep::Kind::Refused => return Err(format!("the core sections a cutter of revolutions \
+            Err(e) if e.kind == crate::Kind::Refused => return Err(format!("the core sections a cutter of revolutions \
                 about parallel lines, or a prism, only: {e}")),
             Err(e) => return Err(e.into()),
         };
@@ -322,7 +322,7 @@ impl Cutter {
         let plane = Frame::about(profile.origin,axis);
         let coords = |q: V| { let l = plane.local(q); [l[0],l[1]] };
         let walks = walks_of(&profile,&coords)?;
-        if walks.iter().flatten().any(|s| matches!(s.curve,crate::brep::geom::Curve::BSpline(_))) {
+        if walks.iter().flatten().any(|s| matches!(s.curve,crate::geom::Curve::BSpline(_))) {
             return Err("the core sections a prism of lines and arcs only".into())
         }
         let extent = [from.min(to),from.max(to)];
@@ -371,8 +371,8 @@ impl Cutter {
         let mut reach = |p: V| { let c = at(p); range = [range[0].min(c),range[1].max(c)]; };
         for seg in walk {
             reach(seg.start());
-            if let crate::brep::geom::Curve::Circle(f,_) = &seg.curve {
-                for (w,_) in crate::brep::geom::turns(dot(across,f.x),dot(across,f.y),seg.span()) { reach(seg.curve.point(w)); }
+            if let crate::geom::Curve::Circle(f,_) = &seg.curve {
+                for (w,_) in crate::geom::turns(dot(across,f.x),dot(across,f.y),seg.span()) { reach(seg.curve.point(w)); }
             }
         }
         let corners = (0..walk.len()).filter_map(|k| {
@@ -604,8 +604,8 @@ impl Cutter {
         let (mut radius_sum,mut radius_count) = (0.,0);
         let (mut spent,mut queried) = ([0.;3],0);
         // half a step off the side, every station's section first, on every core
-        let clock = crate::clock::Instant::now();
-        let mut sections = crate::par::indices(stations,|c| self.profile(station(c as f64))).into_iter();
+        let clock = crate::util::clock::Instant::now();
+        let mut sections = crate::util::par::indices(stations,|c| self.profile(station(c as f64))).into_iter();
         spent[0] += clock.elapsed().as_secs_f64();
         for c in 0..stations {
             let mut hit_here = false;
@@ -614,7 +614,7 @@ impl Cutter {
                 let total = profile.augmented_length();
                 let count = ((total/0.3).ceil() as usize).max(8);
                 let mut queries = Vec::new();
-                let clock = crate::clock::Instant::now();
+                let clock = crate::util::clock::Instant::now();
                 for i in 0..count {
                     let s = total*i as f64/count as f64;
                     let sample = self.sample(profile,s)?;
@@ -633,7 +633,7 @@ impl Cutter {
                 }
                 spent[1] += clock.elapsed().as_secs_f64();
                 if queries.is_empty() { continue }
-                let clock = crate::clock::Instant::now();
+                let clock = crate::util::clock::Instant::now();
                 let states = inside(&queries.iter().map(|q| q.2).collect::<Vec<_>>())?;
                 spent[2] += clock.elapsed().as_secs_f64(); queried += queries.len();
                 let mut any = false;

@@ -11,13 +11,13 @@
 //! round, the last pose the first, and the sheet is cut into faces round the turn that close on
 //! each other, so no face of it has a seam for the split to meet.
 #[allow(unused_imports)]
-use crate::fmath::Det;
+use crate::util::fmath::Det;
 use super::sheet::{Fitted,SweptCut,settle};
 use super::Say;
-use crate::solid::constant_twist::Characteristic;
-use crate::solid::contact_trace::{Grid,Inside,Sheet,UNNAMED,Withheld};
-use crate::solid::export::{AtStage,ExportRefusal,Stage,Tolerance};
-use crate::space::distance;
+use crate::sweep::characteristic::Characteristic;
+use crate::sweep::trace::{Grid,Inside,Sheet,UNNAMED,Withheld};
+use crate::sweep::refusal::{AtStage,ExportRefusal,Stage,Tolerance};
+use crate::util::space::distance;
 
 type V = [f64;3];
 
@@ -77,8 +77,8 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     // sharply over a stretch far shorter than a row, and is laid as many rows as its turn asks.
     // (Counted on the fan alone, the thread's flanks are laid too thinly for the split: a pcurve
     // a micrometre off.)
-    let size = crate::space::polyline_length(&section)/std::f64::consts::PI;
-    let turned = |a: V,b: V| crate::space::dot(a,b).clamp(-1.,1.).dacos();
+    let size = crate::util::space::polyline_length(&section)/std::f64::consts::PI;
+    let turned = |a: V,b: V| crate::util::space::dot(a,b).clamp(-1.,1.).dacos();
     let mut lengths = vec![0.];
     for w in 1..section.len() { lengths.push(lengths[w-1]+distance(section[w-1],section[w])+size*turned(normals[w-1],normals[w])); }
     let total = *lengths.last().expect("a walk has nodes");
@@ -105,10 +105,10 @@ pub fn helical_sheet(cut: &SweptCut,found: &Characteristic,heights: Option<[f64;
     let mids = |x: &[f64]| x.windows(2).map(|w| 0.5*(w[0]+w[1])).collect::<Vec<_>>();
     let grid = Grid {row_mids:mids(&rows),rows,column_mids:mids(&columns),columns};
     // a point of the sheet, in millimetres: the section's point carried, and its normal turned
-    let carried = |(p,n): (V,V),pose: &crate::motion::Pose| -> (V,V) { (pose.point(p).map(|x| x*scale),pose.vector(n)) };
+    let carried = |(p,n): (V,V),pose: &crate::sweep::motion::Pose| -> (V,V) { (pose.point(p).map(|x| x*scale),pose.vector(n)) };
     let lay = |grid: &Grid,withheld: Withheld| -> Result<Sheet,String> {
-        let rows: Vec<(V,V)> = crate::par::map(&grid.rows,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
-        let row_mids: Vec<(V,V)> = crate::par::map(&grid.row_mids,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
+        let rows: Vec<(V,V)> = crate::util::par::map(&grid.rows,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
+        let row_mids: Vec<(V,V)> = crate::util::par::map(&grid.row_mids,|&s| found.on_section(s,station)).into_iter().collect::<Result<_,_>>()?;
         // one pose a column
         let poses = |times: &[f64]| times.iter().map(|&t| family.pose_at(t)).collect::<Result<Vec<_>,_>>();
         let (mut columns,column_mids) = (poses(&grid.columns)?,poses(&grid.column_mids)?);

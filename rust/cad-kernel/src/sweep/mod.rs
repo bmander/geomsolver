@@ -13,6 +13,14 @@ pub mod surface;
 pub mod tool;
 pub mod trace;
 pub mod characteristic;
+pub mod cutter;
+pub mod sheet;
+pub mod helical;
+
+use refusal::Stage;
+
+/// How the pipeline speaks: a line of progress, and the stage just passed.
+pub struct Say<'a> { pub stage: &'a (dyn Fn(&str)+Sync),pub mark: &'a (dyn Fn(Stage)+Sync) }
 
 /// How far from a revolution's axis an endpoint is read as on it, wherever a revolved tool's
 /// faces, fields or contacts are read (the tolerance a revolved snapshot takes).
