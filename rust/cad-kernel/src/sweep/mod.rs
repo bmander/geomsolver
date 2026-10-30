@@ -5,3 +5,4 @@
 //! Nothing here reads a document: a caller builds the tool and the motion from plain data, or
 //! reads them through the `Source` traits its own document implements.
 pub mod envelope;
+pub mod motion;

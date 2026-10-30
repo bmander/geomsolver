@@ -25,6 +25,7 @@
 //! derivatives have a bound — a line, an arc, a polynomial spline's hodographs — and fail closed
 //! for any other path, as a law does for a function it carries no enclosure of.
 use crate::interval::Interval as I;
+pub(super) use super::Stretch;
 use crate::model::{EntRef, Sketch};
 use crate::path::Path;
 use crate::space::{add, cross, dot, norm, scale, sub};
@@ -319,18 +320,6 @@ impl Extremes {
         }
         Some(Stretch { point, turn, speed, spin, origin })
     }
-}
-
-/// A frame along a path over a stretch of its parameter, enclosed (`Guide::stretch`): the
-/// path's point, the turn's entries, the path's speed and the frame's angular speed bounded, and
-/// the point at the home the turn is about.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct Stretch {
-    pub(crate) point: [I; 3],
-    pub(crate) turn: [[I; 3]; 3],
-    pub(crate) speed: f64,
-    pub(crate) spin: f64,
-    pub(crate) origin: V,
 }
 
 /// The path's own frame at `u`, or why it has none.

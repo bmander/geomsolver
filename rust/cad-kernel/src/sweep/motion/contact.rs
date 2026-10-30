@@ -1,9 +1,9 @@
 //! Temporal contact charts for a rotation viewed from another rotating frame, and for a
 //! translation viewed from a rotating one (a rack against the blank it cuts).
 #[allow(unused_imports)]
-use crate::fmath::Det;
+use crate::util::fmath::Det;
 use super::{Family,Step};
-use crate::{envelope::{self,Error,Motion,SurfacePoint},plane::{cross,dot}};
+use crate::{sweep::envelope::{self,Error,Motion,SurfacePoint},plane::{cross,dot}};
 use std::f64::consts::TAU;
 
 /// Normal velocity at one fixed source point under a supported motion family: under a rotation

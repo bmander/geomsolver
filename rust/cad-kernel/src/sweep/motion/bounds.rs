@@ -1,7 +1,8 @@
 //! Interval poses enclose the mathematical rigid family represented by a solved
 //! snapshot. No rounded libm values or sampled poses enter the construction.
-use super::{Family,Step};
-use crate::interval::{Error,Interval as I};
+use super::{Drive,Family,Step};
+use std::sync::Arc;
+use crate::util::interval::{Error,Interval as I};
 type V = [I;3];
 type M = [V;3];
 
@@ -127,7 +128,7 @@ impl Family {
         let mut values = Vec::with_capacity(self.steps.len());
         for step in &self.steps {
             // a drive's joint stands at its law's value, enclosed over the interval (#391 S5)
-            let number = |law: &Option<super::Law>| match law {
+            let number = |law: &Option<Arc<dyn Drive>>| match law {
                 None => Ok(angle),
                 Some(l) => l.enclose(angle).map(|[v,_]| v),
             };
