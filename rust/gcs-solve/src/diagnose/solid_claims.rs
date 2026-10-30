@@ -174,11 +174,9 @@ enum Poses {
     /// Over a free parameter: a copy solved again at each sample.
     Solved,
     /// Over a declared parameter (#633): a copy of the drawing stood at each sample on the branch
-    /// its march carried (`follow::stand`) — where a row reads the parameter (`marched`), since
-    /// otherwise it stands still — and every solid drawn in a frame whose value reads the
-    /// parameter placed at the value worked out there, by its index and its value, as written and
-    /// read.
-    Stood { scratch: Sketch, marched: bool, placed: Vec<(usize, String, crate::expr::Ast)> },
+    /// its march carried (`follow::stand`), which places what is drawn in a frame whose value
+    /// reads the parameter where that value puts it (#697).
+    Stood { scratch: Sketch },
     /// Every pose fails, for this reason: what the roll reads could not be read.
     Failing(String),
 }
@@ -231,54 +229,20 @@ fn poses_of(sk: &Sketch, c: &SolidClaim) -> Poses {
     read().unwrap_or_else(Poses::Failing)
 }
 
-/// What a claim over the declared parameter `name` reads once: the drawing's march along it, and
-/// the solids placed at an instant its value's text reads — `n := x in f`, `f`'s value written
-/// over `name`, placed where the drawing stands when it is elaborated (`value_now`) and not again
-/// when it is stood elsewhere.
+/// What a claim over the declared parameter `name` reads once: the drawing's march along it.
 fn stood(sk: &Sketch, name: &str) -> Poses {
-    let marched = !crate::follow::readers(sk, name).is_empty();
-    if marched {
-        if let Err(e) = crate::follow::followed(sk, name).as_ref() {
-            return Poses::Failing(e.clone());
-        }
+    match crate::follow::followed(sk, name).as_ref() {
+        Ok(_) => Poses::Stood { scratch: sk.clone() },
+        Err(e) => Poses::Failing(e.clone()),
     }
-    let placed = sk.solids.iter().enumerate().filter_map(|(i, s)| match &s.def {
-        crate::model::SolidDef::Placed { at, .. } => crate::expr::parse_in(&at.text, sk.units).ok()
-            .filter(|p| p.body.deps().iter().any(|d| d == name))
-            .map(|p| (i, at.text.clone(), p.body)),
-        _ => None,
-    }).collect();
-    Poses::Stood { scratch: sk.clone(), marched, placed }
 }
 
-/// The pose of claim `c` at the instant `t` of a declared parameter: `scratch` stood there, its
-/// solids drawn in a frame whose value reads the parameter placed at their value there.
-fn stood_pose(scratch: &mut Sketch, marched: bool, placed: &[(usize, String, crate::expr::Ast)],
-              c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
-    let mut evaluate = || -> Result<clear::GeometricEvidence, String> {
-        if marched {
-            crate::follow::stand(scratch, sw.name(), t)
-                .map_err(|e| format!("not followed to {}: {e}", crate::vocab::num(t)))?;
-        }
-        // the numbers held where it stands, the parameter at `t`, as the value was read where
-        // it was placed (`value_now`)
-        let mut held = scratch.held_numbers();
-        held.insert(sw.name().to_string(), crate::expr::Aff::of_dim(t, sw.dimension()));
-        for (i, text, body) in placed {
-            let said = |e: String| format!("`{text}` at {}: {e}", crate::vocab::num(t));
-            let a = crate::expr::eval(body,
-                &crate::expr::with_declared(body, &held, &scratch.declared))
-                .map_err(|e| said(e.to_string()))?;
-            a.dim.require(crate::units::Dim::ANGLE, crate::constraints::JOINT_VALUE).map_err(said)?;
-            let v = a.number().filter(|v| v.is_finite())
-                .ok_or_else(|| said("comes to no number".into()))?;
-            if let crate::model::SolidDef::Placed { at, .. } = &mut scratch.solids[*i].def {
-                at.value = v.to_radians();
-            }
-        }
-        geometry(scratch, c)
-    };
-    SolidPose { parameter: Some(t), evaluation: evaluate() }
+/// The pose of claim `c` at the instant `t` of a declared parameter: `scratch` stood there.
+fn stood_pose(scratch: &mut Sketch, c: &SolidClaim, sw: &Sweep, t: f64) -> SolidPose {
+    let evaluation = crate::follow::stand(scratch, sw.name(), t)
+        .map_err(|e| format!("not followed to {}: {e}", crate::vocab::num(t)))
+        .and_then(|()| geometry(scratch, c));
+    SolidPose { parameter: Some(t), evaluation }
 }
 
 /// The pose of claim `c` at sample `t` of its sweep, solved again on a copy of the drawing.
@@ -387,9 +351,9 @@ impl ClaimJudge {
                 }
                 SolidPose { parameter: Some(t), evaluation: geometry(scratch, c) }
             }
-            Poses::Stood { scratch, marched, placed } => {
+            Poses::Stood { scratch } => {
                 let t = sample(k).expect("a declared parameter's claim is a sweep");
-                stood_pose(scratch, *marched, placed, c, c.over.as_ref().expect("a sweep"), t)
+                stood_pose(scratch, c, c.over.as_ref().expect("a sweep"), t)
             }
             Poses::Solved => {
                 let t = sample(k).expect("a free parameter's claim is a sweep");

@@ -507,6 +507,22 @@ where a rule came from.
     followed curve's polyline key reads home, so standing anywhere re-marches nothing and redraws
     no trace; `edit::commit_seeds` writes no seed from a drawing standing at an instant.  Never
     written to a document, never grafted.
+  - **What is drawn in a valued frame stands where its value puts it** (#697): `n := x in f`,
+    `fix(value == t) f`, is a `SolidDef::Placed` whose `at` is the value's text, worked out at
+    elaboration (`value_now`) and **again wherever the texts that read held numbers are**
+    (`expr::evaluate`'s `place_held`, over `Sketch::held_numbers`) — so `settle`, `home`, `stand`
+    and a put at a station itself (`Followed::put`, which works the texts out there) all place it,
+    and `home` puts it back; a value that does not work out at an instant leaves the last one
+    standing.  A placement whose value reads `t` **reads `t`** (`follow::placed`): a drawing whose
+    only reader is one is followed, a march of two stations, the drawing at home at either end of
+    the interval, along which only the held number moves and nothing is solved (`Followed`'s
+    `solved` false); a drawing where nothing reads `t` is refused as before, and a trace's lowering
+    (`followed.rs`) and the ledger count rows alone.  A placement **moves its solid, never builds
+    it again**: its shape key (`solid::ShapeKey`) reads each plane under it where the placements
+    above put it, relative to a reference they put there too, and the placement's pose relative to
+    that reference — the same at every instant — so a scrub moves the evaluation built at home
+    (#412); a solid read under two placements is not one that moves with either.  The claim judge
+    stands its copy of the drawing and reads it (`Poses::Stood`).
   - **An instant as written** (`follow::instant`): `90deg`, read in the drawing's units as the
     interval's ends are — the parameter's dimension, finite.  A drawing's `model m from "…" at t =
     90deg` (`drawing::Instant`, the parser's `instant`, one word as `t=90deg`) is a snapshot of its
@@ -535,11 +551,16 @@ where a rule came from.
     JSON in the core's words.  `tests/drawing.rs`
     (`a_model_is_shown_at_the_instant_its_drawing_states`): a sheet measuring the rocker pin at
     home and a quarter turn on, the one-word spelling, the refusals.  The web suite's
-    `timeline.test.ts` (the app's side, `app.md`).
+    `timeline.test.ts` (the app's side, `app.md`).  `tests/timeline.rs`
+    (`a_solid_in_a_valued_frame_stands_where_its_value_puts_it`, #697): #633's arm in a frame
+    whose value is `t`, the only reader, followed over `(0deg, 90deg)`; stood at instants, the arm
+    the evaluation built at home and the swung arm that built at home moved — never built again —
+    standing where a fresh build does; in the post at `45deg` (-5) and clear home again (18); a
+    sheet's `model m from "…" at t = 45deg` drawing it there.
   - **Not built**: several parameters stood together (H), an instant past a singular one (J), an
     envelope or a sweep re-read at the instant shown (a solid riding the drawing is evaluated
-    where it stands, a swept field meshed at home), and a paper preview's own scrubber writing
-    the `.svd`'s `at`.
+    where it stands, one drawn in a valued frame placed where its value puts it (#697), a swept
+    field meshed at home), and a paper preview's own scrubber writing the `.svd`'s `at`.
 - **The V-twin over its crank angle** (#398 K, [0.147]): each moving part drawn in its own frame,
   its pose a function of the crank angle.  `param t: Angle over (0deg, 360deg)` is bound to the
   crank's arm (`Crank(O, ref, theta: t)`); each bank's two statements place its cylinder's frame

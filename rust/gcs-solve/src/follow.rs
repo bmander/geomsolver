@@ -138,6 +138,9 @@ pub struct Followed {
     held: u32,
     /// What the parameter does not reach, left where it stands at every instant.
     still: Still,
+    /// Whether a row reads the parameter: where none does, only a placement's value (#697), the
+    /// stations are the drawing at home and only the held number moves — nothing is solved.
+    solved: bool,
 }
 
 impl Followed {
@@ -155,8 +158,12 @@ impl Followed {
         }
         let k = self.stations.partition_point(|s| s.at <= t).max(1) - 1;
         let a = &self.stations[k];
-        if a.at == t || k + 1 == self.stations.len() {
+        if a.at == t || k + 1 == self.stations.len() || !self.solved {
+            // the station itself, its texts worked out there: what a station's solve read, and
+            // where a placement's value puts what is drawn in its frame
             sk.set_x(&a.x);
+            sk.params[self.held as usize].value = t;
+            let _ = crate::expr::evaluate(sk);
             return Ok(());
         }
         let b = &self.stations[k + 1];
@@ -445,14 +452,15 @@ pub fn followed(sk: &Sketch, name: &str) -> Rc<Result<Followed, String>> {
 }
 
 /// What the march along `name` is a function of: the drawing at home, wherever it is shown
-/// standing (a march is of the drawing, not of an instant of it), the parameter's interval and
-/// every number the drawing's statements state.
+/// standing (a march is of the drawing, not of an instant of it), the parameter's interval, how
+/// many placements read it, and every number the drawing's statements state.
 pub(crate) fn march_key(sk: &Sketch, name: &str) -> Vec<f64> {
     let (mut key, numbers) = match &sk.standing {
         Some(s) => (s.home.clone(), s.numbers.clone()),
         None => (sk.get_x(), numbers(sk)),
     };
     key.extend(sk.parameters.get(name).map_or([0.0; 2], |p| [p.from, p.to]));
+    key.push(placed(sk, name).len() as f64);
     key.extend(numbers);
     key
 }
@@ -460,16 +468,26 @@ pub(crate) fn march_key(sk: &Sketch, name: &str) -> Vec<f64> {
 /// **The drawing `sk` followed along its declared parameter `name`**, from the interval's start
 /// to its end or to the singular instant that stops it — or why it cannot be: the parameter is
 /// not declared or nothing reads it, the drawing does not solve at the start, or it is not held
-/// there.
+/// there.  Where no row reads it and a placement's value does (`placed`, #697) the march is the
+/// drawing at home at both ends of the interval: what is drawn in the valued frame moves, and
+/// nothing is solved.
 pub fn follow(sk: &Sketch, name: &str) -> Result<Followed, String> {
     let over = sk.parameters.get(name)
         .ok_or_else(|| format!("`{name}` is no parameter the drawing declares"))?.clone();
     let reading = readers(sk, name);
     let held = sk.held.get(name).map(|h| h.param)
-        .filter(|_| !reading.is_empty())
+        .filter(|_| !reading.is_empty() || !placed(sk, name).is_empty())
         .ok_or_else(|| format!("nothing the drawing states reads `{name}`"))?;
     let mut sk = sk.clone();
     home(&mut sk);
+    if reading.is_empty() {
+        let stations = [over.from, over.to].map(|at| {
+            sk.params[held as usize].value = at;
+            Station { at, x: sk.get_x() }
+        });
+        return Ok(Followed { over, stations: stations.into(), singular: None, held,
+                             still: Still::default(), solved: false });
+    }
     let elsewhere = over.from + (over.to - over.from) * ELSEWHERE;
     let implied = implied(&sk);
     let mut reading = reading;
@@ -510,7 +528,7 @@ fn march(mut sk: Sketch, over: &Running, held: u32, still: &Still) -> Result<Fol
     let stop = |trail: Vec<Station>, kind: Kind| {
         let at = trail.last().map_or(over.from, |s| s.at);
         Ok(Followed { over: over.clone(), stations: trail, singular: Some(Singular { at, kind }),
-                      held, still: still.clone() })
+                      held, still: still.clone(), solved: true })
     };
     loop {
         let prev = trail.last().expect("a march starts somewhere").clone();
@@ -576,13 +594,24 @@ fn march(mut sk: Sketch, over: &Running, held: u32, still: &Still) -> Result<Fol
                                           reading(over, over.to, sk.units)));
         trail.push(Station { at: t, x });
     }
-    Ok(Followed { over: over.clone(), stations: trail, singular: None, held, still: still.clone() })
+    Ok(Followed { over: over.clone(), stations: trail, singular: None, held, still: still.clone(),
+                  solved: true })
 }
 
 /// The ids of the constraints whose numbers read the declared parameter `name` (#391 S4): the
 /// relations that say how the drawing moves as it runs.
 pub fn readers(sk: &Sketch, name: &str) -> Vec<u32> {
     sk.constraints.iter().filter(|c| reading_slot(sk, c, name).is_some()).map(|c| c.id).collect()
+}
+
+/// The solids placed at a value whose text reads the declared parameter `name` (#697), by index:
+/// `n := x in f`, `fix(value == t) f` — what moves as it runs where no row of the drawing does.
+pub fn placed(sk: &Sketch, name: &str) -> Vec<usize> {
+    sk.solids.iter().enumerate().filter(|(_, s)| match &s.def {
+        crate::model::SolidDef::Placed { at, .. } => crate::expr::parse_in(&at.text, sk.units)
+            .is_ok_and(|p| p.body.deps().iter().any(|d| d == name)),
+        _ => false,
+    }).map(|(i, _)| i).collect()
 }
 
 /// The slot of `c` whose text reads the declared parameter `name`, where one does.

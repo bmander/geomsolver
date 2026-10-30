@@ -7,7 +7,6 @@ mod parser;
 
 pub use document::{evaluate, has_expr, set_dimension, sync_free, ExprError, ExprItem, Fault};
 pub use document::{bind_free, declared_reads, eval_declared};
-pub(crate) use document::with_declared;
 pub use eval::{
     decide, decide_in, eval, eval_in, eval_measured, judge_in, reading, to_arg_units,
     to_user_units, Aff, Env, Measurer, READING_SIG,

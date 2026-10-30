@@ -183,6 +183,7 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
     // the geometry a station reads, read where that geometry stands now
     sk.refresh_held();
     let held = sk.held_numbers();
+    place_held(sk, &held);
     for k in rows.into_iter().chain(rest) {
         let nd = &nodes[k];
         let mut value = to_user_units(nd.kind, sk.constraints[nd.ci].args[nd.ai].num());
@@ -276,6 +277,33 @@ pub fn evaluate(sk: &mut Sketch) -> Vec<ExprItem> {
         .map(|(name, (dim, _))| (name, dim))
         .collect();
     items.into_iter().flatten().collect()
+}
+
+/// **Every solid placed at a value that reads a held number placed where it now puts it** (#697):
+/// `n := x in f`, `f`'s value written over a declared parameter or a face family's running number,
+/// placed at that value worked out over `held` as it was where it was elaborated
+/// (`program::motions::value_now`, in degrees).  So a drawing stood at an instant, sent home or
+/// settled at a station shows what is drawn in a valued frame where its rows stand.  A value that
+/// does not work out there, or comes to no finite angle, leaves the last one standing, as an
+/// expression of a row does.
+fn place_held(sk: &mut Sketch, held: &BTreeMap<String, Aff>) {
+    if held.is_empty() {
+        return;
+    }
+    let (units, declared) = (sk.units, &sk.declared);
+    for s in &mut sk.solids {
+        let crate::model::SolidDef::Placed { at, .. } = &mut s.def else { continue };
+        let Ok(p) = parse_in(&at.text, units) else { continue };
+        if !p.body.deps().iter().any(|d| held.contains_key(d)) {
+            continue;
+        }
+        let a = eval(&p.body, &with_declared(&p.body, held, declared));
+        let v = a.ok().filter(|a| a.dim.fits(Dim::ANGLE)).and_then(|a| a.number())
+            .filter(|v| v.is_finite());
+        if let Some(v) = v {
+            at.value = v.to_radians();
+        }
+    }
 }
 
 /// Check expression dimensions against the argument slot and infer a consistent

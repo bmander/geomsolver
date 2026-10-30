@@ -162,3 +162,86 @@ fn a_timeline_is_told_the_march_in_the_cores_words() {
     assert_eq!(field(&j, "followed"), &Json::from(false));
     assert_eq!(field(&j, "why"), &Json::from("`nope` is no parameter the drawing declares"));
 }
+
+/// The arm of #633 drawn in a frame whose value is `t`, and a post it swings into: nothing the
+/// drawing states reads `t` but the placement (#697).
+const SWUNG: &str = "\
+unit mm
+use std
+use std.place (vertical, coords, on_u)
+use std.motion (turns)
+use std.shapes
+param t: Angle over (0deg, 90deg)
+in std.front {
+  construction pivot := vertical line(std.origin, hint((0, 10)))
+  length(10mm) pivot
+}
+in std.top {
+  ac := point hint((20, 0))
+  ac on_u(d: 20mm) std.top
+  arm_r := std.shapes.CenteredRectangle(ac, w: 40mm, h: 6mm)
+  pc := point hint((25, 25))
+  pc coords(du: 25mm, dv: 25mm) std.top
+  post_r := radius(4mm) circle(center: pc)
+}
+arm := solid(face(arm_r.loop), from: 0mm, to: 5mm)
+post := solid(face(post_r), from: 0mm, to: 5mm)
+swing := frame
+swing turns(1) pivot
+fix(value == t) swing
+shown := arm in swing
+claim shown clear(0.5mm) post
+";
+
+/// How far `shown` stands from the post where `sk` stands: the lone claim's measure.
+fn room(sk: &gcs_core::model::Sketch) -> f64 {
+    let v = gcs_core::diagnose::judge_solids(sk);
+    v[0].measured().unwrap_or_else(|| panic!("{:?}", v[0]))
+}
+
+/// **A solid drawn in a valued frame stands where the value puts it** (#697): a drawing whose only
+/// reader of `t` is such a placement is followed, a march that moves the held number alone; stood
+/// at a quarter of the swing's way the arm is in the post, as the claim over `t` found (#633), and
+/// home it is clear again.  Stood anywhere, the arm is the solid built at home and the swung arm
+/// that one moved — never built again — and the move puts it where a fresh build does.
+#[test]
+fn a_solid_in_a_valued_frame_stands_where_its_value_puts_it() {
+    let mut e = crate::common::read(SWUNG);
+    let r = gcs_core::solve::solve(&mut e.sketch, Default::default());
+    assert!(r.success, "{}", r.message);
+    assert_eq!(gcs_core::report::parameter_text(&e.sketch, "t"), "t: followed from 0deg to 90deg");
+    let (arm, shown) = (index(&e, "arm"), index(&e, "shown"));
+    let mesh = gcs_core::solid::ApproximationPolicy::Mesh;
+    let built = |sk: &gcs_core::model::Sketch, i: usize| sk.evaluated_solid(i, mesh).unwrap();
+    let (arm_home, shown_home) = (built(&e.sketch, arm), built(&e.sketch, shown));
+    assert!((room(&e.sketch) - 18.0).abs() < 0.01, "at rest the arm is clear");
+    for t in [45.0, 10.0, 90.0, 60.0] {
+        stand(&mut e.sketch, "t", t).expect("reached");
+        let now = built(&e.sketch, shown);
+        assert!(std::rc::Rc::ptr_eq(&built(&e.sketch, arm), &arm_home), "`arm` built again at {t}");
+        assert!(now.same_shape(&shown_home) && !std::rc::Rc::ptr_eq(&now, &shown_home),
+                "`shown` at {t}: moved, not built again");
+        let fresh = e.sketch.clone();
+        fresh.caches.clear();
+        let fresh = built(&fresh, shown);
+        let (a, b) = (now.world_bounds(), fresh.world_bounds());
+        for k in 0..3 {
+            let off = (a.lo[k] - b.lo[k]).abs().max((a.hi[k] - b.hi[k]).abs());
+            assert!(off < 1e-9, "`shown` at {t}: {a:?} against a fresh build's {b:?}");
+        }
+    }
+    stand(&mut e.sketch, "t", 45.0).expect("reached");
+    assert!((room(&e.sketch) + 5.0).abs() < 0.01, "the arm in the post: {}", room(&e.sketch));
+    home(&mut e.sketch);
+    assert!((room(&e.sketch) - 18.0).abs() < 0.01, "home, the arm is clear again");
+    assert!(std::rc::Rc::ptr_eq(&built(&e.sketch, shown), &shown_home), "home is where it was");
+    // a sheet of the model at an instant draws the arm there
+    let compile = |at: &str| gcs_core::drawing::compile(&format!("model m from \"swung.sv\"{at}
+        sheet s {{
+          view top(m.shown) from top at (60mm, 60mm)
+        }}"), "drawing.svd", None,
+        &mut |path, _| (path == "swung.sv").then(|| ("swung.sv".into(), SWUNG.into())));
+    let (at_home, swung) = (compile("").unwrap(), compile(" at t = 45deg").unwrap());
+    assert_ne!(at_home, swung, "the arm is drawn where it stands at 45deg");
+    assert_eq!(at_home, compile(" at t = 0deg").unwrap(), "and at home at 0deg");
+}
