@@ -842,6 +842,52 @@ pub fn sheets(nets: Vec<(crate::nurbs::Net,String)>) -> Result<Brep,String> {
     Ok(b)
 }
 
+/// A sheet of one net cut into a grid of faces (#684 N): at the parameters `us` along `u` and `vs`
+/// along `v`, each from its domain's start to its end, the faces of a band between two of `us`
+/// named by `names`. Each face is the net's segment there (`Net::segment`); neighbours share their
+/// edges and corners, so a split by it never meets a seam. `closed`: the net's last iso-`v` curve
+/// is its first, as a sheet revolved a whole turn is, and the last faces along `v` close on the
+/// first's edges, a ring.
+pub fn grid_sheet(net: &crate::nurbs::Net,us: &[f64],vs: &[f64],names: &[String],closed: bool) -> Result<Brep,String> {
+    let (nu,nv) = (us.len().saturating_sub(1),vs.len().saturating_sub(1));
+    if nu == 0 || nv == 0 || names.len() != nu { return Err("a sheet's grid of faces must have a face each way, and a name a band".into()) }
+    if closed && nv < 2 { return Err("a closed sheet must have two faces round".into()) }
+    let nets: Vec<Vec<crate::nurbs::Net>> = (0..nu).map(|i| (0..nv).map(|j| net.segment([us[i],us[i+1]],[vs[j],vs[j+1]])).collect())
+        .collect();
+    let row = |net: &crate::nurbs::Net,i: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.dv,knots:net.vknots.clone(),
+        poles:net.poles[i].clone(),weights:net.weights.as_ref().map(|w| w[i].clone())})) };
+    let column = |net: &crate::nurbs::Net,j: usize| -> Curve { Curve::BSpline(Arc::new(BSpline {degree:net.du,knots:net.uknots.clone(),
+        poles:net.poles.iter().map(|r| r[j]).collect(),weights:net.weights.as_ref().map(|w| w.iter().map(|r| r[j]).collect())})) };
+    // the corners, and the edges along u at each v and along v at each u, the last round a closed
+    // sheet its first
+    let round = |j: usize| if closed && j == nv { 0 } else { j };
+    let mut b = Brep::default();
+    let corners: Vec<Vec<u32>> = (0..=nu).map(|i| (0..=nv).map(|j| if round(j) != j { u32::MAX } else { b.vertex(net.point(us[i],vs[j])) })
+        .collect()).collect();
+    let corner = |i: usize,j: usize| corners[i][round(j)];
+    let along_u: Vec<Vec<u32>> = (0..nu).map(|i| (0..=nv).map(|j| if round(j) != j { u32::MAX } else {
+        let curve = if j < nv { column(&nets[i][j],0) } else { let n = &nets[i][nv-1]; column(n,n.poles[0].len()-1) };
+        b.edge(EdgeCurve::Curve(curve),[us[i],us[i+1]],[corner(i,j),corner(i+1,j)])
+    }).collect()).collect();
+    let along_v: Vec<Vec<u32>> = (0..=nu).map(|i| (0..nv).map(|j| {
+        let curve = if i < nu { row(&nets[i][j],0) } else { let n = &nets[nu-1][j]; row(n,n.poles.len()-1) };
+        b.edge(EdgeCurve::Curve(curve),[vs[j],vs[j+1]],[corner(i,j),corner(i,j+1)])
+    }).collect()).collect();
+    let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
+    for (i,band) in nets.into_iter().enumerate() { for (j,net) in band.into_iter().enumerate() {
+        let ([u0,u1],[v0,v1]) = ([us[i],us[i+1]],[vs[j],vs[j+1]]);
+        let lp = vec![
+            Coedge {edge:along_u[i][j],reversed:false,pcurve:line([u0,v0],[u1,v0])},
+            Coedge {edge:along_v[i+1][j],reversed:false,pcurve:line([u1,v0],[u1,v1])},
+            Coedge {edge:along_u[i][round(j+1)],reversed:true,pcurve:line([u0,v1],[u1,v1])},
+            Coedge {edge:along_v[i][j],reversed:true,pcurve:line([u0,v0],[u0,v1])},
+        ];
+        b.faces.push(Face {surface:Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),reversed:false,loops:vec![lp],
+            name:names[i].clone()});
+    } }
+    Ok(b)
+}
+
 /// A solid lofted along a plane's normal (#607): each loop of its section a ring of B-spline
 /// surfaces one after another along `u` — each net's last iso-`u` curve the next one's first, as
 /// `sheets` joins them, and the last's the first's — with `v` running along `n` from the plane at

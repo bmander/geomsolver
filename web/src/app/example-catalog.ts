@@ -45,8 +45,9 @@ const projects: Example[] = [{
   label: 'Solid sweeps · one of each class built exactly', key: 'solid_sweeps',
   description: 'The simplest case of each kind of continuous sweep this kernel builds exactly: a '
     + 'ball swung partway (its tube), a ball carried along a spline (its tube, fitted to the path), '
-    + 'a wheel slid along a rod, a cutter turned partway across a curved block, the wheel screwed '
-    + 'up the rod, a V wheel grinding a thread, a rack rolling a gear\'s tooth space, a drafted rack '
+    + 'a wheel slid along a rod, a cutter turned partway across a curved block, a V wheel turned '
+    + 'once round a rod as a lathe turns it, the wheel screwed up the rod, a V wheel grinding a '
+    + 'thread, a rack rolling a gear\'s tooth space, a drafted rack '
     + 'tooth leaned across the blank as a helical rack\'s, a bar whose flat end cuts a tooth space\'s '
     + 'floor, a plus always '
     + 'in mesh cutting its conjugate wheel, and a wheel of two beads, a union, cut bead by bead. '

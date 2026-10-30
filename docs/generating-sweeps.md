@@ -98,20 +98,18 @@ T1, T2, E0, E1 and S1–S4. What differs is the section the sheet is read along 
   along the walk, within half a turn of the one before, as the section is one curve. S4 reads the
   section in its half-plane, by radius and height.
 
-Two refusals are the limits' own:
+One refusal is the limits' own:
 
 | # | Condition | Why | Refusal names |
 | --- | --- | --- | --- |
 | S1 | No ring the walk passes between two of its stations is in contact all round where its path enters the blank. | Such a ring is all characteristic, and the boundary leaves the walked branch along it. A turn about an axis the tool's own axis meets has one, every normal of it through the point where the axes meet; a slide along the tool's axis has one wherever the normals are square to it. The roots either side need not move (the ring's two roots stay in the plane of the two axes), so a sampled station never sees it: the contact equation's amplitude turns right round instead, and where it turns more than a quarter turn between two walked stations, the least of the ring's three coefficients between them is sought (Brent's method). The field gate found the first one, on a torus leaning toward the turn's axis, before this row did. | The face, and a point of the ring in the blank. |
-| S4 | A turn's roll is less than a whole turn. | A turn carried round a whole turn or more lays its sheet over itself; its sweep is then a solid of revolution, which is not built yet. | The turn, in degrees. |
 
 E1 holds as for a screw, so a slide passes the tool right through the blank and a turn swings it
-across from clear to clear. Still refused: a flat face the motion keeps in its own plane (a cap
+across from clear to clear, unless the turn is a whole one (below). Still refused: a flat face the motion keeps in its own plane (a cap
 square to the turn, a face along the slide) where it reaches the blank, a ring in contact all
-round at a sampled station (S1); a prism tool, whose side has no rings (T1); a characteristic that
-closes on itself within the blank's reach, a tool passed wholly through it (S1); and a whole turn
-(S4). A ball under a turn or a slide is still its tube (`solid::canal`, below), never asked these
-rows.
+round at a sampled station (S1); a prism tool, whose side has no rings (T1); and a characteristic
+that closes on itself within the blank's reach, a tool passed wholly through it (S1). A ball under
+a turn or a slide is still its tube (`solid::canal`, below), never asked these rows.
 `tests/turns_and_slides.rs` and `tests/solid_sweeps_examples.rs` are the gate: a torus slid up a
 rod, square (its tube's lens, `rust/examples/solid_sweeps/slide.sv`) and tilted, a cylinder slid
 with its caps clear (a circular segment), and a torus turned across a ring sector, upright
@@ -120,6 +118,39 @@ from the core — a tilted torus's from its centre circle alone — and held to 
 STL agrees with the field; and the straight-fluted drill
 (`rust/examples/twist_drill/straight_flute.sv`, the twist drill's wheel slid square to the axis,
 its flute the wheel's own profile).
+
+### A whole turn (issue #684 N)
+
+A sweep depends only on the path its motion takes, not on how fast or how often it is taken. A
+turn carried round a whole turn or more therefore sweeps what one whole turn sweeps: a solid of
+revolution, its boundary the characteristic's section in a half-plane through the axis revolved
+all the way round (`constant_twist::whole_turn`, `Characteristic::whole`). The walk, its rows and
+the accuracy meter read such a roll as one whole turn from its start (`constant_twist::once`), so
+a roll of two turns asks and builds what a roll of one does. The rows are a turn's, S1–S3 and S4's
+section read by radius and height, but for one:
+
+- **E1 is not asked.** The tool at either end of a whole turn lies within what the turn sweeps,
+  so its ends need not be clear of the blank and no end pose is built: the roll may start and end
+  inside it, as a part turned once in a lathe against a form tool does.
+
+The sheet (`brep::sweep::helical`) is laid as a turn's is, its columns once round from the roll's
+start, the last column's pose the first's to the bit, so its first and last columns are one curve.
+Only its rows' ends (the characteristic's ends) must leave the blank; the columns' ends lie where
+they will. Fitted and judged as any, the sheet is then cut into faces round the turn
+(`Fitted::named` with `around`, `brep::build::grid_sheet`), four of them, and where it runs onto
+and off a convex corner's fan, into bands across them too, every neighbour sharing its edges and
+the last round closing on the first's. One face of a closed surface would carry a seam across the
+blank, which a split does not finish; a ring of faces carries an edge. The split, cells and
+agreement are the class's; the blank's own seams, where it is a solid of revolution about the same
+axis, are crossed as any edge is.
+
+`tests/turns_and_slides.rs` (`a_whole_turn_grooves_the_whole_ring`: `turn.sv`'s leaning torus
+round the whole ring, over one turn and over two, Pappus over its shadow six times the sector's)
+and `tests/solid_sweeps_examples.rs` (`rust/examples/solid_sweeps/whole_turn.sv`: a V wheel leaning
+across a rod turned once round it, its sheet twelve faces, three bands each four round; Pappus over
+the wheel's shadow, read by the signed distance from the nearer flank round each circle about the
+axis) are the gate, each STL agreeing with the field; `tests/object_builder.rs` builds the wheel's
+at the page's samples. A ball turned a whole turn is still its tube, the canal's whole torus.
 
 ### Sharp edges: a convex corner's fan (issue #684 E)
 

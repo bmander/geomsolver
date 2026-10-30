@@ -631,14 +631,15 @@ use super::constant_twist::Failure;
 /// T2, E1 and T1 for a prism's caps for one placement, asked of every class before anything that
 /// might be reported in their place: the blank's reads, the poses the roll is sampled at, and
 /// whether each cap of `lone` (the tool, where it is a prism standing alone; its `start`, then its
-/// `end`) reaches the blank.
-fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lone: Option<&Lone>)
+/// `end`) reaches the blank. A `whole` turn has no ends to clear: the tool at either lies within
+/// what the turn sweeps (#684 N).
+fn ends(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,lone: Option<&Lone>,whole: bool)
     -> Result<(Reads,Vec<Motion>,[bool;2]),Failure> {
     let tool = c.source_material();
     let on_tool = |p: V| tool.value(p).abs() < 1e-6;
     let domain = c.domain();
     let pose = |t: f64| c.motion().at(t).map_err(|m| (Condition::Motion,m,None));
-    let limits = [pose(domain[0])?,pose(domain[1])?];
+    let limits = if whole { Vec::new() } else { vec![pose(domain[0])?,pose(domain[1])?] };
     let mut reads = Reads::new();
     // T2: a concave corner carried through the blank trims two envelopes against each other.
     // Asked first, since the crossing it makes would otherwise be reported in its place.
@@ -776,7 +777,7 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,l
     let pose = |t: f64| c.motion().at(t).map_err(|m| (Condition::Motion,m,None));
     let times = [pose(domain[0])?,pose(middle)?,pose(domain[1])?];
     let roots = |patch: usize,u: f64,v: f64| c.at_source_over(patch,u,v,domain,options.root_tolerance);
-    let (mut reads,poses,capped) = ends(c,inside,options,lone)?;
+    let (mut reads,poses,capped) = ends(c,inside,options,lone,false)?;
     // M2 at the poles: where a face's profile meets the tool's axis the surface has no normal of
     // its own, so the sampled checks below cannot evaluate it. Its normal is the axis, the limit
     // along the profile; a pole whose contact condition is zero at every time and whose path
@@ -1094,7 +1095,8 @@ fn check(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),options: &Options,l
 /// on the boundary at every time or at none, and the boundary is the characteristic carried along.
 fn check_screw(c: &SweepContacts,inside: &(dyn Fn(V) -> bool+Sync),extent: Option<([f64;2],f64)>,options: &Options)
     -> Result<(SweepEvidence,Reads),Failure> {
-    let (reads,..) = ends(c,inside,options,None)?;
+    let whole = c.motion().twist().is_some_and(|screw| super::constant_twist::whole_turn(&screw,c.domain()));
+    let (reads,..) = ends(c,inside,options,None,whole)?;
     let reads = std::sync::Mutex::new(reads);
     // the blank read outside the lock, the faces' rings side by side
     let read = |p: V| { let i = inside(p); reads.lock().unwrap_or_else(|e| e.into_inner()).push(p,i); i };

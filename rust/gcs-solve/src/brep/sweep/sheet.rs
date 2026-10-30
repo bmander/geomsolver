@@ -88,10 +88,21 @@ impl Fitted {
 
     /// The sheet cut where the cutter's faces meet (`Sheet::bands`), each band named by `name`
     /// (`UNNAMED`'s empty): segments of the fitted net between the rows' parameters as `kind`
-    /// spread them, which are the fit's.
-    pub(super) fn named(&self,kind: Parametrization,name: &dyn Fn(u32) -> String) -> Result<Brep,String> {
+    /// spread them, which are the fit's. `around`, where it is some: the sheet's last column is
+    /// its first, as a whole turn's is, and each band is cut into that many faces along the
+    /// columns, closing on itself (`build::grid_sheet`, #684 N).
+    pub(super) fn named(&self,kind: Parametrization,name: &dyn Fn(u32) -> String,around: Option<usize>) -> Result<Brep,String> {
         let bands = &self.sheet.bands;
         let Some(Surface::BSpline(_,net)) = self.face.faces.first().map(|f| &f.surface) else { return Ok(self.face.clone()) };
+        if let Some(around) = around {
+            let (tu,_) = crate::brep::nurbs::net_parameters(&self.sheet.points,self.sheet.rows,self.sheet.columns,kind)
+                .ok_or("the sheet's rows have no parameters")?;
+            let [[a,z],[c,d]] = net.domain();
+            let us: Vec<f64> = std::iter::once(a).chain(bands.iter().skip(1).map(|b| a+(z-a)*tu[b.0])).chain(std::iter::once(z)).collect();
+            let vs: Vec<f64> = (0..=around).map(|k| c+(d-c)*k as f64/around as f64).collect();
+            let names: Vec<String> = bands.iter().map(|b| name(b.1)).collect();
+            return crate::brep::build::grid_sheet(net,&us,&vs,&names,true)
+        }
         if bands.len() < 2 {
             let mut faces = self.face.clone();
             faces.faces[0].name = bands.first().map_or(String::new(),|b| name(b.1));
@@ -485,7 +496,7 @@ fn traced_sheet(cut: &SweptCut,cutter: &Cutter,inside: Inside,near: &(dyn Fn(V) 
                     let Some((key,face)) = cutter.face_of(tag) else { return String::new() };
                     crate::solid::faces::FacePath::new(cut.routes.get(&key).map_or("",String::as_str),&face).text()
                 };
-                fitted.faces = fitted.named(kind,&face_name).at(Stage::Fit)?;
+                fitted.faces = fitted.named(kind,&face_name,None).at(Stage::Fit)?;
                 carry_out(name,&mut fitted,inside,near,tolerance.map_or(FIT_DISTANCE,|t| t.fit()),say).at(Stage::Sheet)?;
                 (say.stage)(&format!("`{name}`: the sheet's faces, by the cutter's: {}",
                     fitted.faces.faces.iter().map(|f| if f.name.is_empty() { "(unnamed)" } else { f.name.as_str() }).collect::<Vec<_>>().join(", ")));
