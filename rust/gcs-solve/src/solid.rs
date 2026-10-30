@@ -41,6 +41,7 @@ pub mod grown;
 pub mod shelled;
 pub mod canal;
 pub mod distributed;
+pub mod paced;
 pub mod roll;
 pub mod lowering;
 pub mod faces;

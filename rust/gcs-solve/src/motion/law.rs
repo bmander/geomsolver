@@ -3,7 +3,8 @@
 //! a reading runs over it (one clock), so the frame stands at its joint turned `ratio · value(θ)`
 //! and risen `advance · value(θ) / 360°` at the roll `θ`: a cam's law, or any other.  A drive is
 //! read as no constant twist even where its value is linear (`Family::screw` and its kin refuse
-//! it), so what is built under one is the field's.
+//! it); a sweep under one alone is its joint's over the law's reach (`range`, `solid::paced`, #684
+//! L), and one seen from another motion is the field's.
 //!
 //! The text is compiled once over the drawing's held numbers (`tape::Tape`), the parameter among
 //! them, and read three ways: its value at a roll (`eval_num` over `f64`), its value and its rate
@@ -38,6 +39,12 @@ pub fn unread_drive(f: &str, over: &str) -> String {
              it reads no drive (#391): draw in it, `n := x in {f}`, which stands where its value \
              puts it, or read it over the roll — a sweep, a placement")
 }
+
+/// How near the least and the greatest value `Law::range` finds are to the law's own: radians, or
+/// that fraction of a value larger than a radian.
+pub const RANGE: f64 = 1e-12;
+/// How many stretches of the roll `Law::range` may ask before it stands unsettled.
+const STRETCHES: usize = 1 << 16;
 
 /// Degrees a radian, enclosed.
 fn degrees() -> Result<I, Error> {
@@ -132,5 +139,66 @@ impl Law {
         x[self.at] = theta.mul(d)?;
         let [v, r] = crate::tape::eval_interval(&self.flat, &x, self.at)?;
         Ok([v.div(d)?, r])
+    }
+
+    /// **The values the law takes over the roll `[a, b]`** (#684 L): its least and its greatest
+    /// (radians), each a value it takes at a roll read, and within `RANGE` of the least and the
+    /// greatest it takes anywhere in the roll — proved by branch and bound, a stretch dropped
+    /// where its enclosure (`enclose`), or its value at the stretch's middle and its rate's reach
+    /// across half of it, keeps it within `RANGE` of what is found, and where its rate keeps one
+    /// sign, its ends.  The enclosure carries only functions continuous where it carries them, so
+    /// the law takes every value between the two.  Refused where it carries none (`enclose`'s
+    /// failures), and where `STRETCHES` stretches leave it unsettled.
+    pub fn range(&self, [a, b]: [f64; 2]) -> Result<[f64; 2], String> {
+        if !(a < b) {
+            return Err(format!("the roll ({}°, {}°) runs nowhere", a.to_degrees(),
+                               b.to_degrees()));
+        }
+        Ok([self.extreme([a, b], false)?, self.extreme([a, b], true)?])
+    }
+
+    /// The greatest value over `[a, b]` (`up`), or the least: `range`'s search, the value signed
+    /// so the greatest is sought.
+    fn extreme(&self, [a, b]: [f64; 2], up: bool) -> Result<f64, String> {
+        let sign = if up { 1.0 } else { -1.0 };
+        let at = |t: f64| self.value(t).map(|v| sign * v);
+        let enclosed = |lo: f64, hi: f64| -> Result<[I; 2], String> {
+            I::new(lo, hi).and_then(|t| self.enclose(t)).map_err(|e| format!(
+                "`{}` carries no enclosure over {} in ({}°, {}°) ({e:?}), so what it reaches is \
+                 not proved", self.text, self.over, lo.to_degrees(), hi.to_degrees()))
+        };
+        let mut best = at(a)?.max(at(b)?);
+        let pieces = 64;
+        let cut = |k: usize| if k == pieces { b } else { a + (b - a) * k as f64 / pieces as f64 };
+        let mut stack: Vec<[f64; 2]> = (0..pieces).map(|k| [cut(k), cut(k + 1)]).collect();
+        let mut asked = 0;
+        while let Some([lo, hi]) = stack.pop() {
+            asked += 1;
+            if asked > STRETCHES {
+                return Err(format!("`{}` over {} is not settled within {STRETCHES} stretches of \
+                                    the roll", self.text, self.over));
+            }
+            let mid = 0.5 * (lo + hi);
+            let middle = at(mid)?;
+            best = best.max(middle);
+            let [v, r] = enclosed(lo, hi)?;
+            let [vl, vh] = v.bounds();
+            let [rl, rh] = r.bounds();
+            // the enclosure, and the mean value: the middle's and the rate's reach across half
+            let mut most = (if up { vh } else { -vl })
+                .min(middle + rl.abs().max(rh.abs()) * (hi - mid));
+            // a rate of one sign: the greatest is at an end
+            if rl > 0.0 || rh < 0.0 {
+                let ends = at(lo)?.max(at(hi)?);
+                best = best.max(ends);
+                most = most.min(ends);
+            }
+            if most <= best + RANGE * best.abs().max(1.0) || !(lo < mid && mid < hi) {
+                continue;
+            }
+            stack.push([lo, mid]);
+            stack.push([mid, hi]);
+        }
+        Ok(sign * best)
     }
 }

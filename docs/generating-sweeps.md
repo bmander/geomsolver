@@ -152,6 +152,44 @@ the wheel's shadow, read by the signed distance from the nearer flank round each
 axis) are the gate, each STL agreeing with the field; `tests/object_builder.rs` builds the wheel's
 at the page's samples. A ball turned a whole turn is still its tube, the canal's whole torus.
 
+### A joint driven by a law: a sweep is its path's (issue #684 L)
+
+What a sweep removes is every pose its motion stands the tool at over the roll, whatever the rate
+each is reached at, how often, or in which order. A joint driven by a law of the roll
+(`fix(value == law) f`, #391 S5) stands the tool at the joint's own pose at the law's value, so over
+a roll `[a, b]` it stands it at the joint's poses over the values the law takes there. The law is
+continuous (its enclosure carries only continuous functions), so those values are every one between
+its least and its greatest, and the sweep is the **joint's sweep over that interval**: a turn, a
+slide or a screw at a constant rate, admitted and built as one. A cam's rise, dwell and return, a
+rocker swung out and back, a slide that overshoots and settles: each sweeps what its joint does
+over its reach.
+
+- **The reach** (`Law::range`) is found by branch and bound over the law's enclosure: a stretch of
+  the roll is dropped where its enclosure, or its value at its middle and its rate's enclosure
+  across half of it (the mean value), keeps it within `RANGE` (1e-12 radians) of the greatest value
+  read so far, and where its rate keeps one sign, by its ends. Its least and greatest are values the
+  law takes at a roll read. A law no enclosure is carried of (`tan`, `exp`, the roundings, …) is not
+  ranged, and its sweep is refused as before.
+- **The restatement** (`solid::paced`): a body reaching a sweep under a driven joint is built from a
+  copy of the drawing in which that sweep, in its place and under its name, is the joint's sweep
+  (`MotionDef::Driven`'s `of`) over a roll stated as the law's reach (`paced::lowered`). Admission,
+  the exact construction, the accuracy meter and the page's stepped build read the copy, before a
+  union is distributed (#684 C), so a union under a drive is its members' sweeps under the joint.
+  The export holds what it builds to the drawing's own field, the driven sweep's, so the gate
+  compares the restatement with the law it restates. A ball under a drive becomes the canal's
+  closed form; read along its path, it would stop where the law turns back (B1).
+- **Not read so:** a driven joint seen from another motion (`seen_from:`, a cam's follower as the
+  cam sees it). Its screw moves as the law runs, a path no constant-rate joint takes, and it is
+  refused at M1, saying so. A law that stands still over the roll moves nothing and is not read.
+
+The native OCCT path refuses such a body by name (`--kernel rust` builds it).
+`tests/paced_sweeps.rs` is the gate: laws' reaches against their closed forms (1e-12), monotone,
+kinked, dwelling and turning back within the roll; `slide.sv`'s wheel risen, dwelt and returned,
+the slide's lens; `ball.sv`'s ball rocked out and back, Pappus; a drive seen from a turn, refused.
+`tests/solid_sweeps_examples.rs` holds `rust/examples/solid_sweeps/rocked.sv` (`turn.sv`'s cutter
+rocked out and back by the simple harmonic law) to `turn.sv`'s figure, each STL agreeing with the
+driven sweep's field, and `tests/object_builder.rs` builds it at the page's samples.
+
 ### Sharp edges: a convex corner's fan (issue #684 E)
 
 A convex corner of the tool's profile turns to a circle of the tool, and every normal between its

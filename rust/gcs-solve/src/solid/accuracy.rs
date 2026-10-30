@@ -480,7 +480,9 @@ impl Meter {
     /// subtracted from it, each at every placement.
     pub fn read(sk: &Sketch,body: usize,options: Options) -> Result<Self,String> {
         super::validate(sk,body)?;
-        // a cut of a union's sweep is read as each member's (#684 C), as it is built
+        // a sweep under a driven joint is read as its joint's over the law's range (#684 L), and a
+        // cut of a union's sweep as each member's (#684 C), as each is built
+        if let Some(lowered) = super::paced::lowered(sk,body) { return Self::read(&lowered,body,options) }
         if let Some(lowered) = super::distributed::lowered(sk,body) { return Self::read(&lowered,body,options) }
         let tol = cad::AXIS_TOLERANCE;
         // a body built from swept material: its operands each read, the body rule over them

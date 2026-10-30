@@ -364,8 +364,10 @@ where a rule came from.
     law's rate and its reach by the bound on its value — so the roll search through a body
     (`solid::roll`) and a swept field's minimum stay conservative under a drive.  A drive is no
     constant twist: `screw`, `turning`, `sliding`, `in_plane`, `in_frame` and `instantaneous`
-    refuse one, as does `NormalVelocity` (`motion::contact`) — what is built of a driven sweep is
-    the field's.  `solid::reads` keys a drive by its text and every held number.
+    refuse one, as does `NormalVelocity` (`motion::contact`).  A sweep whose own motion is one
+    driven joint is built exactly all the same, as the joint's sweep over the law's reach
+    (`Law::range`, `solid::paced`, #684 L, [generating.md](generating.md)); one seen from another
+    motion is the field's.  `solid::reads` keys a drive by its text and every held number.
   - **Refused** where a row would read it: `envelope::held::motion` read without laws (a
     meshing's own motion, a traced body's frames; E061 where the solve is told it cannot hold to
     the meshing), in `motion::unread_drive`'s words.  Through [0.157] a relation held to an
@@ -705,8 +707,9 @@ where a rule came from.
     stated radius (1e-6); `cam_plate.sv`, a prism's side under the drive holding a point in space,
     the plate's swept field changing sign there; and `mechanisms/cam_follower.sv`, the roller drawn
     in the follower (`x in f`) a roller's radius from the profile turned to `t` at every station of
-    the march (and scrubbed in the web suite's `timeline.test.ts`).  A driven sweep is outside the
-    class exported exactly: `cam_plate.sv`'s plate is a field.
+    the march (and scrubbed in the web suite's `timeline.test.ts`).  A driven sweep seen from another
+    motion is outside the classes exported exactly: `cam_plate.sv`'s plate is a field (one driven
+    alone is its joint's, #684 L).
   - **Not built**: a meshing on one; a relation held to an envelope in space generated under one
     is held since [0.158] (below).
 - **A point carried under a drive, held** (#398 G, [0.156], `envelope::held::Moving::driven`):
