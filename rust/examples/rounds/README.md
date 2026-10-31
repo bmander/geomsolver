@@ -58,6 +58,7 @@ The fillet stack's examples (#195), each the stack's program written with the wo
 
 | File | What it shows |
 |---|---|
+| `dome.sv` | **A rim rounded to the cylinder's own radius** (brep-bench's fillet/cylinder-rim-to-dome). The ball is as wide as the cylinder, so its centre is the one point on the axis a radius below the top: the top shrinks to a point and the ring's torus closes into a hemisphere. Built exactly: a cylinder, a sphere and a plane, 625π/3 = 654.498 mm³. |
 | `pad.sv` | **A cast mounting pad.** A boss's root filled, two of the plate's edges rounded off and cut flush by the faces they end on, and a bore drilled through after, which neither round reaches. Built exactly: 26549.817 mm³. |
 | `knob.sv` | **Curved faces.** A turned knob whose rod is filled where it stands on a disc (a cylinder against a plane) and where it enters a ball (a cylinder against a sphere): one word for both. Built exactly: two tori, the neck's section a line and two arcs in the meridian (26224.398 mm³). |
 | `rail.sv` | **A curved side, ending flush.** A rod half sunk along a plate, filled on both sides by one statement, each run ending where the rod and the plate end together. The rod splits the plate's top in two; in a section the rod is a circle the ball rolls against. Built exactly: 26306.866 mm³. |

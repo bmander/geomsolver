@@ -296,10 +296,20 @@ fn conditions(sk: &Sketch, t: &RegionTerm, read: &mut Read, within: &[crate::mod
 }
 
 /// The point satisfying every condition nearest `p`: from `p`, each step the nearest point of the
-/// conditions linearised where the last one stood.
+/// conditions linearised where the last one stood.  Where the steps never settle — a condition
+/// whose gradient turns over at the point they reach, a cylinder's side on its axis, where the
+/// ball a round rolls is as wide as the cylinder and its centres are the axis — the nearest step
+/// that keeps every condition (a point of the set, never one off it).
 fn nearest(cs: &[Cond], p: V) -> Option<V> {
     let tol = 1e-12 * (1.0 + norm(p));
+    // how far a point stands off the conditions it breaks
+    let off = |x: V| cs.iter().map(|c| {
+        let v = (c.f)(x).0;
+        if c.eq { v.abs() } else { v.max(0.0) }
+    }).fold(0.0, f64::max);
+    let keeps = |x: V| off(x) <= 1e-7 * (1.0 + norm(p));
     let mut x = p;
+    let mut kept: Option<V> = None;
     let mut rows: Vec<(V, f64, bool)> = Vec::with_capacity(cs.len());
     for _ in 0..80 {
         rows.clear();
@@ -312,15 +322,14 @@ fn nearest(cs: &[Cond], p: V) -> Option<V> {
         let step = norm(sub(y, x));
         x = y;
         if step <= tol {
-            break;
+            // only a point that keeps every condition
+            return keeps(x).then_some(x);
+        }
+        if keeps(x) && kept.is_none_or(|k| norm(sub(x, p)) < norm(sub(k, p))) {
+            kept = Some(x);
         }
     }
-    // only a point that keeps every condition
-    let off = cs.iter().map(|c| {
-        let v = (c.f)(x).0;
-        if c.eq { v.abs() } else { v.max(0.0) }
-    }).fold(0.0, f64::max);
-    (off <= 1e-7 * (1.0 + norm(p))).then_some(x)
+    kept
 }
 
 /// The nearest point to `p` of `{y : a·y ≤ b}` (`= b` where marked), at most three rows active:

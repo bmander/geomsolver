@@ -180,6 +180,23 @@ fn a_bosss_root_is_a_ring_exactly() {
     assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 7), ("torus", 1)].into());
 }
 
+/// `dome.sv` (brep-bench's fillet/cylinder-rim-to-dome): a cylinder's rim rounded to its own
+/// radius, so the ball's centres are the axis alone — the field reads the nearest of them where
+/// its steps toward that line never settle (`conditions::nearest`), and the ring's section turned
+/// is a hemisphere touching the top at its pole. The cylinder to half its height under the dome:
+/// `π5²·5 + (2/3)π5³`, `π5² + 2π·5·5 + 2π5²`.
+#[test]
+fn a_rim_rounded_to_its_cylinders_radius_is_a_dome() {
+    let e = solved(include_str!("../../examples/rounds/dome.sv"));
+    let b = exported(&e, "drum");
+    close(props::volume(&b), 625.0 * PI / 3.0);
+    close(b.faces.iter().map(|f| props::area(&b, f)).sum::<f64>(), 125.0 * PI);
+    assert_eq!(kinds(&b), [("cylinder", 1), ("plane", 1), ("sphere", 1)].into());
+    // inside the ball near its pole is material; beyond it, under the old top, none
+    let field = MaterialField::read(&e.sketch, ent(&e, "drum").i(), 1e-10).unwrap();
+    assert!(field.side([0.0, 0.0, 9.9]) < 0.0 && field.side([3.0, 0.0, 9.5]) > 0.0);
+}
+
 /// **A run-out** (#110): a run cut off by a face its edge ends on at a slant. The block's east side
 /// leans in (its top 10 short of its foot) and its west side leans out (5 past), and only its near
 /// face's south edge is rounded. The run is carried on past each end of its edge and cut off there

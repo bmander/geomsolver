@@ -1589,6 +1589,49 @@ fn a_canal_touching_its_operands_along_an_edge_is_unioned_with_them() {
     assert!(whole.faces.len() > tee.faces.len());
 }
 
+/// **A cylinder's rim rounded into a dome** (brep-bench's fillet/cylinder-rim-to-dome): a ball as
+/// wide as the cylinder has its centre on the axis, the cylinder offset by its radius being the
+/// axis itself, so the top shrinks to a point and the round is a hemisphere. The piece is the
+/// meridian's section turned, a strip of the side, the whole top and the hemisphere; cut, the
+/// solid is the cylinder to half its height under the dome — `π5²·5 + (2/3)π5³` and
+/// `π5² + 2π·5·5 + 2π5²` — of three faces, its top the dome's pole. Upside down, the same ball
+/// fills a bore's floor (a concave rim) into a hemisphere; a cylinder shorter than the ball's
+/// radius cannot hold it.
+#[test]
+fn a_cylinders_rim_rounded_to_its_own_radius_is_a_dome() {
+    use gcs_core::brep::boolean::{combined,Op};
+    use gcs_core::brep::build::disc;
+    use gcs_core::brep::fillet::roll;
+    use gcs_core::brep::props::area;
+    // as the bench builds it: the disc swept up, the rim picked by a point on it
+    let mut section = disc([0.;3],[0.,0.,1.],5.);
+    section.names = vec![vec!["side".into()]];
+    let cylinder = prism(&section,0.,10.).unwrap();
+    let round = roll(&cylinder,[0.,5.,10.],5.,1e-9*cylinder.size()).unwrap();
+    assert!(!round.concave);
+    round.piece.check(1e-9).unwrap();
+    close(volume(&round.piece),PI*25.*5.-2./3.*PI*125.);
+    let domed = combined(&cylinder,&round.piece,Op::Cut,0.).unwrap();
+    domed.check(1e-9).unwrap();
+    let total = |b: &gcs_core::brep::topo::Brep| b.faces.iter().map(|f| area(b,f)).sum::<f64>();
+    close(volume(&domed),625.*PI/3.);
+    close(total(&domed),125.*PI);
+    let mut kinds: Vec<&str> = domed.faces.iter().map(|f| f.surface.kind()).collect();
+    kinds.sort();
+    assert_eq!(kinds,["cylinder","plane","sphere"]);
+    // a bore 5 in radius and 8 deep into a block, its floor's rim filled to the bore's radius
+    let bored = combined(&block([-10.,-10.,0.],[10.,10.,12.]),&rod([0.;3],5.,[4.,12.]),Op::Cut,0.).unwrap();
+    let fill = roll(&bored,[5.,0.,4.],5.,1e-9*bored.size()).unwrap();
+    assert!(fill.concave);
+    let filled = combined(&bored,&fill.piece,Op::Union,0.).unwrap();
+    filled.check(1e-9).unwrap();
+    close(volume(&filled),20.*20.*12.-PI*25.*3.-2./3.*PI*125.);
+    // the ball reaches past a cylinder 4 high
+    let short = prism(&disc([0.;3],[0.,0.,1.],5.),0.,4.).unwrap();
+    let why = roll(&short,[0.,5.,4.],5.,1e-9*short.size()).unwrap_err();
+    assert!(why.contains("larger than"),"{why}");
+}
+
 /// Two solids ending in one face, material either side of it, are joined there: the face goes,
 /// its edges are shared by the faces beside them, nothing is intersected.
 #[test]

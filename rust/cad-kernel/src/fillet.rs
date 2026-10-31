@@ -169,6 +169,9 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     let Meeting {uses,faces:[face_a,face_b],sides_faces,chain,stops,p,into:[da,db],theta,concave,sides,surfaces,
         names,..} = meeting(b,at,tol)?;
     let names = || names.clone();
+    if let Some(rolled) = collapsed(b,&uses,&sides_faces,&chain,&stops,p,[da,db],concave,sides,&surfaces,r,tol,&names())? {
+        return Ok(rolled);
+    }
     let [Some(oa),Some(ob)] = [0,1].map(|k| surfaces[k].offset(sides[k]*r)) else {
         return Err(format!("the ball between {} is larger than one of them can hold",names()));
     };
@@ -343,6 +346,88 @@ pub fn roll_across(b: &Brep,at: V,r: f64,tol: f64,wedge: &[(V,V)]) -> Result<Rol
     };
     let contacts = [net.column(0),net.column(net.poles[0].len()-1)];
     Ok(Rolled {piece,chain,spine:spine_fit,contacts,concave,r,reach,trims})
+}
+
+/// **A ball as wide as the cylinder it rolls in**: where a plane square to a cylinder's axis meets
+/// it round the whole circle and the ball's radius is the cylinder's, the cylinder offset by it is
+/// its axis, and the ball's centre the one point on the axis `r` from the plane — a cylinder's rim
+/// rounded into a dome, a bore's floor filled into a hemisphere. Its canal is the ball's own
+/// sphere, touching the cylinder round the circle level with its centre and the plane at the foot
+/// of the axis, so the piece is the meridian's section — the corner, down the cylinder to that
+/// circle, round the ball's quarter arc to the axis and back along the plane — turned about the
+/// axis: a strip of the cylinder, the whole disc inside the circle, and a hemisphere whose pole
+/// touches the disc's middle (`p` the edge's middle, `into` the ways into each face from there).
+/// `None` where the ball's centre is no point (the general roll); refused where the plane's face
+/// lies outside the circle or holds an edge inside it, the cylinder's holds one nearer the plane
+/// than the ball's radius, or the meeting is a stretch of the circle.
+#[allow(clippy::too_many_arguments)]
+fn collapsed(b: &Brep,uses: &[Vec<(usize,usize,usize)>],sides_faces: &[Vec<usize>;2],chain: &[usize],stops: &[u32],
+    p: V,into: [V;2],concave: bool,sides: [f64;2],surfaces: &[Surface;2],r: f64,tol: f64,names: &str)
+    -> Result<Option<Rolled>,String> {
+    let Some(k) = (0..2).find(|&k| matches!(surfaces[k],Surface::Cylinder(_,big) if (big+sides[k]*r).abs() <= tol)) else {
+        return Ok(None)
+    };
+    let o = 1-k;
+    let (Surface::Cylinder(f,big),Surface::Plane(g)) = (&surfaces[k],&surfaces[o]) else { return Ok(None) };
+    let (big,axis) = (*big,f.z);
+    if 1.-dot(axis,g.z).abs() > 1e-9 { return Ok(None) }
+    if !stops.is_empty() {
+        return Err(format!("the ball between {names} is as wide as the cylinder, and their meeting a stretch of its circle: \
+            its centre stands on the axis, and no stretch of a dome is cut off yet"));
+    }
+    // the foot of the axis on the plane, and the ball's centre `r` off it toward the region
+    let foot = add(f.o,scale(axis,dot(sub(g.o,f.o),g.z)/dot(axis,g.z)));
+    let centre = add(foot,scale(g.z,sides[o]*r));
+    let up = unit(sub(centre,foot));
+    // the plane's face lies inside the circle, toward the axis, and holds no other edge there; the
+    // cylinder's holds none nearer the plane than the ball's centre (its seams are no edge)
+    let radial = |q: V| { let w = sub(q,foot); sub(w,scale(axis,dot(w,axis))) };
+    if dot(into[o],radial(p)) >= 0. {
+        return Err(format!("the ball between {names} is as wide as the cylinder, but the plane's face lies outside its circle"));
+    }
+    for (side,s) in [(o,0),(k,1)] {
+        for &fi in &sides_faces[side] {
+            let face = &b.faces[fi];
+            let seams = face.seams();
+            for c in face.loops.iter().flatten() {
+                let e = c.edge as usize;
+                if chain.contains(&e) || seams.contains(&c.edge) { continue }
+                // (an edge between two faces of one side is no edge to the ball)
+                if matches!(uses[e].as_slice(),[x,y] if sides_faces[side].contains(&x.0) && sides_faces[side].contains(&y.0)) { continue }
+                let ed = &b.edges[e];
+                let inside = (0..=32).map(|j| ed.point(ed.t[0]+(ed.t[1]-ed.t[0])*j as f64/32.,&b.vertices)).any(|q| match s {
+                    0 => norm(radial(q)) < big-tol,
+                    _ => dot(sub(q,foot),up) < r-tol,
+                });
+                if inside {
+                    return Err(format!("the ball of {names} is larger than `{}` can hold",face.name));
+                }
+            }
+        }
+    }
+    // the meridian through the rim's first vertex: the corner, where the ball touches the
+    // cylinder, and the axis's foot
+    let x = unit(radial(b.vertices[b.edges[chain[0]].v[0] as usize].p));
+    let corner = add(foot,scale(x,big));
+    let touch = add(centre,scale(x,r));
+    let arc = Frame::new(centre,cross(x,scale(up,-1.)),x);
+    let name = |side: usize| ["a","b"][side].to_string();
+    let section = super::build::Profile {origin:foot,normal:arc.z,
+        loops:vec![vec![super::build::ProfileEdge::Line {a:corner,b:touch},
+            super::build::ProfileEdge::Arc {frame:arc,r,span:Some([0.,0.25*TAU])},
+            super::build::ProfileEdge::Line {a:foot,b:corner}]],
+        names:vec![vec![name(k),"round".into(),name(o)]]};
+    let piece = super::build::revolve(&section,foot,axis,TAU)?;
+    piece.check(10.*tol)?;
+    // the spine and the plane's contact each a point, held still over the parameter
+    let still = |p: V| BSpline::new(1,vec![0.,0.,1.,1.],vec![p,p]);
+    let ring = Frame::new(centre,axis,x);
+    let (round,_) = fit_curve(&|u| ring.at([r*(TAU*u).dcos(),r*(TAU*u).dsin(),0.]),3,64,tol)
+        .ok_or("a dome's contact could not be fitted")?;
+    let mut contacts = [still(foot)?,still(foot)?];
+    contacts[k] = round;
+    Ok(Some(Rolled {piece,chain:chain.to_vec(),spine:still(centre)?,contacts,concave,r,reach:distance(corner,centre),
+        trims:Vec::new()}))
 }
 
 /// **A ball no larger than each face holds**: the band of a face it rolls on — where it stands

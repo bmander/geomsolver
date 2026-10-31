@@ -294,7 +294,22 @@ periodic surface's seam (`rail`, `post`, `frustum`): asked of the same solid wit
 (`seams_turned`). `tests/round_lowering.rs` is the gate (every volume the closed form's to
 1e-9, a rolled one #85's quadrature's to 1e-6: `slot.sv`, `pad.sv`, `rail.sv`, `knob.sv`,
 `tee.sv`, `bore.sv`, `runout.sv`, `twin.sv`, `post.sv`, `dshaft.sv`, `groove.sv`, `bores.sv`,
-`frustum.sv`, `crotch.sv`, `bullnose.sv`).
+`frustum.sv`, `crotch.sv`, `bullnose.sv`, `dome.sv`).
+
+**A ball as wide as its cylinder** (brep-bench's fillet/cylinder-rim-to-dome): a rim where a plane
+square to a cylinder's axis meets it, rounded to the cylinder's own radius, has its ball's centres
+on the axis alone — the cylinder offset by the radius is its axis, `Surface::offset` none — so the
+top shrinks to a point and the round is a hemisphere touching it at its pole. In the lowering it is
+a ring like any other, its section's arc centred on the axis, which `build::revolve` turns into a
+sphere (`dome.sv`, the cylinder to half its height under the dome: the closed forms' volume and
+area to 1e-9, a cylinder, a sphere and a plane); the field reads its centres by the steps that
+never settle there (`conditions::nearest`, [sets.md](sets.md)). `fillet::roll` asked of it builds
+the same piece (`fillet::collapsed`): the meridian's section — down the cylinder to where the ball
+touches it, round the ball's quarter arc to the axis, back along the plane — turned, the spine and
+the plane's contact a point; cut, it is the dome, and upside down it fills a bore's floor into a
+hemisphere (`brep::a_cylinders_rim_rounded_to_its_own_radius_is_a_dome`). Refused by name where the
+plane's face holds an edge inside the circle, the cylinder's one nearer the plane than the radius,
+or the meeting is a stretch of the circle.
 
 **The closing case** (#197, `rust/examples/conrod/`): a forged rod, every round and chamfer a
 statement over the faces its solids gave it, built exactly (pockets drawn as prisms, so their walls
