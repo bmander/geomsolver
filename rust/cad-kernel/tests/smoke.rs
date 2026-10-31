@@ -1,7 +1,7 @@
 //! The crate on its own: what its README promises, built and measured through the public API.
 //! (The kernel's full suite is still geomsolver's, `rust/gcs-core/tests`.)
 use cad_kernel::boolean::{combined, Op};
-use cad_kernel::build::{disc, prism, square};
+use cad_kernel::build::{cone, disc, prism, sphere, square, torus};
 use cad_kernel::mesh::mesh;
 use cad_kernel::props::{area, volume};
 use std::f64::consts::PI;
@@ -26,6 +26,20 @@ fn two_cylinders_crossing_share_a_steinmetz_solid() -> Result {
     let along_y = prism(&disc([0., -15., 0.], [0., 1., 0.], r), 0., 30.)?;
     let both = combined(&along_x, &along_y, Op::Common, 0.)?;
     assert!((volume(&both) - 16. * r * r * r / 3.).abs() < 1e-6);
+    Ok(())
+}
+
+#[test]
+fn the_sphere_the_cone_and_the_torus_are_their_closed_forms() -> Result {
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * b;
+    let up = [0., 0., 1.];
+    assert!(close(volume(&sphere([1., 2., 3.], up, 5.)?), 500. / 3. * PI));
+    assert!(close(volume(&cone([0., 0., 0.], up, 5., 2., 6.)?), 78. * PI));
+    assert!(close(volume(&torus([0., 0., 0.], up, 10., 2.)?), 80. * PI * PI));
+    // a ball and a block share a hemisphere, the ball's poles leaning off the block's floor
+    let ball = sphere([0., 0., 0.], [0.3, 0.2, 1.], 5.)?;
+    let above = prism(&square([0., 0., 0.], up, 10.), 0., 10.)?;
+    assert!(close(volume(&combined(&ball, &above, Op::Common, 0.)?), 250. / 3. * PI));
     Ok(())
 }
 

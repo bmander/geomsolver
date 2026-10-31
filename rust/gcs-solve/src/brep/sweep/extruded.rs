@@ -336,7 +336,7 @@ fn build(cut: &SweptCut,walks: &[Vec<Seg>],convex: &[Vec<bool>],extent: [f64;2],
         }
     }
     let mut sheet = Sheet {bands:vec![(0,UNNAMED)],points:Vec::new(),normals:Vec::new(),times:Vec::new(),rows:rows.len(),columns:STATIONS,withheld:Vec::new(),
-        withheld_normals:Vec::new(),sites:Vec::new()};
+        withheld_normals:Vec::new(),sites:Vec::new(),creases:Vec::new()};
     for (node,n) in &rows {
         for &h in &stations {
             sheet.points.push(lift(node.c,h));

@@ -76,6 +76,33 @@ fn the_blocks_rims_are_built_exactly() {
     assert_eq!(kinds(&b), [("cylinder", 4), ("plane", 10)].into());
 }
 
+/// `bevel.sv` (brep-bench's chamfer/box-top-asymmetric): a box's top rim chamfered 1 across the
+/// top and 2 down the sides by a word written in the file over `std.rounds.Flat`, its legs
+/// unequal. Four flats, each a prism of its section's triangle, neighbours mitred on the line from
+/// the box's corner at z = 4 to the top's: ten planes, the closed forms' volume and area.
+#[test]
+fn a_box_top_chamfered_unequally_is_built_exactly() {
+    let e = solved(include_str!("../../examples/rounds/bevel.sv"));
+    assert_eq!(lowered(&e).0, 4);
+    let b = exported(&e, "box");
+    assert_eq!(kinds(&b), [("plane", 10)].into());
+    close(props::volume(&b), 3428.0 / 3.0);
+    close(b.faces.iter().map(|f| props::area(&b, f)).sum(), 584.0 + 56.0 * 5f64.sqrt());
+    // the top stands at z = 6, its corners 1 in from the box's
+    let (lo, hi) = b.bounds();
+    assert!(gcs_core::space::distance(lo, [0.0; 3]) <= 1e-9 && gcs_core::space::distance(hi, [20.0, 10.0, 6.0]) <= 1e-9,
+        "{lo:?} {hi:?}");
+    for q in [[1.0, 1.0, 6.0], [19.0, 9.0, 6.0], [20.0, 10.0, 4.0], [0.0, 0.0, 4.0]] {
+        assert!(b.vertices.iter().any(|v| gcs_core::space::distance(v.p, q) <= 1e-9), "no vertex at {q:?}");
+    }
+    // its suggested edit, the legs swapped: 2 across and 1 down, 20·10·5 + ∫₀¹ (20 − 4s)(10 − 4s) ds
+    let swapped = include_str!("../../examples/rounds/bevel.sv")
+        .replace("across := 1mm", "across := 2mm").replace("down := 2mm", "down := 1mm");
+    let b = exported(&solved(&swapped), "box");
+    assert_eq!(kinds(&b), [("plane", 10)].into());
+    close(props::volume(&b), 1000.0 + 200.0 - 60.0 + 16.0 / 3.0);
+}
+
 /// **Recognised by the set, not the word**: `by_hand.sv`'s own `Rolled`, written in the file, is
 /// the same set as `std.rounds.Run`, so the same entry builds it.
 #[test]

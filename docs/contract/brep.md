@@ -15,7 +15,12 @@ alone, and it is measured beside other kernels on https://github.com/bmander/bre
 `gcs_core::brep`:
 `geom` (surfaces parameterised as OCCT/STEP do, closed-form inverses, signed distances, `Traced`
 intersections), `topo` (`Brep`: oriented uses with pcurves, degenerate poles; `check`, `pinches`),
-`build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles),
+`build` (prisms, drafted prisms, revolutions and canals of line/arc/circle/spline profiles; the
+sphere, the cone and the torus by their numbers as OCCT's `MakeSphere`/`MakeCone`/`MakeTorus` take
+them, each its meridian turned — `sphere(c, axis, r)`, `cone(o, axis, r0, r1, h)`,
+`torus(c, axis, major, minor)` — and what is no such solid refused by name: the kernel's API
+speaks the vocabulary its other users bring, which the language need not, `std.sets.Sphere`
+staying a set over `distance`; `tests/brep.rs`'s `the_sphere_the_cone_and_the_torus_…`),
 `props` (volume by Green's theorem), `query`, `ssi` (closed forms, else traced), `boolean` (split, arrange, classify,
 assemble), `mesh` (constrained Delaunay refined to a measured sag), `step` (AP214 with pcurves and
 seam curves), `recipe`. A traced pair is seeded where edges cross faces; between analytic
@@ -32,10 +37,29 @@ them; where it does not (a gap narrower than the trace's noise, whose splitting 
 points and makes it wiggle the more) the fit with the fewest is kept (`fitted`). Of two traces, one
 lying along the other — its ends within two marches' slack — is that meeting traced again from a
 seed the first left unrecognised, and only one is kept, before either is fitted: the one reaching
-farther, else the one whose longest step is shorter (`distinct`).
+farther, else the one whose longest step is shorter (`distinct`). **It is fitted through one seed a
+place**: a seed within `tol` of one taken is that vertex again and is passed by. Each is placed
+along the trace only to its search's width (1e-8 of a step), and two a hair apart placed apart
+were both interpolated, the cubic magnifying their rounding into a swing out along the meeting and
+back, on both surfaces all the way (a ring groove's floor ran 0.17 mm past its corner, a crossing
+seeded again 4e-14 off it by another face's edge: `brep::a_trace_is_fitted_through_one_seed_a_place`
+and `flat_faces::an_end_mill_turned_cuts_a_ring_groove` are its gate).
 `brep::a_trace_keeps_a_sharp_turn_at_its_end` (a V of apex radius 0.003 mm, 0.03 mm from the sheet's
 edge, against an `h0` of 0.2) and `object_builder::a_sharp_rims_fan_builds_at_the_displays_samples`
 (`vthread.sv` at the page's samples, which each of the three builds alone) are the gate.
+**A march stepping across a touch ends there** (brep-bench's nurbs/groin-vault): where two
+surfaces touch and their meeting's branches cross, a step of the meeting's scale lands either side
+of the little disc where they stand nearer parallel than a trace follows, and `∇a × ∇b` turns about
+between its ends. A touch found there along the march's branch (`touch_near` from the chord's point
+where the two sines' sizes say it vanished) ends the march as one arriving at a touch does, and the
+branches no curve has arrived along are traced from it. The Boolean pools where traced curves of
+one meeting end at one another (`boolean::ends_met`), the touch a vertex its half-branches share.
+Marched on, two vaults' groins were each one curve through the crown, crossing the other at no
+vertex, and one, its middle 1e-6 from the touch, was dropped as touching. `touch_near` is settled
+by a step a thousandth of `tol`, or one within a tenth of it no longer shrinking, its differences'
+rounding (the crown at a `tol` of 1e-9 cycled through steps of 1.3e-11).
+`brep::a_trace_stepping_across_a_touch_ends_there`, `a_groin_vault_is_four_vaults_meeting_at_the_crown`
+and `brep_export::a_groin_vault_is_built_exactly` (`groin_vault.sv`) are the gate.
 **A point is read against a face by one drawing of its boundary** (`query::Outline`): each edge
 cut in chords until every chord's middle lies within a bar of the edge in space, carrying its
 `sag`, how far a chord strays at most. Its winding says inside only for a point clear of every
@@ -71,6 +95,13 @@ wants a surface says so (`Offset::surface`, or `Surface::offset_surface`, which 
 offset as that), and none reads a collapse as no offset at all (a ball as wide as its cylinder,
 [rounds.md](rounds.md)).
 A minimum is a `util::roots::Least`, its place and its value named, never a pair.
+**A flat between two planes is a plane** (`fillet::flat_along`): the prism on its section's
+triangle, carried on past each end and cut off there, no net fitted. A fitted flat is a B-spline
+face, and a run chamfered after it that ends on it was refused, nothing cutting a run off at a
+spline: a box's top edges chamfered one after another, each cut off by the plane of the one before
+(`brep::a_box_top_chamfered_unequally_is_ten_planes`, brep-bench's chamfer/box-top-asymmetric;
+`brep::chamfers_between_planes_are_planes`). A run going on tangent into a curved face at an end
+is still fitted, as the piece that takes on from its section is.
 `Brep::bounds` encloses (issue #59; `through:` cutters, tool culls): `Curve::bounds` exact for
 lines and conics, the poles reaching a B-spline's range, a trace by its measured sagitta; a face bulges
 past its edges only off a `ruled` surface (`Surface::bounds_over`: meridians at each axis's

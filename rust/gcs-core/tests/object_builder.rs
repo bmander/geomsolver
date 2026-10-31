@@ -154,6 +154,73 @@ fn a_rocked_turn_builds_at_the_displays_samples() {
     assert_eq!(corpus(&["solid_sweeps/rocked.sv".to_string()],true),1);
 }
 
+/// **A prism's flat end turned builds at the display's samples** (`flat_end.sv`, #684 AE): the walk
+/// from the bar's inner side round its end's rim and across the end, carried round the turn, built
+/// by the page's stepped builder as the export builds it.
+#[test]
+fn a_flat_end_turned_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/flat_end.sv".to_string()],true),1);
+}
+
+/// **A prism drafted both ways turned builds at the display's samples** (`creased.sv`, #684 AG):
+/// the walk from one half of the bar's inner side round the crease to the other, built by the
+/// page's stepped builder as the export builds it.
+#[test]
+fn a_creased_bar_turned_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/creased.sv".to_string()],true),1);
+}
+
+/// **A ruling in contact all along it turned builds at the display's samples** (`facing.sv`,
+/// #684 AF): the walk along the bar's inner side's ruling in the plane through the axis, carried
+/// round the turn, built by the page's stepped builder as the export builds it.
+#[test]
+fn a_ruling_in_contact_all_along_it_turned_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/facing.sv".to_string()],true),1);
+}
+
+/// **A flat face kept in its own plane slid builds at the display's samples** (`slot.sv`, #684 O):
+/// the walk down one wall, across the end mill's flat bottom and up the other, its sheet creased
+/// where it runs onto and off the bottom, built by the page's stepped builder as the export builds
+/// it.
+#[test]
+fn a_flat_face_kept_in_its_plane_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/slot.sv".to_string()],true),1);
+}
+
+/// **A sharp edge along one point's path slid builds at the display's samples** (`vgroove.sv`,
+/// #684 V): the walk down one flank of the V wheel and straight onto the other at the rim's one
+/// point, its sheet creased there, built by the page's stepped builder as the export builds it.
+#[test]
+fn a_sharp_edge_along_one_points_path_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/vgroove.sv".to_string()],true),1);
+}
+
+/// **A characteristic closed on itself builds at the display's samples** (`punch.sv`, #684 W): the
+/// walk round the drum, along each side's line and across each flat end, closing where it began,
+/// its sheet a tube cut at its four creases, built by the page's stepped builder as the export
+/// builds it.
+#[test]
+fn a_closed_characteristic_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/punch.sv".to_string()],true),1);
+}
+
+/// **A ring in contact all round builds at the display's samples** (`drill.sv`, #684 X): the drill
+/// slid along its own axis, its characteristic its ring of greatest radius, its sheet the cylinder
+/// that ring sweeps, written exactly, built by the page's stepped builder as the export builds it.
+#[test]
+fn a_ring_in_contact_all_round_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/drill.sv".to_string()],true),1);
+}
+
+/// **A ring in contact all round under a turn builds at the display's samples** (`spoke.sv`, #684 X):
+/// the pin swung along a radius, the walk turning onto its rim's ring half round and off onto its
+/// bottom line, the branch across its end trimmed, built by the page's stepped builder as the export
+/// builds it.
+#[test]
+fn a_ring_in_contact_all_round_turned_builds_at_the_displays_samples() {
+    assert_eq!(corpus(&["solid_sweeps/spoke.sv".to_string()],true),1);
+}
+
 const BLOCK: &str = "unit mm\nuse std\nuse std.rounds (round)\nin std.front {\n  a := point hint((0, 0))\n  b := point hint((40, 0))\n  \
     c := point hint((40, 20))\n  d := point hint((0, 20))\n  fix((0, 0)) a\n  l1 := line(a, b)\n  l2 := line(b, c)\n  \
     l3 := line(c, d)\n  l4 := line(d, a)\n  horizontal l1\n  horizontal l3\n  vertical l2\n  vertical l4\n  \
@@ -393,3 +460,4 @@ nested := solid(compound)
     // each gear's tooth space named for the sweep that cut it
     assert_eq!(d.faces.names.iter().filter(|n| *n == "space").count(),2,"{:?}",d.faces.names);
 }
+

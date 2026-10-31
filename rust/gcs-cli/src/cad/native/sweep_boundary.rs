@@ -408,6 +408,17 @@ pub(crate) fn construct_swept_body(session: &Session,sk: &Sketch,body: usize,rec
         // a whole turn's sheet closes on itself round the turn, which the core's kernel alone builds (#684 N)
         Err(ExportRefusal::at(Stage::Admission,format!("`{}`: `{}` is a whole turn, whose sheet only the core's kernel builds, \
             closed round the turn: export it with `--kernel rust`",sk.solids[body].name,s.name)))
+    } else if let Some(s) = admission.sweeps().iter().find(|s| matches!(&s.class,gcs_core::solid::admission::Class::ConstantTwist(found)
+        if found.closed)) {
+        // a characteristic closed on itself has a tube for its sheet, which the core's kernel alone builds (#684 W)
+        Err(ExportRefusal::at(Stage::Admission,format!("`{}`: `{}`'s characteristic closes on itself, whose sheet only the core's \
+            kernel builds, a tube closed along it: export it with `--kernel rust`",sk.solids[body].name,s.name)))
+    } else if let Some(s) = admission.sweeps().iter().find(|s| matches!(&s.class,gcs_core::solid::admission::Class::ConstantTwist(found)
+        if !found.rounds().is_empty())) {
+        // a ring in contact all round is a branch of the characteristic, which the core's kernel alone walks and trims (#684 X)
+        Err(ExportRefusal::at(Stage::Admission,format!("`{}`: `{}`'s characteristic runs round a ring in contact all round, whose \
+            zone only the core's kernel builds, trimming the branch the ring cuts off: export it with `--kernel rust`",
+            sk.solids[body].name,s.name)))
     } else { Ok(()) };
     if let Admitted::Already(admission) = admitted { presented(admission)?; }
     // What the sketch says of the blank and the cuts, read here; where it cannot be read, an

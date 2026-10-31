@@ -1,7 +1,8 @@
 //! The primitives, built with their topology whole: a profile swept along its normal (a prism,
 //! drafted or not), turned about a line in its plane (a revolution), or a ball's disc screwed along
 //! a helix (a canal), from the loops of lines, arcs, circles and B-splines the CAD recipe carries
-//! (`solid::cad::recipe`).
+//! (`solid::cad::recipe`); and the sphere, the cone and the torus by their numbers (`sphere`,
+//! `cone`, `torus`), each its meridian turned.
 #[allow(unused_imports)]
 use crate::util::fmath::Det;
 use super::geom::{tolerance,BSpline,Blend,Carry,Curve,Frame,Rigid,Surface,Uv,V};
@@ -550,7 +551,7 @@ pub fn canal(c: V,r: f64,origin: V,axis: V,angle: f64,advance: f64,name: &str) -
     // the centre's velocity at the start, square to the radial line
     let rate = add(scale(cross(a,radial),angle),scale(a,advance));
     // a centre that does not move sweeps the ball itself
-    if norm(rate) <= 1e-12*r.max(1.) { return Ok(named(ball(c,a,r)?,name)) }
+    if norm(rate) <= 1e-12*r.max(1.) { return Ok(named(sphere(c,a,r)?,name)) }
     let t = unit(rate);
     // where the disc's circle starts, so where the tube's seams run: turned off the radial line by
     // an angle no design's symmetry gives (on it, the arc the seam's vertex sweeps lies in the plane
@@ -620,13 +621,57 @@ fn poles(t: V,x: V) -> V {
 /// fraction of a turn, which no symmetry of a design's makes.
 const SEAM: f64 = 0.6180339887498949;
 
-/// The ball of radius `r` about `c`: a half disc turned once about the diameter along the unit `w`,
-/// its poles where `w` meets the sphere.
-fn ball(c: V,w: V,r: f64) -> Result<Brep,String> {
-    let f = Frame::about(c,w);
+/// **The ball** of radius `r` about `c`: a half disc turned once about the diameter along `axis`,
+/// its poles where `axis` meets the sphere and its seam the half circle through them on the side
+/// `Frame::about(c, axis)`'s `x` points to. One face, bounded by its seam and a degenerate edge at
+/// each pole. A plane through a pole is a meeting this kernel's Booleans do not split, so a caller
+/// lays `axis` off the planes the ball will meet.
+pub fn sphere(c: V,axis: V,r: f64) -> Result<Brep,String> {
+    if !(r > 0. && r.is_finite()) { return Err(format!("a sphere's radius must be positive, not {r}")) }
+    if !(norm(axis) > 0.) { return Err("a sphere's axis has no direction".into()) }
+    let f = Frame::about(c,axis);
     let arc = ProfileEdge::Arc {frame:Frame::new(c,f.y,f.z),r,span:Some([0.,std::f64::consts::PI])};
     let shut = ProfileEdge::Line {a:f.at([0.,0.,-r]),b:f.at([0.,0.,r])};
     revolve(&Profile {origin:c,normal:f.y,loops:vec![vec![arc,shut]],names:Vec::new()},c,f.z,TAU)
+}
+
+/// **The cone** on the line through `o` along `axis`: radius `r0` at `o` and `r1` a height `h` along
+/// `axis` from it, its meridian turned once (OCCT's `MakeCone`). Either radius may be nothing, an
+/// apex there; equal radii make a cylinder. Its side's seam lies in the half plane
+/// `Frame::about(o, axis)`'s `x` points to.
+pub fn cone(o: V,axis: V,r0: f64,r1: f64,h: f64) -> Result<Brep,String> {
+    if !(r0 >= 0. && r1 >= 0. && r0.is_finite() && r1.is_finite()) {
+        return Err(format!("a cone's radii must be positive or nothing, not {r0} and {r1}"))
+    }
+    if !(r0.max(r1) > 0.) { return Err("a cone with no radius at either end has no volume".into()) }
+    if !(h > 0. && h.is_finite()) { return Err(format!("a cone's height must be positive, not {h}")) }
+    if !(norm(axis) > 0.) { return Err("a cone's axis has no direction".into()) }
+    let f = Frame::about(o,axis);
+    // the meridian in the plane of the axis and `x`: down the axis, out along the base, up the
+    // side, back along the top; an end of no radius is its apex, on the axis
+    let mut corners = vec![o];
+    if r0 > 0. { corners.push(f.at([r0,0.,0.])); }
+    if r1 > 0. { corners.push(f.at([r1,0.,h])); }
+    corners.push(f.at([0.,0.,h]));
+    let n = corners.len();
+    let edges = (0..n).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%n]}).collect();
+    revolve(&Profile {origin:o,normal:f.y,loops:vec![edges],names:Vec::new()},o,f.z,TAU)
+}
+
+/// **The torus** about the line through `c` along `axis`: its tube's middle circle of radius
+/// `major` about `c` square to `axis`, its tube of radius `minor` (OCCT's `MakeTorus`). A ring
+/// torus only: `minor` under `major`, so the tube clears the axis. One face, its two seams the
+/// tube's circle on the side `Frame::about(c, axis)`'s `x` points to and the outer equator.
+pub fn torus(c: V,axis: V,major: f64,minor: f64) -> Result<Brep,String> {
+    if !(minor > 0. && minor.is_finite()) { return Err(format!("a torus's tube's radius must be positive, not {minor}")) }
+    if !(major > minor && major.is_finite()) {
+        return Err(format!("a torus's middle radius {major} must exceed its tube's {minor}: the tube would cross the axis"))
+    }
+    if !(norm(axis) > 0.) { return Err("a torus's axis has no direction".into()) }
+    let f = Frame::about(c,axis);
+    let centre = f.at([major,0.,0.]);
+    let section = ProfileEdge::Arc {frame:Frame::new(centre,f.y,f.x),r:minor,span:None};
+    revolve(&Profile {origin:centre,normal:f.y,loops:vec![vec![section]],names:Vec::new()},c,f.z,TAU)
 }
 
 /// The half of the ball of radius `r` about `c` on the side the unit `n` points to: the ball turned
@@ -635,7 +680,7 @@ fn ball(c: V,w: V,r: f64) -> Result<Brep,String> {
 /// centre along the path — which lies in the path's plane, as a face of the design often does,
 /// and a plane through a pole is a meeting this kernel's Booleans do not split.
 fn half_ball(c: V,n: V,w: V,r: f64) -> Result<Brep,String> {
-    kept(&ball(c,w,r)?,c,n,0.)
+    kept(&sphere(c,w,r)?,c,n,0.)
 }
 
 /// The screw about the line through `c` along the unit `a`: a turn by `angle` and a step of `advance`
@@ -843,39 +888,41 @@ pub fn sheets(nets: Vec<(crate::nurbs::Net,String)>) -> Result<Brep,String> {
 /// A sheet of one net cut into a grid of faces (#684 N): at the parameters `us` along `u` and `vs`
 /// along `v`, each from its domain's start to its end, the faces of a band between two of `us`
 /// named by `names`. Each face is the net's segment there (`Net::segment`); neighbours share their
-/// edges and corners, so a split by it never meets a seam. `closed`: the net's last iso-`v` curve
-/// is its first, as a sheet revolved a whole turn is, and the last faces along `v` close on the
-/// first's edges, a ring.
-pub fn grid_sheet(net: &crate::nurbs::Net,us: &[f64],vs: &[f64],names: &[String],closed: bool) -> Result<Brep,String> {
+/// edges and corners, so a split by it never meets a seam. `closed`, each way: along `u`, the net's
+/// last iso-`u` curve is its first, as a sheet along a characteristic that closes on itself is
+/// (#684 W), and the last band closes on the first's edges, a tube; along `v`, its last iso-`v`
+/// curve is its first, as a sheet revolved a whole turn is, and the last faces along `v` close on
+/// the first's edges, a ring.
+pub fn grid_sheet(net: &crate::nurbs::Net,us: &[f64],vs: &[f64],names: &[String],closed: [bool;2]) -> Result<Brep,String> {
     let (nu,nv) = (us.len().saturating_sub(1),vs.len().saturating_sub(1));
     if nu == 0 || nv == 0 || names.len() != nu { return Err("a sheet's grid of faces must have a face each way, and a name a band".into()) }
-    if closed && nv < 2 { return Err("a closed sheet must have two faces round".into()) }
+    if (closed[0] && nu < 2) || (closed[1] && nv < 2) { return Err("a closed sheet must have two faces round".into()) }
     // each band cut along u once, then round along v
     let nets: Vec<Vec<crate::nurbs::Net>> = (0..nu).map(|i| {
         let band = net.segment([us[i],us[i+1]],[vs[0],vs[nv]]);
         (0..nv).map(|j| band.segment([us[i],us[i+1]],[vs[j],vs[j+1]])).collect()
     }).collect();
     let curve = |b: BSpline| EdgeCurve::Curve(Curve::BSpline(Arc::new(b)));
-    // the corners, and the edges along u at each of the `m` distinct v (a closed sheet's last its
-    // first) and along v at each u
-    let m = if closed { nv } else { nv+1 };
+    // the corners, and the edges along u at each of the `mv` distinct v and along v at each of the
+    // `mu` distinct u (a closed way's last its first)
+    let (mu,mv) = (if closed[0] { nu } else { nu+1 },if closed[1] { nv } else { nv+1 });
     let mut b = Brep::default();
-    let corners: Vec<Vec<u32>> = (0..=nu).map(|i| (0..m).map(|j| b.vertex(net.point(us[i],vs[j]))).collect()).collect();
-    let along_u: Vec<Vec<u32>> = (0..nu).map(|i| (0..m).map(|j| {
+    let corners: Vec<Vec<u32>> = (0..mu).map(|i| (0..mv).map(|j| b.vertex(net.point(us[i],vs[j]))).collect()).collect();
+    let along_u: Vec<Vec<u32>> = (0..nu).map(|i| (0..mv).map(|j| {
         let iso = if j < nv { nets[i][j].column(0) } else { let n = &nets[i][nv-1]; n.column(n.poles[0].len()-1) };
-        b.edge(curve(iso),[us[i],us[i+1]],[corners[i][j],corners[i+1][j]])
+        b.edge(curve(iso),[us[i],us[i+1]],[corners[i][j],corners[(i+1)%mu][j]])
     }).collect()).collect();
-    let along_v: Vec<Vec<u32>> = (0..=nu).map(|i| (0..nv).map(|j| {
+    let along_v: Vec<Vec<u32>> = (0..mu).map(|i| (0..nv).map(|j| {
         let iso = if i < nu { nets[i][j].row(0) } else { let n = &nets[nu-1][j]; n.row(n.poles.len()-1) };
-        b.edge(curve(iso),[vs[j],vs[j+1]],[corners[i][j],corners[i][(j+1)%m]])
+        b.edge(curve(iso),[vs[j],vs[j+1]],[corners[i][j],corners[i][(j+1)%mv]])
     }).collect()).collect();
     let line = |a: [f64;2],z: [f64;2]| Pcurve::Line {a,b:z};
     for (i,band) in nets.into_iter().enumerate() { for (j,net) in band.into_iter().enumerate() {
         let ([u0,u1],[v0,v1]) = ([us[i],us[i+1]],[vs[j],vs[j+1]]);
         let lp = vec![
             Coedge {edge:along_u[i][j],reversed:false,pcurve:line([u0,v0],[u1,v0])},
-            Coedge {edge:along_v[i+1][j],reversed:false,pcurve:line([u1,v0],[u1,v1])},
-            Coedge {edge:along_u[i][(j+1)%m],reversed:true,pcurve:line([u0,v1],[u1,v1])},
+            Coedge {edge:along_v[(i+1)%mu][j],reversed:false,pcurve:line([u1,v0],[u1,v1])},
+            Coedge {edge:along_u[i][(j+1)%mv],reversed:true,pcurve:line([u0,v1],[u1,v1])},
             Coedge {edge:along_v[i][j],reversed:true,pcurve:line([u0,v0],[u0,v1])},
         ];
         b.faces.push(Face {surface:Surface::BSpline(Frame::new([0.;3],[0.,0.,1.],[1.,0.,0.]),Arc::new(net)),reversed:false,loops:vec![lp],
@@ -975,6 +1022,21 @@ pub fn square(o: V,n: V,half: f64) -> Profile {
     let corners = [at(-half,-half),at(half,-half),at(half,half),at(-half,half)];
     let edges = (0..4).map(|k| ProfileEdge::Line {a:corners[k],b:corners[(k+1)%4]}).collect();
     Profile {origin:o,normal:n,loops:vec![edges],names:Vec::new()}
+}
+
+/// The cylinder of radius `r` about the line through `o` along the unit `n`, from `o` to `depth`
+/// along `n`, open at both ends: a sheet of `pieces` faces round it, each a stretch of the one
+/// cylinder between two lines along it, its edges at the ends arcs (a prism of the disc's arcs, its
+/// caps left off). A tool slid along its own axis sweeps one (#684 X).
+pub fn tube(o: V,n: V,r: f64,depth: f64,pieces: usize) -> Result<Brep,String> {
+    if pieces < 2 { return Err("a tube must have two faces round".into()) }
+    let frame = Frame::about(o,unit(n));
+    let step = std::f64::consts::TAU/pieces as f64;
+    let arcs = (0..pieces).map(|k| ProfileEdge::Arc {frame,r,span:Some([k as f64*step,(k+1) as f64*step])}).collect();
+    let mut b = prism(&Profile {origin:o,normal:unit(n),loops:vec![arcs],names:Vec::new()},0.,depth)?;
+    // the prism's two caps are its last faces
+    b.faces.truncate(pieces);
+    Ok(b)
 }
 
 /// The disc of radius `r` about `o` square to `n`: a cylinder's or a frustum's section.

@@ -507,11 +507,14 @@ pub(crate) fn touch(a: &Surface,b: &Surface,p: V) -> Option<Touch> {
 /// **The point near `p` where `a` and `b` touch**: on `a`, where `b`'s signed distance along it is
 /// stationary — their normals parallel there — by Newton over `a`'s tangent plane, its
 /// derivatives by differences; `None` where that does not settle, or settles off `b` (the two pass
-/// apart or cross there, and do not touch).
+/// apart or cross there, and do not touch). Settled is a step a thousandth of `tol`, or one within
+/// a tenth of it that no longer shrinks: the differences' rounding moves the point by as much (two
+/// vaults' crown at a `tol` of 1e-9 cycled through steps of 1.3e-11).
 pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
     let on_a = |q: V| a.point(a.inverse(q));
     let h = difference_step(a,b);
     let mut x = on_a(p);
+    let mut last = f64::INFINITY;
     for _ in 0..32 {
         let f = Frame::about(x,a.gradient(x));
         let g = |s: f64,t: f64| b.implicit(on_a(add(x,add(scale(f.x,s),scale(f.y,t)))));
@@ -523,7 +526,9 @@ pub(crate) fn touch_near(a: &Surface,b: &Surface,p: V,tol: f64) -> Option<V> {
         if !(det.abs() > 0.) { return None }
         let (ds,dt) = ((-gs*gtt+gt*gst)/det,(-gt*gss+gs*gst)/det);
         x = on_a(add(x,add(scale(f.x,ds),scale(f.y,dt))));
-        if ds.hypot(dt) <= 1e-3*tol { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
+        let step = ds.hypot(dt);
+        if step <= 1e-3*tol || step <= 0.1*tol && step >= 0.5*last { return (b.implicit(x).abs() <= 8.*tol).then_some(x) }
+        last = step;
     }
     None
 }
@@ -621,6 +626,9 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                 p = first;
                 t = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
             }
+            // the way `∇a × ∇b` faces the march: it turns about only through a point where the two
+            // are parallel, a touch a step may cross without landing where they nearly are
+            let mut facing = dot(cross(a.gradient(p),b.gradient(p)),t) > 0.;
             for _ in 0..100_000 {
                 let q = probe.project(add(p,scale(t,h)));
                 // a projection that does not reach both surfaces: a step too long (shortened), or past a
@@ -664,13 +672,26 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
                     // into a point where the two touch, along one of its branches: ending there
                     let Some(touched) = touch_at(q).filter(|t| !t.branches.is_empty()) else { return Err(shallow(q)) };
                     if !touched.branches.iter().any(|&d| dot(d,t) > 0.9) { return Err(shallow(q)) }
-                    drop_crowding(&mut pts,touched.at,0.25*h0,tol);
-                    pts.push(touched.at);
-                    if !touches.iter().any(|u| distance(u.at,touched.at) <= 8.*tol) { touches.push(touched); }
+                    end_at_touch(&mut pts,&mut touches,touched,h0,tol);
                     break
                 };
+                let turned = (dot(tq,t) > 0.) != facing;
                 let tq = if dot(tq,t) < 0. { scale(tq,-1.) } else { tq };
                 if dot(tq,t) < 0.996 && h > h0*1e-4 { h /= 2.; continue }
+                // **a step across a touch** (two vaults' groins crossing at their crown, where the
+                // two are tangent): `∇a × ∇b` turned about between its ends, so it vanished between
+                // them, where it shrinks to nothing; a touch there along this march's branch ends the
+                // march, as one arrived at does, so the meeting's curves end at the touch, a vertex
+                // its four half-branches share, and do not run through it as one curve
+                if turned {
+                    let sine = |x: V| norm(cross(a.gradient(x),b.gradient(x)));
+                    let (sp,sq) = (sine(p),sine(q));
+                    let across = add(p,scale(sub(q,p),sp/(sp+sq)));
+                    let crossed = touch_at(across)
+                        .filter(|u| distance(u.at,across) <= h && u.branches.iter().any(|&d| dot(d,t) > 0.9));
+                    if let Some(touched) = crossed { end_at_touch(&mut pts,&mut touches,touched,h0,tol); break }
+                    facing = !facing;
+                }
                 // back where it began: this step's chord passes the start, a closed curve
                 if pts.len() > 3 {
                     let d = sub(q,p);
@@ -705,22 +726,29 @@ pub(crate) fn trace_beside(a: &Surface,b: &Surface,seeds: &[V],beside: &mut dyn 
     }
     // each fitted through the seeds on it, exactly: they are where the faces' boundaries cross, the
     // vertices its edges will end at (a fit within `tol` of the traced points may pass farther from
-    // a vertex between them, where a swept surface's curve runs on into its tangent)
+    // a vertex between them, where a swept surface's curve runs on into its tangent). **One seed a
+    // place**: a seed within `tol` of one taken is that vertex again (a crossing seeded once more
+    // by another face's edge, 4e-14 off it): placed along the trace only to the search's width below
+    // (1e-8 of a step), two such were placed apart and interpolated a hair apart in space, and the
+    // cubic magnified their rounding into a swing out along the curve and back, on both surfaces
+    // all the way (a ring groove's floor ran 0.17 mm past its corner)
     for c in distinct(traced_so_far,tol) {
         let Curve::Traced(t) = &c else { unreachable!() };
-        let through: Vec<(f64,V)> = projected.iter().filter_map(|&p| {
+        let mut through: Vec<(f64,V)> = Vec::new();
+        for &p in &projected {
+            if through.iter().any(|&(_,q)| distance(q,p) <= tol) { continue }
             let x = c.inverse(p);
-            if crate::util::space::distance(c.point(x),p) > 8.*tol { return None }
+            if distance(c.point(x),p) > 8.*tol { continue }
             // where along the trace, closely: a seed placed a little past its neighbour in the
             // trace's order doubles the fit back on itself there
             let (mut a,mut b) = ((x-1.).max(0.),(x+1.).min((t.pts.len()-1) as f64));
-            let d = |x: f64| crate::util::space::distance(t.at(x),p);
+            let d = |x: f64| distance(t.at(x),p);
             for _ in 0..40 {
                 let (m1,m2) = (a+(b-a)*0.382,a+(b-a)*0.618);
                 if d(m1) < d(m2) { b = m2 } else { a = m1 }
             }
-            Some(((a+b)/2.,p))
-        }).collect();
+            through.push(((a+b)/2.,p));
+        }
         curves.push(fitted(t,tol/4.,&through).unwrap_or(c));
     }
     Ok(curves)
@@ -759,6 +787,14 @@ fn distinct(traced: Vec<Curve>,tol: f64) -> Vec<Curve> {
         kept.push((c,pc,hc));
     }
     kept.into_iter().map(|(c,..)| c).collect()
+}
+
+/// A march ended at a touch (`touched`): its points crowding the touch dropped, the touch its last,
+/// and the touch known, once, for the branches no curve arrives along to be traced from.
+fn end_at_touch(pts: &mut Vec<V>,touches: &mut Vec<Touch>,touched: Touch,h0: f64,tol: f64) {
+    drop_crowding(pts,touched.at,0.25*h0,tol);
+    pts.push(touched.at);
+    if !touches.iter().any(|u| distance(u.at,touched.at) <= 8.*tol) { touches.push(touched); }
 }
 
 /// **The steps crowding a march's end dropped**, `end` about to be pushed: a fit through points a

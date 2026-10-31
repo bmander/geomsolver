@@ -7,7 +7,7 @@ use crate::fmath::Det;
 use super::cutter::Cutter;
 use super::Say;
 use crate::brep::geom::Surface;
-use crate::brep::nurbs::{interpolate_net,Parametrization};
+use crate::brep::nurbs::{interpolate_creased,Parametrization};
 use crate::brep::topo::Brep;
 use crate::model::{Sketch,SolidDef};
 use crate::motion::Family;
@@ -90,11 +90,13 @@ impl Fitted {
     /// (`UNNAMED`'s empty): segments of the fitted net between the rows' parameters as `kind`
     /// spread them, which are the fit's. `around`, where it is some: the sheet's last column is
     /// its first, as a whole turn's is, and each band is cut into that many faces along the
-    /// columns, closing on itself (`build::grid_sheet`, #684 N).
-    pub(super) fn named(&self,kind: Parametrization,name: &dyn Fn(u32) -> String,around: Option<usize>) -> Result<Brep,String> {
+    /// columns, closing on itself (`build::grid_sheet`, #684 N). `closed`: the sheet's last row is
+    /// its first, as a sheet along a characteristic that closes on itself is, and its last band
+    /// closes on its first's edges (#684 W).
+    pub(super) fn named(&self,kind: Parametrization,name: &dyn Fn(u32) -> String,around: Option<usize>,closed: bool) -> Result<Brep,String> {
         let bands = &self.sheet.bands;
         let Some(Surface::BSpline(_,net)) = self.face.faces.first().map(|f| &f.surface) else { return Ok(self.face.clone()) };
-        if bands.len() < 2 && around.is_none() {
+        if bands.len() < 2 && around.is_none() && !closed {
             let mut faces = self.face.clone();
             faces.faces[0].name = bands.first().map_or(String::new(),|b| name(b.1));
             return Ok(faces)
@@ -110,7 +112,7 @@ impl Fitted {
         let pieces = around.unwrap_or(1);
         let vs: Vec<f64> = (0..=pieces).map(|k| c+(d-c)*k as f64/pieces as f64).collect();
         let names: Vec<String> = bands.iter().map(|b| name(b.1)).collect();
-        crate::brep::build::grid_sheet(net,&us,&vs,&names,around.is_some())
+        crate::brep::build::grid_sheet(net,&us,&vs,&names,[closed,around.is_some()])
     }
 }
 
@@ -265,7 +267,9 @@ fn nearest_on(grid: &[(V,V)],nu: usize,nv: usize,points: &[V]) -> Vec<[f64;2]> {
 
 /// A sheet grid interpolated as a face.
 fn fit(sheet: &Sheet,kind: Parametrization) -> Result<Brep,String> {
-    let net = interpolate_net(&sheet.points,sheet.rows,sheet.columns,kind).ok_or("the sheet grid could not be interpolated")?;
+    // creased where the sweep has a sharp edge (#684 O), smooth either side
+    let net = interpolate_creased(&sheet.points,sheet.rows,sheet.columns,kind,&sheet.creases)
+        .ok_or("the sheet grid could not be interpolated")?;
     crate::brep::build::sheet(net)
 }
 
@@ -283,16 +287,27 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
     -> Result<Judged,ExportRefusal> {
     let at = |p: V| p.map(|x| (x*1e3).round()/1e3);
     let (nu,nv) = (4*(sheet.rows-1)+1,4*(sheet.columns-1)+1);
-    let folds = |grid: Vec<(V,V)>| -> Result<Vec<(V,V)>,ExportRefusal> {
+    // a crease of the fit, where its normal turns at a sharp edge of the sweep (#684 O), is no fold:
+    // the readings either side of one are not compared
+    let creased = |face: &Brep,i: usize| -> bool {
+        let Some(Surface::BSpline(_,net)) = face.faces.first().map(|f| &f.surface) else { return false };
+        let [[a,z],_] = net.domain();
+        let (u0,u1) = (a+(z-a)*i as f64/(nu-1) as f64,a+(z-a)*(i+1) as f64/(nu-1) as f64);
+        crate::brep::nurbs::distinct(&net.uknots).into_iter().any(|(k,m)| m >= net.du && k >= u0 && k <= u1 && k > a && k < z)
+    };
+    let folds = |face: &Brep,grid: Vec<(V,V)>| -> Result<Vec<(V,V)>,ExportRefusal> {
         let (mut fold,mut folded) = (0_f64,[0.;3]);
-        for i in 0..nu { for j in 0..nv {
-            let (p,n) = grid[i*nv+j];
-            let beside = [(i+1 < nu).then(|| grid[(i+1)*nv+j]),(j+1 < nv).then(|| grid[i*nv+j+1])];
-            for (q,m) in beside.into_iter().flatten() {
-                let angle = dot(n,m).clamp(-1.,1.).dacos().to_degrees();
-                if angle > fold && (near(p) < 0. || near(q) < 0.) { fold = angle; folded = p; }
+        for i in 0..nu {
+            let across = !sheet.creases.is_empty() && i+1 < nu && creased(face,i);
+            for j in 0..nv {
+                let (p,n) = grid[i*nv+j];
+                let beside = [(i+1 < nu && !across).then(|| grid[(i+1)*nv+j]),(j+1 < nv).then(|| grid[i*nv+j+1])];
+                for (q,m) in beside.into_iter().flatten() {
+                    let angle = dot(n,m).clamp(-1.,1.).dacos().to_degrees();
+                    if angle > fold && (near(p) < 0. || near(q) < 0.) { fold = angle; folded = p; }
+                }
             }
-        } }
+        }
         if fold > FOLD_TURN {
             return Err(ExportRefusal {stage:Stage::Withheld,condition:None,witness:Some(folded.map(|x| x/scale)),
                 message:format!("`{name}`: the fitted sheet folds in the blank: its normal turns {fold:.1} degrees between points a \
@@ -327,7 +342,7 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
                 message:format!("`{name}`: the fitted sheet leaves its contacts: {error:.3} mm (at {:?}) and {turn:.1} degrees (at {:?}), \
                 against {FIT_DISTANCE} mm and {FIT_TURN} degrees",at(worst),at(turned))})
         }
-        folds(grid)?;
+        folds(&face,grid)?;
         Ok((face,error,kind))
         };
         let (face,error,kind) = match gross(Parametrization::Centripetal) {
@@ -343,7 +358,7 @@ fn judged(name: &str,sheet: &Sheet,scale: f64,near: &(dyn Fn(V) -> f64+Sync),tol
     struct Candidate { face: Brep,kind: Parametrization,far: Vec<bool>,turned: Vec<bool>,error: f64,worst: V,turn: (f64,f64,V),distant: usize,bent: usize }
     let fitted = |kind: Parametrization| -> Result<Candidate,ExportRefusal> {
         let face = fit(sheet,kind).at(Stage::Fit)?;
-        let grid = folds(surface_grid(&face,nu,nv))?;
+        let grid = folds(&face,surface_grid(&face,nu,nv))?;
         let guesses = nearest_on(&grid,nu,nv,&points);
         let feet = feet_near(&face,&points,&guesses,bar);
         let mut c = Candidate {face,kind,far:vec![false;sheet.withheld.len()],turned:vec![false;sheet.withheld.len()],error:0.,worst:[0.;3],
@@ -490,7 +505,7 @@ fn traced_sheet(cut: &SweptCut,cutter: &Cutter,inside: Inside,near: &(dyn Fn(V) 
                     let Some((key,face)) = cutter.face_of(tag) else { return String::new() };
                     crate::solid::faces::FacePath::new(cut.routes.get(&key).map_or("",String::as_str),&face).text()
                 };
-                fitted.faces = fitted.named(kind,&face_name,None).at(Stage::Fit)?;
+                fitted.faces = fitted.named(kind,&face_name,None,false).at(Stage::Fit)?;
                 carry_out(name,&mut fitted,inside,near,tolerance.map_or(FIT_DISTANCE,|t| t.fit()),say).at(Stage::Sheet)?;
                 (say.stage)(&format!("`{name}`: the sheet's faces, by the cutter's: {}",
                     fitted.faces.faces.iter().map(|f| if f.name.is_empty() { "(unnamed)" } else { f.name.as_str() }).collect::<Vec<_>>().join(", ")));

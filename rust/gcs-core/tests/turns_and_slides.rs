@@ -8,8 +8,10 @@
 //! not by the code under test, and held to the exact solid this kernel builds, whose STL is held
 //! to the field. The square torus slid and the leaning one turned are the series' own
 //! (`solid_sweeps/slide.sv`, `turn.sv`, `solid_sweeps_examples.rs`). A V wheel slid tilted joins its
-//! flanks' characteristics round its sharp rim's fan (#684 E), its shadow read here too. Each row
-//! the two motions add or meet refuses by name, a V wheel slid square for the sharp edge it leaves.
+//! flanks' characteristics round its sharp rim's fan (#684 E), its shadow read here too; slid
+//! square, or stood upright and turned, both flanks meet the rim at one point and the sheet is
+//! creased along its path (#684 V), the section the V's own in closed form. Each row the two
+//! motions add or meet refuses by name.
 use gcs_core::brep::{export,props,sweep::Say};
 use gcs_core::program::Elaborated;
 use gcs_core::solid::admission::{self,Class,Condition,Error,Options};
@@ -31,9 +33,12 @@ fn saying<T>(f: impl FnOnce(&Say) -> T) -> (T,String) {
 /// The solid `name` built exactly within 0.01 mm by this kernel, its STEP and STL written and the
 /// STL held to the material field with no disagreement (where it cuts a sweep: a ball's tube is
 /// static material, built as any is); its volume.
-pub(crate) fn exported(e: &Elaborated,name: &str) -> f64 {
+pub(crate) fn exported(e: &Elaborated,name: &str) -> f64 { exported_at(e,name,0.01) }
+
+/// The same, built within `tolerance` millimetres.
+pub(crate) fn exported_at(e: &Elaborated,name: &str,tolerance: f64) -> f64 {
     let (sk,body) = (&e.sketch,fixtures::solid(e,name));
-    let tolerance = Some(Tolerance::new(0.01).unwrap());
+    let tolerance = Some(Tolerance::new(tolerance).unwrap());
     let (exact,said) = saying(|say| export::exact(sk,body,None,tolerance,say));
     let exact = exact.unwrap_or_else(|r| panic!("{r}\n{said}"));
     eprintln!("{said}");
@@ -105,9 +110,10 @@ in std.front {
 /// What a slide grooves the rod with: a torus whose tube of radius 2 is centred `reach` from the
 /// rod's axis, its own axis 6 beyond; a cylinder of radius 2 and length 20 about that line; or a
 /// V wheel, its sharp rim `reach` from the rod's axis and 6 from its own, its flanks 30° either side
-/// of its plane and 2.5 deep to its bore.
+/// of its plane and 2.5 deep to its bore; or an engraving bit, a cone whose point is `reach` from
+/// the rod's axis on its own, its flank 30° from it and 2.5 long to its back.
 #[derive(Clone,Copy)]
-enum Wheel { Torus,Cylinder,Vee }
+enum Wheel { Torus,Cylinder,Vee,Bit }
 
 /// The wheel drawn in the plane through (0, 0, -9) along x and along y tilted `tilt` degrees up
 /// toward z, its axis along that y; slid 40 mm up the rod's axis over a turn of the roll, from
@@ -162,6 +168,19 @@ construction wheel := solid(face(cb, cw, ct, ca), about: ca)
 }}
 construction wheel := solid(face(lower, bore, upper), about: wheel_axis)
 ",axis=reach+6.,base=reach+2.5,half=2.5*(PI/6.).tan()),
+        Wheel::Bit => format!("\
+  private v0 := point
+  private v1 := point
+  private v2 := point
+  v0 coords(du: {reach}mm, dv: 0mm) bench
+  v1 coords(du: {base}mm, dv: {half}mm) bench
+  v2 coords(du: {base}mm, dv: 0mm) bench
+  private flank := line(v0, v1)
+  private back := line(v1, v2)
+  private bit_axis := line(v2, v0)
+}}
+construction wheel := solid(face(flank, back, bit_axis), about: bit_axis)
+",base=reach+2.5,half=2.5*(PI/6.).tan()),
     };
     format!("{ROD}\
 private bx := axis
@@ -240,6 +259,33 @@ fn a_tilted_v_wheel_slid_removes_its_shadow_round_its_rim() {
     near(volume,PI*25.*20.-shadow*20.,1e-5);
 }
 
+/// A V wheel slid up the rod square to its axis, its sharp rim 4 from the rod's axis (#684 V): the
+/// slide runs along the rim's tangent where the rim is nearest the rod, so both flanks'
+/// characteristics, the meridians of the wheel square to the slide, meet the rim there at one
+/// point, every normal of the rim's fan in contact at it. The walk steps from the one flank
+/// straight onto the other, and the groove's wall has a sharp edge along that point's path: the
+/// sheet creased there, each flank's meridian slid a plane. The groove's section is the wheel's
+/// profile in the plane through its axis, the wedge of half-angle 30° from (4, 0) toward the
+/// wheel's axis within the rod's circle: two triangles to where its sides meet the circle and the
+/// circle's segment beyond their chord, in closed form.
+#[test]
+fn a_v_wheel_slid_square_leaves_its_profile_creased_at_the_rim() {
+    let source = slid(0.,4.,Wheel::Vee);
+    let a = admit(&source).unwrap();
+    let [groove] = a.sweeps() else { panic!("one sweep") };
+    let Class::ConstantTwist(found) = &groove.class else { panic!("`groove` is a constant twist's sweep") };
+    assert!(found.screw.is_slide(),"read as a slide");
+    assert!(found.fans().is_empty(),"no fan walked: {:?}",found.fans());
+    assert_eq!(found.sharp(),["the corner of `wheel.upper` and `wheel.lower`"]);
+    assert_eq!(found.creases().len(),1);
+    let (s,c) = (PI/6.).sin_cos();
+    // where each side of the wedge meets the circle: (4 + t c)² + (t s)² = 25
+    let t = -4.*c+(16.*c*c+9.).sqrt();
+    let (x0,h) = (4.+t*c,t*s);
+    let section = t*t*c*s+25.*(x0/5.).acos()-x0*h;
+    near(exported(&fixtures::read(&source),"part"),PI*25.*20.-section*20.,1e-6);
+}
+
 /// The straight-fluted drill (`twist_drill/straight_flute.sv`): the twist drill's flute wheel set
 /// square to the axis and slid up it. Under the slide the wheel's characteristic is its profile in
 /// the plane through its axis square to the slide, so each flute's section is the wheel's drawn
@@ -285,10 +331,10 @@ impl Lean {
 /// wedge's in common with the ring), and a torus about the line through (5, 0, 0) leaning so,
 /// its tube of radius 2 centred 2.5 out from it, turned about z over the roll from `from` to `to`
 /// degrees.
-fn turned(lean: Lean,from: f64,to: f64) -> String { turned_in(lean,from,to,true) }
+pub(crate) fn turned(lean: Lean,from: f64,to: f64) -> String { turned_in(lean,from,to,true) }
 
 /// `turned`'s torus and roll over the whole ring (no wedge), or its sector.
-fn turned_in(lean: Lean,from: f64,to: f64,sector: bool) -> String {
+pub(crate) fn turned_in(lean: Lean,from: f64,to: f64,sector: bool) -> String {
     let (a,o) = lean.axes();
     // the wedge the ring's sector is its common with
     let wedge = if !sector { String::new() } else { format!("\
@@ -379,6 +425,23 @@ fn a_turned_torus_grooves_a_ring_by_pappus() {
     near(exported(&fixtures::read(&upright),"part"),sector*(144.-64.)-away,2e-5);
 }
 
+/// `whole_turn.sv`'s V wheel stood upright, its axis parallel to the turn's (#684 V): the turn moves
+/// each point square to the plane through it and the rod's axis, and a flank's normal lies in the
+/// plane through it and the wheel's axis, so each flank touches along its meridian in the plane
+/// through both axes, and the two meet the rim at one point, where it is nearest the rod. The walk
+/// steps from the one flank straight onto the other, the sheet creased along that point's circle:
+/// the groove is the V itself turned once round, the wedge `|z − 10| ≤ (r − 4) tan 30°` within the
+/// rod, `4π tan 30° · 7/3` by Pappus.
+#[test]
+fn an_upright_v_wheel_turned_once_leaves_its_v_turned() {
+    let e = fixtures::read(&crate::solid_sweeps_examples::text("whole_turn.sv").replace("lean := 20deg","lean := 0deg"));
+    let Class::ConstantTwist(found) = crate::solid_sweeps_examples::class(&e,"rod") else { panic!("the constant-twist class") };
+    assert!(found.screw.is_turn() && found.whole,"read as a whole turn");
+    assert!(found.fans().is_empty(),"{:?}",found.fans());
+    assert_eq!(found.sharp(),["the corner of `vwheel.upper` and `vwheel.lower`"]);
+    near(exported(&e,"rod"),PI*25.*20.-4.*PI*(PI/6.).tan()*7./3.,1e-6);
+}
+
 // -- refusals --------------------------------------------------------------------------------
 
 /// A whole turn (#684 N): the leaning torus turned once round the whole ring, from inside it, sweeps
@@ -403,27 +466,26 @@ fn a_whole_turn_grooves_the_whole_ring() {
 }
 
 /// Each row a turn or a slide meets refuses by name: a roll that leaves the torus in the ring is not clear at its ends (E1);
-/// a torus leaning toward the turn's axis, so that its own meets it, has a ring in contact all
-/// round, every normal of it through where the axes meet, at which its characteristic branches
-/// between two of the walk's stations (S1: the boundary leaves the walked branch there, which
-/// the field gate saw before this row did); and a torus slid through the rod's middle touches
-/// it all round its tube, a characteristic that closes on itself (S1). A V wheel slid square to
-/// its axis meets the slide's direction along its rim's tangent where the rim is nearest the
-/// rod, so both flanks' characteristics meet the rim there, at one point, and every normal of the
-/// rim's fan is in contact at it: the groove's wall has a sharp edge along that point's path,
-/// which is not built (S1, #684 E).
+/// (a torus leaning toward the turn's axis, so that its own meets it, has a ring in contact all
+/// round, every normal of it through where the axes meet, refused at S1 until #684 X walked onto it,
+/// `rings_all_round::a_torus_leaning_toward_the_turns_axis_grooves_its_shadow`); and a torus slid through the rod's middle touches it
+/// all round its tube, a characteristic that closes on itself (refused so until #684 W), but at the
+/// tube's top and bottom its rings are in contact all round, square to the slide, where the
+/// characteristic branches into the groove's flat sides (S1). An engraving bit slid square
+/// to its axis touches along the two lines of its cone square to the slide, which meet at its
+/// point, on its axis: every normal of the cone round the point is in contact there, and the
+/// groove's wall has a sharp edge along its path, which the class builds where the corner turns
+/// to a circle (a V wheel's rim, #684 V, above) and not at an apex (S1).
 #[test]
 fn the_turn_and_slide_rows_refuse_by_name() {
     let short = refused(admit(&turned(Lean::Across(0.),-130.,30.)));
     assert_eq!(short.condition,Condition::Clearance);
-    let branching = refused(admit(&turned(Lean::Toward(25.),-140.,140.)));
-    assert_eq!(branching.condition,Condition::Regular,"{branching}");
-    assert!(branching.message.contains("in contact all round"),"{}",branching.message);
     let closed = refused(admit(&slid(0.,0.,Wheel::Torus)));
     assert_eq!(closed.condition,Condition::Regular,"{closed}");
-    let creased = refused(admit(&slid(0.,4.,Wheel::Vee)));
-    assert_eq!(creased.condition,Condition::Regular,"{creased}");
-    assert!(creased.message.contains("sharp edge"),"{}",creased.message);
+    assert!(closed.message.contains("`wheel.tube` is in contact all round a ring"),"{}",closed.message);
+    let pointed = refused(admit(&slid(0.,4.,Wheel::Bit)));
+    assert_eq!(pointed.condition,Condition::Regular,"{pointed}");
+    assert!(pointed.message.contains("`wheel.flank` meets the tool's axis at an apex of its profile"),"{}",pointed.message);
 }
 
 // -- what the shadows are read by ------------------------------------------------------------
@@ -501,3 +563,4 @@ pub(crate) fn measure(u: [f64;2],span: &(dyn Fn(f64) -> [f64;2]+Sync),hit: &(dyn
     let values: Vec<f64> = gcs_core::par::indices(rows+1,|k| row(u[0]+k as f64*h));
     values.iter().enumerate().map(|(k,v)| v*if k == 0 || k == rows { 1. } else if k%2 == 1 { 4. } else { 2. }).sum::<f64>()*h/3.
 }
+

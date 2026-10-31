@@ -244,6 +244,19 @@ impl RevolvedSurface {
         Ok(Self {v_domain:span.map(|a| a/sweep),..self.clone()})
     }
 
+    /// Where the face is flat — its meridian a line square to the axis, turned to a disc or a ring
+    /// in a plane square to it (#684 O) — that plane's centre on the axis, the unit axis, the
+    /// radii of the meridian's two ends, and whether the revolution runs all the way round.
+    pub fn flat(&self) -> Option<(V,V,[f64;2],bool)> {
+        let Meridian::Line {start,delta} = self.meridian else { return None };
+        let a = crate::envelope::normalized(self.axis)?;
+        let length = delta[0].dhypot(delta[1]).dhypot(delta[2]);
+        if !(crate::space::dot(delta,a).abs() <= 1e-12*length) { return None }
+        let centre = add(self.origin,scale(a,crate::space::dot(sub(start,self.origin),a)));
+        let whole = self.v_domain == [0.,1.] && self.sweep.abs() >= std::f64::consts::TAU*(1.-1e-12);
+        Some((centre,a,[crate::space::distance(start,centre),crate::space::distance(add(start,delta),centre)],whole))
+    }
+
     /// Original source parameters: an angular span restricts v without renumbering it.
     pub fn domain(&self) -> [[f64;2];2] { [[0.,1.],self.v_domain] }
 
